@@ -23,6 +23,7 @@ namespace cpu {
 /// be nonzero — unlike electrostatic embedding).
 class QmmmMechanical : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cross_lj QM–MM LJ table (Lorentz–Berthelot fill).
     /// @param lj_cutoff LJ and classical Coulomb cutoff [Å].
     QmmmMechanical(std::vector<LJTypeCoeff> cross_lj, double lj_cutoff);

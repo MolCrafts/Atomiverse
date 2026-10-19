@@ -67,3 +67,35 @@ TEST(TestLinearSolve, SolvePcgThrowsWhenMaxIterTooSmall) {
                                          /*max_iter=*/1),
                  std::runtime_error);
 }
+
+TEST(TestLinearSolve, ZeroRhsReturnsExactZeroWithoutMatvec) {
+    const RealVector diag = {4.0, 3.0};
+    const RealVector b = {0.0, 0.0};
+    int calls = 0;
+    const auto x = linalg::solve_pcg(
+        [&](const RealVector& v) {
+            ++calls;
+            return apply_a(v);
+        },
+        diag, b, 1e-12, 0);
+    EXPECT_EQ(calls, 0);
+    EXPECT_EQ(x(0), 0.0);
+    EXPECT_EQ(x(1), 0.0);
+}
+
+TEST(TestLinearSolve, InvalidPreconditionerAndMatvecFailExplicitly) {
+    const RealVector b = {1.0, 2.0};
+    EXPECT_THROW(linalg::solve_pcg(apply_a, RealVector{4}, b, 1e-12, 4),
+                 std::invalid_argument);
+    EXPECT_THROW(linalg::solve_pcg(apply_a, RealVector{4, 0}, b, 1e-12, 4),
+                 std::invalid_argument);
+    EXPECT_THROW(
+        linalg::solve_pcg([](const RealVector&) { return RealVector{1}; },
+                          RealVector{4, 3}, b, 1e-12, 4),
+        std::runtime_error);
+    EXPECT_THROW(
+        linalg::solve_pcg(
+            [](const RealVector& p) { return RealVector{-p(0), -p(1)}; },
+            RealVector{1, 1}, b, 1e-12, 4),
+        std::runtime_error);
+}

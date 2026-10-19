@@ -139,8 +139,8 @@ class GhostCountProbe : public cpu::Component {
         const auto* dd = ctx.runtime.md.dd;
         if (dd == nullptr)
             return;
-        n_local = dd->n_local;
-        n_ghost = dd->n_ghost;
+        n_local = ctx.frame.nlocal();
+        n_ghost = ctx.frame.nghost();
         ++launches;
     }
 

@@ -16,21 +16,23 @@
 /// - `DomainDecomposition::halo_generation` bumps on every halo *full
 ///   rebuild* (ghost slots reshuffled). Position-only halo refreshes keep
 ///   slot indices stable.
-/// - Single-rank: rows never move; the cache is built once (`n` guards
-///   driver re-binds to a different frame).
+/// - Frame identity, atom-block generation and owned/ghost tag sequence
+///   detect rebinding, topology/schema changes and serial row permutations.
 ///
-/// A tuple whose partner does not resolve on this rank (outside the halo)
-/// is dropped at cache-build time — identical semantics to the previous
-/// per-step `resolve() < 0` skip, except the drop tally advances once per
-/// rebuild instead of once per step.
+/// Missing partners are recorded while rebuilding; require_complete() checks
+/// every rank before the partial tuple set can be used for a force evaluation.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 namespace ATV {
 namespace cpu {
@@ -49,25 +51,51 @@ struct BondedTupleCache {
 
     /// @brief True when the cache must be rebuilt before use.
     /// @param ctx Launch context (reads `dd` generation counters).
-    bool stale(const cpu::LaunchContext& ctx) const noexcept {
+    bool stale(const cpu::LaunchContext& ctx) const {
         const auto* dd = ctx.runtime.md.dd;
-        if (!built_)
+        const int n_force = force_count(ctx);
+        if (!built_ || frame_ != &ctx.frame || owned_ != owned_count(ctx)
+            || tags_.size() != static_cast<std::size_t>(n_force)
+            || block_generation_ != ctx.frame.block("atoms").generation())
             return true;
-        if (dd == nullptr)
-            return false; // no DD: rows never move after first build
-        return dd->neighbor_generation != neigh_gen_
-               || dd->halo_generation != halo_gen_;
+        if (dd
+            && (dd->neighbor_generation != neigh_gen_
+                || dd->halo_generation != halo_gen_))
+            return true;
+        const auto tags = ctx.frame.span(kAtom_tag);
+        return !std::equal(tags_.begin(), tags_.end(), tags.data());
     }
 
-    /// @brief Record the generation stamps of the build just performed.
-    /// @param ctx Launch context (reads `dd` generation counters).
-    void mark_built(const cpu::LaunchContext& ctx) noexcept {
+    /// @brief Record the Frame and row identity used to resolve these tuples.
+    void mark_built(const cpu::LaunchContext& ctx) {
         const auto* dd = ctx.runtime.md.dd;
         built_ = true;
+        frame_ = &ctx.frame;
+        owned_ = owned_count(ctx);
+        block_generation_ = ctx.frame.block("atoms").generation();
+        const auto tags = ctx.frame.span(kAtom_tag);
+        tags_.assign(tags.data(), tags.data() + force_count(ctx));
         if (dd != nullptr) {
             neigh_gen_ = dd->neighbor_generation;
             halo_gen_ = dd->halo_generation;
         }
+    }
+
+    /// @brief Fail together before any rank computes an incomplete force field.
+    /// Called by every rank even when its cache has no local tuples.
+    void require_complete(const cpu::LaunchContext& ctx,
+                          const char* kernel) const {
+        int missing = dropped_at_build != 0;
+#ifdef ATV_HAS_MPI
+        if (multi_rank_dd(ctx.runtime))
+            MPI_Allreduce(MPI_IN_PLACE, &missing, 1, MPI_INT, MPI_MAX,
+                          ctx.runtime.md.dd->cart_comm);
+#endif
+        if (missing)
+            throw std::runtime_error(
+                std::string(kernel)
+                + ": bonded partner is absent from owned/ghost rows; "
+                  "check topology tags and increase the communication halo");
     }
 
     /// @brief Drop contents and force a rebuild on next use.
@@ -76,9 +104,15 @@ struct BondedTupleCache {
         flat.shrink_to_fit();
         dropped_at_build = 0;
         built_ = false;
+        frame_ = nullptr;
+        tags_.clear();
     }
 
   private:
+    const cpu::Frame* frame_ = nullptr;
+    int owned_ = 0;
+    std::uint64_t block_generation_ = 0;
+    std::vector<TagInt> tags_;
     std::uint64_t neigh_gen_ = 0;
     std::uint64_t halo_gen_ = 0;
     bool built_ = false;

@@ -15,6 +15,8 @@ namespace semiempirical {
 /// @brief RM1 semiempirical Evaluator (owns concrete `RM1` method).
 class RM1Evaluator : public cpu::Semiempirical {
   public:
+    bool provides_force() const override { return compute_force_; }
+
     RM1Evaluator() = default;
     explicit RM1Evaluator(RM1 method) : solver_(std::move(method)) {}
 

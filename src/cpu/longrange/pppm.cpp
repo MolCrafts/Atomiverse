@@ -44,6 +44,37 @@ namespace ATV {
 namespace cpu {
 namespace {
 
+// Distributed mesh bricks currently follow uniform fractional spatial cuts.
+// Check the replicated cut table locally before FFT setup or MPI collectives;
+// the explicit replicated mesh path has no such ownership constraint.
+void require_supported_mesh_partition(const cpu::Context& ctx) {
+#if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
+    if (!cpu::multi_rank_dd(ctx)
+        || std::getenv("ATV_PPPM_ALLREDUCE") != nullptr)
+        return;
+    const auto& dd = *ctx.md.dd;
+    for (int d = 0; d < 3; ++d) {
+        const auto& cuts = dd.cuts[d];
+        if (cuts.empty())
+            continue;
+        if (dd.dims[d] <= 0
+            || cuts.size() != static_cast<std::size_t>(dd.dims[d] + 1))
+            throw std::invalid_argument(
+                "KSpacePPPM: invalid spatial cut table");
+        for (int i = 0; i <= dd.dims[d]; ++i)
+            if (cuts[i] != static_cast<double>(i) / dd.dims[d])
+                throw std::invalid_argument(
+                    "KSpacePPPM: distributed mesh requires uniform spatial "
+                    "cuts; "
+                    "nonuniform Rebalance cuts are unsupported. "
+                    "Use the explicit replicated mesh path "
+                    "ATV_PPPM_ALLREDUCE=1.");
+    }
+#else
+    (void)ctx;
+#endif
+}
+
 inline int wrap_k(int g, int K) noexcept {
     g %= K;
     if (g < 0)
@@ -193,7 +224,7 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
     int next_K[3];
     for (int d = 0; d < 3; ++d) {
         next_K[d] = longrange::good_fft_size(
-            static_cast<int>(std::ceil(box.length(d) / spacing_)));
+            static_cast<int>(std::ceil(box.lengths()[d] / spacing_)));
         if (next_K[d] < order_ + 1)
             next_K[d] = longrange::good_fft_size(order_ + 1);
         if (d == 2 && (next_K[d] & 1))
@@ -277,9 +308,9 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
                     double mx = 0, my = 0, mz = 0;
                     const int hh[3] = {h0, h1, h2};
                     for (int d = 0; d < 3; ++d) {
-                        mx += hh[d] * ic(0, d);
-                        my += hh[d] * ic(1, d);
-                        mz += hh[d] * ic(2, d);
+                        mx += hh[d] * ic(d, 0);
+                        my += hh[d] * ic(d, 1);
+                        mz += hh[d] * ic(d, 2);
                     }
                     const double msq = mx * mx + my * my + mz * mz;
                     if (msq < 1e-30) {
@@ -605,12 +636,13 @@ void KSpacePPPM::run_grid_plan_(const GridPlan& plan, MPI_Comm comm,
 #endif // ATV_HAS_MPI && ATV_HAS_FFTW_MPI
 
 void KSpacePPPM::build(const BuildContext& ctx) {
+    require_supported_mesh_partition(ctx.runtime);
     note_build();
     ensure_grid(ctx.frame, true);
     ensure_atom_capacity(ctx.frame.capacity(), true);
 #ifdef ATV_HAS_MPI
     // Re-partition brick from DD if multi-rank.
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
+    if (cpu::multi_rank_dd(ctx.runtime)) {
         auto* dd = ctx.runtime.md.dd;
         setup_brick_partition_(dd->coords, dd->dims);
     }
@@ -620,6 +652,7 @@ void KSpacePPPM::build(const BuildContext& ctx) {
 }
 
 void KSpacePPPM::compute(const LaunchContext& ctx) {
+    require_supported_mesh_partition(ctx.runtime);
     auto& f = ctx.frame;
     ensure_grid(f, false);
 
@@ -655,6 +688,28 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                                      dtheta_.data());
 
     double e_recip = 0;
+    double stress[6]{};
+    const double energy_scale =
+        ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
+    const double pi2_alpha2 =
+        ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
+    // The r2c grid and FFT slabs share the PME influence function. Tally in
+    // global reciprocal coordinates; Hermitian multiplicity is in ug.
+    auto tally_mode = [&](int m0, int m1, int m2, double ug) {
+        if (!ctx.stress_requested)
+            return;
+        const int h[3] = {m0 <= K0 / 2 ? m0 : m0 - K0,
+                          m1 <= K1 / 2 ? m1 : m1 - K1, m2};
+        double mx = 0, my = 0, mz = 0;
+        for (int d = 0; d < 3; ++d) {
+            mx += h[d] * ic(d, 0);
+            my += h[d] * ic(d, 1);
+            mz += h[d] * ic(d, 2);
+        }
+        longrange::pme_mode_virial(ug, mx, my, mz,
+                                   1.0 / (mx * mx + my * my + mz * mz),
+                                   pi2_alpha2, stress);
+    };
 
     // ── Mesh arm selection (three arms, decided once per compute) ──────
     // Ranks sharing the mesh: 1 without a domain decomposition.
@@ -755,6 +810,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                         const double herm =
                             (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
                         e_recip += herm * H * q2;
+                        tally_mode(m0, m1, m2, herm * H * q2);
                         w *= H;
                     }
             e_recip *= ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
@@ -764,9 +820,9 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
         // Force from dens_full_ (same as pre-brick serial path).
         ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage, kTimerCategory);
         const double fscale = ATV::units::coulomb / (ATV::units::pi * vol);
-        const double ic00 = ic(0, 0), ic01 = ic(0, 1), ic02 = ic(0, 2);
-        const double ic10 = ic(1, 0), ic11 = ic(1, 1), ic12 = ic(1, 2);
-        const double ic20 = ic(2, 0), ic21 = ic(2, 1), ic22 = ic(2, 2);
+        const double ic00 = ic(0, 0), ic01 = ic(1, 0), ic02 = ic(2, 0);
+        const double ic10 = ic(0, 1), ic11 = ic(1, 1), ic12 = ic(2, 1);
+        const double ic20 = ic(0, 2), ic21 = ic(1, 2), ic22 = ic(2, 2);
         const double K0d = static_cast<double>(K0);
         const double K1d = static_cast<double>(K1);
         const double K2d = static_cast<double>(K2);
@@ -811,9 +867,11 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             const double fzi =
                 g0s * K0d * ic20 + g1s * K1d * ic21 + g2s * K2d * ic22;
             const double s = -fscale * qi;
-            fx[i] += s * fxi;
-            fy[i] += s * fyi;
-            fz[i] += s * fzi;
+            if (ctx.forces_requested) {
+                fx[i] += s * fxi;
+                fy[i] += s * fyi;
+                fz[i] += s * fzi;
+            }
         }
     } else
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
@@ -1034,6 +1092,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                         const double herm =
                             (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
                         e_local += herm * H * q2;
+                        tally_mode(m0, m1, m2, herm * H * q2);
                         re *= H;
                         im *= H;
                     }
@@ -1046,7 +1105,10 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             if (fft_member) {
                 MPI_Allreduce(&e_local, &e_recip, 1, MPI_DOUBLE, MPI_SUM,
                               fft_comm_);
-                e_recip *= ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
+                e_recip *= energy_scale;
+                if (ctx.stress_requested)
+                    MPI_Allreduce(MPI_IN_PLACE, stress, 6, MPI_DOUBLE, MPI_SUM,
+                                  fft_comm_);
 
                 fftw_execute(static_cast<fftw_plan>(plan_mpi_bwd_));
             }
@@ -1073,9 +1135,9 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
         // forward fill above populated every ghost cell they touch.
         ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage, kTimerCategory);
         const double fscale = ATV::units::coulomb / (ATV::units::pi * vol);
-        const double ic00 = ic(0, 0), ic01 = ic(0, 1), ic02 = ic(0, 2);
-        const double ic10 = ic(1, 0), ic11 = ic(1, 1), ic12 = ic(1, 2);
-        const double ic20 = ic(2, 0), ic21 = ic(2, 1), ic22 = ic(2, 2);
+        const double ic00 = ic(0, 0), ic01 = ic(1, 0), ic02 = ic(2, 0);
+        const double ic10 = ic(0, 1), ic11 = ic(1, 1), ic12 = ic(2, 1);
+        const double ic20 = ic(0, 2), ic21 = ic(1, 2), ic22 = ic(2, 2);
         const double K0d = static_cast<double>(K0);
         const double K1d = static_cast<double>(K1);
         const double K2d = static_cast<double>(K2);
@@ -1118,9 +1180,11 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             const double fzi =
                 g0s * K0d * ic20 + g1s * K1d * ic21 + g2s * K2d * ic22;
             const double s = -fscale * qi;
-            fx[i] += s * fxi;
-            fy[i] += s * fyi;
-            fz[i] += s * fzi;
+            if (ctx.forces_requested) {
+                fx[i] += s * fxi;
+                fy[i] += s * fyi;
+                fz[i] += s * fzi;
+            }
         }
     } else
 #endif // MPI + FFTW_MPI
@@ -1156,6 +1220,11 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                              * q_total;
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
+        if (ctx.stress_requested) {
+            for (int d = 0; d < 6; ++d)
+                f.meta.get(kStress)[d] +=
+                    energy_scale * stress[d] + (d < 3 ? e_net : 0.0);
+        }
     }
 }
 

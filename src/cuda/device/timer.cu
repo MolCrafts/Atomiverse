@@ -3,9 +3,8 @@
 ///
 /// These definitions live in a `.cu` translation unit (where `Timer::Impl`
 /// is complete) so that non-CUDA translation units holding a
-/// `std::unique_ptr<cuda::Timer>` member — notably `src/cpu/driver/driver.cpp`'s
-/// `Driver<PhaseEnum, cpu::device_tag>` instantiations — can compile and
-/// link the `Driver` destructor against only the CUDA-free `cuda/timer.h`
+/// `std::unique_ptr<cuda::Timer>` member for the CUDA backend can compile and
+/// link the `Driver` destructor against only the CUDA-free `cuda/device/timer.h`
 /// declaration.
 
 #include "atomiverse/cuda/device/timer.cuh"

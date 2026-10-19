@@ -106,9 +106,11 @@ struct GatheredFrame {
 /// (i.e. the I/O output is independent of how atoms were partitioned across
 /// ranks).
 ///
-/// Non-MPI build: identical to single-rank mode.
+/// Single-rank and non-MPI builds sort by `tag` as well: `atom_modify sort`
+/// reorders owned rows at every rank count, and the gathered frame is the
+/// tag-ordered view, never the row layout.
 ///
-/// @param frame Host-resident frame; only the first `dd.n_local` rows are read.
+/// @param frame Host-resident frame; only the first `frame.nlocal()` rows are read.
 /// @param dd Domain decomposition state (for `n_local` and the active comm).
 /// @param root Rank index that receives the gathered data. Defaults to 0.
 /// @return Gathered frame -- populated on `root`, empty buffers on others.

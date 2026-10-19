@@ -26,8 +26,10 @@ int main() {
     eval.on(ATV::evaluate::Phase::evaluate).add_ref(a);
     eval.on(ATV::evaluate::Phase::evaluate).add_ref(b);
     eval.compile();
-    if (eval.mounted().size() != 5) {
-        std::printf("FAIL: mounted_count=%zu want=5\n", eval.mounted().size());
+    if (eval.mounted().size() != 6) {
+        std::printf("FAIL: mounted_count=%zu want=6\n", eval.mounted().size());
+        for (const auto& binding : eval.mounted())
+            std::printf("  mounted: %s\n", binding.component->name().c_str());
         return 1;
     }
     const auto first = eval.plan();
@@ -46,6 +48,6 @@ int main() {
             }
         }
     }
-    std::printf("ok: mounted_count=5 second_compile_equal=1\n");
+    std::printf("ok: mounted_count=6 second_compile_equal=1\n");
     return 0;
 }

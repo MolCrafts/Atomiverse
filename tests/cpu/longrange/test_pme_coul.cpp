@@ -25,84 +25,17 @@
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
 
+#include "periodic_rocksalt.h"
+
 using namespace ATV;
+using ATV::test::build_dense_halflist;
+using ATV::test::electrostatic_energy;
+using ATV::test::kMadelungNaCl;
+using ATV::test::make_rocksalt;
+using ATV::test::PeriodicRockSalt;
+using ATV::test::zero_force_energy_stress;
 
 namespace {
-
-constexpr double kMadelungNaCl = 1.747564594633182;
-
-cpu::Frame make_rocksalt(double d, int n) {
-    const int N = n * n * n;
-    cpu::Frame frame(N);
-    int idx = 0;
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            for (int k = 0; k < n; ++k) {
-                frame.span(ATV::kAtom_x)[idx] = i * d;
-                frame.span(ATV::kAtom_y)[idx] = j * d;
-                frame.span(ATV::kAtom_z)[idx] = k * d;
-                frame.span(ATV::kAtom_charge)[idx] =
-                    ((i + j + k) % 2 == 0) ? 1.0 : -1.0;
-                frame.span(ATV::kAtom_mass)[idx] = 1.0;
-                frame.span(ATV::kAtom_type)[idx] = 0;
-                frame.span(ATV::kAtom_tag)[idx] = idx + 1;
-                ++idx;
-            }
-    frame.box = ATV::cpu::Box::cubic(n * d);
-    return frame;
-}
-
-void build_full_halflist(const cpu::Frame& f, cpu::md::PairList& pairs) {
-    const int N = f.nlocal();
-    pairs.inum = N;
-    pairs.ilist.resize(N);
-    pairs.numneigh.resize(N);
-    pairs.firstneigh.resize(N);
-    pairs.neighbors.clear();
-    int off = 0;
-    for (int i = 0; i < N; ++i) {
-        pairs.ilist[i] = i;
-        pairs.firstneigh[i] = off;
-        for (int j = i + 1; j < N; ++j)
-            pairs.neighbors.push_back(j);
-        pairs.numneigh[i] = N - 1 - i;
-        off += N - 1 - i;
-    }
-    pairs.total_pairs = off;
-    pairs.has_shifts = false;
-    pairs.version = 1;
-}
-
-void zero_force_energy_stress(cpu::Frame& f) {
-    for (int i = 0; i < f.nlocal(); ++i)
-        f.span(ATV::kAtom_fx)[i] = f.span(ATV::kAtom_fy)[i] =
-            f.span(ATV::kAtom_fz)[i] = 0;
-    f.meta.get(ATV::kEnergy) = 0;
-    f.meta.get(ATV::kEnergyPair) = 0;
-    for (int s = 0; s < 6; ++s)
-        f.meta.get(ATV::kStress)[s] = 0;
-}
-
-// Combined real-space + a reciprocal component (templated on the kspace type).
-template <typename KSpace>
-double electrostatic_energy(cpu::Frame& f, const cpu::md::PairList& pairs,
-                            double alpha, double cutoff, KSpace&& recip) {
-    zero_force_energy_stress(f);
-
-    cpu::Context ctx;
-    ctx.md.pair_list = &pairs;
-    cpu::BuildContext bctx{ctx, f};
-    cpu::LaunchContext lctx{ctx, f, 0, 0};
-
-    cpu::CoulLong real(alpha, cutoff);
-    real.build(bctx);
-    recip.build(bctx);
-    real.launch(lctx);
-    recip.launch(lctx);
-    real.destroy({ctx, f});
-    recip.destroy({ctx, f});
-    return f.meta.get(ATV::kEnergy);
-}
 
 // Reciprocal-only PME: isolates self + recip + net from the real-space half.
 // Returns energy; leaves system virial in f.meta.get(kStress).
@@ -157,14 +90,12 @@ void apply_uniaxial_strain(cpu::Frame& f, int axis, double eps) {
 TEST(PmeCoul, MadelungNaCl) {
     const double d = 2.82;
     const int n = 4;
-    auto frame = make_rocksalt(d, n);
-    cpu::md::PairList pairs;
-    build_full_halflist(frame, pairs);
-
     const double cutoff = 1.9 * d;
+    PeriodicRockSalt rs(d, n, cutoff);
+
     const double alpha =
         3.5 / cutoff; // moderate α so the grid resolves k-space
-    const double e = electrostatic_energy(frame, pairs, alpha, cutoff,
+    const double e = electrostatic_energy(rs.frame, rs.context, alpha, cutoff,
                                           cpu::KSpacePME(alpha, 0.5, 6));
 
     const int N = n * n * n;
@@ -177,16 +108,14 @@ TEST(PmeCoul, MadelungNaCl) {
 TEST(PmeCoul, AgreesWithEwald) {
     const double d = 2.82;
     const int n = 4;
-    auto frame = make_rocksalt(d, n);
-    cpu::md::PairList pairs;
-    build_full_halflist(frame, pairs);
-
     const double cutoff = 1.9 * d;
+    PeriodicRockSalt rs(d, n, cutoff);
+
     const double alpha = 3.5 / cutoff;
-    const double e_ewald = electrostatic_energy(frame, pairs, alpha, cutoff,
-                                                cpu::KSpaceEwald(alpha, 1e-8));
-    const double e_pme = electrostatic_energy(frame, pairs, alpha, cutoff,
-                                              cpu::KSpacePME(alpha, 0.5, 6));
+    const double e_ewald = electrostatic_energy(
+        rs.frame, rs.context, alpha, cutoff, cpu::KSpaceEwald(alpha, 1e-8));
+    const double e_pme = electrostatic_energy(
+        rs.frame, rs.context, alpha, cutoff, cpu::KSpacePME(alpha, 0.5, 6));
     EXPECT_NEAR(e_pme / e_ewald, 1.0, 5e-4)
         << "ewald=" << e_ewald << " pme=" << e_pme;
 }
@@ -205,14 +134,18 @@ TEST(PmeCoul, FiniteDifferenceForces) {
         frame.span(ATV::kAtom_type)[i] = 0;
         frame.span(ATV::kAtom_tag)[i] = i + 1;
     }
+    // Every pair is nearer than any periodic image, so the dense owner-only
+    // list is complete.
     frame.box = ATV::cpu::Box::cubic(8.0);
     cpu::md::PairList pairs;
-    build_full_halflist(frame, pairs);
+    build_dense_halflist(frame, pairs);
+    cpu::Context ctx;
+    ctx.md.pair_list = &pairs;
 
     const double cutoff = 3.9;
     const double alpha = 0.45;
     auto run = [&]() {
-        return electrostatic_energy(frame, pairs, alpha, cutoff,
+        return electrostatic_energy(frame, ctx, alpha, cutoff,
                                     cpu::KSpacePME(alpha, 0.7, 6));
     };
     auto force = [&](int a, int axis) {
@@ -424,23 +357,21 @@ TEST(LongRangePlanContract, NptAcceptsPmeWithReciprocalStress) {
 TEST(PmeStress, AgreesWithEwaldOnRockSalt) {
     const double d = 2.82;
     const int n = 4;
-    auto frame_pme = make_rocksalt(d, n);
-    auto frame_ew = make_rocksalt(d, n);
     const double cutoff = 1.9 * d;
     const double alpha = 3.5 / cutoff;
-    cpu::md::PairList pairs;
-    build_full_halflist(frame_pme, pairs);
+    PeriodicRockSalt pme_rs(d, n, cutoff);
+    PeriodicRockSalt ew_rs(d, n, cutoff);
 
     // Full electrostatics (real + reciprocal) so the comparison is what NPT
     // would actually see: pair virial + reciprocal virial.
-    electrostatic_energy(frame_pme, pairs, alpha, cutoff,
+    electrostatic_energy(pme_rs.frame, pme_rs.context, alpha, cutoff,
                          cpu::KSpacePME(alpha, 0.5, 6));
-    electrostatic_energy(frame_ew, pairs, alpha, cutoff,
+    electrostatic_energy(ew_rs.frame, ew_rs.context, alpha, cutoff,
                          cpu::KSpaceEwald(alpha, 1e-8));
 
     for (int s = 0; s < 6; ++s) {
-        const double p = frame_pme.meta.get(ATV::kStress)[s];
-        const double e = frame_ew.meta.get(ATV::kStress)[s];
+        const double p = pme_rs.frame.meta.get(ATV::kStress)[s];
+        const double e = ew_rs.frame.meta.get(ATV::kStress)[s];
         // Rock-salt: diagonal ~ equal magnitude, off-diagonal ~ 0. Grid
         // discretization dominates; 1% relative on the large diagonal, and
         // an absolute floor for the near-zero shear components.

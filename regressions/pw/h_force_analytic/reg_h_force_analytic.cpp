@@ -12,6 +12,7 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
+#include "atomiverse/cpu/planewave/qe_units.h"
 
 using namespace ATV;
 using namespace ATV::cpu::pw;
@@ -63,7 +64,7 @@ int main() {
         frame.span(kAtom_fx)[0] = frame.span(kAtom_fy)[0] =
             frame.span(kAtom_fz)[0] = 0;
     PWEvaluator pwe{std::move(cfg)};
-    pwe.with_gradient(true);
+    pwe.with_gradient(true).with_stress(true);
     cpu::Evaluate eval;
     eval.on(evaluate::Phase::evaluate).add_ref(pwe);
     eval.enable_timing(false);
@@ -80,6 +81,95 @@ int main() {
     if (!(mag2 < tol)) {
         std::printf("FAIL: evaluator |F|=%.6g eV/Å  tol=%g\n", mag2, tol);
         return 1;
+    }
+
+    const auto same_result = [&]() {
+        return std::abs(frame.meta.get(kEnergy)
+                        - pwe.last_result().energy * qe_units::rydberg_to_ev)
+               < 1e-12;
+    };
+    if (!same_result()) {
+        std::printf("FAIL: combined outputs do not publish the owned result\n");
+        return 1;
+    }
+    // A changed cell and stress-only request must replace the public result too.
+    frame.box = cpu::Box::cubic(7.0);
+    pwe.with_gradient(false);
+    eval.run(frame);
+    if (!same_result() || pwe.last_result().iterations <= 0) {
+        std::printf("FAIL: stress-only output has a stale owned result\n");
+        return 1;
+    }
+
+    // Exercise both metallic occupation routes against the existing displaced-
+    // geometry oracle. Keep the established one-atom symmetry gates: analytic
+    // 1e-9 eV/A here, FD 1e-4 eV/A at h=5e-3 in h_force_fd. This is an
+    // occupation/state-reuse gate, not coverage of nonzero bond or KB forces.
+    for (const bool spin : {false, true}) {
+        cpu::Frame metallic = frame;
+        metallic.box = cpu::Box::cubic(6.0);
+        PW smear;
+        smear.gth_name = "GTH-PBE-q1";
+        smear.ecut_ry = 5.0;
+        smear.k_mesh = 1;
+        smear.tol = 1e-8;
+        smear.max_iter = 100;
+        smear.mix_beta = 0.5;
+        smear.spin_polarized = spin;
+        smear.multiplicity = spin ? 2 : 1;
+        smear.smearing = Smearing::fermi_dirac;
+        smear.degauss = 0.02;
+        smear.extra_bands = 2;
+        const auto fd = pw_forces_fd(metallic, smear, 5e-3);
+        // Restricted metallic stress is supported; spin+smear stress is not.
+        std::array<double, 6> stress_fd{};
+        if (!spin)
+            stress_fd = pw_stress_fd(metallic, smear, 2e-3);
+        PWEvaluator metallic_eval{std::move(smear)};
+        metallic_eval.with_gradient(true).with_stress(!spin);
+        cpu::Evaluate driver;
+        driver.set_evaluator_ref(metallic_eval);
+        driver.enable_timing(false);
+        driver.build();
+        driver.run(metallic);
+        if (!metallic_eval.last_result().converged || fd.size() != 1u) {
+            std::printf("FAIL: metallic spin=%d state did not converge\n",
+                        spin);
+            return 1;
+        }
+        const double force[3] = {metallic.span(kAtom_fx)[0],
+                                 metallic.span(kAtom_fy)[0],
+                                 metallic.span(kAtom_fz)[0]};
+        for (int k = 0; k < 3; ++k) {
+            if (!(std::abs(force[k]) < tol) || !(std::abs(fd[0][k]) < 1e-4)
+                || !(std::abs(force[k] - fd[0][k]) < 1e-4)) {
+                std::printf("FAIL: metallic spin=%d force[%d]=%g FD=%g\n", spin,
+                            k, force[k], fd[0][k]);
+                return 1;
+            }
+        }
+        if (!spin) {
+            const auto& virial = metallic.meta.get(kStress);
+            for (int k = 0; k < 6; ++k) {
+                const double stress = virial[k] / metallic.box.volume();
+                // Same live strain step and dual-gate bound as the existing
+                // pw-analytic-stress-si FD pin (0.05 eV/A^3). Symmetry has the
+                // stricter independent off-diagonal bound from h_stress_cubic.
+                if (!(std::abs(stress - stress_fd[k]) < 0.05)
+                    || (k >= 3 && !(std::abs(stress) < 1e-9))) {
+                    std::printf("FAIL: metallic stress[%d]=%g FD=%g\n", k,
+                                stress, stress_fd[k]);
+                    return 1;
+                }
+            }
+        }
+        if (!(std::abs(metallic.meta.get(kEnergy)
+                       - metallic_eval.last_result().energy
+                             * qe_units::rydberg_to_ev)
+              < 1e-12)) {
+            std::printf("FAIL: metallic spin=%d result ownership\n", spin);
+            return 1;
+        }
     }
 
     std::printf("ok: |F|_analytic=%.4g  |F|_eval=%.4g eV/Å  E=%.6g eV\n", mag,

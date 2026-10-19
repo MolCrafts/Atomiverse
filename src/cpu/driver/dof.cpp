@@ -24,22 +24,10 @@ void publish_global_dof(Context& ctx, const Frame& frame, int n_constraints) {
     long long n_global = frame.nlocal();
 
 #ifdef ATV_HAS_MPI
-    // Multi-rank: reduce the OWNER count, taken from the decomposition — NOT
-    // frame.nlocal().
-    //
-    // `partition_atoms` compacts this rank's owned atoms to the front and records
-    // the count in `dd->n_local`, but it deliberately leaves Frame metadata
-    // at the full allocation (the tail is slack for ghosts). So on every rank
-    // `frame.nlocal()` is still the GLOBAL atom count, and reducing it would
-    // multiply the system size by the rank count. That is not a hypothetical: doing
-    // it gave Ndof 8x too large on 8 ranks, which made the MTK barostat's target
-    // kinetic energy 8x too large, and the NPT test equilibrated to 2404 K instead
-    // of 300 K — exactly 8x the setpoint.
-    //
-    // This is the same source the thermostats each used before Ndof had an owner.
+    // Frame records the owned rows on this rank; reduce owners only.
     if (ctx.mpi_size > 1 && ctx.md.dd != nullptr
         && ctx.md.dd->cart_comm != MPI_COMM_NULL) {
-        long long n_local = ctx.md.dd->n_local;
+        long long n_local = frame.nlocal();
         MPI_Allreduce(&n_local, &n_global, 1, MPI_LONG_LONG, MPI_SUM,
                       ctx.md.dd->cart_comm);
     }

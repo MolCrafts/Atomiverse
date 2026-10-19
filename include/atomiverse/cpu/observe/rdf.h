@@ -54,6 +54,8 @@ class RDF : public cpu::md::AsyncObserver {
     RDF(double r_max, int n_bins, int freq = 0,
         std::string output_file = "rdf.dat");
 
+    /// @brief This analysis consumes a complete system, not a spatial shard.
+    bool requires_full_frame() const override { return true; }
     std::string name() const override { return "rdf_async"; }
     /* role via Observer base */
     int frequency() const override { return freq_; }

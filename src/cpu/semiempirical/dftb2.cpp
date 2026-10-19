@@ -210,19 +210,12 @@ struct LatVec {
 /// @brief Enumerate lattice translations with |T| ≲ max_cut + cell edge.
 /// Columns of `cell` are lattice vectors (matches Box). Includes T = 0.
 std::vector<LatVec> enumerate_lattice(const Mat3& cell, double max_cut) {
-    double col_len[3];
-    for (int d = 0; d < 3; ++d) {
-        const double cx = static_cast<double>(cell(0, d));
-        const double cy = static_cast<double>(cell(1, d));
-        const double cz = static_cast<double>(cell(2, d));
-        col_len[d] = std::sqrt(cx * cx + cy * cy + cz * cz);
-        if (col_len[d] < 1e-9)
-            throw std::runtime_error("DFTB2: degenerate cell edge");
-    }
+    const cpu::Box geometry(cell);
     int nmax[3];
     for (int d = 0; d < 3; ++d)
-        nmax[d] =
-            std::max(1, static_cast<int>(std::ceil(max_cut / col_len[d])) + 1);
+        nmax[d] = std::max(
+            1,
+            static_cast<int>(std::ceil(max_cut / geometry.face_height(d))) + 1);
 
     std::vector<LatVec> out;
     out.reserve(static_cast<std::size_t>((2 * nmax[0] + 1) * (2 * nmax[1] + 1)
@@ -3016,6 +3009,7 @@ constexpr const char* kDftbSpinHowto =
 void DFTB2::build(const BuildContext& /*ctx*/) {}
 
 void DFTB2::launch(const LaunchContext& ctx) {
+    const bool want_stress = with_stress && ctx.stress_requested;
     auto& f = ctx.frame;
     if (f.nlocal() < 1)
         throw std::invalid_argument("DFTB2: empty frame");
@@ -3039,7 +3033,7 @@ void DFTB2::launch(const LaunchContext& ctx) {
         if (sk_set != DftbSkSet::MioSketch)
             throw std::runtime_error(
                 "DFTB2+U: only sk_set=MioSketch is supported (v1 foothold)");
-        if (with_stress)
+        if (want_stress)
             throw std::runtime_error(
                 "DFTB2+U: with_stress not supported — cell virial of E_U is "
                 "not implemented");
@@ -3070,8 +3064,9 @@ void DFTB2::launch(const LaunchContext& ctx) {
     // When +U is active, nuclear forces come from central FD of the total
     // energy (SCC + E_U), not the analytic SCC gradient alone — ∂E_U/∂R needs
     // the charge response. Energy-only path stays analytic SCC + closed E_U.
-    const bool u_force_fd = any_u && with_forces;
-    const bool scc_forces = with_forces && !u_force_fd;
+    const bool want_forces = with_forces && ctx.forces_requested;
+    const bool u_force_fd = any_u && want_forces;
+    const bool scc_forces = want_forces && !u_force_fd;
 
     EnergyTerms terms;
 
@@ -3100,7 +3095,9 @@ void DFTB2::launch(const LaunchContext& ctx) {
     const double* guess_spin = nullptr;
     xt::xtensor<double, 2> aspc_predicted;
     bool aspc_used_prediction = false;
-    if (dq_predictor_) {
+    if (dq_predictor_
+        && !(ctx.runtime.exec.initializing_forces
+             || ctx.runtime.exec.trial_evaluation)) {
         if (predictor_n_at_ != n_at_launch) {
             dq_predictor_->reset();
             predictor_n_at_ = n_at_launch;
@@ -3136,14 +3133,14 @@ void DFTB2::launch(const LaunchContext& ctx) {
             throw std::runtime_error(
                 "DFTB2(ThreeOb): open-shell/charge not supported on this path");
         energy_ = launch_3ob(f, scc_tol, max_scc, mix_beta, scc_forces,
-                             with_stress, last_dq_, last_stress_, scc_residual_,
+                             want_stress, last_dq_, last_stress_, scc_residual_,
                              scc_iterations_, terms);
         last_spin_.assign(static_cast<std::size_t>(f.nlocal()), 0.0);
         break;
     case DftbSkSet::MioSketch: {
         const int mesh[3] = {k_mesh[0], k_mesh[1], k_mesh[2]};
         energy_ = launch_mio(
-            f, scc_tol, max_scc, mix_beta, scc_forces, with_stress, charge,
+            f, scc_tol, max_scc, mix_beta, scc_forces, want_stress, charge,
             multiplicity, mesh, k_time_reversal, lattice_bc, ewald_cutoff,
             ewald_accuracy, guess_dq, guess_spin, spin_w_ev, last_dq_,
             last_spin_, last_stress_, scc_residual_, scc_iterations_, terms);
@@ -3157,7 +3154,9 @@ void DFTB2::launch(const LaunchContext& ctx) {
     // Record the converged state for the next launch. On a warm step the
     // corrector output is what goes in — recording the raw SCC result would
     // throw away the time-reversibility the corrector buys.
-    if (dq_predictor_) {
+    if (dq_predictor_
+        && !(ctx.runtime.exec.initializing_forces
+             || ctx.runtime.exec.trial_evaluation)) {
         xt::xtensor<double, 2> state = xt::zeros<double>({2 * n_at_launch, 1});
         for (int i = 0; i < n_at_launch; ++i) {
             state(i, 0) = last_dq_[static_cast<std::size_t>(i)];
@@ -3335,7 +3334,7 @@ void DFTB2::launch(const LaunchContext& ctx) {
                 fa[0] * f_conv, fa[1] * f_conv, fa[2] * f_conv};
         }
 
-        if (with_forces) {
+        if (want_forces) {
             AccReal* fx = f.span(kAtom_fx);
             AccReal* fy = f.span(kAtom_fy);
             AccReal* fz = f.span(kAtom_fz);
@@ -3347,7 +3346,7 @@ void DFTB2::launch(const LaunchContext& ctx) {
             }
         }
 
-        if (with_stress) {
+        if (want_stress) {
             const double vol = f.box.volume();
             if (!(vol > 0.0))
                 throw std::runtime_error(

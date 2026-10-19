@@ -355,18 +355,22 @@ void PimInducedDipole::launch(const LaunchContext& ctx) {
         }
 
         // Convert Gaussian force (e²/Å²) → eV/Å
-        fx[i] += k * fix;
-        fy[i] += k * fiy;
-        fz[i] += k * fiz;
+        if (ctx.forces_requested) {
+            fx[i] += k * fix;
+            fy[i] += k * fiy;
+            fz[i] += k * fiz;
+        }
     }
 
     // Convert Gaussian virial (e²/Å) → eV, publish to the shared stress meta.
-    f.meta.get(kStress)[0] += k * v_xx;
-    f.meta.get(kStress)[1] += k * v_yy;
-    f.meta.get(kStress)[2] += k * v_zz;
-    f.meta.get(kStress)[3] += k * v_xy;
-    f.meta.get(kStress)[4] += k * v_xz;
-    f.meta.get(kStress)[5] += k * v_yz;
+    if (ctx.stress_requested) {
+        f.meta.get(kStress)[0] += k * v_xx;
+        f.meta.get(kStress)[1] += k * v_yy;
+        f.meta.get(kStress)[2] += k * v_zz;
+        f.meta.get(kStress)[3] += k * v_xy;
+        f.meta.get(kStress)[4] += k * v_xz;
+        f.meta.get(kStress)[5] += k * v_yz;
+    }
 }
 
 } // namespace cpu

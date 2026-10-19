@@ -23,6 +23,11 @@
 using namespace ATV::cpu::scf;
 using ATV::cpu::scf::internal::DIISMixer;
 
+TEST(DIIS, RejectsNonpositiveHistoryDepth) {
+    EXPECT_THROW(DIISMixer(0), std::invalid_argument);
+    EXPECT_THROW(DIISMixer(-1), std::invalid_argument);
+}
+
 // ── DIIS (internal::DIISMixer) ───────────────────────────────────────
 
 TEST(DIIS, SingleEntry_ReturnsSameMatrix) {

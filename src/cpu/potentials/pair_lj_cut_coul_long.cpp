@@ -186,6 +186,7 @@ void PairLJCutCoulLong::finalize_type_table_() {
 }
 
 void PairLJCutCoulLong::build(const BuildContext& ctx) {
+    scale_source_ = nullptr;
     n_threads_ = 1;
 #ifdef _OPENMP
     n_threads_ = omp_get_max_threads();
@@ -215,9 +216,7 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
     scale_version_ = 0;
     if (!any_special_)
         return;
-    const auto* dd = ctx.runtime.md.dd;
-    const int n_owners =
-        (dd && ctx.runtime.mpi_size > 1) ? dd->n_local : ctx.frame.nlocal();
+    const int n_owners = ctx.frame.nlocal();
     special_lj_.rebuild(ctx.frame, n_owners);
     special_coul_.rebuild(ctx.frame, n_owners);
 }
@@ -280,15 +279,11 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
             "PairLJCutCoulLong: runtime.md.pair_list is null");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.box;
 
-    const auto* dd = ctx.runtime.md.dd;
+    const int n_force = cpu::force_count(ctx);
 #ifdef ATV_HAS_MPI
-    const bool mpi = dd && ctx.runtime.mpi_size > 1;
-    const int n_force = mpi ? dd->n_local + dd->n_ghost : f.nlocal();
-#else
-    (void)dd;
-    const int n_force = f.nlocal();
+    const auto* dd = ctx.runtime.md.dd;
+    const bool mpi = cpu::multi_rank_dd(ctx.runtime);
 #endif
 
     if (n_threads_ > 1
@@ -301,9 +296,11 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
         }
     }
 
-    if (any_special_ && pairs.version != scale_version_) {
+    if (any_special_
+        && (scale_source_ != &pairs || pairs.version != scale_version_)) {
         rebuild_filtered_list(f, pairs);
         scale_version_ = pairs.version;
+        scale_source_ = &pairs;
     }
 
     const int k_inum = pairs.inum;
@@ -313,13 +310,6 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     const int* __restrict k_neighbors = pairs.neighbors.data();
     const float* __restrict k_sl = any_special_ ? scale_lj_.data() : nullptr;
     const float* __restrict k_sc = any_special_ ? scale_coul_.data() : nullptr;
-    const bool k_has_shifts = pairs.has_shifts;
-    const double* __restrict k_sx =
-        k_has_shifts ? pairs.shift_x.data() : nullptr;
-    const double* __restrict k_sy =
-        k_has_shifts ? pairs.shift_y.data() : nullptr;
-    const double* __restrict k_sz =
-        k_has_shifts ? pairs.shift_z.data() : nullptr;
 
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
@@ -342,19 +332,21 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     const double* __restrict f_tab = erfc_.f_tab.data();
     const double inv_dr2 = erfc_.inv_dr2;
     const int nbin = erfc_.nbin;
-    const bool do_virial = compute_stress_;
+    const bool do_virial = compute_stress_ && ctx.stress_requested;
 
     double energy_total = 0;
     double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
 
 // if(n_threads_>1): pure serial path skips OpenMP fork (OMP=1 fair vs LAMMPS).
-#pragma omp parallel if (n_threads_ > 1) reduction(+ : energy_total)           \
-    reduction(+ : v_xx) reduction(+ : v_yy) reduction(+ : v_zz)                \
-    reduction(+ : v_xy) reduction(+ : v_xz) reduction(+ : v_yz)
+#pragma omp parallel num_threads(n_threads_) if (n_threads_ > 1)               \
+    reduction(+ : energy_total) reduction(+ : v_xx) reduction(+ : v_yy)        \
+    reduction(+ : v_zz) reduction(+ : v_xy) reduction(+ : v_xz)                \
+    reduction(+ : v_yz)
     {
-        int tid = 0;
+        int tid = 0, team_size = 1;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
+        team_size = omp_get_num_threads();
 #endif
         const bool direct = (n_threads_ == 1);
         double* __restrict fxt;
@@ -375,9 +367,6 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
             fyt = fy_thr_[tid].data();
             fzt = fz_thr_[tid].data();
         }
-
-        const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
-        const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
 
         // Survivor-compaction staging, one chunk of a neighbor list at a
         // time. 4 x 512 doubles + the index list is ~18 KB, so a chunk and
@@ -410,41 +399,16 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
             for (int base = 0; base < jnum; base += kChunk) {
                 const int nc = std::min(kChunk, jnum - base);
 
-                if (k_has_shifts) {
-                    for (int t = 0; t < nc; ++t) {
-                        const int idx = off + base + t;
-                        const int j = k_neighbors[idx];
-                        const double dx = (xi - x_ptr[j]) - k_sx[idx];
-                        const double dy = (yi - y_ptr[j]) - k_sy[idx];
-                        const double dz = (zi - z_ptr[j]) - k_sz[idx];
-                        dxb[t] = dx;
-                        dyb[t] = dy;
-                        dzb[t] = dz;
-                        r2b[t] = dx * dx + dy * dy + dz * dz;
-                    }
-                } else {
-                    // Per-pair min-image is NOT redundant under MPI:
-                    // VelocityVerlet wraps coordinates into the box every
-                    // step, so between neighbor rebuilds a wrapped owner (or
-                    // the ghost copy forwarded from it) sits a full box
-                    // length from its listed partners. Raw dx would silently
-                    // drop those pairs until the next rebuild (slow thermal
-                    // runaway, worse at high rank counts). LAMMPS avoids
-                    // this by wrapping only at reneighbor; until ATV does
-                    // the same, keep the wrap here.
-                    for (int t = 0; t < nc; ++t) {
-                        const int j = k_neighbors[off + base + t];
-                        double dx = xi - x_ptr[j];
-                        double dy = yi - y_ptr[j];
-                        double dz = zi - z_ptr[j];
-                        dx -= lx * std::nearbyint(dx * inv_lx);
-                        dy -= ly * std::nearbyint(dy * inv_ly);
-                        dz -= lz * std::nearbyint(dz * inv_lz);
-                        dxb[t] = dx;
-                        dyb[t] = dy;
-                        dzb[t] = dz;
-                        r2b[t] = dx * dx + dy * dy + dz * dz;
-                    }
+                // Halo-resolved axes retain their selected image.
+                for (int t = 0; t < nc; ++t) {
+                    const int j = k_neighbors[off + base + t];
+                    double dx = xi - x_ptr[j];
+                    double dy = yi - y_ptr[j];
+                    double dz = zi - z_ptr[j];
+                    dxb[t] = dx;
+                    dyb[t] = dy;
+                    dzb[t] = dz;
+                    r2b[t] = dx * dx + dy * dy + dz * dz;
                 }
 
                 // Branchless append; ascending order is mandatory so pass 2
@@ -528,9 +492,11 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
                     fi_x += fxp;
                     fi_y += fyp;
                     fi_z += fzp;
-                    fxt[j] -= fxp;
-                    fyt[j] -= fyp;
-                    fzt[j] -= fzp;
+                    if (ctx.forces_requested) {
+                        fxt[j] -= fxp;
+                        fyt[j] -= fyp;
+                        fzt[j] -= fzp;
+                    }
                     energy_total += epair;
                     if (do_virial) {
                         v_xx += dx * fxp;
@@ -542,18 +508,22 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
                     }
                 }
             }
-            fxt[i] += fi_x;
-            fyt[i] += fi_y;
-            fzt[i] += fi_z;
+            if (ctx.forces_requested) {
+                fxt[i] += fi_x;
+                fyt[i] += fi_y;
+                fzt[i] += fi_z;
+            }
         }
 
         if (!direct) {
 #pragma omp for schedule(static)
             for (int i = 0; i < n_force; ++i) {
-                for (int t = 0; t < n_threads_; ++t) {
-                    fx_ptr[i] += fx_thr_[t][i];
-                    fy_ptr[i] += fy_thr_[t][i];
-                    fz_ptr[i] += fz_thr_[t][i];
+                for (int t = 0; t < team_size; ++t) {
+                    if (ctx.forces_requested) {
+                        fx_ptr[i] += fx_thr_[t][i];
+                        fy_ptr[i] += fy_thr_[t][i];
+                        fz_ptr[i] += fz_thr_[t][i];
+                    }
                 }
             }
         }
@@ -562,12 +532,14 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
     if (do_virial) {
-        f.meta.get(kStress)[0] += v_xx;
-        f.meta.get(kStress)[1] += v_yy;
-        f.meta.get(kStress)[2] += v_zz;
-        f.meta.get(kStress)[3] += v_xy;
-        f.meta.get(kStress)[4] += v_xz;
-        f.meta.get(kStress)[5] += v_yz;
+        if (ctx.stress_requested) {
+            f.meta.get(kStress)[0] += v_xx;
+            f.meta.get(kStress)[1] += v_yy;
+            f.meta.get(kStress)[2] += v_zz;
+            f.meta.get(kStress)[3] += v_xy;
+            f.meta.get(kStress)[4] += v_xz;
+            f.meta.get(kStress)[5] += v_yz;
+        }
     }
 
     // ── LJ tail correction (LAMMPS pair_modify tail yes) ─────────────────
@@ -579,7 +551,7 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
         if (!tail_ready_) {
             std::vector<double> cnt(static_cast<std::size_t>(ntypes), 0.0);
 #ifdef ATV_HAS_MPI
-            const int n_owned = mpi ? dd->n_local : f.nlocal();
+            const int n_owned = f.nlocal();
 #else
             const int n_owned = f.nlocal();
 #endif
@@ -647,6 +619,7 @@ void PairLJCutCoulLong::destroy(const DestroyContext&) {
     scale_lj_.clear();
     scale_coul_.clear();
     scale_version_ = 0;
+    scale_source_ = nullptr;
     any_special_ = false;
 }
 

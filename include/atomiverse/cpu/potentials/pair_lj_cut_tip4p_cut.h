@@ -137,10 +137,14 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     int n_sites_ = 0;
 
     std::vector<int> filtered_neighbors_;
+    std::vector<int>
+        filtered_entries_; ///< Source entries retain periodic image shifts.
     std::vector<int> filtered_numneigh_;
     std::vector<int> filtered_firstneigh_;
     std::vector<double> filtered_scale_;
     int filtered_inum_ = 0;
+    // Null source denotes an unbuilt cache; version zero is a valid list.
+    const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
 
     int n_threads_ = 1;

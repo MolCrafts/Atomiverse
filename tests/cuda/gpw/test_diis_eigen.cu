@@ -8,6 +8,7 @@
 #include "atomiverse/cpu/linalg/density.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/linalg/matrix.h"
+#include "atomiverse/cpu/linalg/pulay.h"
 #include "atomiverse/cuda/gpw/internal/ao_diis_eigen.cuh"
 
 #include <cmath>
@@ -66,8 +67,7 @@ TEST(CudaGpwDiisEigen, ErrorMatchesHost) {
     const int m = static_cast<int>(orth.X.shape(1));
     ASSERT_EQ(m, n);
 
-    const RealMatrix e_host =
-        ATV::cpu::gpw::internal::gpw_diis_error(H, P, S, orth.X);
+    const RealMatrix e_host = ATV::cpu::linalg::diis_error(H, P, S, orth.X);
 
     cudaStream_t stream;
     ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
@@ -232,8 +232,7 @@ TEST(CudaGpwDiisEigen, UksChannelErrorAndDensityMatchHost) {
     (void)eig_h;
     RealMatrix P_a = build_density_matrix(C_h, n_alpha, n, 1.0);
 
-    const RealMatrix e_host =
-        ATV::cpu::gpw::internal::gpw_diis_error(H, P_a, S, orth.X);
+    const RealMatrix e_host = ATV::cpu::linalg::diis_error(H, P_a, S, orth.X);
 
     cudaStream_t stream;
     ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);

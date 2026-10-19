@@ -37,6 +37,7 @@ class RingPolymerSpring : public Potential {
     }
 
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 
   private:
     ReplicaSet* band_ = nullptr;

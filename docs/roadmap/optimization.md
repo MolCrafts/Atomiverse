@@ -17,12 +17,14 @@ flag. Legend: [Roadmap index](index.md).
 | Steepest descent | ○ | ✓ | CPU: only as CG β = 0; no SD component |
 | Cartesian coordinates | ✓ | ✓ | |
 | Internal / redundant internals | ○ | ○ | |
-| Variable-cell (iso / aniso / triclinic) | ✓ | ○ | + joint atom+cell |
+| Variable-cell (iso / aniso / triclinic) | ✓ | ○ | + joint atom+cell; cell geometry must be supported by the evaluator |
 | Constrained opt | ○ | ○ | |
 
 Cell steps consume extensive `kStress` [eV]; consumers divide by \(V\).
 GPW/PW CELL_OPT productized. PR-NPT dynamics lives under
 [MD](molecular-dynamics.md), not here.
+CPU `CellList` evaluators require orthorhombic cells and reject shear;
+triclinic cell updates require an evaluator with triclinic support.
 
 ## 2. Transition states and paths
 

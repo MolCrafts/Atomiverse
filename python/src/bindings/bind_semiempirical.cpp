@@ -103,6 +103,9 @@ ForceArray am1_forces(cpu::semiempirical::AM1Evaluator& evaluator,
 ///         outside H/C/N/O, or on any of the boundary/k-mesh conflicts the
 ///         method rejects.
 void dftb2_run(cpu::semiempirical::DFTB2& dftb, nb::object frame_obj) {
+    if (cpu::task::LauncherGate{}.active())
+        throw std::runtime_error("DFTB2 has no MPI single-point task payload; "
+                                 "run without the launcher");
     auto fref = borrow_molrs_frame(frame_obj);
     cpu::Frame work = cpu::from_molrs(*fref);
     {
@@ -114,6 +117,9 @@ void dftb2_run(cpu::semiempirical::DFTB2& dftb, nb::object frame_obj) {
 
 /// @brief Solve and also return the forces as an (n_atoms, 3) array [eV/Å].
 ForceArray dftb2_forces(cpu::semiempirical::DFTB2& dftb, nb::object frame_obj) {
+    if (cpu::task::LauncherGate{}.active())
+        throw std::runtime_error("DFTB2 has no MPI single-point task payload; "
+                                 "run without the launcher");
     auto fref = borrow_molrs_frame(frame_obj);
     cpu::Frame work = cpu::from_molrs(*fref);
     {
@@ -222,7 +228,7 @@ void bind_semiempirical(nb::module_& m) {
                 "Literature reference for the parameterization.");
 
     // ── AM1Evaluator ──
-    nb::class_<AM1Evaluator>(
+    nb::class_<AM1Evaluator, cpu::Component>(
         m, "AM1Evaluator",
         "AM1 Evaluator: energy [eV], Mulliken charges [e] and nuclear forces "
         "[eV/A]. Plugs into single_point(frame, evaluator) for one solve, "
@@ -459,7 +465,7 @@ void bind_semiempirical(nb::module_& m) {
     m.attr("kDftbSpinConstantsLdaHa") =
         nb::cast(cpu::semiempirical::basis_data::kDftbSpinConstantsLdaHa);
 
-    nb::class_<DFTB2>(
+    nb::class_<DFTB2, cpu::Component>(
         m, "DFTB2",
         "SCC-DFTB2 (self-consistent-charge density-functional tight binding) "
         "for H/C/N/O — Elstner et al., Phys. Rev. B 58, 7260 (1998). A "
@@ -559,13 +565,14 @@ void bind_semiempirical(nb::module_& m) {
              "charges [e] on the atoms charge column, forces [eV/A] on "
              "fx/fy/fz when with_forces, and the cell stress on "
              "frame.meta['stress'] when with_stress. The global interpreter "
-             "lock is released during compute.")
+             "lock is released during compute. Raises RuntimeError under the "
+             "MPI launcher because DFTB2 has no task payload.")
         .def("forces", &dftb2_forces, nb::arg("frame"),
              "Solve, publish everything run() publishes, and additionally "
              "RETURN the analytic forces as an (n_atoms, 3) array [eV/A]. "
              "These are closed-form derivatives (Hellmann-Feynman + Pulay + "
              "the charge-kernel and repulsive terms), not finite "
-             "differences.")
+             "differences. Like run(), rejects MPI launcher execution.")
         .def("last_energy", &DFTB2::last_energy,
              "Total energy of the most recent solve [eV].")
         .def("last_e_band", &DFTB2::last_e_band,

@@ -34,6 +34,7 @@ void FIRE::build(const cpu::BuildContext& ctx) {
 }
 
 void FIRE::launch(const cpu::LaunchContext& ctx) {
+    require_finite_forces(ctx);
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
     const int dim = n * 3;
@@ -54,7 +55,7 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =
-            (dd && ctx.runtime.mpi_size > 1) ? dd->neighbor_generation : 0;
+            (cpu::multi_rank_dd(ctx.runtime)) ? dd->neighbor_generation : 0;
         if (gen != last_generation_) {
             if (last_generation_ != ~std::uint64_t{0}) {
 #pragma omp parallel for schedule(static)

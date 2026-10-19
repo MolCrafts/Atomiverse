@@ -345,6 +345,25 @@ TEST(MDSetApi, ExplicitVirialStressSuppressesAutoInject) {
         << "Explicit Virial via set_observer must dedup the auto-inject";
 }
 
+TEST(MDSetApi, ExplicitVirialWithoutBarostatClearsStressOnceBeforeForce) {
+    IntrospectMD sim;
+    sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
+    sim.set_integrator(ATV::cpu::md::VelocityVerlet{kDt});
+    sim.set_observer(ATV::cpu::md::Virial{});
+    for (int compile = 0; compile < 2; ++compile) {
+        sim.name_counts.clear();
+        ASSERT_NO_THROW(sim.build());
+        EXPECT_EQ(sim.name_counts["virial"], 1);
+        EXPECT_EQ(sim.name_counts["zero_stress"], 1);
+        for (const auto& slot : sim.plan().slots)
+            for (const auto& op : slot.ops)
+                if (op.component->name() == "zero_stress")
+                    EXPECT_EQ(slot.phase,
+                              ATV::slot_of(ATV::md::Phase::pre_force));
+    }
+}
+
 TEST(MDSetApi, NoStressReadsLeavesVirialStressOut) {
     IntrospectMD sim;
     sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});

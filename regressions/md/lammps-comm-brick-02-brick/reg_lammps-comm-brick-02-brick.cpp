@@ -1,5 +1,5 @@
 /// @file reg_lammps-comm-brick-02-brick.cpp
-/// @brief Pins `cpu::Comm*` brick goldens: n_ghost 0/8 and reverse sum fx.
+/// @brief Pins `cpu::Comm*` brick goldens: n_ghost 56/44 and reverse sum fx.
 ///
 /// Never constructs CommBrick; never MD.run. Obtains Comm* from Runtime.
 /// Literature: Plimpton JCP 117 (1995); Thompson CPC 271 (2022).
@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 
 #ifdef ATV_HAS_MPI
@@ -58,10 +59,10 @@ int run_serial() {
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
     comm->setup(lctx);
     comm->borders(lctx);
-    const int n_ghost = backend.context().md.dd->n_ghost;
+    const int n_ghost = frame.nghost();
     backend.shutdown();
-    if (n_ghost != 0) {
-        std::fprintf(stderr, "FAIL: serial n_ghost=%d want 0\n", n_ghost);
+    if (n_ghost != 56) {
+        std::fprintf(stderr, "FAIL: serial n_ghost=%d want 56\n", n_ghost);
         return EXIT_FAILURE;
     }
     std::printf("n_ghost_n1 %d\n", n_ghost);
@@ -91,18 +92,18 @@ int run_child(const char* out_path) {
         cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
         comm->setup(lctx);
         comm->borders(lctx);
-        n_ghost = dd->n_ghost;
-        for (int i = 0; i < dd->n_local; ++i)
+        n_ghost = frame.nghost();
+        for (int i = 0; i < frame.nlocal(); ++i)
             frame.span(kAtom_fx)[i] = 0.0;
-        for (int g = 0; g < dd->n_ghost; ++g)
-            frame.span(kAtom_fx)[dd->n_local + g] = 1.0;
+        for (int g = 0; g < frame.nghost(); ++g)
+            frame.span(kAtom_fx)[frame.nlocal() + g] = 1.0;
         comm->reverse_comm(lctx);
-        for (int i = 0; i < dd->n_local; ++i)
+        for (int i = 0; i < frame.nlocal(); ++i)
             sum_fx += static_cast<double>(frame.span(kAtom_fx)[i]);
         comm->exchange(lctx);
-        int n_local = dd->n_local;
+        int n_local = frame.nlocal();
         MPI_Allreduce(&n_local, &n_owners, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-        if (n_ghost != 8 || std::fabs(sum_fx - 8.0) > 1e-12 || n_owners != 8)
+        if (n_ghost != 44 || std::fabs(sum_fx - 44.0) > 1e-12 || n_owners != 8)
             rc = EXIT_FAILURE;
     }
     backend.shutdown();
@@ -156,21 +157,14 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
 
 #ifdef ATV_HAS_MPI
-    char self_buf[4096];
-    const ssize_t n =
-        ::readlink("/proc/self/exe", self_buf, sizeof(self_buf) - 1);
-    if (n <= 0) {
-        std::fprintf(stderr, "FAIL: cannot resolve /proc/self/exe\n");
-        return EXIT_FAILURE;
-    }
-    self_buf[n] = '\0';
+    const auto self = std::filesystem::canonical(argv[0]).string();
     int n_ghost = -1, n_owners = -1;
     double sum_fx = 0.0;
-    if (!run_n2(self_buf, n_ghost, sum_fx, n_owners)) {
+    if (!run_n2(self, n_ghost, sum_fx, n_owners)) {
         std::fprintf(stderr, "FAIL: n2 child\n");
         return EXIT_FAILURE;
     }
-    if (n_ghost != 8 || std::fabs(sum_fx - 8.0) > 1e-12 || n_owners != 8) {
+    if (n_ghost != 44 || std::fabs(sum_fx - 44.0) > 1e-12 || n_owners != 8) {
         std::fprintf(stderr, "FAIL: n_ghost=%d sum_fx=%.3e owners=%d\n",
                      n_ghost, sum_fx, n_owners);
         return EXIT_FAILURE;

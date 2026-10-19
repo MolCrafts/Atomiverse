@@ -52,7 +52,7 @@ DomainDecomposition brick_dd(int dx, int dy, int dz, int cx, int cy, int cz) {
     const int d[3] = {dx, dy, dz};
     const int c[3] = {cx, cy, cz};
     for (int a = 0; a < 3; ++a) {
-        const double w = kBoxEdge / d[a];
+        const double w = 1.0 / d[a];
         dd.sublo[a] = w * c[a];
         dd.subhi[a] = dd.sublo[a] + w;
     }
@@ -75,11 +75,11 @@ TEST(TestHaloQueries, SwapWithPartnerIsNotSilent) {
 }
 
 /// Both silencing reasons are honoured, and they are the only two.
-TEST(TestHaloQueries, SwapIsSilentOnSelfOrNoPartner) {
+TEST(TestHaloQueries, OnlyMissingPartnerIsSilent) {
     cpu::comm::Swap self;
     self.sendproc = 3;
     self.sendself = true;
-    EXPECT_TRUE(self.is_silent());
+    EXPECT_FALSE(self.is_silent());
 
     cpu::comm::Swap orphan;
     orphan.sendproc = cpu::comm::Swap::kNoPartner;

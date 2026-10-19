@@ -107,3 +107,18 @@ TEST(TestCcAmplitudeDiis, SizeCountsHistoryAndResetClears) {
 }
 
 #endif // ATV_HAS_HF
+
+TEST(CcDiis, RejectsNonpositiveHistoryDepth) {
+    EXPECT_THROW(ATV::cpu::scf::internal::CcAmplitudeDiis(0),
+                 std::invalid_argument);
+    EXPECT_THROW(ATV::cpu::scf::internal::CcAmplitudeDiis(-1),
+                 std::invalid_argument);
+}
+
+TEST(CcDiis, RejectsChangedDimensionsWithoutChangingHistory) {
+    ATV::cpu::scf::internal::CcAmplitudeDiis diis;
+    diis.step({1.0, 2.0}, {0.1, 0.2});
+    EXPECT_THROW(diis.step({1.0}, {0.1}), std::invalid_argument);
+    EXPECT_THROW(diis.step({1.0, 2.0}, {0.1}), std::invalid_argument);
+    EXPECT_EQ(diis.size(), 1);
+}

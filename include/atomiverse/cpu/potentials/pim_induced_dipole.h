@@ -36,6 +36,7 @@ namespace cpu {
 /// deferred.
 class PimInducedDipole : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cutoff Real-space multipole cutoff [Å] (must be > 0).
     /// @param alpha_by_type Isotropic polarizability [Å³] per atom type index
     ///        (`kAtom_type`). Types outside the vector → α = 0 (non-polarizable).

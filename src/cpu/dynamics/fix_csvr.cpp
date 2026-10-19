@@ -48,21 +48,8 @@ FixCSVR::FixCSVR(double T_start, double tau, double dt, std::uint32_t seed)
 }
 
 void FixCSVR::build(const cpu::BuildContext& ctx) {
-    // Global DOF count (3N − 3). atoms.size() is global only on the initial
-    // build; after a domain partition it is n_local + n_ghost, so recover the
-    // global N by allreduce-summing dd->n_local (mirrors NoseHoover::build).
-    int n_global = static_cast<int>(ctx.frame.nlocal());
-#ifdef ATV_HAS_MPI
-    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
-        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        const int n_local = ctx.runtime.md.dd->n_local;
-        MPI_Allreduce(&n_local, &n_global, 1, MPI_INT, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-    }
-#endif
-    // Ndof: single owner, constraint-aware. @see Driver::publish_dof_
+    // Driver publishes the constraint-aware global DOF count before build.
     n_dof_global_ = ctx.runtime.md.n_dof_global;
-    (void)n_global;
 }
 
 double FixCSVR::compute_temp_target(std::int64_t step) const {
@@ -81,6 +68,7 @@ void FixCSVR::launch(const cpu::LaunchContext& ctx) {
 
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
+    n_dof_global_ = ctx.runtime.md.n_dof_global;
     const int n_dof = n_dof_global_;
     if (n_dof <= 0)
         return;

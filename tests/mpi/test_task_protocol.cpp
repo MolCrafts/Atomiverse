@@ -58,6 +58,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
@@ -245,23 +246,33 @@ void expect_result_frame_contract(const cpu::Frame& result,
 /// @brief N == 1 deep comparison: the whole direct frame is on this rank,
 ///        so positions/velocities compare per atom within 1e-10 absolute
 ///        (same physics, different code path — NOT bitwise by contract).
+///        The direct run leaves its rows in the engine's spatially sorted
+///        order while the protocol result is tag-ordered, so rows are joined
+///        by tag — the atom's identity — not by index.
 void expect_trajectory_close_serial(const cpu::Frame& result,
                                     const cpu::Frame& direct) {
     ASSERT_EQ(result.nlocal(), direct.nlocal());
-    for (int i = 0; i < direct.nlocal(); ++i) {
-        SCOPED_TRACE("atom " + std::to_string(i));
-        EXPECT_NEAR(result.span(ATV::kAtom_x)[i], direct.span(ATV::kAtom_x)[i],
+    std::unordered_map<ATV::TagInt, int> direct_row;
+    for (int j = 0; j < direct.nlocal(); ++j)
+        direct_row[direct.span(ATV::kAtom_tag)[j]] = j;
+    for (int i = 0; i < result.nlocal(); ++i) {
+        const ATV::TagInt tag = result.span(ATV::kAtom_tag)[i];
+        SCOPED_TRACE("tag " + std::to_string(tag));
+        const auto it = direct_row.find(tag);
+        ASSERT_NE(it, direct_row.end()) << "tag missing from the direct run";
+        const int j = it->second;
+        EXPECT_NEAR(result.span(ATV::kAtom_x)[i], direct.span(ATV::kAtom_x)[j],
                     1e-10);
-        EXPECT_NEAR(result.span(ATV::kAtom_y)[i], direct.span(ATV::kAtom_y)[i],
+        EXPECT_NEAR(result.span(ATV::kAtom_y)[i], direct.span(ATV::kAtom_y)[j],
                     1e-10);
-        EXPECT_NEAR(result.span(ATV::kAtom_z)[i], direct.span(ATV::kAtom_z)[i],
+        EXPECT_NEAR(result.span(ATV::kAtom_z)[i], direct.span(ATV::kAtom_z)[j],
                     1e-10);
         EXPECT_NEAR(result.span(ATV::kAtom_vx)[i],
-                    direct.span(ATV::kAtom_vx)[i], 1e-10);
+                    direct.span(ATV::kAtom_vx)[j], 1e-10);
         EXPECT_NEAR(result.span(ATV::kAtom_vy)[i],
-                    direct.span(ATV::kAtom_vy)[i], 1e-10);
+                    direct.span(ATV::kAtom_vy)[j], 1e-10);
         EXPECT_NEAR(result.span(ATV::kAtom_vz)[i],
-                    direct.span(ATV::kAtom_vz)[i], 1e-10);
+                    direct.span(ATV::kAtom_vz)[j], 1e-10);
     }
 }
 

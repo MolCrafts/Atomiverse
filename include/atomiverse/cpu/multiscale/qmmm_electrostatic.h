@@ -27,6 +27,7 @@ namespace cpu {
 /// comes from the `kAtomQmZ` mask column (see `qm_mask.h`), not a ctor list.
 class QmmmElectrostatic : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cross_lj QM–MM LJ diagonals/off-diagonals (Lorentz–Berthelot fill).
     /// @param lj_cutoff LJ cutoff [Å].
     /// @param embed_cutoff Embedding site collection cutoff [Å].

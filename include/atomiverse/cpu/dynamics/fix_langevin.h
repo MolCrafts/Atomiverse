@@ -2,6 +2,10 @@
 /// @brief CPU Langevin thermostat -- LAMMPS-equivalent `fix langevin`.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -76,8 +80,17 @@ namespace md {
 /// total. Pair this component with `VelocityVerlet` (or `NVELimit`
 /// for far-from-equilibrium starts) -- the integrator picks up the
 /// modified forces in the next velocity half-kick.
-class FixLangevin : public cpu::Thermostat {
+class FixLangevin : public cpu::Thermostat, public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "FixLangevin: timestep must be finite and positive");
+        dt_ = dt;
+    }
+
     /// @param T_start Ramp start temperature [K] (LAMMPS `Tstart`).
     /// @param T_stop  Ramp end temperature [K] (LAMMPS `Tstop`). A
     ///                negative value (the default) means "no ramp" —
@@ -126,6 +139,7 @@ class FixLangevin : public cpu::Thermostat {
         return {ATV::make_binding(ATV::md::Phase::post_force, +500)};
     }
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 
   private:
     double T_start_; ///< Ramp start temperature [K] (LAMMPS `t_start`).

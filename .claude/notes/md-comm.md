@@ -34,8 +34,8 @@ construction.
 wire moved off the global `kColBorder` flag (`82ad7867`), `charge` stopped
 riding the border pass unless a mounted component asked for it — and four
 styles that read `q[j]` were never given a `declare_ghosts()`: `PairCoulCut`,
-`PairCoulSoft`, `PairGaussianCoul`, `PairLJCutTip4pCut`. At one rank nothing
-changes (there are no ghosts). At 8 ranks `coul/cut` read whatever those ghost
+`PairCoulSoft`, `PairGaussianCoul`, `PairLJCutTip4pCut`. The contract applies to serial self-image ghosts and remote MPI ghosts alike.
+Without the declaration, at 8 ranks `coul/cut` read whatever those ghost
 rows happened to hold and pumped **44% onto the total energy**, while
 `Σ_i F_i` stayed exactly 0 — a bogus `q_i q_j` is still symmetric, so every
 force-balance and momentum check passes. `regressions/md/multihop-widebox-parity`

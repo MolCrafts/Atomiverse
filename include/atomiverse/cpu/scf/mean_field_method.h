@@ -70,7 +70,11 @@ namespace cpu {
 
 namespace electronic {
 class ASPCPredictor; // Kolafa density extrapolator (aspc_predictor.h)
-}
+template <typename Method>
+class CarParrinelloMethod;
+template <typename Method>
+class XlBomdMethod;
+} // namespace electronic
 
 namespace scf {
 
@@ -168,6 +172,17 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
                         public cpu::TimestepConsumer,
                         public cpu::QmEngine,
                         public cpu::EmbeddingEngine {
+  public:
+    bool requires_full_frame() const override { return true; }
+    bool provides_energy() const override { return true; }
+    bool provides_force() const override { return compute_force; }
+    cpu::TimestepConsumer* timestep_consumer() override { return this; }
+
+  private:
+    template <typename Method>
+    friend class ATV::cpu::electronic::CarParrinelloMethod;
+    template <typename Method>
+    friend class ATV::cpu::electronic::XlBomdMethod;
     template <typename Method>
     friend class MP2;
     template <typename Method>
@@ -565,8 +580,8 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
 
     MeanFieldMethod();
     ~MeanFieldMethod() override;
-    MeanFieldMethod(MeanFieldMethod&&) noexcept;
-    MeanFieldMethod& operator=(MeanFieldMethod&&) noexcept;
+    MeanFieldMethod(MeanFieldMethod&&);
+    MeanFieldMethod& operator=(MeanFieldMethod&&);
     MeanFieldMethod(const MeanFieldMethod&) = delete;
     MeanFieldMethod& operator=(const MeanFieldMethod&) = delete;
 
@@ -985,7 +1000,9 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     ///        electrons one velocity-Verlet/RATTLE step.
     /// @param frame Geometry in / forces + energies out (accumulated with
     ///        `+=`, since MD zeroes them at `pre_force`).
-    void cpmd_step_(Frame& frame);
+    /// @param advance_electrons False for force preparation: evaluate a copy
+    ///        of the electronic state without transport/history mutations.
+    void cpmd_step_(Frame& frame, bool advance_electrons);
 
     // ASPC (density extrapolation across outer MD steps)
     bool use_predictor_ = false;

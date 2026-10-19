@@ -25,6 +25,7 @@ class KineticEnergy : public cpu::Observer {
         return {ATV::make_binding(ATV::md::Phase::end_of_step, -100)};
     }
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Remove net linear COM momentum every `freq` steps.

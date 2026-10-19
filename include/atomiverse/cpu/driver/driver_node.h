@@ -11,11 +11,15 @@
 #pragma once
 
 namespace ATV {
+template <typename Component>
+struct Plan;
 namespace cpu {
 
+class Component;
 class Runtime;
 class Context;
 class Frame;
+class TimestepConsumer;
 
 /// @brief Erased base for a nestable CPU loop node.
 ///
@@ -41,9 +45,19 @@ class DriverNode {
     /// @param rt Parent Backend.
     virtual void destroy_on(Runtime& rt) = 0;
 
+    /// Synchronize live bindings before the enclosing tree begins dispatch.
+    virtual void refresh_on(Runtime&) {}
+    /// Only plans sharing the enclosing Runtime participate in its contracts.
+    virtual const Plan<Component>* execution_plan() const { return nullptr; }
+
     /// @brief Default nested-run budget when the caller passes budget < 0.
     /// @return Preset-specific default (0 unless overridden).
     virtual int default_budget() const { return 0; }
+
+    /// Energy/force and clock contracts survive node type erasure.
+    virtual bool provides_energy() const { return false; }
+    virtual bool provides_force() const { return false; }
+    virtual TimestepConsumer* timestep_consumer() { return nullptr; }
 
     /// @brief Does anything in this loop resolve global tags at run time?
     ///
@@ -53,6 +67,7 @@ class DriverNode {
     /// `Runtime::set_frame`, which is one call above the whole tree.
     /// @see cpu::Component::requires_tag_index
     virtual bool requires_tag_index() const { return false; }
+    virtual bool requires_full_frame() const { return false; }
 };
 
 } // namespace cpu

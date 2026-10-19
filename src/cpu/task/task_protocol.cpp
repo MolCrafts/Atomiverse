@@ -210,11 +210,13 @@ DispatchResult TaskDispatcher::dispatch(const TaskSpec& spec,
     MPI_Comm_size(comm_, &world);
     if (world <= 1) {
         // Serial degrade: no workers, no collectives — materialize and run
-        // locally (gather_to_root's own single-rank path is equivalent to
-        // returning the frame as-is).
+        // locally. The result still goes through the owner gather: the run
+        // may have spatially sorted the rows, and the result-frame contract
+        // is tag order at every rank count.
         TaskMaterializer mat(spec);
         TaskResult control = mat.run(frame);
-        return DispatchResult{std::move(frame), std::move(control)};
+        return DispatchResult{assemble_result(comm_, mat, frame),
+                              std::move(control)};
     }
 
     std::vector<std::byte> bytes = pack(spec);

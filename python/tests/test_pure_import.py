@@ -173,3 +173,28 @@ def test_extension_present_path_still_loads(fresh_package: None) -> None:
         assert hasattr(av, "PW")
     else:
         assert "PW" not in getattr(av, "__all__", [])
+
+
+def test_single_point_uses_public_method_entry(monkeypatch) -> None:
+    from unittest.mock import Mock
+    import atomiverse.driver as driver
+
+    require = Mock()
+    monkeypatch.setattr(driver, "require_cpp", require)
+    method = Mock()
+    frame = object()
+    assert driver.single_point(frame, method) is None
+    require.assert_called_once_with()
+    method.run.assert_called_once_with(frame)
+
+
+def test_single_point_rejects_non_evaluator(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import atomiverse.driver as driver
+
+    monkeypatch.setattr(driver, "require_cpp", Mock())
+    monkeypatch.setattr(driver, "has_domain", lambda _: False)
+    monkeypatch.setattr(driver, "_cpp", SimpleNamespace(_Component=SimpleNamespace))
+    with pytest.raises(TypeError, match="method with run"):
+        driver.single_point(object(), object())

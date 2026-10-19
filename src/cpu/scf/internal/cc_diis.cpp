@@ -3,6 +3,7 @@
 ///        amplitude extrapolation (see internal/cc_diis.h).
 
 #include "atomiverse/cpu/scf/internal/cc_diis.h"
+#include "atomiverse/cpu/linalg/pulay.h"
 
 #include <cmath>
 #include <cstddef>
@@ -17,6 +18,14 @@ namespace internal {
 
 std::vector<double> CcAmplitudeDiis::step(const std::vector<double>& amp,
                                           const std::vector<double>& err) {
+    if (amp.size() != err.size()
+        || (!amp_hist_.empty() && amp.size() != amp_hist_.back().size()))
+        throw std::invalid_argument("CcAmplitudeDiis: amplitude and residual "
+                                    "dimensions must match the history");
+    for (std::size_t i = 0; i < amp.size(); ++i)
+        if (!std::isfinite(amp[i]) || !std::isfinite(err[i]))
+            throw std::invalid_argument(
+                "CcAmplitudeDiis: amplitudes and residuals must be finite");
     amp_hist_.push_back(amp);
     err_hist_.push_back(err);
     while (static_cast<int>(amp_hist_.size()) > max_vectors_) {
@@ -35,12 +44,11 @@ std::vector<double> CcAmplitudeDiis::step(const std::vector<double>& amp,
     // a non-finite extrapolant (near-parallel error vectors make B singular).
     while (amp_hist_.size() >= 2) {
         const int m = static_cast<int>(amp_hist_.size());
-        const std::size_t dim = static_cast<std::size_t>(m) + 1;
+        const std::size_t dim = static_cast<std::size_t>(m);
 
-        // Augmented Pulay system  [[B, -1], [-1^T, 0]] [c; λ] = [0; -1],
-        // with B_ij = e_i · e_j over the flattened error vectors.
+        // Residual Gram matrix over the flattened error vectors. The shared
+        // solver adds the unit-sum constraint; history truncation stays here.
         xt::xtensor<double, 2> A = xt::zeros<double>({dim, dim});
-        xt::xtensor<double, 2> rhs = xt::zeros<double>({dim, std::size_t{1}});
         for (int i = 0; i < m; ++i) {
             for (int j = 0; j <= i; ++j) {
                 double b = 0.0;
@@ -54,19 +62,12 @@ std::vector<double> CcAmplitudeDiis::step(const std::vector<double>& amp,
                 A(static_cast<std::size_t>(j), static_cast<std::size_t>(i)) = b;
             }
         }
-        for (int i = 0; i < m; ++i) {
-            A(static_cast<std::size_t>(m), static_cast<std::size_t>(i)) = -1.0;
-            A(static_cast<std::size_t>(i), static_cast<std::size_t>(m)) = -1.0;
-        }
-        A(static_cast<std::size_t>(m), static_cast<std::size_t>(m)) = 0.0;
-        rhs(static_cast<std::size_t>(m), 0) = -1.0;
-
         bool ok = true;
         std::vector<double> out(len, 0.0);
         try {
-            const xt::xtensor<double, 2> c = xt::linalg::solve(A, rhs);
+            const auto c = linalg::pulay_coefficients(A);
             for (int i = 0; i < m; ++i) {
-                const double ci = c(static_cast<std::size_t>(i), 0);
+                const double ci = c(static_cast<std::size_t>(i));
                 if (!std::isfinite(ci)) {
                     ok = false;
                     break;
@@ -76,7 +77,7 @@ std::vector<double> CcAmplitudeDiis::step(const std::vector<double>& amp,
                 for (std::size_t k = 0; k < len; ++k)
                     out[k] += ci * Ti[k];
             }
-        } catch (...) {
+        } catch (const std::runtime_error&) {
             ok = false;
         }
 

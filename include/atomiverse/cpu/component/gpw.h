@@ -10,6 +10,7 @@ namespace cpu {
 /// @brief Gaussian-and-plane-waves DFT electronic structure.
 class GPW : public Component {
   public:
+    bool requires_full_frame() const override { return true; }
     bool provides_energy() const override { return true; }
     bool provides_force() const override { return true; }
 };

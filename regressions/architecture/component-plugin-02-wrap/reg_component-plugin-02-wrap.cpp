@@ -1,6 +1,10 @@
 /// @file reg_component-plugin-02-wrap.cpp
 /// @brief Public-API gate: on(phase).add_ref nests a driver as one Component.
 ///
+/// The inner loop is a physical (Minimize-phase) driver, so it mounts at the
+/// parent's `end_of_step`: a physical child may not replace geometry or force
+/// accumulators inside the parent's force/integration pipeline.
+///
 /// Hard-coded architecture literals (oracle: harness).
 
 #include <cstdio>
@@ -52,11 +56,12 @@ int main() {
     Counter counter;
     inner.on(ATV::minimizer::Phase::force).add_ref(counter);
     OuterLoop outer;
-    outer.on(ATV::md::Phase::force).add_ref(inner, /*order=*/0, /*budget=*/3);
+    outer.on(ATV::md::Phase::end_of_step)
+        .add_ref(inner, /*order=*/0, /*budget=*/3);
     outer.build();
 
     const auto& ops =
-        outer.plan().slots[ATV::slot_of(ATV::md::Phase::force)].ops;
+        outer.plan().slots[ATV::slot_of(ATV::md::Phase::end_of_step)].ops;
     if (ops.empty() || ops.front().component == nullptr
         || dynamic_cast<cpu::DriverNode*>(ops.front().component) != nullptr) {
         std::printf(

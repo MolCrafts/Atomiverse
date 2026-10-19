@@ -1,0 +1,1939 @@
+{
+  "hardware": "Apple M4, macOS, 10 CPU cores",
+  "build": "Release AppleClang 21, -O3 -march=native, OpenMP; same compiler and flags for LAMMPS",
+  "lammps_sha": "a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b",
+  "lammps_packages": [
+    "OPENMP",
+    "MANYBODY"
+  ],
+  "warmup_steps": 20,
+  "measured_steps": 200,
+  "thread_environment": {
+    "OMP_NUM_THREADS": "per sample",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_DYNAMIC": "FALSE",
+    "OMPI_MCA_mpi_yield_when_idle": "1",
+    "binding": "OpenMPI/OS defaults"
+  },
+  "models": {
+    "eam": {
+      "atoms": 10976,
+      "geometry": "FCC Cu, 14 cells/axis, a=3.61 Angstrom, deterministic 0.001*a distortion",
+      "mass_amu": 63.546,
+      "temperature_K": 300,
+      "dt_fs": 1,
+      "cutoff_A": 5.5,
+      "skin_A": 0.3,
+      "potential": "Sutton-Chen Cu; in-tree EAMPotential functions; shifted pair term",
+      "oracle_style": "eam/alloy (eam/alloy/omp for threads>1)",
+      "oracle_representation": "setfl sampled from the same analytic functions: dr=0.0001 Angstrom, nrho=200001, drho=0.005, nr=55001. Unused r<1 Angstrom regularized. ATV analytic; LAMMPS cubic interpolation."
+    },
+    "sw-lj": {
+      "atoms": 10648,
+      "geometry": "diamond Si, 11 cells/axis, a=5.43 Angstrom, deterministic 0.001*a distortion",
+      "mass_amu": 28.0855,
+      "temperature_K": 300,
+      "dt_fs": 0.5,
+      "cutoff_A": 3.77118,
+      "skin_A": 0.3,
+      "potential": "Original Stillinger-Weber Si plus shifted LJ epsilon=0.01 eV, sigma=2 Angstrom; benchmark composition, not a fitted silicon model",
+      "oracle_style": "hybrid/overlay sw lj/cut (OMP suffix for threads>1)",
+      "oracle_representation": "same in-tree SW parameter row exported to .sw; all analytic"
+    }
+  },
+  "strict_initial_allowance": {
+    "force_eV_A": 2e-10,
+    "energy_eV_atom": 2e-10
+  },
+  "one_step_allowance": {
+    "force_eV_A": 1e-08,
+    "energy_eV_atom": 2e-10
+  },
+  "scope": "CPU image-contract and second SW pass; partial evidence while nested Driver lifecycle failure is repaired",
+  "status": "partial",
+  "date_utc": "2026-10-19T08:45:59.537218+00:00",
+  "frozen_binary": "bench_manybody.image-contracts",
+  "baseline_binary": "bench_manybody.contracts (first OMP pass)",
+  "current_source_and_binary_sha256": {
+    "src/cpu/potentials/eam.cpp": "4b2565b9717191ce464af9b7735f3f1664cf081347f0a1d857721e4706e32151",
+    "include/atomiverse/cpu/potentials/eam.h": "9ceaaf0e0ffff2caea9e82ec2e878f7913a8ee626e24b3a8d0d395ac1d91aafb",
+    "include/atomiverse/cpu/potentials/eam_potential.h": "bb3ccf7f8f3add632593673d2e36f7a48e75859fa801f2ae3dc1a30fc23f7c27",
+    "src/cpu/potentials/sw.cpp": "e6a50bee1b36f71e577587238d3fec8fb1ce46969a8a6a296a0c8f014f2f56e3",
+    "include/atomiverse/cpu/potentials/sw.h": "bd0e9f31d294315dcc0759bff29b074957f52a098829a527054a69c2c4078f7e",
+    "include/atomiverse/cpu/potentials/force_scratch.h": "23bc8701eb7eb6a6ff0667f7aa2b3dd256854372692eecac1ddd7b2103b3bc85",
+    "src/cpu/driver/runtime.cpp": "cf092d3f6d23f8387f82ac0015da09203a26a3eec5239e71931327a268e09611",
+    "include/atomiverse/cpu/driver/runtime.h": "6e23437678810ada9525e961ca88a7699c0ab4b8c21593b06d8203284eb04154",
+    "include/atomiverse/cpu/driver/driver.h": "29a53e692a4486c004f81c088e4fd3d6091be1c05ab9ba7d93b7c7b899943a0c",
+    "src/cpu/neighbor/cell_list.cpp": "eaf1500f7bd322b0ab01f46ec90c9d353ad6c976f592acb6881bfdd053045088",
+    "include/atomiverse/cpu/neighbor/neighbor_list.h": "59aec1de6cbda618790fd875bc80372ea36383532544384656961c2407571abf",
+    "benchmarks/lj/bench_lj_cpu.cpp": "4b2a846694636fef86a25266da5f8bbafaaa10992a300372ab20c7575c897304",
+    "benchmarks/lj/in.cpu": "42da811d9c645a2c7ad259e7e060b4680809d0627812352f0ab5b1666c3fbc94",
+    "benchmarks/lj/compare.py": "fa50678b0bc769e50bb887ffc93afdc39bec83ba369324b867b0c085f1481bcc",
+    "/tmp/atv-lammps-cpu-build/lmp": "4d521c871acb6603a68d1eb69295fa34324c4e56a5fdec460e9ce52d47d51288",
+    "include/atomiverse/cpu/neighbor/pair_list.h": "8e233d4f8b2c11b552f2acd14948fea6a680a2514b00591dc982abaceb5cf098",
+    "include/atomiverse/cpu/neighbor/cell_list.h": "832b43ecdc99057fdfb52619ea6b1ce7771ee97acfbaa472f464ed3a9912bf5d",
+    "src/cpu/potentials/pair_lj_cut.cpp": "2ac29980ca0b50c92f313d7b574fd956894c3e708015cb48834e76397c7bb827",
+    "include/atomiverse/cpu/potentials/pair_lj_cut.h": "bad887d59bb5e43d58735c21a2f6452caadb2f79963b111f948849ed25576a6c",
+    "/tmp/atv-cpu-perf/bench_manybody.image-contracts": "18086d87f7ac02f57fac10ebdc76c59574c07289960edae2d94c5179290b9969",
+    "include/atomiverse/cpu/component/neighbor_protocol.h": "3b84ee0fad0a4b9d473c77730bbc68e2df6381f540dcd637d589a8a5a079a599",
+    "include/atomiverse/core/timer.h": "5485911ce5d2f76bf8f7f7938f5172a952de97939055859c715bb332b5038fd5",
+    "include/atomiverse/cpu/component/context.h": "9147dc1526a0bf6610b177fd5b38485477f41f9adaaeeceb9ca5cf07200b33f1",
+    "include/atomiverse/cpu/component/component.h": "bea6a1b9827628111768248b6f47823ec67541b5a64e58e99de241563481eb37",
+    "src/cpu/communication/comm_brick.cpp": "9fa16521109d06ae2d388bd199918e921980b39a4f191e0e53322987403311e2",
+    "src/cpu/communication/reduce.cpp": "66dd2cb418bf1423955f78af565853930327a840366e76224813ab4501e73d15",
+    "include/atomiverse/cpu/component/comm.h": "a7f26af628a8104913f802ea2cd2ec96d6031f8b68a43d9c5992434c8a49f99a"
+  },
+  "baseline_source_and_binary_sha256": {
+    "src/cpu/potentials/eam.cpp": "fc11e7411f52e37e09d704b24078b767b66fb738b2aa4a4d263bd6b32adc4ab3",
+    "include/atomiverse/cpu/potentials/eam.h": "9ceaaf0e0ffff2caea9e82ec2e878f7913a8ee626e24b3a8d0d395ac1d91aafb",
+    "include/atomiverse/cpu/potentials/eam_potential.h": "bb3ccf7f8f3add632593673d2e36f7a48e75859fa801f2ae3dc1a30fc23f7c27",
+    "src/cpu/potentials/sw.cpp": "f65bb39efe0a9d5edede066d1cd7b0828db43f7622d2d793cd59e31fa84fa3ca",
+    "include/atomiverse/cpu/potentials/sw.h": "e0635bd3d967a88a33e2cbb41ac1c04e2635b06c74d0082a647a840d75c21453",
+    "include/atomiverse/cpu/potentials/force_scratch.h": "23bc8701eb7eb6a6ff0667f7aa2b3dd256854372692eecac1ddd7b2103b3bc85",
+    "src/cpu/driver/runtime.cpp": "2953797936b9d0fd475192927f0637fee3905660892886225af59bcbac6d15ec",
+    "include/atomiverse/cpu/driver/runtime.h": "6c55a1f395373cd0855c63d90c681b74e3138f9b7ad9168ba67337d39a984acb",
+    "include/atomiverse/cpu/driver/driver.h": "a7ab59f6a79dc276e1ec69a735e70e2e7289dc986fdeeda0e19ffb5842566967",
+    "src/cpu/neighbor/cell_list.cpp": "a068d12c6aa68ba3b033cf2d4446b5200fcb8c2574a9dd1f7aed8dc291338084",
+    "include/atomiverse/cpu/neighbor/neighbor_list.h": "f6f042b981948141dc9627bef123c6e2d8d6fe8348458408e87d10dc194d3fb4",
+    "benchmarks/lj/bench_lj_cpu.cpp": "4b2a846694636fef86a25266da5f8bbafaaa10992a300372ab20c7575c897304",
+    "benchmarks/lj/in.cpu": "42da811d9c645a2c7ad259e7e060b4680809d0627812352f0ab5b1666c3fbc94",
+    "benchmarks/lj/compare.py": "fa50678b0bc769e50bb887ffc93afdc39bec83ba369324b867b0c085f1481bcc",
+    "/tmp/atv-cpu-perf/bench_manybody.contracts": "c2dbfaddd09a2f058f9d8bede0039b35c2c29193be47769e7573a3d698309768",
+    "/tmp/atv-lammps-cpu-build/lmp": "4d521c871acb6603a68d1eb69295fa34324c4e56a5fdec460e9ce52d47d51288"
+  },
+  "environment_before_matrix": {
+    "timestamp": "2026-10-19T08:42:22.371917+00:00",
+    "loadavg": [
+      11.32177734375,
+      10.37646484375,
+      11.6484375
+    ],
+    "processes": "  PID  %CPU COMM\n    1   2.7 /sbin/launchd\n  343   2.1 /usr/libexec/logd\n  346   0.0 /usr/libexec/UserEventAgent\n  348   0.3 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd\n  349   0.0 /System/Library/PrivateFrameworks/MediaRemote.framework/Support/mediaremoted\n  353   0.0 /usr/sbin/systemstats\n  357   0.0 /usr/libexec/configd\n  359   0.0 /System/Library/CoreServices/powerd.bundle/powerd\n  360   0.0 /usr/libexec/IOMFB_bics_daemon\n  364   0.0 /usr/libexec/remoted\n  368   0.0 /System/Library/PrivateFrameworks/CoreSpeech.framework/corespeechd_system\n  370   0.0 /usr/libexec/watchdogd\n  373   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds\n  375   0.0 /usr/libexec/kernelmanagerd\n  376   0.0 /usr/libexec/diskarbitrationd\n  380   0.0 /usr/sbin/syslogd\n  382   0.0 /usr/libexec/thermalmonitord\n  383   0.0 /System/Library/PrivateFrameworks/CoreDuetContext.framework/Resources/contextstored\n  384   0.0 /usr/libexec/xprotectd\n  385   0.8 /usr/libexec/opendirectoryd\n  386   0.0 /System/Library/PrivateFrameworks/ApplePushService.framework/apsd\n  387   2.2 /System/Library/CoreServices/launchservicesd\n  388   0.0 /usr/libexec/timed\n  390   0.0 /usr/sbin/securityd\n  392   0.0 /usr/libexec/locationd\n  393   0.0 /usr/libexec/nesessionmanager\n  395   0.0 autofsd\n  396   0.0 /usr/libexec/dasd\n  399   0.0 /usr/sbin/distnoted\n  402   0.0 /System/Library/CoreServices/logind\n  403   0.0 /System/Library/PrivateFrameworks/GenerationalStorage.framework/Versions/A/Support/revisiond\n  404   0.0 /usr/sbin/KernelEventAgent\n  408   0.8 /usr/sbin/bluetoothd\n  409   1.9 /usr/sbin/notifyd\n  411   0.0 /usr/libexec/corebrightnessd\n  412   0.0 /System/Library/Frameworks/CoreMediaIO.framework/Versions/A/Resources/com.apple.cmio.registerassistantservice\n  416  77.2 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer\n  417   5.2 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd\n  419   0.0 /usr/sbin/cfprefsd\n  420   4.2 /System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow\n  421   4.7 /usr/libexec/runningboardd\n  450   0.0 /System/Library/CoreServices/coreservicesd\n  454   2.1 /usr/libexec/trustd\n  465   0.0 /System/Library/PrivateFrameworks/CoreAnalytics.framework/Support/analyticsd\n  469   0.1 /usr/libexec/clocksyncd\n  470   0.0 /usr/libexec/lsd\n  473   0.0 /usr/libexec/nsurlsessiond\n  476   0.0 /usr/libexec/apfsd\n  480   0.0 /usr/libexec/airportd\n  483   0.0 /usr/libexec/containermanagerd_system\n  487   0.5 /usr/sbin/mDNSResponder\n  496   0.0 /System/Library/PrivateFrameworks/SystemStatusServer.framework/Support/systemstatusd\n  500   0.0 /System/Library/Frameworks/Security.framework/Versions/A/XPCServices/authd.xpc/Contents/MacOS/authd\n  501   0.0 /usr/libexec/eligibilityd\n  505   2.2 /usr/libexec/syspolicyd\n  506   0.0 /System/Library/CoreServices/TimeMachine/backupd\n  507   0.0 /usr/sbin/distnoted\n  508   0.0 /usr/sbin/WirelessRadioManagerd\n  511   0.0 /usr/sbin/distnoted\n  513   0.0 /usr/libexec/ApplicationFirewall/socketfilterfw\n  520   0.0 /usr/sbin/mDNSResponderHelper\n  523   0.3 /usr/libexec/symptomsd\n  530   0.2 /usr/libexec/gamepolicyd\n  531   0.0 /System/Library/CoreServices/appleeventsd\n  533   0.0 /usr/sbin/distnoted\n  534   0.0 /System/Library/PrivateFrameworks/BackgroundTaskManagement.framework/Resources/backgroundtaskmanagementd\n  538   0.0 /System/Library/DriverExtensions/com.apple.DriverKit-IOUserDockChannelSerial.dext/com.apple.DriverKit-IOUserDockChannelSerial\n  539   0.0 /System/Library/DriverExtensions/com.apple.DriverKit-AppleBCMWLAN.dext/com.apple.DriverKit-AppleBCMWLAN\n  540   9.5 /System/Library/DriverExtensions/com.apple.AppleUserHIDDrivers.dext/com.apple.AppleUserHIDDrivers\n  543   0.0 /usr/sbin/distnoted\n  545   0.0 /System/Library/CoreServices/Software Update.app/Contents/Resources/suhelperd\n  546   0.0 /usr/libexec/com.apple.cmio.videodriverkithostextension.systemextension/Contents/MacOS/com.apple.cmio.videodriverkithostextension\n  549   0.0 /usr/libexec/cameracaptured\n  552   0.0 /System/Library/Frameworks/CoreMediaIO.framework/Versions/A/Resources/UVCAssistant.systemextension/Contents/MacOS/UVCAssistant\n  555   0.0 /usr/sbin/coreaudiod\n  558   0.0 /Library/PrivilegedHelperTools/io.github.clash-verge-rev.clash-verge-rev.service.bundle/Contents/MacOS/clash-verge-service\n  559   0.0 /Library/PrivilegedHelperTools/com.docker.vmnetd\n  562   0.0 /usr/sbin/distnoted\n  564   0.0 /System/Library/Frameworks/LocalAuthentication.framework/Support/coreauthd\n  569   0.0 Core Audio Driver (MSTeamsAudioDevice.driver)\n  570   0.0 /usr/sbin/distnoted\n  584   0.0 /usr/libexec/searchpartyd\n  587   0.0 /usr/libexec/modelmanagerd\n  591   0.0 /usr/sbin/distnoted\n  596   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds_stores\n  597   0.0 /usr/libexec/audiomxd\n  601   0.0 /usr/sbin/BTLEServer\n  603   0.0 /usr/sbin/distnoted\n  606   0.0 /usr/sbin/distnoted\n  610   2.5 /usr/sbin/distnoted\n  613   0.6 /usr/libexec/secd\n  616   1.9 /usr/sbin/cfprefsd\n  619   0.0 /usr/libexec/UserEventAgent\n  626   0.0 /System/Library/CoreServices/audioaccessoryd\n  627   6.8 /System/Library/CoreServices/WindowManager.app/Contents/MacOS/WindowManager\n  630   0.0 /usr/sbin/universalaccessd\n  632   0.1 /usr/libexec/pboard\n  636   0.0 /usr/libexec/lsd\n  637   0.0 /System/Library/PrivateFrameworks/UserNotificationsCore.framework/Support/usernotificationsd\n  638   0.0 /System/Library/PrivateFrameworks/BiomeStreams.framework/Support/BiomeAgent\n  639  30.3 /System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd\n  640   0.5 /usr/libexec/containermanagerd\n  641   0.0 /usr/libexec/ContinuityCaptureAgent\n  642  10.7 /System/Library/PrivateFrameworks/TCC.framework/Support/tccd\n  644   0.0 /usr/libexec/linkd\n  646   2.0 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock\n  647   9.5 /System/Library/CoreServices/ControlCenter.app/Contents/MacOS/ControlCenter\n  649  37.5 /System/Library/CoreServices/MenuBarAgent.app/Contents/MacOS/MenuBarAgent\n  651   0.0 /System/Library/CoreServices/WallpaperAgent.app/Contents/MacOS/WallpaperAgent\n  652   0.4 /System/Library/CoreServices/SystemUIServer.app/Contents/MacOS/SystemUIServer\n  653   1.4 /System/Library/PrivateFrameworks/IDS.framework/identityservicesd.app/Contents/MacOS/identityservicesd\n  654   4.3 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder\n  659   0.0 /System/Library/CoreServices/AccessibilityUIServer.app/Contents/MacOS/AccessibilityUIServer\n  660   2.9 /usr/libexec/trustd\n  664   0.0 /System/Library/Frameworks/QuickLookUI.framework/Versions/A/XPCServices/QuickLookUIService.xpc/Contents/MacOS/QuickLookUIService\n  666   1.4 /usr/sbin/usernoted\n  669   0.0 automountd\n  671   0.0 /System/Library/CoreServices/sharedfilelistd\n  673   0.0 /System/Library/PrivateFrameworks/FileProvider.framework/Support/fileproviderd\n  677   0.6 /System/Library/PrivateFrameworks/ViewBridge.framework/Versions/A/XPCServices/ViewBridgeAuxiliary.xpc/Contents/MacOS/ViewBridgeAuxiliary\n  678   0.0 /System/Library/Frameworks/ApplicationServices.framework/Frameworks/ATS.framework/Support/fontd\n  682   0.0 /System/Library/ExtensionKit/Extensions/WallpaperMacintoshExtension.appex/Contents/MacOS/WallpaperMacintoshExtension\n  685   0.0 /System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/ATS.framework/Versions/A/Support/fontworker\n  689   3.9 /System/Applications/Siri AI.app/Contents/MacOS/Siri AI\n  691   1.3 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd\n  696   0.0 /usr/libexec/rosetta/oahd\n  699   1.6 /System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd\n  703   0.0 /System/Library/PrivateFrameworks/ChronoCore.framework/Support/chronod\n  706   1.5 /usr/libexec/sharingd\n  709   0.0 /System/Library/PrivateFrameworks/UserActivity.framework/Agents/useractivityd\n  711   0.0 /System/Library/CoreServices/Dock.app/Contents/XPCServices/com.apple.dock.extra.xpc/Contents/MacOS/com.apple.dock.extra\n  714   0.0 /usr/sbin/filecoordinationd\n  717   0.7 /System/Library/PrivateFrameworks/IMCore.framework/imagent.app/Contents/MacOS/imagent\n  721   0.0 /System/Library/PrivateFrameworks/AgentSessionKitRuntime.framework/Versions/A/agentstored\n  726   0.0 /usr/libexec/rapportd\n  727   0.0 /usr/libexec/nearbyd\n  730   0.0 /System/Library/Frameworks/CryptoTokenKit.framework/ctkd\n  731   0.0 /System/Library/Frameworks/LocalAuthentication.framework/Support/coreauthd\n  735   0.0 /usr/libexec/nsurlsessiond\n  740   0.0 /System/Applications/Weather.app/Contents/PlugIns/WeatherWidget.appex/Contents/MacOS/WeatherWidget\n  746   1.8 /usr/libexec/duetexpertd\n  749   0.0 /usr/libexec/spotlightknowledged.updater\n  750   3.7 /System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter\n  752   0.0 /System/Library/Frameworks/CryptoTokenKit.framework/ctkahp.bundle/Contents/MacOS/ctkahp\n  753   0.0 /System/Library/Frameworks/InputMethodKit.framework/Resources/imklaunchagent\n  757   8.7 /System/Library/PrivateFrameworks/TextInputUIMacHelper.framework/Versions/A/XPCServices/CursorUIViewService.xpc/Contents/MacOS/CursorUIViewService\n  761   1.6 /System/Library/PrivateFrameworks/CommunicationsFilter.framework/CMFSyncAgent\n  769   0.0 /System/Library/CoreServices/UIKitSystem.app/Contents/MacOS/UIKitSystem\n  778   0.0 /System/Library/PrivateFrameworks/ExchangeSync.framework/Versions/Current/exchangesyncd\n  780   1.0 /usr/libexec/routined\n  783   0.5 /System/Library/PrivateFrameworks/AuthKit.framework/Versions/A/Support/akd\n  786   0.0 /System/Applications/Reminders.app/Contents/PlugIns/RemindersWidgetExtension.appex/Contents/MacOS/RemindersWidgetExtension\n  789   0.0 /usr/libexec/appleaccountd\n  790   0.0 /System/Library/PrivateFrameworks/CoreDuetContext.framework/Resources/ContextStoreAgent\n  796   1.2 /usr/libexec/searchpartyuseragent\n  797   0.0 /System/Library/PrivateFrameworks/MediaRemote.framework/Support/mediaremoteagent\n  798   0.0 /usr/libexec/avconferenced\n  799   0.0 /System/Library/PrivateFrameworks/CloudDocs.framework/PlugIns/com.apple.CloudDocs.iCloudDriveFileProvider.appex/Contents/MacOS/com.apple.CloudDocs.iCloudDriveFileProvider\n  800   0.5 /Applications/OneDrive.app/Contents/MacOS/OneDrive\n  803   6.1 /System/Library/Input Methods/SCIM.app/Contents/PlugIns/SCIM_Extension.appex/Contents/MacOS/SCIM_Extension\n  804   0.0 /Applications/Microsoft Teams.app/Contents/PlugIns/TeamsWidgetExtension.appex/Contents/MacOS/TeamsWidgetExtension\n  806   1.3 /System/Library/PrivateFrameworks/HearingCore.framework/heard\n  807   0.0 /System/Library/PrivateFrameworks/CoreSpeech.framework/corespeechd\n  814   0.0 /System/Library/Image Capture/Support/icdd\n  821   0.0 /System/Library/CoreServices/AirPlayUIAgent.app/Contents/MacOS/AirPlayUIAgent\n  825   0.8 com.apple.weather.menu\n  827   0.0 /opt/homebrew/opt/postgresql@18/bin/postgres\n  829   0.0 /System/Library/CoreServices/diagnostics_agent\n  830   0.6 /System/Library/CoreServices/TextInputMenuAgent.app/Contents/MacOS/TextInputMenuAgent\n  832   0.0 Contents/Library/LaunchAgents/com.microsoft.teams2.agent\n  843   0.0 /System/Applications/Calendar.app/Contents/PlugIns/CalendarWidgetExtension.appex/Contents/MacOS/CalendarWidgetExtension\n  844   0.0 /System/Library/Input Methods/PressAndHold.app/Contents/PlugIns/PAH_Extension.appex/Contents/MacOS/PAH_Extension\n  845   0.1 /Applications/Maccy.app/Contents/MacOS/Maccy\n  851   0.0 /Applications/MonitorControl.app/Contents/MacOS/MonitorControl\n  854   0.0 /Applications/Mos.app/Contents/MacOS/Mos\n  856   0.5 /Applications/Snipaste.app/Contents/MacOS/Snipaste\n  867   0.0 /System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/CVMServer\n  875   0.0 /System/Library/CoreServices/lockoutagent\n  879   0.0 /usr/libexec/fskitd\n  885   1.5 /System/Library/PrivateFrameworks/AssistantServices.framework/Versions/A/Support/assistantd\n  895   0.0 /System/Applications/Clock.app/Contents/PlugIns/WorldClockWidget.appex/Contents/MacOS/WorldClockWidget\n  924   0.0 /usr/sbin/distnoted\n  925   0.0 /System/Library/PrivateFrameworks/AmbientDisplay.framework/Versions/A/XPCServices/com.apple.AmbientDisplayAgent.xpc/Contents/MacOS/com.apple.AmbientDisplayAgent\n  936   0.0 postgres: io worker 0\n  937   0.0 postgres: io worker 1\n  938   0.0 postgres: io worker 2\n  939   0.0 postgres: checkpointer \n  940   0.0 postgres: background writer \n  943   0.0 postgres: walwriter \n  945   0.0 postgres: autovacuum launcher \n  946   0.0 postgres: logical replication launcher \n  961   0.0 /System/Library/DriverExtensions/IOUserBluetoothSerialDriver.dext/IOUserBluetoothSerialDriver\n  962   0.1 /System/Library/CoreServices/WiFiAgent.app/Contents/MacOS/WiFiAgent\n  977   0.0 /System/Library/PrivateFrameworks/CoreFP.framework/Versions/A/fairplayd\n  987   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdbulkimport\n  996   0.0 /System/Library/CoreServices/Dock.app/Contents/XPCServices/com.apple.dock.external.extra.arm64.xpc/Contents/MacOS/com.apple.dock.external.extra.arm64\n 1006   0.0 /System/Library/CoreServices/SubmitDiagInfo\n 1009   0.0 /usr/sbin/distnoted\n 1011   0.0 /usr/sbin/distnoted\n 1013   0.0 /usr/sbin/systemstats\n 1449   0.0 /System/Library/PrivateFrameworks/PassKitCore.framework/passd\n 1465   0.0 /usr/sbin/distnoted\n 1495   0.0 /System/Library/ExtensionKit/Extensions/StartupDiskWidgetExtension.appex/Contents/MacOS/StartupDiskWidgetExtension\n 1535   0.0 /System/Library/PrivateFrameworks/SiriInference.framework/Versions/A/siriinferenced\n 1664   0.0 /System/Library/ExtensionKit/Extensions/ProfilesSettingsIntents.appex/Contents/MacOS/ProfilesSettingsIntents\n 1667   0.0 /System/Library/ExtensionKit/Extensions/DateTimeIntentsExtension.appex/Contents/MacOS/DateTimeIntentsExtension\n 1669   0.0 /System/Library/ExtensionKit/Extensions/BiometricsAndPasswordSettingsAppIntentsExtension.appex/Contents/MacOS/BiometricsAndPasswordSettingsAppIntentsExtension\n 1670   0.0 /System/Library/ExtensionKit/Extensions/ScreenTimeAppIntentsExtension.appex/Contents/MacOS/ScreenTimeAppIntentsExtension\n 1671   0.0 /System/Library/ExtensionKit/Extensions/ClassroomDeviceExpert.appex/Contents/MacOS/ClassroomDeviceExpert\n 1672   0.0 /System/Library/ExtensionKit/Extensions/AppleAccountIntents_macOS.appex/Contents/MacOS/AppleAccountIntents_macOS\n 1673   0.0 /System/Library/ExtensionKit/Extensions/AccountsUISettingsAppIntents.appex/Contents/MacOS/AccountsUISettingsAppIntents\n 1674   0.0 /System/Library/ExtensionKit/Extensions/NotificationsSettingsIntents.appex/Contents/MacOS/NotificationsSettingsIntents\n 1675   0.0 /System/Library/ExtensionKit/Extensions/ControlCenterSettingsIntents.appex/Contents/MacOS/ControlCenterSettingsIntents\n 1677   0.0 /System/Library/ExtensionKit/Extensions/VpnSettingsIntents.appex/Contents/MacOS/VpnSettingsIntents\n 1678   0.0 /System/Library/ExtensionKit/Extensions/AccessibilitySettingsSearchExtension.appex/Contents/MacOS/AccessibilitySettingsSearchExtension\n 1734   0.0 /System/Library/ExtensionKit/Extensions/SpotlightSettingsIntentsExtension.appex/Contents/MacOS/SpotlightSettingsIntentsExtension\n 1735   0.0 /System/Library/ExtensionKit/Extensions/TrackpadIntentsExtension.appex/Contents/MacOS/TrackpadIntentsExtension\n 1736   0.0 /System/Library/ExtensionKit/Extensions/DesktopSettingsIntents.appex/Contents/MacOS/DesktopSettingsIntents\n 1740   0.0 /System/Library/ExtensionKit/Extensions/PlaceholderSettingsSearchTermsIntents.appex/Contents/MacOS/PlaceholderSettingsSearchTermsIntents\n 1741   0.0 /System/Library/ExtensionKit/Extensions/SiriSetupSettingsIntents.appex/Contents/MacOS/SiriSetupSettingsIntents\n 1744   0.0 /System/Library/ExtensionKit/Extensions/FamilyIntents.appex/Contents/MacOS/FamilyIntents\n 1747   0.0 /System/Library/ExtensionKit/Extensions/WallpaperSettingsIntents.appex/Contents/MacOS/WallpaperSettingsIntents\n 1806   0.3 /Applications/Microsoft Word.app/Contents/MacOS/Microsoft Word\n 1886   0.0 /System/Library/ExtensionKit/Extensions/MouseIntentsExtension.appex/Contents/MacOS/MouseIntentsExtension\n 1921   0.2 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n 2217   0.0 /System/Library/CoreServices/CrashReporterSupportHelper\n 2260   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)\n 2261   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)\n 2286   0.0 /System/Library/ExtensionKit/Extensions/KeyboardSettingsIntents.appex/Contents/MacOS/KeyboardSettingsIntents\n 2287   0.0 /System/Library/ExtensionKit/Extensions/InternationalSettingsExtension.appex/Contents/MacOS/InternationalSettingsExtension\n 2288   0.0 /System/Library/ExtensionKit/Extensions/CDsAndDvDsSettingsIntents.appex/Contents/MacOS/CDsAndDvDsSettingsIntents\n 2289   0.0 /System/Library/ExtensionKit/Extensions/SoftwareUpdateSettingsExtensionIntents.appex/Contents/MacOS/SoftwareUpdateSettingsExtensionIntents\n 2290   0.0 /System/Library/ExtensionKit/Extensions/WiFiMacSettingsIntents.appex/Contents/MacOS/WiFiMacSettingsIntents\n 2291   0.0 /System/Library/ExtensionKit/Extensions/GameCenterSettingsSearchExtension.appex/Contents/MacOS/GameCenterSettingsSearchExtension\n 2292   0.0 /System/Library/ExtensionKit/Extensions/PasswordSettingsAppIntentsExtension.appex/Contents/MacOS/PasswordSettingsAppIntentsExtension\n 2293   0.0 /System/Library/ExtensionKit/Extensions/GameControllerSettingsIntents.appex/Contents/MacOS/GameControllerSettingsIntents\n 2294   0.0 /System/Library/ExtensionKit/Extensions/BluetoothSettingsAppIntentsWidgetExtension.appex/Contents/MacOS/BluetoothSettingsAppIntentsWidgetExtension\n 2295   0.0 /System/Library/ExtensionKit/Extensions/TimeMachineSettingsIntents.appex/Contents/MacOS/TimeMachineSettingsIntents\n 2296   0.0 /System/Library/ExtensionKit/Extensions/DoNotDisturbAppIntents.appex/Contents/MacOS/DoNotDisturbAppIntents\n 2297   0.0 /System/Library/ExtensionKit/Extensions/ClassKitAppIntents.appex/Contents/MacOS/ClassKitAppIntents\n 2298   0.0 /System/Library/ExtensionKit/Extensions/StorageSettingsIntentsExtension.appex/Contents/MacOS/StorageSettingsIntentsExtension\n 2299   0.0 /System/Library/ExtensionKit/Extensions/PrefPaneSearchIntent.appex/Contents/MacOS/PrefPaneSearchIntent\n 2300   0.0 /System/Library/ExtensionKit/Extensions/BatterySettingsIntentsExtension.appex/Contents/MacOS/BatterySettingsIntentsExtension\n 2305   0.0 /System/Applications/Notes.app/Contents/PlugIns/com.apple.Notes.SpotlightIndexExtension.appex/Contents/MacOS/com.apple.Notes.SpotlightIndexExtension\n 2411   0.0 /System/Applications/Calendar.app/Contents/Extensions/CalendarIntentsExtension.appex/Contents/MacOS/CalendarIntentsExtension\n 2412   0.0 /System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/Extensions/SafariLinkExtension.appex/Contents/MacOS/SafariLinkExtension\n 2413   0.0 /System/Applications/Messages.app/Contents/Extensions/MessagesActionExtension.appex/Contents/MacOS/MessagesActionExtension\n 2427   0.0 /usr/libexec/spotlightknowledged.importer\n 2582   1.8 /System/Library/PrivateFrameworks/People.framework/peopled\n 2823   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n 2825   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n 2836   0.0 npm exec @playwright/mcp@latest\n 2842   0.0 npm exec shadcn@latest mcp\n 2845   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n 3076   0.0 node\n 3093   0.0 node\n 3118   0.0 /usr/sbin/distnoted\n 3655   0.0 /usr/sbin/distnoted\n 3695   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n 3697   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n 3698   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n 3710   0.0 npm exec shadcn@latest mcp\n 3711   0.0 npm exec @playwright/mcp@latest\n 3759   0.0 /System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService\n 3760   0.0 /usr/sbin/distnoted\n 3812   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n 3837   0.0 node\n 3859   0.0 node\n 6301   0.0 /usr/sbin/distnoted\n 6606   0.0 /System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd\n 6832   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdwrite\n 7605   0.1 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal\n 7667   8.0 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n 7696   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/browser_crashpad_handler\n 7698   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/browser_crashpad_handler\n 7711   0.3 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)\n 7712   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)\n 7713   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)\n 7859  13.1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n 7887   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/chrome_crashpad_handler\n 7889  17.5 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif).app/Contents/MacOS/Google Chrome Helper (Aperitif)\n 7890   1.1 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif).app/Contents/MacOS/Google Chrome Helper (Aperitif)\n 7891   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif).app/Contents/MacOS/Google Chrome Helper (Aperitif)\n 8175   0.0 /Applications/ChatGPT.app/Contents/Resources/native/bare-modifier-monitor\n 8180   2.3 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)\n 8181   4.7 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex\n 8219   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)\n 8317   9.4 /Users/roykid/.codex/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService\n 8322   0.0 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n 8425   0.0 /Users/roykid/Library/Application Support/Codex/artifact-sessions/runtime-generations/generation-xTn8q5/runtime/bin/node\n 8910   0.4 /Applications/Visual Studio Code.app/Contents/MacOS/Code\n 8947   0.0 /Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Helpers/chrome_crashpad_handler\n 8948   0.0 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper\n 8949   0.0 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper\n 9180   0.1 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper\n 9676   0.0 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper\n 9758   0.0 /Applications/Visual Studio Code.app/Contents/Resources/app/node_modules.asar.unpacked/@github/copilot-sdk-darwin-arm64/prebuilds/darwin-arm64/copilot-runtime\n10677   0.3 /Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex-code-mode-host\n12220   0.0 /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper.app/Contents/MacOS/Code Helper\n13060   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n13487   0.0 /usr/libexec/diskimagesiod\n13489   0.0 /usr/libexec/fskit_agent\n13499   0.0 /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/PrivateApplications/CoreDeviceExtensions.app/Contents/Extensions/DeviceFS.appex/Contents/MacOS/DeviceFS\n13500   0.0 /usr/libexec/diskimagesiod\n13505   0.0 /usr/libexec/diskimagesiod\n13510   0.0 /Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/PrivateApplications/CoreDeviceExtensions.app/Contents/Extensions/DeviceFS.appex/Contents/MacOS/DeviceFS\n13513   0.0 /usr/libexec/diskimagesiod\n13521   0.0 /usr/libexec/diskimagesiod\n14724   0.0 /System/Library/CoreServices/Software Update.app/Contents/Resources/softwareupdated\n15034   4.5 /usr/libexec/diagnosticd\n15862   0.1 /System/Library/Frameworks/QuickLookUI.framework/Versions/A/PlugIns/QLPreviewGenerationExtension.appex/Contents/MacOS/QLPreviewGenerationExtension\n18331   0.6 /Applications/Zotero.app/Contents/MacOS/zotero\n18336   0.0 /Applications/Zotero.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container\n18354   0.1 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n19632   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n19633   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n19634   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n19635   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n19636   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n19648   0.0 npm exec shadcn@latest mcp\n19651   0.0 npm exec @playwright/mcp@latest\n19730   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n19940   0.0 node\n19978   0.0 node\n22695   0.8 /Applications/zoom.us.app/Contents/MacOS/zoom.us\n22716   0.0 /Applications/zoom.us.app/Contents/Frameworks/caphost.app/Contents/MacOS/caphost\n22717   5.2 /usr/bin/log\n22721   0.0 /Applications/zoom.us.app/Contents/Frameworks/ZoomCefHelper (GPU).app/Contents/MacOS/ZoomCefHelper (GPU)\n22722   0.0 /Applications/zoom.us.app/Contents/Frameworks/ZoomCefHelper.app/Contents/MacOS/ZoomCefHelper\n22724   0.0 /Applications/zoom.us.app/Contents/Frameworks/ZoomCefHelper.app/Contents/MacOS/ZoomCefHelper\n22725   0.0 /Applications/zoom.us.app/Contents/Frameworks/ZoomCefHelper (Renderer).app/Contents/MacOS/ZoomCefHelper (Renderer)\n22726   0.0 /Applications/zoom.us.app/Contents/Frameworks/ZoomCefHelper (Renderer).app/Contents/MacOS/ZoomCefHelper (Renderer)\n22921   0.1 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n23284   1.8 /usr/libexec/studentd\n23853   0.4 /System/Applications/System Settings.app/Contents/MacOS/System Settings\n23868   0.1 /System/Library/ExtensionKit/Extensions/GeneralSettings.appex/Contents/MacOS/GeneralSettings\n23870   0.0 /System/Library/ExtensionKit/Extensions/NotificationsSettings.appex/Contents/MacOS/NotificationsSettings\n23872   7.5 /System/Library/ExtensionKit/Extensions/FamilySettings.appex/Contents/MacOS/FamilySettings\n23873   0.8 /System/Library/ExtensionKit/Extensions/AppleIDSettings.appex/Contents/MacOS/AppleIDSettings\n23874   0.0 /System/Library/ExtensionKit/Extensions/FollowUpSettingsExtension.appex/Contents/MacOS/FollowUpSettingsExtension\n23875   0.0 /System/Library/ExtensionKit/Extensions/ClassroomSettings.appex/Contents/MacOS/ClassroomSettings\n23876   0.0 /System/Library/ExtensionKit/Extensions/HeadphoneSettingsExtension.appex/Contents/MacOS/HeadphoneSettingsExtension\n24174   1.4 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n24177   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/chrome_crashpad_handler\n24181   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n24182   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n24183   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n24325   0.1 /System/Library/CoreServices/CoreLocationAgent.app/Contents/MacOS/CoreLocationAgent\n24851   7.1 /System/Applications/Utilities/Activity Monitor.app/Contents/MacOS/Activity Monitor\n26405   0.0 /System/Library/PrivateFrameworks/KerberosHelper/Helpers/DiskUnmountWatcher\n26798   0.0 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n26800   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif).app/Contents/MacOS/Google Chrome Helper (Aperitif)\n26801   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif).app/Contents/MacOS/Google Chrome Helper (Aperitif)\n27283   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n27593   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n27594   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n27595   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n27597   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n27612   0.0 npm exec shadcn@latest mcp\n27613   0.0 npm exec @playwright/mcp@latest\n27663   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n27978   0.0 node\n28006   0.0 node\n28165   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif).app/Contents/MacOS/Google Chrome Helper (Aperitif)\n28216   0.0 /System/Library/CoreServices/PowerChime.app/Contents/MacOS/PowerChime\n28233   0.0 /usr/sbin/distnoted\n28958   0.0 /Applications/Microsoft PowerPoint.app/Contents/PlugIns/PowerPointWidget_mac.appex/Contents/MacOS/PowerPointWidget_mac\n29319   0.0 /usr/libexec/PerfPowerServices\n29991   1.8 /System/Library/PrivateFrameworks/CallHistory.framework/Support/CallHistorySyncHelper\n30304   0.0 /Applications/WeChat.app/Contents/MacOS/WeChatHelper.app/Contents/MacOS/WeChatHelper\n30305   0.0 /Applications/WeChat.app/Contents/Frameworks/wxplayer\n30306   0.0 /Applications/WeChat.app/Contents/MacOS/WeChatHelper.app/Contents/MacOS/WeChatHelper\n30307   0.0 /Applications/WeChat.app/Contents/MacOS/WeChatAppEx.app/Contents/Frameworks/WeChatAppEx Framework.framework/Versions/C/Helpers/WeChatAppEx Helper.app/Contents/MacOS/WeChatAppEx Helper\n30325   0.3 /Applications/WeChat.app/Contents/MacOS/WeChatAppEx.app/Contents/Frameworks/WeChatAppEx Framework.framework/Versions/C/Helpers/WeChatAppEx Helper (Renderer).app/Contents/MacOS/WeChatAppEx Helper (Renderer)\n30326   0.1 /Applications/WeChat.app/Contents/MacOS/WeChatAppEx.app/Contents/Frameworks/WeChatAppEx Framework.framework/Versions/C/Helpers/WeChatAppEx Helper (Renderer).app/Contents/MacOS/WeChatAppEx Helper (Renderer)\n31119   0.3 /System/Library/Frameworks/CryptoTokenKit.framework/ctkd\n31786   0.0 /usr/sbin/distnoted\n32562   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n32622   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n32623   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n32624   0.0 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex\n34016   0.1 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n34647   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n35017   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n35630   0.1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n35646   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/chrome_crashpad_handler\n35713   5.5 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n35714   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n35716   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n35736   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n35744   2.5 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n37304   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n37497   0.2 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n37631   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n38523   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)\n38651   0.0 /Applications/Microsoft Excel.app/Contents/PlugIns/ExcelWidget_mac.appex/Contents/MacOS/ExcelWidget_mac\n38908   0.5 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n38923   0.0 /Applications/Microsoft Word.app/Contents/PlugIns/WordWidget_mac.appex/Contents/MacOS/WordWidget_mac\n39352   0.3 /System/Library/PrivateFrameworks/MobileDevice.framework/Resources/MobileDeviceUpdater.app/Contents/MacOS/MobileDeviceUpdater\n39529   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n39583   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n39586   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n39601   0.0 npm exec @playwright/mcp@latest\n39602   0.0 npm exec shadcn@latest mcp\n39658   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n39851   0.0 node\n39878   0.0 node\n40437   0.5 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n40466   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n41161   0.0 /System/Library/PrivateFrameworks/SyncedDefaults.framework/Support/syncdefaultsd\n41204   0.0 /System/Library/PrivateFrameworks/UsageTracking.framework/Versions/A/UsageTrackingAgent\n41247   0.0 /usr/libexec/nehelper\n41443   0.1 /Applications/WeChat.app/Contents/MacOS/WeChatAppEx.app/Contents/MacOS/WeChatAppEx\n41448   0.0 /Applications/WeChat.app/Contents/MacOS/WeChatAppEx.app/Contents/Frameworks/WeChatAppEx Framework.framework/Versions/C/Helpers/WeChatAppEx Helper.app/Contents/MacOS/WeChatAppEx Helper\n41449   0.0 /Applications/WeChat.app/Contents/MacOS/WeChatAppEx.app/Contents/Frameworks/WeChatAppEx Framework.framework/Versions/C/Helpers/WeChatAppEx Helper (GPU).app/Contents/MacOS/WeChatAppEx Helper (GPU)\n41481   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n41484   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n41485   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n41500   0.0 npm exec shadcn@latest mcp\n41502   0.0 npm exec @playwright/mcp@latest\n41549   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n41595   0.0 /System/Library/PrivateFrameworks/iCloudDriveCore.framework/Versions/A/Support/bird\n41787   0.0 node\n41809   0.0 node\n41890   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n42145   0.0 npm run dev:api --port=5180\n42196   0.0 node\n42584   1.2 /System/Library/PrivateFrameworks/DoNotDisturbServer.framework/Support/donotdisturbd\n43032   0.0 /System/Library/CoreServices/Batteries.app/Contents/PlugIns/BatteriesAvocadoWidgetExtension.appex/Contents/MacOS/BatteriesAvocadoWidgetExtension\n44193   0.0 /usr/libexec/findmydevice-user-agent\n44194   0.0 /System/Library/PrivateFrameworks/CoreAnalytics.framework/Support/analyticsagent\n44344   0.0 /Applications/Zotero.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container\n44411   0.0 /Applications/Zotero.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container\n44412   0.0 /Applications/Zotero.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container\n44594   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44602   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44603   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44604   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44605   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44608   0.0 /Users/roykid/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/macos/arm64/ChatGPT for Chrome\n44609   0.0 /Users/roykid/.local/bin/claude\n44611   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44612   0.1 /System/Cryptexes/App/System/Library/CoreServices/PasswordManagerBrowserExtensionHelper.app/Contents/MacOS/PasswordManagerBrowserExtensionHelper\n44700   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44711   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n44867   0.0 /usr/sbin/distnoted\n44897   0.0 /System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd\n45284  45.9 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n45478   0.0 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XprotectService.xpc/Contents/MacOS/XprotectService\n45683   0.0 /System/Library/Frameworks/Translation.framework/translationd\n45760   0.0 node\n46560   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46579   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n46580   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n46628   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46647   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46648   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46706   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46707   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46708   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46709   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46710   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46726   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46727   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46728   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n46857   0.0 /System/Library/PrivateFrameworks/GenerativeExperiencesRuntime.framework/Versions/A/generativeexperiencesd\n47600   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n47907   0.1 /usr/libexec/rtcreportingd\n48907   0.0 /System/Library/PrivateFrameworks/EmailDaemon.framework/Versions/A/maild\n51389   0.1 /System/Library/CoreServices/UserNotificationCenter.app/Contents/MacOS/UserNotificationCenter\n52035  16.9 /Applications/WeChat.app/Contents/MacOS/WeChat\n52037   0.0 /Applications/WeChat.app/Contents/Frameworks/crashpad_handler\n52061   0.1 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n53727   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n53861   2.7 /usr/libexec/replayd\n54025   7.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n54314   0.1 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)\n54342   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)\n54353   0.0 /Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/155.0.8059.80/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)\n54487   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54491   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54495   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54526   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54527   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54528   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54530   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54531   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54533   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54535   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n54666   0.0 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex\n54783   0.0 /usr/bin/ssh-agent\n54823   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n54831   0.0 /System/Library/CoreServices/iconservicesagent\n55990   0.0 /System/Library/PrivateFrameworks/PackageKit.framework/Resources/system_installd\n55994   0.0 /System/Library/PrivateFrameworks/PackageKit.framework/Resources/installd\n57186   0.0 /System/Library/PrivateFrameworks/VoiceShortcuts.framework/Versions/A/Support/siriactionsd\n58095   1.7 /usr/libexec/knowledge-agent\n58234   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n58238   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58243   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58246   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n58253   0.0 npm exec shadcn@latest mcp\n58260   0.0 npm exec @playwright/mcp@latest\n58261   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58265   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58266   0.0 npm exec @playwright/mcp@latest\n58277   0.0 npm exec shadcn@latest mcp\n58281   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58284   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58286   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n58296   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n58301   0.0 npm exec shadcn@latest mcp\n58302   0.0 npm exec @playwright/mcp@latest\n58305   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58309   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n58316   0.0 npm exec @playwright/mcp@latest\n58322   0.0 npm exec shadcn@latest mcp\n58323   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58325   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58326   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58327   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58329   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n58358   0.0 node\n58380   0.0 node\n58503   0.9 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n58605   0.0 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking\n58624   0.0 node\n58646   0.0 node\n58668   0.0 node\n58690   0.0 node\n58712   0.0 node\n58734   0.0 node\n59184   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n62931   0.0 /usr/libexec/AirPlayXPCHelper\n63518   0.0 /Applications/Microsoft Outlook.app/Contents/PlugIns/CalendarWidgetExtension.appex/Contents/MacOS/CalendarWidgetExtension\n63640   0.0 /System/Library/CoreServices/TimeMachine/backupd-helper\n63644   0.0 /usr/libexec/usermanagerd\n63717   0.0 /usr/libexec/neagent\n63771   0.0 /usr/libexec/taskgated\n63775   4.3 /Applications/Tether.app/Contents/MacOS/TetherApp\n63829   0.0 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU\n63831   0.0 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent\n63845   0.0 /System/Library/PrivateFrameworks/AXAssetLoader.framework/Support/axassetsd\n63873   0.0 /System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking\n63960   0.6 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/ThemeWidgetControlViewService.xpc/Contents/MacOS/ThemeWidgetControlViewService\n64512   0.1 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n64514   0.0 /usr/libexec/biometrickitd\n64857   0.0 /usr/libexec/wifip2pd\n65040   0.0 /usr/libexec/powerexperienced\n65077   0.0 /System/Library/Frameworks/CoreTelephony.framework/Support/CommCenter\n65078   0.1 /System/Library/PrivateFrameworks/CoreADI.framework/adid\n65079   0.0 /System/Library/PrivateFrameworks/AssetCacheServices.framework/Versions/A/XPCServices/AssetCacheLocatorService.xpc/Contents/MacOS/AssetCacheLocatorService\n65142   0.0 /System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent\n65159   0.0 /usr/libexec/online-auth-agent\n65160   0.0 /usr/libexec/seputil\n65161   0.0 /usr/libexec/tipsd\n65162   0.3 /System/Library/PrivateFrameworks/FamilyCircle.framework/Versions/A/Resources/familycircled\n65163   0.0 /System/Library/PrivateFrameworks/CoreFollowUp.framework/Versions/A/Support/followupd\n65169   0.0 /usr/libexec/mobileassetd\n65170   0.0 /System/Library/PrivateFrameworks/MobileAssetDaemon.framework/Versions/A/XPCServices/com.apple.MobileAsset.DownloadService.Builtin.xpc/Contents/MacOS/com.apple.MobileAsset.DownloadService.Builtin\n65194   1.7 /usr/libexec/remindd\n65225   0.0 /System/Library/PrivateFrameworks/DeviceConfiguration.framework/Versions/A/DeviceConfigurationAgent\n65229   0.0 /System/Library/PrivateFrameworks/DeviceConfiguration.framework/Versions/A/deviceconfigurationd\n65233   0.0 /System/Library/PrivateFrameworks/CloudSubscriptionFeatures.framework/FeatureAccessAgent\n65247   0.0 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted\n65400   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n65488   0.0 /System/Library/PrivateFrameworks/MobileDevice.framework/Versions/A/Resources/usbmuxd\n65509   0.1 /Library/Apple/System/Library/PrivateFrameworks/RemotePairing.framework/Versions/A/XPCServices/remotepairingd.xpc/Contents/MacOS/remotepairingd\n65539   0.0 /Library/Apple/System/Library/PrivateFrameworks/RemotePairing.framework/Versions/A/XPCServices/remotepairingd.xpc/Contents/MacOS/remotepairingd\n65541   0.0 /Library/Developer/PrivateFrameworks/CoreDevice.framework/Resources/bin/CoreDeviceDDIUpdaterService\n65544   0.0 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Resources/bin/simdiskimaged\n65558   0.0 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/SimLaunchHost.arm64.xpc/Contents/MacOS/SimLaunchHost.arm64\n65635   0.0 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/SimLaunchHost.arm64.xpc/Contents/MacOS/SimLaunchHost.arm64\n65640   0.0 /System/Library/PrivateFrameworks/AMPDevices.framework/Versions/A/Support/AMPDeviceDiscoveryAgent\n65723   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n65810   0.0 /System/Library/CoreServices/osanalyticshelper\n65817   0.0 /System/Library/PrivateFrameworks/IntelligenceFlowRuntime.framework/Versions/A/intelligenceflowd\n65818   0.0 /System/Library/PrivateFrameworks/IntelligenceFlowContextRuntime.framework/Versions/A/intelligencecontextd\n65842   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n65849   0.0 /System/Library/PrivateFrameworks/CommerceKit.framework/Versions/A/Resources/commerce\n65856   0.0 /usr/libexec/nfcd\n65857   0.0 /System/Library/PrivateFrameworks/NearFieldPrivateServices.framework/Versions/A/XPCServices/NFStorageServer.xpc/Contents/MacOS/NFStorageServer\n65980   0.0 /System/Library/CoreServices/Keychain Circle Notification.app/Contents/MacOS/Keychain Circle Notification\n65981   0.0 /usr/libexec/dmd\n65982   0.0 /System/Library/Frameworks/ManagedSettings.framework/Versions/A/ManagedSettingsAgent\n66244   2.7 /System/Library/CoreServices/UniversalControl.app/Contents/MacOS/UniversalControl\n66245   0.1 /usr/libexec/SidecarRelay\n66271   0.0 /usr/libexec/ospredictiond\n66287   0.1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n66297   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.79/Helpers/chrome_crashpad_handler\n66301   2.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.79/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n66302   0.1 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.79/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n66303   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.79/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n66305   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.79/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n66308   2.6 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.79/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n66359   0.0 /usr/libexec/assessmentagent\n66511   0.0 /usr/libexec/feedbackd\n66550   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n66672   0.0 /usr/libexec/gamecontrollerd\n66677   0.0 /usr/libexec/gamecontrolleragentd\n66679   0.0 /usr/libexec/proactived\n66699   1.9 /System/Library/PrivateFrameworks/CalendarDaemon.framework/Support/calaccessd\n66712   1.2 /System/Library/PrivateFrameworks/CommunicationTrust.framework/Support/communicationtrustd\n66715  13.7 /System/Library/Frameworks/Contacts.framework/Support/contactsd\n66968   0.3 /usr/libexec/sandboxd\n67015   0.0 /System/Library/CoreServices/ReportCrash\n67030   0.0 /System/Library/PrivateFrameworks/CoreSymbolication.framework/coresymbolicationd\n67032   0.0 /System/Library/CoreServices/ReportCrash\n67196   0.0 /usr/sbin/BTLEServerAgent\n67198   0.0 /usr/libexec/findmybeaconingd\n67210   0.0 /usr/libexec/securityd_system\n67265   0.0 /usr/libexec/audioanalyticsd\n67296   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n67382   0.0 /usr/libexec/uarpd\n67593   1.8 /usr/libexec/sysmond\n68289   7.0 /System/Library/Frameworks/AddressBook.framework/Versions/A/Helpers/AddressBookSourceSync.app/Contents/MacOS/AddressBookSourceSync\n68325   0.0 /System/Library/PrivateFrameworks/CoreRecents.framework/Versions/A/Support/recentsd\n68328   0.0 /usr/libexec/secinitd\n68429   0.0 /usr/libexec/bluetoothuserd\n68478   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n68487   0.4 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/steam_osx\n68582   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/MacOS/ipcserver\n68633   1.4 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n68654   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n68656   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n68684   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n68698   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n68713   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n68762   0.3 /System/Library/PrivateFrameworks/AOSKit.framework/Versions/A/XPCServices/com.apple.iCloudHelper.xpc/Contents/MacOS/com.apple.iCloudHelper\n68787   0.0 /usr/libexec/mobileactivationd\n68795   1.3 /usr/libexec/siriknowledged\n68810   1.2 /System/Library/PrivateFrameworks/IMDPersistence.framework/XPCServices/IMDPersistenceAgent.xpc/Contents/MacOS/IMDPersistenceAgent\n68843   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n68850   0.0 /usr/libexec/assetsubscriptiond\n68927   0.1 /System/Library/CoreServices/CoreServicesUIAgent.app/Contents/MacOS/CoreServicesUIAgent\n68937   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n69075   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n69228   0.0 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n69443   0.0 /usr/libexec/inputanalyticsd\n70017   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.79/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n70021   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n70156   0.0 /System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/XPCServices/com.apple.hiservices-xpcservice.xpc/Contents/MacOS/com.apple.hiservices-xpcservice\n70159   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n70275   0.1 /System/Library/PrivateFrameworks/Synapse.framework/Support/contentlinkingd\n70278   0.0 /System/Library/PrivateFrameworks/IntelligencePlatformCompute.framework/Versions/A/XPCServices/IntelligencePlatformComputeService.xpc/Contents/MacOS/IntelligencePlatformComputeService\n70291   0.0 /usr/libexec/biomesyncd\n70403   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n70484   0.0 /usr/libexec/networkserviceproxy\n70494   0.0 /usr/libexec/swtransparencyd\n70559   0.0 /usr/libexec/logd_helper\n70635   0.0 /System/Library/PrivateFrameworks/CloudTelemetry.framework/Support/cloudtelemetryd\n70706   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n70967   0.3 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n70968   0.0 /System/Library/CoreServices/iconservicesd\n70969   0.0 /System/Library/Frameworks/QuickLookUI.framework/Versions/A/XPCServices/QuickLookUIService.xpc/Contents/MacOS/QuickLookUIService\n70970   0.0 /System/Library/Frameworks/QuickLookThumbnailing.framework/Support/com.apple.quicklook.ThumbnailsAgent\n70971   0.0 /usr/libexec/storagekitd\n70972   0.0 /usr/libexec/pkd\n70973   0.0 /System/Library/Frameworks/CoreMedia.framework/Versions/A/XPCServices/com.apple.CMExtensionBroker.xpc/Contents/MacOS/com.apple.CMExtensionBroker\n70974   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n70975   0.0 /System/Library/PrivateFrameworks/iCloudNotification.framework/iCloudNotificationAgent\n70976   0.0 /System/Library/PrivateFrameworks/CSExattrCrypto.framework/Versions/A/XPCServices/CSExattrCryptoService.xpc/Contents/MacOS/CSExattrCryptoService\n70977   0.0 /System/Library/Frameworks/ExtensionFoundation.framework/Versions/A/XPCServices/extensionkitservice.xpc/Contents/MacOS/extensionkitservice\n70978   0.0 /Applications/OneDrive.app/Contents/PlugIns/OneDrive File Provider.appex/Contents/MacOS/OneDrive File Provider\n70979   0.5 /usr/libexec/amfid\n70980   0.0 /System/Library/PrivateFrameworks/CacheDelete.framework/deleted_helper\n70987   0.0 /usr/libexec/triald_system\n70988   0.0 /usr/libexec/triald\n70989   0.0 /usr/libexec/AssetCache/AssetCache\n70990   0.0 /System/Library/PrivateFrameworks/GeoServices.framework/geodMachServiceBridge\n70991   0.0 /System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd\n70996   0.0 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n70997   0.0 /System/Library/PrivateFrameworks/XprotectFramework.framework/Versions/A/XPCServices/XProtectBridgeService.xpc/Contents/MacOS/XProtectBridgeService\n70999   0.0 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n71000   0.0 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n71001   0.0 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n71002   0.0 /usr/libexec/secinitd\n71003   0.0 /usr/libexec/secinitd\n71004   0.0 /usr/libexec/secinitd\n71005   0.0 /System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod\n71006   0.0 /usr/sbin/cfprefsd\n71007   0.0 /usr/sbin/cfprefsd\n71008   0.0 /usr/libexec/containermanagerd\n71009   0.0 /usr/libexec/trustd\n71010   0.0 /usr/libexec/trustd\n71011   0.0 /usr/libexec/trustdFileHelper\n71012   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71013   0.0 /usr/libexec/secinitd\n71014   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71015   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71016   0.0 /usr/libexec/containermanagerd\n71017   0.0 /usr/libexec/containermanagerd\n71018   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71019   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71020   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71021   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71022   0.0 /usr/sbin/cfprefsd\n71023   0.0 /System/Library/PrivateFrameworks/AssetCacheServicesExtensions.framework/XPCServices/AssetCacheTetheratorService.xpc/Contents/MacOS/AssetCacheTetheratorService\n71024   0.0 /usr/libexec/trustd\n71025   0.0 /System/Library/PrivateFrameworks/TrialServer.framework/Versions/A/XPCServices/TrialArchivingService.xpc/Contents/MacOS/TrialArchivingService\n71026   0.0 /usr/libexec/containermanagerd\n71027   0.0 /System/Library/PrivateFrameworks/TrialServer.framework/Versions/A/XPCServices/TrialArchivingService.xpc/Contents/MacOS/TrialArchivingService\n71036   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71051   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n71052   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n71053   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71054   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71108   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n71161   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71163   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71278   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n71402   0.0 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared\n71418   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n71518   0.0 /bin/zsh\n71519   0.0 /opt/homebrew/Cellar/python@3.14/3.14.2_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python\n71520   0.0 ps\n71529   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n71531   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n71532   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n71533   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n71535   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n71546   0.0 npm exec shadcn@latest mcp\n71549   0.0 npm exec @playwright/mcp@latest\n71619   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n71810   0.0 /Users/roykid/Library/Application Support/Steam/Steam.AppBundle/Steam/Contents/Frameworks/Steam Helper.app/Contents/MacOS/Steam Helper\n72012   0.0 /System/Library/PrivateFrameworks/DeviceCheckInternal.framework/devicecheckd\n72618   0.0 node\n72619   0.0 node\n72635   0.0 /System/Library/Frameworks/Security.framework/Versions/A/XPCServices/com.apple.CodeSigningHelper.xpc/Contents/MacOS/com.apple.CodeSigningHelper\n74743   0.0 /System/Library/PrivateFrameworks/CascadeSets.framework/Versions/A/XPCServices/SetStoreUpdateService.xpc/Contents/MacOS/SetStoreUpdateService\n74793   0.0 /usr/sbin/netbiosd\n74965   0.0 /System/Library/SystemConfiguration/EAPOLController.bundle/Contents/Resources/eapolclient\n79258   0.0 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/com.apple.CoreSimulator.CoreSimulatorService.xpc/Contents/MacOS/com.apple.CoreSimulator.CoreSimulatorService\n79261   0.0 /Library/Developer/PrivateFrameworks/CoreSimulator.framework/Versions/A/XPCServices/SimulatorTrampoline.xpc/Contents/MacOS/SimulatorTrampoline\n79766   0.1 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n79863   0.0 /usr/libexec/swcd\n79993   0.0 /System/Library/PrivateFrameworks/BiomeStreams.framework/Support/biomed\n80186   0.5 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n81432   0.3 /System/Applications/Preview.app/Contents/MacOS/Preview\n81468   0.6 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n81469   0.0 /System/Library/Frameworks/ImageCaptureCore.framework/Versions/A/XPCServices/mscamerad-xpc.xpc/Contents/MacOS/mscamerad-xpc\n81470   0.0 /usr/libexec/ptpcamerad\n82783   0.0 /usr/libexec/warmd\n83751   0.0 /usr/libexec/coreduetd\n83763   0.0 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/ThemeWidgetControlViewService.xpc/Contents/MacOS/ThemeWidgetControlViewService\n85488   6.3 /Applications/Microsoft Outlook.app/Contents/MacOS/Microsoft Outlook\n85544   0.2 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n86011   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Aperitif Renderer).app/Contents/MacOS/Google Chrome Helper (Aperitif Renderer)\n88448   1.5 /System/Library/PrivateFrameworks/TelephonyUtilities.framework/callservicesd\n89990   0.0 /System/Library/CoreServices/talagentd\n91327   6.6 /System/Applications/Messages.app/Contents/MacOS/Messages\n93611   0.3 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n93722   0.5 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n93823   0.0 /Applications/Zotero.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container\n93954   0.0 /System/Library/PrivateFrameworks/CoreAccessories.framework/Support/accessoryd\n94098   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n94099   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n94100   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n94116   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.40/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n94186   0.2 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n94189   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/chrome_crashpad_handler\n94214   9.1 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (GPU).app/Contents/MacOS/Google Chrome Helper (GPU)\n94216   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n94218   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper\n94223   0.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n94230  10.4 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/155.0.8059.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n94246   0.0 /System/Library/PrivateFrameworks/SafariPlatformSupport.framework/Versions/A/XPCServices/com.apple.SafariPlatformSupport.Helper.xpc/Contents/MacOS/com.apple.SafariPlatformSupport.Helper\n94282   0.3 /System/Library/Frameworks/AppKit.framework/Versions/C/XPCServices/com.apple.appkit.xpc.openAndSavePanelService.xpc/Contents/MacOS/com.apple.appkit.xpc.openAndSavePanelService\n95087   0.0 /Applications/Zotero.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container\n95123   0.0 /Applications/Zotero.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container\n95261   0.0 /System/Library/PrivateFrameworks/OnDeviceStorage.framework/Support/amsondevicestoraged\n96662   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n96664   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node\n96666   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n96677   0.0 npm exec @playwright/mcp@latest\n96679   0.0 npm exec shadcn@latest mcp\n96764   0.0 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl\n96803   0.0 node\n96825   0.0 node\n97927   0.0 /System/Library/CoreServices/Setup Assistant.app/Contents/Resources/mbuseragent\n98504   0.0 /System/Library/ExtensionKit/Extensions/GenerativeExperiencesSafetyInferenceProvider.appex/Contents/MacOS/GenerativeExperiencesSafetyInferenceProvider\n98505   0.0 /System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService\n63797   0.0 /bin/zsh\n",
+    "mpi_yield_when_idle": "1",
+    "exclusive_task_window": true
+  },
+  "historical_artifacts": [
+    "cpu-manybody-m4.json",
+    "cpu-lifecycle-m4.json"
+  ],
+  "order_per_sample": "Current ATV, LAMMPS, contracts ATV, sequential; no task build/test concurrent.",
+  "limitations": [
+    "Shared desktop; all samples retained, substantial timing variability. EAM 4-rank ratios span 0.150\u20130.826, preventing a stable speedup claim.",
+    "EAM uses analytic ATV and tabulated LAMMPS functions with identical parameters; not identical representation.",
+    "Orthorhombic boxes only; triclinic CellList is explicitly unsupported.",
+    "No long-trajectory or pressure-value equivalence claim."
+  ],
+  "short_oracle_checks": [
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8103952365011722e-11,
+      "energy_error_eV_atom": 2.631639762074445e-14,
+      "atv_energy_eV": -2935.0526634227826,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8981986121824335e-11,
+      "energy_error_eV_atom": 5.210646728907401e-14,
+      "atv_energy_eV": -2935.0261334350776,
+      "lammps_energy_eV": -2935.0261334351226,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8104049509526376e-11,
+      "energy_error_eV_atom": 4.210623619319112e-15,
+      "atv_energy_eV": -2935.0526634227635,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.898200520378257e-11,
+      "energy_error_eV_atom": 8.421247238638224e-15,
+      "atv_energy_eV": -2935.0261334351017,
+      "lammps_energy_eV": -2935.026133435109,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 4,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8103928078883058e-11,
+      "energy_error_eV_atom": 4.210623619319112e-15,
+      "atv_energy_eV": -2935.0526634227635,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 4,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8981748464708126e-11,
+      "energy_error_eV_atom": 2.631639762074445e-15,
+      "atv_energy_eV": -2935.0261334351226,
+      "lammps_energy_eV": -2935.026133435125,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8104028692844665e-11,
+      "energy_error_eV_atom": 4.210623619319112e-15,
+      "atv_energy_eV": -2935.0526634227635,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8981986121824335e-11,
+      "energy_error_eV_atom": 2.3158429906255116e-14,
+      "atv_energy_eV": -2935.0261334351017,
+      "lammps_energy_eV": -2935.0261334351217,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 2,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8103928078883058e-11,
+      "energy_error_eV_atom": 4.210623619319112e-15,
+      "atv_energy_eV": -2935.0526634227635,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 2,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8981748464708126e-11,
+      "energy_error_eV_atom": 8.947575191053114e-15,
+      "atv_energy_eV": -2935.0261334351226,
+      "lammps_energy_eV": -2935.0261334351303,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8104014815056857e-11,
+      "energy_error_eV_atom": 5.26327952414889e-15,
+      "atv_energy_eV": -2935.0526634227554,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.898197571348348e-11,
+      "energy_error_eV_atom": 1.0000231095882892e-14,
+      "atv_energy_eV": -2935.0261334351076,
+      "lammps_energy_eV": -2935.026133435116,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 3,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8104084203995896e-11,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -2935.052663422758,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 3,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8981861221734064e-11,
+      "energy_error_eV_atom": 8.947575191053114e-15,
+      "atv_energy_eV": -2935.0261334351217,
+      "lammps_energy_eV": -2935.0261334351294,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8103900323307442e-11,
+      "energy_error_eV_atom": 1.9474134239350895e-14,
+      "atv_energy_eV": -2935.052663422753,
+      "lammps_energy_eV": -2935.05266342277,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8981965305142623e-11,
+      "energy_error_eV_atom": 2.631639762074445e-15,
+      "atv_energy_eV": -2935.0261334351294,
+      "lammps_energy_eV": -2935.026133435127,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 4,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.8103768484323268e-11,
+      "energy_error_eV_atom": 4.210623619319112e-15,
+      "atv_energy_eV": -2935.0526634227563,
+      "lammps_energy_eV": -2935.05266342276,
+      "passed": true
+    },
+    {
+      "model": "eam",
+      "ranks": 4,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 864,
+      "max_force_error_eV_A": 1.898199653016519e-11,
+      "energy_error_eV_atom": 5.26327952414889e-16,
+      "atv_energy_eV": -2935.026133435115,
+      "lammps_energy_eV": -2935.0261334351144,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 4.5630166312093934e-14,
+      "energy_error_eV_atom": 9.473903143468002e-15,
+      "atv_energy_eV": -7522.487753701336,
+      "lammps_energy_eV": -7522.48775370132,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 1.0105496686365869e-13,
+      "atv_energy_eV": -7522.38459130914,
+      "lammps_energy_eV": -7522.384591309315,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 4.5630166312093934e-14,
+      "energy_error_eV_atom": 1.578983857244667e-15,
+      "atv_energy_eV": -7522.487753701337,
+      "lammps_energy_eV": -7522.48775370134,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 8.15808326243078e-14,
+      "atv_energy_eV": -7522.384591309159,
+      "lammps_energy_eV": -7522.3845913093,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 4,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 4.5630166312093934e-14,
+      "energy_error_eV_atom": 4.736951571734001e-15,
+      "atv_energy_eV": -7522.487753701332,
+      "lammps_energy_eV": -7522.48775370134,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 4,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 8.15808326243078e-14,
+      "atv_energy_eV": -7522.384591309157,
+      "lammps_energy_eV": -7522.384591309298,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.817779425929757e-14,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -7522.487753701336,
+      "lammps_energy_eV": -7522.48775370134,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 8.15808326243078e-14,
+      "atv_energy_eV": -7522.384591309159,
+      "lammps_energy_eV": -7522.3845913093,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 2,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.817779425929757e-14,
+      "energy_error_eV_atom": 4.210623619319112e-15,
+      "atv_energy_eV": -7522.487753701333,
+      "lammps_energy_eV": -7522.48775370134,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 2,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 8.210716057672269e-14,
+      "atv_energy_eV": -7522.384591309157,
+      "lammps_energy_eV": -7522.384591309299,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.817779425929757e-14,
+      "energy_error_eV_atom": 5.789607476563779e-15,
+      "atv_energy_eV": -7522.48775370134,
+      "lammps_energy_eV": -7522.48775370133,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 9.263371962502046e-14,
+      "atv_energy_eV": -7522.384591309146,
+      "lammps_energy_eV": -7522.384591309306,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 3,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.817779425929757e-14,
+      "energy_error_eV_atom": 2.631639762074445e-15,
+      "atv_energy_eV": -7522.487753701334,
+      "lammps_energy_eV": -7522.48775370133,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 3,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 8.579145624362691e-14,
+      "atv_energy_eV": -7522.38459130915,
+      "lammps_energy_eV": -7522.384591309298,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.260412773098409e-14,
+      "energy_error_eV_atom": 2.631639762074445e-15,
+      "atv_energy_eV": -7522.487753701335,
+      "lammps_energy_eV": -7522.48775370134,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 8.473880033879713e-14,
+      "atv_energy_eV": -7522.384591309154,
+      "lammps_energy_eV": -7522.3845913093,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 4,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.260239300750811e-14,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -7522.487753701328,
+      "lammps_energy_eV": -7522.48775370133,
+      "passed": true
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 4,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 1728,
+      "max_force_error_eV_A": 3.1109670395323974e-11,
+      "energy_error_eV_atom": 8.263348852913758e-14,
+      "atv_energy_eV": -7522.384591309158,
+      "lammps_energy_eV": -7522.384591309301,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r1-t1.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.702997020127441e-09,
+      "energy_error_eV_atom": 2.3121586949586074e-11,
+      "atv_energy_eV": -1031.836302095098,
+      "lammps_energy_eV": -1031.8363021000923,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r1-t1.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.354472090042691e-13,
+      "energy_error_eV_atom": 0.0,
+      "atv_energy_eV": -1033.08479041509,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r1-t2.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.7029961319490212e-09,
+      "energy_error_eV_atom": 2.3125797573205393e-11,
+      "atv_energy_eV": -1031.8363020950976,
+      "lammps_energy_eV": -1031.8363021000928,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r1-t2.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.354472090042691e-13,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1033.0847904150896,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r2-t1.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.702997020127441e-09,
+      "energy_error_eV_atom": 2.3125797573205393e-11,
+      "atv_energy_eV": -1031.8363020950976,
+      "lammps_energy_eV": -1031.8363021000928,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r2-t1.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.2212453270876722e-13,
+      "energy_error_eV_atom": 3.157967714489334e-15,
+      "atv_energy_eV": -1033.0847904150894,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r2-t2.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.7029961319490212e-09,
+      "energy_error_eV_atom": 2.3122639605490904e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000919,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r2-t2.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.2012613126444194e-13,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1033.0847904150896,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r3-t1.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.702997020127441e-09,
+      "energy_error_eV_atom": 2.3122639605490904e-11,
+      "atv_energy_eV": -1031.8363020950972,
+      "lammps_energy_eV": -1031.8363021000916,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r3-t1.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.2234657731369225e-13,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1033.0847904150896,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r3-t2.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.702997020127441e-09,
+      "energy_error_eV_atom": 2.3124744917300566e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000923,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r3-t2.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.2145839889399213e-13,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1033.0847904150896,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r4-t1.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.7029961319490212e-09,
+      "energy_error_eV_atom": 2.3120534293681246e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000914,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r4-t1.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.1457501614131615e-13,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1033.0847904150899,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r4-t2.final.check.json",
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.7029961319490212e-09,
+      "energy_error_eV_atom": 2.3124744917300566e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000923,
+      "passed": true
+    },
+    {
+      "model": "lj",
+      "mode": "native",
+      "case": "image-contracts-short-r4-t2.initial.check.json",
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 1.1479706074624119e-13,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1033.0847904150896,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    }
+  ],
+  "summary": [
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 1,
+      "samples": 3,
+      "atv_s": 1.25023246,
+      "lammps_s": 1.24189,
+      "median_paired_atv_over_lammps": 0.9942366203461608,
+      "median_paired_atv_over_baseline": 0.7672475828617852,
+      "min_paired_atv_over_lammps": 0.7513912938956301,
+      "max_paired_atv_over_lammps": 1.1271603845751235
+    },
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 2,
+      "samples": 3,
+      "atv_s": 0.883615588,
+      "lammps_s": 0.937197,
+      "median_paired_atv_over_lammps": 0.9428280158813995,
+      "median_paired_atv_over_baseline": 1.1069493522905862,
+      "min_paired_atv_over_lammps": 0.8535486112619639,
+      "max_paired_atv_over_lammps": 1.0206719941848985
+    },
+    {
+      "model": "eam",
+      "ranks": 1,
+      "threads": 4,
+      "samples": 3,
+      "atv_s": 0.594177286,
+      "lammps_s": 0.729058,
+      "median_paired_atv_over_lammps": 0.814993163781208,
+      "median_paired_atv_over_baseline": 0.9607620592880278,
+      "min_paired_atv_over_lammps": 0.8108145209884454,
+      "max_paired_atv_over_lammps": 0.9431901187420243
+    },
+    {
+      "model": "eam",
+      "ranks": 2,
+      "threads": 1,
+      "samples": 3,
+      "atv_s": 0.943402497,
+      "lammps_s": 0.914791,
+      "median_paired_atv_over_lammps": 1.0729517662031325,
+      "median_paired_atv_over_baseline": 1.034280727627279,
+      "min_paired_atv_over_lammps": 0.9979518939298703,
+      "max_paired_atv_over_lammps": 1.0906058620571712
+    },
+    {
+      "model": "eam",
+      "ranks": 4,
+      "threads": 1,
+      "samples": 3,
+      "atv_s": 0.622380876,
+      "lammps_s": 1.74205,
+      "median_paired_atv_over_lammps": 0.5394691593237851,
+      "median_paired_atv_over_baseline": 0.9090258349575941,
+      "min_paired_atv_over_lammps": 0.14990808117059073,
+      "max_paired_atv_over_lammps": 0.8255258117885342
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 1,
+      "samples": 3,
+      "atv_s": 1.07304745,
+      "lammps_s": 0.929225,
+      "median_paired_atv_over_lammps": 0.9851886475288547,
+      "median_paired_atv_over_baseline": 0.9597664809840655,
+      "min_paired_atv_over_lammps": 0.6791092768380002,
+      "max_paired_atv_over_lammps": 1.1596363355383101
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 2,
+      "samples": 3,
+      "atv_s": 1.028795,
+      "lammps_s": 0.919661,
+      "median_paired_atv_over_lammps": 0.922455801648651,
+      "median_paired_atv_over_baseline": 0.7953518774920117,
+      "min_paired_atv_over_lammps": 0.7944431469096788,
+      "max_paired_atv_over_lammps": 1.139044230072995
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 1,
+      "threads": 4,
+      "samples": 3,
+      "atv_s": 0.683656574,
+      "lammps_s": 0.599444,
+      "median_paired_atv_over_lammps": 1.1062939206998486,
+      "median_paired_atv_over_baseline": 0.9952819662731521,
+      "min_paired_atv_over_lammps": 1.0819473662554047,
+      "max_paired_atv_over_lammps": 1.558059486321934
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 2,
+      "threads": 1,
+      "samples": 3,
+      "atv_s": 0.599972917,
+      "lammps_s": 0.600667,
+      "median_paired_atv_over_lammps": 1.0167270505024366,
+      "median_paired_atv_over_baseline": 0.9388341324718987,
+      "min_paired_atv_over_lammps": 0.998844479553563,
+      "max_paired_atv_over_lammps": 1.165029535484598
+    },
+    {
+      "model": "sw-lj",
+      "ranks": 4,
+      "threads": 1,
+      "samples": 3,
+      "atv_s": 0.675138163,
+      "lammps_s": 0.620968,
+      "median_paired_atv_over_lammps": 0.9992084381054149,
+      "median_paired_atv_over_baseline": 0.9911715184721337,
+      "min_paired_atv_over_lammps": 0.7547547393746539,
+      "max_paired_atv_over_lammps": 1.28678646524277
+    }
+  ],
+  "raw_samples": [
+    {
+      "load_before": [
+        10.05322265625,
+        10.16796875,
+        11.54443359375
+      ],
+      "atv_pair_max_s": 1.1632,
+      "lammps_pair_max_s": 1.5847,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 1.25023246,
+      "lammps": 1.66389,
+      "ratio": 0.7513912938956301,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.958273473934291e-11,
+        "energy_error_eV_atom": 9.28055818135641e-15,
+        "atv_energy_eV": -37286.0483377859,
+        "lammps_energy_eV": -37286.048337786,
+        "passed": true
+      },
+      "baseline": 1.20538332,
+      "current_over_baseline": 1.037207367362608,
+      "baseline_pair_max_s": 1.1114,
+      "current_pair_over_baseline": 1.046607881950693,
+      "load_after": [
+        9.328125,
+        10.015625,
+        11.482421875
+      ]
+    },
+    {
+      "load_before": [
+        9.328125,
+        10.015625,
+        11.482421875
+      ],
+      "atv_pair_max_s": 1.0788,
+      "lammps_pair_max_s": 1.0989,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 1.15978696,
+      "lammps": 1.16651,
+      "ratio": 0.9942366203461608,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.958273473934291e-11,
+        "energy_error_eV_atom": 9.28055818135641e-15,
+        "atv_energy_eV": -37286.0483377859,
+        "lammps_energy_eV": -37286.048337786,
+        "passed": true
+      },
+      "baseline": 1.51162022,
+      "current_over_baseline": 0.7672475828617852,
+      "baseline_pair_max_s": 1.4259,
+      "current_pair_over_baseline": 0.7565747948664002,
+      "load_after": [
+        8.9013671875,
+        9.91552734375,
+        11.4384765625
+      ]
+    },
+    {
+      "load_before": [
+        8.9013671875,
+        9.91552734375,
+        11.4384765625
+      ],
+      "atv_pair_max_s": 1.3015,
+      "lammps_pair_max_s": 1.1697,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 1.39980921,
+      "lammps": 1.24189,
+      "ratio": 1.1271603845751235,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.958273473934291e-11,
+        "energy_error_eV_atom": 9.28055818135641e-15,
+        "atv_energy_eV": -37286.0483377859,
+        "lammps_energy_eV": -37286.048337786,
+        "passed": true
+      },
+      "baseline": 2.12610191,
+      "current_over_baseline": 0.6583923392458643,
+      "baseline_pair_max_s": 1.9813,
+      "current_pair_over_baseline": 0.6568919396355928,
+      "load_after": [
+        9.5498046875,
+        10.03271484375,
+        11.470703125
+      ]
+    },
+    {
+      "load_before": [
+        9.5498046875,
+        10.03271484375,
+        11.470703125
+      ],
+      "atv_pair_max_s": 1.0399,
+      "lammps_pair_max_s": 1.0988,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 0,
+      "atv": 1.13737563,
+      "lammps": 1.11434,
+      "ratio": 1.0206719941848985,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582727800449007e-11,
+        "energy_error_eV_atom": 9.94345519431044e-15,
+        "atv_energy_eV": -37286.048337787906,
+        "lammps_energy_eV": -37286.0483377878,
+        "passed": true
+      },
+      "baseline": 0.75078549,
+      "current_over_baseline": 1.5149142400181441,
+      "baseline_pair_max_s": 0.6866,
+      "current_pair_over_baseline": 1.514564520827265,
+      "load_after": [
+        8.94482421875,
+        9.89892578125,
+        11.4150390625
+      ]
+    },
+    {
+      "load_before": [
+        8.94482421875,
+        9.89892578125,
+        11.4150390625
+      ],
+      "atv_pair_max_s": 0.8083,
+      "lammps_pair_max_s": 0.92546,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 1,
+      "atv": 0.883615588,
+      "lammps": 0.937197,
+      "ratio": 0.9428280158813995,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582727800449007e-11,
+        "energy_error_eV_atom": 9.94345519431044e-15,
+        "atv_energy_eV": -37286.048337787906,
+        "lammps_energy_eV": -37286.0483377878,
+        "passed": true
+      },
+      "baseline": 0.798243918,
+      "current_over_baseline": 1.1069493522905862,
+      "baseline_pair_max_s": 0.7317,
+      "current_pair_over_baseline": 1.104687713543802,
+      "load_after": [
+        8.94482421875,
+        9.89892578125,
+        11.4150390625
+      ]
+    },
+    {
+      "load_before": [
+        8.94482421875,
+        9.89892578125,
+        11.4150390625
+      ],
+      "atv_pair_max_s": 0.7188,
+      "lammps_pair_max_s": 0.90833,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 2,
+      "atv": 0.785855378,
+      "lammps": 0.920692,
+      "ratio": 0.8535486112619639,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582727800449007e-11,
+        "energy_error_eV_atom": 9.94345519431044e-15,
+        "atv_energy_eV": -37286.048337787906,
+        "lammps_energy_eV": -37286.0483377878,
+        "passed": true
+      },
+      "baseline": 0.773933071,
+      "current_over_baseline": 1.0154048294959088,
+      "baseline_pair_max_s": 0.7092,
+      "current_pair_over_baseline": 1.0135363790186125,
+      "load_after": [
+        8.46875,
+        9.7841796875,
+        11.36572265625
+      ]
+    },
+    {
+      "load_before": [
+        8.46875,
+        9.7841796875,
+        11.36572265625
+      ],
+      "atv_pair_max_s": 0.4964,
+      "lammps_pair_max_s": 0.63194,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 0,
+      "atv": 0.551696038,
+      "lammps": 0.680422,
+      "ratio": 0.8108145209884454,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582727800449007e-11,
+        "energy_error_eV_atom": 0.0,
+        "atv_energy_eV": -37286.0483377879,
+        "lammps_energy_eV": -37286.0483377879,
+        "passed": true
+      },
+      "baseline": 0.693428331,
+      "current_over_baseline": 0.7956064287197403,
+      "baseline_pair_max_s": 0.6225,
+      "current_pair_over_baseline": 0.797429718875502,
+      "load_after": [
+        8.43115234375,
+        9.75439453125,
+        11.345703125
+      ]
+    },
+    {
+      "load_before": [
+        8.43115234375,
+        9.75439453125,
+        11.345703125
+      ],
+      "atv_pair_max_s": 0.6302,
+      "lammps_pair_max_s": 0.69418,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 1,
+      "atv": 0.702892629,
+      "lammps": 0.745229,
+      "ratio": 0.9431901187420243,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582727800449007e-11,
+        "energy_error_eV_atom": 0.0,
+        "atv_energy_eV": -37286.0483377879,
+        "lammps_energy_eV": -37286.0483377879,
+        "passed": true
+      },
+      "baseline": 0.596889699,
+      "current_over_baseline": 1.1775921584466815,
+      "baseline_pair_max_s": 0.5351,
+      "current_pair_over_baseline": 1.1777237899458044,
+      "load_after": [
+        8.43115234375,
+        9.75439453125,
+        11.345703125
+      ]
+    },
+    {
+      "load_before": [
+        8.43115234375,
+        9.75439453125,
+        11.345703125
+      ],
+      "atv_pair_max_s": 0.5313,
+      "lammps_pair_max_s": 0.68401,
+      "model": "eam",
+      "side": 14,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 2,
+      "atv": 0.594177286,
+      "lammps": 0.729058,
+      "ratio": 0.814993163781208,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582727800449007e-11,
+        "energy_error_eV_atom": 0.0,
+        "atv_energy_eV": -37286.0483377879,
+        "lammps_energy_eV": -37286.0483377879,
+        "passed": true
+      },
+      "baseline": 0.618443745,
+      "current_over_baseline": 0.9607620592880278,
+      "baseline_pair_max_s": 0.5571,
+      "current_pair_over_baseline": 0.953688745288099,
+      "load_after": [
+        8.15625,
+        9.67529296875,
+        11.30810546875
+      ]
+    },
+    {
+      "load_before": [
+        8.15625,
+        9.67529296875,
+        11.30810546875
+      ],
+      "atv_pair_max_s": 0.8626,
+      "lammps_pair_max_s": 0.8237,
+      "model": "eam",
+      "side": 14,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 0.943402497,
+      "lammps": 0.879259,
+      "ratio": 1.0729517662031325,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.958273473934291e-11,
+        "energy_error_eV_atom": 9.94345519431044e-15,
+        "atv_energy_eV": -37286.048337787906,
+        "lammps_energy_eV": -37286.0483377878,
+        "passed": true
+      },
+      "baseline": 0.921151836,
+      "current_over_baseline": 1.0241552588079519,
+      "baseline_pair_max_s": 0.8551,
+      "current_pair_over_baseline": 1.0087709039878379,
+      "load_after": [
+        7.7431640625,
+        9.564453125,
+        11.25927734375
+      ]
+    },
+    {
+      "load_before": [
+        7.7431640625,
+        9.564453125,
+        11.25927734375
+      ],
+      "atv_pair_max_s": 0.918,
+      "lammps_pair_max_s": 0.87706,
+      "model": "eam",
+      "side": 14,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 1.02034467,
+      "lammps": 0.935576,
+      "ratio": 1.0906058620571712,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.958273473934291e-11,
+        "energy_error_eV_atom": 9.94345519431044e-15,
+        "atv_energy_eV": -37286.048337787906,
+        "lammps_energy_eV": -37286.0483377878,
+        "passed": true
+      },
+      "baseline": 0.887770836,
+      "current_over_baseline": 1.1493333962144259,
+      "baseline_pair_max_s": 0.8135,
+      "current_pair_over_baseline": 1.128457283343577,
+      "load_after": [
+        7.36328125,
+        9.455078125,
+        11.21044921875
+      ]
+    },
+    {
+      "load_before": [
+        7.36328125,
+        9.455078125,
+        11.21044921875
+      ],
+      "atv_pair_max_s": 0.8329,
+      "lammps_pair_max_s": 0.85786,
+      "model": "eam",
+      "side": 14,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 0.912917411,
+      "lammps": 0.914791,
+      "ratio": 0.9979518939298703,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.958273473934291e-11,
+        "energy_error_eV_atom": 9.94345519431044e-15,
+        "atv_energy_eV": -37286.048337787906,
+        "lammps_energy_eV": -37286.0483377878,
+        "passed": true
+      },
+      "baseline": 0.882659211,
+      "current_over_baseline": 1.034280727627279,
+      "baseline_pair_max_s": 0.8081,
+      "current_pair_over_baseline": 1.0306892711298106,
+      "load_after": [
+        7.013671875,
+        9.34765625,
+        11.162109375
+      ]
+    },
+    {
+      "load_before": [
+        7.013671875,
+        9.34765625,
+        11.162109375
+      ],
+      "atv_pair_max_s": 0.5105,
+      "lammps_pair_max_s": 0.68816,
+      "model": "eam",
+      "side": 14,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 0.609746573,
+      "lammps": 0.738616,
+      "ratio": 0.8255258117885342,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582595961464833e-11,
+        "energy_error_eV_atom": 7.954764155448352e-15,
+        "atv_energy_eV": -37286.04833778791,
+        "lammps_energy_eV": -37286.048337788,
+        "passed": true
+      },
+      "baseline": 0.670769245,
+      "current_over_baseline": 0.9090258349575941,
+      "baseline_pair_max_s": 0.5959,
+      "current_pair_over_baseline": 0.8566873636516193,
+      "load_after": [
+        7.013671875,
+        9.34765625,
+        11.162109375
+      ]
+    },
+    {
+      "load_before": [
+        7.013671875,
+        9.34765625,
+        11.162109375
+      ],
+      "atv_pair_max_s": 0.5455,
+      "lammps_pair_max_s": 3.4903,
+      "model": "eam",
+      "side": 14,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 0.622380876,
+      "lammps": 4.15175,
+      "ratio": 0.14990808117059073,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582595961464833e-11,
+        "energy_error_eV_atom": 7.954764155448352e-15,
+        "atv_energy_eV": -37286.04833778791,
+        "lammps_energy_eV": -37286.048337788,
+        "passed": true
+      },
+      "baseline": 1.51901333,
+      "current_over_baseline": 0.4097270667137595,
+      "baseline_pair_max_s": 1.21,
+      "current_pair_over_baseline": 0.4508264462809917,
+      "load_after": [
+        8.30810546875,
+        9.54931640625,
+        11.21240234375
+      ]
+    },
+    {
+      "load_before": [
+        8.30810546875,
+        9.54931640625,
+        11.21240234375
+      ],
+      "atv_pair_max_s": 0.7654,
+      "lammps_pair_max_s": 1.6477,
+      "model": "eam",
+      "side": 14,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 0.939782249,
+      "lammps": 1.74205,
+      "ratio": 0.5394691593237851,
+      "check": {
+        "stage": "initial",
+        "atoms": 10976,
+        "max_force_error_eV_A": 1.9582595961464833e-11,
+        "energy_error_eV_atom": 7.954764155448352e-15,
+        "atv_energy_eV": -37286.04833778791,
+        "lammps_energy_eV": -37286.048337788,
+        "passed": true
+      },
+      "baseline": 0.771711587,
+      "current_over_baseline": 1.2177894757980354,
+      "baseline_pair_max_s": 0.6757,
+      "current_pair_over_baseline": 1.1327512209560455,
+      "load_after": [
+        8.203125,
+        9.5068359375,
+        11.1875
+      ]
+    },
+    {
+      "load_before": [
+        8.203125,
+        9.5068359375,
+        11.1875
+      ],
+      "atv_pair_max_s": 1.0007,
+      "lammps_pair_max_s": 1.5317,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 1.08313855,
+      "lammps": 1.59494,
+      "ratio": 0.6791092768380002,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 2.049950492350702e-15,
+        "atv_energy_eV": -46353.99072791352,
+        "lammps_energy_eV": -46353.9907279135,
+        "passed": true
+      },
+      "baseline": 1.01948825,
+      "current_over_baseline": 1.0624335788077988,
+      "baseline_pair_max_s": 0.9447,
+      "current_pair_over_baseline": 1.0592780776966233,
+      "load_after": [
+        7.7060546875,
+        9.3818359375,
+        11.13330078125
+      ]
+    },
+    {
+      "load_before": [
+        7.7060546875,
+        9.3818359375,
+        11.13330078125
+      ],
+      "atv_pair_max_s": 0.8474,
+      "lammps_pair_max_s": 0.88136,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 0.915461921,
+      "lammps": 0.929225,
+      "ratio": 0.9851886475288547,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 2.049950492350702e-15,
+        "atv_energy_eV": -46353.99072791352,
+        "lammps_energy_eV": -46353.9907279135,
+        "passed": true
+      },
+      "baseline": 1.09987258,
+      "current_over_baseline": 0.8323345246046592,
+      "baseline_pair_max_s": 1.0182,
+      "current_pair_over_baseline": 0.8322529954822235,
+      "load_after": [
+        7.5693359375,
+        9.32568359375,
+        11.10302734375
+      ]
+    },
+    {
+      "load_before": [
+        7.5693359375,
+        9.32568359375,
+        11.10302734375
+      ],
+      "atv_pair_max_s": 0.9918,
+      "lammps_pair_max_s": 0.87678,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 1.07304745,
+      "lammps": 0.925331,
+      "ratio": 1.1596363355383101,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 2.049950492350702e-15,
+        "atv_energy_eV": -46353.99072791352,
+        "lammps_energy_eV": -46353.9907279135,
+        "passed": true
+      },
+      "baseline": 1.11802972,
+      "current_over_baseline": 0.9597664809840655,
+      "baseline_pair_max_s": 1.0341,
+      "current_pair_over_baseline": 0.959094865100087,
+      "load_after": [
+        7.5693359375,
+        9.32568359375,
+        11.10302734375
+      ]
+    },
+    {
+      "load_before": [
+        7.5693359375,
+        9.32568359375,
+        11.10302734375
+      ],
+      "atv_pair_max_s": 0.9771,
+      "lammps_pair_max_s": 1.1689,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 0,
+      "atv": 1.08099879,
+      "lammps": 1.3607,
+      "ratio": 0.7944431469096788,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 2.3232772246641292e-14,
+        "atv_energy_eV": -46353.99072791375,
+        "lammps_energy_eV": -46353.9907279135,
+        "passed": true
+      },
+      "baseline": 1.35914533,
+      "current_over_baseline": 0.7953518774920117,
+      "baseline_pair_max_s": 1.2178,
+      "current_pair_over_baseline": 0.8023484972901954,
+      "load_after": [
+        7.203125,
+        9.22021484375,
+        11.05517578125
+      ]
+    },
+    {
+      "load_before": [
+        7.203125,
+        9.22021484375,
+        11.05517578125
+      ],
+      "atv_pair_max_s": 0.932,
+      "lammps_pair_max_s": 0.85338,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 1,
+      "atv": 1.028795,
+      "lammps": 0.903209,
+      "ratio": 1.139044230072995,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 2.3232772246641292e-14,
+        "atv_energy_eV": -46353.99072791375,
+        "lammps_energy_eV": -46353.9907279135,
+        "passed": true
+      },
+      "baseline": 1.20473608,
+      "current_over_baseline": 0.8539588189306988,
+      "baseline_pair_max_s": 1.1253,
+      "current_pair_over_baseline": 0.8282235848218253,
+      "load_after": [
+        7.1865234375,
+        9.18310546875,
+        11.03125
+      ]
+    },
+    {
+      "load_before": [
+        7.1865234375,
+        9.18310546875,
+        11.03125
+      ],
+      "atv_pair_max_s": 0.7693,
+      "lammps_pair_max_s": 0.87307,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 2,
+      "atv": 0.848346625,
+      "lammps": 0.919661,
+      "ratio": 0.922455801648651,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 2.3232772246641292e-14,
+        "atv_energy_eV": -46353.99072791375,
+        "lammps_energy_eV": -46353.9907279135,
+        "passed": true
+      },
+      "baseline": 1.42474509,
+      "current_over_baseline": 0.5954374792756787,
+      "baseline_pair_max_s": 1.3232,
+      "current_pair_over_baseline": 0.5813935912938332,
+      "load_after": [
+        7.49169921875,
+        9.212890625,
+        11.03076171875
+      ]
+    },
+    {
+      "load_before": [
+        7.49169921875,
+        9.212890625,
+        11.03076171875
+      ],
+      "atv_pair_max_s": 0.6017,
+      "lammps_pair_max_s": 0.54315,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 0,
+      "atv": 0.683656574,
+      "lammps": 0.631876,
+      "ratio": 1.0819473662554047,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 6.833168307835674e-15,
+        "atv_energy_eV": -46353.990727913624,
+        "lammps_energy_eV": -46353.9907279137,
+        "passed": true
+      },
+      "baseline": 0.873820761,
+      "current_over_baseline": 0.7823762086147094,
+      "baseline_pair_max_s": 0.7726,
+      "current_pair_over_baseline": 0.7787988609888689,
+      "load_after": [
+        8.0927734375,
+        9.30859375,
+        11.0537109375
+      ]
+    },
+    {
+      "load_before": [
+        8.0927734375,
+        9.30859375,
+        11.0537109375
+      ],
+      "atv_pair_max_s": 0.7957,
+      "lammps_pair_max_s": 0.49589,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 1,
+      "atv": 0.892593583,
+      "lammps": 0.572888,
+      "ratio": 1.558059486321934,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 6.833168307835674e-15,
+        "atv_energy_eV": -46353.990727913624,
+        "lammps_energy_eV": -46353.9907279137,
+        "passed": true
+      },
+      "baseline": 0.809586666,
+      "current_over_baseline": 1.1025299952259837,
+      "baseline_pair_max_s": 0.7334,
+      "current_pair_over_baseline": 1.0849468230160892,
+      "load_after": [
+        8.0048828125,
+        9.27001953125,
+        11.02978515625
+      ]
+    },
+    {
+      "load_before": [
+        8.0048828125,
+        9.27001953125,
+        11.02978515625
+      ],
+      "atv_pair_max_s": 0.5831,
+      "lammps_pair_max_s": 0.50927,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 2,
+      "atv": 0.663161253,
+      "lammps": 0.599444,
+      "ratio": 1.1062939206998486,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 6.833168307835674e-15,
+        "atv_energy_eV": -46353.990727913624,
+        "lammps_energy_eV": -46353.9907279137,
+        "passed": true
+      },
+      "baseline": 0.666304902,
+      "current_over_baseline": 0.9952819662731521,
+      "baseline_pair_max_s": 0.6123,
+      "current_pair_over_baseline": 0.9523109586803854,
+      "load_after": [
+        8.0048828125,
+        9.27001953125,
+        11.02978515625
+      ]
+    },
+    {
+      "load_before": [
+        8.0048828125,
+        9.27001953125,
+        11.02978515625
+      ],
+      "atv_pair_max_s": 0.5447,
+      "lammps_pair_max_s": 0.55526,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 0.599972917,
+      "lammps": 0.600667,
+      "ratio": 0.998844479553563,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 1.2983019784887782e-14,
+        "atv_energy_eV": -46353.99072791374,
+        "lammps_energy_eV": -46353.9907279136,
+        "passed": true
+      },
+      "baseline": 0.639061679,
+      "current_over_baseline": 0.9388341324718987,
+      "baseline_pair_max_s": 0.5851,
+      "current_pair_over_baseline": 0.9309519740215348,
+      "load_after": [
+        7.92431640625,
+        9.23193359375,
+        11.005859375
+      ]
+    },
+    {
+      "load_before": [
+        7.92431640625,
+        9.23193359375,
+        11.005859375
+      ],
+      "atv_pair_max_s": 0.5364,
+      "lammps_pair_max_s": 0.53933,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 0.589371253,
+      "lammps": 0.579675,
+      "ratio": 1.0167270505024366,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 1.2983019784887782e-14,
+        "atv_energy_eV": -46353.99072791374,
+        "lammps_energy_eV": -46353.9907279136,
+        "passed": true
+      },
+      "baseline": 1.03405129,
+      "current_over_baseline": 0.5699632684564419,
+      "baseline_pair_max_s": 0.9313,
+      "current_pair_over_baseline": 0.5759690754858799,
+      "load_after": [
+        7.92431640625,
+        9.23193359375,
+        11.005859375
+      ]
+    },
+    {
+      "load_before": [
+        7.92431640625,
+        9.23193359375,
+        11.005859375
+      ],
+      "atv_pair_max_s": 0.6548,
+      "lammps_pair_max_s": 0.58031,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 0.723698872,
+      "lammps": 0.621185,
+      "ratio": 1.165029535484598,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 4.904410211281629e-14,
+        "energy_error_eV_atom": 1.2983019784887782e-14,
+        "atv_energy_eV": -46353.99072791374,
+        "lammps_energy_eV": -46353.9907279136,
+        "passed": true
+      },
+      "baseline": 0.733772546,
+      "current_over_baseline": 0.9862713942421063,
+      "baseline_pair_max_s": 0.6702,
+      "current_pair_over_baseline": 0.9770217845419278,
+      "load_after": [
+        7.77001953125,
+        9.17822265625,
+        10.97607421875
+      ]
+    },
+    {
+      "load_before": [
+        7.77001953125,
+        9.17822265625,
+        10.97607421875
+      ],
+      "atv_pair_max_s": 0.4762,
+      "lammps_pair_max_s": 0.52814,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 0.675138163,
+      "lammps": 0.675673,
+      "ratio": 0.9992084381054149,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 3.1433189384699745e-14,
+        "energy_error_eV_atom": 1.3666336615671348e-14,
+        "atv_energy_eV": -46353.99072791365,
+        "lammps_energy_eV": -46353.9907279138,
+        "passed": true
+      },
+      "baseline": 0.958860006,
+      "current_over_baseline": 0.7041050401261599,
+      "baseline_pair_max_s": 0.739,
+      "current_pair_over_baseline": 0.644384303112314,
+      "load_after": [
+        7.9482421875,
+        9.19140625,
+        10.97021484375
+      ]
+    },
+    {
+      "load_before": [
+        7.9482421875,
+        9.19140625,
+        10.97021484375
+      ],
+      "atv_pair_max_s": 0.5426,
+      "lammps_pair_max_s": 0.453,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 0.698385339,
+      "lammps": 0.542736,
+      "ratio": 1.28678646524277,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 3.1433189384699745e-14,
+        "energy_error_eV_atom": 1.3666336615671348e-14,
+        "atv_energy_eV": -46353.99072791365,
+        "lammps_energy_eV": -46353.9907279138,
+        "passed": true
+      },
+      "baseline": 0.462477749,
+      "current_over_baseline": 1.5100950056734512,
+      "baseline_pair_max_s": 0.4077,
+      "current_pair_over_baseline": 1.3308805494235958,
+      "load_after": [
+        7.9482421875,
+        9.19140625,
+        10.97021484375
+      ]
+    },
+    {
+      "load_before": [
+        7.9482421875,
+        9.19140625,
+        10.97021484375
+      ],
+      "atv_pair_max_s": 0.3886,
+      "lammps_pair_max_s": 0.51065,
+      "model": "sw-lj",
+      "side": 11,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 0.468678541,
+      "lammps": 0.620968,
+      "ratio": 0.7547547393746539,
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 3.1433189384699745e-14,
+        "energy_error_eV_atom": 1.3666336615671348e-14,
+        "atv_energy_eV": -46353.99072791365,
+        "lammps_energy_eV": -46353.9907279138,
+        "passed": true
+      },
+      "baseline": 0.472853116,
+      "current_over_baseline": 0.9911715184721337,
+      "baseline_pair_max_s": 0.4115,
+      "current_pair_over_baseline": 0.9443499392466587,
+      "load_after": [
+        7.7119140625,
+        9.12158203125,
+        10.93505859375
+      ]
+    }
+  ],
+  "pending": [
+    "Nested LJ short matrix: first r1t1 aborted before comparison.",
+    "LJ 22^3 and 47^3 performance matrix: not started."
+  ],
+  "failures": [
+    {
+      "case": "nested-image-contracts-short-r1-t1",
+      "command": "mpiexec -n 1 /tmp/atv-cpu-perf/bench_manybody.image-contracts 6 0 1 1 PREFIX nested",
+      "error": "driver is already attached to a live Runtime",
+      "log": "/tmp/atv-cpu-perf/nested-image-contracts-short-r1-t1.atv.log",
+      "explanation": "Same child is intentionally bound in two parent stages; second build_on rejects its existing Runtime attachment."
+    }
+  ]
+}

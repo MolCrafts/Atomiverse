@@ -29,6 +29,8 @@ VACF::VACF(double dt, int resolution, int freq, std::string output_file)
       acc_(cpu::compute::VACF{resolution}.accumulator()) {}
 
 void VACF::on_snapshot(const cpu::FrameSnapshot& snap) {
+    if (invalid_input_)
+        return;
     const int n = snap.n_owned;
     if (n <= 0)
         return;
@@ -36,18 +38,26 @@ void VACF::on_snapshot(const cpu::FrameSnapshot& snap) {
         return;
 
     // Snapshot velocity fields are double (widened from StorageReal at capture).
-    cpu::pack_blocked(scratch_, snap.vx, snap.vy, snap.vz, n);
+
     // Worker thread: a molrs refusal is tallied for finalize(), never thrown
     // out of the analysis executor.
     try {
+        input_.pack(scratch_, snap.tag, snap.vx, snap.vy, snap.vz, n, snap.step,
+                    freq_ > 0 ? freq_ : 1);
         acc_.push(scratch_, dt_);
         ++n_frames_;
     } catch (const std::exception& e) {
         rejected_.record(e);
+        invalid_input_ = true;
     }
 }
 
 void VACF::finalize() {
+    if (invalid_input_) {
+        ATV_WARN("[vacf] invalid trajectory input: {}; result not written",
+                 rejected_.first_reason());
+        return;
+    }
     if (gate_.dropped() > 0)
         ATV_WARN("[vacf] dropped {} snapshot(s) with changed atom count "
                  "(constant count required)",

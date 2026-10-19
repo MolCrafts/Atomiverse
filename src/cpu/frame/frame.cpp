@@ -863,6 +863,7 @@ void Frame::add_bond(TagInt ti, TagInt tj, int type_value) {
     partner(row, slot) = partner_tag;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::add_angle(TagInt ti, TagInt tj, TagInt tk, int type_value) {
@@ -881,6 +882,7 @@ void Frame::add_angle(TagInt ti, TagInt tj, TagInt tk, int type_value) {
     partner(row, 2 * slot + 1) = tk;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::add_dihedral(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
@@ -901,6 +903,7 @@ void Frame::add_dihedral(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
     partner(row, 3 * slot + 2) = tl;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::add_improper(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
@@ -921,6 +924,7 @@ void Frame::add_improper(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
     partner(row, 3 * slot + 2) = tl;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::build_special_list() {

@@ -1,7 +1,7 @@
 /// @file cpu/component/component.h
 /// @brief cpu::Component — OOP base for CPU simulation components.
 ///
-/// Lifecycle: build() → launch() × N → destroy().
+/// Lifecycle: build() → optional initial force evaluation → launch() × N → destroy().
 /// Role is a RoleFlag set (see facade/component_role.h).
 ///
 /// Intermediate kinds (Potential, HF, Integrator, …) live in their own
@@ -24,6 +24,7 @@
 namespace ATV {
 namespace cpu {
 
+class DriverNode;
 class ConstraintProvider;
 class NeighborConsumer;
 class NeighborProvider;
@@ -41,9 +42,11 @@ struct LaunchContext {
     cpu::Frame& frame;
     int stage;
     int step;
-    /// @brief When true, force-writing components should skip force writes
+    /// @brief When false, force-writing components should skip force writes
     ///        (MC energy-only trials).
     bool forces_requested = true;
+    /// @brief When false, skip stress/virial writes independently of forces.
+    bool stress_requested = true;
 
     template <typename PhaseEnum>
     bool at(PhaseEnum phase) const {
@@ -73,6 +76,9 @@ class Component {
     /// @brief Behavioural RoleFlag set (may combine several flags).
     /// Default 0: main-loop required, may mutate the frame.
     virtual Role role() const { return 0; }
+
+    /// Nested loop boundary for lifecycle refresh and active-plan contracts.
+    virtual DriverNode* nested_node() const { return nullptr; }
 
     virtual const NeighborConsumer* as_neighbor_consumer() const {
         return nullptr;
@@ -119,6 +125,10 @@ class Component {
     /// `ChargePacker::forward(ctx)` so ghost rows see the new charges
     /// [e] before the force stages read them.
     virtual bool updates_owned_charges() const { return false; }
+    /// Requires all atoms on each executing rank (serial or full replica).
+    /// Spatial decomposition must reject this component before partitioning.
+    virtual bool requires_full_frame() const { return false; }
+
     /// @brief Resolves global tags through the Frame tag index at run time.
     ///
     /// `DomainRuntime` frees the Frame tag index (and the DD mirror, ~50 B per
@@ -173,6 +183,11 @@ class Component {
 
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;
+    /// Initialization hook for pre/post-force and scalar-finalization bindings.
+    /// Default excludes observers and time propagation; force-slot evaluators
+    /// use launch() with runtime.exec.initializing_forces set.
+    /// Opt in only to establish forces at the current configuration.
+    virtual void initialize_forces(const LaunchContext& ctx) { (void)ctx; }
     virtual void destroy(const DestroyContext& ctx) { (void)ctx; }
 };
 

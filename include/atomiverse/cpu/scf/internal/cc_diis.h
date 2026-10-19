@@ -11,9 +11,8 @@
 /// amplitude vector `T = [t1; t2]` from a short history, with the DIIS error
 /// vector the Jacobi increment `e = Δt = R/D`. Naming, construction, and the
 /// `step`/`reset`/`size` surface deliberately mirror `DIISMixer` so the two
-/// accelerators read alike; the deque history and the augmented-normal-equation
-/// solve are the only shared shape (this class does NOT generalize or touch
-/// `diis_mixer.*`).
+/// accelerators read alike. The constrained coefficient solve is shared through
+/// cpu/linalg/pulay.h; CC history truncation remains owned here.
 ///
 /// References:
 ///   - Scuseria, Lee, Schaefer, Chem. Phys. Lett. 130, 236 (1986)
@@ -21,6 +20,7 @@
 #pragma once
 
 #include <deque>
+#include <stdexcept>
 #include <vector>
 
 namespace ATV {
@@ -44,7 +44,11 @@ class CcAmplitudeDiis {
     /// @brief Construct with a bounded history depth.
     /// @param max_vectors Maximum number of stored `(amp, err)` pairs
     ///        (dimensionless; oldest dropped beyond it).
-    explicit CcAmplitudeDiis(int max_vectors = 8) : max_vectors_(max_vectors) {}
+    explicit CcAmplitudeDiis(int max_vectors = 8) : max_vectors_(max_vectors) {
+        if (max_vectors < 1)
+            throw std::invalid_argument(
+                "CcAmplitudeDiis: history depth must be positive");
+    }
 
     /// @brief Store a new `(amp, err)` pair and return the extrapolated amp.
     ///

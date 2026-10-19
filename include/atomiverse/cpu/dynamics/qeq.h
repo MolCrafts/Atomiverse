@@ -44,6 +44,7 @@ namespace md {
 /// @endcode
 class QEq : public cpu::Component {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cutoff Coulomb coupling cutoff \(r_c\) [Å] (> 0).
     explicit QEq(double cutoff);
 
@@ -70,6 +71,7 @@ class QEq : public cpu::Component {
 
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Equilibrated charges [e] in frame-row order (last launch).

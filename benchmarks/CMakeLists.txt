@@ -5,3 +5,7 @@
 if(ATV_BUILD_CUDA)
     add_subdirectory(cuda)
 endif()
+
+if(ATV_BUILD_MD)
+    add_subdirectory(lj)
+endif()

@@ -40,6 +40,8 @@ class MultipoleObserver : public Observer {
 
     /// @brief Component identifier.
     /// @return "multipole_observer".
+    /// @brief This analysis consumes a complete system, not a spatial shard.
+    bool requires_full_frame() const override { return true; }
     std::string name() const override { return "multipole_observer"; }
 
     /// @brief Compute μ/Θ from the current determinant and write frame.meta.

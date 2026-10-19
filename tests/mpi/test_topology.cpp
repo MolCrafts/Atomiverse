@@ -112,7 +112,7 @@ TEST(MpiTopology, PartitionConservesTotalAtomCount) {
     backend.set_frame(frame); // runs partition_atoms on multi-rank
 
     auto* dd = backend.context().md.dd;
-    const int n_local = dd->n_local;
+    const int n_local = frame.nlocal();
 
     int global_n = 0;
     MPI_Allreduce(&n_local, &global_n, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
@@ -138,7 +138,7 @@ TEST(MpiTopology, PartitionAssignsEveryTagOnce) {
 
     // Each rank reports which tags it owns.
     std::vector<int> tag_counts(static_cast<std::size_t>(n_total), 0);
-    for (int i = 0; i < dd->n_local; ++i) {
+    for (int i = 0; i < frame.nlocal(); ++i) {
         const std::int64_t t = frame.span(ATV::kAtom_tag)[i];
         if (t >= 0 && t < n_total) {
             tag_counts[static_cast<std::size_t>(t)] = 1;
@@ -171,16 +171,22 @@ TEST(MpiTopology, OwnedAtomsInSlab) {
 
     // For a uniform-grid initial placement, all atom positions are in
     // [0, box_len); no PBC-wrap is needed, so sublo <= pos < subhi must hold.
-    for (int i = 0; i < dd->n_local; ++i) {
+    for (int i = 0; i < frame.nlocal(); ++i) {
         const double x = frame.span(ATV::kAtom_x)[i];
         const double y = frame.span(ATV::kAtom_y)[i];
         const double z = frame.span(ATV::kAtom_z)[i];
-        EXPECT_GE(x, dd->sublo[0]) << "atom " << i << " x out of slab";
-        EXPECT_LT(x, dd->subhi[0]) << "atom " << i << " x out of slab";
-        EXPECT_GE(y, dd->sublo[1]) << "atom " << i << " y out of slab";
-        EXPECT_LT(y, dd->subhi[1]) << "atom " << i << " y out of slab";
-        EXPECT_GE(z, dd->sublo[2]) << "atom " << i << " z out of slab";
-        EXPECT_LT(z, dd->subhi[2]) << "atom " << i << " z out of slab";
+        EXPECT_GE(x, dd->sublo[0] * frame.box.length(0))
+            << "atom " << i << " x out of slab";
+        EXPECT_LT(x, dd->subhi[0] * frame.box.length(0))
+            << "atom " << i << " x out of slab";
+        EXPECT_GE(y, dd->sublo[1] * frame.box.length(1))
+            << "atom " << i << " y out of slab";
+        EXPECT_LT(y, dd->subhi[1] * frame.box.length(1))
+            << "atom " << i << " y out of slab";
+        EXPECT_GE(z, dd->sublo[2] * frame.box.length(2))
+            << "atom " << i << " z out of slab";
+        EXPECT_LT(z, dd->subhi[2] * frame.box.length(2))
+            << "atom " << i << " z out of slab";
     }
 
     backend.shutdown();
@@ -202,4 +208,63 @@ int main(int argc, char** argv) {
     const int rc = RUN_ALL_TESTS();
     MPI_Finalize();
     return rc;
+}
+
+TEST(MpiTopology, AdoptPreservesBoxAwareProcessGrid) {
+    auto frame = make_uniform_grid(2, 8.0);
+    frame.box = cpu::Box::orthorhombic(40.0, 8.0, 8.0);
+    cpu::Runtime first;
+    first.init();
+    first.set_frame(frame);
+    const auto* before = first.context().md.dd;
+    const std::array<int, 3> dims{before->dims[0], before->dims[1],
+                                  before->dims[2]};
+    cpu::Runtime next;
+    next.adopt_dd(first.release_dd());
+    next.init();
+    next.set_frame(frame);
+    const auto* after = next.context().md.dd;
+    for (int d = 0; d < 3; ++d)
+        EXPECT_EQ(after->dims[d], dims[d]);
+}
+
+TEST(MpiTopology, BindingANewFramePartitionsTheNewPopulation) {
+    auto original = make_uniform_grid(2, 8.0);
+    auto replacement = make_uniform_grid(3, 12.0);
+    cpu::Runtime runtime;
+    runtime.init();
+    runtime.set_frame(original);
+    runtime.set_frame(replacement);
+    const auto* dd = runtime.context().md.dd;
+    int local = replacement.nlocal(), total = 0;
+    MPI_Allreduce(&local, &total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    EXPECT_EQ(total, 27);
+    EXPECT_EQ(replacement.nlocal(), local);
+}
+
+TEST(MpiTopology, ReplicaModeRequiresNewCompleteFrameAfterSpatialSession) {
+    int size = 1;
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    if (size == 1)
+        GTEST_SKIP() << "requires a spatial shard";
+    auto shard = make_uniform_grid(2, 8.0);
+    auto replica = make_uniform_grid(3, 12.0);
+    cpu::Runtime runtime;
+    runtime.init();
+    runtime.set_frame(shard);
+    const int owned = shard.nlocal();
+    runtime.shutdown();
+    runtime.set_serial_on_replica();
+    runtime.init();
+    EXPECT_THROW(runtime.set_frame(shard), std::runtime_error);
+    EXPECT_EQ(shard.nlocal(), owned);
+    ASSERT_NE(runtime.context().md.dd->cart_comm, MPI_COMM_NULL);
+    ASSERT_NO_THROW(runtime.set_frame(replica));
+    EXPECT_EQ(replica.nlocal(), 27);
+    EXPECT_EQ(runtime.context().md.dd->cart_comm, MPI_COMM_NULL);
+    for (int d = 0; d < 3; ++d) {
+        EXPECT_EQ(runtime.context().md.dd->dims[d], 1);
+        EXPECT_EQ(runtime.context().md.dd->coords[d], 0);
+    }
+    runtime.shutdown();
 }

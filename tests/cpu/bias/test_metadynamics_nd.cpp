@@ -105,3 +105,46 @@ TEST(MetadynamicsND, Matches1DWhenNEqualsOne) {
         EXPECT_EQ(meta_n.n_hills(), meta1.n_hills());
     }
 }
+
+TEST(MetadynamicsND,
+     ForceInitializationPreservesHistoryAndEvaluatesExistingHills) {
+    auto f = make_dimer();
+    cpu::Context ctx;
+    std::vector<std::unique_ptr<cpu::bias::CollectiveVariable>> cvs;
+    cvs.push_back(std::make_unique<cpu::bias::DistanceCV>(1, 2));
+    cvs.push_back(std::make_unique<cpu::bias::DistanceCV>(1, 3));
+    cpu::bias::Metadynamics meta(std::move(cvs), 0.1, {0.2, 0.2}, 300.0, 1.0,
+                                 2);
+    meta.build({ctx, f});
+    const auto evaluate = [&](bool setup) {
+        ctx.exec.initializing_forces = setup;
+        f.meta.get(kEnergy) = 0;
+        for (int i = 0; i < 3; ++i)
+            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
+        meta.launch({ctx, f, 0, 0});
+    };
+    for (int i = 0; i < 3; ++i) {
+        evaluate(true);
+        EXPECT_EQ(meta.n_hills(), 0);
+        EXPECT_DOUBLE_EQ(f.meta.get(kEnergy), 0);
+    }
+    for (int i = 0; i < 4; ++i) {
+        evaluate(false);
+        EXPECT_EQ(meta.n_hills(), i < 2 ? 0 : 1);
+    }
+    f.span(kAtom_x)[1] = 2.1;
+    f.span(kAtom_y)[2] = 1.9;
+    const double expected_energy = 0.1 * std::exp(-0.25);
+    for (int i = 0; i < 3; ++i) {
+        evaluate(true);
+        EXPECT_EQ(meta.n_hills(), 1);
+        EXPECT_NEAR(f.meta.get(kEnergy), expected_energy, 1e-13);
+        EXPECT_NEAR(f.span(kAtom_fx)[1], 2.5 * expected_energy, 1e-13);
+        EXPECT_NEAR(f.span(kAtom_fy)[2], -2.5 * expected_energy, 1e-13);
+        EXPECT_NEAR(f.span(kAtom_fx)[0], -2.5 * expected_energy, 1e-13);
+        EXPECT_NEAR(f.span(kAtom_fy)[0], 2.5 * expected_energy, 1e-13);
+    }
+    evaluate(false);
+    EXPECT_EQ(meta.n_hills(), 2);
+    EXPECT_NEAR(f.meta.get(kEnergy), expected_energy + 0.1, 1e-13);
+}

@@ -130,8 +130,8 @@ inline void pme_fill_atom_splines(const StorageReal* x, const StorageReal* y,
     for (int i = 0; i < n_atoms; ++i) {
         double s[3];
         for (int d = 0; d < 3; ++d)
-            s[d] = inv_cell(0, d) * x[i] + inv_cell(1, d) * y[i]
-                   + inv_cell(2, d) * z[i];
+            s[d] = inv_cell(d, 0) * x[i] + inv_cell(d, 1) * y[i]
+                   + inv_cell(d, 2) * z[i];
         for (int d = 0; d < 3; ++d) {
             double u = s[d] * K[d];
             u -= std::floor(u / K[d]) * K[d]; // wrap into [0,K)

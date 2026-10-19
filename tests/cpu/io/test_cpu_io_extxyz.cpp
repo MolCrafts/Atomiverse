@@ -73,3 +73,23 @@ TEST(CpuIoExtxyz, MissingLatticeThrows) {
     EXPECT_THROW(load_extxyz(path), std::runtime_error);
     std::remove(path.c_str());
 }
+
+TEST(CpuIoExtxyz, LatticeVectorsBecomeBoxColumnsWithoutRotatingPositions) {
+    const std::string xyz = "1\nLattice=\"4 0 0 1.5 5 0 0.2 0.7 6\" "
+                            "Properties=species:S:1:pos:R:3\nH 1.33 1.78 2.4\n";
+    const auto path = write_temp("tilted", xyz);
+    const auto frame = load_extxyz(path);
+    std::remove(path.c_str());
+    const auto& h = frame.box.cell();
+    EXPECT_DOUBLE_EQ(h(0, 1), 1.5);
+    EXPECT_DOUBLE_EQ(h(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ(h(0, 2), 0.2);
+    EXPECT_DOUBLE_EQ(h(1, 2), 0.7);
+    const auto frac =
+        frame.box.inv_cell()
+        * ATV::Vec3{frame.span(ATV::kAtom_x)[0], frame.span(ATV::kAtom_y)[0],
+                    frame.span(ATV::kAtom_z)[0]};
+    EXPECT_NEAR(frac[0], 0.2, 1e-12);
+    EXPECT_NEAR(frac[1], 0.3, 1e-12);
+    EXPECT_NEAR(frac[2], 0.4, 1e-12);
+}

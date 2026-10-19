@@ -63,6 +63,7 @@ class Virial : public cpu::Observer {
         return {ATV::make_binding(ATV::md::Phase::post_force, -50)};
     }
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 } // namespace md

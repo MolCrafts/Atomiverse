@@ -45,7 +45,8 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
     // ── Real space ──
     e_real_ = 0;
     AccReal r_cut = AccReal(5) / alpha;
-    auto lens = cell_bohr.lengths();
+    auto lens = Vec3{cell_bohr.face_height(0), cell_bohr.face_height(1),
+                     cell_bohr.face_height(2)};
     int ncell_r = static_cast<int>(
                       std::ceil(r_cut / std::min({lens[0], lens[1], lens[2]})))
                   + 1;
@@ -58,18 +59,16 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
             for (int hx = -ncell_r; hx <= ncell_r; ++hx)
                 for (int hy = -ncell_r; hy <= ncell_r; ++hy)
                     for (int hz = -ncell_r; hz <= ncell_r; ++hz) {
-                        // L = hx a + hy b + hz c with rows of cb = lattice
-                        // vectors (not the transpose — non-symmetric cells
-                        // such as 2×1×1 diamond supercells break if rows and
-                        // columns are swapped).
+                        // L = hx a + hy b + hz c; columns of cb are lattice
+                        // vectors, matching Box H*f.
                         const AccReal Lx = AccReal(hx) * cb(0, 0)
-                                           + AccReal(hy) * cb(1, 0)
-                                           + AccReal(hz) * cb(2, 0);
-                        const AccReal Ly = AccReal(hx) * cb(0, 1)
+                                           + AccReal(hy) * cb(0, 1)
+                                           + AccReal(hz) * cb(0, 2);
+                        const AccReal Ly = AccReal(hx) * cb(1, 0)
                                            + AccReal(hy) * cb(1, 1)
-                                           + AccReal(hz) * cb(2, 1);
-                        const AccReal Lz = AccReal(hx) * cb(0, 2)
-                                           + AccReal(hy) * cb(1, 2)
+                                           + AccReal(hz) * cb(1, 2);
+                        const AccReal Lz = AccReal(hx) * cb(2, 0)
+                                           + AccReal(hy) * cb(2, 1)
                                            + AccReal(hz) * cb(2, 2);
                         Vec3 dr = {
                             pos[static_cast<std::size_t>(i)][0]
@@ -112,12 +111,15 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
     e_recip_ = 0;
     AccReal g_cut = std::sqrt(AccReal(8) * ecut); // 4× E_cut for Ewald recip
     auto recip = cell_bohr.recip_cell();
-    Vec3 b0{recip(0, 0), recip(0, 1), recip(0, 2)};
-    Vec3 b1{recip(1, 0), recip(1, 1), recip(1, 2)};
-    Vec3 b2{recip(2, 0), recip(2, 1), recip(2, 2)};
-    int gmax =
-        static_cast<int>(g_cut / std::min({b0.norm(), b1.norm(), b2.norm()}))
-        + 1;
+    Vec3 b0{recip(0, 0), recip(1, 0), recip(2, 0)};
+    Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
+    Vec3 b2{recip(0, 2), recip(1, 2), recip(2, 2)};
+    int gmax = static_cast<int>(
+                   g_cut
+                   * std::max({cell_bohr.lengths()[0], cell_bohr.lengths()[1],
+                               cell_bohr.lengths()[2]})
+                   / (AccReal(2) * units::pi))
+               + 1;
 
     const AccReal two_pi_over_vol = AccReal(2) * AccReal(units::pi) / vol;
     const AccReal four_pi_over_vol = AccReal(4) * AccReal(units::pi) / vol;

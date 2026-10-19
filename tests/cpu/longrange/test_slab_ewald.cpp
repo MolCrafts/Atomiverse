@@ -65,7 +65,6 @@ void build_full_halflist(const cpu::Frame& f, cpu::md::PairList& pairs) {
         off += N - 1 - i;
     }
     pairs.total_pairs = off;
-    pairs.has_shifts = false;
     pairs.version = 1;
 }
 

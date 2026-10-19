@@ -18,7 +18,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
-#include "atomiverse/cpu/frame/pbc.h"
 
 #include <cmath>
 
@@ -67,7 +66,6 @@ void NVELimit::launch(const cpu::LaunchContext& ctx) {
             sp_y[i] += dt_ * sp_vy[i];
             sp_z[i] += dt_ * sp_vz[i];
         }
-        wrap_orthorhombic(f, n);
 
     } else if (ctx.at(ATV::md::Phase::final_integrate)) {
 #pragma omp parallel for schedule(static)

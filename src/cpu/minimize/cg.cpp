@@ -47,6 +47,7 @@ void CG::build(const cpu::BuildContext& ctx) {
 }
 
 void CG::launch(const cpu::LaunchContext& ctx) {
+    require_finite_forces(ctx);
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
     const int dim = n * 3;
@@ -76,7 +77,7 @@ void CG::launch(const cpu::LaunchContext& ctx) {
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =
-            (dd && ctx.runtime.mpi_size > 1) ? dd->neighbor_generation : 0;
+            (cpu::multi_rank_dd(ctx.runtime)) ? dd->neighbor_generation : 0;
         if (gen != last_generation_) {
             if (last_generation_ != ~std::uint64_t{0}) {
                 has_prev_ = false;
@@ -200,6 +201,8 @@ void CG::launch(const cpu::LaunchContext& ctx) {
                 sp_z[i] = x_prev_[i * 3 + 2] + alpha * d_prev_[i * 3 + 2];
             }
             ctx.runtime.opt.reeval_forces(need_slope);
+            if (need_slope)
+                require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
             LsSample s;
             s.f = f.meta.get(kEnergy);
             double gd_local = 0;
@@ -216,17 +219,27 @@ void CG::launch(const cpu::LaunchContext& ctx) {
         const double alpha_max = std::max(cap, ls_min_alpha_);
         const double alpha_init = std::min(1.0, alpha_max);
         LineSearchResult lr;
-        ctx.runtime.opt.line_search_trial =
-            true; // suppress migration during trials
-        if (ls_mode_ == LineSearchMode::StrongWolfe)
-            lr =
-                strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_, ls_c2_,
-                             /*max_evals=*/20, alpha_max);
-        else
-            lr =
-                armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
-                                 ls_contract_, /*max_evals=*/20, ls_min_alpha_);
-        ctx.runtime.opt.line_search_trial = false;
+        {
+            struct RestoreTrial {
+                cpu::Context& context;
+                bool migration, evaluation;
+                ~RestoreTrial() {
+                    context.opt.line_search_trial = migration;
+                    context.exec.trial_evaluation = evaluation;
+                }
+            } restore{ctx.runtime, ctx.runtime.opt.line_search_trial,
+                      ctx.runtime.exec.trial_evaluation};
+            ctx.runtime.opt.line_search_trial = true;
+            ctx.runtime.exec.trial_evaluation = true;
+            if (ls_mode_ == LineSearchMode::StrongWolfe)
+                lr = strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
+                                  ls_c2_,
+                                  /*max_evals=*/20, alpha_max);
+            else
+                lr = armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init,
+                                      ls_c1_, ls_contract_, /*max_evals=*/20,
+                                      ls_min_alpha_);
+        }
 
         const double alpha = lr.alpha;
 #pragma omp parallel for schedule(static)

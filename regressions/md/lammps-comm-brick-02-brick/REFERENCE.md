@@ -10,9 +10,13 @@ perf_exempt: yes — this slug makes **no** performance claim.
 `cpu::Comm*` published by `DomainRuntime` (never `new CommBrick`, never
 `MD.run`).
 
-- n1 (`mpi_size == 1`): \(n_{\mathrm{ghost}} = 0\)
-- n2 (`ATV_FORCE_DIMS=2,1,1`): \(n_{\mathrm{ghost}} = 8\) per rank;
-  reverse \(\sum f_x = 8\) eV/Å per rank; exchange conserves 8 owners.
+- n1 (`mpi_size == 1`): \(n_{\mathrm{ghost}} = 56\)
+- n2 (`ATV_FORCE_DIMS=2,1,1`): \(n_{\mathrm{ghost}} = 44\) per rank;
+  reverse \(\sum f_x = 44\) eV/Å per rank; exchange conserves 8 owners.
+
+The extended serial brick has four image positions per axis: 4³ − 8 = 56
+ghosts. Each x-decomposed rank has 3 × 4 × 4 − 4 = 44 ghosts; reverse
+communication sums one unit contribution per ghost back to its owner.
 
 - S. Plimpton, J. Comput. Phys. **117**, 1–19 (1995),
   DOI 10.1006/jcph.1995.1039

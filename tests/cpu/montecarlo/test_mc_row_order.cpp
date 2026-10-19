@@ -80,15 +80,14 @@ TEST(NeighborListRowOrder, ForbidRowReorderingStopsTheSpatialSort) {
 
     cpu::Context ctx;
     nl.build({ctx, f});
-    for (int step = 0; step < 5; ++step)
-        nl.launch({ctx, f, ATV::slot_of(ATV::sampling::Phase::energy), step});
+    ASSERT_NE(ctx.md.atom_sort, nullptr);
+    EXPECT_FALSE(ctx.md.atom_sort->enabled);
 
     EXPECT_EQ(tag_column(f), before);
 }
 
-/// Control: the same list WITHOUT the veto does reorder, so the test above is
-/// not passing because the sort was never going to run.
-TEST(NeighborListRowOrder, TheSortDoesReorderWhenItIsAllowed) {
+/// Without the veto, the provider publishes an enabled Runtime sort policy.
+TEST(NeighborListRowOrder, PublishesEnabledSortPolicy) {
     auto f = scrambled_box(4, 4.0);
     const auto before = tag_column(f);
 
@@ -98,10 +97,10 @@ TEST(NeighborListRowOrder, TheSortDoesReorderWhenItIsAllowed) {
 
     cpu::Context ctx;
     nl.build({ctx, f});
-    for (int step = 0; step < 5; ++step)
-        nl.launch({ctx, f, ATV::slot_of(ATV::md::Phase::neighbor), step});
-
-    EXPECT_NE(tag_column(f), before);
+    ASSERT_NE(ctx.md.atom_sort, nullptr);
+    EXPECT_TRUE(ctx.md.atom_sort->enabled);
+    EXPECT_EQ(ctx.md.atom_sort->nfreq, 1);
+    EXPECT_EQ(tag_column(f), before);
 }
 
 /// And the MC preset makes the request, at `build()`, on the list it was
@@ -121,6 +120,8 @@ TEST(McRowOrder, BuildForbidsRowReorderingOnTheNeighborList) {
 
     const auto before = tag_column(f);
     cpu::Context ctx;
-    nl.launch({ctx, f, ATV::slot_of(ATV::sampling::Phase::energy), 0});
+    nl.activate(ctx);
+    ASSERT_NE(ctx.md.atom_sort, nullptr);
+    EXPECT_FALSE(ctx.md.atom_sort->enabled);
     EXPECT_EQ(tag_column(f), before);
 }

@@ -43,21 +43,21 @@ class EAMPotential {
 
     /// @brief Pair term phi(r) [eV].
     /// @param r Separation [Angstrom].
-    double phi(double r) const { return eps_ * std::pow(a_ / r, n_); }
+    double phi(double r) const { return eps_ * integer_power(a_ / r, n_); }
 
     /// @brief d(phi)/dr [eV/Angstrom].
     /// @param r Separation [Angstrom].
     double dphi(double r) const {
-        return -n_ * eps_ * std::pow(a_ / r, n_) / r;
+        return -n_ * eps_ * integer_power(a_ / r, n_) / r;
     }
 
     /// @brief Density contribution f(r) of one neighbour [dimensionless].
     /// @param r Separation [Angstrom].
-    double f(double r) const { return std::pow(a_ / r, m_); }
+    double f(double r) const { return integer_power(a_ / r, m_); }
 
     /// @brief d(f)/dr [1/Angstrom].
     /// @param r Separation [Angstrom].
-    double df(double r) const { return -m_ * std::pow(a_ / r, m_) / r; }
+    double df(double r) const { return -m_ * integer_power(a_ / r, m_) / r; }
 
     /// @brief Embedding energy F(rho) [eV].
     /// @param rho Local density [dimensionless].
@@ -89,6 +89,19 @@ class EAMPotential {
     int m() const { return m_; }
 
   private:
+    // All published Sutton-Chen exponents are nonnegative integers. Avoid
+    // general real-power log/exp work in the two neighbor passes.
+    static double integer_power(double base, unsigned exponent) {
+        double value = 1.0;
+        while (exponent != 0) {
+            if ((exponent & 1u) != 0)
+                value *= base;
+            base *= base;
+            exponent >>= 1u;
+        }
+        return value;
+    }
+
     int n_ = 0;
     int m_ = 0;
     double eps_ = 0.0;

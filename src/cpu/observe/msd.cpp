@@ -38,6 +38,8 @@ MSD::MSD(double dt, int freq, std::string output_file, int window)
       d_(std::numeric_limits<double>::quiet_NaN()) {}
 
 void MSD::on_snapshot(const cpu::FrameSnapshot& snap) {
+    if (invalid_input_)
+        return;
     const int n = snap.n_owned;
     if (n <= 0)
         return;
@@ -45,18 +47,26 @@ void MSD::on_snapshot(const cpu::FrameSnapshot& snap) {
         return;
 
     // Snapshot position fields are double (widened from StorageReal at capture).
-    cpu::pack_blocked(scratch_, snap.x, snap.y, snap.z, n);
+
     // Worker thread: a molrs refusal (wrapped step, bad frame) is tallied for
     // finalize(), never thrown out of the analysis executor.
     try {
+        input_.pack(scratch_, snap.tag, snap.x, snap.y, snap.z, n, snap.step,
+                    freq_ > 0 ? freq_ : 1);
         acc_.push(scratch_, dt_, cpu::cell_matrix(snap.box));
         ++n_frames_;
     } catch (const std::exception& e) {
         rejected_.record(e);
+        invalid_input_ = true;
     }
 }
 
 void MSD::finalize() {
+    if (invalid_input_) {
+        ATV_WARN("[msd] invalid trajectory input: {}; result not written",
+                 rejected_.first_reason());
+        return;
+    }
     if (gate_.dropped() > 0)
         ATV_WARN("[msd] dropped {} snapshot(s) with changed atom count "
                  "(constant count required)",

@@ -76,7 +76,8 @@ void Deform::launch(const cpu::LaunchContext& ctx) {
     }
 
     // Convert the absolute target to a multiplicative scale on the
-    // current edge (Box exposes scale_axis, not set_axis). For an
+    // current Cartesian extent. The same row transform applies to H and
+    // positions, preserving fractional coordinates for tilted cells. For an
     // unperturbed box this is exact; the affine atom remap below uses
     // the same factor (= LAMMPS `remap x`).
     const double L_prev = f.box.length(axis_);
@@ -86,7 +87,10 @@ void Deform::launch(const cpu::LaunchContext& ctx) {
     if (scale == 1.0)
         return;
 
-    f.box.scale_axis(axis_, scale);
+    Mat3 cell = f.box.cell();
+    for (int j = 0; j < 3; ++j)
+        cell(axis_, j) *= scale;
+    f.box.set_cell(cell);
 
     const int n = owned_count(ctx);
     // Resolve only the deformed axis's column -- matches the original
@@ -115,7 +119,7 @@ void Deform::launch(const cpu::LaunchContext& ctx) {
     // LAMMPS `fix deform`'s `remap` also operates on nlocal+nghost).
     // Velocity drift is intentionally omitted — the owner rank applies
     // it; the next forward halo propagates the result.
-    const int n_total = static_cast<int>(f.nlocal());
+    const int n_total = force_count(ctx);
     if (n_total > n) {
 #pragma omp parallel for schedule(static)
         for (int i = n; i < n_total; ++i) {

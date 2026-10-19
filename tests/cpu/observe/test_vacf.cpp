@@ -78,6 +78,8 @@ TEST(CpuVACFObserver, StreamedSnapshotsMatchHandComputedCurve) {
     for (int t = 0; t < 8; ++t) {
         ATV::cpu::FrameSnapshot snap;
         snap.n_owned = 1;
+        snap.tag = {1};
+        snap.step = t;
         snap.vx = {(t % 2 == 0) ? 1.0 : -1.0};
         snap.vy = {(t % 2 == 0) ? 2.0 : 0.0};
         snap.vz = {0.0};

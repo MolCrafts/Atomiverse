@@ -60,6 +60,7 @@ class FixAddForce : public cpu::Bias {
     }
 
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 
     /// @return Last bias energy contribution written this launch [eV].
     double last_energy() const noexcept { return last_u_; }

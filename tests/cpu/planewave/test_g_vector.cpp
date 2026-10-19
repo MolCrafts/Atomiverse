@@ -34,3 +34,39 @@ TEST(GVector, SortedByNorm) {
         EXPECT_LE(gv.g[i - 1].norm_squared(),
                   gv.g[i].norm_squared() + AccReal(1e-12));
 }
+
+TEST(GVector, NonSymmetricCellUsesColumnReciprocalAndCompleteCutoffSphere) {
+    Mat3 h = Mat3::diagonal(4.0, 3.0, 5.0);
+    h(0, 1) = 7.0;
+    h(1, 2) = 1.2;
+    const cpu::Box box(h);
+    const Vec3 k{0.17, -0.11, 0.23};
+    const AccReal cutoff = 2.0;
+    const auto gv = enumerate_g_vectors(box, cutoff, k);
+    // Independent integer cube oracle: this cell/cutoff fits within +/- 12.
+    const Mat3 b = h.inverse().transpose() * AccReal(2 * units::pi);
+    int expected = 0;
+    for (int i = -12; i <= 12; ++i)
+        for (int j = -12; j <= 12; ++j)
+            for (int l = -12; l <= 12; ++l) {
+                const Vec3 g = b * Vec3{AccReal(i), AccReal(j), AccReal(l)};
+                const Vec3 q = g + k;
+                if (0.5 * q.norm_squared() > cutoff + 1e-12)
+                    continue;
+                ++expected;
+                bool found = false;
+                for (int n = 0; n < gv.count(); ++n)
+                    if (gv.h[n] == i && gv.k[n] == j && gv.l[n] == l) {
+                        found = true;
+                        for (int d = 0; d < 3; ++d)
+                            EXPECT_NEAR(gv.g[n][d], g[d], 1e-12);
+                    }
+                EXPECT_TRUE(found) << i << "," << j << "," << l;
+            }
+    EXPECT_EQ(gv.count(), expected);
+    for (int n = 0; n < gv.count(); ++n) {
+        EXPECT_LT(2 * std::abs(gv.h[n]), gv.nx);
+        EXPECT_LT(2 * std::abs(gv.k[n]), gv.ny);
+        EXPECT_LT(2 * std::abs(gv.l[n]), gv.nz);
+    }
+}

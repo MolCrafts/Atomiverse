@@ -139,7 +139,9 @@ def load_toml_config(path: Path | str) -> InstallConfig:
             raise ConfigError("'global' is not a product module; use [global]")
         if name not in MODULE_TO_DEFINE:
             raise ConfigError(f"unknown module in [modules]: {name!r}")
-        cfg.modules[name] = bool(enabled)
+        if not isinstance(enabled, bool):
+            raise ConfigError(f"module {name!r} in [modules] must be a boolean")
+        cfg.modules[name] = enabled
 
     global_tbl = data.pop("global", None) or {}
     if not isinstance(global_tbl, Mapping):

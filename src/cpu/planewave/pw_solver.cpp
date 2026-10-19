@@ -94,8 +94,8 @@ MPI_Datatype mpi_real_type() {
 // unique_ptr members over forward-declared helpers).
 PW::PW() = default;
 PW::~PW() = default;
-PW::PW(PW&&) noexcept = default;
-PW& PW::operator=(PW&&) noexcept = default;
+PW::PW(PW&&) = default;
+PW& PW::operator=(PW&&) = default;
 
 // ── PW Driver node: multi-path stage skeleton ────────────────────────
 //
@@ -217,7 +217,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
     const bool log_rank0 = (layout.rank == 0);
 
     // ── Shared problem assembly (identical to the CUDA backend) ──
-    internal::PWProblem prob;
+    problem_ = std::make_unique<internal::PWProblem>();
+    internal::PWProblem& prob = *problem_;
     internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry, k_mesh,
                                prob);
     internal::PWWorkspace& ws = prob.ws;
@@ -1018,13 +1019,22 @@ PWResult& PW::run(Frame& frame) {
     return res;
 }
 
+void PW::evaluate_(const Frame& frame,
+                   std::vector<std::array<double, 3>>* forces_out,
+                   std::array<double, 6>* stress_out) {
+    run(frame);
+    // Stress snapshots the final density before force assembly reuses workspace.
+    if (stress_out)
+        *stress_out = internal::pw_stress_analytic_impl(frame, *this, &result_,
+                                                        problem_.get());
+    if (forces_out)
+        *forces_out = internal::pw_forces_analytic_impl(frame, *this, &result_,
+                                                        problem_.get());
+}
+
 PWResult& PW::forces(Frame& frame) {
-    if (!built_)
-        build(frame);
-    PWResult scf{};
-    const std::vector<std::array<double, 3>> F =
-        internal::pw_forces_analytic_impl(frame, *this, &scf);
-    result_ = std::move(scf);
+    std::vector<std::array<double, 3>> F;
+    evaluate_(frame, &F, nullptr);
     AccReal* __restrict fx = frame.span(kAtom_fx);
     AccReal* __restrict fy = frame.span(kAtom_fy);
     AccReal* __restrict fz = frame.span(kAtom_fz);
@@ -1040,12 +1050,8 @@ PWResult& PW::forces(Frame& frame) {
 }
 
 std::array<double, 6> PW::stress(Frame& frame) {
-    if (!built_)
-        build(frame);
-    PWResult scf{};
-    const std::array<double, 6> sigma =
-        internal::pw_stress_analytic_impl(frame, *this, &scf);
-    result_ = std::move(scf);
+    std::array<double, 6> sigma;
+    evaluate_(frame, nullptr, &sigma);
     // kStress is the extensive virial W = σΩ [eV] (core/frame_schema.h).
     const double vol = frame.box.volume();
     auto& st = frame.meta.get(kStress);

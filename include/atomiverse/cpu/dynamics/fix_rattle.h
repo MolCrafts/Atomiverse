@@ -2,6 +2,10 @@
 /// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -98,8 +102,18 @@ namespace md {
 ///    \(p_d L_d\) [Å]), VP at `final_integrate` (velocities [Å/fs], no shift).
 class FixRattle : public cpu::Constraint,
                   public cpu::ConstraintProvider,
-                  public cpu::ForwardPacker {
+                  public cpu::ForwardPacker,
+                  public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "FixRattle: timestep must be finite and positive");
+        dt_ = dt;
+    }
+
     /// @brief Smallest meaningful relative residual for the configured Frame
     /// storage precision. A tighter request cannot survive the write back to
     /// the position/velocity columns and is rejected instead of iterating to

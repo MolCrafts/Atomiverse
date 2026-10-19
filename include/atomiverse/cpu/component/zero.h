@@ -22,6 +22,7 @@ class ZeroForces : public cpu::Component {
   public:
     std::string name() const override { return "zero_forces"; }
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Zero potential energy (total + per-term decomposition).
@@ -30,6 +31,7 @@ class ZeroEnergy : public cpu::Component {
   public:
     std::string name() const override { return "zero_energy"; }
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Zero stress tensor. Phase-agnostic — driver binds to its own phase.
@@ -40,6 +42,7 @@ class ZeroStress : public cpu::Component {
   public:
     std::string name() const override { return "zero_stress"; }
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Zero kinetic energy. Phase-agnostic — driver binds to its own phase.
@@ -47,6 +50,7 @@ class ZeroKinetic : public cpu::Component {
   public:
     std::string name() const override { return "zero_kinetic"; }
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 } // namespace cpu

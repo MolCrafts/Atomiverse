@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
 
 namespace ATV {
@@ -50,6 +51,17 @@ void ClassicalPolarization::launch(const cpu::LaunchContext& ctx) {
         mz += qi * zu;
     }
 
+#ifdef ATV_HAS_MPI
+    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1
+        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
+        double moments[3] = {mx, my, mz};
+        MPI_Allreduce(MPI_IN_PLACE, moments, 3, MPI_DOUBLE, MPI_SUM,
+                      ctx.runtime.md.dd->cart_comm);
+        mx = moments[0];
+        my = moments[1];
+        mz = moments[2];
+    }
+#endif
     mu_ = {mx, my, mz};
     P_ = {mx / V, my / V, mz / V};
 }

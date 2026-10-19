@@ -1,14 +1,23 @@
 /// @file cpu/potentials/eam.h
 /// @brief cpu::EAM — analytic embedded-atom many-body force style.
+///
+/// Density/embedding communication algorithm ported from LAMMPS
+/// `src/MANYBODY/pair_eam.h` and `src/OPENMP/pair_eam_omp.cpp`, checkout `a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b`.
+/// Copyright (2003) Sandia Corporation. Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software. Distributed under the GNU General
+/// Public License (GPL-2.0-only).
 #pragma once
 
 #include <vector>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/component/comm.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/potentials/eam_potential.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 namespace ATV {
 namespace cpu {
@@ -26,28 +35,15 @@ namespace cpu {
 /// the `CoulLong` precedent instead: a plain `Component + NeighborConsumer`,
 /// registered explicitly with `.on(md::Phase::force).add_ref(eam)`.
 ///
-/// **Two passes, one launch.** Pass 1 accumulates `rho_i = sum_j f(r_ij)` for
-/// every atom; pass 2 uses `F'(rho_i)` and `F'(rho_j)` to build the forces. Both
-/// live in one `launch()` — the `force` phase's order mechanism could host them as
-/// two components, but they share a per-atom array and nothing else consumes
-/// `rho`, so splitting them would buy nothing and cost a second Plan slot.
-///
-/// **It needs the FULL neighbor list.** `rho_i` is a sum over *all* neighbours of
-/// `i`; a half list gives each atom only the half of its neighbours that landed in
-/// its own CSR row. The component sets `ctx.md.full_list_requested` in `build()`,
-/// and `NeighborList` switches to `CellList::refresh_full`.
-///
-/// **Multi-rank works, via a wider halo rather than an extra message.** Pass 2 needs
-/// `F'(rho_j)` where `j` may be a ghost, and a ghost's own `rho` is a sum over *its*
-/// neighbours — so it can only be completed locally if the ghost shell reaches
-/// `2 * cutoff`. The component declares exactly that through
-/// `NeighborConsumer::halo_cutoff()`. The alternative — exchanging `rho` in the middle
-/// of the force phase — is not available: the engine runs exactly one forward halo
-/// (`pre_neighbor`) and one reverse halo (`post_force`, payload audited to fx/fy/fz),
-/// with no communication point inside `force`. The wide halo sidesteps that hole
-/// instead of punching a new one through it; it costs memory and a fatter ghost
-/// exchange, and it costs no new invariant.
-class EAM : public cpu::Potential, public cpu::NeighborConsumer {
+/// **Two half-list passes, one launch.** Density contributions accumulate onto
+/// both pair endpoints, then reverse communication sums ghost contributions onto
+/// their owners. Each owner computes its embedding derivative; forward
+/// communication supplies it to ghosts before the force pass. The coordinate
+/// halo therefore needs only one cutoff, and no ghost-centred neighbour rows.
+class EAM : public cpu::Potential,
+            public cpu::NeighborConsumer,
+            private cpu::ForwardPacker,
+            private cpu::ReversePacker {
   public:
     /// @param potential Analytic EAM parameterization (constructed by lookup).
     /// @param cutoff Interaction cutoff [Angstrom]. The Sutton-Chen form is a
@@ -62,30 +58,37 @@ class EAM : public cpu::Potential, public cpu::NeighborConsumer {
     /// @brief Cutoff the neighbor list must cover [Angstrom].
     AccReal neighbor_cutoff() const override { return cutoff_; }
 
-    /// @brief The halo must reach 2 * cutoff — a GHOST-OF-GHOST shell.
-    ///
-    /// Pass 2 needs `F'(rho_j)` for a ghost `j`, and `rho_j` sums over *j's*
-    /// neighbours. With a ghost shell of only `r_c`, a ghost's own neighbour list is
-    /// truncated and its density is silently too small. Widening the shell to `2 r_c`
-    /// makes every ghost's rho locally computable, and buys multi-rank EAM without a
-    /// single extra message — which matters, because the engine has exactly one
-    /// forward halo (pre_neighbor) and one reverse halo (post_force) per step, and no
-    /// communication point at all inside the force phase.
-    AccReal halo_cutoff() const override { return 2.0 * cutoff_; }
+    NeighborListMode neighbor_list_mode() const override {
+        return NeighborListMode::Half;
+    }
     const cpu::NeighborConsumer* as_neighbor_consumer() const override {
         return this;
     }
 
     void build(const cpu::BuildContext& ctx) override;
     void launch(const cpu::LaunchContext& ctx) override;
+    void destroy(const cpu::DestroyContext& ctx) override;
 
     /// @brief Resident heap bytes (the per-atom density + embedding-derivative
     /// arrays). Classified under "Pair" by the driver memory summary.
     std::size_t memory_bytes() const override {
-        return (rho_.capacity() + dF_.capacity()) * sizeof(double);
+        std::size_t bytes = (rho_.capacity() + dF_.capacity()) * sizeof(double)
+                            + forces_.memory_bytes();
+        for (const auto& density : rho_threads_)
+            bytes += density.capacity() * sizeof(double);
+        return bytes;
     }
 
   private:
+    int comm_forward() const override { return 1; }
+    int pack_forward_comm(int n, const int* list, double* buf, int pbc_flag,
+                          const int* pbc) override;
+    void unpack_forward_comm(int n, int first, const double* buf) override;
+    int comm_reverse() const override { return 1; }
+    int pack_reverse_comm(int n, int first, double* buf) override;
+    void unpack_reverse_comm(int n, const int* list,
+                             const double* buf) override;
+
     EAMPotential pot_;
     double cutoff_;
     double phi_shift_ =
@@ -95,6 +98,8 @@ class EAM : public cpu::Potential, public cpu::NeighborConsumer {
     /// at build and regrown in launch if the frame grew.
     std::vector<double> rho_;
     std::vector<double> dF_;
+    std::vector<std::vector<double>> rho_threads_;
+    md::BondedForceScratch forces_;
 };
 
 } // namespace cpu

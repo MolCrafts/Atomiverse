@@ -1,5 +1,6 @@
 /// @file src/cpu/multiscale/qmmm_mechanical.cpp
 #include "atomiverse/cpu/multiscale/qmmm_mechanical.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include <cmath>
 #include <unordered_set>
@@ -76,7 +77,9 @@ QmmmMechanical::QmmmMechanical(std::vector<LJTypeCoeff> cross_lj,
 
 void QmmmMechanical::build(const BuildContext& ctx) {
     // Any QmEngine; embedding never required.
-    sub_.build(ctx.frame, ctx.runtime.mpi_size, /*require_embedding=*/false);
+    sub_.build(ctx.frame,
+               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+               /*require_embedding=*/false);
 }
 
 void QmmmMechanical::launch(const LaunchContext& ctx) {

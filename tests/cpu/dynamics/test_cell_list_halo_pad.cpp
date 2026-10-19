@@ -1,52 +1,6 @@
-/// @file tests/cpu/dynamics/test_cell_list_halo_pad.cpp
-/// @brief Unit tests for the halo-coupled cell-grid pad —
-///        spec `.claude/specs/comm-topology-02-multihop.md`, coupling point
-///        "cell-list 垫层联动".
-///
-/// `CellList::init_extended` today ignores its `cutoff_skin` parameter and
-/// pads every decomposed axis by exactly `cutoff + skin`
-/// (`src/cpu/neighbor/cell_list.cpp:47`, `:96-107`). Once the halo grows a
-/// multi-hop ghost shell (`max_hops > 1`, or a bonded extension wider than
-/// `cutoff + skin`), the ghosts land OUTSIDE that window and `bin_atoms`
-/// clamps them into the edge cell (`:215-217`) — silently, with no missing
-/// atom and no error, only wrong cell membership. `-02` therefore pads the
-/// extended axes by `max(cutoff_skin, dd->ghost_shell_width)` while keeping
-/// the cell edge derived from the GLOBAL box division (cross-rank lattice
-/// alignment, the invariant argued at `:76-88`).
-///
-/// Surface pinned here (new in `-02`):
-/// @code{.cpp}
-///   double DomainDecomposition::ghost_shell_width;  // [Angstrom], 0 = none
-///   int    CellList::cell_of(int row) const;        // flat bin of a row
-/// @endcode
-///
-/// `cell_of` is the only observable of binning. Within a single process the
-/// clamp is *pair-invariant*: it merges cells, and every merged candidate
-/// is then rejected by the distance filter in `refresh_half/full`, so the
-/// published `PairList` looks identical either way. What the clamp actually
-/// destroys is the cross-rank symmetry of the home/forward cell
-/// classification — an MPI-level effect covered by
-/// `tests/mpi/test_halo_dual_image_ghosts.cpp`. The unit-level contract is
-/// therefore cell membership itself; `n_at_last_build()` is the in-tree
-/// precedent for this kind of read-only introspection on `CellList`.
-///
-/// Serial: the `DomainDecomposition` is a hand-filled stub (`dims = {4,1,1}`,
-/// this rank at `coords_x = 1`), no MPI is initialized, and every expected
-/// number below is a literal derived from the spec's geometry.
-///
-/// Geometry shared by every case (spec Testing strategy):
-///   * cubic box `L = 15.78 A` (3^3 lattice at a0 = 5.26 A),
-///   * `cutoff = 2.0 A`, `skin = 0.2 A` => `cutoff_skin = 2.2 A`,
-///   * LAMMPS half-reach bins: global cell count per axis
-///     `floor(L / (0.5 * 2.2)) = 14`, so the GLOBAL cell edge is
-///     `cs = 15.78 / 14 = 1.127142857... A` on every axis,
-///   * subdomain `[sublo, subhi) = [3.945, 7.89) A` (L/4, coords_x = 1),
-///   * ghost shell `6.6 A` (pair cutoff 6.0 + auto skin 0.6 of the narrow
-///     4-rank case), i.e. `max_hops = 2` along x.
-///
-/// Categories: basics (pad follows the shell), edge (`shell == 0`
-/// degenerates to today's pad; lattice alignment survives the pad),
-/// lifecycle (`grid_stale` re-derivation when the shell grows).
+/// Cartesian grid coverage and lattice alignment with explicit halo rows.
+/// Geometry: L=15.78, reach=2.2, bin edge=L/14, fractional slab [.25,.5].
+/// Every axis has a halo margin plus one safety bin, including dims==1.
 
 #include <gtest/gtest.h>
 
@@ -83,11 +37,6 @@ constexpr double kSubhi = 7.89;     // [Angstrom] = 2 * L / 4
 /// `L / floor(L / (0.5 * cutoff_skin))` = 15.78 / 14.
 double cell_edge() { return kBoxL / kGlobalCells; }
 
-/// Cells per undecomposed axis => the stride between two consecutive x
-/// bins in the flat index `cx * ncy * ncz + cy * ncz + cz`. y and z carry
-/// `dims == 1`, so they keep the global 14-cell grid: stride = 196.
-constexpr int kXStride = kGlobalCells * kGlobalCells;
-
 /// @brief `dims = {4,1,1}` stub over the cubic box, this rank at coords 1.
 /// @param shell Ghost shell width [Angstrom] the halo would grow
 ///        (`CommBrick` writes `max(cutoff, bonded_extension)` here).
@@ -100,12 +49,12 @@ DomainDecomposition stub_dd(double shell) {
     dd.coords[1] = 0;
     dd.coords[2] = 0;
 
-    dd.sublo[0] = kSublo;
-    dd.subhi[0] = kSubhi;
+    dd.sublo[0] = kSublo / kBoxL;
+    dd.subhi[0] = kSubhi / kBoxL;
     dd.sublo[1] = 0.0;
-    dd.subhi[1] = kBoxL;
+    dd.subhi[1] = 1.0;
     dd.sublo[2] = 0.0;
-    dd.subhi[2] = kBoxL;
+    dd.subhi[2] = 1.0;
     dd.face_neighbors = std::array<int, 6>{0, 2, 1, 1, 1, 1};
     dd.ghost_shell_width = shell;
     return dd;
@@ -136,16 +85,18 @@ cpu::Frame probe_frame(const std::vector<double>& xs) {
 std::vector<int> x_bins(const cpu::Frame& frame, cpu::md::CellList& cl,
                         const DomainDecomposition& dd) {
     const int n = frame.nlocal();
+    // All axes carry halo cells plus one safety bin on either side.
+    const int transverse_cells = dd.ghost_shell_width > kCutoffSkin ? 28 : 20;
+    const int stride = transverse_cells * transverse_cells;
     cl.init_extended(frame, kCutoffSkin, &dd, n);
     cl.build(frame, n);
     std::vector<int> bins(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
         const int flat = cl.cell_of(i);
-        EXPECT_EQ(flat % kXStride, cl.cell_of(0) % kXStride)
+        EXPECT_EQ(flat % stride, cl.cell_of(0) % stride)
             << "row " << i << " left the shared (cy, cz) bin: the "
-            << "undecomposed axes must keep the global " << kGlobalCells
-            << "-cell grid";
-        bins[static_cast<std::size_t>(i)] = flat / kXStride;
+            << "all rows share the same transverse coordinates";
+        bins[static_cast<std::size_t>(i)] = flat / stride;
     }
     return bins;
 }
@@ -160,24 +111,7 @@ std::vector<int> x_bins(const cpu::Frame& frame, cpu::md::CellList& cl,
 /// neighbours, land in DISTINCT consecutive cells instead of collapsing
 /// into the clamped edge cell.
 ///
-/// Hard-coded expectations (cs = 15.78/14 = 1.1271429 A, window low edge
-/// snapped down to the global lattice at `-3 * cs = -3.3814286 A`, 16 cells
-/// along x):
-///
-///   x = sublo - 6.5   = -2.555   -> (x - lo)/cs = 0.7331 -> cx 0
-///   x = sublo - 6.5 + cs         -> 1.7331               -> cx 1
-///   x = sublo - 6.5 + 2cs        -> 2.7331               -> cx 2
-///   x = sublo + 0.1   =  4.045   -> 6.5898               -> cx 6
-///   x = subhi + 6.5 - cs = 13.2629 -> 14.768             -> cx 14
-///   x = subhi + 6.5   = 14.39    -> 15.768               -> cx 15
-///
-/// `cx = 0` for the deepest low-side probe is not a clamp: the window's low
-/// edge is lattice-snapped and therefore at most one cell below
-/// `sublo - shell`, so a row 0.1 A inside the shell necessarily sits in the
-/// first or second cell. What proves the absence of clamping is that the
-/// three low-side probes (and the two high-side ones) occupy *consecutive*
-/// cells — under today's 2.2 A pad they would all fold onto one edge cell,
-/// which is exactly what `ZeroShellKeepsTodaysCutoffSkinPad` below pins.
+/// Low/high probes must occupy consecutive bins, including the safety margin.
 TEST(TestCellListHaloPad, ExtendedAxisWindowCoversGhostShell) {
     const double cs = cell_edge();
     const DomainDecomposition dd = stub_dd(kShell);
@@ -189,7 +123,7 @@ TEST(TestCellListHaloPad, ExtendedAxisWindowCoversGhostShell) {
     const std::vector<int> bins = x_bins(frame, cl, dd);
     ASSERT_EQ(bins.size(), 6u);
 
-    const int expect[6] = {0, 1, 2, 6, 14, 15};
+    const int expect[6] = {1, 2, 3, 7, 15, 16};
     for (int i = 0; i < 6; ++i) {
         SCOPED_TRACE("probe row " + std::to_string(i));
         EXPECT_EQ(bins[static_cast<std::size_t>(i)], expect[i]);
@@ -214,8 +148,8 @@ TEST(TestCellListHaloPad, ZeroShellKeepsTodaysCutoffSkinPad) {
     // Both deep rows are outside the 2.2 A window and clamp to cell 0.
     EXPECT_EQ(bins[0], 0);
     EXPECT_EQ(bins[1], 0);
-    // The owner is inside it: (4.045 - cs) / 1.1271429 = 2.589 -> cell 2.
-    EXPECT_EQ(bins[2], 2);
+    // The safety margin leaves the owner in x bin 3.
+    EXPECT_EQ(bins[2], 3);
 }
 
 // ── 2. compute_grid: the pad must not break lattice alignment ─────────
@@ -251,7 +185,7 @@ TEST(TestCellListHaloPad, PadKeepsCellEdgeOnTheGlobalLattice) {
 /// `dd->ghost_shell_width` ALONE (box and slab unchanged, atoms frozen)
 /// must stale the grid. Without it a run whose bonded extension or hop
 /// count grows mid-flight keeps binning into a too-narrow window.
-/// Reached through the public `needs_rebuild`, like
+/// Reached through the spatial index geometry query, like
 /// `tests/cpu/dynamics/test_cell_list_grid_stale.cpp`.
 TEST(TestCellListHaloPad, RaisingGhostShellWidthStalesTheGrid) {
     DomainDecomposition dd = stub_dd(kShell);
@@ -262,15 +196,15 @@ TEST(TestCellListHaloPad, RaisingGhostShellWidthStalesTheGrid) {
     cpu::md::CellList cl(kCutoff, kSkin);
     cl.init_extended(frame, kCutoffSkin, &dd, n);
     cl.build(frame, n);
-    ASSERT_FALSE(cl.needs_rebuild(frame, n))
+    ASSERT_FALSE(cl.grid_stale(frame))
         << "nothing moved: the grid must be fresh right after build()";
 
     dd.ghost_shell_width = 9.0; // deeper shell, same box and same slab
-    EXPECT_TRUE(cl.needs_rebuild(frame, n))
+    EXPECT_TRUE(cl.grid_stale(frame))
         << "a wider ghost shell needs a wider extended-axis window";
 
     // The comparison is against the CAPTURED width, not a one-way latch:
     // restoring it makes the grid fresh again (no rebuild ran in between).
     dd.ghost_shell_width = kShell;
-    EXPECT_FALSE(cl.needs_rebuild(frame, n));
+    EXPECT_FALSE(cl.grid_stale(frame));
 }

@@ -1,0 +1,234 @@
+#include <gtest/gtest.h>
+#include <limits>
+
+#include "atomiverse/core/stage.h"
+#include "atomiverse/core/verdict.h"
+#include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/minimize/cell_relax.h"
+#include "atomiverse/cpu/minimize/cg.h"
+#include "atomiverse/cpu/minimize/fire.h"
+#include "atomiverse/cpu/minimize/joint_cell_relax.h"
+#include "atomiverse/cpu/minimize/lbfgs.h"
+
+using namespace ATV;
+
+TEST(OptimizerMetrics, NonfiniteForceFailsBeforeCoordinatesOrMetricsChange) {
+    auto check = [](auto& optimizer) {
+        SCOPED_TRACE(optimizer.name());
+        cpu::Frame frame(1);
+        frame.box = cpu::Box::cubic(10);
+        frame.span(kAtom_x)[0] = 2;
+        frame.span(kAtom_fx)[0] = std::numeric_limits<double>::quiet_NaN();
+        cpu::Context context;
+        ConvergenceMetrics metrics;
+        metrics.max_force = 123;
+        context.loop.metrics = &metrics;
+        optimizer.build({context, frame});
+        for (auto phase :
+             {minimizer::Phase::search_direction, minimizer::Phase::line_search,
+              minimizer::Phase::convergence_check}) {
+            EXPECT_THROW(optimizer.launch({context, frame, slot_of(phase), 0}),
+                         std::runtime_error);
+            EXPECT_EQ(frame.span(kAtom_x)[0], 2);
+            EXPECT_EQ(metrics.max_force, 123);
+        }
+    };
+    cpu::minimizer::CG cg;
+    cpu::minimizer::LBFGS lbfgs;
+    cpu::minimizer::FIRE fire;
+    cpu::minimizer::JointIsotropicRelax joint;
+    check(cg);
+    check(lbfgs);
+    check(fire);
+    check(joint);
+}
+
+TEST(OptimizerMetrics, JointReportsMeasuredForceAndDisplacement) {
+    cpu::Frame frame(2);
+    frame.box = cpu::Box::cubic(10);
+    frame.span(kAtom_fx)[0] = 3;
+    frame.span(kAtom_fy)[0] = 4;
+    frame.span(kAtom_fx)[1] = 10;
+    cpu::Context context;
+    ConvergenceMetrics metrics;
+    context.loop.metrics = &metrics;
+    cpu::minimizer::JointIsotropicRelax joint(0.0, 0.1);
+    joint.build({context, frame});
+    joint.launch(
+        {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+    joint.launch({context, frame, slot_of(minimizer::Phase::line_search), 0});
+    joint.launch(
+        {context, frame, slot_of(minimizer::Phase::convergence_check), 0});
+    EXPECT_NEAR(frame.span(kAtom_x)[0], 0.03, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_y)[0], 0.04, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_x)[1], 0.1, 1e-14);
+    EXPECT_EQ(metrics.max_force, 10);
+    EXPECT_NEAR(metrics.rms_force, std::sqrt(125.0 / 6), 1e-14);
+    EXPECT_NEAR(metrics.max_displacement, 0.1, 1e-14);
+    EXPECT_NEAR(metrics.rms_displacement, std::sqrt(0.0125 / 6), 1e-14);
+    EXPECT_TRUE(metrics.has_displacement);
+}
+
+TEST(OptimizerMetrics,
+     JointRejectsNonfinitePressureBeforeGeometryOrMetricsChange) {
+    for (double bad : {std::numeric_limits<double>::quiet_NaN(),
+                       std::numeric_limits<double>::infinity()}) {
+        cpu::Frame frame(1);
+        frame.box = cpu::Box::cubic(10);
+        frame.span(kAtom_x)[0] = 2;
+        frame.span(kAtom_fx)[0] = 1;
+        cpu::Context context;
+        ConvergenceMetrics metrics;
+        metrics.max_force = 123;
+        context.loop.metrics = &metrics;
+        cpu::minimizer::JointIsotropicRelax joint;
+        joint.build({context, frame});
+        joint.launch(
+            {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+        frame.meta.get(kStress)[0] = bad;
+        for (auto phase :
+             {minimizer::Phase::search_direction, minimizer::Phase::line_search,
+              minimizer::Phase::convergence_check}) {
+            EXPECT_THROW(joint.launch({context, frame, slot_of(phase), 0}),
+                         std::runtime_error);
+            EXPECT_EQ(frame.span(kAtom_x)[0], 2);
+            EXPECT_EQ(frame.box.volume(), 1000);
+            EXPECT_EQ(metrics.max_force, 123);
+            EXPECT_EQ(joint.pressure(), 0);
+        }
+    }
+}
+
+TEST(OptimizerMetrics,
+     JointRejectsInvalidMutableParametersBeforeGeometryChange) {
+    using Joint = cpu::minimizer::JointIsotropicRelax;
+    for (double Joint::* member :
+         {&Joint::P_target, &Joint::atom_step, &Joint::alpha0,
+          &Joint::max_scale, &Joint::bulk_mod}) {
+        cpu::Frame frame(1);
+        frame.box = cpu::Box::cubic(10);
+        frame.span(kAtom_x)[0] = 2;
+        frame.span(kAtom_fx)[0] = 1;
+        cpu::Context context;
+        Joint joint;
+        joint.build({context, frame});
+        joint.launch(
+            {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+        joint.*member = std::numeric_limits<double>::quiet_NaN();
+        EXPECT_THROW(joint.launch({context, frame,
+                                   slot_of(minimizer::Phase::line_search), 0}),
+                     std::runtime_error);
+        EXPECT_EQ(frame.span(kAtom_x)[0], 2);
+        EXPECT_EQ(frame.box.volume(), 1000);
+    }
+}
+
+TEST(OptimizerMetrics, JointUsesForceMagnitudeAndMaximumDisplacementComponent) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    frame.span(kAtom_fx)[0] = 3;
+    frame.span(kAtom_fy)[0] = 4;
+    cpu::Context context;
+    ConvergenceMetrics metrics;
+    context.loop.metrics = &metrics;
+    cpu::minimizer::JointIsotropicRelax joint(0.0, 0.1);
+    joint.build({context, frame});
+    joint.launch(
+        {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+    joint.launch({context, frame, slot_of(minimizer::Phase::line_search), 0});
+    joint.launch(
+        {context, frame, slot_of(minimizer::Phase::convergence_check), 0});
+    EXPECT_EQ(metrics.max_force, 5);
+    EXPECT_NEAR(metrics.max_displacement, 0.08, 1e-14);
+    EXPECT_NEAR(metrics.rms_displacement, 0.1 / std::sqrt(3.0), 1e-14);
+}
+
+TEST(OptimizerMetrics,
+     IsotropicCellRejectsBadPressureOrParameterBeforeChangingGeometry) {
+    for (bool bad_pressure : {false, true}) {
+        for (double bad : {std::numeric_limits<double>::quiet_NaN(),
+                           std::numeric_limits<double>::infinity()}) {
+            cpu::Frame frame(1);
+            frame.box = cpu::Box::cubic(10);
+            frame.span(kAtom_x)[0] = 2;
+            cpu::Context context;
+            ConvergenceMetrics metrics;
+            metrics.max_displacement = 123;
+            context.loop.metrics = &metrics;
+            cpu::minimizer::IsotropicCellRelax cell;
+            cell.build({context, frame});
+            cell.launch({context, frame,
+                         slot_of(minimizer::Phase::search_direction), 0});
+            if (bad_pressure)
+                frame.meta.get(kStress)[0] = bad;
+            else
+                cell.bulk_mod = bad;
+            for (auto phase : {minimizer::Phase::search_direction,
+                               minimizer::Phase::line_search,
+                               minimizer::Phase::convergence_check}) {
+                EXPECT_THROW(cell.launch({context, frame, slot_of(phase), 0}),
+                             std::runtime_error);
+                EXPECT_EQ(frame.span(kAtom_x)[0], 2);
+                EXPECT_EQ(frame.box.volume(), 1000);
+                EXPECT_EQ(metrics.max_displacement, 123);
+                EXPECT_EQ(cell.pressure(), 0);
+            }
+        }
+    }
+}
+
+TEST(OptimizerMetrics,
+     IsotropicCellPublishesPhysicalForceAndDisplacementUnits) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    frame.span(kAtom_x)[0] = 2;
+    frame.span(kAtom_y)[0] = 3;
+    frame.span(kAtom_fx)[0] = 3;
+    frame.span(kAtom_fy)[0] = 4;
+    frame.meta.get(kStress)[0] = 3000; // P=1, scale=1.05.
+    cpu::Context context;
+    context.md.reneighbor = false;
+    ConvergenceMetrics metrics;
+    context.loop.metrics = &metrics;
+    cpu::minimizer::IsotropicCellRelax cell;
+    cell.build({context, frame});
+    cell.launch(
+        {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+    cell.launch({context, frame, slot_of(minimizer::Phase::line_search), 0});
+    cell.launch(
+        {context, frame, slot_of(minimizer::Phase::convergence_check), 0});
+    EXPECT_NEAR(frame.span(kAtom_x)[0], 2.1, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_y)[0], 3.15, 1e-14);
+    EXPECT_NEAR(frame.box.length(0), 10.5, 1e-14);
+    EXPECT_TRUE(context.md.reneighbor);
+    EXPECT_EQ(metrics.max_force, 5);
+    EXPECT_NEAR(metrics.rms_force, 5 / std::sqrt(3.0), 1e-14);
+    EXPECT_NEAR(metrics.max_displacement, 0.15, 1e-14);
+    EXPECT_NEAR(metrics.rms_displacement, std::sqrt(0.0325 / 3), 1e-14);
+    EXPECT_TRUE(metrics.has_displacement);
+    EXPECT_NEAR(cell.pressure(), 1000 / frame.box.volume(), 1e-14);
+}
+
+TEST(OptimizerMetrics, IsotropicCellRejectsNonfiniteForceBeforeUpdatingState) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    frame.span(kAtom_x)[0] = 2;
+    cpu::Context context;
+    ConvergenceMetrics metrics;
+    metrics.max_force = 123;
+    context.loop.metrics = &metrics;
+    cpu::minimizer::IsotropicCellRelax cell;
+    cell.build({context, frame});
+    cell.launch(
+        {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+    frame.meta.get(kStress)[0] = 3000;
+    frame.span(kAtom_fx)[0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(cell.launch({context, frame,
+                              slot_of(minimizer::Phase::convergence_check), 0}),
+                 std::runtime_error);
+    EXPECT_EQ(cell.pressure(), 0);
+    EXPECT_EQ(cell.pressure_residual(), 0);
+    EXPECT_EQ(metrics.max_force, 123);
+    EXPECT_EQ(frame.span(kAtom_x)[0], 2);
+    EXPECT_EQ(frame.box.volume(), 1000);
+}

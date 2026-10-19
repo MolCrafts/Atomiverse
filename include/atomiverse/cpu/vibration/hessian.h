@@ -67,6 +67,7 @@ namespace vib {
 /// There is no `ResponseDriver` category in between any more.
 class Hessian : public Driver<ATV::vib::Phase> {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @brief Tag type to construct a driver WITHOUT the HessianAccumulator.
     ///
     /// Exists only so tests can verify `validate_components()` throws when no

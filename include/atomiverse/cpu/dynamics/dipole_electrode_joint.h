@@ -60,6 +60,7 @@ class DipoleElectrodeJoint : public cpu::Component {
 
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Total charge on electrode group `ie` [e] after last launch.

@@ -19,7 +19,8 @@
 /// Subclass contract:
 ///   - `capture_mask()` -- which frame fields the snapshot should carry.
 ///   - `on_snapshot(FrameSnapshot&)` -- runs on an analysis worker thread.
-///     May call MPI collectives on `executor()->analysis_comm()`.
+///     Local computation only: MPI collectives belong on the main thread,
+///     where all ranks share the same phase order. Captures may be dropped.
 ///   - `finalize()` -- called exactly once by the executor during shutdown.
 ///
 /// Lifecycle and delivery:
@@ -28,8 +29,8 @@
 ///   - `launch()` is a `final` thin dispatcher: skip on the `frequency()`
 ///     stride, else submit (this, current_slot) to the executor in ~30 ns.
 ///     No physics.
-///   - `destroy()` is a `final` no-op; `finalize()` is invoked by the
-///     executor at `shutdown()` exactly once.
+///   - `destroy()` unregisters after draining readers; `finalize()` runs once,
+///     either at removal or during executor shutdown.
 ///
 /// @see cpu/md/async_observer.h            driver-specific default binding
 /// @see cpu/minimizer/async_observer.h     driver-specific default binding
@@ -70,7 +71,7 @@ class AsyncComponentBase : public cpu::Component {
     /// from doing physics here.
     void launch(const LaunchContext& ctx) final;
 
-    /// @brief No-op; `finalize()` is called by the executor during shutdown.
+    /// @brief Unregister and finalize after draining in-flight snapshots.
     void destroy(const DestroyContext& ctx) final;
 
     /// @brief Worker-thread entry point. Runs on the analysis executor thread.
@@ -80,7 +81,7 @@ class AsyncComponentBase : public cpu::Component {
     /// @brief Optional end-of-run hook. Called once by `AnalysisExecutor::shutdown()`.
     virtual void finalize() {}
 
-    /// @brief Accessor for the bound executor (e.g. for MPI sub-communicator).
+    /// @brief Accessor for the bound local analysis executor.
     AnalysisExecutor* executor() const noexcept { return exec_; }
 
   private:

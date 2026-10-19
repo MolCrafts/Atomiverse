@@ -14,11 +14,13 @@
 #include "atomiverse/cpu/component/hf.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/scf/methods.h"
+#include "atomiverse/cpu/scf/post_hf.h"
 
 using namespace ATV;
 
@@ -76,4 +78,29 @@ TEST(MethodDriverWire, MinimizeBindsNestedRhf) {
     opt.add_criterion(cpu::ForceConverged{0.5});
     opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
     EXPECT_NO_THROW(opt.build());
+}
+
+TEST(MethodDriverWire, CarParrinelloRejectsReversibleTrialBeforeColdSeed) {
+    cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> rhf(cpu::scf::RHF{},
+                                                            400.0);
+    cpu::Frame frame(0);
+    cpu::Context ctx;
+    ctx.exec.trial_evaluation = true;
+    EXPECT_THROW(rhf.run_nested_erased(ctx, frame, 1), std::runtime_error);
+    EXPECT_TRUE(ctx.exec.trial_evaluation);
+}
+
+TEST(MethodDriverWire, PostHfRestoresEriSettingWhenReferenceThrows) {
+    // Public wrapper configures CP; standalone reference run refuses it before
+    // any integral/SCF work. MP2 still receives the supported concrete RHF type.
+    cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> cp(cpu::scf::RHF{},
+                                                           400.0);
+    auto& method = cp.method();
+    cpu::scf::MP2<cpu::scf::RHF> mp2(method);
+    cpu::Frame frame;
+    for (const bool initial : {false, true}) {
+        method.compute_eri = initial;
+        EXPECT_THROW(mp2.run(frame), std::logic_error);
+        EXPECT_EQ(method.compute_eri, initial);
+    }
 }

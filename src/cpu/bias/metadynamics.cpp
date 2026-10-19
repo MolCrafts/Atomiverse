@@ -104,7 +104,9 @@ void Metadynamics::launch(const LaunchContext& ctx) {
                               : nullptr);
     }
 
-    if (step_ > 0 && (step_ % pace_) == 0) {
+    if (!ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation && step_ > 0
+        && (step_ % pace_) == 0) {
         const double Vhere = bias_at_(last_s_);
         double h = h0_;
         if (gamma_ > 1.0) {
@@ -115,7 +117,9 @@ void Metadynamics::launch(const LaunchContext& ctx) {
             centers_.push_back(last_s_[static_cast<std::size_t>(a)]);
         heights_.push_back(h);
     }
-    ++step_;
+    if (!ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation)
+        ++step_;
 
     last_u_ = bias_at_(last_s_);
     f.meta.get(kEnergy) += last_u_;

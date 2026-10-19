@@ -86,6 +86,9 @@ void ConstPotMaZe::launch(const LaunchContext& ctx) {
     // Adiabatic foothold twin: CG + ASPC BO solve each step.
     bo_.launch(ctx);
     ChargePacker::forward(ctx);
+    if (ctx.runtime.exec.initializing_forces
+        || ctx.runtime.exec.trial_evaluation)
+        return;
     const auto& Q = bo_.charges();
     max_dQ_ = 0.0;
     if (hist_count_ >= 1 && Q.size() == Q_curr_.size()) {
@@ -222,21 +225,28 @@ void ConstPotMaZe::launch_symplectic_(const LaunchContext& ctx) {
     // convention as ConstPotBO's ASPC record; extrapolating committed
     // charges would leave a constant |χ| constraint violation forever).
     std::vector<double> Q(static_cast<std::size_t>(m), 0.0);
-    if (hist_count_ >= 2) {
+    if (!(ctx.runtime.exec.initializing_forces
+          || ctx.runtime.exec.trial_evaluation)
+        && hist_count_ >= 2) {
         for (int i = 0; i < m; ++i)
             Q[static_cast<std::size_t>(i)] =
                 2.0 * Q_curr_[static_cast<std::size_t>(i)]
                 - Q_prev_[static_cast<std::size_t>(i)];
-    } else if (hist_count_ == 1) {
+    } else if (!(ctx.runtime.exec.initializing_forces
+                 || ctx.runtime.exec.trial_evaluation)
+               && hist_count_ == 1) {
         Q = Q_curr_;
     }
 
     last_maze_iters_ = shake_cg_(Q, rhs);
 
     // Shift the unconstrained history (Q_{n-1} ← Q_n ← Q_unc).
-    if (hist_count_ >= 1)
-        Q_prev_ = Q_curr_;
-    Q_curr_ = Q;
+    if (!(ctx.runtime.exec.initializing_forces
+          || ctx.runtime.exec.trial_evaluation)) {
+        if (hist_count_ >= 1)
+            Q_prev_ = Q_curr_;
+        Q_curr_ = Q;
+    }
 
     // Simultaneous electroneutrality constraint: uniform potential shift χ
     // along the cached u = A⁻¹1 (gradient of the neutrality constraint in
@@ -286,6 +296,10 @@ void ConstPotMaZe::launch_symplectic_(const LaunchContext& ctx) {
     ChargePacker::forward(ctx);
     if (bo_.write_electrode_forces)
         bo_.write_electrode_forces_(ctx.frame);
+
+    if (ctx.runtime.exec.initializing_forces
+        || ctx.runtime.exec.trial_evaluation)
+        return;
 
     // Q(t) continuity metric on committed charges.
     max_dQ_ = 0.0;

@@ -90,7 +90,7 @@ TEST(Exchange, AtomDriftsAcrossPosXBoundary) {
     if (my_rank == 0) {
         // Take the rightmost owner and shove it 1 Å past subhi[0].
         int rightmost = 0;
-        for (int i = 1; i < dd->n_local; ++i) {
+        for (int i = 1; i < frame.nlocal(); ++i) {
             if (frame.span(ATV::kAtom_x)[i]
                 > frame.span(ATV::kAtom_x)[rightmost])
                 rightmost = i;
@@ -104,11 +104,11 @@ TEST(Exchange, AtomDriftsAcrossPosXBoundary) {
         moved_aux[0] = frame.span(kMigrationAux)(rightmost, 0);
         moved_aux[1] = frame.span(kMigrationAux)(rightmost, 1);
         const double Lx = frame.box.cell()(0, 0);
-        const double new_x = dd->subhi[0] + 1.0;
+        const double new_x = dd->subhi[0] * frame.box.length(0) + 1.0;
         frame.span(ATV::kAtom_x)[rightmost] =
             new_x - Lx * std::floor(new_x / Lx);
     }
-    const int n_local_before = dd->n_local;
+    const int n_local_before = frame.nlocal();
     const std::uint64_t gen_before = dd->neighbor_generation;
 
     // Broadcast the moved tag from rank 0 so all ranks can probe their
@@ -124,7 +124,7 @@ TEST(Exchange, AtomDriftsAcrossPosXBoundary) {
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
     backend.context().md.comm->exchange(lctx);
 
-    const int n_local_after = dd->n_local;
+    const int n_local_after = frame.nlocal();
     if (my_rank == 0) {
         EXPECT_EQ(n_local_after, n_local_before - 1)
             << "sender rank 0 did not lose its migrating atom";
@@ -137,7 +137,7 @@ TEST(Exchange, AtomDriftsAcrossPosXBoundary) {
         << "neighbor_generation must bump on a successful migration";
 
     // Globally the atom count must be conserved.
-    int local_count = dd->n_local;
+    int local_count = frame.nlocal();
     int global_count = 0;
     MPI_Allreduce(&local_count, &global_count, 1, MPI_INT, MPI_SUM,
                   MPI_COMM_WORLD);
@@ -150,7 +150,7 @@ TEST(Exchange, AtomDriftsAcrossPosXBoundary) {
     EXPECT_TRUE(dd->tag_to_local.empty())
         << "tag_to_local must stay empty for a frame without bonded topology";
     int i_have_it = 0;
-    for (int i = 0; i < dd->n_local; ++i) {
+    for (int i = 0; i < frame.nlocal(); ++i) {
         if (frame.span(ATV::kAtom_tag)[i] == moved_tag) {
             i_have_it = 1;
             break;
@@ -166,7 +166,7 @@ TEST(Exchange, AtomDriftsAcrossPosXBoundary) {
     // The tag must now belong to the receiver (rank 1).
     if (my_rank == 1) {
         EXPECT_EQ(i_have_it, 1) << "rank 1 did not receive the migrating tag";
-        for (int i = 0; i < dd->n_local; ++i) {
+        for (int i = 0; i < frame.nlocal(); ++i) {
             if (frame.span(ATV::kAtom_tag)[i] != moved_tag)
                 continue;
             EXPECT_EQ(frame.span(kMigrationAux)(i, 0), moved_aux[0]);
@@ -192,7 +192,7 @@ TEST(Exchange, SingleRankIsNoOp) {
     backend.set_frame(frame);
 
     auto* dd = backend.context().md.dd;
-    const int n_before = dd->n_local;
+    const int n_before = frame.nlocal();
     const std::uint64_t gen_before = dd->neighbor_generation;
 
     // Move atom 0 past where the slab boundary would be (box edge in single-rank).
@@ -202,7 +202,7 @@ TEST(Exchange, SingleRankIsNoOp) {
     cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
     backend.context().md.comm->exchange(lctx);
 
-    EXPECT_EQ(dd->n_local, n_before)
+    EXPECT_EQ(frame.nlocal(), n_before)
         << "single-rank migration must not change n_local";
     EXPECT_EQ(dd->neighbor_generation, gen_before)
         << "single-rank migration must not bump neighbor_generation";

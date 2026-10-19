@@ -30,6 +30,7 @@ echo "== compare =="
     "$WORK/am1_serial.npz" "$WORK/am1_mpi.npz"
 
 echo "== failure-path assertions (2-rank) =="
+mpirun -np 2 "$LAUNCHER" "$HERE/atv_dftb_reject.py"
 # Script exception: traceback printed, nonzero exit, no hang.
 echo "raise RuntimeError('boom')" > "$WORK/boom.py"
 if mpirun -np 2 "$LAUNCHER" "$WORK/boom.py" 2>/dev/null; then

@@ -14,10 +14,10 @@ namespace ATV {
 
 /// @brief What a criterion says after an iteration. Ordered by severity.
 ///
-/// Composition rule, and it is not negotiable: **Stop > Converged > Continue**. With
-/// several criteria attached, the most severe verdict wins. `Stop` outranks `Converged`
-/// because a run that has gone numerically insane must not be able to report success by
-/// also happening to satisfy a force tolerance.
+/// Stop represents failure and must take precedence over successful convergence.
+/// Composition belongs to the backend's criterion contract: CPU requires all
+/// declared convergence requirements on all ranks, while stop-only guards are
+/// neutral. The numeric ordering remains available to severity-based callers.
 enum class Verdict {
     Continue = 0, ///< Keep looping.
     Converged =

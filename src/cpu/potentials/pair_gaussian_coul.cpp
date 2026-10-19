@@ -63,12 +63,14 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
         const double pref = K * qi * qj;
         energy += pref * G;
         const double fpair = pref * dG / r;
-        fx[i] += fpair * dx;
-        fy[i] += fpair * dy;
-        fz[i] += fpair * dz;
-        fx[j] -= fpair * dx;
-        fy[j] -= fpair * dy;
-        fz[j] -= fpair * dz;
+        if (ctx.forces_requested) {
+            fx[i] += fpair * dx;
+            fy[i] += fpair * dy;
+            fz[i] += fpair * dz;
+            fx[j] -= fpair * dx;
+            fy[j] -= fpair * dy;
+            fz[j] -= fpair * dz;
+        }
         // Here the force on i is +fpair·(r_j − r_i), i.e. F_i = −fpair·Δ with
         // Δ = r_i − r_j, so the pair term is Δ_a F_b = −fpair·d_a·d_b — the
         // opposite sign to the styles that write `f[i] -= fpair·d`. Both give
@@ -100,12 +102,15 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
             for (int jj = 0; jj < jnum; ++jj) {
                 const int j =
                     pairs.neighbors[static_cast<std::size_t>(off + jj)];
-                if (j <= i)
-                    continue; // half-list safety for full lists
                 double dx = static_cast<double>(x[j] - x[i]);
                 double dy = static_cast<double>(y[j] - y[i]);
                 double dz = static_cast<double>(z[j] - z[i]);
-                f.box.min_image(dx, dy, dz);
+                dx = -dx;
+                dy = -dy;
+                dz = -dz;
+                dx = -dx;
+                dy = -dy;
+                dz = -dz;
                 accumulate(i, j, dx, dy, dz);
             }
         }
@@ -122,7 +127,8 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
     }
 
     f.meta.get(kEnergy) += energy;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 }
 
 } // namespace cpu

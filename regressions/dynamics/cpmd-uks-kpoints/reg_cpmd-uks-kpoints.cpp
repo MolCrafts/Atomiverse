@@ -154,9 +154,9 @@ int main() {
     sim.enable_timing(false);
     sim.build();
 
-    // Warm-up: cold multi-k UKS SCF seed + BO forces (Te still 0).
-    if (sim.run(frame, 1) != 1) {
-        std::printf("FAIL: warm-up step did not run\n");
+    // Setup: cold multi-k UKS SCF seed + BO forces (Te still 0).
+    if (sim.run(frame, 0) != 0) {
+        std::printf("FAIL: force initialization advanced the nuclei\n");
         return 1;
     }
     {

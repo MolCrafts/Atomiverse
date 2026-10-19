@@ -1,5 +1,16 @@
 /// @file cpu/neighbor/cell_list.cpp
 /// @brief CellList implementation -- LAMMPS-style linked-cell neighbor list.
+///
+/// Global-bin / local-window indexing adapted from LAMMPS src/nbin.cpp
+/// NBin::coord2bin and src/nbin_standard.cpp. Thread-owned neighbor rows
+/// follow src/OPENMP/npair_bin_omp.cpp and src/OPENMP/npair_omp.h;
+/// flat stencil offsets, triclinic full stencils and tag ownership follow src/nstencil_bin.cpp and
+/// src/npair_bin.cpp; full-to-half assembly follows src/npair_halffull.cpp
+/// (a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b).
+/// Copyright (2003) Sandia Corporation. Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software. Distributed under the GNU General
+/// Public License; this adaptation is GPL-2.0-only.
 
 #include "atomiverse/cpu/neighbor/cell_list.h"
 #include "atomiverse/core/log.h"
@@ -10,6 +21,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <numeric>
+#include <stdexcept>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -27,21 +39,16 @@ CellList::CellList(double cutoff, double skin)
 
 void CellList::init(const cpu::Frame& frame, double cutoff_skin) {
     cutoff_skin_ = cutoff_skin;
-    // Single-rank: no axis extension; whole-box grid; ghosts wrap into [0, L).
+    // Whole-cell Cartesian window; caller supplies explicit image rows.
     dd_ = nullptr;
-    for (int d = 0; d < 3; ++d) {
-        axis_extended_[d] = false;
-        origin_[d] = 0.0;
-    }
-    capacity_ = frame.nlocal();
+    for (int d = 0; d < 3; ++d)
+        bin_lo_[d] = 0;
+    capacity_ = frame.capacity();
     compute_grid(frame);
     build_stencil();
 
     atom_cell_ = xt::zeros<int>({capacity_});
     binned_atoms_ = xt::zeros<int>({capacity_});
-    x_save_ = xt::zeros<double>({capacity_});
-    y_save_ = xt::zeros<double>({capacity_});
-    z_save_ = xt::zeros<double>({capacity_});
 }
 
 void CellList::init_extended(const cpu::Frame& frame, double cutoff_skin,
@@ -49,21 +56,16 @@ void CellList::init_extended(const cpu::Frame& frame, double cutoff_skin,
     cutoff_skin_ = cutoff_skin;
     // Multi-rank: every decomposed axis bins only this rank's subdomain
     // plus a max(cutoff_skin, dd->ghost_shell_width) halo margin (extent +
-    // origin derived from dd->sublo/subhi inside compute_grid).
+    // integer bin offset derived from dd->sublo/subhi inside compute_grid).
     dd_ = dd;
-    for (int d = 0; d < 3; ++d) {
-        axis_extended_[d] = (dd != nullptr && dd->dims[d] > 1);
-        origin_[d] = 0.0; // set per-axis by compute_grid()
-    }
+    for (int d = 0; d < 3; ++d)
+        bin_lo_[d] = 0;
     capacity_ = capacity;
     compute_grid(frame);
     build_stencil();
 
     atom_cell_ = xt::zeros<int>({capacity_});
     binned_atoms_ = xt::zeros<int>({capacity_});
-    x_save_ = xt::zeros<double>({capacity_});
-    y_save_ = xt::zeros<double>({capacity_});
-    z_save_ = xt::zeros<double>({capacity_});
 }
 
 double CellList::halo_pad_() const noexcept {
@@ -81,11 +83,30 @@ double CellList::halo_pad_() const noexcept {
 }
 
 void CellList::compute_grid(const cpu::Frame& frame) {
+    triclinic_ = !frame.box.is_orthorhombic();
+    const auto bounds =
+        frame.box.cartesian_bounds(Vec3{0, 0, 0}, Vec3{1, 1, 1});
+    Vec3 local_lo, local_hi;
+    {
+        Vec3 lo, hi;
+        for (int d = 0; d < 3; ++d) {
+            const double reach = halo_pad_() / frame.box.face_height(d);
+            lo[d] = (dd_ ? dd_->sublo[d] : 0.0) - reach;
+            hi[d] = (dd_ ? dd_->subhi[d] : 1.0) + reach;
+        }
+        const auto local = frame.box.cartesian_bounds(lo, hi);
+        local_lo = local.first;
+        local_hi = local.second;
+    }
+    for (int d = 0; d < 3; ++d) {
+        bbox_lo_[d] = bounds.first[d];
+        bbox_extent_[d] = bounds.second[d] - bounds.first[d];
+    }
     // Per-axis grid extent. Extended (decomposed) axes cover only this
     // rank's subdomain plus a `halo_pad_()` margin on each side, so
     // both the cell arrays and every per-rebuild cell sweep stay
-    // O(local atoms) instead of O(global box). Non-extended axes use the
-    // global box edge as-is (positions wrap into [0, L) during binning).
+    // O(local atoms) instead of O(global box). Without DD, the
+    // whole-cell window uses the same padding and raw-coordinate rule.
     //
     // CRITICAL: the local window is a slice of the GLOBAL bin lattice —
     // the cell size comes from the global box edge and the origin snaps
@@ -98,18 +119,20 @@ void CellList::compute_grid(const cpu::Frame& frame) {
     // lets the same boundary pair land home-cell on one rank and
     // forward-cell on the other → double-counted or dropped pair forces
     // (measured: +2.5% step-1 pressure error on the 8-rank NPT gate).
-    // PBC ghost pre-shifts (±L) preserve lattice alignment because L is
-    // an exact integer multiple of the cell size by construction.
+    // Compute the global bin FIRST and subtract an integer window offset.
+    // Subtracting a rank-dependent floating origin before division can round
+    // an exact boundary into different bins on the owner and ghost ranks.
+    // This follows LAMMPS NBin::coord2bin's global-to-local indexing.
     //
     // The margin widens with the halo's ghost shell but the CELL EDGE does
-    // not: it stays `L / floor(L / cutoff_skin)`, derived from the GLOBAL
+    // not: it stays `L / floor(L / (0.5 * cutoff_skin))`, derived from the GLOBAL
     // box, so a deeper shell buys more cells rather than bigger ones and
     // the cross-rank lattice argued above survives untouched.
     int nc[3];
     double cs[3];
     const double pad = halo_pad_();
     for (int d = 0; d < 3; ++d) {
-        const double L = frame.box.length(d);
+        const double L = bbox_extent_[d];
         // LAMMPS `Neighbor::setup_bins`: bins are HALF the neighbor reach
         // (binsize = 0.5 * cutoff+skin), searched with a multi-cell
         // distance-pruned stencil. Half-reach bins cut the candidate
@@ -118,25 +141,17 @@ void CellList::compute_grid(const cpu::Frame& frame) {
         // fat cells.
         const int nc_global = std::max(
             int(1), static_cast<int>(std::floor(L / (0.5 * cutoff_skin_))));
+        global_bins_[d] = nc_global;
         const double cs_d = L / nc_global;
-        if (axis_extended_[d]) {
-            // Lattice-aligned local window covering [sublo - pad, subhi + pad].
-            const int lo_bin =
-                static_cast<int>(std::floor((dd_->sublo[d] - pad) / cs_d));
-            const int hi_bin =
-                static_cast<int>(std::floor((dd_->subhi[d] + pad) / cs_d));
-            nc[d] = hi_bin - lo_bin + 1;
-            cs[d] = cs_d;
-            origin_[d] = lo_bin * cs_d;
-            sublo_at_grid_[d] = dd_->sublo[d];
-            subhi_at_grid_[d] = dd_->subhi[d];
-        } else {
-            nc[d] = nc_global;
-            cs[d] = cs_d;
-            origin_[d] = 0.0;
-            sublo_at_grid_[d] = 0.0;
-            subhi_at_grid_[d] = L;
-        }
+        const double lo = local_lo[d] - bbox_lo_[d];
+        const double hi = local_hi[d] - bbox_lo_[d];
+        const int lo_bin = static_cast<int>(std::floor(lo / cs_d)) - 1;
+        const int hi_bin = static_cast<int>(std::floor(hi / cs_d)) + 1;
+        nc[d] = hi_bin - lo_bin + 1;
+        cs[d] = cs_d;
+        bin_lo_[d] = lo_bin;
+        sublo_at_grid_[d] = dd_ ? dd_->sublo[d] : 0.0;
+        subhi_at_grid_[d] = dd_ ? dd_->subhi[d] : 1.0;
     }
 
     halo_pad_at_grid_ = pad;
@@ -154,13 +169,12 @@ void CellList::compute_grid(const cpu::Frame& frame) {
 }
 
 bool CellList::grid_stale(const cpu::Frame& frame) const {
-    for (int d = 0; d < 3; ++d)
-        if (frame.box.length(d) != box_at_last_build_[d])
-            return true;
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 3; ++col)
+            if (frame.box.cell()(row, col) != box_at_last_build_(row, col))
+                return true;
     if (dd_ != nullptr) {
         for (int d = 0; d < 3; ++d) {
-            if (!axis_extended_[d])
-                continue;
             if (dd_->sublo[d] != sublo_at_grid_[d]
                 || dd_->subhi[d] != subhi_at_grid_[d])
                 return true;
@@ -211,7 +225,8 @@ void CellList::build_stencil() {
             for (int dk = -rz; dk <= rz; ++dk) {
                 if (min_dist_sq(di, dj, dk) > rc_sq)
                     continue;
-                full_stencil_.push_back({di, dj, dk});
+                const int flat = (di * ncy_ + dj) * ncz_ + dk;
+                full_stencil_.push_back({di, dj, dk, flat});
                 // Half stencil: the home cell plus the lexicographically
                 // FORWARD offsets. Explicit lexicographic order (not the
                 // flat-index sign, which aliases once |dj|·ncz + |dk|
@@ -223,16 +238,14 @@ void CellList::build_stencil() {
                 const bool forward = (di > 0) || (di == 0 && dj > 0)
                                      || (di == 0 && dj == 0 && dk > 0);
                 if (home || forward)
-                    half_stencil_.push_back({di, dj, dk});
+                    half_stencil_.push_back({di, dj, dk, flat});
             }
         }
     }
-    if (visited_scratch_.size() < full_stencil_.size())
-        visited_scratch_.resize(full_stencil_.size());
 }
 
 void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
-    int n = (n_active < 0) ? frame.nlocal() : n_active;
+    int n = (n_active < 0) ? frame.n_total() : n_active;
     // Grow the per-atom arrays if the active count (n_local + n_ghost) exceeds
     // the capacity captured at init. Previously every rank held nlocal ==
     // global N so the init-time capacity always dominated; with right-sized
@@ -242,14 +255,10 @@ void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
         capacity_ = n;
         atom_cell_ = xt::zeros<int>({capacity_});
         binned_atoms_ = xt::zeros<int>({capacity_});
-        x_save_ = xt::zeros<double>({capacity_});
-        y_save_ = xt::zeros<double>({capacity_});
-        z_save_ = xt::zeros<double>({capacity_});
     }
-    double lx = frame.box.length(0);
-    double ly = frame.box.length(1);
-    double lz = frame.box.length(2);
-
+    const double lx = bbox_extent_[0];
+    const double ly = bbox_extent_[1];
+    const double lz = bbox_extent_[2];
     // Clear cell counts
     std::fill(cell_count_.begin(), cell_count_.end(), int(0));
 
@@ -259,27 +268,31 @@ void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
     const StorageReal* __restrict sp_y = frame.span(kAtom_y);
     const StorageReal* __restrict sp_z = frame.span(kAtom_z);
 
-// Assign atoms to cells. Single-rank axes wrap into [0, L); extended
-// axes leave the position alone so PBC-shifted ghost coordinates land
-// in the dedicated halo cells around the slab.
+    // LAMMPS NBin::coord2bin: distinguish the canonical box from its
+    // images. A coordinate strictly below L must stay in the last box bin
+    // even when division rounds to nbin; x == L starts the upper image.
+    const auto global_bin = [](double x, double length, double size,
+                               int count) {
+        if (x >= length)
+            return static_cast<int>((x - length) / size) + count;
+        if (x >= 0)
+            return std::min(static_cast<int>(x / size), count - 1);
+        return static_cast<int>(x / size) - 1;
+    };
+
+// Assign explicit Cartesian owner and image rows to their physical cells.
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
         double xi = sp_x[i];
         double yi = sp_y[i];
         double zi = sp_z[i];
-        if (!axis_extended_[0]) {
-            xi -= lx * std::floor(xi / lx);
-        }
-        if (!axis_extended_[1]) {
-            yi -= ly * std::floor(yi / ly);
-        }
-        if (!axis_extended_[2]) {
-            zi -= lz * std::floor(zi / lz);
-        }
 
-        int cx = static_cast<int>(std::floor((xi - origin_[0]) / csx_));
-        int cy = static_cast<int>(std::floor((yi - origin_[1]) / csy_));
-        int cz = static_cast<int>(std::floor((zi - origin_[2]) / csz_));
+        int cx = global_bin(xi - bbox_lo_[0], lx, csx_, global_bins_[0])
+                 - bin_lo_[0];
+        int cy = global_bin(yi - bbox_lo_[1], ly, csy_, global_bins_[1])
+                 - bin_lo_[1];
+        int cz = global_bin(zi - bbox_lo_[2], lz, csz_, global_bins_[2])
+                 - bin_lo_[2];
         cx = std::max(0, std::min(cx, ncx_ - 1));
         cy = std::max(0, std::min(cy, ncy_ - 1));
         cz = std::max(0, std::min(cz, ncz_ - 1));
@@ -313,18 +326,6 @@ void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
     }
 }
 
-void CellList::save_positions(const cpu::Frame& frame, int n_active) {
-    int n = (n_active < 0) ? frame.nlocal() : n_active;
-    const StorageReal* __restrict sp_x = frame.span(kAtom_x);
-    const StorageReal* __restrict sp_y = frame.span(kAtom_y);
-    const StorageReal* __restrict sp_z = frame.span(kAtom_z);
-    for (int i = 0; i < n; ++i) {
-        x_save_[i] = sp_x[i];
-        y_save_[i] = sp_y[i];
-        z_save_[i] = sp_z[i];
-    }
-}
-
 void CellList::build(const cpu::Frame& frame, int n_active) {
     // The NPT barostat (or Deform) may have rescaled the box since the
     // cell grid was last sized. `compute_grid()` derives the per-axis
@@ -346,54 +347,7 @@ void CellList::build(const cpu::Frame& frame, int n_active) {
         build_stencil();
     }
     bin_atoms(frame, n_active);
-    save_positions(frame, n_active);
-    n_at_last_build_ = (n_active < 0) ? frame.nlocal() : n_active;
-    for (int d = 0; d < 3; ++d)
-        box_at_last_build_[d] = frame.box.length(d);
-}
-
-bool CellList::needs_rebuild(const cpu::Frame& frame, int n_active) const {
-    int n = (n_active < 0) ? frame.nlocal() : n_active;
-
-    // Multi-rank: Migrate / HaloExchange may change n_local + n_ghost
-    // between launches.  When that happens, `binned_atoms_` from the
-    // previous build still references the OLD atom indices, including ones
-    // beyond the current `n_active`. Reading those produces an out-of-
-    // bounds access in `build_half`.  Force a rebuild whenever the active
-    // count moves.
-    if (n != n_at_last_build_)
-        return true;
-
-    // NPT: barostat may have scaled the box (or RCB moved this rank's
-    // subdomain bounds), invalidating the cell grid. Force a rebuild.
-    if (grid_stale(frame))
-        return true;
-
-    double max_disp_sq = 0;
-
-    const StorageReal* __restrict sp_x = frame.span(kAtom_x);
-    const StorageReal* __restrict sp_y = frame.span(kAtom_y);
-    const StorageReal* __restrict sp_z = frame.span(kAtom_z);
-
-    for (int i = 0; i < n; ++i) {
-        double dx = sp_x[i] - x_save_[i];
-        double dy = sp_y[i] - y_save_[i];
-        double dz = sp_z[i] - z_save_[i];
-        // Use minimum-image convention so atom wrapping across PBC
-        // boundaries doesn't falsely signal a ~box-length displacement.
-        frame.box.min_image(dx, dy, dz);
-        double dsq = dx * dx + dy * dy + dz * dz;
-        if (dsq > max_disp_sq)
-            max_disp_sq = dsq;
-    }
-
-    // Rebuild when 2 * max_disp > skin
-    return max_disp_sq * double(4) > skin_ * skin_;
-}
-
-void CellList::update(const cpu::Frame& frame, int n_active) {
-    if (needs_rebuild(frame, n_active))
-        build(frame, n_active);
+    box_at_last_build_ = frame.box.cell();
 }
 
 namespace {
@@ -413,13 +367,11 @@ inline void ensure_at_least(std::vector<int>& arr, std::size_t n) {
 
 void CellList::refresh_half(const cpu::Frame& frame, int n_active,
                             PairList& result, int n_local) const {
-    const int n = (n_active < 0) ? static_cast<int>(frame.nlocal()) : n_active;
-    // Multi-rank ghost-pair tie-breaker. `n_local < 0` → single-rank mode,
-    // pure local-index filter. `n_local >= 0` → owner-ghost pairs are
-    // deduplicated by tag, mirroring LAMMPS `newton on` convention.
-    const bool tag_dedup = (n_local >= 0);
-    const TagInt* __restrict tag_ptr =
-        tag_dedup ? static_cast<const TagInt*>(frame.span(kAtom_tag)) : nullptr;
+    const int n = (n_active < 0) ? static_cast<int>(frame.n_total()) : n_active;
+    // Ghost ownership follows LAMMPS Newton-on, independent of rank count.
+    if (n_local < 0)
+        n_local = frame.nlocal();
+    const TagInt* __restrict tag_ptr = frame.span(kAtom_tag);
     const double rc_sq = cutoff_skin_ * cutoff_skin_;
 
     // Hoisted ONCE at the launch boundary, dominating both the serial and
@@ -436,304 +388,130 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
 
     for (int i = 0; i < n; ++i)
         result.ilist[i] = i;
-    result.inum = n;
+    result.inum = n_local;
+    result.n_rows = n;
 
     int n_threads = 1;
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
 
-    // ── Serial fast path ────────────────────────────────────────────
-    // Single-thread builds write the CSR directly in one pass: for each
-    // atom i we reserve its slot in `neighbors[]`, iterate the stencil,
-    // append each surviving j to a running write cursor, then commit
-    // `numneigh[i]`. No per-thread pair buffers, no pair-count pass, no
-    // prefix-sum pass, no scatter pass — the old path made 3 trips over
-    // ~250k pairs plus an `std::vector<std::vector<pair<int,int>>>`
-    // allocation every call. `neighbors` grows amortized O(1) the first
-    // few times and then stays at capacity (~250k ints = 1 MB for 10k
-    // atoms). `firstneigh[i]` is the live cursor at function entry, so
-    // consumers that later index `neighbors[firstneigh[i] + k]` see the
-    // exact slot we wrote. Matches LAMMPS `NPairHalfBin::build`.
-    // Serial fast-path gate: when there are fewer atoms than threads,
-    // the multi-thread path's per-thread `my_pairs` buffer would either
-    // sit idle on most threads or grow from a tiny baseline on the few
-    // that get any work — both produce sporadic heap allocations that
-    // would otherwise be amortised out by capacity saturation. Falling
-    // back to serial on these small workloads keeps the hot loop
-    // allocation-free (CLAUDE.md "no allocation in launch()") and
-    // avoids paying OMP fork/join overhead that was already net-negative
-    // at this scale.
+    const bool use_half = !triclinic_;
+    const int* __restrict atom_cell_ptr = atom_cell_.data();
+    const int* __restrict cell_count_ptr = cell_count_.data();
+    const int* __restrict cell_offset_ptr = cell_offset_.data();
+    const int* __restrict binned_ptr = binned_atoms_.data();
+    const auto& stencil = use_half ? half_stencil_ : full_stencil_;
+    const int n_owned_rows = std::min(n_local, n);
+
+    // One row traversal for serial CSR and thread-private buffers. The
+    // LAMMPS half/Newton stencil selects forward cells; only the home cell
+    // requires the symmetric coordinate/index tie-break.
+    const auto enumerate_row = [&](int i, const auto& append) {
+        const int ci = atom_cell_ptr[i];
+        const int cz0 = ci % ncz_;
+        const int cy0 = (ci / ncz_) % ncy_;
+        const int cx0 = ci / (ncy_ * ncz_);
+        const double xi = x_ptr[i];
+        const double yi = y_ptr[i];
+        const double zi = z_ptr[i];
+
+        // NPairBin: an interior stencil uses ibin + precomputed offset.
+        // Boundary rows clip offsets to the allocated Cartesian window.
+        const bool interior =
+            cx0 >= stencil_reach_[0] && cx0 < ncx_ - stencil_reach_[0]
+            && cy0 >= stencil_reach_[1] && cy0 < ncy_ - stencil_reach_[1]
+            && cz0 >= stencil_reach_[2] && cz0 < ncz_ - stencil_reach_[2];
+
+        for (auto s : stencil) {
+            int cj = ci + s.flat;
+            if (!interior) {
+                const int cx = cx0 + s.di, cy = cy0 + s.dj, cz = cz0 + s.dk;
+                if (cx < 0 || cx >= ncx_ || cy < 0 || cy >= ncy_ || cz < 0
+                    || cz >= ncz_)
+                    continue;
+                cj = (cx * ncy_ + cy) * ncz_ + cz;
+            }
+
+            const int start = cell_offset_ptr[cj];
+            const int end = start + cell_count_ptr[cj];
+
+            // Half-stencil: only the home cell (cj==ci) needs the j>i
+            // reject; forward cells contribute every j exactly once.
+            // Full-stencil: every cell rejects j<=i.
+            const bool reject_le_i = !use_half || (cj == ci);
+
+            for (int idx = start; idx < end; ++idx) {
+                int j = binned_ptr[idx];
+                if (j <= i && reject_le_i)
+                    continue;
+                // Multi-rank ghost-pair tie-breaker: when j is a halo
+                // ghost (j >= n_local), only the rank whose owner has
+                // the smaller tag adds this pair. Without this, the
+                // same owner-ghost pair gets added on BOTH ranks (each
+                // sees its own atom as having the smaller local row),
+                // double-counting LJ energy + virial. Matches LAMMPS
+                // `npair_half_bin_newton::build` newton-on path.
+                //
+                // Gated by `reject_le_i`: the tie-break applies only where
+                // both ranks scan the pair symmetrically -- every cell in
+                // the full stencil, but ONLY the home cell in the half
+                // stencil. In a half-stencil forward cell the partner rank
+                // sees the pair as a backward cell and never scans it, so
+                // applying the tie-break there would drop the pair on both
+                // ranks. (`reject_le_i == !use_half || cj == ci` is exactly
+                // "this cell is scanned by both ranks".)
+                if (reject_le_i && j >= n_local) {
+                    if (triclinic_) {
+                        const TagInt itag = tag_ptr[i], jtag = tag_ptr[j];
+                        const bool odd = ((itag ^ jtag) & TagInt{1}) != 0;
+                        if ((itag > jtag && !odd) || (itag < jtag && odd))
+                            continue;
+                        if (itag == jtag) {
+                            if (std::abs(z_ptr[j] - zi) > 0.01) {
+                                if (z_ptr[j] < zi)
+                                    continue;
+                            } else if (std::abs(y_ptr[j] - yi) > 0.01) {
+                                if (y_ptr[j] < yi)
+                                    continue;
+                            } else if (x_ptr[j] < xi)
+                                continue;
+                        }
+                    } else {
+                        if (x_ptr[j] < xi)
+                            continue;
+                        if (x_ptr[j] == xi && y_ptr[j] < yi)
+                            continue;
+                        if (x_ptr[j] == xi && y_ptr[j] == yi && z_ptr[j] < zi)
+                            continue;
+                    }
+                }
+
+                const double dx = xi - x_ptr[j];
+                const double dy = yi - y_ptr[j];
+                const double dz = zi - z_ptr[j];
+
+                double r2 = dx * dx + dy * dy + dz * dz;
+                if (r2 < rc_sq) {
+                    append(j);
+                }
+            }
+        }
+    };
+
     if (n_threads == 1 || n < n_threads) {
-        // Pre-reserve neighbors with a 32-per-atom heuristic so the
-        // first rebuild saturates capacity above any realistic per-atom
-        // half-list count (typical LJ + bonded chains: < 16/atom). After
-        // saturation, every subsequent rebuild's `push_back` is a
-        // pointer-bump store, honouring the "no allocation in launch()"
-        // contract.
         const std::size_t want = static_cast<std::size_t>(n) * 32u;
         if (result.neighbors.capacity() < want)
             result.neighbors.reserve(want);
         result.neighbors.clear();
-        // Consumers recompute the pair vector by minimum image every step
-        // (Box::min_image, O(1)). Storing the rebuild-time per-pair shift and
-        // reusing it across steps is UNSAFE: once an atom crosses a periodic
-        // boundary between neighbor rebuilds, its stored image offset is stale,
-        // and the LJ kernel then evaluates the wrong separation — single-rank
-        // NVE energy conservation drifts (~0.7 rel) at OMP_NUM_THREADS=1 (this
-        // serial path) while the multi-thread path, which never stored shifts,
-        // is fine. Match the multi-thread contract: no stored shifts. Ghosts
-        // are pre-placed at their nearest image by the halo, so min_image is a
-        // no-op on owner-ghost pairs (multi-rank stays correct).
-        result.has_shifts = false;
-
-        // x_ptr/y_ptr/z_ptr hoisted at function entry (shared with the
-        // multi-thread branch below).
-        const double lx = frame.box.length(0);
-        const double ly = frame.box.length(1);
-        const double lz = frame.box.length(2);
-        const double half_lx = 0.5 * lx;
-        const double half_ly = 0.5 * ly;
-        const double half_lz = 0.5 * lz;
-        const int* __restrict atom_cell_ptr = atom_cell_.data();
-        const int* __restrict cell_count_ptr = cell_count_.data();
-        const int* __restrict cell_offset_ptr = cell_offset_.data();
-        const int* __restrict binned_ptr = binned_atoms_.data();
-
-        // Half-stencil (LAMMPS newton-on) fast path: iterate the home +
-        // forward cells instead of the full stencil with a `j<=i` reject on
-        // every candidate. Each unordered pair is still emitted exactly once
-        // (home cell: j>i; forward cells: all j -- the reverse offset is
-        // backward from j and thus not in j's half stencil). Valid whenever
-        // no PBC wrap-aliasing can fold two stencil offsets onto the same
-        // cell, i.e. >= 2*reach+1 cells on every wrapped axis. This holds
-        // for single-rank (every axis wraps) AND multi-rank: extended
-        // (decomposed) axes never wrap (out-of-range stencil cells
-        // `continue`, see below), and only the non-extended axes need the
-        // cell-count bound.
-        //
-        // Multi-rank cross-rank dedup (tag_dedup): ghost atoms are iterated as
-        // `i` too, but `inum` is trimmed to `n_local` downstream so only the
-        // owner's scan is consumed. An owner-ghost pair is therefore picked up
-        // by exactly the rank whose owner sees the partner in a *forward* cell
-        // (the partner rank sees it as a *backward* cell and never scans it);
-        // only when both sit in the *home* cell do both ranks see it, so the
-        // tag tie-break is needed there alone -- gated by `reject_le_i` below.
-        // This mirrors LAMMPS `npair_half_bin_newton` (coordinate tie-break in
-        // the home bin, unconditional add in the forward stencil bins).
-        // Small/aliased grids fall back to the full stencil, where the
-        // tie-break applies on every cell because both ranks scan them all.
-        const auto axis_ok = [&](int nc, int reach, bool extended) {
-            return extended || nc >= 2 * reach + 1;
-        };
-        const bool use_half =
-            axis_ok(ncx_, stencil_reach_[0], axis_extended_[0])
-            && axis_ok(ncy_, stencil_reach_[1], axis_extended_[1])
-            && axis_ok(ncz_, stencil_reach_[2], axis_extended_[2]);
-        const std::vector<StencilOffset>& stencil =
-            use_half ? half_stencil_ : full_stencil_;
-
-        int* __restrict visited = visited_scratch_.data();
         int cursor = 0;
-
         for (int i = 0; i < n; ++i) {
             result.firstneigh[i] = cursor;
-            // Multi-rank: ghost rows (i >= n_local) are trimmed to inum =
-            // n_local downstream and never consumed by the force kernel, so we
-            // skip building them entirely. Every owner-ghost pair is already
-            // emitted from the OWNER's scan (forward/home cells) or from the
-            // partner rank's owner (backward cells), so this loses no pair.
-            // This mirrors LAMMPS, whose half neighbor list iterates local
-            // atoms only.
-            //
-            // The skip is UNCONDITIONAL on use_half (it applies on both the
-            // half- and full-stencil paths). That consistency is essential: if
-            // it were gated on use_half, a rank whose deforming/compressing
-            // slab transiently drops below 3 cells/axis would flip to
-            // full-stencil AND resume building ghost rows, while its peers
-            // (still >=3 cells) skip them. That asymmetry makes the reverted
-            // rank a straggler and every collective (halo, energy Allreduce)
-            // blocks on it -- a measured Comm+Reduce blow-up in the 64-rank
-            // (4x4x4, thin-slab) deform stage. Skipping ghost rows on every
-            // rank regardless of stencil keeps the per-rank work balanced.
-            if (tag_dedup && i >= n_local) {
-                result.numneigh[i] = 0;
-                continue;
-            }
-            const int ci = atom_cell_ptr[i];
-            const int cz0 = ci % ncz_;
-            const int cy0 = (ci / ncz_) % ncy_;
-            const int cx0 = ci / (ncy_ * ncz_);
-            const double xi = x_ptr[i];
-            const double yi = y_ptr[i];
-            const double zi = z_ptr[i];
-
-            int visited_n = 0;
-
-            for (auto s : stencil) {
-                int cx = cx0 + s.di;
-                int cy = cy0 + s.dj;
-                int cz = cz0 + s.dk;
-
-                // Per-cell PBC shift: every atom in a wrapped neighbour cell
-                // shares the same image shift, so the inner pair loop applies
-                // it with a single add instead of the 6-branch per-pair
-                // min-image. Only consumed on the `use_half` (single-rank,
-                // >=3-cell, non-extended) path, where one wrap is always
-                // sufficient.
-                double shx = 0.0, shy = 0.0, shz = 0.0;
-                if (axis_extended_[0]) {
-                    if (cx < 0 || cx >= ncx_)
-                        continue;
-                } else {
-                    if (cx < 0) {
-                        cx += ncx_;
-                        shx = -lx;
-                    } else if (cx >= ncx_) {
-                        cx -= ncx_;
-                        shx = lx;
-                    }
-                    // Multi-cell reach on a tiny wrapped grid (full-stencil
-                    // fallback only — the half path's nc >= 2*reach+1 gate
-                    // guarantees the single wrap above): fold the residue.
-                    // The fallback ignores the per-cell shift and re-derives
-                    // separations by min-image, so only the index matters.
-                    if (cx < 0 || cx >= ncx_)
-                        cx = ((cx % ncx_) + ncx_) % ncx_;
-                }
-                if (axis_extended_[1]) {
-                    if (cy < 0 || cy >= ncy_)
-                        continue;
-                } else {
-                    if (cy < 0) {
-                        cy += ncy_;
-                        shy = -ly;
-                    } else if (cy >= ncy_) {
-                        cy -= ncy_;
-                        shy = ly;
-                    }
-                    if (cy < 0 || cy >= ncy_)
-                        cy = ((cy % ncy_) + ncy_) % ncy_;
-                }
-                if (axis_extended_[2]) {
-                    if (cz < 0 || cz >= ncz_)
-                        continue;
-                } else {
-                    if (cz < 0) {
-                        cz += ncz_;
-                        shz = -lz;
-                    } else if (cz >= ncz_) {
-                        cz -= ncz_;
-                        shz = lz;
-                    }
-                    if (cz < 0 || cz >= ncz_)
-                        cz = ((cz % ncz_) + ncz_) % ncz_;
-                }
-
-                const int cj = cx * ncy_ * ncz_ + cy * ncz_ + cz;
-
-                // Small-grid PBC-wrap dedup. Stored as a fixed-size
-                // int[27] so the compiler keeps it in a register file.
-                bool seen = false;
-                for (int v = 0; v < visited_n; ++v) {
-                    if (visited[v] == cj) {
-                        seen = true;
-                        break;
-                    }
-                }
-                if (seen)
-                    continue;
-                visited[visited_n++] = cj;
-
-                const int start = cell_offset_ptr[cj];
-                const int end = start + cell_count_ptr[cj];
-
-                // Half-stencil: only the home cell (cj==ci) needs the j>i
-                // reject; forward cells contribute every j exactly once.
-                // Full-stencil: every cell rejects j<=i.
-                const bool reject_le_i = !use_half || (cj == ci);
-
-                for (int idx = start; idx < end; ++idx) {
-                    int j = binned_ptr[idx];
-                    if (j <= i && reject_le_i)
-                        continue;
-                    // Multi-rank ghost-pair tie-breaker: when j is a halo
-                    // ghost (j >= n_local), only the rank whose owner has
-                    // the smaller tag adds this pair. Without this, the
-                    // same owner-ghost pair gets added on BOTH ranks (each
-                    // sees its own atom as having the smaller local row),
-                    // double-counting LJ energy + virial. Matches LAMMPS
-                    // `npair_half_bin_newton::build` newton-on path.
-                    //
-                    // Gated by `reject_le_i`: the tie-break applies only where
-                    // both ranks scan the pair symmetrically -- every cell in
-                    // the full stencil, but ONLY the home cell in the half
-                    // stencil. In a half-stencil forward cell the partner rank
-                    // sees the pair as a backward cell and never scans it, so
-                    // applying the tie-break there would drop the pair on both
-                    // ranks. (`reject_le_i == !use_half || cj == ci` is exactly
-                    // "this cell is scanned by both ranks".)
-                    if (tag_dedup && reject_le_i && j >= n_local
-                        && tag_ptr[j] < tag_ptr[i])
-                        continue;
-
-                    double dx, dy, dz;
-                    if (use_half) {
-                        // Per-cell shift already encodes the (single) wrap;
-                        // one add, no per-pair branch.
-                        dx = xi - (x_ptr[j] + shx);
-                        dy = yi - (y_ptr[j] + shy);
-                        dz = zi - (z_ptr[j] + shz);
-                    } else {
-                        dx = xi - x_ptr[j];
-                        dy = yi - y_ptr[j];
-                        dz = zi - z_ptr[j];
-                        // Multi-wrap (see Box::min_image) — but ONLY on
-                        // axes the halo did NOT extend. Ghosts sit at
-                        // their true periodic image already; min-imaging
-                        // an extended axis folds the two images a dims==2
-                        // overlap band imports (same tag through both
-                        // faces) onto ONE separation and double-counts
-                        // the pair (observed: silent 16% LJ energy error,
-                        // 2026-07-15). The raw dx rejects the far image
-                        // by its true distance. Owner-owner pairs never
-                        // span half the global box on a decomposed axis
-                        // (sub <= L/2), so skipping the wrap there is
-                        // exact. Cross-PBC ghosts on small grids (the
-                        // 2x2x2 case this multi-wrap was added for) are
-                        // ALSO extended-axis ghosts pre-placed at true
-                        // images — covered by the same rule.
-                        if (!axis_extended_[0]) {
-                            while (dx > half_lx)
-                                dx -= lx;
-                            while (dx < -half_lx)
-                                dx += lx;
-                        }
-                        if (!axis_extended_[1]) {
-                            while (dy > half_ly)
-                                dy -= ly;
-                            while (dy < -half_ly)
-                                dy += ly;
-                        }
-                        if (!axis_extended_[2]) {
-                            while (dz > half_lz)
-                                dz -= lz;
-                            while (dz < -half_lz)
-                                dz += lz;
-                        }
-                    }
-
-                    double r2 = dx * dx + dy * dy + dz * dz;
-                    if (r2 < rc_sq) {
-                        // push_back on an empty-then-growing vector
-                        // amortizes to O(1); after a few rebuilds
-                        // capacity saturates and push_back is a
-                        // pointer-bump store.
-                        result.neighbors.push_back(j);
-                        ++cursor;
-                    }
-                }
-            }
+            if (i < n_owned_rows)
+                enumerate_row(i, [&](int j) {
+                    result.neighbors.push_back(j);
+                    ++cursor;
+                });
             result.numneigh[i] = cursor - result.firstneigh[i];
         }
         result.total_pairs = cursor;
@@ -741,157 +519,70 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
     }
 
     // ── Multi-thread path ───────────────────────────────────────────
-    // Does not populate per-pair shifts; consumers fall back to min-image.
-    result.has_shifts = false;
-    // Thread-private pair buffers feed a pair-count + prefix-sum +
-    // scatter finalizer. Slightly more work per pair than the serial
-    // fast path but keeps scaling on OMP ≥ 2. The old single-path
-    // implementation paid this overhead even with OMP=1 — that cost is
-    // what the serial branch above reclaims.
+    // LAMMPS NPairBinOmp writes complete rows into each thread's own page.
+    // Retain contiguous j-only arenas here, then bulk-copy them to the public
+    // CSR. Prefix only thread totals; no pair-wise scatter or repeated i.
     //
-    // `thread_pairs_` / `thread_visited_` are *member* state: grow them
+    // `thread_neighbors_` is member state: grow it
     // to the current OMP team size if needed, clear the inner vectors
-    // (capacity preserved), and reuse. This is the "no allocation in
-    // launch()" fix — the old code re-constructed n_threads vectors
-    // per rebuild, leaking O(n_threads) heap allocations into the MD
-    // hot path on every neighbor refresh.
-    if (static_cast<int>(thread_pairs_.size()) < n_threads)
-        thread_pairs_.resize(static_cast<std::size_t>(n_threads));
-    if (static_cast<int>(thread_visited_.size()) < n_threads)
-        thread_visited_.resize(static_cast<std::size_t>(n_threads));
-    // Reserve each thread's pair buffer to a per-thread share of the
+    // (capacity preserved), and reuse them across rebuilds.
+    if (static_cast<int>(thread_neighbors_.size()) < n_threads)
+        thread_neighbors_.resize(static_cast<std::size_t>(n_threads));
+    ensure_at_least(thread_offsets_, static_cast<std::size_t>(n_threads + 1));
+    // Reserve each thread's index arena to a per-thread share of the
     // 32-per-atom half-list budget (the same heuristic the serial path uses
     // for `neighbors`). Without this the buffers grow lazily as pair counts
     // drift, leaking a heap allocation into the MD hot loop after warm-up
-    // (caught by MdNoAlloc). Margin covers schedule(dynamic) imbalance.
+    // (caught by MdNoAlloc). Capacities are retained across rebuilds.
     const std::size_t pair_cap_hint =
         static_cast<std::size_t>(n / n_threads + 1) * 32u;
-    for (auto& tp : thread_pairs_) {
+    for (auto& tp : thread_neighbors_) {
         tp.clear();
         if (tp.capacity() < pair_cap_hint)
             tp.reserve(pair_cap_hint);
     }
-    for (auto& tv : thread_visited_) {
-        tv.clear();
-        if (tv.capacity() < 27u)
-            tv.reserve(27); // 27-cell stencil; lazy one-shot grow per thread.
-    }
     for (int i = 0; i < n; ++i)
         result.numneigh[i] = 0;
 
-#pragma omp parallel
+#pragma omp parallel num_threads(n_threads)
     {
-        int tid = 0;
+        int tid = 0, team_size = 1;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
+        team_size = omp_get_num_threads();
 #endif
-        auto& my_pairs = thread_pairs_[tid];
-        auto& visited = thread_visited_[tid];
+        auto& my_neighbors = thread_neighbors_[tid];
 
-#pragma omp for schedule(dynamic)
-        for (int i = 0; i < n; ++i) {
-            const int ci = atom_cell_[i];
-            const int cz0 = ci % ncz_;
-            const int cy0 = (ci / ncz_) % ncy_;
-            const int cx0 = ci / (ncy_ * ncz_);
-
-            visited.clear();
-
-            for (auto s : full_stencil_) {
-                int cx = cx0 + s.di;
-                int cy = cy0 + s.dj;
-                int cz = cz0 + s.dk;
-
-                if (axis_extended_[0]) {
-                    if (cx < 0 || cx >= ncx_)
-                        continue;
-                } else if (cx < 0 || cx >= ncx_) {
-                    cx = ((cx % ncx_) + ncx_) % ncx_;
-                }
-                if (axis_extended_[1]) {
-                    if (cy < 0 || cy >= ncy_)
-                        continue;
-                } else if (cy < 0 || cy >= ncy_) {
-                    cy = ((cy % ncy_) + ncy_) % ncy_;
-                }
-                if (axis_extended_[2]) {
-                    if (cz < 0 || cz >= ncz_)
-                        continue;
-                } else if (cz < 0 || cz >= ncz_) {
-                    cz = ((cz % ncz_) + ncz_) % ncz_;
-                }
-
-                const int cj = cx * ncy_ * ncz_ + cy * ncz_ + cz;
-
-                bool seen = false;
-                for (int v : visited)
-                    if (v == cj) {
-                        seen = true;
-                        break;
-                    }
-                if (seen)
-                    continue;
-                visited.push_back(cj);
-
-                const int start = cell_offset_[cj];
-                const int end = start + cell_count_[cj];
-
-                for (int idx = start; idx < end; ++idx) {
-                    int j = binned_atoms_[idx];
-                    if (j <= i)
-                        continue;
-                    // Multi-rank ghost tie-breaker — see serial path
-                    // comment above for the LAMMPS-newton-on rationale.
-                    if (tag_dedup && j >= n_local && tag_ptr[j] < tag_ptr[i])
-                        continue;
-
-                    double dx = x_ptr[i] - x_ptr[j];
-                    double dy = y_ptr[i] - y_ptr[j];
-                    double dz = z_ptr[i] - z_ptr[j];
-                    // Extended-axis-aware min-image (see the serial
-                    // full-stencil comment): never wrap axes the halo
-                    // extended, or dual-image ghosts double-count.
-                    min_image_unextended_(frame.box, dx, dy, dz);
-
-                    double r2 = dx * dx + dy * dy + dz * dz;
-                    if (r2 < rc_sq) {
-                        my_pairs.emplace_back(i, j);
-                    }
-                }
-            }
+        const int chunk = 1 + n_owned_rows / team_size;
+        const int begin = std::min(tid * chunk, n_owned_rows);
+        const int end = std::min(begin + chunk, n_owned_rows);
+        for (int i = begin; i < end; ++i) {
+            result.firstneigh[i] = static_cast<int>(my_neighbors.size());
+            enumerate_row(i, [&](int j) { my_neighbors.push_back(j); });
+            result.numneigh[i] =
+                static_cast<int>(my_neighbors.size()) - result.firstneigh[i];
         }
-    }
-
-    // Iterate only [0, n_threads) — `thread_pairs_` may be larger than
-    // the current team if a prior rebuild ran on a wider team; those
-    // extra slots are already cleared above but still skip them.
-    for (int t = 0; t < n_threads; ++t)
-        for (auto& [i, j] : thread_pairs_[t])
-            result.numneigh[i]++;
-
-    result.firstneigh[0] = 0;
-    for (int i = 1; i < n; ++i)
-        result.firstneigh[i] =
-            result.firstneigh[i - 1] + result.numneigh[i - 1];
-
-    result.total_pairs =
-        (n > 0) ? result.firstneigh[n - 1] + result.numneigh[n - 1] : 0;
-    result.neighbors.resize(static_cast<std::size_t>(result.total_pairs));
-
-    // Member-state write cursor (no per-rebuild `auto write_ptr =
-    // result.firstneigh` vector copy — that leaked one heap allocation per
-    // neighbor-list rebuild into the MD hot loop). Sized monotonically; the
-    // contents are reset from firstneigh each call.
-    if (csr_write_cursor_.size() < static_cast<std::size_t>(n))
-        csr_write_cursor_.resize(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        csr_write_cursor_[i] = result.firstneigh[i];
-    for (int t = 0; t < n_threads; ++t) {
-        for (auto& [i, j] : thread_pairs_[t]) {
-            result.neighbors[csr_write_cursor_[i]] = j;
-            csr_write_cursor_[i]++;
+#pragma omp barrier
+#pragma omp single
+        {
+            thread_offsets_[0] = 0;
+            for (int t = 0; t < team_size; ++t)
+                thread_offsets_[t + 1] =
+                    thread_offsets_[t]
+                    + static_cast<int>(thread_neighbors_[t].size());
+            result.total_pairs = thread_offsets_[team_size];
+            result.neighbors.resize(
+                static_cast<std::size_t>(result.total_pairs));
         }
+        const int offset = thread_offsets_[tid];
+        std::copy(my_neighbors.begin(), my_neighbors.end(),
+                  result.neighbors.begin() + offset);
+        for (int i = begin; i < end; ++i)
+            result.firstneigh[i] += offset;
     }
+    // Ghost centres carry no half-list rows, but retain valid empty CSR offsets.
+    for (int i = n_owned_rows; i < n; ++i)
+        result.firstneigh[i] = result.total_pairs;
 }
 
 PairList CellList::build_half(const cpu::Frame& frame, int n_active) const {
@@ -901,8 +592,12 @@ PairList CellList::build_half(const cpu::Frame& frame, int n_active) const {
 }
 
 void CellList::refresh_full(const cpu::Frame& frame, int n_active,
-                            PairList& result) const {
-    const int n = (n_active < 0) ? static_cast<int>(frame.nlocal()) : n_active;
+                            PairList& result, int n_rows) const {
+    const int n = (n_active < 0) ? static_cast<int>(frame.n_total()) : n_active;
+    const int centres = n_rows < 0 ? frame.nlocal() : n_rows;
+    if (n_rows < -1 || centres > n)
+        throw std::invalid_argument("CellList full-list centre count must be "
+                                    "-1 or within active atoms");
     const double rc_sq = cutoff_skin_ * cutoff_skin_;
 
     // Hoisted ONCE at the launch boundary, dominating the `#pragma omp
@@ -918,7 +613,7 @@ void CellList::refresh_full(const cpu::Frame& frame, int n_active,
         result.ilist[i] = i;
         result.numneigh[i] = 0;
     }
-    result.inum = n;
+    result.inum = result.n_rows = centres;
 
     int n_threads = 1;
 #ifdef _OPENMP
@@ -928,81 +623,55 @@ void CellList::refresh_full(const cpu::Frame& frame, int n_active,
     // Member-state scratch reuse — same contract as the `refresh_half`
     // version. See the long comment above for the "no allocation in
     // launch()" rationale.
-    if (static_cast<int>(thread_pairs_.size()) < n_threads)
-        thread_pairs_.resize(static_cast<std::size_t>(n_threads));
-    if (static_cast<int>(thread_visited_.size()) < n_threads)
-        thread_visited_.resize(static_cast<std::size_t>(n_threads));
-    // Reserve each thread's pair buffer to a per-thread share of the
+    if (static_cast<int>(thread_neighbors_.size()) < n_threads)
+        thread_neighbors_.resize(static_cast<std::size_t>(n_threads));
+    ensure_at_least(thread_offsets_, static_cast<std::size_t>(n_threads + 1));
+    // Reserve each thread's index arena to a per-thread share of the
     // 32-per-atom half-list budget (the same heuristic the serial path uses
     // for `neighbors`). Without this the buffers grow lazily as pair counts
     // drift, leaking a heap allocation into the MD hot loop after warm-up
-    // (caught by MdNoAlloc). Margin covers schedule(dynamic) imbalance.
+    // (caught by MdNoAlloc). Capacities are retained across rebuilds.
     const std::size_t pair_cap_hint =
         static_cast<std::size_t>(n / n_threads + 1) * 32u;
-    for (auto& tp : thread_pairs_) {
+    for (auto& tp : thread_neighbors_) {
         tp.clear();
         if (tp.capacity() < pair_cap_hint)
             tp.reserve(pair_cap_hint);
     }
-    for (auto& tv : thread_visited_) {
-        tv.clear();
-        if (tv.capacity() < 27u)
-            tv.reserve(27);
-    }
 
-#pragma omp parallel
+#pragma omp parallel num_threads(n_threads)
     {
-        int tid = 0;
+        int tid = 0, team_size = 1;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
+        team_size = omp_get_num_threads();
 #endif
-        auto& my_pairs = thread_pairs_[tid];
-        auto& visited = thread_visited_[tid];
+        auto& my_neighbors = thread_neighbors_[tid];
 
-#pragma omp for schedule(dynamic)
-        for (int i = 0; i < n; ++i) {
+        const int chunk = 1 + centres / team_size;
+        const int begin = std::min(tid * chunk, centres);
+        const int end = std::min(begin + chunk, centres);
+        for (int i = begin; i < end; ++i) {
+            result.firstneigh[i] = static_cast<int>(my_neighbors.size());
             const int ci = atom_cell_[i];
             const int cz0 = ci % ncz_;
             const int cy0 = (ci / ncz_) % ncy_;
             const int cx0 = ci / (ncy_ * ncz_);
 
-            visited.clear();
+            const bool interior =
+                cx0 >= stencil_reach_[0] && cx0 < ncx_ - stencil_reach_[0]
+                && cy0 >= stencil_reach_[1] && cy0 < ncy_ - stencil_reach_[1]
+                && cz0 >= stencil_reach_[2] && cz0 < ncz_ - stencil_reach_[2];
 
             for (auto s : full_stencil_) {
-                int cx = cx0 + s.di;
-                int cy = cy0 + s.dj;
-                int cz = cz0 + s.dk;
-
-                if (axis_extended_[0]) {
-                    if (cx < 0 || cx >= ncx_)
+                int cj = ci + s.flat;
+                if (!interior) {
+                    const int cx = cx0 + s.di, cy = cy0 + s.dj, cz = cz0 + s.dk;
+                    if (cx < 0 || cx >= ncx_ || cy < 0 || cy >= ncy_ || cz < 0
+                        || cz >= ncz_)
                         continue;
-                } else if (cx < 0 || cx >= ncx_) {
-                    cx = ((cx % ncx_) + ncx_) % ncx_;
+                    cj = (cx * ncy_ + cy) * ncz_ + cz;
                 }
-                if (axis_extended_[1]) {
-                    if (cy < 0 || cy >= ncy_)
-                        continue;
-                } else if (cy < 0 || cy >= ncy_) {
-                    cy = ((cy % ncy_) + ncy_) % ncy_;
-                }
-                if (axis_extended_[2]) {
-                    if (cz < 0 || cz >= ncz_)
-                        continue;
-                } else if (cz < 0 || cz >= ncz_) {
-                    cz = ((cz % ncz_) + ncz_) % ncz_;
-                }
-
-                const int cj = cx * ncy_ * ncz_ + cy * ncz_ + cz;
-
-                bool seen = false;
-                for (int v : visited)
-                    if (v == cj) {
-                        seen = true;
-                        break;
-                    }
-                if (seen)
-                    continue;
-                visited.push_back(cj);
 
                 const int start = cell_offset_[cj];
                 const int end = start + cell_count_[cj];
@@ -1018,44 +687,157 @@ void CellList::refresh_full(const cpu::Frame& frame, int n_active,
                     // Extended-axis-aware min-image (see the serial
                     // full-stencil comment): never wrap axes the halo
                     // extended, or dual-image ghosts double-count.
-                    min_image_unextended_(frame.box, dx, dy, dz);
 
                     double r2 = dx * dx + dy * dy + dz * dz;
                     if (r2 < rc_sq) {
-                        my_pairs.emplace_back(i, j);
+                        my_neighbors.push_back(j);
+                        ++result.numneigh[i];
                     }
                 }
             }
         }
+#pragma omp barrier
+#pragma omp single
+        {
+            thread_offsets_[0] = 0;
+            for (int t = 0; t < team_size; ++t)
+                thread_offsets_[t + 1] =
+                    thread_offsets_[t]
+                    + static_cast<int>(thread_neighbors_[t].size());
+            result.total_pairs = thread_offsets_[team_size];
+            result.neighbors.resize(
+                static_cast<std::size_t>(result.total_pairs));
+        }
+        const int offset = thread_offsets_[tid];
+        std::copy(my_neighbors.begin(), my_neighbors.end(),
+                  result.neighbors.begin() + offset);
+        for (int i = begin; i < end; ++i)
+            result.firstneigh[i] += offset;
     }
+    for (int i = centres; i < n; ++i)
+        result.firstneigh[i] = result.total_pairs;
+}
 
-    for (int t = 0; t < n_threads; ++t)
-        for (auto& [i, j] : thread_pairs_[t])
-            result.numneigh[i]++;
-
-    result.firstneigh[0] = 0;
-    for (int i = 1; i < n; ++i)
-        result.firstneigh[i] =
-            result.firstneigh[i - 1] + result.numneigh[i - 1];
-
-    result.total_pairs =
-        (n > 0) ? result.firstneigh[n - 1] + result.numneigh[n - 1] : 0;
-    result.neighbors.resize(static_cast<std::size_t>(result.total_pairs));
-
-    // Member-state write cursor (no per-rebuild `auto write_ptr =
-    // result.firstneigh` vector copy — that leaked one heap allocation per
-    // neighbor-list rebuild into the MD hot loop). Sized monotonically; the
-    // contents are reset from firstneigh each call.
-    if (csr_write_cursor_.size() < static_cast<std::size_t>(n))
-        csr_write_cursor_.resize(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        csr_write_cursor_[i] = result.firstneigh[i];
-    for (int t = 0; t < n_threads; ++t) {
-        for (auto& [i, j] : thread_pairs_[t]) {
-            result.neighbors[csr_write_cursor_[i]] = j;
-            csr_write_cursor_[i]++;
+void CellList::derive_half(const cpu::Frame& frame, int n_active,
+                           const PairList& full, PairList& result,
+                           int n_local) const {
+    const int n = n_active < 0 ? frame.n_total() : n_active;
+    const int owned = n_local < 0 ? frame.nlocal() : n_local;
+    if (&full == &result || owned > n || full.inum < owned
+        || full.n_rows < owned)
+        throw std::invalid_argument("CellList half derivation requires a "
+                                    "distinct full list covering owned rows");
+    ensure_at_least(result.ilist, static_cast<std::size_t>(n));
+    ensure_at_least(result.numneigh, static_cast<std::size_t>(n));
+    ensure_at_least(result.firstneigh, static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        result.ilist[i] = i;
+        result.numneigh[i] = 0;
+    }
+    result.inum = owned;
+    result.n_rows = n;
+    const StorageReal* x = frame.span(kAtom_x);
+    const StorageReal* y = frame.span(kAtom_y);
+    const StorageReal* z = frame.span(kAtom_z);
+    const TagInt* tags = frame.span(kAtom_tag);
+    // NPairHalffull assembly: owned pairs use row order; orthogonal ghost
+    // pairs use image coordinates. Triclinic rows reuse NPairBin's tag parity
+    // ownership so direct half and full-derived half share the same rule.
+    const auto enumerate_row = [&](int i, const auto& append) {
+        const int end = full.firstneigh[i] + full.numneigh[i];
+        for (int k = full.firstneigh[i]; k < end; ++k) {
+            const int j = full.neighbors[k];
+            if (j < owned) {
+                if (j <= i)
+                    continue;
+            } else if (triclinic_) {
+                const bool odd = ((tags[i] ^ tags[j]) & TagInt{1}) != 0;
+                if ((tags[i] > tags[j] && !odd) || (tags[i] < tags[j] && odd))
+                    continue;
+                if (tags[i] == tags[j]) {
+                    if (std::abs(z[j] - z[i]) > 0.01) {
+                        if (z[j] < z[i])
+                            continue;
+                    } else if (std::abs(y[j] - y[i]) > 0.01) {
+                        if (y[j] < y[i])
+                            continue;
+                    } else if (x[j] < x[i])
+                        continue;
+                }
+            } else {
+                if (z[j] < z[i])
+                    continue;
+                if (z[j] == z[i]) {
+                    if (y[j] < y[i])
+                        continue;
+                    if (y[j] == y[i] && x[j] < x[i])
+                        continue;
+                }
+            }
+            append(k);
+        }
+    };
+    int n_threads = 1;
+#ifdef _OPENMP
+    n_threads = omp_get_max_threads();
+#endif
+    if (n_threads == 1 || owned < n_threads) {
+        result.neighbors.clear();
+        for (int i = 0; i < owned; ++i) {
+            result.firstneigh[i] = static_cast<int>(result.neighbors.size());
+            enumerate_row(i, [&](int k) {
+                result.neighbors.push_back(full.neighbors[k]);
+            });
+            result.numneigh[i] = static_cast<int>(result.neighbors.size())
+                                 - result.firstneigh[i];
+        }
+        result.total_pairs = static_cast<int>(result.neighbors.size());
+    } else {
+        if (static_cast<int>(thread_neighbors_.size()) < n_threads)
+            thread_neighbors_.resize(static_cast<std::size_t>(n_threads));
+        ensure_at_least(thread_offsets_,
+                        static_cast<std::size_t>(n_threads + 1));
+        for (auto& neighbors : thread_neighbors_)
+            neighbors.clear();
+#pragma omp parallel num_threads(n_threads)
+        {
+            int tid = 0, team_size = 1;
+#ifdef _OPENMP
+            tid = omp_get_thread_num();
+            team_size = omp_get_num_threads();
+#endif
+            auto& neighbors = thread_neighbors_[tid];
+            const int chunk = 1 + owned / team_size;
+            const int begin = std::min(tid * chunk, owned);
+            const int end = std::min(begin + chunk, owned);
+            for (int i = begin; i < end; ++i) {
+                result.firstneigh[i] = static_cast<int>(neighbors.size());
+                enumerate_row(
+                    i, [&](int k) { neighbors.push_back(full.neighbors[k]); });
+                result.numneigh[i] =
+                    static_cast<int>(neighbors.size()) - result.firstneigh[i];
+            }
+#pragma omp barrier
+#pragma omp single
+            {
+                thread_offsets_[0] = 0;
+                for (int t = 0; t < team_size; ++t)
+                    thread_offsets_[t + 1] =
+                        thread_offsets_[t]
+                        + static_cast<int>(thread_neighbors_[t].size());
+                result.total_pairs = thread_offsets_[team_size];
+                result.neighbors.resize(
+                    static_cast<std::size_t>(result.total_pairs));
+            }
+            const int offset = thread_offsets_[tid];
+            std::copy(neighbors.begin(), neighbors.end(),
+                      result.neighbors.begin() + offset);
+            for (int i = begin; i < end; ++i)
+                result.firstneigh[i] += offset;
         }
     }
+    for (int i = owned; i < n; ++i)
+        result.firstneigh[i] = result.total_pairs;
 }
 
 PairList CellList::build_full(const cpu::Frame& frame, int n_active) const {
@@ -1070,18 +852,15 @@ std::size_t CellList::bytes() const {
                * sizeof(typename std::decay_t<decltype(a)>::value_type);
     };
     std::size_t n = xt_bytes(atom_cell_) + xt_bytes(binned_atoms_)
-                    + xt_bytes(cell_count_) + xt_bytes(cell_offset_)
-                    + xt_bytes(x_save_) + xt_bytes(y_save_) + xt_bytes(z_save_);
+                    + xt_bytes(cell_count_) + xt_bytes(cell_offset_);
     // `size()` (live elements) ≈ resident pages; reserved slack is lazily
     // mapped and not resident, so this subtracts cleanly against peak RSS.
     n += (half_stencil_.size() + full_stencil_.size()) * sizeof(StencilOffset);
-    n += csr_write_cursor_.size() * sizeof(int);
+    n += thread_offsets_.size() * sizeof(int);
     n += bin_write_ptr_.size() * sizeof(int);
-    // Multi-thread scratch: per-thread (i,j) pair buffers + visited-cell lists.
-    for (const auto& tp : thread_pairs_)
-        n += tp.size() * sizeof(std::pair<int, int>);
-    for (const auto& tv : thread_visited_)
-        n += tv.size() * sizeof(int);
+    // Multi-thread scratch: contiguous neighbor indices.
+    for (const auto& tp : thread_neighbors_)
+        n += tp.size() * sizeof(int);
     return n;
 }
 

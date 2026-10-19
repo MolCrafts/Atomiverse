@@ -6,19 +6,20 @@ A molpy-built Atomistic system exports via ``to_frame()`` to the
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
+
 import numpy as np
-import molpy
 
 from _domains import skip_module_unless
 
 skip_module_unless("ATV_BUILD_MD")
 
-from atomiverse.md import MD, InitVelocity
-from atomiverse.neighbor import NeighborList
-from atomiverse.potentials.pair import LJCut
-
 
 def _molpy_argon_frame() -> "molpy.Frame":
+    import molpy
+
     scale = 3.4
     system = molpy.Atomistic()
     for ix in range(2):
@@ -38,12 +39,17 @@ def _molpy_argon_frame() -> "molpy.Frame":
 
 class TestMolpyInterop:
     def test_atomistic_exports_molpy_frame(self) -> None:
+        import molpy
+
         frame = _molpy_argon_frame()
         assert isinstance(frame, molpy.Frame)
         assert np.asarray(frame["atoms"]["x"]).shape == (8,)
 
     def test_molpy_frame_runs_atv_lj_md(self) -> None:
+        from atomiverse.md import MD, InitVelocity
         from atomiverse.md.integrator import VelocityVerlet
+        from atomiverse.neighbor import NeighborList
+        from atomiverse.potentials.pair import LJCut
 
         frame = _molpy_argon_frame()
         cutoff = 8.5
@@ -56,3 +62,39 @@ class TestMolpyInterop:
         energy = frame.meta["energy"]
         assert isinstance(energy, float)
         assert np.isfinite(energy)
+
+
+def test_molrs_abi_mismatch_rejected_before_capsule_access() -> None:
+    # A fresh interpreter exercises the first, cached ABI handshake even if
+    # earlier tests already borrowed a frame. No simulation is run.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent("""\
+            import molrs
+            from atomiverse._binding import _cpp
+
+            token = molrs._ffi_abi_token()
+            molrs._ffi_abi_token = lambda: ("999.0", *token[1:])
+
+            class UnreadableFrame:
+                def _ffi_frameref_capsule(self):
+                    raise AssertionError("capsule accessed before ABI check")
+
+            try:
+                _cpp.MD().run(UnreadableFrame(), 0)
+            except RuntimeError as exc:
+                assert "molrs ABI-line mismatch" in str(exc), str(exc)
+                assert "999.0" in str(exc), str(exc)
+                assert "linked" in str(exc), str(exc)
+            else:
+                raise AssertionError("mismatched molrs ABI was accepted")
+            """),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

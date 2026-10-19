@@ -55,6 +55,7 @@ class FixDfield : public cpu::Bias {
     }
 
     void launch(const cpu::LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 
     double last_energy() const noexcept { return last_u_; }
     /// @brief Itinerant cell polarization \(\sum q_i z_i^{u} / V\) z-component [e/Å²]

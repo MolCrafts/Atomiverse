@@ -83,9 +83,9 @@ int main() {
     sim.enable_timing(false);
     sim.build();
 
-    // Warm-up: cold SCF seed + BO force evaluation (Te still 0).
-    if (sim.run(frame, 1) != 1) {
-        std::printf("FAIL: warm-up step did not run\n");
+    // Setup: cold SCF seed + BO force evaluation (Te still 0).
+    if (sim.run(frame, 0) != 0) {
+        std::printf("FAIL: force initialization advanced the nuclei\n");
         return 1;
     }
     {

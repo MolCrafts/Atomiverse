@@ -1,5 +1,6 @@
 /// @file src/cpu/multiscale/qmmm_oniom.cpp
 #include "atomiverse/cpu/multiscale/qmmm_oniom.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include "atomiverse/core/frame_schema.h"
 
@@ -12,7 +13,9 @@ QmmmOniom::QmmmOniom(std::vector<LJTypeCoeff> low_lj, double cutoff,
 
 void QmmmOniom::build(const BuildContext& ctx) {
     // High level is vacuum QM on the model (+ links); no embedding.
-    sub_.build(ctx.frame, ctx.runtime.mpi_size, /*require_embedding=*/false);
+    sub_.build(ctx.frame,
+               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+               /*require_embedding=*/false);
 }
 
 void QmmmOniom::launch(const LaunchContext& ctx) {

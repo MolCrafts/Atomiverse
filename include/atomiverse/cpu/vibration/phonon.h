@@ -49,6 +49,9 @@ namespace vib {
 /// public members — no `PhononConfig` bag.
 class Phonon : public Driver<ATV::vib::Phase> {
   public:
+    /// @brief Finite displacements require the complete supercell on each rank.
+    bool requires_full_frame() const override { return true; }
+
     /// @brief Supercell repeats along lattice vector a (≥1).
     int na = 1;
     /// @brief Supercell repeats along lattice vector b (≥1).

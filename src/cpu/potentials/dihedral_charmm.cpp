@@ -84,6 +84,7 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "DihedralCharmm");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 5;
     if (n_tuples == 0)
         return;
@@ -105,7 +106,7 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
         ay -= ly * std::nearbyint(ay * inv_ly);
         az -= lz * std::nearbyint(az * inv_lz);
     };
-    const bool do_virial = compute_stress_;
+    const bool do_virial = compute_stress_ && ctx.stress_requested;
 
     const double* __restrict Ktab = K_.data();
     const int* __restrict ntab = n_.data();
@@ -115,7 +116,9 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
 
     scratch_.bind(f);
 
-#pragma omp parallel if (scratch_.n_threads() > 1) reduction(+ : energy_total)
+#pragma omp parallel num_threads(                                              \
+        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
+    reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP
@@ -194,18 +197,20 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
                                                f2y, f2z, f3x, f3y, f3z, f4x,
                                                f4y, f4z);
 
-            tf.fx[i1] += f1x;
-            tf.fy[i1] += f1y;
-            tf.fz[i1] += f1z;
-            tf.fx[i2] += f2x;
-            tf.fy[i2] += f2y;
-            tf.fz[i2] += f2z;
-            tf.fx[i3] += f3x;
-            tf.fy[i3] += f3y;
-            tf.fz[i3] += f3z;
-            tf.fx[i4] += f4x;
-            tf.fy[i4] += f4y;
-            tf.fz[i4] += f4z;
+            if (ctx.forces_requested) {
+                tf.fx[i1] += f1x;
+                tf.fy[i1] += f1y;
+                tf.fz[i1] += f1z;
+                tf.fx[i2] += f2x;
+                tf.fy[i2] += f2y;
+                tf.fz[i2] += f2z;
+                tf.fx[i3] += f3x;
+                tf.fy[i3] += f3y;
+                tf.fz[i3] += f3z;
+                tf.fx[i4] += f4x;
+                tf.fy[i4] += f4y;
+                tf.fz[i4] += f4z;
+            }
 
             if (do_virial) {
                 vir_local.add_pair(-g.b1x, -g.b1y, -g.b1z, f1x, f1y, f1z);
@@ -220,12 +225,14 @@ void DihedralCharmm::compute(const LaunchContext& ctx) {
         }
     }
 
-    scratch_.reduce_into(n_force);
+    if (ctx.forces_requested)
+        scratch_.reduce_into(n_force);
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyDihedral) += energy_total;
     if (do_virial)
-        vir.flush_to(f.meta.get(kStress));
+        if (ctx.stress_requested)
+            vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }

@@ -10,6 +10,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/gaussian_charge.h"
 #include "atomiverse/cpu/potentials/pair_gaussian_coul.h"
 
@@ -37,6 +38,25 @@ cpu::Frame dimer(double r, double q0, double q1, int t0, int t1) {
 }
 
 } // namespace
+
+TEST(PairGaussianCoul, SpatialHalfRowsMayPointToALowerLocalIndex) {
+    auto frame = dimer(2.5, 1.0, -1.0, 0, 0);
+    cpu::md::PairList pairs;
+    pairs.inum = 1;
+    pairs.ilist = {1};
+    pairs.numneigh = {0, 1};
+    pairs.firstneigh = {0, 0};
+    pairs.neighbors = {0};
+    pairs.total_pairs = 1;
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    cpu::PairGaussianCoul potential(8.0, {}, false);
+    potential.build({context, frame});
+    potential.launch({context, frame, 0, 0});
+    EXPECT_NEAR(frame.meta.get(kEnergy), -units::coulomb / 2.5, 1e-12);
+    EXPECT_NEAR(frame.span(kAtom_fx)[0], units::coulomb / (2.5 * 2.5), 1e-12);
+    potential.destroy({context, frame});
+}
 
 TEST(GaussianChargeKernel, EtaEffEqualWidths) {
     const double eta = 1.0;

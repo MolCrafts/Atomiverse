@@ -2,6 +2,7 @@
 /// @brief Beutler/GROMACS one-leg soft-core Coulomb (neighbor-list walk).
 
 #include "atomiverse/cpu/potentials/pair_coul_soft.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include <algorithm>
 #include <cmath>
@@ -62,16 +63,8 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
             "PairCoulSoft::compute: runtime.md.pair_list is null");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.box;
 
-    const auto* dd = ctx.runtime.md.dd;
-#ifdef ATV_HAS_MPI
-    const bool mpi = dd && ctx.runtime.mpi_size > 1;
-    const int n_force = mpi ? dd->n_local + dd->n_ghost : f.nlocal();
-#else
-    (void)dd;
-    const int n_force = f.nlocal();
-#endif
+    const int n_force = cpu::force_count(ctx);
 
     if (static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size()) < n_force) {
         for (int t = 0; t < n_threads_; ++t) {
@@ -86,10 +79,6 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
     const int* __restrict numneigh = pairs.numneigh.data();
     const int* __restrict firstneigh = pairs.firstneigh.data();
     const int* __restrict neighbors = pairs.neighbors.data();
-    const bool has_shifts = pairs.has_shifts;
-    const double* __restrict shx = has_shifts ? pairs.shift_x.data() : nullptr;
-    const double* __restrict shy = has_shifts ? pairs.shift_y.data() : nullptr;
-    const double* __restrict shz = has_shifts ? pairs.shift_z.data() : nullptr;
 
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
@@ -122,13 +111,15 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
         return;
     }
 
-#pragma omp parallel reduction(+ : energy_total) reduction(+ : dU_total)       \
-    reduction(+ : v_xx) reduction(+ : v_yy) reduction(+ : v_zz)                \
-    reduction(+ : v_xy) reduction(+ : v_xz) reduction(+ : v_yz)
+#pragma omp parallel num_threads(n_threads_) reduction(+ : energy_total)       \
+    reduction(+ : dU_total) reduction(+ : v_xx) reduction(+ : v_yy)            \
+    reduction(+ : v_zz) reduction(+ : v_xy) reduction(+ : v_xz)                \
+    reduction(+ : v_yz)
     {
-        int tid = 0;
+        int tid = 0, team_size = 1;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
+        team_size = omp_get_num_threads();
 #endif
         const bool direct = (n_threads_ == 1);
         double* __restrict fxt_ptr;
@@ -150,9 +141,6 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
             fzt_ptr = fzt.data();
         }
 
-        const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
-        const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
-
 #pragma omp for schedule(static)
         for (int ii = 0; ii < k_inum; ++ii) {
             const int i = ilist[ii];
@@ -169,18 +157,9 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
                 if (qj == 0.0)
                     continue;
                 double dx, dy, dz;
-                if (has_shifts) {
-                    dx = xi - (x_ptr[j] + shx[off + jj]);
-                    dy = yi - (y_ptr[j] + shy[off + jj]);
-                    dz = zi - (z_ptr[j] + shz[off + jj]);
-                } else {
-                    dx = xi - x_ptr[j];
-                    dy = yi - y_ptr[j];
-                    dz = zi - z_ptr[j];
-                    dx -= lx * std::nearbyint(dx * inv_lx);
-                    dy -= ly * std::nearbyint(dy * inv_ly);
-                    dz -= lz * std::nearbyint(dz * inv_lz);
-                }
+                dx = xi - x_ptr[j];
+                dy = yi - y_ptr[j];
+                dz = zi - z_ptr[j];
                 const double r2 = dx * dx + dy * dy + dz * dz;
                 if (r2 >= rc_sq || r2 == 0.0)
                     continue;
@@ -213,9 +192,11 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
                     fi_x += fxp;
                     fi_y += fyp;
                     fi_z += fzp;
-                    fxt_ptr[j] -= fxp;
-                    fyt_ptr[j] -= fyp;
-                    fzt_ptr[j] -= fzp;
+                    if (ctx.forces_requested) {
+                        fxt_ptr[j] -= fxp;
+                        fyt_ptr[j] -= fyp;
+                        fzt_ptr[j] -= fzp;
+                    }
                     v_xx += dx * fxp;
                     v_yy += dy * fyp;
                     v_zz += dz * fzp;
@@ -224,18 +205,22 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
                     v_yz += dy * fzp;
                 }
             }
-            fxt_ptr[i] += fi_x;
-            fyt_ptr[i] += fi_y;
-            fzt_ptr[i] += fi_z;
+            if (ctx.forces_requested) {
+                fxt_ptr[i] += fi_x;
+                fyt_ptr[i] += fi_y;
+                fzt_ptr[i] += fi_z;
+            }
         }
 
         if (!direct) {
 #pragma omp for schedule(static)
             for (int i = 0; i < n_force; ++i) {
-                for (int t = 0; t < n_threads_; ++t) {
-                    fx_ptr[i] += fx_thr_[t][i];
-                    fy_ptr[i] += fy_thr_[t][i];
-                    fz_ptr[i] += fz_thr_[t][i];
+                for (int t = 0; t < team_size; ++t) {
+                    if (ctx.forces_requested) {
+                        fx_ptr[i] += fx_thr_[t][i];
+                        fy_ptr[i] += fy_thr_[t][i];
+                        fz_ptr[i] += fz_thr_[t][i];
+                    }
                 }
             }
         }
@@ -243,12 +228,14 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    f.meta.get(kStress)[0] += v_xx;
-    f.meta.get(kStress)[1] += v_yy;
-    f.meta.get(kStress)[2] += v_zz;
-    f.meta.get(kStress)[3] += v_xy;
-    f.meta.get(kStress)[4] += v_xz;
-    f.meta.get(kStress)[5] += v_yz;
+    if (ctx.stress_requested) {
+        f.meta.get(kStress)[0] += v_xx;
+        f.meta.get(kStress)[1] += v_yy;
+        f.meta.get(kStress)[2] += v_zz;
+        f.meta.get(kStress)[3] += v_xy;
+        f.meta.get(kStress)[4] += v_xz;
+        f.meta.get(kStress)[5] += v_yz;
+    }
     dU_dlambda_ = dU_total;
 }
 

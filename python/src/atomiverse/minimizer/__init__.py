@@ -110,7 +110,7 @@ from atomiverse._binding import _cpp, require_domain
 require_domain(__name__, "minimize")
 from atomiverse._dispatch import (
     EVALUATOR_DISPATCH as _EVALUATOR_DISPATCH,
-    unsupported_evaluator_message as _unsupported_evaluator_message,
+    bind_evaluator as _bind_evaluator,
 )
 
 _PHASE_MAP: dict[str, object] = {
@@ -223,6 +223,10 @@ class Minimize:
         Ewald split, a semiempirical method or plane-wave DFT all drive a
         geometry optimization.
 
+        Native Gaussian methods and ``DFTB2`` are borrowed and kept alive by
+        the driver, with diagnostics on the original object. Their current
+        task format supports local runs; launcher use is rejected explicitly.
+
         Two caveats this dispatch cannot catch for you:
 
         * ``CoulLong`` and ``KSpacePME`` are the two halves of one Ewald
@@ -231,10 +235,7 @@ class Minimize:
         * every Coulomb style reads the per-atom ``charge`` column [e] of the
           frame.
         """
-        method_name = _EVALUATOR_DISPATCH.get(type(component))
-        if method_name is None:
-            raise TypeError(_unsupported_evaluator_message(component))
-        getattr(self._cpp, method_name)(component)
+        _bind_evaluator(self._cpp, component)
         self._built = False
         return self
 

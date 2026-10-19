@@ -1,6 +1,7 @@
 /// @file regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp
 /// @brief END-TO-END: ghost-charge correctness after the const-pot Q solve
-///        under MPI domain decomposition (2 ranks, planar walls).
+///        on 2 replicated ranks (planar walls); a spatial decomposition of
+///        the electrode solve is rejected explicitly.
 ///
 /// See REFERENCE.md. Public headers + link atomiverse only. oracle=literature
 /// (self-consistency invariant; LAMMPS fix electrode forward-communicates q
@@ -15,10 +16,17 @@
 ///          the stale-ghost failure mode is exercised — electrode charges
 ///          start at 0 and only the refreshed solve makes ghosts nonzero),
 ///      (c) ghost rows were checked on every step.
+///      (d) the same pipeline under a forced 2x1x1 spatial decomposition is
+///          rejected before any rank-local partial solve could run (the
+///          electrode solve requires a complete Frame).
 ///  - child (`--child <out>`): MPI_Init, run a 38-atom parallel-plate
 ///    capacitor MD (ConstPotBO + PairCoulCut + NeighborList + VelocityVerlet)
-///    for 5 steps with an out-of-library GhostChargeChecker Component bound
-///    at the force phase; reduce the tallies; rank 0 writes one result line.
+///    for 5 steps on every rank as a replica (`set_serial_on_replica`), with
+///    an out-of-library GhostChargeChecker Component bound at the force
+///    phase. The ghost rows are the explicit periodic self-images CommBrick
+///    creates at every rank count; the charge refresh they receive is the
+///    same `ChargePacker` forward pass a remote ghost would. Reduce the
+///    tallies; rank 0 writes one result line.
 ///
 /// The charge refresh under test is posted by ConstPotBO itself after it
 /// rewrites owned q (`ChargePacker` through `ctx.md.comm->forward_comm`).
@@ -121,8 +129,8 @@ class GhostChargeChecker : public cpu::Component {
         if (!dd || ctx.runtime.mpi_size <= 1)
             return;
         auto& f = ctx.frame;
-        const int nloc = dd->n_local;
-        const int ngh = dd->n_ghost;
+        const int nloc = f.nlocal();
+        const int ngh = f.nghost();
         // Resolve each span ONCE per launch (Frame enforces a per-component
         // resolution budget precisely to keep span lookups off hot loops).
         const auto tag_col = f.span(kAtom_tag);
@@ -198,7 +206,31 @@ int run_child(const char* out_path) {
 
     auto frame = make_capacitor();
 
+    // (d) The electrode solve needs every electrode atom. Under a spatial
+    //     decomposition the Runtime rejects it at frame binding, on every
+    //     rank alike, before any collective a partial solve would need.
+    int dd_rejected = 0;
+    {
+        cpu::md::MD rejected;
+        rejected.set_integrator(cpu::md::VelocityVerlet{kDt});
+        rejected.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
+        rejected.set_evaluator(cpu::PairCoulCut{kCut});
+        cpu::md::ConstPotBO solver(kEta);
+        solver.add_electrode(kTypeBot, kPsiBot);
+        solver.add_electrode(kTypeTop, kPsiTop);
+        rejected.set_observer_ref(solver);
+        rejected.build();
+        auto probe = make_capacitor();
+        try {
+            rejected.run(probe, 1);
+        } catch (const std::runtime_error& e) {
+            dd_rejected = std::string(e.what()).find("complete Frame")
+                          != std::string::npos;
+        }
+    }
+
     cpu::md::MD sim;
+    sim.set_serial_on_replica();
     sim.set_integrator(cpu::md::VelocityVerlet{kDt});
     sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
     sim.set_evaluator(cpu::PairCoulCut{kCut});
@@ -238,8 +270,9 @@ int run_child(const char* out_path) {
             std::printf("FAIL: child cannot open %s\n", out_path);
             rc = 1;
         } else {
-            std::fprintf(out, "%.17e %lld %lld %lld %d\n", max_dq, checked,
-                         elec_nonzero, unresolved, checker.launches_);
+            std::fprintf(out, "%.17e %lld %lld %lld %d %d\n", max_dq, checked,
+                         elec_nonzero, unresolved, checker.launches_,
+                         dd_rejected);
             std::fclose(out);
         }
     }
@@ -256,11 +289,16 @@ int main(int argc, char** argv) {
     char self_buf[4096];
     const ssize_t n =
         ::readlink("/proc/self/exe", self_buf, sizeof(self_buf) - 1);
-    if (n <= 0) {
-        std::printf("FAIL: cannot resolve /proc/self/exe\n");
+    // macOS has no /proc; the build runs this binary by absolute path, so
+    // argv[0] names the same executable there.
+    if (n > 0) {
+        self_buf[n] = '\0';
+    } else if (argv[0] != nullptr && std::strlen(argv[0]) < sizeof(self_buf)) {
+        std::strcpy(self_buf, argv[0]);
+    } else {
+        std::printf("FAIL: cannot resolve the executable path\n");
         return 1;
     }
-    self_buf[n] = '\0';
 
     ::setenv("OMP_NUM_THREADS", "1", 1);
     const std::string out = "/tmp/atv-const-pot-charge-halo-"
@@ -282,12 +320,13 @@ int main(int argc, char** argv) {
     }
     double max_dq = -1.0;
     long long checked = -1, elec_nonzero = -1, unresolved = -1;
-    int launches = -1;
-    const int got = std::fscanf(in, "%lf %lld %lld %lld %d", &max_dq, &checked,
-                                &elec_nonzero, &unresolved, &launches);
+    int launches = -1, dd_rejected = -1;
+    const int got =
+        std::fscanf(in, "%lf %lld %lld %lld %d %d", &max_dq, &checked,
+                    &elec_nonzero, &unresolved, &launches, &dd_rejected);
     std::fclose(in);
     std::remove(out.c_str());
-    if (got != 5) {
+    if (got != 6) {
         std::printf("FAIL: malformed child report (%d fields)\n", got);
         return 1;
     }
@@ -316,9 +355,16 @@ int main(int argc, char** argv) {
         ++failures;
     }
 
+    // (d) The decomposed electrode solve is refused, with the how-to.
+    if (dd_rejected != 1) {
+        std::printf("FAIL: a spatially decomposed ConstPotBO run was not "
+                    "rejected with the complete-Frame message\n");
+        ++failures;
+    }
+
     std::printf("[const-pot-charge-halo-mpi] max|dq|=%.3e e checked=%lld "
-                "elec_ghosts_nonzero=%lld launches=%d\n",
-                max_dq, checked, elec_nonzero, launches);
+                "elec_ghosts_nonzero=%lld launches=%d dd_rejected=%d\n",
+                max_dq, checked, elec_nonzero, launches, dd_rejected);
     std::printf(failures == 0 ? "PASS\n" : "FAIL (%d)\n", failures);
     return failures == 0 ? 0 : 1;
 }

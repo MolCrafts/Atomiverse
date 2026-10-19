@@ -50,6 +50,10 @@ struct StopAtStep : ATV::cpu::Component {
 /// thing that was impossible before: "stop or not" was a private `if` inside a driver.
 class ConvergeAtIteration : public ATV::cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     explicit ConvergeAtIteration(int at) : at_(at) {}
     std::string name() const override { return "converge_at_iteration"; }
     void launch(const ATV::cpu::LaunchContext&) override {} // verdict-only

@@ -71,6 +71,8 @@ class Widom : public Observer {
     Widom(double temperature_K, double diameter_a, int n_trials,
           std::uint64_t seed, WidomPotential /*tag*/);
 
+    /// @brief This analysis consumes a complete system, not a spatial shard.
+    bool requires_full_frame() const override { return true; }
     std::string name() const override { return "widom"; }
 
     std::vector<DefaultBinding> default_bindings() const override {

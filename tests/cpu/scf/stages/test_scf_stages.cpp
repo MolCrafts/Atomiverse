@@ -78,6 +78,7 @@
 
 #ifdef ATV_HAS_HF
 
+#include "atomiverse/cpu/linalg/pulay.h"
 #include <cmath>
 #include <cstring>
 #include <iomanip>
@@ -120,11 +121,11 @@
 #include "cpu/driver_test_helpers.h"
 
 using namespace ATV;
+using cpu::linalg::diis_error;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::internal::apply_level_shift;
 using cpu::scf::internal::DensityBuilder;
-using cpu::scf::internal::diis_error;
 using cpu::scf::internal::DIISMixer;
 using cpu::scf::internal::DualConvergenceCheck;
 using cpu::scf::internal::EigenSolver;
@@ -474,7 +475,7 @@ TEST(MixStage, ReproducesDiisErrorAndExtrapolationRestricted) {
         auto lc = at_stage(rt, fr, scf::Phase::mix, iter);
         mix.launch(lc);
 
-        RealMatrix err_ref = diis_error(F_seq[iter], P, S, X);
+        RealMatrix err_ref = ATV::cpu::linalg::diis_error(F_seq[iter], P, S, X);
         RealMatrix F_ref = oracle_diis.step(F_seq[iter], err_ref);
 
         EXPECT_TRUE(MatBitEqual(err_a, err_ref)) << "iter " << iter;
@@ -511,8 +512,10 @@ TEST(MixStage, ReproducesDiisErrorAndExtrapolationUnrestricted) {
         auto lc = at_stage(rt, fr, scf::Phase::mix, iter);
         mix.launch(lc);
 
-        RealMatrix ea_ref = diis_error(Fa_seq[iter], Pa, S, X);
-        RealMatrix eb_ref = diis_error(Fb_seq[iter], Pb, S, X);
+        RealMatrix ea_ref =
+            ATV::cpu::linalg::diis_error(Fa_seq[iter], Pa, S, X);
+        RealMatrix eb_ref =
+            ATV::cpu::linalg::diis_error(Fb_seq[iter], Pb, S, X);
         auto [Fa_ref, Fb_ref] =
             oracle_diis.step(Fa_seq[iter], ea_ref, Fb_seq[iter], eb_ref);
 
@@ -546,7 +549,7 @@ TEST(MixStage, AppliesLevelShiftRestrictedWhenAboveThreshold) {
     mix.launch(lc);
 
     // Oracle: no DIIS, then F' = F + λ(S − S·D_occ·S) with D_occ = 0.5·P.
-    RealMatrix err_ref = diis_error(F_in, P, S, X);
+    RealMatrix err_ref = ATV::cpu::linalg::diis_error(F_in, P, S, X);
     RealMatrix D_occ = 0.5 * P;
     RealMatrix F_ref = apply_level_shift(F_in, S, D_occ, lambda);
 

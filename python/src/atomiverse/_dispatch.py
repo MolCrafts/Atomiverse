@@ -1,29 +1,9 @@
-"""THE evaluator dispatch table — internal, one object, no copies.
+"""Evaluator registration at the Python/native boundary.
 
-An *evaluator* (or force source) is any component that, given a geometry,
-produces an energy and the forces on the atoms: a Lennard-Jones pair style, a
-bonded term, an Ewald electrostatic split, a semiempirical method, plane-wave
-DFT. A force source is a force source — whatever produces energies and forces
-for molecular dynamics produces them for a geometry optimization too — and the
-C++ side says exactly that: ``Driver::set_evaluator`` is inherited, plural and
-identical on ``cpu::md::MD`` and ``cpu::minimizer::Minimize``.
-
-This module owns the one table that both Python facades import, so that
-statement stays true here as well. Its keys are the compiled component classes
-and its values are the typed ``set_evaluator_*`` method names the C++ handles
-expose. Those names are deliberately spelled the same in ``bind_md.cpp`` and
-``bind_minimizer.cpp``, which is what lets a single table drive both; a second
-copy of it would be free to accept a component on one driver and refuse it on
-the other, which is the failure this module exists to prevent.
-
-Registration is unconditional for the components every build carries, and
-probed (``has_domain``) for the compile-optional ones, so the table
-describes the extension actually installed rather than the maximal build.
-
-Internal: nothing here is public API. Import it as
-``from atomiverse._dispatch import EVALUATOR_DISPATCH as _EVALUATOR_DISPATCH``
-so the facade attribute stays ``_EVALUATOR_DISPATCH`` and the object stays
-shared by identity.
+Parameter mirrors use the shared typed setter table, preserving their MPI
+transport. Other bound Component and DriverNode objects use the native
+registration protocol; the driver keeps their Python owners alive and refuses
+MPI task dispatch when the task format cannot represent them.
 """
 
 from __future__ import annotations
@@ -87,8 +67,23 @@ def unsupported_evaluator_message(component: object) -> str:
     supported = ", ".join(t.__name__ for t in EVALUATOR_DISPATCH)
     return (
         f"set_evaluator does not support {type(component).__name__}. "
-        f"Supported: {supported}"
+        f"Supported: {supported}, native Component or DriverNode"
     )
 
 
-__all__ = ["EVALUATOR_DISPATCH", "unsupported_evaluator_message"]
+def bind_evaluator(driver: object, component: object) -> None:
+    """Register mirrored parameters or borrow a native component/loop node.
+
+    Existing mirror entries retain their MPI transport behavior. Other live
+    objects use the C++ registration protocol and remain owned by Python.
+    """
+    method = EVALUATOR_DISPATCH.get(type(component))
+    if method is not None:
+        getattr(driver, method)(component)
+    elif isinstance(component, (_cpp._Component, _cpp._DriverNode)):
+        driver.set_evaluator(component)
+    else:
+        raise TypeError(unsupported_evaluator_message(component))
+
+
+__all__ = ["EVALUATOR_DISPATCH", "unsupported_evaluator_message", "bind_evaluator"]

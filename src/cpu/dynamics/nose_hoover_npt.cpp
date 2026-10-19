@@ -1,5 +1,8 @@
 /// @file cpu/dynamics/nose_hoover_npt.cpp
 /// @brief Single-chain Martyna-Tobias-Klein isotropic NPT.
+/// Initial kinetic-energy setup follows LAMMPS src/fix_nh.cpp,
+/// a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+/// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 
@@ -8,7 +11,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
-#include "atomiverse/cpu/frame/pbc.h"
 
 #include <algorithm>
 #include <array>
@@ -99,36 +101,8 @@ NoseHooverNPT::NoseHooverNPT(double T_target, double tau_T, double P_target,
 ///      `etap_mass`). Atomiverse folds `omega_mass` (LAMMPS per-axis)
 ///      into the single isotropic `W_ = 3·omega_mass`.
 void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
-    // n_dof must be the GLOBAL degree-of-freedom count: it controls Q_t_[0]
-    // (thermostat coupling mass), W_ (barostat mass) and the equipartition
-    // target 0.5·n_dof·kT used by compute_global_KE's NHC update. Using a
-    // per-rank value blows up the barostat under multi-rank rebuilds.
-    //
-    // Single-rank: frame.nlocal() IS global N. Multi-rank: when build()
-    // runs BEFORE partitioning (initial build), atoms.size() is global too;
-    // but when build() runs AFTER a prior stage has already partitioned
-    // (the polyethylene_tension per-stage driver rebuild), atoms.size() ==
-    // n_local + n_ghost — wrong. The DD's `n_local` is authoritative on
-    // each rank post-partition, so Allreduce-sum that to recover global N.
-    int N = static_cast<int>(ctx.frame.nlocal());
-#ifdef ATV_HAS_MPI
-    // MUST be unconditional across all ranks: MPI_Allreduce is a collective,
-    // so every rank on cart_comm has to call it or the ones that do hang
-    // forever. A rank that transiently owns no atoms (n_local == 0 — common
-    // at high rank counts, e.g. an empty cell in a 4x4x4 decomposition) still
-    // participates, contributing 0 to the sum so N stays the correct global
-    // total. Gating this on `n_local > 0` deadlocked the stage-1->stage-2 NPT
-    // rebuild at 64 ranks while 32 ranks (no empty cells) ran fine.
-    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
-        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        const int n_local = ctx.runtime.md.dd->n_local;
-        MPI_Allreduce(&n_local, &N, 1, MPI_INT, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-    }
-#endif
-    // Ndof: single owner, constraint-aware. @see Driver::publish_dof_
+    // Driver publishes the constraint-aware global DOF count before build.
     n_dof_ = ctx.runtime.md.n_dof_global;
-    (void)N;
     kT_ = units::kB_ev_per_k * T_target_;
 
     // Standard MTK masses (Tuckerman 2006 §III).
@@ -665,7 +639,7 @@ void NoseHooverNPT::kick_v_by_force(const cpu::LaunchContext& ctx,
 ///      `exp(dt·omega_dot[i])` only when `p_flag[i]` is set. Atomiverse
 ///      fuses both into the closed-form per-axis
 ///      `x_α·e^{ε̇_α·dt} + v_α·dt·(e^{ε̇_α·dt}−1)/(ε̇_α·dt)` plus a
-///      single `box.scale_diagonal(...)`.
+///      corresponding Cartesian row scaling of H.
 ///
 /// A rigid axis (`couple_axis_[α]==false`) has `ε̇_α == 0`, so its scale
 /// factor is `exp(0)=1` and its drift factor is `expm1c(0)=1`: the
@@ -724,16 +698,13 @@ void NoseHooverNPT::propagate_x_and_box(const cpu::LaunchContext& ctx) {
     // owner rank applies the v drift to its own owned copy, which the
     // next forward halo will propagate.
     // Scale ghost positions too. In multi-rank the ghost range is
-    // `[dd->n_local, dd->n_local + dd->n_ghost)`; in single-rank there
-    // are no ghosts. `atoms.size()` reports the Frame-ctor capacity
+    // `[frame.nlocal(), frame.nlocal() + frame.nghost())`; in single-rank there
+    // may also be self-image ghosts. `atoms.size()` reports the Frame-ctor capacity
     // (10000) in the refactored layout, not the live nlocal+nghost
     // count — using it walks ~6000 uninitialised rows past the ghost
     // range and scales row-0 positions into a singularity that
     // catastrophically explodes LJ at the next force pass.
-    int n_total = n;
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
-        n_total = ctx.runtime.md.dd->n_local + ctx.runtime.md.dd->n_ghost;
-    }
+    const int n_total = force_count(ctx);
     if (n_total > n) {
 #pragma omp parallel for schedule(static)
         for (int i = n; i < n_total; ++i) {
@@ -747,10 +718,13 @@ void NoseHooverNPT::propagate_x_and_box(const cpu::LaunchContext& ctx) {
     // multiplies by exp(0)=1, i.e. is left unchanged. For the all-coupled
     // case all three factors are equal so this is identical to the
     // legacy `box.scale_isotropic(a)`.
-    f.box.scale_diagonal(ax, ay, az);
-
-    // Wrap (orthorhombic) owned atoms into the freshly-scaled box.
-    wrap_orthorhombic(f, n);
+    Mat3 cell = f.box.cell();
+    for (int j = 0; j < 3; ++j) {
+        cell(0, j) *= ax;
+        cell(1, j) *= ay;
+        cell(2, j) *= az;
+    }
+    f.box.set_cell(cell);
 
     // The per-rank slab bounds (sublo/subhi) were set by Backend::set_frame
     // from the box at that point. NPT just changed the box -- if we don't
@@ -771,7 +745,7 @@ void NoseHooverNPT::propagate_x_and_box(const cpu::LaunchContext& ctx) {
     // valid on the standard LAMMPS-style cadence. Migration still fires
     // promptly whenever an owner crosses a slab boundary because the
     // refreshed `sublo/subhi` above feeds the next scheduled migration.
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
+    if (cpu::multi_rank_dd(ctx.runtime)) {
         ctx.runtime.md.dd->compute_sublo_subhi(f.box);
     }
 }
@@ -824,9 +798,19 @@ NoseHooverNPT::extended_hamiltonian(const cpu::LaunchContext& ctx) const {
 ///      `final_integrate` phase (P7) and `end_of_step` (P8-P11) so the
 ///      `Reduce` MPI all-reduce can run in between.
 void NoseHooverNPT::launch(const cpu::LaunchContext& ctx) {
+    if (n_dof_ != ctx.runtime.md.n_dof_global) {
+        // Preserve chain state while refreshing the DOF-dependent
+        // masses at the same bath temperature used to construct them.
+        W_ *= (static_cast<double>(ctx.runtime.md.n_dof_global) + 3.0)
+              / (static_cast<double>(n_dof_) + 3.0);
+        n_dof_ = ctx.runtime.md.n_dof_global;
+        Q_t_[0] = static_cast<double>(n_dof_) * kT_ * tau_T_ * tau_T_;
+    }
     const double half_dt = 0.5 * dt_;
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
+        // Read actual velocities, including changes between run segments.
+        KE_global_ = compute_global_KE(ctx);
         // Interpolate the live thermostat setpoint for this step before
         // the chain integrates, mirroring LAMMPS `FixNH::initial_integrate`
         // calling `compute_temp_target()` ahead of `nhc_temp_integrate()`.

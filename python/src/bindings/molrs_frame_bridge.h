@@ -3,7 +3,7 @@
 ///
 /// Atomiverse does not bind a Frame data type. The **user-facing** exchange
 /// layer is `molpy.Frame`. molpy re-exports the molrs schema object, so the
-/// capsule name stays `"molrs.FrameRef"` — that is an engine-private FFI
+/// capsule name is `"molrs.FrameRef/<major.minor>"` — an engine-private FFI
 /// detail, not a user import. Users never `import molrs`.
 ///
 /// `borrow_molrs_frame()` extracts that capsule, hands the raw address to
@@ -15,6 +15,7 @@
 #include <string>
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
 
 #include <cstdint>
 #include <stdexcept>
@@ -23,30 +24,15 @@
 
 namespace nb = nanobind;
 
-/// @brief Borrow the molpy.Frame behind a Python object as a cxx handle.
+/// @brief The runtime capsule name, after checking the linked molrs ABI.
 ///
-/// @param frame_obj A Python `molpy.Frame` instance.
-/// @return A `rust::Box<molrs::FrameRef>` sharing the same molrs Store as
-///         the Python frame — reads and writes round-trip to it.
-/// @throws std::runtime_error if `frame_obj` is not a molpy.Frame or its
-///         capsule is malformed.
-/// @brief The `FrameRef` PyCapsule name this interpreter's molrs produces.
-///
-/// molrs 0.14 put the ABI line in the capsule name —
-/// `"molrs.FrameRef/<major.minor>"` — so a cross-minor handle exchange fails
-/// the name check instead of dereferencing a drifted layout. Builds on 0.13
-/// and earlier used the bare `"molrs.FrameRef"`, and hardcoding that is what
-/// broke every Python compute entry against a 0.14 molpy.
-///
-/// molrs's own contract says to query the name rather than spell it
-/// (`molrs-cxxapi/src/lib.rs`, `frame_clone_from_addr` safety note), so that
-/// is what this does: `molrs._ffi_abi_token()[2]`. Importing molrs here is
-/// engine-internal — the "never import molrs from user code" rule in the
-/// error message below is guidance for callers, not for this bridge.
+/// Query molrs's own token for the name and compare its ABI line against the
+/// molrs-ffi source selected by ATV_MOLRS_PATH at build time. Comparing only
+/// the capsule and runtime package would accept a different embedded layout.
 ///
 /// Cached: the answer cannot change inside one interpreter.
 /// @return The exact capsule name to hand `PyCapsule_GetPointer`.
-/// @throws std::runtime_error when molrs is absent or the token is malformed.
+/// @throws std::runtime_error when the token is malformed or its ABI differs.
 inline const std::string& molrs_frameref_capsule_name() {
     static const std::string name = [] {
         nb::object token =
@@ -56,11 +42,22 @@ inline const std::string& molrs_frameref_capsule_name() {
                 "molrs._ffi_abi_token() returned fewer than 3 fields; this "
                 "molrs is too old for the Atomiverse Python bridge");
         }
+        const std::string runtime_abi = nb::cast<std::string>(token[0]);
+        if (runtime_abi != ATV_MOLRS_ABI_LINE) {
+            throw std::runtime_error(
+                "molrs ABI-line mismatch: runtime molrs is " + runtime_abi
+                + " but Atomiverse is linked against " + ATV_MOLRS_ABI_LINE
+                + ". Rebuild and install both wheels from one molrs source.");
+        }
         return nb::cast<std::string>(token[2]);
     }();
     return name;
 }
 
+/// @brief Borrow a molpy.Frame handle after validating the molrs ABI.
+/// @param frame_obj A Python molpy.Frame instance.
+/// @return A handle sharing the originating frame's store.
+/// @throws std::runtime_error on an ABI mismatch or malformed frame capsule.
 inline ::rust::Box<molrs::FrameRef> borrow_molrs_frame(nb::object frame_obj) {
     if (!nb::hasattr(frame_obj, "_ffi_frameref_capsule")) {
         throw std::runtime_error(
@@ -68,13 +65,13 @@ inline ::rust::Box<molrs::FrameRef> borrow_molrs_frame(nb::object frame_obj) {
             "Pass a molpy.Frame (from the molpy package). Never import molrs "
             "from user code.");
     }
+    const std::string& expected = molrs_frameref_capsule_name();
     nb::object cap_obj = frame_obj.attr("_ffi_frameref_capsule")();
     PyObject* cap = cap_obj.ptr();
     if (!PyCapsule_CheckExact(cap)) {
         throw std::runtime_error(
             "molrs.Frame._ffi_frameref_capsule() did not return a PyCapsule");
     }
-    const std::string& expected = molrs_frameref_capsule_name();
     void* ptr = PyCapsule_GetPointer(cap, expected.c_str());
     if (ptr == nullptr) {
         // PyCapsule_GetPointer set a Python error (wrong name / NULL). The

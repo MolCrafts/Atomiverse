@@ -16,9 +16,9 @@
 ///
 /// | Call | Returns | Writes back to the frame |
 /// | ---- | ------- | ------------------------ |
-/// | `run(frame)` | `PWResult` (energies [Ry]/[Ha], smearing channels) | nothing |
+/// | `run(frame)` | `PWResult` (energies [Ry]/[Ha], smearing channels) | energy [eV] |
 /// | `forces(frame)` | `(n_atoms, 3)` [eV/Å] | fx/fy/fz [eV/Å] + energy [eV] |
-/// | `stress(frame)` | Voigt 6-vector [eV/Å³] | nothing |
+/// | `stress(frame)` | Voigt 6-vector [eV/Å³] | stress [eV], energy [eV] |
 ///
 /// Units are the solver's on `PWResult` (Rydberg, the plane-wave convention:
 /// 1 Ry = ½ Hartree, and 1 Ry = 13.605693 eV exactly as this engine spells it
@@ -193,13 +193,12 @@ ForceArray pw_forces(PW& solver, nb::object frame_obj) {
 /// @brief Run one plane-wave SCF and return the analytic cell stress.
 ///
 /// Stress is the derivative of the energy with respect to a *strain* of the
-/// cell, so it reports on the cell, not on the atoms: nothing is written back
-/// to the frame. Mechanical (CP2K) sign convention,
+/// cell. Writes extensive virial and energy back while preserving geometry. Mechanical (CP2K) sign convention,
 /// \(\sigma = -(1/\Omega)\,\partial E/\partial\varepsilon\) — positive under
 /// compression.
 ///
 /// @param solver    Configured plane-wave method.
-/// @param frame_obj A `molpy.Frame`; read only.
+/// @param frame_obj A `molpy.Frame`; energy and extensive virial are overwritten.
 /// @return Voigt stress (xx, yy, zz, xy, xz, yz) [eV/Å³].
 /// @throws std::runtime_error (Python `RuntimeError`) on a frame with no
 ///         cell.
@@ -215,6 +214,7 @@ VectorArray pw_cell_stress(PW& solver, nb::object frame_obj) {
         nb::gil_scoped_release release;
         stress = solver.stress(work);
     }
+    ATV::cpu::to_molrs(work, *fref);
     return to_vector_array(
         std::span<const double>(stress.data(), stress.size()));
 }
@@ -418,12 +418,13 @@ void bind_pw(nb::module_& m) {
                     nb::gil_scoped_release release;
                     result = solver.run(work);
                 }
+                ATV::cpu::to_molrs(work, *fref);
                 return result;
             },
             nb::arg("frame"),
             "Run SCF at the frame's current geometry and return the "
-            "PWResult; energies stay on the result (Ry / Hartree) and the "
-            "frame is not written to. The GIL is released during the solve, "
+            "PWResult (Ry / Hartree), and overwrite frame.meta['energy'] "
+            "in eV. The GIL is released during the solve, "
             "so other Python threads keep running.\n\n"
             "Failing to converge within max_iter is NOT an error: the result "
             "comes back with converged = False and the last density's "
@@ -442,8 +443,7 @@ void bind_pw(nb::module_& m) {
              "converged density rather than by differencing energies. The "
              "same values are written to the frame's fx/fy/fz columns and "
              "that SCF's total energy [eV] to frame.meta['energy'] "
-             "(replacing any previous value); last_result is NOT updated, "
-             "because this path runs its own SCF.\n\n"
+             "(replacing any previous value); last_result holds that SCF.\n\n"
              "Raises RuntimeError on a frame with no box, and ValueError "
              "when the restricted fixed-occupation path is asked for an odd "
              "valence-electron count (set spin_polarized, or a smearing), "
@@ -453,8 +453,8 @@ void bind_pw(nb::module_& m) {
              "as a Voigt 6-vector (xx, yy, zz, xy, xz, yz) [eV/A^3]. "
              "Mechanical (CP2K) sign, sigma = -(1/V) dE/d(strain), so a "
              "compressed cell gives a positive diagonal. Reports on the cell "
-             "only: no geometry, force or energy is written back, and "
-             "last_result is not updated.\n\n"
+             "without moving atoms: energy [eV] and the extensive virial "
+             "[eV] overwrite frame metadata; last_result holds that SCF.\n\n"
              "Cost is one SCF plus twelve non-self-consistent strained "
              "diagonalizations (the Nielsen-Martin form of the cell "
              "derivative), not twelve full SCFs.\n\n"
@@ -466,12 +466,12 @@ void bind_pw(nb::module_& m) {
         .def_prop_ro(
             "last_result",
             [](const PW& solver) { return solver.last_result(); },
-            "Copy of the most recent run() result. Neither forces() nor "
-            "stress() touches it — those run their own SCF — so before the "
-            "first run() this is a default PWResult (energy 0, converged "
+            "Copy of the most recent run(), forces() or stress() SCF result. "
+            "Before the first solve this is a default PWResult (energy 0, "
+            "converged "
             "False, iterations 0).");
 
-    nb::class_<PWEvaluator>(
+    nb::class_<PWEvaluator, ATV::cpu::Component>(
         m, "PWEvaluator",
         "The plane-wave method as an MD force source: hand it to "
         "MD.set_evaluator and the run is plane-wave Born-Oppenheimer "

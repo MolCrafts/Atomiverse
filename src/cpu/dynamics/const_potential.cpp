@@ -163,7 +163,6 @@ void ConstPotentialBO::solve_(Frame& frame) {
         rebuild_A_(frame);
 
     const int n_own = frame.nlocal();
-    const auto type = frame.span(kAtom_type);
     const auto qcol = frame.span(kAtom_charge);
     const auto x = frame.span(kAtom_x);
     const auto y = frame.span(kAtom_y);

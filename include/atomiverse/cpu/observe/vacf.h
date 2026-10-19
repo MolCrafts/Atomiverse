@@ -43,12 +43,15 @@ class VACF : public cpu::md::AsyncObserver {
     explicit VACF(double dt, int resolution = 256, int freq = 0,
                   std::string output_file = "vacf.dat");
 
+    /// @brief This analysis consumes a complete system, not a spatial shard.
+    bool requires_full_frame() const override { return true; }
     std::string name() const override { return "vacf_async"; }
     /* role via Observer base */
     int frequency() const override { return freq_; }
 
     cpu::CaptureMask capture_mask() const override {
         cpu::CaptureMask m;
+        m.tags = true;
         m.velocities = true;
         return m;
     }
@@ -67,6 +70,8 @@ class VACF : public cpu::md::AsyncObserver {
     int freq_;
     std::string output_file_;
 
+    cpu::CorrelationInput input_;
+    bool invalid_input_ = false;
     cpu::ConstantCountGate gate_;  ///< constant-atom-count admission gate
     cpu::RejectedFrames rejected_; ///< frames the molrs accumulator refused
     std::vector<double> scratch_;  ///< reused blocked vx|vy|vz buffer

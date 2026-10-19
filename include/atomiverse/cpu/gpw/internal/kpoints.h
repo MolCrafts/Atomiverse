@@ -30,6 +30,8 @@
 
 #include <array>
 #include <complex>
+#include <functional>
+#include <stdexcept>
 #include <vector>
 
 #include <xtensor/containers/xtensor.hpp>
@@ -162,7 +164,7 @@ std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
                                                          const KOrth& orth);
 
 /// @brief k-space DIIS error vector e = X†(H P S − S P H)X — the complex
-///        sibling of `gpw_diis_error`; → 0 at self-consistency.
+///        sibling of `linalg::diis_error`; → 0 at self-consistency.
 CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
                         const CplxMatrix& S, const CplxMatrix& X);
 
@@ -173,9 +175,17 @@ CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
 /// k-point generalization of the Γ `GpwDiis`.
 class KDiis {
   public:
+    using Reducer = std::function<void(double*, int)>;
     /// @param max_vectors History depth (≥ 1). @param weights k weights.
-    KDiis(int max_vectors, std::vector<double> weights)
-        : max_vectors_(max_vectors), weights_(std::move(weights)) {}
+    /// @param sum Optional in-place reduction of the packed Pulay block.
+    /// Empty means local histories; the helper never chooses a communicator.
+    KDiis(int max_vectors, std::vector<double> weights, Reducer sum = {})
+        : max_vectors_(max_vectors), weights_(std::move(weights)),
+          sum_(std::move(sum)) {
+        if (max_vectors < 1)
+            throw std::invalid_argument(
+                "KDiis: history depth must be positive");
+    }
 
     /// @brief Store {H_k}, {e_k} and return the extrapolated {H_k}.
     ///        Latest H during warm-up or on a singular B system.
@@ -185,6 +195,7 @@ class KDiis {
   private:
     int max_vectors_;
     std::vector<double> weights_;
+    Reducer sum_;
     std::vector<std::vector<CplxMatrix>> h_hist_;
     std::vector<std::vector<CplxMatrix>> e_hist_;
 };

@@ -5,6 +5,8 @@
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/force_scratch.h"
 
 namespace ATV {
@@ -45,51 +47,72 @@ void PairBuck::compute(const LaunchContext& ctx) {
 
     const double inv_rho = 1.0 / rho_;
 
-    for (int i = 0; i < n; ++i) {
-        for (int j = i + 1; j < n; ++j) {
-            double dx = x[j] - x[i];
-            double dy = y[j] - y[i];
-            double dz = z[j] - z[i];
+    const auto* pair_list = ctx.runtime.md.pair_list;
+    auto accumulate_pair = [&](int i, int j, int entry = -1) {
+        double dx = x[j] - x[i];
+        double dy = y[j] - y[i];
+        double dz = z[j] - z[i];
+        if (pair_list) {
+            // The list image is attached to j; this kernel uses r_j-r_i.
+            dx = -dx;
+            dy = -dy;
+            dz = -dz;
+            dx = -dx;
+            dy = -dy;
+            dz = -dz;
+        } else
             f.box.min_image(dx, dy, dz);
-            const double r2 = dx * dx + dy * dy + dz * dz;
-            if (r2 >= cutoff_sq_ || r2 == 0.0)
-                continue;
+        const double r2 = dx * dx + dy * dy + dz * dz;
+        if (r2 >= cutoff_sq_ || r2 == 0.0)
+            return;
 
-            const double r = std::sqrt(r2);
-            const double r6 = r2 * r2 * r2;
-            const double expterm = std::exp(-r * inv_rho);
-            const double v = A_ * expterm - C_ / r6 - v_shift_;
-            // dU/dr (unshifted) = -(A/rho) exp(-r/rho) + 6 C / r^7
-            const double dUdr = -A_ * inv_rho * expterm + 6.0 * C_ / (r6 * r);
-            // F on i from j: F_i = -∇_i U; r = |r_j - r_i|, ∇_i r = -r̂
-            // → F_i = dUdr * r̂ with r̂ = (r_j-r_i)/r → F_i = (dUdr/r) * (r_j-r_i)
-            // Convention in this codebase (Yukawa/Morse): fpair = -dUdr/r and
-            // F_i -= fpair * (r_j-r_i)  ⇔  F_i = (dUdr/r) * (r_j-r_i).
-            const double fpair = -dUdr / r;
+        const double r = std::sqrt(r2);
+        const double r6 = r2 * r2 * r2;
+        const double expterm = std::exp(-r * inv_rho);
+        const double v = A_ * expterm - C_ / r6 - v_shift_;
+        // dU/dr (unshifted) = -(A/rho) exp(-r/rho) + 6 C / r^7
+        const double dUdr = -A_ * inv_rho * expterm + 6.0 * C_ / (r6 * r);
+        // F on i from j: F_i = -∇_i U; r = |r_j - r_i|, ∇_i r = -r̂
+        // → F_i = dUdr * r̂ with r̂ = (r_j-r_i)/r → F_i = (dUdr/r) * (r_j-r_i)
+        // Convention in this codebase (Yukawa/Morse): fpair = -dUdr/r and
+        // F_i -= fpair * (r_j-r_i)  ⇔  F_i = (dUdr/r) * (r_j-r_i).
+        const double fpair = -dUdr / r;
 
+        if (ctx.forces_requested) {
             fx[i] -= fpair * dx;
             fy[i] -= fpair * dy;
             fz[i] -= fpair * dz;
             fx[j] += fpair * dx;
             fy[j] += fpair * dy;
             fz[j] += fpair * dz;
-            energy += v;
-            // Δ = r_i − r_j = −(dx,dy,dz) and F_i = fpair·Δ, so every
-            // component is fpair·Δ_a·Δ_b = fpair·d_a·d_b — the sign of the
-            // separation the loop happened to measure drops out.
-            // Unconditional by design: a loop-invariant `if (do_virial)` here
-            // is what let GCC 14.3 reassociate the reduction away in
-            // PairLJCut's SIMD path (see pair_lj_cut.cpp).
-            vir.v[0] += fpair * dx * dx;
-            vir.v[1] += fpair * dy * dy;
-            vir.v[2] += fpair * dz * dz;
-            vir.v[3] += fpair * dx * dy;
-            vir.v[4] += fpair * dx * dz;
-            vir.v[5] += fpair * dy * dz;
         }
+        energy += v;
+        // Δ = r_i − r_j = −(dx,dy,dz) and F_i = fpair·Δ, so every
+        // component is fpair·Δ_a·Δ_b = fpair·d_a·d_b — the sign of the
+        // separation the loop happened to measure drops out.
+        // Unconditional by design: a loop-invariant `if (do_virial)` here
+        // is what let GCC 14.3 reassociate the reduction away in
+        // PairLJCut's SIMD path (see pair_lj_cut.cpp).
+        vir.v[0] += fpair * dx * dx;
+        vir.v[1] += fpair * dy * dy;
+        vir.v[2] += fpair * dz * dz;
+        vir.v[3] += fpair * dx * dy;
+        vir.v[4] += fpair * dx * dz;
+        vir.v[5] += fpair * dy * dz;
+    };
+    if (const auto* pairs = ctx.runtime.md.pair_list) {
+        pairs->for_each_pair(accumulate_pair);
+    } else {
+        if (multi_rank_dd(ctx.runtime))
+            throw std::runtime_error("PairBuck: spatial decomposition requires "
+                                     "a half neighbor list");
+        for (int i = 0; i < n; ++i)
+            for (int j = i + 1; j < n; ++j)
+                accumulate_pair(i, j);
     }
     f.meta.get(kEnergy) += energy;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 }
 
 } // namespace cpu

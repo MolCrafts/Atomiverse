@@ -134,6 +134,32 @@ TEST(PairLJCutTip4pCut, AlphaAndMSiteGeometry) {
     EXPECT_NEAR(om, kQDist, 1e-10);
 }
 
+TEST(PairLJCutTip4pCut, ZeroVersionFilteredDimerMatchesLammpsPin) {
+    auto frame = tip4p_dimer();
+    cpu::md::PairList pairs;
+    pairs.inum = frame.nlocal();
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        pairs.ilist.push_back(i);
+        pairs.firstneigh.push_back(static_cast<int>(pairs.neighbors.size()));
+        pairs.numneigh.push_back(frame.nlocal() - i - 1);
+        for (int j = i + 1; j < frame.nlocal(); ++j)
+            pairs.neighbors.push_back(j);
+    }
+    pairs.total_pairs = static_cast<int>(pairs.neighbors.size());
+    ASSERT_EQ(pairs.version, 0u);
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    auto pair = make_tip4p();
+    pair.build({context, frame});
+    pair.launch({context, frame, 0, 0, true, true});
+    EXPECT_NEAR(frame.meta.get(kEnergy), kPinE, 1e-8);
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        EXPECT_NEAR(frame.span(kAtom_fx)[i], kPinFx[i], 1e-6);
+        EXPECT_NEAR(frame.span(kAtom_fz)[i], kPinFz[i], 1e-6);
+    }
+    pair.destroy({context, frame});
+}
+
 TEST(PairLJCutTip4pCut, DimerEnergyMatchesLammpsPin) {
     cpu::Frame f = tip4p_dimer();
     run_eval(f, make_tip4p());
@@ -145,9 +171,14 @@ TEST(PairLJCutTip4pCut, DimerForcesMatchLammpsPin) {
     cpu::Frame f = tip4p_dimer();
     run_eval(f, make_tip4p());
     for (int i = 0; i < 6; ++i) {
-        EXPECT_NEAR(f.span(kAtom_fx)[i], kPinFx[i], 1e-6) << "fx[" << i << "]";
-        EXPECT_NEAR(f.span(kAtom_fy)[i], 0.0, 1e-10) << "fy[" << i << "]";
-        EXPECT_NEAR(f.span(kAtom_fz)[i], kPinFz[i], 1e-6) << "fz[" << i << "]";
+        const auto atom = f.span(kAtom_tag)[i] - 1;
+        ASSERT_GE(atom, 0);
+        ASSERT_LT(atom, 6);
+        EXPECT_NEAR(f.span(kAtom_fx)[i], kPinFx[atom], 1e-6)
+            << "tag " << atom + 1;
+        EXPECT_NEAR(f.span(kAtom_fy)[i], 0.0, 1e-10) << "tag " << atom + 1;
+        EXPECT_NEAR(f.span(kAtom_fz)[i], kPinFz[atom], 1e-6)
+            << "tag " << atom + 1;
     }
     // Newton III (total force)
     double fx = 0, fy = 0, fz = 0;

@@ -5,6 +5,10 @@
 /// Ref: Miyamoto & Kollman, J. Comput. Chem. 13, 952 (1992).
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -58,8 +62,18 @@ namespace md {
 /// which is iterative and general.
 class FixSettle : public Constraint,
                   public ConstraintProvider,
-                  public ForwardPacker {
+                  public ForwardPacker,
+                  public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "FixSettle: timestep must be finite and positive");
+        dt_ = dt;
+    }
+
     /// @param dt Timestep [fs] (for velocity stage).
     /// @param d_oh O–H distance [Å] (TIP3P default 0.9572).
     /// @param d_hh H–H distance [Å] (TIP3P default 1.5139).

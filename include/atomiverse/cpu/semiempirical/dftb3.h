@@ -77,6 +77,9 @@ class DFTB3 : public cpu::Semiempirical {
     /// @brief When true, write forces F=−∇E [eV/Å] on launch (closed form).
     bool with_forces = true;
 
+    /// @brief Whether the configured evaluator supplies nuclear forces.
+    bool provides_force() const override { return with_forces; }
+
     /// @brief Static SK parameter set. Default `Unset` — DFTB3 will not pick
     ///        one. `launch()` throws `std::invalid_argument` if left `Unset`.
     ///        Declare `DftbSkSet::MioSketch` (mixed-set warning: 3ob

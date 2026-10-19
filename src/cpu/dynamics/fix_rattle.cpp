@@ -2,6 +2,7 @@
 /// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
 
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -22,18 +23,6 @@ namespace cpu {
 namespace md {
 
 namespace {
-
-/// Owner rows of this rank: `dd->n_local` under decomposition, else the whole frame.
-///
-/// `frame.nlocal()` is NOT the owner count under MPI — `partition_atoms` compacts
-/// the owners to the front and leaves the tail as ghost slack, so the array still
-/// spans the global atom count. Iterating it would read stale rows.
-int owner_count(const cpu::Context& ctx, const cpu::Frame& frame) {
-    const auto* dd = ctx.md.dd;
-    if (dd != nullptr && ctx.mpi_size > 1)
-        return dd->n_local;
-    return frame.nlocal();
-}
 
 #ifdef ATV_HAS_MPI
 MPI_Datatype tag_mpi_type() {
@@ -93,7 +82,7 @@ std::vector<FixRattle::Spec>
 FixRattle::discover_local_(const cpu::Context& ctx,
                            const cpu::Frame& frame) const {
     std::vector<Spec> out;
-    const int n_own = owner_count(ctx, frame);
+    const int n_own = frame.nlocal();
     const auto num_bond = frame.span(kAtom_num_bond);
     const auto bond_type = frame.span(kAtom_bond_type);
     const auto bond_atom = frame.span(kAtom_bond_atom);
@@ -141,7 +130,7 @@ int FixRattle::n_constraints(const cpu::Context& ctx,
 void FixRattle::build(const cpu::BuildContext& ctx) {
     const cpu::Context& rt = ctx.runtime;
     const cpu::Frame& frame = ctx.frame;
-    const int n_own = owner_count(rt, frame);
+    const int n_own = frame.nlocal();
     const auto tag = frame.span(kAtom_tag);
     const auto mass = frame.span(kAtom_mass);
 
@@ -267,7 +256,7 @@ void FixRattle::build(const cpu::BuildContext& ctx) {
 
 void FixRattle::resolve_rows_(const cpu::LaunchContext& ctx) {
     const auto* dd = ctx.runtime.md.dd;
-    const bool multi = (dd != nullptr && ctx.runtime.mpi_size > 1);
+    const bool multi = (cpu::multi_rank_dd(ctx.runtime));
 
     for (std::size_t k = 0; k < constraints_.size(); ++k) {
         const Constraint& c = constraints_[k];
@@ -380,9 +369,7 @@ void FixRattle::unpack_forward_comm(int n, int first, const double* buf) {
 void FixRattle::launch(const cpu::LaunchContext& ctx) {
     cpu::Frame& f = ctx.frame;
     frame_ = &f;
-    const auto* dd = ctx.runtime.md.dd;
-    const bool multi = (dd != nullptr && ctx.runtime.mpi_size > 1);
-    const int n_rows = multi ? (dd->n_local + dd->n_ghost) : f.nlocal();
+    const int n_rows = f.n_total();
     auto x = f.span(kAtom_x);
     auto y = f.span(kAtom_y);
     auto z = f.span(kAtom_z);

@@ -221,7 +221,7 @@ void accumulate_nl_forces_k(const PWWorkspace& ws, AccReal weight, int n_bands,
 
 std::vector<std::array<double, 3>>
 pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
-                        PWResult* scf_out) {
+                        PWResult* scf_out, PWProblem* solved) {
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument("pw_forces_analytic: frame has no atoms");
@@ -237,6 +237,9 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
         for (int i = 0; i < n; ++i)
             n_elec += valence_from_z(types[i]);
     }
+
+    if (solved)
+        n_elec = solved->n_elec;
 
     const bool spin = method.spin_polarized;
     int n_alpha = 0;
@@ -273,9 +276,16 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
     VeffBuilder veff;
     DensityBuilder density;
 
-    PWProblem scf_prob;
+    PWProblem local_problem;
+    PWProblem& scf_prob = solved ? *solved : local_problem;
     PWResult res{};
-    if (spin && use_smear) {
+    if (solved) {
+        if (!scf_out)
+            throw std::logic_error("PW solved state requires its result");
+        res = *scf_out;
+        xc.prepare(scf_prob.ws);
+        veff.prepare(scf_prob.ws);
+    } else if (spin && use_smear) {
         res = run_collinear_smear_scf(frame, method, scf_prob, n_bands);
         xc.prepare(scf_prob.ws);
         veff.prepare(scf_prob.ws);

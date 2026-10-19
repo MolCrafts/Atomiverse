@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <new>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
@@ -34,14 +35,15 @@ void DomainRuntime::allocate(Context& ctx) {
         dd_ = std::make_unique<md::mpi::DomainDecomposition>();
     ctx.md.dd = dd_.get();
     if (!comm_)
-        comm_ = std::unique_ptr<comm::CommBrick>(new comm::CommBrick());
+        comm_ = std::unique_ptr<comm::CommBrick>(new comm::CommBrick(*dd_));
     ctx.md.comm = comm_.get();
 
 #ifdef ATV_HAS_MPI
-    // serial_on_replica_: molecular whole-system evaluators opt out of spatial
+    // serial_on_replica: molecular whole-system evaluators opt out of spatial
     // decomposition — leaving cart_comm null means bind_frame's partition
     // condition never fires and every rank keeps its replica.
-    if (ctx.mpi_size > 1 && !serial_on_replica_) {
+    if (ctx.mpi_size > 1 && !ctx.exec.serial_on_replica
+        && dd_->cart_comm == MPI_COMM_NULL) {
         dd_->init_topology(MPI_COMM_WORLD);
     }
 #else
@@ -51,13 +53,19 @@ void DomainRuntime::allocate(Context& ctx) {
 
 void DomainRuntime::adopt(std::unique_ptr<md::mpi::DomainDecomposition> dd,
                           Context& ctx) {
+    comm_.reset();
+    ctx.md.comm = nullptr;
     dd_ = std::move(dd);
+    bound_frame_ = nullptr;
     ctx.md.dd = dd_.get();
 }
 
 std::unique_ptr<md::mpi::DomainDecomposition>
 DomainRuntime::release(Context& ctx) {
+    comm_.reset();
+    ctx.md.comm = nullptr;
     ctx.md.dd = nullptr;
+    bound_frame_ = nullptr;
     return std::move(dd_);
 }
 
@@ -65,10 +73,38 @@ void DomainRuntime::bind_frame(cpu::Frame& frame, Context& ctx,
                                bool tag_index_required) {
     if (!dd_)
         return;
+#ifdef ATV_HAS_MPI
+    if (ctx.exec.serial_on_replica && dd_->cart_comm != MPI_COMM_NULL) {
+        // A retained shard cannot become a complete replica by changing mode.
+        // Check identity before releasing any partition or transport state.
+        if (dd_->partitioned && (!bound_frame_ || bound_frame_ == &frame))
+            throw std::runtime_error(
+                "DomainRuntime: changing spatial decomposition to replica mode "
+                "requires binding a new complete Frame; the retained Frame "
+                "contains only this rank's owned shard");
+        comm_.reset();
+        dd_ = std::make_unique<md::mpi::DomainDecomposition>();
+        comm_.reset(new comm::CommBrick(*dd_));
+        ctx.md.dd = dd_.get();
+        ctx.md.comm = comm_.get();
+        bound_frame_ = nullptr;
+    }
+#endif
+    if (bound_frame_ && bound_frame_ != &frame) {
+        comm_.reset(new comm::CommBrick(*dd_));
+        ctx.md.comm = comm_.get();
+    }
+    // Binding does not touch the Frame's row extents: the Frame owns
+    // `nlocal` / `nghost`, `Comm::exchange` and `Comm::borders` reset and
+    // rebuild the ghost rows at the first rebuild boundary, and an electronic
+    // method binding the shared Frame to its private backend mid-pass must
+    // not discard the halo rows the hosting Runtime's reverse pass still owns.
 
 #ifdef ATV_HAS_MPI
     if (ctx.mpi_size > 1 && dd_->cart_comm != MPI_COMM_NULL) {
-        // First call: dd has no prior partition (n_local==0) → do the full
+        if (bound_frame_ && bound_frame_ != &frame)
+            dd_->partitioned = false;
+        // First call: dd has no prior partition → do the full
         // initial scan that classifies the global frame into per-rank slabs.
         //
         // Subsequent calls (e.g. `adopt` across per-stage driver rebuilds):
@@ -78,9 +114,10 @@ void DomainRuntime::bind_frame(cpu::Frame& frame, Context& ctx,
         // `Comm::exchange`. Skip the re-partition; refresh slab bounds against
         // the (possibly box-changed) current box and let the next exchange
         // absorb any drift.
-        if (dd_->n_local == 0) {
-            dd_->init_topology(MPI_COMM_WORLD, frame.box.length(0),
-                               frame.box.length(1), frame.box.length(2));
+        if (!dd_->partitioned) {
+            dd_->init_topology(MPI_COMM_WORLD, frame.box.face_height(0),
+                               frame.box.face_height(1),
+                               frame.box.face_height(2));
             dd_->partition_atoms(frame);
             // Drop the Frame-local tag index: under decomposition the
             // authoritative tag->row map is `dd->tag_to_local`; the local index
@@ -94,22 +131,18 @@ void DomainRuntime::bind_frame(cpu::Frame& frame, Context& ctx,
             // re-establish pass.
             frame.release_tag_index();
             if (tag_index_required)
-                frame.rebuild_tag_index(0, dd_->n_local > 0 ? dd_->n_local
-                                                            : frame.nlocal());
+                frame.rebuild_tag_index(0, frame.nlocal());
         } else {
             dd_->compute_sublo_subhi(frame.box);
-            // Carry-over preserves the partition, but the allocation bound must
-            // still grow if this frame is larger than the one the partition was
-            // sized for. Grow-only: never shrink below the existing ghost slack.
-            if (frame.nlocal() > dd_->capacity)
-                dd_->capacity = frame.nlocal();
         }
         release_tag_maps_if_unused(frame, tag_index_required);
+        bound_frame_ = &frame;
         return;
     }
 #else
     (void)ctx;
 #endif
+    bound_frame_ = &frame;
     dd_->bind(frame);
     dd_->compute_sublo_subhi(frame.box);
     release_tag_maps_if_unused(frame, tag_index_required);
@@ -133,11 +166,13 @@ void DomainRuntime::release_tag_maps_if_unused(cpu::Frame& frame,
     }
 }
 
-void DomainRuntime::release_comm() {
-#ifdef ATV_HAS_MPI
-    if (dd_)
-        dd_->release_comm();
-#endif
+void DomainRuntime::release_comm(Context& ctx) {
+    comm_.reset();
+    ctx.md.comm = nullptr;
+    ctx.md.dd = nullptr;
+    // Keep the partition topology and frame identity for continuation.
+    // CommBrick owns session-specific wires and row-indexed swap lists; the
+    // borrowed domain communicator has no transport storage to release.
 }
 
 std::size_t DomainRuntime::memory_bytes() const {

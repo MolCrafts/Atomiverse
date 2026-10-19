@@ -8,6 +8,12 @@
 /// Per-domain init functions are compiled only when the matching
 /// ATV_BUILD_* product module is ON (see cmake/AtvProductModules.cmake).
 
+#include "atomiverse/cpu/component/component.h"
+#include "atomiverse/cpu/driver/driver_node.h"
+#include "atomiverse/cpu/evaluate/single_point.h"
+#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/task/launcher_gate.h"
+#include "molrs_frame_bridge.h"
 #include <nanobind/nanobind.h>
 
 namespace nb = nanobind;
@@ -39,6 +45,22 @@ void bind_scf(nb::module_& m);
 
 NB_MODULE(_atomiverse, m) {
     m.doc() = "Atomiverse: molecular simulation compute backend";
+    nb::class_<ATV::cpu::Component>(m, "_Component");
+    nb::class_<ATV::cpu::DriverNode>(m, "_DriverNode");
+    m.def("_single_point_component",
+          [](nb::object frame_obj, ATV::cpu::Component& evaluator) {
+              if (ATV::cpu::task::LauncherGate{}.active())
+                  throw std::runtime_error(
+                      "this evaluator has no MPI single-point task payload; "
+                      "run without the launcher");
+              auto frame = borrow_molrs_frame(frame_obj);
+              auto work = ATV::cpu::from_molrs(*frame);
+              {
+                  nb::gil_scoped_release release;
+                  ATV::cpu::single_point(work, evaluator);
+              }
+              ATV::cpu::to_molrs(work, *frame);
+          });
 
     // Force-field parameter types first: every driver binding takes them.
 #ifdef ATV_HAS_POTENTIALS

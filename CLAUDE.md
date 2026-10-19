@@ -348,15 +348,27 @@ subdir. Electrostatics splits LAMMPS-style: real-space pair styles in
 `longrange/` — there is no top-level shared-math module. Namespaces are not yet
 aligned to directories; aligning them is a deliberate follow-up, not a drive-by.
 
-**Box** (`cpu/frame/box.h`, `cuda/frame/box.cuh`) is the canonical cell type:
-owns the cell matrix plus a per-step-immutable cache and exposes `length(d)`,
-`volume()`, `min_image`, `wrap_axis`, `scale_*`, `set_cell`. CPU adds an xsimd
-`min_image_batch<B>`; LJ keeps an inlined branchy min-image in its ket-loop
-because member-load-through-`this` defeats hoisting there (~7%/step).
+**Box** (`cpu/frame/box.h`, `cuda/frame/box.cuh`) owns cell geometry. CPU
+stores lattice vectors in columns (`r = H s`), inverse/metric caches and a
+revision used to invalidate geometry-dependent state. Minimum-image operations
+remain available to algorithms that need them; CPU pair kernels read raw
+Cartesian differences between explicit atom/image rows.
 
-CPU `DomainDecomposition` is periodic on every axis. Face neighbours wrap;
-`Halo::derive_hops` uses the periodic reach `dims[d] - 1`. There is no
-non-periodic brick path.
+CPU `DomainDecomposition` owns topology and fractional partition bounds;
+`Frame` alone owns `nlocal`, `nghost` and capacity. `CommBrick` creates explicit
+periodic ghost rows on every axis, including single-rank self images. Halo reach
+may span multiple box images. There is no non-periodic brick path.
+
+CPU Runtime owns the MD rebuild sequence: wrap → exchange → sort → borders →
+neighbor build. `NeighborList` owns cadence and owned-position displacement
+checks; `CellList` owns the grid/index and `PairList` stores row indices only.
+Integrators advance owned rows. Initial, live-mounted and nested physical
+components share identity checks and timestep negotiation before build; one
+integrator object may bind both integration phases, but two distinct objects
+may not own the same physical MD integration.
+Neighbor consumers must fit the provider's interaction cutoff, excluding skin.
+Communication uses the provider's enumeration reach or the widest consumer
+halo plus that provider's actual skin, whichever is larger.
 
 ### Core
 
@@ -400,10 +412,16 @@ defaults, not semantics.
 | Gaussian SCF (`MeanFieldMethod<D>`, `cuda::scf::RHF`) | `scf::Phase` | residual / ΔE criteria |
 
 **Two orthogonal policy slots.** `Criterion` answers *should the loop stop?* —
-`add_criterion(…)`, plural, composed by severity **Stop > Converged >
-Continue**, MPI-allreduced by the driver so criterion authors never think about
-it. It sees a `LoopState` and never a phase, which is what lets one criterion
-serve MD, Minimize, MC and Path alike. `OutcomePolicy` answers *does this
+`add_criterion(…)`, plural, with one registration and lifecycle. CPU criteria
+explicitly declare `contributes_to_convergence()`: every declared requirement
+must return `Converged` on **every rank in the driver domain** for success.
+Stop-only guards default
+to false; their `Continue` is neutral, and an undeclared `Converged` is an error.
+Any `Stop` aborts, whether from a guard or a convergence requirement. The CPU
+driver combines these flags in one MPI reduction. A Minimize with only guards
+still installs its default ForceConverged. CUDA retains its existing severity
+composition until its criterion migration. A CPU criterion sees a `LoopState`
+and never a phase, so one criterion serves MD, Minimize, MC and Path alike. `OutcomePolicy` answers *does this
 iteration count?* — `set_outcome(…)`, singular, `Commit`/`Rollback`. MC's
 accept/reject was never a termination.
 
@@ -542,11 +560,18 @@ probed protocol.
 A protocol only earns a `Component` accessor when something **scans** for it.
 `ForwardPacker` (`component/comm.h`) does not: the extra-field forward path is
 self-initiated — the plugin calls `ctx.md.comm->forward_comm(*this)` itself —
-so it is named as a base by the three classes that pack (`ChargePacker`,
-`FixSettle`, `FixRattle`) and `Component` carries none of its virtuals.
+so it is named as a base by the classes that pack (`ChargePacker`,
+`FixSettle`, `FixRattle`, `EAM`) and `Component` carries none of its virtuals.
+`ReversePacker` follows the same self-initiated contract for intermediate
+ghost-to-owner reductions; EAM density uses it before forwarding embedding
+derivatives. Both reuse the communicator's Halo swap lists.
 
-**Lifecycle:** `build()` (one-time alloc) → `launch()` × N → `destroy()`. No
-allocation in `launch()`.
+**Lifecycle:** `build()` (one-time alloc) → initial force evaluation when
+required → `launch()` × N → `destroy()`. CPU MD evaluates initial forces before
+integration, including `run(frame, 0)`. Force-stage evaluators preserve temporal
+history when `ctx.runtime.exec.initializing_forces` is set; pre/post-force and
+scalar-finalization components opt in through `initialize_forces()`. Ordinary
+observers and integrators do not run during setup. No allocation in `launch()`.
 
 **Ownership is explicit at every registration path:** `on(phase).add(rvalue,
 order)` transfers; `on(phase).add_ref(lvalue, order)` borrows; plain

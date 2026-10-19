@@ -226,7 +226,7 @@ class RockSaltChecker : public cpu::Component {
     void launch(const cpu::LaunchContext& ctx) override {
         const auto& f = ctx.frame;
         auto* dd = ctx.runtime.md.dd;
-        const int nloc = dd ? dd->n_local : f.nlocal();
+        const int nloc = f.nlocal();
 
         const auto tag_col = f.span(kAtom_tag);
         const auto fx_col = f.span(kAtom_fx);
@@ -532,11 +532,16 @@ int main(int argc, char** argv) {
     char self_buf[4096];
     const ssize_t n =
         ::readlink("/proc/self/exe", self_buf, sizeof(self_buf) - 1);
-    if (n <= 0) {
-        std::printf("FAIL: cannot resolve /proc/self/exe\n");
+    // macOS has no /proc; the build runs this binary by absolute path, so
+    // argv[0] names the same executable there.
+    if (n > 0) {
+        self_buf[n] = '\0';
+    } else if (argv[0] != nullptr && std::strlen(argv[0]) < sizeof(self_buf)) {
+        std::strcpy(self_buf, argv[0]);
+    } else {
+        std::printf("FAIL: cannot resolve the executable path\n");
         return 1;
     }
-    self_buf[n] = '\0';
     const std::string self(self_buf);
 
     ::setenv("OMP_NUM_THREADS", "1", 1);

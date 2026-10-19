@@ -280,7 +280,7 @@ void DFTB0::launch(const LaunchContext& ctx) {
     energy_ = sol.energy;
     energy_meta += energy_;
 
-    if (with_forces)
+    if (with_forces && ctx.forces_requested)
         add_analytic_forces(f, x, y, z, type, n_at, el, ao0, n_ao, n_occ, sol,
                             fx, fy, fz);
 }

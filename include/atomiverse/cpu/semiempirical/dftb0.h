@@ -41,6 +41,9 @@ class DFTB0 : public cpu::Semiempirical {
     /// non-SCC energy. There is no SCC γ contribution.
     bool with_forces = true;
 
+    /// @brief Whether the configured evaluator supplies nuclear forces.
+    bool provides_force() const override { return with_forces; }
+
     DFTB0() = default;
 
     std::string name() const override { return "dftb0"; }

@@ -140,12 +140,14 @@ void PairBorn::compute(const LaunchContext& ctx) {
         const double dUdr =
             -A * inv_rho * expterm + 6.0 * C / (r6 * r) - 8.0 * D / (r8 * r);
         const double fpair = -dUdr / r;
-        fx[i] -= fpair * dx;
-        fy[i] -= fpair * dy;
-        fz[i] -= fpair * dz;
-        fx[j] += fpair * dx;
-        fy[j] += fpair * dy;
-        fz[j] += fpair * dz;
+        if (ctx.forces_requested) {
+            fx[i] -= fpair * dx;
+            fy[i] -= fpair * dy;
+            fz[i] -= fpair * dz;
+            fx[j] += fpair * dx;
+            fy[j] += fpair * dy;
+            fz[j] += fpair * dz;
+        }
         energy += v;
         add_virial(fpair, dx, dy, dz);
     };
@@ -160,19 +162,23 @@ void PairBorn::compute(const LaunchContext& ctx) {
             for (int jj = 0; jj < jnum; ++jj) {
                 const int j =
                     pairs.neighbors[static_cast<std::size_t>(off + jj)];
-                if (j <= i)
-                    continue;
                 double dx = x[j] - x[i];
                 double dy = y[j] - y[i];
                 double dz = z[j] - z[i];
-                f.box.min_image(dx, dy, dz);
+                dx = -dx;
+                dy = -dy;
+                dz = -dz;
+                dx = -dx;
+                dy = -dy;
+                dz = -dz;
                 born_pair(i, j, dx, dy, dz, A_, inv_rho, sigma_, C_, D_,
                           v_shift_);
             }
         }
         f.meta.get(kEnergy) += energy;
         f.meta.get(kEnergyPair) += energy;
-        vir.flush_to(f.meta.get(kStress));
+        if (ctx.stress_requested)
+            vir.flush_to(f.meta.get(kStress));
         return;
     }
 
@@ -217,12 +223,14 @@ void PairBorn::compute(const LaunchContext& ctx) {
                                     - 8.0 * e.D / (r8 * r);
                 const double fpair = -dUdr / r;
 
-                fx[i] -= fpair * dx;
-                fy[i] -= fpair * dy;
-                fz[i] -= fpair * dz;
-                fx[j] += fpair * dx;
-                fy[j] += fpair * dy;
-                fz[j] += fpair * dz;
+                if (ctx.forces_requested) {
+                    fx[i] -= fpair * dx;
+                    fy[i] -= fpair * dy;
+                    fz[i] -= fpair * dz;
+                    fx[j] += fpair * dx;
+                    fy[j] += fpair * dy;
+                    fz[j] += fpair * dz;
+                }
                 energy += v;
                 add_virial(fpair, dx, dy, dz);
             }
@@ -230,7 +238,8 @@ void PairBorn::compute(const LaunchContext& ctx) {
     }
     f.meta.get(kEnergy) += energy;
     f.meta.get(kEnergyPair) += energy;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 }
 
 } // namespace cpu

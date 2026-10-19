@@ -3,6 +3,27 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Live — cpu-orthogonality (2026-10-19)
+
+[cpu-orthogonality.md](cpu-orthogonality.md): the six-step CPU component and
+execution-contract migration (lifecycle, half/full neighbor requests, output
+requests, tag identity, trial state, async analysis). All six steps are
+implemented; the LJ / EAM / SW+LJ same-input LAMMPS comparison is recorded in
+`benchmarks/lj/README.md` and the LAMMPS alignment in
+[cpu-lammps-alignment.md](../notes/cpu-lammps-alignment.md). The spec stays
+live for the open work it names (electronic execution communicator, PW/GPW
+borrowed nesting, FixMove origin migration, wider perf coverage).
+
+**Red (2026-10-19, blocking for MC):** `regressions/mc/gcmc_lj` — ⟨N⟩ lands
+30–60 % below the Mayer activity expansion at both activities
+(`reg_gcmc_lj.cpp`: 12.1 vs 17.9 at z* = 0.010, 23.2 vs 57.4 at 0.030) on
+the rewritten trial loop (`mc_base.h` `run_trials_`: score, decide, roll
+back, re-score). `reg_npt_lj`, `reg_widom_hs`, every `test_cpu_mc_*` unit
+and the `GcmcMetropolis` policy tests pass, so the acceptance arithmetic is
+not the suspect; the insert/delete trial energy or the row bookkeeping
+around explicit self-image ghost rows is. Not caused by the 2026-10-19
+Runtime fixes (fails identically with them disabled).
+
 ## Blocked — gfn2-camm-r (retired 2026-10-12)
 
 Off-eq water `F_H1,y` is the H0/Pulay pair term. More CAMM does not close

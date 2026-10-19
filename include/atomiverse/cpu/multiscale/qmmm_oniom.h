@@ -37,6 +37,7 @@ namespace cpu {
 /// environment). Svensson et al., *J. Phys. Chem.* **100**, 19357 (1996).
 class QmmmOniom : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param low_lj Low-level LJ diagonals/pairs (Lorentz–Berthelot fill).
     /// @param cutoff Low-level nonbonded cutoff [Å].
     /// @param with_coulomb Include classical Coulomb among low pairs.

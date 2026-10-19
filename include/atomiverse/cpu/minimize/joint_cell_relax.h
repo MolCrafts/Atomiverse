@@ -49,11 +49,11 @@ class JointIsotropicRelax : public Optimizer {
 
   private:
     static double pressure_from_frame_(const Frame& f);
-    void apply_scale_(Frame& f, double s) const;
 
     double pressure_ = 0;
     double p_residual_ = 0;
     double max_force_ = 0;
+    double max_disp_ = 0, rms_disp_ = 0;
     double scale_step_ = 1.0;
     double energy_prev_ = 0;
     bool has_prev_ = false;

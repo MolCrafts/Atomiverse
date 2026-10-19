@@ -24,13 +24,15 @@ namespace internal {
 ///
 /// @param frame Geometry [Å]; not mutated.
 /// @param method Plane-wave method carrying cutoff, k-mesh and SCF settings.
+/// @param solved Optional state from PW::run; scf_out must hold its result.
 /// @param scf_out Optional: the SCF result this force evaluation ran (energy
 ///        [Ry], convergence, iterations), so a caller needing both quantities
 ///        pays for one SCF.
 /// @return Forces [eV/Å], one xyz triple per atom.
 std::vector<std::array<double, 3>>
 pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
-                        PWResult* scf_out = nullptr);
+                        PWResult* scf_out = nullptr,
+                        PWProblem* solved = nullptr);
 
 } // namespace internal
 } // namespace pw

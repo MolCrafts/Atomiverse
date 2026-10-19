@@ -41,9 +41,8 @@ namespace mpi {
 /// @brief MD spatial domain decomposition state for a single rank.
 ///
 /// Holds (a) MPI Cartesian topology, (b) this rank's owned spatial slab,
-/// (c) authoritative atom counts (`n_local`, `n_ghost`, `capacity`),
-/// (d) a generation counter that consumers (neighbor lists, halo lists)
-/// rebuild against, and (e) the tag→local map.
+/// (c) generation counters that consumers (neighbor lists, halo lists)
+/// rebuild against, and (d) the tag→local map.
 ///
 /// It does **not** hold the halo's derived indices: the per-swap send lists
 /// and ghost-slot layout live on `comm::Halo`, private to `comm::CommBrick`
@@ -52,14 +51,14 @@ namespace mpi {
 ///
 /// **Periodicity.** The brick is periodic on every axis. `init_topology`
 /// wraps face neighbours through the Cartesian grid; `Halo::derive_hops`
-/// always uses the periodic reach `dims[d] - 1`. There is no non-periodic
+/// constructs explicit periodic images on every axis, including self copies. There is no non-periodic
 /// decomposition path — a shrink-wrapped / open-boundary run is a
 /// different problem and is not silently half-supported.
 ///
 /// **Who may write these fields from outside `cpu/communication/`.**
 /// Production writers:
 ///   * `md::notify_sorted` (`cpu/dynamics/atom_sort.h`) — owner half of
-///     `tag_to_local`, `ghost_tags` / `n_ghost` when `clear_ghosts`, and
+///     `tag_to_local`, `ghost_tags` when `clear_ghosts`, and
 ///     both generation counters. A spatial reorder of owned rows
 ///     invalidates every cached row index; that is its job.
 ///   * `CommBrick` (this directory) — ghost bookkeeping, `ghost_shell_width`,
@@ -68,13 +67,11 @@ namespace mpi {
 /// from `ghost_shell_width`; three regressions feed `Halo::derive_uniform_rounds`
 /// with it. Do not add a new writer without extending this comment.
 ///
-/// `Frame::capacity()` is the allocated row capacity in multi-rank mode;
-/// `n_local` is the owned-atom count. Force kernels and integrators iterate
-/// `n_local` (via `owned_count()` / `owned_range.h`), not capacity,
-/// so ghost rows in `[n_local, n_local + n_ghost)` are never double-counted.
+/// Frame alone owns nlocal, nghost and capacity. Domain state describes
+/// spatial ownership and derived tag lookup, never mirrors Frame row extents.
 struct DomainDecomposition {
 #ifdef ATV_HAS_MPI
-    /// @brief Cartesian sub-communicator created by `MPI_Cart_create`.
+    /// @brief Borrowed communicator for the brick topology.
     MPI_Comm cart_comm = MPI_COMM_NULL;
 #endif
 
@@ -106,20 +103,14 @@ struct DomainDecomposition {
     /// Single-rank: all zeros (this rank is its own neighbor along periodic axes).
     std::array<int, 6> face_neighbors{};
 
-    /// @brief This rank's owned spatial slab, low corner [Angstrom].
+    /// @brief Owned slab lower bounds in fractional lattice coordinates.
     double sublo[3]{};
 
-    /// @brief This rank's owned spatial slab, high corner [Angstrom].
+    /// @brief Owned slab upper bounds in the same coordinates as sublo.
     double subhi[3]{};
 
-    /// @brief Number of locally owned atoms (authoritative count).
-    int n_local = 0;
-
-    /// @brief Number of ghost copies received from neighbors.
-    int n_ghost = 0;
-
-    /// @brief Allocated atom-array capacity. `n_local + n_ghost <= capacity`.
-    int capacity = 0;
+    /// A valid partition can own zero atoms. Preserved across domain hand-off.
+    bool partitioned = false;
 
     /// @brief Generation counter, bumped on migration. Neighbor-list / bonded /
     /// halo-list consumers rebuild when they observe a bump.
@@ -206,13 +197,8 @@ struct DomainDecomposition {
     /// `MPI_Allreduce`, which guarantees consistency by construction.
     std::array<std::vector<double>, 3> cuts{};
 
-    /// @brief Bind to a frame: populate `n_local`, `capacity`, `tag_to_local`.
-    ///
-    /// Single-rank initialization. Sets `n_local = capacity = frame.nlocal()`,
-    /// `n_ghost = 0`, and rebuilds `tag_to_local` from `kAtom_tag`.
-    /// Does not touch MPI topology fields.
-    ///
-    /// @param frame Host-side frame whose atoms this DD describes.
+    /// @brief Bind a replicated frame and rebuild its owned tag lookup.
+    /// @param frame Frame whose owned rows this domain describes.
     void bind(const Frame& frame);
 
 #ifdef ATV_HAS_MPI
@@ -244,14 +230,9 @@ struct DomainDecomposition {
     /// @return Owning rank in the Cartesian communicator.
     int owner_of(double x, double y, double z, const ATV::cpu::Box& box) const;
 
-    /// @brief Compute and store this rank's spatial slab from the box.
-    ///
-    /// Orthorhombic: `sublo[d] = (L_d / dims[d]) * coords[d]`,
-    /// `subhi[d] = sublo[d] + L_d / dims[d]`. Idempotent. Single-rank
-    /// (`dims == {1,1,1}`): the slab is the full box. Not MPI-gated: the
-    /// slab record is useful for any spatial component, e.g. the neighbor
-    /// list and future observer shell analysis.
-    /// @param box Simulation box (orthorhombic).
+    /// @brief Refresh fractional slab bounds from grid coordinates and cuts.
+    /// Cartesian consumers map these bounds through Box::cartesian_bounds.
+    /// @param box Current simulation box (bounds are metric-independent).
     void compute_sublo_subhi(const ATV::cpu::Box& box);
 
 #ifdef ATV_HAS_MPI
@@ -304,7 +285,7 @@ struct DomainDecomposition {
     /// Each rank inspects all owned rows in the `atoms` Block, picks the
     /// subset whose (PBC-wrapped) positions fall in this rank's slab,
     /// compacts those atoms to the front of every per-atom array, and
-    /// updates `n_local`, `n_ghost = 0`, `capacity = atoms.size()`. Stale
+    /// updates Frame ownership and clears its ghosts. Stale
     /// rows in `[n_local, capacity)` are reused later by `CommBrick`
     /// as ghost slots.
     ///

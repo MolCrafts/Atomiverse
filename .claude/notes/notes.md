@@ -57,6 +57,16 @@ History is git's job — superseded designs are deleted, not archived here.
   gather/bcast go column-major off `Block::resolve_columns`, MC rolls back
   with `Frame::copy_row_from`. CUDA `MultiGpu` is still a second stack.
   Leads: [md-comm.md](md-comm.md).
+- **CPU MD vs LAMMPS (2026-10-19).** One Runtime rebuild sequence (wrap →
+  exchange → sort → borders → neighbor), explicit periodic ghost rows at every
+  rank count, column-lattice `Box` with triclinic CellList/CommBrick, per-
+  consumer half/full neighbor requests, EAM density/embedding ReversePacker
+  path. Same-input LJ loop on Apple M4 is 0.47–0.72× LAMMPS wall at 10k/104k
+  atoms; EAM 0.82–1.13×, SW+LJ 0.94–1.23×. Open: Comm category 1.2–4.3×
+  LAMMPS (includes ATV reductions), neighbor build 1.5–2.0× on SW+LJ, no
+  x86/cluster numbers. Contracts and validation boundary:
+  [cpu-lammps-alignment.md](cpu-lammps-alignment.md); migration spec
+  `.claude/specs/cpu-orthogonality.md`.
 
 ## Loop state pointers
 

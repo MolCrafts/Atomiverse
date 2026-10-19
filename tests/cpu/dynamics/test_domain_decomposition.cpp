@@ -56,9 +56,9 @@ TEST(DomainDecomposition, SingleRankDefaults) {
     EXPECT_EQ(ctx.md.dd->coords[0], 0);
     EXPECT_EQ(ctx.md.dd->coords[1], 0);
     EXPECT_EQ(ctx.md.dd->coords[2], 0);
-    EXPECT_EQ(ctx.md.dd->n_local, frame.nlocal());
-    EXPECT_EQ(ctx.md.dd->n_ghost, 0);
-    EXPECT_EQ(ctx.md.dd->capacity, frame.nlocal());
+    EXPECT_EQ(frame.nlocal(), 64);
+    EXPECT_EQ(frame.nghost(), 0);
+    EXPECT_EQ(frame.capacity(), frame.nlocal());
     EXPECT_EQ(ctx.md.dd->neighbor_generation, static_cast<std::uint64_t>(0));
 }
 
@@ -74,8 +74,7 @@ TEST(DomainDecomposition, SendListsEmpty) {
     cpu::Context& ctx = backend.context();
     ASSERT_NE(ctx.md.dd, nullptr);
     ASSERT_NE(ctx.md.comm, nullptr);
-    EXPECT_EQ(ctx.md.dd->n_ghost, 0)
-        << "single-rank CommBrick methods no-op: nothing is shipped";
+    EXPECT_EQ(frame.nghost(), 0) << "a fresh binding has no ghost rows";
 }
 
 // ── identity tag→local map ───────────────────────────────────────────

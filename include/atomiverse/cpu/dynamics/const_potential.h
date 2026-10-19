@@ -39,6 +39,7 @@ namespace cpu {
 /// Default binding: `md::Phase::pre_force @ -500` (after Zero\*, before force).
 class ConstPotentialBO : public cpu::Component {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param electrode_types Atom type id per electrode (order = electrode index).
     /// @param potentials_V    Applied potential \(\Psi\) [V = eV/e] per electrode.
     /// @param gaussian_width_A Gaussian charge width \(w\) [Å] (MetalWalls-class).
@@ -58,6 +59,7 @@ class ConstPotentialBO : public cpu::Component {
 
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Total charge on electrode `e` after the last solve [e].

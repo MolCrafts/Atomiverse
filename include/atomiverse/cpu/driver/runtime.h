@@ -15,9 +15,13 @@
 /// does not double the runtime, the decomposition, or the frame binding.
 #pragma once
 
+#include <exception>
+
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -36,6 +40,7 @@ namespace ATV {
 namespace cpu {
 
 class NeighborProvider;
+class DriverNode;
 
 namespace md {
 namespace mpi {
@@ -46,6 +51,42 @@ struct DomainDecomposition;
 /// @brief CPU loop runtime -- lifecycle manager + Plan dispatcher.
 class Runtime {
   public:
+    class ScopedPlan;
+    /// Protect a synchronous callback, including criterion/outcome polling.
+    class DispatchScope {
+      public:
+        explicit DispatchScope(Runtime* runtime)
+            : runtime_(runtime),
+              flag_(runtime ? &runtime->dispatch_active_ : nullptr),
+              saved_(flag_ && *flag_), exceptions_(std::uncaught_exceptions()) {
+            if (flag_)
+                *flag_ = true;
+        }
+        ~DispatchScope() {
+            if (flag_)
+                *flag_ = saved_;
+            // Nested dispatch first unwinds its borrowed plan/window. Destroy
+            // only after the outermost callback has left all component stacks.
+            if (runtime_ && runtime_->driver_owned_ && !saved_
+                && std::uncaught_exceptions() > exceptions_)
+                runtime_->unwind_failed_run();
+        }
+        DispatchScope(const DispatchScope&) = delete;
+        DispatchScope& operator=(const DispatchScope&) = delete;
+
+      private:
+        Runtime* runtime_;
+        bool* flag_;
+        bool saved_;
+        int exceptions_;
+    };
+    /// Shared by the tree: structural edits are only legal between dispatches.
+    const bool& dispatch_active() const { return dispatch_active_; }
+    void invalidate_plan() {
+        contracts_ready_ = false;
+        forces_ready_ = false;
+    }
+
     Runtime();
     ~Runtime();
     Runtime(const Runtime&) = delete;
@@ -58,7 +99,7 @@ class Runtime {
     void init();
 
     /// @brief Bind a compiled Plan for execution (non-owning).
-    void load(const Plan<cpu::Component>& plan) { plan_ = &plan; }
+    void load(const Plan<cpu::Component>& plan, int step_idx = 0);
 
     /// @brief Set the Frame to operate on (zero-copy) and bind the DD to it.
     ///
@@ -74,6 +115,11 @@ class Runtime {
 
     /// @brief Execute one simulation step.
     void step(int step_idx);
+    /// Dispatch a normal phase with cadence and timing, allowing a workflow
+    /// to commit/rollback between evaluation and observation. MD must use step().
+    void step_stage(int slot, int step_idx);
+    /// Establish initial MD forces once, without advancing the clock.
+    void prepare_run(int step_idx = 0);
 
     // ── Nested plans: a sub-driver runs its own Plan on THIS runtime ──────────
     void build_plan(const Plan<cpu::Component>& plan);
@@ -94,10 +140,21 @@ class Runtime {
     void destroy_components();
 
     /// @brief Block until the async-analysis executor has drained.
-    void drain_analysis() { analysis_.drain(); }
+    void drain_analysis() {
+        DispatchScope dispatch(this);
+        analysis_.drain();
+    }
 
     /// @brief Release all resources.
     void shutdown();
+
+    /// Unwind a failed setup/dispatch while borrowed components and Frame live.
+    /// Preserves the original exception; the next Driver run rebuilds its plan.
+    void unwind_failed_run() noexcept;
+    bool failed() const noexcept { return failed_; }
+    /// Driver-owned calls unwind on escaping errors; raw Runtime callers retain
+    /// their explicit recovery/borrowed-plan contract.
+    void enable_driver_unwind() noexcept { driver_owned_ = true; }
 
     /// @brief Access the CPU context.
     Context& context() { return context_; }
@@ -130,9 +187,13 @@ class Runtime {
     std::unique_ptr<md::mpi::DomainDecomposition> release_dd();
 
     /// @brief Run serially on a full-replica frame even under multi-rank MPI.
-    void set_serial_on_replica() noexcept { domain_.set_serial_on_replica(); }
+    void set_serial_on_replica() noexcept {
+        context_.exec.serial_on_replica = true;
+    }
 
   private:
+    bool failed_ = false;
+    bool driver_owned_ = false;
     /// @brief Replay one compiled Plan slot. The erased half of `run_stage`.
     void run_slot_(int slot, int step_idx);
 
@@ -150,10 +211,10 @@ class Runtime {
         GhostContract ghost;
 
         /// Widest `NeighborConsumer::halo_cutoff()` [Å] among mounted
-        /// components. A many-body style (EAM) declares a ghost-of-ghost
-        /// shell of 2·cutoff here, wider than the provider's enumeration
-        /// reach; the ghost shell must honour whichever is larger.
+        /// components. A consumer may need a coordinate shell wider than
+        /// the provider's enumeration reach; honour whichever is larger.
         double consumer_halo_cutoff = 0.0;
+        double provider_reach = 0.0;
     };
 
     void cache_verlet_comm_();
@@ -165,6 +226,7 @@ class Runtime {
     void comm_refresh_(int slot, int step);
     /// @brief Exchange + borders. Flat slot args so Verlet can walk
     ///        `pre_exchange` / `pre_neighbor` in between; no schedule bag.
+    void decide_neighbor_();
     void comm_rebuild_(int exchange_slot, int borders_slot, int step);
     /// @brief nflag XOR: forward, or exchange + borders + neighbor build.
     void comm_before_force_(int slot, int step_idx);
@@ -172,7 +234,7 @@ class Runtime {
     void comm_after_force_(int slot, int step_idx);
     /// @brief LAMMPS Verlet::setup: `comm->exchange` then `borders` then
     ///        neighbor build (MPI only). Ghost positions in Å.
-    void setup_verlet_comm_();
+    void setup_verlet_comm_(int step_idx = 0);
     /// @brief Evaluate/Minimize: Comm around force/evaluate (Å positions,
     ///        reverse of ghost forces [eV/Å]); skip `verlet_engine` adapters.
     void step_linear_(int step_idx);
@@ -184,6 +246,24 @@ class Runtime {
     void walk_slot_(int phase, int step_idx, bool skip_engine);
     void launch_engine_(cpu::Component* c, int slot, int op, int phase,
                         int step_idx);
+    void release_component_(cpu::Component* component);
+    void refresh_plan_(int step_idx = 0);
+    bool dispatch_active_ = false;
+    int active_slot_ = -1;
+    bool physical_pipeline_active_ = false;
+    bool forces_ready_ = false;
+    std::uint64_t force_box_revision_ = 0;
+    std::vector<StageSlot<cpu::Component>> force_bindings_;
+    bool components_built_ = false;
+    bool contracts_ready_ = false;
+
+    // One reference per Plan containing an object, not per phase binding.
+    // Zero marks a build in progress so recursive ownership fails explicitly.
+    std::unordered_map<cpu::Component*, std::size_t> component_users_;
+    std::vector<cpu::Component*> component_order_;
+    // Distinct stage adapters can borrow the same node. Its subtree belongs
+    // to this Runtime once, independently of adapter/budget multiplicity.
+    std::unordered_map<cpu::DriverNode*, std::size_t> node_users_;
 
     Context context_{};
     cpu::Frame* frame_ = nullptr;
@@ -208,6 +288,30 @@ class Runtime {
 
     VerletComm verlet_{};
     bool verlet_setup_done_ = false;
+    /// The communicator compiles its wires from `ctx.md.ghost` in `setup()`.
+    /// Every refold (build, live mount, nested plan in or out) sets this so
+    /// the next rebuild boundary re-runs `setup()` before exchanging.
+    bool comm_contract_stale_ = false;
+};
+
+/// Active-plan lifetime for a nested loop. Domain ownership remains shared.
+class Runtime::ScopedPlan {
+  public:
+    ScopedPlan(Runtime& runtime, const Plan<cpu::Component>& plan,
+               int step_idx = 0);
+    ~ScopedPlan();
+    ScopedPlan(const ScopedPlan&) = delete;
+    ScopedPlan& operator=(const ScopedPlan&) = delete;
+
+  private:
+    Runtime& runtime_;
+    const Plan<cpu::Component>* saved_plan_;
+    DynamicsServices saved_md_;
+    VerletComm saved_verlet_;
+    std::vector<std::vector<int>> saved_handles_;
+    std::vector<StageSlot<cpu::Component>> saved_force_bindings_;
+    bool saved_contracts_, saved_setup_, saved_forces_;
+    bool changed_, physical_;
 };
 
 } // namespace cpu

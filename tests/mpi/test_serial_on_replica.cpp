@@ -31,7 +31,6 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/driver/runtime.h"
@@ -65,10 +64,10 @@ cpu::Frame make_h2_frame() {
     frame.span(ATV::kAtom_type)[1] = 1;
     frame.span(ATV::kAtom_x)[0] = 0.0;
     frame.span(ATV::kAtom_y)[0] = 0.0;
-    frame.span(ATV::kAtom_z)[0] = 0.0;
+    frame.span(ATV::kAtom_z)[0] = -0.1;
     frame.span(ATV::kAtom_x)[1] = 0.0;
     frame.span(ATV::kAtom_y)[1] = 0.0;
-    frame.span(ATV::kAtom_z)[1] = 0.74;
+    frame.span(ATV::kAtom_z)[1] = 0.64;
     frame.box = ATV::cpu::Box::cubic(20.0);
     return frame;
 }
@@ -113,6 +112,8 @@ TEST(SerialOnReplica, BackendFlagSkipsTopologyAndKeepsFrameWhole) {
 TEST(SerialOnReplica, EvaluateAm1KeepsFullReplicaOnEveryRank) {
     auto frame = make_h2_frame();
     run_serial_on_replica_am1(frame);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[0], -0.1);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[1], 0.64);
 
     int rank = 0;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -126,6 +127,8 @@ TEST(SerialOnReplica, EvaluateAm1KeepsFullReplicaOnEveryRank) {
 TEST(SerialOnReplica, EvaluateAm1MatchesSerialInnerSolverReference) {
     auto frame = make_h2_frame();
     run_serial_on_replica_am1(frame);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[0], -0.1);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[1], 0.64);
 
     // Serially-computed reference on this same rank: the inner solver run
     // directly, outside any driver / Backend / DD machinery. AM1Evaluator's
@@ -137,8 +140,8 @@ TEST(SerialOnReplica, EvaluateAm1MatchesSerialInnerSolverReference) {
     const auto& ref = solver.run(ref_frame);
     ASSERT_TRUE(ref.converged);
 
-    const double ref_energy_ev =
-        ref.electronic_energy_hartree * units::kHartreeInEv;
+    // The solver computes eV natively; avoid a lossy eV -> Ha -> eV round trip.
+    const double ref_energy_ev = ref.total_energy_ev;
     ASSERT_NE(ref_energy_ev, 0.0)
         << "reference produced zero energy — the parity check would be "
            "vacuous";
@@ -158,6 +161,8 @@ TEST(SerialOnReplica, EvaluateAm1MatchesSerialInnerSolverReference) {
 TEST(SerialOnReplica, EvaluateAm1EnergyIdenticalAcrossRanks) {
     auto frame = make_h2_frame();
     run_serial_on_replica_am1(frame);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[0], -0.1);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[1], 0.64);
 
     int size = 0;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -190,4 +195,24 @@ int main(int argc, char** argv) {
     const int rc = RUN_ALL_TESTS();
     MPI_Finalize();
     return rc;
+}
+
+TEST(SerialOnReplica,
+     WholeSystemEvaluatorRejectsSpatialPartitionBeforeMutation) {
+    auto frame = make_h2_frame();
+    cpu::Evaluate eval;
+    eval.on(ATV::evaluate::Phase::evaluate)
+        .add(cpu::semiempirical::AM1Evaluator{0, 1, 200, 1.0e-8, 1.0e-10});
+    eval.build();
+    cpu::Runtime runtime;
+    runtime.init();
+    runtime.load(eval.plan());
+    if (runtime.context().mpi_size > 1) {
+        EXPECT_THROW(runtime.set_frame(frame), std::runtime_error);
+    } else {
+        EXPECT_NO_THROW(runtime.set_frame(frame));
+    }
+    EXPECT_EQ(frame.nlocal(), 2);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[0], -0.1);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_z)[1], 0.64);
 }

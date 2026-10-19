@@ -2,12 +2,16 @@
 /// @brief CPU affine box-deformation driver (single-axis uniaxial strain).
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/component/integrator.h"
+#include "atomiverse/cpu/component/component.h"
 
 namespace ATV {
 namespace cpu {
@@ -59,8 +63,18 @@ namespace md {
 ///
 /// Bound at `initial_integrate @ +200`, after VelocityVerlet (+0) and
 /// NoseHoover (+100).
-class Deform : public cpu::Integrator {
+class Deform : public cpu::Component, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "Deform: timestep must be finite and positive");
+        dt_ = timestep;
+    }
+
     /// @brief Per-axis strain mode -- mirrors LAMMPS `fix deform` keywords.
     enum class Mode {
         /// Engineering strain: target edge `L = L0*(1 + R*t_elapsed)`,

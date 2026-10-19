@@ -10,6 +10,7 @@
 /// Both had the same cause: ONE IterationStatus on the Context. Now each loop
 /// owns its own and Context merely points at the active one.
 
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/stage.h"
@@ -22,6 +23,40 @@
 #include "cpu/driver_test_helpers.h"
 
 using namespace ATV;
+
+TEST(DriverNesting, NestedExceptionRestoresParentLoopAndResolutionWindow) {
+    class Throwing : public cpu::Component {
+      public:
+        std::string name() const override { return "throwing"; }
+        void launch(const cpu::LaunchContext&) override {
+            throw std::runtime_error("nested failure");
+        }
+    } throwing;
+    class Loop : public cpu::Driver<ATV::scf::Phase> {
+        void validate_components() const override {}
+    } inner;
+    inner.on(ATV::scf::Phase::check).add_ref(throwing);
+    inner.build();
+    auto frame = atv_test::make_trivial_frame();
+    cpu::Runtime runtime;
+    runtime.init();
+    runtime.load(inner.plan());
+    runtime.set_frame(frame);
+    IterationStatus parent_status;
+    ConvergenceMetrics parent_metrics;
+    runtime.context().loop.status = &parent_status;
+    runtime.context().loop.metrics = &parent_metrics;
+    frame.begin_resolution_window(123);
+    const auto before = frame.resolution_window();
+    EXPECT_THROW(inner.run_nested(runtime.context(), frame, 1),
+                 std::runtime_error);
+    EXPECT_EQ(runtime.context().loop.status, &parent_status);
+    EXPECT_EQ(runtime.context().loop.metrics, &parent_metrics);
+    const auto after = frame.resolution_window();
+    EXPECT_EQ(after.active, before.active);
+    EXPECT_EQ(after.budget, before.budget);
+    EXPECT_EQ(after.count, before.count);
+}
 
 namespace {
 
@@ -167,6 +202,34 @@ cpu::Frame two_atoms() {
 
 } // namespace
 
+TEST(DriverNesting, ParentCompilesDescendantGhostDeclarations) {
+    class GhostProbe : public cpu::Component {
+      public:
+        std::string name() const override { return "nested_ghost_probe"; }
+        void launch(const cpu::LaunchContext&) override {}
+        std::span<const GhostField> declare_ghosts() const override {
+            static constexpr GhostField fields[] = {
+                GhostField::read_each_step(kAtom_charge, "nested_ghost_probe")};
+            return fields;
+        }
+    } probe;
+    MethodLoop child;
+    child.on(ATV::scf::Phase::check).add_ref(probe);
+    OuterLoop parent;
+    parent.on(ATV::md::Phase::force).add_ref(child, 0, 1);
+    parent.build();
+    auto frame = two_atoms();
+    cpu::Runtime runtime;
+    runtime.init();
+    runtime.load(parent.plan());
+    runtime.set_frame(frame);
+    runtime.build_components();
+    const auto* field = runtime.context().md.ghost->find(kAtom_charge.key);
+    ASSERT_NE(field, nullptr);
+    EXPECT_EQ(field->freshness, Freshness::step);
+    runtime.destroy_components();
+}
+
 // ── ac-006: inner convergence does NOT stop the outer loop ──────────────────
 
 TEST(DriverNesting, NestedConvergenceDoesNotStopTheParent) {
@@ -291,13 +354,70 @@ TEST(DriverNesting, RunStageReplaysNestedDriver) {
     const int after_replay = counter.calls;
     outer.finish();
 
-    EXPECT_EQ(after_step, 1)
-        << "baseline: Runtime::step already dispatches nested driver nodes";
-    EXPECT_EQ(after_replay, 2)
+    EXPECT_EQ(after_step, 2)
+        << "initial force setup and the production step each dispatch the node";
+    EXPECT_EQ(after_replay, 3)
         << "run_stage(force) did not re-enter the nested driver node "
            "(calls stayed at the step value) — Runtime::run_slot_ skips "
            "driver ops, so every line-search trial and every per-replica "
            "force pass evaluates a zeroed frame";
+}
+
+TEST(DriverNesting, ReplayExceptionRestoresResolutionWindow) {
+    class Throwing : public cpu::Component {
+      public:
+        std::string name() const override { return "throwing_replay"; }
+        void launch(const cpu::LaunchContext&) override {
+            throw std::runtime_error("replay failure");
+        }
+    } throwing;
+    auto frame = two_atoms();
+    ReplayableLoop outer;
+    outer.on(ATV::md::Phase::force).add_ref(throwing);
+    outer.build();
+    outer.begin(frame);
+    frame.begin_resolution_window(123);
+    const auto before = frame.resolution_window();
+    EXPECT_THROW(outer.replay(ATV::md::Phase::force, 0), std::runtime_error);
+    const auto after = frame.resolution_window();
+    EXPECT_EQ(after.active, before.active);
+    EXPECT_EQ(after.budget, before.budget);
+    EXPECT_EQ(after.count, before.count);
+    frame.restore_resolution_window({});
+    outer.finish();
+}
+
+TEST(DriverNesting, StressVetoIsIndependentAndRestoredAfterNestedReplay) {
+    class Probe : public cpu::Component {
+      public:
+        std::string name() const override { return "derivative_probe"; }
+        void launch(const cpu::LaunchContext& ctx) override {
+            forces = ctx.forces_requested;
+            stress = ctx.stress_requested;
+        }
+        bool forces = false;
+        bool stress = true;
+    } probe;
+    Probe following;
+    class ForceOnly : public ReplayableLoop {
+        bool phase_wants_stress(ATV::md::Phase phase) const override {
+            return phase != ATV::md::Phase::force;
+        }
+    } outer;
+    MethodLoop inner;
+    inner.on(ATV::scf::Phase::fock).add_ref(probe);
+    outer.on(ATV::md::Phase::force).add_ref(inner, 0, 1);
+    outer.on(ATV::md::Phase::post_force).add_ref(following);
+    outer.build();
+    auto frame = two_atoms();
+    outer.begin(frame);
+    outer.replay(ATV::md::Phase::force, 0);
+    EXPECT_TRUE(probe.forces);
+    EXPECT_FALSE(probe.stress);
+    outer.replay(ATV::md::Phase::post_force, 0);
+    EXPECT_TRUE(following.forces);
+    EXPECT_TRUE(following.stress);
+    outer.finish();
 }
 
 TEST(DriverNesting, DefaultBudgetWhenUnspecified) {
@@ -360,4 +480,29 @@ TEST(DriverNesting, NestedHfCopiesEnergyAndForce) {
     ASSERT_EQ(ops.size(), 1u);
     EXPECT_TRUE(ops.front().component->provides_energy());
     EXPECT_FALSE(ops.front().component->provides_force());
+}
+
+TEST(DriverNesting, NestedCapabilitiesTrackTheConfiguredObject) {
+    class ConfiguredMethod : public ATV::cpu::Driver<ATV::scf::Phase> {
+      public:
+        bool provides_energy() const override { return true; }
+        bool provides_force() const override { return gradient; }
+        bool requires_full_frame() const override { return true; }
+        bool gradient = false;
+
+      protected:
+        void validate_components() const override {}
+    } method;
+    ATV::cpu::Evaluate parent;
+    parent.on(ATV::evaluate::Phase::evaluate).add_ref(method);
+    parent.build();
+    const ATV::cpu::Component* nested = nullptr;
+    for (const auto* c : parent.plan().components())
+        if (c->requires_full_frame())
+            nested = c;
+    ASSERT_NE(nested, nullptr);
+    EXPECT_FALSE(nested->provides_force());
+    method.gradient = true;
+    EXPECT_TRUE(nested->provides_force());
+    EXPECT_TRUE(parent.plan().requires_full_frame);
 }

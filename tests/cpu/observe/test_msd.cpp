@@ -105,6 +105,7 @@ ATV::cpu::FrameSnapshot ballistic_snapshot(double a, double b, int t,
     ATV::cpu::FrameSnapshot snap;
     snap.step = t;
     snap.n_owned = 2;
+    snap.tag = {1, 2};
     snap.box = ATV::cpu::Box::cubic(box);
     snap.x = {a * t, 0.0};
     snap.y = {0.0, b * t};
@@ -174,4 +175,23 @@ TEST(CpuMSDObserver, ConstructorRefusesBadArguments) {
                  std::invalid_argument);
     EXPECT_THROW((ATV::MSD{1.0, 0, "unused_msd.dat", 0}),
                  std::invalid_argument);
+}
+
+TEST(CorrelationInput, AtomPermutationPreservesPackedIdentity) {
+    ATV::cpu::CorrelationInput input;
+    std::vector<double> packed;
+    input.pack(packed, {20, 10}, {2, 1}, {4, 3}, {6, 5}, 2, 1, 1);
+    EXPECT_EQ(packed, (std::vector<double>{1, 2, 3, 4, 5, 6}));
+    input.pack(packed, {10, 20}, {1, 2}, {3, 4}, {5, 6}, 2, 2, 1);
+    EXPECT_EQ(packed, (std::vector<double>{1, 2, 3, 4, 5, 6}));
+    EXPECT_THROW(input.pack(packed, {10, 30}, {1, 2}, {3, 4}, {5, 6}, 2, 3, 1),
+                 std::runtime_error);
+}
+
+TEST(CorrelationInput, DroppedCaptureDoesNotCompressTimeAxis) {
+    ATV::cpu::CorrelationInput input;
+    std::vector<double> packed;
+    input.pack(packed, {1}, {0}, {0}, {0}, 1, 10, 10);
+    EXPECT_THROW(input.pack(packed, {1}, {0}, {0}, {0}, 1, 30, 10),
+                 std::runtime_error);
 }

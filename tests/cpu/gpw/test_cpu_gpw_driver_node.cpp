@@ -71,3 +71,16 @@ TEST(GpwDriverNode, PathLocalOpsAreCallable) {
     EXPECT_EQ(dens.name(), "gpw_density_stage");
     EXPECT_EQ(hits, 0);
 }
+
+TEST(GpwDriverNode, DirectNestingRejectsBeforeTouchingParent) {
+    GpwDft method;
+    ATV::cpu::Runtime runtime;
+    ATV::cpu::Context context;
+    ATV::cpu::Frame frame;
+    ATV::cpu::DriverNode& node = method;
+    EXPECT_THROW(node.build_on(runtime), std::logic_error);
+    EXPECT_THROW(node.run_nested_erased(context, frame, 1), std::logic_error);
+    EXPECT_THROW(method.run_nested(context, frame, 1), std::logic_error);
+    EXPECT_EQ(context.exec.runtime, nullptr);
+    EXPECT_EQ(frame.nlocal(), 0);
+}

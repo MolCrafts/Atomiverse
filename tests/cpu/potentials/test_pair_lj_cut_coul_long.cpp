@@ -37,6 +37,33 @@ TEST(ErfcTable, MatchesDirectErfc) {
     }
 }
 
+TEST(PairLJCutCoulLong, ZeroVersionSpecialScaleCacheIsInitialized) {
+    cpu::Frame frame(2);
+    frame.box = cpu::Box::cubic(20.0);
+    frame.span(kAtom_x)[1] = 2.0;
+    frame.span(kAtom_tag)[0] = 1;
+    frame.span(kAtom_tag)[1] = 2;
+    cpu::md::PairList pairs;
+    pairs.inum = 2;
+    pairs.ilist = {0, 1};
+    pairs.numneigh = {1, 0};
+    pairs.firstneigh = {0, 1};
+    pairs.neighbors = {1};
+    pairs.total_pairs = 1;
+    ASSERT_EQ(pairs.version, 0u);
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    cpu::PairLJCutCoulLong pair({{0, 0, 1.0, 1.0}}, 0.3, 8.0);
+    pair.set_special_bonds_amber().set_energy_shift(false);
+    pair.build({context, frame});
+    pair.launch({context, frame, 0, 0, true, true});
+    const double invr6 = 1.0 / 64.0;
+    EXPECT_NEAR(frame.meta.get(kEnergy), 4.0 * (invr6 * invr6 - invr6), 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_fx)[0], -12.0 * (2.0 * invr6 * invr6 - invr6),
+                1e-14);
+    pair.destroy({context, frame});
+}
+
 TEST(PairLJCutCoulLong, FiniteEnergyWithAmberSpecials) {
     const int n = 4;
     cpu::Frame f(n);

@@ -127,6 +127,9 @@ atv_add_cpp_test(test_mat3  core/test_mat3.cpp)
 atv_add_cpp_test(test_vec3  core/test_vec3.cpp)
 atv_add_cpp_test(test_real_harmonics core/test_real_harmonics.cpp)
 atv_add_cpp_test(test_units core/test_units.cpp)
+atv_add_cpp_test(test_driver_contract core/test_driver_contract.cpp)
+atv_add_cpp_test(test_cpu_electronic_aimd_method
+                 cpu/electronic/test_aimd_method.cpp)
 
 # ── CPU backend tests (always available, no CUDA required) ──────────
 
@@ -256,6 +259,9 @@ atv_add_cpp_test(test_cpu_pair_born               cpu/potentials/test_pair_born.
 atv_add_cpp_test(test_cpu_pair_virial             cpu/potentials/test_pair_virial.cpp)
 atv_add_cpp_test(test_cpu_pim_induced_dipole      cpu/potentials/test_pim_induced_dipole.cpp)
 atv_add_cpp_test(test_cpu_pim_xl_dipole           cpu/potentials/test_pim_xl_dipole.cpp)
+if(ATV_BUILD_MINIMIZER)
+    atv_add_cpp_test(test_cpu_optimizer_metrics cpu/minimize/test_optimizer_metrics.cpp)
+endif()
 atv_add_cpp_test(test_cpu_minimize_aniso_cell     cpu/minimize/test_anisotropic_cell.cpp)
 if(ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_cpu_gfn2_params         cpu/semiempirical/test_gfn2_params.cpp)
@@ -341,6 +347,7 @@ if(ATV_BUILD_GPW)
     atv_add_cpp_test(test_cpu_gpw_one_electron     cpu/gpw/test_cpu_gpw_one_electron.cpp)
     atv_add_cpp_test(test_cpu_gpw_workspace        cpu/gpw/test_cpu_gpw_workspace.cpp)
     atv_add_cpp_test(test_cpu_gpw_driver_node     cpu/gpw/test_cpu_gpw_driver_node.cpp)
+    atv_add_cpp_test(test_cpu_gpw_diis            cpu/gpw/test_diis.cpp)
     if(ATV_BUILD_PW)
         atv_add_cpp_test(test_cpu_gpw_ks_grid_build cpu/gpw/test_cpu_gpw_ks_grid_build.cpp)
     endif()
@@ -386,7 +393,9 @@ atv_add_cpp_test(test_cpu_md_pe_energy_xcheck     cpu/dynamics/test_pe_energy_xc
 atv_add_cpp_test(test_cpu_md_neighbor_list_arena  cpu/dynamics/test_neighbor_list_arena.cpp)
 atv_add_cpp_test(test_cpu_md_neighbor_decide      cpu/dynamics/test_neighbor_decide.cpp)
 atv_add_cpp_test(test_cpu_driver_verlet_comm      cpu/driver/test_verlet_comm.cpp)
-atv_add_cpp_test(test_cpu_driver_preset_comm_plan cpu/driver/test_preset_comm_plan.cpp)
+if(ATV_BUILD_MD AND ATV_BUILD_EVALUATE AND ATV_BUILD_MINIMIZER AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+    atv_add_cpp_test(test_cpu_driver_preset_comm_plan cpu/driver/test_preset_comm_plan.cpp)
+endif()
 atv_add_cpp_test(test_cpu_md_full_neighbor_list  cpu/dynamics/test_full_neighbor_list.cpp)
 atv_add_cpp_test(test_cpu_md_cell_list_grid_stale  cpu/dynamics/test_cell_list_grid_stale.cpp)
 atv_add_cpp_test(test_cpu_md_cell_list_halo_pad  cpu/dynamics/test_cell_list_halo_pad.cpp)
@@ -443,7 +452,9 @@ endif()
 atv_add_cpp_test(test_cpu_minimizer_line_search_nested_node
                  cpu/minimize/test_line_search_nested_node.cpp)
 atv_add_cpp_test(test_cpu_criterion       cpu/driver/test_criterion.cpp)
-atv_add_cpp_test(test_cpu_driver_nesting  cpu/driver/test_driver_nesting.cpp)
+if(ATV_BUILD_EVALUATE)
+    atv_add_cpp_test(test_cpu_driver_nesting  cpu/driver/test_driver_nesting.cpp)
+endif()
 # scf-driver-refactor-01-plumb: scf::Phase / PhaseKind::SCF / PhaseTraits<scf::Phase>
 # / the Criterion component kind + driver pull-poll. Pure type-foundation plumbing —
 # no consumer yet.
@@ -451,7 +462,9 @@ atv_add_cpp_test(test_cpu_scf_phase_plumbing cpu/driver/test_scf_phase_plumbing.
 atv_add_cpp_test(test_cpu_component_ownership cpu/driver/test_component_ownership.cpp)
 atv_add_cpp_test(test_cpu_require_match cpu/driver/test_require_match.cpp)
 atv_add_cpp_test(test_driver_live_table cpu/driver/test_driver_live_table.cpp)
-atv_add_cpp_test(test_cpu_driver_unfix cpu/driver/test_unfix.cpp)
+if(ATV_BUILD_MD)
+    atv_add_cpp_test(test_cpu_driver_unfix cpu/driver/test_unfix.cpp)
+endif()
 # Mirrors include/atomiverse/cpu/driver/outcome_policy.h — cpu::Metropolis'
 # verb contract (the canonical policy owns Displace/None and refuses the
 # Box/Insert/Delete trials that need the NptMc / Gcmc presets). Formula-level,
@@ -486,7 +499,9 @@ atv_add_cpp_test(test_cpu_observer_potential_profile
 atv_add_cpp_test(test_cpu_observer_species_density_profile
                  cpu/observe/test_species_density_profile.cpp)
 
-atv_add_cpp_test(test_cpu_driver_role_validation cpu/test_cpu_driver_role_validation.cpp)
+if(ATV_BUILD_MD AND ATV_BUILD_EVALUATE AND ATV_BUILD_MINIMIZER)
+    atv_add_cpp_test(test_cpu_driver_role_validation cpu/test_cpu_driver_role_validation.cpp)
+endif()
 # Registration-time PhaseKind gate + five-driver plan-shape regression
 # (arch-refactor-01-bindings). Uses AM1Evaluator (unconditional, no RHF gate).
 # Walks default bindings across MC / PATH / SE / VIB component kinds.
@@ -607,6 +622,10 @@ endif()
 # ── MPI tests (launched under `mpirun`) ─────────────────────────────────
 
 if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
+    atv_add_mpi_exec(test_mpi_criterion mpi/test_criterion.cpp)
+    atv_add_mpi_run(test_mpi_criterion_n2 test_mpi_criterion 2)
+    atv_add_mpi_run(test_mpi_criterion_n4 test_mpi_criterion 4)
+
     atv_add_mpi_exec(test_mpi_topology mpi/test_topology.cpp)
     atv_add_mpi_run(test_mpi_topology_n1 test_mpi_topology 1)
     atv_add_mpi_run(test_mpi_topology_n2 test_mpi_topology 2)
@@ -697,17 +716,25 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
                         test_mpi_evaluate_halo_parity 2)
     endif()
 
-    atv_add_mpi_exec(test_mpi_minimize_lj mpi/test_minimize_lj.cpp)
-    atv_add_mpi_run(test_mpi_minimize_lj_n1 test_mpi_minimize_lj 1)
-    atv_add_mpi_run(test_mpi_minimize_lj_n2 test_mpi_minimize_lj 2)
-    atv_add_mpi_run(test_mpi_minimize_lj_n4 test_mpi_minimize_lj 4)
-    atv_add_mpi_run(test_mpi_minimize_lj_n8 test_mpi_minimize_lj 8)
+    if(ATV_BUILD_MINIMIZER AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+        atv_add_mpi_exec(test_mpi_minimize_lj mpi/test_minimize_lj.cpp)
+        atv_add_mpi_run(test_mpi_minimize_lj_n1 test_mpi_minimize_lj 1)
+        atv_add_mpi_run(test_mpi_minimize_lj_n2 test_mpi_minimize_lj 2)
+        atv_add_mpi_run(test_mpi_minimize_lj_n4 test_mpi_minimize_lj 4)
+        atv_add_mpi_run(test_mpi_minimize_lj_n8 test_mpi_minimize_lj 8)
+    endif()
 
 
     atv_add_mpi_exec(test_mpi_nose_hoover_npt_multirank
                      mpi/test_nose_hoover_npt_multirank.cpp)
     atv_add_mpi_run(test_mpi_nose_hoover_npt_multirank_n8
                     test_mpi_nose_hoover_npt_multirank 8)
+
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_mpi_exec(test_mpi_optimizer_metrics mpi/test_optimizer_metrics.cpp)
+        atv_add_mpi_run(test_mpi_optimizer_metrics_n2 test_mpi_optimizer_metrics 2)
+        atv_add_mpi_run(test_mpi_optimizer_metrics_n4 test_mpi_optimizer_metrics 4)
+    endif()
 
     atv_add_mpi_exec(test_mpi_deform_multirank mpi/test_deform_multirank.cpp)
     atv_add_mpi_run(test_mpi_deform_multirank_n8 test_mpi_deform_multirank 8)
@@ -805,6 +832,7 @@ atv_add_cpp_test(test_cpu_linalg_eigensolve
 # cpu/linalg/linear_solve.h — no RHF gate.
 atv_add_cpp_test(test_cpu_linalg_linear_solve
                  cpu/linalg/test_linear_solve.cpp)
+atv_add_cpp_test(test_cpu_linalg_pulay cpu/linalg/test_pulay.cpp)
 
 # ── Electronic-state propagator tests ─────────────────────────────────
 #

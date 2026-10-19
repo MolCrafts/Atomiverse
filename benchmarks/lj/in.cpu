@@ -1,0 +1,34 @@
+# Shared initial state written by bench_lj_cpu; metal eV/Angstrom/ps/amu.
+# Required CLI vars: PREFIX, WARM, STEPS. Set -sf omp -pk omp THREADS for OPENMP.
+units metal
+atom_style atomic
+boundary p p p
+read_data ${PREFIX}.data
+variable MODEL index lj
+if "${MODEL} == lj" then "pair_style lj/cut 2.5" "pair_coeff 1 1 1.0 1.0 2.5"
+if "${MODEL} == eam" then "pair_style eam/alloy" "pair_coeff * * ${PREFIX}.eam Cu"
+if "${MODEL} == swlj" then "pair_style hybrid/overlay sw lj/cut 3.77118" &
+  "pair_coeff * * sw ${PREFIX}.sw Si" "pair_coeff 1 1 lj/cut 0.01 2.0 3.77118"
+pair_modify shift yes
+neighbor 0.3 bin
+neigh_modify delay 0 every 1 check yes
+atom_modify sort 1000 0.0
+fix integrate all nve
+# ATV uses fs; 0.005 reduced time at mass=epsilon=sigma=1.
+variable dt equal 0.005*sqrt(103.6427)/1000.0
+if "${MODEL} == eam" then "variable dt equal 0.001"
+if "${MODEL} == swlj" then "variable dt equal 0.0005"
+timestep ${dt}
+thermo_style custom step pe pxx pyy pzz pxy pxz pyz
+thermo_modify norm no format float %.17g
+thermo 1
+run 0
+write_dump all custom ${PREFIX}.lmp.initial id x y z fx fy fz modify sort id format float %.17g
+variable initial equal pe
+print "INITIAL_ENERGY $(v_initial:%.17g)" file ${PREFIX}.lmp.energy
+run ${WARM}
+# Keep neighbor history across segments, as in the ATV continuable run.
+timer full
+run ${STEPS} pre no
+write_dump all custom ${PREFIX}.lmp.final id x y z fx fy fz modify sort id format float %.17g
+print "FINAL_ENERGY $(pe:%.17g)" append ${PREFIX}.lmp.energy

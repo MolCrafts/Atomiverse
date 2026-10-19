@@ -39,6 +39,7 @@ double solve_induced_dipoles(int n, const double* pos, const double* alpha,
 /// nuclear Z. Throws if that column is all-zero after evaluate.
 class QmmmPolarizable : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cross_lj QM–MM LJ table.
     /// @param lj_cutoff LJ cutoff [Å].
     /// @param embed_cutoff Embedding site cutoff [Å].

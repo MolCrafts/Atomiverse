@@ -7,7 +7,7 @@
 /// component plugged into it.
 ///
 /// **MPI / domain decomposition.** Under multi-rank the component
-/// operates on the owned rows `[0, dd->n_local)` only; every inner
+/// operates on the owned rows `[0, frame.nlocal())` only; every inner
 /// product of the two-loop recursion, the step-size cap, the Armijo
 /// directional derivative, and the convergence metrics are reduced
 /// across ranks (`minimizer/global_reduce.h`), so all ranks take the

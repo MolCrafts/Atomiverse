@@ -56,6 +56,10 @@ class NddoStep : public cpu::Component {
 /// @brief Judges the flag the check stage wrote. Does not recompute it.
 class NddoConverged : public cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     /// @param converged Flag set by the check stage.
     explicit NddoConverged(const bool& converged) : converged_(converged) {}
 

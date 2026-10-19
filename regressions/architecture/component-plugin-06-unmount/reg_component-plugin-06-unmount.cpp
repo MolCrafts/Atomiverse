@@ -1,5 +1,10 @@
 /// @file reg_component-plugin-06-unmount.cpp
 /// @brief Mid-run unfix of last evaluator throws how-to; remount continues.
+///
+/// Launch counts include the initial force evaluation MD performs before the
+/// first integration (LAMMPS `Verlet::setup`): `run(2)` launches the force
+/// source 3 times, and remounting it changes the force assembly, so the next
+/// `run(2)` re-initializes and launches 3 more.
 
 #include <cstdio>
 #include <stdexcept>
@@ -46,8 +51,8 @@ int main() {
     frame.box = ATV::cpu::Box::cubic(10.0);
 
     md.run(frame, 2);
-    if (ev.launches != 2) {
-        std::printf("FAIL: launches=%d want=2\n", ev.launches);
+    if (ev.launches != 3) {
+        std::printf("FAIL: launches=%d want=3\n", ev.launches);
         return 1;
     }
     try {
@@ -66,10 +71,10 @@ int main() {
     }
     md.on(ATV::md::Phase::force).add_ref(ev);
     md.run(frame, 2);
-    if (ev.launches != 4) {
-        std::printf("FAIL: launches=%d want=4\n", ev.launches);
+    if (ev.launches != 6) {
+        std::printf("FAIL: launches=%d want=6\n", ev.launches);
         return 1;
     }
-    std::printf("ok: unfix-remount launches=4\n");
+    std::printf("ok: unfix-remount launches=6\n");
     return 0;
 }

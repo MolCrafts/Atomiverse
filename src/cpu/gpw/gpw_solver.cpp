@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/linalg/pulay.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -90,6 +91,17 @@ struct GpwMpiLayout {
     int rank = 0;
     int nprocs = 1;
     bool active = false; ///< true only when MPI is built AND nprocs > 1.
+
+    void sum_history(double* values, int count) const {
+#ifdef ATV_HAS_MPI
+        if (active)
+            MPI_Allreduce(MPI_IN_PLACE, values, count, MPI_DOUBLE, MPI_SUM,
+                          MPI_COMM_WORLD);
+#else
+        (void)values;
+        (void)count;
+#endif
+    }
 };
 
 GpwMpiLayout gpw_mpi_layout() {
@@ -1362,7 +1374,10 @@ static GpwResult run_gpw_scf_kpoints(
     if (!use_mg)
         res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
-    internal::KDiis diis(use_diis ? cfg.diis_depth : 1, weights);
+    internal::KDiis diis(use_diis ? cfg.diis_depth : 1, weights,
+                         [layout](double* values, int count) {
+                             layout.sum_history(values, count);
+                         });
     constexpr double kDiisErrTolK = 1e-5; // same gate as the Γ DIIS path
     double e_prev = 0.0;
     const bool periodic_cell = !cfg.nonperiodic;
@@ -2647,8 +2662,14 @@ static GpwResult run_gpw_scf_kpoints_uks(
     if (!use_mg)
         res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
-    internal::KDiis diis_a(use_diis ? cfg.diis_depth : 1, weights);
-    internal::KDiis diis_b(use_diis ? cfg.diis_depth : 1, weights);
+    internal::KDiis diis_a(use_diis ? cfg.diis_depth : 1, weights,
+                           [layout](double* values, int count) {
+                               layout.sum_history(values, count);
+                           });
+    internal::KDiis diis_b(use_diis ? cfg.diis_depth : 1, weights,
+                           [layout](double* values, int count) {
+                               layout.sum_history(values, count);
+                           });
     constexpr double kDiisErrTolK = 1e-5;
     double e_prev = 0.0;
 
@@ -5260,7 +5281,7 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                     res.iters = iter + 1 + p;
                     res.e_total = e_total;
                     const RealMatrix err =
-                        internal::gpw_diis_error(H, P, S, orth().X);
+                        linalg::diis_error(H, P, S, orth().X);
                     double err_norm = 0.0;
                     for (const double v : err)
                         err_norm = std::max(err_norm, std::abs(v));
@@ -6154,8 +6175,8 @@ bool GpwDft::drive_gamma_rks_diis_(
                        double& prev_energy) {
             KsBuildStage::Op ks = [&, build_H]() {
                 build_H(loop_P_, loop_H_, e_total);
-                loop_err_ = internal::gpw_diis_error(loop_H_, loop_P_, loop_S_,
-                                                     loop_X_);
+                loop_err_ =
+                    linalg::diis_error(loop_H_, loop_P_, loop_S_, loop_X_);
                 err_norm = 0.0;
                 for (const double v : loop_err_)
                     err_norm = std::max(err_norm, std::abs(v));
@@ -6228,9 +6249,9 @@ bool GpwDft::drive_gamma_uks_diis_(
                 *Hb_raw = Hb;
                 e_total = e;
                 const RealMatrix err_a =
-                    internal::gpw_diis_error(Ha, Pa, loop_S_, loop_X_);
+                    linalg::diis_error(Ha, Pa, loop_S_, loop_X_);
                 const RealMatrix err_b =
-                    internal::gpw_diis_error(Hb, Pb, loop_S_, loop_X_);
+                    linalg::diis_error(Hb, Pb, loop_S_, loop_X_);
                 err_norm = 0.0;
                 for (const double v : err_a)
                     err_norm = std::max(err_norm, std::abs(v));
@@ -6263,9 +6284,9 @@ bool GpwDft::drive_gamma_uks_diis_(
             MixStage::Op mix_op = [&, diis_a, diis_b, use_diis, Ha_raw,
                                    Hb_raw]() {
                 RealMatrix err_a =
-                    internal::gpw_diis_error(*Ha_raw, Pa, loop_S_, loop_X_);
+                    linalg::diis_error(*Ha_raw, Pa, loop_S_, loop_X_);
                 RealMatrix err_b =
-                    internal::gpw_diis_error(*Hb_raw, Pb, loop_S_, loop_X_);
+                    linalg::diis_error(*Hb_raw, Pb, loop_S_, loop_X_);
                 if (use_diis) {
                     loop_H_ = diis_a->step(*Ha_raw, err_a);     // Ha_use
                     loop_H_ext_ = diis_b->step(*Hb_raw, err_b); // Hb_use

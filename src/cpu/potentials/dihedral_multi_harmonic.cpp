@@ -71,6 +71,7 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "DihedralMultiHarmonic");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 5;
     if (n_tuples == 0)
         return;
@@ -151,18 +152,20 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
                                                f2y, f2z, f3x, f3y, f3z, f4x,
                                                f4y, f4z);
 
-            tf.fx[i1] += f1x;
-            tf.fy[i1] += f1y;
-            tf.fz[i1] += f1z;
-            tf.fx[i2] += f2x;
-            tf.fy[i2] += f2y;
-            tf.fz[i2] += f2z;
-            tf.fx[i3] += f3x;
-            tf.fy[i3] += f3y;
-            tf.fz[i3] += f3z;
-            tf.fx[i4] += f4x;
-            tf.fy[i4] += f4y;
-            tf.fz[i4] += f4z;
+            if (ctx.forces_requested) {
+                tf.fx[i1] += f1x;
+                tf.fy[i1] += f1y;
+                tf.fz[i1] += f1z;
+                tf.fx[i2] += f2x;
+                tf.fy[i2] += f2y;
+                tf.fz[i2] += f2z;
+                tf.fx[i3] += f3x;
+                tf.fy[i3] += f3y;
+                tf.fz[i3] += f3z;
+                tf.fx[i4] += f4x;
+                tf.fy[i4] += f4y;
+                tf.fz[i4] += f4z;
+            }
 
             // Virial: (-b1)⊗F1 + b2⊗(F3+F4) + b3⊗F4.
             vir_local.add_pair(-g.b1x, -g.b1y, -g.b1z, f1x, f1y, f1z);
@@ -174,11 +177,13 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
         vir += vir_local;
     }
 
-    scratch_.reduce_into(n_force);
+    if (ctx.forces_requested)
+        scratch_.reduce_into(n_force);
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyDihedral) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }

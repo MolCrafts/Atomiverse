@@ -329,8 +329,6 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/communication/gather.cpp
         src/cpu/communication/gather_for_io.cpp
         src/cpu/communication/rebalance.cpp
-        # comm_brick calls md::sort_owned_atoms; the TU stays on when MD is off.
-        src/cpu/dynamics/atom_sort.cpp
         # Direct Ewald always (no external deps); PME gated by ATV_BUILD_KSPACE below
         src/cpu/longrange/ewald.cpp
     )
@@ -648,9 +646,6 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_KSPACE)
             list(APPEND ATOMIVERSE_SRCS src/cuda/longrange/pme.cu)
         endif()
-    else()
-        # CUDA-free build still links against cuda::Timer (PIMPL in core/driver_template.h).
-        list(APPEND ATOMIVERSE_SRCS src/cuda/device/timer_cpu_stub.cpp)
     endif()
 
     add_library(atomiverse ${ATOMIVERSE_SRCS})
@@ -742,8 +737,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/roks.cpp
             src/cpu/scf/minao_data.cpp
             src/cpu/scf/internal/minao.cpp
-            src/cpu/scf/xc_functional.cpp
-            src/cpu/scf/xc_gga.cpp
             src/cpu/scf/grid.cpp
             src/cpu/scf/internal/integral_derivatives.cpp
             src/cpu/scf/internal/cphf_pack.cpp
@@ -814,6 +807,14 @@ if(NOT ATV_DOCS_ONLY)
             )
         endif()
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_HF)
+    endif()
+
+    # Semilocal XC is shared by Gaussian SCF and plane waves; a PW-only
+    # product must not depend on enabling the Gaussian method domain.
+    if(ATV_BUILD_HF OR ATV_BUILD_PW)
+        target_sources(atomiverse PRIVATE
+            src/cpu/scf/xc_functional.cpp
+            src/cpu/scf/xc_gga.cpp)
     endif()
 
     if(ATV_BUILD_GPW)
@@ -1273,6 +1274,23 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_BUILD_PYTHON)
         find_package(Python 3.12 COMPONENTS Interpreter Development.Module REQUIRED)
 
+        # Compare the runtime molrs token with the ABI of the source actually
+        # linked above, including when ATV_MOLRS_PATH selects a sibling tree.
+        set(_atv_molrs_ffi_manifest "${ATV_MOLRS_PATH}/molrs-ffi/Cargo.toml")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                     "${_atv_molrs_ffi_manifest}")
+        execute_process(
+            COMMAND "${Python_EXECUTABLE}" -c
+                "import sys, tomllib; print('.'.join(tomllib.loads(open(sys.argv[1], encoding='utf-8').read())['package']['version'].split('.')[:2]))"
+                "${_atv_molrs_ffi_manifest}"
+            OUTPUT_VARIABLE _atv_molrs_abi_line
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _atv_molrs_abi_result
+        )
+        if(NOT _atv_molrs_abi_result EQUAL 0 OR NOT _atv_molrs_abi_line)
+            message(FATAL_ERROR "Cannot determine linked molrs ABI from ${_atv_molrs_ffi_manifest}")
+        endif()
+
         # Locate nanobind from the active Python environment
         execute_process(
             COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
@@ -1313,6 +1331,8 @@ if(NOT ATV_DOCS_ONLY)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_scf.cpp)
         endif()
         nanobind_add_module(_atomiverse ${_ATV_NB_SRCS})
+        target_compile_definitions(_atomiverse PRIVATE
+            ATV_MOLRS_ABI_LINE="${_atv_molrs_abi_line}")
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
 
@@ -1340,8 +1360,16 @@ if(NOT ATV_DOCS_ONLY)
                 # link option instead: CMake places LINK_OPTIONS ahead of the
                 # rpath flags it generates itself, and the loader takes the
                 # first DT_RPATH entry that resolves.
-                target_link_options(_atomiverse PRIVATE
-                                    "LINKER:-rpath,${_atv_py_blas_dir}")
+                if(APPLE)
+                    # Let CMake manage Mach-O paths at both build and install
+                    # time; a manual linker rpath is otherwise added twice by
+                    # install_name_tool during installation.
+                    set_property(TARGET _atomiverse APPEND PROPERTY
+                                 BUILD_RPATH "${_atv_py_blas_dir}")
+                else()
+                    target_link_options(_atomiverse PRIVATE
+                                        "LINKER:-rpath,${_atv_py_blas_dir}")
+                endif()
                 set_property(TARGET _atomiverse APPEND PROPERTY
                              INSTALL_RPATH "${_atv_py_blas_dir}")
                 message(STATUS

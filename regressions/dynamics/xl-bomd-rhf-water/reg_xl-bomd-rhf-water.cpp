@@ -128,6 +128,10 @@ int main() {
     sim.set_evaluator_ref(xl);
     sim.enable_timing(false);
     sim.build();
+    if (sim.run(frame, 0) != 0 || xl.method().xl_advances() != 0) {
+        std::printf("FAIL: force initialization advanced XL history\n");
+        return 1;
+    }
 
     std::vector<int> xl_iters;
     std::vector<double> xl_etot;
@@ -137,11 +141,12 @@ int main() {
             std::printf("FAIL: XL step %d did not run\n", s + 1);
             return 1;
         }
-        if (!xl.converged()) {
+        if (!xl.method().converged()) {
             std::printf("FAIL: XL step %d did not converge (%s) after %d "
                         "iterations — a broken auxiliary guess poisons the "
                         "SCF, it does not merely slow it down\n",
-                        s + 1, xl.stop_reason().c_str(), xl.iterations());
+                        s + 1, xl.method().stop_reason().c_str(),
+                        xl.method().iterations());
             return 1;
         }
         const double pe = frame.meta.get(kEnergy);
@@ -152,7 +157,7 @@ int main() {
                         s + 1, pe, ke);
             return 1;
         }
-        xl_iters.push_back(xl.iterations());
+        xl_iters.push_back(xl.method().iterations());
         xl_etot.push_back(pe + ke);
         for (int i = 0; i < 3; ++i) {
             const double x = static_cast<double>(frame.span(kAtom_x)[i]);
@@ -173,10 +178,10 @@ int main() {
     // The witness that the propagator actually ran: one auxiliary advance per
     // converged nested step, no more (an advance on a standalone run or on an
     // unconverged step would integrate a different trajectory than the nuclei).
-    if (xl.xl_advances() != n_steps) {
+    if (xl.method().xl_advances() != n_steps) {
         std::printf("FAIL: %d auxiliary advances over %d nested steps — the "
                     "XL history is not on the nuclear clock\n",
-                    xl.xl_advances(), n_steps);
+                    xl.method().xl_advances(), n_steps);
         return 1;
     }
 
@@ -302,7 +307,8 @@ int main() {
 
     std::printf("XL-BOMD H2O RHF/STO-3G NVE (K=%d, dt=%.3g fs, tol=%.0e Ha): "
                 "%d steps  E0=%.8g eV  Ef=%.8g eV\n",
-                xl.xl_bomd_order(), dt, scf_tol, n_steps, e0, xl_etot.back());
+                xl.method().xl_bomd_order(), dt, scf_tol, n_steps, e0,
+                xl_etot.back());
     std::printf("  SCF iterations  XL:");
     for (int it : xl_iters)
         std::printf(" %d", it);
@@ -318,7 +324,7 @@ int main() {
     std::printf("  gain vs cold=%.4f (min %.2f)  vs reuse=%.4f (min %.2f)  "
                 "xl_advances=%d\n",
                 mean_cold - mean_xl, min_gain_vs_cold, mean_reuse - mean_xl,
-                min_gain_vs_reuse, xl.xl_advances());
+                min_gain_vs_reuse, xl.method().xl_advances());
     std::printf("  worst |dE|/scale=%.3e (tol %.1e)  leg max|dx|=%.3e Å  "
                 "PEf=%.8g eV  OH=%.4f/%.4f Å\n",
                 worst_drift, drift_tol, traj_mismatch, frame.meta.get(kEnergy),

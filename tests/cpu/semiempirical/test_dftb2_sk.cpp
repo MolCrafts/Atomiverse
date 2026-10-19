@@ -7,10 +7,26 @@
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/basis_data/dftb_mio_tables.h"
+#include "atomiverse/cpu/semiempirical/dftb0.h"
 #include "atomiverse/cpu/semiempirical/dftb2.h"
+#include "atomiverse/cpu/semiempirical/dftb3.h"
+#include "atomiverse/cpu/semiempirical/internal/dftb_gamma_lattice.h"
 
 using namespace ATV;
 using namespace ATV::cpu::semiempirical;
+
+TEST(DFTBOutputs, ForceCapabilityTracksConfiguredOutput) {
+    DFTB0 zero;
+    DFTB2 two;
+    DFTB3 three;
+    EXPECT_TRUE(zero.provides_force());
+    EXPECT_TRUE(two.provides_force());
+    EXPECT_TRUE(three.provides_force());
+    zero.with_forces = two.with_forces = three.with_forces = false;
+    EXPECT_FALSE(zero.provides_force());
+    EXPECT_FALSE(two.provides_force());
+    EXPECT_FALSE(three.provides_force());
+}
 
 namespace {
 
@@ -190,4 +206,38 @@ TEST(DFTB2SK, H2EnergyNearDftbPlusMioPin) {
     dftb.launch({ctx, f, 0, 0});
     constexpr double kPin = -18.36635052;
     EXPECT_NEAR(dftb.last_energy(), kPin, 5e-3);
+}
+
+TEST(DFTBGammaLattice, NonSymmetricCellEnergyAndForcesRotateTogether) {
+    Mat3 h = Mat3::diagonal(4.0, 5.0, 6.0);
+    h(0, 1) = 1.5;
+    h(1, 2) = 0.8;
+    Mat3 rotation = Mat3::diagonal(1.0, 1.0, 1.0);
+    const double c = std::cos(0.37), s = std::sin(0.37);
+    rotation(0, 0) = c;
+    rotation(0, 1) = -s;
+    rotation(1, 0) = s;
+    rotation(1, 1) = c;
+    const Vec3 p0 = h * Vec3{0.1, 0.2, 0.3};
+    const Vec3 p1 = h * Vec3{0.4, 0.7, 0.6};
+    const Vec3 r0 = rotation * p0, r1 = rotation * p1;
+    const double x[] = {p0[0], p1[0]}, y[] = {p0[1], p1[1]},
+                 z[] = {p0[2], p1[2]};
+    const double rx[] = {r0[0], r1[0]}, ry[] = {r0[1], r1[1]},
+                 rz[] = {r0[2], r1[2]};
+    const double u[] = {20, 25}, dq[] = {0.3, -0.3};
+    const cpu::semiempirical::internal::GammaLattice a(
+        2, u, x, y, z, cpu::Box(h), true, 5, 1e-7);
+    const cpu::semiempirical::internal::GammaLattice b(
+        2, u, rx, ry, rz, cpu::Box(rotation * h), true, 5, 1e-7);
+    EXPECT_NEAR(a.energy(dq), b.energy(dq), 1e-10);
+    double fx[2]{}, fy[2]{}, fz[2]{}, gx[2]{}, gy[2]{}, gz[2]{};
+    a.add_gradient(dq, fx, fy, fz, nullptr);
+    b.add_gradient(dq, gx, gy, gz, nullptr);
+    for (int i = 0; i < 2; ++i) {
+        const auto expected = rotation * Vec3{fx[i], fy[i], fz[i]};
+        EXPECT_NEAR(gx[i], expected[0], 1e-10);
+        EXPECT_NEAR(gy[i], expected[1], 1e-10);
+        EXPECT_NEAR(gz[i], expected[2], 1e-10);
+    }
 }

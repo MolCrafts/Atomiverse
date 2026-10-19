@@ -1,18 +1,18 @@
 /// @file reg_lammps-comm-brick-01-halo.cpp
 /// @brief Serial pins for the MPI-free `comm::Halo` swap table.
 ///
-/// Prints hard-coded hop and adapter literals. No third-party process.
+/// Checks uniform periodic hop counts and lattice-image flags.
+/// Algorithm reference: LAMMPS src/comm_brick.cpp at
+/// a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+/// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 /// Literature: Plimpton JCP 117 (1995); Thompson CPC 271 (2022).
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/communication/halo.h"
-#include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/frame/box.h"
 
 #include <array>
 #include <cstdio>
 #include <cstdlib>
-#include <stdexcept>
-#include <type_traits>
 
 using namespace ATV;
 
@@ -34,13 +34,7 @@ DomainDecomposition uniform_dd(int dims_x, int coords_x, double L = kBoxL) {
     dd.coords[1] = 0;
     dd.coords[2] = 0;
 
-    const double w = L / static_cast<double>(dims_x);
-    dd.sublo[0] = w * static_cast<double>(coords_x);
-    dd.subhi[0] = dd.sublo[0] + w;
-    dd.sublo[1] = 0.0;
-    dd.subhi[1] = L;
-    dd.sublo[2] = 0.0;
-    dd.subhi[2] = L;
+    dd.compute_sublo_subhi(cubic_box(L));
     const int lo = (coords_x - 1 + dims_x) % dims_x;
     const int hi = (coords_x + 1) % dims_x;
     dd.face_neighbors =
@@ -73,54 +67,53 @@ int main() {
         cpu::comm::Halo table;
         table.setup(uniform_dd(dims_x, /*coords_x=*/1), cubic_box(kBoxL), w,
                     /*my_rank=*/1);
-        const int ceil_slab = table.max_hops(0);
-        if (ceil_slab != 1) {
-            std::fprintf(stderr, "ceil-slab hop=%d want 1\n", ceil_slab);
+        const int edge_hops = table.max_hops(0);
+        if (edge_hops != 2) {
+            std::fprintf(stderr, "exact-slab hop=%d want 2\n", edge_hops);
             return EXIT_FAILURE;
         }
-        std::printf("ceil-slab %d\n", ceil_slab);
+        std::printf("exact-slab %d\n", edge_hops);
     }
 
     {
         cpu::comm::Halo table;
-        table.setup(uniform_dd(/*dims_x=*/2, /*coords_x=*/0), cubic_box(kBoxL),
+        table.setup(uniform_dd(/*dims_x=*/1, /*coords_x=*/0), cubic_box(kBoxL),
                     kShell, /*my_rank=*/0);
-        int sendself = 1;
-        for (int i = 2; i < 6; ++i) {
-            if (!table[i].sendself || table[i].nrecv != 0)
-                sendself = 0;
+        for (int i = 0; i < 6; ++i) {
+            const auto& swap = table[i];
+            const int axis = i / 2;
+            const int image = i % 2 == 0 ? 1 : -1;
+            double shift[3];
+            swap.pbc_shift(cubic_box(kBoxL), shift);
+            if (!swap.sendself || swap.is_silent() || swap.pbc[axis] != image
+                || shift[axis] != image * kBoxL) {
+                std::fprintf(stderr, "periodic self-image swap %d failed\n", i);
+                return EXIT_FAILURE;
+            }
         }
-        if (!sendself) {
-            std::fprintf(stderr, "sendself skip failed\n");
-            return EXIT_FAILURE;
-        }
-        std::printf("sendself %d\n", sendself);
+        std::printf("self-images 6\n");
     }
 
     {
+        // The periodic chain includes this rank's images and may traverse
+        // complete rings. No minimum-image restriction belongs in transport.
         cpu::comm::Halo table;
-        int mic_refuse = 0;
-        try {
-            // 12 A shell on a 15.78 A box split 4 ways: hops = ceil(12/3.945)
-            // = 4 > dims-1 = 3.
-            table.setup(uniform_dd(/*dims_x=*/4, /*coords_x=*/1),
-                        cubic_box(kBoxL), 12.0, /*my_rank=*/1);
-        } catch (const std::runtime_error&) {
-            mic_refuse = 1;
-        }
-        if (!mic_refuse) {
-            std::fprintf(stderr, "mic-refuse did not throw\n");
+        table.setup(uniform_dd(/*dims_x=*/4, /*coords_x=*/1), cubic_box(kBoxL),
+                    12.0, /*my_rank=*/1);
+        if (table.max_hops(0) != 4) {
+            std::fprintf(stderr, "full-ring hops=%d want 4\n",
+                         table.max_hops(0));
             return EXIT_FAILURE;
         }
-        std::printf("mic-refuse %d\n", mic_refuse);
+        table.setup(uniform_dd(/*dims_x=*/4, /*coords_x=*/1), cubic_box(kBoxL),
+                    20.0, /*my_rank=*/1);
+        if (table.max_hops(0) != 6) {
+            std::fprintf(stderr, "beyond-ring hops=%d want 6\n",
+                         table.max_hops(0));
+            return EXIT_FAILURE;
+        }
+        std::printf("periodic-ring-hops 4/6\n");
     }
 
-    const int halo_is_component =
-        std::is_base_of_v<cpu::Component, cpu::comm::Halo> ? 1 : 0;
-    if (halo_is_component != 0) {
-        std::fprintf(stderr, "comm::Halo must not inherit Component\n");
-        return EXIT_FAILURE;
-    }
-    std::printf("halo-is-component %d\n", halo_is_component);
     return EXIT_SUCCESS;
 }

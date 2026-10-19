@@ -12,6 +12,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/vibration/phonon_dispersion.h"
+#include "atomiverse/cpu/vibration/supercell.h"
 
 using namespace ATV;
 using namespace ATV::cpu::vib;
@@ -115,4 +116,27 @@ TEST(PhononDispersion, DefaultPathWhenQfracEmpty) {
         for (double w : br)
             EXPECT_TRUE(std::isfinite(w));
     }
+}
+
+TEST(PhononDispersion, SupercellReplicatesColumnsOfNonSymmetricCell) {
+    auto unit = mono_cubic(4.0);
+    Mat3 h = Mat3::diagonal(4.0, 5.0, 6.0);
+    h(0, 1) = 1.5;
+    h(2, 0) = 0.8;
+    unit.box.set_cell(h);
+    auto sc = expand_supercell(unit, 2, 3, 1);
+    ASSERT_EQ(sc.nlocal(), 6);
+    const auto& hs = sc.box.cell();
+    for (int d = 0; d < 3; ++d) {
+        EXPECT_DOUBLE_EQ(hs(d, 0), 2 * h(d, 0));
+        EXPECT_DOUBLE_EQ(hs(d, 1), 3 * h(d, 1));
+        EXPECT_DOUBLE_EQ(hs(d, 2), h(d, 2));
+    }
+    // Enumeration order ia/ib/ic: atom 1 is b; atom 3 is a.
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_x)[1], 1.5);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_y)[1], 5.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_z)[1], 0.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_x)[3], 4.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_y)[3], 0.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_z)[3], 0.8);
 }

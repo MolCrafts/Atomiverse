@@ -61,13 +61,10 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
 
         const int slot = nlocal;
         const double u0 = u01(*rng), u1 = u01(*rng), u2 = u01(*rng);
-        const auto& c = ctx.frame.box.cell();
-        sp_x[slot] = static_cast<StorageReal>(u0 * c(0, 0) + u1 * c(1, 0)
-                                              + u2 * c(2, 0));
-        sp_y[slot] = static_cast<StorageReal>(u0 * c(0, 1) + u1 * c(1, 1)
-                                              + u2 * c(2, 1));
-        sp_z[slot] = static_cast<StorageReal>(u0 * c(0, 2) + u1 * c(1, 2)
-                                              + u2 * c(2, 2));
+        const auto position = ctx.frame.box.to_cartesian({u0, u1, u2});
+        sp_x[slot] = static_cast<StorageReal>(position[0]);
+        sp_y[slot] = static_cast<StorageReal>(position[1]);
+        sp_z[slot] = static_cast<StorageReal>(position[2]);
         // Zero everything else — this slot may hold a stale deleted row.
         sp_vx[slot] = 0;
         sp_vy[slot] = 0;

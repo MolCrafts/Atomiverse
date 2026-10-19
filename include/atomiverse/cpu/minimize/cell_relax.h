@@ -9,7 +9,8 @@
 ///
 /// Termination is **not** ForceConverged by default — use
 /// `cpu::PressureConverged` or `cpu::StressConverged`. Atom positions only
-/// scale affinely with the cell.
+/// scale affinely with the cell; non-affine atomic forces are not minimized.
+/// Published force/displacement metrics retain eV/Å and Å units.
 #pragma once
 
 #include <string>
@@ -57,11 +58,11 @@ class IsotropicCellRelax : public Optimizer {
 
   private:
     double pressure_from_frame_(const Frame& f) const;
-    void apply_scale_(Frame& f, double s) const;
 
     double pressure_ = 0;
     double p_residual_ = 0;
     double scale_step_ = 1.0; ///< Multiplicative scale to apply at line_search.
+    double max_disp_ = 0, rms_disp_ = 0; ///< Actual affine displacement [Å].
     double energy_prev_ = 0;
     int step_ = 0;
     bool has_prev_ = false;

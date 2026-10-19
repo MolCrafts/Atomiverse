@@ -116,6 +116,8 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     /// Parallel to PairList::neighbors[] (no compact copy). scale==0 → skip.
     std::vector<float> scale_lj_;
     std::vector<float> scale_coul_;
+    // Null source denotes an unbuilt cache; version zero is a valid list.
+    const md::PairList* scale_source_ = nullptr;
     unsigned long long scale_version_ = 0;
 };
 
