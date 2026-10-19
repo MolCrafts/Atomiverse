@@ -211,3 +211,6 @@ slurm-*.out
 # local bench/job scratch (datasets and cluster scripts, not source)
 .molq/
 logs/
+
+# macOS Finder metadata
+.DS_Store

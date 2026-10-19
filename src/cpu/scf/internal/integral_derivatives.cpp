@@ -310,52 +310,6 @@ void nuclear_deriv_prim_nuc_general(const int a_ang[3], const int b_ang[3],
     }
 }
 
-/// @brief Derivative of primitive ERI w.r.t. center A in all 3 directions.
-///
-/// d/dA_d (ab|cd) = 2*alpha_a * (a+1_d b|cd) - a_d * (a-1_d b|cd)
-///
-/// @param a_ang, b_ang, c_ang, d_ang  Cartesian angular momenta [3] each.
-/// @param alpha_a..alpha_d  Primitive exponents.
-/// @param A..D  Center positions [3] each.
-/// @param dERI_dA  Output: d(ERI)/dA in each direction [3].
-static void eri_deriv_prim_general(const int a_ang[3], const int b_ang[3],
-                                   const int c_ang[3], const int d_ang[3],
-                                   double alpha_a, const double A[3],
-                                   double alpha_b, const double B[3],
-                                   double alpha_c, const double C[3],
-                                   double alpha_d, const double D[3],
-                                   double dERI_dA[3]) {
-    for (int d = 0; d < 3; ++d) {
-        int a_plus[3] = {a_ang[0], a_ang[1], a_ang[2]};
-        a_plus[d] += 1;
-        double ERI_plus =
-            native::eri_prim(a_plus, b_ang, c_ang, d_ang, alpha_a, A, alpha_b,
-                             B, alpha_c, C, alpha_d, D);
-
-        double result = 2.0 * alpha_a * ERI_plus;
-
-        if (a_ang[d] > 0) {
-            int a_minus[3] = {a_ang[0], a_ang[1], a_ang[2]};
-            a_minus[d] -= 1;
-            double ERI_minus =
-                native::eri_prim(a_minus, b_ang, c_ang, d_ang, alpha_a, A,
-                                 alpha_b, B, alpha_c, C, alpha_d, D);
-            result -= a_ang[d] * ERI_minus;
-        }
-
-        dERI_dA[d] = result;
-    }
-}
-
-struct QuartetDerivTotals {
-    double dA[3] = {0.0, 0.0, 0.0};
-    double dB[3] = {0.0, 0.0, 0.0};
-    double dC[3] = {0.0, 0.0, 0.0};
-    double dD[3] = {0.0, 0.0, 0.0};
-};
-
-static inline int pair_multiplicity(int a, int b) { return (a == b) ? 1 : 2; }
-
 static std::vector<int>
 build_shell_to_atom_from_integrals(const internal::IntegralView& integrals) {
     const int n = integrals.n_basis;
@@ -376,78 +330,6 @@ build_shell_to_atom_from_integrals(const internal::IntegralView& integrals) {
     }
 
     return shell_to_atom;
-}
-
-static QuartetDerivTotals
-compute_quartet_derivatives(const native::Shell& shell_a, const int a_ang[3],
-                            const native::Shell& shell_b, const int b_ang[3],
-                            const native::Shell& shell_c, const int c_ang[3],
-                            const native::Shell& shell_d, const int d_ang[3]) {
-    QuartetDerivTotals totals;
-
-    for (int p = 0; p < shell_a.n_prim; ++p) {
-        for (int q = 0; q < shell_b.n_prim; ++q) {
-            for (int r = 0; r < shell_c.n_prim; ++r) {
-                for (int s = 0; s < shell_d.n_prim; ++s) {
-                    const double coeff = shell_a.coeff[p] * shell_b.coeff[q]
-                                         * shell_c.coeff[r] * shell_d.coeff[s];
-
-                    double dA[3];
-                    eri_deriv_prim_general(
-                        a_ang, b_ang, c_ang, d_ang, shell_a.alpha[p],
-                        shell_a.center, shell_b.alpha[q], shell_b.center,
-                        shell_c.alpha[r], shell_c.center, shell_d.alpha[s],
-                        shell_d.center, dA);
-
-                    double dB[3];
-                    eri_deriv_prim_general(
-                        b_ang, a_ang, c_ang, d_ang, shell_b.alpha[q],
-                        shell_b.center, shell_a.alpha[p], shell_a.center,
-                        shell_c.alpha[r], shell_c.center, shell_d.alpha[s],
-                        shell_d.center, dB);
-
-                    double dC[3];
-                    eri_deriv_prim_general(
-                        c_ang, d_ang, a_ang, b_ang, shell_c.alpha[r],
-                        shell_c.center, shell_d.alpha[s], shell_d.center,
-                        shell_a.alpha[p], shell_a.center, shell_b.alpha[q],
-                        shell_b.center, dC);
-
-                    double dD[3];
-                    eri_deriv_prim_general(
-                        d_ang, c_ang, a_ang, b_ang, shell_d.alpha[s],
-                        shell_d.center, shell_c.alpha[r], shell_c.center,
-                        shell_a.alpha[p], shell_a.center, shell_b.alpha[q],
-                        shell_b.center, dD);
-
-                    for (int axis = 0; axis < 3; ++axis) {
-                        totals.dA[axis] += coeff * dA[axis];
-                        totals.dB[axis] += coeff * dB[axis];
-                        totals.dC[axis] += coeff * dC[axis];
-                        totals.dD[axis] += coeff * dD[axis];
-                    }
-                }
-            }
-        }
-    }
-
-    return totals;
-}
-
-static void accumulate_quartet_into_gradient(xt::xtensor<double, 2>& grad,
-                                             int atom_a, int atom_b, int atom_c,
-                                             int atom_d,
-                                             const QuartetDerivTotals& totals,
-                                             double factor) {
-    if (std::abs(factor) < 1e-18)
-        return;
-
-    for (int axis = 0; axis < 3; ++axis) {
-        grad(atom_a, axis) += factor * totals.dA[axis];
-        grad(atom_b, axis) += factor * totals.dB[axis];
-        grad(atom_c, axis) += factor * totals.dC[axis];
-        grad(atom_d, axis) += factor * totals.dD[axis];
-    }
 }
 
 /// @brief Shell-center → atom index. Centers are Bohr and come from the

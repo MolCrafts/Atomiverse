@@ -178,14 +178,6 @@ void require_scc_converged(bool converged, double residual, double scc_tol,
         + std::to_string(scc_tol) + "); raise max_scc or lower mix_beta");
 }
 
-/// DFTB+ Elstner γ_AB [eV] with R [Å], U [eV] (see internal/dftb_gamma.h).
-///
-/// Was Ohno–Klopman; that over-screened poorly and left H₂O E² ≈ 0.65 eV vs
-/// DFTB+ 0.496 eV at the same Δq. Family oracle is DFTB+ expGamma form.
-double gamma_ab(double r, double ua, double ub) {
-    return internal::dftb_gamma::gamma_eV(r, ua, ub);
-}
-
 /// mio-1-1 pair cutoff [Å] (SK grid + distFudge).
 double pair_rcut_A(const DftbElementRow& ea, const DftbElementRow& eb, int za,
                    int zb) {
@@ -280,11 +272,6 @@ internal::GammaLattice build_gamma(const std::vector<const DftbElementRow*>& el,
         static_cast<int>(n), u.data(), xa.data(), ya.data(),
         za.data(),           box,      periodic,  ewald_cutoff,
         ewald_accuracy};
-}
-
-/// dγ/dR [eV/Å] for the DFTB+ Elstner form.
-double dgamma_dr(double r, double ua, double ub) {
-    return internal::dftb_gamma::dgamma_dr_eV(r, ua, ub);
 }
 
 using Cplx = std::complex<double>;
@@ -478,39 +465,6 @@ void apply_shift(int n_at, const std::vector<const DftbElementRow*>& el,
                     H(ia + i, ib + j) += half * S(ia + i, ib + j);
         }
     }
-}
-
-double gamma_pair(int a, int b, const std::vector<const DftbElementRow*>& el,
-                  const StorageReal* x, const StorageReal* y,
-                  const StorageReal* z, const cpu::Box& box) {
-    const double ua = el[static_cast<std::size_t>(a)]->hubbard_u;
-    const double ub = el[static_cast<std::size_t>(b)]->hubbard_u;
-    const double rcut = pair_rcut_A(
-        *el[static_cast<std::size_t>(a)], *el[static_cast<std::size_t>(b)],
-        el[static_cast<std::size_t>(a)]->z, el[static_cast<std::size_t>(b)]->z);
-    const auto images = lattice_images_for(box, el);
-    const double xa = static_cast<double>(x[a]);
-    const double ya = static_cast<double>(y[a]);
-    const double za = static_cast<double>(z[a]);
-    const double xb = static_cast<double>(x[b]);
-    const double yb = static_cast<double>(y[b]);
-    const double zb = static_cast<double>(z[b]);
-    double g = 0;
-    for (const auto& T : images) {
-        const double dx = xb + T.tx - xa;
-        const double dy = yb + T.ty - ya;
-        const double dz = zb + T.tz - za;
-        const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (r < 1e-12) {
-            if (a == b)
-                g += ua; // onsite Hubbard
-            continue;
-        }
-        if (r > rcut)
-            continue;
-        g += gamma_ab(r, ua, ub);
-    }
-    return g;
 }
 
 SccResult scc_energy_restricted(int n_at, int n_ao, int n_occ,
@@ -1230,7 +1184,7 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
 /// homonuclear O₂ — a uniform \(cS\) shift leaves the generalized eigenvectors
 /// invariant — which is why that case cannot detect the omission.)
 ///
-/// **Γ-PBC:** walks the same lattice images as `build_h0_s` / `gamma_pair` /
+/// **Γ-PBC:** walks the same lattice images as `build_h0_s` /
 /// `repulsive_energy`, not min-image. Self-images (\(a=a\), \(T\neq0\)) exert
 /// zero nuclear force and are skipped; in a dense periodic cell they do carry
 /// a virial — an open gap shared with the shipped restricted path, recorded in
@@ -1332,8 +1286,6 @@ void analytic_forces_stress(
             const double zb = static_cast<double>(z[b]);
             const double rcut = pair_rcut_A(ea, eb, type[a], type[b]);
             const auto& sk = pair_sk(type[a], type[b]);
-            const double dqa = dq[static_cast<std::size_t>(a)];
-            const double dqb = dq[static_cast<std::size_t>(b)];
             const double shift_a = 0.5
                                    * (eps_at_a[static_cast<std::size_t>(a)]
                                       + eps_at_a[static_cast<std::size_t>(b)]);
@@ -1416,7 +1368,6 @@ void analytic_forces_stress(
             const int na = ea.n_ao;
             const double rcut = pair_rcut_A(ea, ea, type[a], type[a]);
             const auto& sk = pair_sk(type[a], type[a]);
-            const double dqa = dq[static_cast<std::size_t>(a)];
             // ½(V_A + V_A) — the same Mulliken split as the a<b blocks.
             // ½(ε_A + ε_A) = ε_A — the same Mulliken split as the a<b
             // blocks, spin-resolved like them.
@@ -1610,8 +1561,6 @@ void analytic_forces_restricted_kmesh(
             const double zb = static_cast<double>(z[b]);
             const double rcut = pair_rcut_A(ea, eb, type[a], type[b]);
             const auto& sk = pair_sk(type[a], type[b]);
-            const double dqa = dq[static_cast<std::size_t>(a)];
-            const double dqb = dq[static_cast<std::size_t>(b)];
             const double shift = 0.5
                                  * (dV[static_cast<std::size_t>(a)]
                                     + dV[static_cast<std::size_t>(b)]);
@@ -1737,7 +1686,6 @@ void analytic_forces_restricted_kmesh(
             const int na = ea.n_ao;
             const double rcut = pair_rcut_A(ea, ea, type[a], type[a]);
             const auto& sk = pair_sk(type[a], type[a]);
-            const double dqa = dq[static_cast<std::size_t>(a)];
             const double shift = dV[static_cast<std::size_t>(a)];
             for (const auto& T : images) {
                 const double r =

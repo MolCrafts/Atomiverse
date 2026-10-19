@@ -159,7 +159,7 @@ smv_axis_weights(const std::array<std::array<double, 3>, 3>& b_shell) {
 
 /// Build ±e_i neighbors for an N³ Γ-centered MP mesh.
 std::vector<std::vector<Neighbor>>
-build_neighbors(int N, const Mat3& recip /* rows b_i [1/Å], incl. 2π */) {
+build_neighbors(int N, const Mat3& recip /* columns b_i [1/Å], incl. 2π */) {
     const int nk = N * N * N;
     std::vector<std::vector<Neighbor>> nb(static_cast<std::size_t>(nk));
     auto idx = [N](int i, int j, int k) { return (i * N + j) * N + k; };
@@ -174,9 +174,9 @@ build_neighbors(int N, const Mat3& recip /* rows b_i [1/Å], incl. 2π */) {
     std::array<std::array<double, 3>, 3> b_shell{};
     for (int d = 0; d < 3; ++d) {
         b_shell[static_cast<std::size_t>(d)] = {
-            static_cast<double>(recip(d, 0)) / static_cast<double>(N),
-            static_cast<double>(recip(d, 1)) / static_cast<double>(N),
-            static_cast<double>(recip(d, 2)) / static_cast<double>(N)};
+            static_cast<double>(recip(0, d)) / static_cast<double>(N),
+            static_cast<double>(recip(1, d)) / static_cast<double>(N),
+            static_cast<double>(recip(2, d)) / static_cast<double>(N)};
     }
     const auto w_axis = smv_axis_weights(b_shell);
 
@@ -506,9 +506,8 @@ void projection_U(const std::vector<Cdouble>& A /* n x n, rows=bands */, int n,
                 const double aqq =
                     H[static_cast<std::size_t>(q * n + q)].real();
                 const double thr = 0.5 * (aqq - app);
-                // Complex Jacobi: phase to make apq real after rotation.
+                // Complex Jacobi: rotate by the phase of apq so it is real.
                 const double phi = std::arg(apq);
-                const Cdouble phase = std::exp(-I * phi); // so phase*apq real+
                 const double apq_r = std::abs(apq);
                 const double t =
                     (thr == 0.0)
@@ -589,11 +588,11 @@ void projection_U(const std::vector<Cdouble>& A /* n x n, rows=bands */, int n,
         }
 }
 
-/// Infer cubic a from fcc primitive cell (row length * √2).
+/// Infer cubic a from fcc primitive cell (lattice-vector length * √2).
 double cubic_a_from_cell(const Mat3& cell) {
     const double ax = static_cast<double>(cell(0, 0));
-    const double ay = static_cast<double>(cell(0, 1));
-    const double az = static_cast<double>(cell(0, 2));
+    const double ay = static_cast<double>(cell(1, 0));
+    const double az = static_cast<double>(cell(2, 0));
     const double len = std::sqrt(ax * ax + ay * ay + az * az);
     return len * std::sqrt(2.0);
 }
