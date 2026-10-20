@@ -17,7 +17,11 @@
 #     tools/cpu_job.sh
 #
 # Environment knobs match tools/gpu_job.sh: ATV_CMAKE_FLAGS, ATV_TARGETS,
-# ATV_CTEST_RE, ATV_BUILD_DIR, ATV_KEEP_BUILD.
+# ATV_CTEST_RE (set to a pattern matching nothing, e.g. '^$', to skip ctest),
+# ATV_BUILD_DIR, ATV_KEEP_BUILD, ATV_RUN (shell command after ctest in this
+# module env; ${BUILD} expands in it). A benchmark needs the whole node:
+#   sbatch -A <account> -n 256 --exclusive -t 02:00:00 \
+#     --export=ALL,ATV_RUN='benchmarks/gaff/run_cpu_matrix.sh' tools/cpu_job.sh
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
@@ -59,6 +63,13 @@ fi
 RC=0
 ctest --test-dir "${BUILD}" --output-on-failure -j8 \
       ${ATV_CTEST_RE:+-R "${ATV_CTEST_RE}"} || RC=$?
+
+if [[ -n "${ATV_RUN:-}" ]]; then
+    echo "=== ATV_RUN: ${ATV_RUN} ==="
+    # Stay in this shell's module env. A login shell would drop it.
+    export BUILD
+    bash -c "${ATV_RUN}" || RC=$?
+fi
 
 if [[ "${ATV_KEEP_BUILD:-0}" != "1" ]]; then
     rm -rf "${BUILD}"

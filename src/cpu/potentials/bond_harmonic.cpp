@@ -83,6 +83,7 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
     // Resolve the frame's force spans ONCE, before the parallel region opens
     // (never inside it — see BondedForceScratch::bind).
     scratch_.bind(f);
+    const bool do_virial = ctx.stress_requested; // LAMMPS vflag
 
 // Stiff bonds contribute significantly to the stress tensor. The per-pair
 // virial accumulates into a thread-private `vir_local` and is combined under
@@ -133,7 +134,8 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
                 tf.fz[j] -= fz_val;
             }
 
-            vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
+            if (do_virial)
+                vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
         }
 #pragma omp critical
         vir += vir_local;

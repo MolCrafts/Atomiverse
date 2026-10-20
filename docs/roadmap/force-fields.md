@@ -16,18 +16,20 @@ LAMMPS-shaped. Catalogue is GAFF-capable on CPU plus EAM/SW. Legend:
 | FENE bond | ✓ | ○ | |
 | Multi/harmonic torsion (RB) | ✓ | ✓ | `DihedralMultiHarmonic` |
 | CHARMM torsion | ✓ | ○ | No optional 1–4 pair weights in style |
+| Fourier torsion (Amber/GAFF multi-term) | ✓ | ○ | `DihedralFourier`; LAMMPS `dihedral_style fourier` pin |
 | Harmonic improper | ✓ | ○ | First-class topology |
-| OPLS / CVFF / CMAP / Class-II cross | ○ | ○ | |
+| CVFF improper (Amber/GAFF) | ✓ | ○ | `ImproperCvff`; LAMMPS `improper_style cvff` pin |
+| OPLS / CMAP / Class-II cross | ○ | ○ | |
 
 ## 2. Nonbonded
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| LJ 12-6 | ⚡ | ⚡ | Multi-type + special_bonds scales. Kokkos ◐: `ATV::kokkos::PairLJCut` on `Kokkos::Serial` only — not multi-type, not special_bonds, not an MD step |
+| LJ 12-6 | ⚡ | ⚡ | CPU: multi-type + special_bonds scales. CUDA: single type, special_bonds only with equal 1-2/1-3/1-4 weights. Kokkos ◐: `ATV::kokkos::PairLJCut` on `Kokkos::Serial` only — not multi-type, not special_bonds, not an MD step |
 | Buckingham / Morse / Born (Fumi–Tosi) | ✓ | ○ | |
 | WCA / Yukawa / DPD / FENE+WCA | ✓ | ○ | |
 | Soft-core LJ / Coulomb | ✓ | ○ | Beutler; alchemical λ |
-| CoulCut / CoulLong | ✓ | ○ | special_bonds on real space |
+| CoulCut / CoulLong | ✓ | ◐ | special_bonds on real space. CUDA `CoulLong`: real space only, no exclusion / special_bonds correction |
 | Direct Ewald / PME / SPME | ✓ | ✓ | SPME = Essmann; CUDA reciprocal single-GPU |
 | Gaussian-charge Coulomb | ✓ | ○ | |
 | Steele 10-4-3 wall | ✓ | ○ | `FixWallLJ1043` |

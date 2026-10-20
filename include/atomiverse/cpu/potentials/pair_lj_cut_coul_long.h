@@ -9,6 +9,7 @@
 #include <array>
 #include <span>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -16,7 +17,6 @@
 #include "atomiverse/cpu/potentials/erfc_table.h"
 #include "atomiverse/cpu/potentials/pair.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
-#include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
 namespace cpu {
@@ -106,16 +106,25 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     double etail_pref_ = 0.0, ptail_pref_ = 0.0;
     bool compute_stress_ = true;
 
-    md::SpecialScaleTable special_lj_;
-    md::SpecialScaleTable special_coul_;
     md::ErfcTable erfc_;
+
+    /// Owner row → (partner tag, tier) CSR from kAtom_special, rebuilt with
+    /// the pair list (sort / migration reorder rows). Tier 1/2/3 = 1-2/1-3/
+    /// 1-4, listed nearest tier first so the first match wins as in LAMMPS.
+    std::vector<int> special_off_;
+    std::vector<TagInt> special_tag_;
+    std::vector<std::uint8_t> special_tier_;
+    /// Weights by tier; index 0 is the ordinary pair (1.0). Kept in double:
+    /// Amber's 5/6 is not a float.
+    double tier_lj_[4] = {1.0, 1.0, 1.0, 1.0};
+    double tier_coul_[4] = {1.0, 1.0, 1.0, 1.0};
 
     int n_threads_ = 1;
     std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
 
-    /// Parallel to PairList::neighbors[] (no compact copy). scale==0 → skip.
-    std::vector<float> scale_lj_;
-    std::vector<float> scale_coul_;
+    /// Parallel to PairList::neighbors[] (no compact copy): the pair's tier,
+    /// 0 for an ordinary pair. One byte per pair instead of two floats.
+    std::vector<std::uint8_t> pair_tier_;
     // Null source denotes an unbuilt cache; version zero is a valid list.
     const md::PairList* scale_source_ = nullptr;
     unsigned long long scale_version_ = 0;

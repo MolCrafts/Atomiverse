@@ -53,7 +53,7 @@ cluster hardware.
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| RATTLE | ✓ | ○ | Distance + 1–3; MPI |
+| RATTLE | ✓ | ○ | Distance + 1–3; per-cluster solve (X–H clusters converge independently); MPI |
 | SETTLE | ✓ | ○ | Three-site rigid water |
 | Virtual sites | ✓ | ○ | Weighted3 (TIP4P), OutOfPlane3 (TIP5P) |
 | LINCS / general rigid bodies | ○ | ○ | |

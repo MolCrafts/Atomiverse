@@ -139,7 +139,14 @@ class Box {
     /// Ties retain the initial nearest-plane image. An absent cell leaves d unchanged.
     [[gnu::always_inline]] inline void min_image(double& dx, double& dy,
                                                  double& dz) const noexcept {
-        if (ortho_) {
+        if (ortho_ && inv_lx_ > 0.0) {
+            // Fully periodic orthorhombic cell: the cached inverses turn
+            // three divisions into multiplications (bonded and constraint
+            // kernels call this per tuple, per iteration).
+            dx -= cell_(0, 0) * std::nearbyint(dx * inv_lx_);
+            dy -= cell_(1, 1) * std::nearbyint(dy * inv_ly_);
+            dz -= cell_(2, 2) * std::nearbyint(dz * inv_lz_);
+        } else if (ortho_) {
             if (cell_(0, 0) > 0)
                 dx -= cell_(0, 0) * std::nearbyint(dx / cell_(0, 0));
             if (cell_(1, 1) > 0)

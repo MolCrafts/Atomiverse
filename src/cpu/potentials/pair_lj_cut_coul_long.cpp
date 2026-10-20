@@ -205,69 +205,70 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
         fz_thr_.clear();
     }
 
-    special_lj_.s12 = lj12_;
-    special_lj_.s13 = lj13_;
-    special_lj_.s14 = lj14_;
-    special_coul_.s12 = c12_;
-    special_coul_.s13 = c13_;
-    special_coul_.s14 = c14_;
-    special_lj_.clear();
-    special_coul_.clear();
+    tier_lj_[1] = lj12_;
+    tier_lj_[2] = lj13_;
+    tier_lj_[3] = lj14_;
+    tier_coul_[1] = c12_;
+    tier_coul_[2] = c13_;
+    tier_coul_[3] = c14_;
     scale_version_ = 0;
-    if (!any_special_)
-        return;
-    const int n_owners = ctx.frame.nlocal();
-    special_lj_.rebuild(ctx.frame, n_owners);
-    special_coul_.rebuild(ctx.frame, n_owners);
 }
 
 void PairLJCutCoulLong::rebuild_filtered_list(const Frame& f,
                                               const md::PairList& pairs) {
-    // Fill scale arrays parallel to pairs.neighbors[] — no compact neighbor
-    // copy. Hot path skips pairs with both scales zero (Amber 1–2 / 1–3).
-    //
-    // Always rebuild special tables here: atom spatial sort (and migration)
-    // reorders local rows while n_owners stays fixed, so a size-only cache
-    // would keep stale owner→partner maps and corrupt exclusions.
+    // One byte per pair, parallel to pairs.neighbors[] (no compact copy):
+    // the special tier of (i, j), 0 for an ordinary pair. Rebuilt with the
+    // list because atom sort and migration reorder owner rows.
     const int n = pairs.inum;
-    special_lj_.s12 = lj12_;
-    special_lj_.s13 = lj13_;
-    special_lj_.s14 = lj14_;
-    special_coul_.s12 = c12_;
-    special_coul_.s13 = c13_;
-    special_coul_.s14 = c14_;
-    special_lj_.rebuild(f, n);
-    special_coul_.rebuild(f, n);
+    const auto nspecial = f.span(kAtom_nspecial);
+    const auto special = f.span(kAtom_special);
+    const TagInt* __restrict tag = f.span(kAtom_tag);
 
-    const int np = pairs.total_pairs;
-    scale_lj_.assign(static_cast<std::size_t>(np), 1.0f);
-    scale_coul_.assign(static_cast<std::size_t>(np), 1.0f);
+    // Owner → (partner tag, tier) CSR. kAtom_special lists 1-2, then 1-3,
+    // then 1-4 partners, so a ring atom seen at two tiers keeps the nearer
+    // one (first match below), as LAMMPS does. Tiers whose LJ and Coulomb
+    // weights are both 1 are not listed at all.
+    special_off_.assign(static_cast<std::size_t>(n) + 1, 0);
+    special_tag_.clear();
+    special_tier_.clear();
+    for (int i = 0; i < n; ++i) {
+        const int end[3] = {nspecial(i, 0), nspecial(i, 1), nspecial(i, 2)};
+        int s = 0;
+        for (int tier = 1; tier <= 3; ++tier)
+            for (; s < end[tier - 1]; ++s) {
+                if (tier_lj_[tier] == 1.0 && tier_coul_[tier] == 1.0)
+                    continue;
+                const TagInt tj = special(i, s);
+                if (tj == tag[i])
+                    continue;
+                special_tag_.push_back(tj);
+                special_tier_.push_back(static_cast<std::uint8_t>(tier));
+            }
+        special_off_[static_cast<std::size_t>(i) + 1] =
+            static_cast<int>(special_tag_.size());
+    }
 
+    pair_tier_.assign(static_cast<std::size_t>(pairs.total_pairs), 0);
     const int* __restrict numneigh = pairs.numneigh.data();
     const int* __restrict firstneigh = pairs.firstneigh.data();
     const int* __restrict neighbors = pairs.neighbors.data();
-    const TagInt* __restrict tag = f.span(kAtom_tag);
-    float* __restrict sl_out = scale_lj_.data();
-    float* __restrict sc_out = scale_coul_.data();
-
+    std::uint8_t* __restrict out = pair_tier_.data();
+    const int* __restrict soff = special_off_.data();
+    const TagInt* __restrict stag = special_tag_.data();
+    const std::uint8_t* __restrict stier = special_tier_.data();
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
+        const int s0 = soff[i], s1 = soff[i + 1];
+        if (s0 == s1)
+            continue; // already 0
         const int off = firstneigh[i];
-        const int jn = numneigh[i];
-        const bool no_lj =
-            special_lj_.by_owner[static_cast<std::size_t>(i)].empty();
-        const bool no_c =
-            special_coul_.by_owner[static_cast<std::size_t>(i)].empty();
-        if (no_lj && no_c)
-            continue; // already filled with 1.0f
-        for (int jj = 0; jj < jn; ++jj) {
-            const int j = neighbors[off + jj];
-            const int idx = off + jj;
-            if (!no_lj)
-                sl_out[idx] =
-                    static_cast<float>(special_lj_.scale_owner(i, tag[j]));
-            if (!no_c)
-                sc_out[idx] =
-                    static_cast<float>(special_coul_.scale_owner(i, tag[j]));
+        for (int jj = 0; jj < numneigh[i]; ++jj) {
+            const TagInt tj = tag[neighbors[off + jj]];
+            for (int s = s0; s < s1; ++s)
+                if (stag[s] == tj) {
+                    out[off + jj] = stier[s];
+                    break;
+                }
         }
     }
 }
@@ -308,8 +309,11 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     const int* __restrict k_numneigh = pairs.numneigh.data();
     const int* __restrict k_firstneigh = pairs.firstneigh.data();
     const int* __restrict k_neighbors = pairs.neighbors.data();
-    const float* __restrict k_sl = any_special_ ? scale_lj_.data() : nullptr;
-    const float* __restrict k_sc = any_special_ ? scale_coul_.data() : nullptr;
+    const std::uint8_t* __restrict k_tier =
+        any_special_ ? pair_tier_.data() : nullptr;
+    const double t_lj[4] = {tier_lj_[0], tier_lj_[1], tier_lj_[2], tier_lj_[3]};
+    const double t_coul[4] = {tier_coul_[0], tier_coul_[1], tier_coul_[2],
+                              tier_coul_[3]};
 
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
@@ -433,8 +437,7 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
                     double fpair = 0.0;
                     double epair = 0.0;
 
-                    const double sl =
-                        k_sl ? static_cast<double>(k_sl[idx]) : 1.0;
+                    const double sl = k_tier ? t_lj[k_tier[idx]] : 1.0;
                     if (sl != 0.0) {
                         const std::size_t ab =
                             ti_base + static_cast<std::size_t>(type_ptr[j]);
@@ -471,7 +474,7 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
                             double ec = qq * et;
                             double fc = qq * ft;
                             const double sc =
-                                k_sc ? static_cast<double>(k_sc[idx]) : 1.0;
+                                k_tier ? t_coul[k_tier[idx]] : 1.0;
                             if (sc != 1.0) {
                                 const double r2i = 1.0 / r2;
                                 const double comp =
@@ -613,14 +616,15 @@ void PairLJCutCoulLong::destroy(const DestroyContext&) {
     fx_thr_.clear();
     fy_thr_.clear();
     fz_thr_.clear();
-    special_lj_.clear();
-    special_coul_.clear();
     erfc_.clear();
-    scale_lj_.clear();
-    scale_coul_.clear();
+    special_off_.clear();
+    special_tag_.clear();
+    special_tier_.clear();
+    pair_tier_.clear();
     scale_version_ = 0;
     scale_source_ = nullptr;
-    any_special_ = false;
+    // any_special_ is configuration (set_special_bonds), not build state: a
+    // destroy → build cycle must keep the exclusions.
 }
 
 std::size_t PairLJCutCoulLong::memory_bytes() const {
@@ -631,8 +635,8 @@ std::size_t PairLJCutCoulLong::memory_bytes() const {
         b += v.capacity() * sizeof(double);
     for (const auto& v : fz_thr_)
         b += v.capacity() * sizeof(double);
-    b += scale_lj_.capacity() * sizeof(float);
-    b += scale_coul_.capacity() * sizeof(float);
+    b += pair_tier_.capacity();
+    b += special_tag_.capacity() * sizeof(TagInt);
     b += erfc_.e_tab.capacity() * sizeof(double);
     b += erfc_.f_tab.capacity() * sizeof(double);
     return b;

@@ -251,3 +251,122 @@ TEST(LammpsDataFull, ReadsVelocities) {
     EXPECT_NEAR(f.span(ATV::kAtom_vx)[1], -0.04, 1e-12);
     EXPECT_NEAR(f.span(ATV::kAtom_vz)[1], -0.06, 1e-12);
 }
+
+namespace {
+
+// write_data shape: Type Labels + Coeffs sections around Masses, impropers.
+const char* kSections = R"(LAMMPS data file written by write_data
+
+4 atoms
+3 bonds
+2 angles
+1 dihedrals
+1 impropers
+
+2 atom types
+1 bond types
+1 angle types
+1 dihedral types
+1 improper types
+
+0 20 xlo xhi
+0 20 ylo yhi
+0 20 zlo zhi
+
+Atom Type Labels
+
+1 c
+2 o
+
+Masses
+
+1 12.011
+2 15.999
+
+Pair Coeffs # lj/cut/coul/long
+
+1 0.086 3.4
+2 0.21 2.96
+
+Bond Coeffs # harmonic
+
+1 300.0 1.5
+
+Atoms # full
+
+1 1 1 0.1 1.0 1.0 1.0
+2 1 1 0.0 2.5 1.0 1.0
+3 1 2 -0.1 3.0 2.3 1.0
+4 1 1 0.0 4.0 2.3 2.0
+
+Bonds
+
+1 1 1 2
+2 1 2 3
+3 1 3 4
+
+Angles
+
+1 1 1 2 3
+2 1 2 3 4
+
+Dihedrals
+
+1 1 1 2 3 4
+
+Impropers
+
+1 1 1 2 3 4
+)";
+
+} // namespace
+
+TEST(LammpsDataFull, CoeffSectionsDoNotOverwriteMasses) {
+    const std::string path = write_temp("sections", kSections);
+    Frame f = load_lammps_data(path);
+    std::remove(path.c_str());
+    const auto mass = f.span(ATV::kAtom_mass);
+    EXPECT_DOUBLE_EQ(mass[0], 12.011);
+    EXPECT_DOUBLE_EQ(mass[2], 15.999);
+    EXPECT_DOUBLE_EQ(mass[3], 12.011);
+}
+
+TEST(LammpsDataFull, ReadsImpropersOnCentralSecondAtom) {
+    const std::string path = write_temp("impropers", kSections);
+    Frame f = load_lammps_data(path);
+    std::remove(path.c_str());
+    const auto num = f.span(ATV::kAtom_num_improper);
+    const auto atom = f.span(ATV::kAtom_improper_atom);
+    const auto type = f.span(ATV::kAtom_improper_type);
+    ASSERT_EQ(num[1], 1); // owner = atom 2 of `1 2 3 4`
+    EXPECT_EQ(num[0] + num[2] + num[3], 0);
+    EXPECT_EQ(atom(1, 0), 0);
+    EXPECT_EQ(atom(1, 1), 2);
+    EXPECT_EQ(atom(1, 2), 3);
+    EXPECT_EQ(type(1, 0), 0);
+}
+
+TEST(LammpsDataFull, UnsupportedSectionThrows) {
+    std::string text = kSections;
+    text += "\nEllipsoids\n\n1 1 1 1\n";
+    const std::string path = write_temp("unsupported", text);
+    EXPECT_THROW(load_lammps_data(path), std::runtime_error);
+    std::remove(path.c_str());
+}
+
+TEST(LammpsDataFull, ExtraRowsThrow) {
+    std::string text = kSections;
+    text += "2 1 4 3 2 1\n"; // a second improper the header did not declare
+    const std::string path = write_temp("extra", text);
+    EXPECT_THROW(load_lammps_data(path), std::runtime_error);
+    std::remove(path.c_str());
+}
+
+TEST(LammpsDataFull, TriclinicTiltThrows) {
+    std::string text = kSections;
+    text.replace(text.find("0 20 zlo zhi"), 12,
+                 "0 20 zlo zhi\n1.0 0 0 xy xz yz");
+    const std::string path = write_temp("tilt", text);
+    EXPECT_THROW(load_lammps_data(path), std::runtime_error);
+    std::remove(path.c_str());
+}

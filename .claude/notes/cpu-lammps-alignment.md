@@ -76,11 +76,16 @@ Box owns wrapping, Cartesian/fractional transforms and exact nearest-image
 search in a cached lattice-reduced QR basis; fractional rounding alone is not
 a nearest-image algorithm for general skew.
 
-Linear workflows make the neighbor decision at the force boundary, after line
-search updates, with LAMMPS `Min::init` cadence (`every 1 delay 0 check yes`):
-only an MD plan applies the provider's delay/every/check. Minimize also forbids
-row reordering for its provider's life, because CG / L-BFGS histories index
-rows and there is no FixMinimize to carry them through a sort. A plan without
+Linear workflows (Evaluate, Minimize, MC energy, finite-difference
+Hessian/Phonon force) make the neighbor decision at their one force slot,
+after line search updates, with LAMMPS `Min::init` cadence (`every 1 delay 0
+check yes`): only an MD plan applies the provider's delay/every/check. A plan
+that skips that halo sees no periodic images at all. Minimize, MC and the
+Hessian/Phonon drivers forbid row reordering for their provider's life,
+because CG / L-BFGS histories, trial patches and FD workspaces index rows and
+there is no FixMinimize to carry them through a sort. Elsewhere rows move at
+every sort (including the setup rebuild): consumers resolve atoms by tag, and
+components that cache rows re-resolve at each neighbor build or call. A plan without
 a NeighborProvider migrates and rebuilds its ghosts every step.
 `gather_to_root` returns owners in tag order at every rank count; the row
 order after `atom_modify sort` is never the API's view. Cell/grid

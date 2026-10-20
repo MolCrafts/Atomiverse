@@ -78,6 +78,9 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
     // Resolve the frame's force spans ONCE, before the parallel region opens
     // (never inside it — see BondedForceScratch::bind).
     scratch_.bind(f);
+    // The virial is only flushed when stress is requested; skip the two
+    // outer products per angle otherwise (LAMMPS vflag).
+    const bool do_virial = ctx.stress_requested;
 
 // Thread-private virial combined under a critical section (no per-step heap
 // alloc, unlike an OMP user-defined reduction on Voigt6).
@@ -168,8 +171,10 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
                     tf.fz[j] -= fi_z + fk_z;
                 }
 
-                vir_local.add_pair(dx_ji, dy_ji, dz_ji, fi_x, fi_y, fi_z);
-                vir_local.add_pair(dx_jk, dy_jk, dz_jk, fk_x, fk_y, fk_z);
+                if (do_virial) {
+                    vir_local.add_pair(dx_ji, dy_ji, dz_ji, fi_x, fi_y, fi_z);
+                    vir_local.add_pair(dx_jk, dy_jk, dz_jk, fk_x, fk_y, fk_z);
+                }
             }
         }
 #pragma omp critical
