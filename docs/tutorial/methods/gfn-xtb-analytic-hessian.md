@@ -7,8 +7,8 @@
 | Slug | `gfn-xtb-analytic-hessian` |
 | Public API | `cpu::semiempirical::GFN1` / `GFN2` (`with_forces = true`) on `cpu::vib::Hessian` at `vib::Phase::force` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md); [Ch. 14 Vibrations](../ch14-vibrations.md) |
-| Queue | TB method loop — wave 10 done (`46c26afa` / `55e8c762`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN-xTB analytic Hessian ✓ (GFN0/1/2 FD \(H\)); AES-in-Fock landed on [`gfn2-aes-fock`](gfn2-aes-fock.md) (angular \(F\) / GFN2 \(\omega\) is CAMM-vs-\(R\)) |
+| Queue | TB method loop — done |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN-xTB analytic Hessian ✓ (GFN0/1/2 FD \(H\)); GFN2 AES and self-consistent D4 in the SCC Fock ([`gfn2-aes-fock`](gfn2-aes-fock.md)) |
 | Oracle | **xtb 6.7.1** only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -24,9 +24,11 @@ module boundary**. xtb 6.7.1 prints an **analytical** Hessian (log:
 [`gfn0-xtb-analytic-hessian`](gfn0-xtb-analytic-hessian.md) /
 `se-analytic-hessian`), **not** a closed-form
 \(\partial^2 E/\partial R_i\partial R_j\) kernel and **not** `libxtb`.
-GFN0 FD Hessian already ships. Sibling [`gfn2-aes-fock`](gfn2-aes-fock.md)
-puts GFN2 AES in the SCC Fock; the GFN2 \(\omega\) residual is the
-**CAMM-vs-\(R\)** angular hole (not a missing Fock term).
+GFN0 FD Hessian already ships. GFN2 AES and self-consistent D4 enter the
+SCC Fock as \(\partial E/\partial P\)
+([`gfn2-aes-fock`](gfn2-aes-fock.md)), so the GFN2 analytic gradient is the
+exact derivative of its energy and the FD Hessian differs from xtb only by
+FD step and masses, as for GFN1.
 After mass-weighting (IUPAC-2013 from \(Z\)) and TR projection the three
 vibrational wavenumbers are written on `HessianResult::frequencies`
 [cm⁻¹]; the Cartesian matrix is `HessianResult::hessian` [eV/Å²]. Public
@@ -87,16 +89,17 @@ E = \operatorname{Tr}(P H^{0})
 | ---- | ---- |
 | \(\operatorname{Tr}(P H^{0})\) | Occupied eigenvalues of a CN-shifted extended-Hückel \(H\), \(S\) from STO-\(n\)G |
 | \(E_{\mathrm{IES}}\) | Shell-resolved isotropic electrostatics, \(\gamma_{AB}\) with \(g_{\exp}=2\) |
-| \(E^{(3)}\) | On-site cubic \(\frac13\sum_i \Gamma_i q_i^3\) |
+| \(E^{(3)}\) | On-site cubic \(\frac13\sum_l \Gamma_l q_l^3\) in the shell charge \(q_l\) |
 | \(E_{\mathrm{rep}}\) | Screened \(Z_{\mathrm{eff}}\) pair repulsion |
-| \(E_{\mathrm{D4}}\) | Grimme D4; GFN2 damping \(s_6=1\), \(s_8=2.7\), \(a_1=0.52\), \(a_2=5\), \(s_9=5\) |
-| \(E_{\mathrm{AES}}\) | Anisotropic electrostatics + dipole/quadrupole AXC; in the SCC Fock as of [`gfn2-aes-fock`](gfn2-aes-fock.md) |
+| \(E_{\mathrm{D4}}\) | Self-consistent Grimme D4 (\(C_6\) scaled by the SCC Mulliken charges); GFN2 damping \(s_6=1\), \(s_8=2.7\), \(a_1=0.52\), \(a_2=5\), \(s_9=5\) |
+| \(E_{\mathrm{AES}}\) | Anisotropic electrostatics + dipole/quadrupole AXC on the cumulative multipoles of every atom; in the SCC Fock ([`gfn2-aes-fock`](gfn2-aes-fock.md)) |
 
-Analytic \(\mathbf{F}=-\nabla E\) already ships (`gfn2-xtb-forces`) at frozen
-CAMM. AES-in-Fock is [`gfn2-aes-fock`](gfn2-aes-fock.md); the remaining
-angular \(F\) / GFN2 \(\omega\) hole is CAMM-vs-\(R\). Parameters as
-members of `GFN2`; tables in `basis_data/gfn2_xtb_tables.h`. Unsupported
-\(Z\) throws.
+\(H^0\) uses the double-exponential CN' and the distance polynomial
+\(\Pi(R)\) (\(\Pi\) radius O = 0.64 Å). Analytic \(\mathbf{F}=-\nabla E\)
+already ships (`gfn2-xtb-forces`) and is the exact derivative of the SCC
+energy (AES and D4 in the Fock as \(\partial E/\partial P\); analytic vs
+central FD \(\le 3\times10^{-7}\) eV/Å). Parameters as members of `GFN2`;
+tables in `basis_data/gfn2_xtb_tables.h`. Unsupported \(Z\) throws.
 
 GFN-xTB is **not** DFTB3++ — different Hamiltonian, tables, and oracle
 (**xtb** only). **Not** `libxtb`.
@@ -131,7 +134,7 @@ driver does not solve CPHF). PBC / spin / solvent. GFN-FF (classical).
 IPEA energy / \(G\) / FD Hessian / VIP/VEA are [`ipea-xtb-small`](ipea-xtb-small.md) /
 [`ipea-xtb-forces`](ipea-xtb-forces.md) /
 [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
-[`ipea-xtb-vip`](ipea-xtb-vip.md). AES-in-Fock is
+[`ipea-xtb-vip`](ipea-xtb-vip.md). The AES / D4 Fock potential is
 [`gfn2-aes-fock`](gfn2-aes-fock.md).
 
 **Twin settings (binding for this page / regression):**
@@ -173,9 +176,7 @@ vibrational eigenvalues are real.
 - GFN2 **energy** / quadrupole AES — siblings `gfn2-xtb-water`,
   `gfn2-quadrupole-aes`.
 - GFN2 **analytic \(G\)** (1.10 Å stretch) — sibling `gfn2-xtb-forces`.
-- AES-in-Fock — sibling [`gfn2-aes-fock`](gfn2-aes-fock.md). GFN2
-  \(\omega\) tols on this page **absorb** the remaining CAMM-vs-\(R\)
-  hole; they are not a close of that slope.
+- AES / D4 Fock potential — sibling [`gfn2-aes-fock`](gfn2-aes-fock.md).
 - IPEA energy / \(G\) / FD Hessian / VIP/VEA — [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
   [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
@@ -245,7 +246,7 @@ The regression also re-evaluates energy after restore via `cpu::Evaluate`
 (fresh method; leftover `kEnergy` from the last displacement is not the
 pin).
 
-SE-only build **plus the VIB exception** for this slug (never bare
+SE-only build **plus the VIB exception** for this page (never bare
 `cmake --build build`; never HF/MD/CUDA):
 
 ```bash
@@ -277,7 +278,7 @@ bash -lc '
 | `gfn1_tables.h` | Static H/C/N/O GFN1 rows |
 | `gfn2_xtb_tables.h` | Static H/C/N/O GFN2 rows |
 | `src/cpu/semiempirical/gfn1.cpp` | SCC + analytic \(\nabla E\) |
-| `src/cpu/semiempirical/gfn2.cpp` | SCC + AES (post-SCC) + analytic \(\nabla E\) |
+| `src/cpu/semiempirical/gfn2.cpp` | SCC with AES + self-consistent D4 in the Fock + analytic \(\nabla E\) |
 | `hessian.h` | `cpu::vib::Hessian` FD preset |
 | `hessian_result.h` | `HessianResult` (\(H\), \(\omega\), \(n_{\mathrm{imag}}\)) |
 | `hessian_workspace.h` | \(h=10^{-3}\) Å (`kHessianStepAngstrom`) |
@@ -340,10 +341,10 @@ km mol⁻¹) are **not** a product gate (ATV FD Hessian has no APT).
 | GFN1 \(\omega_3\) (asym stretch) | `res.frequencies(2)` | **3761.56 cm⁻¹** | 10 cm⁻¹ | |
 | GFN1 \(H_{O_x,O_x}\) | `res.hessian(0,0)` | **53.12087 eV/Å²** | 0.2 eV/Å² | from \(0.5466593694\) Eh/\(a_0^2\) |
 | GFN2 \(E\) | `kEnergy` (fresh Evaluate after restore) | **−5.070383095219 Eh** | \(1\times10^{-3}\) eV | family TB energy floor (`reg_gfn2-xtb-water`) |
-| GFN2 \(\omega_1\) (bend) | `res.frequencies(0)` | **1565.10 cm⁻¹** | 150 cm⁻¹ | CAMM-vs-\(R\) hole |
+| GFN2 \(\omega_1\) (bend) | `res.frequencies(0)` | **1565.10 cm⁻¹** | 150 cm⁻¹ | projected, ascending |
 | GFN2 \(\omega_2\) (sym stretch) | `res.frequencies(1)` | **3634.95 cm⁻¹** | 150 cm⁻¹ | |
 | GFN2 \(\omega_3\) (asym stretch) | `res.frequencies(2)` | **3643.62 cm⁻¹** | 150 cm⁻¹ | |
-| GFN2 \(H_{O_x,O_x}\) | `res.hessian(0,0)` | **50.63029 eV/Å²** | 1.0 eV/Å² | from \(0.5210291876\) Eh/\(a_0^2\); AES hole |
+| GFN2 \(H_{O_x,O_x}\) | `res.hessian(0,0)` | **50.63029 eV/Å²** | 1.0 eV/Å² | from \(0.5210291876\) Eh/\(a_0^2\) |
 | Hessian shape | identity | \(9\times 9\) | hard | finite, \(\lvert H-H^\top\rvert\le 10^{-8}\) eV/Å² |
 | Rotor | identity | nonlinear | hard | `res.is_linear == false`; 3 modes |
 | \(n_{\mathrm{imag}}\) | identity | 0 | hard | all three \(\omega>100\) cm⁻¹ |
@@ -353,18 +354,21 @@ km mol⁻¹) are **not** a product gate (ATV FD Hessian has no APT).
 
 | | GFN1 | GFN2 |
 | - | ---- | ---- |
-| \(\lvert E_{\mathrm{ATV}}-E_{\mathrm{pin}}\rvert\) | \(2.767\times10^{-3}\) eV | \(2.64\times10^{-5}\) eV |
-| \(\Delta\omega\) | 0.38 / 0.40 / 5.48 cm⁻¹ | 121 / 89 / 19 cm⁻¹ |
-| \(\lvert H_{O_x,O_x}-H_{\mathrm{pin}}\rvert\) | \(0.104\) eV/Å² | \(0.751\) eV/Å² |
+| \(\lvert E_{\mathrm{ATV}}-E_{\mathrm{pin}}\rvert\) | \(2.767\times10^{-3}\) eV | \(1.14\times10^{-5}\) eV |
+| \(\Delta\omega\) | 0.38 / 0.40 / 5.48 cm⁻¹ | 0.05 / 5.4 / 0.8 cm⁻¹ |
+| \(\lvert H_{O_x,O_x}-H_{\mathrm{pin}}\rvert\) | \(0.104\) eV/Å² | \(0.104\) eV/Å² |
 
 **Tolerance rationale.** Energy floors match the family TB pins
 (`reg_gfn1-xtb-forces` 5 meV; `reg_gfn2-xtb-water` 1 meV). GFN1 frequency
 / Cartesian-\(H\) tols absorb FD-of-\(G\) vs xtb **analytical** Hessian
 plus IUPAC-2013 vs xtb isotope masses (the GFN1 angular-\(F\) kernel hole
 does **not** move these \(\omega\); measured residual sits well under
-10 cm⁻¹ / 0.2 eV/Å²). GFN2 \(\omega\) / \(H\) tols are the stated
-**CAMM-vs-\(R\) hole** (AES-in-Fock is [`gfn2-aes-fock`](gfn2-aes-fock.md);
-the water bend is the angular mode, \(\Delta\omega_1=121\) cm⁻¹).
+10 cm⁻¹ / 0.2 eV/Å²). The GFN2 analytic gradient is the exact derivative
+of its SCC energy (Fock = \(\partial E/\partial P\) with AES and
+self-consistent D4), so the GFN2 FD Hessian differs from xtb only by FD
+step and masses, as for GFN1; measured GFN2 residuals
+(\(\Delta\omega\le 5.4\) cm⁻¹, \(0.104\) eV/Å²) sit far inside the
+GFN2 \(\omega\) / \(H\) tols.
 Structural gates: 9×9 finite symmetric Hessian, nonlinear rotor, 3 real
 modes, \(n_{\mathrm{imag}}=0\).
 
@@ -379,7 +383,7 @@ analytic \(G\), numerical \(H\), 18 force evaluations + finalize; xtb
 | Twin | \(T_{\mathrm{xtb}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{xtb}}\) | ≤10× | Caveat |
 | ---- | -----------------------: | -----------------------: | ----------------------------------------: | ---- | ------ |
 | H₂O GFN1 `--gfn 1 --hess` | **0.03** (1 thread, `/usr/bin/time`) | **\(\sim 3.2\times10^{-3}\)** | **≈ 0.11** | ✓ | xtb printed wall 0.020 s; regression pins the process wall 0.03 s; ATV tables are static; xtb Hessian is analytical |
-| H₂O GFN2 `--gfn 2 --hess` | **0.02** (1 thread, `/usr/bin/time`) | **\(\sim 1.4\times10^{-3}\)** | **≈ 0.07** | ✓ | xtb printed wall 0.012 s; GFN2 \(\omega\) carries the CAMM-vs-\(R\) hole |
+| H₂O GFN2 `--gfn 2 --hess` | **0.02** (1 thread, `/usr/bin/time`) | **\(\sim 1.4\times10^{-3}\)** | **≈ 0.07** | ✓ | xtb printed wall 0.012 s; xtb Hessian is analytical |
 
 Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 
@@ -395,24 +399,23 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **Off-eq geometry.** xtb warns “incompletely optimized”; frequencies are
   still all real. Do not cite these \(\omega\) as a GFN1/GFN2 minimum of
   water.
-- **GFN2 CAMM-vs-\(R\) hole.** AES-in-Fock is
-  [`gfn2-aes-fock`](gfn2-aes-fock.md); GFN2 \(\Delta\omega_1=121\) cm⁻¹
-  on the water bend is the remaining angular slope (xtb `mmompop`
-  two-centre \(\Theta\) on H), not a defect of the FD driver. The
-  150 cm⁻¹ / 1.0 eV/Å² GFN2 tols are **not** a close of that hole.
+- **GFN2 tols are loose.** The 150 cm⁻¹ / 1.0 eV/Å² GFN2 tols sit far
+  above the measured \(\Delta\omega\le 5.4\) cm⁻¹ /
+  \(0.104\) eV/Å²; the gate does not resolve GFN2 \(\omega\) at the
+  GFN1 level.
 - **GFN1 energy kernel hole.** GFN1 \(\lvert\Delta E\rvert=2.767\) meV on
   this water (CH₄ energy residual 10.2 meV on `reg_gfn1-xtb-organic`) is
   kernel/D3/intcut, not a missing Hessian term. It does not move GFN1
   \(\omega\) past 10 cm⁻¹.
 - **GFN0 Hessian.** Sibling [`gfn0-xtb-analytic-hessian`](gfn0-xtb-analytic-hessian.md).
-  This page closes GFN1 (primary) + GFN2 (family, with stated hole) FD \(H\).
+  This page closes GFN1 (primary) + GFN2 (family) FD \(H\).
 - **No PBC / spin / solvent / IR** on this page — see Phase C queue.
   IPEA energy / \(G\) / FD Hessian / VIP/VEA are [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
   [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
   [`ipea-xtb-vip`](ipea-xtb-vip.md). GFN-FF is
   classical (never pending on this loop).
-- **VIB exception.** This slug (and `se-analytic-hessian` /
+- **VIB exception.** This page (and `se-analytic-hessian` /
   `gfn0-xtb-analytic-hessian` / `ipea-xtb-analytic-hessian`) may set
   `-DATV_BUILD_VIB=ON`. Do not enable
   MD/MINIMIZER/HF/PW/GPW/CUDA for the TB product gate; do not build
@@ -421,7 +424,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
   GFN oracle; never treat GFN-xTB as a DFTB3 successor.
 - Foothold ≠ closed: GFN CHNO energy + analytic \(G\) + family FD \(H\) +
   AES-in-Fock + IPEA E+\(G\)+\(H\)+VIP is not the GFN product closed
-  (CAMM-vs-\(R\), ALPB, PBC, spin, sTDA remain).
+  (ALPB, PBC, spin, sTDA remain).
 
 ## References
 
@@ -441,7 +444,6 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - SE Hessian foothold (DFTB2/H₂, structural): case `se-analytic-hessian` pin
 - Oracle README: TB oracle (OpenMOPAC / DFTB+ / xtb)
 - Roadmap: `docs/roadmap/semiempirical.md`
-- Spec history (closed, deleted at done): git `wf/gfn-xtb-analytic-hessian`
 - S. Grimme, C. Bannwarth, P. Shushkov, *J. Chem. Theory Comput.* **13**,
   1989 (2017), DOI 10.1021/acs.jctc.7b00118 (GFN1)
 - C. Bannwarth, S. Ehlert, S. Grimme, *J. Chem. Theory Comput.* **15**,

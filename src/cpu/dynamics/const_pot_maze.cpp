@@ -204,6 +204,7 @@ void ConstPotMaZe::launch_symplectic_(const LaunchContext& ctx) {
         have_u_ = false;
         clear_history(); // electrode set / elastance changed
     }
+    bo_.sites_.refresh(ctx, bo_.elec_atoms_, "ConstPotMaZe");
     bo_.build_rhs_(ctx.frame); // fills b_ and neutrality_target_
 
     const int m = static_cast<int>(bo_.elec_atoms_.size());

@@ -14,23 +14,13 @@ implemented; the LJ / EAM / SW+LJ same-input LAMMPS comparison is recorded in
 live for the open work it names (electronic execution communicator, PW/GPW
 borrowed nesting, FixMove origin migration, wider perf coverage).
 
-**Red (2026-10-19, blocking for MC):** `regressions/mc/gcmc_lj` — ⟨N⟩ lands
-30–60 % below the Mayer activity expansion at both activities
-(`reg_gcmc_lj.cpp`: 12.1 vs 17.9 at z* = 0.010, 23.2 vs 57.4 at 0.030) on
-the rewritten trial loop (`mc_base.h` `run_trials_`: score, decide, roll
-back, re-score). `reg_npt_lj`, `reg_widom_hs`, every `test_cpu_mc_*` unit
-and the `GcmcMetropolis` policy tests pass, so the acceptance arithmetic is
-not the suspect; the insert/delete trial energy or the row bookkeeping
-around explicit self-image ghost rows is. Not caused by the 2026-10-19
-Runtime fixes (fails identically with them disabled).
+## Closed — gfn2-camm-r
 
-## Blocked — gfn2-camm-r (retired 2026-10-12)
-
-Off-eq water `F_H1,y` is the H0/Pulay pair term. More CAMM does not close
-the xtb 6.7.1 pin. Spec deleted. The hold is
-[tb-blocked-capabilities.md](../notes/tb-blocked-capabilities.md).
-`regressions/semiempirical/gfn2-camm-r/` stays the witness. Do not open a
-second CAMM slug for the same bend.
+ATV GFN2 matches xtb 6.7.1 / tblite 0.4.0 term by term and its gradient is
+the exact derivative of its energy. The `F_H1,y` pin is tblite 0.4.0 at the
+identical input; xtb 6.7.1's printed O/H1 y-gradient there is an
+orientation artifact. Provenance and evidence:
+`regressions/semiempirical/gfn2-camm-r/REFERENCE.md`.
 
 ## Superseded — component-plugin (2026-10-09)
 
@@ -138,7 +128,7 @@ Merged to `dev` (`93c334cb`, `b7388af2`); specs deleted; history is git.
 
 | Spec | Shipped |
 | ---- | ------- |
-| `gfn2-aes-fock` | GFN2 AES in the SCC Fock; `reg_gfn2-aes-fock` off-eq H₂O vs xtb 6.7.1 `--gfn 2 --grad` (−5.058625058504 Eh). Angular \(F_{H1,y}\) is CAMM-vs-\(R\), not a missing Fock term |
+| `gfn2-aes-fock` | GFN2 AES in the SCC Fock; `reg_gfn2-aes-fock` off-eq H₂O vs xtb 6.7.1 `--gfn 2 --grad` (−5.058625058504 Eh). xtb's printed angular \(F_{H1,y}\) is an orientation artifact (ungated here; `gfn2-camm-r` pins tblite) |
 | `ipea-xtb-forces` | IPEA analytic \(F=-\nabla E\); `reg_ipea-xtb-forces` off-eq CH4 vs xtb 6.7.1 IPEA `--grad` (−4.662477307157 Eh) |
 
 ## Closed — TB harness wave 10 (2026-08-25)

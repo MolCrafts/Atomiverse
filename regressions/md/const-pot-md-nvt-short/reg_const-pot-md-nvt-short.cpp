@@ -88,7 +88,8 @@ int main() {
     std::vector<int> wall_idx;
     for (int i = 0; i < N; ++i) {
         if (frame.span(kAtom_type)[i] == 2 || frame.span(kAtom_type)[i] == 3) {
-            wall_idx.push_back(i);
+            // Keyed by tag: MD sorts atoms (also at setup), so rows move.
+            wall_idx.push_back(static_cast<int>(frame.span(kAtom_tag)[i]));
             wall_x0.push_back(frame.span(kAtom_x)[i]);
             wall_y0.push_back(frame.span(kAtom_y)[i]);
             wall_z0.push_back(frame.span(kAtom_z)[i]);
@@ -190,8 +191,9 @@ int main() {
 
     // Freeze check.
     double max_dx = 0.0, max_v = 0.0;
+    const auto& row_of = frame.meta.get(cpu::kTagIndex);
     for (std::size_t k = 0; k < wall_idx.size(); ++k) {
-        const int i = wall_idx[k];
+        const int i = row_of.at(wall_idx[k]);
         max_dx =
             std::fmax(max_dx, std::fabs(frame.span(kAtom_x)[i] - wall_x0[k]));
         max_dx =

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -66,6 +67,29 @@ PairLJCut::PairLJCut(std::vector<LJTypeCoeff> coeffs, double cutoff)
         set_type_coeff(c.type_i, c.type_j, c.epsilon, c.sigma);
 }
 
+void PairLJCut::grow_type_table_(int need) {
+    if (need <= n_types_)
+        return;
+    // Grow the square tables, preserving what is already set. New entries are
+    // unset: a type pair with no coefficient and no diagonal to mix from does
+    // not interact (eps = 0, see finalize_type_table_).
+    std::vector<double> e(static_cast<std::size_t>(need) * need, 0.0);
+    std::vector<double> s(static_cast<std::size_t>(need) * need, 0.0);
+    std::vector<char> f(static_cast<std::size_t>(need) * need, 0);
+    for (int a = 0; a < n_types_; ++a)
+        for (int b = 0; b < n_types_; ++b) {
+            const std::size_t old = static_cast<std::size_t>(a) * n_types_ + b;
+            const std::size_t nw = static_cast<std::size_t>(a) * need + b;
+            e[nw] = eps_tab_[old];
+            s[nw] = sigma_tab_[old];
+            f[nw] = set_tab_[old];
+        }
+    eps_tab_.swap(e);
+    sigma_tab_.swap(s);
+    set_tab_.swap(f);
+    n_types_ = need;
+}
+
 PairLJCut& PairLJCut::set_type_coeff(int type_i, int type_j, double epsilon,
                                      double sigma) & {
     if (!per_type_mode_)
@@ -81,26 +105,7 @@ PairLJCut& PairLJCut::set_type_coeff(int type_i, int type_j, double epsilon,
         throw std::invalid_argument(
             "PairLJCut::set_type_coeff: sigma must be > 0");
 
-    const int need = std::max(type_i, type_j) + 1;
-    if (need > n_types_) {
-        // Grow the square tables, preserving what is already set.
-        std::vector<double> e(static_cast<std::size_t>(need) * need, 0.0);
-        std::vector<double> s(static_cast<std::size_t>(need) * need, 0.0);
-        std::vector<char> f(static_cast<std::size_t>(need) * need, 0);
-        for (int a = 0; a < n_types_; ++a)
-            for (int b = 0; b < n_types_; ++b) {
-                const std::size_t old =
-                    static_cast<std::size_t>(a) * n_types_ + b;
-                const std::size_t nw = static_cast<std::size_t>(a) * need + b;
-                e[nw] = eps_tab_[old];
-                s[nw] = sigma_tab_[old];
-                f[nw] = set_tab_[old];
-            }
-        eps_tab_.swap(e);
-        sigma_tab_.swap(s);
-        set_tab_.swap(f);
-        n_types_ = need;
-    }
+    grow_type_table_(std::max(type_i, type_j) + 1);
 
     const std::size_t ij = static_cast<std::size_t>(type_i) * n_types_ + type_j;
     const std::size_t ji = static_cast<std::size_t>(type_j) * n_types_ + type_i;
@@ -145,6 +150,21 @@ void PairLJCut::build(const BuildContext& ctx) {
     // No "did you remember to set coefficients?" check is needed: the per-type
     // constructor refuses an empty list, so a PairLJCut cannot exist in that state.
     // That is the point of moving the table into the constructor.
+    if (per_type_mode_) {
+        // The kernel indexes the table by (type_i, type_j) of every pair, so
+        // it must span every type the Frame carries. A type no coefficient
+        // names is an unset pair like any other: it does not interact.
+        const int* type = ctx.frame.span(kAtom_type);
+        int max_type = -1;
+        for (int i = 0; i < ctx.frame.nlocal(); ++i) {
+            if (type[i] < 0)
+                throw std::runtime_error(
+                    "PairLJCut: atom types must be >= 0 for a per-type table");
+            max_type = std::max(max_type, type[i]);
+        }
+        grow_type_table_(max_type + 1);
+    }
+    types_source_ = nullptr;
     finalize_type_table_();
     n_threads_ = 1;
 #ifdef _OPENMP
@@ -311,6 +331,23 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     // `rebuild_filtered_list` for the invariant. When no exclusions are
     // configured we iterate the upstream CSR directly — no copy, no
     // allocation, no per-pair branch.
+    // Rows (and with them types) change only at a neighbor rebuild. A type
+    // outside the table, e.g. one an MC insertion introduced after build(),
+    // would index past it; refuse it at the rebuild that brings it in.
+    if (n_types_ > 0
+        && (types_source_ != &pairs || pairs.version != types_version_)) {
+        const int* type = f.span(kAtom_type);
+        for (int i = 0; i < n_force; ++i)
+            if (type[i] < 0 || type[i] >= n_types_)
+                throw std::runtime_error(
+                    "PairLJCut: atom type " + std::to_string(type[i])
+                    + " is outside the coefficient table (types 0.."
+                    + std::to_string(n_types_ - 1)
+                    + "); name it in a coefficient before build()");
+        types_source_ = &pairs;
+        types_version_ = pairs.version;
+    }
+
     const bool use_filtered = any_special_;
     if (use_filtered
         && (filtered_source_ != &pairs || pairs.version != filtered_version_)) {
@@ -725,6 +762,7 @@ void PairLJCut::destroy(const DestroyContext& ctx) {
     filtered_inum_ = 0;
     filtered_version_ = 0;
     filtered_source_ = nullptr;
+    types_source_ = nullptr;
     any_special_ = false;
     has_partial_special_ = false;
 }

@@ -259,7 +259,15 @@ class Runtime {
 
     // One reference per Plan containing an object, not per phase binding.
     // Zero marks a build in progress so recursive ownership fails explicitly.
-    std::unordered_map<cpu::Component*, std::size_t> component_users_;
+    // `alive` and `node` are captured when the object is taken in, so a
+    // borrowed component destroyed before its driver is released without
+    // being called into (no destroy(), no nested_node()).
+    struct ComponentUse {
+        std::size_t users = 0;
+        std::shared_ptr<const bool> alive;
+        cpu::DriverNode* node = nullptr;
+    };
+    std::unordered_map<cpu::Component*, ComponentUse> component_users_;
     std::vector<cpu::Component*> component_order_;
     // Distinct stage adapters can borrow the same node. Its subtree belongs
     // to this Runtime once, independently of adapter/budget multiplicity.

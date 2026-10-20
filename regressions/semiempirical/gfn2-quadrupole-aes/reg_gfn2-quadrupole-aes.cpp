@@ -21,8 +21,7 @@ namespace {
 // tools/tb_oracle/inputs/xtb/h2o_gfn2/xtb.out
 constexpr double kPinEnergyEh = -5.070383095219;
 // Transcript prints 12 decimals Eh; ATV writes eV with CODATA-2018 Hartree.
-// AES-in-Fock density shift (gfn2-aes-fock): 230 µeV vs the 26 µeV post-SCC
-// residual. Floor 0.5 meV; pin value is still the xtb 6.7.1 transcript.
+// Floor 0.5 meV (measured 11 µeV, see REFERENCE.md).
 constexpr double kPinTolEV = 5.0e-4;
 
 cpu::Frame make_water() {

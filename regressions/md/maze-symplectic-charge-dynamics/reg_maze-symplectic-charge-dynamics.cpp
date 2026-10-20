@@ -10,8 +10,10 @@
 /// J. Chem. Phys. 152, 194701 (2020) — see REFERENCE.md. Exits non-zero on
 /// failure.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -28,12 +30,20 @@ using namespace ATV;
 
 namespace {
 
-constexpr double kLxy = 6.0;    // [Å]
-constexpr double kLz = 20.0;    // [Å]
+// The capacitor is an isolated 10-atom cluster: 2×2 sites per plate on a
+// kPlate grid, two ions between the plates. Pair styles sum explicit
+// periodic images, so the cell is chosen large enough that every intra-
+// cluster pair (longest: opposite plate corners, √(3²+3²+12²) = 12.73 Å) is
+// inside kCut while every periodic image is outside it (kCut < L/2). The pair
+// sum is then exactly the minimum-image sum ConstPotBO's elastance uses
+// (xy_image_range = 0), the model MetalWalls' dilute twin converges to.
+constexpr double kPlate = 6.0;  // [Å] plate patch period (site grid 3 Å)
+constexpr double kLxy = 30.0;   // [Å] lateral cell, > 2 kCut
+constexpr double kLz = 40.0;    // [Å] > 2 kCut
 constexpr double kEta = 2.0;    // [1/Å]
 constexpr double kPsiBot = 0.0; // [V]  type 1, z = 4 Å
 constexpr double kPsiTop = 1.0; // [V]  type 2, z = 16 Å
-constexpr double kCut = 12.0;   // [Å]  > max min-image distance (10.9 Å)
+constexpr double kCut = 14.0;   // [Å]  > 12.73 Å cluster diameter, < L/2
 constexpr double kDt = 0.25;    // [fs]
 constexpr double kMion = 40.0;  // [amu]
 constexpr int kSteps = 400;     // forward steps (then 400 back)
@@ -60,8 +70,8 @@ cpu::Frame make_capacitor(double lxy = kLxy, double lz = kLz) {
         const int typ = (wall == 0) ? 1 : 2;
         for (int iy = 0; iy < 2; ++iy)
             for (int ix = 0; ix < 2; ++ix) {
-                f.span(kAtom_x)[a] = (ix + 0.5) * (kLxy / 2);
-                f.span(kAtom_y)[a] = (iy + 0.5) * (kLxy / 2);
+                f.span(kAtom_x)[a] = (ix + 0.5) * (kPlate / 2);
+                f.span(kAtom_y)[a] = (iy + 0.5) * (kPlate / 2);
                 f.span(kAtom_z)[a] = z;
                 f.span(kAtom_type)[a] = typ;
                 f.span(kAtom_charge)[a] = 0.0;
@@ -131,9 +141,19 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
     sim.enable_timing(false);
     sim.build();
 
-    const double x0[2] = {f.span(kAtom_x)[kIon0], f.span(kAtom_x)[kIon0 + 1]};
-    const double y0[2] = {f.span(kAtom_y)[kIon0], f.span(kAtom_y)[kIon0 + 1]};
-    const double z0[2] = {f.span(kAtom_z)[kIon0], f.span(kAtom_z)[kIon0 + 1]};
+    // Ions by tag (kIon0+1, kIon0+2): MD sorts rows spatially (also at
+    // setup), so a fixed row index stops naming the ion after the first run.
+    auto ion = [&](int k) {
+        const auto tag = f.span(kAtom_tag);
+        for (int r = 0; r < f.nlocal(); ++r)
+            if (static_cast<long long>(tag[r]) == kIon0 + k + 1)
+                return r;
+        throw std::runtime_error("ion tag not found");
+    };
+
+    const double x0[2] = {f.span(kAtom_x)[ion(0)], f.span(kAtom_x)[ion(1)]};
+    const double y0[2] = {f.span(kAtom_y)[ion(0)], f.span(kAtom_y)[ion(1)]};
+    const double z0[2] = {f.span(kAtom_z)[ion(0)], f.span(kAtom_z)[ion(1)]};
 
     RunResult res;
     auto q_plate = [&](int typ) {
@@ -147,7 +167,7 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
         // E = KE + U_pair − Σ_i Ψ_i Q_i  (constant-potential grand energy)
         double ke = 0.0;
         for (int k = 0; k < 2; ++k) {
-            const int i = kIon0 + k;
+            const int i = ion(k);
             const double vx = f.span(kAtom_vx)[i];
             const double vy = f.span(kAtom_vy)[i];
             const double vz = f.span(kAtom_vz)[i];
@@ -161,9 +181,9 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
             res.max_resid = std::max(res.max_resid, maze.constraint_residual());
         res.max_neut =
             std::max(res.max_neut, maze.solver().neutrality_residual());
-        double dx = f.span(kAtom_x)[kIon0] - f.span(kAtom_x)[kIon0 + 1];
-        double dy = f.span(kAtom_y)[kIon0] - f.span(kAtom_y)[kIon0 + 1];
-        double dz = f.span(kAtom_z)[kIon0] - f.span(kAtom_z)[kIon0 + 1];
+        double dx = f.span(kAtom_x)[ion(0)] - f.span(kAtom_x)[ion(1)];
+        double dy = f.span(kAtom_y)[ion(0)] - f.span(kAtom_y)[ion(1)];
+        double dz = f.span(kAtom_z)[ion(0)] - f.span(kAtom_z)[ion(1)];
         f.box.min_image(dx, dy, dz);
         res.min_sep =
             std::min(res.min_sep, std::sqrt(dx * dx + dy * dy + dz * dz));
@@ -193,7 +213,7 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
     do_leg(); // forward
     // Velocity flip on free ions only (walls stay frozen with v=0).
     for (int k = 0; k < 2; ++k) {
-        const int i = kIon0 + k;
+        const int i = ion(k);
         f.span(kAtom_vx)[i] = -f.span(kAtom_vx)[i];
         f.span(kAtom_vy)[i] = -f.span(kAtom_vy)[i];
         f.span(kAtom_vz)[i] = -f.span(kAtom_vz)[i];
@@ -201,13 +221,15 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
     do_leg(); // backward (palindrome)
 
     for (int k = 0; k < 2; ++k) {
-        const int i = kIon0 + k;
+        const int i = ion(k);
+        // Minimum image: the reneighbor wrap may have moved an ion across the
+        // cell boundary, which is a relabelling of the same point.
+        double dx = f.span(kAtom_x)[i] - x0[k];
+        double dy = f.span(kAtom_y)[i] - y0[k];
+        double dz = f.span(kAtom_z)[i] - z0[k];
+        f.box.min_image(dx, dy, dz);
         res.ret_pos =
-            std::max(res.ret_pos, std::abs(f.span(kAtom_x)[i] - x0[k]));
-        res.ret_pos =
-            std::max(res.ret_pos, std::abs(f.span(kAtom_y)[i] - y0[k]));
-        res.ret_pos =
-            std::max(res.ret_pos, std::abs(f.span(kAtom_z)[i] - z0[k]));
+            std::max({res.ret_pos, std::abs(dx), std::abs(dy), std::abs(dz)});
     }
     const auto& q_end = maze.solver().charges();
     for (std::size_t i = 0; i < q_end.size() && i < q_start.size(); ++i)

@@ -58,6 +58,9 @@ class ConstPotMaZe : public cpu::Component {
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
+    /// @brief Electrode sites are re-resolved by tag after atom sorting.
+    /// @return true.
+    bool requires_tag_index() const override { return true; }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Underlying BO solver (electrode registration, eta, images…).

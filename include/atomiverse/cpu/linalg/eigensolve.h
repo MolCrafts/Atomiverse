@@ -229,6 +229,27 @@ inline std::pair<RealVector, RealMatrix> diagonalize_fock(const RealMatrix& F,
     return {eig, C};
 }
 
+/// @brief Natural orbitals of an AO density matrix: \(P S c = n c\).
+///
+/// The AO density \(P\) is contravariant, so its natural orbitals solve the
+/// generalized problem \((S P S)\,c = n\,S c\) — not \(P c = n S c\), which
+/// differs by \(S^{-1}\) and selects the wrong occupied space in any
+/// non-orthogonal basis. Solved in the orthogonal basis as
+/// \(X^\top S P S X\), mapped back with \(X\) (`diagonalize_fock`).
+/// @param P Symmetric AO density matrix (dimensionless, occupation folded
+///          in), n × n.
+/// @param S AO overlap matrix (dimensionless), n × n.
+/// @param X Orthogonalization matrix (dimensionless) with \(X^\top S X = I\),
+///          n × m, m ≤ n.
+/// @return (occupations [dimensionless], m of them, ascending; S-orthonormal
+///         natural orbitals in the AO basis, n × m). The most occupied
+///         orbitals are the rightmost columns.
+inline std::pair<RealVector, RealMatrix> natural_orbitals(const RealMatrix& P,
+                                                          const RealMatrix& S,
+                                                          const RealMatrix& X) {
+    return diagonalize_fock(xt::linalg::dot(S, xt::linalg::dot(P, S)), X);
+}
+
 /// @brief Solve the generalized symmetric eigenproblem F C = S C ε (LAPACK dsygvd).
 ///
 /// The one-step route: no orthogonalizer is formed, LAPACK Cholesky-factorizes

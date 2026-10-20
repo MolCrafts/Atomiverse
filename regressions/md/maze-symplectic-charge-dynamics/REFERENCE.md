@@ -37,9 +37,11 @@ be ≪ 1 — it is (0.0367). η is an inverse length, so going Å⁻¹ → Bohr�
 `bohr2angstrom` (`src/constants.F90`) is 0.52917721067, 4.4e-10 relative from
 the value above — five orders below any tolerance here.
 
-## Geometry (unchanged)
+## Geometry
 
-Parallel-plate capacitor, orthorhombic box 6 × 6 × 20 Å:
+Parallel-plate capacitor as an isolated 10-atom cluster in an orthorhombic
+30 × 30 × 40 Å cell, `PairGaussianCoul` cutoff 14 Å (the MetalWalls twins
+below were run on the periodic 6 × 6 × 20 Å cell this cluster was cut from):
 
 | Region | type | N | z [Å] | η [1/Å] | Ψ [V] | mass [amu] |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -52,31 +54,27 @@ Plate sites at xy ∈ {1.5, 4.5}², ions at (2.1, 2.1, 8.5) and (4.2, 4.2, 11.5)
 zero initial velocity. Explicit NVE velocity Verlet, dt = 0.25 fs, 400 steps
 forward, velocity flip, 400 steps back (palindrome).
 
-## What MetalWalls cannot express, and why
+## Which electrostatic model the dynamics case runs
 
-Atomiverse evaluates this cell in **minimum image**: `PairGaussianCoul` is a
-hard-cutoff real-space pair style (12 Å > the 10.9 Å maximum min-image
-distance, so every pair interacts exactly once) and `ConstPotBO` builds the
-elastance with `xy_image_range = 0`, i.e. one nearest image per pair and no
-reciprocal space at all.
+Pair styles sum explicit periodic image rows within their cutoff (LAMMPS
+parity), while `ConstPotBO` builds the elastance with `xy_image_range = 0`,
+one nearest image per pair and no reciprocal space. The two describe the same
+model only when every pair interacts exactly once: the cutoff (14 Å) exceeds
+the cluster diameter (12.73 Å, opposite plate corners) and stays below half of
+every cell edge (30 / 40 Å), so no image is inside it. That is the **isolated
+pairwise Gaussian-Coulomb** model — the one MetalWalls' Ewald converges to in
+the dilute twin below (1.1e-6 relative at L = 200 Å), and the dynamics case's
+first-solve Q_top (+0.126708 e) is that value.
 
-MetalWalls has **no minimum-image Coulomb mode**. Its electrostatics is Ewald
-summation in every code path (`num_pbc` 2 or 3; `src/coulomb_lr.f90`,
-`src/coulomb_sr.f90`, `src/coulomb_self.f90` are the three Ewald pieces and
-there is no fourth). Run on the identical 6 × 6 × 20 Å cell it therefore
-answers the *fully periodic* problem, not the truncated one:
+On the periodic 6 × 6 × 20 Å cell a 12 Å cutoff would count up to two images
+per direction while the elastance counts one, and pairs at exactly 2L sit on
+the cutoff, so that cell is not used for the dynamics. MetalWalls' 3D-Ewald
+answer for it is kept here as context:
 
 | Q on the +1 V plate, 6 × 6 × 20 Å cell | value [e] |
 | --- | ---: |
-| Atomiverse, minimum image (what this regression simulates) | **+0.1358218636749** |
+| Minimum-image truncation of that cell (not run) | +0.1358218636749 |
 | MetalWalls c8ad175d, 3D Ewald (`twinA_ewald_6x6x20`) | **+0.1529601174306** |
-| relative discrepancy | **−11.20 %** |
-
-MW's number is converged in its own Ewald parameters to 1.5e-13 relative
-(r_cut 2.0 / 2.5 / 2.9 Å at rtol = ktol 1e-12/1e-14 all give
-+0.15296011743062…), so the 11.2 % is entirely the minimum-image truncation
-of the Atomiverse model — not a solver disagreement. It is **not** repinned
-into the regression: that would replace the model the regression is testing.
 
 ## The kernel-matched twin — where MW and ATV compute the same thing
 
@@ -200,7 +198,7 @@ there, or keep r_cut 2.9 Å.
 | Palindrome charge return [e] | 9.015e-13 | 5.092e-05 |
 | Max constraint residual [V] | 9.990e-11 | — |
 | Max \|ΣQ\| [e] | 5.551e-17 | 5.551e-17 |
-| Q_top first solve, 6 × 6 × 20 Å [e] | +0.135822 | +0.135821 |
+| Q_top first solve, 6 × 6 × 20 Å twin [e] | +0.135822 | +0.135821 |
 | Q_top dilute limit [e] | +0.1267075573679 | — |
 | min ion separation [Å] | 3.798 | 3.798 |
 

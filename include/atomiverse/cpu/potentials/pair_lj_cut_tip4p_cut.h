@@ -107,7 +107,7 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     void compute(const LaunchContext& ctx) override;
 
   private:
-    void ensure_sites_(const Frame& f);
+    void ensure_sites_(const Frame& f, const md::PairList& pairs);
     void rebuild_filtered_list_(const Frame& frame, const md::PairList& pairs);
 
     int type_O_ = 0;
@@ -129,12 +129,18 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     bool any_special_ = false;
     md::SpecialScaleTable special_;
 
-    // Cached H indices + M-site positions (size = n_total).
+    // Cached H indices + M-site positions (size = n_total). Row indices are
+    // valid for one neighbor build: `atom_modify sort` and `borders` renumber
+    // rows only at a rebuild, so the cache is keyed on the list identity and
+    // version (LAMMPS resets `hneigh` when `neighbor->ago == 0`).
     std::vector<int> h1_;
     std::vector<int> h2_;
     std::vector<char> is_O_;
     std::vector<double> mx_, my_, mz_;
     int n_sites_ = 0;
+    // Null source denotes an unresolved cache; version zero is a valid list.
+    const md::PairList* sites_source_ = nullptr;
+    unsigned long long sites_version_ = 0;
 
     std::vector<int> filtered_neighbors_;
     std::vector<int>

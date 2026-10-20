@@ -17,6 +17,7 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/dynamics/const_pot_bo.h" // ElectrodeGroup
+#include "atomiverse/cpu/dynamics/electrode_rows.h"
 
 namespace ATV {
 namespace cpu {
@@ -60,6 +61,9 @@ class ConstPotCG : public cpu::Component {
 
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    /// @brief Electrode sites are re-resolved by tag after atom sorting.
+    /// @return true.
+    bool requires_tag_index() const override { return true; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void destroy(const DestroyContext& ctx) override;
 
@@ -98,6 +102,8 @@ class ConstPotCG : public cpu::Component {
     std::vector<ElectrodeGroup> groups_;
 
     std::vector<int> elec_atoms_;
+
+    ElectrodeRows sites_; ///< tag order; rows follow sorts
     std::vector<int> elec_group_;
     std::vector<double> psi_vec_;
     std::vector<double> Q_;

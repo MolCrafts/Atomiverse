@@ -9,6 +9,7 @@
 /// inherit at most one kind: Concrete → Kind → Component.
 #pragma once
 
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -25,6 +26,7 @@ namespace ATV {
 namespace cpu {
 
 class DriverNode;
+class Runtime;
 class ConstraintProvider;
 class NeighborConsumer;
 class NeighborProvider;
@@ -67,7 +69,33 @@ struct DestroyContext {
 /// `ChargePacker::forward`) — so nothing in the engine scans for a packer
 /// and no probe accessor is needed. Inheriting it here put three empty
 /// virtuals in every component's vtable for the benefit of three classes.
+/// @brief Liveness flag of one Component object.
+///
+/// A borrowed component (`add_ref`, `set_*_ref`) may be destroyed before the
+/// driver that borrows it; the driver's teardown must then not call into it.
+/// The Runtime records this flag when it builds the component and checks it
+/// before `destroy()`. Copies and moves get a fresh flag: they are different
+/// objects with their own lifetime.
+class ComponentLifetime {
+  public:
+    ComponentLifetime() = default;
+    ComponentLifetime(const ComponentLifetime&) {}
+    ComponentLifetime(ComponentLifetime&&) noexcept {}
+    ComponentLifetime& operator=(const ComponentLifetime&) { return *this; }
+    ComponentLifetime& operator=(ComponentLifetime&&) noexcept { return *this; }
+    ~ComponentLifetime() { *alive_ = false; }
+
+    /// @brief Shared view of the flag; false once the object is destroyed.
+    /// @return Flag that outlives the object.
+    std::shared_ptr<const bool> token() const noexcept { return alive_; }
+
+  private:
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+};
+
 class Component {
+    friend class Runtime; // reads lifetime_ when it takes the object in
+
   public:
     virtual ~Component() = default;
 
@@ -189,6 +217,9 @@ class Component {
     /// Opt in only to establish forces at the current configuration.
     virtual void initialize_forces(const LaunchContext& ctx) { (void)ctx; }
     virtual void destroy(const DestroyContext& ctx) { (void)ctx; }
+
+  private:
+    ComponentLifetime lifetime_;
 };
 
 } // namespace cpu

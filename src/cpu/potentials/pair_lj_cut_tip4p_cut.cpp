@@ -120,10 +120,13 @@ void PairLJCutTip4pCut::build(const BuildContext& ctx) {
         special_.rebuild(ctx.frame, n_owners);
     }
     n_sites_ = 0;
+    sites_source_ = nullptr;
+    sites_version_ = 0;
     filtered_version_ = 0;
 }
 
-void PairLJCutTip4pCut::ensure_sites_(const Frame& f) {
+void PairLJCutTip4pCut::ensure_sites_(const Frame& f,
+                                      const md::PairList& pairs) {
     const int n = f.n_total();
     const int* type = f.span(kAtom_type).data();
     const TagInt* tag = f.span(kAtom_tag).data();
@@ -133,10 +136,16 @@ void PairLJCutTip4pCut::ensure_sites_(const Frame& f) {
     const StorageReal* z = f.span(kAtom_z).data();
     const auto& box = f.box;
 
-    // Resolve H partners only when the atom count changes (topology assumed
-    // fixed for the foothold). M-site coordinates are always refreshed.
-    if (n_sites_ != n || h1_.empty()) {
+    // Resolve H partners once per neighbor build: a rebuild is the only
+    // point where exchange / atom sort / borders renumber rows, and a sort
+    // keeps the row count, so the count alone cannot detect it (LAMMPS
+    // src/MOLECULE/pair_lj_cut_tip4p_cut.cpp resets hneigh when
+    // neighbor->ago == 0). M-site coordinates are always refreshed.
+    if (n_sites_ != n || h1_.empty() || sites_source_ != &pairs
+        || sites_version_ != pairs.version) {
         n_sites_ = n;
+        sites_source_ = &pairs;
+        sites_version_ = pairs.version;
         h1_.assign(n, -1);
         h2_.assign(n, -1);
         is_O_.assign(n, 0);
@@ -245,7 +254,7 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
         }
     }
 
-    ensure_sites_(f);
+    ensure_sites_(f, pairs);
 
     const bool use_filtered = any_special_;
     if (use_filtered
@@ -496,6 +505,8 @@ void PairLJCutTip4pCut::destroy(const DestroyContext&) {
     my_.clear();
     mz_.clear();
     n_sites_ = 0;
+    sites_source_ = nullptr;
+    sites_version_ = 0;
     filtered_neighbors_.clear();
     filtered_entries_.clear();
     filtered_scale_.clear();

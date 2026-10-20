@@ -31,16 +31,27 @@ int main() {
     f.box = cpu::Box::cubic(30);
     const double vz = 0.01;
     const double dt = 0.001;
+    // `add_ref` borrows: the lender must outlive the driver, whose destructor
+    // ends the live continuable run by calling `destroy()` on every component.
+    cpu::md::FixMove move(0, 0, vz, 1, dt);
     cpu::md::MD sim;
     sim.set_evaluator(cpu::PairLJCut{0.01, 3.4, 6.0});
     sim.set_neighbor(cpu::md::NeighborList<>{6.0, 0.3});
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
-    cpu::md::FixMove move(0, 0, vz, 1, dt);
     sim.on(ATV::md::Phase::initial_integrate).add_ref(move, +200);
     sim.on(ATV::md::Phase::post_force).add_ref(move, +150);
     sim.build();
     sim.run(f, 100);
-    double z = f.span(kAtom_z)[0];
+    // Rows are not stable under `atom_modify sort`; the pulled atom is tag 1.
+    int row = -1;
+    for (int i = 0; i < f.nlocal(); ++i)
+        if (f.span(kAtom_tag)[i] == 1)
+            row = i;
+    if (row < 0) {
+        std::printf("FAIL: tag 1 vanished from the frame\n");
+        return 1;
+    }
+    double z = f.span(kAtom_z)[row];
     // MD run(100) launches steps 0..99 → t = 99 * dt at last impose.
     double z_pin = 5.0 + vz * dt * 99;
     std::printf("constant-velocity-smd z=%.9f pin=%.9f\n", z, z_pin);

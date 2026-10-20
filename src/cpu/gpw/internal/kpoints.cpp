@@ -676,6 +676,12 @@ std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
     return {std::move(eps), linalg::c_mul(orth.X, Cp)};
 }
 
+std::pair<std::vector<double>, CplxMatrix>
+natural_orbitals_k(const CplxMatrix& P_k, const CplxMatrix& S_k,
+                   const KOrth& orth) {
+    return diagonalize_k(linalg::c_mul(S_k, linalg::c_mul(P_k, S_k)), orth);
+}
+
 CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
                         const CplxMatrix& S, const CplxMatrix& X) {
     const CplxMatrix comm = linalg::c_mul(H, linalg::c_mul(P, S))

@@ -179,3 +179,30 @@ TEST(VirtualSites, Tip5pGeometryAndPartition) {
     EXPECT_NEAR(sy, -0.5, 1e-12);
     EXPECT_NEAR(sz, 0.8, 1e-12);
 }
+
+TEST(VirtualSites, RedistributeFollowsTagsAfterRowReorder) {
+    // `atom_modify sort` renumbers rows between place (prepare) and
+    // redistribute (finalize) without changing the row count; the site force
+    // must still land on the parents named by tag.
+    cpu::Frame f = water_parents(1); // rows: O H1 H2 M = tags 1 2 3 4
+    const double alpha =
+        cpu::md::VirtualSites::tip4p_alpha(kQDist, kROH, theta_hoh());
+    cpu::md::VirtualSites vs;
+    vs.add_weighted3(4, 1, 2, 3, alpha);
+    vs.place(f);
+
+    // Reverse the rows (a sort), then republish the tag index as the engine
+    // does after every reorder (md::notify_sorted).
+    cpu::Frame g = f;
+    for (int i = 0; i < 4; ++i)
+        g.copy_row_from(f, 3 - i, i);
+    g.clear_tag_index();
+    g.rebuild_tag_index(0, g.nlocal());
+    // M (tag 4) now sits in row 0.
+    g.span(kAtom_fx)[0] = 1.0;
+    vs.redistribute(g);
+    EXPECT_NEAR(g.span(kAtom_fx)[0], 0.0, 1e-15);                 // M
+    EXPECT_NEAR(g.span(kAtom_fx)[3], (1.0 - alpha) * 1.0, 1e-12); // O
+    EXPECT_NEAR(g.span(kAtom_fx)[2], 0.5 * alpha, 1e-12);         // H1
+    EXPECT_NEAR(g.span(kAtom_fx)[1], 0.5 * alpha, 1e-12);         // H2
+}

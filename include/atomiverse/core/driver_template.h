@@ -85,6 +85,12 @@ class PhaseBuilder {
 
     /// @brief Borrow a component whose lifetime is owned by the caller.
     ///
+    /// A continuable run stays live between `run()` calls, and the driver's
+    /// destructor ends it by calling `destroy()` on every built component,
+    /// borrowed ones included. A borrowed component may still be destroyed
+    /// first: the CPU Runtime then releases it without calling into it (its
+    /// own destructor has released its resources).
+    ///
     /// Prefer Component binding when the type is dual-identity
     /// (Component + cpu::DriverNode), e.g. transitional MeanFieldMethod.
     template <typename Comp,

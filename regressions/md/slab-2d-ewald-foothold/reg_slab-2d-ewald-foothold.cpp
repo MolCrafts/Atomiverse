@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "atomiverse/core/units.h"
@@ -19,6 +20,24 @@
 #include "atomiverse/cpu/potentials/coul_long.h"
 
 using namespace ATV;
+
+namespace {
+
+/// Row of a tag. Rows are not stable — `atom_modify sort` spatially reorders
+/// owned atoms at the setup reneighbour (LAMMPS Verlet::setup) — so an
+/// out-of-library consumer that wants a named atom must ask the Frame.
+int row_of(const ATV::cpu::Frame& f, ATV::TagInt tag) {
+    const auto& index = f.meta.get(ATV::cpu::kTagIndex);
+    const auto it = index.find(tag);
+    if (it == index.end()) {
+        std::printf("FAIL: tag %lld vanished from the frame\n",
+                    static_cast<long long>(tag));
+        std::exit(1);
+    }
+    return it->second;
+}
+
+} // namespace
 
 // Offline LAMMPS pin (tools/metalwalls_oracle/inputs/lammps/slab-2d-ewald-foothold)
 // oracle: lammps  oracle_version: develop / patch_30Mar2026-1074-g7f680de296
@@ -72,10 +91,11 @@ int main() {
 
     const double e_slab = frame.meta.get(kEnergy);
     double fz_plus = 0.0, fz_minus = 0.0;
-    for (int i = 0; i < 4; ++i)
-        fz_plus += frame.span(kAtom_fz)[i];
-    for (int i = 4; i < 8; ++i)
-        fz_minus += frame.span(kAtom_fz)[i];
+    // + plane carries tags 1..4, − plane tags 5..8.
+    for (TagInt t = 1; t <= 4; ++t)
+        fz_plus += frame.span(kAtom_fz)[row_of(frame, t)];
+    for (TagInt t = 5; t <= 8; ++t)
+        fz_minus += frame.span(kAtom_fz)[row_of(frame, t)];
     fz_plus /= 4.0;
     fz_minus /= 4.0;
 

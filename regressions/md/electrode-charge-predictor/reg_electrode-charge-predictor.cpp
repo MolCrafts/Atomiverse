@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -232,13 +233,23 @@ int main() {
         constexpr int n_steps = 16;
         // K=5 needs 6 recorded vectors, i.e. it first predicts at step 5.
         constexpr int first_scored = 6;
+        // The four ions are the last atoms built (tags ion0+1..ion0+4). MD
+        // sorts rows spatially (also at setup), so locate them by tag.
+        auto row_of_tag = [](const cpu::Frame& fr, long long t) {
+            const auto tag = fr.span(kAtom_tag);
+            for (int r = 0; r < fr.nlocal(); ++r)
+                if (static_cast<long long>(tag[r]) == t)
+                    return r;
+            throw std::runtime_error("ion tag not found");
+        };
         for (int s = 0; s < n_steps; ++s) {
             const double dz = 0.03 * (s + 1);
             for (auto* f : {&f_cold, &f_warm2, &f_warm5}) {
                 for (int k = 0; k < 4; ++k) {
                     const double z0 = (k % 2 == 0) ? 8.0 : 12.0;
                     const double sign = (k % 2 == 0) ? 1.0 : -0.5;
-                    f->span(kAtom_z)[ion0 + k] = z0 + sign * dz;
+                    f->span(kAtom_z)[row_of_tag(*f, ion0 + k + 1)] =
+                        z0 + sign * dz;
                 }
             }
             run_cold.step();

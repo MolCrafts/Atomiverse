@@ -32,7 +32,11 @@ struct Gfn2ElementRow {
     double mprad = 0;     ///< AES base damping radius [Å].
     double mpvcn = 0;     ///< AES valence CN.
     double en = 0;        ///< Pauling electronegativity.
-    double rcov = 0;      ///< Pyykkö covalent radius [Å].
+    double rcov = 0;      ///< Pyykkö covalent radius [Å] (CN', ×4/3).
+    /// Atomic radius of the H⁰ distance polynomial Π(R) [Å]. Equals rcov
+    /// except O (0.64 Å): only that value reproduces xtb 6.7.1 / tblite
+    /// 0.4.0 H⁰-only water energies (1e-11 Eh); C, N match at rcov.
+    double rpoly = 0;
 };
 
 /// @brief GFN2-xTB H/C/N/O. Values from tblite `tblite_xtb_gfn2`.
@@ -58,6 +62,7 @@ inline constexpr Gfn2ElementRow kGfn2Elements[] = {
      1.4,
      1.0,
      2.20,
+     0.32,
      0.32},
     // C
     {6,
@@ -80,6 +85,7 @@ inline constexpr Gfn2ElementRow kGfn2Elements[] = {
      3.0,
      3.0,
      2.55,
+     0.75,
      0.75},
     // N
     {7,
@@ -102,6 +108,7 @@ inline constexpr Gfn2ElementRow kGfn2Elements[] = {
      1.9,
      3.0,
      3.04,
+     0.71,
      0.71},
     // O
     {8,
@@ -124,7 +131,8 @@ inline constexpr Gfn2ElementRow kGfn2Elements[] = {
      1.8,
      2.0,
      3.44,
-     0.63},
+     0.63,
+     0.64},
 };
 
 inline constexpr std::size_t kGfn2NElements =
@@ -144,7 +152,10 @@ inline constexpr double kGfn2AesDmp5 = 4.0;
 inline constexpr double kGfn2AesShift = 1.2;
 inline constexpr double kGfn2AesKexp = 4.0;
 inline constexpr double kGfn2AesRmax = 5.0;
-inline constexpr double kGfn2CnK = 16.0;
+/// GFN2 CN' double-exponential counting (k_a, k_b, radius shift [Bohr]).
+inline constexpr double kGfn2CnKa = 10.0;
+inline constexpr double kGfn2CnKb = 20.0;
+inline constexpr double kGfn2CnShift = 2.0;
 inline constexpr double kGfn2D4S6 = 1.0;
 inline constexpr double kGfn2D4S8 = 2.7;
 inline constexpr double kGfn2D4A1 = 0.52;

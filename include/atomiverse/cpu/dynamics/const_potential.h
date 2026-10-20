@@ -27,6 +27,7 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
+#include "atomiverse/cpu/dynamics/electrode_rows.h"
 
 namespace ATV {
 namespace cpu {
@@ -60,6 +61,9 @@ class ConstPotentialBO : public cpu::Component {
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
+    /// @brief Electrode sites are re-resolved by tag after atom sorting.
+    /// @return true.
+    bool requires_tag_index() const override { return true; }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Total charge on electrode `e` after the last solve [e].
@@ -86,6 +90,7 @@ class ConstPotentialBO : public cpu::Component {
 
     /// Local owned electrode atom indices and electrode id per site.
     std::vector<int> elec_idx_;
+    md::ElectrodeRows sites_;  ///< tag order; rows follow sorts
     std::vector<int> elec_id_; ///< electrode index for each entry of elec_idx_
     int n_elec_ = 0;
 

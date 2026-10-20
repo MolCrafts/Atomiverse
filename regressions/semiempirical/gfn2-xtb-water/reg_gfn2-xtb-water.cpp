@@ -21,7 +21,7 @@ namespace {
 // tools/tb_oracle/inputs/xtb/h2o_gfn2/xtb.out
 constexpr double kPinEnergyEh = -5.070383095219;
 // Transcript prints 12 decimals Eh; ATV writes eV with CODATA-2018 Hartree.
-// 2 meV floor: missing quadrupole AES + D3 vs dexp CN (see REFERENCE.md).
+// 2 meV floor (measured 11 µeV, see REFERENCE.md).
 constexpr double kPinTolEV = 2.0e-3;
 
 cpu::Frame make_water() {

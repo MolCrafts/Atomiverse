@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/dynamics/virtual_sites.h"
@@ -15,6 +16,24 @@
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
 using namespace ATV;
+
+namespace {
+
+/// Row of a tag. Rows are not stable — `atom_modify sort` spatially reorders
+/// owned atoms at the setup reneighbour (LAMMPS Verlet::setup) — so an
+/// out-of-library consumer that wants a named atom must ask the Frame.
+int row_of(const ATV::cpu::Frame& f, ATV::TagInt tag) {
+    const auto& index = f.meta.get(ATV::cpu::kTagIndex);
+    const auto it = index.find(tag);
+    if (it == index.end()) {
+        std::printf("FAIL: tag %lld vanished from the frame\n",
+                    static_cast<long long>(tag));
+        std::exit(1);
+    }
+    return it->second;
+}
+
+} // namespace
 
 int main() {
     // Classic TIP4P (Jorgensen 1983/85)
@@ -140,11 +159,11 @@ int main() {
         return 1;
     }
 
-    // Parent forces: map O/H rows (skip M) to pin order O1 H1 H2 O2 H3 H4
-    const int parent_row[6] = {0, 1, 2, 4, 5, 6};
+    // Parent forces: map O/H tags (skip M) to pin order O1 H1 H2 O2 H3 H4
+    const TagInt parent_tag[6] = {1, 2, 3, 5, 6, 7};
     bool ok = true;
     for (int k = 0; k < 6; ++k) {
-        const int i = parent_row[k];
+        const int i = row_of(f, parent_tag[k]);
         const double fx = f.span(kAtom_fx)[i];
         const double fy = f.span(kAtom_fy)[i];
         const double fz = f.span(kAtom_fz)[i];
@@ -156,11 +175,13 @@ int main() {
         }
     }
     // M forces must be zero after redistribute
-    for (int i : {3, 7}) {
+    for (TagInt site : {4, 8}) {
+        const int i = row_of(f, site);
         if (!(std::fabs(f.span(kAtom_fx)[i]) <= 1e-12)
             || !(std::fabs(f.span(kAtom_fy)[i]) <= 1e-12)
             || !(std::fabs(f.span(kAtom_fz)[i]) <= 1e-12)) {
-            std::printf("FAIL: residual force on site row %d\n", i);
+            std::printf("FAIL: residual force on site tag %lld\n",
+                        static_cast<long long>(site));
             ok = false;
         }
     }

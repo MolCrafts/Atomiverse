@@ -23,8 +23,10 @@ namespace mc {
 /// earlier deletions), stamps the configured type/mass, and takes its tag
 /// from `Frame::acquire_tag()` — never from identity seeding, which would
 /// duplicate a survivor's tag after a delete-compaction. Deletion is the
-/// migration compaction primitive: snapshot the victim into the Frame patch
-/// (full row, topology included), `copy_row(victim, nlocal-1)`, `--nlocal`.
+/// migration compaction primitive: snapshot the victim and the end row into
+/// the Frame patch (full rows, topology included), `copy_row(victim,
+/// nlocal-1)`, `--nlocal`. The end row must be snapshotted because it becomes
+/// a ghost slot that the trial's halo rebuild overwrites.
 ///
 /// A deletion drawn on an empty frame stamps an empty (`Verb::None`)
 /// proposal, which the policy rejects — the standard "trial deletion from

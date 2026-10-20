@@ -40,8 +40,11 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
         // ── Insert at a uniform fractional position ─────────────────────
         txn->begin(Transaction::Verb::Insert, ctx.frame);
         const int nlocal = ctx.frame.nlocal();
-        if (nlocal + 1 > ctx.frame.capacity())
-            ctx.frame.grow(nlocal + 1);
+        // The new owner row takes the first ghost slot (LAMMPS
+        // AtomVec::create_atom); the trial's own exchange/borders rebuild the
+        // shell behind it, but `set_nlocal` still checks owners + ghosts.
+        if (ctx.frame.n_total() + 1 > ctx.frame.capacity())
+            ctx.frame.grow(ctx.frame.n_total() + 1);
         // Resolved AFTER grow() -- grow() invalidates any span/pointer taken
         // before it (generation-aware Span contract, cpu/frame/block.h).
         StorageReal* __restrict sp_x = ctx.frame.span(kAtom_x);
@@ -107,6 +110,12 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
         const int victim = pick(*rng);
         txn->begin(Transaction::Verb::Delete, ctx.frame);
         txn->record_touch(ctx.frame, victim); // full row, topology included
+        // The compaction survivor's source row becomes the first ghost slot
+        // once nlocal drops, and the trial's borders overwrite it with a
+        // periodic image. Rollback must restore it from the patch too, or the
+        // survivor comes back as an image of some other atom — on top of it.
+        if (victim != nlocal - 1)
+            txn->record_touch(ctx.frame, nlocal - 1);
         ctx.frame.copy_row(victim, nlocal - 1);
         ctx.frame.set_nlocal(nlocal - 1);
     }

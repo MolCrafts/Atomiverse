@@ -57,11 +57,10 @@ Wall (xtb, 1 thread): 0.155 s (SCC 0.115 s).
 - SCC residual < `scc_tol`
 - Hard-coded energy pin vs table (tol \(2\times10^{-3}\) eV ≈ 0.07 mEh)
 
-Measured ATV residual at this geometry: **1.45 meV** (0.054 mEh). Floor
-covers (1) missing quadrupole AES (xtb anisotropic ES is 0.61 mEh with
-quadrupoles; this foothold is charge–dipole + dipole–dipole + AXC) and
-(2) H⁰ CN is D3-logistic with 4/3 radii rather than tblite `dexp`.
-Repulsion matches the transcript to 1 µEh; D4 to 3 µEh.
+Measured ATV residual: **11 µeV** (4.2e−7 Eh). H⁰, isotropic ES, third
+order, repulsion and AES/AXC reproduce xtb 6.7.1 / tblite 0.4.0 to
+≤ 1e−8 Eh at the same density; the remainder is the self-consistent D4
+term (ATV −1.40847e−4 vs xtb −1.41270e−4 Eh).
 
 ## Perf
 

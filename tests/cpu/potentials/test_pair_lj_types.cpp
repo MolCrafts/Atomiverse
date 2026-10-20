@@ -150,6 +150,40 @@ TEST(PairLJTypes, TypeWithoutAnLJSiteDoesNotInteract) {
     EXPECT_LT(energy_of(oo, pair, rc), 0.0) << "O-O should be bound at 3.5 A";
 }
 
+/// A type above every coefficient line is an unset pair too: build() sizes the
+/// table to the Frame's types instead of the kernel indexing past it.
+TEST(PairLJTypes, TypeAboveTheTableDoesNotInteract) {
+    const double rc = 9.0;
+    const auto pair = cpu::PairLJCut{{{0, 0, 0.1, 3.0}}, rc};
+    cpu::Frame oh = dimer(0, 3, 0.96);
+    EXPECT_NEAR(energy_of(oh, pair, rc), 0.0, 1e-14);
+    cpu::Frame hh = dimer(3, 3, 0.96);
+    EXPECT_NEAR(energy_of(hh, pair, rc), 0.0, 1e-14);
+}
+
+/// A type that appears after build() (an MC insertion) is refused at the
+/// neighbor rebuild that brings it in, not read past the table.
+TEST(PairLJTypes, TypeIntroducedAfterBuildThrowsAtRebuild) {
+    cpu::Frame f = dimer(0, 0, 4.0);
+    cpu::md::PairList pairs;
+    pairs.inum = 2;
+    pairs.ilist = {0, 1};
+    pairs.firstneigh = {0, 1};
+    pairs.numneigh = {1, 0};
+    pairs.neighbors = {1};
+    pairs.total_pairs = 1;
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    auto pair = cpu::PairLJCut{{{0, 0, 0.1, 3.0}}, 9.0};
+    pair.build({context, f});
+    EXPECT_NO_THROW(pair.launch({context, f, 0, 0, true, true}));
+    f.span(ATV::kAtom_type)[1] = 5;
+    pairs.version = 1;
+    EXPECT_THROW(pair.launch({context, f, 0, 1, true, true}),
+                 std::runtime_error);
+    pair.destroy({context, f});
+}
+
 /// The per-type constructor refuses an empty table: a PairLJCut cannot EXIST in a
 /// state where it has no coefficients. That is why the table is a constructor argument
 /// and not something you attach afterwards.

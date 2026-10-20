@@ -169,6 +169,19 @@ class Hessian : public Driver<ATV::vib::Phase> {
                           const std::string& mode_xyz_prefix);
 
   protected:
+    /// @brief Keep the caller's row order for the whole FD pass.
+    void install_defaults() override {
+        // The workspace (R0, Hessian rows/columns, normal modes) is indexed
+        // by the row order the caller handed in, and DisplaceStep restores R0
+        // by row. `atom_modify sort` at the setup rebuild or a later one
+        // would scramble that map silently. Drop sorting for the provider's
+        // life, as Minimize and MC do for their row-indexed state.
+        this->for_each_pending_mut([](cpu::Component& c) {
+            if (cpu::NeighborProvider* np = c.neighbor_provider())
+                np->forbid_row_reordering();
+        });
+    }
+
     /// @brief A force evaluator to displace against, and an accumulator to build into.
     void validate_components() const override {
         this->require_force();

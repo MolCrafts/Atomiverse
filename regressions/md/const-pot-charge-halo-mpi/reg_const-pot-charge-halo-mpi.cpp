@@ -211,13 +211,15 @@ int run_child(const char* out_path) {
     //     rank alike, before any collective a partial solve would need.
     int dd_rejected = 0;
     {
+        // A borrowed component must outlive the driver that borrows it:
+        // ~MD calls its destroy(). Declare it first.
+        cpu::md::ConstPotBO solver(kEta);
+        solver.add_electrode(kTypeBot, kPsiBot);
+        solver.add_electrode(kTypeTop, kPsiTop);
         cpu::md::MD rejected;
         rejected.set_integrator(cpu::md::VelocityVerlet{kDt});
         rejected.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
         rejected.set_evaluator(cpu::PairCoulCut{kCut});
-        cpu::md::ConstPotBO solver(kEta);
-        solver.add_electrode(kTypeBot, kPsiBot);
-        solver.add_electrode(kTypeTop, kPsiTop);
         rejected.set_observer_ref(solver);
         rejected.build();
         auto probe = make_capacitor();
@@ -229,21 +231,22 @@ int run_child(const char* out_path) {
         }
     }
 
-    cpu::md::MD sim;
-    sim.set_serial_on_replica();
-    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
-    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
-    sim.set_evaluator(cpu::PairCoulCut{kCut});
-
+    // Borrowed components first: they must outlive `sim`, whose destructor
+    // calls their destroy().
     cpu::md::ConstPotBO conp(kEta);
     conp.add_electrode(kTypeBot, kPsiBot);
     conp.add_electrode(kTypeTop, kPsiTop);
     conp.electroneutrality = true;
     conp.xy_image_range = 0; // primary-cell min-image solve
     conp.rebuild_matrix_every_step = true;
-    sim.set_observer_ref(conp); // default binding: pre_force @ -50
-
     GhostChargeChecker checker;
+
+    cpu::md::MD sim;
+    sim.set_serial_on_replica();
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
+    sim.set_evaluator(cpu::PairCoulCut{kCut});
+    sim.set_observer_ref(conp); // default binding: pre_force @ -50
     sim.on(ATV::md::Phase::force).add_ref(checker, +500);
 
     sim.build();

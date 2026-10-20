@@ -96,7 +96,9 @@ void ConstPotentialBO::build(const BuildContext& ctx) {
 
     elec_idx_.clear();
     elec_id_.clear();
-    for (int i = 0; i < n; ++i) {
+    (void)n;
+    // Tag order: the site order must survive atom sorting (ElectrodeRows).
+    for (int i : md::ElectrodeRows::owned_by_tag(ctx.frame)) {
         for (int e = 0; e < static_cast<int>(electrode_types_.size()); ++e) {
             if (type[i] == electrode_types_[static_cast<std::size_t>(e)]) {
                 elec_idx_.push_back(i);
@@ -108,6 +110,7 @@ void ConstPotentialBO::build(const BuildContext& ctx) {
     n_elec_ = static_cast<int>(elec_idx_.size());
     if (n_elec_ == 0)
         throw std::runtime_error("ConstPotentialBO: no electrode atoms found");
+    sites_.bind(ctx.frame, elec_idx_);
 
     const std::size_t nn =
         static_cast<std::size_t>(n_elec_) * static_cast<std::size_t>(n_elec_);
@@ -256,15 +259,23 @@ void ConstPotentialBO::solve_(Frame& frame) {
 void ConstPotentialBO::launch(const LaunchContext& ctx) {
     if (!ctx.at(ATV::md::Phase::pre_force))
         return;
+    sites_.refresh(ctx, elec_idx_, "ConstPotentialBO");
     solve_(ctx.frame);
     ChargePacker::forward(ctx);
 }
 
 void ConstPotentialBO::destroy(const DestroyContext& /*ctx*/) {
+    // Release the matrices only; the last solution (per-electrode totals,
+    // neutrality residual) stays readable after the driver is gone.
     a_built_ = false;
-    n_elec_ = 0;
-    elec_idx_.clear();
-    elec_id_.clear();
+    A_.clear();
+    A_.shrink_to_fit();
+    L_.clear();
+    L_.shrink_to_fit();
+    Aaug_.clear();
+    Aaug_.shrink_to_fit();
+    Laug_.clear();
+    Laug_.shrink_to_fit();
 }
 
 double ConstPotentialBO::total_charge(int electrode) const {

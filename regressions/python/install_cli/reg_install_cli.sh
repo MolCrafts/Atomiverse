@@ -6,6 +6,7 @@ PYTHON="${1:-python3}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 SRC="$REPO/python/src"
+bash "$HERE/../require_runtime_deps.sh" "$PYTHON"
 export PYTHONPATH="$SRC${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "== install_cli regression (staged) =="

@@ -165,7 +165,8 @@ int main() {
     for (int i = 0; i < frame.nlocal(); ++i) {
         const int t = frame.span(kAtom_type)[i];
         if (t == 2 || t == 3) {
-            wall_idx.push_back(i);
+            // Keyed by tag: MD sorts atoms (also at setup), so rows move.
+            wall_idx.push_back(static_cast<int>(frame.span(kAtom_tag)[i]));
             wall_z0.push_back(frame.span(kAtom_z)[i]);
         }
     }
@@ -240,9 +241,11 @@ int main() {
 
     // Freeze + occupancy proxy after short NVT.
     double max_dz = 0.0;
+    const auto& row_of = frame.meta.get(cpu::kTagIndex);
     for (std::size_t k = 0; k < wall_idx.size(); ++k)
-        max_dz = std::fmax(
-            max_dz, std::fabs(frame.span(kAtom_z)[wall_idx[k]] - wall_z0[k]));
+        max_dz = std::fmax(max_dz,
+                           std::fabs(frame.span(kAtom_z)[row_of.at(wall_idx[k])]
+                                     - wall_z0[k]));
     const int occ = occupancy_in_pore(frame);
     std::printf(
         "after 200 fs: E=%.6e K=%.6e QL=%+.6e QR=%+.6e occ=%d max|dz|=%.3e\n",

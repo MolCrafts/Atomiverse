@@ -124,7 +124,11 @@ int main() {
         probe_sim.on(md::Phase::final_integrate).add_ref(probe, +200);
         probe_sim.enable_timing(false);
         probe_sim.build();
-        probe_sim.run(frame, 1);
+        // Zero steps: the setup force evaluation (LAMMPS Verlet::setup, with
+        // the probe's post_force via initialize_forces) measures P_z on the
+        // initial geometry — MetalWalls' step-0 single point. A step would
+        // first move the fluid under those setup forces.
+        probe_sim.run(frame, 0);
     }
     const double P_pin = probe.last_P_z();
     std::printf("Probe P_z (atoms/A) = %.6e eV/Å³  F_atoms=%.6e  A=%.3f\n",
@@ -163,7 +167,8 @@ int main() {
         return 1;
     }
 
-    // Reset velocities after probe (VV advanced one step)
+    // Reset velocities / wall z after the probe (no-ops for a zero-step
+    // probe; kept so the production start state is explicit).
     for (int i = 0; i < frame.nlocal(); ++i) {
         if (frame.span(kAtom_type)[i] == fluid_type)
             continue;

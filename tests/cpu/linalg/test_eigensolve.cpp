@@ -38,6 +38,8 @@
 #include <cmath>
 #include <cstddef>
 
+#include <xtensor/views/xview.hpp>
+
 #include "atomiverse/cpu/linalg/eigensolve.h"
 
 namespace linalg = ATV::cpu::linalg;
@@ -209,4 +211,58 @@ TEST(TestEigensolve, EigNonsymmetricLeavesInputUnchanged) {
         for (std::size_t j = 0; j < 2; ++j)
             EXPECT_EQ(a(i, j), before(i, j))
                 << "A mutated at (" << i << "," << j << ")";
+}
+
+// ── TestEigensolve: natural_orbitals ─────────────────────────────────────
+
+namespace {
+
+/// SPD, non-orthogonal 3×3 overlap (unit diagonal, eigenvalues > 0).
+RealMatrix overlap_3x3() {
+    return RealMatrix{{1.0, 0.4, 0.2}, {0.4, 1.0, 0.3}, {0.2, 0.3, 1.0}};
+}
+
+/// Closed-shell P = 2 C Cᵀ of two S-orthonormal orbitals C = V (VᵀSV)^{-1/2}.
+RealMatrix closed_shell_density(const RealMatrix& S, RealMatrix& C) {
+    const RealMatrix V{{1.0, 0.0}, {0.5, 1.0}, {0.0, 0.3}};
+    const RealMatrix VtSV =
+        xt::linalg::dot(xt::transpose(V), xt::linalg::dot(S, V));
+    C = xt::linalg::dot(V, linalg::sym_power(VtSV, -0.5));
+    return 2.0 * xt::linalg::dot(C, xt::transpose(C));
+}
+
+} // namespace
+
+// [Contract] The occupations of P = 2 C Cᵀ in a non-orthogonal basis are
+// exactly {0, 2, 2}, and the two most occupied natural orbitals rebuild P.
+TEST(TestEigensolve, NaturalOrbitalsRecoverClosedShellDensity) {
+    const RealMatrix S = overlap_3x3();
+    RealMatrix C;
+    const RealMatrix P = closed_shell_density(S, C);
+    const RealMatrix X = linalg::build_orthogonalization_matrix(S);
+
+    auto [occ, nat] = linalg::natural_orbitals(P, S, X);
+    ASSERT_EQ(occ.size(), std::size_t(3));
+    EXPECT_NEAR(occ(0), 0.0, 1e-12);
+    EXPECT_NEAR(occ(1), 2.0, 1e-12);
+    EXPECT_NEAR(occ(2), 2.0, 1e-12);
+
+    const RealMatrix top = xt::view(nat, xt::all(), xt::range(1, 3));
+    const RealMatrix P_rebuilt = 2.0 * xt::linalg::dot(top, xt::transpose(top));
+    for (std::size_t i = 0; i < 3; ++i)
+        for (std::size_t j = 0; j < 3; ++j)
+            EXPECT_NEAR(P_rebuilt(i, j), P(i, j), 1e-12)
+                << "P mismatch at (" << i << "," << j << ")";
+}
+
+// [Pitfall] Diagonalizing P itself against S (P c = n S c) is not the
+// natural-orbital problem once S ≠ I: its spectrum is not {0, 2, 2}.
+TEST(TestEigensolve, NaturalOrbitalsDifferFromDiagonalizingPAgainstS) {
+    const RealMatrix S = overlap_3x3();
+    RealMatrix C;
+    const RealMatrix P = closed_shell_density(S, C);
+    const RealMatrix X = linalg::build_orthogonalization_matrix(S);
+    auto [wrong, unused] = linalg::diagonalize_fock(P, X);
+    (void)unused;
+    EXPECT_GT(std::abs(wrong(2) - 2.0), 1e-3);
 }

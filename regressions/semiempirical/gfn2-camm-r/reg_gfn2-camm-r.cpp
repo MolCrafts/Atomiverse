@@ -21,7 +21,11 @@ using namespace ATV;
 static constexpr double kE_pin_Ha = -5.058625058504;
 static constexpr double kE_tol_eV = 1.0e-2;
 static constexpr double kG_O_x_HaBohr = -7.5243103995119e-2;
-static constexpr double kG_H1_y_HaBohr = 1.5529339054184e-2;
+// ∂E/∂y of H1 from tblite 0.4.0 `run --method gfn2 --grad` on the same
+// mol.xyz (tblite.grad `gradient` row 2, column 2). xtb 6.7.1's printed
+// value at this orientation (+1.5529339054184e-2) disagrees with xtb's own
+// energy derivative; see REFERENCE.md.
+static constexpr double kG_H1_y_HaBohr = 1.6182883370639375e-4;
 static constexpr double kF_tol_eVA = 0.35;
 static constexpr double kXtB_wall_s = 0.015;
 

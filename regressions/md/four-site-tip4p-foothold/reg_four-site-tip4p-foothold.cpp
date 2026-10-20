@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
@@ -13,6 +14,24 @@
 #include "atomiverse/cpu/potentials/pair_lj_cut_tip4p_cut.h"
 
 using namespace ATV;
+
+namespace {
+
+/// Row of a tag. Rows are not stable — `atom_modify sort` spatially reorders
+/// owned atoms at the setup reneighbour (LAMMPS Verlet::setup) — so an
+/// out-of-library consumer that wants a named atom must ask the Frame.
+int row_of(const ATV::cpu::Frame& f, ATV::TagInt tag) {
+    const auto& index = f.meta.get(ATV::cpu::kTagIndex);
+    const auto it = index.find(tag);
+    if (it == index.end()) {
+        std::printf("FAIL: tag %lld vanished from the frame\n",
+                    static_cast<long long>(tag));
+        std::exit(1);
+    }
+    return it->second;
+}
+
+} // namespace
 
 int main() {
     // Classic TIP4P (Jorgensen 1983/85)
@@ -113,9 +132,10 @@ int main() {
 
     bool ok = true;
     for (int i = 0; i < 6; ++i) {
-        const double fx = f.span(kAtom_fx)[i];
-        const double fy = f.span(kAtom_fy)[i];
-        const double fz = f.span(kAtom_fz)[i];
+        const int row = row_of(f, i + 1); // pins are in tag order
+        const double fx = f.span(kAtom_fx)[row];
+        const double fy = f.span(kAtom_fy)[row];
+        const double fz = f.span(kAtom_fz)[row];
         std::printf("F%d  % .16e % .16e % .16e\n", i + 1, fx, fy, fz);
         if (!(std::fabs(fx - fx_pin[i]) <= 1e-6) || !(std::fabs(fy) <= 1e-10)
             || !(std::fabs(fz - fz_pin[i]) <= 1e-6)) {

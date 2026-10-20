@@ -131,8 +131,9 @@ int main() {
         std::printf("FAIL xtb force pin F_O_x (tol %.2f eV/A)\n", kF_tol_eVA);
         return 1;
     }
-    // Angular F_H1_y vs xtb remains a CAMM-vs-R hole (energy FD of ATV
-    // E_AES is ~+0.06 eV/Å; xtb is −0.80). Printed, not gated.
+    // xtb 6.7.1 prints a y-gradient for O/H1 at this orientation that is
+    // not the derivative of its own energy (see REFERENCE.md). Printed,
+    // not gated.
     (void)fH1y;
     (void)fH1y_pin;
 

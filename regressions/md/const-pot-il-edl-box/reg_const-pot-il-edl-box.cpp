@@ -211,10 +211,13 @@ int main() {
     const double Lx = frame.box.length(0);
     const double Ly = frame.box.length(1);
 
-    // Wall snapshot for the freeze check.
-    std::vector<double> wz0(kNAtoms, 0.0);
+    // Wall snapshot for the freeze check, keyed by tag: MD sorts atoms
+    // spatially (LAMMPS `atom_modify sort`, also at setup), so rows move.
+    // Walls are the first 2*kNWallPer atoms built, tags 1..2*kNWallPer.
+    std::vector<double> wz0(kNAtoms + 1, 0.0);
     for (int i = 0; i < 2 * kNWallPer; ++i)
-        wz0[static_cast<std::size_t>(i)] = frame.span(kAtom_z)[i];
+        wz0[static_cast<std::size_t>(frame.span(kAtom_tag)[i])] =
+            frame.span(kAtom_z)[i];
 
     cpu::md::ConstPotBO cpot(kEta);
     cpot.add_electrode(2, kPsiLeft);
@@ -302,10 +305,14 @@ int main() {
 
     // Freeze: graphene walls immobile.
     double max_dz = 0.0;
-    for (int i = 0; i < 2 * kNWallPer; ++i)
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        const auto t = frame.span(kAtom_tag)[i];
+        if (t < 1 || t > 2 * kNWallPer)
+            continue;
         max_dz =
             std::fmax(max_dz, std::fabs(frame.span(kAtom_z)[i]
-                                        - wz0[static_cast<std::size_t>(i)]));
+                                        - wz0[static_cast<std::size_t>(t)]));
+    }
     if (!(max_dz <= 1e-10)) {
         std::printf("FAIL: wall moved (max|Δz|=%.3e)\n", max_dz);
         return 1;

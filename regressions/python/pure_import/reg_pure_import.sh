@@ -9,6 +9,7 @@ PYTHON="${1:-python3}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 SRC="$REPO/python/src"
+bash "$HERE/../require_runtime_deps.sh" "$PYTHON"
 
 if [[ ! -d "$SRC/atomiverse" ]]; then
     echo "FAIL: pure sources not found at $SRC/atomiverse"

@@ -21,8 +21,7 @@ E = \operatorname{Tr}(P H^{0})
 
 \(E_{\mathrm{AES}}\) is charge–dipole, dipole–dipole, charge–quadrupole +
 dipole/quadrupole AXC. CAMM moments enter the SCC Hamiltonian so the density
-is stationary with respect to AES. This is the deepen of `gfn2-xtb-forces`,
-which kept AES as a post-SCC energy (angular \(F_{H1,y}\) hole).
+is stationary with respect to AES.
 
 Reference: Bannwarth, Ehlert, Grimme, *J. Chem. Theory Comput.* **15**, 1652
 (2019), DOI 10.1021/acs.jctc.8b01176. Formula twin: tblite
@@ -79,15 +78,25 @@ geometry as `reg_gfn2-xtb-forces`.
 
 \(F = -\nabla E \times\) `units::kHartreePerBohrInEvPerAngstrom`.
 
-**Tolerance rationale.** AES-in-Fock changes the SCC density; stretch
-\(F_{O,x}\) residual is **0.306** eV/Å (was \(\sim 0.09\) post-SCC).
-Off-eq energy residual **9.19 meV**. Analytic \(F_{H1,y}=+0.136\) eV/Å vs
-xtb \(-0.799\); ATV energy FD stays \(\sim+0.06\): that slope is a
-**CAMM-vs-\(R\)** hole (xtb `mmompop` two-centre quadrupole on H; ATV skips
-s-only \(\Theta\)), not a missing Fock term. Naive two-centre \(\Theta\) on
-H is not xtb `mmompop` (eq-H₂O residual 23 meV). Putting AES in the Fock
-does not tilt ATV's energy surface onto xtb's angular slope. Dual-gated
-anyway (assign wave 11).
+**Current model state.** ATV GFN2 reproduces xtb 6.7.1 / tblite 0.4.0
+term by term: H⁰ (double-exponential CN', Π radius O = 0.64 Å), isotropic
+ES, third order (in the shell *charge*), repulsion, and AES/AXC on the
+cumulative multipoles of every atom (≤ 1e−8 Eh at the same density). AES
+and the self-consistent D4 are in the Fock as \(\partial E/\partial P\), so
+the analytic gradient is the derivative of the energy: analytic vs central
+FD ≤ 3e−7 eV/Å here. Residuals vs the table: \(E\) 11 µeV (D4 term
+−1.40847e−4 vs xtb −1.41270e−4 Eh), \(F_{O,x}\) 1.5e−5 eV/Å.
+
+**xtb 6.7.1 \(\partial E/\partial y\) artifact.** At this orientation (O at
+the origin, H1 on the x axis) the y-gradients xtb prints for O and H1 are
+not the derivative of its own energy. Central FD of xtb 6.7.1 energies
+(h = 1e−3 Å) gives \(g_{O,y}=-1.942\times10^{-3}\),
+\(g_{H1,y}=+1.620\times10^{-4}\) Eh/a0; the same molecule rotated 0.5 rad
+about z and translated makes xtb print \(-1.943\times10^{-3}\) /
+\(+1.620\times10^{-4}\) (rotated back); tblite 0.4.0 prints
+\(-1.9425\times10^{-3}\) / \(+1.6183\times10^{-4}\). ATV:
+\(-1.9428\times10^{-3}\) / \(+1.6203\times10^{-4}\). The tabled
+\(-1.731\times10^{-2}\) / \(+1.553\times10^{-2}\) are not GFN2 gradients.
 
 ## Perf
 
@@ -96,11 +105,5 @@ in the regression; fail if \(T_{\mathrm{atv}}/T_{\mathrm{xtb}} > 10\).
 
 ## Gaps
 
-- Angular \(F_{H1,y}\) vs xtb (CAMM-vs-\(R\) / H quadrupole from two-centre
-  overlap; AES-in-Fock does not close it — ATV energy FD stays \(\sim+0.06\)
-  eV/Å)
-- Frozen-CAMM \(G\) vs energy FD \(\sim 0.19\) eV/Å on \(F_{O,x}\) (quadrupole
-  \(\partial Q/\partial R\))
-- Dipole–quadrupole / quadrupole–quadrupole pair AES ranks
 - Elements beyond H/C/N/O
 - ALPB, spin, PBC, IPEA, sTDA

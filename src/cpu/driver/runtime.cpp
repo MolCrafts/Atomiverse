@@ -57,6 +57,28 @@ void sync_reneighbor_flag(cpu::Context& context) {
 #endif
 }
 
+/// @brief The one force slot a linear (non-Verlet) physical plan wraps in
+///        LAMMPS `Min::energy_force` communication, or -1 for none.
+///
+/// Every classical force kernel reads raw Cartesian differences to explicit
+/// periodic image rows, so any plan that evaluates such a kernel needs the
+/// halo around its force slot. A finite-difference Hessian/phonon pass is the
+/// same single-point evaluation as `Evaluate`, repeated per displacement.
+int linear_force_slot(PhaseKind kind) {
+    switch (kind) {
+    case PhaseKind::Evaluate:
+        return ATV::slot_of(ATV::evaluate::Phase::evaluate);
+    case PhaseKind::Minimizer:
+        return ATV::slot_of(ATV::minimizer::Phase::force);
+    case PhaseKind::Sampling:
+        return ATV::slot_of(ATV::sampling::Phase::energy);
+    case PhaseKind::Vib:
+        return ATV::slot_of(ATV::vib::Phase::force);
+    default:
+        return -1;
+    }
+}
+
 } // namespace
 
 Runtime::Runtime() = default;
@@ -215,7 +237,8 @@ void Runtime::refresh_plan_(int step_idx) {
     verlet_setup_done_ = false;
     if (plan_
         && (plan_->kind == PhaseKind::MD || plan_->kind == PhaseKind::Evaluate
-            || plan_->kind == PhaseKind::Minimizer))
+            || plan_->kind == PhaseKind::Minimizer
+            || plan_->kind == PhaseKind::Vib))
         setup_verlet_comm_(step_idx);
     contracts_ready_ = true;
 }
@@ -239,7 +262,7 @@ void Runtime::launch_op_(std::size_t s, std::size_t o, int step_idx) {
     active_slot_ = static_cast<int>(s);
     physical_pipeline_active_ |=
         plan_->kind == PhaseKind::Evaluate
-        || plan_->kind == PhaseKind::Minimizer
+        || plan_->kind == PhaseKind::Minimizer || plan_->kind == PhaseKind::Vib
         || (plan_->kind == PhaseKind::MD
             && active_slot_ != slot_of(ATV::md::Phase::end_of_step));
     if (op.frequency > 0 && step_idx % op.frequency != 0)
@@ -368,7 +391,8 @@ void Runtime::cache_verlet_comm_() {
         if (!child || child->kind == PhaseKind::MD
             || child->kind == PhaseKind::Evaluate
             || child->kind == PhaseKind::Minimizer
-            || child->kind == PhaseKind::Sampling)
+            || child->kind == PhaseKind::Sampling
+            || child->kind == PhaseKind::Vib)
             continue;
         for (auto* component : child->components())
             if (seen.insert(component).second)
@@ -428,15 +452,8 @@ void Runtime::apply_ghost_cutoff_() {
 }
 
 bool Runtime::is_linear_force_slot_(int slot) const {
-    if (plan_ == nullptr)
-        return false;
-    if (plan_->kind == PhaseKind::Evaluate)
-        return slot == ATV::slot_of(ATV::evaluate::Phase::evaluate);
-    if (plan_->kind == PhaseKind::Minimizer)
-        return slot == ATV::slot_of(ATV::minimizer::Phase::force);
-    if (plan_->kind == PhaseKind::Sampling)
-        return slot == ATV::slot_of(ATV::sampling::Phase::energy);
-    return false;
+    return plan_ != nullptr && slot >= 0
+           && slot == linear_force_slot(plan_->kind);
 }
 
 namespace {
@@ -591,10 +608,8 @@ void Runtime::setup_verlet_comm_(int step_idx) {
 }
 
 void Runtime::step_linear_(int step_idx) {
-    const bool wrap = plan_
-                      && (plan_->kind == PhaseKind::Evaluate
-                          || plan_->kind == PhaseKind::Minimizer
-                          || plan_->kind == PhaseKind::Sampling);
+    const int force_slot = plan_ ? linear_force_slot(plan_->kind) : -1;
+    const bool wrap = force_slot >= 0;
     if (!wrap) {
         for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
             if (plan_->slots[s].ops.empty())
@@ -607,11 +622,6 @@ void Runtime::step_linear_(int step_idx) {
 
     // LAMMPS Min::energy_force (src/min.cpp): nflag XOR on comm around
     // the force evaluation; reverse_comm if newton. GPL-2.0-only.
-    const int force_slot = plan_->kind == PhaseKind::Evaluate
-                               ? ATV::slot_of(ATV::evaluate::Phase::evaluate)
-                           : plan_->kind == PhaseKind::Sampling
-                               ? ATV::slot_of(ATV::sampling::Phase::energy)
-                               : ATV::slot_of(ATV::minimizer::Phase::force);
 
     for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
         if (static_cast<int>(s) == force_slot) {
@@ -791,9 +801,7 @@ void Runtime::step_stage(int slot, int step_idx) {
     const auto start = timing.enabled()
                            ? std::chrono::steady_clock::now()
                            : std::chrono::steady_clock::time_point{};
-    const bool physical = plan_->kind == PhaseKind::Evaluate
-                          || plan_->kind == PhaseKind::Minimizer
-                          || plan_->kind == PhaseKind::Sampling;
+    const bool physical = linear_force_slot(plan_->kind) >= 0;
     const bool force = is_linear_force_slot_(slot);
     if (force)
         decide_neighbor_();
@@ -859,12 +867,13 @@ void Runtime::build_plan(const Plan<cpu::Component>& plan) {
                     c->name()
                     + ": requires a complete Frame and cannot be mounted on a "
                       "spatial partition");
-            auto [it, inserted] = component_users_.emplace(c, 0);
-            if (!inserted && it->second == 0)
+            auto [it, inserted] = component_users_.emplace(
+                c, ComponentUse{0, c->lifetime_.token(), c->nested_node()});
+            if (!inserted && it->second.users == 0)
                 throw std::logic_error("cyclic component lifecycle: "
                                        + c->name());
             if (inserted) {
-                auto* node = c->nested_node();
+                auto* node = it->second.node;
                 bool first_node = false;
                 try {
                     if (node) {
@@ -891,7 +900,7 @@ void Runtime::build_plan(const Plan<cpu::Component>& plan) {
                 }
                 component_order_.push_back(c);
             }
-            ++component_users_.at(c);
+            ++component_users_.at(c).users;
             acquired.push_back(c);
         }
     } catch (...) {
@@ -912,9 +921,8 @@ Runtime::ScopedPlan::ScopedPlan(Runtime& rt, const Plan<cpu::Component>& plan,
       saved_contracts_(rt.contracts_ready_),
       saved_setup_(rt.verlet_setup_done_), saved_forces_(rt.forces_ready_),
       changed_(rt.plan_ != &plan),
-      physical_(plan.kind == PhaseKind::MD || plan.kind == PhaseKind::Evaluate
-                || plan.kind == PhaseKind::Minimizer
-                || plan.kind == PhaseKind::Sampling) {
+      physical_(plan.kind == PhaseKind::MD
+                || linear_force_slot(plan.kind) >= 0) {
     if (!changed_)
         return;
     if (physical_ && rt.physical_pipeline_active_)
@@ -996,13 +1004,18 @@ void Runtime::release_component_(cpu::Component* component) {
     auto it = component_users_.find(component);
     if (it == component_users_.end())
         return;
-    if (--it->second != 0)
+    if (--it->second.users != 0)
         return;
+    const ComponentUse use = it->second;
     component_users_.erase(it);
     component_order_.erase(std::remove(component_order_.begin(),
                                        component_order_.end(), component),
                            component_order_.end());
-    if (auto* node = component->nested_node()) {
+    // A borrowed object that died before this driver owns no resources any
+    // more: its own destructor released them. Calling into it would be a
+    // use-after-free, so only the bookkeeping is dropped.
+    const bool alive = use.alive && *use.alive;
+    if (auto* node = use.node) {
         const auto node_it = node_users_.find(node);
         if (node_it == node_users_.end())
             return;
@@ -1010,7 +1023,8 @@ void Runtime::release_component_(cpu::Component* component) {
             return;
         node_users_.erase(node_it);
     }
-    component->destroy(DestroyContext{context_, *frame_});
+    if (alive)
+        component->destroy(DestroyContext{context_, *frame_});
 }
 
 void Runtime::run_slot_(int slot_index, int step_idx) {
@@ -1030,7 +1044,7 @@ void Runtime::run_slot_(int slot_index, int step_idx) {
     active_slot_ = slot_index;
     physical_pipeline_active_ |=
         plan_->kind == PhaseKind::Evaluate
-        || plan_->kind == PhaseKind::Minimizer
+        || plan_->kind == PhaseKind::Minimizer || plan_->kind == PhaseKind::Vib
         || (plan_->kind == PhaseKind::MD
             && active_slot_ != slot_of(ATV::md::Phase::end_of_step));
     // The engine's own work below (skin test, halo refresh/rebuild, neighbor
@@ -1146,7 +1160,7 @@ void Runtime::unwind_failed_run() noexcept {
         auto* component = component_order_.back();
         // A node's destroy_on releases its children through this same registry.
         // Force the final release regardless of how many bindings shared it.
-        component_users_[component] = 1;
+        component_users_[component].users = 1;
         try {
             release_component_(component);
         } catch (...) {

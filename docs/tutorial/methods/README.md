@@ -151,8 +151,7 @@ Offline family-locked pins only — see TB oracle (OpenMOPAC / DFTB+ / xtb). Ora
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
 REFERENCE (`ratio` or `perf_exempt`). Harness wave 10 closed IPEA-xTB
 energy (`reg_ipea-xtb-small`) and the family GFN1/2 FD Hessian
-(`reg_gfn-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON` exception). GFN2 AES
-remains post-SCC (angular \(F\) hole — recover `gfn2-aes-fock`).
+(`reg_gfn-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON` exception).
 
 | Method | Page | Case | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
@@ -179,8 +178,7 @@ Offline family-locked pins only — see TB oracle (OpenMOPAC / DFTB+ / xtb). Ora
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
 REFERENCE (`ratio` or `perf_exempt`). Harness wave 12 closed IPEA
 FD Hessian (`reg_ipea-xtb-analytic-hessian`; `-DATV_BUILD_VIB=ON`
-exception). `--vip`/`--vea` stays ○. GFN2 CAMM-vs-\(R\) remains
-incomplete.
+exception). `--vip`/`--vea` stays ○.
 
 | Method | Page | Case | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |
@@ -191,8 +189,7 @@ incomplete.
 Offline family-locked pins only — see TB oracle (OpenMOPAC / DFTB+ / xtb). Oracle = **xtb** for GFN-xTB / IPEA rows (never
 OpenMOPAC / DFTB+; GFN is not a DFTB3 successor). Fair walls from
 REFERENCE (`ratio` or `perf_exempt`). Harness wave 13 closed IPEA ΔSCC
-VIP/VEA (`reg_ipea-xtb-vip`). Extra-Z IPEA tables stay ○. GFN2
-CAMM-vs-\(R\) remains incomplete.
+VIP/VEA (`reg_ipea-xtb-vip`). Extra-Z IPEA tables stay ○.
 
 | Method | Page | Case | Oracle | ratio \(T_{\mathrm{atv}}/T_{\mathrm{oracle}}\) |
 | ------ | ---- | ---------- | ------ | --------------------------------------------- |

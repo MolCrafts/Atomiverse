@@ -26,9 +26,10 @@ namespace mc {
 ///
 ///   - **Displace** — patch = the moved atom's original row.
 ///   - **Delete**   — patch = the deleted atom's FULL row, topology and all
-///                    (which a bare xyz array could never have carried). The
-///                    compaction survivor that was copied into the victim's
-///                    slot is simply overwritten back.
+///                    (which a bare xyz array could never have carried), plus
+///                    the compaction survivor's end row: once `nlocal` drops
+///                    that row is the first ghost slot, and the trial's
+///                    borders overwrite it with a periodic image.
 ///   - **Insert**   — patch empty; restoring the recorded `nlocal` truncates
 ///                    the appended rows. (The tag allocator is monotonic and
 ///                    never rolled back — uniqueness needs no reuse.)

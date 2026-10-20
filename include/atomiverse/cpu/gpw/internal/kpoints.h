@@ -163,6 +163,19 @@ struct KOrth {
 std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
                                                          const KOrth& orth);
 
+/// @brief Natural orbitals of a Bloch density: \(P_k S_k c = n c\), solved as
+///        \(X^\dagger (S_k P_k S_k) X\,c' = n\,c'\), \(c = X c'\) — the
+///        complex sibling of `linalg::natural_orbitals`. Diagonalizing \(P_k\)
+///        itself against \(S_k\) would differ by \(S_k^{-1}\).
+/// @param P_k Hermitian Bloch density (dimensionless), nb × nb.
+/// @param S_k Hermitian Bloch overlap (dimensionless), nb × nb.
+/// @param orth Canonical orthogonalizer of `S_k`.
+/// @return Ascending occupations [dimensionless] and S-orthonormal natural
+///         orbitals (nb × m); the most occupied are the rightmost columns.
+std::pair<std::vector<double>, CplxMatrix>
+natural_orbitals_k(const CplxMatrix& P_k, const CplxMatrix& S_k,
+                   const KOrth& orth);
+
 /// @brief k-space DIIS error vector e = X†(H P S − S P H)X — the complex
 ///        sibling of `linalg::diis_error`; → 0 at self-consistency.
 CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,

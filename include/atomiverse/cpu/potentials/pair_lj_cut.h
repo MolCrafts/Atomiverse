@@ -152,6 +152,9 @@ class PairLJCut : public Pair {
     /// has advanced past the last snapshot we filtered.
     void rebuild_filtered_list(const Frame& frame, const md::PairList& pairs);
 
+    /// @brief Extend the square type tables to `need` types (new pairs unset).
+    void grow_type_table_(int need);
+
     double epsilon_, sigma_;
 
     /// Per-type coefficient tables, flattened `n_types_ x n_types_`. Empty = the
@@ -165,6 +168,9 @@ class PairLJCut : public Pair {
     std::vector<double>
         shift_tab_;             ///< energy shift at the cutoff, per pair [eV]
     std::vector<char> set_tab_; ///< 1 = explicitly set by the user
+    // Neighbor build whose row types were last checked against the table.
+    const md::PairList* types_source_ = nullptr;
+    unsigned long long types_version_ = 0;
     double sigma6_, cutoff_sq_, v_shift_;
 
     // Special-bonds weights (LAMMPS special_bonds). Amber: (0, 0, 0.5).

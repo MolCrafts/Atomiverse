@@ -160,6 +160,62 @@ TEST(PairLJCutTip4pCut, ZeroVersionFilteredDimerMatchesLammpsPin) {
     pair.destroy({context, frame});
 }
 
+namespace {
+
+/// Every-pair half list over `n` rows, stamped with `version`.
+cpu::md::PairList all_pairs(int n, unsigned long long version) {
+    cpu::md::PairList pairs;
+    pairs.inum = n;
+    for (int i = 0; i < n; ++i) {
+        pairs.ilist.push_back(i);
+        pairs.firstneigh.push_back(static_cast<int>(pairs.neighbors.size()));
+        pairs.numneigh.push_back(n - i - 1);
+        for (int j = i + 1; j < n; ++j)
+            pairs.neighbors.push_back(j);
+    }
+    pairs.total_pairs = static_cast<int>(pairs.neighbors.size());
+    pairs.version = version;
+    return pairs;
+}
+
+} // namespace
+
+TEST(PairLJCutTip4pCut, HydrogenPartnersFollowRowReorderAtRebuild) {
+    // `atom_modify sort` renumbers rows at a rebuild and keeps the row count;
+    // the cached O→H rows must be re-resolved from tags at that rebuild.
+    auto frame = tip4p_dimer();
+    cpu::Context context;
+    auto pairs = all_pairs(frame.nlocal(), 0);
+    context.md.pair_list = &pairs;
+    auto pair = make_tip4p();
+    pair.build({context, frame});
+    pair.launch({context, frame, 0, 0, true, true});
+
+    // Reverse the rows, republish the tag index (md::notify_sorted), rebuild.
+    const cpu::Frame before = frame;
+    for (int i = 0; i < 6; ++i)
+        frame.copy_row_from(before, 5 - i, i);
+    frame.clear_tag_index();
+    frame.rebuild_tag_index(0, frame.nlocal());
+    for (int i = 0; i < 6; ++i)
+        frame.span(kAtom_fx)[i] = frame.span(kAtom_fy)[i] =
+            frame.span(kAtom_fz)[i] = 0;
+    frame.meta.get(kEnergy) = 0;
+    auto rebuilt = all_pairs(frame.nlocal(), 1);
+    context.md.pair_list = &rebuilt;
+    pair.launch({context, frame, 0, 1, true, true});
+
+    EXPECT_NEAR(frame.meta.get(kEnergy), kPinE, 1e-8);
+    for (int i = 0; i < 6; ++i) {
+        const auto atom = frame.span(kAtom_tag)[i] - 1;
+        EXPECT_NEAR(frame.span(kAtom_fx)[i], kPinFx[atom], 1e-6)
+            << "tag " << atom + 1;
+        EXPECT_NEAR(frame.span(kAtom_fz)[i], kPinFz[atom], 1e-6)
+            << "tag " << atom + 1;
+    }
+    pair.destroy({context, frame});
+}
+
 TEST(PairLJCutTip4pCut, DimerEnergyMatchesLammpsPin) {
     cpu::Frame f = tip4p_dimer();
     run_eval(f, make_tip4p());
