@@ -1,4 +1,7 @@
-name: CI
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(fromJSON('["refs/heads/dev","refs/heads/master","refs/heads/main"]'), github.ref) && !startsWith(github.ref, 'refs/tags/') }}
+name: ci
 
 # Intentionally NOT on push/PR. Local pre-commit / pre-push is the gate:
 #   pre-commit  → format / hygiene
@@ -6,15 +9,24 @@ name: CI
 # Multi-backend (CUDA etc.) is machine-local (login node / GPU job), not
 # GitHub-hosted. Manual re-run only when you want a second opinion:
 #   gh workflow run CI.yml
-on:
-  workflow_dispatch:
+'on':
+  workflow_dispatch: null
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  context:
+    permissions:
+      contents: read
+    name: ci / context
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@master
+
   pre-commit:
-    name: pre-commit
+    if: needs.context.outputs.skip-pr != 'true'
+    needs:
+    - context
+    name: ci / pre-commit
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +41,13 @@ jobs:
         run: pre-commit run --all-files --show-diff-on-failure
 
   cpu:
-    name: CPU unit tests
+    if: needs.context.outputs.skip-pr != 'true'
+    name: ci / CPU unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    needs: pre-commit
+    needs:
+    - context
+    - pre-commit
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,3 +69,14 @@ jobs:
       # Full optional slice on manual GHA (path gate is local pre-push).
       - name: CPU unit (cmake gate, all modules)
         run: cmake -DATV_GATE_ALL=1 -P cmake/AtvUnitGate.cmake
+
+  workflow-policy:
+    name: ci / workflows
+    needs: context
+    if: needs.context.outputs.skip-pr != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v7
+    - uses: MolCrafts/molcrafts-ci/actions/check-workflows@master
