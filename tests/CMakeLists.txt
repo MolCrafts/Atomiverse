@@ -363,6 +363,8 @@ if(ATV_BUILD_GPW)
         atv_add_cpp_test(test_cpu_gpw_grid_fft     cpu/gpw/test_cpu_gpw_grid_fft.cpp)
         atv_add_cpp_test(test_cpu_gpw_xc_grid_gga  cpu/gpw/test_cpu_gpw_xc_grid_gga.cpp)
         atv_add_cpp_test(test_cpu_gpw_mt_poisson   cpu/gpw/test_cpu_gpw_mt_poisson.cpp)
+        # Multi-k spectral G0W0 kernels: Bloch-MO gauge invariance (no SCF).
+        atv_add_cpp_test(test_cpu_gpw_g0w0_kpoints cpu/gpw/test_cpu_gpw_g0w0_kpoints.cpp)
         # Gaussian DOS free math + multi-k mesh guards (no full SCF e2e).
         atv_add_cpp_test(test_cpu_gpw_dos          cpu/gpw/test_cpu_gpw_dos.cpp)
         # Bitwise-identical grid kernels at 1/2/4/8/16 OpenMP threads. Guards the

@@ -39,7 +39,7 @@ const cpu::gpw::Mp2Result& r = m.mp2();   // Γ-point GPW MP2
 | Pseudopotential | **GTH-PBE-q4** (Krack 2005) → 8 valence e⁻, n_occ = 4 |
 | XC (SCF reference) | **PBE** |
 | Density cutoff | **30 Ry** (single grid; e2e ≤ 60 s budget) |
-| SCF | tol 1e-6 Ha, mix 0.3, DIIS 6, **level_shift 0.3 Ha**, max_iter 80 |
+| SCF | tol 1e-6 Ha, mix 0.3, DIIS 6, **level_shift 0.3 Ha**, max_iter 200 |
 | MP2 | all 22 kept virtuals (lindep 1e-8); OS/SS scales 1.0 |
 
 **Note (small gap):** Γ-only sc-Si₂ is an artificial small-gap crystal —
@@ -92,3 +92,14 @@ Pin strategy (binding, mirrors `gpw-pbesol-si`):
 
 `perf_exempt` — no CP2K binary on the pin host for a fair wall twin.
 Regression wall ≈ 16 s single process (4 threads), under the ≤ 60 s cap.
+
+## SCF branch (degenerate guess)
+
+Closed-shell Si₂ is the π² case: the core-Hamiltonian guess has an exactly
+degenerate HOMO, so the occupied π combination is chosen by floating-point
+noise. A 1e-9 Å displacement of atom 2 flips the iteration-0 energy between
+−4.56842019 and −4.56824863 Ha and the converged state between two
+stationary points, E_SCF ≈ −7.5955445 Ha (≈ 58 iterations) and
+≈ −7.5955020 Ha (110–135 iterations, the branch the x86 OpenBLAS build
+takes). Every gate in this regression holds on both branches; `max_iter`
+is 200 so the budget does not depend on which branch LAPACK picks.

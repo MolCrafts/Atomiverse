@@ -28,7 +28,7 @@ const cpu::gpw::G0W0Result& gw = m.g0w0();
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
 | XC | **PBE** |
 | Cutoff | **30 Ry** |
-| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 80 |
+| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 200 |
 | G0W0 | all kept virtuals for dRPA screening; `mp2_ri = true` |
 
 ## First-green values (Atomiverse, this deck, 2026-07-25)
@@ -69,3 +69,14 @@ Pin strategy (binding, mirrors `periodic-rpa-si`):
 `perf_exempt` — no fair wall twin (CP2K RI-G0W0 ≠ spectral algorithm;
 MT exchange ≠ periodic HF). Regression wall ≈ 24 s single process, well
 under the ≤ 60 s cap. Never launch CP2K from ctest.
+
+## SCF branch (degenerate guess)
+
+Closed-shell Si₂ is the π² case: the core-Hamiltonian guess has an exactly
+degenerate HOMO, so the occupied π combination is chosen by floating-point
+noise. A 1e-9 Å displacement of atom 2 flips the iteration-0 energy between
+−4.56842019 and −4.56824863 Ha and the converged state between two
+stationary points, E_SCF ≈ −7.5955445 Ha (≈ 58 iterations) and
+≈ −7.5955020 Ha (110–135 iterations, the branch the x86 OpenBLAS build
+takes). Every gate in this regression holds on both branches; `max_iter`
+is 200 so the budget does not depend on which branch LAPACK picks.

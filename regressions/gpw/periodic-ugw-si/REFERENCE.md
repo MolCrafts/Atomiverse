@@ -32,7 +32,7 @@ const cpu::gpw::G0W0Result& gw = m.g0w0();
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
 | XC | **PBE**, UKS \(n_\alpha=n_\beta=4\) |
 | Cutoff | **30 Ry** |
-| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 80 |
+| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 200 |
 | G0W0 | all kept virtuals per spin for dRPA; `mp2_ri = true` |
 
 ## Dual-gate / first-green band
@@ -69,3 +69,15 @@ Pin strategy (binding, mirrors `periodic-gw-si` / `periodic-ump2-si`):
 MT exchange ≠ periodic HF; no CP2K binary required on the pin host).
 Wall (8 OpenMP threads, EPYC login): SCF ≈ 13 s, UGW ≈ 1 s → **~14 s**
 total (≤ 60 s). Never launch CP2K from ctest.
+
+## SCF branch (degenerate guess)
+
+Closed-shell Si₂ is the π² case: the core-Hamiltonian guess has an exactly
+degenerate HOMO, so the occupied π combination is chosen by floating-point
+noise. On the RKS twin (`periodic-mp2-si`) a 1e-9 Å displacement of atom 2 flips
+the iteration-0 energy between
+−4.56842019 and −4.56824863 Ha and the converged state between two
+stationary points, E_SCF ≈ −7.5955445 Ha (≈ 58 iterations) and
+≈ −7.5955020 Ha (110–135 iterations, the branch the x86 OpenBLAS build
+takes). Every gate in this regression holds on both branches; `max_iter`
+is 200 so the budget does not depend on which branch LAPACK picks.

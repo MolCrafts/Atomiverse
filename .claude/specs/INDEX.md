@@ -3,6 +3,12 @@
 Live specs under `.claude/specs/`. Completed work is **deleted**; history is
 the git log. Method census: `docs/roadmap/`.
 
+## Live — gaff-m1-open-work (2026-10-20)
+
+[gaff-m1-open-work.md](gaff-m1-open-work.md): GAFF milestone 1 (CPU vs
+LAMMPS, CUDA vs OpenMM) remaining phases, the open GPW reds (Γ Si₂ SCF,
+k-point GW, gpw-fd-phonon-si) with their WIP state, and debt found on the way.
+
 ## Live — cpu-orthogonality (2026-10-19)
 
 [cpu-orthogonality.md](cpu-orthogonality.md): the six-step CPU component and

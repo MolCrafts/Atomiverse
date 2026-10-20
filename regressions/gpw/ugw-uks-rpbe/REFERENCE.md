@@ -38,7 +38,7 @@ const cpu::gpw::G0W0Result& gw = m.g0w0();
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
 | XC | **RPBE**, UKS \(n_\alpha=n_\beta=4\) (dual-gate RKS \(n_{\mathrm{occ}}=4\)) |
 | Cutoff | **30 Ry** |
-| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 80 |
+| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 200 |
 | G0W0 | all kept virtuals; `mp2_ri = true` |
 
 ## Dual-gate / first-green band
@@ -85,3 +85,14 @@ enumeration in CP2K 2026.1 — same as `gpw-uks-rpbe`).
 MT exchange ≠ periodic HF; no CP2K binary required on the pin host).
 Measured wall (8 OpenMP threads, EPYC login): two SCFs (UKS + RKS) + two
 G0W0 ≈ **22 s** (≤ 60 s). Never launch CP2K from ctest.
+
+## SCF branch (degenerate guess)
+
+Closed-shell Si₂ is the π² case: the core-Hamiltonian guess has an exactly
+degenerate HOMO, so the occupied π combination is chosen by floating-point
+noise (a 1e-9 Å displacement of atom 2 flips it; shown on the PBE twin
+`periodic-mp2-si`). The SCF then lands on one of two stationary points:
+E_SCF(U) ≈ −7.6173910 Ha in ≈ 55 iterations (Apple arm64 build) or
+≈ −7.6173917 Ha in 102–113 iterations (x86 OpenBLAS build). Every gate in
+this regression holds on both branches; `max_iter` is 200 so the budget
+does not depend on which branch LAPACK picks.

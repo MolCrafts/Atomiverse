@@ -43,7 +43,7 @@ const cpu::gpw::Mp2Result& r = m.mp2();  // UMP2@UKS
 | Pseudopotential | **GTH-PBE-q4** → 8 valence e⁻ |
 | XC (SCF reference) | **PBE**, UKS \(n_\alpha=n_\beta=4\) |
 | Density cutoff | **30 Ry** |
-| SCF | tol 1e-6 Ha, mix 0.3, **level_shift 0.3 Ha**, max_iter 80 |
+| SCF | tol 1e-6 Ha, mix 0.3, **level_shift 0.3 Ha**, max_iter 200 |
 | MP2 | RI-GPW product (`mp2_ri = true`); all kept virtuals per spin |
 
 ## Dual-gate / first-green band
@@ -72,3 +72,15 @@ When CP2K is available, replace the dual-gate band with CP2K
 
 `perf_exempt` — no CP2K binary on the pin host for a fair wall twin.
 Target wall ≤ 60 s single process (SCF ≈ RKS deck + UMP2 3 tensor builds).
+
+## SCF branch (degenerate guess)
+
+Closed-shell Si₂ is the π² case: the core-Hamiltonian guess has an exactly
+degenerate HOMO, so the occupied π combination is chosen by floating-point
+noise. On the RKS twin (`periodic-mp2-si`) a 1e-9 Å displacement of atom 2 flips
+the iteration-0 energy between
+−4.56842019 and −4.56824863 Ha and the converged state between two
+stationary points, E_SCF ≈ −7.5955445 Ha (≈ 58 iterations) and
+≈ −7.5955020 Ha (110–135 iterations, the branch the x86 OpenBLAS build
+takes). Every gate in this regression holds on both branches; `max_iter`
+is 200 so the budget does not depend on which branch LAPACK picks.

@@ -45,7 +45,11 @@ int main() {
     m.cutoff_ry = 30.0;
     m.n_alpha = 4;
     m.n_beta = 4;
-    m.max_iter = 80;
+    // Closed-shell Si₂ π² has an exactly degenerate HOMO in the core-H
+    // guess; last-bit noise picks one of two stationary points
+    // (ΔE 4e-5 Ha, both inside every gate below) reached in ~60 or
+    // ~110-135 level-shifted iterations. See REFERENCE.md.
+    m.max_iter = 200;
     m.tol = 1e-6;
     m.mix = 0.3;
     m.level_shift = 0.3;
