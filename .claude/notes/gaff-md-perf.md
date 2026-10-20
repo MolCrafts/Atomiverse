@@ -19,7 +19,20 @@ torsions, cvff impropers, X–H RATTLE, 2 fs). System A (PEO/LiTFSI) stays in
 - Atomiverse timing tables are cumulative per driver; subtract the warmup
   table (`summarize_cpu.py` does).
 
-## Current state (M4 workbench, Arrhenius not yet run)
+## Current state
+
+Numbers live in `benchmarks/gaff/README.md` (G1 table, preliminary G2,
+OpenMM GH200 ns/day). Arrhenius has the OpenMM GPU baseline only; the ATV vs
+LAMMPS CPU matrix and the 100 ps G2 run are still open
+([`../specs/gaff-m1-open-work.md`](../specs/gaff-m1-open-work.md)). Machine
+paths: [arrhenius-workbench.md](arrhenius-workbench.md).
+
+Acceptance for milestone 1: G1 and G2 green in all codes; CPU steps/s ≥
+LAMMPS at np = 1 and at the best full-node MPI×OMP layout; CUDA ns/day ≥
+OpenMM on one GH200 for ≥ 100k atoms, double and mixed separately (small
+cells reported, not gated).
+
+M4 workbench findings:
 
 - G1 green on CPU: bonded terms agree with LAMMPS to 1e-14, nonbonded to
   3e-6 (mesh-method difference), forces 6e-5 of RMS.

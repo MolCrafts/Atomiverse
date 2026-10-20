@@ -110,6 +110,12 @@ bash -lc '
 Skipping the `LD_LIBRARY_PATH` mirror is the #1 cause of `libopenblas.so.0` /
 `GLIBCXX_3.4.32 not found` at run time.
 
+`regressions/python/*` need `-DPython3_EXECUTABLE` pointing at an interpreter
+with numpy, typer and molcrafts-molpy. Never kill a `git commit` / `git push`
+mid-hook: pre-commit has stashed the unstaged changes and restores them only
+on a normal exit. Arrhenius accounts, paths and the Mac workbench:
+[`.claude/notes/arrhenius-workbench.md`](.claude/notes/arrhenius-workbench.md).
+
 **CUDA builds and runs only on the aarch64 GH200 node** — login nodes have no
 toolkit. From an agent use batch (`hpc gpu` needs a TTY):
 

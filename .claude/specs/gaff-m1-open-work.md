@@ -4,6 +4,16 @@ Live hand-off. Plan of record: CPU vs LAMMPS, CUDA vs OpenMM, general GAFF2
 organic liquid, double + mixed on GPU (`benchmarks/gaff/README.md` holds the
 protocol and gates G1/G2). Delete this file when every item below is closed.
 
+Machine paths, accounts, data and job IDs:
+[`../notes/arrhenius-workbench.md`](../notes/arrhenius-workbench.md).
+Fairness rules and acceptance: [`../notes/gaff-md-perf.md`](../notes/gaff-md-perf.md).
+
+Resume order: (1) open the Arrhenius socket, `git pull` in
+`~/work/molcrafts/Atomiverse-gaff`, rebuild `build-fullreg`, re-run the reds
+below serially; (2) settle item 1 (library fix vs `max_iter`); (3) finish
+items 2–3; (4) resubmit the CPU matrix and the G2 run; (5) CPU perf phase;
+(6) CUDA phases.
+
 ## State at hand-off
 
 - Pushed with `--no-verify`: the pre-push unit gate did **not** run on the last
@@ -81,7 +91,9 @@ protocol and gates G1/G2). Delete this file when every item below is closed.
   fused multi-type LJ + real-space Coulomb tile kernel with per-atom σ/ε;
   OpenMM-style exceptions kernel for 1-4 / exclusions; periodic torsion and
   cvff improper kernels + improper list in `cuda::Frame`; H-bond SHAKE/RATTLE;
-  Ndof from constraints.
+  Ndof from constraints. OpenMM's CUDA platform license has not been checked
+  against GPL-2.0-only: implement from the published algorithms (Eastman et
+  al.), never by copying OpenMM source.
 - **Phase 3 CUDA perf vs OpenMM** — baseline in
   `benchmarks/gaff/results/openmm-gh200-baseline.json`.
 - **Phase 4** final matrix, roadmap rows, notes.
