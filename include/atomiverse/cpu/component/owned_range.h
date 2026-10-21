@@ -8,12 +8,12 @@
 /// open-code `mpi ? dd->n_local : f.nlocal()` (that re-entangles serial
 /// code with a DD type it does not need).
 ///
-/// Multi-rank (`dd` non-null and `mpi_size > 1`):
+/// Multi-rank (`dd` non-null, `mpi_size > 1`, and a live Cartesian communicator):
 ///   - owned rows: `[0, dd->n_local)`
 ///   - ghost rows: `[n_local, n_local + n_ghost)` — force partners only;
 ///     integrators / zeroing must not touch them (CommBrick returns forces).
 ///
-/// Serial / single-rank MPI: return `frame.nlocal()`; never read `dd`.
+/// Serial / single-rank MPI / serial-on-replica: return `frame.nlocal()`.
 #pragma once
 
 #include "atomiverse/cpu/communication/domain.h"
@@ -27,7 +27,15 @@ namespace cpu {
 /// @brief True multi-rank spatial decomposition (not "MPI linked, 1 rank").
 /// @param rt Launch/Build `Context` (field name is historically `runtime`).
 inline bool multi_rank_dd(const cpu::Context& rt) noexcept {
-    return rt.md.dd != nullptr && rt.mpi_size > 1;
+#ifdef ATV_HAS_MPI
+    // serial_on_replica keeps a DD infrastructure object, but deliberately
+    // has no Cartesian topology and does not partition the Frame.
+    return rt.md.dd != nullptr && rt.mpi_size > 1
+           && rt.md.dd->cart_comm != MPI_COMM_NULL;
+#else
+    (void)rt;
+    return false;
+#endif
 }
 
 /// @brief Owned-atom count at `launch()` time.

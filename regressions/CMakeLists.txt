@@ -91,10 +91,18 @@ endfunction()
 atv_add_regression(layout core_contract_includes)
 atv_add_regression(layout backend_owned_longrange)
 
+if(ATV_BUILD_MD AND ATV_BUILD_POTENTIALS)
+    atv_add_regression(md cpu-velocity-verlet-initial-force)
+endif()
+if(ATV_BUILD_MD)
+    atv_add_regression(md langevin-initial-force-samples)
+endif()
+
 # Electrostatic lattice pins exercise a complete MD force pass and belong
 # with end-to-end regressions, not the unit-only tests/ tree.
 if(ATV_BUILD_CUDA AND ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
     atv_add_regression(md cuda-velocity-verlet-initial-force)
+    atv_add_regression(md cuda-npt-volume-parity)
     add_executable(reg_cuda-multi-gpu-trajectory
         md/cuda-multi-gpu-trajectory/reg_cuda-multi-gpu-trajectory.cu)
     target_link_libraries(reg_cuda-multi-gpu-trajectory PRIVATE atomiverse)

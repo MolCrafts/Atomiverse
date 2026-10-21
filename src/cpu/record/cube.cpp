@@ -6,11 +6,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/observe/density.h"
 
 namespace ATV {
 namespace cpu {
@@ -67,14 +69,14 @@ void write_cube(const std::string& filename, const std::string& title1,
     // Header: n_atoms, origin[3].  Negative n_atoms flags "no additional scalar
     // field header"; positive is the standard cube convention used by most
     // visualizers.
-    std::fprintf(fp, "%5d %12.6f %12.6f %12.6f\n", natm, grid.origin[0],
+    std::fprintf(fp, "%5d %24.16e %24.16e %24.16e\n", natm, grid.origin[0],
                  grid.origin[1], grid.origin[2]);
     // Grid axes: N, dx, dy, dz per line (diagonal axes in our convention).
-    std::fprintf(fp, "%5d %12.6f %12.6f %12.6f\n", grid.dims[0],
+    std::fprintf(fp, "%5d %24.16e %24.16e %24.16e\n", grid.dims[0],
                  grid.spacing[0], 0.0, 0.0);
-    std::fprintf(fp, "%5d %12.6f %12.6f %12.6f\n", grid.dims[1], 0.0,
+    std::fprintf(fp, "%5d %24.16e %24.16e %24.16e\n", grid.dims[1], 0.0,
                  grid.spacing[1], 0.0);
-    std::fprintf(fp, "%5d %12.6f %12.6f %12.6f\n", grid.dims[2], 0.0, 0.0,
+    std::fprintf(fp, "%5d %24.16e %24.16e %24.16e\n", grid.dims[2], 0.0, 0.0,
                  grid.spacing[2]);
 
     // Atom block: Z, charge (placeholder = Z), x, y, z (Bohr).
@@ -87,7 +89,7 @@ void write_cube(const std::string& filename, const std::string& title1,
         const double xb = static_cast<double>(px[i]) * units::kAngstromInBohr;
         const double yb = static_cast<double>(py[i]) * units::kAngstromInBohr;
         const double zb = static_cast<double>(pz[i]) * units::kAngstromInBohr;
-        std::fprintf(fp, "%5d %12.6f %12.6f %12.6f %12.6f\n", Z,
+        std::fprintf(fp, "%5d %12.6f %24.16e %24.16e %24.16e\n", Z,
                      static_cast<double>(Z), xb, yb, zb);
     }
 
@@ -112,7 +114,45 @@ void write_cube(const std::string& filename, const std::string& title1,
                 std::fputc('\n', fp);
         }
     }
-    std::fclose(fp);
+    const bool failed = std::ferror(fp) != 0;
+    const int close_status = std::fclose(fp);
+    if (failed || close_status != 0)
+        throw std::runtime_error("write_cube: could not finish " + filename);
+}
+
+void write_cube(const std::string& filename, const std::string& title1,
+                const std::string& title2, const Frame& frame,
+                const DensityGrid& density) {
+    const int dims[] = {density.nx, density.ny, density.nz};
+    const double origins[] = {density.ox, density.oy, density.oz};
+    const double extents[] = {density.lx, density.ly, density.lz};
+    CubeGrid grid{};
+    std::size_t points = 1;
+    for (int d = 0; d < 3; ++d) {
+        if (dims[d] <= 0 || !std::isfinite(origins[d])
+            || !std::isfinite(extents[d]) || extents[d] <= 0.0)
+            throw std::invalid_argument(
+                "write_cube: invalid DensityGrid geometry");
+        if (points > std::numeric_limits<std::size_t>::max()
+                         / static_cast<std::size_t>(dims[d]))
+            throw std::invalid_argument(
+                "write_cube: DensityGrid size overflow");
+        points *= static_cast<std::size_t>(dims[d]);
+        grid.dims[d] = dims[d];
+        grid.origin[d] = origins[d] * units::kAngstromInBohr;
+        // eval_density_grid samples [origin, origin+extent), so the correct
+        // spacing is extent/N; using N-1 would move every non-origin sample.
+        grid.spacing[d] = extents[d] / dims[d] * units::kAngstromInBohr;
+    }
+    if (density.rho.size() != points
+        || points > static_cast<std::size_t>(std::numeric_limits<long>::max()))
+        throw std::invalid_argument(
+            "write_cube: DensityGrid value count mismatch");
+    for (double value : density.rho)
+        if (!std::isfinite(value))
+            throw std::invalid_argument(
+                "write_cube: non-finite DensityGrid value");
+    write_cube(filename, title1, title2, frame, grid, density.rho);
 }
 
 } // namespace recorder

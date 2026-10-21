@@ -39,6 +39,7 @@
 #include "atomiverse/cpu/scf/scf_enums.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
@@ -324,41 +325,34 @@ void RHF::assemble_(cuda::Context& ctx, cuda::Frame& frame) {
 void RHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
     const auto& ws = loop_->slot.cycle->workspace();
     auto* stream = static_cast<cudaStream_t>(ctx.stream);
-    const bool device_forces = ws.device_sp_shells && ws.n > 0 && ws.P && ws.C
-                               && ws.eig && ws.d_shell_alpha && ws.d_shell_atom
-                               && ws.d_shell_L && ws.d_ao_shell && ws.d_ao_cart
-                               && ws.d_atom_pos && frame.atoms.fx
-                               && frame.atoms.fy && frame.atoms.fz;
+    const bool device_forces =
+        ws.device_sp_shells && ws.n > 0 && ws.P && ws.C && ws.eig
+        && ws.d_shell_alpha && ws.d_shell_atom && ws.d_shell_L && ws.d_ao_shell
+        && ws.d_ao_cart && ws.d_atom_pos && ws.d_W
+        && (!kMixedPrecision || ws.d_force_gradient) && frame.atoms.fx
+        && frame.atoms.fy && frame.atoms.fz;
     if (!device_forces) {
         throw std::runtime_error(
             "cuda::scf::RHF: compute_force is set but the device "
             "s/p force workspace is incomplete (P/C/eig/shell maps).");
     }
-    prec_t* d_W = ws.d_W;
-    const bool own_W = (d_W == nullptr);
-    const int nn = ws.n * ws.n;
-    if (own_W)
-        cudaMalloc(&d_W, static_cast<std::size_t>(nn) * sizeof(prec_t));
-    launch_build_W_rhf(d_W, ws.C, ws.eig, ws.n, ws.n_occ, stream);
-    launch_rhf_forces_sp(frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, ws.P,
-                         d_W, ws.d_shell_alpha, ws.d_shell_coeff,
-                         ws.d_shell_center, ws.d_shell_atom, ws.d_shell_L,
-                         ws.d_ao_shell, ws.d_ao_cart, ws.d_atom_Z,
-                         ws.d_atom_pos, ws.n, ws.n_prim, ws.natm, stream);
+    launch_build_W_rhf(ws.d_W, ws.C, ws.eig, ws.n, ws.n_occ, stream);
+    launch_rhf_forces_sp(
+        frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, ws.P, ws.d_W,
+        ws.d_shell_alpha, ws.d_shell_coeff, ws.d_shell_center, ws.d_shell_atom,
+        ws.d_shell_L, ws.d_ao_shell, ws.d_ao_cart, ws.d_atom_Z, ws.d_atom_pos,
+        ws.n, ws.n_prim, ws.natm, stream, ws.d_force_gradient);
     last_force_device_ = true;
-    if (own_W) {
-        cudaStreamSynchronize(stream);
-        cudaFree(d_W);
-    }
 }
 
 void RHF::pull_energy_(cuda::Context& ctx, cuda::Frame& frame) {
-    prec_t e_ev = 0;
+    double e_ev = 0;
     if (frame.scalars) {
         auto* stream = static_cast<cudaStream_t>(ctx.stream);
-        cudaMemcpyAsync(&e_ev, &frame.scalars->energy, sizeof(prec_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(&e_ev, &frame.scalars->energy,
+                                       sizeof(e_ev), cudaMemcpyDeviceToHost,
+                                       stream));
+        ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
     }
     energy_ha_ = static_cast<double>(e_ev) / units::kHartreeInEv;
 }

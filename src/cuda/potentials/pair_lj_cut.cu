@@ -23,7 +23,6 @@
 
 namespace ATV {
 
-using cuda::prec_t;
 using cuda::real_t;
 using cuda::work_t;
 
@@ -90,7 +89,7 @@ __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
 template <bool Ortho, bool Virial>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     real_t* __restrict__ fx, real_t* __restrict__ fy, real_t* __restrict__ fz,
-    prec_t* __restrict__ energy, prec_t* __restrict__ stress,
+    double* __restrict__ energy, double* __restrict__ stress,
     const real_t* __restrict__ spx, const real_t* __restrict__ spy,
     const real_t* __restrict__ spz, const int* __restrict__ row_ptr,
     const int* __restrict__ col_idx, const std::uint64_t* __restrict__ cl_mask,
@@ -230,11 +229,11 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
         work_t out[7];
         block_reduce_sum_n<7>(my_vals, warp_scratch, out);
         if (threadIdx.x == 0) {
-            atomicAdd(energy, static_cast<prec_t>(out[0]));
+            atomicAdd(energy, static_cast<double>(out[0]));
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
-                    atomicAdd(&stress[c], static_cast<prec_t>(out[c + 1]));
+                    atomicAdd(&stress[c], static_cast<double>(out[c + 1]));
             }
         }
     } else {
@@ -244,7 +243,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
         work_t out[1];
         block_reduce_sum_n<1>(my_vals, warp_scratch, out);
         if (threadIdx.x == 0)
-            atomicAdd(energy, static_cast<prec_t>(out[0]));
+            atomicAdd(energy, static_cast<double>(out[0]));
     }
 }
 
@@ -307,9 +306,9 @@ void PairLJCut::build(const BuildContext& ctx) {
         ((ctx.frame.capacity() + kOpenmmClusterSize - 1) / kOpenmmClusterSize)
         * kOpenmmClusterSize;
     if (slots > spos_cap_) {
-        cudaFree(spx_);
-        cudaFree(spy_);
-        cudaFree(spz_);
+        ATV_CUDA_CHECK(cudaFree(spx_));
+        ATV_CUDA_CHECK(cudaFree(spy_));
+        ATV_CUDA_CHECK(cudaFree(spz_));
         spx_ = spy_ = spz_ = nullptr;
         ATV_CUDA_CHECK(cudaMalloc(&spx_, slots * sizeof(real_t)));
         ATV_CUDA_CHECK(cudaMalloc(&spy_, slots * sizeof(real_t)));
@@ -320,11 +319,11 @@ void PairLJCut::build(const BuildContext& ctx) {
     // reneighbor (the flat topology's local indices change as ghosts move), so
     // free any prior CSR first to avoid leaking on repeated build().
     if (d_excl_offsets_) {
-        cudaFree(d_excl_offsets_);
+        ATV_CUDA_CHECK(cudaFree(d_excl_offsets_));
         d_excl_offsets_ = nullptr;
     }
     if (d_excl_partners_) {
-        cudaFree(d_excl_partners_);
+        ATV_CUDA_CHECK(cudaFree(d_excl_partners_));
         d_excl_partners_ = nullptr;
     }
     n_excl_total_ = 0;
@@ -347,22 +346,22 @@ void PairLJCut::build(const BuildContext& ctx) {
     std::vector<int> ai(n_a), ak(n_a);
     std::vector<int> di(n_d), dl(n_d);
     if (n_b > 0) {
-        cudaMemcpy(bi.data(), f.bonds.atomi, n_b * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-        cudaMemcpy(bj.data(), f.bonds.atomj, n_b * sizeof(int),
-                   cudaMemcpyDeviceToHost);
+        ATV_CUDA_CHECK(cudaMemcpy(bi.data(), f.bonds.atomi, n_b * sizeof(int),
+                                  cudaMemcpyDeviceToHost));
+        ATV_CUDA_CHECK(cudaMemcpy(bj.data(), f.bonds.atomj, n_b * sizeof(int),
+                                  cudaMemcpyDeviceToHost));
     }
     if (n_a > 0) {
-        cudaMemcpy(ai.data(), f.angles.atomi, n_a * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-        cudaMemcpy(ak.data(), f.angles.atomk, n_a * sizeof(int),
-                   cudaMemcpyDeviceToHost);
+        ATV_CUDA_CHECK(cudaMemcpy(ai.data(), f.angles.atomi, n_a * sizeof(int),
+                                  cudaMemcpyDeviceToHost));
+        ATV_CUDA_CHECK(cudaMemcpy(ak.data(), f.angles.atomk, n_a * sizeof(int),
+                                  cudaMemcpyDeviceToHost));
     }
     if (n_d > 0) {
-        cudaMemcpy(di.data(), f.dihedrals.atomi, n_d * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-        cudaMemcpy(dl.data(), f.dihedrals.atoml, n_d * sizeof(int),
-                   cudaMemcpyDeviceToHost);
+        ATV_CUDA_CHECK(cudaMemcpy(di.data(), f.dihedrals.atomi,
+                                  n_d * sizeof(int), cudaMemcpyDeviceToHost));
+        ATV_CUDA_CHECK(cudaMemcpy(dl.data(), f.dihedrals.atoml,
+                                  n_d * sizeof(int), cudaMemcpyDeviceToHost));
     }
 
     // Per-atom sorted-unique partner sets.
@@ -394,13 +393,15 @@ void PairLJCut::build(const BuildContext& ctx) {
     }
 
     // Upload to device.
-    cudaMalloc(&d_excl_offsets_, (n + 1) * sizeof(int));
-    cudaMemcpy(d_excl_offsets_, offsets.data(), (n + 1) * sizeof(int),
-               cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMalloc(&d_excl_offsets_, (n + 1) * sizeof(int)));
+    ATV_CUDA_CHECK(cudaMemcpy(d_excl_offsets_, offsets.data(),
+                              (n + 1) * sizeof(int), cudaMemcpyHostToDevice));
     if (n_excl_total_ > 0) {
-        cudaMalloc(&d_excl_partners_, n_excl_total_ * sizeof(int));
-        cudaMemcpy(d_excl_partners_, partners.data(),
-                   n_excl_total_ * sizeof(int), cudaMemcpyHostToDevice);
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d_excl_partners_, n_excl_total_ * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d_excl_partners_, partners.data(),
+                                  n_excl_total_ * sizeof(int),
+                                  cudaMemcpyHostToDevice));
     }
     // Publish the CSR so NeighborList::launch can bake exclusions into the
     // per-atom Verlet list (skipping the per-pair scan in the force kernel).
@@ -411,18 +412,18 @@ void PairLJCut::build(const BuildContext& ctx) {
 
 void PairLJCut::destroy(const DestroyContext& /*ctx*/) {
     if (d_excl_offsets_) {
-        cudaFree(d_excl_offsets_);
+        ATV_CUDA_CHECK(cudaFree(d_excl_offsets_));
         d_excl_offsets_ = nullptr;
     }
     if (d_excl_partners_) {
-        cudaFree(d_excl_partners_);
+        ATV_CUDA_CHECK(cudaFree(d_excl_partners_));
         d_excl_partners_ = nullptr;
     }
     n_excl_total_ = 0;
     if (spx_) {
-        cudaFree(spx_);
-        cudaFree(spy_);
-        cudaFree(spz_);
+        ATV_CUDA_CHECK(cudaFree(spx_));
+        ATV_CUDA_CHECK(cudaFree(spy_));
+        ATV_CUDA_CHECK(cudaFree(spz_));
         spx_ = spy_ = spz_ = nullptr;
         spos_cap_ = 0;
     }
@@ -448,7 +449,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         static_cast<work_t>(kernels::kMinPairDist)
         * static_cast<work_t>(kernels::kMinPairDist);
     cuda::Box box = ctx.runtime.host_box;
-    prec_t* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
+    double* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
     const bool virial = (stress_ptr != nullptr);
 
     // OpenMM cluster force — sole CUDA MD nonbonded path (cuda-openmm-md).
@@ -472,6 +473,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         kernels::gather_cluster_pos<<<grid, block, 0, stream>>>(
             pairs->cl_orig_index, frame.atoms.x, frame.atoms.y, frame.atoms.z,
             n_slots, spx_, spy_, spz_);
+        ATV_CUDA_CHECK(cudaGetLastError());
     }
 
     const uint64_t* mask = pairs->cl_mask;
@@ -490,6 +492,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
             static_cast<work_t>(epsilon_), sigma_sq, cutoff_sq,
             min_pair_dist_sq, static_cast<work_t>(v_shift_), excl_off, excl_par,
             static_cast<work_t>(s_excl_));
+        ATV_CUDA_CHECK(cudaGetLastError());
     };
     using T = std::true_type;
     using F = std::false_type;

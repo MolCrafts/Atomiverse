@@ -7,13 +7,24 @@ import threading
 import time
 
 
-def run_engine(command, budget, measure_memory=False):
+def run_engine(command, budget, measure_memory=False, memory_command=None):
     start = time.perf_counter()
-    if not measure_memory:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=budget)
-        if result.returncode:
-            raise RuntimeError(f"engine failed ({result.returncode}):\n{result.stdout}\n{result.stderr}")
-        return result, time.perf_counter()-start, None
+    result = subprocess.run(command, capture_output=True, text=True, timeout=budget)
+    wall = time.perf_counter()-start
+    if result.returncode:
+        raise RuntimeError(f"engine failed ({result.returncode}):\n{result.stdout}\n{result.stderr}")
+    resources = None
+    if measure_memory:
+        if memory_command is None:
+            raise ValueError('memory measurement needs a separate command/output destination')
+        _, probe_wall, resources = _run_memory_probe(memory_command, budget)
+        resources['probe_process_seconds'] = probe_wall
+        resources['separate_from_throughput'] = True
+    return result, wall, resources
+
+
+def _run_memory_probe(command, budget):
+    start = time.perf_counter()
 
     # nvidia-smi uses NVML, with a documented 100-ms polling period. Filter
     # strictly by child PID: other allocations on this node are not our memory.

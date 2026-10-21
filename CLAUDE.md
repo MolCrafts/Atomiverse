@@ -602,8 +602,13 @@ Conversion points, each owning exactly one boundary:
   mass and topology are static run inputs and are not written.
 - `cpu::to_cuda()` / `cuda::to_cpu()` — host ⇄ device.
 
-Precision tiers map 1:1 across backends: `StorageReal`/`WorkReal`/`AccReal`
-(accumulators always double) ⇄ `real_t`/`work_t`/`prec_t`. Integer IDs by
+Force precision tiers map across backends: `StorageReal`/`WorkReal`/`AccReal`
+(accumulators always double) ⇄ `real_t`/`work_t`/`prec_t`. CUDA physical
+motion state uses `motion_t = prec_t`: mixed mode keeps FP32 force/FFT
+arrays, FP32 main positions plus residuals, and FP64 velocities, masses,
+integration and the canonical cell. Force geometry keeps its own `real_t`
+Box cache. Position writers preserve both parts; explicit exports reconstruct
+the physical coordinate. Integer IDs by
 LAMMPS role: `LocalInt`, `TagInt`, `ImageInt`, `BigInt` (always 64-bit).
 
 Per Frame purity the frame holds **no** method-specific scratch: integrals, AO

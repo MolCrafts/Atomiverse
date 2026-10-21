@@ -30,7 +30,7 @@ bond/angle and polynomial-torsion GAFF subset on one GPU. Legend:
 | Soft-core LJ / Coulomb | ✓ | ○ | Beutler; alchemical λ |
 | CoulCut / CoulLong | ✓ | ○ | special_bonds on real space |
 | Fused LJ + screened Coulomb | ✓ | ✓ | CUDA `PairLJCutCoulLong`: Lorentz–Berthelot, Amber graph exceptions, periodic sparse reciprocal corrections; single GPU |
-| Direct Ewald / PME / SPME | ✓ | ✓ | SPME = Essmann; CUDA PME: single GPU, fixed cell and atom set |
+| Direct Ewald / PME / SPME | ✓ | ✓ | SPME = Essmann; CUDA PME: single GPU, fixed cell and atom set; mixed FP32 mesh/FFT with FP64 energy |
 | Gaussian-charge Coulomb | ✓ | ○ | |
 | Steele 10-4-3 wall | ✓ | ○ | `FixWallLJ1043` |
 | Periodic FMM as MD KSpace | ○ | ○ | Open-boundary FMM math ✓ (powers CFMM-J); not MD drop-in |

@@ -15,6 +15,7 @@
 #include "cublas_dispatch.cuh"
 #include <type_traits>
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cmath>
 #include <cstdio>
@@ -175,16 +176,16 @@ __global__ void build_G_kernel(prec_t* __restrict__ G,
     for (int ij = idx; ij < total; ij += blockDim.x * gridDim.x) {
         int j = ij / n; // column-major: ij = i + j*n
         int i = ij % n;
-        work_t val = work_t(0);
+        prec_t val = prec_t(0);
         for (int l = 0; l < n; ++l) {
             // ERI[i,j,k,l] col-major: i + j*n + k*n² + l*n³
             const int base_ij_l = i + j * n + l * n3;
             for (int k = 0; k < n; ++k) {
                 const int ij_kl = base_ij_l + k * n2;
                 const int ik_jl = i + k * n + j * n2 + l * n3;
-                val += static_cast<work_t>(P[k + l * n])
-                       * (static_cast<work_t>(ERI[ij_kl])
-                          - work_t(0.5) * static_cast<work_t>(ERI[ik_jl]));
+                val += static_cast<prec_t>(P[k + l * n])
+                       * (static_cast<prec_t>(ERI[ij_kl])
+                          - prec_t(0.5) * static_cast<prec_t>(ERI[ik_jl]));
             }
         }
         G[ij] = val;
@@ -226,28 +227,29 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
 
     // Upload Hcore (row-major xtensor -> column-major device)
     // For symmetric matrices, row-major == column-major, so direct copy works.
-    std::vector<work_t> buf(nn);
+    std::vector<prec_t> buf(nn);
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             buf[i + j * n] = Hcore_(i, j); // col-major
-    cudaMemcpy(scf.Hcore, buf.data(), nn * sizeof(prec_t),
-               cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMemcpy(scf.Hcore, buf.data(), nn * sizeof(prec_t),
+                              cudaMemcpyHostToDevice));
 
     // Upload S for device CDIIS error e = Xᵀ (FPS − SPF) X.
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             buf[i + j * n] = S_(i, j);
-    cudaMemcpy(scf.S, buf.data(), nn * sizeof(prec_t), cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMemcpy(scf.S, buf.data(), nn * sizeof(prec_t),
+                              cudaMemcpyHostToDevice));
 
     // Upload ERI (row-major 4D xtensor -> column-major 4D device)
-    std::vector<work_t> eri_buf(n4);
+    std::vector<prec_t> eri_buf(n4);
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k)
                 for (int l = 0; l < n; ++l)
                     eri_buf[i + j * n + k * nn + l * nn * n] = ERI_(i, j, k, l);
-    cudaMemcpy(scf.ERI, eri_buf.data(), n4 * sizeof(prec_t),
-               cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMemcpy(scf.ERI, eri_buf.data(), n4 * sizeof(prec_t),
+                              cudaMemcpyHostToDevice));
 
     // Compute X = S^{-1/2} on host using xtensor-blas
     auto [s_eig, U] = xt::linalg::eigh(S_);
@@ -261,7 +263,8 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             buf[i + j * n] = X_host(i, j);
-    cudaMemcpy(scf.X, buf.data(), nn * sizeof(prec_t), cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMemcpy(scf.X, buf.data(), nn * sizeof(prec_t),
+                              cudaMemcpyHostToDevice));
 
     // cuBLAS handle
     cublasHandle_t handle;
@@ -292,12 +295,12 @@ void RHFFock::step(const SolverContext& ctx, SCFWorkspace& ws) {
     // Step 2: F = Hcore + G (H serves as F)
     cudaMemcpyAsync(scf.H, scf.Hcore, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
-    work_t one = work_t(1);
+    prec_t one = prec_t(1);
     detail::axpy(handle, nn, &one, scf.work, 1, scf.H, 1);
 
     // Step 3: F' = X^T * F * X
     // temp = F * X
-    work_t zero = work_t(0);
+    prec_t zero = prec_t(0);
     detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, scf.H, n,
                  scf.X, n, &zero, d_temp_, n);
     // F' = X^T * temp
@@ -770,8 +773,12 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     // Device forces (pure-s and mixed s/p) need W after SCF.
     // Ragged l≤2 energy does not own launch_rhf_forces_lgt1.
     scf.device_sp_shells = !ragged_;
-    if (!ragged_)
-        cudaMalloc(&scf.d_W, nn * sizeof(prec_t));
+    if (!ragged_) {
+        ATV_CUDA_CHECK(cudaMalloc(&scf.d_W, nn * sizeof(prec_t)));
+        if constexpr (kMixedPrecision)
+            ATV_CUDA_CHECK(cudaMalloc(&scf.d_force_gradient,
+                                      std::size_t(natm) * 3 * sizeof(prec_t)));
+    }
 
     cudaMemsetAsync(scf.P, 0, nn * sizeof(prec_t), stream);
     cudaMemsetAsync(scf.P_old, 0, nn * sizeof(prec_t), stream);
@@ -853,7 +860,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
 
     cudaMemcpyAsync(scf.Hcore, d_T_, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
-    work_t one = work_t(1);
+    prec_t one = prec_t(1);
     detail::axpy(handle, nn, &one, d_V_, 1, scf.Hcore, 1);
 
     // ── 5. Löwdin X = S^{-1/2} on device ──────────────────────────────
@@ -891,7 +898,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     scale_columns_by_rsqrt_kernel<<<grid, block, 0, stream>>>(
         d_temp_, d_eigenvalues, n, lindep_thresh);
 
-    work_t zero = work_t(0);
+    prec_t zero = prec_t(0);
     detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, n, &one, d_temp_, n,
                  scf.X, n, &zero, d_V_, n);
     cudaMemcpyAsync(scf.X, d_V_, nn * sizeof(prec_t), cudaMemcpyDeviceToDevice,
@@ -928,10 +935,10 @@ void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {
 
     cudaMemcpyAsync(scf.H, scf.Hcore, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
-    work_t one = work_t(1);
+    prec_t one = prec_t(1);
     detail::axpy(handle, nn, &one, scf.work, 1, scf.H, 1);
 
-    work_t zero = work_t(0);
+    prec_t zero = prec_t(0);
     detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, scf.H, n,
                  scf.X, n, &zero, d_temp_, n);
     detail::gemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, n, n, n, &one, scf.X, n,
@@ -946,8 +953,9 @@ void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {
     (void)ctx;
 }
 
-void RHFFockDevice::destroy(const SolverContext& /*ctx*/,
-                            SCFWorkspace& /*ws*/) {
+void RHFFockDevice::destroy(const SolverContext& /*ctx*/, SCFWorkspace& ws) {
+    ATV_CUDA_CHECK(cudaFree(ws.d_force_gradient));
+    ws.d_force_gradient = nullptr;
     if (cublas_handle_) {
         cublasDestroy(static_cast<cublasHandle_t>(cublas_handle_));
         cublas_handle_ = nullptr;

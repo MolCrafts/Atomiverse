@@ -143,6 +143,9 @@ struct Context {
     /// nullable service — stays flat.
     cuda::Box host_box;
 
+    /// Cell/inverse retained in integration precision, independently of force math.
+    cuda::MotionBox host_motion_box;
+
     DynamicsServices md; ///< Classical force-pipeline slice.
 };
 

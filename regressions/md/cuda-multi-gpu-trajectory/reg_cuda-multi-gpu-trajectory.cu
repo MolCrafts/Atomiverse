@@ -7,6 +7,7 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/communication/multi_gpu.cuh"
 #include "atomiverse/cuda/device/error.cuh"
+#include "atomiverse/cuda/frame/transfer.cuh"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -242,6 +243,12 @@ void MigratePreservesBondedTopology() {
     ATV::cuda::md::MultiGpu mg;
     auto g = make_bonded_grid(12.0);
     for (int i = 0; i < g.nlocal(); ++i) {
+        g.span(kAtom_x)[i] += 1e-8 * (i + 1);
+        g.span(kAtom_y)[i] += 2e-8 * (i + 1);
+        g.span(kAtom_z)[i] += 3e-8 * (i + 1);
+        g.span(kAtom_mass)[i] = 1 + 1e-8 * (i + 1);
+        for (int d = 0; d < 3; ++d)
+            g.span(kAtom_image)(i, d) = std::int8_t((i + d) % 5 - 2);
         g.span(kAtom_vx)[i] = 2.0; // rigid translation along x
         g.span(kAtom_vy)[i] = 0.0;
         g.span(kAtom_vz)[i] = 0.0;
@@ -274,6 +281,42 @@ void MigratePreservesBondedTopology() {
         if (nl == 0)
             continue;
         const auto& F = mg.frame(s);
+        cpu::Frame snapshot(nl);
+        cuda::to_cpu(F, snapshot);
+        for (int row = 0; row < nl; ++row) {
+            const auto tag = snapshot.span(kAtom_tag)[row];
+            if (tag < 0 || tag >= g.nlocal())
+                throw std::runtime_error("invalid migrated identity");
+            constexpr double tolerance =
+                sizeof(ATV::cuda::motion_t) == 8 ? 1e-9 : 2e-4;
+            const double unwrapped_x = g.span(kAtom_x)[tag] + 4.0;
+            const int crossing = int(std::floor(unwrapped_x / 12.0));
+            check_near(snapshot.span(kAtom_x)[row],
+                       unwrapped_x - crossing * 12.0, tolerance,
+                       "MigratePreservesBondedTopology", int(tag),
+                       "physical x");
+            check_near(snapshot.span(kAtom_y)[row], g.span(kAtom_y)[tag],
+                       tolerance, "MigratePreservesBondedTopology", int(tag),
+                       "physical y");
+            check_near(snapshot.span(kAtom_z)[row], g.span(kAtom_z)[tag],
+                       tolerance, "MigratePreservesBondedTopology", int(tag),
+                       "physical z");
+            check_near(snapshot.span(kAtom_mass)[row], g.span(kAtom_mass)[tag],
+                       tolerance, "MigratePreservesBondedTopology", int(tag),
+                       "mass");
+            for (int d = 0; d < 3; ++d) {
+                const int expected =
+                    int(g.span(kAtom_image)(tag, d)) + (d == 0 ? crossing : 0);
+                if (int(snapshot.span(kAtom_image)(row, d)) != expected)
+                    throw std::runtime_error(
+                        "image crossing count changed across "
+                        "migration/compaction: tag="
+                        + std::to_string(tag) + " axis=" + std::to_string(d)
+                        + " expected=" + std::to_string(expected) + " actual="
+                        + std::to_string(
+                            int(snapshot.span(kAtom_image)(row, d))));
+            }
+        }
         const int MB = F.atoms.bond_per_atom; // runtime stride (per frame)
         std::vector<int> nbv(nl);
         std::vector<long long> ba(static_cast<std::size_t>(nl) * MB), tags(nl);

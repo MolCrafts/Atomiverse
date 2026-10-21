@@ -1,13 +1,10 @@
 /// @file test_rdf_molrs.cu
 /// @brief cuda::RDF on the molrs streaming accumulator (arch-refactor-07-molrs):
-/// static-trajectory g(r) parity vs a host-fed cpu::compute::RDFAccumulator,
+/// frozen-input g(r) parity vs a host-fed cpu::compute::RDFAccumulator,
 /// nearest-neighbor lattice-peak physics, and fail-fast constructor edges.
 ///
-/// A dt = 0 fs VelocityVerlet makes every MD frame identical, so the
-/// normalized g(r) is invariant under the async ring's drop_oldest frame
-/// drops — feeding ONE copy of the same frame into the host accumulator
-/// yields the exact reference curve regardless of how many frames the CUDA
-/// observer accepted. Units: positions / r / cell in Å, g(r) dimensionless.
+/// Repeated RDF::launch calls capture an immutable frame. Feeding one copy
+/// of that frame into the host accumulator gives the same normalized curve. Units: positions / r / cell in Å, g(r) dimensionless.
 
 #include <array>
 #include <cmath>
@@ -20,12 +17,11 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/cpu/frame/transfer.h"
 #include "atomiverse/cpu/observe/trajectory_metrics.h"
-#include "atomiverse/cuda/dynamics/md.cuh"
-#include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
-#include "atomiverse/cuda/neighbor/neighbor_list.cuh"
+#include "atomiverse/cuda/device/error.cuh"
+#include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/observe/rdf.cuh"
-#include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 
 using namespace ATV;
 
@@ -67,19 +63,23 @@ cpu::Frame make_static_lj_lattice(int n_side, double density) {
     return frame;
 }
 
-/// Run a handful of MD steps with a dt = 0 fs VelocityVerlet (satisfies the
-/// cuda::md::MD Force-capability check while keeping every frame identical)
-/// and the cuda::RDF observer; RDF::destroy at teardown writes the g(r) file.
-void run_static_rdf_md(cpu::Frame& frame, const std::string& filename) {
-    cuda::md::MD sim;
-    sim.set_integrator(
-        cuda::md::VelocityVerlet{double(0.0)}); // dt = 0 fs → static
-    sim.on(md::Phase::force)
-        .add(cuda::NeighborList{kCutoff}, -10)
-        .add(cuda::PairLJCut{double(1.0), double(1.0), kCutoff});
-    sim.on(md::Phase::end_of_step).add(cuda::RDF{kRMax, kNBins, filename});
-    sim.build();
-    sim.run(frame, 5);
+/// Exercise RDF::launch with frozen input, independently of any MD pipeline.
+void capture_static_rdf(cpu::Frame& frame, const std::string& filename) {
+    auto device = cpu::to_cuda(frame);
+    cudaStream_t compute{}, defer{};
+    ATV_CUDA_CHECK(cudaStreamCreate(&compute));
+    ATV_CUDA_CHECK(cudaStreamCreate(&defer));
+    cuda::Context runtime;
+    runtime.stream = compute;
+    runtime.defer_stream = defer;
+    cuda::RDF rdf{kRMax, kNBins, filename};
+    rdf.build({runtime, device});
+    for (int capture = 0; capture < 5; ++capture)
+        rdf.launch({runtime, device, slot_of(md::Phase::end_of_step), capture});
+    rdf.destroy({runtime, device});
+    ATV_CUDA_CHECK(cudaStreamDestroy(defer));
+    ATV_CUDA_CHECK(cudaStreamDestroy(compute));
+    cuda::destroy(device);
 }
 
 /// Parse the g(r) file: header "# r [Angstrom]   g(r)", then n_bins lines
@@ -149,7 +149,7 @@ TEST(RDFMolrs, FileMatchesHostAccumulatorPerBin) {
     cpu::Frame md_frame = frame; // keep the pristine copy for the reference
 
     ScopedFile out("test_rdf_molrs_parity.dat");
-    run_static_rdf_md(md_frame, out.path);
+    capture_static_rdf(md_frame, out.path);
 
     std::vector<double> r_file, g_file;
     ASSERT_TRUE(parse_gr_file(out.path, r_file, g_file))
@@ -180,7 +180,7 @@ TEST(RDFMolrs, NearestNeighborLatticeBinNonZero) {
     auto frame = make_static_lj_lattice(kNSide, kDensity);
 
     ScopedFile out("test_rdf_molrs_nn.dat");
-    run_static_rdf_md(frame, out.path);
+    capture_static_rdf(frame, out.path);
 
     std::vector<double> r_file, g_file;
     ASSERT_TRUE(parse_gr_file(out.path, r_file, g_file))

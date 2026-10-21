@@ -91,15 +91,16 @@ void gather_rows(const T* src, T* dst, const int* order, int n, int cols,
 }
 
 // Permute one width-1 real_t array in place via stage_r (cols==1 fast path).
-void permute_r(real_t* arr, const int* order, int n,
-               DeviceVector<real_t>& stage, cudaStream_t stream) {
+template <typename T>
+void permute_r(T* arr, const int* order, int n, DeviceVector<T>& stage,
+               cudaStream_t stream) {
     if (arr == nullptr || n == 0)
         return;
     if (stage.size() < static_cast<std::size_t>(n))
         stage.resize(n);
-    gather_rows<real_t>(arr, stage.data(), order, n, 1, stream);
+    gather_rows<T>(arr, stage.data(), order, n, 1, stream);
     ATV_CUDA_CHECK(cudaMemcpyAsync(arr, stage.data(),
-                                   static_cast<std::size_t>(n) * sizeof(real_t),
+                                   static_cast<std::size_t>(n) * sizeof(T),
                                    cudaMemcpyDeviceToDevice, stream));
 }
 
@@ -156,13 +157,16 @@ void apply_permutation_owned(Frame& frame, const int* order, int n,
     permute_r(a.x, order, n, buf.stage_r, stream);
     permute_r(a.y, order, n, buf.stage_r, stream);
     permute_r(a.z, order, n, buf.stage_r, stream);
-    permute_r(a.vx, order, n, buf.stage_r, stream);
-    permute_r(a.vy, order, n, buf.stage_r, stream);
-    permute_r(a.vz, order, n, buf.stage_r, stream);
+    permute_r(a.x_correction, order, n, buf.stage_r, stream);
+    permute_r(a.y_correction, order, n, buf.stage_r, stream);
+    permute_r(a.z_correction, order, n, buf.stage_r, stream);
+    permute_r(a.vx, order, n, buf.stage_motion, stream);
+    permute_r(a.vy, order, n, buf.stage_motion, stream);
+    permute_r(a.vz, order, n, buf.stage_motion, stream);
     permute_r(a.fx, order, n, buf.stage_r, stream);
     permute_r(a.fy, order, n, buf.stage_r, stream);
     permute_r(a.fz, order, n, buf.stage_r, stream);
-    permute_r(a.mass, order, n, buf.stage_r, stream);
+    permute_r(a.mass, order, n, buf.stage_motion, stream);
     permute_r(a.charge, order, n, buf.stage_r, stream);
     permute_i(a.type, order, n, 1, buf.stage_i, stream);
     permute_i64(a.tag, order, n, 1, buf.stage_i64, stream);

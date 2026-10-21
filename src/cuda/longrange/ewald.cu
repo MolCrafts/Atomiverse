@@ -5,6 +5,7 @@
 #include <stdexcept>
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
@@ -12,7 +13,6 @@
 
 namespace ATV {
 
-using cuda::prec_t;
 using cuda::real_t;
 
 namespace cuda {
@@ -45,12 +45,12 @@ __global__ void ewald_structure_factor(
 __global__ void ewald_energy(const double* __restrict__ kw,
                              const double* __restrict__ sr,
                              const double* __restrict__ si, int ng, double K,
-                             prec_t* __restrict__ energy) {
+                             double* __restrict__ energy) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= ng)
         return;
     const double e = K * kw[k] * (sr[k] * sr[k] + si[k] * si[k]);
-    atomicAdd(energy, static_cast<prec_t>(e));
+    atomicAdd(energy, static_cast<double>(e));
 }
 
 /// @brief Reciprocal forces on owned atoms + per-atom self energy.
@@ -62,7 +62,7 @@ ewald_forces(real_t* __restrict__ fx, real_t* __restrict__ fy,
              const double* __restrict__ ky, const double* __restrict__ kz,
              const double* __restrict__ kw, const double* __restrict__ sr,
              const double* __restrict__ si, int ng, double K, double self_pref,
-             prec_t* __restrict__ energy) {
+             double* __restrict__ energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
@@ -81,7 +81,7 @@ ewald_forces(real_t* __restrict__ fx, real_t* __restrict__ fy,
     fy[i] += real_t(fyi);
     fz[i] += real_t(fzi);
     // Self energy (partitions per atom): -ATV::units::coulomb·(α/√π)·q_i².
-    atomicAdd(energy, static_cast<prec_t>(self_pref * qi * qi));
+    atomicAdd(energy, static_cast<double>(self_pref * qi * qi));
 }
 
 } // namespace kernels
@@ -96,7 +96,7 @@ KSpaceEwald::~KSpaceEwald() {}
 
 void KSpaceEwald::build(const BuildContext& ctx) {
     // Reciprocal basis b_i = 2π·(column i of inv_cell); g = Σ m_i b_i.
-    const cuda::Box& box = ctx.runtime.host_box;
+    const cuda::MotionBox& box = ctx.runtime.host_motion_box;
     const double tp = 2.0 * ATV::units::pi;
     double b[3][3];
     for (int i = 0; i < 3; ++i)
@@ -132,16 +132,16 @@ void KSpaceEwald::build(const BuildContext& ctx) {
             }
     ng_ = static_cast<int>(kx.size());
     const size_t bytes = ng_ * sizeof(double);
-    cudaMalloc(&d_kx_, bytes);
-    cudaMalloc(&d_ky_, bytes);
-    cudaMalloc(&d_kz_, bytes);
-    cudaMalloc(&d_kw_, bytes);
-    cudaMalloc(&d_sr_, bytes);
-    cudaMalloc(&d_si_, bytes);
-    cudaMemcpy(d_kx_, kx.data(), bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_ky_, ky.data(), bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_kz_, kz.data(), bytes, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_kw_, kw.data(), bytes, cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMalloc(&d_kx_, bytes));
+    ATV_CUDA_CHECK(cudaMalloc(&d_ky_, bytes));
+    ATV_CUDA_CHECK(cudaMalloc(&d_kz_, bytes));
+    ATV_CUDA_CHECK(cudaMalloc(&d_kw_, bytes));
+    ATV_CUDA_CHECK(cudaMalloc(&d_sr_, bytes));
+    ATV_CUDA_CHECK(cudaMalloc(&d_si_, bytes));
+    ATV_CUDA_CHECK(cudaMemcpy(d_kx_, kx.data(), bytes, cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_ky_, ky.data(), bytes, cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_kz_, kz.data(), bytes, cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_kw_, kw.data(), bytes, cudaMemcpyHostToDevice));
 }
 
 void KSpaceEwald::compute(const LaunchContext& ctx) {
@@ -151,7 +151,8 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
     if (ng_ == 0 || n == 0)
         return;
 
-    const double vol = static_cast<double>(ctx.runtime.host_box.volume());
+    const double vol =
+        static_cast<double>(ctx.runtime.host_motion_box.volume());
     const double K = ATV::units::coulomb * 2.0 * ATV::units::pi / vol;
     const double self_pref =
         -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi);
@@ -160,23 +161,26 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
     kernels::ewald_structure_factor<<<grid_size(ng_), blk, 0, stream>>>(
         frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
         d_kx_, d_ky_, d_kz_, ng_, d_sr_, d_si_);
+    ATV_CUDA_CHECK(cudaGetLastError());
     kernels::ewald_energy<<<grid_size(ng_), blk, 0, stream>>>(
         d_kw_, d_sr_, d_si_, ng_, K, &frame.scalars->energy);
+    ATV_CUDA_CHECK(cudaGetLastError());
     kernels::ewald_forces<<<grid_size(n), blk, 0, stream>>>(
         frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.x,
         frame.atoms.y, frame.atoms.z, frame.atoms.charge, n, d_kx_, d_ky_,
         d_kz_, d_kw_, d_sr_, d_si_, ng_, K, self_pref, &frame.scalars->energy);
+    ATV_CUDA_CHECK(cudaGetLastError());
     // Note: the net-charge correction (nonzero only for non-neutral systems)
     // is omitted on the CUDA path in this revision; see cpu::KSpaceEwald.
 }
 
 void KSpaceEwald::destroy(const DestroyContext&) {
-    cudaFree(d_kx_);
-    cudaFree(d_ky_);
-    cudaFree(d_kz_);
-    cudaFree(d_kw_);
-    cudaFree(d_sr_);
-    cudaFree(d_si_);
+    ATV_CUDA_CHECK(cudaFree(d_kx_));
+    ATV_CUDA_CHECK(cudaFree(d_ky_));
+    ATV_CUDA_CHECK(cudaFree(d_kz_));
+    ATV_CUDA_CHECK(cudaFree(d_kw_));
+    ATV_CUDA_CHECK(cudaFree(d_sr_));
+    ATV_CUDA_CHECK(cudaFree(d_si_));
     d_kx_ = d_ky_ = d_kz_ = d_kw_ = d_sr_ = d_si_ = nullptr;
 }
 

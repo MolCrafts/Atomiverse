@@ -1,0 +1,96 @@
+{
+  "N": 49680,
+  "energy_atv_ev": 3611.3961472091046,
+  "energy_openmm_ev": 3611.3949857930693,
+  "energy_error_ev": 0.0011614160353019543,
+  "max_force_error_ev_A": 7.457389139986503e-06,
+  "relative_max_force_error": 1.7730285401884665e-06,
+  "atv_process_seconds": 0.8859280969991232,
+  "openmm_process_seconds": 1.6858582489949185,
+  "openmm": {
+    "engine": "openmm",
+    "version": "8.6.1",
+    "platform": "CUDA",
+    "N": 49680,
+    "ms_per_step": 0.288128929969389,
+    "final_energy_ev": 2669.61351028777,
+    "sample_ms": [
+      0.288128929969389,
+      0.2861827200104017,
+      0.2973497999482788
+    ],
+    "precision": "mixed",
+    "pme": [
+      80,
+      80,
+      80
+    ]
+  },
+  "protocol": {
+    "steps": 100,
+    "warmup": 10,
+    "samples": 3,
+    "dt_fs": 0.25,
+    "cutoff_A": 9,
+    "neighbor_skin_A": 0.72,
+    "alpha_inv_A": 0.35,
+    "grid_spacing_A": 1,
+    "precision": "mixed",
+    "term": "all",
+    "initial_position_storage": "exact float32 in Angstrom and nm",
+    "position_quantum_A": 3.814697265625e-05,
+    "neighbor_reserve": "default build-time density/initial-count headroom",
+    "motion_bytes": 8,
+    "position_representation": "float32+residual",
+    "throughput_monitor": "none",
+    "resource_measurement": "separate_process"
+  },
+  "resources": {
+    "atv": {
+      "gpu_peak_mib": 710.0,
+      "host_peak_rss_mib": 467.125,
+      "gpu_samples": 4,
+      "gpu_uuids": [
+        "GPU-129ae544-b607-0517-52d3-433d6eac8de0"
+      ],
+      "gpu_poll_interval_ms": 100,
+      "gpu_metric": "observed peak process GPU memory, including CUDA context; 100-ms sampling",
+      "host_metric": "maximum observed /proc/PID/status VmHWM",
+      "probe_process_seconds": 0.795620995995705,
+      "separate_from_throughput": true
+    },
+    "openmm": {
+      "gpu_peak_mib": 1150.0,
+      "host_peak_rss_mib": 577.25,
+      "gpu_samples": 8,
+      "gpu_uuids": [
+        "GPU-129ae544-b607-0517-52d3-433d6eac8de0"
+      ],
+      "gpu_poll_interval_ms": 100,
+      "gpu_metric": "observed peak process GPU memory, including CUDA context; 100-ms sampling",
+      "host_metric": "maximum observed /proc/PID/status VmHWM",
+      "probe_process_seconds": 1.5402605189956375,
+      "separate_from_throughput": true
+    }
+  },
+  "inputs_sha256": {
+    "data": "e6940f7ebe34859883bb3068491243c514c8bbbc4ef2d30c5dda15345f93261c",
+    "ff": "d3aaf835dd9414d3bb73d6b6738e3260b75626abac491ec8bd2a9d4e9161567a",
+    "prepared_input": "ab8b1d05ad824f956c0568c057dbf7c28ba9fbccfae8f9217b11ef406ea60293",
+    "openmm_input": "66b40a0e43c07c9e1cdef8a3daaf0a0e6c56698914cf0beb5d80559333699e93",
+    "atv_binary": "a0c09ec7b0ee908e101bd2cf8b37d4014323a82e025028b53be81bfeee9fb37a"
+  },
+  "atv_ms_per_step": 0.32656386,
+  "atv_final_energy_ev": 2669.615101,
+  "max_final_position_error_A": 1.784913720825898e-05,
+  "atv_over_openmm": 1.1333949007990776,
+  "final_energy_error_ev": 0.0015907122296994203,
+  "validation": {
+    "initial_energy": true,
+    "initial_forces": true,
+    "final_positions": true,
+    "final_energy": true
+  },
+  "accepted": true,
+  "benchmark_seconds": 7.111720338005398
+}

@@ -63,7 +63,7 @@ namespace minimizer {
 /// @brief Polak-Ribière+ conjugate-gradient Optimizer.
 ///
 /// Optimizer state (previous positions / gradient / direction) lives in
-/// planar 3N `work_t` device buffers allocated in `build()` and released
+/// planar 3N `motion_t` device buffers allocated in `build()` and released
 /// in `destroy()` — no allocation in `launch()`. Buffers are zeroed at
 /// build, which reproduces the CPU step-0 behaviour exactly: forces are
 /// zero at step 0, `g_prev · g_prev = 0` forces β = 0, and the first
@@ -110,13 +110,13 @@ class CG : public cuda::Optimizer {
     int n_ = 0;    ///< Atom count.
     int step_ = 0; ///< Optimizer step counter.
 
-    // Planar [x:0..n, y:n..2n, z:2n..3n] device state, work_t precision
+    // Planar [x:0..n, y:n..2n, z:2n..3n] device state, motion_t precision
     // (position/gradient differences of nearly-equal values would lose
     // too much precision in real_t storage).
-    work_t* d_xprev_ = nullptr; ///< Pre-step positions (3N).
-    work_t* d_gprev_ = nullptr; ///< Previous gradient (3N).
-    work_t* d_dprev_ = nullptr; ///< Previous search direction (3N).
-    work_t* d_pr_ = nullptr;    ///< Device {num, den, beta} scalars.
+    motion_t* d_xprev_ = nullptr; ///< Pre-step positions (3N).
+    motion_t* d_gprev_ = nullptr; ///< Previous gradient (3N).
+    motion_t* d_dprev_ = nullptr; ///< Previous search direction (3N).
+    motion_t* d_pr_ = nullptr;    ///< Device {num, den, beta} scalars.
 
     ConvCheck conv_;
     std::vector<OptRecord> trace_;

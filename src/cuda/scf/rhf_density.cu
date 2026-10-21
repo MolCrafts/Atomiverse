@@ -8,6 +8,7 @@
 #include "cublas_dispatch.cuh"
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -25,7 +26,7 @@ namespace internal {
 /// energy_ev = (0.5 * dot + V_nuc) * Ha→eV.
 /// Prefer `d_V_nuc` (device s/p path — no mid-SCF scientific D2H). Host-fill
 /// path passes nullptr and uses the by-value fallback.
-__global__ void write_rhf_energy_ev_kernel(prec_t* __restrict__ energy_ev,
+__global__ void write_rhf_energy_ev_kernel(double* __restrict__ energy_ev,
                                            const prec_t* __restrict__ dot_HFP,
                                            const double* __restrict__ d_V_nuc,
                                            double V_nuc_host, prec_t ha2ev) {
@@ -96,6 +97,7 @@ void RHFDensity::step(const SolverContext& ctx, SCFWorkspace& ws) {
             write_rhf_energy_ev_kernel<<<1, 1, 0, stream>>>(
                 &ctx.frame.scalars->energy, scf.d_scalar_scratch, scf.d_V_nuc,
                 scf.V_nuc, static_cast<prec_t>(units::kHartreeInEv));
+            ATV_CUDA_CHECK(cudaGetLastError());
             cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
         } else {
             // Host-fill path (no d_scalar_scratch): host DOT + host V_nuc.
@@ -104,10 +106,11 @@ void RHFDensity::step(const SolverContext& ctx, SCFWorkspace& ws) {
             detail::dot(handle, nn, d_HplusF_, 1, scf.P, 1, &dot_val);
             prec_t energy_ha =
                 prec_t(0.5) * dot_val + static_cast<prec_t>(scf.V_nuc);
-            prec_t energy_ev =
+            const double energy_ev =
                 energy_ha * static_cast<prec_t>(units::kHartreeInEv);
-            cudaMemcpyAsync(&ctx.frame.scalars->energy, &energy_ev,
-                            sizeof(prec_t), cudaMemcpyHostToDevice, stream);
+            ATV_CUDA_CHECK(cudaMemcpyAsync(&ctx.frame.scalars->energy,
+                                           &energy_ev, sizeof(energy_ev),
+                                           cudaMemcpyHostToDevice, stream));
         }
     }
 }

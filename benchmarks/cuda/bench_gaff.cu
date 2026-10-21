@@ -141,6 +141,8 @@ int main(int argc, char** argv) try {
               << " steps=" << steps << " ms_per_step=" << ms
               << " samples=" << samples
               << " real_bytes=" << sizeof(ATV::cuda::real_t)
+              << " motion_bytes=" << sizeof(ATV::cuda::motion_t)
+              << " position_residual=" << ATV::cuda::kMixedPrecision
               << " work_bytes=" << sizeof(ATV::cuda::work_t)
               << " accum_bytes=" << sizeof(ATV::cuda::prec_t)
               << " energy=" << f.meta.get(kEnergy) << '\n';

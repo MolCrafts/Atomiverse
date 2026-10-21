@@ -70,6 +70,10 @@ struct SCFWorkspace {
     int* h_converged_mapped = nullptr;
     prec_t* d_scalar_scratch = nullptr; ///< cuBLAS device-pointer results.
     prec_t* d_W = nullptr; ///< Energy-weighted density for device forces [n×n].
+    prec_t* d_force_gradient =
+        nullptr;                      ///< Mixed-only planar gradient [3*natm].
+    prec_t* d_force_Ptotal = nullptr; ///< UHF force density Pα+Pβ [n×n].
+    prec_t* d_force_Wbeta = nullptr;  ///< UHF force weighted density Wβ [n×n].
 
     // -- Basis data for GPU-native integral kernels --
     prec_t* d_shell_alpha = nullptr; ///< Exponents [device, n_shells * n_prim].

@@ -2,7 +2,7 @@
 /// @brief Initializer components for forces, energy, kinetic energy, and velocity.
 ///
 /// Initializers prepare accumulator fields before the computation phase:
-/// - ZeroForces / ZeroEnergy / ZeroKinetic: zero accumulators via cudaMemsetAsync.
+/// - ZeroForces / ZeroEnergy / ZeroKinetic: zero the owned accumulators on device.
 /// - InitVelocity: Maxwell-Boltzmann velocity initialization (LAMMPS `velocity create`).
 ///
 /// The Zero* components are **phase-agnostic**: they declare no
@@ -81,7 +81,7 @@ class ZeroStress : public Component {
     void launch(const LaunchContext& ctx) override;
 };
 
-/// @brief Zeros kinetic energy scalar on device using cudaMemsetAsync.
+/// @brief Zeros kinetic energy and its six kinetic-stress accumulators.
 ///
 /// Phase-agnostic infrastructure component — the driver binds it to its
 /// own phase via explicit `on(phase).add()` (md::MD binds it at
@@ -98,7 +98,7 @@ class ZeroKinetic : public Component {
     /// @return ComponentRole::None.
     /* role default default role 0 */
 
-    /// @brief Zero kinetic energy scalar via cudaMemsetAsync.
+    /// @brief Clear kinetic energy and kinetic stress before their reduction.
     /// @param ctx Launch context.
     void launch(const LaunchContext& ctx) override;
 };
@@ -158,9 +158,8 @@ class ZeroMomentum : public Component {
     /// @param ctx Build context.
     void build(const BuildContext& ctx) override;
 
-    /// @brief Compute COM momentum on the device, D2H copy, broadcast
-    ///        `v_cm = P_cm / M_tot` back as kernel args, subtract from
-    ///        every velocity. No-op when `step % freq != 0`.
+    /// @brief Accumulate COM momentum and subtract `v_cm = P_cm / M_tot`
+    ///        entirely on device. No-op when `step % freq != 0`.
     /// @param ctx Launch context.
     void launch(const LaunchContext& ctx) override;
 
@@ -175,10 +174,10 @@ class ZeroMomentum : public Component {
   private:
     int freq_;
     long long step_ = 0;
-    // 4 contiguous work_t = {Σ mv_x, Σ mv_y, Σ mv_z, Σ m}. cudaMalloc'd
+    // 4 contiguous motion_t = {Σ mv_x, Σ mv_y, Σ mv_z, Σ m}. cudaMalloc'd
     // in build(), zeroed in launch() before each accumulate, cudaFree'd
     // in destroy().
-    void* d_scratch_ = nullptr; // work_t[4]
+    void* d_scratch_ = nullptr; // motion_t[4]
 };
 
 /// @brief Maxwell-Boltzmann velocity initialization (LAMMPS `velocity create`).

@@ -1,5 +1,5 @@
 /// @file cuda/frame/types.cuh
-/// @brief CUDA backend floating-point types — **aligned with LAMMPS Kokkos**.
+/// @brief CUDA force precision tiers and physical-state integration precision.
 ///
 /// LAMMPS Kokkos (`KOKKOS_PREC`) exposes one compile-time mode and two types:
 ///
@@ -9,13 +9,18 @@
 /// | mixed  | float                             | double                                   |
 /// | single | float                             | float                                    |
 ///
-/// Atomiverse mirrors that exactly:
+/// Atomiverse uses those force precision tiers:
 ///
 /// | ATV type | role                                      | LMP twin        |
 /// |----------|-------------------------------------------|-----------------|
-/// | `real_t` | per-atom storage (x, v, f, charges, …)    | `KK_FLOAT`      |
+/// | `real_t` | main positions, forces and charges        | `KK_FLOAT`      |
 /// | `work_t` | kernel temporaries / shared-mem params    | `KK_FLOAT`      |
-/// | `prec_t` | energy / virial / force accumulation      | `KK_ACC_FLOAT`  |
+/// | `prec_t` | energy / virial accumulation      | `KK_ACC_FLOAT`  |
+///
+/// Physical motion uses `motion_t = prec_t`: double in mixed/double, float
+/// in single. Velocities and masses use motion_t; mixed positions keep a
+/// real_t main value plus a real_t residual. Force kernels still read only
+/// the main positions and use work_t arithmetic.
 ///
 /// **`work_t` is not a free third precision axis.** It always equals `real_t`
 /// (same as LAMMPS: force math uses the storage precision). Older docs that
@@ -49,6 +54,11 @@ namespace cuda {
 using real_t = ATV_CUDA_REAL_TYPE;
 using work_t = ATV_CUDA_WORK_TYPE;
 using prec_t = ATV_CUDA_PREC_TYPE;
+using motion_t = prec_t;
+
+/// @brief Whether positions need a residual to retain mixed integration state.
+inline constexpr bool kMixedPrecision =
+    std::is_same_v<real_t, float> && std::is_same_v<motion_t, double>;
 
 static_assert(sizeof(real_t) <= sizeof(work_t),
               "real_t must not exceed work_t");

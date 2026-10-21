@@ -17,13 +17,13 @@ namespace md {
 /// @brief Schneider-Stoll Langevin thermostat applied as an additive force.
 ///
 /// Mirrors LAMMPS `fix langevin Tstart Tstop damp seed`
-/// (`lammps/src/fix_langevin.cpp`). At every step, before the velocity
-/// update, two forces are added per atom:
+/// (`lammps/src/fix_langevin.cpp`). At every force evaluation, before the
+/// velocity update, two forces are added per atom:
 ///
 /// 1. Friction (Stokes drag):  F_drag = - m / (damp · ftm2v) · v
 /// 2. Random kick:              F_rand =   sqrt(2 m kB T / (damp · dt · mvv2e)) / ftm2v · ξ
 ///
-/// where `ξ ~ N(0, 1)` per Cartesian component per atom per step,
+/// where `ξ ~ N(0, 1)` per Cartesian component per atom per force evaluation,
 /// `ftm2v = units::force_to_accel` and `mvv2e = units::mass_v2_to_energy` (the metal-unit conversion
 /// constants). The combined force satisfies the fluctuation-dissipation
 /// theorem so velocity-Verlet integration of `f_total = f_phys + F_drag
@@ -50,7 +50,12 @@ namespace md {
 ///
 /// **RNG divergence (deliberate).** LAMMPS draws uniform samples from
 /// the Marsaglia-Tsang `RanMars` generator; Atomiverse draws Gaussian
-/// samples from a per-`(seed, step, atom-tag)` splitmix stream. The two
+/// samples from a per-`(seed, force-evaluation sample, atom-tag)` splitmix
+/// stream. Build resets the sample sequence; every force launch consumes
+/// one sample, including launches with no owned atoms. This keeps ranks in
+/// lockstep and gives the initial-force bootstrap a different random vector
+/// from the first integrated step, even when both have `step == 0`.
+/// The trajectory step controls only the temperature ramp. The two generators
 /// are statistically equivalent in the many-particle limit -- ⟨T⟩ and
 /// the velocity distribution match -- but individual trajectories
 /// differ. Only ensemble averages are contracted to match LAMMPS.
@@ -125,6 +130,9 @@ class FixLangevin : public cpu::Thermostat {
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::post_force, +500)};
     }
+    /// @brief Restart the random sample sequence for a fresh trajectory.
+    /// @param ctx Build context.
+    void build(const cpu::BuildContext& ctx) override;
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:
@@ -133,6 +141,9 @@ class FixLangevin : public cpu::Thermostat {
     double damp_;
     double dt_;
     std::uint32_t seed_;
+    /// One random sample per force evaluation, independent of step cadence.
+    /// Reset on build; retained across continued trajectory segments.
+    std::uint64_t sample_counter_ = 0;
 
     // Temperature-ramp run span (LAMMPS `update->beginstep` / `endstep`).
     std::int64_t nfirst_ = 0; ///< First MD step of the run.

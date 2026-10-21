@@ -273,58 +273,79 @@ void launch_smart_rolling_prune(
 // Geometry assigns one warp per CSR tile; exclusion baking then clears
 // exception bits in the existing multi-word masks.
 // ---------------------------------------------------------------------------
-__global__ void bake_csr_exclusions_k(const int* __restrict__ row_ptr,
-                                      const int* __restrict__ col_idx,
-                                      const int* __restrict__ original_index,
-                                      int num_clusters,
-                                      const int* __restrict__ offsets,
-                                      const int* __restrict__ partners,
-                                      uint64_t* __restrict__ masks) {
-    const int slot = blockIdx.x * blockDim.x + threadIdx.x;
-    const int ci = slot / kClusterSize, si = slot % kClusterSize;
-    if (ci >= num_clusters)
-        return;
-    const int ai = original_index[slot];
-    for (int p = row_ptr[ci]; p < row_ptr[ci + 1]; ++p) {
-        std::uint32_t bits = mask_jbits(masks, p, si);
-        std::uint32_t retained = 0;
-        if (ai >= 0) {
-            const int begin = offsets[ai], end = offsets[ai + 1];
-            const int cj = col_idx[p];
-            while (bits) {
-                const int sj = __ffs(static_cast<int>(bits)) - 1;
-                bits &= bits - 1;
-                const int aj = original_index[cj * kClusterSize + sj];
-                if (aj < 0)
-                    continue;
-                int lo = begin, hi = end;
-                while (lo < hi) {
-                    const int mid = (lo + hi) / 2;
-                    if (partners[mid] < aj)
-                        lo = mid + 1;
-                    else
-                        hi = mid;
-                }
-                if (lo == end || partners[lo] != aj)
-                    retained |= (1u << sj);
-            }
+// Warp/tile scheduling follows OpenMM platforms/cuda/src/kernels/nonbonded.cu
+// SHA 3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e. The existing ATV exclusion
+// CSR, binary search and mask semantics are unchanged; no source is copied.
+__global__ __launch_bounds__(128) void bake_csr_exclusions_k(
+    const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+    const int* __restrict__ original_index, int num_clusters, int num_pairs,
+    const int* __restrict__ offsets, const int* __restrict__ partners,
+    uint64_t* __restrict__ masks) {
+    static_assert(kClusterSize == 32, "exclusion tiles assume CS=32");
+    const int p =
+        blockIdx.x * (blockDim.x / kClusterSize) + threadIdx.x / kClusterSize;
+    const int lane = threadIdx.x % kClusterSize;
+    if (p >= num_pairs)
+        return; // Whole warp; no block collective follows.
+    int ci = 0;
+    if (lane == 0) {
+        int lo = 0, hi = num_clusters;
+        while (lo < hi) {
+            const int mid = (lo + hi) / 2;
+            if (row_ptr[mid + 1] <= p)
+                lo = mid + 1;
+            else
+                hi = mid;
         }
-        mask_set_jbits(masks, p, si, retained);
+        ci = lo;
     }
+    ci = __shfl_sync(0xffffffffu, ci, 0);
+    const int ai = original_index[ci * kClusterSize + lane];
+    const std::uint32_t bits = ai >= 0 ? mask_jbits(masks, p, lane) : 0;
+    if (!__any_sync(0xffffffffu, bits != 0)) {
+        mask_set_jbits(masks, p, lane, 0);
+        return;
+    }
+    const int begin = ai >= 0 ? offsets[ai] : 0;
+    const int end = ai >= 0 ? offsets[ai + 1] : 0;
+    const int cj = col_idx[p];
+    // Coalesced J indices are reused by every I row of this tile. All lanes
+    // reach each shuffle, including padded rows and rows with no set bits.
+    const int aj_lane = original_index[cj * kClusterSize + lane];
+    std::uint32_t retained = 0;
+#pragma unroll
+    for (int sj = 0; sj < kClusterSize; ++sj) {
+        const int aj = __shfl_sync(0xffffffffu, aj_lane, sj);
+        if ((bits & (1u << sj)) == 0 || aj < 0)
+            continue;
+        int lo = begin, hi = end;
+        while (lo < hi) {
+            const int mid = (lo + hi) / 2;
+            if (partners[mid] < aj)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        if (lo == end || partners[lo] != aj)
+            retained |= (1u << sj);
+    }
+    mask_set_jbits(masks, p, lane, retained);
 }
 
 bool launch_bake_csr_exclusions(const int* row_ptr, const int* col_idx,
                                 const int* original_index, int num_clusters,
-                                const int* excl_offsets,
+                                int num_pairs, const int* excl_offsets,
                                 const int* excl_partners, double special_scale,
                                 uint64_t* masks, cudaStream_t stream) {
     if (excl_offsets == nullptr || special_scale != 0.0)
         return false;
-    if (num_clusters > 0) {
-        const int grid = ATV::cuda::grid_size(num_clusters * kClusterSize);
-        bake_csr_exclusions_k<<<grid, ATV::cuda::kDefaultBlock, 0, stream>>>(
-            row_ptr, col_idx, original_index, num_clusters, excl_offsets,
-            excl_partners, masks);
+    if (num_clusters > 0 && num_pairs > 0) {
+        constexpr int threads = 128;
+        constexpr int tiles_per_block = threads / kClusterSize;
+        const int grid = (num_pairs - 1) / tiles_per_block + 1;
+        bake_csr_exclusions_k<<<grid, threads, 0, stream>>>(
+            row_ptr, col_idx, original_index, num_clusters, num_pairs,
+            excl_offsets, excl_partners, masks);
         ATV_CUDA_CHECK(cudaGetLastError());
     }
     return true;

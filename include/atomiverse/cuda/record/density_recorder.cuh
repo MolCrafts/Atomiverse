@@ -1,166 +1,257 @@
 /// @file cuda/record/density_recorder.cuh
-/// @brief DensityRecorder -- header-only electron density grid recorder (async D2H bridge).
-///
-/// @see cpu::eval_density_grid (cpu/observe/density.h)
+/// @brief DensityRecorder -- frozen density/geometry snapshots written as Cube files.
 #pragma once
 
+#include <cmath>
+#include <filesystem>
+#include <limits>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <cuda_runtime.h>
 
-#include "atomiverse/cpu/observe/density.h"
 #include "atomiverse/cuda/asynchronous/async_bridge.cuh"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 
 #ifdef ATV_HAS_HF
+
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/observe/density.h"
+#include "atomiverse/cpu/record/cube.h"
+#include "atomiverse/cuda/frame/transfer.cuh"
 
 #include "atomiverse/cuda/scf/scf_evaluator.cuh"
 
 namespace ATV {
 namespace cuda {
 
-/// @brief Evaluate and store electron density rho(r) on a uniform grid.
+/// @brief Store rho(r) snapshots on a uniform grid using the canonical STO-3G AOs.
 ///
-/// Registers on a `cuda::Evaluate` driver alongside a
-/// `cuda::scf::SCF`; it runs in the `evaluate::Phase::finalize`
-/// pass, after the inner `the concrete method (cuda::scf::RHF) private cycle` has converged the density.
+/// The borrowed evaluator supplies its density matrix; its AO count must match
+/// the STO-3G basis of the atomic numbers in Frame. The existing scf::SCF source
+/// is synthetic, not molecular RHF. This recorder interprets its supplied matrix
+/// in that documented AO basis; it does not perform an electronic solve.
 ///
-/// The converged density matrix is no longer carried on `cuda::Frame`; the
-/// recorder holds a reference to the `cuda::scf::SCF` and reads the
-/// density from its SCF workspace. Register the evaluator borrowed (lvalue
-/// `add`) so the reference stays valid for the whole run.
+/// Bind after the density producer. Each snapshot freezes the density matrix,
+/// complete physical coordinates, and atomic numbers on the compute stream,
+/// before any later geometry/density update. CPU evaluation and Cube conversion
+/// happen after that snapshot's D2H finishes, on the asynchronous bridge.
 ///
-/// @code{.cpp}
-/// cuda::scf::SCF scf{integrals, tol, max_iter};
-/// cuda::Evaluate eval;
-/// eval.set_observer(scf);                          // lvalue -> borrowed
-/// eval.on(evaluate::Phase::finalize).add(
-///     DensityRecorder{"density.zarr", scf, 20, 20, 20});
-/// @endcode
+/// Files are named `<prefix>.step-<step>.cube`. A trailing `.cube` on the given
+/// prefix is removed. The evaluator must outlive this recorder.
 class DensityRecorder : public AsyncRecorder {
   public:
-    /// @brief Construct an electron-density grid recorder.
-    /// @param store_path Output store path.
-    /// @param evaluator  SCF evaluator whose converged workspace supplies
-    ///                    the density matrix (borrowed -- must outlive this).
-    /// @param nx,ny,nz   Grid dimensions.
-    /// @param padding    Bounding-box padding [Angstrom].
-    /// @param every      Sampling stride in steps.
+    /// @param store_path Output filename prefix (one Cube file per sampled step).
+    /// @param evaluator Borrowed density-matrix source, built before the recorder.
+    /// @param nx,ny,nz Positive grid sample counts.
+    /// @param padding Nonnegative bounding-box padding [Angstrom].
+    /// @param every Positive sampling stride [steps].
     DensityRecorder(std::string store_path, const scf::SCF& evaluator, int nx,
-                    int ny, int nz, double padding = double(2.0), int every = 1)
+                    int ny, int nz, double padding = 2.0, int every = 1)
         : store_path_(std::move(store_path)), evaluator_(&evaluator), nx_(nx),
-          ny_(ny), nz_(nz), every_(every), padding_(padding) {}
+          ny_(ny), nz_(nz), every_(every), padding_(padding) {
+        if (store_path_.empty() || nx <= 0 || ny <= 0 || nz <= 0 || every <= 0
+            || !std::isfinite(padding) || padding < 0.0)
+            throw std::invalid_argument(
+                "DensityRecorder: invalid output/grid parameters");
+        std::size_t points = 1;
+        for (int n : {nx, ny, nz}) {
+            if (points > std::numeric_limits<std::size_t>::max()
+                             / static_cast<std::size_t>(n))
+                throw std::overflow_error(
+                    "DensityRecorder: grid size overflow");
+            points *= static_cast<std::size_t>(n);
+        }
+        if (points > std::numeric_limits<std::size_t>::max() / sizeof(double))
+            throw std::overflow_error(
+                "DensityRecorder: grid byte size overflow");
+    }
 
     ~DensityRecorder() override = default;
     DensityRecorder(DensityRecorder&&) noexcept = default;
     DensityRecorder& operator=(DensityRecorder&&) noexcept = default;
 
     std::string name() const override { return "density_recorder"; }
-    /* role via AsyncRecorder / Recorder */
     int frequency() const override { return every_; }
 
   protected:
     void on_build(const BuildContext& ctx) override {
-        auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-        auto& frame = ctx.frame;
-        n_atoms_ = frame.n_atoms();
+        const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+        n_atoms_ = ctx.frame.n_atoms();
         n_basis_ = evaluator_->workspace().n;
-
-        const auto na = static_cast<size_t>(n_atoms_);
-
+        if (n_atoms_ <= 0)
+            return;
+        if (n_basis_ <= 0 || evaluator_->workspace().P == nullptr)
+            throw std::invalid_argument(
+                "DensityRecorder: build the density source first");
+        const auto na = static_cast<std::size_t>(n_atoms_);
+        const auto nb = static_cast<std::size_t>(n_basis_);
+        const auto max_size = std::numeric_limits<std::size_t>::max();
+        if (nb > max_size / nb / sizeof(prec_t)
+            || nb > max_size / nb / sizeof(double)
+            || na > max_size / (3 * sizeof(motion_t)))
+            throw std::overflow_error(
+                "DensityRecorder: snapshot byte size overflow");
+        matrix_size_ = nb * nb;
+        geometry_ = std::make_unique<cpu::Frame>(n_atoms_);
         htype_.resize(na);
         hx_.resize(na);
         hy_.resize(na);
         hz_.resize(na);
-        cudaMemcpyAsync(htype_.data(), frame.atoms.type, na * sizeof(int),
-                        cudaMemcpyDeviceToHost, stream);
-        // frame.atoms.x/y/z are real_t device buffers -- stage as real_t,
-        // then widen to double for cpu::eval_density_grid.
-        std::vector<real_t> tx(na), ty(na), tz(na);
-        cudaMemcpyAsync(tx.data(), frame.atoms.x, na * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaMemcpyAsync(ty.data(), frame.atoms.y, na * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaMemcpyAsync(tz.data(), frame.atoms.z, na * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
-        for (size_t i = 0; i < na; ++i) {
-            hx_[i] = static_cast<double>(tx[i]);
-            hy_[i] = static_cast<double>(ty[i]);
-            hz_[i] = static_cast<double>(tz[i]);
+        density_.assign(matrix_size_, 0.0);
+        // Check the STO-3G AO contract before allocating the snapshot ring.
+        // Build-time transfer is allowed and uses the canonical Frame bridge.
+        ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+        cuda::to_cpu(ctx.frame, *geometry_);
+        for (int i = 0; i < n_atoms_; ++i) {
+            htype_[i] = geometry_->span(kAtom_type)[i];
+            hx_[i] = geometry_->span(kAtom_x)[i];
+            hy_[i] = geometry_->span(kAtom_y)[i];
+            hz_[i] = geometry_->span(kAtom_z)[i];
         }
-
-        const auto nb = static_cast<size_t>(n_basis_);
-        for (int i = 0; i < kRingDepth; ++i) {
-            cudaMalloc(&d_P_[i], nb * nb * sizeof(double)); // device-ring slot
-            cudaMallocHost(&h_P_[i],
-                           nb * nb * sizeof(double)); // pinned host slot
+        if (cpu::eval_density_grid(htype_, hx_, hy_, hz_, density_.data(),
+                                   n_basis_, 1, 1, 1, padding_)
+                .empty())
+            throw std::invalid_argument(
+                "DensityRecorder: atomic numbers/AO count must match the "
+                "supported STO-3G basis");
+        for (int slot = 0; slot < kRingDepth; ++slot) {
+            ATV_CUDA_CHECK(
+                cudaMalloc(&d_P_[slot], matrix_size_ * sizeof(prec_t)));
+            ATV_CUDA_CHECK(
+                cudaMallocHost(&h_P_[slot], matrix_size_ * sizeof(prec_t)));
+            ATV_CUDA_CHECK(
+                cudaMalloc(&d_pos_[slot], 3 * na * sizeof(motion_t)));
+            ATV_CUDA_CHECK(
+                cudaMallocHost(&h_pos_[slot], 3 * na * sizeof(motion_t)));
+            ATV_CUDA_CHECK(cudaMalloc(&d_type_[slot], na * sizeof(int)));
+            ATV_CUDA_CHECK(cudaMallocHost(&h_type_[slot], na * sizeof(int)));
         }
+        auto prefix = std::filesystem::path(store_path_);
+        if (prefix.extension() == ".cube")
+            prefix.replace_extension();
+        if (prefix.has_parent_path())
+            std::filesystem::create_directories(prefix.parent_path());
+        prefix_ = prefix.string();
     }
 
-    bool can_run(const LaunchContext&) const override {
-        return evaluator_->workspace().P != nullptr && n_basis_ > 0;
+    bool can_run(const LaunchContext& ctx) const override {
+        if (ctx.frame.n_atoms() != n_atoms_
+            || evaluator_->workspace().n != n_basis_)
+            throw std::runtime_error(
+                "DensityRecorder: atom/AO count changed; rebuild the recorder");
+        if (n_atoms_ > 0 && evaluator_->workspace().P == nullptr)
+            throw std::runtime_error("DensityRecorder: density source was "
+                                     "destroyed before its recorder");
+        return n_atoms_ > 0 && n_basis_ > 0;
     }
 
     void freeze_slot(const LaunchContext& ctx, int slot) override {
-        // D2D freeze of the converged density on the compute stream, before a
-        // subsequent (AIMD) SCF solve overwrites the workspace.
-        auto ms = static_cast<cudaStream_t>(ctx.runtime.stream);
-        const size_t nb = static_cast<size_t>(n_basis_);
-        cudaMemcpyAsync(d_P_[slot], evaluator_->workspace().P,
-                        nb * nb * sizeof(double), cudaMemcpyDeviceToDevice, ms);
+        const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+        capture_geometry_(ctx, slot);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_P_[slot], evaluator_->workspace().P,
+                                       matrix_size_ * sizeof(prec_t),
+                                       cudaMemcpyDeviceToDevice, stream));
     }
 
     void d2h_slot(const LaunchContext& ctx, int slot) override {
-        auto ds = static_cast<cudaStream_t>(ctx.runtime.defer_stream);
-        const size_t nb = static_cast<size_t>(n_basis_);
-        cudaMemcpyAsync(h_P_[slot], d_P_[slot], nb * nb * sizeof(double),
-                        cudaMemcpyDeviceToHost, ds);
+        const auto stream = static_cast<cudaStream_t>(ctx.runtime.defer_stream);
+        const auto na = static_cast<std::size_t>(n_atoms_);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(h_P_[slot], d_P_[slot],
+                                       matrix_size_ * sizeof(prec_t),
+                                       cudaMemcpyDeviceToHost, stream));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(h_pos_[slot], d_pos_[slot],
+                                       3 * na * sizeof(motion_t),
+                                       cudaMemcpyDeviceToHost, stream));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(h_type_[slot], d_type_[slot],
+                                       na * sizeof(int), cudaMemcpyDeviceToHost,
+                                       stream));
     }
 
     void on_data_ready(const LaunchContext& ctx, int slot) override {
-        auto grid = cpu::eval_density_grid(htype_, hx_, hy_, hz_, h_P_[slot],
-                                           n_basis_, nx_, ny_, nz_, padding_);
+        // Deferred callbacks are serialized; these build-reserved CPU buffers
+        // are reused only after the preceding snapshot's writer finishes.
+        unpack_geometry_(slot);
+        for (std::size_t i = 0; i < matrix_size_; ++i)
+            density_[i] = static_cast<double>(h_P_[slot][i]);
+        const auto grid =
+            cpu::eval_density_grid(htype_, hx_, hy_, hz_, density_.data(),
+                                   n_basis_, nx_, ny_, nz_, padding_);
         if (grid.empty())
-            return;
-        // NOTE (cuda-resurrect): the zarr density store was removed CPU-side
-        // (cpu/record/zarr.h + cpu::zarr_append_density deleted). The async
-        // density pipeline (grid eval + ring buffering) is preserved; the sink
-        // is disconnected until a cube-writer equivalent is wired in. Reviving
-        // the file sink is a follow-up, not part of the API-mirror scope.
-        (void)ctx;
-        (void)grid;
+            throw std::runtime_error(
+                "DensityRecorder: frozen geometry/AO count is not supported");
+        cpu::recorder::write_cube(
+            prefix_ + ".step-" + std::to_string(ctx.step) + ".cube",
+            "Electron density from Atomiverse",
+            "rho(r) in e / Bohr^3; step " + std::to_string(ctx.step),
+            *geometry_, grid);
     }
 
     void on_destroy(const DestroyContext&) override {
-        for (int i = 0; i < kRingDepth; ++i) {
-            if (d_P_[i]) {
-                cudaFree(d_P_[i]);
-                d_P_[i] = nullptr;
-            }
-            if (h_P_[i]) {
-                cudaFreeHost(h_P_[i]);
-                h_P_[i] = nullptr;
-            }
+        for (int slot = 0; slot < kRingDepth; ++slot) {
+            ATV_CUDA_CHECK(cudaFree(d_P_[slot]));
+            ATV_CUDA_CHECK(cudaFreeHost(h_P_[slot]));
+            ATV_CUDA_CHECK(cudaFree(d_pos_[slot]));
+            ATV_CUDA_CHECK(cudaFreeHost(h_pos_[slot]));
+            ATV_CUDA_CHECK(cudaFree(d_type_[slot]));
+            ATV_CUDA_CHECK(cudaFreeHost(h_type_[slot]));
+            d_P_[slot] = h_P_[slot] = nullptr;
+            d_pos_[slot] = h_pos_[slot] = nullptr;
+            d_type_[slot] = h_type_[slot] = nullptr;
         }
+        geometry_.reset();
+        n_atoms_ = n_basis_ = 0;
+        matrix_size_ = 0;
     }
 
   private:
-    std::string store_path_;
-    const scf::SCF* evaluator_ =
-        nullptr; ///< Borrowed SCF evaluator (density source).
+    void capture_geometry_(const LaunchContext& ctx, int slot) {
+        const auto n = static_cast<std::size_t>(n_atoms_);
+        capture_positions(ctx.frame, d_pos_[slot], d_pos_[slot] + n,
+                          d_pos_[slot] + 2 * n, ctx.runtime.stream);
+        ATV_CUDA_CHECK(
+            cudaMemcpyAsync(d_type_[slot], ctx.frame.atoms.type,
+                            n * sizeof(int), cudaMemcpyDeviceToDevice,
+                            static_cast<cudaStream_t>(ctx.runtime.stream)));
+    }
+
+    void unpack_geometry_(int slot) {
+        auto gx = geometry_->span(kAtom_x);
+        auto gy = geometry_->span(kAtom_y);
+        auto gz = geometry_->span(kAtom_z);
+        auto gt = geometry_->span(kAtom_type);
+        for (int i = 0; i < n_atoms_; ++i) {
+            hx_[i] = static_cast<double>(h_pos_[slot][i]);
+            hy_[i] = static_cast<double>(h_pos_[slot][n_atoms_ + i]);
+            hz_[i] = static_cast<double>(h_pos_[slot][2 * n_atoms_ + i]);
+            htype_[i] = h_type_[slot][i];
+            gx[i] = static_cast<StorageReal>(hx_[i]);
+            gy[i] = static_cast<StorageReal>(hy_[i]);
+            gz[i] = static_cast<StorageReal>(hz_[i]);
+            gt[i] = htype_[i];
+        }
+    }
+
+    std::string store_path_, prefix_;
+    const scf::SCF* evaluator_ = nullptr;
     int nx_, ny_, nz_, every_;
     double padding_;
-
-    int n_atoms_ = 0;
-    int n_basis_ = 0;
-
-    double* d_P_[kRingDepth] = {}; ///< device-ring frozen density matrix
-    double* h_P_[kRingDepth] = {}; ///< pinned host density matrix
+    int n_atoms_ = 0, n_basis_ = 0;
+    std::size_t matrix_size_ = 0;
+    prec_t* d_P_[kRingDepth] = {};
+    prec_t* h_P_[kRingDepth] = {};
+    motion_t* d_pos_[kRingDepth] = {};
+    motion_t* h_pos_[kRingDepth] = {};
+    int* d_type_[kRingDepth] = {};
+    int* h_type_[kRingDepth] = {};
+    std::unique_ptr<cpu::Frame> geometry_;
     std::vector<int> htype_;
-    std::vector<double> hx_, hy_, hz_;
+    std::vector<double> hx_, hy_, hz_, density_;
 };
 
 } // namespace cuda

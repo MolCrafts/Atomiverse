@@ -1,6 +1,7 @@
 /// @file cuda/potentials/bond_harmonic.cu
 /// @brief CUDA BondHarmonic — V = K(r − r₀)² (kernel + class).
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
@@ -11,7 +12,6 @@
 
 namespace ATV {
 
-using cuda::prec_t;
 using cuda::real_t;
 using cuda::work_t;
 
@@ -22,7 +22,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_bond_k(
     const real_t* __restrict__ x, const real_t* __restrict__ y,
     const real_t* __restrict__ z, real_t* __restrict__ fx,
     real_t* __restrict__ fy, real_t* __restrict__ fz,
-    prec_t* __restrict__ energy, prec_t* __restrict__ stress,
+    double* __restrict__ energy, double* __restrict__ stress,
     const int* __restrict__ bi, const int* __restrict__ bj,
     const int* __restrict__ bt, const work_t* __restrict__ K,
     const work_t* __restrict__ r0, cuda::Box box, int n_bonds) {
@@ -91,11 +91,11 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_bond_k(
     work_t out[7];
     block_reduce_sum_n<7>(my_vals, warp_scratch, out);
     if (threadIdx.x == 0) {
-        atomicAdd(energy, static_cast<prec_t>(out[0]));
+        atomicAdd(energy, static_cast<double>(out[0]));
         if (stress != nullptr) {
 #pragma unroll
             for (int c = 0; c < 6; ++c)
-                atomicAdd(&stress[c], static_cast<prec_t>(out[c + 1]));
+                atomicAdd(&stress[c], static_cast<double>(out[c + 1]));
         }
     }
 }
@@ -123,12 +123,12 @@ void BondHarmonic::build(const BuildContext& /*ctx*/) {
     state_->n_types = nt;
     const std::vector<work_t> device_K(K_.begin(), K_.end());
     const std::vector<work_t> device_r0(r0_.begin(), r0_.end());
-    cudaMalloc(&state_->d_K, nt * sizeof(work_t));
-    cudaMalloc(&state_->d_r0, nt * sizeof(work_t));
-    cudaMemcpy(state_->d_K, device_K.data(), nt * sizeof(work_t),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(state_->d_r0, device_r0.data(), nt * sizeof(work_t),
-               cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_K, nt * sizeof(work_t)));
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_r0, nt * sizeof(work_t)));
+    ATV_CUDA_CHECK(cudaMemcpy(state_->d_K, device_K.data(), nt * sizeof(work_t),
+                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(state_->d_r0, device_r0.data(),
+                              nt * sizeof(work_t), cudaMemcpyHostToDevice));
 }
 
 void BondHarmonic::compute(const LaunchContext& ctx) {
@@ -145,11 +145,12 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
         f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.fx, f.atoms.fy, f.atoms.fz,
         &f.scalars->energy, &f.scalars->stress[0], f.bonds.atomi, f.bonds.atomj,
         f.bonds.type, state_->d_K, state_->d_r0, ctx.runtime.host_box, nb);
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 void BondHarmonic::destroy(const DestroyContext& /*ctx*/) {
-    cudaFree(state_->d_K);
-    cudaFree(state_->d_r0);
+    ATV_CUDA_CHECK(cudaFree(state_->d_K));
+    ATV_CUDA_CHECK(cudaFree(state_->d_r0));
     *state_ = {};
 }
 

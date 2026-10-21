@@ -15,6 +15,7 @@
 /// @see internal::Hamiltonian for the helper that builds H
 #pragma once
 
+#include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/internal/solver_context.cuh"
 #include "atomiverse/cuda/scf/scf_workspace.cuh"
 
@@ -47,8 +48,9 @@ class EigenSolver {
 
   private:
     void* cusolver_handle_ = nullptr; ///< cuSOLVER handle.
-    double* d_work_ = nullptr;        ///< cuSOLVER workspace [device].
-    int work_size_ = 0;               ///< Workspace size in elements.
+    prec_t* d_work_ =
+        nullptr;            ///< cuSOLVER workspace [device, matrix precision].
+    int work_size_ = 0;     ///< Workspace size in elements.
     int* d_info_ = nullptr; ///< cuSOLVER convergence info [device, 1 element].
 };
 

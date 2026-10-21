@@ -70,10 +70,18 @@ exactly representable in float32 in both Å and OpenMM's nm. Merely rounding
 Å values to float32 introduces a second, different rounding in nm. The lattice
 is `5*k*2^e` Å (`k*2^(e-1)` nm), with `|5*k| < 2^24`; its spacing is recorded
 in the JSON and checked for exact representability before running.
-Thus initial parity compares the same positions. Mixed-mode force
-tolerance is `1e-4`: ATV stores coordinates in float whereas
-OpenMM mixed retains position corrections, so the modes have different
-coordinate precision despite the matching names.
+Thus initial parity compares the same positions. Mixed-mode force tolerance
+remains `1e-4`; no acceptance threshold is relaxed for a speed experiment.
+Both engines retain a float coordinate plus a residual and use double
+velocities/integration in mixed mode. ATV also retains double masses and a
+canonical double cell. Its force kernels and FFT remain FP32; energies are
+accumulated in FP64. This aligns motion-state semantics, not atomic reduction
+order or bitwise trajectories: ATV force atomics remain floating point,
+whereas OpenMM uses fixed-point force accumulation. The binary reports
+`motion_bytes=8 position_residual=1`, which the harness verifies.
+Non-quantized sub-FP32 increments, boundary wrapping, import/export, optimizer
+history/rollback and asynchronous coordinate snapshots have separate focused
+unit checks; the shared initial lattice is only for the external force comparison.
 
 Architecture reference: OpenMM source commit
 `3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e`, CUDA cluster AABB hierarchy,
@@ -86,8 +94,9 @@ are rebuilt; timed force calls reuse the build-reserved packed buffers.
 
 Submit `RUN_SCRIPT=tools/bench_gaff_openmm/run_scaling.sh TARGETS=bench_gaff`
 with the same `DATA`, `FF`, `BUILD` and `PRECISION` settings as above.
+Set `MEASURE_MEMORY=1` to collect the separate memory probes.
 The default cubic replications `1 2 3 4` give 1,840, 14,720, 49,680 and
-117,760 atoms at fixed density. Each point uses 30 steps, 10 warmup steps,
+117,760 atoms at fixed density. Each point uses 100 steps, 10 warmup steps,
 and three samples. Initial/final scientific acceptance is unchanged.
 
 `--measure-memory` runs an external
@@ -99,13 +108,21 @@ transients; it is not an allocator-exact high-water mark. Host RAM is the
 maximum observed `/proc/PID/status` `VmHWM`, including the C++ or Python
 engine front-end; the common comparison parent is excluded. The last
 sampling interval can miss a peak just before process exit.
-Monitoring runs concurrently for both engines; step timing
-excludes setup. The harness rejects missing measurements or different
+Throughput runs have no concurrent memory monitor. With `--measure-memory`,
+each engine is run a second time with the same physics and step counts for
+memory measurement; its output goes to a different destination. Probe times
+never replace the unmonitored throughput result. Each of the four engine
+processes retains its own ten-second deadline, so the combined comparison
+including replication and memory probes can take longer than ten seconds.
+Step timing excludes setup. The harness rejects missing measurements or different
 physical GPUs between the compared engines. Batch shells without Slurm's
 CUDA visibility mask use the allocated `SLURM_JOB_GPUS` explicitly.
 The parent validates replication once and writes the OpenMM child's input as
 JSON, avoiding duplicate topology preparation within the short deadline.
 Each engine still constructs and evaluates its own forces independently.
+
+The accepted GH200 measurements, numerical summaries and current scaling
+figure are checked in under [results/gh200](results/gh200/README.md).
 
 After both precisions finish, render the accepted measurements with:
 
@@ -117,22 +134,15 @@ This produces a six-panel PNG/SVG (step time, GPU memory and host RAM for each
 precision) and the numerical CSV. Matplotlib is required only for rendering.
 Connecting lines are guides between measured points; no scaling model is fitted.
 
-Accepted GH200 measurements with OpenMM 8.6.1 (time in ms/step, memory in
-MiB; memory columns show Atomiverse / OpenMM):
+The plotter requires compatible precision-state, throughput-monitor and
+resource-probe metadata. It rejects older measurements taken with concurrent
+memory monitoring or the former float-only mixed integrator; those cannot be
+combined with this protocol.
 
-| Precision | Atoms | ATV time | OpenMM time | Observed GPU peak | Observed host peak RSS |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| double | 1,840 | 0.13425 | 0.12034 | 562 / 1002 | 438 / 430 |
-| double | 14,720 | 0.24422 | 0.27595 | 568 / 628 | 433 / 492 |
-| double | 49,680 | 0.55698 | 0.66757 | 718 / 1042 | 438 / 574 |
-| double | 117,760 | 1.13624 | 1.46810 | 982 / 768 | 527 / 829 |
-| mixed | 1,840 | 0.12144 | 0.10916 | 562 / 616 | 445 / 427 |
-| mixed | 14,720 | 0.18866 | 0.15647 | 574 / 626 | 405 / 463 |
-| mixed | 49,680 | 0.34325 | 0.34051 | 708 / 1160 | 436 / 590 |
-| mixed | 117,760 | 0.66605 | 0.69327 | 960 / 1154 | 496 / 802 |
-
-All eight initial/final comparisons pass. Each engine process finishes within
-the ten-second deadline; the longest whole comparison, including input
-preparation and both engines, is 11.52 s. Memory includes initialization and
-context costs; the sampled GPU peaks are not monotone and do not establish
-an allocator complexity bound.
+For IO/analysis precision checks on Arrhenius accounts without rustup, set
+`RUST_MODULES="GPU/buildtool-easybuild/5.2.1-hpca3ef7d197 GCCcore/14.3.0 Rust/1.91.1"`
+and append `-DATV_BUILD_MINIMIZER=ON -DATV_BUILD_ANALYSIS=ON -DATV_BUILD_IO=ON`
+through `ATV_CMAKE_FLAGS`. These dependencies are built before the benchmark.
+`run_precision_checks.sh` runs the focused checks and short scientific pins
+before the scaling series. `profile_scaling.sh` diagnoses prepared cases with
+Nsight; its timings are excluded from throughput results.

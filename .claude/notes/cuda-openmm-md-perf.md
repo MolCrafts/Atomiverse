@@ -70,6 +70,15 @@ Charge spreading assigns one stencil-z position to each of `order` adjacent
 threads per atom, coalescing grid writes and reducing serial atomics per thread
 from order cubed to order squared without changing the stencil.
 
+Reciprocal-force interpolation uses eight adjacent lanes per atom for up to
+16,384 atoms and one lane per atom above that size. Small systems benefit
+from exposing more stencil parallelism; larger systems avoid duplicated
+spline work. Both paths use the same stencil and force normalization.
+CSR exclusion baking assigns a warp per tile, coalesces the column indices
+and shares them across row lanes before writing the existing masks.
+The packed force loop trusts those validated masks to exclude padding and
+self pairs, avoiding a redundant J-index shuffle and predicates per pair.
+
 ## Reference data and acceptance
 
 Use an equilibrated GAFF PEO snapshot, not the unrelaxed packing. The Arrhenius
@@ -90,10 +99,21 @@ inputs (coordinates and cell) use a binary lattice exactly representable
 in both float32 Å and float32 nm: `5*k*2^e` Å, with `|5*k| < 2^24`.
 Its spacing is chosen from the largest coordinate/cell magnitude and recorded.
 This avoids an additional unit-conversion rounding in the initial static
-comparison. ATV mixed
-uses float positions/work plus double accumulation; OpenMM mixed additionally
-retains position corrections. Report this distinction and validate errors
-rather than equating the names with identical coordinate representations.
+comparison. Mixed CUDA motion uses a float coordinate plus residual, double
+velocity/mass/integration and a canonical double cell. Force/FFT work stays
+float and energy reductions stay double. Import/export, every position writer,
+permutation, communication and async coordinate snapshots must preserve the
+residual. Force geometry retains the main float coordinate, matching OpenMM's
+force-position tier. ATV floating-point force atomics still differ from
+OpenMM's fixed-point force buffer; this is not bitwise trajectory parity.
+PME's fixed-cell guard compares the canonical motion cell, so a small box
+change cannot disappear in the force-box float cache.
+
+Throughput and resource sampling use separate engine runs/output destinations.
+No memory monitor is active during accepted throughput samples. Plots require
+one binary per precision, matching protocols and physics validation. Report
+observed GPU peaks (including context, 100-ms PID-filtered NVML samples) and
+host process VmHWM with their sampling limitations.
 
 The pair pass retains library special functions in both precisions. A screened
 polynomial did not improve measured tile throughput, so a less accurate

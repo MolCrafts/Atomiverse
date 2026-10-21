@@ -20,7 +20,9 @@ namespace md {
 
 /// @brief Berendsen isotropic barostat.
 ///
-/// Binds to final_integrate at order +200 (after VelocityVerlet + NoseHoover).
+/// Binds to end_of_step after kinetic stress is available.
+/// Publishes its device-computed cell through a build-reserved pinned 9-scalar
+/// readback and stream synchronization, keeping force and motion Box caches current.
 /// Requires Virial at post_force to populate DeviceFrame::stress.
 class Barostat : public cuda::Barostat {
   public:

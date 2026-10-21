@@ -36,10 +36,10 @@ class AddOne : public cuda::Component {
     }
 };
 
-__global__ void double_vel_k(cuda::real_t* vx, const int* n_ptr) {
+__global__ void double_vel_k(cuda::motion_t* vx, const int* n_ptr) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < *n_ptr)
-        vx[idx] *= cuda::real_t(2);
+        vx[idx] *= cuda::motion_t(2);
 }
 
 class DoubleVel : public cuda::Component {

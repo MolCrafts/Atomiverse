@@ -5,6 +5,8 @@ full discrete Fourier sum. The reference evaluates the cardinal spline
 from its closed truncated-power polynomial, explicitly includes every full-grid
 mode, and differentiates its energy analytically. It uses neither cuFFT nor the
 device spline recurrence.
+The inverse cell uses the motion-state precision: FP64 in mixed/double mode,
+matching the canonical cell used to construct the reciprocal solver.
 
 Four order-6 cases combine even/odd final grid dimensions (9×10×12 and 9×10×15)
 with orthorhombic/skew cells. A deliberately large alpha makes Nyquist terms

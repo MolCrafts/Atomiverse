@@ -172,9 +172,12 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
     tdrag_factor_ = 1.0 - drag_ * dt_ / tau_T_;
     pdrag_factor_ = 1.0 - drag_ * dt_ / tau_P_;
 
-    // Initial KE at equipartition — used in step 0's first NHC update
-    // before any velocity update has produced a real KE_global_.
-    KE_global_ = 0.5 * static_cast<double>(n_dof_) * kT_;
+    // Later build-time velocity initializers may still change the input state.
+    // Seed KE from the actual velocities at the first initial_integrate,
+    // rather than assuming the input is already at the target temperature.
+    KE_global_ = 0.0;
+    kinetic_initialized_ = false;
+    eps_dot_ = {0.0, 0.0, 0.0};
 }
 
 /// @see LAMMPS `FixNH::compute_temp_target()` (`src/fix_nh.cpp`):
@@ -481,24 +484,13 @@ void NoseHooverNPT::update_eps_dot(const cpu::LaunchContext& ctx,
     // Hamiltonian secularly (caught by Slow_AnisoNptConserves…).
     const std::array<double, 3> ke_axis = compute_axis_KE(ctx);
 
-    // Per-axis pair virial. `f.meta.get(kStress)[0..2]` is the rank-LOCAL diagonal
-    // here: the barostat runs at final_integrate, BEFORE Reduce
-    // (end_of_step) reduces stress across ranks. ke_axis above is already
-    // globally summed, so without summing the virial too the driving pressure
-    // mixes global KE with ~1/nranks of the virial — the barostat then drives
-    // off the wrong pressure, the box diverges between ranks, and multi-rank
-    // NPT/tension blows up (single-rank is unaffected). The pair virial is
-    // additive across ranks, so MPI_Allreduce(SUM) recovers the global value.
-    double vir[3] = {f.meta.get(kStress)[0], f.meta.get(kStress)[1],
-                     f.meta.get(kStress)[2]};
-#ifdef ATV_HAS_MPI
-    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
-        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        double local[3] = {vir[0], vir[1], vir[2]};
-        MPI_Allreduce(local, vir, 3, MPI_DOUBLE, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-    }
-#endif
+    // Both call sites consume globally published virial: initial_integrate
+    // reads the setup / previous end_of_step value, and end_of_step @ -40
+    // follows Reduce @ -50. Reducing it again would multiply pressure by
+    // the rank count. The kinetic diagonal above is recomputed at the current
+    // velocity time slice because the thermostat/barostat has changed v.
+    const double vir[3] = {f.meta.get(kStress)[0], f.meta.get(kStress)[1],
+                           f.meta.get(kStress)[2]};
 
     // Per-axis virial + kinetic diagonal, with LAMMPS `couple()` averaging:
     //   * couple_xy  → average (xx,yy) only; z independent (semi-isotropic)
@@ -827,6 +819,14 @@ void NoseHooverNPT::launch(const cpu::LaunchContext& ctx) {
     const double half_dt = 0.5 * dt_;
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
+        if (!kinetic_initialized_) {
+            // LAMMPS FixNH::setup, src/fix_nh.cpp,
+            // a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b: read current
+            // temperature before the first thermostat update.
+            // Copyright (2003) Sandia Corporation. GPL-2.0-only.
+            KE_global_ = compute_global_KE(ctx);
+            kinetic_initialized_ = true;
+        }
         // Interpolate the live thermostat setpoint for this step before
         // the chain integrates, mirroring LAMMPS `FixNH::initial_integrate`
         // calling `compute_temp_target()` ahead of `nhc_temp_integrate()`.

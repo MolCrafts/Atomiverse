@@ -13,15 +13,12 @@
 /// accumulator on its post_force phase slot so KineticEnergy can
 /// atomic-add into a known-zero buffer at end_of_step.
 
-#include "atomiverse/cuda/device/launch.cuh"
-#include "atomiverse/cuda/frame/types.cuh"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/observe/stress.cuh"
 #include <cuda_runtime.h>
 
 namespace ATV {
 namespace cuda {
-
-using cuda::prec_t;
 
 struct Virial::State {};
 
@@ -47,7 +44,8 @@ void Virial::launch(const LaunchContext& ctx) {
     // owned by `pair_lj_cut` / `bond_harmonic` / `angle_harmonic` /
     // `dihedral_multi_harmonic` and cleared by `ZeroEnergy` at
     // pre_force @ -999 — NOT touched here.
-    cudaMemsetAsync(f.scalars->stress_kinetic, 0, 6 * sizeof(prec_t), stream);
+    ATV_CUDA_CHECK(cudaMemsetAsync(f.scalars->stress_kinetic, 0,
+                                   sizeof(f.scalars->stress_kinetic), stream));
 }
 
 void Virial::destroy(const DestroyContext& /*ctx*/) {}

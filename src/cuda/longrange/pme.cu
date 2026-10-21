@@ -25,10 +25,13 @@
 
 namespace ATV {
 
-using cuda::prec_t;
 using cuda::real_t;
 
 namespace cuda {
+
+// A power-of-two subwarp keeps every atom's interpolation collective aligned
+// within a hardware warp, including runtime spline orders above eight.
+constexpr int kInterpLanes = 8;
 
 static_assert(std::is_same_v<work_t, float> || std::is_same_v<work_t, double>);
 using PmeComplex = std::conditional_t<std::is_same_v<work_t, double>,
@@ -137,7 +140,7 @@ pme_spread(const real_t* __restrict__ x, const real_t* __restrict__ y,
 /// @brief Influence function: energy + in-place convolution multiply.
 __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
                               const double* __restrict__ influence,
-                              double escale, prec_t* __restrict__ energy) {
+                              double escale, double* __restrict__ energy) {
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2];
     const int half_z = K2 / 2 + 1;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -166,27 +169,28 @@ __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
     extern __shared__ double warp_scratch[];
     const double block_energy = block_reduce_sum(my_energy, warp_scratch);
     if (threadIdx.x == 0)
-        atomicAdd(energy, static_cast<prec_t>(block_energy));
+        atomicAdd(energy, static_cast<double>(block_energy));
 }
 
-/// @brief Interpolate reciprocal forces onto atoms + per-atom self energy.
-template <int Order>
+/// @brief One lane or an eight-lane group interpolates each atom.
+template <int Order, int Lanes>
 __global__ void
 pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
            real_t* __restrict__ fz, const real_t* __restrict__ x,
            const real_t* __restrict__ y, const real_t* __restrict__ z,
            const real_t* __restrict__ q, int natoms, PmeGeom g,
            const work_t* __restrict__ grid, double fscale, double self_pref,
-           prec_t* __restrict__ energy) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+           double* __restrict__ energy) {
+    const int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int i = gid / Lanes, lane = gid % Lanes;
     const double qi = (i < natoms) ? double(q[i]) : 0.0;
-    // Reduce before the neutral/tail early exit so every lane reaches the
-    // block barriers, including partially populated final blocks.
+    // Only one lane owns self energy. All block threads participate before
+    // the group-uniform neutral/tail exit, including the last partial block.
     extern __shared__ double warp_scratch[];
     const double block_energy =
-        block_reduce_sum(self_pref * qi * qi, warp_scratch);
+        block_reduce_sum(lane == 0 ? self_pref * qi * qi : 0.0, warp_scratch);
     if (threadIdx.x == 0)
-        atomicAdd(energy, static_cast<prec_t>(block_energy));
+        atomicAdd(energy, static_cast<double>(block_energy));
     if (i >= natoms || qi == 0.0)
         return;
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
@@ -205,18 +209,51 @@ pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
     }
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2], nm1 = n - 1;
     work_t gd[3] = {0, 0, 0};
-    for (int a = 0; a < n; ++a) {
-        const int g0 = wrap_idx(base[0] - nm1 + a, K0);
-        for (int b = 0; b < n; ++b) {
-            const int g1 = wrap_idx(base[1] - nm1 + b, K1);
-            for (int c = 0; c < n; ++c) {
-                const int g2 = wrap_idx(base[2] - nm1 + c, K2);
-                const work_t cval = grid[g2 + K2 * (g1 + K1 * g0)];
-                gd[0] += cval * dth[0][a] * th[1][b] * th[2][c];
-                gd[1] += cval * th[0][a] * dth[1][b] * th[2][c];
-                gd[2] += cval * th[0][a] * th[1][b] * dth[2][c];
+    if constexpr (Lanes == 1) {
+        for (int a = 0; a < n; ++a) {
+            const int g0 = wrap_idx(base[0] - nm1 + a, K0);
+            for (int b = 0; b < n; ++b) {
+                const int g1 = wrap_idx(base[1] - nm1 + b, K1);
+                for (int c = 0; c < n; ++c) {
+                    const int g2 = wrap_idx(base[2] - nm1 + c, K2);
+                    const work_t cval = grid[g2 + K2 * (g1 + K1 * g0)];
+                    gd[0] += cval * dth[0][a] * th[1][b] * th[2][c];
+                    gd[1] += cval * th[0][a] * dth[1][b] * th[2][c];
+                    gd[2] += cval * th[0][a] * th[1][b] * dth[2][c];
+                }
             }
         }
+    } else {
+        for (int c = lane; c < n; c += Lanes) {
+            const int g2 = wrap_idx(base[2] - nm1 + c, K2);
+            // Select z coefficients without dynamically indexing the specialized
+            // spline arrays, so order-5/6 coefficients can remain in registers.
+            work_t wz = 0, dwz = 0;
+#pragma unroll
+            for (int k = 0; k < n; ++k)
+                if (k == c) {
+                    wz = th[2][k];
+                    dwz = dth[2][k];
+                }
+            for (int a = 0; a < n; ++a) {
+                const int g0 = wrap_idx(base[0] - nm1 + a, K0);
+                for (int b = 0; b < n; ++b) {
+                    const int g1 = wrap_idx(base[1] - nm1 + b, K1);
+                    const work_t cval = grid[g2 + K2 * (g1 + K1 * g0)];
+                    gd[0] += cval * dth[0][a] * th[1][b] * wz;
+                    gd[1] += cval * th[0][a] * dth[1][b] * wz;
+                    gd[2] += cval * th[0][a] * th[1][b] * dwz;
+                }
+            }
+        }
+        // Every active atom owns all eight lanes, even when n < eight. Lanes
+        // without z sites contribute zero; orders 9--12 visit a second column.
+        const unsigned group_mask = 0xffu << (threadIdx.x & 24);
+        for (int offset = Lanes / 2; offset > 0; offset /= 2)
+            for (int d = 0; d < 3; ++d)
+                gd[d] += __shfl_down_sync(group_mask, gd[d], offset, Lanes);
+        if (lane != 0)
+            return;
     }
     double fxv = 0, fyv = 0, fzv = 0;
     for (int d = 0; d < 3; ++d) {
@@ -340,16 +377,17 @@ KSpacePME::KSpacePME(double alpha, double grid_spacing, int order)
 KSpacePME::~KSpacePME() {}
 
 void KSpacePME::build(const BuildContext& ctx) {
-    const long long spread_threads =
-        static_cast<long long>(ctx.frame.n_local()) * order_;
-    if (spread_threads > std::numeric_limits<int>::max() - (kDefaultBlock - 1))
+    const long long stencil_threads =
+        static_cast<long long>(ctx.frame.n_local())
+        * (order_ > kInterpLanes ? order_ : kInterpLanes);
+    if (stencil_threads > std::numeric_limits<int>::max() - (kDefaultBlock - 1))
         throw std::overflow_error(
-            "KSpacePME: charge-spread thread count exceeds int indexing");
-    const cuda::Box& box = ctx.runtime.host_box;
+            "KSpacePME: stencil thread count exceeds int indexing");
+    const cuda::MotionBox& box = ctx.runtime.host_motion_box;
     for (int i = 0; i < 9; ++i)
         inv_cell_[i] = double(box.inv_cell[i]);
     for (int i = 0; i < 9; ++i)
-        built_cell_[i] = double(box.cell[i]);
+        built_cell_[i] = double(ctx.runtime.host_motion_box.cell[i]);
     vol_ = double(box.volume());
     if (!std::isfinite(vol_) || vol_ <= 0)
         throw std::invalid_argument(
@@ -458,16 +496,25 @@ void KSpacePME::build(const BuildContext& ctx) {
     try {
         enqueue_(LaunchContext{ctx.runtime, ctx.frame, 0, 0});
     } catch (...) {
-        cudaStreamEndCapture(stream, &graph);
-        if (graph)
-            cudaGraphDestroy(graph);
+        const auto capture_status = cudaStreamEndCapture(stream, &graph);
+        if (capture_status != cudaSuccess
+            && capture_status != cudaErrorStreamCaptureInvalidated)
+            std::fprintf(stderr, "KSpacePME: capture cleanup failed: %s\n",
+                         cudaGetErrorString(capture_status));
+        if (graph) {
+            const auto destroy_status = cudaGraphDestroy(graph);
+            if (destroy_status != cudaSuccess)
+                std::fprintf(stderr, "KSpacePME: graph cleanup failed: %s\n",
+                             cudaGetErrorString(destroy_status));
+        }
         throw;
     }
     ATV_CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
     cudaGraphExec_t executable = nullptr;
     const auto status = cudaGraphInstantiate(&executable, graph, 0);
-    cudaGraphDestroy(graph);
+    const auto destroy_status = cudaGraphDestroy(graph);
     ATV_CUDA_CHECK(status);
+    ATV_CUDA_CHECK(destroy_status);
     graph_exec_ = executable;
 }
 
@@ -476,7 +523,7 @@ void KSpacePME::compute(const LaunchContext& ctx) {
         throw std::runtime_error(
             "KSpacePME: atom set changed; rebuild the driver");
     for (int i = 0; i < 9; ++i)
-        if (double(ctx.runtime.host_box.cell[i]) != built_cell_[i])
+        if (double(ctx.runtime.host_motion_box.cell[i]) != built_cell_[i])
             throw std::runtime_error("KSpacePME: fixed-cell reciprocal solver; "
                                      "changing-cell MD is unsupported");
     if (built_atoms_)
@@ -515,6 +562,7 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
         kernels::pme_spread<Order><<<grid_size(n * order_), blk, 0, stream>>>(
             frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
             geom, grid);
+        ATV_CUDA_CHECK(cudaGetLastError());
     };
     if (order_ == 5)
         spread.template operator()<5>();
@@ -527,21 +575,32 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
     kernels::
         pme_influence<<<grid_size(nhalf_), blk, energy_scratch_bytes, stream>>>(
             spectrum, geom, d_influence_, escale, &frame.scalars->energy);
+    ATV_CUDA_CHECK(cudaGetLastError());
     if (execute_inverse(inverse, spectrum, grid) != CUFFT_SUCCESS)
         throw std::runtime_error("KSpacePME: inverse FFT failed");
-    auto interpolate = [&]<int Order>() {
-        kernels::pme_interp<Order>
-            <<<grid_size(n), blk, energy_scratch_bytes, stream>>>(
+    auto interpolate = [&]<int Order, int Lanes>() {
+        kernels::pme_interp<Order, Lanes>
+            <<<grid_size(n * Lanes), blk, energy_scratch_bytes, stream>>>(
                 frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.x,
                 frame.atoms.y, frame.atoms.z, frame.atoms.charge, n, geom, grid,
                 fscale, self_pref, &frame.scalars->energy);
+        ATV_CUDA_CHECK(cudaGetLastError());
     };
-    if (order_ == 5)
-        interpolate.template operator()<5>();
-    else if (order_ == 6)
-        interpolate.template operator()<6>();
+    auto interpolate_order = [&]<int Lanes>() {
+        if (order_ == 5)
+            interpolate.template operator()<5, Lanes>();
+        else if (order_ == 6)
+            interpolate.template operator()<6, Lanes>();
+        else
+            interpolate.template operator()<0, Lanes>();
+    };
+    // Subwarps expose more parallelism for small systems. At larger atom
+    // counts one lane per atom avoids duplicating spline work and improves
+    // occupancy. The crossover is conservative for the measured GH200 path.
+    if (n <= 16384)
+        interpolate_order.template operator()<kInterpLanes>();
     else
-        interpolate.template operator()<0>();
+        interpolate_order.template operator()<1>();
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -549,7 +608,8 @@ void KSpacePME::destroy(const DestroyContext& ctx) {
     ATV_CUDA_CHECK(
         cudaStreamSynchronize(static_cast<cudaStream_t>(ctx.runtime.stream)));
     if (graph_exec_) {
-        cudaGraphExecDestroy(static_cast<cudaGraphExec_t>(graph_exec_));
+        ATV_CUDA_CHECK(
+            cudaGraphExecDestroy(static_cast<cudaGraphExec_t>(graph_exec_)));
         graph_exec_ = nullptr;
     }
     built_atoms_ = 0;
@@ -561,11 +621,11 @@ void KSpacePME::destroy(const DestroyContext& ctx) {
         cufftDestroy(static_cast<cufftHandle>(inverse_plan_));
         inverse_plan_ = -1;
     }
-    cudaFree(d_influence_);
+    ATV_CUDA_CHECK(cudaFree(d_influence_));
     d_influence_ = nullptr;
-    cudaFree(d_spectrum_);
+    ATV_CUDA_CHECK(cudaFree(d_spectrum_));
     d_spectrum_ = nullptr;
-    cudaFree(d_grid_);
+    ATV_CUDA_CHECK(cudaFree(d_grid_));
     d_grid_ = nullptr;
 }
 

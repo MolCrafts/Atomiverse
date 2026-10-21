@@ -86,7 +86,7 @@ class ConvCheck {
     /// @param step    Optimizer step counter (post search_direction increment,
     ///                mirroring the CPU components).
     /// @param trace   Per-step diagnostics sink (host).
-    void measure(const LaunchContext& ctx, const work_t* x_prev, int step,
+    void measure(const LaunchContext& ctx, const motion_t* x_prev, int step,
                  std::vector<OptRecord>& trace);
 
     /// @brief Potential energy read back by the most recent measure() [eV].
@@ -96,12 +96,13 @@ class ConvCheck {
     double max_force() const { return max_force_; }
 
   private:
-    int n_ = 0;                   ///< Atom count.
-    work_t* d_metrics_ = nullptr; ///< Device {max_f, sum_f2, max_disp, sum_d2}.
-    work_t* h_metrics_ = nullptr; ///< Pinned mirror of d_metrics_.
-    double* h_energy_ = nullptr;  ///< Pinned mirror of frame.scalars->energy.
-    double energy_prev_ = 0;      ///< Energy at the previous measure [eV].
-    double last_energy_ = 0;      ///< Energy at the latest measure [eV].
+    int n_ = 0; ///< Atom count.
+    motion_t* d_metrics_ =
+        nullptr; ///< Device {max_f, sum_f2, max_disp, sum_d2}.
+    motion_t* h_metrics_ = nullptr; ///< Pinned mirror of d_metrics_.
+    double* h_energy_ = nullptr;    ///< Pinned mirror of frame.scalars->energy.
+    double energy_prev_ = 0;        ///< Energy at the previous measure [eV].
+    double last_energy_ = 0;        ///< Energy at the latest measure [eV].
     double max_force_ = 0; ///< Max |F| at the latest measure [eV/Angstrom].
 };
 

@@ -14,6 +14,11 @@
 #include "atomiverse/cpu/driver/step_timing.h"
 #include "atomiverse/cpu/frame/pbc.h"
 
+#ifdef ATV_HAS_MD
+#include "atomiverse/cpu/communication/reduce.h"
+#include "atomiverse/cpu/dynamics/init.h"
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -428,6 +433,32 @@ void Runtime::setup_verlet_comm_() {
     }
     verlet_setup_done_ = true;
 }
+
+#ifdef ATV_HAS_MD
+void Runtime::setup_md_forces() {
+    // LAMMPS Verlet::setup / setup_minimal(0), src/verlet.cpp,
+    // a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b: after setup has built
+    // ghosts and neighbors, clear and evaluate forces, reverse ghost forces,
+    // then finish force-dependent setup before the first initial_integrate.
+    // Copyright (2003) Sandia Corporation. GPL-2.0-only.
+    // Communication / neighbor setup has already run in build_components();
+    // replaying pre_exchange..neighbor would duplicate migration and hooks.
+    using P = ATV::md::Phase;
+    walk_slot_(ATV::slot_of(P::pre_force), 0, /*skip_engine=*/true);
+    walk_slot_(ATV::slot_of(P::force), 0, /*skip_engine=*/true);
+    comm_after_force_(ATV::slot_of(P::post_force), 0);
+    walk_slot_(ATV::slot_of(P::post_force), 0, /*skip_engine=*/true);
+
+    // Only scalar infrastructure runs here: walking end_of_step would also
+    // advance thermostat/barostat chains and publish a spurious MD snapshot.
+    // These stateless components own the same scalar operations as in a step.
+    LaunchContext ctx{context_, *frame_, ATV::slot_of(P::end_of_step), 0,
+                      /*forces_requested=*/true};
+    ZeroKinetic{}.launch(ctx);
+    md::KineticEnergy{}.launch(ctx);
+    md::mpi::Reduce{}.launch(ctx);
+}
+#endif
 
 void Runtime::step_linear_(int step_idx) {
     decide_reneighbor_for_plan(plan_, context_, *frame_);

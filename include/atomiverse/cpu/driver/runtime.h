@@ -75,6 +75,14 @@ class Runtime {
     /// @brief Execute one simulation step.
     void step(int step_idx);
 
+#ifdef ATV_HAS_MD
+    /// @brief Seed initial MD force/virial and global scalar observables after
+    ///        build_components(), without moving atoms or advancing a step.
+    ///        The MD preset calls this once per fresh trajectory, including
+    ///        run(frame, 0); continuation keeps the existing force state.
+    void setup_md_forces();
+#endif
+
     // ── Nested plans: a sub-driver runs its own Plan on THIS runtime ──────────
     void build_plan(const Plan<cpu::Component>& plan);
     void step_plan(const Plan<cpu::Component>& plan, int step_idx);
@@ -171,7 +179,7 @@ class Runtime {
     /// @brief Newton-on reverse of ghost forces [eV/Å].
     void comm_after_force_(int slot, int step_idx);
     /// @brief LAMMPS Verlet::setup: `comm->exchange` then `borders` then
-    ///        neighbor build (MPI only). Ghost positions in Å.
+    ///        neighbor build on every rank count. Ghost positions in Å.
     void setup_verlet_comm_();
     /// @brief Evaluate/Minimize: Comm around force/evaluate (Å positions,
     ///        reverse of ghost forces [eV/Å]); skip `verlet_engine` adapters.

@@ -16,7 +16,8 @@ namespace cuda {
 
 /// @brief Transfer CUDA Frame back to CPU Frame (D2H copy, no deallocation).
 ///
-/// Copies positions, velocities, forces, energy, kinetic energy, stress,
+/// Copies reconstructed positions, velocities, forces, masses, atom types,
+/// charge, identity, energy, kinetic energy, stress,
 /// and box from device to host.
 ///
 /// @param src CUDA Frame to read from.

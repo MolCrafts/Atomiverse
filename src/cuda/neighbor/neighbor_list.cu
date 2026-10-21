@@ -427,9 +427,9 @@ void NeighborList::launch(const LaunchContext& ctx) {
             s.buf.interaction_mask.data(), stream);
         ctx.runtime.md.exclusions_baked = launch_bake_csr_exclusions(
             s.buf.row_ptr.data(), s.buf.col_idx.data(),
-            s.buf.original_index.data(), nc, ctx.runtime.md.excl_offsets,
-            ctx.runtime.md.excl_partners, ctx.runtime.md.s_excl,
-            s.buf.interaction_mask.data(), stream);
+            s.buf.original_index.data(), nc, total_cluster_pairs,
+            ctx.runtime.md.excl_offsets, ctx.runtime.md.excl_partners,
+            ctx.runtime.md.s_excl, s.buf.interaction_mask.data(), stream);
         pairs_.rebuild_generation =
             next_rebuild_generation.fetch_add(1, std::memory_order_relaxed);
         launch_snapshot_ref_atoms(frame.atoms.x, frame.atoms.y, frame.atoms.z,
@@ -575,8 +575,9 @@ void NeighborList::rebuild_issue(const LaunchContext& ctx) {
         stream);
     ctx.runtime.md.exclusions_baked = launch_bake_csr_exclusions(
         s.buf.row_ptr.data(), s.buf.col_idx.data(), s.buf.original_index.data(),
-        nc, ctx.runtime.md.excl_offsets, ctx.runtime.md.excl_partners,
-        ctx.runtime.md.s_excl, s.buf.interaction_mask.data(), stream);
+        nc, total_cluster_pairs, ctx.runtime.md.excl_offsets,
+        ctx.runtime.md.excl_partners, ctx.runtime.md.s_excl,
+        s.buf.interaction_mask.data(), stream);
 
     pairs_.rebuild_generation =
         next_rebuild_generation.fetch_add(1, std::memory_order_relaxed);

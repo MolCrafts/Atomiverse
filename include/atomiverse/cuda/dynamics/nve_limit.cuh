@@ -5,6 +5,7 @@
 
 #include "atomiverse/cuda/component/integrator.cuh"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -25,16 +26,18 @@ namespace md {
 /// raw per-subdomain SoA pointers rather than a single Frame). `xmax` is the
 /// per-step displacement cap [Å]; `vmax = xmax/dt` is computed internally.
 /// These mirror LAMMPS `fix nve/limit` exactly (ATV::units::force_to_accel units, Euclidean speed
-/// cap, orthorhombic PBC wrap on the position update).
-void launch_nve_limit_initial(real_t* x, real_t* y, real_t* z, real_t* vx,
-                              real_t* vy, real_t* vz, const real_t* fx,
-                              const real_t* fy, const real_t* fz,
-                              const real_t* mass, cuda::Box box, work_t dt,
-                              work_t xmax, int n, cudaStream_t stream = 0);
-void launch_nve_limit_final(real_t* vx, real_t* vy, real_t* vz,
+/// cap, PBC wrap and crossing-count update on the position update).
+void launch_nve_limit_initial(real_t* x, real_t* y, real_t* z, real_t* xc,
+                              real_t* yc, real_t* zc, std::int8_t* image,
+                              motion_t* vx, motion_t* vy, motion_t* vz,
+                              const real_t* fx, const real_t* fy,
+                              const real_t* fz, const motion_t* mass,
+                              cuda::MotionBox box, motion_t dt, motion_t xmax,
+                              int n, cudaStream_t stream = 0);
+void launch_nve_limit_final(motion_t* vx, motion_t* vy, motion_t* vz,
                             const real_t* fx, const real_t* fy,
-                            const real_t* fz, const real_t* mass, work_t dt,
-                            work_t xmax, int n, cudaStream_t stream = 0);
+                            const real_t* fz, const motion_t* mass, motion_t dt,
+                            motion_t xmax, int n, cudaStream_t stream = 0);
 
 /// @brief CUDA sibling of `cpu::md::NVELimit` — velocity Verlet with a
 ///        per-step displacement cap. Mirrors LAMMPS `fix nve/limit xmax`.

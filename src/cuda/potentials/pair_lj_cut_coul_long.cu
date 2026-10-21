@@ -199,7 +199,7 @@ __device__ void tally(work_t e, const work_t* v, prec_t* partial,
 
 template <bool Virial>
 __global__ void reduce_partials(const prec_t* partial, int count, int stride,
-                                prec_t* energy, prec_t* stress) {
+                                double* energy, double* stress) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     __shared__ prec_t scratch[kDefaultBlock / 32];
     if constexpr (Virial) {
@@ -254,7 +254,6 @@ __global__ __launch_bounds__(kTileBlock, 4) void fused_tile(
             }
             for (int step = 0; step < 32; ++step) {
                 const int jlane = (lane + step) & 31;
-                const int aj = __shfl_sync(0xffffffffu, bj, jlane);
                 work_t dx = __shfl_sync(0xffffffffu, b.x, jlane) - a.x;
                 work_t dy = __shfl_sync(0xffffffffu, b.y, jlane) - a.y;
                 work_t dz = __shfl_sync(0xffffffffu, b.z, jlane) - a.z;
@@ -275,8 +274,8 @@ __global__ __launch_bounds__(kTileBlock, 4) void fused_tile(
                     box.min_image(dx, dy, dz);
                 const work_t r2 = dx * dx + dy * dy + dz * dz;
                 work_t contribution[3] = {};
-                if (ai >= 0 && aj >= 0 && ai != aj && (mask & (1u << jlane))
-                    && r2 > 0 && r2 < cut2) {
+                // Packed masks exclude self pairs and every padded J lane.
+                if (ai >= 0 && (mask & (1u << jlane)) && r2 > 0 && r2 < cut2) {
                     const work_t inv = rsqrt(r2), inv2 = inv * inv,
                                  ar = alpha * (r2 * inv);
                     const work_t sr2 = sig * sig * inv2, sr6 = sr2 * sr2 * sr2;
@@ -430,22 +429,22 @@ struct PairLJCutCoulLong::State {
     int packed_count = 0;
     std::uint64_t packed_generation = 0;
     ~State() {
-        cudaFree(sorted);
-        cudaFree(images);
-        cudaFree(sigma);
-        cudaFree(epsilon);
-        cudaFree(offsets);
-        cudaFree(partners);
-        cudaFree(pairs);
-        cudaFree(partial);
-        cudaFree(packed.counts);
-        cudaFree(packed.offsets);
-        cudaFree(packed.ci);
-        cudaFree(packed.j);
-        cudaFree(packed.masks);
-        cudaFree(packed.scan_temp);
+        ATV_CUDA_CHECK(cudaFree(sorted));
+        ATV_CUDA_CHECK(cudaFree(images));
+        ATV_CUDA_CHECK(cudaFree(sigma));
+        ATV_CUDA_CHECK(cudaFree(epsilon));
+        ATV_CUDA_CHECK(cudaFree(offsets));
+        ATV_CUDA_CHECK(cudaFree(partners));
+        ATV_CUDA_CHECK(cudaFree(pairs));
+        ATV_CUDA_CHECK(cudaFree(partial));
+        ATV_CUDA_CHECK(cudaFree(packed.counts));
+        ATV_CUDA_CHECK(cudaFree(packed.offsets));
+        ATV_CUDA_CHECK(cudaFree(packed.ci));
+        ATV_CUDA_CHECK(cudaFree(packed.j));
+        ATV_CUDA_CHECK(cudaFree(packed.masks));
+        ATV_CUDA_CHECK(cudaFree(packed.scan_temp));
         if (packed.host_count)
-            cudaFreeHost(packed.host_count);
+            ATV_CUDA_CHECK(cudaFreeHost(packed.host_count));
     }
 };
 PairLJCutCoulLong::PairLJCutCoulLong(std::vector<double> epsilon,
@@ -636,25 +635,32 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
         p->cl_orig_index, slots, f.atoms.x, f.atoms.y, f.atoms.z,
         f.atoms.charge, s.sigma, s.epsilon, s.sorted, s.images,
         ctx.runtime.host_box, work_t(cutoff_ * cutoff_));
+    ATV_CUDA_CHECK(cudaGetLastError());
     auto run = [&](auto o, auto v) {
         constexpr bool O = decltype(o)::value, V = decltype(v)::value;
-        if (tile_blocks)
+        if (tile_blocks) {
             fused_tile<O, V><<<tile_blocks, kTileBlock, 0, stream>>>(
                 s.sorted, p->cl_orig_index, s.packed.ci, s.packed.j,
                 s.packed.masks, s.packed_count, ctx.runtime.host_box, s.images,
                 work_t(alpha_), work_t(cutoff_ * cutoff_), f.atoms.fx,
                 f.atoms.fy, f.atoms.fz, s.partial, s.partial_capacity);
-        if (s.count)
+            ATV_CUDA_CHECK(cudaGetLastError());
+        }
+        if (s.count) {
             exceptions<V><<<grid_size(s.count), kDefaultBlock, 0, stream>>>(
                 s.pairs, s.count, f.atoms.x, f.atoms.y, f.atoms.z,
                 f.atoms.charge, s.sigma, s.epsilon, ctx.runtime.host_box,
                 work_t(alpha_), f.atoms.fx, f.atoms.fy, f.atoms.fz, s.partial,
                 s.partial_capacity, tile_blocks);
-        if (partial_count)
+            ATV_CUDA_CHECK(cudaGetLastError());
+        }
+        if (partial_count) {
             reduce_partials<V>
                 <<<grid_size(partial_count), kDefaultBlock, 0, stream>>>(
                     s.partial, partial_count, s.partial_capacity,
                     &f.scalars->energy, f.scalars->stress);
+            ATV_CUDA_CHECK(cudaGetLastError());
+        }
     };
     if (ctx.runtime.host_box.ortho) {
         if (stress_)

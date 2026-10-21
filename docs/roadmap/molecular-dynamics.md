@@ -19,6 +19,21 @@ Tutorial: [MD](../tutorial/ch10-classical-md.md) · [ensembles](../tutorial/ch11
 | DPD thermostat | ✓ | ○ | |
 | NVELimit | ✓ | ✓ | Displacement cap |
 
+CUDA mixed precision retains FP32 main positions plus residuals and FP64
+velocities, masses, integration and canonical cell; force geometry and FFT
+work remain FP32. Import/export, atom permutation, communication, minimizer
+rollback and asynchronous position snapshots preserve the full motion state.
+Global energy and stress scalars remain FP64 in every CUDA mode.
+
+A fresh CPU or CUDA velocity-Verlet run evaluates the initial forces before
+its first half-kick. Initial force preparation does not advance time, integrate
+positions or emit records. Langevin draws a distinct sample for every force
+application, including preparation and the first step; its temperature ramp
+still follows the physical step. Focused regressions pin the first Verlet
+step and the analytic one-step Langevin velocity variance on both backends.
+MTK NPT uses the actual initial kinetic energy, with CPU/CUDA volume-parity
+and MPI reduction checks.
+
 ## 2. Barostats and ensembles
 
 | Capability | CPU | CUDA | Notes |

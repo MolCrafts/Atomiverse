@@ -20,7 +20,6 @@
 
 namespace ATV {
 
-using cuda::prec_t;
 using cuda::real_t;
 using cuda::work_t;
 
@@ -52,7 +51,7 @@ gather_cluster_pos_q(const int* __restrict__ orig_index,
 template <bool Ortho, bool Virial>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
     real_t* __restrict__ fx, real_t* __restrict__ fy, real_t* __restrict__ fz,
-    prec_t* __restrict__ energy, prec_t* __restrict__ stress,
+    double* __restrict__ energy, double* __restrict__ stress,
     const real_t* __restrict__ spx, const real_t* __restrict__ spy,
     const real_t* __restrict__ spz, const real_t* __restrict__ spq,
     const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
@@ -164,11 +163,11 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
         work_t out[7];
         block_reduce_sum_n<7>(my_vals, warp_scratch, out);
         if (threadIdx.x == 0) {
-            atomicAdd(energy, static_cast<prec_t>(out[0]));
+            atomicAdd(energy, static_cast<double>(out[0]));
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
-                    atomicAdd(&stress[c], static_cast<prec_t>(out[c + 1]));
+                    atomicAdd(&stress[c], static_cast<double>(out[c + 1]));
             }
         }
     } else {
@@ -176,7 +175,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
         work_t out[1];
         block_reduce_sum_n<1>(my_vals, warp_scratch, out);
         if (threadIdx.x == 0)
-            atomicAdd(energy, static_cast<prec_t>(out[0]));
+            atomicAdd(energy, static_cast<double>(out[0]));
     }
 }
 
@@ -194,10 +193,10 @@ void CoulLong::build(const BuildContext& ctx) {
         ((ctx.frame.capacity() + kOpenmmClusterSize - 1) / kOpenmmClusterSize)
         * kOpenmmClusterSize;
     if (slots > spos_cap_) {
-        cudaFree(spx_);
-        cudaFree(spy_);
-        cudaFree(spz_);
-        cudaFree(spq_);
+        ATV_CUDA_CHECK(cudaFree(spx_));
+        ATV_CUDA_CHECK(cudaFree(spy_));
+        ATV_CUDA_CHECK(cudaFree(spz_));
+        ATV_CUDA_CHECK(cudaFree(spq_));
         spx_ = spy_ = spz_ = spq_ = nullptr;
         ATV_CUDA_CHECK(cudaMalloc(&spx_, slots * sizeof(real_t)));
         ATV_CUDA_CHECK(cudaMalloc(&spy_, slots * sizeof(real_t)));
@@ -209,10 +208,10 @@ void CoulLong::build(const BuildContext& ctx) {
 
 void CoulLong::destroy(const DestroyContext&) {
     if (spx_) {
-        cudaFree(spx_);
-        cudaFree(spy_);
-        cudaFree(spz_);
-        cudaFree(spq_);
+        ATV_CUDA_CHECK(cudaFree(spx_));
+        ATV_CUDA_CHECK(cudaFree(spy_));
+        ATV_CUDA_CHECK(cudaFree(spz_));
+        ATV_CUDA_CHECK(cudaFree(spq_));
         spx_ = spy_ = spz_ = spq_ = nullptr;
         spos_cap_ = 0;
     }
@@ -228,7 +227,7 @@ void CoulLong::compute(const LaunchContext& ctx) {
     const work_t cutoff_sq =
         static_cast<work_t>(cutoff_) * static_cast<work_t>(cutoff_);
     cuda::Box box = ctx.runtime.host_box;
-    prec_t* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
+    double* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
 
     // OpenMM cluster force — sole CUDA MD nonbonded path (cuda-openmm-md).
     if (pairs->cl_row_ptr == nullptr || pairs->cl_col_idx == nullptr
@@ -248,6 +247,7 @@ void CoulLong::compute(const LaunchContext& ctx) {
         kernels::gather_cluster_pos_q<<<grid, block, 0, stream>>>(
             pairs->cl_orig_index, frame.atoms.x, frame.atoms.y, frame.atoms.z,
             frame.atoms.charge, n_slots, spx_, spy_, spz_, spq_);
+        ATV_CUDA_CHECK(cudaGetLastError());
     }
 
     const bool virial = (stress_ptr != nullptr);
@@ -265,6 +265,7 @@ void CoulLong::compute(const LaunchContext& ctx) {
             pairs->cl_orig_index, nc, box, /*periodic=*/true,
             static_cast<work_t>(alpha_), cutoff_sq,
             static_cast<work_t>(ATV::units::coulomb));
+        ATV_CUDA_CHECK(cudaGetLastError());
     };
     using T = std::true_type;
     using F = std::false_type;

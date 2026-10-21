@@ -9,14 +9,14 @@
 #include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
+#include <vector>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/frame/transfer.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
-#include "atomiverse/cuda/dynamics/md.cuh"
-#include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
-#include "atomiverse/cuda/neighbor/neighbor_list.cuh"
-#include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
+#include "atomiverse/cuda/frame/transfer.cuh"
 
 using namespace ATV;
 
@@ -78,11 +78,8 @@ TEST(ZeroMomentum, FrequencyZeroTreatedAsOne) {
     EXPECT_EQ(zm.frequency_steps(), 1);
 }
 
-TEST(ZeroMomentum, ZeroesUniformCOMDriftAfterOneStep) {
-    // 64 atoms with uniform v=(1, 2, 3). LJ@cutoff=3 with spacing=4 gives
-    // ~zero pair force; the lone velocity update from VelocityVerlet over
-    // dt=1e-6 fs barely perturbs the velocities. Initial |Σ m v| = (64,
-    // 128, 192) — easily above the FP tolerance.
+TEST(ZeroMomentum, ZeroesUniformCOMDrift) {
+    // Test the momentum-removal method alone, with a known uniform drift.
     auto frame = make_drifting_lj(4, 1.0, 2.0, 3.0);
     double p0[3];
     com_momentum(frame, p0);
@@ -90,16 +87,15 @@ TEST(ZeroMomentum, ZeroesUniformCOMDriftAfterOneStep) {
     ASSERT_GT(std::fabs(p0[1]), 1.0);
     ASSERT_GT(std::fabs(p0[2]), 1.0);
 
-    const double cutoff = 3.0;
-    cuda::md::MD sim;
-    sim.set_integrator(
-        cuda::md::VelocityVerlet{1e-6}); // tiny dt — preserve velocity bias
-    sim.on(ATV::md::Phase::force)
-        .add(cuda::NeighborList{cutoff}, -10)
-        .add(cuda::PairLJCut{1.0, 1.0, cutoff});
-    sim.set_observer(cuda::md::ZeroMomentum{1});
-    sim.build();
-    sim.run(frame, 1);
+    auto device = cpu::to_cuda(frame);
+    cuda::Context runtime;
+    cuda::md::ZeroMomentum component{1};
+    component.build({runtime, device});
+    component.launch({runtime, device, slot_of(md::Phase::end_of_step), 0});
+    ATV_CUDA_CHECK(cudaDeviceSynchronize());
+    cuda::to_cpu(device, frame);
+    component.destroy({runtime, device});
+    cuda::destroy(device);
 
     double p1[3];
     com_momentum(frame, p1);
@@ -110,10 +106,23 @@ TEST(ZeroMomentum, ZeroesUniformCOMDriftAfterOneStep) {
     EXPECT_LT(std::fabs(p1[2]), 1e-8);
 }
 
-// freq>1 behaviour is verified by code review of `step_++ % freq_ != 0`
-// in `cuda::md::ZeroMomentum::launch` rather than by a runtime test:
-// constructing a setup where the SECOND step is observably non-zero
-// (skipped by freq=2) requires injecting a velocity perturbation
-// between steps that the integrator can't reproduce on its own from
-// already-zero COM. The CPU sibling `cpu::md::ZeroLinearMomentum` ships
-// with the same modulo gate and rides on its own test coverage.
+TEST(ZeroMomentum, FrequencyLeavesAlternateCaptureUnchanged) {
+    auto frame = make_drifting_lj(4, 1.0, 2.0, 3.0);
+    auto device = cpu::to_cuda(frame);
+    cuda::Context runtime;
+    cuda::md::ZeroMomentum component{2};
+    component.build({runtime, device});
+    component.launch({runtime, device, slot_of(md::Phase::end_of_step), 0});
+    ATV_CUDA_CHECK(cudaDeviceSynchronize());
+    std::vector<cuda::motion_t> bias(frame.nlocal(), cuda::motion_t(4));
+    ATV_CUDA_CHECK(cudaMemcpy(device.atoms.vx, bias.data(),
+                              bias.size() * sizeof(cuda::motion_t),
+                              cudaMemcpyHostToDevice));
+    component.launch({runtime, device, slot_of(md::Phase::end_of_step), 1});
+    ATV_CUDA_CHECK(cudaDeviceSynchronize());
+    cuda::to_cpu(device, frame);
+    for (int i = 0; i < frame.nlocal(); ++i)
+        EXPECT_EQ(frame.span(kAtom_vx)[i], 4);
+    component.destroy({runtime, device});
+    cuda::destroy(device);
+}

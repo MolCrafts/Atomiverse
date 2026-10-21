@@ -41,6 +41,7 @@
 
 #include "atomiverse/cuda/component/optimizer.cuh"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -122,23 +123,26 @@ class LBFGS : public cuda::Optimizer {
     int n_ = 0;  ///< Atom count.
     int n3_ = 0; ///< 3 * n_.
 
-    // Planar [x:0..n, y:n..2n, z:2n..3n] device buffers, work_t precision
+    // Planar [x:0..n, y:n..2n, z:2n..3n] device buffers, motion_t precision
     // (s = x − x_prev and y = g − g_prev are differences of nearly-equal
     // values; real_t storage would destroy the curvature information).
-    work_t* d_x_ = nullptr;     ///< Current packed positions (3N).
-    work_t* d_g_ = nullptr;     ///< Current packed gradient −F (3N).
-    work_t* d_xprev_ = nullptr; ///< Positions at the last accepted step (3N).
-    work_t* d_gprev_ = nullptr; ///< Gradient at the last accepted step (3N).
-    work_t* d_s_ = nullptr;     ///< Position-difference ring (memory × 3N).
-    work_t* d_y_ = nullptr;     ///< Gradient-difference ring (memory × 3N).
-    work_t* d_q_ = nullptr;     ///< Two-loop scratch q → r (3N).
-    work_t* d_dir_ = nullptr; ///< Search direction (3N, persists for rollback).
-    work_t* d_alpha_ = nullptr; ///< Two-loop a_k scalars (memory).
-    work_t* d_dot_ = nullptr;   ///< Device {dot, dir_max} scratch scalars.
-    work_t* d_ys_ = nullptr;    ///< Device curvature product y·s.
-    work_t* d_ls_ = nullptr; ///< Device {applied α, g·d} line-search scalars.
-    work_t* h_ys_ = nullptr; ///< Pinned mirror of d_ys_.
-    work_t* h_ls_ = nullptr; ///< Pinned mirror of d_ls_.
+    motion_t* d_x_ = nullptr; ///< Current packed positions (3N).
+    motion_t* d_g_ = nullptr; ///< Current packed gradient −F (3N).
+    std::int8_t* d_image_prev_ =
+        nullptr;                  ///< Trial-origin lattice crossings (3N).
+    motion_t* d_xprev_ = nullptr; ///< Positions at the last accepted step (3N).
+    motion_t* d_gprev_ = nullptr; ///< Gradient at the last accepted step (3N).
+    motion_t* d_s_ = nullptr;     ///< Position-difference ring (memory × 3N).
+    motion_t* d_y_ = nullptr;     ///< Gradient-difference ring (memory × 3N).
+    motion_t* d_q_ = nullptr;     ///< Two-loop scratch q → r (3N).
+    motion_t* d_dir_ =
+        nullptr; ///< Search direction (3N, persists for rollback).
+    motion_t* d_alpha_ = nullptr; ///< Two-loop a_k scalars (memory).
+    motion_t* d_dot_ = nullptr;   ///< Device {dot, dir_max} scratch scalars.
+    motion_t* d_ys_ = nullptr;    ///< Device curvature product y·s.
+    motion_t* d_ls_ = nullptr; ///< Device {applied α, g·d} line-search scalars.
+    motion_t* h_ys_ = nullptr; ///< Pinned mirror of d_ys_.
+    motion_t* h_ls_ = nullptr; ///< Pinned mirror of d_ls_.
 
     // Host-side circular-buffer bookkeeping (gates kernel-launch counts).
     std::vector<double> rho_; ///< 1 / (y·s) per stored pair.

@@ -133,6 +133,8 @@ class NoseHooverNPT : public cuda::Integrator {
 
     // Cached global kinetic energy carried between phases.
     double KE_global_ = 0.0;
+    bool kinetic_initialized_ =
+        false; ///< First launch samples actual velocities.
 
     // Device scratch (cudaMalloc'd in build()).
     //   d_npt_scratch_: 8 doubles consolidated NPT reduction buffer.

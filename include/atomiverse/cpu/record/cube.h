@@ -17,6 +17,7 @@
 namespace ATV {
 namespace cpu {
 class Frame;
+struct DensityGrid;
 namespace recorder {
 
 /// @brief Uniform Cartesian grid in Bohr (cube-file native units).
@@ -58,6 +59,16 @@ CubeGrid bounding_box_grid(const std::vector<scf::native::Shell>& shells,
 void write_cube(const std::string& filename, const std::string& title1,
                 const std::string& title2, const Frame& frame,
                 const CubeGrid& grid, const std::vector<double>& values);
+
+/// @brief Write an evaluated density grid without changing its sample locations.
+/// @param filename Output path.
+/// @param title1,title2 Cube title lines.
+/// @param frame Frozen nuclear geometry [Angstrom] and atomic numbers.
+/// @param grid Density grid with Angstrom origin/extents and e/Bohr^3 values.
+/// @throws std::invalid_argument for invalid dimensions, extents or value count.
+void write_cube(const std::string& filename, const std::string& title1,
+                const std::string& title2, const Frame& frame,
+                const DensityGrid& grid);
 
 } // namespace recorder
 } // namespace cpu

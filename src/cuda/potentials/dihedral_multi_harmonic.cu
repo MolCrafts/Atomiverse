@@ -1,6 +1,7 @@
 /// @file cuda/potentials/dihedral_multi_harmonic.cu
 /// @brief CUDA DihedralMultiHarmonic — V = Σₙ Cₙ cosⁿ(φ).
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
@@ -37,7 +38,7 @@ __global__ __launch_bounds__(128, 4) void multi_harmonic_dihedral_k(
     const real_t* __restrict__ x, const real_t* __restrict__ y,
     const real_t* __restrict__ z, real_t* __restrict__ fx,
     real_t* __restrict__ fy, real_t* __restrict__ fz,
-    prec_t* __restrict__ energy, prec_t* __restrict__ stress,
+    double* __restrict__ energy, double* __restrict__ stress,
     const int* __restrict__ di, const int* __restrict__ dj,
     const int* __restrict__ dk, const int* __restrict__ dl,
     const int* __restrict__ dt,
@@ -240,11 +241,11 @@ __global__ __launch_bounds__(128, 4) void multi_harmonic_dihedral_k(
     work_t out[7];
     block_reduce_sum_n<7>(my_vals, warp_scratch, out);
     if (threadIdx.x == 0) {
-        atomicAdd(energy, static_cast<prec_t>(out[0]));
+        atomicAdd(energy, static_cast<double>(out[0]));
         if (stress != nullptr) {
 #pragma unroll
             for (int c = 0; c < 6; ++c)
-                atomicAdd(&stress[c], static_cast<prec_t>(out[c + 1]));
+                atomicAdd(&stress[c], static_cast<double>(out[c + 1]));
         }
     }
 }
@@ -259,9 +260,9 @@ void DihedralMultiHarmonic::build(const BuildContext& /*ctx*/) {
     for (int t = 0; t < nt; ++t)
         for (int c = 0; c < 5; ++c)
             flat[t * 5 + c] = C_[t][c];
-    cudaMalloc(&state_->d_C, nt * 5 * sizeof(work_t));
-    cudaMemcpy(state_->d_C, flat.data(), nt * 5 * sizeof(work_t),
-               cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_C, nt * 5 * sizeof(work_t)));
+    ATV_CUDA_CHECK(cudaMemcpy(state_->d_C, flat.data(), nt * 5 * sizeof(work_t),
+                              cudaMemcpyHostToDevice));
 }
 
 void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
@@ -285,10 +286,11 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
         &f.scalars->energy, &f.scalars->stress[0], f.dihedrals.atomi,
         f.dihedrals.atomj, f.dihedrals.atomk, f.dihedrals.atoml,
         f.dihedrals.type, state_->d_C, ctx.runtime.host_box, nd);
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 void DihedralMultiHarmonic::destroy(const DestroyContext& /*ctx*/) {
-    cudaFree(state_->d_C);
+    ATV_CUDA_CHECK(cudaFree(state_->d_C));
     *state_ = {};
 }
 

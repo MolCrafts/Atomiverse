@@ -20,9 +20,9 @@ namespace {
 /// @brief Per-atom Gaussian stream with Box-Muller pair caching.
 ///
 /// Deliberately constructed once per atom inside the `launch()` loop so
-/// each atom's kick is seeded from `(step, tag)` — two ranks that own
-/// the same global atom (different row indices, same tag) produce the
-/// same random force, preserving cross-rank reproducibility without
+/// each atom's kick is seeded from `(force-evaluation sample, tag)`.
+/// Two ranks that own the same global atom (different row indices, same tag)
+/// produce the same random force, preserving cross-rank reproducibility without
 /// needing an MPI reduction. The construction cost is a single
 /// `uint64_t` store on the stack; `next()`'s `log / cos / sqrt` triple
 /// dominates per-atom cost.
@@ -32,8 +32,7 @@ namespace {
 /// halving the Box-Muller invocations per atom (3 gaussians needed ⇒
 /// 2 invocations instead of 3). A dedicated HPC pass can drop the
 /// `log / cos` entirely by switching to Marsaglia polar; keep the
-/// current form here so the statistical properties stay identical to
-/// the 12 existing Langevin tests.
+/// current form here so the Gaussian distribution is unchanged.
 struct GaussStream {
     std::uint64_t s;
     bool has_cached = false;
@@ -76,7 +75,16 @@ FixLangevin::FixLangevin(double T_start, double T_stop, double damp, double dt,
     T_live_ = T_start_;
 }
 
+void FixLangevin::build(const cpu::BuildContext&) {
+    sample_counter_ = 0;
+    T_live_ = T_start_;
+}
+
 void FixLangevin::launch(const cpu::LaunchContext& ctx) {
+    // Every rank consumes one sample per force evaluation, even when it
+    // currently owns no atoms. Continuation keeps this sequence live;
+    // build restarts it for an independent trajectory.
+    const std::uint64_t sample = sample_counter_++;
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
 
@@ -103,13 +111,16 @@ void FixLangevin::launch(const cpu::LaunchContext& ctx) {
         delta = std::clamp(delta, 0.0, 1.0);
     }
     T_live_ = T_start_ + delta * (T_stop_ - T_start_);
+    if (n <= 0)
+        return;
 
-    // Per-step seed mixed in. Atom identity = global tag, so the same
-    // atom on different rank counts gets the same kick (modulo
-    // floating-point reduction noise elsewhere).
+    // The initial force and the first integrated force share ctx.step == 0,
+    // but require independent random samples. Atom identity remains the
+    // global tag, preserving reproducibility across rank counts when each
+    // rank follows the same force-evaluation schedule.
     const std::uint64_t base =
         static_cast<std::uint64_t>(seed_) * 0x9E3779B97F4A7C15ULL
-        + static_cast<std::uint64_t>(ctx.step) * 0xBF58476D1CE4E5B9ULL;
+        + sample * 0xBF58476D1CE4E5B9ULL;
 
     // gfactor1 multiplies v -> drag force (temperature-independent, as
     // LAMMPS `gfactor1`).

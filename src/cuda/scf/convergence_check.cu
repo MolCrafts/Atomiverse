@@ -5,6 +5,7 @@
 #include "cublas_dispatch.cuh"
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -71,8 +72,10 @@ void ConvergenceCheck::step(const SolverContext& ctx, SCFWorkspace& ws) {
             prec_t energy = 0;
             detail::dot(handle, nn, scf.H, 1, scf.P, 1, &energy);
             energy *= static_cast<prec_t>(units::kHartreeInEv);
-            cudaMemcpyAsync(&ctx.frame.scalars->energy, &energy, sizeof(prec_t),
-                            cudaMemcpyHostToDevice, stream);
+            const double frame_energy = static_cast<double>(energy);
+            ATV_CUDA_CHECK(cudaMemcpyAsync(&ctx.frame.scalars->energy,
+                                           &frame_energy, sizeof(frame_energy),
+                                           cudaMemcpyHostToDevice, stream));
         }
         return;
     }
@@ -86,11 +89,13 @@ void ConvergenceCheck::step(const SolverContext& ctx, SCFWorkspace& ws) {
         prec_t energy = 0;
         detail::dot(handle, nn, scf.H, 1, scf.P, 1, &energy);
         energy *= static_cast<prec_t>(units::kHartreeInEv);
-        cudaMemcpyAsync(&ctx.frame.scalars->energy, &energy, sizeof(prec_t),
-                        cudaMemcpyHostToDevice, stream);
+        const double frame_energy = static_cast<double>(energy);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(&ctx.frame.scalars->energy,
+                                       &frame_energy, sizeof(frame_energy),
+                                       cudaMemcpyHostToDevice, stream));
     }
     // Single host-mode fence for residual visibility (legacy paths only).
-    cudaStreamSynchronize(stream);
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
 
     scf.residual = static_cast<double>(norm);
     scf.iteration = ctx.step;

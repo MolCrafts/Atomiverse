@@ -230,7 +230,7 @@ def main():
     p.add_argument('--steps',type=int,default=100);p.add_argument('--warmup',type=int,default=10)
     p.add_argument('--samples',type=int,default=3)
     p.add_argument('--budget',type=float,default=10)
-    p.add_argument('--measure-memory',action='store_true',help='sample process GPU memory and host peak RSS with an external monitor')
+    p.add_argument('--measure-memory',action='store_true',help='sample memory in separate engine processes after unmonitored timing')
     p.add_argument('--prepared-json',help='internal OpenMM child input; avoids repeating validated topology replication')
     p.add_argument('--alpha',type=float,default=0.35);p.add_argument('--cutoff',type=float,default=9)
     p.add_argument('--spacing',type=float,default=1);p.add_argument('--dt',type=float,default=0.25)
@@ -269,14 +269,18 @@ def main():
     # Both children consume the same already validated geometry/topology. This
     # cache only removes duplicate input replication, not OpenMM force work.
     (out/'system.json').write_text(json.dumps(d,separators=(',',':')))
-    atv, atv_wall, atv_resources=run_engine([args.atv,str(out/'input.txt'),str(out/'atv.txt'),str(args.steps),str(args.warmup),args.term,str(args.samples)],args.budget,args.measure_memory)
+    atv_command=[args.atv,str(out/'input.txt'),str(out/'atv.txt'),str(args.steps),str(args.warmup),args.term,str(args.samples)]
+    atv_probe=atv_command.copy()
+    atv_probe[2]=str(out/'memory-atv.txt')
+    atv, atv_wall, atv_resources=run_engine(atv_command,args.budget,args.measure_memory,atv_probe)
     print(atv.stdout,end='');(out/'atv.log').write_text(atv.stdout+atv.stderr)
-    sizes={name:int(re.search(name+r'=(\d+)',atv.stdout)[1]) for name in ('real_bytes','work_bytes','accum_bytes')}
+    sizes={name:int(re.search(name+r'=(\d+)',atv.stdout)[1]) for name in ('real_bytes','work_bytes','accum_bytes','motion_bytes','position_residual')}
     expected=4 if args.precision=='mixed' else 8
-    if sizes!={'real_bytes':expected,'work_bytes':expected,'accum_bytes':8}:
+    if sizes!={'real_bytes':expected,'work_bytes':expected,'accum_bytes':8,'motion_bytes':8,'position_residual':int(args.precision=='mixed')}:
         raise RuntimeError(f'Atomiverse binary precision mismatch: {sizes}')
     cmd=[sys.executable,*sys.argv,'--engine','openmm','--prepared-json',str(out/'system.json')]
-    ref, ref_wall, ref_resources=run_engine(cmd,args.budget,args.measure_memory)
+    ref_probe=[*cmd,'--out',str(out/'memory-openmm')]
+    ref, ref_wall, ref_resources=run_engine(cmd,args.budget,args.measure_memory,ref_probe)
     print(ref.stdout,end='');(out/'openmm.log').write_text(ref.stdout+ref.stderr)
     import numpy as np
     a=np.loadtxt(out/'atv.txt',skiprows=1);b=np.loadtxt(out/'openmm.txt',skiprows=1)
@@ -290,6 +294,10 @@ def main():
                  atv=atv.stdout.strip(),openmm=json.loads(ref.stdout))
     summary['protocol']=dict(steps=args.steps,warmup=args.warmup,samples=args.samples,dt_fs=args.dt,cutoff_A=args.cutoff,neighbor_skin_A=0.08*args.cutoff,alpha_inv_A=args.alpha,grid_spacing_A=args.spacing,precision=args.precision,term=args.term,initial_position_storage='exact float32 in Angstrom and nm' if args.precision=='mixed' else 'float64',position_quantum_A=position_quantum)
     summary['protocol']['neighbor_reserve']='default build-time density/initial-count headroom'
+    summary['protocol']['motion_bytes']=sizes['motion_bytes']
+    summary['protocol']['position_representation']='float32+residual' if sizes['position_residual'] else 'float64'
+    summary['protocol']['throughput_monitor']='none'
+    summary['protocol']['resource_measurement']='separate_process' if args.measure_memory else 'none'
     if args.measure_memory:
         if atv_resources['gpu_uuids'] != ref_resources['gpu_uuids']:
             raise RuntimeError('engines ran on different GPUs')

@@ -22,6 +22,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/transfer.h"
 #include "atomiverse/cpu/scf/basis_data/accessors.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "atomiverse/cuda/scf/internal/uhf_scf_cycle.cuh"
@@ -281,6 +282,8 @@ void UHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
                        && beta.P && beta.C && beta.eig && ws.d_shell_alpha
                        && ws.d_shell_atom && ws.d_shell_L && ws.d_ao_shell
                        && ws.d_ao_cart && ws.d_atom_pos && ws.d_W
+                       && ws.d_force_Ptotal && ws.d_force_Wbeta
+                       && (!kMixedPrecision || ws.d_force_gradient)
                        && frame.atoms.fx && frame.atoms.fy && frame.atoms.fz;
     if (!ready) {
         throw std::runtime_error(
@@ -288,37 +291,35 @@ void UHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
             "s/p force workspace is incomplete (P/C/eig/shell maps).");
     }
     const int nn = ws.n * ws.n;
-    prec_t* d_Ptot = nullptr;
-    prec_t* d_Wb = nullptr;
-    cudaMalloc(&d_Ptot, static_cast<std::size_t>(nn) * sizeof(prec_t));
-    cudaMalloc(&d_Wb, static_cast<std::size_t>(nn) * sizeof(prec_t));
+    prec_t* d_Ptot = ws.d_force_Ptotal;
+    prec_t* d_Wb = ws.d_force_Wbeta;
     const int threads = 256;
     const int blocks = (nn + threads - 1) / threads;
     uhf_add_mat_kernel<<<blocks, threads, 0, stream>>>(d_Ptot, ws.P, beta.P,
                                                        nn);
+    ATV_CUDA_CHECK(cudaGetLastError());
     launch_build_W_uhf(ws.d_W, ws.C, ws.eig, ws.n, ws.n_occ, stream);
     launch_build_W_uhf(d_Wb, beta.C, beta.eig, ws.n, beta.n_occ, stream);
     uhf_add_mat_kernel<<<blocks, threads, 0, stream>>>(ws.d_W, ws.d_W, d_Wb,
                                                        nn);
-    launch_uhf_forces_sp(frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, d_Ptot,
-                         ws.d_W, ws.P, beta.P, ws.d_shell_alpha,
-                         ws.d_shell_coeff, ws.d_shell_center, ws.d_shell_atom,
-                         ws.d_shell_L, ws.d_ao_shell, ws.d_ao_cart, ws.d_atom_Z,
-                         ws.d_atom_pos, ws.n, ws.n_prim, ws.natm, stream);
-    cudaStreamSynchronize(stream);
-    cudaFree(d_Ptot);
-    cudaFree(d_Wb);
+    ATV_CUDA_CHECK(cudaGetLastError());
+    launch_uhf_forces_sp(
+        frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, d_Ptot, ws.d_W, ws.P,
+        beta.P, ws.d_shell_alpha, ws.d_shell_coeff, ws.d_shell_center,
+        ws.d_shell_atom, ws.d_shell_L, ws.d_ao_shell, ws.d_ao_cart, ws.d_atom_Z,
+        ws.d_atom_pos, ws.n, ws.n_prim, ws.natm, stream, ws.d_force_gradient);
     last_force_device_ = true;
     (void)ctx;
 }
 
 void UHF::pull_energy_(cuda::Context& ctx, cuda::Frame& frame) {
-    prec_t e_ev = 0;
+    double e_ev = 0;
     if (frame.scalars) {
         auto* stream = static_cast<cudaStream_t>(ctx.stream);
-        cudaMemcpyAsync(&e_ev, &frame.scalars->energy, sizeof(prec_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(&e_ev, &frame.scalars->energy,
+                                       sizeof(e_ev), cudaMemcpyDeviceToHost,
+                                       stream));
+        ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
     }
     energy_ha_ = static_cast<double>(e_ev) / units::kHartreeInEv;
 }

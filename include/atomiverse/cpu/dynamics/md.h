@@ -113,7 +113,13 @@ class MD : public Driver<ATV::md::Phase> {
     /// @return Number of iterations actually executed (may be below the
     ///         budget when a user criterion stops the loop).
     int run(cpu::Frame& frame, int n_steps) {
-        this->begin_run_(frame);
+        if (this->begin_run_(frame)) {
+            // Setup has already built the neighbor list and populated ghosts.
+            // Seed F(x_0), virial and scalar observables without advancing any
+            // integrator, thermostat, recorder or cumulative step counter.
+            // Continuations retain the previous step's final force.
+            this->backend_->setup_md_forces();
+        }
         int iterations = 0;
         for (int s = 0; s < n_steps; ++s) {
             this->mutable_outer_status().reset();

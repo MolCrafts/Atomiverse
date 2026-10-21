@@ -2,16 +2,18 @@
 /// @brief cuda::minimizer::SteepestDescent kernel: x += alpha * f / m * ATV::units::force_to_accel.
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/position.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/minimize/sd.cuh"
 #include <cuda_runtime.h>
 
 namespace ATV {
 
+using cuda::motion_t;
 using cuda::real_t;
-using cuda::work_t;
 
 namespace cuda {
 namespace minimizer {
@@ -25,39 +27,27 @@ namespace {
 ///
 /// Same unit conversion as VelocityVerlet. At step 0, forces are zero
 /// (from initialization), so positions remain unchanged.
-__global__ void sd_step(real_t* __restrict__ x, real_t* __restrict__ y,
-                        real_t* __restrict__ z, const real_t* __restrict__ fx,
-                        const real_t* __restrict__ fy,
-                        const real_t* __restrict__ fz,
-                        const real_t* __restrict__ mass, cuda::Box box,
-                        work_t alpha, int n) {
+__global__ void
+sd_step(real_t* __restrict__ x, real_t* __restrict__ y, real_t* __restrict__ z,
+        real_t* __restrict__ xcor, real_t* __restrict__ ycor,
+        real_t* __restrict__ zcor, std::int8_t* __restrict__ image,
+        const real_t* __restrict__ fx, const real_t* __restrict__ fy,
+        const real_t* __restrict__ fz, const motion_t* __restrict__ mass,
+        cuda::MotionBox box, motion_t alpha, int n) {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
 
-    work_t inv_m = work_t(1) / static_cast<work_t>(mass[i]);
-    x[i] = static_cast<real_t>(static_cast<work_t>(x[i])
-                               + alpha * static_cast<work_t>(fx[i]) * inv_m
-                                     * ATV::units::force_to_accel);
-    y[i] = static_cast<real_t>(static_cast<work_t>(y[i])
-                               + alpha * static_cast<work_t>(fy[i]) * inv_m
-                                     * ATV::units::force_to_accel);
-    z[i] = static_cast<real_t>(static_cast<work_t>(z[i])
-                               + alpha * static_cast<work_t>(fz[i]) * inv_m
-                                     * ATV::units::force_to_accel);
-    // PBC wrap via cached inv_l on the by-value Box — same form as the
-    // MD integrators (cuda-md-review-cleanup-04-box-by-value-pbc).
-    work_t Lx = work_t(box.cell[0]), Ly = work_t(box.cell[4]),
-           Lz = work_t(box.cell[8]);
-    work_t inv_Lx = work_t(box.inv_l[0]), inv_Ly = work_t(box.inv_l[1]),
-           inv_Lz = work_t(box.inv_l[2]);
-    work_t x_w = static_cast<work_t>(x[i]);
-    work_t y_w = static_cast<work_t>(y[i]);
-    work_t z_w = static_cast<work_t>(z[i]);
-    x[i] = static_cast<real_t>(x_w - Lx * floor(x_w * inv_Lx));
-    y[i] = static_cast<real_t>(y_w - Ly * floor(y_w * inv_Ly));
-    z[i] = static_cast<real_t>(z_w - Lz * floor(z_w * inv_Lz));
+    motion_t inv_m = motion_t(1) / static_cast<motion_t>(mass[i]);
+    wrap_position(
+        x, y, z, xcor, ycor, zcor, image, i, box,
+        load_position(x, xcor, i)
+            + alpha * motion_t(fx[i]) * inv_m * ATV::units::force_to_accel,
+        load_position(y, ycor, i)
+            + alpha * motion_t(fy[i]) * inv_m * ATV::units::force_to_accel,
+        load_position(z, zcor, i)
+            + alpha * motion_t(fz[i]) * inv_m * ATV::units::force_to_accel);
 }
 
 } // anonymous namespace
@@ -83,12 +73,16 @@ void SteepestDescent::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
     int n = ctx.frame.n_atoms();
+    if (n <= 0)
+        return;
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(static_cast<int>(n));
     sd_step<<<grid, block, 0, stream>>>(
-        frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.fx,
-        frame.atoms.fy, frame.atoms.fz, frame.atoms.mass, ctx.runtime.host_box,
-        alpha_, n);
+        frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.x_correction,
+        frame.atoms.y_correction, frame.atoms.z_correction, frame.atoms.image,
+        frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.mass,
+        ctx.runtime.host_motion_box, alpha_, n);
+    ATV_CUDA_CHECK(cudaGetLastError());
     ++step_;
 }
 

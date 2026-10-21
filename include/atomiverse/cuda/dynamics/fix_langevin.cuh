@@ -20,29 +20,33 @@ namespace md {
 ///        Langevin thermostat applied as an additive `post_force` kick.
 ///        Mirrors LAMMPS `fix langevin Tstart Tstop damp seed`.
 ///
-/// Two forces are added per atom each step:
+/// Two forces are added per atom each force evaluation:
 ///
 /// 1. Friction (Stokes drag):  `F_drag = -m / (damp · ftm2v) · v`
 /// 2. Random kick (FDT-consistent):
 ///    `F_rand = sqrt(2 m kB T_live / (damp · dt · mvv2e)) / ftm2v · ξ`,
-///    `ξ ~ N(0, 1)` per Cartesian component, per atom, per step.
+///    `ξ ~ N(0, 1)` per Cartesian component, atom and force-evaluation sample.
 ///
 /// Live setpoint `T_live = T_start + clamp((step-nfirst)/(nlast-nfirst),
 /// 0, 1) · (T_stop - T_start)` (LAMMPS `fix_langevin.cpp::compute_target`
 /// lines 794–802, 661). With the default `T_stop < 0` sentinel the
 /// ramp folds to `T_start` (constant-T thermostat).
 ///
-/// ## RNG design — `(seed, step, global atom tag)` splitmix Box-Muller
+/// ## RNG design — `(seed, sample, global atom tag)` splitmix Box-Muller
 ///
 /// The kernel uses no persistent device RNG state (no `curand_init` /
-/// `curandState*`). Each per-atom call generates 6 fresh `u01` samples
+/// `curandState*`). Each per-atom call generates 4 fresh `u01` samples
 /// from a counter-based splitmix64 stream keyed by the 64-bit triple
-/// `hash(seed, step, frame.atoms.tag[i])`, then Box-Muller transforms
-/// the 6 uniforms into 3 standard normals `rx, ry, rz`. This makes
+/// `hash(seed, sample, frame.atoms.tag[i])`, then Box-Muller transforms
+/// the 4 uniforms into 3 standard normals `rx, ry, rz`. This makes
 /// the random force reproducible across rank counts (the seed depends
 /// on the global `tag`, not on the atom's index in any rank-local
 /// SoA) and saves the per-atom state buffer that `curandState*` would
 /// require.
+/// The private sample counter resets at build and advances on every launch,
+/// including an empty local frame. Bootstrap and normal force evaluations at
+/// the same MD step therefore draw distinct noise; only the temperature ramp
+/// uses the MD step index.
 ///
 /// Per ensemble-average contract (see `msu-pe-align-03` block-average
 /// rule): individual stochastic trajectories may differ from the CPU
@@ -102,6 +106,9 @@ class FixLangevin : public cuda::Thermostat {
         return {ATV::make_binding(ATV::md::Phase::post_force, +500)};
     }
 
+    /// @brief Restart the random sample sequence for a fresh trajectory.
+    /// @param ctx Build context.
+    void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
   private:
@@ -110,6 +117,7 @@ class FixLangevin : public cuda::Thermostat {
     double damp_;
     double dt_;
     std::uint32_t seed_;
+    std::uint64_t sample_counter_ = 0;
     std::int64_t nfirst_ = 0;
     std::int64_t nlast_ = 0;
     double T_live_;

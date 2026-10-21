@@ -315,6 +315,9 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
 
     // Cached global kinetic energy carried between phases
     double KE_global_ = 0.0; ///< 0.5 · Σ m·v² (global, eV)
+    /// Read actual velocities on the first initial_integrate after build,
+    /// including a component mounted after the trajectory has started.
+    bool kinetic_initialized_ = false;
 
     // Helpers --------------------------------------------------------
     double compute_global_KE(const cpu::LaunchContext& ctx) const;

@@ -73,16 +73,22 @@ struct Frame {
 
     /// @brief Per-atom data block matching molpy atoms namespace.
     struct Atoms {
-        real_t* x = nullptr;      ///< x positions [Angstrom, device].
-        real_t* y = nullptr;      ///< y positions [Angstrom, device].
-        real_t* z = nullptr;      ///< z positions [Angstrom, device].
-        real_t* vx = nullptr;     ///< x velocities [Angstrom/fs, device].
-        real_t* vy = nullptr;     ///< y velocities [Angstrom/fs, device].
-        real_t* vz = nullptr;     ///< z velocities [Angstrom/fs, device].
+        real_t* x = nullptr; ///< x positions [Angstrom, device].
+        real_t* y = nullptr; ///< y positions [Angstrom, device].
+        real_t* z = nullptr; ///< z positions [Angstrom, device].
+        real_t* x_correction =
+            nullptr; ///< Mixed x residual [Angstrom, device].
+        real_t* y_correction =
+            nullptr; ///< Mixed y residual [Angstrom, device].
+        real_t* z_correction =
+            nullptr;              ///< Mixed z residual [Angstrom, device].
+        motion_t* vx = nullptr;   ///< x velocities [Angstrom/fs, device].
+        motion_t* vy = nullptr;   ///< y velocities [Angstrom/fs, device].
+        motion_t* vz = nullptr;   ///< z velocities [Angstrom/fs, device].
         real_t* fx = nullptr;     ///< x forces [eV/Angstrom, device].
         real_t* fy = nullptr;     ///< y forces [eV/Angstrom, device].
         real_t* fz = nullptr;     ///< z forces [eV/Angstrom, device].
-        real_t* mass = nullptr;   ///< Masses [amu, device].
+        motion_t* mass = nullptr; ///< Masses [amu, device].
         real_t* charge = nullptr; ///< Partial charges [e, device].
         int* type = nullptr;      ///< Atom types [device].
 

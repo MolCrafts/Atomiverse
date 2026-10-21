@@ -44,46 +44,14 @@ void Backend::materialize(const cpu::Frame& frame) {
     // this field after `propagate_x_and_box_` writes the new
     // diagonal; for fixed-box (NVE/NVT) runs the build-time value
     // here is the value forever.
-    auto& hb = context_.host_box;
+    auto& mb = context_.host_motion_box;
     const auto& cell = frame.box.cell();
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
-            hb.cell[i * 3 + j] = static_cast<real_t>(cell(i, j));
-    // Ortho test: off-diagonal entries within FP roundoff. Threshold
-    // lives on cuda::Box so it stays in lock-step with cpu::Box.
-    hb.ortho = (std::abs(hb.cell[1]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[2]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[3]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[5]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[6]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[7]) < cuda::Box::kOrthoEps);
-    // Derived caches: inv_l (per-axis), half_l, full inv_cell.
-    for (int d = 0; d < 3; ++d) {
-        real_t L = hb.cell[d * 3 + d];
-        hb.inv_l[d] = (L > real_t(0)) ? real_t(1) / L : real_t(0);
-        hb.half_l[d] = real_t(0.5) * L;
-    }
-    // Full 3x3 inverse for triclinic min_image (orthorhombic only uses
-    // the per-axis inv_l above, but the inv_cell entries stay populated
-    // so a path that goes triclinic-aware still works).
-    const real_t a = hb.cell[0], b = hb.cell[1], c = hb.cell[2];
-    const real_t d = hb.cell[3], e = hb.cell[4], f = hb.cell[5];
-    const real_t g = hb.cell[6], h = hb.cell[7], i9 = hb.cell[8];
-    const real_t det =
-        a * (e * i9 - f * h) - b * (d * i9 - f * g) + c * (d * h - e * g);
-    if (std::abs(det) > real_t(0)) {
-        const real_t inv_det = real_t(1) / det;
-        hb.inv_cell[0] = (e * i9 - f * h) * inv_det;
-        hb.inv_cell[1] = (c * h - b * i9) * inv_det;
-        hb.inv_cell[2] = (b * f - c * e) * inv_det;
-        hb.inv_cell[3] = (f * g - d * i9) * inv_det;
-        hb.inv_cell[4] = (a * i9 - c * g) * inv_det;
-        hb.inv_cell[5] = (c * d - a * f) * inv_det;
-        hb.inv_cell[6] = (d * h - e * g) * inv_det;
-        hb.inv_cell[7] = (b * g - a * h) * inv_det;
-        hb.inv_cell[8] = (a * e - b * d) * inv_det;
-    }
-    hb.periodic[0] = hb.periodic[1] = hb.periodic[2] = true;
+            mb.cell[i * 3 + j] = static_cast<motion_t>(cell(i, j));
+    mb.periodic[0] = mb.periodic[1] = mb.periodic[2] = true;
+    mb.refresh();
+    context_.host_box = box_cast<real_t>(mb);
 }
 
 void Backend::build_components() {
@@ -100,7 +68,8 @@ void Backend::build_components() {
                                     op.component->name() + "/build");
             }
         }
-    cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream));
+    ATV_CUDA_CHECK(
+        cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream)));
     if (timer_)
         timer_->impl()->flush();
 }
@@ -187,8 +156,10 @@ void Backend::destroy_components() {
 void Backend::retrieve(cpu::Frame& frame) { cuda::to_cpu(frame_, frame); }
 
 void Backend::sync() {
-    cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream));
-    cudaStreamSynchronize(static_cast<cudaStream_t>(context_.defer_stream));
+    ATV_CUDA_CHECK(
+        cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream)));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(
+        static_cast<cudaStream_t>(context_.defer_stream)));
 }
 
 void Backend::shutdown() {
@@ -197,9 +168,9 @@ void Backend::shutdown() {
     auto main = static_cast<cudaStream_t>(context_.stream);
     auto defer = static_cast<cudaStream_t>(context_.defer_stream);
     if (main)
-        cudaStreamDestroy(main);
+        ATV_CUDA_CHECK(cudaStreamDestroy(main));
     if (defer)
-        cudaStreamDestroy(defer);
+        ATV_CUDA_CHECK(cudaStreamDestroy(defer));
     context_ = {};
     plan_ = nullptr;
     cuda::unregister_log_callback();

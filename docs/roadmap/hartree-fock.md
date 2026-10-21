@@ -23,6 +23,12 @@ Shares one SCF solver with [Kohn–Sham DFT](dft.md): the 2×2 product
 | RHF static polarizability | ✓ | ○ | `Polarizability<RHF>::run()` after `RHF::run` (no Frame). Not an SCF method |
 | Stability analysis | ✓ | ○ | `Stability<RHF>::run` after `RHF::run` (Seeger–Pople). Not an SCF method |
 
+CUDA HF in `mixed` and `double` modes uses FP64 integral recurrences,
+Fock/density contractions, DIIS history and eigensolver storage. The molecular
+force outlet follows the Frame's `real_t` storage. Mixed-mode H₂ RHF/UHF and
+H₂O RHF energy/gradient pins use the same scientific thresholds as double;
+classical MD force and FFT work precision remains independent of this SCF tier.
+
 ### Gaps
 
 - CUDA Hartree–Fock energy is **RHF** on shells with l ≤ 3 (`launch_1e_integrals_sp` / `launch_eri_sp` for uniform STO-3G s/p; `launch_1e_integrals_lgt1` / `launch_eri_lgt1` otherwise, including the CPU CartToSph sandwich on device for spherical def2-SVP, def2-TZVP, and aug-cc-pVDZ) and **UHF** on STO-3G l ≤ 1. No KS, ROHF, GHF, or complex spinor HF on device. No host ERI fill. `cuda::scf::UHF` throws outside STO-3G l ≤ 1 (`launch_eri_sp`, `launch_uhf_forces_sp`). `cuda::scf::RHF` throws `launch_eri_g` for l ≥ 4. `cuda::scf::RHF::forces` throws `launch_rhf_forces_lgt1` outside STO-3G l ≤ 1.

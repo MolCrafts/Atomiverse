@@ -10,10 +10,10 @@
 /// 9-element row-major device cell — AsyncBridge observers (`cuda::RDF`)
 /// and `cuda::md::NoseHooverNPT::propagate_x_k` (thread-0 box-diagonal
 /// write) read/write it directly on device. The host-side authoritative
-/// copy lives on `cuda::Context::host_box`, populated by
+/// copies live on `cuda::Context::host_box` (force arithmetic) and
+/// `host_motion_box` (integration arithmetic), populated by
 /// `Backend::materialize()` and mutated by box-changing components
-/// (currently `cuda::md::NoseHooverNPT`; `cuda::md::Deform`,
-/// `cuda::md::Barostat` are open follow-ups).
+/// (`NoseHooverNPT`, `Deform`, and `Barostat`).
 /// Integrator + bonded + neighbor-list-pair kernels take `cuda::Box` by
 /// value at launch and route PBC through `box.min_image(dx, dy, dz)`.
 ///
@@ -47,23 +47,57 @@ namespace cuda {
 /// Row-major 3×3 storage matching `triclinic.cuh`. Trivially copyable
 /// so the struct can travel through `cudaMemcpyToSymbol` or kernel-arg
 /// pass-by-value without surgery.
-struct Box {
+template <typename CellReal>
+struct BasicBox {
     /// @brief Floating-point tolerance used by `Backend::materialize`
     ///        (and any future setter) to classify an off-diagonal cell
     ///        as orthorhombic. Must match `cpu::Box`'s ortho threshold
     ///        so a borderline-triclinic frame doesn't get classified
     ///        differently on the two backends.
-    static constexpr real_t kOrthoEps = real_t(1e-12);
+    static constexpr CellReal kOrthoEps = CellReal(1e-12);
 
-    real_t cell[9] = {};
-    real_t inv_cell[9] = {};
-    real_t half_l[3] = {};
-    real_t inv_l[3] = {};
+    CellReal cell[9] = {};
+    CellReal inv_cell[9] = {};
+    CellReal half_l[3] = {};
+    CellReal inv_l[3] = {};
     bool periodic[3] = {true, true, true};
     bool ortho = true;
 
+    /// Recompute geometry caches after changing the canonical cell.
+    __host__ __device__ void refresh() noexcept {
+        ortho = true;
+        for (int i = 0; i < 9; ++i)
+            if (i != 0 && i != 4 && i != 8
+                && (cell[i] <= -kOrthoEps || cell[i] >= kOrthoEps))
+                ortho = false;
+        for (int d = 0; d < 3; ++d) {
+            const CellReal L = cell[d * 3 + d];
+            inv_l[d] = L > CellReal(0) ? CellReal(1) / L : CellReal(0);
+            half_l[d] = CellReal(0.5) * L;
+        }
+        const CellReal a = cell[0], b = cell[1], c = cell[2];
+        const CellReal d = cell[3], e = cell[4], f = cell[5];
+        const CellReal g = cell[6], h = cell[7], i = cell[8];
+        const CellReal det =
+            a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+        for (int k = 0; k < 9; ++k)
+            inv_cell[k] = CellReal(0);
+        if (det > CellReal(0) || det < CellReal(0)) {
+            const CellReal inv = CellReal(1) / det;
+            inv_cell[0] = (e * i - f * h) * inv;
+            inv_cell[1] = (c * h - b * i) * inv;
+            inv_cell[2] = (b * f - c * e) * inv;
+            inv_cell[3] = (f * g - d * i) * inv;
+            inv_cell[4] = (a * i - c * g) * inv;
+            inv_cell[5] = (c * d - a * f) * inv;
+            inv_cell[6] = (d * h - e * g) * inv;
+            inv_cell[7] = (b * g - a * h) * inv;
+            inv_cell[8] = (a * e - b * d) * inv;
+        }
+    }
+
     /// @brief Edge length along axis `d`.
-    __host__ __device__ __forceinline__ real_t length(int d) const noexcept {
+    __host__ __device__ __forceinline__ CellReal length(int d) const noexcept {
         return cell[d * 3 + d];
     }
 
@@ -71,16 +105,16 @@ struct Box {
     ///
     /// Orthorhombic fast path: product of diagonal entries. Triclinic:
     /// |det(cell)|.
-    __host__ __device__ __forceinline__ real_t volume() const noexcept {
+    __host__ __device__ __forceinline__ CellReal volume() const noexcept {
         if (ortho) {
             return cell[0] * cell[4] * cell[8];
         }
-        const real_t a = cell[0], bb = cell[1], c = cell[2];
-        const real_t d = cell[3], e = cell[4], f = cell[5];
-        const real_t g = cell[6], h = cell[7], i = cell[8];
-        const real_t det =
+        const CellReal a = cell[0], bb = cell[1], c = cell[2];
+        const CellReal d = cell[3], e = cell[4], f = cell[5];
+        const CellReal g = cell[6], h = cell[7], i = cell[8];
+        const CellReal det =
             a * (e * i - f * h) - bb * (d * i - f * g) + c * (d * h - e * g);
-        return det < real_t(0) ? -det : det;
+        return det < CellReal(0) ? -det : det;
     }
 
     /// @brief Apply minimum-image convention, in place.
@@ -125,6 +159,24 @@ struct Box {
         return w;
     }
 };
+
+using Box = BasicBox<real_t>;
+using MotionBox = BasicBox<motion_t>;
+
+/// Derive a geometry cache in another arithmetic precision from its cell.
+template <typename To, typename From>
+inline BasicBox<To> box_cast(const BasicBox<From>& source) noexcept {
+    BasicBox<To> result;
+    for (int i = 0; i < 9; ++i)
+        result.cell[i] = static_cast<To>(source.cell[i]);
+    for (int d = 0; d < 3; ++d)
+        result.periodic[d] = source.periodic[d];
+    result.refresh();
+    return result;
+}
+
+static_assert(std::is_trivially_copyable<MotionBox>::value,
+              "cuda::MotionBox must be trivially copyable");
 
 static_assert(
     std::is_trivially_copyable<Box>::value,

@@ -24,6 +24,7 @@
 #include "atomiverse/cpu/observe/rdf_curve.h"
 #include "atomiverse/cpu/observe/trajectory_metrics.h"
 #include "atomiverse/cuda/asynchronous/async_bridge.cuh"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 
 namespace ATV {
@@ -65,10 +66,11 @@ class RDF : public AsyncObserver {
             return;
         const auto n = static_cast<size_t>(n_atoms_);
         for (int i = 0; i < kRingDepth; ++i) {
-            cudaMalloc(&d_pos_[i], 3 * n * sizeof(real_t));
-            cudaMalloc(&d_cell_[i], 9 * sizeof(prec_t));
-            cudaMallocHost(&h_pos_[i], 3 * n * sizeof(real_t));
-            cudaMallocHost(&h_cell_[i], 9 * sizeof(prec_t));
+            ATV_CUDA_CHECK(cudaMalloc(&d_pos_[i], 3 * n * sizeof(motion_t)));
+            ATV_CUDA_CHECK(cudaMalloc(&d_cell_[i], 9 * sizeof(prec_t)));
+            ATV_CUDA_CHECK(
+                cudaMallocHost(&h_pos_[i], 3 * n * sizeof(motion_t)));
+            ATV_CUDA_CHECK(cudaMallocHost(&h_cell_[i], 9 * sizeof(prec_t)));
         }
         pos_.resize(3 * n);
     }
@@ -79,29 +81,27 @@ class RDF : public AsyncObserver {
         // D2D freeze of the step-N positions + cell on the compute stream,
         // before the next step's integrate/deform mutates them.
         auto ms = static_cast<cudaStream_t>(ctx.runtime.stream);
-        const auto& atoms = ctx.frame.atoms;
         const auto n = static_cast<size_t>(n_atoms_);
-        cudaMemcpyAsync(d_pos_[slot], atoms.x, n * sizeof(real_t),
-                        cudaMemcpyDeviceToDevice, ms);
-        cudaMemcpyAsync(d_pos_[slot] + n, atoms.y, n * sizeof(real_t),
-                        cudaMemcpyDeviceToDevice, ms);
-        cudaMemcpyAsync(d_pos_[slot] + 2 * n, atoms.z, n * sizeof(real_t),
-                        cudaMemcpyDeviceToDevice, ms);
-        cudaMemcpyAsync(d_cell_[slot], ctx.frame.box, 9 * sizeof(prec_t),
-                        cudaMemcpyDeviceToDevice, ms);
+        capture_positions(ctx.frame, d_pos_[slot], d_pos_[slot] + n,
+                          d_pos_[slot] + 2 * n, ms);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_cell_[slot], ctx.frame.box,
+                                       9 * sizeof(prec_t),
+                                       cudaMemcpyDeviceToDevice, ms));
     }
 
     void d2h_slot(const LaunchContext& ctx, int slot) override {
         auto ds = static_cast<cudaStream_t>(ctx.runtime.defer_stream);
         const auto n = static_cast<size_t>(n_atoms_);
-        cudaMemcpyAsync(h_pos_[slot], d_pos_[slot], 3 * n * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, ds);
-        cudaMemcpyAsync(h_cell_[slot], d_cell_[slot], 9 * sizeof(prec_t),
-                        cudaMemcpyDeviceToHost, ds);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(h_pos_[slot], d_pos_[slot],
+                                       3 * n * sizeof(motion_t),
+                                       cudaMemcpyDeviceToHost, ds));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(h_cell_[slot], d_cell_[slot],
+                                       9 * sizeof(prec_t),
+                                       cudaMemcpyDeviceToHost, ds));
     }
 
     void on_data_ready(const LaunchContext&, int slot) override {
-        // Widen the pinned real_t/prec_t staging buffers to double for the
+        // Widen the pinned motion_t/prec_t staging buffers to double for the
         // molrs accumulator (blocked x|y|z layout is preserved by the freeze).
         // pos_ scratch reuse is safe: callbacks run in defer-stream FIFO order.
         const int n3 = 3 * n_atoms_;
@@ -141,19 +141,19 @@ class RDF : public AsyncObserver {
         }
         for (int i = 0; i < kRingDepth; ++i) {
             if (d_pos_[i]) {
-                cudaFree(d_pos_[i]);
+                ATV_CUDA_CHECK(cudaFree(d_pos_[i]));
                 d_pos_[i] = nullptr;
             }
             if (d_cell_[i]) {
-                cudaFree(d_cell_[i]);
+                ATV_CUDA_CHECK(cudaFree(d_cell_[i]));
                 d_cell_[i] = nullptr;
             }
             if (h_pos_[i]) {
-                cudaFreeHost(h_pos_[i]);
+                ATV_CUDA_CHECK(cudaFreeHost(h_pos_[i]));
                 h_pos_[i] = nullptr;
             }
             if (h_cell_[i]) {
-                cudaFreeHost(h_cell_[i]);
+                ATV_CUDA_CHECK(cudaFreeHost(h_cell_[i]));
                 h_cell_[i] = nullptr;
             }
         }
@@ -164,12 +164,12 @@ class RDF : public AsyncObserver {
     cpu::compute::RDFAccumulator acc_; ///< molrs streaming g(r) state
 
     int n_atoms_ = 0;
-    int n_rejected_ = 0;              ///< frames the accumulator refused
-    real_t* d_pos_[kRingDepth] = {};  ///< device-ring frozen blocked x|y|z [Å]
-    prec_t* d_cell_[kRingDepth] = {}; ///< device-ring frozen 3x3 cell [Å]
-    real_t* h_pos_[kRingDepth] = {};  ///< pinned host blocked x|y|z [Å]
-    prec_t* h_cell_[kRingDepth] = {}; ///< pinned host 3x3 cell [Å]
-    std::vector<double> pos_;         ///< widened-to-double packing scratch
+    int n_rejected_ = 0;               ///< frames the accumulator refused
+    motion_t* d_pos_[kRingDepth] = {}; ///< device-ring frozen blocked x|y|z [Å]
+    prec_t* d_cell_[kRingDepth] = {};  ///< device-ring frozen 3x3 cell [Å]
+    motion_t* h_pos_[kRingDepth] = {}; ///< pinned host blocked x|y|z [Å]
+    prec_t* h_cell_[kRingDepth] = {};  ///< pinned host 3x3 cell [Å]
+    std::vector<double> pos_;          ///< widened-to-double packing scratch
 };
 
 } // namespace cuda

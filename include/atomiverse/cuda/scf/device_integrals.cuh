@@ -9,6 +9,8 @@
 /// Validated against CPU native integrals (ground truth: libcint / PySCF).
 #pragma once
 
+#include "atomiverse/cuda/frame/types.cuh"
+
 namespace ATV {
 namespace cuda {
 namespace scf {
@@ -100,6 +102,8 @@ void launch_boys_f0_test(const double* d_x, double* d_out, int n, void* stream);
 /// `launch_rhf_forces_sp` for mixed s/p (and pure-s when AO maps are live).
 ///
 /// @param fx,fy,fz Force columns [natm], device, eV/Å (overwritten).
+/// @param gradient_scratch Build-owned planar gradient [3*natm, prec_t];
+///        required in mixed mode, ignored when real_t == prec_t.
 /// @param P Density [n_ao×n_ao, col-major], device (RHF factor-2 total).
 /// @param W Energy-weighted density [n_ao×n_ao], device:
 ///        W = 2 Σ_{i=0}^{n_occ−1} ε_i C_{μi} C_{νi}.
@@ -112,28 +116,32 @@ void launch_boys_f0_test(const double* d_x, double* d_out, int n, void* stream);
 /// @param natm Atom count.
 /// @param stream CUDA stream.
 void launch_rhf_forces_pure_s(
-    double* fx, double* fy, double* fz, const double* P, const double* W,
+    real_t* fx, real_t* fy, real_t* fz, const double* P, const double* W,
     const double* shell_alpha, const double* shell_coeff,
     const double* shell_centers, const int* shell_atom, const int* atom_Z,
-    const double* atom_pos, int n_ao, int n_prim, int natm, void* stream);
+    const double* atom_pos, int n_ao, int n_prim, int natm, void* stream,
+    prec_t* gradient_scratch = nullptr);
 
 /// @brief s+p (l ≤ 1) RHF analytic nuclear forces on device (Wave 6).
 ///
 /// Same energy assembly as pure-s, with full raise/lower on Cartesian
 /// components (p → d raise). Ends the host force fallback for STO-3G H…O.
-/// Output forces are **−∂E/∂R** in eV/Å.
+/// Output forces are **−∂E/∂R** in eV/Å (overwritten).
+/// @param gradient_scratch Build-owned planar gradient [3*natm, prec_t];
+///        required in mixed mode, ignored when real_t == prec_t.
 ///
 /// @param shell_L Angular momentum per shell (0 or 1) [n_shells].
 /// @param ao_shell Shell index for each AO [n_ao].
 /// @param ao_cart Cartesian component within shell [n_ao].
-void launch_rhf_forces_sp(double* fx, double* fy, double* fz, const double* P,
+void launch_rhf_forces_sp(real_t* fx, real_t* fy, real_t* fz, const double* P,
                           const double* W, const double* shell_alpha,
                           const double* shell_coeff,
                           const double* shell_centers, const int* shell_atom,
                           const int* shell_L, const int* ao_shell,
                           const int* ao_cart, const int* atom_Z,
                           const double* atom_pos, int n_ao, int n_prim,
-                          int natm, void* stream);
+                          int natm, void* stream,
+                          prec_t* gradient_scratch = nullptr);
 
 /// @brief Build W = 2 Σ_i ε_i C[:,i] C[:,i]ᵀ for i < n_occ (col-major).
 void launch_build_W_rhf(double* W, const double* C, const double* eig, int n_ao,
@@ -147,16 +155,16 @@ void launch_build_W_uhf(double* W, const double* C, const double* eig, int n_ao,
 ///
 /// 2e prefactor is PySCF `grad.uhf.grad_elec`:
 ///   ½ Ptot_ij Ptot_kl − ½ (Pα_ik Pα_jl + Pβ_ik Pβ_jl)
-/// on ∂(ij|kl)/∂R. Output is −∂E/∂R [eV/Å].
-void launch_uhf_forces_sp(double* fx, double* fy, double* fz,
-                          const double* Ptot, const double* Wtot,
-                          const double* Pa, const double* Pb,
-                          const double* shell_alpha, const double* shell_coeff,
-                          const double* shell_centers, const int* shell_atom,
-                          const int* shell_L, const int* ao_shell,
-                          const int* ao_cart, const int* atom_Z,
-                          const double* atom_pos, int n_ao, int n_prim,
-                          int natm, void* stream);
+/// on ∂(ij|kl)/∂R. Output is −∂E/∂R [eV/Å] (overwritten).
+/// @param gradient_scratch Build-owned planar gradient [3*natm, prec_t];
+///        required in mixed mode, ignored when real_t == prec_t.
+void launch_uhf_forces_sp(
+    real_t* fx, real_t* fy, real_t* fz, const double* Ptot, const double* Wtot,
+    const double* Pa, const double* Pb, const double* shell_alpha,
+    const double* shell_coeff, const double* shell_centers,
+    const int* shell_atom, const int* shell_L, const int* ao_shell,
+    const int* ao_cart, const int* atom_Z, const double* atom_pos, int n_ao,
+    int n_prim, int natm, void* stream, prec_t* gradient_scratch = nullptr);
 
 /// @brief Fused 1e integrals for Cartesian shells with l ≤ 3.
 ///

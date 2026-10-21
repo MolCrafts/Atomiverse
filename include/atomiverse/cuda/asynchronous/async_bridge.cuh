@@ -17,7 +17,7 @@
 ///              StreamWaitEvent(defer, pack_events_[slot])
 ///              d2h_slot(ctx, slot)                    [defer stream, D2H frozen slot]
 ///              cudaLaunchHostFunc(defer, &cuda_callback_)
-///              → [worker thread: on_data_ready(ctx, slot) → free payload]
+///              → [worker thread: on_data_ready(ctx, slot)]
 ///   destroy(): cudaStreamSynchronize(defer)  [drain pending callbacks]
 ///              → on_destroy(ctx) → destroy K cudaEvents
 /// @endcode
@@ -40,6 +40,8 @@
 /// @see cpu/observer/rdf.h, cpu/recorder/thermo.h, cpu/io/frame_writer.h
 /// @see .claude/specs/async-analysis-snapshot-ring-02-device-ring.md
 #pragma once
+
+#include <exception>
 
 #include "atomiverse/core/role.h"
 #include "atomiverse/cuda/component/component.cuh"
@@ -82,6 +84,13 @@ class AsyncBridge : public Component {
     void destroy(const DestroyContext& ctx) final;
 
   protected:
+    /// @brief Freeze full physical coordinates into three device arrays.
+    /// @param frame Source device-resident state.
+    /// @param x,y,z Motion-precision destination arrays [Angstrom].
+    /// @param stream Compute stream ordered before the next state update.
+    static void capture_positions(const Frame& frame, motion_t* x, motion_t* y,
+                                  motion_t* z, void* stream);
+
     /// @brief Allocate K device-ring slots + K pinned host slots; open files.
     ///
     /// The K CUDA events are already created before this is called.
@@ -132,6 +141,13 @@ class AsyncBridge : public Component {
     /// @return true if launch should proceed.
     virtual bool can_run(const LaunchContext& ctx) const { return true; }
 
+    // Build-owned callback records. Scalar stage/step metadata is frozen on
+    // the compute stream and copied on the defer stream, like the payload.
+    std::exception_ptr callback_error_; ///< rethrown after draining callbacks
+    void* callback_payloads_ = nullptr;
+    void* device_metadata_ = nullptr;
+    void* host_metadata_ = nullptr;
+
     /// @brief Per-slot CUDA events (cudaEvent_t as void*) owned by this base;
     ///        record freeze completion on the compute stream.
     void* pack_events_[kRingDepth] = {};
@@ -151,11 +167,9 @@ class AsyncBridge : public Component {
     /// @brief Stream-callback dispatcher — internal, do not call directly.
     ///
     /// Routed via `cudaLaunchHostFunc` on the defer stream after the
-    /// subclass's `d2h_slot(ctx, slot)` completes. Runs on a CUDA worker
-    /// thread (not the main thread). Reads the heap-allocated callback
-    /// args struct (owned per-call), constructs a `LaunchContext`, and
-    /// invokes the subclass's `on_data_ready()` hook for the captured slot.
-    /// Frees the args.
+    /// subclass's D2H completes. Uses build-owned per-slot callback records;
+    /// stage and step come from the frozen metadata, never a mutable Context.
+    /// No allocation occurs in launch() or the callback.
     ///
     /// Exposed `public` so the C-callable callback signature
     /// (`cudaHostFn_t`) can reach the static dispatch without friend

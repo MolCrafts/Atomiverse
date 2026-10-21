@@ -5,18 +5,29 @@
 #include "atomiverse/cuda/scf/internal/eigen_solver.cuh"
 #include "cublas_dispatch.cuh"
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
+#include <cstddef>
 #include <cuda_runtime.h>
+#include <stdexcept>
+#include <string>
 
 namespace ATV {
 
 using cuda::prec_t;
-using cuda::real_t;
-using cuda::work_t;
 
 namespace cuda {
 namespace scf {
 namespace internal {
+
+namespace {
+void check_solver(cusolverStatus_t status, const char* operation) {
+    if (status != CUSOLVER_STATUS_SUCCESS)
+        throw std::runtime_error(std::string("cuda::scf::EigenSolver: ")
+                                 + operation + " failed with status "
+                                 + std::to_string(static_cast<int>(status)));
+}
+} // namespace
 
 void EigenSolver::build(const SolverContext& ctx, SCFWorkspace& ws) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
@@ -24,20 +35,21 @@ void EigenSolver::build(const SolverContext& ctx, SCFWorkspace& ws) {
 
     // Create cuSOLVER handle
     cusolverDnHandle_t handle;
-    cusolverDnCreate(&handle);
-    cusolverDnSetStream(handle, stream);
+    check_solver(cusolverDnCreate(&handle), "cusolverDnCreate");
     cusolver_handle_ = handle;
+    check_solver(cusolverDnSetStream(handle, stream), "cusolverDnSetStream");
 
     // Query workspace size for syevd
     int lwork = 0;
-    detail::syevd_bufferSize(handle, CUSOLVER_EIG_MODE_VECTOR,
-                             CUBLAS_FILL_MODE_LOWER, n,
-                             static_cast<prec_t*>(nullptr), n,
-                             static_cast<prec_t*>(nullptr), &lwork);
+    check_solver(detail::syevd_bufferSize(
+                     handle, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_LOWER,
+                     n, static_cast<prec_t*>(nullptr), n,
+                     static_cast<prec_t*>(nullptr), &lwork),
+                 "syevd_bufferSize");
 
     work_size_ = lwork;
-    cudaMalloc(&d_work_, lwork * sizeof(prec_t));
-    cudaMalloc(&d_info_, sizeof(int));
+    ATV_CUDA_CHECK(cudaMalloc(&d_work_, std::size_t(lwork) * sizeof(prec_t)));
+    ATV_CUDA_CHECK(cudaMalloc(&d_info_, sizeof(int)));
 }
 
 void EigenSolver::step(const SolverContext& ctx, SCFWorkspace& ws) {
@@ -50,22 +62,27 @@ void EigenSolver::step(const SolverContext& ctx, SCFWorkspace& ws) {
     int n = scf.n;
 
     // Copy H -> C (syevd solves in-place, overwrites input with eigenvectors)
-    cudaMemcpyAsync(scf.C, scf.H, n * n * sizeof(prec_t),
-                    cudaMemcpyDeviceToDevice, stream);
+    ATV_CUDA_CHECK(cudaMemcpyAsync(scf.C, scf.H,
+                                   std::size_t(n) * n * sizeof(prec_t),
+                                   cudaMemcpyDeviceToDevice, stream));
 
     // Solve: C -> eigenvectors (column-major), eig -> eigenvalues (ascending)
-    detail::syevd(handle, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_LOWER, n,
-                  scf.C, n, scf.eig, d_work_, work_size_, d_info_);
+    check_solver(detail::syevd(handle, CUSOLVER_EIG_MODE_VECTOR,
+                               CUBLAS_FILL_MODE_LOWER, n, scf.C, n, scf.eig,
+                               d_work_, work_size_, d_info_),
+                 "syevd");
 }
 
 void EigenSolver::destroy(const SolverContext& /*ctx*/, SCFWorkspace& /*ws*/) {
     if (cusolver_handle_) {
-        cusolverDnDestroy(static_cast<cusolverDnHandle_t>(cusolver_handle_));
+        check_solver(cusolverDnDestroy(
+                         static_cast<cusolverDnHandle_t>(cusolver_handle_)),
+                     "cusolverDnDestroy");
         cusolver_handle_ = nullptr;
     }
-    cudaFree(d_work_);
+    ATV_CUDA_CHECK(cudaFree(d_work_));
     d_work_ = nullptr;
-    cudaFree(d_info_);
+    ATV_CUDA_CHECK(cudaFree(d_info_));
     d_info_ = nullptr;
 }
 

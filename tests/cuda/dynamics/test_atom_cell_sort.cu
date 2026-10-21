@@ -86,9 +86,9 @@ cpu::Frame make_bonded_lattice(int n_side, double spacing) {
     for (int ix = 0; ix < n_side; ++ix)
         for (int iy = 0; iy < n_side; ++iy)
             for (int iz = 0; iz < n_side; ++iz) {
-                x[idx] = (double(ix) + 0.5) * spacing;
-                y[idx] = (double(iy) + 0.5) * spacing;
-                z[idx] = (double(iz) + 0.5) * spacing;
+                x[idx] = (double(ix) + 0.5) * spacing + 1e-9 * (idx + 1);
+                y[idx] = (double(iy) + 0.5) * spacing + 2e-9 * (idx + 1);
+                z[idx] = (double(iz) + 0.5) * spacing + 3e-9 * (idx + 1);
                 vx[idx] = 0.1 * idx;
                 vy[idx] = 0.2 * idx;
                 vz[idx] = 0.3 * idx;
@@ -197,6 +197,8 @@ TEST_F(AtomCellSort, ConsistentPermutationAndSortedByCell) {
     auto h_y = read_back(d.atoms.y, n);
     auto h_z = read_back(d.atoms.z, n);
     auto h_tag = read_back(d.atoms.tag, n);
+    cpu::Frame sorted = frame;
+    cuda::to_cpu(d, sorted);
     auto h_type = read_back(d.atoms.type, n);
     auto h_charge = read_back(d.atoms.charge, n);
     auto h_image = read_back(d.atoms.image, std::size_t(n) * 3);
@@ -225,6 +227,14 @@ TEST_F(AtomCellSort, ConsistentPermutationAndSortedByCell) {
         ASSERT_GE(orig, 0);
         ASSERT_LT(orig, n);
 
+        const double position_tolerance =
+            sizeof(cuda::motion_t) == 8 ? 2e-13 : 2e-6;
+        EXPECT_NEAR(sorted.span(kAtom_x)[k], frame.span(kAtom_x)[orig],
+                    position_tolerance);
+        EXPECT_NEAR(sorted.span(kAtom_y)[k], frame.span(kAtom_y)[orig],
+                    position_tolerance);
+        EXPECT_NEAR(sorted.span(kAtom_z)[k], frame.span(kAtom_z)[orig],
+                    position_tolerance);
         EXPECT_EQ(h_type[k], int(orig % 3));
         EXPECT_DOUBLE_EQ(double(h_charge[k]), (orig % 2 == 0) ? 0.5 : -0.5);
 
@@ -278,7 +288,7 @@ TEST_F(AtomCellSort, PermuteThenInverseIsIdentity) {
     apply_permutation_owned(d, buf.inverse.data(), n, buf);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
-    auto eq_r = [&](const real_t* da, const real_t* db, std::size_t c) {
+    auto eq_r = [&](const auto* da, const auto* db, std::size_t c) {
         auto ha = read_back(da, c);
         auto hb = read_back(db, c);
         EXPECT_EQ(ha, hb);
@@ -305,6 +315,11 @@ TEST_F(AtomCellSort, PermuteThenInverseIsIdentity) {
     eq_r(d.atoms.x, ref.atoms.x, un);
     eq_r(d.atoms.y, ref.atoms.y, un);
     eq_r(d.atoms.z, ref.atoms.z, un);
+    if constexpr (cuda::kMixedPrecision) {
+        eq_r(d.atoms.x_correction, ref.atoms.x_correction, un);
+        eq_r(d.atoms.y_correction, ref.atoms.y_correction, un);
+        eq_r(d.atoms.z_correction, ref.atoms.z_correction, un);
+    }
     eq_r(d.atoms.vx, ref.atoms.vx, un);
     eq_r(d.atoms.vy, ref.atoms.vy, un);
     eq_r(d.atoms.vz, ref.atoms.vz, un);

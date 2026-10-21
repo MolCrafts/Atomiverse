@@ -242,7 +242,7 @@ struct ClusterBounds {
 // special scaling remains a force-time concern; return whether baking applies.
 bool launch_bake_csr_exclusions(const int* row_ptr, const int* col_idx,
                                 const int* original_index, int num_clusters,
-                                const int* excl_offsets,
+                                int num_pairs, const int* excl_offsets,
                                 const int* excl_partners, double special_scale,
                                 uint64_t* masks, cudaStream_t stream = 0);
 

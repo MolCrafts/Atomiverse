@@ -52,7 +52,7 @@ Result full_fourier_oracle(const cpu::Frame& f, const std::array<int, 3>& K,
     double inv[3][3];
     for (int j = 0; j < 3; ++j)
         for (int d = 0; d < 3; ++d)
-            inv[j][d] = ATV::cuda::real_t(inverse(j, d));
+            inv[j][d] = ATV::cuda::motion_t(inverse(j, d));
     double u[2][3], charge[2];
     for (int i = 0; i < 2; ++i) {
         const double r[] = {f.span(kAtom_x)[i], f.span(kAtom_y)[i],

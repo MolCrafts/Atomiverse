@@ -11,6 +11,7 @@
 
 #include "atomiverse/core/gto.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "cublas_dispatch.cuh"
@@ -116,24 +117,24 @@ __global__ void uhf_build_fock_kernel(prec_t* __restrict__ Fa,
          ij < total; ij += stride) {
         const int j = ij / n;
         const int i = ij - j * n;
-        work_t jtot = work_t(0);
-        work_t ka = work_t(0);
-        work_t kb = work_t(0);
+        prec_t jtot = prec_t(0);
+        prec_t ka = prec_t(0);
+        prec_t kb = prec_t(0);
         for (int l = 0; l < n; ++l) {
             const int base_ij_l = i + j * n + l * n3;
             for (int k = 0; k < n; ++k) {
-                const work_t pa = static_cast<work_t>(Pa[k + l * n]);
-                const work_t pb = static_cast<work_t>(Pb[k + l * n]);
-                const work_t eri_j =
-                    static_cast<work_t>(ERI[base_ij_l + k * n2]);
-                const work_t eri_k =
-                    static_cast<work_t>(ERI[i + k * n + j * n2 + l * n3]);
+                const prec_t pa = static_cast<prec_t>(Pa[k + l * n]);
+                const prec_t pb = static_cast<prec_t>(Pb[k + l * n]);
+                const prec_t eri_j =
+                    static_cast<prec_t>(ERI[base_ij_l + k * n2]);
+                const prec_t eri_k =
+                    static_cast<prec_t>(ERI[i + k * n + j * n2 + l * n3]);
                 jtot += (pa + pb) * eri_j;
                 ka += pa * eri_k;
                 kb += pb * eri_k;
             }
         }
-        const work_t h = static_cast<work_t>(H[ij]);
+        const prec_t h = static_cast<prec_t>(H[ij]);
         Fa[ij] = static_cast<prec_t>(h + jtot - ka);
         Fb[ij] = static_cast<prec_t>(h + jtot - kb);
     }
@@ -333,6 +334,11 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
     }
     ws.device_sp_shells = true;
     cudaMalloc(&ws.d_W, mat_bytes);
+    ATV_CUDA_CHECK(cudaMalloc(&ws.d_force_Ptotal, mat_bytes));
+    ATV_CUDA_CHECK(cudaMalloc(&ws.d_force_Wbeta, mat_bytes));
+    if constexpr (kMixedPrecision)
+        ATV_CUDA_CHECK(cudaMalloc(&ws.d_force_gradient,
+                                  std::size_t(natm) * 3 * sizeof(prec_t)));
     cudaMemsetAsync(ws.P, 0, mat_bytes, stream);
     cudaMemsetAsync(ws.P_old, 0, mat_bytes, stream);
     alloc_spin_mats(beta, n, stream);
@@ -352,7 +358,7 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
 
     cudaMemcpyAsync(ws.Hcore, d_T_, mat_bytes, cudaMemcpyDeviceToDevice,
                     stream);
-    work_t one = work_t(1);
+    prec_t one = prec_t(1);
     detail::axpy(handle, nn, &one, d_V_, 1, ws.Hcore, 1);
 
     cusolverDnHandle_t solver;
@@ -381,7 +387,7 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
     dim3 grid((n + kBx - 1) / kBx, (n + kBy - 1) / kBy);
     uhf_scale_columns_by_rsqrt_kernel<<<grid, block, 0, stream>>>(
         d_temp_, d_eigenvalues, n, static_cast<prec_t>(1.0e-8));
-    work_t zero = work_t(0);
+    prec_t zero = prec_t(0);
     detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, n, &one, d_temp_, n,
                  ws.X, n, &zero, d_V_, n);
     cudaMemcpyAsync(ws.X, d_V_, mat_bytes, cudaMemcpyDeviceToDevice, stream);
@@ -408,8 +414,8 @@ void UHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws,
     uhf_build_fock_kernel<<<blocks, threads, 0, stream>>>(
         ws.work, beta.work, ws.Hcore, ws.P, beta.P, ws.ERI, n);
 
-    const work_t one = work_t(1);
-    const work_t zero = work_t(0);
+    const prec_t one = prec_t(1);
+    const prec_t zero = prec_t(0);
     auto to_prime = [&](prec_t* F, prec_t* Fp, prec_t* Hslot) {
         detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, F, n,
                      ws.X, n, &zero, d_temp_, n);
@@ -423,7 +429,11 @@ void UHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws,
     (void)ctx;
 }
 
-void UHFFockDevice::destroy(const SolverContext&, SCFWorkspace&) {
+void UHFFockDevice::destroy(const SolverContext&, SCFWorkspace& ws) {
+    ATV_CUDA_CHECK(cudaFree(ws.d_force_gradient));
+    ATV_CUDA_CHECK(cudaFree(ws.d_force_Ptotal));
+    ATV_CUDA_CHECK(cudaFree(ws.d_force_Wbeta));
+    ws.d_force_gradient = ws.d_force_Ptotal = ws.d_force_Wbeta = nullptr;
     if (cublas_handle_) {
         cublasDestroy(static_cast<cublasHandle_t>(cublas_handle_));
         cublas_handle_ = nullptr;

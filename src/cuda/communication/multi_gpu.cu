@@ -7,6 +7,7 @@
 #include "atomiverse/cpu/frame/transfer.h"
 #include "atomiverse/cuda/dynamics/nve_limit.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/position.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 // Concrete force styles built by the default factories (the header now carries
@@ -35,6 +36,10 @@
 namespace ATV {
 namespace cuda {
 namespace md {
+
+namespace {
+constexpr int kPositionComponents = kMixedPrecision ? 6 : 3;
+}
 
 // Env-gated (AV_MG_PROFILE) per-phase wall-clock profiler for run_nve_pe.
 // Off by default (zero overhead — no device syncs added). When on, each timed
@@ -93,7 +98,7 @@ inline cudaError_t mallocp(T** p, size_t bytes) {
 }
 inline void freep(void* p) {
     if (p)
-        cudaFreeAsync(p, cudaStream_t{0});
+        CKM(cudaFreeAsync(p, cudaStream_t{0}));
 }
 // Raise the default mem-pool release threshold on every visible device so freed
 // async blocks stay in the pool (default threshold 0 returns them to the OS on
@@ -116,7 +121,8 @@ inline void set_pool_retain(const DeviceManager& dm) {
         cudaMemPool_t pool;
         if (cudaDeviceGetDefaultMemPool(&pool, dm.device_id(i)) != cudaSuccess)
             continue;
-        cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &thr);
+        CKM(cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold,
+                                    &thr));
     }
 }
 } // namespace
@@ -153,10 +159,13 @@ namespace {
 // periodic images, so the atom must not be sent twice or its force doubles).
 __global__ void
 pack_face(const real_t* __restrict__ x, const real_t* __restrict__ y,
-          const real_t* __restrict__ z, const std::int64_t* __restrict__ tag,
-          const int* __restrict__ type, int n_local, int axis, double lo,
-          double hi, double cutoff, int mode, real_t* __restrict__ ox,
-          real_t* __restrict__ oy, real_t* __restrict__ oz,
+          const real_t* __restrict__ z, const real_t* __restrict__ xc,
+          const real_t* __restrict__ yc, const real_t* __restrict__ zc,
+          const std::int64_t* __restrict__ tag, const int* __restrict__ type,
+          int n_local, int axis, double lo, double hi, double cutoff, int mode,
+          real_t* __restrict__ ox, real_t* __restrict__ oy,
+          real_t* __restrict__ oz, real_t* __restrict__ oxc,
+          real_t* __restrict__ oyc, real_t* __restrict__ ozc,
           std::int64_t* __restrict__ otag, int* __restrict__ otype,
           int* __restrict__ oidx, int* __restrict__ counter, int cap) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -174,6 +183,11 @@ pack_face(const real_t* __restrict__ x, const real_t* __restrict__ y,
         ox[s] = x[i];
         oy[s] = y[i];
         oz[s] = z[i];
+        if constexpr (kMixedPrecision) {
+            oxc[s] = xc[i];
+            oyc[s] = yc[i];
+            ozc[s] = zc[i];
+        }
         otag[s] = tag[i];
         otype[s] = type[i];
         oidx[s] = i;
@@ -181,13 +195,13 @@ pack_face(const real_t* __restrict__ x, const real_t* __restrict__ y,
 }
 
 // Packed forward halo (multigpu-bonded-05): gather the positions of `cnt` atoms
-// named by idx into ONE contiguous [3*cnt] buffer (x|y|z blocks), so the
+// named by idx into ONE contiguous position buffer (xyz, then mixed corrections), so the
 // per-step position refresh is a single cudaMemcpyPeer per transfer.
-__global__ void gather_positions_packed(const real_t* __restrict__ x,
-                                        const real_t* __restrict__ y,
-                                        const real_t* __restrict__ z,
-                                        const int* __restrict__ idx, int cnt,
-                                        real_t* __restrict__ out3) {
+__global__ void gather_positions_packed(
+    const real_t* __restrict__ x, const real_t* __restrict__ y,
+    const real_t* __restrict__ z, const real_t* __restrict__ xc,
+    const real_t* __restrict__ yc, const real_t* __restrict__ zc,
+    const int* __restrict__ idx, int cnt, real_t* __restrict__ out3) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= cnt)
         return;
@@ -195,21 +209,31 @@ __global__ void gather_positions_packed(const real_t* __restrict__ x,
     out3[k] = x[i];
     out3[cnt + k] = y[i];
     out3[2 * cnt + k] = z[i];
+    if constexpr (kMixedPrecision) {
+        out3[3 * cnt + k] = xc[i];
+        out3[4 * cnt + k] = yc[i];
+        out3[5 * cnt + k] = zc[i];
+    }
 }
 
-// Packed forward halo: scatter a received [3*cnt] block into the dst ghost rows
+// Packed forward halo: scatter a received coordinate representation into ghost rows
 // [base, base+cnt).
-__global__ void unpack_positions_packed(real_t* __restrict__ x,
-                                        real_t* __restrict__ y,
-                                        real_t* __restrict__ z, int base,
-                                        int cnt,
-                                        const real_t* __restrict__ in3) {
+__global__ void
+unpack_positions_packed(real_t* __restrict__ x, real_t* __restrict__ y,
+                        real_t* __restrict__ z, real_t* __restrict__ xc,
+                        real_t* __restrict__ yc, real_t* __restrict__ zc,
+                        int base, int cnt, const real_t* __restrict__ in3) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= cnt)
         return;
     x[base + k] = in3[k];
     y[base + k] = in3[cnt + k];
     z[base + k] = in3[2 * cnt + k];
+    if constexpr (kMixedPrecision) {
+        xc[base + k] = in3[3 * cnt + k];
+        yc[base + k] = in3[4 * cnt + k];
+        zc[base + k] = in3[5 * cnt + k];
+    }
 }
 
 // Packed reverse halo (multigpu-bonded-05): gather a destination's ghost-row
@@ -408,15 +432,15 @@ void MultiGpu::destroy_halo_plan() {
         freep(p.d_src_idx);
         freep(p.d_pack_src); // packed forward/reverse staging on src
         if (p.ev_src)
-            cudaEventDestroy(p.ev_src);
+            CKM(cudaEventDestroy(p.ev_src));
         if (p.ev_rev_done)
-            cudaEventDestroy(p.ev_rev_done);
+            CKM(cudaEventDestroy(p.ev_rev_done));
         dm_.set_device(p.dst);
         freep(p.d_pack_dst); // packed forward/reverse staging on dst
         if (p.ev_dst)
-            cudaEventDestroy(p.ev_dst);
+            CKM(cudaEventDestroy(p.ev_dst));
         if (p.ev_fwd_done)
-            cudaEventDestroy(p.ev_fwd_done);
+            CKM(cudaEventDestroy(p.ev_fwd_done));
     }
     halo_plan_.clear();
     // The freep's above are stream-ordered (cudaFreeAsync). Drain them so a
@@ -424,7 +448,7 @@ void MultiGpu::destroy_halo_plan() {
     // instances) can't reuse a block whose async free is still in flight.
     for (int s = 0; s < count(); ++s) {
         dm_.set_device(s);
-        cudaDeviceSynchronize();
+        CKM(cudaDeviceSynchronize());
     }
 }
 
@@ -457,11 +481,17 @@ void MultiGpu::build_halo(double cutoff) {
             dm_.set_device(src);
             // Per-source scratch sized to the current sendable set.
             real_t *sx, *sy, *sz;
+            real_t *sxc = nullptr, *syc = nullptr, *szc = nullptr;
             std::int64_t* stag;
             int *stype, *sidx, *scnt;
             CKM(mallocp(&sx, ns * sizeof(real_t)));
             CKM(mallocp(&sy, ns * sizeof(real_t)));
             CKM(mallocp(&sz, ns * sizeof(real_t)));
+            if constexpr (kMixedPrecision) {
+                CKM(mallocp(&sxc, ns * sizeof(real_t)));
+                CKM(mallocp(&syc, ns * sizeof(real_t)));
+                CKM(mallocp(&szc, ns * sizeof(real_t)));
+            }
             CKM(mallocp(&stag, ns * sizeof(std::int64_t)));
             CKM(mallocp(&stype, ns * sizeof(int)));
             CKM(mallocp(&sidx, ns * sizeof(int)));
@@ -498,8 +528,10 @@ void MultiGpu::build_halo(double cutoff) {
                 CKM(cudaMemset(scnt, 0, sizeof(int)));
                 int block = 256, grid = (ns + block - 1) / block;
                 pack_face<<<grid, block>>>(
-                    a.x, a.y, a.z, a.tag, a.type, ns, axis, lo[axis], hi[axis],
-                    cutoff, mode, sx, sy, sz, stag, stype, sidx, scnt, ns);
+                    a.x, a.y, a.z, a.x_correction, a.y_correction,
+                    a.z_correction, a.tag, a.type, ns, axis, lo[axis], hi[axis],
+                    cutoff, mode, sx, sy, sz, sxc, syc, szc, stag, stype, sidx,
+                    scnt, ns);
                 CKM(cudaGetLastError());
                 int cnt = 0; // D2H of the counter also syncs the pack kernel
                 CKM(cudaMemcpy(&cnt, scnt, sizeof(int),
@@ -521,6 +553,14 @@ void MultiGpu::build_halo(double cutoff) {
                                    cnt * sizeof(real_t)));
                 CKM(cudaMemcpyPeer(da.z + base, dd_id, sz, sd,
                                    cnt * sizeof(real_t)));
+                if constexpr (kMixedPrecision) {
+                    CKM(cudaMemcpyPeer(da.x_correction + base, dd_id, sxc, sd,
+                                       cnt * sizeof(real_t)));
+                    CKM(cudaMemcpyPeer(da.y_correction + base, dd_id, syc, sd,
+                                       cnt * sizeof(real_t)));
+                    CKM(cudaMemcpyPeer(da.z_correction + base, dd_id, szc, sd,
+                                       cnt * sizeof(real_t)));
+                }
                 CKM(cudaMemcpyPeer(da.tag + base, dd_id, stag, sd,
                                    cnt * sizeof(std::int64_t)));
                 CKM(cudaMemcpyPeer(da.type + base, dd_id, stype, sd,
@@ -539,10 +579,11 @@ void MultiGpu::build_halo(double cutoff) {
                 CKM(mallocp(&p.d_src_idx, cnt * sizeof(int)));
                 CKM(cudaMemcpy(p.d_src_idx, sidx, cnt * sizeof(int),
                                cudaMemcpyDeviceToDevice));
-                // Packed [3*cnt] staging shared by forward (positions) and
+                // Packed staging shared by forward (positions + mixed correction) and
                 // reverse (forces): one buffer on the SRC device + one on the DST
                 // device, so each per-step exchange is a single P2P (vs three).
-                CKM(mallocp(&p.d_pack_src, 3 * cnt * sizeof(real_t)));
+                CKM(mallocp(&p.d_pack_src,
+                            kPositionComponents * cnt * sizeof(real_t)));
                 // Forward copy-done event on the SRC device (recorded on src's
                 // stream after the forward P2P; dst waits before unpacking).
                 CKM(cudaEventCreateWithFlags(&p.ev_src,
@@ -552,7 +593,8 @@ void MultiGpu::build_halo(double cutoff) {
                 CKM(cudaEventCreateWithFlags(&p.ev_rev_done,
                                              cudaEventDisableTiming));
                 dm_.set_device(dst);
-                CKM(mallocp(&p.d_pack_dst, 3 * cnt * sizeof(real_t)));
+                CKM(mallocp(&p.d_pack_dst,
+                            kPositionComponents * cnt * sizeof(real_t)));
                 // Reverse copy-done event on the DST device (recorded on dst's
                 // stream after the reverse P2P; src waits before scatter-add).
                 CKM(cudaEventCreateWithFlags(&p.ev_dst,
@@ -567,10 +609,13 @@ void MultiGpu::build_halo(double cutoff) {
                 goff[dst] += cnt;
                 frames_[dst].n_ghost_ = goff[dst];
             }
-            cudaSetDevice(dm_.device_id(src));
+            CKM(cudaSetDevice(dm_.device_id(src)));
             freep(sx);
             freep(sy);
             freep(sz);
+            freep(sxc);
+            freep(syc);
+            freep(szc);
             freep(stag);
             freep(stype);
             freep(sidx);
@@ -580,7 +625,7 @@ void MultiGpu::build_halo(double cutoff) {
         // positions settled) before the next axis packs from them.
         for (int s = 0; s < N; ++s) {
             dm_.set_device(s);
-            cudaDeviceSynchronize();
+            CKM(cudaDeviceSynchronize());
         }
     }
 }
@@ -617,19 +662,22 @@ void MultiGpu::forward_comm_async() {
             dm_.set_device(p.src);
             auto& a = frames_[p.src].atoms;
             gather_positions_packed<<<grid, block, 0, comm(p.src)>>>(
-                a.x, a.y, a.z, p.d_src_idx, p.cnt, p.d_pack_src);
+                a.x, a.y, a.z, a.x_correction, a.y_correction, a.z_correction,
+                p.d_src_idx, p.cnt, p.d_pack_src);
             CKM(cudaGetLastError());
             // Buffer-release handshake: don't overwrite d_pack_dst until the
             // PREVIOUS step's unpack on dst released it (no-op first time).
             CKM(cudaStreamWaitEvent(comm(p.src), p.ev_fwd_done, 0));
-            CKM(cudaMemcpyPeerAsync(p.d_pack_dst, dd_id, p.d_pack_src, sd,
-                                    3 * p.cnt * sizeof(real_t), comm(p.src)));
+            CKM(cudaMemcpyPeerAsync(
+                p.d_pack_dst, dd_id, p.d_pack_src, sd,
+                kPositionComponents * p.cnt * sizeof(real_t), comm(p.src)));
             CKM(cudaEventRecord(p.ev_src, comm(p.src)));
             dm_.set_device(p.dst);
             CKM(cudaStreamWaitEvent(comm(p.dst), p.ev_src, 0));
             auto& da = frames_[p.dst].atoms;
             unpack_positions_packed<<<grid, block, 0, comm(p.dst)>>>(
-                da.x, da.y, da.z, p.base, p.cnt, p.d_pack_dst);
+                da.x, da.y, da.z, da.x_correction, da.y_correction,
+                da.z_correction, p.base, p.cnt, p.d_pack_dst);
             CKM(cudaGetLastError());
             CKM(cudaEventRecord(p.ev_fwd_done, comm(p.dst)));
         }
@@ -649,12 +697,12 @@ void MultiGpu::forward_comm() {
     // cascade, then a barrier so ghosts are materialized on return.
     for (int s = 0; s < count(); ++s) {
         dm_.set_device(s);
-        cudaDeviceSynchronize();
+        CKM(cudaDeviceSynchronize());
     }
     forward_comm_async();
     for (int s = 0; s < count(); ++s) {
         dm_.set_device(s);
-        cudaDeviceSynchronize();
+        CKM(cudaDeviceSynchronize());
     }
 }
 
@@ -719,12 +767,12 @@ void MultiGpu::reverse_comm() {
     // async cascade, then a barrier so all scatter-adds have landed on return.
     for (int s = 0; s < count(); ++s) {
         dm_.set_device(s);
-        cudaDeviceSynchronize();
+        CKM(cudaDeviceSynchronize());
     }
     reverse_comm_async();
     for (int s = 0; s < count(); ++s) {
         dm_.set_device(s);
-        cudaDeviceSynchronize();
+        CKM(cudaDeviceSynchronize());
     }
 }
 
@@ -755,6 +803,7 @@ void MultiGpu::partition(const cpu::Frame& global, double ghost_headroom) {
     const auto gcharge = global.span(kAtom_charge);
     const auto gtype = global.span(kAtom_type);
     const auto gtag = global.span(kAtom_tag);
+    const auto gimage = global.span(kAtom_image);
 
     // Bucket global atom indices by owner slab.
     std::vector<std::vector<int>> buckets(N);
@@ -815,6 +864,7 @@ void MultiGpu::partition(const cpu::Frame& global, double ghost_headroom) {
         auto scharge = sub.span(kAtom_charge);
         auto stype = sub.span(kAtom_type);
         auto stag = sub.span(kAtom_tag);
+        auto simage = sub.span(kAtom_image);
         for (int k = 0; k < cnt; ++k) {
             const int g = idx[k];
             sx[k] = gx[g];
@@ -827,6 +877,8 @@ void MultiGpu::partition(const cpu::Frame& global, double ghost_headroom) {
             scharge[k] = gcharge[g];
             stype[k] = gtype[g];
             stag[k] = gtag[g];
+            for (int d = 0; d < 3; ++d)
+                simage(k, d) = gimage(g, d);
         }
 
         // Owner-filtered per-atom bonded topology, partners as GLOBAL TAGS
@@ -977,32 +1029,36 @@ namespace {
 // Velocity-Verlet first half: v += 0.5*dt*(f/m); x += dt*v   (owned only).
 __global__ void
 vv_first(real_t* __restrict__ x, real_t* __restrict__ y, real_t* __restrict__ z,
-         real_t* __restrict__ vx, real_t* __restrict__ vy,
-         real_t* __restrict__ vz, const real_t* __restrict__ fx,
+         real_t* __restrict__ xc, real_t* __restrict__ yc,
+         real_t* __restrict__ zc, std::int8_t* __restrict__ image,
+         motion_t* __restrict__ vx, motion_t* __restrict__ vy,
+         motion_t* __restrict__ vz, const real_t* __restrict__ fx,
          const real_t* __restrict__ fy, const real_t* __restrict__ fz,
-         const real_t* __restrict__ mass, int n_local, real_t dt) {
+         const motion_t* __restrict__ mass, int n_local, motion_t dt,
+         cuda::MotionBox box) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_local)
         return;
-    real_t inv_m = real_t(1) / mass[i];
-    real_t h = real_t(0.5) * dt * inv_m;
+    motion_t inv_m = motion_t(1) / mass[i];
+    motion_t h = motion_t(0.5) * dt * inv_m;
     vx[i] += h * fx[i];
     vy[i] += h * fy[i];
     vz[i] += h * fz[i];
-    x[i] += dt * vx[i];
-    y[i] += dt * vy[i];
-    z[i] += dt * vz[i];
+    wrap_position(x, y, z, xc, yc, zc, image, i, box,
+                  load_position(x, xc, i) + dt * vx[i],
+                  load_position(y, yc, i) + dt * vy[i],
+                  load_position(z, zc, i) + dt * vz[i]);
 }
 // Velocity-Verlet second half: v += 0.5*dt*(f/m)   (owned only).
 __global__ void
-vv_second(real_t* __restrict__ vx, real_t* __restrict__ vy,
-          real_t* __restrict__ vz, const real_t* __restrict__ fx,
+vv_second(motion_t* __restrict__ vx, motion_t* __restrict__ vy,
+          motion_t* __restrict__ vz, const real_t* __restrict__ fx,
           const real_t* __restrict__ fy, const real_t* __restrict__ fz,
-          const real_t* __restrict__ mass, int n_local, real_t dt) {
+          const motion_t* __restrict__ mass, int n_local, motion_t dt) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_local)
         return;
-    real_t h = real_t(0.5) * dt / mass[i];
+    motion_t h = motion_t(0.5) * dt / mass[i];
     vx[i] += h * fx[i];
     vy[i] += h * fy[i];
     vz[i] += h * fz[i];
@@ -1013,7 +1069,11 @@ void MultiGpu::run_nve(int steps, double dt, double cutoff, double epsilon,
                        double sigma) {
     build_halo(cutoff);
     compute_lj_bruteforce(cutoff, epsilon, sigma);
-    const real_t dtr = static_cast<real_t>(dt);
+    const motion_t dtr = static_cast<motion_t>(dt);
+    cuda::MotionBox motion_box;
+    for (int d = 0; d < 3; ++d)
+        motion_box.cell[4 * d] = static_cast<motion_t>(box_L_[d]);
+    motion_box.refresh();
     for (int step = 0; step < steps; ++step) {
         for (int s = 0; s < count(); ++s) {
             const int nl = frames_[s].n_local_;
@@ -1022,8 +1082,10 @@ void MultiGpu::run_nve(int steps, double dt, double cutoff, double epsilon,
             dm_.set_device(s);
             auto& a = frames_[s].atoms;
             int block = 256, grid = (nl + block - 1) / block;
-            vv_first<<<grid, block>>>(a.x, a.y, a.z, a.vx, a.vy, a.vz, a.fx,
-                                      a.fy, a.fz, a.mass, nl, dtr);
+            vv_first<<<grid, block>>>(a.x, a.y, a.z, a.x_correction,
+                                      a.y_correction, a.z_correction, a.image,
+                                      a.vx, a.vy, a.vz, a.fx, a.fy, a.fz,
+                                      a.mass, nl, dtr, motion_box);
             CKM(cudaGetLastError());
         }
         build_halo(cutoff);
@@ -1105,20 +1167,20 @@ void MultiGpu::destroy_force_engine() {
     // device first — events may still be queued on in-flight comm streams.
     for (int s = 0; s < static_cast<int>(ev_pos_.size()); ++s) {
         dm_.set_device(s);
-        cudaDeviceSynchronize();
+        CKM(cudaDeviceSynchronize());
         if (ev_pos_[s])
-            cudaEventDestroy(ev_pos_[s]);
+            CKM(cudaEventDestroy(ev_pos_[s]));
         if (ev_ghosts_[s])
-            cudaEventDestroy(ev_ghosts_[s]);
+            CKM(cudaEventDestroy(ev_ghosts_[s]));
         if (ev_force_[s])
-            cudaEventDestroy(ev_force_[s]);
+            CKM(cudaEventDestroy(ev_force_[s]));
         if (ev_rev_[s])
-            cudaEventDestroy(ev_rev_[s]);
+            CKM(cudaEventDestroy(ev_rev_[s]));
         if (s < static_cast<int>(rows_.size()) && rows_[s]) {
-            cudaFree(rows_[s]);
-            cudaFree(row_flags_[s]);
-            cudaFree(row_nsel_[s]);
-            cudaFree(row_tmp_[s]);
+            CKM(cudaFree(rows_[s]));
+            CKM(cudaFree(row_flags_[s]));
+            CKM(cudaFree(row_nsel_[s]));
+            CKM(cudaFree(row_tmp_[s]));
         }
     }
     ev_pos_.clear();
@@ -1191,6 +1253,10 @@ void MultiGpu::setup_force_engine(double cutoff, double epsilon, double sigma,
         ctx_[s].stream = dm_.stream(s);
         ctx_[s].defer_stream = dm_.defer_stream(s);
         ctx_[s].host_box = box;
+        for (int d = 0; d < 3; ++d)
+            ctx_[s].host_motion_box.cell[d * 3 + d] =
+                static_cast<motion_t>(box_L_[d]);
+        ctx_[s].host_motion_box.refresh();
         ctx_[s].md.pair_list = nullptr;
         ctx_[s].md.flat_pairs_requested = false;
         nlist_[s] = std::make_unique<cuda::NeighborList>(cutoff, force_skin_);
@@ -1349,14 +1415,14 @@ void MultiGpu::rebuild_bonded_tuples() {
 void MultiGpu::destroy_tag_maps() {
     for (std::size_t s = 0; s < tagmap_tag_.size(); ++s) {
         dm_.set_device(static_cast<int>(s));
-        cudaFree(tagmap_tag_[s]);
-        cudaFree(tagmap_idx_[s]);
+        CKM(cudaFree(tagmap_tag_[s]));
+        CKM(cudaFree(tagmap_idx_[s]));
         if (s < tagmap_iota_.size())
-            cudaFree(tagmap_iota_[s]);
+            CKM(cudaFree(tagmap_iota_[s]));
         if (s < tagmap_tmp_.size())
-            cudaFree(tagmap_tmp_[s]);
+            CKM(cudaFree(tagmap_tmp_[s]));
         if (s < drop_ctr_.size())
-            cudaFree(drop_ctr_[s]);
+            CKM(cudaFree(drop_ctr_[s]));
     }
     tagmap_tag_.clear();
     tagmap_idx_.clear();
@@ -1667,13 +1733,13 @@ void MultiGpu::reneighbor() {
         }
         for (int s = 0; s < count(); ++s) {
             dm_.set_device(s);
-            cudaDeviceSynchronize();
+            CKM(cudaDeviceSynchronize());
         }
         auto t0 = std::chrono::steady_clock::now();
         fn();
         for (int s = 0; s < count(); ++s) {
             dm_.set_device(s);
-            cudaDeviceSynchronize();
+            CKM(cudaDeviceSynchronize());
         }
         P.add(name, std::chrono::duration<double>(
                         std::chrono::steady_clock::now() - t0)
@@ -1851,7 +1917,7 @@ void MultiGpu::reneighbor() {
     for (int s = 0; s < N; ++s) {
         cudaMemPool_t pool;
         if (cudaDeviceGetDefaultMemPool(&pool, dm_.device_id(s)) == cudaSuccess)
-            cudaMemPoolTrimTo(pool, kPoolKeepBytes);
+            CKM(cudaMemPoolTrimTo(pool, kPoolKeepBytes));
     }
     if (mg_prof().on) {
         mg_prof().add("R_nlist",
@@ -1861,7 +1927,7 @@ void MultiGpu::reneighbor() {
         for (int s = 0; s < N; ++s) {
             dm_.set_device(s);
             size_t fr = 0, tt = 0;
-            cudaMemGetInfo(&fr, &tt);
+            CKM(cudaMemGetInfo(&fr, &tt));
             std::fprintf(stderr,
                          "[MG_VRAM] reneigh dev%d used=%.1f/%.1f GB "
                          "n_local=%d n_ghost=%d nlist_cap=%d\n",
@@ -1930,7 +1996,7 @@ void MultiGpu::run_nve_nlist(int steps, double dt, double cutoff,
     setup_force_engine(cutoff, epsilon, sigma, skin);
     reneighbor();
     compute_lj_nlist();
-    const real_t dtr = static_cast<real_t>(dt);
+    const motion_t dtr = static_cast<motion_t>(dt);
     if (reneigh_every < 1)
         reneigh_every = 1;
     // Phase timer (no-op unless AV_MG_PROFILE): device-inclusive per-phase
@@ -1944,13 +2010,13 @@ void MultiGpu::run_nve_nlist(int steps, double dt, double cutoff,
         }
         for (int s = 0; s < count(); ++s) {
             dm_.set_device(s);
-            cudaDeviceSynchronize();
+            CKM(cudaDeviceSynchronize());
         }
         auto t0 = std::chrono::steady_clock::now();
         fn();
         for (int s = 0; s < count(); ++s) {
             dm_.set_device(s);
-            cudaDeviceSynchronize();
+            CKM(cudaDeviceSynchronize());
         }
         P.add(name, std::chrono::duration<double>(
                         std::chrono::steady_clock::now() - t0)
@@ -1970,9 +2036,10 @@ void MultiGpu::run_nve_nlist(int steps, double dt, double cutoff,
                 auto& a = frames_[s].atoms;
                 auto st = static_cast<cudaStream_t>(ctx_[s].stream);
                 int block = 256, grid = (nl + block - 1) / block;
-                vv_first<<<grid, block, 0, st>>>(a.x, a.y, a.z, a.vx, a.vy,
-                                                 a.vz, a.fx, a.fy, a.fz, a.mass,
-                                                 nl, dtr);
+                vv_first<<<grid, block, 0, st>>>(
+                    a.x, a.y, a.z, a.x_correction, a.y_correction,
+                    a.z_correction, a.image, a.vx, a.vy, a.vz, a.fx, a.fy, a.fz,
+                    a.mass, nl, dtr, ctx_[s].host_motion_box);
                 CKM(cudaGetLastError());
                 if (count() > 1)
                     CKM(cudaEventRecord(ev_pos_[s], st));
@@ -2010,7 +2077,7 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
                                  "setup_force_engine + setup_bonded first");
     reneighbor(); // migrate + halo + re-materialize topology + nlist
     compute_forces(/*read_energy=*/false); // initial LJ + bonded force
-    const work_t dtw = static_cast<work_t>(dt);
+    const motion_t dtw = static_cast<motion_t>(dt);
     // The MSU PE stage-1 deck integrates the UNRELAXED amorphous start-state
     // (E_pair ~3.4e8) with LAMMPS `fix nve/limit 0.05` — a per-step
     // displacement cap that tames the severe initial atom overlap. Plain
@@ -2018,7 +2085,8 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
     // the overlap force spikes, the system clumps, and the neighbor count grows
     // without bound until it overflows int32 at ~1M atoms. Match LAMMPS:
     // displacement-capped integration (ATV::units::force_to_accel units + orthorhombic PBC wrap).
-    constexpr work_t kNveLimitXmax = work_t(0.05); // Å, == `fix nve/limit 0.05`
+    constexpr motion_t kNveLimitXmax =
+        motion_t(0.05); // Å, == `fix nve/limit 0.05`
     if (reneigh_every < 1)
         reneigh_every = 1;
     // Phase timer (no-op unless AV_MG_PROFILE is set): syncs all devices around
@@ -2031,13 +2099,13 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
         }
         for (int s = 0; s < count(); ++s) {
             dm_.set_device(s);
-            cudaDeviceSynchronize();
+            CKM(cudaDeviceSynchronize());
         }
         auto t0 = std::chrono::steady_clock::now();
         fn();
         for (int s = 0; s < count(); ++s) {
             dm_.set_device(s);
-            cudaDeviceSynchronize();
+            CKM(cudaDeviceSynchronize());
         }
         P.add(name, std::chrono::duration<double>(
                         std::chrono::steady_clock::now() - t0)
@@ -2057,8 +2125,10 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
                 // migrate() does cross-device P2P reads that streams cannot
                 // order) drains all devices at entry instead.
                 auto st = static_cast<cudaStream_t>(ctx_[s].stream);
-                launch_nve_limit_initial(a.x, a.y, a.z, a.vx, a.vy, a.vz, a.fx,
-                                         a.fy, a.fz, a.mass, ctx_[s].host_box,
+                launch_nve_limit_initial(a.x, a.y, a.z, a.x_correction,
+                                         a.y_correction, a.z_correction,
+                                         a.image, a.vx, a.vy, a.vz, a.fx, a.fy,
+                                         a.fz, a.mass, ctx_[s].host_motion_box,
                                          dtw, kNveLimitXmax, nl, st);
                 CKM(cudaGetLastError());
                 if (count() > 1)
@@ -2123,16 +2193,18 @@ __device__ inline int dev_owner(double x, double y, double z, int d0, int d1,
 // the few cnt[] counters — the dominant migrate cost at ~16M atoms/GPU) to
 // O(blocks * n_slots). n_slots is tiny (= #subdomains), so the shared array fits.
 __global__ void classify_owner(const real_t* x, const real_t* y,
-                               const real_t* z, int n, int d0, int d1, int d2,
-                               double Lx, double Ly, double Lz, int* owner,
-                               int* cnt, int n_slots) {
+                               const real_t* z, const real_t* xc,
+                               const real_t* yc, const real_t* zc, int n,
+                               int d0, int d1, int d2, double Lx, double Ly,
+                               double Lz, int* owner, int* cnt, int n_slots) {
     extern __shared__ int s_cnt[];
     for (int t = threadIdx.x; t < n_slots; t += blockDim.x)
         s_cnt[t] = 0;
     __syncthreads();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
-        int o = dev_owner(x[i], y[i], z[i], d0, d1, d2, Lx, Ly, Lz);
+        int o = dev_owner(load_position(x, xc, i), load_position(y, yc, i),
+                          load_position(z, zc, i), d0, d1, d2, Lx, Ly, Lz);
         owner[i] = o;
         atomicAdd(&s_cnt[o], 1);
     }
@@ -2144,14 +2216,16 @@ __global__ void classify_owner(const real_t* x, const real_t* y,
 
 // Gather full per-atom state of `cnt` atoms named by idx[] into contiguous
 // send buffers (one P2P hop to the new owner).
-__global__ void gather_state(const int* idx, int cnt, const real_t* x,
-                             const real_t* y, const real_t* z, const real_t* vx,
-                             const real_t* vy, const real_t* vz,
-                             const real_t* mass, const real_t* charge,
-                             const int* type, const std::int64_t* tag,
-                             real_t* ox, real_t* oy, real_t* oz, real_t* ovx,
-                             real_t* ovy, real_t* ovz, real_t* omass,
-                             real_t* ocharge, int* otype, std::int64_t* otag) {
+__global__ void
+gather_state(const int* idx, int cnt, const real_t* x, const real_t* y,
+             const real_t* z, const real_t* xc, const real_t* yc,
+             const real_t* zc, const motion_t* vx, const motion_t* vy,
+             const motion_t* vz, const motion_t* mass, const real_t* charge,
+             const int* type, const std::int64_t* tag, const std::int8_t* image,
+             real_t* ox, real_t* oy, real_t* oz, real_t* oxc, real_t* oyc,
+             real_t* ozc, motion_t* ovx, motion_t* ovy, motion_t* ovz,
+             motion_t* omass, real_t* ocharge, int* otype, std::int64_t* otag,
+             std::int8_t* oimage) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= cnt)
         return;
@@ -2159,6 +2233,11 @@ __global__ void gather_state(const int* idx, int cnt, const real_t* x,
     ox[k] = x[i];
     oy[k] = y[i];
     oz[k] = z[i];
+    if constexpr (kMixedPrecision) {
+        oxc[k] = xc[i];
+        oyc[k] = yc[i];
+        ozc[k] = zc[i];
+    }
     ovx[k] = vx[i];
     ovy[k] = vy[i];
     ovz[k] = vz[i];
@@ -2166,30 +2245,44 @@ __global__ void gather_state(const int* idx, int cnt, const real_t* x,
     ocharge[k] = charge[i];
     otype[k] = type[i];
     otag[k] = tag[i];
+    for (int d = 0; d < 3; ++d)
+        oimage[k * 3 + d] = image[i * 3 + d];
 }
 
-// 10 per-atom fields moved by migration.
+// Complete owned physical state moved by migration, including mixed corrections.
 struct MigBuf {
-    real_t *x, *y, *z, *vx, *vy, *vz, *mass, *charge;
+    real_t *x, *y, *z, *charge;
+    real_t *xc = nullptr, *yc = nullptr, *zc = nullptr;
+    motion_t *vx, *vy, *vz, *mass;
     int* type;
     std::int64_t* tag;
+    std::int8_t* image;
 };
 void mig_alloc(MigBuf& b, int m) {
     CKM(mallocp(&b.x, m * sizeof(real_t)));
     CKM(mallocp(&b.y, m * sizeof(real_t)));
     CKM(mallocp(&b.z, m * sizeof(real_t)));
-    CKM(mallocp(&b.vx, m * sizeof(real_t)));
-    CKM(mallocp(&b.vy, m * sizeof(real_t)));
-    CKM(mallocp(&b.vz, m * sizeof(real_t)));
-    CKM(mallocp(&b.mass, m * sizeof(real_t)));
+    if constexpr (kMixedPrecision) {
+        CKM(mallocp(&b.xc, m * sizeof(real_t)));
+        CKM(mallocp(&b.yc, m * sizeof(real_t)));
+        CKM(mallocp(&b.zc, m * sizeof(real_t)));
+    }
+    CKM(mallocp(&b.vx, m * sizeof(motion_t)));
+    CKM(mallocp(&b.vy, m * sizeof(motion_t)));
+    CKM(mallocp(&b.vz, m * sizeof(motion_t)));
+    CKM(mallocp(&b.mass, m * sizeof(motion_t)));
     CKM(mallocp(&b.charge, m * sizeof(real_t)));
     CKM(mallocp(&b.type, m * sizeof(int)));
     CKM(mallocp(&b.tag, m * sizeof(std::int64_t)));
+    CKM(mallocp(&b.image, 3 * m * sizeof(std::int8_t)));
 }
 void mig_free(MigBuf& b) {
     freep(b.x);
     freep(b.y);
     freep(b.z);
+    freep(b.xc);
+    freep(b.yc);
+    freep(b.zc);
     freep(b.vx);
     freep(b.vy);
     freep(b.vz);
@@ -2197,6 +2290,7 @@ void mig_free(MigBuf& b) {
     freep(b.charge);
     freep(b.type);
     freep(b.tag);
+    freep(b.image);
 }
 
 // Per-atom bonded topology carried alongside the core MigBuf when the system
@@ -2322,13 +2416,15 @@ __global__ void build_holes_fillers(const int* owner, int self, int n_keep,
     }
 }
 
-// Copy the 10 migrated per-atom fields filler-row → hole-row. `m_ctr` is the
+// Copy the migrated physical state filler-row → hole-row. `m_ctr` is the
 // device hole count (== filler count); grid is sized to the n_leave upper
 // bound so no D2H of the exact count is needed.
 __global__ void fill_holes(const int* holes, const int* fillers,
                            const int* m_ctr, real_t* x, real_t* y, real_t* z,
-                           real_t* vx, real_t* vy, real_t* vz, real_t* mass,
-                           real_t* charge, int* type, std::int64_t* tag) {
+                           real_t* xc, real_t* yc, real_t* zc, motion_t* vx,
+                           motion_t* vy, motion_t* vz, motion_t* mass,
+                           real_t* charge, int* type, std::int64_t* tag,
+                           std::int8_t* image) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= *m_ctr)
         return;
@@ -2336,6 +2432,11 @@ __global__ void fill_holes(const int* holes, const int* fillers,
     x[h] = x[f];
     y[h] = y[f];
     z[h] = z[f];
+    if constexpr (kMixedPrecision) {
+        xc[h] = xc[f];
+        yc[h] = yc[f];
+        zc[h] = zc[f];
+    }
     vx[h] = vx[f];
     vy[h] = vy[f];
     vz[h] = vz[f];
@@ -2343,6 +2444,8 @@ __global__ void fill_holes(const int* holes, const int* fillers,
     charge[h] = charge[f];
     type[h] = type[f];
     tag[h] = tag[f];
+    for (int d = 0; d < 3; ++d)
+        image[h * 3 + d] = image[f * 3 + d];
 }
 
 // Bonded twin of fill_holes: copy the wide per-atom bonded SoA rows.
@@ -2412,8 +2515,9 @@ void MultiGpu::migrate() {
             int blk = 256, grd = (nl + blk - 1) / blk;
             const int nslots = dims[0] * dims[1] * dims[2]; // == N
             classify_owner<<<grd, blk, nslots * sizeof(int)>>>(
-                a.x, a.y, a.z, nl, dims[0], dims[1], dims[2], box_L_[0],
-                box_L_[1], box_L_[2], owner, dcnt, nslots);
+                a.x, a.y, a.z, a.x_correction, a.y_correction, a.z_correction,
+                nl, dims[0], dims[1], dims[2], box_L_[0], box_L_[1], box_L_[2],
+                owner, dcnt, nslots);
             CKM(cudaGetLastError());
         }
         d_owner[s] = owner;
@@ -2551,10 +2655,11 @@ void MultiGpu::migrate() {
             int blk = 256, grd = (c + blk - 1) / blk;
             const int* idx = d_order[src] + boff_x[src][dst];
             MigBuf& B = sb[src][dst];
-            gather_state<<<grd, blk>>>(idx, c, a.x, a.y, a.z, a.vx, a.vy, a.vz,
-                                       a.mass, a.charge, a.type, a.tag, B.x,
-                                       B.y, B.z, B.vx, B.vy, B.vz, B.mass,
-                                       B.charge, B.type, B.tag);
+            gather_state<<<grd, blk>>>(
+                idx, c, a.x, a.y, a.z, a.x_correction, a.y_correction,
+                a.z_correction, a.vx, a.vy, a.vz, a.mass, a.charge, a.type,
+                a.tag, a.image, B.x, B.y, B.z, B.xc, B.yc, B.zc, B.vx, B.vy,
+                B.vz, B.mass, B.charge, B.type, B.tag, B.image);
             CKM(cudaGetLastError());
             if (bonded_) {
                 migb_alloc(sbb[src][dst], c, MB, MA, MD, MS);
@@ -2575,7 +2680,8 @@ void MultiGpu::migrate() {
             int blk = 256, grd = (n_leave[src] + blk - 1) / blk;
             fill_holes<<<grd, blk>>>(
                 d_holes[src], d_holes[src] + m, d_holes[src] + 2 * m, a.x, a.y,
-                a.z, a.vx, a.vy, a.vz, a.mass, a.charge, a.type, a.tag);
+                a.z, a.x_correction, a.y_correction, a.z_correction, a.vx, a.vy,
+                a.vz, a.mass, a.charge, a.type, a.tag, a.image);
             CKM(cudaGetLastError());
             if (bonded_) {
                 fill_holes_bonded<<<grd, blk>>>(
@@ -2615,13 +2721,19 @@ void MultiGpu::migrate() {
             peer(da.x + o, B.x, c * sizeof(real_t));
             peer(da.y + o, B.y, c * sizeof(real_t));
             peer(da.z + o, B.z, c * sizeof(real_t));
-            peer(da.vx + o, B.vx, c * sizeof(real_t));
-            peer(da.vy + o, B.vy, c * sizeof(real_t));
-            peer(da.vz + o, B.vz, c * sizeof(real_t));
-            peer(da.mass + o, B.mass, c * sizeof(real_t));
+            if constexpr (kMixedPrecision) {
+                peer(da.x_correction + o, B.xc, c * sizeof(real_t));
+                peer(da.y_correction + o, B.yc, c * sizeof(real_t));
+                peer(da.z_correction + o, B.zc, c * sizeof(real_t));
+            }
+            peer(da.vx + o, B.vx, c * sizeof(motion_t));
+            peer(da.vy + o, B.vy, c * sizeof(motion_t));
+            peer(da.vz + o, B.vz, c * sizeof(motion_t));
+            peer(da.mass + o, B.mass, c * sizeof(motion_t));
             peer(da.charge + o, B.charge, c * sizeof(real_t));
             peer(da.type + o, B.type, c * sizeof(int));
             peer(da.tag + o, B.tag, c * sizeof(std::int64_t));
+            peer(da.image + 3 * o, B.image, 3 * c * sizeof(std::int8_t));
             if (bonded_) {
                 MigBondedBuf& BB = sbb[src][dst];
                 auto peer_i = [&](int* dstp, int* srcp, int width) {

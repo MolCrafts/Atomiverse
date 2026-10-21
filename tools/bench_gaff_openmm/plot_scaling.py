@@ -35,7 +35,8 @@ def main():
             signature = {key: protocol[key] for key in
                          ('steps', 'warmup', 'samples', 'dt_fs', 'cutoff_A',
                           'neighbor_skin_A', 'alpha_inv_A', 'grid_spacing_A',
-                          'term', 'neighbor_reserve')}
+                          'term', 'neighbor_reserve', 'throughput_monitor',
+                          'resource_measurement', 'motion_bytes')}
             signature['data_sha256'] = result['inputs_sha256']['data']
             signature['ff_sha256'] = result['inputs_sha256']['ff']
             if cohort is None:
@@ -47,6 +48,9 @@ def main():
             if precision in binaries and binaries[precision] != binary:
                 raise ValueError(f'mixed Atomiverse binaries within {precision}: {path}')
             binaries[precision] = binary
+            expected_position = 'float32+residual' if precision == 'mixed' else 'float64'
+            if protocol['position_representation'] != expected_position or protocol['motion_bytes'] != 8:
+                raise ValueError(f'incompatible integration precision: {path}')
             representation = protocol['initial_position_storage']
             if precision in input_representations and input_representations[precision] != representation:
                 raise ValueError(f'mixed input rounding conventions within {precision}: {path}')
@@ -82,7 +86,7 @@ def main():
         raise ValueError('both precisions need at least three matching atom counts')
     args.out.mkdir(parents=True, exist_ok=True)
     with (args.out/'gaff_scaling.csv').open('w', newline='') as output:
-        writer = csv.DictWriter(output, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(output, fieldnames=list(rows[0]), lineterminator='\n')
         writer.writeheader()
         writer.writerows(rows)
 
@@ -153,12 +157,14 @@ def main():
     fig.text(0.07, 0.025,
              'GPU: PID-filtered NVML samples every 100 ms, including CUDA context; transient peaks may be missed.\n'
              'Host: observed engine-process RSS, including C++ / Python front-end; comparison parent excluded. Normal neighbor capacity.\n'
-             'Mixed inputs are exact float32 values in both Angstrom and nm; subsequent trajectory coordinate precision differs by engine.\n'
-             'Points are measurements; connecting lines are guides. Setup is excluded from step timing; memory monitoring runs concurrently.',
+             'Mixed: FP32 force/FFT, position + residual, FP64 velocity/integration in both engines. Exact common initial geometry.\n'
+             'Points are measurements; connecting lines are guides. Throughput is unmonitored; memory is sampled in separate engine runs.',
              fontsize=9, color='#4B5D72', linespacing=1.6)
     fig.subplots_adjust(left=0.075, right=0.96, top=0.9, bottom=0.12, hspace=0.25, wspace=0.3)
     fig.savefig(args.out/'gaff_scaling.png', dpi=180, facecolor='white')
     fig.savefig(args.out/'gaff_scaling.svg', facecolor='white')
+    svg = args.out/'gaff_scaling.svg'
+    svg.write_text('\n'.join(line.rstrip() for line in svg.read_text().splitlines())+'\n')
     print(json.dumps(dict(points=len(rows), atoms=counts['double'],
                           longest_comparison_seconds=max(r['whole_comparison_seconds'] for r in rows),
                           output=str(args.out))))

@@ -52,6 +52,7 @@ struct AtomCellSortBuffers {
     DeviceVector<int> inverse;      ///< [n] inverse permutation (optional).
     DeviceVector<char> sort_temp;   ///< cub temp storage.
 
+    DeviceVector<motion_t> stage_motion;  ///< one velocity/mass column.
     DeviceVector<real_t> stage_r;         ///< staging for one real_t column.
     DeviceVector<std::int64_t> stage_i64; ///< staging for one int64 column.
     DeviceVector<int> stage_i;            ///< staging for one int column.
@@ -67,6 +68,7 @@ struct AtomCellSortBuffers {
         // size the i64 stage to the largest and reuse for the narrower ones.
         // Caller sizes the bonded stages explicitly via resize_bonded().
         stage_r.resize(n);
+        stage_motion.resize(n);
         stage_i.resize(n);
         stage_i8.resize(static_cast<std::size_t>(n) * 3);
     }

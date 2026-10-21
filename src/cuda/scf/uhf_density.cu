@@ -12,6 +12,7 @@
 #include "cublas_dispatch.cuh"
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 
 #include <cublas_v2.h>
@@ -23,7 +24,7 @@ namespace scf {
 namespace internal {
 namespace {
 
-__global__ void uhf_write_energy_ev_kernel(prec_t* __restrict__ energy_ev,
+__global__ void uhf_write_energy_ev_kernel(double* __restrict__ energy_ev,
                                            const prec_t* __restrict__ dot_a,
                                            const prec_t* __restrict__ dot_b,
                                            const double* __restrict__ d_V_nuc,
@@ -87,6 +88,7 @@ void UHFDensity::step(const SolverContext& ctx, SCFWorkspace& ws,
             &ctx.frame.scalars->energy, ws.d_scalar_scratch,
             ws.d_scalar_scratch + 1, ws.d_V_nuc,
             static_cast<prec_t>(units::kHartreeInEv));
+        ATV_CUDA_CHECK(cudaGetLastError());
     }
 }
 

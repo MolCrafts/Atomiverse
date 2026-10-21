@@ -1,6 +1,7 @@
 /// @file cuda/potentials/angle_harmonic.cu
 /// @brief CUDA AngleHarmonic — V = K(θ − θ₀)² (kernel + class).
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
@@ -31,7 +32,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_angle_k(
     const real_t* __restrict__ x, const real_t* __restrict__ y,
     const real_t* __restrict__ z, real_t* __restrict__ fx,
     real_t* __restrict__ fy, real_t* __restrict__ fz,
-    prec_t* __restrict__ energy, prec_t* __restrict__ stress,
+    double* __restrict__ energy, double* __restrict__ stress,
     const int* __restrict__ ai, const int* __restrict__ aj,
     const int* __restrict__ ak, const int* __restrict__ at,
     const work_t* __restrict__ K, const work_t* __restrict__ theta0,
@@ -133,11 +134,11 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_angle_k(
     work_t out[7];
     block_reduce_sum_n<7>(my_vals, warp_scratch, out);
     if (threadIdx.x == 0) {
-        atomicAdd(energy, static_cast<prec_t>(out[0]));
+        atomicAdd(energy, static_cast<double>(out[0]));
         if (stress != nullptr) {
 #pragma unroll
             for (int c = 0; c < 6; ++c)
-                atomicAdd(&stress[c], static_cast<prec_t>(out[c + 1]));
+                atomicAdd(&stress[c], static_cast<double>(out[c + 1]));
         }
     }
 }
@@ -161,12 +162,12 @@ void AngleHarmonic::build(const BuildContext& /*ctx*/) {
     for (int i = 0; i < nt; ++i)
         theta0_dev[i] = static_cast<work_t>(theta0_[i]);
 
-    cudaMalloc(&state_->d_K, nt * sizeof(work_t));
-    cudaMalloc(&state_->d_theta0, nt * sizeof(work_t));
-    cudaMemcpy(state_->d_K, K_dev.data(), nt * sizeof(work_t),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(state_->d_theta0, theta0_dev.data(), nt * sizeof(work_t),
-               cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_K, nt * sizeof(work_t)));
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_theta0, nt * sizeof(work_t)));
+    ATV_CUDA_CHECK(cudaMemcpy(state_->d_K, K_dev.data(), nt * sizeof(work_t),
+                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(state_->d_theta0, theta0_dev.data(),
+                              nt * sizeof(work_t), cudaMemcpyHostToDevice));
 }
 
 void AngleHarmonic::compute(const LaunchContext& ctx) {
@@ -184,11 +185,12 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
         &f.scalars->energy, &f.scalars->stress[0], f.angles.atomi,
         f.angles.atomj, f.angles.atomk, f.angles.type, state_->d_K,
         state_->d_theta0, ctx.runtime.host_box, na);
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 void AngleHarmonic::destroy(const DestroyContext& /*ctx*/) {
-    cudaFree(state_->d_K);
-    cudaFree(state_->d_theta0);
+    ATV_CUDA_CHECK(cudaFree(state_->d_K));
+    ATV_CUDA_CHECK(cudaFree(state_->d_theta0));
     *state_ = {};
 }
 

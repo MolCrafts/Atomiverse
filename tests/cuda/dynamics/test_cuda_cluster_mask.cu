@@ -341,7 +341,7 @@ struct ExclusionMaskInput {
 TEST(CudaClusterMask, BakeFullExclusionsUsesOriginalIndicesAndClearsPadding) {
     ExclusionMaskInput input;
     EXPECT_TRUE(ATV::cuda::md::nlist::launch_bake_csr_exclusions(
-        input.rows.data(), input.columns.data(), input.index.data(), 1,
+        input.rows.data(), input.columns.data(), input.index.data(), 1, 1,
         input.offsets.data(), input.partners.data(), 0.0, input.masks.data()));
     std::vector<std::uint32_t> actual(32);
     ASSERT_EQ(cudaSuccess, cudaMemcpy(actual.data(), input.masks.data(),
@@ -358,13 +358,62 @@ TEST(CudaClusterMask, BakeFullExclusionsUsesOriginalIndicesAndClearsPadding) {
 TEST(CudaClusterMask, PartialSpecialScalePreservesGeometricMask) {
     ExclusionMaskInput input;
     EXPECT_FALSE(ATV::cuda::md::nlist::launch_bake_csr_exclusions(
-        input.rows.data(), input.columns.data(), input.index.data(), 1,
+        input.rows.data(), input.columns.data(), input.index.data(), 1, 1,
         input.offsets.data(), input.partners.data(), 0.5, input.masks.data()));
     std::vector<std::uint32_t> actual(32);
     ASSERT_EQ(cudaSuccess, cudaMemcpy(actual.data(), input.masks.data(),
                                       actual.size() * sizeof(std::uint32_t),
                                       cudaMemcpyDeviceToHost));
     EXPECT_EQ(actual, input.initial);
+}
+
+TEST(CudaClusterMask, ExclusionTilesHandleEmptyCsrRowsAndPartialBlocks) {
+    using ATV::cuda::md::nlist::DeviceVector;
+    // Five tiles span two blocks; row 1 is empty and the final cluster is padded.
+    constexpr int atoms = 121, tiles = 5;
+    const int host_rows[] = {0, 2, 2, 4, 5};
+    const int host_columns[] = {0, 2, 2, 3, 3};
+    const int tile_rows[] = {0, 0, 2, 2, 3};
+    std::vector<int> host_index(128, -1), host_offsets(atoms + 1),
+        host_partners(atoms);
+    for (int i = 0; i < atoms; ++i) {
+        host_index[i] = atoms - 1 - i;
+        host_offsets[i] = i;
+        host_partners[i] = (i + 1) % atoms;
+    }
+    host_offsets[atoms] = atoms;
+    DeviceVector<int> rows{5}, columns{tiles}, index{128}, offsets{atoms + 1},
+        partners{atoms};
+    DeviceVector<std::uint64_t> masks{16 * tiles};
+    auto upload = [](auto* device, const auto* host, std::size_t bytes) {
+        ASSERT_EQ(cudaSuccess,
+                  cudaMemcpy(device, host, bytes, cudaMemcpyHostToDevice));
+    };
+    upload(rows.data(), host_rows, sizeof(host_rows));
+    upload(columns.data(), host_columns, sizeof(host_columns));
+    upload(index.data(), host_index.data(), host_index.size() * sizeof(int));
+    upload(offsets.data(), host_offsets.data(),
+           host_offsets.size() * sizeof(int));
+    upload(partners.data(), host_partners.data(),
+           host_partners.size() * sizeof(int));
+    ASSERT_EQ(cudaSuccess, cudaMemset(masks.data(), 0xff, 128 * tiles));
+    ASSERT_TRUE(ATV::cuda::md::nlist::launch_bake_csr_exclusions(
+        rows.data(), columns.data(), index.data(), 4, tiles, offsets.data(),
+        partners.data(), 0, masks.data()));
+    std::vector<std::uint32_t> actual(32 * tiles);
+    ASSERT_EQ(cudaSuccess, cudaMemcpy(actual.data(), masks.data(), 128 * tiles,
+                                      cudaMemcpyDeviceToHost));
+    for (int p = 0; p < tiles; ++p)
+        for (int lane = 0; lane < 32; ++lane) {
+            const int ai = host_index[32 * tile_rows[p] + lane];
+            std::uint32_t expected = 0;
+            for (int j = 0; j < 32; ++j) {
+                const int aj = host_index[32 * host_columns[p] + j];
+                if (ai >= 0 && aj >= 0 && aj != (ai + 1) % atoms)
+                    expected |= 1u << j;
+            }
+            EXPECT_EQ(actual[32 * p + lane], expected) << p << ':' << lane;
+        }
 }
 
 TEST(CudaClusterMask, CurrentPeriodicMotionOverwritesMappedPartialBlockFlags) {

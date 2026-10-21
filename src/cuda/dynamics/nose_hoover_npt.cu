@@ -5,8 +5,10 @@
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover_npt.cuh"
+#include "atomiverse/cuda/frame/position.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <algorithm>
 #include <cmath>
@@ -15,9 +17,9 @@
 
 namespace ATV {
 
+using cuda::motion_t;
 using cuda::prec_t;
 using cuda::real_t;
-using cuda::work_t;
 
 namespace cuda {
 namespace md {
@@ -38,79 +40,65 @@ constexpr double kEpsDtMaxFraction = 0.005;
 
 // ── Per-atom kernels ────────────────────────────────────────────────
 
-__global__ void scale_vel_uniform_k(real_t* __restrict__ vx,
-                                    real_t* __restrict__ vy,
-                                    real_t* __restrict__ vz, work_t scale,
+__global__ void scale_vel_uniform_k(motion_t* __restrict__ vx,
+                                    motion_t* __restrict__ vy,
+                                    motion_t* __restrict__ vz, motion_t scale,
                                     int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    vx[i] = static_cast<real_t>(static_cast<work_t>(vx[i]) * scale);
-    vy[i] = static_cast<real_t>(static_cast<work_t>(vy[i]) * scale);
-    vz[i] = static_cast<real_t>(static_cast<work_t>(vz[i]) * scale);
+    vx[i] = static_cast<motion_t>(static_cast<motion_t>(vx[i]) * scale);
+    vy[i] = static_cast<motion_t>(static_cast<motion_t>(vy[i]) * scale);
+    vz[i] = static_cast<motion_t>(static_cast<motion_t>(vz[i]) * scale);
 }
 
-__global__ void scale_vel_per_axis_k(real_t* __restrict__ vx,
-                                     real_t* __restrict__ vy,
-                                     real_t* __restrict__ vz, work_t sx,
-                                     work_t sy, work_t sz, int n) {
+__global__ void scale_vel_per_axis_k(motion_t* __restrict__ vx,
+                                     motion_t* __restrict__ vy,
+                                     motion_t* __restrict__ vz, motion_t sx,
+                                     motion_t sy, motion_t sz, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    vx[i] = static_cast<real_t>(static_cast<work_t>(vx[i]) * sx);
-    vy[i] = static_cast<real_t>(static_cast<work_t>(vy[i]) * sy);
-    vz[i] = static_cast<real_t>(static_cast<work_t>(vz[i]) * sz);
+    vx[i] = static_cast<motion_t>(static_cast<motion_t>(vx[i]) * sx);
+    vy[i] = static_cast<motion_t>(static_cast<motion_t>(vy[i]) * sy);
+    vz[i] = static_cast<motion_t>(static_cast<motion_t>(vz[i]) * sz);
 }
 
-__global__ void kick_v_k(real_t* __restrict__ vx, real_t* __restrict__ vy,
-                         real_t* __restrict__ vz, const real_t* __restrict__ fx,
-                         const real_t* __restrict__ fy,
-                         const real_t* __restrict__ fz,
-                         const real_t* __restrict__ mass, work_t half_dt,
-                         int n) {
+__global__ void
+kick_v_k(motion_t* __restrict__ vx, motion_t* __restrict__ vy,
+         motion_t* __restrict__ vz, const real_t* __restrict__ fx,
+         const real_t* __restrict__ fy, const real_t* __restrict__ fz,
+         const motion_t* __restrict__ mass, motion_t half_dt, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    work_t dtfm =
-        half_dt * ATV::units::force_to_accel / static_cast<work_t>(mass[i]);
-    vx[i] = static_cast<real_t>(static_cast<work_t>(vx[i])
-                                + dtfm * static_cast<work_t>(fx[i]));
-    vy[i] = static_cast<real_t>(static_cast<work_t>(vy[i])
-                                + dtfm * static_cast<work_t>(fy[i]));
-    vz[i] = static_cast<real_t>(static_cast<work_t>(vz[i])
-                                + dtfm * static_cast<work_t>(fz[i]));
+    motion_t dtfm =
+        half_dt * ATV::units::force_to_accel / static_cast<motion_t>(mass[i]);
+    vx[i] = static_cast<motion_t>(static_cast<motion_t>(vx[i])
+                                  + dtfm * static_cast<motion_t>(fx[i]));
+    vy[i] = static_cast<motion_t>(static_cast<motion_t>(vy[i])
+                                  + dtfm * static_cast<motion_t>(fy[i]));
+    vz[i] = static_cast<motion_t>(static_cast<motion_t>(vz[i])
+                                  + dtfm * static_cast<motion_t>(fz[i]));
 }
 
 __global__ void
 propagate_x_k(real_t* __restrict__ x, real_t* __restrict__ y,
-              real_t* __restrict__ z, const real_t* __restrict__ vx,
-              const real_t* __restrict__ vy, const real_t* __restrict__ vz,
-              work_t ax, work_t ay, work_t az, work_t dx, work_t dy, work_t dz,
-              work_t dt, prec_t* __restrict__ box, cuda::Box new_box, int n) {
+              real_t* __restrict__ z, real_t* __restrict__ xc,
+              real_t* __restrict__ yc, real_t* __restrict__ zc,
+              std::int8_t* __restrict__ image, const motion_t* __restrict__ vx,
+              const motion_t* __restrict__ vy, const motion_t* __restrict__ vz,
+              motion_t ax, motion_t ay, motion_t az, motion_t dx, motion_t dy,
+              motion_t dz, motion_t dt, prec_t* __restrict__ box,
+              cuda::MotionBox new_box, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         // Closed-form per-axis MTK position propagator (matches CPU
         // propagate_x_and_box).
-        x[i] = static_cast<real_t>(static_cast<work_t>(x[i]) * ax
-                                   + static_cast<work_t>(vx[i]) * dt * dx);
-        y[i] = static_cast<real_t>(static_cast<work_t>(y[i]) * ay
-                                   + static_cast<work_t>(vy[i]) * dt * dy);
-        z[i] = static_cast<real_t>(static_cast<work_t>(z[i]) * az
-                                   + static_cast<work_t>(vz[i]) * dt * dz);
-        // Orthorhombic PBC wrap into the freshly-scaled box via cached
-        // inv_l on the by-value Box — no per-thread FP64 division
-        // (cuda-md-review-cleanup-04-box-by-value-pbc).
-        work_t Lx = work_t(new_box.cell[0]), Ly = work_t(new_box.cell[4]),
-               Lz = work_t(new_box.cell[8]);
-        work_t inv_Lx = work_t(new_box.inv_l[0]),
-               inv_Ly = work_t(new_box.inv_l[1]),
-               inv_Lz = work_t(new_box.inv_l[2]);
-        x[i] -=
-            static_cast<real_t>(Lx * floor(static_cast<work_t>(x[i]) * inv_Lx));
-        y[i] -=
-            static_cast<real_t>(Ly * floor(static_cast<work_t>(y[i]) * inv_Ly));
-        z[i] -=
-            static_cast<real_t>(Lz * floor(static_cast<work_t>(z[i]) * inv_Lz));
+        wrap_position(x, y, z, xc, yc, zc, image, i, new_box,
+                      load_position(x, xc, i) * ax + vx[i] * dt * dx,
+                      load_position(y, yc, i) * ay + vy[i] * dt * dy,
+                      load_position(z, zc, i) * az + vz[i] * dt * dz);
     }
     // Thread 0 of block 0 writes the new box diagonal to device, so
     // downstream consumers reading raw `frame.box` see the updated
@@ -136,8 +124,8 @@ propagate_x_k(real_t* __restrict__ x, real_t* __restrict__ y,
 // Caller multiplies the KE slots by 0.5·ATV::units::mass_v2_to_energy to get eV.
 
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void reduce_ke_axes_k(
-    const real_t* __restrict__ vx, const real_t* __restrict__ vy,
-    const real_t* __restrict__ vz, const real_t* __restrict__ mass,
+    const motion_t* __restrict__ vx, const motion_t* __restrict__ vy,
+    const motion_t* __restrict__ vz, const motion_t* __restrict__ mass,
     double* __restrict__ buf, int n) {
     extern __shared__ double warp_scratch[]; // per-warp staging cells
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -232,6 +220,7 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
     eta_t_dot_.assign(static_cast<std::size_t>(mtchain_), 0.0);
     eta_b_.assign(static_cast<std::size_t>(mpchain_), 0.0);
     eta_b_dot_.assign(static_cast<std::size_t>(mpchain_), 0.0);
+    eps_dot_.fill(0.0);
 
     const double tau_T2 = tau_T_ * tau_T_;
     const double tau_P2 = tau_P_ * tau_P_;
@@ -246,14 +235,16 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
     tdrag_factor_ = 1.0 - drag_ * dt_ / tau_T_;
     pdrag_factor_ = 1.0 - drag_ * dt_ / tau_P_;
 
-    // Initial KE at equipartition.
-    KE_global_ = 0.5 * static_cast<double>(n_dof_) * kT_;
+    // Velocities can be initialized by an earlier component after build().
+    // Sample them at this component's first integration launch.
+    KE_global_ = 0.0;
+    kinetic_initialized_ = false;
 
     // Cache box diagonal (orthorhombic only — same restriction as
     // cuda::md::Barostat / VelocityVerlet wrap).
     prec_t host_box[9];
-    cudaMemcpy(host_box, ctx.frame.box, 9 * sizeof(prec_t),
-               cudaMemcpyDeviceToHost);
+    ATV_CUDA_CHECK(cudaMemcpy(host_box, ctx.frame.box, 9 * sizeof(prec_t),
+                              cudaMemcpyDeviceToHost));
 
     // Enforce the restriction instead of documenting it. Only the diagonal
     // is read below and only the diagonal is written back, so a tilted cell
@@ -280,66 +271,71 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
     //   [4..6] = stress[0..2] mirror (filled by gather_npt_scalars_k)
     //   [7]    = energy mirror
     double* d_npt = nullptr;
-    cudaMalloc(&d_npt, kNptScratchSize * sizeof(double));
-    cudaMemset(d_npt, 0, kNptScratchSize * sizeof(double));
+    ATV_CUDA_CHECK(cudaMalloc(&d_npt, kNptScratchSize * sizeof(double)));
+    ATV_CUDA_CHECK(cudaMemset(d_npt, 0, kNptScratchSize * sizeof(double)));
     d_npt_scratch_ = d_npt;
 
     // Box-diagonal device scratch (3 doubles): refreshed by Deform-aware
     // path in propagate_x_and_box_.
     double* d_box = nullptr;
-    cudaMalloc(&d_box, kBoxDiagSize * sizeof(double));
+    ATV_CUDA_CHECK(cudaMalloc(&d_box, kBoxDiagSize * sizeof(double)));
     d_box_diag_ = d_box;
 
     // Pinned host scratch + events. Routed through defer_stream so the
     // main compute stream is never drained for KE / stress / box reads
     // (cuda-md-review-cleanup-03-launch-purity).
-    cudaMallocHost(&h_npt_scratch_, kNptScratchSize * sizeof(double));
+    ATV_CUDA_CHECK(
+        cudaMallocHost(&h_npt_scratch_, kNptScratchSize * sizeof(double)));
     for (int i = 0; i < kNptScratchSize; ++i)
         h_npt_scratch_[i] = 0.0;
-    cudaMallocHost(&h_box_diag_pinned_, kBoxDiagSize * sizeof(double));
+    ATV_CUDA_CHECK(
+        cudaMallocHost(&h_box_diag_pinned_, kBoxDiagSize * sizeof(double)));
     h_box_diag_pinned_[0] = box_lx_;
     h_box_diag_pinned_[1] = box_ly_;
     h_box_diag_pinned_[2] = box_lz_;
-    cudaMallocHost(&h_kinetic_conserved_pinned_,
-                   kKineticConservedPinnedSize * sizeof(double));
+    ATV_CUDA_CHECK(
+        cudaMallocHost(&h_kinetic_conserved_pinned_,
+                       kKineticConservedPinnedSize * sizeof(double)));
     h_kinetic_conserved_pinned_[0] = KE_global_;
     h_kinetic_conserved_pinned_[1] = 0.0;
 
     cudaEvent_t ev_npt = nullptr;
-    cudaEventCreateWithFlags(&ev_npt, cudaEventDisableTiming);
+    ATV_CUDA_CHECK(cudaEventCreateWithFlags(&ev_npt, cudaEventDisableTiming));
     npt_scratch_event_ = ev_npt;
     cudaEvent_t ev_box = nullptr;
-    cudaEventCreateWithFlags(&ev_box, cudaEventDisableTiming);
+    ATV_CUDA_CHECK(cudaEventCreateWithFlags(&ev_box, cudaEventDisableTiming));
     box_diag_event_ = ev_box;
 }
 
 void NoseHooverNPT::destroy(const DestroyContext& /*ctx*/) {
     if (d_npt_scratch_) {
-        cudaFree(d_npt_scratch_);
+        ATV_CUDA_CHECK(cudaFree(d_npt_scratch_));
         d_npt_scratch_ = nullptr;
     }
     if (d_box_diag_) {
-        cudaFree(d_box_diag_);
+        ATV_CUDA_CHECK(cudaFree(d_box_diag_));
         d_box_diag_ = nullptr;
     }
     if (h_npt_scratch_) {
-        cudaFreeHost(h_npt_scratch_);
+        ATV_CUDA_CHECK(cudaFreeHost(h_npt_scratch_));
         h_npt_scratch_ = nullptr;
     }
     if (h_box_diag_pinned_) {
-        cudaFreeHost(h_box_diag_pinned_);
+        ATV_CUDA_CHECK(cudaFreeHost(h_box_diag_pinned_));
         h_box_diag_pinned_ = nullptr;
     }
     if (h_kinetic_conserved_pinned_) {
-        cudaFreeHost(h_kinetic_conserved_pinned_);
+        ATV_CUDA_CHECK(cudaFreeHost(h_kinetic_conserved_pinned_));
         h_kinetic_conserved_pinned_ = nullptr;
     }
     if (npt_scratch_event_) {
-        cudaEventDestroy(static_cast<cudaEvent_t>(npt_scratch_event_));
+        ATV_CUDA_CHECK(
+            cudaEventDestroy(static_cast<cudaEvent_t>(npt_scratch_event_)));
         npt_scratch_event_ = nullptr;
     }
     if (box_diag_event_) {
-        cudaEventDestroy(static_cast<cudaEvent_t>(box_diag_event_));
+        ATV_CUDA_CHECK(
+            cudaEventDestroy(static_cast<cudaEvent_t>(box_diag_event_)));
         box_diag_event_ = nullptr;
     }
 }
@@ -365,18 +361,21 @@ void NoseHooverNPT::refresh_npt_scalars_(const LaunchContext& ctx) {
     auto defer_stream = static_cast<cudaStream_t>(ctx.runtime.defer_stream);
     auto& f = ctx.frame;
     int n = f.n_atoms();
+    if (n <= 0)
+        return;
     auto* d_npt = static_cast<double*>(d_npt_scratch_);
 
     // Order defer_stream after all pending main_stream work (the
     // velocity / stress / energy values are produced by main_stream
     // kernels — Virial, ZeroEnergy, integrator kicks).
     auto event = static_cast<cudaEvent_t>(npt_scratch_event_);
-    cudaEventRecord(event, main_stream);
-    cudaStreamWaitEvent(defer_stream, event, 0);
+    ATV_CUDA_CHECK(cudaEventRecord(event, main_stream));
+    ATV_CUDA_CHECK(cudaStreamWaitEvent(defer_stream, event, 0));
 
     // Zero the 4 KE slots + the 4 mirror slots (mirror slots are
     // overwritten by gather_npt_scalars_k but cheap to clear).
-    cudaMemsetAsync(d_npt, 0, kNptScratchSize * sizeof(double), defer_stream);
+    ATV_CUDA_CHECK(cudaMemsetAsync(d_npt, 0, kNptScratchSize * sizeof(double),
+                                   defer_stream));
 
     // KE reduction → d_npt[0..3]
     int block = cuda::kDefaultBlock;
@@ -384,16 +383,20 @@ void NoseHooverNPT::refresh_npt_scalars_(const LaunchContext& ctx) {
     size_t smem = cuda::warps_per_block(block) * sizeof(double);
     reduce_ke_axes_k<<<grid, block, smem, defer_stream>>>(
         f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.mass, d_npt, n);
+    ATV_CUDA_CHECK(cudaGetLastError());
 
     // Mirror stress[0..2] + energy → d_npt[4..7]
     gather_npt_scalars_k<<<1, 1, 0, defer_stream>>>(&f.scalars->stress[0],
                                                     &f.scalars->energy, d_npt);
+    ATV_CUDA_CHECK(cudaGetLastError());
 
     // Async D2H to pinned + event record. Host-block on event.
-    cudaMemcpyAsync(h_npt_scratch_, d_npt, kNptScratchSize * sizeof(double),
-                    cudaMemcpyDeviceToHost, defer_stream);
-    cudaEventRecord(event, defer_stream);
-    cudaEventSynchronize(event); // host-thread wait; no stream sync
+    ATV_CUDA_CHECK(cudaMemcpyAsync(h_npt_scratch_, d_npt,
+                                   kNptScratchSize * sizeof(double),
+                                   cudaMemcpyDeviceToHost, defer_stream));
+    ATV_CUDA_CHECK(cudaEventRecord(event, defer_stream));
+    ATV_CUDA_CHECK(
+        cudaEventSynchronize(event)); // host-thread wait; no stream sync
 }
 
 double NoseHooverNPT::compute_global_KE_(const LaunchContext& ctx) {
@@ -410,15 +413,18 @@ void NoseHooverNPT::refresh_box_diag_(const LaunchContext& ctx) {
     // Order defer_stream after Deform's box mutation (which runs on
     // main_stream at order -100).
     auto event = static_cast<cudaEvent_t>(box_diag_event_);
-    cudaEventRecord(event, main_stream);
-    cudaStreamWaitEvent(defer_stream, event, 0);
+    ATV_CUDA_CHECK(cudaEventRecord(event, main_stream));
+    ATV_CUDA_CHECK(cudaStreamWaitEvent(defer_stream, event, 0));
 
     // Single-thread gather + async D2H + event-sync.
     gather_box_diag_k<<<1, 1, 0, defer_stream>>>(f.box, d_box);
-    cudaMemcpyAsync(h_box_diag_pinned_, d_box, kBoxDiagSize * sizeof(double),
-                    cudaMemcpyDeviceToHost, defer_stream);
-    cudaEventRecord(event, defer_stream);
-    cudaEventSynchronize(event); // host-thread wait; no stream sync
+    ATV_CUDA_CHECK(cudaGetLastError());
+    ATV_CUDA_CHECK(cudaMemcpyAsync(h_box_diag_pinned_, d_box,
+                                   kBoxDiagSize * sizeof(double),
+                                   cudaMemcpyDeviceToHost, defer_stream));
+    ATV_CUDA_CHECK(cudaEventRecord(event, defer_stream));
+    ATV_CUDA_CHECK(
+        cudaEventSynchronize(event)); // host-thread wait; no stream sync
 }
 
 // ── Temperature ramp ────────────────────────────────────────────────
@@ -466,10 +472,13 @@ void NoseHooverNPT::nhc_atoms_half_(const LaunchContext& ctx, double half_dt) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& f = ctx.frame;
     int n = f.n_atoms();
+    if (n <= 0)
+        return;
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(n);
     scale_vel_uniform_k<<<grid, block, 0, stream>>>(
-        f.atoms.vx, f.atoms.vy, f.atoms.vz, static_cast<work_t>(scale), n);
+        f.atoms.vx, f.atoms.vy, f.atoms.vz, static_cast<motion_t>(scale), n);
+    ATV_CUDA_CHECK(cudaGetLastError());
     KE_global_ *= scale * scale;
 
     for (int k = 0; k < M; ++k)
@@ -584,6 +593,8 @@ void NoseHooverNPT::scale_v_by_baro_(const LaunchContext& ctx, double half_dt) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& f = ctx.frame;
     int n = f.n_atoms();
+    if (n <= 0)
+        return;
 
     double sum_eps_dot = 0.0;
     for (int a = 0; a < 3; ++a)
@@ -602,12 +613,14 @@ void NoseHooverNPT::scale_v_by_baro_(const LaunchContext& ctx, double half_dt) {
     int grid = cuda::grid_size(n);
     if (sx == sy && sy == sz) {
         scale_vel_uniform_k<<<grid, block, 0, stream>>>(
-            f.atoms.vx, f.atoms.vy, f.atoms.vz, static_cast<work_t>(sx), n);
+            f.atoms.vx, f.atoms.vy, f.atoms.vz, static_cast<motion_t>(sx), n);
+        ATV_CUDA_CHECK(cudaGetLastError());
         KE_global_ *= sx * sx;
     } else {
         scale_vel_per_axis_k<<<grid, block, 0, stream>>>(
-            f.atoms.vx, f.atoms.vy, f.atoms.vz, static_cast<work_t>(sx),
-            static_cast<work_t>(sy), static_cast<work_t>(sz), n);
+            f.atoms.vx, f.atoms.vy, f.atoms.vz, static_cast<motion_t>(sx),
+            static_cast<motion_t>(sy), static_cast<motion_t>(sz), n);
+        ATV_CUDA_CHECK(cudaGetLastError());
         KE_global_ = compute_global_KE_(ctx);
     }
 }
@@ -618,11 +631,14 @@ void NoseHooverNPT::kick_v_by_force_(const LaunchContext& ctx, double half_dt) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& f = ctx.frame;
     int n = f.n_atoms();
+    if (n <= 0)
+        return;
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(n);
     kick_v_k<<<grid, block, 0, stream>>>(
         f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.fx, f.atoms.fy, f.atoms.fz,
-        f.atoms.mass, static_cast<work_t>(half_dt), n);
+        f.atoms.mass, static_cast<motion_t>(half_dt), n);
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 // ── Drift + box scale ───────────────────────────────────────────────
@@ -631,6 +647,8 @@ void NoseHooverNPT::propagate_x_and_box_(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& f = ctx.frame;
     int n = f.n_atoms();
+    if (n <= 0)
+        return;
 
     double eps_dt[3], a_arr[3], drift[3];
     for (int d = 0; d < 3; ++d) {
@@ -669,39 +687,28 @@ void NoseHooverNPT::propagate_x_and_box_(const LaunchContext& ctx) {
     // Build the new orthorhombic Box for the kernel + host_box
     // mirror. Triclinic NPT not yet supported (couple_axis is per
     // diagonal axis; off-diagonals stay zero).
-    cuda::Box new_box = ctx.runtime.host_box;
-    const real_t Lx = static_cast<real_t>(lx_new);
-    const real_t Ly = static_cast<real_t>(ly_new);
-    const real_t Lz = static_cast<real_t>(lz_new);
-    new_box.cell[0] = Lx;
-    new_box.cell[4] = Ly;
-    new_box.cell[8] = Lz;
-    new_box.inv_l[0] = real_t(1) / Lx;
-    new_box.inv_l[1] = real_t(1) / Ly;
-    new_box.inv_l[2] = real_t(1) / Lz;
-    new_box.half_l[0] = real_t(0.5) * Lx;
-    new_box.half_l[1] = real_t(0.5) * Ly;
-    new_box.half_l[2] = real_t(0.5) * Lz;
-    if (new_box.ortho) {
-        for (int k = 0; k < 9; ++k)
-            new_box.inv_cell[k] = real_t(0);
-        new_box.inv_cell[0] = new_box.inv_l[0];
-        new_box.inv_cell[4] = new_box.inv_l[1];
-        new_box.inv_cell[8] = new_box.inv_l[2];
-    }
+    cuda::MotionBox new_box = ctx.runtime.host_motion_box;
+    new_box.cell[0] = static_cast<motion_t>(lx_new);
+    new_box.cell[4] = static_cast<motion_t>(ly_new);
+    new_box.cell[8] = static_cast<motion_t>(lz_new);
+    new_box.refresh();
 
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(n);
     propagate_x_k<<<grid, block, 0, stream>>>(
-        f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.vx, f.atoms.vy, f.atoms.vz,
-        static_cast<work_t>(a_arr[0]), static_cast<work_t>(a_arr[1]),
-        static_cast<work_t>(a_arr[2]), static_cast<work_t>(drift[0]),
-        static_cast<work_t>(drift[1]), static_cast<work_t>(drift[2]),
-        static_cast<work_t>(dt_), f.box, new_box, n);
+        f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.x_correction,
+        f.atoms.y_correction, f.atoms.z_correction, f.atoms.image, f.atoms.vx,
+        f.atoms.vy, f.atoms.vz, static_cast<motion_t>(a_arr[0]),
+        static_cast<motion_t>(a_arr[1]), static_cast<motion_t>(a_arr[2]),
+        static_cast<motion_t>(drift[0]), static_cast<motion_t>(drift[1]),
+        static_cast<motion_t>(drift[2]), static_cast<motion_t>(dt_), f.box,
+        new_box, n);
+    ATV_CUDA_CHECK(cudaGetLastError());
 
     // Mutate the host-side Context Box so peer components see the
     // new dimensions on the next launch().
-    ctx.runtime.host_box = new_box;
+    ctx.runtime.host_motion_box = new_box;
+    ctx.runtime.host_box = box_cast<real_t>(new_box);
 
     box_lx_ = lx_new;
     box_ly_ = ly_new;
@@ -741,9 +748,15 @@ NoseHooverNPT::extended_hamiltonian_(const LaunchContext& /*ctx*/) const {
 // ── launch() dispatch ───────────────────────────────────────────────
 
 void NoseHooverNPT::launch(const LaunchContext& ctx) {
+    if (n_atoms_ <= 0)
+        return;
     const double half_dt = 0.5 * dt_;
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
+        if (!kinetic_initialized_) {
+            KE_global_ = compute_global_KE_(ctx);
+            kinetic_initialized_ = true;
+        }
         compute_temp_target_(ctx.step);
         const double tau_T2 = tau_T_ * tau_T_;
         Q_t_[0] = static_cast<double>(n_dof_) * kT_ * tau_T2;
@@ -778,12 +791,12 @@ void NoseHooverNPT::launch(const LaunchContext& ctx) {
         auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
         h_kinetic_conserved_pinned_[0] = KE_global_;
         h_kinetic_conserved_pinned_[1] = extended_hamiltonian_(ctx);
-        cudaMemcpyAsync(&ctx.frame.scalars->kinetic,
-                        &h_kinetic_conserved_pinned_[0], sizeof(double),
-                        cudaMemcpyHostToDevice, stream);
-        cudaMemcpyAsync(&ctx.frame.scalars->conserved,
-                        &h_kinetic_conserved_pinned_[1], sizeof(double),
-                        cudaMemcpyHostToDevice, stream);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(
+            &ctx.frame.scalars->kinetic, &h_kinetic_conserved_pinned_[0],
+            sizeof(double), cudaMemcpyHostToDevice, stream));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(
+            &ctx.frame.scalars->conserved, &h_kinetic_conserved_pinned_[1],
+            sizeof(double), cudaMemcpyHostToDevice, stream));
     }
 }
 

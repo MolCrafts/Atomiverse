@@ -7,6 +7,7 @@
 
 #include "atomiverse/cuda/scf/internal/diis_mixer.cuh"
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "cublas_dispatch.cuh"
 
@@ -110,11 +111,11 @@ __global__ void weighted_sum_hist_kernel(prec_t* __restrict__ y,
     const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (idx >= nn)
         return;
-    work_t acc = work_t(0);
+    prec_t acc = prec_t(0);
     for (int i = 0; i < m; ++i) {
         const int slot = (hist_start + i) % max_vectors;
-        acc += static_cast<work_t>(c[i])
-               * static_cast<work_t>(hist[slot * nn + idx]);
+        acc += static_cast<prec_t>(c[i])
+               * static_cast<prec_t>(hist[slot * nn + idx]);
     }
     y[idx] = static_cast<prec_t>(acc);
 }
@@ -180,9 +181,9 @@ void DIISMixer::step(const SolverContext& ctx, SCFWorkspace& ws) {
 
     const int n = scf.n;
     const int nn = n * n;
-    const work_t one = work_t(1);
-    const work_t zero = work_t(0);
-    const work_t neg_one = work_t(-1);
+    const prec_t one = prec_t(1);
+    const prec_t zero = prec_t(0);
+    const prec_t neg_one = prec_t(-1);
 
     // ── e = Xᵀ (F P S − S P F) X  (unshifted F in scf.work) ───────────
     // t1 = P S
@@ -258,6 +259,7 @@ void DIISMixer::step(const SolverContext& ctx, SCFWorkspace& ws) {
                                            stream>>>(scf.work, d_F_hist_, d_c_,
                                                      nn, m, hist_start_,
                                                      max_vectors_);
+                ATV_CUDA_CHECK(cudaGetLastError());
             }
             // On singular B: leave scf.work as the latest F (CPU catch path).
         }
@@ -281,8 +283,8 @@ void DIISMixer::step(const SolverContext& ctx, SCFWorkspace& ws) {
         int dblocks = cuda::grid_size(n, cuda::kDefaultBlock);
         add_diagonal_kernel<<<dblocks, cuda::kDefaultBlock, 0, stream>>>(
             scf.H, lambda, n);
-        const work_t neg_lambda = static_cast<work_t>(-level_shift_);
-        const work_t one_b = work_t(1);
+        const prec_t neg_lambda = static_cast<prec_t>(-level_shift_);
+        const prec_t one_b = prec_t(1);
         detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n, n, scf.n_occ,
                      &neg_lambda, scf.C_prime, n, scf.C_prime, n, &one_b, scf.H,
                      n);
