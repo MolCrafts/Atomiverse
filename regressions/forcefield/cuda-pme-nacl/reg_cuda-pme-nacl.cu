@@ -1,9 +1,10 @@
-/// @file tests/cuda/longrange/test_pme_coul.cu
+/// @file regressions/forcefield/cuda-pme-nacl/reg_cuda-pme-nacl.cu
 /// @brief Validation of CUDA Particle-Mesh Ewald (CoulLong + KSpacePME)
 ///        against the NaCl Madelung constant. Needs ATV_BUILD_KSPACE.
 
 #include <cmath>
-#include <gtest/gtest.h>
+#include <cstdio>
+#include <exception>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
@@ -43,7 +44,7 @@ cpu::Frame make_rocksalt(double d, int n) {
 
 } // namespace
 
-TEST(CudaPmeCoul, MadelungNaCl) {
+int main() try {
     const double d = 2.82;
     const int n = 4;
     auto frame = make_rocksalt(d, n);
@@ -64,6 +65,12 @@ TEST(CudaPmeCoul, MadelungNaCl) {
     const double e_expected =
         -0.5 * N * kMadelungNaCl * ATV::units::coulomb / d;
     const double e = static_cast<double>(frame.meta.get(kEnergy));
-    EXPECT_NEAR(e / e_expected, 1.0, 3e-3)
-        << "E=" << e << " expected=" << e_expected;
+    const double error = std::abs(e / e_expected - 1.0);
+    std::printf(
+        "CUDA PME NaCl: E=%.12f eV expected=%.12f eV relative_error=%.6g\n", e,
+        e_expected, error);
+    return error <= 3e-3 ? 0 : 1;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "cuda-pme-nacl: %s\n", error.what());
+    return 1;
 }

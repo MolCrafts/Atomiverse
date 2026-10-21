@@ -2,6 +2,7 @@
 /// @brief CUDA Backend implementation + Driver explicit instantiations.
 
 #include <cmath>
+#include <stdexcept>
 
 #include "atomiverse/core/driver_template_impl.h"
 #include "atomiverse/core/stage.h"
@@ -120,8 +121,13 @@ void Backend::destroy_plan(const Plan<Component>& plan) {
     }
 }
 
-void Backend::step(int step_idx) {
-    for (auto& slot : plan_->slots) {
+void Backend::execute_phases(int step_idx, int first_phase, int end_phase) {
+    if (!plan_ || first_phase < 0 || end_phase < first_phase
+        || end_phase > static_cast<int>(plan_->slots.size()))
+        throw std::invalid_argument(
+            "CUDA Backend phase range is outside the loaded plan");
+    for (int phase = first_phase; phase < end_phase; ++phase) {
+        auto& slot = plan_->slots[static_cast<std::size_t>(phase)];
         if (slot.ops.empty())
             continue;
         for (auto& op : slot.ops) {
@@ -156,6 +162,10 @@ void Backend::step(int step_idx) {
         if (timer_)
             timer_->impl()->flush();
     }
+}
+
+void Backend::step(int step_idx) {
+    execute_phases(step_idx, 0, static_cast<int>(plan_->slots.size()));
     if (timer_)
         timer_->step_done();
 }

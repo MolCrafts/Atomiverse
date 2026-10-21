@@ -18,10 +18,10 @@ namespace ATV::cuda::md::nlist {
 /// @brief Manages all device memory and kernel orchestration.
 template <typename work_t>
 struct NListBuffers {
-    // Morton sort temporaries
-    DeviceVector<uint32_t> morton_codes;
+    // Hilbert sort temporaries
+    DeviceVector<uint32_t> spatial_keys;
     DeviceVector<int> atom_indices;
-    DeviceVector<uint32_t> morton_sorted;
+    DeviceVector<uint32_t> spatial_sorted;
     DeviceVector<int> indices_sorted;
     DeviceVector<char> sort_temp;
 
@@ -33,6 +33,9 @@ struct NListBuffers {
     // AABB
     DeviceVector<work_t> aabb_min_x, aabb_min_y, aabb_min_z;
     DeviceVector<work_t> aabb_max_x, aabb_max_y, aabb_max_z;
+    // Six SoA bounds for groups of 32 consecutive Hilbert clusters. Physical
+    // AABBs make candidate rejection conservative for arbitrarily wide tiles.
+    DeviceVector<real_t> large_bounds;
 
     // Grid
     DeviceVector<int> cluster_cell_idx; // [num_clusters] cell assignment
@@ -42,10 +45,9 @@ struct NListBuffers {
     DeviceVector<char> scan_temp;
 
     // Pair list (CSR)
-    DeviceVector<int> pair_counts;   // [num_clusters] per-cluster pair count
-    DeviceVector<int> row_ptr;       // [num_clusters + 1]
-    DeviceVector<int> row_ptr_upper; // [num_clusters + 1] coarse-count offsets
-    DeviceVector<int> col_idx;       // [num_pairs]
+    DeviceVector<int> pair_counts; // [num_clusters] per-cluster pair count
+    DeviceVector<int> row_ptr;     // [num_clusters + 1]
+    DeviceVector<int> col_idx;     // [num_pairs]
     /// [num_pairs * kMaskWords] OpenMM multi-word interaction masks.
     DeviceVector<uint64_t> interaction_mask;
     DeviceVector<char> prefix_temp;
@@ -99,16 +101,13 @@ struct NListBuffers {
         ref_z.resize(n);
     }
 
-    // The Morton/cluster/AABB/CSR pipeline — consumed ONLY by the opt-in
-    // flat-pair export and the cluster-CSR Coulomb kernels, NOT by the
-    // per-atom Verlet MD force path. Allocated only when flat pairs are
-    // requested (build(), or lazily in launch() if a requester attaches after
-    // the first build). `cluster_ready` lets callers detect whether these
-    // are live.
+    // The Hilbert/cluster/AABB/CSR pipeline is the CUDA MD force source of
+    // truth. Allocate at build-time capacity; set_active_count can reuse
+    // these buffers for a smaller owned+ghost atom set.
     void resize_cluster_csr(int n, int n_clusters) {
-        morton_codes.resize(n);
+        spatial_keys.resize(n);
         atom_indices.resize(n);
-        morton_sorted.resize(n);
+        spatial_sorted.resize(n);
         indices_sorted.resize(n);
 
         int padded = n_clusters * kClusterSize;
@@ -124,18 +123,17 @@ struct NListBuffers {
         aabb_max_x.resize(n_clusters);
         aabb_max_y.resize(n_clusters);
         aabb_max_z.resize(n_clusters);
+        large_bounds.resize(6 * ((n_clusters + 31) / 32));
 
         cluster_cell_idx.resize(n_clusters);
 
         pair_counts.resize(n_clusters);
         row_ptr.resize(n_clusters + 1);
-        row_ptr_upper.resize(n_clusters + 1);
 
         cluster_csr_atoms = n;
     }
 
-    // n the cluster pipeline was last sized for (0 = not allocated). Used by
-    // launch() to lazily allocate when flat pairs turn on after build().
+    // Active atom count the cluster pipeline was last sized for.
     int cluster_csr_atoms = 0;
     bool cluster_ready(int n) const { return cluster_csr_atoms == n; }
 
@@ -211,12 +209,16 @@ struct NListBuffers {
 };
 
 // Kernel launch declarations (defined in .cu files)
+// Inverse cell only: the hierarchy does not require a cell grid or stencil.
+void launch_update_inverse_cell(const prec_t* box, real_t* inverse,
+                                cudaStream_t stream = 0);
+
 template <typename work_t>
-void launch_compute_morton(const real_t* pos_x, const real_t* pos_y,
-                           const real_t* pos_z, int num_atoms,
-                           const real_t* inv_cell, bool periodic,
-                           uint32_t* morton_codes, int* atom_indices,
-                           cudaStream_t stream = 0);
+void launch_compute_spatial_keys(const real_t* pos_x, const real_t* pos_y,
+                                 const real_t* pos_z, int num_atoms,
+                                 const real_t* inv_cell, bool periodic,
+                                 uint32_t* spatial_keys, int* atom_indices,
+                                 cudaStream_t stream = 0);
 
 template <typename work_t>
 void launch_assign_clusters_to_cells(
@@ -226,46 +228,48 @@ void launch_assign_clusters_to_cells(
     const real_t* inv_cell, int dims_x, int dims_y, int dims_z, bool periodic,
     int* cluster_cell_idx, cudaStream_t stream = 0);
 
-// Single-pass AABB fill: writes pairs at row_ptr_upper offsets, outputs
-// actual pair_counts. Launcher dispatches on `box.ortho` so the
-// per-pair min-image check is template-specialized at compile time
-// (cuda-md-review-cleanup-04-box-by-value-pbc).
-template <typename work_t>
-void launch_fill_cluster_pairs(
-    const int* cell_start, const int* cell_clusters,
-    const int* cluster_cell_idx, int dims_x, int dims_y, int dims_z,
-    const int* stencil_dx, const int* stencil_dy, const int* stencil_dz,
-    const int* num_stencil_ptr, const real_t* aabb_min_x,
-    const real_t* aabb_min_y, const real_t* aabb_min_z,
-    const real_t* aabb_max_x, const real_t* aabb_max_y,
-    const real_t* aabb_max_z, int num_clusters, bool periodic,
-    work_t cutoff_plus_skin_sq, ATV::cuda::Box box, const int* row_ptr_upper,
-    int* col_idx, int* pair_counts, cudaStream_t stream = 0);
+// Non-owning physical AABB arrays for the cluster candidate search.
+struct ClusterBounds {
+    const real_t* min_x;
+    const real_t* min_y;
+    const real_t* min_z;
+    const real_t* max_x;
+    const real_t* max_y;
+    const real_t* max_z;
+};
 
-// Exact-count pre-pass: identical AABB-filtered stencil walk as the fill but
-// writes only pair_counts (no col_idx). Its prefix sum is the EXACT pair total
-// the fill emits — replaces the unfiltered coarse counter, whose loose upper
-// bound overflowed int32 and over-allocated the CSR at large dense systems.
-template <typename work_t>
-void launch_count_cluster_pairs(
-    const int* cell_start, const int* cell_clusters,
-    const int* cluster_cell_idx, int dims_x, int dims_y, int dims_z,
-    const int* stencil_dx, const int* stencil_dy, const int* stencil_dz,
-    const int* num_stencil_ptr, const real_t* aabb_min_x,
-    const real_t* aabb_min_y, const real_t* aabb_min_z,
-    const real_t* aabb_max_x, const real_t* aabb_max_y,
-    const real_t* aabb_max_z, int num_clusters, bool periodic,
-    work_t cutoff_plus_skin_sq, ATV::cuda::Box box, int* pair_counts,
-    cudaStream_t stream = 0);
+// Remove fully excluded pairs from existing geometric masks in place. Partial
+// special scaling remains a force-time concern; return whether baking applies.
+bool launch_bake_csr_exclusions(const int* row_ptr, const int* col_idx,
+                                const int* original_index, int num_clusters,
+                                const int* excl_offsets,
+                                const int* excl_partners, double special_scale,
+                                uint64_t* masks, cudaStream_t stream = 0);
 
-// Write row_ptr[N] = row_ptr[N-1] + pair_counts[N-1] on device (avoids D→H readback)
+// Build six SoA bounds for groups of 32 consecutive clusters, in build-time
+// scratch of length 6*ceil(num_clusters/32). No allocation in these launchers.
+void launch_large_cluster_bounds(ClusterBounds bounds, int num_clusters,
+                                 real_t* large_bounds, cudaStream_t stream = 0);
+
+// Exact count and fill use the same hierarchical AABB predicate. The one
+// prefix scan of counts is already the final CSR: no compaction is required.
+template <typename work_t>
+void launch_fill_cluster_pairs(ClusterBounds bounds, const real_t* large_bounds,
+                               int num_clusters, bool periodic,
+                               work_t cutoff_plus_skin_sq, ATV::cuda::Box box,
+                               const int* row_ptr, int* col_idx,
+                               cudaStream_t stream = 0);
+
+template <typename work_t>
+void launch_count_cluster_pairs(ClusterBounds bounds,
+                                const real_t* large_bounds, int num_clusters,
+                                bool periodic, work_t cutoff_plus_skin_sq,
+                                ATV::cuda::Box box, int* pair_counts,
+                                cudaStream_t stream = 0);
+
+// Write the CSR sentinel from the last count; the empty CSR has sentinel 0.
 void launch_write_row_ptr_sentinel(int* row_ptr, const int* pair_counts,
                                    int num_clusters, cudaStream_t stream = 0);
-
-// In-place compaction of col_idx from upper-bound to exact CSR layout
-void launch_compact_pairs(int* col_idx, const int* row_ptr_upper,
-                          const int* row_ptr, const int* pair_counts,
-                          int num_clusters, cudaStream_t stream = 0);
 
 // CUB sort wrapper (manages temp storage via DeviceVector)
 void launch_radix_sort(uint32_t* keys_in, uint32_t* keys_out, int* values_in,
@@ -300,13 +304,13 @@ void launch_build_grid_csr(const int* cluster_cell_idx, int num_clusters,
 
 // --- Fused pipeline kernels (Phase 2-4) ---
 
-// Fused AoS→SoA + Morton code computation (replaces separate K1+K2)
+// Fused AoS→SoA + Hilbert code computation (replaces separate K1+K2)
 template <typename work_t>
-void launch_aos_to_soa_morton(const double* positions_aos, int num_atoms,
-                              real_t* x, real_t* y, real_t* z,
-                              const real_t* inv_cell, bool periodic,
-                              uint32_t* morton_codes, int* atom_indices,
-                              cudaStream_t stream = 0);
+void launch_aos_to_soa_spatial(const double* positions_aos, int num_atoms,
+                               real_t* x, real_t* y, real_t* z,
+                               const real_t* inv_cell, bool periodic,
+                               uint32_t* spatial_keys, int* atom_indices,
+                               cudaStream_t stream = 0);
 
 // Fused scatter-to-cluster + AABB computation (replaces separate K4+K5)
 template <typename work_t>
@@ -335,18 +339,15 @@ void launch_cluster_displacement(
     work_t dirty_threshold_sq, real_t* cluster_disp_sq, int* dirty_flags,
     int* rebuild_flag, work_t half_skin_sq, cudaStream_t stream = 0);
 
-// Per-atom displacement vs ref_{x,y,z}; sets rebuild_flag=1 on first
-// thread whose squared displacement exceeds half_skin_sq. Reads
-// `frame.atoms.x/y/z` directly (always live), unlike
-// `launch_cluster_displacement` which would compare stale sorted
-// `cluster_x/y/z` to its ref snapshot between rebuilds. Used by
-// `cuda::NeighborList::launch()` as the Verlet-skin gate.
+// Check current periodic displacements. Writes one overwritten 0/1 flag
+// per 256-thread block; caller may use mapped pinned storage and must wait
+// for completion before reading. No clear or global atomic is needed.
 template <typename work_t>
 void launch_atom_displacement_max(const real_t* pos_x, const real_t* pos_y,
                                   const real_t* pos_z, const real_t* ref_x,
                                   const real_t* ref_y, const real_t* ref_z,
-                                  int num_atoms, work_t half_skin_sq,
-                                  int* rebuild_flag, cudaStream_t stream = 0);
+                                  int num_atoms, work_t half_skin_sq, Box box,
+                                  int* block_flags, cudaStream_t stream = 0);
 
 // Snapshot current per-atom positions into ref_{x,y,z} buffers. Called
 // after every full neighbor-list rebuild so the next step's
@@ -370,14 +371,15 @@ void launch_smart_rolling_prune(
     cudaStream_t stream = 0);
 
 // Full CSR interaction masks at the search radius (rc+skin). One warp per
-// cluster row: for each CSR entry p of ci, lane i writes the 32-bit j-mask
-// into masks[p * kMaskWords …]. No half-Newton (FULL neighbor). See fused_search.cu.
+// tile: lane i writes its 32-bit j-mask into masks[p * kMaskWords …]. The
+// caller supplies the known CSR entry count. No half-Newton (FULL neighbor).
 template <typename work_t>
 void launch_compute_csr_masks(const real_t* cluster_x, const real_t* cluster_y,
                               const real_t* cluster_z, const int* row_ptr,
                               const int* col_idx, int num_clusters,
-                              work_t search_sq, ATV::cuda::Box box,
-                              uint64_t* masks, cudaStream_t stream = 0);
+                              int num_pairs, work_t search_sq,
+                              ATV::cuda::Box box, uint64_t* masks,
+                              cudaStream_t stream = 0);
 
 // Legacy flat-list force mask (optional flat export path only).
 template <typename work_t>

@@ -55,18 +55,16 @@ struct DynamicsServices {
     /// first launch (all build()s precede any launch()).
     bool flat_pairs_requested = false;
 
-    /// @brief Special-bonds exclusion CSR (per-atom, LOCAL indices),
-    ///        published by `PairLJCut::build` for force-time exclusion scans
-    ///        (and, while multi-GPU still derives a transitional `vl_*` view,
-    ///        optional bake into that view — removed in cuda-openmm-md-04).
-    ///
-    /// `excl_offsets[i]..excl_offsets[i+1]` index `excl_partners` for atom
-    /// i. `s_excl` is the single special-bonds scale (set_special_bonds
-    /// requires all tiers equal). Null/false on configs without special bonds.
+    /// @brief Sorted exclusion CSR in original/local atom indices.
+    /// Pair evaluators publish their fully excluded ordinary interactions
+    /// here. NeighborList removes these pairs from geometric tile masks at
+    /// rebuild only when s_excl is zero; nonzero LJ scaling stays in the force
+    /// kernel. Fused Ewald evaluators restore scaled special interactions in
+    /// their sparse exception pass.
     const int* excl_offsets = nullptr;
     const int* excl_partners = nullptr;
     double s_excl = 1.0;
-    bool exclusions_baked = false;
+    bool exclusions_baked = false; ///< Current tile masks contain exclusions.
 
     /// @brief Pair-force row restriction (multi-GPU owned/ghost split).
     ///

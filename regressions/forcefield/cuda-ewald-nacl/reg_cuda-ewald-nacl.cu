@@ -1,9 +1,10 @@
-/// @file tests/cuda/longrange/test_ewald_coul.cu
+/// @file regressions/forcefield/cuda-ewald-nacl/reg_cuda-ewald-nacl.cu
 /// @brief Validation of CUDA Ewald electrostatics (CoulLong + KSpaceEwald)
 ///        against the NaCl Madelung constant.
 
 #include <cmath>
-#include <gtest/gtest.h>
+#include <cstdio>
+#include <exception>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
@@ -43,7 +44,7 @@ cpu::Frame make_rocksalt(double d, int n) {
 
 } // namespace
 
-TEST(CudaEwaldCoul, MadelungNaCl) {
+int main() try {
     const double d = 2.82;
     const int n = 4; // 64 ions; cutoff < L/2 = 2d
     auto frame = make_rocksalt(d, n);
@@ -66,6 +67,12 @@ TEST(CudaEwaldCoul, MadelungNaCl) {
         -0.5 * N * kMadelungNaCl * ATV::units::coulomb / d;
     const double e = static_cast<double>(frame.meta.get(kEnergy));
     // real_t positions are single precision on the CUDA path → looser tol.
-    EXPECT_NEAR(e / e_expected, 1.0, 2e-3)
-        << "E=" << e << " expected=" << e_expected;
+    const double error = std::abs(e / e_expected - 1.0);
+    std::printf(
+        "CUDA EWALD NaCl: E=%.12f eV expected=%.12f eV relative_error=%.6g\n",
+        e, e_expected, error);
+    return error <= 2e-3 ? 0 : 1;
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "cuda-ewald-nacl: %s\n", error.what());
+    return 1;
 }

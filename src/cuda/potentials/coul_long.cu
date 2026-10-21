@@ -10,6 +10,7 @@
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/component/context.cuh"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
@@ -112,9 +113,9 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
                     real_t dz = shz[warp_in_block][sj] - zi;
                     if (periodic) {
                         if constexpr (Ortho) {
-                            dx -= box.cell[0] * nearbyintf(dx * box.inv_l[0]);
-                            dy -= box.cell[4] * nearbyintf(dy * box.inv_l[1]);
-                            dz -= box.cell[8] * nearbyintf(dz * box.inv_l[2]);
+                            dx -= box.cell[0] * nearbyint(dx * box.inv_l[0]);
+                            dy -= box.cell[4] * nearbyint(dy * box.inv_l[1]);
+                            dz -= box.cell[8] * nearbyint(dz * box.inv_l[2]);
                         } else {
                             box.min_image(dx, dy, dz);
                         }
@@ -123,11 +124,11 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
                     if (r2 >= cutoff_sq || r2 == real_t(0))
                         continue;
                     real_t qj = shq[warp_in_block][sj];
-                    real_t r = sqrtf(r2);
+                    real_t r = sqrt(r2);
                     real_t inv_r2 = real_t(1) / r2;
                     real_t grij = alpha * r;
-                    real_t expm2 = expf(-grij * grij);
-                    real_t erfcv = erfcf(grij);
+                    real_t expm2 = exp(-grij * grij);
+                    real_t erfcv = erfc(grij);
                     real_t prefactor = qqr2e * qi * qj / r;
                     real_t forcecoul =
                         prefactor * (erfcv + real_t(kEwaldF) * grij * expm2);
@@ -188,12 +189,25 @@ CoulLong::CoulLong(double alpha, double cutoff) : Pair(cutoff), alpha_(alpha) {
         throw std::invalid_argument("CoulLong: cutoff must be > 0");
 }
 
-void CoulLong::destroy(const DestroyContext&) {
-    if (pos4_) {
-        cudaFree(pos4_);
-        pos4_ = nullptr;
-        pos4_cap_ = 0;
+void CoulLong::build(const BuildContext& ctx) {
+    const int slots =
+        ((ctx.frame.capacity() + kOpenmmClusterSize - 1) / kOpenmmClusterSize)
+        * kOpenmmClusterSize;
+    if (slots > spos_cap_) {
+        cudaFree(spx_);
+        cudaFree(spy_);
+        cudaFree(spz_);
+        cudaFree(spq_);
+        spx_ = spy_ = spz_ = spq_ = nullptr;
+        ATV_CUDA_CHECK(cudaMalloc(&spx_, slots * sizeof(real_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spy_, slots * sizeof(real_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spz_, slots * sizeof(real_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spq_, slots * sizeof(real_t)));
+        spos_cap_ = slots;
     }
+}
+
+void CoulLong::destroy(const DestroyContext&) {
     if (spx_) {
         cudaFree(spx_);
         cudaFree(spy_);
@@ -225,17 +239,8 @@ void CoulLong::compute(const LaunchContext& ctx) {
     const int nc = pairs->num_clusters;
     const int n_slots = nc * CS;
     if (n_slots > spos_cap_) {
-        if (spx_) {
-            cudaFree(spx_);
-            cudaFree(spy_);
-            cudaFree(spz_);
-            cudaFree(spq_);
-        }
-        cudaMalloc(&spx_, n_slots * sizeof(real_t));
-        cudaMalloc(&spy_, n_slots * sizeof(real_t));
-        cudaMalloc(&spz_, n_slots * sizeof(real_t));
-        cudaMalloc(&spq_, n_slots * sizeof(real_t));
-        spos_cap_ = n_slots;
+        throw std::runtime_error(
+            "cuda::CoulLong: cluster slots exceed Frame capacity at build");
     }
     {
         int block = kDefaultBlock;

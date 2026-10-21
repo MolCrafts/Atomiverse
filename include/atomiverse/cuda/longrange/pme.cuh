@@ -5,7 +5,10 @@
 /// GPU mirror of `cpu::KSpacePME` (Essmann smooth PME): B-spline charge
 /// spreading → cuFFT → influence-function multiply → inverse cuFFT → force
 /// interpolation. Drop-in reciprocal replacement for `cuda::KSpaceEwald`;
-/// shares α with `cuda::CoulLong`. Single-GPU in this revision.
+/// shares α with `cuda::CoulLong`. Single-GPU, fixed-cell/atom-set in this revision.
+/// The reciprocal pipeline is captured once in build and replayed as a graph.
+/// Spline/interpolation, real mesh and half-spectrum follow CUDA work_t precision;
+/// geometry, influence coefficients and energy reductions remain double.
 #pragma once
 
 #include <array>
@@ -39,20 +42,26 @@ class KSpacePME : public KSpace {
     void compute(const LaunchContext& ctx) override;
 
   private:
+    void enqueue_(const LaunchContext& ctx);
+    void* graph_exec_ = nullptr; ///< cudaGraphExec_t, allocated only in build.
+    int built_atoms_ = 0;
+    std::array<double, 9> built_cell_{};
     double alpha_;
     double spacing_;
     int order_;
 
     int K_[3] = {0, 0, 0};
     int ntot_ = 0;
+    int nhalf_ = 0;
     std::array<double, 9> inv_cell_{}; ///< host snapshot of cell⁻¹
     double vol_ = 0;
 
-    // Device-side spline moduli per grid line and the complex work grid.
-    double* d_bsp_[3] = {nullptr, nullptr, nullptr};
-    void* d_grid_ = nullptr; ///< cufftDoubleComplex* (opaque here).
-    int plan_ = -1;          ///< cufftHandle (int) — -1 when uncreated.
-    bool have_plan_ = false;
+    double* d_influence_ = nullptr; ///< Fixed-cell Hermitian influence, double.
+    void* d_grid_ = nullptr;        ///< work_t real mesh, ntot entries.
+    void* d_spectrum_ =
+        nullptr;            ///< work_t complex half-spectrum, nhalf entries.
+    int forward_plan_ = -1; ///< R2C/D2Z cufftHandle; -1 when uncreated.
+    int inverse_plan_ = -1; ///< C2R/Z2D cufftHandle; -1 when uncreated.
 };
 
 } // namespace cuda

@@ -3,7 +3,8 @@
 Tutorial: [Many-body potentials](../tutorial/ch16-many-body-potentials.md) · [classical MD](../tutorial/ch10-classical-md.md).
 
 MD machinery (neighbor lists, DD, halo, PME, specials, virial) is
-LAMMPS-shaped. Catalogue is GAFF-capable on CPU plus EAM/SW. Legend:
+LAMMPS-shaped. CPU supports GAFF plus EAM/SW; CUDA supports the harmonic
+bond/angle and polynomial-torsion GAFF subset on one GPU. Legend:
 [Roadmap index](index.md).
 
 **⚡** — only LJ 12-6 (CPU xsimd + CUDA OpenMM tile engine vs LAMMPS/Kokkos).
@@ -28,7 +29,8 @@ LAMMPS-shaped. Catalogue is GAFF-capable on CPU plus EAM/SW. Legend:
 | WCA / Yukawa / DPD / FENE+WCA | ✓ | ○ | |
 | Soft-core LJ / Coulomb | ✓ | ○ | Beutler; alchemical λ |
 | CoulCut / CoulLong | ✓ | ○ | special_bonds on real space |
-| Direct Ewald / PME / SPME | ✓ | ✓ | SPME = Essmann; CUDA reciprocal single-GPU |
+| Fused LJ + screened Coulomb | ✓ | ✓ | CUDA `PairLJCutCoulLong`: Lorentz–Berthelot, Amber graph exceptions, periodic sparse reciprocal corrections; single GPU |
+| Direct Ewald / PME / SPME | ✓ | ✓ | SPME = Essmann; CUDA PME: single GPU, fixed cell and atom set |
 | Gaussian-charge Coulomb | ✓ | ○ | |
 | Steele 10-4-3 wall | ✓ | ○ | `FixWallLJ1043` |
 | Periodic FMM as MD KSpace | ○ | ○ | Open-boundary FMM math ✓ (powers CFMM-J); not MD drop-in |

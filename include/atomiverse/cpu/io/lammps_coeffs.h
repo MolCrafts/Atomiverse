@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/lj_type_coeff.h"
 
 namespace ATV {
 namespace cpu {

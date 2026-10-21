@@ -1,12 +1,26 @@
 # CUDA performance harnesses (manual, never ctest). Built only with
 # -DATV_BUILD_BENCHMARKS=ON -DATV_BUILD_CUDA=ON; binaries land in <build>/bin.
 
-# OpenMM cluster/tile engine vs the LAMMPS-style per-atom Verlet path.
-# Run: ATV_CUDA_NONBONDED=openmm|lammps ./bin/bench_nonbonded_style [n_side] [steps]
+# OpenMM cluster/tile LJ engine. Run: bench_nonbonded_style [N] [steps] [warmup]
 add_executable(bench_nonbonded_style bench_nonbonded_style.cu)
 target_link_libraries(bench_nonbonded_style PRIVATE atomiverse)
 set_target_properties(bench_nonbonded_style PROPERTIES
                       RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+if(ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+    add_executable(bench_multi_gpu_force bench_multi_gpu_force.cu)
+    target_link_libraries(bench_multi_gpu_force PRIVATE atomiverse)
+    set_target_properties(bench_multi_gpu_force PROPERTIES
+                          RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+endif()
+
+if(ATV_BUILD_KSPACE AND ATV_BUILD_MD AND ATV_BUILD_EVALUATE
+   AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+    add_executable(bench_gaff bench_gaff.cu)
+    target_link_libraries(bench_gaff PRIVATE atomiverse)
+    set_target_properties(bench_gaff PROPERTIES
+                          RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+endif()
 
 find_package(OpenMP)
 

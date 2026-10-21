@@ -1,14 +1,23 @@
 /// @file cuda/longrange/pme.cu
 /// @brief Smooth Particle-Mesh Ewald reciprocal sum — CUDA (cuFFT).
 ///        Built only with ATV_BUILD_KSPACE.
+///
+/// Compile-time spline order and bounded stencil-index wrapping follow the
+/// OpenMM PME kernel architecture, platforms/common/src/kernels/pme.cc,
+/// SHA 3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e. The Essmann recurrence
+/// and FFT normalization remain ATV-native; no source is copied. Spline and
+/// grid precision follow work_t; energy accumulation remains FP64.
 #include <cmath>
 #include <cstdio>
 #include <cuda_runtime.h>
 #include <cufft.h>
+#include <limits>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
@@ -21,6 +30,10 @@ using cuda::real_t;
 
 namespace cuda {
 
+static_assert(std::is_same_v<work_t, float> || std::is_same_v<work_t, double>);
+using PmeComplex = std::conditional_t<std::is_same_v<work_t, double>,
+                                      cufftDoubleComplex, cufftComplex>;
+
 // Geometry passed by value into kernels (cell⁻¹ row-major + grid dims).
 struct PmeGeom {
     double inv_cell[9];
@@ -32,49 +45,61 @@ namespace kernels {
 
 // Canonical Essmann/Amber fill_bspline on device. theta[k]=M_n(frac+n-1-k),
 // dtheta[k]=dM/d(frac). order n ≤ 12.
-__device__ inline void pme_bspline(double frac, int n, double* theta,
-                                   double* dtheta) {
-    theta[n - 1] = 0.0;
+template <int Order>
+__device__ __forceinline__ void pme_bspline(work_t frac, int runtime_order,
+                                            work_t* theta, work_t* dtheta) {
+    const int n = Order > 0 ? Order : runtime_order;
+    theta[n - 1] = work_t(0);
     theta[1] = frac;
-    theta[0] = 1.0 - frac;
+    theta[0] = work_t(1) - frac;
     for (int k = 3; k < n; ++k) {
-        const double div = 1.0 / (k - 1);
+        const work_t div = work_t(1) / (k - 1);
         theta[k - 1] = div * frac * theta[k - 2];
         for (int j = 1; j < k - 1; ++j)
             theta[k - 1 - j] = div
                                * ((frac + j) * theta[k - 2 - j]
                                   + (k - j - frac) * theta[k - 1 - j]);
-        theta[0] = div * (1.0 - frac) * theta[0];
+        theta[0] = div * (work_t(1) - frac) * theta[0];
     }
     dtheta[0] = -theta[0];
     for (int j = 1; j < n; ++j)
         dtheta[j] = theta[j - 1] - theta[j];
-    const double div = 1.0 / (n - 1);
+    const work_t div = work_t(1) / (n - 1);
     theta[n - 1] = div * frac * theta[n - 2];
     for (int j = 1; j < n - 1; ++j)
         theta[n - 1 - j] = div
                            * ((frac + j) * theta[n - 2 - j]
                               + (n - j - frac) * theta[n - 1 - j]);
-    theta[0] = div * (1.0 - frac) * theta[0];
+    theta[0] = div * (work_t(1) - frac) * theta[0];
 }
 
-__device__ inline int wrap_idx(int v, int K) { return ((v % K) + K) % K; }
+// Each grid dimension is at least order+1 and every stencil index lies in
+// [-(order-1), K]. One adjustment suffices, including the rounded u==K edge.
+__device__ __forceinline__ int wrap_idx(int v, int K) {
+    if (v < 0)
+        v += K;
+    if (v >= K)
+        v -= K;
+    return v;
+}
 
-/// @brief Spread owned charges onto the complex grid (atomicAdd to real part).
-__global__ void pme_spread(const real_t* __restrict__ x,
-                           const real_t* __restrict__ y,
-                           const real_t* __restrict__ z,
-                           const real_t* __restrict__ q, int natoms, PmeGeom g,
-                           cufftDoubleComplex* __restrict__ grid) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+/// @brief Spread owned charges; order adjacent threads share one atom.
+template <int Order>
+__global__ void
+pme_spread(const real_t* __restrict__ x, const real_t* __restrict__ y,
+           const real_t* __restrict__ z, const real_t* __restrict__ q,
+           int natoms, PmeGeom g, work_t* __restrict__ grid) {
+    const int n = Order > 0 ? Order : g.order;
+    const int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int i = gid / n, c = gid % n;
     if (i >= natoms)
         return;
-    const double qi = double(q[i]);
+    const work_t qi = work_t(q[i]);
     if (qi == 0.0)
         return;
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
-    const int n = g.order;
-    double th[3][12], dth[3][12];
+    constexpr int extent = Order > 0 ? Order : 12;
+    work_t th[3][extent], dth[3][extent];
     int base[3];
     for (int d = 0; d < 3; ++d) {
         const double s = g.inv_cell[0 * 3 + d] * rx + g.inv_cell[1 * 3 + d] * ry
@@ -82,81 +107,92 @@ __global__ void pme_spread(const real_t* __restrict__ x,
         double u = s * g.K[d];
         u -= floor(u / g.K[d]) * g.K[d];
         const int u0 = int(floor(u));
-        pme_bspline(u - u0, n, th[d], dth[d]);
+        pme_bspline<Order>(work_t(u - u0), n, th[d], dth[d]);
         base[d] = u0;
     }
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2], nm1 = n - 1;
+    // As in OpenMM spreadCharge, adjacent threads write consecutive z
+    // stencil sites. Each issues n*n atomics instead of n*n*n serial atomics.
+    // Keep the existing (q*theta_x)*theta_y*theta_z multiplication order.
+    const int g2 = wrap_idx(base[2] - nm1 + c, K2);
+    // Select without dynamically indexing the order-specialized theta
+    // array, so the compiler can retain the spline coefficients in registers.
+    work_t wz = 0;
+#pragma unroll
+    for (int k = 0; k < n; ++k)
+        if (k == c)
+            wz = th[2][k];
     for (int a = 0; a < n; ++a) {
         const int g0 = wrap_idx(base[0] - nm1 + a, K0);
-        const double wa = qi * th[0][a];
+        const work_t wa = qi * th[0][a];
         for (int b = 0; b < n; ++b) {
             const int g1 = wrap_idx(base[1] - nm1 + b, K1);
-            const double wab = wa * th[1][b];
-            for (int c = 0; c < n; ++c) {
-                const int g2 = wrap_idx(base[2] - nm1 + c, K2);
-                const int idx = g2 + K2 * (g1 + K1 * g0);
-                atomicAdd(&grid[idx].x, wab * th[2][c]);
-            }
+            const work_t wab = wa * th[1][b];
+            const int idx = g2 + K2 * (g1 + K1 * g0);
+            atomicAdd(&grid[idx], wab * wz);
         }
     }
 }
 
 /// @brief Influence function: energy + in-place convolution multiply.
-__global__ void pme_influence(cufftDoubleComplex* __restrict__ grid, PmeGeom g,
-                              const double* __restrict__ bsp0,
-                              const double* __restrict__ bsp1,
-                              const double* __restrict__ bsp2,
-                              double inv_pi2_a2, double escale,
-                              prec_t* __restrict__ energy) {
+__global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
+                              const double* __restrict__ influence,
+                              double escale, prec_t* __restrict__ energy) {
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2];
+    const int half_z = K2 / 2 + 1;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= K0 * K1 * K2)
-        return;
-    const int m2 = idx % K2;
-    const int m1 = (idx / K2) % K1;
-    const int m0 = idx / (K2 * K1);
-    if (m0 == 0 && m1 == 0 && m2 == 0) {
-        grid[idx].x = 0;
-        grid[idx].y = 0;
-        return;
+    double my_energy = 0.0;
+    if (idx < K0 * K1 * half_z) {
+        if (idx == 0) {
+            grid[idx].x = 0;
+            grid[idx].y = 0;
+        } else {
+            const double H = influence[idx];
+            const int m2 = idx % half_z;
+            // The kz boundary planes already contain both xy-conjugate
+            // indices. Only interior kz modes stand for two full modes.
+            const double weight =
+                (m2 == 0 || (K2 % 2 == 0 && m2 == K2 / 2)) ? 1.0 : 2.0;
+            const double qr = grid[idx].x, qi = grid[idx].y;
+            my_energy = weight * escale * H * (qr * qr + qi * qi);
+            grid[idx].x = H * qr;
+            grid[idx].y = H * qi;
+        }
     }
-    const int h0 = (m0 <= K0 / 2) ? m0 : m0 - K0;
-    const int h1 = (m1 <= K1 / 2) ? m1 : m1 - K1;
-    const int h2 = (m2 <= K2 / 2) ? m2 : m2 - K2;
-    const int hh[3] = {h0, h1, h2};
-    double mx = 0, my = 0, mz = 0;
-    for (int d = 0; d < 3; ++d) {
-        mx += hh[d] * g.inv_cell[0 * 3 + d];
-        my += hh[d] * g.inv_cell[1 * 3 + d];
-        mz += hh[d] * g.inv_cell[2 * 3 + d];
-    }
-    const double msq = mx * mx + my * my + mz * mz;
-    const double B = bsp0[m0] * bsp1[m1] * bsp2[m2];
-    const double H = exp(-inv_pi2_a2 * msq) / msq * B;
-    const double qr = grid[idx].x, qi = grid[idx].y;
-    atomicAdd(energy, static_cast<prec_t>(escale * H * (qr * qr + qi * qi)));
-    grid[idx].x = H * qr;
-    grid[idx].y = H * qi;
+
+    // Tail lanes and the zero mode contribute zero but must participate in
+    // the collective. One atomic per block avoids serializing the whole mesh
+    // on the shared energy scalar; keep the partial sums in PME's FP64 type.
+    extern __shared__ double warp_scratch[];
+    const double block_energy = block_reduce_sum(my_energy, warp_scratch);
+    if (threadIdx.x == 0)
+        atomicAdd(energy, static_cast<prec_t>(block_energy));
 }
 
 /// @brief Interpolate reciprocal forces onto atoms + per-atom self energy.
+template <int Order>
 __global__ void
 pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
            real_t* __restrict__ fz, const real_t* __restrict__ x,
            const real_t* __restrict__ y, const real_t* __restrict__ z,
            const real_t* __restrict__ q, int natoms, PmeGeom g,
-           const cufftDoubleComplex* __restrict__ grid, double fscale,
-           double self_pref, prec_t* __restrict__ energy) {
+           const work_t* __restrict__ grid, double fscale, double self_pref,
+           prec_t* __restrict__ energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= natoms)
-        return;
-    const double qi = double(q[i]);
-    atomicAdd(energy, static_cast<prec_t>(self_pref * qi * qi));
-    if (qi == 0.0)
+    const double qi = (i < natoms) ? double(q[i]) : 0.0;
+    // Reduce before the neutral/tail early exit so every lane reaches the
+    // block barriers, including partially populated final blocks.
+    extern __shared__ double warp_scratch[];
+    const double block_energy =
+        block_reduce_sum(self_pref * qi * qi, warp_scratch);
+    if (threadIdx.x == 0)
+        atomicAdd(energy, static_cast<prec_t>(block_energy));
+    if (i >= natoms || qi == 0.0)
         return;
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
-    const int n = g.order;
-    double th[3][12], dth[3][12];
+    const int n = Order > 0 ? Order : g.order;
+    constexpr int extent = Order > 0 ? Order : 12;
+    work_t th[3][extent], dth[3][extent];
     int base[3];
     for (int d = 0; d < 3; ++d) {
         const double s = g.inv_cell[0 * 3 + d] * rx + g.inv_cell[1 * 3 + d] * ry
@@ -164,18 +200,18 @@ pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
         double u = s * g.K[d];
         u -= floor(u / g.K[d]) * g.K[d];
         const int u0 = int(floor(u));
-        pme_bspline(u - u0, n, th[d], dth[d]);
+        pme_bspline<Order>(work_t(u - u0), n, th[d], dth[d]);
         base[d] = u0;
     }
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2], nm1 = n - 1;
-    double gd[3] = {0, 0, 0};
+    work_t gd[3] = {0, 0, 0};
     for (int a = 0; a < n; ++a) {
         const int g0 = wrap_idx(base[0] - nm1 + a, K0);
         for (int b = 0; b < n; ++b) {
             const int g1 = wrap_idx(base[1] - nm1 + b, K1);
             for (int c = 0; c < n; ++c) {
                 const int g2 = wrap_idx(base[2] - nm1 + c, K2);
-                const double cval = grid[g2 + K2 * (g1 + K1 * g0)].x;
+                const work_t cval = grid[g2 + K2 * (g1 + K1 * g0)];
                 gd[0] += cval * dth[0][a] * th[1][b] * th[2][c];
                 gd[1] += cval * th[0][a] * dth[1][b] * th[2][c];
                 gd[2] += cval * th[0][a] * th[1][b] * dth[2][c];
@@ -184,7 +220,7 @@ pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
     }
     double fxv = 0, fyv = 0, fzv = 0;
     for (int d = 0; d < 3; ++d) {
-        const double gk = gd[d] * g.K[d];
+        const double gk = double(gd[d]) * g.K[d];
         fxv += gk * g.inv_cell[0 * 3 + d];
         fyv += gk * g.inv_cell[1 * 3 + d];
         fzv += gk * g.inv_cell[2 * 3 + d];
@@ -198,6 +234,32 @@ pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
 
 namespace {
 
+// The selected complex type, plan kind and execution API must agree in both
+// build warmup and capture. Only the configured work_t path is instantiated.
+template <typename Real, typename Complex>
+cufftResult execute_forward(cufftHandle plan, Real* grid, Complex* spectrum) {
+    if constexpr (std::is_same_v<Complex, cufftDoubleComplex>) {
+        static_assert(std::is_same_v<Real, double>);
+        return cufftExecD2Z(plan, grid, spectrum);
+    } else {
+        static_assert(std::is_same_v<Complex, cufftComplex>);
+        static_assert(std::is_same_v<Real, float>);
+        return cufftExecR2C(plan, grid, spectrum);
+    }
+}
+
+template <typename Real, typename Complex>
+cufftResult execute_inverse(cufftHandle plan, Complex* spectrum, Real* grid) {
+    if constexpr (std::is_same_v<Complex, cufftDoubleComplex>) {
+        static_assert(std::is_same_v<Real, double>);
+        return cufftExecZ2D(plan, spectrum, grid);
+    } else {
+        static_assert(std::is_same_v<Complex, cufftComplex>);
+        static_assert(std::is_same_v<Real, float>);
+        return cufftExecC2R(plan, spectrum, grid);
+    }
+}
+
 int good_fft_size(int n) {
     auto ok = [](int m) {
         for (int p : {2, 3, 5, 7})
@@ -207,8 +269,12 @@ int good_fft_size(int n) {
     };
     if (n < 4)
         n = 4;
-    while (!ok(n))
+    while (!ok(n)) {
+        if (n == std::numeric_limits<int>::max())
+            throw std::overflow_error(
+                "KSpacePME: FFT dimension exceeds int indexing");
         ++n;
+    }
     return n;
 }
 
@@ -263,8 +329,10 @@ std::vector<double> spline_moduli(int K, int n) {
 
 KSpacePME::KSpacePME(double alpha, double grid_spacing, int order)
     : alpha_(alpha), spacing_(grid_spacing), order_(order) {
-    if (alpha <= 0.0)
+    if (!std::isfinite(alpha) || alpha <= 0.0)
         throw std::invalid_argument("KSpacePME: alpha must be > 0");
+    if (!std::isfinite(grid_spacing) || grid_spacing <= 0.0)
+        throw std::invalid_argument("KSpacePME: grid spacing must be > 0");
     if (order < 3 || order > 12)
         throw std::invalid_argument("KSpacePME: order must be in [3,12]");
 }
@@ -272,40 +340,159 @@ KSpacePME::KSpacePME(double alpha, double grid_spacing, int order)
 KSpacePME::~KSpacePME() {}
 
 void KSpacePME::build(const BuildContext& ctx) {
+    const long long spread_threads =
+        static_cast<long long>(ctx.frame.n_local()) * order_;
+    if (spread_threads > std::numeric_limits<int>::max() - (kDefaultBlock - 1))
+        throw std::overflow_error(
+            "KSpacePME: charge-spread thread count exceeds int indexing");
     const cuda::Box& box = ctx.runtime.host_box;
     for (int i = 0; i < 9; ++i)
         inv_cell_[i] = double(box.inv_cell[i]);
+    for (int i = 0; i < 9; ++i)
+        built_cell_[i] = double(box.cell[i]);
     vol_ = double(box.volume());
+    if (!std::isfinite(vol_) || vol_ <= 0)
+        throw std::invalid_argument(
+            "KSpacePME: finite positive periodic cell volume required");
 
+    std::array<std::vector<double>, 3> moduli;
     for (int d = 0; d < 3; ++d) {
         const double len = double(box.length(d));
-        K_[d] = good_fft_size(int(std::ceil(len / spacing_)));
+        const double requested = std::ceil(len / spacing_);
+        if (!std::isfinite(requested) || requested <= 0
+            || requested > std::numeric_limits<int>::max())
+            throw std::overflow_error(
+                "KSpacePME: FFT dimension outside int indexing");
+        K_[d] = good_fft_size(int(requested));
         if (K_[d] < order_ + 1)
             K_[d] = good_fft_size(order_ + 1);
-        auto mod = spline_moduli(K_[d], order_);
-        cudaMalloc(&d_bsp_[d], K_[d] * sizeof(double));
-        cudaMemcpy(d_bsp_[d], mod.data(), K_[d] * sizeof(double),
-                   cudaMemcpyHostToDevice);
+        moduli[d] = spline_moduli(K_[d], order_);
     }
-    ntot_ = K_[0] * K_[1] * K_[2];
-    cudaMalloc(&d_grid_, ntot_ * sizeof(cufftDoubleComplex));
-    cufftHandle plan;
-    if (cufftPlan3d(&plan, K_[0], K_[1], K_[2], CUFFT_Z2Z) != CUFFT_SUCCESS)
-        throw std::runtime_error("KSpacePME: cufftPlan3d failed");
-    plan_ = static_cast<int>(plan);
-    have_plan_ = true;
+    long long real_count = 1;
+    const int grid_limit =
+        std::numeric_limits<int>::max() - (kDefaultBlock - 1);
+    for (int size : K_) {
+        if (real_count > grid_limit / size)
+            throw std::overflow_error(
+                "KSpacePME: FFT grid exceeds int indexing");
+        real_count *= size;
+    }
+    ntot_ = int(real_count);
+    const int half_z = K_[2] / 2 + 1;
+    nhalf_ = K_[0] * K_[1] * half_z;
+    const double inv_pi2_a2 =
+        ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
+    auto coefficient = [&](int m0, int m1, int m2) {
+        if (m0 == 0 && m1 == 0 && m2 == 0)
+            return 0.0;
+        const int m[3] = {m0, m1, m2};
+        double mx = 0, my = 0, mz = 0;
+        for (int d = 0; d < 3; ++d) {
+            const int h = m[d] <= K_[d] / 2 ? m[d] : m[d] - K_[d];
+            mx += h * inv_cell_[d];
+            my += h * inv_cell_[3 + d];
+            mz += h * inv_cell_[6 + d];
+        }
+        const double msq = mx * mx + my * my + mz * mz;
+        const double B = moduli[0][m0] * moduli[1][m1] * moduli[2][m2];
+        return std::exp(-inv_pi2_a2 * msq) / msq * B;
+    };
+    std::vector<double> influence(nhalf_);
+    for (int m0 = 0; m0 < K_[0]; ++m0)
+        for (int m1 = 0; m1 < K_[1]; ++m1)
+            for (int m2 = 0; m2 < half_z; ++m2) {
+                const int c0 = m0 == 0 ? 0 : K_[0] - m0;
+                const int c1 = m1 == 0 ? 0 : K_[1] - m1;
+                const int c2 = m2 == 0 ? 0 : K_[2] - m2;
+                // The old full-complex inverse used only its real part.
+                // For a real charge mesh that equals the inverse of Hsym*Q.
+                // Averaging full-index conjugates preserves its energy too,
+                // including triclinic cross terms at canonical +N/2 modes.
+                influence[m2 + half_z * (m1 + K_[1] * m0)] =
+                    0.5 * coefficient(m0, m1, m2)
+                    + 0.5 * coefficient(c0, c1, c2);
+            }
+    ATV_CUDA_CHECK(
+        cudaMalloc(&d_influence_, std::size_t(nhalf_) * sizeof(double)));
+    ATV_CUDA_CHECK(cudaMemcpy(d_influence_, influence.data(),
+                              std::size_t(nhalf_) * sizeof(double),
+                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMalloc(&d_grid_, std::size_t(ntot_) * sizeof(work_t)));
+    ATV_CUDA_CHECK(
+        cudaMalloc(&d_spectrum_, std::size_t(nhalf_) * sizeof(PmeComplex)));
+    cufftHandle forward, inverse;
+    constexpr cufftType forward_type =
+        std::is_same_v<PmeComplex, cufftDoubleComplex> ? CUFFT_D2Z : CUFFT_R2C;
+    constexpr cufftType inverse_type =
+        std::is_same_v<PmeComplex, cufftDoubleComplex> ? CUFFT_Z2D : CUFFT_C2R;
+    if (cufftPlan3d(&forward, K_[0], K_[1], K_[2], forward_type)
+        != CUFFT_SUCCESS)
+        throw std::runtime_error("KSpacePME: forward cufftPlan3d failed");
+    forward_plan_ = static_cast<int>(forward);
+    if (cufftPlan3d(&inverse, K_[0], K_[1], K_[2], inverse_type)
+        != CUFFT_SUCCESS)
+        throw std::runtime_error("KSpacePME: inverse cufftPlan3d failed");
+    inverse_plan_ = static_cast<int>(inverse);
+    built_atoms_ = ctx.frame.n_local();
+    if (built_atoms_ == 0)
+        return;
+    const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+    if (cufftSetStream(forward, stream) != CUFFT_SUCCESS
+        || cufftSetStream(inverse, stream) != CUFFT_SUCCESS)
+        throw std::runtime_error("KSpacePME: cufftSetStream failed");
+    // cuFFT supports graph capture without callbacks. Allocate/instantiate
+    // once here: force evaluation replays the same resident arrays without
+    // issuing each FFT stage and spline kernel separately from the host.
+    // https://docs.nvidia.com/cuda/cufft/index.html#cuda-graphs-support
+    ATV_CUDA_CHECK(cudaMemsetAsync(
+        d_grid_, 0, std::size_t(ntot_) * sizeof(work_t), stream));
+    auto* warm_grid = static_cast<work_t*>(d_grid_);
+    auto* warm_spectrum = static_cast<PmeComplex*>(d_spectrum_);
+    if (execute_forward(forward, warm_grid, warm_spectrum) != CUFFT_SUCCESS
+        || execute_inverse(inverse, warm_spectrum, warm_grid) != CUFFT_SUCCESS)
+        throw std::runtime_error("KSpacePME: FFT build warmup failed");
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+    cudaGraph_t graph = nullptr;
+    ATV_CUDA_CHECK(
+        cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal));
+    try {
+        enqueue_(LaunchContext{ctx.runtime, ctx.frame, 0, 0});
+    } catch (...) {
+        cudaStreamEndCapture(stream, &graph);
+        if (graph)
+            cudaGraphDestroy(graph);
+        throw;
+    }
+    ATV_CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
+    cudaGraphExec_t executable = nullptr;
+    const auto status = cudaGraphInstantiate(&executable, graph, 0);
+    cudaGraphDestroy(graph);
+    ATV_CUDA_CHECK(status);
+    graph_exec_ = executable;
 }
 
 void KSpacePME::compute(const LaunchContext& ctx) {
-    auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-    auto& frame = ctx.frame;
-    const int n = frame.n_local();
-    if (ntot_ == 0 || n == 0)
-        return;
+    if (ctx.frame.n_local() != built_atoms_)
+        throw std::runtime_error(
+            "KSpacePME: atom set changed; rebuild the driver");
+    for (int i = 0; i < 9; ++i)
+        if (double(ctx.runtime.host_box.cell[i]) != built_cell_[i])
+            throw std::runtime_error("KSpacePME: fixed-cell reciprocal solver; "
+                                     "changing-cell MD is unsupported");
+    if (built_atoms_)
+        ATV_CUDA_CHECK(
+            cudaGraphLaunch(static_cast<cudaGraphExec_t>(graph_exec_),
+                            static_cast<cudaStream_t>(ctx.runtime.stream)));
+}
 
-    auto* grid = static_cast<cufftDoubleComplex*>(d_grid_);
-    cufftHandle plan = static_cast<cufftHandle>(plan_);
-    cufftSetStream(plan, stream);
+void KSpacePME::enqueue_(const LaunchContext& ctx) {
+    const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+    auto& frame = ctx.frame;
+    const int n = built_atoms_;
+    auto* grid = static_cast<work_t*>(d_grid_);
+    auto* spectrum = static_cast<PmeComplex*>(d_spectrum_);
+    const cufftHandle forward = static_cast<cufftHandle>(forward_plan_);
+    const cufftHandle inverse = static_cast<cufftHandle>(inverse_plan_);
 
     PmeGeom geom;
     for (int i = 0; i < 9; ++i)
@@ -317,36 +504,67 @@ void KSpacePME::compute(const LaunchContext& ctx) {
 
     const double escale = ATV::units::coulomb / (2.0 * ATV::units::pi * vol_);
     const double fscale = ATV::units::coulomb / (ATV::units::pi * vol_);
-    const double inv_pi2_a2 =
-        ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
     const double self_pref =
         -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi);
     const int blk = kDefaultBlock;
+    const int energy_scratch_bytes = warps_per_block(blk) * sizeof(double);
 
-    cudaMemsetAsync(grid, 0, ntot_ * sizeof(cufftDoubleComplex), stream);
-    kernels::pme_spread<<<grid_size(n), blk, 0, stream>>>(
-        frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
-        geom, grid);
-    cufftExecZ2Z(plan, grid, grid, CUFFT_FORWARD);
-    kernels::pme_influence<<<grid_size(ntot_), blk, 0, stream>>>(
-        grid, geom, d_bsp_[0], d_bsp_[1], d_bsp_[2], inv_pi2_a2, escale,
-        &frame.scalars->energy);
-    cufftExecZ2Z(plan, grid, grid, CUFFT_INVERSE);
-    kernels::pme_interp<<<grid_size(n), blk, 0, stream>>>(
-        frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.x,
-        frame.atoms.y, frame.atoms.z, frame.atoms.charge, n, geom, grid, fscale,
-        self_pref, &frame.scalars->energy);
+    ATV_CUDA_CHECK(
+        cudaMemsetAsync(grid, 0, std::size_t(ntot_) * sizeof(work_t), stream));
+    auto spread = [&]<int Order>() {
+        kernels::pme_spread<Order><<<grid_size(n * order_), blk, 0, stream>>>(
+            frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
+            geom, grid);
+    };
+    if (order_ == 5)
+        spread.template operator()<5>();
+    else if (order_ == 6)
+        spread.template operator()<6>();
+    else
+        spread.template operator()<0>();
+    if (execute_forward(forward, grid, spectrum) != CUFFT_SUCCESS)
+        throw std::runtime_error("KSpacePME: forward FFT failed");
+    kernels::
+        pme_influence<<<grid_size(nhalf_), blk, energy_scratch_bytes, stream>>>(
+            spectrum, geom, d_influence_, escale, &frame.scalars->energy);
+    if (execute_inverse(inverse, spectrum, grid) != CUFFT_SUCCESS)
+        throw std::runtime_error("KSpacePME: inverse FFT failed");
+    auto interpolate = [&]<int Order>() {
+        kernels::pme_interp<Order>
+            <<<grid_size(n), blk, energy_scratch_bytes, stream>>>(
+                frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.x,
+                frame.atoms.y, frame.atoms.z, frame.atoms.charge, n, geom, grid,
+                fscale, self_pref, &frame.scalars->energy);
+    };
+    if (order_ == 5)
+        interpolate.template operator()<5>();
+    else if (order_ == 6)
+        interpolate.template operator()<6>();
+    else
+        interpolate.template operator()<0>();
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
-void KSpacePME::destroy(const DestroyContext&) {
-    if (have_plan_) {
-        cufftDestroy(static_cast<cufftHandle>(plan_));
-        have_plan_ = false;
+void KSpacePME::destroy(const DestroyContext& ctx) {
+    ATV_CUDA_CHECK(
+        cudaStreamSynchronize(static_cast<cudaStream_t>(ctx.runtime.stream)));
+    if (graph_exec_) {
+        cudaGraphExecDestroy(static_cast<cudaGraphExec_t>(graph_exec_));
+        graph_exec_ = nullptr;
     }
-    for (int d = 0; d < 3; ++d) {
-        cudaFree(d_bsp_[d]);
-        d_bsp_[d] = nullptr;
+    built_atoms_ = 0;
+    if (forward_plan_ >= 0) {
+        cufftDestroy(static_cast<cufftHandle>(forward_plan_));
+        forward_plan_ = -1;
     }
+    if (inverse_plan_ >= 0) {
+        cufftDestroy(static_cast<cufftHandle>(inverse_plan_));
+        inverse_plan_ = -1;
+    }
+    cudaFree(d_influence_);
+    d_influence_ = nullptr;
+    cudaFree(d_spectrum_);
+    d_spectrum_ = nullptr;
     cudaFree(d_grid_);
     d_grid_ = nullptr;
 }

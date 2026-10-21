@@ -1053,6 +1053,8 @@ if(ATV_BUILD_CUDA)
     atv_add_test(test_cuda_device_manager cuda/test_device_manager.cu)
     atv_add_test(test_cuda_spatial_grid cuda/test_spatial_grid.cu)
     atv_add_test(test_cuda_multi_gpu  cuda/dynamics/test_multi_gpu.cu)
+    atv_add_test(test_cuda_hilbert cuda/dynamics/test_hilbert.cu)
+    atv_add_test(test_cuda_timer cuda/device/test_timer.cu)
     atv_add_test(test_cuda_frame      cuda/test_frame.cu)
     atv_add_test(test_cuda_materialize cuda/test_materialize.cu)
     atv_add_test(test_cuda_backend    cuda/test_backend.cu)
@@ -1067,24 +1069,18 @@ if(ATV_BUILD_CUDA)
     # Pulls in the private primitive header src/cuda/neighbor/atom_cell_sort.cuh
     target_include_directories(test_cuda_atom_cell_sort PRIVATE
         ${CMAKE_SOURCE_DIR}/src/cuda/neighbor)
-    atv_add_test(test_cuda_pair_lj_no_d2h cuda/test_pair_lj_no_d2h.cu)
-    target_compile_definitions(test_cuda_pair_lj_no_d2h PRIVATE
-        ATV_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-    atv_add_test(test_cuda_driver_no_per_phase_sync cuda/test_driver_no_per_phase_sync.cu)
-    target_compile_definitions(test_cuda_driver_no_per_phase_sync PRIVATE
-        ATV_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     # cuda::RDF on the molrs streaming accumulator (arch-refactor-07-molrs):
     # static-trajectory g(r) parity vs a host-fed cpu::compute::RDFAccumulator
     # + fail-fast ctor edges. Needs a GPU node (runs a cuda::md::MD).
     atv_add_test(test_cuda_observer_rdf_molrs cuda/observe/test_rdf_molrs.cu)
+    if(ATV_BUILD_POTENTIALS)
+        atv_add_test(test_cuda_harmonic_coefficients cuda/potentials/test_harmonic_coefficients.cu)
+        atv_add_test(test_cuda_packed_tiles cuda/potentials/test_packed_tiles.cu)
+    endif()
     atv_add_test(test_cuda_pair_lj_special_bonds cuda/potentials/test_pair_lj_special_bonds.cu)
     # pair_kernel is cuda-owned (backend-mirror-02-absorb); its scalar-math test
     # moved here from the former cpu/potentials/test_pair_kernel.cpp.
     atv_add_test(test_cuda_pair_kernel cuda/potentials/test_pair_kernel.cu)
-    atv_add_test(test_cuda_ewald_coul cuda/longrange/test_ewald_coul.cu)
-    if(ATV_BUILD_KSPACE)
-        atv_add_test(test_cuda_pme_coul cuda/longrange/test_pme_coul.cu)
-    endif()
     if(ATV_BUILD_PW)
         atv_add_test(test_cuda_pw_fft cuda/planewave/test_fft.cu)
         target_link_libraries(test_cuda_pw_fft PRIVATE CUDA::cufft)

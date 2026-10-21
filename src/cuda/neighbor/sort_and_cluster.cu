@@ -1,6 +1,6 @@
 /// @file cuda/neighbor/sort_and_cluster.cu
-/// @brief Morton-code sorting and cluster grouping kernels.
-#include "morton.cuh"
+/// @brief Hilbert-key sorting and cluster grouping kernels.
+#include "hilbert.cuh"
 #include "nlist_impl.cuh"
 #include "triclinic.cuh"
 
@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 
 namespace ATV::cuda::md::nlist {
 
@@ -43,17 +44,15 @@ void launch_aos_to_soa(const double* positions_aos, int num_atoms, real_t* x,
 }
 
 // ---------------------------------------------------------------------------
-// Kernel: Compute Morton codes from SoA positions
+// Kernel: Compute Hilbert keys from SoA positions
 // ---------------------------------------------------------------------------
 
 template <typename work_t>
-__global__ void compute_morton(const real_t* __restrict__ pos_x,
-                               const real_t* __restrict__ pos_y,
-                               const real_t* __restrict__ pos_z, int num_atoms,
-                               const real_t* __restrict__ inv_cell,
-                               bool periodic,
-                               uint32_t* __restrict__ morton_codes,
-                               int* __restrict__ atom_indices) {
+__global__ void compute_spatial_keys(
+    const real_t* __restrict__ pos_x, const real_t* __restrict__ pos_y,
+    const real_t* __restrict__ pos_z, int num_atoms,
+    const real_t* __restrict__ inv_cell, bool periodic,
+    uint32_t* __restrict__ spatial_keys, int* __restrict__ atom_indices) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_atoms)
         return;
@@ -74,23 +73,23 @@ __global__ void compute_morton(const real_t* __restrict__ pos_x,
         frac.z = clamp01(frac.z);
     }
 
-    morton_codes[i] = morton_from_frac(frac.x, frac.y, frac.z);
+    spatial_keys[i] = hilbert_from_frac(frac.x, frac.y, frac.z);
     atom_indices[i] = i;
 }
 
 template <typename work_t>
-void launch_compute_morton(const real_t* pos_x, const real_t* pos_y,
-                           const real_t* pos_z, int num_atoms,
-                           const real_t* inv_cell, bool periodic,
-                           uint32_t* morton_codes, int* atom_indices,
-                           cudaStream_t stream) {
+void launch_compute_spatial_keys(const real_t* pos_x, const real_t* pos_y,
+                                 const real_t* pos_z, int num_atoms,
+                                 const real_t* inv_cell, bool periodic,
+                                 uint32_t* spatial_keys, int* atom_indices,
+                                 cudaStream_t stream) {
     if (num_atoms == 0)
         return;
     int block = ATV::cuda::kDefaultBlock;
     int grid = (num_atoms + block - 1) / block;
-    compute_morton<work_t>
+    compute_spatial_keys<work_t>
         <<<grid, block, 0, stream>>>(pos_x, pos_y, pos_z, num_atoms, inv_cell,
-                                     periodic, morton_codes, atom_indices);
+                                     periodic, spatial_keys, atom_indices);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -107,7 +106,8 @@ void launch_radix_sort(uint32_t* keys_in, uint32_t* keys_out, int* values_in,
                                     values_in, values_out, num_items, 0, 30,
                                     stream);
     if (needed > temp.capacity()) {
-        temp.resize(needed);
+        throw std::runtime_error(
+            "NeighborList: CUB sort scratch exceeds build-time capacity");
     }
     size_t avail = temp.capacity();
     cub::DeviceRadixSort::SortPairs(temp.data(), avail, keys_in, keys_out,
@@ -124,7 +124,7 @@ void launch_radix_sort(uint32_t* keys_in, uint32_t* keys_out, int* values_in,
 CubTempBytes query_cub_temp_bytes(int num_atoms, int num_clusters) {
     CubTempBytes out{0, 0, 0};
     if (num_atoms > 0) {
-        // Radix sort of `num_atoms` Morton codes (uint32 keys + int values).
+        // Radix sort of `num_atoms` Hilbert keys (uint32 keys + int values).
         uint32_t* dummy_keys = nullptr;
         int* dummy_values = nullptr;
         cub::DeviceRadixSort::SortPairs(nullptr, out.sort_bytes, dummy_keys,
@@ -204,16 +204,16 @@ void launch_scatter_to_soa(const int* sorted_indices, const real_t* pos_x,
 }
 
 // ---------------------------------------------------------------------------
-// Fused kernel: AoS→SoA + Morton code (replaces separate K1+K2)
+// Fused kernel: AoS→SoA + Hilbert code (replaces separate K1+K2)
 // ---------------------------------------------------------------------------
 
 template <typename work_t>
 __global__ void
-aos_to_soa_morton(const double* __restrict__ positions_aos, int num_atoms,
-                  real_t* __restrict__ x, real_t* __restrict__ y,
-                  real_t* __restrict__ z, const real_t* __restrict__ inv_cell,
-                  bool periodic, uint32_t* __restrict__ morton_codes,
-                  int* __restrict__ atom_indices) {
+aos_to_soa_spatial(const double* __restrict__ positions_aos, int num_atoms,
+                   real_t* __restrict__ x, real_t* __restrict__ y,
+                   real_t* __restrict__ z, const real_t* __restrict__ inv_cell,
+                   bool periodic, uint32_t* __restrict__ spatial_keys,
+                   int* __restrict__ atom_indices) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_atoms)
         return;
@@ -226,7 +226,7 @@ aos_to_soa_morton(const double* __restrict__ positions_aos, int num_atoms,
     y[i] = ry;
     z[i] = rz;
 
-    // Morton code
+    // Hilbert code
     Vec3<work_t> frac = cart_to_frac(rx, ry, rz, inv_cell);
 
     if (periodic) {
@@ -239,22 +239,22 @@ aos_to_soa_morton(const double* __restrict__ positions_aos, int num_atoms,
         frac.z = clamp01(frac.z);
     }
 
-    morton_codes[i] = morton_from_frac(frac.x, frac.y, frac.z);
+    spatial_keys[i] = hilbert_from_frac(frac.x, frac.y, frac.z);
     atom_indices[i] = i;
 }
 
 template <typename work_t>
-void launch_aos_to_soa_morton(const double* positions_aos, int num_atoms,
-                              real_t* x, real_t* y, real_t* z,
-                              const real_t* inv_cell, bool periodic,
-                              uint32_t* morton_codes, int* atom_indices,
-                              cudaStream_t stream) {
+void launch_aos_to_soa_spatial(const double* positions_aos, int num_atoms,
+                               real_t* x, real_t* y, real_t* z,
+                               const real_t* inv_cell, bool periodic,
+                               uint32_t* spatial_keys, int* atom_indices,
+                               cudaStream_t stream) {
     if (num_atoms == 0)
         return;
     int block = ATV::cuda::kDefaultBlock;
     int grid = (num_atoms + block - 1) / block;
-    aos_to_soa_morton<work_t><<<grid, block, 0, stream>>>(
-        positions_aos, num_atoms, x, y, z, inv_cell, periodic, morton_codes,
+    aos_to_soa_spatial<work_t><<<grid, block, 0, stream>>>(
+        positions_aos, num_atoms, x, y, z, inv_cell, periodic, spatial_keys,
         atom_indices);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
@@ -388,12 +388,12 @@ void launch_scatter_and_aabb(const int* sorted_indices, const real_t* pos_x,
 namespace {
 [[maybe_unused]] const void* _inst_launch_aos_to_soa =
     reinterpret_cast<const void*>(&launch_aos_to_soa<work_t>);
-[[maybe_unused]] const void* _inst_launch_compute_morton =
-    reinterpret_cast<const void*>(&launch_compute_morton<work_t>);
+[[maybe_unused]] const void* _inst_launch_compute_spatial_keys =
+    reinterpret_cast<const void*>(&launch_compute_spatial_keys<work_t>);
 [[maybe_unused]] const void* _inst_launch_scatter_to_soa =
     reinterpret_cast<const void*>(&launch_scatter_to_soa<work_t>);
-[[maybe_unused]] const void* _inst_launch_aos_to_soa_morton =
-    reinterpret_cast<const void*>(&launch_aos_to_soa_morton<work_t>);
+[[maybe_unused]] const void* _inst_launch_aos_to_soa_spatial =
+    reinterpret_cast<const void*>(&launch_aos_to_soa_spatial<work_t>);
 [[maybe_unused]] const void* _inst_launch_scatter_and_aabb =
     reinterpret_cast<const void*>(&launch_scatter_and_aabb<work_t>);
 } // namespace

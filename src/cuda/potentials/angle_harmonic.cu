@@ -157,12 +157,13 @@ void AngleHarmonic::build(const BuildContext& /*ctx*/) {
     // equilibrium → ~9× over-count vs CPU/LAMMPS in stage 1 of the MSU
     // PE deck, plus mis-aligned restoring forces.
     std::vector<work_t> theta0_dev(nt);
+    const std::vector<work_t> K_dev(K_.begin(), K_.end());
     for (int i = 0; i < nt; ++i)
         theta0_dev[i] = static_cast<work_t>(theta0_[i]);
 
     cudaMalloc(&state_->d_K, nt * sizeof(work_t));
     cudaMalloc(&state_->d_theta0, nt * sizeof(work_t));
-    cudaMemcpy(state_->d_K, K_.data(), nt * sizeof(work_t),
+    cudaMemcpy(state_->d_K, K_dev.data(), nt * sizeof(work_t),
                cudaMemcpyHostToDevice);
     cudaMemcpy(state_->d_theta0, theta0_dev.data(), nt * sizeof(work_t),
                cudaMemcpyHostToDevice);

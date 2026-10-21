@@ -66,6 +66,14 @@ class Backend {
     ///        the loaded schedule.
     void destroy_plan(const Plan<Component>& plan);
 
+    /// @brief Execute a half-open range of scheduled phases without counting a step.
+    /// Frequencies, stream selection and profiling match the full-step dispatch.
+    /// @param step_idx Zero-based simulation step passed to components.
+    /// @param first_phase First included phase index [dimensionless].
+    /// @param end_phase First excluded phase index [dimensionless].
+    /// @throws std::invalid_argument If the range is outside the loaded plan.
+    void execute_phases(int step_idx, int first_phase, int end_phase);
+
     /// @brief Execute one simulation step (launch all components by phase).
     /// @param step_idx Zero-based step index within the simulation.
     void step(int step_idx);

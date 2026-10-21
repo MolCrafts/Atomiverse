@@ -1762,31 +1762,26 @@ void MultiGpu::reneighbor() {
     for (int s = 0; s < N; ++s) {
         const int na = frames_[s].n_local_ + frames_[s].n_ghost_;
         dm_.set_device(s);
-        // (Re)build the neighbor list only when the owned+ghost count first
-        // exceeds the buffers' size; otherwise just reset the active count (no
-        // realloc — the dominant per-reneighbor cost). Build at ~1.3x n_all
-        // (capped at the frame's allocated capacity) so ghost-count fluctuation
-        // between intervals rarely forces a rebuild.
+        // Reserve the cluster CSR and sorting scratch once. Single GPU has
+        // a fixed owned count; multiple GPUs retain 8%+64 ghost headroom,
+        // capped by Frame capacity. Otherwise set_active_count reuses the
+        // existing buffers and only the neighbor contents are rebuilt.
         if (!nlist_built_[s] || na > nlist_cap_[s]) {
             if (nlist_built_[s]) {
                 cuda::DestroyContext dc{ctx_[s], frames_[s]};
                 nlist_[s]->destroy(dc);
             }
-            // Single GPU has no ghosts and a fixed owned count, so size the
-            // neighbor-list buffers (incl. the per-atom Verlet list) at exactly
-            // na. Multi-GPU keeps a small headroom so ghost-count drift between
-            // reneighbor intervals rarely forces a costly rebuild — but the
-            // ghost set is only ~2% of owned and fluctuates <1%, so the old
-            // 1.3x (30% over-allocation of the single largest buffer, the
-            // per-atom Verlet list) was pure waste that inflated the multi-GPU
-            // footprint to ~3.9 GB/Matom and OOM'd large per-GPU systems. 1.08x
-            // covers the observed fluctuation with ~25% less neighbor-list VRAM.
             int want = (count() == 1) ? na : (static_cast<int>(na * 1.08) + 64);
             if (want > frames_[s].capacity_)
                 want = frames_[s].capacity_;
             frames_[s].n_atoms_ = want;
             cuda::BuildContext bc{ctx_[s], frames_[s]};
             nlist_[s]->build(bc);
+            // Pair scratch belongs to build(), including the ordinary LJ
+            // path without bonded exclusions. Its topology view must use the
+            // active rows rather than the neighbor list's allocation headroom.
+            frames_[s].n_atoms_ = na;
+            pair_[s]->build(bc);
             nlist_cap_[s] = want;
             nlist_built_[s] = 1;
         }
@@ -1798,8 +1793,8 @@ void MultiGpu::reneighbor() {
         CKM(cudaDeviceSynchronize());
     }
     // Multi-GPU: rebuild every subdomain's neighbor list CONCURRENTLY. The
-    // per-device launch() rebuild has two internal cudaStreamSynchronize
-    // overflow checks; letting compute_forces' per-device launch loop trigger
+    // per-device launch() rebuild has a scalar count synchronization
+    // before its overflow check; letting compute_forces' per-device launch loop trigger
     // the rebuild (via set_active_count → first_launch) serialized the GPUs —
     // each device's ~75 ms build ran one-after-another (the dominant per-
     // interval multi-GPU cost, ~N× the single-GPU build). Instead: ISSUE the

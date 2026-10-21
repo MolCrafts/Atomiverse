@@ -3,6 +3,7 @@
 ///        Includes LAMMPS-style `special_bonds` 1-2/1-3/1-4 exclusions.
 
 #include "atomiverse/cuda/component/context.cuh"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
@@ -93,9 +94,9 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     const real_t* __restrict__ spx, const real_t* __restrict__ spy,
     const real_t* __restrict__ spz, const int* __restrict__ row_ptr,
     const int* __restrict__ col_idx, const std::uint64_t* __restrict__ cl_mask,
-    const int* __restrict__ orig_index, int num_clusters, cuda::Box box,
-    bool periodic, work_t epsilon, work_t sigma_sq, work_t cutoff_sq,
-    work_t min_pair_dist_sq, work_t v_shift,
+    const int* __restrict__ orig_index, int num_clusters, int n_owned,
+    cuda::Box box, bool periodic, work_t epsilon, work_t sigma_sq,
+    work_t cutoff_sq, work_t min_pair_dist_sq, work_t v_shift,
     const int* __restrict__ excl_offsets, const int* __restrict__ excl_partners,
     work_t s_excl) {
     constexpr int CS = ATV::cuda::kOpenmmClusterSize;
@@ -127,6 +128,8 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     // All lanes of a warp must participate in __syncwarp; pad slots keep
     // ai < 0 and skip force math but still load tiles.
     int ai = (ci < num_clusters) ? orig_index[ci * CS + slot] : -1;
+    if (ai >= n_owned)
+        ai = -1;
     real_t xi = 0, yi = 0, zi = 0;
     real_t fxi = 0, fyi = 0, fzi = 0;
     bool has_excl = false;
@@ -163,9 +166,9 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
                     real_t dz = shz[warp_in_block][sj] - zi;
                     if (periodic) {
                         if constexpr (Ortho) {
-                            dx -= box.cell[0] * nearbyintf(dx * box.inv_l[0]);
-                            dy -= box.cell[4] * nearbyintf(dy * box.inv_l[1]);
-                            dz -= box.cell[8] * nearbyintf(dz * box.inv_l[2]);
+                            dx -= box.cell[0] * nearbyint(dx * box.inv_l[0]);
+                            dy -= box.cell[4] * nearbyint(dy * box.inv_l[1]);
+                            dz -= box.cell[8] * nearbyint(dz * box.inv_l[2]);
                         } else {
                             box.min_image(dx, dy, dz);
                         }
@@ -300,6 +303,19 @@ PairLJCut PairLJCut::set_compute_stress(bool on) && {
 }
 
 void PairLJCut::build(const BuildContext& ctx) {
+    const int slots =
+        ((ctx.frame.capacity() + kOpenmmClusterSize - 1) / kOpenmmClusterSize)
+        * kOpenmmClusterSize;
+    if (slots > spos_cap_) {
+        cudaFree(spx_);
+        cudaFree(spy_);
+        cudaFree(spz_);
+        spx_ = spy_ = spz_ = nullptr;
+        ATV_CUDA_CHECK(cudaMalloc(&spx_, slots * sizeof(real_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spy_, slots * sizeof(real_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spz_, slots * sizeof(real_t)));
+        spos_cap_ = slots;
+    }
     // Re-callable: the multi-GPU bonded path rebuilds the exclusion CSR every
     // reneighbor (the flat topology's local indices change as ghosts move), so
     // free any prior CSR first to avoid leaking on repeated build().
@@ -312,22 +328,12 @@ void PairLJCut::build(const BuildContext& ctx) {
         d_excl_partners_ = nullptr;
     }
     n_excl_total_ = 0;
+    ctx.runtime.md.exclusions_baked = false;
     if (!has_exclusions_) {
         // No special bonds: publish "nothing to bake".
         ctx.runtime.md.excl_offsets = nullptr;
         ctx.runtime.md.excl_partners = nullptr;
         ctx.runtime.md.s_excl = 1.0;
-        return;
-    }
-    // Fast path: if the per-atom special SoA is on-device, NeighborList bakes
-    // 1-2/1-3/1-4 exclusions directly from it (find_special at build) — skip the
-    // O(N) host std::set exclusion-CSR rebuild entirely (its per-reneighbor cost
-    // was the dominant multi-GPU bottleneck). Just publish the scale; the force
-    // kernel reads exclusions_baked and drops its per-pair scan.
-    if (ctx.frame.atoms.special != nullptr) {
-        ctx.runtime.md.excl_offsets = nullptr;
-        ctx.runtime.md.excl_partners = nullptr;
-        ctx.runtime.md.s_excl = s_excl_;
         return;
     }
     auto& f = ctx.frame;
@@ -420,11 +426,6 @@ void PairLJCut::destroy(const DestroyContext& /*ctx*/) {
         spx_ = spy_ = spz_ = nullptr;
         spos_cap_ = 0;
     }
-    if (pos4_) {
-        cudaFree(pos4_);
-        pos4_ = nullptr;
-        pos4_cap_ = 0;
-    }
 }
 
 void PairLJCut::compute(const LaunchContext& ctx) {
@@ -462,15 +463,8 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     // cl_x only as a gather target cache when present is wrong — always gather
     // current frame.atoms into scratch so force is skin-correct.
     if (n_slots > spos_cap_) {
-        if (spx_) {
-            cudaFree(spx_);
-            cudaFree(spy_);
-            cudaFree(spz_);
-        }
-        cudaMalloc(&spx_, n_slots * sizeof(real_t));
-        cudaMalloc(&spy_, n_slots * sizeof(real_t));
-        cudaMalloc(&spz_, n_slots * sizeof(real_t));
-        spos_cap_ = n_slots;
+        throw std::runtime_error(
+            "cuda::PairLJCut: cluster slots exceed Frame capacity at build");
     }
     {
         int block = kDefaultBlock;
@@ -492,9 +486,10 @@ void PairLJCut::compute(const LaunchContext& ctx) {
             frame.atoms.fx, frame.atoms.fy, frame.atoms.fz,
             &frame.scalars->energy, stress_ptr, spx_, spy_, spz_,
             pairs->cl_row_ptr, pairs->cl_col_idx, mask, pairs->cl_orig_index,
-            nc, box, /*periodic=*/true, static_cast<work_t>(epsilon_), sigma_sq,
-            cutoff_sq, min_pair_dist_sq, static_cast<work_t>(v_shift_),
-            excl_off, excl_par, static_cast<work_t>(s_excl_));
+            nc, frame.n_local(), box, /*periodic=*/true,
+            static_cast<work_t>(epsilon_), sigma_sq, cutoff_sq,
+            min_pair_dist_sq, static_cast<work_t>(v_shift_), excl_off, excl_par,
+            static_cast<work_t>(s_excl_));
     };
     using T = std::true_type;
     using F = std::false_type;

@@ -1383,7 +1383,8 @@ if(NOT ATV_DOCS_ONLY)
         install(TARGETS atomiverse
                 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-        install(DIRECTORY include/atomiverse TYPE INCLUDE)
+        include(cmake/AtvInstallHeaders.cmake)
+        atv_install_headers(atomiverse)
     endif()
 
     # ── atomiverse binary: native -in with MD, MPI Python host with LAUNCHER ──

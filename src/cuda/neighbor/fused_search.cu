@@ -270,76 +270,146 @@ void launch_smart_rolling_prune(
 
 // ---------------------------------------------------------------------------
 // CSR interaction masks at SEARCH radius (rc+skin) — production OpenMM path.
-// One block of kClusterSize threads per cluster: lane i writes the 32-bit
-// j-mask for every CSR neighbor of ci into multi-word storage.
+// Geometry assigns one warp per CSR tile; exclusion baking then clears
+// exception bits in the existing multi-word masks.
 // ---------------------------------------------------------------------------
+__global__ void bake_csr_exclusions_k(const int* __restrict__ row_ptr,
+                                      const int* __restrict__ col_idx,
+                                      const int* __restrict__ original_index,
+                                      int num_clusters,
+                                      const int* __restrict__ offsets,
+                                      const int* __restrict__ partners,
+                                      uint64_t* __restrict__ masks) {
+    const int slot = blockIdx.x * blockDim.x + threadIdx.x;
+    const int ci = slot / kClusterSize, si = slot % kClusterSize;
+    if (ci >= num_clusters)
+        return;
+    const int ai = original_index[slot];
+    for (int p = row_ptr[ci]; p < row_ptr[ci + 1]; ++p) {
+        std::uint32_t bits = mask_jbits(masks, p, si);
+        std::uint32_t retained = 0;
+        if (ai >= 0) {
+            const int begin = offsets[ai], end = offsets[ai + 1];
+            const int cj = col_idx[p];
+            while (bits) {
+                const int sj = __ffs(static_cast<int>(bits)) - 1;
+                bits &= bits - 1;
+                const int aj = original_index[cj * kClusterSize + sj];
+                if (aj < 0)
+                    continue;
+                int lo = begin, hi = end;
+                while (lo < hi) {
+                    const int mid = (lo + hi) / 2;
+                    if (partners[mid] < aj)
+                        lo = mid + 1;
+                    else
+                        hi = mid;
+                }
+                if (lo == end || partners[lo] != aj)
+                    retained |= (1u << sj);
+            }
+        }
+        mask_set_jbits(masks, p, si, retained);
+    }
+}
+
+bool launch_bake_csr_exclusions(const int* row_ptr, const int* col_idx,
+                                const int* original_index, int num_clusters,
+                                const int* excl_offsets,
+                                const int* excl_partners, double special_scale,
+                                uint64_t* masks, cudaStream_t stream) {
+    if (excl_offsets == nullptr || special_scale != 0.0)
+        return false;
+    if (num_clusters > 0) {
+        const int grid = ATV::cuda::grid_size(num_clusters * kClusterSize);
+        bake_csr_exclusions_k<<<grid, ATV::cuda::kDefaultBlock, 0, stream>>>(
+            row_ptr, col_idx, original_index, num_clusters, excl_offsets,
+            excl_partners, masks);
+        ATV_CUDA_CHECK(cudaGetLastError());
+    }
+    return true;
+}
+
+// A warp owns one CSR tile, matching the OpenMM warp/tile work partition
+// (platforms/cuda/src/kernels/nonbonded.cu, SHA
+// 3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e). The geometric predicate and
+// mask layout remain ATV-native; no OpenMM source is copied.
 template <bool Ortho, typename work_t>
-__global__ __launch_bounds__(32) void compute_csr_masks_k(
+__global__ __launch_bounds__(128) void compute_csr_masks_k(
     const real_t* __restrict__ cluster_x, const real_t* __restrict__ cluster_y,
     const real_t* __restrict__ cluster_z, const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx, int num_clusters, work_t search_sq,
-    cuda::Box box, uint64_t* __restrict__ masks) {
+    const int* __restrict__ col_idx, int num_clusters, int num_pairs,
+    work_t search_sq, cuda::Box box, uint64_t* __restrict__ masks) {
     static_assert(kClusterSize == 32, "CSR mask kernel assumes CS=32");
-    int ci = static_cast<int>(blockIdx.x);
-    int i_lane = static_cast<int>(threadIdx.x);
-    if (ci >= num_clusters || i_lane >= kClusterSize)
-        return;
-
-    work_t xi = cluster_x[ci * kClusterSize + i_lane];
-    work_t yi = cluster_y[ci * kClusterSize + i_lane];
-    work_t zi = cluster_z[ci * kClusterSize + i_lane];
-
-    // Pad slots (huge coords) produce no in-range bits.
-    int rstart = row_ptr[ci];
-    int rend = row_ptr[ci + 1];
-    for (int p = rstart; p < rend; ++p) {
-        int cj = col_idx[p];
-        std::uint32_t bits = 0;
-#pragma unroll 4
-        for (int j = 0; j < kClusterSize; ++j) {
-            work_t dx = cluster_x[cj * kClusterSize + j] - xi;
-            work_t dy = cluster_y[cj * kClusterSize + j] - yi;
-            work_t dz = cluster_z[cj * kClusterSize + j] - zi;
-            if constexpr (Ortho) {
-                dx -=
-                    work_t(box.cell[0]) * nearbyint(dx * work_t(box.inv_l[0]));
-                dy -=
-                    work_t(box.cell[4]) * nearbyint(dy * work_t(box.inv_l[1]));
-                dz -=
-                    work_t(box.cell[8]) * nearbyint(dz * work_t(box.inv_l[2]));
-            } else {
-                box.min_image(dx, dy, dz);
-            }
-            work_t r2 = dx * dx + dy * dy + dz * dz;
-            if (r2 < search_sq && r2 > work_t(0))
-                bits |= (1u << j);
+    const int p =
+        blockIdx.x * (blockDim.x / kClusterSize) + threadIdx.x / kClusterSize;
+    const int lane = threadIdx.x % kClusterSize;
+    if (p >= num_pairs)
+        return; // Uniform within the warp; no block collective follows.
+    int ci = 0;
+    if (lane == 0) {
+        int lo = 0, hi = num_clusters;
+        while (lo < hi) {
+            const int mid = (lo + hi) / 2;
+            if (row_ptr[mid + 1] <= p)
+                lo = mid + 1;
+            else
+                hi = mid;
         }
-        // Exclude self on diagonal tiles (ai == aj same slot of same cluster).
-        if (ci == cj)
-            bits &= ~(1u << i_lane);
-        mask_set_jbits(masks, p, i_lane, bits);
+        ci = lo;
     }
+    ci = __shfl_sync(0xffffffffu, ci, 0);
+    const int cj = col_idx[p];
+    const work_t xi = cluster_x[ci * kClusterSize + lane];
+    const work_t yi = cluster_y[ci * kClusterSize + lane];
+    const work_t zi = cluster_z[ci * kClusterSize + lane];
+    // Coalesced J-block loads are reused through warp exchange for all 32
+    // rows; no warp serializes the remaining tiles in the same CSR row.
+    const real_t xj = cluster_x[cj * kClusterSize + lane];
+    const real_t yj = cluster_y[cj * kClusterSize + lane];
+    const real_t zj = cluster_z[cj * kClusterSize + lane];
+    std::uint32_t bits = 0;
+#pragma unroll 4
+    for (int j = 0; j < kClusterSize; ++j) {
+        work_t dx = __shfl_sync(0xffffffffu, xj, j) - xi;
+        work_t dy = __shfl_sync(0xffffffffu, yj, j) - yi;
+        work_t dz = __shfl_sync(0xffffffffu, zj, j) - zi;
+        if constexpr (Ortho) {
+            dx -= work_t(box.cell[0]) * nearbyint(dx * work_t(box.inv_l[0]));
+            dy -= work_t(box.cell[4]) * nearbyint(dy * work_t(box.inv_l[1]));
+            dz -= work_t(box.cell[8]) * nearbyint(dz * work_t(box.inv_l[2]));
+        } else {
+            box.min_image(dx, dy, dz);
+        }
+        const work_t r2 = dx * dx + dy * dy + dz * dz;
+        if (r2 < search_sq && r2 > work_t(0))
+            bits |= (1u << j);
+    }
+    // Exclude the same atom on diagonal tiles exactly as the row kernel did.
+    if (ci == cj)
+        bits &= ~(1u << lane);
+    mask_set_jbits(masks, p, lane, bits);
 }
 
 template <typename work_t>
 void launch_compute_csr_masks(const real_t* cluster_x, const real_t* cluster_y,
                               const real_t* cluster_z, const int* row_ptr,
                               const int* col_idx, int num_clusters,
-                              work_t search_sq, cuda::Box box, uint64_t* masks,
-                              cudaStream_t stream) {
-    if (num_clusters <= 0)
+                              int num_pairs, work_t search_sq, cuda::Box box,
+                              uint64_t* masks, cudaStream_t stream) {
+    if (num_clusters <= 0 || num_pairs <= 0)
         return;
-    // One warp-sized block per cluster.
+    constexpr int threads = 128;
+    constexpr int tiles_per_block = threads / kClusterSize;
+    const int grid = (num_pairs - 1) / tiles_per_block + 1;
     if (box.ortho) {
-        compute_csr_masks_k<true, work_t>
-            <<<num_clusters, kClusterSize, 0, stream>>>(
-                cluster_x, cluster_y, cluster_z, row_ptr, col_idx, num_clusters,
-                search_sq, box, masks);
+        compute_csr_masks_k<true, work_t><<<grid, threads, 0, stream>>>(
+            cluster_x, cluster_y, cluster_z, row_ptr, col_idx, num_clusters,
+            num_pairs, search_sq, box, masks);
     } else {
-        compute_csr_masks_k<false, work_t>
-            <<<num_clusters, kClusterSize, 0, stream>>>(
-                cluster_x, cluster_y, cluster_z, row_ptr, col_idx, num_clusters,
-                search_sq, box, masks);
+        compute_csr_masks_k<false, work_t><<<grid, threads, 0, stream>>>(
+            cluster_x, cluster_y, cluster_z, row_ptr, col_idx, num_clusters,
+            num_pairs, search_sq, box, masks);
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }
@@ -471,54 +541,41 @@ void launch_build_verlet_list(const real_t* cluster_x, const real_t* cluster_y,
 }
 
 // ---------------------------------------------------------------------------
-// Kernel: Per-atom displacement vs ref_{x,y,z}, atomicMax rebuild_flag
+// Current periodic motion: one result per block, written directly into mapped
+// pinned memory. All lanes participate, including a partially filled block.
+// No global atomic, device clear, or copy-engine transfer is needed.
 // ---------------------------------------------------------------------------
-//
-// Reads frame.atoms.x/y/z directly (always live), not cluster_x/y/z
-// (sorted layout, stale between rebuilds). Each thread computes one
-// atom's squared displacement; any thread whose d² > half_skin_sq
-// races to atomicMax(rebuild_flag, 1). No reduction needed — we only
-// care "any atom exceeded?", not "what's the max?".
-//
-// Cost: one global load × 6 (current + ref) + 1 atomicMax on at most
-// one thread per launch. ~few µs per call on a 10k-atom system.
-
 template <typename work_t>
-__global__ void atom_displacement_max(
-    const real_t* __restrict__ pos_x, const real_t* __restrict__ pos_y,
-    const real_t* __restrict__ pos_z, const real_t* __restrict__ ref_x,
-    const real_t* __restrict__ ref_y, const real_t* __restrict__ ref_z,
-    int num_atoms, work_t half_skin_sq, int* __restrict__ rebuild_flag) {
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= num_atoms)
-        return;
-
-    work_t dx = pos_x[i] - ref_x[i];
-    work_t dy = pos_y[i] - ref_y[i];
-    work_t dz = pos_z[i] - ref_z[i];
-    work_t d2 = dx * dx + dy * dy + dz * dz;
-
-    if (d2 > half_skin_sq) {
-        atomicMax(rebuild_flag, 1);
+__global__ void atom_displacement_max(const real_t* pos_x, const real_t* pos_y,
+                                      const real_t* pos_z, const real_t* ref_x,
+                                      const real_t* ref_y, const real_t* ref_z,
+                                      int num_atoms, work_t half_skin_sq,
+                                      Box box, int* block_flags) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    bool moved = false;
+    if (i < num_atoms) {
+        work_t dx = pos_x[i] - ref_x[i];
+        work_t dy = pos_y[i] - ref_y[i];
+        work_t dz = pos_z[i] - ref_z[i];
+        box.min_image(dx, dy, dz);
+        moved = dx * dx + dy * dy + dz * dz > half_skin_sq;
     }
+    const int count = __syncthreads_count(moved);
+    if (threadIdx.x == 0)
+        block_flags[blockIdx.x] = count != 0;
 }
 
 template <typename work_t>
 void launch_atom_displacement_max(const real_t* pos_x, const real_t* pos_y,
                                   const real_t* pos_z, const real_t* ref_x,
                                   const real_t* ref_y, const real_t* ref_z,
-                                  int num_atoms, work_t half_skin_sq,
-                                  int* rebuild_flag, cudaStream_t stream) {
+                                  int num_atoms, work_t half_skin_sq, Box box,
+                                  int* block_flags, cudaStream_t stream) {
     if (num_atoms == 0)
         return;
-    // Caller pre-clears rebuild_flag (the launcher mustn't, because we
-    // need to OR into a multi-source flag eventually).
-    int block = ATV::cuda::kDefaultBlock;
-    int grid = (num_atoms + block - 1) / block;
-    atom_displacement_max<work_t>
-        <<<grid, block, 0, stream>>>(pos_x, pos_y, pos_z, ref_x, ref_y, ref_z,
-                                     num_atoms, half_skin_sq, rebuild_flag);
+    atom_displacement_max<work_t><<<(num_atoms + 255) / 256, 256, 0, stream>>>(
+        pos_x, pos_y, pos_z, ref_x, ref_y, ref_z, num_atoms, half_skin_sq, box,
+        block_flags);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 

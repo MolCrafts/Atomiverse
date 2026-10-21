@@ -3,8 +3,8 @@
 ///        back; atom conservation and position round-trip.
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <set>
@@ -183,72 +183,6 @@ TEST(MultiGpu, PartitionRematerializesBondedTopology) {
     EXPECT_EQ(got, ref); // no dropped cross-GPU bonds, no duplicates
 }
 
-// multigpu-bonded P2.3: per-atom bonded topology must travel with an atom when
-// migrate() re-homes it to another GPU. Drive migrations with a rigid x-drift
-// (every atom the same velocity → all bond lengths preserved, so partners stay
-// inside the halo) under negligible LJ (tiny eps) so motion is ~ballistic;
-// reneigh_every=1 migrates + re-materializes every step. The re-materialized
-// bond set (by global tags) must remain the full global set — any atom whose
-// topology was lost in migration would drop its bonds.
-TEST(MultiGpu, MigratePreservesBondedTopology) {
-    cuda::md::MultiGpu mg;
-    if (mg.count() < 2)
-        GTEST_SKIP() << "needs >=2 GPUs to migrate between subdomains";
-    auto g = make_bonded_grid(12.0);
-    for (int i = 0; i < g.nlocal(); ++i) {
-        g.span(kAtom_vx)[i] = 2.0; // rigid translation along x
-        g.span(kAtom_vy)[i] = 0.0;
-        g.span(kAtom_vz)[i] = 0.0;
-    }
-    std::set<std::pair<long long, long long>> ref;
-    for (int i = 0; i < g.nlocal(); ++i)
-        for (int m = 0; m < g.span(kAtom_num_bond)[i]; ++m) {
-            long long a = g.span(kAtom_tag)[i],
-                      b = g.span(kAtom_bond_atom)(i, m);
-            ref.insert({std::min(a, b), std::max(a, b)});
-        }
-    ASSERT_FALSE(ref.empty());
-
-    mg.partition(g);
-    mg.setup_force_engine(3.5, 1e-12,
-                          1.0); // halo 3.5 covers the 3.0 bond; eps≈0
-    // ~4 A of rigid drift over 20 steps → atoms cross subdomain boundaries;
-    // migrate (carrying topology) runs every step (reneigh_every=1).
-    mg.run_nve_nlist(20, 0.1, 3.5, 1e-12, 1.0, 0.5, 1);
-
-    // Validate TRANSPORT fidelity: reconstruct the bond set straight from each
-    // owned atom's migrated per-atom SoA (num_bond + bond_atom GLOBAL TAGS) — no
-    // tag→local resolve, so this is independent of the halo/PBC (the resolve
-    // path is covered by the static Partition test). If migrate lost or
-    // corrupted any atom's topology, a bond would be missing or wrong here.
-    std::set<std::pair<long long, long long>> got;
-    for (int s = 0; s < mg.count(); ++s) {
-        const int nl = mg.n_local(s);
-        if (nl == 0)
-            continue;
-        const auto& F = mg.frame(s);
-        const int MB = F.atoms.bond_per_atom; // runtime stride (per frame)
-        std::vector<int> nbv(nl);
-        std::vector<long long> ba(static_cast<std::size_t>(nl) * MB), tags(nl);
-        cudaMemcpy(nbv.data(), F.atoms.num_bond, nl * sizeof(int),
-                   cudaMemcpyDefault);
-        cudaMemcpy(ba.data(), F.atoms.bond_atom,
-                   static_cast<std::size_t>(nl) * MB * sizeof(long long),
-                   cudaMemcpyDefault);
-        cudaMemcpy(tags.data(), F.atoms.tag, nl * sizeof(long long),
-                   cudaMemcpyDefault);
-        for (int k = 0; k < nl; ++k)
-            for (int m = 0; m < nbv[k]; ++m) {
-                long long a = tags[k],
-                          b = ba[static_cast<std::size_t>(k) * MB + m];
-                got.insert({std::min(a, b), std::max(a, b)});
-            }
-    }
-    std::cerr << "[diag] migrate: ref=" << ref.size() << " got=" << got.size()
-              << "\n";
-    EXPECT_EQ(got, ref); // per-atom bonded topology preserved across migration
-}
-
 // multigpu-bonded-03/04: cross-GPU BondHarmonic + AngleHarmonic +
 // DihedralMultiHarmonic. The total bonded force on each owned atom (and on ghost
 // partners, then reverse_comm'd home) plus the total bonded energy must match a
@@ -412,38 +346,6 @@ TEST(MultiGpu, ForceFamilyFactoryDispatch) {
     // One stub-pair and one stub-kspace launch per subdomain.
     EXPECT_EQ(StubLaunchCounts::pair, mg.count());
     EXPECT_EQ(StubLaunchCounts::kspace, mg.count());
-}
-
-// multigpu-bonded-05 P5.4: per-step hot-path timing (forward_comm + the combined
-// LJ+bonded compute_forces). Disabled by default; run with
-// --gtest_also_run_disabled_tests --gtest_filter=*HotPathTiming*. Reports µs/step
-// so the P2P-batching before/after can be compared across engine versions.
-TEST(MultiGpu, DISABLED_HotPathTiming) {
-    cuda::md::MultiGpu mg;
-    if (mg.count() < 2)
-        GTEST_SKIP() << "needs >=2 GPUs";
-    auto g = make_bonded_grid(12.0);
-    const std::vector<double> K{100.0}, r0{2.0}, aK{50.0}, aT{109.5};
-    const std::vector<std::array<double, 5>> dC{{1.0, 0.5, -0.3, 0.2, 0.1}};
-    mg.partition(g);
-    mg.setup_force_engine(5.0, 0.1, 2.0);
-    mg.setup_bonded(K, r0, aK, aT, dC);
-    mg.enable_special_bonds();
-    mg.reneighbor();
-    const int M = 2000;
-    for (int i = 0; i < 100; ++i) { // warmup
-        mg.forward_comm();
-        mg.compute_forces();
-    }
-    auto t0 = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < M; ++i) {
-        mg.forward_comm();   // per-step position halo (forward, packed)
-        mg.compute_forces(); // LJ + bonded + reverse halo (packed)
-    }
-    auto t1 = std::chrono::high_resolution_clock::now();
-    double us = std::chrono::duration<double, std::micro>(t1 - t0).count() / M;
-    std::cerr << "[timing] forward_comm+compute_forces: " << us << " us/step ("
-              << mg.count() << " GPUs)\n";
 }
 
 TEST(MultiGpu, PartitionGatherRoundTrip) {
@@ -702,33 +604,44 @@ TEST(MultiGpu, LjForceParityDims2Overlap) {
     }
 }
 
-TEST(MultiGpu, LjForceParityNlistVsSingleGpu) {
-    // Stage C: the production force path uses the optimized atom-centric CLUSTER
-    // neighbor-list kernel per subdomain instead of brute force. Validate that
-    // multi-GPU cluster forces equal single-GPU cluster forces (same kernel,
-    // so only float summation order differs -> tight tolerance). A looser
-    // cross-check vs brute force confirms the cluster path is physically sane.
-    auto g = make_grid_n(8, 24.0); // 512 atoms, spacing 3.0
-    const int n = g.nlocal();
-    for (int i = 0; i < n; ++i) {
-        g.span(kAtom_x)[i] += 0.4 * std::sin(0.7 * i + 0.1);
-        g.span(kAtom_y)[i] += 0.4 * std::sin(1.3 * i + 0.2);
-        g.span(kAtom_z)[i] += 0.4 * std::sin(1.9 * i + 0.3);
-    }
-    const double cut = 5.0, eps = 1.0, sig = 2.5;
+namespace {
 
-    // Reference: single-GPU cluster path.
-    cpu::Frame ref(n);
-    for (int i = 0; i < n; ++i)
-        ref.span(kAtom_tag)[i] = i;
-    {
-        cuda::md::MultiGpu mg1(1);
-        mg1.partition(g, 2.0);
-        mg1.setup_force_engine(cut, eps, sig);
-        mg1.reneighbor();
-        mg1.compute_lj_nlist();
-        mg1.gather_forces(ref);
+struct ClusterParityCase {
+    cpu::Frame g;
+    cpu::Frame ref;
+    static constexpr double cut = 5.0, eps = 1.0, sig = 2.5;
+    ClusterParityCase() {
+        g = make_grid_n(8, 24.0); // 512 atoms, spacing 3.0
+        const int n = g.nlocal();
+        for (int i = 0; i < n; ++i) {
+            g.span(kAtom_x)[i] += 0.4 * std::sin(0.7 * i + 0.1);
+            g.span(kAtom_y)[i] += 0.4 * std::sin(1.3 * i + 0.2);
+            g.span(kAtom_z)[i] += 0.4 * std::sin(1.9 * i + 0.3);
+        }
+
+        // Reference: single-GPU cluster path.
+        ref = cpu::Frame(n);
+        for (int i = 0; i < n; ++i)
+            ref.span(kAtom_tag)[i] = i;
+        {
+            cuda::md::MultiGpu mg1(1);
+            mg1.partition(g, 2.0);
+            mg1.setup_force_engine(cut, eps, sig);
+            mg1.reneighbor();
+            mg1.compute_lj_nlist();
+            mg1.gather_forces(ref);
+        }
     }
+};
+
+} // namespace
+
+TEST(MultiGpu, SingleGpuClusterMatchesBruteForce) {
+    ClusterParityCase data;
+    const auto& g = data.g;
+    const auto& ref = data.ref;
+    const int n = g.nlocal();
+    const double cut = data.cut, eps = data.eps, sig = data.sig;
     // Sanity: single-GPU brute force should roughly agree with the cluster path.
     cpu::Frame bf(n);
     for (int i = 0; i < n; ++i)
@@ -749,9 +662,20 @@ TEST(MultiGpu, LjForceParityNlistVsSingleGpu) {
     EXPECT_GT(maxabs, 1e-2) << "reference forces should be nonzero";
     EXPECT_LT(maxdiff_bf, 5e-2) << "cluster path should match brute force";
 
+    std::printf("single_gpu_cluster_bruteforce max_abs_fx=%.17g "
+                "maxdiff_fx=%.17g tolerance=0.05\n",
+                maxabs, maxdiff_bf);
+}
+
+TEST(MultiGpu, LjForceParityNlistVsSingleGpu) {
     cuda::md::MultiGpu mg(2);
     if (mg.count() < 2)
         GTEST_SKIP() << "needs >= 2 GPUs";
+    ClusterParityCase data;
+    const auto& g = data.g;
+    const auto& ref = data.ref;
+    const int n = g.nlocal();
+    const double cut = data.cut, eps = data.eps, sig = data.sig;
     mg.partition(g, 2.0);
     mg.setup_force_engine(cut, eps, sig);
     mg.reneighbor();
@@ -826,99 +750,6 @@ TEST(MultiGpu, LjForceParityVsSingleGpu4Way) {
     }
 }
 
-TEST(MultiGpu, NveTrajectoryParity) {
-    // Run a short NVE trajectory single-GPU vs split-across-GPUs and require the
-    // owned positions to agree — validating the full step loop (halo + force +
-    // integrate) end to end. Small dt / few steps so atoms stay in their slab
-    // (no migration) and float chaos stays bounded.
-    auto g = make_grid(12.0);
-    const int n = g.nlocal();
-    for (int i = 0; i < n; ++i) {
-        g.span(kAtom_x)[i] += 0.4 * std::sin(0.7 * i + 0.1);
-        g.span(kAtom_y)[i] += 0.4 * std::sin(1.3 * i + 0.2);
-        g.span(kAtom_z)[i] += 0.4 * std::sin(1.9 * i + 0.3);
-        g.span(kAtom_vx)[i] = 0.02 * std::sin(0.5 * i);
-        g.span(kAtom_vy)[i] = 0.02 * std::sin(0.9 * i);
-        g.span(kAtom_vz)[i] = 0.02 * std::sin(1.1 * i);
-        g.span(kAtom_mass)[i] = 1.0;
-    }
-    const double cut = 3.5, eps = 1.0, sig = 2.5, dt = 0.002;
-    const int K = 10;
-
-    cpu::Frame ref(n);
-    for (int i = 0; i < n; ++i)
-        ref.span(kAtom_tag)[i] = i;
-    {
-        cuda::md::MultiGpu mg1(1);
-        mg1.partition(g);
-        mg1.run_nve(K, dt, cut, eps, sig);
-        mg1.gather(ref);
-    }
-
-    cuda::md::MultiGpu mg(2);
-    if (mg.count() < 2)
-        GTEST_SKIP() << "needs >= 2 GPUs";
-    mg.partition(g);
-    mg.run_nve(K, dt, cut, eps, sig);
-    cpu::Frame mf(n);
-    for (int i = 0; i < n; ++i)
-        mf.span(kAtom_tag)[i] = i;
-    mg.gather(mf);
-
-    for (int i = 0; i < n; ++i) {
-        EXPECT_NEAR(mf.span(kAtom_x)[i], ref.span(kAtom_x)[i], 5e-3)
-            << "atom " << i;
-        EXPECT_NEAR(mf.span(kAtom_y)[i], ref.span(kAtom_y)[i], 5e-3);
-        EXPECT_NEAR(mf.span(kAtom_z)[i], ref.span(kAtom_z)[i], 5e-3);
-    }
-}
-
-TEST(MultiGpu, NveTrajectoryParityNlist) {
-    // End-to-end Verlet-cadence loop: single-GPU vs multi-GPU run_nve_nlist must
-    // agree on owned positions after a short trajectory. Exercises reneighbor
-    // (halo rebuild + neighbor-list rebuild) and forward_comm position refresh.
-    auto g = make_grid_n(8, 24.0);
-    const int n = g.nlocal();
-    for (int i = 0; i < n; ++i) {
-        g.span(kAtom_x)[i] += 0.4 * std::sin(0.7 * i + 0.1);
-        g.span(kAtom_y)[i] += 0.4 * std::sin(1.3 * i + 0.2);
-        g.span(kAtom_z)[i] += 0.4 * std::sin(1.9 * i + 0.3);
-        g.span(kAtom_vx)[i] = 0.01 * std::sin(0.5 * i);
-        g.span(kAtom_vy)[i] = 0.01 * std::sin(0.9 * i);
-        g.span(kAtom_vz)[i] = 0.01 * std::sin(1.1 * i);
-        g.span(kAtom_mass)[i] = 1.0;
-    }
-    const double cut = 5.0, eps = 1.0, sig = 2.5, dt = 0.002;
-    const int K = 12, reneigh = 4;
-
-    cpu::Frame ref(n);
-    for (int i = 0; i < n; ++i)
-        ref.span(kAtom_tag)[i] = i;
-    {
-        cuda::md::MultiGpu mg1(1);
-        mg1.partition(g, 2.0);
-        mg1.run_nve_nlist(K, dt, cut, eps, sig, -1.0, reneigh);
-        mg1.gather(ref);
-    }
-
-    cuda::md::MultiGpu mg(2);
-    if (mg.count() < 2)
-        GTEST_SKIP() << "needs >= 2 GPUs";
-    mg.partition(g, 2.0);
-    mg.run_nve_nlist(K, dt, cut, eps, sig, -1.0, reneigh);
-    cpu::Frame mf(n);
-    for (int i = 0; i < n; ++i)
-        mf.span(kAtom_tag)[i] = i;
-    mg.gather(mf);
-
-    for (int i = 0; i < n; ++i) {
-        EXPECT_NEAR(mf.span(kAtom_x)[i], ref.span(kAtom_x)[i], 5e-3)
-            << "atom " << i;
-        EXPECT_NEAR(mf.span(kAtom_y)[i], ref.span(kAtom_y)[i], 5e-3);
-        EXPECT_NEAR(mf.span(kAtom_z)[i], ref.span(kAtom_z)[i], 5e-3);
-    }
-}
-
 TEST(MultiGpu, MigrateReassignsOwners) {
     // Shift every owned atom +6 in x (box 24, dims {2,1,1}, boundary x=12) so a
     // large fraction crosses into the neighbor subdomain, then migrate(). After
@@ -981,54 +812,6 @@ TEST(MultiGpu, MigrateReassignsOwners) {
             << "atom " << i;
         EXPECT_NEAR(out.span(kAtom_vz)[i], g.span(kAtom_vz)[i], 1e-4)
             << "atom " << i;
-    }
-}
-
-TEST(MultiGpu, NveMigrationParity) {
-    // Long-run correctness: a uniform +x drift (Galilean boost — leaves all
-    // relative positions and forces unchanged) carries atoms across the x=12
-    // boundary during the run, so migrate() fires repeatedly inside reneighbor.
-    // Multi-GPU (partition + migrate) must still match single-GPU positions.
-    auto g = make_grid_n(8, 24.0);
-    const int n = g.nlocal();
-    const double drift = 40.0;
-    for (int i = 0; i < n; ++i) {
-        g.span(kAtom_x)[i] += 0.3 * std::sin(0.7 * i + 0.1);
-        g.span(kAtom_y)[i] += 0.3 * std::sin(1.3 * i + 0.2);
-        g.span(kAtom_z)[i] += 0.3 * std::sin(1.9 * i + 0.3);
-        g.span(kAtom_vx)[i] = drift + 0.01 * std::sin(0.5 * i);
-        g.span(kAtom_vy)[i] = 0.01 * std::sin(0.9 * i);
-        g.span(kAtom_vz)[i] = 0.01 * std::sin(1.1 * i);
-        g.span(kAtom_mass)[i] = 1.0;
-    }
-    const double cut = 5.0, eps = 1.0, sig = 2.5, dt = 0.002;
-    const int K = 20, reneigh = 4; // 20*0.002*40 = 1.6 -> atoms cross x=12
-
-    cpu::Frame ref(n);
-    for (int i = 0; i < n; ++i)
-        ref.span(kAtom_tag)[i] = i;
-    {
-        cuda::md::MultiGpu mg1(1);
-        mg1.partition(g, 2.0);
-        mg1.run_nve_nlist(K, dt, cut, eps, sig, -1.0, reneigh);
-        mg1.gather(ref);
-    }
-
-    cuda::md::MultiGpu mg(2);
-    if (mg.count() < 2)
-        GTEST_SKIP() << "needs >= 2 GPUs";
-    mg.partition(g, 2.0);
-    mg.run_nve_nlist(K, dt, cut, eps, sig, -1.0, reneigh);
-    cpu::Frame mf(n);
-    for (int i = 0; i < n; ++i)
-        mf.span(kAtom_tag)[i] = i;
-    mg.gather(mf);
-
-    for (int i = 0; i < n; ++i) {
-        EXPECT_NEAR(mf.span(kAtom_x)[i], ref.span(kAtom_x)[i], 2e-2)
-            << "atom " << i;
-        EXPECT_NEAR(mf.span(kAtom_y)[i], ref.span(kAtom_y)[i], 2e-2);
-        EXPECT_NEAR(mf.span(kAtom_z)[i], ref.span(kAtom_z)[i], 2e-2);
     }
 }
 

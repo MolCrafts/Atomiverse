@@ -157,6 +157,15 @@ namespace {
 }
 #endif
 
+#ifndef ATV_HAS_EVALUATE
+/// @brief Reject a single-point task when the Evaluate domain is disabled.
+/// @throws std::runtime_error Always, naming the required build flag.
+[[noreturn]] void throw_evaluate_not_built() {
+    throw std::runtime_error("SinglePointTask requires ATV_BUILD_EVALUATE=ON "
+                             "(single-point evaluation not compiled in)");
+}
+#endif
+
 #ifndef ATV_HAS_MINIMIZER
 /// @brief Reject a `MinimizeTask` in a build without the minimizer domain.
 ///
@@ -602,7 +611,9 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
     }
 
     if (kind_ == TaskKind::SinglePoint) {
-#ifdef ATV_HAS_SEMIEMPIRICAL
+#ifndef ATV_HAS_EVALUATE
+        throw_evaluate_not_built();
+#elif defined(ATV_HAS_SEMIEMPIRICAL)
         const auto& p = spec.single_point().evaluator;
         eval_.emplace();
         eval_->set_serial_on_replica();
@@ -641,10 +652,12 @@ TaskResult TaskMaterializer::run(cpu::Frame& frame) {
         return TaskResult{iterations, md_->converged(), md_->stop_reason()};
     }
 #endif
+#ifdef ATV_HAS_EVALUATE
     if (kind_ == TaskKind::SinglePoint) {
         eval_->run(frame);
         return TaskResult{1, false, {}};
     }
+#endif
 #ifdef ATV_HAS_MINIMIZER
     auto completed = minimize_->run_detached(frame, budget_);
     const int iterations = completed.iterations;
@@ -671,8 +684,10 @@ const Plan<cpu::Component>& TaskMaterializer::plan() const {
     if (kind_ == TaskKind::MD)
         return md_->plan();
 #endif
+#ifdef ATV_HAS_EVALUATE
     if (kind_ == TaskKind::SinglePoint)
         return eval_->plan();
+#endif
 #ifdef ATV_HAS_MINIMIZER
     return minimize_->plan();
 #else

@@ -1,5 +1,6 @@
 /// @file cpu/observe/elastance_observer.cpp
 #include "atomiverse/cpu/observe/elastance_observer.h"
+#include "atomiverse/cpu/dynamics/const_pot_bo.h"
 
 #include <cmath>
 

@@ -1,170 +1,107 @@
-# CUDA OpenMM MD — GH200 timing + LAMMPS Kokkos A/B
+# CUDA GAFF / OpenMM performance methodology
 
-**Date:** 2026-07-23  
-**Node:** n146 GH200 120GB (`hpc gpu -bg` JOBID=574524)  
-**ATV engine:** OpenMM cluster/tile path, Release, `CMAKE_CUDA_ARCHITECTURES=90`  
-**LAMMPS:** develop d3b14f6, serial `lmp-kk-serial`, Kokkos CUDA HOPPER90
+The standing harness is `tools/bench_gaff_openmm/`, with public consumer
+`benchmarks/cuda/bench_gaff.cu`. Run experiments only in an Arrhenius GPU batch
+allocation. Each engine process has a ten-second deadline; use three short
+samples and report their median. Build time, package installation and the
+separate instrumented profile are excluded from throughput.
 
-## OPEN RED — cluster LJ force disagrees with brute force (2026-08-28)
+Both engines use one GH200, the same initial coordinates/topology/parameters,
+unconstrained NVE, 0.25 fs, zero full-step velocities, cutoff 9 Å, unshifted
+Lorentz–Berthelot LJ without tails, alpha 0.35 Å⁻¹ and order-5 PME. Match mesh
+and precision explicitly. OpenMM Verlet velocities are leapfrog half-step
+values, so initialize them one half-kick behind the zero full-step velocity.
+ATV must evaluate the initial force before its first velocity-Verlet half-kick.
 
-`MultiGpu.LjForceParityNlistVsSingleGpu`
-(`tests/cuda/dynamics/test_multi_gpu.cu:750`) fails on a **single** GH200:
-the cluster/tile `compute_lj_nlist` path and the `compute_lj_bruteforce`
-oracle differ by **9.50** where the tolerance is 5e-2, on 512 atoms at
-cut=5.0 / spacing 3.0 / ghost_headroom 2.0. This is the production CUDA MD
-force path against its own oracle, one GPU, no halo involved — so it is a
-cluster-build or tile-mask defect, not a multi-GPU communication one.
+## Force path
 
-Timing numbers below were taken before this was noticed; treat them as
-unvalidated until the parity gate is green. The two `driver build: missing
-required Integrator` failures alongside it were test-side (the force-pass
-tests had no Integrator after the preset validation tightened) and are fixed.
+`PairLJCutCoulLong` fuses LJ and screened Coulomb, gathers live sorted atom
+parameters once, and distributes upper-triangle tiles across warps. At neighbor
+rebuild, nonempty J columns are packed across the original cluster boundaries,
+retaining exact baked row masks. A globally unique rebuild generation invalidates
+the private packed view even when a provider is replaced. The live parameter
+gather computes an I-cluster center and a conservative single-image guard once
+per cluster. Tight orthorhombic clusters then map I/J positions before the
+pair loop; wide or skew clusters retain per-pair minimum images. Newton
+updates use floating atomics to preserve dynamic range. Energy and virial
+producers write disjoint build-reserved partials; a second GPU reduction
+separates the accumulator from the producers. This reduction alone did not
+materially improve measured throughput. Fully excluded bonded
+pairs are baked into geometric masks; a sparse pass restores Amber special
+interactions and removes their reciprocal contribution. Fourier terms with
+phase 0/pi and multiplicity 1–4 map exactly to `DihedralMultiHarmonic`.
+CUDA CHARMM torsions and impropers remain outside this harness.
 
-Reproduce: `sbatch tools/job_cuda_fail_detail.sh` (GH200, ~2 min).
+The directed cluster CSR remains the neighbor source of truth. Hilbert-cluster
+AABBs can be much wider than the atom cutoff, so a centroid-cell stencil is
+not conservative. Grouped AABB rejection followed by exact count/scan/fill
+covers wide clusters and partial groups. A standalone single-GPU LJ force
+check agrees with brute force to 3.6e-15 eV/Å on its fixture. Old throughput
+claims made with the incomplete centroid stencil are not validated evidence.
 
-## Methodology (operator rules)
+All scratch and CSR capacity are reserved in build. The default reserves at
+least twice the initial exact count, with density headroom; an explicit
+constructor reserve overrides it. Overflow throws before fill. Multi-GPU
+headroom is capacity, not initialized atom data: initial counting must use
+actual owned+ghost rows.
 
-| Axis | Mechanism | How |
-|------|-----------|-----|
-| **Precision** | **One CMake mode**, aligned with LAMMPS `KOKKOS_PREC` | `-DATV_CUDA_PREC_MODE=double\|mixed\|single` → maps to `(real_t≡work_t, prec_t)` = `(KK_FLOAT, KK_ACC_FLOAT)`. **No free `CUDA_WORK` axis.** Build: `build_atv_bench.sh double\|mixed\|single` |
-| **Neighbor FULL vs half** | **Script / LMP API params** (not hardcoded in ATV) | `run_compare.py --lmp-neigh {half\|full} --lmp-newton {on\|off}` |
-| **LMP “best”** | Coarse package sweep at N≈1e6 | `run_compare.py --sweep-lmp --sweep-n 1000000` → log `logs/lmp_kk_sweep_1m.txt` |
+The skin gate checks current minimum-image displacements before force
+evaluation. A previous-step flag leaves an unbounded extra drift and can miss
+pairs. Mapped block flags remove the per-step clear and copy-engine transfer;
+the host reads only after the stream event. Cell changes also force a rebuild.
+This host decision still requires synchronization; never hide its cost behind
+an unsafe delayed check.
+Rebuild count probes use build-owned pinned host scalars, avoiding pageable
+stack destinations in the checked asynchronous readbacks. The benchmark matches
+OpenMM's 8%-of-cutoff neighbor padding rather than selecting a smaller force cutoff.
 
-### Precision mode map (ATV ↔ LMP KK)
+PME uses real-to-complex / complex-to-real transforms and a half spectrum.
+Spline/FFT precision follows CUDA work precision, specializes common
+spline orders and keeps energy reductions in FP64. Fixed-cell influence
+coefficients are prepared in build. Full-index conjugate averaging preserves
+the full-grid energy and the real inverse, including triclinic Nyquist modes;
+only interior kz modes have energy weight two. A closed-polynomial spline and
+explicit full Fourier sum independently check energy and its analytic gradient
+on even/odd orthorhombic and skew meshes. Its resident pipeline is captured in build and
+replayed as a CUDA graph. Plans, workspaces and graph resources belong to the
+build/destroy lifecycle. The current PME solver requires a fixed cell and atom
+set; changing either must fail explicitly rather than reuse stale geometry.
+Charge spreading assigns one stencil-z position to each of `order` adjacent
+threads per atom, coalescing grid writes and reducing serial atomics per thread
+from order cubed to order squared without changing the stencil.
 
-| mode | ATV `real_t`/`work_t` | ATV `prec_t` | LMP `KK_FLOAT` | LMP `KK_ACC_FLOAT` |
-|------|----------------------|--------------|----------------|--------------------|
-| **double** (default both) | double | double | double | double |
-| **mixed** | float | double | float | double |
-| **single** | float | float | float | float |
+## Reference data and acceptance
 
-**Historical note (pre-alignment):** ATV used to ship `REAL=float WORK=double PREC=double` as “float default”. That is **not** any LMP mode (LMP mixed = float math + double acc). Tables below tagged `float` are that old hybrid; re-run with `mixed` for a fair same-mode A/B (and rebuild LMP with `-D KOKKOS_PREC=mixed` if comparing mixed-to-mixed).
+Use an equilibrated GAFF PEO snapshot, not the unrelaxed packing. The Arrhenius
+400 K checkpoint under `tg-proj/gaff_1atm_gpu_20261015/peo/r01/` has 1,840 atoms;
+3×3×3 replication has 49,680 atoms. Initial energy and every force component
+must pass before accepting timings. The checked-in eight-atom fragment also
+pins the public complete force pass to independently generated OpenMM CUDA
+values. NaCl Ewald and PME regressions retain their literature tolerances.
 
-Protocol (both engines): LJ NVE, reduced units, ρ\*=**0.8**, cut=**2.5**, skin=**0.3**, dt=**0.005**, ε=σ=**1**, cubic SC lattice. Warmup then timed steps.
+Raw `gaff-ready/cells/peo/r01/system.data` contains severe overlaps. OpenMM CUDA
+uses fixed-point force accumulation and can overflow for forces above about
+2.2e6 eV/Å. OpenMM Reference agrees with ATV's unclipped nonbonded forces there
+(maximum error 1.7e-6 eV/Å on forces around 2.8e7 eV/Å). Do not clamp ATV forces
+to make that invalid CUDA reference pass.
 
-Harness: `tools/bench_lj_vs_lammps/`  
-Logs: `logs/lj_atv_vs_lammps_kk_{float,double,double_vs_lmp_half}.txt`, `logs/lmp_kk_sweep_1m.txt`
+Double compares double storage/work/accumulation on both engines. Mixed
+inputs (coordinates and cell) use a binary lattice exactly representable
+in both float32 Å and float32 nm: `5*k*2^e` Å, with `|5*k| < 2^24`.
+Its spacing is chosen from the largest coordinate/cell magnitude and recorded.
+This avoids an additional unit-conversion rounding in the initial static
+comparison. ATV mixed
+uses float positions/work plus double accumulation; OpenMM mixed additionally
+retains position corrections. Report this distinction and validate errors
+rather than equating the names with identical coordinate representations.
 
----
+The pair pass retains library special functions in both precisions. A screened
+polynomial did not improve measured tile throughput, so a less accurate
+approximation adds no value to this kernel. Do not relax the physics checks
+to accept a performance variation.
 
-## 1. LAMMPS coarse package sweep (N≈1e6)
-
-| neigh | newton | comm | sort | ms/step | Matom·s |
-|-------|--------|------|------|---------|---------|
-| half | on | – | – | 2.30 | 435 |
-| half | on | device | device | 2.28 | 438 |
-| half | off | – | – | 2.36 | 424 |
-| full | on | * | * | **FAIL** (KK requires `newton off` with `neigh full`) |
-| **full** | **off** | **–** | **–** | **1.87** | **536** |
-| full | off | device | device | 1.88 | 531 |
-
-**BEST LMP (this sweep):** `neigh full` + `newton off` ≈ **1.87 ms/step** at 1M  
-(~**18% faster** than default `half`+`newton on` ≈ 2.28–2.30).  
-`comm`/`sort device` did not help further.
-
----
-
-## 2. ATV float vs LMP best (`full` + `newton off`)
-
-ATV build: `ATV_CUDA_REAL=float`, `ATV_CUDA_WORK=double`, `ATV_CUDA_PREC=double`  
-(`build-cuda-bench` / product default storage)
-
-| N | ATV ms | ATV Matom·s | LMP best ms | LMP Matom·s | **ATV/LMP** |
-|---|--------|-------------|-------------|-------------|-------------|
-| 103 823 | **0.138** | 752 | 0.419 | 248 | **0.33** |
-| 250 047 | **0.218** | 1149 | 0.926 | 270 | **0.24** |
-| 512 000 | **0.393** | 1303 | 1.383 | 370 | **0.28** |
-| 1 000 000 | **0.719** | 1392 | 1.864 | 537 | **0.39** |
-| 2 000 376 | **1.339** | 1494 | 2.905 | 689 | **0.46** |
-| 5 000 211 | **3.640** | 1374 | 4.818 | 1038 | **0.76** |
-| 10 077 696 | 8.873 | 1136 | **8.358** | 1206 | **1.06** |
-
-Up to ~5M: ATV float still faster than best LMP. At **~10M**, LMP best edges ahead (~6%).
-
----
-
-## 3. ATV double vs LMP best (`full` + `newton off`)
-
-ATV build: `ATV_CUDA_REAL=double`, `WORK=double`, `PREC=double`  
-(`build-cuda-bench-double` via `build_atv_bench.sh double`)
-
-| N | ATV ms | ATV Matom·s | LMP best ms | LMP Matom·s | **ATV/LMP** |
-|---|--------|-------------|-------------|-------------|-------------|
-| 103 823 | **0.151** | 687 | 0.424 | 245 | **0.36** |
-| 250 047 | **0.246** | 1015 | 0.926 | 270 | **0.27** |
-| 512 000 | **0.450** | 1137 | 1.391 | 368 | **0.32** |
-| 1 000 000 | **0.802** | 1247 | 1.867 | 536 | **0.43** |
-| 2 000 376 | **1.445** | 1385 | 2.916 | 686 | **0.50** |
-| 5 000 211 | **3.484** | 1435 | 4.808 | 1040 | **0.73** |
-| 10 077 696 | **7.251** | 1390 | 8.379 | 1203 | **0.87** |
-
-**Double–double fairer match:** ATV still faster at all sizes in this harness  
-(~**1.15–3.7×** depending on N; gap narrows toward 10M).
-
-Note: at 10M float ATV regressed vs double ATV (8.87 vs 7.25 ms) — treat as  
-**measure once** / possible BW or rebuild noise; re-run before claiming float
-slower at large N.
-
----
-
-## 4. Reference: double ATV vs LMP **default** (`half` + `newton on`)
-
-| N | ATV ms | LMP half/on ms | ATV/LMP |
-|---|--------|----------------|---------|
-| 103 823 | 0.151 | 0.482 | 0.31 |
-| 1 000 000 | 0.801 | 2.286 | 0.35 |
-| 5 000 211 | 3.475 | 8.279 | 0.42 |
-| 10 077 696 | 7.255 | 16.276 | 0.45 |
-
-Default LMP is **~1.2–2× slower** than best LMP at large N — old “ATV 2–3×”
-headlines were inflated by this default.
-
----
-
-## Interpretation / caveats
-
-1. **Precision is compile-global** — compare only binaries built with matching  
-   `ATV_CUDA_REAL`. Do not mix float ATV vs double LMP as “architecture wins.”
-2. **Neighbor is a run param** on LMP (`--lmp-neigh` / `--lmp-newton`).  
-   ATV classical CUDA path is FULL cluster CSR + ½ energy; fairer arithmetic  
-   match = LMP `full` + `newton off` (and KK enforces that pair).
-3. **Single-rank** serial KK; no multi-rank domain decomp, no binsize / hybrid  
-   host-device deep tuning.
-4. ATV headroom: nsys historically shows `lj_force_tile` ~55% GPU; fixed-box  
-   `setup_cell` already skipped on rebuild.
-
----
-
-## Reproduce
-
-```bash
-hpc gpu -bg -t 04:00:00 -c 16 && hpc gpu wait
-
-hpc gpu run -- bash -lc '
-  module load GPU/buildenv-gcccuda/2026.03-cu13.0
-  export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:$LD_LIBRARY_PATH"
-  export LMP_BIN=$HOME/.local/aarch64/bin/lmp-kk-serial
-  export OMP_NUM_THREADS=1
-  cd /path/to/atomiverse
-
-  # 1) precision builds (one mode knob = LMP KOKKOS_PREC)
-  ./tools/bench_lj_vs_lammps/build_atv_bench.sh double
-  ./tools/bench_lj_vs_lammps/build_atv_bench.sh mixed
-
-  # 2) coarse LMP package sweep
-  python3 tools/bench_lj_vs_lammps/run_compare.py --sweep-lmp --sweep-n 1000000
-
-  # 3) fair A/B vs best LMP (full / newton off); same prec mode both sides
-  python3 tools/bench_lj_vs_lammps/run_compare.py \
-    --atv-bench build-cuda-bench-double/bin/cuda_nonbonded_style_bench \
-    --tag double --lmp-neigh full --lmp-newton off
-'
-
-```
-
-## LAMMPS build notes
-
-- Nested `srun` + MPI LAMMPS → **PMI_Init** fail: use **`lmp-kk-serial`**  
-  (`BUILD_MPI=OFF`) under `hpc gpu run`.
-- Source: `/nobackup/proj/disk/teoroo/personal/jicli594/work/lammps`  
-  build: `build-kokkos-cuda-serial`.
+OpenMM architecture reference: source SHA
+`3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e`, cluster bounds, fused warp parameter
+exchange, packed J columns, exception separation, real FFTs and compile-time PME stencil order. ATV code
+implements these algorithms in its own Frame/Component/CSR structure; OpenMM
+source was not copied.

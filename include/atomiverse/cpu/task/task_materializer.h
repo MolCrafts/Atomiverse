@@ -5,10 +5,16 @@
 #include <memory>
 #include <optional>
 
+#include "atomiverse/core/plan.h"
+#include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/component/component.h"
+
 #ifdef ATV_HAS_MD
 #include "atomiverse/cpu/dynamics/md.h"
 #endif
+#ifdef ATV_HAS_EVALUATE
 #include "atomiverse/cpu/evaluate/evaluate.h"
+#endif
 #ifdef ATV_HAS_MINIMIZER
 #include "atomiverse/cpu/minimize/minimize.h"
 #endif
@@ -40,7 +46,9 @@ class TaskMaterializer {
 #ifdef ATV_HAS_MD
     std::optional<md::MD> md_;
 #endif
+#ifdef ATV_HAS_EVALUATE
     std::optional<Evaluate> eval_;
+#endif
 #ifdef ATV_HAS_MINIMIZER
     std::optional<minimizer::Minimize> minimize_;
 #endif

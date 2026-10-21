@@ -91,6 +91,71 @@ endfunction()
 atv_add_regression(layout core_contract_includes)
 atv_add_regression(layout backend_owned_longrange)
 
+# Electrostatic lattice pins exercise a complete MD force pass and belong
+# with end-to-end regressions, not the unit-only tests/ tree.
+if(ATV_BUILD_CUDA AND ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+    atv_add_regression(md cuda-velocity-verlet-initial-force)
+    add_executable(reg_cuda-multi-gpu-trajectory
+        md/cuda-multi-gpu-trajectory/reg_cuda-multi-gpu-trajectory.cu)
+    target_link_libraries(reg_cuda-multi-gpu-trajectory PRIVATE atomiverse)
+    set_target_properties(reg_cuda-multi-gpu-trajectory PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+    add_custom_target(run_reg_cuda-multi-gpu-trajectory
+        COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                $<TARGET_FILE:reg_cuda-multi-gpu-trajectory>
+        DEPENDS reg_cuda-multi-gpu-trajectory
+        COMMENT "regression [md/cuda-multi-gpu-trajectory] (requires 2 GPUs)")
+    add_dependencies(regressions run_reg_cuda-multi-gpu-trajectory)
+    add_executable(reg_cuda-ewald-nacl
+        forcefield/cuda-ewald-nacl/reg_cuda-ewald-nacl.cu)
+    target_link_libraries(reg_cuda-ewald-nacl PRIVATE atomiverse)
+    set_target_properties(reg_cuda-ewald-nacl PROPERTIES
+        CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+    add_custom_target(run_reg_cuda-ewald-nacl
+        COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                $<TARGET_FILE:reg_cuda-ewald-nacl>
+        DEPENDS reg_cuda-ewald-nacl
+        COMMENT "regression [forcefield/cuda-ewald-nacl] (1t)")
+    add_dependencies(regressions run_reg_cuda-ewald-nacl)
+    if(ATV_BUILD_KSPACE)
+        if(ATV_BUILD_EVALUATE)
+            add_executable(reg_cuda-pme-half-spectrum
+                forcefield/cuda-pme-half-spectrum/reg_cuda-pme-half-spectrum.cu)
+            target_link_libraries(reg_cuda-pme-half-spectrum PRIVATE atomiverse)
+            set_target_properties(reg_cuda-pme-half-spectrum PROPERTIES
+                CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+            add_custom_target(run_reg_cuda-pme-half-spectrum
+                COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                        $<TARGET_FILE:reg_cuda-pme-half-spectrum>
+                DEPENDS reg_cuda-pme-half-spectrum)
+            add_dependencies(regressions run_reg_cuda-pme-half-spectrum)
+            add_executable(reg_cuda-gaff-fragment
+                forcefield/cuda-gaff-fragment/reg_cuda-gaff-fragment.cu)
+            target_link_libraries(reg_cuda-gaff-fragment PRIVATE atomiverse)
+            target_compile_definitions(reg_cuda-gaff-fragment PRIVATE
+                ATV_GAFF_ORACLE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/forcefield/cuda-gaff-fragment/reference.txt")
+            set_target_properties(reg_cuda-gaff-fragment PROPERTIES
+                CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+            add_custom_target(run_reg_cuda-gaff-fragment
+                COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                        $<TARGET_FILE:reg_cuda-gaff-fragment>
+                DEPENDS reg_cuda-gaff-fragment)
+            add_dependencies(regressions run_reg_cuda-gaff-fragment)
+        endif()
+        add_executable(reg_cuda-pme-nacl
+            forcefield/cuda-pme-nacl/reg_cuda-pme-nacl.cu)
+        target_link_libraries(reg_cuda-pme-nacl PRIVATE atomiverse)
+        set_target_properties(reg_cuda-pme-nacl PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+        add_custom_target(run_reg_cuda-pme-nacl
+            COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                    $<TARGET_FILE:reg_cuda-pme-nacl>
+            DEPENDS reg_cuda-pme-nacl
+            COMMENT "regression [forcefield/cuda-pme-nacl] (1t)")
+        add_dependencies(regressions run_reg_cuda-pme-nacl)
+    endif()
+endif()
+
 if(ATV_BUILD_MD)
     add_custom_target(run_reg_cli_lj
         COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1

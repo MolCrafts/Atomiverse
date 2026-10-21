@@ -2,6 +2,7 @@
 /// @brief Initializer implementations: ZeroForces, ZeroEnergy, ZeroKinetic, InitVelocity.
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
 
@@ -20,13 +21,23 @@ namespace md {
 
 // ── Zero initializers ────────────────────────────────────────────────
 
+namespace {
+__global__ void zero_forces(real_t* fx, real_t* fy, real_t* fz, int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n)
+        fx[i] = fy[i] = fz[i] = real_t(0);
+}
+} // namespace
+
 void ZeroForces::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
-    auto n = static_cast<size_t>(ctx.frame.n_atoms());
-    cudaMemsetAsync(frame.atoms.fx, 0, n * sizeof(real_t), stream);
-    cudaMemsetAsync(frame.atoms.fy, 0, n * sizeof(real_t), stream);
-    cudaMemsetAsync(frame.atoms.fz, 0, n * sizeof(real_t), stream);
+    const int n = frame.n_atoms();
+    if (n > 0) {
+        zero_forces<<<grid_size(n), kDefaultBlock, 0, stream>>>(
+            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, n);
+        ATV_CUDA_CHECK(cudaGetLastError());
+    }
 }
 
 void ZeroEnergy::launch(const LaunchContext& ctx) {

@@ -162,6 +162,13 @@ class MD : public cuda::Driver<ATV::md::Phase> {
             frame_ptr_ = &frame;
             step_counter_ = 0;
             live_ = true;
+            // Velocity Verlet's first half-kick needs F(x_0). Materialization
+            // initializes force storage, so evaluate the force phases at the
+            // input coordinates before any integration. Continuations retain
+            // F from the previous final kick and do not repeat this pass.
+            this->backend_->execute_phases(
+                step_counter_, static_cast<int>(ATV::md::Phase::pre_exchange),
+                static_cast<int>(ATV::md::Phase::post_force) + 1);
         } else {
             this->flush_new_mounts_();
         }

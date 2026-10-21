@@ -8,23 +8,12 @@
 #include <vector>
 
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/lj_type_coeff.h"
 #include "atomiverse/cpu/potentials/pair.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
 namespace cpu {
-
-/// @brief One Lennard-Jones coefficient entry: the (i,j) type pair and its parameters.
-///
-/// The unit of configuration for a multi-element system. A `PairLJCut` is constructed
-/// from a list of these, so the object is fully specified the moment it exists — there
-/// is no half-built state in which it is constructible but not usable.
-struct LJTypeCoeff {
-    int type_i;     ///< first atom type (the frame's `kAtom_type` value)
-    int type_j;     ///< second atom type
-    double epsilon; ///< well depth [eV]
-    double sigma;   ///< length scale [Angstrom]
-};
 
 /// @brief Lennard-Jones 12-6 with shifted potential.
 ///

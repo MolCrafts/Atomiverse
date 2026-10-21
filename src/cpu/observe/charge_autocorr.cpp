@@ -1,5 +1,6 @@
 /// @file cpu/observe/charge_autocorr.cpp
 #include "atomiverse/cpu/observe/charge_autocorr.h"
+#include "atomiverse/cpu/dynamics/const_pot_bo.h"
 
 #include <cmath>
 #include <stdexcept>

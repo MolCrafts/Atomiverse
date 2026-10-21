@@ -42,6 +42,7 @@ class CoulLong : public Pair, public LongRangeParticipant {
         return false;
     }
 
+    void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
   protected:
@@ -51,16 +52,13 @@ class CoulLong : public Pair, public LongRangeParticipant {
     double alpha_;
     bool compute_stress_ = true;
 
-    // Cluster-sorted scratch (positions + charge), sized to num_clusters*8.
+    // Cluster-sorted positions and charge, allocated to padded Frame capacity
+    // in build(). compute() only gathers into the standing scratch.
     real_t* spx_ = nullptr;
     real_t* spy_ = nullptr;
     real_t* spz_ = nullptr;
     real_t* spq_ = nullptr;
     int spos_cap_ = 0;
-
-    // Legacy pos4_ field kept unused until destroy cleans any prior alloc.
-    float4* pos4_ = nullptr;
-    int pos4_cap_ = 0;
 };
 
 } // namespace cuda

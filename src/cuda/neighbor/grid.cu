@@ -6,6 +6,7 @@
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cub/cub.cuh>
 #include <cuda_runtime.h>
+#include <stdexcept>
 
 namespace ATV::cuda::md::nlist {
 
@@ -83,7 +84,8 @@ void launch_exclusive_sum(const int* input, int* output, int num_items,
     cub::DeviceScan::ExclusiveSum(nullptr, needed, input, output, num_items,
                                   stream);
     if (needed > temp.capacity()) {
-        temp.resize(needed);
+        throw std::runtime_error(
+            "NeighborList: CUB scan scratch exceeds build-time capacity");
     }
     size_t avail = temp.capacity();
     cub::DeviceScan::ExclusiveSum(temp.data(), avail, input, output, num_items,

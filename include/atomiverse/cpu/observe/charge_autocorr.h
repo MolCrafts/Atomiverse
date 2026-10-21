@@ -9,10 +9,13 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/observer.h"
-#include "atomiverse/cpu/dynamics/const_pot_bo.h"
 
 namespace ATV {
 namespace cpu {
+
+namespace md {
+class ConstPotBO;
+}
 
 /// @brief Streaming \(C_{QQ}(\tau)=\langle \delta Q(t)\delta Q(t+\tau)\rangle\).
 ///

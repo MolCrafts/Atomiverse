@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/timer.h"
 
 namespace ATV {
@@ -26,23 +27,25 @@ namespace cuda {
 
 /// @brief CUDA-dependent profiler state behind the `Timer` PIMPL facade.
 ///
-/// Records start/stop events around component launches. Accumulates
-/// elapsed times after each slot sync (zero extra sync overhead).
+/// Records start/stop events around component launches. Timing-enabled
+/// collection waits for recorded stop events before reading elapsed times.
 /// Produces a LAMMPS-style summary table.
 class Timer::Impl {
   public:
     /// @brief Allocate CUDA events.
     void init() {
         for (int i = 0; i < kMaxOps; ++i) {
-            cudaEventCreate(&starts_[i]);
-            cudaEventCreate(&stops_[i]);
+            ATV_CUDA_CHECK(cudaEventCreate(&starts_[i]));
+            ATV_CUDA_CHECK(cudaEventCreate(&stops_[i]));
         }
     }
 
     /// @brief Record a start event before a component launch.
     /// @param stream CUDA stream to record the event on.
     void begin(cudaStream_t stream) {
-        cudaEventRecord(starts_[pending_], stream);
+        if (pending_ == kMaxOps)
+            flush();
+        ATV_CUDA_CHECK(cudaEventRecord(starts_[pending_], stream));
     }
 
     /// @brief Record a stop event after a component launch.
@@ -50,17 +53,19 @@ class Timer::Impl {
     /// @param phase Phase index for grouping in the summary.
     /// @param name Component name for display in the summary.
     void end(cudaStream_t stream, int phase, const std::string& name) {
-        cudaEventRecord(stops_[pending_], stream);
+        ATV_CUDA_CHECK(cudaEventRecord(stops_[pending_], stream));
         pending_phase_[pending_] = phase;
         pending_name_[pending_] = name;
         ++pending_;
     }
 
-    /// @brief Accumulate elapsed times (call after stream sync).
+    /// @brief Wait for recorded stop events and accumulate valid elapsed times.
+    /// Timing is opt-in; unprofiled execution never performs these waits.
     void flush() {
         for (int k = 0; k < pending_; ++k) {
-            float ms;
-            cudaEventElapsedTime(&ms, starts_[k], stops_[k]);
+            ATV_CUDA_CHECK(cudaEventSynchronize(stops_[k]));
+            float ms = 0.0f;
+            ATV_CUDA_CHECK(cudaEventElapsedTime(&ms, starts_[k], stops_[k]));
             auto key = std::make_pair(pending_phase_[k], pending_name_[k]);
             auto it = index_.find(key);
             if (it == index_.end()) {

@@ -12,6 +12,19 @@
 
 namespace ATV::cuda::md::nlist {
 
+__global__ void update_inverse_cell_k(const prec_t* box, real_t* inverse) {
+    real_t cell[9];
+    for (int i = 0; i < 9; ++i)
+        cell[i] = static_cast<real_t>(box[i]);
+    invert_3x3(cell, inverse);
+}
+
+void launch_update_inverse_cell(const prec_t* box, real_t* inverse,
+                                cudaStream_t stream) {
+    update_inverse_cell_k<<<1, 1, 0, stream>>>(box, inverse);
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
+
 // ---------------------------------------------------------------------------
 // Shared device logic (called by both kernel entry points)
 // ---------------------------------------------------------------------------

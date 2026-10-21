@@ -121,11 +121,13 @@ BondHarmonic& BondHarmonic::operator=(BondHarmonic&&) noexcept = default;
 void BondHarmonic::build(const BuildContext& /*ctx*/) {
     int nt = static_cast<int>(K_.size());
     state_->n_types = nt;
+    const std::vector<work_t> device_K(K_.begin(), K_.end());
+    const std::vector<work_t> device_r0(r0_.begin(), r0_.end());
     cudaMalloc(&state_->d_K, nt * sizeof(work_t));
     cudaMalloc(&state_->d_r0, nt * sizeof(work_t));
-    cudaMemcpy(state_->d_K, K_.data(), nt * sizeof(work_t),
+    cudaMemcpy(state_->d_K, device_K.data(), nt * sizeof(work_t),
                cudaMemcpyHostToDevice);
-    cudaMemcpy(state_->d_r0, r0_.data(), nt * sizeof(work_t),
+    cudaMemcpy(state_->d_r0, device_r0.data(), nt * sizeof(work_t),
                cudaMemcpyHostToDevice);
 }
 

@@ -353,6 +353,8 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         if (!this->backend_)
             this->backend_ = std::make_unique<typename Base::BackendT>();
         this->backend_->init();
+        if (this->timer_)
+            this->backend_->set_timer(this->timer_.get());
         this->backend_->load(this->plan_);
         this->backend_->materialize(frame);
         // Point the Context at THIS loop's status + metrics. The loop owns them; the
