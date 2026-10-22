@@ -162,10 +162,10 @@ const PWResult& r = pw.run(f);
 // r.n_elec_occ ≈ 16; r.e_entropy [Ry]; r.converged, r.iterations
 ```
 
-`PWEvaluator` can own a moved `PW` for Driver binding; this regression
+A Driver can mount a moved `PW` directly as a nested node; this regression
 calls `PW` directly. Forces/stress APIs are **not** part of the Fe-smear
-acceptance. Public energy on Frame remains eV when routed through
-`PWEvaluator` / `single_point`; `PWResult` reports Ry/Ha internally.
+acceptance. Public energy on Frame remains eV when routed through a Driver
+mount / `single_point`; `PWResult` reports Ry/Ha internally.
 
 ```bash
 bash -lc '

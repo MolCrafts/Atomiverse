@@ -64,7 +64,6 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``montecarlo.MoveSelector``           ``MoveSelector``            ``cpu::mc::MoveSelector``
 ``pw.PW``                             ``PW``                      ``cpu::pw::PW``
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
-``pw.PWEvaluator``                    ``PWEvaluator``             ``cpu::pw::PWEvaluator``
 ``scf.RHF``                           ``RHF``                     ``cpu::scf::RHF``
 ``scf.UHF``                           ``UHF``                     ``cpu::scf::UHF``
 ``scf.RKS``                           ``RKS``                     ``cpu::scf::RKS``
@@ -264,7 +263,6 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "single_point": ("atomiverse.driver", "single_point"),
     "PW": ("atomiverse.pw", "PW"),
     "PWResult": ("atomiverse.pw", "PWResult"),
-    "PWEvaluator": ("atomiverse.pw", "PWEvaluator"),
     "RHF": ("atomiverse.scf", "RHF"),
     "UHF": ("atomiverse.scf", "UHF"),
     "RKS": ("atomiverse.scf", "RKS"),

@@ -12,7 +12,7 @@
 Productizes **Nielsen–Martin analytic stress** (`pw-analytic-stress-si`) into a
 **plane-wave isotropic CELL_OPT** path: `Minimize` drives
 `IsotropicCellRelax` on Voigt `kStress` virial σ·Ω [eV] written by
-`PWEvaluator::with_stress(true)`, and **`StressConverged`** terminates on residual
+the directly mounted `PW` (the plan consumes stress), and **`StressConverged`** terminates on residual
 hydrostatic stress (mechanical / CP2K convention). Twin is diamond Si
 (2-atom fcc primitive), ONCVPSP-LDA NC-UPF, incomplete tutorial basis
 (\(E_\mathrm{cut}=15\) Ry, \(2\times2\times2\) MP). Expanded start
@@ -24,7 +24,7 @@ Product gate: `reg_pw-variable-cell-si`. Performance: **`perf_exempt`**.
 ## Method
 
 **Level.** Same periodic plane-wave KS-DFT engine as `pw-lda-si` /
-`pw-analytic-stress-si`. After each force-phase SCF, the evaluator writes
+`pw-analytic-stress-si`. After each force-phase SCF, the mounted `PW` writes
 intensive cell stress from the Nielsen–Martin decomposition (Nielsen & Martin,
 *Phys. Rev. B* **32**, 3780 (1985)). The optimizer does **not** recompute a
 second SCF for stress: one production SCF supplies energy and stress.
@@ -98,7 +98,7 @@ Public surface only (`cpu::Frame` + concrete method members; no `*Config`, no
 `make_*` / `build_*`). Headers:
 `minimize.h`, `cell_relax.h`,
 `criteria.h` (`StressConverged`),
-`pw_evaluator.h`, `pw_solver.h`.
+`pw_solver.h`.
 
 Minimal sequence (matches `reg_pw-variable-cell-si.cpp`):
 
@@ -110,7 +110,6 @@ Minimal sequence (matches `reg_pw-variable-cell-si.cpp`):
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/minimize/cell_relax.h"
 #include "atomiverse/cpu/minimize/minimize.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 
@@ -156,7 +155,7 @@ cell.max_scale = 0.012;        // |s−1| cap per step
 opt.set_optimizer_ref(cell);
 opt.add_criterion(cpu::StressConverged{0.0, kStol});
 opt.on(minimizer::Phase::force)
-    .add(PWEvaluator{std::move(method)}.with_stress(true));
+    .add(std::move(method));  // stress computed: the plan consumes it
 opt.build();
 opt.run(frame, 3);  // seed force + up to 2 scale steps
 
@@ -190,8 +189,7 @@ UPF path is injected at compile time as `ATV_PW_UPF_PATH` →
 | ---- | ---- |
 | `cell_relax.h` | `IsotropicCellRelax` |
 | `criteria.h` | `StressConverged` |
-| `pw_evaluator.h` | `with_stress` → `kStress` |
-| `pw_solver.h` | `PW`, analytic stress helpers |
+| `pw_solver.h` | `PW` (nested Driver node; writes `kStress` when the plan consumes stress), analytic stress helpers |
 | `reg_pw-variable-cell-si.cpp` | Product gate |
 | case `pw-variable-cell-si` pin | Offline \(a^\*\) pin + perf |
 | CP2K oracle | Optional CP2K CELL_OPT methodology twin (not absolute \(a^\*\)) |

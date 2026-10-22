@@ -72,10 +72,11 @@ Three things follow, none of which the API can check for you:
 * **The force source must write that virial.** The classical evaluators
   (``PairLJCut``, ``PairCoulCut``, ``CoulLong`` + ``KSpacePME``, the bonded
   styles) do, by default. ``AM1`` writes none — it is a molecular
-  method with no cell — and ``PWEvaluator`` is installed here as a
-  gradient-only copy, so neither drives a cell step from Python. With a zero
-  virial the cell simply never moves, and a ``PressureConverged(P_target=0)``
-  reports success on the untouched cell.
+  method with no cell — so it cannot drive a cell step. A mounted ``PW``
+  computes its analytic virial whenever the plan reads stress (a cell relaxer
+  or a stress/pressure criterion). With a zero virial the cell simply never
+  moves, and a ``PressureConverged(P_target=0)`` reports success on the
+  untouched cell.
 * **The first iteration is a free one.** A step is computed from the stress
   the *previous* iteration's force evaluation left behind, and iteration 0 has
   no such evaluation — it reads whatever the frame arrived with, which is zero

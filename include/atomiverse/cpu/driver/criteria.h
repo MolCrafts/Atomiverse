@@ -136,6 +136,9 @@ class ForceConverged : public Criterion {
 /// own instead of their mean, and can mask axes out.
 class PressureConverged : public Criterion {
   public:
+    /// @brief Reads the system stress (kStress) every iteration.
+    /// @return True.
+    bool requires_system_stress() const override { return true; }
     /// @brief This criterion must be satisfied for the loop to converge.
     /// @return True.
     bool contributes_to_convergence() const override { return true; }
@@ -194,8 +197,8 @@ class PressureConverged : public Criterion {
 ///
 /// and returns `Converged` once \(\max_d |\sigma_{dd} -
 /// \sigma_{\mathrm{target}}|\) over the **unmasked** axes falls below `stol`.
-/// Producers that naturally compute an intensive stress (plane-wave
-/// `PWEvaluator::with_stress`, GPW `GPWEvaluator::compute_stress`) multiply by
+/// Producers that naturally compute an intensive stress (a nested `PW`
+/// when the plan reads stress, GPW `GPWEvaluator::compute_stress`) multiply by
 /// the volume at the Frame write, so they land on the same convention as the
 /// classical pair/bonded virials and need no special handling here.
 ///
@@ -205,6 +208,9 @@ class PressureConverged : public Criterion {
 /// convergence (CP2K `CELL_OPT` `CONSTRAINT` twin).
 class StressConverged : public Criterion {
   public:
+    /// @brief Reads the system stress (kStress) every iteration.
+    /// @return True.
+    bool requires_system_stress() const override { return true; }
     /// @brief This criterion must be satisfied for the loop to converge.
     /// @return True.
     bool contributes_to_convergence() const override { return true; }

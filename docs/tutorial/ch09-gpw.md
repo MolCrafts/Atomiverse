@@ -178,7 +178,7 @@ Stand back and count the electronic-structure evaluators this manual now has:
 | evaluator | basis | electrostatics | chapter |
 |---|---|---|---|
 | `SCF` | Gaussian | analytic ERIs | [2](ch02-rhf.md)–[6](ch06-hybrid-dft.md) |
-| `PWEvaluator` | plane wave | reciprocal-space FFT | [8](ch08-plane-wave.md) |
+| `PW` | plane wave | reciprocal-space FFT | [8](ch08-plane-wave.md) |
 | `GPWEvaluator` (binds `GpwDft`) | Gaussian + grid | grid FFT (Poisson) | 9 (this) |
 
 All three are `role() == Evaluator`, `capabilities() == Energy`, and all three

@@ -102,15 +102,14 @@ pbe.forces(frame);  // own SCF; kAtom_fx/fy/fz [eV/Å] (overwritten), kEnergy [e
 const auto fx = frame.span(ATV::kAtom_fx);    // likewise kAtom_fy / kAtom_fz
 ```
 
-Optional single-point via evaluator (writes `kEnergy` [eV]):
+Optional single-point via the Evaluate driver (writes `kEnergy` [eV]):
 
 ```cpp
 #include "atomiverse/cpu/evaluate/single_point.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 
-ATV::cpu::pw::PWEvaluator pwe{std::move(pbe)};
-ATV::cpu::single_point(frame, pwe);
-// frame.meta.get(ATV::kEnergy) [eV]; pwe.last_result() [Ry/Ha]
+ATV::cpu::single_point(frame, pbe);
+// frame.meta.get(ATV::kEnergy) [eV]; pbe.last_result() [Ry/Ha]
 ```
 
 Build and run the regression:
@@ -132,8 +131,7 @@ bash -lc '
 
 | Path | Role |
 | ---- | ---- |
-| `pw_solver.h` | Public `PW` (`run` / `forces` / `stress`), `PWResult` |
-| `pw_evaluator.h` | Driver-bound `PWEvaluator` |
+| `pw_solver.h` | Public `PW` (`run` / `forces` / `stress`; mountable as a nested Driver node), `PWResult` |
 | `xc_builder.h` | Internal GGA XC (not public) |
 | `src/cpu/planewave/internal/xc_builder.cpp` | Spectral \(\nabla\rho\), divergence \(v_{\mathrm{xc}}\) |
 | `tests/cpu/planewave/test_pw_components.cpp` | Unit: uniform \(\sigma=0\) limit; nonuniform GGA gap |

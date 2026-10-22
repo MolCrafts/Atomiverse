@@ -28,7 +28,7 @@
 #endif
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #ifdef ATV_HAS_PW
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 #endif
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
@@ -105,12 +105,12 @@ namespace {
 
 // Only the MD replay names it.
 #if defined(ATV_HAS_MD) && !defined(ATV_HAS_PW)
-/// @brief Reject a `PwEvaluatorParams` entry in a build without the solver.
+/// @brief Reject a `PWParams` entry in a build without the solver.
 ///
 /// `cpu::pw::PW` is plane-wave density-functional theory — the electronic
 /// structure is expanded in plane waves, which needs FFTW3, so the whole
 /// domain sits behind the `ATV_BUILD_PW` build flag while the wire mirror
-/// `PwEvaluatorParams` and its component ID are compiled unconditionally. A
+/// `PWParams` and its component ID are compiled unconditionally. A
 /// payload naming PW therefore still *decodes* on a PW-less build and has to
 /// be refused here, at the point where the component would be constructed:
 /// the alternative is an MD run whose only force source silently vanished.
@@ -120,7 +120,7 @@ namespace {
 ///
 /// @throws std::runtime_error Always, naming the flag to rebuild with.
 [[noreturn]] void throw_pw_not_built() {
-    throw std::runtime_error("PWEvaluator requires ATV_BUILD_PW=ON "
+    throw std::runtime_error("PW requires ATV_BUILD_PW=ON "
                              "(plane-wave solver not compiled in)");
 }
 #endif
@@ -247,19 +247,12 @@ cpu::semiempirical::AM1 am1_method(const AM1Params& p) {
 #endif
 
 #ifdef ATV_HAS_PW
-/// @brief Build a `PWEvaluator` that computes nuclear forces.
+/// @brief Build the `PW` method a `PWParams` payload describes.
 ///
-/// Plane-wave Born-Oppenheimer dynamics: the electronic structure is
-/// re-converged at every geometry the nuclei reach, and the ionic forces are
-/// analytic (local Hellmann-Feynman + Ewald + Kleinman-Bylander) at the
-/// converged density rather than differenced from energies. A force-producing
-/// step costs two self-consistent-field solves, not one — the energy solve
-/// (`PW::run`), then the force path's own (`pw_forces_analytic`), which is
-/// what publishes the forces.
-///
-/// Gradients are spelled out here rather than inherited from the component
-/// default (`false`): a force-free evaluator still publishes a plausible
-/// energy, so the MD would integrate a frame nothing ever pushed on.
+/// Plane-wave Born-Oppenheimer dynamics: mounted as a nested node, the method
+/// re-converges the electrons at every geometry and accumulates the analytic
+/// ionic forces (local Hellmann-Feynman + Ewald + Kleinman-Bylander) from that
+/// one SCF whenever the phase requests them.
 ///
 /// The fifteen members are assigned in the params' DECLARATION order — the
 /// order the codec writes and a hand-built twin spells — so a dropped or
@@ -269,9 +262,8 @@ cpu::semiempirical::AM1 am1_method(const AM1Params& p) {
 ///
 /// @param p Typed plane-wave params (cutoff [Ry], k-mesh, SCF tolerance and
 ///          cap, mixing, functional, spin, smearing [Ry]).
-/// @return Evaluator owning a freshly configured solver, gradients enabled,
-///         ready for either registration path.
-cpu::pw::PWEvaluator gradient_pw(const PwEvaluatorParams& p) {
+/// @return The configured method, ready for either registration path.
+cpu::pw::PW pw_method(const PWParams& p) {
     cpu::pw::PW pw;
     pw.upf_path = p.upf_path;
     pw.gth_name = p.gth_name;
@@ -288,9 +280,8 @@ cpu::pw::PWEvaluator gradient_pw(const PwEvaluatorParams& p) {
     pw.degauss = p.degauss;
     pw.mp_order = p.mp_order;
     pw.extra_bands = p.extra_bands;
-    // `PW` is move-only (it owns FFTW plans and SCF workspaces), so the
-    // solver moves into the evaluator.
-    return cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true);
+    // `PW` is move-only (it owns FFTW plans and SCF workspaces).
+    return pw;
 }
 #endif
 
@@ -400,9 +391,9 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
 #else
                     throw_semiempirical_not_built();
 #endif
-                } else if constexpr (std::is_same_v<P, PwEvaluatorParams>) {
+                } else if constexpr (std::is_same_v<P, PWParams>) {
 #ifdef ATV_HAS_PW
-                    bind(gradient_pw(p));
+                    bind(pw_method(p));
 #else
                     throw_pw_not_built();
 #endif
@@ -492,9 +483,9 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
 #else
                 throw_semiempirical_not_built();
 #endif
-            } else if constexpr (std::is_same_v<P, PwEvaluatorParams>) {
+            } else if constexpr (std::is_same_v<P, PWParams>) {
 #ifdef ATV_HAS_PW
-                driver.set_evaluator(gradient_pw(p));
+                driver.set_evaluator(pw_method(p));
 #else
                 throw_pw_not_built();
 #endif

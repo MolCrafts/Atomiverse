@@ -39,6 +39,9 @@ class AnisotropicCellRelax : public Optimizer {
     explicit AnisotropicCellRelax(double P_target_ev_a3, double alpha = 0.05);
 
     std::string name() const override { return "anisotropic_cell_relax"; }
+    /// @brief Reads the system stress (kStress) every iteration.
+    /// @return True.
+    bool requires_system_stress() const override { return true; }
 
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::search_direction, 0),

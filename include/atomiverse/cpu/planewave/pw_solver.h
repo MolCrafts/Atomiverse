@@ -227,23 +227,38 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     ///         fixed-occupation path.
     std::array<double, 6> stress(Frame& frame);
 
-    // The path stages borrow each run's stack. Use the evaluator for composition.
-    void build_on(cpu::Runtime&) override {
-        throw std::logic_error("PW cannot be nested directly; use PWEvaluator");
-    }
-    int run_nested_erased(cpu::Context&, cpu::Frame&, int) override {
-        throw std::logic_error("PW cannot be nested directly; use PWEvaluator");
-    }
+    /// @brief Display name in plan dumps and binding diagnostics.
+    /// @return `"pw"`.
+    std::string name() const { return "pw"; }
+    /// @brief Energy source for an outer loop's validation.
+    /// @return true.
+    bool provides_energy() const { return true; }
+    /// @brief Force source for an outer loop's validation.
+    /// @return true.
+    bool provides_force() const { return true; }
 
-    int run_nested(cpu::Context&, cpu::Frame&, int) {
-        throw std::logic_error("PW cannot be nested directly; use PWEvaluator");
-    }
+    /// @brief Nested mount: remember the parent Runtime the SCF runs on.
+    /// @param rt Parent Runtime.
+    void build_on(cpu::Runtime& rt) override;
+    /// @brief One nested solve at the frame's geometry: the SCF stage plan
+    ///        runs on the parent Runtime, then energy [eV], forces [eV/Å]
+    ///        (when the phase requests them) and the virial σΩ [eV] (when it
+    ///        requests stress) are accumulated onto the frame — one SCF
+    ///        serves all three.
+    /// @param ctx Parent Context (requests read from `ctx.exec`).
+    /// @param frame Parent Frame.
+    /// @param budget Ignored; the SCF runs to convergence or `max_iter`.
+    /// @return SCF iterations.
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override;
+    /// @brief Detach from the parent Runtime.
+    /// @param rt Parent Runtime.
+    void destroy_on(cpu::Runtime& rt) override;
 
     /// @brief Most recent SCF result.
     const PWResult& last_result() const { return result_; }
 
   private:
-    friend class PWEvaluator;
     void evaluate_(const Frame& frame,
                    std::vector<std::array<double, 3>>* forces,
                    std::array<double, 6>* stress);
@@ -278,6 +293,10 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     bool loop_converged_ = false;
     bool driver_built_ = false;
     const void* wired_self_ = nullptr;
+    /// Parent Runtime while nested (`build_on`); null for standalone entries.
+    cpu::Runtime* host_runtime_ = nullptr;
+    /// True during a nested solve: `drive_stage_loop_` steps on the host.
+    bool nested_active_ = false;
 
     std::unique_ptr<VeffStage> veff_stage_;
     std::unique_ptr<DiagonalizeStage> diag_stage_;

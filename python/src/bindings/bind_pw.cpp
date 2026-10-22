@@ -31,13 +31,10 @@
 /// plus positions [Å] and the box; a frame missing that column is refused by
 /// the molrs → Frame conversion before any solve starts.
 ///
-/// `PWEvaluator` is the same method wearing its Component face: hand it to
-/// `MD.set_evaluator` and the run becomes plane-wave Born-Oppenheimer
-/// dynamics — the electrons are re-converged at every geometry the nuclei
-/// reach. Budget **two** SCF solves per force-producing step, not one: the
-/// evaluator first runs the energy SCF (`PW::run`) and then the force path,
-/// which converges its own density before assembling the forces
-/// (`cpu::pw::PWEvaluator::launch`).
+/// Hand a `PW` to `MD.set_evaluator` and the run becomes plane-wave
+/// Born-Oppenheimer dynamics: the driver mounts a copy of the method as a
+/// nested node, which re-converges the electrons at every geometry and
+/// accumulates energy and analytic forces from that one SCF.
 
 #include "force_array.h"
 #include "molrs_frame_bridge.h"
@@ -65,14 +62,12 @@
 // its comment: two file-local copies once silently dropped `gth_name`), so
 // the binding reuses it rather than writing a third member list.
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 
 namespace {
 
 using ATV::cpu::pw::PW;
-using ATV::cpu::pw::PWEvaluator;
 using ATV::cpu::pw::PWResult;
 using ATV::cpu::pw::Smearing;
 
@@ -471,39 +466,6 @@ void bind_pw(nb::module_& m) {
             "converged "
             "False, iterations 0).");
 
-    nb::class_<PWEvaluator, ATV::cpu::Component>(
-        m, "PWEvaluator",
-        "The plane-wave method as an MD force source: hand it to "
-        "MD.set_evaluator and the run is plane-wave Born-Oppenheimer "
-        "dynamics — the electrons are re-converged at every geometry the "
-        "nuclei reach. Takes no NeighborList (a plane-wave Hamiltonian is "
-        "not a pair style) and reads the frame's 'atomic_number' column [Z]; "
-        "like any MD run it also needs a per-atom 'mass' column [amu] and a "
-        "box.\n\n"
-        "Cost per force-producing step is TWO SCF solves, not one: the "
-        "energy SCF publishes frame.meta['energy'] [eV], then the analytic "
-        "force path converges its own density before assembling F [eV/A]. "
-        "The two agree to the SCF tolerance — ~3e-6 Ry apart on the pinned "
-        "Si2 fixture of python/tests/test_pw.py — but are not the same "
-        "solve.\n\n"
-        "The evaluator publishes nothing on itself in Python — there is no "
-        "bound result accessor — so read per-step energy and forces off the "
-        "frame.")
-        .def(
-            "__init__",
-            [](PWEvaluator* self, const PW& method) {
-                // Parameters are copied, not moved: moving would leave the
-                // Python-held PW a hollow shell that still looks usable.
-                new (self)
-                    PWEvaluator(ATV::cpu::pw::internal::copy_pw_params(method));
-            },
-            nb::arg("method"),
-            "Wrap a configured PW. The method's fifteen parameters are "
-            "COPIED (a PW owns FFTW plans, which cannot be shared), so the "
-            "object you pass stays usable and later edits to it do not reach "
-            "this evaluator. MD.set_evaluator copies the same fifteen once "
-            "more, with force evaluation switched on, so per-step results "
-            "land on the frame and not on this object either.");
 #else
     (void)m;
 #endif

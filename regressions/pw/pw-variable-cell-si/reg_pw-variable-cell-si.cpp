@@ -17,7 +17,6 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/minimize/cell_relax.h"
 #include "atomiverse/cpu/minimize/minimize.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 
@@ -90,8 +89,7 @@ int main() {
     cell.max_scale = 0.012;
     opt.set_optimizer_ref(cell);
     opt.add_criterion(cpu::StressConverged{0.0, kStol});
-    opt.on(minimizer::Phase::force)
-        .add(PWEvaluator{std::move(method)}.with_stress(true));
+    opt.on(minimizer::Phase::force).add(std::move(method));
     opt.enable_timing(false);
     opt.build();
     // 3 force launches (seed + up to 2 scale steps); stress-only path ~15–20 s.

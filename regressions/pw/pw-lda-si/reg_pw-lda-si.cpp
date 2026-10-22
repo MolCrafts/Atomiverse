@@ -11,7 +11,6 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 
@@ -57,10 +56,9 @@ int main() {
     method.tol = 1e-6;
     method.max_iter = 50;
 
-    PWEvaluator pwe{std::move(method)};
-    cpu::single_point(frame, pwe);
+    cpu::single_point(frame, method);
 
-    const auto& r = pwe.last_result();
+    const auto& r = method.last_result();
     if (!r.converged) {
         std::printf("FAIL: PW LDA Si SCF did not converge (iters=%d)\n",
                     r.iterations);

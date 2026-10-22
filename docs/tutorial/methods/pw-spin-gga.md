@@ -139,8 +139,8 @@ const PWResult& r = pw.run(frame);
 ```
 
 GGA activation twin (same geometry/occupations, `xc = XCType::LSDA`) is part
-of the regression dual gate, not a separate public API. `PWEvaluator` can own
-a moved `PW` for Driver binding; this regression calls `PW` directly.
+of the regression dual gate, not a separate public API. A Driver can mount a
+moved `PW` directly as a nested node; this regression calls `PW` directly.
 Forces/stress APIs are **not** part of the spin-GGA acceptance.
 
 ```bash

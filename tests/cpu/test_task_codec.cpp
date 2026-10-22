@@ -121,23 +121,22 @@ TaskSpec make_md_spec() {
     // `upf_path` stays empty on purpose: it is mutually exclusive with
     // `gth_name`, so "both non-default" is not a legal payload. Emptiness is
     // a value the string codec has to survive too (zero-length prefix).
-    entries.push_back(
-        MDComponentEntry{PwEvaluatorParams{/*upf_path=*/"",
-                                           /*gth_name=*/"GTH-PBE-q4",
-                                           /*ecut_ry=*/4.0,
-                                           /*k_mesh=*/2,
-                                           /*tol=*/1e-4,
-                                           /*max_iter=*/3,
-                                           /*mix_beta=*/0.5,
-                                           /*pulay_depth=*/3,
-                                           /*xc=*/0,
-                                           /*spin_polarized=*/true,
-                                           /*multiplicity=*/2,
-                                           /*smearing=*/2,
-                                           /*degauss=*/0.05,
-                                           /*mp_order=*/2,
-                                           /*extra_bands=*/6},
-                         std::nullopt});
+    entries.push_back(MDComponentEntry{PWParams{/*upf_path=*/"",
+                                                /*gth_name=*/"GTH-PBE-q4",
+                                                /*ecut_ry=*/4.0,
+                                                /*k_mesh=*/2,
+                                                /*tol=*/1e-4,
+                                                /*max_iter=*/3,
+                                                /*mix_beta=*/0.5,
+                                                /*pulay_depth=*/3,
+                                                /*xc=*/0,
+                                                /*spin_polarized=*/true,
+                                                /*multiplicity=*/2,
+                                                /*smearing=*/2,
+                                                /*degauss=*/0.05,
+                                                /*mp_order=*/2,
+                                                /*extra_bands=*/6},
+                                       std::nullopt});
     // ── The widened real-space catalogue (py-pair-styles) ────────────────
     //
     // Nine appended IDs (27-35) with fresh payloads, so `kWireVersion` stays
@@ -330,9 +329,9 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CoulLong), 17u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::KSpacePME), 18u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::XyzRecorder), 19u);
-    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PWEvaluator), 20u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PW), 20u);
     // The full CPU minimize domain (py-minimize-full): six optimizer mirrors
-    // appended after `PWEvaluator`, in the spec's declared order. The VALUE
+    // appended after `PW`, in the spec's declared order. The VALUE
     // is what crosses the wire, so these six numbers are frozen the moment
     // they ship — a renumbering is a decoder change, not a refactor.
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CG), 21u);
@@ -425,13 +424,12 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     // the same wire ID 9 — a second ID for the MD arm would make the same
     // component decode differently depending on the task that carries it.
     EXPECT_EQ(component_id(MDComponentParams{AM1Params{}}), ComponentId::AM1);
-    // `PwEvaluatorParams` is the second payload that LEADS with a string
+    // `PWParams` is the second payload that LEADS with a string
     // (`XyzRecorderParams` was the first), so pin its variant→ID map too: a
     // swapped arm would decode a trajectory filename as a pseudopotential
     // name and vice versa, which the length-prefixed string codec cannot
     // notice on its own.
-    EXPECT_EQ(component_id(MDComponentParams{PwEvaluatorParams{}}),
-              ComponentId::PWEvaluator);
+    EXPECT_EQ(component_id(MDComponentParams{PWParams{}}), ComponentId::PW);
 }
 
 // v5: `MinimizeTask::convergence` stopped being a bare `ForceConvergedParams`

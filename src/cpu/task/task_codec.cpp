@@ -228,7 +228,7 @@ void write(Writer& w, const AM1Params& p) {
 // The widest MD payload (fifteen fields) and the second one leading with a
 // text field. Field order is the struct's declaration order; `bool` crosses
 // as a single byte and both enum mirrors as i32, matching `read_pw` below.
-void write(Writer& w, const PwEvaluatorParams& p) {
+void write(Writer& w, const PWParams& p) {
     w.string(p.upf_path);
     w.string(p.gth_name);
     w.f64(p.ecut_ry);
@@ -446,7 +446,7 @@ ComponentId decode_component_id(std::uint16_t raw) {
     case 19:
         return ComponentId::XyzRecorder;
     case 20:
-        return ComponentId::PWEvaluator;
+        return ComponentId::PW;
     case 21:
         return ComponentId::CG;
     case 22:
@@ -542,8 +542,8 @@ AM1Params read_am1(Reader& r) {
 /// on the wire is also the one where a silently swapped field is hardest to
 /// see, and a named assignment beside its reader makes the byte layout
 /// legible at the point it is decoded.
-PwEvaluatorParams read_pw(Reader& r) {
-    PwEvaluatorParams p;
+PWParams read_pw(Reader& r) {
+    PWParams p;
     p.upf_path = r.string();
     p.gth_name = r.string();
     p.ecut_ry = r.f64();
@@ -639,7 +639,7 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return KSpacePmeParams{r.f64(), r.f64(), r.i32()};
     case ComponentId::AM1:
         return read_am1(r);
-    case ComponentId::PWEvaluator:
+    case ComponentId::PW:
         return read_pw(r);
     // The widened real-space catalogue. Braced init throughout: the field
     // reads of a braced-init-list are sequenced left to right, so the

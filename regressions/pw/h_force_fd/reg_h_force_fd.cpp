@@ -10,7 +10,6 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
 using namespace ATV;
@@ -26,7 +25,7 @@ int main() {
     //   * tol_fd    — central differences with the 5e-3 Å step below, so the
     //                 floor is set by the FD step and the 1e-4 SCF tolerance,
     //                 not by machine epsilon. Measured 2026-08-15: 1.4e-11.
-    //   * tol_eval  — the evaluator path returns the analytic gradient here.
+    //   * tol_eval  — the nested path returns the analytic gradient here.
     //                 Measured 2026-08-15: 6.6e-16.
     // The pre-GTH value of 0.5 was sized for the deleted toy potential and was
     // far too loose to detect a dropped or asymmetric force term.
@@ -67,14 +66,12 @@ int main() {
         return 1;
     }
 
-    // Public evaluator path.
+    // The method nested in an Evaluate.
     for (int i = 0; i < 3; ++i)
         frame.span(kAtom_fx)[0] = frame.span(kAtom_fy)[0] =
             frame.span(kAtom_fz)[0] = 0;
-    PWEvaluator pwe{std::move(cfg)};
-    pwe.with_gradient(true);
     cpu::Evaluate eval;
-    eval.on(evaluate::Phase::evaluate).add_ref(pwe);
+    eval.on(evaluate::Phase::evaluate).add_ref(cfg);
     eval.enable_timing(false);
     eval.build();
     eval.run(frame);
@@ -87,12 +84,12 @@ int main() {
         + frame.span(kAtom_fy)[0] * frame.span(kAtom_fy)[0]
         + frame.span(kAtom_fz)[0] * frame.span(kAtom_fz)[0]));
     if (!(mag2 < tol_eval)) {
-        std::printf("FAIL: evaluator |F|=%.6g eV/Å  tol=%g\n", mag2, tol_eval);
+        std::printf("FAIL: nested |F|=%.6g eV/Å  tol=%g\n", mag2, tol_eval);
         return 1;
     }
 
     std::printf("ok: |F|_fd=%.4g  |F|_eval=%.4g eV/Å  E=%.6g eV\n", mag, mag2,
                 frame.meta.get(kEnergy));
-    std::printf("PASS: pw FD forces (single-atom symmetry + evaluator)\n");
+    std::printf("PASS: pw FD forces (single-atom symmetry + nested method)\n");
     return 0;
 }

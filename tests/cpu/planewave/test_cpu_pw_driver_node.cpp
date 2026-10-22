@@ -85,15 +85,17 @@ TEST(PwDriverNode, MultiPathPublicMembers) {
               static_cast<int>(Smearing::fermi_dirac));
 }
 
-TEST(PwDriverNode, DirectNestingRejectsBeforeTouchingParent) {
+TEST(PwDriverNode, NestedMountBindsToOneRuntime) {
     PW method;
     ATV::cpu::Runtime runtime;
-    ATV::cpu::Context context;
-    ATV::cpu::Frame frame;
+    ATV::cpu::Runtime other;
     ATV::cpu::DriverNode& node = method;
-    EXPECT_THROW(node.build_on(runtime), std::logic_error);
-    EXPECT_THROW(node.run_nested_erased(context, frame, 1), std::logic_error);
-    EXPECT_THROW(method.run_nested(context, frame, 1), std::logic_error);
-    EXPECT_EQ(context.exec.runtime, nullptr);
-    EXPECT_EQ(frame.nlocal(), 0);
+    // A nested PW attaches to its parent Runtime and refuses a second one.
+    EXPECT_NO_THROW(node.build_on(runtime));
+    EXPECT_THROW(node.build_on(other), std::logic_error);
+    node.destroy_on(runtime);
+    EXPECT_NO_THROW(node.build_on(other));
+    node.destroy_on(other);
+    EXPECT_TRUE(method.provides_energy());
+    EXPECT_TRUE(method.provides_force());
 }

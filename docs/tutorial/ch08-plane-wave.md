@@ -182,7 +182,7 @@ energy.
 The plane-wave path needs FFTW3 at build time.
 
 The example builds the 2-atom silicon diamond cell, configures `PW`
-(15 Ry, $2\times2\times2$ mesh), runs it as a `PWEvaluator`, and prints the
+(15 Ry, $2\times2\times2$ mesh), runs it through `cpu::single_point`, and prints the
 total energy in Ry, Hartree, and eV.
 
 ## Practice plan
@@ -200,16 +200,15 @@ not a substitute for this study.
 
 ## Silicon example
 
-The user-facing entry point is the `cpu::pw::PWEvaluator` component — the
-plane-wave energy component. It owns a `PW`, has
-`role() == Evaluator` and `capabilities() == Energy`, and writes the total
-energy to `frame.meta.get(kEnergy)` in eV (the Rydberg / Hartree breakdown stays on
-`last_result()`). Run it through the one-pass `cpu::Evaluate` driver, most
-concisely via the `cpu::single_point` helper:
+The user-facing entry point is the concrete method `cpu::pw::PW` itself — a
+`Driver<pw::Phase>` node that a hosting driver mounts directly. It writes the
+total energy to `frame.meta.get(kEnergy)` in eV (the Rydberg / Hartree
+breakdown stays on `last_result()`). Run it through the one-pass
+`cpu::Evaluate` driver, most concisely via the `cpu::single_point` helper:
 
 ```cpp
 #include "atomiverse/cpu/evaluate/single_point.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 
 cpu::pw::PW pw;
 pw.upf_path = "tests/data/pw/Si_lda_nc.upf";
@@ -217,10 +216,9 @@ pw.ecut_ry  = 30.0;   // wavefunction cutoff [Ry]
 pw.k_mesh   = 4;      // 4x4x4 Monkhorst-Pack mesh
 pw.tol      = 1e-6;   // SCF tolerance on the density change
 
-cpu::pw::PWEvaluator pwe{std::move(pw)};
-cpu::single_point(frame, pwe);          // frame.meta.get(kEnergy) (eV)
+cpu::single_point(frame, pw);           // frame.meta.get(kEnergy) (eV)
 
-const auto& r = pwe.last_result();
+const auto& r = pw.last_result();
 // r.energy [Ry], r.energy_ha (Hartree), r.converged, r.iterations
 ```
 
@@ -325,9 +323,8 @@ cpu::pw::PW pw;
 pw.upf_path = "…/Si_lda_nc.upf";
 pw.ecut_ry = 15.0;   // tutorial; ~30 Ry for production Si
 pw.k_mesh = 2;
-cpu::pw::PWEvaluator pwe{std::move(pw)};
-cpu::single_point(frame, pwe);          // frame.meta.get(kEnergy) (eV)
-auto res = pwe.last_result();           // Ry / Ha on the result object
+cpu::single_point(frame, pw);           // frame.meta.get(kEnergy) (eV)
+auto res = pw.last_result();            // Ry / Ha on the result object
 ```
 
 This tutorial assumes you have read
@@ -346,9 +343,8 @@ The guiding question:
 
 ## Source references
 
-1. `pw_evaluator.h` — the user-facing component
-2. `pw_solver.h` — `PW`, `PWResult`
-3. `internal` — the step helpers and numerics
+1. `pw_solver.h` — `PW` (the user-facing method), `PWResult`
+2. `internal` — the step helpers and numerics
    (`g_vector.h`, `fft.h`, `ewald.h`, `kpoint.h`, `upf_reader.h`, …)
 
 For a converged equation-of-state validation against CP2K, see

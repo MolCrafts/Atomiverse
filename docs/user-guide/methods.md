@@ -50,7 +50,7 @@ Two policy slots let you change *when* a run ends without writing a driver:
 | Lennard-Jones + bonded styles | `PairLJCut` / `BondHarmonic` / … (`Potential`) | `ATV_BUILD_POTENTIALS` |
 | Reciprocal-space electrostatics | `KSpaceEwald` / `KSpacePME` / `KSpacePPPM` (`Potential`) | `ATV_BUILD_KSPACE` |
 | Gaussian SCF — Hartree-Fock and Kohn-Sham | `cpu::scf::RHF` / `UHF` / `ROHF` / `GHF` / `RKS` / `UKS` / `ROKS` (`HF`) | `ATV_BUILD_HF` |
-| Plane-wave DFT | `cpu::pw::PWEvaluator` (`PlaneWave`) | `ATV_BUILD_PW` |
+| Plane-wave DFT | `cpu::pw::PW` (nested `Driver<pw::Phase>`) | `ATV_BUILD_PW` |
 | Gaussian-and-plane-waves DFT | `cpu::gpw::GPWEvaluator` (`GPW`) | `ATV_BUILD_GPW` |
 | NDDO semiempirics | `cpu::semiempirical::AM1` / `RM1` (nested `Driver<nddo::Phase>`) | `ATV_BUILD_SEMIEMPIRICAL` |
 | DFTB | `cpu::semiempirical::DFTB0` / `DFTB2` / `DFTB3` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
@@ -194,18 +194,15 @@ Si, Ni, Zn) or `upf_path` (a norm-conserving UPF file). Setting neither, or
 both, throws.
 
 ```cpp
-#include <utility>
-
 #include "atomiverse/cpu/evaluate/single_point.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 using namespace ATV;
 
 cpu::pw::PW pw;
 pw.gth_name = "GTH-PBE-q4";               // in-tree analytic GTH (Si, 4 valence e⁻)
 pw.ecut_ry = 30.0;                        // wavefunction cutoff [Ry]
 pw.k_mesh = 4;                            // Monkhorst-Pack mesh per dimension
-cpu::pw::PWEvaluator pwe{std::move(pw)};  // PW is move-only
-cpu::single_point(frame, pwe);            // frame.meta.get(ATV::kEnergy) (eV)
+cpu::single_point(frame, pw);             // frame.meta.get(ATV::kEnergy) (eV)
 ```
 
 See [Chapter 8](../tutorial/ch08-plane-wave.md) and

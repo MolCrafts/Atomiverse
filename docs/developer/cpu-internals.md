@@ -341,9 +341,9 @@ The remaining helpers in
 (integrals, gradient kernels, MO transforms) stay private workspace:
 none register into any foreign Plan, and the **core-public**
 production headers — `evaluate.h`, `single_point.h`, `md.h`, `lbfgs.h`
-— must not include from `cpu/scf/internal/` (tests may). Two surfaces
-elsewhere still use the old inner-solver shape as scheduled debt, not a
-pattern: the CPU plane-wave SCF (`cpu::pw::PW` + `PWEvaluator`). CUDA RHF is
+— must not include from `cpu/scf/internal/` (tests may). The CPU plane-wave
+SCF (`cpu::pw::PW`) is a `Driver<pw::Phase>` mounted directly as a nested node
+(no evaluator wrapper). CUDA RHF is
 `cuda::Driver<scf::Phase>` (same stage order as `MeanFieldMethod`).
 
 ## Hot-Path Data Hygiene

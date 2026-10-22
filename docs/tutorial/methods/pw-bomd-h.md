@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `pw-bomd-h` |
-| Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::pw::PWEvaluator{PW}.with_gradient(true)` at `md::Phase::force` |
+| Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::pw::PW` mounted at `md::Phase::force` |
 | Roadmap | MD product path in [ch08-plane-wave.md](../ch08-plane-wave.md) / [ch10-classical-md.md](../ch10-classical-md.md) |
 | Dual gate | Correctness A4–A6; speed **`perf_exempt`** (no CP2K twin wall) |
 
@@ -13,9 +13,9 @@
 
 Born–Oppenheimer molecular dynamics (BOMD) with **plane-wave** electronic
 structure on every ionic step: the outer loop is the MD preset
-(`cpu::md::MD` + NVE `VelocityVerlet`); the force/energy slot binds
-`cpu::pw::PWEvaluator` with analytic ionic forces enabled
-(`with_gradient(true)`). Public units are eV, Å, fs, eV/Å; the PW method keeps
+(`cpu::md::MD` + NVE `VelocityVerlet`); the force/energy slot mounts
+`cpu::pw::PW` directly as a nested Driver node, which computes analytic ionic
+forces because the force phase requests them. Public units are eV, Å, fs, eV/Å; the PW method keeps
 Ry/Ha on `last_result()` only.
 
 This page documents the **dep-safe foothold** regression: a **single H** at the
@@ -107,8 +107,7 @@ Public surface only: `cpu::Frame`, concrete `cpu::pw::PW` members, MD preset,
 explicit force-phase binding. Headers:
 `md.h`,
 `velocity_verlet.h`,
-`pw_solver.h`,
-`pw_evaluator.h`. Unit gate (not e2e):
+`pw_solver.h`. Unit gate (not e2e):
 `tests/cpu/planewave/test_pw_bomd.cpp`.
 
 ```cpp
@@ -117,7 +116,6 @@ explicit force-phase binding. Headers:
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
 using namespace ATV;
@@ -144,7 +142,7 @@ pw.mix_beta = 0.5;
 cpu::md::MD sim;
 sim.set_integrator(cpu::md::VelocityVerlet{/*dt [fs]=*/0.5});
 sim.on(md::Phase::force)
-    .add(cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true));
+    .add(std::move(pw));
 sim.build();
 sim.run(frame, 1);   // warm-up: populate PE/KE/forces
 // E0 = frame.meta.get(kEnergy) + frame.meta.get(kKinetic)  [eV]
@@ -156,8 +154,9 @@ Rules (architecture):
 - Parameters are **members** of `cpu::pw::PW` — no public `*Config` bag.
 - Force binding is explicit `on(md::Phase::force).add(...)` — no categorical
   electronic-structure setter.
-- `with_gradient(true)` (default **false**) fills per-atom forces [eV/Å] via
-  analytic local HF + Ewald.
+- The mounted `PW` fills per-atom forces [eV/Å] via analytic local HF + Ewald
+  whenever the hosting phase requests forces (no gradient knob); one SCF per
+  step, forces reuse the converged density.
 - Frame is the sole I/O currency (`blocks` + `meta` + `box`).
 
 ```bash
@@ -239,8 +238,9 @@ one optimize pass.
   envelope, not production AIMD accuracy.
 - **Follow-ons:** Si/UPF BOMD after bulk energy re-pins (`pw-lda-si` and
   friends); GPW BOMD water (`gpw-bomd-water`); XL-BOMD / CPMD queue rows.
-- Analytic forces are product (`with_gradient(true)`); stress write
-  (`with_stress`) and multi-rank PW MD are out of this slug’s scope.
+- Analytic forces are product (computed when the force phase requests them);
+  stress write (only when the plan consumes stress) and multi-rank PW MD are
+  out of this slug’s scope.
 
 ## References
 

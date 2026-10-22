@@ -3166,7 +3166,7 @@ void DFTB2::launch(const LaunchContext& ctx) {
             // geometry). h = 1e-4 Å matches other DFTB force gates.
             //
             // Each probe re-enters launch_mio (many span resolutions). Same
-            // pattern as PWEvaluator force/stress and MeanFieldMethod
+            // pattern as nested PW force/stress and MeanFieldMethod
             // accumulator guards: park the host launch window so nested
             // multi-SCC probes are not billed against this component's
             // single-launch budget (13.7× catches *loops that re-resolve*,

@@ -154,19 +154,52 @@ bool PW::drive_stage_loop_(int max_iter_in, PWResult& res) {
     if (converged_stage_)
         converged_stage_->reset();
 
+    // Nested: the stage plan runs on the parent Runtime for this solve.
+    // Standalone: this method is the root loop and owns its backend.
+    cpu::Runtime* const host = nested_active_ ? host_runtime_ : nullptr;
+    struct HostGuard {
+        PW& self;
+        cpu::Runtime* host = nullptr;
+        cpu::Context* ctx = nullptr;
+        LoopServices saved{};
+        ~HostGuard() {
+            if (ctx)
+                ctx->loop = saved;
+            if (host)
+                host->destroy_plan(self.plan());
+        }
+    } host_guard{*this};
     cpu::Frame loop_frame;
-    setup_pass(loop_frame);
+    if (host) {
+        host->build_plan(this->plan());
+        host_guard.host = host;
+        host_guard.ctx = &host->context();
+        host_guard.saved = host_guard.ctx->loop;
+        host_guard.ctx->loop.status = &this->mutable_outer_status();
+        host_guard.ctx->loop.metrics = &this->metrics_;
+        this->metrics_ = ConvergenceMetrics{};
+    } else {
+        setup_pass(loop_frame);
+    }
 
     int executed = 0;
     for (int iter = 0; iter < max_iter_in; ++iter) {
         mutable_outer_status().reset();
-        step_once(iter);
         ++executed;
         res.iterations = executed;
-        if (poll_criteria_(iter) != ATV::Verdict::Continue)
-            break;
+        if (host) {
+            host->step_plan(this->plan(), iter);
+            if (this->poll_criteria_(iter, loop_frame, *host_guard.ctx)
+                != ATV::Verdict::Continue)
+                break;
+        } else {
+            step_once(iter);
+            if (poll_criteria_(iter) != ATV::Verdict::Continue)
+                break;
+        }
     }
-    teardown_pass();
+    if (!host)
+        teardown_pass();
 
     const bool conv = this->converged() || loop_converged_;
     res.converged = conv;
@@ -1017,6 +1050,64 @@ PWResult& PW::run(Frame& frame) {
     PWResult& res = run(std::as_const(frame));
     frame.meta.get(kEnergy) = res.energy * qe_units::rydberg_to_ev;
     return res;
+}
+
+void PW::build_on(cpu::Runtime& rt) {
+    if (host_runtime_ && host_runtime_ != &rt)
+        throw std::logic_error("PW: already nested on another Runtime");
+    host_runtime_ = &rt;
+}
+
+void PW::destroy_on(cpu::Runtime& rt) {
+    if (host_runtime_ == &rt)
+        host_runtime_ = nullptr;
+}
+
+int PW::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int /*budget*/) {
+    const bool want_forces = ctx.exec.forces_requested;
+    // The plane-wave virial costs a second assembly and is unsupported for
+    // some occupations, so it is computed only when the hosting plan reads it.
+    const bool want_stress = ctx.exec.stress_requested && ctx.exec.runtime
+                             && ctx.exec.runtime->stress_consumed();
+    std::vector<std::array<double, 3>> forces;
+    std::array<double, 6> stress{};
+    {
+        struct Nested {
+            bool& flag;
+            ~Nested() { flag = false; }
+        } nested{nested_active_};
+        nested_active_ = true;
+        evaluate_(frame, want_forces ? &forces : nullptr,
+                  want_stress ? &stress : nullptr);
+    }
+    // The hosting phase owns zeroing, so every write is `+=`.
+    const double energy = result_.energy * qe_units::rydberg_to_ev;
+    frame.meta.get(kEnergy) += energy;
+    frame.meta.get(kEnergyElectronic) += energy;
+    if (want_forces) {
+        const int n = frame.nlocal();
+        if (static_cast<int>(forces.size()) != n)
+            throw std::runtime_error("PW: force count mismatch");
+        AccReal* __restrict fx = frame.span(kAtom_fx);
+        AccReal* __restrict fy = frame.span(kAtom_fy);
+        AccReal* __restrict fz = frame.span(kAtom_fz);
+        for (int i = 0; i < n; ++i) {
+            const auto& f = forces[static_cast<std::size_t>(i)];
+            fx[i] += static_cast<AccReal>(f[0]);
+            fy[i] += static_cast<AccReal>(f[1]);
+            fz[i] += static_cast<AccReal>(f[2]);
+        }
+    }
+    if (want_stress) {
+        // kStress is the extensive virial W = σΩ [eV].
+        const double vol = frame.box.volume();
+        auto& st = frame.meta.get(kStress);
+        for (int k = 0; k < 6; ++k)
+            st[static_cast<std::size_t>(k)] +=
+                stress[static_cast<std::size_t>(k)] * vol;
+    }
+    return result_.iterations;
 }
 
 void PW::evaluate_(const Frame& frame,

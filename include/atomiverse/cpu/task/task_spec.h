@@ -450,7 +450,7 @@ inline bool operator==(const AM1Params& a, const AM1Params& b) {
 /// Field order is the declaration order below, which is what `task_codec`
 /// writes and `task_materializer` replays; this declaration therefore doubles
 /// as the byte layout. Defaults are `cpu::pw::PW`'s own, member for member.
-struct PwEvaluatorParams {
+struct PWParams {
     /// @brief Norm-conserving UPF (Unified Pseudopotential Format) file — a
     ///        pseudopotential replaces the nucleus plus core electrons by an
     ///        effective potential, which is what makes the plane-wave
@@ -499,7 +499,7 @@ struct PwEvaluatorParams {
     ///        (dimensionless count, per spin channel when collinear).
     int extra_bands = 4;
 };
-inline bool operator==(const PwEvaluatorParams& a, const PwEvaluatorParams& b) {
+inline bool operator==(const PWParams& a, const PWParams& b) {
     return a.upf_path == b.upf_path && a.gth_name == b.gth_name
            && a.ecut_ry == b.ecut_ry && a.k_mesh == b.k_mesh && a.tol == b.tol
            && a.max_iter == b.max_iter && a.mix_beta == b.mix_beta
@@ -1150,7 +1150,7 @@ enum class ComponentId : std::uint16_t {
     /// Plane-wave DFT force source — `cpu::pw::PWEvaluator`. Decodable
     /// everywhere; materializable only where `ATV_BUILD_PW` compiled the
     /// plane-wave solver in.
-    PWEvaluator = 20,
+    PW = 20,
     // The rest of the CPU minimize domain. `CG` and `FIRE` are fixed-cell
     // alternatives to `LBFGS`; the four relaxers below them move the BOX and
     // terminate on `PressureConverged` / `StressConverged` rather than on
@@ -1225,8 +1225,8 @@ inline const char* component_name(ComponentId id) noexcept {
         return "KSpacePME";
     case ComponentId::XyzRecorder:
         return "XyzRecorder";
-    case ComponentId::PWEvaluator:
-        return "PWEvaluator";
+    case ComponentId::PW:
+        return "PW";
     case ComponentId::CG:
         return "CG";
     case ComponentId::FIRE:
@@ -1301,9 +1301,9 @@ using MDComponentParams =
                  ThermoParams, AM1Params, FixLangevinParams, FixCsvrParams,
                  NoseHooverNptParams, ParrinelloRahmanNptParams,
                  BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
-                 KSpacePmeParams, XyzRecorderParams, PwEvaluatorParams,
-                 PairMorseParams, PairBuckParams, PairBornParams,
-                 PairYukawaParams, PairWcaParams, PairDpdParams, BondFeneParams,
+                 KSpacePmeParams, XyzRecorderParams, PWParams, PairMorseParams,
+                 PairBuckParams, PairBornParams, PairYukawaParams,
+                 PairWcaParams, PairDpdParams, BondFeneParams,
                  DihedralCharmmParams, ImproperHarmonicParams>;
 
 using MinimizeComponentParams =
@@ -1359,8 +1359,8 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::KSpacePME;
             else if constexpr (std::is_same_v<P, XyzRecorderParams>)
                 return ComponentId::XyzRecorder;
-            else if constexpr (std::is_same_v<P, PwEvaluatorParams>)
-                return ComponentId::PWEvaluator;
+            else if constexpr (std::is_same_v<P, PWParams>)
+                return ComponentId::PW;
             else if constexpr (std::is_same_v<P, PairMorseParams>)
                 return ComponentId::PairMorse;
             else if constexpr (std::is_same_v<P, PairBuckParams>)

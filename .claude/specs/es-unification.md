@@ -55,7 +55,13 @@ land).
   `run_nested_erased`, molecular unwrap, accumulate, force request from the
   phase); `AM1Evaluator`/`RM1Evaluator` deleted; task wire `AM1Params`;
   Python `AM1` is the solve object (read-only parameters).
-- Next in phase 1: PW, then GPW (nesting currently rejected), DFTB/xTB.
+- Phase 1, PW: `PW` mounts directly (one SCF per step; forces on request;
+  virial only when the plan consumes stress — `Plan::stress_consumed`, set
+  from `requires_system_stress` on components and criteria; cell relaxers and
+  stress/pressure criteria now declare it); `PWEvaluator` deleted; task wire
+  `PWParams`; Python `set_evaluator(PW)`.
+- Next in phase 1: GPW (nesting rejected, evaluator carries CPMD/XL state),
+  then DFTB/xTB.
 
 ## Phases (each keeps every regression green)
 

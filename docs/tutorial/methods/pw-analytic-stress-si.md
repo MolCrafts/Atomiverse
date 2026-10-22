@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `pw-analytic-stress-si` |
-| Public API | `cpu::pw::PW::stress` (analytic Voigt [eV/Å³]); oracle `cpu::pw::pw_stress_fd`; `PWEvaluator::with_stress(true)` → `frame.meta.get(kStress)` |
+| Public API | `cpu::pw::PW::stress` (analytic Voigt [eV/Å³]); oracle `cpu::pw::pw_stress_fd`; `PW` mounted in a stress-consuming plan → `frame.meta.get(kStress)` |
 | Roadmap | [dft.md](../../roadmap/dft.md) § Periodic response — analytic stress|
 
 ## Summary
@@ -55,7 +55,7 @@ restricted closed shell; no metallic smearing on this twin.
 | ------ | ---------- | ---- |
 | \(\sigma_v\) | Analytic Voigt stress from `PW::stress` | eV/Å³ |
 | \(\sigma_v^\mathrm{FD}\) | Multi-SCF strain-FD from `pw_stress_fd` / offline pin | eV/Å³ |
-| `kStress` | Frame meta write when `PWEvaluator::with_stress(true)` | eV/Å³ |
+| `kStress` | Frame meta write (virial σΩ) by `PW::stress`, or by a mounted `PW` when the plan consumes stress | eV |
 
 **Key exclusions (this slug / closed SPEC).**
 
@@ -74,7 +74,7 @@ restricted closed shell; no metallic smearing on this twin.
 Public surface only (`cpu::Frame` + concrete `cpu::pw::PW` members; no `*Config`,
 no `make_*` / `build_*`). Headers:
 `pw_solver.h` (`PW::stress`, `pw_stress_fd`,
-`PW`), `pw_evaluator.h` (`with_stress`), Frame schema `kStress`.
+`PW`), Frame schema `kStress`.
 
 Minimal sequence (matches `reg_pw-analytic-stress-si.cpp`):
 
@@ -127,10 +127,10 @@ const std::array<double, 6> san = method.stress(frame);
 // Dual-gate oracle only (12 SCFs) — not the product hot path:
 // const auto sfd = pw_stress_fd(frame, method, /*h=*/2e-3);
 
-// Driver binding (optional): write σ to frame.meta.get(kStress)
-// PWEvaluator pwe{std::move(method)};
-// pwe.with_stress(true);
-// cpu::single_point(frame, pwe);
+// Driver binding (optional): mount the method itself, e.g.
+// opt.on(minimizer::Phase::force).add(std::move(method));
+// σΩ [eV] lands in frame.meta.get(kStress) when the plan consumes stress
+// (barostat, cell relaxer, StressConverged / PressureConverged).
 ```
 
 Build and run the regression (`ATV_BUILD_PW=ON`, `ATV_BUILD_REGRESSIONS=ON`):
@@ -155,8 +155,7 @@ UPF path is injected at compile time as `ATV_PW_UPF_PATH` →
 
 | Path | Role |
 | ---- | ---- |
-| `pw_solver.h` | Public `PW::stress` / `pw_stress_fd` / `PW` |
-| `pw_evaluator.h` | `with_stress` → `kStress` |
+| `pw_solver.h` | Public `PW::stress` / `pw_stress_fd` / `PW` (writes `kStress`) |
 | `pw_stress.h` | Private analytic + FD impl |
 | `reg_pw-analytic-stress-si.cpp` | Product gate |
 | case `pw-analytic-stress-si` pin | Offline FD pin + perf note |

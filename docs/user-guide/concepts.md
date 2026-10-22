@@ -34,7 +34,7 @@ CUDA workflows use an analogous device frame; transfers are explicit
 A component does **one** thing at a **typed stage** of the plan:
 
 - force / energy sources: `PairLJCut`, `cpu::scf::RHF` (and the other
-  concrete Gaussian methods), `PWEvaluator`, …
+  concrete Gaussian methods), `cpu::pw::PW`, …
 - dynamics: `VelocityVerlet`, thermostats, barostats
 - optimizers / movers: `LBFGS`, `TranslateMove`
 - observers / recorders: RDF, Thermo, XYZ

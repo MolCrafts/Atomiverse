@@ -27,6 +27,9 @@ class TriclinicCellRelax : public Optimizer {
     explicit TriclinicCellRelax(double alpha, double bulk = 1.0);
 
     std::string name() const override { return "triclinic_cell_relax"; }
+    /// @brief Reads the system stress (kStress) every iteration.
+    /// @return True.
+    bool requires_system_stress() const override { return true; }
 
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::search_direction, 0),

@@ -109,7 +109,7 @@ const PWResult& r = pw.run(frame);
 // r.energy_ha [Ha], r.energy [Ry], r.magnetization, r.converged
 ```
 
-`PWEvaluator` can own a moved `PW` for Driver binding; this regression calls
+A Driver can mount a moved `PW` directly as a nested node; this regression calls
 `PW` directly. Forces/stress APIs exist on the restricted path but are **not**
 part of the spin-polarized acceptance.
 

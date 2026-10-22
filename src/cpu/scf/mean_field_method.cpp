@@ -596,7 +596,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
         if (guard_accumulators) {
             // Park the resolution window: this guard's lookups are bookkeeping
             // and must not spend the hosting component's per-launch budget
-            // (same pattern as the SCF loop below and PWEvaluator).
+            // (same pattern as the SCF loop below).
             const auto saved_window = frame.resolution_window();
             natm = static_cast<int>(frame.nlocal());
             e_before = frame.meta.get(kEnergy);

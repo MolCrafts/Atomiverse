@@ -152,7 +152,7 @@ struct MdHandle {
             driver.set_evaluator(std::move(comp));
 #endif
 #ifdef ATV_HAS_PW
-        else if constexpr (std::is_same_v<P, cpu::task::PwEvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::PWParams>)
             // Plane-wave DFT is the other force source that makes the loop
             // Born-Oppenheimer; move-only (it owns FFTW plans), so the
             // component arrives here already moved from the setter.

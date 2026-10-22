@@ -10,7 +10,6 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 
@@ -63,8 +62,8 @@ int main() {
     for (int i = 0; i < 3; ++i)
         frame.span(kAtom_fx)[0] = frame.span(kAtom_fy)[0] =
             frame.span(kAtom_fz)[0] = 0;
-    PWEvaluator pwe{std::move(cfg)};
-    pwe.with_gradient(true).with_stress(true);
+    // The method itself, nested in an Evaluate: energy and forces accumulate.
+    PW& pwe = cfg;
     cpu::Evaluate eval;
     eval.on(evaluate::Phase::evaluate).add_ref(pwe);
     eval.enable_timing(false);
@@ -79,7 +78,7 @@ int main() {
         + frame.span(kAtom_fy)[0] * frame.span(kAtom_fy)[0]
         + frame.span(kAtom_fz)[0] * frame.span(kAtom_fz)[0]));
     if (!(mag2 < tol)) {
-        std::printf("FAIL: evaluator |F|=%.6g eV/Å  tol=%g\n", mag2, tol);
+        std::printf("FAIL: nested |F|=%.6g eV/Å  tol=%g\n", mag2, tol);
         return 1;
     }
 
@@ -92,12 +91,11 @@ int main() {
         std::printf("FAIL: combined outputs do not publish the owned result\n");
         return 1;
     }
-    // A changed cell and stress-only request must replace the public result too.
+    // A changed cell must replace the public result too.
     frame.box = cpu::Box::cubic(7.0);
-    pwe.with_gradient(false);
     eval.run(frame);
     if (!same_result() || pwe.last_result().iterations <= 0) {
-        std::printf("FAIL: stress-only output has a stale owned result\n");
+        std::printf("FAIL: changed cell left a stale owned result\n");
         return 1;
     }
 
@@ -125,13 +123,10 @@ int main() {
         std::array<double, 6> stress_fd{};
         if (!spin)
             stress_fd = pw_stress_fd(metallic, smear, 2e-3);
-        PWEvaluator metallic_eval{std::move(smear)};
-        metallic_eval.with_gradient(true).with_stress(!spin);
-        cpu::Evaluate driver;
-        driver.set_evaluator_ref(metallic_eval);
-        driver.enable_timing(false);
-        driver.build();
-        driver.run(metallic);
+        PW& metallic_eval = smear;
+        metallic_eval.forces(metallic);
+        if (!spin)
+            metallic_eval.stress(metallic);
         if (!metallic_eval.last_result().converged || fd.size() != 1u) {
             std::printf("FAIL: metallic spin=%d state did not converge\n",
                         spin);
@@ -175,6 +170,6 @@ int main() {
     std::printf("ok: |F|_analytic=%.4g  |F|_eval=%.4g eV/Å  E=%.6g eV\n", mag,
                 mag2, frame.meta.get(kEnergy));
     std::printf(
-        "PASS: pw analytic forces (single-atom symmetry + evaluator)\n");
+        "PASS: pw analytic forces (single-atom symmetry + nested method)\n");
     return 0;
 }

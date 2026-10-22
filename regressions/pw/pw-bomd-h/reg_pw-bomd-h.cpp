@@ -13,7 +13,6 @@
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
 using namespace ATV;
@@ -60,8 +59,7 @@ int main() {
 
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
-    sim.on(md::Phase::force)
-        .add(cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true));
+    sim.on(md::Phase::force).add(std::move(pw));
     sim.enable_timing(false);
     sim.build();
 

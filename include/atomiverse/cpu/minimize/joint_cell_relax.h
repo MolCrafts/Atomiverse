@@ -33,6 +33,9 @@ class JointIsotropicRelax : public Optimizer {
                                  double atom_step_a = 0.01);
 
     std::string name() const override { return "joint_isotropic_relax"; }
+    /// @brief Reads the system stress (kStress) every iteration.
+    /// @return True.
+    bool requires_system_stress() const override { return true; }
 
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::search_direction, 0),

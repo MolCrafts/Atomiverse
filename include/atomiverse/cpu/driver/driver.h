@@ -249,6 +249,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         Base::build();
         this->plan_.lifecycle_only.assign(criteria_.begin(), criteria_.end());
         this->plan_.requires_full_frame = requires_full_frame();
+        this->plan_.stress_consumed = stress_consumed_();
         // Compile the per-phase force policy into the Plan. One stamp at build,
         // so the hot loop never asks the question: the Runtime reads
         // `slot.forces_requested` and ANDs it with the Context's nesting
@@ -1335,6 +1336,14 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// Energy/force come from `provides_*`. A nested driver reports them
     /// through the slot built at `on(phase).add`. Integrator / Optimizer /
     /// Mover stay kind probes. No family type list, no `name()==langevin`.
+    /// @brief Does a pending component or a criterion read the system stress?
+    bool stress_consumed_() const {
+        bool consumed = scan_pending_infra_().needs_stress;
+        for (const auto* c : criteria_)
+            consumed = consumed || c->requires_system_stress();
+        return consumed;
+    }
+
     InfraScan scan_pending_infra_() const {
         InfraScan s;
         for_each_pending([&](const cpu::Component& c) {
@@ -1607,6 +1616,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         auto next = builder.build(ATV::slot_count<PhaseEnum>());
         next.lifecycle_only.assign(criteria_.begin(), criteria_.end());
         next.requires_full_frame = requires_full_frame();
+        next.stress_consumed = stress_consumed_();
         next.kind = kind_of(PhaseEnum{});
         for (auto& s : next.slots) {
             s.forces_requested =

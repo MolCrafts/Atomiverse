@@ -542,7 +542,7 @@ def test_evaluator_dispatch_is_one_shared_table() -> None:
 def test_minimize_dispatch_covers_every_md_type() -> None:
     """The behavioral half of ac-003, including capability-gated types.
 
-    ``KSpacePME`` / ``AM1`` / ``PWEvaluator`` join MD's table only
+    ``KSpacePME`` / ``AM1`` / ``PW`` join MD's table only
     on an extension that carries them; asserting key-set equality covers
     them without constructing one.
     """

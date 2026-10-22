@@ -134,7 +134,7 @@ cpu::vib::Phonon phonon(/*na=*/1, /*nb=*/1, /*nc=*/1);
 
 phonon.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3, 1, 0, false});
 phonon.on(ATV::vib::Phase::force).add(cpu::StillingerWeber{pot});
-// PW/GPW later: .add(cpu::pw::PWEvaluator{…}.with_gradient(true));
+// PW/GPW later: .add(std::move(pw));  // cpu::pw::PW mounted directly
 
 phonon.build();
 cpu::vib::PhononResult r = phonon.run(sc);
@@ -199,8 +199,8 @@ from this e2e twin.
 A full PW/GPW FD Hessian is \(6N\) SCF+force evaluations. The **machinery**
 under test is supercell expansion + crystal \(3N\) diagonalization + public
 `Phonon` API. SW supplies periodic many-body forces with a literature potential
-and finishes in well under the ≤ 60 s e2e budget. Binding
-`PWEvaluator::with_gradient(true)` (or GPW) on `vib::Phase::force` is the same
+and finishes in well under the ≤ 60 s e2e budget. Mounting
+`cpu::pw::PW` (or GPW) on `vib::Phase::force` is the same
 public composition path for a later CP2K energy/frequency twin.
 
 ### Accuracy table

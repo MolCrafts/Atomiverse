@@ -159,6 +159,9 @@ class Runtime {
 
     /// @brief Access the CPU context.
     Context& context() { return context_; }
+    /// @brief Does the plan being dispatched consume the system stress?
+    /// @return True when some component of the active plan reads it.
+    bool stress_consumed() const { return plan_ && plan_->stress_consumed; }
 
     /// @brief Cap the OpenMP thread count. Must be called before `init()`.
     void set_threads(int n) { device_.set_threads(context_, n); }

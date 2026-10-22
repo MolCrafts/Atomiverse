@@ -93,6 +93,10 @@ struct Plan {
     }
 
     bool requires_full_frame = false;
+    /// Some component of this plan reads the system stress (a barostat, a
+    /// pressure criterion). Expensive stress sources (electronic structure)
+    /// compute their virial only when this is set.
+    bool stress_consumed = false;
     bool operator==(const Plan&) const = default;
 
     /// Unique objects in construction order; phase bindings remain untouched.

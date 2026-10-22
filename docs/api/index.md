@@ -79,7 +79,7 @@ Start with these CPU headers:
 - [`scf_guess.h` — SCFInitialGuess](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_guess.h)
 - [`gradient_result.h` — GradientResult (the `forces()` return)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/gradient_result.h)
 - [`XCType`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
-- [`cpu::pw::PW`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) + [`cpu::pw::PWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_evaluator.h) — plane-wave DFT
+- [`cpu::pw::PW`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) — plane-wave DFT
 - [`cpu::gpw::GpwDft`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_solver.h) + [`cpu::gpw::GPWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_evaluator.h) — GPW DFT (`GpwDft` is a `Driver<gpw::Phase>` node, Frame in / Frame out via `run(frame)` / `forces(frame)`; `GPWEvaluator(std::move(dft))` binds it into an outer driver)
 - [`cpu::semiempirical::AM1` / `RM1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/am1_solver.h) — NDDO
 - [`cpu::semiempirical::DFTB2`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/dftb2.h) (also `DFTB0`, `DFTB3`) — SCC-DFTB on in-tree Slater-Koster tables

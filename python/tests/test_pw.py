@@ -5,7 +5,7 @@ pins it: analytic ionic **forces** (local Hellmann-Feynman + Ewald +
 Kleinman-Bylander), Nielsen-Martin cell **stress**, the spin / smearing /
 functional knobs of ``cpu::pw::PW``, the extra ``PWResult`` channels, a
 fail-loud missing-cell guard, and PW as an MD force source (plane-wave
-Born-Oppenheimer MD via ``MD.set_evaluator(PWEvaluator(...))``). Before this
+Born-Oppenheimer MD via ``MD.set_evaluator(PW(...))``). Before this
 spec it stopped at the single-point SCF energy.
 
 No new oracle work happens here. Every physical number below is a
@@ -638,13 +638,13 @@ class TestPwFailsLoud:
 
 @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
 class TestPwBomd:
-    """``MD.set_evaluator(PWEvaluator(pw))`` — the C++ twin is
+    """``MD.set_evaluator(pw)`` — the C++ twin is
     regressions/pw/pw-bomd-h (reg_pw-bomd-h.cpp:39-60), whose speed settings
     (tol 1e-4, max_iter 12) are reused here on the stretched Si2 cell so one
     step stays ~0.3 s. Three steps is a smoke, not an energy-drift test:
     the drift pin belongs to that regression.
 
-    ``PWEvaluator`` and the MD names are imported inside the bodies for the
+    The MD names are imported inside the bodies for the
     same build-capability reason as test_md.py's AM1 class — they are absent
     from a wheel built without the matching domain.
     """
@@ -656,13 +656,12 @@ class TestPwBomd:
         the x column it started from."""
         from atomiverse.md import MD
         from atomiverse.md.integrator import VelocityVerlet
-        from atomiverse.pw import PWEvaluator
 
         frame = _si2_frame(_STRETCH)
         x_before = np.asarray(frame["atoms"]["x"], dtype=np.float64).copy()
         sim = MD()
         sim.set_integrator(VelocityVerlet(_BOMD_DT_FS))
-        sim.set_evaluator(PWEvaluator(_si2_bomd_method()))
+        sim.set_evaluator(_si2_bomd_method())
         sim.run(frame, _BOMD_STEPS)
         return frame, x_before
 
@@ -672,11 +671,10 @@ class TestPwBomd:
         whole point of the spec row."""
         from atomiverse.md import MD
         from atomiverse.md.integrator import VelocityVerlet
-        from atomiverse.pw import PWEvaluator
 
         sim = MD()
         sim.set_integrator(VelocityVerlet(_BOMD_DT_FS))
-        sim.set_evaluator(PWEvaluator(_si2_bomd_method()))
+        sim.set_evaluator(_si2_bomd_method())
 
     def test_potential_energy_finite_and_bound(
         self, bomd_si2: tuple["molpy.Frame", "np.ndarray"]

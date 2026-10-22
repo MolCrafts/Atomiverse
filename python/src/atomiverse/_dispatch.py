@@ -46,13 +46,12 @@ if has_domain("am1"):
     EVALUATOR_DISPATCH[_cpp.AM1] = "set_evaluator_am1"
 
 # Plane-wave DFT is the other electronic-structure force source
-# (ATV_BUILD_PW / FFTW3): analytic ionic forces from a re-converged density,
-# two SCF solves per force-producing step. Capability-probed like the two
-# above. Forces only — the setter installs a gradient-enabled copy of the
-# method, not a stress-enabled one, so this source drives a geometry
-# optimization but not a variable-cell relaxation.
+# (ATV_BUILD_PW / FFTW3): one SCF per step, analytic ionic forces from its
+# density, and the analytic virial whenever the plan reads stress (a cell
+# relaxer or a stress/pressure criterion). Capability-probed like the two
+# above.
 if has_domain("pw"):
-    EVALUATOR_DISPATCH[_cpp.PWEvaluator] = "set_evaluator_pw"
+    EVALUATOR_DISPATCH[_cpp.PW] = "set_evaluator_pw"
 
 
 def unsupported_evaluator_message(component: object) -> str:

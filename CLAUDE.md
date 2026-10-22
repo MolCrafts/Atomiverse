@@ -673,9 +673,9 @@ only on large systems. Wave-local freezes live in `.claude/notes/`.
   in the device cache (`publish_cell`), host copy 0.
 - **CUDA multi-GPU** has no Runtime/DomainRuntime: `cuda::MultiGpu`
   (partition/halo/`run_nve*`) is a second MD stack outside the Plan.
-- **Nested electronic methods:** PW/GPW generic nesting is rejected (they run
-  only through `PWEvaluator` / `GPWEvaluator`); QM/MM drives its engine on a
-  private Context. Plan: `.claude/specs/es-unification.md`.
+- **Nested electronic methods:** GPW generic nesting is rejected (it runs only
+  through `GPWEvaluator`); QM/MM drives its engine on a private Context.
+  Plan: `.claude/specs/es-unification.md`.
 - **Residual `int` step counters:** `Runtime::run(int)`, `Driver::run_nested`
   / `run_nested_erased` budgets, PhaseBuilder budgets,
   `Runtime::comm_refresh_(int slot, int step)` (truncates).

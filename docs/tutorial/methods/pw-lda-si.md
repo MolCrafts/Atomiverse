@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `pw-lda-si` |
-| Public API | `cpu::pw::PW` (members) + `cpu::pw::PWEvaluator` + `cpu::single_point` |
+| Public API | `cpu::pw::PW` (members) + `cpu::single_point` |
 | Roadmap | [dft.md](../../roadmap/dft.md) § Periodic DFT / plane-wave|
 
 ## Summary
@@ -82,7 +82,7 @@ Conversion used by the engine gate:
 Public surface only (`cpu::Frame` + concrete method members; no `*Config`, no
 `make_*` / `build_*` factories). Headers:
 `pw_solver.h`,
-`pw_evaluator.h`, `qe_units.h`; evaluate entry
+`qe_units.h`; evaluate entry
 `single_point.h`.
 
 Minimal sequence (matches `reg_pw-lda-si.cpp`):
@@ -91,7 +91,6 @@ Minimal sequence (matches `reg_pw-lda-si.cpp`):
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
 using namespace ATV;
@@ -128,10 +127,9 @@ method.max_iter = 50;
 // Pure LDA on the PW grid (engine default XC may be PBE; set explicitly):
 method.xc = cpu::scf::XCType::LSDA;
 
-PWEvaluator pwe{std::move(method)};
-cpu::single_point(frame, pwe);
+cpu::single_point(frame, method);
 
-const auto& r = pwe.last_result(); // r.energy [Ry], r.converged, r.iterations
+const auto& r = method.last_result(); // r.energy [Ry], r.converged, r.iterations
 const double e_ev = frame.meta.get(kEnergy); // [eV]
 ```
 

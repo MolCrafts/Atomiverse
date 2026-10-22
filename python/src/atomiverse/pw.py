@@ -88,27 +88,27 @@ Knobs beyond the basis
 Plane-wave Born-Oppenheimer MD
 ------------------------------
 
-``PWEvaluator`` is the same method wearing its Component face::
+Hand the method itself to ``MD.set_evaluator``::
 
     from atomiverse.md import MD
     from atomiverse.md.integrator import VelocityVerlet
-    from atomiverse.pw import PW, PWEvaluator
+    from atomiverse.pw import PW
 
     pw = PW()
     pw.gth_name = "GTH-PBE-q4"
     pw.ecut_ry = 8.0
     pw.k_mesh = 1
-    pw.max_iter = 12       # a step is two whole SCFs — budget it
+    pw.max_iter = 12       # one whole SCF per step — budget it
 
     sim = MD()
     sim.set_integrator(VelocityVerlet(0.5))   # dt [fs]
-    sim.set_evaluator(PWEvaluator(pw))
+    sim.set_evaluator(pw)
     sim.run(frame, 3)
 
-Each step costs *two* SCF solves — the energy solve, then the analytic force
-path's own — so the settings that make a Python-side run finish are a small
-cell, a low ``ecut_ry`` and a modest ``max_iter``. The evaluator copies the
-method's parameters (a ``PW`` owns FFTW plans, which cannot be shared), so
+Each step costs one SCF solve; the analytic forces reuse its converged
+density. The settings that make a Python-side run finish are a small cell, a
+low ``ecut_ry`` and a modest ``max_iter``. The driver copies the method's
+parameters (a ``PW`` owns FFTW plans, which cannot be shared), so
 the object passed in stays usable and per-step results land on the frame
 rather than on it.
 
@@ -152,5 +152,4 @@ require_domain(__name__, "pw")
 
 PW = _cpp.PW
 PWResult = _cpp.PWResult
-PWEvaluator = _cpp.PWEvaluator
-__all__ = ["PW", "PWResult", "PWEvaluator"]
+__all__ = ["PW", "PWResult"]

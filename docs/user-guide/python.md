@@ -162,7 +162,7 @@ Current surface:
   `GCMC` with their movers `TranslateMove`, `VolumeMove`,
   `InsertDeleteMove` and `MoveSelector`. Present when the `mc` module is
   built (`python -m atomiverse config md mc …`).
-- **Plane-wave DFT** — `PW` / `PWResult` / `PWEvaluator`, i.e. energy,
+- **Plane-wave DFT** — `PW` / `PWResult`, i.e. energy,
   forces, cell stress and plane-wave Born-Oppenheimer MD (present when the
   `pw` module is built).
 - **Gaussian SCF** — the concrete mean-field methods `RHF`, `UHF`, `RKS`,
@@ -572,7 +572,7 @@ the energy change `etol` (eV).
 Any force source `MD.set_evaluator` accepts works here too — the two facades
 read one dispatch table — so a bonded force field, an Ewald split
 (`CoulLong` + `KSpacePME` at the same `alpha`), `AM1` or
-`PWEvaluator` all drive an optimization.
+`PW` all drive an optimization.
 
 One iteration is free, whichever optimizer you choose: the minimizer phase
 order runs `search_direction` before `force`, so iteration 0 has no force
@@ -609,12 +609,12 @@ default — the pair styles (`PairLJCut`, `PairCoulCut`, `CoulLong` +
 `KSpacePME`, `PairMorse`, `PairBuck`, `PairBorn`, `PairYukawa`, `PairWCA`,
 `PairDpd`) and the bonded ones alike; `PairDpd` contributes its *conservative*
 virial only, which is the term a pressure is built from. `AM1` writes
-none — it is a molecular method with no cell — and
-`PWEvaluator` is installed by this facade as a gradient-only copy. With a zero
-virial the cell never moves and `PressureConverged(P_target=0.0, …)` reports
-success on the untouched cell. (`PW.stress(frame)` still returns the
-plane-wave cell stress as a Voigt 6-vector in eV/Å³; it just does not feed a
-relaxer.)
+none — it is a molecular method with no cell — so it cannot drive a cell step.
+A mounted `PW` computes its analytic virial whenever the plan consumes stress
+(a cell relaxer or a `StressConverged` / `PressureConverged` criterion). With a
+zero virial the cell never moves and `PressureConverged(P_target=0.0, …)`
+reports success on the untouched cell. (`PW.stress(frame)` standalone returns
+the plane-wave cell stress as a Voigt 6-vector in eV/Å³.)
 
 **And the first iteration is free.** The step uses the stress the previous
 iteration's force pass left behind, and iteration 0 has none of its own — it
@@ -1230,32 +1230,32 @@ it is the oracle for the CUDA twin.
 ```python
 from atomiverse.md import MD
 from atomiverse.md.integrator import VelocityVerlet
-from atomiverse.pw import PW, PWEvaluator
+from atomiverse.pw import PW
 
 pw = PW()
 pw.gth_name = "GTH-PBE-q4"
 pw.ecut_ry = 8.0
 pw.k_mesh = 1
 pw.tol = 1e-4
-pw.max_iter = 12            # one step is two whole SCFs — budget it
+pw.max_iter = 12            # one step is one whole SCF — budget it
 
 sim = MD()
 sim.set_integrator(VelocityVerlet(0.5))    # dt [fs]
-sim.set_evaluator(PWEvaluator(pw))
+sim.set_evaluator(pw)
 sim.run(frame, 3)
 print(frame.meta["energy"])  # [eV]
 ```
 
-`PWEvaluator` rides the same plural `set_evaluator` slot as the pair styles
+`PW` rides the same plural `set_evaluator` slot as the pair styles
 and `AM1`; registering it makes the loop Born-Oppenheimer dynamics —
 the electrons re-converged at every geometry the nuclei reach, with analytic
 forces from the converged density. It takes no `NeighborList` (a plane-wave
 Hamiltonian is not a pair style), needs the frame's `atomic_number` [Z] and
-`mass` [amu] columns and a box, and — like the AM1 evaluator — the driver
-installs its own gradient-enabled copy of the parameters, so per-step results
+`mass` [amu] columns and a box, and — like `AM1` — the driver
+mounts its own copy of the method's parameters, so per-step results
 land on the frame rather than on the object you passed. Cost is the thing to
-plan around: a step is *two* SCF solves, the energy solve and then the
-analytic force path's own, each seconds of work at production settings. A
+plan around: a step is *one* SCF solve (the analytic forces reuse the
+converged density), seconds of work at production settings. A
 Python-side run therefore wants a small cell, a low `ecut_ry` and a modest
 `max_iter`.
 

@@ -32,7 +32,7 @@
 #ifdef ATV_HAS_PW
 // `copy_pw_params` is the one definition of "the same method, no state".
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 #endif
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
@@ -162,34 +162,30 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
 #ifdef ATV_HAS_PW
     cls.def(
         "set_evaluator_pw",
-        [](Handle& self, const ATV::cpu::pw::PWEvaluator& evaluator) {
-            // Handed a LIVE component: PWEvaluator is bound in bind_pw.cpp so
-            // Python already holds the real thing.
-            const ATV::cpu::pw::PW& method = evaluator.method();
+        [](Handle& self, const ATV::cpu::pw::PW& method) {
+            // Handed the method itself; a fresh copy of its parameters is
+            // mounted as the nested force source.
             // The two enum members cross the wire as their integer values:
-            // `cpu::task::PwEvaluatorParams` is compiled without the
+            // `cpu::task::PWParams` is compiled without the
             // plane-wave headers those enums live in.
-            const ATV::cpu::task::PwEvaluatorParams p{
-                method.upf_path,
-                method.gth_name,
-                method.ecut_ry,
-                method.k_mesh,
-                method.tol,
-                method.max_iter,
-                method.mix_beta,
-                method.pulay_depth,
-                static_cast<int>(method.xc),
-                method.spin_polarized,
-                method.multiplicity,
-                static_cast<int>(method.smearing),
-                method.degauss,
-                method.mp_order,
-                method.extra_bands};
+            const ATV::cpu::task::PWParams p{method.upf_path,
+                                             method.gth_name,
+                                             method.ecut_ry,
+                                             method.k_mesh,
+                                             method.tol,
+                                             method.max_iter,
+                                             method.mix_beta,
+                                             method.pulay_depth,
+                                             static_cast<int>(method.xc),
+                                             method.spin_polarized,
+                                             method.multiplicity,
+                                             static_cast<int>(method.smearing),
+                                             method.degauss,
+                                             method.mp_order,
+                                             method.extra_bands};
             self.set_categorical(
                 "set_evaluator", p,
-                ATV::cpu::pw::PWEvaluator{
-                    ATV::cpu::pw::internal::copy_pw_params(method)}
-                    .with_gradient(true));
+                ATV::cpu::pw::internal::copy_pw_params(method));
         },
         nb::arg("comp"), pw_doc);
 #endif

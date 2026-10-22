@@ -225,14 +225,14 @@ class MD:
         gradient-enabled copy, so results land on the frame rather than on
         the object you passed.
 
-        ``PWEvaluator`` is the same story on a plane-wave Hamiltonian:
+        ``PW`` is the same story on a plane-wave Hamiltonian:
         registering it makes the run plane-wave Born-Oppenheimer dynamics,
         with analytic ionic forces from the converged density. It likewise
         takes no ``NeighborList``, and it additionally needs the frame to
         carry a ``box`` — a plane-wave basis is defined by the cell. Each
-        step costs *two* SCF solves (the energy solve, then the force
-        path's own), so size the cell, ``ecut_ry`` and ``max_iter`` for the
-        number of steps you actually want.
+        step costs one SCF solve (forces reuse its density), so size the
+        cell, ``ecut_ry`` and ``max_iter`` for the number of steps you
+        actually want.
 
         Three caveats, because they are the ones this dispatch cannot catch
         for you:

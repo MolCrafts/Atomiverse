@@ -171,7 +171,7 @@ struct MinimizeHandle {
             driver.set_evaluator(std::move(component));
 #endif
 #ifdef ATV_HAS_PW
-        else if constexpr (std::is_same_v<P, cpu::task::PwEvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::PWParams>)
             // Move-only for the same reason as KSpacePME.
             driver.set_evaluator(std::move(component));
 #endif
@@ -483,10 +483,10 @@ void bind_minimizer(nb::module_& m) {
         "STRESS SOURCE (the honest gate). A relaxer can only follow a virial "
         "something actually wrote. The classical evaluators — PairLJCut, "
         "PairCoulCut, CoulLong/KSpacePME and the bonded styles — write it by "
-        "default. AM1 writes none at all (it is a molecular method "
-        "with no cell), and set_evaluator_pw installs a gradient-only "
-        "plane-wave copy, so neither drives a cell step from Python: the "
-        "virial stays zero, the scale stays 1, and a PressureConverged at "
+        "default. A mounted PW writes its analytic virial because the cell "
+        "relaxer reads stress. AM1 writes none at all (it is a molecular "
+        "method with no cell), so it cannot drive a cell step: the virial "
+        "stays zero, the scale stays 1, and a PressureConverged at "
         "P_target = 0 reports success on an untouched cell.\n\n"
         "A variable-cell run does not terminate on forces: add "
         "PressureConverged (or StressConverged), not ForceConverged. The "

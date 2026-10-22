@@ -233,7 +233,7 @@ A full ab initio FD Hessian is \(6N_\mathrm{sc}\) SCF+force evaluations. The
 **machinery** under test is IFC Fourier + public `PhononDispersion` API +
 Γ/X/L branch sanity. SW supplies periodic many-body forces with a literature
 potential and finishes in well under the ≤ 60 s e2e budget (same twin family
-as `reg_fd-phonon-supercell`). Binding `PWEvaluator::with_gradient(true)` (or
+as `reg_fd-phonon-supercell`). Mounting `cpu::pw::PW` (or
 GPW) on `vib::Phase::force` is the same public composition path for a later
 CP2K frequency twin.
 

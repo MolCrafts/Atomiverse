@@ -52,7 +52,6 @@
 #include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #ifdef ATV_HAS_PW
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 #endif
@@ -1193,10 +1192,10 @@ cpu::Frame make_si2_bomd_frame() {
     return frame;
 }
 
-// PW as an MD force source (py-pw-forces): the `PwEvaluatorParams` payload
+// PW as an MD force source (py-pw-forces): the `PWParams` payload
 // rides the categorical (`std::nullopt`) evaluator slot — `set_evaluator`,
 // which binds at md::Phase::force order 0, the same slot
-// `on(force).add(PWEvaluator{…}.with_gradient(true))` fills in
+// `on(force).add(PW{…})` fills in
 // regressions/pw/pw-bomd-h. Two steps, each one a full plane-wave SCF plus
 // analytic forces.
 //
@@ -1232,23 +1231,22 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // ignored the field) would silently run PBE and the twin below — which
     // names the enumerator — would disagree. It is also the cheaper
     // functional, no gradient corrections.
-    entries.push_back(
-        MDComponentEntry{PwEvaluatorParams{/*upf_path=*/"",
-                                           /*gth_name=*/"GTH-PBE-q4",
-                                           /*ecut_ry=*/kPwEcut,
-                                           /*k_mesh=*/kPwKMesh,
-                                           /*tol=*/kPwTol,
-                                           /*max_iter=*/kPwMaxIter,
-                                           /*mix_beta=*/kPwMixBeta,
-                                           /*pulay_depth=*/kPwPulayDepth,
-                                           /*xc=*/0,
-                                           /*spin_polarized=*/false,
-                                           /*multiplicity=*/1,
-                                           /*smearing=*/0,
-                                           /*degauss=*/kPwDegauss,
-                                           /*mp_order=*/kPwMpOrder,
-                                           /*extra_bands=*/kPwExtraBands},
-                         std::nullopt});
+    entries.push_back(MDComponentEntry{PWParams{/*upf_path=*/"",
+                                                /*gth_name=*/"GTH-PBE-q4",
+                                                /*ecut_ry=*/kPwEcut,
+                                                /*k_mesh=*/kPwKMesh,
+                                                /*tol=*/kPwTol,
+                                                /*max_iter=*/kPwMaxIter,
+                                                /*mix_beta=*/kPwMixBeta,
+                                                /*pulay_depth=*/kPwPulayDepth,
+                                                /*xc=*/0,
+                                                /*spin_polarized=*/false,
+                                                /*multiplicity=*/1,
+                                                /*smearing=*/0,
+                                                /*degauss=*/kPwDegauss,
+                                                /*mp_order=*/kPwMpOrder,
+                                                /*extra_bands=*/kPwExtraBands},
+                                       std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), kPwSteps});
 
     cpu::Frame materialized_frame = make_si2_bomd_frame();
@@ -1260,9 +1258,8 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // the fifteen knobs is assigned in the params' declaration order — the
     // order the codec writes and the materializer replays — so a dropped or
     // swapped field shows up as a bitwise mismatch rather than as a silent
-    // default. `with_gradient` is spelled explicitly on both sides: forces
-    // are what makes the evaluator an MD force source, and the component
-    // default is false.
+    // default. The method is mounted directly; the MD force phase requests
+    // its forces.
     cpu::Frame direct_frame = make_si2_bomd_frame();
     cpu::pw::PW pw;
     pw.upf_path = "";
@@ -1287,7 +1284,7 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // `PW` is move-only (it owns FFTW plans and SCF workspaces), so the
     // solver moves into the evaluator and the evaluator prvalue moves into
     // the owning setter — no named local to copy from.
-    sim.set_evaluator(cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true));
+    sim.set_evaluator(std::move(pw));
     sim.build();
     sim.run(direct_frame, kPwSteps);
 
@@ -1313,8 +1310,8 @@ TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
     entries.push_back(
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
     entries.push_back(
-        MDComponentEntry{PwEvaluatorParams{"", "GTH-PBE-q4", 2.0, 1, 1e-4, 2,
-                                           0.7, 5, 0, false, 1, 0, 0.02, 1, 4},
+        MDComponentEntry{PWParams{"", "GTH-PBE-q4", 2.0, 1, 1e-4, 2, 0.7, 5, 0,
+                                  false, 1, 0, 0.02, 1, 4},
                          std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), 1});
 
@@ -1322,7 +1319,7 @@ TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
         TaskMaterializer mat(spec);
         cpu::Frame frame = make_lj_frame();
         mat.run(frame);
-        FAIL() << "a PWEvaluator payload was accepted in a PW-less build";
+        FAIL() << "a PW payload was accepted in a PW-less build";
     } catch (const std::runtime_error& err) {
         EXPECT_NE(std::string(err.what()).find("ATV_BUILD_PW"),
                   std::string::npos)

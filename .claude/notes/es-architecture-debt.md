@@ -35,9 +35,9 @@ in `Hessian<RHF>`), `Polarizability<RHF>`, `WithSolvent<Method>`; FD skeleton
 ### Live dialects (do not grow)
 
 1. **Method-as-Driver** — CPU Gaussian mean-field (`MeanFieldMethod`).
-2. **Method + `*Evaluator`** — PW / GPW (the wrapper owns the method and is
-   the only way into an outer loop). Gaussian SCF and AM1/RM1 are already
-   mounted directly as nested nodes on the parent Runtime.
+2. **Method + `*Evaluator`** — GPW only (the wrapper owns the method and the
+   CPMD/XL propagator state). Gaussian SCF, AM1/RM1 and PW mount directly as
+   nested nodes on the parent Runtime.
 3. **Loop inside Component** — some DFTB as bare `Semiempirical`. NDDO
    self-consistency is `NddoMethod` (`Driver<nddo::Phase>`).
 
@@ -45,7 +45,7 @@ in `Hessian<RHF>`), `Polarizability<RHF>`, `WithSolvent<Method>`; FD skeleton
 
 | Sev | ID | Where | Debt |
 | --- | --- | --- | --- |
-| 🔴 | `es-bind-dialects` | `*Evaluator` vs direct nest vs DFTB-as-Component | Target (spec `es-unification`): mount the method itself. Done for Gaussian SCF and AM1/RM1. Open: `PWEvaluator` / `GPWEvaluator` (PW/GPW nesting rejected), DFTB/xTB as bare Components. |
+| 🔴 | `es-bind-dialects` | `*Evaluator` vs direct nest vs DFTB-as-Component | Target (spec `es-unification`): mount the method itself. Done for Gaussian SCF, AM1/RM1 and PW. Open: `GPWEvaluator` (GPW nesting rejected), DFTB/xTB as bare Components. |
 | 🔴 | `es-red-regressions` | `regressions/{gpw,semiempirical,architecture}` | Red independent of shape work: Γ-Si periodic post-SCF family (`periodic-{gw,mp2,ri-mp2,rpa,scs-mp2,scs-ump2,ugw,ump2,urpa}-si`, `ugw-uks-rpbe` — Γ SCF not converged in 80 iters), `periodic-{gw,ugw}-kpoints`, `periodic-gw-finite-q`, `gpw-kpoints-si` (>600 s), `gpw-fd-phonon-si`, `gpw-dftu-kpoints`, `second-gen-cpmd-ot`, GFN2 family (`gfn2-{aes-fock,camm-r,quadrupole-aes,xtb-forces,xtb-water}`, `gfn-xtb-analytic-hessian`). Re-verify against current `dev`. |
 | 🟡 | `es-cuda-gpw-frame-io` | `cuda/gpw/gpw_solver.cuh` | Frame `build`/`run`/`forces` exist (`kinds` + `frame.box`); device kernels and CUDA regs still take `vector<GpwAtom>`. |
 | 🟡 | `es-pw-evaluator-scf` | `cpu/planewave/pw_evaluator.cpp` | Forces + stress launch = 3 SCFs; assemble from the `run` density. |

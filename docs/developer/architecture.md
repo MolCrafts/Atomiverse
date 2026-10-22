@@ -308,8 +308,8 @@ home of single-point energy and force calculations.
 concrete method (`cpu::scf::RHF` / `UHF` / `RKS` / `UKS`), and the CRTP base
 they share, `cpu::scf::MeanFieldMethod<D>`, **is** a `cpu::Driver<scf::Phase>`
 — the same loop-node shape as MD and Minimize. CPU plane-wave DFT also runs
-through `Driver<pw::Phase>`; `cpu::pw::PWEvaluator` binds that method into a
-force slot. There is no `Capability` write-set — components write Frame
+through `Driver<pw::Phase>`; `cpu::pw::PW` itself is mounted as a nested node
+on a force slot. There is no `Capability` write-set — components write Frame
 keys and plug into the *same* Evaluate, MD, and Minimize drivers ("swap the
 energy source, keep the driver").
 
