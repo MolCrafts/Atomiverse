@@ -938,6 +938,14 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     bool driver_built_ = false;
     /// Address the stages were wired to; a mismatch on `this` flags a move.
     const void* wired_self_ = nullptr;
+    /// Parent Runtime of a nested mount (`build_on`); the SCF stage plan runs
+    /// on it instead of a private backend. Null for standalone entries.
+    cpu::Runtime* host_runtime_ = nullptr;
+    /// The stage plan is registered on `host_runtime_` for the solve in
+    /// progress (built at its start, released at its end or on unwind).
+    bool host_registered_ = false;
+    /// @brief Release the stage plan from the parent Runtime, if registered.
+    void release_host_plan_();
 
     // Most recent analytic gradient (forces() return + force-slot write).
     GradientResult last_grad_;

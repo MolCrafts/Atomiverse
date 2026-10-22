@@ -168,11 +168,20 @@ void MeanFieldMethod<D>::set_predictor_(int order, int corrector_steps,
 // ── Stage wiring + Plan compile (lazy, once) ──────────────────────────────────
 
 template <typename D>
+void MeanFieldMethod<D>::release_host_plan_() {
+    if (host_registered_ && host_runtime_)
+        host_runtime_->destroy_plan(this->plan());
+    host_registered_ = false;
+}
+
+template <typename D>
 void MeanFieldMethod<D>::reset_built_driver_() {
     // Drop the wired stages and every trace of their Plan / criterion
     // registration, so ensure_driver_built_ can rebind cleanly against the
     // current object. Reaches the loop-node internals directly (they are
-    // protected precisely so a subclass can drive its own loop).
+    // protected precisely so a subclass can drive its own loop). A parent
+    // Runtime that holds the old stages releases them first.
+    release_host_plan_();
     fock_stage_.reset();
     rohf_couple_stage_.reset();
     mix_stage_.reset();
@@ -307,9 +316,13 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
 
 template <typename D>
 void MeanFieldMethod<D>::build_on(cpu::Runtime& rt) {
-    // Stage wiring needs geometry (internal::IntegralWorkspace dimensions); deferred to the
-    // first drive_scf_. Parent Runtime does not own this method's Plan.
-    (void)rt;
+    // Stage wiring needs geometry (internal::IntegralWorkspace dimensions), so
+    // each nested solve registers the stage plan on this Runtime itself
+    // (drive_scf_core_) and runs every iteration on it — no private backend.
+    if (host_runtime_ && host_runtime_ != &rt)
+        throw std::logic_error("MeanFieldMethod: already nested on another "
+                               "Runtime");
+    host_runtime_ = &rt;
     // The one thing a nested build CAN check: Car-Parrinello shares the
     // nuclear clock, and only a `TimestepProvider` in the same loop can
     // publish it. `cpu::md::MD::build()` refuses the missing provider itself;
@@ -327,8 +340,10 @@ void MeanFieldMethod<D>::build_on(cpu::Runtime& rt) {
 
 template <typename D>
 void MeanFieldMethod<D>::destroy_on(cpu::Runtime& rt) {
-    (void)rt;
+    if (host_runtime_ != &rt)
+        return;
     reset_built_driver_();
+    host_runtime_ = nullptr;
 }
 
 template <typename D>
@@ -1189,7 +1204,38 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         std::abs(level_shift) > internal::kLevelShiftSkipThreshold;
 
     const auto saved_window = frame.resolution_window();
-    setup_pass(frame);
+    // Nested: the stage plan runs on the parent Runtime (an electronic,
+    // non-physical plan borrows its services without touching geometry).
+    // Standalone: this method is the root loop and owns its backend.
+    cpu::Runtime* const host = opts.nested ? host_runtime_ : nullptr;
+    cpu::Context* host_ctx = nullptr;
+    LoopServices parent_loop{};
+    if (host) {
+        // Stages cache geometry-dependent state in build(), so the plan is
+        // built for this solve and released after it — the same per-solve
+        // lifecycle a standalone run gets from setup_pass/teardown_pass.
+        host->build_plan(this->plan());
+        host_registered_ = true;
+        host_ctx = &host->context();
+        parent_loop = host_ctx->loop;
+        host_ctx->loop.status = &this->mutable_outer_status();
+        host_ctx->loop.metrics = &this->metrics_;
+        this->metrics_ = ConvergenceMetrics{};
+    } else {
+        setup_pass(frame);
+    }
+    struct RestoreLoop {
+        cpu::Context* ctx;
+        LoopServices saved;
+        ~RestoreLoop() {
+            if (ctx)
+                ctx->loop = saved;
+        }
+    } restore_loop{host_ctx, parent_loop};
+    struct ReleaseHostPlan {
+        MeanFieldMethod& method;
+        ~ReleaseHostPlan() { method.release_host_plan_(); }
+    } release_host_plan{*this};
 
     int executed = 0;
     for (iter_ = 0; iter_ < budget; ++iter_) {
@@ -1204,13 +1250,23 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         }
 
         mutable_outer_status().reset();
-        step_once(iter_);
         ++executed;
-        if (poll_criteria_(iter_) != ATV::Verdict::Continue)
-            break;
+        if (host) {
+            host->step_plan(this->plan(), iter_);
+            if (this->poll_criteria_(iter_, frame, *host_ctx)
+                != ATV::Verdict::Continue)
+                break;
+        } else {
+            step_once(iter_);
+            if (poll_criteria_(iter_) != ATV::Verdict::Continue)
+                break;
+        }
     }
 
-    teardown_pass();
+    if (!host)
+        teardown_pass();
+    else
+        release_host_plan_();
     frame.restore_resolution_window(saved_window);
 
     const bool did_converge = this->converged();
