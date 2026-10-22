@@ -93,7 +93,25 @@ int main() {
     const double q_bot = joint.total_charge(0);
     const double q_top = joint.total_charge(1);
     const double neut = joint.neutrality_residual();
-    const auto& mu = joint.last_mu();
+    // Rows by tag: MD sorts atoms spatially (also at setup), so the bottom
+    // electrode, top electrode, cation and anion (tags 1..4) may sit in any
+    // rows; last_mu() is row-indexed like every per-atom array.
+    const auto& row_of = frame.meta.get(cpu::kTagIndex);
+    const int r_bot = row_of.at(1), r_top = row_of.at(2);
+    const int r_cat = row_of.at(3), r_an = row_of.at(4);
+    const auto& mu_rows = joint.last_mu();
+    const double mu[12] = {0,
+                           0,
+                           0,
+                           0,
+                           0,
+                           0,
+                           mu_rows[3 * r_cat],
+                           mu_rows[3 * r_cat + 1],
+                           mu_rows[3 * r_cat + 2],
+                           mu_rows[3 * r_an],
+                           mu_rows[3 * r_an + 1],
+                           mu_rows[3 * r_an + 2]};
 
     const double rel_bot = std::abs(q_bot - kQBotPin) / std::abs(kQBotPin);
     const double rel_top = std::abs(q_top - kQTopPin) / std::abs(kQTopPin);
@@ -136,16 +154,18 @@ int main() {
         ++nfail;
     }
     // Electrolyte permanent charges must remain.
-    if (std::abs(static_cast<double>(frame.span(kAtom_charge)[2]) - 1.0) > 1e-14
-        || std::abs(static_cast<double>(frame.span(kAtom_charge)[3]) + 1.0)
+    if (std::abs(static_cast<double>(frame.span(kAtom_charge)[r_cat]) - 1.0)
+            > 1e-14
+        || std::abs(static_cast<double>(frame.span(kAtom_charge)[r_an]) + 1.0)
                > 1e-14) {
         std::fprintf(stderr, "FAIL electrolyte charges mutated\n");
         ++nfail;
     }
     // Frame write-back of electrode Q
-    if (std::abs(static_cast<double>(frame.span(kAtom_charge)[0]) - q_bot)
+    if (std::abs(static_cast<double>(frame.span(kAtom_charge)[r_bot]) - q_bot)
             > 1e-14
-        || std::abs(static_cast<double>(frame.span(kAtom_charge)[1]) - q_top)
+        || std::abs(static_cast<double>(frame.span(kAtom_charge)[r_top])
+                    - q_top)
                > 1e-14) {
         std::fprintf(stderr, "FAIL kAtom_charge electrode write-back\n");
         ++nfail;
@@ -212,8 +232,32 @@ int main() {
         sim.build();
         sim.run(f2, 1);
 
+        // The MD step moves the ions (setup forces are evaluated before the
+        // first integration, as in LAMMPS) and the step's solve sees that
+        // geometry. Compare with the static joint solve on the same
+        // post-step geometry, carried over by tag.
+        cpu::Frame f3 = make_frame();
+        {
+            const auto& row2 = f2.meta.get(cpu::kTagIndex);
+            for (int i = 0; i < f3.nlocal(); ++i) {
+                const int r = row2.at(f3.span(kAtom_tag)[i]);
+                f3.span(kAtom_x)[i] = f2.span(kAtom_x)[r];
+                f3.span(kAtom_y)[i] = f2.span(kAtom_y)[r];
+                f3.span(kAtom_z)[i] = f2.span(kAtom_z)[r];
+            }
+        }
+        cpu::md::DipoleElectrodeJoint j3(2.0, {0.0, 0.0, 0.0, 1.0, 1.5});
+        j3.add_electrode(1, 0.0);
+        j3.add_electrode(2, 1.0);
+        j3.thole_a = 0.39;
+        j3.electroneutrality = true;
+        j3.xy_image_range = 0;
+        j3.joint_tol = 1e-12;
+        j3.pol_tol = 1e-12;
+        solve_once(j3, f3);
+        const double q_static = j3.total_charge(1);
         const double q_md = j2.total_charge(1);
-        const double rel_md = std::abs(q_md - kQTopPin) / std::abs(kQTopPin);
+        const double rel_md = std::abs(q_md - q_static) / std::abs(q_static);
         std::printf("  MD path Q_top = % .16e  rel=% .3e  |sumQ|=% .3e\n", q_md,
                     rel_md, j2.neutrality_residual());
         if (!(rel_md <= kRelTolQ) || !(j2.neutrality_residual() <= 1e-10)

@@ -214,7 +214,7 @@ ratio depends on cutoff/OT choices and is not the product gate.
 
 **perf_exempt = true.** Reason (from REFERENCE / handoff): primary deliverable
 is \(E_{\mathrm{disp}}\) pin parity (same policy as `gpw-vdw-df-ice` /
-`gpw-vdw-df2-ice` / `gpw-ts-ice`). CP2K wall includes full Quickstep with
+`gpw-ts-ice`). CP2K wall includes full Quickstep with
 self-consistent nonlocal potential (~121 s OMP=8) while the hard-gate
 regression materializes post-SCF `e_disp` after a short DIIS SCF. Re-measure a
 strict full-SCF twin later if product policy requires
@@ -242,8 +242,8 @@ strict full-SCF twin later if product policy requires
 - Oracle inputs: CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`
-- Sibling nonlocal / dispersion pins: `gpw-vdw-df-ice`, `gpw-vdw-df2-ice`,
-  `gpw-pbe-d3bj-ice`, `gpw-ts-ice`
+- Sibling nonlocal / dispersion pins: `gpw-vdw-df-ice`,
+  `gpw-pbe-d3bj-ice`, `gpw-ts-ice`; vdW-DF2 method page [gpw-vdw-df2-ice](gpw-vdw-df2-ice.md)
 - R. Sabatini, T. Gorni, S. de Gironcoli, *Phys. Rev. B* **87**, 041108(R)
   (2013) (rVV10)
 - J. Román-Pérez, J. M. Soler, *Phys. Rev. Lett.* **103**, 096102 (2009)

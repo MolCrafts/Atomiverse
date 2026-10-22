@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-mp2-si` |
+| Regression | None standing (end-to-end case removed); the standing periodic Γ MP2 pin is the RI path `periodic-ri-mp2-si` |
 | Public API | `cpu::gpw::GpwDft::mp2()` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); members `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
-| Roadmap | roadmap §10 ○ Periodic MP2 foothold; unblocks `periodic-rpa-si` |
+| Roadmap | roadmap §10 ○ Periodic MP2 foothold; unblocks [periodic-rpa-si](periodic-rpa-si.md) |
 
 ## Summary
 
@@ -81,7 +81,7 @@ kernels are private (`cpu/gpw/internal/mp2_kernels.h`).
   sum ≡ explicit spin-orbital MP2 sum (1e-12); MO-on-grid ≡ explicit
   Γ-image-summed AO contraction (1e-9); \((pp|pp)\) ≡ 2 × Poisson Hartree
   energy of the same pair density (1e-10); guard throws.
-- **E2E** (`periodic-mp2-si`): periodic Γ sc-Si₂
+- **E2E** (recorded when this page was written; no standing case): periodic Γ sc-Si₂
   (a = 5.43 Å, DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE, 30 Ry): SCF converged;
   E_corr < 0; virtual-space monotonicity E_corr(22) ≤ E_corr(8) < 0;
   OS+SS ≡ E_corr; frozen first-green band E_corr = −0.2764 Ha ± 1e-3 until
@@ -90,5 +90,5 @@ kernels are private (`cpu/gpw/internal/mp2_kernels.h`).
 
 ## Follow-ons
 
-RI factorization (cFIT aux tables), k-point sampling, UMP2, `periodic-rpa-si`
+RI factorization (cFIT aux tables), k-point sampling, UMP2, [periodic-rpa-si](periodic-rpa-si.md)
 (direct consumer), physical diamond-Si₈ deck at production cutoffs.

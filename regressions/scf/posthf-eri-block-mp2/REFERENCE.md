@@ -8,13 +8,12 @@ is re-assembled from a per-AO scalar `native::eri` loop to a `native::eri_block`
 shell-block engine (amortized Boys/R-table + OpenMP, 8-fold-symmetry scatter),
 and the correlation energy must reproduce the cited PySCF value unchanged.
 
-## Distinct from `regressions/scf/h2o_mp2_sto3g`
+## What it gates
 
-`h2o_mp2_sto3g` uses a different water geometry (O at origin) and only checks a
-loose window `e_corr < -1e-4`. This witness uses the PySCF `water` preset
-geometry and pins the **exact** PySCF RHF total energy **and** the plain-RMP2
-correlation energy (both tighter than the sibling window), so it gates the
-block-assembled dense-ERI numbers rather than merely their sign.
+This witness uses the PySCF `water` preset geometry and pins the **exact**
+PySCF RHF total energy **and** the plain-RMP2 correlation energy, so it gates
+the block-assembled dense-ERI numbers rather than merely their sign. It is the
+plain-RMP2 pin of the suite.
 
 Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md` (offline pin only;
 **never** import/invoke PySCF from CMake, ctest, or Atomiverse C++).
@@ -108,5 +107,5 @@ inside the pins above (the ERI equivalence judge caps block-vs-scalar drift at
 - Møller, C.; Plesset, M. S. *Phys. Rev.* **46**, 618 (1934). Values match
   PySCF 2.14.0 `pyscf.mp.MP2`.
 - Domain path under `regressions/scf/` matches other Gaussian post-HF cases
-  (`h2o_mp2_sto3g`, `scs-mp2-h2o-sto3g`, `frozen-core-mp2-h2o`); slug = queue id
+  (`scs-mp2-h2o-sto3g`, `frozen-core-mp2-h2o`); slug = queue id
   `posthf-eri-block-mp2`.

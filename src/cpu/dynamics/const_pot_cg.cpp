@@ -65,6 +65,7 @@ void ConstPotCG::launch(const LaunchContext& ctx) {
         build_matrix_(ctx.frame);
         matrix_ready_ = true;
     }
+    sites_.refresh(ctx, elec_atoms_, "ConstPotCG");
     build_rhs_(ctx.frame);
     solve_();
     write_charges_(ctx.frame);
@@ -72,10 +73,11 @@ void ConstPotCG::launch(const LaunchContext& ctx) {
 }
 
 void ConstPotCG::destroy(const DestroyContext&) {
+    // Release the matrix only; the last solution stays readable (see
+    // ConstPotBO::destroy). build() re-collects the electrode sites.
     matrix_ready_ = false;
-    elec_atoms_.clear();
     A_.clear();
-    Q_.clear();
+    A_.shrink_to_fit();
 }
 
 double ConstPotCG::total_charge(std::size_t ie) const {
@@ -103,7 +105,8 @@ void ConstPotCG::collect_electrodes_(const cpu::Frame& frame) {
     psi_vec_.clear();
     const int n = frame.nlocal();
     auto type = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i) {
+    // Tag order: the site order must survive atom sorting (ElectrodeRows).
+    for (int i : ElectrodeRows::owned_by_tag(frame)) {
         for (std::size_t g = 0; g < groups_.size(); ++g) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
@@ -117,6 +120,7 @@ void ConstPotCG::collect_electrodes_(const cpu::Frame& frame) {
     Q_.assign(static_cast<std::size_t>(m), 0.0);
     b_.assign(static_cast<std::size_t>(m), 0.0);
     A_.assign(static_cast<std::size_t>(m) * m, 0.0);
+    sites_.bind(frame, elec_atoms_);
 }
 
 double ConstPotCG::pair_A_(double r, double eta_i, double eta_j) const {

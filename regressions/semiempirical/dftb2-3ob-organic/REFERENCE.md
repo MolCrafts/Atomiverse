@@ -69,9 +69,7 @@ double-counting fixes. That is the point: the 3ob path **already** assembled
 converged, so the only in-tree DFTB2 number with a real DFTB+ oracle behind it
 is the one number that must not move — and did not. Only the MioSketch path,
 which was on the `E_band − E²` route, moved. The 3ob analytic *gradient* did
-change (wrong-sign γ term; see
-`regressions/semiempirical/dftb2-analytic-forces-threeob/REFERENCE.md`), but
-this case runs with `with_forces = false`.
+change (wrong-sign γ term), but this case runs with `with_forces = false`.
 
 ## Float → double re-emission (reproducibility, not accuracy)
 

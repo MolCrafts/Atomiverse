@@ -1,33 +1,4 @@
-/// @file tests/cpu/communication/test_halo_rounds.cpp
-/// @brief What a multi-hop forwarding round actually ships.
-///
-/// The gap this closes: on 2026-08-27 a `&& false` in `Halo::expand` had
-/// switched off the LAMMPS `ineed >= 2` slab band, leaving every forwarding
-/// round to ship the whole slab it had received instead of the part still
-/// inside the receiver's shell. The ghost count came out 1.76x too large and
-/// nothing failed. `test_halo_maxneed.cpp` has nine tests and they all measure
-/// hop *counts*; grepping it for `slablo`, `slabhi` or `sendlist` returns
-/// nothing. `test_halo.cpp` only reaches round 1.
-///
-/// So the defect lived in code no test looked at, and surfaced only as a
-/// 256-rank performance number. These tests pin the two halves of the
-/// multi-hop rule directly:
-///
-///   * the **band** (`Swap::slablo`/`slabhi`) clips how DEEP a forwarded row
-///     may be, and — since the two faces of a round share one scan window,
-///     LAMMPS-style — its mid-plane edge is also what sorts that window
-///     between them;
-///   * the window itself (`[nfirst, nlast)`: everything the previous round
-///     delivered) is `forward_cascade`'s three lines in `comm_brick.cpp`,
-///     behind MPI.
-///
-/// Categories: domain (band geometry, chain completeness), edge (inclusive
-/// edges, singleton round). No MPI.
-///
-/// Reference: LAMMPS `src/comm_brick.cpp` `CommBrick::setup`, the
-/// `ineed >= 2` arm, baseline
-/// `/nobackup/proj/disk/teoroo/personal/jicli594/work/lammps-src` @ 970d4ba;
-/// S. Plimpton, J. Comput. Phys. 117, 1 (1995), DOI 10.1006/jcph.1995.1039.
+/// @file Unit tests for fractional periodic halo geometry.
 
 #include <gtest/gtest.h>
 
@@ -48,9 +19,6 @@ namespace {
 
 using DomainDecomposition = cpu::md::mpi::DomainDecomposition;
 
-/// Verified bench geometry: 63.0016 A cube, 11 A shell.
-/// 8x8x4 -> subdomain 7.875 x 7.875 x 15.750 -> hops 2,2,1.
-/// 16,4,4 -> subdomain 3.938 -> hops 3,1,1.
 constexpr double kBoxEdge = 63.0016;
 constexpr double kShell = 11.0;
 
@@ -65,7 +33,7 @@ DomainDecomposition brick_dd(int dx, int dy, int dz, int cx, int cy, int cz) {
     for (int a = 0; a < 3; ++a) {
         dd.dims[a] = d[a];
         dd.coords[a] = c[a];
-        const double w = kBoxEdge / d[a];
+        const double w = 1.0 / d[a];
         dd.sublo[a] = w * c[a];
         dd.subhi[a] = dd.sublo[a] + w;
     }
@@ -73,8 +41,6 @@ DomainDecomposition brick_dd(int dx, int dy, int dz, int cx, int cy, int cz) {
     return dd;
 }
 
-/// @brief Index of the first swap on `axis` with the given round and face.
-/// @param face 0 = low, 1 = high.
 int swap_of(const cpu::comm::Halo& h, int axis, int round, int face) {
     for (int i = 0; i < static_cast<int>(h.size()); ++i) {
         if (h[i].dim == axis && h[i].round == round) {
@@ -90,9 +56,6 @@ int swap_of(const cpu::comm::Halo& h, int axis, int round, int face) {
 
 // ── 1. the forwarding band clips depth ────────────────────────────────
 
-/// Round 1 is one-sided: the rank's own boundary band, open on the outward
-/// side. This is the case `test_halo.cpp` already covers; it is here as the
-/// contrast for round 2.
 TEST(TestHaloRounds, RoundOneBandIsOneSided) {
     cpu::comm::Halo h;
     const DomainDecomposition dd = brick_dd(8, 8, 4, 3, 3, 1);
@@ -103,17 +66,11 @@ TEST(TestHaloRounds, RoundOneBandIsOneSided) {
     ASSERT_GE(lo, 0);
     ASSERT_GE(hi, 0);
     EXPECT_LT(h[lo].slablo, -1.0e6);
-    EXPECT_DOUBLE_EQ(h[lo].slabhi, dd.sublo[0] + kShell);
-    EXPECT_DOUBLE_EQ(h[hi].slablo, dd.subhi[0] - kShell);
+    EXPECT_DOUBLE_EQ(h[lo].slabhi, dd.sublo[0] + kShell / kBoxEdge);
+    EXPECT_DOUBLE_EQ(h[hi].slablo, dd.subhi[0] - kShell / kBoxEdge);
     EXPECT_GT(h[hi].slabhi, 1.0e6);
 }
 
-/// Round 2 is bounded on BOTH sides — the LAMMPS `ineed >= 2` band. The far
-/// edge is the partner's shell reach (`sublo + cutoff` for the low face); the
-/// near edge is this rank's mid-plane.
-///
-/// **This is the assertion the `&& false` bug would have failed.** With the
-/// band switched off both bounds were the +/-1e30 sentinel.
 TEST(TestHaloRounds, RoundTwoBandIsClosedOnBothSides) {
     cpu::comm::Halo h;
     const DomainDecomposition dd = brick_dd(8, 8, 4, 3, 3, 1);
@@ -127,8 +84,8 @@ TEST(TestHaloRounds, RoundTwoBandIsClosedOnBothSides) {
     ASSERT_GE(hi, 0);
 
     EXPECT_DOUBLE_EQ(h[lo].slablo, mid);
-    EXPECT_DOUBLE_EQ(h[lo].slabhi, dd.sublo[0] + kShell);
-    EXPECT_DOUBLE_EQ(h[hi].slablo, dd.subhi[0] - kShell);
+    EXPECT_DOUBLE_EQ(h[lo].slabhi, dd.sublo[0] + kShell / kBoxEdge);
+    EXPECT_DOUBLE_EQ(h[hi].slablo, dd.subhi[0] - kShell / kBoxEdge);
     EXPECT_DOUBLE_EQ(h[hi].slabhi, mid);
 
     // Neither edge is a sentinel: an open band is exactly the defect.
@@ -138,9 +95,6 @@ TEST(TestHaloRounds, RoundTwoBandIsClosedOnBothSides) {
     EXPECT_LT(h[hi].slabhi, 1.0e6);
 }
 
-/// The forwarded depth is finite and equals what the partner's shell can
-/// still use. At the bench geometry that is 3.125 A, not the full 7.875 A
-/// slab — the 2.52x per-hop over-forwarding the open band produced.
 TEST(TestHaloRounds, ForwardedDepthIsTheReceiverShellRemainder) {
     cpu::comm::Halo h;
     const DomainDecomposition dd = brick_dd(8, 8, 4, 3, 3, 1);
@@ -151,14 +105,12 @@ TEST(TestHaloRounds, ForwardedDepthIsTheReceiverShellRemainder) {
     // Rows offered at round 2 came from the high face: they sit in
     // [subhi, subhi + w]. The band admits only up to sublo + shell.
     const double admitted_hi = std::min(dd.subhi[0] + w, h[lo].slabhi);
-    EXPECT_NEAR(admitted_hi - dd.subhi[0], kShell - w, 1e-9);
+    EXPECT_NEAR(admitted_hi - dd.subhi[0], kShell / kBoxEdge - w, 1e-9);
     EXPECT_LT(admitted_hi - dd.subhi[0], w); // strictly less than a full slab
 }
 
 // ── 2. round>1 sendlist CONTENTS, not just counts ─────────────────────
 
-/// The end-to-end statement: given explicit rows, a round-2 low-face swap
-/// ships exactly those inside [mid, sublo + shell] and nothing else.
 TEST(TestHaloRounds, RoundTwoShipsExactlyTheRowsInsideItsBand) {
     cpu::comm::Halo h;
     const DomainDecomposition dd = brick_dd(8, 8, 4, 3, 3, 1);
@@ -170,9 +122,10 @@ TEST(TestHaloRounds, RoundTwoShipsExactlyTheRowsInsideItsBand) {
     const double band_hi = h[lo].slabhi;
 
     // Six rows: two below the band, two inside, two above.
-    const double xs[6] = {band_lo - 1.0, band_lo - 0.25, band_lo + 0.5,
-                          band_hi - 0.5, band_hi + 0.25, band_hi + 1.0};
+    const double xs[6] = {band_lo - 0.01,  band_lo - 0.005, band_lo + 0.001,
+                          band_hi - 0.001, band_hi + 0.005, band_hi + 0.01};
     cpu::Frame f(6);
+    f.box = cpu::Box::cubic(1.0);
     for (int i = 0; i < 6; ++i) {
         f.span(kAtom_x)[i] = static_cast<StorageReal>(xs[i]);
         f.span(kAtom_y)[i] = static_cast<StorageReal>(dd.sublo[1] + 1.0);
@@ -183,9 +136,6 @@ TEST(TestHaloRounds, RoundTwoShipsExactlyTheRowsInsideItsBand) {
     EXPECT_EQ(h[lo].sendlist, (std::vector<int>{2, 3}));
 }
 
-/// The band is inclusive on both edges (LAMMPS `>=` / `<=`): a row sitting
-/// exactly on either bound ships. An edge ghost that is not needed costs one
-/// row; an edge ghost that is missing costs a pair.
 TEST(TestHaloRounds, RoundTwoBandEdgesAreInclusive) {
     cpu::comm::Halo h;
     const DomainDecomposition dd = brick_dd(8, 8, 4, 3, 3, 1);
@@ -193,6 +143,7 @@ TEST(TestHaloRounds, RoundTwoBandEdgesAreInclusive) {
     const int lo = swap_of(h, 0, 2, 0);
 
     cpu::Frame f(2);
+    f.box = cpu::Box::cubic(1.0);
     f.span(kAtom_x)[0] = static_cast<StorageReal>(h[lo].slablo);
     f.span(kAtom_x)[1] = static_cast<StorageReal>(h[lo].slabhi);
     for (int i = 0; i < 2; ++i) {
@@ -206,17 +157,6 @@ TEST(TestHaloRounds, RoundTwoBandEdgesAreInclusive) {
 
 // ── 3. the mid-plane edge sorts the shared window ─────────────────────
 
-/// Round `r > 1` offers both faces of round `r - 1` at once (LAMMPS
-/// `CommBrick::borders`' `[nfirst, nlast)`), so the band is what decides
-/// which face may forward which row. A ghost that arrived across the LOW
-/// face sits below `sublo`, i.e. below the mid-plane, so it fails the
-/// low-face band and passes the high-face one — it moves on, it does not
-/// bounce back to where it came from.
-///
-/// The band cannot do the other half of the job: an OWNER row sits inside
-/// the subdomain and can fall on either side of the mid-plane, so keeping
-/// round `r > 1` off the owners is the window's responsibility, not the
-/// band's (`forward_cascade`).
 TEST(TestHaloRounds, MidPlaneEdgeSortsTheSharedWindowBetweenFaces) {
     cpu::comm::Halo h;
     const DomainDecomposition dd = brick_dd(8, 8, 4, 3, 3, 1);
@@ -231,8 +171,10 @@ TEST(TestHaloRounds, MidPlaneEdgeSortsTheSharedWindowBetweenFaces) {
     // face, just above. Both are within the forwardable depth
     // (`shell - w` = 3.125 A here), so only the mid-plane edge tells them
     // apart.
-    const double depth = 0.5 * (kShell - (dd.subhi[0] - dd.sublo[0]));
+    const double depth =
+        0.5 * (kShell / kBoxEdge - (dd.subhi[0] - dd.sublo[0]));
     cpu::Frame f(2);
+    f.box = cpu::Box::cubic(1.0);
     f.span(kAtom_x)[0] = static_cast<StorageReal>(dd.sublo[0] - depth);
     f.span(kAtom_x)[1] = static_cast<StorageReal>(dd.subhi[0] + depth);
     for (int i = 0; i < 2; ++i) {
@@ -248,11 +190,6 @@ TEST(TestHaloRounds, MidPlaneEdgeSortsTheSharedWindowBetweenFaces) {
 
 // ── 4. the 3-hop chain stays complete ─────────────────────────────────
 
-/// The geometry that matters most for the depth clip: 16,4,4 gives a 3.938 A
-/// x-subdomain against an 11 A shell, so x needs THREE hops and a forwarding
-/// round has to hand its rows on to yet another hop. If the clip were one
-/// step too tight, the union of the three rounds would fall short of the
-/// shell and pairs would be lost — here, not at 8,8,4.
 TEST(TestHaloRounds, ThreeHopChainCoversTheWholeShell) {
     cpu::comm::Halo h;
     const DomainDecomposition dd = brick_dd(16, 4, 4, 5, 1, 1);
@@ -267,21 +204,19 @@ TEST(TestHaloRounds, ThreeHopChainCoversTheWholeShell) {
     for (int r = 1; r <= h.max_hops(0); ++r) {
         const int lo = swap_of(h, 0, r, 0);
         ASSERT_GE(lo, 0) << "missing low-face swap at round " << r;
-        reach = std::min(static_cast<double>(r) * w, kShell);
+        reach = std::min(static_cast<double>(r) * w, kShell / kBoxEdge);
     }
     // Three hops of 3.938 A cover 11.81 A >= the 11 A shell.
-    EXPECT_GE(3.0 * w, kShell);
-    EXPECT_NEAR(reach, kShell, 1e-9);
+    EXPECT_GE(3.0 * w, kShell / kBoxEdge);
+    EXPECT_NEAR(reach, kShell / kBoxEdge, 1e-9);
 
     // And the deepest round is still clipped at the receiver's shell edge,
     // not left open.
     const int deepest = swap_of(h, 0, 3, 0);
-    EXPECT_DOUBLE_EQ(h[deepest].slabhi, dd.sublo[0] + kShell);
+    EXPECT_DOUBLE_EQ(h[deepest].slabhi, dd.sublo[0] + kShell / kBoxEdge);
     EXPECT_LT(h[deepest].slabhi, 1.0e6);
 }
 
-/// Companion to the above: the shell is not over-covered either. A round-2
-/// band that reached past `sublo + shell` is the 1.76x inflation.
 TEST(TestHaloRounds, NoRoundReachesPastTheReceiverShell) {
     for (const auto& g :
          {std::array<int, 3>{8, 8, 4}, std::array<int, 3>{16, 4, 4}}) {
@@ -295,9 +230,9 @@ TEST(TestHaloRounds, NoRoundReachesPastTheReceiverShell) {
                          + std::to_string(i));
             const int d = h[i].dim;
             if (h[i].sign < 0)
-                EXPECT_LE(h[i].slabhi, dd.sublo[d] + kShell + 1e-9);
+                EXPECT_LE(h[i].slabhi, dd.sublo[d] + kShell / kBoxEdge + 1e-9);
             else
-                EXPECT_GE(h[i].slablo, dd.subhi[d] - kShell - 1e-9);
+                EXPECT_GE(h[i].slablo, dd.subhi[d] - kShell / kBoxEdge - 1e-9);
         }
     }
 }

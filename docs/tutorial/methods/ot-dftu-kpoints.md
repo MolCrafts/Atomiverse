@@ -4,16 +4,16 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-dftu-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `k_mesh` / `k_points`, `plus_u` |
-| Roadmap | `docs/roadmap/dft.md` §10 GPW — multi-k OT+DFT+U ✓ (`reg_ot-dftu-kpoints`) |
+| Roadmap | `docs/roadmap/dft.md` §10 GPW — multi-k OT+DFT+U ✓ |
 
 ## Summary
 
 **Orbital Transformation (OT)** SCF on the **complex multi-k** GPW path,
 combined with **Dudarev DFT+U** (`plus_u` / CP2K `PLUS_U` Mulliken), is a
-product combo that neither Γ-only OT+U (`reg_ot-dftu`) nor multi-k DIIS+U
-(`reg_gpw-dftu-kpoints`) covers alone. Outer SCF rebuilds \(H_k\) (including
+product combo that neither Γ-only OT+U (`ot-dftu`) nor multi-k DIIS+U
+(see [gpw-dftu-kpoints](gpw-dftu-kpoints.md)) covers alone. Outer SCF rebuilds \(H_k\) (including
 \(V_U\)) from the BZ-summed density; each local \(k\) then runs a **fixed-H**
 OT band minimize (`ot_minimize_fixed_k`) — CP2K-style OUTER_SCF for the OT+U
 case. Decisive acceptance is **internal fixed-point parity** OT ≡ DIIS under
@@ -21,7 +21,8 @@ the same multi-k grids and \(U\); absolute first-green energy is frozen for
 the MP \(2\times2\times2\) pin.
 
 Public surface: concrete `cpu::gpw::GpwDft` members (no `*Config`, no
-factories). Product gate: `reg_ot-dftu-kpoints`. Fair wall vs CP2K OT is
+factories). No standing end-to-end regression (gates below are recorded).
+Fair wall vs CP2K OT is
 **`perf_exempt`** — CP2K **2026.1** hard-aborts OT with k-points
 (`OT not possible with kpoint calculations`).
 
@@ -60,7 +61,7 @@ on multi-k:
 4. Outer residual / energy criteria until `tol` or `max_iter`.
 
 Without PLUS_U, multi-k OT may still use the one-step-per-outer Armijo path
-(see `reg_ot-kpoints`). Both routes share the same energy assembly
+(see [ot-kpoints](ot-kpoints.md)). Both routes share the same energy assembly
 (`build_k_energy`) as multi-k DIIS.
 
 **Dudarev DFT+U.** Per element and angular momentum \(L\), \(U_{\mathrm{eff}}=U-J\)
@@ -89,7 +90,7 @@ fixed point as ATV OT+U, **not** a fair OT wall twin.
 
 **Key exclusions.**
 
-- Multi-k **UKS** OT + DFT+U (throws / not wired; see `ot-uks-kpoints` for
+- Multi-k **UKS** OT + DFT+U (throws / not wired; see [ot-uks-kpoints](ot-uks-kpoints.md) for
   multi-k UKS OT without U).
 - Absolute CP2K OT+k energy digits (oracle version has no OT+k path).
 - Analytic multi-k OT+U forces / stress as a fair twin claim.
@@ -156,7 +157,7 @@ m.k_point_weights = {1.0};        // must sum to 1
 // leave k_mesh default; non-empty k_points overrides mesh
 ```
 
-Build and run the regression:
+Build:
 
 ```bash
 bash -lc '
@@ -169,8 +170,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_ot-dftu-kpoints
-  reg_ot-dftu-kpoints
 '
 ```
 
@@ -180,14 +179,13 @@ bash -lc '
 | `ot.h` | OT manifold / fixed-k minimize (internal) |
 | `dft_plus_u.h` | Dudarev E/V (internal) |
 | `src/cpu/gpw/gpw_solver.cpp` | Multi-k OUTER_SCF OT+U wire-up |
-| `tests/cpu/gpw/test_cpu_gpw_ot.cpp` | Unit footholds (e2e pin is the regression) |
-| `ot-dftu-kpoints` | E2E product gate + pin notes |
+| `tests/cpu/gpw/test_cpu_gpw_ot.cpp` | Unit footholds |
 | CP2K oracle | Offline CP2K **DIIS** multi-k PLUS_U twin |
 
 ## Validation (vs CP2K)
 
-Source:
-case `ot-dftu-kpoints` pin.
+Source: values recorded when this page was written; no standing
+regression.
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest.
 Pin date: **2026-07-26**.
 
@@ -239,7 +237,7 @@ OMP_NUM_THREADS=8 cp2k.psmp -i h2_ot_dftu_kpoints.inp -o diis_k_u.out
 
 ## Performance
 
-Source: case `ot-dftu-kpoints` pin and
+Source: values recorded when this page was written; no standing regression. and
 the case pin notes (wave 8). Gate: **`perf_exempt`**.
 
 | Twin | Wall [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -251,7 +249,7 @@ the case pin notes (wave 8). Gate: **`perf_exempt`**.
 **Why exempt.** Fair OT wall requires a CP2K OT+k twin. That path does not
 exist on the pinned oracle version. DIIS multi-k wall is a different
 algorithm and must not be ratioed against ATV OT. Same exemption pattern as
-`ot-kpoints` / `ot-uks-kpoints`.
+[ot-kpoints](ot-kpoints.md) / [ot-uks-kpoints](ot-uks-kpoints.md).
 
 ## Limitations
 
@@ -263,17 +261,14 @@ algorithm and must not be ratioed against ATV OT. Same exemption pattern as
   a correlated-solid pin (contrast Ni \(d\) on [gpw-dftu-nio](gpw-dftu-nio.md)).
 - **Single density grid, 100 Ry** — milli-Ha class absolute vs a future
   multigrid CP2K OT twin is not claimed.
-- **Forces / stress** with multi-k OT+U are not this regression’s product
-  gate (see `gpw-dftu-kpoint-stress` for multi-k DIIS+U stress).
+- **Forces / stress** with multi-k OT+U are not covered by this page (see `gpw-dftu-kpoint-stress` for multi-k DIIS+U stress).
 - **PW / CUDA** have no multi-k OT+U product switch.
 - **Speed:** `perf_exempt`; do not advertise a ≤10× ratio for this slug.
 
 ## References
 
-- Offline pin + gates:
-  case `ot-dftu-kpoints` pin
-- Regression consumer:
-  `reg_ot-dftu-kpoints.cpp`
+- Offline pin + gates: recorded when this page was written (no standing
+  regression)
 - CP2K DIIS multi-k PLUS_U twin:
   CP2K oracle
 - Oracle contract: CP2K oracle

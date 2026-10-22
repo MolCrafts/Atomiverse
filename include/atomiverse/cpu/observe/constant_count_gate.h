@@ -10,9 +10,13 @@
 /// `finalize()` can warn instead of losing data silently.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <numeric>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -75,6 +79,57 @@ class RejectedFrames {
   private:
     BigInt count_ = 0;
     std::string first_reason_;
+};
+
+/// @brief Keep correlator rows tied to stable atom tags and equally spaced captures.
+/// Atom replacement or a dropped capture invalidates a time correlation rather
+/// than silently joining unrelated atoms or compressing its time axis.
+class CorrelationInput {
+  public:
+    void pack(std::vector<double>& out, const std::vector<std::int64_t>& tags,
+              const std::vector<double>& a, const std::vector<double>& b,
+              const std::vector<double>& c, int n, int step, int stride) {
+        const auto count = static_cast<std::size_t>(n);
+        if (tags.size() < count || a.size() < count || b.size() < count
+            || c.size() < count)
+            throw std::runtime_error(
+                "correlator snapshot lacks tags or captured fields");
+        if (ready_ && static_cast<std::int64_t>(step) - last_step_ != stride)
+            throw std::runtime_error(
+                "correlator snapshots are not equally spaced");
+        order_.resize(count);
+        std::iota(order_.begin(), order_.end(), 0);
+        std::sort(order_.begin(), order_.end(),
+                  [&](int i, int j) { return tags[i] < tags[j]; });
+        for (std::size_t i = 0; i < count; ++i) {
+            const auto tag = tags[order_[i]];
+            if (tag <= 0 || (i && tag == tags[order_[i - 1]]))
+                throw std::runtime_error(
+                    "correlator requires unique positive atom tags");
+            if (ready_ && (count != tags_.size() || tag != tags_[i]))
+                throw std::runtime_error("correlator atom identities changed");
+        }
+        if (!ready_) {
+            tags_.resize(count);
+            for (std::size_t i = 0; i < count; ++i)
+                tags_[i] = tags[order_[i]];
+        }
+        out.resize(3 * count);
+        for (std::size_t i = 0; i < count; ++i) {
+            const int row = order_[i];
+            out[i] = a[row];
+            out[count + i] = b[row];
+            out[2 * count + i] = c[row];
+        }
+        last_step_ = step;
+        ready_ = true;
+    }
+
+  private:
+    std::vector<int> order_;
+    std::vector<std::int64_t> tags_;
+    std::int64_t last_step_ = 0;
+    bool ready_ = false;
 };
 
 /// @brief A snapshot's cell matrix H as molrs takes it: row-major, widened to

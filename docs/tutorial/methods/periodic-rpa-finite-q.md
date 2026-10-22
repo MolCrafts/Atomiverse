@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-rpa-finite-q` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::direct_rpa()` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); multi-k members `k_mesh[]`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
 | Roadmap | `docs/roadmap/dft.md` §10 Periodic RPA (finite-\(q\) inter-\(k\)) |
 
@@ -17,12 +17,11 @@ builds the Coulomb-only Casida spectrum from momentum-conserving
 transitions \(i_k\to a_{k+q}\) with **RI-GPW** Coulomb at transfer \(q\),
 reduces each block with the **Furche plasmon formula**, and Brillouin-zone
 averages. This is the **product multi-\(k\) path** for periodic RPA: it
-supersedes the multi-\(k\) **k-diagonal** foothold of `periodic-rpa-kpoints`
-and sits above the Γ-only product `periodic-rpa-si`. Total energy is
+supersedes the multi-\(k\) **k-diagonal** foothold of [periodic-rpa-kpoints](periodic-rpa-kpoints.md)
+and sits above the Γ-only product [periodic-rpa-si](periodic-rpa-si.md). Total energy is
 **dRPA@KS** \(E_{\mathrm{SCF}}+E_c\) (no EXX — periodic HF blocked).
 Public path is `GpwDft` members → `build` → `run` → `direct_rpa` — no
-`*Config` bag, no factory. Product gate:
-`reg_periodic-rpa-finite-q` under `periodic-rpa-finite-q`.
+`*Config` bag, no factory. No standing regression.
 
 ## Method
 
@@ -35,7 +34,7 @@ total-energy assembly.
 URPA is out of scope.
 
 **Reference.** Multi-\(k\) GPW RKS (PBE) on diamond Si in the **bct 4-atom**
-cell used by `gpw-kpoints-si` / `periodic-rpa-kpoints`: a = 5.43 Å,
+cell used by `gpw-kpoints-si` / [periodic-rpa-kpoints](periodic-rpa-kpoints.md): a = 5.43 Å,
 \(a_t=a/\sqrt{2}\), \(c=a\); DZVP-MOLOPT-GTH + GTH-PBE-q4; cutoff 80 Ry;
 MP \(2\times1\times1\) with `k_time_reversal=false` → \(N_k=2\), equal
 weights \(w_k=1/2\). Virtual space capped with `mp2_n_virt=2` for the
@@ -54,7 +53,7 @@ E_c=\sum_q w_q\,\tfrac12\Bigl(\sum_s\Omega_{q,s}-\mathrm{Tr}\,A_q\Bigr).
 \]
 
 At Γ (\(N_k=1\)) this collapses to the real plasmon formula used by
-`periodic-rpa-si` and molecular `DirectRPA<RHF>::run`. Unit tests pin
+[periodic-rpa-si](periodic-rpa-si.md) and molecular `DirectRPA<RHF>::run`. Unit tests pin
 \(N_k=1\) multi-\(k\) complex MOs ≡ real `direct_rpa_rhf_energy`.
 
 **Spectrum size.** With \(q\)-mesh \(=\) \(k\)-mesh,
@@ -158,8 +157,7 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-rpa-finite-q
-  cmake --build build --target run_reg_periodic-rpa-finite-q
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -168,7 +166,7 @@ kernel at \(N_k=1\) ≡ real plasmon.
 
 ## Validation (vs offline CP2K)
 
-Source: case `periodic-rpa-finite-q` pin (offline pin;
+Source: the pin notes recorded when this page was written (no standing regression; offline pin;
 **never** live CP2K in ctest). Oracle input twin:
 CP2K oracle.
 
@@ -197,8 +195,7 @@ Geometry / cell / basis / PP / XC / k-mesh: see REFERENCE system table and
 
 ## Performance
 
-Source: the case pin notes (wave 4), queue row
-`periodic-rpa-finite-q`. Fair-wall target when a comparable CP2K binary and
+Source: the pin notes recorded when this page was written. Fair-wall target when a comparable CP2K binary and
 algorithm twin exist: \(r=T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\le 10\).
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -216,18 +213,17 @@ Regression wall budget: **≤ 60 s** (hard fail above).
   as a CP2K digit.
 - No EXX / hybrid dRPA@HF total energy (periodic HF blocked).
 - Closed-shell only; no RPA forces/stress; no CUDA.
-- Lineage: Γ product `periodic-rpa-si` → multi-\(k\) k-diagonal residual
-  `periodic-rpa-kpoints` → **this finite-\(q\) product**. Shared multi-\(k\)
+- Lineage: Γ product [periodic-rpa-si](periodic-rpa-si.md) → multi-\(k\) k-diagonal residual
+  [periodic-rpa-kpoints](periodic-rpa-kpoints.md) → **this finite-\(q\) product**. Shared multi-\(k\)
   path; k-diagonal foothold is superseded for the product surface.
 
 ## References
 
-- Offline pin: case `periodic-rpa-finite-q` pin
 - Oracle input: CP2K oracle
 - Oracle rules: CP2K oracle (offline only; never in ctest)
 - Roadmap: `docs/roadmap/dft.md` §10
-- Related: `periodic-rpa-si`, `periodic-rpa-kpoints`, `periodic-mp2-kpoints`,
-  `periodic-gw-kpoints`
+- Related: [periodic-rpa-si](periodic-rpa-si.md), [periodic-rpa-kpoints](periodic-rpa-kpoints.md), [periodic-mp2-kpoints](periodic-mp2-kpoints.md),
+  [periodic-gw-kpoints](periodic-gw-kpoints.md)
 - Furche, *J. Chem. Phys.* **114**, 5982 (2001)
 - Ren et al., *New J. Phys.* **14**, 053020 (2012)
 - Del Ben, Hutter, VandeVondele, *J. Chem. Theory Comput.* **8**, 4177 (2012)

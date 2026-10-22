@@ -1,153 +1,235 @@
-/// @file tests/cpu/neighbor/test_full_neighbor_list.cpp
-/// @brief Unit: the opt-in FULL neighbor list (ctx.md.full_list_requested).
-///
-/// Pins the one property every many-body style depends on: for each owned atom
-/// i, the full list carries EVERY neighbour of i within the cutoff, in both
-/// directions — i.e. it is exactly the union of the half list's two directions.
-/// Until this landed, CellList::refresh_full was written but called by nothing.
-
+/// Direct neighbor-index tests. Periodic rows come from the real Comm owner;
+/// the oracle enumerates lattice images independently of its swap lists.
 #include <algorithm>
 #include <cmath>
-#include <set>
-#include <vector>
-
 #include <gtest/gtest.h>
-
-#include "atomiverse/core/mat3.h"
-#include "atomiverse/cpu/component/context.h"
-#include "atomiverse/cpu/frame/frame.h"
+#include <map>
+#include <set>
+#include <tuple>
+#include <vector>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include "atomiverse/cpu/neighbor/cell_list.h"
-#include "atomiverse/cpu/neighbor/pair_list.h"
+#include "periodic_neighbor_fixture.h"
 
 using namespace ATV;
-
 namespace {
+using Key = std::tuple<int, int, int, int, int>;
 
-/// Deterministic jittered lattice — several call sites below.
-cpu::Frame lattice(int n_side, double spacing) {
-    const int n = n_side * n_side * n_side;
-    cpu::Frame f(n);
-    int idx = 0;
-    for (int ix = 0; ix < n_side; ++ix)
-        for (int iy = 0; iy < n_side; ++iy)
-            for (int iz = 0; iz < n_side; ++iz) {
-                // A reproducible jitter so the pairs are not all at equal r.
-                const double j = 0.07 * std::sin(double(7 * idx + 1));
-                f.span(ATV::kAtom_x)[idx] = (double(ix) + 0.5) * spacing + j;
-                f.span(ATV::kAtom_y)[idx] = (double(iy) + 0.5) * spacing - j;
-                f.span(ATV::kAtom_z)[idx] =
-                    (double(iz) + 0.5) * spacing + 0.5 * j;
-                f.span(ATV::kAtom_mass)[idx] = 1.0;
-                f.span(ATV::kAtom_type)[idx] = 0;
-                ++idx;
+cpu::Frame lattice(int side) {
+    cpu::Frame f(side * side * side);
+    f.box = cpu::Box::cubic(side * 1.9);
+    int i = 0;
+    for (int x = 0; x < side; ++x)
+        for (int y = 0; y < side; ++y)
+            for (int z = 0; z < side; ++z, ++i) {
+                const double jitter = 0.07 * std::sin(7.0 * i + 1);
+                f.span(kAtom_x)[i] = (x + .5) * 1.9 + jitter;
+                f.span(kAtom_y)[i] = (y + .5) * 1.9 - jitter;
+                f.span(kAtom_z)[i] = (z + .5) * 1.9 + .5 * jitter;
+                f.span(kAtom_tag)[i] = i + 1;
             }
-    f.box = ATV::cpu::Box::cubic(n_side * spacing);
     return f;
 }
-
+Vec3 position(const cpu::Frame& f, int i) {
+    return {f.span(kAtom_x)[i], f.span(kAtom_y)[i], f.span(kAtom_z)[i]};
+}
+Key reverse(Key k) {
+    auto [i, j, x, y, z] = k;
+    return {j, i, -x, -y, -z};
+}
+Key canonical(Key k) { return std::min(k, reverse(k)); }
+std::set<Key> oracle(const cpu::Frame& f, double reach) {
+    std::set<Key> keys;
+    int bounds[3];
+    for (int d = 0; d < 3; ++d)
+        bounds[d] = int(std::ceil(reach / f.box.face_height(d))) + 1;
+    for (int i = 0; i < f.nlocal(); ++i)
+        for (int j = 0; j < f.nlocal(); ++j)
+            for (int x = -bounds[0]; x <= bounds[0]; ++x)
+                for (int y = -bounds[1]; y <= bounds[1]; ++y)
+                    for (int z = -bounds[2]; z <= bounds[2]; ++z) {
+                        if (i == j && x == 0 && y == 0 && z == 0)
+                            continue;
+                        const Vec3 shift = f.box.to_cartesian(
+                            Vec3{double(x), double(y), double(z)});
+                        if ((position(f, i) - position(f, j) - shift)
+                                .norm_squared()
+                            < reach * reach)
+                            keys.emplace(i, j, x, y, z);
+                    }
+    return keys;
+}
+std::multiset<Key> listed(const cpu::Frame& f, const cpu::md::PairList& pairs,
+                          bool half) {
+    std::map<TagInt, int> owners;
+    for (int i = 0; i < f.nlocal(); ++i)
+        owners.emplace(f.span(kAtom_tag)[i], i);
+    std::multiset<Key> result;
+    for (int ii = 0; ii < pairs.inum; ++ii) {
+        const int i = pairs.ilist[ii];
+        for (int k = 0; k < pairs.numneigh[i]; ++k) {
+            const int row = pairs.neighbors[pairs.firstneigh[i] + k];
+            const int j = owners.at(f.span(kAtom_tag)[row]);
+            const Vec3 shift =
+                f.box.to_fractional(position(f, row) - position(f, j));
+            Key key{i, j, int(std::llround(shift[0])),
+                    int(std::llround(shift[1])), int(std::llround(shift[2]))};
+            result.insert(half ? canonical(key) : key);
+        }
+    }
+    return result;
+}
+void check_lists(cpu::Frame& f, cpu::md::CellList& cells, double reach) {
+    const auto expected_full = oracle(f, reach);
+    std::set<Key> expected_half;
+    for (auto key : expected_full)
+        expected_half.insert(canonical(key));
+    cpu::md::PairList full, half, derived;
+    cells.refresh_full(f, f.n_total(), full);
+    cells.refresh_half(f, f.n_total(), half);
+    cells.derive_half(f, f.n_total(), full, derived);
+    EXPECT_EQ(listed(f, full, false),
+              (std::multiset<Key>(expected_full.begin(), expected_full.end())));
+    EXPECT_EQ(listed(f, half, true),
+              (std::multiset<Key>(expected_half.begin(), expected_half.end())));
+    EXPECT_EQ(listed(f, derived, true),
+              (std::multiset<Key>(expected_half.begin(), expected_half.end())));
+    EXPECT_EQ(full.inum, f.nlocal());
+    EXPECT_EQ(half.inum, f.nlocal());
+    EXPECT_EQ(full.total_pairs, 2 * half.total_pairs);
+}
 } // namespace
 
-/// The full list is the union of the half list's two directions.
 TEST(FullNeighborList, IsUnionOfBothHalfDirections) {
-    const double cutoff = 2.6;
-    cpu::Frame f = lattice(4, 1.9); // 64 atoms, box 7.6 A
-    const int n = f.nlocal();
-
-    cpu::md::CellList cl(cutoff);
-    cl.init(f, cutoff);
-    cl.build(f, n);
-
-    cpu::md::PairList half, full;
-    cl.refresh_half(f, n, half, -1);
-    cl.refresh_full(f, n, full);
-
-    // Symmetrize the half list by hand: every (i,j) also counts for j.
-    std::vector<std::set<int>> expected(n);
-    for (int ii = 0; ii < half.inum; ++ii) {
-        const int i = half.ilist[ii];
-        for (int jj = 0; jj < half.numneigh[i]; ++jj) {
-            const int j = half.neighbors[half.firstneigh[i] + jj];
-            expected[i].insert(j);
-            expected[j].insert(i);
-        }
-    }
-
-    std::vector<std::set<int>> got(n);
-    for (int ii = 0; ii < full.inum; ++ii) {
-        const int i = full.ilist[ii];
-        for (int jj = 0; jj < full.numneigh[i]; ++jj)
-            got[i].insert(full.neighbors[full.firstneigh[i] + jj]);
-    }
-
-    std::size_t n_half_pairs = 0, n_full_legs = 0;
-    for (int i = 0; i < n; ++i) {
-        EXPECT_EQ(got[i], expected[i])
-            << "neighbour set differs for atom " << i;
-        EXPECT_EQ(got[i].count(i), 0u)
-            << "atom " << i << " is its own neighbour";
-        n_full_legs += got[i].size();
-    }
-    for (int i = 0; i < n; ++i)
-        n_half_pairs += expected[i].size();
-
-    EXPECT_GT(n_full_legs, 0u)
-        << "the cutoff caught no pairs — test is vacuous";
-    // Every pair appears exactly twice in a full list, once in each direction.
-    EXPECT_EQ(n_full_legs % 2, 0u);
+    auto f = lattice(4);
+    test::PeriodicNeighborFixture fixture(f, 3.0);
+    cpu::md::CellList cells(2.6, .4);
+    cells.init_extended(f, 3.0, fixture.context.md.dd, f.capacity());
+    cells.build(f);
+    check_lists(f, cells, 3.0);
 }
-
-/// Every leg of the full list lies inside the Verlet range (cutoff + skin), and
-/// no pair inside the cutoff is missing.
-///
-/// The list is a VERLET list: it deliberately carries pairs out to cutoff + skin
-/// so it survives a few steps of motion without a rebuild. Screening at the true
-/// cutoff is the force kernel's job, not the list's — so the list's invariant is
-/// "complete within the cutoff, and bounded by cutoff + skin", not "exactly the
-/// cutoff".
 TEST(FullNeighborList, LegsAreCompleteWithinCutoffAndBoundedBySkin) {
-    const double cutoff = 2.6, skin = 0.4;
-    cpu::Frame f = lattice(4, 1.9);
-    const int n = f.nlocal();
-
-    cpu::md::CellList cl(cutoff, skin);
-    cl.init(f, cutoff + skin);
-    cl.build(f, n);
-
-    cpu::md::PairList full;
-    cl.refresh_full(f, n, full);
-
-    // What the list gives us, per atom.
-    std::vector<std::set<int>> listed(n);
-    for (int ii = 0; ii < full.inum; ++ii) {
-        const int i = full.ilist[ii];
-        for (int jj = 0; jj < full.numneigh[i]; ++jj)
-            listed[i].insert(full.neighbors[full.firstneigh[i] + jj]);
+    auto f = lattice(2); // More than half a box: distinct images must survive.
+    test::PeriodicNeighborFixture fixture(f, 3.0);
+    cpu::md::CellList cells(2.6, .4);
+    cells.init_extended(f, 3.0, fixture.context.md.dd, f.capacity());
+    cells.build(f);
+    check_lists(f, cells, 3.0);
+}
+TEST(FullNeighborList, RawRowsRetainFarSkinImages) {
+    cpu::Frame f(3);
+    f.box = cpu::Box::orthorhombic(7.6, 20, 20);
+    f.span(kAtom_x)[0] = .2;
+    f.span(kAtom_x)[1] = 3.8;
+    f.span(kAtom_x)[2] = -3.8;
+    for (int i = 0; i < 3; ++i) {
+        f.span(kAtom_y)[i] = f.span(kAtom_z)[i] = 10;
+        f.span(kAtom_tag)[i] = i == 0 ? 1 : 2;
     }
-
-    // Brute-force O(N^2) ground truth.
-    std::size_t n_inside = 0;
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
-            if (i == j)
-                continue;
-            double dx = f.span(ATV::kAtom_x)[i] - f.span(ATV::kAtom_x)[j];
-            double dy = f.span(ATV::kAtom_y)[i] - f.span(ATV::kAtom_y)[j];
-            double dz = f.span(ATV::kAtom_z)[i] - f.span(ATV::kAtom_z)[j];
-            f.box.min_image(dx, dy, dz);
-            const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-            if (r <= cutoff) {
-                EXPECT_EQ(listed[i].count(j), 1u)
-                    << "pair (" << i << "," << j << ") at r=" << r
-                    << " is inside the cutoff but MISSING from the full list";
-                ++n_inside;
-            }
-            if (r > cutoff + skin) {
-                EXPECT_EQ(listed[i].count(j), 0u)
-                    << "pair (" << i << "," << j << ") at r=" << r
-                    << " is beyond cutoff+skin yet listed";
-            }
+    f.set_nlocal(1);
+    f.set_nghost(2);
+    cpu::md::CellList cells(3.77118, .3);
+    cells.init(f, 4.07118);
+    cells.build(f);
+    const auto full = cells.build_full(f);
+    ASSERT_EQ(full.numneigh[0], 2);
+    int inside = 0;
+    for (int k = 0; k < full.numneigh[0]; ++k) {
+        const int j = full.neighbors[full.firstneigh[0] + k];
+        inside += (position(f, 0) - position(f, j)).norm() < 3.77118;
+    }
+    EXPECT_EQ(inside, 1);
+}
+#ifdef _OPENMP
+TEST(FullNeighborList, ReusedParallelRowsMatchBruteForceAcrossTeamSizes) {
+    const int saved = omp_get_max_threads(), dynamic = omp_get_dynamic();
+    omp_set_dynamic(0);
+    for (int side : {2, 6}) {
+        auto f = lattice(side);
+        test::PeriodicNeighborFixture fixture(f, 3.0);
+        cpu::md::CellList cells(2.6, .4);
+        cells.init_extended(f, 3.0, fixture.context.md.dd, f.capacity());
+        cells.build(f);
+        for (int threads : {4, 1, 2, 4}) {
+            omp_set_num_threads(threads);
+            check_lists(f, cells, 3.0);
         }
     }
-    EXPECT_GT(n_inside, 0u) << "no pairs inside the cutoff — test is vacuous";
+    omp_set_num_threads(saved);
+    omp_set_dynamic(dynamic);
+}
+TEST(FullNeighborList, NestedSerializedBuildAndZeroOwnersDiscardOldRows) {
+    const int saved = omp_get_max_threads(),
+              levels = omp_get_max_active_levels();
+    omp_set_num_threads(2);
+    omp_set_max_active_levels(1);
+    auto f = lattice(2);
+    test::PeriodicNeighborFixture fixture(f, 3.0);
+    cpu::md::CellList cells(2.6, .4);
+    cells.init_extended(f, 3.0, fixture.context.md.dd, f.capacity());
+    cells.build(f);
+#pragma omp parallel num_threads(2)
+    {
+#pragma omp single
+        check_lists(f, cells, 3.0);
+    }
+    cpu::md::PairList full, half;
+    cells.refresh_full(f, f.n_total(), full, 0);
+    cells.refresh_half(f, f.n_total(), half, 0);
+    EXPECT_EQ(full.total_pairs, 0);
+    EXPECT_EQ(half.total_pairs, 0);
+    omp_set_max_active_levels(levels);
+    omp_set_num_threads(saved);
+}
+#endif
+TEST(FullNeighborList, EmptyPopulationHasNoRowsOrNeighbors) {
+    cpu::Frame f(0);
+    f.box = cpu::Box::cubic(10);
+    cpu::md::CellList cells(2, .3);
+    cells.init(f, 2.3);
+    cells.build(f);
+    EXPECT_EQ(cells.build_full(f).total_pairs, 0);
+    EXPECT_EQ(cells.build_half(f).total_pairs, 0);
+}
+TEST(FullNeighborList, RestrictingCentresKeepsActiveNeighborAtoms) {
+    auto f = lattice(2);
+    test::PeriodicNeighborFixture fixture(f, 3.0);
+    cpu::md::CellList cells(2.6, .4);
+    cells.init_extended(f, 3.0, fixture.context.md.dd, f.capacity());
+    cells.build(f);
+    cpu::md::PairList full, one;
+    cells.refresh_full(f, f.n_total(), full);
+    cells.refresh_full(f, f.n_total(), one, 1);
+    EXPECT_EQ(one.inum, 1);
+    ASSERT_EQ(one.numneigh[0], full.numneigh[0]);
+    EXPECT_TRUE(std::equal(one.neighbors.begin(), one.neighbors.end(),
+                           full.neighbors.begin()));
+    EXPECT_THROW(cells.refresh_full(f, f.n_total(), one, f.n_total() + 1),
+                 std::invalid_argument);
+}
+TEST(FullNeighborList, GeneralCellKeepsEveryPeriodicImageAndDerivedHalfShift) {
+    cpu::Frame f(3);
+    Mat3 h = Mat3::diagonal(3.2, 3.4, 3.6);
+    h(0, 1) = .7;
+    h(1, 0) = .2;
+    h(0, 2) = .3;
+    h(2, 0) = .1;
+    h(1, 2) = .4;
+    h(2, 1) = .2;
+    f.box = cpu::Box(h);
+    const Vec3 fractions[] = {{-.1, .2, 1.2}, {.4, .61, .3}, {.9, .87, .77}};
+    for (int i = 0; i < 3; ++i) {
+        const auto p = f.box.to_cartesian(fractions[i]);
+        f.span(kAtom_x)[i] = p[0];
+        f.span(kAtom_y)[i] = p[1];
+        f.span(kAtom_z)[i] = p[2];
+        f.span(kAtom_tag)[i] = i + 1;
+    }
+    test::PeriodicNeighborFixture fixture(f, 4.1);
+    cpu::md::CellList cells(3.9, .2);
+    cells.init_extended(f, 4.1, fixture.context.md.dd, f.capacity());
+    cells.build(f);
+    check_lists(f, cells, 4.1);
 }

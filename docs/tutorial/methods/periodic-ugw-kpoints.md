@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-ugw-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::g0w0()` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); UKS via `n_alpha`/`n_beta`, multi-k via `k_mesh` |
-| Roadmap | `docs/roadmap/dft.md` §10 — multi-k UGW (`reg_periodic-ugw-kpoints`) |
+| Roadmap | `docs/roadmap/dft.md` §10 — Periodic G0W0 / UGW ◐ (multi-k UGW; no external pin, no standing case) |
 
 ## Summary
 
@@ -15,7 +15,7 @@ a multi-k **GPW UKS PBE** SCF with closed-shell occupations
 \(n_\alpha = n_\beta\). Screening is **spin-conserving direct RPA** over
 \(\alpha\!\to\!\alpha \oplus \beta\!\to\!\beta\) transitions with **finite-\(q\)
 inter-\(k\)** momentum conservation (same dielectric path as multi-k RKS
-G0W0 / `periodic-gw-kpoints` / `periodic-gw-finite-q`). Correlation self-energy
+G0W0 / [periodic-gw-kpoints](periodic-gw-kpoints.md) / [periodic-gw-finite-q](periodic-gw-finite-q.md)). Correlation self-energy
 is the frequency-exact spectral sum over RPA poles with same-spin
 \(G_\sigma W\); exact-exchange diagonals use **truncated (MT) Coulomb** per
 spin; local \(v_{\mathrm{xc}}^\sigma\) is spin-resolved PBE on the BZ-weighted
@@ -23,13 +23,12 @@ UKS density.
 
 Primary public path: set UKS + k-mesh members on `cpu::gpw::GpwDft`,
 `build` → `run` → `g0w0()`. Report is the **α-channel** min-direct QP gap
-[eV] over the sampled mesh. Product gate:
-`reg_periodic-ugw-kpoints`. Offline twin:
+[eV] over the sampled mesh. No standing end-to-end regression. Offline twin:
 CP2K oracle (CP2K never in ctest).
 
 When \(C^\alpha \approx C^\beta\), **multi-k UGW ≡ multi-k RGW** — dual-gated
 against the closed-shell multi-k spectral G0W0 first-green min-direct QP gap
-from `periodic-gw-kpoints`. Absolute CP2K RI-G0W0 digits are **not** a hard
+from [periodic-gw-kpoints](periodic-gw-kpoints.md). Absolute CP2K RI-G0W0 digits are **not** a hard
 twin (algorithm class differs; see Validation).
 
 ## Method
@@ -38,7 +37,7 @@ twin (algorithm class differs; see Validation).
 the multi-k UKS mean-field; no self-consistency in \(G\) or \(W\).
 
 **Reference SCF.** GPW UKS PBE on diamond Si, **bct 4-atom** cell (same deck as
-`periodic-gw-kpoints`): Monkhorst–Pack **2×1×1**, `k_time_reversal=false` →
+[periodic-gw-kpoints](periodic-gw-kpoints.md)): Monkhorst–Pack **2×1×1**, `k_time_reversal=false` →
 \(N_k=2\) with equal weights \(w=1/2\). Occupations \(n_\alpha=n_\beta=8\)
 (16 valence e⁻ with GTH-PBE-q4).
 
@@ -150,17 +149,13 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-ugw-kpoints
-  reg_periodic-ugw-kpoints
 '
 ```
 
-Consumer: `reg_periodic-ugw-kpoints.cpp`.
-
 ## Validation (vs offline CP2K / dual-gate)
 
-Source:
-case `periodic-ugw-kpoints` pin
+Source: values recorded when this page was written; no standing
+regression.
 (offline pin only; **never** live CP2K in ctest).
 
 | Setting | Value |
@@ -178,7 +173,7 @@ case `periodic-ugw-kpoints` pin
 
 **Oracle class note.** CP2K default path is **frequency-integrated RI-GW** with
 Gaussian `RI_AUX` — **not** multi-k spectral UGW with MT exchange. Absolute
-CP2K QP gaps are therefore **not invented** as hard digits; the product gates
+CP2K QP gaps are therefore **not invented** as hard digits; the recorded gates
 are structural + dual-gate vs Atomiverse multi-k RKS G0W0.
 
 ### Accuracy table (first green, OMP=8, 2026-07-26)
@@ -189,12 +184,12 @@ are structural + dual-gate vs Atomiverse multi-k RKS G0W0.
 | KS min-direct gap α | **1.561168** eV | finite / >0 | ≡ RKS multi-k twin |
 | **min-direct QP gap α** | **7.698404** eV | dual-gate | Δ vs RKS multi-k G0W0 ≈ 0.17 eV |
 | \(\varepsilon_{\mathrm{HOMO}}^{\mathrm{QP}}\) / \(\varepsilon_{\mathrm{LUMO}}^{\mathrm{QP}}\) | +0.158037 / +0.440948 Ha | HOMO < LUMO | report \(k\) |
-| Dual-gate ref (RKS multi-k G0W0) | **7.529834** eV | — | `periodic-gw-kpoints` first-green |
-| Regression band | \|gap − 7.529834\| ≤ **0.5 eV** | hard gate | setup band for UGW≡RGW |
+| Dual-gate ref (RKS multi-k G0W0) | **7.529834** eV | — | [periodic-gw-kpoints](periodic-gw-kpoints.md) first-green |
+| Recorded band | \|gap − 7.529834\| ≤ **0.5 eV** | hard gate | setup band for UGW≡RGW |
 | \(n_{\mathrm{occ}}\) / \(n_{\mathrm{virt}}\) | 8 / 4 | exact | \(n_\alpha\); virt = 2+2 |
 | `n_kpts` / `ri` / Newton | 2 / true / converged | exact | multi-k product |
 
-### Binding gates (regression)
+### Binding gates (recorded)
 
 1. **Hard multi-k UGW:** SCF converged; `C_k.size()==C_k_beta.size()==n_kpts`;
    `g0w0` no throw; `n_kpts==2`; `ri`; Newton converged; finite positive
@@ -202,7 +197,7 @@ are structural + dual-gate vs Atomiverse multi-k RKS G0W0.
 2. **Kernel unit:** multi-k UHF at \(N_k=1\) with \(C^\alpha=C^\beta\) ≡
    multi-k RHF spectral QP (`tests/cpu/gpw/test_cpu_gpw_g0w0.cpp`).
 3. **Dual-gate band** vs RKS multi-k first-green min-direct QP gap
-   (`periodic-gw-kpoints` **7.529834 eV**): \|gap − ref\| ≤ **0.5 eV**.
+   ([periodic-gw-kpoints](periodic-gw-kpoints.md) **7.529834 eV**): \|gap − ref\| ≤ **0.5 eV**.
 
 ## Performance
 
@@ -230,16 +225,16 @@ gaps and optionally record a fair_bench ratio.
   product scope.
 - **No OT reference** (`use_ot` throws — no canonical virtuals).
 - **CPU only.** CUDA multi-k UGW is ○ / out of this loop.
-- **Related closed product:** Γ UGW `periodic-ugw-si`; multi-k RKS G0W0
-  `periodic-gw-kpoints` / `periodic-gw-finite-q`. Multi-k URPA total energy
+- **Related closed product:** Γ UGW [periodic-ugw-si](periodic-ugw-si.md); multi-k RKS G0W0
+  [periodic-gw-kpoints](periodic-gw-kpoints.md) / [periodic-gw-finite-q](periodic-gw-finite-q.md). Multi-k URPA total energy
   remains a separate residual if still open on the queue.
 
 ## References
 
-- Offline pin: case `periodic-ugw-kpoints` pin
+- Offline pin: recorded when this page was written (no standing regression)
 - Oracle input twin: CP2K oracle
-- Γ UGW twin: case `periodic-ugw-si` pin
-- Multi-k RKS G0W0 dual-gate: `periodic-gw-kpoints`
+- Γ UGW twin: [periodic-ugw-si](periodic-ugw-si.md) (recorded value)
+- Multi-k RKS G0W0 dual-gate: [periodic-gw-kpoints](periodic-gw-kpoints.md)
 - Roadmap: `docs/roadmap/dft.md` §10
 - Public headers: `g0w0.h`, `gpw_solver.h`
 - Unit: `tests/cpu/gpw/test_cpu_gpw_g0w0.cpp`

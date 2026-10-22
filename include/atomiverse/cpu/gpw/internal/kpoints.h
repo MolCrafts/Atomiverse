@@ -30,6 +30,8 @@
 
 #include <array>
 #include <complex>
+#include <functional>
+#include <stdexcept>
 #include <vector>
 
 #include <xtensor/containers/xtensor.hpp>
@@ -161,8 +163,21 @@ struct KOrth {
 std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
                                                          const KOrth& orth);
 
+/// @brief Natural orbitals of a Bloch density: \(P_k S_k c = n c\), solved as
+///        \(X^\dagger (S_k P_k S_k) X\,c' = n\,c'\), \(c = X c'\) — the
+///        complex sibling of `linalg::natural_orbitals`. Diagonalizing \(P_k\)
+///        itself against \(S_k\) would differ by \(S_k^{-1}\).
+/// @param P_k Hermitian Bloch density (dimensionless), nb × nb.
+/// @param S_k Hermitian Bloch overlap (dimensionless), nb × nb.
+/// @param orth Canonical orthogonalizer of `S_k`.
+/// @return Ascending occupations [dimensionless] and S-orthonormal natural
+///         orbitals (nb × m); the most occupied are the rightmost columns.
+std::pair<std::vector<double>, CplxMatrix>
+natural_orbitals_k(const CplxMatrix& P_k, const CplxMatrix& S_k,
+                   const KOrth& orth);
+
 /// @brief k-space DIIS error vector e = X†(H P S − S P H)X — the complex
-///        sibling of `gpw_diis_error`; → 0 at self-consistency.
+///        sibling of `linalg::diis_error`; → 0 at self-consistency.
 CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
                         const CplxMatrix& S, const CplxMatrix& X);
 
@@ -173,9 +188,17 @@ CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
 /// k-point generalization of the Γ `GpwDiis`.
 class KDiis {
   public:
+    using Reducer = std::function<void(double*, int)>;
     /// @param max_vectors History depth (≥ 1). @param weights k weights.
-    KDiis(int max_vectors, std::vector<double> weights)
-        : max_vectors_(max_vectors), weights_(std::move(weights)) {}
+    /// @param sum Optional in-place reduction of the packed Pulay block.
+    /// Empty means local histories; the helper never chooses a communicator.
+    KDiis(int max_vectors, std::vector<double> weights, Reducer sum = {})
+        : max_vectors_(max_vectors), weights_(std::move(weights)),
+          sum_(std::move(sum)) {
+        if (max_vectors < 1)
+            throw std::invalid_argument(
+                "KDiis: history depth must be positive");
+    }
 
     /// @brief Store {H_k}, {e_k} and return the extrapolated {H_k}.
     ///        Latest H during warm-up or on a singular B system.
@@ -185,6 +208,7 @@ class KDiis {
   private:
     int max_vectors_;
     std::vector<double> weights_;
+    Reducer sum_;
     std::vector<std::vector<CplxMatrix>> h_hist_;
     std::vector<std::vector<CplxMatrix>> e_hist_;
 };

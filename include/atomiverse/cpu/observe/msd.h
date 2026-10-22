@@ -63,12 +63,15 @@ class MSD : public cpu::md::AsyncObserver {
     explicit MSD(double dt, int freq = 0, std::string output_file = "msd.dat",
                  int window = 256);
 
+    /// @brief This analysis consumes a complete system, not a spatial shard.
+    bool requires_full_frame() const override { return true; }
     std::string name() const override { return "msd_async"; }
     /* role via Observer base */
     int frequency() const override { return freq_; }
 
     cpu::CaptureMask capture_mask() const override {
         cpu::CaptureMask m;
+        m.tags = true;
         m.positions = true;
         return m;
     }
@@ -91,6 +94,8 @@ class MSD : public cpu::md::AsyncObserver {
     std::string output_file_;
     int window_;
 
+    cpu::CorrelationInput input_;
+    bool invalid_input_ = false;
     cpu::ConstantCountGate gate_;  ///< constant-atom-count admission gate
     cpu::RejectedFrames rejected_; ///< frames the molrs accumulator refused
     std::vector<double> scratch_;  ///< reused blocked x|y|z packing buffer

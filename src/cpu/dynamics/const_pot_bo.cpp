@@ -219,23 +219,27 @@ void ConstPotBO::launch(const LaunchContext& ctx) {
         build_matrix_(ctx.frame);
         matrix_ready_ = true;
     }
+    sites_.refresh(ctx, elec_atoms_, "ConstPotBO");
     ensure_aspc_();
     build_rhs_(ctx.frame);
-    solve_(!ctx.runtime.exec.initializing_forces);
+    solve_(!(ctx.runtime.exec.initializing_forces
+             || ctx.runtime.exec.trial_evaluation));
     write_charges_(ctx.frame);
     ChargePacker::forward(ctx);
     if (write_electrode_forces)
         write_electrode_forces_(ctx.frame);
-    if (!ctx.runtime.exec.initializing_forces)
+    if (!(ctx.runtime.exec.initializing_forces
+          || ctx.runtime.exec.trial_evaluation))
         record_aspc_();
 }
 
 void ConstPotBO::destroy(const DestroyContext&) {
+    // Release the dense workspace only. The last solution (sites, charges,
+    // potentials) stays readable through the accessors after the driver
+    // that ran this component is gone; build() re-collects it.
     matrix_ready_ = false;
-    elec_atoms_.clear();
     A_.clear();
-    Q_.clear();
-    solved_psi_.clear();
+    A_.shrink_to_fit();
     if (aspc_)
         aspc_->reset();
     last_iters_ = 0;
@@ -268,7 +272,8 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
     eta_vec_.clear();
     const int n = frame.nlocal();
     auto type = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i) {
+    // Tag order: the site order must survive atom sorting (ElectrodeRows).
+    for (int i : ElectrodeRows::owned_by_tag(frame)) {
         for (std::size_t g = 0; g < groups_.size(); ++g) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
@@ -281,6 +286,7 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
             }
         }
     }
+    sites_.bind(frame, elec_atoms_);
     const int m = static_cast<int>(elec_atoms_.size());
     Q_.assign(static_cast<std::size_t>(m), 0.0);
     b_.assign(static_cast<std::size_t>(m), 0.0);

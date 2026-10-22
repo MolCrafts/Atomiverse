@@ -99,7 +99,7 @@ int main() {
     constexpr double kSpreadRatio = 0.25; // Ω_final / Ω_init upper bound
 
     PW method;
-    method.upf_path = ATV_PW_UPF_PATH;
+    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
     method.ecut_ry = kEcutRy;
     method.k_mesh = kMeshScf;
     method.tol = 1e-6;

@@ -12,8 +12,8 @@ energy/force pins (same policy as `gpw-xdm-forces` / `gpw-xdm-kpoint-stress`).
 Product path:
 
 1. Multi-k SCF (`GpwDft::k_mesh`) supplies electronic \(P_k\), \(W_k\).
-2. Analytic k-summed Hellmann–Feynman / Pulay assembly (same as
-   `gpw-kpoint-forces`).
+2. Analytic k-summed Hellmann–Feynman / Pulay assembly (the `GpwDft`
+   multi-k force path).
 3. Geometry-only \(F_{\mathrm{XDM}} = -\nabla E_{\mathrm{XDM}}\) from
    `xdm_pbe` is **added** on the multi-k path (identical switch as Γ:
    pure real-space lattice sum, rcut 50 Å, QE NC-PBE BJ damping).
@@ -52,7 +52,7 @@ geometry-only — independent of the electronic k mesh.
 
 ### B — Multi-k product wiring (H₂, k-mesh 1×1×2)
 
-Compressed H₂ (same geometry as `gpw-kpoint-forces` / `gpw-mbd-kpoint-forces`):
+Compressed H₂ (same geometry as `gpw-mbd-kpoint-forces`):
 PADE, DZV-GTH-PADE, `k_mesh={1,1,2}`, free-atom XDM (periodic cell, rcut 50 Å).
 
 | Quantity | Gate |

@@ -1,5 +1,6 @@
 /// @file src/cpu/potentials/pair_lj_cut_tip4p_cut.cpp
 #include "atomiverse/cpu/potentials/pair_lj_cut_tip4p_cut.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include <algorithm>
 #include <cmath>
@@ -99,6 +100,7 @@ void PairLJCutTip4pCut::compute_newsite(double xO, double yO, double zO,
 }
 
 void PairLJCutTip4pCut::build(const BuildContext& ctx) {
+    filtered_source_ = nullptr;
     n_threads_ = 1;
 #ifdef _OPENMP
     n_threads_ = omp_get_max_threads();
@@ -114,16 +116,17 @@ void PairLJCutTip4pCut::build(const BuildContext& ctx) {
     any_special_ = special_.active();
     special_.clear();
     if (any_special_) {
-        const auto* dd = ctx.runtime.md.dd;
-        const int n_owners =
-            (dd && ctx.runtime.mpi_size > 1) ? dd->n_local : ctx.frame.nlocal();
+        const int n_owners = ctx.frame.nlocal();
         special_.rebuild(ctx.frame, n_owners);
     }
     n_sites_ = 0;
+    sites_source_ = nullptr;
+    sites_version_ = 0;
     filtered_version_ = 0;
 }
 
-void PairLJCutTip4pCut::ensure_sites_(const Frame& f) {
+void PairLJCutTip4pCut::ensure_sites_(const Frame& f,
+                                      const md::PairList& pairs) {
     const int n = f.n_total();
     const int* type = f.span(kAtom_type).data();
     const TagInt* tag = f.span(kAtom_tag).data();
@@ -133,10 +136,16 @@ void PairLJCutTip4pCut::ensure_sites_(const Frame& f) {
     const StorageReal* z = f.span(kAtom_z).data();
     const auto& box = f.box;
 
-    // Resolve H partners only when the atom count changes (topology assumed
-    // fixed for the foothold). M-site coordinates are always refreshed.
-    if (n_sites_ != n || h1_.empty()) {
+    // Resolve H partners once per neighbor build: a rebuild is the only
+    // point where exchange / atom sort / borders renumber rows, and a sort
+    // keeps the row count, so the count alone cannot detect it (LAMMPS
+    // src/MOLECULE/pair_lj_cut_tip4p_cut.cpp resets hneigh when
+    // neighbor->ago == 0). M-site coordinates are always refreshed.
+    if (n_sites_ != n || h1_.empty() || sites_source_ != &pairs
+        || sites_version_ != pairs.version) {
         n_sites_ = n;
+        sites_source_ = &pairs;
+        sites_version_ = pairs.version;
         h1_.assign(n, -1);
         h2_.assign(n, -1);
         is_O_.assign(n, 0);
@@ -197,8 +206,10 @@ void PairLJCutTip4pCut::rebuild_filtered_list_(const Frame& f,
     filtered_numneigh_.assign(n, 0);
     filtered_firstneigh_.assign(n, 0);
     filtered_neighbors_.clear();
+    filtered_entries_.clear();
     filtered_scale_.clear();
     filtered_neighbors_.reserve(pairs.total_pairs);
+    filtered_entries_.reserve(pairs.total_pairs);
     filtered_scale_.reserve(pairs.total_pairs);
 
     const int* numneigh = pairs.numneigh.data();
@@ -217,6 +228,7 @@ void PairLJCutTip4pCut::rebuild_filtered_list_(const Frame& f,
             if (sc == 0.0)
                 continue;
             filtered_neighbors_.push_back(j);
+            filtered_entries_.push_back(off + jj);
             filtered_scale_.push_back(sc);
             ++kept;
         }
@@ -231,16 +243,8 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
             "PairLJCutTip4pCut::launch: runtime.md.pair_list is null");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.box;
 
-    const auto* dd = ctx.runtime.md.dd;
-#ifdef ATV_HAS_MPI
-    const bool mpi = dd && ctx.runtime.mpi_size > 1;
-    const int n_force = mpi ? dd->n_local + dd->n_ghost : f.nlocal();
-#else
-    (void)dd;
-    const int n_force = f.nlocal();
-#endif
+    const int n_force = cpu::force_count(ctx);
 
     if (static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size()) < n_force) {
         for (int t = 0; t < n_threads_; ++t) {
@@ -250,12 +254,14 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
         }
     }
 
-    ensure_sites_(f);
+    ensure_sites_(f, pairs);
 
     const bool use_filtered = any_special_;
-    if (use_filtered && pairs.version != filtered_version_) {
+    if (use_filtered
+        && (filtered_source_ != &pairs || pairs.version != filtered_version_)) {
         rebuild_filtered_list_(f, pairs);
         filtered_version_ = pairs.version;
+        filtered_source_ = &pairs;
     }
     const int k_inum = use_filtered ? filtered_inum_ : pairs.inum;
     const int* __restrict ilist = use_filtered ? nullptr : pairs.ilist.data();
@@ -317,9 +323,6 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
     double* __restrict fyt = fy_thr_[0].data();
     double* __restrict fzt = fz_thr_[0].data();
 
-    const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
-    const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
-
     for (int ii = 0; ii < k_inum; ++ii) {
         const int i = use_filtered ? ii : ilist[ii];
         const int itype = static_cast<int>(type_ptr[i]);
@@ -345,9 +348,6 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
             double dx = xi - x_ptr[j];
             double dy = yi - y_ptr[j];
             double dz = zi - z_ptr[j];
-            dx -= lx * std::nearbyint(dx * inv_lx);
-            dy -= ly * std::nearbyint(dy * inv_ly);
-            dz -= lz * std::nearbyint(dz * inv_lz);
             const double rsq = dx * dx + dy * dy + dz * dz;
 
             // LJ on true positions (O–O only for classic TIP4P).
@@ -357,12 +357,14 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
                 const double r6inv = r2inv * r2inv * r2inv * sig6;
                 const double fpair =
                     sc * eps24 * r2inv * (2.0 * r6inv * r6inv - r6inv);
-                fxt[i] += fpair * dx;
-                fyt[i] += fpair * dy;
-                fzt[i] += fpair * dz;
-                fxt[j] -= fpair * dx;
-                fyt[j] -= fpair * dy;
-                fzt[j] -= fpair * dz;
+                if (ctx.forces_requested) {
+                    fxt[i] += fpair * dx;
+                    fyt[i] += fpair * dy;
+                    fzt[i] += fpair * dz;
+                    fxt[j] -= fpair * dx;
+                    fyt[j] -= fpair * dy;
+                    fzt[j] -= fpair * dz;
+                }
                 energy_total += sc * (eps4 * (r6inv * r6inv - r6inv) - vshift);
                 // LJ acts on the real O positions: Δ = (dx,dy,dz) is already
                 // r_i − r_j and F_i = +fpair·Δ.
@@ -385,9 +387,6 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
                 double cdx = x1x - x2x;
                 double cdy = x1y - x2y;
                 double cdz = x1z - x2z;
-                cdx -= lx * std::nearbyint(cdx * inv_lx);
-                cdy -= ly * std::nearbyint(cdy * inv_ly);
-                cdz -= lz * std::nearbyint(cdz * inv_lz);
                 const double crsq = cdx * cdx + cdy * cdy + cdz * cdz;
                 if (crsq >= cut_coul_sq || crsq == 0.0)
                     continue;
@@ -413,9 +412,11 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
 
                 // Force on charge site of i, partitioned if oxygen.
                 if (itype != type_O) {
-                    fxt[i] += cdx * cforce;
-                    fyt[i] += cdy * cforce;
-                    fzt[i] += cdz * cforce;
+                    if (ctx.forces_requested) {
+                        fxt[i] += cdx * cforce;
+                        fyt[i] += cdy * cforce;
+                        fzt[i] += cdz * cforce;
+                    }
                 } else {
                     const double fdx = cdx * cforce;
                     const double fdy = cdy * cforce;
@@ -426,23 +427,29 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
                     const double fHx = 0.5 * alpha * fdx;
                     const double fHy = 0.5 * alpha * fdy;
                     const double fHz = 0.5 * alpha * fdz;
-                    fxt[i] += fOx;
-                    fyt[i] += fOy;
-                    fzt[i] += fOz;
+                    if (ctx.forces_requested) {
+                        fxt[i] += fOx;
+                        fyt[i] += fOy;
+                        fzt[i] += fOz;
+                    }
                     const int iH1 = h1_[i], iH2 = h2_[i];
-                    fxt[iH1] += fHx;
-                    fyt[iH1] += fHy;
-                    fzt[iH1] += fHz;
-                    fxt[iH2] += fHx;
-                    fyt[iH2] += fHy;
-                    fzt[iH2] += fHz;
+                    if (ctx.forces_requested) {
+                        fxt[iH1] += fHx;
+                        fyt[iH1] += fHy;
+                        fzt[iH1] += fHz;
+                        fxt[iH2] += fHx;
+                        fyt[iH2] += fHy;
+                        fzt[iH2] += fHz;
+                    }
                 }
 
                 // Force on charge site of j (opposite).
                 if (jtype != type_O) {
-                    fxt[j] -= cdx * cforce;
-                    fyt[j] -= cdy * cforce;
-                    fzt[j] -= cdz * cforce;
+                    if (ctx.forces_requested) {
+                        fxt[j] -= cdx * cforce;
+                        fyt[j] -= cdy * cforce;
+                        fzt[j] -= cdz * cforce;
+                    }
                 } else {
                     const double fdx = -cdx * cforce;
                     const double fdy = -cdy * cforce;
@@ -453,30 +460,37 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
                     const double fHx = 0.5 * alpha * fdx;
                     const double fHy = 0.5 * alpha * fdy;
                     const double fHz = 0.5 * alpha * fdz;
-                    fxt[j] += fOx;
-                    fyt[j] += fOy;
-                    fzt[j] += fOz;
+                    if (ctx.forces_requested) {
+                        fxt[j] += fOx;
+                        fyt[j] += fOy;
+                        fzt[j] += fOz;
+                    }
                     const int jH1 = h1_[j], jH2 = h2_[j];
-                    fxt[jH1] += fHx;
-                    fyt[jH1] += fHy;
-                    fzt[jH1] += fHz;
-                    fxt[jH2] += fHx;
-                    fyt[jH2] += fHy;
-                    fzt[jH2] += fHz;
+                    if (ctx.forces_requested) {
+                        fxt[jH1] += fHx;
+                        fyt[jH1] += fHy;
+                        fzt[jH1] += fHz;
+                        fxt[jH2] += fHx;
+                        fyt[jH2] += fHy;
+                        fzt[jH2] += fHz;
+                    }
                 }
             }
         }
     }
 
     for (int i = 0; i < n_force; ++i) {
-        fx_ptr[i] += fxt[i];
-        fy_ptr[i] += fyt[i];
-        fz_ptr[i] += fzt[i];
+        if (ctx.forces_requested) {
+            fx_ptr[i] += fxt[i];
+            fy_ptr[i] += fyt[i];
+            fz_ptr[i] += fzt[i];
+        }
     }
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 }
 
 void PairLJCutTip4pCut::destroy(const DestroyContext&) {
@@ -491,12 +505,16 @@ void PairLJCutTip4pCut::destroy(const DestroyContext&) {
     my_.clear();
     mz_.clear();
     n_sites_ = 0;
+    sites_source_ = nullptr;
+    sites_version_ = 0;
     filtered_neighbors_.clear();
+    filtered_entries_.clear();
     filtered_scale_.clear();
     filtered_numneigh_.clear();
     filtered_firstneigh_.clear();
     filtered_inum_ = 0;
     filtered_version_ = 0;
+    filtered_source_ = nullptr;
     any_special_ = false;
 }
 

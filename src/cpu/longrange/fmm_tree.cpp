@@ -63,8 +63,28 @@ void FmmTree::subdivide(int node_id, const std::vector<Vec3>& positions) {
     if (static_cast<int>(node.particles.size()) <= max_per_leaf_)
         return;
 
+    // Coincident particles cannot be separated by any octree depth. Keep
+    // them in a direct-sum leaf even when it exceeds the target capacity.
+    const Vec3& first = positions[static_cast<std::size_t>(node.particles[0])];
+    bool coincident = true;
+    for (int pi : node.particles) {
+        const auto& p = positions[static_cast<std::size_t>(pi)];
+        if (p.x() != first.x() || p.y() != first.y() || p.z() != first.z()) {
+            coincident = false;
+            break;
+        }
+    }
+    if (coincident)
+        return;
     const AccReal h2 = 0.5 * node.half;
     const Vec3 c = node.center;
+    // Stop at representational resolution; otherwise a rounded child can
+    // retain the same centre forever. Near-field evaluation remains exact.
+    if (!(h2 > 0.0))
+        return;
+    for (int d = 0; d < 3; ++d)
+        if (c[d] + h2 == c[d] || c[d] - h2 == c[d])
+            return;
     // Create 8 children.
     int child_ids[8];
     for (int oct = 0; oct < 8; ++oct) {

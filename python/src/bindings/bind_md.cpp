@@ -107,6 +107,14 @@ struct MdHandle {
                   "configuration.");
     }
 
+    // Borrow a live component/node; nanobind keeps its Python owner alive.
+    template <typename Evaluator>
+    void set_local_evaluator(Evaluator& evaluator, const char* name) {
+        require_configurable_("set_evaluator");
+        driver.set_evaluator_ref(evaluator);
+        unmirrored_.push_back(name);
+    }
+
     template <typename Params, typename Component>
     void set_categorical(const char* setter, const Params& p, Component comp) {
         require_configurable_(setter);
@@ -264,6 +272,10 @@ struct MdHandle {
             return;
         }
 #ifdef ATV_HAS_MPI
+        if (!unmirrored_.empty())
+            throw std::runtime_error(
+                "MD.run: the MPI launcher task payload cannot carry "
+                + unmirrored_.front() + "; run without the launcher");
         cpu::task::TaskSpec spec(
             cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps)});
         auto fref = borrow_molrs_frame(frame_obj);
@@ -285,6 +297,7 @@ struct MdHandle {
   private:
     /// True once a `run()` has completed; see `require_configurable_`.
     bool ran_ = false;
+    std::vector<std::string> unmirrored_;
 };
 
 struct MdPhaseBuilder {

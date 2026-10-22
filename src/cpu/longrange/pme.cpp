@@ -69,7 +69,7 @@ void KSpacePME::ensure_grid(const cpu::Frame& frame, bool initial_build) {
 
     int next_K[3];
     for (int d = 0; d < 3; ++d) {
-        const double len = box.length(d);
+        const double len = box.lengths()[d];
         next_K[d] = longrange::good_fft_size(
             static_cast<int>(std::ceil(len / spacing_)));
         if (next_K[d] < order_ + 1)
@@ -217,9 +217,10 @@ void KSpacePME::compute(const LaunchContext& ctx) {
 #endif
 
     // ── Interpolate reciprocal forces onto owned atoms ─────────────────
-    longrange::pme_interpolate_forces(
-        q, n_local, order_, K_, ic, vol, base_.data(), theta_.data(),
-        dtheta_.data(), grid_.data(), sp_fx, sp_fy, sp_fz);
+    if (ctx.forces_requested)
+        longrange::pme_interpolate_forces(
+            q, n_local, order_, K_, ic, vol, base_.data(), theta_.data(),
+            dtheta_.data(), grid_.data(), sp_fx, sp_fy, sp_fz);
 
     // ── Self energy (per-rank owned) + net-charge (rank 0) ─────────────
     double qsq_local = 0, q_local = 0;
@@ -241,14 +242,14 @@ void KSpacePME::compute(const LaunchContext& ctx) {
         const double e_net = longrange::background_energy(q_total, vol, alpha_);
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
-        // The neutralizing background scales as 1/V, so its virial
-        // -dE/d(eps_aa) is e_net on each diagonal component.
-        f.meta.get(kStress)[0] += stress[0] + e_net;
-        f.meta.get(kStress)[1] += stress[1] + e_net;
-        f.meta.get(kStress)[2] += stress[2] + e_net;
-        f.meta.get(kStress)[3] += stress[3];
-        f.meta.get(kStress)[4] += stress[4];
-        f.meta.get(kStress)[5] += stress[5];
+        if (ctx.stress_requested) {
+            f.meta.get(kStress)[0] += stress[0] + e_net;
+            f.meta.get(kStress)[1] += stress[1] + e_net;
+            f.meta.get(kStress)[2] += stress[2] + e_net;
+            f.meta.get(kStress)[3] += stress[3];
+            f.meta.get(kStress)[4] += stress[4];
+            f.meta.get(kStress)[5] += stress[5];
+        }
     }
 }
 

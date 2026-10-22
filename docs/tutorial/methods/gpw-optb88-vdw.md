@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-optb88-vdw` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::XcKind::OptB88VdW` + `GpwDft::vdw_df` (bound by `GPWEvaluator`); `GpwResult::e_disp` [Ha] |
 | Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
 
@@ -21,8 +21,7 @@ the same **periodic water-dimer cell** as `gpw-vdw-df-ice` / `gpw-rvv10-ice`
 Public surface: enum member `xc = XcKind::OptB88VdW` and bool `vdw_df` on
 `cpu::gpw::GpwDft` (no `*Config` bag). Nonlocal
 energy is reported on `GpwResult::e_disp` [Hartree] and folded into `e_total`.
-Public Frame energy is eV (`frame.meta[kEnergy]`). Product gate:
-`gpw-optb88-vdw` (`reg_gpw-optb88-vdw`). Wall ratio is
+Public Frame energy is eV (`frame.meta[kEnergy]`). Wall ratio is
 **perf_exempt** (XC combo + E_disp pin; full CP2K QS twin wall unavailable on
 the pin host — see Performance).
 
@@ -101,7 +100,7 @@ self-consistent nonlocal potential productization).
 ## Implementation
 
 Public surface only (`GpwDft` members + `GPWEvaluator`; no `*Config`, no
-`make_*` / `build_*` factories). Regression uses the concrete solver:
+`make_*` / `build_*` factories). The recorded check uses the concrete solver:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -153,7 +152,7 @@ ATV::cpu::gpw::GPWEvaluator eval(std::move(dft));
 // frame.meta.get(kEnergy)    [eV] public surface
 ```
 
-Build and run the regression:
+Build configuration:
 
 ```bash
 bash -lc '
@@ -166,8 +165,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-optb88-vdw -j$(nproc)
-  reg_gpw-optb88-vdw
 '
 ```
 
@@ -178,14 +175,11 @@ bash -lc '
 | `xc_functional.h` | `XCType::OptB88VdW` (semi-local kernel) |
 | `xc_grid_gga.h` | `xc_grid_optb88_vdw` / spin |
 | `vdw_df.h` | DRSLL engine (private) |
-| `reg_gpw-optb88-vdw.cpp` | Product gate |
-| case `gpw-optb88-vdw` pin | Offline pins + perf_exempt |
 | CP2K oracle | CP2K twin input + notes |
 
 ## Validation (CP2K / offline pins)
 
-Source:
-case `gpw-optb88-vdw` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle design: offline **CP2K** twin under
 CP2K oracle (Hutter recipe:
 `XC_GGA_X_OPTB88_VDW` + `&PW92` + `TYPE DRSLL`). On the pin host, **CP2K is
@@ -268,14 +262,13 @@ a strict full-SCF twin later if product policy requires
 
 ## References
 
-- Offline pin: case `gpw-optb88-vdw` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - Oracle inputs: CP2K oracle
 - Oracle rules: CP2K oracle (offline pins only; never in ctest)
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion
 - Related product pins: `gpw-vdw-df-ice` (DRSLL kernel),
   `gpw-vdw-scf-potential` (SC nonlocal potential + forces)
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`
-- Closed spec (git history): `.claude/specs/gpw-optb88-vdw/` (deleted at done)
 - J. Klimeš, D. R. Bowler, A. Michaelides, *J. Phys.: Condens. Matter* **22**,
   022201 (2010) (optB88-vdW)
 - M. Dion, H. Rydberg, E. Schröder, D. C. Langreth, B. I. Lundqvist,

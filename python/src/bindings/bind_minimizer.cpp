@@ -111,6 +111,14 @@ struct MinimizeHandle {
                   "change the configuration.");
     }
 
+    // Borrow a live component/node; nanobind keeps its Python owner alive.
+    template <typename Evaluator>
+    void set_local_evaluator(Evaluator& evaluator, const char* name) {
+        require_configurable_("set_evaluator");
+        driver.set_evaluator_ref(evaluator);
+        unmirrored_.push_back(name);
+    }
+
     template <typename Params, typename Component>
     void set_categorical(const char* setter, const Params& p,
                          Component component) {

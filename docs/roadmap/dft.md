@@ -28,8 +28,9 @@ Hand-coded; libxc is an optional test oracle only (`ATV_BUILD_XC_ORACLE`).
 | LSDA (Slater+VWN5) | ✓ | ✓ | CUDA = plane-wave only |
 | PW92 | ✓ | ○ | LDA base of PBE |
 | PBE | ✓ | ✓ | CUDA = PW closed-shell + collinear spin-GGA |
-| PBEsol / revPBE / RPBE / BLYP | ✓ | ○ | Molecular + GPW |
-| optB88 | ✓ | ○ | GPW (with vdW-DF) |
+| BLYP | ✓ | ○ | Molecular pin; GPW reachable, not separately pinned |
+| PBEsol / revPBE / RPBE | ◐ | ○ | Molecular + GPW reachable; libxc unit parity only, no end-to-end pin (GPW functional-swap cases removed) |
+| optB88 | ◐ | ○ | GPW (with vdW-DF); no end-to-end pin (cases removed) |
 | BP86 / other GGA catalog | ○ | ○ | |
 | Meta-GGA (TPSS, r2SCAN, …) | ○ | ○ | No τ channel in grid engine |
 | B3LYP / PBE0 | ✓ | ○ | Gaussian only |
@@ -49,10 +50,12 @@ Hand-coded; libxc is an optional test oracle only (`ATV_BUILD_XC_ORACLE`).
 | TS | ○ | ✓ | ○ | Free-atom + Hirshfeld-scaled |
 | MBD@rsSCS | ○ | ✓ | ○ | Free-atom, Hirshfeld, periodic Ewald |
 | XDM | ○ | ✓ | ○ | |
-| vdW-DF / vdW-DF2 / rVV10 / optB88-vdW | ○ | ✓ | ○ | SC nonlocal potential + F/σ |
+| vdW-DF / rVV10 | ○ | ✓ | ○ | SC nonlocal potential + F/σ |
+| vdW-DF2 / optB88-vdW | ○ | ◐ | ○ | Same kernel path; no end-to-end pin (cases removed) |
 | VV10 (stock) | ○ | ○ | ○ | **Blocked** — no CP2K `TYPE VV10` |
 
-GPW dispersion covers Γ and multi-k, RKS and UKS where productized. Pin
+GPW dispersion runs at Γ and multi-k, RKS and UKS where productized. D3 / D4 / TS
+are pinned at Γ; multi-k pins cover vdW-DF, MBD and XDM. Pin
 detail: [tutorial/methods catalog](../tutorial/methods/catalog.md).
 
 ## 4. Periodic Kohn–Sham
@@ -71,9 +74,10 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 | Periodic LDA / GGA | ✓ | ✓ | No periodic hybrid / meta-GGA |
 | Periodic DFT+U | ✓ | ○ | GPW Dudarev; F/σ at Γ and multi-k |
 | Periodic dispersion | ✓ | ○ | See §3 |
-| Periodic RI-MP2 / UMP2 / SCS | ✓ | ○ | GPW; Γ + multi-k |
-| Periodic dRPA / URPA | ✓ | ○ | Γ, multi-k, finite-q |
-| Periodic G0W0 / UGW | ✓ | ○ | Γ, multi-k, finite-q |
+| Periodic RI-MP2 / SCS-MP2 (Γ) | ✓ | ○ | GPW |
+| Periodic UMP2 / multi-k MP2 | ◐ | ○ | GPW; no external pin, self-pinned cases removed |
+| Periodic dRPA / URPA | ◐ | ○ | Γ, multi-k, finite-q reachable; no external pin, self-pinned cases removed |
+| Periodic G0W0 / UGW | ◐ | ○ | Γ, multi-k, finite-q reachable; no external pin, self-pinned cases removed |
 | GAPW / PAW / USPP | ○ | ○ | NC-UPF or GTH only |
 
 ### Plane-wave depth (CPU)
@@ -95,7 +99,7 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 | Capability | Status | Notes |
 | ---------- | :----: | ----- |
 | LSDA + PBE energy | ✓ | Device XC |
-| Analytic F/σ (closed-shell) | ✓ | LSDA + PBE |
+| Analytic F/σ (closed-shell) | ✓ | LSDA F/σ + PBE σ pinned; closed-shell PBE forces not separately pinned |
 | Collinear spin F/σ | ✓ | Incl. spin-PBE |
 | Metallic smear energy + F/σ | ◐ | Restricted path product; multi-atom stress residual; spin×smear stress ○ |
 | Host Ritz + SCF control | — | Hot path (H·ψ, FFT, Poisson, V_eff) on device |
@@ -107,13 +111,13 @@ via **DIIS or OT**, unless noted.
 
 | Area | Status | Notes |
 | ---- | :----: | ----- |
-| Functionals | ✓ | PADE/LSD, PBE, PBEsol, revPBE, RPBE, BLYP, optB88 |
+| Functionals | ✓ | PADE/LSD, PBE pinned; PBEsol, revPBE, RPBE, BLYP, optB88 reachable without a GPW pin (see §2) |
 | DFT+U + smearing + multigrid | ✓ | Combinable with OT |
 | Analytic F + analytic stress | ✓ | Fixed-P + Pulay; CELL_OPT; FD phonons |
 | Dispersion / vdW | ✓ | §3 full set |
 | Bands / DOS / Berry / MLWF | ✓ | Spin + metallic |
 | BOMD / CPMD / SGCP / XL-BOMD | ✓ | See [MD § AIMD](molecular-dynamics.md#5-ab-initio-md) |
-| Periodic correlated | ✓ | RI-MP2, RPA, GW (§4 table) |
+| Periodic correlated | ◐ | RI-MP2 / SCS-MP2 at Γ pinned; RPA, GW, UMP2, multi-k not (§4 table) |
 
 **Public shape:** `GpwDft` owns kinds and parameters as members and is Frame
 in / Frame out (`run(frame)` / `forces(frame)` / `stress(frame)`); `GPWEvaluator(std::move(dft))`

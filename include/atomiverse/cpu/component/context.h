@@ -94,25 +94,8 @@ struct DynamicsServices {
     /// DomainRuntime destruction). Serial methods no-op with `n_ghost == 0`.
     Comm* comm = nullptr;
 
-    /// @brief Opt-in: publish a FULL neighbor list instead of the half list.
-    ///
-    /// A consumer that cannot work from a half list sets this in its `build()`;
-    /// `NeighborList` then calls `CellList::refresh_full` and the published
-    /// `pair_list` carries, for every owned `i`, *all* of its neighbours in both
-    /// directions. Mirrors `cuda::DynamicsServices::flat_pairs_requested`.
-    ///
-    /// Who needs it: any style whose per-atom term is not a sum over *unordered*
-    /// pairs — the EAM embedding density `rho_i = sum_j phi(r_ij)` (which must see
-    /// every neighbour of `i`, not the half of them that happen to sit in `i`'s
-    /// row), and every 3-body style (Stillinger-Weber, Tersoff), whose angular
-    /// term enumerates `(j,k)` pairs drawn from `i`'s complete neighbour set.
-    ///
-    /// Read in `NeighborList::launch()`, not `build()`: component `build()` runs
-    /// in Plan order, and the neighbor phase precedes the force phase, so the
-    /// requester's `build()` runs *after* the provider's. The provider therefore
-    /// treats a mode change as a rebuild trigger — same lazy resolution as the
-    /// CUDA flat-pairs export.
-    bool full_list_requested = false;
+    /// Independent full CSR for many-body consumers; pair_list always means half.
+    const md::PairList* full_pair_list = nullptr;
 
     /// @brief Global degrees of freedom, `3N - 3 - n_constraints`.
     ///
@@ -142,10 +125,6 @@ struct DynamicsServices {
     /// `exchange` + `borders` + `neighbor->build`. Default `true` so
     /// linear drivers that never call decide still rebuild ghosts.
     bool reneighbor = true;
-
-    /// @brief Verlet already ran `NeighborProvider::decide_reneighbor`
-    /// this step. When false, a direct `launch()` decides inline.
-    bool reneighbor_decided = false;
 };
 
 /// @brief Metropolis-sampling services (publisher: `cpu::mc::MC::run`).
@@ -234,6 +213,9 @@ struct LoopServices {
 struct ExecServices {
     /// @brief The Backend running this node tree. Null outside a run.
     Runtime* runtime = nullptr;
+    /// Full replicas opt out of spatial decomposition. This does not establish
+    /// an electronic communicator; collective methods must check that contract.
+    bool serial_on_replica = false;
 
     /// @brief The force-request veto channel — how an energy-only phase reaches
     ///        the slots of the drivers nested inside it.
@@ -250,8 +232,12 @@ struct ExecServices {
     ///
     /// True outside any veto, which is every loop but MC's trial `energy` phase.
     bool forces_requested = true;
-    /// Evaluate current nuclear state without advancing temporal history.
+    /// @brief Stress-request veto propagated through nested driver dispatch.
+    bool stress_requested = true;
+    /// Evaluate the current nuclear state without advancing propagation history.
     bool initializing_forces = false;
+    /// A reversible energy/force trial must not advance temporal history.
+    bool trial_evaluation = false;
 };
 
 /// @brief Async-analysis services (publisher: `AnalysisExecutor::install`).

@@ -2240,10 +2240,12 @@ void spectral_g0w0_rhf_kpoints(const UniformGrid& grid,
                         const Cplx* pp = psi_p.data()
                                          + static_cast<std::size_t>(p)
                                                * static_cast<std::size_t>(npts);
+                        // w^s_pm = (pm|s) = ∫ ψ_p^* ψ_m W_s: ψ_p^*ψ_m carries
+                        // −q, W_s carries +q — crystal momentum conserved.
                         Cplx acc{0.0, 0.0};
                         for (long g = 0; g < npts; ++g)
                             acc += Ws[static_cast<std::size_t>(g)]
-                                   * (std::conj(pm[g]) * pp[g]);
+                                   * (std::conj(pp[g]) * pm[g]);
                         acc *= w_grid;
                         const double t2 = w_q_se * std::norm(acc);
                         if (t2 == 0.0)
@@ -2281,10 +2283,12 @@ void spectral_g0w0_rhf_kpoints(const UniformGrid& grid,
                 for (long g = 0; g < npts; ++g)
                     rho[static_cast<std::size_t>(g)] = std::conj(pp[g]) * pi[g];
                 poisson_mt_complex(grid, rho.data(), Vmt);
+                // (pi|ip) = ∫ ρ* v[ρ] with ρ = ψ_p^* ψ_i: real, ≥ 0 and
+                // invariant under the arbitrary phase of each Bloch MO.
                 Cplx s{0.0, 0.0};
                 for (long g = 0; g < npts; ++g)
-                    s += Vmt[static_cast<std::size_t>(g)]
-                         * rho[static_cast<std::size_t>(g)];
+                    s += std::conj(rho[static_cast<std::size_t>(g)])
+                         * Vmt[static_cast<std::size_t>(g)];
                 sum -= w_grid * s.real();
             }
             sx[static_cast<std::size_t>(p)] = sum;
@@ -2661,10 +2665,12 @@ void spectral_g0w0_uhf_kpoints(const UniformGrid& grid,
                         const Cplx* pp = psi_p.data()
                                          + static_cast<std::size_t>(p)
                                                * static_cast<std::size_t>(npts);
+                        // w^s_pm = (pm|s) = ∫ ψ_p^* ψ_m W_s: ψ_p^*ψ_m carries
+                        // −q, W_s carries +q — crystal momentum conserved.
                         Cplx acc{0.0, 0.0};
                         for (long g = 0; g < npts; ++g)
                             acc += Ws[static_cast<std::size_t>(g)]
-                                   * (std::conj(pm[g]) * pp[g]);
+                                   * (std::conj(pp[g]) * pm[g]);
                         acc *= w_grid;
                         const double t2 = w_q_se * std::norm(acc);
                         if (t2 == 0.0)
@@ -2702,10 +2708,12 @@ void spectral_g0w0_uhf_kpoints(const UniformGrid& grid,
                 for (long g = 0; g < npts; ++g)
                     rho[static_cast<std::size_t>(g)] = std::conj(pp[g]) * pi[g];
                 poisson_mt_complex(grid, rho.data(), Vmt);
+                // (pi|ip) = ∫ ρ* v[ρ] with ρ = ψ_p^* ψ_i: real, ≥ 0 and
+                // invariant under the arbitrary phase of each Bloch MO.
                 Cplx s{0.0, 0.0};
                 for (long g = 0; g < npts; ++g)
-                    s += Vmt[static_cast<std::size_t>(g)]
-                         * rho[static_cast<std::size_t>(g)];
+                    s += std::conj(rho[static_cast<std::size_t>(g)])
+                         * Vmt[static_cast<std::size_t>(g)];
                 sum -= w_grid * s.real();
             }
             sx[static_cast<std::size_t>(p)] = sum;

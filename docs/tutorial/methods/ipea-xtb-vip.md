@@ -367,8 +367,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **No PBC / spin / solvent / sTDA / halogen** on this page. GFN-FF is
   classical (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
-  for the TB product gate; do not build `reg_am1_water_bomd` /
-  `reg_am1_water_minimize` under this configure. VIB stays OFF (Hessian
+  for the TB product gate. VIB stays OFF (Hessian
   exception is other slugs).
 - Family lock: **xtb only** for IPEA / GFN rows — never DFTB+ or OpenMOPAC as
   an IPEA oracle; never treat GFN-xTB as a DFTB3 successor.

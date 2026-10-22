@@ -159,7 +159,8 @@ void DipoleElectrodeJoint::collect_electrodes_(const cpu::Frame& frame) {
     const int n = frame.nlocal();
     auto type = frame.span(kAtom_type);
     is_elec_.assign(static_cast<std::size_t>(n), 0);
-    for (int i = 0; i < n; ++i) {
+    // Tag order: the site order must survive atom sorting (ElectrodeRows).
+    for (int i : ElectrodeRows::owned_by_tag(frame)) {
         for (std::size_t g = 0; g < groups_.size(); ++g) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
@@ -170,6 +171,7 @@ void DipoleElectrodeJoint::collect_electrodes_(const cpu::Frame& frame) {
             }
         }
     }
+    sites_.bind(frame, elec_atoms_);
     const int m = static_cast<int>(elec_atoms_.size());
     Q_.assign(static_cast<std::size_t>(m), 0.0);
     b_.assign(static_cast<std::size_t>(m), 0.0);
@@ -569,6 +571,18 @@ void DipoleElectrodeJoint::launch(const LaunchContext& ctx) {
         build_matrix_(ctx.frame);
         matrix_ready_ = true;
     }
+    {
+        // Rows moved (sort / migration): re-resolve the sites, re-mark the
+        // electrode rows, and drop the row-indexed dipole warm start.
+        const std::vector<int> before = elec_atoms_;
+        sites_.refresh(ctx, elec_atoms_, "DipoleElectrodeJoint");
+        if (elec_atoms_ != before) {
+            std::fill(is_elec_.begin(), is_elec_.end(), 0);
+            for (int ia : elec_atoms_)
+                is_elec_[static_cast<std::size_t>(ia)] = 1;
+            std::fill(last_mu_.begin(), last_mu_.end(), 0.0);
+        }
+    }
 
     // Resolve Frame columns once per launch (resolution budget).
     Spans s;
@@ -614,13 +628,12 @@ void DipoleElectrodeJoint::launch(const LaunchContext& ctx) {
 }
 
 void DipoleElectrodeJoint::destroy(const DestroyContext&) {
+    // Release the elastance only; the last joint solution (charges, dipoles,
+    // convergence) stays readable after the driver is gone, as for
+    // ConstPotBO. build() resets it.
     matrix_ready_ = false;
-    elec_atoms_.clear();
     A_.clear();
-    Q_.clear();
-    last_mu_.clear();
-    last_joint_iters_ = 0;
-    last_joint_converged_ = false;
+    A_.shrink_to_fit();
 }
 
 double DipoleElectrodeJoint::total_charge(std::size_t ie) const {

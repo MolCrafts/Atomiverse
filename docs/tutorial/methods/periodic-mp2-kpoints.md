@@ -4,16 +4,16 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-mp2-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::{build,run,mp2}` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); members `k_mesh`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
-| Roadmap | handoff **perf_exempt**; roadmap `dft.md` §10 multi-k RI-GPW MP2 closed |
+| Roadmap | handoff **perf_exempt**; roadmap `dft.md` §4 periodic multi-k MP2 ◐ (no standing regression) |
 
 ## Summary
 
 **Momentum-conserving second-order Møller–Plesset correlation on a Monkhorst–Pack
 k-mesh**, evaluated on top of a converged closed-shell multi-k **GPW PBE** SCF.
 This is the multi-k residual that closes the Periodic MP2 product after the
-Γ-only Poisson foothold (`periodic-mp2-si`) and the Γ RI product
+Γ-only Poisson foothold ([periodic-mp2-si](periodic-mp2-si.md)) and the Γ RI product
 (`periodic-ri-mp2-si`). Occupied–virtual pair densities are **complex Bloch
 products**; the Coulomb contraction uses the **RI-GPW** plane-wave resolution of
 the pair-density identity (Del Ben, Hutter, VandeVondele, *JCTC* **8**, 4177
@@ -117,8 +117,7 @@ physical diamond bct cell instead.
 
 ## Implementation
 
-Public surface only (`GpwDft` members + lookup constructors; matches
-`reg_periodic-mp2-kpoints.cpp`):
+Public surface only (`GpwDft` members + lookup constructors):
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -172,9 +171,7 @@ const Mp2Result& r = m.mp2();          // multi-k RI-GPW; r.ri && r.n_kpts == 2
 ```
 
 ```bash
-cmake --build build -j$(nproc) --target atomiverse reg_periodic-mp2-kpoints
-reg_periodic-mp2-kpoints
-# or: cmake --build build --target run_reg_periodic-mp2-kpoints
+cmake --build build -j$(nproc) --target atomiverse
 ```
 
 **Guards:** `std::logic_error` before `build()` / converged `run()`;
@@ -192,12 +189,11 @@ Relevant paths:
 | Implementation | `src/cpu/gpw/mp2.cpp` |
 | Kernels (private) | `cpu/gpw/internal/mp2_kernels.{h,cpp}` |
 | Unit (Γ recovery) | `tests/cpu/gpw/test_cpu_gpw_mp2.cpp` |
-| E2E | `periodic-mp2-kpoints` |
 | Oracle twin | CP2K oracle |
 
 ## Validation (vs CP2K offline pin)
 
-Source: case `periodic-mp2-kpoints` pin (offline pin;
+Source: the pin notes recorded when this page was written (no standing regression; offline pin;
 **never** live CP2K in ctest). Oracle twin:
 CP2K oracle.
 
@@ -254,7 +250,6 @@ Never launch CP2K from ctest.
 
 ## References
 
-- Offline pin: case `periodic-mp2-kpoints` pin
 - Oracle twin: CP2K oracle
 - Oracle rules: CP2K oracle (offline only; never in ctest)
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic MP2

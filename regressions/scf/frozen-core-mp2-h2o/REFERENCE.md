@@ -1,8 +1,8 @@
 # H2O frozen-core RMP2/6-31G* — e_corr + e_tot pins
 
 Closed-shell Møller–Plesset second-order (RMP2) with **frozen O 1s** on
-water / 6-31G*. Axis extension after `rmp2-h2o-sto3g`
-(`regressions/scf/h2o_mp2_sto3g`) and `ump2-o2-sto3g`: same observable pair
+water / 6-31G*. Axis extension after plain RMP2
+(`regressions/scf/posthf-eri-block-mp2`) and `ump2-o2-sto3g`: same observable pair
 (`e_corr`, `e_tot`) with the frozen-core axis (lowest occupied MO excluded
 from the correlation sum).
 
@@ -82,5 +82,5 @@ excluding core correlation on a single first-row heavy atom.
   this matches the usual “frozen core” chemistry convention for H₂O (no
   core orbitals on H).
 - Domain path under `regressions/scf/` matches other Gaussian post-HF cases
-  (`h2o_mp2_sto3g`, `h2o_ri_mp2`, `ump2-o2-sto3g`); slug = queue id
+  (`posthf-eri-block-mp2`, `ump2-o2-sto3g`); slug = queue id
   `frozen-core-mp2-h2o`.

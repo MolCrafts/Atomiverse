@@ -315,8 +315,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **No Hessian / PBC / spin / solvent / IPEA** on this page — see Phase C
   queue. GFN-FF is classical (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
-  for the TB product gate; do not build `reg_am1_water_bomd` /
-  `reg_am1_water_minimize` under this configure.
+  for the TB product gate.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
   GFN0 oracle; never treat GFN-xTB as a DFTB3 successor.
 - Foothold ≠ closed: GFN0 energy + GFN0 \(G\) is not the GFN product closed.

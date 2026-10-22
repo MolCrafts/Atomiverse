@@ -26,6 +26,8 @@ namespace pw {
 /// + KB nonlocal (the `PW::forces` path), accumulated onto the Frame.
 class PWEvaluator : public cpu::PlaneWave {
   public:
+    bool provides_force() const override { return compute_forces_; }
+
     /// @brief Construct with a default-configured plane-wave method.
     PWEvaluator() = default;
 

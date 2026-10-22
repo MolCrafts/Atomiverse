@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-uks-rpbe` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members (`n_alpha`/`n_beta`, `XcKind::RPBE`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
-| Roadmap | `docs/roadmap/dft.md` — RPBE RKS + Γ-UKS (`reg_gpw-uks-rpbe`) |
+| Roadmap | `docs/roadmap/dft.md` — PBEsol / revPBE / RPBE ◐ (no standing pin) |
 
 ## Summary
 
@@ -19,15 +19,15 @@ total energy and spin contamination against offline **CP2K 2026.1 Quickstep**
 **Martyna–Tuckerman** isolated electrostatics.
 
 **Not revPBE** (Zhang–Yang κ-revision of the rational PBE form — see
-`gpw-uks-revpbe` / `gpw-revpbe-si`). Closed-shell RKS RPBE is
-`gpw-rpbe-water`.
+[gpw-uks-revpbe](gpw-uks-revpbe.md) / [gpw-revpbe-si](gpw-revpbe-si.md)). Closed-shell RKS RPBE is
+[gpw-rpbe-water](gpw-rpbe-water.md).
 
 Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element
 (lookup constructors `GaussianBasis` / `GthPotential`), set its members
 (`n_alpha`, `n_beta`, `cutoff_ry`, `xc = XcKind::RPBE`, `nonperiodic`, …),
 move it into `cpu::gpw::GPWEvaluator`, run `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**;
 Hartree and \(\langle S^2\rangle\) via `last_energy_hartree()` / `last_s2()`.
-Product gate: `reg_gpw-uks-rpbe` (CP2K absolute energy + \(\langle S^2\rangle\)
+Recorded validation, no standing regression (CP2K absolute energy + \(\langle S^2\rangle\)
 + **dual-gate** \(|E_{\mathrm{RPBE}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha). Fair
 wall ratio \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx 2.70\) (≤10×).
 
@@ -90,10 +90,9 @@ REFERENCE first-green: \(|E_{\mathrm{RPBE}}-E_{\mathrm{PBE}}| \approx
 
 **Key exclusions (spec scope-out).**
 
-- No **k-point** UKS on this regression (multi-k UKS is `gpw-kpoints-uks` /
-  sibling force/stress pins).
+- No **k-point** UKS on this page (multi-k UKS: see [gpw-kpoints-uks](gpw-kpoints-uks.md)).
 - No **analytic UKS RPBE forces** / stress claim on this page (force path
-  exists elsewhere; product gate here is energy + \(\langle S^2\rangle\)).
+  exists elsewhere; recorded gate here is energy + \(\langle S^2\rangle\)).
 - No MPI scaling claim; single-rank pin.
 - Not all-electron molecular UKS (Gaussian SCF / PySCF loop).
 - **UGW** RPBE spin XC not productized (`GpwDft::g0w0` still refuses UKS RPBE).
@@ -152,7 +151,7 @@ const double s2 = eval.last_s2();                     // Löwdin ⟨S²⟩
 const cpu::gpw::GpwResult& r = eval.last_result();    // converged, iters, …
 ```
 
-Build (GPW needs FFTW3) and run the regression:
+Build (GPW needs FFTW3):
 
 ```bash
 bash -lc '
@@ -165,8 +164,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_gpw-uks-rpbe
-  reg_gpw-uks-rpbe
 '
 ```
 
@@ -178,12 +175,12 @@ Relevant sources:
 | Solver (UKS SCF + XcKind) | `gpw_solver.h`, `src/cpu/gpw/gpw_solver.cpp` |
 | RPBE spin GGA grid | `src/cpu/gpw/internal/xc_grid_gga.cpp` (`xc_grid_rpbe_spin`) |
 | CP2K twin input | CP2K oracle |
-| Sibling RKS RPBE | `gpw-rpbe-water` |
+| Sibling RKS RPBE | [gpw-rpbe-water](gpw-rpbe-water.md) |
 | Sibling UKS PBE | `gpw-uks-pbe` |
 
 ## Validation (CP2K)
 
-Source: case `gpw-uks-rpbe` pin (offline pin; **never**
+Source: values recorded when this page was written; no standing regression. (offline pin; **never**
 live CP2K in ctest). Engine: **CP2K 2026.1** (`cp2k.psmp`), modules
 `buildtool-easybuild/5.2.1-hpca3ef7d197` + `GCC/14.3.0` + `MPICH/4.3.2` +
 `CP2K/2026.1` on Arrhenius. Re-pin date: **2026-07-26**.
@@ -280,8 +277,7 @@ Gate from closed product: \(r \le 10\) or `perf_exempt`. Here
 
 ## References
 
-- Offline pin: case `gpw-uks-rpbe` pin
-- Regression consumer: `reg_gpw-uks-rpbe.cpp`
+- Offline pin: recorded when this page was written (no standing regression)
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Handoff ratio: the case pin notes

@@ -22,8 +22,8 @@
 /// force kernels read only the FP32 primary value. Every other mode stores the
 /// coordinate exactly and has no correction column (`kPositionCorrection`).
 ///
-/// Electronic-structure kernels (`cuda/scf/`) keep their own tiers
-/// `real_t / work_t / prec_t`. Classical MD code never uses them.
+/// Electronic-structure kernels (`cuda/scf/`) use `real_t / work_t / prec_t`,
+/// which are FP64 in every mode. Classical MD code never uses them.
 #pragma once
 
 #include <type_traits>
@@ -66,11 +66,12 @@ static_assert(sizeof(force_t) <= sizeof(mixed_t),
 static_assert(sizeof(fixed_t) == 8, "fixed-point forces are 64-bit");
 
 /// @name Electronic-structure kernel tiers (Gaussian SCF only).
+/// Gaussian SCF is FP64 in every mode: its CPU↔CUDA energy/force contract is
+/// stated at the 1e-10 level, which no FP32 tier can meet.
 /// @{
-using real_t = force_t;
-using work_t = force_t;
-using prec_t =
-    std::conditional_t<kPrecisionMode == PrecisionMode::Single, float, double>;
+using real_t = double;
+using work_t = double;
+using prec_t = double;
 /// @}
 
 } // namespace cuda

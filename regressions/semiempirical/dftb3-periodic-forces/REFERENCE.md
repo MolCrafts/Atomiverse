@@ -29,7 +29,7 @@ lattice shells differ. Analytic \(F\) vs re-SCC FD, tol **1×10⁻⁵ eV/Å**.
 Net force ~0.
 
 This geometry is **homonuclear**, so \(\Delta q\equiv 0\), \(E^{(3)}=0\), and
-DFTB3 reduces to DFTB2 (the Γ control of `dftb2-multi-k-forces`). It still
+DFTB3 reduces to DFTB2 at Γ. It still
 exercises the lattice-image walk on the DFTB3 path.
 
 ## ATV twin snapshot (not an oracle pin)

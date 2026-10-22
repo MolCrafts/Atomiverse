@@ -1,4 +1,7 @@
-name: Release
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+name: release
 
 # Publishes the pure-Python sdist + wheel to PyPI when a vX.Y.Z tag is pushed.
 # The native extension is never published: users build it from the matching
@@ -9,22 +12,32 @@ name: Release
 #   - PyPI: add a trusted publisher for project `atomiverse` →
 #     MolCrafts/Atomiverse, workflow release.yml, environment `pypi`.
 #   - GitHub: create environment `pypi` (optionally with required reviewers).
-on:
+'on':
   push:
-    tags: ["v*"]
+    tags:
+    - v*
 
 permissions: {}
 
 jobs:
+  context:
+    permissions:
+      contents: read
+    name: release / context
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@master
+
   build:
-    name: Build and check dists
+    if: needs.context.outputs.skip-pr != 'true'
+    needs:
+    - context
+    name: release / Build and check dists
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # need origin/master for the ancestry check
+          fetch-depth: 0
 
       - name: Tag matches __version__ and is on master
         run: |
@@ -32,10 +45,6 @@ jobs:
           ver=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' python/src/atomiverse/__init__.py)
           if [ "$tag" != "$ver" ]; then
             echo "::error::tag v$tag does not match __version__ = $ver"
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
-            echo "::error::v$tag is not on master — release by merging dev into master, then tag master"
             exit 1
           fi
 
@@ -63,8 +72,11 @@ jobs:
           path: dist/
 
   publish:
-    name: Publish to PyPI
-    needs: build
+    if: needs.context.outputs.publish == 'true'
+    name: release / Publish to PyPI
+    needs:
+    - context
+    - build
     runs-on: ubuntu-24.04
     environment: pypi
     permissions:
@@ -77,8 +89,11 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   github-release:
-    name: GitHub release
-    needs: publish
+    if: needs.context.outputs.publish == 'true'
+    name: release / GitHub release
+    needs:
+    - context
+    - publish
     runs-on: ubuntu-24.04
     permissions:
       contents: write

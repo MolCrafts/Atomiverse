@@ -21,10 +21,6 @@
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 
-#ifndef ATV_PW_UPF_PATH
-#error "ATV_PW_UPF_PATH must be set to tests/data/pw/Si_lda_nc.upf"
-#endif
-
 using namespace ATV;
 using namespace ATV::cpu::pw;
 
@@ -79,7 +75,7 @@ int main() {
     set_diamond_si(frame, kA0);
 
     PW method;
-    method.upf_path = ATV_PW_UPF_PATH;
+    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
     method.ecut_ry = kEcutRy;
     method.k_mesh = kMesh;
     method.tol = 1e-6;

@@ -105,3 +105,22 @@ TEST(MolrsFrameExchange, ElementSymbolsNeedTheExplicitConversion) {
 }
 
 } // namespace
+
+TEST(MolrsFrameExchange, NonSymmetricCellKeepsColumnLatticeAcrossBoundary) {
+    auto fr = make_h2_molrs();
+    const std::vector<double> h = {4, 1.5, 0.2, 0, 5, 0.7, 0, 0, 6};
+    molrs::frame_set_box_h(*fr,
+                           ::rust::Slice<const double>(h.data(), h.size()));
+    auto frame = ATV::cpu::from_molrs(*fr);
+    const ATV::Vec3 frac{0.2, 0.3, 0.4};
+    const auto cart = frame.box.cell() * frac;
+    EXPECT_NEAR(cart[0], 1.33, 1e-12);
+    EXPECT_NEAR(cart[1], 1.78, 1e-12);
+    EXPECT_NEAR(cart[2], 2.4, 1e-12);
+    frame.box.scale_isotropic(1.1);
+    ATV::cpu::to_molrs(frame, *fr);
+    const auto back = molrs::frame_box_h(*fr);
+    ASSERT_EQ(back.size(), 9u);
+    for (int i = 0; i < 9; ++i)
+        EXPECT_NEAR(back[i], 1.1 * h[i], 1e-12);
+}

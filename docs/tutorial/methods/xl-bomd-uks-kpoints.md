@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `xl-bomd-uks-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{cpu::gpw::GpwDft{…, n_alpha, n_beta, k_mesh}}, k}` bound with `set_evaluator_ref`; propagator class `cpu::electronic::XlBomdCplx` |
 | Roadmap | MD AIMD XL multi-k UKS residual closed 2026-07-26 |
 | Dual gate | Correctness A6 (e2e NVE drift) + unit A1–A5 (`test_cpu_gpw_xl_bomd`); speed **`perf_exempt`** |
@@ -33,7 +33,7 @@ envelope** plus multi-k dual-spin payload diagnostics. Public energy stays
 
 Related: [xl-bomd-water](xl-bomd-water.md) (Γ RKS foothold),
 [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md) (Γ UKS energy),
-`gpw-kpoint-uks-forces` (multi-k UKS force math).
+[gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) (multi-k UKS force math).
 
 ## Method
 
@@ -95,11 +95,11 @@ force-pass warm-start). The zero-SCF linearized-functional XL force is
 ### Why closed-shell fillings on the UKS path?
 
 High-spin H₂ (\(N_\alpha=2\), \(N_\beta=0\)) is unbound at this level and
-cannot pin a short NVE drift window. The regression uses **closed-shell
+cannot pin a short NVE drift window. The recorded check uses **closed-shell
 fillings on the collinear UKS path** (\(N_\alpha = N_\beta = 1\)): both
 spin channels are non-empty (dual \(P_k^\alpha / P_k^\beta\) XL engages)
-while the molecule stays bound. Multi-k UKS force quality is pinned
-separately by `gpw-kpoint-uks-forces` / `gpw-kpoints-uks`.
+while the molecule stays bound. Multi-k UKS force quality is documented
+separately in [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) / [gpw-kpoints-uks](gpw-kpoints-uks.md).
 
 ### Primary observable (envelope)
 
@@ -111,7 +111,7 @@ after one warm-up step (XL histories seeded):
   \le 0.05.
 \]
 
-Additional gates (regression `reg_xl-bomd-uks-kpoints`):
+Additional checks (recorded when this page was written; no standing regression):
 
 - SCF **converged** at every sampled step with dual multi-k XL guesses
 - \(n_k \ge 2\) and `P_k.size() == P_k_beta.size() == n_kpts` after warm-up
@@ -196,7 +196,7 @@ xl.advance(D_k_scf);          // first call seeds; later calls propagate
 const auto& guess = xl.aux(); // complex P_{n+1} for next SCF at this k
 ```
 
-### How to run the regression
+### Build configuration
 
 ```bash
 bash -lc '
@@ -204,8 +204,6 @@ bash -lc '
   export OPENBLAS_ROOT="$OPENBLASDIR"
   export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu
   export LD_LIBRARY_PATH="$LIBRARY_PATH:$LD_LIBRARY_PATH"
-  cmake --build build -j$(nproc) --target atomiverse reg_xl-bomd-uks-kpoints
-  cmake --build build --target run_reg_xl-bomd-uks-kpoints
 '
 ```
 
@@ -218,11 +216,10 @@ Relevant sources:
 | Evaluator | `gpw_evaluator.h` (`k_mesh`, `n_alpha`/`n_beta`; private XL mode bits) |
 | Multi-k UKS SCF + XL payload | `src/cpu/gpw/gpw_solver.cpp` (`run_gpw_scf_kpoints_uks`) |
 | Unit Table-I / dual-spin | `tests/cpu/gpw/` (`test_cpu_gpw_xl_bomd`) |
-| E2E | `xl-bomd-uks-kpoints` |
 
 ## Validation (vs CP2K / literature)
 
-Source: case `xl-bomd-uks-kpoints` pin (offline pin;
+Source: values recorded when this page was written (no standing regression) (offline pin;
 never live CP2K in ctest).
 
 ### System
@@ -295,7 +292,7 @@ the NVE drift envelope, not a wall-clock ratio.
 - **Spin metric.** Multi-k UKS \(\langle S^2\rangle\) is the integer seed
   formula, not the full Löwdin diagnostic used on Γ UKS.
 - **Cutoff / basis cheap for envelope.** Absolute multi-k UKS forces live in
-  `gpw-kpoint-uks-forces`; this regression does not re-pin force vs CP2K.
+  [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md); this page does not re-pin force vs CP2K.
 - **Perf debt.** Fair wall vs CP2K deferred until a CP2K binary is available
   offline; do not invent ratios.
 - **Combinatorial gaps out of scope:** XL + OT + \(k\), XL + smearing, XL +
@@ -303,12 +300,12 @@ the NVE drift envelope, not a wall-clock ratio.
 
 ## References
 
-- Offline pin: case `xl-bomd-uks-kpoints` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - CP2K twin sketch: CP2K oracle
 - Oracle rules: CP2K oracle
 - Prior product paths: [xl-bomd-water](xl-bomd-water.md);
   `xl-bomd-uks`; `xl-bomd-kpoints`;
-  multi-k UKS forces `gpw-kpoint-uks-forces`
+  multi-k UKS forces [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md)
 - A. M. N. Niklasson, *Phys. Rev. Lett.* **100**, 123004 (2008)
 - A. M. N. Niklasson et al., *J. Chem. Phys.* **130**, 214109 (2009) — Table I
 - G. Lippert, J. Hutter, M. Parrinello, *Mol. Phys.* **92**, 477 (1997)

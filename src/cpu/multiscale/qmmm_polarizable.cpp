@@ -1,5 +1,6 @@
 /// @file src/cpu/multiscale/qmmm_polarizable.cpp
 #include "atomiverse/cpu/multiscale/qmmm_polarizable.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include <algorithm>
 #include <cmath>
@@ -136,7 +137,9 @@ void QmmmPolarizable::build(const BuildContext& ctx) {
         throw std::invalid_argument("QmmmPolarizable: thole_a must be >= 0");
     if (!(pol_tol > 0.0) || pol_max_iter < 1)
         throw std::invalid_argument("QmmmPolarizable: invalid pol SCC params");
-    sub_.build(ctx.frame, ctx.runtime.mpi_size, /*require_embedding=*/true);
+    sub_.build(ctx.frame,
+               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+               /*require_embedding=*/true);
 }
 
 void QmmmPolarizable::launch(const LaunchContext& ctx) {

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
@@ -30,6 +31,7 @@ struct Operation {
     Component* component = nullptr; ///< Plugin occupying this slot.
     Scheduling scheduling = Scheduling::blocking; ///< Cached scheduling.
     int frequency = 0; ///< Cached frequency (0 = every step).
+    bool operator==(const Operation&) const = default;
 };
 
 /// @brief All operations for one phase, sorted by order.
@@ -52,6 +54,9 @@ struct StageSlot {
     /// Metropolis test scores an energy and discards the move).
     /// Default true: every other phase asks for forces.
     bool forces_requested = true;
+    /// @brief Whether this phase requests stress/virial output.
+    bool stress_requested = true;
+    bool operator==(const StageSlot&) const = default;
 };
 
 /// @brief Compiled execution plan -- the schedule between Facade and Backend.
@@ -63,23 +68,12 @@ struct StageSlot {
 template <typename Component>
 struct Plan {
     std::vector<StageSlot<Component>> slots; ///< One StageSlot per phase.
+    /// Objects with lifecycle but no scheduled launch (e.g. polled criteria).
+    std::vector<Component*> lifecycle_only;
     /// @brief Workflow this Plan was compiled for. MD uses the Verlet
     ///        `nflag` comm block in `Runtime::step`; other kinds walk slots
     ///        linearly. Stamped by `Driver::build()` from `kind_of(Phase)`.
     PhaseKind kind = PhaseKind::Evaluate;
-
-    /// Lifecycle order is the first scheduled occurrence of each instance.
-    /// Bindings remain untouched: an instance may launch in several slots.
-    std::vector<Component*> components() const {
-        std::vector<Component*> result;
-        for (const auto& slot : slots)
-            for (const auto& op : slot.ops)
-                if (op.component
-                    && std::find(result.begin(), result.end(), op.component)
-                           == result.end())
-                    result.push_back(op.component);
-        return result;
-    }
 
     /// The shared MD preparation schedule. Force-slot evaluators run normally;
     /// other operations opt in through initialize_forces. Integration and
@@ -96,6 +90,23 @@ struct Plan {
             for (const auto& op : slot.ops)
                 visit(slot, op, slot.phase == slot_of(md::Phase::force));
         }
+    }
+
+    bool requires_full_frame = false;
+    bool operator==(const Plan&) const = default;
+
+    /// Unique objects in construction order; phase bindings remain untouched.
+    std::vector<Component*> components() const {
+        std::vector<Component*> objects;
+        std::unordered_set<Component*> seen;
+        for (const auto& slot : slots)
+            for (const auto& op : slot.ops)
+                if (op.component && seen.insert(op.component).second)
+                    objects.push_back(op.component);
+        for (auto* c : lifecycle_only)
+            if (c && seen.insert(c).second)
+                objects.push_back(c);
+        return objects;
     }
 };
 

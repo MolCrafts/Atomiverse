@@ -14,8 +14,8 @@ on a non-converged reference. Legend: [Roadmap index](index.md).
 | RMP2 | ✓ | ○ | Canonical O(N⁵) |
 | UMP2 | ✓ | ○ | `MP2` on `UHF` |
 | ROMP2 | ✓ | ○ | UMP2 on ROHF reference |
-| Frozen-core MP2 | ✓ | ○ | `MP2::frozen = N`; RMP2 / RI-MP2 |
-| RI-MP2 | ✓ | ○ | `ri = RI::{J,JK}` + aux; RHF only |
+| Frozen-core MP2 | ✓ | ○ | `MP2::frozen = N`; RMP2 pinned (RI-MP2 combination reachable) |
+| RI-MP2 | ◐ | ○ | `ri = RI::{J,JK}` + aux; RHF only. No external pin; self-pinned case removed |
 | SCS-MP2 / SOS-MP2 | ✓ | ○ | `MP2::os_scale` / `ss_scale` |
 | RMP2 / UMP2 analytic gradient | ✓ | ○ | Lagrangian + Z-vector |
 | ROMP2 gradient | ○ | ○ | |

@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-gw-finite-q` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::g0w0()` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`) |
-| Roadmap | residual close of Periodic GW ✓ — product multi-k path after Γ (`periodic-gw-si`) and k-diagonal (`periodic-gw-kpoints`) |
+| Roadmap | Periodic GW ◐ (no standing regression) — product multi-k path after Γ ([periodic-gw-si](periodic-gw-si.md)) and k-diagonal ([periodic-gw-kpoints](periodic-gw-kpoints.md)) |
 | Ratio | **`perf_exempt`** (CP2K RI-G0W0 ≠ finite-\(q\) spectral + MT) |
 
 ## Summary
@@ -23,7 +23,7 @@ truncated (Martyna–Tuckerman) Coulomb so the product is G=0-safe without a
 periodic-HF path. Local \(v_{\mathrm{xc}}\) is PBE on the BZ-weighted density.
 
 This **supersedes** the multi-k **k-diagonal** foothold of
-`periodic-gw-kpoints` as the product multi-k G0W0 path. Public path:
+[periodic-gw-kpoints](periodic-gw-kpoints.md) as the product multi-k G0W0 path. Public path:
 `GpwDft` members → `build(frame)` / `run(frame)` → `g0w0()` — no public `*Config`, no
 factory. Primary product observable: **minimum direct QP gap [eV]** over the
 sampled mesh. Oracle policy: offline CP2K twin input only
@@ -47,7 +47,7 @@ the multi-k kernel recovers the real Γ spectral path (unit-tested; no full
 SCF under `tests/`).
 
 **Screening.** Direct RPA (no exchange in the RPA kernel) — same inter-k
-dielectric path as `GpwDft::direct_rpa` / `periodic-rpa-finite-q`. Integrals
+dielectric path as `GpwDft::direct_rpa` / [periodic-rpa-finite-q](periodic-rpa-finite-q.md). Integrals
 are **RI-GPW** (product requires `mp2_ri = true`). Virtual count in the
 screening space is capped by `mp2_n_virt` (e2e pin: **2**).
 
@@ -97,7 +97,7 @@ BZ-weighted density projected onto MOs at each \(k\).
 **Excluded (non-goals of this slug)**
 
 - Frequency-integrated / analytic-continuation GW (CP2K default RI-G0W0 path)
-- k-diagonal-only multi-k G0W0 (historical foothold `periodic-gw-kpoints`)
+- k-diagonal-only multi-k G0W0 (historical foothold [periodic-gw-kpoints](periodic-gw-kpoints.md))
 - Periodic exact exchange without MT truncation; full HF hybrid GPW
 - Open-shell UGW / URPA; BSE; evGW / qsGW / scGW
 - Full virtual space / production cutoffs / large MP meshes (e2e ≤ 60 s)
@@ -164,8 +164,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-gw-finite-q
-  reg_periodic-gw-finite-q
 '
 ```
 
@@ -175,14 +173,12 @@ bash -lc '
 | `gpw_solver.h` | `GpwDft::g0w0` |
 | `src/cpu/gpw/g0w0.cpp` | Γ + multi-k finite-\(q\) driver |
 | `mp2_kernels.h` | `spectral_g0w0_rhf_kpoints` (private) |
-| `periodic-gw-finite-q` | E2E product gate + pin notes |
 | CP2K oracle | Offline CP2K twin (never ctest) |
 | `tests/cpu/gpw/` (`test_cpu_gpw_g0w0`) | Kernel Γ recovery (\(N_k=1\)) unit |
 
 ## Validation (vs CP2K)
 
-Source:
-case `periodic-gw-finite-q` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle: offline **CP2K** input twin
 CP2K oracle (multi-k GPW RKS PBE,
 MONKHORST-PACK 2 1 1, FULL_GRID / no symmetry ≈
@@ -268,11 +264,11 @@ the case pin notes
 
 ## References
 
-- Offline pin: case `periodic-gw-finite-q` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - CP2K twin input: CP2K oracle
 - Oracle rules: CP2K oracle (offline only; never ctest)
-- Prior chain: Γ `periodic-gw-si` → k-diagonal `periodic-gw-kpoints` → **this**
-  finite-\(q\) product; dielectric twin `periodic-rpa-finite-q`
+- Prior chain: Γ [periodic-gw-si](periodic-gw-si.md) → k-diagonal [periodic-gw-kpoints](periodic-gw-kpoints.md) → **this**
+  finite-\(q\) product; dielectric twin [periodic-rpa-finite-q](periodic-rpa-finite-q.md)
 - Molecular spectral G0W0 (PySCF loop): [g0w0-h2-sto3g](g0w0-h2-sto3g.md)
 - Literature: Hybertsen & Louie, PRB **34**, 5390 (1986); Furche, JCP **114**,
   5982 (2001)

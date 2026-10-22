@@ -87,6 +87,10 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     const GpwResult& scf);
 
 /// @brief Analytic ionic forces at a **fixed** electronic state (no SCF).
+/// Optional geometry_cache must describe this geometry/basis/grid. It never
+/// authorizes potential reuse: matching_density separately requires that P
+/// (both spin matrices for UKS) references that result's density fields.
+/// XL shadow densities pass geometry only; CP can pass both at its current P.
 ///
 /// Car–Parrinello path: nuclei feel \(-\partial E/\partial R\) at the current
 /// density. Closed-shell RKS: \(P = 2 C C^\top\),
@@ -102,11 +106,11 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 /// @param H     KS matrix at this density [Hartree], nb × nb.
 /// @return Forces [Hartree/Bohr], one xyz triple per atom.
 /// @throws std::invalid_argument when `cfg.is_uks()` (use the UKS overload).
-std::vector<std::array<double, 3>>
-gpw_forces_at_density(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-                      const linalg::RealMatrix& P,
-                      const linalg::RealMatrix& C_occ,
-                      const linalg::RealMatrix& H);
+std::vector<std::array<double, 3>> gpw_forces_at_density(
+    const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
+    const linalg::RealMatrix& P, const linalg::RealMatrix& C_occ,
+    const linalg::RealMatrix& H, const GpwResult* geometry_cache = nullptr,
+    const GpwResult* matching_density = nullptr);
 
 /// @brief Fixed-density analytic forces for collinear Γ-UKS (CPMD path).
 ///
@@ -126,7 +130,9 @@ std::vector<std::array<double, 3>> gpw_forces_at_density(
     const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const linalg::RealMatrix& P_a, const linalg::RealMatrix& C_a,
     const linalg::RealMatrix& H_a, const linalg::RealMatrix& P_b,
-    const linalg::RealMatrix& C_b, const linalg::RealMatrix& H_b);
+    const linalg::RealMatrix& C_b, const linalg::RealMatrix& H_b,
+    const GpwResult* geometry_cache = nullptr,
+    const GpwResult* matching_density = nullptr);
 
 } // namespace internal
 } // namespace gpw

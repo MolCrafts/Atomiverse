@@ -43,7 +43,7 @@ geometry at a = 3.0 Å):
 The queue row's DZVP-MOLOPT-GTH is unusable for a *periodic* ≤ 60 s
 regression today: ATV's periodic MOLOPT image-sum collocation costs
 **> 10 min per relax launch** (3 SCFs) on this chain — the same wall
-`gpw-pbesol-si` documented when it retreated to nonperiodic MT. With the
+that pushes periodic PBEsol Si to nonperiodic MT. With the
 compact CP2K standard GTH basis the identical launch costs **1.9 s**
 (≈ 300×). The variable-cell machinery is basis-agnostic; the twin therefore
 uses:
@@ -181,8 +181,7 @@ mpirun -np 1 cp2k.psmp -i chain_cellopt.inp -o cellopt.out
    spin-seed terms when enabled. Fixed in this slug.
 3. **Periodic MOLOPT image-sum cost:** ~10 min per 3-SCF launch on a 3-atom
    chain (vs CP2K ~1 s/SCF) — the blocker that forced this twin's basis
-   pivot and previously forced `gpw-pbesol-si` to MT. GPW perf campaign
-   item.
+   pivot and pushes periodic PBEsol Si to MT. Open GPW performance item.
 4. **`dev` HEAD does not configure in a clean checkout** (a6865f43):
    `CMakeLists.txt` references five sources
    (`src/cpu/observe/charge_autocorr.cpp`, `elastance_observer.cpp`,

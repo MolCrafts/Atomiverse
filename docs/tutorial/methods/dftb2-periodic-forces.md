@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `dftb2-periodic-forces` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::semiempirical::DFTB2` (`with_forces = true`, restricted MioSketch) + `cpu::Evaluate` |
 | Roadmap | [`semiempirical.md`](../../roadmap/semiempirical.md) — lattice-image-consistent Γ-PBC nuclear \(F\) ✓ |
 | Family oracle | **DFTB+** (formula / force-module boundary; absolute SK digits deferred) |
@@ -14,11 +14,11 @@
 **Closed-form nuclear forces** for **Γ-point periodic** self-consistent-charge
 DFTB2 (Elstner *et al.*) under the **same lattice-image walk** used for the
 energy (\(H^0\), \(S\), screened \(\gamma\), repulsive). This deepens the
-energy-only periodic foothold (`dftb2-periodic-gamma`) and the molecular
+energy-only periodic foothold ([dftb2-periodic-gamma](dftb2-periodic-gamma.md)) and the molecular
 analytic-force path (`dftb2-analytic-forces`): forces are no longer a
 min-image-only contraction of a lattice-summed energy.
 
-The product gate is an **off-equilibrium 1-D carbon dimer crystal** (two C per
+The recorded gate is an **off-equilibrium 1-D carbon dimer crystal** (two C per
 orthorhombic cell, \(r=1.20\) Å, \(L_x=2.8\) Å) so left/right lattice shells
 differ and \(\mathbf{F}\ne 0\). Forces land on `frame.span(kAtom_f*)` in
 **eV/Å**; energy on `frame.meta.get(kEnergy)` in **eV**. Public surface:
@@ -50,8 +50,8 @@ screened Elstner Coulomb kernel (Hubbard \(U\) at short range,
 \(1/R\) tail), and \(E_{\mathrm{rep}}\) is the short-range pair repulsive.
 Double counting of the SCC piece follows the DFTB+ convention.
 
-**Γ-point lattice sums.** There is **no k-mesh** on this page (multi-k energy
-is `dftb2-kpoints`; multi-k forces remain ○). Matrices and real-space sums
+**Γ-point lattice sums.** There is **no k-mesh** on this page (multi-k energy:
+see [dftb2-kpoints](dftb2-kpoints.md), roadmap ◐; multi-k forces remain ○). Matrices and real-space sums
 walk lattice translations \(\mathbf{T}=n_0\mathbf{a}_1+n_1\mathbf{a}_2+n_2\mathbf{a}_3\)
 with \(|\mathbf{T}|\) up to the maximum pair cutoff (element `r_cut`):
 
@@ -100,7 +100,7 @@ Self-images (\(A=A+\mathbf{T}\), \(\mathbf{T}\ne\mathbf{0}\)) contribute
 **Why not min-image only.** Wave-2 status was: energy lattice-summed, but
 `analytic_forces_restricted` contracted only min-image pairs — so
 \(F\neq-\nabla E\) under engaged PBC. Wave-3 product walks the **same**
-image list as the energy; the regression FD protocol recomputes a full re-SCC
+image list as the energy; the recorded check FD protocol recomputes a full re-SCC
 lattice-summed \(E\) at \(\mathbf{R}\pm h\hat{e}\).
 
 **Parameters (this twin).** `sk_set = MioSketch` (default): multi-element
@@ -108,7 +108,7 @@ H/C/N/O from in-tree `basis_data/dftb_mio_tables.h` (exponential sketches for
 most pairs) plus mio-1-1 H–H radial grids in `dftb_mio_hh_sk.h`. **Not** a
 runtime `.skf` reader; **not** bit-identical DFTB.org mio-1-1 for C–C.
 
-**SCC / force settings (regression).**
+**SCC / force settings (recorded).**
 
 | Knob | Value |
 | ---- | ----- |
@@ -131,7 +131,7 @@ runtime `.skf` reader; **not** bit-identical DFTB.org mio-1-1 for C–C.
 
 With \(r=1.20\) Å and \(L_x=2.8\) Å, left/right image contacts sit at
 1.20 Å and 1.60 Å (plus farther shells inside \(r_\mathrm{cut}\approx 4.5\) Å).
-The equilibrium twin \(r=1.4\) of `dftb2-periodic-gamma` has vanishing force
+The equilibrium twin \(r=1.4\) of [dftb2-periodic-gamma](dftb2-periodic-gamma.md) has vanishing force
 by symmetry and is **not** used here.
 
 **Observables.**
@@ -146,10 +146,10 @@ by symmetry and is **not** used here.
 
 - Absolute \(E\)/\(F\) vs DFTB+ + DFTB.org **mio-1-1** — sketch SK; deepen via
   bit-identical C–C tables later (family oracle remains DFTB+).
-- **k-mesh** forces beyond Γ → multi-k energy is `dftb2-kpoints`; multi-k
+- **k-mesh** forces beyond Γ → multi-k energy: see [dftb2-kpoints](dftb2-kpoints.md); multi-k
   analytic \(F\) remains ○.
 - Analytic **cell stress** under PBC → sibling `dftb2-analytic-stress`
-  (pair virial of the same image terms; separate product gate).
+  (pair virial of the same image terms; separate recorded gate).
 - **DFTB3** / third-order \(\gamma\) forces → separate method / queue.
 - Collinear **open-shell** PBC forces — open-shell analytic path exists
   (`dftb2-spin-analytic-forces`) but this reg is restricted C-chain only.
@@ -170,7 +170,7 @@ bag, **no** `make_*` / `build_*` factories). Headers:
 `lattice_images_for` + `analytic_forces_restricted` image walk). Static tables:
 `dftb_mio_tables.h`.
 
-Minimal sequence (matches `reg_dftb2-periodic-forces.cpp`):
+Minimal sequence:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -230,10 +230,8 @@ bash -lc '
         -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
         -DATV_BUILD_KSPACE=OFF -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j"$(nproc)" --target atomiverse \
-        test_cpu_dftb2 reg_dftb2-periodic-forces
+  cmake --build build -j"$(nproc)" --target atomiverse test_cpu_dftb2
   ctest --test-dir build -R "^(test_cpu_dftb2)$" --output-on-failure
-  cmake --build build --target run_reg_dftb2-periodic-forces
 '
 ```
 
@@ -242,15 +240,13 @@ bash -lc '
 | `dftb2.h` | Public `DFTB2` / `DftbSkSet` |
 | `dftb_mio_tables.h` | Static mio-style SK / Hubbard / rep |
 | `src/cpu/semiempirical/dftb2.cpp` | Lattice enum + Γ H⁰/S + `analytic_forces_restricted` |
-| `reg_dftb2-periodic-forces.cpp` | Product gate |
-| case `dftb2-periodic-forces` pin | Offline gates + oracle line |
 | TB oracle (OpenMOPAC / DFTB+ / xtb) | Offline DFTB+ geometry twin |
 | `tests/cpu/semiempirical/test_dftb2.cpp` | Unit footholds for PBC / analytic F |
 
 ## Validation (DFTB+ / literature)
 
-Source:
-case `dftb2-periodic-forces` pin.
+Source: values recorded when this page was written; no standing
+regression.
 Oracle lines:
 
 ```text
@@ -259,7 +255,7 @@ oracle_version: formula-level (Elstner 1998; Hourahine et al. JCP 152, 124101 (2
 family_oracle: dftb+
 ```
 
-Hard-coded gates in the regression binary — **never** live DFTB+ from ctest.
+Recorded gates (no standing regression) — **never** live DFTB+ from ctest.
 
 **Setup:**
 
@@ -271,7 +267,7 @@ Hard-coded gates in the regression binary — **never** live DFTB+ from ctest.
 | Atomiverse path | `DFTB2` + `Evaluate`, `with_forces=true`, `scc_tol=1e-10` |
 | FD protocol | Central re-SCC energy-only, \(h=10^{-4}\) Å, lattice-summed \(E\) |
 
-**Hard-coded gates (regression):**
+**Recorded gates:**
 
 | Quantity | Pin / gate | Tol | Notes |
 | -------- | ---------: | --- | ----- |
@@ -293,7 +289,7 @@ matches the twin for future absolute pins when bit-identical SK land.
 
 Related absolute **DFTB+ 24.1** energy identity (different system: H₂
 mio-1-1): `dftb2-dftbplus-energy-pin` — \(E=-18.36635052\) eV. Related
-Γ-energy twin: `dftb2-periodic-gamma` (\(r=1.4\) Å equilibrium chain).
+Γ-energy twin: [dftb2-periodic-gamma](dftb2-periodic-gamma.md) (\(r=1.4\) Å equilibrium chain).
 
 ## Performance
 
@@ -330,14 +326,13 @@ not ctest.
   sum, and TD-DFTB remain roadmap ○.
 - Elements limited to H/C/N/O static tables; unsupported \(Z\) throws.
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
-  for the TB product gate; do not build `reg_am1_water_bomd` /
-  `reg_am1_water_minimize` under this configure.
+  for the TB product gate.
 - Family lock: **DFTB+ only** for DFTB rows — never OpenMOPAC as DFTB oracle;
   never treat GFN-xTB as DFTB3 successor.
 
 ## References
 
-- Offline pin: case `dftb2-periodic-forces` pin
+- Offline pin: recorded when this page was written (no standing regression)
 - Public API: `dftb2.h`
 - Offline twin: TB oracle (OpenMOPAC / DFTB+ / xtb)
 - Oracle tooling: TB oracle (OpenMOPAC / DFTB+ / xtb)
@@ -346,6 +341,6 @@ not ctest.
   wave-3 harness (`.claude/specs/dftb2-periodic-forces/` removed at done)
 - Literature: M. Elstner *et al.*, *Phys. Rev. B* **58**, 7260 (1998);
   B. Hourahine *et al.*, *J. Chem. Phys.* **152**, 124101 (2020) (DFTB+)
-- Related: Γ energy `dftb2-periodic-gamma`; molecular analytic F
+- Related: Γ energy [dftb2-periodic-gamma](dftb2-periodic-gamma.md); molecular analytic F
   `dftb2-analytic-forces`; analytic stress `dftb2-analytic-stress`; multi-k
-  energy `dftb2-kpoints`; H₂ DFTB+ energy pin `dftb2-dftbplus-energy-pin`
+  energy [dftb2-kpoints](dftb2-kpoints.md); H₂ DFTB+ energy pin `dftb2-dftbplus-energy-pin`

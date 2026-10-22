@@ -6,7 +6,7 @@
 | ----- | ----- |
 | Slug | `periodic-ri-mp2-si` |
 | Public API | `cpu::gpw::GpwDft::mp2()` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); members `mp2_ri` (default **true**), `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
-| Roadmap | ratio **~0.09**; closes capability after foothold `periodic-mp2-si`; unblocks `periodic-rpa-si` |
+| Roadmap | ratio **~0.09**; closes capability after foothold [periodic-mp2-si](periodic-mp2-si.md); unblocks [periodic-rpa-si](periodic-rpa-si.md) |
 
 ## Summary
 
@@ -17,7 +17,7 @@ Occupied–virtual MO repulsion integrals \((ia|jb)\) are assembled the
 CP2K `&WF_CORRELATION` `METHOD MP2_GPW` + `&WFC_GPW`): FFT each pair density
 \(\rho_{ia}=\psi_i\psi_a\), store the plane-wave Coulomb intermediate, and
 contract in real or G-space. On this deck the RI-GPW kernel is numerically
-identical to the Poisson foothold (`mp2_ri = false`, slug `periodic-mp2-si`)
+identical to the Poisson foothold (`mp2_ri = false`, slug [periodic-mp2-si](periodic-mp2-si.md))
 to \(10^{-10}\) Ha — same Coulomb operator, product intermediate layout.
 Absolute correlation energy is pinned to offline **CP2K 2026.1**
 (\(E_{\mathrm{corr}} = -0.276087740659\) Ha, tol \(10^{-3}\) Ha). Public
@@ -116,7 +116,7 @@ regression wall budget — residual.
 - Gaussian cFIT / `RI_AUX` auxiliary tables (plane-wave RI identity only).
 - UMP2 / open-shell; OT SCF (no canonical virtuals).
 - True MP2@HF (needs periodic hybrid / exact exchange).
-- Periodic RPA / GW (consumer: `periodic-rpa-si`, after this product).
+- Periodic RPA / GW (consumer: [periodic-rpa-si](periodic-rpa-si.md), after this product).
 - Live CP2K (or any third-party) inside ctest.
 - Public `*Config` bags / `make_*` / `build_*` factories.
 - CUDA GPW (CPU-only in this loop).

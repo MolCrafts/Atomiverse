@@ -40,7 +40,6 @@ void VirtualSites::add_weighted3(TagInt site_tag, TagInt p0, TagInt p1,
     s.p2 = p2;
     s.param[0] = alpha;
     sites_.push_back(s);
-    n_resolved_ = -1;
 }
 
 void VirtualSites::add_out_of_plane3(TagInt site_tag, TagInt p0, TagInt p1,
@@ -58,7 +57,6 @@ void VirtualSites::add_out_of_plane3(TagInt site_tag, TagInt p0, TagInt p1,
     s.param[1] = b;
     s.param[2] = c;
     sites_.push_back(s);
-    n_resolved_ = -1;
 }
 
 double VirtualSites::tip4p_alpha(double qdist, double r_oh, double theta_hoh) {
@@ -158,11 +156,10 @@ void VirtualSites::tip5p_out_of_plane_coeffs(double r_ol, double theta_lol,
 }
 
 void VirtualSites::resolve_(Frame& f) {
-    const int n = f.n_total();
-    if (n_resolved_ == n) {
-        // Indices still valid if topology/tags fixed for the run.
-        return;
-    }
+    // Resolve on every call: `atom_modify sort` renumbers owned rows at a
+    // reneighbor without changing the row count, so no cheap key detects it.
+    // The engine republishes the tag index after every reorder
+    // (`md::notify_sorted`); the lookup is O(sites).
     auto& index_mut = f.meta.get(kTagIndex);
     if (index_mut.empty())
         f.rebuild_tag_index(0, f.nlocal());
@@ -180,7 +177,6 @@ void VirtualSites::resolve_(Frame& f) {
         s.i1 = req(s.p1, "parent1");
         s.i2 = req(s.p2, "parent2");
     }
-    n_resolved_ = n;
 }
 
 void VirtualSites::place(Frame& f) {

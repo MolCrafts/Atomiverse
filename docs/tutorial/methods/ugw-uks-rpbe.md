@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ugw-uks-rpbe` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `XcKind::RPBE`, `g0w0()` → `G0W0Result`) |
-| Roadmap | `docs/roadmap/dft.md` — UGW@UKS with RPBE spin XC |
+| Roadmap | `docs/roadmap/dft.md` — Periodic G0W0 / UGW ◐ and RPBE ◐ (no standing case) |
 
 ## Summary
 
@@ -15,7 +15,7 @@ reference with **RPBE** spin-GGA exchange–correlation: spin-conserving
 direct RPA screening (α→α ⊕ β→β), same-spin \(G_\sigma W\) correlation
 self-energy, truncated (MT) exact-exchange diagonals per spin, and
 spin-resolved RPBE \(v_{\mathrm{xc}}^\sigma\) on the UKS density. This page
-is the product gate that RPBE is active on the UGW path (not only on the
+is the recorded gate that RPBE is active on the UGW path (not only on the
 UKS SCF), dual-gated against closed-shell spectral G0W0@RPBE when
 \(n_\alpha=n_\beta\).
 
@@ -23,12 +23,12 @@ Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element, set
 members (`cutoff_ry`, `xc = XcKind::RPBE`, `n_alpha`/`n_beta`, …), then
 `build(frame)`, `run(frame)` (positions [Å], Z in `kAtom_type`, box [Å]),
 then `g0w0()`. Quasiparticle gap on `G0W0Result::gap_ev` is **eV**
-(α channel primary report). Product gate: `reg_ugw-uks-rpbe`. Fair wall vs
+(α channel primary report). No standing end-to-end regression. Fair wall vs
 CP2K: **`perf_exempt`** (CP2K RI-G0W0 ≠ spectral MT algorithm).
 
-Related: UGW@UKS-PBE twin `periodic-ugw-si`; Γ-UKS RPBE
-SCF without GW `gpw-uks-rpbe`; closed-shell G0W0
-`periodic-gw-si`. Narrative GPW: [Ch. 9](../ch09-gpw.md). Molecular
+Related: UGW@UKS-PBE twin [periodic-ugw-si](periodic-ugw-si.md); Γ-UKS RPBE
+SCF without GW [gpw-uks-rpbe](gpw-uks-rpbe.md); closed-shell G0W0
+[periodic-gw-si](periodic-gw-si.md). Narrative GPW: [Ch. 9](../ch09-gpw.md). Molecular
 all-electron G0W0 is a separate PySCF-loop concern (`g0w0-h2-sto3g`) —
 not this page.
 
@@ -54,7 +54,7 @@ with PBE \(\kappa,\mu\) and **PBE correlation** (libxc `GGA_X_RPBE` +
 UGW \(v_{\mathrm{xc}}^\sigma\) diagonals. **Not** Zhang–Yang revPBE
 (κ-revision). CP2K 2026.1 requires nested `&GGA_X_RPBE` / `&GGA_C_PBE`
 blocks — short name `XC_FUNCTIONAL RPBE` is not a valid enumeration
-(same as `gpw-uks-rpbe`). Citation: Hammer, Hansen, Nørskov,
+(same as [gpw-uks-rpbe](gpw-uks-rpbe.md)). Citation: Hammer, Hansen, Nørskov,
 *Phys. Rev. B* **59**, 7413 (1999).
 
 **Spectral G0W0 / UGW.** Screening is **spin-conserving direct RPA**
@@ -75,7 +75,7 @@ HOMO→LUMO QP gap [eV]). Citations: Hybertsen & Louie, *Phys. Rev. B*
 molecular twin `G0W0<RHF>::run` / PySCF `gw.gw_exact.GWExact` form.
 
 **Deck choice.** Artificial sc-Si₂ (a = 5.43 Å, 30 Ry, DZVP-MOLOPT-GTH)
-matches `periodic-ugw-si` / `periodic-gw-si` so PBE vs RPBE functional
+matches [periodic-ugw-si](periodic-ugw-si.md) / [periodic-gw-si](periodic-gw-si.md) so PBE vs RPBE functional
 integrity is a direct digit compare. Level shift 0.3 Ha aids the
 small-gap artificial cell; eigenvalues used in denominators are unshifted.
 
@@ -83,7 +83,7 @@ small-gap artificial cell; eigenvalues used in denominators are unshifted.
 
 - No absolute CP2K QP-gap hard twin (CP2K path is frequency-integrated
   RI-G0W0, not spectral plasmon UGW + MT exchange).
-- No multi-k UGW on this regression (`periodic-ugw-kpoints` is separate).
+- No multi-k UGW on this page ([periodic-ugw-kpoints](periodic-ugw-kpoints.md) is separate).
 - No open-shell \(N_\alpha \neq N_\beta\) pin here (occupations closed-shell
   for dual-gate UGW≡RGW).
 - No analytic GW forces / stress; no BSE@UGW product on this slug.
@@ -141,9 +141,9 @@ const G0W0Result& gw = m.g0w0();
 ```
 
 Dual-gate RKS twin (same deck, `n_occ = 4` instead of `n_alpha`/`n_beta`)
-is exercised in the regression binary; callers that only need UGW skip it.
+is exercised in the recorded check; callers that only need UGW skip it.
 
-Build (GPW needs HF + PW + FFTW3) and run the regression:
+Build (GPW needs HF + PW + FFTW3):
 
 ```bash
 bash -lc '
@@ -156,9 +156,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_ugw-uks-rpbe
-  reg_ugw-uks-rpbe
-  # or: cmake --build build --target run_reg_ugw-uks-rpbe
 '
 ```
 
@@ -174,7 +171,7 @@ Relevant sources:
 
 ## Validation (CP2K)
 
-Source: case `ugw-uks-rpbe` pin (offline pin; **never**
+Source: values recorded when this page was written; no standing regression. (offline pin; **never**
 live CP2K in ctest). Oracle contract: CP2K oracle.
 CP2K twin input ships for operator re-pin only; Atomiverse gates are
 **internal + dual-gate**, not absolute CP2K QP digits (algorithm mismatch:
@@ -183,7 +180,7 @@ frequency-integrated RI-G0W0 vs spectral UGW + MT exchange).
 | Quantity | Pin / gate | Tol | Notes |
 | -------- | ---------- | --- | ----- |
 | \|gap(UGW@RPBE) − gap(RKS G0W0@RPBE)\| | dual-gate in-binary | **≤ 0.05 eV** | UGW ≡ RGW when \(C^\alpha\approx C^\beta\) |
-| \|gap(UGW@RPBE) − 5.719545 eV\| | vs PBE UGW (`periodic-ugw-si`) | **≥ 1e-3 eV** | functional integrity — RPBE must not equal PBE |
+| \|gap(UGW@RPBE) − 5.719545 eV\| | vs PBE UGW ([periodic-ugw-si](periodic-ugw-si.md)) | **≥ 1e-3 eV** | functional integrity — RPBE must not equal PBE |
 | SCF + Newton | both converged | hard | `max_iter=80`, `tol=1e-6` |
 | QP gap | \(> 0\), finite | hard | α HOMO→LUMO |
 | \(\varepsilon_{\mathrm{HOMO}}^{\mathrm{QP}} < \varepsilon_{\mathrm{LUMO}}^{\mathrm{QP}}\) | order | hard | spectrum not re-sorted |
@@ -199,13 +196,13 @@ not a CP2K absolute twin):
 | QP gap RKS G0W0@RPBE | **5.674251 eV** | closed-shell twin; \(\lvert\Delta\rvert \approx 2\times 10^{-5}\) eV |
 | \(E_{\mathrm{SCF}}\) (UKS-RPBE) | **−7.6173910139 Ha** | matches RKS to ~7e-9 Ha |
 | KS gap α | **0.384145 eV** | diagnostic |
-| PBE UGW first-green (compare) | **5.719545 eV** | `periodic-ugw-si`; \(\lvert\Delta\rvert \gg 1\) meV |
+| PBE UGW first-green (compare) | **5.719545 eV** | [periodic-ugw-si](periodic-ugw-si.md); \(\lvert\Delta\rvert \gg 1\) meV |
 
 **Geometry / protocol (must match twin).**
 
 | Item | Value |
 | ---- | ----- |
-| Crystal | artificial sc-Si₂ (same as `periodic-ugw-si`) |
+| Crystal | artificial sc-Si₂ (same as [periodic-ugw-si](periodic-ugw-si.md)) |
 | Cell | cubic **a = 5.43 Å**, `PERIODIC XYZ` |
 | Positions | Si (0,0,0), Si (a/4,a/4,a/4) |
 | Basis / PP | DZVP-MOLOPT-GTH / GTH-PBE-q4 |
@@ -248,8 +245,8 @@ CP2K from ctest.
   fair spectral-equivalent twin exists.
 - **Closed-shell occupations only** on this pin — proves RPBE on the UGW
   path via UGW≡RGW; true open-shell \(N_\alpha\neq N_\beta\) UGW@RPBE is
-  covered by the general UKS g0w0 path but not by this regression band.
-- **Γ only** — multi-k UGW is `periodic-ugw-kpoints`.
+  covered by the general UKS g0w0 path but not by the recorded band.
+- **Γ only** — multi-k UGW is [periodic-ugw-kpoints](periodic-ugw-kpoints.md).
 - **Tiny cell / low cutoff** — artificial sc-Si₂ at 30 Ry is a foothold,
   not production diamond Si₈ / plane-wave complete basis.
 - **No GW forces / BSE@UGW** productization on this slug.
@@ -257,11 +254,10 @@ CP2K from ctest.
 
 ## References
 
-- Offline pin: case `ugw-uks-rpbe` pin
-- Regression consumer: `reg_ugw-uks-rpbe.cpp`
+- Offline pin: recorded when this page was written (no standing regression)
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
-- PBE UGW twin: case `periodic-ugw-si` pin
+- PBE UGW twin: [periodic-ugw-si](periodic-ugw-si.md) (recorded value)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - Public headers: `g0w0.h`, `gpw_solver.h`

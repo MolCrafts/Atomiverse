@@ -4,14 +4,14 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-uks-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `n_alpha`/`n_beta`, `k_mesh` / `k_points`+`k_point_weights` |
-| Roadmap | `docs/roadmap/dft.md` §10 GPW — multi-k UKS OT ✓ (`reg_ot-uks-kpoints`) |
+| Roadmap | `docs/roadmap/dft.md` §10 GPW — multi-k UKS OT ✓ |
 
 ## Summary
 
 **Multi-k collinear unrestricted Kohn–Sham (UKS) Orbital Transformation (OT)**
-extends the GPW OT minimizer from closed-shell multi-k RKS (`ot-kpoints`) and
+extends the GPW OT minimizer from closed-shell multi-k RKS ([ot-kpoints](ot-kpoints.md)) and
 Γ-point UKS OT (`ot-uks-o2`) to the **complex Bloch path with dual spin
 manifolds**. Occupied \(C_k^\alpha\) / \(C_k^\beta\) are optimized on the
 Stiefel-type manifold with occupation 1 per spin channel; joint Polak–Ribière+
@@ -20,8 +20,8 @@ point as multi-k UKS DIIS on identical grids.
 
 Product surface: set `use_ot = true`, open-shell fillings `n_alpha` / `n_beta`,
 and either explicit `k_points`+`k_point_weights` or a Monkhorst–Pack `k_mesh`
-(optional `k_time_reversal`). No public `*Config` bag, no factories. Product
-gate: `ot-uks-kpoints` (`reg_ot-uks-kpoints`).
+(optional `k_time_reversal`). No public `*Config` bag, no factories. No standing
+regression.
 
 **Oracle note (binding).** CP2K **2026.1** aborts OT with k-points at
 `qs_scf_initialization` (`OT not possible with kpoint calculations`). There is
@@ -60,14 +60,14 @@ self-consistent fixed point on identical grids.
 
 **Γ identity.** Explicit k-list `{(0,0,0)}` with weight 1 on the complex path
 must recover the real Γ UKS OT energy (regression gate A1). Multi-k RKS OT
-without spin is `reg_ot-kpoints`; Γ UKS OT against a live CP2K OT twin is
+without spin is [ot-kpoints](ot-kpoints.md); Γ UKS OT against a live CP2K OT twin is
 `reg_ot-uks-o2`.
 
 **Key exclusions.**
 
 - No CP2K OT+KPOINTS energy/wall twin on CP2K 2026.1 (engine rejects the combo).
-- No metallic FD/MP **smearing** on this slug (see `ot-smearing` for RKS OT+FD).
-- No Dudarev DFT+U (see `ot-dftu-kpoints` for multi-k OT+U).
+- No metallic FD/MP **smearing** on this slug (see [ot-smearing](ot-smearing.md) for RKS OT+FD).
+- No Dudarev DFT+U (see [ot-dftu-kpoints](ot-dftu-kpoints.md) for multi-k OT+U).
 - No multi-k UKS OT **forces / stress / BOMD** product gate.
 - No MPI multi-rank OT scaling claim; single-rank identity suite.
 - Dense \(O(n_b^3)\) OT preconditioner — sparse / linear-scaling OT out of
@@ -153,8 +153,7 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_ot-uks-kpoints -j$(nproc)
-  reg_ot-uks-kpoints
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -163,12 +162,11 @@ bash -lc '
 | `gpw_solver.h` | Public `GpwDft`: `use_ot`, UKS, k-mesh |
 | `ot.h` | OT manifold / preconds (internal) |
 | `tests/cpu/gpw/` | Unit coverage for OT / UKS / k paths (as applicable) |
-| `ot-uks-kpoints` | E2E product gate + pin notes |
 | CP2K oracle | Offline CP2K DIAG multi-k UKS doc twin |
 
 ## Validation (vs CP2K)
 
-Source: case `ot-uks-kpoints` pin.
+Source: the pin notes recorded when this page was written (no standing regression).
 Oracle: offline **CP2K 2026.1** documentation twin only; **never** live in ctest.
 
 **Setup:**
@@ -221,7 +219,7 @@ cp2k.psmp -i <CP2K oracle input for this case> \
 
 ## Performance
 
-Source: case `ot-uks-kpoints` pin and
+Source: the pin notes recorded when this page was written (no standing regression) and
 the case pin notes (wave 8).
 
 | Item | Value |
@@ -240,21 +238,19 @@ unrelated OT pins (`ot-minimizer-water`, `ot-uks-o2`).
   ATV while CP2K 2026.1 still forbids OT with k-points. Absolute digits are a
   frozen first-green band, not a cited CP2K OT energy.
 - Compact high-spin H₂ is a **toy** multi-k UKS identity system (same class as
-  `gpw-kpoints-uks`); not a materials-grade k-mesh convergence study.
+  [gpw-kpoints-uks](gpw-kpoints-uks.md)); not a materials-grade k-mesh convergence study.
 - No forces, stress, AIMD, smearing, or DFT+U on this slug (siblings:
-  `gpw-kpoint-uks-forces`, `gpw-kpoint-uks-stress`, `ot-smearing`,
-  `ot-dftu-kpoints`).
+  [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md), [gpw-kpoint-uks-stress](gpw-kpoint-uks-stress.md), [ot-smearing](ot-smearing.md),
+  [ot-dftu-kpoints](ot-dftu-kpoints.md)).
 - Dense OT preconditioner cost; no sparse OT, no MPI industrial scaling gate.
 - PW / CUDA multi-k UKS OT are out of scope for the CP2K GPW product path.
 
 ## References
 
-- Offline pin + gates: case `ot-uks-kpoints` pin
-- Regression binary: `reg_ot-uks-kpoints.cpp`
 - CP2K oracle input: CP2K oracle
 - Oracle rules: CP2K oracle (offline only; never in ctest)
 - Related handbooks: [ot-minimizer-water](ot-minimizer-water.md) (Γ RKS OT),
-  `ot-kpoints` (multi-k RKS OT),
+  [ot-kpoints](ot-kpoints.md) (multi-k RKS OT),
   `ot-uks-o2` (Γ UKS OT + live CP2K OT pin),
   [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md) (Γ UKS DIIS)
 - Roadmap: `docs/roadmap/dft.md` §10 (multi-k UKS OT ✓)

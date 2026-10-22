@@ -578,7 +578,8 @@ std::array<double, 6> pw_stress_fd_impl(const cpu::Frame& frame,
 
 std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
                                               const PW& method,
-                                              PWResult* scf_out) {
+                                              PWResult* scf_out,
+                                              PWProblem* solved) {
     if (frame.nlocal() <= 0)
         throw std::invalid_argument("pw_stress: frame has no atoms");
     if (frame.box.volume() <= 0)
@@ -603,6 +604,9 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
         for (int i = 0; i < n; ++i)
             n_elec += valence_from_z(types[i]);
     }
+
+    if (solved)
+        n_elec = solved->n_elec;
 
     int n_alpha = 0;
     int n_beta = 0;
@@ -631,9 +635,16 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
     DensityBuilder density;
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
-    PWProblem scf_prob;
+    PWProblem local_problem;
+    PWProblem& scf_prob = solved ? *solved : local_problem;
     PWResult res;
-    if (method.spin_polarized) {
+    if (solved) {
+        if (!scf_out)
+            throw std::logic_error("PW solved state requires its result");
+        res = *scf_out;
+        xc.prepare(scf_prob.ws);
+        veff.prepare(scf_prob.ws);
+    } else if (method.spin_polarized) {
         res = run_collinear_scf(frame, method, scf_prob, n_alpha, n_beta);
         // Local builders inside run_collinear_scf are gone; prepare ours for
         // NSCF strain samples (same pattern as pw_forces_analytic spin path).

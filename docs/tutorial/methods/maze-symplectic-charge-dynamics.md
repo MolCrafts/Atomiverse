@@ -17,7 +17,7 @@ constrained every step to the constant-potential condition — the SHAKE-like
 formulation of Coretti, Scalfi, Bacon, Rotenberg, Vuilleumier, Salanne,
 Ciccotti, Bonella, *J. Chem. Phys.* **152**, 194701 (2020). Wave 4 landed
 `ConstPotMaZe` as an **adiabatic foothold** (CG + Kolafa ASPC warm start on
-`ConstPotBO` each `pre_force`, `reg_maze-charge-dynamics`); this wave replaces
+`ConstPotBO` each `pre_force`); this wave replaces
 its default path with the **true symplectic mass-zero dynamics**:
 
 - Verlet extrapolation \(\tilde Q = 2Q_n - Q_{n-1}\) provides the
@@ -243,8 +243,7 @@ re-run an offline fair bench, record version + walls, and replace
   the CG slug's territory (`const-pot-cg-large-electrode`).
 - **No fair speed ratio** until MetalWalls is on the pin host.
 - Scope of this page is the **symplectic path only**; the CG+ASPC adiabatic
-  foothold (`symplectic = false`) is `reg_maze-charge-dynamics` (wave 4) and
-  the ASPC predictor page.
+  foothold (`symplectic = false`) is covered by the ASPC predictor page.
 
 ## References
 

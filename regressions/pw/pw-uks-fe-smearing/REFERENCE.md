@@ -16,8 +16,8 @@ Closes the product gap left by:
 
 | Foothold | What it lacked |
 | -------- | -------------- |
-| `pw-smearing-al` | spin |
-| `pw-spin-polarized-o2` / `pw-uks-kmesh-fe` | metallic smearing |
+| restricted metallic smearing (FCC Al) | spin |
+| `pw-spin-polarized-o2` / fixed-occupation k-mesh UKS Fe | metallic smearing |
 
 ## System
 
@@ -156,7 +156,7 @@ No live CP2K at ctest.
 | Field | Value |
 | ----- | ----- |
 | perf_exempt | true |
-| reason | no fair single-rank NC-UPF PW twin wall vs CP2K GTH-GPW; same class as `pw-uks-kmesh-fe` |
+| reason | no fair single-rank NC-UPF PW twin wall vs CP2K GTH-GPW |
 | T_atv (this host, OMP=1) | **~34 s** (two solves) |
 | ratio T_atv/T_cp2k | n/a |
 

@@ -53,4 +53,4 @@ offline helper as `cisd-h2co-sto3g`). G0W0 is `gw.gw_exact.GWExact` on
 
 H₂O forces are `grad_ha_bohr` from `pin_scf.py rhf --grad`. The full 3×3
 atom-major matrix is in the regression. Energy and excitation gates match
-`es-mean-field-split`, `ch2o_tdhf`, `cisd-h2co-sto3g`, and `g0w0-h2-sto3g`.
+`ch2o_tdhf`, `cisd-h2co-sto3g`, and `g0w0-h2-sto3g`.

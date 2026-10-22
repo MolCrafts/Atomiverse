@@ -170,3 +170,32 @@ TEST(FmmTree, LeafCapacityRespected) {
             EXPECT_LE(tree.node_particle_count(i), leaf);
     }
 }
+
+TEST(FmmTree, CoincidentPopulationStopsAtDirectLeaf) {
+    FmmTree tree(4, 2);
+    std::vector<Vec3> pos(10, Vec3{1, 2, 3});
+    std::vector<AccReal> q(10, 1.0);
+    std::vector<AccReal> phi;
+    tree.potentials(pos, q, phi);
+    EXPECT_EQ(tree.num_nodes(), 1);
+    EXPECT_EQ(tree.node_particle_count(0), 10);
+    // Preserve the existing direct-kernel convention of excluding zero distance.
+    EXPECT_EQ(phi, std::vector<AccReal>(10, 0.0));
+}
+
+TEST(FmmTree, CoincidentClusterStillInteractsWithOtherParticles) {
+    FmmTree tree(6, 2);
+    std::vector<Vec3> pos(8, Vec3{0, 0, 0});
+    pos.push_back(Vec3{2, 0, 0});
+    std::vector<AccReal> q(pos.size(), 1.0);
+    EXPECT_NEAR(tree.energy(pos, q), direct_energy(pos, q), 1e-12);
+}
+
+TEST(FmmTree, RoundedChildCentersTerminateWithoutLosingParticles) {
+    FmmTree tree(4, 1);
+    const double x = 1e16;
+    std::vector<Vec3> pos = {{x, x, x}, {std::nextafter(x, INFINITY), x, x}};
+    std::vector<AccReal> q = {1, -1};
+    EXPECT_NEAR(tree.energy(pos, q), direct_energy(pos, q), 1e-12);
+    EXPECT_TRUE(tree.node_is_leaf(0));
+}

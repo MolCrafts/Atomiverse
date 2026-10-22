@@ -55,7 +55,7 @@ General E-fields: [MD § Nonequilibrium](molecular-dynamics.md#4-nonequilibrium)
 | Capacitance from ⟨δQ²⟩ | ✓ | ○ | Limmer closed form |
 | Potential profile Ψ(z) | ✓ | ○ | |
 | Voronoi volume / classical P | ✓ | ○ | |
-| C_QQ(τ) / elastance | ◐ | ○ | Self-consistency pins only |
+| C_QQ(τ) / elastance | ◐ | ○ | No standing regression; self-consistency cases removed |
 
 ## Gaps / out of scope
 

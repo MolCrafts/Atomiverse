@@ -7,7 +7,7 @@
 | Slug | `pw-spin-polarized-o2` |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`) → `PWResult::magnetization` |
 | Track | CP2K capability wave 1 () |
-| Roadmap | PW collinear spin (Γ) — enables later `pw-uks-kmesh-fe` |
+| Roadmap | PW collinear spin (Γ) — enables later [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md) |
 
 ## Summary
 
@@ -63,8 +63,8 @@ M = N_\uparrow - N_\downarrow = 2.
 | \(M\) | \(N_\uparrow - N_\downarrow\) (`PWResult::magnetization`) | e⁻ |
 | — | SCF convergence flag / iteration count | — |
 
-**Excluded (this slug).** k-point UKS metals / smearing (`pw-smearing-al`,
-`pw-uks-kmesh-fe`); noncollinear / SOC; spin-polarized analytic forces or
+**Excluded (this slug).** k-point UKS metals / smearing ([pw-smearing-al](pw-smearing-al.md),
+[pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)); noncollinear / SOC; spin-polarized analytic forces or
 stress; GPW UKS (`gpw-uks-o2-gamma`); hybrid / meta-GGA XC; CUDA PW spin.
 
 ## Implementation
@@ -203,9 +203,9 @@ reason above. Queue row: ratio **perf_exempt** (2026-07-23 wave 1).
 ## Limitations
 
 - **Γ-only molecular cell** on this pin (`k_mesh = 1`); periodic k-point UKS is
-  a later slug (`pw-uks-kmesh-fe`).
+  a later slug ([pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)).
 - **Fixed occupations only** here — metallic smearing is orthogonal
-  (`pw-smearing-al`); spin + smearing together is not validated on this case.
+  ([pw-smearing-al](pw-smearing-al.md)); spin + smearing together is not validated on this case.
 - **XC channel:** pin path is collinear density with PBE-\(\sigma=0\)
   (LDA-limit) through the shared `evaluate_xc` builder, not a full production
   spin-GGA audit against libxc/QE.

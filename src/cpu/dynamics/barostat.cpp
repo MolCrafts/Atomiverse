@@ -76,7 +76,7 @@ void Barostat::launch(const cpu::LaunchContext& ctx) {
     // `(μ-1)*pos`. Mirrors LAMMPS `fix press/berendsen::end_of_step`
     // calling `domain->x2lamda(nlocal+nghost) / lamda2x(...)` so
     // every atom slot tracks the rescale.
-    const int n_total = static_cast<int>(f.nlocal());
+    const int n_total = force_count(ctx);
     if (n_total > n) {
 #pragma omp parallel for schedule(static)
         for (int i = n; i < n_total; ++i) {
@@ -92,7 +92,7 @@ void Barostat::launch(const cpu::LaunchContext& ctx) {
     // fractions, and the subdomain-local cell grid derives its extents
     // from these bounds; letting them go stale degrades both as the box
     // breathes.
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
+    if (cpu::multi_rank_dd(ctx.runtime)) {
         ctx.runtime.md.dd->compute_sublo_subhi(f.box);
     }
 }

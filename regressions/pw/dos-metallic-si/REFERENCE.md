@@ -30,7 +30,7 @@ const DosResult dr = dos.compute(method, frame);
 ```
 
 Sibling insulator DOS (fixed occupations): `regressions/pw/bands-dos-si`.
-Sibling metallic SCF (energy only): `regressions/pw/pw-smearing-al`.
+Sibling metallic bands: `regressions/pw/bands-metallic-si`.
 Sibling metallic DFPT: `regressions/response/dfpt-metallic-si`.
 
 ## Pseudopotential

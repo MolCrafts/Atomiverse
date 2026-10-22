@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-optb88-uks-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `XcKind::OptB88VdW`, `vdw_df`, `k_mesh` / `k_points`) |
 | Roadmap | `docs/roadmap/dft.md` §8 Dispersion — multi-k UKS optB88-vdW |
 | Fair wall | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx \mathbf{0.73}\) (≤10×) |
@@ -14,19 +14,18 @@
 **Collinear unrestricted Kohn–Sham (UKS) Gaussian-and-plane-waves (GPW)** on a
 **Monkhorst–Pack k-mesh** with **optB88-vdW**: optimized B88 exchange
 (`GGA_X_OPTB88_VDW`) + **PW92** local correlation + **self-consistent DRSLL /
-vdW-DF** nonlocal correlation on the k-summed total density. Pins the dual-spin
-k-path that previously only had Γ UKS (`gpw-optb88-uks`) and multi-k RKS
-(`gpw-optb88-kpoints`) product pins.
+vdW-DF** nonlocal correlation on the k-summed total density. Covers the dual-spin
+k-path alongside Γ UKS and multi-k RKS optB88-vdW.
 
 Public path: set `n_alpha`/`n_beta`, `xc = XcKind::OptB88VdW`, `vdw_df = true`,
 and `k_mesh` (or explicit `k_points`) on `GpwDft`, then `build(frame)` / `run(frame)`.
-Hartree and \(E_c^{\mathrm{nl}}\) via `GpwResult::{e_total,e_disp}`. Product
-gate: `reg_gpw-optb88-uks-kpoints` — Γ-limit identity, OptB88-vs-PBE dual gate,
-absolute \(E_{\mathrm{tot}}\) + tight \(E_{\mathrm{disp}}\) vs offline CP2K, and
-closed-shell multi-k UKS≡RKS identity.
+Hartree and \(E_c^{\mathrm{nl}}\) via `GpwResult::{e_total,e_disp}`. No standing
+regression; the recorded checks were a Γ-limit identity, OptB88-vs-PBE dual
+gate, absolute \(E_{\mathrm{tot}}\) + tight \(E_{\mathrm{disp}}\) vs offline CP2K,
+and closed-shell multi-k UKS≡RKS identity.
 
-Related: `gpw-optb88-uks`, `gpw-optb88-kpoints`,
-`gpw-vdw-uks-kpoints`. Narrative: [Ch. 9 GPW](../ch09-gpw.md).
+Related: [gpw-optb88-vdw](gpw-optb88-vdw.md); kept vdW-DF cases `gpw-vdw-uks`,
+`gpw-vdw-kpoints`. Narrative: [Ch. 9 GPW](../ch09-gpw.md).
 
 ## Method
 
@@ -77,8 +76,7 @@ bash -lc '
   cmake -B build -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_gpw-optb88-uks-kpoints
-  OMP_NUM_THREADS=8 reg_gpw-optb88-uks-kpoints
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 

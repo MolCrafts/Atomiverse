@@ -22,6 +22,10 @@ namespace gpw {
 /// can stop. Algorithms still never write `IterationStatus` themselves.
 class GpwConverged : public cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     /// @param skip_update Flag set by KsBuildStage when the residual gate holds.
     explicit GpwConverged(const bool& skip_update)
         : skip_update_(skip_update) {}

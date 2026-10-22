@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-ump2-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::mp2()` → `cpu::gpw::Mp2Result` (`cpu/gpw/mp2.h`); UKS `n_alpha`/`n_beta`, `k_mesh[3]`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
-| Roadmap | `docs/roadmap/dft.md` §10 — multi-k UMP2 ✓ (`reg_periodic-ump2-kpoints`) |
+| Roadmap | `docs/roadmap/dft.md` §10 — multi-k UMP2 ◐ (no standing regression) |
 | Dual gate | E_corr vs multi-k RMP2 first-green; speed **`perf_exempt`** |
 
 ## Summary
@@ -19,15 +19,15 @@ occupied–virtual pair densities; Del Ben, Hutter, VandeVondele, *JCTC* **8**,
 4177 (2012); CP2K `&WF_CORRELATION` `METHOD MP2_GPW` + `&KPOINTS` + `UKS`).
 
 This page is the **product multi-k UMP2 residual** after the Γ footholds
-([periodic-mp2-si](periodic-mp2-si.md), `periodic-ump2-si`) and the closed-shell
-multi-k residual (`periodic-mp2-kpoints`). With closed-shell occupations
+([periodic-mp2-si](periodic-mp2-si.md), [periodic-ump2-si](periodic-ump2-si.md)) and the closed-shell
+multi-k residual ([periodic-mp2-kpoints](periodic-mp2-kpoints.md)). With closed-shell occupations
 \(n_\alpha = n_\beta\) and \(C^\alpha \approx C^\beta\), **UMP2 ≡ RMP2** — the
 e2e dual-gate.
 
 Public path: construct `cpu::gpw::GpwDft`, set cell / cutoff / UKS occupations /
 Monkhorst–Pack mesh, `build` → `run` → `mp2`. Correlation and SCF energies on
 `Mp2Result` are **Hartree** (internal); public Frame energy remains eV when the
-evaluator path is used. Product gate: `reg_periodic-ump2-kpoints`. Fair wall
+evaluator path is used. Fair wall
 vs CP2K is **`perf_exempt`** (no CP2K binary on the pin host). Offline twin:
 CP2K oracle — never launched by ctest.
 
@@ -91,7 +91,7 @@ CP2K twin matches that cap.
 - Poisson multi-k path (`mp2_ri = false` + \(N_k>1\)).
 - OT SCF (`use_ot` — no canonical virtuals).
 - Periodic hybrid / exact-exchange reference (blocked; correlation is @KS-PBE).
-- UMP2 analytic forces / stress; URPA@UKS (queue residual `periodic-urpa-si`).
+- UMP2 analytic forces / stress; URPA@UKS (queue residual [periodic-urpa-si](periodic-urpa-si.md)).
 - Production diamond at full virtual space / production cutoffs.
 
 ## Implementation
@@ -154,9 +154,6 @@ const cpu::gpw::Mp2Result& r = m.mp2();         // multi-k UMP2, no throw
 
 ```bash
 # Scoped build/test (never bare cmake --build build)
-cmake --build build -j"$(nproc)" --target atomiverse reg_periodic-ump2-kpoints
-cmake --build build --target run_reg_periodic-ump2-kpoints
-# or: reg_periodic-ump2-kpoints
 ```
 
 Relevant headers: `gpw_solver.h` (`GpwDft::mp2`),
@@ -165,7 +162,7 @@ Relevant headers: `gpw_solver.h` (`GpwDft::mp2`),
 
 ## Validation (vs CP2K offline / dual-gate)
 
-Source: case `periodic-ump2-kpoints` pin (offline pin;
+Source: values recorded when this page was written (no standing regression) (offline pin;
 never live in ctest). Twin input:
 CP2K oracle.
 
@@ -173,7 +170,7 @@ CP2K oracle.
 
 | Item | Value |
 | ---- | ----- |
-| Crystal | diamond Si, **bct 4-atom** (same as `periodic-mp2-kpoints`) |
+| Crystal | diamond Si, **bct 4-atom** (same as [periodic-mp2-kpoints](periodic-mp2-kpoints.md)) |
 | Cell | a_t = a/√2, c = a; a = **5.43 Å** |
 | Positions (frac) | (0,0,0), (½,½,½), (½,0,¼), (0,½,¾) |
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
@@ -188,7 +185,7 @@ CP2K oracle.
    `e_corr` finite and **strictly negative**; OS+SS ≡ e_corr;
    e_total ≡ e_scf+e_corr; `n_occ=16`, `n_virt=4`, `ri`, `n_kpts=2`.
 2. **Dual-gate vs RKS multi-k first-green**
-   (`periodic-mp2-kpoints` E_corr = **−0.0657637511** Ha): band
+   ([periodic-mp2-kpoints](periodic-mp2-kpoints.md) E_corr = **−0.0657637511** Ha): band
    \(\lvert E_{\mathrm{corr}}(\mathrm{UMP2}) - \mathrm{ref}\rvert \le\)
    **2e-3** Ha (UKS numerical drift).
 3. **Kernel unit** (`tests/cpu/gpw/test_cpu_gpw_mp2.cpp`): multi-k UMP2 α=β
@@ -203,7 +200,7 @@ CP2K oracle.
 | \(E_{\mathrm{corr}}^{\mathrm{OS}}\) | −0.0598553603 | internal | identity | OS+SS ≡ e_corr @ 1e-12 |
 | \(E_{\mathrm{corr}}^{\mathrm{SS}}\) | −0.0059083908 | internal | identity | |
 | \(E_{\mathrm{total}}\) | −15.6409419924 | internal | identity | e_scf + e_corr |
-| Dual-gate ref (RMP2 multi-k) | −0.0657637511 | `periodic-mp2-kpoints` | — | first-green twin |
+| Dual-gate ref (RMP2 multi-k) | −0.0657637511 | [periodic-mp2-kpoints](periodic-mp2-kpoints.md) | — | first-green twin |
 
 **Offline CP2K status:** no CP2K binary/module on the pin host at first green.
 Absolute CP2K `MP2 Energy` digits are **not invented**. When CP2K is available,
@@ -219,7 +216,7 @@ Source: the case pin notes (wave 6) and REFERENCE.md.
 | multi-k UMP2 Si₄-bct | — | **~3.7** (SCF+UMP2, OMP=4) | **perf_exempt** | n/a | no CP2K binary on pin host |
 
 Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) when a fair wall exists.
-This slug: **`perf_exempt`**. Wall budget for the regression binary: ≤ 60 s.
+This slug: **`perf_exempt`**. Recorded wall stayed within 60 s.
 
 ## Limitations
 
@@ -230,17 +227,17 @@ This slug: **`perf_exempt`**. Wall budget for the regression binary: ≤ 60 s.
 - Correlation on **KS-PBE** orbitals (standard periodic foothold); true MP2@HF
   needs periodic exact exchange (blocked hybrid row).
 - Requires `mp2_ri = true` and a fully periodic cell for multi-k.
-- No UMP2 forces/stress; URPA@UKS remains open (`periodic-urpa-si`).
+- No UMP2 forces/stress; URPA@UKS remains open ([periodic-urpa-si](periodic-urpa-si.md)).
 - Header comment in `mp2.h` may still say multi-k UMP2 is a “follow-on” —
   product path is multi-k UKS as of this slug; trust `GpwDft::mp2` docs + this
   regression.
 
 ## References
 
-- Offline pin: case `periodic-ump2-kpoints` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - Oracle twin: CP2K oracle
-- Closed-shell multi-k twin: case `periodic-mp2-kpoints` pin
-- Γ UMP2 foothold: case `periodic-ump2-si` pin
+- Closed-shell multi-k twin: [periodic-mp2-kpoints](periodic-mp2-kpoints.md)
+- Γ UMP2 foothold: [periodic-ump2-si](periodic-ump2-si.md)
 - Roadmap: `docs/roadmap/dft.md` §10
 - Del Ben, Hutter, VandeVondele, *J. Chem. Theory Comput.* **8**, 4177 (2012)
   (RI-GPW / CP2K `MP2_GPW`)

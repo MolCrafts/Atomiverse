@@ -112,15 +112,15 @@ int main() {
         std::printf("FAIL: force initialization advanced the nuclei\n");
         return 1;
     }
-    if (!(rhf.iterations() > 0)) {
+    if (!(rhf.method().iterations() > 0)) {
         std::printf("FAIL: seed step ran %d SCF iterations — the cold seed "
                     "must converge a real SCF\n",
-                    rhf.iterations());
+                    rhf.method().iterations());
         return 1;
     }
-    if (!rhf.converged()) {
+    if (!rhf.method().converged()) {
         std::printf("FAIL: seed SCF did not converge (%s)\n",
-                    rhf.stop_reason().c_str());
+                    rhf.method().stop_reason().c_str());
         return 1;
     }
     {
@@ -142,15 +142,15 @@ int main() {
         }
     }
 
-    // ── Step 2: the first CP production step — baseline for the drift ─────
+    // ── Step 1: the first CP production step — baseline for the drift ─────
     if (sim.run(frame, 1) != 1) {
         std::printf("FAIL: first CP production step did not run\n");
         return 1;
     }
-    if (rhf.iterations() != 0) {
+    if (rhf.method().iterations() != 0) {
         std::printf("FAIL: first CP step re-ran SCF (iters=%d) — CPMD must not "
                     "be a BOMD rename\n",
-                    rhf.iterations());
+                    rhf.method().iterations());
         return 1;
     }
     const double e0 = frame.meta.get(kConserved);
@@ -170,9 +170,9 @@ int main() {
             std::printf("FAIL: production step %d did not run\n", s + 1);
             return 1;
         }
-        if (rhf.iterations() != 0) {
+        if (rhf.method().iterations() != 0) {
             std::printf("FAIL: production step %d re-ran SCF (iters=%d)\n",
-                        s + 1, rhf.iterations());
+                        s + 1, rhf.method().iterations());
             return 1;
         }
 
@@ -196,10 +196,10 @@ int main() {
             return 1;
         }
         // The published readback must be the published frame channel.
-        if (!(te == rhf.last_electronic_ke_ev())) {
+        if (!(te == rhf.method().last_electronic_ke_ev())) {
             std::printf(
                 "FAIL: T_e channel %g eV != readback %g eV at step %d\n", te,
-                rhf.last_electronic_ke_ev(), s + 1);
+                rhf.method().last_electronic_ke_ev(), s + 1);
             return 1;
         }
         // kConserved is documented as E_SCF + T_nuc + T_e + E_therm^e —
@@ -239,7 +239,7 @@ int main() {
     std::printf("  PEf=%.8g eV  KEf=%.6g eV  Te_max=%.3e eV (0 by H2 "
                 "persymmetry)  r(H–H)=%.4f Å  prod SCF iters=%d (expect 0)\n",
                 frame.meta.get(kEnergy), frame.meta.get(kKinetic), te_max, r_hh,
-                rhf.iterations());
+                rhf.method().iterations());
 
     // H2's occupied σ_g vector is an exact S-metric eigenvector at every bond
     // length, so the CP band force −(I − S C Cᵀ)(∂E/∂C) must vanish and the

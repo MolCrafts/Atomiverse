@@ -216,11 +216,16 @@ int main(int argc, char** argv) {
     char self_buf[4096];
     const ssize_t n =
         ::readlink("/proc/self/exe", self_buf, sizeof(self_buf) - 1);
-    if (n <= 0) {
-        std::printf("FAIL: cannot resolve /proc/self/exe\n");
+    // macOS has no /proc; the build runs this binary by absolute path, so
+    // argv[0] names the same executable there.
+    if (n > 0) {
+        self_buf[n] = '\0';
+    } else if (argv[0] != nullptr && std::strlen(argv[0]) < sizeof(self_buf)) {
+        std::strcpy(self_buf, argv[0]);
+    } else {
+        std::printf("FAIL: cannot resolve the executable path\n");
         return EXIT_FAILURE;
     }
-    self_buf[n] = '\0';
     ::setenv("OMP_NUM_THREADS", "1", 1);
     double e_dd = 0.0, e_bf = 0.0;
     int plan_ok = 0;

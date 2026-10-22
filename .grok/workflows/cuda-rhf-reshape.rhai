@@ -82,7 +82,7 @@ let reg_path = "regressions/scf/" + system_slug + "/";
 let oracle_readme = "tools/pyscf_oracle/README.md";
 let pin_tool = "tools/pyscf_oracle/pin_scf.py";
 let fair_bench = "tools/pyscf_oracle/fair_bench.py";
-let arch_note = ".claude/notes/architecture.md";
+let arch_note = ".claude/notes/es-architecture-debt.md";
 let claude_md = "CLAUDE.md";
 let report_name = "cuda-rhf-reshape-report.md";
 

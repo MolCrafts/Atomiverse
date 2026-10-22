@@ -3,7 +3,9 @@
 These inherited capability and benchmark tables are reference reports,
 not a textbook reading sequence or a new verification of current support.
 
-One page per delivered capability, each mapping 1:1 to a capability case. Every page is a technical report: what the method is, the
+One page per delivered capability. Most pages map 1:1 to a capability case;
+pages whose **Case** cell is `—` document API usage without a standing
+end-to-end case. Every page is a technical report: what the method is, the
 public API that runs it, the external code the number was pinned against, and
 the measured wall against that code where a fair twin exists. These are
 reference pages, not a reading order — the [tutorial index](../index.md) gives the reading
@@ -30,7 +32,7 @@ Hartree–Fock, Kohn–Sham, post-HF, excited states and molecular properties. O
 | B2PLYP double hybrid | [b2plyp-h2o](b2plyp-h2o.md) | `b2plyp-h2o` |
 | BLYP GGA | [blyp-water-sto3g](blyp-water-sto3g.md) | `blyp-water-sto3g` |
 | BSE@G0W0 | [bse-h2-sto3g](bse-h2-sto3g.md) | `bse-h2-sto3g` |
-| CASCI | [casci-h2-sto3g](casci-h2-sto3g.md) | `casci-h2-sto3g` |
+| CASCI | [casci-h2-sto3g](casci-h2-sto3g.md) | — |
 | CASSCF | [casscf-h2-sto3g](casscf-h2-sto3g.md) | `casscf-h2-sto3g` |
 | CC2 | [cc2-h2-sto3g](cc2-h2-sto3g.md) | `cc2-h2-sto3g` |
 | CCSD nuclear gradient | [ccsd-grad-h2o-sto3g](ccsd-grad-h2o-sto3g.md) | `ccsd-grad-h2o-sto3g` |
@@ -115,11 +117,11 @@ Periodic Kohn–Sham in a plane-wave basis with norm-conserving pseudopotentials
 | PW BOMD H (NVE foothold) | [pw-bomd-h](pw-bomd-h.md) | `pw-bomd-h` |
 | PW LDA Si (k-mesh) | [pw-lda-si](pw-lda-si.md) | `pw-lda-si` |
 | PW true PBE GGA Si | [pw-pbe-gga-si](pw-pbe-gga-si.md) | `pw-pbe-gga-si` |
-| Metallic Fermi–Dirac Al | [pw-smearing-al](pw-smearing-al.md) | `pw-smearing-al` |
+| Metallic Fermi–Dirac Al | [pw-smearing-al](pw-smearing-al.md) | — |
 | PW collinear spin-GGA PBE (O₂ triplet, Γ) | [pw-spin-gga](pw-spin-gga.md) | `pw-spin-gga` |
 | PW collinear spin O₂ | [pw-spin-polarized-o2](pw-spin-polarized-o2.md) | `pw-spin-polarized-o2` |
 | PW collinear UKS + metallic smearing (BCC Fe) | [pw-uks-fe-smearing](pw-uks-fe-smearing.md) | `pw-uks-fe-smearing` |
-| PW k-point collinear UKS O₂ | [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md) | `pw-uks-kmesh-fe` |
+| PW k-point collinear UKS O₂ | [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md) | — |
 | PW isotropic variable-cell relax (diamond Si) | [pw-variable-cell-si](pw-variable-cell-si.md) | `pw-variable-cell-si` |
 
 ### Gaussian and plane waves (GPW)
@@ -129,7 +131,7 @@ Periodic Kohn–Sham on a Gaussian basis collocated on a grid, its derivatives, 
 | Method | Page | Case |
 |--------|------|------------|
 | GPW analytic fixed-\(P\) stress H₂O | [gpw-analytic-stress](gpw-analytic-stress.md) | `gpw-analytic-stress` |
-| GPW Γ-RKS BLYP, isolated H₂O (MT) | [gpw-blyp-water](gpw-blyp-water.md) | `gpw-blyp-water` |
+| GPW Γ-RKS BLYP, isolated H₂O (MT) | [gpw-blyp-water](gpw-blyp-water.md) | — |
 | GPW BOMD H₂O NVE energy-drift foothold | [gpw-bomd-water](gpw-bomd-water.md) | `gpw-bomd-water` |
 | GPW PBE-D3 + ATM (C9) isolated dimer | [gpw-d3-atm](gpw-d3-atm.md) | `gpw-d3-atm` |
 | GPW PBE-D3 analytic ionic forces | [gpw-d3-forces](gpw-d3-forces.md) | `gpw-d3-forces` |
@@ -141,77 +143,77 @@ Periodic Kohn–Sham on a Gaussian basis collocated on a grid, its derivatives, 
 | GPW PBE-D4 analytic cell stress | [gpw-d4-stress](gpw-d4-stress.md) | `gpw-d4-stress` |
 | GPW PBE-D4 periodic water dimer | [gpw-d4-water](gpw-d4-water.md) | `gpw-d4-water` |
 | Multi-k DFT+U analytic cell stress (H₂ UKS) | [gpw-dftu-kpoint-stress](gpw-dftu-kpoint-stress.md) | `gpw-dftu-kpoint-stress` |
-| Multi-k Dudarev DFT+U (GPW UKS) | [gpw-dftu-kpoints](gpw-dftu-kpoints.md) | `gpw-dftu-kpoints` |
+| Multi-k Dudarev DFT+U (GPW UKS) | [gpw-dftu-kpoints](gpw-dftu-kpoints.md) | — |
 | Dudarev DFT+U NiO mol (Γ-UKS GPW) | [gpw-dftu-nio](gpw-dftu-nio.md) | `gpw-dftu-nio` |
 | GPW analytic cell stress + DFT+U (NiO) | [gpw-dftu-stress](gpw-dftu-stress.md) | `gpw-dftu-stress` |
 | GPW analytic forces H₂O | [gpw-forces-water](gpw-forces-water.md) | `gpw-forces-water` |
 | GPW multi-k Hirshfeld volumes | [gpw-hirshfeld-kpoints](gpw-hirshfeld-kpoints.md) | `gpw-hirshfeld-kpoints` |
 | Γ-UKS Hirshfeld-scaled MBD@rsSCS (O₂) | [gpw-hirshfeld-uks](gpw-hirshfeld-uks.md) | `gpw-hirshfeld-uks` |
 | Multi-k UKS Hirshfeld-scaled MBD@rsSCS (O₂) | [gpw-hirshfeld-uks-kpoints](gpw-hirshfeld-uks-kpoints.md) | `gpw-hirshfeld-uks-kpoints` |
-| GPW analytic forces at k-points (H₂) | [gpw-kpoint-forces](gpw-kpoint-forces.md) | `gpw-kpoint-forces` |
+| GPW analytic forces at k-points (H₂) | [gpw-kpoint-forces](gpw-kpoint-forces.md) | — |
 | GPW analytic cell stress at k-points (Si) | [gpw-kpoint-stress](gpw-kpoint-stress.md) | `gpw-kpoint-stress` |
-| Multi-k UKS GPW analytic forces | [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) | `gpw-kpoint-uks-forces` |
-| Multi-k UKS GPW analytic cell stress | [gpw-kpoint-uks-stress](gpw-kpoint-uks-stress.md) | `gpw-kpoint-uks-stress` |
-| GPW collinear multi-k UKS (H₂ + O₂ twin) | [gpw-kpoints-uks](gpw-kpoints-uks.md) | `gpw-kpoints-uks` |
+| Multi-k UKS GPW analytic forces | [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) | — |
+| Multi-k UKS GPW analytic cell stress | [gpw-kpoint-uks-stress](gpw-kpoint-uks-stress.md) | — |
+| GPW collinear multi-k UKS (H₂ + O₂ twin) | [gpw-kpoints-uks](gpw-kpoints-uks.md) | — |
 | GPW MBD@rsSCS ionic forces | [gpw-mbd-forces](gpw-mbd-forces.md) | `gpw-mbd-forces` |
 | GPW PBE-MBD@rsSCS + Hirshfeld volumes | [gpw-mbd-hirshfeld](gpw-mbd-hirshfeld.md) | `gpw-mbd-hirshfeld` |
 | GPW PBE-MBD@rsSCS, free-atom water dimer | [gpw-mbd-ice](gpw-mbd-ice.md) | `gpw-mbd-ice` |
 | GPW multi-k analytic forces + MBD@rsSCS | [gpw-mbd-kpoint-forces](gpw-mbd-kpoint-forces.md) | `gpw-mbd-kpoint-forces` |
 | GPW PBE-MBD@rsSCS, periodic Ewald + k-mesh | [gpw-mbd-periodic](gpw-mbd-periodic.md) | `gpw-mbd-periodic` |
 | GPW Γ cell stress with periodic MBD@rsSCS | [gpw-mbd-stress](gpw-mbd-stress.md) | `gpw-mbd-stress` |
-| Metallic FD smearing (BCC Na, GPW multi-k) | [gpw-metallic-smearing](gpw-metallic-smearing.md) | `gpw-metallic-smearing` |
-| GPW optB88-vdW (periodic water dimer) | [gpw-optb88-vdw](gpw-optb88-vdw.md) | `gpw-optb88-vdw` |
+| Metallic FD smearing (BCC Na, GPW multi-k) | [gpw-metallic-smearing](gpw-metallic-smearing.md) | — |
+| GPW optB88-vdW (periodic water dimer) | [gpw-optb88-vdw](gpw-optb88-vdw.md) | — |
 | GPW PBE-D3(BJ) ice dimer | [gpw-pbe-d3bj-ice](gpw-pbe-d3bj-ice.md) | `gpw-pbe-d3bj-ice` |
-| GPW Γ-RKS PBEsol Si₂ (MT) | [gpw-pbesol-si](gpw-pbesol-si.md) | `gpw-pbesol-si` |
-| GPW Γ-RKS revPBE (Si₂ fragment, MT) | [gpw-revpbe-si](gpw-revpbe-si.md) | `gpw-revpbe-si` |
-| GPW Γ-RKS RPBE, isolated H₂O (MT) | [gpw-rpbe-water](gpw-rpbe-water.md) | `gpw-rpbe-water` |
+| GPW Γ-RKS PBEsol Si₂ (MT) | [gpw-pbesol-si](gpw-pbesol-si.md) | — |
+| GPW Γ-RKS revPBE (Si₂ fragment, MT) | [gpw-revpbe-si](gpw-revpbe-si.md) | — |
+| GPW Γ-RKS RPBE, isolated H₂O (MT) | [gpw-rpbe-water](gpw-rpbe-water.md) | — |
 | GPW PBE + rVV10 (periodic water dimer) | [gpw-rvv10-ice](gpw-rvv10-ice.md) | `gpw-rvv10-ice` |
 | GPW cell stress strain-FD H₂O (NUMERICAL pin) | [gpw-stress-water](gpw-stress-water.md) | `gpw-stress-water` |
 | GPW PBE-TS (periodic water dimer) | [gpw-ts-ice](gpw-ts-ice.md) | `gpw-ts-ice` |
-| Multi-k free-atom TS analytic ionic forces (H₂) | [gpw-ts-kpoint-forces](gpw-ts-kpoint-forces.md) | `gpw-ts-kpoint-forces` |
-| Γ-UKS GPW BLYP (O₂) | [gpw-uks-blyp](gpw-uks-blyp.md) | `gpw-uks-blyp` |
+| Multi-k free-atom TS analytic ionic forces (H₂) | [gpw-ts-kpoint-forces](gpw-ts-kpoint-forces.md) | — |
+| Γ-UKS GPW BLYP (O₂) | [gpw-uks-blyp](gpw-uks-blyp.md) | — |
 | Γ-UKS GPW analytic forces (O₂ / PBE) | [gpw-uks-forces](gpw-uks-forces.md) | `gpw-uks-forces` |
 | Γ-UKS GPW multigrid (O₂ / PADE) | [gpw-uks-multigrid](gpw-uks-multigrid.md) | `gpw-uks-multigrid` |
 | Γ-UKS GPW O₂ | [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md) | `gpw-uks-o2-gamma` |
 | Γ-UKS GPW PBE (O₂) | [gpw-uks-pbe](gpw-uks-pbe.md) | `gpw-uks-pbe` |
-| Γ-UKS GPW revPBE (O₂) | [gpw-uks-revpbe](gpw-uks-revpbe.md) | `gpw-uks-revpbe` |
-| Γ-UKS GPW RPBE (O₂) | [gpw-uks-rpbe](gpw-uks-rpbe.md) | `gpw-uks-rpbe` |
-| Collinear UKS + FD smearing (BCC Na) | [gpw-uks-smearing](gpw-uks-smearing.md) | `gpw-uks-smearing` |
+| Γ-UKS GPW revPBE (O₂) | [gpw-uks-revpbe](gpw-uks-revpbe.md) | — |
+| Γ-UKS GPW RPBE (O₂) | [gpw-uks-rpbe](gpw-uks-rpbe.md) | — |
+| Collinear UKS + FD smearing (BCC Na) | [gpw-uks-smearing](gpw-uks-smearing.md) | — |
 | Γ-UKS GPW analytic cell stress (O₂ / PBE) | [gpw-uks-stress](gpw-uks-stress.md) | `gpw-uks-stress` |
 | GPW `CELL_OPT` MOLOPT re-twin (water chain) | [gpw-variable-cell-molopt](gpw-variable-cell-molopt.md) | `gpw-variable-cell-molopt` |
 | GPW PBE + vdW-DF (DRSLL) | [gpw-vdw-df-ice](gpw-vdw-df-ice.md) | `gpw-vdw-df-ice` |
-| GPW PBE + vdW-DF2 (LMKLL) | [gpw-vdw-df2-ice](gpw-vdw-df2-ice.md) | `gpw-vdw-df2-ice` |
+| GPW PBE + vdW-DF2 (LMKLL) | [gpw-vdw-df2-ice](gpw-vdw-df2-ice.md) | — |
 | GPW nonlocal vdW on the REL_CUTOFF multigrid | [gpw-vdw-multigrid](gpw-vdw-multigrid.md) | `gpw-vdw-multigrid` |
 | GPW nonlocal vdW: SC \(V_{\mathrm{nl}}\) + forces | [gpw-vdw-scf-potential](gpw-vdw-scf-potential.md) | `gpw-vdw-scf-potential` |
 | GPW Γ-RKS H₂O PBE (MT) | [gpw-water-pbe-mt](gpw-water-pbe-mt.md) | `gpw-water-pbe-mt` |
 | GPW free-atom XDM (periodic water dimer) | [gpw-xdm-ice](gpw-xdm-ice.md) | `gpw-xdm-ice` |
 | MPI GPW k-point RR (n=1 vs n=4) | [mpi-gpw-scaling-4rank](mpi-gpw-scaling-4rank.md) | `mpi-gpw-scaling-4rank` |
 | OT + Dudarev DFT+U, Γ-UKS GPW (NiO) | [ot-dftu](ot-dftu.md) | `ot-dftu` |
-| Multi-k OT + Dudarev DFT+U (H₂) | [ot-dftu-kpoints](ot-dftu-kpoints.md) | `ot-dftu-kpoints` |
-| Multi-k OT + DFT+U + FD smearing (H₂) | [ot-dftu-smearing](ot-dftu-smearing.md) | `ot-dftu-smearing` |
-| Multi-k Orbital Transformation SCF (H₂) | [ot-kpoints](ot-kpoints.md) | `ot-kpoints` |
+| Multi-k OT + Dudarev DFT+U (H₂) | [ot-dftu-kpoints](ot-dftu-kpoints.md) | — |
+| Multi-k OT + DFT+U + FD smearing (H₂) | [ot-dftu-smearing](ot-dftu-smearing.md) | — |
+| Multi-k Orbital Transformation SCF (H₂) | [ot-kpoints](ot-kpoints.md) | — |
 | OT SCF water (GPW PBE) | [ot-minimizer-water](ot-minimizer-water.md) | `ot-minimizer-water` |
-| OT + metallic FD smearing (BCC Na) | [ot-smearing](ot-smearing.md) | `ot-smearing` |
-| Multi-k UKS OT + Dudarev DFT+U (H₂) | [ot-uks-dftu](ot-uks-dftu.md) | `ot-uks-dftu` |
-| Multi-k UKS OT + DFT+U + smearing (H₂) | [ot-uks-dftu-smearing](ot-uks-dftu-smearing.md) | `ot-uks-dftu-smearing` |
-| Multi-k collinear UKS OT (high-spin H₂) | [ot-uks-kpoints](ot-uks-kpoints.md) | `ot-uks-kpoints` |
+| OT + metallic FD smearing (BCC Na) | [ot-smearing](ot-smearing.md) | — |
+| Multi-k UKS OT + Dudarev DFT+U (H₂) | [ot-uks-dftu](ot-uks-dftu.md) | — |
+| Multi-k UKS OT + DFT+U + smearing (H₂) | [ot-uks-dftu-smearing](ot-uks-dftu-smearing.md) | — |
+| Multi-k collinear UKS OT (high-spin H₂) | [ot-uks-kpoints](ot-uks-kpoints.md) | — |
 | OT orbital minimizer for Γ-UKS (O₂) | [ot-uks-o2](ot-uks-o2.md) | `ot-uks-o2` |
-| UKS OT + metallic FD smearing (BCC Na) | [ot-uks-smearing](ot-uks-smearing.md) | `ot-uks-smearing` |
-| Periodic finite-\(q\) inter-\(k\) G0W0 (Si) | [periodic-gw-finite-q](periodic-gw-finite-q.md) | `periodic-gw-finite-q` |
-| Multi-k spectral G0W0 (diamond Si, bct) | [periodic-gw-kpoints](periodic-gw-kpoints.md) | `periodic-gw-kpoints` |
-| Periodic Γ-point spectral G0W0 (sc-Si₂) | [periodic-gw-si](periodic-gw-si.md) | `periodic-gw-si` |
-| Multi-k RI-GPW MP2 (diamond Si, bct) | [periodic-mp2-kpoints](periodic-mp2-kpoints.md) | `periodic-mp2-kpoints` |
-| Periodic Γ-point GPW MP2, canonical (sc-Si₂) | [periodic-mp2-si](periodic-mp2-si.md) | `periodic-mp2-si` |
+| UKS OT + metallic FD smearing (BCC Na) | [ot-uks-smearing](ot-uks-smearing.md) | — |
+| Periodic finite-\(q\) inter-\(k\) G0W0 (Si) | [periodic-gw-finite-q](periodic-gw-finite-q.md) | — |
+| Multi-k spectral G0W0 (diamond Si, bct) | [periodic-gw-kpoints](periodic-gw-kpoints.md) | — |
+| Periodic Γ-point spectral G0W0 (sc-Si₂) | [periodic-gw-si](periodic-gw-si.md) | — |
+| Multi-k RI-GPW MP2 (diamond Si, bct) | [periodic-mp2-kpoints](periodic-mp2-kpoints.md) | — |
+| Periodic Γ-point GPW MP2, canonical (sc-Si₂) | [periodic-mp2-si](periodic-mp2-si.md) | — |
 | Periodic Γ-point RI-GPW MP2 (sc-Si₂) | [periodic-ri-mp2-si](periodic-ri-mp2-si.md) | `periodic-ri-mp2-si` |
-| Finite-\(q\) inter-\(k\) RI-GPW dRPA (Si) | [periodic-rpa-finite-q](periodic-rpa-finite-q.md) | `periodic-rpa-finite-q` |
-| Multi-k RI-GPW direct RPA (Si₄, bct) | [periodic-rpa-kpoints](periodic-rpa-kpoints.md) | `periodic-rpa-kpoints` |
-| Periodic Γ-point GPW direct RPA (sc-Si₂) | [periodic-rpa-si](periodic-rpa-si.md) | `periodic-rpa-si` |
-| Multi-k unrestricted spectral G0W0 (UGW) | [periodic-ugw-kpoints](periodic-ugw-kpoints.md) | `periodic-ugw-kpoints` |
-| Periodic Γ-point UGW@UKS (sc-Si₂) | [periodic-ugw-si](periodic-ugw-si.md) | `periodic-ugw-si` |
-| Multi-k unrestricted GPW MP2 (UMP2) | [periodic-ump2-kpoints](periodic-ump2-kpoints.md) | `periodic-ump2-kpoints` |
-| Periodic Γ-point GPW UMP2 (sc-Si₂) | [periodic-ump2-si](periodic-ump2-si.md) | `periodic-ump2-si` |
-| Multi-k unrestricted direct RPA (URPA@UKS) | [periodic-urpa-kpoints](periodic-urpa-kpoints.md) | `periodic-urpa-kpoints` |
-| Periodic Γ-point URPA@UKS (sc-Si₂) | [periodic-urpa-si](periodic-urpa-si.md) | `periodic-urpa-si` |
+| Finite-\(q\) inter-\(k\) RI-GPW dRPA (Si) | [periodic-rpa-finite-q](periodic-rpa-finite-q.md) | — |
+| Multi-k RI-GPW direct RPA (Si₄, bct) | [periodic-rpa-kpoints](periodic-rpa-kpoints.md) | — |
+| Periodic Γ-point GPW direct RPA (sc-Si₂) | [periodic-rpa-si](periodic-rpa-si.md) | — |
+| Multi-k unrestricted spectral G0W0 (UGW) | [periodic-ugw-kpoints](periodic-ugw-kpoints.md) | — |
+| Periodic Γ-point UGW@UKS (sc-Si₂) | [periodic-ugw-si](periodic-ugw-si.md) | — |
+| Multi-k unrestricted GPW MP2 (UMP2) | [periodic-ump2-kpoints](periodic-ump2-kpoints.md) | — |
+| Periodic Γ-point GPW UMP2 (sc-Si₂) | [periodic-ump2-si](periodic-ump2-si.md) | — |
+| Multi-k unrestricted direct RPA (URPA@UKS) | [periodic-urpa-kpoints](periodic-urpa-kpoints.md) | — |
+| Periodic Γ-point URPA@UKS (sc-Si₂) | [periodic-urpa-si](periodic-urpa-si.md) | — |
 | Multi-k MLWF on GPW (Marzari–Vanderbilt) | [periodic-wannier-gpw](periodic-wannier-gpw.md) | `periodic-wannier-gpw` |
 
 ### Ab-initio molecular dynamics
@@ -225,12 +227,12 @@ Born–Oppenheimer, Car–Parrinello, second-generation CPMD and XL-BOMD over th
 | AO-basis CPMD on the SCF methods (RHF / RKS / UHF) | [cpmd-rhf-h2](cpmd-rhf-h2.md) | `cpmd-rhf-h2` |
 | Car–Parrinello MD on Γ-UKS (O₂ triplet NVE) | [cpmd-uks](cpmd-uks.md) | `cpmd-uks` |
 | Multi-k UKS CPMD on dual-spin Bloch \(C_k^\sigma\) (H₂ NVE) | [cpmd-uks-kpoints](cpmd-uks-kpoints.md) | `cpmd-uks-kpoints` |
-| Multi-k UKS CPMD + electronic Nosé–Hoover per (k, σ) (H₂ NVE) | [cpmd-uks-thermostat-kpoints](cpmd-uks-thermostat-kpoints.md) | `cpmd-uks-thermostat-kpoints` |
+| Multi-k UKS CPMD + electronic Nosé–Hoover per (k, σ) (H₂ NVE) | [cpmd-uks-thermostat-kpoints](cpmd-uks-thermostat-kpoints.md) | — |
 | Car–Parrinello MD H₂O NVE (fictitious e⁻ DOF) | [cpmd-water](cpmd-water.md) | `cpmd-water` |
 | Multi-k second-gen CP (ASPC on \(P_k\)) H₂ NVE | [second-gen-cpmd-kpoints](second-gen-cpmd-kpoints.md) | `second-gen-cpmd-kpoints` |
 | Second-generation CP with OT corrector (H₂O) | [second-gen-cpmd-ot](second-gen-cpmd-ot.md) | `second-gen-cpmd-ot` |
 | Multi-k second-gen CP + OT corrector H₂ NVE | [second-gen-cpmd-ot-kpoints](second-gen-cpmd-ot-kpoints.md) | `second-gen-cpmd-ot-kpoints` |
-| Multi-k UKS second-gen CP + OT corrector H₂ NVE | [second-gen-cpmd-ot-uks-kpoints](second-gen-cpmd-ot-uks-kpoints.md) | `second-gen-cpmd-ot-uks-kpoints` |
+| Multi-k UKS second-gen CP + OT corrector H₂ NVE | [second-gen-cpmd-ot-uks-kpoints](second-gen-cpmd-ot-uks-kpoints.md) | — |
 | Second-generation CP on Γ-UKS (O₂ triplet) | [second-gen-cpmd-uks](second-gen-cpmd-uks.md) | `second-gen-cpmd-uks` |
 | Second-generation CP + OT on Γ-UKS (O₂) | [second-gen-cpmd-uks-ot](second-gen-cpmd-uks-ot.md) | `second-gen-cpmd-uks-ot` |
 | Second-generation CP: ASPC + partial SCF (H₂O) | [second-gen-cpmd-water](second-gen-cpmd-water.md) | `second-gen-cpmd-water` |
@@ -249,9 +251,9 @@ NDDO, DFTB and extended tight binding. Family-locked oracles: NDDO → **OpenMOP
 | SCC-DFTB2 CH₄ 3ob-3-1 organic SK | [dftb2-3ob-organic](dftb2-3ob-organic.md) | `dftb2-3ob-organic` |
 | SCC-DFTB2 analytic nuclear forces H₂O | [dftb2-analytic-forces](dftb2-analytic-forces.md) | `dftb2-analytic-forces` |
 | SCC-DFTB2 H₂ total \(E\) vs mio-1-1 | [dftb2-dftbplus-energy-pin](dftb2-dftbplus-energy-pin.md) | `dftb2-dftbplus-energy-pin` |
-| Multi-k SCC-DFTB2 (4×1×1 C chain) | [dftb2-kpoints](dftb2-kpoints.md) | `dftb2-kpoints` |
-| Γ-PBC analytic nuclear forces (off-eq C chain) | [dftb2-periodic-forces](dftb2-periodic-forces.md) | `dftb2-periodic-forces` |
-| Γ-point periodic SCC-DFTB2 (1-D C chain) | [dftb2-periodic-gamma](dftb2-periodic-gamma.md) | `dftb2-periodic-gamma` |
+| Multi-k SCC-DFTB2 (4×1×1 C chain) | [dftb2-kpoints](dftb2-kpoints.md) | — |
+| Γ-PBC analytic nuclear forces (off-eq C chain) | [dftb2-periodic-forces](dftb2-periodic-forces.md) | — |
+| Γ-point periodic SCC-DFTB2 (1-D C chain) | [dftb2-periodic-gamma](dftb2-periodic-gamma.md) | — |
 | SCC-DFTB3 H₂O (mio-style; third-order \(E\)) | [dftb3-water-mio](dftb3-water-mio.md) | `dftb3-water-mio` |
 | GFN1/GFN2-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn-xtb-analytic-hessian](gfn-xtb-analytic-hessian.md) | `gfn-xtb-analytic-hessian` |
 | GFN0-xTB FD Hessian of analytic \(G\) (off-eq H₂O) | [gfn0-xtb-analytic-hessian](gfn0-xtb-analytic-hessian.md) | `gfn0-xtb-analytic-hessian` |

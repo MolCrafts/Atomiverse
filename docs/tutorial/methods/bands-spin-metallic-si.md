@@ -130,7 +130,7 @@ Conversion: `cpu/planewave/qe_units.h` (`rydberg_to_ev = 13.605693`).
 - Restricted metallic bands → `bands-metallic-si`.
 - Spin+smear DOS → `dos-spin-metallic-si`.
 - Collinear fixed-occ DOS → `dos-spin-si`.
-- True metal energy pin (FCC Al) → `pw-smearing-al`.
+- True metal energy pin (FCC Al) → [pw-smearing-al](pw-smearing-al.md).
 - UKS + FD SCF without k-path → `pw-uks-fe-smearing`.
 - GPW / Gaussian k-path → `gpw-kpoints-si`.
 - Absolute \(\varepsilon_n\) parity with CP2K Quickstep GTH+DZVP (different PP
@@ -349,7 +349,7 @@ Wall comparison is same-geometry only, not absolute-eigenvalue parity
   structure or dense path productization.
 - Twin is **gapped Si** under FD smear with \(M\approx 0\) (near-integer
   occupations, α≈β); it does **not** pin a true metal vanishing gap or a
-  finite-magnetization metal (use `pw-smearing-al` / `pw-uks-fe-smearing` for
+  finite-magnetization metal (use [pw-smearing-al](pw-smearing-al.md) / `pw-uks-fe-smearing` for
   metallic SCF energy character).
 - Path \(\mu\) is the SCF value; do not treat path-k weights as a BZ mesh
   for re-solving \(E_F\).

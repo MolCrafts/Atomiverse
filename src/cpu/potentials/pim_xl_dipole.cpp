@@ -29,7 +29,10 @@ void PimXlDipole::reset() {
 }
 
 void PimXlDipole::launch(const LaunchContext& ctx) {
-    if (ctx.runtime.exec.initializing_forces) {
+    if (ctx.runtime.exec.initializing_forces
+        || ctx.runtime.exec.trial_evaluation) {
+        // Converge current dipoles without reading or changing the auxiliary
+        // trajectory. Atom-count invalidation waits for the next real step.
         aux_err_ = 0.0;
         last_warm_ = false;
         pim_.launch(ctx);

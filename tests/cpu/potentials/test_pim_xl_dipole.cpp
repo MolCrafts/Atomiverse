@@ -211,3 +211,59 @@ TEST(PimXlDipole, ResetDropsAuxHistory) {
     EXPECT_FALSE(xl.last_warm());
     EXPECT_TRUE(xl.last_pol_converged());
 }
+
+TEST(PimXlDipole, ForceInitializationPreservesAuxiliaryHistory) {
+    auto frame = ion_pair(3.0);
+    cpu::Context context;
+    cpu::PimXlDipole xl(20.0, kAlpha, 0.39, 5, 1e-12, 200);
+    xl.build({context, frame});
+    context.exec.initializing_forces = true;
+    xl.launch({context, frame, 0, 0});
+    EXPECT_TRUE(xl.last_pol_converged());
+    EXPECT_FALSE(xl.propagator().ready());
+    context.exec.initializing_forces = false;
+    zero_forces(frame);
+    xl.launch({context, frame, 0, 0});
+    ASSERT_TRUE(xl.propagator().ready());
+    const auto before = xl.propagator().aux();
+    context.exec.initializing_forces = true;
+    frame.span(kAtom_x)[1] = 3.2;
+    zero_forces(frame);
+    xl.launch({context, frame, 0, 0});
+    EXPECT_FALSE(xl.last_warm());
+    for (std::size_t i = 0; i < before.size(); ++i)
+        EXPECT_DOUBLE_EQ(xl.propagator().aux().data()[i], before.data()[i]);
+    context.exec.initializing_forces = false;
+    zero_forces(frame);
+    xl.launch({context, frame, 0, 1});
+    EXPECT_TRUE(xl.last_warm());
+    EXPECT_NE(xl.propagator().aux()(0, 0), before(0, 0));
+}
+
+TEST(PimXlDipole, TrialEvaluationPreservesAuxiliaryHistory) {
+    auto frame = ion_pair(3.0);
+    cpu::Context context;
+    cpu::PimXlDipole xl(20.0, kAlpha, 0.39, 5, 1e-12, 200);
+    xl.build({context, frame});
+    context.exec.trial_evaluation = true;
+    xl.launch({context, frame, 0, 0});
+    EXPECT_TRUE(xl.last_pol_converged());
+    EXPECT_FALSE(xl.propagator().ready());
+    context.exec.trial_evaluation = false;
+    zero_forces(frame);
+    xl.launch({context, frame, 0, 0});
+    ASSERT_TRUE(xl.propagator().ready());
+    const auto before = xl.propagator().aux();
+    context.exec.trial_evaluation = true;
+    frame.span(kAtom_x)[1] = 3.2;
+    zero_forces(frame);
+    xl.launch({context, frame, 0, 0});
+    EXPECT_FALSE(xl.last_warm());
+    for (std::size_t i = 0; i < before.size(); ++i)
+        EXPECT_DOUBLE_EQ(xl.propagator().aux().data()[i], before.data()[i]);
+    context.exec.trial_evaluation = false;
+    zero_forces(frame);
+    xl.launch({context, frame, 0, 1});
+    EXPECT_TRUE(xl.last_warm());
+    EXPECT_NE(xl.propagator().aux()(0, 0), before(0, 0));
+}

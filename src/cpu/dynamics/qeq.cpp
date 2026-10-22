@@ -124,11 +124,10 @@ void QEq::launch(const LaunchContext& ctx) {
 }
 
 void QEq::destroy(const DestroyContext&) {
-    chi_i_.clear();
-    eta_i_.clear();
+    // Release the hardness matrix only; the equilibrated charges and energy
+    // stay readable after the driver is gone. build() resets them.
     H_.clear();
-    q_.clear();
-    energy_ = 0.0;
+    H_.shrink_to_fit();
 }
 
 double QEq::net_charge() const {

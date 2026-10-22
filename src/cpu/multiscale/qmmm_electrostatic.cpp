@@ -1,5 +1,6 @@
 /// @file src/cpu/multiscale/qmmm_electrostatic.cpp
 #include "atomiverse/cpu/multiscale/qmmm_electrostatic.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include "atomiverse/core/frame_schema.h"
 
@@ -13,7 +14,8 @@ QmmmElectrostatic::QmmmElectrostatic(std::vector<LJTypeCoeff> cross_lj,
 }
 
 void QmmmElectrostatic::build(const BuildContext& ctx) {
-    sub_.build(ctx.frame, ctx.runtime.mpi_size);
+    sub_.build(ctx.frame,
+               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1);
 }
 
 void QmmmElectrostatic::launch(const LaunchContext& ctx) {

@@ -62,11 +62,9 @@ Wall (xtb, 1 thread): 0.155 s (SCC 0.115 s).
 - SCC residual < `scc_tol`
 - Hard-coded energy pin vs table (tol \(5\times10^{-4}\) eV)
 
-The foothold residual without quadrupole AES was **1.45 meV**. Post-SCC
-charge–quadrupole + qkernel AXC closed that to **26 µeV**. AES-in-Fock
-(`gfn2-aes-fock`) moves the SCC density; measured residual is **230 µeV**
-(CAMM-vs-\(R\) hole, not a missing energy term). Pin value is still the
-xtb 6.7.1 transcript.
+Measured residual **11 µeV**: AES/AXC on the cumulative multipoles of every
+atom (H included) is −1.94391e−4 Eh vs xtb anisotropic ES + XC
+−1.94401e−4 Eh; the remainder is the D4 term (see `reg_gfn2-xtb-water`).
 
 ## Perf
 
@@ -75,7 +73,5 @@ ratio. Archived xtb wall is 0.155 s. Revisit when xtb is on PATH.
 
 ## Gaps
 
-- Angular \(F_{H1,y}\) / two-centre \(\Theta\) on H (AES-in-Fock is
-  `gfn2-aes-fock` and does not close this CAMM-vs-\(R\) slope)
 - Elements beyond H/C/N/O
 - ALPB, spin, PBC, sTDA

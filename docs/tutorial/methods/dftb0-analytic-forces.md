@@ -303,8 +303,7 @@ ratio is **0.45** (0.014 / 0.03). Not `perf_exempt`.
 - **Family lock.** DFTB rows pin to DFTB+ only. OpenMOPAC does not pin
   DFTB0. xtb does not pin DFTB0, and GFN-xTB is not a DFTB3 successor.
 - **SE-only cmake** for this case. Do not enable MD, MINIMIZER, HF, PW,
-  GPW, KSPACE, or CUDA to run this gate, and do not build
-  `reg_am1_water_bomd` / `reg_am1_water_minimize` under this configure.
+  GPW, KSPACE, or CUDA to run this gate.
 
 ## References
 

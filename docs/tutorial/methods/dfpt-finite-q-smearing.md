@@ -7,7 +7,7 @@
 | Slug | `dfpt-finite-q-smearing` |
 | Public API | `cpu::pw::DfptPhonon` (members: `q_frac`, response/CG tolerances) + `cpu::pw::DfptPhononResult`; ground state via `cpu::pw::PW` members `smearing`, `degauss` [Ry], `extra_bands` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — finite-q + metallic smear ✓ |
-| Dep | `dfpt-finite-q-si` ✓ (fixed-occ X twin); `dfpt-metallic-si` ✓ (Γ FD); `pw-smearing-al` ✓ (occupations) |
+| Dep | `dfpt-finite-q-si` ✓ (fixed-occ X twin); `dfpt-metallic-si` ✓ (Γ FD); [pw-smearing-al](pw-smearing-al.md) (occupations; no standing case) |
 | Oracle | CP2K (product intent: `VIBRATIONAL_ANALYSIS` + `&SMEAR`); offline note only |
 
 ## Summary
@@ -256,7 +256,7 @@ Handoff: the case pin notes records
   SMEAR + phonon settings only until a binary records ω walls offline.
 - **Gapped Si, not an open metal.** `extra_bands = 0` and near-integer FD
   fill; metallic Al/Fe DFPT remains a deeper product story (ground-state
-  smear: `pw-smearing-al`, `pw-uks-fe-smearing`).
+  smear: [pw-smearing-al](pw-smearing-al.md), `pw-uks-fe-smearing`).
 - **Restricted spin only on this path.** Collinear spin + smear is
   **rejected** and remains the open residual (`dfpt-spin-smearing`).
 - **No \(\delta\mu\) at \(q\neq 0\).** Direct finite-\(q\) metals with

@@ -204,8 +204,7 @@ already declared a "sketch". It is **not fixed on this branch**: correcting it
 moves every `MioSketch` DFTB2/DFTB3 energy, force, stress and charge for any
 system with non-zero Δq and re-pins ~10 regressions owned by other waves
 (`h2o_dftb2_mio`, `dftb2-analytic-forces`, `dftb2-analytic-stress`,
-`dftb2-periodic-gamma`, `dftb2-periodic-forces`, `dftb2-kpoints`,
-`dftb2-dispersion-d3`, `spin-dftb2-o2`, `dftb2-spin-analytic-forces`,
+`dftb2-ewald-gamma`, `dftb3-periodic-forces`, `dftb2-dispersion-d3`, `spin-dftb2-o2`, `dftb2-spin-analytic-forces`,
 `dftb3-water-mio`). Route: `/mol:fix` as its own change, with the whole
 MioSketch pin set re-derived in one pass.
 

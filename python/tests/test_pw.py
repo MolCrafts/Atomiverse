@@ -188,9 +188,8 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molpy.Frame":
     if with_box:
         half = _A / 2.0
         frame.box = molpy.Box(
-            np.array(
-                [[0.0, half, half], [half, 0.0, half], [half, half, 0.0]],
-                dtype=np.float64,
+            molpy.core.Cell.matrix(
+                [[0.0, half, half], [half, 0.0, half], [half, half, 0.0]]
             )
         )
     return frame
@@ -446,6 +445,11 @@ class TestPwStress:
         pw = _si2_method()
         pw.build(frame)
         stress = np.asarray(pw.stress(frame), dtype=np.float64)
+        # Frame stores extensive virial [eV]; the returned stress is [eV/Å³].
+        np.testing.assert_allclose(
+            np.asarray(frame.meta["stress"]), stress * frame.box.volume()
+        )
+        assert np.isfinite(frame.meta["energy"])
         return frame, stress, x_before
 
     def test_returns_voigt_six_vector(
@@ -515,7 +519,11 @@ class TestPwResultFields:
         frame = _si2_frame(_STRETCH)
         pw = _si2_method()
         pw.build(frame)
-        return pw.run(frame)
+        result = pw.run(frame)
+        assert frame.meta["energy"] == pytest.approx(
+            result.energy * 13.605693, rel=1e-12
+        )
+        return result
 
     def test_n_kpts_is_one_at_gamma(self, si2_result: "PWResult") -> None:
         """k_mesh = 1 is the Γ point only, so the Monkhorst-Pack set has a

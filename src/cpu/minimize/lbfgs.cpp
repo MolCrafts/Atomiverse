@@ -96,6 +96,7 @@ void LBFGS::build(const cpu::BuildContext& ctx) {
 }
 
 void LBFGS::launch(const cpu::LaunchContext& ctx) {
+    require_finite_forces(ctx);
     auto& f = ctx.frame;
     // The history's Reducer closes over `this` and reads this pointer: the recursion
     // needs an all-reduce but must not know what a LaunchContext is. Re-pointed every
@@ -129,7 +130,7 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =
-            (dd && ctx.runtime.mpi_size > 1) ? dd->neighbor_generation : 0;
+            (cpu::multi_rank_dd(ctx.runtime)) ? dd->neighbor_generation : 0;
         if (gen != last_generation_) {
             if (last_generation_ != ~std::uint64_t{0}) {
                 hist_->reset();
@@ -271,6 +272,8 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
                 sp_z[i] = xp[i * 3 + 2] + alpha * direction_[i * 3 + 2];
             }
             ctx.runtime.opt.reeval_forces(need_slope);
+            if (need_slope)
+                require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
             LsSample s;
             s.f = f.meta.get(kEnergy); // globally reduced by md::mpi::Reduce
             double gd_local = 0;
@@ -289,14 +292,26 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
         LineSearchResult lr;
         // Suppress migration while trials replay the force phase (see
         // Context::line_search_trial); halo exchange still refreshes ghosts.
-        ctx.runtime.opt.line_search_trial = true;
-        if (ls_mode_ == LineSearchMode::StrongWolfe)
-            lr = strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
-                              ls_c2_, max_ls_, alpha_max);
-        else // Armijo
-            lr = armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
-                                  ls_contract_, max_ls_, ls_min_alpha_);
-        ctx.runtime.opt.line_search_trial = false;
+        {
+            struct RestoreTrial {
+                cpu::Context& context;
+                bool migration, evaluation;
+                ~RestoreTrial() {
+                    context.opt.line_search_trial = migration;
+                    context.exec.trial_evaluation = evaluation;
+                }
+            } restore{ctx.runtime, ctx.runtime.opt.line_search_trial,
+                      ctx.runtime.exec.trial_evaluation};
+            ctx.runtime.opt.line_search_trial = true;
+            ctx.runtime.exec.trial_evaluation = true;
+            if (ls_mode_ == LineSearchMode::StrongWolfe)
+                lr = strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
+                                  ls_c2_, max_ls_, alpha_max);
+            else // Armijo
+                lr =
+                    armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
+                                     ls_contract_, max_ls_, ls_min_alpha_);
+        }
 
         // Commit the accepted geometry (the last trial may have been a
         // different alpha). On a failed search (e.g. machine-flat near the

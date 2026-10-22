@@ -60,11 +60,15 @@ void write_gradient(Frame& frame, const GradientResult& gr) {
 template <typename Method>
 void drive_converged(Method& mf, Frame& frame, const SCFInitialGuess* guess,
                      bool materialize_eri, const char* entry) {
-    const bool prev = mf.compute_eri;
+    struct RestoreEri {
+        bool& value;
+        bool saved;
+        ~RestoreEri() { value = saved; }
+    } restore{mf.compute_eri, mf.compute_eri};
     if (materialize_eri)
         mf.compute_eri = true;
     mf.run(frame, guess);
-    mf.compute_eri = prev;
+    mf.compute_eri = restore.saved;
     if (!mf.converged())
         throw std::invalid_argument(
             std::string(entry)

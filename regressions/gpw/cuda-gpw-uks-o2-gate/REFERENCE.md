@@ -3,7 +3,7 @@
 ## What
 
 Production-class Γ collinear UKS **energy** dual-gate on public
-`ATV::cuda::gpw::GpwDft` after the H₂ UKS foothold (`cuda-gpw-uks-gamma`).
+`ATV::cuda::gpw::GpwDft` (beyond the H₂ UKS foothold).
 O₂ triplet (n_α=7, n_β=5), Padé LSD, DIIS, single-grid. Device mid-SCF
 reuses `KsChainDevice::run_uks` — **no new kernel**.
 

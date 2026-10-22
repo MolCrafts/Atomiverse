@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `second-gen-cpmd-ot-uks-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::SecondGenCp{cpu::gpw::GPWEvaluator{cpu::gpw::GpwDft{…, n_alpha, n_beta, k_mesh, use_ot=true}}, aspc_k, corrector_max_iter}` bound with `set_evaluator_ref` |
 | Dual gate | Correctness (corrector A/B identity + NVE drift + budget + dual-spin multi-k payload); speed **`perf_exempt`** |
 | Wave | CP2K capability loop — worker wave 3 (shift) (2026-07-31) |
@@ -65,7 +65,7 @@ No CP2K number can exist for this method — CP2K's OT implementation is
    diagonalization at the initial H₂ geometry (1×1×2 TR-off mesh, 100 Ry,
    DZV-GTH-PADE / GTH-PADE-q1, \(n_\alpha=n_\beta=1\)): measured
    \(|\Delta E| \approx 3.6\times10^{-11}\) Ha (gate ≤ 1e-4 Ha, the
-   `ot-uks-kpoints` A2 pin level); ⟨S²⟩ OT ≡ diag on the multi-k UKS integer
+   [ot-uks-kpoints](ot-uks-kpoints.md) A2 pin level); ⟨S²⟩ OT ≡ diag on the multi-k UKS integer
    seed formula \(s_z(s_z+1)+N_\beta\) (= 1 for this filling).
 2. **NVE drift envelope** (Kühne PRL **98**, 066401 (2007); Kolafa JCC
    **25**, 335 (2004)): worst relative drift ≤ 0.10, production OT iters ≤
@@ -77,7 +77,7 @@ No CP2K number can exist for this method — CP2K's OT implementation is
 - Collinear multi-k UKS product pin on singlet fillings
   (\(n_\alpha = n_\beta = 1\)) — the dual-spin plumbing gates (β payloads,
   dual ASPC, per-(k, σ) OT) are exercised; open-shell k-UKS physics rides
-  the same code path via `ot-uks-kpoints`.
+  the same code path via [ot-uks-kpoints](ot-uks-kpoints.md).
 - No metallic smearing / +U under the SGCP corrector (integer-occupation
   warm start only; evaluator exposes no smearing).
 - `perf_exempt`: no oracle wall twin can exist (see above).

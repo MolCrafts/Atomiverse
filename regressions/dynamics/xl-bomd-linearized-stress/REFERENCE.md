@@ -13,7 +13,7 @@ shadow payload:
   `cpu::electronic::XlBomdForce{gpw, 5, XlBomdLinearized{}}`
 - Cold seed (step 0): full SCF → analytic fixed-\(P\) stress at that SCF's
   state (same path as `GpwDft::stress`) → seeds XL histories
-- Warm steps: zero-SCF shadow forces (as in `xl-bomd-linearized-kpoints`) **plus**
+- Warm steps: zero-SCF shadow forces (as in `xl-bomd-linearized-forces`) **plus**
   the evaluator's shadow-state stress (strain step / axes from
   `method().stress_strain_h` / `.stress_axes`) — fixed-\(P\) Lagrangian at
   \(P = D = q[n]\), \(W\) from the \(H[n]\) eigenpairs; **no reference SCF**;
@@ -29,12 +29,12 @@ shadow payload:
   *J. Chem. Phys.* **147**, 054103 (2017) — shadow / linearized functional
 - O. H. Nielsen & R. M. Martin, *Phys. Rev. B* **32**, 3780 (1985) — fixed-\(P\)
   cell theorem
-- Sibling force product: `regressions/dynamics/xl-bomd-linearized-kpoints`
+- Sibling force product: `regressions/dynamics/xl-bomd-linearized-forces`
 - BO stress product: `regressions/gpw/gpw-analytic-stress`, `gpw-kpoint-stress`
 
 ## System (twin of the CP2K input)
 
-Identical twin of `xl-bomd-linearized-kpoints` / `gpw-bomd-kpoints`:
+Multi-k compressed-H₂ GPW system:
 
 | Quantity | Value |
 | -------- | ----- |
@@ -73,7 +73,7 @@ multi-k stress surface the shadow must track:
 | Stress mode | **`STRESS_TENSOR ANALYTICAL`** (accepted with `KPOINTS`; not refused) |
 | Wall | **2.13 s** (`/usr/bin/time`) |
 
-**Pinned `.ener` Pot** — byte-identical to the `xl-bomd-linearized-kpoints` pin:
+**Pinned `.ener` Pot:**
 
 | Step | Kin [Ha] | Pot [Ha] | Cons [Ha] |
 | ---- | -------- | -------- | --------- |

@@ -1,7 +1,7 @@
 # H2O SCS-MP2/STO-3G — e_corr pin
 
 Spin-component-scaled second-order Møller–Plesset (SCS-MP2) on water /
-STO-3G. Axis extension after `rmp2-h2o-sto3g` (`regressions/scf/h2o_mp2_sto3g`)
+STO-3G. Axis extension after plain RMP2 (`regressions/scf/posthf-eri-block-mp2`)
 and `frozen-core-mp2-h2o`: same RMP2 doubles sum, reweighted by Grimme’s
 opposite-spin / same-spin scales.
 
@@ -88,5 +88,5 @@ on this system by \(\sim 5.3\,\mathrm{mHa}\) (OS up-weighted, SS down-weighted).
 - Grimme, S. *J. Chem. Phys.* **118**, 9095 (2003). Scales match PySCF’s
   `emp2_scs` property (`e_corr_ss/3 + e_corr_os*1.2`).
 - Domain path under `regressions/scf/` matches other Gaussian post-HF cases
-  (`h2o_mp2_sto3g`, `frozen-core-mp2-h2o`, `ump2-o2-sto3g`); slug = queue id
+  (`posthf-eri-block-mp2`, `frozen-core-mp2-h2o`, `ump2-o2-sto3g`); slug = queue id
   `scs-mp2-h2o-sto3g`.

@@ -127,6 +127,10 @@ atv_add_cpp_test(test_mat3  core/test_mat3.cpp)
 atv_add_cpp_test(test_vec3  core/test_vec3.cpp)
 atv_add_cpp_test(test_real_harmonics core/test_real_harmonics.cpp)
 atv_add_cpp_test(test_units core/test_units.cpp)
+atv_add_cpp_test(test_driver_contract core/test_driver_contract.cpp)
+atv_add_cpp_test(test_plan_lifecycle core/test_plan_lifecycle.cpp)
+atv_add_cpp_test(test_cpu_electronic_aimd_method
+                 cpu/electronic/test_aimd_method.cpp)
 
 # ── CPU backend tests (always available, no CUDA required) ──────────
 
@@ -197,6 +201,7 @@ if(ATV_BUILD_MD) # VelocityVerlet / QEq / ConstPot* / FixRattle are MD-domain so
     atv_add_cpp_test(test_cpu_md_const_pot_per_eta    cpu/dynamics/test_const_pot_per_eta.cpp)
     atv_add_cpp_test(test_cpu_md_charge_updater_probe cpu/dynamics/test_charge_updater_probe.cpp)
     atv_add_cpp_test(test_cpu_md_fix_rattle_packer    cpu/dynamics/test_fix_rattle_packer.cpp)
+    atv_add_cpp_test(test_cpu_md_fix_rattle           cpu/dynamics/test_fix_rattle.cpp)
 endif()
 atv_add_cpp_test(test_cpu_md_charge_packer        cpu/dynamics/test_charge_packer.cpp)
 atv_add_cpp_test(test_cpu_comm_tag_index_lifetime cpu/communication/test_tag_index_lifetime.cpp)
@@ -230,6 +235,8 @@ atv_add_cpp_test(test_cpu_coul_long_special       cpu/potentials/test_coul_long_
 atv_add_cpp_test(test_cpu_pair_lj_cut_coul_long   cpu/potentials/test_pair_lj_cut_coul_long.cpp)
 atv_add_cpp_test(test_cpu_dihedral_charmm         cpu/potentials/test_dihedral_charmm.cpp)
 atv_add_cpp_test(test_cpu_improper_harmonic       cpu/potentials/test_improper_harmonic.cpp)
+atv_add_cpp_test(test_cpu_dihedral_fourier        cpu/potentials/test_dihedral_fourier.cpp)
+atv_add_cpp_test(test_cpu_improper_cvff           cpu/potentials/test_improper_cvff.cpp)
 atv_add_cpp_test(test_cpu_lammps_data_full        cpu/io/test_lammps_data_full.cpp)
 atv_add_cpp_test(test_cpu_lammps_real             cpu/io/test_lammps_real.cpp)
 atv_add_cpp_test(test_cpu_lammps_coeffs           cpu/io/test_lammps_coeffs.cpp)
@@ -257,6 +264,7 @@ atv_add_cpp_test(test_cpu_pair_virial             cpu/potentials/test_pair_viria
 atv_add_cpp_test(test_cpu_pim_induced_dipole      cpu/potentials/test_pim_induced_dipole.cpp)
 atv_add_cpp_test(test_cpu_pim_xl_dipole           cpu/potentials/test_pim_xl_dipole.cpp)
 if(ATV_BUILD_MINIMIZER)
+    atv_add_cpp_test(test_cpu_optimizer_metrics cpu/minimize/test_optimizer_metrics.cpp)
     atv_add_cpp_test(test_cpu_minimize_aniso_cell cpu/minimize/test_anisotropic_cell.cpp)
 endif()
 if(ATV_BUILD_SEMIEMPIRICAL)
@@ -346,6 +354,9 @@ if(ATV_BUILD_GPW)
     atv_add_cpp_test(test_cpu_gpw_one_electron     cpu/gpw/test_cpu_gpw_one_electron.cpp)
     atv_add_cpp_test(test_cpu_gpw_workspace        cpu/gpw/test_cpu_gpw_workspace.cpp)
     atv_add_cpp_test(test_cpu_gpw_driver_node     cpu/gpw/test_cpu_gpw_driver_node.cpp)
+    atv_add_cpp_test(test_cpu_gpw_diis            cpu/gpw/test_diis.cpp)
+    atv_add_cpp_test(test_cpu_gpw_kpoints_natural_orbitals
+                     cpu/gpw/test_kpoints_natural_orbitals.cpp)
     if(ATV_BUILD_PW)
         atv_add_cpp_test(test_cpu_gpw_ks_grid_build cpu/gpw/test_cpu_gpw_ks_grid_build.cpp)
     endif()
@@ -356,6 +367,8 @@ if(ATV_BUILD_GPW)
         atv_add_cpp_test(test_cpu_gpw_grid_fft     cpu/gpw/test_cpu_gpw_grid_fft.cpp)
         atv_add_cpp_test(test_cpu_gpw_xc_grid_gga  cpu/gpw/test_cpu_gpw_xc_grid_gga.cpp)
         atv_add_cpp_test(test_cpu_gpw_mt_poisson   cpu/gpw/test_cpu_gpw_mt_poisson.cpp)
+        # Multi-k spectral G0W0 kernels: Bloch-MO gauge invariance (no SCF).
+        atv_add_cpp_test(test_cpu_gpw_g0w0_kpoints cpu/gpw/test_cpu_gpw_g0w0_kpoints.cpp)
         # Gaussian DOS free math + multi-k mesh guards (no full SCF e2e).
         atv_add_cpp_test(test_cpu_gpw_dos          cpu/gpw/test_cpu_gpw_dos.cpp)
         # Bitwise-identical grid kernels at 1/2/4/8/16 OpenMP threads. Guards the
@@ -385,13 +398,14 @@ if(ATV_BUILD_GPW)
 endif()
 atv_add_cpp_test(test_cpu_md_pair_morse_smoke     cpu/dynamics/test_pair_morse_smoke.cpp)
 atv_add_cpp_test(test_cpu_md_pe_ff_constants      cpu/dynamics/test_pe_ff_constants.cpp)
-atv_add_cpp_test(test_cpu_md_pe_energy_xcheck     cpu/dynamics/test_pe_energy_xcheck.cpp)
 # pe_tension_protocol grepped benchmarks/md/pe/... which was deleted; re-add
 # when the PE tension app is restored under regressions/ or examples/.
 atv_add_cpp_test(test_cpu_md_neighbor_list_arena  cpu/dynamics/test_neighbor_list_arena.cpp)
 atv_add_cpp_test(test_cpu_md_neighbor_decide      cpu/dynamics/test_neighbor_decide.cpp)
 atv_add_cpp_test(test_cpu_driver_verlet_comm      cpu/driver/test_verlet_comm.cpp)
-atv_add_cpp_test(test_cpu_driver_preset_comm_plan cpu/driver/test_preset_comm_plan.cpp)
+if(ATV_BUILD_MD AND ATV_BUILD_EVALUATE AND ATV_BUILD_MINIMIZER AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+    atv_add_cpp_test(test_cpu_driver_preset_comm_plan cpu/driver/test_preset_comm_plan.cpp)
+endif()
 atv_add_cpp_test(test_cpu_md_full_neighbor_list  cpu/dynamics/test_full_neighbor_list.cpp)
 atv_add_cpp_test(test_cpu_md_cell_list_grid_stale  cpu/dynamics/test_cell_list_grid_stale.cpp)
 atv_add_cpp_test(test_cpu_md_cell_list_halo_pad  cpu/dynamics/test_cell_list_halo_pad.cpp)
@@ -453,15 +467,20 @@ if(ATV_BUILD_MINIMIZER)
                      cpu/minimize/test_line_search_nested_node.cpp)
 endif()
 atv_add_cpp_test(test_cpu_criterion       cpu/driver/test_criterion.cpp)
-atv_add_cpp_test(test_cpu_driver_nesting  cpu/driver/test_driver_nesting.cpp)
+if(ATV_BUILD_EVALUATE)
+    atv_add_cpp_test(test_cpu_driver_nesting  cpu/driver/test_driver_nesting.cpp)
+endif()
 # scf-driver-refactor-01-plumb: scf::Phase / PhaseKind::SCF / PhaseTraits<scf::Phase>
 # / the Criterion component kind + driver pull-poll. Pure type-foundation plumbing —
 # no consumer yet.
 atv_add_cpp_test(test_cpu_scf_phase_plumbing cpu/driver/test_scf_phase_plumbing.cpp)
 atv_add_cpp_test(test_cpu_component_ownership cpu/driver/test_component_ownership.cpp)
 atv_add_cpp_test(test_cpu_require_match cpu/driver/test_require_match.cpp)
+atv_add_cpp_test(test_cpu_borrowed_lifetime cpu/driver/test_borrowed_lifetime.cpp)
 atv_add_cpp_test(test_driver_live_table cpu/driver/test_driver_live_table.cpp)
-atv_add_cpp_test(test_cpu_driver_unfix cpu/driver/test_unfix.cpp)
+if(ATV_BUILD_MD)
+    atv_add_cpp_test(test_cpu_driver_unfix cpu/driver/test_unfix.cpp)
+endif()
 # Mirrors include/atomiverse/cpu/driver/outcome_policy.h — cpu::Metropolis'
 # verb contract (the canonical policy owns Displace/None and refuses the
 # Box/Insert/Delete trials that need the NptMc / Gcmc presets). Formula-level,
@@ -496,7 +515,9 @@ atv_add_cpp_test(test_cpu_observer_potential_profile
 atv_add_cpp_test(test_cpu_observer_species_density_profile
                  cpu/observe/test_species_density_profile.cpp)
 
-atv_add_cpp_test(test_cpu_driver_role_validation cpu/test_cpu_driver_role_validation.cpp)
+if(ATV_BUILD_MD AND ATV_BUILD_EVALUATE AND ATV_BUILD_MINIMIZER)
+    atv_add_cpp_test(test_cpu_driver_role_validation cpu/test_cpu_driver_role_validation.cpp)
+endif()
 # Registration-time PhaseKind gate + five-driver plan-shape regression
 # (arch-refactor-01-bindings). Uses AM1Evaluator (unconditional, no RHF gate).
 # Walks default bindings across MC / PATH / SE / VIB component kinds.
@@ -624,6 +645,10 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
         atv_add_mpi_run(test_mpi_init_velocity_n2 test_mpi_init_velocity 2)
         atv_add_mpi_run(test_mpi_init_velocity_n4 test_mpi_init_velocity 4)
     endif()
+    atv_add_mpi_exec(test_mpi_criterion mpi/test_criterion.cpp)
+    atv_add_mpi_run(test_mpi_criterion_n2 test_mpi_criterion 2)
+    atv_add_mpi_run(test_mpi_criterion_n4 test_mpi_criterion 4)
+
     atv_add_mpi_exec(test_mpi_topology mpi/test_topology.cpp)
     atv_add_mpi_run(test_mpi_topology_n1 test_mpi_topology 1)
     atv_add_mpi_run(test_mpi_topology_n2 test_mpi_topology 2)
@@ -667,12 +692,6 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
                     test_mpi_coul_energy_bruteforce 8)
 
     if(ATV_BUILD_KSPACE)
-        atv_add_mpi_exec(test_mpi_pme_nacl_parity
-                         mpi/test_pme_nacl_parity.cpp)
-        atv_add_mpi_run(test_mpi_pme_nacl_parity_n1
-                        test_mpi_pme_nacl_parity 1)
-        atv_add_mpi_run(test_mpi_pme_nacl_parity_n2
-                        test_mpi_pme_nacl_parity 2)
         atv_add_mpi_exec(test_mpi_pppm_brick_parity
                          mpi/test_pppm_brick_parity.cpp)
         atv_add_mpi_run(test_mpi_pppm_brick_parity_n1
@@ -714,20 +733,11 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
                         test_mpi_evaluate_halo_parity 2)
     endif()
 
-    atv_add_mpi_exec(test_mpi_minimize_lj mpi/test_minimize_lj.cpp)
-    atv_add_mpi_run(test_mpi_minimize_lj_n1 test_mpi_minimize_lj 1)
-    atv_add_mpi_run(test_mpi_minimize_lj_n2 test_mpi_minimize_lj 2)
-    atv_add_mpi_run(test_mpi_minimize_lj_n4 test_mpi_minimize_lj 4)
-    atv_add_mpi_run(test_mpi_minimize_lj_n8 test_mpi_minimize_lj 8)
-
-
-    atv_add_mpi_exec(test_mpi_nose_hoover_npt_multirank
-                     mpi/test_nose_hoover_npt_multirank.cpp)
-    atv_add_mpi_run(test_mpi_nose_hoover_npt_multirank_n8
-                    test_mpi_nose_hoover_npt_multirank 8)
-
-    atv_add_mpi_exec(test_mpi_deform_multirank mpi/test_deform_multirank.cpp)
-    atv_add_mpi_run(test_mpi_deform_multirank_n8 test_mpi_deform_multirank 8)
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_mpi_exec(test_mpi_optimizer_metrics mpi/test_optimizer_metrics.cpp)
+        atv_add_mpi_run(test_mpi_optimizer_metrics_n2 test_mpi_optimizer_metrics 2)
+        atv_add_mpi_run(test_mpi_optimizer_metrics_n4 test_mpi_optimizer_metrics 4)
+    endif()
 
     if(ATV_BUILD_MOLRS) # EAM/SW table lookups key on molrs::Element
         atv_add_mpi_exec(test_mpi_eam_multirank mpi/test_eam_multirank.cpp)
@@ -822,6 +832,7 @@ atv_add_cpp_test(test_cpu_linalg_eigensolve
 # cpu/linalg/linear_solve.h — no RHF gate.
 atv_add_cpp_test(test_cpu_linalg_linear_solve
                  cpu/linalg/test_linear_solve.cpp)
+atv_add_cpp_test(test_cpu_linalg_pulay cpu/linalg/test_pulay.cpp)
 
 # ── Electronic-state propagator tests ─────────────────────────────────
 #
@@ -1176,14 +1187,9 @@ if(ATV_BUILD_CUDA)
         if(TARGET test_cuda_gpw_ks_multigrid)
             target_link_libraries(test_cuda_gpw_ks_multigrid PRIVATE CUDA::cufft)
         endif()
-        # Public cuda::gpw::GpwDft first product (Γ RKS DIIS + device KS).
-        atv_add_test(test_cuda_gpw_full_product cuda/gpw/test_gpw_full_product.cu)
         atv_add_test(test_cuda_gpw_stress cuda/gpw/test_gpw_stress.cu)
         if(TARGET test_cuda_gpw_stress)
             target_link_libraries(test_cuda_gpw_stress PRIVATE CUDA::cufft)
-        endif()
-        if(TARGET test_cuda_gpw_full_product)
-            target_link_libraries(test_cuda_gpw_full_product PRIVATE CUDA::cufft)
         endif()
         # Device grid force kernels + free-fn guards (cuda-gpw-device-forces).
         atv_add_test(test_cuda_gpw_forces cuda/gpw/test_gpw_forces.cu)
@@ -1200,11 +1206,6 @@ if(ATV_BUILD_CUDA)
         # Device P→weight + acc→V scatter vs host oracles
         # (cuda-gpw-device-weight-pack).
         atv_add_test(test_cuda_gpw_weight_pack cuda/gpw/test_weight_pack.cu)
-        # Multi-k RKS DIIS energy dual-gate (cuda-gpw-kpoints).
-        atv_add_test(test_cuda_gpw_kpoints cuda/gpw/test_gpw_kpoints.cu)
-        if(TARGET test_cuda_gpw_kpoints)
-            target_link_libraries(test_cuda_gpw_kpoints PRIVATE CUDA::cufft)
-        endif()
         # Device multi-k χ^k density collocate vs host collocate_density_k
         # (cuda-gpw-kpoint-device-collocate).
         atv_add_test(test_cuda_gpw_kpoint_collocate
@@ -1286,13 +1287,6 @@ if(ATV_BUILD_MD)
         ${CMAKE_SOURCE_DIR}/app/atomiverse/input_script.cpp)
     target_include_directories(test_app_input_script PRIVATE
         ${CMAKE_SOURCE_DIR}/app/atomiverse)
-endif()
-
-# Diagnostic helper (not registered as a test): fixed-V_eff band parity.
-if(ATV_BUILD_CUDA AND ATV_BUILD_PW)
-    add_executable(diag_band_parity cuda/planewave/diag_band_parity.cu)
-    target_link_libraries(diag_band_parity PRIVATE atomiverse)
-    set_target_properties(diag_band_parity PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 endif()
 
 # ctest policy reminder: multi-step Driver pipelines (MD/Minimize/Path

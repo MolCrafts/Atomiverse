@@ -101,6 +101,9 @@ class VirtualSites {
 
         std::string name() const override { return "virtual_sites_place"; }
 
+        /// @brief Sites and parents are named by tag; rows move at a sort.
+        bool requires_tag_index() const override { return true; }
+
         std::vector<DefaultBinding> default_bindings() const override {
             return {ATV::make_binding(ATV::md::Phase::post_integrate, +100),
                     ATV::make_binding(ATV::md::Phase::pre_force, +50)};
@@ -127,6 +130,9 @@ class VirtualSites {
             return "virtual_sites_redistribute";
         }
 
+        /// @brief Sites and parents are named by tag; rows move at a sort.
+        bool requires_tag_index() const override { return true; }
+
         std::vector<DefaultBinding> default_bindings() const override {
             return {ATV::make_binding(ATV::md::Phase::post_force, +50)};
         }
@@ -150,14 +156,13 @@ class VirtualSites {
         // Weighted3: alpha in param[0]
         // OutOfPlane3: a,b,c in param[0..2]
         double param[3] = {0.0, 0.0, 0.0};
-        // Resolved local indices (rebuilt when n_total changes).
+        // Local rows, resolved from the tag index on every place/redistribute.
         int is = -1, i0 = -1, i1 = -1, i2 = -1;
     };
 
     void resolve_(Frame& f);
 
     std::vector<Site> sites_;
-    int n_resolved_ = -1;
 };
 
 } // namespace md

@@ -207,3 +207,10 @@ TEST(ADIIS, HistoryTrimsToMaxVectors) {
 }
 
 #endif // ATV_HAS_HF
+
+TEST(EdiisAdiis, RejectsNonpositiveHistoryDepth) {
+    EXPECT_THROW(EDIISMixer(0), std::invalid_argument);
+    EXPECT_THROW(EDIISMixer(-1), std::invalid_argument);
+    EXPECT_THROW(ADIISMixer(0), std::invalid_argument);
+    EXPECT_THROW(ADIISMixer(-1), std::invalid_argument);
+}

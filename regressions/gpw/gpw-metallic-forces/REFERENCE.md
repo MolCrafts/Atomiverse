@@ -98,5 +98,5 @@ are not dual-gated (eggbox + basis/grid mismatch vs ATV).
 
 - `GpwResult::f_k` / `f_k_beta` — per-k fractional occupations after smear SCF
 - `copy_gpw` in force path propagates smear members
-- UKS store path also fills fractional `f_k` / `P_k` (product pin:
-  `gpw-uks-metallic-forces`)
+- UKS store path also fills fractional `f_k` / `P_k` (UKS smear stress:
+  `gpw-uks-metallic-stress`)

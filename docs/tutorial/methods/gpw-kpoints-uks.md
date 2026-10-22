@@ -4,10 +4,10 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-kpoints-uks` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `k_mesh` / `k_points`+`k_point_weights`, `k_time_reversal`, `XcKind`) |
 | Track | CP2K capability () |
-| Roadmap | [dft.md](../../roadmap/dft.md) — multi-k collinear UKS GPW; queue `gpw-kpoints-uks` (done 2026-07-25) |
+| Roadmap | [dft.md](../../roadmap/dft.md) — multi-k collinear UKS GPW |
 
 ## Summary
 
@@ -18,14 +18,14 @@ restricted multi-k GPW (`gpw-kpoints-si`) and Γ-only UKS (`gpw-uks-o2-gamma`,
 (`n_alpha`/`n_beta`), complex Bloch densities per \(\mathbf{k}\), spin-resolved
 XC, and optional time-reversal folding of \(\pm\mathbf{k}\).
 
-The **ctest regression** is a fast **H₂ high-spin identity suite** (compact
+The recorded check (no standing regression) was a fast **H₂ high-spin identity suite** (compact
 DZV-GTH-PADE, wall ~4 s class): Γ-limit, closed-shell UKS ≡ RKS multi-k,
 time-reversal 8↔4, k-sampling activation, and a frozen absolute \(E_{\mathrm{tot}}\)
 pin. The **offline CP2K product twin** is **triplet O₂** UKS-PBE / DZVP-MOLOPT-GTH
 on a periodic \(2\times2\times2\) mesh (not re-run in ctest; wall exceeds the
 60 s class on dual Γ+MP MOLOPT). Public energy on `Frame` is **eV**
-(`kEnergy`); this regression reads the `GpwResult` fields in **Ha**.
-Gate: `reg_gpw-kpoints-uks`. **No live CP2K in ctest** — offline pins only.
+(`kEnergy`); the values below read the `GpwResult` fields in **Ha**.
+Offline CP2K pins only.
 **perf_exempt** (fair twin would need ATV O₂ MOLOPT multi-k wall; H₂ has no
 CP2K twin).
 
@@ -84,14 +84,14 @@ internal exactness identities as `gpw-kpoints-si`, extended to UKS:
 
 **Key exclusions (this slug).**
 
-- No **analytic multi-k UKS forces / stress** (see `gpw-kpoint-forces`,
+- No **analytic multi-k UKS forces / stress** (see [gpw-kpoint-forces](gpw-kpoint-forces.md),
   `gpw-kpoint-stress`, `gpw-uks-forces`).
 - No **OT** / **DFT+U** / **multigrid** / **nonperiodic MT** on the k path
   (throw at `build()`).
 - No **noncollinear** spin / SOC; no metallic smearing on this dual-spin path.
 - No **ATV O₂ MOLOPT multi-k** absolute energy in ctest (wall budget); O₂ is
   the offline CP2K product pin only.
-- Not plane-wave NC-UPF UKS (`pw-uks-kmesh-fe` / `pw-spin-polarized-o2`).
+- Not plane-wave NC-UPF UKS ([pw-uks-kmesh-fe](pw-uks-kmesh-fe.md) / `pw-spin-polarized-o2`).
 
 ## Implementation
 
@@ -116,7 +116,7 @@ using cpu::gpw::GpwDft;
 using cpu::gpw::XcKind;
 
 // High-spin H₂ toy (geometry given in Bohr, converted to Å for the Frame);
-// matches reg_gpw-kpoints-uks main pin settings
+// pin settings used for the values on this page
 const double L = 8.0;  // Bohr
 const double b2a = units::kBohrInAngstrom;
 cpu::Frame frame(2);
@@ -150,7 +150,7 @@ Explicit Γ on the k path (for the Γ-limit identity) uses
 Closed-shell multi-k RKS still uses `n_occ`; matching UKS uses
 `n_alpha = n_beta = n_occ`.
 
-Build (GPW needs HF+PW+FFTW3) and run the regression:
+Build (GPW needs HF+PW+FFTW3) configuration:
 
 ```bash
 bash -lc '
@@ -163,8 +163,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-kpoints-uks -j$(nproc)
-  reg_gpw-kpoints-uks
 '
 ```
 
@@ -174,16 +172,14 @@ bash -lc '
 | ---- | ---- |
 | Public API | `gpw_solver.h` (`GpwDft`) |
 | Solver impl | `src/cpu/gpw/gpw_solver.cpp` |
-| Offline pin | case `gpw-kpoints-uks` pin |
 | CP2K twin input | CP2K oracle |
 | Related Γ UKS | `gpw-uks-o2-gamma`, `gpw-uks-pbe` |
 | Related RKS k | `gpw-kpoints-si` |
 
 ## Validation (CP2K)
 
-Source: case `gpw-kpoints-uks` pin
-(offline only; **never live CP2K in ctest**). Closed acceptance 2026-07-25;
-spec history under git (`.claude/specs/gpw-kpoints-uks/` deleted at done).
+Source: values recorded when this page was written (no standing regression)
+(offline CP2K only).
 
 ### Identity gates (decisive; independent of oracle)
 
@@ -283,12 +279,11 @@ replace with measured \(r \le 10\).
 - **k-path constraints:** periodic, `local_pp_on_grid`, collinear RKS/UKS;
   OT / DFT+U / multigrid / nonperiodic throw at `build()`.
 - **Out of scope forever for this page:** noncollinear spin, SOC, hybrid GPW
-  k-points, CUDA GPW, plane-wave NC-UPF multi-k UKS (see `pw-uks-kmesh-fe`).
+  k-points, CUDA GPW, plane-wave NC-UPF multi-k UKS (see [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)).
 
 ## References
 
-- Offline pin: case `gpw-kpoints-uks` pin
-- Regression consumer: `reg_gpw-kpoints-uks.cpp`
+- Offline pin: values recorded when this page was written (no standing regression)
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

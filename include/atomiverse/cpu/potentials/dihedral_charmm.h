@@ -10,9 +10,8 @@
 #include <string>
 #include <vector>
 
-#include "atomiverse/cpu/potentials/bonded_cache.h"
 #include "atomiverse/cpu/potentials/dihedral.h"
-#include "atomiverse/cpu/potentials/force_scratch.h"
+#include "atomiverse/cpu/potentials/periodic_torsion.h"
 
 namespace ATV {
 namespace cpu {
@@ -20,8 +19,8 @@ namespace cpu {
 /// @brief Periodic Fourier torsion (CHARMM / AMBER-style).
 ///
 /// Per type: V = K (1 + cos(n φ − δ)) with K [eV], n ≥ 1 (multiplicity),
-/// δ [rad] (phase). Reuses BondedTupleCache / BondedForceScratch /
-/// dihedral_geom with DihedralMultiHarmonic.
+/// δ [rad] (phase). The loop is the shared `md::PeriodicTorsionSet`
+/// (also behind DihedralFourier and ImproperCvff).
 class DihedralCharmm : public Dihedral {
   public:
     /// @param K      Force constants per dihedral type [eV].
@@ -36,11 +35,11 @@ class DihedralCharmm : public Dihedral {
     /// @brief Skip pair-virial from dihedrals when no barostat needs stress
     ///        (~extra 3 outer products per torsion). Default true.
     DihedralCharmm& set_compute_stress(bool on) & {
-        compute_stress_ = on;
+        set_.set_compute_stress(on);
         return *this;
     }
     DihedralCharmm set_compute_stress(bool on) && {
-        compute_stress_ = on;
+        set_.set_compute_stress(on);
         return std::move(*this);
     }
 
@@ -51,17 +50,7 @@ class DihedralCharmm : public Dihedral {
     void compute(const LaunchContext& ctx) override;
 
   private:
-    std::vector<double> K_;
-    std::vector<int> n_;
-    std::vector<double> delta_;
-    /// Precomputed cos(δ), sin(δ) — avoids per-tuple sin/cos of phase.
-    std::vector<double> cos_delta_;
-    std::vector<double> sin_delta_;
-    bool compute_stress_ = true;
-
-    md::BondedForceScratch scratch_;
-    md::DropTally drops_;
-    md::BondedTupleCache cache_;
+    md::PeriodicTorsionSet set_;
 };
 
 } // namespace cpu

@@ -75,6 +75,19 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
                             [[maybe_unused]] const char* am1_doc,
                             [[maybe_unused]] const char* pw_doc) {
     cls.def(
+           "set_evaluator",
+           [](Handle& self, ATV::cpu::Component& evaluator) {
+               self.set_local_evaluator(evaluator, evaluator.name().c_str());
+           },
+           nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::DriverNode& evaluator) {
+                self.set_local_evaluator(evaluator, "nested electronic method");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>());
+
+    cls.def(
         "set_evaluator_pair_lj_cut",
         [](Handle& self, const ATV::cpu::task::PairLJCutParams& p) {
             self.set_categorical(

@@ -30,7 +30,7 @@ Related: PADE LSD foothold [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md) (same
 geometry/spin bookkeeping, LDA XC); closed-shell MT PBE
 [gpw-water-pbe-mt](gpw-water-pbe-mt.md). Narrative: [Ch. 9 GPW](../ch09-gpw.md).
 Molecular all-electron UKS is a separate SCF / PySCF-loop concern — not this
-page. **k-point UKS** remains open (`gpw-kpoints-uks`).
+page. **k-point UKS** remains open ([gpw-kpoints-uks](gpw-kpoints-uks.md)).
 
 ## Method
 
@@ -71,7 +71,7 @@ Ideal high-spin value for \(S=1\): \(S(S+1)=2\). Citation: Löwdin,
 
 **Key exclusions (slug scope-out).**
 
-- No **k-point** UKS; Γ only (`gpw-kpoints-uks` still open).
+- No **k-point** UKS; Γ only ([gpw-kpoints-uks](gpw-kpoints-uks.md) still open).
 - No **ROKS** GPW; no **analytic UKS forces** / stress on this regression.
 - No hybrid XC, meta-GGA, or DFT+U on this pin (DFT+U: `gpw-dftu-nio`).
 - No MPI scaling claim; single-rank pin.
@@ -232,8 +232,8 @@ Gate from closed slug: \(r \le 10\) or `perf_exempt`. Here \(r \approx 0.85\)
   multigrid parity is product work.
 - **No analytic UKS forces** or stress on this slug; force regressions
   remain closed-shell (`gpw-forces-water`) unless a UKS-force slug ships.
-- **Γ only** — k-mesh UKS is roadmap open (`gpw-kpoints-uks`; plane-wave
-  multi-k spin: `pw-uks-kmesh-fe` / `pw-uks-fe-smearing`).
+- **Γ only** — k-mesh UKS is roadmap open ([gpw-kpoints-uks](gpw-kpoints-uks.md); plane-wave
+  multi-k spin: [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md) / `pw-uks-fe-smearing`).
 - **Geometry hygiene:** off-center molecules under MT will fail energy
   parity; always center for isolated UKS/RKS pins.
 - **ROKS / spin projection** not provided; residual \(\langle S^2\rangle\)

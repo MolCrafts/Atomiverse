@@ -23,15 +23,15 @@ evaluated at the strained overlaps. Sign convention matches CP2K
 
 This page is the product gate that closes the **k-point × DFT+U × stress**
 product of three prior footholds: multi-k DFT+U energy
-(`reg_gpw-dftu-kpoints`), Γ DFT+U stress (`reg_gpw-dftu-stress`), and multi-k
-UKS stress (`reg_gpw-kpoint-uks-stress`). Public surface: set `GpwDft`
+([gpw-dftu-kpoints](gpw-dftu-kpoints.md)), Γ DFT+U stress (`reg_gpw-dftu-stress`), and multi-k
+UKS stress ([gpw-kpoint-uks-stress](gpw-kpoint-uks-stress.md)). Public surface: set `GpwDft`
 members (`k_mesh`, `plus_u`, spin occupations, cutoff), put the geometry and
 cell on the Frame, and call `method.stress(frame)` (strain step
 `stress_strain_h`) — **no** `*Config` bag, **no** `make_*` /
 `build_*` factories. Product regression:
 `reg_gpw-dftu-kpoint-stress`. Oracle: offline **CP2K 2026.1** twin retained
 for provenance; **not** a fair absolute energy/stress pin on this H₂ toy
-(unphysical Mulliken / SCF abort — same class as `gpw-dftu-kpoints`).
+(unphysical Mulliken / SCF abort — same class as [gpw-dftu-kpoints](gpw-dftu-kpoints.md)).
 Decisive gates are internal dual-gate + Γ-limit identity. Wall ~**2.4 s**
 (Release, OMP=8, product+FD); ratio **`perf_exempt`**.
 
@@ -258,7 +258,7 @@ matches shipped Γ DFT+U stress.
 | Engine | CP2K **2026.1** (`cp2k.psmp`) |
 | Input | CP2K oracle |
 | Result | Unphysical Mulliken charges; large negative DFT+U (\(\sim-175\) Ha); SCF fails within `MAX_SCF=100` |
-| Use | Provenance / class note only — **same pathology class** as `gpw-dftu-kpoints` |
+| Use | Provenance / class note only — **same pathology class** as [gpw-dftu-kpoints](gpw-dftu-kpoints.md) |
 
 ```text
   DFT+U energy: ~ −175 Ha (unphysical)
@@ -318,7 +318,7 @@ parity is established.
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Closed spec (git history): `.claude/specs/gpw-dftu-kpoint-stress/` (deleted at done)
-- Deps: `gpw-dftu-kpoints` ✓, `gpw-dftu-stress` ✓, `gpw-kpoint-uks-stress` ✓
+- Deps: [gpw-dftu-kpoints](gpw-dftu-kpoints.md), `gpw-dftu-stress` ✓, [gpw-kpoint-uks-stress](gpw-kpoint-uks-stress.md)
 - Γ DFT+U energy handbook: [gpw-dftu-nio](gpw-dftu-nio.md)
 - Γ analytic stress: [gpw-analytic-stress](gpw-analytic-stress.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)

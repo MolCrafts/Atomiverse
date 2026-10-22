@@ -21,6 +21,9 @@
 /// Algorithm transplanted from LAMMPS `src/balance.cpp` (`balance dynamic xyz`,
 /// checkout `78a7ddf`).
 ///
+/// Fractional triclinic histogram coordinates follow LAMMPS src/balance.cpp,
+/// checkout a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+///
 /// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 
 #include "atomiverse/cpu/communication/rebalance.h"
@@ -54,7 +57,8 @@ void build_local_histogram(const Frame& frame, int n_local, int axis,
                            const cpu::Box& box, int n_bins,
                            std::vector<std::int64_t>& hist) {
     std::fill(hist.begin(), hist.end(), 0);
-    const double L = box.length(axis);
+    const bool ortho = box.is_orthorhombic();
+    const double L = ortho ? box.length(axis) : 1.0;
     if (L <= 0.0 || n_local <= 0)
         return;
     const double inv_bin = static_cast<double>(n_bins) / L;
@@ -74,9 +78,15 @@ void build_local_histogram(const Frame& frame, int n_local, int axis,
     default:
         break;
     }
+    const StorageReal* x = frame.span(kAtom_x);
+    const StorageReal* y = frame.span(kAtom_y);
+    const StorageReal* z = frame.span(kAtom_z);
     for (int i = 0; i < n_local; ++i) {
-        const double q = (q_ptr != nullptr) ? q_ptr[i] : 0.0;
-        const double wrapped = box.wrap_axis(q, axis);
+        const double q =
+            ortho ? q_ptr[i] : box.to_fractional({x[i], y[i], z[i]})[axis];
+        double wrapped = ortho ? box.wrap_axis(q, axis) : q - std::floor(q);
+        if (!ortho && wrapped >= 1.0)
+            wrapped = 0.0;
         int bin = static_cast<int>(wrapped * inv_bin);
         if (bin < 0)
             bin = 0;
@@ -172,13 +182,13 @@ void Rebalance::launch(const cpu::LaunchContext& ctx) {
         return;
 
     const Frame& frame = ctx.frame;
-    const double Lx = frame.box.length(0);
-    const double Ly = frame.box.length(1);
-    const double Lz = frame.box.length(2);
+    const double Lx = frame.box.face_height(0);
+    const double Ly = frame.box.face_height(1);
+    const double Lz = frame.box.face_height(2);
     if (Lx <= 0.0 || Ly <= 0.0 || Lz <= 0.0)
         return;
 
-    const int n_local = dd->n_local;
+    const int n_local = frame.nlocal();
 
     // 3 axis-aligned histograms. Packed into one 3*n_bins buffer for a single
     // allreduce.

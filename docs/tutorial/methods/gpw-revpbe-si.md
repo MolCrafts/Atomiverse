@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-revpbe-si` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` with `xc = XcKind::RevPBE` (optionally bound by `GPWEvaluator`); `GaussianBasis` / `GthPotential` lookup ctors; shared `cpu::scf::XCType::RevPBE` |
 | Roadmap | handoff ratio **perf_exempt** |
 
@@ -96,14 +96,14 @@ available.
   8-atom Si cell under the 60 s e2e budget.
 - Analytic forces / stress / BOMD / D3 / D4 as *this* product’s gate (other
   queue slugs).
-- RPBE (Hammer–Hansen–Nørskov) — separate residual `gpw-rpbe-water`.
+- RPBE (Hammer–Hansen–Nørskov) — separate residual [gpw-rpbe-water](gpw-rpbe-water.md).
 - Live CP2K (or any third-party) inside ctest.
 - Public `*Config` bags / `make_*` / `build_*` factories.
 
 ## Implementation
 
-Public surface only (`GpwDft` members + lookup constructors; matches
-`reg_gpw-revpbe-si.cpp` — direct `GpwDft` path to stay within the e2e budget):
+Public surface only (`GpwDft` members + lookup constructors; direct `GpwDft`
+path):
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -165,8 +165,7 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-revpbe-si -j$(nproc)
-  reg_gpw-revpbe-si
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -180,13 +179,12 @@ bash -lc '
 | `gpw_tables.h` | Si GTH-PBE-q4 + DZVP-MOLOPT-GTH static tables |
 | `src/cpu/gpw/internal/xc_grid_gga.cpp` | Closed-shell GGA grid; `xc_grid_revpbe` |
 | `src/cpu/scf/xc_functional.cpp` | Pointwise revPBE \(\kappa=1.245\) |
-| `reg_gpw-revpbe-si.cpp` | Product gate (dual-gate + soft absolute) |
 | CP2K oracle | Offline CP2K twin (never ctest) |
 
 ## Validation (vs CP2K)
 
 Source:
-case `gpw-revpbe-si` pin.
+the pin notes recorded when this page was written (no standing regression).
 Oracle status at pin time (2026-07-25): **no CP2K binary / module** on the worker
 host (`cp2k`, `cp2k.psmp`, `cp2k.sopt` not on PATH; `module avail cp2k` empty).
 Absolute CP2K \(E_{\mathrm{tot}}\) digits are therefore **not** invented from
@@ -225,7 +223,7 @@ CP2K oracle. Closed acceptance:
 | Quantity | Atomiverse (verified 2026-07-25) | Oracle / pin | Tol | Notes |
 | -------- | -------------------------------: | -----------: | --- | ----- |
 | \(E_{\mathrm{revPBE}}\) | **−13.0900394799 Ha** | first-green ATV (soft) | **\(1\times 10^{-3}\) Ha** | Until offline CP2K re-pin |
-| \(E_{\mathrm{PBE}}\) (twin) | −13.0743742822 Ha | same host twin | — | Dual-gate partner; matches `gpw-pbesol-si` PBE residual |
+| \(E_{\mathrm{PBE}}\) (twin) | −13.0743742822 Ha | same host twin | — | Dual-gate partner; matches [gpw-pbesol-si](gpw-pbesol-si.md) PBE residual |
 | \(\lvert E_{\mathrm{revPBE}}-E_{\mathrm{PBE}}\rvert\) | \(1.567\times 10^{-2}\) Ha | floor \(>10^{-4}\) Ha | **hard** | Functional activation |
 | SCF (revPBE) | converged, 10 iters | — | `converged == true` | Product gate |
 | Finite energy | finite | — | `isfinite` | Product gate |
@@ -276,7 +274,7 @@ host/core count (single-rank).
 - **Energy-only product gate** for this regression — analytic force/stress
   paths accept `XcKind::RevPBE` via the shared GGA grid, but forces/stress are
   not the e2e observable here.
-- **Not RPBE.** Hammer–Hansen–Nørskov RPBE remains residual `gpw-rpbe-water`.
+- **Not RPBE.** Hammer–Hansen–Nørskov RPBE remains residual [gpw-rpbe-water](gpw-rpbe-water.md).
 - **`perf_exempt`**: no fair \(r\) until offline CP2K is timed on the same
   host; do not invent a speed ratio.
 - **CPU only** — CUDA GPW remains blocked on the CP2K loop.
@@ -285,8 +283,6 @@ host/core count (single-rank).
 
 ## References
 
-- Offline pin: case `gpw-revpbe-si` pin
-- Regression consumer: `reg_gpw-revpbe-si.cpp`
 - Oracle twin: CP2K oracle
 - Oracle notes: CP2K oracle
 - Closed spec (git history): `.claude/specs/gpw-revpbe-si/` on

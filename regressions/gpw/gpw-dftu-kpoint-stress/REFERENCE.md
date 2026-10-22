@@ -43,7 +43,7 @@ Public API: `GpwDft::stress(frame)` (members `stress_strain_h`, `k_mesh`,
 - **Input:** `tools/cp2k_oracle/inputs/gpw-dftu-kpoint-stress/h2_uks_dftu_kpoint_stress.inp`
   (NUMERICAL stress + PLUS_U + KPOINTS; 8 Bohr cell variant for wall estimate).
 - **Date:** 2026-07-26
-- **Result:** same class of pathology as `gpw-dftu-kpoints` — **unphysical
+- **Result:** same class of pathology as the multi-k H₂+U energy toy — **unphysical
   Mulliken charges**, large negative DFT+U, SCF fails to converge within
   MAX_SCF=100 (abort). **Not** used as absolute stress/energy twin.
 - **Decisive gates:** internal dual-gate + Γ-limit identity + U activation.
@@ -90,7 +90,7 @@ DFT+U stress.
 | Item | Value |
 | ---- | ----- |
 | `perf_exempt` | **true** |
-| reason | No fair absolute CP2K NUMERICAL stress twin (unphysical Mulliken + SCF non-convergence on H₂+U multi-k toy; same class as `gpw-dftu-kpoints`). Dual-gate wall ~2.4 s is product+FD, not a fair oracle ratio. |
+| reason | No fair absolute CP2K NUMERICAL stress twin (unphysical Mulliken + SCF non-convergence on H₂+U multi-k toy). Dual-gate wall ~2.4 s is product+FD, not a fair oracle ratio. |
 | r = T_atv/T_cp2k | n/a (exempt) |
 | `within_10x` | n/a (exempt) |
 
@@ -98,7 +98,7 @@ DFT+U stress.
 
 - Spec: `.claude/specs/gpw-dftu-kpoint-stress/`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dftu-kpoint-stress/h2_uks_dftu_kpoint_stress.inp`
-- Deps: `gpw-dftu-kpoints` ✓, `gpw-dftu-stress` ✓, `gpw-kpoint-uks-stress` ✓
+- Related: `gpw-dftu-stress`, `gpw-dftu-kpoint-forces`, `gpw-kpoint-stress`
 - Citations: Dudarev *et al.*, PRB **57**, 1505 (1998); Nielsen & Martin, PRB **32**, 3780 (1985).
 
 ## Re-pin 2026-07-31 — variational +U scatter

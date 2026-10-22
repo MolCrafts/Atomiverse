@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-urpa-si` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::direct_rpa()` → `cpu::gpw::RpaResult` after Γ **UKS** `run()` (`cpu/gpw/rpa.h`, `gpw_solver.h`) |
 | Roadmap | handoff **perf_exempt**; roadmap §10 Periodic RPA residual prose (URPA@UKS) |
 
@@ -16,7 +16,7 @@ on artificial sc-Si₂ (cubic \(a = 5.43\) Å, DZVP-MOLOPT-GTH + GTH-PBE-q4,
 density cutoff **30 Ry**, periodic XYZ). Screening is **spin-conserving dRPA**
 over α→α ⊕ β→β transitions (Coulomb kernel only; spins explicit — no
 closed-shell factor 2). Occupied–virtual MO ERIs \((ia|jb)\) come from the
-product **RI-GPW** path (same machinery as `periodic-rpa-si` / UMP2); correlation
+product **RI-GPW** path (same machinery as [periodic-rpa-si](periodic-rpa-si.md) / UMP2); correlation
 is the **Furche plasmon formula** on the composite OV spectrum. When
 \(C^\alpha \approx C^\beta\), **URPA ≡ RKS dRPA** — the product gate dual-gates
 against the closed-shell first-green \(E_c\). Public path: concrete
@@ -31,7 +31,7 @@ on GPW orbitals (periodic analogue of molecular `DirectRPA<RHF>::run`, open-shel
 channel). Not TDHF/TDDFT Casida excitation spectra, not RPAX/SOSEX, not
 frequency-integrated ACFDT product paths.
 
-**Reference.** Γ-point **UKS-PBE** (`n_alpha`, `n_beta`). The regression deck uses
+**Reference.** Γ-point **UKS-PBE** (`n_alpha`, `n_beta`). The recorded deck uses
 closed-shell occupations (\(n_\alpha = n_\beta = 4\), multiplicity 1) so that
 the unrestricted path reduces to closed-shell dRPA when orbitals match — a
 **setup-integrity dual-gate**, not a high-spin open-shell pin. Multi-k URPA is
@@ -61,7 +61,7 @@ E_{\mathrm{tot}} = E_{\mathrm{SCF}} + E_c
 (no EXX replacement — periodic exact exchange remains blocked).
 
 **\((ia|jb)\) route.** Product RI-GPW when `mp2_ri = true` and the cell is
-periodic; else Poisson-per-pair foothold. The regression cross-checks
+periodic; else Poisson-per-pair foothold. The recorded check cross-checks
 \(|E_c^{\mathrm{RI}} - E_c^{\mathrm{can}}| \le 10^{-8}\) Ha. Virtual space
 capped per spin by `mp2_n_virt` (0 = all kept virtuals).
 
@@ -79,14 +79,14 @@ capped per spin by `mp2_n_virt` (0 = all kept virtuals).
 | RI flag | `ri` | bool | product RI-GPW path |
 
 Internal SCF/RPA pins are reported in **Hartree** (cited). Public Frame energy
-for evaluator paths remains **eV** (`kEnergy`) — this regression drives
+for evaluator paths remains **eV** (`kEnergy`) — the recorded check drives
 `GpwDft` directly and asserts Ha fields on `RpaResult`.
 
 **What this pin includes**
 
 | Item | Setting |
 | ---- | ------- |
-| Crystal | artificial sc-Si₂ (same deck as `periodic-rpa-si` / `periodic-ump2-si`) |
+| Crystal | artificial sc-Si₂ (same deck as [periodic-rpa-si](periodic-rpa-si.md) / [periodic-ump2-si](periodic-ump2-si.md)) |
 | Cell | cubic **a = 5.43 Å**, periodic XYZ, **Γ only** |
 | Positions | Si (0,0,0), Si (a/4,a/4,a/4) |
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
@@ -106,8 +106,7 @@ for evaluator paths remains **eV** (`kEnergy`) — this regression drives
 
 ## Implementation
 
-Public surface only (`GpwDft` members + lookup constructors; matches
-`reg_periodic-urpa-si.cpp`):
+Public surface only (`GpwDft` members + lookup constructors):
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -156,7 +155,7 @@ Guards (throw, never silent): `logic_error` before `build()` / converged
 empty virtual channels, or vanishing HOMO–LUMO gap (< 1e-6 Ha);
 `runtime_error` if the dRPA reduction is ill-conditioned.
 
-Build and run the regression (CPU login; modules as in `AGENTS.md`):
+Build configuration (CPU login; modules as in `AGENTS.md`):
 
 ```bash
 bash -lc '
@@ -168,8 +167,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_periodic-urpa-si -j$(nproc)
-  reg_periodic-urpa-si
 '
 ```
 
@@ -180,21 +177,19 @@ bash -lc '
 | `src/cpu/gpw/rpa.cpp` | Γ URPA dispatch → `internal::direct_rpa_uhf` |
 | `gaussian_basis.h` | `GaussianBasis(Element, name)` |
 | `gth_potential.h` | `GthPotential(Element, name)` |
-| `reg_periodic-urpa-si.cpp` | Product gate |
 | CP2K oracle | Offline CP2K twin (never ctest) |
 
 ## Validation (vs CP2K)
 
-Source:
-case `periodic-urpa-si` pin.
+Source: values recorded when this page was written (no standing regression).
 
 **Oracle status.** Input twin:
 CP2K oracle (UKS MULT 1 + `&RI_RPA`
 MINIMAX). CP2K’s default path is **frequency-integrated RI-RPA with Gaussian
 RI_AUX and EXX total-energy assembly**, not the exact plasmon formula on PW-RI
 \((ia|jb)\). Absolute CP2K \(E_c\) digits are **not invented** as a hard twin of
-the plasmon value. Pin strategy (binding; mirrors `periodic-rpa-si` /
-`periodic-ump2-si`):
+the plasmon value. Pin strategy (binding; mirrors [periodic-rpa-si](periodic-rpa-si.md) /
+[periodic-ump2-si](periodic-ump2-si.md)):
 
 1. **Hard internal gates** — SCF converged; \(E_c < 0\); all \(\Omega > 0\);
    \(E_{\mathrm{tot}} = E_{\mathrm{SCF}} + E_c\); RI ≡ Poisson ≤ \(10^{-8}\) Ha.
@@ -221,7 +216,7 @@ the plasmon value. Pin strategy (binding; mirrors `periodic-rpa-si` /
 | Quantity | Atomiverse / pin | Oracle / twin | Tol | Notes |
 | -------- | ---------------: | ------------: | --- | ----- |
 | \(E_c\) (URPA first-green, 2026-07-26) | **−0.2658538251 Ha** | dual-gate vs RKS | — | Δ vs RKS ≈ \(1.5\times 10^{-7}\) Ha |
-| \(E_c\) (RKS dRPA first-green, `periodic-rpa-si`) | **−0.2658539776 Ha** | closed-shell twin | **\(2\times 10^{-3}\) Ha** band | regression hard pin |
+| \(E_c\) (RKS dRPA first-green, [periodic-rpa-si](periodic-rpa-si.md)) | **−0.2658539776 Ha** | closed-shell twin | **\(2\times 10^{-3}\) Ha** band | regression hard pin |
 | \(E_{\mathrm{SCF}}\) (UKS-PBE) | **−7.5955445033 Ha** | matches RKS ~\(4\times 10^{-9}\) | soft | REFERENCE diagnostic |
 | \(\mathrm{Tr}\,A\) (URPA composite) | 136.534225 | ≈ 2 × RKS Tr A | soft | α⊕β OV |
 | \(n_{\mathrm{occ}}\) / \(n_{\mathrm{virt}}\) / \(n_\Omega\) | 8 / 44 / 176 | spin-orbital composite | hard | product gate |
@@ -283,8 +278,7 @@ Campaign records the same: ratio **perf_exempt**.
 
 ## References
 
-- Offline pin: case `periodic-urpa-si` pin
-- Regression consumer: `reg_periodic-urpa-si.cpp`
+- Offline pin: values recorded when this page was written (no standing regression)
 - Oracle twin: CP2K oracle
 - Oracle notes: CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` § Periodic RPA / URPA@UKS

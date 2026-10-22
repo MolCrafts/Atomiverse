@@ -14,9 +14,8 @@
 ///
 /// Zero async subscribers → 5 ns early return (hot-path throughput budget).
 /// With at least one firing subscriber, cost is dominated by the OMP
-/// parallel copy over the **static union** of all subscribers'
-/// `capture_mask()` flags, computed once and cached (not recomputed per
-/// step). The captured field set therefore does not depend on which
+/// parallel copy over the union of all currently mounted subscribers'
+/// `capture_mask()` flags. The captured field set does not depend on which
 /// subscribers fire this step -- it is uniform for every captured step.
 ///
 /// @see .claude/specs/async-analysis-snapshot-ring-01-uniformity.md
@@ -50,10 +49,6 @@ class Publish : public cpu::Component {
 
   private:
     AnalysisExecutor* exec_ = nullptr;
-    /// @brief Static union of all subscribers' capture masks, computed once
-    /// on first capturing launch and reused thereafter.
-    CaptureMask static_mask_{};
-    bool mask_ready_ = false; ///< True once `static_mask_` has been resolved.
 };
 
 } // namespace cpu

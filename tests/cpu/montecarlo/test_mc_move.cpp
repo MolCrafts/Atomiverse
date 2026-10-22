@@ -3,11 +3,11 @@
 ///        (mc-sampling-02-move): TranslateMove's per-launch behaviour and the
 ///        MC driver's build-time validation + config-constructor guards.
 ///
-/// These are true unit tests — they do NOT drive `MC::run()` (a full
-/// backend/plan pipeline, i.e. an integration/e2e path). The Mover is exercised
+/// The Mover is exercised
 /// by calling `launch()` directly against a hand-built context; the driver is
 /// exercised only through `build()` (plan compile + validation, no stepping).
-/// End-to-end sampler behaviour (bootstrap energy, accept/reject/rollback,
+/// Mock-only McBase::run tests below check its decision/observation boundary.
+/// End-to-end physical sampler behaviour (bootstrap energy, accept/reject/rollback,
 /// determinism, Metropolis distribution) belongs to the validation tier in
 /// sub-spec mc-sampling-03-validate, not to this ms-scale suite.
 
@@ -230,4 +230,113 @@ TEST(MCBuildUnit, SetMoverIsIdempotentOnSameClass) {
     // Singular-by-name: re-setting the same Mover class is a no-op (v1 ships
     // only TranslateMove, so the different-class throw path is not exercisable).
     EXPECT_NO_THROW(mc.set_mover(cpu::mc::TranslateMove{0.5}));
+}
+
+namespace {
+struct TrialMover : cpu::Mover {
+    std::string name() const override { return "trial_mover_probe"; }
+    void launch(const cpu::LaunchContext& ctx) override {
+        auto& tx = *ctx.runtime.mc.proposal;
+        tx.begin(cpu::mc::Transaction::Verb::Displace, ctx.frame);
+        tx.record_touch(ctx.frame, 0);
+        ctx.frame.span(kAtom_x)[0] = 1.0;
+    }
+};
+struct TrialEnergy : cpu::Potential {
+    bool fail = false;
+    int calls = 0;
+    std::string name() const override { return "trial_energy_probe"; }
+    void launch(const cpu::LaunchContext& ctx) override {
+        EXPECT_TRUE(ctx.runtime.exec.trial_evaluation);
+        EXPECT_FALSE(ctx.forces_requested);
+        EXPECT_FALSE(ctx.stress_requested);
+        ++calls;
+        if (fail)
+            throw std::runtime_error("trial evaluator failed");
+        const double energy = 100.0 * ctx.frame.span(kAtom_x)[0];
+        ctx.frame.meta.get(kEnergy) += energy;
+        ctx.frame.meta.get(kEnergyPair) = energy;
+        ctx.frame.span(kAtom_charge)[0] = energy;
+    }
+};
+struct TrialObserver : cpu::Component {
+    int calls = 0;
+    std::string name() const override { return "trial_observer_probe"; }
+    void launch(const cpu::LaunchContext& ctx) override {
+        EXPECT_FALSE(ctx.runtime.exec.trial_evaluation);
+        EXPECT_DOUBLE_EQ(ctx.frame.span(kAtom_x)[0], 0.0);
+        EXPECT_DOUBLE_EQ(ctx.frame.meta.get(kEnergy), 0.0);
+        EXPECT_DOUBLE_EQ(ctx.frame.meta.get(kEnergyPair), 0.0);
+        EXPECT_DOUBLE_EQ(ctx.frame.span(kAtom_charge)[0], 0.0);
+        ++calls;
+    }
+};
+} // namespace
+
+// Orchestration unit: mocks exercise McBase::run's decision/observation boundary,
+// with no force field, neighbor build, physical trajectory or stochastic oracle.
+TEST(McBaseUnit, RejectedTrialRestoresOutputsBeforeObservation) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    TrialMover mover;
+    TrialEnergy energy;
+    TrialObserver observer;
+    cpu::mc::MC mc(1.0, 1);
+    mc.on(sampling::Phase::propose).add_ref(mover);
+    mc.set_evaluator_ref(energy);
+    mc.on(sampling::Phase::end_of_step).add_ref(observer);
+    mc.build();
+    mc.run(frame, 1); // uphill 100 eV at 1 K is deterministically rejected
+    EXPECT_EQ(observer.calls, 1); // bootstrap was energy-only
+    EXPECT_EQ(energy.calls, 3);   // bootstrap, proposal, restored configuration
+    EXPECT_EQ(mc.accepts(), 0);
+}
+
+TEST(McBaseUnit, FailedBootstrapCanBeRetriedWithoutObservingIt) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    TrialMover mover;
+    TrialEnergy energy;
+    TrialObserver observer;
+    cpu::mc::MC mc(1.0, 1);
+    mc.on(sampling::Phase::propose).add_ref(mover);
+    mc.set_evaluator_ref(energy);
+    mc.on(sampling::Phase::end_of_step).add_ref(observer);
+    mc.build();
+    energy.fail = true;
+    EXPECT_THROW(mc.run(frame, 0), std::runtime_error);
+    energy.fail = false;
+    mc.run(frame, 0);
+    EXPECT_EQ(energy.calls, 2);
+    EXPECT_EQ(observer.calls, 0);
+}
+
+TEST(McBaseUnit,
+     NestedTrialUsesTheSameDecisionBoundaryAndRestoresParentServices) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    TrialMover mover;
+    TrialEnergy energy;
+    TrialObserver observer;
+    cpu::mc::MC mc(1.0, 1);
+    mc.on(sampling::Phase::propose).add_ref(mover);
+    mc.set_evaluator_ref(energy);
+    mc.on(sampling::Phase::end_of_step).add_ref(observer);
+    Plan<cpu::Component> outer;
+    cpu::Runtime runtime;
+    runtime.init();
+    runtime.load(outer);
+    runtime.set_frame(frame);
+    runtime.build_components();
+    mc.build_on(runtime);
+    const auto saved = runtime.context().loop;
+    EXPECT_EQ(mc.run_nested_erased(runtime.context(), frame, 1), 1);
+    EXPECT_EQ(observer.calls, 1);
+    EXPECT_EQ(energy.calls, 3);
+    EXPECT_EQ(mc.accepts(), 0);
+    EXPECT_EQ(runtime.context().mc.proposal, nullptr);
+    EXPECT_EQ(runtime.context().loop.status, saved.status);
+    EXPECT_EQ(runtime.context().loop.metrics, saved.metrics);
+    mc.destroy_on(runtime);
+    runtime.destroy_components();
 }

@@ -28,7 +28,7 @@ degrees of freedom on **multi-k closed-shell RKS** Gaussian-and-plane-waves
 - Marx & Hutter, *Ab Initio Molecular Dynamics* (CUP) — CP conserved energy
 - Andersen, *J. Comput. Phys.* **52**, 24 (1983) — electronic RATTLE
 - Γ product paths: `regressions/dynamics/cpmd-water`, `cpmd-rattle-water`
-- Multi-k force pin: `regressions/gpw/gpw-kpoint-forces`
+- Multi-k analytic-force cases: `regressions/gpw/gpw-mbd-kpoint-forces`, `gpw-vdw-kpoint-forces`
 - Multi-k AIMD family twin: `regressions/dynamics/xl-bomd-kpoints`
 
 This is **not** a golden snapshot of Atomiverse total energy. The e2e pin is

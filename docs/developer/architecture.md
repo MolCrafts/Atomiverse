@@ -61,6 +61,11 @@ CUDA-free. Its job is to let the CPU and CUDA backends talk about the same
 ideas without forcing them to share a data layout — to collect intent, not to
 run the algorithm itself.
 
+Backend trait specializations own the concrete Frame type, nested DriverNode
+adaptation, and execution lifecycle. The shared Driver compiles registrations
+into a Plan and delegates through those traits; CPU Runtime and CUDA transfer
+code stay in their respective backend directories.
+
 ### 2. CPU backend and CPU analysis layer
 
 The CPU side lives under [`cpu`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu) (headers) and [`src/cpu`](https://github.com/MolCrafts/Atomiverse/blob/dev/src/cpu). It contains three distinct roles.
@@ -70,7 +75,7 @@ First, it defines the user-facing host data model through
 examples and users fill directly.
 
 Second, it provides a true CPU execution backend through
-[`cpu::Backend`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/backend.h), which runs components
+[`cpu::Runtime`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/runtime.h), which runs components
 directly on that host frame with no transfer step.
 
 Third, it provides CPU-only utilities that are not part of the staged CUDA
@@ -122,6 +127,48 @@ CUDA path copies final state back into cpu::Frame
 This is the main architectural invariant of the project. Users do not directly
 call component `build()` or `launch()` methods. The backend owns lifecycle
 dispatch, and the driver owns plan compilation.
+
+CPU MD initializes forces after communication and neighbor setup, before the
+first integration. `MD.run(frame, 0)` therefore computes the initial energy and
+forces without advancing time. Force-stage evaluators run with
+`ctx.runtime.exec.initializing_forces`; they must evaluate the current electronic
+or auxiliary state without advancing its history. Components in pre-force,
+post-force or scalar-finalization stages opt in through `initialize_forces()`.
+Integrators and ordinary observers do not run during this initialization.
+
+CPU MD has one rebuild boundary: wrap owned coordinates, exchange owners,
+sort owned rows, create borders, then build neighbors. Runtime schedules it;
+`DomainDecomposition` owns fractional partitions and topology, `CommBrick`
+owns transport and explicit periodic images, `NeighborList` owns rebuild
+cadence and owned-position history, and `CellList` owns spatial indexing.
+`Frame` alone records owned, ghost and allocated row counts. `PairList` stores
+row indices; pair kernels use raw Cartesian differences for every rank count
+and cell shape. Integrators advance owned rows only. Owned rows may be
+spatially reordered at a rebuild (`atom_modify sort`), on one rank as on
+many: an atom's identity is its `tag`, which the write-back and every gather
+carry, and `gather_to_root` returns owners in tag order at any rank count.
+
+Initial and live-mounted physical components share pre-build timestep
+negotiation and unique-owner validation. The same integrator object may bind
+two phases; distinct integrator or neighbor-provider objects cannot silently
+compete for one physical pipeline. Sampling energy evaluations use the same
+communication boundary, rebuilding for each proposal and rollback score.
+
+Neighbor coverage has two separate distances: the supported interaction cutoff
+and the enumeration radius including skin. Contract compilation rejects a
+consumer whose interaction cutoff exceeds the provider's supported cutoff,
+even when it fits inside the skin band. Communication covers the widest
+consumer halo plus the provider's actual skin, and at least the enumeration
+radius. Initial registration, live changes and borrowed nested consumers use
+the same coverage check.
+
+Nested MD uses the same Verlet scheduler and retains its own cumulative step
+counter across invocations. A scoped active Plan restores the parent's services
+on return, including exceptions. A physical child can run in a generic outer
+workflow or at MD `end_of_step`; placing it inside an active parent force or
+integration pipeline is rejected because it can migrate atoms and overwrite
+partially accumulated forces. After a physical child, the parent rebuilds its
+communication state and initializes its forces before resuming integration.
 
 ## `cpu::Frame` And `cuda::Frame`
 
@@ -260,10 +307,9 @@ home of single-point energy and force calculations.
 "electronic structure" category beside MD and Minimize. Gaussian SCF is a
 concrete method (`cpu::scf::RHF` / `UHF` / `RKS` / `UKS`), and the CRTP base
 they share, `cpu::scf::MeanFieldMethod<D>`, **is** a `cpu::Driver<scf::Phase>`
-— the same loop-node shape as MD and Minimize. Plane-wave DFT has not been
-re-hosted yet: `cpu::pw::PW` behind `cpu::pw::PWEvaluator` (`PlaneWave`) is
-still a plain class with its own loop, which is scheduled debt rather than a
-pattern to copy. There is no `Capability` write-set — components write Frame
+— the same loop-node shape as MD and Minimize. CPU plane-wave DFT also runs
+through `Driver<pw::Phase>`; `cpu::pw::PWEvaluator` binds that method into a
+force slot. There is no `Capability` write-set — components write Frame
 keys and plug into the *same* Evaluate, MD, and Minimize drivers ("swap the
 energy source, keep the driver").
 

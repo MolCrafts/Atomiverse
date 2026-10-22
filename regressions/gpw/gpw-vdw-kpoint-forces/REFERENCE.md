@@ -88,8 +88,7 @@ w.r.t. O0 \(x\) (\(h=5\times10^{-4}\) Bohr):
 
 Proves multi-k analytic forces with SC \(V_{\mathrm{nl}}\) are \(-\nabla E\) of
 the multi-k energy. Not re-run in ctest: three multi-k SCFs exceed the ≤ 60 s
-regression budget (same policy as freezing a first-green band after offline FD
-on `gpw-kpoint-forces`).
+regression budget (a first-green band frozen after offline FD).
 
 ## Atomiverse twin (first green, 2026-08-01, OMP=8)
 
@@ -125,7 +124,7 @@ on `gpw-kpoint-forces`).
 
 ## Out of scope
 
-- UKS multi-k vdW forces (`gpw-vdw-uks-kpoints` energy only)
+- UKS multi-k vdW forces
 - Analytic stress with nonlocal vdW
 - CUDA / cross-representation (PW NC-UPF) twins
 

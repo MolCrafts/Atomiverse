@@ -8,9 +8,9 @@ oracle_version: 6.7.1
 ## Method
 
 GFN2-xTB nuclear gradient of the Bannwarth 2019 SCC energy with anisotropic
-electrostatics in the Fock **and** xtb `mmompop` two-centre CAMM quadrupole
-on every centre (including s-only H), plus frozen-\(P\)
-\(\partial\Theta/\partial R\) in the analytic \(G\):
+electrostatics on the cumulative atomic multipoles (charge, dipole,
+two-centre quadrupole of every atom) in the Fock, plus frozen-\(P\)
+\(\partial\mu/\partial R\), \(\partial\Theta/\partial R\) in the analytic \(G\):
 
 \[
 E = \operatorname{Tr}(P H^{0})
@@ -22,10 +22,8 @@ E = \operatorname{Tr}(P H^{0})
 \]
 
 \(E_{\mathrm{AES}}\) is charge–dipole, dipole–dipole, charge–quadrupole +
-dipole/quadrupole AXC. This is the deepen of `gfn2-aes-fock`: AES-in-Fock
-does not close angular \(F_{H1,y}\) (ATV energy FD \(\sim+0.06\) eV/Å vs
-xtb \(-0.80\)). Frozen-CAMM \(\partial Q/\partial R\) on \(F_{O,x}\) is the
-same CAMM completeness hole.
+dipole/quadrupole AXC; \(E_{\mathrm{D4}}\) is self-consistent in the SCC
+charges.
 
 Reference: Bannwarth, Ehlert, Grimme, *J. Chem. Theory Comput.* **15**, 1652
 (2019), DOI 10.1021/acs.jctc.8b01176. Formula twin: xtb 6.7.1
@@ -82,42 +80,61 @@ geometry as `reg_gfn2-aes-fock` / `reg_gfn2-xtb-forces`.
 | -------- | ----- | ---- | --- |
 | \(E\) | **−5.058625058504** | Eh | \(1\times10^{-2}\) eV |
 | \(F_{O,x}\) | **+3.869155970641** | eV/Å | \(0.35\) |
-| \(F_{H1,y}\) | **−0.7986** | eV/Å | \(0.35\) (**gated**) |
+| \(F_{H1,y}\) | **−0.008321573206** (tblite 0.4.0, see below) | eV/Å | \(0.35\) (**gated**) |
 
 \(F = -\nabla E \times\) `units::kHartreePerBohrInEvPerAngstrom`.
 
-**Tolerance rationale.** AES-in-Fock left angular \(F_{H1,y}\) unmatched
-(ATV energy FD \(\sim+0.06\) vs xtb \(-0.80\); analytic \(+0.136\)). This
-slug gates both stretch and angular components at the same 0.35 eV/Å
-envelope used for \(F_{O,x}\) in `reg_gfn2-aes-fock`. Energy floor 10 meV
-covers remaining mixer / D4 / intcut residual (sibling 9.19 meV). Dual
-gate includes analytic vs ATV energy FD.
+**Current model state.** ATV GFN2 reproduces xtb 6.7.1 / tblite 0.4.0
+term by term: H⁰ (double-exponential CN', Π radius O = 0.64 Å), isotropic
+ES, third order (in the shell *charge*), repulsion, and AES/AXC on the
+cumulative multipoles of every atom (≤ 1e−8 Eh at the same density). AES
+and the self-consistent D4 are in the Fock as \(\partial E/\partial P\), so
+the analytic gradient is the derivative of the energy: analytic vs central
+FD ≤ 3e−7 eV/Å here. Residuals vs the table: \(E\) 11 µeV (D4 term
+−1.40847e−4 vs xtb −1.41270e−4 Eh), \(F_{O,x}\) 1.5e−5 eV/Å.
 
-**Wave-13 resume (not closed).** Two-centre \(\Theta\) on every centre
-does not tilt the bend: \(F_{H1,y}\) **+0.123** vs xtb **−0.799** eV/Å.
-\(E\) **10.6 meV**, \(F_{O,x}\) **0.260** eV/Å, analytic-vs-FD holds.
+**xtb 6.7.1 \(\partial E/\partial y\) artifact.** At this orientation (O at
+the origin, H1 on the x axis) the y-gradients xtb prints for O and H1 are
+not the derivative of its own energy. Central FD of xtb 6.7.1 energies
+(h = 1e−3 Å) gives \(g_{O,y}=-1.942\times10^{-3}\),
+\(g_{H1,y}=+1.620\times10^{-4}\) Eh/a0; the same molecule rotated 0.5 rad
+about z and translated makes xtb print \(-1.943\times10^{-3}\) /
+\(+1.620\times10^{-4}\) (rotated back); tblite 0.4.0 prints
+\(-1.9425\times10^{-3}\) / \(+1.6183\times10^{-4}\). ATV:
+\(-1.9428\times10^{-3}\) / \(+1.6203\times10^{-4}\). The tabled
+\(-1.731\times10^{-2}\) / \(+1.553\times10^{-2}\) are not GFN2 gradients.
 
-**2026-10-09 (not closed).** Replacing the \(\tfrac12 P\) population and
-the \(/3\) kernel with tblite `qpat`
-(\(\Theta=-\sum P\,\Theta_{\mathrm{op}}\), Fock \(-\tfrac12\),
-\(E=q(\Theta:\mathrm{rr})g_5\)) gives \(E\) **128 meV** off and
-\(F_{H1,y}\) **+0.050**. Not adopted. On the restored baseline the
-analytic \(\nabla E\) [Eh/a0] splits as:
+### \(F_{H1,y}\) pin provenance (tblite 0.4.0)
 
-| Piece | \(g_{O,x}\) | \(g_{H1,y}\) |
-| ----- | ----------- | ------------ |
-| H0/Pulay | −5.74e−2 | **−7.09e−3** |
-| dipole CAMM chain | −2.81e−3 | +4.68e−4 |
-| quadrupole CAMM chain | −1.35e−3 | +4.78e−4 |
-| IES \(\partial\gamma/\partial R\) | −1.32e−2 | +3.28e−3 |
-| repulsion | +1.96e−3 | +6.24e−4 |
-| + CN, AES kernel, D4 | (rest) | ~−1.5e−4 |
-| **total** | **−7.02e−2** | **−2.38e−3** |
-| xtb | **−7.52e−2** | **+1.55e−2** |
+xtb 6.7.1's printed \(\partial E/\partial y\) of O and H1 at this input is
+not the derivative of xtb's own energy (evidence above and below), so the
+\(F_{H1,y}\) pin is taken from tblite 0.4.0 — same GFN2-xTB Hamiltonian,
+total energy within 2.7e−9 Eh of xtb 6.7.1 — at the **identical** input.
+E and \(F_{O,x}\) stay the xtb 6.7.1 pins.
 
-The bend residual is the H0/Pulay pair term, not \(\partial\Theta/\partial R\).
-Mulliken \(q_O\) is −0.678 e vs xtb −0.549 e (gap 10.74 vs 10.61 eV).
-Dipole–quadrupole / quadrupole–quadrupole pair ranks wait.
+| Field | Value |
+| ----- | ----- |
+| Binary | `/opt/homebrew/Caskroom/miniconda/base/envs/tblite-oracle/bin/tblite` (conda-forge `tblite 0.4.0 hb3fdf34_2`; `tblite --version` → `tblite version 0.4.0`) |
+| Input | `tools/tb_oracle/inputs/xtb/h2o_gfn2_offeq_grad/mol.xyz` (sha256 `ea3fd42d92d5ad482dbac0f46ad7e1894b3566ef692652ec2aff92e27f3f7eb9`) |
+| Command | `OMP_NUM_THREADS=1 tblite run --method gfn2 --grad tblite.grad mol.xyz` |
+| Printed total energy | `total energy             -5.0586250605191E+00 Eh` |
+| Output line (tblite.grad, `gradient :real:2:3,3`, row 2 = H1) | `  7.5510829209522637E-02  1.6182883370639375E-04  1.6456648816321770E-17` |
+| Pin | \(\partial E/\partial y_{H1} = +1.6182883370639375\times10^{-4}\) Eh/a0 → \(F_{H1,y} = -\partial E/\partial y \times\) `units::kHartreePerBohrInEvPerAngstrom` = −0.008321573206 eV/Å |
+
+Evidence that the replaced xtb value (+1.5529339054184e−2 Eh/a0) is an
+orientation artifact of xtb 6.7.1's gradient (all Eh/a0):
+
+| Source | \(g_{O,y}\) | \(g_{H1,y}\) |
+| ------ | ------------- | -------------- |
+| xtb 6.7.1 `--grad`, this input (old pin) | −1.7310e−2 | +1.5529e−2 |
+| central FD of xtb 6.7.1 energies, this input (h = 1e−3 Å, `--acc 0.0001`) | −1.94179e−3 | +1.6202e−4 |
+| xtb 6.7.1 `--grad`, same molecule rotated 0.5 rad about z and translated, rotated back | −1.94296e−3 | +1.6203e−4 |
+| tblite 0.4.0 `--grad`, this input | −1.94249e−3 | +1.61829e−4 |
+| ATV GFN2 (analytic; analytic vs FD ≤ 3e−7 eV/Å) | −1.94283e−3 | +1.62025e−4 |
+
+The x components and H2 agree across all rows (e.g. \(g_{O,x}\): xtb
+−7.52431e−2, rotated xtb −7.52431e−2, tblite −7.52427e−2), so only the
+O/H1 y pair of the symmetric-orientation xtb gradient is affected.
 
 ## Perf
 
@@ -126,6 +143,5 @@ regression; fail if \(T_{\mathrm{atv}}/T_{\mathrm{xtb}} > 10\).
 
 ## Gaps
 
-- Dipole–quadrupole / quadrupole–quadrupole pair AES ranks
 - Elements beyond H/C/N/O
 - ALPB, spin, PBC, sTDA

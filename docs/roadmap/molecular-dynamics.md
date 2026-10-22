@@ -28,7 +28,7 @@ NaN) stops integration and is reported with atom tag and step.
 | Nosé–Hoover (single chain) | ✓ | ✓ | Standalone NVT |
 | Nosé–Hoover chain (M-chain) | ✓ | ✓ | Inside MTK NPT only |
 | Bussi / CSVR | ✓ | ○ | |
-| DPD thermostat | ✓ | ○ | |
+| DPD thermostat | ◐ | ○ | No external pin; self-pinned case removed |
 | NVELimit | ✓ | ✓ | Displacement cap |
 
 ## 2. Barostats and ensembles
@@ -37,17 +37,35 @@ NaN) stops integration and is reported with atom tag and step.
 | ---------- | :-: | :--: | ----- |
 | NVE / NVT / NPT | ✓ | ✓ | |
 | NPH (isotropic) | ✓ | ○ | `NphIntegrator` |
-| MTK NPT (diagonal) | ✓ | ✓ | `NoseHooverNPT`; CUDA orthorhombic, with PME reciprocal virial |
-| Parrinello–Rahman NPT (full cell) | ✓ | ○ | |
+| MTK NPT (diagonal) | ✓ | ✓ | `NoseHooverNPT`; CUDA orthorhombic, with PME or Ewald reciprocal virial |
+| Parrinello–Rahman NPT (full cell) | ✓ | ○ | CPU full-cell LJ regression; general-cell neighbor lists and spatial decomposition |
 | Surface-tension NPT | ✓ | ○ | Semi-isotropic |
 | Berendsen barostat | ✓ | ✓ | Protocol reproduction — not for sampling |
 | Temperature ramp | ✓ | ✓ | |
+
+CPU `Box` uses lattice vectors in columns (`r = H s`) and supports general
+triclinic cells. Neighbor construction, fractional spatial decomposition and
+periodic halo images support both single-rank and MPI execution, including
+shear changes and multiple images of the same atom. LJ, EAM and SW+LJ tilted
+initial/one-step states are compared with LAMMPS; general cell matrices and
+self-image multiplicity have direct tests. The 800-step PR-NPT LJ regression
+also passes. These checks do not establish every potential/barostat combination;
+GPW and slab Ewald retain orthorhombic restrictions.
+
+CPU MD uses one Runtime rebuild sequence and explicit periodic ghost rows for
+both serial and MPI execution. Frame owns row extents; neighbor consumers
+declare interaction coverage independently of skin and communication reach.
+The [LJ CPU benchmark](../../benchmarks/lj/README.md#cpu-md-architecture-apple-m4-2026-10-19)
+records the same-input LAMMPS comparison at 10,648 and 103,823 atoms: the tested
+Apple M4 loop meets the performance target, while communication category
+parity remains open. This does not establish parity for other potentials or
+cluster hardware.
 
 ## 3. Constraints and virtual sites
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| RATTLE | ✓ | ○ | Distance + 1–3; MPI |
+| RATTLE | ✓ | ○ | Distance + 1–3; per-cluster solve (X–H clusters converge independently); MPI |
 | SETTLE | ✓ | ○ | Three-site rigid water |
 | Virtual sites | ✓ | ○ | Weighted3 (TIP4P), OutOfPlane3 (TIP5P) |
 | LINCS / general rigid bodies | ○ | ○ | |
@@ -57,7 +75,8 @@ NaN) stops integration and is reported with atom tag and step.
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | Constant / oscillating E-field | ✓ | ○ | |
-| Constant-force / constant-velocity pull | ✓ | ○ | |
+| Constant-force pull | ✓ | ○ | |
+| Constant-velocity pull (SMD) | ◐ | ○ | No external pin; self-pinned case removed |
 | Uniaxial Deform | ✓ | ✓ | CUDA: `erate` only |
 | SLLOD / Lees–Edwards / heat flux | ○ | ○ | |
 
@@ -67,10 +86,10 @@ NaN) stops integration and is reported with atom tag and step.
 | ---------- | :-: | :--: | ----- |
 | HF BOMD | ✓ | ◐ | CUDA: STO-3G s/p RHF only |
 | KS BOMD (Gaussian) | ✓ | ○ | |
-| GPW BOMD | ✓ | ○ | Γ / multi-k / UKS / smear |
+| GPW BOMD | ✓ | ○ | Γ pinned; multi-k / UKS / smear reachable, not separately pinned |
 | PW BOMD | ✓ | ○ | Foothold |
-| AM1 BOMD | ✓ | ○ | |
-| DFTB / xTB MD | ✓ | ○ | Via forces → MD; no dedicated AIMD pin family |
+| AM1 BOMD | ◐ | ○ | AM1 forces pinned; no external-pinned MD case (self-pinned case removed) |
+| DFTB / xTB MD | ◐ | ○ | Via forces → MD; forces pinned, no external-pinned MD case (self-pinned DFTB2 MD cases removed) |
 | CPMD (GPW) | ✓ | ○ | eNH; multi-k / UKS |
 | Second-gen CPMD | ✓ | ○ | ASPC + partial SCF; OT variants |
 | XL-BOMD | ✓ | ○ | Incl. linearized F/σ |

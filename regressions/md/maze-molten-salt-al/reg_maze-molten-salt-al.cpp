@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/dynamics/const_pot_bo.h"
 #include "atomiverse/cpu/dynamics/const_pot_maze.h"
 #include "atomiverse/cpu/dynamics/fix_freeze.h"
 #include "atomiverse/cpu/dynamics/init.h"
@@ -100,7 +101,8 @@ int main() {
     for (int i = 0; i < frame.nlocal(); ++i) {
         const int t = frame.span(kAtom_type)[i];
         if (t == 2 || t == 3) {
-            wall_idx.push_back(i);
+            // Keyed by tag: MD sorts atoms (also at setup), so rows move.
+            wall_idx.push_back(static_cast<int>(frame.span(kAtom_tag)[i]));
             wx0.push_back(frame.span(kAtom_x)[i]);
             wy0.push_back(frame.span(kAtom_y)[i]);
             wz0.push_back(frame.span(kAtom_z)[i]);
@@ -201,8 +203,9 @@ int main() {
     }
 
     double max_dx = 0.0;
+    const auto& row_of = frame.meta.get(cpu::kTagIndex);
     for (std::size_t k = 0; k < wall_idx.size(); ++k) {
-        const int i = wall_idx[k];
+        const int i = row_of.at(wall_idx[k]);
         max_dx = std::fmax(max_dx, std::fabs(frame.span(kAtom_x)[i] - wx0[k]));
         max_dx = std::fmax(max_dx, std::fabs(frame.span(kAtom_y)[i] - wy0[k]));
         max_dx = std::fmax(max_dx, std::fabs(frame.span(kAtom_z)[i] - wz0[k]));
@@ -216,8 +219,40 @@ int main() {
         std::printf("FAIL freeze\n");
         return 1;
     }
-    if (!(QL < 0.0 && QR > 0.0)) {
-        std::printf("FAIL end polarity\n");
+    // End state. The total electrode charge of one snapshot is not a sign
+    // test: in an 8-ion cell the ions' induced charge (~0.1 e) can exceed the
+    // 1 V response (~0.04 e). Two deterministic checks instead:
+    //  (1) MaZe has tracked the Born–Oppenheimer surface — its charges equal a
+    //      fresh dense ConstPotBO solve on the same configuration;
+    //  (2) the potential-driven part, Q(Ψ) − Q(Ψ=0) on that configuration
+    //      (the solve is linear in Ψ), has the applied polarity.
+    auto dense_QL = [&](double psi_bot, double psi_top) {
+        cpu::Frame fc = frame;
+        cpu::md::ConstPotBO bo(kEta);
+        bo.add_electrode(2, psi_bot);
+        bo.add_electrode(3, psi_top);
+        bo.electroneutrality = true;
+        bo.xy_image_range = 30;
+        cpu::md::MD s2;
+        s2.set_evaluator(cpu::PairCoulCut{kCut});
+        s2.set_neighbor(cpu::md::NeighborList<>{kCut, 0.4});
+        s2.set_integrator(cpu::md::VelocityVerlet{0.0});
+        s2.set_observer_ref(bo);
+        s2.build();
+        s2.run(fc, 0); // setup force evaluation only: no motion
+        return bo.total_charge(0);
+    };
+    const double QL_bo = dense_QL(kPsiBot, kPsiTop);
+    const double QL_field = QL_bo - dense_QL(0.0, 0.0);
+    std::printf("end: MaZe QL=%+.6e dense BO QL=%+.6e  field-driven QL=%+.6e\n",
+                QL, QL_bo, QL_field);
+    if (!(std::fabs(QL - QL_bo) <= 1e-6)) {
+        std::printf("FAIL MaZe off the BO surface |dQL|=%.3e\n",
+                    std::fabs(QL - QL_bo));
+        return 1;
+    }
+    if (!(QL_field < 0.0)) {
+        std::printf("FAIL end field-driven polarity\n");
         return 1;
     }
     std::printf("PASS: maze-molten-salt-al\n");

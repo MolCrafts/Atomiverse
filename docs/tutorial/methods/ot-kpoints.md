@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `k_mesh` / `k_points` + `k_point_weights` |
-| Roadmap | `docs/roadmap/dft.md` §10 GPW — OT multi-k ✓ (`reg_ot-kpoints`) |
+| Roadmap | `docs/roadmap/dft.md` §10 GPW — OT multi-k ✓ |
 | Oracle | offline CP2K (CP2K oracle); **never** live in ctest |
 
 ## Summary
@@ -23,8 +23,7 @@ bag, no factories.
 This page pins the **multi-k OT total energy** for a compact periodic H₂
 (DZV-GTH-PADE / GTH-PADE-q1 / PADE / 100 Ry) against **in-tree multi-k DIIS**
 on identical grids (exactness identities), with a frozen first-green absolute
-band until an offline CP2K OT+KPOINTS energy is available. Product gate:
-`ot-kpoints` (`reg_ot-kpoints`). Fair wall vs CP2K:
+band until an offline CP2K OT+KPOINTS energy is available. Fair wall vs CP2K:
 **`perf_exempt`** (no CP2K module/binary on the pin host).
 
 Related product OT surfaces (separate slugs): Γ RKS water
@@ -95,7 +94,7 @@ require \(\lvert E_{\mathrm{OT}}-E_{\mathrm{DIIS}}\rvert \le 10^{-4}\) Ha.
 ## Implementation
 
 Public surface only (`cpu::gpw::GpwDft` members; no `*Config`, no factories).
-Match the regression (compact H₂, 8 Bohr cell, 100 Ry, PADE):
+Pin settings (compact H₂, 8 Bohr cell, 100 Ry, PADE):
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -155,7 +154,7 @@ mp.build(frame);
 const auto& rm = mp.run(frame);
 ```
 
-Build and run the regression:
+Build configuration:
 
 ```bash
 bash -lc '
@@ -168,8 +167,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_ot-kpoints
-  reg_ot-kpoints
 '
 ```
 
@@ -178,12 +175,11 @@ bash -lc '
 | `gpw_solver.h` | Public `GpwDft::{use_ot,k_mesh,k_points,…}` |
 | `ot.h` | Real OT primitives (internal) |
 | `src/cpu/gpw/gpw_solver.cpp` | Multi-k OT SCF branch (complex \(C_k\)) |
-| `ot-kpoints` | E2E product gate + pin notes |
 | CP2K oracle | Offline CP2K OT+KPOINTS twin |
 
 ## Validation (vs CP2K / internal exactness)
 
-Source: case `ot-kpoints` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle: offline **CP2K** (CP2K oracle); **never** live in ctest.
 
 **Setup:**
@@ -237,7 +233,7 @@ Identity gates A1–A4 remain decisive regardless of absolute CP2K digits.
 
 ## Performance
 
-Source: case `ot-kpoints` pin and
+Source: values recorded when this page was written (no standing regression) and
 the case pin notes (wave 7). Queue record:
 **`perf_exempt`**.
 
@@ -249,7 +245,7 @@ the case pin notes (wave 7). Queue record:
 **Caveats.** (1) Do not fabricate a ratio without a matched offline CP2K twin
 wall. (2) Dense OT preconditioner + complex multi-k matrices dominate this
 microcase; ratio (when measured) will not forecast sparse/linear-scaling OT.
-(3) The regression binary runs several OT+DIIS constructions (A1–A5) and is
+(3) The recorded check binary runs several OT+DIIS constructions (A1–A5) and is
 **not** a single-path fair twin until split.
 
 ## Limitations
@@ -260,17 +256,15 @@ microcase; ratio (when measured) will not forecast sparse/linear-scaling OT.
   offline CP2K re-pin; sub-µHa multigrid parity is not claimed at 100 Ry.
 - Dense \(O(n_b^3)\) preconditioner inverse — sparse OT out of scope.
 - Forces / stress under multi-k OT are not gated by this slug (use DIIS multi-k
-  force/stress product rows: `gpw-kpoint-forces`, `gpw-kpoint-stress`).
+  force/stress product rows: [gpw-kpoint-forces](gpw-kpoint-forces.md), `gpw-kpoint-stress`).
 - PW backend has no OT product switch (`docs/roadmap/dft.md` OT column: GPW ✓,
   PW ○, CUDA ○).
 - Fair wall vs CP2K is **perf_exempt** on this pin host.
 
 ## References
 
-- Offline pin + gates: case `ot-kpoints` pin
-- Regression binary: `reg_ot-kpoints.cpp`
+- Offline pin + gates: values recorded when this page was written (no standing regression)
 - CP2K oracle input: CP2K oracle
-- Closed spec (git history): `.claude/specs/ot-kpoints/` (deleted at done)
 - Sibling Γ OT handbook: [`ot-minimizer-water`](ot-minimizer-water.md)
 - Narrative GPW chapter: `docs/tutorial/ch09-gpw.md`
 - Roadmap: `docs/roadmap/dft.md` §10 (OT multi-k ✓ on GPW)

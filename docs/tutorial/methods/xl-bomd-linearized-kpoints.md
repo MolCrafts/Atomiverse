@@ -4,10 +4,10 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `xl-bomd-linearized-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{cpu::gpw::GpwDft{… k_mesh …}}, k=5, cpu::electronic::XlBomdLinearized{}}` bound with `set_evaluator_ref`; one `cpu::electronic::XlBomdCplx` propagator per sampled (k, σ) |
-| Roadmap | closes the multi-k residual named by `xl-bomd-linearized-forces` / `xl-bomd-linearized-uks` |
-| Dual gate | Correctness unit (`test_cpu_gpw_xl_bomd`) + e2e `reg_xl-bomd-linearized-kpoints` (CP2K-anchored); speed measured ratio (see Performance) |
+| Roadmap | closes the multi-k residual named by `xl-bomd-linearized-forces` / [xl-bomd-linearized-uks](xl-bomd-linearized-uks.md) |
+| Dual gate | Correctness unit (`test_cpu_gpw_xl_bomd`) ; no standing end-to-end regression; speed measured ratio (see Performance) |
 | Oracle | Offline **CP2K 2026.1** converged-BOMD k-point `.ener` trace (CP2K oracle); never live in ctest |
 
 ## Summary
@@ -66,8 +66,8 @@ spin-degeneracy identity.
 
 ### System and observable
 
-Identical twin of `xl-bomd-kpoints` / `gpw-bomd-kpoints` at the
-`gpw-bomd-kpoints` pin settings: periodic H₂ (R = 1.0 Bohr along x, cubic
+Identical twin of `xl-bomd-kpoints` / [gpw-bomd-kpoints](gpw-bomd-kpoints.md) at the
+[gpw-bomd-kpoints](gpw-bomd-kpoints.md) pin settings: periodic H₂ (R = 1.0 Bohr along x, cubic
 12 Bohr cell), DZV-GTH-PADE / GTH-PADE-q1, PADE, CUTOFF 300 Ry, MP 1×1×2
 unreduced (2 k), NVE dt 0.5 fs, v₀ = ∓0.001 Å/fs, 1 cold seed + 4
 production steps. Three legs: **A** SCF-XL RKS-k anchor, **B** linearized
@@ -76,7 +76,7 @@ RKS-k (product under test), **C** linearized UKS-k with
 
 ### Exclusions (this slug)
 
-- Not SCF-converged multi-k XL (`xl-bomd-kpoints` / `xl-bomd-uks-kpoints`)
+- Not SCF-converged multi-k XL (`xl-bomd-kpoints` / [xl-bomd-uks-kpoints](xl-bomd-uks-kpoints.md))
 - Not OT + XL, CPMD, or second-gen CP simultaneous with XL (mutually exclusive)
 - Not `compute_stress` with linearized XL (now refused at `build()` — was a
   silent drop on the Γ path)
@@ -116,8 +116,7 @@ bash -lc '
   export OPENBLAS_ROOT="$OPENBLASDIR"
   export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu
   export LD_LIBRARY_PATH="$LIBRARY_PATH:$LD_LIBRARY_PATH"
-  cmake --build build -j$(nproc) --target atomiverse reg_xl-bomd-linearized-kpoints
-  cmake --build build --target run_reg_xl-bomd-linearized-kpoints
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -131,11 +130,10 @@ Relevant sources:
 | k-UKS fixed-density eval | `src/cpu/gpw/gpw_solver.cpp` (`run_gpw_scf_kpoints_uks`, `max_iter == 0`) |
 | k forces | `src/cpu/gpw/internal/gpw_forces.cpp` (`assemble_gpw_forces_kpoints`) |
 | Unit | `tests/cpu/gpw/test_gpw_xl_bomd.cpp` |
-| E2E | `xl-bomd-linearized-kpoints` |
 
 ## Validation and performance
 
-Source: case `xl-bomd-linearized-kpoints` pin.
+Source: the pin notes recorded when this page was written (no standing regression).
 Oracle: **CP2K 2026.1** (`cp2k.psmp`, EasyBuild `2026.1-gmpflf-2026.03`,
 Arrhenius epyc login node, 2026-07-31) converged-SCF k-point NVE `.ener`
 trace of the identical twin input — offline pin, never run at ctest time.
@@ -174,7 +172,6 @@ dual-spin, and k-weighted complex) are unit-pinned in
 
 ## References
 
-- Offline pin: case `xl-bomd-linearized-kpoints` pin
 - CP2K twin: CP2K oracle
 - Sibling pages: [xl-bomd-linearized-forces](xl-bomd-linearized-forces.md),
   [xl-bomd-linearized-uks](xl-bomd-linearized-uks.md),

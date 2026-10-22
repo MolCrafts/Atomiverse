@@ -1,5 +1,8 @@
 /// @file cpu/dynamics/parrinello_rahman_npt.cpp
 /// @brief Full-cell MTK / Parrinello–Rahman NPT integrator.
+/// Initial kinetic-energy setup follows LAMMPS src/fix_nh.cpp,
+/// a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+/// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 
@@ -7,7 +10,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
-#include "atomiverse/cpu/frame/pbc.h"
 
 #include <algorithm>
 #include <cmath>
@@ -68,17 +70,8 @@ ParrinelloRahmanNPT::ParrinelloRahmanNPT(double T_target, double P_target,
       dt_(dt), W_override_(W_cell) {}
 
 void ParrinelloRahmanNPT::build(const cpu::BuildContext& ctx) {
-    int N = static_cast<int>(ctx.frame.nlocal());
-#ifdef ATV_HAS_MPI
-    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
-        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        const int n_local = ctx.runtime.md.dd->n_local;
-        MPI_Allreduce(&n_local, &N, 1, MPI_INT, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-    }
-#endif
+    // Driver publishes the constraint-aware global DOF count before build.
     n_dof_ = ctx.runtime.md.n_dof_global;
-    (void)N;
     kT_ = units::kB_ev_per_k * T_target_;
 
     Q_t_.assign(static_cast<std::size_t>(mtchain_), 0.0);
@@ -512,10 +505,7 @@ void ParrinelloRahmanNPT::propagate_x_and_box(const cpu::LaunchContext& ctx) {
         sp_z[i] = z;
     }
 
-    int n_total = n;
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
-        n_total = ctx.runtime.md.dd->n_local + ctx.runtime.md.dd->n_ghost;
-    }
+    const int n_total = force_count(ctx);
     if (n_total > n) {
 #pragma omp parallel for schedule(static)
         for (int i = n; i < n_total; ++i) {
@@ -561,10 +551,7 @@ void ParrinelloRahmanNPT::propagate_x_and_box(const cpu::LaunchContext& ctx) {
     h(2, 1) = h(1, 2) = AccReal(0.5) * (h(1, 2) + h(2, 1));
     f.box.set_cell(h);
 
-    if (f.box.is_orthorhombic())
-        wrap_orthorhombic(f, n);
-
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
+    if (cpu::multi_rank_dd(ctx.runtime)) {
         ctx.runtime.md.dd->compute_sublo_subhi(f.box);
     }
 }
@@ -601,9 +588,16 @@ ParrinelloRahmanNPT::extended_hamiltonian(const cpu::LaunchContext& ctx) const {
 }
 
 void ParrinelloRahmanNPT::launch(const cpu::LaunchContext& ctx) {
+    if (n_dof_ != ctx.runtime.md.n_dof_global) {
+        n_dof_ = ctx.runtime.md.n_dof_global;
+        Q_t_[0] = static_cast<double>(n_dof_) * kT_ * tau_T_ * tau_T_;
+        if (W_override_ <= 0.0)
+            W_ = (static_cast<double>(n_dof_) + 3.0) * kT_ * tau_P_ * tau_P_;
+    }
     const double half_dt = 0.5 * dt_;
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
+        KE_global_ = compute_global_KE(ctx);
         nhc_baro_half(half_dt);
         nhc_atoms_half(ctx, half_dt);
         update_eps_dot(ctx, half_dt);

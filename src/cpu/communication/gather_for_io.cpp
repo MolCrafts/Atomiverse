@@ -2,6 +2,7 @@
 /// @brief Shared owner-gather preamble for root-writing recorders.
 
 #include "atomiverse/cpu/communication/gather_for_io.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include "atomiverse/cpu/communication/gather.h"
 #include "atomiverse/cpu/component/context.h"
@@ -16,9 +17,9 @@ const cpu::Frame* gather_for_root_io(const cpu::Frame& frame,
                                      const cpu::Context& runtime,
                                      cpu::Frame& gathered) {
     const auto* dd = runtime.md.dd;
-    const bool multi = dd && runtime.mpi_size > 1;
+    const bool multi = cpu::multi_rank_dd(runtime);
     if (!multi)
-        return &frame;
+        return runtime.mpi_rank == 0 ? &frame : nullptr;
 
     // Collective: every rank participates before the rank gate.
     const auto g = gather_to_root(frame, *dd);

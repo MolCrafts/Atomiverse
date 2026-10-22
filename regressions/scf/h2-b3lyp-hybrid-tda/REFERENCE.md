@@ -10,8 +10,7 @@ hybrid functional (not pure ALDA). Observable: first singlet excitation energy
 
 This pin is the oracle twin for the missing hybrid-kernel axis on `RKS::tda`
 (roadmap: hybrid TDDFT ○ after full MO-product LSDA ALDA pure TDA closed).
-It is **not** a pure-functional ALDA duplicate of `h2_rks_alda_tda` /
-`h2_full_grid_alda`.
+It is **not** a pure-functional ALDA duplicate of `h2_full_grid_alda`.
 
 ## Geometry
 

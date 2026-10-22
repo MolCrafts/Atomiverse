@@ -105,7 +105,7 @@ Cadence: first sort after `nfreq` steps (default 1000), matching LAMMPS
 
 | In scope | Out of scope (explicit) |
 |---|---|
-| Isotropic / orthorhombic NPT | Triclinic / anisotropic NPT |
+| General 3D cell transforms; isotropic / orthorhombic NPT regression | Full tilted-cell KSpace/NPT trajectory validation |
 | Neutral ionic crystals | 1-2/1-3/1-4 reciprocal exclusion correction (link 04) |
 | Serial + multi-rank replicated grid | Distributed FFT PME |
 | Soft core + CoulLong + PME composition | CUDA KSpace (deferred) |

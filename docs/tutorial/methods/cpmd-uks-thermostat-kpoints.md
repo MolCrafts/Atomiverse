@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `cpmd-uks-thermostat-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::electronic::CarParrinello{gpw, mu_au, ElectronicThermostat{K0, tau_e}}` with multi-k UKS `gpw` (`n_alpha`/`n_beta` + `k_mesh`); one thermostatted `CpmdCplx` per (k, spin). Nuclear dt pushed from the MD integrator (`TimestepProvider` → `TimestepConsumer`) |
 | Roadmap / queue | `docs/roadmap/dft.md` (AIMD); queue done 2026-08-01 |
 
@@ -65,22 +65,21 @@ md.run(frame, /*steps=*/6);
 ```
 
 ```bash
-cmake --build build --target reg_cpmd-uks-thermostat-kpoints
-reg_cpmd-uks-thermostat-kpoints
+cmake --build build -j$(nproc) --target atomiverse
 ```
 
 ## Validation
 
-Source: case `cpmd-uks-thermostat-kpoints` pin
+Source: the pin notes recorded when this page was written (no standing regression)
 (offline pins; never live in ctest). The CP propagator has no CP2K twin
 (family lock); the BO surface underneath is CP2K-anchored through
-`gpw-kpoints-uks` / `gpw-kpoint-uks-forces` / `gpw-bomd-uks-kpoints`.
+[gpw-kpoints-uks](gpw-kpoints-uks.md) / [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) / multi-k UKS GPW BOMD.
 
 | Quantity | Gate | Anchor |
 | -------- | ---- | ------ |
 | Relative \(E_{\mathrm{ext}}\) drift over 4 production steps | ≤ 0.10 | Literature (Blöchl & Parrinello 1992; Marx & Hutter) |
 | Max \(T_e\) over production | ≤ 0.05 eV | Thermostatted control envelope |
-| UKS-vs-RKS closed-shell identity, `tol = 1e-7` | ≤ 3×10⁻⁴ eV | Multi-k RKS CP2K-pinned in `gpw-bomd-kpoints` |
+| UKS-vs-RKS closed-shell identity, `tol = 1e-7` | ≤ 3×10⁻⁴ eV | Multi-k RKS CP2K values recorded on [gpw-bomd-kpoints](gpw-bomd-kpoints.md) |
 | Production SCF iterations | exactly 0 | dual-spin fixed-density multi-k eval |
 | \(n_{\mathrm{kpts}}\) after seed | ≥ 2 | 1×1×2, time reversal off |
 | \(E_{\mathrm{therm}}\) | finite every production step | NH bookkeeping |

@@ -33,8 +33,6 @@ partial-SCF corrector:
 - Multi-k diagonalization-corrector twin:
   `regressions/dynamics/second-gen-cpmd-kpoints`
 - Γ OT-corrector twin: `regressions/dynamics/second-gen-cpmd-ot`
-- Multi-k OT SCF identity pin: `regressions/gpw/ot-kpoints`
-  (|E_OT − E_DIIS| ≤ 1e-4 Ha)
 
 ## System
 
@@ -74,8 +72,8 @@ and `second-gen-cpmd-ot`):
 
 1. **Corrector A/B identity** — full-budget multi-k OT vs multi-k
    diagonalization/DIIS at the initial geometry converge to the same SCF
-   fixed point: \(|E_\mathrm{OT} − E_\mathrm{diag}| \le 10^{-4}\) Ha (the
-   `ot-kpoints` pin level; same functional, different minimizer).
+   fixed point: \(|E_\mathrm{OT} − E_\mathrm{diag}| \le 10^{-4}\) Ha (same
+   functional, different minimizer).
 2. **NVE drift envelope** with the OT corrector on the k path (below).
 
 ## Observable and tolerance
@@ -107,7 +105,7 @@ Additional gates:
 
 ## Honest scope
 
-- Closed-shell multi-k RKS product pin; multi-k **UKS** SGCP + OT is the
-  sibling `second-gen-cpmd-ot-uks-kpoints` (dual-spin k-OT warm start)
+- Closed-shell multi-k RKS product pin; multi-k **UKS** SGCP + OT (dual-spin
+  k-OT warm start) has no standing regression
 - No metallic smearing / +U under the SGCP corrector here
 - Soft drift tol vs full BO for partial-SCF heat on short traj

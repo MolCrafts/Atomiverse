@@ -3,7 +3,7 @@
 ## What
 
 Dual-gate restricted Fermi–Dirac metallic smear (FCC Al primitive cell) on
-`cuda::pw::PW`. Same geometry and occupations as `pw-smearing-al`.
+`cuda::pw::PW`, against the same-settings CPU `cpu::pw::PW` smear path.
 
 ## Oracle
 

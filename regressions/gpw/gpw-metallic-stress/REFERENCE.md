@@ -76,7 +76,7 @@ fixed-\(f\) Hellmann–Feynman matches reconverged \(F\) under strain.
 
 Absolute free energy and absolute stress differ from CP2K by grid /
 `EPS_DEFAULT` / multigrid residual (~0.64 Ha on \(F\), ~0.002 Ha/Bohr³ on
-\(\sigma\)) — same class as `reg_gpw-metallic-smearing`. Dual-gate analytic↔FD
+\(\sigma\)). Dual-gate analytic↔FD
 is the product correctness pin; CP2K documents the matched GPW+SMEAR algorithm
 twin and soft stress class.
 

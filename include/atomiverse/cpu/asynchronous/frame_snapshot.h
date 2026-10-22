@@ -36,8 +36,8 @@ struct CaptureMask {
 /// @brief Contiguous host-side copy of the locally-owned portion of a `cpu::Frame`.
 ///
 /// Buffers are `std::vector<>`-backed for trivial copy/move semantics and
-/// bounded heap growth. All vectors are sized at `build()` time to the
-/// frame's initial capacity; `Publish` only writes, never reallocates.
+/// bounded heap growth. Buffers are preallocated at build and resized only by a publisher holding
+/// an exclusive slot when the population or capture schema changes.
 struct FrameSnapshot {
     BigInt step = 0; ///< Simulation step at which this snapshot was published.
     int n_owned = 0; ///< Number of owned atoms captured.

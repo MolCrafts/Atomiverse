@@ -1,4 +1,4 @@
-# Reference — ghost-charge correctness after the const-pot Q solve (MPI DD)
+# Reference — ghost-charge correctness after the const-pot Q solve (replicated ranks)
 
 oracle: literature  
 oracle_version: n/a (self-consistency invariant; no oracle binary is run —
@@ -8,11 +8,13 @@ see citations below; perf_exempt)
 
 Constant-potential MD rewrites electrode charges **mid-step** (the Q solve at
 `pre_force`), i.e. after the step's forward halo has populated ghost atoms.
-Under MPI domain decomposition the updated owner charges must be
-**forward-communicated to every ghost copy before the force stages read
-them** — otherwise pair/k-space Coulomb forces at rank boundaries use charges
-that are one solve stale (and identically zero on the first step, since
-electrode charges start at 0).
+The updated owner charges must be **forward-communicated to every ghost copy
+before the force stages read them** — otherwise pair/k-space Coulomb forces
+across a periodic face use charges that are one solve stale (and identically
+zero on the first step, since electrode charges start at 0). CommBrick creates
+explicit periodic image rows at every rank count, so the ghosts under test are
+the self-images at the ±x / ±y faces of the cell; a remote ghost rides the
+same `ChargePacker` forward pass.
 
 This is the documented contract of the LAMMPS ELECTRODE implementation: after
 every conp charge solve, `fix electrode` issues a forward communication of the
@@ -35,8 +37,11 @@ per-atom charge so ghosts match owners before force evaluation.
 
 ## System (child, np = 2)
 
-38-atom parallel-plate capacitor, box 20 × 10 × 16 Å (orthorhombic, forced
-2×1×1 decomposition along x so each rank owns part of BOTH plates):
+38-atom parallel-plate capacitor, box 20 × 10 × 16 Å (orthorhombic). Both
+ranks run the whole system as a replica (`MD::set_serial_on_replica`): the
+electrode solve requires a complete Frame, so a forced 2×1×1 spatial
+decomposition is attempted first and must be **rejected** at frame binding
+(gate d) rather than run as a rank-local partial solve.
 
 | Species | Type | Count | z [Å] | q₀ [e] |
 | --- | --- | --- | --- | --- |
@@ -63,6 +68,7 @@ allgather).
 | electrode ghosts with \|q\| > 1e-12 e | **> 0** | non-vacuous: electrode charges start at 0; only the refreshed solve makes ghosts nonzero |
 | unresolved ghost tags | **0** | every ghost must map to an owner |
 | checker launches | ≥ 5 (one per step) | invariant enforced on every step |
+| decomposed `ConstPotBO` run | **rejected** (`requires a complete Frame`) | no silent rank-local partial solve |
 
 Without the auto-injected charge refresh, gate (a) fails with
 max |dq| ≈ the solved electrode charge magnitude (~1e-2 e in this geometry)
@@ -70,8 +76,7 @@ at the first step — the stale-ghost failure mode this regression pins.
 
 ## Scope note
 
-The per-rank `ConstPotBO` solve under DD is a rank-local partial solve (the
-DD-aware global electrode solve is a separate queued capability). This
-regression pins the **transport** invariant only: whatever charge the owner
-solved, every ghost copy carries it before forces read it. Runtime ≈ seconds
-(≤ 60 s).
+A DD-aware global electrode solve is a separate queued capability; until it
+exists the decomposed combination is refused explicitly. This regression pins
+the **transport** invariant: whatever charge the owner solved, every ghost
+copy carries it before forces read it. Runtime ≈ seconds (≤ 60 s).

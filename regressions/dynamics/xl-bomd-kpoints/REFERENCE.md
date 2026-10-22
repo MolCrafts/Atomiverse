@@ -32,7 +32,7 @@
 - A. M. N. Niklasson et al., *J. Chem. Phys.* **130**, 214109 (2009) —
   Table I coefficients (unit-pinned in `test_cpu_gpw_xl_bomd`)
 - Γ product paths: `regressions/dynamics/xl-bomd-water`, `xl-bomd-uks`
-- Multi-k force pin: `regressions/gpw/gpw-kpoint-forces`
+- Multi-k analytic-force cases: `regressions/gpw/gpw-mbd-kpoint-forces`, `gpw-vdw-kpoint-forces`
 
 This is **not** a golden snapshot of Atomiverse total energy. The e2e pin is
 the **envelope** on relative NVE drift with multi-k XL \(P_k\) guesses

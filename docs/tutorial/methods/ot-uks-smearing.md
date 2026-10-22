@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-uks-smearing` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `n_alpha`/`n_beta`, `smearing`, `degauss` [Ry], `extra_bands`, `k_mesh` |
-| Roadmap | `docs/roadmap/dft.md` §10 GPW — OT+metallic smear **UKS** ✓ (`reg_ot-uks-smearing`) |
+| Roadmap | `docs/roadmap/dft.md` §10 GPW — OT+metallic smear **UKS** ✓ |
 ## Summary
 
 Collinear **UKS** Gaussian-and-plane-waves (GPW) DFT with **Orbital
@@ -17,8 +17,8 @@ reports the **Mermin free energy** \(F = E_{\mathrm{KS}} - TS\). Product
 surface is public members on the concrete method `cpu::gpw::GpwDft` — **no**
 `*Config` bag, **no** factories. Textbook pin: **BCC Na** conventional
 cubic (\(a=4.225\) Å, 2 atoms), PADE/LSD, GTH-PBE-q9, DZVP-MOLOPT-SR-GTH,
-MP \(2\times2\times2\), `degauss = 0.02` Ry. Product gate:
-`ot-uks-smearing` (`reg_ot-uks-smearing`). Fair OT-only wall
+MP \(2\times2\times2\), `degauss = 0.02` Ry. No standing regression
+exercises this combination. Fair OT-only wall
 ratio \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx 0.12\) (OMP=4, ≪10×).
 CP2K 2026.1 hard-aborts OT with k-points, so the offline twin is **DIIS +
 LSD + FERMI_DIRAC** only; product accuracy is **internal exactness**
@@ -51,7 +51,7 @@ with spin-orbital fillings \(f\in[0,1]\) (`spin_degen = 1` via the shared
 `cpu::pw::internal` occupation fill). For BCC Na with GTH-q9,
 \(N_e = 18\). BCC Na is non-magnetic in the ground state — the ferro seed
 (\(n_\alpha=10\), \(n_\beta=8\)) typically collapses under smear (same class
-as `gpw-uks-smearing` / `ot-smearing`).
+as [gpw-uks-smearing](gpw-uks-smearing.md) / [ot-smearing](ot-smearing.md)).
 
 **Fermi–Dirac free energy.** With reduced energy
 \(x = (\varepsilon-\mu)/\sigma\) and \(\sigma =\) `degauss` (converted to Ha
@@ -96,18 +96,18 @@ identical grids — the product identity gate.
 | Slug | Spin | SCF | Smear | k-mesh |
 | ---- | ---- | --- | ----- | ------ |
 | `ot-minimizer-water` | RKS | OT | none | Γ |
-| `ot-smearing` | RKS | OT | FD/MP | multi-k |
-| `gpw-uks-smearing` | UKS | DIIS | FD/MP | multi-k |
-| `ot-uks-kpoints` | UKS | OT | none (integer) | multi-k |
-| **`ot-uks-smearing`** | **UKS** | **OT** | **FD/MP** | **multi-k** |
+| [ot-smearing](ot-smearing.md) | RKS | OT | FD/MP | multi-k |
+| [gpw-uks-smearing](gpw-uks-smearing.md) | UKS | DIIS | FD/MP | multi-k |
+| [ot-uks-kpoints](ot-uks-kpoints.md) | UKS | OT | none (integer) | multi-k |
+| **this page** | **UKS** | **OT** | **FD/MP** | **multi-k** |
 
 **Key exclusions.**
 
 - Absolute free-energy match to CP2K (grid / `EPS_DEFAULT` / REL_CUTOFF
   differ by ~0.6 Ha) — **not** a product gate.
 - CP2K OT + k-points (hard abort in CP2K 2026.1) — no fair OT energy/wall twin.
-- Multi-k UKS OT + DFT+U + smear (`ot-uks-dftu` is integer multi-k UKS OT+U;
-  `ot-dftu-smearing` is RKS OT+U+smear).
+- Multi-k UKS OT + DFT+U + smear ([ot-uks-dftu](ot-uks-dftu.md) is integer multi-k UKS OT+U;
+  [ot-dftu-smearing](ot-dftu-smearing.md) is RKS OT+U+smear).
 - Cold / Marzari–Vanderbilt smear; non-collinear / SOC; sparse OT.
 - Forces / stress / BOMD under UKS OT + smear (separate queue rows if needed).
 - CUDA GPW OT/smear; MPI multi-rank industrial scaling gate on this slug.
@@ -183,9 +183,7 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_ot-uks-smearing
-  reg_ot-uks-smearing
-  # or: cmake --build build --target run_reg_ot-uks-smearing
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -193,14 +191,13 @@ bash -lc '
 | ---- | ---- |
 | `gpw_solver.h` | Public `GpwDft::{use_ot,smearing,degauss,n_alpha,n_beta,k_mesh,…}` |
 | `ot.h` | OT parameterization / fractional-occ gradient (internal) |
-| `ot-uks-smearing` | E2E product gate + pin notes |
 | CP2K oracle | Offline DIIS+LSD+FD twin + README |
-| `ot-smearing` | Closed-shell RKS OT+FD sibling |
-| `gpw-uks-smearing` | Multi-k UKS DIIS+FD sibling |
+| [ot-smearing](ot-smearing.md) | Closed-shell RKS OT+FD sibling |
+| [gpw-uks-smearing](gpw-uks-smearing.md) | Multi-k UKS DIIS+FD sibling |
 
 ## Validation (vs CP2K / internal exactness)
 
-Source: case `ot-uks-smearing` pin.
+Source: the pin notes recorded when this page was written (no standing regression).
 Oracle: offline **CP2K 2026.1** for wall class + DIIS LSD twin input; **never**
 live in ctest. Product free-energy accuracy is **ATV-internal** (OT ≡ DIIS)
 plus a frozen first-green pin.
@@ -244,8 +241,8 @@ plus a frozen first-green pin.
 
 Absolute free energy is **not** compared to CP2K (grid / `EPS_DEFAULT` /
 rel-cutoff class differ by ~0.6 Ha). Electron count + OT≡DIIS identity are
-the product accuracy gates. Same system class as `reg_gpw-uks-smearing` /
-`reg_ot-smearing`.
+the product accuracy gates. Same system class as [gpw-uks-smearing](gpw-uks-smearing.md) /
+[ot-smearing](ot-smearing.md).
 
 Offline oracle sketch (host with CP2K module; **not** ctest):
 
@@ -260,13 +257,13 @@ cp2k.psmp -i <CP2K oracle input for this case> \
 ## Performance
 
 Source: fair wall table in
-case `ot-uks-smearing` pin and
+the pin notes recorded when this page was written (no standing regression) and
 the case pin notes (wave 9, 2026-07-26). Queue record:
 ratio **~0.12**. Gate \(r\le 10\).
 
 Comparable settings: cutoff 150 Ry, PADE, multi-k \(2^3\), single rank,
 `OMP_NUM_THREADS=4`. CP2K wall class is the DIIS LSD twin (~89.5 s, same
-class as `gpw-uks-smearing` / RKS FD).
+class as [gpw-uks-smearing](gpw-uks-smearing.md) / RKS FD).
 
 | Twin | Wall [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | -------: | ----------------------------------------: | ---- | ------ |
@@ -288,8 +285,8 @@ sparse/linear-scaling OT. (4) `within_10x=true`; no optimize pass required.
   offset). Use OT≡DIIS + \(N_e\) + frozen pin.
 - CP2K product surface does not offer OT + k-points; fair OT energy twin is
   impossible — document DIIS twin wall class only.
-- Multi-k UKS OT + DFT+U + smear remains out of scope (see `ot-uks-dftu`,
-  `ot-dftu-smearing` for the partial combos).
+- Multi-k UKS OT + DFT+U + smear remains out of scope (see [ot-uks-dftu](ot-uks-dftu.md),
+  [ot-dftu-smearing](ot-dftu-smearing.md) for the partial combos).
 - Forces / stress / BOMD with UKS OT + smear are not gated here.
 - BCC Na is a soft metallic non-magnet; ferro seed collapses — do not treat
   residual magnetization as a product observable on this pin.
@@ -298,8 +295,6 @@ sparse/linear-scaling OT. (4) `within_10x=true`; no optimize pass required.
 
 ## References
 
-- Offline pin + fair wall: case `ot-uks-smearing` pin
-- Regression binary: `reg_ot-uks-smearing.cpp`
 - Closed spec (git history): `.claude/specs/ot-uks-smearing/` (deleted at done)
 - CP2K oracle inputs: CP2K oracle
 - Sibling tutorials: [ot-minimizer-water](ot-minimizer-water.md) (Γ RKS OT),

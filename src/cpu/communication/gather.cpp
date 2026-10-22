@@ -111,6 +111,9 @@ void copy_owners_into(GatheredFrame& out, const Frame& frame, int n_local) {
     copy_runtime_columns(out, frame, n_local, migrated_columns(frame));
 }
 
+// Owners are returned in tag order at every rank count: spatial sorting
+// reorders rows even on one rank, and the gathered frame is the API's
+// deterministic view of the system, not a snapshot of the row layout.
 void sort_by_tag(GatheredFrame& gathered) {
     const int n = gathered.n_total;
     if (n <= 1)
@@ -182,7 +185,8 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
     out.box = frame.box.cell();
 
     if (dd.cart_comm == MPI_COMM_NULL) {
-        copy_owners_into(out, frame, dd.n_local);
+        copy_owners_into(out, frame, frame.nlocal());
+        sort_by_tag(out);
         return out;
     }
 
@@ -198,7 +202,8 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         throw std::invalid_argument(
             "gather_to_root: root rank is invalid or differs across ranks");
     if (world_size <= 1) {
-        copy_owners_into(out, frame, dd.n_local);
+        copy_owners_into(out, frame, frame.nlocal());
+        sort_by_tag(out);
         return out;
     }
 
@@ -208,7 +213,7 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         dd.cart_comm, "gather_to_root");
 
     const int local_range_valid =
-        dd.n_local >= 0 && dd.n_local <= frame.capacity();
+        frame.nlocal() >= 0 && frame.nlocal() <= frame.capacity();
     int all_ranges_valid = 0;
     MPI_Allreduce(&local_range_valid, &all_ranges_valid, 1, MPI_INT, MPI_MIN,
                   dd.cart_comm);
@@ -216,7 +221,7 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         throw std::out_of_range(
             "gather_to_root: owner range is outside Frame capacity");
 
-    const std::int64_t local_count = dd.n_local;
+    const std::int64_t local_count = frame.nlocal();
     std::int64_t global_count = 0;
     MPI_Allreduce(&local_count, &global_count, 1, MPI_INT64_T, MPI_SUM,
                   dd.cart_comm);
@@ -228,7 +233,7 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
     std::vector<int> counts;
     if (rank == root)
         counts.resize(static_cast<std::size_t>(world_size));
-    const int n_local = dd.n_local;
+    const int n_local = frame.nlocal();
     MPI_Gather(&n_local, 1, MPI_INT, rank == root ? counts.data() : nullptr, 1,
                MPI_INT, root, dd.cart_comm);
 
@@ -369,7 +374,8 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
                              const DomainDecomposition& dd, int root) {
     GatheredFrame out;
     out.root_rank = root;
-    copy_owners_into(out, frame, dd.n_local);
+    copy_owners_into(out, frame, frame.nlocal());
+    sort_by_tag(out);
     return out;
 }
 

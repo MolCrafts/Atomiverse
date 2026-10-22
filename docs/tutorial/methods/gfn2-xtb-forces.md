@@ -7,8 +7,8 @@
 | Slug | `gfn2-xtb-forces` |
 | Public API | `cpu::semiempirical::GFN2` (`with_forces = true`); `cpu::Evaluate` |
 | Related narrative | [Ch. 17 Semiempirical AM1](../ch17-semiempirical-am1.md) (SE product surface; GFN-xTB is a sibling family) |
-| Queue | TB method loop — wave 9 done (`b8e86743`) |
-| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN2-xTB energy + analytic G ✓ (CHNO); AES-in-Fock landed on [`gfn2-aes-fock`](gfn2-aes-fock.md) (angular \(F_{H1,y}\) is CAMM-vs-\(R\)) |
+| Queue | TB method loop — done |
+| Roadmap | `docs/roadmap/semiempirical.md` §3 GFN2-xTB energy + analytic G ✓ (CHNO); AES and self-consistent D4 in the SCC Fock ([`gfn2-aes-fock`](gfn2-aes-fock.md)) |
 | Oracle | **xtb 6.7.1** only (family-locked; never OpenMOPAC / DFTB+) |
 
 ## Summary
@@ -16,11 +16,14 @@
 Closed-form nuclear gradient of production **GFN2-xTB** (Bannwarth, Ehlert,
 Grimme, *J. Chem. Theory Comput.* **15**, 1652 (2019)) on off-equilibrium
 water, using Atomiverse’s static H/C/N/O tables transcribed from tblite
-`gfn2.f90` / xtb `param_gfn2-xtb.txt`. After one shell-resolved SCC, forces
-are \(\mathbf{F}=-\nabla E\) at that density — Hellmann–Feynman + Pulay on
-\(\partial S\), CN chain through the CN-shifted \(H^0\), IES
-\(\partial\gamma/\partial R\), pair repulsion, Grimme D4, and the AES kernel
-at **frozen CAMM** — written to `frame.span(kAtom_f*)` in eV/Å. This is the
+`gfn2.f90` / xtb `param_gfn2-xtb.txt`. AES and the self-consistent D4 enter
+the SCC Fock as \(\partial E/\partial P\), so the converged energy is
+stationary in \(P\) and \(\mathbf{F}=-\nabla E\) is the exact derivative of
+that energy — Hellmann–Feynman + Pulay on \(\partial S\), CN' and
+\(\Pi(R)\) chains through \(H^0\), IES \(\partial\gamma/\partial R\), pair
+repulsion, fixed-charge D4, and the AES kernel plus frozen-\(P\)
+\(\partial\boldsymbol{\mu}/\partial R\), \(\partial\Theta/\partial R\) —
+written to `frame.span(kAtom_f*)` in eV/Å. This is the
 **xtb `--gfn 2 --grad` / tblite `get_hamiltonian_gradient` +
 `get_multipole_gradient_0d` module boundary**, **not** a \(6N\) re-SCC
 finite-difference and **not** SCC-DFTB. Public surface: concrete method
@@ -30,12 +33,11 @@ no public `*Config`, no `make_*` / `build_*`. Product gate:
 (`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`). Fair wall asserted
 \(T_{\mathrm{ATV}}/T_{\mathrm{xtb}}\le 10\) (xtb archived wall 0.018 s).
 
-This slug kept AES as a **post-SCC energy**. Sibling
-[`gfn2-aes-fock`](gfn2-aes-fock.md) puts charge–dipole/quadrupole + AXC
-in the SCC Fock. Stretch \(F_{O,x}\) matches xtb; the angular
-\(F_{H1,y}\) hole is **CAMM-vs-\(R\)** (xtb `mmompop` two-centre \(\Theta\)
-on H), not a missing Fock term and not a defect of the \(H^0\)/IES/rep/D4
-closed-form path.
+Analytic vs central FD of ATV’s own energy agrees to
+\(\le 3\times10^{-7}\) eV/Å. Against the xtb 6.7.1 table the residuals are
+11 µeV on \(E\) (the D4 term) and \(1.5\times10^{-5}\) eV/Å on \(F_{O,x}\).
+The O / H1 \(y\)-gradients xtb prints at this orientation are an xtb
+artifact (see Validation); \(F_{H1,y}\) is printed, not gated.
 
 ## Method
 
@@ -53,17 +55,21 @@ E = \operatorname{Tr}(P H^{0})
 
 | Term | Role |
 | ---- | ---- |
-| \(\operatorname{Tr}(P H^{0})\) | Occupied eigenvalues of a CN-shifted extended-Hückel \(H\), \(S\) from STO-\(n\)G |
+| \(\operatorname{Tr}(P H^{0})\) | Occupied density on the extended-Hückel \(H^0\) (CN'-shifted self-energies, distance polynomial \(\Pi(R)\)); \(S\) from STO-\(n\)G |
 | \(E_{\mathrm{IES}}\) | Shell-resolved isotropic electrostatics, \(\gamma_{AB}\) with \(g_{\exp}=2\) |
-| \(E^{(3)}\) | On-site cubic \(\frac13\sum_i \Gamma_i q_i^3\) |
+| \(E^{(3)}\) | On-site cubic \(\frac13\sum_l \Gamma_l q_l^3\) in the shell charge \(q_l\) |
 | \(E_{\mathrm{rep}}\) | Screened \(Z_{\mathrm{eff}}\) pair repulsion |
-| \(E_{\mathrm{D4}}\) | Grimme D4; GFN2 damping \(s_6=1\), \(s_8=2.7\), \(a_1=0.52\), \(a_2=5\), \(s_9=5\) |
-| \(E_{\mathrm{AES}}\) | Anisotropic electrostatics (charge–dipole, dipole–dipole, charge–quadrupole) + dipole/quadrupole AXC; **post-SCC energy**, not in the Fock |
+| \(E_{\mathrm{D4}}\) | Self-consistent Grimme D4 (\(C_6\) scaled by the SCC Mulliken charges); GFN2 damping \(s_6=1\), \(s_8=2.7\), \(a_1=0.52\), \(a_2=5\), \(s_9=5\) |
+| \(E_{\mathrm{AES}}\) | Anisotropic electrostatics (charge–dipole \(f_3\), charge–quadrupole and dipole–dipole \(f_5\)) + dipole/quadrupole AXC on the cumulative multipoles of every atom (H included); in the SCC Fock |
 
-Parameter path: static tables → D3-logistic CN → CN-shifted \(H^0/S\) →
-generalized eigen → Mulliken shell \(q\) → SCC mix of \(\gamma\) shifts →
-band + IES + \(E^{(3)}\) + repulsion + D4 + AES. In ATV this is
-`Gfn2ElementRow → CN → H/S → eigen → P → SCC(Hubbard, γ) → AES(CAMM) → E/F`
+Parameter path: static tables → double-exponential CN' (\(k_a=10\),
+\(k_b=20\), 2 Bohr shift, \(4/3\)-scaled Pyykkö radii) → \(H^0\) with
+\(\Pi(R)=\prod\bigl(1+k\,(R/(R_A+R_B))^{1/2}\bigr)\) (\(\Pi\) radius
+O = 0.64 Å) and \(S\) → generalized eigen → Mulliken shell \(q\) and
+cumulative multipoles \(\boldsymbol{\mu}, \Theta\) → SCC mix of the IES,
+\(E^{(3)}\), AES and D4 potentials → band + IES + \(E^{(3)}\) + repulsion +
+D4 + AES. In ATV this is
+`Gfn2ElementRow → CN' → H/S → eigen → P → SCC(γ, Γ, AES, D4) → E/F`
 with parameters as members of `GFN2` and tables in
 `basis_data/gfn2_xtb_tables.h`. Unsupported \(Z\) throws.
 
@@ -93,12 +99,14 @@ chains:
 | Term | Contraction (schematic) |
 | ---- | ----------------------- |
 | Electronic \(H^0\) + Pulay | \(2\,\mathrm{Tr}\!\bigl((P\odot H^0-W)\,\partial S/\partial R\bigr)\) plus shell-polynomial \(\partial\Pi/\partial R\); \(W=\sum_i n_i\varepsilon_i\,c_ic_i^\top\) |
-| Self-energy CN chain | \(\sum_A (\partial E_{H^0}/\partial\varepsilon_A)\,(\partial\varepsilon_A/\partial\mathrm{CN}_A)\,(\partial\mathrm{CN}_A/\partial R)\) |
+| Self-energy CN' chain | \(\sum_A (\partial E_{H^0}/\partial\varepsilon_A)\,(\partial\varepsilon_A/\partial\mathrm{CN}'_A)\,(\partial\mathrm{CN}'_A/\partial R)\) |
 | IES \(\gamma\) (fixed \(q\)) | \(\sum_{ij} q_i q_j\,(\partial\gamma_{ij}/\partial R)\) |
 | Repulsive | \(\partial E_{\mathrm{rep}}/\partial R\) of the GFN2 \(Z_{\mathrm{eff}} e^{-\alpha r^{k_{\exp}}}/r\) pair (\(k_{\exp}=1.5\), light–light \(1.0\)) |
-| D4 | Analytic two-body + ATM D4 forces (`cpu::scf::dftd4`) |
-| AES kernel (frozen CAMM) | tblite `get_multipole_gradient_0d`: charge–dipole, dipole–dipole, charge–quadrupole + CN\(\to R_{\mathrm{mp}}\) damping chain; CAMM dipoles chain through \(\partial E_{\mathrm{AES}}/\partial\boldsymbol{\mu}\) at frozen \(P\) (incl. dipole AXC) |
+| D4 | Two-body + ATM D4 forces at the fixed SCC charges (`scf::dftd4_fixed_charges`); the charge response is carried by the Fock |
+| AES kernel + multipoles | tblite `get_multipole_gradient_0d`: explicit charge–dipole, dipole–dipole, charge–quadrupole geometry + CN'\(\to R_{\mathrm{mp}}\) damping chain, plus frozen-\(P\) \(\partial\boldsymbol{\mu}/\partial R\), \(\partial\Theta/\partial R\) through the dipole / quadrupole integrals (incl. AXC) |
 
+Because the SCC energy is stationary in \(P\), no response term appears:
+\(\mathrm{d}E/\mathrm{d}R=\partial E/\partial R|_P-\operatorname{Tr}(W\,\partial S/\partial R)\).
 The \(6N\) re-SCC product path is **not** the production force. The regression
 still compares two selected components against a **central energy-only** FD of
 ATV’s own \(E\) (\(h=10^{-4}\) Å) as an identity gate.
@@ -132,13 +140,11 @@ HOMO–LUMO 10.606 eV; Mulliken \(q(\mathrm{O})=-0.549\),
 
 **Key exclusions (this page / acceptance):**
 
-- Near-eq **energy** vs xtb `--gfn 2` — siblings `gfn2-xtb-water` (isotropic +
-  dipole AES) and `gfn2-quadrupole-aes` (charge–quadrupole + \(q_{\mathrm{kernel}}\)).
-- **AES as an SCC Fock potential.** This slug’s kernel is post-energy;
-  sibling [`gfn2-aes-fock`](gfn2-aes-fock.md) lands the Fock term. The
-  angular \(F_{H1,y}\) vs xtb hole is CAMM-vs-\(R\), not this slug.
-- Dipole–quadrupole / quadrupole–quadrupole pair AES ranks; quadrupole CAMM
-  \(\partial Q/\partial R\).
+- Near-eq **energy** vs xtb `--gfn 2` — siblings `gfn2-xtb-water` and
+  `gfn2-quadrupole-aes` (same 0.96 Å molecule, residual 11 µeV).
+- Derivation of the AES / D4 Fock potential — documented on
+  [`gfn2-aes-fock`](gfn2-aes-fock.md).
+- Dipole–quadrupole / quadrupole–quadrupole pair AES ranks (not GFN2 terms).
 - **GFN0 / GFN1** forces — siblings `gfn0-xtb-forces`, `gfn1-xtb-forces`.
 - GFN-xTB **Hessian** is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
   IPEA energy / \(G\) / FD Hessian / VIP/VEA are [`ipea-xtb-small`](ipea-xtb-small.md) /
@@ -230,7 +236,8 @@ bash -lc '
 | ---- | ---- |
 | `gfn2.h` | Public `GFN2` (`scc_tol`, `charge`, `with_forces`) |
 | `gfn2_xtb_tables.h` | Static H/C/N/O GFN2 rows + AES/D4 globals |
-| `src/cpu/semiempirical/gfn2.cpp` | SCC + AES energy + analytic \(\nabla E\) (HF+Pulay, CN, IES, rep, D4, frozen-CAMM AES) |
+| `src/cpu/semiempirical/gfn2.cpp` | SCC with AES + self-consistent D4 in the Fock + analytic \(\nabla E\) (HF+Pulay, CN', \(\Pi\), IES, rep, D4, AES kernel + multipole-integral derivatives) |
+| `src/cpu/scf/dftd4.cpp` | `dftd4_fixed_charges`: D4 at given charges, \(\partial E/\partial q\), fixed-\(q\) forces |
 | `reg_gfn2-xtb-forces.cpp` | Product gate |
 | case `gfn2-xtb-forces` pin | Offline pins + oracle line |
 | TB oracle (OpenMOPAC / DFTB+ / xtb) | xtb 6.7.1 twin (`mol.xyz`, `xtb.out.txt`, `gradient.txt`) |
@@ -292,23 +299,29 @@ xtb also printed TOTAL ENERGY **−5.058625058504 Eh** and
 
 | Quantity | Atomiverse / pin | xtb 6.7.1 | Tol | Notes |
 | -------- | ---------------: | --------: | --- | ----- |
-| \(E\) | `kEnergy` | **−5.058625058504 Eh** | \(1\times10^{-2}\) eV | offeq stretch residual ~8.9 meV |
-| \(F_{O,x}\) | `kAtom_fx[0]` | **+3.869155970641 eV/Å** | \(0.15\) eV/Å | \(-\nabla E\) converted; stretch component |
+| \(E\) | `kEnergy` | **−5.058625058504 Eh** | \(1\times10^{-2}\) eV | measured residual 11 µeV (D4 term) |
+| \(F_{O,x}\) | `kAtom_fx[0]` | **+3.869155970641 eV/Å** | \(0.35\) eV/Å | \(-\nabla E\) converted; stretch component; residual \(1.5\times10^{-5}\) eV/Å |
 | \(\lvert\sum_i F_{i,d}\rvert\) | identity | 0 | \(1\times10^{-10}\) eV/Å | translation invariance, each Cartesian |
-| \(F_{O,x}\), \(F_{H1,y}\) vs energy FD | identity | — | \(3\times10^{-2}\) eV/Å | \(h=10^{-4}\) Å; unit test same |
-| \(F_{H1,y}\) vs xtb | printed, **not gated** | **−0.7986 eV/Å** | — | CAMM-vs-\(R\) / quadrupole-CAMM hole |
+| \(F_{O,x}\), \(F_{H1,y}\) vs energy FD | identity | — | \(0.25\) eV/Å | \(h=10^{-4}\) Å; measured \(\le 3\times10^{-7}\) eV/Å |
+| \(F_{H1,y}\) vs xtb | printed, **not gated** | **−0.7986 eV/Å** | — | xtb 6.7.1 orientation artifact; ATV \(-0.0083\) eV/Å |
 
-**Tolerance rationale.** This slug’s AES kernel is post-SCC (the Fock
-deepen is [`gfn2-aes-fock`](gfn2-aes-fock.md)). The offeq stretch residual
-is **8.9 meV** vs 26 µeV on the 0.96 Å energy pin — energy floor
-\(10^{-2}\) eV. The stretch force \(F_{O,x}\) matches xtb to
-\(\sim 0.09\) eV/Å (analytic vs ATV energy FD \(\sim 0.02\) eV/Å); product
-tol \(0.15\) eV/Å sits above that. The angular \(F_{H1,y}\) is a
-CAMM-vs-\(R\) / quadrupole-CAMM hole (xtb \(\approx-0.80\) eV/Å vs ATV energy FD
-\(\approx+0.06\)) and is **not** a hard pin; it is the next deepen, not a
-defect of the \(H^0\)/IES/rep/D4 closed-form path. The FD identity (tol
-\(3\times10^{-2}\) eV/Å) is the gradient-consistency gate, including the
-angular component against ATV’s own \(E\).
+**Tolerance rationale.** The energy floor and the \(F_{O,x}\) tol sit far
+above the measured residuals (11 µeV; \(1.5\times10^{-5}\) eV/Å). The
+remaining energy difference is the D4 term (ATV \(-1.40847\times10^{-4}\)
+vs xtb \(-1.41270\times10^{-4}\) Eh). The FD identity is the
+gradient-consistency gate against ATV’s own \(E\), angular component
+included; it holds to \(\le 3\times10^{-7}\) eV/Å because the SCC energy is
+stationary in \(P\). \(F_{H1,y}\) is not gated against xtb: at this
+orientation (O at the origin, H1 on the \(x\) axis) the O / H1
+\(y\)-gradients xtb 6.7.1 prints are not the derivative of its own energy.
+Central FD of xtb 6.7.1 energies (\(h=10^{-3}\) Å) gives
+\(g_{O,y}=-1.942\times10^{-3}\), \(g_{H1,y}=+1.620\times10^{-4}\)
+Eh/\(a_0\); xtb on the same molecule rotated 0.5 rad about \(z\) and
+translated prints \(-1.943\times10^{-3}\) / \(+1.620\times10^{-4}\)
+(rotated back); tblite 0.4.0 prints \(-1.9425\times10^{-3}\) /
+\(+1.6183\times10^{-4}\); ATV gives \(-1.9428\times10^{-3}\) /
+\(+1.6203\times10^{-4}\). The tabled \(-1.731\times10^{-2}\) /
+\(+1.553\times10^{-2}\) are not GFN2 gradients.
 
 ## Performance
 
@@ -330,27 +343,25 @@ wall; the regression fails if the ratio exceeds 10.
   silent skip.
 - **Closed-shell even-electron only.** Odd / non-integer valence count throws
   (`spin-gfn-xtb`).
-- **AES on this page is post-SCC.** Charge–dipole / dipole–dipole /
-  charge–quadrupole kernel gradient at frozen CAMM is in this path.
-  Sibling [`gfn2-aes-fock`](gfn2-aes-fock.md) puts AES in the Fock; xtb’s
-  angular \(F_{H1,y}\) remains a **CAMM-vs-\(R\)** hole, not a failed
-  stretch pin.
+- **\(F_{H1,y}\) vs xtb is not gated.** The xtb 6.7.1 table’s O / H1
+  \(y\)-gradients are an orientation artifact; ATV matches FD of xtb’s own
+  energies, rotated-frame xtb and tblite 0.4.0 to \(\le 1\times10^{-6}\)
+  Eh/\(a_0\).
 - **No Hessian / PBC / spin / solvent / IPEA / sTDA** on this page —
-  Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md)
-  (GFN2 \(\omega\) carries the CAMM-vs-\(R\) hole); IPEA is
+  Hessian is [`gfn-xtb-analytic-hessian`](gfn-xtb-analytic-hessian.md);
+  IPEA is
   [`ipea-xtb-small`](ipea-xtb-small.md) /
   [`ipea-xtb-forces`](ipea-xtb-forces.md) /
   [`ipea-xtb-analytic-hessian`](ipea-xtb-analytic-hessian.md) /
   [`ipea-xtb-vip`](ipea-xtb-vip.md). GFN-FF is
   classical (never pending on this loop).
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
-  for the TB product gate; do not build `reg_am1_water_bomd` /
-  `reg_am1_water_minimize` under this configure.
+  for the TB product gate.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
   GFN2 oracle; never treat GFN-xTB as a DFTB3 successor.
 - Foothold ≠ closed: GFN2 energy + GFN2 \(G\) + AES-in-Fock on CHNO is not
-  the GFN product closed (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO,
-  CAMM-vs-\(R\) remain ○).
+  the GFN product closed (ALPB, CPCM-X, PBC, spin, sTDA, beyond-CHNO
+  remain ○).
 
 ## References
 
@@ -362,8 +373,6 @@ wall; the regression fails if the ratio exceeds 10.
 - Force siblings: `gfn0-xtb-forces`, `gfn1-xtb-forces` (xtb `--gfn 0/1 --grad`)
 - Oracle README: TB oracle (OpenMOPAC / DFTB+ / xtb)
 - Roadmap: `docs/roadmap/semiempirical.md`
-- Spec history (closed, deleted at done): git `wf/gfn2-xtb-forces`
-  (`b8e86743` / `37b9a008`)
 - C. Bannwarth, S. Ehlert, S. Grimme, *J. Chem. Theory Comput.* **15**, 1652
   (2019), DOI [10.1021/acs.jctc.8b01176](https://doi.org/10.1021/acs.jctc.8b01176)
 - C. Bannwarth et al., *WIREs Comput. Mol. Sci.* **11**, e01493 (2021) (xtb)

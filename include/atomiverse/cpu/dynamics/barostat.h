@@ -2,6 +2,10 @@
 /// @brief CPU Berendsen isotropic barostat.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <string>
 #include <vector>
 
@@ -66,8 +70,18 @@ namespace md {
 /// re-derived together with the sign (`(P_target − P)` instead of
 /// `(P − P_target)`), `μ` is numerically unchanged for the same physical
 /// state — a representation change, not a behaviour change.
-class Barostat : public cpu::Barostat {
+class Barostat : public cpu::Barostat, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "Barostat: timestep must be finite and positive");
+        dt_ = timestep;
+    }
+
     /// @brief LAMMPS `fix press/berendsen`-equivalent isotropic barostat.
     /// @param P_target     Target pressure [eV/Å³], LAMMPS-standard sign
     ///                     (`+trace(σ)/(3V)`, positive ⇔ compressive).

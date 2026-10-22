@@ -57,7 +57,7 @@ int main() try {
         .add(ATV::cuda::KSpacePME{0.35, 1, 5}, 100);
     eval.build();
     eval.run(f);
-    std::ifstream pin(ATV_GAFF_ORACLE_PATH);
+    std::ifstream pin(ATV_REG_CASE_DIR "/reference.txt");
     pin.exceptions(std::ios::failbit | std::ios::badbit);
     double expected_energy;
     pin >> expected_energy;

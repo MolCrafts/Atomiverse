@@ -121,7 +121,8 @@ elsewhere in the product surface — this post-processor reports Ry on
 - Metallic restricted DOS → `dos-metallic-si`.
 - Collinear spin + metallic **bands** (k-path) → `bands-spin-metallic-si`.
 - Metallic restricted bands → `bands-metallic-si`.
-- True metal energy pin (FCC Al / Fe) → `pw-smearing-al` / `pw-uks-fe-smearing`.
+- True metal energy pin (Fe) → `pw-uks-fe-smearing`; FCC Al is described in
+  [pw-smearing-al](pw-smearing-al.md) (no standing regression).
 - GPW / Gaussian PDOS → CP2K character note only, not absolute \(D(E)\).
 - Absolute \(\varepsilon_n\) / \(D(E)\) parity with CP2K Quickstep GTH+DZVP.
 - Production-converged \(E_\mathrm{cut}\) (~60 Ry) / dense k when they break
@@ -330,7 +331,7 @@ Wall comparison is same-geometry only, not absolute-\(D(E)\) parity
 
 - Tutorial ecut / SCF k only — not production-converged dense spin+metallic DOS.
 - Twin is **gapped Si** under FD smear (near-integer occupations); it does
-  **not** pin a true metal vanishing gap (use `pw-smearing-al` /
+  **not** pin a true metal vanishing gap (use [pw-smearing-al](pw-smearing-al.md) /
   `pw-uks-fe-smearing` for metallic free energy).
 - Integral field is still named `n_elec_to_vbm` but means \(\int^{E_F} D\) on
   this path.

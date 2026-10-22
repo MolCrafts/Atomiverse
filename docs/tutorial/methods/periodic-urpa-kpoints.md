@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-urpa-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::direct_rpa()` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); multi-k UKS via members `n_alpha` / `n_beta`, `k_mesh`, `mp2_ri`, `mp2_n_virt` |
 | Roadmap | `docs/roadmap/dft.md` §10–11 (periodic RPA / URPA) |
 | Oracle | offline CP2K twin CP2K oracle (never live in ctest) |
@@ -13,8 +13,8 @@
 
 **Spin-conserving direct RPA (dRPA) correlation on a multi-k GPW UKS
 reference** — the unrestricted product path **URPA@UKS** after closed-shell
-multi-k dRPA (`periodic-rpa-kpoints` / `periodic-rpa-finite-q`) and Γ URPA
-(`periodic-urpa-si`). Screening is Coulomb-only Casida over the composite
+multi-k dRPA ([periodic-rpa-kpoints](periodic-rpa-kpoints.md) / [periodic-rpa-finite-q](periodic-rpa-finite-q.md)) and Γ URPA
+([periodic-urpa-si](periodic-urpa-si.md)). Screening is Coulomb-only Casida over the composite
 α→α ⊕ β→β particle–hole space, with **finite-\(q\) inter-\(k\)** momentum
 conservation on a closed Monkhorst–Pack mesh. Correlation energy is the
 **Furche plasmon formula** Brillouin-zone-averaged over transfer \(q\).
@@ -22,13 +22,13 @@ conservation on a closed Monkhorst–Pack mesh. Correlation energy is the
 Public path: construct `cpu::gpw::GpwDft`, set members (occupations, k-mesh,
 RI + virtual cap), `build` → `run` (UKS SCF) → `direct_rpa()`. Result
 fields are Hartree internally; Frame-facing energy for SCF remains eV on
-`meta` when used through evaluators. Product gate:
-`reg_periodic-urpa-kpoints`. Fair wall vs CP2K is **`perf_exempt`** (algorithm
+`meta` when used through evaluators. No standing regression.
+Fair wall vs CP2K is **`perf_exempt`** (algorithm
 class mismatch + no CP2K binary required on the pin host).
 
-Related: Γ URPA `periodic-urpa-si`; multi-k RKS dRPA
-`periodic-rpa-kpoints`; multi-k UGW
-`periodic-ugw-kpoints`; molecular dRPA
+Related: Γ URPA [periodic-urpa-si](periodic-urpa-si.md); multi-k RKS dRPA
+[periodic-rpa-kpoints](periodic-rpa-kpoints.md); multi-k UGW
+[periodic-ugw-kpoints](periodic-ugw-kpoints.md); molecular dRPA
 [direct-rpa-h2-sto3g](direct-rpa-h2-sto3g.md) (PySCF loop, not this page).
 
 ## Method
@@ -69,7 +69,7 @@ all ordered \((k,q)\) pairs → \(n_\Omega = N_k^2 \cdot 32 = 128\).
 **Dual-gate identity.** When \(C^\alpha \approx C^\beta\) and
 \(n_\alpha=n_\beta\), multi-k URPA \(E_c\) **bit-matches** multi-k RKS dRPA
 on the same geometry/basis/cutoff (first-green
-`periodic-rpa-kpoints` \(E_c\)).
+[periodic-rpa-kpoints](periodic-rpa-kpoints.md) \(E_c\)).
 
 **Key exclusions.**
 
@@ -158,9 +158,7 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-urpa-kpoints
-  reg_periodic-urpa-kpoints
-  # or: cmake --build build --target run_reg_periodic-urpa-kpoints
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -169,7 +167,7 @@ Unit tier (no full SCF): `tests/cpu/gpw/test_cpu_gpw_rpa.cpp` —
 
 ## Validation (vs CP2K / dual-gate)
 
-Source: case `periodic-urpa-kpoints` pin
+Source: the pin notes recorded when this page was written (no standing regression)
 (offline pin only; CP2K never imported from CMake/ctest).
 
 | Setting | Value |
@@ -200,7 +198,7 @@ only, not the hard accuracy gate.
 2. **Kernel unit:** multi-k UHF at \(N_k=1\) with \(C^\alpha=C^\beta\) recovers
    real closed-shell / Γ URPA plasmon (`test_cpu_gpw_rpa`).
 3. **Dual-gate band** vs RKS multi-k first-green \(E_c\)
-   (`periodic-rpa-kpoints`): \(|E_c - (-0.0736273682)|\le 5\times 10^{-3}\) Ha.
+   ([periodic-rpa-kpoints](periodic-rpa-kpoints.md)): \(|E_c - (-0.0736273682)|\le 5\times 10^{-3}\) Ha.
 
 ### Hard-coded pins (first green, 2026-07-26, OMP=8)
 
@@ -211,7 +209,7 @@ only, not the hard accuracy gate.
 | Tr \(A\) (composite BZ avg) | 17.508325 Ha | diagnostic | |
 | \(n_{\mathrm{occ}}\) / \(n_{\mathrm{virt}}\) / \(n_\Omega\) | 16 / 4 / 128 | exact | spin-orbital counts |
 | Wall (SCF + URPA) | ~2.7 s | ≤ 60 s | e2e budget |
-| Dual-gate ref (RKS multi-k dRPA) | −0.0736273682 Ha | same band | `periodic-rpa-kpoints` |
+| Dual-gate ref (RKS multi-k dRPA) | −0.0736273682 Ha | same band | [periodic-rpa-kpoints](periodic-rpa-kpoints.md) |
 
 ## Performance
 
@@ -245,15 +243,13 @@ CP2K from ctest.
 
 ## References
 
-- Offline pin: case `periodic-urpa-kpoints` pin
-- Regression binary: `reg_periodic-urpa-kpoints.cpp`
 - CP2K input twin: CP2K oracle
 - Oracle rules: CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` (periodic RPA / URPA)
 - Public headers: `rpa.h`, `gpw_solver.h`
 - Unit kernels: `tests/cpu/gpw/test_cpu_gpw_rpa.cpp`
-- Sibling slugs: `periodic-urpa-si`, `periodic-rpa-kpoints`,
-  `periodic-rpa-finite-q`, `periodic-ugw-kpoints`
+- Sibling slugs: [periodic-urpa-si](periodic-urpa-si.md), [periodic-rpa-kpoints](periodic-rpa-kpoints.md),
+  [periodic-rpa-finite-q](periodic-rpa-finite-q.md), [periodic-ugw-kpoints](periodic-ugw-kpoints.md)
 - Furche, *J. Chem. Phys.* **114**, 5982 (2001), DOI 10.1063/1.1353585
 - Ren et al., *New J. Phys.* **14**, 053020 (2012)
 - Del Ben, Hutter, VandeVondele, *J. Chem. Theory Comput.* **8**, 4177 (2012)

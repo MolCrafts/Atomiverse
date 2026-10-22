@@ -4,10 +4,10 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `xl-bomd-linearized-uks` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdForce{cpu::gpw::GPWEvaluator{cpu::gpw::GpwDft{…, n_alpha, n_beta}}, k=5, cpu::electronic::XlBomdLinearized{}}` bound with `set_evaluator_ref`; dual α/β `cpu::electronic::XlBomd` propagators |
 | Roadmap | follow-on of the `xl-bomd-linearized-forces` residual (UKS refused there at `build()`) |
-| Dual gate | Correctness A1–A3 unit (`test_cpu_gpw_xl_bomd`) + A4 e2e `reg_xl-bomd-linearized-uks`; speed **`perf_exempt`** |
+| Dual gate | Correctness A1–A3 unit (`test_cpu_gpw_xl_bomd`) + A4 e2e (case removed; no standing regression); speed **`perf_exempt`** |
 | Oracle | Offline CP2K twin sketch only (CP2K oracle); never live in ctest |
 
 ## Summary
@@ -222,7 +222,7 @@ sim.run(frame, 4);
 refusal on the linearized path is **removed** — dual-spin shadow forces are
 the delivered feature of this slug.
 
-### How to run the regression
+### Build configuration
 
 ```bash
 bash -lc '
@@ -230,8 +230,6 @@ bash -lc '
   export OPENBLAS_ROOT="$OPENBLASDIR"
   export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu
   export LD_LIBRARY_PATH="$LIBRARY_PATH:$LD_LIBRARY_PATH"
-  cmake --build build -j$(nproc) --target atomiverse reg_xl-bomd-linearized-uks
-  cmake --build build --target run_reg_xl-bomd-linearized-uks
 '
 ```
 
@@ -244,11 +242,10 @@ Relevant sources:
 | Warm dual-spin shadow path | `src/cpu/gpw/gpw_evaluator.cpp` |
 | Forces at density (dual overload) | `src/cpu/gpw/internal/gpw_forces.cpp` (`internal::gpw_forces_at_density`) |
 | Unit A1–A3 | `tests/cpu/gpw/test_gpw_xl_bomd.cpp` |
-| E2E A4 | `xl-bomd-linearized-uks` |
 
 ## Validation (vs CP2K / literature)
 
-Source: case `xl-bomd-linearized-uks` pin
+Source: values recorded when this page was written (no standing regression)
 (offline pin; never live CP2K in ctest).
 
 ### Accuracy table
@@ -298,7 +295,7 @@ Source: pin notes Perf gate.
 | Reason | No offline CP2K binary on host for a fair multi-step UKS AIMD wall twin |
 | `ratio_atv_over_cp2k` | n/a |
 | `within_10x` | n/a (exempt) |
-| Regression wall | 40 s measured (≤60 s budget) |
+| Recorded wall | 40 s measured (≤60 s budget) |
 
 Gate: \(r \le 10\) unless `perf_exempt`. Warm steps are cheaper than
 full-SCF XL-UKS (one dual-KS build + two diagonalizations vs iterative
@@ -324,7 +321,7 @@ measured fair-bench ratio.
 
 ## References
 
-- Offline pin: case `xl-bomd-linearized-uks` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - CP2K twin sketch: CP2K oracle
 - Oracle rules: CP2K oracle
 - Sibling paths: [xl-bomd-linearized-forces](xl-bomd-linearized-forces.md)

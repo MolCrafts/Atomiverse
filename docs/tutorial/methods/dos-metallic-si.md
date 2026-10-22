@@ -84,8 +84,8 @@ open-gap semiconductor: FD occupations stay near-integer, `gap_ry > 0` on the
 DOS mesh, and \(E_F\) sits in the gap (within a few `degauss` of
 \([E_\mathrm{vbm},E_\mathrm{cbm}]\)). The scientific gate is the **metallic
 DOS product path** (no throw) plus electron count from \(\int^{E_F} D\), not a
-metal-like vanishing gap. True metallic energy pins live on
-`pw-smearing-al` (FCC Al).
+metal-like vanishing gap. True-metal free-energy usage (FCC Al) is described on
+[pw-smearing-al](pw-smearing-al.md) (no standing case).
 
 **XC / spin.** `XCType::LSDA` (Slater + PW92) on the PW grid; restricted (no
 collinear spin on this path). `Bands::compute` still rejects metallic
@@ -107,7 +107,7 @@ smearing — band-path + FD is out of scope here.
 - Fixed-occupation insulator bands + DOS → `bands-dos-si`.
 - Spin-polarized / spin-resolved DOS; metallic **band path**
   (`Bands` + smear still throws).
-- Metallic SCF energy pin on a true metal → `pw-smearing-al`.
+- Metallic SCF energy on a true metal → [pw-smearing-al](pw-smearing-al.md) (method page; no standing case).
 - Metallic DFPT → `dfpt-metallic-si`.
 - GPW `&SMEAR` productization (separate GPW metallic rows).
 - Absolute \(\varepsilon_n\) / \(D(E)\) parity with CP2K Quickstep GTH+DZVP.
@@ -298,7 +298,7 @@ DOS parity (GTH+Gaussian vs NC-UPF PW).
 - Tutorial ecut / SCF k only — not production-converged metallic DOS.
 - Geometry is **gapped Si** under FD: validates the metallic occupation **path**
   and \(\int^{E_F} D \approx n_e\), not a vanishing-gap metal spectrum
-  (use `pw-smearing-al` for free-energy metal pins).
+  (see [pw-smearing-al](pw-smearing-al.md) for true-metal free energies).
 - `Bands` still rejects metallic smearing; high-symmetry-path bands under FD
   are a follow-on, not this slug.
 - No spin-resolved DOS; collinear spin + smear DOS unsupported on `Dos`.

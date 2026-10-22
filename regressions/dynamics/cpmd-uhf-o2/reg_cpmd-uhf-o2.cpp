@@ -102,15 +102,15 @@ int main() {
         std::printf("FAIL: force initialization advanced the nuclei\n");
         return 1;
     }
-    if (!(uhf.iterations() > 0)) {
+    if (!(uhf.method().iterations() > 0)) {
         std::printf("FAIL: seed step ran %d SCF iterations — the cold seed "
                     "must converge a real SCF\n",
-                    uhf.iterations());
+                    uhf.method().iterations());
         return 1;
     }
-    if (!uhf.converged()) {
+    if (!uhf.method().converged()) {
         std::printf("FAIL: seed UHF SCF did not converge (%s)\n",
-                    uhf.stop_reason().c_str());
+                    uhf.method().stop_reason().c_str());
         return 1;
     }
 
@@ -118,11 +118,11 @@ int main() {
     //    launched from; `determinant()` intentionally stays the seed SCF's
     //    wavefunction on production steps — propagated orbitals have no
     //    canonical eigenvalues).
-    const double s2_contam = uhf.determinant().spin_contamination();
-    const int n_a =
-        uhf.determinant().n_electrons(cpu::scf::SlaterDeterminant::Spin::alpha);
-    const int n_b =
-        uhf.determinant().n_electrons(cpu::scf::SlaterDeterminant::Spin::beta);
+    const double s2_contam = uhf.method().determinant().spin_contamination();
+    const int n_a = uhf.method().determinant().n_electrons(
+        cpu::scf::SlaterDeterminant::Spin::alpha);
+    const int n_b = uhf.method().determinant().n_electrons(
+        cpu::scf::SlaterDeterminant::Spin::beta);
     if (n_a != 9 || n_b != 7) {
         std::printf("FAIL: seed determinant carries N_alpha=%d N_beta=%d, "
                     "expected 9 / 7 (triplet O2)\n",
@@ -152,15 +152,15 @@ int main() {
         }
     }
 
-    // ── Step 2: the first CP production step — baseline for the drift ─────
+    // ── Step 1: the first CP production step — baseline for the drift ─────
     if (sim.run(frame, 1) != 1) {
         std::printf("FAIL: first CP production step did not run\n");
         return 1;
     }
-    if (uhf.iterations() != 0) {
+    if (uhf.method().iterations() != 0) {
         std::printf("FAIL: first CP step re-ran SCF (iters=%d) — CPMD must not "
                     "be a BOMD rename\n",
-                    uhf.iterations());
+                    uhf.method().iterations());
         return 1;
     }
     const double e0 = frame.meta.get(kConserved);
@@ -181,9 +181,9 @@ int main() {
             std::printf("FAIL: production step %d did not run\n", s + 1);
             return 1;
         }
-        if (uhf.iterations() != 0) {
+        if (uhf.method().iterations() != 0) {
             std::printf("FAIL: production step %d re-ran SCF (iters=%d)\n",
-                        s + 1, uhf.iterations());
+                        s + 1, uhf.method().iterations());
             return 1;
         }
 
@@ -244,7 +244,7 @@ int main() {
                 "<S^2>-S(S+1)=%.4f  r(O–O)=%.4f Å  prod SCF iters=%d "
                 "(expect 0)\n",
                 frame.meta.get(kEnergy), frame.meta.get(kKinetic), te_min,
-                te_max, s2_contam, r_oo, uhf.iterations());
+                te_max, s2_contam, r_oo, uhf.method().iterations());
 
     // Both fictitious channels must be alive: O2's multi-dimensional symmetry
     // blocks leave the occupied subspace free to move (unlike H2).

@@ -23,19 +23,8 @@
 #include "atomiverse/core/device.h"
 #include "atomiverse/core/plan.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/component/timestep_protocol.h"
-#include "atomiverse/cpu/driver/driver_node.h"
-#include "atomiverse/cpu/driver/runtime.h"
-#include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cuda/component/component.cuh"
-#include "atomiverse/cuda/device/timer.h"
-#include "atomiverse/cuda/driver/driver_node.h"
 
 namespace ATV {
-
-/// @brief GPU profiler type held by `Driver` (CUDA-free PIMPL facade).
-using Timer = cuda::Timer;
 
 /// @brief Instance identity of a mounted plugin (pointer, not type or name).
 struct PluginIdentity {
@@ -46,22 +35,6 @@ struct PluginIdentity {
 };
 
 namespace detail {
-
-template <typename Node>
-bool driver_provides_energy(const Node& node) {
-    if constexpr (requires { node.provides_energy(); })
-        return node.provides_energy();
-    else
-        return false;
-}
-
-template <typename Node>
-bool driver_provides_force(const Node& node) {
-    if constexpr (requires { node.provides_force(); })
-        return node.provides_force();
-    else
-        return false;
-}
 
 /// @brief Unresolved binding collected before `Driver::build()`.
 template <typename Component>
@@ -88,6 +61,7 @@ class PhaseBuilder {
                       && !std::is_lvalue_reference_v<Comp>,
                   int> = 0>
     PhaseBuilder& add(Comp&& comp, int order = 0) {
+        require_mutable_();
         using C = std::remove_reference_t<Comp>;
         auto ptr = std::make_unique<C>(std::forward<Comp>(comp));
         auto* raw = ptr.get();
@@ -100,6 +74,7 @@ class PhaseBuilder {
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     PhaseBuilder& add(std::unique_ptr<Comp> comp, int order = 0) {
+        require_mutable_();
         if (!comp)
             throw std::invalid_argument("PhaseBuilder::add: null component");
         Component* raw = comp.get();
@@ -110,91 +85,50 @@ class PhaseBuilder {
 
     /// @brief Borrow a component whose lifetime is owned by the caller.
     ///
+    /// A continuable run stays live between `run()` calls, and the driver's
+    /// destructor ends it by calling `destroy()` on every built component,
+    /// borrowed ones included. A borrowed component may still be destroyed
+    /// first: the CPU Runtime then releases it without calling into it (its
+    /// own destructor has released its resources).
+    ///
     /// Prefer Component binding when the type is dual-identity
     /// (Component + cpu::DriverNode), e.g. transitional MeanFieldMethod.
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     PhaseBuilder& add_ref(Comp& comp, int order = 0) {
+        require_mutable_();
         bindings_->push_back({ATV::slot_of(phase_), order, &comp});
         return *this;
     }
 
-    /// @brief Own a nested CPU driver on this phase.
-    ///
-    /// `@param order` Binding order within the phase (lower runs earlier).
-    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
-    /// `child.default_budget()`. A type that is both Component and
-    /// DriverNode keeps the Component overload.
+    /// @brief Register an owned nested loop using the backend's node protocol.
     template <typename Nested,
               std::enable_if_t<
-                  std::is_same_v<DeviceTag, cpu::device_tag>
-                      && std::is_base_of_v<cpu::DriverNode,
-                                           std::remove_reference_t<Nested>>
+                  std::is_base_of_v<
+                      typename backend_traits<DeviceTag>::driver_node_type,
+                      std::remove_reference_t<Nested>>
                       && !std::is_base_of_v<Component,
                                             std::remove_reference_t<Nested>>
                       && !std::is_lvalue_reference_v<Nested>,
                   int> = 0>
     PhaseBuilder& add(Nested&& child, int order = 0, int budget = -1) {
+        require_mutable_();
         using N = std::remove_reference_t<Nested>;
-        auto node = std::make_unique<N>(std::forward<Nested>(child));
-        N* raw = node.get();
-        return mount_nested_cpu(std::move(node), raw, order, budget);
+        auto owned = std::make_unique<N>(std::forward<Nested>(child));
+        N* node = owned.get();
+        return mount_nested(std::move(owned), node, order, budget);
     }
 
-    /// @brief Borrow a nested CPU driver on this phase.
-    ///
-    /// The slot is owned by this driver; `child` stays with the caller
-    /// so `child.converged()` remains readable after `run`.
-    /// `@param order` Binding order within the phase (lower runs earlier).
-    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
-    /// `child.default_budget()`.
-    template <typename Nested,
-              std::enable_if_t<std::is_same_v<DeviceTag, cpu::device_tag>
-                                   && std::is_base_of_v<cpu::DriverNode, Nested>
-                                   && !std::is_base_of_v<Component, Nested>,
-                               int> = 0>
-    PhaseBuilder& add_ref(Nested& child, int order = 0, int budget = -1) {
-        return mount_nested_cpu(std::unique_ptr<Nested>{}, &child, order,
-                                budget);
-    }
-
-    /// @brief Own a nested CUDA driver on this phase.
-    ///
-    /// `@param order` Binding order within the phase (lower runs earlier).
-    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
-    /// `child.default_budget()`. A type that is both Component and
-    /// DriverNode keeps the Component overload.
-    template <typename Nested,
-              std::enable_if_t<
-                  std::is_same_v<DeviceTag, cuda::device_tag>
-                      && std::is_base_of_v<cuda::DriverNode,
-                                           std::remove_reference_t<Nested>>
-                      && !std::is_base_of_v<Component,
-                                            std::remove_reference_t<Nested>>
-                      && !std::is_lvalue_reference_v<Nested>,
-                  int> = 0>
-    PhaseBuilder& add(Nested&& child, int order = 0, int budget = -1) {
-        using N = std::remove_reference_t<Nested>;
-        auto node = std::make_unique<N>(std::forward<Nested>(child));
-        N* raw = node.get();
-        return mount_nested_cuda(std::move(node), raw, order, budget);
-    }
-
-    /// @brief Borrow a nested CUDA driver on this phase.
-    ///
-    /// The slot is owned by this driver; `child` stays with the caller.
-    /// `@param order` Binding order within the phase (lower runs earlier).
-    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
-    /// `child.default_budget()`.
+    /// @brief Borrow a nested loop; the caller owns its lifetime.
     template <
         typename Nested,
-        std::enable_if_t<std::is_same_v<DeviceTag, cuda::device_tag>
-                             && std::is_base_of_v<cuda::DriverNode, Nested>
-                             && !std::is_base_of_v<Component, Nested>,
-                         int> = 0>
+        std::enable_if_t<
+            std::is_base_of_v<
+                typename backend_traits<DeviceTag>::driver_node_type, Nested>
+                && !std::is_base_of_v<Component, Nested>,
+            int> = 0>
     PhaseBuilder& add_ref(Nested& child, int order = 0, int budget = -1) {
-        return mount_nested_cuda(std::unique_ptr<Nested>{}, &child, order,
-                                 budget);
+        return mount_nested(std::unique_ptr<Nested>{}, &child, order, budget);
     }
 
     /// Implicit lvalue borrowing is forbidden. Use `add_ref(comp)`.
@@ -205,119 +139,28 @@ class PhaseBuilder {
     template <typename PE, typename DT>
     friend class Driver;
     PhaseBuilder(std::vector<detail::PendingBinding<Component>>* b,
-                 std::vector<std::unique_ptr<Component>>* o,
-                 std::vector<std::unique_ptr<cpu::DriverNode>>* d, PhaseEnum p)
-        : bindings_(b), owned_(o), owned_drivers_(d), phase_(p) {}
+                 std::vector<std::unique_ptr<Component>>* o, PhaseEnum p,
+                 const bool* const* lock)
+        : bindings_(b), owned_(o), phase_(p), mutation_lock_(lock) {}
     std::vector<detail::PendingBinding<Component>>* bindings_;
     std::vector<std::unique_ptr<Component>>* owned_;
-    std::vector<std::unique_ptr<cpu::DriverNode>>* owned_drivers_;
     PhaseEnum phase_;
-
-    template <typename Node>
-    PhaseBuilder& mount_nested_cpu(std::unique_ptr<Node> owned, Node* live,
-                                   int order, int budget) {
-        Node* node = owned ? owned.get() : live;
-        const int cap = budget < 0 ? node->default_budget() : budget;
-        const bool energy = detail::driver_provides_energy(*node);
-        const bool force = detail::driver_provides_force(*node);
-        cpu::TimestepConsumer* step = nullptr;
-        if constexpr (std::is_base_of_v<cpu::TimestepConsumer, Node>)
-            step = static_cast<cpu::TimestepConsumer*>(node);
-
-        struct Slot : Component {
-            std::unique_ptr<cpu::DriverNode> owned_node;
-            cpu::DriverNode* node = nullptr;
-            cpu::TimestepConsumer* step = nullptr;
-            int budget = 0;
-            bool energy = false;
-            bool force = false;
-
-            std::string name() const override { return "nested_driver"; }
-            bool provides_energy() const override { return energy; }
-            bool provides_force() const override { return force; }
-            bool requires_tag_index() const override {
-                return node && node->requires_tag_index();
-            }
-            cpu::TimestepConsumer* as_timestep_consumer() override {
-                return step;
-            }
-            void build(const cpu::BuildContext& ctx) override {
-                node->build_on(require_runtime(ctx.runtime, "build"));
-            }
-            void launch(const cpu::LaunchContext& ctx) override {
-                const auto saved_window = ctx.frame.resolution_window();
-                const bool saved_forces = ctx.runtime.exec.forces_requested;
-                ctx.frame.restore_resolution_window(cpu::ResolutionWindow{});
-                ctx.runtime.exec.forces_requested =
-                    saved_forces && ctx.forces_requested;
-                node->run_nested_erased(ctx.runtime, ctx.frame, budget);
-                ctx.runtime.exec.forces_requested = saved_forces;
-                ctx.frame.restore_resolution_window(saved_window);
-            }
-            void destroy(const cpu::DestroyContext& ctx) override {
-                node->destroy_on(require_runtime(ctx.runtime, "destroy"));
-            }
-
-            static cpu::Runtime& require_runtime(cpu::Context& ctx,
-                                                 const char* where) {
-                if (!ctx.exec.runtime) {
-                    throw std::runtime_error(
-                        std::string("nested driver ") + where
-                        + ": no Runtime on the Context. Bind the driver under "
-                          "a parent Driver that has completed setup_pass.");
-                }
-                return *ctx.exec.runtime;
-            }
-        };
-
-        auto slot = std::make_unique<Slot>();
-        slot->owned_node = std::move(owned);
-        slot->node = node;
-        slot->step = step;
-        slot->budget = cap;
-        slot->energy = energy;
-        slot->force = force;
-        Component* raw = slot.get();
-        owned_->push_back(std::move(slot));
-        bindings_->push_back({ATV::slot_of(phase_), order, raw});
-        return *this;
+    const bool* const* mutation_lock_;
+    void require_mutable_() const {
+        if (mutation_lock_ && *mutation_lock_ && **mutation_lock_)
+            throw std::logic_error(
+                "cannot change driver bindings during dispatch");
     }
 
     template <typename Node>
-    PhaseBuilder& mount_nested_cuda(std::unique_ptr<Node> owned, Node* live,
-                                    int order, int budget) {
-        Node* node = owned ? owned.get() : live;
+    PhaseBuilder& mount_nested(std::unique_ptr<Node> owned, Node* node,
+                               int order, int budget) {
+        require_mutable_();
         const int cap = budget < 0 ? node->default_budget() : budget;
-        const bool energy = detail::driver_provides_energy(*node);
-        const bool force = detail::driver_provides_force(*node);
-
-        struct Slot : Component {
-            std::unique_ptr<cuda::DriverNode> owned_node;
-            cuda::DriverNode* node = nullptr;
-            int budget = 0;
-            bool energy = false;
-            bool force = false;
-
-            std::string name() const override { return "nested_driver"; }
-            bool provides_energy() const override { return energy; }
-            bool provides_force() const override { return force; }
-            void build(const cuda::BuildContext& ctx) override {
-                node->build_on(ctx.runtime, ctx.frame);
-            }
-            void launch(const cuda::LaunchContext& ctx) override {
-                node->run_nested_erased(ctx.runtime, ctx.frame, budget);
-            }
-            void destroy(const cuda::DestroyContext& ctx) override {
-                node->destroy_on(ctx.runtime, ctx.frame);
-            }
-        };
-
-        auto slot = std::make_unique<Slot>();
-        slot->owned_node = std::move(owned);
-        slot->node = node;
-        slot->budget = cap;
-        slot->energy = energy;
-        slot->force = force;
+        const auto [energy, force] =
+            backend_traits<DeviceTag>::node_outputs(*node);
+        auto slot = backend_traits<DeviceTag>::template nested_slot<Node>(
+            std::move(owned), node, cap, energy, force);
         Component* raw = slot.get();
         owned_->push_back(std::move(slot));
         bindings_->push_back({ATV::slot_of(phase_), order, raw});
@@ -335,26 +178,25 @@ class Driver {
     using traits = backend_traits<DeviceTag>;
     using Component = typename traits::component_type;
     using BackendT = typename traits::backend_type;
+    using frame_type = typename traits::frame_type;
+    using Timer = typename traits::timer_type;
 
   public:
     Driver() = default;
-    ~Driver() { shutdown(); }
+    virtual ~Driver() { shutdown(); }
     Driver(const Driver&) = delete;
     Driver& operator=(const Driver&) = delete;
 
-    Driver(Driver&& o) noexcept
-        : pending_(std::move(o.pending_)),
-          owned_components_(std::move(o.owned_components_)),
-          owned_drivers_(std::move(o.owned_drivers_)),
-          plan_(std::move(o.plan_)), backend_(std::move(o.backend_)),
-          timer_(std::move(o.timer_)) {}
+    Driver(Driver&& o) { *this = std::move(o); }
 
-    Driver& operator=(Driver&& o) noexcept {
+    Driver& operator=(Driver&& o) {
         if (this != &o) {
+            if (mutation_lock_ || o.mutation_lock_)
+                throw std::logic_error(
+                    "cannot move a driver bound to a Runtime");
             shutdown();
             pending_ = std::move(o.pending_);
             owned_components_ = std::move(o.owned_components_);
-            owned_drivers_ = std::move(o.owned_drivers_);
             plan_ = std::move(o.plan_);
             backend_ = std::move(o.backend_);
             timer_ = std::move(o.timer_);
@@ -372,7 +214,7 @@ class Driver {
     /// @return A `PhaseBuilder` bound to that phase.
     PhaseBuilder<PhaseEnum, DeviceTag> on(PhaseEnum phase) {
         return PhaseBuilder<PhaseEnum, DeviceTag>(&pending_, &owned_components_,
-                                                  &owned_drivers_, phase);
+                                                  phase, &mutation_lock_);
     }
 
     /// @brief Read-only access to the compiled Plan (after `build()`).
@@ -383,6 +225,7 @@ class Driver {
     /// `pending_` stays populated so a second `build()` / `compile()` can
     /// rewrite `plan_` without reconstructing the driver.
     void build() {
+        require_mutable_();
         PlanBuilder<Component> builder;
         for (auto& pb : pending_)
             builder.add({pb.phase, pb.order, pb.component});
@@ -404,11 +247,6 @@ class Driver {
         return false;
     }
 
-    /// @brief Run the full simulation lifecycle.
-    /// @param frame Host-side frame used as input and final output.
-    /// @param n_steps Number of time steps or SCF iterations to execute.
-    void run(cpu::Frame& frame, int n_steps);
-
     /// @brief Enable per-component timing (call before run).
     void enable_timing();
 
@@ -417,9 +255,15 @@ class Driver {
     std::string summary() const;
 
     /// @brief Shut down Backend and release all resources.
-    void shutdown();
+    virtual void shutdown();
 
   protected:
+    /// @brief Backend execution primitive; public workflow entry points belong
+    /// to the concrete backend driver so lifecycle and termination cannot be bypassed.
+    /// @param frame Host-side frame used as input and final output.
+    /// @param n_steps Number of steps to dispatch.
+    void run(frame_type& frame, int n_steps);
+
     // Internals are protected (not private) so the backend loop node
     // (cpu::Driver / cuda::Driver) can drive the per-iteration loop itself.
 
@@ -433,10 +277,11 @@ class Driver {
               std::enable_if_t<
                   std::is_base_of_v<Component, std::remove_reference_t<Comp>>
                       && !std::is_lvalue_reference_v<Comp>
-                      && !std::is_base_of_v<cpu::DriverNode,
+                      && !std::is_base_of_v<typename traits::driver_node_type,
                                             std::remove_reference_t<Comp>>,
                   int> = 0>
     void bind_defaults(Comp&& comp) {
+        require_mutable_();
         using C = std::remove_reference_t<Comp>;
         bind_defaults(std::make_unique<C>(std::forward<Comp>(comp)));
     }
@@ -445,6 +290,7 @@ class Driver {
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     void bind_defaults(std::unique_ptr<Comp> comp) {
+        require_mutable_();
         if (!comp)
             throw std::invalid_argument(
                 "Driver::bind_defaults: null component");
@@ -463,9 +309,11 @@ class Driver {
     /// @brief Borrow a component via its `default_bindings()`.
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>
-                                   && !std::is_base_of_v<cpu::DriverNode, Comp>,
+                                   && !std::is_base_of_v<
+                                       typename traits::driver_node_type, Comp>,
                                int> = 0>
     void bind_defaults_ref(Comp& comp) {
+        require_mutable_();
         auto bindings = comp.default_bindings();
         if (bindings.empty())
             throw std::runtime_error(
@@ -514,9 +362,15 @@ class Driver {
         });
     }
 
+    const bool* mutation_lock_ = nullptr;
+    void require_mutable_() const {
+        if (mutation_lock_ && *mutation_lock_)
+            throw std::logic_error(
+                "cannot change driver bindings during dispatch");
+    }
+
     std::vector<detail::PendingBinding<Component>> pending_;
     std::vector<std::unique_ptr<Component>> owned_components_;
-    std::vector<std::unique_ptr<cpu::DriverNode>> owned_drivers_;
     Plan<Component> plan_;
     std::unique_ptr<BackendT> backend_;
     std::unique_ptr<Timer> timer_;

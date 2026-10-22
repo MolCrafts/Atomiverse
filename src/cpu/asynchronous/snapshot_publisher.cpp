@@ -42,11 +42,12 @@ CaptureMask mask_union_all(const std::vector<AsyncComponentBase*>& subs) {
     return u;
 }
 
-// Copy src[0..n) into out[0..n); vectors already sized by prealloc_slots().
+// The acquired slot has no readers. Resize it for changing population/schema.
 template <class T>
 void copy_range(std::vector<double>& out, const T* src, int n, bool capture) {
+    out.resize(capture ? static_cast<std::size_t>(n) : 0);
     if (!capture)
-        return; // leave pre-sized buffer untouched (consumer reads n_owned)
+        return;
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i)
         out[static_cast<std::size_t>(i)] = src[i]; // implicit widen to double
@@ -54,6 +55,7 @@ void copy_range(std::vector<double>& out, const T* src, int n, bool capture) {
 
 void copy_range_int(std::vector<int>& out, const int* src, int n,
                     bool capture) {
+    out.resize(capture ? static_cast<std::size_t>(n) : 0);
     if (!capture)
         return;
 #pragma omp parallel for schedule(static)
@@ -64,6 +66,7 @@ void copy_range_int(std::vector<int>& out, const int* src, int n,
 template <class T>
 void copy_range_i64(std::vector<std::int64_t>& out, const T* src, int n,
                     bool capture) {
+    out.resize(capture ? static_cast<std::size_t>(n) : 0);
     if (!capture)
         return;
 #pragma omp parallel for schedule(static)
@@ -101,18 +104,22 @@ void Publish::launch(const LaunchContext& ctx) {
     if (!any_firing)
         return;
 
-    // Static capture-mask union over ALL subscribers, resolved once and
-    // reused -- the captured field set is uniform for every captured step and
-    // does not depend on which subscribers fire. Subscriber set is fixed after
-    // build(); compute lazily on the first capturing launch (the publisher at
-    // +10 builds before subscribers at +20, so the list is empty in build()).
-    if (!mask_ready_) {
-        static_mask_ = mask_union_all(subs);
-        mask_ready_ = true;
-    }
-    const CaptureMask mask = static_mask_;
+    // Use all currently mounted subscribers, independent of firing cadence.
+    // Live additions/removals must not retain the previous capture schema.
+    const CaptureMask mask = mask_union_all(subs);
 
     const int slot_idx = exec_->acquire_slot();
+    if (slot_idx < 0)
+        return;
+    struct CaptureGuard {
+        AnalysisExecutor& executor;
+        int slot;
+        bool published = false;
+        ~CaptureGuard() {
+            if (!published)
+                executor.abandon_slot(slot);
+        }
+    } capture{*exec_, slot_idx};
     FrameSnapshot& snap = exec_->slot(slot_idx);
 
     const int n = ctx.frame.nlocal();
@@ -133,6 +140,7 @@ void Publish::launch(const LaunchContext& ctx) {
     copy_range_i64(snap.tag, ctx.frame.span(kAtom_tag).data(), n, mask.tags);
 
     exec_->publish(slot_idx, step);
+    capture.published = true;
     // Dispatch happens per-subscriber inside `AsyncComponentBase::launch()`
     // at end_of_step @ +20.
 }

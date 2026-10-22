@@ -31,6 +31,7 @@
 #pragma once
 
 #include <deque>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -48,7 +49,11 @@ namespace internal {
 class EDIISMixer {
   public:
     /// @param max_vectors Maximum number of stored (F, D, E) iterates.
-    explicit EDIISMixer(int max_vectors = 6) : max_vectors_(max_vectors) {}
+    explicit EDIISMixer(int max_vectors = 6) : max_vectors_(max_vectors) {
+        if (max_vectors < 1)
+            throw std::invalid_argument(
+                "EDIISMixer: history depth must be positive");
+    }
 
     /// @brief Store a new iterate and return the EDIIS-combined Fock pair.
     /// @param F_alpha α Fock matrix [Hartree].
@@ -105,7 +110,11 @@ class EDIISMixer {
 class ADIISMixer {
   public:
     /// @param max_vectors Maximum number of stored (F, D) iterates.
-    explicit ADIISMixer(int max_vectors = 6) : max_vectors_(max_vectors) {}
+    explicit ADIISMixer(int max_vectors = 6) : max_vectors_(max_vectors) {
+        if (max_vectors < 1)
+            throw std::invalid_argument(
+                "ADIISMixer: history depth must be positive");
+    }
 
     /// @brief Store a new iterate and return the ADIIS-combined Fock pair.
     /// @param F_alpha α Fock matrix [Hartree].

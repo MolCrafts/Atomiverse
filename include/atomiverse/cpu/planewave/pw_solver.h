@@ -21,6 +21,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -40,6 +41,7 @@ namespace cpu {
 namespace pw {
 
 namespace internal {
+struct PWProblem;
 class PoissonSolver;
 class XCBuilder;
 class VeffBuilder;
@@ -85,6 +87,7 @@ enum class Smearing : int {
 
 class PW : public cpu::Driver<ATV::pw::Phase> {
   public:
+    bool requires_full_frame() const override { return true; }
     /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(frame)`.
     using cpu::Driver<ATV::pw::Phase>::build;
 
@@ -142,8 +145,8 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     PW();
 
     ~PW();
-    PW(PW&&) noexcept;
-    PW& operator=(PW&&) noexcept;
+    PW(PW&&);
+    PW& operator=(PW&&);
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 
@@ -224,10 +227,27 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     ///         fixed-occupation path.
     std::array<double, 6> stress(Frame& frame);
 
+    // The path stages borrow each run's stack. Use the evaluator for composition.
+    void build_on(cpu::Runtime&) override {
+        throw std::logic_error("PW cannot be nested directly; use PWEvaluator");
+    }
+    int run_nested_erased(cpu::Context&, cpu::Frame&, int) override {
+        throw std::logic_error("PW cannot be nested directly; use PWEvaluator");
+    }
+
+    int run_nested(cpu::Context&, cpu::Frame&, int) {
+        throw std::logic_error("PW cannot be nested directly; use PWEvaluator");
+    }
+
     /// @brief Most recent SCF result.
     const PWResult& last_result() const { return result_; }
 
   private:
+    friend class PWEvaluator;
+    void evaluate_(const Frame& frame,
+                   std::vector<std::array<double, 3>>* forces,
+                   std::array<double, 6>* stress);
+    std::unique_ptr<internal::PWProblem> problem_;
     /// @brief Wire path-local stage StepFns + compile Plan (rebuilds each drive).
     void ensure_driver_built_(VeffStage::StepFn veff,
                               DiagonalizeStage::StepFn diag,

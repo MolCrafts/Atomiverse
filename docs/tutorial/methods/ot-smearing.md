@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-smearing` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `smearing`, `degauss` [Ry], `extra_bands`, `mp_order`; `GpwResult::{e_total,e_fermi,n_elec_occ,e_entropy}` |
-| Roadmap | [dft.md](../../roadmap/dft.md) §10 — OT + metallic smear ✓ (`reg_ot-smearing`) |
+| Roadmap | [dft.md](../../roadmap/dft.md) §10 — OT + metallic smear ✓ |
 ## Summary
 
 **Orbital Transformation (OT)** optimizes occupied MO coefficients on the
@@ -23,8 +23,7 @@ pin: **BCC Na** conventional cell, PADE / GTH-PBE-q9 / DZVP-MOLOPT-SR-GTH,
 Fermi–Dirac `degauss = 0.02` Ry, Monkhorst–Pack \(2\times2\times2\). Product
 gate: free energy **OT+FD ≡ DIIS+FD**, electron count \(N_e=18\), frozen
 \(F\) pin. Offline CP2K 2026.1 documents the **DIIS + FERMI_DIRAC** twin
-(stock CP2K OT does not combine with SMEAR). Regression:
-`reg_ot-smearing`. Fair OT-only wall ratio
+(stock CP2K OT does not combine with SMEAR). Fair OT-only wall ratio
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx 0.20\) (≤10×).
 
 ## Method
@@ -90,8 +89,8 @@ state when both converge on identical grids (product identity gate).
 **Key exclusions (binding).**
 
 - **UKS OT + smear** — `build` throws (multi-k UKS OT with integer occupations
-  is productized under `ot-uks-kpoints`; UKS OT + FD/MP remains residual).
-- OT + DFT+U + smear on the multi-k path — not this pin (`ot-dftu-kpoints`
+  is productized under [ot-uks-kpoints](ot-uks-kpoints.md); UKS OT + FD/MP remains residual).
+- OT + DFT+U + smear on the multi-k path — not this pin ([ot-dftu-kpoints](ot-dftu-kpoints.md)
   is integer / separate combo).
 - Sparse / linear-scaling OT preconditioner ○ (dense inverse cost).
 - Stock CP2K OT+SMEAR product twin — CP2K keeps fixed integer OT occupations;
@@ -102,7 +101,7 @@ state when both converge on identical grids (product identity gate).
 ## Implementation
 
 Public surface only: construct `cpu::gpw::GpwDft`, set members, `build` /
-`run` on a `cpu::Frame` (regression path). No `*Config`, no factories. Headers:
+`run` on a `cpu::Frame` (the path used for the recorded values). No `*Config`, no factories. Headers:
 `gpw_solver.h` (API + `Smearing` enum);
 OT internals in `ot.h` (not a user type).
 
@@ -171,8 +170,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_ot-smearing -j$(nproc)
-  reg_ot-smearing
 '
 ```
 
@@ -181,15 +178,12 @@ bash -lc '
 | `gpw_solver.h` | Public `use_ot`, `Smearing`, `degauss`, `extra_bands` |
 | `ot.h` | Multi-k OT + fractional gradient (internal) |
 | `src/cpu/gpw/gpw_solver.cpp` | Build gates (RKS OT+smear OK; UKS OT+smear throws) |
-| `ot-smearing` | E2E product gate + pin notes |
 | CP2K oracle | Offline CP2K DIIS+FD twin |
-| Related: `reg_gpw-metallic-smearing` | DIIS-only metallic smear (same system class) |
 | Related: `reg_ot-minimizer-water` | Γ OT, fixed integer occupations |
 
 ## Validation (vs CP2K)
 
-Source:
-case `ot-smearing` pin
+Source: values recorded when this page was written (no standing regression)
 (offline pins only; **never** live CP2K in ctest).
 
 ### System (Atomiverse pin)
@@ -231,7 +225,7 @@ case `ot-smearing` pin
 Absolute free energy is **not** compared to CP2K as a product gate: grid /
 `EPS_DEFAULT` / rel-cutoff defaults still leave ~0.6 Ha class offset.
 Electron count + OT≡DIIS identity + frozen ATV pin are the acceptance
-surface. Same system class as `reg_gpw-metallic-smearing`.
+surface. Same system class as [gpw-metallic-smearing](gpw-metallic-smearing.md).
 
 ### Offline CP2K twin (algorithm / SMEAR documentation)
 
@@ -260,8 +254,7 @@ cp2k.psmp -i <CP2K oracle input for this case> -o ot.out
 
 ## Performance
 
-Source: fair wall table in
-case `ot-smearing` pin (2026-07-26). Handoff /
+Source (fair wall): values recorded when this page was written (no standing regression) (2026-07-26). Handoff /
 queue record: ratio **~0.20**. Gate \(r\le 10\) unless `perf_exempt`.
 
 Comparable settings: cutoff 150 Ry, PADE, multi-k \(2^3\), single rank,
@@ -271,14 +264,14 @@ Comparable settings: cutoff 150 Ry, PADE, multi-k \(2^3\), single rank,
 | ---- | -------: | ----------------------------------------: | ---- | ------ |
 | CP2K DIIS+FD (`na_ot_fermi_dirac.inp`) | **~89.5** | — | — | same class as metallic-smearing twin |
 | ATV OT+FD only (fair) | **~18.2** | **~0.20** | ✓ | primary ratio |
-| ATV OT+DIIS (full regression binary) | longer | — | — | **not** a fair twin — identity gate also runs DIIS |
+| ATV OT+DIIS (full recorded check) | longer | — | — | **not** a fair twin — identity gate also runs DIIS |
 
 \[
 r = T_{\mathrm{atv}} / T_{\mathrm{cp2k}} \approx 18.2 / 89.5 \approx 0.20 \ll 10
 \]
 
 `within_10x = true`. **Caveats.** (1) Report the **OT-only** wall; the
-regression binary also runs the DIIS twin for identity and must not be
+recorded check also runs the DIIS twin for identity and must not be
 ratioed against CP2K alone without splitting. (2) CP2K twin is DIIS+SMEAR,
 not OT+SMEAR — ratio is dual-gate throughput, not a same-algorithm OT
 race. (3) Dense OT preconditioner cost on small cells does not forecast
@@ -287,8 +280,8 @@ sparse/linear-scaling OT. (4) **ctest never launches CP2K.**
 ## Limitations
 
 - **Closed-shell multi-k RKS only** for OT+smear. Multi-k UKS OT + FD/MP
-  remains fail-fast (`A6`); use `gpw-uks-smearing` (DIIS UKS smear) or
-  `ot-uks-kpoints` (UKS OT, integer occupations).
+  remains fail-fast (`A6`); use [gpw-uks-smearing](gpw-uks-smearing.md) (DIIS UKS smear) or
+  [ot-uks-kpoints](ot-uks-kpoints.md) (UKS OT, integer occupations).
 - **Absolute energy is ATV-frozen, not CP2K-matched.** Product gates are
   OT≡DIIS free-energy identity, \(N_e\), and the frozen Ha pin; CP2K
   documents SMEAR settings / algorithm only (~0.6 Ha class offset).
@@ -297,7 +290,7 @@ sparse/linear-scaling OT. (4) **ctest never launches CP2K.**
 - **No cold / Marzari–Vanderbilt** public enum; e2e gate is Fermi–Dirac
   (MP available via members + unit tests).
 - **OT + DFT+U + smear** multi-k combo not this pin (see `ot-dftu` /
-  `ot-dftu-kpoints`).
+  [ot-dftu-kpoints](ot-dftu-kpoints.md)).
 - **Forces / stress / BOMD** under OT+smear are not acceptance pins here.
 - **CUDA GPW** OT/smear out of scope.
 - **Speed.** \(r\approx 0.20\) on the documented dual; no multi-system
@@ -305,8 +298,7 @@ sparse/linear-scaling OT. (4) **ctest never launches CP2K.**
 
 ## References
 
-- Offline pin + fair wall: case `ot-smearing` pin
-- Regression binary: `reg_ot-smearing.cpp`
+- Offline pin + fair wall: values recorded when this page was written (no standing regression)
 - CP2K twin input: CP2K oracle
 - Oracle notes: CP2K oracle
 - Handoff ratio **~0.20**: the case pin notes
@@ -314,8 +306,8 @@ sparse/linear-scaling OT. (4) **ctest never launches CP2K.**
 - Internal OT (fractional gradient): `ot.h`
 - Related tutorials: [ot-minimizer-water](ot-minimizer-water.md) (Γ OT,
   fixed occ); [pw-smearing-al](pw-smearing-al.md) (PW metallic FD)
-- Related regressions: `reg_gpw-metallic-smearing`, `reg_ot-kpoints`,
-  `reg_ot-uks-kpoints`, `reg_gpw-uks-smearing`
+- Related tutorials (no standing regressions): [gpw-metallic-smearing](gpw-metallic-smearing.md), [ot-kpoints](ot-kpoints.md),
+  [ot-uks-kpoints](ot-uks-kpoints.md), [gpw-uks-smearing](gpw-uks-smearing.md)
 - Literature: VandeVondele & Hutter, *J. Chem. Phys.* **118**, 4365 (2003)
   (OT); Kühne et al., *J. Chem. Phys.* **152**, 194103 (2020) §VII C;
   Mermin, *Phys. Rev.* **137**, A1441 (1965); Methfessel & Paxton,

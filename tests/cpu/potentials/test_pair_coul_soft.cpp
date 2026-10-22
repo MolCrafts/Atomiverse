@@ -41,7 +41,6 @@ cpu::md::PairList half_list() {
     pairs.firstneigh = {0, 0};
     pairs.neighbors = {1};
     pairs.total_pairs = 1;
-    pairs.has_shifts = false;
     pairs.version = 1;
     return pairs;
 }

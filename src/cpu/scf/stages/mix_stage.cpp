@@ -3,6 +3,7 @@
 ///        shift, byte-for-byte the shipping SCF loop body (steps 2 + 2b).
 
 #include "atomiverse/cpu/scf/stages/mix_stage.h"
+#include "atomiverse/cpu/linalg/pulay.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,9 +22,9 @@ void MixStage::launch(const cpu::LaunchContext& ctx) {
         return;
 
     // Step 2: DIIS error from the UNSHIFTED Fock (scf_solver.cpp:246-249).
-    err_alpha_ = internal::diis_error(F_alpha_, P_alpha_, S_, X_);
+    err_alpha_ = linalg::diis_error(F_alpha_, P_alpha_, S_, X_);
     if (!restricted_)
-        err_beta_ = internal::diis_error(F_beta_, P_beta_, S_, X_);
+        err_beta_ = linalg::diis_error(F_beta_, P_beta_, S_, X_);
 
     // SOSCF escalation latch: once max|DIIS error| falls below soscf_start
     // (or from the earliest eligible iteration when soscf_start <= 0), the

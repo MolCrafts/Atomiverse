@@ -36,7 +36,7 @@
 /// Both are user-definable, and they are orthogonal:
 ///
 ///   - `Criterion`     — *should the loop stop?*      `add_criterion(…)`, plural,
-///                       composed by severity: **Stop > Converged > Continue**.
+///                       all requirements for success; any Stop aborts.
 ///                       A Component the driver polls. @see component/criterion.h
 ///   - `OutcomePolicy` — *does this iteration count?* `set_outcome(…)`, singular.
 ///                       @see outcome_policy.h
@@ -86,6 +86,7 @@
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/optimizer.h"
 #include "atomiverse/cpu/component/pair_evaluator.h"
+#include "atomiverse/cpu/component/timestep_protocol.h"
 #include "atomiverse/cpu/driver/backend_traits.h"
 #include "atomiverse/cpu/driver/dof.h"
 #include "atomiverse/cpu/driver/outcome_policy.h"
@@ -208,6 +209,20 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     using Base = ATV::Driver<PhaseEnum, cpu::device_tag>;
     using Traits = PhaseTraits<PhaseEnum>;
 
+    /// @brief End the owned run and release its Runtime; the next run starts fresh.
+    /// @throws std::logic_error during dispatch or while mounted on a parent.
+    void shutdown() override {
+        this->require_mutable_();
+        if (attached_runtime_)
+            throw std::logic_error(
+                "a mounted driver must be released by its parent Runtime");
+        flush_live_();
+        if (this->backend_)
+            this->backend_->destroy_components();
+        this->mutation_lock_ = nullptr;
+        Base::shutdown();
+    }
+
     /// @brief Compile the Plan after installing infrastructure and
     /// validating the required role + capability set.
     ///
@@ -216,7 +231,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// second (so the auto-injected set counts toward role/capability
     /// requirements), `Base::build()` last.
     void build() {
+        this->require_mutable_();
         install_defaults();
+        compile_physical_contract_();
         validate_long_range_contract_();
         validate_components();
         // Capture Constraint components from the live mount table. Plan is a
@@ -228,22 +245,22 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         // it once per binding tripled the constraint count and made the driver throw
         // "no degrees of freedom left" on a perfectly ordinary water box.
         // `Backend::collect_component_memory` dedups the same way, for the same reason.
-        constraint_providers_.clear();
-        std::unordered_set<const cpu::ConstraintProvider*> seen;
-        for_each_pending([&](const cpu::Component& c) {
-            if (const cpu::ConstraintProvider* cp = c.as_constraint()) {
-                if (seen.insert(cp).second)
-                    constraint_providers_.push_back(cp);
-            }
-        });
+        refresh_constraints_();
         Base::build();
+        this->plan_.lifecycle_only.assign(criteria_.begin(), criteria_.end());
+        this->plan_.requires_full_frame = requires_full_frame();
         // Compile the per-phase force policy into the Plan. One stamp at build,
         // so the hot loop never asks the question: the Runtime reads
         // `slot.forces_requested` and ANDs it with the Context's nesting
         // channel when it constructs each LaunchContext.
-        for (auto& s : this->plan_.slots)
+        for (auto& s : this->plan_.slots) {
             s.forces_requested =
                 phase_wants_forces(static_cast<PhaseEnum>(s.phase));
+            s.stress_requested =
+                phase_wants_stress(static_cast<PhaseEnum>(s.phase));
+        }
+        // Recompiling the table does not refresh an already-bound Runtime.
+        rebind_pending_ = live_;
     }
 
     /// @brief Enable/disable opt-in per-component timing for this run.
@@ -296,18 +313,70 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// recompiles the Plan, and re-runs the same closure as `build()`.
     /// Call between steps or `run()` chunks, not from `launch()`.
     /// @param name_or_id Exact `Component::name()`.
-    /// @throws std::runtime_error if none / several match, if called during
-    ///         launch, or if the remaining set fails `validate_components`.
+    /// @throws std::runtime_error if none / several match or if the remaining
+    ///         set fails `validate_components`.
+    /// @throws std::logic_error if called during dispatch.
     void unfix(std::string_view name_or_id) {
-        this->unmount_(name_or_id, launching_, [&](cpu::Component* c) {
-            if (live_ && this->backend_ && built_plugins_.count(c)) {
-                Plan<cpu::Component> one;
-                one.slots.resize(1);
-                one.slots[0].ops.push_back({c});
-                this->backend_->destroy_plan(one);
-                built_plugins_.erase(c);
+        this->require_mutable_();
+        std::vector<cpu::Component*> hits;
+        for (const auto& binding : this->pending_) {
+            cpu::Component* c = binding.component;
+            if (c && c->name() == name_or_id)
+                hits.push_back(c);
+        }
+        for (auto* c : criteria_)
+            if (c->name() == name_or_id)
+                hits.push_back(c);
+        if (hits.empty()) {
+            std::string have;
+            for (const auto& pb : this->pending_) {
+                if (!pb.component)
+                    continue;
+                if (!have.empty())
+                    have += ", ";
+                have += pb.component->name();
             }
-        });
+            throw std::runtime_error(
+                "unfix: no plugin named '" + std::string(name_or_id)
+                + "'. mounted: [" + have
+                + "]. Remount with on(phase).add / set_evaluator.");
+        }
+        cpu::Component* c = hits.front();
+        if (std::any_of(hits.begin(), hits.end(),
+                        [&](cpu::Component* hit) { return hit != c; })) {
+            throw std::runtime_error(
+                "unfix: name '" + std::string(name_or_id)
+                + "' is not unique. Give plugins distinct name() values.");
+        }
+        auto* runtime =
+            attached_runtime_ ? attached_runtime_ : this->backend_.get();
+        if (live_ && runtime && built_plugins_.count(c)) {
+            Plan<cpu::Component> one;
+            one.slots.resize(1);
+            one.slots[0].phase = 0;
+            Operation<cpu::Component> op;
+            op.component = c;
+            one.slots[0].ops.push_back(op);
+            runtime->drain_analysis();
+            runtime->destroy_plan(one);
+            built_plugins_.erase(c);
+        }
+        this->pending_.erase(std::remove_if(this->pending_.begin(),
+                                            this->pending_.end(),
+                                            [c](const auto& binding) {
+                                                return binding.component == c;
+                                            }),
+                             this->pending_.end());
+        std::erase(criteria_, c);
+        std::erase_if(criteria_owned_,
+                      [c](const auto& owned) { return owned.get() == c; });
+        this->owned_components_.erase(
+            std::remove_if(this->owned_components_.begin(),
+                           this->owned_components_.end(),
+                           [c](const std::unique_ptr<cpu::Component>& p) {
+                               return p.get() == c;
+                           }),
+            this->owned_components_.end());
         auto clear_slot = [&](std::optional<std::string>& slot) {
             if (slot && *slot == name_or_id)
                 slot.reset();
@@ -365,6 +434,11 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @param phase The phase whose slot is being stamped.
     /// @return False to launch every op of that phase energy-only.
     virtual bool phase_wants_forces(PhaseEnum /*phase*/) const { return true; }
+
+    /// @brief Stress policy; energy-only phases default to neither derivative.
+    virtual bool phase_wants_stress(PhaseEnum phase) const {
+        return phase_wants_forces(phase);
+    }
 
     /// @brief Walk every **component** pending binding (driver-nodes skipped).
     /// Components with multiple `default_bindings()` entries appear once
@@ -492,19 +566,30 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     void setup_pass(cpu::Frame& frame) {
         if (!this->backend_)
             this->backend_ = std::make_unique<typename Base::BackendT>();
-        this->backend_->init();
-        this->backend_->load(this->plan_);
-        this->backend_->set_frame(frame);
-        publish_dof_(frame);
-        // Point the Context at THIS loop's status + metrics. The loop owns them; the
-        // Context only borrows. A nested driver will re-point them at its own and
-        // restore ours on exit, which is what makes a nested loop physically unable to
-        // stop its parent.
-        this->backend_->context().loop.status = &status_;
-        this->backend_->context().loop.metrics = &metrics_;
-        this->backend_->build_components();
-        status_.reset();
-        metrics_ = ConvergenceMetrics{};
+        this->backend_->enable_driver_unwind();
+        try {
+            this->backend_->init();
+            this->backend_->load(this->plan_);
+            this->backend_->set_frame(frame);
+            publish_dof_(frame, this->backend_->context());
+            // Point the Context at THIS loop's status + metrics. The loop owns them; the
+            // Context only borrows. A nested driver will re-point them at its own and
+            // restore ours on exit, which is what makes a nested loop physically unable to
+            // stop its parent.
+            this->backend_->context().loop.status = &status_;
+            this->backend_->context().loop.metrics = &metrics_;
+            this->backend_->build_components();
+            this->mutation_lock_ = &this->backend_->dispatch_active();
+            status_.reset();
+            metrics_ = ConvergenceMetrics{};
+        } catch (...) {
+            this->backend_->unwind_failed_run();
+            this->mutation_lock_ = nullptr;
+            live_ = false;
+            frame_ptr_ = nullptr;
+            built_plugins_.clear();
+            throw;
+        }
     }
 
     /// @brief Single iteration through the compiled Plan.
@@ -516,6 +601,17 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             ~Guard() { flag = false; }
         } guard(launching_);
         this->backend_->step(iter_index);
+    }
+
+    /// Normal phase dispatch for workflows with an inter-stage decision.
+    void step_stage_once(PhaseEnum phase, int iter_index) {
+        struct Guard {
+            bool& flag;
+            bool saved;
+            explicit Guard(bool& f) : flag(f), saved(f) { flag = true; }
+            ~Guard() { flag = saved; }
+        } guard(launching_);
+        this->backend_->step_stage(ATV::slot_of(phase), iter_index);
     }
 
     // ── Continuation (MD and MC; the other presets run fresh each call) ─────
@@ -541,12 +637,23 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @return True if this call started a fresh run (so the caller can do its
     ///         once-per-run seeding, e.g. MC's bootstrap energy pass).
     bool begin_run_(cpu::Frame& frame) {
+        this->require_mutable_();
+        if (attached_runtime_)
+            throw std::logic_error(
+                "a mounted driver must run through its parent Runtime");
+        if (this->backend_ && this->backend_->failed()) {
+            live_ = false;
+            frame_ptr_ = nullptr;
+            built_plugins_.clear();
+        }
         if (live_ && frame_ptr_ != &frame) {
             this->backend_->destroy_components();
             live_ = false;
             built_plugins_.clear();
         }
         if (live_) {
+            validate_long_range_contract_();
+            validate_components();
             flush_new_mounts_();
             return false;
         }
@@ -594,21 +701,23 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @param frame Frame carrying the trial state.
     /// @param iteration Index of the iteration just completed.
     /// @return The policy's decision.
-    Outcome decide_outcome_(const cpu::Frame& frame, BigInt iteration) {
+    Outcome decide_outcome_(const cpu::Frame& frame, BigInt iteration,
+                            const cpu::Context& context) {
+        Runtime::DispatchScope dispatch(context.exec.runtime);
         if (!outcome_)
             return Outcome::Commit;
-        const cpu::LoopState st{iteration, frame, this->backend_->context(),
-                                metrics_};
+        const cpu::LoopState st{iteration, frame, context, metrics_};
         return outcome_->after_stages(st);
     }
 
     /// @brief Let the outcome policy seed itself from the initial configuration.
     ///        Called once per fresh run, after the bootstrap pass. @see Metropolis
     /// @param frame Frame carrying the initial (bootstrap-evaluated) state.
-    void start_outcome_(const cpu::Frame& frame) {
+    void start_outcome_(const cpu::Frame& frame, const cpu::Context& context) {
+        Runtime::DispatchScope dispatch(context.exec.runtime);
         if (!outcome_)
             return;
-        const cpu::LoopState st{-1, frame, this->backend_->context(), metrics_};
+        const cpu::LoopState st{-1, frame, context, metrics_};
         outcome_->on_start(st);
     }
 
@@ -623,6 +732,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     void teardown_pass() {
         this->backend_->destroy_components();
         this->backend_->shutdown();
+        this->mutation_lock_ = nullptr;
     }
 
     /// @brief Tear down while transferring the live spatial decomposition.
@@ -634,6 +744,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         this->backend_->destroy_components();
         auto dd = this->backend_->release_dd();
         this->backend_->shutdown();
+        this->mutation_lock_ = nullptr;
         return dd;
     }
 
@@ -646,16 +757,11 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
     /// @brief Ask every criterion about the iteration just completed, and reduce.
     ///
-    /// Composition: **Stop > Converged > Continue** — the most severe verdict wins, so a
-    /// run that has gone numerically insane cannot report success by also happening to
-    /// satisfy a force tolerance. A criterion is a Component the driver PULLS a
-    /// `verdict()` from, but it cannot write the loop's status — the driver alone
-    /// writes `converged`/`stop_requested`. This poll is the ONLY verdict channel.
-    ///
-    /// The verdict is all-reduced across ranks HERE, once, rather than in each
-    /// criterion. Ranks that disagree about when to stop deadlock at the next
-    /// collective, and that is not a hazard a criterion author should have to know
-    /// about. `Verdict` is ordered by severity precisely so the reduction is a `MAX`.
+    /// Every convergence requirement must be satisfied on every rank. Stop-only
+    /// guards are neutral unless they return Stop; any Stop prevents success.
+    /// The driver alone writes convergence and stop status. This poll is the
+    /// ONLY verdict channel, with one collective for stop, pending requirements,
+    /// and contract errors so every rank makes the same termination decision.
     ///
     /// @param iteration Index of the iteration just completed.
     /// @return The reduced verdict; also folds `stop_requested` (which a *component* may
@@ -677,20 +783,42 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @return The reduced verdict.
     Verdict poll_criteria_(BigInt iteration, const cpu::Frame& frame,
                            const cpu::Context& ctx) {
+        Runtime::DispatchScope dispatch(ctx.exec.runtime);
         const cpu::LoopState st{iteration, frame, ctx, metrics_};
-        Verdict v = status_.stop_requested ? Verdict::Stop : Verdict::Continue;
+        // A run with guards alone has no success condition. Encode the negation
+        // of conjunction so one MPI_MAX also handles any-rank stops and errors.
+        int flags[3] = {status_.stop_requested ? 1 : 0,
+                        has_convergence_criterion() ? 0 : 1, 0};
+        std::string convergence_reason;
         for (auto* c : criteria_) {
             const Verdict cv = c->verdict(st);
-            if (cv != Verdict::Continue && worse_of(v, cv) == cv && v != cv) {
-                status_.reason = c->name();
+            const bool requirement = c->contributes_to_convergence();
+            if (cv == Verdict::Stop) {
+                if (!flags[0])
+                    status_.reason = c->name();
+                flags[0] = 1;
             }
-            v = worse_of(v, cv);
+            if (requirement) {
+                if (cv != Verdict::Converged)
+                    flags[1] = 1;
+                else if (convergence_reason.empty())
+                    convergence_reason = c->name();
+            } else if (cv == Verdict::Converged) {
+                flags[2] = 1;
+            }
         }
-        v = reduce_verdict_(v, ctx);
-        if (v == Verdict::Converged)
+        const bool local_stop = flags[0] != 0;
+        const Verdict v = reduce_verdict_(flags, ctx);
+        if (v == Verdict::Converged) {
             status_.converged = true;
-        if (v == Verdict::Stop)
+            status_.reason = std::move(convergence_reason);
+        }
+        if (v == Verdict::Stop) {
+            status_.converged = false;
             status_.stop_requested = true;
+            if (!local_stop)
+                status_.reason = "criterion stop on another rank";
+        }
         return v;
     }
 
@@ -721,8 +849,25 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
     /// @brief `cpu::DriverNode` — compile Plan and build components on the parent Runtime.
     void build_on(cpu::Runtime& rt) override {
+        if (attached_runtime_ || live_)
+            throw std::logic_error(
+                "driver is already attached to a live Runtime");
         compile();
+        const int parent_dof = rt.context().md.n_dof_global;
+        struct RestoreDof {
+            int& value;
+            int saved;
+            ~RestoreDof() { value = saved; }
+        } restore{rt.context().md.n_dof_global, parent_dof};
+        if (this->plan().kind == PhaseKind::MD)
+            publish_dof_(rt.frame(), rt.context());
         rt.build_plan(this->plan());
+        attached_runtime_ = &rt;
+        this->mutation_lock_ = &rt.dispatch_active();
+        frame_ptr_ = &rt.frame();
+        live_ = true;
+        mark_built_from_pending_();
+        step_counter_ = 0;
     }
 
     /// @brief `cpu::DriverNode` — run this loop nested on a borrowed Context/Frame.
@@ -733,22 +878,42 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
     /// @brief `cpu::DriverNode` — destroy components on the parent Runtime.
     void destroy_on(cpu::Runtime& rt) override {
+        attached_runtime_ = nullptr;
+        this->mutation_lock_ = nullptr;
+        frame_ptr_ = nullptr;
+        live_ = false;
+        built_plugins_.clear();
         rt.destroy_plan(this->plan());
+    }
+
+    void refresh_on(cpu::Runtime& rt) override {
+        if (!attached_runtime_)
+            return;
+        if (attached_runtime_ != &rt)
+            throw std::logic_error("nested driver belongs to another Runtime");
+        this->require_mutable_();
+        flush_new_mounts_();
+    }
+
+    const Plan<cpu::Component>* execution_plan() const override {
+        return attached_runtime_ ? &this->plan_ : nullptr;
     }
 
     /// @brief Default nested budget (presets may override; methods set max_iter in 04b).
     int default_budget() const override { return 0; }
 
-    /// @brief `cpu::DriverNode` — does any component in this loop (or below it)
-    ///        resolve global tags at run time?
-    ///
-    /// Both lists are walked because the answer is needed at a moment when
-    /// either may be the live one: the top-level driver is compiled by the
-    /// user's `build()` before `run()` (so `plan()` holds everything and
-    /// `pending_` is empty), while a nested node is compiled inside
-    /// `Runtime::build_components()` — one step *after* the frame is bound, so
-    /// at question time only its `pending_` exists. Missing the nested case
-    /// would silently drop the index for a `FixSettle` inside a `SubDriver`.
+    /// @brief Whether this loop or a descendant needs every atom on each rank.
+    bool requires_full_frame() const override {
+        bool needed = false;
+        for_each_pending([&](const cpu::Component& c) {
+            needed = needed || c.requires_full_frame();
+        });
+        for (const auto* c : criteria_)
+            needed = needed || c->requires_full_frame();
+        return needed;
+    }
+
+    /// @brief Whether this loop or a descendant resolves global tags.
     bool requires_tag_index() const override {
         bool needed = false;
         this->for_each_pending([&](const cpu::Component& c) {
@@ -795,22 +960,48 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
         // Point the Context at THIS loop's status + metrics, and remember the parent's.
         const LoopServices parent_loop = ctx.loop;
+        struct RestoreLoop {
+            cpu::Context& ctx;
+            LoopServices saved;
+            cpu::Frame& frame;
+            ResolutionWindow window;
+            ~RestoreLoop() {
+                ctx.loop = saved;
+                frame.restore_resolution_window(window);
+            }
+        } restore_loop{ctx, parent_loop, frame, frame.resolution_window()};
+        frame.restore_resolution_window(ResolutionWindow{});
         ctx.loop.status = &status_;
         ctx.loop.metrics = &metrics_;
         status_.reset();
         metrics_ = ConvergenceMetrics{};
 
+        const bool continuous = this->plan_.kind == PhaseKind::MD;
+        cpu::Runtime::ScopedPlan active_plan(*runtime, this->plan_,
+                                             continuous ? step_counter_ : 0);
+        // The child's DOF count is the child's; the parent's thermostats read
+        // theirs again after return (same guard as `build_on`).
+        struct RestoreDof {
+            int& value;
+            int saved;
+            ~RestoreDof() { value = saved; }
+        } restore_dof{ctx.md.n_dof_global, ctx.md.n_dof_global};
+        if (this->plan_.kind == PhaseKind::MD)
+            publish_dof_(frame, ctx);
+        runtime->prepare_run(continuous ? step_counter_ : 0);
         int iters = 0;
         for (int s = 0; s < budget; ++s) {
             status_.reset();
-            runtime->step_plan(this->plan_, s);
+            if (this->plan_.kind == PhaseKind::MD)
+                ctx.md.is_last_step = (s == budget - 1);
+            const BigInt step = continuous ? next_step_() : s;
+            runtime->step_plan(this->plan_, step);
             ++iters;
-            if (poll_criteria_(s, frame, ctx) != Verdict::Continue)
+            if (poll_criteria_(step, frame, ctx) != Verdict::Continue)
                 break;
         }
 
         // Hand the Context back to the parent. The child's verdict stays on the child.
-        ctx.loop = parent_loop;
         return iters;
     }
 
@@ -893,10 +1084,18 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     template <typename R>
     void set_record(R&) = delete;
 
-    /// @brief Whether any criterion is attached (a preset injects a default if not).
+    /// @brief Whether any convergence requirement or stop guard is attached.
     bool has_criterion() const { return !criteria_.empty(); }
 
-    /// @brief Attach a termination Criterion. Plural — criteria compose by severity.
+    /// @brief Whether a successful-convergence requirement is attached.
+    /// @return True if any registered criterion contributes to convergence.
+    bool has_convergence_criterion() const {
+        return std::any_of(
+            criteria_.begin(), criteria_.end(),
+            [](const auto* c) { return c->contributes_to_convergence(); });
+    }
+
+    /// @brief Attach a termination Criterion. All requirements must converge.
     ///
     /// `opt.add_criterion(ForceConverged{0.01});`
     /// `sim.add_criterion(StopOnNaN{});  sim.add_criterion(StopWhenTooHot{2000});`
@@ -909,7 +1108,8 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// criterion declares phase bindings (`default_bindings()` non-empty, e.g. an
     /// `ScfConverged` that binds `check` to measure) — is ALSO borrowed into the
     /// Plan via `add_ref` so its stage runs. A verdict-only criterion (no bindings,
-    /// the common case) enters only the polling list. @see poll_criteria_
+    /// the common case) is polled without a scheduled launch, but still participates
+    /// in Plan build/destroy. @see poll_criteria_
     ///
     /// @tparam C A cpu::Criterion subclass (rvalue only; use `add_criterion_ref`
     ///         to borrow).
@@ -917,6 +1117,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     template <typename C,
               std::enable_if_t<!std::is_lvalue_reference_v<C>, int> = 0>
     void add_criterion(C&& c) {
+        this->require_mutable_();
         using D = std::decay_t<C>;
         static_assert(std::is_base_of_v<cpu::Criterion, D>,
                       "add_criterion requires a cpu::Criterion subclass");
@@ -937,6 +1138,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @param c Criterion instance, borrowed (caller retains ownership).
     template <typename C>
     void add_criterion_ref(C& c) {
+        this->require_mutable_();
         static_assert(std::is_base_of_v<cpu::Criterion, C>,
                       "add_criterion_ref requires a cpu::Criterion subclass");
         criteria_.push_back(&c);
@@ -961,6 +1163,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     ///         (`MC::current_energy()` reads Metropolis's cached energy).
     template <typename P>
     std::decay_t<P>& set_outcome(P&& p) {
+        this->require_mutable_();
         using D = std::decay_t<P>;
         static_assert(std::is_base_of_v<cpu::OutcomePolicy, D>,
                       "set_outcome requires a cpu::OutcomePolicy subclass");
@@ -1091,14 +1294,18 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         bool has_mover = false;      ///< A Mover kind is registered.
         bool has_hessian = false;    ///< Some plugin provides_hessian().
         std::string neighbor_consumer_name; ///< First `NeighborConsumer`.
-        std::optional<AccReal>
-            neighbor_consumer_cutoff; ///< Set when it declares a cutoff > 0.
-        /// Widest `NeighborProvider::neighbor_reach()` [Å] among the registered
-        /// providers — the distance a list actually enumerates pairs out to
-        /// (`cutoff + skin`), which the halo shell must cover. Unset when no
-        /// provider declares one.
-        std::optional<AccReal> neighbor_provider_reach;
     };
+
+    void refresh_constraints_() {
+        constraint_providers_.clear();
+        std::unordered_set<const cpu::ConstraintProvider*> seen;
+        for_each_pending([&](const cpu::Component& c) {
+            if (const cpu::ConstraintProvider* cp = c.as_constraint()) {
+                if (seen.insert(cp).second)
+                    constraint_providers_.push_back(cp);
+            }
+        });
+    }
 
     /// @brief Compute and publish the global DOF count — the single owner.
     ///
@@ -1112,11 +1319,11 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// simply wrong once anything is constrained, and the failure is silent: rigid
     /// water reports T ~33 % low and every thermostat drives to the wrong setpoint.
     /// @param frame The frame whose atom count sets `3N`.
-    void publish_dof_(cpu::Frame& frame) {
+    void publish_dof_(cpu::Frame& frame, cpu::Context& context) {
         int n_con = 0;
         for (const cpu::ConstraintProvider* cp : constraint_providers_)
-            n_con += cp->n_constraints(this->backend_->context(), frame);
-        cpu::publish_global_dof(this->backend_->context(), frame, n_con);
+            n_con += cp->n_constraints(context, frame);
+        cpu::publish_global_dof(context, frame, n_con);
     }
 
     /// Constraint components, captured at `build()` while the pending list still
@@ -1147,26 +1354,15 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
                 s.needs_stress = true;
             if (c.provides_system_stress())
                 s.has_virial_stress = true;
-            if (const cpu::NeighborProvider* np = c.as_neighbor_provider()) {
+            if (c.as_neighbor_provider())
                 s.has_neighbor_list = true;
-                const AccReal reach = np->neighbor_reach();
-                if (reach > AccReal(0)
-                    && (!s.neighbor_provider_reach
-                        || reach > *s.neighbor_provider_reach))
-                    s.neighbor_provider_reach = reach;
-            }
             if (c.as_constraint())
                 s.has_constraint = true;
             if (c.updates_owned_charges())
                 s.has_charge_updater = true;
-            if (const cpu::NeighborConsumer* nc = c.as_neighbor_consumer()) {
+            if (c.as_neighbor_consumer()) {
                 if (s.neighbor_consumer_name.empty())
                     s.neighbor_consumer_name = c.name();
-                const AccReal hc = nc->halo_cutoff();
-                if (hc > AccReal(0)
-                    && (!s.neighbor_consumer_cutoff
-                        || hc > *s.neighbor_consumer_cutoff))
-                    s.neighbor_consumer_cutoff = hc;
             }
         });
         return s;
@@ -1226,26 +1422,178 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         built_plugins_.clear();
         for_each_pending_mut(
             [&](cpu::Component& c) { built_plugins_.insert(&c); });
+        for (auto* c : criteria_)
+            built_plugins_.insert(c);
+    }
+
+    /// Compile physical ownership and clocks before any component build.
+    /// Registration through setters and through on().add has the same contract.
+    void compile_physical_contract_() {
+        const cpu::Component* integrator = nullptr;
+        const cpu::Component* neighbor = nullptr;
+        std::unordered_set<const cpu::Component*> seen;
+        this->for_each_pending([&](const cpu::Component& c) {
+            if (!seen.insert(&c).second)
+                return;
+            if (c.as_neighbor_provider()) {
+                if (neighbor)
+                    throw std::runtime_error(
+                        "driver build: multiple NeighborProvider owners: '"
+                        + neighbor->name() + "' and '" + c.name() + "'");
+                neighbor = &c;
+            }
+            if constexpr (std::is_same_v<PhaseEnum, ATV::md::Phase>) {
+                if (dynamic_cast<const cpu::Integrator*>(&c)) {
+                    if (integrator)
+                        throw std::runtime_error(
+                            "MD::build(): multiple Integrator owners: '"
+                            + integrator->name() + "' and '" + c.name()
+                            + "'; exactly one clock may own the run");
+                    integrator = &c;
+                }
+            }
+        });
+        if (neighbor) {
+            (void)neighbor->as_neighbor_provider()->validated_skin();
+            this->for_each_pending([&](const cpu::Component& c) {
+                if (const auto* consumer = c.as_neighbor_consumer())
+                    neighbor->as_neighbor_provider()->validate_coverage(
+                        *consumer, neighbor->name(), c.name());
+            });
+        }
+        if constexpr (std::is_same_v<PhaseEnum, ATV::md::Phase>)
+            negotiate_timestep_();
+    }
+
+    void negotiate_timestep_() {
+        // ── The nuclear timestep is single-sourced from the integrator ────
+        //
+        // The integrator owns the clock. Anything that must advance on the
+        // SAME clock — a Car-Parrinello electronic propagator, an
+        // extended-Lagrangian density — used to re-declare `dt` as its own
+        // member, and "must match the nuclear dt" was a docs-only contract: no
+        // runtime check was even possible, so a typo bought a silently wrong
+        // trajectory instead of an error. The dt is published by a
+        // `TimestepProvider` and pushed here, when the live contract is compiled
+        // — i.e. strictly before any component `build()` — so a consumer can
+        // already validate it in its own build.
+        struct PublishedDt {
+            std::string owner;
+            double dt_fs;
+        };
+        std::vector<PublishedDt> published;
+        std::unordered_set<const cpu::TimestepProvider*> seen_providers;
+        this->for_each_pending([&](const cpu::Component& c) {
+            const cpu::TimestepProvider* p = c.as_timestep_provider();
+            // The walk visits BINDINGS: VelocityVerlet declares two
+            // (initial_integrate + final_integrate), so dedup by identity.
+            if (!p || !seen_providers.insert(p).second)
+                return;
+            published.push_back({c.name(), p->timestep()});
+        });
+
+        // Two integrators on different clocks is a broken setup whether or not
+        // anything consumes the dt: one of them is wrong and the engine cannot
+        // know which. Name BOTH — naming one leaves the user diffing the whole
+        // component set for the other.
+        for (std::size_t i = 1; i < published.size(); ++i) {
+            const double a = published[0].dt_fs;
+            const double b = published[i].dt_fs;
+            const double diff = std::fabs(a - b);
+            const double scale = std::max(std::fabs(a), std::fabs(b));
+            const bool disagree =
+                std::isfinite(diff) ? diff > 1e-12 * scale : !(a == b);
+            if (disagree)
+                throw std::runtime_error(
+                    "MD::build(): conflicting MD timesteps — integrator '"
+                    + published[0].owner + "' publishes " + std::to_string(a)
+                    + " fs, integrator '" + published[i].owner + "' publishes "
+                    + std::to_string(b)
+                    + " fs; exactly one clock may own the run");
+        }
+
+        // Collect the consumers BEFORE validating anything: whether the
+        // published dt must be *usable* is a question only a consumer can ask.
+        // A run with no consumer never reads the value — the shipped
+        // energy-only MPI harnesses register `VelocityVerlet{0.0}` purely to
+        // satisfy MD's Integrator requirement and deliberately move nothing —
+        // so rejecting dt = 0 there would fail a setup that is, for that run,
+        // entirely well defined. The CONFLICT check above is different in kind
+        // and stays unconditional: two clocks are ambiguous whether or not
+        // anybody reads them.
+        struct PendingConsumer {
+            cpu::TimestepConsumer* consumer;
+            std::string owner;
+        };
+        std::vector<PendingConsumer> consumers;
+        std::unordered_set<const cpu::TimestepConsumer*> seen_consumers;
+        auto collect_dt = [&](cpu::TimestepConsumer* tc,
+                              const std::string& who) {
+            // Dedup for the same reason as the providers: one consumer object
+            // must be handed the dt exactly once, not once per binding.
+            if (!tc || !seen_consumers.insert(tc).second)
+                return;
+            consumers.push_back({tc, who});
+        };
+        this->for_each_pending_mut([&](cpu::Component& c) {
+            collect_dt(c.as_timestep_consumer(), c.name());
+        });
+
+        if (!consumers.empty()) {
+            // Validity is checked once, before the FIRST push: no consumer may
+            // receive a dt the engine already knows is unusable.
+            if (!published.empty()
+                && (!(published[0].dt_fs > 0.0)
+                    || !std::isfinite(published[0].dt_fs)))
+                throw std::runtime_error("MD::build(): integrator '"
+                                         + published[0].owner
+                                         + "' publishes an unusable timestep "
+                                         + std::to_string(published[0].dt_fs)
+                                         + " fs (must be finite and > 0)");
+
+            for (const PendingConsumer& pc : consumers) {
+                if (published.empty()) {
+                    if (pc.consumer->timestep_required())
+                        throw std::runtime_error(
+                            "MD::build(): '" + pc.owner
+                            + "' requires the nuclear timestep, but no "
+                              "registered component implements "
+                              "TimestepProvider; add an MD integrator (e.g. "
+                              "sim.set_integrator(cpu::md::VelocityVerlet{dt}"
+                              "))");
+                    // opt-in means opt-in: never push an unasked-for dt
+                    continue;
+                }
+                pc.consumer->set_timestep(published[0].dt_fs);
+            }
+        }
     }
 
     void flush_new_mounts_() {
-        if (!this->backend_)
+        compile_physical_contract_();
+        auto* runtime =
+            attached_runtime_ ? attached_runtime_ : this->backend_.get();
+        if (!runtime)
             return;
-        for (auto& pb : this->pending_) {
-            cpu::Component* c = pb.component;
-            if (!c || built_plugins_.count(c))
-                continue;
-            Plan<cpu::Component> one;
-            one.slots.resize(1);
-            one.slots[0].phase = 0;
-            Operation<cpu::Component> op;
-            op.component = c;
-            one.slots[0].ops.push_back(op);
-            this->backend_->build_plan(one);
+        Plan<cpu::Component> additions;
+        for (auto* c : criteria_)
+            if (!built_plugins_.contains(c))
+                additions.lifecycle_only.push_back(c);
+        for (const auto& binding : this->pending_)
+            if (binding.component
+                && !built_plugins_.contains(binding.component))
+                additions.lifecycle_only.push_back(binding.component);
+        // Runtime rolls back the entire batch if any new object fails to build.
+        runtime->build_plan(additions);
+        for (auto* c : additions.components())
             built_plugins_.insert(c);
-        }
+        for (auto* component : this->plan_.components())
+            if (auto* node = component->nested_node())
+                node->refresh_on(*runtime);
         rebind_from_live_table_();
     }
+
+    bool rebind_pending_ = false;
 
     void rebind_from_live_table_() {
         PlanBuilder<cpu::Component> builder;
@@ -1256,15 +1604,30 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             e.component = pb.component;
             builder.add(e);
         }
-        this->plan_ = builder.build(ATV::slot_count<PhaseEnum>());
-        this->plan_.kind = kind_of(PhaseEnum{});
-        for (auto& s : this->plan_.slots)
+        auto next = builder.build(ATV::slot_count<PhaseEnum>());
+        next.lifecycle_only.assign(criteria_.begin(), criteria_.end());
+        next.requires_full_frame = requires_full_frame();
+        next.kind = kind_of(PhaseEnum{});
+        for (auto& s : next.slots) {
             s.forces_requested =
                 phase_wants_forces(static_cast<PhaseEnum>(s.phase));
-        if (this->backend_)
-            this->backend_->load(this->plan());
+            s.stress_requested =
+                phase_wants_stress(static_cast<PhaseEnum>(s.phase));
+        }
+        if (next == this->plan_ && !rebind_pending_)
+            return;
+        rebind_pending_ = true;
+        this->plan_ = std::move(next);
+        refresh_constraints_();
+        if (attached_runtime_)
+            attached_runtime_->invalidate_plan();
+        else if (this->backend_)
+            this->backend_->load(this->plan(), step_counter_);
         validate_long_range_contract_();
         validate_components();
+        if (live_ && this->backend_)
+            publish_dof_(this->backend_->frame(), this->backend_->context());
+        rebind_pending_ = false;
     }
 
     void throw_if_missing_neighbor_list_(const InfraScan& s,
@@ -1280,32 +1643,35 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         }
     }
 
-    /// @brief Reduce a verdict across ranks (MAX by severity). @see poll_criteria_
-    ///
-    /// Severity is the enum's integer value, so "the most severe verdict any rank
-    /// reached" is a plain MPI_MAX. Every rank therefore leaves the loop on the same
-    /// iteration — the alternative is a rank that keeps looping into a collective nobody
-    /// else will ever enter.
-    Verdict reduce_verdict_(Verdict v, const cpu::Context& ctx) const {
+    /// @brief Combine any-rank stops, pending requirements, and contract errors.
+    /// @param flags Stop, unsatisfied convergence, invalid guard success flags.
+    /// @param ctx Runtime communicator context.
+    /// @return Stop for any stop; Converged only when no requirement is pending.
+    Verdict reduce_verdict_(int (&flags)[3], const cpu::Context& ctx) const {
 #ifdef ATV_HAS_MPI
         const auto* dd = ctx.md.dd;
-        if (ctx.mpi_size > 1 && dd && dd->cart_comm != MPI_COMM_NULL) {
-            int sev = static_cast<int>(v);
-            MPI_Allreduce(MPI_IN_PLACE, &sev, 1, MPI_INT, MPI_MAX,
+        if (ctx.mpi_size > 1 && dd && dd->cart_comm != MPI_COMM_NULL)
+            MPI_Allreduce(MPI_IN_PLACE, flags, 3, MPI_INT, MPI_MAX,
                           dd->cart_comm);
-            return static_cast<Verdict>(sev);
-        }
 #else
         (void)ctx;
 #endif
-        return v;
+        // Throw only after the reduction: a violation on one rank must not
+        // leave other ranks continuing into the next collective.
+        if (flags[2])
+            throw std::logic_error(
+                "Criterion returned Converged without declaring "
+                "contributes_to_convergence()");
+        if (flags[0])
+            return Verdict::Stop;
+        return flags[1] ? Verdict::Continue : Verdict::Converged;
     }
 
   protected:
     /// This loop's own status and metrics. **Not on the Context** — see LoopServices.
     IterationStatus status_{};
     ConvergenceMetrics metrics_{};
-    /// Termination criteria — plural, composed by severity. `criteria_owned_`
+    /// Termination criteria — conjunctive requirements and stop guards. `criteria_owned_`
     /// holds the ones added by value (this driver owns them); `criteria_` is the
     /// non-owning polling list (owned + borrowed). A criterion that also declares
     /// phase bindings is additionally borrowed into the Plan. @see add_criterion
@@ -1315,6 +1681,8 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     std::unique_ptr<cpu::OutcomePolicy> outcome_;
 
     // Continuation bookkeeping — shared by the time-like presets (MD, MC).
+    cpu::Runtime* attached_runtime_ =
+        nullptr;             ///< Borrowed parent, never owned.
     bool live_ = false;      ///< Backend live between first run() and teardown.
     bool launching_ = false; ///< True only inside `step_once`.
     cpu::Frame* frame_ptr_ = nullptr; ///< Frame bound by the live run.

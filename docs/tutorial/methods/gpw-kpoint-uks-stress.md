@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-kpoint-uks-stress` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::stress` / free oracle `gpw_stress_fd` on `GpwDft` (`n_alpha`/`n_beta` + `k_mesh`); multi-k collinear UKS fixed-\(\{P_k^\sigma,W_k^\sigma\}\) |
 | Related narrative | [Ch. 9 GPW](../ch09-gpw.md) |
 | Queue | CP2K capability loop — wave 4 done (2026-07-26) |
@@ -24,8 +24,8 @@ the dual-gate oracle on the same UKS+k method.
 Closed-shell identity: multi-k UKS with \(N_\alpha=N_\beta=1\) matches multi-k
 RKS stress. Twin system is **high-spin H₂** (\(N_\alpha=2\), \(N_\beta=0\)) in a
 periodic 12 Bohr cubic cell, PADE LSD, in-tree DZV-GTH-PADE / GTH-PADE-q1,
-mesh \(1\times1\times2\). Product gate:
-`gpw-kpoint-uks-stress` (`reg_gpw-kpoint-uks-stress`).
+mesh \(1\times1\times2\). No standing end-to-end regression; the gates
+below are recorded from when this page was written.
 Fair wall **`perf_exempt`** (no same-basis CP2K NUMERICAL stress wall on pin
 host — BASIS_MOLOPT lacks DZV-GTH-PADE; no CP2K module at first green).
 
@@ -33,11 +33,11 @@ Public surface: `method.stress(frame)` with members on `GpwDft`
 (`stress_strain_h`, `stress_axes`) — **no** public `*Config` bag, **no**
 `make_*` / `build_*` factories. `GpwDft::stress` and `gpw_stress_fd` return
 σ in eV/Å³; internal energy is Ha and the pins compare in Ha / Ha·Bohr⁻³
-(this regression exercises the method directly, not through Evaluate).
+(the recorded check exercised the method directly, not through Evaluate).
 
-Deps closed earlier: `gpw-kpoints-uks`, `gpw-kpoint-stress`, `gpw-uks-stress`,
-`gpw-kpoint-uks-forces`. Sibling force pin reuses the same geometry and soft
-energy.
+Related surfaces: `gpw-kpoint-stress`, `gpw-uks-stress` (standing
+regressions); [gpw-kpoints-uks](gpw-kpoints-uks.md), [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) (method pages, same
+geometry and soft energy).
 
 ## Method
 
@@ -128,7 +128,7 @@ all-electron).
 ## Implementation
 
 Public surface only (`cpu::Frame` + `GpwDft` members, `GpwDft::stress` /
-`gpw_stress_fd`; **no** `*Config`, **no** factories). Match the regression:
+`gpw_stress_fd`; **no** `*Config`, **no** factories). Minimal sequence:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -179,7 +179,7 @@ const auto sfd = gpw_stress_fd(frame, method, h);  // multi-SCF oracle
 // pins compare in Ha/Bohr³: divide by units::kHartreePerBohr3InEvPerAngstrom3
 ```
 
-Build and run the regression (GPW needs HF + PW + FFTW3):
+Build (GPW needs HF + PW + FFTW3):
 
 ```bash
 bash -lc '
@@ -191,8 +191,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target reg_gpw-kpoint-uks-stress
-  reg_gpw-kpoint-uks-stress
 '
 ```
 
@@ -202,19 +200,17 @@ bash -lc '
 | `internal/gpw_stress.h` | Private fixed-\(P_k^\sigma\) + multi-SCF FD |
 | `src/cpu/gpw/internal/gpw_stress.cpp` | Orthorhombic analytic / FD implementation |
 | `gpw_evaluator.h` | Evaluate binding of `GpwDft` (`compute_stress`) |
-| `reg_gpw-kpoint-uks-stress.cpp` | Product dual-gate + identity |
-| case `gpw-kpoint-uks-stress` pin | Hard-coded pins + `perf_exempt` |
 | CP2K oracle | CP2K NUMERICAL documentation twin (SZV) |
 
 ## Validation (vs CP2K / dual-gate)
 
-Source:
-case `gpw-kpoint-uks-stress` pin.
+Source: values recorded when this page was written; no standing
+regression.
 Oracle policy: offline **CP2K 2026.1** documentation twin when the module is
-available; **never** live CP2K from ctest. Decisive product gates are
+available; **never** live CP2K from ctest. Decisive recorded gates are
 **internal dual-gate** (analytic vs multi-SCF FD) and **closed-shell
-identity** (k-UKS ≡ k-RKS). Soft energy pin matches sibling
-`gpw-kpoint-uks-forces` (same geometry/method).
+identity** (k-UKS ≡ k-RKS). Soft energy pin matches the
+[gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) page (same geometry/method).
 
 **Setup:**
 
@@ -273,7 +269,7 @@ available at first green (2026-07-26). When a same-basis twin wall exists,
 record single-rank walls for a product-only analytic pass and replace this
 section (target \(r\le 10\)).
 
-Regression wall (~1 s) covers SCF + analytic stress + multi-SCF FD + closed-
+Recorded wall (~1 s) covers SCF + analytic stress + multi-SCF FD + closed-
 shell identity — within the ≤ 60 s e2e budget.
 
 ## Limitations
@@ -281,26 +277,24 @@ shell identity — within the ≤ 60 s e2e budget.
 - **Orthorhombic diagonal only** — no triclinic shear; off-diagonal Voigt
   components are hard zeros.
 - **Dual-gate primary, CP2K absolute secondary** — absolute NUMERICAL stress
-  vs CP2K awaits same-basis data; energy soft pin is shared with
-  `gpw-kpoint-uks-forces`.
+  vs CP2K awaits same-basis data; energy soft pin is shared with the
+  [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) page.
 - **Cheap high-spin H₂ pin** — not bulk magnetic solid stress; larger k-meshes
-  and production cutoffs are out of this regression budget.
+  and production cutoffs are out of this e2e budget.
 - **PADE LSD only on this pin** — multi-k UKS + PBE-GGA stress is a separate
   capability surface if requested later (Γ-UKS PBE stress: `gpw-uks-stress`).
 - **Multi-k DFT+U stress** — see [gpw-dftu-kpoint-stress](gpw-dftu-kpoint-stress.md).
 - **Cost** — analytic path is one SCF + 6 fixed-\(P\) samples; FD oracle is
-  6+ re-converged SCFs (regression only).
-- Unit tests under `tests/cpu/gpw/` only; e2e CP2K-class parity is exclusively
-  the regression binary.
+  6+ re-converged SCFs.
+- Unit tests under `tests/cpu/gpw/` only; no standing e2e regression.
 
 ## References
 
-- Offline pin + fair wall: case `gpw-kpoint-uks-stress` pin
-- Regression consumer: `reg_gpw-kpoint-uks-stress.cpp`
+- Offline pin + fair wall: recorded when this page was written (no standing regression)
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
-- Related pins: `gpw-kpoint-uks-forces`, `gpw-uks-stress`, `gpw-kpoint-stress`,
-  `gpw-kpoints-uks`, `gpw-analytic-stress`, `gpw-stress-water`
+- Related pins: `gpw-uks-stress`, `gpw-kpoint-stress`, `gpw-analytic-stress`,
+  `gpw-stress-water`; related pages [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md), [gpw-kpoints-uks](gpw-kpoints-uks.md)
 - Narrative GPW: `docs/tutorial/ch09-gpw.md`
 - Roadmap: `docs/roadmap/dft.md`
 - Spec history (closed, deleted at done): git `wf/gpw-kpoint-uks-stress` /

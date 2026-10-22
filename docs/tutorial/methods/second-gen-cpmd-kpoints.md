@@ -34,7 +34,7 @@ corrector-budget gate. Public energy stays **eV** on `frame.meta`; internal
 Ha/Ry are method private.
 
 Related: multi-k density-guess socket twin [xl-bomd-uks-kpoints](xl-bomd-uks-kpoints.md)
-(Niklasson XL, not ASPC); multi-k force math `gpw-kpoint-forces`;
+(Niklasson XL, not ASPC); multi-k force math [gpw-kpoint-forces](gpw-kpoint-forces.md);
 classical CPMD [cpmd-water](cpmd-water.md) (fictitious \(\mu\), not SGCP);
 Γ BOMD foothold [gpw-bomd-water](gpw-bomd-water.md).
 
@@ -327,8 +327,8 @@ NVE drift + corrector-budget envelope, not a wall-clock ratio.
   is a separate product path (`second-gen-cpmd-ot`).
 - **Soft drift tol.** Partial-SCF heat justifies \(\delta \le 0.10\) on a
   short traj; do not tighten without a longer literature-aligned window.
-- **Cutoff / basis cheap for envelope.** Absolute multi-k forces live in
-  `gpw-kpoint-forces`; this regression does not re-pin force vs CP2K.
+- **Cutoff / basis cheap for envelope.** Absolute multi-k forces are described in
+  [gpw-kpoint-forces](gpw-kpoint-forces.md) (no standing regression); this regression does not re-pin force vs CP2K.
 - **Perf debt.** Fair wall vs CP2K deferred until a CP2K binary is available
   offline; do not invent ratios.
 - **Combinatorial gaps out of scope:** SGCP + smearing, SGCP + DFT+U + \(k\),
@@ -341,7 +341,7 @@ NVE drift + corrector-budget envelope, not a wall-clock ratio.
 - CP2K twin sketch: CP2K oracle
 - Oracle rules: CP2K oracle
 - Prior product paths: `second-gen-cpmd-water`;
-  multi-k force pin `gpw-kpoint-forces`;
+  multi-k force tutorial [gpw-kpoint-forces](gpw-kpoint-forces.md);
   multi-k XL twin [xl-bomd-uks-kpoints](xl-bomd-uks-kpoints.md);
   classical CP [cpmd-water](cpmd-water.md)
 - T. D. Kühne, M. Krack, F. R. Mohamed, M. Parrinello, *Phys. Rev. Lett.*

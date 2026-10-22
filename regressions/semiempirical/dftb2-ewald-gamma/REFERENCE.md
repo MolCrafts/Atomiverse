@@ -9,12 +9,11 @@ Offline pin only — ctest never launches DFTB+.
 
 ## Why this case exists
 
-Every other periodic DFTB2 case in this suite (`dftb2-periodic-gamma`,
-`dftb2-periodic-forces`, `dftb2-kpoints`, `dftb2-multi-k-forces`) is the same
-homonuclear 1-D carbon chain. There Δq ≡ 0 by symmetry, so
+The earlier periodic DFTB2 checks (Γ energy, Γ forces, multi-k energy and
+forces) all used the same homonuclear 1-D carbon chain. There Δq ≡ 0 by symmetry, so
 \(E^{(2)}=\tfrac12\sum\gamma\Delta q\Delta q\) vanishes **identically** and the
 SCC charge kernel is never evaluated at all. The periodic γ was therefore
-untested for as long as those cases were the only periodic ones, and it was
+untested for as long as that chain was the only periodic geometry, and it was
 wrong: the \(1/R\) half of \(\gamma\) was truncated at the Slater–Koster
 cutoff, which is not an approximation of a lattice sum but a different,
 non-positive-definite operator. On this cell that gave \(E^{(2)} = -2.19\) Ha

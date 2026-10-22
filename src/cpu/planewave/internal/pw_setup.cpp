@@ -696,9 +696,9 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
         auto recip = box_bohr.recip_cell();
         for (auto& kf : out.kg.kpoints) {
             Vec3 kc{
-                recip(0, 0) * kf[0] + recip(1, 0) * kf[1] + recip(2, 0) * kf[2],
-                recip(0, 1) * kf[0] + recip(1, 1) * kf[1] + recip(2, 1) * kf[2],
-                recip(0, 2) * kf[0] + recip(1, 2) * kf[1]
+                recip(0, 0) * kf[0] + recip(0, 1) * kf[1] + recip(0, 2) * kf[2],
+                recip(1, 0) * kf[0] + recip(1, 1) * kf[1] + recip(1, 2) * kf[2],
+                recip(2, 0) * kf[0] + recip(2, 1) * kf[1]
                     + recip(2, 2) * kf[2]};
             out.gv_k.push_back(
                 internal::enumerate_g_vectors(box_bohr, ecut_ht, kc));
@@ -746,9 +746,9 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
     out.gv_k.clear();
     out.gv_k.reserve(kfrac.size());
     for (const auto& kf : kfrac) {
-        Vec3 kc{recip(0, 0) * kf[0] + recip(1, 0) * kf[1] + recip(2, 0) * kf[2],
-                recip(0, 1) * kf[0] + recip(1, 1) * kf[1] + recip(2, 1) * kf[2],
-                recip(0, 2) * kf[0] + recip(1, 2) * kf[1]
+        Vec3 kc{recip(0, 0) * kf[0] + recip(0, 1) * kf[1] + recip(0, 2) * kf[2],
+                recip(1, 0) * kf[0] + recip(1, 1) * kf[1] + recip(1, 2) * kf[2],
+                recip(2, 0) * kf[0] + recip(2, 1) * kf[1]
                     + recip(2, 2) * kf[2]};
         out.gv_k.push_back(
             internal::enumerate_g_vectors(box_bohr, ecut_ht, kc));

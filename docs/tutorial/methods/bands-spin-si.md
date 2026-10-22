@@ -111,7 +111,7 @@ reports SCF energy in Ry on `BandsResult` (internal, cited).
 - Spin-resolved / metallic DOS → residual / later queue (Dos rejects collinear
   today; `dos-metallic-si` is the metallic restricted path).
 - Molecular PW UKS energy foothold → `pw-spin-polarized-o2`; k-mesh UKS metal →
-  `pw-uks-kmesh-fe`.
+  [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md).
 - Berry phase with spin → `berry-spin-si`; DFPT spin → `dfpt-spin-si` and kin.
 - Absolute \(\varepsilon_n\) parity with CP2K Quickstep GTH+DZVP (different PP
   and basis).

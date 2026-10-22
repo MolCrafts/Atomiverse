@@ -145,3 +145,68 @@ TEST(LammpsCoeffs, UnknownCommandsCollected) {
 TEST(LammpsCoeffs, MissingFileThrows) {
     EXPECT_THROW(load_lammps_coeffs("/nonexistent/x.ff"), std::runtime_error);
 }
+
+TEST(LammpsCoeffs, ParsesFourierAndCvff) {
+    const std::string path =
+        write_tmp("dihedral_style fourier\n"
+                  "dihedral_coeff 2 2 0.80 1 180.0 0.383 3 0.0\n"
+                  "dihedral_coeff 1 1 0.15 3 0.0\n"
+                  "improper_style cvff\n"
+                  "improper_coeff 1 1.1 -1 2\n"
+                  "improper_coeff 2 10.5 1 0\n"
+                  "pair_modify mix arithmetic shift no tail no\n");
+    const LammpsCoeffs c = load_lammps_coeffs(path);
+    std::remove(path.c_str());
+    ASSERT_TRUE(c.has_fourier);
+    EXPECT_FALSE(c.has_charmm);
+    ASSERT_EQ(c.dihedral_fourier.size(), 2u);
+    ASSERT_EQ(c.dihedral_fourier[1].size(), 2u);
+    EXPECT_DOUBLE_EQ(c.dihedral_fourier[1][0].K, kcal_per_mol_to_ev(0.80));
+    EXPECT_EQ(c.dihedral_fourier[1][0].n, 1);
+    EXPECT_DOUBLE_EQ(c.dihedral_fourier[1][0].delta, degree_to_rad(180.0));
+    EXPECT_EQ(c.dihedral_fourier[1][1].n, 3);
+    ASSERT_EQ(c.dihedral_fourier[0].size(), 1u);
+    ASSERT_TRUE(c.has_improper_cvff);
+    ASSERT_EQ(c.improper_K.size(), 2u);
+    EXPECT_DOUBLE_EQ(c.improper_K[0], kcal_per_mol_to_ev(1.1));
+    EXPECT_EQ(c.improper_d[0], -1);
+    EXPECT_EQ(c.improper_n[0], 2);
+    EXPECT_EQ(c.improper_d[1], 1);
+    EXPECT_EQ(c.improper_n[1], 0);
+    EXPECT_TRUE(c.has_shift);
+    EXPECT_FALSE(c.energy_shift);
+    EXPECT_FALSE(c.tail_correction);
+}
+
+TEST(LammpsCoeffs, HybridFourierLeavesOtherTypesEmpty) {
+    const std::string path =
+        write_tmp("dihedral_style hybrid charmm fourier\n"
+                  "dihedral_coeff 1 charmm 3.625 2 180 0\n"
+                  "dihedral_coeff 2 fourier 1 0.15 3 0.0\n");
+    const LammpsCoeffs c = load_lammps_coeffs(path);
+    std::remove(path.c_str());
+    ASSERT_EQ(c.dihedral_fourier.size(), 2u);
+    EXPECT_TRUE(c.dihedral_fourier[0].empty());
+    EXPECT_EQ(c.dihedral_charmm_K[1], 0.0);
+}
+
+TEST(LammpsCoeffs, RejectsMalformedFourierAndCvff) {
+    for (const char* text :
+         {"dihedral_style fourier\ndihedral_coeff 1 2 0.8 1 180.0\n",
+          "improper_style cvff\nimproper_coeff 1 1.1 0 2\n",
+          "improper_style cvff\nimproper_coeff 1 1.1 1 7\n",
+          "improper_coeff 1 1.1 1 2\n"}) {
+        const std::string path = write_tmp(text);
+        EXPECT_THROW(load_lammps_coeffs(path), std::runtime_error) << text;
+        std::remove(path.c_str());
+    }
+    const std::string p = write_tmp("improper_style harmonic\n");
+    EXPECT_THROW(load_lammps_coeffs(p), std::invalid_argument);
+    std::remove(p.c_str());
+}
+
+TEST(LammpsCoeffs, RejectsNonArithmeticMixing) {
+    const std::string path = write_tmp("pair_modify mix geometric\n");
+    EXPECT_THROW(load_lammps_coeffs(path), std::invalid_argument);
+    std::remove(path.c_str());
+}

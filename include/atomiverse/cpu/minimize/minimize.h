@@ -174,7 +174,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     }
 
     void install_defaults() override {
-        // A Minimize with no criterion would never stop early — the optimizer publishes
+        // A Minimize with only stop guards would never converge — the optimizer publishes
         // metrics and nobody judges them. So the PRESET supplies the policy it is a
         // preset for. This is what "MD-style pipelines become a default-constructed
         // driver + criterion" means in practice: the class contributes a default, not a
@@ -182,7 +182,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
         //
         // Textbook LAMMPS/ASE-ish defaults; override wholesale with
         // `opt.add_criterion(cpu::ForceConverged{ftol, ...})` before build().
-        if (!this->has_criterion())
+        if (!this->has_convergence_criterion())
             this->add_criterion(cpu::ForceConverged{});
 
         const auto s = this->scan_pending_infra_();
@@ -201,6 +201,16 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
         this->throw_if_missing_neighbor_list_(
             s, "Minimize",
             "Add `opt.set_neighbor(cpu::md::NeighborList<>{cutoff, skin})`.");
+        // LAMMPS carries its per-atom minimizer vectors through FixMinimize
+        // when `atom_modify sort` fires inside Min::energy_force. CG / L-BFGS
+        // here keep row-indexed histories (x_prev, g_prev, s/y pairs), so a
+        // sort at a rebuild or a line-search replay would silently scramble
+        // the search direction. Drop sorting for this provider's life, as MC
+        // does for its row transactions.
+        this->for_each_pending_mut([](cpu::Component& c) {
+            if (cpu::NeighborProvider* np = c.neighbor_provider())
+                np->forbid_row_reordering();
+        });
     }
 
   private:

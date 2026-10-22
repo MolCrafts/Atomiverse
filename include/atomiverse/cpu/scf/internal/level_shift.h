@@ -3,7 +3,7 @@
 ///        level shift F' = F + λ(S − S·D_occ·S).
 ///
 /// **Internal SCF helper.** Free-function math operation following the
-/// `internal::diis_error` precedent: not a Component, never registered
+/// `linalg::diis_error` precedent: not a Component, never registered
 /// into a Plan, not included from facade-public headers (tests may).
 ///
 /// Spectral effect: with D_occ idempotent w.r.t. S (D_occ·S·D_occ = D_occ),

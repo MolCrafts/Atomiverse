@@ -112,6 +112,23 @@ def test_toml_global_mpi_ok(tmp_path: Path) -> None:
 # ── modules + DAG ────────────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize("value", ['"false"', '"off"', "0", "1", "[]", "{}"])
+def test_toml_module_requires_boolean(tmp_path: Path, value: str) -> None:
+    config = tmp_path / "invalid.toml"
+    config.write_text(f"[modules]\nmd = {value}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="md.*boolean"):
+        load_toml_config(config)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_toml_module_boolean(tmp_path: Path, enabled: bool) -> None:
+    config = tmp_path / "valid.toml"
+    config.write_text(
+        f"[modules]\nmd = {str(enabled).lower()}\n", encoding="utf-8"
+    )
+    assert load_toml_config(config).modules["md"] is enabled
+
+
 def test_apply_cli_modules_md_mpi_global() -> None:
     cfg = InstallConfig()
     apply_cli_modules(cfg, ["md"], options={"mpi": True})

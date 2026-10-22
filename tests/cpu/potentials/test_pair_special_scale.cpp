@@ -48,7 +48,6 @@ cpu::md::PairList only_14() {
     pairs.firstneigh = {0, 1, 1, 1};
     pairs.neighbors = {3};
     pairs.total_pairs = 1;
-    pairs.has_shifts = false;
     pairs.version = 1;
     return pairs;
 }

@@ -15,6 +15,7 @@
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "cublas_dispatch.cuh"
 
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 
 #include <cuda_runtime.h>
@@ -42,18 +43,19 @@ uhf_scale_columns_by_rsqrt_kernel(prec_t* __restrict__ U,
     U[i + j * n] *= s;
 }
 
-__global__ void uhf_pack_atom_pos_bohr_kernel(prec_t* __restrict__ atom_pos,
-                                              const real_t* __restrict__ x_A,
-                                              const real_t* __restrict__ y_A,
-                                              const real_t* __restrict__ z_A,
-                                              int natm, prec_t a2b) {
+__global__ void uhf_pack_atom_pos_bohr_kernel(
+    prec_t* __restrict__ atom_pos, const pos_t* __restrict__ x_A,
+    const pos_t* __restrict__ y_A, const pos_t* __restrict__ z_A,
+    const pos_t* __restrict__ x_corr, const pos_t* __restrict__ y_corr,
+    const pos_t* __restrict__ z_corr, int natm, prec_t a2b) {
     const int a = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (a >= natm)
         return;
+    // Full-precision coordinate (primary + correction in mixed mode).
     const int o = a * 3;
-    atom_pos[o + 0] = static_cast<prec_t>(x_A[a]) * a2b;
-    atom_pos[o + 1] = static_cast<prec_t>(y_A[a]) * a2b;
-    atom_pos[o + 2] = static_cast<prec_t>(z_A[a]) * a2b;
+    atom_pos[o + 0] = static_cast<prec_t>(load_position(x_A, x_corr, a)) * a2b;
+    atom_pos[o + 1] = static_cast<prec_t>(load_position(y_A, y_corr, a)) * a2b;
+    atom_pos[o + 2] = static_cast<prec_t>(load_position(z_A, z_corr, a)) * a2b;
 }
 
 __global__ void uhf_expand_shell_centers_kernel(
@@ -286,6 +288,7 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
     uhf_pack_atom_pos_bohr_kernel<<<cuda::grid_size(natm, cuda::kDefaultBlock),
                                     cuda::kDefaultBlock, 0, stream>>>(
         ws.d_atom_pos, ctx.frame.atoms.x, ctx.frame.atoms.y, ctx.frame.atoms.z,
+        ctx.frame.atoms.x_corr, ctx.frame.atoms.y_corr, ctx.frame.atoms.z_corr,
         natm, a2b);
     uhf_expand_shell_centers_kernel<<<cuda::grid_size(n_shells,
                                                       cuda::kDefaultBlock),

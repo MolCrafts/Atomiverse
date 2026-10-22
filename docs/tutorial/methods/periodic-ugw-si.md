@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-ugw-si` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::g0w0()` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); UKS via members `n_alpha` / `n_beta` |
-| Roadmap | `docs/roadmap/dft.md` §10 — Γ UGW@UKS product (`reg_periodic-ugw-si`) |
+| Roadmap | `docs/roadmap/dft.md` §10 — Periodic G0W0 / UGW ◐ (no external pin; no standing case) |
 
 ## Summary
 
@@ -21,13 +21,13 @@ on the UKS density. Primary report is the **α-channel** spectrum / HOMO→LUMO
 QP gap [eV].
 
 When \(C^\alpha \approx C^\beta\), **UGW ≡ RGW** — the product dual-gates the
-QP gap against the closed-shell first-green pin of `periodic-gw-si`
+QP gap against the closed-shell first-green pin of [periodic-gw-si](periodic-gw-si.md)
 (\(5.719545\) eV). Public path: `GpwDft` members → `build` → `run` →
 `g0w0()` — **no** public `*Config`, **no** `make_*` / `build_*` factory.
-Regression binary: `reg_periodic-ugw-si`. Fair wall vs CP2K is
+No standing end-to-end regression (gates below are recorded). Fair wall vs CP2K is
 **`perf_exempt`** (algorithm mismatch — see Performance).
 
-Related closed-shell spectral twin: `periodic-gw-si`.
+Related closed-shell spectral twin: [periodic-gw-si](periodic-gw-si.md).
 Molecular RHF G0W0 is a separate PySCF-loop concern (`g0w0-h2-sto3g`).
 
 ## Method
@@ -75,7 +75,7 @@ functional).
 **Dual-gate identity.** For \(n_\alpha = n_\beta\) and \(C^\alpha \approx
 C^\beta\), UGW recovers closed-shell spectral G0W0 to numerical noise
 (\(\Delta_{\mathrm{gap}} \sim 2\times 10^{-5}\) eV on this deck). That is the
-setup-integrity gate used by the regression.
+setup-integrity gate used by the recorded check.
 
 **Key exclusions (product scope).**
 
@@ -143,7 +143,7 @@ const G0W0Result& gw = m.g0w0();
 if called without SCF, on multi-k UKS, when β orbitals are missing, with
 `use_ot`, vanishing HOMO–LUMO gap (< 1e-6 Ha), or empty virtual space.
 
-Build (GPW needs HF + PW + FFTW3) and run the regression:
+Build (GPW needs HF + PW + FFTW3):
 
 ```bash
 bash -lc '
@@ -156,8 +156,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-ugw-si
-  reg_periodic-ugw-si
 '
 ```
 
@@ -170,23 +168,23 @@ Relevant sources:
 | Impl (UGW branch) | `src/cpu/gpw/g0w0.cpp` |
 | RI/MO-ERI kernels | `mp2_kernels.h` |
 | Unit tests (not e2e) | `tests/cpu/gpw/test_cpu_gpw_g0w0.cpp` |
-| Offline pin | case `periodic-ugw-si` pin |
+| Offline pin | recorded when this page was written (no standing regression) |
 | CP2K twin input | CP2K oracle |
 
 ## Validation (CP2K / dual-gate)
 
-Source: case `periodic-ugw-si` pin
+Source: values recorded when this page was written; no standing regression.
 (offline pin only; **never** live CP2K in ctest). Oracle contract:
 CP2K oracle.
 
-**Product gates (hard-coded in `reg_periodic-ugw-si`).**
+**Recorded gates (no standing regression).**
 
 | Quantity | Pin / gate | Tol | Notes |
 | -------- | ---------: | --- | ----- |
 | SCF | converged, finite \(E_{\mathrm{tot}}\) | — | UKS-PBE, `tol=1e-6`, max 80 iters |
-| \(E_{\mathrm{SCF}}\) (info) | **−7.5955445033** Ha | ~4e-9 vs RKS | matches `periodic-gw-si` RKS energy |
+| \(E_{\mathrm{SCF}}\) (info) | **−7.5955445033** Ha | ~4e-9 vs RKS | matches [periodic-gw-si](periodic-gw-si.md) RKS energy |
 | KS gap α (info) | **0.410157** eV | — | diagnostic |
-| **QP gap α** | **5.719545** eV dual-gate | **0.05 eV** | vs RKS first-green `periodic-gw-si` |
+| **QP gap α** | **5.719545** eV dual-gate | **0.05 eV** | vs RKS first-green [periodic-gw-si](periodic-gw-si.md) |
 | UGW first-green (info) | **5.719564** eV | \(\Delta\sim 2\times 10^{-5}\) eV | 2026-07-26 product |
 | Newton QP | `gw.converged` | — | all MO Newton solves |
 | Gap sign / order | gap > 0; \(\varepsilon_H^{\mathrm{QP}} < \varepsilon_L^{\mathrm{QP}}\) | — | hard |
@@ -197,7 +195,7 @@ CP2K oracle.
 
 | Item | Value |
 | ---- | ----- |
-| Crystal | artificial sc-Si₂ (same as `periodic-gw-si` / `periodic-ump2-si`) |
+| Crystal | artificial sc-Si₂ (same as [periodic-gw-si](periodic-gw-si.md) / [periodic-ump2-si](periodic-ump2-si.md)) |
 | Cell | cubic **a = 5.43 Å**, periodic, **Γ only** |
 | Positions | Si (0,0,0), Si (a/4,a/4,a/4) |
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
@@ -213,7 +211,7 @@ Gaussian RI_AUX and periodic HF in the GW step — **not** spectral plasmon UGW
 with MT exchange. Absolute CP2K QP digits are therefore **not invented** as a
 hard twin of the spectral value.
 
-Pin strategy (binding, mirrors `periodic-gw-si` / `periodic-ump2-si`):
+Pin strategy (binding, mirrors [periodic-gw-si](periodic-gw-si.md) / [periodic-ump2-si](periodic-ump2-si.md)):
 
 1. **Hard internal gates** (convergence, gap sign, HOMO/LUMO order, finite shifts).
 2. **Dual-gate band** vs RKS spectral first-green \(\lvert\mathrm{gap}-5.719545\rvert\le 0.05\) eV.
@@ -244,14 +242,14 @@ or **`perf_exempt`**.
 
 **Why exempt.** Fair wall requires the same method class. CP2K RI-G0W0
 (minimax / frequency integration + periodic HF exchange) is not a wall-time
-twin of spectral plasmon G0W0 with MT \(\Sigma_x\). Regression wall stays
+twin of spectral plasmon G0W0 with MT \(\Sigma_x\). Recorded wall stays
 well under the ≤ 60 s e2e cap. Never launch CP2K from ctest.
 
 ## Limitations
 
 - **Γ UKS only.** Multi-k UGW is explicitly a follow-on (throws today).
 - **Spectral product path only.** No analytic-continuation GW in the public
-  GPW API; CP2K RI-G0W0 numbers are diagnostic, not the product gate.
+  GPW API; CP2K RI-G0W0 numbers are diagnostic, not the recorded gate.
 - **No self-consistency.** evGW / qsGW / scGW remain roadmap-open.
 - **MT exchange, not periodic HF.** \(\Sigma_x\) uses truncated Coulomb so
   the foothold is G=0-safe without a periodic hybrid path
@@ -262,13 +260,12 @@ well under the ≤ 60 s e2e cap. Never launch CP2K from ctest.
   diamond-Si₈ cutoffs or a physical GW band gap claim.
 - **CPU only.** CUDA UGW is ○.
 - **Speed.** `perf_exempt` until a spectral-equivalent CP2K (or literature)
-  fair twin exists; no multi-system UGW perf suite beyond this regression wall.
+  fair twin exists; no multi-system UGW perf suite beyond this page wall.
 
 ## References
 
-- Offline pin: case `periodic-ugw-si` pin
-- Regression consumer: `reg_periodic-ugw-si.cpp`
-- Closed-shell dual-gate twin: case `periodic-gw-si` pin
+- Offline pin: recorded when this page was written (no standing regression)
+- Closed-shell dual-gate twin: [periodic-gw-si](periodic-gw-si.md) (recorded value)
 - CP2K twin input: CP2K oracle
 - Oracle contract: CP2K oracle
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) (Periodic GW + UGW)

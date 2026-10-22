@@ -19,8 +19,9 @@ suite, not a PLUMED replacement. Legend: [Roadmap index](index.md).
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| Umbrella (Distance / Angle / Dihedral) | ✓ | ○ | `HarmonicBias` |
-| Well-tempered metaD (1D) | ✓ | ○ | `Metadynamics1D` |
+| Umbrella (Distance / Angle) | ✓ | ○ | `HarmonicBias` |
+| Umbrella (Dihedral) | ◐ | ○ | `HarmonicBias`; no external pin, self-pinned case removed |
+| Well-tempered metaD (1D) | ◐ | ○ | `Metadynamics1D`; no external pin, self-pinned case removed |
 | Multi-CV well-tempered metaD | ✓ | ○ | `Metadynamics` |
 | T-REMD | ✓ | ○ | |
 | H-REMD (λ ladder) | ✓ | ○ | |

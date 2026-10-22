@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-kpoint-uks-stress-gga` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` + `cpu::gpw::GpwDft::stress` / free oracle `gpw_stress_fd`; members `n_alpha`/`n_beta`, `k_mesh`, `xc` (`RevPBE` \| `RPBE` \| `BLYP`) |
 | Roadmap | [dft.md](../../roadmap/dft.md) § Periodic DFT / GPW — multi-k UKS stress for pure GGA |
 | Queue | CP2K capability loop — harness wave 11 done (2026-07-26) |
@@ -16,7 +16,7 @@
 analytic cell stress** for pure **spin-GGA** exchange–correlation: **RevPBE**,
 **RPBE**, and **BLYP**. Product path is the same fixed-density-matrix strain
 theorem as closed-shell / PADE multi-k UKS stress
-(case `gpw-kpoint-uks-stress` pin),
+(see [gpw-kpoint-uks-stress](gpw-kpoint-uks-stress.md)),
 extended so the non-self-consistent Lagrangian rebuilds **spin GGA XC** under
 orthorhombic diagonal strain.
 
@@ -29,7 +29,7 @@ ensure GGA is actually live. Public energy on Frame remains **eV** and
 `GpwDft::stress` / `gpw_stress_fd` return **eV/Å³**; pin channels compare in
 **Ha / Ha·Bohr⁻³**.
 
-Product gate: `reg_gpw-kpoint-uks-stress-gga`. Fair wall vs same-basis CP2K
+No standing end-to-end regression (gates below are recorded). Fair wall vs same-basis CP2K
 NUMERICAL stress is **`perf_exempt`** (DZV-GTH-PADE not in `BASIS_MOLOPT`;
 documentation SZV twins only). Oracle contract: offline pins under
 CP2K oracle — **never** live CP2K in ctest.
@@ -112,7 +112,7 @@ PBE-mislabelled path.
 Public surface only: a `Frame` (Å, Z in `kAtom_type`, box) + `Kind` built
 from lookup constructors (`GaussianBasis` / `GthPotential`), `GpwDft` members, `GpwDft::stress` /
 `gpw_stress_fd`. **No** public `*Config`, **no** `make_*` / `build_*`
-factories. Match the regression:
+factories. Minimal sequence:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -174,7 +174,7 @@ const auto sfd = gpw_stress_fd(frame, make_uks(XcKind::RevPBE), h);  // Voigt eV
 
 `GPWEvaluator` can also request product stress on a Frame path
 (`compute_stress`, `stress_use_fd=false` default, `last_stress_ha_bohr3()`,
-Frame `kStress` in eV (virial σ·Ω)) — this regression exercises `GpwDft::stress`
+Frame `kStress` in eV (virial σ·Ω)) — this page exercises `GpwDft::stress`
 directly on `GpwDft` with explicit multi-k UKS + GGA members.
 
 Build and run (scoped targets only):
@@ -189,9 +189,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_gpw-kpoint-uks-stress-gga
-  reg_gpw-kpoint-uks-stress-gga
-  # or: cmake --build build --target run_reg_gpw-kpoint-uks-stress-gga
 '
 ```
 
@@ -202,16 +199,14 @@ bash -lc '
 | `src/cpu/gpw/internal/gpw_stress.cpp` | Fixed-\(P_k^\sigma\)+Pulay + multi-SCF FD |
 | `gaussian_basis.h` | `GaussianBasis(Element, "DZV-GTH-PADE")` |
 | `gth_potential.h` | `GthPotential(Element, "GTH-PADE-q1")` |
-| `reg_gpw-kpoint-uks-stress-gga.cpp` | Product dual-gate + activation |
-| case `gpw-kpoint-uks-stress-gga` pin | Hard-coded pins + tolerances |
 | CP2K oracle | CP2K NUMERICAL documentation twins |
 
 ## Validation (vs CP2K / dual-gate)
 
-Source:
-case `gpw-kpoint-uks-stress-gga` pin.
+Source: values recorded when this page was written; no standing
+regression.
 Oracle: offline **CP2K** documentation twins + **ATV dual-gate** (analytic vs
-`gpw_stress_fd`). Hard-coded pins in the regression binary — **never** live
+`gpw_stress_fd`). Hard-coded pins in the recorded check — **never** live
 CP2K from ctest.
 
 ### Twin settings (binding)
@@ -312,24 +307,22 @@ and target \(r \le 10\).
   blanket “all GGA” claim; hybrids / meta-GGA blocked elsewhere in the queue.
 - **High-spin H₂ textbook geometry** — not bulk solids, metals with smearing,
   DFT+U stress (`gpw-dftu-kpoint-stress`), or dispersion stress (D3/D4).
-- **`perf_exempt`** until same-basis CP2K wall exists; regression wall ~2.7 s
+- **`perf_exempt`** until same-basis CP2K wall exists; recorded wall ~2.7 s
   is diagnostic only.
 - Public Frame energy is eV; pin compare uses Hartree and Ha/Bohr³ stress.
-- Unit tests under `tests/cpu/gpw/` only for pieces; e2e is exclusively
-  `reg_gpw-kpoint-uks-stress-gga`.
+- Unit tests under `tests/cpu/gpw/` only for pieces; no standing e2e
+  regression.
 - CPU only — no CUDA GPW.
 
 ## References
 
-- Offline pin + dual-gate numbers:
-  case `gpw-kpoint-uks-stress-gga` pin
-- Regression consumer:
-  `reg_gpw-kpoint-uks-stress-gga.cpp`
+- Offline pin + dual-gate numbers: recorded when this page was written
+  (no standing regression)
 - CP2K documentation twins:
   CP2K oracle
 - Oracle contract: CP2K oracle
 - Predecessor PADE multi-k UKS stress:
-  case `gpw-kpoint-uks-stress` pin
+  [gpw-kpoint-uks-stress](gpw-kpoint-uks-stress.md)
 - Γ analytic stress narrative: [`gpw-analytic-stress.md`](gpw-analytic-stress.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)

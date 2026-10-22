@@ -68,7 +68,7 @@ int main() {
     constexpr double kBornTol = 0.5;
 
     PW method;
-    method.upf_path = ATV_PW_UPF_PATH;
+    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
     method.ecut_ry = kEcutRy;
     method.k_mesh = kMeshScf;
     method.tol = 1e-6;

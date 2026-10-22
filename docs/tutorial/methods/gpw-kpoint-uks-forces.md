@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-kpoint-uks-forces` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `k_mesh`, `XcKind::PADE`); `GpwDft::forces(frame)` |
 | Roadmap | `docs/roadmap/dft.md` — k-point UKS analytic ionic forces |
 
@@ -26,14 +26,14 @@ absolute same-basis twin pending DZV-GTH-PADE on the CP2K data path).
 Public path: construct `cpu::gpw::GpwDft`, set members (`n_alpha`, `n_beta`,
 `k_mesh`, `cutoff_ry`, `xc`, `local_pp_on_grid`, …), `build(frame)`, then
 `run(frame)` for energy or `forces(frame)` for energy + forces [eV/Å]. **No** public `*Config`
-bag, **no** `make_*` / `build_*` factories. Product gate:
-`reg_gpw-kpoint-uks-forces`. Performance: **`perf_exempt`** (no same-basis
+bag, **no** `make_*` / `build_*` factories. No standing
+regression. Performance: **`perf_exempt`** (no same-basis
 CP2K fair wall on the pin host).
 
 Related: Γ-UKS energy [`gpw-uks-o2-gamma`](gpw-uks-o2-gamma.md); Γ-UKS forces
 `gpw-uks-forces`; multi-k RKS forces
-`gpw-kpoint-forces`; multi-k UKS energy
-`gpw-kpoints-uks`. Narrative: [Ch. 9 GPW](../ch09-gpw.md).
+[gpw-kpoint-forces](gpw-kpoint-forces.md); multi-k UKS energy
+[gpw-kpoints-uks](gpw-kpoints-uks.md). Narrative: [Ch. 9 GPW](../ch09-gpw.md).
 
 ## Method
 
@@ -85,15 +85,15 @@ density.
 - No **same-basis absolute CP2K force twin** in the ≤60 s regression (BASIS_MOLOPT
   lacks DZV-GTH-PADE; oracle input uses SZV-MOLOPT-GTH for documentation only).
 - Full **6N finite-difference** force oracle is offline only (too slow for
-  ctest; same policy as `gpw-kpoint-forces`).
+  ctest; same policy as [gpw-kpoint-forces](gpw-kpoint-forces.md)).
 - No hybrid / GAPW / CUDA-GPW; no molecular all-electron UKS (PySCF loop).
 - Live CP2K never runs in ctest.
 
 ## Implementation
 
 Public surface only (`GpwDft` members + lookup constructors +
-`forces(frame)`; **no** `*Config`, **no** factories). Matches
-`reg_gpw-kpoint-uks-forces.cpp`:
+`forces(frame)`; **no** `*Config`, **no** factories). Minimal
+sequence:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -155,8 +155,7 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target reg_gpw-kpoint-uks-forces
-  reg_gpw-kpoint-uks-forces
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -172,7 +171,7 @@ Relevant sources:
 
 ## Validation (CP2K / product pin)
 
-Source: case `gpw-kpoint-uks-forces` pin (offline pin;
+Source: the pin notes recorded when this page was written (no standing regression; offline pin;
 **never** live CP2K in ctest). Primary product numbers are **frozen
 Atomiverse first-green** (2026-07-25, Release, OMP=8). CP2K 2026.1 input is a
 protocol / documentation twin (SZV-MOLOPT-GTH, not DZV-GTH-PADE).
@@ -221,7 +220,7 @@ product DZV pin). Do not compare absolute \(E\)/\(F\) to Atomiverse without a
 same-basis re-pin.
 
 **Offline analytic-vs-FD (related k-RKS path).** On the sibling closed-shell
-`gpw-kpoint-forces` off-symmetry geometry, max\(\lvert F_{\mathrm{analytic}} -
+[gpw-kpoint-forces](gpw-kpoint-forces.md) off-symmetry geometry, max\(\lvert F_{\mathrm{analytic}} -
 F_{\mathrm{fd}}\rvert \approx 6\times 10^{-6}\) Ha/Bohr; full 6N FD is outside
 the regression budget for this UKS slug as well.
 
@@ -246,18 +245,16 @@ Gate: \(r \le 10\) or `perf_exempt` + reason. This slug is **perf_exempt**.
 - **Multi-k UKS stress** remains a residual (forces productized; stress not).
 - XL-BOMD / CPMD fixed-density UKS is out of scope.
 - **CUDA-GPW** blocked; plane-wave multi-k UKS is a separate PW surface
-  (`pw-uks-kmesh-fe`).
+  ([pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)).
 - **ROKS / spin projection** not provided.
 
 ## References
 
-- Offline pin: case `gpw-kpoint-uks-forces` pin
-- Regression consumer: `reg_gpw-kpoint-uks-forces.cpp`
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
-- Deps (landed): `gpw-kpoints-uks`, `gpw-kpoint-forces`, `gpw-uks-forces`
+- Deps (landed): [gpw-kpoints-uks](gpw-kpoints-uks.md), [gpw-kpoint-forces](gpw-kpoint-forces.md), `gpw-uks-forces`
 - G. Lippert, J. Hutter, M. Parrinello, *Mol. Phys.* **92**, 477 (1997) — GPW
 - J. VandeVondele et al., *Comput. Phys. Commun.* **167**, 103 (2005) — Quickstep forces
 - S. Goedecker, M. Teter, J. Hutter, *Phys. Rev. B* **54**, 1703 (1996) — PADE / GTH

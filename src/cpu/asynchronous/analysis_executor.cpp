@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <utility>
 
 #ifdef __linux__
 #include <pthread.h>
@@ -34,33 +35,17 @@ void AnalysisExecutor::init(const Config& cfg, Context& ctx) {
     const int ring_size = std::max(1, cfg.ring_size);
     ring_.assign(static_cast<std::size_t>(ring_size), FrameSnapshot{});
     slot_busy_.assign(static_cast<std::size_t>(ring_size), false);
+    slot_readers_.assign(static_cast<std::size_t>(ring_size), 0);
+    last_published_slot_.store(-1, std::memory_order_relaxed);
     ring_capacity_.store(ring_size, std::memory_order_relaxed);
     next_slot_.store(0, std::memory_order_relaxed);
     n_dropped_.store(0, std::memory_order_relaxed);
     in_flight_.store(0, std::memory_order_relaxed);
     stop_.store(false, std::memory_order_relaxed);
     queue_.clear();
+    active_subscribers_.clear();
+    failure_ = nullptr;
     subscribers_.clear();
-
-#ifdef ATV_HAS_MPI
-    int mpi_initialized = 0;
-    MPI_Initialized(&mpi_initialized);
-    if (mpi_initialized) {
-        // NB: we deliberately *alias* the parent comm rather than
-        // MPI_Comm_dup-ing it. OpenMPI 5.0.x on macOS corrupts its internal
-        // communicator state when user code runs multiple comm_dup /
-        // cart_create cycles in the same process (observed across
-        // GoogleTest cases). Aliasing means analysis-thread MPI collectives
-        // share the world comm; that is safe as long as the analysis
-        // worker does not run concurrently with a collective on the main
-        // thread -- Publish orders them strictly.
-        analysis_comm_ = cfg.parent_comm;
-        owns_analysis_comm_ = false;
-    } else {
-        analysis_comm_ = MPI_COMM_NULL;
-        owns_analysis_comm_ = false;
-    }
-#endif
 
     const int n_workers = std::max(0, cfg.n_threads);
     workers_.reserve(static_cast<std::size_t>(n_workers));
@@ -85,6 +70,10 @@ void AnalysisExecutor::quiesce() {
         return queue_.empty()
                && in_flight_.load(std::memory_order_relaxed) == 0;
     });
+    auto failure = std::exchange(failure_, nullptr);
+    lk.unlock();
+    if (failure)
+        std::rethrow_exception(failure);
 }
 
 void AnalysisExecutor::shutdown() {
@@ -111,25 +100,23 @@ void AnalysisExecutor::shutdown() {
     // Subscriber finalize() after all workers have joined, on the main thread,
     // exactly once per subscriber.
     for (auto* sub : subscribers_) {
-        if (sub)
-            sub->finalize();
+        if (sub) {
+            try {
+                sub->finalize();
+            } catch (...) {
+                if (!failure_)
+                    failure_ = std::current_exception();
+            }
+        }
     }
     subscribers_.clear();
-
-#ifdef ATV_HAS_MPI
-    if (owns_analysis_comm_ && analysis_comm_ != MPI_COMM_NULL) {
-        int mpi_finalized = 0;
-        MPI_Finalized(&mpi_finalized);
-        if (!mpi_finalized) {
-            MPI_Comm_free(&analysis_comm_);
-        }
-        owns_analysis_comm_ = false;
-    }
-    analysis_comm_ = MPI_COMM_NULL;
-#endif
+    if (failure_)
+        ATV_WARN("analysis executor discarded an unconsumed callback error "
+                 "during shutdown; use drain_analysis() to receive errors");
 
     ring_.clear();
     slot_busy_.clear();
+    slot_readers_.clear();
     ring_capacity_.store(0, std::memory_order_relaxed);
     queue_.clear();
     initialized_ = false;
@@ -141,18 +128,29 @@ int AnalysisExecutor::acquire_slot() {
 }
 
 int AnalysisExecutor::acquire_slot_locked() {
-    // Single drop_oldest policy: round-robin to the next slot at constant
-    // ring depth K. If that slot is still in flight, overwrite it in place
-    // and count the drop -- never blocks, never allocates.
+    // The previous publication stays pinned while subscribers enqueue their
+    // jobs. Only the next publisher releases that pin; each queued/running
+    // reader keeps its own reference until its callback has finished.
+    const int previous = last_published_slot_.exchange(-1);
+    if (previous >= 0)
+        slot_busy_[static_cast<std::size_t>(previous)] = false;
     const int cap = ring_capacity_.load(std::memory_order_relaxed);
-    const int idx = next_slot_.load(std::memory_order_relaxed);
+    const int start = next_slot_.load(std::memory_order_relaxed);
+    for (int offset = 0; offset < cap; ++offset) {
+        const int idx = (start + offset) % cap;
+        if (slot_busy_[idx] || slot_readers_[idx] != 0)
+            continue;
+        slot_busy_[idx] = true;
+        next_slot_.store((idx + 1) % cap, std::memory_order_relaxed);
+        return idx;
+    }
+    n_dropped_.fetch_add(1, std::memory_order_relaxed);
+    return -1; // Drop this capture, never overwrite storage held by a reader.
+}
 
-    if (slot_busy_[static_cast<std::size_t>(idx)])
-        n_dropped_.fetch_add(1, std::memory_order_relaxed);
-
-    slot_busy_[static_cast<std::size_t>(idx)] = true;
-    next_slot_.store((idx + 1) % cap, std::memory_order_relaxed);
-    return idx;
+void AnalysisExecutor::abandon_slot(int idx) {
+    std::lock_guard<std::mutex> lk(mtx_);
+    slot_busy_[static_cast<std::size_t>(idx)] = false;
 }
 
 FrameSnapshot& AnalysisExecutor::slot(int idx) {
@@ -162,12 +160,11 @@ FrameSnapshot& AnalysisExecutor::slot(int idx) {
 void AnalysisExecutor::publish(int idx, BigInt step) {
     ring_[static_cast<std::size_t>(idx)].step = step;
     last_published_slot_.store(idx, std::memory_order_release);
-    // Slot remains marked busy until the last consumer finishes; but with
-    // a single publish-to-submit-to-worker pipeline, the slot is released
-    // inside the worker loop after `on_snapshot` completes.
+    // Publication pin remains until the next acquire; jobs hold reader refs.
 }
 
 void AnalysisExecutor::prealloc_slots(int n_atoms, CaptureMask mask) {
+    quiesce();
     std::lock_guard<std::mutex> lk(mtx_);
     for (auto& snap : ring_) {
         if (mask.positions) {
@@ -208,10 +205,36 @@ void AnalysisExecutor::register_subscriber(AsyncComponentBase* sub) {
     subscribers_.push_back(sub);
 }
 
+void AnalysisExecutor::unregister_subscriber(AsyncComponentBase* sub) {
+    // Destruction/removal must drain without throwing from a destructor path.
+    // Keep any callback error for the next explicit quiesce().
+    {
+        std::unique_lock<std::mutex> lk(mtx_);
+        cv_work_.wait(lk, [this] {
+            return queue_.empty()
+                   && in_flight_.load(std::memory_order_relaxed) == 0;
+        });
+        auto it = std::find(subscribers_.begin(), subscribers_.end(), sub);
+        if (it == subscribers_.end())
+            return;
+        subscribers_.erase(it);
+    }
+    try {
+        sub->finalize();
+    } catch (...) {
+        std::lock_guard<std::mutex> lk(mtx_);
+        if (!failure_)
+            failure_ = std::current_exception();
+    }
+}
+
 void AnalysisExecutor::submit(AsyncComponentBase* sub, int slot_idx) {
+    if (workers_.empty())
+        return; // Ring-only mode does not queue unserviceable jobs.
     {
         std::lock_guard<std::mutex> lk(mtx_);
         queue_.push_back({sub, slot_idx});
+        ++slot_readers_[static_cast<std::size_t>(slot_idx)];
         in_flight_.fetch_add(1, std::memory_order_relaxed);
     }
     cv_work_.notify_one();
@@ -247,25 +270,41 @@ void AnalysisExecutor::worker_loop(int worker_idx) {
         Job job{};
         {
             std::unique_lock<std::mutex> lk(mtx_);
-            cv_work_.wait(lk, [this] {
-                return stop_.load(std::memory_order_relaxed) || !queue_.empty();
+            const auto runnable = [this] {
+                return std::find_if(
+                    queue_.begin(), queue_.end(), [this](const Job& j) {
+                        return !active_subscribers_.contains(j.sub);
+                    });
+            };
+            cv_work_.wait(lk, [&] {
+                return stop_.load(std::memory_order_relaxed)
+                       || runnable() != queue_.end();
             });
-            if (queue_.empty()) {
+            auto next = runnable();
+            if (next == queue_.end()) {
                 if (stop_.load(std::memory_order_relaxed))
                     return;
                 continue;
             }
-            job = queue_.front();
-            queue_.pop_front();
+            job = *next;
+            queue_.erase(next);
+            active_subscribers_.insert(job.sub);
         }
 
-        if (job.sub) {
-            job.sub->on_snapshot(ring_[static_cast<std::size_t>(job.slot_idx)]);
+        try {
+            if (job.sub)
+                job.sub->on_snapshot(
+                    ring_[static_cast<std::size_t>(job.slot_idx)]);
+        } catch (...) {
+            std::lock_guard<std::mutex> lk(mtx_);
+            if (!failure_)
+                failure_ = std::current_exception();
         }
 
         {
             std::lock_guard<std::mutex> lk(mtx_);
-            slot_busy_[static_cast<std::size_t>(job.slot_idx)] = false;
+            active_subscribers_.erase(job.sub);
+            --slot_readers_[static_cast<std::size_t>(job.slot_idx)];
             in_flight_.fetch_sub(1, std::memory_order_relaxed);
         }
         cv_work_.notify_all(); // wake up shutdown-waiters too

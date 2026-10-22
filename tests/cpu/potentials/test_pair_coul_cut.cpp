@@ -11,6 +11,126 @@
 
 using namespace ATV;
 
+TEST(PairCoulCut, FilteredListUsesExplicitOwnerIndices) {
+    for (bool filtered : {false, true}) {
+        cpu::Frame frame(3);
+        frame.box = cpu::Box::cubic(20.0);
+        frame.span(kAtom_x)[0] = 7.0;
+        frame.span(kAtom_x)[1] = 2.0;
+        frame.span(kAtom_x)[2] = 0.0;
+        for (int i = 0; i < 3; ++i) {
+            frame.span(kAtom_charge)[i] = 1.0;
+            frame.span(kAtom_tag)[i] = i + 1;
+        }
+        cpu::md::PairList pairs;
+        pairs.inum = 1;
+        pairs.ilist = {2};
+        pairs.numneigh = {0, 0, 1};
+        pairs.firstneigh = {0, 0, 0};
+        pairs.neighbors = {1};
+        pairs.total_pairs = 1;
+        cpu::Context context;
+        context.md.pair_list = &pairs;
+        cpu::PairCoulCut coul(4.0);
+        if (filtered)
+            coul.set_special_bonds(0.0, 0.0, 0.5);
+        coul.build({context, frame});
+        coul.launch({context, frame, 0, 0, true, true});
+        EXPECT_NEAR(frame.meta.get(kEnergy), units::coulomb / 2.0, 1e-12);
+        EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[0], 0.0);
+        EXPECT_NEAR(frame.span(kAtom_fx)[2], -units::coulomb / 4.0, 1e-12);
+        coul.destroy({context, frame});
+    }
+}
+
+TEST(PairCoulCut, FilteredRowsRetainExplicitImageCoordinates) {
+    for (bool filtered : {false, true}) {
+        for (bool inside : {false, true}) {
+            cpu::Frame frame(2);
+            frame.box = cpu::Box::orthorhombic(7.6, 20.0, 20.0);
+            frame.span(kAtom_x)[0] = 0.2;
+            frame.span(kAtom_x)[1] = inside ? 3.8 : -3.8;
+            frame.span(kAtom_charge)[0] = 1.0;
+            frame.span(kAtom_charge)[1] = -1.0;
+            cpu::md::PairList pairs;
+            pairs.inum = 1;
+            pairs.ilist = {0};
+            pairs.numneigh = {1, 0};
+            pairs.firstneigh = {0, 1};
+            pairs.neighbors = {1};
+            pairs.total_pairs = 1;
+            cpu::Context context;
+            context.md.pair_list = &pairs;
+            cpu::PairCoulCut coul(3.77118);
+            if (filtered)
+                coul.set_special_bonds(0.0, 0.0, 0.5);
+            coul.build({context, frame});
+            coul.launch({context, frame, 0, 0, true, true});
+            EXPECT_NEAR(frame.meta.get(kEnergy),
+                        inside ? -units::coulomb / 3.6 : 0.0, 1e-12);
+            if (!inside) {
+                EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[0], 0.0);
+                EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[1], 0.0);
+                EXPECT_DOUBLE_EQ(frame.meta.get(kStress)[0], 0.0);
+            }
+            coul.destroy({context, frame});
+        }
+    }
+}
+
+TEST(PairCoulCut, FilteredCacheTracksSourceAndBuildLifecycle) {
+    cpu::Frame frame(2);
+    frame.box = cpu::Box::cubic(20.0);
+    frame.span(kAtom_x)[1] = 2.0;
+    frame.span(kAtom_charge)[0] = 1.0;
+    frame.span(kAtom_charge)[1] = -1.0;
+    frame.span(kAtom_tag)[0] = 1;
+    frame.span(kAtom_tag)[1] = 2;
+    cpu::md::PairList populated;
+    populated.inum = 2;
+    populated.ilist = {0, 1};
+    populated.numneigh = {1, 0};
+    populated.firstneigh = {0, 1};
+    populated.neighbors = {1};
+    populated.total_pairs = 1;
+    auto empty = populated;
+    empty.numneigh = {0, 0};
+    empty.firstneigh = {0, 0};
+    empty.neighbors.clear();
+    empty.total_pairs = 0;
+    ASSERT_EQ(populated.version, 0u);
+    ASSERT_EQ(empty.version, populated.version);
+    cpu::Context context;
+    context.md.pair_list = &populated;
+    cpu::PairCoulCut coul(8.0);
+    coul.set_special_bonds(0.0, 0.0, 0.5);
+    coul.build({context, frame});
+    auto evaluate = [&](cpu::md::PairList& source) {
+        context.md.pair_list = &source;
+        frame.meta.get(kEnergy) = 0;
+        coul.launch({context, frame, 0, 0, false, false});
+        return frame.meta.get(kEnergy);
+    };
+    const double expected = -units::coulomb / 2.0;
+    EXPECT_NEAR(evaluate(populated), expected, 1e-12);
+    EXPECT_DOUBLE_EQ(evaluate(empty), 0.0);
+    EXPECT_NEAR(evaluate(populated), expected, 1e-12);
+
+    // A new build invalidates the old cache even when its provider and
+    // version are unchanged but the provider has been reinitialized.
+    populated = empty;
+    coul.build({context, frame});
+    EXPECT_DOUBLE_EQ(evaluate(populated), 0.0);
+    coul.destroy({context, frame});
+    populated.numneigh = {1, 0};
+    populated.firstneigh = {0, 1};
+    populated.neighbors = {1};
+    populated.total_pairs = 1;
+    coul.build({context, frame});
+    EXPECT_NEAR(evaluate(populated), expected, 1e-12);
+    coul.destroy({context, frame});
+}
+
 TEST(PairCoulCut, TwoChargeEnergyAndForce) {
     cpu::Frame f(2);
     f.span(kAtom_x)[0] = 0;
@@ -34,7 +154,6 @@ TEST(PairCoulCut, TwoChargeEnergyAndForce) {
     pairs.firstneigh = {0, 0};
     pairs.neighbors = {1};
     pairs.total_pairs = 1;
-    pairs.has_shifts = false;
     pairs.version = 1;
 
     cpu::Context ctx;
@@ -86,7 +205,6 @@ TEST(PairCoulCut, SpecialBondsExclude12) {
     pairs.firstneigh = {0, 0};
     pairs.neighbors = {1};
     pairs.total_pairs = 1;
-    pairs.has_shifts = false;
     pairs.version = 1;
 
     cpu::Context ctx;
@@ -131,7 +249,6 @@ TEST(PairCoulCut, SpecialBondsKeepIntermolecular) {
     pairs.firstneigh = {0, 0};
     pairs.neighbors = {1};
     pairs.total_pairs = 1;
-    pairs.has_shifts = false;
     pairs.version = 1;
 
     cpu::Context ctx;

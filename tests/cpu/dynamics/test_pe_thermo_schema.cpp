@@ -27,6 +27,24 @@
 
 using namespace ATV;
 
+TEST(DerivativeReset, EnergyOnlyLaunchPreservesForcesAndStress) {
+    cpu::Frame frame(1);
+    cpu::Context ctx;
+    frame.span(kAtom_fx)[0] = 2.0;
+    frame.span(kAtom_fy)[0] = 3.0;
+    frame.span(kAtom_fz)[0] = 4.0;
+    frame.meta.get(kStress).fill(5.0);
+    cpu::ZeroForces forces;
+    cpu::ZeroStress stress;
+    forces.launch({ctx, frame, 0, 0, false, false});
+    stress.launch({ctx, frame, 0, 0, false, false});
+    EXPECT_EQ(frame.span(kAtom_fx)[0], 2.0);
+    EXPECT_EQ(frame.span(kAtom_fy)[0], 3.0);
+    EXPECT_EQ(frame.span(kAtom_fz)[0], 4.0);
+    for (double value : frame.meta.get(kStress))
+        EXPECT_EQ(value, 5.0);
+}
+
 // ── ac-001: per-term energy fields exist and default to zero ─────────
 
 TEST(PeThermoSchema, TypedMetaDefaultsToZero) {

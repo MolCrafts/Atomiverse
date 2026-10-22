@@ -22,6 +22,7 @@ class NddoConverged;
 /// are rewired on every `drive_` so a step lambda never outlives that call.
 class NddoMethod : public cpu::Driver<ATV::nddo::Phase> {
   public:
+    bool requires_full_frame() const override { return true; }
     ~NddoMethod() override;
 
     NddoMethod(const NddoMethod&) = delete;

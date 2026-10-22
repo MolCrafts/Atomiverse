@@ -22,6 +22,8 @@ namespace semiempirical {
 /// are re-converged at every geometry the nuclei reach.
 class AM1Evaluator : public cpu::Semiempirical {
   public:
+    bool provides_force() const override { return compute_force_; }
+
     /// @brief Default AM1 settings (neutral singlet; see `AM1`'s members).
     AM1Evaluator() = default;
     /// @brief Own a concrete AM1 method (parameters already on the method).

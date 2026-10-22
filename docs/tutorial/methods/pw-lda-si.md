@@ -66,7 +66,7 @@ Conversion used by the engine gate:
 - Analytic / FD forces and Nielsen–Martin stress → `pw-analytic-stress-si` and
   related force regressions, not this energy pin.
 - True GGA (PBE) → `pw-pbe-gga-si`.
-- Metallic smearing → `pw-smearing-al`.
+- Metallic smearing → [pw-smearing-al](pw-smearing-al.md).
 - Collinear spin → `pw-spin-polarized-o2`.
 - PW BOMD → `pw-bomd-h`.
 - Production-converged ONCV cutoffs (~60 Ry) and dense k-meshes when they

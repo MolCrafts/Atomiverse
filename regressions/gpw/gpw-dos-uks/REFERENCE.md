@@ -121,5 +121,5 @@ multi-k collinear UKS SCF job class).
 - Spec: `.claude/specs/gpw-dos-uks/acceptance.md`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dos-uks/si_gpw_dos_uks.inp`
 - Sibling RKS DOS: `gpw-dos-si`
-- Sibling multi-k UKS energy: `gpw-kpoints-uks`
+- Sibling multi-k UKS energy: `gpw-hirshfeld-uks-kpoints`
 - PW pattern: `cpu::pw::Dos` / `reg_dos-spin-si`

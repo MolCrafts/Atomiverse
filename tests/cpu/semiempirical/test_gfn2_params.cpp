@@ -140,9 +140,10 @@ TEST(Gfn2Params, AnalyticForceMatchesCentralFD) {
         return -(shifted(h) - shifted(-h)) / (2.0 * h);
     };
     constexpr double h = 1.0e-4;
-    // Two-centre CAMM Θ on H + ∂Θ/∂R chain; analytic vs energy FD.
-    EXPECT_NEAR(fx0, fd(0, 0, h), 0.25);
-    EXPECT_NEAR(fy1, fd(1, 1, h), 0.25);
+    // The SCC energy is stationary in P (Fock = ∂E/∂P, AES and D4 in the
+    // Fock), so the analytic gradient is the exact derivative of E.
+    EXPECT_NEAR(fx0, fd(0, 0, h), 1.0e-4);
+    EXPECT_NEAR(fy1, fd(1, 1, h), 1.0e-4);
 }
 
 TEST(Gfn2Params, AnalyticForceTranslationallyInvariant) {
@@ -177,6 +178,5 @@ TEST(Gfn2Params, WaterEnergyFiniteAndSccConverged) {
     EXPECT_LT(gfn2.last_scc_residual(), gfn2.scc_tol);
     EXPECT_GT(gfn2.last_scc_iterations(), 0);
     EXPECT_EQ(gfn2.last_mulliken_dq().size(), 3u);
-    // Two-centre Θ on H is a real AES term (~23 meV vs the old
-    // O-centre freeze). Oracle energy lives on the regression.
+    // Oracle energy lives on reg_gfn2-xtb-water.
 }

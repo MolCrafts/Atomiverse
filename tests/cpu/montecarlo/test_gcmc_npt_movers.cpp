@@ -171,6 +171,37 @@ TEST(InsertDeleteMove, DeletionCompactsAndPatchResurrects) {
     }
 }
 
+TEST(InsertDeleteMove, DeletionRollbackSurvivesGhostSlotOverwrite) {
+    // Once nlocal drops, the compaction survivor's end row is the first ghost
+    // slot, and the trial's borders write a periodic image into it. Rollback
+    // must not rely on that row still holding the survivor.
+    MoverHarness h{4};
+    const cpu::Frame before = h.frame;
+    cpu::mc::InsertDeleteMove mv{1, 39.948};
+    int deletions = 0;
+    while (deletions < 24) {
+        mv.launch(h.launch());
+        if (h.txn.verb == Verb::Delete) {
+            ++deletions;
+            const int freed = h.frame.nlocal();
+            h.frame.span(ATV::kAtom_x)[freed] = -999.0; // a ghost image lands
+            h.frame.span(ATV::kAtom_tag)[freed] = 77;
+            h.txn.rollback(h.frame);
+            ASSERT_EQ(h.frame.nlocal(), 4);
+            for (int i = 0; i < 4; ++i) {
+                EXPECT_EQ(h.frame.span(ATV::kAtom_x)[i],
+                          before.span(ATV::kAtom_x)[i])
+                    << i;
+                EXPECT_EQ(h.frame.span(ATV::kAtom_tag)[i],
+                          before.span(ATV::kAtom_tag)[i])
+                    << i;
+            }
+            continue;
+        }
+        h.txn.rollback(h.frame); // undo the insertion and redraw
+    }
+}
+
 TEST(InsertDeleteMove, DeletionFromEmptyFrameProposesNothing) {
     MoverHarness h{0};
     cpu::mc::InsertDeleteMove mv{1, 39.948};

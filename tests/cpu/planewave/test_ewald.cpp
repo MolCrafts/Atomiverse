@@ -68,3 +68,28 @@ TEST(Ewald, ForceMatchesEnergyFd) {
         }
     }
 }
+
+TEST(Ewald, NonSymmetricCellAndForcesRotateTogether) {
+    Mat3 h = Mat3::diagonal(4.0, 5.0, 6.0);
+    h(0, 1) = 1.5;
+    h(1, 2) = 0.8;
+    Mat3 rotation = Mat3::diagonal(1.0, 1.0, 1.0);
+    const double c = std::cos(0.37), s = std::sin(0.37);
+    rotation(0, 0) = c;
+    rotation(0, 1) = -s;
+    rotation(1, 0) = s;
+    rotation(1, 1) = c;
+    const std::vector<Vec3> pos = {h * Vec3{0.1, 0.2, 0.3},
+                                   h * Vec3{0.4, 0.7, 0.6}};
+    const std::vector<Vec3> rotated = {rotation * pos[0], rotation * pos[1]};
+    const std::vector<AccReal> charges = {1.0, -1.0};
+    const EwaldSummation a(pos, charges, cpu::Box(h), AccReal(2.0));
+    const EwaldSummation b(rotated, charges, cpu::Box(rotation * h),
+                           AccReal(2.0));
+    EXPECT_NEAR(a.total_energy(), b.total_energy(), 1e-11);
+    for (int atom = 0; atom < 2; ++atom) {
+        const auto expected = rotation * a.forces_bohr()[atom];
+        for (int d = 0; d < 3; ++d)
+            EXPECT_NEAR(b.forces_bohr()[atom][d], expected[d], 1e-11);
+    }
+}

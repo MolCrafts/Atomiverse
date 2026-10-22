@@ -4,24 +4,24 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `pw-uks-kmesh-fe` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::pw::PW` (`spin_polarized`, `multiplicity`, `k_mesh ≥ 2`) → `PWResult::{magnetization, energy_ha}` |
 | Track | CP2K capability wave 2 () |
-| Roadmap | [dft.md](../../roadmap/dft.md) § k-point periodic UKS; queue `pw-uks-kmesh-fe` (done) |
+| Roadmap | [dft.md](../../roadmap/dft.md) § k-point periodic UKS |
 
 ## Summary
 
 **Collinear spin-polarized plane-wave Kohn–Sham on a multi-k Monkhorst–Pack
 mesh** — the ladder step after Γ-only UKS (`pw-spin-polarized-o2`) and restricted
-metallic smearing (`pw-smearing-al`). Concrete method `cpu::pw::PW` with
+metallic smearing ([pw-smearing-al](pw-smearing-al.md)). Concrete method `cpu::pw::PW` with
 `spin_polarized = true`, `multiplicity = 3`, and **`k_mesh = 2`** (not Γ-only).
 Target system is gas-phase **O₂ triplet** \(^3\Sigma_g^-\) in a cubic cell with
 SG15 ONCV oxygen NC-UPF. Primary gates: collinear magnetization
 \(M = N_\uparrow - N_\downarrow = 2\) and total energy \(E_{\mathrm{tot}}\) [Ha]
 at fixed settings. Queue name allows Fe or O₂; **bulk Fe metal is deferred**
 (needs spin + metallic smearing together — not co-supported on `PW::run` yet).
-Regression binary: `reg_pw-uks-kmesh-fe`. **No live CP2K/QE in ctest** —
-offline pins only.
+No standing regression; the values below are offline pins recorded when this
+page was written.
 
 ## Method
 
@@ -130,8 +130,7 @@ bash -lc '
   cmake -B build -DCMAKE_BUILD_TYPE=Release \
         -DATV_BUILD_TESTS=ON -DATV_BUILD_PW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_pw-uks-kmesh-fe -j$(nproc)
-  reg_pw-uks-kmesh-fe
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -142,14 +141,13 @@ bash -lc '
 | Public API | `pw_solver.h` |
 | SCF / spin × k branch | `src/cpu/planewave/pw_solver.cpp` |
 | Unit (multi-k mag) | `tests/cpu/planewave/test_pw_spin.cpp` |
-| Offline pin | case `pw-uks-kmesh-fe` pin |
 | Oracle note | CP2K oracle |
 
 ## Validation (CP2K)
 
-Source: case `pw-uks-kmesh-fe` pin
-(offline only; **no live CP2K or QE in ctest**). Closed acceptance
-(git `pw-uks-kmesh-fe` / wave 2): multi-k collinear UKS, mag + \(e_{\mathrm{tot}}\),
+Source: the pin notes recorded when this page was written (no standing regression)
+(offline only; **no live CP2K or QE in ctest**). Accepted scope:
+multi-k collinear UKS, mag + \(e_{\mathrm{tot}}\),
 `perf_exempt`.
 
 | Setting | Value |
@@ -212,11 +210,11 @@ Dual gate: (1) mag + \(e_{\mathrm{tot}}\) + SCF converge with `k_mesh = 2`;
 
 ## Limitations
 
-- **O₂ cell, not bulk Fe.** Queue name `pw-uks-kmesh-fe` reflects the intended
+- **O₂ cell, not bulk Fe.** The page name reflects the intended
   Fe metal use-case; product pin uses O₂ because spin + metallic smearing is
   not co-supported yet on `PW::run`. Fe metal + spin+smearing is a follow-on.
 - **Fixed occupations only** — no metallic smearing on this dual-spin path;
-  restricted smearing is `pw-smearing-al`.
+  restricted smearing is [pw-smearing-al](pw-smearing-al.md).
 - **Modest ecut (5 Ry)** and small cell for multi-k × dual-spin wall budget;
   production ONCV O₂ needs higher cutoff for basis completeness. Absolute
   energy is therefore not chemically converged.
@@ -230,8 +228,6 @@ Dual gate: (1) mag + \(e_{\mathrm{tot}}\) + SCF converge with `k_mesh = 2`;
 
 ## References
 
-- Offline pin: case `pw-uks-kmesh-fe` pin
-- Regression consumer: `reg_pw-uks-kmesh-fe.cpp`
 - Oracle note: CP2K oracle
 - Closed acceptance (git history): `.claude/specs/pw-uks-kmesh-fe/` (deleted at
   done; wave 2 2026-07-24)

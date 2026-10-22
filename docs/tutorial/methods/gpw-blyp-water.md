@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-blyp-water` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` + `run(frame)`; `xc = XcKind::BLYP`; `Kind` + `GaussianBasis` / `GthPotential` lookup ctors |
 | Roadmap | handoff ratio **perf_exempt** (dual-gate vs PBE); sibling PBE pin [gpw-water-pbe-mt](gpw-water-pbe-mt.md); narrative [ch09-gpw](../ch09-gpw.md) |
 
@@ -17,8 +17,8 @@ energy for an **isolated** water molecule with the **BLYP** GGA functional
 and XC, GTH pseudopotentials, density cutoff **400 Ry**, Martyna–Tuckerman
 cluster electrostatics (`nonperiodic = true`). Public path is concrete
 `cpu::gpw::GpwDft` (kinds ctor arg + members; no `*Config` bag) run as
-`dft.run(frame)` with `xc = XcKind::BLYP`. Product gate
-`reg_gpw-blyp-water` asserts SCF convergence, a **dual-gate** against identical
+`dft.run(frame)` with `xc = XcKind::BLYP`. The recorded check (no standing
+regression) asserted SCF convergence, a **dual-gate** against identical
 geometry PBE (\(|E_{\mathrm{BLYP}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha), and a soft
 absolute band on first-green Atomiverse \(E_{\mathrm{BLYP}}\) until an offline
 CP2K twin replaces it. Fair wall vs CP2K is **`perf_exempt`** (no CP2K binary
@@ -107,7 +107,7 @@ the molecule to periodic images. Cell \(L = 10\) Å matches
 
 Public surface only (`cpu::Frame` + `GpwDft` ctor args / members; lookup
 constructors for basis/PP tables — not factories for a parallel world model).
-Matches `reg_gpw-blyp-water.cpp` (BLYP single-point + PBE dual-gate):
+BLYP single-point + PBE dual-gate:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -157,7 +157,7 @@ Dual-gate (product regression): second `GpwDft` with
 `xc = XcKind::PBE` on the same geometry; require
 \(|E_{\mathrm{BLYP}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha.
 
-Build and run the regression (CPU login; modules as in `AGENTS.md`):
+Build configuration (CPU login; modules as in `AGENTS.md`):
 
 ```bash
 bash -lc '
@@ -169,8 +169,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-blyp-water -j$(nproc)
-  reg_gpw-blyp-water
 '
 ```
 
@@ -181,13 +179,11 @@ bash -lc '
 | `gth_potential.h` | `GthPotential(Element, name)` lookup |
 | `xc_grid_gga.h` | `xc_grid_blyp` / shared GGA grid path |
 | `src/cpu/gpw/` | GPW SCF / collocate / integrate (private) |
-| `reg_gpw-blyp-water.cpp` | Product gate |
 | CP2K oracle | Offline CP2K twin (never ctest) |
 
 ## Validation (vs CP2K)
 
-Source:
-case `gpw-blyp-water` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle: offline **CP2K Quickstep** twin (same geometry, DZVP-MOLOPT-GTH +
 GTH-PBE, CUTOFF 400, PERIODIC NONE / PSOLVER MT, `XC_FUNCTIONAL BLYP`).
 External-engine absolute digits were **not** available at pin time (no CP2K
@@ -278,15 +274,13 @@ Source: pin notes
 
 ## References
 
-- Offline pin: case `gpw-blyp-water` pin
-- Regression consumer: `reg_gpw-blyp-water.cpp`
+- Offline pin: values recorded when this page was written (no standing regression)
 - Oracle twin: CP2K oracle
 - Oracle notes: CP2K oracle
 - Sibling PBE pin / tutorial: case `gpw-water-pbe-mt` pin,
   [gpw-water-pbe-mt](gpw-water-pbe-mt.md)
 - Molecular all-electron BLYP (PySCF): [blyp-water-sto3g](blyp-water-sto3g.md)
 - Narrative chapter: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
-- Closed spec (git history): `.claude/specs/gpw-blyp-water/`
 - Public API: `gpw_evaluator.h`,
   `gpw_solver.h` (`XcKind::BLYP`)
 - A. D. Becke, *Phys. Rev. A* **38**, 3098 (1988) — B88 exchange.

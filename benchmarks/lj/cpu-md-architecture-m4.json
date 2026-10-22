@@ -1,0 +1,2352 @@
+{
+  "scope": "CPU MD ownership refactor; LJ only same-input LAMMPS performance acceptance",
+  "date_utc": "2026-10-19T10:43:46.637727+00:00",
+  "environment": {
+    "load_before": [
+      2.8759765625,
+      3.96435546875,
+      3.94482421875
+    ],
+    "cpu": "Apple M4",
+    "cores": "10",
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434\n",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin\n",
+    "mpi": "mpiexec (Open MPI) 5.0.9\n\nReport bugs to https://www.open-mpi.org/community/help/\n\n"
+  },
+  "load_after": [
+    3.48291015625,
+    3.65087890625,
+    3.79052734375
+  ],
+  "build": "Release AppleClang 21, -O3 -march=native; OpenMPI 5.0.9, Homebrew libomp; double precision",
+  "product_flags": {
+    "ATV_BUILD_ANALYSIS": "OFF",
+    "ATV_BUILD_BENCHMARKS": "ON",
+    "ATV_BUILD_BENCH_GAFF": "OFF",
+    "ATV_BUILD_CUDA": "OFF",
+    "ATV_BUILD_DEBUG_AMORPHOUS": "OFF",
+    "ATV_BUILD_EVALUATE": "OFF",
+    "ATV_BUILD_EXAMPLES": "OFF",
+    "ATV_BUILD_GPW": "OFF",
+    "ATV_BUILD_HF": "OFF",
+    "ATV_BUILD_IO": "OFF",
+    "ATV_BUILD_KOKKOS": "OFF",
+    "ATV_BUILD_KSPACE": "OFF",
+    "ATV_BUILD_LAUNCHER": "OFF",
+    "ATV_BUILD_MC": "OFF",
+    "ATV_BUILD_MD": "ON",
+    "ATV_BUILD_MINIMIZER": "OFF",
+    "ATV_BUILD_MOLRS": "OFF",
+    "ATV_BUILD_NEIGHBOR": "ON",
+    "ATV_BUILD_PATH": "OFF",
+    "ATV_BUILD_POTENTIALS": "ON",
+    "ATV_BUILD_PW": "OFF",
+    "ATV_BUILD_PYTHON": "OFF",
+    "ATV_BUILD_REGRESSIONS": "ON",
+    "ATV_BUILD_SEMIEMPIRICAL": "OFF",
+    "ATV_BUILD_TESTS": "ON",
+    "ATV_BUILD_VIB": "OFF",
+    "ATV_BUILD_XC_ORACLE": "OFF",
+    "ATV_USE_MPI": "ON"
+  },
+  "lammps_sha": "a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b",
+  "lammps_packages": [
+    "OPENMP",
+    "MANYBODY"
+  ],
+  "lammps_style": "ordinary lj/cut for one thread, lj/cut/omp for multiple threads",
+  "thread_environment": {
+    "OMP_DYNAMIC": "FALSE",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMPI_MCA_mpi_yield_when_idle": "1",
+    "OMP_NUM_THREADS": "per sample",
+    "binding": "OpenMPI/OS defaults; no explicit binding"
+  },
+  "warmup_steps": 20,
+  "measured_steps": 200,
+  "order": "ATV then LAMMPS sequentially; no task build/test/other benchmark overlap",
+  "source_and_binary_sha256": {
+    "/tmp/atv-cpu-perf/bench_md_lj.architecture": "f8853eeb63a94759748f3d808c0af77e4113e4824108d07dc8e09a4c2bc521a9",
+    "/tmp/atv-lammps-cpu-build/lmp": "4d521c871acb6603a68d1eb69295fa34324c4e56a5fdec460e9ce52d47d51288",
+    "benchmarks/lj/bench_lj_cpu.cpp": "5b042ca06c121951853970dc1e8c840d37363dfa5eaaa3f75b370f43e07cbd7f",
+    "benchmarks/lj/compare.py": "fa50678b0bc769e50bb887ffc93afdc39bec83ba369324b867b0c085f1481bcc",
+    "benchmarks/lj/in.cpu": "42da811d9c645a2c7ad259e7e060b4680809d0627812352f0ab5b1666c3fbc94",
+    "include/atomiverse/cpu/communication/comm_brick.h": "1ace498a00faaff758d764d9bc8d028d5b55bdf2b603968d10465da65d1258cf",
+    "include/atomiverse/cpu/communication/halo.h": "e966aa9112cd146146e7478e60bf02950a524e2e53caa12c136e06fa6b458230",
+    "include/atomiverse/cpu/component/context.h": "d7dadc5a45d16538664c2179ded1394ebee89fa090282064c2324ce9e8a1ccf9",
+    "include/atomiverse/cpu/component/neighbor_protocol.h": "97032dc48ae517c4df460da3455021c197006614cd5a78cb4818e1ca1351af2f",
+    "include/atomiverse/cpu/driver/driver.h": "db5ed7721bb277c67a3af46aebfc77a592a52129b9ec2203638b249aab565422",
+    "include/atomiverse/cpu/driver/runtime.h": "be544bae9de161766b2034d47bc7696b14843c38c065ba2cbce10da37e6d7ebc",
+    "include/atomiverse/cpu/dynamics/md.h": "704165a51c4b625d1303ae83121ca7593144863898229187fc1bc79aa8ffe235",
+    "include/atomiverse/cpu/frame/box.h": "00dfbed4d065b1fd273288d86234a35b9cad63d3a3f0753eb38a75e9f7255ffe",
+    "include/atomiverse/cpu/neighbor/cell_list.h": "3ef64e50364ed963a287c140b99e600351f8b2a70130b3e170da29d71c3bdc44",
+    "include/atomiverse/cpu/neighbor/neighbor_list.h": "0134a2838222aaa55f02da732fb93c473e340ab52233527ee594c5c5b11acd4b",
+    "include/atomiverse/cpu/neighbor/pair_list.h": "2665720779be4041e170130cb2107b386d030594c3a5b75efeace815c98a1179",
+    "src/cpu/communication/atom_pack.cpp": "969bb8922ec6943f017825a147684e92426e56d601c55550108a16dbaca9dd84",
+    "src/cpu/communication/comm_brick.cpp": "a3a45047d62af62dca947f45719297441c3dabe7befec397d61a7e2ef433bc8d",
+    "src/cpu/communication/domain.cpp": "701d30c932c3a326b6dbf7932d587939deb2a606b52340065409f7261ea17f66",
+    "src/cpu/communication/domain_runtime.cpp": "f354c0333c64c01af86305ac92279f208c18d1851132a00607af957d158361a6",
+    "src/cpu/communication/halo.cpp": "52b67eab295615857a9826739bcdb00ef0b512a264384ca167bb38b5eed4f224",
+    "src/cpu/driver/runtime.cpp": "230c015bb24a5817143c37c56a6d94e48b3e2eda803e58ce9e27fc65179dedc6",
+    "src/cpu/dynamics/atom_sort.cpp": "a3ef4b2089378ddf14af4aa0d21d20ffa0331e3b61a3890a789bf4bfc6f65185",
+    "src/cpu/dynamics/velocity_verlet.cpp": "a8235a5372f34a8f4ab5bdfa7cc8d0cfcd74dba16d97815011f6b0ffdca1cc81",
+    "src/cpu/frame/box.cpp": "3de344d456e6e092748da58a839856b34be2d4def3d0565b6425b85dafc436d6",
+    "src/cpu/neighbor/cell_list.cpp": "7cd0e14185d0b8d55c0b078473187dc6664e24fb5c78fe14e62dadce365ac1be",
+    "src/cpu/potentials/pair_lj_cut.cpp": "1c25c2b2c46083b2c896cce1ad08a5d745a1a7d6b6044812fd838294bee19103"
+  },
+  "runner_sha256": {
+    "run_matrix.py": "3160f3ccfd746aa87346f4699c44fff8850faec45d7b2553a41c8975340128da",
+    "run_md_lj_ortho.py": "00527bbfcc9e73cd01489f5bdaf6e9bde9ccb1cd038a688e6b3c0e65c66422dd",
+    "run_md_lj_short.py": "d3fa3ac730b7abc926672e85e9f59d4175ab3d4b58087d6fce362042e44eb4ea",
+    "run_md_lj_small-ortho.py": "0d66d9ec83a06e530852d49555d2eeac8064c873bfc5dd93be3202e981f28de6",
+    "run_md_lj_small-tilted.py": "8dbc0a4e21b833e51a047983ac7ae3bfd13a7efea7d0a7dd449337e263480b11",
+    "run_md_lj_nested.py": "8247732953c8998cee6f5c02e1ac609d29f73f1c16536bae3ce874e49a9018d2"
+  },
+  "strict_initial_allowance": {
+    "force_eV_A": 2e-10,
+    "energy_eV_atom": 2e-10
+  },
+  "one_step_allowance": {
+    "force_eV_A": 1e-08,
+    "energy_eV_atom": 2e-10
+  },
+  "model": {
+    "atoms": [
+      10648,
+      103823
+    ],
+    "density_A3": 0.8,
+    "epsilon_eV": 1,
+    "sigma_A": 1,
+    "mass_amu": 1,
+    "cutoff_A": 2.5,
+    "skin_A": 0.3,
+    "dt_fs": "0.005*sqrt(103.6427)",
+    "energy_shift": true,
+    "newton": true,
+    "tallies": "force, energy and all six virial components each step",
+    "sort": "setup then every 1000 steps",
+    "neighbor": "every 1 delay 0 check yes"
+  },
+  "short_oracle_checks": [
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 5.972999872483342e-14,
+      "energy_error_eV_atom": 3.157967714489334e-15,
+      "atv_energy_eV": -1033.0847904150908,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.702997020127441e-09,
+      "energy_error_eV_atom": 2.3124744917300566e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000923,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 5.995204332975845e-14,
+      "energy_error_eV_atom": 3.157967714489334e-15,
+      "atv_energy_eV": -1033.0847904150894,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.7029961319490212e-09,
+      "energy_error_eV_atom": 2.3126850229110224e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000928,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 5.972999872483342e-14,
+      "energy_error_eV_atom": 3.157967714489334e-15,
+      "atv_energy_eV": -1033.0847904150894,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.702997020127441e-09,
+      "energy_error_eV_atom": 2.3126850229110224e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000928,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 5.928590951498336e-14,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1033.0847904150896,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.7029961319490212e-09,
+      "energy_error_eV_atom": 2.3121586949586074e-11,
+      "atv_energy_eV": -1031.8363020950974,
+      "lammps_energy_eV": -1031.8363021000916,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 5.972999872483342e-14,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1033.0847904150899,
+      "lammps_energy_eV": -1033.08479041509,
+      "passed": true
+    },
+    {
+      "case": "ortho",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.702997020127441e-09,
+      "energy_error_eV_atom": 2.3119481637776416e-11,
+      "atv_energy_eV": -1031.8363020950976,
+      "lammps_energy_eV": -1031.8363021000914,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.340794638821535e-13,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1099.5889088796002,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736657746250785e-09,
+      "energy_error_eV_atom": 1.8336213206229904e-11,
+      "atv_energy_eV": -1098.7210290007927,
+      "lammps_energy_eV": -1098.7210290047533,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.34190486184616e-13,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1099.5889088796005,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736648864466588e-09,
+      "energy_error_eV_atom": 1.8326739303086435e-11,
+      "atv_energy_eV": -1098.7210290007924,
+      "lammps_energy_eV": -1098.721029004751,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.340794638821535e-13,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1099.5889088796002,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736657746250785e-09,
+      "energy_error_eV_atom": 1.8326739303086435e-11,
+      "atv_energy_eV": -1098.7210290007924,
+      "lammps_energy_eV": -1098.721029004751,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.33968441579691e-13,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1099.5889088796002,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736648864466588e-09,
+      "energy_error_eV_atom": 1.8324633991276777e-11,
+      "atv_energy_eV": -1098.7210290007924,
+      "lammps_energy_eV": -1098.7210290047506,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.340794638821535e-13,
+      "energy_error_eV_atom": 0.0,
+      "atv_energy_eV": -1099.5889088796,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "short",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736657746250785e-09,
+      "energy_error_eV_atom": 1.8324633991276777e-11,
+      "atv_energy_eV": -1098.721029000793,
+      "lammps_energy_eV": -1098.721029004751,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.5083047578154947e-14,
+      "energy_error_eV_atom": 1.4210854715202004e-14,
+      "atv_energy_eV": -305.3330117761321,
+      "lammps_energy_eV": -305.333011776133,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.7140788222700394e-09,
+      "energy_error_eV_atom": 4.022382427137927e-11,
+      "atv_energy_eV": -304.8537925136074,
+      "lammps_energy_eV": -304.8537925161817,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.6415315207705135e-14,
+      "energy_error_eV_atom": 0.0,
+      "atv_energy_eV": -305.333011776132,
+      "lammps_energy_eV": -305.333011776132,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.714079710448459e-09,
+      "energy_error_eV_atom": 4.022560062821867e-11,
+      "atv_energy_eV": -304.85379251360723,
+      "lammps_energy_eV": -304.85379251618167,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.2862601528904634e-14,
+      "energy_error_eV_atom": 0.0,
+      "atv_energy_eV": -305.333011776132,
+      "lammps_energy_eV": -305.333011776132,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.7140805986268788e-09,
+      "energy_error_eV_atom": 4.022382427137927e-11,
+      "atv_energy_eV": -304.85379251360735,
+      "lammps_energy_eV": -304.85379251618167,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.597122599785507e-14,
+      "energy_error_eV_atom": 0.0,
+      "atv_energy_eV": -305.333011776132,
+      "lammps_energy_eV": -305.333011776132,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.714079710448459e-09,
+      "energy_error_eV_atom": 4.022293609295957e-11,
+      "atv_energy_eV": -304.8537925136073,
+      "lammps_energy_eV": -304.85379251618156,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.375077994860476e-14,
+      "energy_error_eV_atom": 0.0,
+      "atv_energy_eV": -305.333011776132,
+      "lammps_energy_eV": -305.333011776132,
+      "passed": true
+    },
+    {
+      "case": "small-ortho",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 3.7140788222700394e-09,
+      "energy_error_eV_atom": 4.022293609295957e-11,
+      "atv_energy_eV": -304.8537925136073,
+      "lammps_energy_eV": -304.85379251618156,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 4.445332990599127e-13,
+      "energy_error_eV_atom": 3.552713678800501e-15,
+      "atv_energy_eV": -338.9656859053482,
+      "lammps_energy_eV": -338.965685905348,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 2.6285911225443215e-09,
+      "energy_error_eV_atom": 1.467981292080367e-11,
+      "atv_energy_eV": -338.7658022448758,
+      "lammps_energy_eV": -338.7658022458153,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 4.440892098500626e-13,
+      "energy_error_eV_atom": 3.552713678800501e-15,
+      "atv_energy_eV": -338.9656859053482,
+      "lammps_energy_eV": -338.965685905348,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 2.6285902343659018e-09,
+      "energy_error_eV_atom": 1.468336563448247e-11,
+      "atv_energy_eV": -338.7658022448759,
+      "lammps_energy_eV": -338.7658022458156,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 4.445332990599127e-13,
+      "energy_error_eV_atom": 2.6645352591003757e-15,
+      "atv_energy_eV": -338.96568590534815,
+      "lammps_energy_eV": -338.965685905348,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 2.6285906784551116e-09,
+      "energy_error_eV_atom": 1.468514199132187e-11,
+      "atv_energy_eV": -338.7658022448758,
+      "lammps_energy_eV": -338.7658022458156,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 4.4497738826976274e-13,
+      "energy_error_eV_atom": 5.329070518200751e-15,
+      "atv_energy_eV": -338.9656859053483,
+      "lammps_energy_eV": -338.965685905348,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 2.6285915666335313e-09,
+      "energy_error_eV_atom": 1.468158927764307e-11,
+      "atv_energy_eV": -338.7658022448759,
+      "lammps_energy_eV": -338.7658022458155,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 64,
+      "max_force_error_eV_A": 4.445332990599127e-13,
+      "energy_error_eV_atom": 1.2434497875801753e-14,
+      "atv_energy_eV": -338.9656859053482,
+      "lammps_energy_eV": -338.965685905349,
+      "passed": true
+    },
+    {
+      "case": "small-tilted",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 64,
+      "max_force_error_eV_A": 2.628589790276692e-09,
+      "energy_error_eV_atom": 1.467803656396427e-11,
+      "atv_energy_eV": -338.7658022448759,
+      "lammps_energy_eV": -338.7658022458153,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.340794638821535e-13,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1099.5889088796002,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736648864466588e-09,
+      "energy_error_eV_atom": 1.8334107894420243e-11,
+      "atv_energy_eV": -1098.7210290007931,
+      "lammps_energy_eV": -1098.7210290047533,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.34190486184616e-13,
+      "energy_error_eV_atom": 2.105311809659556e-15,
+      "atv_energy_eV": -1099.5889088796005,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 1,
+      "threads": 2,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.173663998268239e-09,
+      "energy_error_eV_atom": 1.8326739303086435e-11,
+      "atv_energy_eV": -1098.7210290007924,
+      "lammps_energy_eV": -1098.721029004751,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.340794638821535e-13,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1099.5889088796002,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 2,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736648864466588e-09,
+      "energy_error_eV_atom": 1.8327791958991266e-11,
+      "atv_energy_eV": -1098.7210290007922,
+      "lammps_energy_eV": -1098.721029004751,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.33968441579691e-13,
+      "energy_error_eV_atom": 1.052655904829778e-15,
+      "atv_energy_eV": -1099.5889088796002,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 3,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736648864466588e-09,
+      "energy_error_eV_atom": 1.8324633991276777e-11,
+      "atv_energy_eV": -1098.7210290007924,
+      "lammps_energy_eV": -1098.7210290047506,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "initial",
+      "atoms": 216,
+      "max_force_error_eV_A": 7.340794638821535e-13,
+      "energy_error_eV_atom": 0.0,
+      "atv_energy_eV": -1099.5889088796,
+      "lammps_energy_eV": -1099.5889088796,
+      "passed": true
+    },
+    {
+      "case": "nested",
+      "model": "lj",
+      "ranks": 4,
+      "threads": 1,
+      "stage": "final",
+      "atoms": 216,
+      "max_force_error_eV_A": 3.1736648864466588e-09,
+      "energy_error_eV_atom": 1.8324633991276777e-11,
+      "atv_energy_eV": -1098.721029000793,
+      "lammps_energy_eV": -1098.721029004751,
+      "passed": true
+    }
+  ],
+  "summary": [
+    {
+      "atoms": 10648,
+      "ranks": 1,
+      "threads": 1,
+      "atv_s": 0.436929122,
+      "lammps_s": 0.763568,
+      "median_paired_ratio": 0.5722203156758795,
+      "min_ratio": 0.5715739678689722,
+      "max_ratio": 0.5741539004658651,
+      "median_stage_ratio": {
+        "Pair": 0.36365746561696033,
+        "Neigh": 0.9906896863418603,
+        "Comm": 2.555543132776438,
+        "Modify": 0.8937805641032189
+      }
+    },
+    {
+      "atoms": 10648,
+      "ranks": 1,
+      "threads": 2,
+      "atv_s": 0.254763208,
+      "lammps_s": 0.494004,
+      "median_paired_ratio": 0.5162399211342418,
+      "min_ratio": 0.4877634237199703,
+      "max_ratio": 0.5189103915202523,
+      "median_stage_ratio": {
+        "Pair": 0.31182917184498926,
+        "Neigh": 0.9571873160063925,
+        "Comm": 2.4163515933706687,
+        "Modify": 0.8510113468179575
+      }
+    },
+    {
+      "atoms": 10648,
+      "ranks": 1,
+      "threads": 4,
+      "atv_s": 0.246540167,
+      "lammps_s": 0.406997,
+      "median_paired_ratio": 0.6035491402356028,
+      "min_ratio": 0.6009069428030183,
+      "max_ratio": 0.6367331253686874,
+      "median_stage_ratio": {
+        "Pair": 0.4053050755939525,
+        "Neigh": 1.0653694131955,
+        "Comm": 2.362739211027857,
+        "Modify": 0.8103610447869185
+      }
+    },
+    {
+      "atoms": 10648,
+      "ranks": 2,
+      "threads": 1,
+      "atv_s": 0.263603787,
+      "lammps_s": 0.444819,
+      "median_paired_ratio": 0.588969167740661,
+      "min_ratio": 0.5050151866383638,
+      "max_ratio": 0.6443198447008783,
+      "median_stage_ratio": {
+        "Pair": 0.3529740686377298,
+        "Neigh": 0.9364000982237866,
+        "Comm": 2.568016521504894,
+        "Modify": 0.7944254034546155
+      }
+    },
+    {
+      "atoms": 10648,
+      "ranks": 4,
+      "threads": 1,
+      "atv_s": 0.262690166,
+      "lammps_s": 0.359318,
+      "median_paired_ratio": 0.7189264523347006,
+      "min_ratio": 0.7066730674041235,
+      "max_ratio": 0.7432174776396941,
+      "median_stage_ratio": {
+        "Pair": 0.41489304380623954,
+        "Neigh": 0.9279602614664503,
+        "Comm": 1.1557589019295802,
+        "Modify": 0.7564525401676299
+      }
+    },
+    {
+      "atoms": 103823,
+      "ranks": 1,
+      "threads": 1,
+      "atv_s": 4.83676854,
+      "lammps_s": 8.56954,
+      "median_paired_ratio": 0.5599433824653043,
+      "min_ratio": 0.541230664656446,
+      "max_ratio": 0.7251729918175374,
+      "median_stage_ratio": {
+        "Pair": 0.34879616370841526,
+        "Neigh": 0.9837080482241772,
+        "Comm": 2.266104693516495,
+        "Modify": 0.5480512776391638
+      }
+    },
+    {
+      "atoms": 103823,
+      "ranks": 1,
+      "threads": 2,
+      "atv_s": 2.76932151,
+      "lammps_s": 5.81436,
+      "median_paired_ratio": 0.4725465939301279,
+      "min_ratio": 0.4650519076906143,
+      "max_ratio": 0.5448666086544658,
+      "median_stage_ratio": {
+        "Pair": 0.28185937069763944,
+        "Neigh": 0.9919008027522935,
+        "Comm": 1.9968890570479674,
+        "Modify": 0.5738903231826807
+      }
+    },
+    {
+      "atoms": 103823,
+      "ranks": 1,
+      "threads": 4,
+      "atv_s": 2.21028287,
+      "lammps_s": 4.38113,
+      "median_paired_ratio": 0.5121244117694762,
+      "min_ratio": 0.47260105554182136,
+      "max_ratio": 0.5484941967026772,
+      "median_stage_ratio": {
+        "Pair": 0.34480523689156783,
+        "Neigh": 0.9142031776600867,
+        "Comm": 1.7784279005312187,
+        "Modify": 0.5167873601053324
+      }
+    },
+    {
+      "atoms": 103823,
+      "ranks": 2,
+      "threads": 1,
+      "atv_s": 3.05090835,
+      "lammps_s": 5.20373,
+      "median_paired_ratio": 0.5694149802494027,
+      "min_ratio": 0.5625712639333229,
+      "max_ratio": 0.9344796809211854,
+      "median_stage_ratio": {
+        "Pair": 0.3357818651936299,
+        "Neigh": 0.8939670932358319,
+        "Comm": 4.270591550051655,
+        "Modify": 0.8076518203927546
+      }
+    },
+    {
+      "atoms": 103823,
+      "ranks": 4,
+      "threads": 1,
+      "atv_s": 2.3674178,
+      "lammps_s": 3.78168,
+      "median_paired_ratio": 0.6199492685790442,
+      "min_ratio": 0.5663866387022621,
+      "max_ratio": 0.6345501573363783,
+      "median_stage_ratio": {
+        "Pair": 0.3440949884838376,
+        "Neigh": 0.9154879140555058,
+        "Comm": 3.211500590783773,
+        "Modify": 0.8667548112237402
+      }
+    }
+  ],
+  "raw_samples": [
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 0.436929122,
+      "lammps": 0.763568,
+      "ratio": 0.5722203156758795,
+      "load_before": [
+        2.705078125,
+        3.64794921875,
+        3.8232421875
+      ],
+      "load_after": [
+        2.728515625,
+        3.63671875,
+        3.818359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 1.0249752461753512e-13,
+        "atv_energy_eV": -51052.25559561271,
+        "lammps_energy_eV": -51052.2555956138,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1887,
+        "Neigh": 0.2198,
+        "Comm": 0.0165,
+        "Modify": 0.007,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.51836,
+        "Neigh": 0.22564,
+        "Comm": 0.0063087,
+        "Modify": 0.0078047,
+        "Output": 0.0028623
+      },
+      "lammps_output_percent": 0.3748585587662133,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t1-rep0"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 0.435053635,
+      "lammps": 0.75773,
+      "ratio": 0.5741539004658651,
+      "load_before": [
+        2.728515625,
+        3.63671875,
+        3.818359375
+      ],
+      "load_after": [
+        2.728515625,
+        3.63671875,
+        3.818359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 1.0249752461753512e-13,
+        "atv_energy_eV": -51052.25559561271,
+        "lammps_energy_eV": -51052.2555956138,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.188,
+        "Neigh": 0.2192,
+        "Comm": 0.016,
+        "Modify": 0.007,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.51697,
+        "Neigh": 0.22126,
+        "Comm": 0.0062609,
+        "Modify": 0.0078319,
+        "Output": 0.0028181
+      },
+      "lammps_output_percent": 0.37191347841579453,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t1-rep1"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 0.438317213,
+      "lammps": 0.76686,
+      "ratio": 0.5715739678689722,
+      "load_before": [
+        2.728515625,
+        3.63671875,
+        3.818359375
+      ],
+      "load_after": [
+        2.728515625,
+        3.63671875,
+        3.818359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 1.0249752461753512e-13,
+        "atv_energy_eV": -51052.25559561271,
+        "lammps_energy_eV": -51052.2555956138,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1886,
+        "Neigh": 0.2217,
+        "Comm": 0.0161,
+        "Modify": 0.0069,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.52689,
+        "Neigh": 0.22009,
+        "Comm": 0.0063693,
+        "Modify": 0.0079449,
+        "Output": 0.0029164
+      },
+      "lammps_output_percent": 0.3803040972276557,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t1-rep2"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 0,
+      "atv": 0.254278877,
+      "lammps": 0.521316,
+      "ratio": 0.4877634237199703,
+      "load_before": [
+        2.728515625,
+        3.63671875,
+        3.818359375
+      ],
+      "load_after": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.3761548284539913e-13,
+        "energy_error_eV_atom": 3.416584153917837e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.255595613,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1092,
+        "Neigh": 0.1143,
+        "Comm": 0.0169,
+        "Modify": 0.007,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.37373,
+        "Neigh": 0.12447,
+        "Comm": 0.0074732,
+        "Modify": 0.0093075,
+        "Output": 0.003619
+      },
+      "lammps_output_percent": 0.6942046666513209,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t2-rep0"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 1,
+      "atv": 0.254763208,
+      "lammps": 0.490958,
+      "ratio": 0.5189103915202523,
+      "load_before": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "load_after": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.3761548284539913e-13,
+        "energy_error_eV_atom": 3.416584153917837e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.255595613,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1098,
+        "Neigh": 0.1138,
+        "Comm": 0.0172,
+        "Modify": 0.007,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.35126,
+        "Neigh": 0.11844,
+        "Comm": 0.0070879,
+        "Modify": 0.0081984,
+        "Output": 0.0032916
+      },
+      "lammps_output_percent": 0.6704443149923212,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t2-rep1"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 2,
+      "atv": 0.255024586,
+      "lammps": 0.494004,
+      "ratio": 0.5162399211342418,
+      "load_before": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "load_after": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.3761548284539913e-13,
+        "energy_error_eV_atom": 3.416584153917837e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.255595613,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1104,
+        "Neigh": 0.1138,
+        "Comm": 0.017,
+        "Modify": 0.0069,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.35404,
+        "Neigh": 0.11889,
+        "Comm": 0.0070354,
+        "Modify": 0.008108,
+        "Output": 0.0032815
+      },
+      "lammps_output_percent": 0.6642658763896648,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t2-rep2"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 0,
+      "atv": 0.254736548,
+      "lammps": 0.400068,
+      "ratio": 0.6367331253686874,
+      "load_before": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "load_after": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.3761548284539913e-13,
+        "energy_error_eV_atom": 6.1498514770521065e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.2555956129,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1293,
+        "Neigh": 0.0864,
+        "Comm": 0.0182,
+        "Modify": 0.0112,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.29254,
+        "Neigh": 0.079538,
+        "Comm": 0.0078846,
+        "Modify": 0.013821,
+        "Output": 0.0033382
+      },
+      "lammps_output_percent": 0.8344081506143957,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t4-rep0"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 1,
+      "atv": 0.244567323,
+      "lammps": 0.406997,
+      "ratio": 0.6009069428030183,
+      "load_before": [
+        2.830078125,
+        3.642578125,
+        3.8193359375
+      ],
+      "load_after": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.3761548284539913e-13,
+        "energy_error_eV_atom": 6.1498514770521065e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.2555956129,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1201,
+        "Neigh": 0.0855,
+        "Comm": 0.0182,
+        "Modify": 0.0111,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.29632,
+        "Neigh": 0.08255,
+        "Comm": 0.0076135,
+        "Modify": 0.013877,
+        "Output": 0.0036215
+      },
+      "lammps_output_percent": 0.8898099985994984,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t4-rep1"
+    },
+    {
+      "side": 22,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 2,
+      "atv": 0.246540167,
+      "lammps": 0.408484,
+      "ratio": 0.6035491402356028,
+      "load_before": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "load_after": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.3761548284539913e-13,
+        "energy_error_eV_atom": 6.1498514770521065e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.2555956129,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1202,
+        "Neigh": 0.0876,
+        "Comm": 0.0181,
+        "Modify": 0.0109,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.29876,
+        "Neigh": 0.082225,
+        "Comm": 0.0076606,
+        "Modify": 0.013368,
+        "Output": 0.0035552
+      },
+      "lammps_output_percent": 0.8703400867598241,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r1-t4-rep2"
+    },
+    {
+      "side": 22,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 0.250432046,
+      "lammps": 0.425204,
+      "ratio": 0.588969167740661,
+      "load_before": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "load_after": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 3.416584153917837e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.255595613,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.101,
+        "Neigh": 0.1144,
+        "Comm": 0.0286,
+        "Modify": 0.0035,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.28614,
+        "Neigh": 0.12217,
+        "Comm": 0.011137,
+        "Modify": 0.0044057,
+        "Output": 0.0022102
+      },
+      "lammps_output_percent": 0.519797555996651,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r2-t1-rep0"
+    },
+    {
+      "side": 22,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 0.263603787,
+      "lammps": 0.521972,
+      "ratio": 0.5050151866383638,
+      "load_before": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "load_after": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 3.416584153917837e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.255595613,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1033,
+        "Neigh": 0.1226,
+        "Comm": 0.0309,
+        "Modify": 0.0036,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.3379,
+        "Neigh": 0.14037,
+        "Comm": 0.032112,
+        "Modify": 0.0059527,
+        "Output": 0.0046176
+      },
+      "lammps_output_percent": 0.8846451533798749,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r2-t1-rep1"
+    },
+    {
+      "side": 22,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 0.286605709,
+      "lammps": 0.444819,
+      "ratio": 0.6443198447008783,
+      "load_before": [
+        3.08349609375,
+        3.681640625,
+        3.83203125
+      ],
+      "load_after": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 3.416584153917837e-15,
+        "atv_energy_eV": -51052.255595612965,
+        "lammps_energy_eV": -51052.255595613,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.1149,
+        "Neigh": 0.1279,
+        "Comm": 0.0399,
+        "Modify": 0.0039,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.29959,
+        "Neigh": 0.12644,
+        "Comm": 0.012311,
+        "Modify": 0.0047701,
+        "Output": 0.0025547
+      },
+      "lammps_output_percent": 0.5743234888797465,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r2-t1-rep2"
+    },
+    {
+      "side": 22,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 0.258323215,
+      "lammps": 0.359318,
+      "ratio": 0.7189264523347006,
+      "load_before": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "load_after": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 2.5282722738991996e-14,
+        "atv_energy_eV": -51052.25559561297,
+        "lammps_energy_eV": -51052.2555956127,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.0801,
+        "Neigh": 0.068,
+        "Comm": 0.1162,
+        "Modify": 0.0025,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.1814,
+        "Neigh": 0.073279,
+        "Comm": 0.10054,
+        "Modify": 0.0033049,
+        "Output": 0.0058304
+      },
+      "lammps_output_percent": 1.6226295370674444,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r4-t1-rep0"
+    },
+    {
+      "side": 22,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 0.262690166,
+      "lammps": 0.371728,
+      "ratio": 0.7066730674041235,
+      "load_before": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "load_after": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 2.5282722738991996e-14,
+        "atv_energy_eV": -51052.25559561297,
+        "lammps_energy_eV": -51052.2555956127,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.077,
+        "Neigh": 0.0703,
+        "Comm": 0.1157,
+        "Modify": 0.0026,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.18559,
+        "Neigh": 0.073997,
+        "Comm": 0.10822,
+        "Modify": 0.003407,
+        "Output": 0.0066588
+      },
+      "lammps_output_percent": 1.7913097748891664,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r4-t1-rep1"
+    },
+    {
+      "side": 22,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 0.264991962,
+      "lammps": 0.356547,
+      "ratio": 0.7432174776396941,
+      "load_before": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "load_after": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 10648,
+        "max_force_error_eV_A": 2.373934382404741e-13,
+        "energy_error_eV_atom": 2.5282722738991996e-14,
+        "atv_energy_eV": -51052.25559561297,
+        "lammps_energy_eV": -51052.2555956127,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.0785,
+        "Neigh": 0.0693,
+        "Comm": 0.1217,
+        "Modify": 0.0025,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 0.19214,
+        "Neigh": 0.075222,
+        "Comm": 0.094638,
+        "Modify": 0.0034805,
+        "Output": 0.0057798
+      },
+      "lammps_output_percent": 1.6210485574131879,
+      "atv_neighbor_builds": 28,
+      "lammps_measured_neighbor_builds": 28,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n22-r4-t1-rep2"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 6.10716763,
+      "lammps": 8.42167,
+      "ratio": 0.7251729918175374,
+      "load_before": [
+        3.23681640625,
+        3.703125,
+        3.8388671875
+      ],
+      "load_after": [
+        3.685546875,
+        3.77099609375,
+        3.8583984375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.231370892033738e-13,
+        "energy_error_eV_atom": 2.438798002114977e-13,
+        "atv_energy_eV": -496269.2911950227,
+        "lammps_energy_eV": -496269.291195048,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 3.5688,
+        "Neigh": 2.3467,
+        "Comm": 0.081,
+        "Modify": 0.0615,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 5.8206,
+        "Neigh": 2.3954,
+        "Comm": 0.037782,
+        "Modify": 0.11552,
+        "Output": 0.024984
+      },
+      "lammps_output_percent": 0.2966632508754201,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t1-rep0"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 4.63809783,
+      "lammps": 8.56954,
+      "ratio": 0.541230664656446,
+      "load_before": [
+        3.685546875,
+        3.77099609375,
+        3.8583984375
+      ],
+      "load_after": [
+        3.6064453125,
+        3.7490234375,
+        3.84814453125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.231370892033738e-13,
+        "energy_error_eV_atom": 2.438798002114977e-13,
+        "atv_energy_eV": -496269.2911950227,
+        "lammps_energy_eV": -496269.291195048,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 2.0202,
+        "Neigh": 2.4152,
+        "Comm": 0.0871,
+        "Modify": 0.0637,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 5.9058,
+        "Neigh": 2.4552,
+        "Comm": 0.038436,
+        "Modify": 0.11623,
+        "Output": 0.025314
+      },
+      "lammps_output_percent": 0.2953950853838129,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t1-rep1"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 4.83676854,
+      "lammps": 8.63796,
+      "ratio": 0.5599433824653043,
+      "load_before": [
+        3.6064453125,
+        3.7490234375,
+        3.84814453125
+      ],
+      "load_after": [
+        3.458984375,
+        3.7109375,
+        3.83203125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.231370892033738e-13,
+        "energy_error_eV_atom": 2.438798002114977e-13,
+        "atv_energy_eV": -496269.2911950227,
+        "lammps_energy_eV": -496269.291195048,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 2.0948,
+        "Neigh": 2.5293,
+        "Comm": 0.0885,
+        "Modify": 0.0704,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 6.0058,
+        "Neigh": 2.4235,
+        "Comm": 0.037303,
+        "Modify": 0.11782,
+        "Output": 0.025454
+      },
+      "lammps_output_percent": 0.29467605777290007,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t1-rep2"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 0,
+      "atv": 2.76932151,
+      "lammps": 5.86042,
+      "ratio": 0.4725465939301279,
+      "load_before": [
+        3.458984375,
+        3.7109375,
+        3.83203125
+      ],
+      "load_after": [
+        3.42431640625,
+        3.69140625,
+        3.8232421875
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.240252676230739e-13,
+        "energy_error_eV_atom": 7.849005064278086e-14,
+        "atv_energy_eV": -496269.29119501787,
+        "lammps_energy_eV": -496269.291195026,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.2103,
+        "Neigh": 1.3839,
+        "Comm": 0.095,
+        "Modify": 0.0384,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 4.3019,
+        "Neigh": 1.3952,
+        "Comm": 0.047574,
+        "Modify": 0.064536,
+        "Output": 0.0287
+      },
+      "lammps_output_percent": 0.48972599233502034,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t2-rep0"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 1,
+      "atv": 2.96795925,
+      "lammps": 5.44713,
+      "ratio": 0.5448666086544658,
+      "load_before": [
+        3.42431640625,
+        3.69140625,
+        3.8232421875
+      ],
+      "load_after": [
+        3.43896484375,
+        3.6845703125,
+        3.8193359375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.240252676230739e-13,
+        "energy_error_eV_atom": 7.849005064278086e-14,
+        "atv_energy_eV": -496269.29119501787,
+        "lammps_energy_eV": -496269.291195026,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.126,
+        "Neigh": 1.6715,
+        "Comm": 0.0929,
+        "Modify": 0.0369,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 3.9949,
+        "Neigh": 1.2907,
+        "Comm": 0.046004,
+        "Modify": 0.064298,
+        "Output": 0.02877
+      },
+      "lammps_output_percent": 0.5281680444564386,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t2-rep1"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 2,
+      "repeat": 2,
+      "atv": 2.70397921,
+      "lammps": 5.81436,
+      "ratio": 0.4650519076906143,
+      "load_before": [
+        3.43896484375,
+        3.6845703125,
+        3.8193359375
+      ],
+      "load_after": [
+        3.45751953125,
+        3.67822265625,
+        3.8154296875
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.240252676230739e-13,
+        "energy_error_eV_atom": 7.849005064278086e-14,
+        "atv_energy_eV": -496269.29119501787,
+        "lammps_energy_eV": -496269.291195026,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.238,
+        "Neigh": 1.3069,
+        "Comm": 0.0856,
+        "Modify": 0.0352,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 4.2799,
+        "Neigh": 1.3734,
+        "Comm": 0.04557,
+        "Modify": 0.064467,
+        "Output": 0.028614
+      },
+      "lammps_output_percent": 0.4921263905227747,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t2-rep2"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 0,
+      "atv": 2.40302438,
+      "lammps": 4.38113,
+      "ratio": 0.5484941967026772,
+      "load_before": [
+        3.45751953125,
+        3.67822265625,
+        3.8154296875
+      ],
+      "load_after": [
+        3.77392578125,
+        3.73779296875,
+        3.8349609375
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.240252676230739e-13,
+        "energy_error_eV_atom": 4.485145751016049e-14,
+        "atv_energy_eV": -496269.29119501665,
+        "lammps_energy_eV": -496269.291195012,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.259,
+        "Neigh": 0.9542,
+        "Comm": 0.1069,
+        "Modify": 0.0397,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 3.1806,
+        "Neigh": 1.0042,
+        "Comm": 0.064602,
+        "Modify": 0.065151,
+        "Output": 0.038347
+      },
+      "lammps_output_percent": 0.8752764697692148,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t4-rep0"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 1,
+      "atv": 2.21028287,
+      "lammps": 4.31591,
+      "ratio": 0.5121244117694762,
+      "load_before": [
+        3.77392578125,
+        3.73779296875,
+        3.8349609375
+      ],
+      "load_after": [
+        4.03564453125,
+        3.794921875,
+        3.853515625
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.240252676230739e-13,
+        "energy_error_eV_atom": 4.485145751016049e-14,
+        "atv_energy_eV": -496269.29119501665,
+        "lammps_energy_eV": -496269.291195012,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.064,
+        "Neigh": 0.9494,
+        "Comm": 0.1229,
+        "Modify": 0.0314,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 3.0858,
+        "Neigh": 1.0385,
+        "Comm": 0.064143,
+        "Modify": 0.06076,
+        "Output": 0.038864
+      },
+      "lammps_output_percent": 0.9004821694613652,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t4-rep1"
+    },
+    {
+      "side": 47,
+      "ranks": 1,
+      "threads": 4,
+      "repeat": 2,
+      "atv": 2.08375004,
+      "lammps": 4.40911,
+      "ratio": 0.47260105554182136,
+      "load_before": [
+        4.03564453125,
+        3.794921875,
+        3.853515625
+      ],
+      "load_after": [
+        3.80224609375,
+        3.751953125,
+        3.8369140625
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.240252676230739e-13,
+        "energy_error_eV_atom": 4.485145751016049e-14,
+        "atv_energy_eV": -496269.29119501665,
+        "lammps_energy_eV": -496269.291195012,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.9969,
+        "Neigh": 0.9022,
+        "Comm": 0.1155,
+        "Modify": 0.0295,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 3.1683,
+        "Neigh": 1.046,
+        "Comm": 0.064945,
+        "Modify": 0.061342,
+        "Output": 0.039876
+      },
+      "lammps_output_percent": 0.9044002077516777,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r1-t4-rep2"
+    },
+    {
+      "side": 47,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 2.90320783,
+      "lammps": 5.09858,
+      "ratio": 0.5694149802494027,
+      "load_before": [
+        3.80224609375,
+        3.751953125,
+        3.8369140625
+      ],
+      "load_after": [
+        3.5986328125,
+        3.7099609375,
+        3.82080078125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.226929999935237e-13,
+        "energy_error_eV_atom": 7.849005064278086e-14,
+        "atv_energy_eV": -496269.29119501787,
+        "lammps_energy_eV": -496269.291195026,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.1428,
+        "Neigh": 1.3971,
+        "Comm": 0.2983,
+        "Modify": 0.0418,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 3.4034,
+        "Neigh": 1.5687,
+        "Comm": 0.10854,
+        "Modify": 0.051915,
+        "Output": 0.017019
+      },
+      "lammps_output_percent": 0.33379882241722203,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r2-t1-rep0"
+    },
+    {
+      "side": 47,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 4.86277995,
+      "lammps": 5.20373,
+      "ratio": 0.9344796809211854,
+      "load_before": [
+        3.5986328125,
+        3.7099609375,
+        3.82080078125
+      ],
+      "load_after": [
+        3.49951171875,
+        3.685546875,
+        3.81103515625
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.226929999935237e-13,
+        "energy_error_eV_atom": 7.849005064278086e-14,
+        "atv_energy_eV": -496269.29119501787,
+        "lammps_energy_eV": -496269.291195026,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.784,
+        "Neigh": 2.5196,
+        "Comm": 0.4731,
+        "Modify": 0.0622,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 3.4795,
+        "Neigh": 1.5919,
+        "Comm": 0.082539,
+        "Modify": 0.052127,
+        "Output": 0.017073
+      },
+      "lammps_output_percent": 0.32809158046247594,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r2-t1-rep1"
+    },
+    {
+      "side": 47,
+      "ranks": 2,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 3.05090835,
+      "lammps": 5.42315,
+      "ratio": 0.5625712639333229,
+      "load_before": [
+        3.49951171875,
+        3.685546875,
+        3.81103515625
+      ],
+      "load_after": [
+        3.2685546875,
+        3.62939453125,
+        3.78955078125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.226929999935237e-13,
+        "energy_error_eV_atom": 7.849005064278086e-14,
+        "atv_energy_eV": -496269.29119501787,
+        "lammps_energy_eV": -496269.291195026,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 1.203,
+        "Neigh": 1.467,
+        "Comm": 0.3183,
+        "Modify": 0.0445,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 3.6354,
+        "Neigh": 1.641,
+        "Comm": 0.074533,
+        "Modify": 0.055098,
+        "Output": 0.018321
+      },
+      "lammps_output_percent": 0.3378294902409117,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r2-t1-rep2"
+    },
+    {
+      "side": 47,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 0,
+      "atv": 2.3674178,
+      "lammps": 3.73086,
+      "ratio": 0.6345501573363783,
+      "load_before": [
+        3.2685546875,
+        3.62939453125,
+        3.78955078125
+      ],
+      "load_after": [
+        3.38037109375,
+        3.64111328125,
+        3.79150390625
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.226929999935237e-13,
+        "energy_error_eV_atom": 9.643063364684506e-14,
+        "atv_energy_eV": -496269.291195018,
+        "lammps_energy_eV": -496269.291195008,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.8707,
+        "Neigh": 1.0403,
+        "Comm": 0.404,
+        "Modify": 0.0354,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 2.4911,
+        "Neigh": 1.0818,
+        "Comm": 0.11045,
+        "Modify": 0.040842,
+        "Output": 0.016291
+      },
+      "lammps_output_percent": 0.4366553556016575,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r4-t1-rep0"
+    },
+    {
+      "side": 47,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 1,
+      "atv": 2.38995338,
+      "lammps": 4.21965,
+      "ratio": 0.5663866387022621,
+      "load_before": [
+        3.38037109375,
+        3.64111328125,
+        3.79150390625
+      ],
+      "load_after": [
+        3.62890625,
+        3.685546875,
+        3.80517578125
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.226929999935237e-13,
+        "energy_error_eV_atom": 9.643063364684506e-14,
+        "atv_energy_eV": -496269.291195018,
+        "lammps_energy_eV": -496269.291195008,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.8779,
+        "Neigh": 1.0357,
+        "Comm": 0.4298,
+        "Modify": 0.0349,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 2.7033,
+        "Neigh": 1.1829,
+        "Comm": 0.24775,
+        "Modify": 0.042093,
+        "Output": 0.095268
+      },
+      "lammps_output_percent": 2.257722796914436,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r4-t1-rep1"
+    },
+    {
+      "side": 47,
+      "ranks": 4,
+      "threads": 1,
+      "repeat": 2,
+      "atv": 2.34444975,
+      "lammps": 3.78168,
+      "ratio": 0.6199492685790442,
+      "load_before": [
+        3.62890625,
+        3.685546875,
+        3.80517578125
+      ],
+      "load_after": [
+        3.525390625,
+        3.662109375,
+        3.79541015625
+      ],
+      "check": {
+        "stage": "initial",
+        "atoms": 103823,
+        "max_force_error_eV_A": 5.226929999935237e-13,
+        "energy_error_eV_atom": 9.643063364684506e-14,
+        "atv_energy_eV": -496269.291195018,
+        "lammps_energy_eV": -496269.291195008,
+        "passed": true
+      },
+      "atv_stage_max_s": {
+        "Pair": 0.8665,
+        "Neigh": 1.0226,
+        "Comm": 0.4077,
+        "Modify": 0.0345,
+        "Output": 0.0
+      },
+      "lammps_stage_max_s": {
+        "Pair": 2.5182,
+        "Neigh": 1.117,
+        "Comm": 0.12695,
+        "Modify": 0.039254,
+        "Output": 0.015098
+      },
+      "lammps_output_percent": 0.3992405491739121,
+      "atv_neighbor_builds": 31,
+      "lammps_measured_neighbor_builds": 31,
+      "raw_log_prefix": "/tmp/atv-cpu-perf/md-architecture-final-n47-r4-t1-rep2"
+    }
+  ],
+  "validation": {
+    "mpi_build_ctest": 75,
+    "no_mpi_ctest": 5,
+    "regressions": [
+      "reg_lj_argon",
+      "reg_pr_npt_lj",
+      "reg_nph_lj",
+      "reg_lammps-comm-brick-01-halo",
+      "reg_lammps-comm-brick-02-brick"
+    ]
+  },
+  "limitations": [
+    "Shared Apple M4 desktop, ordinary system applications remain active. All samples retained; this is not a guarantee for x86, clusters or other potentials.",
+    "Performance matrix uses orthorhombic LJ; tilted, small-box multiple-image and nested cases are correctness checks.",
+    "Initial and one-step energy/force checks do not establish long-trajectory or pressure-value equivalence. Integration unit constants differ by about 1e-7 relative.",
+    "No final before/after paired timing claim; earlier pilot measurements are not used as the baseline."
+  ],
+  "reproduction": {
+    "atv": "mpiexec -n RANKS <bench_lj_cpu> 22|47 20 200 THREADS PREFIX",
+    "lammps": "mpiexec -n RANKS <lmp> -in benchmarks/lj/in.cpu -var PREFIX PREFIX -var WARM 20 -var STEPS 200 -log PREFIX.lmp.log -screen none; append -sf omp -pk omp THREADS only for THREADS > 1",
+    "check": "python3 benchmarks/lj/compare.py PREFIX",
+    "small_box": "bench_lj_cpu 4 0 1 THREADS PREFIX [--tilt 1.7 -0.8 0.6]",
+    "nested": "bench_lj_cpu 6 0 1 THREADS PREFIX nested lj --tilt 1.7 -0.8 0.6",
+    "repeats": 3
+  }
+}

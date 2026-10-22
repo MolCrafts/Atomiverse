@@ -1,7 +1,5 @@
 # GPW DFT+U — projector divergence vs CP2K, and the variational scatter
 
-Current understanding (2026-07-31, `gpw-dftu-kpoint-forces`).
-
 ## Two different Mulliken projectors
 
 | | Occupation on the correlated (atom, ℓ) block | Geometry dependence |
@@ -21,14 +19,12 @@ Consequences:
   as a second method). That rewrites **every** +U fixed point and re-pins the
   +U regression family — schedule deliberately, not as a drive-by.
 
-## Variational scatter (fixed 2026-07-31)
+## Variational scatter
 
 For ATV's occupation the exact Fock contribution is ∂E_U/∂P = **½(V̂S+SV̂)**.
-The pre-fix bare-V̂ scatter left the SCF fixed point non-stationary for the
-reported E_U[n(P,S)]: analytic-vs-FD forces disagreed at O(1) Ha/Bohr on the
-H₂ toy and the +U stress dual gates carried a ~9e-4 Ha/Bohr³ residual (now
-3e-9). All +U ATV-self pins were re-measured in the same change (each cites
-its pre-fix value inline).
+A bare-V̂ scatter leaves the SCF fixed point non-stationary for the reported
+E_U[n(P,S)]: analytic-vs-FD forces then disagree at O(1) Ha/Bohr on the H₂ toy
+and +U stress dual gates carry a ~1e-3 Ha/Bohr³ residual (3e-9 when correct).
 
 ## Toy-regime warning
 

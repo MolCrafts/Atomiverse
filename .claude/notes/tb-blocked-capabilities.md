@@ -1,42 +1,31 @@
-# TB / SE blocked capabilities — why they are not pending (2026-07-29)
+# TB / SE blocked capabilities
 
-Durable harness for rows that are **not ordinary pending**. A row leaves a hold
-list only when its gate is *actually* removed.
+Rows that are **not ordinary pending**. A row leaves this list only when its
+gate is actually removed.
 
-## Permanent rules (never capabilities to implement)
+## Permanent rules (never capabilities)
 
 | Id | Rule |
 | -- | ---- |
 | `mopac-as-dftb-oracle` | Forbidden: pin DFTB to OpenMOPAC |
-| `gfn-ff` | Scope-out: classical GFN-FF → MD/FF surface |
-| `om3-nddo` | No family-locked pin: OM3 ∉ OpenMOPAC primary surface. Expanding to Thiel OMx is an oracle-set decision, not a missing ATV feature gate. |
+| `gfn-ff` | Scope-out: classical GFN-FF belongs to the MD/FF surface |
+| `om3-nddo` | No family-locked pin: OM3 is outside the OpenMOPAC surface; adding Thiel OMx is an oracle-set decision, not a missing feature |
 
-## Closed from blocked (2026-07-29)
-
-| Slug | Resolution |
-| ---- | ---------- |
-| `se-analytic-hessian` | Shipped `reg_se-analytic-hessian` (VIB+DFTB2 H₂) |
-| `dftb-plus-u` | Design note + energy-only Dudarev on `DFTB2::u_eff` + `reg_dftb-plus-u` |
-| `dftb-gamma-units-fix` | Fixed γ units (was pending head, not blocked) |
-
-## Still blocked (science multi-wave)
+## Blocked (science, multi-wave)
 
 | Slug | Gate | Unblock |
 | ---- | ---- | ------- |
 | `noncollinear-spin-dftb` | Spinor Hamiltonian (2-component density), not a parameter on collinear | Spec + multi-wave after collinear solid |
 | `spin-orbit-dftb` | SOC/SK design | After noncollinear |
-| `gfn2-camm-r` | Off-eq water bend `F_H1,y` vs xtb 6.7.1 `--gfn 2 --grad`. Quadrupole chain and the AES kernel are already ~5e-4 Eh/a0 on `g_H1,y`. The miss is the H0/Pulay pair term (−7.1e-3 vs the +1.1e-2 the total needs). Another CAMM edit does not close it. | A derived H0/Pulay term that matches xtb. Not a fitted scale. Do not open a second CAMM slug for the same bend. |
 
-`regressions/semiempirical/gfn2-camm-r/` stays the failing witness. The live
-spec is deleted. `gfn2.cpp` is unchanged.
+## Not blocked (ordinary pending)
 
-Shell-resolved **collinear** spin (`ShellResolvedSpin = Yes`) and
-shell-resolved \(U_\ell\) are ordinary pending, not these rows.
+- Shell-resolved collinear spin (`ShellResolvedSpin = Yes`) and shell-resolved
+  \(U_\ell\).
+- `stda-xtb` waits on AES-in-Fock / production GFN2 ground state; staff Phase C
+  under the queue.
+- `gfn2-camm-r`: GFN2 matches xtb 6.7.1 / tblite 0.4.0 term by term; the
+  `F_H1,y` pin is tblite 0.4.0 at the identical input (xtb 6.7.1 prints an
+  orientation artifact there). See its `REFERENCE.md`.
 
-## Phase C dependents (pending, not blocked)
-
-`stda-xtb` waits on AES-in-Fock / production GFN2 GS. Family Hessian
-(`gfn-xtb-analytic-hessian`) **shipped**. Staff remaining Phase C under the
-queue; do not re-list as blocked.
-
-Related: [[dftb-plus-u]], [[dftb-gamma-units-defect]].
+Related: [dftb-plus-u.md](dftb-plus-u.md), [dftb-vs-dftbplus-cleanup.md](dftb-vs-dftbplus-cleanup.md).

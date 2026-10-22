@@ -12,7 +12,7 @@ propagated per spin **and** per sampled k (the `cpmd-kpoints` ×
 - Force/energy: `cpu::gpw::GPWEvaluator` with `compute_forces = true`,
   **`n_alpha = 1`**, **`n_beta = 1`** (closed-shell fillings on the UKS
   path — both spin channels propagate and H₂ stays bound; triplet H₂ is
-  repulsive and cannot pin NVE, the `xl-bomd-uks-kpoints` precedent),
+  repulsive and cannot pin NVE),
   **`k_mesh = {1,1,2}`**, **`k_time_reversal = false`** (two sampled k),
   wrapped in `cpu::electronic::CarParrinello{gpw, μ}`; the electronic dt is
   pushed by `cpu::md::MD` from the `VelocityVerlet` integrator
@@ -37,9 +37,8 @@ propagated per spin **and** per sampled k (the `cpmd-kpoints` ×
 - Andersen, *J. Comput. Phys.* **52**, 24 (1983) — electronic RATTLE
 - Parent products: `regressions/dynamics/cpmd-kpoints` (multi-k RKS Bloch CP),
   `regressions/dynamics/cpmd-uks` (Γ dual-spin CP)
-- Multi-k UKS BO surface pins: `regressions/gpw/gpw-kpoints-uks`,
-  `gpw-kpoint-uks-forces` (CP2K-anchored energies/forces)
-- Multi-k UKS AIMD family twin: `regressions/dynamics/xl-bomd-uks-kpoints`
+- Multi-k UKS BO surface: `regressions/gpw/gpw-hirshfeld-uks-kpoints`
+  (multi-k UKS energy path)
 
 This is **not** a golden snapshot of Atomiverse total energy. The e2e pin is
 the **envelope** on relative \(E_{\mathrm{cons}}\) drift with dual-spin
@@ -59,7 +58,7 @@ force path, or SCF on production steps destroys one of them immediately.
 | XC | PADE (LSD) |
 | Basis | DZV-GTH-PADE |
 | PP | GTH-PADE-q1 |
-| CUTOFF | 100 Ry (envelope run; grid series in `gpw-bomd-kpoints`) |
+| CUTOFF | 100 Ry (envelope run) |
 | k-mesh | \(1\times1\times2\), `k_time_reversal=false` → \(n_k=2\) |
 | SCF seed | `tol = 1e-5`, `max_iter = 60`, DIIS |
 | CPMD | \(\mu = 400\) a.u.; production fixed-density dual-spin |
@@ -72,18 +71,15 @@ force path, or SCF on production steps destroys one of them immediately.
 
 **Family policy (`cpmd-kpoints` / `cpmd-uks`, queue-assigned): literature
 NVE conservation envelope.** The gate is a *method-family lock*, not a
-missing binary: CP2K 2026.1 builds and runs on this host (it pinned
-`gpw-bomd-kpoints` on 2026-07-31), but CP2K has **no fictitious-mass
+missing binary: CP2K 2026.1 builds and runs on this host, but CP2K has **no fictitious-mass
 Car–Parrinello propagator** — its `RUN_TYPE MD` is Born–Oppenheimer and its
 CP-like method is second-generation CPMD (ASPC + corrector). The CP
 conserved quantity \(T_n + T_e + E_{\mathrm{KS}}\) with the fictitious
 \(T_e[\dot C_k^\sigma]\) is not a number CP2K can print for any input.
 
-The **BO surface underneath is CP2K-anchored** by the shipped multi-k UKS
-pins (`gpw-kpoints-uks` energies, `gpw-kpoint-uks-forces` forces, both vs
-offline CP2K Quickstep LSD + KPOINTS), and this regression additionally
-asserts the closed-shell identity below against the multi-k **RKS** path
-that `gpw-bomd-kpoints` pinned against CP2K 2026.1 directly.
+The multi-k BO surface is CP2K-anchored by `gpw-kpoints-si` (RKS), and this
+regression additionally asserts the closed-shell identity below between the
+multi-k UKS and **RKS** paths.
 
 ## Observable and tolerance
 
@@ -99,8 +95,8 @@ Additional gates:
 - **UKS-vs-RKS closed-shell consistency:** dedicated multi-k UKS
   (`n_alpha = n_beta = 1`) and multi-k RKS (`n_occ = 1`) single points
   (`cpu::single_point`, plain `GPWEvaluator`, same geometry/mesh/cutoff,
-  `tol = 1e-7`) agree within **3×10⁻⁴ eV** ≈ 1.1×10⁻⁵ Ha (the shipped
-  `gpw-kpoints-uks` A2 identity holds to 5×10⁻⁶ Ha at this tol; at the MD
+  `tol = 1e-7`) agree within **3×10⁻⁴ eV** ≈ 1.1×10⁻⁵ Ha (the UKS≡RKS
+  closed-shell identity holds to 5×10⁻⁶ Ha at this tol; at the MD
   envelope `tol = 1e-5` the residual is convergence noise)
 - Production SCF **iters == 0** (dual-spin fixed-density multi-k eval)
 - `n_kpts >= 2` after seed

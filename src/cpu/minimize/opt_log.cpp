@@ -58,7 +58,7 @@ void OptLog::launch(const cpu::LaunchContext& ctx) {
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =
-            (dd && ctx.runtime.mpi_size > 1) ? dd->neighbor_generation : 0;
+            (cpu::multi_rank_dd(ctx.runtime)) ? dd->neighbor_generation : 0;
         if (gen != last_generation_) {
             if (last_generation_ != ~std::uint64_t{0})
                 has_prev_ = false;

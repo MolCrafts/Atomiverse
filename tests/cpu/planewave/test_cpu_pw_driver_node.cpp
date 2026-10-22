@@ -84,3 +84,16 @@ TEST(PwDriverNode, MultiPathPublicMembers) {
     EXPECT_EQ(static_cast<int>(m.smearing),
               static_cast<int>(Smearing::fermi_dirac));
 }
+
+TEST(PwDriverNode, DirectNestingRejectsBeforeTouchingParent) {
+    PW method;
+    ATV::cpu::Runtime runtime;
+    ATV::cpu::Context context;
+    ATV::cpu::Frame frame;
+    ATV::cpu::DriverNode& node = method;
+    EXPECT_THROW(node.build_on(runtime), std::logic_error);
+    EXPECT_THROW(node.run_nested_erased(context, frame, 1), std::logic_error);
+    EXPECT_THROW(method.run_nested(context, frame, 1), std::logic_error);
+    EXPECT_EQ(context.exec.runtime, nullptr);
+    EXPECT_EQ(frame.nlocal(), 0);
+}

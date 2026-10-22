@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `dftb2-periodic-gamma` |
+| Regression | None standing for this page; Γ-point periodic DFTB2 is pinned by `dftb2-ewald-gamma` |
 | Public API | `cpu::semiempirical::DFTB2` (members) + `cpu::Evaluate` |
 | Roadmap | [`semiempirical.md`](../../roadmap/semiempirical.md) — Periodic DFTB (Γ-point) ✓ |
 | Family oracle | **DFTB+** (absolute pin deferred to bit-identical SK; see Validation) |
@@ -14,11 +14,11 @@
 **Self-consistent-charge DFTB2** (Elstner *et al.*) at the **Γ point** for a
 periodic cell: lattice-summed two-center \(H^0\) and \(S\), screened
 DFTB+ Elstner \(\gamma\) (short-range expGamma), and pair repulsive within static SK cutoffs.
-The product gate is a minimal **1-D carbon dimer crystal** (two C per
+The recorded gate is a minimal **1-D carbon dimer crystal** (two C per
 orthorhombic cell) under `cpu::Evaluate` + `cpu::semiempirical::DFTB2`
 (default `DftbSkSet::MioSketch`). Energy is written to
 `frame.meta.get(kEnergy)` in **eV**. Molecular limit is recovered when all
-cell edges \(\gg r_\mathrm{cut}\); the regression requires a finite gap
+cell edges \(\gg r_\mathrm{cut}\); the recorded check requires a finite gap
 between the dense-chain energy and the same dimer in a 20 Å cubic box.
 
 This page is the TB-loop foothold for **Γ-point PBC energy**, not k-mesh,
@@ -79,7 +79,7 @@ H/C/N/O from in-tree `basis_data/dftb_mio_tables.h` (exponential sketches for
 most pairs) plus mio-1-1 H–H radial grids in `dftb_mio_hh_sk.h`. **Not** a
 runtime `.skf` reader; **not** bit-identical DFTB.org mio-1-1 for C–C.
 
-**SCC settings (regression).** `scc_tol = 1e-10`, `max_scc = 50` (default),
+**SCC settings (recorded).** `scc_tol = 1e-10`, `max_scc = 50` (default),
 `with_forces = false`, `charge = 0`, `multiplicity = 1`.
 
 **Observables.**
@@ -91,12 +91,12 @@ runtime `.skf` reader; **not** bit-identical DFTB.org mio-1-1 for C–C.
 
 **Key exclusions (this slug).**
 
-- **k-point** sampling beyond Γ → queue `dftb2-kpoints` (○).
+- **k-point** sampling beyond Γ → see [dftb2-kpoints](dftb2-kpoints.md) (roadmap ◐).
 - Analytic **stress** / variable-cell DFTB → roadmap ○.
 - **DFTB3** (third-order γ) → separate method / queue.
 - Collinear **spin** product → `spin-dftb2-o2` (forces still FD for open shell).
 - Analytic nuclear **forces** under PBC (min-image molecular analytic path
-  only; this regression is energy-only).
+  only; this page is energy-only).
 - **Dispersion** (D3/D4) on DFTB → `dftb2-dispersion-d3` (○).
 - Live **DFTB+** at ctest time (offline pins only; see TB oracle (OpenMOPAC / DFTB+ / xtb)).
 - OpenMOPAC as reference (**forbidden** for the DFTB family).
@@ -113,7 +113,7 @@ bag, **no** `make_*` / `build_*` factories). Headers:
 `src/cpu/semiempirical/dftb2.cpp` (lattice enumeration + Γ H⁰/S/γ/rep).
 Static tables: `dftb_mio_tables.h`.
 
-Minimal sequence (matches `reg_dftb2-periodic-gamma.cpp`):
+Minimal sequence:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -170,8 +170,6 @@ bash -lc '
         -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
         -DATV_BUILD_KSPACE=OFF -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j"$(nproc)" --target atomiverse reg_dftb2-periodic-gamma
-  cmake --build build --target run_reg_dftb2-periodic-gamma
 '
 ```
 
@@ -181,7 +179,7 @@ Unit footholds (finite energy; PBC vs molecular separation):
 
 ## Validation (vs offline pin)
 
-Source: case `dftb2-periodic-gamma` pin
+Source: values recorded when this page was written; no standing regression.
 (offline pin; **never** live DFTB+ in ctest).
 
 ```text
@@ -204,7 +202,7 @@ molecular dimer.
 
 | Quantity | Atomiverse / pin | Oracle | Tol | Notes |
 | -------- | ---------------: | ------ | --- | ----- |
-| Total energy \(E\) [eV] | **−113.5976598145** | literature (ATV mio-style twin) | ±0.05 eV | Hard pin in `reg_dftb2-periodic-gamma` |
+| Total energy \(E\) [eV] | **−113.5976598145** | literature (ATV mio-style twin) | ±0.05 eV | Recorded value (no standing regression) |
 | \(\lvert E-E_{\mathrm{mol}}\rvert\) [eV] | \(> 0.05\) | sanity (same dimer, 20 Å cubic) | — | Lattice images must matter |
 
 Related absolute **DFTB+ 24.1** energy identity (different system: H₂
@@ -235,14 +233,14 @@ slug. A related molecular energy pin
 - Real-space truncation of \(\gamma\) (no Ewald) is intentional for this
   SK-cutoff model; long-range electrostatics in dense 3-D ionic cells are
   outside the pin.
-- Forces on this regression are off; PBC analytic forces / stress are not
+- Forces on this page are off; PBC analytic forces / stress are not
   product-gated here.
 - k-mesh, DFTB3, D3, TD-DFTB, and noncollinear spin remain roadmap ○.
 - Elements limited to H/C/N/O static tables; unsupported \(Z\) throws.
 
 ## References
 
-- Offline pin: case `dftb2-periodic-gamma` pin
+- Offline pin: recorded when this page was written (no standing regression)
 - Public API: `dftb2.h`
 - Roadmap: [`docs/roadmap/semiempirical.md`](../../roadmap/semiempirical.md)
 - Oracle tooling: TB oracle (OpenMOPAC / DFTB+ / xtb)

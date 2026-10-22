@@ -7,7 +7,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
-#include "atomiverse/cpu/frame/pbc.h"
 
 #include <algorithm>
 #include <array>
@@ -45,17 +44,8 @@ NphIntegrator::NphIntegrator(double P_target, double tau_P, double dt,
     : P_target_(P_target), tau_P_(tau_P), dt_(dt), W_override_(W_cell) {}
 
 void NphIntegrator::build(const cpu::BuildContext& ctx) {
-    int N = static_cast<int>(ctx.frame.nlocal());
-#ifdef ATV_HAS_MPI
-    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
-        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        const int n_local = ctx.runtime.md.dd->n_local;
-        MPI_Allreduce(&n_local, &N, 1, MPI_INT, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-    }
-#endif
+    // Driver publishes the constraint-aware global DOF count before build.
     n_dof_ = ctx.runtime.md.n_dof_global;
-    (void)N;
 
     // Prefer instantaneous kinetic temperature from the frame when
     // velocities already exist (InitVelocity builds before integrators
@@ -64,17 +54,8 @@ void NphIntegrator::build(const cpu::BuildContext& ctx) {
     if (W_override_ > 0.0) {
         W_ = W_override_;
     } else {
-        double ke = 0.0;
-        const int n = owned_count(ctx);
-        const StorageReal* mass = ctx.frame.span(kAtom_mass);
-        const StorageReal* vx = ctx.frame.span(kAtom_vx);
-        const StorageReal* vy = ctx.frame.span(kAtom_vy);
-        const StorageReal* vz = ctx.frame.span(kAtom_vz);
-        for (int i = 0; i < n; ++i) {
-            const double v2 = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i];
-            ke += mass[i] * v2;
-        }
-        ke *= 0.5 * units::mass_v2_to_energy;
+        const double ke =
+            compute_global_KE(cpu::LaunchContext{ctx.runtime, ctx.frame, 0, 0});
         double kT = (n_dof_ > 0 && ke > 0.0)
                         ? (2.0 * ke / static_cast<double>(n_dof_))
                         : (units::kB_ev_per_k * kTref_K);
@@ -244,10 +225,7 @@ void NphIntegrator::propagate_x_and_box(const cpu::LaunchContext& ctx) {
         sp_z[i] = sp_z[i] * a + sp_vz[i] * dt_ * drift;
     }
 
-    int n_total = n;
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
-        n_total = ctx.runtime.md.dd->n_local + ctx.runtime.md.dd->n_ghost;
-    }
+    const int n_total = force_count(ctx);
     if (n_total > n) {
 #pragma omp parallel for schedule(static)
         for (int i = n; i < n_total; ++i) {
@@ -258,9 +236,8 @@ void NphIntegrator::propagate_x_and_box(const cpu::LaunchContext& ctx) {
     }
 
     f.box.scale_isotropic(a);
-    wrap_orthorhombic(f, n);
 
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
+    if (cpu::multi_rank_dd(ctx.runtime)) {
         ctx.runtime.md.dd->compute_sublo_subhi(f.box);
     }
 }
@@ -275,6 +252,12 @@ double NphIntegrator::extended_enthalpy(const cpu::LaunchContext& ctx) const {
 }
 
 void NphIntegrator::launch(const cpu::LaunchContext& ctx) {
+    if (n_dof_ != ctx.runtime.md.n_dof_global) {
+        if (W_override_ <= 0.0)
+            W_ *= (static_cast<double>(ctx.runtime.md.n_dof_global) + 3.0)
+                  / (static_cast<double>(n_dof_) + 3.0);
+        n_dof_ = ctx.runtime.md.n_dof_global;
+    }
     const double half_dt = 0.5 * dt_;
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {

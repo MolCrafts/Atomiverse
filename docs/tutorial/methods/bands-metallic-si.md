@@ -26,7 +26,7 @@ twin wall on the pin host).
 ## Method
 
 **Level.** Periodic plane-wave Kohn–Sham DFT. Self-consistent density and
-effective potential from the same PW stack as `pw-lda-si` / `pw-smearing-al`
+effective potential from the same PW stack as `pw-lda-si` / [pw-smearing-al](pw-smearing-al.md)
 (Hartree in \(G\)-space, LDA XC on the FFT grid, Davidson diagonalization,
 NC UPF), with **fractional occupations** driven by
 
@@ -107,7 +107,7 @@ Conversion: `cpu/planewave/qe_units.h` (`rydberg_to_ev = 13.605693`).
 - Fixed-occupation insulator bands + DOS → `bands-dos-si`.
 - Metallic DOS (integral to \(E_F\)) → `dos-metallic-si`.
 - Collinear spin bands (fixed occ) → `bands-spin-si`.
-- True metal energy pin (FCC Al) → `pw-smearing-al`.
+- True metal energy pin (FCC Al) → [pw-smearing-al](pw-smearing-al.md).
 - Spin + metallic smear on bands / DOS (product reject; residual).
 - GPW / Gaussian k-path → `gpw-kpoints-si`.
 - Absolute \(\varepsilon_n\) parity with CP2K Quickstep GTH+DZVP (different PP
@@ -301,7 +301,7 @@ Wall comparison is same-geometry only, not absolute-eigenvalue parity
 - Tutorial ecut / SCF k only — not production-converged metallic band
   structure or dense path productization.
 - Twin is **gapped Si** under FD smear (near-integer occupations); it does
-  **not** pin a true metal vanishing gap (use `pw-smearing-al` for FCC Al
+  **not** pin a true metal vanishing gap (use [pw-smearing-al](pw-smearing-al.md) for FCC Al
   free energy).
 - Path \(\mu\) is the SCF value; do not treat path-k weights as a BZ mesh
   for re-solving \(E_F\).

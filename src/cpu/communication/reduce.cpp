@@ -31,7 +31,8 @@ void Reduce::launch(const cpu::LaunchContext& ctx) {
         return;
 
     // Cadence gate (see Reduce doc): with every_ > 1, fire only on step 0, the
-    // final step of the run, and every every_-th step. Gated on the
+    // final step of the run, and every every_-th step. Force initialization
+    // always reduces, including a live refresh between cadence steps. Gated on the
     // all-ranks-identical ctx.step / is_last_step so the collective is still
     // entered in lockstep — no rank-divergent skip, hence no deadlock.
     // every_ == 1 (default) reduces every step, byte-identical to before; the
@@ -50,7 +51,7 @@ void Reduce::launch(const cpu::LaunchContext& ctx) {
     // stress_kinetic[6]} into one 20-double allreduce. Per-term energy fields
     // reduce identically to `energy` (each is a per-rank partial sum of one
     // evaluator family). `n_local` is omitted -- it is authoritative on each
-    // rank from `dd->n_local` and does not need to be summed. Both stress
+    // rank from `frame.nlocal()` and does not need to be summed. Both stress
     // fields reduce identically (each is a per-rank partial sum of Voigt
     // components).
     double sendbuf[20];

@@ -4,13 +4,14 @@
 
 # CLI -var creates index vars; do not redeclare them.
 variable nside equal ceil(v_N^(1.0/3.0))
-variable a0 equal (1.0/0.8)^(1.0/3.0)
+variable rho equal 0.8
 
 units           lj
 atom_style      atomic
 boundary        p p p
 
-lattice         sc ${a0}
+# With units lj, lattice takes reduced number density, not lattice spacing.
+lattice         sc ${rho}
 region          box block 0 ${nside} 0 ${nside} 0 ${nside}
 create_box      1 box
 create_atoms    1 box

@@ -7,7 +7,6 @@
 #pragma once
 
 #include <cstdint>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -51,8 +50,7 @@ class Brownian : public cpu::Integrator, public cpu::TimestepProvider {
     double dt_;
     double D_;
     double temperature_;
-    std::mt19937_64 rng_;
-    std::normal_distribution<double> normal_{0.0, 1.0};
+    std::uint64_t seed_;
 };
 
 } // namespace md

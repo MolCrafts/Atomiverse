@@ -10,8 +10,8 @@
 
 ## Summary
 
-Earlier ice pins (`gpw-vdw-df-ice`, `gpw-vdw-df2-ice`, `gpw-rvv10-ice`)
-delivered **post-SCF** nonlocal correlation energy \(E_c^{\mathrm{nl}}\) on a
+Earlier ice pins (`gpw-vdw-df-ice`, `gpw-rvv10-ice`; vdW-DF2 on
+[gpw-vdw-df2-ice](gpw-vdw-df2-ice.md), no standing case) delivered **post-SCF** nonlocal correlation energy \(E_c^{\mathrm{nl}}\) on a
 frozen PBE density. This slug productizes the **self-consistent** path: each
 SCF iteration adds the nonlocal functional derivative
 
@@ -300,9 +300,9 @@ product policy requires \(r=T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\le10\).
 - Oracle inputs: CP2K oracle
 - Oracle notes: CP2K oracle
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) §3 Dispersion / §4 Periodic KS
-- Related post-SCF energy pins: `gpw-rvv10-ice`, `gpw-vdw-df-ice`,
-  `gpw-vdw-df2-ice` (regressions under `gpw`)
-- Related exchange + nonlocal combo: optB88-vdW (`gpw-optb88-vdw`)
+- Related post-SCF energy pins: `gpw-rvv10-ice`, `gpw-vdw-df-ice`
+  (regressions under `gpw`); vdW-DF2 method page [gpw-vdw-df2-ice](gpw-vdw-df2-ice.md)
+- Related exchange + nonlocal combo: optB88-vdW (method page [gpw-optb88-vdw](gpw-optb88-vdw.md))
 - Pairwise dispersion siblings: [gpw-pbe-d3bj-ice](gpw-pbe-d3bj-ice.md),
   [gpw-d4-water](gpw-d4-water.md)
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

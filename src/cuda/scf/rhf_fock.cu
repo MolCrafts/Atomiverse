@@ -15,6 +15,7 @@
 #include "cublas_dispatch.cuh"
 #include <type_traits>
 
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cmath>
 #include <cstdio>
@@ -70,14 +71,17 @@ __global__ void scale_columns_by_rsqrt_kernel(prec_t* __restrict__ U,
 // Pack nuclear positions only; shell centers filled by expand_s_shells_kernel.
 __global__ void pack_atom_pos_bohr_kernel(
     prec_t* __restrict__ atom_pos, // [natm * 3] Bohr
-    const real_t* __restrict__ x_A, const real_t* __restrict__ y_A,
-    const real_t* __restrict__ z_A, int natm, prec_t a2b) {
+    const pos_t* __restrict__ x_A, const pos_t* __restrict__ y_A,
+    const pos_t* __restrict__ z_A, const pos_t* __restrict__ x_corr,
+    const pos_t* __restrict__ y_corr, const pos_t* __restrict__ z_corr,
+    int natm, prec_t a2b) {
     const int a = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (a >= natm)
         return;
-    const prec_t xb = static_cast<prec_t>(x_A[a]) * a2b;
-    const prec_t yb = static_cast<prec_t>(y_A[a]) * a2b;
-    const prec_t zb = static_cast<prec_t>(z_A[a]) * a2b;
+    // Full-precision coordinate (primary + correction in mixed mode).
+    const prec_t xb = static_cast<prec_t>(load_position(x_A, x_corr, a)) * a2b;
+    const prec_t yb = static_cast<prec_t>(load_position(y_A, y_corr, a)) * a2b;
+    const prec_t zb = static_cast<prec_t>(load_position(z_A, z_corr, a)) * a2b;
     const int o = a * 3;
     atom_pos[o + 0] = xb;
     atom_pos[o + 1] = yb;
@@ -713,7 +717,8 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
         const int grid = cuda::grid_size(natm, block);
         pack_atom_pos_bohr_kernel<<<grid, block, 0, stream>>>(
             scf.d_atom_pos, ctx.frame.atoms.x, ctx.frame.atoms.y,
-            ctx.frame.atoms.z, natm, a2b);
+            ctx.frame.atoms.z, ctx.frame.atoms.x_corr, ctx.frame.atoms.y_corr,
+            ctx.frame.atoms.z_corr, natm, a2b);
     }
     {
         const int block = cuda::kDefaultBlock;

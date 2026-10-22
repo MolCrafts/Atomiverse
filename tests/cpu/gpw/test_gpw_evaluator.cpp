@@ -8,14 +8,23 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/electronic/car_parrinello.h"
+#include "atomiverse/cpu/electronic/second_gen_cp.h"
+#include "atomiverse/cpu/electronic/xl_bomd_force.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
+#include "atomiverse/cpu/gpw/internal/collocate.h"
+#include "atomiverse/cpu/gpw/internal/gpw_atom.h"
+#include "atomiverse/cpu/gpw/internal/gpw_forces.h"
+#include <limits>
+#include <xtensor/generators/xbuilder.hpp>
 
 using namespace ATV;
 
@@ -96,4 +105,104 @@ TEST(GpwEvaluatorCellGuard, LaunchRefusesCellShearedAfterBuild) {
     frame.box.set_cell(h);
 
     EXPECT_THROW(eval.launch({rt, frame, 0, 0}), std::invalid_argument);
+}
+
+TEST(GpwEvaluatorTrialGuard, PropagatingModesRejectTrialsBeforeColdSeed) {
+    cpu::Frame frame(0); // refusal precedes geometry/SCF construction
+    cpu::Context ctx;
+    ctx.exec.trial_evaluation = true;
+    cpu::electronic::CarParrinello cp(h2_eval(), 400.0);
+    cpu::electronic::SecondGenCp second(h2_eval());
+    cpu::electronic::XlBomdForce shadow(h2_eval(), 5,
+                                        cpu::electronic::XlBomdLinearized{});
+    EXPECT_THROW(cp.launch({ctx, frame, 0, 0}), std::runtime_error);
+    EXPECT_THROW(second.launch({ctx, frame, 0, 0}), std::runtime_error);
+    EXPECT_THROW(shadow.launch({ctx, frame, 0, 0}), std::runtime_error);
+}
+
+TEST(GpwEvaluatorCellGuard, RejectsExplicitIndependentMpiReplicasBeforeBuild) {
+    cpu::Frame frame; // Guard must precede even method geometry validation.
+    auto eval = h2_eval();
+    cpu::Context context;
+    context.exec.serial_on_replica = true;
+    context.mpi_size = 2; // Runtime publishes the actual WORLD size here.
+    cpu::BuildContext build{context, frame};
+    try {
+        eval.build(build);
+        FAIL() << "independent replica execution was accepted";
+    } catch (const std::runtime_error& error) {
+        EXPECT_NE(std::string(error.what()).find("serial replicas"),
+                  std::string::npos);
+    }
+    cpu::LaunchContext launch{context, frame, 0, 0};
+    try {
+        eval.launch(launch);
+        FAIL() << "independent replica launch was accepted";
+    } catch (const std::runtime_error& error) {
+        EXPECT_NE(std::string(error.what()).find("serial replicas"),
+                  std::string::npos);
+    }
+    // The same explicit replica policy is supported on a single process.
+    auto valid = make_h2();
+    auto configured = h2_eval();
+    context.mpi_size = 1;
+    cpu::BuildContext serial{context, valid};
+    EXPECT_NO_THROW(configured.build(serial));
+}
+
+TEST(GpwEvaluatorForceReuse,
+     GeometryCacheDoesNotReuseAuxiliaryDensityPotentials) {
+    using namespace cpu::gpw;
+    using cpu::linalg::RealMatrix;
+    auto frame = make_h2();
+    auto eval = h2_eval();
+    auto& method = eval.method();
+    method.cutoff_ry = 5.0; // Small direct force-kernel fixture, no SCF.
+    method.n_alpha = method.n_beta = 1;
+    method.build(frame);
+    const auto atoms = internal::GpwDftAccess::atoms_from_frame(method, frame);
+    std::vector<GridBasisFunction> basis;
+    for (const auto& atom : atoms)
+        basis.insert(basis.end(), atom.basis.begin(), atom.basis.end());
+    const std::size_t nb = basis.size();
+    ASSERT_GT(nb, 1u);
+    RealMatrix c = xt::zeros<double>({nb, std::size_t{1}});
+    RealMatrix h = xt::zeros<double>({nb, nb});
+    c(0, 0) = 1.0;
+    for (std::size_t i = 0; i < nb; ++i)
+        h(i, i) = 0.2;
+    GpwResult cache;
+    cache.P = xt::zeros<double>({nb, nb});
+    cache.P_beta = xt::zeros<double>({nb, nb});
+    cache.P(0, 0) = cache.P_beta(0, 0) = 1.0;
+    const auto grid =
+        make_uniform_grid(method.cell_bohr().data(), method.cutoff_ry);
+    cache.scf_cbg = build_compact_basis_grid(grid, basis, !method.nonperiodic,
+                                             method.eps_default);
+    cache.scf_cbg_valid = true;
+    // A valid-sized but poisoned auxiliary potential must never be consumed
+    // merely because the geometry cache was supplied for a shadow density.
+    cache.veff_a.assign(grid.npts(), std::numeric_limits<double>::quiet_NaN());
+    cache.veff_b = cache.veff_a;
+    cache.v_es = cache.veff_a;
+    RealMatrix shadow_a = cache.P, shadow_b = cache.P_beta;
+    shadow_a(0, 0) = 0.6;
+    shadow_a(1, 1) = 0.4;
+    const auto expected = internal::gpw_forces_at_density(
+        atoms, method, shadow_a, c, h, shadow_b, c, h);
+    for (int repeat = 0; repeat < 2; ++repeat) {
+        const auto actual = internal::gpw_forces_at_density(
+            atoms, method, shadow_a, c, h, shadow_b, c, h, &cache);
+        ASSERT_EQ(actual.size(), expected.size());
+        for (std::size_t a = 0; a < actual.size(); ++a)
+            for (int k = 0; k < 3; ++k) {
+                EXPECT_TRUE(std::isfinite(actual[a][k]));
+                EXPECT_NEAR(actual[a][k], expected[a][k], 1e-12);
+            }
+        EXPECT_TRUE(cache.force_cbgd_valid);
+    }
+    EXPECT_THROW(internal::gpw_forces_at_density(atoms, method, shadow_a, c, h,
+                                                 shadow_b, c, h, &cache,
+                                                 &cache),
+                 std::invalid_argument);
 }

@@ -78,19 +78,12 @@ struct LatVec {
 };
 
 std::vector<LatVec> enumerate_lattice(const Mat3& cell, double max_cut) {
-    double col_len[3];
-    for (int d = 0; d < 3; ++d) {
-        const double cx = static_cast<double>(cell(0, d));
-        const double cy = static_cast<double>(cell(1, d));
-        const double cz = static_cast<double>(cell(2, d));
-        col_len[d] = std::sqrt(cx * cx + cy * cy + cz * cz);
-        if (col_len[d] < 1e-9)
-            throw std::runtime_error("DFTB3: degenerate cell edge");
-    }
+    const cpu::Box geometry(cell);
     int nmax[3];
     for (int d = 0; d < 3; ++d)
-        nmax[d] =
-            std::max(1, static_cast<int>(std::ceil(max_cut / col_len[d])) + 1);
+        nmax[d] = std::max(
+            1,
+            static_cast<int>(std::ceil(max_cut / geometry.face_height(d))) + 1);
     std::vector<LatVec> out;
     for (int n0 = -nmax[0]; n0 <= nmax[0]; ++n0)
         for (int n1 = -nmax[1]; n1 <= nmax[1]; ++n1)
@@ -728,7 +721,7 @@ void DFTB3::launch(const LaunchContext& ctx) {
     energy_ = sol.energy();
     energy_meta += energy_;
 
-    if (with_forces)
+    if (with_forces && ctx.forces_requested)
         analytic_forces(n_at, n_ao, el, hubbard_du_ev, ao0, type.data(), x, y,
                         z, f.box, sol, fx, fy, fz);
 }

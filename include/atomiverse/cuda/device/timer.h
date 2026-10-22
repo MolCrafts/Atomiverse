@@ -2,10 +2,9 @@
 /// @brief cuda::Timer -- CUDA-free PIMPL facade for the GPU profiler.
 ///
 /// The actual CUDA-event-based profiler lives in `Timer::Impl`, defined
-/// in `src/cuda/device/timer.cu` together with `cuda/timer.cuh`. This header is
-/// deliberately CUDA-free so that non-CUDA translation units (notably
-/// `src/cpu/driver/driver.cpp`, which instantiates `Driver<PhaseEnum,
-/// cpu::device_tag>`) can hold and destroy a `std::unique_ptr<Timer>`
+/// in `src/cuda/device/timer.cu` together with `cuda/device/timer.cuh`. This header is
+/// deliberately CUDA-free so that host translation units using the CUDA
+/// backend can hold and destroy a `std::unique_ptr<Timer>`
 /// member without a complete CUDA type. All special members are declared
 /// here and defined out-of-line in `src/cuda/device/timer.cu`, where `Impl` is
 /// complete.

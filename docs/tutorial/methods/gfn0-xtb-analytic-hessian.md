@@ -323,8 +323,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}} \le 10\) when a twin exists.
 - **VIB exception.** This slug (and `se-analytic-hessian` /
   `gfn-xtb-analytic-hessian` / `ipea-xtb-analytic-hessian`) may set
   `-DATV_BUILD_VIB=ON`. Do not enable
-  MD/MINIMIZER/HF/PW/GPW/CUDA for the TB product gate; do not build
-  `reg_am1_water_bomd` / `reg_am1_water_minimize` under this configure.
+  MD/MINIMIZER/HF/PW/GPW/CUDA for the TB product gate.
 - Family lock: **xtb only** for GFN rows — never DFTB+ or OpenMOPAC as a
   GFN0 oracle; never treat GFN-xTB as a DFTB3 successor.
 - Foothold ≠ closed: GFN0 energy + \(G\) + FD \(H\) is not the GFN product

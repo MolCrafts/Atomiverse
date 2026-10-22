@@ -75,6 +75,14 @@ class BondedForceScratch {
 
     int n_threads() const noexcept { return n_threads_; }
 
+    std::size_t memory_bytes() const noexcept {
+        std::size_t bytes = 0;
+        for (const auto* arrays : {&fx_, &fy_, &fz_})
+            for (const auto& buffer : *arrays)
+                bytes += buffer.capacity() * sizeof(double);
+        return bytes;
+    }
+
     /// @brief Resolve the frame's fx/fy/fz spans ONCE per launch, before the
     ///        OMP parallel region opens (never inside it — the span resolution
     ///        counter is not thread-safe, and every thread would otherwise
@@ -93,6 +101,13 @@ class BondedForceScratch {
     ///        zeros this thread's private buffer first. Call once per thread
     ///        at the top of the parallel region, after `bind()`.
     ThreadForce begin_thread(int tid, int n_force) {
+        if (tid == 0) {
+#ifdef _OPENMP
+            active_threads_ = omp_get_num_threads();
+#else
+            active_threads_ = 1;
+#endif
+        }
         if (direct_) {
             // A caller that forgot `bind(f)` would otherwise get null force
             // pointers and silently drop every bonded force. Fail loudly.
@@ -139,7 +154,7 @@ class BondedForceScratch {
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < n_force; ++i) {
             double sx = 0.0, sy = 0.0, sz = 0.0;
-            for (int t = 0; t < n_threads_; ++t) {
+            for (int t = 0; t < active_threads_; ++t) {
                 sx += fx_[static_cast<std::size_t>(t)]
                          [static_cast<std::size_t>(i)];
                 sy += fy_[static_cast<std::size_t>(t)]
@@ -166,6 +181,7 @@ class BondedForceScratch {
 
   private:
     int n_threads_ = 0;
+    int active_threads_ = 1;
     bool direct_ = false; ///< single-thread: accumulate straight into frame.
     std::vector<std::vector<double>> fx_, fy_, fz_;
     /// Frame fx/fy/fz spans, resolved once per launch by `bind()`.

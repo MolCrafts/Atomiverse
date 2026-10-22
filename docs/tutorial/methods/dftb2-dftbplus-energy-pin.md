@@ -82,8 +82,8 @@ identity vs DFTB.org full mio dumps is **out of scope** here (see
 ### Explicit exclusions
 
 - **Not** DFTB0 (non-SCC), **not** DFTB3 (\(E^\gamma\) third-order), **not**
-  spin-DFTB, **not** PBC / k-mesh (Γ lattice sum is wave-2 sibling
-  `dftb2-periodic-gamma`).
+  spin-DFTB, **not** PBC / k-mesh (Γ lattice sum: method page
+  [dftb2-periodic-gamma](dftb2-periodic-gamma.md)).
 - **Not** analytic forces (sibling `dftb2-analytic-forces`; this reg forces
   `with_forces = false`).
 - **Not** OpenMOPAC or xtb as reference — family lock is **DFTB+ only**.

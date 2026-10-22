@@ -150,10 +150,9 @@ MeanFieldMethod<D>::MeanFieldMethod() = default;
 template <typename D>
 MeanFieldMethod<D>::~MeanFieldMethod() = default;
 template <typename D>
-MeanFieldMethod<D>::MeanFieldMethod(MeanFieldMethod&&) noexcept = default;
+MeanFieldMethod<D>::MeanFieldMethod(MeanFieldMethod&&) = default;
 template <typename D>
-MeanFieldMethod<D>&
-MeanFieldMethod<D>::operator=(MeanFieldMethod&&) noexcept = default;
+MeanFieldMethod<D>& MeanFieldMethod<D>::operator=(MeanFieldMethod&&) = default;
 
 template <typename D>
 void MeanFieldMethod<D>::set_predictor_(int order, int corrector_steps,
@@ -356,12 +355,16 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
     // the nuclear clock, so the nested entry is both the only place it may
     // propagate and the natural place to refuse a second guess owner (and a
     // dissipation order Table I does not have) before any SCF is spent.
+    if (cpmd && ctx.exec.trial_evaluation)
+        throw std::runtime_error("MeanFieldMethod: Car-Parrinello propagation "
+                                 "cannot score reversible trials");
     engage_xl_bomd_();
     if (cpmd) {
         // Production Car-Parrinello step: no SCF at all — a fixed-density
         // evaluation plus one electronic velocity-Verlet advance.
         if (cpmd_alpha_ && cpmd_alpha_->ready()) {
-            cpmd_step_(f, !ctx.exec.initializing_forces);
+            cpmd_step_(f, !(ctx.exec.initializing_forces
+                            || ctx.exec.trial_evaluation));
             return 0;
         }
         // Cold seed. Validate BEFORE any SCF work so a refused configuration
@@ -371,7 +374,8 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
         DriveOpts opts;
         opts.unwrap = true;
         opts.nested = true;
-        opts.apply_aspc = !ctx.exec.initializing_forces;
+        opts.apply_aspc =
+            !(ctx.exec.initializing_forces || ctx.exec.trial_evaluation);
         opts.forces = true; // CP nuclei need Born-Oppenheimer forces at t = 0
         opts.write_energy = true;
         opts.accumulate =
@@ -400,7 +404,8 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
     opts.nested = true;
     // Force preparation is an evaluation, not a tick of the nuclear clock.
     // Bypass both history-based guesses and all predictor/XL history writes.
-    opts.apply_aspc = !ctx.exec.initializing_forces;
+    opts.apply_aspc =
+        !(ctx.exec.initializing_forces || ctx.exec.trial_evaluation);
     // The outer loop's per-phase force policy, ANDed down the Context by the
     // Runtime: an energy-only phase (MC's trial `energy`) skips the whole
     // gradient — for a QM method the dominant cost of the sweep.

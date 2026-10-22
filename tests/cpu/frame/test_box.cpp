@@ -56,19 +56,22 @@ double wrap_axis_reference(double q, double L) {
     return w;
 }
 
-/// @brief Reference: triclinic min-image via inv_cell roundtrip.
-///        Independent of `Box::min_image`'s implementation.
+// Independent lattice enumeration oracle for these bounded test fixtures.
 void min_image_triclinic_reference(double& dx, double& dy, double& dz,
-                                   const Mat3& cell, const Mat3& inv) {
-    const double fx = inv(0, 0) * dx + inv(0, 1) * dy + inv(0, 2) * dz;
-    const double fy = inv(1, 0) * dx + inv(1, 1) * dy + inv(1, 2) * dz;
-    const double fz = inv(2, 0) * dx + inv(2, 1) * dy + inv(2, 2) * dz;
-    const double rfx = fx - std::nearbyint(fx);
-    const double rfy = fy - std::nearbyint(fy);
-    const double rfz = fz - std::nearbyint(fz);
-    dx = cell(0, 0) * rfx + cell(0, 1) * rfy + cell(0, 2) * rfz;
-    dy = cell(1, 0) * rfx + cell(1, 1) * rfy + cell(1, 2) * rfz;
-    dz = cell(2, 0) * rfx + cell(2, 1) * rfy + cell(2, 2) * rfz;
+                                   const Mat3& cell, const Mat3&) {
+    const ATV::Vec3 original{dx, dy, dz};
+    double best2 = original.norm_squared();
+    for (int i = -4; i <= 4; ++i)
+        for (int j = -4; j <= 4; ++j)
+            for (int k = -4; k <= 4; ++k) {
+                const auto r = original - cell * ATV::Vec3(i, j, k);
+                if (r.norm_squared() < best2) {
+                    best2 = r.norm_squared();
+                    dx = r[0];
+                    dy = r[1];
+                    dz = r[2];
+                }
+            }
 }
 
 double frob_norm(const Mat3& m) {
@@ -178,8 +181,8 @@ TEST(BoxApi, RecipCellTransposeTimesCellIs2PiI) {
     check(Box{cell}, 1e-10, "triclinic");
 }
 
-/// @brief `lengths()` = Euclidean norms of cell rows (not only diagonal).
-TEST(BoxApi, LengthsRowNorms) {
+/// @brief `lengths()` = Euclidean norms of cell columns (not only diagonal).
+TEST(BoxApi, LengthsColumnNorms) {
     auto ortho = Box::cubic(10.0);
     const auto lo = ortho.lengths();
     EXPECT_NEAR(lo[0], 10.0, 1e-12);
@@ -189,14 +192,14 @@ TEST(BoxApi, LengthsRowNorms) {
     Mat3 cell = Mat3::diagonal(3.0, 4.0, 5.0);
     cell(0, 1) = 0.0;
     cell(0, 2) = 0.0;
-    // Row 0 = (6, 8, 0) → length 10.
+    // Columns are (6,0,0), (8,4,0), (0,0,5).
     cell(0, 0) = 6.0;
     cell(0, 1) = 8.0;
     cell(0, 2) = 0.0;
     Box tri(cell);
     const auto lt = tri.lengths();
-    EXPECT_NEAR(lt[0], 10.0, 1e-12);
-    EXPECT_NEAR(lt[1], 4.0, 1e-12);
+    EXPECT_NEAR(lt[0], 6.0, 1e-12);
+    EXPECT_NEAR(lt[1], std::sqrt(80.0), 1e-12);
     EXPECT_NEAR(lt[2], 5.0, 1e-12);
 }
 
@@ -261,15 +264,6 @@ TEST(BoxMinImage, TriclinicSingleShear) {
         EXPECT_NEAR(dx, rdx, 1e-10);
         EXPECT_NEAR(dy, rdy, 1e-10);
         EXPECT_NEAR(dz, rdz, 1e-10);
-
-        // Fractional components within [-0.5, 0.5].
-        const Mat3& iv = bx.inv_cell();
-        const double fx = iv(0, 0) * dx + iv(0, 1) * dy + iv(0, 2) * dz;
-        const double fy = iv(1, 0) * dx + iv(1, 1) * dy + iv(1, 2) * dz;
-        const double fz = iv(2, 0) * dx + iv(2, 1) * dy + iv(2, 2) * dz;
-        EXPECT_LE(std::abs(fx), 0.5 + 1e-12);
-        EXPECT_LE(std::abs(fy), 0.5 + 1e-12);
-        EXPECT_LE(std::abs(fz), 0.5 + 1e-12);
     }
 
     // Cache identity: cell · inv_cell - I.
@@ -289,13 +283,11 @@ TEST(BoxMinImage, TriclinicTwoShears) {
 
     double dx = 9.0, dy = 11.0, dz = 7.0;
     bx.min_image(dx, dy, dz);
-    const Mat3& iv = bx.inv_cell();
-    const double fx = iv(0, 0) * dx + iv(0, 1) * dy + iv(0, 2) * dz;
-    const double fy = iv(1, 0) * dx + iv(1, 1) * dy + iv(1, 2) * dz;
-    const double fz = iv(2, 0) * dx + iv(2, 1) * dy + iv(2, 2) * dz;
-    EXPECT_LE(std::abs(fx), 0.5 + 1e-12);
-    EXPECT_LE(std::abs(fy), 0.5 + 1e-12);
-    EXPECT_LE(std::abs(fz), 0.5 + 1e-12);
+    double rx = 9, ry = 11, rz = 7;
+    min_image_triclinic_reference(rx, ry, rz, bx.cell(), bx.inv_cell());
+    EXPECT_NEAR(dx, rx, 1e-12);
+    EXPECT_NEAR(dy, ry, 1e-12);
+    EXPECT_NEAR(dz, rz, 1e-12);
 }
 
 // ── wrap_axis parity ───────────────────────────────────────────────────
@@ -341,6 +333,68 @@ TEST(BoxWrap, WrapIntoCallsAllAxes) {
     EXPECT_DOUBLE_EQ(x, 5.0);
     EXPECT_DOUBLE_EQ(y, 7.0);
     EXPECT_DOUBLE_EQ(z, 3.5);
+}
+
+TEST(BoxGeometry, GeneralCellTransformsWrapAndBounds) {
+    Mat3 h = Mat3::diagonal(4, 5, 6);
+    h(0, 1) = 2;
+    h(1, 0) = -1;
+    h(1, 2) = 1;
+    h(2, 0) = .5;
+    const Box box(h);
+    const ATV::Vec3 fractional{-1.25, 2.5, .75};
+    const auto r = box.to_cartesian(fractional);
+    const auto restored = box.to_fractional(r);
+    for (int d = 0; d < 3; ++d)
+        EXPECT_NEAR(restored[d], fractional[d], 1e-14);
+    double x = r[0], y = r[1], z = r[2];
+    box.wrap_into(x, y, z);
+    const auto wrapped = box.to_fractional({x, y, z});
+    EXPECT_NEAR(wrapped[0], .75, 1e-14);
+    EXPECT_NEAR(wrapped[1], .5, 1e-14);
+    EXPECT_NEAR(wrapped[2], .75, 1e-14);
+    const auto [lo, hi] = box.cartesian_bounds({0, 0, 0}, {1, 1, 1});
+    EXPECT_DOUBLE_EQ(lo[0], 0);
+    EXPECT_DOUBLE_EQ(hi[0], 6);
+    EXPECT_DOUBLE_EQ(lo[1], -1);
+    EXPECT_DOUBLE_EQ(hi[1], 6);
+    EXPECT_DOUBLE_EQ(lo[2], 0);
+    EXPECT_DOUBLE_EQ(hi[2], 6.5);
+    const auto a = h * ATV::Vec3{1, 0, 0};
+    const auto b = h * ATV::Vec3{0, 1, 0};
+    const auto c = h * ATV::Vec3{0, 0, 1};
+    EXPECT_NEAR(box.face_height(0), box.volume() / b.cross(c).norm(), 1e-13);
+    EXPECT_NEAR(box.face_height(1), box.volume() / c.cross(a).norm(), 1e-13);
+    EXPECT_NEAR(box.face_height(2), box.volume() / a.cross(b).norm(), 1e-13);
+}
+
+TEST(BoxMinImage, FractionalRoundingIsNotTheNearestImage) {
+    Mat3 h = Mat3::diagonal(10, 2, 8);
+    h(0, 1) = 9;
+    const Box box(h);
+    const auto r = box.to_cartesian({.49, .49, 0});
+    double x = r[0], y = r[1], z = r[2];
+    box.min_image(x, y, z);
+    double rx = r[0], ry = r[1], rz = r[2];
+    min_image_triclinic_reference(rx, ry, rz, h, box.inv_cell());
+    EXPECT_NEAR(x, rx, 1e-12);
+    EXPECT_NEAR(y, ry, 1e-12);
+    EXPECT_NEAR(z, rz, 1e-12);
+    EXPECT_LT(x * x + y * y + z * z, r.norm_squared());
+}
+
+TEST(BoxMutation, InvalidCellLeavesGeometryAndRevisionUnchanged) {
+    Box box = Box::cubic(5);
+    const auto revision = box.revision();
+    Mat3 singular = Mat3::identity();
+    singular(0, 1) = 1;
+    singular(1, 0) = 1;
+    EXPECT_THROW(box.set_cell(singular), std::runtime_error);
+    Mat3 bad = Mat3::identity();
+    bad(0, 1) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(box.set_cell(bad), std::invalid_argument);
+    EXPECT_EQ(box.revision(), revision);
+    EXPECT_DOUBLE_EQ(box.volume(), 125);
 }
 
 // ── ac-009: cache coherence after mutation ─────────────────────────────
@@ -424,7 +478,7 @@ TEST(BoxBatch, OrthoLaneParity) {
     auto bx = Box::orthorhombic(10.0, 12.0, 8.0);
 
     std::mt19937 rng(0xBA7C0u);
-    std::uniform_real_distribution<double> dist(-1.5, 1.5);
+    std::uniform_real_distribution<double> dist(-8.0, 8.0);
 
     for (int trial = 0; trial < 1000; ++trial) {
         alignas(64) double xb[16] = {}, yb[16] = {}, zb[16] = {};
@@ -447,12 +501,94 @@ TEST(BoxBatch, OrthoLaneParity) {
         for (std::size_t lane = 0; lane < W; ++lane) {
             double sx = xb[lane], sy = yb[lane], sz = zb[lane];
             bx.min_image(sx, sy, sz);
-            // Bit-exact: both code paths reduce to the same IEEE
-            // operations (compare + select vs compare + branch on the
-            // same mask).
+            // Both paths use the same division and nearest-integer reduction.
             EXPECT_EQ(bxr[lane], sx) << "trial=" << trial << " lane=" << lane;
             EXPECT_EQ(byr[lane], sy);
             EXPECT_EQ(bzr[lane], sz);
         }
     }
+}
+
+TEST(BoxMinImage,
+     ExtremeIntegerShearDoesNotEnumerateUnrepresentableImageRange) {
+    // The same Z^3 lattice in a catastrophically skew basis. The old
+    // reciprocal-box loop started beyond 2^53, where double += 1 stalls.
+    Mat3 h = Mat3::identity();
+    h(0, 1) = 1e16;
+    h(1, 2) = 1e16;
+    const Box box(h);
+    double x = .25, y = .49, z = -.2;
+    box.min_image(x, y, z);
+    EXPECT_NEAR(x, .25, 1e-13);
+    EXPECT_NEAR(y, .49, 1e-13);
+    EXPECT_NEAR(z, -.2, 1e-13);
+    // Public cell and coordinate system remain untouched by private reduction.
+    EXPECT_DOUBLE_EQ(box.cell()(0, 1), 1e16);
+    Box assigned = Box::cubic(2);
+    assigned = box;
+    x = 1.25;
+    y = -2.51;
+    z = 3.8;
+    assigned.min_image(x, y, z);
+    EXPECT_NEAR(x, .25, 1e-13);
+    EXPECT_NEAR(y, .49, 1e-13);
+    EXPECT_NEAR(z, -.2, 1e-13);
+}
+
+TEST(BoxMinImage, RotatedAsymmetricCellMatchesIndependentLatticeOracle) {
+    Mat3 h = Mat3::diagonal(4, 3, 5);
+    h(0, 1) = 2.7;
+    h(1, 2) = -.8;
+    h(2, 0) = .3;
+    Mat3 rotation = Mat3::identity();
+    rotation(0, 0) = std::cos(.47);
+    rotation(0, 1) = -std::sin(.47);
+    rotation(1, 0) = std::sin(.47);
+    rotation(1, 1) = std::cos(.47);
+    h = rotation * h;
+    const Box box(h);
+    std::mt19937 rng(147u);
+    std::uniform_real_distribution<double> fraction(-1.5, 1.5);
+    for (int trial = 0; trial < 80; ++trial) {
+        const auto r =
+            h * ATV::Vec3{fraction(rng), fraction(rng), fraction(rng)};
+        double x = r[0], y = r[1], z = r[2];
+        double rx = x, ry = y, rz = z;
+        min_image_triclinic_reference(rx, ry, rz, h, box.inv_cell());
+        box.min_image(x, y, z);
+        EXPECT_NEAR(x, rx, 2e-12);
+        EXPECT_NEAR(y, ry, 2e-12);
+        EXPECT_NEAR(z, rz, 2e-12);
+    }
+}
+
+TEST(BoxGeometry, NegativeDiagonalGeneralCellKeepsSignedCoordinateTransform) {
+    const Box box(Mat3::diagonal(-4, -5, 6));
+    EXPECT_FALSE(box.is_orthorhombic());
+    EXPECT_DOUBLE_EQ(box.volume(), 120);
+    EXPECT_DOUBLE_EQ(box.face_height(0), 4);
+    const auto r = box.to_cartesian({.25, .3, .4});
+    EXPECT_DOUBLE_EQ(r[0], -1);
+    EXPECT_DOUBLE_EQ(r[1], -1.5);
+    double x = 3.2, y = -4.1, z = 5.3;
+    box.min_image(x, y, z);
+    EXPECT_NEAR(x, -.8, 1e-13);
+    EXPECT_NEAR(y, .9, 1e-13);
+    EXPECT_NEAR(z, -.7, 1e-13);
+    EXPECT_THROW(Box::orthorhombic(-4, -5, 6), std::invalid_argument);
+    EXPECT_THROW(Box::cubic(0), std::invalid_argument);
+}
+
+TEST(BoxWrap, TinyNegativeFractionDoesNotRoundToUpperFace) {
+    Mat3 h = Mat3::diagonal(4, 5, 6);
+    h(0, 1) = 1;
+    const Box box(h);
+    double x = -1e-300, y = 0, z = 0;
+    box.wrap_into(x, y, z);
+    const auto f = box.to_fractional({x, y, z});
+    for (int d = 0; d < 3; ++d) {
+        EXPECT_GE(f[d], 0);
+        EXPECT_LT(f[d], 1);
+    }
+    EXPECT_DOUBLE_EQ(x, 0);
 }

@@ -51,5 +51,5 @@ CUDA E=−15.151890075311 Ha iters=9; \|dE\|=**2.130e-08** Ha (tol 5e-5).
 Holds: ks_multigrid unit, full_product, multigrid-run \|dE\|=**1.308e-11**,
 product-si \|dE\|=**3.504e-05**. Prior dual-gate **1180409** (pre-rebase
 `a58d90e1`) same \|dE\|. Prior fail **1180025** device monom
-\|dE\|=**4.296e-04**. Iron-law residual mid-path P/V DH → child
-`cuda-gpw-multigrid-device-ks` (do not re-open monom path here).
+\|dE\|=**4.296e-04**. Iron-law residual mid-path P/V DH is separate device-KS work
+(do not re-open monom path here).

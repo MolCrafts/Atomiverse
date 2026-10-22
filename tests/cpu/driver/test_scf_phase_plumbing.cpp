@@ -16,7 +16,7 @@
 ///      instantiating a `Driver<scf::Phase>` subclass.
 ///   4. The `cpu::Criterion` component kind (`Verdict verdict(const LoopState&)`) plus the
 ///      driver's `add_criterion` / `add_criterion_ref` registration and its per-iteration,
-///      severity-composed pull: Stop > Converged > Continue, with the loop — never the
+///      conjunctive convergence pull with Stop taking precedence, with the loop — never the
 ///      component — writing convergence status.
 ///
 /// None of these symbols exist yet: the expected RED is that this translation unit FAILS
@@ -86,6 +86,10 @@ class ContinueCriterion : public cpu::Criterion {
 ///        verdict — it has no field with which to write the loop's status itself.
 class ConvergeAfter : public cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     explicit ConvergeAfter(int at) : at_(at) {}
     std::string name() const override { return "converge_after"; }
     void launch(const cpu::LaunchContext&) override {}
@@ -103,6 +107,10 @@ class ConvergeAfter : public cpu::Criterion {
 /// @brief Votes Converged every poll.
 class AlwaysConverged : public cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     std::string name() const override { return "always_converged"; }
     void launch(const cpu::LaunchContext&) override {}
     Verdict verdict(const cpu::LoopState&) override {
@@ -307,7 +315,7 @@ TEST(ScfPhasePlumbing, StopBeatsConvergedInComposition) {
 
     ScfPhaseProbe probe;
     probe.add_criterion_ref(converged_vote); // registered first ...
-    probe.add_criterion_ref(stop_vote);      // ... Stop still wins by severity
+    probe.add_criterion_ref(stop_vote);      // ... Stop still prevents success
     probe.build();
 
     const int iters = probe.run(frame, /*budget=*/5);

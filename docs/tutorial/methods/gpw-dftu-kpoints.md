@@ -4,15 +4,15 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-dftu-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `k_mesh` / `k_points` + `k_point_weights`, `k_time_reversal`, `n_alpha`/`n_beta`, `std::vector<PlusU> plus_u` |
-| Roadmap | `docs/roadmap/dft.md` — multi-k Dudarev DFT+U SCF (`reg_gpw-dftu-kpoints`) ✓ |
+| Roadmap | `docs/roadmap/dft.md` — multi-k Dudarev DFT+U SCF ✓ |
 | Perf | **`perf_exempt`** (no fair absolute CP2K energy twin on the H₂ toy) |
 
 ## Summary
 
 **Dudarev DFT+U on multi-k collinear UKS GPW** closes the product gap between
-Γ-only PLUS_U (`gpw-dftu-nio`) and multi-k UKS without U (`gpw-kpoints-uks`).
+Γ-only PLUS_U (`gpw-dftu-nio`) and multi-k UKS without U ([gpw-kpoints-uks](gpw-kpoints-uks.md)).
 Per-spin Mulliken occupations are **k-weighted Hermitian projections** of
 \(P_k^\sigma S_k\); the same Dudarev energy \(E_U\) and potential
 \(V^\sigma = U(\tfrac12 I - n^\sigma)\) are added to **every** complex Bloch
@@ -26,7 +26,8 @@ absolute ATV energy pin). An offline CP2K 2026.1 twin input ships under
 CP2K oracle but reports **unphysical
 Mulliken charges** on this toy (pathological \(E_U\)) — **not** an absolute
 energy twin. Literature-facing PLUS_U numbers remain the Γ NiO molecule pin
-(`gpw-dftu-nio`). Product gate: `reg_gpw-dftu-kpoints`. Fair wall:
+(`gpw-dftu-nio`). No standing regression for multi-k SCF energy
+(multi-k DFT+U F/σ: `gpw-dftu-kpoint-forces`, `gpw-dftu-kpoint-stress`). Fair wall:
 **`perf_exempt`**.
 
 Related: Γ DFT+U — [gpw-dftu-nio](gpw-dftu-nio.md); narrative GPW —
@@ -165,8 +166,7 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-dftu-kpoints -j$(nproc)
-  reg_gpw-dftu-kpoints
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -180,7 +180,7 @@ bash -lc '
 
 ## Validation (vs CP2K + internal identities)
 
-Source: case `gpw-dftu-kpoints` pin.
+Source: the pin notes recorded when this page was written (no standing regression).
 Oracle: offline **CP2K 2026.1** twin **ships** under CP2K oracle but is
 **pathology-noted** (not absolute energy gate). **Never** live in ctest. Pin
 date: **2026-07-26**.
@@ -251,9 +251,9 @@ OMP_NUM_THREADS=8 cp2k.psmp -i h2_uks_dftu_kpoints.inp -o h2_uks_dftu_kpoints.ou
 ## Performance
 
 Source: fair wall table in
-case `gpw-dftu-kpoints` pin (2026-07-26). Handoff:
+the pin notes recorded when this page was written (no standing regression; 2026-07-26). Handoff:
 the case pin notes — **`perf_exempt`**. Same pattern as
-`gpw-kpoints-uks`: decisive gates are internal identities, not
+[gpw-kpoints-uks](gpw-kpoints-uks.md): decisive gates are internal identities, not
 \(T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) against a fair absolute energy twin.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
@@ -282,8 +282,6 @@ bulk NiO multi-k PLUS_U wall or multigrid parity.
 
 ## References
 
-- Offline pin + fair wall: case `gpw-dftu-kpoints` pin
-- Regression consumer: `reg_gpw-dftu-kpoints.cpp`
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Γ DFT+U product twin: [gpw-dftu-nio](gpw-dftu-nio.md),

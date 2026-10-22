@@ -66,8 +66,7 @@ capability this case pins is the lift of the old build-time refusal
 host but has **no fictitious-mass Car–Parrinello propagator** — the CP
 extended conserved quantity (and its electronic NH bookkeeping term) is not a
 number CP2K can print, so no live or offline CP2K twin of this observable
-exists. The BO surface underneath is CP2K-anchored by `gpw-kpoints-si` /
-`gpw-kpoint-forces` / `gpw-bomd-kpoints`. An **unexecutable sketch** of the
+exists. The BO surface underneath is CP2K-anchored by `gpw-kpoints-si`. An **unexecutable sketch** of the
 intended twin lives in
 `tools/cp2k_oracle/inputs/cpmd-thermostat-kpoints/h2_cpmd_thermostat_kpoints_nve.inp`.
 The pin is therefore the **literature extended-energy / \(T_e\) control

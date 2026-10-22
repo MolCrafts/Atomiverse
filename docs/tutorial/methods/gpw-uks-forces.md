@@ -30,7 +30,7 @@ Product gate: `reg_gpw-uks-forces`. Fair wall ratio
 Related: energy-only Γ-UKS PADE foothold
 [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md); closed-shell RKS forces
 [gpw-forces-water](gpw-forces-water.md); multi-k UKS energy
-`gpw-kpoints-uks` (forces remain Γ-only here). Narrative:
+[gpw-kpoints-uks](gpw-kpoints-uks.md) (forces remain Γ-only here). Narrative:
 [Ch. 9 GPW](../ch09-gpw.md).
 
 ## Method
@@ -104,8 +104,8 @@ force parity. Citation: Martyna & Tuckerman, *J. Chem. Phys.* **110**, 2810
 
 **Key exclusions (this page / acceptance):**
 
-- **No k-point UKS forces** — Γ only; multi-k RKS forces are
-  `gpw-kpoint-forces`; multi-k UKS forces remain follow-on.
+- **No k-point UKS forces** — Γ only; multi-k RKS forces: see
+  [gpw-kpoint-forces](gpw-kpoint-forces.md) (method page); multi-k UKS forces remain follow-on.
 - **No UKS stress** — cell stress paths are separate (`gpw-stress-water`,
   `gpw-kpoint-stress`); UKS stress may throw / unpinned.
 - **No ROKS** GPW forces; no spin projection of \(\mathbf{F}\).
@@ -317,8 +317,8 @@ the same ratio **~2.52**.
   tolerance is deliberately **5e-3 Ha/Bohr** for first-green; may tighten
   when multigrid parity is product work.
 - **Γ-UKS forces only** — multi-k UKS forces and UKS stress are out of scope
-  for this regression (see `gpw-kpoint-forces`, `gpw-kpoints-uks`,
-  `gpw-kpoint-stress` for related RKS/UKS product surfaces).
+  for this regression (see `gpw-kpoint-stress` and the [gpw-kpoint-forces](gpw-kpoint-forces.md) / [gpw-kpoints-uks](gpw-kpoints-uks.md)
+  method pages for related RKS/UKS surfaces).
 - **Isolated MT O₂ only** — no periodic supercell, no BOMD trajectory pin,
   no geometry-opt loop gate on this page.
 - **PBE GGA** on this pin; PADE energy-only is `gpw-uks-o2-gamma`. Do not

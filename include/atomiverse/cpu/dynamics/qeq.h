@@ -44,6 +44,7 @@ namespace md {
 /// @endcode
 class QEq : public cpu::Component {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cutoff Coulomb coupling cutoff \(r_c\) [Å] (> 0).
     explicit QEq(double cutoff);
 

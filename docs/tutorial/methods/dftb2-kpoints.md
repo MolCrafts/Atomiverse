@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `dftb2-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::semiempirical::DFTB2` (`k_mesh`, `k_time_reversal` members) + `cpu::Evaluate` |
-| Roadmap | [`semiempirical.md`](../../roadmap/semiempirical.md) — multi-k energy ✓; multi-k F/stress ○ |
+| Roadmap | [`semiempirical.md`](../../roadmap/semiempirical.md) — multi-k energy ◐ (no standing regression); multi-k F/stress ○ |
 | Family oracle | **DFTB+** only (never OpenMOPAC / xtb) |
 
 ## Summary
@@ -16,7 +16,7 @@ k-mesh beyond Γ**: Bloch-phased lattice sums of two-center \(H^0(\mathbf{k})\)
 and \(S(\mathbf{k})\), k-weighted band energy and Mulliken charges, and
 real-space (Γ-style) screened \(\gamma\) + pair repulsive. The product gate is
 the same minimal **1-D carbon dimer crystal** used by
-`dftb2-periodic-gamma`, now sampled with `k_mesh = {4, 1, 1}` under
+[dftb2-periodic-gamma](dftb2-periodic-gamma.md), now sampled with `k_mesh = {4, 1, 1}` under
 `cpu::Evaluate` + `cpu::semiempirical::DFTB2` (default
 `DftbSkSet::MioSketch`). Energy is written to `frame.meta.get(kEnergy)` in
 **eV**.
@@ -24,7 +24,7 @@ the same minimal **1-D carbon dimer crystal** used by
 This page is the TB-loop foothold for **multi-k energy**, not multi-k
 forces/stress, DFTB3, or open-shell k-mesh. Family numerical oracle remains
 **DFTB+**; absolute energy on this twin is the **ATV mio-style static
-Hamiltonian** (same hygiene as `dftb2-periodic-gamma`) because MioSketch C–C
+Hamiltonian** (same hygiene as [dftb2-periodic-gamma](dftb2-periodic-gamma.md)) because MioSketch C–C
 is not a full DFTB.org mio-1-1 `.skf` dump and host builds may lack a DFTB+
 binary. Bit-identical DFTB+ energy identity ships for H–H mio-1-1
 (`dftb2-dftbplus-energy-pin`) and 3ob organics (`dftb2-3ob-organic`).
@@ -100,7 +100,7 @@ Uniform weight \(w_0 = 1/(N_0 N_1 N_2)\) before folding. With
 `k_time_reversal = true` (default), \(\pm\mathbf{k}\) pairs are folded and
 weights doubled — exact for real-Hamiltonian closed-shell densities. Default
 `k_mesh = {1,1,1}` keeps the **real Γ solver** (pin-safe path for
-`dftb2-periodic-gamma` and molecular cases).
+[dftb2-periodic-gamma](dftb2-periodic-gamma.md) and molecular cases).
 
 DFTB+ twin uses the equivalent SupercellFolding:
 
@@ -161,7 +161,7 @@ bag, **no** `make_*` / `build_*` factories). Headers:
 `fill_sk_block_phased`, k-weighted SCC). Static tables:
 `dftb_mio_tables.h`.
 
-Minimal sequence (matches `reg_dftb2-kpoints.cpp`):
+Minimal sequence:
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -172,7 +172,7 @@ Minimal sequence (matches `reg_dftb2-kpoints.cpp`):
 
 using namespace ATV;
 
-// 1-D C dimer crystal: r(C–C)=1.4 Å, Lx=2.8 Å (same as dftb2-periodic-gamma).
+// 1-D C dimer crystal: r(C–C)=1.4 Å, Lx=2.8 Å (same cell as the Γ-point page).
 // Ly=Lz=12 Å isolate the chain from its periodic images in y/z.
 cpu::Frame frame(2);
 frame.span(kAtom_type)[0] = 6;
@@ -222,8 +222,7 @@ bash -lc '
         -DATV_BUILD_HF=OFF -DATV_BUILD_PW=OFF -DATV_BUILD_GPW=OFF \
         -DATV_BUILD_KSPACE=OFF -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j"$(nproc)" --target atomiverse reg_dftb2-kpoints
-  cmake --build build --target run_reg_dftb2-kpoints
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -232,7 +231,7 @@ for Γ chain finiteness; multi-k product gate is the regression only.
 
 ## Validation (vs offline pin)
 
-Source: case `dftb2-kpoints` pin
+Source: the pin notes recorded when this page was written (no standing regression)
 (offline pin; **never** live DFTB+ in ctest).
 
 ```text
@@ -242,7 +241,7 @@ family_oracle: dftb+
 ```
 
 **Geometry.** Two C atoms, orthorhombic cell \(L_x=2.8\) Å, \(L_y=L_z=12.0\) Å
-(identical to `dftb2-periodic-gamma`).
+(identical to [dftb2-periodic-gamma](dftb2-periodic-gamma.md)).
 
 | Atom | x [Å] | y [Å] | z [Å] |
 | ---- | ----: | ----: | ----: |
@@ -254,9 +253,9 @@ Offline twin: TB oracle (OpenMOPAC / DFTB+ / xtb).
 
 | Quantity | Atomiverse / pin | Oracle | Tol | Notes |
 | -------- | ---------------: | ------ | --- | ----- |
-| Total energy \(E\) (4×1×1) [eV] | **−98.9944775364** | literature (ATV mio-style twin; family dftb+) | ±0.05 eV | Hard pin in `reg_dftb2-kpoints` |
+| Total energy \(E\) (4×1×1) [eV] | **−98.9944775364** | literature (ATV mio-style twin; family dftb+) | ±0.05 eV | Recorded value (no standing regression) |
 | \(\lvert E - E_\Gamma\rvert\) [eV] | \(> 0.01\) | sanity | — | Multi-k must separate from Γ |
-| \(E_\Gamma\) (1×1×1 control) [eV] | **−113.5976598145** | matches `reg_dftb2-periodic-gamma` | ±0.05 eV | Shared cell / Hamiltonian |
+| \(E_\Gamma\) (1×1×1 control) [eV] | **−113.5976598145** | matches [dftb2-periodic-gamma](dftb2-periodic-gamma.md) | ±0.05 eV | Shared cell / Hamiltonian |
 
 Measured host residual vs the multi-k pin is far tighter than the ±0.05 eV
 hygiene window (pin is the ATV Hamiltonian twin, not DFTB.org C–C digits).
@@ -285,7 +284,7 @@ not this multi-k twin, not ctest. Gate convention (TB loop):
 | Item | Status |
 | ---- | ------ |
 | Multi-k SCC-DFTB2 energy (restricted MioSketch) | **closed** (this slug) |
-| Γ control identity with `dftb2-periodic-gamma` | **closed** (regression control) |
+| Γ control identity with [dftb2-periodic-gamma](dftb2-periodic-gamma.md) | **closed** (recorded control) |
 | Absolute DFTB+ digits for C–C MioSketch | deferred (ATV Hamiltonian twin) |
 | Multi-k analytic forces / electronic stress | **○** (throws if requested) |
 | Open-shell / ThreeOb multi-k | **○** (throws) |
@@ -299,7 +298,6 @@ remain open ladder tips.
 
 ## References
 
-- Offline pin: case `dftb2-kpoints` pin
 - Public API: `dftb2.h`
 - Offline twin: TB oracle (OpenMOPAC / DFTB+ / xtb)
 - Family rules: TB oracle (OpenMOPAC / DFTB+ / xtb)

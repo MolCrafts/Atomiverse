@@ -95,12 +95,11 @@ mio sketch plus directional factors for \(s\)/\(p\) blocks
 - Absolute \(E\)/\(F\) vs DFTB+ + DFTB.org **mio-1-1** — different slug
   (`dftb2-dftbplus-energy-pin`); sketch SK is not interchangeable for pin identity.
 - Production **3ob-3-1** SK forces — out of scope for *this* page, and since
-  **shipped**: closed-form ThreeOb F (`dftb2-analytic-forces-threeob`,
-  2026-07-28) and cell stress (`dftb2-analytic-stress-threeob`, 2026-07-29).
+  **shipped**: closed-form ThreeOb F and cell stress.
 - Open-shell / collinear spin forces — re-SCC central FD
   (`spin-dftb2-o2` is energy + Mulliken \(m\); analytic open-shell F open).
 - Cell **stress**, PBC/k-DFTB, DFTB0/DFTB3, D3, TD-DFTB — other queue rows
-  (`dftb2-analytic-stress`, `dftb2-periodic-gamma`, …).
+  (`dftb2-analytic-stress`, [dftb2-periodic-gamma](dftb2-periodic-gamma.md), …).
 - Live DFTB+ / OpenMOPAC / xtb from ctest — **forbidden**; offline pins only.
 - Using OpenMOPAC as a DFTB force reference — family lock forbids it.
 
@@ -255,7 +254,7 @@ exists. Handoff records wave-1 TB greens as `perf_exempt`.
 - **MioSketch SK is what *this page* gates.** The analytic path has since been
   generalized to the 3ob radial-table derivatives: ThreeOb closed shell now has
   closed-form F **and** a closed-form pair-virial cell stress
-  (`reg_dftb2-analytic-forces-threeob`, `reg_dftb2-analytic-stress-threeob`).
+  (no standing ThreeOb regression).
 - **Restricted closed shell only** — open-shell collinear path still uses
   re-SCC central FD of \(E\) when `with_forces` is set.
 - **Fixed-\(\Delta q\) force identity** — full re-SCC FD residual on multi-
@@ -264,8 +263,7 @@ exists. Handoff records wave-1 TB greens as `perf_exempt`.
   numerical twins; deepen via `dftb2-dftbplus-energy-pin` / production SK.
 - **No stress / PBC / DFTB3 / D3 / TD** on this page — see Phase A queue.
 - **SE-only cmake** for this loop — do not enable MD/MINIMIZER/HF/PW/GPW/CUDA
-  for the TB product gate; do not build `reg_am1_water_bomd` /
-  `reg_am1_water_minimize` under this configure.
+  for the TB product gate.
 - Family lock: **DFTB+ only** for DFTB rows — never OpenMOPAC as DFTB oracle;
   never treat GFN-xTB as DFTB3 successor.
 

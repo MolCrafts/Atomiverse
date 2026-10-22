@@ -41,7 +41,7 @@ Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md` (offline pin only;
 | CASCI | `pyscf.mcscf.CASCI(mf, ncas=2, nelecas=2)` |
 | AO / MO | 2 AO; 1 occupied, 1 virtual spatial MO; ncore=0 |
 | PySCF version | 2.14.0 |
-| Pinned | 2026-07-23, venv `~/work/.x86_64` (same pin as `casci-h2-sto3g`) |
+| Pinned | 2026-07-23, venv `~/work/.x86_64` |
 
 ## Repro command
 
@@ -73,9 +73,9 @@ print(e_hf, e_fci, e_cas)   # e_fci == e_cas == -1.137283834488502
 | \(E_{\mathrm{CASCI}(2,2)}\) (total) | −1.137283834488502 Ha | 1e-6 Ha |
 | \(|E_{\mathrm{FCI}} - E_{\mathrm{CASCI}}|\) | 0 | **1e-12 Ha** (equivalence gate) |
 
-The full-CI total −1.137283834488502 Ha is the same offline PySCF 2.14.0 literal
-pinned by `regressions/scf/casci-h2-sto3g` (`mc.e_tot`); FCI coincides with
-CASCI(2,2) to ~1e-14 Ha on this system.
+The full-CI total −1.137283834488502 Ha is the offline PySCF 2.14.0 literal
+(`mc.e_tot` of `pyscf.mcscf.CASCI`); FCI coincides with CASCI(2,2) to ~1e-14 Ha
+on this system.
 
 ## Gates (product regression)
 

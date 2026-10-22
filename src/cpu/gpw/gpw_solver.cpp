@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/linalg/pulay.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -90,6 +91,17 @@ struct GpwMpiLayout {
     int rank = 0;
     int nprocs = 1;
     bool active = false; ///< true only when MPI is built AND nprocs > 1.
+
+    void sum_history(double* values, int count) const {
+#ifdef ATV_HAS_MPI
+        if (active)
+            MPI_Allreduce(MPI_IN_PLACE, values, count, MPI_DOUBLE, MPI_SUM,
+                          MPI_COMM_WORLD);
+#else
+        (void)values;
+        (void)count;
+#endif
+    }
 };
 
 GpwMpiLayout gpw_mpi_layout() {
@@ -1317,12 +1329,14 @@ static GpwResult run_gpw_scf_kpoints(
             P_k[static_cast<std::size_t>(ik)] =
                 CplxMatrix((*guess_P_k)[static_cast<std::size_t>(ik)]);
             if (cfg.use_ot) {
-                // Natural orbitals of the guess density: eigenvalues of
-                // X† P X ascend, so the largest occupations sit in the LAST
-                // columns (same convention as the Γ diagonalize_fock path).
-                auto [n_occ_vals, Cnat] =
-                    internal::diagonalize_k(P_k[static_cast<std::size_t>(ik)],
-                                            orth[static_cast<std::size_t>(ik)]);
+                // Natural orbitals of the guess density solve P S c = n c,
+                // i.e. (S P S) c = n S c: eigenvalues of X† (S P S) X
+                // ascend, so the largest occupations sit in the LAST columns
+                // (same convention as the Γ warm start).
+                auto [n_occ_vals, Cnat] = internal::natural_orbitals_k(
+                    P_k[static_cast<std::size_t>(ik)],
+                    S_k[static_cast<std::size_t>(ik)],
+                    orth[static_cast<std::size_t>(ik)]);
                 (void)n_occ_vals;
                 const int m = static_cast<int>(Cnat.shape(1));
                 if (m < cfg.n_occ)
@@ -1362,7 +1376,10 @@ static GpwResult run_gpw_scf_kpoints(
     if (!use_mg)
         res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
-    internal::KDiis diis(use_diis ? cfg.diis_depth : 1, weights);
+    internal::KDiis diis(use_diis ? cfg.diis_depth : 1, weights,
+                         [layout](double* values, int count) {
+                             layout.sum_history(values, count);
+                         });
     constexpr double kDiisErrTolK = 1e-5; // same gate as the Γ DIIS path
     double e_prev = 0.0;
     const bool periodic_cell = !cfg.nonperiodic;
@@ -2647,8 +2664,14 @@ static GpwResult run_gpw_scf_kpoints_uks(
     if (!use_mg)
         res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
-    internal::KDiis diis_a(use_diis ? cfg.diis_depth : 1, weights);
-    internal::KDiis diis_b(use_diis ? cfg.diis_depth : 1, weights);
+    internal::KDiis diis_a(use_diis ? cfg.diis_depth : 1, weights,
+                           [layout](double* values, int count) {
+                               layout.sum_history(values, count);
+                           });
+    internal::KDiis diis_b(use_diis ? cfg.diis_depth : 1, weights,
+                           [layout](double* values, int count) {
+                               layout.sum_history(values, count);
+                           });
     constexpr double kDiisErrTolK = 1e-5;
     double e_prev = 0.0;
 
@@ -3051,8 +3074,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
         }
 
         // Dual-spin natural-orbital warm start (SGCP OT corrector): purify
-        // each predicted P_k^σ to natural orbitals — eigenvalues of
-        // X† P^σ X ascend, so the largest occupations sit in the LAST
+        // each predicted P_k^σ to natural orbitals (P S c = n c, solved as
+        // (S P^σ S) c = n S c) — eigenvalues of X† (S P^σ S) X ascend, so
+        // the largest occupations sit in the LAST
         // columns (same convention as the multi-k RKS warm start in the
         // run_gpw_scf_kpoints init loop and the Γ-UKS guess purification).
         // Integer-occupation path only: under metallic smearing the OT
@@ -3062,8 +3086,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
         auto warm_from_guess = [&](const CplxMatrix& Pg, int n_occ_s, int ik) {
             if (n_occ_s < 1)
                 return CplxMatrix(xt::zeros<Cplx>({nb, 0}));
-            auto [n_occ_vals, Cnat] =
-                internal::diagonalize_k(Pg, orth[static_cast<std::size_t>(ik)]);
+            auto [n_occ_vals, Cnat] = internal::natural_orbitals_k(
+                Pg, S_k[static_cast<std::size_t>(ik)],
+                orth[static_cast<std::size_t>(ik)]);
             (void)n_occ_vals;
             const int m = static_cast<int>(Cnat.shape(1));
             if (m < n_occ_s)
@@ -4342,20 +4367,25 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
         }
         // OT: purify ASPC/XL density to natural orbitals so the OT manifold
         // starts on the predicted density (not a silent ignore of guess_P,
-        // and not the previous-step C alone). Eigenvalues of Xᵀ P X ascend;
-        // largest occupations occupy the last columns.
+        // and not the previous-step C alone). Natural orbitals solve
+        // P S c = n c, i.e. the generalized problem (S P S) c = n S c — the
+        // AO density P is contravariant, so diagonalizing P itself against S
+        // (P c = n S c) mixes in S⁻¹ and picks the wrong occupied space for
+        // any non-orthogonal basis. Eigenvalues of Xᵀ (S P S) X ascend;
+        // largest occupations occupy the last of the m kept columns.
         // RKS: total P → C0. UKS: dual Pα/Pβ → Ca_prev / Cb_prev (UKS OT
         // seeds from those; second-gen-cpmd-uks-ot).
         if (cfg.use_ot && !uks) {
             if (cfg.n_occ < 1)
                 throw std::invalid_argument("GpwDft::run: RKS OT density "
                                             "warm-start requires n_occ >= 1");
-            auto [n_occ_vals, Cnat] = linalg::diagonalize_fock(P, orth().X);
+            auto [n_occ_vals, Cnat] = linalg::natural_orbitals(P, S, orth().X);
             (void)n_occ_vals;
+            const int m = static_cast<int>(Cnat.shape(1));
             C0 = xt::zeros<double>(
                 {static_cast<std::size_t>(nb), static_cast<std::size_t>(nb)});
             for (int i = 0; i < cfg.n_occ; ++i) {
-                const int src = nb - cfg.n_occ + i;
+                const int src = m - cfg.n_occ + i;
                 for (int u = 0; u < nb; ++u)
                     C0(u, i) = Cnat(u, src);
             }
@@ -4365,21 +4395,22 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                 throw std::invalid_argument(
                     "GpwDft::run: UKS OT density warm-start requires "
                     "n_alpha+n_beta >= 1");
-            auto [na_vals, Cnat_a] = linalg::diagonalize_fock(Pa, orth().X);
-            auto [nb_vals, Cnat_b] = linalg::diagonalize_fock(Pb, orth().X);
+            auto [na_vals, Cnat_a] = linalg::natural_orbitals(Pa, S, orth().X);
+            auto [nb_vals, Cnat_b] = linalg::natural_orbitals(Pb, S, orth().X);
             (void)na_vals;
             (void)nb_vals;
+            const int m = static_cast<int>(Cnat_a.shape(1));
             Ca_prev = xt::zeros<double>(
                 {static_cast<std::size_t>(nb), static_cast<std::size_t>(nb)});
             Cb_prev = xt::zeros<double>(
                 {static_cast<std::size_t>(nb), static_cast<std::size_t>(nb)});
             for (int i = 0; i < cfg.n_alpha; ++i) {
-                const int src = nb - cfg.n_alpha + i;
+                const int src = m - cfg.n_alpha + i;
                 for (int u = 0; u < nb; ++u)
                     Ca_prev(u, i) = Cnat_a(u, src);
             }
             for (int i = 0; i < cfg.n_beta; ++i) {
-                const int src = nb - cfg.n_beta + i;
+                const int src = m - cfg.n_beta + i;
                 for (int u = 0; u < nb; ++u)
                     Cb_prev(u, i) = Cnat_b(u, src);
             }
@@ -5250,7 +5281,13 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                         C_prev_pol(u, i) = Cocc(u, i);
                 bool pol_done = false;
                 bool h_matches_P = true;
-                for (int p = 0; p < 30; ++p) {
+                // Polish steps share the caller's SCF budget: `res.iters`
+                // counts them, and `max_iter` is the hard cap a partial-SCF
+                // consumer (second-gen CP corrector) relies on.
+                constexpr int kPolishMaxSteps = 30;
+                const int polish_budget =
+                    std::min(kPolishMaxSteps, cfg.max_iter - iter);
+                for (int p = 0; p < polish_budget; ++p) {
                     if (!h_matches_P) {
                         auto he = build_H_and_energy(P);
                         H = std::move(he.first);
@@ -5260,7 +5297,7 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                     res.iters = iter + 1 + p;
                     res.e_total = e_total;
                     const RealMatrix err =
-                        internal::gpw_diis_error(H, P, S, orth().X);
+                        linalg::diis_error(H, P, S, orth().X);
                     double err_norm = 0.0;
                     for (const double v : err)
                         err_norm = std::max(err_norm, std::abs(v));
@@ -6154,8 +6191,8 @@ bool GpwDft::drive_gamma_rks_diis_(
                        double& prev_energy) {
             KsBuildStage::Op ks = [&, build_H]() {
                 build_H(loop_P_, loop_H_, e_total);
-                loop_err_ = internal::gpw_diis_error(loop_H_, loop_P_, loop_S_,
-                                                     loop_X_);
+                loop_err_ =
+                    linalg::diis_error(loop_H_, loop_P_, loop_S_, loop_X_);
                 err_norm = 0.0;
                 for (const double v : loop_err_)
                     err_norm = std::max(err_norm, std::abs(v));
@@ -6228,9 +6265,9 @@ bool GpwDft::drive_gamma_uks_diis_(
                 *Hb_raw = Hb;
                 e_total = e;
                 const RealMatrix err_a =
-                    internal::gpw_diis_error(Ha, Pa, loop_S_, loop_X_);
+                    linalg::diis_error(Ha, Pa, loop_S_, loop_X_);
                 const RealMatrix err_b =
-                    internal::gpw_diis_error(Hb, Pb, loop_S_, loop_X_);
+                    linalg::diis_error(Hb, Pb, loop_S_, loop_X_);
                 err_norm = 0.0;
                 for (const double v : err_a)
                     err_norm = std::max(err_norm, std::abs(v));
@@ -6263,9 +6300,9 @@ bool GpwDft::drive_gamma_uks_diis_(
             MixStage::Op mix_op = [&, diis_a, diis_b, use_diis, Ha_raw,
                                    Hb_raw]() {
                 RealMatrix err_a =
-                    internal::gpw_diis_error(*Ha_raw, Pa, loop_S_, loop_X_);
+                    linalg::diis_error(*Ha_raw, Pa, loop_S_, loop_X_);
                 RealMatrix err_b =
-                    internal::gpw_diis_error(*Hb_raw, Pb, loop_S_, loop_X_);
+                    linalg::diis_error(*Hb_raw, Pb, loop_S_, loop_X_);
                 if (use_diis) {
                     loop_H_ = diis_a->step(*Ha_raw, err_a);     // Ha_use
                     loop_H_ext_ = diis_b->step(*Hb_raw, err_b); // Hb_use

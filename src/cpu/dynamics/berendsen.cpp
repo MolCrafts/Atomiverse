@@ -51,6 +51,7 @@ void Berendsen::launch(const cpu::LaunchContext& ctx) {
 
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
+    n_dof_global_ = ctx.runtime.md.n_dof_global;
     const int n_dof = n_dof_global_;
     if (n_dof <= 0)
         return;

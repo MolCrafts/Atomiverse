@@ -40,7 +40,7 @@ std::string parse_device_arg(int argc, char** argv) {
     return want;
 }
 
-cpu::Frame make_water_frame() {
+ATV::cpu::Frame make_water_frame() {
     using namespace ATV;
     constexpr double kPi = 3.14159265358979323846;
     const double r_oh = 0.95;

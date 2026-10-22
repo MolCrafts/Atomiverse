@@ -76,12 +76,26 @@ Gas-phase water, charge 0, singlet, **off equilibrium** (O–H stretched
 
 \(F = -\nabla E \times\) `units::kHartreePerBohrInEvPerAngstrom`.
 
-**Tolerance rationale.** AES is now in the SCC Fock (`gfn2-aes-fock`); offeq
-stretch residual stays \(\sim 9\) meV — energy floor \(10^{-2}\) eV. Stretch
-\(F_{O,x}\) residual \(\sim 0.31\) eV/Å vs xtb after the Fock term (analytic
-vs ATV energy FD \(\sim 0.19\) eV/Å, quadrupole \(\partial Q/\partial R\)).
-Angular \(F_{H1,y}\) is a CAMM-vs-\(R\) hole (xtb \(-0.80\) eV/Å vs ATV
-energy FD \(+0.06\)) and is **not** a hard pin.
+**Current model state.** ATV GFN2 reproduces xtb 6.7.1 / tblite 0.4.0
+term by term: H⁰ (double-exponential CN', Π radius O = 0.64 Å), isotropic
+ES, third order (in the shell *charge*), repulsion, and AES/AXC on the
+cumulative multipoles of every atom (≤ 1e−8 Eh at the same density). AES
+and the self-consistent D4 are in the Fock as \(\partial E/\partial P\), so
+the analytic gradient is the derivative of the energy: analytic vs central
+FD ≤ 3e−7 eV/Å here. Residuals vs the table: \(E\) 11 µeV (D4 term
+−1.40847e−4 vs xtb −1.41270e−4 Eh), \(F_{O,x}\) 1.5e−5 eV/Å.
+
+**xtb 6.7.1 \(\partial E/\partial y\) artifact.** At this orientation (O at
+the origin, H1 on the x axis) the y-gradients xtb prints for O and H1 are
+not the derivative of its own energy. Central FD of xtb 6.7.1 energies
+(h = 1e−3 Å) gives \(g_{O,y}=-1.942\times10^{-3}\),
+\(g_{H1,y}=+1.620\times10^{-4}\) Eh/a0; the same molecule rotated 0.5 rad
+about z and translated makes xtb print \(-1.943\times10^{-3}\) /
+\(+1.620\times10^{-4}\) (rotated back); tblite 0.4.0 prints
+\(-1.9425\times10^{-3}\) / \(+1.6183\times10^{-4}\). ATV:
+\(-1.9428\times10^{-3}\) / \(+1.6203\times10^{-4}\). The tabled
+\(-1.731\times10^{-2}\) / \(+1.553\times10^{-2}\) are not GFN2 gradients.
+\(F_{H1,y}\) is printed, not gated.
 
 ## Perf
 
@@ -90,7 +104,5 @@ in the regression; fail if \(T_{\mathrm{atv}}/T_{\mathrm{xtb}} > 10\).
 
 ## Gaps
 
-- Angular \(F_{H1,y}\) vs xtb (CAMM-vs-\(R\) / two-centre \(\Theta\) on H;
-  AES-in-Fock is `gfn2-aes-fock` and does not close this slope)
 - Elements beyond H/C/N/O
 - ALPB, spin, PBC, sTDA

@@ -239,3 +239,63 @@ TEST(ConstPotBO, ThomasFermiHardnessAnalyticTwoSite) {
     EXPECT_NEAR(conp.total_charge(1), q1_analytic, 1e-10);
     EXPECT_NEAR(conp.total_charge(0), -q1_analytic, 1e-10);
 }
+
+TEST(ConstPotBO, ForceInitializationDoesNotPredictOrRecordChargeHistory) {
+    auto frame = madelung_primary();
+    cpu::md::ConstPotBO solver(2.0);
+    solver.add_electrode(1, 0.0).add_electrode(2, 1.0);
+    solver.use_cg = true;
+    solver.predictor_order = 1;
+    solver.xy_image_range = 0;
+    cpu::Context context;
+    solver.build({context, frame});
+    context.exec.initializing_forces = true;
+    for (int i = 0; i < 3; ++i) {
+        solver.initialize_forces({context, frame, 0, 0});
+        EXPECT_FALSE(solver.last_used_predictor());
+    }
+    context.exec.initializing_forces = false;
+    solver.launch({context, frame, 0, 0});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 1});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 2});
+    ASSERT_TRUE(solver.last_used_predictor());
+    context.exec.initializing_forces = true;
+    solver.initialize_forces({context, frame, 0, 2});
+    EXPECT_FALSE(solver.last_used_predictor());
+    context.exec.initializing_forces = false;
+    solver.launch({context, frame, 0, 3});
+    EXPECT_TRUE(solver.last_used_predictor());
+    solver.destroy({context, frame});
+}
+
+TEST(ConstPotBO, TrialEvaluationDoesNotPredictOrRecordChargeHistory) {
+    auto frame = madelung_primary();
+    cpu::md::ConstPotBO solver(2.0);
+    solver.add_electrode(1, 0.0).add_electrode(2, 1.0);
+    solver.use_cg = true;
+    solver.predictor_order = 1;
+    solver.xy_image_range = 0;
+    cpu::Context context;
+    solver.build({context, frame});
+    context.exec.trial_evaluation = true;
+    for (int i = 0; i < 3; ++i) {
+        solver.initialize_forces({context, frame, 0, 0});
+        EXPECT_FALSE(solver.last_used_predictor());
+    }
+    context.exec.trial_evaluation = false;
+    solver.launch({context, frame, 0, 0});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 1});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 2});
+    ASSERT_TRUE(solver.last_used_predictor());
+    context.exec.trial_evaluation = true;
+    solver.initialize_forces({context, frame, 0, 2});
+    EXPECT_FALSE(solver.last_used_predictor());
+    context.exec.trial_evaluation = false;
+    solver.launch({context, frame, 0, 3});
+    EXPECT_TRUE(solver.last_used_predictor());
+    solver.destroy({context, frame});
+}

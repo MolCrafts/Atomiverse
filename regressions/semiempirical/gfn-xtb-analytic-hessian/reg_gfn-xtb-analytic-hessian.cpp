@@ -4,7 +4,7 @@
 /// oracle: xtb  oracle_version: 6.7.1
 /// Public API only. Exit non-zero on failure. <= 60 s.
 /// Requires ATV_BUILD_VIB=ON and ATV_BUILD_SEMIEMPIRICAL=ON.
-/// Primary pin: GFN1. GFN2 carries the documented AES-in-Fock hole.
+/// Primary pin: GFN1; GFN2 gated on the same shape.
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -32,8 +32,7 @@ static constexpr double kGfn1_H_tol_eVA2 = 0.2;
 static constexpr double kGfn1_xtb_wall_s = 0.03;
 
 // Offline xtb 6.7.1 `--gfn 2 --chrg 0 --uhf 0 --acc 0.01 --hess` on the same
-// 0.96 Å water (tools/tb_oracle/inputs/xtb/h2o_gfn2_hess/). AES is still
-// post-SCC in ATV; ω / Cartesian-H tols absorb that Fock hole.
+// 0.96 Å water (tools/tb_oracle/inputs/xtb/h2o_gfn2_hess/).
 static constexpr double kGfn2_E_pin_Ha = -5.070383095219;
 static constexpr double kGfn2_omega_pin[3] = {1565.10, 3634.95, 3643.62};
 static constexpr double kGfn2_H_Oxx_HaBohr2 = 0.5210291876;
@@ -196,7 +195,7 @@ int main() {
         }
     }
 
-    // ── GFN2 (family close; AES still post-SCC) ─────────────────────
+    // ── GFN2 (family close) ─────────────────────────────────────────
     {
         cpu::Frame f = make_water();
         cpu::semiempirical::GFN2 gfn2;

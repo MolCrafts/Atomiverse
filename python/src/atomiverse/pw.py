@@ -34,9 +34,9 @@ What you can ask for at a geometry
 ============================  ==============================  ================
 Call                          Returns                         Writes back
 ============================  ==============================  ================
-``run(frame)``                ``PWResult`` (energies [Ry])    nothing
+``run(frame)``                ``PWResult`` (energies [Ry])    energy [eV]
 ``forces(frame)``             ``(n_atoms, 3)`` [eV/Å]         fx/fy/fz, energy
-``stress(frame)``             Voigt 6-vector [eV/Å³]          nothing
+``stress(frame)``             Voigt 6-vector [eV/Å³]          stress [eV], energy [eV]
 ============================  ==============================  ================
 
 ``forces`` are analytic — local Hellmann-Feynman + Ewald ion-ion +
@@ -45,8 +45,9 @@ differencing energies — and the energy [eV] they land on
 ``frame.meta['energy']`` belongs to that same SCF. ``stress`` is the
 Nielsen-Martin cell derivative in the mechanical (CP2K) sign,
 σ = −(1/V)·∂E/∂ε, so a compressed cell gives a positive diagonal; it reports
-on the cell and moves nothing. Both run their own SCF and leave
-``last_result`` alone, which stays the result of the last ``run``.
+on the cell without moving atoms. Each entry updates ``last_result`` to
+its SCF. Frame stress stores the extensive virial σΩ [eV], while the
+returned stress is intensive [eV/Å³].
 
 Guards, all of them loud. A frame with no box raises ``RuntimeError``
 everywhere. ``ValueError`` covers the physics preconditions: an odd

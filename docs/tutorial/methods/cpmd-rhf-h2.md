@@ -60,9 +60,9 @@ Car–Parrinello is a **wrapper type**, not a flag on the method: the mode bits
 live in `protected` storage on `MeanFieldMethod`, and
 `cpu::electronic::CarParrinelloMethod<Method>`
 (`cpu/electronic/aimd_method.h`) is the only public way to set them. The
-wrapper publicly inherits `Method`, so every ordinary member (`basis`, `tol`,
-`max_iter`, …) is still yours to set on the object you move in, and the
-wrapper is still an `HF`-kind Component for the force slot.
+wrapper owns `Method` and implements the nested DriverNode and timestep
+protocols. Configure `basis`, `tol`, and `max_iter` on the method before moving
+it in; inspect parameters and results afterwards through `wrapper.method()`.
 
 | Public surface | Meaning |
 | --- | --- |
@@ -202,7 +202,7 @@ changes and \(T_e > 0\) is a hard gate there.
 
 | What | Path |
 | ---- | ---- |
-| CP wrapper (`CarParrinelloMethod`, `ScfElectronicThermostat`) | `aimd_method.h` |
+| CP composed node (`CarParrinelloMethod`, `ScfElectronicThermostat`) | `aimd_method.h` |
 | Mode storage, `TimestepConsumer`, seed/step | `mean_field_method.h`, `src/cpu/scf/mean_field_method.cpp` |
 | Fixed-state gradient (`compute_at_density`) | `gradient.h`, `src/cpu/scf/internal/gradient.cpp` |
 | Fixed-density energy | `src/cpu/scf/internal/mean_field_energy.cpp` |

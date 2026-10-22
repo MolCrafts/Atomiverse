@@ -45,7 +45,7 @@ compared here via `last_stress_ha_bohr3()`.
 stress twin exists. Hard pins are the dual pure-Python energy sums (same
 policy and oracle family as `gpw-xdm-ice` / `gpw-xdm-forces` /
 `gpw-xdm-stress`), plus the multi-SCF strain-FD dual gate for the tensor —
-same structure as `gpw-mbd-kpoint-stress` / `gpw-ts-kpoint-stress`.
+same structure as `gpw-mbd-kpoint-stress`.
 
 ## System
 
@@ -150,4 +150,4 @@ zz −6.403e−09 Ha/Bohr³ — matching the dual-python FD terms per axis.
 
 - Sibling XDM products: `gpw-xdm-ice` (energy), `gpw-xdm-forces` (ionic
   forces), `gpw-xdm-stress` (Γ stress). Sibling multi-k dispersion stress:
-  `gpw-mbd-kpoint-stress`, `gpw-ts-kpoint-stress`.
+  `gpw-mbd-kpoint-stress`.

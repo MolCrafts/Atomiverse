@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-vdw-df2-ice` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::vdw_df2` (bound through `cpu::gpw::GPWEvaluator`); `GpwResult::e_disp` [Ha] |
-| Roadmap | `docs/roadmap/dft.md` §8 Dispersion |
+| Roadmap | `docs/roadmap/dft.md` §3 Dispersion — vdW-DF2 / optB88-vdW ◐ (no standing pin) |
 
 ## Summary
 
@@ -21,8 +21,8 @@ ice Ih supercell) and gates **\(E_c^{\mathrm{nl}}\)** reported on
 Public surface: bool member `vdw_df2` on `cpu::gpw::GpwDft` (bound through
 `cpu::gpw::GPWEvaluator`; no `*Config` bag). The nonlocal energy is folded into
 `e_total`. Mutually exclusive with `d3` / `d3bj` / `d4` / `ts` / `mbd` /
-`vdw_df` / `rvv10`. Product gate: `gpw-vdw-df2-ice`
-(`reg_gpw-vdw-df2-ice`). Wall ratio is **perf_exempt** (E_disp pin; full QS twin
+`vdw_df` / `rvv10`. No standing end-to-end regression (the recorded pin
+below is historical). Wall ratio is **perf_exempt** (E_disp pin; full QS twin
 wall unavailable / unfair on the pin host — see Performance).
 
 **Oracle lineage.** CP2K `VDW_POTENTIAL` / `POTENTIAL_TYPE NON_LOCAL` /
@@ -132,7 +132,7 @@ ATV::cpu::gpw::GPWEvaluator eval(std::move(dft));
 // Public frame.meta energy remains eV; internal GpwResult energies are Ha.
 ```
 
-Build and run the regression:
+Build:
 
 ```bash
 bash -lc '
@@ -145,8 +145,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_gpw-vdw-df2-ice
-  reg_gpw-vdw-df2-ice
 '
 ```
 
@@ -156,14 +154,12 @@ bash -lc '
 | `gpw_evaluator.h` | `GPWEvaluator` (binds the configured `GpwDft`) |
 | `vdw_df.h` | `vdw_df_lmkll`, `kVdwDf2Zab` (private) |
 | `tests/cpu/gpw/test_cpu_gpw_vdw_df.cpp` | Unit gate vs libvdwxc DF2 synthetic |
-| `reg_gpw-vdw-df2-ice.cpp` | Product gate |
-| case `gpw-vdw-df2-ice` pin | Offline pins + perf_exempt |
 | CP2K oracle | CP2K / libvdwxc twin notes |
 
 ## Validation (CP2K / libvdwxc)
 
-Source:
-case `gpw-vdw-df2-ice` pin.
+Source: values recorded when this page was written; no standing
+regression.
 Oracle: offline **libvdwxc 0.5.0** (kernel; same engine CP2K links for
 `TYPE LMKLL`) + dual-frozen full-GPW pin after unit gate. Twin notes:
 CP2K oracle. External
@@ -180,18 +176,18 @@ oracle from ctest.
 | Basis / PP | `DZVP-MOLOPT-SR-GTH` + `GTH-PBE-q6` (O) / `GTH-PBE-q1` (H) |
 | Host XC | PBE (`XcKind::PBE`) |
 | Nonlocal | LMKLL / DF2 (\(Z_{ab}=-1.887\)) post-SCF on final \(\rho\) |
-| Grid / cutoff | GPW CUTOFF **200 Ry** (regression) |
+| Grid / cutoff | GPW CUTOFF **200 Ry** (recorded) |
 | Occupations | RKS, 16 valence e⁻ → `n_occ = 8` |
 | CP2K twin surface | `&VDW_POTENTIAL` / `NON_LOCAL TYPE LMKLL` (when QS+libvdwxc available) |
 
 | Quantity | Atomiverse / pin | Oracle (offline) | Tol | Notes |
 | -------- | ---------------: | ----------------: | --- | ----- |
-| \(E_c^{\mathrm{nl}}\) product [Ha] | \(+1.3011875519702767\times 10^{-1}\) | same dual-frozen pin | \(5\times 10^{-5}\) Ha | Hard gate `reg_gpw-vdw-df2-ice` |
+| \(E_c^{\mathrm{nl}}\) product [Ha] | \(+1.3011875519702767\times 10^{-1}\) | same dual-frozen pin | \(5\times 10^{-5}\) Ha | Recorded value (no standing regression) |
 | Kernel \(E_{\mathrm{nl}}\) synthetic 16³ [Ha] | matches unit test | libvdwxc `VDWXC_DF2` \(+1.1428161716669384\times 10^{-1}\) | \(1\times 10^{-6}\) Ha | Fixed Gaussian blob, L=8 Bohr |
 | \(E_{\mathrm{tot}}\) QS [Ha] | (not gated) | — | — | Context only; OT/grid/DIIS |
 
 **Tolerance rationale.** Unit tests lock the RPS/DF2 kernel to libvdwxc at
-μHa on a fixed density. The product gate uses a looser \(5\times 10^{-5}\) Ha
+μHa on a fixed density. The recorded gate uses a looser \(5\times 10^{-5}\) Ha
 tolerance on post-SCF \(E_c^{\mathrm{nl}}\) because the host density comes from
 a finite SCF (mix/tol/cutoff) and the RPS path uses float32 kernel tables.
 Positive \(E_c^{\mathrm{nl}}\) is expected for this isolated-dimer density;
@@ -211,7 +207,7 @@ measured this wave). Same policy as `gpw-vdw-df-ice` / `gpw-ts-ice` /
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
 | Full QS (context) | n/a (not fair-twinned) | — | **perf_exempt** | — | No CP2K QS wall on pin host |
-| E_disp product gate | n/a | short SCF + RPS (reg) | **perf_exempt** | — | Hard gate is E_disp only |
+| E_disp recorded gate | n/a | short SCF + RPS (recorded) | **perf_exempt** | — | Hard gate is E_disp only |
 | Kernel micro (synthetic) | libvdwxc pin host | unit test | **perf_exempt** | — | Accuracy gate, not wall ratio |
 
 **perf_exempt = true.** Reason (REFERENCE / handoff): primary deliverable is
@@ -239,7 +235,7 @@ when a host provides CP2K linked with libvdwxc if product policy requires
 
 ## References
 
-- Offline pin: case `gpw-vdw-df2-ice` pin
+- Offline pin: recorded when this page was written (no standing regression)
 - Oracle inputs: CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion (vdW-DF2 ✓)
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

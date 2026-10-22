@@ -6,6 +6,7 @@
 /// launch: net force ≈ 0 (Newton 3) and finite LJ energy with special-bonds
 /// exclusions on 8 independent C20 chains.
 
+#include "periodic_neighbor_fixture.h"
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -104,7 +105,7 @@ cpu::Frame make_multi_chain_box(const MultiChainConfig& cfg) {
 }
 
 void zero_forces(cpu::Frame& f) {
-    for (int i = 0; i < f.nlocal(); ++i) {
+    for (int i = 0; i < f.n_total(); ++i) {
         f.span(ATV::kAtom_fx)[i] = 0;
         f.span(ATV::kAtom_fy)[i] = 0;
         f.span(ATV::kAtom_fz)[i] = 0;
@@ -164,7 +165,8 @@ TEST(PeMultiChain, BondedPlusLjSpecialsFiniteOneLaunch) {
     const double lj_sig = 4.01;
     const double lj_cut = 10.5;
 
-    cpu::Context ctx;
+    test::PeriodicNeighborFixture fixture(frame, 1.3 * lj_cut);
+    auto& ctx = fixture.context;
     cpu::BuildContext bctx{ctx, frame};
     cpu::LaunchContext lctx{ctx, frame, 0, 0};
 
@@ -178,6 +180,7 @@ TEST(PeMultiChain, BondedPlusLjSpecialsFiniteOneLaunch) {
 
     zero_forces(frame);
     lj.launch(lctx);
+    ctx.md.comm->reverse_comm(lctx);
 
     EXPECT_FALSE(std::isnan(frame.meta.get(ATV::kEnergy)))
         << "LJ + specials produced NaN energy";

@@ -9,9 +9,8 @@
 /// tolerances and nothing else.
 ///
 /// It never writes `ConvergenceMetrics` or the loop's status — it only RETURNS a
-/// `Verdict`, which the driver pulls once per iteration and composes by
-/// severity (Stop > Converged > Continue). A component still cannot declare its
-/// own loop converged.
+/// `Verdict`, which the driver pulls once per iteration. All requirements must
+/// hold for success; any Stop aborts. A component cannot declare its loop converged.
 ///
 /// Flag-gated placement: the `Criterion` base (`cpu/component/criterion.h`) is
 /// unconditional, but this concrete SCF criterion lives in the SCF domain dir
@@ -41,6 +40,10 @@ namespace scf {
 /// combines both channels' Frobenius norms.
 class ScfConverged : public cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     /// @brief Construct the convergence criterion, wiring the state it reads.
     /// @param tol_energy Energy-change tolerance |ΔE| must fall below [Hartree].
     /// @param tol_grad DIIS-error tolerance ‖err‖_F must fall below

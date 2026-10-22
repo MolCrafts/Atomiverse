@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `casci-h2-sto3g` |
+| Regression | None standing for this page; the same PySCF CASCI(2,2) value is pinned by `ci-engine-equiv-h2-sto3g` |
 | Public API | `cpu::scf::RHF::casci(Frame&, ncas, nelecas)` → `CASCIResult` |
 | Roadmap | [Post-HF §4.1 Active-space methods](../../roadmap/post-hf.md) |
 
@@ -19,8 +19,8 @@ no core on this system (`ncore=0`), and runs the dense FCI kernel in the
 `CASCIResult{e_casci, e_corr, ncas, nelecas, ncore}` in Hartree. On this
 two-electron foothold CASCI(2,2) coincides with FCI / CCSD / CISD in the
 basis. Offline oracle pin is PySCF 2.14.0 `mcscf.CASCI` (never live in
-ctest). End-to-end gate: `casci-h2-sto3g` → binary
-`reg_casci-h2-sto3g`. Fair-bench ratio
+ctest). The standing end-to-end pin of this number is
+`ci-engine-equiv-h2-sto3g` (FCI ≡ CASCI on this space). Recorded fair-bench ratio
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}} = 0.076\) (within 10×;
 startup-dominated).
 
@@ -83,7 +83,7 @@ const cpu::scf::CASCIResult cas = rhf.casci(frame, /*ncas=*/2, /*nelecas=*/2);
 `e_corr` [Hartree], `ncas`, `nelecas`, `ncore`. Pack-level
 `casci_energy` is private engine code.
 
-**Build / run regression** (CPU login; modules as in AGENTS.md):
+**Build** (CPU login; modules as in AGENTS.md):
 
 ```bash
 bash -lc '
@@ -94,8 +94,6 @@ bash -lc '
   cmake -B build -DCMAKE_BUILD_TYPE=Release \
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_casci-h2-sto3g -j$(nproc)
-  reg_casci-h2-sto3g
 '
 ```
 
@@ -106,11 +104,10 @@ bash -lc '
 | `casci_pack.h` | Private pack entry |
 | `src/cpu/scf/fci.cpp` | Dense FCI / CASCI energy kernel |
 | `src/cpu/scf/mean_field_method.cpp` | `MeanFieldMethod::casci` dispatch |
-| `reg_casci-h2-sto3g.cpp` | E2E consumer |
 
 ## Validation (vs PySCF)
 
-Source: case `casci-h2-sto3g` pin
+Source: values recorded when this page was written; no standing regression.
 (offline pin; PySCF never in ctest). Protocol:
 `docs/tutorial/appendix-pyscf-oracle.md`.
 
@@ -129,9 +126,9 @@ Source: case `casci-h2-sto3g` pin
 | Quantity | Pin | Tol | Notes |
 | -------- | --: | --- | ----- |
 | \(E_{\mathrm{RHF}}\) | −1.116759307396426 Ha | \(10^{-6}\) Ha | Diagnostic |
-| \(E_{\mathrm{corr}}\) (CASCI) | **−0.020524527092077 Ha** | **\(10^{-6}\) Ha** | Product gate |
-| \(E_{\mathrm{tot}}\) (CASCI) | **−1.137283834488502 Ha** | **\(10^{-6}\) Ha** | Primary product gate |
-| Bookkeeping | `ncas=2`, `nelecas=2`, `ncore=0` | exact | Product gate |
+| \(E_{\mathrm{corr}}\) (CASCI) | **−0.020524527092077 Ha** | **\(10^{-6}\) Ha** | Recorded gate |
+| \(E_{\mathrm{tot}}\) (CASCI) | **−1.137283834488502 Ha** | **\(10^{-6}\) Ha** | Primary recorded gate |
+| Bookkeeping | `ncas=2`, `nelecas=2`, `ncore=0` | exact | Recorded gate |
 | Consistency | \(E_{\mathrm{tot}} = E_{\mathrm{RHF}} + E_{\mathrm{corr}}\) | \(10^{-12}\) Ha | Regression check |
 
 CASCI(2,2) coincides with FCI / CCSD to \(\sim 10^{-14}\) Ha on this system.
@@ -146,8 +143,7 @@ python <pyscf pin> casci \
 
 ## Performance
 
-Source: fair wall in
-case `casci-h2-sto3g` pin
+Source: fair wall recorded when this page was written
 (2026-07-23; login node; `OMP_NUM_THREADS=1`; median of ≥5). Campaign
 handoff ratio **0.076** (the case pin notes). No
 standing comparison table in-tree at draft time.
@@ -159,8 +155,7 @@ standing comparison table in-tree at draft time.
 ```bash
 export OMP_NUM_THREADS=1
 python <pyscf fair-bench> \
-    --method casci --geom h2 --basis sto-3g --repeat 3 -- \
-    reg_casci-h2-sto3g
+    --method casci --geom h2 --basis sto-3g --repeat 3
 ```
 
 Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}} \le 10\). No ⚡ optimization
@@ -185,8 +180,7 @@ pass required on this case.
 
 ## References
 
-- Offline pin: case `casci-h2-sto3g` pin
-- Regression consumer: `reg_casci-h2-sto3g.cpp`
+- Offline pin: recorded when this page was written (no standing regression)
 - Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md`
 - Roadmap: `docs/roadmap/post-hf.md` (§4.1 Active-space methods)
 - Public API: `casci.h`

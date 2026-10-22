@@ -45,7 +45,7 @@ looser than pure-s H₂ (5e-6) for multi-center product residual (cuFFT vs FFTW)
 
 Multi-k, UKS water, OT, multigrid product, nonperiodic MT, PBE water (→ later
 after this PADE gate / `product-h2o-pbe-gate`), AO-Pulay device path. Device
-RKS DIIS/eigen is on base (`cuda-gpw-device-diis-eigen`); this gate uses it.
+RKS DIIS/eigen is on base; this gate uses it.
 
 ## Build / run (GH200)
 

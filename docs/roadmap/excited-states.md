@@ -18,8 +18,8 @@ Response and many-body methods on HF/KS references. Legend:
 | Full LR-TDDFT (RKS) | ✓ | ○ | `TDDFT<RKS>::run` (`pyscf.tdscf.rks.TDDFT`). Casida A/B |
 | Full LR-TDDFT (UKS) | ✓ | ○ | `TDDFT<UKS>::run` (`pyscf.tdscf.uks.TDDFT`). Pure LSDA |
 | Spin-flip TDA / TDDFT | ✓ | ○ | `SfTDA<UHF>::run` / `SfTDHF<UHF>::run` |
-| CIS/TDA analytic forces | ✓ | ○ | `TDA<RHF>::forces`. Default analytic; FD fallback |
-| TDA NAC vectors | ✓ | ○ | `TDA<RHF>::nac_vectors`. No FSSH consumer yet |
+| CIS/TDA analytic forces | ◐ | ○ | `TDA<RHF>::forces`. Default analytic; FD fallback. No external pin; self-pinned cases removed |
+| TDA NAC vectors | ◐ | ○ | `TDA<RHF>::nac_vectors`. No FSSH consumer yet. No external pin; self-pinned cases removed |
 | Real-time / CVS / REW TDDFT | ○ | ○ | |
 
 ## 2. ADC

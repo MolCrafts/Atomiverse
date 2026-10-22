@@ -293,8 +293,8 @@ AIMD with matched ASPC order / OT corrector budget / cutoff / OMP and record
 ## Limitations
 
 - Γ-point collinear UKS only; no multi-k SGCP-OT, no metallic smear on this
-  slug (see `ot-uks-kpoints`, `ot-uks-smearing`, `ot-uks-dftu-smearing` for
-  static OT composition rows).
+  slug (static OT compositions are described on the [ot-uks-kpoints](ot-uks-kpoints.md),
+  [ot-uks-smearing](ot-uks-smearing.md), [ot-uks-dftu-smearing](ot-uks-dftu-smearing.md) method pages).
 - Soft drift tol (0.10) is appropriate for **short** partial-OT trajectories;
   production long-run stability vs full BO / CP2K AIMD is not claimed.
 - No absolute energy / force re-pin vs CP2K on the MD trajectory until the

@@ -40,7 +40,7 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
     // the extent the per-thread force buffers and the reduction touch (NOT
     // `Frame::n_total()`, which is the global atom count in multi-rank).
     // `resolve()` returns -1 for any tag that is absent or maps outside
-    // `[0, n_force)` — a stale ghost partner is dropped, not read as garbage.
+    // `[0, n_force)`; incomplete topology fails collectively before evaluation.
     const md::ResolveView rv(ctx);
     const int nlocal = rv.n_local();
     const int n_force = rv.n_force();
@@ -67,6 +67,7 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "BondHarmonic");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 3;
     if (n_tuples == 0)
         return;
@@ -82,13 +83,16 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
     // Resolve the frame's force spans ONCE, before the parallel region opens
     // (never inside it — see BondedForceScratch::bind).
     scratch_.bind(f);
+    const bool do_virial = ctx.stress_requested; // LAMMPS vflag
 
 // Stiff bonds contribute significantly to the stress tensor. The per-pair
 // virial accumulates into a thread-private `vir_local` and is combined under
 // a critical section (once per thread per step) — an OMP user-defined
 // reduction on Voigt6 would heap-allocate per step, violating the
 // "no allocation in launch()" invariant.
-#pragma omp parallel if (scratch_.n_threads() > 1) reduction(+ : energy_total)
+#pragma omp parallel num_threads(                                              \
+        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
+    reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP
@@ -121,24 +125,29 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
             const double fy_val = fpair * dy;
             const double fz_val = fpair * dz;
 
-            tf.fx[i] += fx_val;
-            tf.fx[j] -= fx_val;
-            tf.fy[i] += fy_val;
-            tf.fy[j] -= fy_val;
-            tf.fz[i] += fz_val;
-            tf.fz[j] -= fz_val;
+            if (ctx.forces_requested) {
+                tf.fx[i] += fx_val;
+                tf.fx[j] -= fx_val;
+                tf.fy[i] += fy_val;
+                tf.fy[j] -= fy_val;
+                tf.fz[i] += fz_val;
+                tf.fz[j] -= fz_val;
+            }
 
-            vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
+            if (do_virial)
+                vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
         }
 #pragma omp critical
         vir += vir_local;
     }
 
-    scratch_.reduce_into(n_force);
+    if (ctx.forces_requested)
+        scratch_.reduce_into(n_force);
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyBond) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }

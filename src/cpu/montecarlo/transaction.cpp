@@ -18,12 +18,15 @@ void Transaction::begin(Verb v, const cpu::Frame& f) {
     source_frame_ = &f;
 
     // A volume move records every owned row. Reserve here, once, before its
-    // particle loop. Single-row verbs get the same boundary preparation;
-    // Insert and None carry no pre-mutation row.
+    // particle loop. A displacement records one row and a deletion two (the
+    // victim and the compaction survivor's end row); Insert and None carry no
+    // pre-mutation row.
     if (v == Verb::Box)
         prepare_patch_(f, f.nlocal());
-    else if (v == Verb::Displace || v == Verb::Delete)
+    else if (v == Verb::Displace)
         prepare_patch_(f, 1);
+    else if (v == Verb::Delete)
+        prepare_patch_(f, 2);
 }
 
 void Transaction::record_touch(const cpu::Frame& f, int row) {
@@ -48,9 +51,10 @@ void Transaction::rollback(cpu::Frame& f) {
             "mc::Transaction::rollback: no proposal recorded (begin() never "
             "ran)");
     // Population first (an Insert's appended rows fall off the end), then the
-    // touched rows (a Delete's victim gets its original content back — the
-    // compaction survivor copied into its slot is overwritten, and the
-    // survivor's own end-row content was never destroyed by copy_row).
+    // touched rows (a Delete's victim and the compaction survivor's end row
+    // both come back from the patch — rows past `nlocal` are ghost slots that
+    // the trial's borders rewrote, so nothing beyond `nlocal` survives a
+    // trial by itself).
     f.set_nlocal(nlocal_before_);
     for (std::size_t k = 0; k < touched_.size(); ++k)
         f.copy_row_from(patch_, touched_[k], static_cast<int>(k));

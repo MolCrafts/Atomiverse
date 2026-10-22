@@ -41,8 +41,7 @@ points moved; the sibling +U regressions were re-pinned in the same change
 
 U−J = 2 eV deliberately: at 4 eV this DZV s-shell toy sits in the
 strong-overlap regime where the gross-Mulliken occupation is unphysical
-(CP2K's own `PLUS_U` warns "unphysical Mulliken charges" there, see
-`gpw-dftu-kpoints`) and the displaced multi-SCF FD oracle hops between SCF
+(CP2K's own `PLUS_U` warns "unphysical Mulliken charges" there) and the displaced multi-SCF FD oracle hops between SCF
 branches — no dual gate can hold on a multi-valued surface. At 2 eV the SCF
 is single-branch.
 
@@ -130,7 +129,7 @@ second method) is a census decision — it rewrites every +U SCF fixed point.
   oscillating — the degenerate minority-spin d manifold of the linear molecule
   defeats fixed-multiplicity diagonalization (OT is not available with
   k-points in CP2K). Same pathology class as documented for
-  `gpw-dftu-kpoints` / `gpw-dftu-kpoint-stress`. Multi-k force correctness is
+  `gpw-dftu-kpoint-stress`. Multi-k force correctness is
   therefore gated by the internal A2 full-6N FD dual gate + the A5 Γ-limit
   identity, with the Γ d-shell CP2K pin as the external anchor.
 

@@ -60,9 +60,18 @@ class TimerRegistry {
     bool enabled() const noexcept { return enabled_; }
     void set_enabled(bool on) noexcept { enabled_ = on; }
 
-    /// @brief Register a top-level op once (at build time); returns a dense
-    /// handle for the hot path. Safe to call when disabled.
+    /// @brief Register a top-level op at build time; returns its dense handle.
+    /// Re-registering the same identity preserves its handle and samples.
+    /// Safe to call when disabled.
     int register_op(TimerKey key) {
+        for (std::size_t i = 0; i < top_keys_.size(); ++i) {
+            const auto& existing = top_keys_[i];
+            if (existing.component == key.component
+                && existing.phase == key.phase
+                && existing.category == key.category
+                && existing.subkey == key.subkey)
+                return static_cast<int>(i);
+        }
         const int h = static_cast<int>(top_.size());
         top_keys_.push_back(std::move(key));
         top_.emplace_back();

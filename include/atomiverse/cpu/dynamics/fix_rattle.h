@@ -2,9 +2,14 @@
 /// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
@@ -13,6 +18,7 @@
 #include "atomiverse/cpu/component/comm.h"
 #include "atomiverse/cpu/component/constraint.h"
 #include "atomiverse/cpu/component/constraint_protocol.h"
+#include "atomiverse/cpu/potentials/bonded_cache.h"
 
 namespace ATV {
 namespace cpu {
@@ -63,16 +69,26 @@ namespace md {
 ///
 /// | Phase | Order | What |
 /// |---|---|---|
-/// | `initial_integrate` | −500 | snapshot the (constraint-satisfying) reference positions |
+/// | `initial_integrate` | −500 | snapshot each local constraint's reference bond vector |
 /// | `post_integrate` | 0 | position stage |
 /// | `final_integrate` | +200 | velocity stage |
 ///
 /// The snapshot is not optional. SHAKE/RATTLE corrects along the **reference** bond
 /// vector — the one from before the unconstrained move — and `VelocityVerlet` fuses
-/// the half-kick and the drift into a single `launch()` and then wraps coordinates
-/// into the box. By the time any `+order` component runs, the pre-move positions are
-/// gone. So the component keeps its own shadow copy, taken at `initial_integrate`
+/// the half-kick and the drift into a single `launch()`. By the time any `+order`
+/// component runs, the pre-move positions are gone. So the component keeps the
+/// reference bond vectors of its local constraints, taken at `initial_integrate`
 /// @ −500, ahead of every integrator.
+///
+/// ## Clusters
+///
+/// Constraints sharing an atom form a cluster (a CH3 group, a rigid water); at
+/// `build()` the global table is grouped by cluster with union-find. Each stage
+/// iterates every cluster to convergence on its own, so a cluster solved
+/// redundantly on two ranks takes the same iterations from the same inputs,
+/// and clusters run in parallel under OpenMP. The local list (clusters with an
+/// owned atom, as LAMMPS `fix shake` lists them) is re-resolved only when rows
+/// move (migration, halo rebuild, sort).
 ///
 /// ## Multi-rank
 ///
@@ -98,8 +114,18 @@ namespace md {
 ///    \(p_d L_d\) [Å]), VP at `final_integrate` (velocities [Å/fs], no shift).
 class FixRattle : public cpu::Constraint,
                   public cpu::ConstraintProvider,
-                  public cpu::ForwardPacker {
+                  public cpu::ForwardPacker,
+                  public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "FixRattle: timestep must be finite and positive");
+        dt_ = dt;
+    }
+
     /// @brief Smallest meaningful relative residual for the configured Frame
     /// storage precision. A tighter request cannot survive the write back to
     /// the position/velocity columns and is rejected instead of iterating to
@@ -235,26 +261,55 @@ class FixRattle : public cpu::Constraint,
     std::vector<Spec> discover_local_(const cpu::Context& ctx,
                                       const cpu::Frame& frame) const;
 
-    /// @brief Map every constraint's tags to current local rows (-1 = not here).
-    void resolve_rows_(const cpu::LaunchContext& ctx);
+    /// @brief Rebuild this rank's cluster list when rows moved (migration,
+    ///        halo rebuild, re-sort); a no-op on ordinary steps.
+    void refresh_local_(const cpu::LaunchContext& ctx);
+
+    /// @brief Snapshot each local constraint's reference bond vector.
+    void snapshot_(const cpu::LaunchContext& ctx);
+
+    /// @brief SHAKE position stage, cluster by cluster.
+    void solve_positions_(const cpu::LaunchContext& ctx);
+
+    /// @brief RATTLE velocity stage, cluster by cluster.
+    void solve_velocities_(const cpu::LaunchContext& ctx);
 
     double dt_;
     double tol_;
     int max_iter_;
     std::vector<Rule> bond_rules_;
     std::vector<Rule> angle_rules_;
-    std::vector<Constraint> constraints_; ///< global table, keyed by tag
-    std::vector<int> rows_;               ///< resolved rows, 2 per constraint
 
-    /// Reference (constraint-satisfying) positions, snapshotted before the
-    /// integrator moves anything. Component-owned: the Frame atom Block is not a safe place
-    /// to stash them, and by post_integrate the originals are gone.
-    std::vector<double> ref_x_, ref_y_, ref_z_;
+    /// Global table, keyed by tag and grouped by cluster: a cluster is a
+    /// connected set of constraints (shared atoms), e.g. a CH3 group. Clusters
+    /// share no atom, so each converges on its own — the redundant solve on
+    /// every rank holding a cluster takes the same iterations from the same
+    /// inputs, and clusters can run in parallel.
+    std::vector<Constraint> constraints_;
+    std::vector<int> cluster_offset_; ///< CSR over constraints_
+    std::unordered_map<TagInt, int> cluster_of_tag_;
+
+    /// This rank's clusters (those with an OWNED atom, as LAMMPS fix shake
+    /// lists them), resolved to rows. CSR: local cluster c owns local
+    /// constraints [local_offset_[c], local_offset_[c+1]).
+    std::vector<int> local_offset_;
+    std::vector<int> local_i_, local_j_;
+    std::vector<double> local_d2_, local_imi_, local_imj_;
+    /// Reference (constraint-satisfying) bond vectors, taken before the
+    /// integrator moves anything: SHAKE corrects along them, and by
+    /// post_integrate the pre-move positions are gone.
+    std::vector<double> ref_sx_, ref_sy_, ref_sz_;
+    std::vector<char> cluster_seen_; ///< scratch, one flag per global cluster
+    BondedTupleCache rows_cache_;    ///< row-identity staleness only
 
     int last_pos_iters_ = 0;
     int last_vel_iters_ = 0;
     CommMode comm_mode_ = CommMode::XSHAKE;
     cpu::Frame* frame_ = nullptr;
+    /// x, y, z, vx, vy, vz of `frame_`, resolved once per launch for the
+    /// forward packer.
+    StorageReal* col_[6] = {nullptr, nullptr, nullptr,
+                            nullptr, nullptr, nullptr};
 };
 
 } // namespace md

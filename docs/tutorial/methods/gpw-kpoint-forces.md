@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-kpoint-forces` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` (`k_mesh`); `GpwDft::forces(frame)` (RKS Bloch path) |
 | Roadmap / queue | `docs/roadmap/dft.md` — multi-k forces; queue **done** 2026-07-25 (`perf_exempt`) |
 
@@ -20,8 +20,8 @@ occupied MO coefficients from `GpwResult::C_occ_k`.
 Public surface: construct `cpu::gpw::GpwDft`, set members (`k_mesh`,
 `cutoff_ry`, `xc`, `local_pp_on_grid`, …), `build(frame)` / `run(frame)` for
 energy, `forces(frame)` for SCF + forces (`kAtom_f*` [eV/Å]). No public `*Config`,
-no `make_*` / `build_*` factories. Product gate:
-`reg_gpw-kpoint-forces`. Decisive correctness is **analytic vs finite-difference**
+no `make_*` / `build_*` factories. No standing
+regression. Decisive correctness is **analytic vs finite-difference**
 identity on the k-path energy (max residual \(5.98\times 10^{-6}\) Ha/Bohr);
 absolute first-green energy/force digits freeze the regression. Fair wall vs
 CP2K is **`perf_exempt`** (no same-basis CP2K twin: in-tree `DZV-GTH-PADE` is
@@ -100,7 +100,7 @@ live CP2K digit match).
 
 **Key exclusions (non-goals of this slug)**
 
-- k-point **UKS** forces (k-UKS energy is `gpw-kpoints-uks`; forces follow-on).
+- k-point **UKS** forces (k-UKS energy is [gpw-kpoints-uks](gpw-kpoints-uks.md); forces follow-on).
 - Cell **stress** at k (`gpw-kpoint-stress`); Γ MT water forces
   (`gpw-forces-water`).
 - Hybrid / meta-GGA / GAPW / OT / DFT+U / multigrid on the k-force path
@@ -177,8 +177,7 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_gpw-kpoint-forces
-  reg_gpw-kpoint-forces
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -191,15 +190,13 @@ bash -lc '
 | `gth_potential.h` | `GthPotential(Element, name)` lookup |
 | `src/cpu/gpw/gpw_solver.cpp` | k-point RKS SCF branch |
 | `src/cpu/gpw/internal/` | Force assembly (Bloch-phased derivatives) |
-| `reg_gpw-kpoint-forces.cpp` | Product gate |
-| case `gpw-kpoint-forces` pin | Offline pins + FD identity |
 | CP2K oracle | CP2K ENERGY_FORCE twin (offline only) |
 | `tests/cpu/gpw/test_cpu_gpw_forces.cpp` | Unit k-force / Γ-identity (not e2e) |
 
 ## Validation (vs CP2K / FD)
 
 Source:
-case `gpw-kpoint-forces` pin.
+the pin notes recorded when this page was written (no standing regression).
 Oracle rules: offline pins only (CP2K oracle); **never** live
 CP2K from ctest. Absolute same-basis CP2K digits are **not** the product gate
 for this slug (basis mismatch); decisive gate is analytic \(\equiv\) FD of the
@@ -292,8 +289,6 @@ same host/core count (single-rank). Do not invent a speed ratio.
 
 ## References
 
-- Offline pin: case `gpw-kpoint-forces` pin
-- Regression consumer: `reg_gpw-kpoint-forces.cpp`
 - Oracle twin: CP2K oracle
 - Oracle notes: CP2K oracle
 - Spec history: `.claude/specs/gpw-kpoint-forces/` (closed at done; git on

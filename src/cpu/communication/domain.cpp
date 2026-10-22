@@ -6,6 +6,9 @@
 /// `src/domain.cpp` / `src/comm.cpp` / `src/procmap.cpp` (checkout `78a7ddf`,
 /// 2026-08-25). Public API is ATV-native.
 ///
+/// Triclinic fractional partitions ported from LAMMPS src/domain.cpp,
+/// checkout a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+///
 /// Copyright (2003) Sandia Corporation.  Under the terms of Contract
 /// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
 /// certain rights in this software.  This software is distributed under
@@ -31,9 +34,7 @@ namespace mpi {
 
 void DomainDecomposition::bind(const Frame& frame) {
     const int n = frame.nlocal();
-    n_local = n;
-    n_ghost = 0;
-    capacity = n;
+    partitioned = false;
 
     tag_to_local.clear();
     // The tag→local map exists solely for bonded-tuple resolution; pure
@@ -50,9 +51,9 @@ void DomainDecomposition::bind(const Frame& frame) {
     }
 }
 
-void DomainDecomposition::compute_sublo_subhi(const ATV::cpu::Box& box) {
+void DomainDecomposition::compute_sublo_subhi(const ATV::cpu::Box& /*box*/) {
     for (int d = 0; d < 3; ++d) {
-        const double L = box.length(d);
+        constexpr double L = 1.0;
         if (static_cast<int>(cuts[d].size()) == dims[d] + 1) {
             // Non-uniform cut planes (set by `Rebalance`). cuts[d] is in
             // box-length fractions, so the partition survives NPT/Deform box
@@ -209,19 +210,16 @@ inline int slab_along_dim_from_cuts(double frac,
 
 int DomainDecomposition::owner_of(double x, double y, double z,
                                   const ATV::cpu::Box& box) const {
-    const double q[3] = {x, y, z};
+    const Vec3 q = box.to_fractional({x, y, z});
     int c[3];
     for (int d = 0; d < 3; ++d) {
-        const double L = box.length(d);
-        const double wrapped = box.wrap_axis(q[d], d);
-        if (static_cast<int>(cuts[static_cast<std::size_t>(d)].size())
-            == dims[d] + 1) {
-            const double frac = (L > 0.0) ? (wrapped / L) : 0.0;
-            c[d] = slab_along_dim_from_cuts(
-                frac, cuts[static_cast<std::size_t>(d)], dims[d]);
-        } else {
-            c[d] = rank_along_dim(wrapped, L, dims[d]);
-        }
+        double wrapped = q[d] - std::floor(q[d]);
+        if (wrapped >= 1.0)
+            wrapped = 0.0;
+        if (static_cast<int>(cuts[d].size()) == dims[d] + 1)
+            c[d] = slab_along_dim_from_cuts(wrapped, cuts[d], dims[d]);
+        else
+            c[d] = rank_along_dim(wrapped, 1.0, dims[d]);
     }
     return rank_of(c[0], c[1], c[2]);
 }
@@ -236,11 +234,7 @@ void DomainDecomposition::partition_atoms(ATV::cpu::Frame& frame) {
 
     compute_sublo_subhi(frame.box);
 
-    const double Lx = frame.box.length(0);
-    const double Ly = frame.box.length(1);
-    const double Lz = frame.box.length(2);
-
-    // First-run vs subsequent-run scoping. On the first call (n_local == 0)
+    // First-run vs subsequent-run scoping. On the first partition
     // we scan the entire user-supplied atom array because we don't yet know
     // which atoms belong to this rank. On subsequent calls -- e.g. when a
     // user invokes `Driver::run()` twice in a row -- the array's tail rows
@@ -253,15 +247,15 @@ void DomainDecomposition::partition_atoms(ATV::cpu::Frame& frame) {
     // authoritative owner set (Migrate already re-homed any cross-slab
     // drifters at pre_force); we only need to re-scan that range, not the
     // stale ghost/old-owner rows beyond it.
-    const bool first_partition = (n_local == 0);
-    const int n_to_iterate = first_partition ? frame.nlocal() : n_local;
+    const bool first_partition = !partitioned;
+    const int n_to_iterate = frame.nlocal();
     std::vector<int> owned_indices;
     owned_indices.reserve(static_cast<std::size_t>(n_to_iterate));
 
     // First-partition deduplication. When the caller passed an
     // already-partitioned frame (e.g. polyethylene_tension's per-stage
     // driver rebuild: stage 1 partitioned the frame into [0..n_local) +
-    // stale tail; stage 2's fresh DD enters here with n_local==0 so the
+    // stale tail; stage 2's fresh DD enters here without a partition so the
     // tail rows are also scanned), the same tag can appear at both the
     // compacted slot and the stale slot. Without dedup both copies are
     // claimed, LJ then finds two atoms at identical positions, and the
@@ -287,20 +281,13 @@ void DomainDecomposition::partition_atoms(ATV::cpu::Frame& frame) {
             if (!seen_tags.insert(t).second)
                 continue; // duplicate tag from stale tail — keep first
         }
-        const double xw = frame.box.wrap_axis(sp_x[i], 0);
-        const double yw = frame.box.wrap_axis(sp_y[i], 1);
-        const double zw = frame.box.wrap_axis(sp_z[i], 2);
-        const int cx = rank_along_dim(xw, Lx, dims[0]);
-        const int cy = rank_along_dim(yw, Ly, dims[1]);
-        const int cz = rank_along_dim(zw, Lz, dims[2]);
-        if (cx == coords[0] && cy == coords[1] && cz == coords[2]) {
+        if (owner_of(sp_x[i], sp_y[i], sp_z[i], frame.box)
+            == rank_of(coords[0], coords[1], coords[2])) {
             owned_indices.push_back(i);
         }
     }
 
-    n_local = static_cast<int>(owned_indices.size());
-    n_ghost = 0;
-    capacity = frame.capacity();
+    const int n_local = static_cast<int>(owned_indices.size());
 
     // One structural row operation covers every migrating column: canonical
     // state, topology and runtime columns. Increasing destination order keeps
@@ -310,8 +297,8 @@ void DomainDecomposition::partition_atoms(ATV::cpu::Frame& frame) {
         if (oi != ni)
             frame.copy_row(ni, oi);
     }
-    frame.set_nlocal(n_local);
     frame.set_nghost(0);
+    frame.set_nlocal(n_local);
 
     // Release the global-N backing store. Each rank loaded the whole file
     // (load_lammps_data is called per-rank) but owns only `n_local`; the
@@ -331,7 +318,6 @@ void DomainDecomposition::partition_atoms(ATV::cpu::Frame& frame) {
         if (new_cap < frame.capacity()) {
             frame.set_capacity(new_cap);
         }
-        capacity = frame.capacity();
     }
 
     tag_to_local.clear();
@@ -362,6 +348,7 @@ void DomainDecomposition::partition_atoms(ATV::cpu::Frame& frame) {
     // a ~1 ms tax per step. A future optimisation can split: keep full
     // topology for the LJ exclusion build, filter for the force pass.
     ++neighbor_generation;
+    partitioned = true;
 }
 
 #endif // ATV_HAS_MPI

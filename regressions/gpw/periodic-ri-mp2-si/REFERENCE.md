@@ -16,8 +16,8 @@ VandeVondele, *J. Chem. Theory Comput.* **8**, 4177 (2012); CP2K
 3. \((ia|jb)=\sum_g w\, V_{ia}(g)\,\rho_{jb}(g)\);
 4. canonical closed-shell doubles sum with OS/SS decomposition.
 
-Numerically identical to the Poisson foothold path (`mp2_ri = false`,
-`periodic-mp2-si`) — same kernel, product intermediate layout. Gaussian
+Numerically identical to the Poisson foothold path (`mp2_ri = false`)
+— same kernel, product intermediate layout. Gaussian
 cFIT / `RI_AUX` tables and multi-k MP2 are residuals.
 
 ```cpp
@@ -32,13 +32,13 @@ const cpu::gpw::Mp2Result& r = m.mp2();
 
 | Item | Value |
 |------|--------|
-| Crystal | artificial sc-Si₂ (same as `periodic-mp2-si`) |
+| Crystal | artificial sc-Si₂ |
 | Cell | cubic **a = 5.43 Å**, periodic, Γ only |
 | Positions | Si (0,0,0), Si (a/4,a/4,a/4) |
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
 | XC | **PBE** |
 | Cutoff | **30 Ry** (SCF + WFC_GPW) |
-| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 80 |
+| SCF | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 200 |
 | MP2 | all kept virtuals; `mp2_ri = true` |
 
 ## Offline CP2K pin (2026-07-25)
@@ -75,3 +75,14 @@ Hard gates: SCF converged; E_corr finite and **strictly negative**.
 
 \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}} \ll 1\) on this host → **within_10x**.
 Never launch CP2K from ctest.
+
+## SCF branch (degenerate guess)
+
+Closed-shell Si₂ is the π² case: the core-Hamiltonian guess has an exactly
+degenerate HOMO, so the occupied π combination is chosen by floating-point
+noise. A 1e-9 Å displacement of atom 2 flips the iteration-0 energy between
+−4.56842019 and −4.56824863 Ha and the converged state between two
+stationary points, E_SCF ≈ −7.5955445 Ha (≈ 58 iterations) and
+≈ −7.5955020 Ha (110–135 iterations, the branch the x86 OpenBLAS build
+takes). Every gate in this regression holds on both branches; `max_iter`
+is 200 so the budget does not depend on which branch LAPACK picks.

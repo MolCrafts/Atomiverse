@@ -2,6 +2,7 @@
 /// @brief Combined DIIS accelerator implementation.
 
 #include "atomiverse/cpu/scf/internal/diis_mixer.h"
+#include "atomiverse/cpu/linalg/pulay.h"
 
 #include <xtensor/reducers/xnorm.hpp>
 
@@ -34,8 +35,7 @@ std::pair<RealMatrix, RealMatrix> DIISMixer::step(const RealMatrix& F_alpha,
     int n = static_cast<int>(F_alpha.shape(0));
 
     // Build combined B matrix: B_ij = Tr(e^α_i · e^α_j) + Tr(e^β_i · e^β_j)
-    int dim = m + 1;
-    RealMatrix B = xt::zeros<double>({(int)dim, (int)dim});
+    RealMatrix B = xt::zeros<double>({m, m});
     for (int i = 0; i < m; ++i)
         for (int j = 0; j <= i; ++j) {
             double val = xt::sum(ea_hist_[i] * ea_hist_[j])()
@@ -43,25 +43,16 @@ std::pair<RealMatrix, RealMatrix> DIISMixer::step(const RealMatrix& F_alpha,
             B(i, j) = val;
             B(j, i) = val;
         }
-    for (int i = 0; i < m; ++i) {
-        B(m, i) = double(-1);
-        B(i, m) = double(-1);
-    }
-    B(m, m) = double(0);
-
-    RealMatrix rhs = xt::zeros<double>({(int)dim, (int)1});
-    rhs(m, 0) = double(-1);
-
     try {
-        auto c = xt::linalg::solve(B, rhs);
+        const auto c = linalg::pulay_coefficients(B);
         RealMatrix Fa_diis = xt::zeros<double>({n, n});
         RealMatrix Fb_diis = xt::zeros<double>({n, n});
         for (int i = 0; i < m; ++i) {
-            Fa_diis += double(c(i, 0)) * Fa_hist_[i];
-            Fb_diis += double(c(i, 0)) * Fb_hist_[i];
+            Fa_diis += double(c(i)) * Fa_hist_[i];
+            Fb_diis += double(c(i)) * Fb_hist_[i];
         }
         return {Fa_diis, Fb_diis};
-    } catch (...) {
+    } catch (const std::runtime_error&) {
         return {Fa_hist_.back(), Fb_hist_.back()};
     }
 }

@@ -1,7 +1,7 @@
 /// @file cpu/component/component.h
 /// @brief cpu::Component — OOP base for CPU simulation components.
 ///
-/// Lifecycle: build() → launch() × N → destroy().
+/// Lifecycle: build() → optional initial force evaluation → launch() × N → destroy().
 /// Role is a RoleFlag set (see facade/component_role.h).
 ///
 /// Intermediate kinds (Potential, HF, Integrator, …) live in their own
@@ -9,13 +9,14 @@
 /// inherit at most one kind: Concrete → Kind → Component.
 #pragma once
 
-#include "atomiverse/core/precision.h"
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/ghost_contract.h"
+#include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/types.h"
@@ -25,6 +26,8 @@
 namespace ATV {
 namespace cpu {
 
+class DriverNode;
+class Runtime;
 class ConstraintProvider;
 class NeighborConsumer;
 class NeighborProvider;
@@ -42,9 +45,11 @@ struct LaunchContext {
     cpu::Frame& frame;
     int stage;
     BigInt step;
-    /// @brief When true, force-writing components should skip force writes
+    /// @brief When false, force-writing components should skip force writes
     ///        (MC energy-only trials).
     bool forces_requested = true;
+    /// @brief When false, skip stress/virial writes independently of forces.
+    bool stress_requested = true;
 
     template <typename PhaseEnum>
     bool at(PhaseEnum phase) const {
@@ -65,7 +70,33 @@ struct DestroyContext {
 /// `ChargePacker::forward`) — so nothing in the engine scans for a packer
 /// and no probe accessor is needed. Inheriting it here put three empty
 /// virtuals in every component's vtable for the benefit of three classes.
+/// @brief Liveness flag of one Component object.
+///
+/// A borrowed component (`add_ref`, `set_*_ref`) may be destroyed before the
+/// driver that borrows it; the driver's teardown must then not call into it.
+/// The Runtime records this flag when it builds the component and checks it
+/// before `destroy()`. Copies and moves get a fresh flag: they are different
+/// objects with their own lifetime.
+class ComponentLifetime {
+  public:
+    ComponentLifetime() = default;
+    ComponentLifetime(const ComponentLifetime&) {}
+    ComponentLifetime(ComponentLifetime&&) noexcept {}
+    ComponentLifetime& operator=(const ComponentLifetime&) { return *this; }
+    ComponentLifetime& operator=(ComponentLifetime&&) noexcept { return *this; }
+    ~ComponentLifetime() { *alive_ = false; }
+
+    /// @brief Shared view of the flag; false once the object is destroyed.
+    /// @return Flag that outlives the object.
+    std::shared_ptr<const bool> token() const noexcept { return alive_; }
+
+  private:
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+};
+
 class Component {
+    friend class Runtime; // reads lifetime_ when it takes the object in
+
   public:
     virtual ~Component() = default;
 
@@ -74,6 +105,9 @@ class Component {
     /// @brief Behavioural RoleFlag set (may combine several flags).
     /// Default 0: main-loop required, may mutate the frame.
     virtual Role role() const { return 0; }
+
+    /// Nested loop boundary for lifecycle refresh and active-plan contracts.
+    virtual DriverNode* nested_node() const { return nullptr; }
 
     virtual const NeighborConsumer* as_neighbor_consumer() const {
         return nullptr;
@@ -120,6 +154,10 @@ class Component {
     /// `ChargePacker::forward(ctx)` so ghost rows see the new charges
     /// [e] before the force stages read them.
     virtual bool updates_owned_charges() const { return false; }
+    /// Requires all atoms on each executing rank (serial or full replica).
+    /// Spatial decomposition must reject this component before partitioning.
+    virtual bool requires_full_frame() const { return false; }
+
     /// @brief Resolves global tags through the Frame tag index at run time.
     ///
     /// `DomainRuntime` frees the Frame tag index (and the DD mirror, ~50 B per
@@ -174,10 +212,15 @@ class Component {
 
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;
-    /// Establish current forces without propagation or observation.
-    /// Force-slot evaluators use launch() with exec.initializing_forces set.
+    /// Initialization hook for pre/post-force and scalar-finalization bindings.
+    /// Default excludes observers and time propagation; force-slot evaluators
+    /// use launch() with runtime.exec.initializing_forces set.
+    /// Opt in only to establish forces at the current configuration.
     virtual void initialize_forces(const LaunchContext& ctx) { (void)ctx; }
     virtual void destroy(const DestroyContext& ctx) { (void)ctx; }
+
+  private:
+    ComponentLifetime lifetime_;
 };
 
 } // namespace cpu

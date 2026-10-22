@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-uks-blyp` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` (`n_alpha`/`n_beta`, `XcKind::BLYP`, `nonperiodic`) bound by `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — Γ-UKS BLYP spin-GGA (productized) |
 | Fair wall | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx \mathbf{2.48}\) (≤10×) |
@@ -24,13 +24,13 @@ Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element
 bind it with `cpu::gpw::GPWEvaluator(std::move(dft))`, run
 `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**;
 Hartree and \(\langle S^2\rangle\) via `last_energy_hartree()` /
-`last_s2()`. Product gate: `reg_gpw-uks-blyp` — absolute energy vs CP2K
-plus a **dual-gate** \(|E_{\mathrm{BLYP}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha
+`last_s2()`. Recorded validation (no standing regression): absolute energy
+vs CP2K plus a **dual-gate** \(|E_{\mathrm{BLYP}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha
 on the same geometry (functional activation).
 
 Related: Γ-UKS PADE foothold [`gpw-uks-o2-gamma`](gpw-uks-o2-gamma.md);
 Γ-UKS PBE sibling `gpw-uks-pbe`; closed-shell BLYP water
-`gpw-blyp-water`. Narrative: [Ch. 9 GPW](../ch09-gpw.md).
+[gpw-blyp-water](gpw-blyp-water.md). Narrative: [Ch. 9 GPW](../ch09-gpw.md).
 Molecular all-electron UKS/BLYP is a PySCF-loop concern — not this page.
 
 ## Method
@@ -92,7 +92,7 @@ Ideal high-spin value for \(S=1\): \(S(S+1)=2\). Citation: Löwdin,
 
 - No **k-point** UKS-BLYP; Γ only (multi-k UKS is separate product work).
 - No hybrid B3LYP / exact exchange on the GPW path here.
-- No **ROKS** GPW; no analytic-force or stress claim on this regression
+- No **ROKS** GPW; no analytic-force or stress claim on this page
   (force/stress UKS paths exist on other slugs).
 - No MPI scaling claim; single-rank pin.
 - Not all-electron molecular BLYP (Gaussian SCF / PySCF path).
@@ -152,7 +152,7 @@ const double s2 = eval.last_s2();                     // Löwdin ⟨S²⟩
 const cpu::gpw::GpwResult& r = eval.last_result();    // converged, iters, …
 ```
 
-Build (GPW needs FFTW3) and run the regression:
+Build (GPW needs FFTW3):
 
 ```bash
 bash -lc '
@@ -165,8 +165,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-uks-blyp -j$(nproc)
-  reg_gpw-uks-blyp
 '
 ```
 
@@ -182,7 +180,7 @@ Relevant sources:
 
 ## Validation (CP2K)
 
-Source: case `gpw-uks-blyp` pin (offline pin; **never**
+Source: values recorded when this page was written; no standing regression. (offline pin; **never**
 live CP2K in ctest). Engine: **CP2K 2026.1** (`cp2k.psmp`), module
 `CP2K/2026.1` on Arrhenius. Re-pin date: **2026-07-26**.
 
@@ -272,12 +270,11 @@ Gate from closed spec: \(r \le 10\) or `perf_exempt`. Here \(r \approx 2.48\)
 
 ## References
 
-- Offline pin: case `gpw-uks-blyp` pin
-- Regression consumer: `reg_gpw-uks-blyp.cpp`
+- Offline pin: recorded when this page was written (no standing regression)
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Sibling tutorials: [`gpw-uks-o2-gamma`](gpw-uks-o2-gamma.md) (PADE LSD),
-  closed-shell water BLYP reg `gpw-blyp-water`
+  closed-shell water BLYP page [gpw-blyp-water](gpw-blyp-water.md)
 - Narrative GPW: [`docs/tutorial/ch09-gpw.md`](../ch09-gpw.md)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)
 - G. Lippert, J. Hutter, M. Parrinello, *Mol. Phys.* **92**, 477 (1997) — GPW

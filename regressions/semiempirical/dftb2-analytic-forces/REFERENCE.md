@@ -86,7 +86,7 @@ Residual after the fix, measured on this case:
 | ---- | ------------ | -------------------------------------- |
 | O₂ triplet (`reg_dftb2-spin-analytic-forces`) | 0 | 3.0e-07 → 3.0e-07 eV/Å |
 | H₂O MioSketch (this case) | ≠ 0 | 0.23 / 0.75 → **2.5e-07 / 4.9e-09** eV/Å |
-| H₂O 3ob (`reg_dftb2-analytic-forces-threeob`) | ≠ 0 | 0.84 / 0.24 → **4.4e-07 / 2.0e-09** eV/Å |
+| H₂O 3ob (measured at the fix; no standing case) | ≠ 0 | 0.84 / 0.24 → **4.4e-07 / 2.0e-09** eV/Å |
 | H₂O stress (`reg_dftb2-analytic-stress`) | ≠ 0 | 1.3e-04 → **1.1e-10** eV/Å³ |
 
 The energy of this case moved from −44.60971806 to **−91.70909683 eV** as a

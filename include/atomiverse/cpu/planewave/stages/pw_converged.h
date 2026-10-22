@@ -21,6 +21,10 @@ namespace pw {
 /// stop. Algorithms still never write `IterationStatus` themselves.
 class PwConverged : public cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     /// @param converged Flag set when the density residual is below tol.
     explicit PwConverged(const bool& converged) : converged_(converged) {}
 

@@ -67,7 +67,7 @@ requires \(\mathbf{F}=\mathbf{0}\) for every atom (product residual bound below)
 **Key exclusions (this slug / regression).**
 
 - Spin-polarized PW UKS (`pw-spin-polarized-o2`).
-- Metallic smearing (`pw-smearing-al`).
+- Metallic smearing ([pw-smearing-al](pw-smearing-al.md)).
 - Analytic Nielsen–Martin stress (`pw-analytic-stress-si`).
 - Live CP2K / Quantum ESPRESSO from ctest (offline pins only).
 - CUDA PW GGA (CUDA path not this product).

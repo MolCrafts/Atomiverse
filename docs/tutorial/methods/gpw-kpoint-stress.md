@@ -275,7 +275,7 @@ convention for stress twins (`gpw-stress-water`).
 - Related: [gpw-analytic-stress](gpw-analytic-stress.md) (Γ fixed-\(P\)),
   [gpw-stress-water](gpw-stress-water.md) (MT NUMERICAL pin),
   k-point energy twin family `gpw-kpoints-si`, k-forces
-  `gpw-kpoint-forces`
+  [gpw-kpoint-forces](gpw-kpoint-forces.md)
 - Roadmap: `docs/roadmap/dft.md` (GPW analytic cell stress at Γ and k-points ✓)
 - Nielsen & Martin, *Phys. Rev. B* **32**, 3780 (1985)
 - J. VandeVondele, M. Krack, F. Mohamed, M. Parrinello, T. Chassaing,

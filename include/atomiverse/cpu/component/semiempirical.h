@@ -10,6 +10,7 @@ namespace cpu {
 /// @brief Semiempirical electronic structure (AM1, …).
 class Semiempirical : public Component {
   public:
+    bool requires_full_frame() const override { return true; }
     bool provides_energy() const override { return true; }
     bool provides_force() const override { return true; }
 };

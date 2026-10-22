@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-rpa-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::direct_rpa()` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); members `k_mesh`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
-| Roadmap | [dft.md](../../roadmap/dft.md) §10 Periodic RPA ✓ (multi-k k-diagonal) |
+| Roadmap | [dft.md](../../roadmap/dft.md) §10 Periodic RPA ◐ (multi-k k-diagonal; no external pin, no standing case) |
 | Oracle | CP2K offline twin CP2K oracle (never live in ctest) |
 
 ## Summary
@@ -18,9 +18,9 @@ diamond silicon in a body-centred tetragonal 4-atom cell. For each sampled
 Poisson product path (complex Bloch products; real Poisson on Re/Im of the
 pair density), reduced by the **Furche plasmon formula**, and Brillouin-zone
 averaged. This closes the multi-k residual after the Γ-only product
-`periodic-rpa-si` (where `direct_rpa` previously threw for \(N_k>1\)). Public
+[periodic-rpa-si](periodic-rpa-si.md) (where `direct_rpa` previously threw for \(N_k>1\)). Public
 path is members on concrete `GpwDft` → `build` → `run` → `direct_rpa` — no
-`*Config` bag, no factory. E2E: `reg_periodic-rpa-kpoints`. Fair wall vs CP2K
+`*Config` bag, no factory. No standing end-to-end regression. Fair wall vs CP2K
 is **`perf_exempt`** (no CP2K binary on the pin host; CP2K RI-RPA ≠ exact
 k-diagonal plasmon on PW-RI \((ia|jb)\)).
 
@@ -60,7 +60,7 @@ B_{ia,jb}(k) = 2\,(ia|jb)_k.
 solve the periodic FFT Poisson equation (linear real solve on Re/Im),
 contract in G-space. Product path requires `mp2_ri = true` for multi-k;
 Γ recovery with real MOs also accepts the Poisson foothold used by
-`periodic-rpa-si` / unit tests.
+[periodic-rpa-si](periodic-rpa-si.md) / unit tests.
 
 **Correlation.** Furche plasmon formula on the positive eigenvalues \(\Omega\)
 of the Hermitian reduction
@@ -72,7 +72,7 @@ No EXX replacement — periodic exact exchange remains blocked
 ([hartree-fock.md](../../roadmap/hartree-fock.md) periodic HF rows).
 
 **Excluded.** Full \(q\)-resolved RPA dielectric; multi-k G0W0 (separate residual
-after Γ `periodic-gw-si`); RPAX / SOSEX; CP2K-style minimax + Gaussian
+after Γ [periodic-gw-si](periodic-gw-si.md)); RPAX / SOSEX; CP2K-style minimax + Gaussian
 `RI_AUX` frequency integration as the accuracy twin; CUDA.
 
 ## Implementation
@@ -150,25 +150,21 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-rpa-kpoints
-  reg_periodic-rpa-kpoints
 '
 ```
 
-Source consumer:
-`reg_periodic-rpa-kpoints.cpp`.
 Unit kernel Γ recovery (\(N_k=1\) multi-k ≡ real `direct_rpa_rhf_energy`):
 `tests/cpu/gpw/test_cpu_gpw_rpa.cpp`.
 
 ## Validation (vs CP2K)
 
-Source:
-case `periodic-rpa-kpoints` pin
+Source: values recorded when this page was written; no standing
+regression.
 (offline pin only; CP2K never launched from CMake/ctest).
 
 | Setting | Value |
 | ------- | ----- |
-| Crystal | diamond Si, **bct 4-atom** (same as `gpw-kpoints-si` / `periodic-mp2-kpoints`) |
+| Crystal | diamond Si, **bct 4-atom** (same as `gpw-kpoints-si` / [periodic-mp2-kpoints](periodic-mp2-kpoints.md)) |
 | Cell | \(a_t = a/\sqrt{2}\), \(c = a\); \(a =\) **5.43 Å** |
 | Positions (frac) | (0,0,0), (½,½,½), (½,0,¼), (0,½,¾) |
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
@@ -183,7 +179,7 @@ case `periodic-rpa-kpoints` pin
 ### Offline oracle status
 
 **No CP2K binary / module on the worker host at pin time** (same status as
-`periodic-mp2-kpoints` / `periodic-rpa-si`). Absolute CP2K correlation digits
+[periodic-mp2-kpoints](periodic-mp2-kpoints.md) / [periodic-rpa-si](periodic-rpa-si.md)). Absolute CP2K correlation digits
 are **not invented**. CP2K's default path is frequency-integrated **RI-RPA**
 with Gaussian `RI_AUX`, minimax quadrature, and **EXX** total-energy assembly
 — not the exact k-diagonal Furche plasmon on PW-RI \((ia|jb)\). Printed CP2K
@@ -208,7 +204,7 @@ band below.
 | **\(E_c\) (2k, \(n_{\mathrm{virt}}=2\))** | **≈ −0.0163** Ha | **5e-3 Ha** | primary e2e band (OMP orbital scatter) |
 | \(E_c\) (OMP=1, deterministic) | −0.0157519268 Ha | info | REFERENCE sample |
 | \(E_c\) (OMP=4, sample range) | −0.0154 … −0.0173 Ha | info | multi-k SCF scatter |
-| \(n_{\mathrm{occ}}\) / \(n_{\mathrm{virt}}\) | 8 / 2 | exact | regression gate |
+| \(n_{\mathrm{occ}}\) / \(n_{\mathrm{virt}}\) | 8 / 2 | exact | recorded gate |
 | \(N_k\) / `ri` | 2 / true | exact | multi-k RI product |
 | \(n_\Omega\) | \(2\cdot 8\cdot 2 = 32\) | exact | k-diagonal spectrum size |
 | Wall (SCF + RPA) | **~3 s** | ≤ 60 s | EPYC login, e2e budget |
@@ -249,13 +245,13 @@ available, re-pin wall and accuracy in REFERENCE and handoff.
 
 ## References
 
-- Offline pin: case `periodic-rpa-kpoints` pin
+- Offline pin: recorded when this page was written (no standing regression)
 - Oracle input: CP2K oracle
 - Oracle rules: CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic RPA ✓ (Γ + multi-k k-diagonal)
-- Γ foothold tutorial / reg: [periodic-mp2-si.md](periodic-mp2-si.md),
-  `periodic-rpa-si`
-- Multi-k MP2 peer: `periodic-mp2-kpoints`
+- Γ foothold tutorials: [periodic-mp2-si.md](periodic-mp2-si.md),
+  [periodic-rpa-si](periodic-rpa-si.md)
+- Multi-k MP2 peer: [periodic-mp2-kpoints](periodic-mp2-kpoints.md)
 - Molecular dRPA (Furche plasmon, exact MO-ERI): [direct-rpa-h2-sto3g.md](direct-rpa-h2-sto3g.md)
 - Public headers: `rpa.h`, `gpw_solver.h`
 - Literature:

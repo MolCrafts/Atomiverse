@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-uks-smearing` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `n_alpha`/`n_beta`, `smearing`, `degauss` [Ry], `extra_bands`, `mp_order`, `k_mesh`; `GpwResult::{e_total,e_fermi,n_elec_occ,e_entropy}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) — Smearing for metals (GPW multi-k UKS ✓) |
 ## Summary
@@ -23,9 +23,9 @@ with **one shared** \(\mu\) over \(\alpha\) and \(\beta\); magnetization is
 Textbook pin: **BCC Na** conventional cubic (\(a=4.225\) Å, 2 atoms), PADE
 LSD, GTH-PBE-q9 + DZVP-MOLOPT-SR-GTH, Monkhorst–Pack \(2\times2\times2\),
 Fermi–Dirac `degauss = 0.02` Ry, ferro seed \(n_\alpha=10\), \(n_\beta=8\).
-Regression: `reg_gpw-uks-smearing`. Closes the product gap after multi-k
-RKS smear (`gpw-metallic-smearing`) and fixed-occ multi-k
-UKS (`gpw-kpoints-uks`). Offline CP2K 2026.1 documents `LSD` +
+No standing regression. Closes the product gap after multi-k
+RKS smear ([gpw-metallic-smearing](gpw-metallic-smearing.md)) and fixed-occ multi-k
+UKS ([gpw-kpoints-uks](gpw-kpoints-uks.md)). Offline CP2K 2026.1 documents `LSD` +
 `&SMEAR METHOD FERMI_DIRAC`; absolute free energy is an **ATV-frozen** pin
 (grid / multigrid differ from CP2K by ~0.6 Ha class). Fair wall
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx 0.017\) (≤10×).
@@ -93,7 +93,7 @@ matches RKS \(n_{\mathrm{occ}}=1\) + FD to machine-level free energy
 (\(\lvert\Delta F\rvert \lesssim 10^{-15}\) Ha on the same binary; regression
 gate \(\lvert\Delta F\rvert \le 5\times 10^{-6}\) Ha). BCC Na is
 **non-magnetic**: a ferro seed collapses under smear to the same free
-energy as RKS FD (`gpw-metallic-smearing`) to \(\sim 4\times 10^{-13}\) Ha.
+energy as RKS FD ([gpw-metallic-smearing](gpw-metallic-smearing.md)) to \(\sim 4\times 10^{-13}\) Ha.
 
 **Excluded (this slug).**
 
@@ -179,8 +179,7 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_gpw-uks-smearing
-  reg_gpw-uks-smearing
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -197,7 +196,7 @@ Relevant sources:
 ## Validation (CP2K)
 
 Source:
-case `gpw-uks-smearing` pin
+the pin notes recorded when this page was written (no standing regression)
 (offline pins only; **never** live CP2K in ctest).
 
 ### ATV system (free energy + \(N_{\mathrm{occ}}\) gate)
@@ -264,7 +263,7 @@ the case pin notes.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ---------------------------------------: | ---- | ------ |
-| Na FD twin class (`na_bcc_fermi_dirac.inp`) vs `reg_gpw-uks-smearing` (Na pin) | **89.51** | **≈ 1.56** | **≈ 0.017** | ✓ | UKS CP2K twin is same system with `LSD`; wall class matches RKS FD twin already timed offline; ATV own multigrid |
+| Na FD twin class (`na_bcc_fermi_dirac.inp`) vs ATV Na UKS smear run | **89.51** | **≈ 1.56** | **≈ 0.017** | ✓ | UKS CP2K twin is same system with `LSD`; wall class matches RKS FD twin already timed offline; ATV own multigrid |
 
 \[
 r = T_{\mathrm{atv}} / T_{\mathrm{cp2k}} \approx 0.017 \ll 10
@@ -298,7 +297,6 @@ treat \(r\) as bit-identical Hamiltonian throughput. Queue records ratio
 
 ## References
 
-- Offline pin: case `gpw-uks-smearing` pin
 - CP2K twin: CP2K oracle
 - RKS twin / wall class: CP2K oracle
 - Oracle contract: CP2K oracle

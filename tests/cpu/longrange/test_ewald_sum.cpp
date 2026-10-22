@@ -107,3 +107,33 @@ TEST(EwaldSumMath, ForcesOpposeOnOppositeCharges) {
     EXPECT_NEAR(fz[0] + fz[1], 0.0, 1e-10);
     EXPECT_GT(std::fabs(fx[0]) + std::fabs(fy[0]) + std::fabs(fz[0]), 1e-6);
 }
+
+TEST(EwaldSumMath, SkewCellReciprocalSphereUsesDualColumnBasis) {
+    Mat3 h = Mat3::diagonal(4.0, 3.0, 5.0);
+    h(0, 1) = 7.0;
+    h(1, 2) = 1.2;
+    const double alpha = 0.4, accuracy = 1e-5;
+    EwaldSum sum(alpha, accuracy);
+    sum.rebuild(h.inverse());
+    const Mat3 b = h.inverse().transpose() * AccReal(2 * units::pi);
+    const double cutoff2 = 4 * alpha * alpha * -std::log(accuracy);
+    std::size_t count = 0;
+    for (int i = -12; i <= 12; ++i)
+        for (int j = -12; j <= 12; ++j)
+            for (int k = -12; k <= 12; ++k) {
+                if (k < 0 || (k == 0 && j < 0) || (k == 0 && j == 0 && i <= 0))
+                    continue;
+                const Vec3 g = b * Vec3{AccReal(i), AccReal(j), AccReal(k)};
+                if (g.norm_squared() > cutoff2)
+                    continue;
+                ++count;
+                bool found = false;
+                for (std::size_t n = 0; n < sum.size(); ++n)
+                    if (std::abs(sum.kx()[n] - g[0]) < 1e-12
+                        && std::abs(sum.ky()[n] - g[1]) < 1e-12
+                        && std::abs(sum.kz()[n] - g[2]) < 1e-12)
+                        found = true;
+                EXPECT_TRUE(found) << i << "," << j << "," << k;
+            }
+    EXPECT_EQ(sum.size(), count);
+}

@@ -189,12 +189,17 @@ int main() {
     const double dq_bot = std::abs(cg.total_charge(0) - bo.total_charge(0));
     const double dq_top = std::abs(cg.total_charge(1) - bo.total_charge(1));
 
+    // Per site, by tag (sites are tags 1..n_elec; rows are sorted by MD).
     double max_dq = 0.0;
-    for (int i = 0; i < n_elec; ++i) {
-        max_dq = std::max(
-            max_dq,
-            std::abs(static_cast<double>(f_cg.span(kAtom_charge)[i])
-                     - static_cast<double>(f_bo.span(kAtom_charge)[i])));
+    {
+        const auto& row_cg = f_cg.meta.get(cpu::kTagIndex);
+        const auto& row_bo = f_bo.meta.get(cpu::kTagIndex);
+        for (int t = 1; t <= n_elec; ++t)
+            max_dq = std::max(
+                max_dq, std::abs(static_cast<double>(
+                                     f_cg.span(kAtom_charge)[row_cg.at(t)])
+                                 - static_cast<double>(
+                                     f_bo.span(kAtom_charge)[row_bo.at(t)])));
     }
 
     std::printf("  large plate %dx%d  N_elec=%d\n", nx, ny, n_elec);
@@ -223,12 +228,14 @@ int main() {
         std::fprintf(stderr, "FAIL group |dQ| bot=%g top=%g\n", dq_bot, dq_top);
         ++nfail;
     }
-    // Electrolyte untouched
-    const int i_elyt0 = n_elec;
-    if (std::abs(static_cast<double>(f_cg.span(kAtom_charge)[i_elyt0]) - 0.5)
+    // Electrolyte untouched. Rows by tag: MD sorts atoms spatially (also at
+    // setup); the two ions are the atoms built after the n_elec sites, tags
+    // n_elec+1 and n_elec+2.
+    const auto& cg_row = f_cg.meta.get(cpu::kTagIndex);
+    const int r_cat = cg_row.at(n_elec + 1), r_an = cg_row.at(n_elec + 2);
+    if (std::abs(static_cast<double>(f_cg.span(kAtom_charge)[r_cat]) - 0.5)
             > 1e-14
-        || std::abs(static_cast<double>(f_cg.span(kAtom_charge)[i_elyt0 + 1])
-                    + 0.5)
+        || std::abs(static_cast<double>(f_cg.span(kAtom_charge)[r_an]) + 0.5)
                > 1e-14) {
         std::fprintf(stderr, "FAIL electrolyte charges mutated\n");
         ++nfail;
@@ -254,8 +261,28 @@ int main() {
         sim.build();
         sim.run(f2, 1);
 
+        // The MD step moves atoms (setup forces are evaluated before the
+        // first integration, as in LAMMPS), and the step's solve sees the
+        // post-drift geometry. Compare against the dense BO solved on that
+        // same geometry, carried over by tag.
+        auto f3 = multi_site_plate(nx, ny);
+        {
+            const auto& row2 = f2.meta.get(cpu::kTagIndex);
+            for (int i = 0; i < f3.nlocal(); ++i) {
+                const int r = row2.at(f3.span(kAtom_tag)[i]);
+                f3.span(kAtom_x)[i] = f2.span(kAtom_x)[r];
+                f3.span(kAtom_y)[i] = f2.span(kAtom_y)[r];
+                f3.span(kAtom_z)[i] = f2.span(kAtom_z)[r];
+            }
+        }
+        cpu::md::ConstPotBO bo3(kEta);
+        bo3.add_electrode(1, kPsiBot);
+        bo3.add_electrode(2, kPsiTop);
+        bo3.electroneutrality = true;
+        bo3.xy_image_range = 0;
+        solve_once(bo3, f3);
         const double d_top =
-            std::abs(conp2.total_charge(1) - bo.total_charge(1));
+            std::abs(conp2.total_charge(1) - bo3.total_charge(1));
         std::printf("  MD path Q_top=% .12e  |d vs BO|=% .3e  |sumQ|=% .3e\n",
                     conp2.total_charge(1), d_top, conp2.neutrality_residual());
         if (!(conp2.neutrality_residual() <= 1e-10) || !(d_top <= 1e-6)) {

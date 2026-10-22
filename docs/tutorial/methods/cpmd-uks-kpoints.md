@@ -32,8 +32,8 @@ production step). Electronic kinetic energy is
 \rVert_F^2\). The multi-k **electronic thermostat** (one NH per (k, σ)
 channel, k-weighted totals) ships as `cpmd-thermostat-kpoints`
 (RKS; `cpmd-thermostat-kpoints`) **and** the
-multi-k UKS eNH combo pin `cpmd-uks-thermostat-kpoints`
-(`cpmd-uks-thermostat-kpoints`); this pin is NVE
+multi-k UKS eNH combo documented in
+[cpmd-uks-thermostat-kpoints](cpmd-uks-thermostat-kpoints.md) (no standing regression); this pin is NVE
 electrons.
 
 ## System
@@ -95,7 +95,7 @@ shipped multi-k UKS pins.
 | Quantity | Gate (hard-coded) | Anchor / oracle | Notes |
 | -------- | ----------------: | --------------- | ----- |
 | Relative \(E_{\mathrm{cons}}\) drift \(\delta\) over 4 production steps | \(\le 0.10\) | Literature NVE envelope (Car–Parrinello 1985; Marx & Hutter) | \(E_{\mathrm{cons}} = T_n + T_e + E_{\mathrm{KS}}\), \(E_0\) at first CP step |
-| UKS-vs-RKS closed-shell identity, `tol = 1e-7` | \(\le 3\times10^{-4}\) eV (≈ 1.1×10⁻⁵ Ha) | Multi-k RKS path CP2K-pinned in `gpw-bomd-kpoints` (CP2K 2026.1); UKS path in `gpw-kpoints-uks` (A2 holds to 5×10⁻⁶ Ha) | Same geometry / mesh / cutoff; \(n_\alpha=n_\beta=1\) vs \(n_{\mathrm{occ}}=1\) |
+| UKS-vs-RKS closed-shell identity, `tol = 1e-7` | \(\le 3\times10^{-4}\) eV (≈ 1.1×10⁻⁵ Ha) | Multi-k RKS path CP2K comparison documented in [gpw-bomd-kpoints](gpw-bomd-kpoints.md) (CP2K 2026.1); UKS path in [gpw-kpoints-uks](gpw-kpoints-uks.md) (A2 held to 5×10⁻⁶ Ha) | Same geometry / mesh / cutoff; \(n_\alpha=n_\beta=1\) vs \(n_{\mathrm{occ}}=1\) |
 | Production SCF iterations | exactly 0 | — | dual-spin fixed-density multi-k eval |
 | \(n_{\mathrm{kpts}}\) after seed | \(\ge 2\) | — | 1×1×2, time reversal off |
 | \(T_e\) once propagated | \(> 0\) | — | dual-spin sum \(\sum_k w_k \sum_\sigma \tfrac12\mu\lVert\dot C_k^\sigma\rVert_F^2\) |
@@ -115,7 +115,7 @@ surface `cpmd-uks` ships on).
 | fictitious-mass multi-k UKS CPMD | n/a | n/a | n/a | **perf_exempt** | Oracle family lock (below) |
 
 **perf_exempt** — CP2K 2026.1 (present on the pin host; it pinned
-`gpw-bomd-kpoints` on 2026-07-31) has **no fictitious-mass Car–Parrinello
+[gpw-bomd-kpoints](gpw-bomd-kpoints.md) on 2026-07-31) has **no fictitious-mass Car–Parrinello
 propagator**: its `RUN_TYPE MD` is Born–Oppenheimer and its CP-like method
 is second-generation CPMD (ASPC + corrector). The CP conserved quantity with
 fictitious \(T_e[\dot C_k^\sigma]\) is not a number CP2K can print for any
@@ -127,7 +127,7 @@ input, so no fair same-method wall twin exists (same policy as
 - Multi-k electronic thermostat remains refused (NVE electrons on the k
   path; queued `cpmd-thermostat-kpoints`).
 - Closed-shell fillings only in the pinned case (\(n_\alpha=n_\beta=1\));
-  triplet H₂ is unbound and cannot pin NVE (the `xl-bomd-uks-kpoints`
+  triplet H₂ is unbound and cannot pin NVE (the [xl-bomd-uks-kpoints](xl-bomd-uks-kpoints.md)
   precedent). Open-shell multi-k CP is exercised only via unit gates.
 - CPU backend only; CUDA CP is out of scope for this loop.
 
@@ -139,4 +139,4 @@ input, so no fair same-method wall twin exists (same policy as
 - Andersen, *J. Comput. Phys.* **52**, 24 (1983) — electronic RATTLE
 - Parents: [cpmd-kpoints](cpmd-kpoints.md) (multi-k RKS Bloch CP),
   [cpmd-uks](cpmd-uks.md) (Γ dual-spin CP); BO anchors
-  `gpw-kpoints-uks`, `gpw-kpoint-uks-forces` (CP2K)
+  [gpw-kpoints-uks](gpw-kpoints-uks.md), [gpw-kpoint-uks-forces](gpw-kpoint-uks-forces.md) (CP2K)

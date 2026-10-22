@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-dftu-smearing` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `plus_u`, `smearing`, `degauss` [Ry], `extra_bands`, `k_points` / `k_point_weights` |
-| Roadmap | `docs/roadmap/dft.md` §8/§10 — multi-k RKS **OT+DFT+U+smear** ✓ (`reg_ot-dftu-smearing`) |
+| Roadmap | `docs/roadmap/dft.md` §8/§10 — multi-k RKS **OT+DFT+U+smear** ✓ |
 
 ## Summary
 
@@ -27,7 +27,7 @@ reached by multi-k DIIS + U + FD on identical grids.
 absolute CP2K OT+k digits). CP2K **2026.1** hard-aborts OT with k-points and
 does not productize OT+SMEAR; the offline twin is multi-k **DIIS** +
 FERMI_DIRAC + PLUS_U under CP2K oracle.
-Product gate: `reg_ot-dftu-smearing`. Fair wall vs CP2K OT: **`perf_exempt`**.
+Fair wall vs CP2K OT: **`perf_exempt`**.
 
 Related handbook pages: OT alone — [ot-minimizer-water](ot-minimizer-water.md);
 DFT+U alone — [gpw-dftu-nio](gpw-dftu-nio.md); PW metallic smear —
@@ -121,10 +121,10 @@ grids (gate A2: \(\lvert F_{\mathrm{OT}}-F_{\mathrm{DIIS}}\rvert\le 10^{-4}\) Ha
 ## Implementation
 
 Public surface only: construct `cpu::gpw::GpwDft`, set members, `build` /
-`run` on a `cpu::Frame` (regression consumer path). Header:
+`run` on a `cpu::Frame` (the path used for the recorded values). Header:
 `gpw_solver.h`. No `*Config`, no factories.
 Inside a Driver the same configured `GpwDft` is bound through
-`cpu::gpw::GPWEvaluator(std::move(dft))`; this combo regression calls the
+`cpu::gpw::GPWEvaluator(std::move(dft))`; the recorded values call the
 method directly.
 
 ```cpp
@@ -179,7 +179,7 @@ const GpwResult& r = m.run(frame);   // also writes frame.meta[kEnergy] [eV]
 // r.converged, r.iters
 ```
 
-Build and run the regression (scoped targets — never bare full `cmake --build`):
+Build configuration:
 
 ```bash
 bash -lc '
@@ -192,8 +192,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_ot-dftu-smearing
-  reg_ot-dftu-smearing
 '
 ```
 
@@ -204,13 +202,11 @@ bash -lc '
 | `dft_plus_u.h` | Dudarev E/V (internal) |
 | `src/cpu/gpw/gpw_solver.cpp` | Multi-k OT+U+smear SCF wire-up |
 | `tests/cpu/gpw/test_cpu_gpw_ot.cpp` | Unit: OT+U+FD fixed-point notes (not e2e) |
-| `ot-dftu-smearing` | E2E product gate + pin notes |
 | CP2K oracle | Offline CP2K multi-k DIIS+U+FD twin |
 
 ## Validation (vs CP2K)
 
-Source:
-case `ot-dftu-smearing` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest. Pin
 date: **2026-07-26**.
 
@@ -270,19 +266,19 @@ cp2k.psmp -i <CP2K oracle input for this case> \
 
 ## Performance
 
-Source: case `ot-dftu-smearing` pin +
+Source: values recorded when this page was written (no standing regression) +
 the case pin notes (wave 9). Gate \(r\le 10\) unless
 `perf_exempt`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
 | Fair OT vs CP2K OT+k+U+smear | n/a | **~0.169** (OT-only Release, OMP=4) | **n/a** | **perf_exempt** | CP2K has no OT+k / OT+SMEAR product path |
-| Full regression binary A0–A7 | n/a | **≈ 0.4** (Release) | — | — | includes DIIS twin + activation + UKS throw |
+| Full recorded check A0–A7 | n/a | **≈ 0.4** (Release) | — | — | includes DIIS twin + activation + UKS throw |
 
 **Exemption reason (binding):** CP2K 2026.1 hard-aborts OT with k-points and
 does not combine product OT with SMEAR; the DIIS multi-k twin is not a fair
 OT wall comparison. Decisive product gates are the free-energy identities
-(same pattern as `ot-dftu-kpoints` / `ot-smearing`). Handoff records
+(same pattern as [ot-dftu-kpoints](ot-dftu-kpoints.md) / [ot-smearing](ot-smearing.md)). Handoff records
 **`perf_exempt`**.
 
 ## Limitations
@@ -294,10 +290,10 @@ OT wall comparison. Decisive product gates are the free-energy identities
   OT+k digits do not exist in 2026.1; the twin only documents DIIS+U+FD
   settings.
 - **Multi-k UKS OT + U + smear** remains out of product (A7 throws). Sibling
-  landings cover UKS OT+smear (`ot-uks-smearing`) and multi-k UKS OT+U integer
-  (`ot-uks-dftu`) separately.
+  landings cover UKS OT+smear ([ot-uks-smearing](ot-uks-smearing.md)) and multi-k UKS OT+U integer
+  ([ot-uks-dftu](ot-uks-dftu.md)) separately.
 - **Integer multi-k OT+U** (no smear) uses OUTER_SCF + fixed-H OT
-  (`ot-dftu-kpoints`); free-energy PR+ Armijo is the U+smear path — do not
+  ([ot-dftu-kpoints](ot-dftu-kpoints.md)); free-energy PR+ Armijo is the U+smear path — do not
   conflate the two algorithm sketches.
 - **No forces / stress / BOMD** acceptance on this triple combo.
 - **Single-rank** microcase; no MPI OT scaling claim.
@@ -305,10 +301,7 @@ OT wall comparison. Decisive product gates are the free-energy identities
 
 ## References
 
-- Offline pin + walls:
-  case `ot-dftu-smearing` pin
-- Regression consumer:
-  `reg_ot-dftu-smearing.cpp`
+- Offline pin + walls: values recorded on this page (no standing regression)
 - CP2K twin:
   CP2K oracle
 - Oracle contract: CP2K oracle

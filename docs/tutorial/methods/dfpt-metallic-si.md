@@ -7,7 +7,7 @@
 | Slug | `dfpt-metallic-si` |
 | Public API | `cpu::pw::DfptPhonon` / `DfptPhononResult` + `PW` members `smearing`, `degauss` [Ry], `extra_bands` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — metallic occupation smearing ✓ |
-| Dep | `dfpt-phonon-si` ✓ (Γ fixed-occ); `pw-smearing-al` ✓ (Mermin GS); siblings: GGA / spin / finite-\(q\) DFPT |
+| Dep | `dfpt-phonon-si` ✓ (Γ fixed-occ); [pw-smearing-al](pw-smearing-al.md) ✓ (Mermin GS); siblings: GGA / spin / finite-\(q\) DFPT |
 
 ## Summary
 

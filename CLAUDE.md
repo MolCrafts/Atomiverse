@@ -33,56 +33,43 @@ rewritten, not appended to.
 
 ## What this repo is
 
-Atomiverse is an engine for multiscale, multiphysics atomistic simulation.
-Dual backends (CPU + CUDA) share one Driver/Component/Frame API across
-classical MD, Monte Carlo, geometry optimization, vibration, and electronic
-structure (Gaussian SCF, plane-wave DFT, GPW, NDDO/AM1, DFTB). C++20, `ATV::`
-namespace. Active development is on **`dev`**, and worktrees branch off `dev`
-explicitly. `master` is the released snapshot, advanced only by merging `dev`
-into it — never commit to `master` directly, and when the two have diverged
-`dev` is the one that describes current behaviour.
+- Engine for multiscale, multiphysics atomistic simulation: classical MD, MC,
+  geometry optimization, vibration, electronic structure (Gaussian SCF,
+  plane-wave DFT, GPW, NDDO/AM1, DFTB). C++20, namespace `ATV::`.
+- Two backends (CPU, CUDA) behind one Driver/Component/Frame API; where they
+  still diverge is listed under **Known debt**.
+- Develop on **`dev`**; worktrees branch off `dev` explicitly. `master` is the
+  released snapshot, advanced only by merging `dev` — never commit to it. When
+  they diverge, `dev` describes current behaviour.
 
-## License & LAMMPS porting (operator directive 2026-08-26)
+## License & LAMMPS porting
 
-Atomiverse is **GPL-2.0-only** — the same license as LAMMPS; `LICENSE` at the
-repo root is LAMMPS's GPLv2 text verbatim, and the python wheel metadata
-carries `GPL-2.0-only`. This is deliberate: it makes ATV license-compatible
-with LAMMPS source, so parallel machinery is **ported from LAMMPS, not
-independently derived**.
+Atomiverse is **GPL-2.0-only** like LAMMPS (`LICENSE` is LAMMPS's GPLv2 text),
+so parallel machinery is **ported from LAMMPS, not independently derived**.
 
-- **Scope of the port mandate:** multicore/parallel algorithms — domain
-  decomposition, halo/forward/reverse communication, buffer pack/unpack,
-  k-space parallel FFT decomposition and remap, load balancing, neighbor
-  build parallel structure. When such a slug opens, read the LAMMPS
-  implementation first and transplant its algorithm and communication
-  structure; do not invent an alternative and A/B it.
-- **Reference checkout:** `../../lammps-src` relative to the repo root
-  (`/nobackup/proj/disk/teoroo/personal/jicli594/work/lammps-src`, shallow
-  sparse clone of `src/`, `970d4ba 2026-08-27`). Deepen or re-clone rather
-  than trusting memory of LAMMPS internals — and when you re-clone, stamp
-  the SHA you actually read into the provenance header of every file you
-  touch. Older headers naming `78a7ddf` were derived against that earlier
-  checkout; do not rewrite them wholesale.
-- **Provenance headers are mandatory:** every file whose algorithm or
-  structure is taken from LAMMPS carries a header naming the originating
-  LAMMPS source file (e.g. `src/comm_brick.cpp`) and retaining the Sandia
-  copyright notice, per GPL.
-- **What does not change:** ATV's own laws (Frame/Driver/Component, iron
-  laws, directory layering) still govern the *shape* of the ported code —
-  the port is of the algorithm and communication pattern, not a verbatim
-  file dump; public API stays ATV-native.
-- Physics/serial-kernel work (SCF, GPW, TB, pair styles' math) is untouched
-  by this mandate and keeps its existing oracle-loop rules.
+- **Scope:** domain decomposition, halo/forward/reverse comm, pack/unpack,
+  k-space parallel FFT decomposition and remap, load balancing, neighbor-build
+  parallel structure. Read the LAMMPS implementation first and transplant its
+  algorithm and communication structure; do not invent an alternative and A/B it.
+- **Reference checkout:** `../../lammps-src` (shallow sparse `src/` at
+  `970d4ba`). Deepen or re-clone rather than trust memory; stamp the SHA you
+  read into every header you touch. Headers naming `78a7ddf` came from an
+  earlier checkout — do not rewrite them wholesale.
+- **Provenance headers are mandatory:** name the LAMMPS source file
+  (e.g. `src/comm_brick.cpp`) and keep the Sandia copyright notice.
+- ATV's laws still govern the *shape* of ported code; public API stays
+  ATV-native. Physics/serial kernels (SCF, GPW, TB, pair math) are outside the
+  mandate and follow the oracle-loop rules.
 
 ## Where things live
 
 | Path | Contents |
 | --- | --- |
 | `include/atomiverse/` + `src/` | Mirrored header/impl trees |
-| `tests/` | **Unit tests only** (see the test iron law) |
-| `regressions/` | `<domain>/<case>/` — the only home of end-to-end |
+| `tests/` | **Unit tests only** (iron law 1) |
+| `regressions/` | `<domain>/<case>/` — the only home of end-to-end (iron law 1a) |
 | `benchmarks/` | Standing perf harnesses; never registered with ctest |
-| `docs/` | The manual: user-guide / tutorial / roadmap / developer / api. `docs/roadmap/` is the **only** place that states what is implemented on which backend |
+| `docs/` | The manual. `docs/roadmap/` is the **only** place that states what is implemented on which backend |
 | `.claude/notes/` | Passive project knowledge (current understanding only) |
 | `.claude/specs/` | Live specs; deleted at `done` |
 | `.claude/campaigns/` | Generated loop ledgers — **gitignored**, never the manual |
@@ -107,70 +94,74 @@ bash -lc '
 '
 ```
 
-Skipping the `LD_LIBRARY_PATH` mirror is the #1 cause of `libopenblas.so.0` /
-`GLIBCXX_3.4.32 not found` at run time.
+- Skipping the `LD_LIBRARY_PATH` mirror is the #1 cause of `libopenblas.so.0` /
+  `GLIBCXX_3.4.32 not found`. `-march=native` is required for the SCF ERI kernels.
+- **CUDA builds and runs only on the aarch64 GH200 node.** From an agent:
+  `sbatch -A <slurm-account> tools/gpu_job.sh` (knobs `ATV_CMAKE_FLAGS`,
+  `ATV_TARGETS`, `ATV_CTEST_RE`; `hpc gpu` needs a TTY). The script is
+  `#!/bin/bash -l`, loads `GPU/buildenv-gcccuda/2026.03-cu13.0`, and keeps the
+  default aarch64 Rust. `tools/gpu_job.sh` / `tools/cpu_job.sh` are
+  parameterised templates, not one script per slug. Never pipe `module load`.
+- **molrs** is a hard dependency, submodule `./molrs`; the gitlink is the pin.
+  No API version gate before molrs 1.0.0.
+- Never kill a `git commit` / `git push` mid-hook (pre-commit restores stashed
+  unstaged changes only on a normal exit).
+- Machines and workbenches: [arrhenius-workbench.md](.claude/notes/arrhenius-workbench.md).
+  Never set `OMP_PROC_BIND`/`OMP_PLACES` when timing BLAS-bound paths:
+  [openblas-thread-binding.md](.claude/notes/openblas-thread-binding.md).
 
-**CUDA builds and runs only on the aarch64 GH200 node** — login nodes have no
-toolkit. From an agent use batch (`hpc gpu` needs a TTY):
-
-```bash
-sbatch -A <slurm-account> tools/gpu_job.sh      # knobs: ATV_CMAKE_FLAGS,
-                                               # ATV_TARGETS, ATV_CTEST_RE
-```
-
-`tools/gpu_job.sh` (GPU) and `tools/cpu_job.sh` (CPU) are the batch templates —
-parameterised, not one script per slug.
-
-The job script starts `#!/bin/bash -l` and loads
-`GPU/buildenv-gcccuda/2026.03-cu13.0`. Never pipe `module load` — a subshell
-loses the env. On the GPU node the default aarch64 Rust toolchain is correct;
-do not override it there.
-
-**molrs** is a hard dependency, vendored as a git submodule at `./molrs`
-(pin = the submodule gitlink; molrs has no API version before 1.0.0, so there
-is no version gate — the pinned tree compiles against ATV or it does not).
-
-`-march=native` is required for the CPU SCF ERI kernels.
-
-### CMake options
-
-| Option | Default | Enables |
+| CMake option | Default | Enables |
 | --- | --- | --- |
 | `ATV_BUILD_CUDA` | ON | CUDA backend (`ATV_HAS_CUDA`) |
 | `ATV_BUILD_HF` | OFF | Gaussian SCF (`ATV_HAS_HF`) |
 | `ATV_BUILD_PW` | OFF | Plane-wave DFT (FFTW3) |
 | `ATV_BUILD_GPW` | OFF | GPW (needs HF + PW) |
 | `ATV_BUILD_KSPACE` | OFF | PME reciprocal-space electrostatics (FFTW3) |
-| `ATV_BUILD_TESTS` / `ATV_BUILD_REGRESSIONS` / `ATV_BUILD_EXAMPLES` | OFF | target groups |
-| `ATV_REAL_STORAGE` / `ATV_REAL_WORK` | `double` | per-atom storage / kernel-work precision |
+| `ATV_BUILD_TESTS` / `_REGRESSIONS` / `_EXAMPLES` | OFF | target groups |
+| `ATV_REAL_STORAGE` / `ATV_REAL_WORK` | `double` | CPU per-atom storage / kernel-work precision |
 | `ATV_ID_SIZE` | `bigbig` | 64-bit `TagInt` (`smallbig` = 32-bit) |
 
 ## Iron laws
 
-These are binding. They are enforced by **this file and code review**, never by
-grep gates registered as tests.
+Binding; enforced by **this file and code review**, never by grep gates
+registered as tests.
 
 ### 1. Tests are unit tests — nothing else
 
-`tests/` contains **only** single-function / single-method unit tests, mirroring
-the source layout, and the whole suite runs in seconds. Strictly forbidden
-there:
+`tests/` holds **only** single-function / single-method unit tests mirroring
+the source layout; the suite runs in seconds. Forbidden there:
 
-- **End-to-end of any kind** — no full SCF/MD/vib/MC solve, no convergence
-  loop, no timing, no external-engine comparison, no third-party read at build
-  or test time. In-tree scientific parameter data (`basis_data/` headers and a
-  future `data/` directory) is first-party code carrying provenance; tests and
-  regressions reading it is not a "third-party read". Reading anything outside
-  the repo at build or test time stays forbidden.
-- **Style / surface / architecture gates** — no grep scrubs, no shell or CMake
-  scripts registered via `add_test`, no test that reads the source tree to
-  assert a file exists, is absent, or contains a token. Architectural rules
-  live in this file and are enforced by review, not by ctest.
+- **End-to-end of any kind** — no full SCF/MD/vib/MC solve, convergence loop,
+  timing, or external-engine comparison.
+- **Reading outside the repo** at build or test time. In-tree parameter data
+  (`basis_data/`, a future `data/`) is first-party code with provenance.
+- **Style / surface / architecture gates** — no grep scrubs, no scripts via
+  `add_test`, no test reading the source tree for files or tokens.
 
-There is no opt-in switch: if it is registered, it runs. End-to-end goes to
-`regressions/<domain>/<case>/` as an **out-of-library consumer** (public
-headers + link `atomiverse`, nothing else), checked against a **cited
-literature value**, ≤ 60 s, one per delivered feature.
+No opt-in switch: if it is registered, it runs.
+
+### 1a. A regression pins one capability against a real oracle
+
+End-to-end lives only in `regressions/<domain>/<case>/` (contract and
+templates: `regressions/README.md`).
+
+- **One case per roadmap cell.** A case exists for one `docs/roadmap/` row on
+  the backends it claims; a ✓ cell names its case, a capability without one is
+  ◐ at most. CUDA support is the **same** case run with `--device=cuda|both`,
+  never a sibling directory. Parameter variants on one code path, staged ports
+  and API-shape checks get no case.
+- **The oracle is not Atomiverse.** Allowed: `external` (a number another
+  program printed: version + input + output line), `literature` (citation),
+  `analytic` (closed form / exact identity), `cpu-twin` (a CUDA cell whose CPU
+  cell carries one of the others). Not oracles: self-golden, ATV-vs-ATV finite
+  differences as the sole gate, re-implementations, cross-Hamiltonian "twins".
+- **Out-of-library consumer:** public headers + link `atomiverse`, no
+  `internal/`; **≤ 60 s** at the declared thread width; exit non-zero printing
+  `got / want / tol`.
+- **Registration is data:** `case.cmake`
+  (`atv_regression(REQUIRES <modules> [DEVICES] [THREADS] [RANKS] …)`) plus a
+  `REFERENCE.md` from the README template. Nothing hand-listed in
+  `regressions/CMakeLists.txt`; a module OFF removes its cases.
 
 ### 2. Frame is the only public token
 
@@ -183,217 +174,165 @@ The sole public I/O currency is **`Frame`** = `blocks` + `meta` + `box`.
 | **Categorical slots** | Other components (`set_evaluator`, `set_engine`, `set_integrator`) |
 | **Engine-private only** | `cpu::Context` / `cuda::Context`, `LaunchContext`, `SolverContext`, service slices |
 
-Users never define, fill, subclass, or pass a Context, and never hand-drive
+Users never define, fill, subclass or pass a Context, and never hand-drive
 Component lifecycle (`.launch(...)`, `build({ctx, frame})`, `setup_pass`).
-Writing a Component means overriding `launch(const LaunchContext&)` — that is
-the author's side, not the user's. There is no parallel `*System`, no public
-`AtomList`, no `SinglePoint` class.
+Writing a Component = overriding `launch(const LaunchContext&)` (author side).
+No parallel `*System`, no public `AtomList`, no `SinglePoint` class.
 
 ### 3. No public Config bags, no factories
 
-Parameters are **constructor arguments** (`RHF{BasisSet::STO3G, charge, tol}`,
-`NoseHooverNPT(T, tau_T, P, tau_P, dt)`) or public members. Forbidden as public
-API: `*Config` / nested `::Config` / any bag whose job is to be stuffed into a
-constructor; `obj.param = …` after default construction as the parameter story;
-`make_*` / `build_*` / `create_*` / `*_config()` free functions returning
-constructed objects.
-
-Narrow exceptions: true free math with no owner; lookup-table constructors
-(`GthPotential(Element, name)`); logging/async infra private to its subsystem.
+- Parameters are **constructor arguments** (`RHF{BasisSet::STO3G, charge, tol}`,
+  `NoseHooverNPT(T, tau_T, P, tau_P, dt)`) or public members.
+- Forbidden as public API: `*Config` / nested `::Config` / any bag stuffed into
+  a constructor; `obj.param = …` after default construction as the parameter
+  story; `make_*` / `build_*` / `create_*` / `*_config()` returning objects.
+- Narrow exceptions: true free math with no owner; lookup-table constructors
+  (`GthPotential(Element, name)`); subsystem-private logging/async infra;
+  `ATV::make_binding`; the comm `make_*_plan` makers.
 
 ### 4. Region and selection are Frame fields
 
-Which atoms, bonds, or region a method acts on is declared on the **Frame**
-(named columns / blocks / topology), never via `set_region` / `set_mask` /
-`set_links` / constructor atom-index lists. A missing or invalid required field
-**throws** with a how-to — no silent "treat everything as MM" default. Derived
-membership is fine when it is a pure function of Frame data already present
-(QM/MM link cuts = bonds whose endpoints differ in the QM mask; no bonds ⇒ no
-links). Algorithm parameters and component slots stay on the object — those are
-not "which atoms". Gaussian SCF ghost indices
-(`MeanFieldMethod::ghost_atoms`) stay on the method.
+- Which atoms, bonds or region a method acts on is declared on the **Frame**
+  (named columns / blocks / topology), never via `set_region` / `set_mask` /
+  `set_links` / constructor atom-index lists.
+- A missing or invalid required field **throws** with a how-to — no silent
+  "treat everything as MM".
+- Derived membership is fine when it is a pure function of Frame data (QM/MM
+  link cuts = bonds whose endpoints differ in the QM mask; no bonds ⇒ no links).
+- Algorithm parameters and slots stay on the object. Named exception: Gaussian
+  SCF ghost indices (`MeanFieldMethod::ghost_atoms`).
 
 ### 5. Frame columns are `span`, meta is `get`
 
-On the C++ public surface, block columns are `frame.span(ColKey)` — a
-non-owning `Span<T>` view. Typed scalars are `frame.meta.get(MetaKey)`. Do not
-rename the C++ API to `get_column`; pythonic names belong on the nanobind
-binding.
+C++ columns are `frame.span(ColKey)` (non-owning `Span<T>`); typed scalars are
+`frame.meta.get(MetaKey)`. No `get_column`; pythonic names belong on nanobind.
 
 ### 6. Composition over inheritance
 
-User-visible workflows are **composed** from Driver presets + Components, not
-grown as subclass trees. AIMD = `MD` + an electronic evaluator. QM/MM = the
-same shape + MM evaluators + a connection-layer evaluator that `set_engine`s
-the QM method — not a `QmmmDriver`, not a second MD. A new Driver preset is
-justified only when the **loop topology** is genuinely new; a different force
-recipe is a Component. Inheritance depth stays ≤ 2
-(`Concrete → Kind → Component`); there are no category driver bases.
+- Workflows are **composed** from presets + Components. AIMD = `MD` + an
+  electronic evaluator. QM/MM = the same + MM evaluators + a connection-layer
+  evaluator that `set_engine`s the QM method — no `QmmmDriver`, no second MD.
+- A new preset needs a genuinely new **loop topology**; a different force
+  recipe is a Component.
+- Inheritance depth ≤ 2 (`Concrete → Kind → Component`); no category driver bases.
 
 ### 7. No freestanding integral bag
 
-Integral state is expanded **private fields** on the concrete method (`ints_S_`,
-`ints_Hcore_`, shells), rebuilt from Frame. Engines take a non-owning
-`internal::IntegralView`. The public API is only `RHF{basis, …}.run(frame)` /
+Integral state is **private fields** on the concrete method (`ints_S_`,
+`ints_Hcore_`, shells), rebuilt from Frame; engines take a non-owning
+`internal::IntegralView`. Public API is only `RHF{basis, …}.run(frame)` /
 `.forces(frame)`, same shape on CUDA.
 
 ### 8. Every method domain has its own build flag
 
-No developer ever has to compile the whole engine to work on one method. Every
-method domain is gated by an `ATV_BUILD_<DOMAIN>` option in
-`cmake/AtvProductModules.cmake`, and **OFF must exclude its sources, headers,
-tests and regressions** — not merely hide a symbol. Dependencies are declared
-in the module DAG (`atv_force_on`), so turning a domain on pulls in exactly
-what it needs and nothing else.
-
-Adding a method domain means adding its flag in the same change. A domain whose
-sources compile unconditionally is a defect. The working configuration for a
-single-domain task is that domain plus its DAG closure, everything else OFF —
-e.g. the SE-only build (`SEMIEMPIRICAL` + `EVALUATE` ON; HF/PW/GPW/MD/MC/
-MINIMIZER/VIB/PATH/KSPACE/CUDA OFF).
-
-molrs is a **derived** dependency: product flags force `ATV_BUILD_MOLRS=ON`,
-never the inverse (`FATAL_ERROR "X requires MOLRS"` is the banned shape). A
-feature slice needing a specific molrs pin (WHAM ⇒ `ATV_MOLRS_HAS_WHAM`) gates
-its sources **and** its regressions on the same condition.
+- Each method domain is gated by `ATV_BUILD_<DOMAIN>` in
+  `cmake/AtvProductModules.cmake`; **OFF excludes its sources, headers, tests
+  and regressions**. An unconditionally compiled domain is a defect; a new
+  domain adds its flag in the same change.
+- Dependencies live in the module DAG (`atv_force_on`). Work on one domain with
+  its closure only (e.g. SE-only: `SEMIEMPIRICAL` + `EVALUATE` ON; everything
+  else, CUDA included, OFF).
+- molrs is **derived**: products force `ATV_BUILD_MOLRS=ON`, never the inverse
+  (`FATAL_ERROR "X requires MOLRS"` is banned). A slice needing a specific molrs
+  pin (WHAM ⇒ `ATV_MOLRS_HAS_WHAM`) gates sources **and** regressions on it.
 
 ### 9. No silent debt
 
-On discovering an anti-pattern, failing test, broken invariant, or clear bug in
-the surface you touch or depend on: **fix it now** if local and stage-allowed,
-otherwise **stop** and report `path:line`. Never ignore it as "pre-existing",
-never skip-mark, never weaken an assert, never land features on known rot.
-Name it in the summary (found / fixed / blocking). This outranks "stay in
-scope" and "minimal diff".
+On finding an anti-pattern, failing test, broken invariant or clear bug in the
+surface you touch or depend on: **fix it now** if local and stage-allowed,
+otherwise **stop** and report `path:line`. Never "pre-existing", never
+skip-mark, never weaken an assert, never land on known rot. Name it in the
+summary (found / fixed / blocking). Outranks "stay in scope" and "minimal diff".
 
 ## Design defaults
 
-**OOP by default.** Domain concepts are types with methods
-(`NeighborList.build`, `ForceField.energy`). Module-level functions only for
-true free operations with no natural owner.
-
-**Primitive, single-responsibility public APIs.** Callers compose: construct →
-configure → one concern → read result. No `run_everything` / `compute_all` /
-`pipeline` façade that hides multi-step work — composition is the caller's job
-(scripts, docs examples, `regressions/`).
-
-**Inline until the second real use.** A block that runs once, from one call
-site, stays inline. Extract at the second call site, or when a unit test must
-target that unit — never to give a paragraph a name.
-
-**No fallback values.** Lookup tables throw on unsupported input.
-
-**Hot-path data structures carry only fundamental physical quantities** —
-positions, velocities, integrals, shell descriptors; never precomputed indices,
-caches, or derived maps. Consumers derive their own views.
-
-**Before adding a public symbol:** natural owning type → method on it. More
-than one user-visible step → split into primitives. One in-tree call site → do
-not extract. Tempted to hang a field on a context bag → Frame field, ctor arg,
-or member.
+- **OOP by default** — domain concepts are types with methods
+  (`NeighborList.build`); free functions only for true free operations.
+- **Primitive, single-responsibility public APIs** — construct → configure →
+  one concern → read result. No `run_everything` / `compute_all` / `pipeline`
+  façade; composition is the caller's job.
+- **Inline until the second real use** (or until a unit test must target it).
+- **No fallback values** — lookup tables throw on unsupported input.
+- **Hot-path data carry only fundamental physical quantities** (positions,
+  velocities, integrals, shell descriptors), never indices, caches or derived
+  maps; consumers derive their own views.
+- **Before adding a public symbol:** owning type → method; >1 user-visible step
+  → primitives; one call site → do not extract; context-bag field → Frame
+  field, ctor arg or member instead.
 
 ## Architecture
 
-Three pillars: **Driver** (owns the loop), **Component** (one single-step
-operation), **Frame** (device-resident state). Two backends (`cpu/`, `cuda/`)
-sit behind one CUDA-free contract layer in `core/`. There is **no
-backward compatibility** in this layout — no shims, no alias headers, no
-deprecated forwarding, no `#error` tombstones.
+Pillars: **Driver** (owns the loop), **Component** (one single-step
+operation), **Frame** (device-resident state). Backends `cpu/` and `cuda/` sit
+behind the CUDA-free contract layer `core/`. **No backward compatibility** — no
+shims, alias headers, deprecated forwarding or `#error` tombstones.
 
-### Backend directory layering
+### Directory layering
 
-Each backend root holds **directories only**. Names are full English words,
-mirrored across `cpu/` and `cuda/` (a CPU-only domain is simply absent on
-`cuda`, never renamed). The same feature lives in the same directory on every
-backend.
+Each backend root holds **directories only**, full English names, mirrored
+across backends (a CPU-only domain is absent on `cuda`, never renamed); a
+feature lives in the same directory on every backend.
 
 ```
 <backend>/
-  frame/         Frame pillar: device-resident state + residency ops
-  driver/        Driver<P>, DriverNode, Runtime, criteria, OutcomePolicy
-  component/     Component, Launch/Context, kinds, protocols
-  evaluate/      Evaluate preset + single_point
-  io/            external formats / molrs bridge          (CPU only)
-  device/        DeviceRuntime — threads/streams + timing
-  communication/ DomainRuntime — decomposition, halo, migration, reductions
-  neighbor/      cell/Verlet structures + the published PairList
-  asynchronous/  AnalysisRuntime — snapshot ring, D2H bridge
-  linalg/        shared dense linear algebra                (CPU only)
-  electronic/    Cpmd, XlBomd, ASPCPredictor                (CPU only)
-  dynamics/      MD — integrators, thermostats, barostats, deform
-  montecarlo/    MC preset, movers, trial transaction       (CPU only)
-  minimize/      SD, CG, L-BFGS + opt recorders
-  replica/       ReplicaSet + ReplicaExpansion
-  path/          CI-NEB + PathDriver preset
-  scf/           Gaussian-basis SCF
-  semiempirical/ NDDO/AM1                                   (CPU only)
-  planewave/     plane-wave DFT
-  gpw/           Gaussian-and-plane-waves DFT (method CPU-only; cuda/gpw/
-                 holds internal kernel footholds only, no method product)
-  xc/            shared exchange-correlation pieces
-  vibration/     FD Hessian, thermochemistry                (CPU only)
-  longrange/     reciprocal-space electrostatics + its operator math
-  potentials/    real-space evaluators (pair + bonded)
-  bias/          CVs, harmonic bias, metadynamics             (CPU only)
-  multiscale/    QM/MM connection-layer evaluators            (CPU only)
-  electrodes/    electrode charge dynamics/work               (CPU only)
-  task/          MPI launcher task protocol                   (CPU only)
-  observe/       derived quantities (RDF, virial, Mulliken, density)
-  record/        I/O (XYZ, cube, thermo, timing)
+  frame/ driver/ component/ evaluate/       pillars (+ Evaluate preset)
+  device/ communication/ neighbor/          Device/Domain runtimes, PairList
+  asynchronous/                             AnalysisRuntime, snapshot ring, D2H bridge
+  dynamics/ minimize/ scf/ planewave/ gpw/  method domains on both backends
+  longrange/ potentials/ observe/ record/   (CUDA gpw = method over internal stages)
+  io/ linalg/ electronic/ montecarlo/ replica/ path/ semiempirical/ xc/
+  vibration/ bias/ multiscale/ electrodes/ task/                 CPU only
 ```
 
-Shared code goes in the matching pillar dir, never parked inside a domain
-subdir. Electrostatics splits LAMMPS-style: real-space pair styles in
-`potentials/`, reciprocal solvers **and their math** in each backend's own
-`longrange/`. Only scalar laws that both backends genuinely call (Ewald
-self energy, neutralizing background) live in `core/longrange_math.h`; every
-parallel kernel stays per backend. Namespaces are not yet
-aligned to directories; aligning them is a deliberate follow-up, not a drive-by.
+- Shared code goes in the matching pillar dir, never inside a domain subdir.
+- Electrostatics splits LAMMPS-style: real-space pair styles in `potentials/`;
+  reciprocal solvers **and their math** in each backend's `longrange/`.
+- `core/` holds only scalar laws both backends call: `longrange_math.h` (Ewald
+  self energy, neutralizing background), `dynamics_math.h` (NHC half-step,
+  thermal DOF, pressure/Berendsen, ramps). Parallel kernels stay per backend.
+- `core/` also holds precision tiers, `Mat3`, units, Frame schema, device tags,
+  backend traits, `Driver<PhaseEnum, DeviceTag>`, `Plan`, `Stage`, `role.h`,
+  `verdict.h`, `iteration_status.h`, `ghost_contract.h`. `molrs.hpp` is the only
+  include for CXX-generated code.
 
-**Box** (`cpu/frame/box.h`, `cuda/frame/box.cuh`) is the canonical cell type:
-owns the cell matrix plus a per-step-immutable cache and exposes `length(d)`,
-`volume()`, `min_image`, `wrap_axis`, `scale_*`, `set_cell`. The CUDA Box keeps
-the cell in FP64, hands force kernels a narrowed `as<force_t>()` copy, wraps
-by whole lattice vectors (`wrap_position`, skew cells included) and carries a
-`revision` the backend bumps when a publish changes the cell — cell-derived
-tables (PME influence) key on it instead of copying geometry. CPU adds an xsimd
-`min_image_batch<B>`; LJ keeps an inlined branchy min-image in its ket-loop
-because member-load-through-`this` defeats hoisting there (~7%/step).
+### Box and decomposition
 
-CPU `DomainDecomposition` is periodic on every axis. Face neighbours wrap;
-`Halo::derive_hops` uses the periodic reach `dims[d] - 1`. There is no
-non-periodic brick path.
-
-### Core
-
-`core/` holds the device-independent contracts: precision tiers, `Mat3`, units,
-Frame schema, device tags, backend traits, the `Driver<PhaseEnum, DeviceTag>`
-dispatch template, `Plan`, `Stage`, `role.h`, `verdict.h`,
-`iteration_status.h`. `molrs.hpp` is the stable CXX FFI
-header and the only include for CXX-generated code.
+- **Box** stores lattice vectors in columns (`r = H s`, molrs/LAMMPS H) on both
+  backends; CellList, comm, PW, Ewald/PME/PPPM, DFTB lattice sums and
+  vibrational supercells use that convention.
+- CPU Box: inverse/face-height/reduced-lattice caches, exact general-skew
+  nearest image, host `revision` bumped on mutation. CUDA Box: FP64 cell,
+  narrowed `as<force_t>()` copy for kernels, lattice-vector `wrap_position`,
+  `revision` keying cell-derived tables (PME/Ewald).
+- Neighbor-listed CPU kernels use raw differences between explicit atom/image
+  rows and never min-image; bonded styles and the list-less pair fallback still
+  apply `Box::min_image`.
+- CPU `DomainDecomposition` owns topology and fractional bounds; **`Frame` alone
+  owns `nlocal`, `nghost` and capacity.** `CommBrick` creates explicit periodic
+  ghost rows on every axis, single-rank self images included; reach may span
+  several images. No non-periodic brick path.
 
 ### Driver — a staged loop, not a category
 
-A Driver is three things: **stages** (a typed phase enum), **iteration**, and
-**termination**. Termination is a policy object, so no category base classes
-exist — there is no `EvaluateDriver` / `DynamicsDriver` / `OptimizeDriver`
-taxonomy, and adding one is never the answer.
+A Driver is **stages** (typed phase enum) + **iteration** + **termination**
+(a policy object). No category bases — `EvaluateDriver` / `DynamicsDriver` /
+`OptimizeDriver` are never the answer.
 
 | | What it is | How many |
 | --- | --- | --- |
-| **Runtime** | Thin coordinator composing DomainRuntime + DeviceRuntime + AnalysisRuntime; frame binding, node storage, Plan dispatch | one per run |
+| **Runtime** (CPU) | Composes Domain/Device/Analysis runtimes; owns frame binding, the rebuild boundary, initial forces, the component ledger, the dispatch lock, nested `ScopedPlan`s | one per run |
+| **Backend** (CUDA) | Streams, Frame, Plan, `detail::ComponentLifecycle` | one per run |
 | **Driver<P>** | **One loop node**: stages + plan + criteria | any number, nestable |
-| **Criterion** | A Component the driver polls once per iteration | any number, user-definable |
+| **Criterion** | A Component the driver polls once per iteration | any number |
 
 ```
-Driver<PhaseEnum, DeviceTag>          plan / dispatch primitive
-  └─ cpu::Driver<PhaseEnum>           THE loop node
+Driver<PhaseEnum, DeviceTag>               plan / dispatch primitive (core)
+  └─ cpu::Driver<P> / cuda::Driver<P>      THE loop node
        └─ {MD, Minimize, MC, Evaluate, Hessian, PathDriver}   presets
 ```
 
-Two levels, not four. A **preset** is not an architectural layer: it is a class
-whose constructor attaches default criteria and infrastructure. It contributes
-defaults, not semantics.
+A **preset** is not a layer: its constructor attaches default criteria and
+infrastructure — defaults, not semantics.
 
 | Preset | Phase enum | Default policy |
 | --- | --- | --- |
@@ -405,80 +344,104 @@ defaults, not semantics.
 | `cpu::PathDriver` | `path::Phase` | criterion `AllReplicasConverged` |
 | Gaussian SCF (`MeanFieldMethod<D>`, `cuda::scf::RHF`) | `scf::Phase` | residual / ΔE criteria |
 
-**Two orthogonal policy slots.** `Criterion` answers *should the loop stop?* —
-`add_criterion(…)`, plural, composed by severity **Stop > Converged >
-Continue**, MPI-allreduced by the driver so criterion authors never think about
-it. It sees a `LoopState` and never a phase, which is what lets one criterion
-serve MD, Minimize, MC and Path alike. `OutcomePolicy` answers *does this
-iteration count?* — `set_outcome(…)`, singular, `Commit`/`Rollback`. MC's
-accept/reject was never a termination.
-
-**Algorithms never judge themselves.** `LBFGS`/`CG` publish metrics into
-`ConvergenceMetrics`; a Criterion judges them. A component may *request* a
-stop; it cannot *declare* convergence — there is no field left for it to write.
-
-**Status belongs to the loop.** Each loop node owns its `IterationStatus` +
-`ConvergenceMetrics`; `ctx.loop` only borrows the active loop's. `run_nested`
-re-points them at the child and restores the parent's on exit, so an inner loop
-physically cannot stop its enclosing loop.
-
-**A Driver is an executable node.** It does not inherit `Component`:
-`launch` is one step and does not allocate, while a nested driver runs its
-own loop. `on(phase).add` of a `DriverNode` that is not a Component builds a
-registration-private slot and stores that slot as the Plan's `Component*`.
-`provides_energy` / `provides_force` are copied from the concrete type there.
-The child runs its own Plan on the parent's Runtime: no second backend, no
-rebuilt decomposition, no split communicator. Type erasure happens at the
-**node** boundary, never at the stage boundary — stages stay typed enums all
-the way down.
-
-**Replica count is a nested loop, not an axis of a taxonomy.** REMD/PIMD need
-no new category: a replica loop + a budget criterion + a different `couple`
-component. Replicas are generated by a `ReplicaExpansion`, never supplied by
-the user; `run()` takes one Frame and writes one Frame back. Per-replica
-parameters belong to the expansion.
-
-**Known ceiling:** components cannot be cloned, so one inner Driver body over N
-replicas would need N independent component states (N L-BFGS histories).
-Undecided.
+- **`Criterion`** — *should the loop stop?* `add_criterion(…)`, plural; sees a
+  `LoopState`, never a phase, so one criterion serves every preset. CPU
+  criteria declare `contributes_to_convergence()`: success = every declared
+  requirement `Converged` on **every rank of the driver domain** (one MPI
+  reduction); stop-only guards are neutral; an undeclared `Converged` is an
+  error; any `Stop` aborts. Minimize with only guards still installs
+  `ForceConverged`.
+- **`OutcomePolicy`** — *does this iteration count?* `set_outcome(…)`,
+  singular, `Commit`/`Rollback`. MC accept/reject is an outcome.
+- **Algorithms never judge themselves.** `LBFGS`/`CG` publish
+  `ConvergenceMetrics`; a Criterion judges. A component may *request* a stop,
+  never *declare* convergence.
+- **Status belongs to the loop.** Each node owns `IterationStatus` +
+  `ConvergenceMetrics`; `ctx.loop` borrows the active loop's; `run_nested`
+  re-points and restores, so an inner loop cannot stop its parent.
+- **A Driver is an executable node, not a Component** (`launch` = one step, no
+  allocation; a nested driver runs its own loop). `on(phase).add` of a
+  `DriverNode` mounts a registration-private slot (core
+  `PhaseBuilder::mount_nested`, `nested_driver`) copying `provides_energy` /
+  `provides_force`. Type erasure happens at the **node** boundary, never at the
+  stage boundary.
+- **Nesting** runs the child's Plan on the parent's Runtime (no second
+  Runtime/DD/communicator). A physical child (MD, Evaluate, Minimize, Vib, MC)
+  rebuilds halo/list for its plan, invalidates the parent's halo/list/forces on
+  exit, and may run only in an outer workflow or at MD `end_of_step`;
+  electronic children borrow the parent's communication.
+- **Replicas are a nested loop**: replica loop + budget criterion + a `couple`
+  component; replicas come from a `ReplicaExpansion` (owning per-replica
+  parameters); `run()` takes one Frame and writes one back.
+- **Known ceiling:** components cannot be cloned, so one inner Driver body over
+  N replicas (N L-BFGS histories) is not expressible. Undecided.
 
 ### Stage typing
 
-The phase enums all start at 0, so an `int` phase cannot be told apart across
-workflows. Everything a human writes goes through a typed entry point:
+Phase enums all start at 0, so an `int` phase is ambiguous. Typed entry points:
+`ATV::slot_of(phase)` (the one enum→slot conversion),
+`ATV::slot_count<PhaseEnum>()`, `backend.run_stage(phase, step)`,
+`ctx.at(phase)`, `ATV::make_binding(phase, order)`. Hand-written
+`static_cast<int>` over a Phase enum is banned; `DefaultBinding`
+(`{PhaseKind, int phase, int order}`) is built only by `make_binding`.
 
-| Use | Entry point |
-| --- | --- |
-| the one enum→slot conversion | `ATV::slot_of(phase)` |
-| `COUNT` as a slot count | `ATV::slot_count<PhaseEnum>()` |
-| replay one phase | `backend.run_stage(phase, step)` |
-| "is this my stage?" | `ctx.at(phase)` |
-| declare a default binding | `ATV::make_binding(phase, order)` |
+### CPU MD execution
 
-Hand-written `static_cast<int>` over a Phase enum is banned. `DefaultBinding`
-carries `{PhaseKind, int phase, int order}` — the `PhaseKind` beside the int is
-what makes the erasure safe, `make_binding` is the only way to build the pair,
-and no caller ever types the int.
+Binding summary; mechanism and LAMMPS source mapping in
+[cpu-lammps-alignment.md](.claude/notes/cpu-lammps-alignment.md).
+
+- **One rebuild boundary** (LAMMPS `Verlet::setup`/`run`): wrap → exchange →
+  sort → borders → neighbor. Runtime does migration, borders and force reverse
+  comm; `pre_exchange` / `pre_neighbor` / `post_force` are hooks.
+- Only MD applies the provider's delay/every/check; linear workflows rebuild at
+  their force slot with LAMMPS `Min::init` cadence; a plan without a
+  NeighborProvider migrates every step. Minimize, MC and Hessian/Phonon forbid
+  row reordering; elsewhere rows move and consumers resolve atoms **by tag**.
+- **Neighbor requests:** consumers declare Half/Full and ghost-centred rows;
+  Runtime aggregates them for exactly one NeighborProvider per plan.
+  `ctx.md.pair_list` is always half; `full_pair_list` is separate. Consumers fit
+  the provider cutoff (excluding skin).
+- Initial, live-mounted and nested physical components share identity checks
+  and timestep negotiation before build; one integrator object may bind both
+  integration phases, two distinct objects may not own the same integration.
+- **Mutation lock:** structural edits (`unfix`, live `on(phase).add`) throw while
+  `Runtime::dispatch_active()`. Every ghost-contract refold marks the
+  communicator stale for the next rebuild.
+- **Ledger:** unique-instance lifecycle with alive token and separate nested
+  DriverNode counting; a failed Driver-owned run destroys built components and
+  rebuilds on retry.
+- **Execution declarations:** `requires_full_frame()` throws on a spatial
+  partition unless `set_serial_on_replica()`; stress output = slot
+  `stress_requested` AND `exec.stress_requested`. Resolve Frame columns once per
+  launch (per-launch resolution budget).
+- **Initial forces:** MD evaluates forces before the first half kick, including
+  `run(frame, 0)`; the same Frame continues without re-preparing. Force slots
+  run; other bindings opt in via `initialize_forces()`; integrators and ordinary
+  observers do not run. CPU walks `pre_force`..`end_of_step` and re-prepares
+  when force-assembly bindings change or the box revision moved since
+  `end_of_step`. CUDA mechanism: see Known debt.
+- **History flags:** stateful evaluators (CPMD/XL/ASPC, metadynamics,
+  Langevin/DPD RNG, constant-potential, auxiliary dipoles) never advance history
+  while `exec.initializing_forces` (setup) or `exec.trial_evaluation` (MC trial)
+  is set.
+- Step counters are `BigInt`.
 
 ### A loop is a Driver; a method is concrete
 
-There is no generic "SCFSolver" and no electronic-structure *category*. The
-real thing is the concrete method — `RHF`, `UHF`, `RKS`, `UKS`, `AM1`, `RM1`,
-`PW`, `GpwDft` — each owning its Hamiltonian, density build, and parameters as
-members. Gaussian SCF is a Driver node on both backends: `MeanFieldMethod<D> :
-cpu::Driver<scf::Phase>` and `cuda::scf::RHF : cuda::Driver<scf::Phase>`,
-with typed stages `fock → mix → diagonalize → density → check`. CPU stages
-live under `cpu/scf/stages/`; CUDA stages are owned by `RHF` and call the
-same-order device helpers (`DIISMixer`, `EigenSolver` stay `internal::`).
-`scf::Phase` is legal **because** a Driver node carries it; a free-floating
-phase enum with no node is not.
+- No generic "SCFSolver", no electronic-structure *category*. The concrete
+  method — `RHF`, `UHF`, `RKS`, `UKS`, `AM1`, `RM1`, `PW`, `GpwDft` — owns its
+  Hamiltonian, density build and parameters as members.
+- Gaussian SCF is a Driver node on both backends (`MeanFieldMethod<D> :
+  cpu::Driver<scf::Phase>`, `cuda::scf::RHF : cuda::Driver<scf::Phase>`),
+  stages `fock → mix → diagonalize → density → check`; CPU stages under
+  `cpu/scf/stages/`, CUDA stages owned by `RHF` (`DIISMixer`, `EigenSolver`
+  stay `internal::`). `scf::Phase` is legal **because** a node carries it.
+  `cpu::pw::PW` is `Driver<pw::Phase>`; `GpwDft` DIIS paths are Driver stages.
 
 ```cpp
 cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10};
 rhf.run(frame);        // Frame in / Frame out; workspace private
 ```
-
-Every concrete ES method speaks one call shape:
 
 | Member | Does | Frame writes (overwrite) |
 | --- | --- | --- |
@@ -487,354 +450,267 @@ Every concrete ES method speaks one call shape:
 | `forces(Frame&)` | SCF + forces | `kAtom_f*` [eV/Å], `kEnergy` |
 | `stress(Frame&)` (periodic) | SCF + analytic stress; returns σ [eV/Å³] | `kStress` = σΩ [eV], `kEnergy` |
 
-Algorithm knobs of those members (FD step, strain step, axis mask) are
-members. Finite-difference oracles stay free functions (`*_forces_fd`,
-`*_stress_fd`) in the same public units; analytic force/stress assemblies are
-`internal`. Hartree/Ry live only on the returned result object.
-
-CUDA presents the same shape (`cuda::scf::RHF{basis}.run(frame)` /
-`.forces(frame)`). When an outer MD/Minimize/Evaluate needs forces it binds the
-concrete method (or a thin force-slot component owning it); that component
-accumulates (`+=`) onto the Frame and reaches the method through the
-non-writing entries, never by duplicating its parameters.
-
-*Properties* (charges, dipoles, Mulliken, AM1-BCC) are component **outputs
-written to Frame** — never Driver-level categories.
-
-**Remaining debt, do not extend:** ES method families do **not** yet share
-one public shape (science factorization OK; engineering dialects —
-method-as-Driver vs method+`*Evaluator` vs Solver-internal SCC; CUDA
-`cuda::gpw::GpwDft` Frame `build`/`run`/`forces` read `kinds`, while the
-device kernels still take `GpwAtom`). Full ledger and close order:
-[`.claude/notes/es-architecture-debt.md`](.claude/notes/es-architecture-debt.md).
-Named residuals still open there include: `cuda::pw::PW` has no Driver
-mirror; `GpwDft` OT free-loop (DIIS paths are Driver stages).
-`cpu::pw::PW` product paths are already `Driver<pw::Phase>` — do not re-open
-as free-loop debt.
+- Knobs of those members (FD step, strain step, axis mask) are members. FD
+  oracles stay free functions (`*_forces_fd`, `*_stress_fd`) in public units;
+  analytic assemblies are `internal`. Hartree/Ry live only on result objects.
+- CUDA presents the same shape. An outer MD/Minimize/Evaluate binds the method
+  (or a thin force-slot component owning it) that accumulates (`+=`) onto the
+  Frame through the non-writing entries, never duplicating its parameters.
+- *Properties* (charges, dipoles, Mulliken, AM1-BCC) are component **outputs
+  written to Frame**, never Driver categories.
 
 ### Component
 
-**Role is a bitset**, not an exclusive enum: `FrameImmutable` (does not modify
-x/v/f/box/topology), `Deferred` (optional; unset ⇒ main-loop required),
-`ExternalIO`. There is no `Capability` write-set — outputs are Frame keys.
-Validation uses kinds and Role flags: `Evaluate` needs ≥1 energy source, `MD`
-≥1 `Integrator`, `Minimize` ≥1 `Optimizer`, `MC` ≥1 `Mover`.
-
-**Kinds** — one class per header under `component/`, depth ≤ 2
-(`Concrete → Kind → Component`). Pipeline glue (NeighborList, Halo, Zero*,
-Reduce) inherits `Component` directly; there is no `Infrastructure` kind.
+- **Role is a bitset**: `FrameImmutable` (does not modify x/v/f/box/topology),
+  `Deferred` (optional; unset ⇒ main-loop required), `ExternalIO`. Outputs are
+  Frame keys (no `Capability` set). Validation: `Evaluate` ≥1 energy source,
+  `MD` ≥1 `Integrator`, `Minimize` ≥1 `Optimizer`, `MC` ≥1 `Mover`.
+- **Kinds**: one class per header under `component/`, depth ≤ 2. Pipeline glue
+  (`NeighborList`, `Zero*`, `Reduce`) inherits `Component` directly; no
+  `Infrastructure` kind.
 
 | Kind | Default Role | Examples |
 | --- | --- | --- |
 | `Potential` | required | PairLJCut, BondHarmonic, CoulLong, KSpace |
-| `HF` / `Semiempirical` / `PlaneWave` / `GPW` | required | concrete methods |
-
-`HF` is a tag on the Driver node, not a `Component` subclass.
-`Semiempirical`, `PlaneWave`, and `GPW` are Component kinds. The
-registration slot copies `provides_energy` / `provides_force` off the tag.
+| `HF` (tag on the Driver node) / `Semiempirical` / `PlaneWave` / `GPW` | required | concrete methods |
 | `Bias` / `PathCoupling` | required | HarmonicBias, NebCoupling |
 | `Observer` | FrameImmutable\|Deferred | RDF, MSD, Virial, KineticEnergy |
 | `Recorder` | +ExternalIO | Thermo, XYZ |
 | `Integrator` / `Thermostat` / `Barostat` / `Optimizer` / `Constraint` / `Mover` | required | VelocityVerlet, LBFGS |
 
-**Opt-in protocols** — `Component` stays minimal; cross-cutting needs are
-declared by implementing a protocol the engine **probes for** (no
-`dynamic_cast`, no dead default virtuals): `NeighborConsumer`,
-`NeighborProvider`, `LongRangeParticipant` (exactly one matched real/reciprocal
-pair required), `PairEvaluator`, `ConstraintProvider`, `TimestepProvider` /
-`TimestepConsumer`. The async base is a class, `AsyncComponentBase`, not a
-probed protocol.
-
-A protocol only earns a `Component` accessor when something **scans** for it.
-`ForwardPacker` (`component/comm.h`) does not: the extra-field forward path is
-self-initiated — the plugin calls `ctx.md.comm->forward_comm(*this)` itself —
-so it is named as a base by the three classes that pack (`ChargePacker`,
-`FixSettle`, `FixRattle`) and `Component` carries none of its virtuals.
-
-**Lifecycle:** `build()` (one-time alloc) → `launch()` × N → `destroy()`. No
-allocation in `launch()`.
-
-**Ownership is explicit at every registration path:** `on(phase).add(rvalue,
-order)` transfers; `on(phase).add_ref(lvalue, order)` borrows; plain
-`on(phase).add(lvalue)` is deleted. Categorical setters follow the same rule
-(`set_xxx` owns, `set_xxx_ref` borrows).
-
-`on(phase)` is the **only** public registration path in C++. There is no bare
-`Driver::add` / `add_ref` that infers the phase — the driver-level binder is
-`bind_defaults` and it is `protected`
-(`core/driver_template.h:197`, `:238`). Python's `sim.add(...)` is a binding
-convenience and is not the C++ surface.
-
-**Observer computes; Recorder writes I/O.** Never both.
+- **Opt-in protocols** the engine probes for (no `dynamic_cast`):
+  `NeighborConsumer`, `NeighborProvider`, `LongRangeParticipant` (exactly one
+  matched real/reciprocal pair), `PairEvaluator`, `ConstraintProvider`,
+  `TimestepProvider` / `TimestepConsumer`. `AsyncComponentBase` is a class.
+- `Component` carries default-false **declared-requirement** virtuals
+  (`requires_full_frame`, `requires_tag_index`, `requires/provides_system_stress`,
+  `updates_owned_charges`, `provides_hessian`, `initialize_forces`,
+  `neighbor_provider()`, …); each exists because Runtime/Driver scans for it.
+  A protocol or accessor earns a place only when something scans for it.
+- `ForwardPacker` / `ReversePacker` (`component/comm.h`) are self-initiated
+  (`ctx.md.comm->forward_comm(*this)`), so `Component` carries none of their
+  virtuals. Packers: `ChargePacker`, `FixSettle`, `FixRattle`, `EAM`.
+- **Lifecycle:** `build()` (one-time alloc) → initial forces when required →
+  `launch()` × N → `destroy()`. No allocation in `launch()`.
+- **Ownership is explicit:** `on(phase).add(rvalue, order)` transfers;
+  `on(phase).add_ref(lvalue, order)` borrows; `add(lvalue)` is deleted.
+  `set_xxx` owns, `set_xxx_ref` borrows.
+- `on(phase)` is the **only** public C++ registration path; `bind_defaults` /
+  `bind_defaults_ref` are protected (`core/driver_template.h`). Python
+  `sim.add(...)` is a binding convenience.
+- **Observer computes; Recorder writes I/O.** Never both.
 
 ### Context tiers
 
-`Context` is a flat core (threading/MPI topology, timing registry) plus
-per-workflow service slices — a component reaches only its workflow's slice:
+Flat core (threading/MPI topology, timing registry) + per-workflow slices,
+reached via `LaunchContext::runtime` (`ctx.runtime.md.pair_list`).
 
 | Slice | Struct | Key fields |
 | --- | --- | --- |
-| `ctx.md` | `DynamicsServices` | `dd`, `pair_list`, halo/migration hooks |
-| `ctx.mc` | `SamplingServices` | `proposal` (`mc::Transaction`) |
-| `ctx.opt` | `OptimizeServices` | `reeval_forces`, `line_search_trial` |
-| `ctx.path` | `PathServices` | replica coupling state |
-| `ctx.loop` | `LoopServices` | borrowed `status` + `metrics` of the active loop |
-| `ctx.exec` | `ExecServices` | `runtime` (nested drivers run on it) |
-| `ctx.analysis` | `AnalysisServices` | `executor` (snapshot-ring analysis) |
+| `md` | `DynamicsServices` | `dd`, `comm` (CommBrick), `ghost`, `pair_list` (half) / `full_pair_list`, `atom_sort`, `reneighbor`, `n_dof_global`, `is_last_step` |
+| `mc` | `SamplingServices` | `proposal` (`mc::Transaction`), `rng` |
+| `opt` | `OptimizeServices` | `reeval_forces`, `line_search_trial` |
+| `path` | `PathServices` | replica coupling state |
+| `loop` | `LoopServices` | borrowed `status` + `metrics` of the active loop |
+| `exec` | `ExecServices` | `runtime`; vetoes `forces_requested` / `stress_requested`; history flags `initializing_forces` / `trial_evaluation`; `serial_on_replica` |
+| `analysis` | `AnalysisServices` | `executor` (snapshot-ring analysis) |
 
-Slices are plain aggregates; the Context stays non-polymorphic
-(static-asserted). `cuda::Context` carries streams + the `md` slice only. The
-CUDA SCF solver deliberately does not take the driver Context — it receives a
-narrow `SolverContext{stream, frame, step}`.
+Slices are plain aggregates; Context stays non-polymorphic (static-asserted).
+`cuda::Context` carries streams, `host_box`, `loop` and `md`. The CUDA SCF
+solver takes only `SolverContext{stream, frame, step}`.
 
 ### Frame
 
-A Frame is device-resident system state. Its boundary vocabulary is exactly
-three regions: named typed **blocks**, exact-dtype **meta**, and **box**.
+Boundary vocabulary: typed **blocks**, exact-dtype **meta**, **box**.
 
 | Frame | Representation | Topology |
 | --- | --- | --- |
 | `molrs.Frame` | flat typed Block columns + typed `MetaValue` map + box | flat bonds/angles/dihedrals |
 | `cpu::Frame` | exactly `BlockMap blocks; MetaMap meta; Box box;` | per-atom LAMMPS columns (`num_bond`/`bond_atom`, global-tag partners) |
-| `cuda::Frame` | raw device pointers + host-cached counts | dual: single-GPU flat lists; multi-GPU per-atom SoA |
+| `cuda::Frame` | raw device pointers + host-cached counts | single-GPU flat lists; multi-GPU per-atom SoA |
 
-Conversion points, each owning exactly one boundary:
-
-- `from_molrs()` / `to_molrs()` — strict schema boundary, run once per
-  `run()`, never in a step loop. Unknown blocks/columns, wrong dtypes and wrong
-  row counts fail immediately. `to_molrs` writes back x/v/f, charge, image, tag
-  (checked i32 narrowing — overflow throws), the box (the cell is an output
-  under barostats / cell relax) and every serializable typed-meta value; type,
-  mass and topology are static run inputs and are not written.
-- `cpu::to_cuda()` / `cuda::to_cpu()` — host ⇄ device.
-
-CPU precision tiers are `StorageReal`/`WorkReal`/`AccReal` (accumulators
-always double). CUDA classical MD uses one type per physical role
-(`cuda/frame/types.cuh`, OpenMM mixed strategy; knob `ATV_CUDA_PREC_MODE`
-only): force math `force_t`, stored coordinate `pos_t` plus an FP32 correction
-column in mixed mode, integration state `mixed_t`, cell `geom_t` (FP64),
-reductions `acc_t` (FP64), forces 64-bit fixed point `fixed_t`. Integrators
-reconstruct/split coordinates (`cuda/frame/precision.cuh`) and refuse a
-faulted force; `cuda::to_cpu` reports its atom tag and step. Every path that
-moves per-atom state (sort, migration, snapshots, transfers) carries the
-correction and velocity columns untruncated. `real_t`/`work_t`/`prec_t`
-remain only for Gaussian SCF kernels. Integer IDs by LAMMPS role:
-`LocalInt`, `TagInt`, `ImageInt`, `BigInt` (always 64-bit).
-
-Per Frame purity the frame holds **no** method-specific scratch: integrals, AO
-maps, grids and DIIS history are owned by the concrete method. The neighbor
-pair list stays on `NeighborList`, published as a non-owning `ctx.md.pair_list`.
-No implicit transfer in low-level operators; CUDA pipelines stay on device
-between explicit transfers.
+- `from_molrs()` / `to_molrs()` — strict schema boundary, once per `run()`.
+  Unknown blocks/columns, wrong dtypes and row counts fail immediately.
+  `to_molrs` writes x/v/f, charge, image, tag (checked i32 narrowing), box and
+  serializable meta; type, mass, topology are static inputs. `cpu::to_cuda()` /
+  `cuda::to_cpu()` move host ⇄ device.
+- **CPU precision:** `StorageReal` / `WorkReal` / `AccReal` (accumulators
+  double).
+- **CUDA classical MD precision:** one type per role (`cuda/frame/types.cuh`,
+  OpenMM mixed strategy, knob `ATV_CUDA_PREC_MODE`): `force_t` force math,
+  `pos_t` coordinates (+ FP32 correction column in mixed mode), `mixed_t`
+  integration state, `geom_t` cell (FP64), `acc_t` reductions (FP64),
+  `fixed_t` 64-bit fixed-point forces. Integrators reconstruct/split
+  coordinates (`precision.cuh`) and refuse a faulted force (`ForceFault`;
+  `cuda::to_cpu` reports tag and step). Every per-atom move (sort, migration,
+  snapshot, transfer) carries correction and velocity columns untruncated.
+  Gaussian SCF CUDA tiers `real_t` / `work_t` / `prec_t` are FP64 in every mode.
+- Integer IDs by LAMMPS role: `LocalInt`, `TagInt`, `ImageInt`, `BigInt`
+  (always 64-bit).
+- **Frame purity:** no method scratch (integrals, AO maps, grids, DIIS history
+  belong to the method); the pair list stays on `NeighborList`. No implicit
+  transfer in low-level operators; CUDA stays on device between explicit
+  transfers.
 
 ### molrs integration
 
-The engine *measures*; molrs *analyzes and stores*. Bridge calls are raw-array
-FFI wrappers — per-frame writers in `cpu/io/frame_writer.h`, batch computes and
-streaming accumulators in `cpu/observe/trajectory_metrics.h` (PIMPL) — with no
-`rust/cxx.h` in public headers. **No analysis math lives in C++ on either
-backend**: both RDF observers stream positions + per-frame cell into the molrs
-accumulator; the one g(r) emitter is `cpu::rdf_write_curve`.
-
-## Conventions
-
-- **Namespace:** `ATV`; sub `ATV::cpu`, `ATV::cuda`, `ATV::md`,
-  `ATV::minimizer`, `ATV::sampling`, `ATV::path`, `ATV::scf`, `ATV::pw`,
-  `ATV::evaluate`. Internals `ATV::cpu::scf::internal` etc. — not public, and
-  code under an `internal/` directory belongs in the matching `internal`
-  namespace.
-- **File extensions:** CPU `.h`/`.cpp`, CUDA `.cuh`/`.cu`, core `.h`.
-  Deliberately CUDA-free bridge headers under `cuda/` keep `.h`.
-- **Phase naming:** Evaluate `prepare, evaluate, finalize`; MD LAMMPS-style
-  (`initial_integrate, post_integrate, pre_exchange, pre_neighbor, neighbor,
-  pre_force, force, post_force, final_integrate, end_of_step` —
-  `core/stage.h`); Minimizer `search_direction, line_search, force,
-  convergence_check, end_of_step`; Vib `setup, displace, force, accumulate,
-  diagonalize, thermochem, end_of_step`; Sampling `propose, energy,
-  end_of_step`; SCF `fock, mix, diagonalize, density, check`.
-- **Units:** eV, Å, fs, amu, eV/Å, K on the public surface; conversions in
-  `core/units.h`. SCF/PW compute in Hartree/Ry and write eV to `kEnergy`.
-- **Precision:** state it or state the integer role — the catch-all `Real` and
-  `Int` names do not exist.
-- **libxc:** when enabled, native XC must match libxc to 1e-12.
-- **SIMD is a first-class optimization lane** — via **portable xsimd only**
-  (11.2.0, linked directly to `atomiverse`): single source, raw
-  pointers/spans, scalar tail; the compiler emits AVX2/AVX-512 or NEON per
-  arch. Arch intrinsics (`_mm512_*`/NEON), per-arch kernel + dispatch, and
-  global `XTENSOR_USE_XSIMD` (breaks `reshape_view` in `xc_grid_engine.h`)
-  stay banned. Reference idioms: `native_integrals.cpp` (ERI ss|ss ket-loop;
-  `eri_block()` dispatches by compile-time Ltot), `multigrid.cpp`
-  `axis_dot`/`axis_axpy` (GPW point-fill z-runs). A vectorized reduction is
-  not bit-exact: it lands only with a stated tolerance vs the pins, and any
-  energy-path change re-runs the force regressions.
-- **Doxygen:** every public symbol needs `@brief`, `@param` (with units),
-  `@return`.
-
-## CUDA classical MD is an OpenMM engine
-
-CUDA neighbor rebuild and nonbonded force are an **OpenMM cluster/tile
-engine**: spatial reorder → clusters (target 32) → AABB → cluster CSR + real
-interaction masks → tile/shared-memory force for LJ and real-space Coulomb. PME
-stays in `longrange/` (cuFFT). The public surface may stay LAMMPS-named and the
-CPU may stay LAMMPS-like; that does not license per-atom Verlet as the CUDA MD
-force architecture. Forbidden: a `NonbondedStyle` dual architecture, force
-defaulting to per-atom Verlet, production `memset` all-ones masks.
-
-CPU MD establishes initial forces before the first half kick, including
-`run(frame, 0)`. The same Frame continues without repeating initialization.
-Force-slot evaluators preserve temporal history when
-`ctx.runtime.exec.initializing_forces` is set; pre/post-force and scalar
-finalization components opt in through `initialize_forces()`. Integrators and
-ordinary observers do not run during force preparation.
-
-Generic CUDA MD algorithms use NVIDIA implementations directly: CUB for
-block/device reductions, sort, scan, histogram and selection; Cooperative Groups
-for warp collectives; Thrust for searches and generic gather/scatter/sequence;
-cuRAND Philox for stochastic noise; cuFFT for PME transforms. Do not add a
-parallel handwritten implementation or a forwarding-only wrapper. Physics,
-spatial predicates and fused topology/force packing remain domain kernels.
-Reserve hot-path scratch in build, preserve stream ordering, and key stochastic
-streams by seed, global atom tag, step and component domain so reordering/migration
-preserves noise without correlating distinct stochastic components.
-
-## Electronic structure optimization order
-
-ES work (Gaussian SCF, PW, GPW, SE) follows this order — architecture and
-shared algorithm shape before micro-perf; CPU before CUDA ES expansion:
-
-1. **CPU architecture** — Driver/stage semantics, kill forked SCF copies, extract
-   only at a second real call site (Gaussian / PW / GPW share DIIS, density,
-   ρ→V_eff-class pipelines, LA helpers when reuse is real).
-2. **CPU performance** — xsimd hot paths, OT economics, grid constants, MPI;
-   fair wall vs the method's external twin when one exists (CP2K for GPW, …).
-3. **CUDA ES by method slice** — rewrite hot paths in CUDA programming style
-   (device-only, tiling, minimal H2D); use **same-settings CPU results as the
-   correctness oracle** (plus external pins under the oracle law). Do **not**
-   maintain one giant dual-backend source for kernels.
-4. **Large-system CUDA perf** — only after the slice is correct; small molecules
-   are correctness-only, never the "CUDA wins" story.
-
-**CUDA ES open gate** (all required for a method slice): CPU regressions green
-and external oracle pins green when that quantity has a twin; public
-`run`/`forces` shape stable (no in-flight structural rewrite of that method);
-CUDA↔CPU energy/forces/residual tolerances stated; perf claims only on large
-systems. Wave-local freezes and first-cut queue items live in `.claude/notes/`,
-not here.
-
-**Classical MD CUDA is a separate track** — OpenMM engine work is not blocked
-by ES CPU priority, and ES CUDA freezes do not freeze MD CUDA.
-
-### API naming law
-
-`declare_*` describes **structure**, `require_*` describes a **dependency**,
-`on_*` handles an **event**. Never mix them: an interface that spells a data
-property as an event (`on_every_step(field)`) has put static metadata in the
-lifecycle vocabulary, and the name will keep sliding between "what the field
-is" and "when something happens". `on(phase).add(...)` is legal under this law
-— a phase *is* an event, and that call declares its handler.
-
-`declare_*` is a **Component-author** surface, the same side of the fence as
-`launch()`. No user script constructs one.
+The engine *measures*; molrs *analyzes and stores*. Bridges are raw-array FFI
+wrappers (`cpu/io/frame_writer.h`, `cpu/observe/trajectory_metrics.h` PIMPL),
+no `rust/cxx.h` in public headers. **No analysis math in C++ on either
+backend**; RDF observers stream positions + cell into the molrs accumulator;
+the one g(r) emitter is `cpu::rdf_write_curve`.
 
 ### Ghost data is a lifetime contract, not a wire
 
-A component hands back a `static constexpr` table from
-`declare_ghosts()` (`core/ghost_contract.h`) — a compile-time property of the
-type, not a builder call. Each `GhostField` states two orthogonal things:
+A component returns a `static constexpr` table from `declare_ghosts()`
+(`core/ghost_contract.h`); each `GhostField` states **freshness** (owner →
+ghost: `read_stable` / `read_each_step`) or **data flow** (ghost → owner:
+`reduce_to_owner`).
 
-| Axis | Question | Constructor |
-| --- | --- | --- |
-| **freshness** (owner → ghost) | how current must this be when I read it? | `read_stable` / `read_each_step` |
-| **data flow** (ghost → owner) | what do I tally that has to reach the owner? | `reduce_to_owner` |
+- **A style that reads a ghost column without declaring it gets garbage,
+  silently** — symmetric garbage passes every force-balance check, for self
+  images and remote ghosts alike. A new ghost-reading style adds its table in
+  the same change.
+- Presence is implied by the read. The same field from two components merges to
+  the **stricter** freshness (order-independent); opposite directions on one
+  column conflict. Named constructors are the only way to build a field.
+- The Driver folds every table onto `base_fields::kEngine` into one
+  `GhostContract` (`ctx.md.ghost`). The contract→pass mapping lives once, in
+  `make_wire_plan` (`cpu/communication/atom_pack.cpp`): `Border` = every read,
+  `Comm` = `step` reads, `Reverse` = every reduction. Nothing above it names a
+  wire; nothing below it names a freshness.
+- `Block::resolve_column(GhostField)` = the column a component asked for;
+  `resolve_columns(flags)` = which columns belong on wire X (migration only).
+  No third selector.
+- **CPU comm is LAMMPS `CommBrick`:** one swap at a time on tag 0 (standing
+  `Irecv` → pack → blocking `Send` → `Wait`), `sendproc != recvproc` swap table,
+  the round only as forwarding unit. Detail: [md-comm.md](.claude/notes/md-comm.md).
+- **Only halo and migration compile a `PackPlan`** (`make_wire_plan`,
+  `make_exchange_plan` on `kColExchange`). `gather_to_root` / `bcast_frame` move
+  columns column-major via `Block::resolve_columns` +
+  `comm::column_schema_fingerprint`; `mc::Transaction` uses
+  `Frame::copy_row_from` on a `clone_structure` patch. Never borrow the
+  migration wire for anything else.
 
-They are not one enum: `stable`/`step` are two strengths of the *same*
-guarantee in one direction; a reduction is the other direction and has no
-freshness. **A style that reads a ghost column and does not declare it gets
-garbage, silently** — adding such a style means adding its table in the same
-change. **Presence is implied** — reading a field on a ghost means the
-ghost carries it from the moment it exists, so there is no second set to keep
-in sync. Two components asking for the same field merge with the **stricter**
-freshness winning, in either order, so the fold is rank-independent; opposite
-directions on one column is a conflict, not a merge. The named constructors
-are the only way to build a `GhostField`, so a half-stated declaration does
-not exist.
+## Conventions
 
-**One object, one compile step.** The Driver folds every component's table
-onto the engine's own (`base_fields::kEngine`) into a single `GhostContract`,
-published as `ctx.md.ghost`. There is no per-wire copy and no intermediate
-bag. The mapping from contract to communication pass lives exactly once, in
-`make_wire_plan` (`cpu/communication/atom_pack.cpp`): `Border` = every read,
-`Comm` = reads at `Freshness::step`, `Reverse` = every reduction. Nothing
-above that function names a wire; nothing below it names a freshness.
+- **Namespace:** `ATV`; `ATV::cpu`, `ATV::cuda`, `ATV::md`, `ATV::minimizer`,
+  `ATV::sampling`, `ATV::path`, `ATV::scf`, `ATV::pw`, `ATV::evaluate`. Code
+  under an `internal/` directory lives in the matching `internal` namespace.
+- **Extensions:** CPU `.h`/`.cpp`, CUDA `.cuh`/`.cu`, core `.h`; CUDA-free
+  bridge headers under `cuda/` keep `.h`.
+- **Phases:** Evaluate `prepare, evaluate, finalize`; MD `initial_integrate,
+  post_integrate, pre_exchange, pre_neighbor, neighbor, pre_force, force,
+  post_force, final_integrate, end_of_step`; Minimizer `search_direction,
+  line_search, force, convergence_check, end_of_step`; Vib `setup, displace,
+  force, accumulate, diagonalize, thermochem, end_of_step`; Sampling `propose,
+  energy, end_of_step`; SCF `fock, mix, diagonalize, density, check`.
+- **Units:** eV, Å, fs, amu, eV/Å, K on the public surface (`core/units.h`);
+  SCF/PW compute in Hartree/Ry and write eV to `kEnergy`.
+- **Precision:** state it or state the integer role — `Real`/`Int` do not exist.
+- **libxc:** when enabled, native XC must match libxc to 1e-12.
+- **SIMD = portable xsimd only** (11.2.0): single source, raw pointers/spans,
+  scalar tail. Banned: arch intrinsics, per-arch kernels + dispatch, global
+  `XTENSOR_USE_XSIMD` (breaks `reshape_view` in `xc_grid_engine.h`). Idioms:
+  `native_integrals.cpp` ERI ket-loop, `multigrid.cpp` `axis_dot`/`axis_axpy`.
+  A vectorized reduction lands only with a stated tolerance vs the pins; any
+  energy-path change re-runs the force regressions. Never put a SIMD reduction
+  behind a loop-invariant branch; validate virials at the shipped flags.
+- **Doxygen:** every public symbol has `@brief`, `@param` (with units), `@return`.
+- **API naming law:** `declare_*` = structure, `require_*` = dependency,
+  `on_*` = event; never mix (`on_every_step(field)` is wrong). `on(phase).add`
+  is legal — a phase is an event. `declare_*` is a Component-author surface.
 
-**Two selectors, two questions.** `Block::resolve_column(GhostField)` answers
-"give me the column this component asked for"; `resolve_columns(flags)`
-answers "which columns claim to belong on wire X" and drives migration only,
-because what an atom IS is a property of the Frame rather than of whoever is
-mounted. Neither is a generalisation of the other and there is no third.
+## CUDA classical MD is an OpenMM engine
 
-**CPU MD step halo** is that contract, compiled — refresh x/y/z (plus whatever a
-`step` read added), reverse fx/fy/fz, creation x/y/z/tag/type — field-major
-whenever every column on it is scalar, which is every production wire. MPI
-shape is LAMMPS `CommBrick` verbatim: **one swap at a time on tag 0**,
-standing `Irecv` → pack → blocking `Send` → `Wait`, no send-side
-`Isend`/`Waitall`. That is legal because the swap table follows LAMMPS's
-`sendproc != recvproc` convention — a swap ships across its own face and
-hears back across the opposite one, so every rank's swap `s` is its
-partner's swap `s` and exactly one message is in flight per pair per swap.
-The **round** survives only as the forwarding unit: its two swaps share one
-scan window (everything the previous round delivered), and the `round > 1`
-mid-plane band edge is what sorts that window between the two faces.
-Remaining CUDA `MultiGpu` / namespace alignment:
-[md-comm.md](.claude/notes/md-comm.md).
+- Neighbor rebuild and nonbonded force are an **OpenMM cluster/tile engine**:
+  spatial reorder → clusters (target 32) → AABB → cluster CSR + real
+  interaction masks → tile/shared-memory force for LJ and real-space Coulomb.
+  LAMMPS names on the surface do not license per-atom Verlet. Forbidden: a
+  `NonbondedStyle` dual architecture, per-atom Verlet as default force path,
+  production `memset` all-ones masks.
+- PME (cuFFT) and Ewald stay in `longrange/` and follow a changing cell (mesh /
+  mode set fixed at build, cell tables refreshed on `Box::revision`).
+- Generic algorithms use NVIDIA libraries directly — CUB, Cooperative Groups,
+  Thrust, cuRAND Philox, cuFFT — no handwritten twin, no forwarding wrapper.
+  Physics, spatial predicates, fused topology/force packing stay domain kernels.
+  Reserve hot-path scratch in build, keep stream order, key noise by seed,
+  global tag, step and component domain. Detail:
+  [cuda-md-nvidia-libraries.md](.claude/notes/cuda-md-nvidia-libraries.md).
+- A separate track: not blocked by ES CPU priority, not frozen by ES CUDA freezes.
 
-**Nothing outside the halo and migration compiles a `PackPlan`.** It is a
-communication artifact: `make_wire_plan` for the contract-driven halo passes,
-`make_exchange_plan` for migration (flag-driven, `kColExchange` — migration
-carries what an atom IS). Everything else asks the Block directly.
-`gather_to_root` and `bcast_frame` enumerate columns with
-`Block::resolve_columns` and move them **column-major** (`Gatherv` / `Bcast`
-per column), agreeing on the schema through `comm::column_schema_fingerprint`;
-`mc::Transaction` snapshots and restores whole rows with
-`Frame::copy_row_from` onto a `clone_structure` patch. Borrowing the
-migration wire to answer a non-migration question is what those three used to
-do, and it is not a shortcut that is available again.
+## Electronic structure optimization order
+
+Architecture and shared algorithm shape before micro-perf; CPU before CUDA ES.
+
+1. **CPU architecture** — Driver/stage semantics, kill forked SCF copies,
+   extract only at a second real call site.
+2. **CPU performance** — xsimd hot paths, OT economics, grid constants, MPI;
+   fair wall vs the external twin (CP2K for GPW, …).
+3. **CUDA ES by method slice** — device-only, tiling, minimal H2D;
+   **same-settings CPU is the correctness oracle** (plus external pins); no
+   giant dual-backend kernel source; mid-path device↔host exchange is a defect
+   ([cuda-only-no-dh.md](.claude/notes/cuda-only-no-dh.md)).
+4. **Large-system CUDA perf** — only after the slice is correct; small
+   molecules are correctness-only, never the "CUDA wins" story.
+
+**CUDA ES open gate** (all, per slice): CPU regressions and external pins
+green; public `run`/`forces` stable; CUDA↔CPU tolerances stated; perf claims
+only on large systems. Wave-local freezes live in `.claude/notes/`.
+
+## Known debt (do not extend)
+
+- **CPU/CUDA execution split.** CPU: `cpu::Runtime` (ledger with alive token,
+  hand-written initial-force walk, box-revision invalidation, own
+  `cpu::Driver::unfix`, MPI-reduced declared-convergence criteria). CUDA:
+  `cuda::Backend` + core `Plan::prepare_forces` (from `post_integrate`, flag on
+  `LaunchContext`) + core `detail::ComponentLifecycle` + core `Driver::unmount_`
+  + single-rank `worse_of` criteria. The `core/plan.h` helpers have one backend
+  user — re-unify CPU onto them or move them to `cuda/driver/`; never call them
+  shared.
+- **CUDA force validity** ignores host Frame edits between chunks
+  (invalidates only on binding change / rematerialize); CUDA Box revision lives
+  in the device cache (`publish_cell`), host copy 0.
+- **CUDA multi-GPU** has no Runtime/DomainRuntime: `cuda::MultiGpu`
+  (partition/halo/`run_nve*`) is a second MD stack outside the Plan.
+- **Nested electronic methods:** Gaussian SCF drives a private Runtime
+  (`MeanFieldMethod::build_on` ignores the parent's); PW/GPW generic nesting is
+  rejected.
+- **Residual `int` step counters:** `Runtime::run(int)`, `Driver::run_nested`
+  / `run_nested_erased` budgets, PhaseBuilder budgets,
+  `Runtime::comm_refresh_(int slot, int step)` (truncates).
+- **ES public shapes** diverge across families:
+  [es-architecture-debt.md](.claude/notes/es-architecture-debt.md).
+- Namespaces are not aligned to directories; aligning them is a deliberate
+  follow-up, not a drive-by.
 
 ## Oracle capability loops
 
 Instances: `pyscf-method-loop`, `cp2k-method-loop`, `metalwalls-method-loop`,
 `tb-method-loop`. Design: `docs/developer/oracle-capability-loop.md`; template
-`.grok/workflows/_templates/`; scaffold skill `.agents/skills/create-oracle-loop/`.
+`.grok/workflows/_templates/`; scaffold `.agents/skills/create-oracle-loop/`.
 
-**A loop's queue / handoff / ledger is not documentation.** It is generated
-under `.claude/campaigns/` (gitignored) and stays there. The one place that
-states what a method can do, on which backend, is `docs/roadmap/` — a wave that
-lands a capability updates the roadmap row, and nothing about waves, slugs or
-job IDs is ever written into `docs/`.
-
-- **GapCensus every wave** — re-diff the offline oracle + roadmap against ATV on
+- **Queue / handoff / ledger are not documentation**: generated under
+  `.claude/campaigns/` (gitignored). `docs/roadmap/` alone states what a method
+  can do on which backend; a landing updates its row, and waves, slugs or job
+  IDs never enter `docs/`.
+- **GapCensus every wave** — re-diff offline oracle + roadmap against ATV on
   `target_branch`, refill pending, update the roadmap. A foothold is not a
   closed capability. Stop only at `gaps_remaining = 0`.
-- **Clearup every wave** — after the worktrees panel returns, remove isolation
-  worktrees, prune fully-merged `wf/*` tips, wipe builds. Workers must not nest
-  long-lived subagents.
-- **Pin provenance** — a pin is *a number the other code printed*, re-runnable
-  as binary + version + input + output line. A `tools/*_oracle/` script may
-  parse oracle output; it must **never** reimplement the ATV algorithm, and a
-  pin must never be seeded from ATV's own measurement. `oracle:` names the code
-  that produced the number, not the paper. Detail:
-  [`.claude/notes/oracle-pin-provenance.md`](.claude/notes/oracle-pin-provenance.md).
-- **CP2K loop (strict)** — install and **actually run** CP2K offline for every
-  landable slug: correctness pin **and** fair wall
-  (\(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\)), same algorithm/settings class as the
-  ATV path under test. **Forbidden:** cross-representation "physics windows"
-  (e.g. GTH-GPW numbers anchoring NC-UPF PW, or any unequal Hamiltonian treated
-  as a twin). No CP2K → build/install it; if the quantity is genuinely not a
-  CP2K algorithm, the only honest pin is **`oracle: literature`** with a real
-  citation (not a fake `oracle: cp2k`). `perf_exempt` / "no binary" /
-  model-mismatch windows are **not** a green path for this loop.
-- **Blocked ≠ pending** — a row is blocked because a *stated gate* holds. A wave
-  short of work does not license promoting one, switching oracle families, or
+- **Clearup every wave** — remove isolation worktrees, prune merged `wf/*`
+  tips, wipe builds. Workers never nest long-lived subagents.
+- **Pin provenance** — a pin is *a number the other code printed* (binary +
+  version + input + output line). `tools/*_oracle/` only parses oracle output;
+  never seed a pin from ATV; `oracle:` names the code that printed it.
+  Detail: [oracle-pin-provenance.md](.claude/notes/oracle-pin-provenance.md).
+- **CP2K loop (strict)** — actually run CP2K for every landable slug:
+  correctness pin **and** fair wall (\(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\)) on
+  the same algorithm/settings class. No cross-representation windows (GTH-GPW
+  anchoring NC-UPF PW, any unequal Hamiltonian). No binary → build it; a
+  quantity CP2K does not implement pins as `oracle: literature` with a real
+  citation. `perf_exempt` / "no binary" / mismatch windows are not green.
+- **Blocked ≠ pending** — blocked means a *stated gate* holds; a wave short of
+  work does not license promoting a row, switching oracle family, or
   downgrading to `oracle: literature`.
 
 ## Default workflow
@@ -844,10 +720,8 @@ job IDs is ever written into `docs/`.
 3. Review (`/mol:review`)
 4. Capture decisions (`/mol:note` — rewrite the harness, never append)
 
-General workflow skills come from the molcrafts `mol` plugin. Atomiverse-only
-audits layer on top: `/av-arch`, `/av-cuda`, `/av-hpc`, `/av-perf`.
-
-Knowledge flow: `.claude/notes/` holds current understanding only (no history —
-that is what git is for); this file holds the binding rules; agents read both.
+Workflow skills come from the molcrafts `mol` plugin; Atomiverse audits:
+`/av-arch`, `/av-cuda`, `/av-hpc`, `/av-perf`. `.claude/notes/` holds current
+understanding only; this file holds the binding rules; agents read both.
 
 <!-- mol:bootstrap:managed end -->

@@ -25,7 +25,7 @@ CUDA counterparts: Mulliken, RDF, stress only.
 | Ψ(z) profile | `PotentialProfile` | Analytic planar Poisson |
 | Electrode Q(t) | `ElectrodeChargeObserver` | LAMMPS |
 | Capacitance ⟨δQ²⟩ | `CapacitanceChargeFluctuation` | Limmer closed form |
-| C_QQ(τ) / elastance | electrode observers | **Self-consistency only** — owe external pin |
+| C_QQ(τ) / elastance | electrode observers | **No standing regression** — owe external pin |
 | Classical polarization P | `ClassicalPolarization` | MetalWalls finite-field |
 
 ## Claim gap

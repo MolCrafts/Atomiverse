@@ -18,7 +18,7 @@ Fermi-level shift \(\delta\mu\) restores \(\int\Delta n=0\) when
 Cite: Baroni et al., *Rev. Mod. Phys.* **73**, 515 (2001);
 de Gironcoli, *Phys. Rev. B* **51**, 6773 (1995). Sibling fixed-occ:
 `regressions/response/dfpt-phonon-si`. Sibling PW smear:
-`regressions/pw/pw-smearing-al`.
+`regressions/pw/dos-metallic-si`.
 
 Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
 `method.smearing = Smearing::fermi_dirac`.

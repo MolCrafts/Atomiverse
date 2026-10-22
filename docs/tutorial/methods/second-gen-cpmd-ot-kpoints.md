@@ -26,7 +26,7 @@ forces are taken at the post-corrector density.
 This closes the last SGCP corrector×sampling cell for RKS: Γ-DIIS
 (`second-gen-cpmd-water`), Γ-OT (`second-gen-cpmd-ot`), multi-k
 diagonalization (`second-gen-cpmd-kpoints`), and multi-k OT. Multi-k
-**UKS** + OT is the sibling product `second-gen-cpmd-ot-uks-kpoints`
+**UKS** + OT is the sibling product [second-gen-cpmd-ot-uks-kpoints](second-gen-cpmd-ot-uks-kpoints.md)
 (dual-spin per-(k, σ) natural-orbital warm start).
 
 ## Usage
@@ -62,7 +62,7 @@ No CP2K number can exist for this method — CP2K's OT implementation is
 1. **Corrector A/B identity** — full-budget multi-k OT vs multi-k
    diagonalization at the initial H₂ geometry (1×1×2 TR-off mesh, 100 Ry,
    DZV-GTH-PADE / GTH-PADE-q1): measured \(|\Delta E| = 3.0\times10^{-12}\)
-   Ha (gate ≤ 1e-4 Ha, the `ot-kpoints` pin level).
+   Ha (gate ≤ 1e-4 Ha, the [ot-kpoints](ot-kpoints.md) pin level).
 2. **NVE drift envelope** (Kühne PRL **98**, 066401 (2007); Kolafa JCC
    **25**, 335 (2004)): measured worst relative drift \(5.1\times10^{-4}\)
    (gate ≤ 0.10), production OT iters ≤ budget 5, \(n_k = 2\) with full
@@ -71,6 +71,6 @@ No CP2K number can exist for this method — CP2K's OT implementation is
 ## Honest scope
 
 - Closed-shell multi-k RKS only; multi-k UKS + OT is
-  `second-gen-cpmd-ot-uks-kpoints`.
+  [second-gen-cpmd-ot-uks-kpoints](second-gen-cpmd-ot-uks-kpoints.md).
 - No metallic smearing / +U pinned under the SGCP corrector.
 - `perf_exempt`: no oracle wall twin can exist (see above).

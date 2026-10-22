@@ -13,11 +13,13 @@ void AsyncComponentBase::build(const BuildContext& ctx) {
     exec_ = ctx.runtime.analysis.executor;
     if (!exec_)
         return;
-    exec_->register_subscriber(this);
+    // A live mount may resize buffers used by existing subscribers.
+    exec_->quiesce();
     // Pre-size ring slot buffers for this subscriber's mask so
     // `Publish::launch()` never reallocates at fire time.
     // Multiple calls are idempotent (monotonic).
     exec_->prealloc_slots(ctx.frame.nlocal(), capture_mask());
+    exec_->register_subscriber(this);
 }
 
 void AsyncComponentBase::launch(const LaunchContext& ctx) {
@@ -51,7 +53,9 @@ void AsyncComponentBase::launch(const LaunchContext& ctx) {
 }
 
 void AsyncComponentBase::destroy(const DestroyContext& /*ctx*/) {
-    // finalize() is called by AnalysisExecutor::shutdown() after workers join.
+    if (exec_)
+        exec_->unregister_subscriber(this);
+    exec_ = nullptr;
 }
 
 } // namespace cpu

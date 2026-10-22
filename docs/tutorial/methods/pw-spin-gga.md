@@ -91,7 +91,7 @@ M = N_\uparrow - N_\downarrow = 2.
 noncollinear / SOC; spin-polarized analytic forces or stress acceptance; hybrid
 / meta-GGA XC; CUDA PW spin; absolute digit match to CP2K Quickstep (GPW/GTH ≠
 NC-UPF PW — prefer QE `pw.x` offline re-pin). GPW spin-GGA is a separate
-product surface (`gpw-uks-pbe`, `gpw-uks-blyp`).
+product surface (`gpw-uks-pbe`, [gpw-uks-blyp](gpw-uks-blyp.md)).
 
 ## Implementation
 
@@ -246,10 +246,10 @@ Dual gate: (1) mag + \(e_{\mathrm{tot}}\) + GGA activation + SCF converge;
 ## Limitations
 
 - **Γ-only molecular cell** on this pin (`k_mesh = 1`); multi-k collinear UKS
-  is a sibling product (`pw-uks-kmesh-fe`), not re-audited here for spin-GGA
+  is a sibling product ([pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)), not re-audited here for spin-GGA
   activation digits.
 - **Fixed occupations only** — metallic smearing is orthogonal
-  (`pw-smearing-al`); combined spin + smearing metals are not the acceptance
+  (see [pw-smearing-al](pw-smearing-al.md)); combined spin + smearing metals are not the acceptance
   of this page.
 - **Energy twin debt:** absolute \(E_{\mathrm{tot}}\) is a frozen offline method
   pin (tol \(10^{-3}\) Ha), not a CP2K/QE re-pin — re-pin when `pw.x` or a fair
@@ -263,7 +263,7 @@ Dual gate: (1) mag + \(e_{\mathrm{tot}}\) + GGA activation + SCF converge;
   foothold; with production `xc=PBE` it now rides true spin-GGA. This page is
   the **dedicated GGA-activation product** (dual LSDA run + energy pin).
   Closed-shell true GGA: `pw-pbe-gga-si`. GPW UKS GGA: `gpw-uks-pbe` /
-  `gpw-uks-blyp`.
+  [gpw-uks-blyp](gpw-uks-blyp.md).
 - **Out of scope forever for this page:** noncollinear spin, SOC, hybrid PW,
   meta-GGA (\(\tau\) channel blocked on PW/GPW engines), CUDA PW spin.
 
@@ -277,8 +277,8 @@ Dual gate: (1) mag + \(e_{\mathrm{tot}}\) + GGA activation + SCF converge;
 - Narrative PW / GPW chapters: [ch08-plane-wave.md](../ch08-plane-wave.md),
   [ch09-gpw.md](../ch09-gpw.md)
 - Related: `pw-spin-polarized-o2` (spin foothold), `pw-pbe-gga-si` (closed-shell
-  true GGA), `pw-uks-kmesh-fe` (k-mesh UKS), GPW UKS GGA
-  (`gpw-uks-pbe`, `gpw-uks-blyp`)
+  true GGA), [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md) (k-mesh UKS), GPW UKS GGA
+  (`gpw-uks-pbe`, [gpw-uks-blyp](gpw-uks-blyp.md))
 - Closed spec (history): `.claude/specs/pw-spin-gga/spec.md` (deleted at done;
   git log)
 - J. P. Perdew, K. Burke, M. Ernzerhof, *Phys. Rev. Lett.* **77**, 3865 (1996)

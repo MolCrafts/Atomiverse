@@ -5,7 +5,7 @@ capability loop, 2026-07-31.)*
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-bomd-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::md::MD` + `cpu::md::VelocityVerlet` + `cpu::gpw::GPWEvaluator{GpwDft{kinds} with cutoff_ry, …, k_mesh = {1,1,2}, k_time_reversal = false; compute_forces=true}`; step-0 forces seeded by `cpu::single_point(frame, gpw)` |
 | Oracle | **CP2K 2026.1** Quickstep AIMD (`RUN_TYPE MD` + `&KPOINTS`), offline via CP2K oracle |
 
@@ -48,7 +48,7 @@ Public surface only — Frame in, Frame out; parameters are constructor
 arguments / members of the concrete method (no `*Config` bags).
 
 ```cpp
-// minimal call sequence — match `gpw-bomd-kpoints`
+// minimal call sequence
 cpu::Frame frame(2);                      // periodic H2, cubic 12 Bohr cell
 // … fill kAtom_x/y/z, kAtom_type (Z=1), velocities; frame.box = …
 
@@ -71,8 +71,6 @@ md.run(frame, 4);                         // 4 NVE steps
 ```
 
 ```bash
-cmake --build build --target reg_gpw-bomd-kpoints
-reg_gpw-bomd-kpoints
 ```
 
 Sources: `src/cpu/gpw/` (evaluator MD path + \(P_k\) warm start),
@@ -82,7 +80,7 @@ same fixed point, RKS and UKS multi-k).
 
 ## Validation (vs CP2K)
 
-Source: case `gpw-bomd-kpoints` pin — offline pins,
+Source: values recorded when this page was written (no standing regression) — offline pins,
 never a live oracle at ctest time. Twin: periodic H₂ (bond 1.0 Bohr,
 cubic 12 Bohr cell), DZV-GTH-PADE / GTH-PADE-q1 / PADE, CUTOFF 300 Ry
 NGRIDS 1, MP 1×1×2 unreduced, NVE dt 0.5 fs × 4 steps, ATV `tol = 1e-7`
@@ -92,7 +90,7 @@ NGRIDS 1, MP 1×1×2 unreduced, NVE dt 0.5 fs × 4 steps, ATV `tol = 1e-7`
 | Quantity | Atomiverse | CP2K pin | Tol | Notes |
 | -------- | ---------: | -------: | --- | ----- |
 | Step-0 E_pot [Ha] | −1.074456793 | −1.074050184 | 1e-3 | Δ = 4.07e-4 — Γ-point periodic-GPW model band (see below) |
-| Step-0 \(F_x\) atom 0 [Ha/Bohr] | −0.339676 | −0.345535381 | 8e-3 | Δ = 5.86e-3; analytic ≡ FD to 6e-6 (`gpw-kpoint-forces`) |
+| Step-0 \(F_x\) atom 0 [Ha/Bohr] | −0.339676 | −0.345535381 | 8e-3 | Δ = 5.86e-3; analytic ≡ FD to 6e-6 ([gpw-kpoint-forces](gpw-kpoint-forces.md)) |
 | E_pot step 1 [Ha] | trace | −1.097682104 | 2e-3 | worst Δ over steps 1–4 = 2.33e-4 |
 | E_pot step 2 [Ha] | trace | −1.125544577 | 2e-3 | |
 | E_pot step 3 [Ha] | trace | −1.130531455 | 2e-3 | |
@@ -107,7 +105,7 @@ defect — the multi-k machinery contributes < 1e-5 on top.
 
 ## Performance
 
-Source: case `gpw-bomd-kpoints` pin (fair wall,
+Source: values recorded when this page was written (no standing regression) (fair wall,
 same host, single rank, `OMP_NUM_THREADS=8`).
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -128,9 +126,9 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\); no exemption.
 
 ## References
 
-- Offline pin: case `gpw-bomd-kpoints` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - Twin input: CP2K oracle
 - Marx & Hutter, *Ab Initio Molecular Dynamics* (CUP), BOMD chapter
 - VandeVondele et al., *Comput. Phys. Commun.* **167**, 103 (2005) (Quickstep GPW)
 - Monkhorst & Pack, *Phys. Rev. B* **13**, 5188 (1976)
-- Siblings: `gpw-bomd-water` (Γ), `gpw-kpoint-forces`, `xl-bomd-kpoints`, `cpmd-kpoints`, `second-gen-cpmd-kpoints`
+- Siblings: `gpw-bomd-water` (Γ), [gpw-kpoint-forces](gpw-kpoint-forces.md), `xl-bomd-kpoints`, `cpmd-kpoints`, `second-gen-cpmd-kpoints`

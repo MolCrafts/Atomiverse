@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-rpbe-water` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` (`xc = XcKind::RPBE`) bound by `cpu::gpw::GPWEvaluator` + `cpu::single_point`; `Kind` + `GaussianBasis` / `GthPotential` lookup ctors; shared `cpu::scf::XCType::RPBE` |
-| Roadmap | handoff ratio **perf_exempt** (dual-gate \|E_RPBE−E_PBE\|); narrative twin [ch09-gpw](../ch09-gpw.md) |
+| Roadmap | [dft.md](../../roadmap/dft.md) — PBEsol / revPBE / RPBE ◐ (no standing pin); handoff ratio **perf_exempt** (dual-gate \|E_RPBE−E_PBE\|); narrative twin [ch09-gpw](../ch09-gpw.md) |
 
 ## Summary
 
@@ -18,9 +18,9 @@ pseudopotentials, density cutoff **400 Ry**. Cluster electrostatics use the
 **Martyna–Tuckerman (MT)** Poisson solver (`nonperiodic = true`; CP2K
 `PERIODIC NONE` / `PSOLVER MT`). Geometry, basis, PP, cutoff, and MT BC match
 the PBE foothold [`gpw-water-pbe-mt`](gpw-water-pbe-mt.md) and the BLYP sibling
-`gpw-blyp-water` so the only intentional change is the XC functional.
+[gpw-blyp-water](gpw-blyp-water.md) so the only intentional change is the XC functional.
 
-The e2e product gate is a **dual-gate** against identical-geometry PBE
+The recorded e2e gate was a **dual-gate** against identical-geometry PBE
 (\(|E_{\mathrm{RPBE}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha) plus a soft absolute band
 on first-green Atomiverse \(E_{\mathrm{RPBE}}\) until an offline CP2K twin can
 replace it. Public path: concrete `cpu::gpw::GpwDft` members bound by
@@ -58,7 +58,7 @@ s = \frac{|\nabla\rho|}{2\,k_{\mathrm{F}}\,\rho}.
 
 **Correlation is pure PBE** (libxc `GGA_X_RPBE` + `GGA_C_PBE`; CP2K
 `XC_FUNCTIONAL RPBE`). This is **not** **revPBE** (Zhang & Yang κ-revision of
-the *rational* PBE exchange form — `XcKind::RevPBE` / `reg_gpw-revpbe-si`).
+the *rational* PBE exchange form — `XcKind::RevPBE`; see [gpw-revpbe-si](gpw-revpbe-si.md)).
 
 Atomiverse routes RPBE through the shared pointwise engine used by all pure
 GGAs on the GPW grid:
@@ -107,7 +107,7 @@ the free-space solution for a charge density localized inside the cell (here
 
 - Absolute total-energy digit match to a live CP2K process at pin time (no
   binary on host; do **not** invent CP2K digits from memory).
-- **revPBE** (different functional; see `gpw-revpbe-si`).
+- **revPBE** (different functional; see [gpw-revpbe-si](gpw-revpbe-si.md)).
 - Analytic forces / stress / UKS / k-points / D3 / D4 / BOMD as *this*
   product’s gate (other queue slugs: `gpw-forces-water`, `gpw-stress-water`,
   `gpw-uks-o2-gamma`, `gpw-pbe-d3bj-ice`, `gpw-bomd-water`, …).
@@ -119,7 +119,7 @@ the free-space solution for a charge density localized inside the cell (here
 
 Public surface only (`cpu::Frame` + `GpwDft` members + `GPWEvaluator`; lookup
 constructors for basis/PP tables — not factories for a parallel world model).
-Matches `reg_gpw-rpbe-water.cpp`:
+Minimal sequence:
 
 ```cpp
 #include "atomiverse/cpu/evaluate/single_point.h"
@@ -169,7 +169,7 @@ Dual-gate twin (product regression runs both in one process): same kinds /
 cutoff / SCF / MT with `XcKind::PBE` on a second frame; assert
 \(|E_{\mathrm{RPBE}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha.
 
-Build and run the regression (CPU login; modules as in `AGENTS.md`):
+Build (CPU login; modules as in `AGENTS.md`):
 
 ```bash
 bash -lc '
@@ -181,8 +181,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-rpbe-water -j$(nproc)
-  reg_gpw-rpbe-water
 '
 ```
 
@@ -195,18 +193,17 @@ bash -lc '
 | `xc_functional.h` | `XCType::RPBE`, `evaluate_xc`, `is_gga` |
 | `xc_grid_gga.h` | `xc_grid_rpbe` / GGA grid energy+potential |
 | `src/cpu/gpw/internal/xc_grid_gga.cpp` | Closed-shell GGA grid assembly |
-| `reg_gpw-rpbe-water.cpp` | Product gate (dual-gate + soft absolute) |
 | CP2K oracle | Offline CP2K twin (never ctest) |
 
 ## Validation (vs CP2K)
 
-Source:
-case `gpw-rpbe-water` pin.
+Source: values recorded when this page was written; no standing
+regression.
 Oracle status at pin time (2026-07-25): **no CP2K binary / module** on the worker
 host (`cp2k`, `cp2k.psmp`, `cp2k.sopt` not on PATH; `module avail cp2k` empty).
 Absolute CP2K \(E_{\mathrm{tot}}\) digits are therefore **not** invented from
 memory and **not** taken from a live third-party process at ctest time. The
-product gate uses:
+recorded gate uses:
 
 1. **Hard dual-gate** — same geometry / basis / PP / cutoff / MT BC with
    `XcKind::PBE` must shift energy by more than \(10^{-4}\) Ha.
@@ -245,8 +242,8 @@ residual on this host matches the established
 | \(E_{\mathrm{RPBE}}\) | **−17.2435550328 Ha** | first-green ATV (soft) | **\(1\times 10^{-3}\) Ha** | Until offline CP2K re-pin |
 | \(E_{\mathrm{PBE}}\) (twin) | −17.2127580657 Ha | same host twin; vs CP2K −17.212337 Ha on PBE foothold | — | Dual-gate partner |
 | \(\lvert E_{\mathrm{RPBE}}-E_{\mathrm{PBE}}\rvert\) | \(3.080\times 10^{-2}\) Ha | floor \(>10^{-4}\) Ha | **hard** | Functional activation |
-| SCF (RPBE) | converged, 9 iters | — | `converged == true` | Product gate |
-| Finite energy | finite Ha + Frame eV | — | `isfinite` | Product gate |
+| SCF (RPBE) | converged, 9 iters | — | `converged == true` | Recorded gate |
+| Finite energy | finite Ha + Frame eV | — | `isfinite` | Recorded gate |
 
 Offline re-pin (human only; never ctest):
 
@@ -288,7 +285,7 @@ Source: pin notes
   from Zhang–Yang revPBE (`XcKind::RevPBE`); do not cross-cite energies.
 - **MT isolated** H₂O energy foothold, not periodic bulk water, forces, or
   AIMD. Forces/stress/BOMD/dispersion live in other slugs.
-- **Energy-only product gate** for this regression — the shared GGA grid path
+- **Energy-only recorded gate** for this page — the shared GGA grid path
   accepts `XcKind::RPBE` for force assembly, but forces are not the e2e
   observable here (`gpw-forces-water` is the force foothold, PBE/MT water).
 - **`perf_exempt`**: no fair \(r\) until offline CP2K is timed on the same
@@ -299,8 +296,7 @@ Source: pin notes
 
 ## References
 
-- Offline pin: case `gpw-rpbe-water` pin
-- Regression consumer: `reg_gpw-rpbe-water.cpp`
+- Offline pin: recorded when this page was written (no standing regression)
 - Oracle twin: CP2K oracle
 - Oracle notes: CP2K oracle
 - Closed spec (git history): `.claude/specs/gpw-rpbe-water/` on

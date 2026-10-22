@@ -1,0 +1,17 @@
+# Oracle twin for regressions/forcefield/gaff-fourier-cvff-lammps:
+# dihedral fourier + improper cvff only (pair/bond/angle zero).
+units           real
+atom_style      full
+boundary        p p p
+read_data       system.data
+pair_style      zero 8.0
+pair_coeff      * *
+bond_style      zero
+bond_coeff      *
+angle_style     zero
+angle_coeff     *
+include         torsion.ff
+thermo_style    custom step pe edihed eimp
+thermo_modify   format float %24.16e
+run             0
+write_dump      all custom lammps_torsion_forces.dump id fx fy fz modify sort id format float %24.16e

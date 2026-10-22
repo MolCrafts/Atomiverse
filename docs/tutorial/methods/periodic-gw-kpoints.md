@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-gw-kpoints` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::g0w0()` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); members `k_mesh`, `k_time_reversal`, `mp2_ri`, `mp2_n_virt` |
-| Roadmap | `docs/roadmap/dft.md` §10 **Periodic GW** ✓ (multi-k residual); handoff ratio **perf_exempt** |
+| Roadmap | `docs/roadmap/dft.md` §10 **Periodic GW** ◐ (no standing regression); handoff ratio **perf_exempt** |
 
 ## Summary
 
@@ -20,9 +20,9 @@ diagonals use **truncated (Martyna–Tuckerman) Coulomb** so the product is G=0-
 without a full periodic-HF path. The primary product observable is the
 **minimum direct QP gap [eV]** over the sampled mesh. Public path:
 `GpwDft` members → `build(frame)` → `run(frame)` → `g0w0()` — no `*Config` bag, no factory.
-Regression: `reg_periodic-gw-kpoints`. Offline twin:
+Offline twin:
 CP2K oracle (CP2K never in ctest).
-Closes the multi-\(k\) residual after the Γ foothold `periodic-gw-si`.
+Closes the multi-\(k\) residual after the Γ foothold [periodic-gw-si](periodic-gw-si.md).
 
 ## Method
 
@@ -47,7 +47,7 @@ from **same-\(k\)** occupied–virtual pairs (vertical \(q=0\)):
 
 with RI-GPW Poisson on complex pair densities (linear real Poisson on Re/Im
 when needed). Full inter-\(k\) / finite-\(q\) \(W(\mathbf q)\) is a follow-on
-(see finite-\(q\) dRPA product `periodic-rpa-finite-q`).
+(see finite-\(q\) dRPA product [periodic-rpa-finite-q](periodic-rpa-finite-q.md)).
 
 **Self-energy.** Spectral (frequency-exact) diagonal correlation
 \(\Sigma_{c,pp}(\omega)\) as a sum over those same-\(k\) RPA poles (molecular
@@ -89,7 +89,7 @@ converged MO spectrum at the \(k\) that realises the **minimum direct** QP gap.
 
 ## Implementation
 
-Public surface only — matches `reg_periodic-gw-kpoints.cpp`. Headers:
+Public surface only. Headers:
 `gpw_solver.h`, `g0w0.h`, `gaussian_basis.h`,
 `gth_potential.h`.
 
@@ -159,8 +159,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target reg_periodic-gw-kpoints
-  reg_periodic-gw-kpoints
 '
 ```
 
@@ -172,17 +170,14 @@ bash -lc '
 | `gth_potential.h` | `GthPotential(Element, name)` lookup |
 | `src/cpu/gpw/internal/` (G0W0 / RI-GPW kernels) | private spectral + RI machinery |
 | `tests/cpu/gpw/test_cpu_gpw_g0w0.cpp` | unit: multi-\(k\) kernel at \(N_k=1\) ≡ real spectral QP |
-| `reg_periodic-gw-kpoints.cpp` | product gate |
 | CP2K oracle | offline CP2K twin (never ctest) |
 
 Related product path: Γ-only spectral G0W0 on sc-Si₂ —
-`docs/tutorial/methods/` companion regression `periodic-gw-si`
-(`reg_periodic-gw-si`).
+[periodic-gw-si](periodic-gw-si.md).
 
 ## Validation (vs CP2K)
 
-Source:
-case `periodic-gw-kpoints` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle status at pin time (**2026-07-26**): **no CP2K binary / module** on the
 worker host. Absolute CP2K QP digits are **not invented**. CP2K’s default
 `&RI_G0W0` path is **frequency-integrated** RI-GW with Gaussian `RI_AUX`, not
@@ -194,7 +189,7 @@ spectral-equivalent twin is defined.
 
 | Setting | Value |
 | ------- | ----- |
-| Crystal | diamond Si, **bct 4-atom** (same deck family as `periodic-rpa-kpoints`) |
+| Crystal | diamond Si, **bct 4-atom** (same deck family as [periodic-rpa-kpoints](periodic-rpa-kpoints.md)) |
 | Cell | \(a_t = a/\sqrt{2}\), \(c = a\); \(a = \mathbf{5.43}\) Å |
 | Positions (frac) | \((0,0,0)\), \((\tfrac12,\tfrac12,\tfrac12)\), \((\tfrac12,0,\tfrac14)\), \((0,\tfrac12,\tfrac34)\) |
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
@@ -255,7 +250,7 @@ launch CP2K from ctest.
 ## Limitations
 
 - **k-diagonal \(W\) only.** Finite-\(q\) inter-\(k\) screening is not this
-  product; dRPA finite-\(q\) lives under `periodic-rpa-finite-q`.
+  product; dRPA finite-\(q\) lives under [periodic-rpa-finite-q](periodic-rpa-finite-q.md).
 - **Closed-shell RKS only.** No UKS/OT G0W0; no hybrid / exact-exchange KS
   reference (periodic HF still ○).
 - **Spectral product path only.** No public analytic-continuation GW; CP2K’s
@@ -273,12 +268,11 @@ launch CP2K from ctest.
 
 ## References
 
-- Offline pin: case `periodic-gw-kpoints` pin
-- Regression consumer: `reg_periodic-gw-kpoints.cpp`
+- Offline pin: values recorded when this page was written (no standing regression)
 - Offline CP2K twin: CP2K oracle
 - Oracle rules: CP2K oracle (offline pins only)
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic GW
-- Γ foothold sibling: `periodic-gw-si`
+- Γ foothold sibling: [periodic-gw-si](periodic-gw-si.md)
 - Molecular spectral twin (PySCF campaign, separate loop):
   `docs/tutorial/methods/g0w0-h2-sto3g.md`
 - Hybertsen & Louie, *Phys. Rev. B* **34**, 5390 (1986)

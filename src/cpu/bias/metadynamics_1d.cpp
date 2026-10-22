@@ -50,7 +50,8 @@ void Metadynamics1D::launch(const LaunchContext& ctx) {
     last_cv_ = cv_->evaluate(f, want_force ? grad_.data() : nullptr);
 
     // Deposit hill before evaluating bias for this step (after pace).
-    if (!ctx.runtime.exec.initializing_forces && step_ > 0
+    if (!ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation && step_ > 0
         && (step_ % pace_) == 0) {
         const double Vhere = bias_at_(last_cv_);
         double h = h0_;
@@ -61,7 +62,8 @@ void Metadynamics1D::launch(const LaunchContext& ctx) {
         centers_.push_back(last_cv_);
         heights_.push_back(h);
     }
-    if (!ctx.runtime.exec.initializing_forces)
+    if (!ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation)
         ++step_;
 
     last_u_ = bias_at_(last_cv_);

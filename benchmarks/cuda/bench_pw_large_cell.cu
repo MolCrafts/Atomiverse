@@ -1,10 +1,8 @@
 /// @file benchmarks/cuda/bench_pw_large_cell.cu
 /// @brief Manual CPU-vs-CUDA plane-wave wall harness over Si supercells
-///        (parity-gap slug `cuda-pw-large-cell-measure`). NOT a ctest and
-///        NOT a regression: no literature window, no pass/fail pin — it
-///        prints same-settings walls so the large-cell measurement note
-///        (`.claude/notes/cuda-pw-large-cell.md`) can be written from a
-///        GH200 job log. Public API only: `cpu::pw::PW` / `cuda::pw::PW`
+///        Not a ctest and not a regression: no pass/fail pin, it prints
+///        same-settings walls (result recorded in
+///        `.claude/notes/cuda-rhf-device-only.md`). Public API only: `cpu::pw::PW` / `cuda::pw::PW`
 ///        + `Frame`; settings live inside the CUDA LSDA envelope
 ///        (restricted, fixed occupations, `XCType::LSDA`, no smearing).
 ///

@@ -21,12 +21,14 @@ namespace internal {
 ///
 /// @param frame Geometry [Å]; not mutated.
 /// @param method Plane-wave method members (ecut, k-mesh, UPF path, …).
+/// @param solved Optional state from PW::run; scf_out must hold its result.
 /// @param scf_out Optional: the production SCF result (energy [Ry] — the
 ///        spin-resolved NSCF energy on the collinear path — convergence,
 ///        iterations).
 std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
                                               const PW& method,
-                                              PWResult* scf_out = nullptr);
+                                              PWResult* scf_out = nullptr,
+                                              PWProblem* solved = nullptr);
 
 /// @brief Strain finite-difference stress oracle [eV/Å³] (12 SCF solves).
 ///

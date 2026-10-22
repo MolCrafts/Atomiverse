@@ -1,11 +1,14 @@
 /// @file cpu/component/comm.h
-/// @brief `ForwardPacker` — LAMMPS Fix-style extra-field forward protocol.
+/// @brief LAMMPS-style extra-field forward and reverse protocols.
 ///
 /// Algorithm transplanted from LAMMPS `src/fix.h` `pack_forward_comm` /
 /// `unpack_forward_comm` (checkout `78a7ddf`, 2026-08-25). Public API is
 /// ATV-native: a packer fills a `double` buffer from its own arrays; `Comm`
 /// replays the Halo sendlists and posts MPI. Plugins include this header,
 /// never `atom_pack.h`.
+///
+/// Reverse protocol ported from LAMMPS `src/pair.h`, checkout
+/// `a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b`.
 ///
 /// Copyright (2003) Sandia Corporation.  Under the terms of Contract
 /// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
@@ -66,6 +69,24 @@ class ForwardPacker {
         (void)first;
         (void)buf;
     }
+};
+
+/// @brief Extra-field reduction invoked by `Comm::reverse_comm(ReversePacker&)`.
+///
+/// The communicator visits the halo swaps backwards: contiguous ghost values
+/// travel back to their original sendlist rows, accumulating through forwarded
+/// ghosts until they reach the owner. Kept independent of ForwardPacker because
+/// a component may require either direction without the other.
+class ReversePacker {
+  public:
+    virtual ~ReversePacker() = default;
+    /// Doubles packed per atom.
+    virtual int comm_reverse() const = 0;
+    /// Pack `n` contiguous ghost rows beginning at `first`.
+    virtual int pack_reverse_comm(int n, int first, double* buf) = 0;
+    /// Add `n` received values onto the rows in `list`.
+    virtual void unpack_reverse_comm(int n, const int* list,
+                                     const double* buf) = 0;
 };
 
 } // namespace cpu

@@ -198,9 +198,9 @@ void fill_ionic(BerryPolarizationResult& out, const cpu::Frame& frame) {
     for (int a = 0; a < frame.nlocal(); ++a) {
         const double zv = static_cast<double>(internal::valence_from_z(st[a]));
         for (int d = 0; d < 3; ++d) {
-            double f = (static_cast<double>(recip(d, 0)) * sx[a]
-                        + static_cast<double>(recip(d, 1)) * sy[a]
-                        + static_cast<double>(recip(d, 2)) * sz[a])
+            double f = (static_cast<double>(recip(0, d)) * sx[a]
+                        + static_cast<double>(recip(1, d)) * sy[a]
+                        + static_cast<double>(recip(2, d)) * sz[a])
                        / two_pi;
             f -= std::floor(f);
             out.p_ion_frac[static_cast<std::size_t>(d)] += zv * f;
@@ -221,7 +221,7 @@ void assemble_totals(BerryPolarizationResult& out, const cpu::Frame& frame,
         for (int c = 0; c < 3; ++c)
             out.dipole_e_ang[static_cast<std::size_t>(c)] +=
                 out.p_frac[static_cast<std::size_t>(d)]
-                * static_cast<double>(cell(d, c));
+                * static_cast<double>(cell(c, d));
     }
 }
 

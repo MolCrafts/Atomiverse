@@ -18,7 +18,7 @@ adding \(F_{\mathrm{MBD}}\). The product path is:
 
 1. Multi-k SCF (`GpwDft::k_mesh`) supplies electronic \(P_k\), \(W_k\).
 2. Analytic k-summed Hellmann–Feynman / Pulay assembly (same as
-   `gpw-kpoint-forces`).
+   [gpw-kpoint-forces](gpw-kpoint-forces.md)).
 3. Geometry-only \(F_{\mathrm{MBD}} = -\nabla E_{\mathrm{MBD}}\) from
    `mbd_rsscs_pbe` is **added** on the multi-k path (identical switch as Γ:
    isolated when `mbd_k_mesh={0,0,0}`; Ewald + MBD k-mesh when non-zero).
@@ -27,7 +27,7 @@ Public surface: bool `mbd` on `GpwDft` plus electronic
 `k_mesh` (no `*Config` bag, no new force-API symbols). Hard gates:
 **libMBD energy** (water dimer free-atom) + **force dual-gate** + **multi-k
 wiring** on compressed H₂. Wall ratio is **perf_exempt** (same policy as
-`gpw-mbd-forces` / `gpw-kpoint-forces`).
+`gpw-mbd-forces` / [gpw-kpoint-forces](gpw-kpoint-forces.md)).
 
 ## Method
 
@@ -112,7 +112,7 @@ using ATV::cpu::gpw::GthPotential;
 using ATV::cpu::gpw::Kind;
 using ATV::cpu::gpw::XcKind;
 
-// H₂ — same geometry as gpw-kpoint-forces (REFERENCE.md): (5.5|6.5, 6, 6) Bohr
+// H₂ — same geometry as the gpw-kpoint-forces tutorial page: (5.5|6.5, 6, 6) Bohr
 // in a 12 Bohr cube; the Frame is in Å.
 constexpr double b2a = ATV::units::kBohrInAngstrom;
 ATV::cpu::Frame frame(2);
@@ -224,7 +224,7 @@ from ctest.
 
 | Item | Value |
 | ---- | ----- |
-| System | Compressed H₂ (same as `gpw-kpoint-forces`) |
+| System | Compressed H₂ (same as [gpw-kpoint-forces](gpw-kpoint-forces.md)) |
 | Geometry [Bohr] | H (5.5, 6.0, 6.0); H (6.5, 6.0, 6.0) |
 | Cell | **12 × 12 × 12 Bohr**, periodic |
 | Basis / PP | `DZV-GTH-PADE` + `GTH-PADE-q1` |
@@ -262,7 +262,7 @@ wiring).
 **perf_exempt = true.** Reason (from REFERENCE / handoff / queue wave 10):
 primary deliverables are offline libMBD \(E_{\mathrm{disp}}\) parity, force
 dual-gate, and multi-k wiring identity. Same policy as `gpw-mbd-forces` and
-`gpw-kpoint-forces`. Re-measure a strict full-SCF twin later only if product
+[gpw-kpoint-forces](gpw-kpoint-forces.md). Re-measure a strict full-SCF twin later only if product
 policy requires \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) on a host
 with libMBD-linked CP2K and a defined fair twin.
 
@@ -289,8 +289,8 @@ with libMBD-linked CP2K and a defined fair twin.
 - Oracle notes: CP2K oracle,
   CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` §8 Dispersion, §10 Periodic KS
-- Sibling force pins: `gpw-mbd-forces`,
-  `gpw-kpoint-forces`
+- Sibling force pin: `gpw-mbd-forces`; multi-k force tutorial
+  [gpw-kpoint-forces](gpw-kpoint-forces.md) (no standing regression)
 - Related energy pins: `gpw-mbd-ice`,
   `gpw-mbd-periodic`
 - GPW narrative chapter: `docs/tutorial/ch09-gpw.md`

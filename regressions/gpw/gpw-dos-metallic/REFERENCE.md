@@ -80,7 +80,7 @@ Key log lines:
 ```
 
 Absolute free energy is **not** dual-gated vs CP2K (same residual class as
-`reg_gpw-metallic-smearing`: ~0.64 Ha from grid/Poisson/table details at
+the metallic free-energy SCF: ~0.64 Ha from grid/Poisson/table details at
 matched CUTOFF / NGRIDS 1). Correctness gates are free-energy freeze +
 Fermi character + \(\int^{E_F} D \approx N_e\).
 
@@ -125,6 +125,6 @@ Na multi-k FD SCF + DOS job class).
 
 - Spec: `.claude/specs/gpw-dos-metallic/` (deleted on close)
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dos-metallic/na_bcc_fd_dos.inp`
-- Sibling free-energy SCF: `reg_gpw-metallic-smearing`
+- Sibling metallic forces: `reg_gpw-metallic-forces`
 - Sibling fixed-occ DOS: `reg_gpw-dos-si`
 - PW metallic DOS pattern: `reg_dos-metallic-si`

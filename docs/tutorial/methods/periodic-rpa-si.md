@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-rpa-si` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::direct_rpa()` → `cpu::gpw::RpaResult` (`cpu/gpw/rpa.h`); members `mp2_ri`, `mp2_n_virt` |
-| Roadmap | roadmap §10 Γ dRPA@KS product; handoff **perf_exempt** |
+| Roadmap | [dft.md](../../roadmap/dft.md) Periodic dRPA / URPA ◐ (no external pin; no standing case); handoff **perf_exempt** |
 
 ## Summary
 
@@ -100,7 +100,7 @@ is a separate blocked capability.
 - CP2K default **frequency-integrated RI-RPA** with Gaussian `RI_AUX` +
   minimax quadrature as a hard digit twin of \(E_c\) (different algorithm and
   total-energy assembly with EXX; digits not invented).
-- Multi-k RPA / residual RI-RPA scale-up; **periodic GW** (`periodic-gw-si`).
+- Multi-k RPA / residual RI-RPA scale-up; **periodic GW** ([periodic-gw-si](periodic-gw-si.md)).
 - Open-shell / UKS dRPA; OT-SCF references (no canonical virtuals).
 - RPAX / SOSEX / ACFDT product paths; molecular post-HF RPA is
   `direct-rpa-h2-sto3g` (PySCF loop).
@@ -172,8 +172,6 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-rpa-si
-  reg_periodic-rpa-si
 '
 ```
 
@@ -184,21 +182,20 @@ bash -lc '
 | `mp2.h` | shared MO-ERI / `Mp2Result` infrastructure |
 | `src/cpu/gpw/rpa.cpp` | `GpwDft::direct_rpa` orchestration |
 | `src/cpu/gpw/internal/mp2_kernels.cpp` | `direct_rpa_rhf_energy` plasmon kernel |
-| `reg_periodic-rpa-si.cpp` | product gate |
 | `tests/cpu/gpw/test_cpu_gpw_rpa.cpp` | unit: dense A/B vs plasmon kernel |
 | CP2K oracle | offline CP2K twin (never ctest) |
 
 ## Validation (vs CP2K offline contract)
 
-Source:
-case `periodic-rpa-si` pin
+Source: values recorded when this page was written; no standing
+regression.
 (offline pin only; CP2K never imported from CMake/ctest).
 
 Oracle twin input matches the product deck geometry / basis / PP / cutoff /
 level_shift but uses CP2K `&WF_CORRELATION` **RI_RPA** (minimax, 8 quadrature
 points, Gaussian `RI_AUX`) with EXX total-energy assembly. Absolute CP2K
 \(E_c\) digits are therefore **not invented** as a hard twin of the plasmon
-value. Pin strategy mirrors the `periodic-mp2-si` foothold:
+value. Pin strategy mirrors the [periodic-mp2-si](periodic-mp2-si.md) foothold:
 
 1. **Hard internal gates:** SCF converged; \(E_c\) finite and strictly
    negative; all \(\Omega_s>0\); \(E_{\mathrm{total}}\equiv E_{\mathrm{SCF}}+E_c\);
@@ -295,8 +292,7 @@ host/core count (single-rank).
 
 ## References
 
-- Offline pin: case `periodic-rpa-si` pin
-- Regression consumer: `reg_periodic-rpa-si.cpp`
+- Offline pin: recorded when this page was written (no standing regression)
 - Oracle twin: CP2K oracle
 - Oracle notes: CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` §10 (Periodic RPA Γ dRPA@KS ✓ product)

@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-pbesol-si` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` / `GPWEvaluator` with `xc = XcKind::PBEsol`; `GaussianBasis` / `GthPotential` lookup ctors; shared `cpu::scf::XCType::PBEsol` |
 | Roadmap | handoff ratio **perf_exempt** |
 
@@ -98,8 +98,8 @@ available.
 
 ## Implementation
 
-Public surface only (`GpwDft` members + lookup constructors; matches
-`reg_gpw-pbesol-si.cpp` — direct `GpwDft` path to stay within the e2e budget):
+Public surface only (`GpwDft` members + lookup constructors; direct `GpwDft`
+path):
 
 ```cpp
 #include "atomiverse/core/frame_schema.h"
@@ -161,8 +161,7 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_gpw-pbesol-si -j$(nproc)
-  reg_gpw-pbesol-si
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -175,13 +174,12 @@ bash -lc '
 | `xc_functional.h` | `XCType::PBEsol`, `evaluate_xc`, `is_gga` |
 | `gpw_tables.h` | Si GTH-PBE-q4 + DZVP-MOLOPT-GTH static tables |
 | `src/cpu/gpw/internal/xc_grid_gga.cpp` | Closed-shell GGA grid energy/potential |
-| `reg_gpw-pbesol-si.cpp` | Product gate (dual-gate + soft absolute) |
 | CP2K oracle | Offline CP2K twin (never ctest) |
 
 ## Validation (vs CP2K)
 
 Source:
-case `gpw-pbesol-si` pin.
+the pin notes recorded when this page was written (no standing regression).
 Oracle status at pin time (2026-07-23): **no CP2K binary / module** on the worker
 host (`cp2k`, `cp2k.psmp`, `cp2k.sopt` not on PATH; `module avail cp2k` empty).
 Absolute CP2K \(E_{\mathrm{tot}}\) digits are therefore **not** invented from
@@ -279,8 +277,6 @@ count (single-rank).
 
 ## References
 
-- Offline pin: case `gpw-pbesol-si` pin
-- Regression consumer: `reg_gpw-pbesol-si.cpp`
 - Oracle twin: CP2K oracle
 - Oracle notes: CP2K oracle
 - Closed spec (git history): `.claude/specs/gpw-pbesol-si/` on

@@ -14,21 +14,23 @@ bond/angle and polynomial-torsion GAFF subset on one GPU. Legend:
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | Harmonic bond / angle | ✓ | ✓ | |
-| FENE bond | ✓ | ○ | |
+| FENE bond | ◐ | ○ | No external pin; self-pinned chain case removed |
 | Multi/harmonic torsion (RB) | ✓ | ✓ | `DihedralMultiHarmonic` |
 | CHARMM torsion | ✓ | ○ | No optional 1–4 pair weights in style |
+| Fourier torsion (Amber/GAFF multi-term) | ✓ | ○ | `DihedralFourier`; LAMMPS `dihedral_style fourier` pin |
 | Harmonic improper | ✓ | ○ | First-class topology |
-| OPLS / CVFF / CMAP / Class-II cross | ○ | ○ | |
+| CVFF improper (Amber/GAFF) | ✓ | ○ | `ImproperCvff`; LAMMPS `improper_style cvff` pin |
+| OPLS / CMAP / Class-II cross | ○ | ○ | |
 
 ## 2. Nonbonded
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| LJ 12-6 | ⚡ | ⚡ | Multi-type + special_bonds scales. Kokkos ◐: `ATV::kokkos::PairLJCut` on `Kokkos::Serial` only — not multi-type, not special_bonds, not an MD step |
+| LJ 12-6 | ⚡ | ⚡ | CPU: multi-type + special_bonds scales. CUDA: single type, special_bonds only with equal 1-2/1-3/1-4 weights. Kokkos ◐: `ATV::kokkos::PairLJCut` on `Kokkos::Serial` only — not multi-type, not special_bonds, not an MD step |
 | Buckingham / Morse / Born (Fumi–Tosi) | ✓ | ○ | |
-| WCA / Yukawa / DPD / FENE+WCA | ✓ | ○ | |
+| WCA / Yukawa / DPD / FENE+WCA | ◐ | ○ | No external pin; self-pinned cases removed |
 | Soft-core LJ / Coulomb | ✓ | ○ | Beutler; alchemical λ |
-| CoulCut / CoulLong | ✓ | ○ | special_bonds on real space |
+| CoulCut / CoulLong | ✓ | ◐ | special_bonds on real space. CUDA `CoulLong`: real space only, no exclusion / special_bonds correction |
 | Fused LJ + screened Coulomb | ✓ | ✓ | CUDA `PairLJCutCoulLong`: Lorentz–Berthelot, Amber graph exceptions, periodic sparse reciprocal corrections; single GPU |
 | Direct Ewald / PME / SPME | ✓ | ✓ | SPME = Essmann; neutralizing background energy and virial on both backends. CUDA PME and Ewald: single GPU, fixed atom set and mesh / mode set, changing cell (NPT/deform) with six-component virial |
 | Gaussian-charge Coulomb | ✓ | ○ | |
@@ -57,6 +59,6 @@ bond/angle and polynomial-torsion GAFF subset on one GPU. Legend:
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| DPD | ✓ | ○ | Multi-type \(a_{ij}\) |
+| DPD | ◐ | ○ | Multi-type \(a_{ij}\). No external pin; self-pinned Groot–Warren / mixing cases removed |
 | MARTINI / SDK / IBI / … | ○ | ○ | |
 | ML potentials (ANI, MACE, DeepMD, …) | ○ | ○ | Entire catalogue ○ |

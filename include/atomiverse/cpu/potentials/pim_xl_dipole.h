@@ -39,6 +39,7 @@ namespace cpu {
 /// a stationary geometry is the plain SCF PIM answer.
 class PimXlDipole : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cutoff Real-space multipole cutoff [Å] (must be > 0).
     /// @param alpha_by_type Isotropic polarizability [Å³] per atom type index
     ///        (`kAtom_type`); types outside the vector → α = 0.

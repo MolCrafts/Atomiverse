@@ -8,7 +8,7 @@
 /// collective, so per-rank bookkeeping is globally consistent before
 /// observers or the snapshot publisher read the frame's scalar state.
 /// `n_local` is NOT reduced — it is authoritative per rank from
-/// `dd->n_local`. Single-rank: no-op early-return.
+/// `frame.nlocal()`. Single-rank: no-op early-return.
 ///
 /// Order is tight: must run after `KineticEnergy @ -100` so the reduced KE
 /// is the locally-summed one, and before `Publish @ +10` so async

@@ -6,7 +6,7 @@ Canonical deep path: ``atomiverse.driver.single_point``; top-level
 runs one pass of the ``Evaluate`` driver preset.
 """
 
-from atomiverse._binding import _cpp, has_domain, missing_domain_message, require_cpp
+from atomiverse._binding import _cpp, has_domain, require_cpp
 
 
 def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
@@ -19,33 +19,19 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     ``molpy.Frame``. The evaluator is borrowed — inspect
     ``evaluator.last_result()`` afterwards for solver-internal quantities.
 
-    Two dispatch paths, one call shape. A component-style evaluator such as
-    ``AM1Evaluator`` is run by the C++ ``cpu::single_point`` helper, which
-    drives one pass of the ``Evaluate`` driver over it. A Gaussian SCF method
-    (``RHF`` / ``UHF`` / ``RKS`` / ``UKS``) is already a driver in its own
-    right — it owns the self-consistent-field loop — so it is dispatched
-    straight to ``evaluator.run(frame)``. Nothing is returned either way;
-    results are read off the frame or off the evaluator.
+    A method's public ``run(frame)`` entry owns its standalone solve (Gaussian
+    SCF, PW and DFTB2). Evaluator components use the C++ ``Evaluate`` preset.
+    AM1Evaluator retains its MPI single-point task; generic components reject
+    launcher mode when no task payload can represent them.
 
     Parameters
     ----------
     frame : molpy.Frame
-        System state (``atoms`` block with ``x, y, z, atomic_number``; the
-        ``atomic_number`` column [uint] carries Z). Results land as typed
-        metadata read back as plain values, for example
-        ``frame.meta["energy"]`` is a ``float`` [eV].
-    evaluator : atomiverse.AM1Evaluator or atomiverse.RHF/UHF/RKS/UKS
-        The evaluator component. ``AM1Evaluator`` runs through the C++
-        ``Evaluate`` pass; a Gaussian SCF method owns its own SCF loop, so
-        it is driven by ``evaluator.run(frame)`` instead (read the Hartree
-        energy / loop state off the method afterwards with ``energy()`` /
-        ``converged()`` / ``iterations()``).
-
-        Forces differ between the two paths. The ``Evaluate`` pass requests
-        gradients, so ``AM1Evaluator`` publishes fx/fy/fz [eV/Å] here as
-        well; ``AM1Evaluator.forces(frame)`` is the entry that also *returns*
-        them as an (N, 3) array. A Gaussian SCF ``run`` computes no forces —
-        call that method's own ``forces(frame)`` for those.
+        System state, updated in place in engine units (eV and Å).
+    evaluator : method or evaluator component
+        A method with ``run(frame)``, or a native evaluator Component.
+        Forces follow that object's run policy; use ``forces(frame)`` when
+        the method's standalone run is energy-only.
     device : str, optional
         Execution backend, PyTorch-style. v1 accepts only ``"cpu"``; any
         other value raises ``ValueError`` before any compute.
@@ -56,8 +42,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
         If *device* is anything but ``"cpu"``, or (SCF path) if the method's
         spin multiplicity cannot split this frame's electron count.
     TypeError
-        If *evaluator* is not a Gaussian SCF method and the extension was
-        built without the ``am1`` module, which binds the ``Evaluate`` pass.
+        If *evaluator* has neither a public run entry nor a native Component.
     RuntimeError
         If the frame is missing a required column or carries a wrong dtype.
     """
@@ -67,21 +52,23 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
             "only device='cpu' is supported"
         )
     require_cpp()
-    # A Gaussian SCF method is its own driver loop, not an Evaluate
-    # component. Imported here, and only on an `hf` build, so this module
-    # imports on any module selection.
-    if has_domain("hf"):
-        from atomiverse import scf
-
-        if isinstance(evaluator, (scf.RHF, scf.UHF, scf.RKS, scf.UKS)):
-            evaluator.run(frame)
-            return
-    if not has_domain("am1"):
+    # Methods own their standalone Frame entry. This also covers PW and
+    # DFTB2 without a second per-family list of supported methods.
+    run = getattr(evaluator, "run", None)
+    if callable(run):
+        run(frame)
+        return
+    # Preserve AM1's existing MPI task transport. Generic components have
+    # no serialized task payload and the native entry rejects launcher use.
+    if has_domain("am1") and isinstance(evaluator, _cpp.AM1Evaluator):
+        _cpp.single_point(frame, evaluator)
+    elif isinstance(evaluator, _cpp._Component):
+        _cpp._single_point_component(frame, evaluator)
+    else:
         raise TypeError(
             f"single_point cannot run {type(evaluator).__name__}: "
-            + missing_domain_message("the Evaluate pass of single_point", "am1")
+            "expected a method with run(frame) or an evaluator component"
         )
-    _cpp.single_point(frame, evaluator)
 
 
 __all__ = ["single_point"]

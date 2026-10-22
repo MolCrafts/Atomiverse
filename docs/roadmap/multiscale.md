@@ -32,12 +32,13 @@ QM region = `kAtomQmZ` mask; link cuts derived from mask × bonds.
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| Mechanical embedding | ✓ | ○ | `QmmmMechanical` |
+| Mechanical embedding | ◐ | ○ | `QmmmMechanical`; no external pin, self-pinned case removed |
 | Electrostatic embedding | ✓ | ○ | `QmmmElectrostatic` |
 | Polarizable embedding | ✓ | ○ | `QmmmPolarizable` |
 | Two-layer ONIOM (subtractive) | ✓ | ○ | `QmmmOniom` |
 | Link atoms | ✓ | ○ | |
-| QM/MM MD / geometry opt | ✓ | ○ | Same composition as AIMD / Minimize |
+| QM/MM MD | ✓ | ○ | Same composition as AIMD |
+| QM/MM geometry opt | ◐ | ○ | Same composition as Minimize; no external pin, self-pinned case removed |
 | 3-layer ONIOM / periodic / PME QM/MM | ○ | ○ | |
 | Excited-state QM/MM | ○ | ○ | |
 

@@ -171,6 +171,9 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     double mix_beta = 0.3;
     /// @brief When true, write F=−∇E [eV/Å] on launch.
     bool with_forces = true;
+
+    /// @brief Whether the configured evaluator supplies nuclear forces.
+    bool provides_force() const override { return with_forces; }
     /// @brief When true, write intensive cell stress to `kStress` [eV/Å³].
     ///
     /// Closed-form pair virial of the analytic force terms on **every**

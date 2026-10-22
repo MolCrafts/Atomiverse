@@ -12,6 +12,8 @@ namespace cpu {
 // ── ZeroForces ───────────────────────────────────────────────────
 
 void ZeroForces::launch(const cpu::LaunchContext& ctx) {
+    if (!ctx.forces_requested)
+        return;
     auto& f = ctx.frame;
     // Zero only the OWNED rows [0, n_local). In multi-rank the backing store
     // is sized to the loaded (global) atom count, so zeroing [0, atoms.size())
@@ -66,6 +68,8 @@ void ZeroEnergy::launch(const cpu::LaunchContext& ctx) {
 // ── ZeroStress ───────────────────────────────────────────────────
 
 void ZeroStress::launch(const cpu::LaunchContext& ctx) {
+    if (!ctx.stress_requested)
+        return;
     auto& f = ctx.frame;
     for (int k = 0; k < 6; ++k)
         f.meta.get(kStress)[k] = 0;

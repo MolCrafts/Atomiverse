@@ -412,7 +412,8 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
 
     // ── Real space ──
     const AccReal r_cut = AccReal(5) / alpha;
-    const auto lens = cell_bohr.lengths();
+    const auto lens = Vec3{cell_bohr.face_height(0), cell_bohr.face_height(1),
+                           cell_bohr.face_height(2)};
     const int ncell_r = static_cast<int>(std::ceil(
                             r_cut / std::min({lens[0], lens[1], lens[2]})))
                         + 1;
@@ -424,15 +425,15 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
             for (int hx = -ncell_r; hx <= ncell_r; ++hx)
                 for (int hy = -ncell_r; hy <= ncell_r; ++hy)
                     for (int hz = -ncell_r; hz <= ncell_r; ++hz) {
-                        // L = hx a + hy b + hz c (rows of cb = lattice vectors).
+                        // L = hx a + hy b + hz c (columns of cb = lattice vectors).
                         const AccReal Lx = AccReal(hx) * cb(0, 0)
-                                           + AccReal(hy) * cb(1, 0)
-                                           + AccReal(hz) * cb(2, 0);
-                        const AccReal Ly = AccReal(hx) * cb(0, 1)
+                                           + AccReal(hy) * cb(0, 1)
+                                           + AccReal(hz) * cb(0, 2);
+                        const AccReal Ly = AccReal(hx) * cb(1, 0)
                                            + AccReal(hy) * cb(1, 1)
-                                           + AccReal(hz) * cb(2, 1);
-                        const AccReal Lz = AccReal(hx) * cb(0, 2)
-                                           + AccReal(hy) * cb(1, 2)
+                                           + AccReal(hz) * cb(1, 2);
+                        const AccReal Lz = AccReal(hx) * cb(2, 0)
+                                           + AccReal(hy) * cb(2, 1)
                                            + AccReal(hz) * cb(2, 2);
                         const Vec3 dr = {
                             pos[static_cast<std::size_t>(i)][0]
@@ -479,12 +480,15 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     // ── Reciprocal space ──
     const AccReal g_cut = std::sqrt(AccReal(8) * ecut_hartree);
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 b0{recip(0, 0), recip(0, 1), recip(0, 2)};
-    const Vec3 b1{recip(1, 0), recip(1, 1), recip(1, 2)};
-    const Vec3 b2{recip(2, 0), recip(2, 1), recip(2, 2)};
-    const int gmax =
-        static_cast<int>(g_cut / std::min({b0.norm(), b1.norm(), b2.norm()}))
-        + 1;
+    const Vec3 b0{recip(0, 0), recip(1, 0), recip(2, 0)};
+    const Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
+    const Vec3 b2{recip(0, 2), recip(1, 2), recip(2, 2)};
+    const int gmax = static_cast<int>(g_cut
+                                      * std::max({cell_bohr.lengths()[0],
+                                                  cell_bohr.lengths()[1],
+                                                  cell_bohr.lengths()[2]})
+                                      / (AccReal(2) * units::pi))
+                     + 1;
     const AccReal alpha_sq_4 = AccReal(4) * alpha * alpha;
     const AccReal two_pi_over_vol = AccReal(2) * AccReal(units::pi) / vol;
 
@@ -570,9 +574,9 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
 
     // Cartesian q [1/Bohr]; recip_cell includes 2π.
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 b0{recip(0, 0), recip(0, 1), recip(0, 2)};
-    const Vec3 b1{recip(1, 0), recip(1, 1), recip(1, 2)};
-    const Vec3 b2{recip(2, 0), recip(2, 1), recip(2, 2)};
+    const Vec3 b0{recip(0, 0), recip(1, 0), recip(2, 0)};
+    const Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
+    const Vec3 b2{recip(0, 2), recip(1, 2), recip(2, 2)};
     const Vec3 q_cart = b0 * q_frac[0] + b1 * q_frac[1] + b2 * q_frac[2];
     const AccReal rcut_alpha = cell_bohr.lengths().norm() * AccReal(0.5);
     const AccReal alpha = std::sqrt(-std::log(AccReal(2e-17))) / rcut_alpha;
@@ -584,9 +588,10 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     };
 
     // Mirror the Γ real-space pair loop (i < j) with lattice phase e^{iq·L}.
-    // Same φ′′ kernel and L = h a + k b + l c (rows) as ewald_dynamical_matrix.
+    // Same φ′′ kernel and L = h a + k b + l c (columns) as ewald_dynamical_matrix.
     const AccReal r_cut = AccReal(5) / alpha;
-    const auto lens = cell_bohr.lengths();
+    const auto lens = Vec3{cell_bohr.face_height(0), cell_bohr.face_height(1),
+                           cell_bohr.face_height(2)};
     const int ncell_r = static_cast<int>(std::ceil(
                             r_cut / std::min({lens[0], lens[1], lens[2]})))
                         + 1;
@@ -599,13 +604,13 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                 for (int hy = -ncell_r; hy <= ncell_r; ++hy)
                     for (int hz = -ncell_r; hz <= ncell_r; ++hz) {
                         const AccReal Lx = AccReal(hx) * cb(0, 0)
-                                           + AccReal(hy) * cb(1, 0)
-                                           + AccReal(hz) * cb(2, 0);
-                        const AccReal Ly = AccReal(hx) * cb(0, 1)
+                                           + AccReal(hy) * cb(0, 1)
+                                           + AccReal(hz) * cb(0, 2);
+                        const AccReal Ly = AccReal(hx) * cb(1, 0)
                                            + AccReal(hy) * cb(1, 1)
-                                           + AccReal(hz) * cb(2, 1);
-                        const AccReal Lz = AccReal(hx) * cb(0, 2)
-                                           + AccReal(hy) * cb(1, 2)
+                                           + AccReal(hz) * cb(1, 2);
+                        const AccReal Lz = AccReal(hx) * cb(2, 0)
+                                           + AccReal(hy) * cb(2, 1)
                                            + AccReal(hz) * cb(2, 2);
                         const Vec3 dr = {
                             pos[static_cast<std::size_t>(i)][0]
@@ -666,13 +671,13 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                     if (hx == 0 && hy == 0 && hz == 0)
                         continue;
                     const AccReal Lx = AccReal(hx) * cb(0, 0)
-                                       + AccReal(hy) * cb(1, 0)
-                                       + AccReal(hz) * cb(2, 0);
-                    const AccReal Ly = AccReal(hx) * cb(0, 1)
+                                       + AccReal(hy) * cb(0, 1)
+                                       + AccReal(hz) * cb(0, 2);
+                    const AccReal Ly = AccReal(hx) * cb(1, 0)
                                        + AccReal(hy) * cb(1, 1)
-                                       + AccReal(hz) * cb(2, 1);
-                    const AccReal Lz = AccReal(hx) * cb(0, 2)
-                                       + AccReal(hy) * cb(1, 2)
+                                       + AccReal(hz) * cb(1, 2);
+                    const AccReal Lz = AccReal(hx) * cb(2, 0)
+                                       + AccReal(hy) * cb(2, 1)
                                        + AccReal(hz) * cb(2, 2);
                     const AccReal r = std::sqrt(Lx * Lx + Ly * Ly + Lz * Lz);
                     if (!(r > AccReal(0)) || r >= r_cut)
@@ -720,10 +725,12 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     const AccReal g_cut = std::sqrt(AccReal(8) * ecut_hartree);
     const AccReal qn = q_cart.norm();
     const AccReal g_cut_eff = g_cut + qn + AccReal(1e-6);
-    const int gmax =
-        static_cast<int>(g_cut_eff
-                         / std::min({b0.norm(), b1.norm(), b2.norm()}))
-        + 1;
+    const int gmax = static_cast<int>(g_cut_eff
+                                      * std::max({cell_bohr.lengths()[0],
+                                                  cell_bohr.lengths()[1],
+                                                  cell_bohr.lengths()[2]})
+                                      / (AccReal(2) * units::pi))
+                     + 1;
     const AccReal alpha_sq_4 = AccReal(4) * alpha * alpha;
     const AccReal four_pi_over_vol = AccReal(4) * AccReal(units::pi) / vol;
 
@@ -2709,11 +2716,11 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     cpu::Box cell_bohr;
     cell_bohr.set_cell(frame.box.cell() * AccReal(1.8897259886));
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(1, 0) * q_frac[1]
-                          + recip(2, 0) * q_frac[2],
-                      recip(0, 1) * q_frac[0] + recip(1, 1) * q_frac[1]
-                          + recip(2, 1) * q_frac[2],
-                      recip(0, 2) * q_frac[0] + recip(1, 2) * q_frac[1]
+    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(0, 1) * q_frac[1]
+                          + recip(0, 2) * q_frac[2],
+                      recip(1, 0) * q_frac[0] + recip(1, 1) * q_frac[1]
+                          + recip(1, 2) * q_frac[2],
+                      recip(2, 0) * q_frac[0] + recip(2, 1) * q_frac[1]
                           + recip(2, 2) * q_frac[2]};
     const AccReal q2 =
         q_cart[0] * q_cart[0] + q_cart[1] * q_cart[1] + q_cart[2] * q_cart[2];
@@ -3497,11 +3504,11 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     cpu::Box cell_bohr;
     cell_bohr.set_cell(frame.box.cell() * AccReal(1.8897259886));
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(1, 0) * q_frac[1]
-                          + recip(2, 0) * q_frac[2],
-                      recip(0, 1) * q_frac[0] + recip(1, 1) * q_frac[1]
-                          + recip(2, 1) * q_frac[2],
-                      recip(0, 2) * q_frac[0] + recip(1, 2) * q_frac[1]
+    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(0, 1) * q_frac[1]
+                          + recip(0, 2) * q_frac[2],
+                      recip(1, 0) * q_frac[0] + recip(1, 1) * q_frac[1]
+                          + recip(1, 2) * q_frac[2],
+                      recip(2, 0) * q_frac[0] + recip(2, 1) * q_frac[1]
                           + recip(2, 2) * q_frac[2]};
 
     FFTWBuffer<fftw_complex> work_buf(static_cast<std::size_t>(nr));

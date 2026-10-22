@@ -1,83 +1,123 @@
-# regressions/ — out-of-library textbook end-to-end
+# regressions/ — end-to-end capability pins
 
-The **only** home of end-to-end in this repository.
+The **only** home of end-to-end in this repository. One case proves that one
+delivered capability works through the public API, against a number that does
+not come from Atomiverse.
 
 ```bash
 cmake -B build -DATV_BUILD_REGRESSIONS=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target regressions     # builds AND runs every case
+cmake --build build --target regressions        # build and run every case
+cmake --build build --target run_reg_<case>     # one case
 ```
 
-## Why a third directory
-
-| | runs | tests | hard prohibition |
+| | answers | runs | registered in ctest |
 |---|---|---|---|
-| `tests/` | **whole suite in seconds** — the fast-iteration loop | **one function or method** | **e2e is strictly forbidden** |
-| `regressions/` | one case ≤ 60 s | **end-to-end, against the literature** | never in the default `ctest` |
-| `benchmarks/` | at acceptance time | parity vs an external **engine** (LAMMPS/PySCF/CP2K), and speed | never in `ctest` |
+| `tests/` | does this function / method do what it says? | whole suite in seconds | yes |
+| `regressions/` | does this capability still give the right physics? | ≤ 60 s per case | **never** |
+| `benchmarks/` | how fast is it next to a production twin? | at acceptance | never |
 
-`benchmarks/` asks *"are we as fast and as accurate as LAMMPS?"* — it needs a
-third-party engine installed. `regressions/` asks *"are we still as correct as
-the **textbook**?"* — it needs nothing, so it can run every cycle.
+## When a case is required
 
-## The rules
+A case exists **for one roadmap cell**: one capability (a row of
+`docs/roadmap/`) on the backends it claims. A cell is ✓ only when a case pins
+it; a capability without a case is ◐ at most.
 
-1. **Out-of-library consumer.** Include only public `atomiverse/…` headers; link
-   only the `atomiverse` target. No `internal/` headers, no friends, no reaching
-   into private implementation. If a case cannot be written against the public
-   API, that is not a reason to reach inside — **it is the defect the case just
-   found.** Report it.
+| Needs a case | Does not get a case |
+|---|---|
+| a new user-visible capability: method, ensemble, integrator, bias, observable, I/O path | single-function math or logic → `tests/` |
+| an existing capability gaining a backend (CUDA) — the **same** case gains `--device=cuda` | internal refactors and staged ports ("move step X to the device") → unit test or nothing |
+| a ◐ cell being promoted to ✓ | parameter variants on the same code path (another functional, basis, k-mesh, thermostat constant) |
+| | speed → `benchmarks/`; API shape, layering, includes → code review |
 
-2. **Check the literature, not ourselves.** The expected value comes from a
-   textbook or paper, and `REFERENCE.md` cites it (source, section/equation/page,
-   the value, and the *physical* justification for the tolerance). Freezing our
-   own current output as a "golden value" is forbidden — that regression-tests our
-   bugs.
+One capability × its backends = **one case**. A second case for the same
+capability needs a different code path (forces vs stress vs k-points are
+different paths; PBE vs PBEsol through libxc is not).
 
-3. **As small as possible.** ≤ 60 s. This is a regression, not a production run.
+## The oracle
 
-   **Declare your thread width at registration.** `atv_add_regression(<domain>
-   <case> [THREADS <n>])` defaults to **1**, and the aggregate target runs the
-   binary under `OMP_NUM_THREADS=<n>`. Almost every case is a handful of atoms,
-   where OpenMP fork/join costs more than the physics — on a 48-core node
-   `mc_bias_es` takes 7 s at 1 thread, 231 s at 8, and does not finish at the
-   node default, with bit-identical results at every count. Cases with the
-   opposite shape (GPW/OT self-consistency on a real grid, DFPT response,
-   multi-k plane-wave) declare `THREADS 8` next to the case, so the requirement
-   is visible in one file instead of hidden in a `.cpp`. Raise a case only on a
-   **measurement**, not a hunch, and never above 8: at 16 threads on a shared
-   node the OpenMP barriers start losing to descheduling.
+The oracle is where the expected number comes from. Test: *if our
+implementation were wrong, would this number change?* If it would, it is not
+an oracle.
 
-4. **Never resolve input data relative to the current directory.** The absolute
-   data root is compiled in: `ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"`. A case must
-   give the same verdict from the build tree, the source tree, or a bare
-   `./reg_<case>` under a debugger. No `../..` probe chains, no `getenv`
-   escape hatch, and **no substituting a different model when an input is
-   missing** — `reg_pw-smearing-al` used to fall back to a toy `V_loc` and print
-   `PASS` against a pin recorded for the real pseudopotential. A missing input
-   is a failure. Enforced by review (CLAUDE.md test iron law), not by a gate.
+| Kind | Example | `REFERENCE.md` must record |
+|---|---|---|
+| `external` | PySCF, CP2K, LAMMPS, DFTB+, tblite, MOPAC, OpenMM printed it | program + version/sha, input file (in `tools/<code>_oracle/`), the output line |
+| `literature` | Madelung constant, published reference energy | citation (DOI/book, section/table), value, units |
+| `analytic` | closed form, exact identity (virial = energy for a degree −1 potential), conservation law | the formula and its derivation source |
+| `cpu-twin` | a CUDA cell of a capability whose CPU cell is pinned by one of the above | the CPU case that carries the external pin |
 
-5. **Not in the default `ctest`.** Built behind `ATV_BUILD_REGRESSIONS=ON`, run
-   through the `regressions` target.
+Never an oracle: Atomiverse's own earlier output ("golden", "first green",
+"frozen"), an Atomiverse-vs-Atomiverse finite difference as the only gate, a
+numpy re-implementation of the algorithm, or a "twin" with a different
+Hamiltonian (GTH-GPW numbers for NC-UPF plane waves). These may appear as
+*extra* consistency checks next to a real oracle, never instead of one. Full
+provenance rules: `.claude/notes/oracle-pin-provenance.md`.
 
-6. **Non-zero exit on failure**, printing `got / want / tol`.
+## Layout
 
-7. **One flat `main()` per case.** Code that runs exactly once is **not** carved
-   into `setup_frame()` / `run_md()` / `check_energy()` helpers with one call site
-   each. A reader must be able to read the case top to bottom. (CLAUDE.md: *"Extract
-   on the second caller, not the first."*)
+```
+regressions/<domain>/<case>/
+  case.cmake         registration (below)
+  reg_<case>.cpp     or .cu when the case runs on CUDA; one flat main()
+  REFERENCE.md       the oracle record (template below)
+  <small inputs>     optional; shared data lives in tests/data/
+```
 
-**Every delivered feature ships exactly one case here.** Not in `tests/`.
+- `<domain>` is the product module whose sources the case exercises
+  (`scf` = HF, `gpw`, `pw`, `semiempirical`, `md`, `minimizer`, `mc`, `path`,
+  `sampling`, `multiscale`, `response`, `forcefield`, `longrange`, …).
+- `<case>` names the capability, not the history: system + method + quantity
+  (`h2o-rhf-sto3g-energy`, `nacl-pme-npt`). No wave/slug/backend prefixes;
+  backends are a runtime argument.
 
-## Cases
+### `case.cmake`
 
-| Domain | Case | What it pins | Reference |
-|---|---|---|---|
-| `md` | `lj_argon` | NVE energy conservation of the LJ argon fluid | Rahman (1964); Frenkel & Smit §4.3 |
-| `md` | `pe_bonded_nve` | Bonded-only PE UA-chain NVE energy conservation | Frenkel & Smit §4.3; Tschopp 2010 (OPLS-AA UA) |
-| `md` | `dihedral_charmm` | CHARMM periodic torsion \(V=K(1+\cos(n\phi-\delta))\) at \(\phi=\pi/2\) | MacKerell et al. (1998); LAMMPS `dihedral_style charmm` |
-| `md` | `improper_harmonic` | Harmonic improper \(V=K(\chi-\chi_0)^2\) at \(\chi=\pi/2\) | LAMMPS `improper_style harmonic` |
-| `pw` | `h_force_fd` | Plane-wave FD ionic force vanishes for one H (symmetry) | Martin *Electronic Structure*; FD oracle |
-| `pw` | `h_force_analytic` | Plane-wave analytic ionic force vanishes for one H (symmetry) | Martin; QE force_lc/ew; default evaluator path |
-| `pw` | `h_stress_cubic` | Plane-wave cell stress off-diagonals vanish for cubic H | strain-FD of SCF energy; cubic symmetry |
-| `semiempirical` | `rm1_water_energy` | RM1 water converges and differs from AM1 | Rocha et al. JCC 27, 1101 (2006) |
-| `scf` | `h2o_rhf_sto3g` | RHF/STO-3G water total energy via the driver-ized `cpu::scf::RHF` | LibreTexts PChem (Peverati) §28.2; Hehre/Stewart/Pople JCP 51, 2657 (1969) |
+```cmake
+atv_regression(
+  REQUIRES MD POTENTIALS KSPACE     # product modules (ATV_BUILD_<X>); any OFF ⇒ case absent
+  [DEVICES cpu|cuda|both]           # default cpu; cuda/both need a .cu source and ATV_BUILD_CUDA
+  [THREADS <n>]                     # OMP width, default 1; raise only on a measurement, ≤ 8
+  [RANKS <n>]                       # run under mpiexec -n <n> (needs ATV_USE_MPI)
+  [GPUS <n>]                        # minimum visible GPUs
+  [LIBS <targets…>]                 # extra link targets (CUDA::cufft, …)
+  [ARGS <args…>])                   # extra command-line arguments
+```
+
+`regressions/CMakeLists.txt` discovers every `*/*/case.cmake`; nothing is
+registered by hand. The binary gets the compile-time data root
+`ATV_REG_DATA_DIR` (`tests/data`) and `ATV_REG_CASE_DIR` (its own directory).
+
+## Rules
+
+1. **Out-of-library consumer.** Public `atomiverse/…` headers only, link only
+   `atomiverse`. No `internal/` headers. A capability that cannot be driven
+   through the public API is the defect the case just found.
+2. **A real oracle** (table above), recorded in `REFERENCE.md`.
+3. **≤ 60 s** at the declared `THREADS` on one node, measured. A case that
+   needs longer is too big: shrink the system, not the rule.
+4. **No CWD-relative input.** Resolve inputs through `ATV_REG_DATA_DIR` /
+   `ATV_REG_CASE_DIR`. A missing input fails; never substitute a different
+   model.
+5. **Exit non-zero on failure**, printing `got / want / tol` per gate.
+6. **One flat `main()`.** Code that runs once is not carved into one-call
+   helpers. `--device=cpu|cuda|both` selects backends for `DEVICES both`.
+7. **Deterministic.** Fixed seeds; tolerances justified by physics or by the
+   oracle's own precision, not loosened until green.
+
+## `REFERENCE.md` template
+
+```markdown
+# <case> — <capability in one line>
+
+| | |
+|---|---|
+| Roadmap | docs/roadmap/<chapter>.md — <row> (<backends>) |
+| Oracle | external / literature / analytic / cpu-twin |
+| Source | <program version + input + output line> or <citation> |
+| Quantity | <what is compared, units> |
+| Tolerance | <value> — <why this tolerance> |
+| Runtime | <measured s> at <THREADS> threads (<machine>) |
+
+<System and settings: geometry, basis/cutoffs, ensemble, steps — enough to
+re-run the oracle.>
+```

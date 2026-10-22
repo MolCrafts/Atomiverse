@@ -25,7 +25,7 @@ from atomiverse._binding import _cpp, require_domain
 require_domain(__name__, "md")
 from atomiverse._dispatch import (
     EVALUATOR_DISPATCH as _EVALUATOR_DISPATCH,
-    unsupported_evaluator_message as _unsupported_evaluator_message,
+    bind_evaluator as _bind_evaluator,
 )
 
 # ---------------------------------------------------------------------------
@@ -213,6 +213,11 @@ class MD:
         types are whatever this extension binds; an unsupported one raises
         ``TypeError`` listing them.
 
+        Gaussian methods (``RHF``, ``UHF``, ``RKS``, ``UKS``) and ``DFTB2``
+        are borrowed as live native nodes/components. This driver keeps their
+        Python owners alive; their diagnostics remain on the original object.
+        These registrations currently require running without the MPI launcher.
+
         ``AM1Evaluator`` belongs here too: registering it makes the run
         Born-Oppenheimer molecular dynamics — one semiempirical SCF solve
         per step, forces from it. It needs no ``NeighborList`` (AM1 is
@@ -244,10 +249,7 @@ class MD:
           refuses a second thermostat beside it; the result is simply
           double-thermostatted.
         """
-        method_name = _EVALUATOR_DISPATCH.get(type(component))
-        if method_name is None:
-            raise TypeError(_unsupported_evaluator_message(component))
-        getattr(self._cpp, method_name)(component)
+        _bind_evaluator(self._cpp, component)
         self._built = False
         return self
 

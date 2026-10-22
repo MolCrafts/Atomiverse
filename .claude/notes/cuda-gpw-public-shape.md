@@ -1,35 +1,9 @@
-# CUDA GPW public-shape freeze
+# CUDA GPW — frozen public shape and product state
 
-Binding contract for `cuda-gpw-full-product`. Landed by
-`arch-cuda-gpw-public-shape-freeze` (method=arch-doc; merge `0147fe02` /
-docs `aea603bb`). Current understanding
-only — not a history log.
+Binding contract for `cuda::gpw::GpwDft`. Residency law:
+[cuda-only-no-dh.md](cuda-only-no-dh.md).
 
-## Lever
-
-`MeanFieldMethod` + `cpu/scf/stages/` (typed SCF Driver stages;
-`run(frame)` / `forces(frame)`) and multi-path DIIS `GpwDft :
-cpu::Driver<gpw::Phase>` (`ks_build → mix → diagonalize → density → check`).
-CUDA classical twins: `cuda::scf::RHF`, `cuda::pw::PW`. Full product **equals**
-that public shape; it does **not** invent a second SCF surface from stage
-footholds.
-
-## Status today
-
-| Layer | What exists |
-| --- | --- |
-| CPU method | `cpu::gpw::GpwDft` — multi-path **DIIS** on Driver stages; **OT** free-loop residual (same capability follow-on, not a block) |
-| CUDA stages | `cuda/gpw/internal/`: Poisson, XC LDA/GGA, product collocate/integrate (PBC sphere-window), weight pack, `KsChainDevice` / `KsMultiGridChainDevice`, `AoDiisEigenDevice`, multi-k collocate/integrate/STVnl/DIIS |
-| CUDA public method | **product landed** — `cuda::gpw::GpwDft` members + `build`/`run`/`last_result` + free-fn forces/stress. Slice: Γ RKS (SG + MG monom device KS, PADE/PBE) + Γ UKS PADE + multi-k RKS H₂ spine; mid-SCF device H/DIIS/payload (RKS+UKS); Si dual-gates green. Depth residual: multi-k χ/orth/vnl/payload, cold-start, free-fn AO Pulay/stress device, MG F/σ, `cuda::Driver<gpw::Phase>` nest (same class as CUDA SCF fold residual) |
-
-Frame `build` / `run` / `forces` are on `cuda::gpw::GpwDft` and read
-`kinds` plus `frame.box`. The device kernels and the current CUDA
-regressions still pass `internal::GpwAtom`. `cell[3]` is set from the box
-on the Frame path.
-
-## Frozen public shape (CUDA product must match)
-
-The user-facing CUDA method is the CPU twin, Frame in / Frame out:
+## Frozen shape (must equal CPU `GpwDft`)
 
 ```text
 cuda::gpw::GpwDft method{kinds};   // Kind = element + basis + GTH, ctor arg
@@ -41,61 +15,51 @@ const auto& last = method.last_result();
 // stress: gpw_stress(frame, method[, state]) free-fn family, as CPU
 ```
 
-### Required
+- Concrete method under `ATV::cuda::gpw` (no freestanding `SCFSolver`);
+  parameters as members / ctor args; no `*Config`, no `make_*`.
+- `build(frame)` fail-fast; re-entrant `run` / `forces`; `last_result`;
+  geometry never a member (no public `cell`) and never an atom list
+  (`internal::GpwAtom` is engine-private). Same `GpwResult` / `XcKind` as CPU.
+- Stage kernels stay under `cuda/gpw/internal/` (`KsChainDevice`,
+  `KsMultiGridChainDevice`, `PoissonFftDevice`, product collocate/integrate,
+  spectral MG transfer, XC grids) and are composed, never promoted to user API.
+- Capability subset is allowed; a public-shape fork is not. Unsupported options
+  (OT, MT, …) fail closed. CPU OT free-loop residual does not block CUDA.
+- Shape gate: `regressions/architecture/arch-cuda-gpw-public-shape-freeze/`.
 
-- Concrete method type under `ATV::cuda::gpw` (not freestanding `SCFSolver`)
-- Parameters as public members / ctor args — **no** public `*Config` bags
-- `build(frame)` fail-fast; re-entrant `run(frame)` / `forces(frame)`;
-  `last_result`; geometry never a member (no public `cell`), never an
-  atom list (`internal::GpwAtom` is engine-private)
-- Stage kernels stay under `cuda/gpw/internal/`; product **composes** them
-- No `make_*` / `build_*` factories returning constructed methods
-- Users never define Context or hand-drive Component lifecycle
+## Product state
 
-### Optional depth (not required for first product)
+- Frame `build` / `run` / `forces` exist and read `kinds` + `frame.box`; the
+  device kernels and CUDA regressions still pass `internal::GpwAtom`
+  (`es-cuda-gpw-frame-io`). The SCF is a free-loop composer inside `run()`, not
+  a nested `cuda::Driver<gpw::Phase>` — fold only shape-preservingly.
+- Mid-SCF on device (non-default stream): P resident → weight pack → ρ
+  collocate (SG PBC sphere-window | MG monom multi-level) → Poisson + XC →
+  V_eff → integrate → V_AO scatter → H = H0 + V → device DIIS residual → eigen
+  → P (`AoDiisEigenDevice`, `KpointDiis`). Final eigen payload D2H once.
 
-Post-SCF (`mp2` / RPA / G0W0), OT minimizer, multi-k UKS, vdW stack, etc. Ship
-when CPU twin is green and CUDA↔CPU tols are stated. **Capability subset is
-allowed; public-shape fork is not.**
-
-### Explicit non-product (stay internal)
-
-`KsChainDevice`, `KsMultiGridChainDevice`, `PoissonFftDevice`,
-`DeviceProduct` collocate/integrate, spectral MG transfer, XC grid kernels.
-These are stage/oracle units (`tests/cuda/gpw/*`, `reg_cuda-gpw-ks-*`). They
-must not become the public method API.
-
-## OT residual does not block
-
-CPU OT (`use_ot`) remains free-loop residual after multi-path DIIS Driver.
-That residual does **not** block this freeze and does **not** force OT onto
-the first CUDA product slice. DIIS Γ (and later multi-path DIIS) is the
-default product spine; OT is same-capability follow-on on both backends when
-staffed.
-
-## Unlock condition for `cuda-gpw-full-product`
-
-| Gate | State on `dev` @ `9c331b9d` |
+| Path | Mid-SCF on device |
 | --- | --- |
-| Multi-path DIIS CPU Driver | **green** (`arch-gpw-driver-paths`) |
-| Public-shape freeze | **green** (this note; merge `0147fe02`) |
-| Stage footholds composed | **green** (ks-chain / GGA / MG units) |
-| First method product | **landed** — feat `31d24207`; GH200 **1120817** dual-gate (PADE); device collocate **1125709**; MG energy **1126433**; Γ UKS **1126430** + O₂ **1127173**; device forces **1127167**; PBE H₂ **1127166**; stress **1128195**; non-default stream **1128196**; device RKS DIIS/eigen **1129719**; water dual-gate **1130195**; multi-k energy **1130141** (H₂ host residual); residual (multi-k device spine + Si/water multi-k energy+F/σ + multi-k×PBE, MG water/Si F/σ + Si MG×PBE, water×PBE F/σ, UKS F/σ + O₂ UKS-PBE F/σ + joints, force-stream / AO-Pulay, device STVnl/weight-pack/uks-diis) stays on es-cpu-cuda queue |
+| Γ RKS single-grid | yes |
+| Γ RKS multigrid | yes (monom default; `ATV_GPW_CUDA_HOST_MG=1` is debug only) |
+| Γ UKS single-grid | yes (dual pack / H / DIIS / payload) |
+| Multi-k RKS | mid-SCF yes; setup χ / STVnl hybrid |
 
-`cuda-gpw-full-product` is no longer blocked on “needs architecture freeze”.
-It remains a product implementation slug (compose internals → public method),
-subject to ES CUDA open-gate rules in CLAUDE.md.
+- Forces: device grid Hellmann–Feynman + **host AO Pulay** residual; stress via
+  a host assembly shell.
+- Evidence class is CPU-twin (◐), not CP2K; promoting to ✓ needs independent
+  CP2K pins.
 
-## Harness
+## Open depth (do not soft-land)
 
-`regressions/architecture/arch-cuda-gpw-public-shape-freeze/` — shape-only
-gate on the CPU public contract the CUDA product must mirror. No multi-iter
-SCF; no tree-scan style gates.
+1. `device-cold-start` — densify still on host.
+2. Multi-k χ / orth / Vnl / H0 residency, payload and cold-start.
+3. Device-native AO Pulay / force handoff; device stress kernels.
+4. Production multi-k / MG / UKS × PBE joints; Si MG F/σ.
+5. Nested `cuda::Driver<gpw::Phase>` (shape-preserving fold only).
 
 ## Forbidden
 
-- Public CUDA GPW API that differs from CPU `GpwDft` shape (e.g. Config bag,
-  free-loop solver type, foothold-as-product)
-- Staffing full product by promoting `KsChainDevice` to user surface
-- Softening pins / self-golden CUDA↔CPU
-- Claiming product green without GH200 evidence
+A public CUDA GPW API that differs from CPU `GpwDft` (Config bag, free-loop
+solver type, foothold-as-product); promoting `KsChainDevice` to user surface;
+softened or self-golden CUDA↔CPU pins; claiming green without GH200 evidence.

@@ -51,7 +51,7 @@ Representative fixed volumes (O,H,H,O,H,H):
 
 ### D/E — Multi-k product wiring (H₂, k-mesh 1×1×2)
 
-Compressed H₂ (same geometry as `gpw-mbd-kpoint-forces` / `gpw-kpoint-forces`):
+Compressed H₂ (same geometry as `gpw-mbd-kpoint-forces`):
 PADE, DZV-GTH-PADE, `k_mesh={1,1,2}`, CUTOFF 100 Ry.
 
 | Quantity | Gate |

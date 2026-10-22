@@ -92,8 +92,8 @@ single-grid settings (regression dual check).
 - Liechtenstein full \(U,J\) tensor; orbital-dependent U ramping.
 - Analytic DFT+U forces / stress on the OT path (separate DIIS stress / force
   rows: `gpw-dftu-stress`, `gpw-forces-water`).
-- Multi-k OT + DFT+U combo (multi-k DFT+U DIIS ✓ via `gpw-dftu-kpoints`; multi-k
-  OT rejects or is separate `ot-kpoints` scope).
+- Multi-k OT + DFT+U combo (multi-k DFT+U DIIS ✓ via [gpw-dftu-kpoints](gpw-dftu-kpoints.md); multi-k
+  OT rejects or is separate [ot-kpoints](ot-kpoints.md) scope).
 - Solid rocksalt AFM NiO product pin; GAPW / PAW projectors; MPI OT scaling.
 - PW backend OT+U (GPW only).
 

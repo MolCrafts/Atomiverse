@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `pw-smearing-al` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::pw::PW` members `smearing`, `degauss` [Ry], `mp_order`, `extra_bands`; `PWResult::{e_fermi,n_elec_occ,e_entropy}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) — Smearing for metals (CPU PW ✓) |
 ## Summary
@@ -17,7 +17,7 @@ exposes this on the concrete method `cpu::pw::PW` as public members
 `make_*` factory. Density and band energy use \(f_b(\varepsilon,\mu)\);
 the SCF total is the **Mermin free energy** \(F = E_{\mathrm{KS}} - TS\).
 Textbook pin: **FCC Al** primitive cell, NC UPF, Fermi–Dirac
-`degauss = 0.02` Ry. Regression binary: `reg_pw-smearing-al`. Offline
+`degauss = 0.02` Ry. No standing end-to-end regression. Offline
 CP2K 2026.1 documents the product counterpart (`&SMEAR METHOD FERMI_DIRAC`);
 absolute \(E\) is **not** a GTH-GPW ↔ NC-UPF twin — the energy gate freezes
 ATV free energy on identical ATV settings.
@@ -65,7 +65,7 @@ E_{\mathrm{entropy}} = -TS = -\sigma\sum_{k,b} w_k\, s_{kb}.
 **Default path.** `Smearing::none` keeps fixed integer occupations
 (\(n_{\mathrm{bands}}=\max(N_e/2,1)\)) — prior Si/H PW pins unchanged.
 
-**Excluded (this slug).** Spin-polarized metallic UKS (`pw-uks-kmesh-fe`,
+**Excluded (this slug).** Spin-polarized metallic UKS ([pw-uks-kmesh-fe](pw-uks-kmesh-fe.md),
 `pw-spin-polarized-o2`); cold / Marzari–Vanderbilt smearing; GPW `&SMEAR`
 productization; CUDA PW smearing; forces under smear as a pin.
 
@@ -131,21 +131,16 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_PW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_pw-smearing-al -j$(nproc)
-  reg_pw-smearing-al
 '
 ```
 
-Source consumer:
-`reg_pw-smearing-al.cpp`.
 Unit tests (occupation closed forms, not e2e):
 `tests/cpu/planewave/test_pw_smearing.cpp` → `test_cpu_pw_smearing`.
 
 ## Validation (CP2K)
 
-Source:
-case `pw-smearing-al` pin
-(offline pins only; **never** live CP2K in ctest).
+Source: values recorded when this page was written; no standing
+regression (offline pins only; **never** live CP2K in ctest).
 
 ### ATV system (energy + \(N_{\mathrm{occ}}\) gate)
 
@@ -196,7 +191,7 @@ Source: same REFERENCE (single-rank wall, 2026-07-23). Gate:
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
-| `al_fermi_dirac.inp` vs `reg_pw-smearing-al` | 211 | **1.70** | **0.008** | ✓ | different basis/PP/grid; wall indicative for dual gate only |
+| `al_fermi_dirac.inp` vs ATV `PW` (recorded) | 211 | **1.70** | **0.008** | ✓ | different basis/PP/grid; wall indicative for dual gate only |
 
 \[
 r = T_{\mathrm{atv}} / T_{\mathrm{cp2k}} \approx 0.008 \ll 10
@@ -211,7 +206,7 @@ same-Hamiltonian throughput claim. Handoff records ratio **0.008**
 
 - **Spin-unpolarized only on this pin.** Collinear spin is a separate
   product (`pw-spin-polarized-o2`); metallic k-point UKS is queue-pending
-  (`pw-uks-kmesh-fe`).
+  ([pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)).
 - **Absolute energy is ATV-frozen, not CP2K-matched.** GTH-GPW and NC-UPF PW
   are different Hamiltonians; CP2K documents SMEAR settings / algorithm
   only.
@@ -228,7 +223,7 @@ same-Hamiltonian throughput claim. Handoff records ratio **0.008**
 
 ## References
 
-- Offline pin: case `pw-smearing-al` pin
+- Offline pin: recorded when this page was written (no standing regression)
 - CP2K twin input: CP2K oracle
 - Oracle notes: CP2K oracle
 - Handoff ratio **0.008**: the case pin notes

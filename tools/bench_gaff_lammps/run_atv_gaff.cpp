@@ -9,9 +9,16 @@
 ///   neighbor 2.0 bin; neigh_modify delay 0 every 1 check yes
 ///   fix nvt temp 400.0 400.0 100.0; timestep 1.0
 ///
+/// General GAFF (benchmarks/gaff): `--ff` may also carry `dihedral_style
+/// fourier` and `improper_style cvff`; `--shake` holds every bond with a
+/// hydrogen (mass < 1.1 amu) rigid like `fix shake ... m 1.008`; `--mesh K`
+/// pins a cubic K³ PPPM mesh like `kspace_modify mesh K K K`.
+///
 /// Usage:
 ///   mpirun -np N run_atv_gaff --data melt.data --steps 1000 [--warmup 100]
 ///   mpirun -np N run_atv_gaff --data system.data --ff system.ff [--npt]
+///   run_atv_gaff --data system.data --ff system.ff --single-point \
+///       --alpha 0.35 --mesh 64 --forces-out atv.forces
 #include <mpi.h>
 
 #include <algorithm>
@@ -20,12 +27,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -41,7 +51,9 @@
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/dihedral_charmm.h"
+#include "atomiverse/cpu/potentials/dihedral_fourier.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/improper_cvff.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 
 using namespace ATV;
@@ -66,8 +78,15 @@ struct Args {
     double tau_P = 1000.0;
     bool single_point = false; // one force evaluation, print components, exit
     int tail_override = -1;    // -1 auto (from ff), 0 off, 1 on
-    int shift_override = -1;   // -1 auto (!tail), 0 off, 1 on
+    int shift_override = -1;   // -1 auto (ff, else LAMMPS default off)
     int seed = 4928;
+    double dt = 1.0;           // fs
+    int mesh = 0;              // >0: cubic K³ PPPM mesh (kspace_modify mesh)
+    bool shake = false;        // hold X-H bonds rigid (fix shake m 1.008)
+    double shake_tol = 1.0e-5; // relative tolerance
+    std::string forces_out;    // single point: write "id fx fy fz" kcal/mol/Å
+    int thermo = 0;            // >0: Thermo line every N steps (LAMMPS thermo)
+    bool nve = false;          // no thermostat (gate G2: energy drift)
 };
 
 Args parse(int argc, char** argv) {
@@ -116,13 +135,32 @@ Args parse(int argc, char** argv) {
             a.shift_override = std::atoi(next("--shift"));
         else if (!std::strcmp(argv[i], "--seed"))
             a.seed = std::atoi(next("--seed"));
+        else if (!std::strcmp(argv[i], "--dt"))
+            a.dt = std::atof(next("--dt"));
+        else if (!std::strcmp(argv[i], "--mesh"))
+            a.mesh = std::atoi(next("--mesh"));
+        else if (!std::strcmp(argv[i], "--shake"))
+            a.shake = true;
+        else if (!std::strcmp(argv[i], "--shake-tol"))
+            a.shake_tol = std::atof(next("--shake-tol"));
+        else if (!std::strcmp(argv[i], "--forces-out"))
+            a.forces_out = next("--forces-out");
+        else if (!std::strcmp(argv[i], "--thermo"))
+            a.thermo = std::atoi(next("--thermo"));
+        else if (!std::strcmp(argv[i], "--nve"))
+            a.nve = true;
         else if (!std::strcmp(argv[i], "--help")) {
             std::printf(
                 "run_atv_gaff --data PATH [--ff PATH] [--steps N] [--warmup N]"
                 " [--cutoff 10] [--accuracy 1e-4] [--grid-spacing Å]"
                 " [--T 400] [--tau-T 100] [--npt] [--P atm] [--tau-P 1000]"
-                " [--single-point] [--seed N]\n");
+                " [--single-point] [--seed N] [--dt fs] [--mesh K] [--shake]"
+                " [--shake-tol 1e-5] [--forces-out PATH] [--tail 0|1]"
+                " [--shift 0|1] [--thermo N] [--nve]\n");
             std::exit(0);
+        } else {
+            std::fprintf(stderr, "unknown argument %s (see --help)\n", argv[i]);
+            std::exit(2);
         }
     }
     return a;
@@ -177,7 +215,12 @@ int main(int argc, char** argv) {
     std::vector<double> Kd, dphase;
     std::vector<int> nper;
     std::vector<std::vector<double>> multi_Cn;
-    bool use_charmm = true, use_multi = false;
+    std::vector<std::vector<cpu::TorsionTerm>> fourier;
+    std::vector<double> imp_K;
+    std::vector<int> imp_d, imp_n;
+    bool use_charmm = true, use_multi = false, use_fourier = false,
+         use_cvff = false;
+    int ff_shift = -1; // pair_modify shift from the ff (-1 = not given)
     double sp_lj[3] = {0.0, 0.0, 0.5};
     double sp_coul[3] = {0.0, 0.0, 5.0 / 6.0};
     double cutoff = args.cutoff;
@@ -186,10 +229,14 @@ int main(int argc, char** argv) {
 
     if (!args.ff.empty()) {
         const cpu::LammpsCoeffs ff = cpu::load_lammps_coeffs(args.ff);
-        if (ff.pair_style != "lj/cut/coul/long")
+        // An ff without pair_style (benchmarks/gaff writes none: the deck
+        // owns the cutoff) means lj/cut/coul/long at --cutoff.
+        if (!ff.pair_style.empty() && ff.pair_style != "lj/cut/coul/long")
             throw std::runtime_error("run_atv_gaff: --ff pair_style must be "
                                      "lj/cut/coul/long, got '"
                                      + ff.pair_style + "'");
+        if (ff.lj.empty())
+            throw std::runtime_error("run_atv_gaff: --ff has no pair_coeff");
         lj_coeffs = ff.lj;
         Kbond = ff.bond_K;
         r0 = ff.bond_r0;
@@ -201,6 +248,14 @@ int main(int argc, char** argv) {
         multi_Cn = ff.dihedral_multi_Cn;
         use_charmm = ff.has_charmm;
         use_multi = ff.has_multi;
+        use_fourier = ff.has_fourier;
+        fourier = ff.dihedral_fourier;
+        use_cvff = ff.has_improper_cvff;
+        imp_K = ff.improper_K;
+        imp_d = ff.improper_d;
+        imp_n = ff.improper_n;
+        if (ff.has_shift)
+            ff_shift = ff.energy_shift ? 1 : 0;
         if (ff.has_special) {
             std::copy(ff.special_lj, ff.special_lj + 3, sp_lj);
             std::copy(ff.special_coul, ff.special_coul + 3, sp_coul);
@@ -249,8 +304,16 @@ int main(int argc, char** argv) {
     const double alpha = args.alpha > 0.0
                              ? args.alpha
                              : cpu::pppm_alpha_from_accuracy(accuracy, cutoff);
-    const double grid_sp =
-        args.grid_spacing > 0.0 ? args.grid_spacing : (cutoff / 2.5);
+    // `--mesh K`: spacing L/(K - 1/2) makes KSpacePPPM's ceil(L/spacing)
+    // land exactly on K (K itself must be FFT-friendly, as LAMMPS's is).
+    if (args.mesh > 0
+        && (std::abs(frame.box.length(0) - frame.box.length(1)) > 1e-9
+            || std::abs(frame.box.length(0) - frame.box.length(2)) > 1e-9))
+        throw std::invalid_argument("--mesh needs a cubic box");
+    const double grid_sp = args.mesh > 0
+                               ? frame.box.length(0) / (args.mesh - 0.5)
+                           : args.grid_spacing > 0.0 ? args.grid_spacing
+                                                     : (cutoff / 2.5);
     if (rank == 0)
         std::printf("[atv] alpha=%.6f (%s) grid_spacing=%.3f\n", alpha,
                     args.alpha > 0.0 ? "explicit" : "from accuracy", grid_sp);
@@ -273,8 +336,9 @@ int main(int argc, char** argv) {
     const bool stress = args.npt;
     if (args.tail_override >= 0)
         tail = args.tail_override != 0;
+    // LAMMPS default is `pair_modify shift no`; the ff may say otherwise.
     const bool shift =
-        args.shift_override >= 0 ? args.shift_override != 0 : !tail;
+        args.shift_override >= 0 ? args.shift_override != 0 : ff_shift == 1;
 
     auto install = [&](auto& sim) {
         sim.set_evaluator(cpu::PairLJCutCoulLong{lj_coeffs, alpha, cutoff}
@@ -293,6 +357,13 @@ int main(int argc, char** argv) {
                                   .set_compute_stress(stress));
         if (use_multi)
             sim.set_evaluator(cpu::DihedralMultiHarmonic{multi_Cn});
+        if (use_fourier)
+            sim.set_evaluator(
+                cpu::DihedralFourier{fourier}.set_compute_stress(stress));
+        if (use_cvff)
+            sim.set_evaluator(
+                cpu::ImproperCvff{imp_K, imp_d, imp_n}.set_compute_stress(
+                    stress));
     };
 
     // ── Single-point: one evaluation, component energies, exit ──────────
@@ -393,6 +464,34 @@ int main(int argc, char** argv) {
                         frame.meta.get(kEnergyBond) * kcal,
                         frame.meta.get(kEnergyAngle) * kcal,
                         frame.meta.get(kEnergyDihedral) * kcal);
+            // Machine-readable line for benchmarks/gaff/compare_sp.py.
+            std::printf("[atv] SP_KCAL total=%.14e nonbonded=%.14e "
+                        "bond=%.14e angle=%.14e dihedral=%.14e "
+                        "improper=%.14e\n",
+                        frame.meta.get(kEnergy) * kcal,
+                        frame.meta.get(kEnergyPair) * kcal,
+                        frame.meta.get(kEnergyBond) * kcal,
+                        frame.meta.get(kEnergyAngle) * kcal,
+                        frame.meta.get(kEnergyDihedral) * kcal,
+                        frame.meta.get(kEnergyImproper) * kcal);
+        }
+        if (!args.forces_out.empty()) {
+            if (nrank != 1)
+                throw std::invalid_argument("--forces-out needs one rank");
+            // Rows are data-file order (tag = row), so id = tag + 1.
+            const double kcal_f = 1.0 / ATV::cpu::kKcalPerMolInEv;
+            const auto tag = frame.span(kAtom_tag);
+            const AccReal* fx = frame.span(kAtom_fx);
+            const AccReal* fy = frame.span(kAtom_fy);
+            const AccReal* fz = frame.span(kAtom_fz);
+            std::ofstream out(args.forces_out);
+            if (!out)
+                throw std::runtime_error("cannot write " + args.forces_out);
+            out.precision(15);
+            out << std::scientific;
+            for (int i = 0; i < frame.nlocal(); ++i)
+                out << tag[i] + 1 << ' ' << fx[i] * kcal_f << ' '
+                    << fy[i] * kcal_f << ' ' << fz[i] * kcal_f << '\n';
         }
         MPI_Finalize();
         return 0;
@@ -410,10 +509,39 @@ int main(int argc, char** argv) {
         // 1 atm = 6.324209e-7 eV/Å³ (LAMMPS units real pressure is atm)
         const double P_evA3 = args.P_atm * 6.3242090e-7;
         sim.set_integrator(cpu::md::NoseHooverNPT{args.T, args.tau_T, P_evA3,
-                                                  args.tau_P, 1.0});
+                                                  args.tau_P, args.dt});
     } else {
-        sim.set_integrator(cpu::md::VelocityVerlet{1.0});
-        sim.set_thermostat(cpu::md::NoseHoover{args.T, args.tau_T, 1.0});
+        sim.set_integrator(cpu::md::VelocityVerlet{args.dt});
+        if (!args.nve)
+            sim.set_thermostat(
+                cpu::md::NoseHoover{args.T, args.tau_T, args.dt});
+    }
+    if (args.thermo > 0)
+        sim.set_thermo(args.thermo);
+    if (args.shake) {
+        // `fix shake ... m 1.008`: every bond type that bonds a hydrogen
+        // (mass < 1.1 amu) is held at its bond_coeff r0.
+        const auto mass = frame.span(kAtom_mass);
+        const auto num_bond = frame.span(kAtom_num_bond);
+        const auto bond_atom = frame.span(kAtom_bond_atom);
+        const auto bond_type = frame.span(kAtom_bond_type);
+        std::set<int> types;
+        for (int i = 0; i < frame.nlocal(); ++i)
+            for (int m = 0; m < num_bond[i]; ++m) {
+                const int j = static_cast<int>(bond_atom(i, m)); // tag = row
+                if (mass[i] < 1.1 || mass[j] < 1.1)
+                    types.insert(bond_type(i, m));
+            }
+        cpu::md::FixRattle rattle{args.dt, args.shake_tol, /*max_iter=*/100};
+        for (int t : types) {
+            if (t < 0 || t >= static_cast<int>(r0.size()))
+                throw std::runtime_error("--shake: bond type has no r0");
+            rattle.constrain_bond(t, r0[static_cast<std::size_t>(t)]);
+        }
+        if (rank == 0)
+            std::printf("[atv] shake: %zu X-H bond types held rigid\n",
+                        types.size());
+        sim.set_observer(std::move(rattle));
     }
     if (!have_velocities)
         sim.set_observer(
@@ -436,8 +564,7 @@ int main(int argc, char** argv) {
     if (rank == 0) {
         const double steps_s = args.steps / wall;
         const double matom = static_cast<double>(n_atoms) * steps_s / 1e6;
-        // dt = 1 fs → ns/day
-        const double ns_day = steps_s * 1e-6 * 86400.0;
+        const double ns_day = steps_s * args.dt * 1e-6 * 86400.0;
         std::printf("[atv] PERFORMANCE  wall=%.4f s  steps/s=%.3f  "
                     "Matom-step/s=%.3f  ns/day=%.3f  ranks=%d\n",
                     wall, steps_s, matom, ns_day, nrank);

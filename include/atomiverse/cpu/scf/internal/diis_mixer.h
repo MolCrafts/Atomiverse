@@ -16,6 +16,7 @@
 #pragma once
 
 #include <deque>
+#include <stdexcept>
 #include <utility>
 
 #include <xtensor-blas/xlinalg.hpp>
@@ -27,17 +28,6 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 namespace internal {
-
-/// @brief Compute DIIS error vector in the orthonormal basis.
-///
-/// Matches PySCF: e = X^T (F P S - S P F) X, where X is the canonical
-/// orthogonalization matrix (X^T S X = I). At self-consistency, e -> 0.
-inline RealMatrix diis_error(const RealMatrix& F, const RealMatrix& P,
-                             const RealMatrix& S, const RealMatrix& X) {
-    RealMatrix commutator = xt::linalg::dot(F, xt::linalg::dot(P, S))
-                            - xt::linalg::dot(S, xt::linalg::dot(P, F));
-    return xt::linalg::dot(xt::transpose(X), xt::linalg::dot(commutator, X));
-}
 
 /// @brief Combined DIIS accelerator for spin-resolved Fock matrices.
 ///
@@ -51,7 +41,11 @@ inline RealMatrix diis_error(const RealMatrix& F, const RealMatrix& P,
 class DIISMixer {
   public:
     /// @param max_vectors Maximum number of stored (F, e) pairs.
-    explicit DIISMixer(int max_vectors = 6) : max_vectors_(max_vectors) {}
+    explicit DIISMixer(int max_vectors = 6) : max_vectors_(max_vectors) {
+        if (max_vectors < 1)
+            throw std::invalid_argument(
+                "DIISMixer: history depth must be positive");
+    }
 
     /// @brief Store a new Fock/error pair and return extrapolated Fock matrices.
     std::pair<RealMatrix, RealMatrix> step(const RealMatrix& F_alpha,

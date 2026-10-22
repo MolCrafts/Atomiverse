@@ -61,6 +61,7 @@ void BondFene::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "BondFene");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 3;
     if (n_tuples == 0)
         return;
@@ -77,8 +78,10 @@ void BondFene::compute(const LaunchContext& ctx) {
 
     scratch_.bind(f);
 
-#pragma omp parallel if (scratch_.n_threads() > 1) reduction(+ : energy_total) \
-    reduction(+ : bad_type) reduction(+ : overstretched)
+#pragma omp parallel num_threads(                                              \
+        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
+    reduction(+ : energy_total) reduction(+ : bad_type)                        \
+    reduction(+ : overstretched)
     {
         int tid = 0;
 #ifdef _OPENMP
@@ -124,12 +127,14 @@ void BondFene::compute(const LaunchContext& ctx) {
             const double fy_val = fpair * dy;
             const double fz_val = fpair * dz;
 
-            tf.fx[i] += fx_val;
-            tf.fx[j] -= fx_val;
-            tf.fy[i] += fy_val;
-            tf.fy[j] -= fy_val;
-            tf.fz[i] += fz_val;
-            tf.fz[j] -= fz_val;
+            if (ctx.forces_requested) {
+                tf.fx[i] += fx_val;
+                tf.fx[j] -= fx_val;
+                tf.fy[i] += fy_val;
+                tf.fy[j] -= fy_val;
+                tf.fz[i] += fz_val;
+                tf.fz[j] -= fz_val;
+            }
 
             vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
         }
@@ -142,11 +147,13 @@ void BondFene::compute(const LaunchContext& ctx) {
     if (overstretched > 0)
         throw std::runtime_error("BondFene: bond length ≥ R0");
 
-    scratch_.reduce_into(n_force);
+    if (ctx.forces_requested)
+        scratch_.reduce_into(n_force);
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyBond) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }

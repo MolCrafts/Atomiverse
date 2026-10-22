@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `xl-bomd-rhf-water` |
-| Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdMethod<cpu::scf::{RHF,UHF,RKS,UKS,…}>{method, k}` bound with `set_evaluator_ref`; witness `xl_advances()`; propagator `cpu::electronic::XlBomd` |
+| Public API | `cpu::md::MD` + `VelocityVerlet` + `cpu::electronic::XlBomdMethod<cpu::scf::{RHF,UHF,RKS,UKS,…}>{method, k}` bound with `set_evaluator_ref`; witness `method().xl_advances()`; propagator `cpu::electronic::XlBomd` |
 | Spec | `esmm-cpmd-05-scf-xlbomd` (ac-001 ladder, ac-002 exclusivity, ac-003 history integrity, ac-004 the XL signature) |
 | Dual gate | Correctness = `test_cpu_scf_xl_bomd` + `reg_xl-bomd-rhf-water`; speed **`perf_exempt`** |
 | GPW sibling | [xl-bomd-water](xl-bomd-water.md) — same propagator behind GPW forces |
@@ -48,8 +48,9 @@ turns it on, where the guess enters, and when the auxiliary density advances.
 
 XL-BOMD is a **type**, not a flag: the mode bits live in `protected` storage on
 `MeanFieldMethod`, and the wrapper (`cpu/electronic/aimd_method.h`) is the only
-public way to set them. It publicly inherits `Method`, so `basis` / `tol` /
-`max_iter` are still ordinary members on the object you move in. There is no
+public way to set them. It owns `Method` and implements the nested DriverNode
+and timestep protocols. Configure `basis` / `tol` / `max_iter` before moving
+the method in, and inspect it afterwards through `wrapper.method()`. There is no
 `XlConfig` and no `make_xl_*`: a plain BOMD user constructs the method
 directly, and an XL user gets the same dissipation order the GPW evaluator
 ships.
@@ -116,7 +117,7 @@ sim.set_evaluator_ref(rhf);             // borrow: diagnostics stay readable
 sim.build();
 sim.run(frame, 20);                     // frame.meta.get(kEnergy) [eV]
 
-rhf.xl_advances();                      // == 20: one advance per converged step
+rhf.method().xl_advances();                      // == 20: one advance per converged step
 ```
 
 Step 1 is a cold seed (nothing has been propagated yet); every later step is a
@@ -176,7 +177,7 @@ saturates. Warm-step mean over steps 9–20 at Δt = 0.25 fs, `tol` = 1e-6 Ha:
 
 | What | Path |
 | ---- | ---- |
-| XL wrapper (`XlBomdMethod`) | `aimd_method.h` |
+| XL composed node (`XlBomdMethod`) | `aimd_method.h` |
 | Mode storage, ladder, advance hook, exclusivity gates | `mean_field_method.h`, `src/cpu/scf/mean_field_method.cpp` |
 | Propagator | `xl_bomd.h` |
 | Unit tests | `tests/cpu/scf/test_scf_xl_bomd.cpp` |

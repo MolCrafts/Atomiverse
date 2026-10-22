@@ -36,7 +36,8 @@ CPU-only domain. Oracles: **OpenMOPAC** (NDDO), **DFTB+** 24.1 (DFTB), **xtb
 | DFTB-D3 triclinic cell | ○ | ○ | `d3_periodic` throws unless the box is orthorhombic |
 | SK beyond H/C/N/O | ○ | ○ | mio-1-1 ships P and S; in-tree tables are H/C/N/O and throw |
 | On-site correction | ○ | ○ | DFTB+ `OnSiteCorrection` |
-| Γ-point / multi-k periodic DFTB2 | ✓ | ○ | Analytic F/σ on MioSketch; ThreeOb is molecular only |
+| Γ-point periodic DFTB2 | ✓ | ○ | Ewald γ energy pinned vs DFTB+; analytic F/σ on MioSketch (periodic σ unit-gated); ThreeOb is molecular only |
+| Multi-k periodic DFTB2 | ◐ | ○ | Reachable; no external pin (self-pinned k-point cases removed) |
 | DFTB2 analytic gradient / stress | ✓ | ○ | Pair virial; all product paths |
 | TD-DFTB | ✓ | ○ | Closed-shell Γ MioSketch. 3ob and collinear-reference Casida still ○. See [Excited States](excited-states.md) |
 | LC-DFTB / Fermi filling / GBSA | ○ | ○ | |
@@ -46,8 +47,7 @@ CPU-only domain. Oracles: **OpenMOPAC** (NDDO), **DFTB+** 24.1 (DFTB), **xtb
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | GFN0 / GFN1 / GFN2 | ✓ | ○ | H/C/N/O; analytic G; FD Hessian; integer occ |
-| GFN2 AES (quadrupole) | ✓ | ○ | In SCC Fock; two-centre Θ is in the gradient |
-| GFN2 CAMM-vs-R | ○ | ○ | Blocked. Angular \(F_{H1,y}\) vs xtb 6.7.1 is the H0/Pulay pair term |
+| GFN2 AES (quadrupole) + self-consistent D4 | ✓ | ○ | Cumulative multipoles of every atom; AES and D4 in the SCC Fock; gradient is the exact derivative of E |
 | IPEA-xTB | ✓ | ○ | Energy + G + FD Hessian + ΔSCC VIP/VEA; CHNO only |
 | Periodic / spin / ALPB / GBSA / CPCM-X / Fermi / sTDA-xTB | ○ | ○ | `--gbsa` is not ALPB. Extra-Z tables too |
 | GFN-FF | ○ | ○ | Classical FF scope-out |

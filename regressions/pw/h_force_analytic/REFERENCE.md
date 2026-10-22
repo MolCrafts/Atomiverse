@@ -52,3 +52,20 @@ Measured 2026-08-15 with GTH-PBE-q1, spin-polarized doublet:
 
 Public `PWEvaluator::with_gradient(true)` must write a finite energy and a force
 vector satisfying the same bound (analytic path).
+
+## Shared-state request coverage
+
+The regression also checks combined force/stress and a changed-cell stress-only
+request against the owning method's `last_result()`. Restricted Fermi–Dirac
+smearing and collinear spin plus smearing reuse the single-H fixture, with two
+extra bands, width 0.02 Ry, SCF tolerance 1e-8 and a 100-iteration cap. Their
+forces are compared with the existing `pw_forces_fd` oracle at 5e-3 Å using the
+unchanged h_force_fd bound (1e-4 eV/Å), alongside the analytic symmetry bound
+(1e-9 eV/Å). This does not test nonzero bond forces or nonlocal projectors.
+
+Restricted smearing additionally compares stress with `pw_stress_fd` at strain
+2e-3. The 0.05 eV/Å³ dual-gate bound is inherited from pw-analytic-stress-si;
+the separate off-diagonal symmetry bound is 1e-9 eV/Å³. This broad diagonal
+bound is a smoke gate, not a precision stress benchmark. Spin plus smearing
+stress remains unsupported and is not counted as coverage. New matrix cases
+must be executed after compilation; no new measured reference values are claimed.

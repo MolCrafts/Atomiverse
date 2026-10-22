@@ -127,7 +127,7 @@ concept OpenShellMethod = requires(Method& method) {
 /// @tparam Method Concrete C++ method owned by value (`RHF` / `UHF` / `RKS`
 ///         / `UKS`).
 template <typename Method>
-class MethodHandle {
+class MethodHandle : public ATV::cpu::DriverNode {
   public:
     Method method; ///< Concrete C++ method; parameters are members.
 
@@ -135,6 +135,26 @@ class MethodHandle {
     ///        (M = 1 singlet, 2 doublet, 3 triplet; dimensionless). Read by
     ///        the open-shell methods only.
     int multiplicity = 1;
+
+    bool provides_energy() const override { return method.provides_energy(); }
+    bool provides_force() const override { return method.provides_force(); }
+    int default_budget() const override { return method.default_budget(); }
+    bool requires_tag_index() const override {
+        return method.requires_tag_index();
+    }
+    ATV::cpu::TimestepConsumer* timestep_consumer() override { return &method; }
+    void build_on(ATV::cpu::Runtime& runtime) override {
+        resolve_occupation_(runtime.frame());
+        method.build_on(runtime);
+    }
+    int run_nested_erased(ATV::cpu::Context& context, ATV::cpu::Frame& frame,
+                          int budget) override {
+        resolve_occupation_(frame);
+        return method.run_nested_erased(context, frame, budget);
+    }
+    void destroy_on(ATV::cpu::Runtime& runtime) override {
+        method.destroy_on(runtime);
+    }
 
     /// @brief Construct the owned method in place from its C++ ctor args.
     ///        Constrained so it never hijacks copy / move construction.
@@ -234,7 +254,8 @@ class MethodHandle {
 /// @tparam Method Concrete C++ method the handle owns.
 /// @param cls Class binding of a `MethodHandle` specialization.
 template <typename Method>
-void bind_single_point(nb::class_<MethodHandle<Method>>& cls) {
+void bind_single_point(
+    nb::class_<MethodHandle<Method>, ATV::cpu::DriverNode>& cls) {
     using Handle = MethodHandle<Method>;
     cls.def("run", &Handle::run, nb::arg("frame"),
             "Iterate the SCF (self-consistent field) loop to convergence at "
@@ -296,7 +317,7 @@ void bind_scf(nb::module_& m) {
     using ATV::cpu::scf::UHF;
     using ATV::cpu::scf::UKS;
 
-    nb::class_<MethodHandle<RHF>> rhf(
+    nb::class_<MethodHandle<RHF>, ATV::cpu::DriverNode> rhf(
         m, "RHF",
         "Restricted Hartree-Fock (RHF): the closed-shell mean-field method. "
         "Every electron moves in the averaged field of all the others, "
@@ -321,7 +342,7 @@ void bind_scf(nb::module_& m) {
         "An unknown basis name raises ValueError listing the supported ones.");
     bind_single_point(rhf);
 
-    nb::class_<MethodHandle<UHF>> uhf(
+    nb::class_<MethodHandle<UHF>, ATV::cpu::DriverNode> uhf(
         m, "UHF",
         "Unrestricted Hartree-Fock (UHF): the same exact-exchange mean-field "
         "model as RHF, but the spin-up (alpha) and spin-down (beta) electrons "
@@ -354,7 +375,7 @@ void bind_scf(nb::module_& m) {
         "construction.");
     bind_single_point(uhf);
 
-    nb::class_<MethodHandle<RKS>> rks(
+    nb::class_<MethodHandle<RKS>, ATV::cpu::DriverNode> rks(
         m, "RKS",
         "Restricted Kohn-Sham (RKS) density-functional theory (DFT): the "
         "electrons are described by the orbitals of a fictitious "
@@ -380,7 +401,7 @@ void bind_scf(nb::module_& m) {
         "basis name raises ValueError listing the supported ones.");
     bind_single_point(rks);
 
-    nb::class_<MethodHandle<UKS>> uks(
+    nb::class_<MethodHandle<UKS>, ATV::cpu::DriverNode> uks(
         m, "UKS",
         "Unrestricted Kohn-Sham (UKS) density-functional theory: RKS with "
         "independent spatial orbitals for the spin-up (alpha) and spin-down "

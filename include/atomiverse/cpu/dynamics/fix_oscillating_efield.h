@@ -2,6 +2,10 @@
 /// @brief CPU oscillating (AC) uniform external electric field — LAMMPS variable `fix efield`.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cmath>
 #include <string>
 #include <vector>
@@ -43,8 +47,18 @@ namespace md {
 /// ── Not in scope (see spec `oscillating-efield-md`) ───────────────────
 /// atom-style spatial fields, region keyword, dipole torque, arbitrary
 /// equal-style expression engine beyond AC cosine.
-class FixOscillatingEfield : public cpu::Bias {
+class FixOscillatingEfield : public cpu::Bias, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "FixOscillatingEfield: timestep must be finite and positive");
+        dt = timestep;
+    }
+
     /// @param Ex0 Amplitude of \(E_x\) [V/Å].
     /// @param Ey0 Amplitude of \(E_y\) [V/Å].
     /// @param Ez0 Amplitude of \(E_z\) [V/Å].

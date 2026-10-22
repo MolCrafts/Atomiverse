@@ -17,6 +17,7 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/dynamics/const_pot_bo.h" // ElectrodeGroup
+#include "atomiverse/cpu/dynamics/electrode_rows.h"
 
 namespace ATV {
 namespace cpu {
@@ -36,6 +37,7 @@ namespace md {
 /// @endcode
 class ConstPotCG : public cpu::Component {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param eta Gaussian charge width \(\eta\) [1/Å] (shared by all
     ///            electrode sites in v1).
     explicit ConstPotCG(double eta);
@@ -60,6 +62,9 @@ class ConstPotCG : public cpu::Component {
     void build(const BuildContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
+    /// @brief Electrode sites are re-resolved by tag after atom sorting.
+    /// @return true.
+    bool requires_tag_index() const override { return true; }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Total charge on electrode group `ie` [e] after last launch.
@@ -97,6 +102,8 @@ class ConstPotCG : public cpu::Component {
     std::vector<ElectrodeGroup> groups_;
 
     std::vector<int> elec_atoms_;
+
+    ElectrodeRows sites_; ///< tag order; rows follow sorts
     std::vector<int> elec_group_;
     std::vector<double> psi_vec_;
     std::vector<double> Q_;

@@ -4,16 +4,16 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-uks-dftu` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `n_alpha`/`n_beta`, `k_mesh` / `k_points`, `plus_u` |
-| Roadmap | `docs/roadmap/dft.md` § OT — multi-k UKS OT+U (`reg_ot-uks-dftu`) ✓ |
+| Roadmap | `docs/roadmap/dft.md` § OT — multi-k UKS OT+U ✓ |
 
 ## Summary
 
 **Multi-k collinear UKS GPW** with the **Orbital Transformation (OT)** SCF
 minimizer and **Dudarev DFT+U** (`PLUS_U`, Mulliken occupation) is the product
 intersection of three previously separate footholds: multi-k UKS OT
-(`ot-uks-kpoints`), multi-k RKS OT+U (`ot-dftu-kpoints`), and Γ-UKS OT+U
+([ot-uks-kpoints](ot-uks-kpoints.md)), multi-k RKS OT+U ([ot-dftu-kpoints](ot-dftu-kpoints.md)), and Γ-UKS OT+U
 (`ot-dftu`). This page pins that combo on a **high-spin H₂** microcase
 (DZV-GTH-PADE, PADE LSD, \(U-J=4\) eV on H \(L=0\)) against offline **CP2K
 2026.1** logistics and in-tree OT≡DIIS fixed-point identities.
@@ -21,11 +21,11 @@ intersection of three previously separate footholds: multi-k UKS OT
 Product path: construct `cpu::gpw::GpwDft`, set UKS occupations + `use_ot` +
 `k_mesh`/`k_points` + `plus_u`, `build(frame)` / `run(frame)`. Method energy
 channel is **Hartree** on `GpwResult::e_total` / `e_dftu`; `run(frame)` also
-writes the public Frame energy in eV (`kEnergy`). Product gate:
-`reg_ot-uks-dftu`. Fair wall: **`perf_exempt`** — CP2K 2026.1 hard-aborts OT
+writes the public Frame energy in eV (`kEnergy`). No standing
+regression. Fair wall: **`perf_exempt`** — CP2K 2026.1 hard-aborts OT
 with k-points, so no OT wall twin exists; decisive gates are internal
-OT≡DIIS multi-k UKS+U identities (same pattern as `ot-uks-kpoints` /
-`ot-dftu-kpoints`).
+OT≡DIIS multi-k UKS+U identities (same pattern as [ot-uks-kpoints](ot-uks-kpoints.md) /
+[ot-dftu-kpoints](ot-dftu-kpoints.md)).
 
 Related: closed-shell Γ OT [ot-minimizer-water](ot-minimizer-water.md);
 Γ-UKS DFT+U DIIS [gpw-dftu-nio](gpw-dftu-nio.md); Γ UKS
@@ -69,7 +69,7 @@ integer occupations, multi-k UKS OT+U uses a **CP2K-style OUTER_SCF**: rebuild
 densities, then **fixed-H OT** band minimize on each local \((k,\sigma)\)
 (`ot_minimize_fixed_k`). Same self-consistent fixed point as multi-k UKS
 DIIS+U when both converge on identical grids. Without `plus_u`, multi-k UKS
-OT uses the product dual-spin OT loop of `ot-uks-kpoints`.
+OT uses the product dual-spin OT loop of [ot-uks-kpoints](ot-uks-kpoints.md).
 
 **Dudarev DFT+U (binding).** Per element and angular momentum \(L\), effective
 \(U_{\mathrm{eff}}=U-J\) in **eV** on the public surface (converted to
@@ -105,7 +105,7 @@ OT≡DIIS multi-k UKS+U (A1–A2) plus activation / absolute first-green pin
 **Key exclusions (binding from closed product scope).**
 
 - Multi-k **UKS OT + DFT+U + metallic smearing** ○ (residual;
-  `ot-dftu-smearing` covers RKS OT+U+smear; `ot-uks-smearing` covers UKS
+  [ot-dftu-smearing](ot-dftu-smearing.md) covers RKS OT+U+smear; [ot-uks-smearing](ot-uks-smearing.md) covers UKS
   OT+smear without U).
 - Liechtenstein full \(U,J\); PAW/GAPW projectors.
 - Multigrid / nonperiodic multi-k OT+U (throws at `build()`).
@@ -195,8 +195,7 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build --target reg_ot-uks-dftu -j$(nproc)
-  reg_ot-uks-dftu
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -217,7 +216,7 @@ itself calls `GpwDft` directly (as in the regression).
 
 ## Validation (vs CP2K / internal identities)
 
-Source: case `ot-uks-dftu` pin.
+Source: the pin notes recorded when this page was written (no standing regression).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest.
 Pin date: **2026-07-26**.
 
@@ -270,7 +269,7 @@ cp2k.psmp -i <CP2K oracle input for this case> \
 ## Performance
 
 Source: fair wall table in
-case `ot-uks-dftu` pin (2026-07-26). Handoff:
+the pin notes recorded when this page was written (no standing regression; 2026-07-26). Handoff:
 the case pin notes → **`perf_exempt`**.
 
 | Item | Value |
@@ -303,13 +302,11 @@ apply; do not invent a CP2K OT wall from the DIIS twin.
 - **Dense OT preconditioner** cost does not forecast sparse / linear-scaling
   OT industrial workloads.
 - Prior product pins remain the entry points for partial combos: multi-k UKS
-  OT without U (`ot-uks-kpoints`), multi-k RKS OT+U (`ot-dftu-kpoints`),
+  OT without U ([ot-uks-kpoints](ot-uks-kpoints.md)), multi-k RKS OT+U ([ot-dftu-kpoints](ot-dftu-kpoints.md)),
   Γ-UKS OT+U (`ot-dftu`).
 
 ## References
 
-- Offline pin + fair wall: case `ot-uks-dftu` pin
-- Regression consumer: `reg_ot-uks-dftu.cpp`
 - CP2K DIIS multi-k+U twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md)

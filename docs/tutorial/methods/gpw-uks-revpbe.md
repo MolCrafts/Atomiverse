@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-uks-revpbe` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members (`n_alpha`/`n_beta`, `XcKind::RevPBE`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — Γ-UKS revPBE spin-GGA (`XcKind::RevPBE`) |
 | Fair wall | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx \mathbf{3.22}\) (≤10×) |
@@ -25,10 +25,10 @@ Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element
 (`n_alpha`, `n_beta`, `cutoff_ry`, `xc = XcKind::RevPBE`, `nonperiodic`, …),
 move it into `cpu::gpw::GPWEvaluator`, run `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**;
 Hartree and \(\langle S^2\rangle\) via `last_energy_hartree()` / `last_s2()`.
-Product gate: `reg_gpw-uks-revpbe`.
+No standing regression.
 
 Related: PADE LSD foothold [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md); closed-shell
-revPBE RKS (`reg_gpw-revpbe-si`); UKS-PBE sibling `reg_gpw-uks-pbe`. Narrative
+revPBE RKS ([gpw-revpbe-si](gpw-revpbe-si.md)); UKS-PBE sibling `reg_gpw-uks-pbe`. Narrative
 GPW: [Ch. 9](../ch09-gpw.md). Molecular all-electron UKS is a separate SCF /
 PySCF-loop concern — not this page.
 
@@ -63,7 +63,7 @@ base; at finite gradient they differ. libxc: `GGA_X_PBE_R` + `GGA_C_PBE`.
 ```
 
 Short `XC_FUNCTIONAL revPBE` is **not** a valid enumeration in CP2K 2026.1
-(closed-shell RKS pin `gpw-revpbe-si` may use a different stock name depending
+(closed-shell RKS pin [gpw-revpbe-si](gpw-revpbe-si.md) may use a different stock name depending
 on version — always re-pin from the twin input under CP2K oracle).
 
 **Distinct from RPBE.** Hammer–Hansen–Nørskov RPBE uses a different exchange
@@ -180,9 +180,7 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_gpw-uks-revpbe
-  reg_gpw-uks-revpbe
-  # or: cmake --build build --target run_reg_gpw-uks-revpbe
+  cmake --build build -j$(nproc) --target atomiverse
 '
 ```
 
@@ -199,7 +197,7 @@ Relevant sources:
 
 ## Validation (CP2K)
 
-Source: case `gpw-uks-revpbe` pin (offline pin; **never**
+Source: the pin notes recorded when this page was written (no standing regression; offline pin; **never**
 live CP2K in ctest). Engine: **CP2K 2026.1** (`cp2k.psmp`), module
 `CP2K/2026.1` on Arrhenius. Pin date: **2026-07-26**.
 
@@ -278,8 +276,6 @@ Gate from closed product: \(r \le 10\) or `perf_exempt`. Here
 
 ## References
 
-- Offline pin: case `gpw-uks-revpbe` pin
-- Regression consumer: `reg_gpw-uks-revpbe.cpp`
 - CP2K twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Sibling UKS-PADE: [gpw-uks-o2-gamma](gpw-uks-o2-gamma.md)

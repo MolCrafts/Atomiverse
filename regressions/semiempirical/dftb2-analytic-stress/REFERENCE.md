@@ -99,7 +99,7 @@ nor the new value is an oracle number — no DFTB+ identity is claimed.
    into one spin-resolved `analytic_forces_stress` that also emits the virial;
    this case's numbers are unchanged
    (`regressions/semiempirical/dftb2-spin-analytic-stress`).
-3. ~~**No periodic case.**~~ **Closed 2026-07-29** (`dftb2-multi-k-forces`).
+3. ~~**No periodic case.**~~ **Closed 2026-07-29** (unit-gated, see below).
    This gate's geometry is still a molecule in a 20 Å box, and the numbers above
    are bit-unchanged — but the defect it was pointing at was real and is fixed:
    the pair virial walked ordered pairs \(a<b\) only, so it dropped the
@@ -112,8 +112,7 @@ nor the new value is an oracle number — no DFTB+ identity is claimed.
    \(-0.37019871\) eV/Å³. With the self-image \(H^0/S/\gamma/E_\mathrm{rep}\)
    virial terms added, the residual is \(<10^{-6}\) eV/Å³ and the periodic case
    is unit-gated by `tests/cpu/semiempirical/test_dftb2.cpp`
-   `PeriodicAnalyticStressMatchesStrainFdCChain` plus the multi-k strain-FD
-   gate in `regressions/semiempirical/dftb2-multi-k-forces/`.
+   `PeriodicAnalyticStressMatchesStrainFdCChain`.
 
    The self-image virial is carried on the **spin-resolved** assembly, so it
    applies to the open-shell path as well as the restricted one.

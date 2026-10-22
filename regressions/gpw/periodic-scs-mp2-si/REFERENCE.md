@@ -41,7 +41,7 @@ under `&WF_CORRELATION`.
 | Basis / PP | **DZVP-MOLOPT-GTH** / **GTH-PBE-q4** |
 | XC | **PBE** |
 | Cutoff | **30 Ry** (SCF + WFC_GPW) |
-| SCF (ATV) | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 80 |
+| SCF (ATV) | tol 1e-6, mix 0.3, level_shift 0.3 Ha, max_iter 200 |
 | MP2 | all kept virtuals; `mp2_ri = true`; SCS scales as above |
 
 ## Offline CP2K pin (2026-08-01)
@@ -107,3 +107,14 @@ ATV product numbers on the same host (arrhenius1, 2026-08-01):
 `E_corr(SCS) = −0.2982932565` Ha (`|Δ|` vs CP2K pin = 3.5e-4 Ha < 1e-3).
 
 Never launch CP2K from ctest.
+
+## SCF branch (degenerate guess)
+
+Closed-shell Si₂ is the π² case: the core-Hamiltonian guess has an exactly
+degenerate HOMO, so the occupied π combination is chosen by floating-point
+noise. A 1e-9 Å displacement of atom 2 flips the iteration-0 energy between
+−4.56842019 and −4.56824863 Ha and the converged state between two
+stationary points, E_SCF ≈ −7.5955445 Ha (≈ 58 iterations) and
+≈ −7.5955020 Ha (110–135 iterations, the branch the x86 OpenBLAS build
+takes). Every gate in this regression holds on both branches; `max_iter`
+is 200 so the budget does not depend on which branch LAPACK picks.

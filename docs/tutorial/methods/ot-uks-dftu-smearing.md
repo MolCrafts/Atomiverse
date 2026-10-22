@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `ot-uks-dftu-smearing` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `use_ot`, `plus_u`, `smearing`, `degauss`, `extra_bands`, `n_alpha`/`n_beta`, `k_points` / `k_mesh` |
-| Roadmap | `docs/roadmap/dft.md` — multi-k **UKS OT+U+smear** (`reg_ot-uks-dftu-smearing`) ✓ |
+| Roadmap | `docs/roadmap/dft.md` — multi-k **UKS OT+U+smear** ✓ |
 
 ## Summary
 
@@ -23,11 +23,11 @@ Public surface is concrete `cpu::gpw::GpwDft` **members** only — no `*Config`
 bag, no `make_*` / `build_*` factories. Textbook pin: equal-spin **H₂**
 (DZV-GTH-PADE / GTH-PADE-q1), PADE LSD, single density grid at 100 Ry,
 explicit κ = (¼,0,0), \(U-J=4.0\) eV on H \(L=0\), FD `degauss = 0.02` Ry.
-Product gate: `reg_ot-uks-dftu-smearing`. Fair wall twin: **none** — CP2K
+Fair wall twin: **none** — CP2K
 2026.1 aborts OT+k and product OT+SMEAR; status **`perf_exempt`**.
 
-Related combos: RKS OT+U+smear — `ot-dftu-smearing`; UKS OT+smear —
-`ot-uks-smearing`; UKS OT+U integer — `ot-uks-dftu`; Γ DFT+U foothold —
+Related combos: RKS OT+U+smear — [ot-dftu-smearing](ot-dftu-smearing.md); UKS OT+smear —
+[ot-uks-smearing](ot-uks-smearing.md); UKS OT+U integer — [ot-uks-dftu](ot-uks-dftu.md); Γ DFT+U foothold —
 [gpw-dftu-nio](gpw-dftu-nio.md); closed-shell OT —
 [ot-minimizer-water](ot-minimizer-water.md); metallic PW smear —
 [pw-smearing-al](pw-smearing-al.md). Narrative GPW: [Ch. 9](../ch09-gpw.md).
@@ -106,9 +106,9 @@ first-green absolute.
 ## Implementation
 
 Public surface only: construct `cpu::gpw::GpwDft`, set members, `build` /
-`run` on a `cpu::Frame` (regression path). Outer Drivers bind the same
+`run` on a `cpu::Frame` (the path used for the recorded values). Outer Drivers bind the same
 configured `GpwDft` through `cpu::gpw::GPWEvaluator(std::move(m))`; this pin
-calls the method directly to match the regression. **No**
+calls the method directly to match the recorded values. **No**
 `*Config`, **no** factories.
 
 ```cpp
@@ -163,7 +163,7 @@ const GpwResult& r = m.run(frame);
 // r.e_dftu [Ha], r.n_elec_occ ≈ 2, r.e_fermi, r.e_entropy, r.converged
 ```
 
-Build (GPW needs FFTW3) and run the regression:
+Build (GPW needs FFTW3) configuration:
 
 ```bash
 bash -lc '
@@ -176,8 +176,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_ot-uks-dftu-smearing
-  reg_ot-uks-dftu-smearing
 '
 ```
 
@@ -193,8 +191,7 @@ bash -lc '
 
 ## Validation (vs CP2K)
 
-Source:
-case `ot-uks-dftu-smearing` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle: offline **CP2K 2026.1** (`cp2k.psmp`); **never** live in ctest. Pin
 date: **2026-07-26**. Closed gates A0–A6.
 
@@ -252,8 +249,7 @@ Attempting `&OT` under the same multi-k + SMEAR setup aborts on CP2K 2026.1
 
 ## Performance
 
-Source: REFERENCE performance section + handoff
-the case pin notes row `ot-uks-dftu-smearing`. Gate:
+Source: values recorded when this page was written (no standing regression). Gate:
 \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) **or** `perf_exempt`.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
@@ -263,7 +259,7 @@ the case pin notes row `ot-uks-dftu-smearing`. Gate:
 **Why exempt.** There is no product CP2K binary that runs multi-k OT (with
 or without SMEAR). The DIIS twin is a fixed-point document, not a fair
 algorithm wall. Product gate is internal OT ≡ DIIS free energy (A2), same
-class as `ot-dftu-smearing` / `ot-uks-dftu`. Wall above is indicative only
+class as [ot-dftu-smearing](ot-dftu-smearing.md) / [ot-uks-dftu](ot-uks-dftu.md). Wall above is indicative only
 (single microcase; not a multi-system standing suite).
 
 ## Limitations
@@ -284,10 +280,7 @@ class as `ot-dftu-smearing` / `ot-uks-dftu`. Wall above is indicative only
 
 ## References
 
-- Offline pin + walls:
-  case `ot-uks-dftu-smearing` pin
-- Regression consumer:
-  `reg_ot-uks-dftu-smearing.cpp`
+- Offline pin + walls: values recorded on this page (no standing regression)
 - CP2K DIIS twin:
   CP2K oracle
 - Oracle contract:

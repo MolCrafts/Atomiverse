@@ -30,31 +30,8 @@ NoseHoover::NoseHoover(double T_start, double tau_T, double dt)
 }
 
 void NoseHoover::build(const cpu::BuildContext& ctx) {
-    // `Q_` (chain mass) is set from the *global* DOF count; using a per-rank
-    // value diverges the chain dynamics under multi-rank. atoms.size() at
-    // build time equals global N only on the *initial* build (before
-    // Backend::set_frame partitions). When a driver is rebuilt after a
-    // partition has happened (e.g. polyethylene_tension's per-stage rebuild)
-    // atoms.size() == n_local + n_ghost — wrong. Allreduce-sum dd->n_local
-    // to recover global N in that case.
-    int n_global = static_cast<int>(ctx.frame.nlocal());
-#ifdef ATV_HAS_MPI
-    // MUST be unconditional across all ranks (collective). A rank that owns no
-    // atoms (n_local == 0) still has to call MPI_Allreduce or the others hang;
-    // it contributes 0 so n_global stays the correct global total. Gating on
-    // `n_local > 0` caused a 64-rank stage-transition deadlock. See the twin
-    // fix in nose_hoover_npt.cpp::build.
-    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
-        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        const int n_local = ctx.runtime.md.dd->n_local;
-        MPI_Allreduce(&n_local, &n_global, 1, MPI_INT, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-    }
-#endif
-    // Ndof is published by Driver::publish_dof_ before any component builds,
-    // and already accounts for constraints (3N - 3 - n_constraints).
+    // Driver publishes the constraint-aware global DOF count before build.
     n_dof_global_ = ctx.runtime.md.n_dof_global;
-    (void)n_global;
     // Initial chain mass at the ramp anchor `T_start_`; `launch()`
     // retunes it each step to the live setpoint (LAMMPS recomputes
     // `eta_mass[0] = tdof·boltz·t_target/t_freq²` in nhc_temp_integrate).
@@ -99,11 +76,15 @@ double NoseHoover::compute_temp_target(std::int64_t step) const {
 void NoseHoover::launch(const cpu::LaunchContext& ctx) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    // Use the build-time-cached global DOF. atoms.size() at launch is the
-    // per-rank capacity (n_local + n_ghost), not global N — the old form
-    // gave a 3× over-count under MPI from ghost slots, and under per-stage
-    // rebuilds it was even smaller than n_local.
+    // Driver republishes this global, constraint-aware count after live edits.
+    // Refresh the mass below without resetting the thermostat's chain state.
+    n_dof_global_ = ctx.runtime.md.n_dof_global;
     const int n_dof = n_dof_global_;
+    // A published zero-DOF system (e.g. one atom after COM removal) has no
+    // thermal bath. Preserve velocities and chain state instead of dividing
+    // by the zero thermostat mass.
+    if (n_dof <= 0)
+        return;
 
     if (ctx.at(ATV::md::Phase::initial_integrate)
         || ctx.at(ATV::md::Phase::final_integrate)) {

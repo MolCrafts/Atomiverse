@@ -60,6 +60,7 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "AngleHarmonic");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 4;
     if (n_tuples == 0)
         return;
@@ -77,10 +78,15 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
     // Resolve the frame's force spans ONCE, before the parallel region opens
     // (never inside it — see BondedForceScratch::bind).
     scratch_.bind(f);
+    // The virial is only flushed when stress is requested; skip the two
+    // outer products per angle otherwise (LAMMPS vflag).
+    const bool do_virial = ctx.stress_requested;
 
 // Thread-private virial combined under a critical section (no per-step heap
 // alloc, unlike an OMP user-defined reduction on Voigt6).
-#pragma omp parallel if (scratch_.n_threads() > 1) reduction(+ : energy_total)
+#pragma omp parallel num_threads(                                              \
+        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
+    reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP
@@ -153,29 +159,35 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
                     c_coeff * (dz_ji / r_ji - cos_theta * dz_jk / r_jk);
 
                 // Force on j: -(fi + fk) (Newton's 3rd law).
-                tf.fx[i] += fi_x;
-                tf.fy[i] += fi_y;
-                tf.fz[i] += fi_z;
-                tf.fx[k] += fk_x;
-                tf.fy[k] += fk_y;
-                tf.fz[k] += fk_z;
-                tf.fx[j] -= fi_x + fk_x;
-                tf.fy[j] -= fi_y + fk_y;
-                tf.fz[j] -= fi_z + fk_z;
+                if (ctx.forces_requested) {
+                    tf.fx[i] += fi_x;
+                    tf.fy[i] += fi_y;
+                    tf.fz[i] += fi_z;
+                    tf.fx[k] += fk_x;
+                    tf.fy[k] += fk_y;
+                    tf.fz[k] += fk_z;
+                    tf.fx[j] -= fi_x + fk_x;
+                    tf.fy[j] -= fi_y + fk_y;
+                    tf.fz[j] -= fi_z + fk_z;
+                }
 
-                vir_local.add_pair(dx_ji, dy_ji, dz_ji, fi_x, fi_y, fi_z);
-                vir_local.add_pair(dx_jk, dy_jk, dz_jk, fk_x, fk_y, fk_z);
+                if (do_virial) {
+                    vir_local.add_pair(dx_ji, dy_ji, dz_ji, fi_x, fi_y, fi_z);
+                    vir_local.add_pair(dx_jk, dy_jk, dz_jk, fk_x, fk_y, fk_z);
+                }
             }
         }
 #pragma omp critical
         vir += vir_local;
     }
 
-    scratch_.reduce_into(n_force);
+    if (ctx.forces_requested)
+        scratch_.reduce_into(n_force);
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyAngle) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }

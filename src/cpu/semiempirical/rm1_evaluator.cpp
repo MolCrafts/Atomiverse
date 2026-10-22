@@ -41,10 +41,15 @@ WrappedPositionsSnapshot unwrap_for_rm1(ATV::cpu::Frame& frame) {
         double dx = sp_x[i] - x0;
         double dy = sp_y[i] - y0;
         double dz = sp_z[i] - z0;
+        const double original_dx = dx, original_dy = dy, original_dz = dz;
         frame.box.min_image(dx, dy, dz);
-        sp_x[i] = static_cast<StorageReal>(x0 + dx);
-        sp_y[i] = static_cast<StorageReal>(y0 + dy);
-        sp_z[i] = static_cast<StorageReal>(z0 + dz);
+        // Preserve the input exactly when no periodic image changed.
+        if (dx != original_dx)
+            sp_x[i] = static_cast<StorageReal>(x0 + dx);
+        if (dy != original_dy)
+            sp_y[i] = static_cast<StorageReal>(y0 + dy);
+        if (dz != original_dz)
+            sp_z[i] = static_cast<StorageReal>(z0 + dz);
     }
     return snap;
 }

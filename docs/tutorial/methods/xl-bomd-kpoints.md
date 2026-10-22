@@ -29,11 +29,12 @@ the multi-k SCF. SCF still converges to `tol` each ionic step
 internal KS energies may be cited in Ha/Ry on method channels only.
 
 This page is the **multi-k XL product pin**: periodic H₂ (twin geometry
-family of `gpw-kpoint-forces`), PADE / DZV-GTH-PADE / GTH-PADE-q1,
+family of [gpw-kpoint-forces](gpw-kpoint-forces.md)), PADE / DZV-GTH-PADE / GTH-PADE-q1,
 \(1\times1\times2\) unreduced mesh (\(n_k=2\)), short NVE trajectory. The
 pin is **not** a golden Atomiverse total energy — it is the literature
 NVE conservation envelope plus multi-k payload diagnostics. Absolute
-multi-k force quality is already offline-pinned in `gpw-kpoint-forces`;
+multi-k force quality is not gated here (no standing multi-k force
+regression; see the [gpw-kpoint-forces](gpw-kpoint-forces.md) method page);
 Γ XL product paths are `xl-bomd-water` / `xl-bomd-uks`.
 
 ## Method
@@ -232,7 +233,7 @@ ctest --test-dir build -R '^test_cpu_gpw_xl_bomd$' --output-on-failure
 
 Source: case `xl-bomd-kpoints` pin. Offline pins
 only — **CP2K is never invoked from ctest**. Multi-k force absolute
-quality lives in `gpw-kpoint-forces`; this slug gates **MD binding +
+quality is not gated here (see [gpw-kpoint-forces](gpw-kpoint-forces.md)); this case gates **MD binding +
 multi-k XL guess plumbing + NVE envelope**.
 
 | Quantity | Atomiverse / pin | Oracle | Tol / gate | Notes |
@@ -258,7 +259,6 @@ Related pins:
 
 | Related slug | Role |
 | ------------ | ---- |
-| `gpw-kpoint-forces` | multi-k analytic ionic forces (absolute quality) |
 | `xl-bomd-water` | Γ closed-shell RKS XL NVE (H₂O / PBE) |
 | `xl-bomd-uks` | Γ UKS XL NVE |
 | `gpw-bomd-water` | plain BOMD NVE (no XL) |
@@ -284,7 +284,8 @@ slug).
 - **SCF still fully converged** each step; linearized zero-SCF XL forces
   are out of scope for this foothold.
 - Envelope CUTOFF is cheap (100 Ry); do not treat this regression as a
-  multi-k force accuracy pin — use `gpw-kpoint-forces`.
+  multi-k force accuracy pin (no standing multi-k force regression; see
+  [gpw-kpoint-forces](gpw-kpoint-forces.md)).
 - Short trajectory (1+4 steps) is a **plumbing / conservation smoke**,
   not a production sampling length.
 - No fair multi-k AIMD wall ratio until offline CP2K twin is re-run on
@@ -296,8 +297,8 @@ slug).
 - CP2K twin sketch: CP2K oracle
 - Oracle rules: CP2K oracle (offline only; never live ctest)
 - Γ XL tutorial: [xl-bomd-water.md](xl-bomd-water.md)
-- Multi-k forces family: [gpw-kpoint-forces](../../roadmap/dft.md) product row /
-  `gpw-kpoint-forces`
+- Multi-k forces family: [gpw-kpoint-forces](gpw-kpoint-forces.md) /
+  [roadmap](../../roadmap/dft.md)
 - A. M. N. Niklasson, *Phys. Rev. Lett.* **100**, 123004 (2008)
 - A. M. N. Niklasson et al., *J. Chem. Phys.* **130**, 214109 (2009) — Table I
 - J. VandeVondele et al., *Comput. Phys. Commun.* **167**, 103 (2005) — GPW

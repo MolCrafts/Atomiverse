@@ -21,8 +21,7 @@ xtb 6.7.1 `--gfn 1 --hess` / `--gfn 2 --hess` prints an **analytical**
 Hessian (xtb log: “analytical hessian”); ATV stays FD of analytic \(G\)
 (same shape as GFN0). **Not** DFTB+; **Not** OpenMOPAC.
 
-Primary pin is **GFN1**. GFN2 AES remains a **post-SCC energy** (angular
-\(F\) hole; queue `gfn2-aes-fock`); the GFN2 ω residual carries that hole.
+Primary pin is **GFN1**; GFN2 is gated on the same shape.
 
 ## Offline oracle run
 
@@ -100,18 +99,21 @@ Same Cartesian as `reg_gfn1-xtb-forces` / `reg_gfn0-xtb-analytic-hessian`.
 (`reg_gfn1-xtb-forces` 5 meV; `reg_gfn2-xtb-water` 1 meV). GFN1
 frequency / Cartesian-\(H\) tols absorb FD-step vs xtb **analytical**
 Hessian plus IUPAC-2013 vs xtb isotope masses (the GFN1 angular-\(F\)
-kernel hole does **not** move these ω). GFN2 ω / \(H\) tols are the
-stated **AES-in-Fock hole** (AES still post-SCC; the water bend is the
-angular mode). Structural gates: 9×9 finite symmetric Hessian,
+kernel hole does **not** move these ω). GFN2 ω / \(H\) tols are unchanged from
+the first landing. Structural gates: 9×9 finite symmetric Hessian,
 nonlinear rotor, 3 real modes, \(n_{\mathrm{imag}}=0\).
 
 Measured on the pin host (Release, `OMP_NUM_THREADS=1`):
 
 | | GFN1 | GFN2 |
 | - | ---- | ---- |
-| \(\|E_{\mathrm{ATV}}-E_{\mathrm{pin}}\|\) | \(2.767\times10^{-3}\) eV | \(2.64\times10^{-5}\) eV |
-| \(\Delta\omega\) | 0.38 / 0.40 / 5.48 cm⁻¹ | 121 / 89 / 19 cm⁻¹ |
-| \(\|H_{O_x,O_x}-H_{\mathrm{pin}}\|\) | \(0.104\) eV/Å² | \(0.751\) eV/Å² |
+| \(\|E_{\mathrm{ATV}}-E_{\mathrm{pin}}\|\) | \(2.767\times10^{-3}\) eV | \(1.14\times10^{-5}\) eV |
+| \(\Delta\omega\) | 0.38 / 0.40 / 5.48 cm⁻¹ | 0.05 / 5.4 / 0.8 cm⁻¹ |
+| \(\|H_{O_x,O_x}-H_{\mathrm{pin}}\|\) | \(0.104\) eV/Å² | \(0.104\) eV/Å² |
+
+The GFN2 analytic gradient is the exact derivative of its SCC energy
+(Fock = \(\partial E/\partial P\) with AES and self-consistent D4), so the FD
+Hessian here differs from xtb only by FD step and masses, as for GFN1.
 
 ## Perf
 

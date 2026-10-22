@@ -1,9 +1,12 @@
 /// @file cpu/driver/runtime.cpp
 /// @brief cpu::Runtime implementation. Plan dispatch + component lifecycle;
 ///        DD / device / analysis state lives in the composed sub-runtimes.
+// Communication/sort scheduling follows LAMMPS src/verlet.cpp,
+// a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b. Copyright (2003) Sandia
+// Corporation. Under Contract DE-AC04-94AL85000, the U.S. Government retains
+// certain rights. Distributed under the GNU General Public License.
 
 #include "atomiverse/cpu/driver/runtime.h"
-#include "atomiverse/core/precision.h"
 
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/stage.h"
@@ -13,12 +16,15 @@
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/driver/driver_node.h"
 #include "atomiverse/cpu/driver/step_timing.h"
+#include "atomiverse/cpu/dynamics/atom_sort.h"
 #include "atomiverse/cpu/frame/pbc.h"
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #ifdef ATV_HAS_MPI
@@ -51,25 +57,25 @@ void sync_reneighbor_flag(cpu::Context& context) {
 #endif
 }
 
-/// LAMMPS Verlet: `nflag = neighbor->decide()` before exchange/borders.
-void decide_reneighbor_for_plan(const Plan<cpu::Component>* plan,
-                                cpu::Context& context, cpu::Frame& frame) {
-    context.md.reneighbor = true;
-    context.md.reneighbor_decided = false;
-    if (plan == nullptr)
-        return;
-    for (const auto& slot : plan->slots) {
-        for (const auto& op : slot.ops) {
-            if (op.component == nullptr)
-                continue;
-            cpu::NeighborProvider* np = op.component->neighbor_provider();
-            if (np == nullptr)
-                continue;
-            context.md.reneighbor = np->decide_reneighbor(context, frame);
-            sync_reneighbor_flag(context);
-            context.md.reneighbor_decided = true;
-            return;
-        }
+/// @brief The one force slot a linear (non-Verlet) physical plan wraps in
+///        LAMMPS `Min::energy_force` communication, or -1 for none.
+///
+/// Every classical force kernel reads raw Cartesian differences to explicit
+/// periodic image rows, so any plan that evaluates such a kernel needs the
+/// halo around its force slot. A finite-difference Hessian/phonon pass is the
+/// same single-point evaluation as `Evaluate`, repeated per displacement.
+int linear_force_slot(PhaseKind kind) {
+    switch (kind) {
+    case PhaseKind::Evaluate:
+        return ATV::slot_of(ATV::evaluate::Phase::evaluate);
+    case PhaseKind::Minimizer:
+        return ATV::slot_of(ATV::minimizer::Phase::force);
+    case PhaseKind::Sampling:
+        return ATV::slot_of(ATV::sampling::Phase::energy);
+    case PhaseKind::Vib:
+        return ATV::slot_of(ATV::vib::Phase::force);
+    default:
+        return -1;
     }
 }
 
@@ -81,6 +87,7 @@ Runtime::Runtime(Runtime&&) noexcept = default;
 Runtime& Runtime::operator=(Runtime&&) noexcept = default;
 
 void Runtime::init() {
+    failed_ = false;
     // Device: OpenMP thread configuration (+ NUMA-bind warning).
     device_.configure_threads(context_);
 
@@ -124,36 +131,30 @@ void Runtime::init() {
 }
 
 void Runtime::set_frame(cpu::Frame& frame) {
-    frame_ = &frame;
     bool needs_tag_index = false;
     if (plan_) {
-        for (const auto& slot : plan_->slots) {
-            for (const auto& op : slot.ops) {
-                if (op.component)
-                    needs_tag_index =
-                        needs_tag_index || op.component->requires_tag_index();
-                if (needs_tag_index)
-                    break;
-            }
-            if (needs_tag_index)
-                break;
+        for (const auto* component : plan_->components()) {
+            if (multi_rank_dd(context_) && component->requires_full_frame())
+                throw std::runtime_error(
+                    component->name()
+                    + ": requires a complete Frame; use "
+                      "set_serial_on_replica() "
+                      "before build, or run without spatial decomposition");
+            needs_tag_index |= component->requires_tag_index();
         }
     }
+    if (plan_ && plan_->requires_full_frame && multi_rank_dd(context_))
+        throw std::runtime_error("driver requires a complete Frame; use "
+                                 "set_serial_on_replica() before build");
     domain_.bind_frame(frame, context_, needs_tag_index);
+    frame_ = &frame;
+    forces_ready_ = false;
 }
 
-void Runtime::load(const Plan<cpu::Component>& plan) {
-    std::vector<std::pair<int, cpu::Component*>> bindings;
-    if (plan.kind == PhaseKind::MD)
-        for (const auto& slot : plan.slots)
-            for (const auto& op : slot.ops)
-                bindings.emplace_back(slot.phase, op.component);
-    if (bindings != force_bindings_) {
-        forces_ready_ = false;
-        verlet_setup_done_ = false;
-    }
-    force_bindings_ = std::move(bindings);
+void Runtime::load(const Plan<cpu::Component>& plan, BigInt step_idx) {
     plan_ = &plan;
+    if (components_built_)
+        refresh_plan_(step_idx);
 }
 
 void Runtime::adopt_dd(std::unique_ptr<md::mpi::DomainDecomposition> dd) {
@@ -166,64 +167,123 @@ std::unique_ptr<md::mpi::DomainDecomposition> Runtime::release_dd() {
 
 void Runtime::build_components() {
     try {
-        forces_ready_ = false;
         build_plan(*plan_);
-        TimerRegistry& timing = device_.timing();
-        // Register one timing handle per op (component name + phase + category
-        // rollup), precomputed so the hot step loop never re-classifies / allocates.
-        op_handle_.assign(plan_->slots.size(), {});
-        for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
-            auto& slot = plan_->slots[s];
-            op_handle_[s].reserve(slot.ops.size());
-            for (auto& op : slot.ops) {
-                const std::string nm = op.component->name();
-                ATV_DEBUG("building component '{}'", nm);
-                op_handle_[s].push_back(timing.register_op(TimerKey{
-                    nm, slot.phase,
-                    static_cast<int>(md::StepTiming::classify(nm)), ""}));
-            }
-        }
-        ATV_INFO("all components built");
-        const int comm_cat = static_cast<int>(md::StepTiming::Comm);
-        comm_handle_fwd_ =
-            timing.register_op(TimerKey{"comm_forward", -1, comm_cat, ""});
-        comm_handle_exch_ =
-            timing.register_op(TimerKey{"comm_exchange", -1, comm_cat, ""});
-        comm_handle_bord_ =
-            timing.register_op(TimerKey{"comm_borders", -1, comm_cat, ""});
-        comm_handle_rev_ =
-            timing.register_op(TimerKey{"comm_reverse", -1, comm_cat, ""});
-        cache_verlet_comm_();
-        // The schema is now folded; hold the Frame to it before anything runs.
-        // Iron law 4, applied once for the whole component set instead of each
-        // component remembering to check its own fields.
-        if (frame_ != nullptr) {
-            check_ghosts(verlet_.ghost, *frame_, "driver build");
-        }
-        verlet_setup_done_ = false;
-        if (plan_
-            && (plan_->kind == PhaseKind::Evaluate
-                || plan_->kind == PhaseKind::Minimizer))
-            setup_verlet_comm_();
     } catch (...) {
-        DestroyContext ctx{context_, *frame_};
-        lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
+        if (driver_owned_)
+            unwind_failed_run();
+        throw;
+    }
+    try {
+        refresh_plan_();
+        components_built_ = true;
+    } catch (...) {
+        if (driver_owned_)
+            unwind_failed_run();
+        else
+            destroy_plan(*plan_);
         throw;
     }
 }
 
+void Runtime::refresh_plan_(BigInt step_idx) {
+    contracts_ready_ = false;
+    std::vector<StageSlot<cpu::Component>> force_bindings;
+    if (plan_->kind == PhaseKind::MD) {
+        for (int phase = slot_of(ATV::md::Phase::pre_force);
+             phase <= slot_of(ATV::md::Phase::post_force); ++phase)
+            force_bindings.push_back(plan_->slots[phase]);
+    }
+    if (force_bindings != force_bindings_)
+        forces_ready_ = false;
+    force_bindings_ = std::move(force_bindings);
+    analysis_.drain();
+    TimerRegistry& timing = device_.timing();
+    // Register one timing handle per op (component name + phase + category
+    // rollup), precomputed so the hot step loop never re-classifies / allocates.
+    op_handle_.assign(plan_->slots.size(), {});
+    for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
+        auto& slot = plan_->slots[s];
+        op_handle_[s].reserve(slot.ops.size());
+        for (auto& op : slot.ops) {
+            const std::string nm = op.component->name();
+            op_handle_[s].push_back(timing.register_op(
+                TimerKey{nm, slot.phase,
+                         static_cast<int>(md::StepTiming::classify(nm)), ""}));
+        }
+    }
+    ATV_INFO("all components built");
+    const int comm_cat = static_cast<int>(md::StepTiming::Comm);
+    comm_handle_fwd_ =
+        timing.register_op(TimerKey{"comm_forward", -1, comm_cat, ""});
+    comm_handle_exch_ =
+        timing.register_op(TimerKey{"comm_exchange", -1, comm_cat, ""});
+    comm_handle_bord_ =
+        timing.register_op(TimerKey{"comm_borders", -1, comm_cat, ""});
+    comm_handle_rev_ =
+        timing.register_op(TimerKey{"comm_reverse", -1, comm_cat, ""});
+    cache_verlet_comm_();
+    // The fold changed: CommBrick compiled its border/forward/reverse wires
+    // from the previous `ctx.md.ghost` and caches them until told otherwise.
+    // A nested physical child or a live-mounted style that declares a new
+    // ghost column (a Coulomb style's charge) would otherwise read rows the
+    // halo never filled, silently.
+    comm_contract_stale_ = true;
+    // The schema is now folded; hold the Frame to it before anything runs.
+    // Iron law 4, applied once for the whole component set instead of each
+    // component remembering to check its own fields.
+    if (frame_ != nullptr) {
+        check_ghosts(verlet_.ghost, *frame_, "driver build");
+    }
+    verlet_setup_done_ = false;
+    if (plan_
+        && (plan_->kind == PhaseKind::MD || plan_->kind == PhaseKind::Evaluate
+            || plan_->kind == PhaseKind::Minimizer
+            || plan_->kind == PhaseKind::Vib))
+        setup_verlet_comm_(step_idx);
+    contracts_ready_ = true;
+}
+
 void Runtime::launch_op_(std::size_t s, std::size_t o, BigInt step_idx) {
+    DispatchScope dispatch(this);
     auto& slot = plan_->slots[s];
     auto& op = slot.ops[o];
+    const int saved_slot = active_slot_;
+    struct RestoreSlot {
+        int& slot;
+        int saved;
+        bool& pipeline;
+        bool saved_pipeline;
+        ~RestoreSlot() {
+            slot = saved;
+            pipeline = saved_pipeline;
+        }
+    } restore_slot{active_slot_, saved_slot, physical_pipeline_active_,
+                   physical_pipeline_active_};
+    active_slot_ = static_cast<int>(s);
+    physical_pipeline_active_ |=
+        plan_->kind == PhaseKind::Evaluate
+        || plan_->kind == PhaseKind::Minimizer || plan_->kind == PhaseKind::Vib
+        || (plan_->kind == PhaseKind::MD
+            && active_slot_ != slot_of(ATV::md::Phase::end_of_step));
     if (op.frequency > 0 && step_idx % op.frequency != 0)
         return;
-    LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
+    LaunchContext ctx{context_,
+                      *frame_,
+                      slot.phase,
+                      step_idx,
                       /*forces_requested=*/slot.forces_requested
-                          && context_.exec.forces_requested};
+                          && context_.exec.forces_requested,
+                      slot.stress_requested && context_.exec.stress_requested};
+    const auto saved_window = frame_->resolution_window();
+    struct RestoreWindow {
+        Frame& frame;
+        ResolutionWindow saved;
+        ~RestoreWindow() { frame.restore_resolution_window(saved); }
+    } restore{*frame_, saved_window};
     frame_->begin_resolution_window(kResolveBudgetPerLaunch);
     TimerRegistry& timing_reg = device_.timing();
     const bool timing = timing_reg.enabled();
-    const bool have_handles = op_handle_.size() == plan_->slots.size();
+    const bool have_handles = s < op_handle_.size() && o < op_handle_[s].size();
     if (timing && have_handles) {
         const auto t0 = std::chrono::steady_clock::now();
         op.component->launch(ctx);
@@ -261,7 +321,15 @@ void Runtime::launch_engine_(cpu::Component* c, int slot, int op, int phase,
         const auto& sl = plan_->slots[static_cast<std::size_t>(slot)];
         ctx.forces_requested =
             sl.forces_requested && context_.exec.forces_requested;
+        ctx.stress_requested =
+            sl.stress_requested && context_.exec.stress_requested;
     }
+    const auto saved_window = frame_->resolution_window();
+    struct RestoreWindow {
+        Frame& frame;
+        ResolutionWindow saved;
+        ~RestoreWindow() { frame.restore_resolution_window(saved); }
+    } restore{*frame_, saved_window};
     frame_->begin_resolution_window(kResolveBudgetPerLaunch);
     TimerRegistry& timing_reg = device_.timing();
     const bool timing = timing_reg.enabled();
@@ -285,6 +353,9 @@ void Runtime::launch_engine_(cpu::Component* c, int slot, int op, int phase,
 
 void Runtime::cache_verlet_comm_() {
     verlet_ = {};
+    context_.md.pair_list = nullptr;
+    context_.md.full_pair_list = nullptr;
+    context_.md.atom_sort = nullptr;
     if (plan_ == nullptr)
         return;
     // The halo's own product comes first, so it keeps the leading wire
@@ -298,51 +369,109 @@ void Runtime::cache_verlet_comm_() {
             if (c == nullptr)
                 continue;
             if (cpu::NeighborProvider* np = c->neighbor_provider()) {
+                if (verlet_.neighbor_comp == c)
+                    continue;
+                if (verlet_.neighbor_comp)
+                    throw std::runtime_error(
+                        "runtime plan has multiple NeighborProvider owners");
+                (void)np->validated_skin();
                 verlet_.neighbor = np;
                 verlet_.neighbor_comp = c;
                 verlet_.neighbor_slot = static_cast<int>(s);
                 verlet_.neighbor_op = static_cast<int>(o);
             }
-            if (const cpu::NeighborConsumer* nc = c->as_neighbor_consumer()) {
-                const double halo = static_cast<double>(nc->halo_cutoff());
-                if (halo > verlet_.consumer_halo_cutoff)
-                    verlet_.consumer_halo_cutoff = halo;
-            }
-            // Same fold, one level up: instead of the widest cutoff, the
-            // union of the columns anybody reads on a ghost row. Insertion
-            // order is Plan order, so every rank builds the identical
-            // schema without a collective.
-            verlet_.ghost.declare(c->declare_ghosts());
         }
+    }
+    auto active_components = plan_->components();
+    std::unordered_set<cpu::Component*> seen(active_components.begin(),
+                                             active_components.end());
+    for (std::size_t i = 0; i < active_components.size(); ++i) {
+        auto* node = active_components[i]->nested_node();
+        const auto* child = node ? node->execution_plan() : nullptr;
+        if (!child || child->kind == PhaseKind::MD
+            || child->kind == PhaseKind::Evaluate
+            || child->kind == PhaseKind::Minimizer
+            || child->kind == PhaseKind::Sampling
+            || child->kind == PhaseKind::Vib)
+            continue;
+        for (auto* component : child->components())
+            if (seen.insert(component).second)
+                active_components.push_back(component);
+    }
+    bool want_half = false, want_full = false, want_ghost_rows = false;
+    for (const auto* c : active_components) {
+        if (const auto* consumer = c->as_neighbor_consumer()) {
+            if (verlet_.neighbor)
+                verlet_.neighbor->validate_coverage(
+                    *consumer, verlet_.neighbor_comp->name(), c->name());
+            if (consumer->requires_ghost_neighbor_rows()
+                && consumer->neighbor_list_mode() != NeighborListMode::Full)
+                throw std::runtime_error(
+                    "ghost-centred half neighbour lists are not supported");
+            want_ghost_rows |= consumer->requires_ghost_neighbor_rows();
+            want_half |=
+                consumer->neighbor_list_mode() == NeighborListMode::Half;
+            want_full |=
+                consumer->neighbor_list_mode() == NeighborListMode::Full;
+        }
+    }
+    for (auto* c : active_components)
+        if (auto* provider = c->neighbor_provider())
+            provider->configure_lists(want_half || !want_full, want_full,
+                                      want_ghost_rows);
+    // Preserve Plan order; pointers serve only to deduplicate identities.
+    for (const auto* c : active_components) {
+        verlet_.ghost.declare(c->declare_ghosts());
+        if (const auto* nc = c->as_neighbor_consumer()) {
+            const double halo = nc->halo_cutoff();
+            if (!std::isfinite(halo) || halo < 0)
+                throw std::runtime_error(c->name() + ": invalid halo cutoff");
+            verlet_.consumer_halo_cutoff =
+                std::max(verlet_.consumer_halo_cutoff, halo);
+        }
+        if (const auto* np = c->as_neighbor_provider())
+            verlet_.provider_reach =
+                std::max(verlet_.provider_reach,
+                         static_cast<double>(np->neighbor_reach()));
     }
 }
 
 void Runtime::apply_ghost_cutoff_() {
+    if (verlet_.neighbor)
+        verlet_.neighbor->activate(context_);
     cpu::Comm* comm = context_.md.comm;
-    if (!comm || !verlet_.neighbor)
+    if (!comm)
         return;
-    // The provider covers pair enumeration (cutoff + skin); a many-body
-    // consumer may declare a wider ghost-of-ghost shell (EAM: 2·cutoff).
-    // 1.1× on the consumer shell keeps the declared reach valid while
-    // atoms drift between reneighbourings (80c5f4a6 contract).
+    // A wider coordinate dependency needs the same relative-displacement
+    // margin as the neighbor list, not a fixed percentage of its radius.
+    const double skin =
+        verlet_.neighbor ? verlet_.neighbor->validated_skin() : 0;
     const double reach =
-        std::max(static_cast<double>(verlet_.neighbor->neighbor_reach()),
-                 1.1 * verlet_.consumer_halo_cutoff);
-    if (reach > 0.0)
-        comm->set_ghost_cutoff(reach);
+        std::max(verlet_.provider_reach, verlet_.consumer_halo_cutoff + skin);
+    comm->set_ghost_cutoff(reach);
 }
 
 bool Runtime::is_linear_force_slot_(int slot) const {
-    if (plan_ == nullptr)
-        return false;
-    if (plan_->kind == PhaseKind::Evaluate)
-        return slot == ATV::slot_of(ATV::evaluate::Phase::evaluate);
-    if (plan_->kind == PhaseKind::Minimizer)
-        return slot == ATV::slot_of(ATV::minimizer::Phase::force);
-    return false;
+    return plan_ != nullptr && slot >= 0
+           && slot == linear_force_slot(plan_->kind);
 }
 
 namespace {
+
+// Setup is outside the measured step loop. Preserve the user's timing setting
+// and accumulated production samples, including when initialization throws.
+class SuspendTiming {
+  public:
+    explicit SuspendTiming(TimerRegistry& registry)
+        : registry_(registry), enabled_(registry.enabled()) {
+        registry_.set_enabled(false);
+    }
+    ~SuspendTiming() { registry_.set_enabled(enabled_); }
+
+  private:
+    TimerRegistry& registry_;
+    bool enabled_;
+};
 
 /// @brief Time one Runtime-level comm call into its registered handle.
 template <typename Fn>
@@ -359,7 +488,7 @@ inline void timed_comm(TimerRegistry& reg, int handle, Fn&& fn) {
 
 } // namespace
 
-void Runtime::comm_refresh_(int slot, BigInt step) {
+void Runtime::comm_refresh_(int slot, int step) {
     apply_ghost_cutoff_();
     cpu::Comm* comm = context_.md.comm;
     if (!comm)
@@ -370,39 +499,70 @@ void Runtime::comm_refresh_(int slot, BigInt step) {
                [&] { comm->forward_comm(comm_ctx); });
 }
 
+void Runtime::decide_neighbor_() {
+    // Without a provider nothing can judge the Verlet skin, so every step
+    // migrates and rebuilds its ghosts (the conservative default of
+    // `NeighborProvider::decide_reneighbor`); a bonded-only or electronic
+    // force on several ranks still needs migration and a fresh halo.
+    // MC proposals/rollbacks are discontinuous changes, not MD drift. Their
+    // energy phase always rebuilds, independent of the MD delay/every cadence.
+    // LAMMPS Min::init drops delay/every/check for a minimization; only an MD
+    // plan runs the cadence.
+    const bool md_cadence = plan_ && plan_->kind == PhaseKind::MD;
+    context_.md.reneighbor =
+        !verlet_.neighbor || (plan_ && plan_->kind == PhaseKind::Sampling)
+        || verlet_.neighbor->decide_reneighbor(context_, *frame_, md_cadence);
+    sync_reneighbor_flag(context_);
+}
+
 void Runtime::comm_rebuild_(int exchange_slot, int borders_slot, BigInt step) {
     LaunchContext comm_ctx{context_, *frame_, exchange_slot, step,
                            /*forces_requested=*/true};
-    // LAMMPS `Domain::pbc()` before `Comm::exchange()` (src/verlet.cpp
-    // Verlet::setup and the reneighbor block of Verlet::run, src/min.cpp
-    // Min::setup; LAMMPS e8c4c278a8). Copyright (2003) Sandia Corporation.
-    // GPL-2.0-only. Two consumers need owned rows inside [0, L), on any rank
-    // count, with or without MPI: migration, which compares min-image and
-    // cannot correct an off-image row, and the cell list, whose half stencil
-    // applies one image shift per neighbor cell, so an unwrapped row (an
-    // initial frame with atoms just outside the box) loses its
-    // cross-boundary pairs. With neither, the rows stay where the caller put
-    // them: ATV's Box has no per-axis periodicity, and a cluster method
-    // (DFTB, xTB) handed a molecule near the origin of a padding box would
-    // be split across the cell. A line search trial leaves positions alone,
-    // as LAMMPS's does.
+    // The caller may mutate Frame::box between continuable runs. Refresh
+    // fractional/Cartesian slab bounds at the same boundary as the halo,
+    // including orthorhombic-to-triclinic transitions.
+    if (context_.md.dd)
+        context_.md.dd->compute_sublo_subhi(frame_->box);
+    // LAMMPS Domain::pbc before Comm::exchange (src/verlet.cpp,
+    // a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b). Copyright (2003)
+    // Sandia Corporation. GPL-2.0-only. Migration and explicit periodic
+    // ghost construction require owned rows in the primary cell. CellList
+    // then bins Cartesian owner/image rows without applying another image.
+    // Without either consumer, preserve molecular cluster coordinates.
+    // Line-search trials retain the optimizer's coordinates.
     if (!context_.opt.line_search_trial
-        && (context_.mpi_size > 1 || verlet_.neighbor_comp != nullptr))
-        md::wrap_orthorhombic(*frame_, owned_count(comm_ctx));
+        && (multi_rank_dd(context_) || verlet_.neighbor_comp != nullptr))
+        md::wrap_owned(*frame_, owned_count(comm_ctx));
     apply_ghost_cutoff_();
     cpu::Comm* comm = context_.md.comm;
-    if (!comm)
-        return;
     TimerRegistry& reg = device_.timing();
-    timed_comm(reg, comm_handle_exch_, [&] { comm->exchange(comm_ctx); });
+    if (comm && comm_contract_stale_) {
+        // Recompile the wires off the current fold before the first exchange
+        // that will use them; the ghost shell below is rebuilt from scratch.
+        comm->setup(comm_ctx);
+        comm_contract_stale_ = false;
+    }
+    if (comm)
+        timed_comm(reg, comm_handle_exch_, [&] { comm->exchange(comm_ctx); });
+    // LAMMPS Verlet::run: exchange -> atom->sort -> borders -> neighbor.
+    // Sorting owns no communication policy; every rank count follows this
+    // one boundary, before borders replaces all row-indexed send lists.
+    if (auto* sort = context_.md.atom_sort) {
+        sort->step = step;
+        if (sort->due()) {
+            if (md::sort_owned_atoms(
+                    *frame_, frame_->nlocal(),
+                    sort->resolved_binsize(verlet_.provider_reach)))
+                md::notify_sorted(context_.md.dd, *frame_, nullptr);
+            sort->mark_sorted();
+        }
+    }
     comm_ctx.stage = borders_slot;
-    timed_comm(reg, comm_handle_bord_, [&] { comm->borders(comm_ctx); });
+    if (comm)
+        timed_comm(reg, comm_handle_bord_, [&] { comm->borders(comm_ctx); });
 }
 
 void Runtime::comm_before_force_(int slot, BigInt step_idx) {
-    cpu::Comm* comm = context_.md.comm;
-    if (!comm)
-        return;
     if (!context_.md.reneighbor) {
         comm_refresh_(slot, step_idx);
         return;
@@ -435,26 +595,21 @@ void Runtime::setup_verlet_comm_(BigInt step_idx) {
     // forward_comm. Copyright (2003) Sandia Corporation. GPL-2.0-only.
     if (verlet_setup_done_)
         return;
-    LaunchContext ctx{context_, *frame_,
-                      ATV::slot_of(ATV::md::Phase::pre_exchange), step_idx,
-                      /*forces_requested=*/true};
+    SuspendTiming suspend_timing(device_.timing());
+    context_.md.reneighbor = true;
     comm_rebuild_(ATV::slot_of(ATV::md::Phase::pre_exchange),
                   ATV::slot_of(ATV::md::Phase::pre_neighbor), step_idx);
     if (verlet_.neighbor_comp) {
-        context_.md.reneighbor = true;
-        context_.md.reneighbor_decided = true;
-        ctx.stage = ATV::slot_of(ATV::md::Phase::neighbor);
-        verlet_.neighbor_comp->launch(ctx);
-        context_.md.reneighbor_decided = false;
+        launch_engine_(verlet_.neighbor_comp, verlet_.neighbor_slot,
+                       verlet_.neighbor_op,
+                       ATV::slot_of(ATV::md::Phase::neighbor), step_idx);
     }
     verlet_setup_done_ = true;
 }
 
 void Runtime::step_linear_(BigInt step_idx) {
-    decide_reneighbor_for_plan(plan_, context_, *frame_);
-    const bool wrap = plan_
-                      && (plan_->kind == PhaseKind::Evaluate
-                          || plan_->kind == PhaseKind::Minimizer);
+    const int force_slot = plan_ ? linear_force_slot(plan_->kind) : -1;
+    const bool wrap = force_slot >= 0;
     if (!wrap) {
         for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
             if (plan_->slots[s].ops.empty())
@@ -467,18 +622,16 @@ void Runtime::step_linear_(BigInt step_idx) {
 
     // LAMMPS Min::energy_force (src/min.cpp): nflag XOR on comm around
     // the force evaluation; reverse_comm if newton. GPL-2.0-only.
-    const int force_slot = plan_->kind == PhaseKind::Evaluate
-                               ? ATV::slot_of(ATV::evaluate::Phase::evaluate)
-                               : ATV::slot_of(ATV::minimizer::Phase::force);
 
     for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
-        if (static_cast<int>(s) == force_slot)
+        if (static_cast<int>(s) == force_slot) {
+            decide_neighbor_();
             comm_before_force_(force_slot, step_idx);
+        }
         walk_slot_(static_cast<int>(s), step_idx, /*skip_engine=*/true);
         if (static_cast<int>(s) == force_slot)
             comm_after_force_(force_slot, step_idx);
     }
-    context_.md.reneighbor_decided = false;
 }
 
 void Runtime::step_verlet_(BigInt step_idx) {
@@ -490,14 +643,8 @@ void Runtime::step_verlet_(BigInt step_idx) {
     walk_slot_(ATV::slot_of(P::initial_integrate), step_idx, true);
     walk_slot_(ATV::slot_of(P::post_integrate), step_idx, true);
 
-    bool nflag = false;
-    if (verlet_.neighbor) {
-        nflag = verlet_.neighbor->decide_reneighbor(context_, *frame_);
-    }
-    context_.md.reneighbor = nflag;
-    sync_reneighbor_flag(context_);
-    nflag = context_.md.reneighbor;
-    context_.md.reneighbor_decided = true;
+    decide_neighbor_();
+    const bool nflag = context_.md.reneighbor;
 
     const int pre_n = ATV::slot_of(P::pre_neighbor);
     const int neigh = ATV::slot_of(P::neighbor);
@@ -529,56 +676,80 @@ void Runtime::step_verlet_(BigInt step_idx) {
     walk_slot_(ATV::slot_of(P::post_force), step_idx, true);
     walk_slot_(ATV::slot_of(P::final_integrate), step_idx, true);
     walk_slot_(ATV::slot_of(P::end_of_step), step_idx, true);
-
-    context_.md.reneighbor_decided = false;
+    // Stamp after end_of_step: a barostat or Deform rescaling the cell there
+    // is the loop's own update (LAMMPS fix press/berendsen integrates the next
+    // step on the forces it has), while a cell edit between `run()` calls
+    // still differs from this stamp and re-initializes forces in prepare_run.
+    force_box_revision_ = frame_->box.revision();
 }
 
 void Runtime::prepare_run(BigInt step_idx) {
+    DispatchScope dispatch(this);
+    if (plan_ && plan_->kind == PhaseKind::MD
+        && !context_.exec.forces_requested)
+        throw std::runtime_error(
+            "MD requires forces; it cannot run inside an energy-only request");
+    if (plan_ && plan_->kind == PhaseKind::MD && forces_ready_
+        && force_box_revision_ != frame_->box.revision()) {
+        // An external cell edit must invalidate forces before the first
+        // half kick, not merely rebuild neighbors later in that step.
+        forces_ready_ = false;
+        contracts_ready_ = false;
+    }
+    if (!contracts_ready_)
+        refresh_plan_(step_idx);
     if (!plan_ || plan_->kind != PhaseKind::MD || forces_ready_)
         return;
-    if (!context_.exec.forces_requested)
-        throw std::runtime_error(
-            "MD requires forces; energy-only execution is invalid");
+    SuspendTiming suspend_timing(device_.timing());
     // LAMMPS src/verlet.cpp::setup, a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
     // Copyright (2003) Sandia Corporation. GPL-2.0-only.
-    // Reuse the setup halo/list and reverse communication, without integration.
     const bool saved = context_.exec.initializing_forces;
-    auto& registry = device_.timing();
-    const bool timing_enabled = registry.enabled();
-    registry.set_enabled(false);
     struct Restore {
         bool& flag;
         bool saved;
-        TimerRegistry& registry;
-        bool timing_enabled;
         bool& ready;
-        bool& setup_done;
+        bool& contracts;
         ~Restore() {
             flag = saved;
-            registry.set_enabled(timing_enabled);
+            // A failed force assembly may leave ghost accumulators dirty.
+            // Retry through the existing halo/list setup, never reuse them.
             if (!ready)
-                setup_done = false;
+                contracts = false;
         }
-    } restore{context_.exec.initializing_forces,
-              saved,
-              registry,
-              timing_enabled,
-              forces_ready_,
-              verlet_setup_done_};
+    } restore{context_.exec.initializing_forces, saved, forces_ready_,
+              contracts_ready_};
     context_.exec.initializing_forces = true;
-    plan_->prepare_forces(
-        [&](int phase) {
-            if (phase == slot_of(ATV::md::Phase::neighbor))
-                setup_verlet_comm_(step_idx);
-            if (phase == slot_of(ATV::md::Phase::post_force))
-                comm_after_force_(phase, step_idx);
-        },
-        [&](const auto& slot, const auto& op, bool force_slot) {
+    for (int phase = slot_of(ATV::md::Phase::pre_force);
+         phase <= slot_of(ATV::md::Phase::end_of_step); ++phase) {
+        if (phase == slot_of(ATV::md::Phase::final_integrate))
+            continue;
+        if (phase == slot_of(ATV::md::Phase::post_force))
+            comm_after_force_(phase, step_idx);
+        const auto& slot = plan_->slots[phase];
+        const int saved_slot = active_slot_;
+        struct RestoreSlot {
+            int& slot;
+            int saved;
+            bool& pipeline;
+            bool saved_pipeline;
+            ~RestoreSlot() {
+                slot = saved;
+                pipeline = saved_pipeline;
+            }
+        } restore_slot{active_slot_, saved_slot, physical_pipeline_active_,
+                       physical_pipeline_active_};
+        active_slot_ = phase;
+        physical_pipeline_active_ = true;
+        for (const auto& op : slot.ops) {
             if (op.component->verlet_engine())
-                return;
-            LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
-                              slot.forces_requested
-                                  && context_.exec.forces_requested};
+                continue;
+            LaunchContext ctx{
+                context_,
+                *frame_,
+                phase,
+                step_idx,
+                slot.forces_requested && context_.exec.forces_requested,
+                slot.stress_requested && context_.exec.stress_requested};
             const auto window = frame_->resolution_window();
             struct RestoreWindow {
                 Frame& frame;
@@ -586,16 +757,19 @@ void Runtime::prepare_run(BigInt step_idx) {
                 ~RestoreWindow() { frame.restore_resolution_window(saved); }
             } restore_window{*frame_, window};
             frame_->begin_resolution_window(kResolveBudgetPerLaunch);
-            if (force_slot)
+            if (phase == slot_of(ATV::md::Phase::force))
                 op.component->launch(ctx);
             else
                 op.component->initialize_forces(ctx);
             frame_->end_resolution_window(op.component->name().c_str());
-        });
+        }
+    }
+    force_box_revision_ = frame_->box.revision();
     forces_ready_ = true;
 }
 
 void Runtime::step(BigInt step_idx) {
+    DispatchScope dispatch(this);
     prepare_run(step_idx);
     TimerRegistry& timing_reg = device_.timing();
     const bool timing = timing_reg.enabled();
@@ -607,12 +781,44 @@ void Runtime::step(BigInt step_idx) {
         step_linear_(step_idx);
     if (timing) {
         const auto step_t1 = std::chrono::steady_clock::now();
-        auto* dd = domain_.dd();
         timing_reg.set_loop(
             std::chrono::duration<double>(step_t1 - step_t0).count(),
-            dd ? dd->n_local : static_cast<int>(frame_->nlocal()),
-            dd ? dd->n_ghost : static_cast<int>(frame_->nghost()));
+            static_cast<int>(frame_->nlocal()),
+            static_cast<int>(frame_->nghost()));
         timing_reg.tick_step();
+    }
+}
+
+void Runtime::step_stage(int slot, BigInt step_idx) {
+    DispatchScope dispatch(this);
+    if (!plan_ || slot < 0
+        || static_cast<std::size_t>(slot) >= plan_->slots.size())
+        throw std::out_of_range("Runtime::step_stage: invalid phase");
+    if (plan_->kind == PhaseKind::MD)
+        throw std::logic_error("MD stages require the coordinated Verlet step");
+    prepare_run(step_idx);
+    auto& timing = device_.timing();
+    const auto start = timing.enabled()
+                           ? std::chrono::steady_clock::now()
+                           : std::chrono::steady_clock::time_point{};
+    const bool physical = linear_force_slot(plan_->kind) >= 0;
+    const bool force = is_linear_force_slot_(slot);
+    if (force)
+        decide_neighbor_();
+    if (force)
+        comm_before_force_(slot, step_idx);
+    walk_slot_(slot, step_idx, physical);
+    if (force)
+        comm_after_force_(slot, step_idx);
+    const bool last = static_cast<std::size_t>(slot + 1) == plan_->slots.size();
+    if (timing.enabled()) {
+        timing.set_loop(std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - start)
+                            .count(),
+                        static_cast<int>(frame_->nlocal()),
+                        static_cast<int>(frame_->nghost()));
+        if (last)
+            timing.tick_step();
     }
 }
 
@@ -652,39 +858,207 @@ void Runtime::step(BigInt step_idx) {
 // window stack to unwind — `ResolutionState` is three atomics).
 
 void Runtime::build_plan(const Plan<cpu::Component>& plan) {
-    BuildContext build{context_, *frame_};
-    DestroyContext destroy{context_, *frame_};
-    lifecycle_.build(
-        plan, [&](Component& c) { c.build(build); },
-        [&](Component& c) { c.destroy(destroy); });
-}
-
-void Runtime::step_plan(const Plan<cpu::Component>& plan, BigInt step_idx) {
-    decide_reneighbor_for_plan(&plan, context_, *frame_);
-    for (const auto& slot : plan.slots) {
-        if (slot.ops.empty())
-            continue;
-        for (const auto& op : slot.ops) {
-            if (op.frequency > 0 && step_idx % op.frequency != 0)
-                continue;
-            LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
-                              /*forces_requested=*/slot.forces_requested
-                                  && context_.exec.forces_requested};
-            const auto saved = frame_->resolution_window();
-            frame_->begin_resolution_window(kResolveBudgetPerLaunch);
-            op.component->launch(ctx);
-            frame_->end_resolution_window(op.component->name().c_str());
-            frame_->restore_resolution_window(saved);
+    BuildContext ctx{context_, *frame_};
+    std::vector<cpu::Component*> acquired;
+    try {
+        for (auto* c : plan.components()) {
+            if (multi_rank_dd(context_) && c->requires_full_frame())
+                throw std::runtime_error(
+                    c->name()
+                    + ": requires a complete Frame and cannot be mounted on a "
+                      "spatial partition");
+            auto [it, inserted] = component_users_.emplace(
+                c, ComponentUse{0, c->lifetime_.token(), c->nested_node()});
+            if (!inserted && it->second.users == 0)
+                throw std::logic_error("cyclic component lifecycle: "
+                                       + c->name());
+            if (inserted) {
+                auto* node = it->second.node;
+                bool first_node = false;
+                try {
+                    if (node) {
+                        auto [node_it, node_inserted] =
+                            node_users_.emplace(node, 0);
+                        first_node = node_inserted;
+                        if (!first_node && node_it->second == 0)
+                            throw std::logic_error(
+                                "cyclic nested driver lifecycle");
+                    }
+                    if (!node || first_node) {
+                        if (c->requires_tag_index()
+                            && frame_->meta.get(kTagIndex).empty())
+                            frame_->rebuild_tag_index(0, frame_->nlocal());
+                        c->build(ctx);
+                    }
+                    if (node)
+                        ++node_users_.at(node);
+                } catch (...) {
+                    if (first_node)
+                        node_users_.erase(node);
+                    component_users_.erase(c);
+                    throw;
+                }
+                component_order_.push_back(c);
+            }
+            ++component_users_.at(c).users;
+            acquired.push_back(c);
         }
+    } catch (...) {
+        for (auto it = acquired.rbegin(); it != acquired.rend(); ++it) {
+            try {
+                release_component_(*it);
+            } catch (...) {
+                ATV_WARN("component destroy failed during build rollback");
+            }
+        }
+        throw;
     }
 }
 
+Runtime::ScopedPlan::ScopedPlan(Runtime& rt, const Plan<cpu::Component>& plan,
+                                BigInt step_idx)
+    : runtime_(rt), saved_plan_(rt.plan_), saved_md_(rt.context_.md),
+      saved_contracts_(rt.contracts_ready_),
+      saved_setup_(rt.verlet_setup_done_), saved_forces_(rt.forces_ready_),
+      changed_(rt.plan_ != &plan),
+      physical_(plan.kind == PhaseKind::MD
+                || linear_force_slot(plan.kind) >= 0) {
+    if (!changed_)
+        return;
+    if (physical_ && rt.physical_pipeline_active_)
+        throw std::runtime_error(
+            "a nested physical driver cannot replace geometry/accumulators "
+            "during its parent's force/integration pipeline; mount it in an "
+            "outer workflow or at MD end_of_step");
+    if (physical_)
+        saved_verlet_ = std::move(rt.verlet_);
+    saved_handles_ = std::move(rt.op_handle_);
+    saved_force_bindings_ = std::move(rt.force_bindings_);
+    rt.plan_ = &plan;
+    rt.contracts_ready_ = true;
+    rt.verlet_setup_done_ = false;
+    rt.forces_ready_ = false;
+    if (physical_) {
+        try {
+            rt.refresh_plan_(step_idx);
+        } catch (...) {
+            rt.plan_ = saved_plan_;
+            rt.verlet_ = std::move(saved_verlet_);
+            rt.op_handle_ = std::move(saved_handles_);
+            rt.force_bindings_ = std::move(saved_force_bindings_);
+            rt.context_.md = saved_md_;
+            rt.context_.md.ghost = &rt.verlet_.ghost;
+            rt.contracts_ready_ = false;
+            rt.forces_ready_ = false;
+            throw;
+        }
+    }
+    // Electronic iterations borrow the existing communication services without
+    // copying ghost contracts or rebuilding spatial state.
+}
+
+Runtime::ScopedPlan::~ScopedPlan() {
+    if (!changed_)
+        return;
+    auto& rt = runtime_;
+    rt.plan_ = saved_plan_;
+    if (physical_)
+        rt.verlet_ = std::move(saved_verlet_);
+    rt.op_handle_ = std::move(saved_handles_);
+    rt.force_bindings_ = std::move(saved_force_bindings_);
+    rt.context_.md = saved_md_;
+    rt.context_.md.ghost = &rt.verlet_.ghost;
+    // A physical child may migrate/sort atoms and overwrite force accumulators.
+    // Rebuild the parent halo/list and reseed before its next integration.
+    rt.contracts_ready_ = saved_contracts_ && !physical_;
+    rt.verlet_setup_done_ = saved_setup_ && !physical_;
+    rt.forces_ready_ = saved_forces_ && !physical_;
+}
+
+void Runtime::step_plan(const Plan<cpu::Component>& plan, BigInt step_idx) {
+    DispatchScope dispatch(this);
+    ScopedPlan active(*this, plan, step_idx);
+    prepare_run(step_idx);
+    if (plan.kind == PhaseKind::MD)
+        step_verlet_(step_idx);
+    else
+        step_linear_(step_idx);
+}
+
 void Runtime::destroy_plan(const Plan<cpu::Component>& plan) {
-    DestroyContext ctx{context_, *frame_};
-    lifecycle_.destroy(plan, [&](Component& c) { c.destroy(ctx); });
+    const auto objects = plan.components();
+    std::exception_ptr failure;
+    for (auto it = objects.rbegin(); it != objects.rend(); ++it) {
+        try {
+            release_component_(*it);
+        } catch (...) {
+            if (!failure)
+                failure = std::current_exception();
+        }
+    }
+    if (failure)
+        std::rethrow_exception(failure);
+}
+
+void Runtime::release_component_(cpu::Component* component) {
+    auto it = component_users_.find(component);
+    if (it == component_users_.end())
+        return;
+    if (--it->second.users != 0)
+        return;
+    const ComponentUse use = it->second;
+    component_users_.erase(it);
+    component_order_.erase(std::remove(component_order_.begin(),
+                                       component_order_.end(), component),
+                           component_order_.end());
+    // A borrowed object that died before this driver owns no resources any
+    // more: its own destructor released them. Calling into it would be a
+    // use-after-free, so only the bookkeeping is dropped.
+    const bool alive = use.alive && *use.alive;
+    if (auto* node = use.node) {
+        const auto node_it = node_users_.find(node);
+        if (node_it == node_users_.end())
+            return;
+        if (--node_it->second != 0)
+            return;
+        node_users_.erase(node_it);
+    }
+    if (alive)
+        component->destroy(DestroyContext{context_, *frame_});
 }
 
 void Runtime::run_slot_(int slot_index, BigInt step_idx) {
+    DispatchScope dispatch(this);
+    const int saved_slot = active_slot_;
+    struct RestoreSlot {
+        int& slot;
+        int saved;
+        bool& pipeline;
+        bool saved_pipeline;
+        ~RestoreSlot() {
+            slot = saved;
+            pipeline = saved_pipeline;
+        }
+    } restore_slot{active_slot_, saved_slot, physical_pipeline_active_,
+                   physical_pipeline_active_};
+    active_slot_ = slot_index;
+    physical_pipeline_active_ |=
+        plan_->kind == PhaseKind::Evaluate
+        || plan_->kind == PhaseKind::Minimizer || plan_->kind == PhaseKind::Vib
+        || (plan_->kind == PhaseKind::MD
+            && active_slot_ != slot_of(ATV::md::Phase::end_of_step));
+    // The engine's own work below (skin test, halo refresh/rebuild, neighbor
+    // build) resolves Frame columns too. It is not the calling optimizer's
+    // lookups, so it runs outside that component's resolution window; the
+    // caller's window, count included, comes back on exit. Each replayed op
+    // still gets its own window.
+    const auto caller_window = frame_->resolution_window();
+    struct RestoreCallerWindow {
+        Frame& frame;
+        ResolutionWindow saved;
+        ~RestoreCallerWindow() { frame.restore_resolution_window(saved); }
+    } restore_caller_window{*frame_, caller_window};
+    frame_->restore_resolution_window(ResolutionWindow{});
     // Replay every binding of one phase on the current frame — used for
     // line-search trial evaluations. Re-entrant: must not touch the timing
     // registry (op_handle_ indices belong to the outer step) and must not
@@ -704,22 +1078,33 @@ void Runtime::run_slot_(int slot_index, BigInt step_idx) {
     // `step_linear_` does (nflag XOR + reverse), otherwise a line-search
     // trial would see stale ghosts after the Plan lost CommBrick/Recv.
     const bool wrap = is_linear_force_slot_(slot_index);
-    if (wrap)
+    if (wrap) {
+        decide_neighbor_();
         comm_before_force_(slot_index, step_idx);
+    }
     for (auto& slot : plan_->slots) {
         if (slot.phase != slot_index)
             continue;
         for (auto& op : slot.ops) {
             if (wrap && op.component && op.component->verlet_engine())
                 continue;
-            LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
+            LaunchContext ctx{context_,
+                              *frame_,
+                              slot.phase,
+                              step_idx,
                               /*forces_requested=*/slot.forces_requested
-                                  && context_.exec.forces_requested};
+                                  && context_.exec.forces_requested,
+                              slot.stress_requested
+                                  && context_.exec.stress_requested};
             const auto saved = frame_->resolution_window();
+            struct RestoreWindow {
+                Frame& frame;
+                ResolutionWindow saved;
+                ~RestoreWindow() { frame.restore_resolution_window(saved); }
+            } restore{*frame_, saved};
             frame_->begin_resolution_window(kResolveBudgetPerLaunch);
             op.component->launch(ctx);
             frame_->end_resolution_window(op.component->name().c_str());
-            frame_->restore_resolution_window(saved);
         }
     }
     if (wrap)
@@ -736,20 +1121,11 @@ void Runtime::run(int n_steps) {
 std::vector<std::pair<std::string, std::size_t>>
 Runtime::collect_component_memory() const {
     std::vector<std::pair<std::string, std::size_t>> out;
-    // Unique components across all plan slots (a component may bind to several
-    // phases) — dedup by pointer so its memory is counted once.
     if (plan_) {
-        std::vector<const cpu::Component*> seen;
-        for (const auto& slot : plan_->slots) {
-            for (const auto& op : slot.ops) {
-                const cpu::Component* c = op.component;
-                if (!c || std::find(seen.begin(), seen.end(), c) != seen.end())
-                    continue;
-                seen.push_back(c);
-                const std::size_t b = c->memory_bytes();
-                if (b)
-                    out.emplace_back(c->name(), b);
-            }
+        for (const auto* c : plan_->components()) {
+            const std::size_t b = c->memory_bytes();
+            if (b)
+                out.emplace_back(c->name(), b);
         }
     }
     // Per-atom SoA + topology + tag map (the dominant "Atoms" bucket).
@@ -762,24 +1138,52 @@ Runtime::collect_component_memory() const {
 }
 
 void Runtime::destroy_components() {
+    if (!components_built_)
+        return;
     // Drain and join analysis workers first so any in-flight `on_snapshot`
     // completes against live subscribers before any component enters destroy().
     analysis_.shutdown_workers();
 
-    if (!lifecycle_.empty()) {
-        DestroyContext ctx{context_, *frame_};
-        lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
+    components_built_ = false;
+    destroy_plan(*plan_);
+}
+
+void Runtime::unwind_failed_run() noexcept {
+    failed_ = true;
+    // Join readers before destroy callbacks release their captured state.
+    try {
+        analysis_.shutdown_workers();
+    } catch (...) {
+    }
+    components_built_ = false;
+    while (!component_order_.empty()) {
+        auto* component = component_order_.back();
+        // A node's destroy_on releases its children through this same registry.
+        // Force the final release regardless of how many bindings shared it.
+        component_users_[component].users = 1;
+        try {
+            release_component_(component);
+        } catch (...) {
+            ATV_WARN("component destroy failed while unwinding a run");
+        }
+    }
+    component_users_.clear();
+    node_users_.clear();
+    contracts_ready_ = false;
+    forces_ready_ = false;
+    verlet_setup_done_ = false;
+    try {
+        shutdown();
+    } catch (...) {
     }
 }
 
 void Runtime::shutdown() {
     ATV_DEBUG("CPU runtime shutting down");
-    if (!lifecycle_.empty())
-        destroy_components();
     analysis_.teardown(context_);
     context_.exec.runtime =
         nullptr; // the Runtime is gone; no node may reach it
-    domain_.release_comm();
+    domain_.release_comm(context_);
     frame_ = nullptr;
     plan_ = nullptr;
 }

@@ -22,7 +22,9 @@ namespace minimizer {
 /// unconditionally. Axes may
 /// be masked out (`relax_x/y/z`) for constrained variable-cell runs
 /// (CP2K `CELL_OPT` `CONSTRAINT` twin): a masked axis is never scaled and
-/// never enters the residual.
+/// never enters the residual. Use StressConverged with the same axis mask for
+/// termination. Published force/displacement metrics retain eV/Å and Å units;
+/// this optimizer does not minimize non-affine atomic forces.
 class AnisotropicCellRelax : public Optimizer {
   public:
     double P_target = 0.0;   ///< Target pressure [eV/Å³].
@@ -51,11 +53,10 @@ class AnisotropicCellRelax : public Optimizer {
     double pressure() const { return pressure_; }
 
   private:
-    void apply_scales_(Frame& f, double sx, double sy, double sz) const;
-
     double pressure_ = 0;
     double p_residual_ = 0;
     double sx_ = 1, sy_ = 1, sz_ = 1;
+    double max_disp_ = 0, rms_disp_ = 0; ///< Actual affine displacement [Å].
     double energy_prev_ = 0;
     int step_ = 0;
     bool has_prev_ = false;

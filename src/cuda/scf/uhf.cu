@@ -356,28 +356,24 @@ void UHF::seed_minao_(cuda::Context& ctx, cuda::Frame& frame) {
     if (static_cast<int>(host_Z_.size()) != natm)
         return;
     auto* stream = static_cast<cudaStream_t>(ctx.stream);
-    std::vector<real_t> hx(static_cast<std::size_t>(natm));
-    std::vector<real_t> hy(hx.size());
-    std::vector<real_t> hz(hx.size());
-    const auto nbyte = sizeof(real_t) * hx.size();
-    cudaMemcpyAsync(hx.data(), frame.atoms.x, nbyte, cudaMemcpyDeviceToHost,
-                    stream);
-    cudaMemcpyAsync(hy.data(), frame.atoms.y, nbyte, cudaMemcpyDeviceToHost,
-                    stream);
-    cudaMemcpyAsync(hz.data(), frame.atoms.z, nbyte, cudaMemcpyDeviceToHost,
-                    stream);
-    cudaStreamSynchronize(stream);
-    std::vector<double> x(static_cast<std::size_t>(natm));
-    std::vector<double> y(x.size());
-    std::vector<double> z(x.size());
-    for (int i = 0; i < natm; ++i) {
-        x[static_cast<std::size_t>(i)] =
-            static_cast<double>(hx[static_cast<std::size_t>(i)]);
-        y[static_cast<std::size_t>(i)] =
-            static_cast<double>(hy[static_cast<std::size_t>(i)]);
-        z[static_cast<std::size_t>(i)] =
-            static_cast<double>(hz[static_cast<std::size_t>(i)]);
-    }
+    // Full-precision coordinates: primary plus the mixed-mode correction.
+    const std::size_t count = static_cast<std::size_t>(natm);
+    auto fetch = [&](const pos_t* primary, const pos_t* correction) {
+        std::vector<pos_t> hi(count), lo(count, pos_t(0));
+        cudaMemcpyAsync(hi.data(), primary, count * sizeof(pos_t),
+                        cudaMemcpyDeviceToHost, stream);
+        if (correction)
+            cudaMemcpyAsync(lo.data(), correction, count * sizeof(pos_t),
+                            cudaMemcpyDeviceToHost, stream);
+        cudaStreamSynchronize(stream);
+        std::vector<double> out(count);
+        for (std::size_t i = 0; i < count; ++i)
+            out[i] = static_cast<double>(hi[i]) + static_cast<double>(lo[i]);
+        return out;
+    };
+    const std::vector<double> x = fetch(frame.atoms.x, frame.atoms.x_corr);
+    const std::vector<double> y = fetch(frame.atoms.y, frame.atoms.y_corr);
+    const std::vector<double> z = fetch(frame.atoms.z, frame.atoms.z_corr);
     const int n = loop_->slot.cycle->workspace().n;
     const std::vector<double> half = uhf_minao_half(
         host_Z_.data(), x.data(), y.data(), z.data(), natm, basis, charge, n);

@@ -11,8 +11,8 @@ adding \(F_{\mathrm{MBD}}\).
 Product path:
 
 1. Multi-k SCF (`GpwDft::k_mesh`) supplies electronic \(P_k\), \(W_k\).
-2. Analytic k-summed Hellmann–Feynman / Pulay assembly (same as
-   `gpw-kpoint-forces`).
+2. Analytic k-summed Hellmann–Feynman / Pulay assembly (the `GpwDft`
+   multi-k force path).
 3. Geometry-only \(F_{\mathrm{MBD}} = -\nabla E_{\mathrm{MBD}}\) from
    `mbd_rsscs_pbe` is **added** on the multi-k path (identical switch as Γ:
    isolated when `mbd_k_mesh={0,0,0}`; Ewald + MBD k-mesh when non-zero).
@@ -37,7 +37,7 @@ Same nuclei / pin policy as `gpw-mbd-forces` / `gpw-mbd-ice`.
 
 ### B — Multi-k product wiring (H₂, k-mesh 1×1×2)
 
-Compressed H₂ (same geometry as `gpw-kpoint-forces`): PADE, DZV-GTH-PADE,
+Compressed H₂: PADE, DZV-GTH-PADE,
 `k_mesh={1,1,2}`, free-atom MBD (`mbd_k_mesh` default zero).
 
 | Quantity | Gate |
@@ -92,5 +92,4 @@ Cell (H₂ SCF): **12 × 12 × 12 Bohr**, periodic; electronic **k = 1×1×2**.
 
 MBD is \(O(N^3)\) geometry-only; multi-k H₂ force assembly is a single
 gradient pass after one SCF. Full CP2K QS wall is not a fair twin (no stock
-MBD pair type). **`perf_exempt`** — same policy as `gpw-mbd-forces` /
-`gpw-kpoint-forces`.
+MBD pair type). **`perf_exempt`** — same policy as `gpw-mbd-forces`.

@@ -3,7 +3,7 @@
 ///        error + Fock-space extrapolation + level shift, bit-identical to the
 ///        shipping SCF loop, with the DIIS history owned inside the component.
 ///
-/// Wraps the shipping internal helpers `internal::diis_error`,
+/// Wraps the shipping internal helpers `linalg::diis_error`,
 /// `internal::DIISMixer` and `internal::apply_level_shift` behind a
 /// `cpu::Component` bound at `scf::Phase::mix`. State flows through named
 /// constructor references (const& reads, & writes) — no config struct, no

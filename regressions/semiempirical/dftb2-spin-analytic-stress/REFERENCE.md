@@ -126,8 +126,8 @@ so the energy is identical (orientation does not enter a cluster Hamiltonian):
 1. **D3 dispersion is absent from the stress** unless `d3 = true` (the
    closed-shell D3 virial lives on `dftb2-analytic-stress`).
 2. **No periodic open-shell stress twin.** This geometry is a molecule in a
-   20 Å box; self-image virial is unit-gated elsewhere
-   (`dftb2-multi-k-forces`).
+   20 Å box; self-image virial is unit-gated in
+   `tests/cpu/semiempirical/test_dftb2.cpp`.
 3. **Cluster DFTB+ cannot pin \(\sigma\).** Closing an absolute stress pin
    would need a periodic Hamiltonian ATV actually uses, not a dummy `S` box.
 

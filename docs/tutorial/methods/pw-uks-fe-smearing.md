@@ -13,8 +13,8 @@
 
 **Collinear spin-polarized plane-wave Kohn–Sham with metallic Fermi–Dirac
 smearing** — the product step that joins restricted metal occupations
-(`pw-smearing-al`) and fixed-occupation UKS (`pw-spin-polarized-o2` /
-`pw-uks-kmesh-fe`). Concrete method `cpu::pw::PW` with
+([pw-smearing-al](pw-smearing-al.md)) and fixed-occupation UKS (`pw-spin-polarized-o2` /
+[pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)). Concrete method `cpu::pw::PW` with
 `spin_polarized = true` **and** `smearing = Smearing::fermi_dirac` on the
 same `run`. Shared chemical potential \(\mu\) over spin channels;
 occupations \(f_{\sigma kb}\in[0,1]\); magnetization
@@ -24,13 +24,13 @@ the Mermin free energy \(F = E_{\mathrm{KS}} - TS\). Textbook pin: **BCC Fe**
 primitive cell, SG15 ONCV PBE Fe NC-UPF, `degauss = 0.02` Ry, MP
 \(2\times2\times2\). Regression binary: `reg_pw-uks-fe-smearing`. **No live
 CP2K/QE in ctest** — offline pins only. Absolute \(E\) is **not** a
-GTH-GPW ↔ NC-UPF twin (same class as `pw-smearing-al` / `pw-uks-kmesh-fe`).
+GTH-GPW ↔ NC-UPF twin (same class as [pw-smearing-al](pw-smearing-al.md) / [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)).
 
 ## Method
 
 **Level.** Collinear spin-DFT on the plane-wave grid (LSD channel as in
 `pw-spin-polarized-o2`) with metallic occupations (same smear library as
-`pw-smearing-al`):
+[pw-smearing-al](pw-smearing-al.md)):
 
 - Separate \(\alpha/\beta\) KS orbitals and densities \(\rho_\uparrow\),
   \(\rho_\downarrow\) at every \(\mathbf{k}\) of the MP mesh.
@@ -107,8 +107,8 @@ ONCVPSP / SG15, PBE, \(Z_{\mathrm{val}}=16\)).
 forces or stress under smear; GPW UKS + SMEAR productization; CUDA PW;
 hybrid / meta-GGA XC; cold / Marzari–Vanderbilt smear; production Fe
 magnetization (needs higher ecut / denser k-mesh). Restricted smear
-without spin remains `pw-smearing-al`; fixed-occupation multi-k UKS
-remains `pw-uks-kmesh-fe`.
+without spin remains [pw-smearing-al](pw-smearing-al.md); fixed-occupation multi-k UKS
+remains [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md).
 
 ## Implementation
 
@@ -268,7 +268,7 @@ Source: pin notes § Perf; queue/handoff mark this slug **perf_exempt**.
 | Field | Value |
 | ----- | ----- |
 | `perf_exempt` | **true** |
-| Reason | no fair single-rank NC-UPF PW twin wall vs CP2K GTH-GPW; same class as `pw-uks-kmesh-fe` |
+| Reason | no fair single-rank NC-UPF PW twin wall vs CP2K GTH-GPW; same class as [pw-uks-kmesh-fe](pw-uks-kmesh-fe.md) |
 | \(T_{\mathrm{ATV}}\) (this host, OMP=8, single rank) | **~20 s** |
 | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | **n/a** |
 
@@ -297,8 +297,8 @@ single-rank CPU.
 - **GPW UKS + SMEAR** not productized here (PW-only path).
 - **CUDA PW** out of scope.
 - **Out of scope forever for this page:** noncollinear spin, SOC, hybrid
-  PW, restricted-only smear (`pw-smearing-al`), fixed-occupation multi-k
-  UKS without smear (`pw-uks-kmesh-fe`).
+  PW, restricted-only smear ([pw-smearing-al](pw-smearing-al.md)), fixed-occupation multi-k
+  UKS without smear ([pw-uks-kmesh-fe](pw-uks-kmesh-fe.md)).
 
 ## References
 

@@ -4,6 +4,7 @@
 /// Verifies that the class resolves and that energy + per-atom forces on a two-atom test
 /// match the documented LJ 12-6 formula bit-for-bit.
 
+#include <cmath>
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/mat3.h"
@@ -17,6 +18,40 @@ TEST(PairLJCutPort, NewClassExists) {
     ATV::cpu::PairLJCut lj{0.1, 3.0, 8.0};
     EXPECT_EQ(lj.name(), "lj");
     EXPECT_DOUBLE_EQ(lj.pair_cutoff(), 8.0);
+}
+
+TEST(PairLJCutPort, FilteredSubsetPreservesExplicitCentreRows) {
+    using namespace ATV;
+    cpu::Frame frame(3);
+    frame.box = cpu::Box::cubic(20.0);
+    for (int i = 0; i < 3; ++i) {
+        frame.span(kAtom_x)[i] = 1.5 * i;
+        frame.span(kAtom_y)[i] = frame.span(kAtom_z)[i] = 0.0;
+        frame.span(kAtom_tag)[i] = i + 1;
+    }
+    cpu::md::PairList pairs;
+    pairs.inum = 1;
+    pairs.n_rows = 3;
+    pairs.ilist = {2};
+    pairs.firstneigh = {0, 0, 0};
+    pairs.numneigh = {0, 0, 1};
+    pairs.neighbors = {0};
+    pairs.total_pairs = 1;
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    cpu::PairLJCut potential(0.2, 1.0, 4.0);
+    potential.set_special_bonds(0.0, 0.0, 0.0); // activate filtering, no bonds
+    potential.build({context, frame});
+    potential.launch({context, frame, 0, 0, true, true});
+    const double r6 = std::pow(1.0 / 3.0, 6);
+    const double cut6 = std::pow(1.0 / 4.0, 6);
+    const double expected_energy = 0.8 * (r6 * r6 - r6 - cut6 * cut6 + cut6);
+    const double expected_fx = 4.8 * (2 * r6 * r6 - r6) / 3.0;
+    EXPECT_NEAR(frame.meta.get(kEnergy), expected_energy, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_fx)[2], expected_fx, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_fx)[0], -expected_fx, 1e-14);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[1], 0.0);
+    potential.destroy({context, frame});
 }
 
 TEST(PairLJCutPort, EnergyMatchesAnalyticFormula) {

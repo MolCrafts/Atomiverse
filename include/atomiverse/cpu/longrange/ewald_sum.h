@@ -62,9 +62,7 @@ class EwaldSum {
 
     /// @brief Rebuild reciprocal-vector tables from the inverse cell.
     /// @param inv_cell Inverse of the real-space cell matrix [1/Å]
-    ///                 (Mat3 indexing: inv_cell(row, col)). Lattice vectors
-    ///                 are the cell columns, so reciprocal vector b_i is row
-    ///                 i of inv_cell (times 2π).
+    ///                 (Mat3 indexing: inv_cell(row, col); real cell columns are lattice vectors).
     /// @return true if any internal table capacity grew (reserve).
     bool rebuild(const Mat3& inv_cell) {
         // Reciprocal basis b_i = 2π · (row i of cell⁻¹); g = Σ m_i b_i.
@@ -75,15 +73,19 @@ class EwaldSum {
             b[i][1] = tp * inv_cell(i, 1);
             b[i][2] = tp * inv_cell(i, 2);
         }
-        auto blen = [&](int i) {
-            return std::sqrt(b[i][0] * b[i][0] + b[i][1] * b[i][1]
-                             + b[i][2] * b[i][2]);
-        };
+        const Mat3 cell = inv_cell.inverse();
         const double gcut = 2.0 * alpha_ * std::sqrt(-std::log(accuracy_));
         const double gcut2 = gcut * gcut;
         int kmax[3];
-        for (int i = 0; i < 3; ++i)
-            kmax[i] = std::max(1, static_cast<int>(std::ceil(gcut / blen(i))));
+        for (int i = 0; i < 3; ++i) {
+            // m_i = a_i dot G / (2*pi): reciprocal vector norms alone
+            // underestimate the integer range when basis vectors cancel.
+            const double a_norm =
+                std::sqrt(cell(0, i) * cell(0, i) + cell(1, i) * cell(1, i)
+                          + cell(2, i) * cell(2, i));
+            kmax[i] =
+                std::max(1, static_cast<int>(std::ceil(gcut * a_norm / tp)));
+        }
 
         const std::size_t max_vectors =
             static_cast<std::size_t>(2 * kmax[0] + 1)

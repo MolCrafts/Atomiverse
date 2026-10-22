@@ -38,13 +38,17 @@
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/gaussian_charge.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
 #include "atomiverse/cpu/potentials/pair_buck.h"
+#include "atomiverse/cpu/potentials/pair_coul_cut.h"
+#include "atomiverse/cpu/potentials/pair_coul_soft.h"
 #include "atomiverse/cpu/potentials/pair_dpd.h"
 #include "atomiverse/cpu/potentials/pair_gaussian_coul.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut_tip4p_cut.h"
+#include "atomiverse/cpu/potentials/pair_lj_soft.h"
 #include "atomiverse/cpu/potentials/pair_morse.h"
 #include "atomiverse/cpu/potentials/pair_wca.h"
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
@@ -113,7 +117,6 @@ cpu::md::PairList all_pairs_half(int n) {
         off += n - 1 - i;
     }
     p.total_pairs = off;
-    p.has_shifts = false;
     p.version = 1;
     return p;
 }
@@ -259,6 +262,50 @@ TEST(PairLJCut, VirialTraceIsMinusThreeVdEdV) {
                 [](double l) { return cluster(l); }, trace, dedv);
     EXPECT_NEAR(trace, dedv, 1e-6 * std::fabs(dedv));
     EXPECT_GT(std::fabs(dedv), 1.0);
+}
+
+TEST(PairLJCut, ForceAndStressRequestsAreIndependent) {
+    auto pairs = all_pairs_half(kN);
+    cpu::Context ctx;
+    ctx.md.pair_list = &pairs;
+    auto reference = cluster(1.0);
+    cpu::PairLJCut baseline{kEps, kSig, kCutoff};
+    baseline.build({ctx, reference});
+    baseline.launch({ctx, reference, 0, 0, true, true});
+    for (bool force : {false, true}) {
+        for (bool stress : {false, true}) {
+            SCOPED_TRACE(force);
+            SCOPED_TRACE(stress);
+            auto frame = cluster(1.0);
+            cpu::PairLJCut lj{kEps, kSig, kCutoff};
+            lj.build({ctx, frame});
+            for (int i = 0; i < kN; ++i) {
+                frame.span(kAtom_fx)[i] = 7.0;
+                frame.span(kAtom_fy)[i] = 7.0;
+                frame.span(kAtom_fz)[i] = 7.0;
+            }
+            frame.meta.get(kStress).fill(7.0);
+            lj.launch({ctx, frame, 0, 0, force, stress});
+            for (int i = 0; i < kN; ++i) {
+                EXPECT_NEAR(frame.span(kAtom_fx)[i],
+                            7.0 + (force ? reference.span(kAtom_fx)[i] : 0.0),
+                            1e-10);
+                EXPECT_NEAR(frame.span(kAtom_fy)[i],
+                            7.0 + (force ? reference.span(kAtom_fy)[i] : 0.0),
+                            1e-10);
+                EXPECT_NEAR(frame.span(kAtom_fz)[i],
+                            7.0 + (force ? reference.span(kAtom_fz)[i] : 0.0),
+                            1e-10);
+            }
+            for (int k = 0; k < 6; ++k)
+                EXPECT_NEAR(
+                    frame.meta.get(kStress)[k],
+                    7.0 + (stress ? reference.meta.get(kStress)[k] : 0.0),
+                    1e-10);
+            EXPECT_DOUBLE_EQ(frame.meta.get(kEnergy),
+                             reference.meta.get(kEnergy));
+        }
+    }
 }
 
 // ── PairBorn ────────────────────────────────────────────────────────────
@@ -726,4 +773,63 @@ TEST(PairLJCutTip4pCut, VirialTraceIsMinusThreeVdEdV) {
                 [](double l) { return water_cluster(l); }, trace, dedv);
     EXPECT_NEAR(trace, dedv, 1e-6 * std::fabs(dedv));
     EXPECT_GT(std::fabs(dedv), 0.1);
+}
+
+TEST(ClassicalPairRequests, ForceAndStressRequestsAreIndependent) {
+    auto check = [](auto pair) {
+        SCOPED_TRACE(pair.name());
+        auto f = charged_cluster(1.0);
+        auto pairs = all_pairs_half(f.nlocal());
+        cpu::Context runtime;
+        runtime.md.pair_list = &pairs;
+        pair.build({runtime, f});
+        for (int i = 0; i < f.nlocal(); ++i)
+            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
+        f.meta.get(kStress).fill(0);
+        f.meta.get(kEnergy) = 0;
+        pair.launch({runtime, f, 0, 9});
+        const auto baseline = f;
+        ASSERT_NE(f.meta.get(kEnergy), 0);
+        for (bool force : {false, true})
+            for (bool stress : {false, true}) {
+                for (int i = 0; i < f.nlocal(); ++i) {
+                    f.span(kAtom_fx)[i] = 11;
+                    f.span(kAtom_fy)[i] = 12;
+                    f.span(kAtom_fz)[i] = 13;
+                }
+                f.meta.get(kStress).fill(17);
+                f.meta.get(kEnergy) = 0;
+                pair.launch({runtime, f, 0, 9, force, stress});
+                EXPECT_DOUBLE_EQ(f.meta.get(kEnergy),
+                                 baseline.meta.get(kEnergy));
+                for (int i = 0; i < f.nlocal(); ++i) {
+                    EXPECT_NEAR(f.span(kAtom_fx)[i],
+                                11 + (force ? baseline.span(kAtom_fx)[i] : 0),
+                                1e-9);
+                    EXPECT_NEAR(f.span(kAtom_fy)[i],
+                                12 + (force ? baseline.span(kAtom_fy)[i] : 0),
+                                1e-9);
+                    EXPECT_NEAR(f.span(kAtom_fz)[i],
+                                13 + (force ? baseline.span(kAtom_fz)[i] : 0),
+                                1e-9);
+                }
+                for (int d = 0; d < 6; ++d)
+                    EXPECT_NEAR(
+                        f.meta.get(kStress)[d],
+                        17 + (stress ? baseline.meta.get(kStress)[d] : 0),
+                        1e-8);
+            }
+        pair.destroy({runtime, f});
+    };
+    check(cpu::PairBorn{kA, kRho, kSigma, kC, kD, kCutoff});
+    check(cpu::PairBuck{kBuckA, kBuckRho, kBuckC, kCutoff});
+    check(cpu::PairMorse{kMorseD, kMorseAlpha, kMorseR0, kCutoff});
+    check(cpu::PairWCA{kWcaEps, kWcaSigma});
+    check(cpu::PairYukawa{kYukA, kYukKappa, kCutoff});
+    check(cpu::PairDpd{kDpdA, 1.0, kDpdT, kDpdRc, kDpdDt, 5});
+    check(cpu::PairGaussianCoul{kCutoff, gauss_eta()});
+    check(cpu::CoulLong{0.3, kCutoff});
+    check(cpu::PairCoulCut{kCutoff});
+    check(cpu::PairCoulSoft{kCutoff, 1.0});
+    check(cpu::PairLJSoft{0.01, 1.0, kCutoff});
 }

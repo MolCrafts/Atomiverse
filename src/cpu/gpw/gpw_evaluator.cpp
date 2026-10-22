@@ -125,6 +125,11 @@ void GPWEvaluator::set_timestep(double dt_fs) {
 }
 
 void GPWEvaluator::build(const cpu::BuildContext& ctx) {
+    if (ctx.runtime.exec.serial_on_replica && ctx.runtime.mpi_size > 1)
+        throw std::runtime_error("GPWEvaluator: independent serial replicas "
+                                 "under multi-rank MPI are "
+                                 "unsupported; GPW collective execution "
+                                 "currently uses MPI_COMM_WORLD");
     // Frame → cell, kinds → atoms, derived n_occ, fail-fast validation: all
     // owned by the method. This shell only checks its own AIMD mode bits.
     method_.build(ctx.frame);
@@ -334,7 +339,19 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
 }
 
 void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
-    const bool initializing = ctx.runtime.exec.initializing_forces;
+    if (ctx.runtime.exec.serial_on_replica && ctx.runtime.mpi_size > 1)
+        throw std::runtime_error("GPWEvaluator: independent serial replicas "
+                                 "under multi-rank MPI are "
+                                 "unsupported; GPW collective execution "
+                                 "currently uses MPI_COMM_WORLD");
+    const bool initializing = ctx.runtime.exec.initializing_forces
+                              || ctx.runtime.exec.trial_evaluation;
+    if (ctx.runtime.exec.trial_evaluation
+        && (cpmd || second_gen_cp || xl_bomd_linearized))
+        throw std::runtime_error("GPWEvaluator: propagating/shadow electronic "
+                                 "modes cannot score reversible trials");
+    const bool want_stress = compute_stress && ctx.stress_requested;
+    const bool want_forces = compute_forces && ctx.forces_requested;
     cpu::Frame& frame = ctx.frame;
     const int n = frame.nlocal();
 
@@ -462,7 +479,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         frame.meta.get(kEnergyElectronic) +=
             last_.e_total * ATV::units::kHartreeInEv;
 
-        if (compute_forces) {
+        if (want_forces) {
             // Populate C_occ_k(_beta) + eps_k(_beta) = diag(C† H^σ C) for
             // the k-summed force assembly (occ 2 RKS; occ 1 per spin UKS).
             auto fill_channel = [&](const linalg::CplxMatrix& C,
@@ -631,14 +648,14 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             frame.meta.get(kEnergyElectronic) +=
                 last_.e_total * ATV::units::kHartreeInEv;
 
-            if (compute_forces) {
+            if (want_forces) {
                 if (last_.H_ks.size() == 0 || last_.H_ks_beta.size() == 0)
                     throw std::runtime_error(
                         "GPWEvaluator: UKS CPMD force path needs H_ks and "
                         "H_ks_beta from fixed-density eval");
                 const auto F = internal::gpw_forces_at_density(
                     atoms, method_, last_.P, Ca2, last_.H_ks, last_.P_beta, Cb2,
-                    last_.H_ks_beta);
+                    last_.H_ks_beta, &last_, &last_);
                 AccReal* __restrict sp_fx = frame.span(kAtom_fx);
                 AccReal* __restrict sp_fy = frame.span(kAtom_fy);
                 AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -680,9 +697,10 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         frame.meta.get(kEnergyElectronic) +=
             last_.e_total * ATV::units::kHartreeInEv;
 
-        if (compute_forces) {
+        if (want_forces) {
             const auto F = internal::gpw_forces_at_density(
-                atoms, method_, last_.P, cp_alpha->C(), last_.H_ks);
+                atoms, method_, last_.P, cp_alpha->C(), last_.H_ks, &last_,
+                &last_);
             AccReal* __restrict sp_fx = frame.span(kAtom_fx);
             AccReal* __restrict sp_fy = frame.span(kAtom_fy);
             AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -697,6 +715,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         }
 
         if (!initializing)
+
             cp_alpha->advance(last_.H_ks, S, cpmd_dt_fs_, /*occ=*/2.0);
         last_te_ev_ = cp_alpha->kinetic_ha() * ATV::units::kHartreeInEv;
         last_etherm_ev_ =
@@ -840,7 +859,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             frame.meta.get(kEnergyElectronic) +=
                 last_.e_total * ATV::units::kHartreeInEv;
 
-            if (compute_forces) {
+            if (want_forces) {
                 // Multi-k forces at the post-corrector density. Partial SCF
                 // may leave converged=false; SGCP semantics are forces at
                 // the corrector state (same as Γ-UKS SGCP).
@@ -987,7 +1006,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         frame.meta.get(kEnergyElectronic) +=
             last_.e_total * ATV::units::kHartreeInEv;
 
-        if (compute_forces) {
+        if (want_forces) {
             std::vector<std::array<double, 3>> F;
             if (uks_sgcp) {
                 // UKS: forces at the post-corrector density (partial SCF may
@@ -1148,10 +1167,11 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             if (!initializing)
                 xl_->advance(D);
 
-            if (compute_forces) {
+            if (want_forces) {
                 // Forces of U(R,n) at fixed n: density D, KS matrix H[n].
-                F = internal::gpw_forces_at_density(
-                    atoms, method_, D, occupied_block(C, n_occ), last_.H_ks);
+                F = internal::gpw_forces_at_density(atoms, method_, D,
+                                                    occupied_block(C, n_occ),
+                                                    last_.H_ks, &last_);
             }
         } else {
             // Γ UKS: one generalized diagonalization per spin channel.
@@ -1219,13 +1239,13 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                 xl_beta_->advance(Db);
             }
 
-            if (compute_forces) {
+            if (want_forces) {
                 // Forces of U(R,n^α,n^β) at fixed n^σ: densities D^σ, KS
                 // matrices H^σ[n] (dual-spin fixed-density overload).
                 F = internal::gpw_forces_at_density(
                     atoms, method_, Da, occupied_block(Ca, method_.n_alpha),
                     last_.H_ks, Db, occupied_block(Cb, method_.n_beta),
-                    last_.H_ks_beta);
+                    last_.H_ks_beta, &last_);
             }
         }
 
@@ -1233,7 +1253,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         frame.meta.get(kEnergyElectronic) +=
             last_.e_total * ATV::units::kHartreeInEv;
 
-        if (compute_forces) {
+        if (want_forces) {
             AccReal* __restrict sp_fx = frame.span(kAtom_fx);
             AccReal* __restrict sp_fy = frame.span(kAtom_fy);
             AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -1247,7 +1267,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             }
         }
 
-        if (compute_stress) {
+        if (want_stress) {
             // Shadow-density stress: analytic fixed-P Lagrangian at the warm
             // payload (P = D = q[n], W from the H[n] eigenpairs) — the cell
             // analogue of gpw_forces_at_density. No reference SCF (zero-SCF
@@ -1406,7 +1426,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         frame.meta.get(kEnergyElectronic) +=
             last_.e_total * ATV::units::kHartreeInEv;
 
-        if (compute_forces) {
+        if (want_forces) {
             // Forces of U(R,{n_k}) at fixed n: the k-path assembly at the
             // (D_k, ε_k, C_k^occ) payload — since C_k are exact
             // eigenvectors of H_k[n], W = C (C†HC) C† (the Γ product's
@@ -1425,7 +1445,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             }
         }
 
-        if (compute_stress) {
+        if (want_stress) {
             // Shadow-density stress on the k path: k-summed fixed-{P_k,W_k}
             // Lagrangian at the warm payload (C_occ_k / eps_k just built) —
             // no reference SCF, zero-SCF preserved.
@@ -1564,7 +1584,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
     frame.meta.get(kEnergyElectronic) +=
         last_.e_total * ATV::units::kHartreeInEv;
 
-    if (compute_forces) {
+    if (want_forces) {
         // Prefer forces at the density just converged (no second SCF). UKS has
         // no guess_C warm-start, so a re-SCF would double wall; RKS cold
         // re-SCF is kept only when the energy result lacks orbitals (should
@@ -1758,7 +1778,7 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         publish_electronic_energies(frame, last_te_ev_, last_etherm_ev_);
     }
 
-    if (compute_stress) {
+    if (want_stress) {
         // Product default: Hellmann–Feynman fixed-P analytic stress (one SCF
         // already done above + fixed-P energy samples). Optional multi-SCF
         // strain-FD oracle via stress_use_fd. Warm-start from last MOs; skip

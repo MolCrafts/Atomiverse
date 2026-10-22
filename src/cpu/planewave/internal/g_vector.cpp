@@ -14,15 +14,14 @@ namespace internal {
 GVectorList enumerate_g_vectors(const cpu::Box& cell_bohr, AccReal ecut,
                                 const Vec3& k) {
     auto recip = cell_bohr.recip_cell();
-    Vec3 b0{recip(0, 0), recip(0, 1), recip(0, 2)};
-    Vec3 b1{recip(1, 0), recip(1, 1), recip(1, 2)};
-    Vec3 b2{recip(2, 0), recip(2, 1), recip(2, 2)};
+    Vec3 b0{recip(0, 0), recip(1, 0), recip(2, 0)};
+    Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
+    Vec3 b2{recip(0, 2), recip(1, 2), recip(2, 2)};
 
-    AccReal b0n = b0.norm(), b1n = b1.norm(), b2n = b2.norm();
     AccReal gmax = std::sqrt(AccReal(2) * ecut);
-    int hmax = static_cast<int>(gmax / b0n) + 1;
-    int kmax = static_cast<int>(gmax / b1n) + 1;
-    int lmax = static_cast<int>(gmax / b2n) + 1;
+    int hmax = static_cast<int>(gmax / b0.norm()) + 1;
+    int kmax = static_cast<int>(gmax / b1.norm()) + 1;
+    int lmax = static_cast<int>(gmax / b2.norm()) + 1;
 
     // Index window per axis. The integer index of G along axis i is
     // exactly h_i = (a_i . G) / 2pi, so over the cutoff ball
@@ -33,14 +32,14 @@ GVectorList enumerate_g_vectors(const cpu::Box& cell_bohr, AccReal ecut,
     // the projection extent for non-orthogonal cells), silently clipping
     // sphere-edge G-vectors — harmless-looking for small |k| but fatal
     // for Berry-phase strings sampled at fractional labels near 1.
-    const Mat3& A = cell_bohr.cell(); // rows a_i [Bohr]
+    const Mat3& A = cell_bohr.cell(); // columns a_i [Bohr]
     int lo[3], hi[3];
     for (int i = 0; i < 3; ++i) {
-        const AccReal an = std::sqrt(A(i, 0) * A(i, 0) + A(i, 1) * A(i, 1)
-                                     + A(i, 2) * A(i, 2));
+        const AccReal an = std::sqrt(A(0, i) * A(0, i) + A(1, i) * A(1, i)
+                                     + A(2, i) * A(2, i));
         const AccReal two_pi = AccReal(2) * units::pi;
         const AccReal fi =
-            (A(i, 0) * k[0] + A(i, 1) * k[1] + A(i, 2) * k[2]) / two_pi;
+            (A(0, i) * k[0] + A(1, i) * k[1] + A(2, i) * k[2]) / two_pi;
         const AccReal hw = gmax * an / two_pi;
         lo[i] = static_cast<int>(std::floor(-fi - hw)) - 1;
         hi[i] = static_cast<int>(std::ceil(-fi + hw)) + 1;
@@ -83,6 +82,9 @@ GVectorList enumerate_g_vectors(const cpu::Box& cell_bohr, AccReal ecut,
         result.h.push_back(t.hi);
         result.k.push_back(t.ki);
         result.l.push_back(t.li);
+        hmax = std::max(hmax, std::abs(t.hi));
+        kmax = std::max(kmax, std::abs(t.ki));
+        lmax = std::max(lmax, std::abs(t.li));
     }
 
     // FFT grid dimensions: must be even (FFTW requirement)

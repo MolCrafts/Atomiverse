@@ -1,0 +1,3 @@
+atv_regression(
+  REQUIRES KSPACE MD FFTW_MPI
+  MPIEXEC)

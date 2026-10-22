@@ -24,10 +24,6 @@
 #include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 
-#ifndef ATV_PW_UPF_PATH
-#error "ATV_PW_UPF_PATH must be set to tests/data/pw/Si_lda_nc.upf"
-#endif
-
 using namespace ATV;
 
 namespace {
@@ -106,7 +102,7 @@ int run_on_device(Device dev, double& energy_ry) {
 
     if (dev == Device::Cpu) {
         cpu::pw::PW method;
-        method.upf_path = ATV_PW_UPF_PATH;
+        method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
         method.ecut_ry = kEcutRy;
         method.k_mesh = kMesh;
         method.tol = 1e-6;
@@ -119,7 +115,7 @@ int run_on_device(Device dev, double& energy_ry) {
         energy_ry = r.energy;
     } else {
         cuda::pw::PW method;
-        method.upf_path = ATV_PW_UPF_PATH;
+        method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
         method.ecut_ry = kEcutRy;
         method.k_mesh = kMesh;
         method.tol = 1e-6;

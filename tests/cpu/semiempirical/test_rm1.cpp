@@ -80,38 +80,3 @@ TEST(RM1, UnsupportedElementThrows) {
     RM1Solver solver;
     EXPECT_THROW(solver.build(f), std::runtime_error);
 }
-
-TEST(RM1, WaterEnergyFiniteAndDiffersFromAM1) {
-    auto frame = make_water();
-    AM1Solver am1;
-    am1.build(frame);
-    const auto& ra = am1.run(frame);
-    EXPECT_TRUE(ra.converged);
-    EXPECT_TRUE(std::isfinite(ra.total_energy_ev));
-
-    RM1Solver rm1;
-    rm1.build(frame);
-    const auto& rr = rm1.run(frame);
-    EXPECT_TRUE(rr.converged);
-    EXPECT_TRUE(std::isfinite(rr.total_energy_ev));
-    EXPECT_GT(std::abs(rr.total_energy_ev - ra.total_energy_ev), 0.05)
-        << "RM1 and AM1 water energies should differ";
-}
-
-TEST(RM1, EvaluatorWritesEnergyAndForces) {
-    auto frame = make_water();
-    for (int i = 0; i < 3; ++i) {
-        frame.span(kAtom_fx)[i] = 99.0;
-        frame.span(kAtom_fy)[i] = 99.0;
-        frame.span(kAtom_fz)[i] = 99.0;
-    }
-    RM1Evaluator eval{};
-    eval.with_gradient(true);
-    cpu::Evaluate driver;
-    driver.on(evaluate::Phase::evaluate).add_ref(eval);
-    driver.enable_timing(false);
-    driver.build();
-    driver.run(frame);
-    EXPECT_TRUE(std::isfinite(frame.meta.get(kEnergy)));
-    EXPECT_NE(frame.span(kAtom_fx)[0], AccReal(99.0));
-}

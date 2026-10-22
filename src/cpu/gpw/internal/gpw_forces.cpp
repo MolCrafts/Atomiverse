@@ -1660,11 +1660,11 @@ gpw_forces_analytic(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     return gpw_forces_from_scf(atoms, cfg, scf);
 }
 
-std::vector<std::array<double, 3>>
-gpw_forces_at_density(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-                      const linalg::RealMatrix& P,
-                      const linalg::RealMatrix& C_occ,
-                      const linalg::RealMatrix& H) {
+std::vector<std::array<double, 3>> gpw_forces_at_density(
+    const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
+    const linalg::RealMatrix& P, const linalg::RealMatrix& C_occ,
+    const linalg::RealMatrix& H, const GpwResult* geometry_cache,
+    const GpwResult* matching_density) {
     if (cfg.is_uks())
         throw std::invalid_argument(
             "gpw_forces_at_density: UKS requires the dual-spin overload "
@@ -1689,7 +1689,14 @@ gpw_forces_at_density(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const RealMatrix W =
         2.0
         * xt::linalg::dot(C_occ, xt::linalg::dot(Lambda, xt::transpose(C_occ)));
-    return assemble_gpw_forces(atoms, cfg, P, W);
+    if (matching_density && &P != &matching_density->P)
+        throw std::invalid_argument(
+            "fixed-density force payload does not own P");
+    return assemble_gpw_forces(
+        atoms, cfg, P, W, nullptr,
+        matching_density ? &matching_density->volume_ratios : nullptr,
+        matching_density ? &matching_density->veff : nullptr, nullptr, nullptr,
+        matching_density ? &matching_density->v_es : nullptr, geometry_cache);
 }
 
 namespace {
@@ -1710,7 +1717,8 @@ std::vector<std::array<double, 3>> gpw_forces_at_density(
     const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const linalg::RealMatrix& P_a, const linalg::RealMatrix& C_a,
     const linalg::RealMatrix& H_a, const linalg::RealMatrix& P_b,
-    const linalg::RealMatrix& C_b, const linalg::RealMatrix& H_b) {
+    const linalg::RealMatrix& C_b, const linalg::RealMatrix& H_b,
+    const GpwResult* geometry_cache, const GpwResult* matching_density) {
     if (!cfg.is_uks())
         throw std::invalid_argument(
             "gpw_forces_at_density (UKS): cfg is not UKS — use the RKS "
@@ -1744,7 +1752,16 @@ std::vector<std::array<double, 3>> gpw_forces_at_density(
 
     RealMatrix W = energy_weighted_fixed(C_a, H_a, nb);
     W += energy_weighted_fixed(C_b, H_b, nb);
-    return assemble_gpw_forces(atoms, cfg, P_a, W, &P_b);
+    if (matching_density
+        && (&P_a != &matching_density->P || &P_b != &matching_density->P_beta))
+        throw std::invalid_argument(
+            "fixed-density UKS payload does not own both densities");
+    return assemble_gpw_forces(
+        atoms, cfg, P_a, W, &P_b,
+        matching_density ? &matching_density->volume_ratios : nullptr, nullptr,
+        matching_density ? &matching_density->veff_a : nullptr,
+        matching_density ? &matching_density->veff_b : nullptr,
+        matching_density ? &matching_density->v_es : nullptr, geometry_cache);
 }
 
 } // namespace internal

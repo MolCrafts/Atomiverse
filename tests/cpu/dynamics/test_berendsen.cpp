@@ -8,6 +8,11 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/dynamics/berendsen.h"
+#include "atomiverse/cpu/dynamics/fix_csvr.h"
+#include "atomiverse/cpu/dynamics/nose_hoover.h"
+#include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/nph_integrator.h"
+#include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 using namespace ATV;
@@ -88,6 +93,49 @@ TEST(Berendsen, MovesTemperatureTowardTheSetpointFromBothSides) {
         const double T_after = temperature(f, n_dof);
         EXPECT_LT(std::fabs(T_after - T0), std::fabs(T_before - T0));
     }
+}
+
+TEST(Berendsen, UsesUpdatedConstraintDofWithoutRebuilding) {
+    auto frame = two_movers(1.0, 0.01);
+    auto ctx = make_ctx(6);
+    cpu::md::Berendsen thermostat(300.0, 100.0, 1.0);
+    thermostat.build({ctx, frame});
+    ctx.md.n_dof_global = 5;
+    const double before = temperature(frame, 5);
+    const double expected =
+        0.01 * std::sqrt(1.0 + 0.01 * (300.0 / before - 1.0));
+    thermostat.launch({ctx, frame, ATV::slot_of(md::Phase::end_of_step), 0});
+    EXPECT_NEAR(frame.span(kAtom_vx)[0], expected, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_vx)[1], expected, 1e-14);
+}
+
+TEST(ThermostatDof, LiveCountMatchesInitialCountForVelocityUpdates) {
+    auto check = [](auto live, auto fresh, md::Phase phase) {
+        SCOPED_TRACE(live.name());
+        auto a = two_movers(1.0, 0.01);
+        auto b = two_movers(1.0, 0.01);
+        auto ctx = make_ctx(6);
+        live.build({ctx, a});
+        ctx.md.n_dof_global = 5;
+        fresh.build({ctx, b});
+        live.launch({ctx, a, ATV::slot_of(phase), 0});
+        fresh.launch({ctx, b, ATV::slot_of(phase), 0});
+        for (int i = 0; i < 2; ++i)
+            EXPECT_DOUBLE_EQ(a.span(kAtom_vx)[i], b.span(kAtom_vx)[i]);
+    };
+    check(cpu::md::FixCSVR{300.0, 100.0, 1.0, 7u},
+          cpu::md::FixCSVR{300.0, 100.0, 1.0, 7u}, md::Phase::end_of_step);
+    check(cpu::md::NoseHoover{300.0, 100.0, 1.0},
+          cpu::md::NoseHoover{300.0, 100.0, 1.0}, md::Phase::initial_integrate);
+    check(cpu::md::NoseHooverNPT{300.0, 100.0, 0.0, 1000.0, 1.0},
+          cpu::md::NoseHooverNPT{300.0, 100.0, 0.0, 1000.0, 1.0},
+          md::Phase::initial_integrate);
+    check(cpu::md::ParrinelloRahmanNPT{300.0, 0.0, 100.0, 1000.0, 1.0},
+          cpu::md::ParrinelloRahmanNPT{300.0, 0.0, 100.0, 1000.0, 1.0},
+          md::Phase::initial_integrate);
+    check(cpu::md::NphIntegrator{0.0, 1000.0, 1.0, 100.0},
+          cpu::md::NphIntegrator{0.0, 1000.0, 1.0, 100.0},
+          md::Phase::initial_integrate);
 }
 
 TEST(Berendsen, ZeroVelocitiesAreLeftAloneRatherThanDividedByZero) {

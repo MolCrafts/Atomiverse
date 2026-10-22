@@ -27,6 +27,7 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
+#include "atomiverse/cpu/dynamics/electrode_rows.h"
 
 namespace ATV {
 namespace cpu {
@@ -39,6 +40,7 @@ namespace cpu {
 /// Default binding: `md::Phase::pre_force @ -500` (after Zero\*, before force).
 class ConstPotentialBO : public cpu::Component {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param electrode_types Atom type id per electrode (order = electrode index).
     /// @param potentials_V    Applied potential \(\Psi\) [V = eV/e] per electrode.
     /// @param gaussian_width_A Gaussian charge width \(w\) [Å] (MetalWalls-class).
@@ -59,6 +61,9 @@ class ConstPotentialBO : public cpu::Component {
     void build(const BuildContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
+    /// @brief Electrode sites are re-resolved by tag after atom sorting.
+    /// @return true.
+    bool requires_tag_index() const override { return true; }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Total charge on electrode `e` after the last solve [e].
@@ -85,6 +90,7 @@ class ConstPotentialBO : public cpu::Component {
 
     /// Local owned electrode atom indices and electrode id per site.
     std::vector<int> elec_idx_;
+    md::ElectrodeRows sites_;  ///< tag order; rows follow sorts
     std::vector<int> elec_id_; ///< electrode index for each entry of elec_idx_
     int n_elec_ = 0;
 

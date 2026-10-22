@@ -27,7 +27,7 @@ closed-shell RKS** Gaussian-and-plane-waves (GPW / Quickstep) forces:
 - CP2K `EXTRAPOLATION ASPC` + `&KPOINTS`
 - Γ product paths: `regressions/dynamics/second-gen-cpmd-water` (+ UKS/OT)
 - Multi-k density-guess socket twin: `regressions/dynamics/xl-bomd-kpoints`
-- Multi-k force pin: `regressions/gpw/gpw-kpoint-forces`
+- Multi-k analytic-force cases: `regressions/gpw/gpw-mbd-kpoint-forces`, `gpw-vdw-kpoint-forces`
 
 ## System
 

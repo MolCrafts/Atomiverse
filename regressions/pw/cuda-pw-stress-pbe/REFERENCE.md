@@ -17,7 +17,7 @@ Public API: `cuda::pw::pw_stress(frame, method[, energy_ry_out])` → Voigt
 σ [eV/Å³] with `method.xc = XCType::PBE`.
 
 Sibling of `cuda-pw-stress` (LSDA). Closes the closed-shell PBE stress
-dual-gate left open after `cuda-pw-pbe-device` + `cuda-pw-stress` (LSDA).
+dual-gate left open after the device PBE energy path + `cuda-pw-stress` (LSDA).
 
 ## System
 

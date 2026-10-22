@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-ump2-si` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::mp2()` → `cpu::gpw::Mp2Result` on a **UKS** reference (`n_alpha`/`n_beta`); members `mp2_ri`, `mp2_n_virt`, `mp2_os_scale`, `mp2_ss_scale` |
-| Roadmap | `docs/roadmap/dft.md` §10 — Periodic MP2 includes **Γ UMP2@UKS** (`reg_periodic-ump2-si`) ✓ |
+| Roadmap | `docs/roadmap/dft.md` §10 — Periodic MP2 includes **Γ UMP2@UKS** ◐ (no standing regression) |
 
 ## Summary
 
@@ -22,14 +22,13 @@ intermediates with G=0 dropped (neutral pair densities), then same-spin
 This page is the **equal-spin closed-shell UKS foothold** on artificial
 sc-Si₂ (\(n_\alpha=n_\beta=4\)): when \(C^\alpha\approx C^\beta\),
 **UMP2 ≡ RMP2**, dual-gated against the closed-shell first-green band from
-`periodic-mp2-si`. Absolute CP2K UMP2 digits are **not invented** when the
+[periodic-mp2-si](periodic-mp2-si.md). Absolute CP2K UMP2 digits are **not invented** when the
 oracle binary is absent — the offline twin input is ready for re-pin.
 
 Public path: construct `cpu::gpw::GpwDft`, set UKS occupations and SCF/MP2
 members (no `*Config` bag, no factory), `build` → `run` → `mp2`. Energies on
 `Mp2Result` are **Hartree** (internal post-HF convention); Frame public
-energies remain eV when routed through evaluators. Product gate:
-`reg_periodic-ump2-si`. Fair wall vs CP2K is **perf_exempt** (no CP2K binary
+energies remain eV when routed through evaluators. Fair wall vs CP2K is **perf_exempt** (no CP2K binary
 on the pin host).
 
 Related: closed-shell Γ MP2 — [periodic-mp2-si](periodic-mp2-si.md);
@@ -49,7 +48,7 @@ ignored. Separate \(C^\alpha\), \(C^\beta\) and \(\varepsilon^\alpha\),
 \(\varepsilon^\beta\). This pin uses **equal-spin** occupations
 \(n_\alpha=n_\beta=4\) (8 valence e⁻ from two Si GTH-PBE-q4 sites) and
 **PBE** GGA (`XcKind::PBE`) — the same chemical deck as
-`periodic-mp2-si`, re-hosted as UKS so the UMP2 kernel is exercised with a
+[periodic-mp2-si](periodic-mp2-si.md), re-hosted as UKS so the UMP2 kernel is exercised with a
 dual-gate identity to RMP2.
 
 **RI-GPW \((ia|jb)\).** Product default `mp2_ri = true` (periodic):
@@ -106,7 +105,7 @@ row `periodic-hybrid-gpw`).
 **Key exclusions (product scope).**
 
 - **No multi-k UMP2** — `GpwDft::mp2` throws on UKS with \(N_k>0\); multi-k
-  is closed-shell RI-GPW only (`periodic-mp2-kpoints`).
+  is closed-shell RI-GPW only ([periodic-mp2-kpoints](periodic-mp2-kpoints.md)).
 - **No OT reference** — OT stores occupied orbitals only; canonical
   virtuals require diagonalization (`use_ot = false`).
 - **No UMP2 gradients / stress / forces**; energy only.
@@ -170,7 +169,7 @@ Guards (fail hard, no silent fallback): `std::logic_error` before
 `std::invalid_argument` for multi-k UKS, for `use_ot`, for vanishing
 per-spin HOMO–LUMO gap (< 1e-6 Ha), or for empty virtual space.
 
-Build (GPW needs HF + PW + FFTW3) and run the regression:
+Build (GPW needs HF + PW + FFTW3) configuration:
 
 ```bash
 bash -lc '
@@ -183,9 +182,6 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-ump2-si
-  reg_periodic-ump2-si
-  # or: cmake --build build --target run_reg_periodic-ump2-si
 '
 ```
 
@@ -196,13 +192,11 @@ bash -lc '
 | UMP2 dispatch (Γ UKS) | `src/cpu/gpw/mp2.cpp` |
 | Kernels (private) | `mp2_kernels.h` |
 | Unit tests (not e2e) | `tests/cpu/gpw/test_cpu_gpw_mp2.cpp` |
-| Offline pin contract | case `periodic-ump2-si` pin |
 | CP2K twin input | CP2K oracle |
 
 ## Validation (vs CP2K / dual-gate)
 
-Source:
-case `periodic-ump2-si` pin.
+Source: values recorded when this page was written (no standing regression).
 Oracle: offline **CP2K** twin (CP2K oracle:
 `UKS`, `MULTIPLICITY 1`, same cell/basis/PP/cutoff, `&WF_CORRELATION` MP2);
 **never** live in ctest. At pin time **no CP2K module** on the host —
@@ -214,7 +208,7 @@ orbitals) against the closed-shell first-green band.
 
 | Item | Value |
 | ---- | ----- |
-| Crystal | artificial sc-Si₂ (same as `periodic-mp2-si`) |
+| Crystal | artificial sc-Si₂ (same as [periodic-mp2-si](periodic-mp2-si.md)) |
 | Cell | cubic **a = 5.43 Å**, fully periodic, **Γ only** |
 | Positions | Si (0,0,0), Si (a/4, a/4, a/4) |
 | Basis | **DZVP-MOLOPT-GTH** |
@@ -228,7 +222,7 @@ orbitals) against the closed-shell first-green band.
 
 | Quantity | Pin / band [Ha] | Tol | Notes |
 | -------- | --------------: | --- | ----- |
-| \(E_{\mathrm{corr}}\) (RMP2 first-green twin) | **−0.2764036524** | — | from `periodic-mp2-si` |
+| \(E_{\mathrm{corr}}\) (RMP2 first-green twin) | **−0.2764036524** | — | from [periodic-mp2-si](periodic-mp2-si.md) |
 | \(E_{\mathrm{corr}}\) (UMP2@UKS product gate) | same target | **2×10⁻³** | UKS numerical drift band |
 | \(E_{\mathrm{corr}}\) sign | \(E_{\mathrm{corr}} < 0\) | hard | regression |
 | OS + SS ≡ \(E_{\mathrm{corr}}\) | identity | **1×10⁻¹²** | unscaled channels, scales = 1 |
@@ -247,7 +241,7 @@ pin notes §Perf.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}}\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----------------------------------------: | ---- | ------ |
-| `periodic-ump2-si` | — | (reg ≤ 60 s budget) | **perf_exempt** | n/a | No CP2K binary on pin host for fair wall |
+| Γ UMP2 sc-Si₂ | — | — | **perf_exempt** | n/a | No CP2K binary on pin host for fair wall |
 
 Target wall ≤ 60 s single process (SCF ≈ RKS deck cost + UMP2 three-tensor
 build: αα, ββ, αβ). Do **not** invent a numeric ratio without a fair twin.
@@ -268,7 +262,7 @@ build: αα, ββ, αβ). Do **not** invent a numeric ratio without a fair twin.
 
 ## References
 
-- Offline pin: case `periodic-ump2-si` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - CP2K twin: CP2K oracle
 - Oracle rules: CP2K oracle (offline pins only; never live ctest)
 - Roadmap: [`docs/roadmap/dft.md`](../../roadmap/dft.md) §10 Periodic MP2

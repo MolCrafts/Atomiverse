@@ -17,7 +17,6 @@ TEST(InitVelocity, GlobalComAndTargetTemperatureWithOneAtomPerRank) {
     frame.span(ATV::kAtom_tag)[0] = rank + 1;
     ATV::cpu::md::mpi::DomainDecomposition dd;
     dd.cart_comm = MPI_COMM_WORLD;
-    dd.n_local = 1;
     ATV::cpu::Context context;
     context.mpi_rank = rank;
     context.mpi_size = size;

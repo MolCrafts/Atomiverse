@@ -65,6 +65,7 @@ struct BornTypeCoeff {
 /// cell onto the Madelung attraction.
 class PairBorn : public Pair {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param A      Born–Mayer prefactor [eV] (must be ≥ 0).
     /// @param rho    Softness length [Å] (must be > 0).
     /// @param sigma  Ionic-pair radius parameter [Å].

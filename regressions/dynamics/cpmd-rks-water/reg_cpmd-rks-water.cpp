@@ -27,6 +27,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/component/zero.h"
 #include "atomiverse/cpu/dynamics/cpmd_conserved.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
@@ -102,15 +103,15 @@ int main() {
         std::printf("FAIL: force initialization advanced the nuclei\n");
         return 1;
     }
-    if (!(rks.iterations() > 0)) {
+    if (!(rks.method().iterations() > 0)) {
         std::printf("FAIL: seed step ran %d SCF iterations — the cold seed "
                     "must converge a real SCF\n",
-                    rks.iterations());
+                    rks.method().iterations());
         return 1;
     }
-    if (!rks.converged()) {
+    if (!rks.method().converged()) {
         std::printf("FAIL: seed KS SCF did not converge (%s)\n",
-                    rks.stop_reason().c_str());
+                    rks.method().stop_reason().c_str());
         return 1;
     }
     {
@@ -130,15 +131,15 @@ int main() {
         }
     }
 
-    // ── Step 2: the first CP production step — baseline for the drift ─────
+    // ── Step 1: the first CP production step — baseline for the drift ─────
     if (sim.run(frame, 1) != 1) {
         std::printf("FAIL: first CP production step did not run\n");
         return 1;
     }
-    if (rks.iterations() != 0) {
+    if (rks.method().iterations() != 0) {
         std::printf("FAIL: first CP step re-ran SCF (iters=%d) — CPMD must not "
                     "be a BOMD rename\n",
-                    rks.iterations());
+                    rks.method().iterations());
         return 1;
     }
     const double e0 = frame.meta.get(kConserved);
@@ -159,9 +160,9 @@ int main() {
             std::printf("FAIL: production step %d did not run\n", s + 1);
             return 1;
         }
-        if (rks.iterations() != 0) {
+        if (rks.method().iterations() != 0) {
             std::printf("FAIL: production step %d re-ran SCF (iters=%d)\n",
-                        s + 1, rks.iterations());
+                        s + 1, rks.method().iterations());
             return 1;
         }
 
@@ -225,7 +226,7 @@ int main() {
     std::printf("  PEf=%.8g eV  KEf=%.6g eV  Te in [%.3e, %.3e] eV  "
                 "OH=%.4f/%.4f Å  prod SCF iters=%d (expect 0)\n",
                 frame.meta.get(kEnergy), frame.meta.get(kKinetic), te_min,
-                te_max, oh1, oh2, rks.iterations());
+                te_max, oh1, oh2, rks.method().iterations());
 
     // The electronic DOF must be alive (this is not H2's frozen subspace) …
     if (!(te_min > 0.0)) {
@@ -250,6 +251,27 @@ int main() {
     if (!(worst_drift <= drift_tol)) {
         std::printf("FAIL: CP energy drift %.3e exceeds tol %.1e\n",
                     worst_drift, drift_tol);
+        return 1;
+    }
+
+    // Two evaluations of the same warm electronic state must not propagate
+    // its orbitals, electronic velocity, or thermostat history.
+    cpu::Context setup_context;
+    setup_context.exec.initializing_forces = true;
+    const cpu::LaunchContext setup_launch{setup_context, frame, 0, 0};
+    auto prepare = [&] {
+        cpu::ZeroForces{}.launch(setup_launch);
+        cpu::ZeroEnergy{}.launch(setup_launch);
+        rks.run_nested_erased(setup_context, frame, 0);
+    };
+    prepare();
+    const double setup_energy = frame.meta.get(kEnergy);
+    const double setup_te = rks.method().last_electronic_ke_ev();
+    prepare();
+    if (std::abs(frame.meta.get(kEnergy) - setup_energy) > 1e-10
+        || std::abs(rks.method().last_electronic_ke_ev() - setup_te) > 1e-12) {
+        std::printf(
+            "FAIL: repeated warm force preparation advanced CP state\n");
         return 1;
     }
 

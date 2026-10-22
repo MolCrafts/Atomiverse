@@ -70,19 +70,10 @@ double short_range_cutoff(double u_min_eV) {
     return r;
 }
 
-/// Integer image half-widths covering @p cutoff along every lattice vector
-/// (the cell columns, as in `EwaldSum` and the SK lattice enumeration).
-void image_extent(const Mat3& cell, double cutoff, int nmax[3]) {
-    for (int d = 0; d < 3; ++d) {
-        const double len =
-            std::sqrt(cell(0, d) * cell(0, d) + cell(1, d) * cell(1, d)
-                      + cell(2, d) * cell(2, d));
-        if (!(len > 0.0))
-            throw std::runtime_error(
-                "GammaLattice: cell axis " + std::to_string(d)
-                + " has zero length; a periodic γ needs a real cell");
-        nmax[d] = static_cast<int>(std::ceil(cutoff / len)) + 1;
-    }
+/// Integer image half-widths covering @p cutoff along every cell axis.
+void image_extent(const cpu::Box& box, double cutoff, int nmax[3]) {
+    for (int d = 0; d < 3; ++d)
+        nmax[d] = static_cast<int>(std::ceil(cutoff / box.face_height(d))) + 1;
 }
 
 } // namespace
@@ -151,7 +142,7 @@ GammaLattice::GammaLattice(int n_at, const double* u_eV, const double* x,
     const double C = units::coulomb;
     const double walk_cutoff = std::max(short_cutoff_, real_cutoff);
     const Mat3& cell = cell_;
-    image_extent(cell, walk_cutoff, nmax_);
+    image_extent(box, walk_cutoff, nmax_);
 
     // Real space: erfc(αr)/r over every image inside real_cutoff, minus the
     // exponential short-range piece inside short_cutoff. (A,A,T=0) excluded.

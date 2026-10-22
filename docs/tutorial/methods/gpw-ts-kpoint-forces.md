@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-ts-kpoint-forces` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::ts` + `k_mesh`; multi-k `GpwDft::forces(frame)` / `GPWEvaluator(std::move(dft), /*compute_forces=*/true)`; `GpwResult::e_disp` [Ha] |
 | Roadmap | `docs/roadmap/dft.md` §8 Dispersion + §10 Periodic KS |
 | Oracle | **libMBD** free-atom TS energy + force dual-gate (CP2K has **no** stock `TYPE TS`) |
@@ -13,8 +13,8 @@
 
 **Monkhorst–Pack multi-k GPW** ionic forces with additive **Tkatchenko–Scheffler
 (TS)** free-atom volumes. Γ already folds TS into `assemble_gpw_forces`
-(`gpw-ts-forces`); multi-k stress is `gpw-ts-kpoint-stress`. This capability is
-the **dedicated multi-k product force pin**: the same geometry-only
+(`gpw-ts-forces`); multi-k stress is the matching `stress(frame)` path. This capability is
+the **multi-k force path**: the same geometry-only
 
 \[
 F_{\mathrm{TS}} = -\nabla E_{\mathrm{disp}}^{\mathrm{TS}}
@@ -63,5 +63,5 @@ No `*Config` bag; no `make_*` factory.
 
 ## Pins and geometry
 
-See case `gpw-ts-kpoint-forces` pin and
+See the pin notes recorded when this page was written (no standing regression) and
 CP2K oracle.

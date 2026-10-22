@@ -30,6 +30,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -304,6 +305,7 @@ struct GpwResult {
 /// the user API. Contract: `.claude/notes/cuda-gpw-public-shape.md`.
 class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
   public:
+    bool requires_full_frame() const override { return true; }
     /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(frame)`.
     using cpu::Driver<ATV::gpw::Phase>::build;
 
@@ -476,8 +478,8 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     explicit GpwDft(std::vector<Kind> kinds) : kinds(std::move(kinds)) {}
     GpwDft(const GpwDft&) = delete;
     GpwDft& operator=(const GpwDft&) = delete;
-    GpwDft(GpwDft&&) noexcept = default;
-    GpwDft& operator=(GpwDft&&) noexcept = default;
+    GpwDft(GpwDft&&) = default;
+    GpwDft& operator=(GpwDft&&) = default;
 
     /// @brief One-time fail-fast validation against a reference Frame.
     ///
@@ -495,6 +497,10 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     bool is_uks() const { return n_alpha + n_beta > 0; }
 
     /// @brief Run the GPW SCF (RKS or UKS) at the Frame's geometry.
+    /// Multi-k execution under initialized MPI is collective on MPI_COMM_WORLD:
+    /// all world ranks must call with matching method/geometry and call ordering.
+    /// Independent per-rank replicas and split-communicator execution are not
+    /// supported yet; no execution communicator is inferred from a Frame.
     ///
     /// Re-entrant: geometry and cell are re-read from `frame` on every call,
     /// so a Frame whose atoms or box moved since `build()` is solved as is.
@@ -546,8 +552,22 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @throws std::runtime_error when the SCF did not converge.
     std::array<double, 6> stress(Frame& frame);
 
-    /// @brief Result of the most recent `run()` (default-constructed —
-    ///        `converged == false` — before the first run).
+    // The path stages borrow each run's stack. Use the evaluator for composition.
+    void build_on(cpu::Runtime&) override {
+        throw std::logic_error(
+            "GpwDft cannot be nested directly; use GPWEvaluator");
+    }
+    int run_nested_erased(cpu::Context&, cpu::Frame&, int) override {
+        throw std::logic_error(
+            "GpwDft cannot be nested directly; use GPWEvaluator");
+    }
+
+    int run_nested(cpu::Context&, cpu::Frame&, int) {
+        throw std::logic_error(
+            "GpwDft cannot be nested directly; use GPWEvaluator");
+    }
+
+    /// @brief Result of the most recent run, default-constructed before it.
     const GpwResult& last_result() const { return result_; }
 
     /// @brief Orthorhombic cell [Bohr] of the most recent `build()` / `run()`.

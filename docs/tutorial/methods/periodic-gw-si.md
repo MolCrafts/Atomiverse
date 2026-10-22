@@ -4,9 +4,9 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `periodic-gw-si` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft::g0w0()` → `cpu::gpw::G0W0Result` (`cpu/gpw/g0w0.h`); screening virtuals via `mp2_n_virt`, product RI via `mp2_ri` |
-| Roadmap | roadmap `dft.md` §10 **Periodic GW** ✓ (Γ product; multi-k residual); handoff ratio **perf_exempt** |
+| Roadmap | roadmap `dft.md` §10 **Periodic GW** ◐ (no standing regression); handoff ratio **perf_exempt** |
 
 ## Summary
 
@@ -14,7 +14,7 @@ Closed-shell **spectral \(G_0W_0\)** quasiparticle (QP) energies on a
 converged **Γ-point periodic GPW PBE** reference for artificial sc-Si₂
 (\(a=5.43\) Å, DZVP-MOLOPT-GTH + GTH-PBE-q4, density cutoff **30 Ry**).
 Screening is **direct RPA** (dRPA) on the same product **RI-GPW** \((ia|jb)\)
-path as `periodic-rpa-si` / `periodic-ri-mp2-si`; the correlation self-energy
+path as [periodic-rpa-si](periodic-rpa-si.md) / `periodic-ri-mp2-si`; the correlation self-energy
 is the frequency-exact spectral sum over RPA poles (same form as molecular
 `G0W0<RHF>::run` / PySCF `GWExact`). Exact-exchange diagonals use **truncated (MT)
 Coulomb** so the Γ-only foothold is G=0-safe without a periodic-HF product path.
@@ -79,7 +79,7 @@ Not the linearized \(Z\)-factor form. Requires a finite KS HOMO–LUMO gap
 
 | Item | Setting |
 | ---- | ------- |
-| Crystal | artificial sc-Si₂ (same deck as `periodic-rpa-si`) |
+| Crystal | artificial sc-Si₂ (same deck as [periodic-rpa-si](periodic-rpa-si.md)) |
 | Cell | cubic \(a = 5.43\) Å, periodic XYZ, Γ only |
 | Positions | Si \((0,0,0)\), Si \((a/4,a/4,a/4)\) |
 | Basis / PP | DZVP-MOLOPT-GTH / GTH-PBE-q4 |
@@ -103,8 +103,7 @@ Not the linearized \(Z\)-factor form. Requires a finite KS HOMO–LUMO gap
 
 ## Implementation
 
-Public surface only (`GpwDft` members + lookup constructors; matches
-`reg_periodic-gw-si.cpp`). Headers: `gpw_solver.h`,
+Public surface only (`GpwDft` members + lookup constructors). Headers: `gpw_solver.h`,
 `g0w0.h`; impl `src/cpu/gpw/g0w0.cpp`. Shared dRPA / RI MO-ERI internals:
 `cpu/gpw/internal/mp2_kernels.h`.
 
@@ -164,18 +163,12 @@ bash -lc '
         -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse reg_periodic-gw-si
-  reg_periodic-gw-si
-  # or: cmake --build build --target run_reg_periodic-gw-si
 '
 ```
 
-Source consumer: `reg_periodic-gw-si.cpp`.
-
 ## Validation (vs offline CP2K pins / first-green)
 
-Source:
-case `periodic-gw-si` pin
+Source: values recorded when this page was written (no standing regression)
 (offline pin only; CP2K never launched from CMake/ctest).
 
 | Setting | Value |
@@ -217,7 +210,7 @@ quadrature + Gaussian `RI_AUX` under `&WF_CORRELATION`. CP2K’s default path is
 Absolute CP2K QP digits are **not invented** as a hard twin of the spectral
 value.
 
-Pin strategy (binding, mirrors `periodic-rpa-si`):
+Pin strategy (binding, mirrors [periodic-rpa-si](periodic-rpa-si.md)):
 
 1. Hard internal gates (SCF / Newton / finite positive QP gap / HOMO below LUMO).
 2. Frozen first-green band \(|\mathrm{gap}-5.719545|\le 0.05\) eV.
@@ -234,7 +227,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) unless exempted.
 | ---- | -----------------------: | ---------------------: | ----: | ---- | ------ |
 | spectral G0W0@PBE (Γ sc-Si₂) | — | ~24 (SCF≈23 + G0W0≈0.6; 4 OMP, EPYC login) | **perf_exempt** | exempt | CP2K RI-G0W0 ≠ spectral algorithm; MT \(\Sigma_x\) ≠ periodic HF; no CP2K binary on pin host |
 
-Regression wall ≈ **24 s** single process, well under the ≤ 60 s e2e cap.
+Recorded wall ≈ **24 s** single process, well under the ≤ 60 s e2e cap.
 Never launch CP2K from ctest.
 
 ## Limitations
@@ -261,7 +254,7 @@ periodic G0W0; UGW.
 
 ## References
 
-- Offline pin: case `periodic-gw-si` pin
+- Offline pin: values recorded when this page was written (no standing regression)
 - Oracle twin: CP2K oracle
 - Oracle contract: CP2K oracle
 - Roadmap: `docs/roadmap/dft.md` §10 Periodic GW ✓ (Γ; multi-k residual)

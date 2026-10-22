@@ -3,14 +3,7 @@
 ///        learn how many atoms a rank owns/holds and to resolve a global
 ///        atom tag to a local row index, with a built-in bounds guard.
 ///
-/// Motivation. `frame.nlocal()` is NOT the rank-local owned count in
-/// multi-rank mode: it is left at the Frame-constructor default (the global
-/// atom count) because `DomainDecomposition::capacity` is sized from
-/// `frame.nlocal()` as deliberate ghost slack. The authoritative
-/// per-rank counts live on `dd` (`n_local`, `n_ghost`). Bonded/pair force
-/// kernels must therefore size their per-thread accumulators and reduction
-/// loops to `n_local + n_ghost`, NOT `atoms.n_total()` — otherwise every rank
-/// does O(global N) work regardless of how few atoms it owns.
+/// Frame owns both owned and ghost row extents for every execution topology.
 ///
 /// Tag resolution. Partner atoms (bonded tuples, special-bonds exclusions)
 /// are stored as global tags and resolved to local rows via a tag→local map
@@ -23,6 +16,7 @@
 /// coordinate read into a clean drop.
 #pragma once
 
+#include "atomiverse/cpu/component/owned_range.h"
 #include <cstdint>
 #include <unordered_map>
 
@@ -39,16 +33,13 @@ namespace md {
 ///        kernels. Cheap value type; build one per `compute()` call.
 class ResolveView {
   public:
-    explicit ResolveView(const cpu::LaunchContext& ctx) {
+    explicit ResolveView(const cpu::LaunchContext& ctx)
+        : n_local_(ctx.frame.nlocal()), n_force_(ctx.frame.n_total()) {
         const auto* dd = ctx.runtime.md.dd;
-        if (dd != nullptr && ctx.runtime.mpi_size > 1) {
+        if (cpu::multi_rank_dd(ctx.runtime)) {
             map_ = &dd->tag_to_local;
-            n_local_ = dd->n_local;
-            n_force_ = dd->n_local + dd->n_ghost;
         } else {
             map_ = &ctx.frame.meta.get(kTagIndex);
-            n_local_ = ctx.frame.nlocal();
-            n_force_ = n_local_; // single-rank: no ghosts
         }
     }
 

@@ -1,8 +1,8 @@
 # O2 triplet UMP2/STO-3G — e_corr + e_tot pins
 
 Open-shell Møller–Plesset second-order (UMP2) on a UHF reference for
-triplet O₂ / STO-3G. Axis extension after `rmp2-h2o-sto3g`
-(`regressions/scf/h2o_mp2_sto3g`): same observable pair (`e_corr`, `e_tot`)
+triplet O₂ / STO-3G. Axis extension after plain RMP2
+(`regressions/scf/posthf-eri-block-mp2`): same observable pair (`e_corr`, `e_tot`)
 on an unrestricted open-shell reference.
 
 Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md` (offline pin only;
@@ -72,4 +72,4 @@ digits; ⟨S²⟩ − 2 ≈ 3.410858×10⁻³ (same contamination).
 - UMP2 is spin-contaminated when the UHF reference is; the pins are the
   raw (unprojected) UMP2 energies as returned by PySCF `mp.UMP2`.
 - Domain path under `regressions/scf/` matches other Gaussian post-HF cases
-  (`h2o_mp2_sto3g`, `h2o_ri_mp2`); slug = queue id `ump2-o2-sto3g`.
+  (`posthf-eri-block-mp2`, `frozen-core-mp2-h2o`); slug = queue id `ump2-o2-sto3g`.

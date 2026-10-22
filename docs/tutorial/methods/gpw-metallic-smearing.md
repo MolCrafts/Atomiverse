@@ -4,7 +4,7 @@
 
 | Field | Value |
 | ----- | ----- |
-| Slug | `gpw-metallic-smearing` |
+| Regression | None standing (end-to-end case removed) |
 | Public API | `cpu::gpw::GpwDft` members `smearing`, `degauss` [Ry], `mp_order`, `extra_bands`, `k_mesh`; `GpwResult::{e_total,e_fermi,n_elec_occ,e_entropy}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) — Smearing for metals (CPU GPW ✓ multi-k RKS) |
 ## Summary
@@ -20,7 +20,9 @@ metallic smearing. Density and band energy use \(f_b(\varepsilon,\mu)\);
 the SCF total is the **Mermin free energy** \(F = E_{\mathrm{KS}} - TS\)
 reported as `GpwResult.e_total` [Ha]. Textbook pin: **BCC Na** conventional
 cell (2 atoms), GTH + MOLOPT-SR, PADE, Fermi–Dirac `degauss = 0.02` Ry,
-\(2\times2\times2\) MP mesh. Regression binary: `reg_gpw-metallic-smearing`.
+\(2\times2\times2\) MP mesh. No standing end-to-end regression for this
+energy pin (GPW smearing forces/stress: `gpw-metallic-forces`,
+`gpw-metallic-stress`).
 Offline CP2K 2026.1 documents the Quickstep counterpart
 (`&SMEAR METHOD FERMI_DIRAC` + `ADDED_MOS`); absolute \(E\) is an **ATV free-energy
 freeze**, not a bit-identical twin (grid / multigrid / `EPS_DEFAULT` differ
@@ -85,7 +87,7 @@ closed-shell RKS** path only. `build()` throws if:
 **Excluded (this slug).** GPW UKS + smear; OT + smear; cold /
 Marzari–Vanderbilt; Gaussian smear enum on GPW (PW has it);
 forces/stress under smear as acceptance pins; CUDA GPW;
-`GPWEvaluator` wrapper path for this regression (calls `GpwDft::run(frame)`
+`GPWEvaluator` wrapper path for this page (calls `GpwDft::run(frame)`
 directly).
 
 ## Implementation
@@ -162,15 +164,11 @@ bash -lc '
         -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
         -DATV_BUILD_REGRESSIONS=ON -DATV_BUILD_CUDA=OFF \
         -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc) --target atomiverse test_cpu_gpw_smearing \
-        reg_gpw-metallic-smearing
+  cmake --build build -j$(nproc) --target atomiverse test_cpu_gpw_smearing
   ctest --test-dir build -R "^(test_cpu_gpw_smearing)$" --output-on-failure
-  reg_gpw-metallic-smearing
 '
 ```
 
-Source consumer:
-`reg_gpw-metallic-smearing.cpp`.
 Unit tests (API + occupation closed forms, not e2e SCF):
 `tests/cpu/gpw/test_cpu_gpw_smearing.cpp` → `test_cpu_gpw_smearing`.
 
@@ -184,8 +182,8 @@ Unit tests (API + occupation closed forms, not e2e SCF):
 
 ## Validation (CP2K)
 
-Source:
-case `gpw-metallic-smearing` pin
+Source: values recorded when this page was written; no standing
+regression.
 (offline pins only; **never** live CP2K in ctest).
 
 ### ATV system (free energy + \(N_{\mathrm{occ}}\) gate)
@@ -256,7 +254,7 @@ Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \le 10\) unless exempted.
 
 | Twin | \(T_{\mathrm{CP2K}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
 | ---- | ------------------------: | ----------------------: | ----: | ---- | ------ |
-| `na_bcc_fermi_dirac.inp` vs `reg_gpw-metallic-smearing` | **89.51** | **0.999** | **~0.011** | ✓ | same system/basis/PP class; ATV in-tree tables + own grid; wall indicative for dual gate |
+| `na_bcc_fermi_dirac.inp` vs ATV `GpwDft` (recorded) | **89.51** | **0.999** | **~0.011** | ✓ | same system/basis/PP class; ATV in-tree tables + own grid; wall indicative for dual gate |
 
 \[
 r = T_{\mathrm{atv}} / T_{\mathrm{cp2k}} \approx 0.011 \ll 10
@@ -289,7 +287,7 @@ single density pathway. Handoff records ratio **~0.011**
 
 ## References
 
-- Offline pin: case `gpw-metallic-smearing` pin
+- Offline pin: recorded when this page was written (no standing regression)
 - CP2K twin input: CP2K oracle
 - Oracle notes: CP2K oracle
 - Handoff ratio **~0.011**: the case pin notes
