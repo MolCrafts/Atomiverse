@@ -272,7 +272,7 @@ TEST(CudaMdNoise, InitialForceAndFirstStepUseIndependentLangevinSamples) {
     }
     DeviceInput input(host);
     ATV::cuda::md::FixLangevin thermostat(300, 300, 1, 1, 42);
-    ATV::cuda::md::ZeroForces zero;
+    ATV::cuda::ZeroForces zero;
     const int phase = slot_of(md::Phase::post_force);
     thermostat.initialize_forces({input.context, input.frame, phase, 0, true});
     ATV_CUDA_CHECK(cudaStreamSynchronize(input.stream));

@@ -49,7 +49,7 @@ double energy_only(cpu::Frame g) {
     for (int i = 0; i < 3; ++i)
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
-    cpu::semiempirical::DFTB2 d;
+    cpu::semiempirical::DFTB2 d{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d.boundary = cpu::semiempirical::DftbBoundary::cluster;
@@ -67,7 +67,7 @@ int main() {
     auto frame = make_water();
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;

@@ -83,8 +83,7 @@ cpu::Frame frame(2);
 // … place O at (0,0,0) and (0,0,1.2075); type/mass as in reg …
 
 // ROKS warm-start (optional; stabilizes UKS multi-minima)
-cpu::scf::ROKS roks(9, 7, cpu::scf::XCType::LSDA);
-roks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROKS roks{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7, cpu::scf::XCType::LSDA};
 roks.tol = 1e-12;
 roks.max_iter = 200;
 roks.grid_level = cpu::scf::GridLevel::MatchPySCF;
@@ -97,8 +96,7 @@ guess.P_beta  = roks.determinant().density(Spin::beta);
 guess.has_alpha = true;
 guess.has_beta  = true;
 
-cpu::scf::UKS uks(9, 7, cpu::scf::XCType::LSDA);
-uks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::UKS uks{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7, cpu::scf::XCType::LSDA};
 uks.tol = 1e-12;
 uks.max_iter = 200;
 uks.grid_level = cpu::scf::GridLevel::MatchPySCF;

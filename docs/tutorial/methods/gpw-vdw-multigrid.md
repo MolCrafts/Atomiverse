@@ -62,12 +62,10 @@ kernel).
 ```cpp
 // frame: water dimer, positions [Å], Z in kAtom_type
 frame.box = cpu::Box::cubic(12.0);  // Å
-cpu::gpw::GpwDft gpw{kinds};          // one Kind each for O and H
-gpw.cutoff_ry = 200.0;
+cpu::gpw::GpwDft gpw{kinds, 200.0, cpu::gpw::XcKind::PBE};          // one Kind each for O and H
 gpw.ngrids = 4;        // CP2K NGRIDS (its default is 4)
 gpw.rel_cutoff = 40.0; // CP2K REL_CUTOFF [Ry]
 gpw.n_occ = 8;
-gpw.xc = cpu::gpw::XcKind::PBE;
 gpw.vdw_df = true;     // or vdw_df2 / rvv10
 gpw.build(frame);
 const cpu::gpw::GpwResult& r = gpw.run(frame);  // frame.meta[kEnergy] [eV]

@@ -131,14 +131,12 @@ frame.box = ATV::cpu::Box::cubic(a);
 
 GpwDft m{{Kind{molrs::Element::Si,     // concrete method — members as params
                GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-m.cutoff_ry = 30.0;
+               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}, 30.0, XcKind::PBE};
 m.n_occ = 4;
 m.max_iter = 80;
 m.tol = 1e-6;
 m.mix = 0.3;
 m.level_shift = 0.3;                   // small-gap sc-Si2 convergence aid
-m.xc = XcKind::PBE;
 m.mp2_ri = true;
 m.build(frame);
 m.run(frame);                          // must converge

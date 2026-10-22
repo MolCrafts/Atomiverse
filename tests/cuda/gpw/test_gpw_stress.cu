@@ -28,11 +28,10 @@ std::vector<ATV::cpu::gpw::internal::GpwAtom> h2_atoms() {
 
 TEST(CudaGpwStress, MultiKBuildIsOnProductPath) {
     auto atoms = h2_atoms();
-    ATV::cuda::gpw::GpwDft m;
+    ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
+                             /*cutoff_ry=*/80.0, XcKind::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-    m.cutoff_ry = 80.0;
     m.n_occ = 1;
-    m.xc = XcKind::PADE;
     m.k_mesh[0] = 2;
     m.k_mesh[1] = 1;
     m.k_mesh[2] = 1;
@@ -46,11 +45,10 @@ TEST(CudaGpwStress, MultiKBuildIsOnProductPath) {
 
 TEST(CudaGpwStress, FailClosedUnconvergedState) {
     auto atoms = h2_atoms();
-    ATV::cuda::gpw::GpwDft m;
+    ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
+                             /*cutoff_ry=*/80.0, XcKind::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-    m.cutoff_ry = 80.0;
     m.n_occ = 1;
-    m.xc = XcKind::PADE;
     m.build(atoms);
     ATV::cpu::gpw::GpwResult fake;
     fake.converged = false;

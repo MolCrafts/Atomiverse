@@ -55,12 +55,10 @@ Public surface only — same shape as `gpw-d4-stress` with `d3bj` instead of
 `d4`:
 
 ```cpp
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 200.0;
+cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
 dft.max_iter = 200;
 dft.tol = 1e-6;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::PBE;
 dft.nonperiodic = false;
 dft.d3bj = true;             // exclusive vs d3 / d4 / ts / xdm / mbd
 

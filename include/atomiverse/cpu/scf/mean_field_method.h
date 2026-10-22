@@ -5,8 +5,8 @@
 ///
 /// There is no bag named `SCFSolver` / freestanding integral bag / `SCFConfig`.
 /// Each method is a concrete class; parameters are **constructor arguments**
-/// (e.g. `RHF{BasisSet::STO3G, charge, tol}`); **never** `rhf.basis = …`
-/// after default construction. The only I/O currency is `Frame`. Integral
+/// (e.g. `RHF{BasisSet::STO3G, charge, tol}`), fixed after construction;
+/// SCF knobs are public members. The only I/O currency is `Frame`. Integral
 /// **fields** live as method-private members; engines take
 /// `internal::IntegralView` (non-owning refs).
 ///
@@ -233,9 +233,11 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     friend class GF2;
 
   public:
-    // ── Geometry / basis (inputs from Frame + these members) ──────────
-    BasisSet basis = BasisSet::STO3G;
-    int charge = 0;
+    // ── Identity (constructor arguments, fixed after construction) ────
+    /// @brief Gaussian basis set.
+    const BasisSet basis;
+    /// @brief Molecular charge [e] (electrons = ΣZ − charge).
+    const int charge;
 
     /// @brief Local atom indices treated as ghosts (BSSE counterpoise).
     ///
@@ -578,10 +580,13 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// @throws std::invalid_argument when `dt_fs` is not finite and > 0.
     void set_timestep(double dt_fs) override;
 
-    MeanFieldMethod();
+    /// @brief Fix the method identity; concrete methods set their defaults.
+    /// @param basis Gaussian basis set.
+    /// @param charge Molecular charge [e].
+    MeanFieldMethod(BasisSet basis, int charge);
     ~MeanFieldMethod() override;
     MeanFieldMethod(MeanFieldMethod&&);
-    MeanFieldMethod& operator=(MeanFieldMethod&&);
+    MeanFieldMethod& operator=(MeanFieldMethod&&) = delete;
     MeanFieldMethod(const MeanFieldMethod&) = delete;
     MeanFieldMethod& operator=(const MeanFieldMethod&) = delete;
 

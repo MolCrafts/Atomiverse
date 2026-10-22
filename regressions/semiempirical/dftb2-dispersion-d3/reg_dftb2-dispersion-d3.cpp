@@ -46,7 +46,7 @@ cpu::Frame make_dimer() {
 int main() {
     auto f_off = make_dimer();
     cpu::Evaluate eval_off;
-    cpu::semiempirical::DFTB2 d_off;
+    cpu::semiempirical::DFTB2 d_off{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d_off.boundary = cpu::semiempirical::DftbBoundary::cluster;
@@ -61,7 +61,7 @@ int main() {
 
     auto f_on = make_dimer();
     cpu::Evaluate eval_on;
-    cpu::semiempirical::DFTB2 d_on;
+    cpu::semiempirical::DFTB2 d_on{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d_on.boundary = cpu::semiempirical::DftbBoundary::cluster;

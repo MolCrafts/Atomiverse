@@ -149,14 +149,12 @@ frame.box = cpu::Box::cubic(L);
 
 GpwDft m{{Kind{molrs::Element::H,
                GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-m.cutoff_ry = 100.0;
+               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 100.0, XcKind::PADE};
 m.n_alpha = 2;   // multiplicity 3, 2 valence e⁻
 m.n_beta = 0;
 m.max_iter = 120;
 m.tol = 1e-7;
 m.mix = 0.35;
-m.xc = XcKind::PADE;
 m.local_pp_on_grid = true;
 m.k_mesh[0] = 1;
 m.k_mesh[1] = 1;

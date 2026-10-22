@@ -254,26 +254,29 @@ cpu::semiempirical::AM1 am1_method(const AM1Params& p) {
 /// ionic forces (local Hellmann-Feynman + Ewald + Kleinman-Bylander) from that
 /// one SCF whenever the phase requests them.
 ///
-/// The fifteen members are assigned in the params' DECLARATION order — the
-/// order the codec writes and a hand-built twin spells — so a dropped or
-/// swapped field is a visible diff rather than a silent C++ default. The two
-/// enum mirrors are cast back from their wire integers here, the one place
-/// that knows both the flag-gated enums and the flagless wire struct.
+/// Identity fields go to the constructor; the knobs are assigned in the
+/// params' declaration order, so a dropped or swapped field is a visible diff
+/// rather than a silent C++ default. The two enum mirrors are cast back from
+/// their wire integers here, the one place that knows both the flag-gated
+/// enums and the flagless wire struct.
 ///
 /// @param p Typed plane-wave params (cutoff [Ry], k-mesh, SCF tolerance and
 ///          cap, mixing, functional, spin, smearing [Ry]).
 /// @return The configured method, ready for either registration path.
 cpu::pw::PW pw_method(const PWParams& p) {
-    cpu::pw::PW pw;
-    pw.upf_path = p.upf_path;
-    pw.gth_name = p.gth_name;
-    pw.ecut_ry = p.ecut_ry;
-    pw.k_mesh = p.k_mesh;
+    if (p.upf_path.empty() == p.gth_name.empty())
+        throw std::invalid_argument(
+            "PWParams: set exactly one of upf_path / gth_name");
+    const auto xc = static_cast<cpu::scf::XCType>(p.xc);
+    cpu::pw::PW pw = p.upf_path.empty()
+                         ? cpu::pw::PW(cpu::pw::GthPseudopotential{p.gth_name},
+                                       p.ecut_ry, p.k_mesh, xc)
+                         : cpu::pw::PW(cpu::pw::UpfPseudopotential{p.upf_path},
+                                       p.ecut_ry, p.k_mesh, xc);
     pw.tol = p.tol;
     pw.max_iter = p.max_iter;
     pw.mix_beta = p.mix_beta;
     pw.pulay_depth = p.pulay_depth;
-    pw.xc = static_cast<cpu::scf::XCType>(p.xc);
     pw.spin_polarized = p.spin_polarized;
     pw.multiplicity = p.multiplicity;
     pw.smearing = static_cast<cpu::pw::Smearing>(p.smearing);

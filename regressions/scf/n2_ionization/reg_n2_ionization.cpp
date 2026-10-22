@@ -49,8 +49,7 @@ int main() {
 
     // ── Neutral N2: RHF/6-31G* + orbital observer via Evaluate ──────────
     auto frame = n2_frame();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     auto handle = rhf.result_handle();
@@ -80,11 +79,7 @@ int main() {
 
     // ── Cation N2⁺: UHF, members only (charge / n_alpha / n_beta) ──────
     auto frame_cat = n2_frame();
-    cpu::scf::UHF uhf;
-    uhf.basis = cpu::scf::BasisSet::Pople631Gs;
-    uhf.charge = 1;
-    uhf.n_alpha = 7;
-    uhf.n_beta = 6;
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::Pople631Gs, 7, 6, /*charge=*/1};
     uhf.tol = 1e-12;
     uhf.max_iter = 400;
     uhf.run(frame_cat);

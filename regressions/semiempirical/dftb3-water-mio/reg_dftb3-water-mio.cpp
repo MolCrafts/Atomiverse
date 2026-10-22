@@ -56,8 +56,7 @@ int main() {
     auto frame = make_water();
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB3 dftb3;
-    dftb3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    cpu::semiempirical::DFTB3 dftb3{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb3.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     dftb3.with_forces = false;
     dftb3.scc_tol = 1e-10;
@@ -92,7 +91,7 @@ int main() {
     // own magnitude: the old E_band - (E2 + 2E3) route moved it ~7x |E3|.
     auto frame2 = make_water();
     cpu::Evaluate eval2;
-    cpu::semiempirical::DFTB2 d2;
+    cpu::semiempirical::DFTB2 d2{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d2.boundary = cpu::semiempirical::DftbBoundary::cluster;

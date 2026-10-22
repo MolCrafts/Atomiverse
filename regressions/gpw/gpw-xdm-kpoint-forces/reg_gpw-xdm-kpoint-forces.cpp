@@ -148,16 +148,16 @@ int main() {
     frame.box = cpu::Box::cubic(12.0 / kA2B);
 
     auto make_cfg = [](bool xdm) {
-        GpwDft m({cpu::gpw::Kind{
-            molrs::Element::H, GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-            GthPotential(molrs::Element::H, "GTH-PADE-q1")}});
-        m.cutoff_ry = 100.0;
+        GpwDft m(
+            {cpu::gpw::Kind{molrs::Element::H,
+                            GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
+                            GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
+            100.0, XcKind::PADE);
         m.n_occ = 1;
         m.tol = 1e-8;
         m.max_iter = 60;
         m.nonperiodic = false;
         m.local_pp_on_grid = true;
-        m.xc = XcKind::PADE;
         m.eps_default = 1e-8;
         m.k_mesh[0] = 1;
         m.k_mesh[1] = 1;

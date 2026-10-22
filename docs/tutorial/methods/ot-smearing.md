@@ -132,13 +132,11 @@ frame.box = cpu::Box::cubic(a);
 
 GpwDft ot{{cpu::gpw::Kind{molrs::Element::Na,
                            cpu::gpw::GaussianBasis(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH"),
-                           cpu::gpw::GthPotential(molrs::Element::Na, "GTH-PBE-q9")}}};
-ot.cutoff_ry = 150.0;
+                           cpu::gpw::GthPotential(molrs::Element::Na, "GTH-PBE-q9")}}, 150.0, cpu::gpw::XcKind::PADE};
 ot.n_occ = 9;            // Ne/2 for GTH-PBE-q9 × 2
 ot.max_iter = 200;
 ot.tol = 1e-6;
 ot.eps_default = 1e-7;
-ot.xc = cpu::gpw::XcKind::PADE;
 ot.diis_depth = 6;
 ot.mix = 0.4;
 ot.k_mesh[0] = ot.k_mesh[1] = ot.k_mesh[2] = 2;

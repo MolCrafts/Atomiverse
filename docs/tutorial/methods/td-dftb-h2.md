@@ -85,7 +85,7 @@ h2.span(kAtom_type)[0] = h2.span(kAtom_type)[1] = 1;
 h2.span(kAtom_x)[1] = 0.74;
 h2.box = cpu::Box::cubic(20.0);
 
-cpu::semiempirical::DFTB2 dftb;          // parameters are MEMBERS
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb.scc_tol = 1e-12;
 dftb.max_scc = 120;
 

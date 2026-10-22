@@ -2,7 +2,8 @@
 
 The PW-enabled wheel exposes the same object lifecycle as C++:
 
-``PW`` (members) → ``build(frame)`` → ``run(frame)`` → ``PWResult``.
+``PW(...)`` (identity) → knob members → ``build(frame)`` → ``run(frame)`` →
+``PWResult``.
 
 There is no bag named ``PWConfig`` / ``PWSolver`` and no transient functional
 solve entry point.
@@ -11,10 +12,8 @@ Example::
 
     import atomiverse as av
 
-    pw = av.PW()
-    pw.gth_name = "GTH-PBE-q4"   # analytic GTH for Si; no external file
-    pw.ecut_ry = 30.0
-    pw.k_mesh = 4
+    # analytic GTH for Si; no external file
+    pw = av.PW(gth_name="GTH-PBE-q4", ecut_ry=30.0, k_mesh=4)
     pw.build(frame)
     result = pw.run(frame)
     print(result.energy)  # Ry
@@ -63,14 +62,27 @@ spells 1 Ry = 13.605693 eV — the Quantum ESPRESSO-rounded
 ``cpu::pw::qe_units::rydberg_to_ev``) plus ``energy_ha`` in Hartree, while
 everything written onto the frame is in engine units — eV, eV/Å, eV/Å³.
 
-Knobs beyond the basis
-----------------------
+Constructor arguments (keyword-only, read-only afterwards)
+---------------------------------------------------------
+
+``PW(*, ecut_ry, k_mesh, upf_path="", gth_name="", xc="PBE")``
+
+``ecut_ry`` / ``k_mesh``
+    Wavefunction cutoff [Ry] and Monkhorst-Pack mesh per dimension. Both are
+    required — there is no default basis size.
+
+``upf_path`` / ``gth_name``
+    The pseudopotential; exactly one must be given (see below).
 
 ``xc``
     Exchange-correlation functional by *name* (default ``"PBE"``), the same
-    table ``RKS(functional=...)`` uses: ``"LSDA"``, ``"PBE"``, ``"PBEsol"``,
+    table ``RKS(xc=...)`` uses: ``"LSDA"``, ``"PBE"``, ``"PBEsol"``,
     ``"RevPBE"``, ``"RPBE"``, ``"BLYP"``, ``"OptB88VdW"``, ``"B3LYP"``,
-    ``"PBE0"``, ``"B2PLYP"``. An unknown name raises ``ValueError``.
+    ``"PBE0"``, ``"B2PLYP"``, ``"CAMB3LYP"``. An unknown name raises
+    ``ValueError``.
+
+Knobs beyond the basis
+----------------------
 
 ``spin_polarized`` / ``multiplicity``
     Collinear spin. The default restricted path doubly occupies every band
@@ -94,10 +106,7 @@ Hand the method itself to ``MD.set_evaluator``::
     from atomiverse.md.integrator import VelocityVerlet
     from atomiverse.pw import PW
 
-    pw = PW()
-    pw.gth_name = "GTH-PBE-q4"
-    pw.ecut_ry = 8.0
-    pw.k_mesh = 1
+    pw = PW(gth_name="GTH-PBE-q4", ecut_ry=8.0, k_mesh=1)
     pw.max_iter = 12       # one whole SCF per step — budget it
 
     sim = MD()
@@ -135,7 +144,7 @@ count are applied to every atom in the cell. The ``gth_name`` branch says so
 silently be treated as the UPF's own element throughout. Multi-species
 plane-wave runs are not implemented.
 
-Setting both, or neither, raises. There is no toy/bare-Coulomb fallback —
+Passing both, or neither, raises ``ValueError`` at construction. There is no toy/bare-Coulomb fallback —
 a bare valence-charge potential is not representable in a plane-wave basis
 at any finite cutoff, so it never converged with ``ecut_ry``.
 

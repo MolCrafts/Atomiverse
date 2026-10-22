@@ -124,11 +124,7 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = 10.0;
-method.k_mesh = 1;                 // on the 2×1×1 supercell path
-method.xc = cpu::scf::XCType::LSDA;
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 1, cpu::scf::XCType::LSDA};  // on the 2×1×1 supercell path
 method.smearing = Smearing::fermi_dirac;
 method.degauss = 0.02;             // Ry
 method.extra_bands = 0;            // gapped twin; open metals use > 0

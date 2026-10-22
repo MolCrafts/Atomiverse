@@ -82,9 +82,7 @@ Frame diatomic_co(double r_co) {
 }
 
 Point rm1_on(const Frame& geom) {
-    RM1 rm1;
-    rm1.charge = 0;
-    rm1.multiplicity = 1;
+    RM1 rm1{/*charge=*/0, /*multiplicity=*/1};
     rm1.density_tol = 1.0e-10;
     rm1.max_iter = 400;
     rm1.build(geom);
@@ -123,9 +121,7 @@ double relax_r(Frame (*make)(double), double r, Point* best) {
 }
 
 double max_force(Frame& geom) {
-    RM1 rm1;
-    rm1.charge = 0;
-    rm1.multiplicity = 1;
+    RM1 rm1{/*charge=*/0, /*multiplicity=*/1};
     rm1.density_tol = 1.0e-10;
     rm1.max_iter = 400;
     rm1.build(geom);

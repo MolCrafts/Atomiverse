@@ -95,7 +95,7 @@ final convergence criteria rather than treating this sequence as universal.
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.damping_factor = 0.5;  // retain half the previous density
 rhf.level_shift = 0.2;     // Hartree; 0 disables
 rhf.run(frame);
@@ -166,7 +166,7 @@ switch to CDIIS when \(\max|e|\) falls below a threshold.
 ### Practice
 
 ```cpp
-cpu::scf::UHF uhf(5, 5);
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/5};
 uhf.mixer = cpu::scf::MixerKind::ADIIS_CDIIS;
 uhf.mixer_switch_tol = 1e-2;
 uhf.run(frame);
@@ -204,7 +204,7 @@ Cost per Newton step exceeds one CDIIS extrapolation. Staging: DIIS until
 ### Practice
 
 ```cpp
-cpu::scf::UHF uhf(5, 5);
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/5};
 uhf.soscf = true;
 uhf.soscf_start = 0.25;
 uhf.soscf_max_micro = 12;

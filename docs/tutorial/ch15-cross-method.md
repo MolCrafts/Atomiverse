@@ -91,7 +91,7 @@ sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
 // AM1
 // sim.on(md::Phase::force).add(cpu::semiempirical::AM1{});
 // AIMD
-// sim.on(md::Phase::force).add(cpu::scf::RHF{});
+// sim.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 ```
 
 > **Build flags.** The quantum half of every comparison below needs

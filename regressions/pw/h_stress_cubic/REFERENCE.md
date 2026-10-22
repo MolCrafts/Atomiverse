@@ -9,7 +9,7 @@ analytic decomposition is a follow-on.
 
 ## System
 
-One H at the origin of a cubic cell \(L=6\) Å. `gth_name = "GTH-PBE-q1"` (analytic Goedecker–Teter–Hutter
+One H at the origin of a cubic cell \(L=6\) Å. `GthPseudopotential{"GTH-PBE-q1"}` (analytic Goedecker–Teter–Hutter
 pseudopotential; the bare-Coulomb "toy" potential this case originally used has
 been deleted from the tree), \(E_\mathrm{cut}=5\) Ry,
 Γ-only, short SCF.

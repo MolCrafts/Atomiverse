@@ -43,10 +43,9 @@ namespace scf {
 /// dense ERI (`compute_eri`, on by default here).
 class GHF : public MeanFieldMethod<GHF> {
   public:
-    /// @brief Total electron count N (dimensionless; must be set before
-    ///        `run`, else std::invalid_argument — the spinor aufbau fills
+    /// @brief Total electron count N (dimensionless; the spinor aufbau fills
     ///        the lowest N of the 2n spinors with occupation 1 each).
-    int n_electrons = 0;
+    const int n_electrons;
 
     /// @brief Collinearity-breaking initial-guess rotation [radians]. The
     ///        guess is the noncollinear-magnetism standard "charge density
@@ -62,15 +61,12 @@ class GHF : public MeanFieldMethod<GHF> {
     ///        saddle's basin.
     double guess_spin_rotation = 0.2;
 
-    /// @brief Construct with the GHF defaults (generalized HF; Hcore initial
-    ///        guess; 0.7 density damping; DIIS capped at 6 vectors and
-    ///        started at iteration 5; energy tolerance 1e-8 Ha; stored dense
-    ///        ERI on; no nested-force write). Set `n_electrons` before
-    ///        `run`.
-    GHF();
-    /// @brief Construct with an explicit electron count.
-    /// @param n_electrons Total electrons N (dimensionless).
-    explicit GHF(int n_electrons);
+    /// @brief Construct GHF (Hcore guess, 0.7 damping, DIIS 6 vectors from
+    ///        iteration 5, energy tolerance 1e-8 Ha, stored dense ERI, no
+    ///        nested-force write).
+    /// @param basis Basis set.
+    /// @param n_electrons Total electrons N (dimensionless, > 0).
+    GHF(BasisSet basis, int n_electrons);
     std::string name() const { return "ghf"; }
 
   protected:

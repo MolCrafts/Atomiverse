@@ -32,12 +32,10 @@ diagonalization (inside `GPWEvaluator::launch`), and multi-k OT.
 ## Usage
 
 ```cpp
-cpu::gpw::GpwDft dft{{H_kind}};
-dft.cutoff_ry = 100.0;
+cpu::gpw::GpwDft dft{{H_kind}, 100.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 60;
 dft.tol = 1e-5;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.n_alpha = 1;               // collinear UKS path
 dft.n_beta = 1;
 dft.k_mesh[2] = 2;             // 1×1×2 Monkhorst–Pack

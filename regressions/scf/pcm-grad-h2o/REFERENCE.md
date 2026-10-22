@@ -70,8 +70,8 @@ At SCF the orbital response cancels under the solvent Fock Brillouin condition;
 2. \(\partial\Delta G_\mathrm{el}/\partial R|_P\) by central FD of a rebuilt
    cavity + unit-charge AO potentials at fixed \(P\) (h = 10⁻⁴ Bohr).
 
-Public API: `RHF` members `solvent_eps`, `solvent_radii_scale`, `solvent_x`
-then `rhf.forces(frame)` — no `*Config` bag.
+Public API: `WithSolvent<RHF>{std::move(rhf), SolventModel::CPCM, eps}`
+(knobs `radii_scale`, `x`) then `sol.forces(frame)` — no `*Config` bag.
 
 Refs: Barone & Cossi, *J. Phys. Chem. A* **102**, 1995 (1998),
 DOI 10.1021/jp9716997; Lange & Herbert, *J. Chem. Phys.* **133**, 244111 (2010).

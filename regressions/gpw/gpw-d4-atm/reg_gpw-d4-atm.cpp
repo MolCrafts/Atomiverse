@@ -57,13 +57,12 @@ int main() {
 
     frame.box = cpu::Box::cubic(12.0);
 
-    GpwDft gpw{{O, H}};
-    gpw.cutoff_ry = 200.0; // e_disp is geometry-only; short SCF only
+    // Low cutoff: e_disp is geometry-only; short SCF only.
+    GpwDft gpw{{O, H}, 200.0, XcKind::PBE};
     gpw.n_occ = 8;
     gpw.max_iter = 8;
     gpw.tol = 1e-6;
     gpw.mix = 0.4;
-    gpw.xc = XcKind::PBE;
     gpw.nonperiodic = false;
     gpw.d4 = true;
     gpw.d4_atm = true;

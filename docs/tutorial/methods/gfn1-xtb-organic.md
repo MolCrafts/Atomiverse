@@ -13,7 +13,7 @@
 
 First-generation Grimme **GFN1-xTB** total energy for isolated methane on the
 organic H/C/N/O static tables. Public path is concrete
-`cpu::semiempirical::GFN1` (members for SCC / charge / multiplicity; no
+`cpu::semiempirical::GFN1{charge, multiplicity}` (members for SCC; no
 `*Config` bag, no `make_*` / `build_*`), bound into `cpu::Evaluate` at
 `evaluate::Phase::evaluate`. Native tables only — **no** `libxtb`. Product
 gate `reg_gfn1-xtb-organic` asserts

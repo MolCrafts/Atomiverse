@@ -172,12 +172,10 @@ int main() {
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-    cpu::gpw::GpwDft eval_method{{O, H}};
-    eval_method.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft eval_method{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     eval_method.max_iter = 120;
     eval_method.tol = 1e-6;
     eval_method.mix = 0.4;
-    eval_method.xc = cpu::gpw::XcKind::PBE;
     eval_method.nonperiodic = false;
     eval_method.d3bj = true;
     cpu::gpw::GPWEvaluator eval(std::move(eval_method));
@@ -245,13 +243,11 @@ int main() {
     }
 
     // ── (4) Decisive dual gate: analytic vs multi-SCF strain-FD ───────────
-    cpu::gpw::GpwDft method{{O, H}};
-    method.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft method{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     method.n_occ = 8; // 2×O q6 + 4×H q1 = 16 e → 8 doubly occupied
     method.max_iter = 120;
     method.tol = 1e-6;
     method.mix = 0.4;
-    method.xc = cpu::gpw::XcKind::PBE;
     method.nonperiodic = false;
     method.local_pp_on_grid = true;
     method.d3bj = true;

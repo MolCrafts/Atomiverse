@@ -6,7 +6,7 @@ capability loop, 2026-07-31.)*
 | Field | Value |
 | ----- | ----- |
 | Regression | None standing (end-to-end case removed) |
-| Public API | `cpu::md::MD` + `cpu::md::VelocityVerlet` + `cpu::gpw::GPWEvaluator{GpwDft{kinds} with cutoff_ry, …, k_mesh = {1,1,2}, k_time_reversal = false; compute_forces=true}`; step-0 forces seeded by `cpu::single_point(frame, gpw)` |
+| Public API | `cpu::md::MD` + `cpu::md::VelocityVerlet` + `cpu::gpw::GPWEvaluator{GpwDft{kinds, cutoff_ry, xc} with k_mesh = {1,1,2}, k_time_reversal = false; compute_forces=true}`; step-0 forces seeded by `cpu::single_point(frame, gpw)` |
 | Oracle | **CP2K 2026.1** Quickstep AIMD (`RUN_TYPE MD` + `&KPOINTS`), offline via CP2K oracle |
 
 ## Summary
@@ -52,8 +52,7 @@ arguments / members of the concrete method (no `*Config` bags).
 cpu::Frame frame(2);                      // periodic H2, cubic 12 Bohr cell
 // … fill kAtom_x/y/z, kAtom_type (Z=1), velocities; frame.box = …
 
-cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry         = 300.0;
+cpu::gpw::GpwDft dft{kinds, 300.0, cpu::gpw::XcKind::PADE};
 dft.max_iter          = 200;
 dft.mix               = 0.3;
 dft.k_mesh[2]         = 2;                // 1×1×2

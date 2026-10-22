@@ -18,8 +18,7 @@ E_{\mathrm{xc}}
 Concrete public API (no Config bag, no factory):
 
 ```cpp
-cpu::scf::RKS rks(cpu::scf::XCType::B2PLYP);
-rks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::scf::XCType::B2PLYP);
 const double a_c = cpu::scf::hybrid_pt2_fraction(cpu::scf::XCType::B2PLYP);
 rks.mp2_os_scale = a_c;
 rks.mp2_ss_scale = a_c;

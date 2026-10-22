@@ -71,8 +71,9 @@ void PW::validate_members() const {
     if (xc != cpu::scf::XCType::LSDA && xc != cpu::scf::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::PW::run: xc has no device path — only XCType::LSDA "
-            "(Slater + VWN5) and XCType::PBE are implemented on the GPU. Set "
-            "pw.xc to one of those, or run this functional on cpu::pw::PW.");
+            "(Slater + VWN5) and XCType::PBE are implemented on the GPU. "
+            "Construct with one of those, or run this functional on "
+            "cpu::pw::PW.");
     // Collinear UKS: LSDA and true spin-GGA PBE are landed; other XC throw.
     if (spin_polarized && xc != cpu::scf::XCType::LSDA
         && xc != cpu::scf::XCType::PBE)
@@ -114,14 +115,8 @@ void PW::validate_members() const {
 }
 
 void PW::build(const cpu::Frame& reference) {
-    // Same envelope as cpu::pw::PW: exactly one pseudopotential source,
-    // validated up front so a bad file or unknown GTH name fails here.
-    if (upf_path.empty() == gth_name.empty())
-        throw std::invalid_argument(
-            "cuda::pw::PW::build: set exactly one of upf_path (a "
-            "norm-conserving UPF file) or gth_name (an in-tree analytic GTH "
-            "parameterization such as \"GTH-PBE-q4\"). A plane-wave run has "
-            "no default pseudopotential.");
+    // Validate the pseudopotential up front so a bad file or unknown GTH
+    // name fails here.
     if (!upf_path.empty()) {
         (void)cpu::pw::internal::read_upf_v1(upf_path);
     } else {
@@ -636,10 +631,6 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     // Lazy build on a non-const view of the same public members. build() only
     // sets built_ and validates the PP source — method is const, so replicate
     // the PP gate without mutating the caller's object.
-    if (method.upf_path.empty() == method.gth_name.empty())
-        throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: set exactly one of upf_path or "
-            "gth_name (same envelope as PW::build)");
     if (!method.upf_path.empty()) {
         (void)cpu::pw::internal::read_upf_v1(method.upf_path);
     } else {
@@ -989,10 +980,6 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
         throw std::invalid_argument(
             "cuda::pw::pw_stress: non-positive cell volume");
 
-    if (method.upf_path.empty() == method.gth_name.empty())
-        throw std::invalid_argument(
-            "cuda::pw::pw_stress: set exactly one of upf_path or gth_name "
-            "(same envelope as PW::build)");
     if (!method.upf_path.empty()) {
         (void)cpu::pw::internal::read_upf_v1(method.upf_path);
     } else {

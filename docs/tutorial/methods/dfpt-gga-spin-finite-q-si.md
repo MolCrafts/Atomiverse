@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `dfpt-gga-spin-finite-q-si` |
-| Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` + `PW.spin_polarized = true` |
+| Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW{…, XCType::PBE}` + `PW.spin_polarized = true` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **finite-q × spin × pure GGA** ✓ (`reg_dfpt-gga-spin-finite-q-si`) |
 | Dep | `dfpt-gga-spin-si` ✓ (Γ, spin × PBE); `dfpt-gga-finite-q-si` ✓ (X supercell, restricted PBE) |
 
@@ -73,11 +73,7 @@ live CP2K in ctest.
 ## Implementation
 
 ```cpp
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry  = 10.0;
-method.k_mesh   = 1;
-method.xc       = cpu::scf::XCType::PBE;   // pure GGA kernel
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 1, cpu::scf::XCType::PBE};  // pure GGA kernel
 method.spin_polarized = true;              // joint spin × GGA response
 method.multiplicity   = 1;
 method.tol      = 1e-8;

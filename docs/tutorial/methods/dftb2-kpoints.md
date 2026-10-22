@@ -190,7 +190,7 @@ for (int i = 0; i < 2; ++i) {
 frame.box = cpu::Box::orthorhombic(2.8, 12.0, 12.0);
 
 cpu::Evaluate eval;
-cpu::semiempirical::DFTB2 dftb;  // sk_set = MioSketch (default)
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb.with_forces = false;       // multi-k is energy-only
 dftb.scc_tol = 1e-10;
 dftb.k_mesh = {4, 1, 1};        // Monkhorst–Pack along chain

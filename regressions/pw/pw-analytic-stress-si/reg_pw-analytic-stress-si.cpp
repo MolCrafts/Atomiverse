@@ -60,13 +60,10 @@ int main() {
     cell(2, 2) = 0;
     frame.box.set_cell(cell);
 
-    PW method;
-    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
-    method.ecut_ry = kEcutRy;
-    method.k_mesh = kMesh;
+    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
+              kMesh, cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
-    method.xc = cpu::scf::XCType::LSDA;
 
     const auto san = method.stress(frame); // σ [eV/Å³]
     for (int v = 0; v < 6; ++v) {

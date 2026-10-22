@@ -115,8 +115,7 @@ Recorded 2026-07-23 (login node, `OMP_NUM_THREADS=1`, median of 5):
   \(E_{\mathrm{corr}}\) (and \(E_{\mathrm{tot}}\), \(E^{(2)}\), \(E^{(3)}\))
   pins — no live PySCF, no reading this file at ctest time. Public path:
   ```cpp
-  cpu::scf::RHF rhf;
-  rhf.basis = cpu::scf::BasisSet::STO3G;
+  cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
   rhf.tol = 1e-12;
   auto r = rhf.mp3(frame);   // r.e_corr = E2+E3; r.e_corr_mp2 / e_corr_mp3
   ```

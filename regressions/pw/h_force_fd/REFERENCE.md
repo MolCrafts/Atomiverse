@@ -16,7 +16,7 @@ numerical check.
 ## System
 
 One hydrogen atom (Z=1) at the origin of a cubic cell \(L=6\) Å. Settings:
-\(E_\mathrm{cut}=5\) Ry, Γ-only k-mesh, `max_iter=8`, `gth_name = "GTH-PBE-q1"`
+\(E_\mathrm{cut}=5\) Ry, Γ-only k-mesh, `max_iter=8`, `GthPseudopotential{"GTH-PBE-q1"}`
 (analytic Goedecker–Teter–Hutter pseudopotential). The bare-Coulomb "toy"
 local potential this case originally used has been deleted from the tree.
 

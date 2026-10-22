@@ -2256,10 +2256,9 @@ T* d_alloc(std::size_t n) {
 
 /// Map CUDA product members onto a CPU shell for host force/stress assembly.
 cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
-    cpu::gpw::GpwDft c;
+    cpu::gpw::GpwDft c(m.kinds, m.cutoff_ry, m.xc);
     cpu::gpw::internal::GpwDftAccess::set_cell(
         c, {m.cell[0], m.cell[1], m.cell[2]});
-    c.cutoff_ry = m.cutoff_ry;
     c.ngrids = m.ngrids;
     c.rel_cutoff = m.rel_cutoff;
     c.n_occ = m.n_occ;
@@ -2272,7 +2271,6 @@ cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
     c.diis_depth = m.diis_depth;
     c.lindep_threshold = m.lindep_threshold;
     c.level_shift = m.level_shift;
-    c.xc = m.xc;
     c.nonperiodic = m.nonperiodic;
     c.local_pp_on_grid = m.local_pp_on_grid;
     c.use_ot = m.use_ot;

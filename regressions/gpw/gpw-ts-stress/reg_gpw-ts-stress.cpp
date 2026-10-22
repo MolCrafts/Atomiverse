@@ -152,12 +152,10 @@ int main() {
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-    cpu::gpw::GpwDft dft{{O, H}};
-    dft.cutoff_ry = 120.0;
+    cpu::gpw::GpwDft dft{{O, H}, 120.0, cpu::gpw::XcKind::PBE};
     dft.max_iter = 120;
     dft.tol = 1e-6;
     dft.mix = 0.4;
-    dft.xc = cpu::gpw::XcKind::PBE;
     dft.nonperiodic = false;
     dft.ts = true;
     cpu::gpw::GPWEvaluator eval(std::move(dft));
@@ -190,13 +188,11 @@ int main() {
 
     // ── C: multi-SCF strain-FD oracle on the same method ──────────────────
     auto make_cfg = [&](bool ts) {
-        cpu::gpw::GpwDft m{{O, H}};
-        m.cutoff_ry = 120.0;
+        cpu::gpw::GpwDft m{{O, H}, 120.0, cpu::gpw::XcKind::PBE};
         m.n_occ = 8;
         m.max_iter = 120;
         m.tol = 1e-6;
         m.mix = 0.4;
-        m.xc = cpu::gpw::XcKind::PBE;
         m.nonperiodic = false;
         m.local_pp_on_grid = true;
         m.ts = ts;

@@ -179,13 +179,9 @@ cpu::Frame make_si_diamond(double a_ang, double delta_frac_a3) {
     return frame;
 }
 
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = kEcutRy;
-method.k_mesh = kMeshScf;
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, kEcutRy, kMeshScf, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
-method.xc = cpu::scf::XCType::LSDA;
 method.spin_polarized = true;
 method.multiplicity = 1;          // N↑ = N↓ = 4 (8 valence e⁻)
 

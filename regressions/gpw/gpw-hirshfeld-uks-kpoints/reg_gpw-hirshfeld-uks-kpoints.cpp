@@ -73,18 +73,19 @@ int main() {
 
     cpu::Frame frame = o2_triplet(10.0); // Å
 
-    GpwDft gpw{{cpu::gpw::Kind{
-        molrs::Element::O,
-        cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-SR-GTH"),
-        cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")}}};
-    gpw.cutoff_ry = 120.0;
+    GpwDft gpw{
+        {cpu::gpw::Kind{
+            molrs::Element::O,
+            cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-SR-GTH"),
+            cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")}},
+        120.0,
+        XcKind::PBE};
     gpw.n_alpha = 7;
     gpw.n_beta = 5;
     gpw.max_iter = 80;
     gpw.tol = 1e-6;
     gpw.mix = 0.45;
     gpw.diis_depth = 10;
-    gpw.xc = XcKind::PBE;
     gpw.mbd = true;
     gpw.hirshfeld = true;
     // 2×2×1 MP + TR → multi-k (n_kpts = 2). 2×1×1 folds to Γ under TR.

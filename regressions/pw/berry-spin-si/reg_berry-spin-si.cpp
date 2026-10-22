@@ -67,13 +67,10 @@ int main() {
     constexpr double kSymTol = 0.05;
     constexpr double kBornTol = 0.5;
 
-    PW method;
-    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
-    method.ecut_ry = kEcutRy;
-    method.k_mesh = kMeshScf;
+    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
+              kMeshScf, cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
-    method.xc = cpu::scf::XCType::LSDA;
     method.spin_polarized = true;
     method.multiplicity = 1; // N↑ = N↓ = 4 for 8 valence electrons
 

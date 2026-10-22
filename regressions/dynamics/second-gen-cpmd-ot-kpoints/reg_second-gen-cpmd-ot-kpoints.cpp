@@ -57,12 +57,12 @@ int main() {
         fa.box = cpu::Box::cubic(L_bohr * units::kBohrInAngstrom);
 
         auto make = [&](bool ot) {
-            cpu::gpw::GpwDft m{{cpu::gpw::Kind{molrs::Element::H, bH, pH}}};
-            m.cutoff_ry = 100.0;
+            cpu::gpw::GpwDft m{{cpu::gpw::Kind{molrs::Element::H, bH, pH}},
+                               100.0,
+                               cpu::gpw::XcKind::PADE};
             m.n_occ = 1;
             m.max_iter = 200;
             m.tol = 1e-7;
-            m.xc = cpu::gpw::XcKind::PADE;
             m.k_mesh[0] = 1;
             m.k_mesh[1] = 1;
             m.k_mesh[2] = 2;
@@ -126,8 +126,7 @@ int main() {
     constexpr double rmin = 0.4;
     constexpr double rmax = 1.5;
 
-    cpu::gpw::GpwDft dft{{H}};
-    dft.cutoff_ry = 100.0;
+    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;

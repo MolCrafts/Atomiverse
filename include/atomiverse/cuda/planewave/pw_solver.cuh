@@ -26,11 +26,8 @@
 /// `cpu::pw::PW` under an MPI launcher.
 ///
 /// @code
-///   cuda::pw::PW pw;
-///   pw.upf_path = "Si_lda_nc.upf";
-///   pw.ecut_ry = 15.0;
-///   pw.k_mesh = 2;
-///   pw.xc = cpu::scf::XCType::LSDA;   // or XCType::PBE (the default)
+///   cuda::pw::PW pw{cpu::pw::UpfPseudopotential{"Si_lda_nc.upf"},
+///                   /*ecut_ry=*/15.0, /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame);   // energy [Ry] / energy_ha [Ha]
 /// @endcode
@@ -40,7 +37,9 @@
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 #include <array>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ATV {
@@ -61,18 +60,21 @@ using Smearing = ::ATV::cpu::pw::Smearing;
 /// each `run()`, so the object is safe to reuse across AIMD / optimize steps.
 class PW {
   public:
-    /// @brief Norm-conserving UPF pseudopotential file. Mutually exclusive
-    ///        with `gth_name`; exactly one must be set.
-    std::string upf_path;
-    /// @brief In-tree analytic GTH parameterization, e.g. "GTH-PBE-q4".
-    ///        Needs no external file. Mutually exclusive with `upf_path`;
-    ///        leaving both empty throws — there is no default
-    ///        pseudopotential. Same surface as `cpu::pw::PW`.
-    std::string gth_name;
+    // ── Identity (constructor arguments, fixed after construction) ────
+    /// @brief UPF file path; empty when a GTH table entry is used.
+    const std::string upf_path;
+    /// @brief GTH table entry; empty when a UPF file is used.
+    const std::string gth_name;
     /// @brief Wavefunction cutoff [Ry].
-    double ecut_ry = 30.0;
+    const double ecut_ry;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
-    int k_mesh = 4;
+    const int k_mesh;
+    /// @brief Exchange–correlation functional. `XCType::LSDA` and
+    ///        `XCType::PBE` have device paths; `run()` throws for anything
+    ///        else (including PBEsol/revPBE/RPBE).
+    const cpu::scf::XCType xc;
+
+    // ── Knobs ──────────────────────────────────────────────────────────
     /// @brief SCF tolerance on the density-change L2 norm (dimensionless).
     ///
     /// This is the SCF (outer) tolerance only. The device block-Davidson
@@ -85,15 +87,6 @@ class PW {
     double mix_beta = 0.7;
     /// @brief Pulay mixing history window (dimensionless).
     int pulay_depth = 5;
-    /// @brief Exchange–correlation functional.
-    ///
-    /// `XCType::LSDA` (Slater exchange + VWN5 correlation) and `XCType::PBE`
-    /// (PBE GGA over a PW92 base) have device paths. The default matches
-    /// `cpu::pw::PW` deliberately: identical user code computes the same
-    /// functional on both backends. `run()` throws for anything else,
-    /// including the PBE-family variants (PBEsol/revPBE/RPBE) whose
-    /// constants the device kernel does not carry.
-    cpu::scf::XCType xc = cpu::scf::XCType::PBE;
     /// @brief Collinear spin-polarized KS (fixed occupations). Device path
     ///        supports `XCType::LSDA` and true spin-GGA `XCType::PBE`.
     bool spin_polarized = false;
@@ -112,10 +105,34 @@ class PW {
     ///        Fixed-occupation runs ignore this (solve \(n_e/2\) bands).
     int extra_bands = 4;
 
-    PW() = default;
+    /// @brief Plane-wave DFT from a UPF pseudopotential file (same
+    ///        signature as `cpu::pw::PW`).
+    /// @param pp Pseudopotential file.
+    /// @param ecut_ry Wavefunction cutoff [Ry].
+    /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
+    /// @param xc Exchange–correlation functional.
+    PW(cpu::pw::UpfPseudopotential pp, double ecut_ry, int k_mesh,
+       cpu::scf::XCType xc = cpu::scf::XCType::PBE)
+        : upf_path(std::move(pp.path)), ecut_ry(ecut_ry), k_mesh(k_mesh),
+          xc(xc) {
+        if (upf_path.empty())
+            throw std::invalid_argument("cuda::pw::PW: empty UPF path");
+    }
+    /// @brief Plane-wave DFT from an in-tree GTH pseudopotential.
+    /// @param pp GTH table entry.
+    /// @param ecut_ry Wavefunction cutoff [Ry].
+    /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
+    /// @param xc Exchange–correlation functional.
+    PW(cpu::pw::GthPseudopotential pp, double ecut_ry, int k_mesh,
+       cpu::scf::XCType xc = cpu::scf::XCType::PBE)
+        : gth_name(std::move(pp.name)), ecut_ry(ecut_ry), k_mesh(k_mesh),
+          xc(xc) {
+        if (gth_name.empty())
+            throw std::invalid_argument("cuda::pw::PW: empty GTH name");
+    }
     ~PW() = default;
     PW(PW&&) noexcept = default;
-    PW& operator=(PW&&) noexcept = default;
+    PW& operator=(PW&&) = delete;
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 

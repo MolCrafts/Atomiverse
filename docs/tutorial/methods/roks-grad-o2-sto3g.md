@@ -79,8 +79,7 @@ frame.span(kAtom_z)[0] = 0.0;
 frame.span(kAtom_z)[1] = 1.2075;
 frame.box = cpu::Box::cubic(20.0);
 
-cpu::scf::ROKS roks(/*n_alpha=*/9, /*n_beta=*/7, cpu::scf::XCType::LSDA);
-roks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROKS roks{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7, cpu::scf::XCType::LSDA};
 roks.tol = 1e-12;
 roks.max_iter = 200;
 const cpu::scf::GradientResult res = roks.forces(frame);

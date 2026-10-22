@@ -18,7 +18,7 @@ shipped `vdw_df` (post-SCF DRSLL on the final density). This product pin uses
 the same **periodic water-dimer cell** as `gpw-vdw-df-ice` / `gpw-rvv10-ice`
 (12 Å cubic, ice-relevant H-bonded pair — not bulk ice Ih).
 
-Public surface: enum member `xc = XcKind::OptB88VdW` and bool `vdw_df` on
+Public surface: `XcKind::OptB88VdW` as the `xc` constructor argument and bool member `vdw_df` on
 `cpu::gpw::GpwDft` (no `*Config` bag). Nonlocal
 energy is reported on `GpwResult::e_disp` [Hartree] and folded into `e_total`.
 Public Frame energy is eV (`frame.meta[kEnergy]`). Wall ratio is
@@ -121,13 +121,11 @@ using ATV::cpu::gpw::XcKind;
 frame.box = ATV::cpu::Box::cubic(12.0);   // [Å]
 // Kind O / H: DZVP-MOLOPT-SR-GTH + GTH-PBE-q6 / GTH-PBE-q1
 
-GpwDft gpw{{O, H}};
-gpw.cutoff_ry = 200.0;
+GpwDft gpw{{O, H}, 200.0, XcKind::OptB88VdW};
 gpw.n_occ = 8;         // 16 valence e⁻ → 8 doubly occupied
 gpw.max_iter = 40;
 gpw.tol = 1e-7;
 gpw.mix = 0.4;
-gpw.xc = XcKind::OptB88VdW;
 gpw.nonperiodic = false;
 gpw.vdw_df = true;     // DRSLL nonlocal; exclusive vs d3/d3bj/d4/ts/mbd/…
 
@@ -141,9 +139,8 @@ Driver path (component binding the same method):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 200.0;  dft.max_iter = 40;  dft.tol = 1e-7;  dft.mix = 0.4;
-dft.xc = ATV::cpu::gpw::XcKind::OptB88VdW;
+ATV::cpu::gpw::GpwDft dft{kinds, 200.0, ATV::cpu::gpw::XcKind::OptB88VdW};
+dft.max_iter = 40;  dft.tol = 1e-7;  dft.mix = 0.4;
 dft.nonperiodic = false;
 dft.vdw_df = true;
 ATV::cpu::gpw::GPWEvaluator eval(std::move(dft));

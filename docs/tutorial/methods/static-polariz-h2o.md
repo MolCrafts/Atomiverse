@@ -16,8 +16,7 @@ and \(-\partial^2 E/\partial F^2\).
 ## Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.run(frame);
 auto alpha = cpu::scf::Polarizability<cpu::scf::RHF>{rhf}.run(); // 3×3 [a.u.]
 ```

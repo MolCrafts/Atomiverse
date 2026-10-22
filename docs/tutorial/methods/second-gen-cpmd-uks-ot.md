@@ -157,12 +157,10 @@ const cpu::gpw::Kind O{
 
 constexpr double dt = 0.5; // fs — BOMD-class step (not classical CP dt)
 constexpr int corrector_budget = 5;
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 200.0;
+cpu::gpw::GpwDft dft{{O}, 200.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 80;
 dft.tol = 1e-5;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.nonperiodic = true;
 dft.n_alpha = 7; // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;

@@ -1,7 +1,7 @@
 /// @file examples/15_am1.cpp
 /// @brief AM1 semiempirical single-point, force check, and short Minimize.
 ///
-/// Teaches: Semiempirical kind + AM1Evaluator (no SE Driver); energy, ΔHf,
+/// Teaches: the AM1 method mounted directly in a Driver slot; energy, ΔHf,
 /// nuclear forces (a central finite difference of the energy at fixed
 /// converged density); geometry step on Minimize. See docs/tutorial/ch17.
 ///
@@ -20,7 +20,6 @@
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/scf/methods.h"
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 
 namespace {
@@ -69,10 +68,10 @@ int main() {
 
     // ── 1. Low-level solver: energy + heat of formation ───────────────
     {
-        cpu::semiempirical::AM1Solver solver;
-        solver.build(frame);
-        const auto& r = solver.run(frame);
-        ATV_INFO("AM1Solver: converged={}  E={:.6f} eV  ΔHf={:.3f} kcal/mol  "
+        cpu::semiempirical::AM1 method;
+        method.build(frame);
+        const auto& r = method.run(frame);
+        ATV_INFO("AM1: converged={}  E={:.6f} eV  ΔHf={:.3f} kcal/mol  "
                  "iters={}",
                  r.converged, r.total_energy_ev, r.heat_of_formation_kcal_mol,
                  r.iterations);
@@ -81,8 +80,7 @@ int main() {
     // ── 2. Evaluate + forces (public Component path) ──────────────────
     {
         cpu::Evaluate eval;
-        eval.on(evaluate::Phase::evaluate)
-            .add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+        eval.on(evaluate::Phase::evaluate).add(cpu::semiempirical::AM1{});
         eval.build();
         eval.run(frame);
         ATV_INFO("Evaluate: E={:.6f} eV  max|F|={:.4f} eV/Å  q_O={:.4f}",
@@ -98,15 +96,13 @@ int main() {
         cpu::minimizer::Minimize opt;
         opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.02, 8});
         opt.add_criterion(cpu::ForceConverged{0.5, 0.3, 0.5, 0.3, 1e-3});
-        opt.on(minimizer::Phase::force)
-            .add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+        opt.on(minimizer::Phase::force).add(cpu::semiempirical::AM1{});
         opt.build();
         opt.run(frame, 20);
 
         // Re-evaluate for final E/F on Frame.
         cpu::Evaluate eval;
-        eval.on(evaluate::Phase::evaluate)
-            .add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+        eval.on(evaluate::Phase::evaluate).add(cpu::semiempirical::AM1{});
         eval.build();
         eval.run(frame);
 

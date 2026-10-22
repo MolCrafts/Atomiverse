@@ -19,8 +19,7 @@ gradient at PySCF AO/dAO integrals on the pinned density, FD-cross-checked.
 ## Practice
 
 ```cpp
-cpu::scf::GHF ghf;
-ghf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::GHF ghf{cpu::scf::BasisSet::STO3G, /*n_electrons=*/3};
 // equilateral side 1.0 Å; Néel guess as in regression
 ghf.run(frame);
 auto g = ghf.forces(frame);   // or gradient API used in reg — [eV/Å] on Frame path

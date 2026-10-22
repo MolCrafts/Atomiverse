@@ -79,16 +79,15 @@ BccParameterSet = _cpp.BccParameterSet
 #:
 #: Example::
 #:
-#:     d = atv.DFTB2()
+#:     d = atv.DFTB2(atv.DftbSkSet.mio)
 #:     d.boundary = atv.DftbBoundary.lattice
 #:     d.k_mesh = (3, 3, 3)
 #:     forces = d.forces(frame)      # (N, 3) [eV/Å]; energy on frame.meta
 #:
 #: Open shell (triplet O₂, DFTB+ ``ShellResolvedSpin = No``)::
 #:
-#:     d = atv.DFTB2()
+#:     d = atv.DFTB2(atv.DftbSkSet.mio, multiplicity=3)
 #:     d.boundary = atv.DftbBoundary.cluster
-#:     d.multiplicity = 3
 #:     d.spin_w_ha = atv.kDftbSpinConstantsPbeHa
 DFTB2 = _cpp.DFTB2
 
@@ -97,9 +96,9 @@ DFTB2 = _cpp.DFTB2
 #: box is NOT a way to get an isolated molecule once γ is Ewald-summed.
 DftbBoundary = _cpp.DftbBoundary
 
-#: Which transcribed Slater-Koster set DFTB2 / DFTB3 uses
-#: (``unset``, ``mio``, or ``threeob``). DFTB2 defaults to ``mio``;
-#: ``unset`` is the DFTB3 sentinel and throws from launch until assigned.
+#: Which transcribed Slater-Koster set DFTB2 uses (``unset``, ``mio``, or
+#: ``threeob``) — the required first argument of ``DFTB2(sk_set, charge=0,
+#: multiplicity=1)``. ``unset`` is a sentinel that throws from launch.
 DftbSkSet = _cpp.DftbSkSet
 
 #: One element's shell-resolved collinear spin constants \(W^A_{ll'}\) [Ha].

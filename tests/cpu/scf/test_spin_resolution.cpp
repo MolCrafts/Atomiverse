@@ -55,17 +55,14 @@ TEST(SpinResolution, RejectsParityMismatch) {
 }
 
 TEST(UHF, OccupationMismatchThrows) {
-    auto frame = make_water(); // 10 e-
-    cpu::scf::UHF uhf(5, 4);   // sum 9
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    auto frame = make_water();                          // 10 e-
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, 5, 4}; // sum 9
     EXPECT_THROW(uhf.run(frame), std::invalid_argument);
 }
 
 TEST(RHF, OddElectronThrows) {
     auto frame = make_water();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.charge = 1; // 9 electrons
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/1}; // 9 electrons
     EXPECT_THROW(rhf.run(frame), std::invalid_argument);
 }
 

@@ -54,8 +54,7 @@ int check_h2() {
     frame.span(kAtom_z)[1] = 0.74;
     frame.box = cpu::Box::cubic(20.0);
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-10;
     rhf.max_iter = 50;
     rhf.run(frame);
@@ -111,8 +110,7 @@ int check_h2o() {
     const std::array<double, 3> mid2 = {
         0.5 * (O[0] + H2[0]), 0.5 * (O[1] + H2[1]), 0.5 * (O[2] + H2[2])};
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-10;
     rhf.max_iter = 100;
     rhf.run(frame);

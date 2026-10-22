@@ -16,25 +16,15 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-UHF::UHF() {
+UHF::UHF(BasisSet basis_in, int na, int nb, int charge_in, double tol_in,
+         int max_iter_in)
+    : MeanFieldMethod<UHF>(basis_in, charge_in), n_alpha(na), n_beta(nb) {
     spin_ = SpinType::Unrestricted;
     method_ = MeanFieldType::HF;
     init_guess = InitGuess::Hcore;
     damping_factor = 0.7;
     diis_max_vectors = 6;
     diis_start_iter = 5;
-    tol = 1e-8;
-}
-UHF::UHF(int na, int nb) : UHF() {
-    n_alpha = na;
-    n_beta = nb;
-}
-
-UHF::UHF(BasisSet basis_in, int na, int nb, int charge_in, double tol_in,
-         int max_iter_in)
-    : UHF(na, nb) {
-    basis = basis_in;
-    charge = charge_in;
     tol = tol_in;
     max_iter = max_iter_in;
 }
@@ -65,11 +55,7 @@ DeltaScfResult UHF::delta_scf(Frame& frame, int from, int to, MomStyle style,
     SCFInitialGuess rhf_seed;
     const SCFInitialGuess* gs_guess = guess;
     if (!guess && n_alpha == n_beta) {
-        RHF rhf;
-        rhf.basis = basis;
-        rhf.charge = charge;
-        rhf.tol = tol;
-        rhf.max_iter = max_iter;
+        RHF rhf{basis, charge, tol, max_iter};
         rhf.ghost_atoms = ghost_atoms;
         rhf.ecp = ecp;
         rhf.run(frame);

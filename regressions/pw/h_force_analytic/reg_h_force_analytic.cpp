@@ -35,10 +35,7 @@ int main() {
     frame.span(kAtom_z)[0] = 0.0;
     frame.box = cpu::Box::cubic(6.0);
 
-    PW cfg;
-    cfg.gth_name = "GTH-PBE-q1";
-    cfg.ecut_ry = 5.0;
-    cfg.k_mesh = 1;
+    PW cfg{GthPseudopotential{"GTH-PBE-q1"}, 5.0, 1};
     cfg.tol = 1e-4;
     cfg.max_iter = 8;
     cfg.mix_beta = 0.5;
@@ -106,10 +103,7 @@ int main() {
     for (const bool spin : {false, true}) {
         cpu::Frame metallic = frame;
         metallic.box = cpu::Box::cubic(6.0);
-        PW smear;
-        smear.gth_name = "GTH-PBE-q1";
-        smear.ecut_ry = 5.0;
-        smear.k_mesh = 1;
+        PW smear{GthPseudopotential{"GTH-PBE-q1"}, 5.0, 1};
         smear.tol = 1e-8;
         smear.max_iter = 100;
         smear.mix_beta = 0.5;

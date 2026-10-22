@@ -64,14 +64,10 @@ int main() {
 
     auto frame = make_si_diamond(5.43);
 
-    PW pbe;
-    pbe.upf_path = upf;
-    pbe.ecut_ry = 15.0;
-    pbe.k_mesh = 2;
+    PW pbe{UpfPseudopotential{upf}, 15.0, 2, cpu::scf::XCType::PBE};
     pbe.tol = 1e-5;
     pbe.max_iter = 40;
     pbe.mix_beta = 0.5;
-    pbe.xc = cpu::scf::XCType::PBE;
 
     pbe.build(frame);
     // Copy: `forces()` below overwrites `last_result()` with its own SCF.
@@ -98,14 +94,10 @@ int main() {
         }
     }
 
-    PW lda;
-    lda.upf_path = upf;
-    lda.ecut_ry = 15.0;
-    lda.k_mesh = 2;
+    PW lda{UpfPseudopotential{upf}, 15.0, 2, cpu::scf::XCType::LSDA};
     lda.tol = 1e-5;
     lda.max_iter = 40;
     lda.mix_beta = 0.5;
-    lda.xc = cpu::scf::XCType::LSDA;
     lda.build(frame);
     const auto& r_lda = lda.run(frame);
     if (!std::isfinite(r_lda.energy)) {

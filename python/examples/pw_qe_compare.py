@@ -6,7 +6,7 @@ given the same Hamiltonian, or the comparison means nothing:
 
 * Pseudopotential — the in-tree ONCVPSP norm-conserving UPF
   ``tests/data/pw/Si_lda_nc.upf``, used verbatim by Atomiverse
-  (``PW.upf_path``) and by QE (``ATOMIC_SPECIES``). The plane-wave path
+  (``PW(upf_path=...)``) and by QE (``ATOMIC_SPECIES``). The plane-wave path
   implements norm-conserving pseudopotentials only: it applies no
   augmentation charge, so an ultrasoft or PAW file is rejected on read
   rather than integrated as if it were norm-conserving.
@@ -138,7 +138,7 @@ def write_qe_input(
 ) -> str:
     """Write a QE input file and return the outdir path.
 
-    ``upf_path`` is the same file handed to ``PW.upf_path``; its directory
+    ``upf_path`` is the same file handed to ``PW(upf_path=...)``; its directory
     becomes QE's ``pseudo_dir`` and its name the ``ATOMIC_SPECIES`` entry.
     """
     alat_bohr = a_lat / 0.52917721092  # Angstrom → Bohr
@@ -216,16 +216,13 @@ def run_atomiverse(
     """Run Atomiverse PW and return results.
 
     ``upf_path`` is required: a plane-wave run has no default
-    pseudopotential, and ``PW.build`` raises when neither ``upf_path`` nor
-    ``gth_name`` is set.
+    pseudopotential, and ``PW(...)`` raises when neither ``upf_path`` nor
+    ``gth_name`` is given.
     """
     import atomiverse as av
 
     frame = build_si_diamond(a_lat)
-    pw = av.PW()
-    pw.upf_path = upf_path
-    pw.ecut_ry = ecut_ry
-    pw.k_mesh = kmesh
+    pw = av.PW(upf_path=upf_path, ecut_ry=ecut_ry, k_mesh=kmesh)
     pw.tol = tol
     pw.max_iter = max_iter
     pw.build(frame)

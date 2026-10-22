@@ -208,12 +208,10 @@ int main() {
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-    cpu::gpw::GpwDft eval_method{{O, H}};
-    eval_method.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft eval_method{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     eval_method.max_iter = 120;
     eval_method.tol = 1e-6;
     eval_method.mix = 0.4;
-    eval_method.xc = cpu::gpw::XcKind::PBE;
     eval_method.nonperiodic = false;
     eval_method.d4 = true;
     eval_method.d4_atm = true;
@@ -249,13 +247,11 @@ int main() {
 
     // Plain electronic forces (no dispersion) — one SCF.
     cpu::Frame frame_plain = geometry_copy(frame);
-    cpu::gpw::GpwDft plain{{O, H}};
-    plain.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft plain{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     plain.n_occ = 8;
     plain.max_iter = 120;
     plain.tol = 1e-6;
     plain.mix = 0.4;
-    plain.xc = cpu::gpw::XcKind::PBE;
     plain.nonperiodic = false;
     plain.local_pp_on_grid = true;
     plain.d4 = false;

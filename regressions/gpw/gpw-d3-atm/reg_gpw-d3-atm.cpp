@@ -61,13 +61,12 @@ int main() {
     constexpr double kEDispRef = -0.00081414118193; // Ha
     constexpr double kTol = 1.0e-9;                 // Ha
 
-    GpwDft gpw{{O, H}};
-    gpw.cutoff_ry = 200.0; // e_disp is geometry-only
+    // Low cutoff: e_disp is geometry-only.
+    GpwDft gpw{{O, H}, 200.0, XcKind::PBE};
     gpw.n_occ = 8;
     gpw.max_iter = 8;
     gpw.tol = 1e-6;
     gpw.mix = 0.4;
-    gpw.xc = XcKind::PBE;
     gpw.nonperiodic = true;
     gpw.d3 = true;
     gpw.d3_atm = true;

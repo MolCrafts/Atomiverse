@@ -30,8 +30,7 @@ namespace {
 
 /// One RHF run with basis def2-SVP + ecp def2-ECP; returns E_total [Ha].
 double run_rhf(ATV::cpu::Frame frame) {
-    ATV::cpu::scf::RHF rhf;
-    rhf.basis = ATV::cpu::scf::BasisSet::Def2SVP;
+    ATV::cpu::scf::RHF rhf{ATV::cpu::scf::BasisSet::Def2SVP};
     rhf.ecp = "def2-ECP";
     rhf.tol = 1e-12;
     rhf.max_iter = 200;

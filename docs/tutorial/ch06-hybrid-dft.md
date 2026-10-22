@@ -130,8 +130,7 @@ using namespace ATV;
 
 cpu::Frame frame = /* H2O, positions in Å, type = Z */;
 
-cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);  // or XCType::PBE0
-rks.basis = cpu::scf::BasisSet::Pople631Gs;
+cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, cpu::scf::XCType::B3LYP};  // or XCType::PBE0
 rks.max_iter = 300;
 
 rks.run(frame);                  // eV energy on frame.meta[kEnergy]
@@ -170,8 +169,7 @@ routine for a hybrid is:
 
 ```cpp
 auto run_hybrid = [](cpu::Frame& frame, cpu::scf::XCType xc) {
-    cpu::scf::RKS rks(xc);
-    rks.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, xc};
     rks.max_iter = 300;
     return rks.forces(frame);   // runs the SCF, then the analytic gradient
 };
@@ -192,14 +190,13 @@ provides B3LYP forces to whichever driver it is plugged into.
 cpu::minimizer::Minimize opt;
 opt.set_optimizer(cpu::minimizer::LBFGS{/* memory, alpha0, max_ls */});
 opt.add_criterion(cpu::ForceConverged{/* the five tolerances */});
-cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);
-rks.basis = cpu::scf::BasisSet::Pople631Gs;
+cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, cpu::scf::XCType::B3LYP};
 opt.on(minimizer::Phase::force).add(std::move(rks));
 opt.build();
 opt.run(frame, /*max_iter=*/100);
 ```
 
-The same `RKS{XCType::B3LYP}` drops into `cpu::md::MD` for
+The same `RKS{basis, XCType::B3LYP}` drops into `cpu::md::MD` for
 hybrid-functional AIMD ([Comparing Models](ch15-cross-method.md)) and into `cpu::vib::Hessian`
 for hybrid vibrational frequencies ([Molecular Vibrations](ch14-vibrations.md)). One
 gradient routine, one method object, three drivers — the "swap the
@@ -254,8 +251,7 @@ const double h_ang = 1e-3 / ATV::units::kAngstromInBohr;   // 1e-3 Bohr in Å
 auto e_at = [&](int A, int d, double h) {         // E at a displaced geometry
     cpu::Frame moved = frame;
     /* shift atom A's coordinate d by h [Å] */
-    cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);
-    rks.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, cpu::scf::XCType::B3LYP};
     rks.run(moved);
     return rks.energy();                          // [Hartree]
 };

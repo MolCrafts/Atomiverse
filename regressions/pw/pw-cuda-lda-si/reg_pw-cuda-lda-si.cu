@@ -101,26 +101,22 @@ int run_on_device(Device dev, double& energy_ry) {
     energy_ry = 0.0;
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method;
-        method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = kMesh;
+        cpu::pw::PW method{
+            cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
+            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 50;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         const auto& r = method.run(frame);
         converged = r.converged;
         iterations = r.iterations;
         energy_ry = r.energy;
     } else {
-        cuda::pw::PW method;
-        method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = kMesh;
+        cuda::pw::PW method{
+            cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
+            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 50;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         const auto& r = method.run(frame);
         converged = r.converged;

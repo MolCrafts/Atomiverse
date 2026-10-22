@@ -190,11 +190,12 @@ class TestRHF:
     def rhf_h2o() -> tuple["molpy.Frame", "RHF"]:
         """One RHF/STO-3G water single point, shared read-only below.
 
-        Constructor arguments only (iron law 3): ``RHF()`` carries the
-        documented defaults — STO-3G, charge 0, tol 1e-9 Ha, 100 iterations.
+        Constructor arguments only (iron law 3): ``RHF(basis="STO-3G")``
+        carries the documented defaults — charge 0, tol 1e-9 Ha, 100
+        iterations.
         """
         frame = _h2o_libretexts_frame()
-        method = RHF()
+        method = RHF(basis="STO-3G")
         method.run(frame)
         return frame, method
 
@@ -248,9 +249,11 @@ class TestUHF:
     @pytest.fixture(scope="class")
     @staticmethod
     def uhf_n2_cation() -> "UHF":
-        """N₂⁺ doublet: multiplicity resolves α/β from N_e = ΣZ − charge."""
+        """N₂⁺ doublet: N_e = ΣZ − charge = 13 and M = 2 give α/β = 7/6."""
         frame = _n2_frame()
-        method = UHF(basis="6-31G*", charge=1, multiplicity=2, tol=1e-12, max_iter=400)
+        method = UHF(
+            basis="6-31G*", n_alpha=7, n_beta=6, charge=1, tol=1e-12, max_iter=400
+        )
         method.run(frame)
         return method
 
@@ -276,7 +279,7 @@ class TestRKS:
     def rks_b3lyp_h2o() -> "RKS":
         """B3LYP/def2-SVP water — the spherical-d hybrid path."""
         frame = _h2o_pyscf_frame()
-        method = RKS(functional="B3LYP", basis="def2-SVP", tol=1e-10, max_iter=200)
+        method = RKS(basis="def2-SVP", xc="B3LYP", tol=1e-10, max_iter=200)
         method.run(frame)
         return method
 
@@ -303,7 +306,8 @@ class TestUKS:
         """Triplet O₂ / LSDA / STO-3G. Smoke only — no pinned oracle for
         this combination exists in-tree, so nothing numeric is asserted."""
         frame = _o2_frame()
-        method = UKS(functional="LSDA", charge=0, multiplicity=3)
+        # N_e = 16, M = 3 ⇒ α/β = 9/7.
+        method = UKS(basis="STO-3G", n_alpha=9, n_beta=7, xc="LSDA", charge=0)
         method.run(frame)
         return frame, method
 
@@ -344,7 +348,7 @@ class TestScfForces:
         at the settings the pin was taken at.
         """
         frame = _h2o_pyscf_frame()
-        method = RHF(tol=1e-12, max_iter=200)
+        method = RHF(basis="STO-3G", tol=1e-12, max_iter=200)
         forces = method.forces(frame)
         return frame, np.asarray(forces, dtype=np.float64)
 
@@ -412,12 +416,25 @@ class TestScfFailsLoud:
         """An unsupported functional name fails at construction and lists the
         supported functionals."""
         with pytest.raises(ValueError, match="B3LYP"):
-            RKS(functional="M06-2X")
+            RKS(basis="STO-3G", xc="M06-2X")
 
-    def test_bad_multiplicity_raises_at_run(self, n2_frame: "molpy.Frame") -> None:
-        """A multiplicity of the wrong parity for the electron count is only
+    def test_bad_occupation_raises_at_run(self, n2_frame: "molpy.Frame") -> None:
+        """An α/β split that does not sum to the electron count is only
         detectable once N_e = ΣZ − charge is known, so it fails at ``run``:
-        neutral N₂ has 14 electrons and cannot be a doublet."""
-        method = UHF(multiplicity=2)
-        with pytest.raises(ValueError, match="(?i)multiplicit"):
+        neutral N₂ has 14 electrons, not 7 + 6."""
+        method = UHF(basis="STO-3G", n_alpha=7, n_beta=6)
+        with pytest.raises(ValueError, match="n_alpha"):
             method.run(n2_frame)
+
+    def test_identity_is_read_only(self) -> None:
+        """Identity fields are fixed by the constructor: readable, never
+        assignable (knobs are the only post-construction settings)."""
+        method = UKS(basis="6-31G*", n_alpha=5, n_beta=4, xc="PBE", charge=1)
+        assert method.basis == "6-31G*"
+        assert method.charge == 1
+        assert (method.n_alpha, method.n_beta) == (5, 4)
+        assert method.xc == "PBE"
+        with pytest.raises(AttributeError):
+            method.basis = "STO-3G"
+        with pytest.raises(AttributeError):
+            method.n_alpha = 6

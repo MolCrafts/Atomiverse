@@ -75,8 +75,7 @@ int main() {
 
     // ── 1. Stretched H2: the Seeger-Pople trap ────────────────────────────
     auto frame = make_h2(1.5);
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-12;
     rhf.run(frame);
     if (!rhf.converged()) {
@@ -120,8 +119,7 @@ int main() {
     guess.has_alpha = true;
     guess.has_beta = true;
 
-    cpu::scf::UHF uhf{1, 1};
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, 1, 1};
     uhf.tol = 1e-12;
     auto frame_u = make_h2(1.5);
     uhf.run(frame_u, &guess);
@@ -145,8 +143,7 @@ int main() {
 
     // ── 3. Equilibrium H2: both channels stable ───────────────────────────
     auto frame_eq = make_h2(0.735);
-    cpu::scf::RHF rhf_eq;
-    rhf_eq.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_eq{cpu::scf::BasisSet::STO3G};
     rhf_eq.tol = 1e-12;
     rhf_eq.run(frame_eq);
     if (!rhf_eq.converged()) {

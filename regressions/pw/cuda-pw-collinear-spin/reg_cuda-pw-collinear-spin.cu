@@ -82,17 +82,14 @@ struct RunOut {
 RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
     RunOut o;
     if (dev == Device::Cpu) {
-        cpu::pw::PW pw;
-        pw.upf_path = upf;
-        pw.ecut_ry = kEcutRy;
-        pw.k_mesh = 1;
+        cpu::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
+                       cpu::scf::XCType::LSDA};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
         pw.pulay_depth = 5;
         pw.spin_polarized = true;
         pw.multiplicity = 3;
-        pw.xc = cpu::scf::XCType::LSDA;
         pw.build(frame);
         const auto& r = pw.run(frame);
         o.energy_ha = r.energy_ha;
@@ -100,17 +97,14 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
         o.converged = r.converged;
         o.iterations = r.iterations;
     } else {
-        cuda::pw::PW pw;
-        pw.upf_path = upf;
-        pw.ecut_ry = kEcutRy;
-        pw.k_mesh = 1;
+        cuda::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
+                        cpu::scf::XCType::LSDA};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
         pw.pulay_depth = 5;
         pw.spin_polarized = true;
         pw.multiplicity = 3;
-        pw.xc = cpu::scf::XCType::LSDA;
         pw.build(frame);
         const auto& r = pw.run(frame);
         o.energy_ha = r.energy_ha;

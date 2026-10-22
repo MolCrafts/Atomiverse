@@ -24,11 +24,10 @@
 ///   //        box = Box::orthorhombic(a/√2, a/√2, a) [Å] (BCT Si)
 ///   cpu::gpw::GpwDft dft{{{molrs::Element::Si,
 ///                          cpu::gpw::GaussianBasis(molrs::Element::Si, "SZV-GTH"),
-///                          cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PADE-q4")}}};
-///   dft.cutoff_ry = 100.0;
+///                          cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PADE-q4")}},
+///                        /*cutoff_ry=*/100.0, cpu::gpw::XcKind::PADE};
 ///   dft.n_alpha = 8;   // collinear UKS (M = 0): 8↑ + 8↓
 ///   dft.n_beta  = 8;
-///   dft.xc = cpu::gpw::XcKind::PADE;
 ///   dft.build(frame);
 ///
 ///   cpu::gpw::PeriodicWannier mlwf;   // members: k_mesh, max_iter, …

@@ -155,13 +155,11 @@ frame.box = cpu::Box::cubic(L * b2a);
 
 GpwDft method{{Kind{molrs::Element::H,
                     GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-                    GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-method.cutoff_ry = 100.0;
+                    GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 100.0, XcKind::PADE};
 method.n_alpha = 2;
 method.n_beta = 0;
 method.max_iter = 60;
 method.tol = 1e-8;
-method.xc = XcKind::PADE;
 method.local_pp_on_grid = true;
 method.k_mesh[0] = 1;
 method.k_mesh[1] = 1;

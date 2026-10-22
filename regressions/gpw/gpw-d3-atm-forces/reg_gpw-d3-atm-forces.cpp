@@ -262,12 +262,10 @@ int main() {
     // Method parameters shared by the product run (ATM on) and the two-body
     // twin (ATM off).
     auto make_method = [&](bool atm_on) {
-        cpu::gpw::GpwDft m{{O, H}};
-        m.cutoff_ry = 300.0;
+        cpu::gpw::GpwDft m{{O, H}, 300.0, cpu::gpw::XcKind::PBE};
         m.max_iter = 120;
         m.tol = 1e-7;
         m.mix = 0.4;
-        m.xc = cpu::gpw::XcKind::PBE;
         m.nonperiodic = true;
         m.d3 = true;
         m.d3_atm = atm_on;

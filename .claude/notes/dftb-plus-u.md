@@ -19,7 +19,7 @@ with Mulliken population \(n_A = n_{\mathrm{val},A}-\Delta q_A\) and
 the SCC Hubbard \(U\) from SK tables.
 
 ```cpp
-cpu::semiempirical::DFTB2 dftb;
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb.u_eff[8] = 4.0;       // O effective U [eV]
 ```
 

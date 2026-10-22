@@ -128,13 +128,11 @@ frame.box = cpu::Box::cubic(a);
 GpwDft m{{cpu::gpw::Kind{
     molrs::Element::Na,
     cpu::gpw::GaussianBasis(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH"),
-    cpu::gpw::GthPotential(molrs::Element::Na, "GTH-PBE-q9")}}};
-m.cutoff_ry = 150.0;
+    cpu::gpw::GthPotential(molrs::Element::Na, "GTH-PBE-q9")}}, 150.0, XcKind::PADE};
 m.n_occ = 9;              // Ne/2 seed; fractional fill under smear
 m.max_iter = 80;
 m.tol = 1e-6;             // Ha
 m.eps_default = 1e-7;
-m.xc = XcKind::PADE;
 m.diis_depth = 6;
 m.mix = 0.4;
 m.k_mesh[0] = m.k_mesh[1] = m.k_mesh[2] = 2;

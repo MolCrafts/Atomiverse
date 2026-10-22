@@ -4,6 +4,7 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -26,7 +27,8 @@ using ATV::cpu::gpw::MixStage;
 // GpwDft is the GPW self-consistency Driver node (MeanFieldMethod pattern).
 TEST(GpwDriverNode, InheritsCpuDriverGpwPhase) {
     static_assert(std::is_base_of_v<ATV::cpu::Driver<ATV::gpw::Phase>, GpwDft>);
-    GpwDft m;
+    GpwDft m{std::vector<ATV::cpu::gpw::Kind>{}, /*cutoff_ry=*/300.0,
+             ATV::cpu::gpw::XcKind::PADE};
     EXPECT_EQ(ATV::slot_count<ATV::gpw::Phase>(), 5);
     EXPECT_EQ(ATV::gpw::kind_of(ATV::gpw::Phase{}), ATV::PhaseKind::SCF);
 }
@@ -73,7 +75,8 @@ TEST(GpwDriverNode, PathLocalOpsAreCallable) {
 }
 
 TEST(GpwDriverNode, NestedMountNeedsABoundFrame) {
-    GpwDft method;
+    GpwDft method{std::vector<ATV::cpu::gpw::Kind>{}, /*cutoff_ry=*/300.0,
+                  ATV::cpu::gpw::XcKind::PADE};
     ATV::cpu::Runtime runtime;
     ATV::cpu::DriverNode& node = method;
     // No Frame bound on the parent: refuse with a how-to, never dereference.

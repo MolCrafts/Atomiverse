@@ -73,14 +73,11 @@ int main() {
 
     auto frame = make_si_diamond(kA);
 
-    PW method;
-    method.upf_path = upf;
-    method.ecut_ry = kEcutRy;
-    method.k_mesh = kMeshScf;
+    PW method{UpfPseudopotential{upf}, kEcutRy, kMeshScf,
+              cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 80;
     method.mix_beta = 0.5;
-    method.xc = cpu::scf::XCType::LSDA;
     method.smearing = Smearing::fermi_dirac;
     method.degauss = kDegaussRy;
     method.extra_bands = kExtraBands;

@@ -88,17 +88,14 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
         *e_ry = 0.0;
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method;
-        method.upf_path = upf;
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = 1;
+        cpu::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
+                           cpu::scf::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;
         method.pulay_depth = 5;
         method.spin_polarized = true;
         method.multiplicity = 3;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         {
             // `stress()` writes kStress/kEnergy on the Frame; run it on a copy.
@@ -108,17 +105,14 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
                 *e_ry = method.last_result().energy; // reference SCF [Ry]
         }
     } else {
-        cuda::pw::PW method;
-        method.upf_path = upf;
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = 1;
+        cuda::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
+                            cpu::scf::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;
         method.pulay_depth = 5;
         method.spin_polarized = true;
         method.multiplicity = 3;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         stress = cuda::pw::pw_stress(frame, method, e_ry);
     }

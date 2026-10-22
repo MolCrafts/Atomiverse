@@ -44,19 +44,20 @@ int main() {
     constexpr double kEDispRef = -1.4928804171407961e-03; // Ha
     constexpr double kTol = 1.0e-8;                       // Ha
 
+    // Low cutoff: e_disp is geometry-only; short SCF only.
     GpwDft gpw{
         {cpu::gpw::Kind{molrs::Element::O,
                         GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-SR-GTH"),
                         GthPotential(molrs::Element::O, "GTH-PBE-q6")},
          cpu::gpw::Kind{molrs::Element::H,
                         GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
-                        GthPotential(molrs::Element::H, "GTH-PBE-q1")}}};
-    gpw.cutoff_ry = 200.0; // e_disp is geometry-only; short SCF only
+                        GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
+        200.0,
+        XcKind::PBE};
     gpw.n_occ = 8;
     gpw.max_iter = 8;
     gpw.tol = 1e-6;
     gpw.mix = 0.4;
-    gpw.xc = XcKind::PBE;
     gpw.nonperiodic = false;
     gpw.mbd = true;
 

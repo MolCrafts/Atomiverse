@@ -98,7 +98,7 @@ const double e_disp = d4.energy(frame);    // [Hartree]
 Optional fold-in on a mean-field method (not required by the regression gate):
 
 ```cpp
-ATV::cpu::scf::RKS rks(ATV::cpu::scf::XCType::PBE);
+ATV::cpu::scf::RKS rks{ATV::cpu::scf::BasisSet::STO3G, ATV::cpu::scf::XCType::PBE};
 rks.d4 = true;
 rks.run(frame);
 const double ed = rks.energy_disp();       // [Hartree]

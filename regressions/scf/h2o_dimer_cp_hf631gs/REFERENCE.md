@@ -96,6 +96,6 @@ dimer BSSE.
 ## What is checked
 
 `cpu::scf::Counterpoise({0,1,2},{3,4,5}).run(dimer, rhf)` with
-`rhf.basis = Pople631Gs` yields `e_int_cp` and `bsse` within 1e-6 Ha of the
+`cpu::scf::RHF rhf{Pople631Gs}` yields `e_int_cp` and `bsse` within 1e-6 Ha of the
 PySCF pins above; `bsse ≤ 0`; `|bsse|` in [0.1, 50] mHa. Non-finite or
 out-of-tolerance values exit non-zero with `got / want / tol`.

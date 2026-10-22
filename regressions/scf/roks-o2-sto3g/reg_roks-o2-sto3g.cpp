@@ -41,8 +41,8 @@ int main() {
 
     // ── O2 triplet, ROKS(9,7)/LSDA/STO-3G ─────────────────────────────
     auto frame = o2_frame();
-    cpu::scf::ROKS roks(9, 7, cpu::scf::XCType::LSDA);
-    roks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::ROKS roks(cpu::scf::BasisSet::STO3G, 9, 7,
+                        cpu::scf::XCType::LSDA);
     roks.tol = 1e-12;
     roks.max_iter = 200;
     roks.run(frame);

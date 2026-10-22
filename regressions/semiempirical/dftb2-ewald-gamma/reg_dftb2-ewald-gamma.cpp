@@ -86,7 +86,7 @@ int main() {
     auto frame = make_water_cell();
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb.boundary = cpu::semiempirical::DftbBoundary::lattice;
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 200;

@@ -75,10 +75,11 @@ stress; GPW k-points (`gpw-kpoints-si`); CUDA PW spin; hybrid / meta-GGA XC.
 
 ## Implementation
 
-Public surface only: construct `cpu::pw::PW`, set members (no `*Config` bag,
+Public surface only: construct `cpu::pw::PW{pp, ecut_ry, k_mesh, xc}`, set members (no `*Config` bag,
 no `make_*` / `build_*` factory), `build(frame)` → `run(frame)`. **No new
-public members** relative to Γ UKS — this slug gates existing
-`spin_polarized` / `multiplicity` / `k_mesh` with `k_mesh ≥ 2`. Header:
+public members** relative to Γ UKS — this slug gates the existing
+`spin_polarized` / `multiplicity` members and the `k_mesh` constructor argument
+with `k_mesh ≥ 2`. Header:
 `pw_solver.h`. Internals stay under
 `cpu/planewave/internal/`.
 
@@ -101,10 +102,7 @@ frame.span(kAtom_z)[0] = 0.0;
 frame.span(kAtom_z)[1] = 1.2075;         // R(O–O) [Å]
 frame.box = cpu::Box::cubic(5.5);
 
-PW pw;
-pw.upf_path = "tests/data/pw/O_ONCV_PBE-1.2.upf";
-pw.ecut_ry = 5.0;
-pw.k_mesh = 2;                           // multi-k UKS (this slug)
+PW pw{UpfPseudopotential{"tests/data/pw/O_ONCV_PBE-1.2.upf"}, 5.0, 2};  // multi-k UKS (this slug)
 pw.tol = 2e-3;                           // density L2
 pw.max_iter = 20;
 pw.mix_beta = 0.5;

@@ -142,9 +142,9 @@ const cpu::gpw::Kind H{
     cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-GTH"),
     cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 400.0;  dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::BLYP;  dft.nonperiodic = true;
+cpu::gpw::GpwDft dft{{O, H}, 400.0, cpu::gpw::XcKind::BLYP};
+dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
+dft.nonperiodic = true;
 dft.build(frame);
 const cpu::gpw::GpwResult& r = dft.run(frame);
 

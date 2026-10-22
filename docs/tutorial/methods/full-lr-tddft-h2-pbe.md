@@ -24,8 +24,7 @@ exchange in both A and B.
 ## Practice
 
 ```cpp
-cpu::scf::RKS rks(cpu::scf::XCType::PBE);
-rks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
 rks.run(frame);
 auto ex = rks.tddft(/*n_states=*/3);   // full LR, not TDA
 ```

@@ -92,10 +92,20 @@ MPI_Datatype mpi_real_type() {
 
 // Out-of-line where internal::* are complete types (required for the
 // unique_ptr members over forward-declared helpers).
-PW::PW() = default;
+PW::PW(UpfPseudopotential pp, double ecut, int k, cpu::scf::XCType xc_in)
+    : upf_path(std::move(pp.path)), ecut_ry(ecut), k_mesh(k), xc(xc_in) {
+    if (upf_path.empty())
+        throw std::invalid_argument("PW: empty UPF pseudopotential path");
+}
+
+PW::PW(GthPseudopotential pp, double ecut, int k, cpu::scf::XCType xc_in)
+    : gth_name(std::move(pp.name)), ecut_ry(ecut), k_mesh(k), xc(xc_in) {
+    if (gth_name.empty())
+        throw std::invalid_argument("PW: empty GTH pseudopotential name");
+}
+
 PW::~PW() = default;
 PW::PW(PW&&) = default;
-PW& PW::operator=(PW&&) = default;
 
 // ── PW Driver node: multi-path stage skeleton ────────────────────────
 //
@@ -216,12 +226,6 @@ void PW::build(const cpu::Frame& reference) {
     // Validate the pseudopotential up front so a bad file or an unknown GTH
     // name fails at build() rather than mid-SCF. setup_pw_problem() rebuilds
     // it at each run().
-    if (upf_path.empty() == gth_name.empty())
-        throw std::invalid_argument(
-            "cpu::pw::PW::build: set exactly one of upf_path (a "
-            "norm-conserving UPF file) or gth_name (an in-tree analytic GTH "
-            "parameterization such as \"GTH-PBE-q4\"). A plane-wave run has "
-            "no default pseudopotential.");
     if (!upf_path.empty()) {
         (void)internal::read_upf_v1(upf_path);
     } else {

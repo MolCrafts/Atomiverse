@@ -193,8 +193,7 @@ TEST(GFN1, AnalyticForceTranslationallyInvariant) {
 TEST(GFN1, OpenShellThrows) {
     auto f = make_h2();
     cpu::Context ctx;
-    GFN1 g;
-    g.multiplicity = 3;
+    GFN1 g{/*charge=*/0, /*multiplicity=*/3};
     g.build({ctx, f});
     EXPECT_THROW(g.launch({ctx, f, 0, 0}), std::runtime_error);
 }

@@ -80,12 +80,10 @@ int main() {
         cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
     cpu::Frame frame_o2 = make_o2();
-    cpu::gpw::GpwDft dft_o2({O});
-    dft_o2.cutoff_ry = 400.0;
+    cpu::gpw::GpwDft dft_o2({O}, 400.0, cpu::gpw::XcKind::PBE);
     dft_o2.max_iter = 200;
     dft_o2.tol = 1e-7;
     dft_o2.mix = 0.4;
-    dft_o2.xc = cpu::gpw::XcKind::PBE;
     dft_o2.n_alpha = 7; // multiplicity 3, 12 valence e⁻
     dft_o2.n_beta = 5;
     dft_o2.vdw_df = true;
@@ -133,12 +131,10 @@ int main() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     auto make_dimer_eval = [&]() {
-        cpu::gpw::GpwDft dft_ev({Osr, Hsr});
-        dft_ev.cutoff_ry = 200.0;
+        cpu::gpw::GpwDft dft_ev({Osr, Hsr}, 200.0, cpu::gpw::XcKind::PBE);
         dft_ev.max_iter = 120;
         dft_ev.tol = 1e-7;
         dft_ev.mix = 0.4;
-        dft_ev.xc = cpu::gpw::XcKind::PBE;
         dft_ev.vdw_df = true;
         return cpu::gpw::GPWEvaluator(std::move(dft_ev));
     };

@@ -111,13 +111,11 @@ GpwDft gpw{{Kind{molrs::Element::O,
                   GthPotential(molrs::Element::O, "GTH-PBE-q6")},
              Kind{molrs::Element::H,
                   GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
-                  GthPotential(molrs::Element::H, "GTH-PBE-q1")}}};
-gpw.cutoff_ry = 200.0; // e_disp is geometry-only; SCF only needs to run
+                  GthPotential(molrs::Element::H, "GTH-PBE-q1")}}, 200.0, XcKind::PBE};  // e_disp is geometry-only; SCF only needs to run
 gpw.n_occ = 8;         // 16 valence e⁻ → 8 doubly occupied
 gpw.max_iter = 8;
 gpw.tol = 1e-6;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = false;
 gpw.mbd = true;        // mutually exclusive with d3 / d3bj / d4 / ts
 
@@ -131,9 +129,9 @@ Driver path (the same configured method bound as a component):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 300.0;  dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;  dft.nonperiodic = false;
+ATV::cpu::gpw::GpwDft dft{kinds, 300.0, ATV::cpu::gpw::XcKind::PBE};
+dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
+dft.nonperiodic = false;
 dft.mbd = true;
 ATV::cpu::gpw::GPWEvaluator eval(std::move(dft));
 // bind on Evaluate / MD / Minimize force slot

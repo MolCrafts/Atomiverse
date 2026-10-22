@@ -24,8 +24,7 @@ exchange quartets — the exact 8-fold permutation multiplicity-unpack the
 Concrete public API (no Config bag, no factory, Frame I/O only):
 
 ```cpp
-cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);
-rks.basis = cpu::scf::BasisSet::Def2SVP;
+cpu::scf::RKS rks(cpu::scf::BasisSet::Def2SVP, cpu::scf::XCType::B3LYP);
 rks.tol = 1e-10;
 rks.max_iter = 200;
 rks.run(frame);

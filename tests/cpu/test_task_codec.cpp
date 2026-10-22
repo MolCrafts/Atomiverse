@@ -588,7 +588,7 @@ TEST(TaskCodec, EachPhaseSlotIsCheckedAgainstItsOwnDomain) {
 }
 
 TEST(TaskCodec, InvalidBudgetsLbfgsAndTolerancesFailBeforePacking) {
-    EXPECT_THROW(TaskSpec(MDTask{{}, 0}), std::invalid_argument);
+    EXPECT_THROW(TaskSpec(MDTask{{}, -1}), std::invalid_argument);
     EXPECT_THROW(TaskSpec(MinimizeTask{{}, -1, {}}), std::invalid_argument);
 
     MinimizeTask bad_lbfgs{
@@ -668,3 +668,17 @@ TEST(TaskCodec, EmptyMdAndMinimizePayloadsRemainCodecLevelCitizens) {
 }
 
 } // namespace
+
+TEST(TaskCodec, ZeroAndWideBudgetsRoundTrip) {
+    for (std::int64_t budget : {std::int64_t{0}, std::int64_t{1} << 40}) {
+        const TaskSpec md(MDTask{{}, budget});
+        const TaskSpec min(MinimizeTask{{}, budget, {}});
+        const auto md_bytes = pack(md);
+        const auto min_bytes = pack(min);
+        EXPECT_EQ(unpack(md_bytes.data(), md_bytes.size()).md().n_steps,
+                  budget);
+        EXPECT_EQ(
+            unpack(min_bytes.data(), min_bytes.size()).minimize().max_iter,
+            budget);
+    }
+}

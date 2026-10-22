@@ -43,14 +43,12 @@ int main() {
         cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-    cpu::gpw::GpwDft dft{{O}};
-    dft.cutoff_ry = 400.0;
+    cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::PADE};
     dft.ngrids = 4;
     dft.rel_cutoff = 60.0;
     dft.max_iter = 200;
     dft.tol = 1e-7;
     dft.mix = 0.4;
-    dft.xc = cpu::gpw::XcKind::PADE;
     dft.nonperiodic = true;
     dft.n_alpha = 7; // multiplicity 3, 12 valence e⁻
     dft.n_beta = 5;

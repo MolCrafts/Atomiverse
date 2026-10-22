@@ -80,13 +80,13 @@ TEST(GpwBandsGuards, RejectsDispersionOnPath) {
     // lightest product-illegal flag that still builds on the k path.
     GpwDft disp{{Kind{molrs::Element::H,
                       GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-                      GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-    disp.cutoff_ry = 80.0;
+                      GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
+                /*cutoff_ry=*/80.0,
+                XcKind::PADE};
     disp.n_occ = 1;
     disp.max_iter = 1;
     disp.k_mesh[0] = disp.k_mesh[1] = disp.k_mesh[2] = 2;
     disp.d3 = true;
-    disp.xc = XcKind::PADE;
     disp.local_pp_on_grid = true;
     disp.build(h2);
 

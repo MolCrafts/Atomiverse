@@ -11,7 +11,7 @@ density-scale free-atom **MBD@rsSCS** parameters (Tkatchenko & Scheffler,
 Public API:
 
 ```cpp
-GpwDft gpw;
+GpwDft gpw{kinds, /*cutoff_ry=*/200.0, XcKind::PBE};
 gpw.n_alpha = 7;
 gpw.n_beta  = 5;
 gpw.mbd = true;

@@ -10,8 +10,8 @@ family_oracle: dftb+
 **This pin is not `oracle: dftb+` and must not be labelled as such.** Two
 named blockers:
 
-1. **Mixed parameter set.** The run declares
-   `d3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch` and therefore pairs
+1. **Mixed parameter set.** The run constructs
+   `DFTB3{cpu::semiempirical::DftbSkSet::MioSketch}` and therefore pairs
    mio-1-1 SK/repulsive (`src/cpu/semiempirical/dftb3.cpp`) with 3ob-class
    Hubbard derivatives (`d3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa`).
    The engine `ATV_WARN`s (`[dftb3] … 3ob supersedes the MIO parameter set`).

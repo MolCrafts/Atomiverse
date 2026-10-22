@@ -95,9 +95,8 @@ struct Point {
 /// @return Converged flag, ΔHf [kcal/mol] and total energy [eV].
 Point rm1_point(double r, double theta_deg) {
     cpu::Frame f = water(r, theta_deg);
-    RM1 rm1; // concrete method — parameters are members, no *Config bag
-    rm1.charge = 0;
-    rm1.multiplicity = 1;
+    RM1 rm1{/*charge=*/0, /*multiplicity=*/
+            1}; // concrete method — parameters are members, no *Config bag
     rm1.density_tol = 1.0e-10;
     rm1.max_iter = 400;
     rm1.build(f);

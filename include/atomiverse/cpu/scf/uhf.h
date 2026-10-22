@@ -18,20 +18,11 @@ namespace scf {
 ///        systems (unequal α and β counts) are representable.
 class UHF : public MeanFieldMethod<UHF> {
   public:
-    int n_alpha = 0; ///< Alpha (spin-up) electrons (must be set before run).
-    int n_beta = 0;  ///< Beta (spin-down) electrons (must be set before run).
+    const int n_alpha; ///< Alpha (spin-up) electrons.
+    const int n_beta;  ///< Beta (spin-down) electrons.
 
-    /// @brief Construct with the UHF defaults (unrestricted HF; Hcore initial
-    ///        guess; 0.7 density damping; DIIS capped at 6 vectors and started
-    ///        at iteration 5; energy tolerance 1e-8 Ha). Set `n_alpha` /
-    ///        `n_beta` before `run`.
-    UHF();
-    /// @brief Construct with an explicit α / β electron count.
-    /// @param n_alpha Spin-up electrons.
-    /// @param n_beta  Spin-down electrons.
-    explicit UHF(int n_alpha, int n_beta);
-
-    /// @brief Basis, α/β counts, and molecular charge (primary CPU form).
+    /// @brief Basis, α/β counts and molecular charge (Hcore guess, 0.7
+    ///        density damping, DIIS 6 vectors from iteration 5).
     ///
     /// CUDA twin: `cuda::scf::UHF{basis, n_alpha, n_beta, charge}`.
     /// `n_alpha + n_beta` must equal ΣZ − charge; the integral build checks it.

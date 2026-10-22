@@ -9,11 +9,9 @@
 ///
 /// One concept: how a plane-wave single-point energy is assembled from the
 /// same Driver/Component vocabulary as every other method. The plane-wave
-/// SCF loop lives inside the inner solver `cpu::pw::PW`; the
-/// user-facing component is `cpu::pw::PWEvaluator` (role Evaluator,
-/// capability Energy), run through the one-pass `cpu::Evaluate` driver via
-/// the `cpu::single_point` helper — the same shape as the Gaussian methods
-/// (`cpu::scf::RHF{basis}.run(frame)`).
+/// SCF loop lives inside the concrete method `cpu::pw::PW`, run through the
+/// one-pass `cpu::Evaluate` driver via the `cpu::single_point` helper — the
+/// same shape as the Gaussian methods (`cpu::scf::RHF{basis}.run(frame)`).
 ///
 /// Build:
 ///   cmake -B build -DATV_BUILD_PW=ON -DATV_BUILD_EXAMPLES=ON   # needs FFTW3
@@ -30,18 +28,18 @@
 /// parameterization "GTH-PBE-q4" for silicon, evaluated in-tree from
 /// `cpu/gpw/basis_data/gpw_tables.h`. There is no pseudopotential-free
 /// mode: a bare valence-charge Coulomb potential is not representable in a
-/// plane-wave basis at any finite cutoff, so a run with neither
-/// `upf_path` nor `gth_name` set throws.
+/// plane-wave basis at any finite cutoff, so `PW` is constructed with either
+/// a `UpfPseudopotential` or a `GthPseudopotential`, and an empty path or
+/// name throws.
 
 #include <iomanip>
 #include <iostream>
 #include <string>
-#include <utility>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/methods.h"
 
 using namespace ATV;
@@ -101,30 +99,32 @@ int main(int argc, char** argv) {
 
     // ── Configure the plane-wave SCF ──────────────────────────────────
     //
+    // pseudopotential : UPF file or in-tree GTH parameter set (exactly one).
     // ecut_ry  : plane-wave kinetic-energy cutoff [Ry]. Larger = more plane
     //            waves = more complete basis. 15 Ry / k_mesh=2 keeps this
     //            tutorial fast (seconds); production silicon uses ~30 Ry and
     //            a denser k-mesh — see benchmarks/pw/si for converged runs.
     // k_mesh   : Monkhorst-Pack Brillouin-zone sampling (k_mesh^3 points).
     // tol      : SCF convergence tolerance on the density change.
-    cpu::pw::PW cfg;
-    cfg.upf_path = upf_path;
-    cfg.gth_name = gth_name;
-    cfg.ecut_ry = 15.0;
-    cfg.k_mesh = 2;
-    cfg.tol = 1e-6;
-    cfg.max_iter = 50;
+    constexpr double kEcutRy = 15.0;
+    constexpr int kKMesh = 2;
+    cpu::pw::PW pw = upf_path.empty()
+                         ? cpu::pw::PW{cpu::pw::GthPseudopotential{gth_name},
+                                       kEcutRy, kKMesh}
+                         : cpu::pw::PW{cpu::pw::UpfPseudopotential{upf_path},
+                                       kEcutRy, kKMesh};
+    pw.tol = 1e-6;
+    pw.max_iter = 50;
 
-    // ── Run it as an Evaluator component ──────────────────────────────
+    // ── Run it through the one-pass Evaluate driver ───────────────────
     //
-    // PWEvaluator wraps the inner PW. cpu::single_point binds it at
-    // the evaluate phase, builds the one-pass Evaluate driver, and runs it.
-    // The component writes frame.meta.get(ATV::kEnergy) in eV; the Ry / Hartree
-    // breakdown stays on last_result().
-    cpu::pw::PWEvaluator pwe{std::move(cfg)};
-    cpu::single_point(frame, pwe);
+    // cpu::single_point binds the method at the evaluate phase, builds the
+    // one-pass Evaluate driver, and runs it. The method writes
+    // frame.meta.get(ATV::kEnergy) in eV; the Ry / Hartree breakdown stays on
+    // last_result().
+    cpu::single_point(frame, pw);
 
-    const auto& result = pwe.last_result();
+    const auto& result = pw.last_result();
 
     std::cout << std::boolalpha << "Converged:    " << result.converged << " ("
               << result.iterations << " iterations)\n"

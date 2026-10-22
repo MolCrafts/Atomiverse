@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `gpw-uks-o2-gamma` |
-| Public API | `cpu::gpw::GpwDft` members (`n_alpha`/`n_beta`, `XcKind::PADE`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
+| Public API | `cpu::gpw::GpwDft{kinds, cutoff_ry, XcKind::PADE}` + members (`n_alpha`/`n_beta`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — Γ-point UKS GPW (PADE LSD foothold) |
 
 ## Summary
@@ -18,8 +18,7 @@ spin contamination against offline **CP2K 2026.1 Quickstep** (`LSD`,
 `MULTIPLICITY 3`) with **Martyna–Tuckerman** isolated electrostatics.
 
 Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element
-(lookup constructors `GaussianBasis` / `GthPotential`), set its members
-(`n_alpha`, `n_beta`, `cutoff_ry`, `xc`, `nonperiodic`, …), move it into
+(lookup constructors `GaussianBasis` / `GthPotential`), pass `cutoff_ry` and `xc` to the constructor, set its members (`n_alpha`, `n_beta`, `nonperiodic`, …), move it into
 `cpu::gpw::GPWEvaluator`, run `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**; Hartree
 and \(\langle S^2\rangle\) via `last_energy_hartree()` / `last_s2()`. Product
 gate: `reg_gpw-uks-o2-gamma`. Fair wall ratio
@@ -107,12 +106,10 @@ cpu::gpw::Kind O{molrs::Element::O,
                  cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
                  cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 400.0;
+cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.nonperiodic = true;
 dft.n_alpha = 7;  // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;

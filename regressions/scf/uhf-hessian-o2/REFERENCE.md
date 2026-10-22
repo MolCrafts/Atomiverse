@@ -4,7 +4,7 @@
 
 Analytic UHF nuclear Hessian via unrestricted coupled-perturbed Hartree–Fock
 (CPHF) linear response, HF/STO-3G on triplet O₂ (charge 0, \(2S=2\)). Public
-API: `cpu::scf::UHF{9,7}.hessian(frame, &guess)` with ROHF density warm-start
+API: `cpu::scf::UHF{BasisSet::STO3G, 9, 7}.hessian(frame, &guess)` with ROHF density warm-start
 (same multi-minima path as `ump2-o2-sto3g` / `o2_rohf_sto3g`). Observable is
 the dense Cartesian Hessian in eV/Å² (Frame/vib contract).
 
@@ -93,7 +93,7 @@ symmetry on this collinear geometry).
 
 ## What is checked
 
-`cpu::scf::UHF{9,7}` with ROHF warm-start → `uhf.hessian(frame, &guess)`
+`cpu::scf::UHF{BasisSet::STO3G, 9, 7}` with ROHF warm-start → `uhf.hessian(frame, &guess)`
 returns a 6×6 Hessian in eV/Å². Product gate: the nine Cartesian-diagonal /
 stretch elements above within **1e-5 eV/Å²** of the pinned PySCF values;
 failure prints got / want / tol and exits non-zero. ≤ 60 s, single node.

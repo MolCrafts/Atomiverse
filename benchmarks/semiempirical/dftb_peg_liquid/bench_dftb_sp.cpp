@@ -124,7 +124,8 @@ int main(int argc, char** argv) {
     for (int r = 0; r < repeat; ++r) {
         cpu::Frame f = frame;
         f.meta.get(kEnergy) = 0;
-        cpu::semiempirical::DFTB2 dftb;
+        cpu::semiempirical::DFTB2 dftb{
+            cpu::semiempirical::DftbSkSet::MioSketch};
         dftb.boundary = periodic ? cpu::semiempirical::DftbBoundary::lattice
                                  : cpu::semiempirical::DftbBoundary::cluster;
         dftb.scc_tol = scc_tol;

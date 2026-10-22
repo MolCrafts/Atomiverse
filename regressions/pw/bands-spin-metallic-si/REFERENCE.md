@@ -10,14 +10,13 @@ diagonalization on frozen \(V_{\mathrm{eff},\sigma}\) along a high-symmetry
 Public path (no `*Config`, no factories):
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;           // seed M=0; free under smear
 method.smearing = Smearing::fermi_dirac;
 method.degauss = 0.02;             // Ry
 method.extra_bands = 4;
-method.upf_path = "..."; method.ecut_ry = 15; method.k_mesh = 2;
-method.xc = cpu::scf::XCType::LSDA;
 
 cpu::pw::Bands bands;
 bands.n_bands = 8;

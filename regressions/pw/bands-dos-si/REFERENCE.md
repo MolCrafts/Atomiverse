@@ -11,7 +11,8 @@ diagonalization on a high-symmetry **k-path** (bands) and a denser MP mesh
 Public path:
 
 ```cpp
-cpu::pw::PW method;          // members: upf, ecut, k_mesh, xc=LSDA, …
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};  // + knobs: tol, max_iter, …
 cpu::pw::Bands bands;        // members: n_bands, kfrac / set_diamond_path
 auto br = bands.compute(method, frame);
 cpu::pw::Dos dos;            // members: k_mesh, n_bands, sigma_ry, …

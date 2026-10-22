@@ -68,9 +68,8 @@ TEST(GpwIntegrateDosTo, PartialCutoffHalfPeak) {
 }
 
 TEST(GpwDosGuards, RejectsGammaOnlyMesh) {
-    GpwDft method;
+    GpwDft method{std::vector<Kind>{}, /*cutoff_ry=*/50.0, XcKind::PADE};
     method.n_occ = 1;
-    method.cutoff_ry = 50.0;
     // No atoms needed for the multi-k gate — compute throws before run when
     // mesh is Γ-only. Still need a non-empty atom list for API contract if it
     // got past the gate; the gate fires first.
@@ -85,7 +84,7 @@ TEST(GpwDosGuards, RejectsNonPositiveSigma) {
     Dos dos;
     dos.k_mesh = 2;
     dos.sigma_ha = 0.0;
-    GpwDft method;
+    GpwDft method{std::vector<Kind>{}, /*cutoff_ry=*/300.0, XcKind::PADE};
     ATV::cpu::Frame atoms(0);
     EXPECT_THROW(dos.compute(method, atoms), std::invalid_argument);
 }

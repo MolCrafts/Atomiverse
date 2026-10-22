@@ -22,8 +22,8 @@ using RM1Result = NDDOResult;
 /// The self-consistency loop is `NddoMethod`.
 class RM1 : public NddoMethod, public cpu::QmEngine {
   public:
-    int charge = 0;
-    int multiplicity = 1;
+    const int charge;
+    const int multiplicity;
     int max_iter = 200;
     double density_tol = 1.0e-8;
     double energy_tol = 1.0e-10;
@@ -31,19 +31,17 @@ class RM1 : public NddoMethod, public cpu::QmEngine {
     ///        truncation error \(O(h^{2})\).
     double force_step = 1.0e-4;
 
-    /// @brief Default parameters (charge 0, singlet, max_iter 200, …).
-    RM1();
     /// @brief Construct with SCF parameters assigned immediately.
     /// @param charge Total molecular charge [e].
     /// @param multiplicity Spin multiplicity 2S+1 (dimensionless).
     /// @param max_iter SCF iteration cap (dimensionless).
     /// @param density_tol Density residual tolerance (dimensionless).
     /// @param energy_tol Energy residual tolerance [eV].
-    RM1(int charge, int multiplicity, int max_iter = 200,
-        double density_tol = 1.0e-8, double energy_tol = 1.0e-10);
+    explicit RM1(int charge = 0, int multiplicity = 1, int max_iter = 200,
+                 double density_tol = 1.0e-8, double energy_tol = 1.0e-10);
     ~RM1();
     RM1(RM1&&) noexcept;
-    RM1& operator=(RM1&&) noexcept;
+    RM1& operator=(RM1&&) = delete;
     RM1(const RM1&) = delete;
     RM1& operator=(const RM1&) = delete;
 

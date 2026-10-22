@@ -50,7 +50,7 @@ cpu::Frame make_h2() {
 int main() {
     auto frame = make_h2();
 
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;

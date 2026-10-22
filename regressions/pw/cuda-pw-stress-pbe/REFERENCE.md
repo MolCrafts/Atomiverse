@@ -14,7 +14,7 @@ Device twin of `cpu::pw::pw_stress` with **`XCType::PBE`**:
 Sign: mechanical / CP2K \(\sigma=-(1/\Omega)\,\partial E/\partial\varepsilon\).
 
 Public API: `cuda::pw::pw_stress(frame, method[, energy_ry_out])` → Voigt
-σ [eV/Å³] with `method.xc = XCType::PBE`.
+σ [eV/Å³] for a `method` constructed with `XCType::PBE`.
 
 Sibling of `cuda-pw-stress` (LSDA). Closes the closed-shell PBE stress
 dual-gate left open after the device PBE energy path + `cuda-pw-stress` (LSDA).

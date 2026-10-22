@@ -50,7 +50,7 @@ TEST(MethodDriverWire, HfIsPureTagNotComponent) {
     static_assert(std::is_base_of_v<cpu::DriverNode, cpu::scf::RHF>);
     static_assert(std::is_base_of_v<cpu::HF, cpu::scf::RHF>);
     static_assert(!std::is_base_of_v<cpu::Component, cpu::scf::RHF>);
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     EXPECT_EQ(rhf.default_budget(), rhf.max_iter);
 }
 
@@ -58,7 +58,7 @@ TEST(MethodDriverWire, HfIsPureTagNotComponent) {
 TEST(MethodDriverWire, EvaluateBindsNestedRhf) {
     auto frame = make_h2();
     (void)frame;
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.with_gradient(false);
     cpu::Evaluate eval;
     eval.on(evaluate::Phase::evaluate).add_ref(rhf);
@@ -68,7 +68,7 @@ TEST(MethodDriverWire, EvaluateBindsNestedRhf) {
 TEST(MethodDriverWire, MdBindsNestedRhfForce) {
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{0.5});
-    sim.on(md::Phase::force).add(cpu::scf::RHF{});
+    sim.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
     EXPECT_NO_THROW(sim.build());
 }
 
@@ -76,13 +76,14 @@ TEST(MethodDriverWire, MinimizeBindsNestedRhf) {
     cpu::minimizer::Minimize opt;
     opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});
     opt.add_criterion(cpu::ForceConverged{0.5});
-    opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+    opt.on(minimizer::Phase::force)
+        .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
     EXPECT_NO_THROW(opt.build());
 }
 
 TEST(MethodDriverWire, CarParrinelloRejectsReversibleTrialBeforeColdSeed) {
-    cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> rhf(cpu::scf::RHF{},
-                                                            400.0);
+    cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> rhf(
+        cpu::scf::RHF{cpu::scf::BasisSet::STO3G}, 400.0);
     cpu::Frame frame(0);
     cpu::Context ctx;
     ctx.exec.trial_evaluation = true;
@@ -93,8 +94,8 @@ TEST(MethodDriverWire, CarParrinelloRejectsReversibleTrialBeforeColdSeed) {
 TEST(MethodDriverWire, PostHfRestoresEriSettingWhenReferenceThrows) {
     // Public wrapper configures CP; standalone reference run refuses it before
     // any integral/SCF work. MP2 still receives the supported concrete RHF type.
-    cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> cp(cpu::scf::RHF{},
-                                                           400.0);
+    cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> cp(
+        cpu::scf::RHF{cpu::scf::BasisSet::STO3G}, 400.0);
     auto& method = cp.method();
     cpu::scf::MP2<cpu::scf::RHF> mp2(method);
     cpu::Frame frame;

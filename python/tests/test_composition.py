@@ -7,8 +7,17 @@ import pytest
 from _domains import needs
 
 
+#: Constructor arguments per Gaussian method; the identity is mandatory.
+_MEAN_FIELD_ARGS = {
+    "RHF": {"basis": "STO-3G"},
+    "UHF": {"basis": "STO-3G", "n_alpha": 1, "n_beta": 1},
+    "RKS": {"basis": "STO-3G", "xc": "PBE"},
+    "UKS": {"basis": "STO-3G", "n_alpha": 1, "n_beta": 1},
+}
+
+
 @pytest.mark.parametrize("workflow", ["md", "minimize"])
-@pytest.mark.parametrize("method", ["RHF", "UHF", "RKS", "UKS"])
+@pytest.mark.parametrize("method", sorted(_MEAN_FIELD_ARGS))
 @needs("ATV_BUILD_MD", "ATV_BUILD_MINIMIZER", "ATV_BUILD_HF")
 def test_mean_field_node_registration_keeps_owner(workflow, method):
     import atomiverse as av
@@ -16,7 +25,7 @@ def test_mean_field_node_registration_keeps_owner(workflow, method):
     driver = av.MD(dt=0.25) if workflow == "md" else av.Minimize()
     if workflow == "minimize":
         driver.set_optimizer(av.LBFGS())
-    evaluator = getattr(av, method)()
+    evaluator = getattr(av, method)(**_MEAN_FIELD_ARGS[method])
     before = sys.getrefcount(evaluator)
     driver.set_evaluator(evaluator)
     assert sys.getrefcount(evaluator) > before
@@ -32,7 +41,7 @@ def test_dftb_component_registration_keeps_owner(workflow):
     driver = av.MD(dt=0.25) if workflow == "md" else av.Minimize()
     if workflow == "minimize":
         driver.set_optimizer(av.LBFGS())
-    evaluator = av.DFTB2()
+    evaluator = av.DFTB2(av.DftbSkSet.mio)
     before = sys.getrefcount(evaluator)
     driver.set_evaluator(evaluator)
     assert sys.getrefcount(evaluator) > before

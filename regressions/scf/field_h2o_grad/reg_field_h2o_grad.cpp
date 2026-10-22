@@ -42,8 +42,7 @@ cpu::Frame water() {
 const std::array<double, 3> kField{{0.0, 0.0, 0.01}}; // a.u.
 
 double field_energy(const cpu::Frame& frame) {
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     rhf.external_field = kField;
@@ -57,8 +56,7 @@ int main() {
     using namespace ATV;
     const cpu::Frame frame = water();
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     rhf.external_field = kField;

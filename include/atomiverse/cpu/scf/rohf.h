@@ -45,19 +45,18 @@ namespace scf {
 /// DOI 10.1063/1.3503173.
 class ROHF : public MeanFieldMethod<ROHF> {
   public:
-    int n_alpha = 0; ///< Alpha (spin-up) electrons (must be set before run).
-    int n_beta = 0;  ///< Beta (spin-down) electrons; requires n_alpha ≥ n_beta.
+    const int n_alpha; ///< Alpha (spin-up) electrons.
+    const int
+        n_beta; ///< Beta (spin-down) electrons; requires n_alpha ≥ n_beta.
 
-    /// @brief Construct with the ROHF defaults (restricted-open HF; Hcore
-    ///        initial guess; 0.7 density damping; DIIS capped at 6 vectors
-    ///        and started at iteration 5; energy tolerance 1e-8 Ha). Set
-    ///        `n_alpha` / `n_beta` before `run`.
-    ROHF();
-    /// @brief Construct with an explicit α / β electron count.
+    /// @brief Construct ROHF (Hcore guess, 0.7 damping, DIIS 6 vectors from
+    ///        iteration 5, energy tolerance 1e-8 Ha).
+    /// @param basis Basis set.
     /// @param n_alpha Spin-up electrons.
     /// @param n_beta  Spin-down electrons (must satisfy n_alpha ≥ n_beta;
     ///                violated at run() with std::invalid_argument).
-    explicit ROHF(int n_alpha, int n_beta);
+    /// @param charge  Molecular charge [e].
+    ROHF(BasisSet basis, int n_alpha, int n_beta, int charge = 0);
     std::string name() const { return "rohf"; }
 
   protected:

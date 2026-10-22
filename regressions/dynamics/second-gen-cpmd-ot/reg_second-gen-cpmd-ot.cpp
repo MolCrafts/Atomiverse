@@ -57,12 +57,10 @@ int main() {
 
     constexpr double dt = 0.5; // fs — BOMD-class step (vs classical CP ~0.1)
     constexpr int corrector_budget = 5;
-    cpu::gpw::GpwDft gpw_base_dft{{O, H}};
-    gpw_base_dft.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft gpw_base_dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     gpw_base_dft.max_iter = 60;
     gpw_base_dft.tol = 1e-5;
     gpw_base_dft.mix = 0.3;
-    gpw_base_dft.xc = cpu::gpw::XcKind::PBE;
     gpw_base_dft.nonperiodic = true;
     gpw_base_dft.use_ot = true; // OT partial-SCF corrector (this slug)
     cpu::gpw::GPWEvaluator gpw_base(std::move(gpw_base_dft),

@@ -98,16 +98,14 @@ int main() {
 
     std::printf("Case A: N2 R=2.5 A, 6-31G RHF, hcore guess (tol 1e-9)\n");
     cpu::Frame fA1 = make_n2(2.5);
-    cpu::scf::RHF cdiisA;
-    cdiisA.basis = BasisSet::Pople631G;
+    cpu::scf::RHF cdiisA{BasisSet::Pople631G};
     cdiisA.tol = 1e-9;
     cdiisA.max_iter = 60;
     cdiisA.init_guess = InitGuess::Hcore;
     cdiisA.run(fA1);
 
     cpu::Frame fA2 = make_n2(2.5);
-    cpu::scf::RHF soscfA;
-    soscfA.basis = BasisSet::Pople631G;
+    cpu::scf::RHF soscfA{BasisSet::Pople631G};
     soscfA.tol = 1e-9;
     soscfA.max_iter = 60;
     soscfA.init_guess = InitGuess::Hcore;
@@ -165,8 +163,7 @@ int main() {
                 budget);
     auto run_uhf = [&](bool soscf) {
         cpu::Frame frame = make_h2o(2.6);
-        cpu::scf::UHF uhf(/*n_alpha=*/5, /*n_beta=*/5);
-        uhf.basis = BasisSet::Def2SVP;
+        cpu::scf::UHF uhf(BasisSet::Def2SVP, /*n_alpha=*/5, /*n_beta=*/5);
         uhf.tol = 1e-9;
         uhf.max_iter = budget;
         uhf.init_guess = InitGuess::Hcore;

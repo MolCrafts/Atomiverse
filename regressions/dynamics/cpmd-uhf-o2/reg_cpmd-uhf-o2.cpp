@@ -64,8 +64,8 @@ int main() {
     constexpr double dt = 0.05; // fs
 
     // 16 electrons, high-spin triplet: 1σg²1σu²2σg²2σu²3σg²1πu⁴1πg²(↑↑).
-    cpu::scf::UHF uhf_base{/*n_alpha=*/9, /*n_beta=*/7};
-    uhf_base.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UHF uhf_base{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9,
+                           /*n_beta=*/7};
     uhf_base.tol = 1e-9;
     // Scanned μ ∈ {400, 1000, 2000} a.u. × dt ∈ {0.05, 0.1} fs (REFERENCE.md):
     // the plane-wave textbook μ = 400 a.u. loses adiabaticity on the stiffer AO

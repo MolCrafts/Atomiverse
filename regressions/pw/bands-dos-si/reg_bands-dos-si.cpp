@@ -81,13 +81,10 @@ int main() {
 
     auto frame = make_si_diamond(kA);
 
-    PW method;
-    method.upf_path = upf;
-    method.ecut_ry = kEcutRy;
-    method.k_mesh = kMeshScf;
+    PW method{UpfPseudopotential{upf}, kEcutRy, kMeshScf,
+              cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
-    method.xc = cpu::scf::XCType::LSDA;
 
     // ── Bands ──────────────────────────────────────────────────────────
     Bands bands;

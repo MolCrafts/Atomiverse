@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Regression | None standing (end-to-end case removed) |
-| Public API | `cpu::gpw::GpwDft` members (`n_alpha`/`n_beta`, `XcKind::RevPBE`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
+| Public API | `cpu::gpw::GpwDft{kinds, cutoff_ry, XcKind::RevPBE}` + members (`n_alpha`/`n_beta`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — Γ-UKS revPBE spin-GGA (`XcKind::RevPBE`) |
 | Fair wall | \(r = T_{\mathrm{ATV}}/T_{\mathrm{CP2K}} \approx \mathbf{3.22}\) (≤10×) |
 
@@ -21,8 +21,7 @@ identical-geometry UKS-PBE ensures the functional is activated
 (\(|E_{\mathrm{revPBE}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha).
 
 Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element
-(lookup constructors `GaussianBasis` / `GthPotential`), set its members
-(`n_alpha`, `n_beta`, `cutoff_ry`, `xc = XcKind::RevPBE`, `nonperiodic`, …),
+(lookup constructors `GaussianBasis` / `GthPotential`), pass `cutoff_ry` and `XcKind::RevPBE` to the constructor, set its members (`n_alpha`, `n_beta`, `nonperiodic`, …),
 move it into `cpu::gpw::GPWEvaluator`, run `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**;
 Hartree and \(\langle S^2\rangle\) via `last_energy_hartree()` / `last_s2()`.
 No standing regression.
@@ -144,12 +143,10 @@ cpu::gpw::Kind O{molrs::Element::O,
                  cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
                  cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 400.0;
+cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::RevPBE};
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::RevPBE;
 dft.nonperiodic = true;
 dft.n_alpha = 7;  // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;

@@ -32,12 +32,10 @@ diagonalization (`second-gen-cpmd-kpoints`), and multi-k OT. Multi-k
 ## Usage
 
 ```cpp
-cpu::gpw::GpwDft dft{{H_kind}};
-dft.cutoff_ry = 100.0;
+cpu::gpw::GpwDft dft{{H_kind}, 100.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 60;
 dft.tol = 1e-5;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.nonperiodic = false;
 dft.k_mesh[2] = 2;             // 1×1×2 Monkhorst–Pack
 dft.k_time_reversal = false;   // two sampled k

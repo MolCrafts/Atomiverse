@@ -70,8 +70,7 @@ frame.span(kAtom_z)[1] = 0.74;
 frame.span(kAtom_type)[1] = 1;
 frame.box = cpu::Box::cubic(20.0);
 
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.max_iter = 200;
 rhf.run(frame);

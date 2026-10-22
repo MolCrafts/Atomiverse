@@ -40,8 +40,7 @@ int main() {
 
     auto frame = h2o_frame();
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     ATV::cpu::scf::MP2<decltype(rhf)> mp_corr{rhf};

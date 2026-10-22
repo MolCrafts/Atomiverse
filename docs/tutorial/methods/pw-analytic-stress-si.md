@@ -111,13 +111,9 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method;
-method.upf_path = "…/tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = kEcutRy;
-method.k_mesh = kMesh;
+PW method{UpfPseudopotential{"…/tests/data/pw/Si_lda_nc.upf"}, kEcutRy, kMesh, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
-method.xc = cpu::scf::XCType::LSDA;
 
 // Analytic Nielsen–Martin stress [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 // Also writes W = σ·Ω [eV] to frame.meta.get(kStress) and E [eV] to kEnergy;

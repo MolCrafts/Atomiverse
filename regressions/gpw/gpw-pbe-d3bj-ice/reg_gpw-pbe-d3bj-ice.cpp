@@ -51,14 +51,14 @@ int main() {
                      GthPotential(molrs::Element::O, "GTH-PBE-q6")},
                 Kind{molrs::Element::H,
                      GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
-                     GthPotential(molrs::Element::H, "GTH-PBE-q1")}}};
-    gpw.cutoff_ry =
-        200.0;     // e_disp is geometry-only; SCF settings only need to run
+                     GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
+               /*cutoff_ry=*/200.0,
+               XcKind::PBE};
+    // e_disp is geometry-only; SCF settings only need to run.
     gpw.n_occ = 8; // 2×O (6e) + 4×H (4e) = 16e → 8 doubly occupied
     gpw.max_iter = 8;
     gpw.tol = 1e-6;
     gpw.mix = 0.4;
-    gpw.xc = XcKind::PBE;
     gpw.nonperiodic = false;
     gpw.d3bj = true;
 

@@ -82,8 +82,7 @@ TEST(LinkAtom, NoBondsMeansZeroLinks) {
     cpu::Context ctx;
     cpu::QmmmElectrostatic q{
         {{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0, 12.0};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     q.set_engine(std::move(rhf));
     q.build({ctx, f});
     EXPECT_EQ(q.last_n_links(), 0);
@@ -116,8 +115,7 @@ TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
     cpu::Context ctx;
     cpu::QmmmElectrostatic qm{{{1, 1, 0.01, 3.4}}, 10.0, 12.0};
     qm.link_scale() = 0.709;
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     qm.set_engine(std::move(rhf));
     qm.build({ctx, f});
     EXPECT_EQ(qm.last_n_links(), 1);
@@ -141,8 +139,7 @@ TEST(LinkAtom, BothQmBondIsNotALink) {
 
     cpu::Context ctx;
     cpu::QmmmElectrostatic q{{{1, 1, 0.01, 3.4}}, 10.0, 12.0};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     q.set_engine(std::move(rhf));
     q.build({ctx, f});
     EXPECT_EQ(q.last_n_links(), 0);

@@ -19,7 +19,7 @@ with different \((\mu,\beta)\). The e2e product gate is a **dual-gate** against
 identical-geometry PBE (\(|E_{\mathrm{PBEsol}}-E_{\mathrm{PBE}}| > 10^{-4}\) Ha)
 plus a soft absolute band on first-green Atomiverse \(E_{\mathrm{PBEsol}}\) until
 an offline CP2K twin can replace it. Public surface: concrete
-`cpu::gpw::GpwDft` members (`xc`, `cutoff_ry`, `nonperiodic`, …); lookup
+`cpu::gpw::GpwDft{kinds, cutoff_ry, xc}` + members (`nonperiodic`, …); lookup
 constructors for basis/PP tables — no public `*Config`, no factories. Fair wall
 vs CP2K is **`perf_exempt`** (no CP2K binary on the pin host).
 
@@ -124,13 +124,11 @@ frame.box = cpu::Box::cubic(a);
 
 GpwDft m{{Kind{molrs::Element::Si,
                GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-m.cutoff_ry = 200.0;
+               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}, 200.0, XcKind::PBEsol};  // or XcKind::PBE for dual-gate twin
 m.n_occ = 4;                             // 2 Si × zion 4 → 8 e⁻
 m.max_iter = 60;
 m.tol = 1e-6;
 m.mix = 0.4;
-m.xc = XcKind::PBEsol;                   // or XcKind::PBE for dual-gate twin
 m.nonperiodic = true;                    // MT isolated Poisson
 m.build(frame);
 const GpwResult& r = m.run(frame);       // r.e_total [Ha], r.converged, r.iters
@@ -143,8 +141,9 @@ Frame-compatible evaluator path (same `xc` / kinds; not the timed e2e path):
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
 
-// GpwDft m{{Kind{Element::Si, GaussianBasis(...), GthPotential(...)}}};
-// m.xc = XcKind::PBEsol;  m.nonperiodic = true;  (other members as above)
+// GpwDft m{{Kind{Element::Si, GaussianBasis(...), GthPotential(...)}},
+//          cutoff_ry, XcKind::PBEsol};
+// m.nonperiodic = true;  (other members as above)
 // GPWEvaluator eval(std::move(m));
 // cpu::single_point(frame, eval);  // last_energy_hartree() [Ha]
 ```

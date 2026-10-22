@@ -157,7 +157,7 @@ frame.span(kAtom_z)[2] = 0.0;
 frame.box = cpu::Box::cubic(20.0);
 
 cpu::Evaluate eval;
-cpu::semiempirical::DFTB3 dftb3;
+cpu::semiempirical::DFTB3 dftb3{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb3.with_forces = false;
 dftb3.scc_tol = 1e-10;
 // max_scc = 50, mix_beta = 0.3 defaults

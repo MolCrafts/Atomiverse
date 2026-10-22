@@ -11,7 +11,7 @@ Same geometry and cell as `gpw-d4-water` (two-body-only twin).
 Public API:
 
 ```cpp
-GpwDft gpw;
+GpwDft gpw{kinds, /*cutoff_ry=*/200.0, XcKind::PBE};
 gpw.d4 = true;
 gpw.d4_atm = true;   // s9 = 1
 ```

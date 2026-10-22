@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `dfpt-gga-spin-si` |
-| Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` + `PW.spin_polarized = true` |
+| Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult`; `PW{…, XCType::PBE}` + `PW.spin_polarized = true` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **joint GGA × collinear spin** ✓ (`reg_dfpt-gga-spin-si`) |
 | Dep | `dfpt-gga-si` ✓ (restricted PBE kernel); `dfpt-spin-si` ✓ (collinear LSDA kernel) |
 
@@ -69,11 +69,7 @@ joint finite-q × spin × GGA product is `dfpt-gga-spin-finite-q-si`. Hybrids,
 ## Implementation
 
 ```cpp
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry  = 10.0;
-method.k_mesh   = 2;
-method.xc       = cpu::scf::XCType::PBE;   // pure GGA kernel
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 2, cpu::scf::XCType::PBE};  // pure GGA kernel
 method.spin_polarized = true;              // joint spin × GGA response
 method.multiplicity   = 1;
 method.tol      = 1e-8;

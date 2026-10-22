@@ -59,21 +59,16 @@ MPI_Datatype mpi_real_type() {
 } // namespace
 
 PW copy_pw_params(const PW& m) {
-    PW p;
-    // Pseudopotential source — exactly one of these is set, and dropping
-    // either makes the copy throw "no default pseudopotential" at build().
-    p.upf_path = m.upf_path;
-    p.gth_name = m.gth_name;
-    // Basis / k-mesh
-    p.ecut_ry = m.ecut_ry;
-    p.k_mesh = m.k_mesh;
+    // Pseudopotential source — exactly one of the two is set.
+    PW p = m.upf_path.empty()
+               ? PW(GthPseudopotential{m.gth_name}, m.ecut_ry, m.k_mesh, m.xc)
+               : PW(UpfPseudopotential{m.upf_path}, m.ecut_ry, m.k_mesh, m.xc);
     // SCF control
     p.tol = m.tol;
     p.max_iter = m.max_iter;
     p.mix_beta = m.mix_beta;
     p.pulay_depth = m.pulay_depth;
     // Hamiltonian / occupations
-    p.xc = m.xc;
     p.spin_polarized = m.spin_polarized;
     p.multiplicity = m.multiplicity;
     p.smearing = m.smearing;

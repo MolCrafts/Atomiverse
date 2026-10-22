@@ -132,11 +132,7 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = 10.0;
-method.k_mesh = 1;
-method.xc = cpu::scf::XCType::LSDA;
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 1, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;   // M = 0 closed-shell collinear
 method.tol = 1e-6;

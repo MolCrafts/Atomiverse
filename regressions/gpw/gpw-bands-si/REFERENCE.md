@@ -10,7 +10,8 @@ freeze \(V_\mathrm{eff}\) from the SCF density \(\rho=\sum_k w_k\rho_k\), rebuil
 Public API:
 
 ```cpp
-cpu::gpw::GpwDft dft{{cpu::gpw::Kind{Si, basis, pot}}};  // + k_mesh, cutoff_ry, n_occ, xc, …
+cpu::gpw::GpwDft dft{{cpu::gpw::Kind{Si, basis, pot}}, /*cutoff_ry=*/150.0,
+                     cpu::gpw::XcKind::PBE};  // + knobs: k_mesh, n_occ, …
 dft.build(frame);       // positions [Å], Z in kAtom_type, orthorhombic box [Å]
 cpu::gpw::Bands bands;  // members: n_bands, kfrac / set_diamond_path
 auto br = bands.compute(dft, frame);

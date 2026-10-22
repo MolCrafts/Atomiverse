@@ -79,13 +79,11 @@ int main() {
     ATV::cpu::Frame frame = make_frame();
 
     auto make_cfg = [&]() {
-        GpwDft m(water_kinds());
-        m.cutoff_ry = 200.0;
+        GpwDft m(water_kinds(), 200.0, XcKind::PBE);
         m.n_occ = 8;
         m.max_iter = 40;
         m.tol = 1e-7;
         m.mix = 0.4;
-        m.xc = XcKind::PBE;
         m.nonperiodic = false;
         m.vdw_df = true;
         m.local_pp_on_grid = true;

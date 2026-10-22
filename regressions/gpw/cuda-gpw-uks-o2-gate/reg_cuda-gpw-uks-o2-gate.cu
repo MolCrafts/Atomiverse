@@ -63,14 +63,12 @@ void set_cell_bohr(ATV::cuda::gpw::GpwDft& m, double a, double b, double c) {
 template <typename Method>
 void set_uks(Method& m) {
     set_cell_bohr(m, kCellBohr, kCellBohr, kCellBohr);
-    m.cutoff_ry = 100.0;
     m.n_occ = 0;
     m.n_alpha = 7; // multiplicity 3, 12 valence e⁻
     m.n_beta = 5;
     m.max_iter = 80;
     m.tol = 1e-8;
     m.diis_depth = 6;
-    m.xc = XcKind::PADE;
     m.nonperiodic = false;
     m.local_pp_on_grid = true;
     m.use_ot = false;
@@ -107,7 +105,7 @@ int main(int argc, char** argv) {
     double s2_cpu = 0.0, s2_cuda = 0.0;
 
     if (run_cpu) {
-        ATV::cpu::gpw::GpwDft m;
+        ATV::cpu::gpw::GpwDft m({}, 100.0, XcKind::PADE);
         set_uks(m);
         ATV::cpu::gpw::internal::GpwDftAccess::build(m, atoms);
         const auto& r = ATV::cpu::gpw::internal::GpwDftAccess::run(m, atoms);
@@ -123,7 +121,7 @@ int main(int argc, char** argv) {
     }
 
     if (run_cuda) {
-        ATV::cuda::gpw::GpwDft m;
+        ATV::cuda::gpw::GpwDft m({}, 100.0, XcKind::PADE);
         set_uks(m);
         m.build(atoms);
         const auto& r = m.run(atoms);

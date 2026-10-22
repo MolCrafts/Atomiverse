@@ -15,14 +15,10 @@ namespace ATV::cpu::task {
 namespace {
 
 void require_budget(const char* task, const char* field, std::int64_t value) {
-    if (value < 1)
+    if (value < 0)
         throw std::invalid_argument(std::string("task_spec: ") + task + " "
-                                    + field + " must be >= 1, got "
+                                    + field + " must be >= 0, got "
                                     + std::to_string(value));
-    if (value > std::numeric_limits<int>::max())
-        throw std::invalid_argument(std::string("task_spec: ") + task + " "
-                                    + field + " " + std::to_string(value)
-                                    + " exceeds the int budget limit");
 }
 
 template <typename Phase>

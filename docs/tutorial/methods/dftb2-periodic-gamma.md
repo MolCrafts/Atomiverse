@@ -74,7 +74,7 @@ enumeration, truncated at the static SK cutoff — **not** Ewald long-range
 Coulomb. When all \(L_d \gg r_\mathrm{cut}\), only \(\mathbf{T}=\mathbf{0}\)
 contributes and the molecular (isolated) limit is recovered.
 
-**Parameters (this twin).** `sk_set = MioSketch` (default): multi-element
+**Parameters (this twin).** `DftbSkSet::MioSketch` (constructor argument): multi-element
 H/C/N/O from in-tree `basis_data/dftb_mio_tables.h` (exponential sketches for
 most pairs) plus mio-1-1 H–H radial grids in `dftb_mio_hh_sk.h`. **Not** a
 runtime `.skf` reader; **not** bit-identical DFTB.org mio-1-1 for C–C.
@@ -142,7 +142,7 @@ for (int i = 0; i < 2; ++i) {
 frame.box = cpu::Box::orthorhombic(2.8, 12.0, 12.0);
 
 cpu::Evaluate eval;
-cpu::semiempirical::DFTB2 dftb;  // sk_set = MioSketch (default)
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb.with_forces = false;
 dftb.scc_tol = 1e-10;
 eval.on(evaluate::Phase::evaluate).add(std::move(dftb));

@@ -24,8 +24,8 @@ short-range correction (SRB is identically zero on H₂O) — written to
 `frame.span(kAtom_f*)` in eV/Å. This is the **xtb `--gfn 0 --grad` module
 boundary** (pprcht `build_dSH0`, `chargeEquilibration`, `gfn0_repulsion`,
 `gfn0_shortranged`), **not** a \(6N\) energy finite-difference and **not**
-SCC-DFTB. Public surface: concrete method `cpu::semiempirical::GFN0` with
-members (`charge`, `with_forces`); no public `*Config`, no `make_*` /
+SCC-DFTB. Public surface: concrete method `cpu::semiempirical::GFN0{charge}` with
+member `with_forces`; no public `*Config`, no `make_*` /
 `build_*`. Product gate: `reg_gfn0-xtb-forces`. Energy identity already ships
 on methanol (`reg_gfn0-beyond-toy`). Fair wall
 \(T_{\mathrm{ATV}}/T_{\mathrm{xtb}}\approx 0.092\le 10\).
@@ -185,8 +185,7 @@ for (int i = 0; i < 3; ++i) {
 frame.box = cpu::Box::cubic(20.0);
 frame.meta.get(kEnergy) = 0;
 
-cpu::semiempirical::GFN0 gfn0;
-gfn0.charge = 0;
+cpu::semiempirical::GFN0 gfn0{/*charge=*/0};
 gfn0.with_forces = true;
 
 cpu::Evaluate eval;

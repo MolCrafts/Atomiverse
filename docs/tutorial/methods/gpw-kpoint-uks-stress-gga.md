@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Regression | None standing (end-to-end case removed) |
-| Public API | `cpu::gpw::GpwDft` + `cpu::gpw::GpwDft::stress` / free oracle `gpw_stress_fd`; members `n_alpha`/`n_beta`, `k_mesh`, `xc` (`RevPBE` \| `RPBE` \| `BLYP`) |
+| Public API | `cpu::gpw::GpwDft` + `cpu::gpw::GpwDft::stress` / free oracle `gpw_stress_fd`; constructor `xc` (`RevPBE` \| `RPBE` \| `BLYP`); members `n_alpha`/`n_beta`, `k_mesh` |
 | Roadmap | [dft.md](../../roadmap/dft.md) § Periodic DFT / GPW — multi-k UKS stress for pure GGA |
 | Queue | CP2K capability loop — harness wave 11 done (2026-07-26) |
 
@@ -143,13 +143,11 @@ const Kind H{molrs::Element::H,
              GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
 auto make_uks = [&](XcKind xc) {
-    GpwDft m{{H}};
-    m.cutoff_ry = 100.0;
+    GpwDft m{{H}, 100.0, xc};
     m.n_alpha = 2;
     m.n_beta = 0;
     m.max_iter = 60;
     m.tol = 1e-8;
-    m.xc = xc;
     m.local_pp_on_grid = true;
     m.k_mesh[0] = 1;
     m.k_mesh[1] = 1;

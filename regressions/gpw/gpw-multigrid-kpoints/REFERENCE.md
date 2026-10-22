@@ -16,8 +16,8 @@ image shift t becomes a phase index:
   into the real per-cell stack **V_t**, phase-summed per k into the Hermitian
   grid KS matrix **V^k = Σ_t e^{+2πi κ·t} V_t**.
 
-Public API: concrete `cpu::gpw::GpwDft` with members
-(`k_mesh`, `ngrids`, `rel_cutoff`, `cutoff_ry`, …); lookup constructors
+Public API: concrete `cpu::gpw::GpwDft{kinds, cutoff_ry, xc}` with knob
+members (`k_mesh`, `ngrids`, `rel_cutoff`, …); lookup constructors
 `GaussianBasis(Element::Si, "DZVP-MOLOPT-GTH")` /
 `GthPotential(Element::Si, "GTH-PBE-q4")`. No public `*Config`, no factories.
 

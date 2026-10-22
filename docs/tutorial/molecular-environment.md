@@ -86,8 +86,7 @@ C-PCM free energy (`pcm-grad-h2o`).
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.point_charges = {{0.0, 0.0, 3.0, 0.5}, {0.0, 0.0, -3.0, -0.5}};
 rhf.external_field = {0.0, 0.0, 1e-4};
 rhf.run(frame);
@@ -112,7 +111,7 @@ this engine includes it in nuclear repulsion.
 Dielectric continuum \(\varepsilon\); cavity of scaled Bondi spheres; apparent
 surface charges from \(S\mathbf q=-f(\varepsilon)\mathbf V\) with
 \(f=(\varepsilon-1)/(\varepsilon+x)\). \(x=0\): C-PCM; \(x=1/2\): COSMO.
-IEF-PCM (`solvent_model = SolventModel::IEFPCM`) uses
+IEF-PCM (`SolventModel::IEFPCM` as the `WithSolvent` constructor argument) uses
 \(f=(\varepsilon-1)/(\varepsilon+1)\) and the \(K q = R V\) system with the
 double-layer operator \(D\).
 Only electrostatic \(\Delta G_{\mathrm{el}}=\frac12\mathbf q\cdot\mathbf V\).
@@ -124,20 +123,18 @@ the cavity).
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Pople631Gs;
-cpu::scf::ContinuumSolvent pcm;
-pcm.eps = 78.4;
-pcm.radii_scale = 1.2;
-pcm.x = 0.0;
-cpu::scf::WithSolvent<cpu::scf::RHF> sol{std::move(rhf), pcm};
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
+cpu::scf::WithSolvent<cpu::scf::RHF> sol{std::move(rhf), cpu::scf::SolventModel::CPCM,
+                                          /*eps=*/78.4};
+sol.radii_scale = 1.2;  // Bondi-radius multiplier
+sol.x = 0.0;            // 0 = C-PCM, 0.5 = COSMO
 sol.run(frame);
 double dg_kcal = sol.e_solvent() * 627.509474;
 // forces of G = E_HF + ΔG_el:
 auto g = sol.forces(frame); // eV/Å on frame fx/fy/fz
 ```
 
-Gas phase is the unwrapped method. `ContinuumSolvent::eps = 0` is vacuum.
+Gas phase is the unwrapped method. `eps = 0` is vacuum.
 
 ### Results
 
@@ -169,8 +166,7 @@ qm[0] = 8; qm[1] = 1; qm[2] = 1; // water QM
 // optional: frame.add_bond(...) across QM–MM for link H
 
 cpu::QmmmElectrostatic qmmm{{{2, 2, 0.0065, 3.15}}, 10.0, 12.0};
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.predictor(3);
 qmmm.set_engine(std::move(rhf));
 // Optional MC posture: qmmm.reset_history_each_launch() = true;

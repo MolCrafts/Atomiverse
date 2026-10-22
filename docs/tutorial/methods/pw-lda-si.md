@@ -118,14 +118,10 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method;
-method.upf_path = "…/tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = kEcutRy;
-method.k_mesh = kMesh;
+PW method{UpfPseudopotential{"…/tests/data/pw/Si_lda_nc.upf"}, kEcutRy, kMesh, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
 // Pure LDA on the PW grid (engine default XC may be PBE; set explicitly):
-method.xc = cpu::scf::XCType::LSDA;
 
 cpu::single_point(frame, method);
 
@@ -243,8 +239,7 @@ Wall comparison is same-geometry only, not absolute-energy parity.
   productization (EOS is the fair multi-code science metric).
 - Energy-only foothold; forces/stress/GGA/smearing/spin/BOMD are other slugs.
 - No MPI multi-rank scaling gate here (`mpi-pw-scaling-4rank` later).
-- `PW::xc` default in headers may be GGA-PBE for other product paths; LDA
-  callers must set `XCType::LSDA` for pure local XC (see Method).
+- `PW::xc` default in headers may be GGA-PBE for other product paths; LDA callers must pass `XCType::LSDA` to the constructor for pure local XC (see Method).
 - Empty `upf_path` selects a toy \(V_\mathrm{loc}\) (unphysical); this
   regression always uses the in-tree ONCV Si UPF.
 - CUDA PW surface is not a CPU compatibility API for this pin.

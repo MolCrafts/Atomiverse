@@ -264,7 +264,7 @@ rhf.run(frame);                               // rhf.energy() in Ha
 
 The electron counts (`n_alpha`, `n_beta`) are resolved from the Frame
 (Σ Z − charge) on every run, and the private integral workspace is rebuilt
-whenever the geometry or the `basis` member changes — nothing is tied to a
+whenever the geometry changes — nothing is tied to a
 stale pack. That rebuild-from-Frame contract is the same one the dynamics
 and optimization chapters rely on when the method is bound at a `force`
 phase.
@@ -495,8 +495,7 @@ row is independently certified to be the *right* energy for its basis, so the
 *differences* between rows genuinely measure basis incompleteness and not a
 bug that happens to cancel.
 
-The production recommendation follows directly: set the method's `basis` to
-`BasisSet::Def2SVP` for real closed-shell work (`BasisSet::Pople631G` for
+The production recommendation follows directly: construct the method with `BasisSet::Def2SVP` for real closed-shell work (`BasisSet::Pople631G` for
 quick tests), knowing STO-3G exists for pedagogy and fast regressions, and
 def2-TZVP for pushing toward the basis-set limit where its f-shell support
 allows.

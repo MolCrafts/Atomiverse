@@ -57,12 +57,12 @@ int main() {
     auto make_cfg = [&]() {
         GpwDft m{{Kind{molrs::Element::Si,
                        GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                       GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-        m.cutoff_ry = 100.0;
+                       GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+                 100.0,
+                 XcKind::PBE};
         m.n_occ = 8;
         m.max_iter = 60;
         m.tol = 1e-8;
-        m.xc = XcKind::PBE;
         m.eps_default = 1e-7;
         m.local_pp_on_grid = true;
         m.k_mesh[0] = 1;

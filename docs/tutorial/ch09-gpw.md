@@ -144,16 +144,17 @@ const cpu::gpw::Kind H{molrs::Element::H,
 The `q6`/`q1` suffixes are the valence electron counts the pseudopotential keeps
 (6 for oxygen, 1 for hydrogen) — the core is replaced by the GTH form.
 
-**Step 3 — construct and run.** `GpwDft` takes the kinds in its constructor;
-SCF/grid knobs are public members (no public Config bag):
+**Step 3 — construct and run.** `GpwDft` takes the kinds, the density cutoff
+and the functional in its constructor; SCF/grid knobs are public members (no
+public Config bag):
 
 ```cpp
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry   = 400.0;                   // real-space grid resolution [Ry]
+cpu::gpw::GpwDft dft{{O, H},
+                     400.0,                   // real-space grid resolution [Ry]
+                     cpu::gpw::XcKind::PBE};  // PADE (LDA) or PBE (GGA)
 dft.max_iter    = 200;
 dft.tol         = 1e-7;
 dft.mix         = 0.3;
-dft.xc          = cpu::gpw::XcKind::PBE;   // PADE (LDA) or PBE (GGA)
 dft.nonperiodic = true;                    // isolated: Martyna-Tuckerman electrostatics
 
 dft.build(f);                              // fail-fast validation
@@ -234,9 +235,9 @@ const cpu::gpw::Kind O{
     cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
     cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 // … H kind …
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 400.0;  dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;  dft.nonperiodic = true;
+cpu::gpw::GpwDft dft{{O, H}, 400.0, cpu::gpw::XcKind::PBE};
+dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
+dft.nonperiodic = true;
 dft.build(frame);
 dft.run(frame);
 ```

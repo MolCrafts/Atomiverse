@@ -19,8 +19,7 @@ is the recorded gate that RPBE is active on the UGW path (not only on the
 UKS SCF), dual-gated against closed-shell spectral G0W0@RPBE when
 \(n_\alpha=n_\beta\).
 
-Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element, set
-members (`cutoff_ry`, `xc = XcKind::RPBE`, `n_alpha`/`n_beta`, …), then
+Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element, pass `cutoff_ry` and `XcKind::RPBE` to the constructor, set members (`n_alpha`/`n_beta`, …), then
 `build(frame)`, `run(frame)` (positions [Å], Z in `kAtom_type`, box [Å]),
 then `g0w0()`. Quasiparticle gap on `G0W0Result::gap_ev` is **eV**
 (α channel primary report). No standing end-to-end regression. Fair wall vs
@@ -119,13 +118,11 @@ frame.box = cpu::Box::cubic(a);
 
 GpwDft m{{Kind{molrs::Element::Si,
                GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-m.cutoff_ry = 30.0;
+               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}, 30.0, XcKind::RPBE};  // Hammer RPBE + PBE c (not revPBE)
 m.max_iter = 80;
 m.tol = 1e-6;
 m.mix = 0.3;
 m.level_shift = 0.3;          // Ha; SCF aid
-m.xc = XcKind::RPBE;          // Hammer RPBE + PBE c (not revPBE)
 m.n_alpha = 4;
 m.n_beta = 4;                 // UKS with closed-shell occupations
 m.mp2_ri = true;              // product RI-GPW tensors for dRPA / G0W0

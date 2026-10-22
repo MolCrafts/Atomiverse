@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Regression | None standing (end-to-end case removed) |
-| Public API | `cpu::gpw::GpwDft` members (`n_alpha`/`n_beta`, `XcKind::RPBE`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
+| Public API | `cpu::gpw::GpwDft{kinds, cutoff_ry, XcKind::RPBE}` + members (`n_alpha`/`n_beta`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — PBEsol / revPBE / RPBE ◐ (no standing pin) |
 
 ## Summary
@@ -23,8 +23,7 @@ total energy and spin contamination against offline **CP2K 2026.1 Quickstep**
 [gpw-rpbe-water](gpw-rpbe-water.md).
 
 Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element
-(lookup constructors `GaussianBasis` / `GthPotential`), set its members
-(`n_alpha`, `n_beta`, `cutoff_ry`, `xc = XcKind::RPBE`, `nonperiodic`, …),
+(lookup constructors `GaussianBasis` / `GthPotential`), pass `cutoff_ry` and `XcKind::RPBE` to the constructor, set its members (`n_alpha`, `n_beta`, `nonperiodic`, …),
 move it into `cpu::gpw::GPWEvaluator`, run `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**;
 Hartree and \(\langle S^2\rangle\) via `last_energy_hartree()` / `last_s2()`.
 Recorded validation, no standing regression (CP2K absolute energy + \(\langle S^2\rangle\)
@@ -131,12 +130,10 @@ cpu::gpw::Kind O{molrs::Element::O,
                  cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
                  cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 400.0;
+cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::RPBE};  // Hammer–Hansen–Nørskov + PBE-c
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::RPBE;  // Hammer–Hansen–Nørskov + PBE-c
 dft.nonperiodic = true;
 dft.n_alpha = 7;  // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;

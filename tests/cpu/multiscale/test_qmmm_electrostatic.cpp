@@ -81,8 +81,7 @@ TEST(QmmmElectrostatic, Am1EngineThrowsNamed) {
 TEST(QmmmElectrostatic, RhfBuildSucceedsWithoutLaunch) {
     auto f = make_embed_h2o();
     cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     qmmm.set_engine(std::move(rhf));
     cpu::Context ctx;
     cpu::BuildContext b{ctx, f};
@@ -94,16 +93,14 @@ TEST(QmmmElectrostatic, EngineSwapRhfRksBuildOnly) {
     cpu::Context ctx;
     {
         cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-        cpu::scf::RHF rhf;
-        rhf.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
         qmmm.set_engine(std::move(rhf));
         EXPECT_NO_THROW(qmmm.build({ctx, f}));
     }
     {
         auto f2 = make_embed_h2o();
         cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-        cpu::scf::RKS rks;
-        rks.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
         qmmm.set_engine(std::move(rks));
         EXPECT_NO_THROW(qmmm.build({ctx, f2}));
     }

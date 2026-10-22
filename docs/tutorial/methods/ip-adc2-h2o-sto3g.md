@@ -58,8 +58,7 @@ cpu::Frame frame(3);
 // O(0,0,0.1173); H(0,±0.7572,−0.4692) Å — pin_scf water
 // types: 8, 1, 1; box = Box::cubic(30.0)
 
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.max_iter = 200;
 rhf.run(frame);

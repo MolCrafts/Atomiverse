@@ -73,13 +73,11 @@ int main() {
     auto frame = na_bcc(a_ang);
 
     auto make_cfg = [&]() {
-        GpwDft m{na_kinds()};
-        m.cutoff_ry = 150.0;
+        GpwDft m{na_kinds(), 150.0, XcKind::PADE};
         m.n_occ = 9; // Ne/2
         m.max_iter = 80;
         m.tol = 1e-6;
         m.eps_default = 1e-7;
-        m.xc = XcKind::PADE;
         m.diis_depth = 6;
         m.mix = 0.4;
         m.k_mesh[0] = m.k_mesh[1] = m.k_mesh[2] = 2;

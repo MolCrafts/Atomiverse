@@ -411,7 +411,7 @@ cpu::md::MD aimd;
 aimd.set_integrator(cpu::md::VelocityVerlet{0.5});
 aimd.set_thermostat(cpu::md::NoseHoover{300.0, 100.0, 0.5});   // NVT, unchanged
 aimd.on(md::Phase::force)
-    .add(cpu::scf::RHF{}.predictor(3));            // quantum forces
+    .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G}.predictor(3));            // quantum forces
 aimd.build();
 aimd.run(frame, n_steps);
 ```

@@ -140,13 +140,9 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method;
-method.upf_path = "…/tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = kEcutRy;
-method.k_mesh = kMesh;
+PW method{UpfPseudopotential{"…/tests/data/pw/Si_lda_nc.upf"}, kEcutRy, kMesh, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 40;
-method.xc = cpu::scf::XCType::LSDA;
 
 cpu::minimizer::Minimize opt;
 cpu::minimizer::IsotropicCellRelax cell(/*P_target*/ 0.0, /*alpha*/ 1.0);

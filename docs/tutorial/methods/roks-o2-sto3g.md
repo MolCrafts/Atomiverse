@@ -17,8 +17,7 @@ is the KS analogue with an XC functional (here LSDA / VWN-class as in the pin).
 ```cpp
 #include <atomiverse/cpu/scf/roks.h>
 
-cpu::scf::ROKS roks(/*n_alpha=*/9, /*n_beta=*/7, cpu::scf::XCType::LSDA);
-roks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROKS roks{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7, cpu::scf::XCType::LSDA};
 roks.run(frame);   // O₂ r = 1.2075 Å
 ```
 

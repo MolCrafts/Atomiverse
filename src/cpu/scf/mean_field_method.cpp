@@ -146,13 +146,12 @@ MeanFieldMethod<D>::PositionGuard::~PositionGuard() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 template <typename D>
-MeanFieldMethod<D>::MeanFieldMethod() = default;
+MeanFieldMethod<D>::MeanFieldMethod(BasisSet basis_in, int charge_in)
+    : basis(basis_in), charge(charge_in) {}
 template <typename D>
 MeanFieldMethod<D>::~MeanFieldMethod() = default;
 template <typename D>
 MeanFieldMethod<D>::MeanFieldMethod(MeanFieldMethod&&) = default;
-template <typename D>
-MeanFieldMethod<D>& MeanFieldMethod<D>::operator=(MeanFieldMethod&&) = default;
 
 template <typename D>
 void MeanFieldMethod<D>::set_predictor_(int order, int corrector_steps,

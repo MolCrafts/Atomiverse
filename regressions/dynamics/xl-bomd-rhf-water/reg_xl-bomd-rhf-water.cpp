@@ -116,7 +116,7 @@ int main() {
     constexpr double oh_min = 0.70;         // Å
 
     // ── Leg A: the XL-BOMD run ────────────────────────────────────────────
-    cpu::scf::RHF xl_base;
+    cpu::scf::RHF xl_base{cpu::scf::BasisSet::STO3G};
     xl_base.max_iter = 200;
     // Niklasson auxiliary-density propagation, Table I row K = 5
     cpu::electronic::XlBomdMethod<cpu::scf::RHF> xl{std::move(xl_base), 5};
@@ -186,7 +186,7 @@ int main() {
     }
 
     // ── Leg B: the plain-BOMD twin (last-density reuse) ────────────────────
-    cpu::scf::RHF reuse;
+    cpu::scf::RHF reuse{cpu::scf::BasisSet::STO3G};
     reuse.max_iter = 200;
     // plain BOMD — the ONLY difference from leg A (no XL wrapper)
 
@@ -250,7 +250,9 @@ int main() {
             f.span(kAtom_z)[i] =
                 geom[static_cast<std::size_t>(s * 9 + i * 3 + 2)];
         }
-        cpu::scf::RHF cold; // no warm state: constructed, used once, destroyed
+        cpu::scf::RHF cold{
+            cpu::scf::BasisSet::
+                STO3G}; // no warm state: constructed, used once, destroyed
         cold.max_iter = 200;
         cold.run(f);
         if (!cold.converged()) {

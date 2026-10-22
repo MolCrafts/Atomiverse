@@ -40,22 +40,21 @@ namespace scf {
 /// 141102 (2010); PySCF `dft.ROKS`.
 class ROKS : public MeanFieldMethod<ROKS> {
   public:
-    int n_alpha = 0; ///< Alpha (spin-up) electrons (must be set before run).
-    int n_beta = 0;  ///< Beta (spin-down) electrons; requires n_alpha ≥ n_beta.
-    XCType xc =
-        XCType::LSDA; ///< Exchange–correlation functional (default LSDA).
+    const int n_alpha; ///< Alpha (spin-up) electrons.
+    const int
+        n_beta;      ///< Beta (spin-down) electrons; requires n_alpha ≥ n_beta.
+    const XCType xc; ///< Exchange–correlation functional.
 
-    /// @brief Construct with the ROKS defaults (restricted-open KS; LSDA;
-    ///        MINAO guess; MatchPySCF grid; 0.5 density damping; DIIS
-    ///        capped at 6 vectors starting at iteration 1; energy
-    ///        tolerance 1e-8 Ha). Set `n_alpha` / `n_beta` before `run`.
-    ROKS();
-    /// @brief Construct with an explicit α / β electron count and functional.
+    /// @brief Construct ROKS (MINAO guess, MatchPySCF grid, 0.5 damping,
+    ///        DIIS 6 vectors from iteration 1, energy tolerance 1e-8 Ha).
+    /// @param basis Basis set.
     /// @param n_alpha Spin-up electrons.
     /// @param n_beta  Spin-down electrons (must satisfy n_alpha ≥ n_beta;
     ///                violated at run() with std::invalid_argument).
-    /// @param xc      Exchange–correlation functional (default LSDA).
-    ROKS(int n_alpha, int n_beta, XCType xc = XCType::LSDA);
+    /// @param xc      Exchange–correlation functional.
+    /// @param charge  Molecular charge [e].
+    ROKS(BasisSet basis, int n_alpha, int n_beta, XCType xc = XCType::LSDA,
+         int charge = 0);
     std::string name() const { return "roks"; }
 
   protected:

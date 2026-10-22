@@ -119,13 +119,11 @@ using ATV::cpu::gpw::XcKind;
 frame.box = ATV::cpu::Box::cubic(12.0); // Å
 
 // kinds O, H: DZVP-MOLOPT-SR-GTH + GTH-PBE-q6 / GTH-PBE-q1
-GpwDft gpw{{O, H}};
-gpw.cutoff_ry = 200.0; // e_disp is geometry-only; SCF only needs to run
+GpwDft gpw{{O, H}, 200.0, XcKind::PBE};  // e_disp is geometry-only; SCF only needs to run
 gpw.n_occ = 8;         // 16 valence e⁻ → 8 doubly occupied
 gpw.max_iter = 8;
 gpw.tol = 1e-6;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = false;
 gpw.mbd = true;
 gpw.mbd_k_mesh[0] = gpw.mbd_k_mesh[1] = gpw.mbd_k_mesh[2] = 2; // periodic
@@ -140,9 +138,9 @@ Driver / Frame path (component; same members):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 300.0;  dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;  dft.nonperiodic = false;
+ATV::cpu::gpw::GpwDft dft{kinds, 300.0, ATV::cpu::gpw::XcKind::PBE};
+dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
+dft.nonperiodic = false;
 dft.mbd = true;
 dft.mbd_k_mesh[0] = dft.mbd_k_mesh[1] = dft.mbd_k_mesh[2] = 2;
 ATV::cpu::gpw::GPWEvaluator eval(std::move(dft));

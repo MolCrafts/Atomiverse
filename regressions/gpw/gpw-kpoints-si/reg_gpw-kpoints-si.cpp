@@ -66,12 +66,12 @@ ATV::cpu::gpw::GpwDft si_method(int nz, double cutoff_ry) {
     using namespace ATV::cpu::gpw;
     GpwDft m{{Kind{molrs::Element::Si,
                    GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                   GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-    m.cutoff_ry = cutoff_ry;
+                   GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+             cutoff_ry,
+             ATV::cpu::gpw::XcKind::PBE};
     m.n_occ = 8 * nz; // 4 atoms × 4 valence e⁻ per repeat, closed shell
     m.max_iter = 60;
     m.tol = 1e-8;
-    m.xc = ATV::cpu::gpw::XcKind::PBE;
     m.eps_default = 1e-7;
     return m;
 }
@@ -108,21 +108,17 @@ int main() {
                       GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                       GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
-        GpwDft gamma{{kH}};
-        gamma.cutoff_ry = 100.0;
+        GpwDft gamma{{kH}, 100.0, XcKind::PADE};
         gamma.n_occ = 1;
         gamma.max_iter = 60;
         gamma.tol = 1e-9;
-        gamma.xc = XcKind::PADE;
         gamma.build(h2);
         const double e_legacy = gamma.run(h2).e_total;
 
-        GpwDft kg{{kH}};
-        kg.cutoff_ry = 100.0;
+        GpwDft kg{{kH}, 100.0, XcKind::PADE};
         kg.n_occ = 1;
         kg.max_iter = 60;
         kg.tol = 1e-9;
-        kg.xc = XcKind::PADE;
         kg.k_points.push_back({0.0, 0.0, 0.0});
         kg.k_point_weights.push_back(1.0);
         kg.build(h2);

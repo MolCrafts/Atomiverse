@@ -19,8 +19,7 @@ Löwdin \(\langle S^2\rangle\) against offline **CP2K 2026.1 Quickstep**
 isolated electrostatics.
 
 Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element
-(lookup constructors `GaussianBasis` / `GthPotential`), set members
-(`n_alpha`, `n_beta`, `cutoff_ry`, `xc = XcKind::BLYP`, `nonperiodic`, …),
+(lookup constructors `GaussianBasis` / `GthPotential`), pass `cutoff_ry` and `XcKind::BLYP` to the constructor, set members (`n_alpha`, `n_beta`, `nonperiodic`, …),
 bind it with `cpu::gpw::GPWEvaluator(std::move(dft))`, run
 `cpu::single_point(frame, eval)`. Energy on `frame.meta` is **eV**;
 Hartree and \(\langle S^2\rangle\) via `last_energy_hartree()` /
@@ -132,12 +131,10 @@ cpu::gpw::Kind O{molrs::Element::O,
                  cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
                  cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 400.0;
+cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::BLYP};
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::BLYP;
 dft.nonperiodic = true;
 dft.n_alpha = 7;  // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;

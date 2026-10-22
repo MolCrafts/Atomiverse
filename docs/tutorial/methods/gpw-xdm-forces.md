@@ -168,13 +168,11 @@ const auto xdm_per = xdm_pbe(Z, pos, cellp, /*periodic=*/true, rcut);
 // Product SCF materializes the same periodic E_disp on GpwResult.
 // frame: same dimer in Å, Z in kAtom_type; kinds = {O, H} Kind entries
 frame.box = ATV::cpu::Box::cubic(12.0);  // Å
-GpwDft gpw{kinds};
-gpw.cutoff_ry = 200.0;
+GpwDft gpw{kinds, 200.0, XcKind::PBE};
 gpw.n_occ = 8;
 gpw.max_iter = 8;
 gpw.tol = 1e-6;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = false;
 gpw.xdm = true; // exclusive vs d3/d3bj/d4/ts/mbd/vdw_*
 
@@ -188,12 +186,10 @@ Driver / Frame path (component; same member):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 300.0;
+ATV::cpu::gpw::GpwDft dft{kinds, 300.0, ATV::cpu::gpw::XcKind::PBE};
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.3;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;
 dft.nonperiodic = false;
 dft.xdm = true;
 ATV::cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces=*/true);

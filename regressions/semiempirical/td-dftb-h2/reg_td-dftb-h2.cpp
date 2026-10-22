@@ -74,7 +74,7 @@ static cpu::Frame make_water() {
 }
 
 int main() {
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;

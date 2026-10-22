@@ -947,12 +947,7 @@ std::vector<double> TDA<RHF>::forces(cpu::Frame& frame, int state, double h,
     const RHF& src = *mf_;
 
     auto make_rhf = [&src]() {
-        RHF r;
-        r.basis = src.basis;
-        r.tol = src.tol;
-        r.max_iter = src.max_iter;
-        r.charge = src.charge;
-        return r;
+        return RHF{src.basis, src.charge, src.tol, src.max_iter};
     };
 
     if (analytic) {
@@ -1031,11 +1026,7 @@ std::vector<double> TDA<RHF>::nac_vectors(cpu::Frame& frame, int state_i,
     // still calibrating against FD on H2).
     auto Flo = forces(frame, lo, 2e-3, /*analytic=*/false);
     auto Fhi = forces(frame, hi, 2e-3, /*analytic=*/false);
-    RHF r;
-    r.basis = src.basis;
-    r.tol = src.tol;
-    r.max_iter = src.max_iter;
-    r.charge = src.charge;
+    RHF r{src.basis, src.charge, src.tol, src.max_iter};
     r.run(frame);
     if (!r.converged())
         throw std::runtime_error("TDA::nac_vectors: SCF did not converge");

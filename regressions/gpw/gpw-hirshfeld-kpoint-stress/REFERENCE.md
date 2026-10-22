@@ -27,7 +27,7 @@ scope):
 Public API:
 
 ```cpp
-GpwDft gpw;
+GpwDft gpw{kinds, /*cutoff_ry=*/100.0, XcKind::PADE};
 gpw.ts = true;          // or gpw.mbd = true
 gpw.hirshfeld = true;
 gpw.k_mesh[0] = gpw.k_mesh[1] = 1;

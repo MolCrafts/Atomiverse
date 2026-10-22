@@ -82,7 +82,7 @@ cpu::Frame make_cell(int step) {
 /// Walk the trajectory, returning total SCC iterations; @p last_energy gets
 /// the final total energy [eV].
 long walk(bool use_predictor, double& last_energy) {
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb.boundary = cpu::semiempirical::DftbBoundary::lattice;
     dftb.scc_tol = 1e-8;
     dftb.max_scc = 200;

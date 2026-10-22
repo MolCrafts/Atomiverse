@@ -213,7 +213,7 @@ in principle, a correlated density and gradient).
 In Atomiverse's vocabulary that is not a new `Driver` at all. The Gaussian SCF
 engine already exposes exactly the inputs such a method needs:
 
-- `cpu::scf::RHF rhf; MP2{rhf}.run(frame);` (or `FCI{rhf}.run(frame)`) drives a fresh
+- `cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G}; MP2{rhf}.run(frame);` (or `FCI{rhf}.run(frame)`) drives a fresh
   SCF with the dense two-electron (ERI) tensor materialized in the method's
   private workspace — the same integrals the CUDA `RHFFock` kernel reads.
 - `rhf.run(frame)` puts the orbitals and their energies on

@@ -282,8 +282,8 @@ struct GpwResult {
 /// ```cpp
 /// cpu::gpw::GpwDft dft{{{molrs::Element::H,
 ///                        cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
-///                        cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-/// dft.cutoff_ry = 280.0;
+///                        cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
+///                      /*cutoff_ry=*/280.0, cpu::gpw::XcKind::PADE};
 /// dft.build(frame);                  // fail-fast validation
 /// dft.run(frame);                    // eV on frame.meta[kEnergy]
 /// dft.forces(frame);                 // eV/Å on kAtom_f*, eV on kEnergy
@@ -309,12 +309,17 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(frame)`.
     using cpu::Driver<ATV::gpw::Phase>::build;
 
-    // ── Method parameters ─────────────────────────────────────────────
+    // ── Identity (constructor arguments, fixed after construction) ────
     /// @brief Per-element basis + GTH potential, matched on Z (`kAtom_type`).
-    std::vector<Kind> kinds;
-    double cutoff_ry = 300.0; ///< density grid cutoff [Ry].
-    int ngrids = 1;           ///< CP2K multigrid levels.
-    double rel_cutoff = 0.0;  ///< CP2K REL_CUTOFF [Ry].
+    const std::vector<Kind> kinds;
+    const double cutoff_ry; ///< density grid cutoff [Ry].
+    /// @brief LDA (PADE) or GGA (PBE / PBEsol / RevPBE / RPBE / BLYP /
+    ///        OptB88VdW) exchange–correlation.
+    const XcKind xc;
+
+    // ── Knobs ──────────────────────────────────────────────────────────
+    int ngrids = 1;          ///< CP2K multigrid levels.
+    double rel_cutoff = 0.0; ///< CP2K REL_CUTOFF [Ry].
     /// @brief RKS doubly-occupied orbitals. 0 (default) derives
     ///        \(N_{\mathrm{val}}/2\) from the kinds' GTH valence charges at
     ///        `build()` (odd valence count throws — set `n_alpha`/`n_beta`).
@@ -331,10 +336,8 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     int diis_depth = 6;        ///< Pulay DIIS history depth.
     double lindep_threshold = 1e-8; ///< S-eigenvalue keep threshold.
     double level_shift = 0.0;       ///< virtual level shift [Hartree].
-    XcKind xc = XcKind::
-        PADE; ///< LDA (PADE) or GGA (PBE / PBEsol / RevPBE / RPBE / BLYP / OptB88VdW).
-    bool nonperiodic = false;     ///< isolated (MT) Poisson solver.
-    bool local_pp_on_grid = true; ///< collocate GTH local SR PP on grid.
+    bool nonperiodic = false;       ///< isolated (MT) Poisson solver.
+    bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
     bool d3 =
         false; ///< Grimme DFT-D3 zero damping (PBE). Exclusive vs d3bj/d4/ts/mbd/xdm.
     /// @brief Grimme DFT-D3 Becke–Johnson damping (PBE params, CP2K CN form).
@@ -471,15 +474,16 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     ///        `AnisotropicCellRelax` `relax_*` mask in variable-cell runs.
     std::array<bool, 3> stress_axes = {true, true, true};
 
-    /// @brief Empty method; fill `kinds` before `build()`.
-    GpwDft() = default;
-    /// @brief Method over the given per-element basis + GTH entries.
-    /// @param kinds One entry per element present in the Frames to solve.
-    explicit GpwDft(std::vector<Kind> kinds) : kinds(std::move(kinds)) {}
+    /// @brief GPW Kohn–Sham method.
+    /// @param kinds One basis + GTH entry per element in the Frames to solve.
+    /// @param cutoff_ry Density grid cutoff [Ry].
+    /// @param xc Exchange–correlation functional.
+    GpwDft(std::vector<Kind> kinds, double cutoff_ry, XcKind xc)
+        : kinds(std::move(kinds)), cutoff_ry(cutoff_ry), xc(xc) {}
     GpwDft(const GpwDft&) = delete;
     GpwDft& operator=(const GpwDft&) = delete;
     GpwDft(GpwDft&&) = default;
-    GpwDft& operator=(GpwDft&&) = default;
+    GpwDft& operator=(GpwDft&&) = delete;
 
     /// @brief One-time fail-fast validation against a reference Frame.
     ///

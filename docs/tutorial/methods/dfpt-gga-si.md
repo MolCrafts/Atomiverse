@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `dfpt-gga-si` |
-| Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` |
+| Public API | `cpu::pw::DfptPhonon` (members) + `cpu::pw::DfptPhononResult`; `PW{…, XCType::PBE}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **GGA kernel** ✓ (`reg_dfpt-gga-si`) |
 | Dep | `dfpt-phonon-si` ✓ (LSDA Γ product); ground-state twin `pw-pbe-gga-si` ✓ |
 
@@ -117,11 +117,10 @@ frame.span(kAtom_z)[1] = 5.43 / 4.0;
 // FCC cell matrix as in reg_dfpt-gga-si.cpp
 // frame.box.set_cell(...);
 
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry  = 10.0;                         // [Ry]
-method.k_mesh   = 2;                            // 2×2×2 MP
-method.xc       = cpu::scf::XCType::PBE;        // pure GGA kernel
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+          10.0,                                               // [Ry]
+          2,                                                  // 2×2×2 MP
+          cpu::scf::XCType::PBE};                             // pure GGA kernel
 method.tol      = 1e-8;
 method.max_iter = 200;
 

@@ -54,8 +54,7 @@ int main() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
     constexpr double dt = 0.1; // fs — short step for electronic stability
-    cpu::gpw::GpwDft dft{{H}};
-    dft.cutoff_ry = 100.0;
+    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;

@@ -76,8 +76,7 @@ int main() {
     constexpr double kTolF = 1e-3; // dimensionless, oscillator strengths
 
     // ── RHF/6-31G* (Cartesian d, engine convention) ──────────────────────
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     rhf.run(frame);

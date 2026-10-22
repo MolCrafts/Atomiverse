@@ -58,8 +58,7 @@ int main() {
 
     auto frame = h2o_frame();
 
-    cpu::scf::RKS rks(xc);
-    rks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, xc);
     rks.tol = 1e-10;
     rks.max_iter = 100;
     // Double-hybrid PT2 scale: E_tot = E_KS + a_c * E_MP2.

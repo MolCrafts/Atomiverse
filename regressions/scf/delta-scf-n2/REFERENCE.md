@@ -3,7 +3,7 @@
 Closed-shell **ΔSCF** electronic excitation for N₂ at the experimental bond
 length, with **IMOM** (initial maximum-overlap) occupation locking on the
 non-Aufbau UHF re-SCF. Product API: `UHF::delta_scf(frame, from, to,
-MomStyle::IMOM)` after setting `n_alpha` / `n_beta` / `basis`.
+MomStyle::IMOM)` on a `UHF{basis, n_alpha, n_beta}`.
 
 Literature / theory:
 
@@ -94,8 +94,7 @@ bash -lc '
 ## Public API (no Config bags)
 
 ```cpp
-cpu::scf::UHF uhf(/*n_alpha=*/7, /*n_beta=*/7);
-uhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::UHF uhf(cpu::scf::BasisSet::STO3G, /*n_alpha=*/7, /*n_beta=*/7);
 uhf.tol = 1e-12;
 auto r = uhf.delta_scf(frame, /*from=*/6, /*to=*/7, cpu::scf::MomStyle::IMOM);
 // r.delta_e_ev [eV]; r.e_ground / r.e_excited [Ha]

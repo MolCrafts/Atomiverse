@@ -120,14 +120,14 @@ int main() {
     auto make_k = [&](double u_ev) {
         GpwDft m{{Kind{molrs::Element::H,
                        GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-                       GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-        m.cutoff_ry = 100.0;
+                       GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
+                 100.0,
+                 XcKind::PADE};
         m.n_alpha = 2;
         m.n_beta = 0;
         m.max_iter = 120;
         m.tol = 1e-8;
         m.mix = 0.35;
-        m.xc = XcKind::PADE;
         m.local_pp_on_grid = true;
         m.k_mesh[0] = 1;
         m.k_mesh[1] = 1;
@@ -233,12 +233,12 @@ int main() {
                          GthPotential(molrs::Element::Ni, "GTH-PADE-q18")},
                     Kind{molrs::Element::O,
                          GaussianBasis(molrs::Element::O, "SZV-GTH-PADE"),
-                         GthPotential(molrs::Element::O, "GTH-PADE-q6")}}};
-        scf.cutoff_ry = 250.0;
+                         GthPotential(molrs::Element::O, "GTH-PADE-q6")}},
+                   250.0,
+                   XcKind::PADE};
         scf.max_iter = 300;
         scf.tol = 1e-6;
         scf.mix = 0.35;
-        scf.xc = XcKind::PADE;
         scf.nonperiodic = false;
         scf.local_pp_on_grid = true;
         scf.n_alpha = 13;

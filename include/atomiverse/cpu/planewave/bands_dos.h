@@ -1,17 +1,14 @@
 /// @file cpu/planewave/bands_dos.h
 /// @brief Band structure and density-of-states post-processing (CPU PW).
 ///
-/// After a self-consistent density is obtained from `cpu::pw::PW` members,
+/// After a self-consistent density is obtained from `cpu::pw::PW`,
 /// non-self-consistent diagonalization on a frozen \(V_\mathrm{eff}\) yields
 /// \(\varepsilon_n(\mathbf{k})\) (bands) and a Gaussian-broadened DOS.
 /// Parameters are members of `Bands` / `Dos` — no public `*Config` bag.
 ///
 /// @code
-///   cpu::pw::PW pw;
-///   pw.upf_path = "Si.upf";
-///   pw.ecut_ry = 15.0;
-///   pw.k_mesh = 2;
-///   pw.xc = cpu::scf::XCType::LSDA;
+///   cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"Si.upf"}, /*ecut_ry=*/15.0,
+///                  /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 ///
 ///   cpu::pw::Bands bands;
 ///   bands.n_bands = 8;

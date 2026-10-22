@@ -215,11 +215,10 @@ TEST(CudaGpwForces, LocalPpHfKernelMatchesHost) {
 }
 
 TEST(CudaGpwForces, FreeFnRejectsMissingGrids) {
-    ATV::cuda::gpw::GpwDft m;
+    ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
+                             /*cutoff_ry=*/80.0, XcKind::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-    m.cutoff_ry = 80.0;
     m.n_occ = 1;
-    m.xc = XcKind::PADE;
     m.local_pp_on_grid = true;
     m.ngrids = 1;
     ATV::cuda::gpw::GpwResult scf;
@@ -234,13 +233,12 @@ TEST(CudaGpwForces, FreeFnRejectsMissingGrids) {
 }
 
 TEST(CudaGpwForces, UksDoesNotHitFirstSliceReject) {
-    ATV::cuda::gpw::GpwDft m;
+    ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
+                             /*cutoff_ry=*/80.0, XcKind::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-    m.cutoff_ry = 80.0;
     m.n_occ = 0;
     m.n_alpha = 1;
     m.n_beta = 0;
-    m.xc = XcKind::PADE;
     ATV::cuda::gpw::GpwResult scf;
     scf.converged = true;
     auto atoms = std::vector<GpwAtom>{};

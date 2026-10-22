@@ -84,17 +84,13 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf,
                cpu::scf::XCType xc) {
     RunOut o;
     if (dev == Device::Cpu) {
-        cpu::pw::PW pw;
-        pw.upf_path = upf;
-        pw.ecut_ry = kEcutRy;
-        pw.k_mesh = 1;
+        cpu::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1, xc};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
         pw.pulay_depth = 5;
         pw.spin_polarized = true;
         pw.multiplicity = 3;
-        pw.xc = xc;
         pw.build(frame);
         const auto& r = pw.run(frame);
         o.energy_ha = r.energy_ha;
@@ -102,17 +98,13 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf,
         o.converged = r.converged;
         o.iterations = r.iterations;
     } else {
-        cuda::pw::PW pw;
-        pw.upf_path = upf;
-        pw.ecut_ry = kEcutRy;
-        pw.k_mesh = 1;
+        cuda::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1, xc};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
         pw.pulay_depth = 5;
         pw.spin_polarized = true;
         pw.multiplicity = 3;
-        pw.xc = xc;
         pw.build(frame);
         const auto& r = pw.run(frame);
         o.energy_ha = r.energy_ha;
@@ -202,17 +194,14 @@ int main(int argc, char** argv) {
     constexpr double kForceTolEvA = 5.0e-3;
     constexpr double kStressTolEvA3 = 5.0e-2;
 
-    auto fill_pbe = [&](auto& pw) {
-        pw.upf_path = upf;
-        pw.ecut_ry = kEcutRy;
-        pw.k_mesh = 1;
+    const cpu::pw::UpfPseudopotential pbe_pp{upf};
+    auto fill_pbe = [](auto& pw) {
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
         pw.pulay_depth = 5;
         pw.spin_polarized = true;
         pw.multiplicity = 3;
-        pw.xc = cpu::scf::XCType::PBE;
     };
 
     // CPU oracle: `PW::forces` writes the Frame's force columns + kEnergy, so
@@ -235,7 +224,7 @@ int main(int argc, char** argv) {
     std::vector<std::array<double, 3>> F_cpu, F_cuda;
     std::array<double, 6> S_cpu{}, S_cuda{};
     if (want == "cpu" || want == "both") {
-        cpu::pw::PW pw;
+        cpu::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
         fill_pbe(pw);
         pw.build(frame_f);
         F_cpu = cpu_forces(frame_f, pw);
@@ -245,7 +234,7 @@ int main(int argc, char** argv) {
         }
     }
     if (want == "cuda" || want == "both") {
-        cuda::pw::PW pw;
+        cuda::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
         fill_pbe(pw);
         pw.build(frame_f);
         F_cuda = cuda::pw::pw_forces_analytic(frame_f, pw);
@@ -302,8 +291,8 @@ int main(int argc, char** argv) {
 
     // Collinear spin × FD smear (energy + forces). Same O2 / UPF / ecut.
     {
-        cpu::pw::PW cpu_s;
-        cuda::pw::PW cuda_s;
+        cpu::pw::PW cpu_s{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
+        cuda::pw::PW cuda_s{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
         fill_pbe(cpu_s);
         fill_pbe(cuda_s);
         cpu_s.smearing = cpu::pw::Smearing::fermi_dirac;

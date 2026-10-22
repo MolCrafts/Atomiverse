@@ -42,7 +42,7 @@ GH200 configure: `-DCMAKE_CUDA_ARCHITECTURES=90`; do not link x86 `libxtb`
 
 ## `cuda::pw::PW`
 
-- Public shape mirrors `cpu::pw::PW`: members → `build(frame)` → `run(frame)` →
+- Public shape mirrors `cpu::pw::PW`: constructor (pseudopotential, `ecut_ry`, `k_mesh`, `xc`) + members → `build(frame)` → `run(frame)` →
   `PWResult`; Frame `forces` / `stress` members call the device
   `pw_forces_analytic` / `pw_stress`.
 - Envelope (everything else throws `std::invalid_argument` naming the member):

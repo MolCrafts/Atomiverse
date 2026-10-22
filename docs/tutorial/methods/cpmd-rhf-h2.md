@@ -61,7 +61,7 @@ live in `protected` storage on `MeanFieldMethod`, and
 `cpu::electronic::CarParrinelloMethod<Method>`
 (`cpu/electronic/aimd_method.h`) is the only public way to set them. The
 wrapper owns `Method` and implements the nested DriverNode and timestep
-protocols. Configure `basis`, `tol`, and `max_iter` on the method before moving
+protocols. Construct the method with its `basis` and set `tol` / `max_iter` before moving
 it in; inspect parameters and results afterwards through `wrapper.method()`.
 
 | Public surface | Meaning |
@@ -105,8 +105,7 @@ exclusive with `cpmd` in **both** directions — the symmetric row is asserted b
 ```cpp
 constexpr double dt = 0.05; // fs — nuclear and electronic share one step
 
-cpu::scf::RKS rks_base{cpu::scf::XCType::LSDA};  // or RHF / UHF{n_a,n_b} / UKS
-rks_base.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RKS rks_base{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::LSDA};  // or RHF / UHF{basis, n_a, n_b} / UKS
 rks_base.tol   = 1e-9;
 // CP is the wrapper type; mu [a.u. electron mass] is its constructor argument.
 cpu::electronic::CarParrinelloMethod<cpu::scf::RKS> rks{std::move(rks_base),

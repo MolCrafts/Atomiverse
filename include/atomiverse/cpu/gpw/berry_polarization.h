@@ -28,10 +28,9 @@
 ///   //        box = Box::orthorhombic(a/√2, a/√2, a) [Å] (BCT Si)
 ///   cpu::gpw::GpwDft dft{{{molrs::Element::Si,
 ///                          cpu::gpw::GaussianBasis(molrs::Element::Si, "SZV-GTH"),
-///                          cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PADE-q4")}}};
-///   dft.cutoff_ry = 100.0;
+///                          cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PADE-q4")}},
+///                        /*cutoff_ry=*/100.0, cpu::gpw::XcKind::PADE};
 ///   dft.n_occ = 8;
-///   dft.xc = cpu::gpw::XcKind::PADE;
 ///   dft.build(frame);
 ///
 ///   cpu::gpw::BerryPolarization berry;   // members: k_perp, k_string, …

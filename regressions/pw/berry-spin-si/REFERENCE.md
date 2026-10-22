@@ -18,7 +18,8 @@ Ionic bookkeeping is spin-independent.
 Public path:
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;          // N↑−N↓ = 0 for diamond Si
 cpu::pw::BerryPolarization berry; // k_perp, k_string, directions

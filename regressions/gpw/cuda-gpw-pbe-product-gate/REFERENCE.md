@@ -2,8 +2,8 @@
 
 ## What
 
-Public product dual-gate under **PBE-GGA**: `ATV::cuda::gpw::GpwDft` with
-`xc = XcKind::PBE` vs same-settings CPU `GpwDft`. Composes the landed
+Public product dual-gate under **PBE-GGA**: `ATV::cuda::gpw::GpwDft`
+constructed with `XcKind::PBE` vs same-settings CPU `GpwDft`. Composes the landed
 `KsChainDevice` PBE stage into the public method energy
 path. Not a new kernel foothold.
 

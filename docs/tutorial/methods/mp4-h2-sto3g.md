@@ -15,8 +15,7 @@ on a converged RHF reference:
 \(E_{\mathrm{corr}}=E^{(2)}+E^{(3)}+E^{(4)}\) with
 \(E^{(4)}=E_S^{(4)}+E_D^{(4)}+E_T^{(4)}+E_Q^{(4)}\). Use as the next rung above
 RMP3 when full CCSD is not required; product gate is total \(E_{\mathrm{corr}}\)
-on H₂ / STO-3G. Public path: construct `cpu::scf::RHF`, set members
-(`basis`, `tol`, …), call `mp4(frame)` — Frame in, `MP4Result` out; no
+on H₂ / STO-3G. Public path: construct `cpu::scf::RHF{basis}`, set members (`tol`, …), call `mp4(frame)` — Frame in, `MP4Result` out; no
 `*Config` bag. Offline pin rebuilds intermediate-normalization RSPT through
 order 4 on PySCF RHF orbitals (PySCF 2.14 has no `mp.MP4`). Product regression:
 `mp4-h2-sto3g` (`reg_mp4-h2-sto3g`).
@@ -82,8 +81,7 @@ members. No public `*Config` / factories. Pack-based `mp4_energy` stays under
 // H₂, r = 0.74 Å, singlet
 ATV::cpu::Frame frame(2);
 // … Z=1, positions, box …
-ATV::cpu::scf::RHF rhf;
-rhf.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::RHF rhf{ATV::cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.max_iter = 100;
 const ATV::cpu::scf::MP4Result mp4 = rhf.mp4(frame);

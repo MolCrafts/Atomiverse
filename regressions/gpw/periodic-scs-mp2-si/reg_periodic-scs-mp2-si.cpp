@@ -45,8 +45,9 @@ int main() {
 
     GpwDft m{{Kind{molrs::Element::Si,
                    GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                   GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-    m.cutoff_ry = 30.0;
+                   GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+             30.0,
+             XcKind::PBE};
     m.n_occ = 4;
     // Closed-shell Si₂ π² has an exactly degenerate HOMO in the core-H
     // guess; last-bit noise picks one of two stationary points
@@ -56,7 +57,6 @@ int main() {
     m.tol = 1e-6;
     m.mix = 0.3;
     m.level_shift = 0.3;
-    m.xc = XcKind::PBE;
     m.mp2_ri = true;
     m.build(frame);
 

@@ -112,14 +112,12 @@ frame.box = cpu::Box::orthorhombic(L[0], L[1], L[2]);
 cpu::gpw::GpwDft m{{cpu::gpw::Kind{
     molrs::Element::Si,
     cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-    cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-m.cutoff_ry = 150.0;   // CP2K &MGRID CUTOFF
+    cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}, 150.0, cpu::gpw::XcKind::PBE};  // CP2K &MGRID CUTOFF
 m.ngrids = 4;          // CP2K NGRIDS
 m.rel_cutoff = 60.0;   // CP2K REL_CUTOFF [Ry]
 m.n_occ = 8;           // 16 valence e⁻, closed shell
 m.max_iter = 60;
 m.tol = 1e-8;
-m.xc = cpu::gpw::XcKind::PBE;
 m.eps_default = 1e-7;
 m.k_mesh[0] = m.k_mesh[1] = m.k_mesh[2] = 2;   // MONKHORST-PACK 2 2 2
 m.k_time_reversal = true;                      // 4 k, doubled weights

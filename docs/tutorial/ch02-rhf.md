@@ -313,7 +313,7 @@ cpu::vib::HessianResult H =
 
 `Polarizability<RHF>::run()` does not take a Frame: call `rhf.run(frame)`
 first, then read the 3×3 tensor [a.u.]. Continuum solvent is
-`WithSolvent<RHF>{std::move(rhf), solvent}.run(frame)`.
+`WithSolvent<RHF>{std::move(rhf), SolventModel::CPCM, eps}.run(frame)`.
 
 Orbital stability and CIS/TDA read that same converged determinant. They are
 not members of `RHF` (`pyscf.scf.stability.rhf_stability`,
@@ -547,7 +547,7 @@ solutions** — the neutral and the cation — at the same (vertical) geometry:
 $$\mathrm{IP}_{\Delta\mathrm{SCF}} \;=\; E_{\mathrm{SCF}}(N-1) - E_{\mathrm{SCF}}(N).$$
 
 No new machinery is needed: the cation is configured entirely through the
-members that already exist — `charge` on any method, and the explicit
+constructor arguments that already exist — `charge` on any method, and the explicit
 `n_alpha` / `n_beta` electron counts on `UHF` (removing one electron leaves
 an open shell, so the cation is a UHF run):
 
@@ -564,9 +564,7 @@ double ip_koopmans =
     * 27.211386245988;                                   // [eV]
 
 // Cation N2+: one α electron removed — members only, no new API.
-cpu::scf::UHF uhf{/*n_alpha=*/7, /*n_beta=*/6};   // 13 electrons: doublet
-uhf.basis = cpu::scf::BasisSet::Pople631Gs;      // no basis ctor slot on UHF yet
-uhf.charge = 1;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::Pople631Gs, /*n_alpha=*/7, /*n_beta=*/6, /*charge=*/1};   // 13 electrons: doublet
 uhf.tol = 1e-12;
 uhf.run(frame);
 double ip_delta = (uhf.energy() - e_n2) * 27.211386245988;   // [eV]

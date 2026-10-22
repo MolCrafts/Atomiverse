@@ -47,17 +47,16 @@ cpu::Frame make_h2() {
     return f;
 }
 
-cpu::gpw::GPWEvaluator h2_eval() {
+/// @param cutoff_ry Density-grid cutoff [Ry].
+cpu::gpw::GPWEvaluator h2_eval(double cutoff_ry = 60.0) {
     const cpu::gpw::Kind H{
         molrs::Element::H,
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
-    cpu::gpw::GpwDft dft{{H}};
-    dft.cutoff_ry = 60.0;
+    cpu::gpw::GpwDft dft{{H}, cutoff_ry, cpu::gpw::XcKind::PADE};
     dft.max_iter = 1;
     dft.tol = 1e-6;
     dft.mix = 0.3;
-    dft.xc = cpu::gpw::XcKind::PADE;
     return cpu::gpw::GPWEvaluator(std::move(dft), /*compute_forces=*/false);
 }
 
@@ -155,9 +154,9 @@ TEST(GpwEvaluatorForceReuse,
     using namespace cpu::gpw;
     using cpu::linalg::RealMatrix;
     auto frame = make_h2();
-    auto eval = h2_eval();
+    // Small direct force-kernel fixture, no SCF.
+    auto eval = h2_eval(/*cutoff_ry=*/5.0);
     auto& method = eval.method();
-    method.cutoff_ry = 5.0; // Small direct force-kernel fixture, no SCF.
     method.n_alpha = method.n_beta = 1;
     method.build(frame);
     const auto atoms = internal::GpwDftAccess::atoms_from_frame(method, frame);

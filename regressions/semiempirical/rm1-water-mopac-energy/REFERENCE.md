@@ -23,9 +23,7 @@ form and parameter count as AM1; different parameter values.
 Public API — concrete method, parameters are members:
 
 ```cpp
-cpu::semiempirical::RM1 rm1;
-rm1.charge = 0;
-rm1.multiplicity = 1;
+cpu::semiempirical::RM1 rm1{/*charge=*/0, /*multiplicity=*/1};
 rm1.density_tol = 1.0e-10;
 rm1.build(frame);
 const cpu::semiempirical::RM1Result& r = rm1.run(frame);

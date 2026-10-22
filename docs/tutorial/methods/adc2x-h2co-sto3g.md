@@ -65,8 +65,7 @@ cpu::Frame frame(4);
 // C(0,0,0); O(0,0,1.21); H(0,±0.943,−0.587) Å — pin_scf h2co
 // types: 6, 8, 1, 1; box = Box::cubic(30.0)
 
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.max_iter = 200;
 rhf.run(frame);

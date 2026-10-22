@@ -31,9 +31,9 @@ using AM1Result = NDDOResult;
 class AM1 : public NddoMethod, public cpu::QmEngine {
   public:
     /// @brief Total molecular charge [e].
-    int charge = 0;
+    const int charge;
     /// @brief Spin multiplicity 2S+1 (dimensionless).
-    int multiplicity = 1;
+    const int multiplicity;
     /// @brief SCF iteration cap (dimensionless).
     int max_iter = 200;
     /// @brief Density residual tolerance (dimensionless).
@@ -44,22 +44,20 @@ class AM1 : public NddoMethod, public cpu::QmEngine {
     ///        truncation error \(O(h^{2})\).
     double force_step = 1.0e-4;
 
-    /// @brief Default parameters (charge 0, singlet, max_iter 200, …).
-    AM1();
     /// @brief Construct with SCF parameters assigned immediately.
     /// @param charge Total molecular charge [e].
     /// @param multiplicity Spin multiplicity 2S+1 (dimensionless).
     /// @param max_iter SCF iteration cap (dimensionless).
     /// @param density_tol Density residual tolerance (dimensionless).
     /// @param energy_tol Energy residual tolerance [eV].
-    AM1(int charge, int multiplicity, int max_iter = 200,
-        double density_tol = 1.0e-8, double energy_tol = 1.0e-10);
+    explicit AM1(int charge = 0, int multiplicity = 1, int max_iter = 200,
+                 double density_tol = 1.0e-8, double energy_tol = 1.0e-10);
     ~AM1();
     AM1(AM1&&) noexcept;
-    AM1& operator=(AM1&&) noexcept;
+    AM1& operator=(AM1&&) = delete;
     /// @brief Copy parameters only (does not copy SCF engine state).
     AM1(const AM1& other);
-    AM1& operator=(const AM1& other);
+    AM1& operator=(const AM1&) = delete;
 
     /// @brief Size the NDDO engine for this atom set and snapshot the members
     ///        as its configuration.

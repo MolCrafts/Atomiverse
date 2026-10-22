@@ -64,8 +64,7 @@ double energy_only(cpu::Frame g) {
     for (int i = 0; i < 3; ++i)
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
-    cpu::semiempirical::DFTB3 d;
-    d.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    cpu::semiempirical::DFTB3 d{cpu::semiempirical::DftbSkSet::MioSketch};
     d.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     d.with_forces = false;
     d.scc_tol = 1e-10;
@@ -94,8 +93,7 @@ int main() {
     auto frame = make_water();
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB3 dftb3;
-    dftb3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    cpu::semiempirical::DFTB3 dftb3{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb3.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     dftb3.with_forces = true;
     dftb3.scc_tol = 1e-10;
@@ -190,7 +188,7 @@ int main() {
     // Third order must actually move the force, not only the energy.
     auto frame2 = make_water();
     cpu::Evaluate eval2;
-    cpu::semiempirical::DFTB2 d2;
+    cpu::semiempirical::DFTB2 d2{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d2.boundary = cpu::semiempirical::DftbBoundary::cluster;

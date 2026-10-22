@@ -5,12 +5,12 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `rks-hessian-h2o-sto3g` |
-| Public API | `cpu::scf::RKS{XCType::LSDA}.hessian(frame)` |
+| Public API | `cpu::scf::RKS{BasisSet::STO3G, XCType::LSDA}.hessian(frame)` |
 | Roadmap | `docs/roadmap/dft.md` (RKS analytic Hessian row — product foothold via FD) |
 
 ## Summary
 
-Computes the Cartesian nuclear Hessian \(\partial^2 E_{\mathrm{RKS}}/\partial R_i\partial R_j\) for restricted Kohn–Sham DFT by central finite difference of **analytic** RKS nuclear forces (KS gradient with grid-response XC), not a full CPKS closed form. Target system is gas-phase water, LSDA (Slater–VWN5) / STO-3G. Public surface: construct `cpu::scf::RKS` with the XC functional, set members (`basis`, `tol`, `grid_level`, …), call `hessian(frame)` → dense \(3N\times 3N\) matrix in eV/Å² (`cpu::vib::HessianResult`). Offline accuracy pin is PySCF 2.14.0 FD of analytic RKS gradients (same algorithm class as Atomiverse). End-to-end gate: `rks-hessian-h2o-sto3g` (`reg_rks-hessian-h2o-sto3g`). Fair wall vs the FD twin: \(r = 3.08\) (≤10×).
+Computes the Cartesian nuclear Hessian \(\partial^2 E_{\mathrm{RKS}}/\partial R_i\partial R_j\) for restricted Kohn–Sham DFT by central finite difference of **analytic** RKS nuclear forces (KS gradient with grid-response XC), not a full CPKS closed form. Target system is gas-phase water, LSDA (Slater–VWN5) / STO-3G. Public surface: construct `cpu::scf::RKS` with the basis and XC functional, set members (`tol`, `grid_level`, …), call `hessian(frame)` → dense \(3N\times 3N\) matrix in eV/Å² (`cpu::vib::HessianResult`). Offline accuracy pin is PySCF 2.14.0 FD of analytic RKS gradients (same algorithm class as Atomiverse). End-to-end gate: `rks-hessian-h2o-sto3g` (`reg_rks-hessian-h2o-sto3g`). Fair wall vs the FD twin: \(r = 3.08\) (≤10×).
 
 ## Method
 
@@ -46,8 +46,7 @@ ATV::cpu::Frame frame(3);
 // H₂O: O at (0, 0, 0.1173); H at (0, ±0.7572, −0.4692) Å — pin_scf water
 // Z = 8,1,1; 20 Å cubic box (gas phase)
 
-ATV::cpu::scf::RKS rks(ATV::cpu::scf::XCType::LSDA);
-rks.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::RKS rks{ATV::cpu::scf::BasisSet::STO3G, ATV::cpu::scf::XCType::LSDA};
 rks.tol = 1e-12;
 rks.max_iter = 200;
 rks.grid_level = ATV::cpu::scf::GridLevel::MatchPySCF;

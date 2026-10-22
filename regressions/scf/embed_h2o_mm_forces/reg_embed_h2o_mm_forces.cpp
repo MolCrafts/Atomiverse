@@ -31,8 +31,7 @@ int main() {
 
     // PySCF qmmm.mm_charge e_tot FD does NOT include MM–MM Coulomb; match
     // that surface with embed_self_energy=false (QM↔MM seam only).
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     rhf.embed_self_energy = false;

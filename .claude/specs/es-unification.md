@@ -72,6 +72,15 @@ land).
   node, migrates those users and deletes `GPWEvaluator`.
 - DFTB/xTB already mount directly as Components (accumulating); their loop
   shape is phase 3. Phase 1 is closed apart from the GPW transitional debt.
+- Phase 2: identity parameters are ctor arguments and `const` members on
+  Gaussian SCF (basis/charge/occupations/xc), `PW` (CPU+CUDA, pseudopotential
+  tag `UpfPseudopotential`/`GthPseudopotential`, cutoff, k-mesh, xc), `GpwDft`
+  (CPU+CUDA, kinds/cutoff/xc), AM1/RM1/DFTB2/DFTB3/GFN0/GFN1/GFN2/IPEA
+  (charge, multiplicity, SK set); no default ctor where no identity default
+  exists; move-assignment deleted. `ContinuumSolvent` deleted (`WithSolvent`
+  takes model + ε). `Counterpoise` requires a neutral method instead of
+  rewriting its charge. The duplicate `ScfElectronicThermostat` /
+  `ElectronicThermostat` bags go with the propagator node (phase 5).
 
 ## Phases (each keeps every regression green)
 

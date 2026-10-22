@@ -57,10 +57,8 @@ periodic exact exchange (blocked row `periodic-hybrid-gpw`). Cost:
 
 ```cpp
 // frame: sc-Si₂, positions [Å], Z = 14 in kAtom_type, box = cpu::Box::cubic(5.43)
-cpu::gpw::GpwDft m{{Si}};              // Si = Kind{Si, DZVP-MOLOPT-GTH, GTH-PBE-q4}
-m.cutoff_ry = 30.0;
+cpu::gpw::GpwDft m{{Si}, 30.0, cpu::gpw::XcKind::PBE};              // Si = Kind{Si, DZVP-MOLOPT-GTH, GTH-PBE-q4}
 m.n_occ = 4;
-m.xc = cpu::gpw::XcKind::PBE;
 m.level_shift = 0.3;                   // convergence aid (eps unshifted)
 m.build(frame);
 m.run(frame);                          // converged Γ RKS (eV on kEnergy)

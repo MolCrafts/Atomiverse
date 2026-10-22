@@ -74,8 +74,7 @@ Energies energy_link(double scale) {
     cpu::QmmmElectrostatic qmmm{
         {{1, 1, 0.01, 3.4}, {6, 6, 0.01, 3.4}}, 8.0, 15.0};
     qmmm.link_scale() = scale;
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-8;
     rhf.max_iter = 80;
     qmmm.set_engine(std::move(rhf));

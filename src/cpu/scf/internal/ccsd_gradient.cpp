@@ -46,8 +46,7 @@ Frame displace(const Frame& frame, int A, int d, double delta_A) {
 
 /// RHF + CCSD total energy [Ha] at `frame` (fresh SCF each call).
 double ccsd_tot_ha(const Frame& frame, BasisSet basis, double scf_tol) {
-    RHF rhf;
-    rhf.basis = basis;
+    RHF rhf{basis};
     rhf.tol = scf_tol;
     rhf.max_iter = 200;
     rhf.compute_eri = true;

@@ -93,10 +93,7 @@ frame.span(kAtom_z)[0] = 0.0;
 frame.span(kAtom_z)[1] = 1.2075;         // R(O–O) [Å]
 frame.box = cpu::Box::cubic(8.0);
 
-PW pw;
-pw.upf_path = "tests/data/pw/O_ONCV_PBE-1.2.upf";
-pw.ecut_ry = 12.0;
-pw.k_mesh = 1;                           // Γ
+PW pw{UpfPseudopotential{"tests/data/pw/O_ONCV_PBE-1.2.upf"}, 12.0, 1};  // Γ
 pw.tol = 5e-4;                           // density L2
 pw.max_iter = 60;
 pw.mix_beta = 0.3;

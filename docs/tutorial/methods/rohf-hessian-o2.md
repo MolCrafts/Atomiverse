@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `rohf-hessian-o2` |
-| Public API | `cpu::scf::ROHF{n_α,n_β}.hessian(frame)` |
+| Public API | `cpu::scf::ROHF{basis, n_α, n_β}.hessian(frame)` |
 | Roadmap | `docs/roadmap/hartree-fock.md` (ROHF Hessian row) |
 
 ## Summary
@@ -49,8 +49,7 @@ ATV::cpu::Frame frame(2);
 // O₂: Z=8, r = 1.2075 Å along z; 20 Å cubic box (gas phase)
 // ... fill type / mass / x,y,z / box as in the regression ...
 
-ATV::cpu::scf::ROHF rohf(/*n_alpha=*/9, /*n_beta=*/7);
-rohf.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::ROHF rohf{ATV::cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7};
 rohf.tol = 1e-12;
 rohf.max_iter = 200;
 

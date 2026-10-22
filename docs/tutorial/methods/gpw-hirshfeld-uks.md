@@ -19,8 +19,7 @@ O₂** under Martyna–Tuckerman isolation: same centered geometry as
 path rather than free-atom volumes.
 
 Public path: construct `cpu::gpw::GpwDft` with one `Kind` per element via
-lookup constructors `GaussianBasis` / `GthPotential`, set members (`n_alpha`,
-`n_beta`, `mbd`, `hirshfeld`, `cutoff_ry`, `xc`, `nonperiodic`, …), then
+lookup constructors `GaussianBasis` / `GthPotential`, pass `cutoff_ry` and `xc` to the constructor, set members (`n_alpha`, `n_beta`, `mbd`, `hirshfeld`, `nonperiodic`, …), then
 `build(frame)` → `run(frame)`. Dispersion lands on
 `GpwResult::e_disp` [Hartree] and is folded into `e_total`; ratios on
 `volume_ratios`. **No** public `*Config` bag and **no** `make_*` /
@@ -129,15 +128,13 @@ frame.box = cpu::Box::cubic(L);
 
 GpwDft gpw{{Kind{molrs::Element::O,
                  GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
-                 GthPotential(molrs::Element::O, "GTH-PBE-q6")}}};
-gpw.cutoff_ry = 200.0;
+                 GthPotential(molrs::Element::O, "GTH-PBE-q6")}}, 200.0, XcKind::PBE};
 gpw.n_alpha = 7;  // multiplicity 3, 12 valence e⁻
 gpw.n_beta = 5;
 gpw.max_iter = 150;
 gpw.tol = 1e-6;
 gpw.mix = 0.35;
 gpw.diis_depth = 10;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = true;
 gpw.mbd = true;
 gpw.hirshfeld = true;

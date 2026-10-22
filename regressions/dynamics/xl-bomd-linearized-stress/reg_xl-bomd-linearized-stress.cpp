@@ -83,7 +83,7 @@ cpu::gpw::GPWEvaluator make_gpw(bool multi_k) {
         molrs::Element::H,
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
-    cpu::gpw::GpwDft dft{{H}};
+    cpu::gpw::GpwDft dft{{H}, 300.0, cpu::gpw::XcKind::PADE};
     dft.max_iter = 60;
     dft.tol = 1e-7;
     dft.mix = 0.3;
@@ -265,16 +265,17 @@ bool dual_gate_seed(double& id_err, double& an_fd_err) {
     frame.box = cpu::Box::cubic(kLBohr * units::kBohrInAngstrom);
 
     auto make_cfg = []() {
-        cpu::gpw::GpwDft m{{cpu::gpw::Kind{
-            molrs::Element::H,
-            cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-            cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-        m.cutoff_ry = 300.0;
+        cpu::gpw::GpwDft m{
+            {cpu::gpw::Kind{
+                molrs::Element::H,
+                cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
+                cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
+            300.0,
+            cpu::gpw::XcKind::PADE};
         m.n_occ = 1;
         m.max_iter = 60;
         m.tol = 1e-7;
         m.mix = 0.3;
-        m.xc = cpu::gpw::XcKind::PADE;
         m.eps_default = 1e-10;
         m.k_mesh[0] = 1;
         m.k_mesh[1] = 1;

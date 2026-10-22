@@ -80,10 +80,7 @@ cpu::Frame make_al_dimer() {
 }
 
 template <typename PwT>
-void configure_smear(PwT& pw, const char* upf) {
-    pw.upf_path = upf;
-    pw.ecut_ry = kEcutRy;
-    pw.k_mesh = kMesh;
+void configure_smear(PwT& pw) {
     pw.tol = kTol;
     pw.max_iter = kMaxIter;
     pw.mix_beta = 0.4;
@@ -99,8 +96,8 @@ int run_on_device(Device dev, const char* upf,
     forces.clear();
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method;
-        configure_smear(method, upf);
+        cpu::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh};
+        configure_smear(method);
         method.build(frame);
         {
             // `forces()` overwrites the Frame's force columns + kEnergy;
@@ -117,8 +114,8 @@ int run_on_device(Device dev, const char* upf,
                              static_cast<double>(fz[i])};
         }
     } else {
-        cuda::pw::PW method;
-        configure_smear(method, upf);
+        cuda::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh};
+        configure_smear(method);
         method.build(frame);
         forces = cuda::pw::pw_forces_analytic(frame, method);
     }

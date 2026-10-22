@@ -21,7 +21,7 @@ AO-basis Bloch MOs and phased AO overlaps \(S\) carrying
 Public path:
 
 ```cpp
-cpu::gpw::GpwDft method{{si_kind}};
+cpu::gpw::GpwDft method{{si_kind}, /*cutoff_ry=*/80.0, cpu::gpw::XcKind::PADE};
 method.n_alpha = 8;
 method.n_beta = 8;               // multiplicity 1 for diamond Si
 method.n_occ = 0;

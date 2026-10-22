@@ -54,8 +54,7 @@ int main() {
 
     constexpr double dt = 0.5; // fs — BOMD-class step
     constexpr int corrector_budget = 5;
-    cpu::gpw::GpwDft dft{{O}};
-    dft.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft dft{{O}, 200.0, cpu::gpw::XcKind::PADE};
     dft.max_iter = 80;
     dft.tol = 1e-5;
     dft.mix = 0.4;

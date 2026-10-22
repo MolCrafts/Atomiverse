@@ -52,9 +52,9 @@ refused loudly at `build()`.
 
 ```cpp
 constexpr double dt = 0.1; // fs — nuclear and electronic share one step
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 200.0;  dft.max_iter = 60;  dft.tol = 1e-5;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;  dft.nonperiodic = true;
+cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+dft.max_iter = 60;  dft.tol = 1e-5;  dft.mix = 0.3;
+dft.nonperiodic = true;
 cpu::gpw::GPWEvaluator gpw(std::move(dft), /*compute_forces=*/true);
 // Car–Parrinello is a wrapper TYPE around the pure GPW evaluator, not a
 // `method.cpmd = true` switch: the fictitious mass mu [a.u. electron mass] is a

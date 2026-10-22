@@ -24,11 +24,7 @@ Reference: Baroni, de Gironcoli, Dal Corso, Giannozzi, *Rev. Mod. Phys.*
 ## Usage
 
 ```cpp
-cpu::pw::PW pw;
-pw.upf_path = "tests/data/pw/Si_lda_nc.upf";
-pw.ecut_ry = 10.0;
-pw.k_mesh = 2;
-pw.xc = cpu::scf::XCType::LSDA;   // DFPT kernel is LSDA-only
+cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 2, cpu::scf::XCType::LSDA};  // DFPT kernel is LSDA-only
 pw.tol = 1e-8;
 
 cpu::pw::DfptPhonon dfpt;         // members: response_tol, cg_tol, mix_beta, …

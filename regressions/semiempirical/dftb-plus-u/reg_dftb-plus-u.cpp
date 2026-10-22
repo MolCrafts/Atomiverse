@@ -42,7 +42,7 @@ cpu::Frame make_water() {
 
 /// @brief Single-point DFTB2(+U) energy via Evaluate (Frame only).
 double energy_only(cpu::Frame g, double u_o) {
-    cpu::semiempirical::DFTB2 d;
+    cpu::semiempirical::DFTB2 d{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d.boundary = cpu::semiempirical::DftbBoundary::cluster;
@@ -64,7 +64,7 @@ int main() {
     constexpr double kTol = 1e-9;
 
     auto f0 = make_water();
-    cpu::semiempirical::DFTB2 plain;
+    cpu::semiempirical::DFTB2 plain{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     plain.boundary = cpu::semiempirical::DftbBoundary::cluster;
@@ -79,7 +79,7 @@ int main() {
     const double e0 = plain.last_energy();
 
     auto f = make_water();
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;

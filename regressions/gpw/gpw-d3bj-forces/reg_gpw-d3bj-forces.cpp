@@ -197,12 +197,11 @@ int main() {
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-    cpu::gpw::GpwDft eval_method{{O, H}};
-    eval_method.cutoff_ry = 300.0; // CP2K CUTOFF 300
+    // Cutoff matches CP2K CUTOFF 300.
+    cpu::gpw::GpwDft eval_method{{O, H}, 300.0, cpu::gpw::XcKind::PBE};
     eval_method.max_iter = 120;
     eval_method.tol = 1e-7; // CP2K EPS_SCF 1e-7
     eval_method.mix = 0.4;
-    eval_method.xc = cpu::gpw::XcKind::PBE;
     eval_method.nonperiodic = false; // CP2K PERIODIC XYZ
     eval_method.d3bj = true;
     cpu::gpw::GPWEvaluator eval(std::move(eval_method));
@@ -239,13 +238,11 @@ int main() {
     // Twin: fresh SCF + analytic forces (dispersion is geometry-only, so
     // the converged density matches the product run).
     cpu::Frame frame_plain = geometry_copy(frame);
-    cpu::gpw::GpwDft plain{{O, H}};
-    plain.cutoff_ry = 300.0;
+    cpu::gpw::GpwDft plain{{O, H}, 300.0, cpu::gpw::XcKind::PBE};
     plain.n_occ = 8;
     plain.max_iter = 120;
     plain.tol = 1e-7;
     plain.mix = 0.4;
-    plain.xc = cpu::gpw::XcKind::PBE;
     plain.nonperiodic = false;
     plain.local_pp_on_grid = true;
     plain.d3bj = false;

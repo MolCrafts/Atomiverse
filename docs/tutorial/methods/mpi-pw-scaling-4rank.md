@@ -49,10 +49,7 @@ exactly 2.
 ## Usage
 
 ```cpp
-cpu::pw::PW pw;
-pw.upf_path = "tests/data/pw/Si_lda_nc.upf";
-pw.ecut_ry  = 15.0;
-pw.k_mesh   = 2;       // 8 k-points
+cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 15.0, 2};  // 8 k-points
 pw.tol      = 1e-6;
 pw.max_iter = 50;
 

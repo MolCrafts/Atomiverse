@@ -132,13 +132,11 @@ frame.box = cpu::Box::cubic(L);
 
 GpwDft m{{cpu::gpw::Kind{molrs::Element::H,
                           cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-                          cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-m.cutoff_ry = 100.0;
+                          cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 100.0, XcKind::PADE};
 m.n_occ = 1;
 m.max_iter = 200;
 m.tol = 1e-7;
 m.mix = 0.35;                         // DIIS twin path; OT uses OUTER_SCF
-m.xc = XcKind::PADE;
 m.k_mesh[0] = m.k_mesh[1] = m.k_mesh[2] = 2;
 m.k_time_reversal = true;             // TR-fold → 4 k for 2×2×2
 m.use_ot = true;

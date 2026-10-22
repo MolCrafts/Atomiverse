@@ -18,18 +18,17 @@ namespace scf {
 ///        integration grid.
 class RKS : public MeanFieldMethod<RKS> {
   public:
-    XCType xc = XCType::PBE; ///< Exchange–correlation functional (default PBE).
+    const XCType xc; ///< Exchange–correlation functional.
 
-    /// @brief Construct with the RKS defaults (restricted KS; PBE functional;
-    ///        MINAO initial guess; no damping; MatchPySCF grid; energy
-    ///        tolerance 1e-9 Ha).
-    RKS();
-    /// @brief Construct RKS with an explicit exchange–correlation functional.
-    /// @param xc Functional to use (e.g. LSDA, PBE, BLYP, B3LYP, PBE0,
-    ///           CAMB3LYP, B2PLYP). For double hybrids, `MP2{rks}` with
+    /// @brief Construct RKS (MINAO guess, no damping, MatchPySCF grid,
+    ///        energy tolerance 1e-9 Ha).
+    /// @param basis Basis set.
+    /// @param xc Functional (e.g. LSDA, PBE, BLYP, B3LYP, PBE0, CAMB3LYP,
+    ///           B2PLYP). For double hybrids, `MP2{rks}` with
     ///           `os_scale = ss_scale = hybrid_pt2_fraction(xc)` supplies the
     ///           PT2 term (KS SCF alone is not the full energy).
-    explicit RKS(XCType xc);
+    /// @param charge Molecular charge [e].
+    RKS(BasisSet basis, XCType xc, int charge = 0);
     std::string name() const { return "rks"; }
 
   protected:

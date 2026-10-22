@@ -17,8 +17,7 @@ compressed H₂ bond. One SCF on the complex Bloch path builds
 assembles Hellmann–Feynman + Pulay terms k-summed with weights, reusing
 occupied MO coefficients from `GpwResult::C_occ_k`.
 
-Public surface: construct `cpu::gpw::GpwDft`, set members (`k_mesh`,
-`cutoff_ry`, `xc`, `local_pp_on_grid`, …), `build(frame)` / `run(frame)` for
+Public surface: construct `cpu::gpw::GpwDft`, pass `cutoff_ry` and `xc` to the constructor, set members (`k_mesh`, `local_pp_on_grid`, …), `build(frame)` / `run(frame)` for
 energy, `forces(frame)` for SCF + forces (`kAtom_f*` [eV/Å]). No public `*Config`,
 no `make_*` / `build_*` factories. No standing
 regression. Decisive correctness is **analytic vs finite-difference**
@@ -143,14 +142,12 @@ frame.box = cpu::Box::cubic(12.0 * b2a);
 
 GpwDft m{{Kind{molrs::Element::H,
                GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-m.cutoff_ry = 100.0;
+               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 100.0, XcKind::PADE};
 m.n_occ = 1;
 m.tol = 1e-8;
 m.max_iter = 60;
 m.nonperiodic = false;
 m.local_pp_on_grid = true;
-m.xc = XcKind::PADE;
 m.eps_default = 1e-8;
 m.k_mesh[0] = 1;
 m.k_mesh[1] = 1;

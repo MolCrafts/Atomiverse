@@ -6,8 +6,8 @@ Binding contract for `cuda::gpw::GpwDft`. Residency law:
 ## Frozen shape (must equal CPU `GpwDft`)
 
 ```text
-cuda::gpw::GpwDft method{kinds};   // Kind = element + basis + GTH, ctor arg
-method.cutoff_ry = …;              // members, not *Config
+cuda::gpw::GpwDft method{kinds, cutoff_ry, xc};  // identity: ctor args
+method.tol = …;                    // knobs: members, not *Config
 method.build(frame);               // cell from frame.box, Z → kinds
 auto& res = method.run(frame);     // eV on kEnergy; Hartree on GpwResult
 method.forces(frame);              // eV/Å on kAtom_f*
@@ -16,7 +16,8 @@ const auto& last = method.last_result();
 ```
 
 - Concrete method under `ATV::cuda::gpw` (no freestanding `SCFSolver`);
-  parameters as members / ctor args; no `*Config`, no `make_*`.
+  identity (`kinds`, `cutoff_ry`, `xc`) as ctor args, knobs as members; no
+  `*Config`, no `make_*`.
 - `build(frame)` fail-fast; re-entrant `run` / `forces`; `last_result`;
   geometry never a member (no public `cell`) and never an atom list
   (`internal::GpwAtom` is engine-private). Same `GpwResult` / `XcKind` as CPU.

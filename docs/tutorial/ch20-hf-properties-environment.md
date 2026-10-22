@@ -88,8 +88,7 @@ This engine uses the **centre of nuclear charge** (`kMultipoleOrigin`).
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
 rhf.run(frame);
 
 cpu::MultipoleObserver obs{rhf.result_handle()};

@@ -12,8 +12,7 @@
 /// AIMD registers a force evaluator into `cpu::md::MD`:
 ///
 /// @code{.cpp}
-///   cpu::scf::RHF rhf;
-///   rhf.basis = cpu::scf::BasisSet::STO3G;
+///   cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 ///
 ///   cpu::vib::Hessian driver;
 ///   driver.on(ATV::vib::Phase::force)

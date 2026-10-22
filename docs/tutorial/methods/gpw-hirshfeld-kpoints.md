@@ -104,13 +104,11 @@ using ATV::cpu::gpw::XcKind;
 frame.box = ATV::cpu::Box::cubic(12.0);   // [Å]
 // Kind O / H: DZVP-MOLOPT-SR-GTH + GTH-PBE-q6 / GTH-PBE-q1
 
-GpwDft gpw{{O, H}};
-gpw.cutoff_ry = 200.0;
+GpwDft gpw{{O, H}, 200.0, XcKind::PBE};
 gpw.n_occ = 8;          // 16 valence e⁻ → 8 doubly occupied
 gpw.max_iter = 16;
 gpw.tol = 1e-6;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = false;
 gpw.mbd = true;
 gpw.hirshfeld = true;   // requires ts or mbd; RKS only
@@ -129,9 +127,8 @@ Driver path (component binding the same method):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 200.0;  dft.max_iter = 16;  dft.tol = 1e-6;  dft.mix = 0.4;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;
+ATV::cpu::gpw::GpwDft dft{kinds, 200.0, ATV::cpu::gpw::XcKind::PBE};
+dft.max_iter = 16;  dft.tol = 1e-6;  dft.mix = 0.4;
 dft.nonperiodic = false;
 dft.mbd = true;
 dft.hirshfeld = true;

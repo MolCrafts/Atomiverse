@@ -62,7 +62,7 @@ TEST(QmSubsystem, MissingMaskThrowsHowTo) {
     f.span(kAtom_type)[0] = 1;
     f.span(kAtom_type)[1] = 1;
     QmSubsystem sub;
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
     EXPECT_THROW(
         {
@@ -82,7 +82,7 @@ TEST(QmSubsystem, AllZeroMaskThrows) {
     auto qm = f.span(cpu::kAtomQmZ);
     qm[0] = qm[1] = qm[2] = 0;
     QmSubsystem sub;
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
     EXPECT_THROW(sub.build(f, 1), std::runtime_error);
 }
@@ -91,7 +91,7 @@ TEST(QmSubsystem, NonzeroQmChargeThrows) {
     auto f = make_h2o_ar();
     f.span(kAtom_charge)[0] = 0.1;
     QmSubsystem sub;
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
     EXPECT_THROW(sub.build(f, 1), std::runtime_error);
 }
@@ -116,7 +116,7 @@ TEST(QmSubsystem, Am1EngineRejectedByName) {
 TEST(QmSubsystem, MpiSizeGreaterThanOneThrows) {
     auto f = make_h2o_ar();
     QmSubsystem sub;
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
     EXPECT_THROW(sub.build(f, 2), std::runtime_error);
 }
@@ -124,8 +124,7 @@ TEST(QmSubsystem, MpiSizeGreaterThanOneThrows) {
 TEST(QmSubsystem, PrivateFrameAllocatedOnBuild) {
     auto f = make_h2o_ar();
     QmSubsystem sub;
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
     sub.embed_cutoff() = 20.0;
     sub.build(f, 1);

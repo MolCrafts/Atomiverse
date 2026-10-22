@@ -95,14 +95,12 @@ int main() {
     constexpr double kU_ev = 4.0;
 
     auto make_k = [&]() {
-        GpwDft m{h_kinds()};
-        m.cutoff_ry = 100.0;
+        GpwDft m{h_kinds(), 100.0, XcKind::PADE};
         m.n_alpha = 2;
         m.n_beta = 0;
         m.max_iter = 120;
         m.tol = 1e-7;
         m.mix = 0.35;
-        m.xc = XcKind::PADE;
         m.local_pp_on_grid = true;
         m.k_mesh[0] = 1;
         m.k_mesh[1] = 1;
@@ -189,14 +187,12 @@ int main() {
     // A7: Γ-limit identity — complex k=Γ + U stress ≡ real Γ + U stress
     {
         auto make_g = [&]() {
-            GpwDft m{h_kinds()};
-            m.cutoff_ry = 100.0;
+            GpwDft m{h_kinds(), 100.0, XcKind::PADE};
             m.n_alpha = 2;
             m.n_beta = 0;
             m.max_iter = 120;
             m.tol = 1e-7;
             m.mix = 0.35;
-            m.xc = XcKind::PADE;
             m.local_pp_on_grid = true;
             m.nonperiodic = false;
             m.plus_u.push_back(PlusU{molrs::Element::H, /*l=*/0, kU_ev});

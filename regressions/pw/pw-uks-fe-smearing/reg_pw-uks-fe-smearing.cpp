@@ -45,15 +45,12 @@ cpu::Frame make_fe_bcc_primitive(double a_ang) {
 /// @brief One collinear-UKS + FD-smearing solve at the fixed case settings.
 PWResult solve(const char* upf, double degauss_ry) {
     auto frame = make_fe_bcc_primitive(/*a_ang=*/2.87);
-    PW pw;
-    pw.upf_path = upf;
-    pw.ecut_ry = 12.0; // modest algorithm pin (≤ 60 s)
-    pw.k_mesh = 2;
+    // ecut 12 Ry: modest algorithm pin (≤ 60 s).
+    PW pw{UpfPseudopotential{upf}, 12.0, 2, cpu::scf::XCType::PBE};
     pw.tol = 2e-3;
     pw.max_iter = 30;
     pw.mix_beta = 0.3;
     pw.pulay_depth = 5;
-    pw.xc = cpu::scf::XCType::PBE;
     pw.spin_polarized = true;
     pw.multiplicity = 5; // seed M≈4; free under smear
     pw.smearing = Smearing::fermi_dirac;

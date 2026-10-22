@@ -13,7 +13,8 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-ROHF::ROHF() {
+ROHF::ROHF(BasisSet basis_in, int na, int nb, int charge_in)
+    : MeanFieldMethod<ROHF>(basis_in, charge_in), n_alpha(na), n_beta(nb) {
     spin_ = SpinType::RestrictedOpen;
     method_ = MeanFieldType::HF;
     init_guess = InitGuess::Hcore;
@@ -21,10 +22,6 @@ ROHF::ROHF() {
     diis_max_vectors = 6;
     diis_start_iter = 5;
     tol = 1e-8;
-}
-ROHF::ROHF(int na, int nb) : ROHF() {
-    n_alpha = na;
-    n_beta = nb;
 }
 void ROHF::resolve_occupation(int) {
     if (n_alpha < n_beta)

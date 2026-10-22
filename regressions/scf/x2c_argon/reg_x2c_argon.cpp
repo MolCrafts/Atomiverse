@@ -44,8 +44,7 @@ int main() {
     frame.box = cpu::Box::cubic(30.0);
 
     // Non-relativistic reference.
-    cpu::scf::RHF nr;
-    nr.basis = cpu::scf::BasisSet::Def2TZVP;
+    cpu::scf::RHF nr{cpu::scf::BasisSet::Def2TZVP};
     nr.tol = 1e-12;
     nr.max_iter = 200;
     nr.x2c = false;
@@ -57,8 +56,7 @@ int main() {
     const double e_nr = frame.meta.get(kEnergy) / units::kHartreeInEv;
 
     // x2c-1e.
-    cpu::scf::RHF x2c;
-    x2c.basis = cpu::scf::BasisSet::Def2TZVP;
+    cpu::scf::RHF x2c{cpu::scf::BasisSet::Def2TZVP};
     x2c.tol = 1e-12;
     x2c.max_iter = 200;
     x2c.x2c = true;

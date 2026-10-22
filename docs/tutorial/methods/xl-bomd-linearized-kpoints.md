@@ -87,12 +87,10 @@ RKS-k (product under test), **C** linearized UKS-k with
 ## Implementation
 
 ```cpp
-cpu::gpw::GpwDft dft{{H}};
-dft.cutoff_ry = 300.0;
+cpu::gpw::GpwDft dft{{H}, 300.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 60;
 dft.tol = 1e-7;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.k_mesh[2] = 2;
 dft.k_time_reversal = false;         // two sampled k (CP2K FULL_GRID)
 // dft.n_alpha = dft.n_beta = 1;     // collinear UKS leg (dual P_k^σ)

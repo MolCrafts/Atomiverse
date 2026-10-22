@@ -19,11 +19,10 @@ n_{\mathrm{elec}}(E_\mathrm{vbm})=\int_{-\infty}^{E_\mathrm{vbm}} D(E)\,dE
 Public path (no `*Config`, no factories):
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;
-method.upf_path = "..."; method.ecut_ry = 15; method.k_mesh = 2;
-method.xc = cpu::scf::XCType::LSDA;
 
 cpu::pw::Dos dos;
 dos.k_mesh = 4;

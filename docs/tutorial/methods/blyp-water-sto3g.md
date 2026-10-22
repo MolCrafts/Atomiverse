@@ -16,8 +16,7 @@ form.
 ## Practice
 
 ```cpp
-cpu::scf::RKS rks(cpu::scf::XCType::BLYP);
-rks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::BLYP};
 rks.tol = 1e-10;
 rks.run(frame);   // water pin geometry
 // energy on method / frame.meta (eV on Frame path; Ha on method — see reg)

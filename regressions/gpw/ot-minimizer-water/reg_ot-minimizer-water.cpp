@@ -46,12 +46,10 @@ cpu::gpw::GPWEvaluator make_eval(bool use_ot) {
     // Cutoff 250 Ry. Single-grid (ngrids=1): product multigrid is a net loss
     // on this 3-atom / 10 Å cell (product list overhead > collocate win).
     // CP2K twin uses NGRIDS 4 — energy pin tol absorbs the residual.
-    cpu::gpw::GpwDft dft({O, H});
-    dft.cutoff_ry = 250.0;
+    cpu::gpw::GpwDft dft({O, H}, 250.0, cpu::gpw::XcKind::PBE);
     dft.max_iter = 200;
     dft.tol = 1e-7;
     dft.mix = 0.3;
-    dft.xc = cpu::gpw::XcKind::PBE;
     dft.nonperiodic = true;
     dft.d3 = false;
     dft.use_ot = use_ot;

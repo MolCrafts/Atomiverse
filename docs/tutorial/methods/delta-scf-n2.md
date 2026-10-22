@@ -62,7 +62,7 @@ MOM/IMOM). Same CODATA factor on both sides of the product gate
 ## Implementation
 
 Public surface: `cpu::Frame` + concrete `cpu::scf::UHF`. No `*Config` bags; no
-factories. Members: `basis`, `tol`, `max_iter`, `n_alpha` / `n_beta` (ctor),
+factories. Constructor arguments: `basis`, `n_alpha` / `n_beta`; members: `tol`, `max_iter`,
 optional `MomStyle mom` / `set_mom_reference` for manual MOM runs. Product path
 is `UHF::delta_scf`.
 
@@ -73,8 +73,7 @@ is `UHF::delta_scf`.
 // N₂, r=1.0977 Å, Z=7; box cubic 20 Å (see reg)
 cpu::Frame frame = /* … */;
 
-cpu::scf::UHF uhf(/*n_alpha=*/7, /*n_beta=*/7);
-uhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/7, /*n_beta=*/7};
 uhf.tol = 1e-12;
 uhf.max_iter = 200;
 

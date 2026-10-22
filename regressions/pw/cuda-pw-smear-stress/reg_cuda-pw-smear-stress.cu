@@ -95,15 +95,11 @@ cpu::Frame make_al_fcc_primitive(double a_ang) {
 }
 
 template <typename PwT>
-void configure_smear(PwT& pw, const char* upf) {
-    pw.upf_path = upf;
-    pw.ecut_ry = kEcutRy;
-    pw.k_mesh = kMesh;
+void configure_smear(PwT& pw) {
     pw.tol = kTol;
     pw.max_iter = kMaxIter;
     pw.mix_beta = 0.4;
     pw.pulay_depth = 5;
-    pw.xc = cpu::scf::XCType::LSDA;
     pw.smearing = cpu::pw::Smearing::fermi_dirac;
     pw.degauss = kDegaussRy;
     pw.extra_bands = kExtraBands;
@@ -142,8 +138,9 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
         *e_ry = 0.0;
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method;
-        configure_smear(method, upf);
+        cpu::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh,
+                           cpu::scf::XCType::LSDA};
+        configure_smear(method);
         method.build(frame);
         {
             // `stress()` writes kStress/kEnergy on the Frame; run it on a copy.
@@ -153,8 +150,9 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
                 *e_ry = method.last_result().energy; // reference SCF [Ry]
         }
     } else {
-        cuda::pw::PW method;
-        configure_smear(method, upf);
+        cuda::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh,
+                            cpu::scf::XCType::LSDA};
+        configure_smear(method);
         method.build(frame);
         stress = cuda::pw::pw_stress(frame, method, e_ry);
     }

@@ -66,12 +66,10 @@ int main() {
     // Cheaper than forces pin (200 Ry / tol 1e-5) so cold SCF seed stays
     // inside the ≤60 s gate. CPMD production steps are single KS evals.
     constexpr double dt = 0.1; // fs — short step for electronic stability
-    cpu::gpw::GpwDft dft{{O, H}};
-    dft.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;
-    dft.xc = cpu::gpw::XcKind::PBE;
     dft.nonperiodic = true;
     cpu::gpw::GPWEvaluator gpw(std::move(dft), /*compute_forces=*/true);
     // Heavier fictitious mass than plane-wave textbook 400 a.u. — AO residual

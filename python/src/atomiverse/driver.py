@@ -40,7 +40,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     ------
     ValueError
         If *device* is anything but ``"cpu"``, or (SCF path) if the method's
-        spin multiplicity cannot split this frame's electron count.
+        ``n_alpha + n_beta`` does not equal this frame's electron count.
     TypeError
         If *evaluator* has neither a public run entry nor a native Component.
     RuntimeError

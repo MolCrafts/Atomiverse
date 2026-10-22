@@ -55,11 +55,10 @@ int main() {
     auto frame = make_ch4();
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::ThreeOb};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.sk_set = cpu::semiempirical::DftbSkSet::ThreeOb;
     dftb.with_forces = false;
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;

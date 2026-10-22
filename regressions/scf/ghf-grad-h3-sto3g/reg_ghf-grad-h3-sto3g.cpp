@@ -41,8 +41,7 @@ int main() {
     using namespace ATV;
 
     auto frame = h3_frame();
-    cpu::scf::GHF ghf(3);
-    ghf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::GHF ghf(cpu::scf::BasisSet::STO3G, 3);
     ghf.tol = 1e-12;
     ghf.max_iter = 200;
     ghf.guess_spin_rotation = 2.0 * M_PI / 3.0;

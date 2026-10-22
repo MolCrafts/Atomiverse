@@ -48,8 +48,8 @@ int main() {
     auto frame = o2_frame();
 
     // ROKS warm-start → UKS (same multi-minima caution as UHF/UMP2 O2 path).
-    cpu::scf::ROKS roks(9, 7, cpu::scf::XCType::LSDA);
-    roks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::ROKS roks(cpu::scf::BasisSet::STO3G, 9, 7,
+                        cpu::scf::XCType::LSDA);
     roks.tol = 1e-12;
     roks.max_iter = 200;
     roks.grid_level = cpu::scf::GridLevel::MatchPySCF;
@@ -66,8 +66,7 @@ int main() {
     guess.has_alpha = true;
     guess.has_beta = true;
 
-    cpu::scf::UKS uks(9, 7, cpu::scf::XCType::LSDA);
-    uks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UKS uks(cpu::scf::BasisSet::STO3G, 9, 7, cpu::scf::XCType::LSDA);
     uks.tol = 1e-12;
     uks.max_iter = 200;
     uks.grid_level = cpu::scf::GridLevel::MatchPySCF;

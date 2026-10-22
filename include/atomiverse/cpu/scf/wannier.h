@@ -12,8 +12,7 @@
 /// Marzari–Vanderbilt / multi-k MLWF is deferred (roadmap §11).
 ///
 /// @code
-///   cpu::scf::RHF rhf;
-///   rhf.basis = BasisSet::STO3G;
+///   cpu::scf::RHF rhf{BasisSet::STO3G};
 ///   rhf.run(frame);
 ///   cpu::scf::WannierCenters wb;
 ///   auto r = wb.compute(rhf.result_handle(), frame);

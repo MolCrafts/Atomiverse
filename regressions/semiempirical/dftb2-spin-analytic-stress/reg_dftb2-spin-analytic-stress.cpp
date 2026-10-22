@@ -98,11 +98,11 @@ double energy_only(cpu::Frame g, int multiplicity) {
     for (int i = 0; i < g.nlocal(); ++i)
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
-    cpu::semiempirical::DFTB2 d;
+    cpu::semiempirical::DFTB2 d{cpu::semiempirical::DftbSkSet::MioSketch,
+                                /*charge=*/0, multiplicity};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    d.multiplicity = multiplicity;
     d.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     d.with_forces = false;
     d.with_stress = false;
@@ -119,11 +119,11 @@ int check_case(const char* label, int z1, double r_ang, int multiplicity) {
     auto frame = make_tilted_diatomic(z1, r_ang);
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch,
+                                   /*charge=*/0, multiplicity};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.multiplicity = multiplicity;
     dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     dftb.with_forces = true;
     dftb.with_stress = true;

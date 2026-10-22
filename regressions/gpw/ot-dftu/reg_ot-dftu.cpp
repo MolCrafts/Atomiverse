@@ -49,12 +49,10 @@ cpu::gpw::GPWEvaluator make_eval(bool use_ot) {
                      cpu::gpw::GaussianBasis(molrs::Element::O, "SZV-GTH-PADE"),
                      cpu::gpw::GthPotential(molrs::Element::O, "GTH-PADE-q6")};
 
-    cpu::gpw::GpwDft dft{{Ni, O}};
-    dft.cutoff_ry = 250.0;
+    cpu::gpw::GpwDft dft{{Ni, O}, 250.0, cpu::gpw::XcKind::PADE};
     dft.max_iter = 300;
     dft.tol = 1e-5;
     dft.mix = 0.35;
-    dft.xc = cpu::gpw::XcKind::PADE;
     dft.nonperiodic = true;
     dft.use_ot = use_ot;
     // multiplicity 3, 24 valence e⁻ → Nα=13, Nβ=11

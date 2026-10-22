@@ -175,8 +175,7 @@ bool run_case(const Molecule& m) {
         const char* label = is_bcc ? "bcc" : "abcg2";
 
         auto frame = build(m);
-        AM1 am1;
-        am1.charge = m.net_charge;
+        AM1 am1{m.net_charge};
         am1.density_tol = 1.0e-10;
         AM1BCCCharges model{am1, set};
         model.assign(frame);

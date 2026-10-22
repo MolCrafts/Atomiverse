@@ -33,8 +33,7 @@ int main() {
     frame.span(kAtom_z)[1] = 1.2075;
     frame.box = cpu::Box::cubic(20.0);
 
-    cpu::scf::ROHF rohf(9, 7); // O2 triplet
-    rohf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::ROHF rohf(cpu::scf::BasisSet::STO3G, 9, 7); // O2 triplet
     rohf.tol = 1e-12;
     rohf.max_iter = 200;
     const cpu::scf::GradientResult res = rohf.forces(frame);

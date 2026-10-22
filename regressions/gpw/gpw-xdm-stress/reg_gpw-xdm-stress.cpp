@@ -150,12 +150,10 @@ int main() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     // ── (1) Product analytic stress with periodic free-atom XDM ───────────
-    cpu::gpw::GpwDft dft{{O, H}};
-    dft.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     dft.max_iter = 120;
     dft.tol = 1e-6;
     dft.mix = 0.4;
-    dft.xc = cpu::gpw::XcKind::PBE;
     dft.nonperiodic = false;
     dft.xdm = true;
     cpu::gpw::GPWEvaluator eval(std::move(dft));
@@ -204,13 +202,11 @@ int main() {
     // ── (3) Multi-SCF strain-FD oracle on the same method ─────────────────
     // Same Frame as the product path so twins share the product geometry
     // (not the pin constant — that residual is gated separately on E_disp).
-    cpu::gpw::GpwDft method({O, H});
-    method.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft method({O, H}, 200.0, cpu::gpw::XcKind::PBE);
     method.n_occ = 8;
     method.max_iter = 120;
     method.tol = 1e-6;
     method.mix = 0.4;
-    method.xc = cpu::gpw::XcKind::PBE;
     method.nonperiodic = false;
     method.local_pp_on_grid = true;
     method.xdm = true;
@@ -250,13 +246,11 @@ int main() {
     }
 
     // ── (4) The XDM stress contribution is the pinned number ──────────────
-    cpu::gpw::GpwDft plain({O, H});
-    plain.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft plain({O, H}, 200.0, cpu::gpw::XcKind::PBE);
     plain.n_occ = 8;
     plain.max_iter = 120;
     plain.tol = 1e-6;
     plain.mix = 0.4;
-    plain.xc = cpu::gpw::XcKind::PBE;
     plain.nonperiodic = false;
     plain.local_pp_on_grid = true;
     plain.xdm = false;

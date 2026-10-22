@@ -50,8 +50,7 @@ int main() {
     constexpr double kTrAHa = 1.612118275776;
     constexpr double kTolEHa = 1e-6; // job gate on e_corr
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-12;
     rhf.max_iter = 100;
     rhf.run(f);

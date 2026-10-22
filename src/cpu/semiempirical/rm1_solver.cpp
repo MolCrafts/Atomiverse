@@ -7,8 +7,6 @@
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
-RM1::RM1() = default;
-
 RM1::RM1(int charge_, int multiplicity_, int max_iter_, double density_tol_,
          double energy_tol_)
     : charge(charge_), multiplicity(multiplicity_), max_iter(max_iter_),
@@ -24,20 +22,6 @@ RM1::RM1(RM1&& other) noexcept
     other.reset_built_driver_();
 }
 
-RM1& RM1::operator=(RM1&& other) noexcept {
-    if (this != &other) {
-        reset_built_driver_();
-        other.reset_built_driver_();
-        charge = other.charge;
-        multiplicity = other.multiplicity;
-        max_iter = other.max_iter;
-        density_tol = other.density_tol;
-        energy_tol = other.energy_tol;
-        force_step = other.force_step;
-        engine_ = std::move(other.engine_);
-    }
-    return *this;
-}
 void RM1::sync_engine_() {
     NDDOConfig c;
     c.method = SemiEmpiricalMethod::RM1;

@@ -61,14 +61,12 @@ int main() {
 
     // One method recipe for the product evaluator and the FD twin.
     auto make_method = [&O]() {
-        cpu::gpw::GpwDft m({O});
-        m.cutoff_ry = 400.0;
+        cpu::gpw::GpwDft m({O}, 400.0, cpu::gpw::XcKind::PBE);
         m.n_alpha = 7;
         m.n_beta = 5;
         m.max_iter = 200;
         m.tol = 1e-7;
         m.mix = 0.4;
-        m.xc = cpu::gpw::XcKind::PBE;
         m.nonperiodic = true;
         m.local_pp_on_grid = true;
         return m;

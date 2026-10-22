@@ -9,10 +9,10 @@
 ///
 /// This mirrors CP2K's getting-started h2o.inp: isolated H2O, PBE,
 /// DZVP-MOLOPT-GTH basis + GTH-PBE pseudopotentials, Martyna-Tuckerman isolated
-/// electrostatics. The method is cpu::gpw::GpwDft (kinds + parameters as
-/// public members, Frame in / Frame out — `dft.run(frame)` works directly);
-/// here it is bound to a Driver slot through cpu::gpw::GPWEvaluator and run
-/// with cpu::single_point exactly like cpu::pw::PWEvaluator.
+/// electrostatics. The method is cpu::gpw::GpwDft (kinds, cutoff and
+/// functional fixed at construction, knobs as public members, Frame in /
+/// Frame out — `dft.run(frame)` works directly); here it is bound to a Driver
+/// slot through cpu::gpw::GPWEvaluator and run with cpu::single_point.
 ///
 /// Build:
 ///   cmake -B build -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON \
@@ -76,12 +76,10 @@ int main() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     // The method carries every parameter; the evaluator binds it to a slot.
-    cpu::gpw::GpwDft dft{{O, H}};
-    dft.cutoff_ry = 400.0;
+    cpu::gpw::GpwDft dft{{O, H}, /*cutoff_ry=*/400.0, cpu::gpw::XcKind::PBE};
     dft.max_iter = 200;
     dft.tol = 1e-7;
     dft.mix = 0.3;
-    dft.xc = cpu::gpw::XcKind::PBE;
     dft.nonperiodic = true;
 
     cpu::gpw::GPWEvaluator eval(std::move(dft));

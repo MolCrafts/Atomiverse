@@ -72,13 +72,10 @@ int main() {
     constexpr double kSymTol = 0.05; // distance to {0, Q/2} lattice [e]
     constexpr double kBornTol = 0.5; // |Z*| upper bound [e]
 
-    PW method;
-    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
-    method.ecut_ry = kEcutRy;
-    method.k_mesh = kMeshScf;
+    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
+              kMeshScf, cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
-    method.xc = cpu::scf::XCType::LSDA;
 
     BerryPolarization berry;
     berry.k_perp = 2;

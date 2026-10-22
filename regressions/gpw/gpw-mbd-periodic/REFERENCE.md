@@ -10,7 +10,7 @@ geometry (same nuclei as `gpw-mbd-ice` / `gpw-ts-ice`) in a **periodic** cubic c
 Public API:
 
 ```cpp
-GpwDft gpw;
+GpwDft gpw{kinds, /*cutoff_ry=*/200.0, XcKind::PBE};
 gpw.mbd = true;
 gpw.mbd_k_mesh[0] = gpw.mbd_k_mesh[1] = gpw.mbd_k_mesh[2] = 2; // periodic
 ```

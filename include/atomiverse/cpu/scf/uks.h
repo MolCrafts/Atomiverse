@@ -15,21 +15,19 @@ namespace scf {
 ///        electrons, for open-shell / spin-polarized systems.
 class UKS : public MeanFieldMethod<UKS> {
   public:
-    int n_alpha = 0; ///< Alpha (spin-up) electrons (set before run).
-    int n_beta = 0;  ///< Beta (spin-down) electrons (set before run).
-    XCType xc =
-        XCType::LSDA; ///< Exchange–correlation functional (default LSDA).
+    const int n_alpha; ///< Alpha (spin-up) electrons.
+    const int n_beta;  ///< Beta (spin-down) electrons.
+    const XCType xc;   ///< Exchange–correlation functional.
 
-    /// @brief Construct with the UKS defaults (unrestricted KS; LSDA functional;
-    ///        Hcore initial guess; 0.5 density damping; DIIS capped at 6
-    ///        vectors; energy tolerance 1e-8 Ha). Set `n_alpha` / `n_beta`
-    ///        before `run`.
-    UKS();
-    /// @brief Construct UKS with explicit α / β counts and functional.
+    /// @brief Construct UKS (Hcore guess, 0.5 damping, DIIS 6 vectors,
+    ///        energy tolerance 1e-8 Ha).
+    /// @param basis Basis set.
     /// @param n_alpha Spin-up electrons.
     /// @param n_beta  Spin-down electrons.
-    /// @param xc      Exchange–correlation functional (default LSDA).
-    UKS(int n_alpha, int n_beta, XCType xc = XCType::LSDA);
+    /// @param xc      Exchange–correlation functional.
+    /// @param charge  Molecular charge [e].
+    UKS(BasisSet basis, int n_alpha, int n_beta, XCType xc = XCType::LSDA,
+        int charge = 0);
     std::string name() const { return "uks"; }
 
   protected:

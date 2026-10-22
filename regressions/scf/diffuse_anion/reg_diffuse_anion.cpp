@@ -51,9 +51,7 @@ struct RhfOut {
 
 RhfOut run_rhf(ATV::cpu::Frame frame, ATV::cpu::scf::BasisSet basis,
                int charge) {
-    ATV::cpu::scf::RHF rhf;
-    rhf.basis = basis;
-    rhf.charge = charge;
+    ATV::cpu::scf::RHF rhf{basis, charge};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     rhf.run(frame);

@@ -47,9 +47,9 @@ Production steps use dual-spin fixed-density multi-k KS evals
 ## Implementation
 
 ```cpp
-cpu::gpw::GpwDft dft{{H}};
-dft.cutoff_ry = 100.0;  dft.max_iter = 80;  dft.tol = 1e-5;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PADE;  dft.nonperiodic = false;
+cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
+dft.max_iter = 80;  dft.tol = 1e-5;  dft.mix = 0.3;
+dft.nonperiodic = false;
 dft.n_alpha = 1;  dft.n_beta = 1;
 dft.k_mesh[2] = 2;  dft.k_time_reversal = false;
 cpu::gpw::GPWEvaluator gpw(std::move(dft), /*compute_forces=*/true);

@@ -228,8 +228,7 @@ for (int i = 0; i < 3; ++i) {
 frame.box = cpu::Box::cubic(20.0);
 frame.meta.get(kEnergy) = 0;
 
-cpu::semiempirical::GFN1 gfn1;
-gfn1.charge = 0;
+cpu::semiempirical::GFN1 gfn1{/*charge=*/0};
 gfn1.with_forces = true;
 
 // Empty recorder paths: do not write frequencies.tsv / mode_*.xyz.

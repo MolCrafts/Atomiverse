@@ -8,8 +8,9 @@ Spin-unpolarized plane-wave Kohn–Sham total energy and ionic forces with the
 and potential spectrally on the FFT grid (not the historical `σ = 0`
 LDA-limit call of `evaluate_xc(PBE, …)`).
 
-Public API: concrete `cpu::pw::PW` with members (`upf_path`, `ecut_ry`,
-`k_mesh`, `xc = XCType::PBE`, …); Frame I/O; `pw_forces_analytic` for forces
+Public API: concrete
+`cpu::pw::PW{UpfPseudopotential{path}, ecut_ry, k_mesh, XCType::PBE}` (knobs
+as members); Frame I/O; `pw_forces_analytic` for forces
 [eV/Å]. No public `*Config` bag.
 
 ## System

@@ -98,8 +98,7 @@ inside the pins above (the ERI equivalence judge caps block-vs-scalar drift at
 - Product regression `reg_posthf-eri-block-mp2.cpp` asserts the hard-coded RHF /
   RMP2 pins — no live PySCF, no reading this file at ctest time. Public path:
   ```cpp
-  cpu::scf::RHF rhf;
-  rhf.basis = cpu::scf::BasisSet::STO3G;
+  cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
   rhf.tol = 1e-12;
   auto m = rhf.mp2(frame);   // m.e_corr plain RMP2 through the dense ERI tensor
   ```

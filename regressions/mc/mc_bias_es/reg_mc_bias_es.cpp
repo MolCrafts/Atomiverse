@@ -119,8 +119,7 @@ int main() {
         f.span(kAtom_x)[0] = centre - 0.5 * r;
         f.span(kAtom_x)[1] = centre + 0.5 * r;
         f.box = cpu::Box::cubic(box_len);
-        cpu::scf::RHF probe;
-        probe.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::RHF probe{cpu::scf::BasisSet::STO3G};
         probe.tol = 1e-12; // [Hartree]
         probe.max_iter = 100;
         probe.compute_force = false; // this stencil wants energies only
@@ -164,8 +163,7 @@ int main() {
 
     // compute_force stays at its DEFAULT true — see the header comment: the
     // energy-only slot policy is the only thing that may suppress the gradient.
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-8; // [Hartree]; 3 × 10⁻⁷ eV, 10⁻⁵ of k_BT
     rhf.max_iter = 100;
 

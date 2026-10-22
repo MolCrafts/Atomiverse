@@ -9,22 +9,12 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-RHF::RHF() {
+RHF::RHF(BasisSet basis_in, int charge_in, double tol_in, int max_iter_in)
+    : MeanFieldMethod<RHF>(basis_in, charge_in) {
     spin_ = SpinType::Restricted;
     method_ = MeanFieldType::HF;
     init_guess = InitGuess::MINAO;
     damping_factor = 0.0;
-    tol = 1e-9;
-}
-
-RHF::RHF(BasisSet basis_in) : RHF() { basis = basis_in; }
-
-RHF::RHF(BasisSet basis_in, int charge_in) : RHF(basis_in) {
-    charge = charge_in;
-}
-
-RHF::RHF(BasisSet basis_in, int charge_in, double tol_in, int max_iter_in)
-    : RHF(basis_in, charge_in) {
     tol = tol_in;
     max_iter = max_iter_in;
 }

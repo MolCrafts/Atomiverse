@@ -23,7 +23,7 @@ stress.
 Public API:
 
 ```cpp
-GpwDft gpw{kinds};
+GpwDft gpw{kinds, /*cutoff_ry=*/120.0, XcKind::PBE};
 gpw.ts = true;          // or gpw.mbd = true
 gpw.hirshfeld = true;   // post-SCF volumes → energy, forces, stress
 gpw.build(frame);

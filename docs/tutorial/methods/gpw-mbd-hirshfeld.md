@@ -131,13 +131,11 @@ using ATV::cpu::gpw::XcKind;
 
 frame.box = ATV::cpu::Box::cubic(12.0);  // Å
 
-GpwDft gpw{kinds};
-gpw.cutoff_ry = 200.0; // density-dependent E_disp; pin is this product setting
+GpwDft gpw{kinds, 200.0, XcKind::PBE};  // density-dependent E_disp; pin is this product setting
 gpw.n_occ = 8;         // 16 valence e⁻ → 8 doubly occupied
 gpw.max_iter = 16;
 gpw.tol = 1e-6;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = false;
 gpw.mbd = true;
 gpw.hirshfeld = true;  // post-SCF volumes → mbd_rsscs_pbe(…, vol_ratio)
@@ -153,9 +151,9 @@ Driver / Frame path (component; same members):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 300.0;  dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;  dft.nonperiodic = false;
+ATV::cpu::gpw::GpwDft dft{kinds, 300.0, ATV::cpu::gpw::XcKind::PBE};
+dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
+dft.nonperiodic = false;
 dft.mbd = true;
 dft.hirshfeld = true;
 ATV::cpu::gpw::GPWEvaluator eval(std::move(dft));

@@ -84,12 +84,10 @@ cpu::gpw::GPWEvaluator make_eval(bool forces) {
         molrs::Element::Si,
         cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")};
-    cpu::gpw::GpwDft dft{{Si}};
-    dft.cutoff_ry = kCutoffRy;
+    cpu::gpw::GpwDft dft{{Si}, kCutoffRy, cpu::gpw::XcKind::PADE};
     dft.max_iter = kMaxIter;
     dft.tol = kTol;
     dft.mix = kMix;
-    dft.xc = cpu::gpw::XcKind::PADE;
     dft.nonperiodic = true;
     dft.n_alpha = 5;
     dft.n_beta = 3;

@@ -50,8 +50,7 @@ int main() {
 
     // Zero cross-LJ → pure electrostatic embedding path.
     cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     qmmm.set_engine(std::move(rhf));

@@ -117,15 +117,13 @@ frame.box = cpu::Box::cubic(a);
 
 GpwDft m{{Kind{molrs::Element::Si,
                GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-m.cutoff_ry = 30.0;
+               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}, 30.0, XcKind::PBE};
 m.n_alpha = 4;
 m.n_beta = 4;              // UKS closed-shell occupations
 m.max_iter = 80;
 m.tol = 1e-6;
 m.mix = 0.3;
 m.level_shift = 0.3;       // Ha; small-gap artificial sc-Si₂
-m.xc = XcKind::PBE;
 m.mp2_ri = true;
 m.build(frame);
 

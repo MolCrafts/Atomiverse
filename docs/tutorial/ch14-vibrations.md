@@ -270,7 +270,7 @@ $6N$-displacement schedule, no termination criterion — yet it consumes the
 - the minimizer ([Geometry Optimization](ch12-geometry-optimization.md)) plugs into
   `cpu::minimizer::Minimize` for geometry optimization,
 - and the hybrid-DFT chapter ([Hybrid Functionals](ch06-hybrid-dft.md)) swaps in
-  `cpu::scf::RKS{XCType::B3LYP}` for hybrid forces.
+  `cpu::scf::RKS{basis, XCType::B3LYP}` for hybrid forces.
 
 So the natural workflow — optimize, then characterize — is *one method, two
 drivers*:
@@ -311,8 +311,7 @@ Analytic Hessians are currently **RHF only**.
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
 rhf.tol = 1e-12;
 cpu::vib::HessianResult H = cpu::scf::Hessian<cpu::scf::RHF>{rhf}.run(frame); // eV/Å²
 // mass-weight → project TR → diagonalise → frequencies [cm⁻¹]

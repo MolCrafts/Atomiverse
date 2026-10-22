@@ -93,13 +93,10 @@ int main() {
     constexpr double kMidTol = 0.90;
     constexpr double kSpreadRatio = 0.25;
 
-    PW method;
-    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
-    method.ecut_ry = kEcutRy;
-    method.k_mesh = kMeshScf;
+    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
+              kMeshScf, cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
-    method.xc = cpu::scf::XCType::LSDA;
     method.spin_polarized = true;
     method.multiplicity = 1; // M = 0 closed-shell collinear
 

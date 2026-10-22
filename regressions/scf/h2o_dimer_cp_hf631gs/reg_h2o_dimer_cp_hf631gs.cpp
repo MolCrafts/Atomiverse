@@ -39,8 +39,7 @@ int main() {
     }
     dimer.box = cpu::Box::cubic(30.0);
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Pople631Gs; // 6-31G*
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs}; // 6-31G*
     rhf.tol = 1e-10;
     rhf.max_iter = 100;
 

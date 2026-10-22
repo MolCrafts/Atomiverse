@@ -89,12 +89,10 @@ the same `e_disp` branch); CUDA GPW.
 Public surface only (`GPWEvaluator` / `GpwDft` members; Frame in/out):
 
 ```cpp
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 200.0;
+cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
 dft.max_iter = 200;
 dft.tol = 1e-7;              // matches CP2K EPS_SCF twin
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;
 dft.nonperiodic = false;     // PERIODIC XYZ
 dft.d3 = true;               // zero damping; exclusive vs d3bj/d4/ts/xdm/mbd
 

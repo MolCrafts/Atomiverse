@@ -68,14 +68,12 @@ void set_cell_bohr(ATV::cuda::gpw::GpwDft& m, double a, double b, double c) {
 template <typename Method>
 void set_si_mg(Method& m, double a_bohr) {
     set_cell_bohr(m, a_bohr / std::sqrt(2.0), a_bohr / std::sqrt(2.0), a_bohr);
-    m.cutoff_ry = 40.0;
     m.ngrids = 4;
     m.rel_cutoff = 20.0; // < cutoff → true multi-level (make_multigrid gate)
     m.n_occ = 8;         // 4 atoms × 4 valence e⁻
     m.max_iter = 60;
     m.tol = 1e-8;
     m.diis_depth = 6;
-    m.xc = XcKind::PADE;
     m.nonperiodic = false;
     m.local_pp_on_grid = true;
     m.use_ot = false;
@@ -111,7 +109,7 @@ int main(int argc, char** argv) {
     double e_cpu = 0.0, e_cuda = 0.0;
 
     if (run_cpu) {
-        ATV::cpu::gpw::GpwDft m;
+        ATV::cpu::gpw::GpwDft m({}, 40.0, XcKind::PADE);
         set_si_mg(m, a);
         ATV::cpu::gpw::internal::GpwDftAccess::build(m, atoms);
         const auto& r = ATV::cpu::gpw::internal::GpwDftAccess::run(m, atoms);
@@ -129,7 +127,7 @@ int main(int argc, char** argv) {
     }
 
     if (run_cuda) {
-        ATV::cuda::gpw::GpwDft m;
+        ATV::cuda::gpw::GpwDft m({}, 40.0, XcKind::PADE);
         set_si_mg(m, a);
         m.build(atoms);
         const auto& r = m.run(atoms);

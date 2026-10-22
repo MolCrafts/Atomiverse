@@ -134,7 +134,7 @@ They may omit initialization; use the complete model example when running code.
 cpu::md::MD sim;
 sim.set_integrator(cpu::md::VelocityVerlet{0.5});
 sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});       // classical
-// sim.on(md::Phase::force).add(cpu::scf::RHF{});       // AIMD
+// sim.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});       // AIMD
 sim.build();
 sim.run(frame, 1000);
 ```

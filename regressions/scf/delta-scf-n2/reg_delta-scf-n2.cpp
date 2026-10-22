@@ -51,8 +51,7 @@ int main() {
     auto frame = n2_frame();
 
     // Closed-shell N2: 14 e → n_α = n_β = 7. HOMO=6, LUMO=7 (0-based).
-    cpu::scf::UHF uhf(/*n_alpha=*/7, /*n_beta=*/7);
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UHF uhf(cpu::scf::BasisSet::STO3G, /*n_alpha=*/7, /*n_beta=*/7);
     uhf.tol = 1e-12;
     uhf.max_iter = 200;
 

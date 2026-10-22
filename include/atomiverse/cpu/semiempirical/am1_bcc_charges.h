@@ -38,7 +38,7 @@ class AM1BCCCharges {
     ///        member [e] is the net molecular charge; closed-shell singlet only.
     /// @param parameter_set Bond-charge-correction table.
     explicit AM1BCCCharges(
-        AM1 am1 = {}, BccParameterSet parameter_set = BccParameterSet::Bcc);
+        AM1 am1 = AM1{}, BccParameterSet parameter_set = BccParameterSet::Bcc);
 
     /// @brief Compute AM1-BCC charges and write them to the Frame.
     ///

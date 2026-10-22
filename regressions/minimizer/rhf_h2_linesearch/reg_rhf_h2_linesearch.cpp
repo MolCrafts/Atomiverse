@@ -57,8 +57,7 @@ int main() {
     // ── RHF/STO-3G as a NESTED force source at the minimizer force phase ──
     // tol is tight so the trial energies/slopes the line search reads back
     // are converged well below the Wolfe tests' own resolution.
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-10; // [Hartree]
     rhf.max_iter = 100;
 

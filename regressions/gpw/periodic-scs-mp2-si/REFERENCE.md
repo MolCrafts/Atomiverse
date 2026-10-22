@@ -18,8 +18,8 @@ E_{\mathrm{corr}}^{\mathrm{SCS}} = c_{\mathrm{OS}}\,E_{\mathrm{OS}}
 Product API (same member names as molecular `RHF` / `UHF`):
 
 ```cpp
-cpu::gpw::GpwDft m{{si_kind}};
-// ... PBE GPW members; build(frame); run(frame);  // frame: Å positions, Z, box
+cpu::gpw::GpwDft m{{si_kind}, /*cutoff_ry=*/30.0, cpu::gpw::XcKind::PBE};
+// ... members; build(frame); run(frame);  // frame: Å positions, Z, box
 m.mp2_ri = true;
 m.mp2_os_scale = 1.2;
 m.mp2_ss_scale = 1.0 / 3.0;

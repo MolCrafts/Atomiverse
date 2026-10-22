@@ -60,9 +60,9 @@ const cpu::gpw::Kind H{
     molrs::Element::H,
     cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
     cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
-cpu::gpw::GpwDft dft{{H}};
-dft.cutoff_ry = 100.0;  dft.max_iter = 80;  dft.tol = 1e-5;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PADE;  dft.nonperiodic = false;
+cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
+dft.max_iter = 80;  dft.tol = 1e-5;  dft.mix = 0.3;
+dft.nonperiodic = false;
 dft.n_alpha = 1;  dft.n_beta = 1;          // collinear UKS, closed-shell fillings
 dft.k_mesh[2] = 2;  dft.k_time_reversal = false;   // 1×1×2, n_k = 2
 cpu::gpw::GPWEvaluator gpw(std::move(dft), /*compute_forces=*/true);

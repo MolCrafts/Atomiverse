@@ -41,8 +41,7 @@ ATV::cpu::Frame glycine() {
 double run_once(bool use_ri, double& energy) {
     using clock = std::chrono::steady_clock;
     ATV::cpu::Frame f = glycine();
-    ATV::cpu::scf::RHF rhf;
-    rhf.basis = ATV::cpu::scf::BasisSet::Def2SVP;
+    ATV::cpu::scf::RHF rhf{ATV::cpu::scf::BasisSet::Def2SVP};
     rhf.tol = 1e-9;
     rhf.max_iter = 200;
     if (use_ri)

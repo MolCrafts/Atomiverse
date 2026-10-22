@@ -198,8 +198,7 @@ for (int i = 0; i < 5; ++i) {
 frame.box = cpu::Box::cubic(20.0);
 frame.meta.get(kEnergy) = 0;
 
-cpu::semiempirical::IPEA ipea;
-ipea.charge = 0;
+cpu::semiempirical::IPEA ipea{/*charge=*/0};
 ipea.with_forces = true;
 
 // Empty recorder paths: do not write frequencies.tsv / mode_*.xyz.

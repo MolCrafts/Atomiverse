@@ -16,7 +16,7 @@ Extends Γ-UKS Hirshfeld (`reg_gpw-hirshfeld-uks`) and multi-k RKS Hirshfeld
 Public API:
 
 ```cpp
-GpwDft gpw;
+GpwDft gpw{kinds, /*cutoff_ry=*/120.0, XcKind::PBE};
 gpw.n_alpha = 7;
 gpw.n_beta  = 5;
 gpw.mbd = true;

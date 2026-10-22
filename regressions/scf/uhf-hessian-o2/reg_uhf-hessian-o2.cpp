@@ -39,8 +39,7 @@ int main() {
 
     // Cold UHF often lands on a higher local solution for O2; warm-start
     // from ROHF densities to reach the PySCF UHF minimum used for the pin.
-    cpu::scf::ROHF rohf(9, 7);
-    rohf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::ROHF rohf(cpu::scf::BasisSet::STO3G, 9, 7);
     rohf.tol = 1e-12;
     rohf.max_iter = 200;
     rohf.run(frame);
@@ -56,8 +55,7 @@ int main() {
     guess.has_alpha = true;
     guess.has_beta = true;
 
-    cpu::scf::UHF uhf(9, 7);
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UHF uhf(cpu::scf::BasisSet::STO3G, 9, 7);
     uhf.tol = 1e-12;
     uhf.max_iter = 200;
 

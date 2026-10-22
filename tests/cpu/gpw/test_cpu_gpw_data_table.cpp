@@ -15,6 +15,7 @@
 
 #include <stdexcept>
 #include <type_traits>
+#include <vector>
 
 #include "atomiverse/cpu/gpw/basis_data/gpw_tables.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
@@ -168,7 +169,7 @@ TEST(GpwDataTable, D3CoversSupportedElementsOnly) {
 // Metallic free-energy force payload: result fields + public smear members
 // (no SCF — full FD identity lives in regressions/gpw/gpw-metallic-forces).
 TEST(GpwDataTable, MetallicForcePayloadMembersExist) {
-    GpwDft m;
+    GpwDft m{std::vector<Kind>{}, /*cutoff_ry=*/300.0, XcKind::PADE};
     m.smearing = Smearing::fermi_dirac;
     m.degauss = 0.02;
     m.extra_bands = 4;

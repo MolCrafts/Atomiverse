@@ -134,10 +134,10 @@ TEST(GpwBerryComputeGates, MetallicAndEmptyThrow) {
 
     GpwDft method{{Kind{molrs::Element::Si,
                         GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                        GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-    method.cutoff_ry = 50.0;
+                        GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+                  /*cutoff_ry=*/50.0,
+                  XcKind::PADE};
     method.n_occ = 2;
-    method.xc = XcKind::PADE;
     method.build(atoms);
 
     BerryPolarization berry;

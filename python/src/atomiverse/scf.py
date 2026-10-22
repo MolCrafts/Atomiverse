@@ -9,7 +9,9 @@ expanded in a fixed set of Gaussian functions, the *basis set*.
 
 The surface is the **concrete method** — ``RHF``, ``UHF``, ``RKS``, ``UKS``.
 There is no ``SCF`` facade, no ``SCFConfig`` bag and no factory: every
-parameter is a constructor argument, and the only I/O currency is a
+parameter is a constructor argument — keyword names match the C++
+constructor — the identity (``basis``, ``charge``, ``n_alpha`` / ``n_beta``,
+``xc``) is read-only afterwards, and the only I/O currency is a
 ``molpy.Frame``.
 
 Two letters name each method. ``R`` (restricted) means the spin-up (alpha)
@@ -20,7 +22,7 @@ what an open-shell system with unpaired electrons needs. ``HF``
 (Hartree-Fock) treats electron exchange exactly and leaves out electron
 correlation; ``KS`` (Kohn-Sham density-functional theory) replaces both by
 an approximate exchange-correlation *functional* — a recipe mapping the
-electron density to an energy — chosen by the ``functional`` argument.
+electron density to an energy — chosen by the ``xc`` argument.
 
 Example::
 
@@ -35,30 +37,28 @@ Example::
 Constructors
 ------------
 
-``RHF(basis="STO-3G", charge=0, tol=1e-9, max_iter=100)``
+``RHF(basis, charge=0, tol=1e-9, max_iter=100)``
     Closed-shell Hartree-Fock.
 
-``UHF(basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)``
-    Open-shell Hartree-Fock. ``multiplicity`` is M = 2S + 1 with S the total
-    spin — 1 singlet (all electrons paired), 2 doublet (one unpaired), 3
-    triplet (two unpaired). The alpha / beta split is resolved at ``run`` /
-    ``forces`` time, once the frame fixes the electron count
+``UHF(basis, n_alpha, n_beta, charge=0, tol=1e-8, max_iter=100)``
+    Open-shell Hartree-Fock with ``n_alpha`` spin-up and ``n_beta``
+    spin-down electrons. For spin multiplicity M = 2S + 1 (S the total spin —
+    1 singlet, 2 doublet, 3 triplet) and electron count
     N_e = sum(Z) - charge: n_alpha = (N_e + M - 1)/2 and
-    n_beta = (N_e - M + 1)/2. Those are integers only for an even N_e with an
-    odd M or an odd N_e with an even M; any other pairing, or M > N_e + 1,
-    raises ``ValueError`` there rather than at construction.
+    n_beta = (N_e - M + 1)/2. ``n_alpha + n_beta`` must equal the frame's
+    N_e; a mismatch raises ``ValueError`` at ``run`` / ``forces``, once the
+    frame fixes N_e.
 
-``RKS(functional="PBE", basis="STO-3G", charge=0, tol=1e-9, max_iter=100)``
+``RKS(basis, xc, charge=0, tol=1e-9, max_iter=100)``
     Closed-shell Kohn-Sham DFT.
 
-``UKS(functional="LSDA", basis="STO-3G", charge=0, multiplicity=1,
-tol=1e-8, max_iter=100)``
-    Open-shell Kohn-Sham DFT; ``multiplicity`` as for ``UHF``.
+``UKS(basis, n_alpha, n_beta, xc="LSDA", charge=0, tol=1e-8, max_iter=100)``
+    Open-shell Kohn-Sham DFT; ``n_alpha`` / ``n_beta`` as for ``UHF``.
 
 ``basis`` is one of ``STO-3G``, ``6-31G``, ``6-31G*``, ``6-31+G*``,
-``def2-SVP``, ``def2-TZVP``, ``aug-cc-pVDZ``; ``functional`` is one of
+``def2-SVP``, ``def2-TZVP``, ``aug-cc-pVDZ``, ``cc-pVDZ``; ``xc`` is one of
 ``LSDA``, ``PBE``, ``PBEsol``, ``RevPBE``, ``RPBE``, ``BLYP``,
-``OptB88VdW``, ``B3LYP``, ``PBE0``, ``B2PLYP``. An unsupported name raises
+``OptB88VdW``, ``B3LYP``, ``PBE0``, ``B2PLYP``, ``CAMB3LYP``. An unsupported name raises
 ``ValueError`` listing the supported ones — there is no fallback basis or
 functional.
 

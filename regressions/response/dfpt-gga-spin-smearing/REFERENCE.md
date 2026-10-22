@@ -28,8 +28,8 @@ Cite: Baroni, de Gironcoli, Dal Corso, Giannozzi, *Rev. Mod. Phys.* **73**,
 Ernzerhof, *Phys. Rev. Lett.* **77**, 3865 (1996).
 
 Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
-`method.spin_polarized = true`, `method.xc = XCType::PBE`, and
-`method.smearing = Smearing::fermi_dirac`.
+`method` constructed as `PW{pp, ecut_ry, k_mesh, XCType::PBE}`,
+`method.spin_polarized = true`, and `method.smearing = Smearing::fermi_dirac`.
 
 Siblings: `dfpt-gga-spin-si` (spin×GGA, fixed occ), `dfpt-spin-smearing`
 (spin×smear, LSDA), `dfpt-gga-si` (restricted GGA).

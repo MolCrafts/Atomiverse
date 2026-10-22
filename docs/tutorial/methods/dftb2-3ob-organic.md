@@ -14,7 +14,7 @@
 Self-consistent-charge **DFTB2** total energy for isolated methane using the
 DFTB.org **3ob-3-1** organic H/C/N/O Slater–Koster tables, transcribed as
 static C++ data (`basis_data/dftb_3ob_tables.h`). Public path is concrete
-`cpu::semiempirical::DFTB2` with member `sk_set = DftbSkSet::ThreeOb` (no
+`cpu::semiempirical::DFTB2{DftbSkSet::ThreeOb}` (no
 `*Config` bag, no `make_*` / `build_*`), bound into `cpu::Evaluate` at
 `evaluate::Phase::evaluate`. Product gate `reg_dftb2-3ob-organic` asserts
 
@@ -122,8 +122,7 @@ for (int i = 0; i < 4; ++i) {
 frame.box = cpu::Box::cubic(20.0);
 
 cpu::Evaluate eval;
-cpu::semiempirical::DFTB2 dftb;
-dftb.sk_set = cpu::semiempirical::DftbSkSet::ThreeOb;
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::ThreeOb};
 dftb.with_forces = false;
 dftb.scc_tol = 1e-10;
 dftb.max_scc = 80;

@@ -126,14 +126,12 @@ frame.box = ATV::cpu::Box::cubic(12.0 * b2a);
 
 GpwDft cfg{{Kind{molrs::Element::H,
                  GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-                 GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-cfg.cutoff_ry = 100.0;
+                 GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 100.0, XcKind::PADE};
 cfg.n_occ = 1;
 cfg.tol = 1e-8;
 cfg.max_iter = 60;
 cfg.nonperiodic = false;
 cfg.local_pp_on_grid = true;
-cfg.xc = XcKind::PADE;
 cfg.k_mesh[0] = 1;
 cfg.k_mesh[1] = 1;
 cfg.k_mesh[2] = 2;   // electronic multi-k
@@ -149,9 +147,8 @@ Driver path (component binding the same method):
 
 ```cpp
 // kinds = {H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 100.0;  dft.max_iter = 60;  dft.tol = 1e-8;  dft.mix = 0.3;
-dft.xc = ATV::cpu::gpw::XcKind::PADE;
+ATV::cpu::gpw::GpwDft dft{kinds, 100.0, ATV::cpu::gpw::XcKind::PADE};
+dft.max_iter = 60;  dft.tol = 1e-8;  dft.mix = 0.3;
 dft.nonperiodic = false;
 dft.mbd = true;
 dft.k_mesh[2] = 2;                      // electronic multi-k

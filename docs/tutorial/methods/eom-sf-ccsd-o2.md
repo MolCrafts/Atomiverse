@@ -84,8 +84,7 @@ Public headers only for consumers (`Frame` + concrete `UHF` / `ROHF`; no
 cpu::Frame frame = /* … */;
 
 // Multi-minima: ROHF → UHF density guess (same pattern as ump2-o2-sto3g)
-cpu::scf::ROHF rohf(9, 7);
-rohf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROHF rohf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7};
 rohf.tol = 1e-12;
 rohf.max_iter = 200;
 rohf.run(frame);
@@ -96,8 +95,7 @@ guess.P_alpha = rohf.determinant().density(Spin::alpha);
 guess.P_beta  = rohf.determinant().density(Spin::beta);
 guess.has_alpha = guess.has_beta = true;
 
-cpu::scf::UHF uhf(9, 7);
-uhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7};
 uhf.tol = 1e-12;
 uhf.max_iter = 200;
 

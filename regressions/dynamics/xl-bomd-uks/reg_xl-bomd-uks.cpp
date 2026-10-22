@@ -56,8 +56,7 @@ int main() {
     // Envelope run: 200 Ry / tol 1e-5 keeps multi-step UKS inside ≤60 s.
     // Absolute E/F parity is gpw-uks-forces / gpw-uks-o2-gamma's job.
     // XL-BOMD K=5 (Niklasson 2009 Table I); dual α/β propagators.
-    cpu::gpw::GpwDft dft{{O}};
-    dft.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft dft{{O}, 200.0, cpu::gpw::XcKind::PADE};
     dft.max_iter = 80;
     dft.tol = 1e-5;
     dft.mix = 0.4;

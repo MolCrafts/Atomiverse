@@ -34,9 +34,9 @@ CP2K oracle.
 ## Usage
 
 ```cpp
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 200.0;  dft.max_iter = 60;  dft.tol = 1e-5;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;  dft.nonperiodic = true;
+cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+dft.max_iter = 60;  dft.tol = 1e-5;  dft.mix = 0.3;
+dft.nonperiodic = true;
 cpu::gpw::GPWEvaluator gpw(std::move(dft), /*compute_forces=*/true);
 // mu [a.u. electron mass] is a constructor argument of the CP wrapper; the
 // mode bits it flips are private on GPWEvaluator.

@@ -112,11 +112,7 @@ cell(1, 0) = half; cell(1, 1) = 0;    cell(1, 2) = half;
 cell(2, 0) = half; cell(2, 1) = half; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = 10.0;
-method.k_mesh = 2;
-method.xc = cpu::scf::XCType::LSDA;
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 2, cpu::scf::XCType::LSDA};
 method.smearing = Smearing::fermi_dirac;
 method.degauss = 0.02;   // Ry
 method.extra_bands = 0;  // gapped twin; open metals use > 0

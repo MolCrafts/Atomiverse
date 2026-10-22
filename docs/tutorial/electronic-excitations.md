@@ -78,8 +78,7 @@ the length-gauge transition dipole.
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
 rhf.tol = 1e-12;
 rhf.run(frame); // formaldehyde geometry in regressions
 

@@ -46,8 +46,7 @@ int main() {
 
     // ── Analytic: Hessian<RHF> (CPHF) → vib::Hessian::run_from_cartesian.
     cpu::Frame frame = make_frame();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
     rhf.tol = 1e-12;
     rhf.conv_tol_grad = 1e-10;
     const cpu::vib::HessianResult analytic_H =
@@ -64,8 +63,7 @@ int main() {
 
     // ── FD production line: full vib::Hessian on the same RHF.
     cpu::Frame frame_fd = make_frame();
-    cpu::scf::RHF rhf_fd;
-    rhf_fd.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF rhf_fd{cpu::scf::BasisSet::Pople631Gs};
     rhf_fd.tol = 1e-12;
     rhf_fd.conv_tol_grad = 1e-10;
     cpu::vib::Hessian fd_driver;

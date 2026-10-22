@@ -12,11 +12,10 @@ Self-consistent spin densities from a uniform Monkhorst–Pack mesh, then
 Public path:
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;
-method.upf_path = "..."; method.ecut_ry = 15; method.k_mesh = 2;
-method.xc = cpu::scf::XCType::LSDA;
 
 cpu::pw::Bands bands;
 bands.n_bands = 8;

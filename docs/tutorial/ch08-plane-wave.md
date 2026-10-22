@@ -210,10 +210,9 @@ breakdown stays on `last_result()`). Run it through the one-pass
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
-cpu::pw::PW pw;
-pw.upf_path = "tests/data/pw/Si_lda_nc.upf";
-pw.ecut_ry  = 30.0;   // wavefunction cutoff [Ry]
-pw.k_mesh   = 4;      // 4x4x4 Monkhorst-Pack mesh
+cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+               30.0,  // wavefunction cutoff [Ry]
+               4};    // 4x4x4 Monkhorst-Pack mesh
 pw.tol      = 1e-6;   // SCF tolerance on the density change
 
 cpu::single_point(frame, pw);           // frame.meta.get(kEnergy) (eV)
@@ -261,8 +260,7 @@ rebuilt inside each `run()`, so the same solver handles a moving geometry (AIMD,
 optimization). Under MPI the solver distributes k-points round-robin across
 `MPI_COMM_WORLD` and Allreduces the density and band-energy accumulations.
 
-A GPU path exists as the same method shape: `cuda::pw::PW` has the same public
-members as `cpu::pw::PW` plus `build(reference)` / `run(frame)` /
+A GPU path exists as the same method shape: `cuda::pw::PW` has the same constructor and public members as `cpu::pw::PW` plus `build(reference)` / `run(frame)` /
 `last_result()`, and returns the same `PWResult`. Both halves of the SCF
 iteration are device-resident: the Davidson hot path (cuFFT for $H\psi$,
 cuBLAS for the subspace algebra) and the whole density side — $\rho(G) \to
@@ -274,17 +272,12 @@ work (problem assembly, per-k table binding), the Pulay coefficient solve
 (bit-for-bit the CPU's `solve_pulay_coefficients`) and the energy report.
 
 ```cpp
-cuda::pw::PW pw;
-pw.upf_path = "Si_lda_nc.upf";
-pw.ecut_ry = 15.0;
-pw.k_mesh = 2;
-pw.xc = cpu::scf::XCType::LSDA;   // required on this backend
+cuda::pw::PW pw{cpu::pw::UpfPseudopotential{"Si_lda_nc.upf"}, 15.0, 2, cpu::scf::XCType::LSDA};  // required on this backend
 pw.build(frame);
 const auto& r = pw.run(frame);    // r.energy [Ry], r.energy_ha [Ha]
 ```
 
-The device path is a strict subset of the CPU path, and a member it cannot
-honour makes `run()` throw with a how-to instead of silently computing a
+The device path is a strict subset of the CPU path, and a setting it cannot honour makes `run()` throw with a how-to instead of silently computing a
 different Hamiltonian: only `XCType::LSDA`, only restricted
 (`spin_polarized = false`, `multiplicity = 1`), only fixed closed-shell
 occupations (`smearing = Smearing::none`). k-points are not distributed across
@@ -319,10 +312,7 @@ completeness; production acceptance in the regressions suite compares **EOS**
 the regression reference notes.
 
 ```cpp
-cpu::pw::PW pw;
-pw.upf_path = "…/Si_lda_nc.upf";
-pw.ecut_ry = 15.0;   // tutorial; ~30 Ry for production Si
-pw.k_mesh = 2;
+cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"…/Si_lda_nc.upf"}, 15.0, 2};  // tutorial; ~30 Ry for production Si
 cpu::single_point(frame, pw);           // frame.meta.get(kEnergy) (eV)
 auto res = pw.last_result();            // Ry / Ha on the result object
 ```

@@ -101,13 +101,11 @@ using ATV::cpu::gpw::XcKind;
 frame.box = ATV::cpu::Box::cubic(12.0); // Å
 
 // kinds O, H: DZVP-MOLOPT-SR-GTH + GTH-PBE-q6 / GTH-PBE-q1
-GpwDft gpw{{O, H}};
-gpw.cutoff_ry = 200.0;
+GpwDft gpw{{O, H}, 200.0, XcKind::PBE};
 gpw.n_occ = 8;         // 16 valence e⁻ → 8 doubly occupied
 gpw.max_iter = 40;
 gpw.tol = 1e-7;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = false;
 gpw.rvv10 = true;      // exclusive vs d3/d3bj/d4/ts/mbd/vdw_df/vdw_df2
 
@@ -121,9 +119,9 @@ Driver / Frame path (component; same member):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 200.0;  dft.max_iter = 40;  dft.tol = 1e-7;  dft.mix = 0.4;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;  dft.nonperiodic = false;
+ATV::cpu::gpw::GpwDft dft{kinds, 200.0, ATV::cpu::gpw::XcKind::PBE};
+dft.max_iter = 40;  dft.tol = 1e-7;  dft.mix = 0.4;
+dft.nonperiodic = false;
 dft.rvv10 = true;
 ATV::cpu::gpw::GPWEvaluator eval(std::move(dft));
 // single_point(frame, eval) or bind on Evaluate / MD / Minimize force slot

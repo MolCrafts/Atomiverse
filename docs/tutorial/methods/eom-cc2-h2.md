@@ -82,8 +82,7 @@ Public headers only for consumers (`Frame` + concrete `RHF`; no `*Config`):
 
 cpu::Frame frame(2);
 // H(0,0,0), H(0,0,0.74) Å; Z=1; Box::cubic(20)
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.max_iter = 100;
 

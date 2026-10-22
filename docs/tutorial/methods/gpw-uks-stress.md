@@ -20,8 +20,7 @@ and the analytic-vs-multi-SCF-FD stress dual-gate against offline **CP2K
 pin; stress twin input `STRESS_TENSOR NUMERICAL`).
 
 Public path: construct `cpu::gpw::GpwDft` with one `Kind` for O
-(lookup constructors `GaussianBasis` / `GthPotential`), set its members
-(`n_alpha=7`, `n_beta=5`, `cutoff_ry`, `xc=PBE`, `nonperiodic`), move it into
+(lookup constructors `GaussianBasis` / `GthPotential`), pass `cutoff_ry` and `XcKind::PBE` to the constructor, set its members (`n_alpha=7`, `n_beta=5`, `nonperiodic`), move it into
 `cpu::gpw::GPWEvaluator` with `compute_stress=true`, `stress_use_fd=false`,
 bind into `cpu::Evaluate`.
 Frame energy is **eV** on `kEnergy`; pin channel is
@@ -146,12 +145,10 @@ const cpu::gpw::Kind O{
     cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
     cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 400.0;
+cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::PBE};
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::PBE;
 dft.nonperiodic = true;
 dft.n_alpha = 7;             // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;

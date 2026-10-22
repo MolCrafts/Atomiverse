@@ -157,13 +157,11 @@ const cpu::gpw::Kind H{molrs::Element::H,
                        cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                        cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
-GpwDft m{{H}};
-m.cutoff_ry = 100.0;
+GpwDft m{{H}, 100.0, cpu::gpw::XcKind::PADE};
 m.n_occ = 1;                 // closed-shell RKS, Ne = 2
 m.max_iter = 220;
 m.tol = 1e-7;
 m.mix = 0.35;                // DIIS path; ignored under free-energy OT+smear
-m.xc = cpu::gpw::XcKind::PADE;
 m.k_points.push_back({0.25, 0.0, 0.0});
 m.k_point_weights.push_back(1.0);
 m.smearing = Smearing::fermi_dirac;

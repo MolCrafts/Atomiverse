@@ -17,8 +17,10 @@ product of the two shipped joint parents
 `regressions/response/dfpt-gga-finite-q-si` (X supercell, restricted PBE).
 
 ```cpp
-cpu::pw::PW pw;                  // ecut 10 Ry, k_mesh 1, tol 1e-8
-pw.xc = cpu::scf::XCType::PBE;   // pure GGA kernel
+cpu::pw::PW pw{cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
+               /*ecut_ry=*/10.0, /*k_mesh=*/1,
+               cpu::scf::XCType::PBE}; // pure GGA kernel
+pw.tol = 1e-8;
 pw.spin_polarized = true;        // collinear, M = 0
 pw.multiplicity = 1;
 cpu::pw::DfptPhonon dfpt;

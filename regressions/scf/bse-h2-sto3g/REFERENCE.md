@@ -15,8 +15,7 @@ the regression pins the exact-ERI + spectral-G0W0 twin of `BSE<RHF>::run()`).
 Public API:
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.run(frame);
 cpu::scf::BSEResult bse = cpu::scf::BSE<cpu::scf::RHF>{rhf}.run(/*n_states=*/1); // full BSE

@@ -63,16 +63,17 @@ int main() {
     cpu::Frame frame = si_bct(5.43); // Å (10.26120 Bohr)
 
     // Collinear UKS multi-k — product path of this pin (n_alpha/n_beta).
-    GpwDft method{{cpu::gpw::Kind{
-        molrs::Element::Si,
-        cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-        cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-    method.cutoff_ry = 150.0;
+    GpwDft method{
+        {cpu::gpw::Kind{
+            molrs::Element::Si,
+            cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
+            cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+        150.0,
+        XcKind::PBE};
     method.n_alpha = 8;
     method.n_beta = 8;
     method.max_iter = 60;
     method.tol = 1e-8;
-    method.xc = XcKind::PBE;
     method.eps_default = 1e-7;
     method.diis_depth = 6;
     method.k_time_reversal = true;

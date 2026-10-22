@@ -57,8 +57,7 @@ struct RunResult {
 
 RunResult run_rhf(InitGuess guess, MixerKind mixer) {
     cpu::Frame frame = make_h2o(1.0);
-    cpu::scf::RHF rhf;
-    rhf.basis = BasisSet::Def2SVP;
+    cpu::scf::RHF rhf{BasisSet::Def2SVP};
     rhf.tol = 1e-9;
     rhf.max_iter = 100;
     rhf.init_guess = guess;
@@ -69,8 +68,7 @@ RunResult run_rhf(InitGuess guess, MixerKind mixer) {
 
 RunResult run_uhf_stretched(MixerKind mixer) {
     cpu::Frame frame = make_h2o(2.6);
-    cpu::scf::UHF uhf(/*n_alpha=*/5, /*n_beta=*/5);
-    uhf.basis = BasisSet::Def2SVP;
+    cpu::scf::UHF uhf(BasisSet::Def2SVP, /*n_alpha=*/5, /*n_beta=*/5);
     uhf.tol = 1e-9;
     uhf.max_iter = 60; // the budget CDIIS-alone must exceed
     uhf.init_guess = InitGuess::Hcore;

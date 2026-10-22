@@ -43,15 +43,13 @@ std::vector<GpwAtom> h2_atoms() {
 // Gaussian tail radius at eps 1e-8 exceeds L/2, so basis functions reach
 // the grid through more than one lattice image.
 GpwDft fixed_density_cfg() {
-    GpwDft m;
+    GpwDft m{std::vector<Kind>{}, /*cutoff_ry=*/100.0, XcKind::PADE};
     GpwDftAccess::set_cell(m, {12.0, 12.0, 12.0});
-    m.cutoff_ry = 100.0;
     m.n_alpha = 2;
     m.n_beta = 0;
     m.max_iter = 0; // fixed-density: one collocate→Poisson→XC→integrate
     m.nonperiodic = false;
     m.local_pp_on_grid = true;
-    m.xc = XcKind::PADE;
     m.eps_default = 1e-8;
     return m;
 }

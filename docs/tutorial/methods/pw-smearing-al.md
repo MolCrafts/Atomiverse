@@ -97,10 +97,7 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 f.box.set_cell(cell);
 
-PW pw;
-pw.upf_path = "tests/data/pw/Al_pz_nc.upf"; // NC, LDA/PZ, Z_val = 3
-pw.ecut_ry = 20.0;
-pw.k_mesh = 2;
+PW pw{UpfPseudopotential{"tests/data/pw/Al_pz_nc.upf"}, 20.0, 2};  // NC, LDA/PZ, Z_val = 3
 pw.tol = 1e-5;
 pw.max_iter = 60;
 pw.mix_beta = 0.4;

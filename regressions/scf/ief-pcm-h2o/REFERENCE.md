@@ -72,11 +72,10 @@ Notes on model differences (honest):
 Public API:
 
 ```cpp
-cpu::scf::RHF sol;
-sol.basis = cpu::scf::BasisSet::Pople631Gs;
-sol.solvent_eps = 78.4;
-sol.solvent_radii_scale = 1.2;
-sol.solvent_model = cpu::scf::SolventModel::IEFPCM;
+cpu::scf::RHF mf{cpu::scf::BasisSet::Pople631Gs};
+cpu::scf::WithSolvent<cpu::scf::RHF> sol{
+    std::move(mf), cpu::scf::SolventModel::IEFPCM, /*eps=*/78.4};
+sol.radii_scale = 1.2;
 sol.run(frame);
 double e_solv = sol.e_solvent(); // [Hartree]
 ```

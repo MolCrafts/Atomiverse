@@ -39,8 +39,7 @@ int main() {
 
     auto frame = make_h2o();
 
-    cpu::scf::RHF gas;
-    gas.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF gas{cpu::scf::BasisSet::Pople631Gs};
     gas.tol = 1e-10;
     gas.max_iter = 100;
     gas.run(frame);
@@ -49,15 +48,12 @@ int main() {
         return 1;
     }
 
-    cpu::scf::RHF sol_mf;
-    sol_mf.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF sol_mf{cpu::scf::BasisSet::Pople631Gs};
     sol_mf.tol = 1e-10;
     sol_mf.max_iter = 100;
-    cpu::scf::ContinuumSolvent pcm;
-    pcm.eps = 78.4;
-    pcm.radii_scale = 1.2;
-    pcm.model = cpu::scf::SolventModel::IEFPCM;
-    cpu::scf::WithSolvent<cpu::scf::RHF> sol{std::move(sol_mf), pcm};
+    cpu::scf::WithSolvent<cpu::scf::RHF> sol{
+        std::move(sol_mf), cpu::scf::SolventModel::IEFPCM, /*eps=*/78.4};
+    sol.radii_scale = 1.2;
     sol.run(frame);
     if (!sol.mf.converged()) {
         std::printf("FAIL: IEF-PCM SCF did not converge\n");

@@ -379,7 +379,6 @@ void require_exact_eri(RI ri) {
 
 template <typename Method>
 void copy_scf_controls(const Method& src, Method& dst) {
-    dst.basis = src.basis;
     dst.tol = src.tol;
     dst.max_iter = src.max_iter;
     dst.init_guess = src.init_guess;
@@ -435,7 +434,7 @@ vib::HessianResult Hessian<RKS>::run(Frame& frame,
     return finite_difference_hessian(
         mf, frame, guess, [] {},
         [&](Frame& f) -> GradientResult {
-            RKS s(mf.xc);
+            RKS s(mf.basis, mf.xc, mf.charge);
             copy_scf_controls(mf, s);
             copy_grid_controls(mf, s);
             return forces_or_throw(s, f, nullptr);
@@ -450,7 +449,7 @@ vib::HessianResult Hessian<ROHF>::run(Frame& frame,
     return finite_difference_hessian(
         mf, frame, guess, [] {},
         [&](Frame& f) -> GradientResult {
-            ROHF s(mf.n_alpha, mf.n_beta);
+            ROHF s(mf.basis, mf.n_alpha, mf.n_beta, mf.charge);
             copy_scf_controls(mf, s);
             return forces_or_throw(s, f, nullptr);
         });
@@ -471,7 +470,7 @@ vib::HessianResult Hessian<UKS>::run(Frame& frame,
             ref_guess.has_beta = true;
         },
         [&](Frame& f) -> GradientResult {
-            UKS s(mf.n_alpha, mf.n_beta, mf.xc);
+            UKS s(mf.basis, mf.n_alpha, mf.n_beta, mf.xc, mf.charge);
             copy_scf_controls(mf, s);
             copy_grid_controls(mf, s);
             return forces_or_throw(s, f, &ref_guess);

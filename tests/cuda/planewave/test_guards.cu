@@ -20,7 +20,7 @@ using namespace ATV;
 static_assert(!std::is_copy_constructible_v<ATV::cuda::pw::PW>,
               "cuda::pw::PW owns device-backed run state: no copies");
 static_assert(std::is_move_constructible_v<ATV::cuda::pw::PW>,
-              "cuda::pw::PW must be movable (member-set then handed off)");
+              "cuda::pw::PW must be movable (constructed then handed off)");
 
 namespace {
 
@@ -39,19 +39,21 @@ cpu::Frame make_h_atom() {
 
 /// @brief Method with every member on a supported setting (LSDA, restricted,
 ///        fixed occupations) so a test can flip exactly one of them.
-cuda::pw::PW make_supported() {
-    cuda::pw::PW pw;
-    pw.gth_name = "GTH-PBE-q1"; // real H potential, no file needed
-    pw.ecut_ry = 6.0;
-    pw.k_mesh = 1;
-    pw.xc = cpu::scf::XCType::LSDA;
-    return pw;
+/// @param xc Exchange–correlation functional.
+/// @param ecut_ry Wavefunction cutoff [Ry].
+/// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
+cuda::pw::PW make_supported(cpu::scf::XCType xc = cpu::scf::XCType::LSDA,
+                            double ecut_ry = 6.0, int k_mesh = 1) {
+    // Real H potential, no file needed.
+    return cuda::pw::PW{cpu::pw::GthPseudopotential{"GTH-PBE-q1"}, ecut_ry,
+                        k_mesh, xc};
 }
 
 } // namespace
 
 TEST(CudaPWGuards, DefaultXcIsPbe) {
-    cuda::pw::PW pw;
+    cuda::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q1"},
+                    /*ecut_ry=*/30.0, /*k_mesh=*/4};
     // The default deliberately matches cpu::pw::PW (PBE): identical user
     // code computes the same functional on both backends. PBE has a device
     // path, so the default is runnable — no throw to assert here.
@@ -60,10 +62,9 @@ TEST(CudaPWGuards, DefaultXcIsPbe) {
 
 TEST(CudaPWGuards, UnsupportedXcThrows) {
     auto frame = make_h_atom();
-    auto pw = make_supported();
     // BLYP has no device kernel — only LSDA and PBE do. The gate must throw
     // rather than silently compute a different functional.
-    pw.xc = cpu::scf::XCType::BLYP;
+    auto pw = make_supported(cpu::scf::XCType::BLYP);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
@@ -73,8 +74,7 @@ TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
     // kernel hard-wires; accepting them would silently compute plain PBE.
     for (const auto xc : {cpu::scf::XCType::PBEsol, cpu::scf::XCType::RevPBE,
                           cpu::scf::XCType::RPBE}) {
-        auto pw = make_supported();
-        pw.xc = xc;
+        auto pw = make_supported(xc);
         EXPECT_THROW(pw.run(frame), std::invalid_argument);
     }
 }
@@ -83,8 +83,7 @@ TEST(CudaPWGuards, SpinPolarizedWithPbesolThrows) {
     // Collinear spin-GGA on device is plain PBE only; PBEsol/revPBE/RPBE
     // hard-wire different μ/κ/β and must still throw under spin.
     auto frame = make_h_atom();
-    auto pw = make_supported();
-    pw.xc = cpu::scf::XCType::PBEsol;
+    auto pw = make_supported(cpu::scf::XCType::PBEsol);
     pw.spin_polarized = true;
     pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
@@ -124,17 +123,16 @@ TEST(CudaPWGuards, NonPositiveTolThrows) {
 
 TEST(CudaPWGuards, ZeroKMeshThrows) {
     auto frame = make_h_atom();
-    auto pw = make_supported();
     // generate_mp_mesh returns an empty grid for 0 without throwing, so an
     // ungated k_mesh = 0 reports a "converged" run with e_band == 0.
-    pw.k_mesh = 0;
+    auto pw = make_supported(cpu::scf::XCType::LSDA, /*ecut_ry=*/6.0,
+                             /*k_mesh=*/0);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
 TEST(CudaPWGuards, NonPositiveEcutThrows) {
     auto frame = make_h_atom();
-    auto pw = make_supported();
-    pw.ecut_ry = 0.0;
+    auto pw = make_supported(cpu::scf::XCType::LSDA, /*ecut_ry=*/0.0);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
@@ -145,8 +143,15 @@ TEST(CudaPWGuards, ZeroPulayDepthThrows) {
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
+TEST(CudaPWGuards, EmptyPseudopotentialThrowsAtConstruction) {
+    EXPECT_THROW((cuda::pw::PW{cpu::pw::GthPseudopotential{""}, 6.0, 1}),
+                 std::invalid_argument);
+    EXPECT_THROW((cuda::pw::PW{cpu::pw::UpfPseudopotential{""}, 6.0, 1}),
+                 std::invalid_argument);
+}
+
 TEST(CudaPWGuards, FreshResultIsEmpty) {
-    cuda::pw::PW pw;
+    auto pw = make_supported();
     EXPECT_EQ(pw.last_result().iterations, 0);
     EXPECT_FALSE(pw.last_result().converged);
 }

@@ -22,8 +22,7 @@ static cpu::Frame make_h() {
 
 int main() {
     auto frame = make_h();
-    cpu::scf::UHF uhf(/*n_alpha=*/1, /*n_beta=*/0);
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/1, /*n_beta=*/0};
     uhf.tol = 1e-8;
     uhf.run(frame);
     std::cout << std::setprecision(10)

@@ -143,13 +143,9 @@ frame.span(kAtom_x)[1] = a / 4.0;
 frame.span(kAtom_y)[1] = a / 4.0;
 frame.span(kAtom_z)[1] = a / 4.0;
 
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = 15.0;
-method.k_mesh = 2;                 // SCF MP mesh
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 15.0, 2, cpu::scf::XCType::LSDA};  // SCF MP mesh
 method.tol = 1e-6;
 method.max_iter = 50;
-method.xc = cpu::scf::XCType::LSDA;
 method.spin_polarized = true;
 method.multiplicity = 1;           // M = 0 closed-shell collinear
 

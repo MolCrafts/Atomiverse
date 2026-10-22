@@ -6,17 +6,16 @@
 /// method uses to supply everything its non-interacting reference system
 /// leaves out; it is named by a string on the Python surface and by
 /// `cpu::scf::XCType` in C++. Two bindings now need that mapping — the
-/// Gaussian SCF methods (`RKS(functional=...)`, `UKS`) and the plane-wave
-/// method (`PW.xc`) — so the table lives here rather than being spelled twice
+/// Gaussian SCF methods (`RKS(xc=...)`, `UKS`) and the plane-wave method
+/// (`PW(xc=...)`) — so the table lives here rather than being spelled twice
 /// and drifting.
 ///
 /// Both directions come off ONE table, which is the point: a name that
 /// `xc_from_name` accepts is exactly the name `xc_name` gives back, so the
-/// round-trip a Python property promises (`pw.xc = "LSDA"` then `pw.xc ==
-/// "LSDA"`) cannot be broken by editing one list and forgetting the other.
-/// The Gaussian SCF binding uses only the forward direction — `functional=`
-/// is a constructor argument there, never read back — while `PW.xc` is a
-/// read-write property and needs both.
+/// round-trip a Python property promises (`PW(..., xc="LSDA")` then
+/// `pw.xc == "LSDA"`) cannot be broken by editing one list and forgetting the
+/// other. Every binding takes `xc=` as a constructor argument and reads it
+/// back through a read-only property, so both directions are used.
 ///
 /// No-fallback rule: an unsupported name raises `std::invalid_argument`
 /// (Python `ValueError`) listing every supported one. Silently substituting a

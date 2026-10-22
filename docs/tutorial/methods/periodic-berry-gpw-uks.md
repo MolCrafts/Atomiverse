@@ -26,7 +26,7 @@ wrap quantum 1. Insulator only (metallic smear rejected).
 
 ```cpp
 // frame: Si positions [Å], Z = 14 in kAtom_type, orthorhombic box [Å]
-GpwDft m{{Si}}; m.n_alpha = 8; m.n_beta = 8; m.n_occ = 0; m.build(frame);
+GpwDft m{{Si}, 300.0, XcKind::PADE}; m.n_alpha = 8; m.n_beta = 8; m.n_occ = 0; m.build(frame);
 BerryPolarization berry; // k_perp, k_string, directions
 auto r = berry.compute(m, frame);
 ```

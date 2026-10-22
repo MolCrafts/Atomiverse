@@ -42,15 +42,15 @@ int main() {
 
     GpwDft gpw{{Kind{molrs::Element::O,
                      GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
-                     GthPotential(molrs::Element::O, "GTH-PBE-q6")}}};
-    gpw.cutoff_ry = 200.0;
+                     GthPotential(molrs::Element::O, "GTH-PBE-q6")}},
+               200.0,
+               XcKind::PBE};
     gpw.n_alpha = 7; // multiplicity 3, 12 valence e⁻
     gpw.n_beta = 5;
     gpw.max_iter = 150;
     gpw.tol = 1e-6;
     gpw.mix = 0.35;
     gpw.diis_depth = 10;
-    gpw.xc = XcKind::PBE;
     gpw.nonperiodic = true;
     gpw.mbd = true;
     gpw.hirshfeld = true;

@@ -53,10 +53,7 @@ int main() {
     frame.span(kAtom_z)[1] = 1.2075;
     frame.box = cpu::Box::cubic(8.0);
 
-    PW pw;
-    pw.upf_path = upf;
-    pw.ecut_ry = 12.0;
-    pw.k_mesh = 1;
+    PW pw{UpfPseudopotential{upf}, 12.0, 1, cpu::scf::XCType::PBE};
     pw.tol = 5e-4;
     pw.max_iter = 60;
     pw.mix_beta = 0.3;
@@ -64,7 +61,6 @@ int main() {
     pw.spin_polarized = true;
     pw.multiplicity = 3;
     // Default xc=PBE → true collinear spin-GGA (pw-spin-gga product path).
-    pw.xc = cpu::scf::XCType::PBE;
 
     pw.build(frame);
     const auto& r = pw.run(frame);

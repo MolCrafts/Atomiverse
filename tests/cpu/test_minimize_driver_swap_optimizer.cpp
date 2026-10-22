@@ -27,14 +27,16 @@ TEST(MinimizeSwap, LBFGSThenCG) {
     auto frame = h2();
     cpu::minimizer::Minimize opt;
     opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});
-    opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+    opt.on(minimizer::Phase::force)
+        .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
     opt.add_criterion(cpu::ForceConverged{0.5, 0.3, 0.5, 0.3, 1e-3});
     opt.build();
     opt.run(frame, 5);
     // rebuild with CG
     cpu::minimizer::Minimize opt2;
     opt2.set_optimizer(cpu::minimizer::CG{});
-    opt2.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+    opt2.on(minimizer::Phase::force)
+        .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
     opt2.add_criterion(cpu::ForceConverged{0.5, 0.3, 0.5, 0.3, 1e-3});
     opt2.build();
     opt2.run(frame, 5);
@@ -45,7 +47,8 @@ TEST(MinimizeSwap, ThenFIRE) {
     auto frame = h2();
     cpu::minimizer::Minimize opt;
     opt.set_optimizer(cpu::minimizer::FIRE{});
-    opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+    opt.on(minimizer::Phase::force)
+        .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
     opt.add_criterion(cpu::ForceConverged{0.5, 0.3, 0.5, 0.3, 1e-3});
     opt.build();
     opt.run(frame, 5);

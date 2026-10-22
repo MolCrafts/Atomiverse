@@ -16,9 +16,9 @@
 using namespace ATV;
 
 TEST(QmEngine, GaussianMethodsExposeEmbedding) {
-    cpu::scf::RHF rhf;
-    cpu::scf::UHF uhf;
-    cpu::scf::RKS rks;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, 0, 0};
+    cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
     cpu::QmEngine* engines[] = {&rhf, &uhf, &rks};
     for (cpu::QmEngine* e : engines) {
         ASSERT_NE(e->as_embedding(), nullptr);
@@ -28,7 +28,7 @@ TEST(QmEngine, GaussianMethodsExposeEmbedding) {
 
 TEST(QmEngine, Am1AndDftb2NoEmbedding) {
     cpu::semiempirical::AM1 am1;
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     cpu::QmEngine* engines[] = {&am1, &dftb};
     for (cpu::QmEngine* e : engines) {
         EXPECT_EQ(e->as_embedding(), nullptr);
@@ -37,7 +37,7 @@ TEST(QmEngine, Am1AndDftb2NoEmbedding) {
 }
 
 TEST(QmEngine, EmbeddingSitesRoundTrip) {
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     cpu::EmbeddingEngine* emb = rhf.as_embedding();
     ASSERT_NE(emb, nullptr);
     emb->set_site_self_energy(false);

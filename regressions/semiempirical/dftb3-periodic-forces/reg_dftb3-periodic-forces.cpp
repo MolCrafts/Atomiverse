@@ -44,8 +44,7 @@ double energy_only(cpu::Frame g) {
     for (int i = 0; i < g.nlocal(); ++i)
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
     cpu::Evaluate ev;
-    cpu::semiempirical::DFTB3 d;
-    d.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    cpu::semiempirical::DFTB3 d{cpu::semiempirical::DftbSkSet::MioSketch};
     d.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     d.with_forces = false;
     d.scc_tol = 1e-10;
@@ -61,8 +60,7 @@ int main() {
     auto frame = make_c_chain_offeq();
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB3 dftb;
-    dftb.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+    cpu::semiempirical::DFTB3 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb.hubbard_du_ha = cpu::semiempirical::basis_data::k3obHubbardDerivsHa;
     dftb.with_forces = true;
     dftb.scc_tol = 1e-10;

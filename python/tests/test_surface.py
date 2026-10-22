@@ -49,7 +49,7 @@ namespace (pinned per row in test_namespaces.py):
 
 Smoke parameters reuse the verified conftest values (Ar LJ
 epsilon=0.0104 eV, sigma=3.4 A, mass 39.948 amu; PW on the in-tree
-analytic ``gth_name = "GTH-PBE-q4"`` at ecut 8 Ry / 1 k-point: "runs,
+analytic ``gth_name="GTH-PBE-q4"`` at ecut 8 Ry / 1 k-point: "runs,
 underconverged") — no new reference values are introduced.
 """
 
@@ -358,10 +358,8 @@ class TestPWSurface:
         """The analytic in-tree GTH path runs from Python and returns a
         finite energy [Ry] — 'runs, underconverged' contract at ecut 8 Ry
         and one k-point, no new reference values."""
-        pw = av.PW()
-        pw.gth_name = "GTH-PBE-q4"  # Si, in-tree analytic GTH; no file
-        pw.ecut_ry = 8.0
-        pw.k_mesh = 1
+        # Si, in-tree analytic GTH; no file
+        pw = av.PW(gth_name="GTH-PBE-q4", ecut_ry=8.0, k_mesh=1)
         pw.max_iter = 5
         pw.build(silicon_frame)
         result = pw.run(silicon_frame)
@@ -370,15 +368,13 @@ class TestPWSurface:
         assert np.isfinite(result.energy)
 
     @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
-    def test_no_pseudopotential_raises(self, silicon_frame: "molpy.Frame") -> None:
+    def test_no_pseudopotential_raises(self) -> None:
         """A plane-wave run has no default pseudopotential: leaving both
-        `gth_name` and `upf_path` empty fails loud instead of running a
-        bare valence-charge potential that no cutoff converges."""
-        pw = av.PW()
-        pw.ecut_ry = 8.0
-        pw.k_mesh = 1
-        with pytest.raises(Exception):
-            pw.build(silicon_frame)
+        `gth_name` and `upf_path` empty fails loud at construction instead
+        of running a bare valence-charge potential that no cutoff
+        converges."""
+        with pytest.raises(ValueError):
+            av.PW(ecut_ry=8.0, k_mesh=1)
 
     @pytest.mark.skipif(_HAS_PW, reason="extension built with ATV_BUILD_PW")
     @pytest.mark.parametrize("name", ("PW", "PWResult"))

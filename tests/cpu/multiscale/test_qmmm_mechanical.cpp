@@ -61,7 +61,7 @@ TEST(QmmmMechanical, H2PlusArWithDftb2) {
 
     cpu::Context ctx;
     cpu::QmmmMechanical qmmm{{{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0};
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb.with_forces = false;
     qmmm.set_engine(std::move(dftb));
     qmmm.build({ctx, f});
@@ -96,7 +96,7 @@ TEST(QmmmMechanical, ClassicalCoulombClosedForm) {
     f.span(cpu::kAtomQmZ)[2] = 0;
 
     cpu::QmmmMechanical q2{{{1, 1, 0.0, 3.4}, {18, 18, 0.0, 3.4}}, 10.0};
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb.with_forces = false;
     q2.set_engine(std::move(dftb));
     cpu::Context ctx;

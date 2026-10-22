@@ -71,12 +71,10 @@ int main() {
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
-    cpu::gpw::GpwDft dft({O, H});
-    dft.cutoff_ry = 300.0;
+    cpu::gpw::GpwDft dft({O, H}, 300.0, cpu::gpw::XcKind::PADE);
     dft.max_iter = 200;
     dft.tol = 1e-7;
     dft.mix = 0.3;
-    dft.xc = cpu::gpw::XcKind::PADE;
     dft.nonperiodic = false;
     dft.stress_strain_h = 2e-3;
     dft.stress_axes = {true, false, false}; // only the chain axis relaxes

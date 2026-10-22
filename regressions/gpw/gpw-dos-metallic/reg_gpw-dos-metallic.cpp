@@ -64,16 +64,17 @@ int main() {
 
     cpu::Frame frame = na_bcc(4.225); // Å
 
-    GpwDft method{{cpu::gpw::Kind{
-        molrs::Element::Na,
-        cpu::gpw::GaussianBasis(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH"),
-        cpu::gpw::GthPotential(molrs::Element::Na, "GTH-PBE-q9")}}};
-    method.cutoff_ry = 150.0;
+    GpwDft method{
+        {cpu::gpw::Kind{
+            molrs::Element::Na,
+            cpu::gpw::GaussianBasis(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH"),
+            cpu::gpw::GthPotential(molrs::Element::Na, "GTH-PBE-q9")}},
+        150.0,
+        XcKind::PADE};
     method.n_occ = 9; // Ne/2 seed for metallic path
     method.max_iter = 80;
     method.tol = 1e-6;
     method.eps_default = 1e-7;
-    method.xc = XcKind::PADE;
     method.diis_depth = 6;
     method.mix = 0.4;
     method.k_time_reversal = true;

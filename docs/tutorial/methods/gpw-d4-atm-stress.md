@@ -100,12 +100,10 @@ bash -lc '
 Public surface (no `*Config`, no factories; Frame is the only token):
 
 ```cpp
-cpu::gpw::GpwDft dft{{O_kind, H_kind}};
-dft.cutoff_ry = 200.0;
+cpu::gpw::GpwDft dft{{O_kind, H_kind}, 200.0, cpu::gpw::XcKind::PBE};
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;
 dft.nonperiodic = false;
 dft.d4 = true;              // exclusive vs d3 / d3bj
 dft.d4_atm = true;          // s9 = 1 in energy AND strained stress rebuild

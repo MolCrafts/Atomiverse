@@ -16,10 +16,10 @@ Wannier centers from the Berry-phase formula (independent α / β manifolds).
 Public path:
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};  // k_mesh = SCF mesh
 method.spin_polarized = true;
 method.multiplicity = 1;          // M = N↑ − N↓ = 0
-// upf, ecut_ry, k_mesh (SCF), xc, …
 cpu::pw::PeriodicWannier mlwf;    // members: k_mesh, max_iter, tol, …
 auto r = mlwf.compute(method, frame);
 // r.n_wann_up / r.n_wann_dn; r.centers [Å] = α then β; r.spin[i] ∈ {0,1}

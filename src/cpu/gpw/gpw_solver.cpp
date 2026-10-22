@@ -6096,9 +6096,8 @@ GpwDft GpwDftAccess::clone(const GpwDft& m) {
     // method's configuration (strained-cell stress samples, FD oracles and
     // the analytic-force cold solve all go through here, so a new member is
     // added in exactly one place).
-    GpwDft p(m.kinds);
+    GpwDft p(m.kinds, m.cutoff_ry, m.xc);
     p.cell_ = m.cell_;
-    p.cutoff_ry = m.cutoff_ry;
     p.ngrids = m.ngrids;
     p.rel_cutoff = m.rel_cutoff;
     p.n_occ = m.n_occ;
@@ -6111,7 +6110,6 @@ GpwDft GpwDftAccess::clone(const GpwDft& m) {
     p.diis_depth = m.diis_depth;
     p.lindep_threshold = m.lindep_threshold;
     p.level_shift = m.level_shift;
-    p.xc = m.xc;
     p.nonperiodic = m.nonperiodic;
     p.local_pp_on_grid = m.local_pp_on_grid;
     p.d3 = m.d3;

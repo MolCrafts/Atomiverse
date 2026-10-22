@@ -149,12 +149,10 @@ const cpu::gpw::Kind H{
 
 constexpr double dt = 0.5; // fs
 constexpr int corrector_budget = 5;
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 200.0;
+cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
 dft.max_iter = 60;
 dft.tol = 1e-5;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;
 dft.nonperiodic = true;
 cpu::gpw::GPWEvaluator gpw(std::move(dft), /*compute_forces=*/true);
 // Second-generation CP is a wrapper TYPE around the pure evaluator: the ASPC

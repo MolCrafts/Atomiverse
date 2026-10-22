@@ -18,8 +18,7 @@ amplitudes — no extra \(O(N^5)\) cost beyond RMP2.
 ## Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 // optional: rhf.mp2_os_scale / mp2_ss_scale members if exposed for SCS
 rhf.run(frame);
 auto mp = rhf.mp2(frame);   // SCS path as used in reg (see reg source)

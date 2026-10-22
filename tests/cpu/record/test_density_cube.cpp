@@ -86,7 +86,7 @@ ParsedCube parse_cube(const std::string& path) {
 
 TEST(DensityCubeTest, H2DensityIntegratesToTwoElectrons) {
     auto frame = make_h2(0.74);
-    cpu::scf::RHF scf{};
+    cpu::scf::RHF scf{cpu::scf::BasisSet::STO3G};
     auto handle = scf.result_handle();
 
     auto tmp = std::filesystem::temp_directory_path() / "atv_rho_h2.cube";
@@ -119,7 +119,7 @@ TEST(DensityCubeTest, H2DensityIntegratesToTwoElectrons) {
 
 TEST(OrbitalCubeTest, WritesOrbitalFileForHomoH2) {
     auto frame = make_h2(0.74);
-    cpu::scf::RHF scf{};
+    cpu::scf::RHF scf{cpu::scf::BasisSet::STO3G};
     auto handle = scf.result_handle();
 
     auto tmp = std::filesystem::temp_directory_path() / "atv_mo_h2.cube";

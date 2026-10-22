@@ -14,7 +14,7 @@
 ///   1. Construct an H2 frame and integrals at STO-3G.
 ///   2. Compose `cpu::md::MD` with InitVelocity + VelocityVerlet +
 ///      NoseHoover (NVT ensemble).
-///   3. Bind `RHF{}.predictor(3)` at md::Phase::force —
+///   3. Bind `RHF{BasisSet::STO3G}.predictor(3)` at md::Phase::force —
 ///      ASPC predictor warm-starts the density across MD steps.
 ///   4. Run 200 steps and report initial / final energy + temperature.
 ///
@@ -107,7 +107,8 @@ int main() {
     sim.set_observer(cpu::md::InitVelocity{T_target, /*seed=*/42u});
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
     sim.set_thermostat(cpu::md::NoseHoover{T_target, tau, dt});
-    sim.on(md::Phase::force).add(cpu::scf::RHF{}.predictor(/*order=*/3));
+    sim.on(md::Phase::force)
+        .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G}.predictor(/*order=*/3));
     sim.build();
 
     // Take one step to populate frame.meta.get(ATV::kKinetic) and frame.meta.get(ATV::kEnergy) from the

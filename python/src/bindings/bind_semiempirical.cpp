@@ -385,9 +385,8 @@ void bind_semiempirical(nb::module_& m) {
                          "SK set — they are explicit members "
                          "(DFTB2.spin_w_ha, DFTB3.hubbard_du_ha).")
         .value("unset", DftbSkSet::Unset,
-               "Sentinel: the method has not been told which SK set to use. "
-               "DFTB3 defaults here and throws from launch until assigned. "
-               "DFTB2 defaults to mio and throws if the caller assigns this.")
+               "Sentinel: no SK set chosen. A DFTB2 constructed with it "
+               "throws from launch.")
         .value("mio", DftbSkSet::MioSketch,
                "DFTB.org mio-1-1 H/C/N/O — onsite energies, Hubbard U, the "
                "two-centre grids and the spline repulsive.")
@@ -436,26 +435,33 @@ void bind_semiempirical(nb::module_& m) {
         "integrals, with the atomic charges relaxed self-consistently. Costs "
         "roughly a thousandth of a Gaussian-basis DFT solve and reproduces "
         "DFTB+ on the same parameter set.\n\n"
-        "Settings are plain writable members, not a config object. Drives "
-        "single_point(frame, method) for one solve and forces(frame) for the "
-        "gradient; the same object is a force source for MD and geometry "
-        "optimisation.")
-        .def(nb::init<>(),
-             "Construct with the defaults: mio-1-1, boundary=lattice, "
-             "neutral closed shell, Gamma point, forces on, stress off, "
-             "scc_tol 1e-8.")
+        "The SK set, charge and multiplicity are constructor arguments; the "
+        "other settings are plain writable members, not a config object. "
+        "Drives single_point(frame, method) for one solve and forces(frame) "
+        "for the gradient; the same object is a force source for MD and "
+        "geometry optimisation.")
+        .def(nb::init<DftbSkSet, int, int>(), nb::arg("sk_set"),
+             nb::arg("charge") = 0, nb::arg("multiplicity") = 1,
+             "Construct with the Slater-Koster parameter set (DftbSkSet.mio "
+             "or DftbSkSet.threeob), net molecular charge [e] and spin "
+             "multiplicity 2S+1. These three are fixed afterwards; the other "
+             "settings are writable members defaulting to boundary=lattice, "
+             "Gamma point, forces on, stress off, scc_tol 1e-8.")
         .def_rw("boundary", &DFTB2::boundary,
                 "Cluster or lattice Hamiltonian (see DftbBoundary). Default "
                 "lattice — a declared cell is a declared lattice, so an "
                 "isolated molecule must say so.")
-        .def_rw("sk_set", &DFTB2::sk_set, "Slater-Koster parameter set.")
-        .def_rw("charge", &DFTB2::charge,
+        .def_ro("sk_set", &DFTB2::sk_set,
+                "Slater-Koster parameter set fixed at construction "
+                "(read-only).")
+        .def_ro("charge", &DFTB2::charge,
                 "Net molecular charge [e], subtracted from the valence "
-                "electron count.")
-        .def_rw("multiplicity", &DFTB2::multiplicity,
-                "Spin multiplicity 2S+1. 1 = closed shell (the default); "
-                "anything else runs the collinear spin-polarized path and "
-                "requires spin_w_ha (typically kDftbSpinConstantsPbeHa).")
+                "electron count; fixed at construction (read-only).")
+        .def_ro("multiplicity", &DFTB2::multiplicity,
+                "Spin multiplicity 2S+1, fixed at construction (read-only). "
+                "1 = closed shell (the default); anything else runs the "
+                "collinear spin-polarized path and requires spin_w_ha "
+                "(typically kDftbSpinConstantsPbeHa).")
         .def_rw("spin_w_ha", &DFTB2::spin_w_ha,
                 "Per-element collinear spin constants W^A_ll' [Hartree], as "
                 "in DFTB+ SpinConstants — NOT eV. Empty = unset. Required "

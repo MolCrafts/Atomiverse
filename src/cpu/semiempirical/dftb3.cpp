@@ -628,8 +628,8 @@ namespace {
 constexpr const char* kDftbHubbardDerivHowto =
     "d3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;";
 constexpr const char* kDftbSkSetHowto =
-    "DFTB3 will not pick an SK set for you — declare "
-    "d3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;";
+    "DFTB3 will not pick an SK set for you — construct with "
+    "DFTB3{cpu::semiempirical::DftbSkSet::MioSketch}";
 
 } // namespace
 

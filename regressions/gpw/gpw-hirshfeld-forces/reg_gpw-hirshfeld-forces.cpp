@@ -205,13 +205,13 @@ int main() {
                          GthPotential(molrs::Element::O, "GTH-PBE-q6")},
                     Kind{molrs::Element::H,
                          GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
-                         GthPotential(molrs::Element::H, "GTH-PBE-q1")}}};
-        cfg.cutoff_ry = 120.0;
+                         GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
+                   120.0,
+                   XcKind::PBE};
         cfg.n_occ = 8;
         cfg.max_iter = 80;
         cfg.tol = 1e-6;
         cfg.mix = 0.4;
-        cfg.xc = XcKind::PBE;
         cfg.nonperiodic = false;
         cfg.local_pp_on_grid = true;
         cfg.ts = with_ts;

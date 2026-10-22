@@ -119,8 +119,7 @@ universal JKFIT** for both `RI::J` and `RI::JK` (exchange needs JKFIT quality).
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Def2TZVP;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2TZVP};
 rhf.ri = cpu::scf::RI::JK; // None | J | JK
 rhf.aux_basis = cpu::scf::AuxBasis::Def2JKFIT;
 rhf.tol = 1e-12;
@@ -224,8 +223,7 @@ PySCF has no molecular FMM; CFMM is validated against this engine’s Direct
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.coulomb = cpu::scf::Coulomb::CFMM;
 rhf.cfmm_order = 10;
 rhf.cfmm_threshold = 1e-9;

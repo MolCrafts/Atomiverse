@@ -20,7 +20,7 @@ Hellmann–Feynman on \(\partial H_0\), Pulay energy-weighted density on
 pair repulsive derivative — written to `frame.span(kAtom_f*)` in eV/Å. This is
 the **DFTB+ force-module boundary** (Hourahine et al.), **not** a \(6N\) re-SCC
 finite-difference of \(E\). Public surface: concrete method
-`cpu::semiempirical::DFTB2` with members (`with_forces`, `scc_tol`, `sk_set`, …);
+`cpu::semiempirical::DFTB2{sk_set}` with members (`with_forces`, `scc_tol`, …);
 no public `*Config`, no `make_*` / `build_*`. Product gate:
 `reg_dftb2-analytic-forces`. Oracle family: **DFTB+** (formula-level module
 boundary; offline note only — no live DFTB+ in ctest). `perf_exempt: true`
@@ -148,8 +148,7 @@ for (int i = 0; i < 3; ++i) {
 frame.box = cpu::Box::cubic(20.0);
 frame.meta.get(kEnergy) = 0;
 
-cpu::semiempirical::DFTB2 dftb;
-// dftb.sk_set = DftbSkSet::MioSketch;  // default — analytic F path
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb.with_forces = true;
 dftb.scc_tol = 1e-10;
 

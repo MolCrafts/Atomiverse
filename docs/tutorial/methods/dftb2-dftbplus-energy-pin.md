@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `dftb2-dftbplus-energy-pin` |
-| Public API | `cpu::Evaluate` + `cpu::semiempirical::DFTB2` (`sk_set = MioSketch`, forces off) |
+| Public API | `cpu::Evaluate` + `cpu::semiempirical::DFTB2{DftbSkSet::MioSketch}` (forces off) |
 | Roadmap / queue | `docs/roadmap/semiempirical.md` §2 SCC-DFTB2; queue done 2026-07-27 |
 | Oracle | **DFTB+ 24.1** only (family-locked; never OpenMOPAC / xtb) |
 
@@ -114,7 +114,7 @@ frame.span(kAtom_tag)[0] = 1; frame.span(kAtom_tag)[1] = 2;
 frame.box = cpu::Box::cubic(30.0);
 
 cpu::Evaluate eval;
-cpu::semiempirical::DFTB2 dftb;   // sk_set = MioSketch (default) → mio-1-1 H–H
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};   // mio-1-1 H–H
 dftb.with_forces = false;
 dftb.scc_tol = 1e-8;
 dftb.max_scc = 50;

@@ -21,7 +21,7 @@ Cite: Baroni, de Gironcoli, Dal Corso, Giannozzi, *Rev. Mod. Phys.* **73**,
 Sibling LSDA product: `regressions/response/dfpt-phonon-si`.
 
 Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
-`method.xc = XCType::PBE`.
+`method` constructed as `PW{pp, ecut_ry, k_mesh, XCType::PBE}`.
 
 ## System (regression twin)
 

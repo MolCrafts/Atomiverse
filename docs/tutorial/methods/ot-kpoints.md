@@ -124,12 +124,10 @@ const cpu::gpw::Kind H{molrs::Element::H,
                        cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
 // Explicit single k = (1/4, 0, 0) — CP2K GENERAL twin
-GpwDft ot{{H}};
-ot.cutoff_ry = 100.0;
+GpwDft ot{{H}, 100.0, cpu::gpw::XcKind::PADE};
 ot.n_occ = 1;
 ot.max_iter = 200;
 ot.tol = 1e-8;
-ot.xc = cpu::gpw::XcKind::PADE;
 ot.eps_default = 1e-7;
 ot.use_ot = true;
 ot.k_points.push_back({0.25, 0.0, 0.0});
@@ -139,12 +137,10 @@ const auto& ro = ot.run(frame);
 // ro.e_total [Hartree]; ro.converged; ro.n_kpts; ro.k_frac
 
 // Monkhorst–Pack 2×1×1 with time-reversal (alternate construction)
-GpwDft mp{{H}};
-mp.cutoff_ry = 100.0;
+GpwDft mp{{H}, 100.0, cpu::gpw::XcKind::PADE};
 mp.n_occ = 1;
 mp.max_iter = 200;
 mp.tol = 1e-8;
-mp.xc = cpu::gpw::XcKind::PADE;
 mp.use_ot = true;
 mp.k_mesh[0] = 2;
 mp.k_mesh[1] = 1;

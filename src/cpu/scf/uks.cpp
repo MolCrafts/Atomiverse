@@ -12,22 +12,17 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-UKS::UKS() {
+UKS::UKS(BasisSet basis_in, int na, int nb, XCType xc_in, int charge_in)
+    : MeanFieldMethod<UKS>(basis_in, charge_in), n_alpha(na), n_beta(nb),
+      xc(xc_in) {
     spin_ = SpinType::Unrestricted;
     method_ = MeanFieldType::KS;
-    xc_type_ = XCType::LSDA;
-    xc = XCType::LSDA;
+    xc_type_ = xc_in;
     init_guess = InitGuess::Hcore;
     damping_factor = 0.5;
     diis_max_vectors = 6;
     diis_start_iter = 1;
     tol = 1e-8;
-}
-UKS::UKS(int na, int nb, XCType xc_in) : UKS() {
-    n_alpha = na;
-    n_beta = nb;
-    xc = xc_in;
-    xc_type_ = xc_in;
 }
 void UKS::resolve_occupation(int) {
     xc_type_ = xc;

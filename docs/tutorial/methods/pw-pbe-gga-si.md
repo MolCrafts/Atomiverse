@@ -15,8 +15,8 @@ functional on the FFT grid: density gradients enter both \(E_{\mathrm{xc}}\) and
 \(v_{\mathrm{xc}}\), not the historical LDA-limit path that called PBE with
 \(\sigma = 0\). The product system is bulk silicon (diamond FCC primitive cell, 2 atoms)
 at a modest cutoff and \(2\times2\times2\) k-mesh so the e2e gate finishes in seconds.
-Public surface: concrete `cpu::pw::PW` with members (`upf_path`, `ecut_ry`, `k_mesh`,
-`xc`, …); Frame in / Frame out; analytic ionic forces via `PW::forces`.
+Public surface: concrete `cpu::pw::PW{UpfPseudopotential{path}, ecut_ry, k_mesh, xc}` plus
+members (`tol`, `max_iter`, …); Frame in / Frame out; analytic ionic forces via `PW::forces`.
 Product gate: `pw-pbe-gga-si` (`reg_pw-pbe-gga-si`). Offline absolute
 CP2K/QE energy twin was **unavailable** on the pin host; correctness uses crystal-symmetry
 force zeros plus a PBE–LSDA energy-gap activation pin. Performance is **`perf_exempt`**.
@@ -86,14 +86,13 @@ Public surface only (`cpu::Frame` + concrete method members; no `*Config`, no fa
 // FCC cell matrix as in reg_pw-pbe-gga-si.cpp
 ATV::cpu::Frame frame = /* 2 Si, Z=14, mass 28.0855, box = FCC cell */;
 
-ATV::cpu::pw::PW pbe;
-pbe.upf_path = "tests/data/pw/Si_lda_nc.upf";  // in-tree ONCVPSP NC UPF
-pbe.ecut_ry  = 15.0;                          // wavefunction cutoff [Ry]
-pbe.k_mesh   = 2;                             // 2×2×2 Monkhorst–Pack
+ATV::cpu::pw::PW pbe{ATV::cpu::pw::UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},  // in-tree ONCVPSP NC UPF
+                     15.0,                                                             // wavefunction cutoff [Ry]
+                     2,                                                                // 2×2×2 Monkhorst–Pack
+                     ATV::cpu::scf::XCType::PBE};                                      // true GGA (spectral ∇ρ)
 pbe.tol      = 1e-5;
 pbe.max_iter = 40;
 pbe.mix_beta = 0.5;
-pbe.xc       = ATV::cpu::scf::XCType::PBE;    // true GGA (spectral ∇ρ)
 
 pbe.build(frame);
 const ATV::cpu::pw::PWResult r = pbe.run(frame);  // copy: forces() overwrites last_result()

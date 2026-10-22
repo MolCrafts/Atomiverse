@@ -43,12 +43,10 @@ domain decomposition is a later industrial step). Fair wall vs CP2K is
 ```cpp
 // frame: 4-atom bct Si, a = 5.43 Å, positions [Å], Z = 14 in kAtom_type
 frame.box = cpu::Box::orthorhombic(a / std::sqrt(2.0), a / std::sqrt(2.0), a);
-cpu::gpw::GpwDft gpw{{si_kind}};  // one Kind: Si basis + GTH potential
-gpw.cutoff_ry = 150.0;
+cpu::gpw::GpwDft gpw{{si_kind}, 150.0, cpu::gpw::XcKind::PBE};  // one Kind: Si basis + GTH potential
 gpw.n_occ = 8;
 gpw.k_mesh[0] = gpw.k_mesh[1] = gpw.k_mesh[2] = 2;
 gpw.k_time_reversal = true;
-gpw.xc = cpu::gpw::XcKind::PBE;
 gpw.build(frame);
 const auto& r = gpw.run(frame);
 // r.e_total identical on every rank under mpiexec

@@ -51,7 +51,7 @@ Free-atom tables: `basis_data/ts_tables.h` (libMBD `ts_vdw_params`).
 ## Public surface
 
 ```cpp
-cpu::gpw::GpwDft gpw{kinds};   // one Kind per element
+cpu::gpw::GpwDft gpw{kinds, 300.0, cpu::gpw::XcKind::PADE};   // one Kind per element
 gpw.k_mesh[0] = 1; gpw.k_mesh[1] = 1; gpw.k_mesh[2] = 2;
 gpw.ts = true;
 gpw.build(frame);                     // positions [Å], Z in kAtom_type, box [Å]

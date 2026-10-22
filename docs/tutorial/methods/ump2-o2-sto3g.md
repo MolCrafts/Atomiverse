@@ -27,9 +27,7 @@ $$ E_{\mathrm{corr}}^{\mathrm{UMP2}} = E_{\mathrm{SS}} + E_{\mathrm{OS}}, \qquad
 // O₂, r = 1.2075 Å, triplet (2S = 2)
 cpu::Frame frame(2);
 // … set Z=8, positions, tags …
-cpu::scf::UHF uhf;
-uhf.basis = cpu::scf::BasisSet::STO3G;
-uhf.n_alpha = 9; uhf.n_beta = 7;   // or resolve from charge/multiplicity
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7};  // or resolve from charge/multiplicity
 uhf.tol = 1e-10;
 uhf.run(frame);
 auto mp = uhf.mp2(frame);          // MP2Result: e_corr, e_tot [Ha]

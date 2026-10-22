@@ -9,7 +9,8 @@ collocates / diagonalizes only its local k; real-space density,
 kinetic/nonlocal energy scalars, DIIS \(B\)-matrix partials, and residual
 norms are Allreduced so every rank holds identical `e_total`.
 
-Public API: concrete `cpu::gpw::GpwDft` members (`k_mesh`, `cutoff_ry`, …);
+Public API: concrete `cpu::gpw::GpwDft{kinds, cutoff_ry, xc}` + knob members
+(`k_mesh`, …);
 `GpwResult::{n_kpts, n_kpts_local, e_total, …}`. No public `*Config`, no
 factories.
 

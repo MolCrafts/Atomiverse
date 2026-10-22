@@ -35,8 +35,7 @@ int main() {
     frame.span(kAtom_z)[1] = 2.666;
     frame.box = cpu::Box::cubic(20.0);
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Def2SVP;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP};
     rhf.ecp = "def2-ECP";
     rhf.tol = 1e-12;
     rhf.max_iter = 200;

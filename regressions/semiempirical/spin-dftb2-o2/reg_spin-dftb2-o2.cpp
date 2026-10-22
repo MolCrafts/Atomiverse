@@ -44,12 +44,12 @@ int main() {
     auto frame = make_o2();
 
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB2 dftb;
+    // ground-state triplet O₂
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch,
+                                   /*charge=*/0, /*multiplicity=*/3};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.charge = 0;
-    dftb.multiplicity = 3; // ground-state triplet O₂
     dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
     dftb.with_forces = false;
     dftb.scc_tol = 1e-10;

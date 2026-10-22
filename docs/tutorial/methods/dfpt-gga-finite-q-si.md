@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `dfpt-gga-finite-q-si` |
-| Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` |
+| Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW{…, XCType::PBE}` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **finite-q × pure GGA** ✓ (`reg_dfpt-gga-finite-q-si`) |
 | Dep | `dfpt-finite-q-si` ✓ (commensurate X path, LSDA); `dfpt-gga-si` ✓ (Γ, PBE kernel) |
 
@@ -69,11 +69,7 @@ separate census decision), hybrids, CUDA, live CP2K in ctest.
 ## Implementation
 
 ```cpp
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry  = 10.0;
-method.k_mesh   = 1;
-method.xc       = cpu::scf::XCType::PBE;   // pure GGA kernel
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 1, cpu::scf::XCType::PBE};  // pure GGA kernel
 method.tol      = 1e-8;
 method.max_iter = 200;
 

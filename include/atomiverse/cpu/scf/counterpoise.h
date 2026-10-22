@@ -65,13 +65,11 @@ struct CounterpoiseResult {
 /// SCFs, restores `ghost_atoms`, and returns the energy components.
 ///
 /// Sub-fragment Frames for free monomers are built with the public Frame
-/// API (row copy of positions + Z + box). Method `charge` is left
-/// untouched for the dimer run; free-monomer and ghosted runs force
-/// charge 0 (neutral monomers; charged monomers are out of scope).
+/// API (row copy of positions + Z + box). Neutral fragments only: the
+/// method must carry charge 0.
 ///
 /// @code
-///   cpu::scf::RHF rhf;
-///   rhf.basis = BasisSet::Pople631Gs;
+///   cpu::scf::RHF rhf{BasisSet::Pople631Gs};
 ///   rhf.tol = 1e-10;
 ///   cpu::scf::Counterpoise cp({0, 1, 2}, {3, 4, 5}); // water dimer
 ///   auto r = cp.run(dimer_frame, rhf);
@@ -93,9 +91,8 @@ class Counterpoise {
 
     /// @brief Run the five-SCF Boys–Bernardi counterpoise sequence.
     ///
-    /// Temporarily rewrites `m.ghost_atoms` (and, for the four monomer
-    /// calculations, `m.charge = 0`); both members are restored on exit
-    /// even if an SCF throws. Geometry is const — uses
+    /// Temporarily rewrites `m.ghost_atoms`, restored on exit even if an
+    /// SCF throws. Geometry is const — uses
     /// `Method::run(const Frame&)`. Energies are read from `m.energy()`
     /// [Hartree].
     ///
@@ -103,39 +100,36 @@ class Counterpoise {
     ///         `ghost_atoms`, `charge`, `run(const Frame&)`, `energy()`,
     ///         and `converged()`.
     /// @param dimer Full complex geometry (Å); left untouched.
-    /// @param m     User-configured method (basis, tol, … already set).
+    /// @param m     Neutral method (charge 0) whose basis and knobs apply to
+    ///              all five SCFs.
     /// @return CounterpoiseResult with all components [Hartree].
+    /// @throws std::invalid_argument when `m.charge != 0` (charged fragments
+    ///         are out of scope).
     /// @throws std::runtime_error when any of the five SCFs fails to
     ///         converge (no fallback).
     template <typename Method>
     CounterpoiseResult run(const Frame& dimer, Method& m) const {
-        const auto saved_ghost = m.ghost_atoms;
-        const int saved_charge = m.charge;
+        if (m.charge != 0)
+            throw std::invalid_argument(
+                "cpu::scf::Counterpoise: the method must be neutral "
+                "(charge 0); charged fragments are out of scope");
 
-        // RAII restore of method members (ghost_atoms + charge).
+        // RAII restore of the caller's ghost_atoms.
         struct Restore {
             Method& m;
             std::vector<int> ghost;
-            int charge;
-            ~Restore() {
-                m.ghost_atoms = std::move(ghost);
-                m.charge = charge;
-            }
-        } restore{m, saved_ghost, saved_charge};
+            ~Restore() { m.ghost_atoms = std::move(ghost); }
+        } restore{m, m.ghost_atoms};
 
         CounterpoiseResult r;
 
-        // 1. Dimer in dimer basis (user charge applies only here).
+        // 1. Dimer in dimer basis.
         m.ghost_atoms.clear();
-        m.charge = saved_charge;
         m.run(dimer);
         if (!m.converged())
             throw std::runtime_error(
                 "cpu::scf::Counterpoise: dimer SCF did not converge");
         r.e_dimer = m.energy();
-
-        // Free monomers always neutral (spec: charged monomers out of scope).
-        m.charge = 0;
 
         // 2. Monomer A in its own basis.
         {

@@ -77,8 +77,7 @@ int main() {
     constexpr double kParityTol = 1e-9;                 // Ha, same fixed point
 
     // ── 1. spatial-orbital path (with amplitude DIIS) — closed-shell default.
-    cpu::scf::RHF rhf_spatial;
-    rhf_spatial.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_spatial{cpu::scf::BasisSet::STO3G};
     rhf_spatial.tol = 1e-12;
     rhf_spatial.max_iter = 100;
     auto frame_spatial = make_water();
@@ -94,8 +93,7 @@ int main() {
 
     // ── 2. spin-orbital oracle — RHF::ccsd_t keeps the spin-orbital Gauss–Stanton
     //       kernel (spec out-of-scope); its CCSD-only correlation is the oracle.
-    cpu::scf::RHF rhf_so;
-    rhf_so.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_so{cpu::scf::BasisSet::STO3G};
     rhf_so.tol = 1e-12;
     rhf_so.max_iter = 100;
     auto frame_so = make_water();
@@ -110,8 +108,7 @@ int main() {
     const double e_corr_so = ccsd_so.e_corr_ccsd;
 
     // ── 3. plain Jacobi (DIIS off) — same residual tolerance, same fixed point.
-    cpu::scf::RHF rhf_jacobi;
-    rhf_jacobi.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_jacobi{cpu::scf::BasisSet::STO3G};
     rhf_jacobi.tol = 1e-12;
     rhf_jacobi.max_iter = 100;
     auto frame_jacobi = make_water();

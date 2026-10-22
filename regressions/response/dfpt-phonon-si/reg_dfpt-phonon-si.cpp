@@ -68,11 +68,8 @@ int main() {
     cell(2, 2) = 0;
     frame.box.set_cell(cell);
 
-    PW method;
-    method.upf_path = ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf";
-    method.ecut_ry = kEcutRy;
-    method.k_mesh = kMesh;
-    method.xc = cpu::scf::XCType::LSDA;
+    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
+              kMesh, cpu::scf::XCType::LSDA};
     method.tol = 1e-8;
     method.max_iter = 200;
 

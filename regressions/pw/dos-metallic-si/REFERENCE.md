@@ -15,11 +15,11 @@ n_{\mathrm{elec}}(E_F)=\int_{-\infty}^{E_F} D(E)\,dE \approx n_e.
 Public path (no `*Config`, no factories):
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 method.smearing = Smearing::fermi_dirac;
 method.degauss = 0.02;   // Ry
 method.extra_bands = 4;
-// … ecut, k_mesh, upf, xc=LSDA …
 
 cpu::pw::Dos dos;
 dos.k_mesh = 4;

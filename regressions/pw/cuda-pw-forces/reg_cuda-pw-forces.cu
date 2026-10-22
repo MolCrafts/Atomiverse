@@ -87,14 +87,11 @@ int run_on_device(Device dev, std::vector<std::array<double, 3>>& forces) {
     forces.clear();
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method;
-        method.gth_name = "GTH-PBE-q4";
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = kMesh;
+        cpu::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q4"}, kEcutRy,
+                           kMesh, cpu::scf::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         {
             // `forces()` overwrites the Frame's force columns + kEnergy;
@@ -111,14 +108,11 @@ int run_on_device(Device dev, std::vector<std::array<double, 3>>& forces) {
                              static_cast<double>(fz[i])};
         }
     } else {
-        cuda::pw::PW method;
-        method.gth_name = "GTH-PBE-q4";
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = kMesh;
+        cuda::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q4"}, kEcutRy,
+                            kMesh, cpu::scf::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         forces = cuda::pw::pw_forces_analytic(frame, method);
     }

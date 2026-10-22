@@ -131,14 +131,12 @@ frame.box = cpu::Box::cubic(L);
 GpwDft m{{cpu::gpw::Kind{
     molrs::Element::H,
     cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-    cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-m.cutoff_ry = 120.0;
+    cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 120.0, XcKind::PADE};
 m.n_alpha = 2;   // high-spin: both e− α
 m.n_beta = 0;
 m.max_iter = 120;
 m.tol = 1e-7;
 m.mix = 0.35;
-m.xc = XcKind::PADE;
 m.k_mesh[0] = m.k_mesh[1] = m.k_mesh[2] = 2;  // MP 2×2×2
 m.k_time_reversal = true;                      // → n_kpts == 4
 m.plus_u.push_back(PlusU{molrs::Element::H, /*l=*/0, /*u_minus_j_ev=*/4.0});

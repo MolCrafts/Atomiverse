@@ -57,8 +57,7 @@ constructor args / members. No public `*Config` / factories.
 // O₂, r = 1.2075 Å, triplet (2S = 2)
 ATV::cpu::Frame frame(2);
 // … Z=8, positions, tags, box …
-ATV::cpu::scf::ROHF rohf(9, 7);
-rohf.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::ROHF rohf{ATV::cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7};
 rohf.tol = 1e-12;
 rohf.max_iter = 200;
 const ATV::cpu::scf::MP2Result mp2 = rohf.mp2(frame);

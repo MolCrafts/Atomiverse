@@ -23,8 +23,7 @@ int main() {
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
     f.box = cpu::Box::cubic(20);
 
-    cpu::scf::RKS rks(cpu::scf::XCType::LSDA);
-    rks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::scf::XCType::LSDA);
     rks.tol = 1e-9;
     rks.run(f);
     if (!rks.converged()) {

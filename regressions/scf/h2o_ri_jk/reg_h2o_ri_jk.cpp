@@ -46,16 +46,14 @@ int main() {
     frame.box = cpu::Box::cubic(20.0);
 
     // Reference: own exact-ERI RHF (def2-TZVP is spherical).
-    cpu::scf::RHF exact;
-    exact.basis = cpu::scf::BasisSet::Def2TZVP;
+    cpu::scf::RHF exact{cpu::scf::BasisSet::Def2TZVP};
     exact.tol = 1e-12;
     exact.max_iter = 200;
     exact.run(frame);
     const double e_exact = exact.energy();
 
     // Under test: the same molecule with ri = RI::JK (member-driven).
-    cpu::scf::RHF ri;
-    ri.basis = cpu::scf::BasisSet::Def2TZVP;
+    cpu::scf::RHF ri{cpu::scf::BasisSet::Def2TZVP};
     ri.tol = 1e-12;
     ri.max_iter = 200;
     ri.ri = cpu::scf::RI::JK;                     // fitted J and K

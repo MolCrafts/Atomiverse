@@ -397,8 +397,7 @@ TEST(EcpX2cGate, ThrowsForEcpElement) {
     // I2 + x2c + def2-ECP: throws before any SCF work, naming the element.
     // (e2e-in-tests wave-2: no multi-iter all-electron run under tests/.)
     auto frame = i2_frame();
-    cpu::scf::RHF rhf;
-    rhf.basis = BasisSet::Def2SVP;
+    cpu::scf::RHF rhf{BasisSet::Def2SVP};
     rhf.ecp = "def2-ECP";
     rhf.x2c = true;
     try {

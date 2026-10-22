@@ -180,8 +180,7 @@ TEST(ZeroEnergyElectronic, CoBoundPassLeavesOnlyTheQmShareInElectronicTerm) {
     cpu::Frame frame = make_h2(kH2Bond);
 
     AccumulatingStub stub{kStubEnergy};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-10;
     rhf.with_gradient(false);
 
@@ -218,8 +217,7 @@ TEST(ZeroEnergyElectronic, CoBoundPassLeavesOnlyTheQmShareInElectronicTerm) {
 TEST(ZeroEnergyElectronic, SoleSourceRhfWritesTheWholeEnergyAsElectronic) {
     cpu::Frame frame = make_h2(kH2Bond);
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-10;
     rhf.with_gradient(false);
 

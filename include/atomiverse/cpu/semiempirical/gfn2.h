@@ -44,11 +44,13 @@ class GFN2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// @brief Anderson mixing β ∈ (0, 1] (populations + multipoles).
     double mix_beta = 0.4;
     /// @brief Net molecular charge [e].
-    int charge = 0;
+    const int charge;
     /// @brief When true, write analytic forces \(F=-\nabla E\) [eV/Å] on launch.
     bool with_forces = false;
 
-    GFN2() = default;
+    /// @brief GFN2-xTB.
+    /// @param charge Net molecular charge [e].
+    explicit GFN2(int charge = 0) : charge(charge) {}
 
     std::string name() const override { return "gfn2"; }
 

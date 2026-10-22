@@ -5,12 +5,12 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `uks-hessian-o2-sto3g` |
-| Public API | `cpu::scf::UKS{9,7,XCType::LSDA}.hessian(frame, &guess)` |
+| Public API | `cpu::scf::UKS{BasisSet::STO3G, 9, 7, XCType::LSDA}.hessian(frame, &guess)` |
 | Roadmap | `docs/roadmap/dft.md` (UKS nuclear Hessian — product foothold via FD) |
 
 ## Summary
 
-Computes the Cartesian nuclear Hessian \(\partial^2 E_{\mathrm{UKS}}/\partial R_i\partial R_j\) for unrestricted Kohn–Sham DFT by central finite difference of **analytic** UKS nuclear forces (KS gradient with grid-response XC), not a full UCPKS closed form. Target system is gas-phase triplet O₂ (\(2S=2\), \(n_\alpha=9\), \(n_\beta=7\)), LSDA (Slater–VWN5) / STO-3G. Public surface: construct `cpu::scf::UKS` with spin counts and XC, set members (`basis`, `tol`, `grid_level`, …), call `hessian(frame, &guess)` → dense \(3N\times 3N\) matrix in eV/Å² (`cpu::vib::HessianResult`). Multi-minima O₂ needs a ROKS density warm-start (same path as `uks-tda-o2-lsda`). Offline accuracy pin is PySCF 2.14.0 FD of analytic UKS gradients (same algorithm class as Atomiverse). End-to-end gate: `uks-hessian-o2-sto3g` (`reg_uks-hessian-o2-sto3g`). Fair wall vs the FD twin: \(r = 2.13\) (≤10×).
+Computes the Cartesian nuclear Hessian \(\partial^2 E_{\mathrm{UKS}}/\partial R_i\partial R_j\) for unrestricted Kohn–Sham DFT by central finite difference of **analytic** UKS nuclear forces (KS gradient with grid-response XC), not a full UCPKS closed form. Target system is gas-phase triplet O₂ (\(2S=2\), \(n_\alpha=9\), \(n_\beta=7\)), LSDA (Slater–VWN5) / STO-3G. Public surface: construct `cpu::scf::UKS` with basis, spin counts and XC, set members (`tol`, `grid_level`, …), call `hessian(frame, &guess)` → dense \(3N\times 3N\) matrix in eV/Å² (`cpu::vib::HessianResult`). Multi-minima O₂ needs a ROKS density warm-start (same path as `uks-tda-o2-lsda`). Offline accuracy pin is PySCF 2.14.0 FD of analytic UKS gradients (same algorithm class as Atomiverse). End-to-end gate: `uks-hessian-o2-sto3g` (`reg_uks-hessian-o2-sto3g`). Fair wall vs the FD twin: \(r = 2.13\) (≤10×).
 
 ## Method
 
@@ -48,8 +48,7 @@ ATV::cpu::Frame frame(2);
 // O₂: Z=8, r = 1.2075 Å along z; 20 Å cubic box (gas phase)
 // ... fill type / mass / x,y,z / box as in the regression ...
 
-ATV::cpu::scf::ROKS roks(/*n_alpha=*/9, /*n_beta=*/7, ATV::cpu::scf::XCType::LSDA);
-roks.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::ROKS roks{ATV::cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7, ATV::cpu::scf::XCType::LSDA};
 roks.tol = 1e-12;
 roks.max_iter = 200;
 roks.grid_level = ATV::cpu::scf::GridLevel::MatchPySCF;
@@ -62,8 +61,7 @@ guess.P_beta = roks.determinant().density(Spin::beta);
 guess.has_alpha = true;
 guess.has_beta = true;
 
-ATV::cpu::scf::UKS uks(/*n_alpha=*/9, /*n_beta=*/7, ATV::cpu::scf::XCType::LSDA);
-uks.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::UKS uks{ATV::cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7, ATV::cpu::scf::XCType::LSDA};
 uks.tol = 1e-12;
 uks.max_iter = 200;
 uks.grid_level = ATV::cpu::scf::GridLevel::MatchPySCF;

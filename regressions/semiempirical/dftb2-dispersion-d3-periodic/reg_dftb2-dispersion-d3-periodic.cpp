@@ -60,7 +60,7 @@ cpu::Frame make_dimer() {
 void run_case(bool d3, bool d3_periodic, double& e_tot, double& e_disp) {
     auto f = make_dimer();
     cpu::Evaluate eval;
-    cpu::semiempirical::DFTB2 m;
+    cpu::semiempirical::DFTB2 m{cpu::semiempirical::DftbSkSet::MioSketch};
     m.d3 = d3;
     m.d3_periodic = d3_periodic;
     m.d3_cutoff = kOracleCutoffBohr * units::kBohrInAngstrom;

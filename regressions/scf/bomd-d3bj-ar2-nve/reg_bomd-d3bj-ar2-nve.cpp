@@ -95,8 +95,7 @@ cpu::Frame ar2(double r) {
 /// @brief The method under test: RHF/def2-SVP with the D3(BJ) correction on.
 /// @return A configured `RHF` (parameters are members — no config bag).
 cpu::scf::RHF method() {
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Def2SVP;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP};
     rhf.d3bj = true;
     rhf.tol = 1e-10; // Ha — FD of the total energy needs a tight SCF
     rhf.max_iter = 200;

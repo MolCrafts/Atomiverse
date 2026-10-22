@@ -98,8 +98,7 @@ int main() {
         sim.set_neighbor(cpu::md::NeighborList<>{8.0, 0.5});
 
         cpu::QmmmElectrostatic qmmm{{}, 8.0, 15.0}; // no cross LJ
-        cpu::scf::RHF rhf;
-        rhf.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
         rhf.tol = 1e-9;
         rhf.max_iter = 80;
         rhf.predictor(3);

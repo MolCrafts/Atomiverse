@@ -12,9 +12,9 @@ canonical-orthogonalization + zheevd diagonalization, and k-summed Pulay
 DIIS. CP2K MP convention κ_d = (2r − N − 1)/(2N) (N = 2 → ±1/4, Γ-avoiding);
 time-reversal folding of ±k (exact for RKS).
 
-Public API: concrete `cpu::gpw::GpwDft` with members
-(`k_mesh`, `k_time_reversal`, explicit `k_points`/`k_point_weights`,
-`cutoff_ry`, …); lookup constructors
+Public API: concrete `cpu::gpw::GpwDft{kinds, cutoff_ry, xc}` with knob
+members (`k_mesh`, `k_time_reversal`, explicit `k_points`/`k_point_weights`,
+…); lookup constructors
 `GaussianBasis(Element::Si, "DZVP-MOLOPT-GTH")` /
 `GthPotential(Element::Si, "GTH-PBE-q4")`. No public `*Config`, no factories.
 Result payload: `GpwResult::{k_frac, k_weights, eps_k}`.

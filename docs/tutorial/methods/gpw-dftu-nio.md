@@ -123,12 +123,10 @@ cpu::gpw::Kind O{molrs::Element::O,
                  cpu::gpw::GaussianBasis(molrs::Element::O, "SZV-GTH-PADE"),
                  cpu::gpw::GthPotential(molrs::Element::O, "GTH-PADE-q6")};
 
-cpu::gpw::GpwDft dft{{Ni, O}};
-dft.cutoff_ry = 250.0;
+cpu::gpw::GpwDft dft{{Ni, O}, 250.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 300;
 dft.tol = 1e-5;
 dft.mix = 0.35;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.nonperiodic = true;
 dft.n_alpha = 13;  // multiplicity 3, 24 valence e⁻
 dft.n_beta = 11;

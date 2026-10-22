@@ -38,11 +38,10 @@ Related: [gpw-optb88-vdw](gpw-optb88-vdw.md); kept vdW-DF cases `gpw-vdw-uks`,
 
 ```cpp
 // frame: positions [Å], Z in kAtom_type, orthorhombic frame.box [Å]
-ATV::cpu::gpw::GpwDft gpw{{O, H}};   // one Kind per element
-// cutoff_ry, ngrids, rel_cutoff ...
+ATV::cpu::gpw::GpwDft gpw{{O, H}, 300.0, ATV::cpu::gpw::XcKind::OptB88VdW};   // one Kind per element
+// ngrids, rel_cutoff ...
 gpw.n_alpha = 8;
 gpw.n_beta = 8;
-gpw.xc = ATV::cpu::gpw::XcKind::OptB88VdW;
 gpw.vdw_df = true;
 gpw.k_mesh[0] = 2;  gpw.k_mesh[1] = 1;  gpw.k_mesh[2] = 1;
 gpw.k_time_reversal = false; // 1:1 with CP2K full MP mesh

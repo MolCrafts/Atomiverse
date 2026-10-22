@@ -24,7 +24,8 @@ Cite: Baroni, de Gironcoli, Dal Corso, Giannozzi, *Rev. Mod. Phys.* **73**,
 515 (2001); Perdew, Burke, Ernzerhof, *Phys. Rev. Lett.* **77**, 3865 (1996).
 
 Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
-`method.spin_polarized = true` and `method.xc = XCType::PBE`.
+`method` constructed as `PW{pp, ecut_ry, k_mesh, XCType::PBE}` and
+`method.spin_polarized = true`.
 
 ## System (regression twin)
 

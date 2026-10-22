@@ -107,15 +107,15 @@ int main() {
 
     GpwDft method{{Kind{molrs::Element::Si,
                         GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                        GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-    method.cutoff_ry = kCutoffRy;
+                        GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+                  kCutoffRy,
+                  XcKind::PADE};
     // Collinear closed-shell UKS: 4 Si × 4 valence e⁻ → 8↑ + 8↓.
     method.n_alpha = 8;
     method.n_beta = 8;
     method.n_occ = 0;
     method.max_iter = 60;
     method.tol = 1e-7;
-    method.xc = XcKind::PADE;
     method.eps_default = 1e-7;
     method.build(frame);
 

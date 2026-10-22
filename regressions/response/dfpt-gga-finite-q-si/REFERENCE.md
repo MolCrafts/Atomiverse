@@ -17,8 +17,10 @@ shipped single-axis pins `regressions/response/dfpt-finite-q-si`
 (Γ, PBE kernel).
 
 ```cpp
-cpu::pw::PW pw;                  // ecut 10 Ry, k_mesh 1, tol 1e-8
-pw.xc = cpu::scf::XCType::PBE;   // pure GGA kernel
+cpu::pw::PW pw{cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
+               /*ecut_ry=*/10.0, /*k_mesh=*/1,
+               cpu::scf::XCType::PBE}; // pure GGA kernel
+pw.tol = 1e-8;
 cpu::pw::DfptPhonon dfpt;
 dfpt.q_frac = {0.5, 0.0, 0.0};   // X → 2×1×1 supercell Γ-DFPT
 auto r = dfpt.compute(pw, frame);

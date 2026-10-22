@@ -25,8 +25,7 @@ method ([full-lr-tddft-h2-pbe](full-lr-tddft-h2-pbe.md)).
 
 cpu::Frame frame(2);
 // H–H = 0.74 Å …
-cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);
-rks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::B3LYP};
 rks.tol = 1e-10;
 rks.run(frame);
 auto ex = rks.tda(/*n_states=*/3);   // excitations [eV], oscillator strengths

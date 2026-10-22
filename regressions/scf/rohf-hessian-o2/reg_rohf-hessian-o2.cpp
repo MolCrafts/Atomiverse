@@ -36,8 +36,7 @@ int main() {
 
     auto frame = o2_frame();
 
-    cpu::scf::ROHF rohf(9, 7);
-    rohf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::ROHF rohf(cpu::scf::BasisSet::STO3G, 9, 7);
     rohf.tol = 1e-12;
     rohf.max_iter = 200;
 

@@ -152,14 +152,12 @@ const cpu::gpw::Kind H{molrs::Element::H,
                        cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
 // A3-class product: MP 2×1×1, time-reversal, OT + Dudarev U
-GpwDft m{{H}};
-m.cutoff_ry = 100.0;
+GpwDft m{{H}, 100.0, XcKind::PADE};
 m.n_alpha = 2;
 m.n_beta = 0;
 m.max_iter = 200;
 m.tol = 1e-7;
 m.mix = 0.35;                 // DIIS twin only; ignored when use_ot
-m.xc = XcKind::PADE;
 m.k_mesh[0] = 2;
 m.k_mesh[1] = 1;
 m.k_mesh[2] = 1;

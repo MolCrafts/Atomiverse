@@ -21,7 +21,8 @@ closing the loop through the periodic-gauge coefficient shift
 Public path:
 
 ```cpp
-cpu::pw::PW method;                 // upf, ecut_ry, k_mesh, xc, ...
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 cpu::pw::BerryPolarization berry;   // members: k_perp, k_string, directions
 auto r = berry.compute(method, frame);
 // r.phase_el / r.p_el_frac / r.p_ion_frac / r.p_frac [e] / r.dipole_e_ang [e Å]

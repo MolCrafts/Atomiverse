@@ -94,8 +94,7 @@ int main() {
     cpu::Frame frame = make_c10h22();
 
     // Direct Schwarz path (oracle — our own PySCF-pinned vacuum route).
-    cpu::scf::RHF direct;
-    direct.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF direct{cpu::scf::BasisSet::STO3G};
     direct.tol = 1e-9;
     direct.max_iter = 80;
     direct.coulomb = cpu::scf::Coulomb::Direct;
@@ -103,8 +102,7 @@ int main() {
     const double e_direct = direct.energy();
 
     // CFMM-J path (K remains exact).
-    cpu::scf::RHF cfmm;
-    cfmm.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF cfmm{cpu::scf::BasisSet::STO3G};
     cfmm.tol = 1e-9;
     cfmm.max_iter = 80;
     cfmm.coulomb = cpu::scf::Coulomb::CFMM;

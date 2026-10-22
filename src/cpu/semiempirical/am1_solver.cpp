@@ -11,8 +11,6 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-AM1::AM1() = default;
-
 AM1::AM1(int charge_, int multiplicity_, int max_iter_, double density_tol_,
          double energy_tol_)
     : charge(charge_), multiplicity(multiplicity_), max_iter(max_iter_),
@@ -28,39 +26,10 @@ AM1::AM1(AM1&& other) noexcept
     other.reset_built_driver_();
 }
 
-AM1& AM1::operator=(AM1&& other) noexcept {
-    if (this != &other) {
-        reset_built_driver_();
-        other.reset_built_driver_();
-        charge = other.charge;
-        multiplicity = other.multiplicity;
-        max_iter = other.max_iter;
-        density_tol = other.density_tol;
-        energy_tol = other.energy_tol;
-        force_step = other.force_step;
-        engine_ = std::move(other.engine_);
-    }
-    return *this;
-}
-
 AM1::AM1(const AM1& other)
     : NddoMethod(), charge(other.charge), multiplicity(other.multiplicity),
       max_iter(other.max_iter), density_tol(other.density_tol),
       energy_tol(other.energy_tol), force_step(other.force_step) {}
-
-AM1& AM1::operator=(const AM1& other) {
-    if (this != &other) {
-        reset_built_driver_();
-        charge = other.charge;
-        multiplicity = other.multiplicity;
-        max_iter = other.max_iter;
-        density_tol = other.density_tol;
-        energy_tol = other.energy_tol;
-        force_step = other.force_step;
-        engine_.reset();
-    }
-    return *this;
-}
 
 void AM1::sync_engine_() {
     NDDOConfig c;

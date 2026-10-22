@@ -55,8 +55,7 @@ int main() {
     constexpr double kEquivTol = 1e-12;             // FCI vs CASCI(full space)
 
     // FCI via the public entry (RHF::fci drives its own SCF).
-    cpu::scf::RHF rhf_fci;
-    rhf_fci.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_fci{cpu::scf::BasisSet::STO3G};
     rhf_fci.tol = 1e-12;
     rhf_fci.max_iter = 100;
     const cpu::scf::FCIResult fci =
@@ -68,8 +67,7 @@ int main() {
     }
 
     // CASCI(2,2) via the public entry (RHF::casci drives its own SCF).
-    cpu::scf::RHF rhf_cas;
-    rhf_cas.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_cas{cpu::scf::BasisSet::STO3G};
     rhf_cas.tol = 1e-12;
     rhf_cas.max_iter = 100;
     const cpu::scf::CASCIResult cas =

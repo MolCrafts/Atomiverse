@@ -162,12 +162,10 @@ const cpu::gpw::Kind H{
     cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
     cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
-cpu::gpw::GpwDft dft{{H}};
-dft.cutoff_ry = 100.0;
+cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 60;
 dft.tol = 1e-5;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.n_alpha = 1;               // closed-shell fillings on UKS path
 dft.n_beta  = 1;
 dft.k_mesh[0] = 1;

@@ -10,7 +10,8 @@
 /// entry point here refuses a frame with no box instead of converging on
 /// nothing and reporting NaN.
 ///
-/// The surface is the C++ one, member for member: construct `PW`, set the
+/// The surface is the C++ one, member for member: construct `PW` from its
+/// identity (pseudopotential, `ecut_ry`, `k_mesh`, `xc`), set the knob
 /// members (there is no `PWConfig` bag and no factory), `build(frame)` once,
 /// then ask for what you need at a geometry —
 ///
@@ -277,46 +278,80 @@ void bind_pw(nb::module_& m) {
         m, "PW",
         "Plane-wave density-functional theory (DFT) for a periodic cell: the "
         "Kohn-Sham orbitals are expanded in plane waves e^{i(k+G)r}, the "
-        "basis a periodic system asks for. Parameters are plain members "
-        "(there is no PWConfig bag and no factory) — default-construct, "
-        "assign, then build(frame) / run(frame) / forces(frame) / "
-        "stress(frame).\n\n"
+        "basis a periodic system asks for. The pseudopotential, cutoff, "
+        "k-mesh and functional are constructor arguments, fixed afterwards; "
+        "the SCF knobs are plain writable members (there is no PWConfig bag "
+        "and no factory). Construct, then build(frame) / run(frame) / "
+        "forces(frame) / stress(frame).\n\n"
         "Every entry point reads the frame's per-atom 'atomic_number' column "
         "[Z], the positions [A] and the box, and refuses a frame with no box.")
-        .def(nb::init<>())
-        .def_rw("upf_path", &PW::upf_path,
-                "Path to a NORM-CONSERVING pseudopotential file in Unified "
-                "Pseudopotential Format (UPF) — a *pseudopotential* replaces "
-                "the nucleus and the chemically inert core electrons by an "
-                "effective potential, which is what makes a plane-wave "
-                "expansion affordable. Ultrasoft and PAW files are refused on "
-                "read: this path adds no augmentation charge, so their "
-                "densities would be wrong by an unbounded amount. Mutually "
-                "exclusive with gth_name — setting both, or neither, raises "
-                "ValueError at build(). There is no default and no "
-                "bare-Coulomb fallback: a point charge has no finite "
-                "plane-wave cutoff.")
-        .def_rw("gth_name", &PW::gth_name,
-                "In-tree analytic Goedecker-Teter-Hutter (GTH) "
-                "pseudopotential, e.g. 'GTH-PBE-q4' (Si, 4 valence "
-                "electrons) or 'GTH-PBE-q1' (H) — an analytic form whose "
-                "published parameters ship with the engine, so no external "
-                "file is needed. In-tree coverage is H, O, Na, Cl, Ar, Si, "
-                "Ni, Zn. ONE potential serves the whole cell, so a frame "
-                "mixing atomic numbers raises ValueError; multi-species "
-                "plane-wave runs are not implemented. Mutually exclusive with "
-                "upf_path.")
-        .def_rw("ecut_ry", &PW::ecut_ry,
-                "Wavefunction cutoff [Ry], default 30. A plane wave "
-                "e^{i(k+G)r} is kept only when its kinetic energy — |k+G|^2 "
-                "in Rydberg atomic units — stays below this, so it is the one "
-                "knob that sets basis size and cost; converge it for the "
-                "system rather than trusting the default.")
-        .def_rw("k_mesh", &PW::k_mesh,
-                "Monkhorst-Pack mesh size per dimension (dimensionless), "
-                "default 4. The Brillouin zone is sampled on a uniform "
-                "k_mesh**3 grid of equal weight and no symmetry reduction; "
-                "k_mesh = 1 is the Gamma point alone.")
+        .def(
+            "__init__",
+            [](PW* self, double ecut_ry, int k_mesh,
+               const std::string& upf_path, const std::string& gth_name,
+               const std::string& xc) {
+                if (upf_path.empty() == gth_name.empty())
+                    throw std::invalid_argument(
+                        "PW: pass exactly one pseudopotential source, "
+                        "upf_path='<file.upf>' or gth_name='GTH-...' (got "
+                        + std::string(upf_path.empty() ? "neither" : "both")
+                        + ")");
+                const ATV::cpu::scf::XCType functional = xc_from_name(xc);
+                if (!upf_path.empty())
+                    new (self) PW(ATV::cpu::pw::UpfPseudopotential{upf_path},
+                                  ecut_ry, k_mesh, functional);
+                else
+                    new (self) PW(ATV::cpu::pw::GthPseudopotential{gth_name},
+                                  ecut_ry, k_mesh, functional);
+            },
+            nb::kw_only(), nb::arg("ecut_ry"), nb::arg("k_mesh"),
+            nb::arg("upf_path") = "", nb::arg("gth_name") = "",
+            nb::arg("xc") = "PBE",
+            "Construct the method. All arguments are keyword-only.\n\n"
+            "ecut_ry: wavefunction cutoff [Ry]. A plane wave e^{i(k+G)r} is "
+            "kept only when its kinetic energy — |k+G|^2 in Rydberg atomic "
+            "units — stays below this, so it is the one knob that sets basis "
+            "size and cost; converge it for the system.\n\n"
+            "k_mesh: Monkhorst-Pack mesh size per dimension "
+            "(dimensionless). The Brillouin zone is sampled on a uniform "
+            "k_mesh**3 grid of equal weight and no symmetry reduction; "
+            "k_mesh = 1 is the Gamma point alone.\n\n"
+            "upf_path: path to a NORM-CONSERVING pseudopotential file in "
+            "Unified Pseudopotential Format (UPF) — a *pseudopotential* "
+            "replaces the nucleus and the chemically inert core electrons by "
+            "an effective potential, which is what makes a plane-wave "
+            "expansion affordable. Ultrasoft and PAW files are refused on "
+            "read: this path adds no augmentation charge.\n\n"
+            "gth_name: in-tree analytic Goedecker-Teter-Hutter (GTH) "
+            "pseudopotential, e.g. 'GTH-PBE-q4' (Si, 4 valence electrons) or "
+            "'GTH-PBE-q1' (H); no external file is needed. In-tree coverage "
+            "is H, O, Na, Cl, Ar, Si, Ni, Zn. ONE potential serves the whole "
+            "cell, so a frame mixing atomic numbers raises ValueError.\n\n"
+            "Exactly one of upf_path / gth_name must be given — both or "
+            "neither raises ValueError here. There is no default and no "
+            "bare-Coulomb fallback: a point charge has no finite plane-wave "
+            "cutoff.\n\n"
+            "xc: exchange-correlation functional by NAME — the recipe "
+            "supplying the exchange and correlation energy the Kohn-Sham "
+            "reference system leaves out. Same table as RKS(xc=...): "
+            "'LSDA', 'PBE', 'PBEsol', 'RevPBE', 'RPBE', 'BLYP', 'OptB88VdW', "
+            "'B3LYP', 'PBE0', 'B2PLYP', 'CAMB3LYP'. An unknown name raises "
+            "ValueError listing them — there is no fallback functional.")
+        .def_ro("upf_path", &PW::upf_path,
+                "UPF pseudopotential file fixed at construction; empty when "
+                "gth_name is used (read-only).")
+        .def_ro("gth_name", &PW::gth_name,
+                "GTH pseudopotential table entry fixed at construction; empty "
+                "when upf_path is used (read-only).")
+        .def_ro("ecut_ry", &PW::ecut_ry,
+                "Wavefunction cutoff [Ry] fixed at construction (read-only).")
+        .def_ro("k_mesh", &PW::k_mesh,
+                "Monkhorst-Pack mesh size per dimension fixed at construction "
+                "(read-only).")
+        .def_prop_ro(
+            "xc", [](const PW& solver) { return xc_name(solver.xc); },
+            "Exchange-correlation functional name fixed at construction "
+            "(read-only).")
         .def_rw("tol", &PW::tol,
                 "SCF convergence threshold on the L2 norm of the "
                 "density change between two iterations (dimensionless), "
@@ -338,18 +373,6 @@ void bind_pw(nb::module_& m) {
                 "(dimensionless count), default 5. Pulay mixing extrapolates "
                 "the next input density from that history instead of from "
                 "the last iteration alone.")
-        .def_prop_rw(
-            "xc", [](const PW& solver) { return xc_name(solver.xc); },
-            [](PW& solver, const std::string& name) {
-                solver.xc = xc_from_name(name);
-            },
-            "Exchange-correlation functional by NAME (default 'PBE') — the "
-            "recipe supplying the exchange and correlation energy the "
-            "Kohn-Sham reference system leaves out. Same table as "
-            "RKS(functional=...): 'LSDA', 'PBE', 'PBEsol', 'RevPBE', 'RPBE', "
-            "'BLYP', 'OptB88VdW', 'B3LYP', 'PBE0', 'B2PLYP'. An unknown name "
-            "raises ValueError listing them — there is no fallback "
-            "functional.")
         .def_rw("spin_polarized", &PW::spin_polarized,
                 "Collinear spin-polarized Kohn-Sham (nspin = 2): the "
                 "spin-up and spin-down densities are solved for separately. "
@@ -395,14 +418,13 @@ void bind_pw(nb::module_& m) {
             },
             nb::arg("frame"),
             "Validate the reference frame and perform one-time setup: it "
-            "checks that exactly one pseudopotential source is set and that "
-            "it resolves (the UPF file parses, or the GTH name exists for "
+            "checks that the pseudopotential source resolves (the UPF file "
+            "parses, or the GTH name exists for "
             "this frame's element). run()/forces()/stress() call it lazily, "
             "so build() is only about failing early.\n\n"
             "Raises RuntimeError when the frame carries no box — a "
             "plane-wave basis is defined by the cell — and ValueError when "
-            "neither or both of upf_path / gth_name are set, or the named "
-            "potential is unknown or unreadable.")
+            "the named potential is unknown or unreadable.")
         .def(
             "run",
             [](PW& solver, nb::object frame_obj) {
@@ -427,10 +449,9 @@ void bind_pw(nb::module_& m) {
             "Raises RuntimeError on a frame with no box, and ValueError when "
             "a restricted run is asked for an odd valence-electron count "
             "(set spin_polarized, or a smearing), when multiplicity and the "
-            "electron count have incompatible parity, when gth_name is used "
-            "on a frame that mixes atomic numbers (one potential serves the "
-            "whole cell), and when the pseudopotential source is missing or "
-            "doubly set.")
+            "electron count have incompatible parity, and when gth_name is "
+            "used on a frame that mixes atomic numbers (one potential serves "
+            "the whole cell).")
         .def("forces", &pw_forces, nb::arg("frame"),
              "Run one SCF and return the analytic ionic forces F = -dE/dR as "
              "an (n_atoms, 3) array [eV/A] — local Hellmann-Feynman + Ewald "

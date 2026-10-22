@@ -15,7 +15,8 @@ restricted smear: fractional \(f_{nk}\) weights, projector on
 \(q\neq 0\).
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
+                   /*ecut_ry=*/10.0, /*k_mesh=*/1, cpu::scf::XCType::LSDA};
 method.smearing = Smearing::fermi_dirac;
 method.degauss = 0.02; // Ry
 cpu::pw::DfptPhonon dfpt;

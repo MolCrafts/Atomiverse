@@ -23,12 +23,13 @@ TEST(UhfCtor, AssignsBasisOccupationChargeAndTol) {
     EXPECT_EQ(uhf.name(), "uhf");
 }
 
-TEST(UhfCtor, CountOnlyCtorLeavesChargeZero) {
-    const UHF uhf{/*n_alpha=*/1, /*n_beta=*/0};
+TEST(UhfCtor, TrailingArgumentsDefault) {
+    const UHF uhf{BasisSet::STO3G, /*n_alpha=*/1, /*n_beta=*/0};
     EXPECT_EQ(uhf.n_alpha, 1);
     EXPECT_EQ(uhf.n_beta, 0);
     EXPECT_EQ(uhf.charge, 0);
-    EXPECT_EQ(uhf.basis, BasisSet::STO3G);
+    EXPECT_DOUBLE_EQ(uhf.tol, 1e-8);
+    EXPECT_EQ(uhf.max_iter, 100);
 }
 
 #endif

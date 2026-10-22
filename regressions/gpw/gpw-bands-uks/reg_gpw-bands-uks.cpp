@@ -71,14 +71,14 @@ int main() {
 
     GpwDft method{{Kind{molrs::Element::Si,
                         GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                        GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-    method.cutoff_ry = 150.0;
+                        GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+                  150.0,
+                  XcKind::PBE};
     method.n_alpha = 8;
     method.n_beta = 8;
     method.max_iter = 60;
     method.tol = 1e-8;
     method.eps_default = 1e-7;
-    method.xc = XcKind::PBE;
     method.k_mesh[0] = method.k_mesh[1] = method.k_mesh[2] = 2;
     method.k_time_reversal = true;
     method.local_pp_on_grid = true;

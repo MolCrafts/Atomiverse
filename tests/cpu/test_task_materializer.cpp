@@ -1255,22 +1255,19 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     mat.run(materialized_frame);
 
     // Hand-built twin, registered in the spec's entry order. Every one of
-    // the fifteen knobs is assigned in the params' declaration order — the
-    // order the codec writes and the materializer replays — so a dropped or
-    // swapped field shows up as a bitwise mismatch rather than as a silent
-    // default. The method is mounted directly; the MD force phase requests
-    // its forces.
+    // the fifteen fields is spelled in the params' declaration order — the
+    // order the codec writes and the materializer replays — the identity
+    // fields (pseudopotential, ecut, k-mesh, xc) through the constructor and
+    // the knobs by assignment, so a dropped or swapped field shows up as a
+    // bitwise mismatch rather than as a silent default. The method is
+    // mounted directly; the MD force phase requests its forces.
     cpu::Frame direct_frame = make_si2_bomd_frame();
-    cpu::pw::PW pw;
-    pw.upf_path = "";
-    pw.gth_name = "GTH-PBE-q4";
-    pw.ecut_ry = kPwEcut;
-    pw.k_mesh = kPwKMesh;
+    cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q4"}, kPwEcut, kPwKMesh,
+                   cpu::scf::XCType::LSDA};
     pw.tol = kPwTol;
     pw.max_iter = kPwMaxIter;
     pw.mix_beta = kPwMixBeta;
     pw.pulay_depth = kPwPulayDepth;
-    pw.xc = cpu::scf::XCType::LSDA;
     pw.spin_polarized = false;
     pw.multiplicity = 1;
     pw.smearing = cpu::pw::Smearing::none;

@@ -27,7 +27,7 @@ written to `frame.span(kAtom_f*)` in eV/Å. This is the
 **xtb `--gfn 2 --grad` / tblite `get_hamiltonian_gradient` +
 `get_multipole_gradient_0d` module boundary**, **not** a \(6N\) re-SCC
 finite-difference and **not** SCC-DFTB. Public surface: concrete method
-`cpu::semiempirical::GFN2` with members (`charge`, `scc_tol`, `with_forces`);
+`cpu::semiempirical::GFN2{charge}` with members (`scc_tol`, `with_forces`);
 no public `*Config`, no `make_*` / `build_*`. Product gate:
 `reg_gfn2-xtb-forces`. Energy identity already ships on the same molecule
 (`reg_gfn2-xtb-water`, `reg_gfn2-quadrupole-aes`). Fair wall asserted

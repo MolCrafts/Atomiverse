@@ -109,15 +109,13 @@ frame.box = cpu::Box::orthorhombic(at, at, a);
 
 cpu::gpw::GpwDft m{{cpu::gpw::Kind{molrs::Element::Si,
                                    cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                                   cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-m.cutoff_ry = 80.0;
+                                   cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}, 80.0, cpu::gpw::XcKind::PBE};
 m.n_occ = 8;                 // 16 valence e⁻ / 2
 m.max_iter = 60;
 m.tol = 1e-7;
 m.mix = 0.3;
 m.level_shift = 0.0;
 m.eps_default = 1e-7;
-m.xc = cpu::gpw::XcKind::PBE;
 m.diis_depth = 6;
 m.mp2_ri = true;             // multi-k product path
 m.mp2_n_virt = 2;            // e2e virt cap (≤ 60 s)

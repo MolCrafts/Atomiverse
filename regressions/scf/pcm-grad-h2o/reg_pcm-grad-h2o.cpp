@@ -43,15 +43,14 @@ cpu::Frame water() {
 }
 
 cpu::scf::WithSolvent<cpu::scf::RHF> make_solvated() {
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
-    cpu::scf::ContinuumSolvent pcm;
-    pcm.eps = 78.4;
-    pcm.radii_scale = 1.2;
-    pcm.x = 0.0; // C-PCM
-    return {std::move(rhf), pcm};
+    cpu::scf::WithSolvent<cpu::scf::RHF> sol{
+        std::move(rhf), cpu::scf::SolventModel::CPCM, /*eps=*/78.4};
+    sol.radii_scale = 1.2;
+    sol.x = 0.0; // C-PCM
+    return sol;
 }
 
 double solvent_energy(const cpu::Frame& frame) {

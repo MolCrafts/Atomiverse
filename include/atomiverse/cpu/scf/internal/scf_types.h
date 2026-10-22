@@ -20,9 +20,7 @@ namespace scf {
 /// Feed the resolved counts to a concrete open-shell method (`UHF`/`UKS`):
 /// @code
 ///   SpinResolution occ(ints.n_electrons, /*multiplicity=*/2);
-///   cpu::scf::UHF uhf;
-///   uhf.n_alpha = occ.n_alpha;
-///   uhf.n_beta  = occ.n_beta;
+///   cpu::scf::UHF uhf{basis, occ.n_alpha, occ.n_beta};
 /// @endcode
 ///
 /// Matches PySCF's convention contrast: PySCF's `mol.spin` is 2S =

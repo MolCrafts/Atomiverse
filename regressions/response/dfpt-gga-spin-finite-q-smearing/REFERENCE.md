@@ -26,8 +26,8 @@ energy \(F\approx E_{\mathrm{KS}}\) and results track the fixed-occ
 `dfpt-gga-spin-finite-q-si` parent.
 
 ```cpp
-cpu::pw::PW pw;
-pw.xc = cpu::scf::XCType::PBE;
+cpu::pw::PW pw{cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
+               /*ecut_ry=*/10.0, /*k_mesh=*/1, cpu::scf::XCType::PBE};
 pw.spin_polarized = true;
 pw.multiplicity = 1;
 pw.smearing = Smearing::fermi_dirac;

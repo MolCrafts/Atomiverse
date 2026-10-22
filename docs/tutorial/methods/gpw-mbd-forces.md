@@ -159,13 +159,11 @@ const MbdResult mbd = mbd_rsscs_pbe(Z, pos, cell0, /*periodic=*/false);
 // Frame: same 6 atoms in Å, Z in kAtom_type; cubic 12 Å box
 frame.box = ATV::cpu::Box::cubic(12.0);
 // kinds O, H: DZVP-MOLOPT-SR-GTH + GTH-PBE-q6 / GTH-PBE-q1
-GpwDft gpw{{O, H}};
-gpw.cutoff_ry = 200.0;
+GpwDft gpw{{O, H}, 200.0, XcKind::PBE};
 gpw.n_occ = 8;
 gpw.max_iter = 8;
 gpw.tol = 1e-6;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = false;
 gpw.mbd = true;              // exclusive vs d3/d3bj/d4/ts/xdm/vdW-DF*
 gpw.build(frame);
@@ -177,9 +175,9 @@ Driver / Frame path (component; same member):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 300.0;  dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;  dft.nonperiodic = false;
+ATV::cpu::gpw::GpwDft dft{kinds, 300.0, ATV::cpu::gpw::XcKind::PBE};
+dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
+dft.nonperiodic = false;
 dft.mbd = true;
 ATV::cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces=*/true);
 // single_point / Evaluate / Minimize force slot

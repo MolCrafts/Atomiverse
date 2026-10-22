@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `dfpt-gga-spin-finite-q-smearing` |
-| Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW.xc = XCType::PBE` + `PW.spin_polarized = true` + `PW.smearing = fermi_dirac` |
+| Public API | `cpu::pw::DfptPhonon` (members, `q_frac`) + `cpu::pw::DfptPhononResult`; `PW{…, XCType::PBE}` + `PW.spin_polarized = true` + `PW.smearing = fermi_dirac` |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **finite-q × spin × pure GGA × smear** ✓ (`reg_dfpt-gga-spin-finite-q-smearing`) |
 | Dep | `dfpt-gga-spin-smearing` ✓; `dfpt-gga-spin-finite-q-si` ✓; `dfpt-finite-q-spin-smearing` ✓ |
 
@@ -76,11 +76,7 @@ separate census decision), hybrids, CUDA, live CP2K in ctest.
 ## Implementation
 
 ```cpp
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry  = 10.0;
-method.k_mesh   = 1;
-method.xc       = cpu::scf::XCType::PBE;
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 1, cpu::scf::XCType::PBE};
 method.spin_polarized = true;
 method.multiplicity   = 1;
 method.smearing = Smearing::fermi_dirac;

@@ -87,13 +87,11 @@ cpu::Frame make_si_supercell(double a, int n) {
 /// @return Wall time of `run(frame)` [s].
 template <class Method>
 double run_leg(const cpu::Frame& frame, const Opts& o, cpu::pw::PWResult& out) {
-    Method m;
-    m.upf_path = o.upf;
-    m.ecut_ry = o.ecut_ry;
-    m.k_mesh = o.k_mesh;
+    // LSDA: the CUDA device envelope.
+    Method m{cpu::pw::UpfPseudopotential{o.upf}, o.ecut_ry, o.k_mesh,
+             cpu::scf::XCType::LSDA};
     m.tol = o.tol;
     m.max_iter = o.max_iter;
-    m.xc = cpu::scf::XCType::LSDA; // the CUDA device envelope
     m.build(frame);
     const auto t0 = std::chrono::steady_clock::now();
     out = m.run(frame);

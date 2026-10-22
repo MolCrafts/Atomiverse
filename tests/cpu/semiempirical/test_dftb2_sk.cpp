@@ -17,8 +17,8 @@ using namespace ATV::cpu::semiempirical;
 
 TEST(DFTBOutputs, ForceCapabilityTracksConfiguredOutput) {
     DFTB0 zero;
-    DFTB2 two;
-    DFTB3 three;
+    DFTB2 two{DftbSkSet::MioSketch};
+    DFTB3 three{DftbSkSet::Unset};
     EXPECT_TRUE(zero.provides_force());
     EXPECT_TRUE(two.provides_force());
     EXPECT_TRUE(three.provides_force());
@@ -91,7 +91,7 @@ TEST(DFTB2SK, TablesCoverHCNO) {
 TEST(DFTB2SK, H2EnergyFinite) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB2 dftb;
+    DFTB2 dftb{DftbSkSet::MioSketch};
     dftb.build({ctx, f});
     dftb.launch({ctx, f, 0, 0});
     EXPECT_TRUE(std::isfinite(dftb.last_energy()));
@@ -126,7 +126,7 @@ TEST(DFTB2SK, CH4EnergyFinite) {
     f.box = cpu::Box::cubic(20.0);
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;
-    DFTB2 dftb;
+    DFTB2 dftb{DftbSkSet::MioSketch};
     dftb.build({ctx, f});
     dftb.launch({ctx, f, 0, 0});
     EXPECT_TRUE(std::isfinite(dftb.last_energy()));
@@ -135,7 +135,7 @@ TEST(DFTB2SK, CH4EnergyFinite) {
 TEST(DFTB2SK, WaterEnergyFinite) {
     auto f = make_water();
     cpu::Context ctx;
-    DFTB2 dftb;
+    DFTB2 dftb{DftbSkSet::MioSketch};
     dftb.with_forces = true;
     dftb.build({ctx, f});
     dftb.launch({ctx, f, 0, 0});
@@ -156,7 +156,7 @@ TEST(DFTB2SK, UnsupportedElementThrows) {
     f.box = cpu::Box::cubic(10.0);
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;
-    DFTB2 dftb;
+    DFTB2 dftb{DftbSkSet::MioSketch};
     dftb.build({ctx, f});
     EXPECT_THROW(dftb.launch({ctx, f, 0, 0}), std::runtime_error);
 }
@@ -164,7 +164,7 @@ TEST(DFTB2SK, UnsupportedElementThrows) {
 TEST(DFTB2SK, ForceMatchesFiniteDifferenceOneComponent) {
     auto f = make_water();
     cpu::Context ctx;
-    DFTB2 dftb;
+    DFTB2 dftb{DftbSkSet::MioSketch};
     dftb.with_forces = true;
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;
@@ -179,7 +179,7 @@ TEST(DFTB2SK, ForceMatchesFiniteDifferenceOneComponent) {
         g.meta.get(kEnergy) = 0;
         for (int i = 0; i < 3; ++i)
             g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
-        DFTB2 d;
+        DFTB2 d{DftbSkSet::MioSketch};
         d.with_forces = false;
         d.scc_tol = 1e-10;
         d.max_scc = 80;
@@ -199,7 +199,7 @@ TEST(DFTB2SK, H2EnergyNearDftbPlusMioPin) {
     // Unit tol is looser than the regression (1e-3); this is a fast smoke.
     auto f = make_h2(0.74);
     cpu::Context ctx;
-    DFTB2 dftb;
+    DFTB2 dftb{DftbSkSet::MioSketch};
     dftb.with_forces = false;
     dftb.scc_tol = 1e-8;
     dftb.build({ctx, f});

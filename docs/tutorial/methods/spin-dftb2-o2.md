@@ -128,10 +128,8 @@ for (int i = 0; i < 2; ++i) {
 }
 frame.box = cpu::Box::cubic(30.0);
 
-cpu::semiempirical::DFTB2 dftb;
+cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/3};
 dftb.boundary = cpu::semiempirical::DftbBoundary::cluster; // DFTB+ `C` geometry
-dftb.charge = 0;
-dftb.multiplicity = 3;
 dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
 dftb.with_forces = false;        // energy + spin gate only
 dftb.scc_tol = 1e-10;

@@ -73,6 +73,6 @@ under `cpu/scf/stages/`.
 
 Pair each tutorial with one code-reading target:
 
-- after Chapter 1, read [`cpu::scf::solvemethods.h`methods.h) (the concrete `RHF` / `UHF` / `RKS` / `UKS`) and the loop they share, [`mean_field_method.hUHF` — the same class, with `n_alpha` / `n_beta` set as members
+- after Chapter 1, read [`cpu::scf::solvemethods.h`methods.h) (the concrete `RHF` / `UHF` / `RKS` / `UKS`) and the loop they share, [`mean_field_method.hUHF` — the same class, with `n_alpha` / `n_beta` as constructor arguments
 - after Chapter 5, revisit `UKS` and read [`xc_functional.hpw_solver.h`pw_solver.h) and [`internal/pw_workspace.hDriver`, `Plan`, and `Component` start to make
 sense instead of feeling abstract.

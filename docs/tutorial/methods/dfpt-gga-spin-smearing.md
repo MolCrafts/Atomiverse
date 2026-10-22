@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `dfpt-gga-spin-smearing` |
-| Public API | `cpu::pw::DfptPhonon` + `PW` members (`xc=PBE`, `spin_polarized`, `smearing=fermi_dirac`) |
+| Public API | `cpu::pw::DfptPhonon` + `PW{…, XCType::PBE}` + members (`spin_polarized`, `smearing=fermi_dirac`) |
 | Roadmap | [dft.md](../../roadmap/dft.md) §11 DFPT — **joint GGA × spin × smear** ✓ |
 | Dep | `dfpt-gga-spin-si` ✓; `dfpt-spin-smearing` ✓; `dfpt-gga-si` ✓ |
 
@@ -42,11 +42,7 @@ Rev. B* **51**, 6773 (1995); PBE, *Phys. Rev. Lett.* **77**, 3865 (1996).
 ## Implementation
 
 ```cpp
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = 10.0;
-method.k_mesh = 2;
-method.xc = cpu::scf::XCType::PBE;
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 2, cpu::scf::XCType::PBE};
 method.spin_polarized = true;
 method.multiplicity = 1;
 method.smearing = Smearing::fermi_dirac;

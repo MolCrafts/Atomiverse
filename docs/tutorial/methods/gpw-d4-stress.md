@@ -127,12 +127,10 @@ Regression binds the evaluator into `cpu::Evaluate`:
 // Frame: 6 atoms, water dimer [Å], cubic 12 Å (REFERENCE.md).
 // kinds: O DZVP-MOLOPT-SR-GTH + GTH-PBE-q6; H … + GTH-PBE-q1
 
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 200.0;
+cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
 dft.max_iter = 120;
 dft.tol = 1e-6;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::PBE;
 dft.nonperiodic = false;
 dft.d4 = true;               // exclusive vs d3 / d3bj / ts / xdm / mbd
 

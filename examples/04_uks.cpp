@@ -22,8 +22,8 @@ static cpu::Frame make_he() {
 
 int main() {
     auto frame = make_he();
-    cpu::scf::UKS uks(/*n_alpha=*/1, /*n_beta=*/1, cpu::scf::XCType::LSDA);
-    uks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UKS uks{cpu::scf::BasisSet::STO3G, /*n_alpha=*/1, /*n_beta=*/1,
+                      cpu::scf::XCType::LSDA};
     uks.run(frame);
     std::cout << std::setprecision(10)
               << "He UKS-LSDA converged=" << uks.converged()

@@ -62,13 +62,13 @@ int main() {
 
     GpwDft method{{Kind{molrs::Element::Na,
                         GaussianBasis(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH"),
-                        GthPotential(molrs::Element::Na, "GTH-PBE-q9")}}};
-    method.cutoff_ry = 150.0;
+                        GthPotential(molrs::Element::Na, "GTH-PBE-q9")}},
+                  150.0,
+                  XcKind::PADE};
     method.n_occ = 9;
     method.max_iter = 80;
     method.tol = 1e-6;
     method.eps_default = 1e-7;
-    method.xc = XcKind::PADE;
     method.diis_depth = 6;
     method.mix = 0.4;
     method.k_mesh[0] = method.k_mesh[1] = method.k_mesh[2] = 2;

@@ -75,14 +75,12 @@ int main() {
     // ── Collapse sentinel: H2 (no frustration) ─────────────────────────
     {
         auto frame = h2_frame();
-        cpu::scf::UHF uhf(1, 1);
-        uhf.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::UHF uhf(cpu::scf::BasisSet::STO3G, 1, 1);
         uhf.tol = 1e-12;
         uhf.max_iter = 200;
         uhf.run(frame);
 
-        cpu::scf::GHF ghf(2);
-        ghf.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::GHF ghf(cpu::scf::BasisSet::STO3G, 2);
         ghf.tol = 1e-12;
         ghf.max_iter = 200;
         ghf.run(frame); // default small nonzero guess_spin_rotation
@@ -98,8 +96,7 @@ int main() {
     // ── Noncollinear win: equilateral H3 (spin-frustrated) ─────────────
     {
         auto frame = h3_frame();
-        cpu::scf::GHF ghf(3);
-        ghf.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::GHF ghf(cpu::scf::BasisSet::STO3G, 3);
         ghf.tol = 1e-12;
         ghf.max_iter = 200;
         // Geometry-adapted Neel angle: 120-degree per-AO moment fan.
@@ -124,8 +121,7 @@ int main() {
         ok = ok && std::fabs(pab - pin_pab) <= 1e-3;
 
         // ── Collinear trap: theta = 0 stays on the UHF saddle ──────────
-        cpu::scf::GHF trap(3);
-        trap.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::GHF trap(cpu::scf::BasisSet::STO3G, 3);
         trap.tol = 1e-12;
         trap.max_iter = 200;
         trap.guess_spin_rotation = 0.0;

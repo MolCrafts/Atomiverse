@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `b2plyp-h2o` |
-| Public API | `cpu::scf::RKS{XCType::B2PLYP}` + `mp2(frame)` with \(a_c\) scales |
+| Public API | `cpu::scf::RKS{basis, XCType::B2PLYP}` + `mp2(frame)` with \(a_c\) scales |
 | Roadmap | `docs/roadmap/dft.md` §7 Double-Hybrid Functionals |
 
 ## Summary
@@ -54,8 +54,7 @@ ATV::cpu::Frame frame(3);
 // ... type / x,y,z / box ...
 
 using ATV::cpu::scf::XCType;
-ATV::cpu::scf::RKS rks(XCType::B2PLYP);
-rks.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::RKS rks{ATV::cpu::scf::BasisSet::STO3G, XCType::B2PLYP};
 rks.tol = 1e-10;
 rks.max_iter = 100;
 

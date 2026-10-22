@@ -35,8 +35,7 @@ int main() {
     frame.span(kAtom_z)[2] = -0.4692;
     frame.box = cpu::Box::cubic(20.0);
 
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.tol = 1e-12;
     rhf.max_iter = 200;
     const cpu::scf::GradientResult res =

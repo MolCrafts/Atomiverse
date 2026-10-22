@@ -169,7 +169,8 @@ TEST(MinimizeNestedNode, FixedStepEntersTheNodeOncePerIteration) {
     const int iterations = opt.run(frame, /*max_iter=*/4);
 
     ASSERT_EQ(iterations, 4);
-    EXPECT_EQ(method.calls, iterations)
-        << "Fixed mode evaluates no trial geometry: the only dispatch of the "
-           "nested node is the one Runtime::step makes per iteration";
+    EXPECT_EQ(method.calls, iterations + 1)
+        << "Fixed mode evaluates initial forces once, then one force "
+           "evaluation "
+           "per iteration, without trial geometries";
 }

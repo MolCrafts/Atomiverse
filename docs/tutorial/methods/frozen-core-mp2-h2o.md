@@ -15,8 +15,7 @@ rises by ~2.4 mHa relative to full RMP2 on the same geometry/basis.
 ## Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Pople631Gs;  // 6-31G*
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};  // 6-31G*
 rhf.frozen = 1;   // freeze lowest occupied spatial MO (O 1s)
 rhf.run(frame);
 auto mp = rhf.mp2(frame);

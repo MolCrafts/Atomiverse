@@ -12,10 +12,10 @@ steepest-descent polish; centers from the Berry-phase formula.
 Public API:
 
 ```cpp
-cpu::gpw::GpwDft dft{{si_kind}};
+cpu::gpw::GpwDft dft{{si_kind}, /*cutoff_ry=*/100.0, cpu::gpw::XcKind::PADE};
 dft.n_alpha = 8;
 dft.n_beta  = 8;          // M = 0 closed-shell collinear
-// cutoff, xc, build(frame) …  (cell from frame.box)
+// build(frame) …  (cell from frame.box)
 cpu::gpw::PeriodicWannier mlwf;   // members: k_mesh, max_iter, tol, …
 auto r = mlwf.compute(dft, frame);
 // r.n_wann_up / n_wann_dn; r.centers [Å] = α then β; r.spin[i] ∈ {0,1}

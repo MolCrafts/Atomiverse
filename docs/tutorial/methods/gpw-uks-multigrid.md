@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `gpw-uks-multigrid` |
-| Public API | `cpu::gpw::GpwDft` members (`n_alpha`/`n_beta`, `ngrids`, `rel_cutoff`, `XcKind::PADE`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
+| Public API | `cpu::gpw::GpwDft{kinds, cutoff_ry, XcKind::PADE}` + members (`n_alpha`/`n_beta`, `ngrids`, `rel_cutoff`, `nonperiodic`) bound through `cpu::gpw::GPWEvaluator`; `cpu::single_point` |
 | Roadmap | `docs/roadmap/dft.md` — UKS multigrid product collocation |
 
 ## Summary
@@ -132,14 +132,12 @@ cpu::gpw::Kind O{molrs::Element::O,
                  cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
                  cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 400.0;
+cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::PADE};
 dft.ngrids = 4;        // CP2K &MGRID NGRIDS
 dft.rel_cutoff = 60.0; // CP2K REL_CUTOFF [Ry]
 dft.max_iter = 200;
 dft.tol = 1e-7;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.nonperiodic = true;
 dft.n_alpha = 7;  // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;

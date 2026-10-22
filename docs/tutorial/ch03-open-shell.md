@@ -154,8 +154,7 @@ instead of one occupation pattern, you now choose one for each spin channel.
 In the example, that choice appears directly in calls such as
 
 ```cpp
-cpu::scf::UHF uhf(n_alpha, n_beta);
-uhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, n_alpha, n_beta};
 uhf.tol = tol;
 uhf.max_iter = max_iter;
 uhf.run(frame);                       // eV energy on frame.meta.get(kEnergy)
@@ -253,7 +252,7 @@ const int multiplicity = 2;                                 // M = 2S + 1
 const int n_alpha = (n_electrons + multiplicity - 1) / 2;   // 5
 const int n_beta  = (n_electrons - multiplicity + 1) / 2;   // 4
 
-cpu::scf::UHF uhf(n_alpha, n_beta);   // (5, 4)
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, n_alpha, n_beta};   // (5, 4)
 ```
 
 Guard the two validity conditions yourself before constructing: $N_e$ and
@@ -282,7 +281,7 @@ $\mathrm{H}(0, 4)$ — $M = 4 > N_e + 1 = 2$ would need $n_\beta = -1$.
 One convention contrast worth memorizing: PySCF's `mol.spin` is **not** the
 multiplicity — it is $2S = n_\alpha - n_\beta = M - 1$. A PySCF doublet is
 `spin=1`; here you write the same state as $M = 2$, i.e.
-`cpu::scf::UHF{5, 4}`.
+`cpu::scf::UHF{basis, 5, 4}`.
 
 **Limitations.** Resolving the occupation fixes bookkeeping only. It cannot tell you
 *which* multiplicity is the ground state (the O atom is a triplet because of
@@ -363,9 +362,7 @@ channels with half of the converged neutral density,
 ```cpp
 using Spin = cpu::scf::SlaterDeterminant::Spin;
 
-cpu::scf::RHF neutral;
-neutral.basis = basis;
-neutral.charge = 0;
+cpu::scf::RHF neutral{basis, /*charge=*/0};
 neutral.tol = tol;
 neutral.max_iter = max_iter;
 neutral.run(frame);
@@ -375,9 +372,7 @@ guess.P_alpha = neutral.determinant().density(Spin::alpha);   // half the total
 guess.P_beta  = guess.P_alpha;                                // restricted density
 guess.has_alpha = guess.has_beta = true;
 
-cpu::scf::UHF cation(N/2, N/2 - 1);
-cation.basis = basis;
-cation.charge = 1;
+cpu::scf::UHF cation{basis, N/2, N/2 - 1, /*charge=*/1};
 cation.tol = tol;
 cation.run(frame, &guess);
 ```
@@ -469,8 +464,7 @@ flags, and—when external instability is found—orbitals rotated along the
 unstable mode for use as a UHF guess:
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.run(frame); // H2, R = 1.5 Å
 
@@ -480,8 +474,7 @@ auto st = cpu::scf::Stability<cpu::scf::RHF>{rhf}.run();
 if (!st.external_stable) {
     // Build a broken-symmetry guess from st.rotated_C; see
     // `h2_rhf_stability` for the full construction.
-    cpu::scf::UHF uhf{1, 1};
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/1, /*n_beta=*/1};
     uhf.run(frame, &guess);
     // uhf.energy() ≈ −0.958 Ha < rhf.energy() ≈ −0.911 Ha
 }
@@ -540,15 +533,13 @@ bug report.
 
 ```cpp
 // O2 triplet, R = 1.2075 Å, (n_alpha, n_beta) = (9, 7), STO-3G
-cpu::scf::ROHF rohf(9, 7); // requires n_alpha >= n_beta
-rohf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROHF rohf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7}; // requires n_alpha >= n_beta
 rohf.tol = 1e-12;
 rohf.run(frame);
 // energy ≈ −147.632167 Ha; spin contamination = 0
 
 // planar D3h methyl, R(C–H) = 1.079 Å, (5, 4)
-cpu::scf::ROHF ch3(5, 4);
-ch3.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROHF ch3{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/4};
 ch3.run(frame_ch3); // ≈ −39.072133 Ha, <S²> = 0.75
 ```
 
@@ -644,8 +635,7 @@ convergence the Mulliken spin vectors (real algebra: magnetisation in the
 
 ```cpp
 // equilateral H3, side 1.0 Å, STO-3G
-cpu::scf::GHF ghf(3); // total electron count for spinor aufbau
-ghf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::GHF ghf{cpu::scf::BasisSet::STO3G, /*n_electrons=*/3}; // total electron count for spinor aufbau
 ghf.tol = 1e-12;
 ghf.guess_spin_rotation = 2.0 * M_PI / 3.0; // geometry-adapted Néel angle
 ghf.run(frame);

@@ -49,7 +49,7 @@ turns it on, where the guess enters, and when the auxiliary density advances.
 XL-BOMD is a **type**, not a flag: the mode bits live in `protected` storage on
 `MeanFieldMethod`, and the wrapper (`cpu/electronic/aimd_method.h`) is the only
 public way to set them. It owns `Method` and implements the nested DriverNode
-and timestep protocols. Configure `basis` / `tol` / `max_iter` before moving
+and timestep protocols. Construct the method with its `basis` and set `tol` / `max_iter` before moving
 the method in, and inspect it afterwards through `wrapper.method()`. There is no
 `XlConfig` and no `make_xl_*`: a plain BOMD user constructs the method
 directly, and an XL user gets the same dissipation order the GPW evaluator
@@ -104,8 +104,7 @@ single 2n-dimensional spinor density.
 ## Usage
 
 ```cpp
-cpu::scf::RHF rhf_base;                 // or UHF / RKS / UKS
-rhf_base.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf_base{cpu::scf::BasisSet::STO3G};                 // or UHF / RKS / UKS
 rhf_base.tol = 1e-6;                    // Ha, |dE| SCF exit
 // XL-BOMD is a wrapper TYPE around the method, not an `xl_bomd = true` flag:
 // the dissipation order K (Niklasson 2009 Table I) is a constructor argument.

@@ -195,12 +195,14 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molpy.Frame":
     return frame
 
 
-def _si2_method() -> "PW":
-    """``PW`` carrying the pinned Si2 settings (members, no config bag)."""
-    pw = PW()
-    pw.gth_name = _GTH_SI
-    pw.ecut_ry = _ECUT_RY
-    pw.k_mesh = _K_MESH
+def _si2_method(xc: str = "PBE") -> "PW":
+    """``PW`` carrying the pinned Si2 settings: identity as constructor
+    arguments, knobs as members (no config bag).
+
+    @param xc: Exchange-correlation functional name (identity, fixed at
+        construction).
+    """
+    pw = PW(gth_name=_GTH_SI, ecut_ry=_ECUT_RY, k_mesh=_K_MESH, xc=xc)
     pw.tol = _TOL
     pw.max_iter = _MAX_ITER
     return pw
@@ -239,21 +241,21 @@ class TestPwKnobDefaults:
     def test_xc_defaults_to_pbe(self) -> None:
         """``xc`` is a functional *name* on the Python surface; the C++
         default is ``XCType::PBE`` (pw_solver.h:122)."""
-        assert PW().xc == "PBE"
+        assert _si2_method().xc == "PBE"
 
     def test_spin_defaults_to_restricted(self) -> None:
         """Default is restricted, multiplicity 1 (pw_solver.h:126,130)."""
-        pw = PW()
+        pw = _si2_method()
         assert pw.spin_polarized is False
         assert pw.multiplicity == 1
 
     def test_smearing_defaults_to_none(self) -> None:
         """Fixed occupations by default (pw_solver.h:133)."""
-        assert PW().smearing == "none"
+        assert _si2_method().smearing == "none"
 
     def test_smearing_parameter_defaults(self) -> None:
         """degauss [Ry], MP order and extra bands (pw_solver.h:134-139)."""
-        pw = PW()
+        pw = _si2_method()
         assert pw.degauss == pytest.approx(0.02)
         assert pw.mp_order == 1
         assert pw.extra_bands == 4
@@ -267,29 +269,26 @@ class TestPwKnobRoundTrip:
     @pytest.mark.parametrize("name", ("LSDA", "PBE"))
     def test_xc_name_roundtrip(self, name: str) -> None:
         """A supported functional name survives the enum mapping."""
-        pw = PW()
-        pw.xc = name
-        assert pw.xc == name
+        assert _si2_method(xc=name).xc == name
 
     def test_xc_unknown_raises(self) -> None:
-        """An unsupported functional fails loud and lists the supported
-        names — same no-fallback contract as RKS(functional=...)
-        (bind_scf.cpp:100-117)."""
-        pw = PW()
+        """An unsupported functional fails loud at construction and lists the
+        supported names — same no-fallback contract as RKS(xc=...)
+        (xc_names.h)."""
         with pytest.raises(ValueError, match="LSDA|PBE"):
-            pw.xc = "NOTAFUNCTIONAL"
+            _si2_method(xc="NOTAFUNCTIONAL")
 
     @pytest.mark.parametrize("name", _SMEARING_NAMES)
     def test_smearing_name_roundtrip(self, name: str) -> None:
         """Every ``Smearing`` spelling of pw_solver.h:79-84 round-trips."""
-        pw = PW()
+        pw = _si2_method()
         pw.smearing = name
         assert pw.smearing == name
 
     def test_smearing_parameters_roundtrip(self) -> None:
         """Width [Ry], Methfessel-Paxton order and extra bands are plain
         members, set beside the smearing kind."""
-        pw = PW()
+        pw = _si2_method()
         pw.smearing = "gaussian"
         pw.degauss = 0.01
         pw.mp_order = 2
@@ -301,11 +300,41 @@ class TestPwKnobRoundTrip:
 
     def test_spin_knobs_roundtrip(self) -> None:
         """Collinear switch + multiplicity (pw_solver.h:126-130)."""
-        pw = PW()
+        pw = _si2_method()
         pw.spin_polarized = True
         pw.multiplicity = 3
         assert pw.spin_polarized is True
         assert pw.multiplicity == 3
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
+class TestPwIdentity:
+    """Pseudopotential, cutoff, k-mesh and functional are constructor
+    arguments, fixed afterwards."""
+
+    def test_identity_reads_back(self) -> None:
+        pw = _si2_method(xc="LSDA")
+        assert pw.gth_name == _GTH_SI
+        assert pw.upf_path == ""
+        assert pw.ecut_ry == pytest.approx(_ECUT_RY)
+        assert pw.k_mesh == _K_MESH
+        assert pw.xc == "LSDA"
+
+    @pytest.mark.parametrize("name", ("gth_name", "upf_path", "ecut_ry", "k_mesh", "xc"))
+    def test_identity_is_read_only(self, name: str) -> None:
+        pw = _si2_method()
+        with pytest.raises(AttributeError):
+            setattr(pw, name, getattr(pw, name))
+
+    def test_no_pseudopotential_raises(self) -> None:
+        """Neither source: there is no default pseudopotential."""
+        with pytest.raises(ValueError, match="upf_path"):
+            PW(ecut_ry=_ECUT_RY, k_mesh=_K_MESH)
+
+    def test_both_pseudopotentials_raise(self) -> None:
+        """Both sources: ambiguous, refused at construction."""
+        with pytest.raises(ValueError, match="gth_name"):
+            PW(upf_path="si.upf", gth_name=_GTH_SI, ecut_ry=_ECUT_RY, k_mesh=_K_MESH)
 
 
 # ── forces(frame): (N,3) [eV/Å] + write-back ─────────────────────────
@@ -336,8 +365,7 @@ class TestPwForces:
     def lsda_forces() -> tuple["molpy.Frame", "np.ndarray"]:
         """The pinned run: same cell, ``xc = LSDA`` (REFERENCE.md settings)."""
         frame = _si2_frame(_STRETCH)
-        pw = _si2_method()
-        pw.xc = "LSDA"
+        pw = _si2_method(xc="LSDA")
         pw.build(frame)
         forces = np.asarray(pw.forces(frame), dtype=np.float64)
         return frame, forces
@@ -563,10 +591,7 @@ class TestPwSpinPolarized:
     def h_atom_result() -> "PWResult":
         """Spin-polarized doublet H in the pw-bomd-h cell."""
         frame = _h_atom_frame()
-        pw = PW()
-        pw.gth_name = _GTH_H
-        pw.ecut_ry = _H_ECUT_RY
-        pw.k_mesh = _K_MESH
+        pw = PW(gth_name=_GTH_H, ecut_ry=_H_ECUT_RY, k_mesh=_K_MESH)
         pw.tol = _TOL
         pw.max_iter = _H_MAX_ITER
         pw.mix_beta = _H_MIX_BETA

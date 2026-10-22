@@ -73,7 +73,7 @@ enum class DftbBoundary {
 /// polarization (Köhler / DFTB+ spin channel): dual α/β Fock matrices,
 /// Mulliken Δq and spin population m = Nα−Nβ.
 ///
-/// - `sk_set = MioSketch` (default): full mio-1-1 H/C/N/O SK + repulsive
+/// - `sk_set = MioSketch`: full mio-1-1 H/C/N/O SK + repulsive
 ///   (`basis_data/dftb_mio_sk_tables.h`; DFTB+ pins
 ///   `regressions/semiempirical/{dftb2-dftbplus-energy-pin,h2o_dftb2_mio}/`).
 ///   **Γ-point PBC** (`boundary = lattice`): lattice-summed H⁰/S and
@@ -136,8 +136,8 @@ enum class DftbBoundary {
 ///
 /// Molecule, open shell, dispersion, forces + stress:
 /// @code
-///   cpu::semiempirical::DFTB2 dftb;
-///   dftb.multiplicity = 3;   // O2 triplet (MioSketch)
+///   cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch,
+///                                  /*charge=*/0, /*multiplicity=*/3}; // O2 triplet
 ///   dftb.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
 ///   dftb.d3 = true;
 ///   dftb.with_forces = true;
@@ -193,7 +193,7 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// virial of `dftd3_pbe_bj` (image-aware when `d3_periodic=true`).
     bool with_stress = false;
     /// @brief Static SK parameter set (member — not a Config bag).
-    DftbSkSet sk_set = DftbSkSet::MioSketch;
+    const DftbSkSet sk_set;
     /// @brief Cluster or lattice Hamiltonian. Default `lattice`.
     ///
     /// A Frame always carries a `Box`, so the box alone cannot say whether the
@@ -215,9 +215,9 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// @brief Ewald relative accuracy in (0, 1); sets the \(|k|\) cutoff.
     double ewald_accuracy = 1e-8;
     /// @brief Net molecular charge [e] (subtracted from valence electron count).
-    int charge = 0;
+    const int charge;
     /// @brief Spin multiplicity 2S+1 (dimensionless). Default 1 = closed shell.
-    int multiplicity = 1;
+    const int multiplicity;
     /// @brief Opt-in Grimme DFT-D3 with Becke–Johnson damping (two-body).
     bool d3 = false;
     /// @brief When true with `d3`, lattice-sum D3 over the orthorhombic box.
@@ -308,7 +308,12 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// naming `dftb-shell-resolved-spin` when the spin channel is taken.
     bool shell_resolved_spin = false;
 
-    DFTB2() = default;
+    /// @brief SCC-DFTB2.
+    /// @param sk_set Slater–Koster parameter set.
+    /// @param charge Net molecular charge [e].
+    /// @param multiplicity Spin multiplicity 2S+1 (dimensionless).
+    explicit DFTB2(DftbSkSet sk_set, int charge = 0, int multiplicity = 1)
+        : sk_set(sk_set), charge(charge), multiplicity(multiplicity) {}
 
     /// @brief Extrapolate the SCC starting charges from previous launches.
     ///

@@ -106,14 +106,12 @@ const cpu::gpw::Kind H{molrs::Element::H,
                        cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
 // Multi-k collinear UKS OT at κ = (1/4, 0, 0)
-cpu::gpw::GpwDft ot{{H}};
-ot.cutoff_ry = 100.0;
+cpu::gpw::GpwDft ot{{H}, 100.0, cpu::gpw::XcKind::PADE};
 ot.n_alpha = 2;   // high-spin H₂: Nα=2, Nβ=0
 ot.n_beta = 0;
 ot.n_occ = 0;     // UKS path when n_alpha+n_beta > 0
 ot.max_iter = 200;
 ot.tol = 1e-8;
-ot.xc = cpu::gpw::XcKind::PADE;
 ot.eps_default = 1e-7;
 ot.use_ot = true;
 ot.k_points.push_back({0.25, 0.0, 0.0});
@@ -127,7 +125,7 @@ const auto& res = ot.run(frame);
 Monkhorst–Pack alternative (regression A3):
 
 ```cpp
-cpu::gpw::GpwDft ot_mp{{H}};
+cpu::gpw::GpwDft ot_mp{{H}, 100.0, cpu::gpw::XcKind::PADE};
 // ... same base UKS fields as above ...
 ot_mp.use_ot = true;
 ot_mp.k_mesh[0] = 2;

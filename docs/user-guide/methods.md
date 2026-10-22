@@ -72,9 +72,7 @@ move the configured method into `cpu::gpw::GPWEvaluator`
 (`cpu/gpw/gpw_evaluator.h`):
 
 ```cpp
-cpu::gpw::GpwDft dft{{O, H}};          // cpu::gpw::Kind per element
-dft.cutoff_ry = 400.0;
-dft.xc = cpu::gpw::XcKind::PBE;
+cpu::gpw::GpwDft dft{{O, H}, 400.0, cpu::gpw::XcKind::PBE};          // cpu::gpw::Kind per element
 cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces=*/true);
 ```
 
@@ -147,14 +145,13 @@ Open-shell and KS:
 #include "atomiverse/cpu/scf/methods.h"
 using namespace ATV;
 
-cpu::scf::UHF uhf(/*n_alpha=*/5, /*n_beta=*/4);
-uhf.charge = 1;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/4, /*charge=*/1};
 uhf.run(frame);
 
-cpu::scf::RKS rks(cpu::scf::XCType::PBE);
+cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
 rks.run(frame);
 
-cpu::scf::UKS uks(1, 1, cpu::scf::XCType::LSDA);
+cpu::scf::UKS uks{cpu::scf::BasisSet::STO3G, /*n_alpha=*/1, /*n_beta=*/1, cpu::scf::XCType::LSDA};
 uks.run(frame);
 ```
 
@@ -174,7 +171,7 @@ using namespace ATV;
 
 cpu::md::MD aimd;
 aimd.set_integrator(cpu::md::VelocityVerlet{0.5});
-aimd.on(md::Phase::force).add(cpu::scf::RHF{});  // concrete method as force component
+aimd.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});  // concrete method as force component
 aimd.build();
 aimd.run(frame, 100);
 ```
@@ -198,10 +195,9 @@ both, throws.
 #include "atomiverse/cpu/planewave/pw_solver.h"
 using namespace ATV;
 
-cpu::pw::PW pw;
-pw.gth_name = "GTH-PBE-q4";               // in-tree analytic GTH (Si, 4 valence e⁻)
-pw.ecut_ry = 30.0;                        // wavefunction cutoff [Ry]
-pw.k_mesh = 4;                            // Monkhorst-Pack mesh per dimension
+cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q4"},  // in-tree analytic GTH (Si, 4 valence e⁻)
+               30.0,                                       // wavefunction cutoff [Ry]
+               4};                                         // Monkhorst-Pack mesh per dimension
 cpu::single_point(frame, pw);             // frame.meta.get(ATV::kEnergy) (eV)
 ```
 
@@ -225,7 +221,7 @@ opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});  // memory, alpha0, max_l
 // Convergence is the criterion's, not the optimizer's. Omit it and Minimize
 // attaches cpu::ForceConverged{} with its defaults.
 opt.add_criterion(cpu::ForceConverged{/*ftol=*/0.05});
-opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+opt.on(minimizer::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 opt.build();
 opt.run(frame, 100);
 ```
@@ -285,14 +281,13 @@ Driver that needs energy and forces. See
 
 The result matches AmberTools `antechamber -c bcc` / `-c abcg2` at the same
 geometry. The Frame must carry the molecule's bonds, and the net charge is the
-`AM1` member `charge`.
+`AM1` constructor argument `charge`.
 
 ```cpp
 #include "atomiverse/cpu/semiempirical/am1_bcc_charges.h"
 using namespace ATV::cpu::semiempirical;
 
-AM1 am1;
-am1.charge = -1;                                   // net molecular charge (e)
+AM1 am1{/*charge=*/-1};  // net molecular charge (e)
 AM1BCCCharges{am1, BccParameterSet::Bcc}.assign(frame);   // kAtom_charge (e)
 ```
 

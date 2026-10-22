@@ -46,8 +46,7 @@ int main() {
     auto frame = make_h2o();
 
     // ── Analytic dipole (link 03) ──────────────────────────────────────
-    cpu::scf::RHF rhf0;
-    rhf0.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf0{cpu::scf::BasisSet::STO3G};
     rhf0.tol = 1e-12;
     rhf0.max_iter = 200;
     auto handle = rhf0.result_handle();
@@ -68,15 +67,13 @@ int main() {
 
     // ── Finite-field central difference ────────────────────────────────
     constexpr double F = 1e-4;
-    cpu::scf::RHF rhf_p;
-    rhf_p.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_p{cpu::scf::BasisSet::STO3G};
     rhf_p.tol = 1e-12;
     rhf_p.max_iter = 200;
     rhf_p.external_field = {0.0, 0.0, F};
     rhf_p.run(frame);
 
-    cpu::scf::RHF rhf_m;
-    rhf_m.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_m{cpu::scf::BasisSet::STO3G};
     rhf_m.tol = 1e-12;
     rhf_m.max_iter = 200;
     rhf_m.external_field = {0.0, 0.0, -F};
@@ -107,8 +104,7 @@ int main() {
         (0.5 * -0.5) / (6.0 * units::kAngstromInBohr); // classical MM–MM [Ha]
     constexpr double kEWant = kEPyscfMm + kMmMm;
 
-    cpu::scf::RHF rhf_mm;
-    rhf_mm.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_mm{cpu::scf::BasisSet::STO3G};
     rhf_mm.tol = 1e-12;
     rhf_mm.max_iter = 200;
     rhf_mm.point_charges = {{0.0, 0.0, 3.0, 0.5}, {0.0, 0.0, -3.0, -0.5}};

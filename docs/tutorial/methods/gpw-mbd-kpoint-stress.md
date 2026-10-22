@@ -101,9 +101,9 @@ const cpu::gpw::Kind H{molrs::Element::H,
     cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
     cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 120.0;  dft.max_iter = 60;  dft.tol = 1e-8;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;  dft.nonperiodic = false;
+cpu::gpw::GpwDft dft{{O, H}, 120.0, cpu::gpw::XcKind::PBE};
+dft.max_iter = 60;  dft.tol = 1e-8;  dft.mix = 0.3;
+dft.nonperiodic = false;
 dft.k_mesh[2] = 2;             // electronic multi-k 1×1×2
 dft.mbd = true;                // MBD@rsSCS, free-atom volumes
 dft.mbd_k_mesh[0] = dft.mbd_k_mesh[1] = dft.mbd_k_mesh[2] = 2;

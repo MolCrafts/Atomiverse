@@ -433,17 +433,18 @@ forces = rhf.forces(frame)            # (N, 3) numpy array [eV/Å]
 fz = np.asarray(frame["atoms"]["fz"]) # same values written back to the frame
 ```
 
-The four constructors and their defaults:
+The four constructors. `basis`, `charge`, the α/β counts and `xc` are fixed
+at construction and read-only afterwards; `tol` / `max_iter` stay writable.
 
 | Method | Signature |
 | --- | --- |
-| `RHF` | `RHF(basis="STO-3G", charge=0, tol=1e-9, max_iter=100)` |
-| `UHF` | `UHF(basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)` |
-| `RKS` | `RKS(functional="PBE", basis="STO-3G", charge=0, tol=1e-9, max_iter=100)` |
-| `UKS` | `UKS(functional="LSDA", basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)` |
+| `RHF` | `RHF(basis, charge=0, tol=1e-9, max_iter=100)` |
+| `UHF` | `UHF(basis, n_alpha, n_beta, charge=0, tol=1e-8, max_iter=100)` |
+| `RKS` | `RKS(basis, xc, charge=0, tol=1e-9, max_iter=100)` |
+| `UKS` | `UKS(basis, n_alpha, n_beta, xc="LSDA", charge=0, tol=1e-8, max_iter=100)` |
 
 `basis` is one of `STO-3G`, `6-31G`, `6-31G*`, `6-31+G*`, `def2-SVP`,
-`def2-TZVP`, `aug-cc-pVDZ`; `functional` is one of `LSDA`, `PBE`, `PBEsol`,
+`def2-TZVP`, `aug-cc-pVDZ`; `xc` is one of `LSDA`, `PBE`, `PBEsol`,
 `RevPBE`, `RPBE`, `BLYP`, `OptB88VdW`, `B3LYP`, `PBE0`, `B2PLYP`. An
 unsupported name raises `ValueError` listing the supported ones — there is
 no fallback basis or functional.
@@ -499,7 +500,7 @@ atoms.insert("atomic_number", np.array([8, 1, 1], dtype=np.uint32))
 frame["atoms"] = atoms
 frame.box = molpy.Box.cube(20.0)                    # gas phase
 
-rhf = av.RHF()                                      # STO-3G defaults
+rhf = av.RHF("STO-3G")
 rhf.run(frame)
 assert rhf.converged()
 print(rhf.energy())        # total energy [Hartree]
@@ -1148,10 +1149,8 @@ argument optional and already at its C++ default:
 ## Plane-wave DFT (`pw` module)
 
 ```python
-pw = av.PW()
-pw.gth_name = "GTH-PBE-q4"   # analytic GTH for Si; no external file
-pw.ecut_ry = 30.0
-pw.k_mesh = 4
+pw = av.PW(gth_name="GTH-PBE-q4",   # analytic GTH for Si; no external file
+           ecut_ry=30.0, k_mesh=4)
 pw.build(frame)
 result = pw.run(frame)
 print(result.energy)      # [Ry]
@@ -1196,7 +1195,8 @@ while everything reaching the frame is in engine units: eV, eV/Å, eV/Å³.
 ### Spin, functionals and metals
 
 ```python
-pw.xc = "LSDA"              # name, not an enum; unknown names raise ValueError
+pw = av.PW(gth_name="GTH-PBE-q4", ecut_ry=30.0, k_mesh=4,
+           xc="LSDA")       # name, not an enum; unknown names raise ValueError
 pw.spin_polarized = True    # collinear; needed for an odd electron count
 pw.multiplicity = 2         # fixed occupations: N↑ − N↓ = M − 1 exactly
 pw.smearing = "gaussian"    # or "none" (default), "fermi_dirac",
@@ -1204,7 +1204,7 @@ pw.degauss = 0.01           #    "methfessel_paxton"; width [Ry]
 pw.extra_bands = 8          # empty states above E_F for the μ search
 ```
 
-`xc` takes the same functional names as `RKS(functional=...)`: `"LSDA"`,
+`xc` takes the same functional names as `RKS(xc=...)`: `"LSDA"`,
 `"PBE"` (default), `"PBEsol"`, `"RevPBE"`, `"RPBE"`, `"BLYP"`,
 `"OptB88VdW"`, `"B3LYP"`, `"PBE0"`, `"B2PLYP"`. There is no fallback — an
 unknown name raises `ValueError` listing them.
@@ -1232,10 +1232,7 @@ from atomiverse.md import MD
 from atomiverse.md.integrator import VelocityVerlet
 from atomiverse.pw import PW
 
-pw = PW()
-pw.gth_name = "GTH-PBE-q4"
-pw.ecut_ry = 8.0
-pw.k_mesh = 1
+pw = PW(gth_name="GTH-PBE-q4", ecut_ry=8.0, k_mesh=1)
 pw.tol = 1e-4
 pw.max_iter = 12            # one step is one whole SCF — budget it
 

@@ -52,8 +52,7 @@ Outputs: centers \(\mathbf R_{ii}\) **[Å]**, spreads \(\Omega_i\) **[Å²]**.
 #include "atomiverse/cpu/scf/methods.h"
 #include "atomiverse/cpu/scf/wannier.h"
 
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-10;
 rhf.run(frame);   // closed-shell water, H2, …
 

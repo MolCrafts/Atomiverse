@@ -12,7 +12,8 @@ metallic occupation smearing**.
 | **Direct** (this regression) | `dfpt_q_spin_impl`: shared \(\mu\), spinor \(f\in[0,1]\), projector \(f\ge 10^{-8}\) at \(\mathbf{k}+\mathbf{q}\); **no** \(\delta\mu\) at \(q\neq 0\) |
 
 ```cpp
-cpu::pw::PW method;
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
+                   /*ecut_ry=*/10.0, /*k_mesh=*/1, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;
 method.smearing = Smearing::fermi_dirac;

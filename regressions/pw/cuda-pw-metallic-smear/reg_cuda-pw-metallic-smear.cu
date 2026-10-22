@@ -88,10 +88,7 @@ struct RunOut {
 };
 
 template <typename PwT>
-RunOut run_pw(PwT& pw, const cpu::Frame& frame, const char* upf) {
-    pw.upf_path = upf;
-    pw.ecut_ry = kEcutRy;
-    pw.k_mesh = 2;
+RunOut run_pw(PwT& pw, const cpu::Frame& frame) {
     pw.tol = 1e-5;
     pw.max_iter = 60;
     pw.mix_beta = 0.4;
@@ -114,11 +111,11 @@ RunOut run_pw(PwT& pw, const cpu::Frame& frame, const char* upf) {
 
 RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
     if (dev == Device::Cpu) {
-        cpu::pw::PW pw;
-        return run_pw(pw, frame, upf);
+        cpu::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 2};
+        return run_pw(pw, frame);
     }
-    cuda::pw::PW pw;
-    return run_pw(pw, frame, upf);
+    cuda::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 2};
+    return run_pw(pw, frame);
 }
 
 bool check_one(const RunOut& r, Device dev) {

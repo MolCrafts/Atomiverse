@@ -171,9 +171,9 @@ const cpu::gpw::Kind H{
 
 // Product twin family (forces pin is 400 Ry / 1e-7). BOMD uses a cheaper
 // same-method envelope so the ≤60 s gate holds.
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 200.0;  dft.max_iter = 60;  dft.tol = 1e-5;  dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;  dft.nonperiodic = true;
+cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+dft.max_iter = 60;  dft.tol = 1e-5;  dft.mix = 0.3;
+dft.nonperiodic = true;
 cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces=*/true);
 
 cpu::md::MD sim;

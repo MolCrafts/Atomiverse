@@ -141,15 +141,14 @@ cell(1, 0) =  h; cell(1, 1) = -h; cell(1, 2) =  h;
 cell(2, 0) =  h; cell(2, 1) =  h; cell(2, 2) = -h;
 f.box.set_cell(cell);
 
-PW pw;
-pw.upf_path = "tests/data/pw/Fe_ONCV_PBE-1.2.upf";
-pw.ecut_ry = 12.0;                 // algorithm pin (not production ecut)
-pw.k_mesh = 2;                     // 2×2×2 MP
+PW pw{UpfPseudopotential{"tests/data/pw/Fe_ONCV_PBE-1.2.upf"},
+      12.0,                                                     // algorithm pin (not production ecut)
+      2,                                                        // 2×2×2 MP
+      cpu::scf::XCType::PBE};
 pw.tol = 2e-3;                     // density L2
 pw.max_iter = 30;
 pw.mix_beta = 0.3;
 pw.pulay_depth = 5;
-pw.xc = cpu::scf::XCType::PBE;
 pw.spin_polarized = true;
 pw.multiplicity = 5;               // seed M≈4; free under smear
 pw.smearing = Smearing::fermi_dirac;

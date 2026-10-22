@@ -102,11 +102,7 @@ using namespace ATV::cpu::pw;
 cpu::Frame frame(2);
 // … types Z=14, mass, basis atom at (a/4,a/4,a/4), set fcc cell …
 
-PW method;
-method.upf_path = "tests/data/pw/Si_lda_nc.upf";
-method.ecut_ry = 10.0;
-method.k_mesh = 2;
-method.xc = cpu::scf::XCType::LSDA;
+PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"}, 10.0, 2, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;   // collinear DFPT path
 method.multiplicity = 1;        // M = 0
 method.tol = 1e-8;

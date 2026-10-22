@@ -7,7 +7,7 @@ of freedom on an **unrestricted Gaussian-basis mean-field method** — the
 dual-channel leg of the AO CPMD family:
 
 - Outer loop: `cpu::md::MD` + NVE `VelocityVerlet` (nuclei)
-- Force slot: `cpu::scf::UHF{9, 7}` with **`cpmd = true`**,
+- Force slot: `cpu::scf::UHF{cpu::scf::BasisSet::STO3G, 9, 7}` with **`cpmd = true`**,
   **`cpmd_mu = 1000` a.u.**; the electronic dt is **not** set on the method —
   `cpu::md::MD` pushes the nuclear dt in from `VelocityVerlet` through the
   `TimestepProvider` / `TimestepConsumer` protocol at build (there is

@@ -191,12 +191,10 @@ constexpr double dt = 0.5;          // fs
 constexpr int corrector_budget = 5; // SCF iters per warm production step
 constexpr int n_seed = 2;           // ASPC K=1 needs K+1 densities
 
-cpu::gpw::GpwDft dft{{H}};
-dft.cutoff_ry = 100.0;
+cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 60;
 dft.tol = 1e-5;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.nonperiodic = false;
 dft.k_mesh[0] = 1;
 dft.k_mesh[1] = 1;

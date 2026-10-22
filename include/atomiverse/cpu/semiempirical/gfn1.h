@@ -48,13 +48,17 @@ class GFN1 : public cpu::Semiempirical, public cpu::QmEngine {
     /// @brief Anderson charge-mixing relaxation β ∈ (0,1] (dimensionless).
     double mix_beta = 0.4;
     /// @brief Net molecular charge [e] (subtracted from valence electron count).
-    int charge = 0;
+    const int charge;
     /// @brief Spin multiplicity 2S+1. Only 1 (closed shell) is supported.
-    int multiplicity = 1;
+    const int multiplicity;
     /// @brief When true, write analytic forces F=−∇E [eV/Å] on launch.
     bool with_forces = false;
 
-    GFN1() = default;
+    /// @brief GFN1-xTB.
+    /// @param charge Net molecular charge [e].
+    /// @param multiplicity Spin multiplicity 2S+1 (dimensionless).
+    explicit GFN1(int charge = 0, int multiplicity = 1)
+        : charge(charge), multiplicity(multiplicity) {}
 
     std::string name() const override { return "gfn1"; }
 

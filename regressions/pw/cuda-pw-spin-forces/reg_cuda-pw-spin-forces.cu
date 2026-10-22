@@ -80,17 +80,14 @@ int run_on_device(Device dev, const char* upf,
     forces.clear();
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method;
-        method.upf_path = upf;
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = 1;
+        cpu::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
+                           cpu::scf::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;
         method.pulay_depth = 5;
         method.spin_polarized = true;
         method.multiplicity = 3;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         {
             // `forces()` overwrites the Frame's force columns + kEnergy;
@@ -107,17 +104,14 @@ int run_on_device(Device dev, const char* upf,
                              static_cast<double>(fz[i])};
         }
     } else {
-        cuda::pw::PW method;
-        method.upf_path = upf;
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = 1;
+        cuda::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
+                            cpu::scf::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;
         method.pulay_depth = 5;
         method.spin_polarized = true;
         method.multiplicity = 3;
-        method.xc = cpu::scf::XCType::LSDA;
         method.build(frame);
         forces = cuda::pw::pw_forces_analytic(frame, method);
     }

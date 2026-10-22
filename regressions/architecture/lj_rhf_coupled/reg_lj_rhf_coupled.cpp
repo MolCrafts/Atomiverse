@@ -119,8 +119,7 @@ int main() {
     const double mm_f_h = frame.span(kAtom_fx)[2];
 
     // ── Leg 2: the QM source alone (He pair ghosted out of the QM system) ─
-    cpu::scf::RHF rhf_only;
-    rhf_only.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_only{cpu::scf::BasisSet::STO3G};
     rhf_only.tol = 1e-10;
     rhf_only.ghost_atoms = {0, 1};
     cpu::Evaluate qm_only;
@@ -135,8 +134,7 @@ int main() {
     const double qm_energy_ha = rhf_only.energy();
 
     // ── Leg 3: both sources, MM first (the order the overwrite erased) ───
-    cpu::scf::RHF rhf_after;
-    rhf_after.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_after{cpu::scf::BasisSet::STO3G};
     rhf_after.tol = 1e-10;
     rhf_after.ghost_atoms = {0, 1};
     cpu::Evaluate both;
@@ -155,8 +153,7 @@ int main() {
     const double co_f_h1 = frame.span(kAtom_fx)[3];
 
     // ── Leg 4: both sources, QM first — binding order is not a physics knob
-    cpu::scf::RHF rhf_before;
-    rhf_before.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_before{cpu::scf::BasisSet::STO3G};
     rhf_before.tol = 1e-10;
     rhf_before.ghost_atoms = {0, 1};
     cpu::Evaluate both_swapped;
@@ -184,8 +181,7 @@ int main() {
     bare.span(kAtom_tag)[0] = 1;
     bare.span(kAtom_tag)[1] = 2;
     bare.box = cpu::Box::cubic(L);
-    cpu::scf::RHF rhf_bare;
-    rhf_bare.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_bare{cpu::scf::BasisSet::STO3G};
     rhf_bare.tol = 1e-10;
     cpu::Evaluate bare_eval;
     bare_eval.on(evaluate::Phase::evaluate).add_ref(rhf_bare, 0);

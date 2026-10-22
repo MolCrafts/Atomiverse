@@ -5,7 +5,7 @@
 | Field | Value |
 | ----- | ----- |
 | Slug | `gpw-kpoint-stress` |
-| Public API | `cpu::gpw::GpwDft::stress` (analytic fixed-\(P_k\)); oracle `gpw_stress_fd`; `GpwDft` members `k_mesh`, `cutoff_ry`, … + Frame `box` (no `*Config`) |
+| Public API | `cpu::gpw::GpwDft::stress` (analytic fixed-\(P_k\)); oracle `gpw_stress_fd`; `GpwDft{kinds, cutoff_ry, xc}` + members `k_mesh`, … + Frame `box` (no `*Config`) |
 | Roadmap | [dft.md](../../roadmap/dft.md) § Periodic DFT — GPW analytic cell stress at k-points |
 
 ## Summary
@@ -129,12 +129,10 @@ frame.box = cpu::Box::orthorhombic(at, at, a);
 
 GpwDft m{{Kind{molrs::Element::Si,
                GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-m.cutoff_ry = 100.0;
+               GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}, 100.0, XcKind::PBE};
 m.n_occ = 8;
 m.max_iter = 60;
 m.tol = 1e-8;
-m.xc = XcKind::PBE;
 m.eps_default = 1e-7;
 m.local_pp_on_grid = true;
 m.k_mesh[0] = 1;

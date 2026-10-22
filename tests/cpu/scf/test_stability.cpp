@@ -218,7 +218,7 @@ TEST(StabilityAnalysis, LowestVectorIsNormalizedEigenvector) {
 }
 
 TEST(RhfStability, ThrowsBeforeRun) {
-    cpu::scf::RHF rhf;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     using Stab = cpu::scf::Stability<cpu::scf::RHF>;
     EXPECT_THROW(Stab{rhf}.run(), std::runtime_error);
 }

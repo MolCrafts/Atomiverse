@@ -59,9 +59,7 @@ TEST(NddoDriverNode, StageDefaultBindings) {
 }
 
 TEST(NddoDriverNode, PublicMembersHaveNoConfigBag) {
-    RM1 method;
-    method.charge = 1;
-    method.multiplicity = 1;
+    RM1 method{/*charge=*/1, /*multiplicity=*/1};
     method.max_iter = 30;
     EXPECT_EQ(method.charge, 1);
     EXPECT_EQ(method.max_iter, 30);

@@ -114,14 +114,11 @@ int run_on_device(Device dev, std::array<double, 6>& stress, double* e_ry) {
         *e_ry = 0.0;
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method;
-        method.gth_name = "GTH-PBE-q4";
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = kMesh;
+        cpu::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q4"}, kEcutRy,
+                           kMesh, cpu::scf::XCType::PBE};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;
-        method.xc = cpu::scf::XCType::PBE;
         method.build(frame);
         {
             // `stress()` writes kStress/kEnergy on the Frame; run it on a copy.
@@ -131,14 +128,11 @@ int run_on_device(Device dev, std::array<double, 6>& stress, double* e_ry) {
                 *e_ry = method.last_result().energy; // reference SCF [Ry]
         }
     } else {
-        cuda::pw::PW method;
-        method.gth_name = "GTH-PBE-q4";
-        method.ecut_ry = kEcutRy;
-        method.k_mesh = kMesh;
+        cuda::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q4"}, kEcutRy,
+                            kMesh, cpu::scf::XCType::PBE};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;
-        method.xc = cpu::scf::XCType::PBE;
         method.build(frame);
         stress = cuda::pw::pw_stress(frame, method, e_ry);
     }

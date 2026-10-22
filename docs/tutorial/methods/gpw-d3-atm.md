@@ -116,13 +116,11 @@ using ATV::cpu::gpw::XcKind;
 frame.box = ATV::cpu::Box::cubic(12.0);   // [Å]
 // Kind O / H: DZVP-MOLOPT-SR-GTH + GTH-PBE-q6 / GTH-PBE-q1
 
-GpwDft gpw{{O, H}};
-gpw.cutoff_ry = 200.0; // e_disp is geometry-only; SCF only needs to run
+GpwDft gpw{{O, H}, 200.0, XcKind::PBE};  // e_disp is geometry-only; SCF only needs to run
 gpw.n_occ = 8;         // 16 valence e⁻ → 8 doubly occupied
 gpw.max_iter = 8;
 gpw.tol = 1e-6;
 gpw.mix = 0.4;
-gpw.xc = XcKind::PBE;
 gpw.nonperiodic = true; // isolated / MT — matches twin PERIODIC NONE
 gpw.d3 = true;          // zero damping; exclusive vs d3bj / d4 / ts / …
 gpw.d3_atm = true;      // CP2K CALCULATE_C9_TERM
@@ -137,9 +135,8 @@ Driver path (component binding the same method):
 
 ```cpp
 // kinds = {O, H} Kind{Element, GaussianBasis, GthPotential}
-ATV::cpu::gpw::GpwDft dft{kinds};
-dft.cutoff_ry = 300.0;  dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
-dft.xc = ATV::cpu::gpw::XcKind::PBE;
+ATV::cpu::gpw::GpwDft dft{kinds, 300.0, ATV::cpu::gpw::XcKind::PBE};
+dft.max_iter = 200;  dft.tol = 1e-7;  dft.mix = 0.3;
 dft.nonperiodic = true;
 dft.d3 = true;
 dft.d3_atm = true;

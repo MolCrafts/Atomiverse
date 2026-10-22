@@ -113,11 +113,9 @@ frame.box = cpu::Box::cubic(L);
 
 GpwDft m{{Kind{molrs::Element::H,
                GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-m.cutoff_ry = 100.0;
+               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 100.0, XcKind::PADE};
 m.n_alpha = 2;  m.n_beta = 0;      // high-spin UKS
 m.tol = 1e-8;   m.mix = 0.35;  m.max_iter = 120;
-m.xc = XcKind::PADE;
 m.local_pp_on_grid = true;
 m.k_mesh[0] = 1; m.k_mesh[1] = 1; m.k_mesh[2] = 2;   // MP 1×1×2, TR-folded
 m.k_time_reversal = true;

@@ -71,8 +71,7 @@ int main() {
     // (TimestepConsumer) at build — there is deliberately no `cpmd_dt` member.
     constexpr double dt = 0.05; // fs
 
-    cpu::scf::RHF rhf_base;
-    rhf_base.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf_base{cpu::scf::BasisSet::STO3G};
     rhf_base.tol = 1e-10;
     // Family-wide fictitious mass: the AO residual is stiffer than a
     // plane-wave one, and the textbook μ = 400 a.u. blows the sibling cases up

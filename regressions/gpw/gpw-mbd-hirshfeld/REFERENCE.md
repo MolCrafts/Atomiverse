@@ -10,7 +10,7 @@ Ambrosetti et al., *J. Chem. Phys.* **140**, 18A508 (2014)).
 Public API:
 
 ```cpp
-GpwDft gpw;
+GpwDft gpw{kinds, /*cutoff_ry=*/200.0, XcKind::PBE};
 gpw.mbd = true;
 gpw.hirshfeld = true;   // post-SCF volumes → mbd_rsscs_pbe(…, vol_ratio)
 ```

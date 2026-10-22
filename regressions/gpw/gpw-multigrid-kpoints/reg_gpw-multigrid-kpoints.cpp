@@ -69,14 +69,14 @@ ATV::cpu::gpw::GpwDft si_method(double cutoff_ry, int ngrids,
     using namespace ATV::cpu::gpw;
     GpwDft m{{Kind{molrs::Element::Si,
                    GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                   GthPotential(molrs::Element::Si, "GTH-PBE-q4")}}};
-    m.cutoff_ry = cutoff_ry;
+                   GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+             cutoff_ry,
+             ATV::cpu::gpw::XcKind::PBE};
     m.ngrids = ngrids;
     m.rel_cutoff = rel_cutoff;
     m.n_occ = 8; // 4 atoms × 4 valence e⁻, closed shell
     m.max_iter = 60;
     m.tol = 1e-8;
-    m.xc = ATV::cpu::gpw::XcKind::PBE;
     m.eps_default = 1e-7;
     return m;
 }

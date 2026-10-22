@@ -26,9 +26,8 @@
 /// Contract: `.claude/notes/cuda-gpw-public-shape.md`.
 ///
 /// @code
-///   cuda::gpw::GpwDft m;
-///   m.kinds.push_back({el, basis, pot});
-///   m.cutoff_ry = 100.0;
+///   cuda::gpw::GpwDft m({{el, basis, pot}}, /*cutoff_ry=*/100.0,
+///                       cpu::gpw::XcKind::PADE);
 ///   m.n_occ = 5;                   // or n_alpha / n_beta for UKS
 ///   m.build(frame);                // cell from frame.box, Z → kinds
 ///   const auto& res = m.run(frame); // kEnergy [eV]; result in Hartree
@@ -40,6 +39,7 @@
 #include "atomiverse/cpu/linalg/matrix.h"
 
 #include <array>
+#include <utility>
 #include <vector>
 
 namespace ATV {
@@ -62,9 +62,16 @@ using GpwAtom = ::ATV::cpu::gpw::internal::GpwAtom;
 /// Move-only.
 class GpwDft {
   public:
-    // ── Method parameters (mirror CPU GpwDft product-slice members) ──────
+    // ── Identity (constructor arguments, same as `cpu::gpw::GpwDft`) ─────
+    /// @brief Per-element basis + GTH potential. `build(Frame)` / `run(Frame)`
+    ///        map `kAtom_type` (Z) onto these entries. The atom-list entry
+    ///        points do not read this member.
+    const std::vector<cpu::gpw::Kind> kinds;
+    const double cutoff_ry; ///< density grid cutoff [Ry].
+    const XcKind xc;        ///< RKS: PADE or PBE; UKS: PADE only (first cut).
+
+    // ── Knobs ──────────────────────────────────────────────────────────
     double cell[3] = {0, 0, 0}; ///< orthorhombic box lengths [Bohr].
-    double cutoff_ry = 300.0;   ///< density grid cutoff [Ry].
     int ngrids = 1;          ///< multigrid levels (≥1; >1 needs rel_cutoff>0).
     double rel_cutoff = 0.0; ///< CP2K REL_CUTOFF [Ry] (required when ngrids>1).
     int n_occ = 0;           ///< RKS: doubly-occupied orbitals (N_elec / 2).
@@ -77,14 +84,9 @@ class GpwDft {
     int diis_depth = 6;        ///< Pulay DIIS history depth.
     double lindep_threshold = 1e-8; ///< S-eigenvalue keep threshold.
     double level_shift = 0.0;       ///< virtual level shift [Hartree] (Γ path).
-    XcKind xc = XcKind::PADE; ///< RKS: PADE or PBE; UKS: PADE only (first cut).
-    bool nonperiodic = false; ///< MT Poisson — not on device (throws).
-    bool local_pp_on_grid = true; ///< collocate GTH local SR PP on grid.
-    bool use_ot = false;          ///< OT — not on device product (throws).
-    /// @brief Per-element basis + GTH potential. `build(Frame)` / `run(Frame)`
-    ///        map `kAtom_type` (Z) onto these entries. The atom-list entry
-    ///        points do not read this member.
-    std::vector<cpu::gpw::Kind> kinds;
+    bool nonperiodic = false;       ///< MT Poisson — not on device (throws).
+    bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
+    bool use_ot = false;            ///< OT — not on device product (throws).
     /// @brief Monkhorst–Pack subdivisions (CP2K convention). `{1,1,1}` is Γ
     ///        product path; any \(N_d>1\) selects multi-k RKS DIIS (single-grid).
     int k_mesh[3] = {1, 1, 1};
@@ -95,12 +97,17 @@ class GpwDft {
     /// @brief Time-reversal fold of the Monkhorst–Pack mesh (CPU twin default).
     bool k_time_reversal = true;
 
-    GpwDft() = default;
+    /// @brief GPW Kohn–Sham method (same signature as `cpu::gpw::GpwDft`).
+    /// @param kinds One basis + GTH entry per element in the Frames to solve.
+    /// @param cutoff_ry Density grid cutoff [Ry].
+    /// @param xc Exchange–correlation functional.
+    GpwDft(std::vector<cpu::gpw::Kind> kinds, double cutoff_ry, XcKind xc)
+        : kinds(std::move(kinds)), cutoff_ry(cutoff_ry), xc(xc) {}
     ~GpwDft() = default;
     GpwDft(const GpwDft&) = delete;
     GpwDft& operator=(const GpwDft&) = delete;
     GpwDft(GpwDft&&) noexcept = default;
-    GpwDft& operator=(GpwDft&&) noexcept = default;
+    GpwDft& operator=(GpwDft&&) = delete;
 
     /// @brief One-time fail-fast validation against a reference system.
     /// @param reference Atoms the solver will be run on (structural only).

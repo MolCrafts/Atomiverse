@@ -21,7 +21,7 @@ corrections. Legend: [Roadmap index](index.md). Trajectory observers:
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| C-PCM / COSMO / IEF-PCM | ✓ | ○ | `WithSolvent` + `ContinuumSolvent`; energy in the Fock build |
+| C-PCM / COSMO / IEF-PCM | ✓ | ○ | `WithSolvent`; energy in the Fock build |
 | C-PCM free-energy forces | ✓ | ○ | |
 | SMD / GB / PB / nonequilibrium PCM | ○ | ○ | |
 

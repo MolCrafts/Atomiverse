@@ -20,7 +20,8 @@ steepest-descent polish, and Wannier centers from the Berry-phase formula
 Public path:
 
 ```cpp
-cpu::pw::PW method;                 // upf, ecut_ry, k_mesh (SCF), xc, …
+cpu::pw::PW method{cpu::pw::UpfPseudopotential{"..."}, /*ecut_ry=*/15.0,
+                   /*k_mesh=*/2, cpu::scf::XCType::LSDA};  // k_mesh = SCF mesh
 cpu::pw::PeriodicWannier mlwf;      // members: k_mesh, max_iter, tol, …
 auto r = mlwf.compute(method, frame);
 // r.centers[i] [Å], r.spreads[i] [Å²], r.total_spread

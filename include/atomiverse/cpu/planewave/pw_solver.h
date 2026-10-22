@@ -1,18 +1,19 @@
 /// @file cpu/planewave/pw_solver.h
 /// @brief cpu::pw::PW — concrete plane-wave DFT method (CPU Driver node).
 ///
-/// Parameters are public members (RHF pattern). Frame is the only I/O.
+/// Pseudopotential, cutoff, k-mesh and functional are constructor arguments;
+/// SCF knobs are public members (RHF pattern). Frame is the only I/O.
 /// Self-consistency is a **Driver loop**: `PW` derives
 /// `cpu::Driver<ATV::pw::Phase>`. All product SCF paths (restricted
 /// fixed-occupation, collinear fixed-occupation, restricted metallic
 /// smearing, collinear + metallic smearing) are owned as stages
 /// (`veff → diagonalize → density → mix → check`) with path-local StepFns.
-/// Workflow entry: `PWEvaluator` or direct `build`/`run`.
+/// Workflow entry: mount it with `outer.on(phase).add(pw)` or call
+/// `build`/`run` directly.
 ///
 /// @code
-///   cpu::pw::PW pw;
-///   pw.ecut_ry = 30.0;
-///   pw.k_mesh = 4;
+///   cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q4"},
+///                  /*ecut_ry=*/30.0, /*k_mesh=*/4};
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame); // [Ry]/Ha on result
 /// @endcode
@@ -85,30 +86,40 @@ enum class Smearing : int {
     gaussian = 3,          ///< Gaussian (cold/Marzari–Vanderbilt not here).
 };
 
+/// @brief Norm-conserving UPF pseudopotential file.
+struct UpfPseudopotential {
+    std::string path; ///< UPF file path.
+};
+
+/// @brief In-tree analytic Goedecker-Teter-Hutter pseudopotential, e.g.
+///        "GTH-PBE-q4" or "GTH-PADE-q6" (published parameters in
+///        `cpu/gpw/basis_data/gpw_tables.h`; Goedecker-Teter-Hutter, PRB 54,
+///        1703 (1996); Krack, TCA 114, 145 (2005)).
+struct GthPseudopotential {
+    std::string name; ///< Table entry name.
+};
+
 class PW : public cpu::Driver<ATV::pw::Phase> {
   public:
     bool requires_full_frame() const override { return true; }
     /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(frame)`.
     using cpu::Driver<ATV::pw::Phase>::build;
 
-    /// @brief Norm-conserving UPF pseudopotential file. Mutually exclusive
-    ///        with `gth_name`; exactly one must be set.
-    std::string upf_path;
-    /// @brief In-tree analytic Goedecker-Teter-Hutter parameterization, e.g.
-    ///        "GTH-PBE-q4" or "GTH-PADE-q6". Needs no external file: the
-    ///        published parameters ship in `cpu/gpw/basis_data/gpw_tables.h`
-    ///        (Goedecker-Teter-Hutter, PRB 54, 1703 (1996); Krack, TCA 114,
-    ///        145 (2005)). Mutually exclusive with `upf_path`.
-    ///
-    /// A plane-wave run has **no default pseudopotential** — leaving both
-    /// empty throws. There is no built-in substitute for a real
-    /// pseudopotential: a bare valence-charge Coulomb potential is not
-    /// representable in a plane-wave basis at any finite cutoff.
-    std::string gth_name;
+    // ── Identity (constructor arguments, fixed after construction) ────
+    /// @brief UPF file path; empty when a GTH table entry is used.
+    const std::string upf_path;
+    /// @brief GTH table entry; empty when a UPF file is used.
+    const std::string gth_name;
     /// @brief Wavefunction cutoff [Ry].
-    double ecut_ry = 30.0;
+    const double ecut_ry;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
-    int k_mesh = 4;
+    const int k_mesh;
+    /// @brief Exchange–correlation functional. `XCType::PBE` uses spectral
+    ///        density gradients (true GGA) for restricted and collinear spin
+    ///        paths; pure LDA is `XCType::LSDA`.
+    const cpu::scf::XCType xc;
+
+    // ── Knobs ──────────────────────────────────────────────────────────
     /// @brief SCF tolerance on the density-change L2 norm (dimensionless).
     double tol = 1e-6;
     /// @brief Maximum SCF iterations (dimensionless).
@@ -117,12 +128,6 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     double mix_beta = 0.7;
     /// @brief Pulay mixing history window (dimensionless).
     int pulay_depth = 5;
-    /// @brief Exchange–correlation functional (default true GGA PBE).
-    ///
-    /// `XCType::PBE` uses spectral density gradients (true GGA) for both
-    /// restricted and collinear spin-polarized paths. Pure LDA is
-    /// `XCType::LSDA`. Parameters are members — no public `*Config` bag.
-    cpu::scf::XCType xc = cpu::scf::XCType::PBE;
     /// @brief Collinear spin-polarized KS (nspin=2). Default false = restricted.
     ///        Compatible with metallic `smearing` (shared μ, self-consistent mag).
     ///        With `xc = PBE` uses true collinear spin-GGA (spectral ∇ρ_σ).
@@ -141,12 +146,24 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// @brief Extra bands beyond ceil(n_e/2) when smearing is on (per spin if collinear).
     int extra_bands = 4;
 
-    /// @brief Default construct (helpers allocated on first build/run).
-    PW();
+    /// @brief Plane-wave DFT from a UPF pseudopotential file.
+    /// @param pp Pseudopotential file.
+    /// @param ecut_ry Wavefunction cutoff [Ry].
+    /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
+    /// @param xc Exchange–correlation functional.
+    PW(UpfPseudopotential pp, double ecut_ry, int k_mesh,
+       cpu::scf::XCType xc = cpu::scf::XCType::PBE);
+    /// @brief Plane-wave DFT from an in-tree GTH pseudopotential.
+    /// @param pp GTH table entry.
+    /// @param ecut_ry Wavefunction cutoff [Ry].
+    /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
+    /// @param xc Exchange–correlation functional.
+    PW(GthPseudopotential pp, double ecut_ry, int k_mesh,
+       cpu::scf::XCType xc = cpu::scf::XCType::PBE);
 
     ~PW();
     PW(PW&&);
-    PW& operator=(PW&&);
+    PW& operator=(PW&&) = delete;
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 

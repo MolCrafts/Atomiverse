@@ -39,8 +39,8 @@ int main() {
     frame.span(kAtom_z)[1] = 1.2075;
     frame.box = cpu::Box::cubic(20.0);
 
-    cpu::scf::ROKS roks(9, 7, cpu::scf::XCType::LSDA); // O2 triplet
-    roks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::ROKS roks(cpu::scf::BasisSet::STO3G, 9, 7,
+                        cpu::scf::XCType::LSDA); // O2 triplet
     roks.tol = 1e-12;
     roks.max_iter = 200;
     const cpu::scf::GradientResult res = roks.forces(frame);

@@ -54,8 +54,7 @@ namespace semiempirical {
 /// Units on the public surface: energy [eV], positions [Å], forces [eV/Å].
 ///
 /// @code
-///   cpu::semiempirical::DFTB3 dftb3;
-///   dftb3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+///   cpu::semiempirical::DFTB3 dftb3{cpu::semiempirical::DftbSkSet::MioSketch};
 ///   dftb3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;
 ///   dftb3.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(dftb3));
@@ -85,7 +84,7 @@ class DFTB3 : public cpu::Semiempirical {
     ///        Declare `DftbSkSet::MioSketch` (mixed-set warning: 3ob
     ///        \(U^{\mathrm d}\) on mio SK must not be labelled `oracle: dftb+`)
     ///        or `ThreeOb` (`std::runtime_error` until `dftb-gamma-h-damping`).
-    DftbSkSet sk_set = DftbSkSet::Unset;
+    const DftbSkSet sk_set;
 
     /// @brief Per-Z DFTB3 Hubbard derivatives \(U^{\mathrm d}=dU/dq\)
     ///        [Ha] (atomic units, as in DFTB+ HubbardDerivs / SpinConstants — NOT eV).
@@ -97,7 +96,9 @@ class DFTB3 : public cpu::Semiempirical {
     /// The published 3ob-3-1 table is `basis_data::k3obHubbardDerivsHa`.
     std::array<double, 96> hubbard_du_ha{};
 
-    DFTB3() = default;
+    /// @brief DFTB3.
+    /// @param sk_set Slater–Koster parameter set (`Unset` throws at build).
+    explicit DFTB3(DftbSkSet sk_set) : sk_set(sk_set) {}
 
     /// @brief Component name token `"dftb3"` (dimensionless).
     std::string name() const override { return "dftb3"; }

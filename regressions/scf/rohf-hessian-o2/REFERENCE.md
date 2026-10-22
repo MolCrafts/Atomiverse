@@ -5,7 +5,7 @@
 Nuclear Hessian of the ROHF energy via central finite difference of the
 **analytic** ROHF nuclear forces (`ROHF::forces` / ROHF Lagrangian),
 HF/STO-3G on triplet O₂ (charge 0, \(2S=2\)). Public API:
-`cpu::scf::ROHF{9,7}.hessian(frame)`. Observable is the dense Cartesian
+`cpu::scf::ROHF{BasisSet::STO3G, 9, 7}.hessian(frame)`. Observable is the dense Cartesian
 Hessian in eV/Å² (Frame/vib contract). Full three-space ROHF CPHF is a
 follow-up; PySCF 2.14.0 also has no `hessian.ROHF`.
 
@@ -129,7 +129,7 @@ mf=scf.ROHF(m); mf.kernel(); mf.Hessian()
 
 ## What is checked
 
-`cpu::scf::ROHF{9,7}` → `rohf.hessian(frame)` returns a 6×6 Hessian in eV/Å².
+`cpu::scf::ROHF{BasisSet::STO3G, 9, 7}` → `rohf.hessian(frame)` returns a 6×6 Hessian in eV/Å².
 Product gate: the nine Cartesian-diagonal / stretch elements above within
 **1e-5 eV/Å²** of the offline pins; failure prints got / want / tol and exits
 non-zero. ≤ 60 s, single node.

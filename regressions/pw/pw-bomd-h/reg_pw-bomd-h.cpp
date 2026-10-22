@@ -36,10 +36,8 @@ int main() {
     frame.span(kAtom_vz)[0] = 0.0;
     frame.box = cpu::Box::cubic(6.0);
 
-    cpu::pw::PW pw;
-    pw.gth_name = "GTH-PBE-q1"; // analytic GTH for H (see REFERENCE.md)
-    pw.ecut_ry = 5.0;
-    pw.k_mesh = 1;
+    // Analytic GTH for H (see REFERENCE.md).
+    cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q1"}, 5.0, 1};
     pw.tol = 1e-4;
     pw.max_iter = 12;
     pw.mix_beta = 0.5;

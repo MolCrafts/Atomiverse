@@ -43,13 +43,14 @@ int main() {
 
     const double eps = 0.01, sigma = 3.4, cut = 12.0;
     cpu::QmmmOniom oniom{{{1, 1, eps, sigma}, {18, 18, eps, sigma}}, cut};
-    cpu::semiempirical::DFTB2 dftb;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb.with_forces = false;
     oniom.set_engine(std::move(dftb));
 
     // Keep a second instance for last_* after Evaluate takes ownership.
     cpu::QmmmOniom probe{{{1, 1, eps, sigma}, {18, 18, eps, sigma}}, cut};
-    probe.set_engine(cpu::semiempirical::DFTB2{});
+    probe.set_engine(
+        cpu::semiempirical::DFTB2{cpu::semiempirical::DftbSkSet::MioSketch});
 
     cpu::Evaluate eval;
     eval.on(evaluate::Phase::evaluate).add_ref(probe);

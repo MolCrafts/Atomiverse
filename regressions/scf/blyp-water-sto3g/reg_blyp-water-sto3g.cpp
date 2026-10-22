@@ -48,8 +48,7 @@ int main() {
         return 1;
     }
 
-    cpu::scf::RKS rks(cpu::scf::XCType::BLYP);
-    rks.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::scf::XCType::BLYP);
     rks.tol = 1e-10;
     rks.max_iter = 100;
     rks.run(frame);

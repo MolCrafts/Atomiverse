@@ -52,7 +52,7 @@ This is **not** a golden snapshot of Atomiverse total energy. The pin is the
 | Species | 1 × H (Z = 1) at the origin |
 | Mass | 1.008 amu |
 | Cell | cubic \(L = 6\) Å |
-| Pseudopotential | `gth_name = "GTH-PBE-q1"` (analytic GTH; same foothold as `h_force_*`) |
+| Pseudopotential | `GthPseudopotential{"GTH-PBE-q1"}` (analytic GTH; same foothold as `h_force_*`) |
 | \(E_\mathrm{cut}\) | 5 Ry |
 | k-mesh | Γ-only (`k_mesh = 1`) |
 | SCF | `tol = 1e-4`, `max_iter = 12`, `mix_beta = 0.5` |

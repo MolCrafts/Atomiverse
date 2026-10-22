@@ -46,7 +46,7 @@ Registration is ownership-explicit:
 
 ```cpp
 sim.set_evaluator(cpu::PairLJCut{eps, sigma, rcut});  // owns a copy
-sim.on(md::Phase::force).add(cpu::scf::RHF{});         // owns a copy
+sim.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});         // owns a copy
 sim.on(md::Phase::force).add_ref(my_component);       // borrows
 ```
 

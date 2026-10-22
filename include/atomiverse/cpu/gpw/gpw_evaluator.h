@@ -40,8 +40,7 @@ namespace gpw {
 /// There is no second copy of the method parameters here.
 ///
 /// ```cpp
-/// cpu::gpw::GpwDft dft{kinds};
-/// dft.cutoff_ry = 280.0;
+/// cpu::gpw::GpwDft dft{kinds, /*cutoff_ry=*/280.0, cpu::gpw::XcKind::PBE};
 /// md.on(md::Phase::force).add(cpu::gpw::GPWEvaluator(std::move(dft),
 ///                                                    /*compute_forces=*/true));
 /// ```

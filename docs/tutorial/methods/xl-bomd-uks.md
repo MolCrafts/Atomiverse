@@ -190,12 +190,10 @@ const cpu::gpw::Kind O{
 
 // Envelope: 200 Ry / tol 1e-5. UKS occupations give the dual XL spin
 // propagators; the XL wrapper supplies the dissipation order.
-cpu::gpw::GpwDft dft{{O}};
-dft.cutoff_ry = 200.0;
+cpu::gpw::GpwDft dft{{O}, 200.0, cpu::gpw::XcKind::PADE};
 dft.max_iter = 80;
 dft.tol = 1e-5;
 dft.mix = 0.4;
-dft.xc = cpu::gpw::XcKind::PADE;
 dft.nonperiodic = true;
 dft.n_alpha = 7;  // multiplicity 3, 12 valence e⁻
 dft.n_beta = 5;
@@ -224,8 +222,9 @@ const auto& guess = xl.aux(); // SCF initial-density guess for next step
 
 Rules (architecture):
 
-- Method parameters are **members** of `GpwDft` (moved into `GPWEvaluator`) — no
-  public `*Config` bag.
+- `kinds`, `cutoff_ry` and `xc` are `GpwDft` constructor arguments; the other
+  parameters are members (moved into `GPWEvaluator` with the method) — no public
+  `*Config` bag.
 - Force binding is `set_evaluator_ref(eval)` (borrow) or
   `set_evaluator(std::move(eval))` (own); `on(md::Phase::force).add_ref(...)`
   remains available when a specific order is needed.

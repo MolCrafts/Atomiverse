@@ -249,11 +249,11 @@ basic call looks like this:
 
 ```cpp
 auto ints = /* use RHF{basis}.run(frame) */;
-cpu::scf::UKS uks(n_alpha, n_beta, XCType::LSDA);
+cpu::scf::UKS uks{cpu::scf::BasisSet::STO3G, n_alpha, n_beta, XCType::LSDA};
 config.n_radial = 50;
 config.n_angular = 110;
 config.max_iter = max_iter;
-cpu::scf::UKS uks(n_alpha, n_beta, cpu::scf::XCType::LSDA);
+cpu::scf::UKS uks{cpu::scf::BasisSet::STO3G, n_alpha, n_beta, cpu::scf::XCType::LSDA};
 solver.build(ints);
 const auto& uks = solver.run(ints);
 ```

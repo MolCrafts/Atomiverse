@@ -2,6 +2,7 @@
 /// @brief Unit: PW is a Driver node with multi-path pw::Phase stage bindings.
 
 #include <functional>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -18,16 +19,23 @@
 
 using ATV::cpu::pw::DensityStage;
 using ATV::cpu::pw::DiagonalizeStage;
+using ATV::cpu::pw::GthPseudopotential;
 using ATV::cpu::pw::MixStage;
 using ATV::cpu::pw::PW;
 using ATV::cpu::pw::PwConverged;
 using ATV::cpu::pw::Smearing;
+using ATV::cpu::pw::UpfPseudopotential;
 using ATV::cpu::pw::VeffStage;
+
+namespace {
+constexpr double kEcutRy = 30.0; // [Ry]
+constexpr int kKMesh = 4;        // Monkhorst-Pack points per dimension
+} // namespace
 
 // PW is the plane-wave self-consistency Driver node (MeanFieldMethod / GpwDft).
 TEST(PwDriverNode, InheritsCpuDriverPwPhase) {
     static_assert(std::is_base_of_v<ATV::cpu::Driver<ATV::pw::Phase>, PW>);
-    PW m;
+    PW m{GthPseudopotential{"GTH-PBE-q1"}, kEcutRy, kKMesh};
     EXPECT_EQ(ATV::slot_count<ATV::pw::Phase>(), 5);
     EXPECT_EQ(ATV::pw::kind_of(ATV::pw::Phase{}), ATV::PhaseKind::SCF);
 }
@@ -73,7 +81,7 @@ TEST(PwDriverNode, PathLocalStepFnsAreCallable) {
 
 // Public multi-path members remain constructible without *Config bags.
 TEST(PwDriverNode, MultiPathPublicMembers) {
-    PW m;
+    PW m{GthPseudopotential{"GTH-PBE-q1"}, kEcutRy, kKMesh};
     m.spin_polarized = true;
     m.multiplicity = 3;
     m.smearing = Smearing::fermi_dirac;
@@ -85,8 +93,17 @@ TEST(PwDriverNode, MultiPathPublicMembers) {
               static_cast<int>(Smearing::fermi_dirac));
 }
 
+// Identity is fixed at construction: an empty pseudopotential is refused
+// there, not at the first run.
+TEST(PwDriverNode, EmptyPseudopotentialThrowsAtConstruction) {
+    EXPECT_THROW((PW{GthPseudopotential{""}, kEcutRy, kKMesh}),
+                 std::invalid_argument);
+    EXPECT_THROW((PW{UpfPseudopotential{""}, kEcutRy, kKMesh}),
+                 std::invalid_argument);
+}
+
 TEST(PwDriverNode, NestedMountBindsToOneRuntime) {
-    PW method;
+    PW method{GthPseudopotential{"GTH-PBE-q1"}, kEcutRy, kKMesh};
     ATV::cpu::Runtime runtime;
     ATV::cpu::Runtime other;
     ATV::cpu::DriverNode& node = method;

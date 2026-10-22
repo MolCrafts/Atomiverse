@@ -68,16 +68,16 @@ ATV::cpu::Frame si_bct(double a_ang) {
 
 ATV::cpu::gpw::GpwDft si_method() {
     using namespace ATV;
-    cpu::gpw::GpwDft m({cpu::gpw::Kind{
-        molrs::Element::Si,
-        cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-        cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}});
+    cpu::gpw::GpwDft m(
+        {cpu::gpw::Kind{
+            molrs::Element::Si,
+            cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
+            cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+        80.0, ATV::cpu::gpw::XcKind::PBE);
     // Lightweight twin for self-launch wall (≤ 60 s total parent+worker).
-    m.cutoff_ry = 80.0;
     m.n_occ = 8;
     m.max_iter = 40;
     m.tol = 1e-7;
-    m.xc = ATV::cpu::gpw::XcKind::PBE;
     m.eps_default = 1e-6;
     m.k_mesh[0] = m.k_mesh[1] = m.k_mesh[2] = 2; // TR → 4 k
     m.k_time_reversal = true;

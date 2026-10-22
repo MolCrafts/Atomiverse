@@ -17,14 +17,16 @@
 /// exactly and omits correlation; **KS** = Kohn–Sham density-functional
 /// theory replaces both by an approximate exchange–correlation *functional*
 /// (a recipe mapping the electron density to an energy), named by the
-/// `functional` argument.
+/// `xc` argument.
 ///
 /// One Python class per concrete method — there is no `SCF` facade, no
-/// `SCFConfig` bag and no factory. Parameters are constructor arguments;
-/// basis set (the fixed set of Gaussian functions the orbitals are expanded
-/// in) and exchange–correlation functional are strings resolved against the
-/// C++ enums (unknown names throw `ValueError` listing the supported ones —
-/// no silent fallback).
+/// `SCFConfig` bag and no factory. Parameters are constructor arguments
+/// whose keywords match the C++ parameter names; the identity (basis,
+/// charge, α / β counts, functional) is read-only afterwards. The basis set
+/// (the fixed set of Gaussian functions the orbitals are expanded in) and the
+/// exchange–correlation functional are strings resolved against the C++
+/// enums (unknown names throw `ValueError` listing the supported ones — no
+/// silent fallback).
 ///
 /// `run(frame)` writes the total energy [eV] to the borrowed molpy.Frame's
 /// typed meta and leaves fx/fy/fz untouched; `forces(frame)` additionally
@@ -60,7 +62,6 @@
 #include "atomiverse/cpu/frame/molrs_exchange.h"
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/gradient_result.h"
-#include "atomiverse/cpu/scf/internal/scf_types.h"
 #include "atomiverse/cpu/scf/methods.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 
@@ -96,45 +97,16 @@ BasisSet basis_from_name(const std::string& name) {
                                 + "'; supported: " + supported);
 }
 
-/// @brief Electron count N_e = Σ_A Z_A − q of a materialized Frame: the
-///        nuclear charges of all atoms less the molecular charge.
-/// @param frame  Frame whose `kAtom_type` column carries the atomic number Z
-///               per atom (imported from molrs `atoms.atomic_number`).
-/// @param charge Molecular charge q [e].
-/// @return Electron count (dimensionless).
-int electron_count(const ATV::cpu::Frame& frame, int charge) {
-    const auto z = frame.span(ATV::kAtom_type);
-    int total = 0;
-    for (int i = 0; i < frame.nlocal(); ++i)
-        total += z[i];
-    return total - charge;
-}
-
-/// @brief A method whose occupation is the explicit α / β split (UHF, UKS),
-///        as opposed to the restricted methods that derive it from N_e alone.
-/// @tparam Method Concrete C++ mean-field method being probed.
-template <typename Method>
-concept OpenShellMethod = requires(Method& method) {
-    method.n_alpha;
-    method.n_beta;
-};
-
 /// @brief Python-side owner of one concrete mean-field method.
 ///
-/// Holds the C++ method (whose parameters are its own members) plus the spin
-/// multiplicity, which only becomes an α / β split once the electron count
-/// N_e = ΣZ − q is known — i.e. at `run` / `forces` time, from the Frame.
+/// Holds the C++ method by value; its identity (basis, charge, occupation,
+/// functional) is fixed by the constructor and its knobs are its own members.
 /// @tparam Method Concrete C++ method owned by value (`RHF` / `UHF` / `RKS`
 ///         / `UKS`).
 template <typename Method>
 class MethodHandle : public ATV::cpu::DriverNode {
   public:
     Method method; ///< Concrete C++ method; parameters are members.
-
-    /// @brief Spin multiplicity M = 2S + 1, where S is the total spin
-    ///        (M = 1 singlet, 2 doublet, 3 triplet; dimensionless). Read by
-    ///        the open-shell methods only.
-    int multiplicity = 1;
 
     bool provides_energy() const override { return method.provides_energy(); }
     bool provides_force() const override { return method.provides_force(); }
@@ -144,12 +116,10 @@ class MethodHandle : public ATV::cpu::DriverNode {
     }
     ATV::cpu::TimestepConsumer* timestep_consumer() override { return &method; }
     void build_on(ATV::cpu::Runtime& runtime) override {
-        resolve_occupation_(runtime.frame());
         method.build_on(runtime);
     }
     int run_nested_erased(ATV::cpu::Context& context, ATV::cpu::Frame& frame,
                           int budget) override {
-        resolve_occupation_(frame);
         return method.run_nested_erased(context, frame, budget);
     }
     void destroy_on(ATV::cpu::Runtime& runtime) override {
@@ -164,38 +134,16 @@ class MethodHandle : public ATV::cpu::DriverNode {
     explicit MethodHandle(Args&&... args)
         : method(std::forward<Args>(args)...) {}
 
-    /// @brief Assign the four parameters every mean-field method shares, for
-    ///        the methods that have no forwarding constructor to take them.
-    /// @param basis    Resolved basis set.
-    /// @param charge   Molecular charge q [e].
-    /// @param tol      SCF tolerance on the total-energy change between
-    ///                 iterations, |ΔE| [Hartree]. Convergence also requires
-    ///                 the Frobenius norm of the DIIS error matrix (DIIS =
-    ///                 *direct inversion of the iterative subspace*, the
-    ///                 standard SCF accelerator; its error matrix measures
-    ///                 how far the current density is from self-consistency,
-    ///                 dimensionless) to fall below `conv_tol_grad`, which
-    ///                 this binding never sets, so it keeps the C++ default
-    ///                 of √tol (`MeanFieldMethod::conv_tol_grad` < 0).
-    /// @param max_iter SCF iteration cap (dimensionless count).
-    void configure(BasisSet basis, int charge, double tol, int max_iter) {
-        method.basis = basis;
-        method.charge = charge;
-        method.tol = tol;
-        method.max_iter = max_iter;
-    }
-
     /// @brief Run one SCF on a borrowed molpy.Frame.
     /// @param frame_obj A `molpy.Frame`; total energy [eV] lands on its meta.
     ///        Forces are not computed here — fx/fy/fz round-trip unchanged.
     /// @throws std::runtime_error (Python `RuntimeError`) from the Frame
     ///         boundary on a missing / wrong-dtype column.
-    /// @throws std::invalid_argument (Python `ValueError`) when the requested
-    ///         multiplicity cannot split this electron count (open shell).
+    /// @throws std::invalid_argument (Python `ValueError`) when the α / β
+    ///         occupation does not sum to the electron count ΣZ − charge.
     void run(nb::object frame_obj) {
         auto fref = borrow_molrs_frame(frame_obj);
         ATV::cpu::Frame work = ATV::cpu::from_molrs(*fref);
-        resolve_occupation_(work);
         {
             nb::gil_scoped_release release;
             method.run(work);
@@ -214,7 +162,6 @@ class MethodHandle : public ATV::cpu::DriverNode {
     ForceArray forces(nb::object frame_obj) {
         auto fref = borrow_molrs_frame(frame_obj);
         ATV::cpu::Frame work = ATV::cpu::from_molrs(*fref);
-        resolve_occupation_(work);
         ATV::cpu::scf::GradientResult result;
         {
             nb::gil_scoped_release release;
@@ -227,26 +174,6 @@ class MethodHandle : public ATV::cpu::DriverNode {
         // copies from.
         return to_force_array(std::span<const double>(result.forces.data(),
                                                       result.forces.size()));
-    }
-
-  private:
-    /// @brief Resolve the α / β occupation of an open-shell method from the
-    ///        Frame's electron count and the requested multiplicity.
-    ///
-    /// No-op for the restricted methods, which fix their own occupation from
-    /// the electron count alone.
-    /// @param work Materialized Frame (Z per atom in `kAtom_type`).
-    /// @throws std::invalid_argument (Python `ValueError`) when N_e and M have
-    ///         mismatched parity, when M > N_e + 1, or when the charge leaves
-    ///         a negative electron count — `SpinResolution` states the rule in
-    ///         the message. No fallback occupation.
-    void resolve_occupation_(const ATV::cpu::Frame& work) {
-        if constexpr (OpenShellMethod<Method>) {
-            const ATV::cpu::scf::SpinResolution occupation(
-                electron_count(work, method.charge), multiplicity);
-            method.n_alpha = occupation.n_alpha;
-            method.n_beta = occupation.n_beta;
-        }
     }
 };
 
@@ -268,7 +195,7 @@ void bind_single_point(
             "a mean-field method has no MPI launcher task, so nothing is "
             "dispatched to worker ranks. Raises RuntimeError when the frame "
             "lacks a required column (atoms.x/y/z/atomic_number) and, for "
-            "UHF/UKS, ValueError when the multiplicity does not match the "
+            "UHF/UKS, ValueError when n_alpha + n_beta does not equal the "
             "electron count N_e = sum(Z) - charge.")
         .def("forces", &Handle::forces, nb::arg("frame"),
              "Run one SCF and return the analytic nuclear forces "
@@ -297,7 +224,17 @@ void bind_single_point(
             "iterations",
             [](const Handle& self) { return self.method.iterations(); },
             "SCF iterations performed by the most recent run "
-            "(dimensionless count); 0 before the first run.");
+            "(dimensionless count); 0 before the first run.")
+        .def_prop_ro(
+            "basis",
+            [](const Handle& self) {
+                return std::string(
+                    ATV::cpu::scf::basis_set_name(self.method.basis));
+            },
+            "Basis-set name fixed at construction (read-only).")
+        .def_prop_ro(
+            "charge", [](const Handle& self) { return self.method.charge; },
+            "Molecular charge [e] fixed at construction (read-only).");
 }
 
 } // namespace
@@ -333,8 +270,8 @@ void bind_scf(nb::module_& m) {
             new (self) MethodHandle<RHF>(basis_from_name(basis), charge, tol,
                                          max_iter);
         },
-        nb::arg("basis") = "STO-3G", nb::arg("charge") = 0,
-        nb::arg("tol") = 1.0e-9, nb::arg("max_iter") = 100,
+        nb::arg("basis"), nb::arg("charge") = 0, nb::arg("tol") = 1.0e-9,
+        nb::arg("max_iter") = 100,
         "Construct with basis-set name (the fixed set of Gaussian functions "
         "the orbitals are expanded in — a bigger set is more accurate and "
         "more expensive), molecular charge [e], SCF tolerance on the "
@@ -351,28 +288,31 @@ void bind_scf(nb::module_& m) {
         "singly ionized molecule — because there the two spin channels really "
         "do see different fields.");
     uhf.def(
-        "__init__",
-        [](MethodHandle<UHF>* self, const std::string& basis, int charge,
-           int multiplicity, double tol, int max_iter) {
-            new (self) MethodHandle<UHF>();
-            self->configure(basis_from_name(basis), charge, tol, max_iter);
-            self->multiplicity = multiplicity;
-        },
-        nb::arg("basis") = "STO-3G", nb::arg("charge") = 0,
-        nb::arg("multiplicity") = 1, nb::arg("tol") = 1.0e-8,
-        nb::arg("max_iter") = 100,
-        "Construct with basis-set name, molecular charge [e], spin "
-        "multiplicity, SCF tolerance on the energy change per iteration "
-        "[Hartree] and the iteration cap. The multiplicity is M = 2S + 1 "
-        "with S the total spin: 1 = singlet (all electrons paired), "
-        "2 = doublet (one unpaired), 3 = triplet (two unpaired). It is not a "
-        "count of electrons, so the alpha / beta split is only resolved at "
-        "run() / forces() time, once the frame fixes the electron count "
-        "N_e = sum(Z) - charge: n_alpha = (N_e + M - 1)/2, "
-        "n_beta = (N_e - M + 1)/2. Those are integers only for an even N_e "
-        "with an odd M or an odd N_e with an even M; any other pairing, or "
-        "M > N_e + 1, raises ValueError at run() / forces(), not at "
-        "construction.");
+           "__init__",
+           [](MethodHandle<UHF>* self, const std::string& basis, int n_alpha,
+              int n_beta, int charge, double tol, int max_iter) {
+               new (self) MethodHandle<UHF>(basis_from_name(basis), n_alpha,
+                                            n_beta, charge, tol, max_iter);
+           },
+           nb::arg("basis"), nb::arg("n_alpha"), nb::arg("n_beta"),
+           nb::arg("charge") = 0, nb::arg("tol") = 1.0e-8,
+           nb::arg("max_iter") = 100,
+           "Construct with basis-set name, the spin-up (alpha) and spin-down "
+           "(beta) electron counts, molecular charge [e], SCF tolerance on "
+           "the energy change per iteration [Hartree] and the iteration cap. "
+           "n_alpha - n_beta = M - 1 for spin multiplicity M = 2S + 1 "
+           "(1 singlet, 2 doublet, 3 triplet), and n_alpha + n_beta must "
+           "equal the electron count N_e = sum(Z) - charge of the frame — a "
+           "mismatch raises ValueError at run() / forces(), when the frame "
+           "fixes N_e. An unknown basis name raises ValueError here.")
+        .def_prop_ro(
+            "n_alpha",
+            [](const MethodHandle<UHF>& self) { return self.method.n_alpha; },
+            "Spin-up electron count fixed at construction (read-only).")
+        .def_prop_ro(
+            "n_beta",
+            [](const MethodHandle<UHF>& self) { return self.method.n_beta; },
+            "Spin-down electron count fixed at construction (read-only).");
     bind_single_point(uhf);
 
     nb::class_<MethodHandle<RKS>, ATV::cpu::DriverNode> rks(
@@ -382,23 +322,32 @@ void bind_scf(nb::module_& m) {
         "non-interacting system chosen to reproduce the real electron "
         "density, and everything the fiction leaves out — exchange and "
         "correlation — is supplied by an exchange-correlation functional, a "
-        "recipe mapping the density to an energy (named by `functional`). "
+        "recipe mapping the density to an energy (named by `xc`). "
         "'Restricted' means closed shell: alpha and beta electrons share one "
         "set of spatial orbitals.");
     rks.def(
-        "__init__",
-        [](MethodHandle<RKS>* self, const std::string& functional,
-           const std::string& basis, int charge, double tol, int max_iter) {
-            new (self) MethodHandle<RKS>(xc_from_name(functional));
-            self->configure(basis_from_name(basis), charge, tol, max_iter);
-        },
-        nb::arg("functional") = "PBE", nb::arg("basis") = "STO-3G",
-        nb::arg("charge") = 0, nb::arg("tol") = 1.0e-9,
-        nb::arg("max_iter") = 100,
-        "Construct with exchange-correlation functional name, basis-set "
-        "name, molecular charge [e], SCF tolerance on the energy change per "
-        "iteration [Hartree] and the iteration cap. An unknown functional or "
-        "basis name raises ValueError listing the supported ones.");
+           "__init__",
+           [](MethodHandle<RKS>* self, const std::string& basis,
+              const std::string& xc, int charge, double tol, int max_iter) {
+               new (self) MethodHandle<RKS>(basis_from_name(basis),
+                                            xc_from_name(xc), charge);
+               self->method.tol = tol;
+               self->method.max_iter = max_iter;
+           },
+           nb::arg("basis"), nb::arg("xc"), nb::arg("charge") = 0,
+           nb::arg("tol") = 1.0e-9, nb::arg("max_iter") = 100,
+           "Construct with basis-set name, exchange-correlation functional "
+           "name, molecular charge [e], SCF tolerance on the energy change "
+           "per iteration [Hartree] and the iteration cap. An unknown "
+           "functional or basis name raises ValueError listing the supported "
+           "ones.")
+        .def_prop_ro(
+            "xc",
+            [](const MethodHandle<RKS>& self) {
+                return xc_name(self.method.xc);
+            },
+            "Exchange-correlation functional name fixed at construction "
+            "(read-only).");
     bind_single_point(rks);
 
     nb::class_<MethodHandle<UKS>, ATV::cpu::DriverNode> uks(
@@ -408,25 +357,39 @@ void bind_scf(nb::module_& m) {
         "(beta) channels, for open-shell systems with unpaired electrons "
         "(radicals, triplet ground states such as O2).");
     uks.def(
-        "__init__",
-        [](MethodHandle<UKS>* self, const std::string& functional,
-           const std::string& basis, int charge, int multiplicity, double tol,
-           int max_iter) {
-            new (self) MethodHandle<UKS>();
-            self->method.xc = xc_from_name(functional);
-            self->configure(basis_from_name(basis), charge, tol, max_iter);
-            self->multiplicity = multiplicity;
-        },
-        nb::arg("functional") = "LSDA", nb::arg("basis") = "STO-3G",
-        nb::arg("charge") = 0, nb::arg("multiplicity") = 1,
-        nb::arg("tol") = 1.0e-8, nb::arg("max_iter") = 100,
-        "Construct with exchange-correlation functional name, basis-set "
-        "name, molecular charge [e], spin multiplicity M = 2S + 1 (S = total "
-        "spin; 1 singlet, 2 doublet, 3 triplet), SCF tolerance on the energy "
-        "change per iteration [Hartree] and the iteration cap. As for UHF the "
-        "alpha / beta split is resolved at run() / forces() from "
-        "N_e = sum(Z) - charge and M, and an impossible pairing raises "
-        "ValueError there.");
+           "__init__",
+           [](MethodHandle<UKS>* self, const std::string& basis, int n_alpha,
+              int n_beta, const std::string& xc, int charge, double tol,
+              int max_iter) {
+               new (self) MethodHandle<UKS>(basis_from_name(basis), n_alpha,
+                                            n_beta, xc_from_name(xc), charge);
+               self->method.tol = tol;
+               self->method.max_iter = max_iter;
+           },
+           nb::arg("basis"), nb::arg("n_alpha"), nb::arg("n_beta"),
+           nb::arg("xc") = "LSDA", nb::arg("charge") = 0,
+           nb::arg("tol") = 1.0e-8, nb::arg("max_iter") = 100,
+           "Construct with basis-set name, spin-up (alpha) and spin-down "
+           "(beta) electron counts, exchange-correlation functional name, "
+           "molecular charge [e], SCF tolerance on the energy change per "
+           "iteration [Hartree] and the iteration cap. As for UHF, "
+           "n_alpha + n_beta must equal N_e = sum(Z) - charge, checked at "
+           "run() / forces().")
+        .def_prop_ro(
+            "n_alpha",
+            [](const MethodHandle<UKS>& self) { return self.method.n_alpha; },
+            "Spin-up electron count fixed at construction (read-only).")
+        .def_prop_ro(
+            "n_beta",
+            [](const MethodHandle<UKS>& self) { return self.method.n_beta; },
+            "Spin-down electron count fixed at construction (read-only).")
+        .def_prop_ro(
+            "xc",
+            [](const MethodHandle<UKS>& self) {
+                return xc_name(self.method.xc);
+            },
+            "Exchange-correlation functional name fixed at construction "
+            "(read-only).");
     bind_single_point(uks);
 #else
     (void)m;

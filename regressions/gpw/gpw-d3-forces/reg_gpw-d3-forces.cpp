@@ -181,12 +181,11 @@ int main() {
 
     // Method parameters shared by the D3 product run and the plain twin.
     auto make_method = [&](bool d3_on) {
-        cpu::gpw::GpwDft m{{O, H}};
-        m.cutoff_ry = 300.0; // CP2K CUTOFF 300
+        // Cutoff matches CP2K CUTOFF 300.
+        cpu::gpw::GpwDft m{{O, H}, 300.0, cpu::gpw::XcKind::PBE};
         m.max_iter = 120;
         m.tol = 1e-7; // CP2K EPS_SCF 1e-7
         m.mix = 0.4;
-        m.xc = cpu::gpw::XcKind::PBE;
         m.nonperiodic = true; // CP2K PERIODIC NONE + PSOLVER MT
         m.d3 = d3_on;
         return m;

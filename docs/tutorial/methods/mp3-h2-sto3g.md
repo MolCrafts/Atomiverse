@@ -13,8 +13,7 @@
 Canonical closed-shell third-order Møller–Plesset (RMP3) correlation energy on a
 converged RHF reference: \(E_{\mathrm{corr}}=E^{(2)}+E^{(3)}\). Use for a
 cheap post-HF step beyond MP2 when a full CCSD is not required; product gate is
-total \(E_{\mathrm{corr}}\) on H₂ / STO-3G. Public path: construct
-`cpu::scf::RHF`, set members (`basis`, `tol`, …), call `mp3(frame)` — Frame in,
+total \(E_{\mathrm{corr}}\) on H₂ / STO-3G. Public path: construct `cpu::scf::RHF{basis}`, set members (`tol`, …), call `mp3(frame)` — Frame in,
 `MP3Result` out; no `*Config` bag. Offline pin rebuilds Szabo–Ostlund /
 Psi4NumPy diagrams on PySCF RHF orbitals (PySCF 2.14 has no `mp.MP3`). Product
 regression: `mp3-h2-sto3g` (`reg_mp3-h2-sto3g`).
@@ -70,8 +69,7 @@ members. No public `*Config` / factories. Pack-based `mp3_energy` stays under
 // H₂, r = 0.74 Å, singlet
 ATV::cpu::Frame frame(2);
 // … Z=1, positions, box …
-ATV::cpu::scf::RHF rhf;
-rhf.basis = ATV::cpu::scf::BasisSet::STO3G;
+ATV::cpu::scf::RHF rhf{ATV::cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.max_iter = 100;
 const ATV::cpu::scf::MP3Result mp3 = rhf.mp3(frame);

@@ -58,17 +58,13 @@ int main() {
 
     auto frame = o2_frame();
 
-    PW pbe;
-    pbe.upf_path = upf;
-    pbe.ecut_ry = 12.0;
-    pbe.k_mesh = 1;
+    PW pbe{UpfPseudopotential{upf}, 12.0, 1, cpu::scf::XCType::PBE};
     pbe.tol = 5e-4;
     pbe.max_iter = 60;
     pbe.mix_beta = 0.3;
     pbe.pulay_depth = 5;
     pbe.spin_polarized = true;
     pbe.multiplicity = 3;
-    pbe.xc = cpu::scf::XCType::PBE;
 
     pbe.build(frame);
     const auto& r_pbe = pbe.run(frame);
@@ -95,17 +91,13 @@ int main() {
 
     // LSDA spin twin for GGA activation (same geometry / occupations).
     auto frame_lsda = o2_frame();
-    PW lsda;
-    lsda.upf_path = upf;
-    lsda.ecut_ry = 12.0;
-    lsda.k_mesh = 1;
+    PW lsda{UpfPseudopotential{upf}, 12.0, 1, cpu::scf::XCType::LSDA};
     lsda.tol = 5e-4;
     lsda.max_iter = 60;
     lsda.mix_beta = 0.3;
     lsda.pulay_depth = 5;
     lsda.spin_polarized = true;
     lsda.multiplicity = 3;
-    lsda.xc = cpu::scf::XCType::LSDA;
 
     lsda.build(frame_lsda);
     const auto& r_lsda = lsda.run(frame_lsda);

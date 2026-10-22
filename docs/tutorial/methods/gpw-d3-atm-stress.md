@@ -53,12 +53,10 @@ energy instead, which is exactly the fold this pin certifies.
 ## Implementation
 
 ```cpp
-cpu::gpw::GpwDft dft{{O, H}};
-dft.cutoff_ry = 150.0;
+cpu::gpw::GpwDft dft{{O, H}, 150.0, cpu::gpw::XcKind::PBE};
 dft.max_iter = 200;
 dft.tol = 1e-6;
 dft.mix = 0.3;
-dft.xc = cpu::gpw::XcKind::PBE;
 dft.nonperiodic = false;
 dft.d3 = true;               // zero damping; exclusive vs d3bj / d4 / …
 dft.d3_atm = true;           // CP2K CALCULATE_C9_TERM

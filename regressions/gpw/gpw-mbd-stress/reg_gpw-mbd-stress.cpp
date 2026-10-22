@@ -89,12 +89,10 @@ int main() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     // ── (1) Product analytic stress with periodic MBD ─────────────────────
-    cpu::gpw::GpwDft dft{{O, H}};
-    dft.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     dft.max_iter = 120;
     dft.tol = 1e-6;
     dft.mix = 0.4;
-    dft.xc = cpu::gpw::XcKind::PBE;
     dft.nonperiodic = false;
     dft.mbd = true;
     dft.mbd_k_mesh[0] = dft.mbd_k_mesh[1] = dft.mbd_k_mesh[2] = 2;
@@ -140,13 +138,11 @@ int main() {
     }
 
     // ── (2) Multi-SCF strain-FD oracle on the same method ─────────────────
-    cpu::gpw::GpwDft method{{O, H}};
-    method.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft method{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     method.n_occ = 8;
     method.max_iter = 120;
     method.tol = 1e-6;
     method.mix = 0.4;
-    method.xc = cpu::gpw::XcKind::PBE;
     method.nonperiodic = false;
     method.local_pp_on_grid = true;
     method.mbd = true;
@@ -187,13 +183,11 @@ int main() {
     }
 
     // ── (3) MBD must actually reach the stress ────────────────────────────
-    cpu::gpw::GpwDft plain{{O, H}};
-    plain.cutoff_ry = 200.0;
+    cpu::gpw::GpwDft plain{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
     plain.n_occ = 8;
     plain.max_iter = 120;
     plain.tol = 1e-6;
     plain.mix = 0.4;
-    plain.xc = cpu::gpw::XcKind::PBE;
     plain.nonperiodic = false;
     plain.local_pp_on_grid = true;
     plain.mbd = false;

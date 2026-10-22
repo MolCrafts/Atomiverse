@@ -59,14 +59,12 @@ std::vector<ATV::cpu::gpw::Kind> water_kinds() {
 }
 
 ATV::cpu::gpw::GpwDft make_gpw(int ngrids, double rel_cutoff) {
-    ATV::cpu::gpw::GpwDft gpw(water_kinds());
-    gpw.cutoff_ry = 200.0;
+    ATV::cpu::gpw::GpwDft gpw(water_kinds(), 200.0, ATV::cpu::gpw::XcKind::PBE);
     gpw.ngrids = ngrids;
     gpw.rel_cutoff = rel_cutoff;
     gpw.n_occ = 8;
     gpw.max_iter = 60;
     gpw.tol = 1e-7;
-    gpw.xc = ATV::cpu::gpw::XcKind::PBE;
     gpw.nonperiodic = false;
     gpw.vdw_df = true;
     return gpw;

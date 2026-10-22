@@ -58,8 +58,7 @@ f.span(kAtom_x)[1] = 0.74; f.span(kAtom_y)[1] = 0.0;  f.span(kAtom_z)[1] = 0.0;
 f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
 f.box = cpu::Box::cubic(20.0);
 
-cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);
-rks.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::B3LYP};
 rks.tol = 1e-10;
 rks.max_iter = 100;
 rks.run(f);

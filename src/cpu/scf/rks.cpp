@@ -12,21 +12,17 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-RKS::RKS() {
+RKS::RKS(BasisSet basis_in, XCType xc_in, int charge_in)
+    : MeanFieldMethod<RKS>(basis_in, charge_in), xc(xc_in) {
     spin_ = SpinType::Restricted;
     method_ = MeanFieldType::KS;
-    xc_type_ = XCType::PBE;
-    xc = XCType::PBE;
+    xc_type_ = xc_in;
     init_guess = InitGuess::MINAO;
     damping_factor = 0.0;
     grid_level = GridLevel::MatchPySCF;
     diis_max_vectors = 8;
     diis_start_iter = 1;
     tol = 1e-9;
-}
-RKS::RKS(XCType xc_in) : RKS() {
-    xc = xc_in;
-    xc_type_ = xc_in;
 }
 void RKS::resolve_occupation(int n_electrons) {
     xc_type_ = xc;

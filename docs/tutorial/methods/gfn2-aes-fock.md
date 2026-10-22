@@ -23,7 +23,7 @@ energy. This is the tblite `get_potential` + `add_pot_to_h1` /
 `add_vmp_to_h1` module boundary: multipoles \(\to\) potential
 \(\{v, \mathbf{v}^\mu, \mathbf{v}^\Theta\}\) \(\to\) \(H\) every SCC
 iteration. Public surface is unchanged —
-`cpu::semiempirical::GFN2` members (`charge`, `scc_tol`, `with_forces`);
+`cpu::semiempirical::GFN2{charge}` with members (`scc_tol`, `with_forces`);
 no public `*Config`, no `make_*` / `build_*`. Product gate:
 `reg_gfn2-aes-fock`. Same off-eq H₂O twin as the force sibling
 (TB oracle (OpenMOPAC / DFTB+ / xtb)). Fair wall asserted

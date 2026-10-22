@@ -19,8 +19,8 @@ forces because the force phase requests them. Public units are eV, Å, fs, eV/Å
 Ry/Ha on `last_result()` only.
 
 This page documents the **dep-safe foothold** regression: a **single H** at the
-origin of a cubic cell with the **empty-`upf_path` toy local potential** (same
-foothold as `h_force_*`). Lattice symmetry keeps \(\mathbf{F}\approx\mathbf{0}\);
+origin of a cubic cell with the analytic **GTH-PBE-q1** hydrogen pseudopotential
+(in-tree table, no external file). Lattice symmetry keeps \(\mathbf{F}\approx\mathbf{0}\);
 a hand-set \(v_x\) supplies non-trivial KE so the NVE total-energy envelope is
 meaningful. The pin is **not** a golden Atomiverse total energy and **not** a
 live CP2K AIMD twin — it is the literature symplectic / BOMD conservation
@@ -35,9 +35,11 @@ symplectic Velocity Verlet; electrons re-solved self-consistently each step
 Lagrangian).
 
 **Electronic structure.** Concrete method `cpu::pw::PW` (plane-wave DFT
-SCF: Poisson → XC → \(V_{\mathrm{eff}}\) → Davidson → density mix). Empty
-`upf_path` selects the **toy local** \(V_{\mathrm{loc}}\) (no UPF file, no
-Kleinman–Bylander nonlocal). Forces from the `PW::forces` path: local
+SCF: Poisson → XC → \(V_{\mathrm{eff}}\) → Davidson → density mix). The
+pseudopotential is analytic **GTH-PBE-q1** (`GthPseudopotential{"GTH-PBE-q1"}`,
+in-tree table); that entry carries no nonlocal projectors, so the
+Kleinman–Bylander term is zero. One valence electron is a doublet, so the SCF
+is collinear spin-polarized (`spin_polarized = true`, `multiplicity = 2`). Forces from the `PW::forces` path: local
 Hellmann–Feynman + Ewald ionic contribution [eV/Å].
 
 **Nuclear dynamics (NVE).**
@@ -81,7 +83,7 @@ gates: PE finite; KE finite and \(\ge 0\); coordinates finite; warm-up
 | Species | 1 × H (\(Z=1\)) at the origin |
 | Mass | 1.008 amu |
 | Cell | cubic \(L = 6\) Å |
-| Pseudopotential | empty `upf_path` (toy local \(V\)) |
+| Pseudopotential | GTH-PBE-q1 (analytic, local only) |
 | \(E_{\mathrm{cut}}\) | 5 Ry |
 | k-mesh | Γ-only (`k_mesh = 1`) |
 | SCF | `tol = 1e-4`, `max_iter = 12`, `mix_beta = 0.5` |
@@ -90,11 +92,11 @@ gates: PE finite; KE finite and \(\ge 0\); coordinates finite; warm-up
 | Initial velocity | \(v_x = 0.002\) Å/fs (hand-set; `InitVelocity` COM-zeros \(N=1\)) |
 | Steps | 1 warm-up + 10 production (chunked) |
 
-**Why not H₂?** With the toy empty-UPF local potential the bare nuclear
-Coulomb of two protons is not cancelled by a physical bonding curve; a short
-NVE traj dissociates violently and is a poor drift pin. Product force math is
-covered by `h_force_analytic` / FD unit tests; this slug pins **MD binding +
-NVE conservation** on the symmetry-stable single-H foothold.
+**Why not H₂?** A single H at a cubic high-symmetry site has
+\(\mathbf{F}=\mathbf{0}\) by symmetry, which gives an exact force residual
+pin. Product force math is covered by `h_force_analytic` / FD unit tests; this
+slug pins **MD binding + NVE conservation** on the symmetry-stable single-H
+foothold.
 
 **Excluded.** GPW BOMD (`gpw-bomd-water`); XL-BOMD / CPMD; Si bulk UPF long
 trajectories; production thermostats; true GGA / spin / metallic smearing PW
@@ -131,13 +133,12 @@ frame.span(kAtom_vy)[0] = 0.0;
 frame.span(kAtom_vz)[0] = 0.0;
 frame.box = cpu::Box::cubic(6.0);
 
-cpu::pw::PW pw;
-pw.ecut_ry = 5.0;
-pw.k_mesh = 1;
+cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q1"}, 5.0, 1};  // analytic GTH for H
 pw.tol = 1e-4;
 pw.max_iter = 12;
 pw.mix_beta = 0.5;
-// empty upf_path → toy V_loc
+pw.spin_polarized = true;  // lone H is a doublet: N↑ = 1, N↓ = 0
+pw.multiplicity = 2;
 
 cpu::md::MD sim;
 sim.set_integrator(cpu::md::VelocityVerlet{/*dt [fs]=*/0.5});
@@ -227,8 +228,8 @@ one optimize pass.
 
 ## Limitations
 
-- **Toy PP only.** Empty `upf_path` is a non-physical local potential for
-  foothold force/MD binding — not production hydrogen chemistry.
+- **Local-only PP.** GTH-PBE-q1 has no nonlocal projectors; the slug pins
+  force/MD binding, not production hydrogen chemistry.
 - **Single ion, \(\mathbf{F}\approx\mathbf{0}\).** Free-particle NVE with
   near-flat PE; does not stress multi-atom bonding, cell stress, or
   long-range force cancellation on a molecule.

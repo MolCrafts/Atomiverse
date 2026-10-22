@@ -21,7 +21,8 @@ and the short reciprocal step \(b=2\pi/(L_i J)\) on wrapped k-labels
 Public path:
 
 ```cpp
-cpu::gpw::GpwDft method{{si_kind}};      // cutoff, n_occ, xc, …
+cpu::gpw::GpwDft method{{si_kind}, /*cutoff_ry=*/80.0,
+                        cpu::gpw::XcKind::PADE};  // + knobs: n_occ, …
 method.build(frame);                     // positions [Å], Z, orthorhombic box [Å]
 cpu::gpw::BerryPolarization berry;       // members: k_perp, k_string, directions
 auto r = berry.compute(method, frame);

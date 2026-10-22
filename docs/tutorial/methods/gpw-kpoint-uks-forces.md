@@ -23,8 +23,7 @@ identity multi-k UKS ≡ multi-k RKS. Offline **CP2K** twin input ships under
 CP2K oracle (exploratory SZV-MOLOPT basis;
 absolute same-basis twin pending DZV-GTH-PADE on the CP2K data path).
 
-Public path: construct `cpu::gpw::GpwDft`, set members (`n_alpha`, `n_beta`,
-`k_mesh`, `cutoff_ry`, `xc`, `local_pp_on_grid`, …), `build(frame)`, then
+Public path: construct `cpu::gpw::GpwDft`, pass `cutoff_ry` and `xc` to the constructor, set members (`n_alpha`, `n_beta`, `k_mesh`, `local_pp_on_grid`, …), `build(frame)`, then
 `run(frame)` for energy or `forces(frame)` for energy + forces [eV/Å]. **No** public `*Config`
 bag, **no** `make_*` / `build_*` factories. No standing
 regression. Performance: **`perf_exempt`** (no same-basis
@@ -122,15 +121,13 @@ frame.box = cpu::Box::cubic(12.0 * b2a);   // [Å]
 
 GpwDft m{{Kind{molrs::Element::H,
                GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
-               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}};
-m.cutoff_ry = 100.0;
+               GthPotential(molrs::Element::H, "GTH-PADE-q1")}}, 100.0, XcKind::PADE};
 m.n_alpha = 2;                             // multiplicity 3, 2 valence e⁻
 m.n_beta  = 0;
 m.tol = 1e-8;
 m.max_iter = 60;
 m.nonperiodic = false;
 m.local_pp_on_grid = true;                 // energy and gradient both read it
-m.xc = XcKind::PADE;
 m.eps_default = 1e-8;
 m.k_mesh[0] = 1;
 m.k_mesh[1] = 1;
