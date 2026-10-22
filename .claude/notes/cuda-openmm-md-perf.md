@@ -23,7 +23,9 @@ the private packed view even when a provider is replaced. The live parameter
 gather computes an I-cluster center and a conservative single-image guard once
 per cluster. Tight orthorhombic clusters then map I/J positions before the
 pair loop; wide or skew clusters retain per-pair minimum images. Newton
-updates use floating atomics to preserve dynamic range. Energy and virial
+updates add 64-bit fixed-point words (OpenMM resolution and range); the
+returned words are checked for wraparound only after the block energy
+reduction, so the check does not stall the warp. Energy and virial
 producers write disjoint build-reserved partials; a second GPU reduction
 separates the accumulator from the producers. This reduction alone did not
 materially improve measured throughput. Fully excluded bonded
@@ -56,16 +58,21 @@ stack destinations in the checked asynchronous readbacks. The benchmark matches
 OpenMM's 8%-of-cutoff neighbor padding rather than selecting a smaller force cutoff.
 
 PME uses real-to-complex / complex-to-real transforms and a half spectrum.
-Spline/FFT precision follows CUDA work precision, specializes common
-spline orders and keeps energy reductions in FP64. Fixed-cell influence
-coefficients are prepared in build. Full-index conjugate averaging preserves
+Spline/FFT precision follows `force_t`, specializes common spline orders and
+keeps energy/virial reductions in FP64. Influence and virial coefficients are
+device tables keyed on `Box::revision` and refreshed inside the captured
+graph when the published cell changes; the mesh is fixed at build. Full-index conjugate averaging preserves
 the full-grid energy and the real inverse, including triclinic Nyquist modes;
 only interior kz modes have energy weight two. A closed-polynomial spline and
 explicit full Fourier sum independently check energy and its analytic gradient
 on even/odd orthorhombic and skew meshes. Its resident pipeline is captured in build and
 replayed as a CUDA graph. Plans, workspaces and graph resources belong to the
-build/destroy lifecycle. The current PME solver requires a fixed cell and atom
-set; changing either must fail explicitly rather than reuse stale geometry.
+build/destroy lifecycle. The atom set is fixed per build (a change throws);
+the cell may change. `KSpaceEwald` follows the cell the same way: its
+integer mode set is fixed at build and wave vectors, weights, volume and the
+six-component virial refresh on `Box::revision`. Long-range solvers read
+lattice vectors as the cell columns (molrs/LAMMPS H), the same convention as
+`min_image`; the CPU `EwaldSum` and the DFTB γ real-space walk use it too.
 Charge spreading assigns one stencil-z position to each of `order` adjacent
 threads per atom, coalescing grid writes and reducing serial atomics per thread
 from order cubed to order squared without changing the stencil.
@@ -90,10 +97,16 @@ inputs (coordinates and cell) use a binary lattice exactly representable
 in both float32 Å and float32 nm: `5*k*2^e` Å, with `|5*k| < 2^24`.
 Its spacing is chosen from the largest coordinate/cell magnitude and recorded.
 This avoids an additional unit-conversion rounding in the initial static
-comparison. ATV mixed
-uses float positions/work plus double accumulation; OpenMM mixed additionally
-retains position corrections. Report this distinction and validate errors
-rather than equating the names with identical coordinate representations.
+comparison. Both engines' mixed modes now keep an FP32 position correction,
+FP64 velocities and fixed-point forces; final-position error against OpenMM
+fell about tenfold when ATV adopted the correction.
+
+NVE drift (`run_drift.sh`, 1,840 atoms, six seeds, 4 ps at 0.25 and
+0.125 fs): slopes over a few picoseconds do not shrink with dt in either
+engine (unshifted cutoff), so acceptance compares the ATV mean slope with
+OpenMM's within two pooled standard errors and the fluctuation RMS within
+20 %. Both double and mixed pass at both steps; per-seed slopes are
+~1e-7–1e-6 eV/ps/atom in both engines.
 
 The pair pass retains library special functions in both precisions. A screened
 polynomial did not improve measured tile throughput, so a less accurate

@@ -37,14 +37,21 @@ if [[ -n "${REFERENCE_CHECK_DATA:-}" ]]; then
         --out logs/gaff-openmm/raw-reference --engine openmm \
         --platform Reference --term nonbonded --steps 1 --warmup 1
 fi
-for rep in ${REPLICAS:-1 3}; do
+# REPLICAS: orthorhombic n^3 replication; SKEW_REPLICAS: the same replicated
+# system in a tilted supercell (compare.py --skew).
+cases=()
+for rep in ${REPLICAS:-1 3}; do cases+=("$rep:"); done
+for rep in ${SKEW_REPLICAS:-}; do cases+=("$rep:skew"); done
+for case in "${cases[@]}"; do
+    rep=${case%%:*}
+    skew=${case#*:}
+    out="logs/gaff-openmm/${PRECISION:-double}-r$rep${skew:+-skew}"
     "$ENV_DIR/bin/python" tools/bench_gaff_openmm/compare.py \
         --data "$DATA" --ff "$FF" --atv "$BUILD/bin/bench_gaff" \
-        --out "logs/gaff-openmm/${PRECISION:-double}-r$rep" \
-        --replicate "$rep" --precision "${PRECISION:-double}" \
+        --out "$out" --replicate "$rep" ${skew:+--skew} \
+        --precision "${PRECISION:-double}" \
         --steps "${STEPS:-100}" --warmup 10 --budget 10
     ATV_BENCH_TIMING=1 timeout 10s "$BUILD/bin/bench_gaff" \
-        "logs/gaff-openmm/${PRECISION:-double}-r$rep/input.txt" \
-        "logs/gaff-openmm/${PRECISION:-double}-r$rep/profile-forces.txt" 50 10 all 1 \
-        > "logs/gaff-openmm/${PRECISION:-double}-r$rep/profile.log"
+        "$out/input.txt" "$out/profile-forces.txt" 50 10 all 1 \
+        > "$out/profile.log"
 done

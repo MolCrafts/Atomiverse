@@ -20,7 +20,12 @@ versions. `OPENMM_ENV` can select an existing environment. Compilation and
 package installation happen before timing. Each engine process has a
 10-second deadline; three timed samples use their median. `STEPS` defaults to
 100 and `REPLICAS` to `1 3` (replication
-along each axis). `PRECISION=mixed BUILD=build-gaff-mixed` builds a separate
+along each axis). `SKEW_REPLICAS=3` adds the same replicated system in a
+tilted supercell (`compare.py --skew`: A = n·a, B = a + n·b, C = b + n·c).
+Any sublattice of the base lattice tiles the identical infinite periodic
+system, so atom count, density and every bonded geometry equal the
+orthorhombic case while both engines run triclinic neighbor, pair, PME and
+bonded paths. `PRECISION=mixed BUILD=build-gaff-mixed` builds a separate
 mixed-precision binary. Keep both engines on the same GPU.
 
 Matched defaults: unconstrained NVE, 0.25 fs, zero initial velocities, 10 warmup
@@ -35,7 +40,8 @@ OpenMM CUDA's default padding. This does not change the force cutoff.
 Replication follows minimum-image bonded paths and maps boundary-crossing
 endpoints to adjacent replicas, preserving bond/angle/torsion geometry.
 
-Supported input: contiguous atom/type IDs, orthorhombic PEO data, harmonic
+Supported input: contiguous atom/type IDs, orthorhombic input data (the
+replicated cell may be tilted with `--skew`), harmonic
 bonds/angles, Fourier torsions with multiplicities 1–4 and phases 0 or pi.
 Those torsions map exactly to the existing `DihedralMultiHarmonic` polynomial.
 Unsupported sections, impropers, coefficients or phases raise errors. This
@@ -49,13 +55,13 @@ and final periodic positions are checked (final position limits: 1e-4 Å double,
 build-time density/initial-count headroom; overflow throws before fill,
 with no allocation in timed steps. The separate profile
 run enables GPU event timing; its wall time is not used in the comparison.
-CUDA PME uses real FFTs with a half spectrum. Its fixed-cell influence
-coefficients are prepared in build, with conjugate averaging at Nyquist modes
-to preserve the full-grid real potential and energy. The separate
+CUDA PME uses real FFTs with a half spectrum. Its influence coefficients
+live in device tables keyed on the published cell revision, with conjugate
+averaging at Nyquist modes to preserve the full-grid real potential and energy. The separate
 `cuda-pme-half-spectrum` regression checks even/odd and skew meshes against
 an independent full Fourier sum and analytic force gradient.
-Spline/grid/FFT precision follows the selected work precision;
-energy and self-energy reductions remain double in both tested modes.
+Spline/grid/FFT precision follows `force_t`; energy, virial and
+self-energy reductions are FP64 in every mode.
 Screening and exception corrections retain the library special functions.
 System-level acceptance thresholds are identical across optimization experiments.
 Outputs under `logs/gaff-openmm/` include raw forces, energies, actual OpenMM
@@ -71,9 +77,11 @@ exactly representable in float32 in both Å and OpenMM's nm. Merely rounding
 is `5*k*2^e` Å (`k*2^(e-1)` nm), with `|5*k| < 2^24`; its spacing is recorded
 in the JSON and checked for exact representability before running.
 Thus initial parity compares the same positions. Mixed-mode force
-tolerance is `1e-4`: ATV stores coordinates in float whereas
-OpenMM mixed retains position corrections, so the modes have different
-coordinate precision despite the matching names.
+tolerance is `1e-4`. Both engines now use the same mixed strategy: FP32 force
+math on FP32 coordinates, an FP32 position correction reconstructed in FP64
+for integration, FP64 velocities and 64-bit fixed-point force accumulation.
+The ATV binary reports `real_bytes` (stored coordinate), `work_bytes` (force
+math), `accum_bytes` (reductions) and `mixed_bytes` (integration state).
 
 Architecture reference: OpenMM source commit
 `3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e`, CUDA cluster AABB hierarchy,
@@ -81,6 +89,22 @@ nonbonded parameter fusion and sparse exception handling. The implementation
 uses ATV's own CSR, masks, Frame and Component lifecycle. The fused force path
 packs nonempty J columns across cluster boundaries only when neighbor masks
 are rebuilt; timed force calls reuse the build-reserved packed buffers.
+
+## NVE energy drift
+
+`RUN_SCRIPT=tools/bench_gaff_openmm/run_drift.sh` (with `DATA`, `FF`,
+`PRECISION`, `BUILD`) runs `compare.py --drift`: for each fixed seed
+(`SEEDS`, default six) a 300 K Maxwell–Boltzmann velocity set with zero total
+momentum is generated once and fed to both engines (`bench_gaff` reads the
+optional velocity rows of its input; OpenMM starts its leapfrog half a kick
+behind the same full-step velocity). Each engine integrates `DRIFT_TIME` fs
+(default 4000) of unconstrained NVE at `DT` and `DT/2`, sampling the total
+energy every 10 fs. Drift slopes over a few picoseconds are noise dominated
+(they do not shrink with the time step in either engine, because the
+unshifted cutoff makes the energy jump as pairs cross it), so the seeds define
+the reference distribution: the ATV mean slope must agree with OpenMM's within
+two pooled standard errors and the mean fluctuation RMS within 20 %
+(`drift.json`, `accepted`). Energy series of both engines are kept per seed.
 
 ## Speed and memory scaling
 

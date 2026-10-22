@@ -345,12 +345,18 @@ backend.
 Shared code goes in the matching pillar dir, never parked inside a domain
 subdir. Electrostatics splits LAMMPS-style: real-space pair styles in
 `potentials/`, reciprocal solvers **and their math** in each backend's own
-`longrange/` — there is no top-level shared-math module. Namespaces are not yet
+`longrange/`. Only scalar laws that both backends genuinely call (Ewald
+self energy, neutralizing background) live in `core/longrange_math.h`; every
+parallel kernel stays per backend. Namespaces are not yet
 aligned to directories; aligning them is a deliberate follow-up, not a drive-by.
 
 **Box** (`cpu/frame/box.h`, `cuda/frame/box.cuh`) is the canonical cell type:
 owns the cell matrix plus a per-step-immutable cache and exposes `length(d)`,
-`volume()`, `min_image`, `wrap_axis`, `scale_*`, `set_cell`. CPU adds an xsimd
+`volume()`, `min_image`, `wrap_axis`, `scale_*`, `set_cell`. The CUDA Box keeps
+the cell in FP64, hands force kernels a narrowed `as<force_t>()` copy, wraps
+by whole lattice vectors (`wrap_position`, skew cells included) and carries a
+`revision` the backend bumps when a publish changes the cell — cell-derived
+tables (PME influence) key on it instead of copying geometry. CPU adds an xsimd
 `min_image_batch<B>`; LJ keeps an inlined branchy min-image in its ket-loop
 because member-load-through-`this` defeats hoisting there (~7%/step).
 
@@ -602,9 +608,18 @@ Conversion points, each owning exactly one boundary:
   mass and topology are static run inputs and are not written.
 - `cpu::to_cuda()` / `cuda::to_cpu()` — host ⇄ device.
 
-Precision tiers map 1:1 across backends: `StorageReal`/`WorkReal`/`AccReal`
-(accumulators always double) ⇄ `real_t`/`work_t`/`prec_t`. Integer IDs by
-LAMMPS role: `LocalInt`, `TagInt`, `ImageInt`, `BigInt` (always 64-bit).
+CPU precision tiers are `StorageReal`/`WorkReal`/`AccReal` (accumulators
+always double). CUDA classical MD uses one type per physical role
+(`cuda/frame/types.cuh`, OpenMM mixed strategy; knob `ATV_CUDA_PREC_MODE`
+only): force math `force_t`, stored coordinate `pos_t` plus an FP32 correction
+column in mixed mode, integration state `mixed_t`, cell `geom_t` (FP64),
+reductions `acc_t` (FP64), forces 64-bit fixed point `fixed_t`. Integrators
+reconstruct/split coordinates (`cuda/frame/precision.cuh`) and refuse a
+faulted force; `cuda::to_cpu` reports its atom tag and step. Every path that
+moves per-atom state (sort, migration, snapshots, transfers) carries the
+correction and velocity columns untruncated. `real_t`/`work_t`/`prec_t`
+remain only for Gaussian SCF kernels. Integer IDs by LAMMPS role:
+`LocalInt`, `TagInt`, `ImageInt`, `BigInt` (always 64-bit).
 
 Per Frame purity the frame holds **no** method-specific scratch: integrals, AO
 maps, grids and DIIS history are owned by the concrete method. The neighbor
@@ -664,6 +679,23 @@ stays in `longrange/` (cuFFT). The public surface may stay LAMMPS-named and the
 CPU may stay LAMMPS-like; that does not license per-atom Verlet as the CUDA MD
 force architecture. Forbidden: a `NonbondedStyle` dual architecture, force
 defaulting to per-atom Verlet, production `memset` all-ones masks.
+
+CPU MD establishes initial forces before the first half kick, including
+`run(frame, 0)`. The same Frame continues without repeating initialization.
+Force-slot evaluators preserve temporal history when
+`ctx.runtime.exec.initializing_forces` is set; pre/post-force and scalar
+finalization components opt in through `initialize_forces()`. Integrators and
+ordinary observers do not run during force preparation.
+
+Generic CUDA MD algorithms use NVIDIA implementations directly: CUB for
+block/device reductions, sort, scan, histogram and selection; Cooperative Groups
+for warp collectives; Thrust for searches and generic gather/scatter/sequence;
+cuRAND Philox for stochastic noise; cuFFT for PME transforms. Do not add a
+parallel handwritten implementation or a forwarding-only wrapper. Physics,
+spatial predicates and fused topology/force packing remain domain kernels.
+Reserve hot-path scratch in build, preserve stream ordering, and key stochastic
+streams by seed, global atom tag, step and component domain so reordering/migration
+preserves noise without correlating distinct stochastic components.
 
 ## Electronic structure optimization order
 

@@ -245,8 +245,17 @@ time with `-DATV_REAL_STORAGE=float` and `-DATV_REAL_WORK=float` — the
 LAMMPS "mixed mode" recipe, where pairwise math runs in single precision but
 *accumulates* into double. `AccReal` is `double` by construction and has no
 override: it is the one place precision is never economized, to reduce accumulation error in energies and electronic matrices. This
-policy is a safeguard, not a proof that a computed result is accurate. The CUDA backend mirrors these exactly as `real_t` / `work_t` /
-`prec_t` (`cuda/frame/types.cuh`).
+policy is a safeguard, not a proof that a computed result is accurate.
+
+The CUDA backend has its own single knob, `-DATV_CUDA_PREC_MODE=double|mixed|single`,
+and assigns one type per physical role (`cuda/frame/types.cuh`). The
+default `double` is FP64 throughout. `mixed` follows OpenMM: force math,
+splines and FFTs in FP32; coordinates stored as an FP32 value plus an FP32
+correction and reconstructed in FP64 for integration; velocities, masses,
+thermostat/barostat state, energies and virials in FP64; forces accumulated
+in 64-bit fixed point (OpenMM's resolution and range, about ±2.2·10⁶ eV/Å).
+A force outside that range stops integration and is reported with the atom
+tag and step when the run returns.
 
 ### Integer tiers
 

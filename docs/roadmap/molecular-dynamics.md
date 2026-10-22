@@ -6,6 +6,18 @@ Tutorial: [MD](../tutorial/ch10-classical-md.md) · [ensembles](../tutorial/ch11
 [Roadmap index](index.md). Electrode Components:
 [Electrodes](electrodes.md).
 
+## 0. CUDA precision modes
+
+| Mode | Force math / mesh / FFT | Coordinates | Integration, v, m | Energy, virial | Forces |
+| ---- | ----------------------- | ----------- | ----------------- | -------------- | ------ |
+| `double` (default) | FP64 | FP64 | FP64 | FP64 | 64-bit fixed point |
+| `mixed` | FP32 | FP32 + FP32 correction | FP64 | FP64 | 64-bit fixed point |
+| `single` | FP32 | FP32 | FP32 | FP64 | 64-bit fixed point |
+
+`ATV_CUDA_PREC_MODE` selects the mode; `mixed` follows OpenMM's mixed
+precision. A force outside the fixed-point range (|F| ≥ 2.2·10⁶ eV/Å, or
+NaN) stops integration and is reported with atom tag and step.
+
 ## 1. Integrators and thermostats
 
 | Capability | CPU | CUDA | Notes |
@@ -25,7 +37,7 @@ Tutorial: [MD](../tutorial/ch10-classical-md.md) · [ensembles](../tutorial/ch11
 | ---------- | :-: | :--: | ----- |
 | NVE / NVT / NPT | ✓ | ✓ | |
 | NPH (isotropic) | ✓ | ○ | `NphIntegrator` |
-| MTK NPT (diagonal) | ✓ | ✓ | `NoseHooverNPT` |
+| MTK NPT (diagonal) | ✓ | ✓ | `NoseHooverNPT`; CUDA orthorhombic, with PME reciprocal virial |
 | Parrinello–Rahman NPT (full cell) | ✓ | ○ | |
 | Surface-tension NPT | ✓ | ○ | Semi-isotropic |
 | Berendsen barostat | ✓ | ✓ | Protocol reproduction — not for sampling |

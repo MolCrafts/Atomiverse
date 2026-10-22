@@ -1,6 +1,7 @@
 /// @file benchmarks/cuda/bench_gaff.cu
 /// @brief Public-API GAFF PEO correctness and short NVE timing consumer.
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
@@ -29,10 +30,12 @@ int main(int argc, char** argv) try {
             "usage: bench_gaff input.txt output.txt [steps=100] [warmup=10]");
     std::ifstream in(argv[1]);
     in.exceptions(std::ios::failbit | std::ios::badbit);
-    int n, nt, nbt, nat, ndt, nb, na, nd, order;
-    double lx, ly, lz, alpha, cutoff, spacing, dt;
-    in >> n >> lx >> ly >> lz >> nt >> nbt >> nat >> ndt >> nb >> na >> nd
-        >> alpha >> cutoff >> spacing >> order >> dt;
+    int n, nt, nbt, nat, ndt, nb, na, nd, order, nv;
+    double lx, ly, lz, xy, xz, yz, alpha, cutoff, spacing, dt;
+    in >> n >> lx >> ly >> lz >> xy >> xz >> yz >> nt >> nbt >> nat >> ndt >> nb
+        >> na >> nd >> alpha >> cutoff >> spacing >> order >> dt >> nv;
+    if (nv != 0 && nv != n)
+        throw std::invalid_argument("velocity rows must be 0 or N");
     std::vector<double> eps(nt), sig(nt), bk(nbt), br(nbt), ak(nat), at(nat);
     std::vector<std::array<double, 5>> dc(ndt);
     const std::string term = argc > 5 ? argv[5] : "all";
@@ -49,7 +52,13 @@ int main(int argc, char** argv) try {
         for (double& v : c)
             in >> v;
     cpu::Frame f(n);
-    f.box = cpu::Box::orthorhombic(lx, ly, lz);
+    // LAMMPS-form H (lattice vectors are the columns): a = (lx,0,0),
+    // b = (xy,ly,0), c = (xz,yz,lz).
+    Mat3 cell = Mat3::diagonal(lx, ly, lz);
+    cell(0, 1) = xy;
+    cell(0, 2) = xz;
+    cell(1, 2) = yz;
+    f.box.set_cell(cell);
     for (int i = 0; i < n; ++i) {
         in >> f.span(kAtom_x)[i] >> f.span(kAtom_y)[i] >> f.span(kAtom_z)[i]
             >> f.span(kAtom_charge)[i] >> f.span(kAtom_type)[i]
@@ -73,6 +82,8 @@ int main(int argc, char** argv) try {
         in >> i >> j >> k >> l >> t;
         f.add_dihedral(i, j, k, l, t);
     }
+    for (int i = 0; i < nv; ++i) // initial velocities [Angstrom/fs]
+        in >> f.span(kAtom_vx)[i] >> f.span(kAtom_vy)[i] >> f.span(kAtom_vz)[i];
     auto bind = [&](auto& sim, auto phase) {
         if (term == "all" || term == "nonbonded") {
             sim.set_neighbor(ATV::cuda::NeighborList{cutoff, 0.08 * cutoff});
@@ -102,15 +113,57 @@ int main(int argc, char** argv) try {
     }
     const int steps = argc > 3 ? std::stoi(argv[3]) : 100,
               warm = argc > 4 ? std::stoi(argv[4]) : 10,
-              samples = argc > 6 ? std::stoi(argv[6]) : 3;
-    if (steps < 1 || warm < 1 || samples < 1)
+              samples = argc > 6 ? std::stoi(argv[6]) : 3,
+              drift_every = argc > 7 ? std::stoi(argv[7]) : 0;
+    if (steps < 1 || warm < 1 || samples < 1 || drift_every < 0)
         throw std::invalid_argument("positive step counts required");
+    // MD keeps the nonbonded pieces by reference so their rebuild and tile
+    // statistics can be reported after timing; they are declared first so
+    // they outlive the driver that borrows them.
+    ATV::cuda::NeighborList md_neighbor{cutoff, 0.08 * cutoff};
+    auto md_pair = ATV::cuda::PairLJCutCoulLong{eps, sig, alpha, cutoff}
+                       .set_special_bonds_amber();
     ATV::cuda::md::MD md;
-    bind(md, ATV::md::Phase::force);
+    if (term == "all" || term == "nonbonded") {
+        md.set_neighbor_ref(md_neighbor);
+        md.set_evaluator_ref(md_pair);
+        md.on(ATV::md::Phase::force)
+            .add(ATV::cuda::KSpacePME{alpha, spacing, order}, 100);
+    }
+    if (term == "all" || term == "bond")
+        md.set_evaluator(ATV::cuda::BondHarmonic{bk, br});
+    if (term == "all" || term == "angle")
+        md.set_evaluator(ATV::cuda::AngleHarmonic{ak, at});
+    if (term == "all" || term == "dihedral")
+        md.set_evaluator(ATV::cuda::DihedralMultiHarmonic{dc});
     if (std::getenv("ATV_BENCH_TIMING"))
         md.enable_timing();
     md.set_integrator(ATV::cuda::md::VelocityVerlet{dt});
     md.build();
+    if (drift_every > 0) {
+        // NVE energy series from t = 0: "step potential kinetic" [eV].
+        std::ofstream drift(std::string(argv[2]) + ".drift");
+        drift.exceptions(std::ios::failbit | std::ios::badbit);
+        drift << std::setprecision(17);
+        md.run(f, 0);
+        // run(0) prepares forces and energy only; KE at t = 0 is evaluated
+        // here from the input velocities (later records come from MD).
+        double ke0 = 0;
+        for (int i = 0; i < n; ++i)
+            ke0 += 0.5 * units::mass_v2_to_energy * f.span(kAtom_mass)[i]
+                   * (f.span(kAtom_vx)[i] * f.span(kAtom_vx)[i]
+                      + f.span(kAtom_vy)[i] * f.span(kAtom_vy)[i]
+                      + f.span(kAtom_vz)[i] * f.span(kAtom_vz)[i]);
+        for (int done = 0;; done += drift_every) {
+            drift << done << ' ' << f.meta.get(kEnergy) << ' '
+                  << (done == 0 ? ke0 : f.meta.get(kKinetic)) << '\n';
+            if (done >= steps)
+                break;
+            md.run(f, drift_every);
+        }
+        std::cout << "engine=atv N=" << n << " drift_steps=" << steps << '\n';
+        return 0;
+    }
     md.run(f, warm);
     std::vector<double> times;
     for (int sample = 0; sample < samples; ++sample) {
@@ -137,13 +190,20 @@ int main(int argc, char** argv) try {
     for (int i = 0; i < n; ++i)
         final_out << f.span(kAtom_x)[i] << ' ' << f.span(kAtom_y)[i] << ' '
                   << f.span(kAtom_z)[i] << '\n';
+    // The *_bytes keys are parsed by tools/bench_gaff_openmm/compare.py:
+    // stored coordinate, force math, reduction and integration widths.
     std::cout << std::setprecision(10) << "engine=atv N=" << n
               << " steps=" << steps << " ms_per_step=" << ms
               << " samples=" << samples
-              << " real_bytes=" << sizeof(ATV::cuda::real_t)
-              << " work_bytes=" << sizeof(ATV::cuda::work_t)
-              << " accum_bytes=" << sizeof(ATV::cuda::prec_t)
-              << " energy=" << f.meta.get(kEnergy) << '\n';
+              << " real_bytes=" << sizeof(ATV::cuda::pos_t)
+              << " work_bytes=" << sizeof(ATV::cuda::force_t)
+              << " accum_bytes=" << sizeof(ATV::cuda::acc_t)
+              << " mixed_bytes=" << sizeof(ATV::cuda::mixed_t)
+              << " energy=" << f.meta.get(kEnergy)
+              << " rebuilds=" << md_neighbor.rebuild_count()
+              << " candidate_tiles=" << md_neighbor.candidate_tiles()
+              << " valid_tiles=" << md_pair.valid_tiles()
+              << " packed_tiles=" << md_pair.packed_tiles() << '\n';
     if (std::getenv("ATV_BENCH_TIMING"))
         std::cout << md.summary();
     return 0;

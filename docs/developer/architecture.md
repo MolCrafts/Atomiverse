@@ -227,6 +227,21 @@ It auto-adds zeroing and kinetic-energy infrastructure, while components such as
 `VelocityVerlet`, `NeighborList`, `PairLJCut`, `NoseHoover`, and `Barostat` fill
 in the actual physics.
 
+Component lifecycle is per instance, rather than per phase binding. The shared
+Plan enumerates unique instances, and the runtime ledger reference-counts nested
+plans and rolls back failed builds. Every binding still launches in its phase.
+
+The initial-force schedule is shared by CPU and CUDA. Force-slot evaluators run;
+other operations opt in through `initialize_forces`. Integration, recorder
+launches and algorithm-history advancement are excluded. NPT seeds kinetic
+history from the prepared initial velocities.
+
+CUDA NPT keeps its chains and scalar propagation on the device. The NHC scalar
+half-step, pressure convention and temperature ramps use the common mathematical
+rules in `core/dynamics_math.h`. Box writers declare `changes_box()` so the
+backend publishes the derived device cell before subsequent consumers. Trajectory
+recorders freeze the cell and coordinates together.
+
 ### Minimization
 
 The minimizer driver reuses the same staged idea with a different phase order:

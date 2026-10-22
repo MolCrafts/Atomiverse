@@ -20,7 +20,32 @@ EV_KCAL = 1 / 23.060547830619026
 EV_KJ = EV_KCAL / 4.184
 
 
-def load(data, ff, rep):
+def supercell(rep, skew):
+    """Integer rows M of a supercell lattice (A = sum_j M_ij a_j).
+
+    ``skew`` keeps det(M) = rep**3 copies but tilts the cell:
+    A = rep a, B = a + rep b, C = b + rep c. Any sublattice of the base
+    lattice tiles the same infinite periodic system, so atom count, density
+    and every bonded geometry are those of the orthorhombic replication.
+    """
+    if not skew:
+        return [[rep, 0, 0], [0, rep, 0], [0, 0, rep]]
+    if rep < 2:
+        raise ValueError("--skew requires --replicate >= 2")
+    return [[rep, 0, 0], [1, rep, 0], [0, 1, rep]]
+
+
+def inverse3(m):
+    a, b, c = m[0]
+    d, e, f = m[1]
+    g, h, i = m[2]
+    det = a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g)
+    return [[(e*i-f*h)/det, (c*h-b*i)/det, (b*f-c*e)/det],
+            [(f*g-d*i)/det, (a*i-c*g)/det, (c*d-a*f)/det],
+            [(d*h-e*g)/det, (b*g-a*h)/det, (a*e-b*d)/det]], det
+
+
+def load(data, ff, rep, skew=False):
     sections = {k: [] for k in ("Masses", "Atoms", "Velocities", "Bonds", "Angles", "Dihedrals")}
     current = None
     bounds = []
@@ -38,7 +63,7 @@ def load(data, ff, rep):
             lo, hi = map(float, line.split()[:2])
             bounds.append((lo, hi))
         elif line.endswith("xy xz yz"):
-            raise ValueError("benchmark currently requires an orthorhombic cell")
+            raise ValueError("benchmark currently requires an orthorhombic input cell")
         elif current:
             sections[current].append(line.split())
     mass = {int(t[0]): float(t[1]) for t in sections["Masses"]}
@@ -50,31 +75,51 @@ def load(data, ff, rep):
     lengths = [hi-lo for lo, hi in bounds]
     if rep < 1:
         raise ValueError("positive replication count required")
+    M = supercell(rep, skew)
+    Minv, det = inverse3(M)
+    # Supercell rows in Angstrom (the base cell is orthorhombic).
+    cell = [[M[i][j]*lengths[j] for j in range(3)] for i in range(3)]
+    # Coset representatives t of base-lattice translations modulo the
+    # supercell lattice: integer vectors with fractional t M^-1 in [0, 1).
+    def frac(t):
+        return [sum(t[i]*Minv[i][k] for i in range(3)) for k in range(3)]
+    span = range(-rep, 2*rep+1)
+    cosets = [(ix, iy, iz) for ix in span for iy in span for iz in span
+              if all(-1e-12 <= f < 1-1e-12 for f in frac((ix, iy, iz)))]
+    if len(cosets) != round(det):
+        raise ValueError("supercell coset enumeration failed")
+    coset_index = {t: n for n, t in enumerate(cosets)}
+    def reduce(t):
+        k = [math.floor(f+1e-12) for f in frac(t)]
+        r = tuple(t[j]-sum(k[i]*M[i][j] for i in range(3)) for j in range(3))
+        return coset_index[r]
     base_positions = [[(float(t[4+d])-bounds[d][0]) % lengths[d] for d in range(3)] for t in base]
     atoms, bonds, angles, dihedrals = [], [], [], []
-    for ix in range(rep):
-        for iy in range(rep):
-            for iz in range(rep):
-                cell = (ix, iy, iz)
-                for t, pos in zip(base, base_positions):
-                    typ = int(t[2])
-                    atoms.append([pos[d]+cell[d]*lengths[d] for d in range(3)]+[float(t[3]), typ-1, mass[typ]])
-                for name, out in (("Bonds", bonds), ("Angles", angles), ("Dihedrals", dihedrals)):
-                    for t in sections[name]:
-                        # Follow each bonded path in minimum-image geometry.
-                        # A boundary-crossing endpoint belongs to the adjacent
-                        # replica, not the same replica with a stretched bond.
-                        ids = [int(a)-1 for a in t[2:]]
-                        image = [0, 0, 0]
-                        mapped = []
-                        previous = ids[0]
-                        for atom in ids:
-                            for d in range(3):
-                                image[d] -= round((base_positions[atom][d]-base_positions[previous][d])/lengths[d])
-                            target = [(cell[d]+image[d]) % rep for d in range(3)]
-                            mapped.append(((target[0]*rep+target[1])*rep+target[2])*len(base)+atom)
-                            previous = atom
-                        out.append(mapped+[int(t[1])-1])
+    for t0 in cosets:
+        for t, pos in zip(base, base_positions):
+            typ = int(t[2])
+            atoms.append([pos[d]+t0[d]*lengths[d] for d in range(3)]+[float(t[3]), typ-1, mass[typ]])
+        for name, out in (("Bonds", bonds), ("Angles", angles), ("Dihedrals", dihedrals)):
+            for t in sections[name]:
+                # Follow each bonded path in minimum-image geometry.
+                # A boundary-crossing endpoint belongs to the adjacent
+                # translation, not the same one with a stretched bond.
+                ids = [int(a)-1 for a in t[2:]]
+                image = [0, 0, 0]
+                mapped = []
+                previous = ids[0]
+                for atom in ids:
+                    for d in range(3):
+                        image[d] -= round((base_positions[atom][d]-base_positions[previous][d])/lengths[d])
+                    target = tuple(t0[d]+image[d] for d in range(3))
+                    mapped.append(reduce(target)*len(base)+atom)
+                    previous = atom
+                out.append(mapped+[int(t[1])-1])
+    cell_inv, _ = inverse3(cell)
+    def min_image(v):
+        f = [sum(v[i]*cell_inv[i][k] for i in range(3)) for k in range(3)]
+        f = [x-round(x) for x in f]
+        return [sum(f[k]*cell[k][j] for k in range(3)) for j in range(3)]
     # Input geometry invariant: replication must preserve every consecutive
     # bonded displacement, not merely the atom count or total charge.
     for name, records in (("Bonds", bonds), ("Angles", angles), ("Dihedrals", dihedrals)):
@@ -82,13 +127,11 @@ def load(data, ff, rep):
         for index, record in enumerate(records):
             ids = [int(a)-1 for a in source[index % len(source)][2:]]
             for edge in range(len(ids)-1):
-                for d in range(3):
-                    ref_delta = base_positions[ids[edge+1]][d]-base_positions[ids[edge]][d]
-                    ref_delta -= lengths[d]*round(ref_delta/lengths[d])
-                    new_delta = atoms[record[edge+1]][d]-atoms[record[edge]][d]
-                    new_delta -= lengths[d]*rep*round(new_delta/(lengths[d]*rep))
-                    if abs(new_delta-ref_delta) > 1e-9:
-                        raise ValueError(f"replication changed {name} geometry")
+                ref = [base_positions[ids[edge+1]][d]-base_positions[ids[edge]][d] for d in range(3)]
+                ref = [ref[d]-lengths[d]*round(ref[d]/lengths[d]) for d in range(3)]
+                new = min_image([atoms[record[edge+1]][d]-atoms[record[edge]][d] for d in range(3)])
+                if max(abs(new[d]-ref[d]) for d in range(3)) > 1e-9:
+                    raise ValueError(f"replication changed {name} geometry")
     coeff = {k: {} for k in ("pair", "bond", "angle", "dihedral")}
     for line in Path(ff).read_text().splitlines():
         t = line.split("#")[0].split()
@@ -119,7 +162,8 @@ def load(data, ff, rep):
         if sorted(table) != list(range(len(table))):
             raise ValueError(f"missing {kind} coefficient")
     return dict(atoms=atoms, bonds=bonds, angles=angles, dihedrals=dihedrals,
-                box=[l*rep for l in lengths], **{k:[v[t] for t in sorted(v)] for k,v in coeff.items()})
+                box=[cell[d][d] for d in range(3)], cell=[v for row in cell for v in row],
+                **{k:[v[t] for t in sorted(v)] for k,v in coeff.items()})
 
 
 def polynomial(terms):
@@ -137,24 +181,27 @@ def polynomial(terms):
 
 
 def prepare(d, path, args):
-    rows = [[len(d['atoms']), *d['box'], len(d['pair']), len(d['bond']), len(d['angle']),
+    c = d['cell']
+    rows = [[len(d['atoms']), *d['box'], c[3], c[6], c[7], len(d['pair']), len(d['bond']), len(d['angle']),
              len(d['dihedral']), len(d['bonds']), len(d['angles']), len(d['dihedrals']),
-             args.alpha, args.cutoff, args.spacing, 5, args.dt]]
+             args.alpha, args.cutoff, args.spacing, 5, args.dt, len(d.get('velocities', []))]]
     for name in ('pair','bond','angle'):
         rows.extend(d[name])
     rows.extend(polynomial(t) for t in d['dihedral'])
     for name in ('atoms','bonds','angles','dihedrals'):
         rows.extend(d[name])
+    rows.extend(d.get('velocities', []))
     path.write_text('\n'.join(' '.join(map(str,r)) for r in rows)+'\n')
 
 
-def openmm_run(d, args, result):
+def openmm_system(d, args):
+    """OpenMM System matching the ATV force field; returns (system, nonbonded)."""
     import openmm as mm
     import numpy as np
     from openmm import unit
     system = mm.System()
-    system.setDefaultPeriodicBoxVectors(*[mm.Vec3(*[l/10 if i==j else 0 for j in range(3)])
-                                         for i,l in enumerate(d['box'])])
+    system.setDefaultPeriodicBoxVectors(*[mm.Vec3(*[v/10 for v in d['cell'][3*i:3*i+3]])
+                                         for i in range(3)])
     nb = mm.NonbondedForce()
     nb.setNonbondedMethod(nb.PME)
     nb.setCutoffDistance(args.cutoff/10)
@@ -188,6 +235,14 @@ def openmm_run(d, args, result):
         for force,n,phase in d['dihedral'][t]:
             tor.addTorsion(i,j,k,l,n,phase,force/EV_KJ)
     if args.term in ('all','dihedral'): system.addForce(tor)
+    return system, nb
+
+
+def openmm_run(d, args, result):
+    import openmm as mm
+    import numpy as np
+    from openmm import unit
+    system, nb = openmm_system(d, args)
     integrator=mm.VerletIntegrator(args.dt/1000)
     platform=mm.Platform.getPlatformByName(args.platform)
     properties={'Precision':args.precision,'DeviceIndex':'0','UseCpuPme':'false'} if args.platform=='CUDA' else {}
@@ -221,12 +276,114 @@ def openmm_run(d, args, result):
                 precision=args.precision,pme=list(nb.getPMEParametersInContext(context))[1:] if args.term in ('all','nonbonded') else None)
 
 
+MVV2E = 103.6427            # amu A^2/fs^2 -> eV (ATV units)
+KB_EV = 8.617333262e-5      # eV/K
+
+
+def thermal_velocities(d, temperature, seed):
+    """Maxwell-Boltzmann velocities [A/fs] with zero total momentum."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    mass = np.asarray([a[5] for a in d['atoms']])
+    v = rng.standard_normal((len(mass), 3))*np.sqrt(KB_EV*temperature/(MVV2E*mass))[:, None]
+    v -= (mass[:, None]*v).sum(axis=0)/mass.sum()
+    return v
+
+
+def openmm_drift(d, args, dt, steps, every, velocities):
+    """OpenMM NVE energy series (step, potential, kinetic) [eV]."""
+    import openmm as mm
+    import numpy as np
+    from openmm import unit
+    system, nb = openmm_system(d, args)
+    integrator = mm.VerletIntegrator(dt/1000)
+    platform = mm.Platform.getPlatformByName(args.platform)
+    properties = {'Precision': args.precision, 'DeviceIndex': '0', 'UseCpuPme': 'false'} if args.platform == 'CUDA' else {}
+    context = mm.Context(system, integrator, platform, properties)
+    context.setPositions(np.asarray([a[:3] for a in d['atoms']])/10)
+    mass = np.asarray([a[5] for a in d['atoms']])
+    state = context.getState(getForces=True)
+    accel = state.getForces(asNumpy=True).value_in_unit(unit.kilojoule_per_mole/unit.nanometer)/mass[:, None]
+    # Leapfrog stores v(t - dt/2); start from the same full-step velocity.
+    context.setVelocities(velocities*100 - 0.5*(dt/1000)*accel)
+    series = []
+    for done in range(0, steps+1, every):
+        if done:
+            integrator.step(every)
+        st = context.getState(getEnergy=True)
+        series.append((done, st.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)*EV_KJ,
+                       st.getKineticEnergy().value_in_unit(unit.kilojoule_per_mole)*EV_KJ))
+    return series
+
+
+def drift_fit(series, dt, natoms):
+    """Linear drift [eV/ps/atom] and residual RMS [eV/atom] of E_total."""
+    import numpy as np
+    a = np.asarray(series, dtype=float)
+    t = a[:, 0]*dt/1000
+    e = (a[:, 1]+a[:, 2])/natoms
+    slope, intercept = np.polyfit(t, e, 1)
+    return float(slope), float(np.sqrt(np.mean((e-(slope*t+intercept))**2)))
+
+
+def run_drift(d, args, out):
+    """NVE drift at dt and dt/2 for each seed, ATV against OpenMM."""
+    import subprocess
+    results = []
+    for seed in [int(x) for x in args.seeds.split(',')]:
+        v = thermal_velocities(d, args.temperature, seed)
+        for dt in (args.dt, args.dt/2):
+            steps = int(round(args.drift_time/dt))
+            every = max(1, int(round(args.drift_every/dt)))
+            case = dict(d, velocities=[[float(x) for x in row] for row in v])
+            run_args = argparse.Namespace(**{**vars(args), 'dt': dt})
+            tag = out/f'drift-s{seed}-dt{dt:g}'
+            tag.mkdir(parents=True, exist_ok=True)
+            prepare(case, tag/'input.txt', run_args)
+            proc = subprocess.run([args.atv, str(tag/'input.txt'), str(tag/'atv.txt'), str(steps), '1', 'all', '1', str(every)],
+                                  capture_output=True, text=True, timeout=args.budget)
+            if proc.returncode:
+                raise RuntimeError(f'ATV drift run failed:\n{proc.stdout}\n{proc.stderr}')
+            atv = [tuple(map(float, line.split())) for line in (tag/'atv.txt.drift').read_text().splitlines()]
+            omm = openmm_drift(case, run_args, dt, steps, every, v)
+            (tag/'openmm.drift').write_text(''.join(f'{a} {b!r} {c!r}\n' for a, b, c in omm))
+            sa, ra = drift_fit(atv, dt, len(d['atoms']))
+            so, ro = drift_fit(omm, dt, len(d['atoms']))
+            results.append(dict(seed=seed, dt_fs=dt, steps=steps, atv_drift_ev_ps_atom=sa, atv_rms_ev_atom=ra,
+                                openmm_drift_ev_ps_atom=so, openmm_rms_ev_atom=ro))
+            print(json.dumps(results[-1]), flush=True)
+    # Drift slopes over a few ps are noise dominated (they do not shrink with
+    # dt in either engine), so the seeds define the reference distribution:
+    # the ATV mean slope must agree with OpenMM's within two pooled standard
+    # errors, and the energy-fluctuation RMS within 20 %.
+    import statistics
+    comparison = {}
+    for dt in (args.dt, args.dt/2):
+        rows = [r for r in results if r['dt_fs'] == dt]
+        a = [r['atv_drift_ev_ps_atom'] for r in rows]
+        o = [r['openmm_drift_ev_ps_atom'] for r in rows]
+        n = len(rows)
+        se = math.sqrt((statistics.pvariance(a)+statistics.pvariance(o))/max(n-1, 1))
+        rms_a = statistics.mean(r['atv_rms_ev_atom'] for r in rows)
+        rms_o = statistics.mean(r['openmm_rms_ev_atom'] for r in rows)
+        comparison[f'{dt:g}'] = dict(atv_mean=statistics.mean(a), openmm_mean=statistics.mean(o),
+                                     pooled_se=se, atv_rms=rms_a, openmm_rms=rms_o,
+                                     drift_agrees=abs(statistics.mean(a)-statistics.mean(o)) <= 2*se,
+                                     rms_agrees=abs(rms_a/rms_o-1) <= 0.2)
+    summary = dict(precision=args.precision, N=len(d['atoms']), temperature_K=args.temperature,
+                   time_fs=args.drift_time, seeds=args.seeds, results=results, comparison=comparison,
+                   accepted=all(c['drift_agrees'] and c['rms_agrees'] for c in comparison.values()))
+    (out/'drift.json').write_text(json.dumps(summary, indent=2)+'\n')
+    print(json.dumps(summary))
+
+
 def main():
     benchmark_start=time.perf_counter()
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--data',required=True);p.add_argument('--ff',required=True)
     p.add_argument('--atv',required=True);p.add_argument('--out',required=True)
     p.add_argument('--replicate',type=int,default=1)
+    p.add_argument('--skew',action='store_true',help='tilted supercell of the same replicated system (A=n a, B=a+n b, C=b+n c)')
     p.add_argument('--steps',type=int,default=100);p.add_argument('--warmup',type=int,default=10)
     p.add_argument('--samples',type=int,default=3)
     p.add_argument('--budget',type=float,default=10)
@@ -238,10 +395,14 @@ def main():
     p.add_argument('--engine',choices=('compare','openmm'),default='compare')
     p.add_argument('--platform',choices=('CUDA','Reference'),default='CUDA')
     p.add_argument('--term',choices=('all','nonbonded','bond','angle','dihedral'),default='all')
+    p.add_argument('--drift',action='store_true',help='NVE energy drift at dt and dt/2 against OpenMM (multiple seeds)')
+    p.add_argument('--seeds',default='1,2,3');p.add_argument('--temperature',type=float,default=300)
+    p.add_argument('--drift-time',type=float,default=2000,help='simulated time per run [fs]')
+    p.add_argument('--drift-every',type=float,default=10,help='energy sampling interval [fs]')
     args=p.parse_args();out=Path(args.out);out.mkdir(parents=True,exist_ok=True)
     if args.prepared_json and args.engine!='openmm':
         raise ValueError('--prepared-json is only valid for the OpenMM child')
-    d=json.loads(Path(args.prepared_json).read_text()) if args.prepared_json else load(args.data,args.ff,args.replicate)
+    d=json.loads(Path(args.prepared_json).read_text()) if args.prepared_json else load(args.data,args.ff,args.replicate,args.skew)
     position_quantum=None
     if args.precision=='mixed' and not args.prepared_json:
         # Float-representable Angstrom values need not remain representable
@@ -251,18 +412,21 @@ def main():
         # Later trajectory precision remains independently checked.
         import numpy as np
         positions=np.asarray([a[:3] for a in d['atoms']],dtype=np.float64)
-        box=np.asarray(d['box'],dtype=np.float64)
-        maximum=max(float(np.max(np.abs(positions))),float(np.max(np.abs(box))))
+        cell=np.asarray(d['cell'],dtype=np.float64)
+        maximum=max(float(np.max(np.abs(positions))),float(np.max(np.abs(cell))))
         position_quantum=5*2.0**(math.ceil(math.log2(maximum))-24)
         positions=np.rint(positions/position_quantum)*position_quantum
-        box=np.rint(box/position_quantum)*position_quantum
-        for values in (positions,box):
+        cell=np.rint(cell/position_quantum)*position_quantum
+        for values in (positions,cell):
             if not (np.array_equal(values,values.astype(np.float32).astype(np.float64))
                     and np.array_equal(values/10,(values/10).astype(np.float32).astype(np.float64))):
                 raise ValueError('mixed input is not exactly representable in both Angstrom and nm')
-        d['box']=[float(v) for v in box]
+        d['cell']=[float(v) for v in cell]
+        d['box']=[d['cell'][0],d['cell'][4],d['cell'][8]]
         for atom,position in zip(d['atoms'],positions):
             atom[:3]=[float(v) for v in position]
+    if args.drift:
+        run_drift(d,args,out);return
     if args.engine=='openmm':
         print(json.dumps(openmm_run(d,args,out/'openmm.txt')));return
     prepare(d,out/'input.txt',args)
@@ -288,7 +452,7 @@ def main():
                  max_force_error_ev_A=err,relative_max_force_error=rel,
                  atv_process_seconds=atv_wall,openmm_process_seconds=ref_wall,
                  atv=atv.stdout.strip(),openmm=json.loads(ref.stdout))
-    summary['protocol']=dict(steps=args.steps,warmup=args.warmup,samples=args.samples,dt_fs=args.dt,cutoff_A=args.cutoff,neighbor_skin_A=0.08*args.cutoff,alpha_inv_A=args.alpha,grid_spacing_A=args.spacing,precision=args.precision,term=args.term,initial_position_storage='exact float32 in Angstrom and nm' if args.precision=='mixed' else 'float64',position_quantum_A=position_quantum)
+    summary['protocol']=dict(steps=args.steps,warmup=args.warmup,samples=args.samples,dt_fs=args.dt,cutoff_A=args.cutoff,neighbor_skin_A=0.08*args.cutoff,alpha_inv_A=args.alpha,grid_spacing_A=args.spacing,cell_A=d['cell'],skew=args.skew,precision=args.precision,term=args.term,initial_position_storage='exact float32 in Angstrom and nm' if args.precision=='mixed' else 'float64',position_quantum_A=position_quantum)
     summary['protocol']['neighbor_reserve']='default build-time density/initial-count headroom'
     if args.measure_memory:
         if atv_resources['gpu_uuids'] != ref_resources['gpu_uuids']:
@@ -302,8 +466,9 @@ def main():
         raise RuntimeError('Atomiverse final energy is non-finite')
     pa=np.loadtxt(out/'atv.txt.final');pb=np.loadtxt(out/'openmm.txt.final')
     delta=pa-pb
-    box=np.asarray(d['box'])
-    delta-=box*np.rint(delta/box)
+    cell=np.asarray(d['cell']).reshape(3,3)
+    fractional=delta@np.linalg.inv(cell)
+    delta=(fractional-np.rint(fractional))@cell
     summary['max_final_position_error_A']=float(np.max(np.abs(delta)))
     summary['atv_over_openmm']=summary['atv_ms_per_step']/summary['openmm']['ms_per_step']
     summary['final_energy_error_ev']=summary['atv_final_energy_ev']-summary['openmm']['final_energy_ev']
