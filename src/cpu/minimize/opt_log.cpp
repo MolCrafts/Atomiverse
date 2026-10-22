@@ -121,7 +121,7 @@ void OptLog::launch(const cpu::LaunchContext& ctx) {
         os_.flush();
     }
     if (also_stdout_) {
-        std::printf("%6d  %15.8e  %12.6e  %12.6e  %12.6e\n", ctx.step,
+        std::printf("%6lld  %15.8e  %12.6e  %12.6e  %12.6e\n", ctx.step,
                     f.meta.get(kEnergy), max_force, rms_force, step_norm);
     }
     ++n_rows_;

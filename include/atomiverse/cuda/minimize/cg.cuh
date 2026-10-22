@@ -102,13 +102,15 @@ class CG : public cuda::Optimizer {
     double max_force() const { return conv_.max_force(); }
 
     /// @brief Per-step optimization trace.
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
     double alpha0_; ///< Step size [Angstrom^2/eV].
 
-    int n_ = 0;    ///< Atom count.
-    int step_ = 0; ///< Optimizer step counter.
+    int n_ = 0;       ///< Atom count.
+    BigInt step_ = 0; ///< Optimizer step counter.
 
     // Planar [x:0..n, y:n..2n, z:2n..3n] device state, mixed_t precision
     // (position/gradient differences of nearly-equal values would lose
@@ -120,7 +122,7 @@ class CG : public cuda::Optimizer {
     acc_t* d_pr_ = nullptr;      ///< Device {num, den, beta} reductions.
 
     ConvCheck conv_;
-    std::vector<OptRecord> trace_;
+    std::vector<ATV::minimizer::OptRecord> trace_;
 };
 
 } // namespace minimizer

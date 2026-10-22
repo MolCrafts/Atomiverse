@@ -30,7 +30,7 @@
 
 #include <vector>
 
-#include "atomiverse/cpu/minimize/lbfgs.h" // cpu::minimizer::OptRecord
+#include "atomiverse/core/optimization_record.h"
 #include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 
@@ -40,7 +40,6 @@ namespace minimizer {
 
 /// @brief Per-step optimization record — shared with the CPU backend so
 ///        diagnostics tooling reads one type.
-using OptRecord = ATV::cpu::minimizer::OptRecord;
 
 /// @brief Fused force/displacement metric reduction, published to the loop.
 ///
@@ -63,14 +62,12 @@ class ConvCheck {
     ///
     /// Launches the fused metric kernel, copies the four metrics + the frame potential
     /// energy D2H into pinned memory, synchronizes the compute stream, appends an
-    /// `OptRecord` to @p trace, and writes `ctx.runtime.loop.metrics` — max/RMS force,
+    /// `ATV::minimizer::OptRecord` to @p trace, and writes `ctx.runtime.loop.metrics` — max/RMS force,
     /// max/RMS displacement, energy, |ΔE|, and `has_displacement`.
     ///
-    /// Displacement and energy-change criteria are not meaningful at `step == 0`
-    /// (nothing has moved yet, and there is no previous energy): displacement is then
-    /// flagged `has_displacement = false`, and `energy_change` is published as a
-    /// large sentinel so no handler can call an unstarted run converged. Exactly as on
-    /// the CPU.
+    /// Displacement is meaningful only with a saved geometry and a completed
+    /// move. Energy change requires a previous measurement; the first sample
+    /// publishes a large sentinel, even when a move has already completed.
     ///
     /// Because `measure()` ends with a stream synchronize, any D2H copies the caller
     /// enqueued on the same stream beforehand are complete when it returns (LBFGS
@@ -87,8 +84,8 @@ class ConvCheck {
     /// @param step    Optimizer step counter (post search_direction increment,
     ///                mirroring the CPU components).
     /// @param trace   Per-step diagnostics sink (host).
-    void measure(const LaunchContext& ctx, const mixed_t* x_prev, int step,
-                 std::vector<OptRecord>& trace);
+    void measure(const LaunchContext& ctx, const mixed_t* x_prev, BigInt step,
+                 std::vector<ATV::minimizer::OptRecord>& trace);
 
     /// @brief Potential energy read back by the most recent measure() [eV].
     double last_energy() const { return last_energy_; }

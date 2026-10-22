@@ -53,7 +53,7 @@ class TaskMaterializer {
     std::optional<minimizer::Minimize> minimize_;
 #endif
     std::unique_ptr<md::mpi::DomainDecomposition> completed_dd_;
-    int budget_ = 1;
+    std::int64_t budget_ = 1;
 };
 
 } // namespace ATV::cpu::task

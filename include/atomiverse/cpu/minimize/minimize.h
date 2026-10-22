@@ -89,7 +89,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
   public:
     /// @brief Completed run plus the still-live owner decomposition.
     struct DetachedRun {
-        int iterations = 0;
+        BigInt iterations = 0;
         std::unique_ptr<cpu::md::mpi::DomainDecomposition> decomposition;
     };
 
@@ -105,7 +105,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// @param frame Host-resident system state, updated in place.
     /// @param max_iter Iteration budget.
     /// @return Number of iterations actually executed (≤ `max_iter`).
-    int run(cpu::Frame& frame, int max_iter) {
+    BigInt run(cpu::Frame& frame, BigInt max_iter) {
         return run_impl_(frame, max_iter, false).iterations;
     }
 
@@ -114,7 +114,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// Task orchestration uses this entry point to gather the final distributed
     /// Frame after component destruction. The decomposition is detached before
     /// Runtime shutdown, so its Cartesian communicator remains valid for gather.
-    DetachedRun run_detached(cpu::Frame& frame, int max_iter) {
+    DetachedRun run_detached(cpu::Frame& frame, BigInt max_iter) {
         return run_impl_(frame, max_iter, true);
     }
 
@@ -123,9 +123,9 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// @param max_iter Iteration budget.
     /// @return Number of iterations actually executed (≤ `max_iter`).
 #ifdef ATV_HAS_MOLRS
-    int run(molrs::FrameRef& frame, int max_iter) {
+    BigInt run(molrs::FrameRef& frame, BigInt max_iter) {
         cpu::Frame work = cpu::from_molrs(frame);
-        const int iters = run(work, max_iter);
+        const BigInt iters = run(work, max_iter);
         cpu::to_molrs(work, frame);
         return iters;
     }
@@ -213,9 +213,18 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
         });
     }
 
+    void clear_singular_on_unfix_(std::string_view name) override {
+        if (optimizer_set_ && *optimizer_set_ == name)
+            optimizer_set_.reset();
+    }
+
   private:
-    DetachedRun run_impl_(cpu::Frame& frame, int max_iter, bool detach_dd) {
+    DetachedRun run_impl_(cpu::Frame& frame, BigInt max_iter, bool detach_dd) {
+        if (max_iter < 0)
+            throw std::invalid_argument(
+                "Minimize iteration budget must be nonnegative");
         setup_pass(frame);
+        this->backend_->prepare_run();
         // Publish the re-entrant force re-eval handle so an Optimizer component can
         // evaluate trial geometries during the line_search phase. Replays the force
         // phase (zeroing → evaluator → reduce) on the frame's current geometry.
@@ -224,8 +233,8 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
             [this](bool /*need_grad*/) {
                 this->backend_->run_stage(Traits::eval_phase, /*step_idx=*/0);
             };
-        int iters = 0;
-        for (int s = 0; s < max_iter; ++s) {
+        BigInt iters = 0;
+        for (BigInt s = 0; s < max_iter; ++s) {
             mutable_outer_status().reset();
             step_once(s);
             ++iters;

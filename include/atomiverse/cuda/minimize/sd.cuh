@@ -27,7 +27,7 @@
 /// two displacement criteria out of its test rather than guessing.
 ///
 /// A component that published nothing would be worse than useless here: the handler
-/// would read an all-zero `LoopMetrics` and declare an untouched system converged.
+/// would read an all-zero `ConvergenceMetrics` and declare an untouched system converged.
 ///
 /// @see cuda::minimizer::Minimize for the driver that owns the loop
 /// @see cuda/driver/criterion.cuh for the handler that judges the metrics
@@ -100,14 +100,16 @@ class SteepestDescent : public cuda::Optimizer {
     double max_force() const { return conv_.max_force(); }
 
     /// @brief Per-step optimization trace.
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
-    double alpha_; ///< Step size (pseudo-timestep) [fs].
-    int step_ = 0; ///< Optimizer step counter.
+    double alpha_;    ///< Step size (pseudo-timestep) [fs].
+    BigInt step_ = 0; ///< Optimizer step counter.
 
     ConvCheck conv_; ///< Metric reduction (publishes; never decides).
-    std::vector<OptRecord> trace_; ///< Per-step diagnostics.
+    std::vector<ATV::minimizer::OptRecord> trace_; ///< Per-step diagnostics.
 };
 
 } // namespace minimizer

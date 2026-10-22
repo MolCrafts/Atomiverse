@@ -112,7 +112,9 @@ class LBFGS : public cuda::Optimizer {
     double max_force() const { return conv_.max_force(); }
 
     /// @brief Per-step optimization trace.
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
     int memory_;    ///< Correction-pair capacity.
@@ -140,7 +142,8 @@ class LBFGS : public cuda::Optimizer {
     mixed_t* d_alpha_ = nullptr; ///< Two-loop a_k scalars (memory).
     acc_t* d_dot_ = nullptr;     ///< Device {dot, dir_max} scratch reductions.
     acc_t* d_ys_ = nullptr;      ///< Device curvature product y·s.
-    acc_t* d_ls_ = nullptr; ///< Device {applied α, g·d} line-search scalars.
+    acc_t* d_ls_ =
+        nullptr; ///< Device {applied α, g·d, origin energy} line-search scalars.
     acc_t* h_ys_ = nullptr; ///< Pinned mirror of d_ys_.
     acc_t* h_ls_ = nullptr; ///< Pinned mirror of d_ls_.
 
@@ -148,7 +151,7 @@ class LBFGS : public cuda::Optimizer {
     std::vector<double> rho_; ///< 1 / (y·s) per stored pair.
     int n_stored_ = 0;
     int oldest_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
     bool has_prev_ = false;
 
     // Line search (optional; off by default, as on the CPU).
@@ -163,7 +166,7 @@ class LBFGS : public cuda::Optimizer {
     bool ls_fetch_pending_ = false; ///< D2H of {α, g·d} queued for next check.
 
     ConvCheck conv_;
-    std::vector<OptRecord> trace_;
+    std::vector<ATV::minimizer::OptRecord> trace_;
 };
 
 } // namespace minimizer

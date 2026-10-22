@@ -326,29 +326,33 @@ class Driver {
 
     /// Unmount an instance and all of its bindings, with backend resource
     /// release before ownership is erased. Repeated bindings are not namesakes.
-    template <typename Release>
-    void unmount_(std::string_view name, bool launching, Release&& release) {
+    template <typename Release, typename Extra = std::vector<Component*>>
+    void unmount_(std::string_view name, bool launching, Release&& release,
+                  const Extra& extra = {}) {
         if (launching)
             throw std::runtime_error(
                 "unfix: cannot unfix from inside launch(). Unfix between "
                 "steps or run() chunks.");
         Component* found = nullptr;
         std::string mounted;
-        for (const auto& binding : pending_) {
-            auto* component = binding.component;
+        auto inspect = [&](Component* component) {
             if (!component)
-                continue;
+                return;
             if (!mounted.empty())
                 mounted += ", ";
             mounted += component->name();
             if (component->name() != name)
-                continue;
+                return;
             if (found && found != component)
                 throw std::runtime_error(
                     "unfix: name '" + std::string(name)
                     + "' is not unique. Give plugins distinct name() values.");
             found = component;
-        }
+        };
+        for (const auto& binding : pending_)
+            inspect(binding.component);
+        for (auto* component : extra)
+            inspect(component);
         if (!found)
             throw std::runtime_error(
                 "unfix: no plugin named '" + std::string(name) + "'. mounted: ["

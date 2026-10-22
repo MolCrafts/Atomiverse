@@ -296,7 +296,26 @@ The minimizer driver reuses the same staged idea with a different phase order:
 `search_direction -> line_search -> force -> convergence_check -> end_of_step`
 
 That lets the project share force-evaluation components with MD while changing
-only the orchestration logic.
+only the orchestration logic. MD and minimization have independent build flags;
+CUDA accumulator initializers (`cuda/component/zero.cuh`) belong to the shared
+component layer. They reset fields before every force evaluation, including
+line-search trials, rather than only at one-time setup.
+
+Minimizer budgets, completed counts, and diagnostic record steps use 64-bit
+`BigInt`; Python and task transport preserve that width. Optimization records
+are declared in `core/optimization_record.h`, shared by CPU and CUDA.
+
+Both minimizers ask their execution backend to prepare initial forces before
+searching. A zero iteration budget performs preparation without advancing the
+optimizer or ordinary output; a negative budget is rejected before setup.
+On both backends a Criterion is a Component: its phase bindings measure, while
+its `verdict()` is polled by the loop. Unscheduled criteria still participate in
+Plan build/destroy; repeated bindings build one instance.
+Convergence requires all declared requirements to succeed. Stop-only guards
+are neutral unless they request a stop, which takes precedence over success.
+Minimizers with only guards still install the default force criterion. The
+first measured energy has no previous sample and cannot satisfy the energy-change
+tolerance. Each `run()` remains a fresh optimization with fresh optimizer history.
 
 ### Single-point evaluation and electronic structure
 

@@ -387,6 +387,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         clear_slot(bond_set_);
         clear_slot(angle_set_);
         clear_slot(dihedral_set_);
+        clear_singular_on_unfix_(name_or_id);
         rebind_from_live_table_();
     }
 
@@ -1200,6 +1201,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         thermo_every_ = every;
         this->on(Traits::end_phase).add(ATV::cpu::Thermo{every}, +20);
     }
+
+    /// @brief Let a preset clear its categorical slot after unmounting.
+    virtual void clear_singular_on_unfix_(std::string_view) {}
 
     // ─── Singular-setter helpers (used by the categorical setters above) ──
 

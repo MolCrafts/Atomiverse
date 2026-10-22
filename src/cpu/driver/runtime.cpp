@@ -698,6 +698,19 @@ void Runtime::prepare_run(BigInt step_idx) {
     }
     if (!contracts_ready_)
         refresh_plan_(step_idx);
+    if (plan_ && plan_->kind == PhaseKind::Minimizer && !forces_ready_) {
+        const bool saved = context_.exec.initializing_forces;
+        context_.exec.initializing_forces = true;
+        try {
+            // Reuse the force-slot dispatcher, including halo and reverse comm.
+            run_slot_(slot_of(ATV::minimizer::Phase::force), step_idx);
+        } catch (...) {
+            context_.exec.initializing_forces = saved;
+            throw;
+        }
+        context_.exec.initializing_forces = saved;
+        forces_ready_ = true;
+    }
     if (!plan_ || plan_->kind != PhaseKind::MD || forces_ready_)
         return;
     SuspendTiming suspend_timing(device_.timing());

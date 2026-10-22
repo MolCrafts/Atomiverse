@@ -46,7 +46,7 @@ class TriclinicCellRelax : public Optimizer {
     Mat3 eps_{}; // strain to apply
     double residual_ = 0;
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
     bool has_prev_ = false;
 };
 

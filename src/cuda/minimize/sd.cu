@@ -20,8 +20,8 @@ namespace {
 /// Moves each atom along the force direction:
 ///   x[i] += alpha * fx[i] / mass[i] * ATV::units::force_to_accel
 ///
-/// Same unit conversion as VelocityVerlet. At step 0, forces are zero
-/// (from initialization), so positions remain unchanged. The update runs in
+/// Same unit conversion as VelocityVerlet. The backend prepares initial forces
+/// before the first optimizer step. The update runs in
 /// mixed_t on the reconstructed coordinate (primary + correction) with
 /// decoded fixed-point forces; a faulted force is never consumed.
 __global__ void

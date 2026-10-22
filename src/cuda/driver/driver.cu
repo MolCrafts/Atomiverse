@@ -73,7 +73,7 @@ void Backend::materialize(const cpu::Frame& frame) {
 
 void Backend::load(const Plan<Component>& plan) {
     std::vector<std::pair<int, Component*>> bindings;
-    if (plan.kind == PhaseKind::MD)
+    if (plan.kind == PhaseKind::MD || plan.kind == PhaseKind::Minimizer)
         for (const auto& slot : plan.slots)
             for (const auto& op : slot.ops)
                 bindings.emplace_back(slot.phase, op.component);
@@ -105,7 +105,9 @@ void Backend::destroy_plan(const Plan<Component>& plan) {
 }
 
 void Backend::prepare_run(BigInt step_idx) {
-    if (!plan_ || plan_->kind != PhaseKind::MD || forces_ready_)
+    if (!plan_
+        || (plan_->kind != PhaseKind::MD && plan_->kind != PhaseKind::Minimizer)
+        || forces_ready_)
         return;
     plan_->prepare_forces(
         [](int) {},

@@ -93,7 +93,7 @@ struct DynamicsServices {
 
 /// @brief The active loop node's status + metrics (publisher: the running Driver).
 ///
-/// Non-owning: a Driver owns its own `IterationStatus` and `LoopMetrics` and points
+/// Non-owning: a Driver owns its own `IterationStatus` and `ConvergenceMetrics` and points
 /// these here for the duration of its loop. So a nested driver's components write to
 /// the NESTED loop's status, never the parent's. Mirrors `cpu::LoopServices`.
 struct LoopServices {
@@ -103,7 +103,7 @@ struct LoopServices {
 
     /// @brief Where components publish what they measured, for handlers to judge.
     /// `cuda::minimizer::ConvCheck` writes it after its one pinned D2H per iteration.
-    LoopMetrics* metrics = nullptr;
+    ConvergenceMetrics* metrics = nullptr;
 };
 
 /// @brief CUDA execution context passed to components via

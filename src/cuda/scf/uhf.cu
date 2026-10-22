@@ -149,9 +149,10 @@ class UhfStage : public cuda::Component {
 
 class UhfConverged : public cuda::Criterion {
   public:
+    bool contributes_to_convergence() const override { return true; }
     explicit UhfConverged(EngineSlot* slot) : slot_(slot) {}
-    const char* name() const override { return "scf_converged"; }
-    ATV::Verdict after_iteration(const cuda::LoopState& state) override {
+    std::string name() const override { return "scf_converged"; }
+    ATV::Verdict verdict(const cuda::LoopState& state) override {
         if (!slot_ || !slot_->cycle)
             return ATV::Verdict::Continue;
         if (slot_->cycle->poll_converged(state.runtime.stream, state.iteration))
@@ -395,7 +396,7 @@ int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
     ctx.loop.status = &this->status_;
     ctx.loop.metrics = &this->metrics_;
     this->status_.reset();
-    this->metrics_ = LoopMetrics{};
+    this->metrics_ = ConvergenceMetrics{};
 
     const int cap = budget > 0 ? budget : max_iter;
     int iters = 0;
@@ -403,7 +404,7 @@ int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
         this->mutable_outer_status().reset();
         step_stages_(ctx, frame, i);
         ++iters;
-        if (this->poll_handlers_(i, frame, ctx) != ATV::Verdict::Continue)
+        if (this->poll_criteria_(i, frame, ctx) != ATV::Verdict::Continue)
             break;
     }
     loop_->slot.cycle->finish(ctx.stream);

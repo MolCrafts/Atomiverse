@@ -60,7 +60,7 @@ class JointIsotropicRelax : public Optimizer {
     double scale_step_ = 1.0;
     double energy_prev_ = 0;
     bool has_prev_ = false;
-    int step_ = 0;
+    BigInt step_ = 0;
 };
 
 } // namespace minimizer

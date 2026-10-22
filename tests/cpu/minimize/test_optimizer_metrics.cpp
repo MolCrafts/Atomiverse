@@ -232,3 +232,69 @@ TEST(OptimizerMetrics, IsotropicCellRejectsNonfiniteForceBeforeUpdatingState) {
     EXPECT_EQ(frame.span(kAtom_x)[0], 2);
     EXPECT_EQ(frame.box.volume(), 1000);
 }
+
+#include "atomiverse/cpu/driver/runtime.h"
+namespace {
+class PreparationProbe : public cpu::Component {
+  public:
+    std::string name() const override { return "preparation_probe"; }
+    void launch(const cpu::LaunchContext& ctx) override {
+        ++calls;
+        initializing = ctx.runtime.exec.initializing_forces;
+    }
+    int calls = 0;
+    bool initializing = false;
+};
+} // namespace
+TEST(OptimizerMetrics, PreparationRunsOnlyForceSlotOnce) {
+    PreparationProbe force, direction, output;
+    Plan<cpu::Component> plan;
+    plan.kind = PhaseKind::Minimizer;
+    for (int i = 0; i < slot_count<minimizer::Phase>(); ++i)
+        plan.slots.push_back({i, {}});
+    plan.slots[slot_of(minimizer::Phase::force)].ops.push_back({&force});
+    plan.slots[slot_of(minimizer::Phase::search_direction)].ops.push_back(
+        {&direction});
+    plan.slots[slot_of(minimizer::Phase::end_of_step)].ops.push_back({&output});
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    cpu::Runtime runtime;
+    runtime.init();
+    runtime.load(plan);
+    runtime.set_frame(frame);
+    runtime.build_components();
+    runtime.prepare_run();
+    runtime.prepare_run();
+    EXPECT_EQ(force.calls, 1);
+    EXPECT_TRUE(force.initializing);
+    EXPECT_EQ(direction.calls, 0);
+    EXPECT_EQ(output.calls, 0);
+    EXPECT_FALSE(runtime.context().exec.initializing_forces);
+    runtime.destroy_components();
+    runtime.shutdown();
+}
+
+TEST(OptimizerMetrics, FirstMeasurementHasNoEnergyDifference) {
+    auto check = [](auto& optimizer) {
+        SCOPED_TRACE(optimizer.name());
+        cpu::Frame frame(1);
+        frame.box = cpu::Box::cubic(10);
+        frame.span(kAtom_fx)[0] = 1;
+        cpu::Context context;
+        ConvergenceMetrics metrics;
+        context.loop.metrics = &metrics;
+        optimizer.build({context, frame});
+        optimizer.launch(
+            {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+        optimizer.launch(
+            {context, frame, slot_of(minimizer::Phase::convergence_check), 0});
+        EXPECT_GT(metrics.energy_change, 1e20);
+        optimizer.destroy({context, frame});
+    };
+    cpu::minimizer::CG cg;
+    cpu::minimizer::LBFGS lbfgs;
+    cpu::minimizer::FIRE fire;
+    check(cg);
+    check(lbfgs);
+    check(fire);
+}

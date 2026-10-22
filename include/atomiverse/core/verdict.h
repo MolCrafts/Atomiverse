@@ -86,11 +86,4 @@ struct ConvergenceMetrics {
     double replicas_converged = 0.0;
 };
 
-/// @brief CUDA-only compatibility alias for the pre-rename name.
-///
-/// The CUDA backend still spells `LoopMetrics` (its handler machinery is
-/// unchanged until CUDA grows a Criterion kind — deferred GPU-node work); CPU
-/// code must use `ConvergenceMetrics`. Remove with the CUDA criterion migration.
-using LoopMetrics = ConvergenceMetrics;
-
 } // namespace ATV

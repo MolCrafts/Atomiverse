@@ -102,7 +102,8 @@ void ConvCheck::destroy() {
 }
 
 void ConvCheck::measure(const LaunchContext& ctx, const mixed_t* x_prev,
-                        int step, std::vector<OptRecord>& trace) {
+                        BigInt step,
+                        std::vector<ATV::minimizer::OptRecord>& trace) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
     const int n = n_;
@@ -137,13 +138,12 @@ void ConvCheck::measure(const LaunchContext& ctx, const mixed_t* x_prev,
         has_disp ? std::sqrt(static_cast<double>(h_metrics_[3]) / (3.0 * n))
                  : 0.0;
     const double energy = *h_energy_;
-    // No previous energy at step 0: publish a sentinel so that no handler can call a
-    // run converged before it has moved (|ΔE| < etol would otherwise be trivially
-    // true). Same value, same reason, as the CPU optimizers.
+    // A step counter does not establish a previous energy sample. The first
+    // measurement publishes a sentinel, even after an initial-force-driven move.
     const double energy_change =
-        (step > 0) ? std::abs(energy - energy_prev_) : 1e30;
+        !trace.empty() ? std::abs(energy - energy_prev_) : 1e30;
 
-    OptRecord rec{};
+    ATV::minimizer::OptRecord rec{};
     rec.step = step;
     rec.energy = energy;
     rec.max_force = max_force_;
@@ -158,7 +158,7 @@ void ConvCheck::measure(const LaunchContext& ctx, const mixed_t* x_prev,
     // Until this line, ConvCheck wrote `outer_status.converged = true` itself, so the
     // criteria could not be changed without touching the optimizer — and a nested
     // loop's convergence could stop the loop above it.
-    if (LoopMetrics* m = ctx.runtime.loop.metrics) {
+    if (ConvergenceMetrics* m = ctx.runtime.loop.metrics) {
         m->energy = energy;
         m->max_force = max_force_;
         m->rms_force = rms_force;

@@ -33,6 +33,7 @@
 ///   Nocedal, Math. Comp. 35, 773 (1980) -- L-BFGS algorithm
 ///   Nocedal & Wright, Numerical Optimization, Ch. 7
 #pragma once
+#include "atomiverse/core/optimization_record.h"
 
 #include <cstdint>
 #include <memory>
@@ -51,19 +52,6 @@
 namespace ATV {
 namespace cpu {
 namespace minimizer {
-
-/// @brief Per-step optimization record for diagnostics.
-struct OptRecord {
-    int step = 0;         ///< Optimization step number.
-    double energy = 0;    ///< Total energy [eV].
-    double max_force = 0; ///< Maximum atomic force magnitude [eV/Angstrom].
-    double rms_force = 0; ///< RMS of atomic force magnitudes [eV/Angstrom].
-    double max_displacement =
-        0; ///< Maximum displacement from previous step [Angstrom].
-    double rms_displacement =
-        0; ///< RMS displacement from previous step [Angstrom].
-    double energy_change = 0; ///< Energy change from previous step [eV].
-};
 
 /// @brief L-BFGS Optimizer component.
 ///
@@ -128,7 +116,9 @@ class LBFGS : public cpu::Optimizer {
     double max_force() const { return max_force_; }
 
     /// @brief Per-step optimization trace.
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
     int memory_;
@@ -164,7 +154,7 @@ class LBFGS : public cpu::Optimizer {
     std::uint64_t last_generation_ = ~std::uint64_t{0};
     double max_force_ = 0;
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
 
     // Line search. Default StrongWolfe; `line_search()` overrides.
     LineSearchMode ls_mode_ = LineSearchMode::StrongWolfe;
@@ -180,7 +170,7 @@ class LBFGS : public cpu::Optimizer {
     double ls_dir_max_ = 0; // global max|direction| component, for the cap.
 
     // Optimization trace
-    std::vector<OptRecord> trace_;
+    std::vector<ATV::minimizer::OptRecord> trace_;
 };
 
 } // namespace minimizer

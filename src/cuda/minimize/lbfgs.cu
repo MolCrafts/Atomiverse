@@ -236,13 +236,13 @@ void LBFGS::build(const BuildContext& ctx) {
     cudaMalloc(&d_alpha_, memory_ * sizeof(mixed_t));
     cudaMalloc(&d_dot_, 2 * sizeof(acc_t));
     cudaMalloc(&d_ys_, sizeof(acc_t));
-    cudaMalloc(&d_ls_, 2 * sizeof(acc_t));
+    cudaMalloc(&d_ls_, 3 * sizeof(acc_t));
     cudaMemset(d_xprev_, 0, bytes3n);
     cudaMemset(d_gprev_, 0, bytes3n);
     cudaMemset(d_dir_, 0, bytes3n);
-    cudaMemset(d_ls_, 0, 2 * sizeof(acc_t));
+    cudaMemset(d_ls_, 0, 3 * sizeof(acc_t));
     cudaMallocHost(&h_ys_, sizeof(acc_t));
-    cudaMallocHost(&h_ls_, 2 * sizeof(acc_t));
+    cudaMallocHost(&h_ls_, 3 * sizeof(acc_t));
 
     rho_.assign(memory_, 0.0);
     n_stored_ = 0;
@@ -265,13 +265,14 @@ void LBFGS::launch(const LaunchContext& ctx) {
         // Batch the line-search scalars produced by this iteration's
         // search_direction onto the ConvCheck sync — zero extra host blocks.
         if (ls_fetch_pending_)
-            cudaMemcpyAsync(h_ls_, d_ls_, 2 * sizeof(acc_t),
+            cudaMemcpyAsync(h_ls_, d_ls_, 3 * sizeof(acc_t),
                             cudaMemcpyDeviceToHost, stream);
         // Measure and publish. The Verdict is the loop's, through its handlers.
         conv_.measure(ctx, d_xprev_, step_, trace_);
         if (ls_fetch_pending_) {
             ls_alpha_ = static_cast<double>(h_ls_[0]);
             ls_gd_ = static_cast<double>(h_ls_[1]);
+            ls_origin_energy_ = static_cast<double>(h_ls_[2]);
             ls_fetch_pending_ = false;
         }
         return;
@@ -380,7 +381,10 @@ void LBFGS::launch(const LaunchContext& ctx) {
         // g·d at the trial origin, fetched with the next ConvCheck sync.
         cudaMemsetAsync(d_ls_ + 1, 0, sizeof(acc_t), stream);
         dot3n<<<grid3, block, shmem, stream>>>(d_g_, d_dir_, d_ls_ + 1, n3);
-        ls_origin_energy_ = conv_.last_energy();
+        // Preserve the actual origin energy on device, including the first
+        // step after initial-force preparation. Fetch it with the trial metrics.
+        cudaMemcpyAsync(d_ls_ + 2, &frame.scalars->energy, sizeof(acc_t),
+                        cudaMemcpyDeviceToDevice, stream);
         ls_had_trial_ = true;
         ls_fetch_pending_ = true;
     }

@@ -665,7 +665,7 @@ only on large systems. Wave-local freezes live in `.claude/notes/`.
   `cpu::Driver::unfix`, MPI-reduced declared-convergence criteria). CUDA:
   `cuda::Backend` + core `Plan::prepare_forces` (from `post_integrate`, flag on
   `LaunchContext`) + core `detail::ComponentLifecycle` + core `Driver::unmount_`
-  + single-rank `worse_of` criteria. The `core/plan.h` helpers have one backend
+  + single-rank declared-convergence criteria. The `core/plan.h` helpers have one backend
   user — re-unify CPU onto them or move them to `cuda/driver/`; never call them
   shared.
 - **CUDA force validity** ignores host Frame edits between chunks

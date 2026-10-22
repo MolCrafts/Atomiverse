@@ -579,7 +579,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
     if (kind_ == TaskKind::MD) {
 #ifdef ATV_HAS_MD
         const auto& task = spec.md();
-        budget_ = static_cast<int>(task.n_steps);
+        budget_ = task.n_steps;
         md_.emplace();
         for (const auto& entry : task.entries)
             register_md_entry(*md_, entry, task.n_steps);
@@ -609,7 +609,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
 
 #ifdef ATV_HAS_MINIMIZER
     const auto& task = spec.minimize();
-    budget_ = static_cast<int>(task.max_iter);
+    budget_ = task.max_iter;
     minimize_.emplace();
     internal::add_minimize_criterion(*minimize_, task.convergence);
     for (const auto& entry : task.entries)
@@ -627,7 +627,7 @@ TaskResult TaskMaterializer::run(cpu::Frame& frame) {
     completed_dd_.reset();
 #ifdef ATV_HAS_MD
     if (kind_ == TaskKind::MD) {
-        const int iterations = md_->run(frame, budget_);
+        const auto iterations = md_->run(frame, budget_);
         return TaskResult{iterations, md_->converged(), md_->stop_reason()};
     }
 #endif
@@ -639,7 +639,7 @@ TaskResult TaskMaterializer::run(cpu::Frame& frame) {
 #endif
 #ifdef ATV_HAS_MINIMIZER
     auto completed = minimize_->run_detached(frame, budget_);
-    const int iterations = completed.iterations;
+    const auto iterations = completed.iterations;
     completed_dd_ = std::move(completed.decomposition);
     return TaskResult{iterations, minimize_->converged(),
                       minimize_->stop_reason()};

@@ -147,7 +147,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// **Termination.** The step budget is the termination — MD attaches no default
     /// handler. Any handler the user attached is polled after every step, and the loop
     /// breaks on anything but `Verdict::Continue` (that includes a component having set
-    /// `status.stop_requested`, which `poll_handlers_` folds in).
+    /// `status.stop_requested`, which `poll_criteria_` folds in).
     ///
     /// @param frame Host-resident system state; transferred H2D, advanced
     ///        on the device, retrieved D2H, updated in place.
@@ -173,7 +173,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
             this->mutable_outer_status().reset();
             step_once(step_counter_++);
             ++iterations;
-            if (this->poll_handlers_(s) != Verdict::Continue)
+            if (this->poll_criteria_(s) != Verdict::Continue)
                 break;
         }
         // Pull device state back to the host frame so the caller can inspect

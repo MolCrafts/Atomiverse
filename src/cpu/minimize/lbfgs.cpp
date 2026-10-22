@@ -186,10 +186,10 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
         const double rms_disp =
             disp_valid ? std::sqrt(sums[1] / (3 * n_global)) : double(0);
         const double energy_change =
-            (step_ > 0) ? std::abs(f.meta.get(kEnergy) - energy_prev_)
-                        : double(1e30);
+            (!trace_.empty()) ? std::abs(f.meta.get(kEnergy) - energy_prev_)
+                              : double(1e30);
 
-        OptRecord rec;
+        ATV::minimizer::OptRecord rec;
         rec.step = step_;
         rec.energy = f.meta.get(kEnergy);
         rec.max_force = max_force_;

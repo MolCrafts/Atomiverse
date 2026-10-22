@@ -283,12 +283,12 @@ struct MinimizeHandle {
             "frame[\"atoms\"].insert(\"charge\", q).");
     }
 
-    TaskResult run(nb::object frame_obj, int max_iter) {
+    TaskResult run(nb::object frame_obj, std::int64_t max_iter) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
             auto frame = borrow_molrs_frame(frame_obj);
             require_charge_column(*frame);
-            int iterations = 0;
+            std::int64_t iterations = 0;
             {
                 nb::gil_scoped_release release;
                 iterations = driver.run(*frame, max_iter);

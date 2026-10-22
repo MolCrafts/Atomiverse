@@ -154,7 +154,7 @@ TEST(CUDADriverRoleValidation, MDAttachesNoDefaultHandler) {
     d.on(md::Phase::initial_integrate).add_ref(integ);
     d.on(md::Phase::force).add_ref(force);
     d.build();
-    EXPECT_FALSE(d.has_handler());
+    EXPECT_FALSE(d.has_criterion());
 }
 
 // ─── cuda::minimizer::Minimize (was: OptimizeDriver) ────────────────
@@ -207,9 +207,9 @@ TEST(CUDADriverRoleValidation, MinimizeAttachesDefaultForceConvergedHandler) {
     StubEnergyEvaluator energy;
     o.on(minimizer::Phase::search_direction).add_ref(opt);
     o.on(minimizer::Phase::force).add_ref(energy);
-    EXPECT_FALSE(o.has_handler());
+    EXPECT_FALSE(o.has_criterion());
     o.build();
-    EXPECT_TRUE(o.has_handler());
+    EXPECT_TRUE(o.has_criterion());
 }
 
 /// …and a user handler suppresses the default rather than stacking on top of it.
@@ -221,7 +221,7 @@ TEST(CUDADriverRoleValidation, MinimizeKeepsTheUserHandler) {
     o.add_criterion(cuda::ForceConverged{/*ftol=*/1e-4});
     o.on(minimizer::Phase::search_direction).add_ref(opt);
     o.on(minimizer::Phase::force).add_ref(energy);
-    EXPECT_TRUE(o.has_handler());
+    EXPECT_TRUE(o.has_criterion());
     EXPECT_NO_THROW(o.build());
 }
 

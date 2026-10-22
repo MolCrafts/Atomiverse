@@ -21,9 +21,9 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/optimization_record.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/optimizer.h"
-#include "atomiverse/cpu/minimize/lbfgs.h" // OptRecord
 
 namespace ATV {
 namespace cpu {
@@ -61,14 +61,16 @@ class FIRE : public cpu::Optimizer {
     double max_force() const { return max_force_; }
 
     /// @brief Per-step diagnostic records (energy, forces, displacements).
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
     // Runtime FIRE state (reset in build / on migration).
     double dt_ = 0.1;    ///< Current pseudo-timestep [fs].
     double alpha_ = 0.1; ///< Current mixing α (dimensionless).
     int n_pos_ = 0;      ///< Consecutive steps with P > 0.
-    int step_ = 0;       ///< Completed search_direction count.
+    BigInt step_ = 0;    ///< Completed search_direction count.
 
     std::vector<double> v_;      ///< Private pseudo-velocity [Å/fs], 3N.
     std::vector<double> x_prev_; ///< Geometry at previous step [Å], 3N.
@@ -78,7 +80,7 @@ class FIRE : public cpu::Optimizer {
 
     double max_force_ = 0;
     double energy_prev_ = 0;
-    std::vector<OptRecord> trace_;
+    std::vector<ATV::minimizer::OptRecord> trace_;
 };
 
 } // namespace minimizer

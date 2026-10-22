@@ -32,8 +32,8 @@
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cuda/component/zero.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
-#include "atomiverse/cuda/dynamics/init.cuh"
 
 namespace ATV {
 namespace cuda {
@@ -46,9 +46,9 @@ namespace cuda {
 class Evaluate : public Driver<ATV::evaluate::Phase> {
   public:
     Evaluate() {
-        this->on(ATV::evaluate::Phase::prepare).add(md::ZeroForces{}, -1000);
-        this->on(ATV::evaluate::Phase::prepare).add(md::ZeroEnergy{}, -999);
-        this->on(ATV::evaluate::Phase::prepare).add(md::ZeroStress{}, -998);
+        this->on(ATV::evaluate::Phase::prepare).add(ZeroForces{}, -1000);
+        this->on(ATV::evaluate::Phase::prepare).add(ZeroEnergy{}, -999);
+        this->on(ATV::evaluate::Phase::prepare).add(ZeroStress{}, -998);
     }
 
     /// @brief Run a single evaluation pass through the compiled Plan.

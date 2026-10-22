@@ -36,10 +36,11 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/optimization_record.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/optimizer.h"
-#include "atomiverse/cpu/minimize/lbfgs.h" // for OptRecord
+#include "atomiverse/cpu/minimize/line_search.h"
 
 namespace ATV {
 namespace cpu {
@@ -85,7 +86,9 @@ class CG : public cpu::Optimizer {
     void launch(const cpu::LaunchContext& ctx) override;
 
     double max_force() const { return max_force_; }
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
     double alpha0_;
@@ -111,7 +114,7 @@ class CG : public cpu::Optimizer {
     bool x_prev_valid_ = false; ///< False after migration reshuffles rows.
     double max_force_ = 0;
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
 
     // Per-step workspaces, sized once in build() — no launch() allocation.
     std::vector<double> x_ws_;
@@ -122,7 +125,7 @@ class CG : public cpu::Optimizer {
     /// migration reshuffled local rows → previous-step state is discarded.
     std::uint64_t last_generation_ = ~std::uint64_t{0};
 
-    std::vector<OptRecord> trace_;
+    std::vector<ATV::minimizer::OptRecord> trace_;
 };
 
 } // namespace minimizer

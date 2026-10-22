@@ -455,6 +455,8 @@ TEST(TestVerletComm, MinimizeWrapsCommAroundForceSlot) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
+    hook.n_launch = 0;
     // The force slot's comm only; the setup's is not part of it.
     comm.reset();
     log.clear();
@@ -957,6 +959,7 @@ TEST(TestVerletComm, LinearNeighborDecisionSeesLineSearchMovement) {
         runtime.set_frame(frame);
         bind_spy(runtime, comm);
         runtime.build_components();
+        runtime.prepare_run();
         comm.reset();
         neighbor.n_decide = 0;
         if (mode == 2) {

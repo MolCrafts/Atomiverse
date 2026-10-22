@@ -61,7 +61,7 @@ class AnisotropicCellRelax : public Optimizer {
     double sx_ = 1, sy_ = 1, sz_ = 1;
     double max_disp_ = 0, rms_disp_ = 0; ///< Actual affine displacement [Å].
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
     bool has_prev_ = false;
 };
 

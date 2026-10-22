@@ -75,11 +75,21 @@ struct Plan {
     ///        linearly. Stamped by `Driver::build()` from `kind_of(Phase)`.
     PhaseKind kind = PhaseKind::Evaluate;
 
-    /// The shared MD preparation schedule. Force-slot evaluators run normally;
+    /// Initial force preparation schedule for MD and minimization. Force-slot evaluators run normally;
     /// other operations opt in through initialize_forces. Integration and
     /// ordinary observer/recorder launches are never part of preparation.
     template <typename BeforePhase, typename Visit>
     void prepare_forces(BeforePhase&& before_phase, Visit&& visit) const {
+        if (kind == PhaseKind::Minimizer) {
+            for (const auto& slot : slots) {
+                if (slot.phase != slot_of(minimizer::Phase::force))
+                    continue;
+                before_phase(slot.phase);
+                for (const auto& op : slot.ops)
+                    visit(slot, op, true);
+            }
+            return;
+        }
         if (kind != PhaseKind::MD)
             return;
         for (const auto& slot : slots) {

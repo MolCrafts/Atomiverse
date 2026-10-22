@@ -38,10 +38,10 @@
 ///   1. `build()` — installs infrastructure (`install_defaults()`), then validates the
 ///      component set, then compiles the Plan.
 ///   2. The loop primitives every preset composes its `run()` from: `setup_pass`,
-///      `step_once`, `poll_handlers_`, `teardown_pass`. The CUDA flavour of
+///      `step_once`, `poll_criteria_`, `teardown_pass`. The CUDA flavour of
 ///      `setup_pass` materializes the host frame onto the device (H2D) and
 ///      `teardown_pass` retrieves it back (D2H).
-///   3. **This loop's own** `IterationStatus` + `LoopMetrics` — owned here, borrowed by
+///   3. **This loop's own** `IterationStatus` + `ConvergenceMetrics` — owned here, borrowed by
 ///      the Context (`cuda::LoopServices`). A nested loop cannot reach the loop above
 ///      it.
 ///   4. The termination policy slot: `add_criterion(…)`, plural, composed by severity —
@@ -51,8 +51,8 @@
 /// `set_record`) live here, same as `cpu::Driver`. Presets add only
 /// loop-specific slots (`set_integrator`, `set_optimizer`, `set_thermo`).
 /// There is no MPI: the CUDA driver loop is single-rank, so
-/// `poll_handlers_` reduces nothing. When a multi-GPU driver loop lands,
-/// the reduction goes in `poll_handlers_` and no handler changes.
+/// `poll_criteria_` reduces nothing. When a multi-GPU driver loop lands,
+/// the reduction goes in `poll_criteria_` and no handler changes.
 ///
 /// User code does not subclass this directly — it constructs a preset.
 #pragma once
@@ -145,10 +145,12 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// `validate_components()` second (so a build with a missing required component
     /// throws before the Plan is compiled), `Base::build()` last.
     void build() {
+        this->require_mutable_();
         install_defaults();
         validate_long_range_contract_();
         validate_components();
         Base::build();
+        this->plan_.lifecycle_only.assign(criteria_.begin(), criteria_.end());
     }
 
     // ── Termination policy ─────────────────────────────────────────────────
@@ -163,16 +165,43 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// @param h A Criterion subclass, moved in.
     /// @return Reference to self, for chaining.
     template <typename H>
+        requires(!std::is_lvalue_reference_v<H>)
     Driver& add_criterion(H&& h) {
+        this->require_mutable_();
         using D = std::decay_t<H>;
-        static_assert(std::is_base_of_v<cuda::Criterion, D>,
-                      "add_criterion requires a cuda::Criterion subclass");
-        handlers_.push_back(std::make_unique<D>(std::forward<H>(h)));
+        static_assert(std::is_base_of_v<cuda::Criterion, D>);
+        auto owned = std::make_unique<D>(std::forward<H>(h));
+        auto* raw = owned.get();
+        if (!raw->default_bindings().empty())
+            this->bind_defaults_ref(*raw);
+        criteria_owned_.push_back(std::move(owned));
+        criteria_.push_back(raw);
         return *this;
     }
 
+    /// @brief Borrow a criterion; the caller retains ownership.
+    template <typename C>
+    Driver& add_criterion_ref(C& c) {
+        this->require_mutable_();
+        static_assert(std::is_base_of_v<cuda::Criterion, C>);
+        if (!c.default_bindings().empty())
+            this->bind_defaults_ref(c);
+        criteria_.push_back(&c);
+        return *this;
+    }
+
+    template <typename C>
+    void add_criterion(C&) = delete;
+
     /// @brief Whether any handler is attached (a preset injects a default if not).
-    bool has_handler() const { return !handlers_.empty(); }
+    bool has_criterion() const { return !criteria_.empty(); }
+
+    /// @brief Whether a successful-convergence requirement is attached.
+    bool has_convergence_criterion() const {
+        return std::any_of(
+            criteria_.begin(), criteria_.end(),
+            [](const auto& h) { return h->contributes_to_convergence(); });
+    }
 
     /// @brief Did this loop terminate because a handler declared success?
     ///
@@ -194,15 +223,22 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// @throws std::runtime_error if none / several match, if called during
     ///         launch, or if the remaining set fails `validate_components`.
     void unfix(std::string_view name_or_id) {
-        this->unmount_(name_or_id, launching_, [&](cuda::Component* c) {
-            if (this->backend_ && built_plugins_.count(c)) {
-                Plan<cuda::Component> one;
-                one.slots.resize(1);
-                one.slots[0].ops.push_back({c});
-                this->backend_->destroy_plan(one);
-                built_plugins_.erase(c);
-            }
-        });
+        this->unmount_(
+            name_or_id, launching_,
+            [&](cuda::Component* c) {
+                if (this->backend_ && built_plugins_.count(c)) {
+                    Plan<cuda::Component> one;
+                    one.slots.resize(1);
+                    one.slots[0].ops.push_back({c});
+                    this->backend_->destroy_plan(one);
+                    built_plugins_.erase(c);
+                }
+                std::erase(criteria_, c);
+                std::erase_if(criteria_owned_, [c](const auto& owned) {
+                    return owned.get() == c;
+                });
+            },
+            criteria_);
         clear_singular_on_unfix_(name_or_id);
         if (neighbor_set_ && *neighbor_set_ == name_or_id)
             neighbor_set_.reset();
@@ -289,6 +325,8 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     void for_each_pending(Fn&& fn) const {
         for (const auto& pb : this->pending_)
             fn(*pb.component);
+        for (auto* c : criteria_)
+            fn(*c);
     }
 
     /// @brief Mutable variant of for_each_pending — visitor may mutate the
@@ -298,6 +336,8 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     void for_each_pending_mut(Fn&& fn) {
         for (auto& pb : this->pending_)
             fn(*pb.component);
+        for (auto* c : criteria_)
+            fn(*c);
     }
 
     // ── Driver loop helpers (protected — presets only) ──────────────
@@ -324,7 +364,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         this->backend_->build_components();
         mark_built_from_pending_();
         status_.reset();
-        metrics_ = LoopMetrics{};
+        metrics_ = ConvergenceMetrics{};
     }
 
     /// @brief Single iteration through the compiled Plan.
@@ -332,9 +372,17 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     void step_once(BigInt iter_index) {
         struct Guard {
             bool& flag;
-            explicit Guard(bool& f) : flag(f) { flag = true; }
-            ~Guard() { flag = false; }
-        } guard(launching_);
+            const bool*& lock;
+            bool saved;
+            const bool* saved_lock;
+            ~Guard() {
+                flag = saved;
+                lock = saved_lock;
+            }
+        } guard{launching_, this->mutation_lock_, launching_,
+                this->mutation_lock_};
+        launching_ = true;
+        this->mutation_lock_ = &launching_;
         this->backend_->step(iter_index);
     }
 
@@ -342,6 +390,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     ///        shut down the backend.
     /// @param frame Host-resident frame populated from the device.
     void teardown_pass(cpu::Frame& frame) {
+        this->backend_->sync();
         this->backend_->destroy_components();
         this->backend_->retrieve(frame);
         this->backend_->shutdown();
@@ -350,7 +399,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
 
     /// @brief Ask every handler about the iteration just completed, and reduce.
     ///
-    /// Composition: **Stop > Converged > Continue** — the most severe verdict wins, so a
+    /// Composition: every declared convergence requirement must pass; Stop wins, so a
     /// run that has gone numerically insane cannot report success by also happening to
     /// satisfy a force tolerance.
     ///
@@ -358,35 +407,64 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// request stops, they never declare convergence: `IterationStatus::converged` is
     /// written here, from the handlers' reduced verdict, and nowhere else.
     ///
-    /// Single-rank: unlike `cpu::Driver::poll_handlers_` there is no `MPI_Allreduce`
+    /// Single-rank: unlike `cpu::Driver::poll_criteria_` there is no `MPI_Allreduce`
     /// of the severity, because the CUDA driver loop has no communicator.
     ///
     /// @param iteration Index of the iteration just completed.
     /// @return The reduced verdict.
-    Verdict poll_handlers_(BigInt iteration) {
-        return poll_handlers_(iteration, this->backend_->frame(),
+    Verdict poll_criteria_(BigInt iteration) {
+        return poll_criteria_(iteration, this->backend_->frame(),
                               this->backend_->context());
     }
 
-    /// @brief Same composition as `poll_handlers_(int)`, on a borrowed
+    /// @brief Same composition as `poll_criteria_(int)`, on a borrowed
     ///        frame and context. Nested SCF uses the parent's device frame
     ///        instead of `this->backend_`.
-    Verdict poll_handlers_(BigInt iteration, const cuda::Frame& frame,
+    Verdict poll_criteria_(BigInt iteration, const cuda::Frame& frame,
                            const cuda::Context& ctx) {
-        const cuda::LoopState st{iteration, frame, ctx, metrics_};
-        Verdict v = status_.stop_requested ? Verdict::Stop : Verdict::Continue;
-        for (auto& h : handlers_) {
-            const Verdict hv = h->after_iteration(st);
-            if (hv != Verdict::Continue && worse_of(v, hv) == hv && v != hv) {
-                status_.reason = h->name();
+        struct DispatchGuard {
+            bool& launching;
+            const bool*& lock;
+            bool saved;
+            const bool* saved_lock;
+            ~DispatchGuard() {
+                launching = saved;
+                lock = saved_lock;
             }
-            v = worse_of(v, hv);
+        } guard{launching_, this->mutation_lock_, launching_,
+                this->mutation_lock_};
+        launching_ = true;
+        this->mutation_lock_ = &launching_;
+        const cuda::LoopState st{iteration, frame, ctx, metrics_};
+        bool stop = status_.stop_requested;
+        bool satisfied = has_convergence_criterion();
+        bool invalid = false;
+        std::string reason;
+        for (auto& h : criteria_) {
+            const Verdict hv = h->verdict(st);
+            if (hv == Verdict::Stop) {
+                if (!stop)
+                    status_.reason = h->name();
+                stop = true;
+            }
+            if (h->contributes_to_convergence()) {
+                satisfied &= hv == Verdict::Converged;
+                if (hv == Verdict::Converged && reason.empty())
+                    reason = h->name();
+            } else if (hv == Verdict::Converged) {
+                invalid = true;
+            }
         }
-        if (v == Verdict::Converged)
-            status_.converged = true;
-        if (v == Verdict::Stop)
-            status_.stop_requested = true;
-        return v;
+        if (invalid)
+            throw std::logic_error(
+                "Criterion returned Converged without declaring "
+                "contributes_to_convergence()");
+        status_.converged = !stop && satisfied;
+        status_.stop_requested = stop;
+        if (status_.converged)
+            status_.reason = std::move(reason);
+        return stop ? Verdict::Stop
+                    : (satisfied ? Verdict::Converged : Verdict::Continue);
     }
 
     /// @brief Mutable handle to this loop's iteration status (for the per-iteration
@@ -575,15 +653,15 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
 
     void mark_built_from_pending_() {
         built_plugins_.clear();
-        for_each_pending_mut(
-            [&](cuda::Component& c) { built_plugins_.insert(&c); });
+        for (auto* c : this->plan_.components())
+            built_plugins_.insert(c);
     }
 
     void flush_new_mounts_() {
         if (!this->backend_)
             return;
-        for (auto& pb : this->pending_) {
-            cuda::Component* c = pb.component;
+        rebind_from_live_table_();
+        for (auto* c : this->plan_.components()) {
             if (!c || built_plugins_.count(c))
                 continue;
             Plan<cuda::Component> one;
@@ -609,6 +687,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         }
         this->plan_ = builder.build(ATV::slot_count<PhaseEnum>());
         this->plan_.kind = kind_of(PhaseEnum{});
+        this->plan_.lifecycle_only.assign(criteria_.begin(), criteria_.end());
         if (this->backend_)
             this->backend_->load(this->plan());
         validate_long_range_contract_();
@@ -654,9 +733,10 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
   protected:
     /// This loop's own status and metrics. **Not on the Context** — see LoopServices.
     IterationStatus status_{};
-    LoopMetrics metrics_{};
-    /// Termination policies — plural, composed by severity. @see poll_handlers_
-    std::vector<std::unique_ptr<cuda::Criterion>> handlers_;
+    ConvergenceMetrics metrics_{};
+    /// Termination policies — plural, composed by severity. @see poll_criteria_
+    std::vector<cuda::Criterion*> criteria_;
+    std::vector<std::unique_ptr<cuda::Criterion>> criteria_owned_;
     bool launching_ = false; ///< True inside `step_once` / `launch()`.
     std::unordered_set<cuda::Component*> built_plugins_;
     std::optional<std::string> neighbor_set_;

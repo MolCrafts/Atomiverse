@@ -67,7 +67,7 @@ class IsotropicCellRelax : public Optimizer {
     double scale_step_ = 1.0; ///< Multiplicative scale to apply at line_search.
     double max_disp_ = 0, rms_disp_ = 0; ///< Actual affine displacement [Å].
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
     bool has_prev_ = false;
 };
 
