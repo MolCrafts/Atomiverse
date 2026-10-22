@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <string>
 
+#include <dlfcn.h>
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -18,9 +20,22 @@
 #include <mpi.h>
 #endif
 
-// Optional: OpenBLAS exposes its own thread count. Weak so a build against any
-// other BLAS still links. See the threading note in configure_threads().
-extern "C" int openblas_get_num_threads(void) __attribute__((weak));
+// Optional: OpenBLAS exposes its own thread count. Look it up at run time so a
+// build against any other BLAS still links. A weak undefined symbol does that
+// on ELF and is rejected by the Mach-O linker. See configure_threads().
+namespace {
+int openblas_thread_count() {
+    using Fn = int (*)();
+    static Fn fn = nullptr;
+    static bool resolved = false;
+    if (!resolved) {
+        fn = reinterpret_cast<Fn>(
+            dlsym(RTLD_DEFAULT, "openblas_get_num_threads"));
+        resolved = true;
+    }
+    return fn ? fn() : 0;
+}
+} // namespace
 
 namespace ATV {
 namespace cpu {
@@ -59,9 +74,7 @@ void DeviceRuntime::configure_threads(Context& ctx) {
     // unambiguously wrong: several OpenMP threads while BLAS runs on one.
     static bool s_threading_warned = false;
     if (!s_threading_warned && ctx.n_threads > 1) {
-        int blas_threads = 0;
-        if (openblas_get_num_threads)
-            blas_threads = openblas_get_num_threads();
+        const int blas_threads = openblas_thread_count();
         if (blas_threads == 1) {
             int my_rank = 0;
 #ifdef ATV_HAS_MPI
