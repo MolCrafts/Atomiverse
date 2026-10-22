@@ -18,3 +18,10 @@ GH200 **1336653** (T\*=1, ε=1 eV): CPU `V=269.425432`, CUDA
 LAMMPS twin deck uses a literal \(a_0\) so ρ=0.8. A digit-identical
 LAMMPS volume is not claimed: ATV/LAMMPS RNGs and lj-vs-fs time units
 differ. The landed gate is CPU↔CUDA.
+
+The 1/2-step initial-force and represented-cell parity cases also run here,
+with their original relative bounds 1e-8 and 1e-6. They use T=1 K and
+CUDA-representable input cells/positions; they are not unit tests.
+The scalar NHC half-step follows Martyna, Klein and Tuckerman, JCP 97,
+2635 (1992), doi:10.1063/1.463940; MTK pressure propagation follows
+Martyna, Tobias and Klein, JCP 101, 4177 (1994), doi:10.1063/1.467468.

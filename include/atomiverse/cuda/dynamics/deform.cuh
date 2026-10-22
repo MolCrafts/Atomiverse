@@ -26,6 +26,7 @@ class Deform : public Component {
     /// @param dt          Time step [fs] (must match integrator).
     Deform(int axis, double strain_rate, double dt);
 
+    bool changes_box(int) const override { return true; }
     std::string name() const override { return "deform"; }
     Role role() const override { return 0; }
 

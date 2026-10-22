@@ -24,5 +24,5 @@ force pass or lose the current force. Transverse coordinates and velocities
 remain unchanged. No force component lifecycle is driven by the consumer.
 
 Maximum absolute position/velocity error must be below 1e−11 in double or
-3e−6 with float storage or kernel work. Four total integration steps on two atoms should
+3e−6 when force math (`force_t`) or integration state (`mixed_t`) is FP32. Four total integration steps on two atoms should
 finish within ten seconds on Arrhenius, including CUDA initialization.

@@ -53,7 +53,7 @@ void Thermo::launch(const cpu::LaunchContext& ctx) {
 
 // ── thermo_print free function ─────────────────────────────────────
 
-void thermo_print(int step, double pe, double ke, int n_dof,
+void thermo_print(BigInt step, double pe, double ke, int n_dof,
                   bool& header_printed, std::ofstream& file) {
     // Temperature: T = 2*KE / (Ndof * kB). Ndof is supplied by the caller — it is
     // owned by Driver::publish_dof_ and accounts for constraints.

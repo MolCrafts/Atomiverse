@@ -1,3 +1,4 @@
+#include "atomiverse/core/dynamics_math.h"
 /// @file cpu/dynamics/fix_langevin.cpp
 /// @brief LAMMPS-equivalent Langevin thermostat (force-additive form).
 
@@ -96,20 +97,18 @@ void FixLangevin::launch(const cpu::LaunchContext& ctx) {
     // extrapolating. With the default span (`nlast_ <= nfirst_`) or
     // `T_stop_ == T_start_`, `T_live_` stays at `T_start_` — the
     // no-ramp default.
-    double delta = 0.0;
-    if (nlast_ > nfirst_) {
-        delta = static_cast<double>(ctx.step - nfirst_)
-                / static_cast<double>(nlast_ - nfirst_);
-        delta = std::clamp(delta, 0.0, 1.0);
-    }
-    T_live_ = T_start_ + delta * (T_stop_ - T_start_);
+    T_live_ =
+        ATV::md::ramp_target(T_start_, T_stop_, ctx.step, nfirst_, nlast_);
 
     // Per-step seed mixed in. Atom identity = global tag, so the same
     // atom on different rank counts gets the same kick (modulo
     // floating-point reduction noise elsewhere).
     const std::uint64_t base =
         static_cast<std::uint64_t>(seed_) * 0x9E3779B97F4A7C15ULL
-        + static_cast<std::uint64_t>(ctx.step) * 0xBF58476D1CE4E5B9ULL;
+        + static_cast<std::uint64_t>(
+              static_cast<std::int64_t>(ctx.step)
+              - (ctx.runtime.exec.initializing_forces ? 1 : 0))
+              * 0xBF58476D1CE4E5B9ULL;
 
     // gfactor1 multiplies v -> drag force (temperature-independent, as
     // LAMMPS `gfactor1`).

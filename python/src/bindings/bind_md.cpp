@@ -234,7 +234,7 @@ struct MdHandle {
             "frame[\"atoms\"].insert(\"charge\", q).");
     }
 
-    void run(nb::object frame_obj, int n_steps) {
+    void run(nb::object frame_obj, std::int64_t n_steps) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
             // Every ramping component gets THIS run's span `[0, n_steps]`,

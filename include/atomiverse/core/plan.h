@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/stage.h"
 #include "atomiverse/core/types.h"
 
 namespace ATV {
@@ -66,7 +67,115 @@ struct Plan {
     ///        `nflag` comm block in `Runtime::step`; other kinds walk slots
     ///        linearly. Stamped by `Driver::build()` from `kind_of(Phase)`.
     PhaseKind kind = PhaseKind::Evaluate;
+
+    /// Lifecycle order is the first scheduled occurrence of each instance.
+    /// Bindings remain untouched: an instance may launch in several slots.
+    std::vector<Component*> components() const {
+        std::vector<Component*> result;
+        for (const auto& slot : slots)
+            for (const auto& op : slot.ops)
+                if (op.component
+                    && std::find(result.begin(), result.end(), op.component)
+                           == result.end())
+                    result.push_back(op.component);
+        return result;
+    }
+
+    /// The shared MD preparation schedule. Force-slot evaluators run normally;
+    /// other operations opt in through initialize_forces. Integration and
+    /// ordinary observer/recorder launches are never part of preparation.
+    template <typename BeforePhase, typename Visit>
+    void prepare_forces(BeforePhase&& before_phase, Visit&& visit) const {
+        if (kind != PhaseKind::MD)
+            return;
+        for (const auto& slot : slots) {
+            if (slot.phase < slot_of(md::Phase::post_integrate)
+                || slot.phase == slot_of(md::Phase::final_integrate))
+                continue;
+            before_phase(slot.phase);
+            for (const auto& op : slot.ops)
+                visit(slot, op, slot.phase == slot_of(md::Phase::force));
+        }
+    }
 };
+
+namespace detail {
+
+/// Runtime-owned lifecycle ledger shared by CPU and CUDA. Nested plans
+/// acquire references to instances; bindings never acquire resources.
+template <typename Component>
+class ComponentLifecycle {
+  public:
+    bool empty() const noexcept { return entries_.empty(); }
+    template <typename Build, typename Destroy>
+    void build(const Plan<Component>& plan, Build&& build_one,
+               Destroy&& destroy_one) {
+        std::vector<Component*> acquired;
+        acquired.reserve(plan.components().size());
+        try {
+            for (auto* component : plan.components()) {
+                auto it = find_(component);
+                if (it != entries_.end()) {
+                    ++it->references;
+                } else {
+                    try {
+                        build_one(*component);
+                    } catch (...) {
+                        // build may have acquired only part of its resources.
+                        destroy_one(*component);
+                        throw;
+                    }
+                    entries_.push_back({component, 1});
+                }
+                acquired.push_back(component);
+            }
+        } catch (...) {
+            for (auto it = acquired.rbegin(); it != acquired.rend(); ++it)
+                release_(*it, destroy_one);
+            throw;
+        }
+    }
+
+    template <typename Destroy>
+    void destroy(const Plan<Component>& plan, Destroy&& destroy_one) {
+        auto components = plan.components();
+        for (auto it = components.rbegin(); it != components.rend(); ++it)
+            release_(*it, destroy_one);
+    }
+
+    template <typename Destroy>
+    void destroy_all(Destroy&& destroy_one) {
+        // Pop before the callback: destroying a nested driver may itself
+        // release child plans in this same ledger.
+        while (!entries_.empty()) {
+            auto* component = entries_.back().component;
+            entries_.pop_back();
+            destroy_one(*component);
+        }
+    }
+
+  private:
+    struct Entry {
+        Component* component;
+        std::size_t references;
+    };
+    auto find_(Component* component) {
+        return std::find_if(
+            entries_.begin(), entries_.end(),
+            [component](const Entry& e) { return e.component == component; });
+    }
+    template <typename Destroy>
+    void release_(Component* component, Destroy& destroy_one) {
+        auto it = find_(component);
+        if (it == entries_.end() || --it->references != 0)
+            return;
+        entries_.erase(it);
+        destroy_one(*component);
+    }
+    std::vector<Entry> entries_;
+};
+
+} // namespace detail
 
 /// @brief Compiles bindings into a Plan.
 ///

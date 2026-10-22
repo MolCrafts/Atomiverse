@@ -12,11 +12,17 @@
 #include <vector>
 
 #include "atomiverse/core/plan.h"
+#ifdef ATV_HAS_MD
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#endif
+#ifdef ATV_HAS_EVALUATE
 #include "atomiverse/cpu/evaluate/evaluate.h"
+#endif
+#ifdef ATV_HAS_MINIMIZER
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/cpu/minimize/minimize.h"
+#endif
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -61,6 +67,7 @@ std::string dead_hit(const std::vector<std::string>& names) {
 
 } // namespace
 
+#ifdef ATV_HAS_MD
 TEST(TestMdInstallDefaults, PlanHasReduceAndNoDeadCommPlugins) {
     ATV::cpu::md::MD sim;
     sim.set_integrator(ATV::cpu::md::VelocityVerlet{1.0});
@@ -73,7 +80,9 @@ TEST(TestMdInstallDefaults, PlanHasReduceAndNoDeadCommPlugins) {
     EXPECT_TRUE(dead_hit(names).empty())
         << "dead comm plugin still on the MD Plan: " << dead_hit(names);
 }
+#endif
 
+#ifdef ATV_HAS_EVALUATE
 TEST(TestEvaluateInstallDefaults, PlanHasReduceAndNoDeadCommPlugins) {
     ATV::cpu::Evaluate eval;
     eval.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
@@ -86,7 +95,9 @@ TEST(TestEvaluateInstallDefaults, PlanHasReduceAndNoDeadCommPlugins) {
     EXPECT_TRUE(dead_hit(names).empty())
         << "dead comm plugin still on the Evaluate Plan: " << dead_hit(names);
 }
+#endif
 
+#ifdef ATV_HAS_MINIMIZER
 TEST(TestMinimizeInstallDefaults, PlanHasReduceAndNoDeadCommPlugins) {
     ATV::cpu::minimizer::Minimize opt;
     opt.set_optimizer(ATV::cpu::minimizer::LBFGS{});
@@ -100,3 +111,4 @@ TEST(TestMinimizeInstallDefaults, PlanHasReduceAndNoDeadCommPlugins) {
     EXPECT_TRUE(dead_hit(names).empty())
         << "dead comm plugin still on the Minimize Plan: " << dead_hit(names);
 }
+#endif

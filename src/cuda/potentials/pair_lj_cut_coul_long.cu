@@ -9,25 +9,33 @@
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut_coul_long.cuh"
 #include "internal/packed_tiles.cuh"
 #include <algorithm>
 #include <cmath>
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 #include <cstddef>
 #include <cub/device/device_scan.cuh>
 #include <cuda_runtime.h>
 #include <limits>
 #include <map>
+#include <nvtx3/nvToolsExt.h>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
 
 namespace ATV::cuda {
 namespace {
+// 128 threads x 4 resident blocks: 256/2, 128/3 and 128/6 measured no
+// better on GH200 (256/2 is 7% slower in double at 49,680 atoms).
 constexpr int kTileBlock = 128;
-constexpr work_t kWorkInfinity = std::numeric_limits<work_t>::infinity();
-constexpr work_t kWorkEpsilon = std::numeric_limits<work_t>::epsilon();
+constexpr int kTileMinBlocks = 4;
+constexpr force_t kForceInfinity = std::numeric_limits<force_t>::infinity();
+constexpr force_t kForceEpsilon = std::numeric_limits<force_t>::epsilon();
+using ForceBox = BoxGeometry<force_t>;
 
 // OpenMM packs only J atoms that interact with an I cluster, crossing the
 // original J-cluster boundaries. Here the exact baked masks are the input;
@@ -43,23 +51,27 @@ __device__ unsigned upper_mask(const PairList& source, int p, int ci,
     return bits;
 }
 
-__device__ unsigned column_union(unsigned bits) {
-    for (int shift = 16; shift > 0; shift /= 2)
-        bits |= __shfl_xor_sync(0xffffffffu, bits, shift);
-    return bits;
-}
-
-__global__ void count_packed_tiles(PairList source, int* counts) {
+__global__ void count_packed_tiles(PairList source, int* counts, int* valid) {
     const int ci = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32;
     const int lane = threadIdx.x % 32;
     if (ci > source.num_clusters)
         return;
-    int columns = 0;
+    namespace cg = cooperative_groups;
+    auto warp = cg::tiled_partition<32>(cg::this_thread_block());
+    int columns = 0, entries = 0;
     if (ci < source.num_clusters)
-        for (int p = source.cl_row_ptr[ci]; p < source.cl_row_ptr[ci + 1]; ++p)
-            columns += __popc(column_union(upper_mask(source, p, ci, lane)));
-    if (lane == 0)
+        for (int p = source.cl_row_ptr[ci]; p < source.cl_row_ptr[ci + 1];
+             ++p) {
+            const unsigned used = cg::reduce(
+                warp, upper_mask(source, p, ci, lane), cg::bit_or<unsigned>{});
+            columns += __popc(used);
+            entries += used != 0;
+        }
+    if (lane == 0) {
         counts[ci] = (columns + 31) / 32;
+        if (valid != nullptr && entries)
+            atomicAdd(valid, entries);
+    }
 }
 
 __global__ void fill_packed_tiles(PairList source,
@@ -68,11 +80,13 @@ __global__ void fill_packed_tiles(PairList source,
     const int lane = threadIdx.x % 32;
     if (ci >= source.num_clusters)
         return;
+    namespace cg = cooperative_groups;
+    auto warp = cg::tiled_partition<32>(cg::this_thread_block());
     int tile = out.offsets[ci], column = 0;
     unsigned packed_bits = 0;
     for (int p = source.cl_row_ptr[ci]; p < source.cl_row_ptr[ci + 1]; ++p) {
         const unsigned row = upper_mask(source, p, ci, lane);
-        unsigned columns = column_union(row);
+        unsigned columns = cg::reduce(warp, row, cg::bit_or<unsigned>{});
         while (columns) {
             const int j = __ffs(columns) - 1;
             columns &= columns - 1;
@@ -103,14 +117,14 @@ __global__ void fill_packed_tiles(PairList source,
 }
 
 struct Atom {
-    work_t x, y, z, q, sigma_half, epsilon_root;
+    force_t x, y, z, q, sigma_half, epsilon_root;
 };
 struct Exception {
     int i, j;
-    work_t lj_scale, coul_scale;
+    force_t lj_scale, coul_scale;
 };
 struct ClusterImage {
-    work_t center[3];
+    force_t center[3];
     int single;
 };
 
@@ -119,27 +133,27 @@ struct ClusterImage {
 // assumption about its motion within the neighbor skin. Wide clusters safely
 // keep the per-pair minimum image calculation.
 __device__ __forceinline__ ClusterImage cluster_image(const Atom& a, int ai,
-                                                      const Box& box,
-                                                      work_t cut2) {
-    const work_t position[3] = {a.x, a.y, a.z};
+                                                      const ForceBox& box,
+                                                      force_t cut2) {
+    const force_t position[3] = {a.x, a.y, a.z};
     ClusterImage image{};
-    const work_t cutoff = sqrt(cut2);
+    const force_t cutoff = sqrt(cut2);
 #pragma unroll
     for (int d = 0; d < 3; ++d) {
-        work_t lo = ai >= 0 ? position[d] : kWorkInfinity;
-        work_t hi = ai >= 0 ? position[d] : -kWorkInfinity;
+        force_t lo = ai >= 0 ? position[d] : kForceInfinity;
+        force_t hi = ai >= 0 ? position[d] : -kForceInfinity;
 #pragma unroll
-        for (int shift = 16; shift > 0; shift /= 2) {
-            lo = fmin(lo, __shfl_xor_sync(0xffffffffu, lo, shift));
-            hi = fmax(hi, __shfl_xor_sync(0xffffffffu, hi, shift));
-        }
-        const work_t length = work_t(box.cell[4 * d]);
-        const work_t halfwidth = (hi - lo) * work_t(0.5);
-        const work_t margin = work_t(32) * kWorkEpsilon
-                              * (fabs(lo) + fabs(hi) + fabs(length) + cutoff);
+        namespace cg = cooperative_groups;
+        auto warp = cg::tiled_partition<32>(cg::this_thread_block());
+        lo = cg::reduce(warp, lo, cg::less<force_t>{});
+        hi = cg::reduce(warp, hi, cg::greater<force_t>{});
+        const force_t length = force_t(box.cell[4 * d]);
+        const force_t halfwidth = (hi - lo) * force_t(0.5);
+        const force_t margin = force_t(32) * kForceEpsilon
+                               * (fabs(lo) + fabs(hi) + fabs(length) + cutoff);
         // Every cutoff neighbor then lies strictly inside the single box
         // centered here. The guard is warp-uniform, including padded lanes.
-        if (!(halfwidth + cutoff + margin < length * work_t(0.5)))
+        if (!(halfwidth + cutoff + margin < length * force_t(0.5)))
             return image;
         image.center[d] = lo + halfwidth;
     }
@@ -148,16 +162,18 @@ __device__ __forceinline__ ClusterImage cluster_image(const Atom& a, int ai,
 }
 
 __device__ __forceinline__ void
-apply_cluster_image(Atom& a, const ClusterImage& image, const Box& box) {
+apply_cluster_image(Atom& a, const ClusterImage& image, const ForceBox& box) {
     a.x -= box.cell[0] * nearbyint((a.x - image.center[0]) * box.inv_l[0]);
     a.y -= box.cell[4] * nearbyint((a.y - image.center[1]) * box.inv_l[1]);
     a.z -= box.cell[8] * nearbyint((a.z - image.center[2]) * box.inv_l[2]);
 }
 
-__global__ void gather(const int* index, int slots, const real_t* x,
-                       const real_t* y, const real_t* z, const real_t* q,
-                       const work_t* sigma, const work_t* epsilon, Atom* sorted,
-                       ClusterImage* images, Box box, work_t cut2) {
+__global__ void gather(const int* index, int slots, const pos_t* x,
+                       const pos_t* y, const pos_t* z, const force_t* q,
+                       const force_t* sigma, const force_t* epsilon,
+                       Atom* sorted, ClusterImage* images, Box box_arg,
+                       force_t cut2) {
+    const ForceBox box = box_arg.current().as<force_t>();
     const int s = blockIdx.x * blockDim.x + threadIdx.x;
     if (s >= slots)
         return;
@@ -177,62 +193,70 @@ __global__ void gather(const int* index, int slots, const real_t* x,
 // Like OpenMM's nonbonded energy buffer, each producer writes a disjoint
 // partial. A separate reduction avoids serializing every force block on one
 // system energy/stress address. All launched blocks overwrite their slot.
-template <bool Virial>
-__device__ void tally(work_t e, const work_t* v, prec_t* partial,
+template <bool Virial, int BlockSize>
+__device__ void tally(acc_t e, const acc_t* v, acc_t* partial,
                       int partial_stride, int partial_offset) {
-    __shared__ work_t scratch[kDefaultBlock / 32];
-    work_t vals[7] = {e, v[0], v[1], v[2], v[3], v[4], v[5]}, out[7];
-    if constexpr (Virial) {
-        block_reduce_sum_n<7>(vals, scratch, out);
-    } else {
-        out[0] = block_reduce_sum(e, scratch);
-    }
+    // The tile producer uses kTileBlock; exceptions use kDefaultBlock.
+    // The caller supplies its compile-time block size to CUB.
+    constexpr int components = Virial ? 7 : 1;
+    using Values = ::cuda::std::array<acc_t, components>;
+    using Reduce = cub::BlockReduce<Values, BlockSize>;
+    __shared__ typename Reduce::TempStorage reduction;
+    Values values{};
+    values[0] = e;
+    if constexpr (Virial)
+        for (int d = 0; d < 6; ++d)
+            values[d + 1] = v[d];
+    const auto out =
+        Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
     if (threadIdx.x == 0) {
         const std::size_t slot = partial_offset + blockIdx.x;
-        partial[slot] = prec_t(out[0]);
+        partial[slot] = out[0];
         if constexpr (Virial)
             for (int d = 0; d < 6; ++d)
                 partial[static_cast<std::size_t>(d + 1) * partial_stride
-                        + slot] = prec_t(out[d + 1]);
+                        + slot] = out[d + 1];
     }
 }
 
 template <bool Virial>
-__global__ void reduce_partials(const prec_t* partial, int count, int stride,
-                                prec_t* energy, prec_t* stress) {
+__global__ void reduce_partials(const acc_t* partial, int count, int stride,
+                                acc_t* energy, acc_t* stress) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    __shared__ prec_t scratch[kDefaultBlock / 32];
-    if constexpr (Virial) {
-        prec_t values[7] = {}, reduced[7];
-        if (i < count)
-            for (int d = 0; d < 7; ++d)
-                values[d] = partial[static_cast<std::size_t>(d) * stride + i];
-        block_reduce_sum_n<7>(values, scratch, reduced);
-        if (threadIdx.x == 0) {
-            atomicAdd(energy, reduced[0]);
+    constexpr int components = Virial ? 7 : 1;
+    using Values = ::cuda::std::array<acc_t, components>;
+    using Reduce = cub::BlockReduce<Values, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    Values values{};
+    if (i < count)
+        for (int d = 0; d < components; ++d)
+            values[d] = partial[static_cast<std::size_t>(d) * stride + i];
+    const auto reduced =
+        Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
+    if (threadIdx.x == 0) {
+        atomicAdd(energy, reduced[0]);
+        if constexpr (Virial)
             for (int d = 0; d < 6; ++d)
                 atomicAdd(stress + d, reduced[d + 1]);
-        }
-    } else {
-        const prec_t value = i < count ? partial[i] : prec_t(0);
-        const prec_t reduced = block_reduce_sum(value, scratch);
-        if (threadIdx.x == 0)
-            atomicAdd(energy, reduced);
     }
 }
 
 template <bool Ortho, bool Virial>
-__global__ __launch_bounds__(kTileBlock, 4) void fused_tile(
+__global__ __launch_bounds__(kTileBlock, kTileMinBlocks) void fused_tile(
     const Atom* atoms, const int* index, const int* packed_ci,
-    const int* packed_j, const std::uint32_t* masks, int num_pairs, Box box,
-    const ClusterImage* images, work_t alpha, work_t cut2, real_t* fx,
-    real_t* fy, real_t* fz, prec_t* partial, int partial_stride) {
+    const int* packed_j, const std::uint32_t* masks, int num_pairs, Box box_arg,
+    const ClusterImage* images, force_t alpha, force_t cut2, fixed_t* fx,
+    fixed_t* fy, fixed_t* fz, ForceFault* fault, acc_t* partial,
+    int partial_stride) {
+    const ForceBox box = box_arg.current().as<force_t>();
     // A warp owns one I cluster and 32 packed J atoms. Baked masks already
-    // contain only upper-triangle interactions. Floating
-    // atomics retain the force range needed for initially clashing systems.
+    // contain only upper-triangle interactions. Pair math runs in force_t;
+    // energy and virial accumulate in acc_t per interaction, and each lane
+    // adds its I and J forces to the fixed-point columns once per tile.
     const int p = blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32;
     const int lane = threadIdx.x % 32;
-    work_t e = 0, v[6] = {};
+    acc_t e = 0, v[6] = {};
+    DeferredForceAdds<6> adds;
     if (p < num_pairs) {
         const int si = packed_ci[p] * 32 + lane;
         const std::size_t slot = static_cast<std::size_t>(p) * 32 + lane;
@@ -240,7 +264,7 @@ __global__ __launch_bounds__(kTileBlock, 4) void fused_tile(
         const int ai = index[si], bj = sj >= 0 ? index[sj] : -1;
         Atom a = atoms[si], b = sj >= 0 ? atoms[sj] : Atom{};
         const unsigned mask = masks[slot];
-        work_t fi[3] = {}, fj[3] = {};
+        force_t fi[3] = {}, fj[3] = {};
         if (__any_sync(0xffffffffu, mask != 0)) {
             bool single_copy = false;
             if constexpr (Ortho) {
@@ -255,14 +279,14 @@ __global__ __launch_bounds__(kTileBlock, 4) void fused_tile(
             for (int step = 0; step < 32; ++step) {
                 const int jlane = (lane + step) & 31;
                 const int aj = __shfl_sync(0xffffffffu, bj, jlane);
-                work_t dx = __shfl_sync(0xffffffffu, b.x, jlane) - a.x;
-                work_t dy = __shfl_sync(0xffffffffu, b.y, jlane) - a.y;
-                work_t dz = __shfl_sync(0xffffffffu, b.z, jlane) - a.z;
-                const work_t qj = __shfl_sync(0xffffffffu, b.q, jlane);
-                const work_t sig =
+                force_t dx = __shfl_sync(0xffffffffu, b.x, jlane) - a.x;
+                force_t dy = __shfl_sync(0xffffffffu, b.y, jlane) - a.y;
+                force_t dz = __shfl_sync(0xffffffffu, b.z, jlane) - a.z;
+                const force_t qj = __shfl_sync(0xffffffffu, b.q, jlane);
+                const force_t sig =
                     a.sigma_half
                     + __shfl_sync(0xffffffffu, b.sigma_half, jlane);
-                const work_t eps =
+                const force_t eps =
                     a.epsilon_root
                     * __shfl_sync(0xffffffffu, b.epsilon_root, jlane);
                 if constexpr (Ortho) {
@@ -273,32 +297,32 @@ __global__ __launch_bounds__(kTileBlock, 4) void fused_tile(
                     }
                 } else
                     box.min_image(dx, dy, dz);
-                const work_t r2 = dx * dx + dy * dy + dz * dz;
-                work_t contribution[3] = {};
+                const force_t r2 = dx * dx + dy * dy + dz * dz;
+                force_t contribution[3] = {};
                 if (ai >= 0 && aj >= 0 && ai != aj && (mask & (1u << jlane))
                     && r2 > 0 && r2 < cut2) {
-                    const work_t inv = rsqrt(r2), inv2 = inv * inv,
-                                 ar = alpha * (r2 * inv);
-                    const work_t sr2 = sig * sig * inv2, sr6 = sr2 * sr2 * sr2;
-                    const work_t ex = exp(-ar * ar), er = erfcx(ar) * ex;
-                    const work_t qq = work_t(units::coulomb) * a.q * qj * inv;
-                    const work_t fr =
+                    const force_t inv = rsqrt(r2), inv2 = inv * inv,
+                                  ar = alpha * (r2 * inv);
+                    const force_t sr2 = sig * sig * inv2, sr6 = sr2 * sr2 * sr2;
+                    const force_t ex = exp(-ar * ar), er = erfcx(ar) * ex;
+                    const force_t qq = force_t(units::coulomb) * a.q * qj * inv;
+                    const force_t fr =
                         (eps * (12 * sr6 - 6) * sr6
-                         + qq * (er + work_t(1.1283791670955126) * (ar * ex)))
+                         + qq * (er + force_t(1.1283791670955126) * (ar * ex)))
                         * inv2;
                     contribution[0] = fr * dx;
                     contribution[1] = fr * dy;
                     contribution[2] = fr * dz;
                     for (int d = 0; d < 3; ++d)
                         fi[d] -= contribution[d];
-                    e += eps * sr6 * (sr6 - 1) + qq * er;
+                    e += acc_t(eps * sr6 * (sr6 - 1) + qq * er);
                     if constexpr (Virial) {
-                        v[0] += fr * dx * dx;
-                        v[1] += fr * dy * dy;
-                        v[2] += fr * dz * dz;
-                        v[3] += fr * dx * dy;
-                        v[4] += fr * dx * dz;
-                        v[5] += fr * dy * dz;
+                        v[0] += acc_t(fr * dx * dx);
+                        v[1] += acc_t(fr * dy * dy);
+                        v[2] += acc_t(fr * dz * dz);
+                        v[3] += acc_t(fr * dx * dy);
+                        v[4] += acc_t(fr * dx * dz);
+                        v[5] += acc_t(fr * dy * dz);
                     }
                 }
                 // Send each contribution back to its original j lane. Tail
@@ -308,67 +332,69 @@ __global__ __launch_bounds__(kTileBlock, 4) void fused_tile(
                     fj[d] += __shfl_sync(0xffffffffu, contribution[d], source);
             }
         }
-        if (ai >= 0) {
-            atomicAdd(fx + ai, real_t(fi[0]));
-            atomicAdd(fy + ai, real_t(fi[1]));
-            atomicAdd(fz + ai, real_t(fi[2]));
-        }
-        if (bj >= 0) {
-            atomicAdd(fx + bj, real_t(fj[0]));
-            atomicAdd(fy + bj, real_t(fj[1]));
-            atomicAdd(fz + bj, real_t(fj[2]));
+        // Issue the six atomics now; their wraparound check runs after the
+        // energy/virial reduction below.
+        fixed_t* const columns[3] = {fx, fy, fz};
+#pragma unroll
+        for (int d = 0; d < 3; ++d) {
+            adds.add(d, columns[d], ai, fi[d], fault);
+            adds.add(3 + d, columns[d], bj, fj[d], fault);
         }
     }
-    tally<Virial>(e, v, partial, partial_stride, 0);
+    tally<Virial, kTileBlock>(e, v, partial, partial_stride, 0);
+    adds.check(fault);
 }
 
 template <bool Virial>
-__global__ void exceptions(const Exception* pairs, int count, const real_t* x,
-                           const real_t* y, const real_t* z, const real_t* q,
-                           const work_t* sigma, const work_t* epsilon, Box box,
-                           work_t alpha, real_t* fx, real_t* fy, real_t* fz,
-                           prec_t* partial, int partial_stride,
-                           int partial_offset) {
+__global__ void exceptions(const Exception* pairs, int count, const pos_t* x,
+                           const pos_t* y, const pos_t* z, const force_t* q,
+                           const force_t* sigma, const force_t* epsilon,
+                           Box box_arg, force_t alpha, fixed_t* fx, fixed_t* fy,
+                           fixed_t* fz, ForceFault* fault, acc_t* partial,
+                           int partial_stride, int partial_offset) {
+    const ForceBox box = box_arg.current().as<force_t>();
     const int p = blockIdx.x * blockDim.x + threadIdx.x;
-    work_t e = 0, v[6] = {};
+    acc_t e = 0, v[6] = {};
+    DeferredForceAdds<6> adds;
     if (p < count) {
         const Exception t = pairs[p];
         const int i = t.i, j = t.j;
-        work_t dx = x[j] - x[i], dy = y[j] - y[i], dz = z[j] - z[i];
+        force_t dx = x[j] - x[i], dy = y[j] - y[i], dz = z[j] - z[i];
         box.min_image(dx, dy, dz);
-        const work_t r2 = dx * dx + dy * dy + dz * dz;
+        const force_t r2 = dx * dx + dy * dy + dz * dz;
         if (r2 > 0) {
-            const work_t inv2 = 1 / r2, inv = 1 / sqrt(r2), ar = alpha / inv;
-            const work_t sig = sigma[i] + sigma[j], sr2 = sig * sig * inv2,
-                         sr6 = sr2 * sr2 * sr2;
-            const work_t eps = t.lj_scale * epsilon[i] * epsilon[j];
-            const work_t qq = work_t(units::coulomb) * q[i] * q[j] * inv;
-            const work_t screened = t.coul_scale - erf(ar);
-            const work_t fr =
+            const force_t inv2 = 1 / r2, inv = 1 / sqrt(r2), ar = alpha / inv;
+            const force_t sig = sigma[i] + sigma[j], sr2 = sig * sig * inv2,
+                          sr6 = sr2 * sr2 * sr2;
+            const force_t eps = t.lj_scale * epsilon[i] * epsilon[j];
+            const force_t qq = force_t(units::coulomb) * q[i] * q[j] * inv;
+            const force_t screened = t.coul_scale - erf(ar);
+            const force_t fr =
                 (eps * (12 * sr6 - 6) * sr6
                  + qq
                        * (screened
-                          + work_t(1.1283791670955126) * ar * exp(-ar * ar)))
+                          + force_t(1.1283791670955126) * ar * exp(-ar * ar)))
                 * inv2;
-            const work_t f[3] = {fr * dx, fr * dy, fr * dz};
-            atomicAdd(fx + i, real_t(-f[0]));
-            atomicAdd(fy + i, real_t(-f[1]));
-            atomicAdd(fz + i, real_t(-f[2]));
-            atomicAdd(fx + j, real_t(f[0]));
-            atomicAdd(fy + j, real_t(f[1]));
-            atomicAdd(fz + j, real_t(f[2]));
-            e = eps * sr6 * (sr6 - 1) + qq * screened;
+            const force_t f[3] = {fr * dx, fr * dy, fr * dz};
+            adds.add(0, fx, i, -f[0], fault);
+            adds.add(1, fy, i, -f[1], fault);
+            adds.add(2, fz, i, -f[2], fault);
+            adds.add(3, fx, j, f[0], fault);
+            adds.add(4, fy, j, f[1], fault);
+            adds.add(5, fz, j, f[2], fault);
+            e = acc_t(eps * sr6 * (sr6 - 1) + qq * screened);
             if constexpr (Virial) {
-                v[0] = fr * dx * dx;
-                v[1] = fr * dy * dy;
-                v[2] = fr * dz * dz;
-                v[3] = fr * dx * dy;
-                v[4] = fr * dx * dz;
-                v[5] = fr * dy * dz;
+                v[0] = acc_t(fr * dx * dx);
+                v[1] = acc_t(fr * dy * dy);
+                v[2] = acc_t(fr * dz * dz);
+                v[3] = acc_t(fr * dx * dy);
+                v[4] = acc_t(fr * dx * dz);
+                v[5] = acc_t(fr * dy * dz);
             }
         }
     }
-    tally<Virial>(e, v, partial, partial_stride, partial_offset);
+    tally<Virial, kDefaultBlock>(e, v, partial, partial_stride, partial_offset);
+    adds.check(fault);
 }
 
 template <class T>
@@ -391,8 +417,10 @@ std::size_t internal::packed_tiles_scan_bytes(int num_clusters) {
 
 int internal::pack_tiles(const PairList& source,
                          const PackedTileWorkspace& work, cudaStream_t stream) {
+    if (work.valid != nullptr)
+        ATV_CUDA_CHECK(cudaMemsetAsync(work.valid, 0, sizeof(int), stream));
     count_packed_tiles<<<(source.num_clusters + 4) / 4, kTileBlock, 0,
-                         stream>>>(source, work.counts);
+                         stream>>>(source, work.counts, work.valid);
     ATV_CUDA_CHECK(cudaGetLastError());
     std::size_t bytes = work.scan_bytes;
     ATV_CUDA_CHECK(cub::DeviceScan::ExclusiveSum(
@@ -401,7 +429,12 @@ int internal::pack_tiles(const PairList& source,
     ATV_CUDA_CHECK(
         cudaMemcpyAsync(work.host_count, work.offsets + source.num_clusters,
                         sizeof(int), cudaMemcpyDeviceToHost, stream));
+    if (work.valid != nullptr && work.host_valid != nullptr)
+        ATV_CUDA_CHECK(cudaMemcpyAsync(work.host_valid, work.valid, sizeof(int),
+                                       cudaMemcpyDeviceToHost, stream));
+    nvtxRangePushA("atv.wait.packed_count");
     ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+    nvtxRangePop();
     const int count = *work.host_count;
     if (count > work.capacity)
         throw std::runtime_error(
@@ -417,13 +450,13 @@ int internal::pack_tiles(const PairList& source,
 struct PairLJCutCoulLong::State {
     Atom* sorted = nullptr;
     ClusterImage* images = nullptr;
-    work_t* sigma = nullptr;
-    work_t* epsilon = nullptr;
+    force_t* sigma = nullptr;
+    force_t* epsilon = nullptr;
     int* offsets = nullptr;
     int* partners = nullptr;
     Exception* pairs = nullptr;
     int count = 0, slots = 0;
-    prec_t* partial = nullptr; // SoA: energy followed by six virial planes.
+    acc_t* partial = nullptr; // SoA: energy followed by six virial planes.
     int partial_capacity = 0;
     int exception_blocks = 0;
     internal::PackedTileWorkspace packed;
@@ -444,6 +477,7 @@ struct PairLJCutCoulLong::State {
         cudaFree(packed.j);
         cudaFree(packed.masks);
         cudaFree(packed.scan_temp);
+        cudaFree(packed.valid);
         if (packed.host_count)
             cudaFreeHost(packed.host_count);
     }
@@ -489,14 +523,14 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
     std::vector<int> types(n);
     ATV_CUDA_CHECK(cudaMemcpy(types.data(), f.atoms.type, n * sizeof(int),
                               cudaMemcpyDeviceToHost));
-    std::vector<work_t> sig(n), eps(n);
+    std::vector<force_t> sig(n), eps(n);
     for (int i = 0; i < n; ++i) {
         const int t = types[i];
         if (t < 0 || std::size_t(t) >= epsilon_.size())
             throw std::invalid_argument(
                 "cuda::PairLJCutCoulLong: atom type outside coefficient table");
-        sig[i] = work_t(sigma_[t] * 0.5);
-        eps[i] = work_t(2 * std::sqrt(epsilon_[t]));
+        sig[i] = force_t(sigma_[t] * 0.5);
+        eps[i] = force_t(2 * std::sqrt(epsilon_[t]));
     }
     upload(s.sigma, sig);
     upload(s.epsilon, eps);
@@ -546,8 +580,8 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
         for (auto [j, d] : depth) {
             partners.push_back(j);
             if (i < j)
-                pairs.push_back({i, j, work_t(d == 3 ? 0.5 : 0),
-                                 work_t(d == 3 ? 5.0 / 6.0 : 0)});
+                pairs.push_back({i, j, force_t(d == 3 ? 0.5 : 0),
+                                 force_t(d == 3 ? 5.0 / 6.0 : 0)});
         }
         offsets[i + 1] = int(partners.size());
     }
@@ -560,7 +594,10 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
         throw std::invalid_argument(
             "cuda::PairLJCutCoulLong: build NeighborList before pair scratch");
     auto& packed = s.packed;
-    ATV_CUDA_CHECK(cudaMallocHost(&packed.host_count, sizeof(int)));
+    // Pinned [packed tiles, valid CSR entries] readback of each rebuild.
+    ATV_CUDA_CHECK(cudaMallocHost(&packed.host_count, 2 * sizeof(int)));
+    packed.host_valid = packed.host_count + 1;
+    ATV_CUDA_CHECK(cudaMalloc(&packed.valid, sizeof(int)));
     // A row contributes at most 32 columns per CSR entry, hence its packed
     // tile count cannot exceed its original entry count. The existing CSR
     // reserve is also an upper bound for all packed arrays and partials.
@@ -591,7 +628,7 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
     if (s.partial_capacity > 0)
         ATV_CUDA_CHECK(
             cudaMalloc(&s.partial, static_cast<std::size_t>(s.partial_capacity)
-                                       * 7 * sizeof(prec_t)));
+                                       * 7 * sizeof(acc_t)));
     // Ordinary tile force excludes every Amber exception. The sparse pass
     // restores scaled LJ and the real-space Ewald exclusion correction.
     ctx.runtime.md.excl_offsets = s.offsets;
@@ -635,21 +672,22 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     gather<<<grid_size(slots), kDefaultBlock, 0, stream>>>(
         p->cl_orig_index, slots, f.atoms.x, f.atoms.y, f.atoms.z,
         f.atoms.charge, s.sigma, s.epsilon, s.sorted, s.images,
-        ctx.runtime.host_box, work_t(cutoff_ * cutoff_));
+        ctx.runtime.host_box, force_t(cutoff_ * cutoff_));
     auto run = [&](auto o, auto v) {
         constexpr bool O = decltype(o)::value, V = decltype(v)::value;
         if (tile_blocks)
             fused_tile<O, V><<<tile_blocks, kTileBlock, 0, stream>>>(
                 s.sorted, p->cl_orig_index, s.packed.ci, s.packed.j,
                 s.packed.masks, s.packed_count, ctx.runtime.host_box, s.images,
-                work_t(alpha_), work_t(cutoff_ * cutoff_), f.atoms.fx,
-                f.atoms.fy, f.atoms.fz, s.partial, s.partial_capacity);
+                force_t(alpha_), force_t(cutoff_ * cutoff_), f.atoms.fx,
+                f.atoms.fy, f.atoms.fz, f.force_fault, s.partial,
+                s.partial_capacity);
         if (s.count)
             exceptions<V><<<grid_size(s.count), kDefaultBlock, 0, stream>>>(
                 s.pairs, s.count, f.atoms.x, f.atoms.y, f.atoms.z,
                 f.atoms.charge, s.sigma, s.epsilon, ctx.runtime.host_box,
-                work_t(alpha_), f.atoms.fx, f.atoms.fy, f.atoms.fz, s.partial,
-                s.partial_capacity, tile_blocks);
+                force_t(alpha_), f.atoms.fx, f.atoms.fy, f.atoms.fz,
+                f.force_fault, s.partial, s.partial_capacity, tile_blocks);
         if (partial_count)
             reduce_partials<V>
                 <<<grid_size(partial_count), kDefaultBlock, 0, stream>>>(
@@ -669,6 +707,14 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }
+int PairLJCutCoulLong::packed_tiles() const noexcept {
+    return state_ ? state_->packed_count : 0;
+}
+
+int PairLJCutCoulLong::valid_tiles() const noexcept {
+    return state_ && state_->packed_generation ? *state_->packed.host_valid : 0;
+}
+
 void PairLJCutCoulLong::destroy(const DestroyContext& ctx) {
     if (state_ && ctx.runtime.md.excl_offsets == state_->offsets) {
         ctx.runtime.md.excl_offsets = nullptr;

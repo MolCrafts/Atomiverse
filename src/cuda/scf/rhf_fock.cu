@@ -152,9 +152,9 @@ nuclear_repulsion_pairs_kernel(double* __restrict__ v_nuc_out,
         }
     }
     // Block reduce then one atomicAdd per block (fewer atomics than per-thread).
-    __shared__ double warp_scratch[/* max warps in 256 */ 8];
-    const double block_sum =
-        cuda::block_reduce_sum<double>(contrib, warp_scratch);
+    using Reduce = cub::BlockReduce<double, cuda::kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const double block_sum = Reduce(reduction).Sum(contrib);
     if (threadIdx.x == 0 && block_sum != 0.0)
         atomicAdd(v_nuc_out, block_sum);
 }

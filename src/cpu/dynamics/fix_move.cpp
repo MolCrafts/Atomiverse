@@ -58,7 +58,7 @@ void FixMove::launch(const LaunchContext& ctx) {
 
     // initial_integrate: impose r = r0 + v * (step - step0) * dt
     // LaunchContext step is the MD step index.
-    const int step = ctx.step;
+    const BigInt step = ctx.step;
     if (step0_ == 0 && step > 0)
         step0_ = 0; // keep origin at build geometry
     const double t = static_cast<double>(step) * dt;

@@ -13,7 +13,7 @@ namespace ATV::cuda::md::nlist {
 
 /// @brief Flat SoA pair list — output of the fused search+mask kernel.
 /// @note Non-owning view; lifetime managed by NListBuffers.
-template <typename work_t>
+template <typename T>
 struct FlatPairList {
     int* ci; ///< [num_pairs] i-cluster index
     int* cj; ///< [num_pairs] j-cluster index

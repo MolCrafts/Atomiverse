@@ -39,6 +39,13 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     /// @return The configured evaluator by value.
     PairLJCutCoulLong set_special_bonds_amber() &&;
     void set_stress_required(bool required) override { stress_ = required; }
+    /// @brief Packed I×J tiles of the latest neighbor rebuild (diagnostics).
+    /// @return Tile count [dimensionless]; 0 before the first force call.
+    int packed_tiles() const noexcept;
+    /// @brief Cluster-pair CSR entries with at least one interacting pair in
+    ///        the upper triangle at the latest rebuild (diagnostics).
+    /// @return Entry count [dimensionless]; 0 before the first force call.
+    int valid_tiles() const noexcept;
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 

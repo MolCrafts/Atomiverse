@@ -60,6 +60,7 @@
 /// exactly as on the CPU, and no handler changes.
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include <cmath>
 #include <memory>
 #include <string>
@@ -73,7 +74,7 @@ namespace cuda {
 
 /// @brief Everything a handler is allowed to look at.
 struct LoopState {
-    int iteration; ///< 0-based index of the iteration just completed.
+    BigInt iteration; ///< 0-based index of the iteration just completed.
     const cuda::Frame& frame; ///< Device-resident state as it now stands.
     const cuda::Context&
         runtime; ///< Execution context (streams, service slices).

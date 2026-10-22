@@ -53,7 +53,7 @@ struct AtomSortState {
     /// @brief Master enable (LAMMPS `atom_modify sort` vs no-sort).
     bool enabled = true;
     /// @brief The loop's current step, stamped from `LaunchContext::step`.
-    int step = 0;
+    BigInt step = 0;
     /// @brief Next `step` at which sort may fire. Default = default nfreq so
     ///        the first sort is after `nfreq` steps (LAMMPS `nextsort` init),
     ///        not on step 0.

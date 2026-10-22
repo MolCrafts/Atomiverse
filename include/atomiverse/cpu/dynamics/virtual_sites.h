@@ -106,6 +106,9 @@ class VirtualSites {
                     ATV::make_binding(ATV::md::Phase::pre_force, +50)};
         }
 
+        void initialize_forces(const LaunchContext& ctx) override {
+            launch(ctx);
+        }
         void launch(const LaunchContext& ctx) override {
             table_->place(ctx.frame);
         }
@@ -128,6 +131,9 @@ class VirtualSites {
             return {ATV::make_binding(ATV::md::Phase::post_force, +50)};
         }
 
+        void initialize_forces(const LaunchContext& ctx) override {
+            launch(ctx);
+        }
         void launch(const LaunchContext& ctx) override {
             table_->redistribute(ctx.frame);
         }

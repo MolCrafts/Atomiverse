@@ -127,6 +127,7 @@ class ConstPotBO : public cpu::Component {
     }
 
     void build(const BuildContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
@@ -285,9 +286,9 @@ class ConstPotBO : public cpu::Component {
     void collect_electrodes_(const cpu::Frame& frame);
     void build_matrix_(const cpu::Frame& frame);
     void build_rhs_(const cpu::Frame& frame);
-    void solve_();
+    void solve_(bool use_history = true);
     void solve_dense_();
-    void solve_cg_();
+    void solve_cg_(bool use_history);
     /// @brief True if any registered group is constant-charge (conq).
     bool has_const_charge_() const;
     /// @brief One \(y = A^{-1} v\) application on the active path

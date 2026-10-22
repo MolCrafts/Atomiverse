@@ -111,15 +111,9 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     //   3. rescale so the measured temperature equals the requested T
     //      (`rescale(t, t_desired)`, velocity.cpp:368).
     //
-    // Phase 2: InitVelocity operates on locally-owned atoms only. COM
-    // removal is *local* -- for multi-rank usage that requires a
-    // globally-zero COM, the caller should set velocities pre-partition
-    // on a single rank and let `Backend::set_frame()` partition the
-    // already-initialised velocities. The temperature rescale below is
-    // MPI-aware (it reduces the global KE) so the measured *global*
-    // temperature is exact even though the COM removal stays local. A
-    // proper multi-rank InitVelocity with MPI_Allreduce-based global COM
-    // is tracked in Phase 3.
+    // Draw on owned atoms, then remove the GLOBAL COM and rescale with
+    // the published global DOF. Rank streams are distinct; initialization
+    // does not require callers to seed velocities before partitioning.
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
 
@@ -136,6 +130,11 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     // the absolute scale is then fixed by the temperature rescale in
     // step 3, so the per-component prefactor only needs to be consistent.
     std::mt19937 rng(seed_);
+    if (multi_rank_dd(ctx.runtime)) {
+        std::seed_seq sequence{seed_,
+                               static_cast<unsigned>(ctx.runtime.mpi_rank)};
+        rng.seed(sequence);
+    }
     if (dist_ == VelocityDist::gaussian) {
         std::normal_distribution<double> draw(0.0, 1.0); // N(0,1)
         for (int i = 0; i < n; ++i) {
@@ -155,7 +154,7 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
         }
     }
 
-    // ── 2. local COM velocity removal (LAMMPS `mom yes` default) ─────
+    // ── 2. global COM velocity removal (LAMMPS `mom yes` default) ─────
     double vcm_x = 0, vcm_y = 0, vcm_z = 0, mtot = 0;
     for (int i = 0; i < n; ++i) {
         vcm_x += sp_mass[i] * sp_vx[i];
@@ -163,6 +162,19 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
         vcm_z += sp_mass[i] * sp_vz[i];
         mtot += sp_mass[i];
     }
+#ifdef ATV_HAS_MPI
+    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
+        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
+        const double local[4]{vcm_x, vcm_y, vcm_z, mtot};
+        double global[4]{};
+        MPI_Allreduce(local, global, 4, MPI_DOUBLE, MPI_SUM,
+                      ctx.runtime.md.dd->cart_comm);
+        vcm_x = global[0];
+        vcm_y = global[1];
+        vcm_z = global[2];
+        mtot = global[3];
+    }
+#endif
     if (mtot > 0) {
         vcm_x /= mtot;
         vcm_y /= mtot;
@@ -184,7 +196,6 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         sum_mv2 += sp_mass[i] * v2;
     }
-    long long n_global = n;
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -192,15 +203,10 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
         MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM,
                       ctx.runtime.md.dd->cart_comm);
         sum_mv2 = global;
-        long long n_local = n, ng = 0;
-        MPI_Allreduce(&n_local, &ng, 1, MPI_LONG_LONG, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-        n_global = ng;
     }
 #endif
     // Ndof: single owner, constraint-aware. @see Driver::publish_dof_
     const long long ndof = ctx.runtime.md.n_dof_global;
-    (void)n_global;
     if (ndof > 0 && sum_mv2 > 0.0) {
         const double ke = 0.5 * units::mass_v2_to_energy * sum_mv2;
         const double t_measured =

@@ -117,7 +117,7 @@ class Deform : public cpu::Integrator {
     double dt_;      ///< MD step size [fs]
     int axis_;       ///< deformed axis: 0=x, 1=y, 2=z
     double L0_{0.0}; ///< deformed-axis edge at activation [Angstrom]
-    int origin_step_{
+    BigInt origin_step_{
         -1}; ///< step index at activation; -1 = not yet snapshotted
 };
 

@@ -66,7 +66,7 @@ int main() try {
     const double e_expected =
         -0.5 * N * kMadelungNaCl * ATV::units::coulomb / d;
     const double e = static_cast<double>(frame.meta.get(kEnergy));
-    // real_t positions are single precision on the CUDA path → looser tol.
+    // pos_t / force_t are single precision in mixed and single modes → looser tol.
     const double error = std::abs(e / e_expected - 1.0);
     std::printf(
         "CUDA EWALD NaCl: E=%.12f eV expected=%.12f eV relative_error=%.6g\n",

@@ -5,8 +5,18 @@
 /// Compile-time spline order and bounded stencil-index wrapping follow the
 /// OpenMM PME kernel architecture, platforms/common/src/kernels/pme.cc,
 /// SHA 3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e. The Essmann recurrence
-/// and FFT normalization remain ATV-native; no source is copied. Spline and
-/// grid precision follow work_t; energy accumulation remains FP64.
+/// and FFT normalization remain ATV-native; no source is copied. Splines,
+/// mesh and FFT run in force_t; fractional coordinates, influence and energy
+/// stay FP64; forces are added to the fixed-point Frame columns.
+///
+/// Every kernel reads the published device Box (`Box::current()`); the
+/// influence/virial coefficient tables remember the Box revision they were
+/// computed for, and the captured graph recomputes them in stream order when
+/// the published revision differs. Reciprocal virial: Essmann et
+/// al., J. Chem. Phys. 103, 8577 (1995), eq. 2.11, evaluated on the discrete
+/// mesh energy for both conjugate half-spectrum indices. Lattice vectors are
+/// the cell columns (molrs/LAMMPS H): s = cell⁻¹ · r and the wave vector of
+/// mode m is Σ_d m_d (row d of cell⁻¹).
 #include <cmath>
 #include <cstdio>
 #include <cuda_runtime.h>
@@ -16,29 +26,35 @@
 #include <type_traits>
 #include <vector>
 
+#include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/longrange/pme.cuh"
 
 namespace ATV {
 
-using cuda::prec_t;
-using cuda::real_t;
-
 namespace cuda {
 
-static_assert(std::is_same_v<work_t, float> || std::is_same_v<work_t, double>);
-using PmeComplex = std::conditional_t<std::is_same_v<work_t, double>,
+static_assert(std::is_same_v<force_t, float>
+              || std::is_same_v<force_t, double>);
+using PmeComplex = std::conditional_t<std::is_same_v<force_t, double>,
                                       cufftDoubleComplex, cufftComplex>;
 
-// Geometry passed by value into kernels (cell⁻¹ row-major + grid dims).
+// Build-fixed mesh passed by value into kernels.
 struct PmeGeom {
-    double inv_cell[9];
     int K[3];
     int order;
+};
+
+// Bookkeeping of the cell-dependent coefficient tables (fixed device
+// address). The geometry itself is always the published Box.
+struct PmeTables {
+    unsigned long long revision; ///< Box revision of the tables; ~0 at build.
+    int dirty;                   ///< Tables are recomputed on this replay.
 };
 
 namespace kernels {
@@ -46,31 +62,31 @@ namespace kernels {
 // Canonical Essmann/Amber fill_bspline on device. theta[k]=M_n(frac+n-1-k),
 // dtheta[k]=dM/d(frac). order n ≤ 12.
 template <int Order>
-__device__ __forceinline__ void pme_bspline(work_t frac, int runtime_order,
-                                            work_t* theta, work_t* dtheta) {
+__device__ __forceinline__ void pme_bspline(force_t frac, int runtime_order,
+                                            force_t* theta, force_t* dtheta) {
     const int n = Order > 0 ? Order : runtime_order;
-    theta[n - 1] = work_t(0);
+    theta[n - 1] = force_t(0);
     theta[1] = frac;
-    theta[0] = work_t(1) - frac;
+    theta[0] = force_t(1) - frac;
     for (int k = 3; k < n; ++k) {
-        const work_t div = work_t(1) / (k - 1);
+        const force_t div = force_t(1) / (k - 1);
         theta[k - 1] = div * frac * theta[k - 2];
         for (int j = 1; j < k - 1; ++j)
             theta[k - 1 - j] = div
                                * ((frac + j) * theta[k - 2 - j]
                                   + (k - j - frac) * theta[k - 1 - j]);
-        theta[0] = div * (work_t(1) - frac) * theta[0];
+        theta[0] = div * (force_t(1) - frac) * theta[0];
     }
     dtheta[0] = -theta[0];
     for (int j = 1; j < n; ++j)
         dtheta[j] = theta[j - 1] - theta[j];
-    const work_t div = work_t(1) / (n - 1);
+    const force_t div = force_t(1) / (n - 1);
     theta[n - 1] = div * frac * theta[n - 2];
     for (int j = 1; j < n - 1; ++j)
         theta[n - 1 - j] = div
                            * ((frac + j) * theta[n - 2 - j]
                               + (n - j - frac) * theta[n - 1 - j]);
-    theta[0] = div * (work_t(1) - frac) * theta[0];
+    theta[0] = div * (force_t(1) - frac) * theta[0];
 }
 
 // Each grid dimension is at least order+1 and every stencil index lies in
@@ -86,28 +102,30 @@ __device__ __forceinline__ int wrap_idx(int v, int K) {
 /// @brief Spread owned charges; order adjacent threads share one atom.
 template <int Order>
 __global__ void
-pme_spread(const real_t* __restrict__ x, const real_t* __restrict__ y,
-           const real_t* __restrict__ z, const real_t* __restrict__ q,
-           int natoms, PmeGeom g, work_t* __restrict__ grid) {
+pme_spread(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
+           const pos_t* __restrict__ z, const force_t* __restrict__ q,
+           int natoms, PmeGeom g, Box box_arg, force_t* __restrict__ grid) {
     const int n = Order > 0 ? Order : g.order;
     const int gid = blockIdx.x * blockDim.x + threadIdx.x;
     const int i = gid / n, c = gid % n;
     if (i >= natoms)
         return;
-    const work_t qi = work_t(q[i]);
+    const force_t qi = force_t(q[i]);
     if (qi == 0.0)
         return;
+    const Box box = box_arg.current();
+    const double* inv_cell = box.inv_cell;
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
     constexpr int extent = Order > 0 ? Order : 12;
-    work_t th[3][extent], dth[3][extent];
+    force_t th[3][extent], dth[3][extent];
     int base[3];
     for (int d = 0; d < 3; ++d) {
-        const double s = g.inv_cell[0 * 3 + d] * rx + g.inv_cell[1 * 3 + d] * ry
-                         + g.inv_cell[2 * 3 + d] * rz;
+        const double s = inv_cell[3 * d + 0] * rx + inv_cell[3 * d + 1] * ry
+                         + inv_cell[3 * d + 2] * rz;
         double u = s * g.K[d];
         u -= floor(u / g.K[d]) * g.K[d];
         const int u0 = int(floor(u));
-        pme_bspline<Order>(work_t(u - u0), n, th[d], dth[d]);
+        pme_bspline<Order>(force_t(u - u0), n, th[d], dth[d]);
         base[d] = u0;
     }
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2], nm1 = n - 1;
@@ -117,32 +135,117 @@ pme_spread(const real_t* __restrict__ x, const real_t* __restrict__ y,
     const int g2 = wrap_idx(base[2] - nm1 + c, K2);
     // Select without dynamically indexing the order-specialized theta
     // array, so the compiler can retain the spline coefficients in registers.
-    work_t wz = 0;
+    force_t wz = 0;
 #pragma unroll
     for (int k = 0; k < n; ++k)
         if (k == c)
             wz = th[2][k];
     for (int a = 0; a < n; ++a) {
         const int g0 = wrap_idx(base[0] - nm1 + a, K0);
-        const work_t wa = qi * th[0][a];
+        const force_t wa = qi * th[0][a];
         for (int b = 0; b < n; ++b) {
             const int g1 = wrap_idx(base[1] - nm1 + b, K1);
-            const work_t wab = wa * th[1][b];
+            const force_t wab = wa * th[1][b];
             const int idx = g2 + K2 * (g1 + K1 * g0);
             atomicAdd(&grid[idx], wab * wz);
         }
     }
 }
 
-/// @brief Influence function: energy + in-place convolution multiply.
-__global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
-                              const double* __restrict__ influence,
-                              double escale, prec_t* __restrict__ energy) {
+/// @brief Flag the coefficient tables stale when the published cell revision
+///        moved; add the neutralizing-background energy (and its virial).
+template <bool Virial>
+__global__ void pme_refresh_tables(Box box_arg, PmeTables* __restrict__ tables,
+                                   double background_coef,
+                                   acc_t* __restrict__ energy,
+                                   acc_t* __restrict__ stress) {
+    const Box box = box_arg.current();
+    PmeTables& t = *tables;
+    t.dirty = box.revision != t.revision;
+    t.revision = box.revision;
+    // E_bg ∝ 1/V: its virial −∂E/∂ε_aa is E_bg on each diagonal component.
+    const double background = -background_coef / box.volume();
+    atomicAdd(energy, background);
+    if constexpr (Virial)
+        for (int d = 0; d < 3; ++d)
+            atomicAdd(stress + d, background);
+}
+
+/// @brief Recompute conjugate-averaged influence (and virial coefficients)
+///        for every half-spectrum mode after a cell change.
+///
+/// Each stored mode stands for itself and its full-index conjugate
+/// c = (K − m) mod K. Their canonical wave vectors differ only at Nyquist
+/// components of even meshes, where triclinic cells give different |m|².
+/// Both sides are evaluated and averaged, for the energy kernel H and for
+/// the strain derivative coefficients
+/// C_ab = ½ Σ_side H (δ_ab − 2(1/m² + π²/α²) m_a m_b).
+template <bool Virial>
+__global__ void
+pme_refresh_influence(const PmeTables* __restrict__ tables, Box box_arg,
+                      PmeGeom g, const double* __restrict__ moduli,
+                      double inv_pi2_a2, double* __restrict__ influence,
+                      double* __restrict__ virial, int nhalf) {
+    if (!tables->dirty)
+        return;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= nhalf)
+        return;
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2];
     const int half_z = K2 / 2 + 1;
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    double my_energy = 0.0;
-    if (idx < K0 * K1 * half_z) {
+    const int m[3] = {idx / (half_z * K1), (idx / half_z) % K1, idx % half_z};
+    double H = 0.0, coef[6] = {};
+    if (idx != 0) {
+        const int K[3] = {K0, K1, K2};
+        const Box box = box_arg.current();
+        const double* inv_cell = box.inv_cell;
+        for (int side = 0; side < 2; ++side) {
+            int s[3];
+            for (int d = 0; d < 3; ++d)
+                s[d] = side == 0 || m[d] == 0 ? m[d] : K[d] - m[d];
+            double mv[3] = {0.0, 0.0, 0.0};
+            for (int d = 0; d < 3; ++d) {
+                const int h = s[d] <= K[d] / 2 ? s[d] : s[d] - K[d];
+                for (int r = 0; r < 3; ++r)
+                    mv[r] += h * inv_cell[3 * d + r];
+            }
+            const double msq = mv[0] * mv[0] + mv[1] * mv[1] + mv[2] * mv[2];
+            const double B =
+                moduli[s[0]] * moduli[K0 + s[1]] * moduli[K0 + K1 + s[2]];
+            const double h_side = 0.5 * exp(-inv_pi2_a2 * msq) / msq * B;
+            H += h_side;
+            if constexpr (Virial) {
+                const double vt = -2.0 * (1.0 / msq + inv_pi2_a2);
+                coef[0] += h_side * (1.0 + vt * mv[0] * mv[0]);
+                coef[1] += h_side * (1.0 + vt * mv[1] * mv[1]);
+                coef[2] += h_side * (1.0 + vt * mv[2] * mv[2]);
+                coef[3] += h_side * vt * mv[0] * mv[1];
+                coef[4] += h_side * vt * mv[0] * mv[2];
+                coef[5] += h_side * vt * mv[1] * mv[2];
+            }
+        }
+    }
+    influence[idx] = H;
+    if constexpr (Virial)
+        for (int k = 0; k < 6; ++k)
+            virial[static_cast<std::size_t>(k) * nhalf + idx] = coef[k];
+}
+
+/// @brief Influence function: energy (+ virial) + in-place convolution.
+template <bool Virial>
+__global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
+                              Box box_arg, const double* __restrict__ influence,
+                              const double* __restrict__ virial, int nhalf,
+                              acc_t* __restrict__ energy,
+                              acc_t* __restrict__ stress) {
+    const int K2 = g.K[2];
+    const int half_z = K2 / 2 + 1;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const double escale = ATV::units::coulomb
+                          / (2.0 * ATV::units::pi * box_arg.current().volume());
+    constexpr int components = Virial ? 7 : 1;
+    ::cuda::std::array<acc_t, components> values{};
+    if (idx < nhalf) {
         if (idx == 0) {
             grid[idx].x = 0;
             grid[idx].y = 0;
@@ -154,64 +257,78 @@ __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
             const double weight =
                 (m2 == 0 || (K2 % 2 == 0 && m2 == K2 / 2)) ? 1.0 : 2.0;
             const double qr = grid[idx].x, qi = grid[idx].y;
-            my_energy = weight * escale * H * (qr * qr + qi * qi);
+            const double q2 = weight * escale * (qr * qr + qi * qi);
+            values[0] = q2 * H;
+            if constexpr (Virial)
+                for (int k = 0; k < 6; ++k)
+                    values[k + 1] =
+                        q2 * virial[static_cast<std::size_t>(k) * nhalf + idx];
             grid[idx].x = H * qr;
             grid[idx].y = H * qi;
         }
     }
 
     // Tail lanes and the zero mode contribute zero but must participate in
-    // the collective. One atomic per block avoids serializing the whole mesh
-    // on the shared energy scalar; keep the partial sums in PME's FP64 type.
-    extern __shared__ double warp_scratch[];
-    const double block_energy = block_reduce_sum(my_energy, warp_scratch);
-    if (threadIdx.x == 0)
-        atomicAdd(energy, static_cast<prec_t>(block_energy));
+    // the collective. One atomic per block and component.
+    using Reduce =
+        cub::BlockReduce<::cuda::std::array<acc_t, components>, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const auto sum =
+        Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
+    if (threadIdx.x == 0) {
+        atomicAdd(energy, sum[0]);
+        if constexpr (Virial)
+            for (int k = 0; k < 6; ++k)
+                atomicAdd(stress + k, sum[k + 1]);
+    }
 }
 
 /// @brief Interpolate reciprocal forces onto atoms + per-atom self energy.
 template <int Order>
 __global__ void
-pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
-           real_t* __restrict__ fz, const real_t* __restrict__ x,
-           const real_t* __restrict__ y, const real_t* __restrict__ z,
-           const real_t* __restrict__ q, int natoms, PmeGeom g,
-           const work_t* __restrict__ grid, double fscale, double self_pref,
-           prec_t* __restrict__ energy) {
+pme_interp(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
+           fixed_t* __restrict__ fz, ForceFault* fault,
+           const pos_t* __restrict__ x, const pos_t* __restrict__ y,
+           const pos_t* __restrict__ z, const force_t* __restrict__ q,
+           int natoms, PmeGeom g, Box box_arg, const force_t* __restrict__ grid,
+           double self_pref, acc_t* __restrict__ energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = (i < natoms) ? double(q[i]) : 0.0;
     // Reduce before the neutral/tail early exit so every lane reaches the
     // block barriers, including partially populated final blocks.
-    extern __shared__ double warp_scratch[];
-    const double block_energy =
-        block_reduce_sum(self_pref * qi * qi, warp_scratch);
+    using Reduce = cub::BlockReduce<double, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const double block_energy = Reduce(reduction).Sum(self_pref * qi * qi);
     if (threadIdx.x == 0)
-        atomicAdd(energy, static_cast<prec_t>(block_energy));
+        atomicAdd(energy, block_energy);
     if (i >= natoms || qi == 0.0)
         return;
+    const Box box = box_arg.current();
+    const double* inv_cell = box.inv_cell;
+    const double fscale = ATV::units::coulomb / (ATV::units::pi * box.volume());
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
     const int n = Order > 0 ? Order : g.order;
     constexpr int extent = Order > 0 ? Order : 12;
-    work_t th[3][extent], dth[3][extent];
+    force_t th[3][extent], dth[3][extent];
     int base[3];
     for (int d = 0; d < 3; ++d) {
-        const double s = g.inv_cell[0 * 3 + d] * rx + g.inv_cell[1 * 3 + d] * ry
-                         + g.inv_cell[2 * 3 + d] * rz;
+        const double s = inv_cell[3 * d + 0] * rx + inv_cell[3 * d + 1] * ry
+                         + inv_cell[3 * d + 2] * rz;
         double u = s * g.K[d];
         u -= floor(u / g.K[d]) * g.K[d];
         const int u0 = int(floor(u));
-        pme_bspline<Order>(work_t(u - u0), n, th[d], dth[d]);
+        pme_bspline<Order>(force_t(u - u0), n, th[d], dth[d]);
         base[d] = u0;
     }
     const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2], nm1 = n - 1;
-    work_t gd[3] = {0, 0, 0};
+    force_t gd[3] = {0, 0, 0};
     for (int a = 0; a < n; ++a) {
         const int g0 = wrap_idx(base[0] - nm1 + a, K0);
         for (int b = 0; b < n; ++b) {
             const int g1 = wrap_idx(base[1] - nm1 + b, K1);
             for (int c = 0; c < n; ++c) {
                 const int g2 = wrap_idx(base[2] - nm1 + c, K2);
-                const work_t cval = grid[g2 + K2 * (g1 + K1 * g0)];
+                const force_t cval = grid[g2 + K2 * (g1 + K1 * g0)];
                 gd[0] += cval * dth[0][a] * th[1][b] * th[2][c];
                 gd[1] += cval * th[0][a] * dth[1][b] * th[2][c];
                 gd[2] += cval * th[0][a] * th[1][b] * dth[2][c];
@@ -221,13 +338,14 @@ pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
     double fxv = 0, fyv = 0, fzv = 0;
     for (int d = 0; d < 3; ++d) {
         const double gk = double(gd[d]) * g.K[d];
-        fxv += gk * g.inv_cell[0 * 3 + d];
-        fyv += gk * g.inv_cell[1 * 3 + d];
-        fzv += gk * g.inv_cell[2 * 3 + d];
+        fxv += gk * inv_cell[3 * d + 0];
+        fyv += gk * inv_cell[3 * d + 1];
+        fzv += gk * inv_cell[3 * d + 2];
     }
-    fx[i] += real_t(-fscale * qi * fxv);
-    fy[i] += real_t(-fscale * qi * fyv);
-    fz[i] += real_t(-fscale * qi * fzv);
+    // One thread owns atom i in this kernel.
+    add_force_owned(fx, i, force_t(-fscale * qi * fxv), fault);
+    add_force_owned(fy, i, force_t(-fscale * qi * fyv), fault);
+    add_force_owned(fz, i, force_t(-fscale * qi * fzv), fault);
 }
 
 } // namespace kernels
@@ -235,7 +353,7 @@ pme_interp(real_t* __restrict__ fx, real_t* __restrict__ fy,
 namespace {
 
 // The selected complex type, plan kind and execution API must agree in both
-// build warmup and capture. Only the configured work_t path is instantiated.
+// build warmup and capture. Only the configured force_t path is instantiated.
 template <typename Real, typename Complex>
 cufftResult execute_forward(cufftHandle plan, Real* grid, Complex* spectrum) {
     if constexpr (std::is_same_v<Complex, cufftDoubleComplex>) {
@@ -345,19 +463,17 @@ void KSpacePME::build(const BuildContext& ctx) {
     if (spread_threads > std::numeric_limits<int>::max() - (kDefaultBlock - 1))
         throw std::overflow_error(
             "KSpacePME: charge-spread thread count exceeds int indexing");
+    // The build-time cell only selects the mesh; every replay reads the
+    // published device cell.
     const cuda::Box& box = ctx.runtime.host_box;
-    for (int i = 0; i < 9; ++i)
-        inv_cell_[i] = double(box.inv_cell[i]);
-    for (int i = 0; i < 9; ++i)
-        built_cell_[i] = double(box.cell[i]);
-    vol_ = double(box.volume());
-    if (!std::isfinite(vol_) || vol_ <= 0)
+    const double volume = box.volume();
+    if (!std::isfinite(volume) || volume <= 0)
         throw std::invalid_argument(
             "KSpacePME: finite positive periodic cell volume required");
 
-    std::array<std::vector<double>, 3> moduli;
+    std::vector<double> moduli;
     for (int d = 0; d < 3; ++d) {
-        const double len = double(box.length(d));
+        const double len = box.length(d);
         const double requested = std::ceil(len / spacing_);
         if (!std::isfinite(requested) || requested <= 0
             || requested > std::numeric_limits<int>::max())
@@ -366,7 +482,8 @@ void KSpacePME::build(const BuildContext& ctx) {
         K_[d] = good_fft_size(int(requested));
         if (K_[d] < order_ + 1)
             K_[d] = good_fft_size(order_ + 1);
-        moduli[d] = spline_moduli(K_[d], order_);
+        const auto axis = spline_moduli(K_[d], order_);
+        moduli.insert(moduli.end(), axis.begin(), axis.end());
     }
     long long real_count = 1;
     const int grid_limit =
@@ -380,44 +497,33 @@ void KSpacePME::build(const BuildContext& ctx) {
     ntot_ = int(real_count);
     const int half_z = K_[2] / 2 + 1;
     nhalf_ = K_[0] * K_[1] * half_z;
-    const double inv_pi2_a2 =
-        ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
-    auto coefficient = [&](int m0, int m1, int m2) {
-        if (m0 == 0 && m1 == 0 && m2 == 0)
-            return 0.0;
-        const int m[3] = {m0, m1, m2};
-        double mx = 0, my = 0, mz = 0;
-        for (int d = 0; d < 3; ++d) {
-            const int h = m[d] <= K_[d] / 2 ? m[d] : m[d] - K_[d];
-            mx += h * inv_cell_[d];
-            my += h * inv_cell_[3 + d];
-            mz += h * inv_cell_[6 + d];
-        }
-        const double msq = mx * mx + my * my + mz * mz;
-        const double B = moduli[0][m0] * moduli[1][m1] * moduli[2][m2];
-        return std::exp(-inv_pi2_a2 * msq) / msq * B;
-    };
-    std::vector<double> influence(nhalf_);
-    for (int m0 = 0; m0 < K_[0]; ++m0)
-        for (int m1 = 0; m1 < K_[1]; ++m1)
-            for (int m2 = 0; m2 < half_z; ++m2) {
-                const int c0 = m0 == 0 ? 0 : K_[0] - m0;
-                const int c1 = m1 == 0 ? 0 : K_[1] - m1;
-                const int c2 = m2 == 0 ? 0 : K_[2] - m2;
-                // The old full-complex inverse used only its real part.
-                // For a real charge mesh that equals the inverse of Hsym*Q.
-                // Averaging full-index conjugates preserves its energy too,
-                // including triclinic cross terms at canonical +N/2 modes.
-                influence[m2 + half_z * (m1 + K_[1] * m0)] =
-                    0.5 * coefficient(m0, m1, m2)
-                    + 0.5 * coefficient(c0, c1, c2);
-            }
+
+    // Net charge of the fixed atom set sets the neutralizing background.
+    built_atoms_ = ctx.frame.n_local();
+    double net_charge = 0.0;
+    if (built_atoms_) {
+        std::vector<force_t> charge(built_atoms_);
+        ATV_CUDA_CHECK(cudaMemcpy(charge.data(), ctx.frame.atoms.charge,
+                                  charge.size() * sizeof(force_t),
+                                  cudaMemcpyDeviceToHost));
+        for (const force_t q : charge)
+            net_charge += double(q);
+    }
+    background_coef_ = -longrange::background_energy(net_charge, 1.0, alpha_);
+
+    ATV_CUDA_CHECK(cudaMalloc(&d_moduli_, moduli.size() * sizeof(double)));
+    ATV_CUDA_CHECK(cudaMemcpy(d_moduli_, moduli.data(),
+                              moduli.size() * sizeof(double),
+                              cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMalloc(&d_tables_, sizeof(PmeTables)));
+    // Revision ~0 never matches a published Box: the first replay fills them.
+    ATV_CUDA_CHECK(cudaMemset(d_tables_, 0xff, sizeof(PmeTables)));
     ATV_CUDA_CHECK(
         cudaMalloc(&d_influence_, std::size_t(nhalf_) * sizeof(double)));
-    ATV_CUDA_CHECK(cudaMemcpy(d_influence_, influence.data(),
-                              std::size_t(nhalf_) * sizeof(double),
-                              cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(cudaMalloc(&d_grid_, std::size_t(ntot_) * sizeof(work_t)));
+    if (stress_)
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d_virial_, 6 * std::size_t(nhalf_) * sizeof(double)));
+    ATV_CUDA_CHECK(cudaMalloc(&d_grid_, std::size_t(ntot_) * sizeof(force_t)));
     ATV_CUDA_CHECK(
         cudaMalloc(&d_spectrum_, std::size_t(nhalf_) * sizeof(PmeComplex)));
     cufftHandle forward, inverse;
@@ -433,7 +539,6 @@ void KSpacePME::build(const BuildContext& ctx) {
         != CUFFT_SUCCESS)
         throw std::runtime_error("KSpacePME: inverse cufftPlan3d failed");
     inverse_plan_ = static_cast<int>(inverse);
-    built_atoms_ = ctx.frame.n_local();
     if (built_atoms_ == 0)
         return;
     const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
@@ -445,8 +550,8 @@ void KSpacePME::build(const BuildContext& ctx) {
     // issuing each FFT stage and spline kernel separately from the host.
     // https://docs.nvidia.com/cuda/cufft/index.html#cuda-graphs-support
     ATV_CUDA_CHECK(cudaMemsetAsync(
-        d_grid_, 0, std::size_t(ntot_) * sizeof(work_t), stream));
-    auto* warm_grid = static_cast<work_t*>(d_grid_);
+        d_grid_, 0, std::size_t(ntot_) * sizeof(force_t), stream));
+    auto* warm_grid = static_cast<force_t*>(d_grid_);
     auto* warm_spectrum = static_cast<PmeComplex*>(d_spectrum_);
     if (execute_forward(forward, warm_grid, warm_spectrum) != CUFFT_SUCCESS
         || execute_inverse(inverse, warm_spectrum, warm_grid) != CUFFT_SUCCESS)
@@ -475,10 +580,6 @@ void KSpacePME::compute(const LaunchContext& ctx) {
     if (ctx.frame.n_local() != built_atoms_)
         throw std::runtime_error(
             "KSpacePME: atom set changed; rebuild the driver");
-    for (int i = 0; i < 9; ++i)
-        if (double(ctx.runtime.host_box.cell[i]) != built_cell_[i])
-            throw std::runtime_error("KSpacePME: fixed-cell reciprocal solver; "
-                                     "changing-cell MD is unsupported");
     if (built_atoms_)
         ATV_CUDA_CHECK(
             cudaGraphLaunch(static_cast<cudaGraphExec_t>(graph_exec_),
@@ -489,32 +590,44 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
     const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
     const int n = built_atoms_;
-    auto* grid = static_cast<work_t*>(d_grid_);
+    auto* grid = static_cast<force_t*>(d_grid_);
     auto* spectrum = static_cast<PmeComplex*>(d_spectrum_);
+    auto* tables = static_cast<PmeTables*>(d_tables_);
+    const Box& box = ctx.runtime.host_box;
     const cufftHandle forward = static_cast<cufftHandle>(forward_plan_);
     const cufftHandle inverse = static_cast<cufftHandle>(inverse_plan_);
 
     PmeGeom geom;
-    for (int i = 0; i < 9; ++i)
-        geom.inv_cell[i] = inv_cell_[i];
     geom.K[0] = K_[0];
     geom.K[1] = K_[1];
     geom.K[2] = K_[2];
     geom.order = order_;
 
-    const double escale = ATV::units::coulomb / (2.0 * ATV::units::pi * vol_);
-    const double fscale = ATV::units::coulomb / (ATV::units::pi * vol_);
-    const double self_pref =
-        -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi);
+    const double self_pref = longrange::self_energy_prefactor(alpha_);
+    const double inv_pi2_a2 =
+        ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
     const int blk = kDefaultBlock;
-    const int energy_scratch_bytes = warps_per_block(blk) * sizeof(double);
+    acc_t* energy = &frame.scalars->energy;
+    acc_t* stress = frame.scalars->stress;
 
+    auto refresh = [&]<bool Virial>() {
+        kernels::pme_refresh_tables<Virial><<<1, 1, 0, stream>>>(
+            box, tables, background_coef_, energy, stress);
+        kernels::pme_refresh_influence<Virial>
+            <<<grid_size(nhalf_), blk, 0, stream>>>(
+                tables, box, geom, d_moduli_, inv_pi2_a2, d_influence_,
+                d_virial_, nhalf_);
+    };
+    if (stress_)
+        refresh.template operator()<true>();
+    else
+        refresh.template operator()<false>();
     ATV_CUDA_CHECK(
-        cudaMemsetAsync(grid, 0, std::size_t(ntot_) * sizeof(work_t), stream));
+        cudaMemsetAsync(grid, 0, std::size_t(ntot_) * sizeof(force_t), stream));
     auto spread = [&]<int Order>() {
         kernels::pme_spread<Order><<<grid_size(n * order_), blk, 0, stream>>>(
             frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
-            geom, grid);
+            geom, box, grid);
     };
     if (order_ == 5)
         spread.template operator()<5>();
@@ -524,17 +637,21 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
         spread.template operator()<0>();
     if (execute_forward(forward, grid, spectrum) != CUFFT_SUCCESS)
         throw std::runtime_error("KSpacePME: forward FFT failed");
-    kernels::
-        pme_influence<<<grid_size(nhalf_), blk, energy_scratch_bytes, stream>>>(
-            spectrum, geom, d_influence_, escale, &frame.scalars->energy);
+    if (stress_)
+        kernels::pme_influence<true><<<grid_size(nhalf_), blk, 0, stream>>>(
+            spectrum, geom, box, d_influence_, d_virial_, nhalf_, energy,
+            stress);
+    else
+        kernels::pme_influence<false><<<grid_size(nhalf_), blk, 0, stream>>>(
+            spectrum, geom, box, d_influence_, d_virial_, nhalf_, energy,
+            stress);
     if (execute_inverse(inverse, spectrum, grid) != CUFFT_SUCCESS)
         throw std::runtime_error("KSpacePME: inverse FFT failed");
     auto interpolate = [&]<int Order>() {
-        kernels::pme_interp<Order>
-            <<<grid_size(n), blk, energy_scratch_bytes, stream>>>(
-                frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.x,
-                frame.atoms.y, frame.atoms.z, frame.atoms.charge, n, geom, grid,
-                fscale, self_pref, &frame.scalars->energy);
+        kernels::pme_interp<Order><<<grid_size(n), blk, 0, stream>>>(
+            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.force_fault,
+            frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
+            geom, box, grid, self_pref, energy);
     };
     if (order_ == 5)
         interpolate.template operator()<5>();
@@ -561,8 +678,14 @@ void KSpacePME::destroy(const DestroyContext& ctx) {
         cufftDestroy(static_cast<cufftHandle>(inverse_plan_));
         inverse_plan_ = -1;
     }
+    cudaFree(d_tables_);
+    d_tables_ = nullptr;
+    cudaFree(d_moduli_);
+    d_moduli_ = nullptr;
     cudaFree(d_influence_);
     d_influence_ = nullptr;
+    cudaFree(d_virial_);
+    d_virial_ = nullptr;
     cudaFree(d_spectrum_);
     d_spectrum_ = nullptr;
     cudaFree(d_grid_);

@@ -4,14 +4,11 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/deform.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cuda_runtime.h>
 
 namespace ATV {
-
-using cuda::prec_t;
-using cuda::real_t;
-using cuda::work_t;
 
 namespace cuda {
 namespace md {
@@ -29,8 +26,8 @@ std::vector<DefaultBinding> Deform::default_bindings() const {
 void Deform::build(const BuildContext& ctx) {
     // Cache the initial box edge on the deform axis so launch() can
     // compute L_k = L0 · (1 + erate · k · dt). One D2H at build time.
-    prec_t host_box[9];
-    cudaMemcpy(host_box, ctx.frame.box, 9 * sizeof(prec_t),
+    geom_t host_box[9];
+    cudaMemcpy(host_box, ctx.frame.box, 9 * sizeof(geom_t),
                cudaMemcpyDeviceToHost);
     L0_ = static_cast<double>(host_box[axis_ * 3 + axis_]);
     step_count_ = 0;
@@ -39,23 +36,21 @@ void Deform::build(const BuildContext& ctx) {
 namespace {
 
 __global__ void
-deform_k(real_t* __restrict__ pos, // x, y, or z depending on axis
-         prec_t* __restrict__ box, // 3x3 row-major
-         int axis, work_t scale_factor, int n) {
+deform_k(pos_t* __restrict__ pos,  // x, y, or z depending on axis
+         pos_t* __restrict__ corr, // matching correction column (or null)
+         geom_t* __restrict__ box, // 3x3 row-major
+         int axis, mixed_t scale_factor, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= n)
         return;
 
     // Remap atom position proportionally
-    pos[idx] =
-        static_cast<real_t>(static_cast<work_t>(pos[idx]) * scale_factor);
+    store_position(pos, corr, idx,
+                   load_position(pos, corr, idx) * scale_factor);
 
     // Thread 0 updates the box diagonal element
-    if (idx == 0) {
-        int box_idx = axis * 3 + axis;
-        box[box_idx] = static_cast<prec_t>(static_cast<work_t>(box[box_idx])
-                                           * scale_factor);
-    }
+    if (idx == 0)
+        box[axis * 3 + axis] *= geom_t(scale_factor);
 }
 
 } // anonymous namespace
@@ -77,22 +72,26 @@ void Deform::launch(const LaunchContext& ctx) {
     ++step_count_;
     const double L_prev = L0_ * (1.0 + strain_rate_ * dt_ * (step_count_ - 1));
     const double L_curr = L0_ * (1.0 + strain_rate_ * dt_ * step_count_);
-    work_t scale = static_cast<work_t>(L_curr / L_prev);
+    const mixed_t scale = static_cast<mixed_t>(L_curr / L_prev);
 
-    real_t* pos = nullptr;
+    pos_t* pos = nullptr;
+    pos_t* corr = nullptr;
     switch (axis_) {
     case 0:
         pos = f.atoms.x;
+        corr = f.atoms.x_corr;
         break;
     case 1:
         pos = f.atoms.y;
+        corr = f.atoms.y_corr;
         break;
     case 2:
         pos = f.atoms.z;
+        corr = f.atoms.z_corr;
         break;
     }
 
-    deform_k<<<grid, block, 0, stream>>>(pos, f.box, axis_, scale, n);
+    deform_k<<<grid, block, 0, stream>>>(pos, corr, f.box, axis_, scale, n);
 }
 
 } // namespace md

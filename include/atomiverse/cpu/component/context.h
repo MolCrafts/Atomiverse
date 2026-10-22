@@ -250,6 +250,8 @@ struct ExecServices {
     ///
     /// True outside any veto, which is every loop but MC's trial `energy` phase.
     bool forces_requested = true;
+    /// Evaluate current nuclear state without advancing temporal history.
+    bool initializing_forces = false;
 };
 
 /// @brief Async-analysis services (publisher: `AnalysisExecutor::install`).

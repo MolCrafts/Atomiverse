@@ -73,6 +73,7 @@ class FixFreeze : public cpu::Constraint, public cpu::ConstraintProvider {
                       const cpu::Frame& frame) const override;
 
     void build(const cpu::BuildContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:

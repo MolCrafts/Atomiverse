@@ -74,9 +74,8 @@ class Thermo : public AsyncRecorder {
     }
 
     void on_data_ready(const LaunchContext& ctx, int slot) override {
-        // CUDA has no constraint components yet, so Ndof is still 3N - 3 here.
         cpu::thermo_print(ctx.step, *h_pe_[slot], *h_ke_[slot],
-                          3 * n_atoms_ - 3, header_printed_, file_);
+                          ctx.runtime.md.n_dof_global, header_printed_, file_);
     }
 
     void on_destroy(const DestroyContext&) override {

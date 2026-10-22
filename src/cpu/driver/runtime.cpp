@@ -3,6 +3,7 @@
 ///        DD / device / analysis state lives in the composed sub-runtimes.
 
 #include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/core/precision.h"
 
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/stage.h"
@@ -141,6 +142,20 @@ void Runtime::set_frame(cpu::Frame& frame) {
     domain_.bind_frame(frame, context_, needs_tag_index);
 }
 
+void Runtime::load(const Plan<cpu::Component>& plan) {
+    std::vector<std::pair<int, cpu::Component*>> bindings;
+    if (plan.kind == PhaseKind::MD)
+        for (const auto& slot : plan.slots)
+            for (const auto& op : slot.ops)
+                bindings.emplace_back(slot.phase, op.component);
+    if (bindings != force_bindings_) {
+        forces_ready_ = false;
+        verlet_setup_done_ = false;
+    }
+    force_bindings_ = std::move(bindings);
+    plan_ = &plan;
+}
+
 void Runtime::adopt_dd(std::unique_ptr<md::mpi::DomainDecomposition> dd) {
     domain_.adopt(std::move(dd), context_);
 }
@@ -150,48 +165,54 @@ std::unique_ptr<md::mpi::DomainDecomposition> Runtime::release_dd() {
 }
 
 void Runtime::build_components() {
-    BuildContext ctx{context_, *frame_};
-    TimerRegistry& timing = device_.timing();
-    // Register one timing handle per op (component name + phase + category
-    // rollup), precomputed so the hot step loop never re-classifies / allocates.
-    op_handle_.assign(plan_->slots.size(), {});
-    for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
-        auto& slot = plan_->slots[s];
-        op_handle_[s].reserve(slot.ops.size());
-        for (auto& op : slot.ops) {
-            const std::string nm = op.component->name();
-            ATV_DEBUG("building component '{}'", nm);
-            op.component->build(ctx);
-            op_handle_[s].push_back(timing.register_op(
-                TimerKey{nm, slot.phase,
-                         static_cast<int>(md::StepTiming::classify(nm)), ""}));
+    try {
+        forces_ready_ = false;
+        build_plan(*plan_);
+        TimerRegistry& timing = device_.timing();
+        // Register one timing handle per op (component name + phase + category
+        // rollup), precomputed so the hot step loop never re-classifies / allocates.
+        op_handle_.assign(plan_->slots.size(), {});
+        for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
+            auto& slot = plan_->slots[s];
+            op_handle_[s].reserve(slot.ops.size());
+            for (auto& op : slot.ops) {
+                const std::string nm = op.component->name();
+                ATV_DEBUG("building component '{}'", nm);
+                op_handle_[s].push_back(timing.register_op(TimerKey{
+                    nm, slot.phase,
+                    static_cast<int>(md::StepTiming::classify(nm)), ""}));
+            }
         }
+        ATV_INFO("all components built");
+        const int comm_cat = static_cast<int>(md::StepTiming::Comm);
+        comm_handle_fwd_ =
+            timing.register_op(TimerKey{"comm_forward", -1, comm_cat, ""});
+        comm_handle_exch_ =
+            timing.register_op(TimerKey{"comm_exchange", -1, comm_cat, ""});
+        comm_handle_bord_ =
+            timing.register_op(TimerKey{"comm_borders", -1, comm_cat, ""});
+        comm_handle_rev_ =
+            timing.register_op(TimerKey{"comm_reverse", -1, comm_cat, ""});
+        cache_verlet_comm_();
+        // The schema is now folded; hold the Frame to it before anything runs.
+        // Iron law 4, applied once for the whole component set instead of each
+        // component remembering to check its own fields.
+        if (frame_ != nullptr) {
+            check_ghosts(verlet_.ghost, *frame_, "driver build");
+        }
+        verlet_setup_done_ = false;
+        if (plan_
+            && (plan_->kind == PhaseKind::Evaluate
+                || plan_->kind == PhaseKind::Minimizer))
+            setup_verlet_comm_();
+    } catch (...) {
+        DestroyContext ctx{context_, *frame_};
+        lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
+        throw;
     }
-    ATV_INFO("all components built");
-    const int comm_cat = static_cast<int>(md::StepTiming::Comm);
-    comm_handle_fwd_ =
-        timing.register_op(TimerKey{"comm_forward", -1, comm_cat, ""});
-    comm_handle_exch_ =
-        timing.register_op(TimerKey{"comm_exchange", -1, comm_cat, ""});
-    comm_handle_bord_ =
-        timing.register_op(TimerKey{"comm_borders", -1, comm_cat, ""});
-    comm_handle_rev_ =
-        timing.register_op(TimerKey{"comm_reverse", -1, comm_cat, ""});
-    cache_verlet_comm_();
-    // The schema is now folded; hold the Frame to it before anything runs.
-    // Iron law 4, applied once for the whole component set instead of each
-    // component remembering to check its own fields.
-    if (frame_ != nullptr) {
-        check_ghosts(verlet_.ghost, *frame_, "driver build");
-    }
-    verlet_setup_done_ = false;
-    if (plan_
-        && (plan_->kind == PhaseKind::MD || plan_->kind == PhaseKind::Evaluate
-            || plan_->kind == PhaseKind::Minimizer))
-        setup_verlet_comm_();
 }
 
-void Runtime::launch_op_(std::size_t s, std::size_t o, int step_idx) {
+void Runtime::launch_op_(std::size_t s, std::size_t o, BigInt step_idx) {
     auto& slot = plan_->slots[s];
     auto& op = slot.ops[o];
     if (op.frequency > 0 && step_idx % op.frequency != 0)
@@ -215,7 +236,7 @@ void Runtime::launch_op_(std::size_t s, std::size_t o, int step_idx) {
     frame_->end_resolution_window(op.component->name().c_str());
 }
 
-void Runtime::walk_slot_(int phase, int step_idx, bool skip_engine) {
+void Runtime::walk_slot_(int phase, BigInt step_idx, bool skip_engine) {
     if (plan_ == nullptr || phase < 0
         || static_cast<std::size_t>(phase) >= plan_->slots.size())
         return;
@@ -230,7 +251,7 @@ void Runtime::walk_slot_(int phase, int step_idx, bool skip_engine) {
 }
 
 void Runtime::launch_engine_(cpu::Component* c, int slot, int op, int phase,
-                             int step_idx) {
+                             BigInt step_idx) {
     if (c == nullptr)
         return;
     LaunchContext ctx{context_, *frame_, phase, step_idx,
@@ -338,7 +359,7 @@ inline void timed_comm(TimerRegistry& reg, int handle, Fn&& fn) {
 
 } // namespace
 
-void Runtime::comm_refresh_(int slot, int step) {
+void Runtime::comm_refresh_(int slot, BigInt step) {
     apply_ghost_cutoff_();
     cpu::Comm* comm = context_.md.comm;
     if (!comm)
@@ -349,7 +370,7 @@ void Runtime::comm_refresh_(int slot, int step) {
                [&] { comm->forward_comm(comm_ctx); });
 }
 
-void Runtime::comm_rebuild_(int exchange_slot, int borders_slot, int step) {
+void Runtime::comm_rebuild_(int exchange_slot, int borders_slot, BigInt step) {
     LaunchContext comm_ctx{context_, *frame_, exchange_slot, step,
                            /*forces_requested=*/true};
     // LAMMPS `Domain::pbc()` before `Comm::exchange()` (src/verlet.cpp
@@ -378,7 +399,7 @@ void Runtime::comm_rebuild_(int exchange_slot, int borders_slot, int step) {
     timed_comm(reg, comm_handle_bord_, [&] { comm->borders(comm_ctx); });
 }
 
-void Runtime::comm_before_force_(int slot, int step_idx) {
+void Runtime::comm_before_force_(int slot, BigInt step_idx) {
     cpu::Comm* comm = context_.md.comm;
     if (!comm)
         return;
@@ -397,7 +418,7 @@ void Runtime::comm_before_force_(int slot, int step_idx) {
     }
 }
 
-void Runtime::comm_after_force_(int slot, int step_idx) {
+void Runtime::comm_after_force_(int slot, BigInt step_idx) {
     cpu::Comm* comm = context_.md.comm;
     if (!comm)
         return;
@@ -407,7 +428,7 @@ void Runtime::comm_after_force_(int slot, int step_idx) {
     timed_comm(reg, comm_handle_rev_, [&] { comm->reverse_comm(comm_ctx); });
 }
 
-void Runtime::setup_verlet_comm_() {
+void Runtime::setup_verlet_comm_(BigInt step_idx) {
     // LAMMPS Verlet::setup (src/verlet.cpp): pbc + exchange + borders +
     // neighbor->build before the run loop, on every rank count, so the first
     // force sees wrapped owned rows and the first nflag==0 step can
@@ -415,10 +436,10 @@ void Runtime::setup_verlet_comm_() {
     if (verlet_setup_done_)
         return;
     LaunchContext ctx{context_, *frame_,
-                      ATV::slot_of(ATV::md::Phase::pre_exchange), 0,
+                      ATV::slot_of(ATV::md::Phase::pre_exchange), step_idx,
                       /*forces_requested=*/true};
     comm_rebuild_(ATV::slot_of(ATV::md::Phase::pre_exchange),
-                  ATV::slot_of(ATV::md::Phase::pre_neighbor), 0);
+                  ATV::slot_of(ATV::md::Phase::pre_neighbor), step_idx);
     if (verlet_.neighbor_comp) {
         context_.md.reneighbor = true;
         context_.md.reneighbor_decided = true;
@@ -429,7 +450,7 @@ void Runtime::setup_verlet_comm_() {
     verlet_setup_done_ = true;
 }
 
-void Runtime::step_linear_(int step_idx) {
+void Runtime::step_linear_(BigInt step_idx) {
     decide_reneighbor_for_plan(plan_, context_, *frame_);
     const bool wrap = plan_
                       && (plan_->kind == PhaseKind::Evaluate
@@ -460,7 +481,7 @@ void Runtime::step_linear_(int step_idx) {
     context_.md.reneighbor_decided = false;
 }
 
-void Runtime::step_verlet_(int step_idx) {
+void Runtime::step_verlet_(BigInt step_idx) {
     // Structural copy of LAMMPS Verlet::run (src/verlet.cpp) communication
     // block on ctx.md.comm: nflag = neighbor->decide(); if 0: forward_comm;
     // else exchange + borders + neighbor->build; reverse_comm if newton.
@@ -512,7 +533,70 @@ void Runtime::step_verlet_(int step_idx) {
     context_.md.reneighbor_decided = false;
 }
 
-void Runtime::step(int step_idx) {
+void Runtime::prepare_run(BigInt step_idx) {
+    if (!plan_ || plan_->kind != PhaseKind::MD || forces_ready_)
+        return;
+    if (!context_.exec.forces_requested)
+        throw std::runtime_error(
+            "MD requires forces; energy-only execution is invalid");
+    // LAMMPS src/verlet.cpp::setup, a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+    // Copyright (2003) Sandia Corporation. GPL-2.0-only.
+    // Reuse the setup halo/list and reverse communication, without integration.
+    const bool saved = context_.exec.initializing_forces;
+    auto& registry = device_.timing();
+    const bool timing_enabled = registry.enabled();
+    registry.set_enabled(false);
+    struct Restore {
+        bool& flag;
+        bool saved;
+        TimerRegistry& registry;
+        bool timing_enabled;
+        bool& ready;
+        bool& setup_done;
+        ~Restore() {
+            flag = saved;
+            registry.set_enabled(timing_enabled);
+            if (!ready)
+                setup_done = false;
+        }
+    } restore{context_.exec.initializing_forces,
+              saved,
+              registry,
+              timing_enabled,
+              forces_ready_,
+              verlet_setup_done_};
+    context_.exec.initializing_forces = true;
+    plan_->prepare_forces(
+        [&](int phase) {
+            if (phase == slot_of(ATV::md::Phase::neighbor))
+                setup_verlet_comm_(step_idx);
+            if (phase == slot_of(ATV::md::Phase::post_force))
+                comm_after_force_(phase, step_idx);
+        },
+        [&](const auto& slot, const auto& op, bool force_slot) {
+            if (op.component->verlet_engine())
+                return;
+            LaunchContext ctx{context_, *frame_, slot.phase, step_idx,
+                              slot.forces_requested
+                                  && context_.exec.forces_requested};
+            const auto window = frame_->resolution_window();
+            struct RestoreWindow {
+                Frame& frame;
+                ResolutionWindow saved;
+                ~RestoreWindow() { frame.restore_resolution_window(saved); }
+            } restore_window{*frame_, window};
+            frame_->begin_resolution_window(kResolveBudgetPerLaunch);
+            if (force_slot)
+                op.component->launch(ctx);
+            else
+                op.component->initialize_forces(ctx);
+            frame_->end_resolution_window(op.component->name().c_str());
+        });
+    forces_ready_ = true;
+}
+
+void Runtime::step(BigInt step_idx) {
+    prepare_run(step_idx);
     TimerRegistry& timing_reg = device_.timing();
     const bool timing = timing_reg.enabled();
     const auto step_t0 = timing ? std::chrono::steady_clock::now()
@@ -568,16 +652,14 @@ void Runtime::step(int step_idx) {
 // window stack to unwind — `ResolutionState` is three atomics).
 
 void Runtime::build_plan(const Plan<cpu::Component>& plan) {
-    BuildContext ctx{context_, *frame_};
-    for (const auto& slot : plan.slots) {
-        for (const auto& op : slot.ops) {
-            ATV_DEBUG("building nested component '{}'", op.component->name());
-            op.component->build(ctx);
-        }
-    }
+    BuildContext build{context_, *frame_};
+    DestroyContext destroy{context_, *frame_};
+    lifecycle_.build(
+        plan, [&](Component& c) { c.build(build); },
+        [&](Component& c) { c.destroy(destroy); });
 }
 
-void Runtime::step_plan(const Plan<cpu::Component>& plan, int step_idx) {
+void Runtime::step_plan(const Plan<cpu::Component>& plan, BigInt step_idx) {
     decide_reneighbor_for_plan(&plan, context_, *frame_);
     for (const auto& slot : plan.slots) {
         if (slot.ops.empty())
@@ -599,17 +681,10 @@ void Runtime::step_plan(const Plan<cpu::Component>& plan, int step_idx) {
 
 void Runtime::destroy_plan(const Plan<cpu::Component>& plan) {
     DestroyContext ctx{context_, *frame_};
-    for (int s = static_cast<int>(plan.slots.size()) - 1; s >= 0; --s) {
-        const auto& slot = plan.slots[s];
-        for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o) {
-            const auto& op = slot.ops[o];
-            ATV_DEBUG("destroying nested component '{}'", op.component->name());
-            op.component->destroy(ctx);
-        }
-    }
+    lifecycle_.destroy(plan, [&](Component& c) { c.destroy(ctx); });
 }
 
-void Runtime::run_slot_(int slot_index, int step_idx) {
+void Runtime::run_slot_(int slot_index, BigInt step_idx) {
     // Replay every binding of one phase on the current frame — used for
     // line-search trial evaluations. Re-entrant: must not touch the timing
     // registry (op_handle_ indices belong to the outer step) and must not
@@ -691,19 +766,16 @@ void Runtime::destroy_components() {
     // completes against live subscribers before any component enters destroy().
     analysis_.shutdown_workers();
 
-    DestroyContext ctx{context_, *frame_};
-    for (int s = static_cast<int>(plan_->slots.size()) - 1; s >= 0; --s) {
-        auto& slot = plan_->slots[s];
-        for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o) {
-            auto& op = slot.ops[o];
-            ATV_DEBUG("destroying component '{}'", op.component->name());
-            op.component->destroy(ctx);
-        }
+    if (!lifecycle_.empty()) {
+        DestroyContext ctx{context_, *frame_};
+        lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
     }
 }
 
 void Runtime::shutdown() {
     ATV_DEBUG("CPU runtime shutting down");
+    if (!lifecycle_.empty())
+        destroy_components();
     analysis_.teardown(context_);
     context_.exec.runtime =
         nullptr; // the Runtime is gone; no node may reach it

@@ -183,9 +183,7 @@ struct Swap {
     /// @brief `sendproc` value meaning "this face has no partner".
     ///
     /// `Halo` is MPI-free by contract, so it cannot name `MPI_PROC_NULL`.
-    /// The transport that does (`comm_brick.cpp`) static-asserts the two
-    /// are equal, so this stays a compile-time-checked mirror rather than
-    /// an assumption.
+    /// The transport accepts this marker independently of its MPI sentinel.
     static constexpr int kNoPartner = -1;
 
     /// @brief True when this swap moves no data at all.

@@ -8,6 +8,7 @@
 /// @see Driver for the user-facing facade that delegates to Backend
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include <cuda_runtime.h>
 
 #include "atomiverse/core/plan.h"
@@ -47,7 +48,7 @@ class Backend {
 
     /// @brief Bind a compiled Plan for execution.
     /// @param plan Plan to execute (non-owning reference, must outlive Backend usage).
-    void load(const Plan<Component>& plan) { plan_ = &plan; }
+    void load(const Plan<Component>& plan);
 
     /// @brief Materialize DeviceFrame from a host Frame (calls cpu::to_cuda).
     /// @param frame Host-side system state to transfer to device.
@@ -72,11 +73,14 @@ class Backend {
     /// @param first_phase First included phase index [dimensionless].
     /// @param end_phase First excluded phase index [dimensionless].
     /// @throws std::invalid_argument If the range is outside the loaded plan.
-    void execute_phases(int step_idx, int first_phase, int end_phase);
+    void execute_phases(BigInt step_idx, int first_phase, int end_phase);
+
+    /// Establish force/scalar readiness without advancing the trajectory.
+    void prepare_run(BigInt step_idx = 0);
 
     /// @brief Execute one simulation step (launch all components by phase).
     /// @param step_idx Zero-based step index within the simulation.
-    void step(int step_idx);
+    void step(BigInt step_idx);
 
     /// @brief Execute multiple simulation steps.
     /// @param n_steps Number of steps to execute.
@@ -102,6 +106,10 @@ class Backend {
     cuda::Frame& frame() { return frame_; }
 
   private:
+    void publish_box_();
+    detail::ComponentLifecycle<Component> lifecycle_;
+    bool forces_ready_ = false;
+    std::vector<std::pair<int, Component*>> force_bindings_;
     cuda::Context context_{}; ///< CUDA stream handles.
     cuda::Frame frame_{};     ///< Device-resident system state + host metadata.
     const Plan<Component>* plan_ =

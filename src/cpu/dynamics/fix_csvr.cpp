@@ -1,3 +1,4 @@
+#include "atomiverse/core/dynamics_math.h"
 /// @file cpu/dynamics/fix_csvr.cpp
 /// @brief CPU CSVR (Bussi) thermostat implementation.
 
@@ -66,13 +67,7 @@ void FixCSVR::build(const cpu::BuildContext& ctx) {
 }
 
 double FixCSVR::compute_temp_target(std::int64_t step) const {
-    double delta = 0.0;
-    if (nlast_ > nfirst_) {
-        delta = static_cast<double>(step - nfirst_)
-                / static_cast<double>(nlast_ - nfirst_);
-        delta = std::clamp(delta, 0.0, 1.0);
-    }
-    return T_start_ + delta * (T_stop_ - T_start_);
+    return ATV::md::ramp_target(T_start_, T_stop_, step, nfirst_, nlast_);
 }
 
 void FixCSVR::launch(const cpu::LaunchContext& ctx) {

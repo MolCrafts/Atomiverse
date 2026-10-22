@@ -17,6 +17,9 @@ struct PackedTileWorkspace {
     int* counts = nullptr;          // num_clusters+1, last count is zero.
     int* offsets = nullptr;         // exclusive scan of counts.
     int* host_count = nullptr;      // caller-owned pinned scalar readback.
+    int* valid = nullptr;           // optional device count of CSR entries
+                                    // with an upper-triangle mask bit.
+    int* host_valid = nullptr;      // optional pinned readback of valid.
     int* ci = nullptr;              // capacity tiles.
     int* j = nullptr;               // capacity*32 sorted atom slots.
     std::uint32_t* masks = nullptr; // capacity*32 rows.

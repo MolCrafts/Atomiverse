@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/dynamics/barostat.h"
 
+#include "atomiverse/core/dynamics_math.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/communication/domain.h"
@@ -44,25 +45,10 @@ void Barostat::launch(const cpu::LaunchContext& ctx) {
     // post-force velocity snapshot. This `+trace/(3V)` convention is
     // identical to `NoseHooverNPT` and LAMMPS — the link
     // `lammps-api-align-04` flipped the previous `−trace/(3V)`.
-    const double trace_total =
-        (f.meta.get(kStress)[0] + f.meta.get(kStress)[1]
-         + f.meta.get(kStress)[2])
-        + (f.meta.get(kStressKinetic)[0] + f.meta.get(kStressKinetic)[1]
-           + f.meta.get(kStressKinetic)[2]);
-    const double P = +trace_total / (3.0 * V);
-
-    // Berendsen dilation factor — `fix_press_berendsen.cpp::end_of_step`:
-    //   μ = (1 − dt/(Pdamp·β) · (P_target − P))^(1/3)
-    // with β = bulk_modulus (LAMMPS `bulkmodulus`). Because the sign of
-    // P flipped together with the `(P_target − P)` ordering (was
-    // `(P − P_target)` under `P = −trace/(3V)`), the μ³ argument is
-    // numerically unchanged for the same physical state — a
-    // representation change, not a behaviour change.
-    // Clamped to [0.5, 2.0] so a single step cannot collapse or explode
-    // the box if P diverges (e.g. transient force spike on step 0).
-    const double mu_cubed =
-        1.0 - (dt_ / (tau_P_ * bulk_modulus_)) * (P_target_ - P);
-    const double mu = std::cbrt(std::max(0.5, std::min(2.0, mu_cubed)));
+    const double P = ATV::md::isotropic_pressure(
+        f.meta.get(kStress).data(), f.meta.get(kStressKinetic).data(), V);
+    const double mu =
+        ATV::md::berendsen_dilation(P, P_target_, dt_, tau_P_, bulk_modulus_);
 
     // Scale box edges. Single-rank or multi-rank: deterministic, identical
     // computation on every rank (P, V, μ are all global) so the box stays

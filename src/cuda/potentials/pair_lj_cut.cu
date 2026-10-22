@@ -6,6 +6,7 @@
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/lj_kernel.cuh"
@@ -17,36 +18,16 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thrust/binary_search.h>
+#include <thrust/execution_policy.h>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace ATV {
 
-using cuda::prec_t;
-using cuda::real_t;
-using cuda::work_t;
-
 namespace cuda {
 namespace kernels {
-
-/// @brief Device-side binary search of a sorted int range.
-///        Returns true if `target` is in `[beg, end)`.
-__device__ inline bool excl_contains(const int* __restrict__ partners, int beg,
-                                     int end, int target) {
-    int lo = beg, hi = end;
-    while (lo < hi) {
-        int mid = (lo + hi) >> 1;
-        int v = partners[mid];
-        if (v == target)
-            return true;
-        if (v < target)
-            lo = mid + 1;
-        else
-            hi = mid;
-    }
-    return false;
-}
 
 // Gather current atom positions into the cluster-sorted slot layout so the
 // force kernel reads neighbour positions COALESCED (spx[cj*8+sj] is contiguous
@@ -54,12 +35,12 @@ __device__ inline bool excl_contains(const int* __restrict__ partners, int beg,
 // read per slot here amortises the scatter that previously happened per pair —
 // the dominant cost of the pre-tile atom-walk force (latency-bound gathers).
 __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
-                                   const real_t* __restrict__ x,
-                                   const real_t* __restrict__ y,
-                                   const real_t* __restrict__ z, int n_slots,
-                                   real_t* __restrict__ spx,
-                                   real_t* __restrict__ spy,
-                                   real_t* __restrict__ spz) {
+                                   const pos_t* __restrict__ x,
+                                   const pos_t* __restrict__ y,
+                                   const pos_t* __restrict__ z, int n_slots,
+                                   force_t* __restrict__ spx,
+                                   force_t* __restrict__ spy,
+                                   force_t* __restrict__ spz) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= n_slots)
         return;
@@ -89,24 +70,26 @@ __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
 /// active j-slots. FULL neighbor + 0.5 energy (both endpoints accumulate).
 template <bool Ortho, bool Virial>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
-    real_t* __restrict__ fx, real_t* __restrict__ fy, real_t* __restrict__ fz,
-    prec_t* __restrict__ energy, prec_t* __restrict__ stress,
-    const real_t* __restrict__ spx, const real_t* __restrict__ spy,
-    const real_t* __restrict__ spz, const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx, const std::uint64_t* __restrict__ cl_mask,
+    fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
+    fixed_t* __restrict__ fz, ForceFault* fault, acc_t* __restrict__ energy,
+    acc_t* __restrict__ stress, const force_t* __restrict__ spx,
+    const force_t* __restrict__ spy, const force_t* __restrict__ spz,
+    const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+    const std::uint64_t* __restrict__ cl_mask,
     const int* __restrict__ orig_index, int num_clusters, int n_owned,
-    cuda::Box box, bool periodic, work_t epsilon, work_t sigma_sq,
-    work_t cutoff_sq, work_t min_pair_dist_sq, work_t v_shift,
+    cuda::Box box_arg, bool periodic, force_t epsilon, force_t sigma_sq,
+    force_t cutoff_sq, force_t min_pair_dist_sq, force_t v_shift,
     const int* __restrict__ excl_offsets, const int* __restrict__ excl_partners,
-    work_t s_excl) {
+    force_t s_excl) {
+    const auto box = box_arg.current().as<force_t>();
     constexpr int CS = ATV::cuda::kOpenmmClusterSize;
     static_assert(CS == 32, "tile force assumes OpenMM CS=32");
 
     // Per-warp tile staging: [warp][slot]
     constexpr int kMaxWarps = ATV::cuda::kDefaultBlock / 32;
-    __shared__ real_t shx[kMaxWarps][CS];
-    __shared__ real_t shy[kMaxWarps][CS];
-    __shared__ real_t shz[kMaxWarps][CS];
+    __shared__ force_t shx[kMaxWarps][CS];
+    __shared__ force_t shy[kMaxWarps][CS];
+    __shared__ force_t shz[kMaxWarps][CS];
     __shared__ int sh_aj[kMaxWarps][CS];
 
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -114,24 +97,24 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     int slot = tid % CS;
     int warp_in_block = threadIdx.x / 32;
 
-    work_t my_energy = work_t(0);
-    work_t my_vxx = work_t(0), my_vyy = work_t(0), my_vzz = work_t(0);
-    work_t my_vxy = work_t(0), my_vxz = work_t(0), my_vyz = work_t(0);
+    acc_t my_energy = 0;
+    acc_t my_vxx = 0, my_vyy = 0, my_vzz = 0;
+    acc_t my_vxy = 0, my_vxz = 0, my_vyz = 0;
 
-    const real_t eps_r = real_t(epsilon);
-    const real_t sigsq_r = real_t(sigma_sq);
-    const real_t cut_r = real_t(cutoff_sq);
-    const real_t minr_r = real_t(min_pair_dist_sq);
-    const real_t vshift_r = real_t(v_shift);
-    const real_t sexcl_r = real_t(s_excl);
+    const force_t eps_r = force_t(epsilon);
+    const force_t sigsq_r = force_t(sigma_sq);
+    const force_t cut_r = force_t(cutoff_sq);
+    const force_t minr_r = force_t(min_pair_dist_sq);
+    const force_t vshift_r = force_t(v_shift);
+    const force_t sexcl_r = force_t(s_excl);
 
     // All lanes of a warp must participate in __syncwarp; pad slots keep
     // ai < 0 and skip force math but still load tiles.
     int ai = (ci < num_clusters) ? orig_index[ci * CS + slot] : -1;
     if (ai >= n_owned)
         ai = -1;
-    real_t xi = 0, yi = 0, zi = 0;
-    real_t fxi = 0, fyi = 0, fzi = 0;
+    force_t xi = 0, yi = 0, zi = 0;
+    force_t fxi = 0, fyi = 0, fzi = 0;
     bool has_excl = false;
     int beg_excl = 0, end_excl = 0;
     if (ai >= 0) {
@@ -161,9 +144,9 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
                     int aj = sh_aj[warp_in_block][sj];
                     if (aj < 0 || aj == ai)
                         continue;
-                    real_t dx = shx[warp_in_block][sj] - xi;
-                    real_t dy = shy[warp_in_block][sj] - yi;
-                    real_t dz = shz[warp_in_block][sj] - zi;
+                    force_t dx = shx[warp_in_block][sj] - xi;
+                    force_t dy = shy[warp_in_block][sj] - yi;
+                    force_t dz = shz[warp_in_block][sj] - zi;
                     if (periodic) {
                         if constexpr (Ortho) {
                             dx -= box.cell[0] * nearbyint(dx * box.inv_l[0]);
@@ -173,78 +156,80 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
                             box.min_image(dx, dy, dz);
                         }
                     }
-                    real_t r2 = dx * dx + dy * dy + dz * dz;
+                    force_t r2 = dx * dx + dy * dy + dz * dz;
                     if (r2 >= cut_r || r2 < minr_r)
                         continue;
-                    real_t scale = real_t(1);
+                    force_t scale = force_t(1);
                     if (has_excl && end_excl > beg_excl
-                        && excl_contains(excl_partners, beg_excl, end_excl,
-                                         aj)) {
-                        if (sexcl_r == real_t(0))
+                        && thrust::binary_search(
+                            thrust::seq, excl_partners + beg_excl,
+                            excl_partners + end_excl, aj)) {
+                        if (sexcl_r == force_t(0))
                             continue;
                         scale = sexcl_r;
                     }
-                    real_t inv_r2 = real_t(1) / r2;
-                    real_t sr2 = sigsq_r * inv_r2;
-                    real_t sr6 = sr2 * sr2 * sr2;
-                    real_t sr12 = sr6 * sr6;
-                    real_t f_over_r = scale * real_t(24) * eps_r
-                                      * (real_t(2) * sr12 - sr6) * inv_r2;
+                    force_t inv_r2 = force_t(1) / r2;
+                    force_t sr2 = sigsq_r * inv_r2;
+                    force_t sr6 = sr2 * sr2 * sr2;
+                    force_t sr12 = sr6 * sr6;
+                    force_t f_over_r = scale * force_t(24) * eps_r
+                                       * (force_t(2) * sr12 - sr6) * inv_r2;
                     fxi += -f_over_r * dx;
                     fyi += -f_over_r * dy;
                     fzi += -f_over_r * dz;
-                    real_t e_pair =
-                        scale * (real_t(4) * eps_r * (sr12 - sr6) - vshift_r);
-                    my_energy += work_t(0.5) * work_t(e_pair);
+                    force_t e_pair =
+                        scale * (force_t(4) * eps_r * (sr12 - sr6) - vshift_r);
+                    my_energy += acc_t(0.5) * acc_t(e_pair);
                     if constexpr (Virial) {
-                        my_vxx += work_t(0.5) * work_t(dx * (f_over_r * dx));
-                        my_vyy += work_t(0.5) * work_t(dy * (f_over_r * dy));
-                        my_vzz += work_t(0.5) * work_t(dz * (f_over_r * dz));
-                        my_vxy += work_t(0.5) * work_t(dx * (f_over_r * dy));
-                        my_vxz += work_t(0.5) * work_t(dx * (f_over_r * dz));
-                        my_vyz += work_t(0.5) * work_t(dy * (f_over_r * dz));
+                        my_vxx += acc_t(0.5) * acc_t(dx * (f_over_r * dx));
+                        my_vyy += acc_t(0.5) * acc_t(dy * (f_over_r * dy));
+                        my_vzz += acc_t(0.5) * acc_t(dz * (f_over_r * dz));
+                        my_vxy += acc_t(0.5) * acc_t(dx * (f_over_r * dy));
+                        my_vxz += acc_t(0.5) * acc_t(dx * (f_over_r * dz));
+                        my_vyz += acc_t(0.5) * acc_t(dy * (f_over_r * dz));
                     }
                 }
             }
             __syncwarp();
         }
+        // Full list: each owned row is written by exactly one lane.
         if (ai >= 0) {
-            fx[ai] += fxi;
-            fy[ai] += fyi;
-            fz[ai] += fzi;
+            add_force_owned(fx, ai, fxi, fault);
+            add_force_owned(fy, ai, fyi, fault);
+            add_force_owned(fz, ai, fzi, fault);
         }
     }
 
-    // Packed warp-shuffle reduction: 7 scalars (energy + 6 stress
-    // components) reduced via cg::reduce. Replaces the original
-    // sequential 7-pass shared-mem reductions with 7 × `__syncthreads`
-    // (one per scalar inside `block_reduce_sum`) instead of 7 × 8
-    // shared-mem barrier-steps. Drops shared-mem footprint from
-    // `blockDim.x × sizeof(work_t)` to (blockDim.x / 32) × sizeof(work_t)
-    // (cuda-md-review-cleanup-05-reductions-and-atomics).
-    extern __shared__ work_t warp_scratch[]; // per-warp staging cells
-
+    // CUB reduces energy and each virial component in a single collective.
     if constexpr (Virial) {
-        work_t my_vals[7] = {my_energy, my_vxx, my_vyy, my_vzz,
-                             my_vxy,    my_vxz, my_vyz};
-        work_t out[7];
-        block_reduce_sum_n<7>(my_vals, warp_scratch, out);
+        ::cuda::std::array<acc_t, 7> my_vals = {
+            my_energy, my_vxx, my_vyy, my_vzz, my_vxy, my_vxz, my_vyz};
+
+        using Reduce =
+            cub::BlockReduce<::cuda::std::array<acc_t, 7>, kDefaultBlock>;
+        __shared__ typename Reduce::TempStorage reduction;
+        const auto out =
+            Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
         if (threadIdx.x == 0) {
-            atomicAdd(energy, static_cast<prec_t>(out[0]));
+            atomicAdd(energy, out[0]);
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
-                    atomicAdd(&stress[c], static_cast<prec_t>(out[c + 1]));
+                    atomicAdd(&stress[c], out[c + 1]);
             }
         }
     } else {
         // Virial gated off: reduce energy alone; the my_v* accumulators stay
         // 0 and are dead-code-eliminated, freeing their registers.
-        work_t my_vals[1] = {my_energy};
-        work_t out[1];
-        block_reduce_sum_n<1>(my_vals, warp_scratch, out);
+        ::cuda::std::array<acc_t, 1> my_vals = {my_energy};
+
+        using Reduce =
+            cub::BlockReduce<::cuda::std::array<acc_t, 1>, kDefaultBlock>;
+        __shared__ typename Reduce::TempStorage reduction;
+        const auto out =
+            Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 1>{});
         if (threadIdx.x == 0)
-            atomicAdd(energy, static_cast<prec_t>(out[0]));
+            atomicAdd(energy, out[0]);
     }
 }
 
@@ -311,9 +296,9 @@ void PairLJCut::build(const BuildContext& ctx) {
         cudaFree(spy_);
         cudaFree(spz_);
         spx_ = spy_ = spz_ = nullptr;
-        ATV_CUDA_CHECK(cudaMalloc(&spx_, slots * sizeof(real_t)));
-        ATV_CUDA_CHECK(cudaMalloc(&spy_, slots * sizeof(real_t)));
-        ATV_CUDA_CHECK(cudaMalloc(&spz_, slots * sizeof(real_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spx_, slots * sizeof(force_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spy_, slots * sizeof(force_t)));
+        ATV_CUDA_CHECK(cudaMalloc(&spz_, slots * sizeof(force_t)));
         spos_cap_ = slots;
     }
     // Re-callable: the multi-GPU bonded path rebuilds the exclusion CSR every
@@ -440,15 +425,15 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         (has_exclusions_ && !baked) ? d_excl_offsets_ : nullptr;
     const int* excl_par =
         (has_exclusions_ && !baked) ? d_excl_partners_ : nullptr;
-    const work_t cutoff_sq =
-        static_cast<work_t>(cutoff_) * static_cast<work_t>(cutoff_);
-    const work_t sigma_sq =
-        static_cast<work_t>(sigma_) * static_cast<work_t>(sigma_);
-    const work_t min_pair_dist_sq =
-        static_cast<work_t>(kernels::kMinPairDist)
-        * static_cast<work_t>(kernels::kMinPairDist);
+    const force_t cutoff_sq =
+        static_cast<force_t>(cutoff_) * static_cast<force_t>(cutoff_);
+    const force_t sigma_sq =
+        static_cast<force_t>(sigma_) * static_cast<force_t>(sigma_);
+    const force_t min_pair_dist_sq =
+        static_cast<force_t>(kernels::kMinPairDist)
+        * static_cast<force_t>(kernels::kMinPairDist);
     cuda::Box box = ctx.runtime.host_box;
-    prec_t* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
+    acc_t* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
     const bool virial = (stress_ptr != nullptr);
 
     // OpenMM cluster force — sole CUDA MD nonbonded path (cuda-openmm-md).
@@ -477,19 +462,19 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     const uint64_t* mask = pairs->cl_mask;
     int block = kDefaultBlock;
     int grid = grid_size(n_slots);
-    int shmem = warps_per_block(block) * sizeof(work_t);
+    constexpr int shmem = 0;
 
     auto launch = [&](auto ortho_t, auto vir_t) {
         constexpr bool O = decltype(ortho_t)::value;
         constexpr bool V = decltype(vir_t)::value;
         kernels::lj_force_tile<O, V><<<grid, block, shmem, stream>>>(
-            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz,
+            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.force_fault,
             &frame.scalars->energy, stress_ptr, spx_, spy_, spz_,
             pairs->cl_row_ptr, pairs->cl_col_idx, mask, pairs->cl_orig_index,
             nc, frame.n_local(), box, /*periodic=*/true,
-            static_cast<work_t>(epsilon_), sigma_sq, cutoff_sq,
-            min_pair_dist_sq, static_cast<work_t>(v_shift_), excl_off, excl_par,
-            static_cast<work_t>(s_excl_));
+            static_cast<force_t>(epsilon_), sigma_sq, cutoff_sq,
+            min_pair_dist_sq, static_cast<force_t>(v_shift_), excl_off,
+            excl_par, static_cast<force_t>(s_excl_));
     };
     using T = std::true_type;
     using F = std::false_type;

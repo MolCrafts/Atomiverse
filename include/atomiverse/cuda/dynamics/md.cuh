@@ -152,7 +152,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// @param frame Host-resident system state; transferred H2D, advanced
     ///        on the device, retrieved D2H, updated in place.
     /// @param n_steps Step budget [dimensionless step count].
-    void run(cpu::Frame& frame, int n_steps) {
+    BigInt run(cpu::Frame& frame, BigInt n_steps) {
+        if (n_steps < 0)
+            throw std::invalid_argument("MD step budget must be nonnegative");
         if (live_ && frame_ptr_ != &frame) {
             teardown_pass(*frame_ptr_);
             live_ = false;
@@ -162,19 +164,15 @@ class MD : public cuda::Driver<ATV::md::Phase> {
             frame_ptr_ = &frame;
             step_counter_ = 0;
             live_ = true;
-            // Velocity Verlet's first half-kick needs F(x_0). Materialization
-            // initializes force storage, so evaluate the force phases at the
-            // input coordinates before any integration. Continuations retain
-            // F from the previous final kick and do not repeat this pass.
-            this->backend_->execute_phases(
-                step_counter_, static_cast<int>(ATV::md::Phase::pre_exchange),
-                static_cast<int>(ATV::md::Phase::post_force) + 1);
         } else {
             this->flush_new_mounts_();
         }
-        for (int s = 0; s < n_steps; ++s) {
+        this->backend_->prepare_run(step_counter_);
+        BigInt iterations = 0;
+        for (BigInt s = 0; s < n_steps; ++s) {
             this->mutable_outer_status().reset();
             step_once(step_counter_++);
+            ++iterations;
             if (this->poll_handlers_(s) != Verdict::Continue)
                 break;
         }
@@ -182,6 +180,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         // intermediate observables between chunks. Components remain alive on the
         // device for subsequent `run()` calls.
         this->backend_->retrieve(frame);
+        return iterations;
     }
 
     ~MD() {
@@ -388,7 +387,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// @brief Frame bound by the live run; a different frame restarts.
     cpu::Frame* frame_ptr_ = nullptr;
     /// @brief Cumulative MD step index across all `run()` calls.
-    int step_counter_ = 0;
+    BigInt step_counter_ = 0;
 };
 
 } // namespace md

@@ -61,6 +61,22 @@ struct DihedralList {
     int* n_dihedrals = nullptr; ///< Dihedral count [device, 1 element].
 };
 
+/// @brief First fixed-point force fault recorded on one Frame.
+///
+/// Writers raise it when a value does not fit the fixed-point range
+/// (`kConversion`, including NaN/Inf) or an accumulation wraps
+/// (`kAccumulation`). `row` is the first offending local row. The first
+/// integrator that refuses the forces stamps `step` and that row's global
+/// `tag`; `cuda::to_cpu` throws when any kind is set.
+struct ForceFault {
+    static constexpr unsigned kConversion = 1u;   ///< Encode out of range.
+    static constexpr unsigned kAccumulation = 2u; ///< Fixed-point sum wrapped.
+    unsigned kinds = 0;  ///< Bitwise OR of fault kinds.
+    int row = -1;        ///< First offending local row, -1 if unknown.
+    long long step = -1; ///< Step at which integration was refused, -1 if none.
+    long long tag = -1;  ///< Global tag of `row` at that step, -1 if unknown.
+};
+
 /// @brief GPU-side system state -- device pointers + host-cached metadata.
 ///
 /// Device pointer fields are GPU-resident. Metadata fields (n_atoms_,
@@ -72,19 +88,32 @@ struct Frame {
     // -- Per-atom arrays (device pointers, molcrafts "atoms" block) --
 
     /// @brief Per-atom data block matching molpy atoms namespace.
+    ///
+    /// Column types follow the precision contract in `types.cuh`. A stored
+    /// coordinate is `x[i] + x_corr[i]` when `kPositionCorrection` holds
+    /// (mixed mode) and `x[i]` otherwise; force kernels read the primary
+    /// value only, integrators and every host conversion use both. Forces are
+    /// signed 64-bit fixed point (`precision.cuh`): writers encode, readers
+    /// decode, and a failed encode raises `Frame::force_fault`.
     struct Atoms {
-        real_t* x = nullptr;      ///< x positions [Angstrom, device].
-        real_t* y = nullptr;      ///< y positions [Angstrom, device].
-        real_t* z = nullptr;      ///< z positions [Angstrom, device].
-        real_t* vx = nullptr;     ///< x velocities [Angstrom/fs, device].
-        real_t* vy = nullptr;     ///< y velocities [Angstrom/fs, device].
-        real_t* vz = nullptr;     ///< z velocities [Angstrom/fs, device].
-        real_t* fx = nullptr;     ///< x forces [eV/Angstrom, device].
-        real_t* fy = nullptr;     ///< y forces [eV/Angstrom, device].
-        real_t* fz = nullptr;     ///< z forces [eV/Angstrom, device].
-        real_t* mass = nullptr;   ///< Masses [amu, device].
-        real_t* charge = nullptr; ///< Partial charges [e, device].
-        int* type = nullptr;      ///< Atom types [device].
+        pos_t* x = nullptr; ///< x positions [Angstrom, device].
+        pos_t* y = nullptr; ///< y positions [Angstrom, device].
+        pos_t* z = nullptr; ///< z positions [Angstrom, device].
+        /// x position corrections [Angstrom, device]; null without correction.
+        pos_t* x_corr = nullptr;
+        /// y position corrections [Angstrom, device]; null without correction.
+        pos_t* y_corr = nullptr;
+        /// z position corrections [Angstrom, device]; null without correction.
+        pos_t* z_corr = nullptr;
+        mixed_t* vx = nullptr; ///< x velocities [Angstrom/fs, device].
+        mixed_t* vy = nullptr; ///< y velocities [Angstrom/fs, device].
+        mixed_t* vz = nullptr; ///< z velocities [Angstrom/fs, device].
+        fixed_t* fx = nullptr; ///< x forces [fixed-point eV/Angstrom, device].
+        fixed_t* fy = nullptr; ///< y forces [fixed-point eV/Angstrom, device].
+        fixed_t* fz = nullptr; ///< z forces [fixed-point eV/Angstrom, device].
+        mixed_t* mass = nullptr;   ///< Masses [amu, device].
+        force_t* charge = nullptr; ///< Partial charges [e, device].
+        int* type = nullptr;       ///< Atom types [device].
 
         /// @brief Global atom identity [device], persistent across MPI
         /// migration and restart. Same semantic field as CPU `kAtom_tag`.
@@ -154,7 +183,11 @@ struct Frame {
     /// that header for the field-by-field documentation.
     SystemScalars* scalars = nullptr;
 
-    prec_t* box =
+    /// @brief First fixed-point force fault [device, 1 element]. Every force
+    /// writer of this Frame reports into it; see `ForceFault`.
+    ForceFault* force_fault = nullptr;
+
+    geom_t* box =
         nullptr; ///< Simulation cell 3x3 row-major [Angstrom, device, 9].
 
     // -- Topology sub-structures --

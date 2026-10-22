@@ -361,7 +361,7 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
         // Production Car-Parrinello step: no SCF at all — a fixed-density
         // evaluation plus one electronic velocity-Verlet advance.
         if (cpmd_alpha_ && cpmd_alpha_->ready()) {
-            cpmd_step_(f);
+            cpmd_step_(f, !ctx.exec.initializing_forces);
             return 0;
         }
         // Cold seed. Validate BEFORE any SCF work so a refused configuration
@@ -371,6 +371,7 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
         DriveOpts opts;
         opts.unwrap = true;
         opts.nested = true;
+        opts.apply_aspc = !ctx.exec.initializing_forces;
         opts.forces = true; // CP nuclei need Born-Oppenheimer forces at t = 0
         opts.write_energy = true;
         opts.accumulate =
@@ -397,6 +398,9 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
     DriveOpts opts;
     opts.unwrap = true;
     opts.nested = true;
+    // Force preparation is an evaluation, not a tick of the nuclear clock.
+    // Bypass both history-based guesses and all predictor/XL history writes.
+    opts.apply_aspc = !ctx.exec.initializing_forces;
     // The outer loop's per-phase force policy, ANDed down the Context by the
     // Runtime: an energy-only phase (MC's trial `energy`) skips the whole
     // gradient — for a QM method the dominant cost of the sweep.
@@ -1523,7 +1527,7 @@ void MeanFieldMethod<D>::cpmd_seed_() {
 }
 
 template <typename D>
-void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
+void MeanFieldMethod<D>::cpmd_step_(Frame& frame, bool advance_electrons) {
     // A production Car-Parrinello step is NOT the stage Plan: DIIS,
     // diagonalization and the density rebuild are exactly what CP skips, and
     // `DriveOpts.max_iter = 0` cannot express "build one Fock at a given
@@ -1531,6 +1535,15 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     // Drive `internal::HamiltonianBuilder` directly — the precedent is the
     // de-shift epilogue in drive_scf_core_.
     PositionGuard guard(frame, /*active=*/true);
+
+    // Preparing forces must not change the electronic trajectory, even when
+    // geometry transport changes C or the tangent velocity. Work on copies
+    // only for that infrequent evaluation; production steps retain the state.
+    auto setup_alpha =
+        advance_electrons ? decltype(cpmd_alpha_){} : cpmd_alpha_;
+    auto setup_beta = advance_electrons ? decltype(cpmd_beta_){} : cpmd_beta_;
+    auto& alpha = advance_electrons ? cpmd_alpha_ : setup_alpha;
+    auto& beta = advance_electrons ? cpmd_beta_ : setup_beta;
 
     restricted_ = (spin_ == SpinType::Restricted);
     is_hf_ = (method_ == MeanFieldType::HF);
@@ -1550,15 +1563,15 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     // 2. Löwdin-transport the coefficients under the NEW metric (a geometry
     //    change is not a dynamics step) and project the electronic velocity
     //    back onto the constraint manifold.
-    cpmd_alpha_->align_to_overlap(S_);
-    const bool has_beta = (cpmd_beta_ && cpmd_beta_->ready());
+    alpha->align_to_overlap(S_);
+    const bool has_beta = (beta && beta->ready());
     if (has_beta)
-        cpmd_beta_->align_to_overlap(S_);
+        beta->align_to_overlap(S_);
 
     // 3. Density from the propagated coefficients. Restricted folds occ = 2
     //    into the alpha channel (the loop's convention: P_alpha carries the
     //    factor-2 closed-shell density and P_beta aliases it).
-    const RealMatrix& C_a = cpmd_alpha_->C();
+    const RealMatrix& C_a = alpha->C();
     const int n_occ_a = static_cast<int>(C_a.shape()[1]);
     RealMatrix P_a =
         linalg::build_density_matrix(C_a, n_occ_a, n, restricted ? 2.0 : 1.0);
@@ -1566,7 +1579,7 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     if (restricted) {
         P_b = P_a;
     } else if (has_beta) {
-        const RealMatrix& C_b = cpmd_beta_->C();
+        const RealMatrix& C_b = beta->C();
         P_b = linalg::build_density_matrix(
             C_b, static_cast<int>(C_b.shape()[1]), n, 1.0);
     } else {
@@ -1624,8 +1637,7 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
                                    /*d4=*/false};
     const RealMatrix empty;
     last_grad_ = gradient.compute_at_density(
-        frame, ints, C_a, F_alpha_,
-        restricted || !has_beta ? empty : cpmd_beta_->C(),
+        frame, ints, C_a, F_alpha_, restricted || !has_beta ? empty : beta->C(),
         restricted ? empty : F_beta_, e_total_);
     const int natm = static_cast<int>(frame.nlocal());
     AccReal* __restrict fx = frame.span(kAtom_fx);
@@ -1645,13 +1657,15 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     //    nuclear clock, then publish the adiabaticity signal. Closed shell is
     //    one channel at occ = 2; UHF/UKS are two channels at occ = 1 each and
     //    T_e is their sum.
-    cpmd_alpha_->advance(F_alpha_, S_, cpmd_dt_fs_, restricted ? 2.0 : 1.0);
-    double te_ha = cpmd_alpha_->kinetic_ha();
-    double etherm_ha = cpmd_alpha_->thermostat_energy_ha();
+    if (advance_electrons)
+        alpha->advance(F_alpha_, S_, cpmd_dt_fs_, restricted ? 2.0 : 1.0);
+    double te_ha = alpha->kinetic_ha();
+    double etherm_ha = alpha->thermostat_energy_ha();
     if (has_beta) {
-        cpmd_beta_->advance(F_beta_, S_, cpmd_dt_fs_, /*occ=*/1.0);
-        te_ha += cpmd_beta_->kinetic_ha();
-        etherm_ha += cpmd_beta_->thermostat_energy_ha();
+        if (advance_electrons)
+            beta->advance(F_beta_, S_, cpmd_dt_fs_, /*occ=*/1.0);
+        te_ha += beta->kinetic_ha();
+        etherm_ha += beta->thermostat_energy_ha();
     }
     last_te_ev_ = te_ha * units::kHartreeInEv;
     last_etherm_ev_ = etherm_ha * units::kHartreeInEv;

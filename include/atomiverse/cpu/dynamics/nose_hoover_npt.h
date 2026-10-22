@@ -260,6 +260,10 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
                 ATV::make_binding(ATV::md::Phase::end_of_step, -40)};
     }
     void build(const cpu::BuildContext& ctx) override;
+    void initialize_forces(const cpu::LaunchContext& ctx) override {
+        if (ctx.at(ATV::md::Phase::end_of_step))
+            KE_global_ = ctx.frame.meta.get(kKinetic);
+    }
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:
@@ -296,6 +300,7 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     double pdrag_factor_ = 1.0;
 
     // Derived in build()
+    BigInt n_atoms_global_ = 0;
     int n_dof_ = 0;           ///< 3N - 3 (COM removed)
     double kT_ = 0.0;         ///< kB · T_target [eV]
     std::vector<double> Q_t_; ///< Atom-NHC masses per chain link [eV·fs²]
@@ -328,7 +333,7 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     /// @brief Interpolate the live thermostat setpoint for `step`,
     ///        mirroring LAMMPS `fix_nh.cpp::compute_temp_target()`.
     ///        Updates `T_live_` and `kT_`.
-    void compute_temp_target(int step);
+    void compute_temp_target(BigInt step);
     void nhc_atoms_half(const cpu::LaunchContext& ctx, double half_dt);
     void nhc_baro_half(double half_dt);
     void update_eps_dot(const cpu::LaunchContext& ctx, double half_dt);

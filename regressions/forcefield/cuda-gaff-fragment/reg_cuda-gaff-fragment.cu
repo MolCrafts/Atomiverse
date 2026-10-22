@@ -76,7 +76,7 @@ int main() try {
         }
     }
     constexpr double tolerance =
-        std::is_same_v<ATV::cuda::real_t, float> ? 5e-4 : 5e-5;
+        std::is_same_v<ATV::cuda::force_t, float> ? 5e-4 : 5e-5;
     std::printf("CUDA GAFF: E=%.15g eV energy_error=%.6g eV "
                 "max_force_error=%.6g eV/A\n",
                 f.meta.get(kEnergy), energy_error, force_error);

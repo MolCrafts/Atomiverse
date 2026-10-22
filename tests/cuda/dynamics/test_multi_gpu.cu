@@ -15,6 +15,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/communication/multi_gpu.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/longrange/kspace.cuh"
 #include "atomiverse/cuda/potentials/pair.cuh"
 
@@ -358,9 +359,8 @@ TEST(MultiGpu, PartitionGatherRoundTrip) {
         out.span(kAtom_tag)[i] = i;
     mg.gather(out);
 
-    // cuda::Frame stores per-atom data as real_t (float), so the
-    // partition->materialize->gather round trip is exact only to float
-    // precision (e.g. vx = 0.01*idx is not representable in float).
+    // The round trip follows the configured CUDA storage precision.
+    // Non-binary inputs may round when pos_t / mixed_t is float.
     for (int i = 0; i < g.nlocal(); ++i) {
         EXPECT_NEAR(out.span(kAtom_x)[i], g.span(kAtom_x)[i], 1e-5)
             << "atom " << i;
@@ -391,10 +391,10 @@ TEST(MultiGpu, HaloExchangeXSplit) {
     for (int slot = 0; slot < 2; ++slot) {
         const auto& f = mg.frame(slot);
         int ng = mg.n_ghost(slot);
-        std::vector<float> gx(ng);
+        std::vector<cuda::pos_t> gx(ng);
         cudaSetDevice(mg.devices().device_id(slot));
-        cudaMemcpy(gx.data(), f.atoms.x + mg.n_local(slot), ng * sizeof(float),
-                   cudaMemcpyDeviceToHost);
+        cudaMemcpy(gx.data(), f.atoms.x + mg.n_local(slot),
+                   ng * sizeof(cuda::pos_t), cudaMemcpyDeviceToHost);
         for (int k = 0; k < ng; ++k) {
             if (slot == 0)
                 EXPECT_GE(gx[k], 6.0f) << "slab0 ghost should be slab1 atom";
@@ -406,12 +406,14 @@ TEST(MultiGpu, HaloExchangeXSplit) {
 
 namespace {
 // Shift the x-coordinate of every owned atom by `delta` (test helper for
-// forward_comm: emulates one integration step moving the owners).
-__global__ void shift_owned_x(ATV::cuda::real_t* x, int n_local,
-                              ATV::cuda::real_t delta) {
+// forward_comm: emulates one integration step moving the owners, so it
+// reconstructs and re-splits the stored coordinate like an integrator).
+__global__ void shift_owned_x(ATV::cuda::pos_t* x, ATV::cuda::pos_t* x_corr,
+                              int n_local, ATV::cuda::mixed_t delta) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n_local)
-        x[i] += delta;
+        ATV::cuda::store_position(
+            x, x_corr, i, ATV::cuda::load_position(x, x_corr, i) + delta);
 }
 } // namespace
 
@@ -427,8 +429,10 @@ TEST(MultiGpu, ForwardCommRefreshesGhostPositions) {
     mg.partition(g);
     mg.build_halo(3.0);
 
-    auto read_ghosts = [&](int slot, std::vector<float>& gx,
-                           std::vector<float>& gy, std::vector<float>& gz) {
+    // Ghosts carry the primary (force-path) coordinate only.
+    auto read_ghosts = [&](int slot, std::vector<cuda::pos_t>& gx,
+                           std::vector<cuda::pos_t>& gy,
+                           std::vector<cuda::pos_t>& gz) {
         int ng = mg.n_ghost(slot);
         gx.resize(ng);
         gy.resize(ng);
@@ -436,29 +440,30 @@ TEST(MultiGpu, ForwardCommRefreshesGhostPositions) {
         const auto& f = mg.frame(slot);
         int off = mg.n_local(slot);
         cudaSetDevice(mg.devices().device_id(slot));
-        cudaMemcpy(gx.data(), f.atoms.x + off, ng * sizeof(float),
+        cudaMemcpy(gx.data(), f.atoms.x + off, ng * sizeof(cuda::pos_t),
                    cudaMemcpyDeviceToHost);
-        cudaMemcpy(gy.data(), f.atoms.y + off, ng * sizeof(float),
+        cudaMemcpy(gy.data(), f.atoms.y + off, ng * sizeof(cuda::pos_t),
                    cudaMemcpyDeviceToHost);
-        cudaMemcpy(gz.data(), f.atoms.z + off, ng * sizeof(float),
+        cudaMemcpy(gz.data(), f.atoms.z + off, ng * sizeof(cuda::pos_t),
                    cudaMemcpyDeviceToHost);
     };
 
-    std::vector<std::vector<float>> bx(2), by(2), bz(2);
+    std::vector<std::vector<cuda::pos_t>> bx(2), by(2), bz(2);
     for (int s = 0; s < 2; ++s)
         read_ghosts(s, bx[s], by[s], bz[s]);
 
-    const float delta = 0.123f;
+    const cuda::mixed_t delta = cuda::mixed_t(0.123);
     for (int s = 0; s < 2; ++s) {
         int nl = mg.n_local(s);
         cudaSetDevice(mg.devices().device_id(s));
         int block = 128, grid = (nl + block - 1) / block;
-        shift_owned_x<<<grid, block>>>(mg.frame(s).atoms.x, nl, delta);
+        shift_owned_x<<<grid, block>>>(mg.frame(s).atoms.x,
+                                       mg.frame(s).atoms.x_corr, nl, delta);
     }
     mg.forward_comm();
 
     for (int s = 0; s < 2; ++s) {
-        std::vector<float> ax, ay, az;
+        std::vector<cuda::pos_t> ax, ay, az;
         read_ghosts(s, ax, ay, az);
         ASSERT_EQ(ax.size(), bx[s].size())
             << "ghost count changed on slot " << s;
@@ -774,7 +779,8 @@ TEST(MultiGpu, MigrateReassignsOwners) {
         int nl = mg.n_local(s);
         cudaSetDevice(mg.devices().device_id(s));
         int block = 128, grid = (nl + block - 1) / block;
-        shift_owned_x<<<grid, block>>>(mg.frame(s).atoms.x, nl, delta);
+        shift_owned_x<<<grid, block>>>(mg.frame(s).atoms.x,
+                                       mg.frame(s).atoms.x_corr, nl, delta);
     }
     for (int s = 0; s < 2; ++s) {
         cudaSetDevice(mg.devices().device_id(s));

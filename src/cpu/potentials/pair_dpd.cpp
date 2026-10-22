@@ -96,7 +96,8 @@ void PairDpd::compute(const LaunchContext& ctx) {
     // `stream_origin_` only SHIFTS this, so a chunked run can continue the
     // stream its predecessor ended on (`set_step`).
     const std::int64_t stream_step =
-        static_cast<std::int64_t>(stream_origin_) + ctx.step;
+        static_cast<std::int64_t>(stream_origin_) + ctx.step
+        - (ctx.runtime.exec.initializing_forces ? 1 : 0);
 
     auto theta = [&](int i, int j) {
         std::uint64_t s = seed_;

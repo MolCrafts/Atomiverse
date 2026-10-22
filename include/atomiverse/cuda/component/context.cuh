@@ -15,6 +15,7 @@
 /// @see cuda::Frame for the device-side data
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include <type_traits>
 
 #include "atomiverse/core/iteration_status.h"
@@ -35,6 +36,8 @@ struct PairList;
 /// CUDA MD nonbonded path is the **OpenMM cluster/tile engine** only
 /// (see CLAUDE.md + `cuda-openmm-md` specs). There is no style enum.
 struct DynamicsServices {
+    /// Global thermal DOF, published by the backend before component build.
+    BigInt n_dof_global = 0;
     /// @brief Non-owning handle to the active neighbor pair list.
     ///
     /// Published by `NeighborList::build()` (and re-published on each
@@ -128,19 +131,10 @@ struct Context {
     /// @see cuda/driver/criterion.cuh
     LoopServices loop;
 
-    /// @brief Host-resident snapshot of the simulation cell, passed by
-    ///        value into integrator + bonded + pair kernels so they
-    ///        avoid per-thread FP64 division and uncoalesced
-    ///        widely-spaced `frame.box[0]/[4]/[8]` loads.
-    ///
-    /// Populated by `Backend::materialize(cpu::Frame)` at build time
-    /// from the canonical `cpu::Box` in `cpu::Frame`. Mutated by
-    /// integrators that change the cell (`cuda::md::NoseHooverNPT`,
-    /// `cuda::md::Barostat`, `cuda::md::Deform`) after they write the
-    /// new diagonal to device-side `frame.box`. All consumers read
-    /// from this field at launch — no per-step D2H of box[0,4,8]
-    /// (cuda-md-review-cleanup-04-box-by-value-pbc). Core state, not a
-    /// nullable service — stays flat.
+    /// @brief Cell kernel argument with a backend-owned device cache view.
+    /// Host values select invariant geometry specializations and initialize
+    /// build resources. Kernels resolve Box::current() at entry; physical cell
+    /// changes are published by the backend after changes_box() bindings.
     cuda::Box host_box;
 
     DynamicsServices md; ///< Classical force-pipeline slice.

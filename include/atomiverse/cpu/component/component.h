@@ -9,6 +9,7 @@
 /// inherit at most one kind: Concrete → Kind → Component.
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include <span>
 #include <string>
 #include <vector>
@@ -40,7 +41,7 @@ struct LaunchContext {
     cpu::Context& runtime;
     cpu::Frame& frame;
     int stage;
-    int step;
+    BigInt step;
     /// @brief When true, force-writing components should skip force writes
     ///        (MC energy-only trials).
     bool forces_requested = true;
@@ -173,6 +174,9 @@ class Component {
 
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;
+    /// Establish current forces without propagation or observation.
+    /// Force-slot evaluators use launch() with exec.initializing_forces set.
+    virtual void initialize_forces(const LaunchContext& ctx) { (void)ctx; }
     virtual void destroy(const DestroyContext& ctx) { (void)ctx; }
 };
 

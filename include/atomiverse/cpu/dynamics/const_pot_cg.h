@@ -58,6 +58,7 @@ class ConstPotCG : public cpu::Component {
     }
 
     void build(const BuildContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 

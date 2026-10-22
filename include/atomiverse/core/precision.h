@@ -12,17 +12,18 @@
 /// only storage and work may be lowered to `float`; ::ATV::AccReal is
 /// **always** `double` — the "key location" precision that is never economized.
 ///
-/// **CUDA** (`real_t` / `work_t` / `prec_t` in `cuda/frame/types.cuh`) follows
-/// **LAMMPS Kokkos** (`KOKKOS_PREC`), not a free three-axis split:
-/// one mode knob `-DATV_CUDA_PREC_MODE=double|mixed|single` maps to
-/// `(KK_FLOAT, KK_ACC_FLOAT)` with `work_t ≡ real_t ≡ KK_FLOAT` and
-/// `prec_t ≡ KK_ACC_FLOAT`. There is no independent CUDA "work" precision.
+/// **CUDA** uses one type per physical role (`cuda/frame/types.cuh`), selected
+/// by the single knob `-DATV_CUDA_PREC_MODE=double|mixed|single` and modelled
+/// on OpenMM's mixed precision: force math `force_t`, stored coordinate
+/// `pos_t` (+ correction in mixed), integration state `mixed_t`, geometry
+/// `geom_t`, reductions `acc_t` (always double) and 64-bit fixed-point force
+/// accumulation `fixed_t`.
 ///
-/// | tier            | role                                   | CUDA twin | default | may lower? |
-/// |-----------------|----------------------------------------|-----------|---------|-----------|
-/// | `StorageReal`   | per-atom persistent state (x, v, f)    | `real_t`  | double  | yes (float) |
-/// | `WorkReal`      | transient per-kernel compute scalars   | `work_t`  | double  | yes (float) |
-/// | `AccReal`       | accumulators / reductions / energy / virial / SCF | `prec_t` | double | **no** (CPU); CUDA `single` mode may lower `prec_t` |
+/// | tier            | role                                   | default | may lower? |
+/// |-----------------|----------------------------------------|---------|-----------|
+/// | `StorageReal`   | per-atom persistent state (x, v, f)    | double  | yes (float) |
+/// | `WorkReal`      | transient per-kernel compute scalars   | double  | yes (float) |
+/// | `AccReal`       | accumulators / reductions / energy / virial / SCF | double | **no** |
 ///
 /// ### Integer tiers (ports LAMMPS `src/lmptype.h` roles)
 /// Each role is sized independently so 64-bit width is paid only where a count

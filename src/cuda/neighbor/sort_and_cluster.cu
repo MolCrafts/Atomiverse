@@ -5,6 +5,8 @@
 #include "triclinic.cuh"
 
 #include "atomiverse/cuda/frame/types.cuh"
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 #include <cub/cub.cuh>
 #include <cuda_runtime.h>
 
@@ -16,51 +18,23 @@
 namespace ATV::cuda::md::nlist {
 
 // ---------------------------------------------------------------------------
-// Kernel: AoS double* → SoA real_t* (x, y, z separate arrays)
-// ---------------------------------------------------------------------------
-
-template <typename work_t>
-__global__ void aos_to_soa(const double* __restrict__ positions, int num_atoms,
-                           real_t* __restrict__ x, real_t* __restrict__ y,
-                           real_t* __restrict__ z) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= num_atoms)
-        return;
-    x[i] = static_cast<work_t>(positions[i * 3 + 0]);
-    y[i] = static_cast<work_t>(positions[i * 3 + 1]);
-    z[i] = static_cast<work_t>(positions[i * 3 + 2]);
-}
-
-template <typename work_t>
-void launch_aos_to_soa(const double* positions_aos, int num_atoms, real_t* x,
-                       real_t* y, real_t* z, cudaStream_t stream) {
-    if (num_atoms == 0)
-        return;
-    int block = ATV::cuda::kDefaultBlock;
-    int grid = (num_atoms + block - 1) / block;
-    aos_to_soa<work_t>
-        <<<grid, block, 0, stream>>>(positions_aos, num_atoms, x, y, z);
-    ATV_CUDA_CHECK(cudaGetLastError());
-}
-
-// ---------------------------------------------------------------------------
 // Kernel: Compute Hilbert keys from SoA positions
 // ---------------------------------------------------------------------------
 
-template <typename work_t>
+template <typename T>
 __global__ void compute_spatial_keys(
-    const real_t* __restrict__ pos_x, const real_t* __restrict__ pos_y,
-    const real_t* __restrict__ pos_z, int num_atoms,
-    const real_t* __restrict__ inv_cell, bool periodic,
+    const pos_t* __restrict__ pos_x, const pos_t* __restrict__ pos_y,
+    const pos_t* __restrict__ pos_z, int num_atoms,
+    const force_t* __restrict__ inv_cell, bool periodic,
     uint32_t* __restrict__ spatial_keys, int* __restrict__ atom_indices) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= num_atoms)
         return;
 
-    work_t rx = pos_x[i], ry = pos_y[i], rz = pos_z[i];
+    T rx = pos_x[i], ry = pos_y[i], rz = pos_z[i];
 
     // Cartesian → fractional
-    Vec3<work_t> frac = cart_to_frac(rx, ry, rz, inv_cell);
+    Vec3<T> frac = cart_to_frac(rx, ry, rz, inv_cell);
 
     if (periodic) {
         frac.x = wrap_frac(frac.x);
@@ -77,17 +51,17 @@ __global__ void compute_spatial_keys(
     atom_indices[i] = i;
 }
 
-template <typename work_t>
-void launch_compute_spatial_keys(const real_t* pos_x, const real_t* pos_y,
-                                 const real_t* pos_z, int num_atoms,
-                                 const real_t* inv_cell, bool periodic,
+template <typename T>
+void launch_compute_spatial_keys(const pos_t* pos_x, const pos_t* pos_y,
+                                 const pos_t* pos_z, int num_atoms,
+                                 const force_t* inv_cell, bool periodic,
                                  uint32_t* spatial_keys, int* atom_indices,
                                  cudaStream_t stream) {
     if (num_atoms == 0)
         return;
     int block = ATV::cuda::kDefaultBlock;
     int grid = (num_atoms + block - 1) / block;
-    compute_spatial_keys<work_t>
+    compute_spatial_keys<T>
         <<<grid, block, 0, stream>>>(pos_x, pos_y, pos_z, num_atoms, inv_cell,
                                      periodic, spatial_keys, atom_indices);
     ATV_CUDA_CHECK(cudaGetLastError());
@@ -96,6 +70,21 @@ void launch_compute_spatial_keys(const real_t* pos_x, const real_t* pos_y,
 // ---------------------------------------------------------------------------
 // CUB radix sort wrapper — temp storage owned by DeviceVector
 // ---------------------------------------------------------------------------
+
+void launch_exclusive_sum(const int* input, int* output, int num_items,
+                          DeviceVector<char>& temp, cudaStream_t stream) {
+    size_t needed = 0;
+    cub::DeviceScan::ExclusiveSum(nullptr, needed, input, output, num_items,
+                                  stream);
+    if (needed > temp.capacity()) {
+        throw std::runtime_error(
+            "NeighborList: CUB scan scratch exceeds build-time capacity");
+    }
+    size_t avail = temp.capacity();
+    cub::DeviceScan::ExclusiveSum(temp.data(), avail, input, output, num_items,
+                                  stream);
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
 
 void launch_radix_sort(uint32_t* keys_in, uint32_t* keys_out, int* values_in,
                        int* values_out, int num_items, DeviceVector<char>& temp,
@@ -148,131 +137,19 @@ CubTempBytes query_cub_temp_bytes(int num_atoms, int num_clusters) {
 }
 
 // ---------------------------------------------------------------------------
-// Kernel: Scatter sorted atoms into cluster SoA layout
-// ---------------------------------------------------------------------------
-
-template <typename work_t>
-__global__ void scatter_to_soa(
-    const int* __restrict__ sorted_indices, const real_t* __restrict__ src_x,
-    const real_t* __restrict__ src_y, const real_t* __restrict__ src_z,
-    int num_atoms, int num_clusters, real_t* __restrict__ dst_x,
-    real_t* __restrict__ dst_y, real_t* __restrict__ dst_z,
-    int* __restrict__ original_index, int* __restrict__ cluster_count) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int padded = num_clusters * kClusterSize;
-
-    if (i < num_atoms) {
-        int old_idx = sorted_indices[i];
-        dst_x[i] = src_x[old_idx];
-        dst_y[i] = src_y[old_idx];
-        dst_z[i] = src_z[old_idx];
-        original_index[i] = old_idx;
-    } else if (i < padded) {
-        // Padding: set to huge value so AABB excludes them
-        work_t huge = work_t(1e30);
-        dst_x[i] = huge;
-        dst_y[i] = huge;
-        dst_z[i] = huge;
-        original_index[i] = -1;
-    }
-
-    // Compute cluster_count: thread 0 of each cluster
-    if (i < padded && (i % kClusterSize) == 0) {
-        int ci = i / kClusterSize;
-        int first = ci * kClusterSize;
-        int last = first + kClusterSize;
-        if (last > num_atoms)
-            last = num_atoms;
-        cluster_count[ci] = (last > first) ? (last - first) : 0;
-    }
-}
-
-template <typename work_t>
-void launch_scatter_to_soa(const int* sorted_indices, const real_t* pos_x,
-                           const real_t* pos_y, const real_t* pos_z,
-                           int num_atoms, int num_clusters, real_t* cluster_x,
-                           real_t* cluster_y, real_t* cluster_z,
-                           int* original_index, int* cluster_count,
-                           cudaStream_t stream) {
-    int padded = num_clusters * kClusterSize;
-    int block = ATV::cuda::kDefaultBlock;
-    int grid = (padded + block - 1) / block;
-    scatter_to_soa<work_t><<<grid, block, 0, stream>>>(
-        sorted_indices, pos_x, pos_y, pos_z, num_atoms, num_clusters, cluster_x,
-        cluster_y, cluster_z, original_index, cluster_count);
-    ATV_CUDA_CHECK(cudaGetLastError());
-}
-
-// ---------------------------------------------------------------------------
-// Fused kernel: AoS→SoA + Hilbert code (replaces separate K1+K2)
-// ---------------------------------------------------------------------------
-
-template <typename work_t>
-__global__ void
-aos_to_soa_spatial(const double* __restrict__ positions_aos, int num_atoms,
-                   real_t* __restrict__ x, real_t* __restrict__ y,
-                   real_t* __restrict__ z, const real_t* __restrict__ inv_cell,
-                   bool periodic, uint32_t* __restrict__ spatial_keys,
-                   int* __restrict__ atom_indices) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= num_atoms)
-        return;
-
-    // AoS double → SoA work_t
-    work_t rx = static_cast<work_t>(positions_aos[i * 3 + 0]);
-    work_t ry = static_cast<work_t>(positions_aos[i * 3 + 1]);
-    work_t rz = static_cast<work_t>(positions_aos[i * 3 + 2]);
-    x[i] = rx;
-    y[i] = ry;
-    z[i] = rz;
-
-    // Hilbert code
-    Vec3<work_t> frac = cart_to_frac(rx, ry, rz, inv_cell);
-
-    if (periodic) {
-        frac.x = wrap_frac(frac.x);
-        frac.y = wrap_frac(frac.y);
-        frac.z = wrap_frac(frac.z);
-    } else {
-        frac.x = clamp01(frac.x);
-        frac.y = clamp01(frac.y);
-        frac.z = clamp01(frac.z);
-    }
-
-    spatial_keys[i] = hilbert_from_frac(frac.x, frac.y, frac.z);
-    atom_indices[i] = i;
-}
-
-template <typename work_t>
-void launch_aos_to_soa_spatial(const double* positions_aos, int num_atoms,
-                               real_t* x, real_t* y, real_t* z,
-                               const real_t* inv_cell, bool periodic,
-                               uint32_t* spatial_keys, int* atom_indices,
-                               cudaStream_t stream) {
-    if (num_atoms == 0)
-        return;
-    int block = ATV::cuda::kDefaultBlock;
-    int grid = (num_atoms + block - 1) / block;
-    aos_to_soa_spatial<work_t><<<grid, block, 0, stream>>>(
-        positions_aos, num_atoms, x, y, z, inv_cell, periodic, spatial_keys,
-        atom_indices);
-    ATV_CUDA_CHECK(cudaGetLastError());
-}
-
-// ---------------------------------------------------------------------------
 // Fused kernel: Scatter to cluster SoA + AABB (replaces separate K4+K5)
 // ---------------------------------------------------------------------------
 
-template <typename work_t>
+template <typename T>
 __global__ void scatter_and_aabb(
-    const int* __restrict__ sorted_indices, const real_t* __restrict__ src_x,
-    const real_t* __restrict__ src_y, const real_t* __restrict__ src_z,
-    int num_atoms, int num_clusters, real_t* __restrict__ dst_x,
-    real_t* __restrict__ dst_y, real_t* __restrict__ dst_z,
+    const int* __restrict__ sorted_indices, const pos_t* __restrict__ src_x,
+    const pos_t* __restrict__ src_y, const pos_t* __restrict__ src_z,
+    int num_atoms, int num_clusters, pos_t* __restrict__ dst_x,
+    pos_t* __restrict__ dst_y, pos_t* __restrict__ dst_z,
     int* __restrict__ original_index, int* __restrict__ cluster_count,
-    real_t* __restrict__ min_x, real_t* __restrict__ min_y,
-    real_t* __restrict__ min_z, real_t* __restrict__ max_x,
-    real_t* __restrict__ max_y, real_t* __restrict__ max_z) {
+    force_t* __restrict__ min_x, force_t* __restrict__ min_y,
+    force_t* __restrict__ min_z, force_t* __restrict__ max_x,
+    force_t* __restrict__ max_y, force_t* __restrict__ max_z) {
 
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int lane = tid % kClusterSize;
@@ -285,8 +162,8 @@ __global__ void scatter_and_aabb(
     bool valid = (i < num_atoms);
 
     // Phase 1: Scatter
-    work_t vx, vy, vz;
-    work_t huge = work_t(1e30);
+    T vx, vy, vz;
+    T huge = T(1e30);
 
     if (valid) {
         int old_idx = sorted_indices[i];
@@ -316,37 +193,29 @@ __global__ void scatter_and_aabb(
         cluster_count[ci] = (last > first) ? (last - first) : 0;
     }
 
-    // Phase 2: AABB via warp-shuffle reduction.
+    // Phase 2: AABB via Cooperative Groups warp reductions.
     // CS=32 ⇒ one cluster per full warp (mask 0xffffffff). Sub-warp grouping
     // is only needed if kClusterSize < 32 (historical CS=8).
-    work_t lo_x = valid ? vx : huge;
-    work_t lo_y = valid ? vy : huge;
-    work_t lo_z = valid ? vz : huge;
-    work_t hi_x = valid ? vx : -huge;
-    work_t hi_y = valid ? vy : -huge;
-    work_t hi_z = valid ? vz : -huge;
+    T lo_x = valid ? vx : huge;
+    T lo_y = valid ? vy : huge;
+    T lo_z = valid ? vz : huge;
+    T hi_x = valid ? vx : -huge;
+    T hi_y = valid ? vy : -huge;
+    T hi_z = valid ? vz : -huge;
 
     static_assert(kClusterSize == 32 || (32 % kClusterSize) == 0,
                   "kClusterSize must divide 32 for sub-warp AABB");
     // OpenMM CS=32: one cluster = full warp. (If CS is ever <32, use a
     // dedicated sub-warp mask path — do not `1u << kClusterSize` when CS==32.)
     static_assert(kClusterSize == 32, "AABB reduction assumes OpenMM CS=32");
-    unsigned mask = 0xffffffffu;
-    for (int offset = kClusterSize / 2; offset >= 1; offset >>= 1) {
-        work_t tmp;
-        tmp = __shfl_down_sync(mask, lo_x, offset);
-        lo_x = fmin(lo_x, tmp);
-        tmp = __shfl_down_sync(mask, hi_x, offset);
-        hi_x = fmax(hi_x, tmp);
-        tmp = __shfl_down_sync(mask, lo_y, offset);
-        lo_y = fmin(lo_y, tmp);
-        tmp = __shfl_down_sync(mask, hi_y, offset);
-        hi_y = fmax(hi_y, tmp);
-        tmp = __shfl_down_sync(mask, lo_z, offset);
-        lo_z = fmin(lo_z, tmp);
-        tmp = __shfl_down_sync(mask, hi_z, offset);
-        hi_z = fmax(hi_z, tmp);
-    }
+    namespace cg = cooperative_groups;
+    auto warp = cg::tiled_partition<32>(cg::this_thread_block());
+    lo_x = cg::reduce(warp, lo_x, cg::less<T>{});
+    hi_x = cg::reduce(warp, hi_x, cg::greater<T>{});
+    lo_y = cg::reduce(warp, lo_y, cg::less<T>{});
+    hi_y = cg::reduce(warp, hi_y, cg::greater<T>{});
+    lo_z = cg::reduce(warp, lo_z, cg::less<T>{});
+    hi_z = cg::reduce(warp, hi_z, cg::greater<T>{});
 
     if (lane == 0) {
         min_x[ci] = lo_x;
@@ -358,22 +227,22 @@ __global__ void scatter_and_aabb(
     }
 }
 
-template <typename work_t>
-void launch_scatter_and_aabb(const int* sorted_indices, const real_t* pos_x,
-                             const real_t* pos_y, const real_t* pos_z,
-                             int num_atoms, int num_clusters, real_t* cluster_x,
-                             real_t* cluster_y, real_t* cluster_z,
+template <typename T>
+void launch_scatter_and_aabb(const int* sorted_indices, const pos_t* pos_x,
+                             const pos_t* pos_y, const pos_t* pos_z,
+                             int num_atoms, int num_clusters, pos_t* cluster_x,
+                             pos_t* cluster_y, pos_t* cluster_z,
                              int* original_index, int* cluster_count,
-                             real_t* aabb_min_x, real_t* aabb_min_y,
-                             real_t* aabb_min_z, real_t* aabb_max_x,
-                             real_t* aabb_max_y, real_t* aabb_max_z,
+                             force_t* aabb_min_x, force_t* aabb_min_y,
+                             force_t* aabb_min_z, force_t* aabb_max_x,
+                             force_t* aabb_max_y, force_t* aabb_max_z,
                              cudaStream_t stream) {
     if (num_clusters == 0)
         return;
     int threads_needed = num_clusters * kClusterSize;
     int block = ATV::cuda::kDefaultBlock;
     int grid = (threads_needed + block - 1) / block;
-    scatter_and_aabb<work_t><<<grid, block, 0, stream>>>(
+    scatter_and_aabb<T><<<grid, block, 0, stream>>>(
         sorted_indices, pos_x, pos_y, pos_z, num_atoms, num_clusters, cluster_x,
         cluster_y, cluster_z, original_index, cluster_count, aabb_min_x,
         aabb_min_y, aabb_min_z, aabb_max_x, aabb_max_y, aabb_max_z);
@@ -381,21 +250,15 @@ void launch_scatter_and_aabb(const int* sorted_indices, const real_t* pos_x,
 }
 
 // ── Forced template instantiations ───────────────────────────────────
-// Instantiate each launcher template over the configured work_t type
+// Instantiate each launcher template over the force-path scratch type
 // (the only argument the call sites use). Address-of ODR-uses the
 // template, so the compiler-deduced signature is instantiated without
 // a hand-written parameter list that could drift out of sync.
 namespace {
-[[maybe_unused]] const void* _inst_launch_aos_to_soa =
-    reinterpret_cast<const void*>(&launch_aos_to_soa<work_t>);
 [[maybe_unused]] const void* _inst_launch_compute_spatial_keys =
-    reinterpret_cast<const void*>(&launch_compute_spatial_keys<work_t>);
-[[maybe_unused]] const void* _inst_launch_scatter_to_soa =
-    reinterpret_cast<const void*>(&launch_scatter_to_soa<work_t>);
-[[maybe_unused]] const void* _inst_launch_aos_to_soa_spatial =
-    reinterpret_cast<const void*>(&launch_aos_to_soa_spatial<work_t>);
+    reinterpret_cast<const void*>(&launch_compute_spatial_keys<force_t>);
 [[maybe_unused]] const void* _inst_launch_scatter_and_aabb =
-    reinterpret_cast<const void*>(&launch_scatter_and_aabb<work_t>);
+    reinterpret_cast<const void*>(&launch_scatter_and_aabb<force_t>);
 } // namespace
 
 } // namespace ATV::cuda::md::nlist

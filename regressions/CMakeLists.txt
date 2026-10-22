@@ -91,6 +91,10 @@ endfunction()
 atv_add_regression(layout core_contract_includes)
 atv_add_regression(layout backend_owned_longrange)
 
+if(ATV_BUILD_MD AND ATV_BUILD_POTENTIALS)
+    atv_add_regression(md cpu-velocity-verlet-initial-force)
+endif()
+
 # Electrostatic lattice pins exercise a complete MD force pass and belong
 # with end-to-end regressions, not the unit-only tests/ tree.
 if(ATV_BUILD_CUDA AND ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
@@ -141,6 +145,17 @@ if(ATV_BUILD_CUDA AND ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHB
                         $<TARGET_FILE:reg_cuda-gaff-fragment>
                 DEPENDS reg_cuda-gaff-fragment)
             add_dependencies(regressions run_reg_cuda-gaff-fragment)
+            add_executable(reg_cuda-npt-pme-nacl
+                md/cuda-npt-pme-nacl/reg_cuda-npt-pme-nacl.cu)
+            target_link_libraries(reg_cuda-npt-pme-nacl PRIVATE atomiverse)
+            set_target_properties(reg_cuda-npt-pme-nacl PROPERTIES
+                CUDA_SEPARABLE_COMPILATION ON CXX_STANDARD 20)
+            add_custom_target(run_reg_cuda-npt-pme-nacl
+                COMMAND ${CMAKE_COMMAND} -E env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+                        $<TARGET_FILE:reg_cuda-npt-pme-nacl>
+                DEPENDS reg_cuda-npt-pme-nacl
+                COMMENT "regression [md/cuda-npt-pme-nacl] (1t)")
+            add_dependencies(regressions run_reg_cuda-npt-pme-nacl)
         endif()
         add_executable(reg_cuda-pme-nacl
             forcefield/cuda-pme-nacl/reg_cuda-pme-nacl.cu)
@@ -233,7 +248,9 @@ if(ATV_BUILD_MD)
     atv_add_regression(md rigid_water)
     atv_add_regression(md dihedral_charmm)
     atv_add_regression(md improper_harmonic)
-    atv_add_regression(md gaff_protocol_smoke)
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_regression(md gaff_protocol_smoke)
+    endif()
     atv_add_regression(md charging-work-energy)
     atv_add_regression(md gaussian-electrode-charge)
     atv_add_regression(md qeq-fluctuating-charge)

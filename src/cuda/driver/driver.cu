@@ -1,8 +1,11 @@
 /// @file cuda/driver/driver.cu
 /// @brief CUDA Backend implementation + Driver explicit instantiations.
 
+#include "atomiverse/core/dynamics_math.h"
+#include "atomiverse/core/precision.h"
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 #include "atomiverse/core/driver_template_impl.h"
 #include "atomiverse/core/stage.h"
@@ -13,13 +16,10 @@
 #include "atomiverse/cuda/driver/backend.cuh"
 #include "atomiverse/cuda/driver/backend_traits.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
+#include "atomiverse/cuda/frame/types.cuh"
 
 namespace ATV {
 namespace cuda {
-
-using cuda::prec_t;
-using cuda::real_t;
-using cuda::work_t;
 
 // ── Backend ────────────────────────────────────────────────────────
 
@@ -32,96 +32,95 @@ void Backend::init() {
     context_.defer_stream = defer;
 }
 
-void Backend::materialize(const cpu::Frame& frame) {
-    frame_ = cpu::to_cuda(frame);
+namespace {
+__global__ void publish_cell(const geom_t* cell, Box seed, Box* cache) {
+    const Box previous = *cache;
+    seed.resident = nullptr;
+    seed.assign_cell(cell);
+    bool changed = false;
+    for (int k = 0; k < 9; ++k)
+        changed |= !(seed.cell[k] == previous.cell[k]);
+    seed.revision = previous.revision + (changed ? 1 : 0);
+    *cache = seed;
+}
+} // namespace
 
-    // Populate the host-side cuda::Box snapshot on the Context. All
-    // integrator + bonded + pair kernels read from this field at
-    // launch instead of issuing a per-step D2H of frame.box[0,4,8],
-    // and can pass the trivially-copyable struct as a kernel arg by
-    // value (no per-thread 1/Lx FP64 division — uses cached inv_l).
-    // For NPT runs, the integrator (`cuda::md::NoseHooverNPT`) updates
-    // this field after `propagate_x_and_box_` writes the new
-    // diagonal; for fixed-box (NVE/NVT) runs the build-time value
-    // here is the value forever.
-    auto& hb = context_.host_box;
-    const auto& cell = frame.box.cell();
+void Backend::publish_box_() {
+    publish_cell<<<1, 1, 0, static_cast<cudaStream_t>(context_.stream)>>>(
+        frame_.box, context_.host_box,
+        const_cast<Box*>(context_.host_box.resident));
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
+
+void Backend::materialize(const cpu::Frame& frame) {
+    forces_ready_ = false;
+    frame_ = cpu::to_cuda(frame);
+    context_.md.n_dof_global = ATV::md::degrees_of_freedom(frame.nlocal());
+
+    auto& box = context_.host_box;
+    geom_t cell[9];
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
-            hb.cell[i * 3 + j] = static_cast<real_t>(cell(i, j));
-    // Ortho test: off-diagonal entries within FP roundoff. Threshold
-    // lives on cuda::Box so it stays in lock-step with cpu::Box.
-    hb.ortho = (std::abs(hb.cell[1]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[2]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[3]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[5]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[6]) < cuda::Box::kOrthoEps)
-               && (std::abs(hb.cell[7]) < cuda::Box::kOrthoEps);
-    // Derived caches: inv_l (per-axis), half_l, full inv_cell.
-    for (int d = 0; d < 3; ++d) {
-        real_t L = hb.cell[d * 3 + d];
-        hb.inv_l[d] = (L > real_t(0)) ? real_t(1) / L : real_t(0);
-        hb.half_l[d] = real_t(0.5) * L;
-    }
-    // Full 3x3 inverse for triclinic min_image (orthorhombic only uses
-    // the per-axis inv_l above, but the inv_cell entries stay populated
-    // so a path that goes triclinic-aware still works).
-    const real_t a = hb.cell[0], b = hb.cell[1], c = hb.cell[2];
-    const real_t d = hb.cell[3], e = hb.cell[4], f = hb.cell[5];
-    const real_t g = hb.cell[6], h = hb.cell[7], i9 = hb.cell[8];
-    const real_t det =
-        a * (e * i9 - f * h) - b * (d * i9 - f * g) + c * (d * h - e * g);
-    if (std::abs(det) > real_t(0)) {
-        const real_t inv_det = real_t(1) / det;
-        hb.inv_cell[0] = (e * i9 - f * h) * inv_det;
-        hb.inv_cell[1] = (c * h - b * i9) * inv_det;
-        hb.inv_cell[2] = (b * f - c * e) * inv_det;
-        hb.inv_cell[3] = (f * g - d * i9) * inv_det;
-        hb.inv_cell[4] = (a * i9 - c * g) * inv_det;
-        hb.inv_cell[5] = (c * d - a * f) * inv_det;
-        hb.inv_cell[6] = (d * h - e * g) * inv_det;
-        hb.inv_cell[7] = (b * g - a * h) * inv_det;
-        hb.inv_cell[8] = (a * e - b * d) * inv_det;
-    }
-    hb.periodic[0] = hb.periodic[1] = hb.periodic[2] = true;
+            cell[3 * i + j] = frame.box.cell()(i, j);
+    box.assign_cell(cell);
+    Box* resident = nullptr;
+    ATV_CUDA_CHECK(cudaMalloc(&resident, sizeof(Box)));
+    // Zeroed cache: the first publish is a cell change (revision 1).
+    ATV_CUDA_CHECK(cudaMemset(resident, 0, sizeof(Box)));
+    box.resident = resident;
+    publish_box_();
+}
+
+void Backend::load(const Plan<Component>& plan) {
+    std::vector<std::pair<int, Component*>> bindings;
+    if (plan.kind == PhaseKind::MD)
+        for (const auto& slot : plan.slots)
+            for (const auto& op : slot.ops)
+                bindings.emplace_back(slot.phase, op.component);
+    if (bindings != force_bindings_)
+        forces_ready_ = false;
+    force_bindings_ = std::move(bindings);
+    plan_ = &plan;
 }
 
 void Backend::build_components() {
-    BuildContext ctx{context_, frame_};
-    for (auto& slot : plan_->slots)
-        for (auto& op : slot.ops) {
-            if (timer_)
-                timer_->impl()->begin(
-                    static_cast<cudaStream_t>(context_.stream));
-            op.component->build(ctx);
-            if (timer_) {
-                timer_->impl()->end(static_cast<cudaStream_t>(context_.stream),
-                                    slot.phase,
-                                    op.component->name() + "/build");
-            }
-        }
-    cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream));
+    build_plan(*plan_);
+    ATV_CUDA_CHECK(
+        cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream)));
     if (timer_)
         timer_->impl()->flush();
 }
 
 void Backend::build_plan(const Plan<Component>& plan) {
-    BuildContext ctx{context_, frame_};
-    for (auto& slot : plan.slots)
-        for (auto& op : slot.ops)
-            op.component->build(ctx);
+    BuildContext build{context_, frame_};
+    DestroyContext destroy{context_, frame_};
+    lifecycle_.build(
+        plan, [&](Component& c) { c.build(build); },
+        [&](Component& c) { c.destroy(destroy); });
 }
 
 void Backend::destroy_plan(const Plan<Component>& plan) {
     DestroyContext ctx{context_, frame_};
-    for (int s = static_cast<int>(plan.slots.size()) - 1; s >= 0; --s) {
-        auto& slot = plan.slots[static_cast<std::size_t>(s)];
-        for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o)
-            slot.ops[static_cast<std::size_t>(o)].component->destroy(ctx);
-    }
+    lifecycle_.destroy(plan, [&](Component& c) { c.destroy(ctx); });
 }
 
-void Backend::execute_phases(int step_idx, int first_phase, int end_phase) {
+void Backend::prepare_run(BigInt step_idx) {
+    if (!plan_ || plan_->kind != PhaseKind::MD || forces_ready_)
+        return;
+    plan_->prepare_forces(
+        [](int) {},
+        [&](const auto& slot, const auto& op, bool force_slot) {
+            LaunchContext ctx{context_, frame_, slot.phase,
+                              step_idx, true,   slot.forces_requested};
+            if (force_slot)
+                op.component->launch(ctx);
+            else
+                op.component->initialize_forces(ctx);
+        });
+    forces_ready_ = true;
+}
+
+void Backend::execute_phases(BigInt step_idx, int first_phase, int end_phase) {
     if (!plan_ || first_phase < 0 || end_phase < first_phase
         || end_phase > static_cast<int>(plan_->slots.size()))
         throw std::invalid_argument(
@@ -141,6 +140,8 @@ void Backend::execute_phases(int step_idx, int first_phase, int end_phase) {
             if (timer_)
                 timer_->impl()->begin(stream);
             op.component->launch(ctx);
+            if (op.component->changes_box(slot.phase))
+                publish_box_();
             if (timer_)
                 timer_->impl()->end(stream, slot.phase, op.component->name());
         }
@@ -164,7 +165,8 @@ void Backend::execute_phases(int step_idx, int first_phase, int end_phase) {
     }
 }
 
-void Backend::step(int step_idx) {
+void Backend::step(BigInt step_idx) {
+    prepare_run(step_idx);
     execute_phases(step_idx, 0, static_cast<int>(plan_->slots.size()));
     if (timer_)
         timer_->step_done();
@@ -177,11 +179,7 @@ void Backend::run(int n_steps) {
 
 void Backend::destroy_components() {
     DestroyContext ctx{context_, frame_};
-    for (int s = static_cast<int>(plan_->slots.size()) - 1; s >= 0; --s) {
-        auto& slot = plan_->slots[s];
-        for (int o = static_cast<int>(slot.ops.size()) - 1; o >= 0; --o)
-            slot.ops[o].component->destroy(ctx);
-    }
+    lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
 }
 
 void Backend::retrieve(cpu::Frame& frame) { cuda::to_cpu(frame_, frame); }
@@ -192,6 +190,12 @@ void Backend::sync() {
 }
 
 void Backend::shutdown() {
+    if (!lifecycle_.empty()) {
+        sync();
+        destroy_components();
+    }
+    if (context_.host_box.resident)
+        ATV_CUDA_CHECK(cudaFree(const_cast<Box*>(context_.host_box.resident)));
     cuda::destroy(frame_);
     frame_ = {};
     auto main = static_cast<cudaStream_t>(context_.stream);

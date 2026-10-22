@@ -39,6 +39,7 @@
 #include "atomiverse/cpu/scf/scf_enums.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
@@ -340,16 +341,23 @@ void RHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
     if (own_W)
         cudaMalloc(&d_W, static_cast<std::size_t>(nn) * sizeof(prec_t));
     launch_build_W_rhf(d_W, ws.C, ws.eig, ws.n, ws.n_occ, stream);
-    launch_rhf_forces_sp(frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, ws.P,
+    // The analytic gradient is assembled in FP64 and then published to the
+    // Frame's fixed-point force columns (overwrite semantics).
+    double* d_grad = nullptr;
+    ATV_CUDA_CHECK(cudaMalloc(&d_grad, 3 * static_cast<std::size_t>(ws.natm)
+                                           * sizeof(double)));
+    launch_rhf_forces_sp(d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm, ws.P,
                          d_W, ws.d_shell_alpha, ws.d_shell_coeff,
                          ws.d_shell_center, ws.d_shell_atom, ws.d_shell_L,
                          ws.d_ao_shell, ws.d_ao_cart, ws.d_atom_Z,
                          ws.d_atom_pos, ws.n, ws.n_prim, ws.natm, stream);
+    cuda::store_forces(frame, d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm,
+                       ws.natm, stream);
     last_force_device_ = true;
-    if (own_W) {
-        cudaStreamSynchronize(stream);
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+    cudaFree(d_grad);
+    if (own_W)
         cudaFree(d_W);
-    }
 }
 
 void RHF::pull_energy_(cuda::Context& ctx, cuda::Frame& frame) {

@@ -87,12 +87,23 @@ class EngineStub : public cpu::Component {
 class Hook : public cpu::Component {
   public:
     int n_launch = 0;
+    bool initialize = false;
+    bool fail = false;
+    bool saw_initializing = false;
+    std::string label = "hook";
     std::vector<std::string>* log = nullptr;
     std::string name() const override { return "hook"; }
-    void launch(const cpu::LaunchContext&) override {
+    void initialize_forces(const cpu::LaunchContext& ctx) override {
+        if (initialize)
+            launch(ctx);
+    }
+    void launch(const cpu::LaunchContext& ctx) override {
+        if (fail)
+            throw std::runtime_error("force preparation failed");
+        saw_initializing = ctx.runtime.exec.initializing_forces;
         ++n_launch;
         if (log)
-            log->push_back("hook");
+            log->push_back(label);
     }
 };
 
@@ -153,6 +164,7 @@ TEST(TestVerletComm, NflagZeroIsForwardCommOnly) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     // Count the steps only; the setup's pbc + exchange + borders + build
     // is SerialSetupWrapsThenUsesCommThenNeighbor's.
     comm.reset();
@@ -186,6 +198,7 @@ TEST(TestVerletComm, NflagOneIsExchangeBordersBuild) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     // Count the steps only; the setup's pbc + exchange + borders + build
     // is SerialSetupWrapsThenUsesCommThenNeighbor's.
     comm.reset();
@@ -218,6 +231,7 @@ TEST(TestVerletComm, ReverseCommEveryStepNotGatedOnNflag) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     // Count the steps only; the setup's pbc + exchange + borders + build
     // is SerialSetupWrapsThenUsesCommThenNeighbor's.
     comm.reset();
@@ -248,6 +262,7 @@ TEST(TestVerletComm, SerialSetupWrapsThenUsesCommThenNeighbor) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
 
     EXPECT_EQ(rt.context().mpi_size, 1);
     EXPECT_DOUBLE_EQ(frame.span(kAtom_x)[0], 9.5);
@@ -272,12 +287,13 @@ TEST(TestVerletComm, MpiSetupUsesCommThenNeighbor) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
 
     EXPECT_EQ(comm.n_exchange, 1);
     EXPECT_EQ(comm.n_borders, 1);
     EXPECT_EQ(neigh.n_launch, 1);
     EXPECT_EQ(comm.n_forward, 0);
-    EXPECT_EQ(comm.n_reverse, 0);
+    EXPECT_EQ(comm.n_reverse, 1); // preparation also reverses initial forces
 }
 
 TEST(TestVerletComm, EvaluateWrapsCommAroundForceSlot) {
@@ -301,6 +317,7 @@ TEST(TestVerletComm, EvaluateWrapsCommAroundForceSlot) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     // The force slot's comm only; the setup's is not part of it.
     comm.reset();
     log.clear();
@@ -345,6 +362,7 @@ TEST(TestVerletComm, MinimizeWrapsCommAroundForceSlot) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     // The force slot's comm only; the setup's is not part of it.
     comm.reset();
     log.clear();
@@ -388,6 +406,7 @@ TEST(TestVerletComm, MinimizeRunStageWrapsComm) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     // The force slot's comm only; the setup's is not part of it.
     comm.reset();
     log.clear();
@@ -419,6 +438,7 @@ TEST(TestVerletComm, MdRefreshSequenceIsForwardThenReverse) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     log.clear(); // the setup's exchange + borders are not this step's
     rt.step(0);
 
@@ -442,6 +462,7 @@ TEST(TestVerletComm, MdRebuildSequenceIsExchangeBordersReverse) {
     rt.set_frame(frame);
     bind_spy(rt, comm);
     rt.build_components();
+    rt.prepare_run();
     log.clear(); // the setup's exchange + borders are not this step's
     for (int s = 0; s < 10; ++s)
         rt.step(s);
@@ -458,4 +479,78 @@ TEST(TestVerletComm, MdRebuildSequenceIsExchangeBordersReverse) {
     EXPECT_EQ(rebuild[0], "exchange");
     EXPECT_EQ(rebuild[1], "borders");
     EXPECT_EQ(rebuild[2], "reverse");
+}
+
+TEST(TestVerletComm, PrepareRunSeedsForcesOnceWithoutIntegrationOrObservers) {
+    auto frame = one_atom();
+    SpyComm comm;
+    SpyNeighbor neigh;
+    Hook observer, integrate, pre, force, post;
+    std::vector<std::string> log;
+    comm.log = &log;
+    pre.label = "pre";
+    pre.log = &log;
+    pre.initialize = true;
+    force.label = "force";
+    force.log = &log;
+    post.label = "post";
+    post.log = &log;
+    post.initialize = true;
+    auto plan = md_plan(neigh, observer);
+    add_op(plan, md::Phase::initial_integrate, integrate);
+    add_op(plan, md::Phase::pre_force, pre);
+    add_op(plan, md::Phase::force, force);
+    add_op(plan, md::Phase::post_force, post);
+    // An ordinary observer in post_force must not run during initialization.
+    add_op(plan, md::Phase::post_force, observer);
+    cpu::Runtime rt;
+    rt.init();
+    rt.load(plan);
+    rt.set_frame(frame);
+    bind_spy(rt, comm);
+    rt.build_components();
+    comm.reset();
+    log.clear();
+    rt.prepare_run();
+    const std::vector<std::string> expected{"exchange", "borders", "pre",
+                                            "force",    "reverse", "post"};
+    EXPECT_EQ(log, expected);
+    EXPECT_TRUE(pre.saw_initializing);
+    EXPECT_TRUE(force.saw_initializing);
+    EXPECT_TRUE(post.saw_initializing);
+    EXPECT_FALSE(rt.context().exec.initializing_forces);
+    EXPECT_EQ(observer.n_launch, 0);
+    EXPECT_EQ(integrate.n_launch, 0);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_x)[0], 1.0);
+    rt.prepare_run();
+    EXPECT_EQ(log, expected);
+    EXPECT_EQ(comm.n_reverse, 1);
+}
+
+TEST(TestVerletComm, FailedForcePreparationRestoresFlagsAndCanRetry) {
+    auto frame = one_atom();
+    SpyComm comm;
+    SpyNeighbor neigh;
+    Hook observer, force;
+    force.fail = true;
+    auto plan = md_plan(neigh, observer);
+    add_op(plan, md::Phase::force, force);
+    cpu::Runtime rt;
+    rt.init();
+    rt.load(plan);
+    rt.set_frame(frame);
+    bind_spy(rt, comm);
+    rt.build_components();
+    rt.enable_timing(true);
+    EXPECT_THROW(rt.prepare_run(), std::runtime_error);
+    EXPECT_FALSE(rt.context().exec.initializing_forces);
+    EXPECT_TRUE(rt.timing().enabled());
+    force.fail = false;
+    EXPECT_NO_THROW(rt.prepare_run());
+    EXPECT_TRUE(force.saw_initializing);
+    EXPECT_EQ(comm.n_exchange, 2);
+    EXPECT_EQ(comm.n_reverse, 1);
+    EXPECT_EQ(observer.n_launch, 0);
+    EXPECT_NO_THROW(rt.prepare_run());
+    EXPECT_EQ(force.n_launch, 1);
 }

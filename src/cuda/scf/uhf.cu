@@ -22,6 +22,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/transfer.h"
 #include "atomiverse/cpu/scf/basis_data/accessors.h"
+#include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "atomiverse/cuda/scf/internal/uhf_scf_cycle.cuh"
@@ -300,12 +301,19 @@ void UHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
     launch_build_W_uhf(d_Wb, beta.C, beta.eig, ws.n, beta.n_occ, stream);
     uhf_add_mat_kernel<<<blocks, threads, 0, stream>>>(ws.d_W, ws.d_W, d_Wb,
                                                        nn);
-    launch_uhf_forces_sp(frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, d_Ptot,
+    // The analytic gradient is assembled in FP64 and then published to the
+    // Frame's fixed-point force columns (overwrite semantics).
+    double* d_grad = nullptr;
+    cudaMalloc(&d_grad, 3 * static_cast<std::size_t>(ws.natm) * sizeof(double));
+    launch_uhf_forces_sp(d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm, d_Ptot,
                          ws.d_W, ws.P, beta.P, ws.d_shell_alpha,
                          ws.d_shell_coeff, ws.d_shell_center, ws.d_shell_atom,
                          ws.d_shell_L, ws.d_ao_shell, ws.d_ao_cart, ws.d_atom_Z,
                          ws.d_atom_pos, ws.n, ws.n_prim, ws.natm, stream);
+    cuda::store_forces(frame, d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm,
+                       ws.natm, stream);
     cudaStreamSynchronize(stream);
+    cudaFree(d_grad);
     cudaFree(d_Ptot);
     cudaFree(d_Wb);
     last_force_device_ = true;

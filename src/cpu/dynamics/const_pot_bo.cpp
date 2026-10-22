@@ -221,12 +221,13 @@ void ConstPotBO::launch(const LaunchContext& ctx) {
     }
     ensure_aspc_();
     build_rhs_(ctx.frame);
-    solve_();
+    solve_(!ctx.runtime.exec.initializing_forces);
     write_charges_(ctx.frame);
     ChargePacker::forward(ctx);
     if (write_electrode_forces)
         write_electrode_forces_(ctx.frame);
-    record_aspc_();
+    if (!ctx.runtime.exec.initializing_forces)
+        record_aspc_();
 }
 
 void ConstPotBO::destroy(const DestroyContext&) {
@@ -662,7 +663,7 @@ void ConstPotBO::solve_dense_() {
     last_used_predictor_ = false;
 }
 
-void ConstPotBO::solve_cg_() {
+void ConstPotBO::solve_cg_(bool use_history) {
     const int m = static_cast<int>(elec_atoms_.size());
     std::vector<double> rhs(static_cast<std::size_t>(m));
     for (int i = 0; i < m; ++i)
@@ -672,7 +673,7 @@ void ConstPotBO::solve_cg_() {
     // Warm-start unconstrained CG from ASPC (or zero).
     std::vector<double> Q0(static_cast<std::size_t>(m), 0.0);
     last_used_predictor_ = false;
-    if (aspc_) {
+    if (use_history && aspc_) {
         std::vector<double> Qpred;
         if (aspc_->predict(Qpred) && static_cast<int>(Qpred.size()) == m) {
             Q0 = Qpred;
@@ -714,7 +715,7 @@ void ConstPotBO::solve_cg_() {
     last_iters_ = iters_main;
 }
 
-void ConstPotBO::solve_() {
+void ConstPotBO::solve_(bool use_history) {
     const int m = static_cast<int>(elec_atoms_.size());
     if (m == 0)
         return;
@@ -728,7 +729,7 @@ void ConstPotBO::solve_() {
     // neutrality_target_ set in build_rhs_ (0 or −Q_elyt).
 
     if (use_cg)
-        solve_cg_();
+        solve_cg_(use_history);
     else
         solve_dense_();
 

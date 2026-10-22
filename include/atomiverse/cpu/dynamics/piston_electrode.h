@@ -93,6 +93,7 @@ class PistonElectrode : public cpu::Component {
     }
 
     void build(const cpu::BuildContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
     /// @brief Instantaneous piston \(P_z\) [eV/Å³] from last `post_force`.

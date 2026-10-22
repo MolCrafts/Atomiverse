@@ -159,7 +159,7 @@ FrameSnapshot& AnalysisExecutor::slot(int idx) {
     return ring_[static_cast<std::size_t>(idx)];
 }
 
-void AnalysisExecutor::publish(int idx, int step) {
+void AnalysisExecutor::publish(int idx, BigInt step) {
     ring_[static_cast<std::size_t>(idx)].step = step;
     last_published_slot_.store(idx, std::memory_order_release);
     // Slot remains marked busy until the last consumer finishes; but with

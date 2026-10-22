@@ -15,6 +15,7 @@
 /// does not double the runtime, the decomposition, or the frame binding.
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -58,7 +59,7 @@ class Runtime {
     void init();
 
     /// @brief Bind a compiled Plan for execution (non-owning).
-    void load(const Plan<cpu::Component>& plan) { plan_ = &plan; }
+    void load(const Plan<cpu::Component>& plan);
 
     /// @brief Set the Frame to operate on (zero-copy) and bind the DD to it.
     ///
@@ -73,17 +74,21 @@ class Runtime {
     void build_components();
 
     /// @brief Execute one simulation step.
-    void step(int step_idx);
+    void step(BigInt step_idx);
+
+    /// @brief Establish initial MD forces once, without advancing the clock.
+    /// @param step_idx Cumulative MD step index.
+    void prepare_run(BigInt step_idx = 0);
 
     // ── Nested plans: a sub-driver runs its own Plan on THIS runtime ──────────
     void build_plan(const Plan<cpu::Component>& plan);
-    void step_plan(const Plan<cpu::Component>& plan, int step_idx);
+    void step_plan(const Plan<cpu::Component>& plan, BigInt step_idx);
     void destroy_plan(const Plan<cpu::Component>& plan);
 
     /// @brief Re-run only the bindings of a single phase (line-search trials).
     /// @tparam PhaseEnum The workflow Phase enum this runtime's Plan was compiled from.
     template <typename PhaseEnum>
-    void run_stage(PhaseEnum phase, int step_idx) {
+    void run_stage(PhaseEnum phase, BigInt step_idx) {
         run_slot_(ATV::slot_of(phase), step_idx);
     }
 
@@ -134,7 +139,7 @@ class Runtime {
 
   private:
     /// @brief Replay one compiled Plan slot. The erased half of `run_stage`.
-    void run_slot_(int slot, int step_idx);
+    void run_slot_(int slot, BigInt step_idx);
 
     /// @brief NeighborProvider cache for Verlet / linear `ctx.md.comm` dispatch.
     ///        Halo adapters are not cached; Runtime calls one `Comm*`.
@@ -162,29 +167,30 @@ class Runtime {
     /// @brief True when `slot` is Evaluate `evaluate` or Minimize `force`.
     bool is_linear_force_slot_(int slot) const;
     /// @brief Position-only halo refresh (no reneighbor).
-    void comm_refresh_(int slot, int step);
+    void comm_refresh_(int slot, BigInt step);
     /// @brief Exchange + borders. Flat slot args so Verlet can walk
     ///        `pre_exchange` / `pre_neighbor` in between; no schedule bag.
-    void comm_rebuild_(int exchange_slot, int borders_slot, int step);
+    void comm_rebuild_(int exchange_slot, int borders_slot, BigInt step);
     /// @brief nflag XOR: forward, or exchange + borders + neighbor build.
-    void comm_before_force_(int slot, int step_idx);
+    void comm_before_force_(int slot, BigInt step_idx);
     /// @brief Newton-on reverse of ghost forces [eV/Å].
-    void comm_after_force_(int slot, int step_idx);
+    void comm_after_force_(int slot, BigInt step_idx);
     /// @brief LAMMPS Verlet::setup: `comm->exchange` then `borders` then
     ///        neighbor build (MPI only). Ghost positions in Å.
-    void setup_verlet_comm_();
+    void setup_verlet_comm_(BigInt step_idx = 0);
     /// @brief Evaluate/Minimize: Comm around force/evaluate (Å positions,
     ///        reverse of ghost forces [eV/Å]); skip `verlet_engine` adapters.
-    void step_linear_(int step_idx);
+    void step_linear_(BigInt step_idx);
     /// @brief LAMMPS Verlet::run comm on `ctx.md.comm`. `nflag==0` →
     ///        `forward_comm` (ghost positions [Å]); else exchange + borders +
     ///        neighbor build. `reverse_comm` every step (newton-on, [eV/Å]).
-    void step_verlet_(int step_idx);
-    void launch_op_(std::size_t slot, std::size_t op, int step_idx);
-    void walk_slot_(int phase, int step_idx, bool skip_engine);
+    void step_verlet_(BigInt step_idx);
+    void launch_op_(std::size_t slot, std::size_t op, BigInt step_idx);
+    void walk_slot_(int phase, BigInt step_idx, bool skip_engine);
     void launch_engine_(cpu::Component* c, int slot, int op, int phase,
-                        int step_idx);
+                        BigInt step_idx);
 
+    detail::ComponentLifecycle<cpu::Component> lifecycle_;
     Context context_{};
     cpu::Frame* frame_ = nullptr;
     const Plan<cpu::Component>* plan_ = nullptr;
@@ -208,6 +214,8 @@ class Runtime {
 
     VerletComm verlet_{};
     bool verlet_setup_done_ = false;
+    bool forces_ready_ = false;
+    std::vector<std::pair<int, cpu::Component*>> force_bindings_;
 };
 
 } // namespace cpu

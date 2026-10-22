@@ -13,6 +13,7 @@
 /// CUDA-free header.
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -52,8 +53,10 @@ struct BuildContext {
 struct LaunchContext {
     cuda::Context& runtime; ///< CUDA execution context (streams).
     cuda::Frame& frame;     ///< Device-resident system state + host metadata.
-    int stage; ///< Current Plan slot index (erased — compare via `at()`).
-    int step;  ///< Current simulation step index (0-based).
+    int stage;   ///< Current Plan slot index (erased — compare via `at()`).
+    BigInt step; ///< Current simulation step index (0-based).
+    bool initializing_forces = false;
+    bool forces_requested = true;
 
     /// @brief Is the component running in `phase` right now? @see cpu::LaunchContext::at
     /// @tparam PhaseEnum The workflow Phase enum the component is bound in.
@@ -101,6 +104,9 @@ class Component {
 
     /// @brief RoleFlag set (mirrors cpu::Component). @see facade/component_role.h
     virtual Role role() const { return 0; }
+
+    /// The backend publishes cell caches after these bindings complete.
+    virtual bool changes_box(int stage) const { return false; }
 
     virtual bool requires_system_stress() const { return false; }
     virtual bool provides_system_stress() const { return false; }
@@ -184,6 +190,9 @@ class Component {
     ///
     /// @param ctx Launch context with Runtime, DeviceFrame, phase, and step.
     virtual void launch(const LaunchContext& ctx) = 0;
+
+    /// Opt in to the force-preparation schedule without advancing history.
+    virtual void initialize_forces(const LaunchContext& ctx) {}
 
     /// @brief Resource cleanup.
     ///

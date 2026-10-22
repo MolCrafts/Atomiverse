@@ -39,7 +39,7 @@ struct CaptureMask {
 /// bounded heap growth. All vectors are sized at `build()` time to the
 /// frame's initial capacity; `Publish` only writes, never reallocates.
 struct FrameSnapshot {
-    int step = 0;    ///< Simulation step at which this snapshot was published.
+    BigInt step = 0; ///< Simulation step at which this snapshot was published.
     int n_owned = 0; ///< Number of owned atoms captured.
     cpu::Box box{};  ///< Simulation cell at the time of capture [Angstrom].
 

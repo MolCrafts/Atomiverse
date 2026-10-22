@@ -21,8 +21,6 @@
 namespace ATV {
 namespace cuda {
 
-using cuda::prec_t;
-
 struct Virial::State {};
 
 Virial::Virial() : state_(std::make_unique<State>()) {}
@@ -47,7 +45,7 @@ void Virial::launch(const LaunchContext& ctx) {
     // owned by `pair_lj_cut` / `bond_harmonic` / `angle_harmonic` /
     // `dihedral_multi_harmonic` and cleared by `ZeroEnergy` at
     // pre_force @ -999 — NOT touched here.
-    cudaMemsetAsync(f.scalars->stress_kinetic, 0, 6 * sizeof(prec_t), stream);
+    cudaMemsetAsync(f.scalars->stress_kinetic, 0, 6 * sizeof(acc_t), stream);
 }
 
 void Virial::destroy(const DestroyContext& /*ctx*/) {}

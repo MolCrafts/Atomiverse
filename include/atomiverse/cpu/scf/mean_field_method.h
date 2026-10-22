@@ -985,7 +985,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     ///        electrons one velocity-Verlet/RATTLE step.
     /// @param frame Geometry in / forces + energies out (accumulated with
     ///        `+=`, since MD zeroes them at `pre_force`).
-    void cpmd_step_(Frame& frame);
+    void cpmd_step_(Frame& frame, bool advance_electrons = true);
 
     // ASPC (density extrapolation across outer MD steps)
     bool use_predictor_ = false;

@@ -19,9 +19,33 @@ namespace cuda {
 /// Copies positions, velocities, forces, energy, kinetic energy, stress,
 /// and box from device to host.
 ///
+/// Coordinates are reconstructed from primary + correction, forces decoded
+/// from fixed point. A recorded `ForceFault` throws before anything is
+/// copied: the device state is then invalid.
+///
 /// @param src CUDA Frame to read from.
 /// @param dst CPU Frame to write into (must be pre-sized).
+/// @throws std::runtime_error naming the atom tag and step of a force fault.
 void to_cpu(const Frame& src, cpu::Frame& dst);
+
+/// @brief Throw when a fixed-point force fault was recorded on `frame`.
+///
+/// The run-return check of every device workflow; `to_cpu` calls it first.
+/// @param frame CUDA Frame to inspect (synchronous D2H of the fault record).
+/// @throws std::runtime_error naming the atom tag and step of the fault.
+void throw_if_force_fault(const Frame& frame);
+
+/// @brief Overwrite the fixed-point forces of rows [0, n) from device doubles.
+///
+/// For force producers that assemble a complete FP64 gradient in their own
+/// workspace (Gaussian SCF) and publish it to the Frame. Out-of-range values
+/// raise the Frame's `ForceFault`.
+/// @param frame Device frame whose force columns are overwritten.
+/// @param fx,fy,fz Device force arrays [eV/Angstrom], n entries each.
+/// @param n Number of rows.
+/// @param stream CUDA stream (cudaStream_t) the producer ran on.
+void store_forces(Frame& frame, const double* fx, const double* fy,
+                  const double* fz, int n, void* stream);
 
 /// @brief Free all device memory in a CUDA Frame.
 ///

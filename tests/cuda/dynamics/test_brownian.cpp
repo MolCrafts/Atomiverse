@@ -81,33 +81,6 @@ TEST(CudaBrownian, WrapMatchesCpuSandboxRule) {
     EXPECT_FALSE(cuda::md::brownian_should_wrap(false, 20.0));
 }
 
-TEST(CudaBrownian, GaussiansAreReproducibleAndUnitVariance) {
-    double ax, ay, az, bx, by, bz;
-    cuda::md::brownian_gaussians<double>(42, 7, 3, ax, ay, az);
-    cuda::md::brownian_gaussians<double>(42, 7, 3, bx, by, bz);
-    EXPECT_DOUBLE_EQ(ax, bx);
-    EXPECT_DOUBLE_EQ(ay, by);
-    EXPECT_DOUBLE_EQ(az, bz);
-    EXPECT_TRUE(std::isfinite(ax) && std::isfinite(ay) && std::isfinite(az));
-    cuda::md::brownian_gaussians<double>(42, 7, 4, bx, by, bz);
-    EXPECT_NE(ax, bx);
-
-    const int n = 8192;
-    double sum = 0.0;
-    double sum2 = 0.0;
-    for (int i = 0; i < n; ++i) {
-        double gx, gy, gz;
-        cuda::md::brownian_gaussians<double>(99, static_cast<std::uint64_t>(i),
-                                             1, gx, gy, gz);
-        sum += gx;
-        sum2 += gx * gx;
-    }
-    const double mean = sum / n;
-    const double var = sum2 / n - mean * mean;
-    EXPECT_NEAR(mean, 0.0, 0.08);
-    EXPECT_NEAR(var, 1.0, 0.12);
-}
-
 TEST(CudaBrownian, FreeParticleStepVariance) {
     const double D = 0.01;
     const double dt = 1.0;

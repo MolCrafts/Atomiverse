@@ -132,7 +132,8 @@ TEST(CudaMaterialize, RoundTrip) {
     ASSERT_EQ(rx.size(), 3u);
     ASSERT_EQ(rvy.size(), 3u);
     ASSERT_EQ(rq.size(), 3u);
-    // cuda::Frame stores per-atom arrays as real_t (float by default), so the
+    // cuda::Frame stores charges as force_t and velocities as mixed_t (FP32 in
+    // single mode; positions round-trip through pos_t + correction), so the
     // H2D/D2H round trip is element-wise equal only to float precision.
     for (int i = 0; i < 3; ++i) {
         EXPECT_NEAR(rx[i], x[i], 1e-5);

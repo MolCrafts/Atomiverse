@@ -8,10 +8,7 @@
 /// `frame.scalars->stress_kinetic[6]` (the Σ m·vα·vβ·ATV::units::mass_v2_to_energy kinetic
 /// stress tensor — `cuda::Virial` zeroes the buffer at
 /// post_force then this kernel atomic-adds into it). Reduction is a
-/// packed warp-shuffle (`cuda::block_reduce_sum_n<7>`) — replaces the
-/// pre-link-05 two-kernel pattern (separate `kinetic_energy` +
-/// `kinetic_stress_k`) and the per-component shared-memory tree
-/// reduction.
+/// CUB BlockReduce over the seven independent components.
 ///
 /// Requires ZeroKinetic (order -1000 at end_of_step) and Virial
 /// (auto-injected at post_force @ -50) to clear the accumulators
@@ -59,6 +56,7 @@ class KineticEnergy : public Component {
     /// @brief Launch KE reduction kernel.
     /// @param ctx Launch context.
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 } // namespace md

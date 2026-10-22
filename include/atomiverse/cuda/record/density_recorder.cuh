@@ -12,6 +12,7 @@
 
 #include "atomiverse/cpu/observe/density.h"
 #include "atomiverse/cuda/asynchronous/async_bridge.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 
 #ifdef ATV_HAS_HF
@@ -76,20 +77,37 @@ class DensityRecorder : public AsyncRecorder {
         hz_.resize(na);
         cudaMemcpyAsync(htype_.data(), frame.atoms.type, na * sizeof(int),
                         cudaMemcpyDeviceToHost, stream);
-        // frame.atoms.x/y/z are real_t device buffers -- stage as real_t,
-        // then widen to double for cpu::eval_density_grid.
-        std::vector<real_t> tx(na), ty(na), tz(na);
-        cudaMemcpyAsync(tx.data(), frame.atoms.x, na * sizeof(real_t),
+        // frame.atoms.x/y/z are pos_t device buffers (+ pos_t corrections in
+        // mixed mode) -- stage both, then reconstruct the full coordinate
+        // and widen to double for cpu::eval_density_grid.
+        std::vector<pos_t> tx(na), ty(na), tz(na);
+        std::vector<pos_t> cx, cy, cz; // corrections (kPositionCorrection)
+        cudaMemcpyAsync(tx.data(), frame.atoms.x, na * sizeof(pos_t),
                         cudaMemcpyDeviceToHost, stream);
-        cudaMemcpyAsync(ty.data(), frame.atoms.y, na * sizeof(real_t),
+        cudaMemcpyAsync(ty.data(), frame.atoms.y, na * sizeof(pos_t),
                         cudaMemcpyDeviceToHost, stream);
-        cudaMemcpyAsync(tz.data(), frame.atoms.z, na * sizeof(real_t),
+        cudaMemcpyAsync(tz.data(), frame.atoms.z, na * sizeof(pos_t),
                         cudaMemcpyDeviceToHost, stream);
+        if constexpr (kPositionCorrection) {
+            cx.resize(na);
+            cy.resize(na);
+            cz.resize(na);
+            cudaMemcpyAsync(cx.data(), frame.atoms.x_corr, na * sizeof(pos_t),
+                            cudaMemcpyDeviceToHost, stream);
+            cudaMemcpyAsync(cy.data(), frame.atoms.y_corr, na * sizeof(pos_t),
+                            cudaMemcpyDeviceToHost, stream);
+            cudaMemcpyAsync(cz.data(), frame.atoms.z_corr, na * sizeof(pos_t),
+                            cudaMemcpyDeviceToHost, stream);
+        }
         cudaStreamSynchronize(stream);
         for (size_t i = 0; i < na; ++i) {
-            hx_[i] = static_cast<double>(tx[i]);
-            hy_[i] = static_cast<double>(ty[i]);
-            hz_[i] = static_cast<double>(tz[i]);
+            const int row = static_cast<int>(i);
+            hx_[i] =
+                static_cast<double>(load_position(tx.data(), cx.data(), row));
+            hy_[i] =
+                static_cast<double>(load_position(ty.data(), cy.data(), row));
+            hz_[i] =
+                static_cast<double>(load_position(tz.data(), cz.data(), row));
         }
 
         const auto nb = static_cast<size_t>(n_basis_);

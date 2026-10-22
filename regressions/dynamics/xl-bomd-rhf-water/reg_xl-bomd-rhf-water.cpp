@@ -128,6 +128,10 @@ int main() {
     sim.set_evaluator_ref(xl);
     sim.enable_timing(false);
     sim.build();
+    if (sim.run(frame, 0) != 0 || xl.xl_advances() != 0) {
+        std::printf("FAIL: force initialization advanced XL history\n");
+        return 1;
+    }
 
     std::vector<int> xl_iters;
     std::vector<double> xl_etot;

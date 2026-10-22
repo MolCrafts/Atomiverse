@@ -54,10 +54,10 @@ class CoulLong : public Pair, public LongRangeParticipant {
 
     // Cluster-sorted positions and charge, allocated to padded Frame capacity
     // in build(). compute() only gathers into the standing scratch.
-    real_t* spx_ = nullptr;
-    real_t* spy_ = nullptr;
-    real_t* spz_ = nullptr;
-    real_t* spq_ = nullptr;
+    force_t* spx_ = nullptr;
+    force_t* spy_ = nullptr;
+    force_t* spz_ = nullptr;
+    force_t* spq_ = nullptr;
     int spos_cap_ = 0;
 };
 

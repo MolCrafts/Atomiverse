@@ -5,10 +5,29 @@
 /// GPU mirror of `cpu::KSpacePME` (Essmann smooth PME): B-spline charge
 /// spreading → cuFFT → influence-function multiply → inverse cuFFT → force
 /// interpolation. Drop-in reciprocal replacement for `cuda::KSpaceEwald`;
-/// shares α with `cuda::CoulLong`. Single-GPU, fixed-cell/atom-set in this revision.
-/// The reciprocal pipeline is captured once in build and replayed as a graph.
-/// Spline/interpolation, real mesh and half-spectrum follow CUDA work_t precision;
-/// geometry, influence coefficients and energy reductions remain double.
+/// shares α with `cuda::CoulLong`. Single-GPU.
+///
+/// One build fixes the FFT dimensions (chosen from `grid_spacing` and the
+/// build-time cell), the spline order, α and the atom set; changing any of
+/// them requires a rebuild. The cell may change between steps (NPT, deform):
+/// every kernel reads the published device `Box` (geometry, volume and the
+/// normalization derived from it), and the influence/virial coefficient
+/// tables, at fixed device addresses, remember the `Box::revision` they were
+/// computed for; the captured graph recomputes them in stream order when the
+/// revision moves. A box change therefore needs neither graph recapture nor
+/// new FFT plans. The mesh is NOT re-chosen when the cell
+/// changes, so the grid spacing (and the reciprocal error) drift with the
+/// box.
+///
+/// When stress is required the six-component reciprocal virial is the exact
+/// strain derivative of the discrete PME energy at fixed fractional
+/// coordinates, averaged over both conjugate half-spectrum indices (exact at
+/// triclinic Nyquist modes); the background energy contributes its volume
+/// derivative on the diagonal.
+///
+/// Spline/interpolation, real mesh and half-spectrum follow CUDA force_t
+/// precision; geometry, influence coefficients and energy/virial reductions
+/// remain double.
 #pragma once
 
 #include <array>
@@ -24,7 +43,8 @@ namespace cuda {
 class KSpacePME : public KSpace {
   public:
     /// @param alpha        Ewald splitting parameter α [1/Å] (match CoulLong).
-    /// @param grid_spacing Target real-space grid spacing [Å]. Default 1.0.
+    /// @param grid_spacing Target real-space grid spacing [Å] used to choose
+    ///                     the FFT dimensions at build. Default 1.0.
     /// @param order        B-spline order (≥ 3). Default 6.
     explicit KSpacePME(double alpha, double grid_spacing = 1.0, int order = 6);
     ~KSpacePME() override;
@@ -34,6 +54,14 @@ class KSpacePME : public KSpace {
         return {LongRangeRole::ReciprocalSpace, AccReal(alpha_), AccReal(0),
                 AccReal(0)};
     }
+
+    /// @brief Gate the reciprocal virial (set before build).
+    /// @param required True iff a downstream consumer reads stress.
+    void set_stress_required(bool required) override { stress_ = required; }
+
+    /// @brief FFT dimensions chosen at build.
+    /// @return {K0, K1, K2} [grid points]; zero before build.
+    std::array<int, 3> mesh() const { return {K_[0], K_[1], K_[2]}; }
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
@@ -45,21 +73,23 @@ class KSpacePME : public KSpace {
     void enqueue_(const LaunchContext& ctx);
     void* graph_exec_ = nullptr; ///< cudaGraphExec_t, allocated only in build.
     int built_atoms_ = 0;
-    std::array<double, 9> built_cell_{};
     double alpha_;
     double spacing_;
     int order_;
+    bool stress_ = true;
+    double background_coef_ = 0; ///< k_e π Q² / (2α²) [eV·Å³].
 
     int K_[3] = {0, 0, 0};
     int ntot_ = 0;
     int nhalf_ = 0;
-    std::array<double, 9> inv_cell_{}; ///< host snapshot of cell⁻¹
-    double vol_ = 0;
 
-    double* d_influence_ = nullptr; ///< Fixed-cell Hermitian influence, double.
-    void* d_grid_ = nullptr;        ///< work_t real mesh, ntot entries.
+    void* d_tables_ = nullptr;      ///< Coefficient-table revision (PmeTables).
+    double* d_moduli_ = nullptr;    ///< B-spline moduli, K0 + K1 + K2 entries.
+    double* d_influence_ = nullptr; ///< Conjugate-averaged influence, nhalf.
+    double* d_virial_ = nullptr;    ///< Six virial coefficient planes, 6·nhalf.
+    void* d_grid_ = nullptr;        ///< force_t real mesh, ntot entries.
     void* d_spectrum_ =
-        nullptr;            ///< work_t complex half-spectrum, nhalf entries.
+        nullptr;            ///< force_t complex half-spectrum, nhalf entries.
     int forward_plan_ = -1; ///< R2C/D2Z cufftHandle; -1 when uncreated.
     int inverse_plan_ = -1; ///< C2R/Z2D cufftHandle; -1 when uncreated.
 };

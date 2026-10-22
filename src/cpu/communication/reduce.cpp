@@ -39,7 +39,8 @@ void Reduce::launch(const cpu::LaunchContext& ctx) {
     // on the last step keeps the globally-reduced scalars valid for the common
     // "read Frame metadata after run()" pattern, so the cadence is safe whenever
     // no *per-step* consumer reads them.
-    if (every_ > 1 && !ctx.runtime.md.is_last_step && ctx.step != 0
+    if (!ctx.runtime.exec.initializing_forces && every_ > 1
+        && !ctx.runtime.md.is_last_step && ctx.step != 0
         && (ctx.step % every_) != 0)
         return;
 

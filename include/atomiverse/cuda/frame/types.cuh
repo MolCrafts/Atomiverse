@@ -1,32 +1,29 @@
 /// @file cuda/frame/types.cuh
-/// @brief CUDA backend floating-point types — **aligned with LAMMPS Kokkos**.
+/// @brief CUDA backend precision contract: one type per physical role.
 ///
-/// LAMMPS Kokkos (`KOKKOS_PREC`) exposes one compile-time mode and two types:
+/// `ATV_CUDA_PREC_MODE` (double | mixed | single) selects the mode at configure
+/// time; there is no other precision knob. Classical MD follows OpenMM's mixed
+/// strategy (reference: openmm `platforms/common/src/kernels/verlet.cc`,
+/// commit 3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e); bit identity with OpenMM is
+/// not a goal.
 ///
-/// | mode   | `KK_FLOAT` (storage + force math) | `KK_ACC_FLOAT` (force/energy/virial acc) |
-/// |--------|-----------------------------------|------------------------------------------|
-/// | double | double                            | double                                   |
-/// | mixed  | float                             | double                                   |
-/// | single | float                             | float                                    |
+/// | role | type | double | mixed | single |
+/// |------|------|--------|-------|--------|
+/// | force math, splines, grids, FFT, charges | `force_t` | FP64 | FP32 | FP32 |
+/// | stored coordinate (force-kernel input) | `pos_t` | FP64 | FP32 | FP32 |
+/// | stored coordinate correction | `pos_t` | — | FP32 | — |
+/// | reconstructed coordinate, velocity, integration mass, dt, thermostat/barostat state | `mixed_t` | FP64 | FP64 | FP32 |
+/// | cell and derived geometry | `geom_t` | FP64 | FP64 | FP64 |
+/// | energy, virial, kinetic energy, global reductions | `acc_t` | FP64 | FP64 | FP64 |
+/// | classical force accumulation | `fixed_t` | 64-bit fixed point | 64-bit fixed point | 64-bit fixed point |
 ///
-/// Atomiverse mirrors that exactly:
+/// In mixed mode a coordinate is `x + x_corr`: integrators reconstruct it in
+/// FP64, update it, and split it again (`cuda/frame/precision.cuh`); ordinary
+/// force kernels read only the FP32 primary value. Every other mode stores the
+/// coordinate exactly and has no correction column (`kPositionCorrection`).
 ///
-/// | ATV type | role                                      | LMP twin        |
-/// |----------|-------------------------------------------|-----------------|
-/// | `real_t` | per-atom storage (x, v, f, charges, …)    | `KK_FLOAT`      |
-/// | `work_t` | kernel temporaries / shared-mem params    | `KK_FLOAT`      |
-/// | `prec_t` | energy / virial / force accumulation      | `KK_ACC_FLOAT`  |
-///
-/// **`work_t` is not a free third precision axis.** It always equals `real_t`
-/// (same as LAMMPS: force math uses the storage precision). Older docs that
-/// advertised independent `-DATV_CUDA_WORK` are obsolete; pick the mode only:
-///
-///   cmake … -DATV_CUDA_PREC_MODE=double|mixed|single
-///
-/// Constraint: sizeof(real_t) <= sizeof(work_t) <= sizeof(prec_t) (always true
-/// under the three modes above). Host-side Frame/CPU code uses
-/// `ATV::StorageReal` / `WorkReal` / `AccReal` from `core/precision.h`
-/// (CPU AccReal is always double).
+/// Electronic-structure kernels (`cuda/scf/`) keep their own tiers
+/// `real_t / work_t / prec_t`. Classical MD code never uses them.
 #pragma once
 
 #include <type_traits>
@@ -34,30 +31,47 @@
 namespace ATV {
 namespace cuda {
 
-#ifndef ATV_CUDA_REAL_TYPE
-#define ATV_CUDA_REAL_TYPE double
+/// @brief Configured CUDA precision mode.
+enum class PrecisionMode { Double, Mixed, Single };
+
+#if defined(ATV_CUDA_PRECISION_MIXED)
+inline constexpr PrecisionMode kPrecisionMode = PrecisionMode::Mixed;
+#elif defined(ATV_CUDA_PRECISION_SINGLE)
+inline constexpr PrecisionMode kPrecisionMode = PrecisionMode::Single;
+#else
+inline constexpr PrecisionMode kPrecisionMode = PrecisionMode::Double;
 #endif
 
-#ifndef ATV_CUDA_WORK_TYPE
-#define ATV_CUDA_WORK_TYPE double
-#endif
+/// Force math, splines, grids, FFT, charges and force-path coordinates.
+using force_t =
+    std::conditional_t<kPrecisionMode == PrecisionMode::Double, double, float>;
+/// Stored coordinate primary value (and correction, when present).
+using pos_t = force_t;
+/// Integration state: reconstructed coordinates, velocities, masses, dt,
+/// thermostat and barostat variables.
+using mixed_t =
+    std::conditional_t<kPrecisionMode == PrecisionMode::Single, float, double>;
+/// Cell matrix and its derived geometry (volume, inverse, lengths).
+using geom_t = double;
+/// Energy, virial, kinetic energy and every global reduction.
+using acc_t = double;
+/// Classical force accumulation word (signed 64-bit fixed point).
+using fixed_t = long long;
 
-#ifndef ATV_CUDA_PREC_TYPE
-#define ATV_CUDA_PREC_TYPE double
-#endif
+/// True when stored coordinates carry a separate correction column.
+inline constexpr bool kPositionCorrection = !std::is_same_v<pos_t, mixed_t>;
 
-using real_t = ATV_CUDA_REAL_TYPE;
-using work_t = ATV_CUDA_WORK_TYPE;
-using prec_t = ATV_CUDA_PREC_TYPE;
+static_assert(sizeof(force_t) <= sizeof(mixed_t),
+              "integration state must not be narrower than force math");
+static_assert(sizeof(fixed_t) == 8, "fixed-point forces are 64-bit");
 
-static_assert(sizeof(real_t) <= sizeof(work_t),
-              "real_t must not exceed work_t");
-static_assert(sizeof(work_t) <= sizeof(prec_t),
-              "work_t must not exceed prec_t");
-
-// Mode invariants (LAMMPS KOKKOS_PREC mapping).
-static_assert(sizeof(real_t) == sizeof(work_t),
-              "work_t must equal real_t (LAMMPS KK_FLOAT); no free work axis");
+/// @name Electronic-structure kernel tiers (Gaussian SCF only).
+/// @{
+using real_t = force_t;
+using work_t = force_t;
+using prec_t =
+    std::conditional_t<kPrecisionMode == PrecisionMode::Single, float, double>;
+/// @}
 
 } // namespace cuda
 } // namespace ATV

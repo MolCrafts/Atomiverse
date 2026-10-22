@@ -63,38 +63,25 @@ if(NOT ATV_DOCS_ONLY)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     endif()
 
-    # CUDA precision — aligned with LAMMPS Kokkos `KOKKOS_PREC` (one knob, three
-    # modes). LAMMPS uses two types only: KK_FLOAT (storage + force math) and
-    # KK_ACC_FLOAT (force/energy/virial accumulation). We mirror that as
-    # real_t/work_t (= KK_FLOAT) and prec_t (= KK_ACC_FLOAT). There is no free
-    # independent "work" axis — WORK always tracks REAL.
-    #   double (default, KK default): real=work=prec=double
-    #   mixed:                        real=work=float, prec=double
-    #   single:                       real=work=prec=float
+    # CUDA precision mode (cuda/frame/types.cuh): one knob, one type per
+    # physical role. mixed follows OpenMM: FP32 force math and coordinates
+    # plus an FP32 coordinate correction, FP64 integration and reductions,
+    # 64-bit fixed-point force accumulation.
     set(ATV_CUDA_PREC_MODE "double" CACHE STRING
-        "CUDA precision mode (LAMMPS KOKKOS_PREC): double | mixed | single")
+        "CUDA precision mode: double | mixed | single")
     set_property(CACHE ATV_CUDA_PREC_MODE PROPERTY STRINGS double mixed single)
     string(TOLOWER "${ATV_CUDA_PREC_MODE}" _atv_cuda_prec_mode)
     if(_atv_cuda_prec_mode STREQUAL "double")
-        set(ATV_CUDA_REAL "double")
-        set(ATV_CUDA_WORK "double")
-        set(ATV_CUDA_PREC "double")
+        set(ATV_CUDA_PRECISION_DEFINE "ATV_CUDA_PRECISION_DOUBLE")
     elseif(_atv_cuda_prec_mode STREQUAL "mixed")
-        set(ATV_CUDA_REAL "float")
-        set(ATV_CUDA_WORK "float")
-        set(ATV_CUDA_PREC "double")
+        set(ATV_CUDA_PRECISION_DEFINE "ATV_CUDA_PRECISION_MIXED")
     elseif(_atv_cuda_prec_mode STREQUAL "single")
-        set(ATV_CUDA_REAL "float")
-        set(ATV_CUDA_WORK "float")
-        set(ATV_CUDA_PREC "float")
+        set(ATV_CUDA_PRECISION_DEFINE "ATV_CUDA_PRECISION_SINGLE")
     else()
         message(FATAL_ERROR
             "ATV_CUDA_PREC_MODE must be double|mixed|single (got '${ATV_CUDA_PREC_MODE}')")
     endif()
-    message(STATUS
-        "CUDA precision mode=${_atv_cuda_prec_mode} "
-        "(real_t=${ATV_CUDA_REAL} work_t=${ATV_CUDA_WORK} prec_t=${ATV_CUDA_PREC}; "
-        "mirrors LMP KK_FLOAT/KK_ACC_FLOAT)")
+    message(STATUS "CUDA precision mode=${_atv_cuda_prec_mode}")
 
     # CPU/shared numerical precision — LAMMPS-style tiered control (see
     # include/atomiverse/core/precision.h). Storage and kernel-work reals may be
@@ -623,7 +610,6 @@ if(NOT ATV_DOCS_ONLY)
             list(APPEND ATOMIVERSE_SRCS
                 src/cuda/neighbor/neighbor_list.cu
                 src/cuda/neighbor/sort_and_cluster.cu
-                src/cuda/neighbor/grid.cu
                 src/cuda/neighbor/pair_search.cu
                 src/cuda/neighbor/fused_search.cu
                 src/cuda/neighbor/atom_cell_sort.cu
@@ -1203,7 +1189,7 @@ if(NOT ATV_DOCS_ONLY)
         set_target_properties(atomiverse PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_CUDA)
     endif()
-    target_compile_definitions(atomiverse PUBLIC ATV_CUDA_REAL_TYPE=${ATV_CUDA_REAL} ATV_CUDA_WORK_TYPE=${ATV_CUDA_WORK} ATV_CUDA_PREC_TYPE=${ATV_CUDA_PREC})
+    target_compile_definitions(atomiverse PUBLIC ${ATV_CUDA_PRECISION_DEFINE})
 
     # CPU/shared tiered precision (core/precision.h). Accumulators are always
     # double and intentionally not configurable here.

@@ -2,6 +2,7 @@
 /// @brief publish_global_dof — the single owner of the DOF count.
 
 #include "atomiverse/cpu/driver/dof.h"
+#include "atomiverse/core/dynamics_math.h"
 
 #include <stdexcept>
 #include <string>
@@ -46,7 +47,7 @@ void publish_global_dof(Context& ctx, const Frame& frame, int n_constraints) {
 #endif
 
     // 3 for centre-of-mass removal; the rest to the constraints.
-    const long long ndof = 3 * n_global - 3 - n_constraints;
+    const long long ndof = ATV::md::degrees_of_freedom(n_global, n_constraints);
 
     // Over-constrained is a real error and throws. A DOF-less system with NO
     // constraints is not: a one-atom frame has 3N-3 = 0 by construction, and such

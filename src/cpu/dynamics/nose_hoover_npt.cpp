@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 
+#include "atomiverse/core/dynamics_math.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
@@ -110,7 +111,7 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
     // (the polyethylene_tension per-stage driver rebuild), atoms.size() ==
     // n_local + n_ghost — wrong. The DD's `n_local` is authoritative on
     // each rank post-partition, so Allreduce-sum that to recover global N.
-    int N = static_cast<int>(ctx.frame.nlocal());
+    long long N = ctx.frame.nlocal();
 #ifdef ATV_HAS_MPI
     // MUST be unconditional across all ranks: MPI_Allreduce is a collective,
     // so every rank on cart_comm has to call it or the ones that do hang
@@ -121,14 +122,14 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
     // rebuild at 64 ranks while 32 ranks (no empty cells) ran fine.
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        const int n_local = ctx.runtime.md.dd->n_local;
-        MPI_Allreduce(&n_local, &N, 1, MPI_INT, MPI_SUM,
+        const long long n_local = ctx.runtime.md.dd->n_local;
+        MPI_Allreduce(&n_local, &N, 1, MPI_LONG_LONG, MPI_SUM,
                       ctx.runtime.md.dd->cart_comm);
     }
 #endif
     // Ndof: single owner, constraint-aware. @see Driver::publish_dof_
     n_dof_ = ctx.runtime.md.n_dof_global;
-    (void)N;
+    n_atoms_global_ = N;
     kT_ = units::kB_ev_per_k * T_target_;
 
     // Standard MTK masses (Tuckerman 2006 §III).
@@ -191,14 +192,8 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
 /// setpoint at `T_stop_` instead of extrapolating. With the default
 /// span (`nlast_ <= nfirst_`) or `T_stop_ == T_target_`, the live
 /// setpoint stays at `T_target_` — the no-ramp default.
-void NoseHooverNPT::compute_temp_target(int step) {
-    double delta = 0.0;
-    if (nlast_ > nfirst_) {
-        delta = static_cast<double>(step - nfirst_)
-                / static_cast<double>(nlast_ - nfirst_);
-        delta = std::clamp(delta, 0.0, 1.0);
-    }
-    T_live_ = T_target_ + delta * (T_stop_ - T_target_);
+void NoseHooverNPT::compute_temp_target(BigInt step) {
+    T_live_ = ATV::md::ramp_target(T_target_, T_stop_, step, nfirst_, nlast_);
     kT_ = units::kB_ev_per_k * T_live_;
 }
 
@@ -268,49 +263,11 @@ NoseHooverNPT::compute_axis_KE(const cpu::LaunchContext& ctx) const {
 /// @see LAMMPS `FixNH::nhc_temp_integrate()` (`src/fix_nh.cpp`).
 void NoseHooverNPT::nhc_atoms_half(const cpu::LaunchContext& ctx,
                                    double half_dt) {
-    // M-chain NHC half-step, mirroring LAMMPS `fix_nh.cpp::nhc_temp_integrate`
-    // (release branch). Per-link structure inside the backward sweep:
-    //
-    //     eta_dot[k] *= expfac           // pre-scale by outer link
-    //     eta_dot[k] += G_k * dt/4       // accelerate
-    //     eta_dot[k] *= tdrag_factor     // *** drag at every link ***
-    //     eta_dot[k] *= expfac           // post-scale by outer link
-    //
-    // with `expfac = exp(-dt/8 * eta_dot[k+1])`; for the outermost link
-    // (k = M-1) the "next" link `eta_dot[M]` is a zero sentinel, so
-    // `expfac = 1` and the two scalings are no-ops — drag and G still
-    // apply. The forward sweep re-runs the same structure with the
-    // post-scale KE, minus drag (LAMMPS does not damp on the way out).
-    const double quarter_dt = 0.5 * half_dt;
-    const double eighth_dt = 0.5 * quarter_dt;
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const int M = mtchain_;
-
-    auto G_t = [&](int k) -> double {
-        if (k == 0)
-            return (2.0 * KE_global_ - n_dof_ * kT_) / Q_t_[0];
-        return (Q_t_[static_cast<std::size_t>(k - 1)]
-                    * eta_t_dot_[static_cast<std::size_t>(k - 1)]
-                    * eta_t_dot_[static_cast<std::size_t>(k - 1)]
-                - kT_)
-               / Q_t_[static_cast<std::size_t>(k)];
-    };
-
-    // Backward pass: M-1 → 0. Drag applied at every link.
-    for (int k = M - 1; k >= 0; --k) {
-        const double expfac =
-            (k < M - 1) ? std::exp(-eta_t_dot_[static_cast<std::size_t>(k + 1)]
-                                   * eighth_dt)
-                        : 1.0;
-        eta_t_dot_[static_cast<std::size_t>(k)] *= expfac;
-        eta_t_dot_[static_cast<std::size_t>(k)] += G_t(k) * quarter_dt;
-        eta_t_dot_[static_cast<std::size_t>(k)] *= tdrag_factor_;
-        eta_t_dot_[static_cast<std::size_t>(k)] *= expfac;
-    }
-
-    // Scale atom velocities by the innermost thermostat momentum.
-    const double scale = std::exp(-eta_t_dot_[0] * half_dt);
+    const double scale = ATV::md::nhc_half_step(
+        eta_t_.data(), eta_t_dot_.data(), Q_t_.data(), mtchain_, KE_global_,
+        n_dof_ * kT_, kT_, half_dt, tdrag_factor_);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);
     StorageReal* __restrict sp_vy = f.span(kAtom_vy);
     StorageReal* __restrict sp_vz = f.span(kAtom_vz);
@@ -320,23 +277,6 @@ void NoseHooverNPT::nhc_atoms_half(const cpu::LaunchContext& ctx,
         sp_vy[i] *= scale;
         sp_vz[i] *= scale;
     }
-    KE_global_ *= scale * scale;
-
-    // Propagate the chain positions.
-    for (int k = 0; k < M; ++k)
-        eta_t_[static_cast<std::size_t>(k)] +=
-            eta_t_dot_[static_cast<std::size_t>(k)] * half_dt;
-
-    // Forward pass: 0 → M-1. No drag (LAMMPS pattern).
-    for (int k = 0; k < M; ++k) {
-        const double expfac =
-            (k < M - 1) ? std::exp(-eta_t_dot_[static_cast<std::size_t>(k + 1)]
-                                   * eighth_dt)
-                        : 1.0;
-        eta_t_dot_[static_cast<std::size_t>(k)] *= expfac;
-        eta_t_dot_[static_cast<std::size_t>(k)] += G_t(k) * quarter_dt;
-        eta_t_dot_[static_cast<std::size_t>(k)] *= expfac;
-    }
 }
 
 /// @see LAMMPS `FixNH::nhc_press_integrate()` (`src/fix_nh.cpp`). The
@@ -344,79 +284,17 @@ void NoseHooverNPT::nhc_atoms_half(const cpu::LaunchContext& ctx,
 ///      `(kecurrent - lkt_press)/etap_mass[0]` with `lkt_press = kt`
 ///      for `pstyle == ISO`.
 void NoseHooverNPT::nhc_baro_half(double half_dt) {
-    // Same M-chain pattern as `nhc_atoms_half`, but the innermost link
-    // thermostats the barostat momenta `ε̇_α` instead of atom KE.
-    // Drag (`pdrag_factor`) is applied at every link in the backward
-    // sweep and dropped in the forward sweep, matching LAMMPS
-    // `fix_nh.cpp::nhc_press_integrate`.
-    //
-    // The barostat NHC is a single chain over the *active* `ε̇_α` set —
-    // a single collective barostat DOF (LAMMPS keeps `lkt_press = kt`
-    // for `pstyle == ISO`; Atomiverse keeps the single-DOF target for
-    // every coupling so the all-axes case stays bit-compatible with the
-    // pre-change isotropic integrator). The innermost-link force uses
-    // the summed barostat KE `2·KE_baro = Σ_{α active} W_axis·ε̇_α²`
-    // with `W_axis = W_/3` the per-axis barostat mass (LAMMPS
-    // `omega_mass`; the isotropic total `W_ = 3·W_axis`). For the
-    // all-coupled, all-equal case `Σ_α W_axis·ε̇_α² = W_·ε̇²`, exactly
-    // the legacy scalar form.
-    const double quarter_dt = 0.5 * half_dt;
-    const double eighth_dt = 0.5 * quarter_dt;
-    const int M = mpchain_;
-    const double W_axis = W_ / 3.0;
-
-    // Summed barostat kinetic-energy term `2·KE_baro` over active axes.
-    auto baro_2ke = [&]() -> double {
-        double s = 0.0;
-        for (int a = 0; a < 3; ++a)
-            if (couple_axis_[a])
-                s += W_axis * eps_dot_[a] * eps_dot_[a];
-        return s;
-    };
-
-    auto G_b = [&](int k) -> double {
-        if (k == 0)
-            return (baro_2ke() - kT_) / Q_b_[0];
-        return (Q_b_[static_cast<std::size_t>(k - 1)]
-                    * eta_b_dot_[static_cast<std::size_t>(k - 1)]
-                    * eta_b_dot_[static_cast<std::size_t>(k - 1)]
-                - kT_)
-               / Q_b_[static_cast<std::size_t>(k)];
-    };
-
-    // Backward pass with per-link drag.
-    for (int k = M - 1; k >= 0; --k) {
-        const double expfac =
-            (k < M - 1) ? std::exp(-eta_b_dot_[static_cast<std::size_t>(k + 1)]
-                                   * eighth_dt)
-                        : 1.0;
-        eta_b_dot_[static_cast<std::size_t>(k)] *= expfac;
-        eta_b_dot_[static_cast<std::size_t>(k)] += G_b(k) * quarter_dt;
-        eta_b_dot_[static_cast<std::size_t>(k)] *= pdrag_factor_;
-        eta_b_dot_[static_cast<std::size_t>(k)] *= expfac;
-    }
-
-    // Scale each active box-length momentum by the innermost
-    // baro-thermostat (LAMMPS `factor_etap` over the active `omega_dot`).
-    const double baro_scale = std::exp(-eta_b_dot_[0] * half_dt);
-    for (int a = 0; a < 3; ++a)
-        if (couple_axis_[a])
-            eps_dot_[a] *= baro_scale;
-
-    for (int k = 0; k < M; ++k)
-        eta_b_[static_cast<std::size_t>(k)] +=
-            eta_b_dot_[static_cast<std::size_t>(k)] * half_dt;
-
-    // Forward pass, no drag.
-    for (int k = 0; k < M; ++k) {
-        const double expfac =
-            (k < M - 1) ? std::exp(-eta_b_dot_[static_cast<std::size_t>(k + 1)]
-                                   * eighth_dt)
-                        : 1.0;
-        eta_b_dot_[static_cast<std::size_t>(k)] *= expfac;
-        eta_b_dot_[static_cast<std::size_t>(k)] += G_b(k) * quarter_dt;
-        eta_b_dot_[static_cast<std::size_t>(k)] *= expfac;
-    }
+    double kinetic = 0;
+    for (int axis = 0; axis < 3; ++axis)
+        if (couple_axis_[axis])
+            kinetic += (W_ / 3.0) * eps_dot_[axis] * eps_dot_[axis];
+    kinetic *= 0.5;
+    const double scale = ATV::md::nhc_half_step(
+        eta_b_.data(), eta_b_dot_.data(), Q_b_.data(), mpchain_, kinetic, kT_,
+        kT_, half_dt, pdrag_factor_);
+    for (int axis = 0; axis < 3; ++axis)
+        if (couple_axis_[axis])
+            eps_dot_[axis] *= scale;
 }
 
 /// @see LAMMPS `FixNH::nh_omega_dot()` + `FixNH::couple()` (`src/fix_nh.cpp`).
@@ -543,7 +421,7 @@ void NoseHooverNPT::update_eps_dot(const cpu::LaunchContext& ctx,
     for (int a = 0; a < 3; ++a)
         if (couple_axis_[a])
             mtk_active_ke += ke_axis[a];
-    const int N_atoms = (n_dof_ + 3) / 3;
+    const BigInt N_atoms = n_atoms_global_;
     const double mtk_term =
         (pdim_ > 0)
             ? 6.0 * mtk_active_ke / (static_cast<double>(pdim_) * N_atoms)
@@ -599,7 +477,7 @@ void NoseHooverNPT::scale_v_by_baro(const cpu::LaunchContext& ctx,
     for (int a = 0; a < 3; ++a)
         if (couple_axis_[a])
             sum_eps_dot += eps_dot_[a];
-    const int N_atoms = (n_dof_ + 3) / 3;
+    const BigInt N_atoms = n_atoms_global_;
     const double mtk_term2 =
         (pdim_ > 0) ? sum_eps_dot / (static_cast<double>(pdim_) * N_atoms)
                     : 0.0;

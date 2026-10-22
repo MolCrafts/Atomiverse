@@ -1,10 +1,14 @@
 /// @file cuda/longrange/ewald.cuh
 /// @brief Reciprocal-space Ewald summation (LAMMPS `kspace_style ewald`) — CUDA.
 ///
-/// GPU mirror of `cpu::KSpaceEwald`. Adds the long-range reciprocal sum,
-/// the self-energy, on top of the real-space `cuda::CoulLong`. Single-GPU in
-/// this revision (the structure-factor sum is over `frame.n_local()` atoms;
-/// a cross-GPU `S(k)` reduction is a multi-GPU follow-up — NCCL is available).
+/// GPU mirror of `cpu::KSpaceEwald`. Adds the long-range reciprocal sum, the
+/// self-energy and the neutralizing background of a charged cell on top of
+/// the real-space `cuda::CoulLong`. Single-GPU (the structure-factor sum is
+/// over `frame.n_local()` atoms). The integer mode set is chosen at build;
+/// wave vectors, weights, volume and the six-component reciprocal virial
+/// follow the published device cell (`Box::revision`), so deform and
+/// barostats run without a rebuild. The cutoff sphere is not re-chosen when
+/// the cell changes.
 ///
 /// Cross-driver component: bind explicitly to the force phase. Shares the
 /// splitting parameter α with `cuda::CoulLong`.
@@ -33,6 +37,10 @@ class KSpaceEwald : public KSpace {
                 AccReal(accuracy_)};
     }
 
+    /// @brief Record whether a consumer reads stress (enables the virial).
+    /// @param required True iff a downstream consumer reads stress.
+    void set_stress_required(bool required) override { stress_ = required; }
+
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
@@ -42,8 +50,14 @@ class KSpaceEwald : public KSpace {
   private:
     double alpha_;
     double accuracy_;
+    bool stress_ = true;
+    /// Background energy times volume, k_e π Q² / (2α²) [eV·Å³].
+    double background_coef_ = 0;
 
-    int ng_ = 0; ///< Number of reciprocal vectors.
+    int ng_ = 0;                 ///< Number of reciprocal vectors.
+    int* d_modes_ = nullptr;     ///< Integer modes (m0, m1, m2) per vector.
+    void* d_tables_ = nullptr;   ///< Cell revision of the k tables.
+    double* d_virial_ = nullptr; ///< 6 × ng strain coefficients.
     // Device reciprocal vectors + kernel weight, and structure-factor scratch.
     double* d_kx_ = nullptr;
     double* d_ky_ = nullptr;

@@ -118,3 +118,47 @@ TEST(Berendsen, RampInterpolatesTheSetpointOverTheRunSpan) {
     th.launch({ctx, f, ATV::slot_of(md::Phase::end_of_step), 5});
     EXPECT_NEAR(th.T_target(), 300.0, 1e-12); // halfway
 }
+
+#include "atomiverse/core/dynamics_math.h"
+
+TEST(DynamicsMath, PressureIncludesKineticAndVolumeWithCompressiveSign) {
+    const double virial[6]{6, 12, 18};
+    const double kinetic[6]{3, 6, 9};
+    EXPECT_DOUBLE_EQ(md::isotropic_pressure(virial, kinetic, 6.0), 3.0);
+    EXPECT_DOUBLE_EQ(md::isotropic_pressure(virial, kinetic, 12.0), 1.5);
+}
+
+TEST(DynamicsMath, BarostatUsesBulkModulusAndBoundsVolumeChange) {
+    EXPECT_NEAR(md::berendsen_dilation(3.0, 1.0, 1.0, 10.0, 2.0),
+                std::cbrt(1.1), 1e-14);
+    EXPECT_NEAR(md::berendsen_dilation(1e9, 0.0, 1.0, 1.0, 1.0), std::cbrt(2.0),
+                1e-14);
+    EXPECT_NEAR(md::berendsen_dilation(0.0, 1e9, 1.0, 1.0, 1.0), std::cbrt(0.5),
+                1e-14);
+}
+
+TEST(DynamicsMath, RampUsesFullWidthClockAndClampsAtEndpoints) {
+    const BigInt first = BigInt(1) << 60;
+    EXPECT_DOUBLE_EQ(
+        md::ramp_target(100.0, 300.0, first + 5, first, first + 10), 200.0);
+    EXPECT_DOUBLE_EQ(
+        md::ramp_target(100.0, 300.0, first - 1, first, first + 10), 100.0);
+    EXPECT_DOUBLE_EQ(
+        md::ramp_target(100.0, 300.0, first + 11, first, first + 10), 300.0);
+}
+
+TEST(DynamicsMath, SingleLinkChainMatchesSymmetricThermostatEquations) {
+    double position = 0.2, velocity = 0.3, mass = 2, ke = 4;
+    constexpr double h = 0.1, target = 3;
+    const double middle = velocity + (2 * ke - target) / mass * (h / 2);
+    const double scale = std::exp(-middle * h);
+    const double final_ke = ke * scale * scale;
+    const double final_velocity =
+        middle + (2 * final_ke - target) / mass * (h / 2);
+    EXPECT_DOUBLE_EQ(
+        md::nhc_half_step(&position, &velocity, &mass, 1, ke, target, 1, h, 1),
+        scale);
+    EXPECT_DOUBLE_EQ(position, 0.2 + middle * h);
+    EXPECT_DOUBLE_EQ(ke, final_ke);
+    EXPECT_DOUBLE_EQ(velocity, final_velocity);
+}

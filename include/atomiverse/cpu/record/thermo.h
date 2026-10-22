@@ -43,7 +43,7 @@ class Thermo : public cpu::Recorder {
 /// @param n_dof          Degrees of freedom, used for the temperature.
 /// @param header_printed Guard flag; set to true after the first call.
 /// @param file           Optional open output stream (may be a closed fstream).
-void thermo_print(int step, double pe, double ke, int n_dof,
+void thermo_print(BigInt step, double pe, double ke, int n_dof,
                   bool& header_printed, std::ofstream& file);
 
 } // namespace cpu

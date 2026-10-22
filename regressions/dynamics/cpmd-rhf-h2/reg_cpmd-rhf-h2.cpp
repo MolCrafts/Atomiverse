@@ -107,9 +107,9 @@ int main() {
     sim.enable_timing(false);
     sim.build();
 
-    // ── Step 1: the cold seed — one full converged SCF + BO forces ────────
-    if (sim.run(frame, 1) != 1) {
-        std::printf("FAIL: seed step did not run\n");
+    // ── Setup: the cold seed — one full converged SCF + BO forces ────────
+    if (sim.run(frame, 0) != 0) {
+        std::printf("FAIL: force initialization advanced the nuclei\n");
         return 1;
     }
     if (!(rhf.iterations() > 0)) {

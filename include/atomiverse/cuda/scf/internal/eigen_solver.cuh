@@ -47,7 +47,7 @@ class EigenSolver {
 
   private:
     void* cusolver_handle_ = nullptr; ///< cuSOLVER handle.
-    double* d_work_ = nullptr;        ///< cuSOLVER workspace [device].
+    prec_t* d_work_ = nullptr;        ///< cuSOLVER workspace [device].
     int work_size_ = 0;               ///< Workspace size in elements.
     int* d_info_ = nullptr; ///< cuSOLVER convergence info [device, 1 element].
 };

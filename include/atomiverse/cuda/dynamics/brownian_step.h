@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cmath>
-#include <cstdint>
 
 #include "atomiverse/core/units.h"
 
@@ -40,33 +39,6 @@ __host__ __device__ __forceinline__ T bd_sqrt(T x) {
 }
 
 template <typename T>
-__host__ __device__ __forceinline__ T bd_log(T x) {
-#if defined(__CUDA_ARCH__)
-    return log(x);
-#else
-    return std::log(x);
-#endif
-}
-
-template <typename T>
-__host__ __device__ __forceinline__ T bd_cos(T x) {
-#if defined(__CUDA_ARCH__)
-    return cos(x);
-#else
-    return std::cos(x);
-#endif
-}
-
-template <typename T>
-__host__ __device__ __forceinline__ T bd_sin(T x) {
-#if defined(__CUDA_ARCH__)
-    return sin(x);
-#else
-    return std::sin(x);
-#endif
-}
-
-template <typename T>
 __host__ __device__ __forceinline__ T bd_floor(T x) {
 #if defined(__CUDA_ARCH__)
     return floor(x);
@@ -82,29 +54,6 @@ __host__ __device__ __forceinline__ bool bd_finite(T v) {
 #else
     return std::isfinite(static_cast<double>(v));
 #endif
-}
-
-/// @brief splitmix64. Same mixer as `cuda::md::FixLangevin`.
-__host__ __device__ __forceinline__ std::uint64_t splitmix64(std::uint64_t x) {
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
-}
-
-/// @brief Map a hash into (0, 1]. Never zero, so `log` in Box–Muller is safe.
-template <typename T>
-__host__ __device__ __forceinline__ T u01(std::uint64_t h) {
-    const std::uint64_t mant = (h >> 11) | std::uint64_t(1);
-    return T(mant) * (T(1) / T(9007199254740992.0)); // 2^53
-}
-
-template <typename T>
-__host__ __device__ __forceinline__ void box_muller(T u1, T u2, T& z1, T& z2) {
-    const T r = bd_sqrt(T(-2) * bd_log(u1));
-    const T theta = T(6.28318530717958647692) * u2;
-    z1 = r * bd_cos(theta);
-    z2 = r * bd_sin(theta);
 }
 
 } // namespace detail
@@ -178,33 +127,6 @@ __host__ __device__ __forceinline__ T brownian_wrap(T q, T L) {
 __host__ __device__ __forceinline__ bool brownian_should_wrap(bool ortho,
                                                               double length_x) {
     return ortho && length_x > 0.0 && length_x < 1.0e5;
-}
-
-/// @brief Three standard normals keyed by `(seed, step, tag)`.
-///        Counter-based, so the device kernel has no RNG state.
-/// @param seed User seed.
-/// @param step MD step index.
-/// @param tag Global atom tag (or a stand-in index).
-/// @param gx Standard normal, x.
-/// @param gy Standard normal, y.
-/// @param gz Standard normal, z.
-template <typename T>
-__host__ __device__ __forceinline__ void
-brownian_gaussians(std::uint64_t seed, std::uint64_t step, std::uint64_t tag,
-                   T& gx, T& gy, T& gz) {
-    const std::uint64_t base =
-        seed * 0x9E3779B97F4A7C15ULL + step * 0xBF58476D1CE4E5B9ULL;
-    const std::uint64_t key = base + tag * 0xD6E8FEB86659FD93ULL;
-    const std::uint64_t h1 = detail::splitmix64(key);
-    const std::uint64_t h2 = detail::splitmix64(h1);
-    const std::uint64_t h3 = detail::splitmix64(h2);
-    const std::uint64_t h4 = detail::splitmix64(h3);
-    T z1, z2, z3, z_unused;
-    detail::box_muller(detail::u01<T>(h1), detail::u01<T>(h2), z1, z2);
-    detail::box_muller(detail::u01<T>(h3), detail::u01<T>(h4), z3, z_unused);
-    gx = z1;
-    gy = z2;
-    gz = z3;
 }
 
 } // namespace md

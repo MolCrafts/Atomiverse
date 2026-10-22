@@ -1,3 +1,4 @@
+#include "atomiverse/core/dynamics_math.h"
 /// @file cpu/dynamics/nose_hoover.cpp
 /// @brief CPU Nose-Hoover thermostat implementation (LAMMPS `fix nvt`).
 
@@ -92,13 +93,7 @@ void NoseHoover::set_T_target(double T_target, bool reset_chain) {
 /// `T_stop_ == T_start_`, the result is the constant `T_start_` — the
 /// no-ramp default.
 double NoseHoover::compute_temp_target(std::int64_t step) const {
-    double delta = 0.0;
-    if (nlast_ > nfirst_) {
-        delta = static_cast<double>(step - nfirst_)
-                / static_cast<double>(nlast_ - nfirst_);
-        delta = std::clamp(delta, 0.0, 1.0);
-    }
-    return T_start_ + delta * (T_stop_ - T_start_);
+    return ATV::md::ramp_target(T_start_, T_stop_, step, nfirst_, nlast_);
 }
 
 void NoseHoover::launch(const cpu::LaunchContext& ctx) {

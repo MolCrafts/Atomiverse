@@ -112,10 +112,13 @@ class MD : public Driver<ATV::md::Phase> {
     /// @param n_steps Step budget.
     /// @return Number of iterations actually executed (may be below the
     ///         budget when a user criterion stops the loop).
-    int run(cpu::Frame& frame, int n_steps) {
+    BigInt run(cpu::Frame& frame, BigInt n_steps) {
+        if (n_steps < 0)
+            throw std::invalid_argument("MD step budget must be nonnegative");
         this->begin_run_(frame);
-        int iterations = 0;
-        for (int s = 0; s < n_steps; ++s) {
+        this->backend_->prepare_run(this->step_counter_);
+        BigInt iterations = 0;
+        for (BigInt s = 0; s < n_steps; ++s) {
             this->mutable_outer_status().reset();
             // Flag the final step so cadence-gated end-of-step collectives
             // (mpi::Reduce under set_scalar_reduce_every > 1) always publish
@@ -155,9 +158,9 @@ class MD : public Driver<ATV::md::Phase> {
     /// @param n_steps Step budget.
     /// @return Number of iterations actually executed.
 #ifdef ATV_HAS_MOLRS
-    int run(molrs::FrameRef& frame, int n_steps) {
+    BigInt run(molrs::FrameRef& frame, BigInt n_steps) {
         cpu::Frame work = cpu::from_molrs(frame);
-        const int iterations = run(work, n_steps);
+        const BigInt iterations = run(work, n_steps);
         cpu::to_molrs(work, frame);
         this->flush_live_();
         return iterations;
@@ -380,7 +383,7 @@ class MD : public Driver<ATV::md::Phase> {
         if (!this->pending_named_("reduce"))
             this->bind_defaults(mpi::Reduce{scalar_reduce_every_});
 
-        if (s.needs_stress) {
+        if (s.needs_stress || s.has_virial_stress) {
             if (!this->pending_named_("zero_stress"))
                 this->on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
             if (!s.has_virial_stress)

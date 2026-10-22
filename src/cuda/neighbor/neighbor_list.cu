@@ -23,6 +23,7 @@
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cuda_runtime.h>
+#include <nvtx3/nvToolsExt.h>
 
 using namespace ATV::cuda::md::nlist;
 
@@ -40,9 +41,9 @@ std::atomic<std::uint64_t> next_rebuild_generation{1};
 // ============================================================================
 
 struct NeighborList::State {
-    NListBuffers<real_t> buf;
+    NListBuffers<force_t> buf;
 
-    DeviceVector<real_t> d_inv_cell{9};
+    DeviceVector<force_t> d_inv_cell{9}; // narrowed from the FP64 cell
     DeviceVector<int> d_pair_count{1};
 
     int num_atoms = 0;
@@ -53,11 +54,11 @@ struct NeighborList::State {
     bool flat_export = false;
     bool periodic = true;
 
-    // Cached scalars (computed once in build())
-    work_t cut_skin_sq = work_t(0);
-    work_t cutoff_sq = work_t(0);
-    work_t half_skin_sq =
-        work_t(0); // (skin/2)² — Verlet-skin trigger threshold
+    // Cached force-path scalars (computed once in build())
+    force_t cut_skin_sq = force_t(0);
+    force_t cutoff_sq = force_t(0);
+    force_t half_skin_sq =
+        force_t(0); // (skin/2)² — Verlet-skin trigger threshold
 
     // Skin-gate state
     bool first_launch = true;
@@ -69,7 +70,7 @@ struct NeighborList::State {
     // entry before the host reads it after the event. Allocated only in build.
     int* h_rebuild_flag = nullptr;
     int* mapped_rebuild_flags = nullptr;
-    Box reference_box{};
+    DeviceVector<Box> reference_box{1};
     int* h_flat_pair_count = nullptr;
     int* h_cluster_pair_count = nullptr;
     cudaEvent_t rebuild_flag_event = nullptr;
@@ -98,12 +99,12 @@ void NeighborList::build(const BuildContext& ctx) {
     s.max_atoms = n; // all buffers below are sized for this atom count
     s.periodic = true;
 
-    work_t r_search = cutoff_ + skin_;
+    force_t r_search = force_t(cutoff_ + skin_);
 
     // Cache squared cutoffs so launch() doesn't recompute every step.
     s.cut_skin_sq = r_search * r_search;
-    s.cutoff_sq = work_t(cutoff_) * work_t(cutoff_);
-    work_t half_skin = work_t(skin_) * work_t(0.5);
+    s.cutoff_sq = force_t(cutoff_) * force_t(cutoff_);
+    force_t half_skin = force_t(skin_) * force_t(0.5);
     s.half_skin_sq = half_skin * half_skin;
 
     // Hilbert keys need the inverse cell; the hierarchy needs no cell grid,
@@ -168,7 +169,7 @@ void NeighborList::build(const BuildContext& ctx) {
     // estimate predicts. Reserve twice this exact count during build, while
     // keeping every subsequent rebuild allocation-free and overflow-checked.
     if (cluster_pair_capacity_ == 0 && initial_clusters > 0) {
-        launch_compute_spatial_keys<work_t>(
+        launch_compute_spatial_keys<force_t>(
             frame.atoms.x, frame.atoms.y, frame.atoms.z, initial_atoms,
             s.d_inv_cell.data(), s.periodic, s.buf.spatial_keys.data(),
             s.buf.atom_indices.data(), stream);
@@ -176,7 +177,7 @@ void NeighborList::build(const BuildContext& ctx) {
             s.buf.spatial_keys.data(), s.buf.spatial_sorted.data(),
             s.buf.atom_indices.data(), s.buf.indices_sorted.data(),
             initial_atoms, s.buf.sort_temp, stream);
-        launch_scatter_and_aabb<work_t>(
+        launch_scatter_and_aabb<force_t>(
             s.buf.indices_sorted.data(), frame.atoms.x, frame.atoms.y,
             frame.atoms.z, initial_atoms, initial_clusters,
             s.buf.cluster_x.data(), s.buf.cluster_y.data(),
@@ -190,10 +191,10 @@ void NeighborList::build(const BuildContext& ctx) {
                              s.buf.aabb_max_y.data(), s.buf.aabb_max_z.data()};
         launch_large_cluster_bounds(bounds, initial_clusters,
                                     s.buf.large_bounds.data(), stream);
-        launch_count_cluster_pairs<work_t>(bounds, s.buf.large_bounds.data(),
-                                           initial_clusters, s.periodic,
-                                           s.cut_skin_sq, ctx.runtime.host_box,
-                                           s.buf.pair_counts.data(), stream);
+        launch_count_cluster_pairs<force_t>(bounds, s.buf.large_bounds.data(),
+                                            initial_clusters, s.periodic,
+                                            s.cut_skin_sq, ctx.runtime.host_box,
+                                            s.buf.pair_counts.data(), stream);
         launch_exclusive_sum(s.buf.pair_counts.data(), s.buf.row_ptr.data(),
                              initial_clusters, s.buf.prefix_temp, stream);
         launch_write_row_ptr_sentinel(s.buf.row_ptr.data(),
@@ -249,10 +250,10 @@ void NeighborList::build(const BuildContext& ctx) {
     if (ctx.runtime.md.flat_pairs_requested) {
         cudaMalloc(&pairs_.i, atom_pair_cap * sizeof(int));
         cudaMalloc(&pairs_.j, atom_pair_cap * sizeof(int));
-        cudaMalloc(&pairs_.dx, atom_pair_cap * sizeof(real_t));
-        cudaMalloc(&pairs_.dy, atom_pair_cap * sizeof(real_t));
-        cudaMalloc(&pairs_.dz, atom_pair_cap * sizeof(real_t));
-        cudaMalloc(&pairs_.dist_sq, atom_pair_cap * sizeof(real_t));
+        cudaMalloc(&pairs_.dx, atom_pair_cap * sizeof(force_t));
+        cudaMalloc(&pairs_.dy, atom_pair_cap * sizeof(force_t));
+        cudaMalloc(&pairs_.dz, atom_pair_cap * sizeof(force_t));
+        cudaMalloc(&pairs_.dist_sq, atom_pair_cap * sizeof(force_t));
     }
     cudaMalloc(&pairs_.n_pairs, sizeof(int));
     cudaMemset(pairs_.n_pairs, 0, sizeof(int));
@@ -345,16 +346,16 @@ void NeighborList::launch(const LaunchContext& ctx) {
     // displacement avoids rebuilding merely because an atom crossed a face.
     bool rebuild_needed = s.first_launch;
     s.first_launch = false;
-    for (int d = 0; d < 9; ++d)
-        rebuild_needed |=
-            s.reference_box.cell[d] != ctx.runtime.host_box.cell[d];
     if (!rebuild_needed && !rebuild_on_request_ && n > 0) {
-        launch_atom_displacement_max<work_t>(
+        launch_atom_displacement_max<force_t>(
             frame.atoms.x, frame.atoms.y, frame.atoms.z, s.buf.ref_x.data(),
             s.buf.ref_y.data(), s.buf.ref_z.data(), n, s.half_skin_sq,
-            ctx.runtime.host_box, s.mapped_rebuild_flags, stream);
+            ctx.runtime.host_box, s.mapped_rebuild_flags, stream,
+            s.reference_box.data());
         ATV_CUDA_CHECK(cudaEventRecord(s.rebuild_flag_event, stream));
+        nvtxRangePushA("atv.wait.skin");
         ATV_CUDA_CHECK(cudaEventSynchronize(s.rebuild_flag_event));
+        nvtxRangePop();
         const int blocks = (n + 255) / 256;
         for (int block = 0; block < blocks; ++block)
             rebuild_needed |= s.h_rebuild_flag[block] != 0;
@@ -362,7 +363,14 @@ void NeighborList::launch(const LaunchContext& ctx) {
 
     if (rebuild_needed) {
         s.rebuild_count++;
-        s.reference_box = ctx.runtime.host_box;
+        ATV_CUDA_CHECK(cudaMemcpyAsync(
+            s.reference_box.data(),
+            ctx.runtime.host_box.resident ? ctx.runtime.host_box.resident
+                                          : &ctx.runtime.host_box,
+            sizeof(Box),
+            ctx.runtime.host_box.resident ? cudaMemcpyDeviceToDevice
+                                          : cudaMemcpyHostToDevice,
+            stream));
 
         launch_update_inverse_cell(frame.box, s.d_inv_cell.data(), stream);
         pairs_.cl_row_ptr = s.buf.row_ptr.data();
@@ -374,7 +382,7 @@ void NeighborList::launch(const LaunchContext& ctx) {
         pairs_.cl_z = s.buf.cluster_z.data();
         pairs_.num_clusters = nc;
 
-        launch_compute_spatial_keys<work_t>(
+        launch_compute_spatial_keys<force_t>(
             frame.atoms.x, frame.atoms.y, frame.atoms.z, n, s.d_inv_cell.data(),
             s.periodic, s.buf.spatial_keys.data(), s.buf.atom_indices.data(),
             stream);
@@ -382,7 +390,7 @@ void NeighborList::launch(const LaunchContext& ctx) {
             s.buf.spatial_keys.data(), s.buf.spatial_sorted.data(),
             s.buf.atom_indices.data(), s.buf.indices_sorted.data(), n,
             s.buf.sort_temp, stream);
-        launch_scatter_and_aabb<work_t>(
+        launch_scatter_and_aabb<force_t>(
             s.buf.indices_sorted.data(), frame.atoms.x, frame.atoms.y,
             frame.atoms.z, n, nc, s.buf.cluster_x.data(),
             s.buf.cluster_y.data(), s.buf.cluster_z.data(),
@@ -395,7 +403,7 @@ void NeighborList::launch(const LaunchContext& ctx) {
                              s.buf.aabb_max_y.data(), s.buf.aabb_max_z.data()};
         launch_large_cluster_bounds(bounds, nc, s.buf.large_bounds.data(),
                                     stream);
-        launch_count_cluster_pairs<work_t>(
+        launch_count_cluster_pairs<force_t>(
             bounds, s.buf.large_bounds.data(), nc, s.periodic, s.cut_skin_sq,
             ctx.runtime.host_box, s.buf.pair_counts.data(), stream);
         launch_exclusive_sum(s.buf.pair_counts.data(), s.buf.row_ptr.data(), nc,
@@ -405,7 +413,9 @@ void NeighborList::launch(const LaunchContext& ctx) {
         ATV_CUDA_CHECK(cudaMemcpyAsync(s.h_cluster_pair_count,
                                        s.buf.row_ptr.data() + nc, sizeof(int),
                                        cudaMemcpyDeviceToHost, stream));
+        nvtxRangePushA("atv.wait.csr_count");
         ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+        nvtxRangePop();
         const int total_cluster_pairs = *s.h_cluster_pair_count;
         pairs_.num_cluster_pairs = total_cluster_pairs;
         if (total_cluster_pairs > s.pair_capacity) {
@@ -416,11 +426,11 @@ void NeighborList::launch(const LaunchContext& ctx) {
                 + std::to_string(total_cluster_pairs)
                 + ") or a larger reserve");
         }
-        launch_fill_cluster_pairs<work_t>(
+        launch_fill_cluster_pairs<force_t>(
             bounds, s.buf.large_bounds.data(), nc, s.periodic, s.cut_skin_sq,
             ctx.runtime.host_box, s.buf.row_ptr.data(), s.buf.col_idx.data(),
             stream);
-        launch_compute_csr_masks<work_t>(
+        launch_compute_csr_masks<force_t>(
             s.buf.cluster_x.data(), s.buf.cluster_y.data(),
             s.buf.cluster_z.data(), s.buf.row_ptr.data(), s.buf.col_idx.data(),
             nc, total_cluster_pairs, s.cut_skin_sq, ctx.runtime.host_box,
@@ -463,7 +473,7 @@ void NeighborList::launch(const LaunchContext& ctx) {
                                    ? s.last_flat_pair_count
                                    : total_pairs_h;
         if (prune_grid_pairs > 0) {
-            launch_smart_rolling_prune<work_t>(
+            launch_smart_rolling_prune<force_t>(
                 s.buf.cluster_x.data(), s.buf.cluster_y.data(),
                 s.buf.cluster_z.data(), s.buf.flat_ci.data(),
                 s.buf.flat_cj.data(), s.buf.flat_pair_counter.data(),
@@ -514,7 +524,14 @@ void NeighborList::rebuild_issue(const LaunchContext& ctx) {
     int nc = s.num_clusters;
     pairs_.num_clusters = nc;
     s.rebuild_count++;
-    s.reference_box = ctx.runtime.host_box;
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        s.reference_box.data(),
+        ctx.runtime.host_box.resident ? ctx.runtime.host_box.resident
+                                      : &ctx.runtime.host_box,
+        sizeof(Box),
+        ctx.runtime.host_box.resident ? cudaMemcpyDeviceToDevice
+                                      : cudaMemcpyHostToDevice,
+        stream));
 
     launch_update_inverse_cell(frame.box, s.d_inv_cell.data(), stream);
     pairs_.cl_row_ptr = s.buf.row_ptr.data();
@@ -525,14 +542,14 @@ void NeighborList::rebuild_issue(const LaunchContext& ctx) {
     pairs_.cl_y = s.buf.cluster_y.data();
     pairs_.cl_z = s.buf.cluster_z.data();
 
-    launch_compute_spatial_keys<work_t>(frame.atoms.x, frame.atoms.y,
-                                        frame.atoms.z, n, s.d_inv_cell.data(),
-                                        s.periodic, s.buf.spatial_keys.data(),
-                                        s.buf.atom_indices.data(), stream);
+    launch_compute_spatial_keys<force_t>(frame.atoms.x, frame.atoms.y,
+                                         frame.atoms.z, n, s.d_inv_cell.data(),
+                                         s.periodic, s.buf.spatial_keys.data(),
+                                         s.buf.atom_indices.data(), stream);
     launch_radix_sort(s.buf.spatial_keys.data(), s.buf.spatial_sorted.data(),
                       s.buf.atom_indices.data(), s.buf.indices_sorted.data(), n,
                       s.buf.sort_temp, stream);
-    launch_scatter_and_aabb<work_t>(
+    launch_scatter_and_aabb<force_t>(
         s.buf.indices_sorted.data(), frame.atoms.x, frame.atoms.y,
         frame.atoms.z, n, nc, s.buf.cluster_x.data(), s.buf.cluster_y.data(),
         s.buf.cluster_z.data(), s.buf.original_index.data(),
@@ -544,7 +561,7 @@ void NeighborList::rebuild_issue(const LaunchContext& ctx) {
                          s.buf.aabb_min_z.data(), s.buf.aabb_max_x.data(),
                          s.buf.aabb_max_y.data(), s.buf.aabb_max_z.data()};
     launch_large_cluster_bounds(bounds, nc, s.buf.large_bounds.data(), stream);
-    launch_count_cluster_pairs<work_t>(
+    launch_count_cluster_pairs<force_t>(
         bounds, s.buf.large_bounds.data(), nc, s.periodic, s.cut_skin_sq,
         ctx.runtime.host_box, s.buf.pair_counts.data(), stream);
     launch_exclusive_sum(s.buf.pair_counts.data(), s.buf.row_ptr.data(), nc,
@@ -564,11 +581,11 @@ void NeighborList::rebuild_issue(const LaunchContext& ctx) {
             + " is too small; construct NeighborList(cutoff, skin, "
             + std::to_string(total_cluster_pairs) + ") or a larger reserve");
     }
-    launch_fill_cluster_pairs<work_t>(
+    launch_fill_cluster_pairs<force_t>(
         bounds, s.buf.large_bounds.data(), nc, s.periodic, s.cut_skin_sq,
         ctx.runtime.host_box, s.buf.row_ptr.data(), s.buf.col_idx.data(),
         stream);
-    launch_compute_csr_masks<work_t>(
+    launch_compute_csr_masks<force_t>(
         s.buf.cluster_x.data(), s.buf.cluster_y.data(), s.buf.cluster_z.data(),
         s.buf.row_ptr.data(), s.buf.col_idx.data(), nc, total_cluster_pairs,
         s.cut_skin_sq, ctx.runtime.host_box, s.buf.interaction_mask.data(),

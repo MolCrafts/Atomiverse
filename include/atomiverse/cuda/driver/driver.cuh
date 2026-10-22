@@ -194,56 +194,15 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// @throws std::runtime_error if none / several match, if called during
     ///         launch, or if the remaining set fails `validate_components`.
     void unfix(std::string_view name_or_id) {
-        if (launching_) {
-            throw std::runtime_error(
-                "unfix: cannot unfix from inside launch(). Unfix between "
-                "steps or run() chunks.");
-        }
-        std::vector<std::size_t> hits;
-        for (std::size_t i = 0; i < this->pending_.size(); ++i) {
-            cuda::Component* c = this->pending_[i].component;
-            if (c && c->name() == name_or_id)
-                hits.push_back(i);
-        }
-        if (hits.empty()) {
-            std::string have;
-            for (const auto& pb : this->pending_) {
-                if (!pb.component)
-                    continue;
-                if (!have.empty())
-                    have += ", ";
-                have += pb.component->name();
+        this->unmount_(name_or_id, launching_, [&](cuda::Component* c) {
+            if (this->backend_ && built_plugins_.count(c)) {
+                Plan<cuda::Component> one;
+                one.slots.resize(1);
+                one.slots[0].ops.push_back({c});
+                this->backend_->destroy_plan(one);
+                built_plugins_.erase(c);
             }
-            throw std::runtime_error(
-                "unfix: no plugin named '" + std::string(name_or_id)
-                + "'. mounted: [" + have
-                + "]. Remount with on(phase).add / set_evaluator.");
-        }
-        if (hits.size() > 1) {
-            throw std::runtime_error(
-                "unfix: name '" + std::string(name_or_id)
-                + "' is not unique. Give plugins distinct name() values.");
-        }
-        cuda::Component* c = this->pending_[hits[0]].component;
-        if (this->backend_ && built_plugins_.count(c)) {
-            Plan<cuda::Component> one;
-            one.slots.resize(1);
-            one.slots[0].phase = 0;
-            Operation<cuda::Component> op;
-            op.component = c;
-            one.slots[0].ops.push_back(op);
-            this->backend_->destroy_plan(one);
-            built_plugins_.erase(c);
-        }
-        this->pending_.erase(this->pending_.begin()
-                             + static_cast<std::ptrdiff_t>(hits[0]));
-        this->owned_components_.erase(
-            std::remove_if(this->owned_components_.begin(),
-                           this->owned_components_.end(),
-                           [c](const std::unique_ptr<cuda::Component>& p) {
-                               return p.get() == c;
-                           }),
-            this->owned_components_.end());
+        });
         clear_singular_on_unfix_(name_or_id);
         if (neighbor_set_ && *neighbor_set_ == name_or_id)
             neighbor_set_.reset();
@@ -370,7 +329,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
 
     /// @brief Single iteration through the compiled Plan.
     /// @param iter_index Zero-based iteration index passed to components.
-    void step_once(int iter_index) {
+    void step_once(BigInt iter_index) {
         struct Guard {
             bool& flag;
             explicit Guard(bool& f) : flag(f) { flag = true; }
@@ -404,7 +363,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     ///
     /// @param iteration Index of the iteration just completed.
     /// @return The reduced verdict.
-    Verdict poll_handlers_(int iteration) {
+    Verdict poll_handlers_(BigInt iteration) {
         return poll_handlers_(iteration, this->backend_->frame(),
                               this->backend_->context());
     }
@@ -412,7 +371,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// @brief Same composition as `poll_handlers_(int)`, on a borrowed
     ///        frame and context. Nested SCF uses the parent's device frame
     ///        instead of `this->backend_`.
-    Verdict poll_handlers_(int iteration, const cuda::Frame& frame,
+    Verdict poll_handlers_(BigInt iteration, const cuda::Frame& frame,
                            const cuda::Context& ctx) {
         const cuda::LoopState st{iteration, frame, ctx, metrics_};
         Verdict v = status_.stop_requested ? Verdict::Stop : Verdict::Continue;
@@ -649,6 +608,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
             builder.add(e);
         }
         this->plan_ = builder.build(ATV::slot_count<PhaseEnum>());
+        this->plan_.kind = kind_of(PhaseEnum{});
         if (this->backend_)
             this->backend_->load(this->plan());
         validate_long_range_contract_();

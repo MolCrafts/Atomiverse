@@ -28,11 +28,13 @@ class Barostat : public cuda::Barostat {
     /// @param P_target Target pressure [eV/Angstrom^3].
     /// @param tau_p    Pressure coupling time [fs].
     /// @param dt       Time step [fs].
-    Barostat(double P_target, double tau_p, double dt);
+    Barostat(double P_target, double tau_p, double dt,
+             double bulk_modulus = 1.0);
     ~Barostat() override;
     Barostat(Barostat&&) noexcept;
     Barostat& operator=(Barostat&&) noexcept;
 
+    bool changes_box(int) const override { return true; }
     std::string name() const override { return "barostat"; }
     Role role() const override { return 0; }
     bool requires_system_stress() const override { return true; }
@@ -53,7 +55,7 @@ class Barostat : public cuda::Barostat {
     void destroy(const DestroyContext& ctx) override;
 
   private:
-    double P_target_, tau_p_, dt_;
+    double P_target_, tau_p_, dt_, bulk_modulus_;
     struct State;
     std::unique_ptr<State> state_;
 };

@@ -46,13 +46,16 @@ openmm_mask_jbits(const std::uint64_t* mask, int pair_idx, int i_slot) {
 /// `build()`, populated in `launch()`, freed in `destroy()` -- and published
 /// to consumers as a non-owning `const PairList*` on `cuda::Context`,
 /// mirroring `cpu::md::NeighborList` / `cpu::Context::pair_list`.
+///
+/// Exported geometry (displacements, r²) is force-path `force_t`; the
+/// cluster coordinate copies keep the stored coordinate type `pos_t`.
 struct PairList {
-    int* i = nullptr;     ///< First atom index [device].
-    int* j = nullptr;     ///< Second atom index [device].
-    real_t* dx = nullptr; ///< x-displacement (j - i) [Angstrom, device].
-    real_t* dy = nullptr; ///< y-displacement (j - i) [Angstrom, device].
-    real_t* dz = nullptr; ///< z-displacement (j - i) [Angstrom, device].
-    real_t* dist_sq =
+    int* i = nullptr;      ///< First atom index [device].
+    int* j = nullptr;      ///< Second atom index [device].
+    force_t* dx = nullptr; ///< x-displacement (j - i) [Angstrom, device].
+    force_t* dy = nullptr; ///< y-displacement (j - i) [Angstrom, device].
+    force_t* dz = nullptr; ///< z-displacement (j - i) [Angstrom, device].
+    force_t* dist_sq =
         nullptr; ///< Squared pair distance dx²+dy²+dz² [Å², device].
     ///<
     ///< Per cuda-md-review-cleanup-06-launch-config-streams, the
@@ -78,9 +81,9 @@ struct PairList {
     /// Optional Hilbert-sorted cluster SoA positions (Å), length
     /// `num_clusters * kOpenmmClusterSize`. When non-null, force kernels use
     /// these directly and skip a per-step gather from `frame.atoms.x/y/z`.
-    const real_t* cl_x = nullptr;
-    const real_t* cl_y = nullptr;
-    const real_t* cl_z = nullptr;
+    const pos_t* cl_x = nullptr;
+    const pos_t* cl_y = nullptr;
+    const pos_t* cl_z = nullptr;
     int num_clusters = 0;          ///< cluster count (host scalar).
     int num_cluster_pairs = 0;     ///< Directed CSR entries (host scalar).
     int cluster_pair_capacity = 0; ///< Build-time directed CSR reserve.
@@ -149,6 +152,7 @@ class NeighborList : public Component, public NeighborProvider {
     ///
     /// @param ctx Launch context with Runtime and DeviceFrame.
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 
     /// @brief Reset the active atom count to reuse build()-time buffers for a
     ///        different (smaller-or-equal) atom count, forcing a full rebuild
@@ -210,6 +214,11 @@ class NeighborList : public Component, public NeighborProvider {
     /// public contract).
     /// @return Rebuild count over the lifetime of this component.
     int rebuild_count() const noexcept;
+
+    /// @brief Candidate cluster pairs (directed CSR entries) of the latest
+    ///        rebuild, before exact masks (diagnostics).
+    /// @return Entry count [dimensionless].
+    int candidate_tiles() const noexcept { return pairs_.num_cluster_pairs; }
 
   private:
     double cutoff_;                 ///< Interaction cutoff [Angstrom].

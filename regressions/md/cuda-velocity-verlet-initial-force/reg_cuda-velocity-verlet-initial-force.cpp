@@ -98,8 +98,8 @@ int main() try {
     std::printf("CUDA Velocity Verlet: first_error=%.6g continued_error=%.6g "
                 "whole_error=%.6g chunk_error=%.6g\n",
                 first_error, continued_error, whole_error, chunk_error);
-    constexpr double tolerance = (std::is_same_v<ATV::cuda::real_t, float>
-                                  || std::is_same_v<ATV::cuda::work_t, float>)
+    constexpr double tolerance = (std::is_same_v<ATV::cuda::force_t, float>
+                                  || std::is_same_v<ATV::cuda::mixed_t, float>)
                                      ? 3e-6
                                      : 1e-11;
     return std::max({first_error, continued_error, whole_error, chunk_error})

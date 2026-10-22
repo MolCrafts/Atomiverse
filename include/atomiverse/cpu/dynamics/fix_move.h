@@ -43,6 +43,7 @@ class FixMove : public cpu::Component {
     }
 
     void build(const BuildContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext&) override;
 
@@ -52,7 +53,7 @@ class FixMove : public cpu::Component {
   private:
     std::vector<int> atoms_;
     std::vector<double> x0_, y0_, z0_;
-    int step0_ = 0;
+    BigInt step0_ = 0;
     bool origin_set_ = false;
     double last_z_ = 0.0;
 };

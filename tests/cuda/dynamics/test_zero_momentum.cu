@@ -103,8 +103,8 @@ TEST(ZeroMomentum, ZeroesUniformCOMDriftAfterOneStep) {
 
     double p1[3];
     com_momentum(frame, p1);
-    // Per ac-002: |Σ m v_α| < 1e-5 (FP32) / < 1e-10 (FP64). cuda::work_t
-    // defaults to double in this build; 1e-8 (eV·fs/Å) leaves headroom.
+    // Per ac-002: |Σ m v_α| < 1e-5 (FP32) / < 1e-10 (FP64). Velocities are
+    // cuda::mixed_t (FP64 in the default build); 1e-8 (eV·fs/Å) leaves headroom.
     EXPECT_LT(std::fabs(p1[0]), 1e-8);
     EXPECT_LT(std::fabs(p1[1]), 1e-8);
     EXPECT_LT(std::fabs(p1[2]), 1e-8);

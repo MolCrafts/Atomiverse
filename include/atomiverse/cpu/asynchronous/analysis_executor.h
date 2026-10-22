@@ -128,7 +128,7 @@ class AnalysisExecutor {
     /// find the slot filled by the publisher at this end-of-step.
     /// @param idx Slot index.
     /// @param step Simulation step index.
-    void publish(int idx, int step);
+    void publish(int idx, BigInt step);
 
     /// @brief Slot index most recently stamped by `publish()`, or -1 if none.
     /// Consumed by `AsyncComponentBase::launch()` when deciding which slot

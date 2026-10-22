@@ -291,9 +291,9 @@ TEST(DriverNesting, RunStageReplaysNestedDriver) {
     const int after_replay = counter.calls;
     outer.finish();
 
-    EXPECT_EQ(after_step, 1)
-        << "baseline: Runtime::step already dispatches nested driver nodes";
-    EXPECT_EQ(after_replay, 2)
+    EXPECT_EQ(after_step, 2) << "initial force preparation and the first step "
+                                "each dispatch the nested method";
+    EXPECT_EQ(after_replay, 3)
         << "run_stage(force) did not re-enter the nested driver node "
            "(calls stayed at the step value) — Runtime::run_slot_ skips "
            "driver ops, so every line-search trial and every per-replica "

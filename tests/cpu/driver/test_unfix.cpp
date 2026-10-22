@@ -141,3 +141,22 @@ TEST(TestDriverUnfix, UnfixFromLaunchThrows) {
     auto frame = make_trivial_frame();
     EXPECT_THROW(md.run(frame, 1), std::runtime_error);
 }
+
+TEST(TestDriverUnfix, MultipleBindingsOfOneInstanceAreNotAmbiguous) {
+    ATV::cpu::md::MD md;
+    StubIntegrator integ;
+    StubProbeForce force;
+    CountedObs obs;
+    md.on(ATV::md::Phase::initial_integrate).add_ref(integ);
+    md.on(ATV::md::Phase::force).add_ref(force);
+    md.on(ATV::md::Phase::post_force).add_ref(obs);
+    md.on(ATV::md::Phase::end_of_step).add_ref(obs);
+    md.build();
+    auto frame = make_trivial_frame();
+    md.run(frame, 0);
+    EXPECT_EQ(obs.builds, 1);
+    EXPECT_EQ(obs.launches, 0);
+    EXPECT_NO_THROW(md.unfix("counted_obs"));
+    EXPECT_EQ(obs.destroys, 1);
+    EXPECT_FALSE(md.is_mounted(ATV::PluginIdentity{&obs}));
+}

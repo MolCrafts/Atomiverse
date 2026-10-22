@@ -43,6 +43,7 @@
 /// severity.
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/component.h"
 
@@ -51,7 +52,7 @@ namespace cpu {
 
 /// @brief Everything a criterion is allowed to look at.
 struct LoopState {
-    int iteration;           ///< 0-based index of the iteration just completed.
+    BigInt iteration;        ///< 0-based index of the iteration just completed.
     const cpu::Frame& frame; ///< The system state as it now stands.
     const cpu::Context&
         runtime; ///< Execution context (threads, MPI, service slices).

@@ -94,9 +94,9 @@ uhf_nuclear_repulsion_pairs_kernel(double* __restrict__ v_nuc_out,
         if (r2 > 0.0)
             contrib = static_cast<double>(atom_Z[a] * atom_Z[b]) / sqrt(r2);
     }
-    __shared__ double warp_scratch[8];
-    const double block_sum =
-        cuda::block_reduce_sum<double>(contrib, warp_scratch);
+    using Reduce = cub::BlockReduce<double, cuda::kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const double block_sum = Reduce(reduction).Sum(contrib);
     if (threadIdx.x == 0 && block_sum != 0.0)
         atomicAdd(v_nuc_out, block_sum);
 }

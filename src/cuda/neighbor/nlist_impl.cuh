@@ -16,7 +16,11 @@
 namespace ATV::cuda::md::nlist {
 
 /// @brief Manages all device memory and kernel orchestration.
-template <typename work_t>
+///
+/// Coordinate copies (cluster SoA, skin-check reference) keep the stored
+/// coordinate type `pos_t`; bounds and other search scratch use `T`, the
+/// force-path scratch type (`force_t`).
+template <typename T>
 struct NListBuffers {
     // Hilbert sort temporaries
     DeviceVector<uint32_t> spatial_keys;
@@ -26,16 +30,16 @@ struct NListBuffers {
     DeviceVector<char> sort_temp;
 
     // Cluster SoA
-    DeviceVector<work_t> cluster_x, cluster_y, cluster_z;
+    DeviceVector<pos_t> cluster_x, cluster_y, cluster_z;
     DeviceVector<int> original_index;
     DeviceVector<int> cluster_count;
 
     // AABB
-    DeviceVector<work_t> aabb_min_x, aabb_min_y, aabb_min_z;
-    DeviceVector<work_t> aabb_max_x, aabb_max_y, aabb_max_z;
+    DeviceVector<T> aabb_min_x, aabb_min_y, aabb_min_z;
+    DeviceVector<T> aabb_max_x, aabb_max_y, aabb_max_z;
     // Six SoA bounds for groups of 32 consecutive Hilbert clusters. Physical
     // AABBs make candidate rejection conservative for arbitrarily wide tiles.
-    DeviceVector<real_t> large_bounds;
+    DeviceVector<T> large_bounds;
 
     // Grid
     DeviceVector<int> cluster_cell_idx; // [num_clusters] cell assignment
@@ -55,7 +59,7 @@ struct NListBuffers {
     // Reference positions for the Verlet-skin rebuild check
     // (snapshot of frame.atoms.x/y/z taken at the end of every full
     // rebuild; consumed by launch_atom_displacement_max each step).
-    DeviceVector<work_t> ref_x, ref_y, ref_z;
+    DeviceVector<pos_t> ref_x, ref_y, ref_z;
 
     // Stencil (device copy)
     DeviceVector<int> stencil_dx, stencil_dy, stencil_dz;
@@ -181,7 +185,7 @@ struct NListBuffers {
 
     void resize_displacement(int n_clusters) { dirty_flags.resize(n_clusters); }
 
-    ClusterData<work_t> cluster_data(int num_clusters, int num_atoms) {
+    ClusterData<T> cluster_data(int num_clusters, int num_atoms) {
         return {cluster_x.data(),
                 cluster_y.data(),
                 cluster_z.data(),
@@ -197,12 +201,12 @@ struct NListBuffers {
                 num_atoms};
     }
 
-    ClusterPairList<work_t> pair_list(int num_clusters, int num_pairs) {
+    ClusterPairList<T> pair_list(int num_clusters, int num_pairs) {
         return {row_ptr.data(), col_idx.data(), interaction_mask.data(),
                 num_pairs, num_clusters};
     }
 
-    FlatPairList<work_t> flat_pair_list() {
+    FlatPairList<T> flat_pair_list() {
         return {flat_ci.data(), flat_cj.data(), flat_mask.data(),
                 flat_pair_counter.data(), static_cast<int>(flat_ci.size())};
     }
@@ -210,32 +214,25 @@ struct NListBuffers {
 
 // Kernel launch declarations (defined in .cu files)
 // Inverse cell only: the hierarchy does not require a cell grid or stencil.
-void launch_update_inverse_cell(const prec_t* box, real_t* inverse,
+// The inverse is formed in geom_t and narrowed once to force_t.
+void launch_update_inverse_cell(const geom_t* box, force_t* inverse,
                                 cudaStream_t stream = 0);
 
-template <typename work_t>
-void launch_compute_spatial_keys(const real_t* pos_x, const real_t* pos_y,
-                                 const real_t* pos_z, int num_atoms,
-                                 const real_t* inv_cell, bool periodic,
+template <typename T>
+void launch_compute_spatial_keys(const pos_t* pos_x, const pos_t* pos_y,
+                                 const pos_t* pos_z, int num_atoms,
+                                 const force_t* inv_cell, bool periodic,
                                  uint32_t* spatial_keys, int* atom_indices,
                                  cudaStream_t stream = 0);
 
-template <typename work_t>
-void launch_assign_clusters_to_cells(
-    const real_t* aabb_min_x, const real_t* aabb_min_y,
-    const real_t* aabb_min_z, const real_t* aabb_max_x,
-    const real_t* aabb_max_y, const real_t* aabb_max_z, int num_clusters,
-    const real_t* inv_cell, int dims_x, int dims_y, int dims_z, bool periodic,
-    int* cluster_cell_idx, cudaStream_t stream = 0);
-
 // Non-owning physical AABB arrays for the cluster candidate search.
 struct ClusterBounds {
-    const real_t* min_x;
-    const real_t* min_y;
-    const real_t* min_z;
-    const real_t* max_x;
-    const real_t* max_y;
-    const real_t* max_z;
+    const force_t* min_x;
+    const force_t* min_y;
+    const force_t* min_z;
+    const force_t* max_x;
+    const force_t* max_y;
+    const force_t* max_z;
 };
 
 // Remove fully excluded pairs from existing geometric masks in place. Partial
@@ -249,21 +246,22 @@ bool launch_bake_csr_exclusions(const int* row_ptr, const int* col_idx,
 // Build six SoA bounds for groups of 32 consecutive clusters, in build-time
 // scratch of length 6*ceil(num_clusters/32). No allocation in these launchers.
 void launch_large_cluster_bounds(ClusterBounds bounds, int num_clusters,
-                                 real_t* large_bounds, cudaStream_t stream = 0);
+                                 force_t* large_bounds,
+                                 cudaStream_t stream = 0);
 
 // Exact count and fill use the same hierarchical AABB predicate. The one
 // prefix scan of counts is already the final CSR: no compaction is required.
-template <typename work_t>
-void launch_fill_cluster_pairs(ClusterBounds bounds, const real_t* large_bounds,
-                               int num_clusters, bool periodic,
-                               work_t cutoff_plus_skin_sq, ATV::cuda::Box box,
-                               const int* row_ptr, int* col_idx,
-                               cudaStream_t stream = 0);
+template <typename T>
+void launch_fill_cluster_pairs(ClusterBounds bounds,
+                               const force_t* large_bounds, int num_clusters,
+                               bool periodic, T cutoff_plus_skin_sq,
+                               ATV::cuda::Box box, const int* row_ptr,
+                               int* col_idx, cudaStream_t stream = 0);
 
-template <typename work_t>
+template <typename T>
 void launch_count_cluster_pairs(ClusterBounds bounds,
-                                const real_t* large_bounds, int num_clusters,
-                                bool periodic, work_t cutoff_plus_skin_sq,
+                                const force_t* large_bounds, int num_clusters,
+                                bool periodic, T cutoff_plus_skin_sq,
                                 ATV::cuda::Box box, int* pair_counts,
                                 cudaStream_t stream = 0);
 
@@ -296,32 +294,18 @@ struct CubTempBytes {
 };
 CubTempBytes query_cub_temp_bytes(int num_atoms, int num_clusters);
 
-// Grid CSR build
-void launch_build_grid_csr(const int* cluster_cell_idx, int num_clusters,
-                           int ncells, int* cell_start, int* cell_clusters,
-                           int* histogram, DeviceVector<char>& scan_temp,
-                           cudaStream_t stream = 0);
-
 // --- Fused pipeline kernels (Phase 2-4) ---
 
-// Fused AoS→SoA + Hilbert code computation (replaces separate K1+K2)
-template <typename work_t>
-void launch_aos_to_soa_spatial(const double* positions_aos, int num_atoms,
-                               real_t* x, real_t* y, real_t* z,
-                               const real_t* inv_cell, bool periodic,
-                               uint32_t* spatial_keys, int* atom_indices,
-                               cudaStream_t stream = 0);
-
 // Fused scatter-to-cluster + AABB computation (replaces separate K4+K5)
-template <typename work_t>
-void launch_scatter_and_aabb(const int* sorted_indices, const real_t* pos_x,
-                             const real_t* pos_y, const real_t* pos_z,
-                             int num_atoms, int num_clusters, real_t* cluster_x,
-                             real_t* cluster_y, real_t* cluster_z,
+template <typename T>
+void launch_scatter_and_aabb(const int* sorted_indices, const pos_t* pos_x,
+                             const pos_t* pos_y, const pos_t* pos_z,
+                             int num_atoms, int num_clusters, pos_t* cluster_x,
+                             pos_t* cluster_y, pos_t* cluster_z,
                              int* original_index, int* cluster_count,
-                             real_t* aabb_min_x, real_t* aabb_min_y,
-                             real_t* aabb_min_z, real_t* aabb_max_x,
-                             real_t* aabb_max_y, real_t* aabb_max_z,
+                             force_t* aabb_min_x, force_t* aabb_min_y,
+                             force_t* aabb_min_z, force_t* aabb_max_x,
+                             force_t* aabb_max_y, force_t* aabb_max_z,
                              cudaStream_t stream = 0);
 
 // CSR→Flat expansion (one warp per cluster, parallel copy)
@@ -331,30 +315,32 @@ void launch_csr_to_flat(const int* row_ptr, const int* col_idx,
                         cudaStream_t stream = 0);
 
 // Per-cluster displacement + dirty flags + rebuild flag
-template <typename work_t>
+template <typename T>
 void launch_cluster_displacement(
-    const real_t* cluster_x, const real_t* cluster_y, const real_t* cluster_z,
-    const real_t* ref_cluster_x, const real_t* ref_cluster_y,
-    const real_t* ref_cluster_z, const int* cluster_count, int num_clusters,
-    work_t dirty_threshold_sq, real_t* cluster_disp_sq, int* dirty_flags,
-    int* rebuild_flag, work_t half_skin_sq, cudaStream_t stream = 0);
+    const pos_t* cluster_x, const pos_t* cluster_y, const pos_t* cluster_z,
+    const pos_t* ref_cluster_x, const pos_t* ref_cluster_y,
+    const pos_t* ref_cluster_z, const int* cluster_count, int num_clusters,
+    T dirty_threshold_sq, force_t* cluster_disp_sq, int* dirty_flags,
+    int* rebuild_flag, T half_skin_sq, cudaStream_t stream = 0);
 
 // Check current periodic displacements. Writes one overwritten 0/1 flag
 // per 256-thread block; caller may use mapped pinned storage and must wait
 // for completion before reading. No clear or global atomic is needed.
-template <typename work_t>
-void launch_atom_displacement_max(const real_t* pos_x, const real_t* pos_y,
-                                  const real_t* pos_z, const real_t* ref_x,
-                                  const real_t* ref_y, const real_t* ref_z,
-                                  int num_atoms, work_t half_skin_sq, Box box,
-                                  int* block_flags, cudaStream_t stream = 0);
+// Cell change is detected by exact comparison of the geom_t cells.
+template <typename T>
+void launch_atom_displacement_max(const pos_t* pos_x, const pos_t* pos_y,
+                                  const pos_t* pos_z, const pos_t* ref_x,
+                                  const pos_t* ref_y, const pos_t* ref_z,
+                                  int num_atoms, T half_skin_sq, Box box,
+                                  int* block_flags, cudaStream_t stream = 0,
+                                  const Box* reference_box = nullptr);
 
 // Snapshot current per-atom positions into ref_{x,y,z} buffers. Called
 // after every full neighbor-list rebuild so the next step's
 // `launch_atom_displacement_max` measures motion since the rebuild.
-void launch_snapshot_ref_atoms(const real_t* pos_x, const real_t* pos_y,
-                               const real_t* pos_z, real_t* ref_x,
-                               real_t* ref_y, real_t* ref_z, int num_atoms,
+void launch_snapshot_ref_atoms(const pos_t* pos_x, const pos_t* pos_y,
+                               const pos_t* pos_z, pos_t* ref_x, pos_t* ref_y,
+                               pos_t* ref_z, int num_atoms,
                                cudaStream_t stream = 0);
 
 // Smart rolling prune on flat pair list (skip clean pairs). Templated on
@@ -362,32 +348,33 @@ void launch_snapshot_ref_atoms(const real_t* pos_x, const real_t* pos_y,
 // the ortho specialization; the dispatcher takes a cuda::Box by value
 // and selects the right instantiation based on `box.ortho`
 // (cuda-md-review-cleanup-04-box-by-value-pbc).
-template <typename work_t>
-void launch_smart_rolling_prune(
-    const real_t* cluster_x, const real_t* cluster_y, const real_t* cluster_z,
-    const int* flat_ci, const int* flat_cj, const int* num_flat_pairs_device,
-    int pair_capacity, const int* dirty_flags, work_t cutoff_sq,
-    ATV::cuda::Box box, uint64_t* flat_mask, int prune_step, int prune_period,
-    cudaStream_t stream = 0);
+template <typename T>
+void launch_smart_rolling_prune(const pos_t* cluster_x, const pos_t* cluster_y,
+                                const pos_t* cluster_z, const int* flat_ci,
+                                const int* flat_cj,
+                                const int* num_flat_pairs_device,
+                                int pair_capacity, const int* dirty_flags,
+                                T cutoff_sq, ATV::cuda::Box box,
+                                uint64_t* flat_mask, int prune_step,
+                                int prune_period, cudaStream_t stream = 0);
 
 // Full CSR interaction masks at the search radius (rc+skin). One warp per
 // tile: lane i writes its 32-bit j-mask into masks[p * kMaskWords …]. The
 // caller supplies the known CSR entry count. No half-Newton (FULL neighbor).
-template <typename work_t>
-void launch_compute_csr_masks(const real_t* cluster_x, const real_t* cluster_y,
-                              const real_t* cluster_z, const int* row_ptr,
+template <typename T>
+void launch_compute_csr_masks(const pos_t* cluster_x, const pos_t* cluster_y,
+                              const pos_t* cluster_z, const int* row_ptr,
                               const int* col_idx, int num_clusters,
-                              int num_pairs, work_t search_sq,
-                              ATV::cuda::Box box, uint64_t* masks,
-                              cudaStream_t stream = 0);
+                              int num_pairs, T search_sq, ATV::cuda::Box box,
+                              uint64_t* masks, cudaStream_t stream = 0);
 
 // Legacy flat-list force mask (optional flat export path only).
-template <typename work_t>
-void launch_compute_force_mask(const real_t* cluster_x, const real_t* cluster_y,
-                               const real_t* cluster_z, const int* flat_ci,
+template <typename T>
+void launch_compute_force_mask(const pos_t* cluster_x, const pos_t* cluster_y,
+                               const pos_t* cluster_z, const int* flat_ci,
                                const int* flat_cj,
                                const int* num_flat_pairs_device, int pair_count,
-                               work_t search_sq, ATV::cuda::Box box,
+                               T search_sq, ATV::cuda::Box box,
                                uint64_t* flat_mask, cudaStream_t stream = 0);
 
 // Build the per-atom Verlet list (column-major, stride=num_atoms) from the
@@ -395,32 +382,14 @@ void launch_compute_force_mask(const real_t* cluster_x, const real_t* cluster_y,
 // thread per cluster slot; writes neighbor global indices into
 // verlet_nbr[k*stride + ai] and the count into verlet_cnt[ai]. atomicMax's the
 // max count into overflow[0]. Run once per rebuild. See fused_search.cu.
-template <typename work_t>
-void launch_build_verlet_list(const real_t* cluster_x, const real_t* cluster_y,
-                              const real_t* cluster_z, const int* row_ptr,
+template <typename T>
+void launch_build_verlet_list(const pos_t* cluster_x, const pos_t* cluster_y,
+                              const pos_t* cluster_z, const int* row_ptr,
                               const int* col_idx, const int* original_index,
                               int num_clusters, int stride, int max_neigh,
-                              work_t search_sq, ATV::cuda::Box box,
-                              int* verlet_nbr, int* verlet_cnt, int* overflow,
+                              T search_sq, ATV::cuda::Box box, int* verlet_nbr,
+                              int* verlet_cnt, int* overflow,
                               cudaStream_t stream = 0);
-
-// --- GPU-side setup (setup.cu) ---
-
-void launch_setup_cell_device(const prec_t* d_box, real_t* d_cell,
-                              real_t* d_inv_cell, int* d_dims,
-                              int* d_stencil_dx, int* d_stencil_dy,
-                              int* d_stencil_dz, int* d_n_stencil,
-                              int* d_ncells, work_t cutoff_plus_skin,
-                              bool periodic, int max_stencil,
-                              cudaStream_t stream = 0);
-
-void launch_setup_cell(const real_t* box_data, real_t* d_cell,
-                       real_t* d_inv_cell, int* d_dims, int* d_stencil_dx,
-                       int* d_stencil_dy, int* d_stencil_dz, int* d_n_stencil,
-                       int* d_ncells, work_t cutoff_plus_skin, bool periodic,
-                       int max_stencil, cudaStream_t stream = 0);
-
-void launch_write_int(int* arr, int idx, int val, cudaStream_t stream = 0);
 
 // --- Export to atom pairs (export_pairs.cu) ---
 
@@ -429,9 +398,9 @@ void launch_write_int(int* arr, int idx, int val, cudaStream_t stream = 0);
 void launch_export_atom_pairs(
     const int* flat_ci, const int* flat_cj, const uint64_t* flat_mask,
     const int* num_flat_device, int n_flat, const int* original_index,
-    const real_t* pos_x, const real_t* pos_y, const real_t* pos_z,
-    bool periodic, ATV::cuda::Box box, int* out_i, int* out_j, real_t* out_dx,
-    real_t* out_dy, real_t* out_dz, real_t* out_dist_sq, int* out_count,
+    const pos_t* pos_x, const pos_t* pos_y, const pos_t* pos_z, bool periodic,
+    ATV::cuda::Box box, int* out_i, int* out_j, force_t* out_dx,
+    force_t* out_dy, force_t* out_dz, force_t* out_dist_sq, int* out_count,
     const int* capacity_ptr, cudaStream_t stream = 0);
 
 } // namespace ATV::cuda::md::nlist

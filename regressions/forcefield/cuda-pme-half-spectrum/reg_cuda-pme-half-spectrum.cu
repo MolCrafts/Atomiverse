@@ -3,6 +3,7 @@
 /// Smooth PME: Essmann et al., JCP 103, 8577 (1995), doi:10.1063/1.470117.
 /// The oracle uses the cardinal spline's closed polynomial, not the device
 /// recurrence, and explicitly sums every signed Fourier mode and its gradient.
+/// Lattice vectors are the cell columns (molrs/LAMMPS H): u = K · cell⁻¹ · r.
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"
@@ -52,7 +53,7 @@ Result full_fourier_oracle(const cpu::Frame& f, const std::array<int, 3>& K,
     double inv[3][3];
     for (int j = 0; j < 3; ++j)
         for (int d = 0; d < 3; ++d)
-            inv[j][d] = ATV::cuda::real_t(inverse(j, d));
+            inv[j][d] = inverse(j, d); // PME geometry is FP64 in every mode
     double u[2][3], charge[2];
     for (int i = 0; i < 2; ++i) {
         const double r[] = {f.span(kAtom_x)[i], f.span(kAtom_y)[i],
@@ -61,7 +62,7 @@ Result full_fourier_oracle(const cpu::Frame& f, const std::array<int, 3>& K,
         for (int d = 0; d < 3; ++d) {
             u[i][d] = 0;
             for (int j = 0; j < 3; ++j)
-                u[i][d] += inv[j][d] * r[j] * K[d];
+                u[i][d] += inv[d][j] * r[j] * K[d];
         }
     }
     std::array<std::vector<double>, 3> moduli;
@@ -88,7 +89,7 @@ Result full_fourier_oracle(const cpu::Frame& f, const std::array<int, 3>& K,
                     double kj = 0;
                     for (int d = 0; d < 3; ++d)
                         kj +=
-                            (m[d] <= K[d] / 2 ? m[d] : m[d] - K[d]) * inv[j][d];
+                            (m[d] <= K[d] / 2 ? m[d] : m[d] - K[d]) * inv[d][j];
                     k2 += kj * kj;
                 }
                 const double H = std::exp(-pi * pi * k2 / (alpha * alpha)) / k2
@@ -112,7 +113,7 @@ Result full_fourier_oracle(const cpu::Frame& f, const std::array<int, 3>& K,
                     for (int j = 0; j < 3; ++j)
                         for (int d = 0; d < 3; ++d) {
                             Complex term = charge[i] * derivative[d]
-                                           * double(K[d]) * inv[j][d];
+                                           * double(K[d]) * inv[d][j];
                             for (int e = 0; e < 3; ++e)
                                 if (e != d)
                                     term *= factor[e];
@@ -172,7 +173,7 @@ bool check(int nz, bool triclinic, int n = order) {
         }
     }
     constexpr double tolerance =
-        std::is_same_v<ATV::cuda::work_t, float> ? 5e-5 : 5e-8;
+        std::is_same_v<ATV::cuda::force_t, float> ? 5e-5 : 5e-8;
     std::printf(
         "PME full DFT oracle: order=%d nz=%d triclinic=%d dE=%.6g dF=%.6g\n", n,
         nz, triclinic, de, df);

@@ -299,56 +299,15 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @throws std::runtime_error if none / several match, if called during
     ///         launch, or if the remaining set fails `validate_components`.
     void unfix(std::string_view name_or_id) {
-        if (launching_) {
-            throw std::runtime_error(
-                "unfix: cannot unfix from inside launch(). Unfix between "
-                "steps or run() chunks.");
-        }
-        std::vector<std::size_t> hits;
-        for (std::size_t i = 0; i < this->pending_.size(); ++i) {
-            cpu::Component* c = this->pending_[i].component;
-            if (c && c->name() == name_or_id)
-                hits.push_back(i);
-        }
-        if (hits.empty()) {
-            std::string have;
-            for (const auto& pb : this->pending_) {
-                if (!pb.component)
-                    continue;
-                if (!have.empty())
-                    have += ", ";
-                have += pb.component->name();
+        this->unmount_(name_or_id, launching_, [&](cpu::Component* c) {
+            if (live_ && this->backend_ && built_plugins_.count(c)) {
+                Plan<cpu::Component> one;
+                one.slots.resize(1);
+                one.slots[0].ops.push_back({c});
+                this->backend_->destroy_plan(one);
+                built_plugins_.erase(c);
             }
-            throw std::runtime_error(
-                "unfix: no plugin named '" + std::string(name_or_id)
-                + "'. mounted: [" + have
-                + "]. Remount with on(phase).add / set_evaluator.");
-        }
-        if (hits.size() > 1) {
-            throw std::runtime_error(
-                "unfix: name '" + std::string(name_or_id)
-                + "' is not unique. Give plugins distinct name() values.");
-        }
-        cpu::Component* c = this->pending_[hits[0]].component;
-        if (live_ && this->backend_ && built_plugins_.count(c)) {
-            Plan<cpu::Component> one;
-            one.slots.resize(1);
-            one.slots[0].phase = 0;
-            Operation<cpu::Component> op;
-            op.component = c;
-            one.slots[0].ops.push_back(op);
-            this->backend_->destroy_plan(one);
-            built_plugins_.erase(c);
-        }
-        this->pending_.erase(this->pending_.begin()
-                             + static_cast<std::ptrdiff_t>(hits[0]));
-        this->owned_components_.erase(
-            std::remove_if(this->owned_components_.begin(),
-                           this->owned_components_.end(),
-                           [c](const std::unique_ptr<cpu::Component>& p) {
-                               return p.get() == c;
-                           }),
-            this->owned_components_.end());
+        });
         auto clear_slot = [&](std::optional<std::string>& slot) {
             if (slot && *slot == name_or_id)
                 slot.reset();
@@ -550,7 +509,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
     /// @brief Single iteration through the compiled Plan.
     /// @param iter_index Index of the iteration to execute (0-based).
-    void step_once(int iter_index) {
+    void step_once(BigInt iter_index) {
         struct Guard {
             bool& flag;
             explicit Guard(bool& f) : flag(f) { flag = true; }
@@ -620,7 +579,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     ///
     /// Cumulative — not per-call — so frequency-gated components (Thermo, Migrate,
     /// recorders) keep a continuous cadence across a chunked run.
-    int next_step_() { return step_counter_++; }
+    BigInt next_step_() { return step_counter_++; }
 
     // ── Outcome policy ─────────────────────────────────────────────────────
 
@@ -635,7 +594,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @param frame Frame carrying the trial state.
     /// @param iteration Index of the iteration just completed.
     /// @return The policy's decision.
-    Outcome decide_outcome_(const cpu::Frame& frame, int iteration) {
+    Outcome decide_outcome_(const cpu::Frame& frame, BigInt iteration) {
         if (!outcome_)
             return Outcome::Commit;
         const cpu::LoopState st{iteration, frame, this->backend_->context(),
@@ -701,7 +660,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @param iteration Index of the iteration just completed.
     /// @return The reduced verdict; also folds `stop_requested` (which a *component* may
     ///         set — components request stops, they never declare convergence).
-    Verdict poll_criteria_(int iteration) {
+    Verdict poll_criteria_(BigInt iteration) {
         return poll_criteria_(iteration, this->backend_->frame(),
                               this->backend_->context());
     }
@@ -716,7 +675,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @param frame The system state as it now stands.
     /// @param ctx The Context of the Runtime executing this loop.
     /// @return The reduced verdict.
-    Verdict poll_criteria_(int iteration, const cpu::Frame& frame,
+    Verdict poll_criteria_(BigInt iteration, const cpu::Frame& frame,
                            const cpu::Context& ctx) {
         const cpu::LoopState st{iteration, frame, ctx, metrics_};
         Verdict v = status_.stop_requested ? Verdict::Stop : Verdict::Continue;
@@ -1359,7 +1318,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     bool live_ = false;      ///< Backend live between first run() and teardown.
     bool launching_ = false; ///< True only inside `step_once`.
     cpu::Frame* frame_ptr_ = nullptr; ///< Frame bound by the live run.
-    int step_counter_ = 0; ///< Cumulative step index across run() calls.
+    BigInt step_counter_ = 0; ///< Cumulative step index across run() calls.
     std::unordered_set<cpu::Component*> built_plugins_;
 
   private:

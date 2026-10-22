@@ -298,8 +298,12 @@ class MultiGpu {
         int cnt = 0;
         int base = 0;
         int* d_src_idx = nullptr;
-        real_t* d_pack_src = nullptr;
-        real_t* d_pack_dst = nullptr;
+        // Packed [3*cnt] staging on the src / dst device, shared by both halo
+        // directions and sized for the wider payload: the forward pass views
+        // it as `pos_t` (primary positions), the reverse pass as `fixed_t`
+        // (fixed-point ghost-row forces).
+        void* d_pack_src = nullptr;
+        void* d_pack_dst = nullptr;
         cudaEvent_t ev_src = nullptr;
         cudaEvent_t ev_dst = nullptr;
         cudaEvent_t ev_fwd_done = nullptr;

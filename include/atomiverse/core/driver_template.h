@@ -476,6 +476,44 @@ class Driver {
             pending_.push_back({db.phase, db.order, &comp});
     }
 
+    /// Unmount an instance and all of its bindings, with backend resource
+    /// release before ownership is erased. Repeated bindings are not namesakes.
+    template <typename Release>
+    void unmount_(std::string_view name, bool launching, Release&& release) {
+        if (launching)
+            throw std::runtime_error(
+                "unfix: cannot unfix from inside launch(). Unfix between "
+                "steps or run() chunks.");
+        Component* found = nullptr;
+        std::string mounted;
+        for (const auto& binding : pending_) {
+            auto* component = binding.component;
+            if (!component)
+                continue;
+            if (!mounted.empty())
+                mounted += ", ";
+            mounted += component->name();
+            if (component->name() != name)
+                continue;
+            if (found && found != component)
+                throw std::runtime_error(
+                    "unfix: name '" + std::string(name)
+                    + "' is not unique. Give plugins distinct name() values.");
+            found = component;
+        }
+        if (!found)
+            throw std::runtime_error(
+                "unfix: no plugin named '" + std::string(name) + "'. mounted: ["
+                + mounted + "]. Remount with on(phase).add / set_evaluator.");
+        release(found);
+        std::erase_if(pending_, [found](const auto& binding) {
+            return binding.component == found;
+        });
+        std::erase_if(owned_components_, [found](const auto& component) {
+            return component.get() == found;
+        });
+    }
+
     std::vector<detail::PendingBinding<Component>> pending_;
     std::vector<std::unique_ptr<Component>> owned_components_;
     std::vector<std::unique_ptr<cpu::DriverNode>> owned_drivers_;

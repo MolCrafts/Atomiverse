@@ -58,6 +58,7 @@ class Virial : public Observer {
     ///        declares `provides_system_stress()`.
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void destroy(const DestroyContext& ctx) override;
 
   private:

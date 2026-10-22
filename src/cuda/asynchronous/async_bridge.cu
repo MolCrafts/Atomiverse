@@ -20,10 +20,6 @@
 namespace ATV {
 namespace cuda {
 
-using cuda::prec_t;
-using cuda::real_t;
-using cuda::work_t;
-
 namespace {
 
 /// @brief Per-call callback payload. Heap-allocated by `launch()` and
@@ -42,7 +38,7 @@ struct CallbackPayload {
     cuda::Context* runtime;
     cuda::Frame* frame;
     int stage;
-    int step;
+    BigInt step;
     int slot;
 };
 

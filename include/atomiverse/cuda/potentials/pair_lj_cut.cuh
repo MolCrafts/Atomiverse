@@ -125,9 +125,9 @@ class PairLJCut : public Pair {
     // force kernel reads neighbour positions coalesced). Sized to
     // padded Frame capacity in build(), with no allocation in compute().
     // Freed in destroy(). Runtime container — not part of the frame.
-    real_t* spx_ = nullptr;
-    real_t* spy_ = nullptr;
-    real_t* spz_ = nullptr;
+    force_t* spx_ = nullptr;
+    force_t* spy_ = nullptr;
+    force_t* spz_ = nullptr;
     int spos_cap_ = 0;
 };
 

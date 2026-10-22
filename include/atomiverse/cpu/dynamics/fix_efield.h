@@ -57,6 +57,7 @@ class FixEfield : public cpu::Bias {
         return {ATV::make_binding(ATV::md::Phase::post_force, +100)};
     }
 
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
     /// @return Last field energy contribution written this launch [eV].

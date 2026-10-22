@@ -47,6 +47,7 @@ class ZeroForces : public Component {
     /// @brief Zero fx, fy, fz arrays via cudaMemsetAsync.
     /// @param ctx Launch context.
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Zeros potential energy scalar on device using cudaMemsetAsync.
@@ -69,6 +70,7 @@ class ZeroEnergy : public Component {
     /// @brief Zero energy scalar via cudaMemsetAsync.
     /// @param ctx Launch context.
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Zeros the pair/bonded virial tensor `stress[6]`.
@@ -79,6 +81,7 @@ class ZeroStress : public Component {
   public:
     std::string name() const override { return "zero_stress"; }
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Zeros kinetic energy scalar on device using cudaMemsetAsync.
@@ -101,6 +104,7 @@ class ZeroKinetic : public Component {
     /// @brief Zero kinetic energy scalar via cudaMemsetAsync.
     /// @param ctx Launch context.
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
 /// @brief Removes net linear COM momentum every `freq` steps.
@@ -175,10 +179,10 @@ class ZeroMomentum : public Component {
   private:
     int freq_;
     long long step_ = 0;
-    // 4 contiguous work_t = {Σ mv_x, Σ mv_y, Σ mv_z, Σ m}. cudaMalloc'd
+    // 4 contiguous acc_t = {Σ mv_x, Σ mv_y, Σ mv_z, Σ m}. cudaMalloc'd
     // in build(), zeroed in launch() before each accumulate, cudaFree'd
     // in destroy().
-    void* d_scratch_ = nullptr; // work_t[4]
+    void* d_scratch_ = nullptr; // acc_t[4]
 };
 
 /// @brief Maxwell-Boltzmann velocity initialization (LAMMPS `velocity create`).

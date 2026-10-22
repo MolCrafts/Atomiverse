@@ -17,7 +17,7 @@ using namespace ATV;
 namespace {
 
 constexpr double kTolerance =
-    std::is_same_v<ATV::cuda::work_t, float> ? 5e-5 : 1e-11;
+    std::is_same_v<ATV::cuda::force_t, float> ? 5e-5 : 1e-11;
 
 void initialize(cpu::Frame& frame) {
     for (int i = 0; i < frame.nlocal(); ++i) {
@@ -36,7 +36,7 @@ struct DeviceInput {
         : frame(cpu::to_cuda(source)) {
         for (int d = 0; d < 3; ++d) {
             context.host_box.cell[4 * d] = 20;
-            context.host_box.inv_l[d] = ATV::cuda::real_t(1.0 / 20.0);
+            context.host_box.inv_l[d] = 1.0 / 20.0;
             context.host_box.half_l[d] = 10;
         }
     }

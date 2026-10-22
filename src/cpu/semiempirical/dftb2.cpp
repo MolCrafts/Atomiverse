@@ -3100,7 +3100,7 @@ void DFTB2::launch(const LaunchContext& ctx) {
     const double* guess_spin = nullptr;
     xt::xtensor<double, 2> aspc_predicted;
     bool aspc_used_prediction = false;
-    if (dq_predictor_) {
+    if (dq_predictor_ && !ctx.runtime.exec.initializing_forces) {
         if (predictor_n_at_ != n_at_launch) {
             dq_predictor_->reset();
             predictor_n_at_ = n_at_launch;
@@ -3157,7 +3157,7 @@ void DFTB2::launch(const LaunchContext& ctx) {
     // Record the converged state for the next launch. On a warm step the
     // corrector output is what goes in — recording the raw SCC result would
     // throw away the time-reversibility the corrector buys.
-    if (dq_predictor_) {
+    if (dq_predictor_ && !ctx.runtime.exec.initializing_forces) {
         xt::xtensor<double, 2> state = xt::zeros<double>({2 * n_at_launch, 1});
         for (int i = 0; i < n_at_launch; ++i) {
             state(i, 0) = last_dq_[static_cast<std::size_t>(i)];

@@ -150,13 +150,15 @@ struct FaceBufs {
             requests.resize(need);
         int nreq = 0;
         auto post_recv = [&](void* buf, int nbytes, int proc, int tag) {
-            if (nbytes <= 0 || proc == MPI_PROC_NULL)
+            if (nbytes <= 0 || proc == MPI_PROC_NULL
+                || proc == Swap::kNoPartner)
                 return;
             MPI_Irecv(buf, nbytes, MPI_BYTE, proc, tag, comm,
                       &requests[static_cast<std::size_t>(nreq++)]);
         };
         auto post_send = [&](void* buf, int nbytes, int proc, int tag) {
-            if (nbytes <= 0 || proc == MPI_PROC_NULL)
+            if (nbytes <= 0 || proc == MPI_PROC_NULL
+                || proc == Swap::kNoPartner)
                 return;
             MPI_Isend(buf, nbytes, MPI_BYTE, proc, tag, comm,
                       &requests[static_cast<std::size_t>(nreq++)]);
@@ -215,9 +217,8 @@ void CommBrick::remember_(const cpu::LaunchContext& ctx) {
 
 namespace {
 
-static_assert(Swap::kNoPartner == MPI_PROC_NULL,
-              "Swap::kNoPartner must mirror the transport's no-partner "
-              "sentinel; Halo is MPI-free and cannot name MPI_PROC_NULL");
+// The MPI-free halo marker need not equal MPI_PROC_NULL (OpenMPI uses -2).
+// Posting accepts either marker without sending a request.
 
 using detail::FaceBufs;
 

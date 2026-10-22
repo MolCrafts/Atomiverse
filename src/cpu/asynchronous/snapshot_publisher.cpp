@@ -19,7 +19,7 @@ namespace cpu {
 
 namespace {
 
-bool subscriber_fires(const AsyncComponentBase* sub, int step) {
+bool subscriber_fires(const AsyncComponentBase* sub, BigInt step) {
     const int f = sub->frequency();
     if (f <= 0)
         return step > 0; // freq 0 = every step (after step 0)
@@ -89,7 +89,7 @@ void Publish::launch(const LaunchContext& ctx) {
     if (subs.empty())
         return; // zero-subscriber fast path (≤ 100 ns)
 
-    const int step = ctx.step;
+    const BigInt step = ctx.step;
 
     bool any_firing = false;
     for (const auto* s : subs) {
