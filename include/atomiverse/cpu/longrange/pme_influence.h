@@ -64,9 +64,9 @@ inline void pme_apply_influence(std::complex<double>* grid, const int K[3],
                 double mx = 0, my = 0, mz = 0;
                 const int hh[3] = {h0, h1, h2};
                 for (int d = 0; d < 3; ++d) {
-                    mx += hh[d] * inv_cell(0, d);
-                    my += hh[d] * inv_cell(1, d);
-                    mz += hh[d] * inv_cell(2, d);
+                    mx += hh[d] * inv_cell(d, 0);
+                    my += hh[d] * inv_cell(d, 1);
+                    mz += hh[d] * inv_cell(d, 2);
                 }
                 const double msq = mx * mx + my * my + mz * mz;
                 const double B = bm01 * bsp_mod2[m2];
@@ -136,9 +136,9 @@ inline void pme_build_influence_tables(const int K[3], const double* bsp_mod0,
                 double mx = 0, my = 0, mz = 0;
                 const int hh[3] = {h0, h1, h2};
                 for (int d = 0; d < 3; ++d) {
-                    mx += hh[d] * inv_cell(0, d);
-                    my += hh[d] * inv_cell(1, d);
-                    mz += hh[d] * inv_cell(2, d);
+                    mx += hh[d] * inv_cell(d, 0);
+                    my += hh[d] * inv_cell(d, 1);
+                    mz += hh[d] * inv_cell(d, 2);
                 }
                 const double msq = mx * mx + my * my + mz * mz;
                 const double inv_msq = 1.0 / msq;
@@ -202,7 +202,7 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
 ///        convolution grid.
 ///
 /// F_{i,a} = −(units::coulomb/πV) q_i Σ_stencil C(grid) Σ_d dθ_d Π_{d'≠d} θ_{d'}
-///           · K_d · inv_cell(a,d)
+///           · K_d · inv_cell(d,a)
 ///
 /// @param q       Charges [e], length @p n_atoms.
 /// @param n_atoms Atom count.
@@ -269,9 +269,9 @@ inline void pme_interpolate_forces(const StorageReal* q, int n_atoms, int order,
         double fxi = 0, fyi = 0, fzi = 0;
         for (int d = 0; d < 3; ++d) {
             const double gk = g_d[d] * K[d];
-            fxi += gk * inv_cell(0, d);
-            fyi += gk * inv_cell(1, d);
-            fzi += gk * inv_cell(2, d);
+            fxi += gk * inv_cell(d, 0);
+            fyi += gk * inv_cell(d, 1);
+            fzi += gk * inv_cell(d, 2);
         }
         fx[i] += -fscale * qi * fxi;
         fy[i] += -fscale * qi * fyi;

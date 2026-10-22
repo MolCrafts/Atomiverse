@@ -13,6 +13,7 @@
 #include <fftw3.h>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -226,8 +227,7 @@ void KSpacePME::compute(const LaunchContext& ctx) {
         qsq_local += q[i] * q[i];
         q_local += q[i];
     }
-    const double e_self =
-        -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi) * qsq_local;
+    const double e_self = longrange::self_energy_prefactor(alpha_) * qsq_local;
     f.meta.get(kEnergy) += e_self;
     f.meta.get(kEnergyPair) += e_self;
 
@@ -238,14 +238,14 @@ void KSpacePME::compute(const LaunchContext& ctx) {
                       dd->cart_comm);
 #endif
     if (first_rank) {
-        const double e_net = -ATV::units::coulomb * ATV::units::pi
-                             / (2.0 * vol * alpha_ * alpha_) * q_total
-                             * q_total;
+        const double e_net = longrange::background_energy(q_total, vol, alpha_);
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
-        f.meta.get(kStress)[0] += stress[0];
-        f.meta.get(kStress)[1] += stress[1];
-        f.meta.get(kStress)[2] += stress[2];
+        // The neutralizing background scales as 1/V, so its virial
+        // -dE/d(eps_aa) is e_net on each diagonal component.
+        f.meta.get(kStress)[0] += stress[0] + e_net;
+        f.meta.get(kStress)[1] += stress[1] + e_net;
+        f.meta.get(kStress)[2] += stress[2] + e_net;
         f.meta.get(kStress)[3] += stress[3];
         f.meta.get(kStress)[4] += stress[4];
         f.meta.get(kStress)[5] += stress[5];

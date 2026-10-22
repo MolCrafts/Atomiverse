@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/units.h"
@@ -61,16 +62,18 @@ class EwaldSum {
 
     /// @brief Rebuild reciprocal-vector tables from the inverse cell.
     /// @param inv_cell Inverse of the real-space cell matrix [1/Å]
-    ///                 (Mat3 indexing: inv_cell(row, col)).
+    ///                 (Mat3 indexing: inv_cell(row, col)). Lattice vectors
+    ///                 are the cell columns, so reciprocal vector b_i is row
+    ///                 i of inv_cell (times 2π).
     /// @return true if any internal table capacity grew (reserve).
     bool rebuild(const Mat3& inv_cell) {
-        // Reciprocal basis b_i = 2π · (column i of cell⁻¹); g = Σ m_i b_i.
+        // Reciprocal basis b_i = 2π · (row i of cell⁻¹); g = Σ m_i b_i.
         const double tp = 2.0 * ATV::units::pi;
         double b[3][3];
         for (int i = 0; i < 3; ++i) {
-            b[i][0] = tp * inv_cell(0, i);
-            b[i][1] = tp * inv_cell(1, i);
-            b[i][2] = tp * inv_cell(2, i);
+            b[i][0] = tp * inv_cell(i, 0);
+            b[i][1] = tp * inv_cell(i, 1);
+            b[i][2] = tp * inv_cell(i, 2);
         }
         auto blen = [&](int i) {
             return std::sqrt(b[i][0] * b[i][0] + b[i][1] * b[i][1]
@@ -220,8 +223,7 @@ class EwaldSum {
     /// @param qsq_sum Σ_i q_i² [e²].
     /// @return E_self [eV].
     double self_energy(double qsq_sum) const {
-        return -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi)
-               * qsq_sum;
+        return longrange::self_energy_prefactor(alpha_) * qsq_sum;
     }
 
     /// @brief Net-charge (background) correction [eV].
@@ -229,8 +231,7 @@ class EwaldSum {
     /// @param volume  Cell volume [Å³].
     /// @return E_corr [eV].
     double net_charge_energy(double q_total, double volume) const {
-        return -ATV::units::coulomb * ATV::units::pi
-               / (2.0 * volume * alpha_ * alpha_) * q_total * q_total;
+        return longrange::background_energy(q_total, volume, alpha_);
     }
 
     /// @brief Reciprocal energy and virial from global S(k).

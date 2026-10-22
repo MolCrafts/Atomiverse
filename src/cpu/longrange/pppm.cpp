@@ -25,6 +25,7 @@
 #endif
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/timer.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
@@ -277,9 +278,9 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
                     double mx = 0, my = 0, mz = 0;
                     const int hh[3] = {h0, h1, h2};
                     for (int d = 0; d < 3; ++d) {
-                        mx += hh[d] * ic(0, d);
-                        my += hh[d] * ic(1, d);
-                        mz += hh[d] * ic(2, d);
+                        mx += hh[d] * ic(d, 0);
+                        my += hh[d] * ic(d, 1);
+                        mz += hh[d] * ic(d, 2);
                     }
                     const double msq = mx * mx + my * my + mz * mz;
                     if (msq < 1e-30) {
@@ -805,11 +806,11 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                 }
             }
             const double fxi =
-                g0s * K0d * ic00 + g1s * K1d * ic01 + g2s * K2d * ic02;
+                g0s * K0d * ic00 + g1s * K1d * ic10 + g2s * K2d * ic20;
             const double fyi =
-                g0s * K0d * ic10 + g1s * K1d * ic11 + g2s * K2d * ic12;
+                g0s * K0d * ic01 + g1s * K1d * ic11 + g2s * K2d * ic21;
             const double fzi =
-                g0s * K0d * ic20 + g1s * K1d * ic21 + g2s * K2d * ic22;
+                g0s * K0d * ic02 + g1s * K1d * ic12 + g2s * K2d * ic22;
             const double s = -fscale * qi;
             fx[i] += s * fxi;
             fy[i] += s * fyi;
@@ -1112,11 +1113,11 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                 }
             }
             const double fxi =
-                g0s * K0d * ic00 + g1s * K1d * ic01 + g2s * K2d * ic02;
+                g0s * K0d * ic00 + g1s * K1d * ic10 + g2s * K2d * ic20;
             const double fyi =
-                g0s * K0d * ic10 + g1s * K1d * ic11 + g2s * K2d * ic12;
+                g0s * K0d * ic01 + g1s * K1d * ic11 + g2s * K2d * ic21;
             const double fzi =
-                g0s * K0d * ic20 + g1s * K1d * ic21 + g2s * K2d * ic22;
+                g0s * K0d * ic02 + g1s * K1d * ic12 + g2s * K2d * ic22;
             const double s = -fscale * qi;
             fx[i] += s * fxi;
             fy[i] += s * fyi;
@@ -1139,8 +1140,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
         qsq_local += q[i] * q[i];
         q_local += q[i];
     }
-    const double e_self =
-        -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi) * qsq_local;
+    const double e_self = longrange::self_energy_prefactor(alpha_) * qsq_local;
     f.meta.get(kEnergy) += e_self;
     f.meta.get(kEnergyPair) += e_self;
 
@@ -1151,9 +1151,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                       dd->cart_comm);
 #endif
     if (first_rank) {
-        const double e_net = -ATV::units::coulomb * ATV::units::pi
-                             / (2.0 * vol * alpha_ * alpha_) * q_total
-                             * q_total;
+        const double e_net = longrange::background_energy(q_total, vol, alpha_);
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
     }

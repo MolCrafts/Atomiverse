@@ -70,12 +70,13 @@ double short_range_cutoff(double u_min_eV) {
     return r;
 }
 
-/// Integer image half-widths covering @p cutoff along every cell axis.
+/// Integer image half-widths covering @p cutoff along every lattice vector
+/// (the cell columns, as in `EwaldSum` and the SK lattice enumeration).
 void image_extent(const Mat3& cell, double cutoff, int nmax[3]) {
     for (int d = 0; d < 3; ++d) {
         const double len =
-            std::sqrt(cell(d, 0) * cell(d, 0) + cell(d, 1) * cell(d, 1)
-                      + cell(d, 2) * cell(d, 2));
+            std::sqrt(cell(0, d) * cell(0, d) + cell(1, d) * cell(1, d)
+                      + cell(2, d) * cell(2, d));
         if (!(len > 0.0))
             throw std::runtime_error(
                 "GammaLattice: cell axis " + std::to_string(d)
@@ -170,11 +171,11 @@ GammaLattice::GammaLattice(int n_at, const double* u_eV, const double* x,
         for (int n0 = -nmax_[0]; n0 <= nmax_[0]; ++n0)
             for (int n1 = -nmax_[1]; n1 <= nmax_[1]; ++n1)
                 for (int n2 = -nmax_[2]; n2 <= nmax_[2]; ++n2) {
-                    const double tx = n0 * cell(0, 0) + n1 * cell(1, 0)
-                                      + n2 * cell(2, 0) - x[a];
-                    const double ty = n0 * cell(0, 1) + n1 * cell(1, 1)
-                                      + n2 * cell(2, 1) - y[a];
-                    const double tz = n0 * cell(0, 2) + n1 * cell(1, 2)
+                    const double tx = n0 * cell(0, 0) + n1 * cell(0, 1)
+                                      + n2 * cell(0, 2) - x[a];
+                    const double ty = n0 * cell(1, 0) + n1 * cell(1, 1)
+                                      + n2 * cell(1, 2) - y[a];
+                    const double tz = n0 * cell(2, 0) + n1 * cell(2, 1)
                                       + n2 * cell(2, 2) - z[a];
                     for (std::size_t b = 0; b < n; ++b) {
                         const double dx = x[b] + tx;
@@ -347,11 +348,11 @@ void GammaLattice::add_gradient(const double* dq, double* fx, double* fy,
         for (int n0 = -nmax_[0]; n0 <= nmax_[0]; ++n0)
             for (int n1 = -nmax_[1]; n1 <= nmax_[1]; ++n1)
                 for (int n2 = -nmax_[2]; n2 <= nmax_[2]; ++n2) {
-                    const double tx = n0 * cell_(0, 0) + n1 * cell_(1, 0)
-                                      + n2 * cell_(2, 0) - x_[a];
-                    const double ty = n0 * cell_(0, 1) + n1 * cell_(1, 1)
-                                      + n2 * cell_(2, 1) - y_[a];
-                    const double tz = n0 * cell_(0, 2) + n1 * cell_(1, 2)
+                    const double tx = n0 * cell_(0, 0) + n1 * cell_(0, 1)
+                                      + n2 * cell_(0, 2) - x_[a];
+                    const double ty = n0 * cell_(1, 0) + n1 * cell_(1, 1)
+                                      + n2 * cell_(1, 2) - y_[a];
+                    const double tz = n0 * cell_(2, 0) + n1 * cell_(2, 1)
                                       + n2 * cell_(2, 2) - z_[a];
                     for (std::size_t b = 0; b < n; ++b) {
                         const double d[3] = {x_[b] + tx, y_[b] + ty,

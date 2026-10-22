@@ -114,7 +114,8 @@ inline int good_fft_size(int n) {
 ///
 /// @param x,y,z     Atom coordinates [Å], length @p n_atoms.
 /// @param n_atoms   Atom count.
-/// @param inv_cell  Inverse cell matrix [1/Å] (Mat3 indexing).
+/// @param inv_cell  Inverse cell matrix [1/Å] (Mat3 indexing); lattice
+///                  vectors are the cell columns, so s = inv_cell · r.
 /// @param K         Grid dimensions {K0, K1, K2}.
 /// @param order     B-spline order n.
 /// @param[out] base Length 3·n_atoms; base[3·i+d] = floor(u_d) in [0, K_d).
@@ -130,8 +131,8 @@ inline void pme_fill_atom_splines(const StorageReal* x, const StorageReal* y,
     for (int i = 0; i < n_atoms; ++i) {
         double s[3];
         for (int d = 0; d < 3; ++d)
-            s[d] = inv_cell(0, d) * x[i] + inv_cell(1, d) * y[i]
-                   + inv_cell(2, d) * z[i];
+            s[d] = inv_cell(d, 0) * x[i] + inv_cell(d, 1) * y[i]
+                   + inv_cell(d, 2) * z[i];
         for (int d = 0; d < 3; ++d) {
             double u = s[d] * K[d];
             u -= std::floor(u / K[d]) * K[d]; // wrap into [0,K)

@@ -51,7 +51,11 @@ class Box {
     Box() noexcept = default;
 
     /// @brief Construct from a row-major 3×3 cell matrix.
-    /// @param cell Cell matrix [Angstrom]; rows are lattice vectors a, b, c.
+    /// @param cell Cell matrix [Angstrom]. Classical MD (molrs/LAMMPS H,
+    ///             `min_image`, the Ewald/PME/PPPM solvers) reads the columns as
+    ///             lattice vectors: r = cell · s, s = inv_cell · r. The
+    ///             plane-wave helpers `recip_cell()` / `lengths()` read rows; the
+    ///             two conventions agree only for symmetric cells.
     explicit Box(const Mat3& cell) noexcept { set_cell(cell); }
 
     Box(const Box&) noexcept = default;

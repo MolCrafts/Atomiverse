@@ -44,11 +44,11 @@ void KSpaceEwald::ensure_kvectors(const cpu::Frame& frame, bool initial_build) {
 
     Mat3 inv = box.inv_cell();
     if (slab_active()) {
-        // unitk_z = 2π / (Lz * f)  ⇔  scale column 2 of inv_cell by 1/f
-        // (EwaldSum::rebuild forms b_i from column i of inv_cell).
+        // unitk_z = 2π / (Lz * f)  ⇔  scale row 2 of inv_cell by 1/f
+        // (EwaldSum::rebuild forms b_i from row i of inv_cell).
         const double inv_f = 1.0 / slab_factor;
-        for (int r = 0; r < 3; ++r)
-            inv(r, 2) *= inv_f;
+        for (int c = 0; c < 3; ++c)
+            inv(2, c) *= inv_f;
     }
 
     const bool table_grew = sum_.rebuild(inv);
@@ -179,9 +179,11 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
 
         f.meta.get(kEnergy) += e_recip + e_net + e_slab;
         f.meta.get(kEnergyPair) += e_recip + e_net + e_slab;
-        f.meta.get(kStress)[0] += stress[0];
-        f.meta.get(kStress)[1] += stress[1];
-        f.meta.get(kStress)[2] += stress[2];
+        // The neutralizing background scales as 1/V, so its virial
+        // -dE/d(eps_aa) is e_net on each diagonal component.
+        f.meta.get(kStress)[0] += stress[0] + e_net;
+        f.meta.get(kStress)[1] += stress[1] + e_net;
+        f.meta.get(kStress)[2] += stress[2] + e_net;
         f.meta.get(kStress)[3] += stress[3];
         f.meta.get(kStress)[4] += stress[4];
         f.meta.get(kStress)[5] += stress[5];
