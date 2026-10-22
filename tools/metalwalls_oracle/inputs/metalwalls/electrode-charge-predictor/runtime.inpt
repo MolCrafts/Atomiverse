@@ -1,4 +1,4 @@
-# MetalWalls twin of ATV regression regressions/md/electrode-charge-predictor
+# MetalWalls twin of ATV regression regressions/md/constant-potential
 # ===========================================================================
 # 3x3 electrode sites per wall (z = 4 / 16 A) + 4 point ions (+-0.5 e),
 # box 6 x 6 x 20 A, eta = 2.0 1/A, Psi = (0, 1) V, CG electrode charges.

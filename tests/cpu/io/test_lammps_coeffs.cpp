@@ -16,7 +16,10 @@ namespace {
 /// Write `text` to a unique temp file, return its path.
 std::string write_tmp(const std::string& text) {
     static int counter = 0;
-    std::string path = ::testing::TempDir() + "atv_coeffs_"
+    // ctest runs each test in its own process: key by test name too.
+    const std::string test =
+        ::testing::UnitTest::GetInstance()->current_test_info()->name();
+    std::string path = ::testing::TempDir() + "atv_coeffs_" + test + "_"
                        + std::to_string(counter++) + ".ff";
     std::ofstream out(path);
     out << text;

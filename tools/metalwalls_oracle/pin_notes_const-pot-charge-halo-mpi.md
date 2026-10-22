@@ -20,6 +20,6 @@
   self-consistency check (a LAMMPS run would measure a full conp Ewald
   pipeline, not the transport under test).
 - **Inputs:** none (no oracle run); the regression geometry is fully defined
-  in `regressions/md/const-pot-charge-halo-mpi/`.
+  in `regressions/md/constant-potential/`.
 
 Verified 2026-07-27 (metalwalls loop wave 5 worker).

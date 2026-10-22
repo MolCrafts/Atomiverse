@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-metallic-stress —
+! CP2K twin for regressions/gpw/rks —
 ! multi-k RKS free-energy cell stress under FERMI_DIRAC smear (BCC Na).
 ! Matched GPW class: GTH-PBE-q9 + DZVP-MOLOPT-SR-GTH, PADE, MP 2×2×2, CUTOFF 150.
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.

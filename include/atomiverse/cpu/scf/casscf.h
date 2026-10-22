@@ -1,5 +1,5 @@
 /// @file cpu/scf/casscf.h
-/// @brief Complete active-space SCF (CASSCF) — public API via `RHF::casscf`.
+/// @brief Complete active-space SCF (CASSCF) — public API `CASSCF<RHF>{rhf}.run(frame, ncas, nelecas)`.
 ///
 /// Closed-shell CASSCF on a converged RHF reference: frozen core is doubly
 /// occupied; full CI is solved in the active spatial orbitals; orbitals are
@@ -40,7 +40,7 @@ struct CASSCFResult {
 };
 
 // Pack-based entry is private — see internal/casscf_pack.h.
-// Public: MeanFieldMethod::casscf(frame, ncas, nelecas) (closed-shell RHF).
+// Public: CASSCF<RHF> (post_hf.h), closed-shell RHF reference.
 
 } // namespace scf
 } // namespace cpu

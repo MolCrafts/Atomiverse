@@ -15,19 +15,19 @@ PySCF, reads a file, or touches the network.
 ===================================  =========================================
 Pinned quantity                      Source (hard-coded golden)
 ===================================  =========================================
-E_RHF/STO-3G(H₂O) = −74.961754 Ha    regressions/scf/h2o_rhf_sto3g/REFERENCE.md
+E_RHF/STO-3G(H₂O) = −74.961754 Ha    regressions/scf/rhf/REFERENCE.md
                                      (LibreTexts §28.2; window 1e-3 Ha)
-E_UHF/6-31G*(N₂⁺) =                  regressions/scf/n2_ionization/REFERENCE.md
+E_UHF/6-31G*(N₂⁺) =                  regressions/scf/uhf/REFERENCE.md
   −108.365971102534 Ha               (PySCF 2.14.0, conv_tol 1e-12)
-E_B3LYP/def2-SVP(H₂O) =              regressions/scf/b3lyp-fused-jk-h2o/
+E_B3LYP/def2-SVP(H₂O) =              regressions/scf/rks/
   −76.35814183099154 Ha              REFERENCE.md (PySCF 2.14.0; window 1e-6 Ha)
-∂E/∂z(O) = −6.142775911808e-02       regressions/scf/h2o_rhf_sto3g_grad/
+∂E/∂z(O) = −6.142775911808e-02       regressions/scf/rhf/
   Ha/Bohr                            REFERENCE.md:34 (PySCF 2.14.0 analytic)
 ===================================  =========================================
 
 Sign convention (verified, not assumed): Atomiverse publishes **forces**
 F = −∂E/∂R in eV/Å — see
-``regressions/scf/h2o_rhf_sto3g_grad/reg_h2o_rhf_sto3g_grad.cpp:69-73``, which
+``regressions/scf/rhf/h2o_rhf_sto3g_grad.cpp:69-73``, which
 negates the reported force to recover the PySCF gradient. The pinned oxygen
 gradient of −6.142775911808e-02 Ha/Bohr is therefore a **positive** z force of
 +3.158742374 eV/Å.
@@ -78,22 +78,22 @@ _HARTREE_PER_BOHR_IN_EV_PER_ANGSTROM: float = _HARTREE_IN_EV * _ANGSTROM_IN_BOHR
 
 # ── Hard-coded goldens + their stated windows ───────────────────────
 
-# regressions/scf/h2o_rhf_sto3g/REFERENCE.md (LibreTexts §28.2, PySCF-checked).
+# regressions/scf/rhf/REFERENCE.md (LibreTexts §28.2, PySCF-checked).
 _E_RHF_H2O_STO3G_HA: float = -74.961754
 _TOL_RHF_H2O_HA: float = 1.0e-3  # the regression's own milli-Hartree window
 
-# regressions/scf/n2_ionization/REFERENCE.md (PySCF 2.14.0, conv_tol 1e-12).
+# regressions/scf/uhf/REFERENCE.md (PySCF 2.14.0, conv_tol 1e-12).
 _E_UHF_N2_CATION_HA: float = -108.365971102534
 # The C++ case grades the DERIVED ionization energies at ±1e-3 eV, i.e.
 # 1e-3 / 27.211386245988 = 3.7e-5 Ha on the underlying total energies. 1e-4 Ha
 # is a deliberately looser band on the raw total energy of the cation alone.
 _TOL_UHF_N2_HA: float = 1.0e-4
 
-# regressions/scf/b3lyp-fused-jk-h2o/REFERENCE.md (PySCF 2.14.0, ac-006).
+# regressions/scf/rks/REFERENCE.md (PySCF 2.14.0, ac-006).
 _E_RKS_B3LYP_H2O_DEF2SVP_HA: float = -76.35814183099154
 _TOL_RKS_B3LYP_HA: float = 1.0e-6  # the regression's own window
 
-# regressions/scf/h2o_rhf_sto3g_grad/REFERENCE.md:34 — PySCF analytic dE/dz on
+# regressions/scf/rhf/REFERENCE.md:34 — PySCF analytic dE/dz on
 # oxygen [Ha/Bohr]; F = −∂E/∂R, so the force is positive along +z.
 _GRAD_O_Z_HA_PER_BOHR: float = -6.142775911808e-02
 _FORCE_O_Z_EV_PER_ANGSTROM: float = (
@@ -104,7 +104,7 @@ _TOL_FORCE_EV_PER_ANGSTROM: float = 1.0e-4  # numerical-force tolerance
 
 # ── Geometries ──────────────────────────────────────────────────────
 
-# regressions/scf/h2o_rhf_sto3g/reg_h2o_rhf_sto3g.cpp:22-26 — derived from the
+# regressions/scf/rhf/h2o_rhf_sto3g.cpp:22-26 — derived from the
 # citation geometry with the same formulas (R = 0.95 Å, ∠HOH = 104.5°), NOT
 # from the rounded table in that case's REFERENCE.md.
 _R_OH_ANGSTROM: float = 0.95
@@ -214,7 +214,7 @@ class TestRHF:
     ) -> None:
         """``run()`` writes the total energy [eV] to ``frame.meta["energy"]``;
         converted to Hartree it reproduces the −74.961754 Ha pin of
-        regressions/scf/h2o_rhf_sto3g/REFERENCE.md within its 1e-3 Ha window."""
+        regressions/scf/rhf/REFERENCE.md within its 1e-3 Ha window."""
         frame, _ = rhf_h2o
         energy_ev = frame.meta["energy"]
         assert isinstance(energy_ev, float)
@@ -262,7 +262,7 @@ class TestUHF:
 
     def test_energy_matches_pyscf_pin(self, uhf_n2_cation: "UHF") -> None:
         """E_UHF(N₂⁺) reproduces the −108.365971102534 Ha PySCF 2.14.0 pin of
-        regressions/scf/n2_ionization/REFERENCE.md within 1e-4 Ha (that case
+        regressions/scf/uhf/REFERENCE.md within 1e-4 Ha (that case
         grades the derived IPs at ±1e-3 eV ≈ 3.7e-5 Ha)."""
         assert uhf_n2_cation.energy() == pytest.approx(
             _E_UHF_N2_CATION_HA, abs=_TOL_UHF_N2_HA
@@ -288,7 +288,7 @@ class TestRKS:
 
     def test_energy_matches_pyscf_pin(self, rks_b3lyp_h2o: "RKS") -> None:
         """E_B3LYP/def2-SVP(H₂O) reproduces the −76.35814183099154 Ha PySCF
-        2.14.0 pin of regressions/scf/b3lyp-fused-jk-h2o/REFERENCE.md within
+        2.14.0 pin of regressions/scf/rks/REFERENCE.md within
         that case's own 1e-6 Ha window."""
         assert rks_b3lyp_h2o.energy() == pytest.approx(
             _E_RKS_B3LYP_H2O_DEF2SVP_HA, abs=_TOL_RKS_B3LYP_HA
@@ -343,7 +343,7 @@ class TestScfForces:
     def rhf_forces_h2o() -> tuple["molpy.Frame", np.ndarray]:
         """RHF/STO-3G analytic forces at the pinned-gradient geometry.
 
-        tol/max_iter mirror regressions/scf/h2o_rhf_sto3g_grad
+        tol/max_iter mirror regressions/scf/rhf
         (``RHF{STO3G, 0, 1e-12, 200}``) so the comparison is against the pin
         at the settings the pin was taken at.
         """
@@ -383,7 +383,7 @@ class TestScfForces:
         self, rhf_forces_h2o: tuple["molpy.Frame", np.ndarray]
     ) -> None:
         """F_z(O) = −∂E/∂z(O) at the PySCF pin: −(−6.142775911808e-02 Ha/Bohr)
-        = +3.158742374 eV/Å (regressions/scf/h2o_rhf_sto3g_grad/REFERENCE.md:34;
+        = +3.158742374 eV/Å (regressions/scf/rhf/REFERENCE.md:34;
         sign convention read off reg_h2o_rhf_sto3g_grad.cpp:69-73)."""
         _, forces = rhf_forces_h2o
         assert forces[0, 2] == pytest.approx(

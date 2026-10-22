@@ -14,7 +14,7 @@ Demonstrates the always-available geometry-optimization surface:
   length can be checked against arithmetic instead of a stored number.
 
 Recipe and gates are those of the C++ end-to-end case
-``regressions/minimizer/lj_dimer``: start at 1.2 r*, L-BFGS(10, 0.05, 20),
+``regressions/minimizer/geometry``: start at 1.2 r*, L-BFGS(10, 0.05, 20),
 200 iterations, |r − r*| < 0.01 Å.
 
 MolCrafts stack only (molpy + numpy) — no ASE, no matplotlib. Headless,
@@ -46,7 +46,7 @@ import numpy as np
 
 import atomiverse as av
 
-# ── Lennard-Jones argon, the parameters of regressions/minimizer/lj_dimer ──
+# ── Lennard-Jones argon, the parameters of regressions/minimizer/geometry ──
 _EPS: float = 0.0104  # well depth [eV]
 _SIGMA: float = 3.4  # collision diameter [Å]
 _CUTOFF: float = 2.5 * _SIGMA  # [Å]
@@ -55,7 +55,7 @@ _MASS_AR: float = 39.948  # [amu]
 _Z_AR: int = 18  # atomic number
 
 #: Analytic minimum of the 12-6 Lennard-Jones pair potential — arithmetic,
-#: not a stored measurement (regressions/minimizer/lj_dimer/REFERENCE.md).
+#: not a stored measurement (regressions/minimizer/geometry/REFERENCE.md).
 _R_STAR: float = 2.0 ** (1.0 / 6.0) * _SIGMA  # 3.816371 Å
 
 #: Isolation cell: at 40 Å the dimer never sees a periodic image of itself.

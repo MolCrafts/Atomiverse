@@ -98,10 +98,10 @@ module raises ``MissingDomainError`` (an ``ImportError``) naming the flag.
 
 Pinned numbers behind this surface: ``python/tests/test_scf.py`` grades
 RHF/STO-3G water against the -74.961754 Ha value of
-``regressions/scf/h2o_rhf_sto3g/REFERENCE.md`` (1e-3 Ha window), UHF/6-31G*
-N2+ against ``regressions/scf/n2_ionization``, B3LYP/def2-SVP water against
-``regressions/scf/b3lyp-fused-jk-h2o``, and the oxygen force against
-``regressions/scf/h2o_rhf_sto3g_grad``.
+``regressions/scf/rhf/REFERENCE.md`` (1e-3 Ha window), UHF/6-31G*
+N2+ against ``regressions/scf/uhf``, B3LYP/def2-SVP water against
+``regressions/scf/rks``, and the oxygen force against
+``regressions/scf/rhf``.
 """
 
 from __future__ import annotations

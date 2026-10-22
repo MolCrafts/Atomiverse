@@ -250,7 +250,7 @@ law += "export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu; export LD_LIBRA
 law += "Configure once per tree: cmake -B build " + cmake_flags + ". ";
 law += "SCOPED BUILD (binding): never bare `cmake --build build` — that compiles every test binary. ";
 law += "Build only what this slug develops: cmake --build build -j$(nproc) --target atomiverse <touched test_*> reg_<slug>. ";
-law += "SCOPED TEST (binding): ctest --test-dir build -R '^(<touched test_*>)$' + regression via --target run_reg_<slug>. ";
+law += "SCOPED TEST (binding): ctest --test-dir build -R '^(<touched test_*>)$' + regression via ctest --test-dir build -R '/<slug>$' (target atv_regressions). ";
 law += "Loop-domain suite ctest -R '" + test_filter + "' runs only at the merge gate on `" + target_branch + "`; full unfiltered ctest never. ";
 law += "Parent `" + target_branch + "`; workers only on wf/<slug>; no push; no reset --hard; worktrees on nobackup. ";
 law += "GapCensus every wave: diff " + gap_sources + " + tree vs `" + target_branch + "`; foothold ≠ capability closed; refill " + queue_path + ". ";
@@ -375,7 +375,7 @@ while wave < max_waves {
         wp += "WORKER wave " + wn + " isolation. slug=" + slug + " method=" + it.method + " (track cpu|cuda). Branch wf/" + slug + ". ";
         wp += "RESEARCH FIRST: read baseline/notes/hot-path sources; name the lever (file+function+metric) and acceptance before coding. ";
         wp += "Then: spec-lite → offline pin / twin measure → scoped impl → dual gate → commit. ";
-        wp += "SCOPED build+test only: --target atomiverse <your test_*> reg_" + slug + "; ctest -R your tests + run_reg_" + slug + ". ";
+        wp += "SCOPED build+test only: --target atv_tests atv_regressions; ctest -R your tests + ctest -R '/" + slug + "$'. ";
         wp += "If method=cuda: GH200 sbatch only; never claim green without GPU log; cmake CUDA ON only on the GPU node. ";
         if skip_implement { wp += "skip_implement: verify only. "; }
         if do_perf {

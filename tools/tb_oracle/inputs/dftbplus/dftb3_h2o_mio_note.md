@@ -14,7 +14,7 @@ When DFTB+ + matching SK land offline:
 1. Build `hsd` input for H2O at the REFERENCE geometry with
    `ThirdOrderFull = Yes` (or diagonal DFTB3) and the same SCC tol.
 2. Convert total energy to eV; write into
-   `regressions/semiempirical/dftb3-water-mio/REFERENCE.md`.
+   `regressions/semiempirical/dftb3/REFERENCE.md`.
 3. Point regression `kPinEnergyEV` at that number only after SK fidelity
    matches (see queue slug `dftb2-3ob-organic` / energy-pin).
 

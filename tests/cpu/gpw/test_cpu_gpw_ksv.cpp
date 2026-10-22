@@ -1,7 +1,7 @@
 /// @file test_cpu_gpw_ksv.cpp
 /// @brief Unit tests for GPW Berry-phase string geometry, link-det phase
 ///        math and quantum wrapping. No SCF e2e (that lives in
-///        regressions/gpw/periodic-berry-gpw and periodic-berry-gpw-uks).
+///        regressions/gpw/berry-phase and periodic-berry-gpw-uks).
 
 #include <array>
 #include <cmath>

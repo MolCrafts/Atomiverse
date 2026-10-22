@@ -1,5 +1,5 @@
 # CP2K twin (offline oracle note) — collinear-spin Berry-phase dipole, bulk Si
-# Pairs with regressions/pw/berry-spin-si/REFERENCE.md.
+# Pairs with regressions/pw/berry-phase/REFERENCE.md.
 # Never executed at ctest/regression time (offline pin only).
 #
 # Same modern-theory-of-polarization observable as si_berry_polarization_note.inp

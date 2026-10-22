@@ -66,7 +66,7 @@ GH200 configure: `-DCMAKE_CUDA_ARCHITECTURES=90`; do not link x86 `libxtb`
   `CUBLAS_POINTER_MODE_DEVICE`): one sync per band; Gram-Schmidt is sequential
   across bands, so that is the floor. Still on host per Davidson round: the
   `Zheevd` `devInfo`, the n_bands eigenvalues, the accept flag.
-- Correctness: `regressions/pw/pw-cuda-lda-si --device=both` |ΔE| ~1e-14 Ry
+- Correctness: `regressions/pw/rks --device=both` |ΔE| ~1e-14 Ry
   (bound 1e-3 Ry — do not tighten from one cell); forces/stress CPU twins at
   ~1e-12.
 - Large-cell evidence (ES order step 4, Si Γ LSDA, ecut 15 Ry,

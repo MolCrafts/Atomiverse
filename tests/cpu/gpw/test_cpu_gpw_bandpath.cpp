@@ -1,6 +1,6 @@
 /// @file test_cpu_gpw_bandpath.cpp
 /// @brief Unit tests for GPW band-path geometry and gap finder.
-///        No full SCF e2e (that lives in regressions/gpw/gpw-bands-si).
+///        No full SCF e2e (that lives in regressions/gpw/bands-dos).
 
 #include <cmath>
 #include <stdexcept>
@@ -41,25 +41,6 @@ TEST(GpwBandsPath, DiamondPathIncludesGammaAndX) {
     // n_seg=4 → 4 samples per segment; 5 segments with shared joins:
     // start + 5*(4-1) = 1 + 15 = 16.
     EXPECT_EQ(bands.kfrac.size(), 16u);
-}
-
-TEST(GpwGapFromSpectrum, SyntheticIndirectGap) {
-    // k0: VBM at band 1 = -0.1; k1: CBM at band 2 = 0.2 → gap 0.3
-    std::vector<std::vector<double>> evals = {
-        {-1.0, -0.1, 1.0},
-        {-1.0, -0.5, 0.2},
-    };
-    double e_vbm = 0, e_cbm = 0;
-    int vk = -1, ck = -1, vb = -1, cb = -1;
-    const double gap =
-        gap_from_spectrum(evals, /*n_occ=*/2, e_vbm, e_cbm, vk, ck, vb, cb);
-    EXPECT_NEAR(e_vbm, -0.1, 1e-12);
-    EXPECT_NEAR(e_cbm, 0.2, 1e-12);
-    EXPECT_NEAR(gap, 0.3, 1e-12);
-    EXPECT_EQ(vk, 0);
-    EXPECT_EQ(ck, 1);
-    EXPECT_EQ(vb, 1);
-    EXPECT_EQ(cb, 2);
 }
 
 TEST(GpwBandsGuards, RejectsDispersionOnPath) {

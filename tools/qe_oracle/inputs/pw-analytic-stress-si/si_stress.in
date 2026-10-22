@@ -1,4 +1,4 @@
-! Fair-wall twin of regressions/pw/pw-analytic-stress-si: one SCF + stress.
+! Fair-wall twin of regressions/pw/rks: one SCF + stress.
 ! ATV job: 1 SCF + Nielsen-Martin numerical-HF stress (12 NSCF strained
 ! diagonalizations). QE job: 1 SCF + analytic NM stress (tstress). Same NC
 ! UPF, cell, ecutwfc, MP mesh; XCType::LSDA = Slater + PW92 -> 'SLA PW'.

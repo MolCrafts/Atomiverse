@@ -17,17 +17,18 @@
 #   sbatch -A <slurm-account> tools/gpu_job.sh
 #   sbatch -A <slurm-account> \
 #     --export=ALL,ATV_CMAKE_FLAGS="-DATV_BUILD_PW=ON -DATV_BUILD_GPW=OFF",\
-# ATV_TARGETS="reg_cuda-pw-metallic-smear",ATV_CTEST_RE='test_cuda_pw_' \
+# ATV_TARGETS="atv_tests_cuda atv_regressions",ATV_CTEST_RE='^pw/cuda-pw-' \
 #     tools/gpu_job.sh
 #
 # Environment knobs (all optional):
 #   ATV_CMAKE_FLAGS  extra -D flags appended to the configure line
 #   ATV_TARGETS      space-separated build targets   (default: the ctest deps)
-#   ATV_CTEST_RE     ctest -R regex                  (default: all CUDA tests)
+#   ATV_CTEST_RE     ctest -R regex                  (default: CUDA unit tests,
+#                    label cuda; regression cases are named <domain>/<case>)
 #   ATV_BUILD_DIR    build tree name                 (default: build-gpu-job)
 #   ATV_KEEP_BUILD   set to 1 to keep the tree for follow-up runs
 #   ATV_RUN          shell command after ctest (GPU module env; ${BUILD}
-#                    expands in that shell). Regressions are not ctest.
+#                    expands in that shell).
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
@@ -78,8 +79,13 @@ else
 fi
 
 RC=0
-echo "=== ctest -R '${ATV_CTEST_RE:-cuda}' ==="
-ctest --test-dir "${BUILD}" --output-on-failure -R "${ATV_CTEST_RE:-cuda}" || RC=$?
+if [[ -n "${ATV_CTEST_RE:-}" ]]; then
+    echo "=== ctest -R '${ATV_CTEST_RE}' ==="
+    ctest --test-dir "${BUILD}" --output-on-failure -R "${ATV_CTEST_RE}" || RC=$?
+else
+    echo "=== ctest -L cuda -LE regression ==="
+    ctest --test-dir "${BUILD}" --output-on-failure -L cuda -LE regression || RC=$?
+fi
 
 if [[ -n "${ATV_RUN:-}" ]]; then
     echo "=== ATV_RUN: ${ATV_RUN} ==="

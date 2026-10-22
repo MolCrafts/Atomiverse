@@ -2,36 +2,38 @@
 #
 # Contract: regressions/README.md. Every case directory carries a
 # `case.cmake` that calls atv_regression(); this file only discovers them.
-# Regressions are never registered with add_test() (CLAUDE.md iron law 1):
+# All cases link into one executable, `atv_regressions`; each is one ctest
+# test labelled `regression`:
 #
-#   cmake --build build --target regressions       # build and run every case
-#   cmake --build build --target run_reg_<case>    # one case
+#   ctest -L regression                       # every case
+#   ctest -R '^scf/coupled-cluster$'            # one case
+#   atv_regressions --case scf/ccsd-h2-sto3g  # same, without ctest
+#   ctest -LE regression                      # unit tests only
 
-add_custom_target(regressions
-    COMMENT "Running all end-to-end regression cases")
-
-# atv_regression(REQUIRES <tokens…>|NONE [DEVICES cpu|cuda|both] [THREADS n]
-#                [RANKS n] [GPUS n] [MPIEXEC] [LIBS targets…] [ARGS args…])
+# atv_regression(SECTION <name> REQUIRES <tokens…>|NONE [DEVICES cpu|cuda|both]
+#                [THREADS n] [GPUS n] [MPIEXEC] [LIBS targets…])
 #
-# Called from regressions/<domain>/<case>/case.cmake with _ATV_REG_DOMAIN and
-# _ATV_REG_CASE set by the discovery loop below.
+# One call per section, from regressions/<domain>/<method>/case.cmake; the
+# method directory is one case (one ctest test) running its enabled sections.
+#   SECTION   section source <name>.cpp, or <name>.cu on CUDA (see DEVICES).
 #   REQUIRES  product modules (ATV_BUILD_<X>) plus WHAM (molrs WhamCompute) and
-#             FFTW_MPI (multi-rank FFTW); any unmet token removes the case.
-#   DEVICES   cpu: reg_<case>.cpp. cuda: reg_<case>.cu, needs ATV_BUILD_CUDA.
-#             both: reg_<case>.cu run with --device=both when CUDA is on,
-#             otherwise reg_<case>.cpp (absent when there is none).
-#   THREADS   OMP/OpenBLAS width (default 1); raise only on a measurement.
-#   RANKS     run under mpiexec -n <n>.
-#   MPIEXEC   the case relaunches itself through mpiexec; it gets ATV_MPIEXEC.
-#   GPUS      minimum visible GPUs (recorded in the run comment).
+#             FFTW_MPI (multi-rank FFTW); any unmet token removes the section.
+#   DEVICES   cpu: <name>.cpp. cuda: <name>.cu, needs ATV_BUILD_CUDA.
+#             both: <name>.cu run with --device=both when CUDA is on,
+#             otherwise <name>.cpp (absent when there is none).
+#   THREADS   OMP/OpenBLAS width (default 1); the case runs at the widest.
+#   MPIEXEC   the section relaunches itself through mpiexec (ATV_MPIEXEC).
+#   GPUS      minimum visible GPUs (test label).
 function(atv_regression)
-    cmake_parse_arguments(R "MPIEXEC" "DEVICES;THREADS;RANKS;GPUS"
-                          "REQUIRES;LIBS;ARGS" ${ARGN})
-    set(domain ${_ATV_REG_DOMAIN})
-    set(case ${_ATV_REG_CASE})
-    set(dir ${CMAKE_CURRENT_SOURCE_DIR}/${domain}/${case})
+    cmake_parse_arguments(R "MPIEXEC" "SECTION;DEVICES;THREADS;GPUS"
+                          "REQUIRES;LIBS" ${ARGN})
+    set(case ${_ATV_REG_DOMAIN}/${_ATV_REG_CASE})
+    set(dir ${CMAKE_CURRENT_SOURCE_DIR}/${case})
+    if(NOT R_SECTION)
+        message(FATAL_ERROR "regression ${case}: SECTION is mandatory")
+    endif()
     if(NOT R_REQUIRES)
-        message(FATAL_ERROR "regression ${domain}/${case}: REQUIRES is mandatory (use NONE)")
+        message(FATAL_ERROR "regression ${case}/${R_SECTION}: REQUIRES is mandatory (use NONE)")
     endif()
     foreach(token IN LISTS R_REQUIRES)
         if(token STREQUAL "NONE")
@@ -43,79 +45,78 @@ function(atv_regression)
         elseif(DEFINED ATV_BUILD_${token})
             set(met ${ATV_BUILD_${token}})
         else()
-            message(FATAL_ERROR "regression ${domain}/${case}: unknown REQUIRES token '${token}'")
+            message(FATAL_ERROR "regression ${case}/${R_SECTION}: unknown REQUIRES token '${token}'")
         endif()
         if(NOT met)
             return()
         endif()
     endforeach()
-    if((R_MPIEXEC OR R_RANKS) AND NOT (ATV_USE_MPI AND MPIEXEC_EXECUTABLE))
+    if(R_MPIEXEC AND NOT (ATV_USE_MPI AND MPIEXEC_EXECUTABLE))
         return()
     endif()
 
     if(NOT R_DEVICES)
         set(R_DEVICES cpu)
     endif()
-    set(device_args "")
+    set(both OFF)
     if(R_DEVICES STREQUAL "cpu")
-        set(source reg_${case}.cpp)
+        set(source ${R_SECTION}.cpp)
     elseif(R_DEVICES STREQUAL "cuda")
         if(NOT ATV_BUILD_CUDA)
             return()
         endif()
-        set(source reg_${case}.cu)
+        set(source ${R_SECTION}.cu)
     elseif(R_DEVICES STREQUAL "both")
         if(ATV_BUILD_CUDA)
-            set(source reg_${case}.cu)
-            set(device_args --device=both)
-        elseif(EXISTS ${dir}/reg_${case}.cpp)
-            set(source reg_${case}.cpp)
+            set(source ${R_SECTION}.cu)
+            set(both ON)
+        elseif(EXISTS ${dir}/${R_SECTION}.cpp)
+            set(source ${R_SECTION}.cpp)
         else()
             return()
         endif()
     else()
-        message(FATAL_ERROR "regression ${domain}/${case}: DEVICES must be cpu|cuda|both")
+        message(FATAL_ERROR "regression ${case}/${R_SECTION}: DEVICES must be cpu|cuda|both")
     endif()
     if(NOT EXISTS ${dir}/${source})
-        message(FATAL_ERROR "regression ${domain}/${case}: missing ${source}")
+        message(FATAL_ERROR "regression ${case}/${R_SECTION}: missing ${source}")
     endif()
     if(NOT R_THREADS)
         set(R_THREADS 1)
     endif()
 
-    set(target reg_${case})
-    add_executable(${target} ${dir}/${source})
-    target_link_libraries(${target} PRIVATE atomiverse ${R_LIBS})
-    set_target_properties(${target} PROPERTIES CXX_STANDARD 20)
-    if(source MATCHES "\\.cu$")
-        set_target_properties(${target} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    endif()
-    # Absolute, compiled-in input roots: a case resolves its inputs the same
-    # way from the build tree, the source tree or a bare ./reg_<case>.
-    target_compile_definitions(${target} PRIVATE
-        ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data"
-        ATV_REG_CASE_DIR="${dir}")
+    set_property(GLOBAL APPEND PROPERTY ATV_REG_SOURCES ${dir}/${source})
+    set_property(GLOBAL APPEND PROPERTY ATV_REG_LIBS ${R_LIBS})
     if(R_MPIEXEC)
-        target_compile_definitions(${target} PRIVATE
-            ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+        set_property(GLOBAL PROPERTY ATV_REG_MPIEXEC ON)
     endif()
-
-    set(launcher "")
-    if(R_RANKS)
-        set(launcher ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${R_RANKS})
+    # Accumulate the case: widest thread count, sections run with
+    # --device=both, GPU label.
+    set(_atv_case_enabled ON PARENT_SCOPE)
+    if(R_THREADS GREATER _atv_case_threads)
+        set(_atv_case_threads ${R_THREADS} PARENT_SCOPE)
     endif()
-    set(note "${R_THREADS}t")
+    if(both)
+        set(_atv_case_both ${_atv_case_both} ${R_SECTION} PARENT_SCOPE)
+    endif()
     if(R_GPUS)
-        string(APPEND note ", needs ${R_GPUS} GPUs")
+        set(_atv_case_gpus ${R_GPUS} PARENT_SCOPE)
     endif()
-    add_custom_target(run_${target}
-        COMMAND ${CMAKE_COMMAND} -E env
-                OMP_NUM_THREADS=${R_THREADS} OPENBLAS_NUM_THREADS=${R_THREADS}
-                ${launcher} $<TARGET_FILE:${target}> ${device_args} ${R_ARGS}
-        DEPENDS ${target}
-        COMMENT "regression [${domain}/${case}] (${note})"
-        VERBATIM)
-    add_dependencies(regressions run_${target})
+endfunction()
+
+# Register one discovered method directory as one ctest test.
+function(atv_regression_case_test case)
+    add_test(NAME ${case}
+             COMMAND $<TARGET_FILE:atv_regressions> --case ${case})
+    set(labels regression)
+    if(_atv_case_gpus)
+        list(APPEND labels "gpus=${_atv_case_gpus}")
+    endif()
+    list(JOIN _atv_case_both ":" both)
+    set_tests_properties(${case} PROPERTIES
+        LABELS "${labels}"
+        PROCESSORS ${_atv_case_threads}
+        ENVIRONMENT "OMP_NUM_THREADS=${_atv_case_threads};OPENBLAS_NUM_THREADS=${_atv_case_threads};ATV_REG_BOTH_SECTIONS=${both}")
 endfunction()
 
 file(GLOB _atv_reg_cases RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -125,5 +126,45 @@ foreach(_atv_reg_file IN LISTS _atv_reg_cases)
     get_filename_component(_atv_reg_path ${_atv_reg_file} DIRECTORY)
     get_filename_component(_ATV_REG_CASE ${_atv_reg_path} NAME)
     get_filename_component(_ATV_REG_DOMAIN ${_atv_reg_path} DIRECTORY)
+    set(_atv_case_enabled OFF)
+    set(_atv_case_threads 1)
+    set(_atv_case_both "")
+    set(_atv_case_gpus "")
     include(${CMAKE_CURRENT_SOURCE_DIR}/${_atv_reg_file})
+    if(_atv_case_enabled)
+        atv_regression_case_test(${_ATV_REG_DOMAIN}/${_ATV_REG_CASE})
+    endif()
 endforeach()
+
+# One executable for every enabled case. Unity batches parse the shared
+# headers once per batch; each case lives in its own namespace, so batches
+# cannot collide.
+get_property(_atv_reg_sources GLOBAL PROPERTY ATV_REG_SOURCES)
+get_property(_atv_reg_libs GLOBAL PROPERTY ATV_REG_LIBS)
+list(REMOVE_DUPLICATES _atv_reg_libs)
+add_executable(atv_regressions harness/main.cpp ${_atv_reg_sources})
+target_include_directories(atv_regressions PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(atv_regressions PRIVATE atomiverse ${_atv_reg_libs})
+target_compile_definitions(atv_regressions PRIVATE
+    ATV_REG_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
+get_property(_atv_reg_mpiexec GLOBAL PROPERTY ATV_REG_MPIEXEC)
+if(_atv_reg_mpiexec)
+    target_compile_definitions(atv_regressions PRIVATE
+        ATV_MPIEXEC="${MPIEXEC_EXECUTABLE}")
+endif()
+set_target_properties(atv_regressions PROPERTIES
+    CXX_STANDARD 20
+    UNITY_BUILD ON
+    UNITY_BUILD_BATCH_SIZE 16)
+foreach(_src IN LISTS _atv_reg_sources)
+    if(_src MATCHES "\\.cu$")
+        set_source_files_properties(${_src} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+        set_target_properties(atv_regressions PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    endif()
+endforeach()
+
+add_custom_target(regressions
+    COMMAND ${CMAKE_CTEST_COMMAND} -L regression --output-on-failure
+    DEPENDS atv_regressions
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running all end-to-end regression cases")

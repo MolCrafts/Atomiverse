@@ -5,4 +5,4 @@
 # Geometry: O2 R=1.2075 Å, cell cubic 8 Å, multiplicity 3, nspin=2, GGA_X_PBE
 # + GGA_C_PBE (true σ), ecut ≈ 12 Ry, Γ-only.
 # When pw.x available: run fixed input and replace energy pin in
-# regressions/pw/pw-spin-gga/REFERENCE.md.
+# regressions/pw/collinear-spin/REFERENCE.md.

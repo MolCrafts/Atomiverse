@@ -26,7 +26,7 @@ run offline; fair ratio r = T_atv/T_cp2k ≤ 10.
 
 ## ATV regression twin
 
-`regressions/response/dfpt-spin-smearing` — PW LSDA, NC UPF
+`regressions/response/dfpt` — PW LSDA, NC UPF
 `tests/data/pw/Si_lda_nc.upf`, collinear spin multiplicity=1, FD degauss
 0.02 Ry, extra_bands 0, ecut 10 Ry, 2×2×2 MP. Sharp pin: central second
 difference of Mermin free energy F for C[(0x),(0x)] with spin+smear SCF.

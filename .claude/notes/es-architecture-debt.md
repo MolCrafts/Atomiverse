@@ -52,7 +52,7 @@ in `Hessian<RHF>`), `Polarizability<RHF>`, `WithSolvent<Method>`; FD skeleton
 | 🟡 | `es-cuda-pw-driver` | `cuda/planewave/pw_solver.cuh` | Frame `run`/`forces`/`stress` exist; SCF loop is inside the method, not `Driver<pw::Phase>`; free `pw_forces_analytic` / `pw_stress` are the device implementations. |
 | 🟡 | `es-gpw-ot-freeloop` | `GpwDft` `use_ot` | OT still free-loop; DIIS paths are Driver stages — no third topology. |
 | 🟡 | `es-dftb-qmengine` | DFTB0/3, GFN0 vs DFTB2, GFN1/2 | Uneven `QmEngine` coverage for QM/MM `set_engine`. |
-| 🟡 | `es-docs-drift` | tutorials / `*Evaluator` comments | "mirrors Gaussian" without Evaluator caveat; ch09 `role()/capabilities()` prose; stale UKS / multi-k "throws" lists in `periodic-{mp2,ri-mp2,rpa,gw}-si.md`, `periodic-gw-kpoints.md`, `ot-smearing.md`; `second-gen-cpmd-uks.md` presents private flags as members. |
+| 🟡 | `es-docs-drift` | tutorials / `*Evaluator` comments | "mirrors Gaussian" without Evaluator caveat; ch09 `role()/capabilities()` prose. |
 | 🟡 | `es-reg-internal` | `regressions/gpw/*` dispersion pins | ~25 GPW cases include `internal/{dftd3,dftd3_params,ts_dispersion,mbd_dispersion,xdm_dispersion}.h` — violates iron law 1a. Pin through the public method or move kernel pins to `tests/`. |
 | 🟡 | `es-gpw-thread-determinism` | GPW Γ-UKS+U, Γ-UKS OT | Differ run to run at 8 threads: `gpw-dftu-forces`, `gpw-dftu-kpoints`, `second-gen-cpmd-uks-ot`; `test_cpu_gpw_thread_reproducibility` does not cover these paths. |
 | 🟡 | `es-cuda-es-tests-e2e` | `tests/cuda/gpw/test_gpw_{full_product,kpoints,stress}.cu`, `tests/cuda/planewave/test_pw_cell_stress.cu` | Full CUDA + CPU-oracle SCFs under ctest — iron law 1. Move to `regressions/{gpw,pw}` `--device=both` cases. |

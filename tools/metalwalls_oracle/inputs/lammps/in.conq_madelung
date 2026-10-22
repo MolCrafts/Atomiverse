@@ -1,5 +1,5 @@
 # Constant-charge (conq) twin of the ELECTRODE madelung example.
-# Offline oracle input for regressions/md/const-charge-electrode/ — requires
+# Offline oracle input for regressions/md/constant-charge/ — requires
 # LAMMPS built with -D PKG_ELECTRODE=ON (never run from ctest).
 #
 # Feeds the conp pin Q_top = +0.279214485147238 e (from

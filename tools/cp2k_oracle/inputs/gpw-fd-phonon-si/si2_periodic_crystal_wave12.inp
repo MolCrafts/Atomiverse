@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-fd-phonon-si
+! Offline CP2K twin for regressions/response/phonons
 ! Finite-displacement Γ phonons: Si2 diamond fragment, cubic a=5.43 Å
 ! GPW PADE + DZVP-MOLOPT-GTH + GTH-PBE-q4, CUTOFF 150 Ry
 ! Nonperiodic MT Poisson (ATV product budget: periodic MOLOPT image sums

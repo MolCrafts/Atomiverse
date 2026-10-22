@@ -4,11 +4,11 @@ mol_project:
   language: cpp
   stage: experimental
   build:
-    install: "cmake -B build -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON"
-    check: "cmake --build build -j$(nproc)"
-    test: "ctest --test-dir build --output-on-failure"
+    install: "cmake -B build -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON"
+    check: "cmake --build build --target atv_tests"
+    test: "ctest --test-dir build -LE regression --output-on-failure"
     test_single: "ctest --test-dir build -R {path} --output-on-failure"
-    coverage: "ctest --test-dir build --output-on-failure"
+    coverage: "ctest --test-dir build -LE regression --output-on-failure"
   arch:
     style: backend-pillars
     rules_section: "## Architecture"
@@ -87,10 +87,12 @@ bash -lc '
   export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu   # default is wrongly aarch64
   export LD_LIBRARY_PATH="$LIBRARY_PATH:$LD_LIBRARY_PATH"   # module sets link path only
   git submodule update --init --recursive molrs   # once per clone
-  cmake -B build -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON \
+  cmake -B build -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
-  cmake --build build -j$(nproc)
-  ctest --test-dir build --output-on-failure
+  cmake --build build --target atv_tests atv_regressions
+  ctest --test-dir build -LE regression --output-on-failure   # unit tests
+  ctest --test-dir build -L regression -R "^scf/"             # regressions
 '
 ```
 
@@ -129,7 +131,9 @@ registered as tests.
 ### 1. Tests are unit tests — nothing else
 
 `tests/` holds **only** single-function / single-method unit tests mirroring
-the source layout; the suite runs in seconds. Forbidden there:
+the source layout, linked into one gtest executable (`atv_tests`, plus
+`atv_tests_cuda` / `atv_tests_mpi`; a dedicated executable only for a test
+that needs its own link line); the suite runs in seconds. Forbidden there:
 
 - **End-to-end of any kind** — no full SCF/MD/vib/MC solve, convergence loop,
   timing, or external-engine comparison.
@@ -140,27 +144,33 @@ the source layout; the suite runs in seconds. Forbidden there:
 
 No opt-in switch: if it is registered, it runs.
 
-### 1a. A regression pins one capability against a real oracle
+### 1a. A regression pins one method against a real oracle
 
-End-to-end lives only in `regressions/<domain>/<case>/` (contract and
-templates: `regressions/README.md`).
+End-to-end lives only in `regressions/<domain>/<method>/` (contract and
+templates: `regressions/README.md`). The number of cases is the number of
+methods (~90), not of quantities.
 
-- **One case per roadmap cell.** A case exists for one `docs/roadmap/` row on
-  the backends it claims; a ✓ cell names its case, a capability without one is
-  ◐ at most. CUDA support is the **same** case run with `--device=cuda|both`,
-  never a sibling directory. Parameter variants on one code path, staged ports
-  and API-shape checks get no case.
+- **One case per method.** A case is a directory of sections, one per pinned
+  system, quantity (energy, forces, stress), variant (spin, k-points,
+  smearing) or backend; a new one of those is a new section, never a new
+  case. A ✓ roadmap cell names its case, a capability without one is ◐ at
+  most. CUDA is a section run with `--device=cuda|both`, never a sibling
+  case. Parameter variants on one code path, staged ports and API-shape
+  checks get no section.
 - **The oracle is not Atomiverse.** Allowed: `external` (a number another
   program printed: version + input + output line), `literature` (citation),
   `analytic` (closed form / exact identity), `cpu-twin` (a CUDA cell whose CPU
   cell carries one of the others). Not oracles: self-golden, ATV-vs-ATV finite
   differences as the sole gate, re-implementations, cross-Hamiltonian "twins".
 - **Out-of-library consumer:** public headers + link `atomiverse`, no
-  `internal/`; **≤ 60 s** at the declared thread width; exit non-zero printing
-  `got / want / tol`.
+  `internal/`; **≤ 60 s per section** at the declared thread width; exit
+  non-zero printing `got / want / tol`.
 - **Registration is data:** `case.cmake`
-  (`atv_regression(REQUIRES <modules> [DEVICES] [THREADS] [RANKS] …)`) plus a
-  `REFERENCE.md` from the README template. Nothing hand-listed in
+  (`atv_regression(SECTION <name> REQUIRES <modules> [DEVICES] [THREADS] …)`) plus a
+  `REFERENCE.md` from the README template; each section source registers its
+  `run` with `ATV_REGRESSION("<domain>/<method>", "<section>", …)` into the
+  one `atv_regressions` executable (unity-built, so each section lives in its
+  own namespace). ctest lists one test per case, label `regression`. Nothing hand-listed in
   `regressions/CMakeLists.txt`; a module OFF removes its cases.
 
 ### 2. Frame is the only public token

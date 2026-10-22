@@ -26,11 +26,11 @@ set_target_properties(xc_libxc_oracle PROPERTIES CXX_STANDARD 20)
 # Smoke test for the oracle itself. Verifies init/teardown,
 # spin-polarized vs unpolarized, density cutoff, and the Slater
 # textbook value (cross-library reference for LDA exchange).
-atv_add_cpp_test(test_xc_libxc_oracle test_xc_libxc_oracle.cpp)
+atv_add_unit_exe(test_xc_libxc_oracle test_xc_libxc_oracle.cpp)
 target_link_libraries(test_xc_libxc_oracle PRIVATE xc_libxc_oracle)
 
 # Native-vs-libxc parity test (the binding scientific gate of sub-spec 03).
 # Lives in the parent tests/cpu/scf/ directory but registered here so it
 # is only built when the oracle is available.
-atv_add_cpp_test(test_cpu_scf_xc_vs_libxc ../test_xc_vs_libxc.cpp)
+atv_add_unit_exe(test_cpu_scf_xc_vs_libxc ../test_xc_vs_libxc.cpp)
 target_link_libraries(test_cpu_scf_xc_vs_libxc PRIVATE xc_libxc_oracle)

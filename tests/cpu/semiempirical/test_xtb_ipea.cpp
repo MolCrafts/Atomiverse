@@ -1,6 +1,6 @@
 /// @file tests/cpu/semiempirical/test_xtb_ipea.cpp
 /// Unit tests for IPEA-xTB (tables, throws, FD identity, VIP/VEA flags).
-/// Pins live in regressions/semiempirical/ipea-xtb-small, ipea-xtb-forces,
+/// Pins live in regressions/semiempirical/ipea-xtb, ipea-xtb-forces,
 /// and ipea-xtb-vip.
 #include <cmath>
 #include <stdexcept>

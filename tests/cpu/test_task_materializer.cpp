@@ -116,7 +116,7 @@ constexpr int kNSteps = 5;
 // (`KSpacePME`) halves or the driver refuses to build, so both the TaskSpec
 // entries and the hand-built twin read it from here. 3.5/r_c is the LAMMPS
 // rule of thumb: erfc(3.5) ≈ 7e-7, i.e. the screened real-space pair term
-// is negligible by the cutoff (regressions/md/npt_pme_nacl/REFERENCE.md).
+// is negligible by the cutoff (regressions/md/npt/REFERENCE.md).
 constexpr double kAlpha = 3.5 / kCutoff; // [1/Å]
 constexpr double kPmeSpacing = 1.0;      // [Å] target PME grid spacing
 constexpr int kPmeOrder = 6;             // B-spline interpolation order
@@ -1452,7 +1452,7 @@ TEST(TaskMaterializer, MinimizeCgRunMatchesHandBuiltDriverBitwise) {
 }
 
 TEST(TaskMaterializer, MinimizeFireRunMatchesHandBuiltDriverBitwise) {
-    // The LJ-tuned FIRE 1.0 knobs of regressions/minimizer/fire_lj_dimer:
+    // The LJ-tuned FIRE 1.0 knobs of regressions/minimizer/geometry:
     // ASE's dt0 = 0.1 assumes O(1) forces, and an LJ residual is ≪ 1 eV/Å,
     // so the pseudo-timestep and its ceiling are raised. Both are live
     // within five iterations (dt grows after n_min accelerating steps), and
@@ -1523,7 +1523,7 @@ TEST(TaskMaterializer, MinimizeFireRunMatchesHandBuiltDriverBitwise) {
 }
 
 /// @brief Two LJ atoms 3.0 Å apart in a 6 Å cubic cell — the fixture of
-///        regressions/minimizer/cell_lj_pressure, scaled to a unit-test
+///        regressions/minimizer/cell-relax, scaled to a unit-test
 ///        iteration budget.
 ///
 /// Compressed on both counts: the pair sits inside r_min AND the cell is
@@ -1593,7 +1593,7 @@ TEST(TaskMaterializer, MinimizeCellRelaxRunMatchesHandBuiltDriverBitwise) {
     // Two of the four knobs are constructor arguments and two are public
     // members, so the twin spells the ctor first and then assigns the rest
     // in declaration order — the shape the materializer arm has to use, and
-    // the one regressions/minimizer/cell_lj_pressure uses.
+    // the one regressions/minimizer/cell-relax uses.
     cpu::minimizer::IsotropicCellRelax cell(kCellPTarget, kCellAlpha0);
     cell.max_scale = kCellMaxScale;
     cell.bulk_mod = kCellBulkMod;

@@ -1,7 +1,7 @@
 /// @file tests/cpu/md/test_pair_morse_smoke.cpp
 /// @brief Unit checks for `cpu::PairMorse` energy/force at fixed geometry.
 ///
-/// Multi-step NVE is a regression property (see `regressions/md/lj_argon` for
+/// Multi-step NVE is a regression property (see `regressions/md/nve` for
 /// the integrator conservation story). This file only launches one force
 /// evaluation — analytic Morse well \(V=D(1-e^{-\alpha(r-r_0)})^2\).
 

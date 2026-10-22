@@ -3,4 +3,4 @@
 # with tests/data/pw/O_ONCV_PBE-1.2.upf for an absolute e_tot twin.
 # Geometry: O2 R=1.2075 Å, cell cubic 8 Å, multiplicity 3, LSD/PBE.
 # When pw.x available: run fixed input and replace energy pin in
-# regressions/pw/pw-spin-polarized-o2/REFERENCE.md.
+# regressions/pw/collinear-spin/REFERENCE.md.

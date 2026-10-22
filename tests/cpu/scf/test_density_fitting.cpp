@@ -4,7 +4,7 @@
 ///        against externally pinned PySCF values, metric whitening
 ///        algebra, and the fitted J/K math on H2/STO-3G — all single
 ///        calls, NO converged SCF (the H2O/def2-TZVP end-to-end double
-///        gate lives in regressions/scf/h2o_ri_jk/).
+///        gate lives in regressions/scf/rhf/).
 ///
 /// Oracle: PySCF 2.14.0 (~/work/.x86_64/bin/python). Every pinned number
 /// below records the generating command in the adjacent comment.

@@ -34,10 +34,10 @@ namespace semiempirical {
 /// Hessian [eV/Å²], IP/EA [eV].
 ///
 /// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
-/// `regressions/semiempirical/ipea-xtb-small/` (energy),
-/// `regressions/semiempirical/ipea-xtb-forces/` (forces),
-/// `regressions/semiempirical/ipea-xtb-analytic-hessian/` (FD Hessian),
-/// `regressions/semiempirical/ipea-xtb-vip/` (ΔSCC IP/EA).
+/// `regressions/semiempirical/ipea-xtb/` (energy),
+/// `regressions/semiempirical/ipea-xtb/` (forces),
+/// `regressions/semiempirical/ipea-xtb/` (FD Hessian),
+/// `regressions/semiempirical/ipea-xtb/` (ΔSCC IP/EA).
 ///
 /// @code
 ///   cpu::Evaluate eval;

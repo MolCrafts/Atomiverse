@@ -2,7 +2,7 @@
 /// @brief Unit: `cpu::vib::Hessian` accepts GFN0 as a Semiempirical force kind.
 ///
 /// Wiring only — `Hessian::run` (6N displacements) lives in
-/// `regressions/semiempirical/gfn0-xtb-analytic-hessian/`.
+/// `regressions/semiempirical/gfn0-xtb/`.
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/stage.h"

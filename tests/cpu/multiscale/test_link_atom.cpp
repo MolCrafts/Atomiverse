@@ -1,7 +1,7 @@
 /// @file tests/cpu/multiscale/test_link_atom.cpp
 /// @brief Unit tests for H link-atom placement and topology-derived cuts.
 ///
-/// Full QMMM electrostatic launch/SCF: regressions/multiscale/qmmm_link_ch3oh
+/// Full QMMM electrostatic launch/SCF: regressions/multiscale/qmmm
 /// (e2e-in-tests wave-2).
 #include <cmath>
 #include <gtest/gtest.h>

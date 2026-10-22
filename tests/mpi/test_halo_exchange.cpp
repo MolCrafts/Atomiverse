@@ -454,11 +454,3 @@ TEST(HaloForward, OneCommPerRuntime) {
 // See test_topology.cpp for the OpenMPI 5.0.x macOS teardown rationale.
 // CTest reads the GoogleTest "[  PASSED  ]" summary line to determine
 // pass/fail, bypassing any prterun exit-code wobble.
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

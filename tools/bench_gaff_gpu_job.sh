@@ -49,7 +49,7 @@ sha256sum benchmarks/cuda/bench_gaff.cu \
     include/atomiverse/cuda/dynamics/md.cuh \
     tools/bench_gaff_openmm/compare.py \
     tools/bench_gaff_openmm/measure_resources.py \
-    regressions/forcefield/cuda-pme-half-spectrum/reg_cuda-pme-half-spectrum.cu \
+    regressions/longrange/ewald-pme/cuda-pme-half-spectrum.cu \
     > "logs/gaff-openmm/sources-${SLURM_JOB_ID:-manual}.sha256"
 if [[ -n "${RUN_SCRIPT:-}" ]]; then
     bash "$RUN_SCRIPT" "$BUILD"

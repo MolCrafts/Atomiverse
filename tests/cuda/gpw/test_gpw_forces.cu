@@ -3,7 +3,7 @@
 ///
 /// UNIT SCOPE: ionic HF / local-PP HF kernels on synthetic grids; public
 /// free-fn force path fail-closed guards. Full H₂ dual-gate lives in
-/// regressions/gpw/cuda-gpw-device-forces — never under ctest as e2e SCF.
+/// regressions/gpw/rks — never under ctest as e2e SCF.
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"

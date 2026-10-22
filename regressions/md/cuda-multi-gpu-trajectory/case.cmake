@@ -1,4 +1,0 @@
-atv_regression(
-  REQUIRES MD POTENTIALS NEIGHBOR
-  DEVICES cuda
-  GPUS 2)

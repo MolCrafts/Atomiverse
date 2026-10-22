@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-d3-stress/ (never launched by ctest).
+! Offline CP2K twin for regressions/gpw/d3/ (never launched by ctest).
 ! Plain-PBE twin (no VDW block): identical geometry/settings as
 ! water_dimer_d3_stress.inp. Because D3 is geometry-only, the D3-run stress
 ! minus this run's stress isolates the D3-zero dispersion stress, with the

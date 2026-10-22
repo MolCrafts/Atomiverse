@@ -27,4 +27,4 @@ C_{\mathrm{diff}}=0.38681727072485284~\mathrm{e/V},\quad
 C_{\mathrm{int}}=0.5~\mathrm{e/V}.
 \]
 
-Recorded in `regressions/md/capacitance-charge-fluctuation/REFERENCE.md`.
+Recorded in `regressions/md/electrode-observables/REFERENCE.md`.

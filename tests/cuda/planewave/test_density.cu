@@ -6,7 +6,7 @@
 /// drives ONE device method (or a fixed 5-call mixing sequence with synthetic
 /// input) and compares it to the actual CPU stage object on the same
 /// `PWWorkspace`. The end-to-end CPU/CUDA PW parity solve lives in
-/// regressions/pw/pw-cuda-lda-si, never under ctest.
+/// regressions/pw/rks, never under ctest.
 ///
 /// TOLERANCES ARE NOT ZERO BY DESIGN. cuFFT and FFTW use different butterfly
 /// orders, the device reductions are fixed-geometry trees while the CPU sums

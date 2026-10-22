@@ -42,7 +42,7 @@ cpu::minimizer::FIRE tuned_fire(const FIREParams& p);
 /// are members. The constructor validates the two members against their
 /// DEFAULTS, so an out-of-range payload is caught on the assignment's own
 /// terms at `launch()` rather than here — the same split the hand-built
-/// `regressions/minimizer/cell_lj_pressure` recipe has.
+/// `regressions/minimizer/cell-relax` recipe has.
 ///
 /// @param p Typed isotropic relax params (pressure [eV/Å³], gains).
 /// @return Optimizer ready for any registration path.

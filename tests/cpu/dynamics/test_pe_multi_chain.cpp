@@ -2,7 +2,7 @@
 /// @brief Unit surface for multi-molecule bonded topology + LJ specials.
 ///
 /// Multi-step NVE conservation is a **regression**
-/// (`regressions/md/pe_bonded_nve`). This file only exercises one force
+/// (`regressions/md/nve`). This file only exercises one force
 /// launch: net force ≈ 0 (Newton 3) and finite LJ energy with special-bonds
 /// exclusions on 8 independent C20 chains.
 

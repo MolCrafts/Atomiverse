@@ -1,4 +1,4 @@
-# CP2K twin for regressions/dynamics/second-gen-cpmd-water (offline oracle —
+# CP2K twin for regressions/dynamics/second-gen-cpmd (offline oracle —
 # never run at ctest/regression time). Second-generation Car–Parrinello MD
 # (Kühne et al., PRL 98, 066401 (2007)): ASPC density extrapolation + limited
 # SCF corrector on the same H2O NVE twin as gpw-bomd / xl-bomd / cpmd-water.

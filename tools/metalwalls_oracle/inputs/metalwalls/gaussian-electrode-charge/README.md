@@ -7,4 +7,4 @@ Gaussian-charge Green function (identical physics to MW electrode Gaussians).
 
 When a MetalWalls or LAMMPS ELECTRODE binary becomes available, a fair wall twin
 can be added here; until then regressions use analytic pins in
-`regressions/md/gaussian-electrode-charge/REFERENCE.md`.
+`regressions/md/constant-potential/REFERENCE.md`.

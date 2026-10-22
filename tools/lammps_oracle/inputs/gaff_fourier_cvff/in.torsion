@@ -1,4 +1,4 @@
-# Oracle twin for regressions/forcefield/gaff-fourier-cvff-lammps:
+# Oracle twin for regressions/forcefield/gaff:
 # dihedral fourier + improper cvff only (pair/bond/angle zero).
 units           real
 atom_style      full

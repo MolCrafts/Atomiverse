@@ -1,7 +1,7 @@
 # Offline twin: Born–Mayer–Huggins ion dimer — LAMMPS pair_style born
 # metal units (eV, Å). pair_modify shift yes matches ATV PairBorn.
 # Not run by ctest. Pin recorded 2026-07-24 →
-# regressions/forcefield/born-repulsion-foothold/REFERENCE.md
+# regressions/forcefield/pair-styles/REFERENCE.md
 
 units           metal
 atom_style      atomic

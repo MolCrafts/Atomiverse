@@ -20,7 +20,7 @@ electrode charges.
    point for a stationary geometry is the SCF PIM solution, so the two-site
    Thole/Applequist closed form pins the XL component's cold *and* warm
    launches. Geometry and numbers are shared with
-   `regressions/md/pim-induced-dipole-bulk/REFERENCE.md`
+   `regressions/md/polarizable/REFERENCE.md`
    (q = ±1 e, α = 1.0/1.5 Å³, r = 3 Å, thole_a = 0.39, L = 50 Å):
    E_pol = **−0.12040946414707571 eV**,
    F_x = **±0.040341072868572643 eV/Å**,

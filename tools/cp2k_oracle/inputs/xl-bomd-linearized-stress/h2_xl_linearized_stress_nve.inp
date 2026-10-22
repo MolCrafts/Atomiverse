@@ -1,4 +1,4 @@
-# CP2K twin for regressions/dynamics/xl-bomd-linearized-stress (offline
+# CP2K twin for regressions/dynamics/xl-bomd (offline
 # oracle — never run at ctest/regression time).
 #
 # CP2K 2026.1 has NO zero-SCF shadow-functional (linearized) XL-BOMD product,

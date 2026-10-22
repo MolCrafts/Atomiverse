@@ -26,8 +26,7 @@
         "ATV_BUILD_KSPACE": "OFF",
         "ATV_REAL_STORAGE": "double",
         "ATV_TEST_TIMEOUT_SECONDS": "10",
-        "ATV_TEST_OMP_THREADS": "2",
-        "ATV_TEST_HEAVY": "OFF"
+        "ATV_TEST_OMP_THREADS": "1"
       }
     },
     {

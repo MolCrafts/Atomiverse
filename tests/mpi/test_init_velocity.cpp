@@ -37,11 +37,3 @@ TEST(InitVelocity, GlobalComAndTargetTemperatureWithOneAtomPerRank) {
         / (context.md.n_dof_global * ATV::units::kB_ev_per_k);
     EXPECT_NEAR(temperature, 300, 1e-9);
 }
-int main(int argc, char** argv) {
-    int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int result = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return result;
-}

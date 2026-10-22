@@ -17,7 +17,8 @@
 #     tools/cpu_job.sh
 #
 # Environment knobs match tools/gpu_job.sh: ATV_CMAKE_FLAGS, ATV_TARGETS,
-# ATV_CTEST_RE (set to a pattern matching nothing, e.g. '^$', to skip ctest),
+# ATV_CTEST_RE (default: every unit test; a pattern matching nothing, e.g.
+# '^$', skips ctest),
 # ATV_BUILD_DIR, ATV_KEEP_BUILD, ATV_RUN (shell command after ctest in this
 # module env; ${BUILD} expands in it). A benchmark needs the whole node:
 #   sbatch -A <account> -n 256 --exclusive -t 02:00:00 \
@@ -61,8 +62,13 @@ else
 fi
 
 RC=0
-ctest --test-dir "${BUILD}" --output-on-failure -j8 \
-      ${ATV_CTEST_RE:+-R "${ATV_CTEST_RE}"} || RC=$?
+# Default: the unit tests. ATV_CTEST_RE selects by name instead (regression
+# cases are named <domain>/<case>).
+if [[ -n "${ATV_CTEST_RE:-}" ]]; then
+    ctest --test-dir "${BUILD}" --output-on-failure -j8 -R "${ATV_CTEST_RE}" || RC=$?
+else
+    ctest --test-dir "${BUILD}" --output-on-failure -j8 -LE regression || RC=$?
+fi
 
 if [[ -n "${ATV_RUN:-}" ]]; then
     echo "=== ATV_RUN: ${ATV_RUN} ==="

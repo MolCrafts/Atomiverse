@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/periodic-wannier-gpw-uks
+! Offline CP2K twin for regressions/gpw/wannier
 ! (NOT run by ctest — human/agent pin host only).
 !
 ! Diamond Si BCT 4-atom orthorhombic cell, collinear LSD (UKS, multiplicity 1)

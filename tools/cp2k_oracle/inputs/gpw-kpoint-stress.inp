@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-kpoint-stress — Monkhorst-Pack k-point GPW
+! CP2K twin for regressions/gpw/rks — Monkhorst-Pack k-point GPW
 ! stress on diamond Si bct 4-atom (DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE).
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
 ! Pin: STRESS_TENSOR (NUMERICAL or ANALYTICAL) [Ha/Bohr^3] + total energy [Ha].

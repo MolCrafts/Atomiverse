@@ -14,22 +14,22 @@ No new oracle work happens here. Every physical number below is a
 =====================================  ======================================
 Pinned quantity                        Source (hard-coded golden)
 =====================================  ======================================
-Stretched Si2 fixture: fcc primitive   ``regressions/pw/cuda-pw-forces/
+Stretched Si2 fixture: fcc primitive   ``regressions/pw/rks/
 cell rows [[0,a/2,a/2],[a/2,0,a/2],    reg_cuda-pw-forces.cu:60-83`` +
 [a/2,a/2,0]] with a = 5.43 Å; Si at    ``REFERENCE.md`` (settings table).
 (0,0,0) and (a/4+0.08, a/4, a/4);
 ``GTH-PBE-q4``, ecut 8 Ry, k_mesh 1,
 tol 1e-6, max_iter 40
-LSDA analytic max|F| = 2.517979 eV/Å   ``regressions/pw/cuda-pw-forces/
+LSDA analytic max|F| = 2.517979 eV/Å   ``regressions/pw/rks/
 at parity bound 5e-3 eV/Å; force-path  REFERENCE.md:39,42,44-46`` (GH200 job
 SCF energy -13.85556302 Ry;            1050105; the CPU number *is* the
 non-vacuity floor max|F| > 0.05 eV/Å   oracle for the CUDA twin there)
-Stress symmetry window 0.025 eV/Å³     ``regressions/pw/pw-analytic-stress-si/
+Stress symmetry window 0.025 eV/Å³     ``regressions/pw/rks/
 (``kSymTol``: soft, incomplete ecut/k) reg_pw-analytic-stress-si.cpp:28``
-Si a0 ≈ 5.468 Å (PseudoDojo EOS), so   ``regressions/pw/pw-analytic-stress-si/
+Si a0 ≈ 5.468 Å (PseudoDojo EOS), so   ``regressions/pw/rks/
 a = 5.43 Å is compressed and the       REFERENCE.md`` (sign + a0 rows)
 mechanical diagonal must be positive
-Single-H cell: 6 Å cube, ``GTH-PBE-q1``  ``regressions/pw/pw-bomd-h/
+Single-H cell: 6 Å cube, ``GTH-PBE-q1``  ``regressions/dynamics/bomd/
 ecut 5 Ry, mix_beta 0.5                reg_pw-bomd-h.cpp:28-46``
 PW BOMD step budget tol 1e-4 /         same file (``pw-bomd-h`` speed
 max_iter 12                            settings), reused on Si2 here
@@ -83,7 +83,7 @@ if _HAS_PW:
     from atomiverse.pw import PW, PWResult
 
 
-# ── Fixture geometry / settings (regressions/pw/cuda-pw-forces) ──────
+# ── Fixture geometry / settings (regressions/pw/rks) ──────
 
 #: Si lattice constant [Å] — reg_cuda-pw-forces.cu:32.
 _A: float = 5.43
@@ -130,7 +130,7 @@ _TOL_STRESS_SYM_EV_A3: float = 0.025
 #: every symmetry gate above, so require a real hydrostatic component.
 _MIN_STRESS_EV_A3: float = 1.0e-3
 
-# ── Single-H cell (regressions/pw/pw-bomd-h) ─────────────────────────
+# ── Single-H cell (regressions/dynamics/bomd) ─────────────────────────
 
 _H_BOX_A: float = 6.0
 _GTH_H: str = "GTH-PBE-q1"
@@ -434,7 +434,7 @@ class TestPwForces:
         self, lsda_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
         """HARD-CODED GOLDEN: max|F| = 2.517979 eV/Å on this fixture with
-        xc = LSDA (regressions/pw/cuda-pw-forces/REFERENCE.md:44-46, GH200
+        xc = LSDA (regressions/pw/rks/REFERENCE.md:44-46, GH200
         job 1050105 — the CPU analytic path is the oracle there), graded at
         that regression's own 5e-3 eV/Å parity bound."""
         _, forces = lsda_forces
@@ -664,7 +664,7 @@ class TestPwFailsLoud:
 @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
 class TestPwBomd:
     """``MD.set_evaluator(pw)`` — the C++ twin is
-    regressions/pw/pw-bomd-h (reg_pw-bomd-h.cpp:39-60), whose speed settings
+    regressions/dynamics/bomd (reg_pw-bomd-h.cpp:39-60), whose speed settings
     (tol 1e-4, max_iter 12) are reused here on the stretched Si2 cell so one
     step stays ~0.3 s. Three steps is a smoke, not an energy-drift test:
     the drift pin belongs to that regression.

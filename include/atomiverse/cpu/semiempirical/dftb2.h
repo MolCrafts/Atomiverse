@@ -231,7 +231,7 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// the cutoff is discarded, and different D3 engines truncate differently
     /// (simple-dftd3 defaults to 60 Bohr = 31.75 Å for the two-body term).
     /// Set it to the oracle's cutoff when pinning a periodic dispersion
-    /// energy — see `regressions/semiempirical/dftb2-dispersion-d3-periodic/`.
+    /// energy — see `regressions/semiempirical/dftb2/`.
     double d3_cutoff = 49.84849326866401;
     /// @brief D3 C6 scale (dimensionless). DFTB3-D3(BJ) default = 1.
     double d3_s6 = 1.0;
@@ -466,7 +466,7 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// collapse of the published PBE table); empty `spin_w_ha` throws.
     /// Absolute excitation energies are not DFTB+/mio-1-1 numbers for
     /// anything but the structural limits gated in
-    /// `regressions/semiempirical/td-dftb-h2/`.
+    /// `regressions/semiempirical/td-dftb/`.
     ///
     /// @param frame          Geometry [Å] + atomic number Z in the type column.
     ///                       Read-only; nothing is written to it.

@@ -7,7 +7,7 @@
 /// splines are in **Bohr**; integral energies in **Hartree** (DFTB+
 /// convention). Public ATV conversion to eV/Å is done at use site.
 ///
-/// Pin path: `regressions/semiempirical/dftb2-dftbplus-energy-pin/` vs
+/// Pin path: `regressions/semiempirical/dftb2/` vs
 /// DFTB+ 24.1 + mio-1-1.
 #pragma once
 

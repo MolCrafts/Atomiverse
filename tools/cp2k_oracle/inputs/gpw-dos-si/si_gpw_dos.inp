@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-dos-si — multi-k GPW RKS DOS on diamond
+! CP2K twin for regressions/gpw/bands-dos — multi-k GPW RKS DOS on diamond
 ! Si (bct 4-atom cell, DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE).
 ! Matched algorithm class: Quickstep GPW + MONKHORST-PACK 2×2×2 + &PRINT &DOS
 ! (eigenvalue histogram on the SCF k mesh; ATV Gaussian-smears the same class

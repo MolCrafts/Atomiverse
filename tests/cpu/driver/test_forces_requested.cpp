@@ -36,7 +36,7 @@
 /// no-op `launch`, so the whole file is microseconds and nothing here depends
 /// on `ATV_BUILD_HF`. The QM-in-MC end-to-end witness (a nested RHF energy +
 /// umbrella bias, pinned against the analytic stiff-spring variance) is
-/// `regressions/mc/mc_bias_es`, not this file.
+/// `regressions/sampling/metadynamics`, not this file.
 ///
 /// **Determinism.** No RNG consumed by any stub (the MC RNG stream is seeded
 /// fixed and only the acceptance policy draws from it), no wall clock, no

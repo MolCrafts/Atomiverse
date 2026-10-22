@@ -1,6 +1,6 @@
 # DFTB+ 24.1 non-SCC twins for `dftb0-analytic-forces`
 
-Offline pins for `regressions/semiempirical/dftb0-analytic-forces/`.
+Offline pins for `regressions/semiempirical/dftb0/`.
 Each subdirectory is one `SCC = No` mio-1-1 single point with
 `PrintForces = Yes`. `dftb.out.txt` is the verbatim `detailed.out`.
 `Prefix = "./"` is rewritten to the mio-1-1 tree by

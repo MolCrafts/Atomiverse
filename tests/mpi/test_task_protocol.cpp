@@ -534,12 +534,3 @@ TEST(MpiTaskProtocol, MaterializeFailurePropagatesAndSessionSurvives) {
 //
 // See test_topology.cpp for the OpenMPI 5.0.x teardown rationale (CTest
 // reads the gtest summary via PASS_REGULAR_EXPRESSION, not the exit code).
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

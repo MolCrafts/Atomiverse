@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-d3bj-stress/
+! Offline CP2K twin for regressions/gpw/d3/
 ! Never launched by ctest. Same geometry/settings as
 ! ../gpw-d3bj-forces/water_dimer_d3bj_forces.inp, plus NUMERICAL stress.
 ! Pin = STRESS| NUMERICAL stress tensor [GPa] of this run MINUS the plain

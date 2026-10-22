@@ -4,7 +4,7 @@
 /// Unit tier (e2e-in-tests wave-2): type hierarchy + outer Plan bind/build
 /// only. No full SCF / multi-step MD / Minimize campaigns under `tests/`.
 /// Nested energy and multi-step pins live in
-/// `regressions/architecture/lj_rhf_coupled` and `regressions/scf/*`.
+/// `regressions/multiscale/qmmm` and `regressions/scf/*`.
 
 #include <gtest/gtest.h>
 

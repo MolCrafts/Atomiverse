@@ -1,9 +1,9 @@
 /// @file cpu/scf/casci.h
-/// @brief Complete active-space CI (CASCI) — public API via `RHF::casci`.
+/// @brief Complete active-space CI (CASCI) — public API `CASCI<RHF>{rhf}.run(frame, ncas, nelecas)`.
 ///
 /// Closed-shell CASCI on a converged RHF reference: frozen core is doubly
 /// occupied; full CI is solved in the active spatial orbitals only (dense
-/// determinant basis, same Slater–Condon kernel as `RHF::fci`). Matches
+/// determinant basis, same Slater–Condon kernel as `FCI<RHF>`). Matches
 /// PySCF `mcscf.CASCI(mf, ncas, nelecas)` for the same RHF orbitals.
 ///
 /// Roos, *The Complete Active Space Self-Consistent Field Method and its
@@ -31,7 +31,7 @@ struct CASCIResult {
 };
 
 // Pack-based entry is private — see internal/casci_pack.h.
-// Public: MeanFieldMethod::casci(frame, ncas, nelecas) (closed-shell RHF).
+// Public: CASCI<RHF> (post_hf.h), closed-shell RHF reference.
 
 } // namespace scf
 } // namespace cpu

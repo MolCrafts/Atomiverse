@@ -3,7 +3,7 @@
 ///
 /// UNIT SCOPE: local Hellmann–Feynman kernel vs a host twin on synthetic
 /// ρ(G); public-API single-atom symmetry. Full Si-dimer CUDA↔CPU dual-gate
-/// lives in regressions/pw/cuda-pw-forces — never under ctest.
+/// lives in regressions/pw/rks — never under ctest.
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"

@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-vdw-kpoint-forces/
+! Offline CP2K twin for regressions/gpw/vdw-df/
 ! Never launched by ctest. Periodic water-dimer GPW PBE + nonlocal
 ! vdW-DF (DRSLL) + MONKHORST-PACK 2 1 1 + ENERGY_FORCE.
 ! Same geometry / grid / XC / NON_LOCAL as gpw-vdw-kpoints energy twin

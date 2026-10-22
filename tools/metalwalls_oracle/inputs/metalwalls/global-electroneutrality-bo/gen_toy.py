@@ -5,7 +5,7 @@ HA_EV = 27.211386245988        # eV per Ha
 
 A2B = 1.0 / BOHR               # Bohr per A
 
-# ---- ATV regression system (regressions/md/global-electroneutrality-bo) ----
+# ---- ATV regression system (regressions/md/constant-potential) ----
 Lx_A, Ly_A, Lz_A = 10.0, 10.0, 20.0
 z_e1_A, z_e2_A, z_ion_A = 5.0, 15.0, 10.0
 eta_invA = 2.0                 # ConstPotBO(2.0) [1/A]

@@ -3,7 +3,7 @@
 ///
 /// UNIT SCOPE: empty-frame / open-shell reject; CUDA↔CPU parity on a cheap
 /// closed-shell H₂ cell (LSDA + PBE). Full Si dual-gates live in
-/// regressions/pw/cuda-pw-stress (LSDA) and cuda-pw-stress-pbe (PBE) —
+/// regressions/pw/rks (LSDA) and cuda-pw-stress-pbe (PBE) —
 /// never under ctest as an e2e product.
 
 #include "atomiverse/core/frame_schema.h"
@@ -123,7 +123,7 @@ TEST(CudaPWCellStress, SmearZeroDegaussThrows) {
 
 /// Restricted FD metallic smear: monatomic H (odd valence) is accepted —
 /// finite free-energy stress. Full CUDA↔CPU dual-gate is
-/// regressions/pw/cuda-pw-smear-stress (never under ctest as e2e product).
+/// regressions/pw/smearing (never under ctest as e2e product).
 /// CUDA-only to stay inside the 10 s unit-timeout budget (dual SCF twin
 /// would push the suite over the hard TIMEOUT).
 TEST(CudaPWCellStress, HSmearRestrictedFinite) {

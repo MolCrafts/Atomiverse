@@ -1188,7 +1188,7 @@ SccResult scc_energy_unrestricted(int n_at, int n_ao, int n_alpha, int n_beta,
 /// `repulsive_energy`, not min-image. Self-images (\(a=a\), \(T\neq0\)) exert
 /// zero nuclear force and are skipped; in a dense periodic cell they do carry
 /// a virial — an open gap shared with the shipped restricted path, recorded in
-/// `regressions/semiempirical/dftb2-analytic-stress/REFERENCE.md`.
+/// `regressions/semiempirical/dftb2/REFERENCE.md`.
 /// Fold γ's own gradient into the accumulators the SK walk already fills.
 ///
 /// γ is Ewald-summed, so its derivative has a reciprocal half that no

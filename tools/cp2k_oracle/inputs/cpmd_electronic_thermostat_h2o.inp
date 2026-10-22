@@ -1,4 +1,4 @@
-! Offline CP2K twin note for regressions/dynamics/cpmd-electronic-thermostat
+! Offline CP2K twin note for regressions/dynamics/car-parrinello
 ! Isolated H2O, PBE / DZVP-MOLOPT-GTH / GTH-PBE, MT 10 Å, short MD.
 ! ctest NEVER launches CP2K — pin is literature E_ext + Te envelope.
 ! Classical fictitious-mass CPMD with electronic NH is not a stock QS

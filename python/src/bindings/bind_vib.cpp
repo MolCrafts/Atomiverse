@@ -143,8 +143,8 @@ struct VibHandle {
     /// @brief Install the neighbor list in its finite-difference form.
     ///
     /// `every=1, delay=0, check=yes` — the shape the phonon regressions build
-    /// (`regressions/pw/fd-phonon-supercell`,
-    /// `regressions/response/phonon-dispersion-si`). The MD params default of
+    /// (`regressions/response/phonons`,
+    /// `regressions/response/phonons`). The MD params default of
     /// `delay=10` is wrong here for the same reason it is wrong for Monte
     /// Carlo: the displacement loop is not a trajectory, so "ten steps since
     /// the last rebuild" bounds nothing. With the check ON the half-skin test

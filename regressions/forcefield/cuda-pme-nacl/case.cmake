@@ -1,3 +1,0 @@
-atv_regression(
-  REQUIRES MD POTENTIALS NEIGHBOR KSPACE
-  DEVICES cuda)

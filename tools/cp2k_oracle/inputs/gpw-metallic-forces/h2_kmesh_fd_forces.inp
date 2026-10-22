@@ -1,4 +1,4 @@
-! Matched fair-wall twin for regressions/gpw/gpw-metallic-forces (H2, k 1×1×2,
+! Matched fair-wall twin for regressions/gpw/rks (H2, k 1×1×2,
 ! FERMI_DIRAC SMEAR, ENERGY_FORCE). Basis DZVP-MOLOPT-GTH (ATV pin uses
 ! DZV-GTH-PADE — same algorithm class; absolute E/F not compared).
 &GLOBAL

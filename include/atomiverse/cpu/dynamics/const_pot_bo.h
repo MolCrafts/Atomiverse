@@ -209,10 +209,10 @@ class ConstPotBO : public cpu::Component {
     /// therefore grows with \((z/L)^2\). Measured against MetalWalls c8ad175d:
     /// - 20 Å electrode gap over a 4.07 Å lateral cell — \(R=200\) is still
     ///   ~1.2 % off, \(R=1280\) is 0.18 % off
-    ///   (`regressions/md/thomas-fermi-electrode/REFERENCE.md`);
+    ///   (`regressions/md/thomas-fermi/REFERENCE.md`);
     /// - two 2×2 walls in a 4 Å cell at a 5 Å gap — residual charge error
     ///   1.5 % at \(R=100\), 1.2 % at 200, 0.09 % at 1600
-    ///   (`regressions/md/per-electrode-eta`).
+    ///   (`regressions/md/constant-potential`).
     ///
     /// Choose \(R\) from the accuracy you need — there is no "large enough"
     /// value. Cost \(\propto N_{\mathrm{elec}}^2 \times R^2\).

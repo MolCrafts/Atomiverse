@@ -1,5 +1,5 @@
 # MetalWalls twin of Atomiverse
-# regressions/md/const-pot-cg-large-electrode
+# regressions/md/constant-potential
 # Single-point constant-potential electrode charge solve.
 
 num_steps    0

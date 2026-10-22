@@ -167,7 +167,7 @@ TEST(GpwDataTable, D3CoversSupportedElementsOnly) {
 }
 
 // Metallic free-energy force payload: result fields + public smear members
-// (no SCF — full FD identity lives in regressions/gpw/gpw-metallic-forces).
+// (no SCF — full FD identity lives in regressions/gpw/rks).
 TEST(GpwDataTable, MetallicForcePayloadMembersExist) {
     GpwDft m{std::vector<Kind>{}, /*cutoff_ry=*/300.0, XcKind::PADE};
     m.smearing = Smearing::fermi_dirac;

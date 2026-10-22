@@ -11,7 +11,7 @@
 /// evaluator writes into a running sum. Central-differencing a running sum of a
 /// linear restoring force yields exactly HALF the true curvature — the "k or
 /// k/2 depending on FD assembly convention" hedge fossilized in
-/// `regressions/architecture/harmonic_driver_matrix` is that bug, not a
+/// `regressions/response/vibrations` is that bug, not a
 /// convention.
 ///
 /// `vib::Phonon` already binds `ZeroForces` @ -1000 / `ZeroEnergy` @ -999 on its

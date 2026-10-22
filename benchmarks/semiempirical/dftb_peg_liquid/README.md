@@ -73,7 +73,7 @@ Neither engine gains anything from 16 → 32 threads. 16 is the operating point.
 
 Same total energy at every thread count, −35805.6778561470 eV, matching DFTB+
 to 2.4×10⁻⁵ eV over 1088 atoms (2.3×10⁻⁸ eV/atom); forces to 2.5×10⁻⁶ eV/Å
-MAE. The correctness gates are `regressions/semiempirical/dftb2-ewald-gamma/`.
+MAE. The correctness gates are `regressions/semiempirical/dftb2/`.
 
 Per-iteration the gap is wider than the totals suggest: ATV is ~0.51 s per
 generalized eigenproblem at n_ao = 2432 against DFTB+'s ~0.9 s (its

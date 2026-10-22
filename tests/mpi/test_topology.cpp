@@ -201,15 +201,6 @@ TEST(MpiTopology, OwnedAtomsInSlab) {
 // use `PASS_REGULAR_EXPRESSION="\\[  PASSED  \\]"` to read the GoogleTest
 // summary line instead of the prterun exit code.
 
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}
-
 TEST(MpiTopology, AdoptPreservesBoxAwareProcessGrid) {
     auto frame = make_uniform_grid(2, 8.0);
     frame.box = cpu::Box::orthorhombic(40.0, 8.0, 8.0);

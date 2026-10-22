@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate MetalWalls twins of the Atomiverse regression
-``regressions/md/maze-symplectic-charge-dynamics``.
+``regressions/md/polarizable``.
 
 The Atomiverse regression simulates a 10-atom parallel-plate capacitor with
 *minimum-image* real-space Coulomb (``PairGaussianCoul``, cutoff 12 A, and

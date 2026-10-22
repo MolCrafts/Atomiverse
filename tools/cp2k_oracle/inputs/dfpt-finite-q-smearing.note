@@ -27,6 +27,6 @@ run offline; fair ratio \(r = T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) ≤ 10.
 
 ## ATV regression twin
 
-`regressions/response/dfpt-finite-q-smearing` — PW LSDA, NC UPF
+`regressions/response/dfpt` — PW LSDA, NC UPF
 `tests/data/pw/Si_lda_nc.upf`, FD degauss 0.02 Ry, extra_bands 0,
 ecut 10 Ry, k_mesh 1 on 2×1×1 SC, q = X.

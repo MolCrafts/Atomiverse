@@ -1,6 +1,6 @@
 # MetalWalls twin — `thomas-fermi-electrode`
 
-The oracle input behind `regressions/md/thomas-fermi-electrode`. It is the
+The oracle input behind `regressions/md/thomas-fermi`. It is the
 MetalWalls transcription of the *exact* system that regression simulates: six Au
 electrode sites (3 + 3) stacked at \(x=y=0\), \(L_x=L_y=4.07\) Å, first-plane gap
 20 Å, \(\Delta\Psi = 1\) V, \(\eta = 1/0.56\) Å⁻¹, Voronoi volume \(a_0^3/4\),
@@ -31,7 +31,7 @@ l_tf = 3.779452249251540     +0 -3.707555065364344E-003 +3.707555065364343E-003
 
 Conversions and the full breakdown (charges per site, Coulomb and Thomas–Fermi
 energies, the dimensional cross-checks) live in
-`regressions/md/thomas-fermi-electrode/REFERENCE.md`.
+`regressions/md/thomas-fermi/REFERENCE.md`.
 
 ## Two things that will bite you
 

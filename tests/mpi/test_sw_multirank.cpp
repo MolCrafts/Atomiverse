@@ -346,12 +346,3 @@ TEST_P(SWMultiRank, SkinImageBeyondHalfBoxDoesNotBecomeAnotherInteraction) {
 }
 
 INSTANTIATE_TEST_SUITE_P(NeighborCounting, SWMultiRank, ::testing::Bool());
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

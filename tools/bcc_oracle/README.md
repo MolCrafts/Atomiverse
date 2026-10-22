@@ -65,4 +65,4 @@ sqm prints its Mulliken charges to 3 decimals, and that rounded table is what
 antechamber reads into the BCC stage. Each oracle charge therefore carries up
 to ±5e-4 e of rounding from its AM1 input. This rounding is the floor for any
 comparison against a full-precision AM1. See
-`regressions/semiempirical/am1bcc-antechamber-charges/REFERENCE.md`.
+`regressions/semiempirical/am1-bcc/REFERENCE.md`.

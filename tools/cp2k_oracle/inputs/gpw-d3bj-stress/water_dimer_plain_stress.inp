@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-d3bj-stress/
+! Offline CP2K twin for regressions/gpw/d3/
 ! Never launched by ctest. Plain (no-dispersion) twin of
 ! water_dimer_d3bj_stress.inp — identical apart from the removed
 ! &VDW_POTENTIAL block. The pin is sigma(D3BJ) - sigma(plain).

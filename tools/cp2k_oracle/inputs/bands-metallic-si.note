@@ -92,5 +92,5 @@ Documents the Quickstep product counterpart of metallic-occupation bands.
 ## Pin policy
 
 Record CP2K version, wall, and qualitative \(E_F\) / gap character in
-`regressions/pw/bands-metallic-si/REFERENCE.md` when a binary is available.
+`regressions/pw/bands-dos/REFERENCE.md` when a binary is available.
 Never launch CP2K from ctest.

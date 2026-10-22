@@ -109,11 +109,10 @@ test beyond reproducing the bulk cohesive energy.
 ## Implementation scope
 
 The theory of EAM and angular potentials is distinct from the capabilities
-of a particular implementation. The inherited notes about element coverage,
-MPI, CUDA, and parameter loading now belong to the
-[classical-model support notes](methods/classical-models.md). They are not
-newly verified support claims. Check a pinned source revision before using
-these examples beyond their demonstrated single-element setting.
+of a particular implementation. Element coverage, MPI, CUDA and parameter
+loading are stated on the
+[many-body potentials method page](methods/md-manybody-potentials.md#scope),
+next to the regression case that pins both potentials.
 
 ## Practice plan
 

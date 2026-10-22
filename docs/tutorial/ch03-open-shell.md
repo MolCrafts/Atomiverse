@@ -500,7 +500,7 @@ second-order SCF, CPHF response, and TDHF excitation energies.
 
 PySCF’s `mf.stability(external=True)` at \(R=1.5\,\mathrm{Å}\) reports the
 same internal-stable / external-unstable diagnosis. Geometry and commands are
-in case `h2_rhf_stability` pin.
+in section `h2_rhf_stability` of case `scf/rhf`.
 
 ## Restricted Open-Shell HF
 
@@ -655,10 +655,10 @@ On the same geometry collinear UHF itself has two stationary points (a pure
 doublet and a lower broken-symmetry solution). Cold-start UHF in this engine
 lands on the former; PySCF’s MINAO often lands on the latter. The non-collinear
 GHF minimum lies below both; full verification is in
-case `h3_ghf_sto3g` pin.
+section `h3_ghf_sto3g` of case `scf/ghf`.
 
-Analytic nuclear forces are supported (`ghf.forces(frame)`; pin in
-`ghf-grad-h3-sto3g`). Unsupported (explicit errors):
+Analytic nuclear forces are supported (`ghf.forces(frame)`; pin in section
+`ghf-grad-h3-sto3g` of case `scf/ghf`). Unsupported (explicit errors):
 `mp2()`/`fci()`, `soscf`, `level_shift`, EDIIS/ADIIS, non-Hcore guesses.
 Spinor exchange requires a stored dense ERI (`compute_eri`, on by default).
 

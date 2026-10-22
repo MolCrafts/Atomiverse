@@ -23,4 +23,4 @@ E_{\mathrm{charge}} = -\sum_i \Psi_i Q_i = -0.4~\mathrm{eV}
 Cross-check (Scalfi eq. 12): \(Q_L\Delta\psi = 0.4\times 1.0 = 0.4\),
 \(E = -q^{\mathrm{T}}\Psi = -0.4\) eV.
 
-Recorded in `regressions/md/charging-work-energy/REFERENCE.md`.
+Recorded in `regressions/md/electrode-observables/REFERENCE.md`.

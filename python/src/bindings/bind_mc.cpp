@@ -742,7 +742,7 @@ void bind_mc(nb::module_& m) {
         "you convert a target density into the argument passed here. Same "
         "convention as Frenkel & Smit eq. (5.6.9); transcribed with the two "
         "acceptance rules in include/atomiverse/cpu/montecarlo/gcmc.h and "
-        "pinned in regressions/mc/gcmc_lj/REFERENCE.md.\n\n"
+        "pinned in regressions/mc/metropolis/REFERENCE.md.\n\n"
         "Because Lambda is built here from `mass`, the InsertDeleteMove that "
         "stamps atoms into the cell MUST carry that same mass — two different "
         "masses mean the sampled chemical potential is not the one requested, "

@@ -55,7 +55,7 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   comm Runtime now does), `cpu/component/context.h` (`Backend::init()` names),
   `docs/developer/architecture.md` (shared initial-force schedule / ledger),
   `src/cuda/dynamics/brownian.cu` ("step is an int").
-- `regressions/mc/gcmc_lj` is red (⟨N⟩ below the activity expansion on the
+- `regressions/mc/metropolis` is red (⟨N⟩ below the activity expansion on the
   rewritten trial loop).
 - Minimize/Optimizer vocabulary is non-orthogonal (`cpu::minimizer::`,
   `Minimize` preset, `Optimizer` kind, `CG`/`LBFGS`/`FIRE`) — needs a

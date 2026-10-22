@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-uks-metallic-stress —
+! CP2K twin for regressions/gpw/uks —
 ! multi-k UKS free-energy NUMERICAL stress under FERMI_DIRAC (BCC Na).
 ! Run OFFLINE only; never at ctest time.
 

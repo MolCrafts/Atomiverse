@@ -15,7 +15,7 @@
 /// is equal ONLY when the integral tensor obeys real (pq|rs)=(qp|sr) symmetry.
 /// The symmetric g used here pins the canonical value; the fork discrepancy is
 /// flagged separately in the tester report and gated by the equivalence
-/// regression (regressions/scf/ci-engine-equiv-h2-sto3g).
+/// regression (regressions/scf/multireference).
 
 #ifdef ATV_HAS_HF
 

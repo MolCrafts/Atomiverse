@@ -35,7 +35,7 @@ stack. Three work at fixed cell:
     from the minimum. Its defaults are ASE's and assume forces of order
     1 eV/Å; on a soft system (an argon Lennard-Jones dimer sits at ~10⁻²
     eV/Å) grow the pseudo-time scale — ``FIRE(dt0=1.0, dt_max=20.0)``, the
-    retune ``regressions/minimizer/fire_lj_dimer`` uses.
+    retune ``regressions/minimizer/geometry`` uses.
 
 Note ``alpha0`` means a step size in Å²/eV for ``LBFGS`` and ``CG``, but a
 dimensionless velocity-mixing fraction for ``FIRE``.

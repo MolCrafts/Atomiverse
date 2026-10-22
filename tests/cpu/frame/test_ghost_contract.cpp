@@ -233,7 +233,7 @@ TEST(TestGhostContract, CoulombReadsGhostChargeAtStableFreshness) {
 /// rank nothing changed (there are no ghosts); at 8 ranks `coul/cut` read
 /// whatever those ghost rows happened to hold and pumped 44% onto the total
 /// energy, with `sum_i F_i` still exactly zero because the bogus `q_i q_j`
-/// is symmetric. `regressions/md/multihop-widebox-parity` caught it; this is
+/// is symmetric. `regressions/md/domain-decomposition` caught it; this is
 /// the unit-level guard.
 TEST(TestGhostContract, EveryGhostChargeReaderDeclaresIt) {
     const cpu::PairCoulCut coul_cut{/*cutoff=*/9.0};

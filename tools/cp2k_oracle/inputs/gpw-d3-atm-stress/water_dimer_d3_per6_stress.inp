@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-d3-atm-stress/
+! Offline CP2K twin for regressions/gpw/d3/
 ! Never launched by ctest. C9 .FALSE. member of the ATM delta-stress pin
 ! pair — identical to water_dimer_d3_atm_per6_stress.inp except
 ! CALCULATE_C9_TERM. Pin = sigma(ATM twin) MINUS sigma(this run): D3 is

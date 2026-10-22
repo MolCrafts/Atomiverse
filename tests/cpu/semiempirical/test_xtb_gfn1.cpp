@@ -1,6 +1,6 @@
 /// @file tests/cpu/semiempirical/test_xtb_gfn1.cpp
 /// Unit tests for GFN1-xTB (tables, throws, FD identity). Pins live in
-/// regressions/semiempirical/gfn1-xtb-organic and gfn1-xtb-forces.
+/// regressions/semiempirical/gfn1-xtb and gfn1-xtb-forces.
 #include <cmath>
 #include <stdexcept>
 #include <string>

@@ -81,7 +81,7 @@ nav = [
     { "Reference" = [
       "tutorial/methods/README.md",
       "tutorial/methods/catalog.md",
-      "tutorial/methods/classical-models.md",
+      "tutorial/methods/md-manybody-potentials.md",
       "tutorial/appendix-pyscf-oracle.md",
       "tutorial/MAINTENANCE.md",
     ] },

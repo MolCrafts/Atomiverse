@@ -107,7 +107,7 @@ neighbor construction improves 9–24% relative to its paired baseline but remai
 but not every numerical implementation body. Do not claim a complete kernel
 audit or universal LAMMPS parity.
 
-Open work includes the red `regressions/mc/gcmc_lj` (⟨N⟩ below the activity
+Open work includes the red `regressions/mc/metropolis` (⟨N⟩ below the activity
 expansion on the rewritten trial loop; tracked in ../notes/notes.md), explicit
 electronic execution communicator ownership and
 subcommunicator propagation (including GPW DFT+U), full PW/GPW borrowed nesting,

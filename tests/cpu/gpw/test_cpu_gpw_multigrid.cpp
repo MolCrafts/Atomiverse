@@ -391,7 +391,7 @@ TEST(GpwMultigridCells, CellsIntegrateIsAdjointOfCellsCollocate) {
 // half weight and the folded single κ at full weight build the SAME real
 // D(t) = Σ_k w_k Re[P^k e^{−2πi κ·t}] when P^{−k} = conj(P^k) — the mechanism
 // behind the machine-exact folded-vs-full multi-k multigrid SCF energies
-// (regressions/gpw/gpw-multigrid-kpoints REFERENCE.md).
+// (regressions/gpw/rks REFERENCE.md).
 TEST(GpwMultigridCells, TimeReversalDStackFoldsExactly) {
     using Cplx = std::complex<double>;
     constexpr double kTwoPi = 6.283185307179586476925286766559;

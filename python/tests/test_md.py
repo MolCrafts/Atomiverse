@@ -413,7 +413,7 @@ class TestThermostatsAndNpt:
 
     #: Barostat cases need a real timestep: the 0.001 fs of the NVE smokes
     #: advances 5 as of physical time, which no cell can respond to. The Ar
-    #: step of regressions/md/pr_npt_lj/reg_pr_npt_lj.cpp is 1.0 fs; 4.0 fs
+    #: step of regressions/md/npt/pr_npt_lj.cpp is 1.0 fs; 4.0 fs
     #: is still ~1/450 of the Ar LJ oscillation period (~1.8 ps) and buys
     #: the same physical time in a quarter of the steps, which is what
     #: keeps these cases inside the suite's seconds-scale budget.
@@ -597,7 +597,7 @@ class TestThermostatsAndNpt:
 
 # ── py-coulomb-pme: charged systems ─────────────────────────────────
 #
-# Geometry and Ewald settings mirror regressions/md/npt_pme_nacl exactly
+# Geometry and Ewald settings mirror regressions/md/npt exactly
 # (reg_npt_pme_nacl.cpp `nacl()` / `electrostatic_energy()`): 4³ = 64 ions
 # on a rock-salt lattice with alternating (-1)^(i+j+k) site charges, so the
 # cell is neutral; nearest-neighbour spacing d = a₀/2 at the experimental
@@ -617,7 +617,7 @@ _PME_ORDER: int = 6
 _ARGON_ALPHA: float = 3.5 / 3.0
 
 #: HARD-CODED GOLDEN — Madelung constant of the rock-salt lattice, from
-#: regressions/md/npt_pme_nacl/REFERENCE.md §1 (Ziman, *Principles of the
+#: regressions/md/npt/REFERENCE.md §1 (Ziman, *Principles of the
 #: Theory of Solids*, 2nd ed., Cambridge 1972, §2.3). Not measured here.
 _MADELUNG: float = 1.747564594633182
 
@@ -699,7 +699,7 @@ class TestCoulombPme:
 
         E = −½ N M k_e / d with the hard-coded constants above; tolerance
         5e-4 relative is the PME discretization budget pinned by
-        regressions/md/npt_pme_nacl/REFERENCE.md §1 (measured there: 3.8e-8).
+        regressions/md/npt/REFERENCE.md §1 (measured there: 3.8e-8).
         """
         from atomiverse.longrange import CoulLong, KSpacePME
 

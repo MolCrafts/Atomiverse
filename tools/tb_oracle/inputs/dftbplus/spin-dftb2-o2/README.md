@@ -24,4 +24,4 @@ tools/tb_oracle/run_dftbplus_pin.sh tools/tb_oracle/inputs/dftbplus/spin-dftb2-o
 ```
 
 ctest never launches DFTB+; numbers are hard-coded in
-`regressions/semiempirical/spin-dftb2-o2/`.
+`regressions/semiempirical/dftb2/`.

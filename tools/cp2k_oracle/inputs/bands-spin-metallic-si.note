@@ -97,5 +97,5 @@ occupation** band structure.
 ## Pin policy
 
 Record CP2K version, wall, and qualitative \(E_F\) / gap / α≈β character in
-`regressions/pw/bands-spin-metallic-si/REFERENCE.md` when a binary is
+`regressions/pw/bands-dos/REFERENCE.md` when a binary is
 available. Never launch CP2K from ctest.

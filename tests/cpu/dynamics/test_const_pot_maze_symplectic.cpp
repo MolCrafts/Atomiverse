@@ -1,7 +1,7 @@
 /// @file tests/cpu/dynamics/test_const_pot_maze_symplectic.cpp
 /// @brief Unit tests for the true mass-zero constrained ConstPotMaZe path
 ///        (single methods; no e2e MD — that lives in
-///        regressions/md/maze-symplectic-charge-dynamics).
+///        regressions/md/polarizable).
 
 #include <gtest/gtest.h>
 

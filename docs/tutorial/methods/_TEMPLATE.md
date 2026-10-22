@@ -1,66 +1,59 @@
-# <Method name> — <system / basis>
+# <Method name>
 
-*(Technical-report draft; narrative house style TBD — rewrite later.)*
+What the method computes and where it sits relative to its neighbours
+(RHF/RKS/MP2/…, NVE/NPT/…). Two to four sentences, no pedagogy — the tutorial
+chapters own the teaching narrative.
 
-| Field | Value |
-| ----- | ----- |
-| Slug | `<slug>` |
-| Public API | `…` |
-| Roadmap | link / row name |
-
-## Summary
-
-What the method computes, typical use, and where it sits relative to RHF/RKS/MP2/….
-Three to six sentences. No pedagogy.
-
-## Method
-
-Equations, spin treatment, kernel/response level, important approximations.
-Use display math where useful. State what is **not** included.
-
-## Implementation
-
-Public surface only (`cpu::Frame`, concrete method members; no `*Config` bags).
+Public API: the concrete type and the members a reader calls, constructor
+arguments only (no `*Config` bags), exactly as the case sections use them.
 
 ```cpp
-// minimal call sequence — match the capability case
+// minimal call sequence shared by the sections
 ```
 
-```bash
-cmake --build build --target reg_<slug>
-reg_<slug>
-```
+Case: `ctest -R '^<domain>/<method>$'` — sources and oracle record in
+[`regressions/<domain>/<method>/`](../../../regressions/<domain>/<method>/).
+One section of the case per `##` heading below:
+`atv_regressions --case <domain>/<method> --section <name>`.
 
-Name the public types readers call; do not dump repository paths.
+## Common setup
 
-## Validation (vs PySCF)
+State once what every section shares: oracle program and version (PySCF,
+CP2K, Quantum ESPRESSO, LAMMPS, MetalWalls, OpenMOPAC, DFTB+, xtb), shared
+settings, shared limitations, shared literature. Omit when the sections share
+nothing.
 
-Source: case `<slug>` pin (offline pin; never live in ctest).
+## <section> — <system / quantity> {#<section>}
 
-| Quantity | Atomiverse / pin | PySCF | Tol | Notes |
-| -------- | ---------------: | ----: | --- | ----- |
+One `##` per section of the case; the heading anchor is the section name, so
+other pages link as `<domain>-<method>.md#<section>`. A variant documented
+here but not run by the case carries the line
+`*No section of the case runs this variant.*` directly under its heading.
+
+### Method
+
+Variant-specific equations, spin treatment, approximations; what is **not**
+included.
+
+### Validation
+
+| Quantity | Atomiverse | Oracle | Tol | Notes |
+| -------- | ---------: | -----: | --- | ----- |
 | … | … | … | … | … |
 
-Geometry, basis, `cart`/spherical, `conv_tol`, PySCF version — all from the pin notes.
+System, basis/cutoff, convergence settings, oracle version and the output line
+the pin came from. Never a number Atomiverse printed.
 
-## Performance
+### Performance
 
-```bash
-# fair wall vs the oracle twin for this case
-reg_<slug>   # or the matching fair-bench invocation for the domain
-```
+Fair wall \(r = T_{\mathrm{ATV}}/T_{\mathrm{oracle}}\) on the same settings
+class (gate \(r \le 10\)), or `perf_exempt` with the reason.
 
-| Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) | ≤10× | Caveat |
-| ---- | -------------------------: | -----------------------: | ----: | ---- | ------ |
-| … | … | … | … | ✓/✗ | … |
+### Limitations
 
-Gate: \(r = T_{\mathrm{ATV}}/T_{\mathrm{PySCF}} \le 10\) unless exempted.
-
-## Limitations
-
-Scope, known failures, speed debt, follow-ons.
+Scope specific to this variant.
 
 ## References
 
-- Offline pin: case `<slug>`
-- Literature …
+Literature and oracle citations shared by the sections; variant-specific ones
+stay in their section.

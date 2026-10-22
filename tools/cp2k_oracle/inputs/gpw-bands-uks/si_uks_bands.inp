@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-bands-uks — GTH-GPW collinear UKS band
+! CP2K twin for regressions/gpw/bands-dos — GTH-GPW collinear UKS band
 ! structure on diamond Si (bct 4-atom, DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE).
 ! Run OFFLINE only; never at ctest time.
 !

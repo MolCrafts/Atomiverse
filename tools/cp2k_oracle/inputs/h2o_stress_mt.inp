@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-stress-water/
+! Offline CP2K twin for regressions/gpw/rks/
 ! Never launched by ctest. Same geometry as h2o_forces_mt.inp.
 ! STRESS_TENSOR NUMERICAL — same-method twin as Atomiverse strain-FD.
 ! (ANALYTICAL stress on nonperiodic MT is not the pin; see REFERENCE.md.)

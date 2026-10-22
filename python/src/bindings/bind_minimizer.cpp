@@ -430,7 +430,7 @@ void bind_minimizer(nb::module_& m) {
         "The defaults are ASE's, which assume O(1) eV/A forces. A soft "
         "system — an Ar Lennard-Jones cluster has a residual of ~1e-2 eV/A — "
         "wants a larger pseudo-time scale, e.g. dt0 = 1.0, dt_max = 20.0 "
-        "(regressions/minimizer/fire_lj_dimer).")
+        "(regressions/minimizer/geometry).")
         .def(
             "__init__",
             [](cpu::task::FIREParams* p, double dt0, double dt_max, int n_min,

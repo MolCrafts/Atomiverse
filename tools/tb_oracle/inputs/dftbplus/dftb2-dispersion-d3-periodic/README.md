@@ -1,7 +1,7 @@
 # Offline twin — DFTB2 Γ-PBC lattice-sum D3(BJ)
 
 Inputs that reproduce the pins in
-`regressions/semiempirical/dftb2-dispersion-d3-periodic/REFERENCE.md`.
+`regressions/semiempirical/dftb2/REFERENCE.md`.
 
 **Never executed by ctest.** Run by hand when re-deriving a pin.
 

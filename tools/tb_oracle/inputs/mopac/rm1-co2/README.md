@@ -1,6 +1,6 @@
 # OpenMOPAC offline twin — RM1 / CO₂ / CO
 
-Twin for `regressions/semiempirical/nddo-sharp-discriminator`.
+Twin for `regressions/semiempirical/am1`.
 
 > **Offline only. ctest never executes these decks.** No `mopac` binary exists
 > on the Atomiverse build host. Pin numbers are the OpenMOPAC PARAM survey,

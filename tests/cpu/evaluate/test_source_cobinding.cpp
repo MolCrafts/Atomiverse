@@ -3,7 +3,7 @@
 ///        both land in `kEnergy` (driver-owned zero + `+=` contract).
 ///
 /// e2e-in-tests wave-2: no RHF/SCF under this unit. QM×MM co-binding pin is
-/// `regressions/architecture/lj_rhf_coupled`. Spec background:
+/// `regressions/multiscale/qmmm`. Spec background:
 /// `.claude/specs/esmm-contract-05-accumulate-switch` (U7).
 
 #include <cmath>

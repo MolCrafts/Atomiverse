@@ -116,15 +116,6 @@ TEST(SerialOnReplica, BackendFlagSkipsTopologyAndKeepsFrameWhole) {
 
 // ── Custom main: MPI bracket around GoogleTest (test_topology convention) ─
 
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}
-
 TEST(SerialOnReplica,
      WholeSystemEvaluatorRejectsSpatialPartitionBeforeMutation) {
     auto frame = make_h2_frame();

@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-vdw-stress —
+! CP2K twin for regressions/gpw/vdw-df —
 ! water dimer PBE + NON_LOCAL DRSLL + STRESS_TENSOR NUMERICAL.
 ! Run OFFLINE only; never at ctest time.
 

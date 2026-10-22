@@ -175,7 +175,8 @@ sim.set_evaluator(cpu::PairLJCut{...}); // MM–MM
 sim.set_evaluator(std::move(qmmm));     // QM + cross (+ auto links)
 ```
 
-See `reg_qmmm_es_h2o_pyscf`, `reg_qmmm_link_ch3oh`, `reg_qmmm_md_conservation`.
+See sections `qmmm_es_h2o_pyscf`, `qmmm_link_ch3oh` and `qmmm_md_conservation`
+of case `multiscale/qmmm`.
 
 ## Further reading
 

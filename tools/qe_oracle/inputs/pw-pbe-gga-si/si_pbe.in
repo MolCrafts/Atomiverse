@@ -1,4 +1,4 @@
-! Fair-wall twin of regressions/pw/pw-pbe-gga-si, run 1 of 2 (PBE + forces).
+! Fair-wall twin of regressions/pw/rks, run 1 of 2 (PBE + forces).
 ! Same NC UPF, cell, ecutwfc, MP mesh as the ATV regression. pseudo_dir must
 ! point at the ATV checkout's tests/data/pw. ATV solves the full 2x2x2 mesh
 ! (8 k, no symmetry reduction); QE reduces to its IBZ set natively.

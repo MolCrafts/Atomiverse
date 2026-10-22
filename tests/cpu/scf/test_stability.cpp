@@ -5,14 +5,14 @@
 ///        throws.
 ///
 /// NO SCF loop runs here (the full RHF.run()+Stability<RHF>::run path lives in
-/// regressions/scf/h2_rhf_stability). The converged H2/STO-3G determinant
+/// regressions/scf/rhf). The converged H2/STO-3G determinant
 /// is symmetry-exact in closed form (see test_orbital_hessian.cpp for the
 /// derivation): φ_g = (χ₁+χ₂)/√(2(1+S₁₂)), φ_u = (χ₁−χ₂)/√(2(1−S₁₂)),
 /// ε_p = c_pᵀ F c_p from ONE Fock build over the symmetry-fixed density.
 ///
 /// PySCF 2.14.0 pins (H2/STO-3G, cart=True, RHF conv_tol=1e-12; (A±B)
 /// built from ao2mo MO integrals with the same closed-shell formulas —
-/// commands in regressions/scf/h2_rhf_stability/REFERENCE.md):
+/// commands in regressions/scf/rhf/REFERENCE.md):
 ///   R = 0.735 Å: λ_min[¹(A+B)] = +1.1351770407 Ha,
 ///                λ_min[³(A+B)] = +0.4114522416 Ha  (both stable)
 ///   R = 1.5 Å:   λ_min[¹(A+B)] = +0.7088965814 Ha,

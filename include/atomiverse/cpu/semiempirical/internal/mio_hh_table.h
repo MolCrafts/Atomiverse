@@ -11,8 +11,8 @@
 /// H⁰/S (SCC or not) — never in how the parameters are read.
 ///
 /// Pinned against DFTB+ 24.1 + mio-1-1 by
-/// `regressions/semiempirical/dftb2-dftbplus-energy-pin/` (SCC) and
-/// `regressions/semiempirical/dftb0-h2/` (non-SCC).
+/// `regressions/semiempirical/dftb2/` (SCC) and
+/// `regressions/semiempirical/dftb0/` (non-SCC).
 #pragma once
 
 #include <algorithm>

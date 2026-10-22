@@ -49,23 +49,24 @@ subagents / worktrees before the next GapCensus.
 ## Scoped build & test (binding)
 
 Every tree compiles and tests **only the part under development** — never the
-whole product. Unit tests are one `test_*` executable per topic and regressions
-are standalone `reg_<slug>` / `run_reg_<slug>` targets, so scoping is exact:
+whole product. Unit tests link into `atv_tests` and regressions into
+`atv_regressions`; ctest lists every gtest case and every regression case, so
+scoping is by test name:
 
 ```bash
 cmake -B build <cmake_flags>                 # configure once per tree
 cmake --build build -j$(nproc) \
-      --target atomiverse <touched test_*> reg_<slug>   # NEVER bare `cmake --build build`
-ctest --test-dir build -R '^(<touched test_*>)$'        # only your tests
-cmake --build build --target run_reg_<slug>             # your regression
+      --target atv_tests atv_regressions      # NEVER bare `cmake --build build`
+ctest --test-dir build -R '^(<touched Suite>)\.'       # only your tests
+ctest --test-dir build -R '^<domain>/<case>$'             # your regression
 ```
 
 | Rule | Binding behaviour |
 | ---- | ----------------- |
-| Worker build | `--target atomiverse` + the `test_*` binaries the slug touched/added + `reg_<slug>` |
-| Worker test | `ctest -R` on those test names + `run_reg_<slug>`; nothing else |
+| Worker build | `--target atv_tests atv_regressions` |
+| Worker test | `ctest -R` on the touched suites + `ctest -R '^<domain>/<case>$'`; nothing else |
 | Merge gate | Scoped rebuild + the loop-domain suite `ctest -R '<test_filter>'` on `target_branch` |
-| Forbidden | Bare `cmake --build build` (compiles every test binary); full unfiltered `ctest` anywhere in the loop |
+| Forbidden | Bare `cmake --build build` (benchmarks, Python, examples); full unfiltered `ctest` anywhere in the loop |
 
 `test_filter` is a per-loop CONFIG knob: an anchored regex bounding the loop's
 domain suite (e.g. cp2k `^test_cpu_(gpw|pw|scf|xc)_`). Cross-domain breakage is

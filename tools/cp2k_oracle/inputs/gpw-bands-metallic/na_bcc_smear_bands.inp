@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-bands-metallic —
+! CP2K twin for regressions/gpw/bands-dos —
 ! multi-k RKS SMEAR + BAND_STRUCTURE on BCC Na (GTH-GPW).
 ! Run OFFLINE only; never at ctest time.
 

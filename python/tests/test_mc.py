@@ -10,9 +10,9 @@ What is (and is not) checked here
 Behavioural invariants only. The quantitative ensemble physics lives in
 ``regressions/mc/`` and stays there:
 
-* ``regressions/mc/npt_lj`` — ⟨V⟩ = (N+1)k_BT/P + N·B₂ and the exact NPT
+* ``regressions/mc/metropolis`` — ⟨V⟩ = (N+1)k_BT/P + N·B₂ and the exact NPT
   width σ_V = √(N+1)·k_BT/P.
-* ``regressions/mc/gcmc_lj`` — ⟨N⟩(z) against the Mayer activity expansion
+* ``regressions/mc/metropolis`` — ⟨N⟩(z) against the Mayer activity expansion
   ρ = z − 2B₂z² at two activities.
 
 This file asserts only what a *binding* can break: the handle constructs,
@@ -34,7 +34,7 @@ Pinned quantity               Source
 ============================  ===============================================
 z ≡ e^{βμ}/Λ³, so             Frenkel & Smit, *Understanding Molecular
 μ = k_BT·ln(z·Λ³)             Simulation* (2nd ed. 2002) §5.6.1 eq. (5.6.9);
-                              transcribed in ``regressions/mc/gcmc_lj/
+                              transcribed in ``regressions/mc/metropolis/
                               REFERENCE.md`` and used at
                               ``reg_gcmc_lj.cpp:84``
 Λ = h/√(2π m k_BT)            same REFERENCE.md; engine implementation
@@ -44,7 +44,7 @@ h = 4.135667696 eV·fs,
 amu·Å²/fs² → eV = 103.6427
 ρ(z) = z − 2·B₂(T)·z² + O(z³) Hill, *An Introduction to Statistical
                               Thermodynamics* (Dover 1986) §15-3 eq. (15-24);
-                              ``regressions/mc/gcmc_lj/REFERENCE.md``
+                              ``regressions/mc/metropolis/REFERENCE.md``
 B₂(T*=1.5, LJ cut+shifted at  quadrature of McQuarrie, *Statistical
 2.5σ) = −1.7801 σ³            Mechanics* (2000) eq. (12-30) — the same
                               integral ``reg_gcmc_lj.cpp:45-72`` evaluates
@@ -55,7 +55,7 @@ ideal-gas ⟨N⟩ = z·V = 10.80 atoms. Three effects justify the width and none
 is worth tightening in a pytest: the second-order Mayer term lifts the
 prediction to 12.72 atoms (+18%), the first *neglected* term is worth a
 further ≈0.6 atoms, and an 8k-trial chain on ~11 atoms is far too short for
-a percent-level mean. Tightening it is ``regressions/mc/gcmc_lj``'s job,
+a percent-level mean. Tightening it is ``regressions/mc/metropolis``'s job,
 which runs 450k trials in a 12σ box at two activities.
 
 Units: temperature [K]; pressure [eV/Å³] (LAMMPS sign, positive =

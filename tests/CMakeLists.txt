@@ -6,17 +6,12 @@ FetchContent_Declare(
     GIT_TAG v1.17.0
 )
 FetchContent_MakeAvailable(googletest)
+include(GoogleTest)
 
-# Unit tests assert CODE CORRECTNESS on tiny systems (tens to hundreds of
-# atoms); performance and LAMMPS-reference validation live in benchmarks/.
-# On many-core nodes the OpenMP default (= all hardware threads, e.g. 288 on
-# a GH200 node) makes those tiny systems WALL-DOMINATED by fork/join barriers
-# — 20-atom 5000-step runs took minutes, and `ctest -j` multiplied the
-# oversubscription. Cap every test's default; a test that genuinely needs a
-# specific thread count can still call omp_set_num_threads itself.
-# Tiny systems: few threads beat oversubscription. 8 threads on 20-atom
-# tests was wall-dominated by OpenMP fork/join.
-set(ATV_TEST_OMP_THREADS 2 CACHE STRING
+# Unit tests assert CODE CORRECTNESS on tiny systems; one OpenMP thread keeps
+# them free of fork/join overhead and makes reductions bit-reproducible (some
+# tests compare two runs bit for bit).
+set(ATV_TEST_OMP_THREADS 1 CACHE STRING
     "OMP_NUM_THREADS for single-process unit tests")
 # MPI unit tests: 1 thread/rank — multi-rank campaigns are not unit tests.
 set(ATV_TEST_MPI_OMP_THREADS 1 CACHE STRING
@@ -26,23 +21,11 @@ set(ATV_TEST_MPI_OMP_THREADS 1 CACHE STRING
 set(ATV_TEST_TIMEOUT_SECONDS 10 CACHE STRING
     "Maximum wall seconds for any unit test under ctest (hard kill)")
 
-# Pre-push builds only non-heavy targets so the gate stays minutes, not hours.
-# Full method campaigns (CCSD/FCI/MP2/BOMD/CPMD/full GPW/PW solves, …) match
-# this regex and are skipped unless ATV_TEST_HEAVY=ON.
-option(ATV_TEST_HEAVY
-    "Build/register multi-second method tests (default OFF — pre-push gate)"
-    OFF)
-# Not CACHE: must track the source list (a sticky CACHE goes stale).
-# Wave-2 (2026-08-10): residual multi-iter e2e under tests/ deleted; false-heavy
-# tokens that gated true units (method_driver, eom_, tdhf, dispersion→phonon,
-# pw_evaluator→gpw_evaluator) removed. Empty regex = no name-based heavy skip.
-set(ATV_TEST_HEAVY_REGEX "^$")
-
 # Fast-gate discipline (HARD RULE):
 #   • tests/ = one component / one method / ≤ ATV_TEST_TIMEOUT_SECONDS.
-#   • FORBIDDEN under ctest: multi-step Driver loops, equilibration,
-#     multi-rank production MD, full post-HF/CPMD/BOMD campaigns, oracles.
-#   • Those live in regressions/ (NOT ctest) or benchmarks/**.
+#   • FORBIDDEN here: multi-step Driver loops, equilibration, multi-rank
+#     production MD, full post-HF/CPMD/BOMD campaigns, oracles.
+#   • Those live in regressions/ (ctest label `regression`) or benchmarks/**.
 
 # CUDA test: compiled as .cu with separable compilation.
 # A .cu source registered while the CUDA language is disabled is silently
@@ -61,55 +44,71 @@ function(atv_guard_cuda_sources name)
 endfunction()
 
 function(atv_add_test name)
-    if(NOT ATV_TEST_HEAVY AND name MATCHES "${ATV_TEST_HEAVY_REGEX}")
-        message(STATUS "unit: skip heavy ${name} (ATV_TEST_HEAVY=OFF)")
-        return()
-    endif()
+    atv_guard_cuda_sources(${name} ${ARGN})
+    foreach(src IN LISTS ARGN)
+        if(src MATCHES "\\.cu$")
+            set_property(GLOBAL APPEND PROPERTY ATV_UNIT_CUDA_SOURCES
+                         ${CMAKE_CURRENT_SOURCE_DIR}/${src})
+        else()
+            set_property(GLOBAL APPEND PROPERTY ATV_UNIT_SOURCES
+                         ${CMAKE_CURRENT_SOURCE_DIR}/${src})
+        endif()
+    endforeach()
+endfunction()
+
+# A unit test that needs its own link line or compile definitions (stub
+# libraries, extra sources) keeps a dedicated executable.
+function(atv_add_unit_exe name)
     atv_guard_cuda_sources(${name} ${ARGN})
     add_executable(${name} ${ARGN})
     target_link_libraries(${name} PRIVATE atomiverse GTest::gtest_main)
-    set_target_properties(${name} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_test(NAME ${name} COMMAND ${name})
-    set_tests_properties(${name} PROPERTIES
-        TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
-        ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
+    set_target_properties(${name} PROPERTIES CXX_STANDARD 20
+                          CUDA_SEPARABLE_COMPILATION ON)
+    target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    set(labels unit)
+    foreach(src IN LISTS ARGN)
+        if(src MATCHES "\\.cu$")
+            set(labels cuda)
+        endif()
+    endforeach()
+    gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST
+        PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS} LABELS ${labels}
+                   ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS};OPENBLAS_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
 endfunction()
 
 # C++ test: compiled as .cpp, no CUDA required.
 function(atv_add_cpp_test name)
-    if(NOT ATV_TEST_HEAVY AND name MATCHES "${ATV_TEST_HEAVY_REGEX}")
-        message(STATUS "unit: skip heavy ${name} (ATV_TEST_HEAVY=OFF)")
-        return()
-    endif()
-    atv_guard_cuda_sources(${name} ${ARGN})
-    add_executable(${name} ${ARGN})
-    target_link_libraries(${name} PRIVATE atomiverse GTest::gtest_main)
-    set_target_properties(${name} PROPERTIES CXX_STANDARD 20)
-    target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_test(NAME ${name} COMMAND ${name})
-    set_tests_properties(${name} PROPERTIES
-        TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
-        ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
+    atv_add_test(${name} ${ARGN})
 endfunction()
 
 # MPI test executable: one build target, can be launched at multiple rank
 # counts via `atv_add_mpi_run`. The test source provides its own `main`
 # that wraps MPI init/finalize.
-function(atv_add_mpi_exec target_name)
-    add_executable(${target_name} ${ARGN})
-    target_link_libraries(${target_name} PRIVATE atomiverse GTest::gtest MPI::MPI_CXX)
-    set_target_properties(${target_name} PROPERTIES CXX_STANDARD 20)
-    target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+function(atv_add_mpi_exec target_name src)
+    set_property(GLOBAL APPEND PROPERTY ATV_UNIT_MPI_SOURCES
+                 ${CMAKE_CURRENT_SOURCE_DIR}/${src})
+    # The gtest suites of this source select its tests inside atv_tests_mpi.
+    file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/${src} lines
+         REGEX "^(TEST|TEST_F|TEST_P)\\(")
+    set(suites "")
+    foreach(line IN LISTS lines)
+        string(REGEX REPLACE "^TEST[_A-Z]*\\( *([A-Za-z0-9_]+).*" "\\1.*" suite "${line}")
+        list(APPEND suites ${suite})
+    endforeach()
+    list(REMOVE_DUPLICATES suites)
+    list(JOIN suites ":" filter)
+    set_property(GLOBAL PROPERTY ATV_MPI_FILTER_${target_name} "${filter}")
 endfunction()
 
 # Register one CTest invocation at a given rank count for an MPI executable.
 # Tagged with the "mpi" CTest label so CI can skip them on MPI-less environments.
 function(atv_add_mpi_run test_name target_name n)
+    get_property(filter GLOBAL PROPERTY ATV_MPI_FILTER_${target_name})
     add_test(
         NAME ${test_name}
         COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${n}
-                ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${target_name}> ${MPIEXEC_POSTFLAGS}
+                ${MPIEXEC_PREFLAGS} $<TARGET_FILE:atv_tests_mpi> ${MPIEXEC_POSTFLAGS}
+                --gtest_filter=${filter}
     )
     set_tests_properties(${test_name} PROPERTIES
         LABELS "mpi"
@@ -153,8 +152,6 @@ if(ATV_BUILD_HF)
     # Bit-for-bit erased-vs-direct RHF comparison: OMP reduction order must be
     # identical in both runs, so pin the thread count (parallel ctest otherwise
     # oversubscribes and the comparison flakes).
-    set_tests_properties(test_cpu_qm_engine PROPERTIES
-        ENVIRONMENT "OMP_NUM_THREADS=1")
 endif()
 # esmm-contract-05-accumulate-switch (U8 + U7b): the kEnergyElectronic per-term
 # key — ZeroEnergy must clear it in lockstep with kEnergy, and a co-bound
@@ -163,10 +160,6 @@ endif()
 # #ifdef ATV_HAS_HF. Serial: the RHF pin must not drift with reduction order.
 if(ATV_BUILD_HF) # drives the electronic-energy zeroing through scf methods
     atv_add_cpp_test(test_cpu_zero_energy_electronic cpu/component/test_zero_energy_electronic.cpp)
-endif()
-if(TARGET test_cpu_zero_energy_electronic)
-set_tests_properties(test_cpu_zero_energy_electronic PROPERTIES
-    ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
 endif()
 if(ATV_BUILD_MC) # montecarlo sources are excluded when MC is off
     atv_add_cpp_test(test_cpu_mc_scaffold cpu/test_mc_scaffold.cpp)
@@ -182,7 +175,7 @@ endif()
 atv_add_cpp_test(test_cpu_md_pe_thermo_schema cpu/dynamics/test_pe_thermo_schema.cpp)
 atv_add_cpp_test(test_cpu_md_pe_single_chain cpu/dynamics/test_pe_single_chain.cpp)
 # Multi-step PE bonded NVE conservation is a regression
-# (regressions/md/pe_bonded_nve), not a unit test.
+# (regressions/md/nve), not a unit test.
 # test_cpu_md_csvr / test_cpu_md_nvt relocated to benchmarks/md/lj/validation/
 # (val_md_csvr / val_md_nvt) — full thermostat equilibrations, not ms unit tests.
 atv_add_cpp_test(test_cpu_md_atom_sort            cpu/dynamics/test_atom_sort.cpp)
@@ -345,7 +338,7 @@ if(ATV_BUILD_GPW)
     atv_add_cpp_test(test_cpu_gpw_gth_integrals    cpu/gpw/test_cpu_gpw_gth_integrals.cpp)
     atv_add_cpp_test(test_cpu_gpw_collocate        cpu/gpw/test_cpu_gpw_collocate.cpp)
     atv_add_cpp_test(test_cpu_gpw_gamma_k_identity cpu/gpw/test_cpu_gpw_gamma_k_identity.cpp)
-    atv_add_cpp_test(test_cpu_gpw_multigrid        cpu/gpw/test_cpu_gpw_multigrid.cpp)
+    atv_add_unit_exe(test_cpu_gpw_multigrid        cpu/gpw/test_cpu_gpw_multigrid.cpp)
     if(ATV_BUILD_PW)  # FFT transfer (prolong_fft / restrict_fft) needs FFTW3
         target_link_libraries(test_cpu_gpw_multigrid PRIVATE fftw3_stub)
         target_compile_definitions(test_cpu_gpw_multigrid PRIVATE ATV_GPW_HAS_FFT)
@@ -423,7 +416,7 @@ if(ATV_BUILD_VIB)
     atv_add_cpp_test(test_cpu_vib_hessian_zeroing
         cpu/vibration/test_hessian_zeroing.cpp)
     # GPW force-consumer wiring for Phonon (no NeighborList). Full FD spectrum
-    # lives in regressions/gpw/gpw-fd-phonon-si (6N SCF — not unit budget).
+    # lives in regressions/response/phonons (6N SCF — not unit budget).
     if(ATV_BUILD_GPW)
         atv_add_cpp_test(test_cpu_vib_phonon_gpw_wiring
             cpu/vibration/test_phonon_gpw_wiring.cpp)
@@ -595,7 +588,7 @@ endif()
 # LauncherArgs (same link, ac-002/ac-006): header-only class in
 # app/atomiverse/, which is NOT part of libatomiverse — the test compiles the
 # header directly via this include dir.
-atv_add_cpp_test(test_app_launcher_args                   app/test_launcher_args.cpp)
+atv_add_unit_exe(test_app_launcher_args                   app/test_launcher_args.cpp)
 target_include_directories(test_app_launcher_args PRIVATE
     ${CMAKE_SOURCE_DIR}/app/atomiverse)
 
@@ -603,7 +596,7 @@ target_include_directories(test_app_launcher_args PRIVATE
 # path-resolution + version-string logic — Python.h-free, no popen/exec, no
 # interpreter ever executed. The TU lives in app/atomiverse/ (NOT part of
 # libatomiverse), so this target compiles it directly as a second source.
-atv_add_cpp_test(test_app_interpreter_locator
+atv_add_unit_exe(test_app_interpreter_locator
     app/test_interpreter_locator.cpp
     ${CMAKE_SOURCE_DIR}/app/atomiverse/interpreter_locator.cpp)
 target_include_directories(test_app_interpreter_locator PRIVATE
@@ -800,20 +793,13 @@ if(ATV_BUILD_PW)
             PRIVATE ATV_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     endif()
 
-    # FFT test needs FFTW3 linkage
-    add_executable(test_cpu_pw_fft cpu/planewave/test_fft.cpp)
-    target_link_libraries(test_cpu_pw_fft PRIVATE atomiverse GTest::gtest_main fftw3_stub)
-    set_target_properties(test_cpu_pw_fft PROPERTIES CXX_STANDARD 20)
-    target_include_directories(test_cpu_pw_fft PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    add_test(NAME test_cpu_pw_fft COMMAND test_cpu_pw_fft)
-    if(TARGET test_cpu_pw_fft)
-    set_tests_properties(test_cpu_pw_fft PROPERTIES
-        ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
-    endif()
+    # FFT test links the FFTW3 stub.
+    atv_add_unit_exe(test_cpu_pw_fft cpu/planewave/test_fft.cpp)
+    target_link_libraries(test_cpu_pw_fft PRIVATE fftw3_stub)
 
     # MPI PW/GPW k-point multi-iter SCF: e2e-in-tests wave-2 deleted the unit
-    # sources. Industrial gates live in regressions/pw/mpi-pw-scaling-4rank and
-    # regressions/gpw/mpi-gpw-scaling-4rank (not under ctest default gate).
+    # sources. Industrial gates live in regressions/pw/rks and
+    # regressions/gpw/rks (not under ctest default gate).
 endif()
 
 # ── Shared dense linear algebra (cpu/linalg) ──────────────────────────
@@ -888,7 +874,7 @@ if(ATV_BUILD_HF)
     atv_add_cpp_test(test_cpu_scf_xc_functional cpu/scf/test_xc_functional.cpp)
     # scf-driver-refactor-04b-wire: method-driver is DriverNode + outer Plan
     # bind/build only (no full SCF under tests/; wave-2). Nested energy pins:
-    # regressions/architecture/lj_rhf_coupled + scf/*rhf*.
+    # regressions/multiscale/qmmm + scf/*rhf*.
     atv_add_cpp_test(test_cpu_scf_method_driver_wire
                      cpu/scf/test_method_driver_wire.cpp)
     # esmm-cpmd-04-ao-cpmd: AO Car-Parrinello on the mean-field methods —
@@ -920,10 +906,6 @@ if(ATV_BUILD_HF)
     # Four 6-step H2/STO-3G nested trajectories, ~20 ms. Serial for the same
     # ULP-determinism reason as test_cpu_scf_method_driver_parity: the pin is
     # bit-identity against the method's own energy() readback.
-    if(TARGET test_cpu_scf_aspc_fallback_accumulate)
-    set_tests_properties(test_cpu_scf_aspc_fallback_accumulate PROPERTIES
-        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
-    endif()
     # hf-capability-gaps-08-stability: MO orbital-Hessian A/B kernel +
     # Seeger-Pople stability analysis. NO SCF loop: the converged H2/STO-3G
     # determinant is symmetry-exact in closed form (one Fock build, no
@@ -1003,10 +985,10 @@ if(ATV_BUILD_HF)
     atv_add_cpp_test(test_cpu_scf_cc_diis       cpu/scf/test_cc_diis.cpp)
     # scf-review-08-ccsd-spatial-diis: closed-shell spatial-orbital CCSD kernel
     # (internal/ccsd_spatial.h) — H2/STO-3G E_corr pin (same PySCF pin as
-    # regressions/scf/ccsd-h2-sto3g) + He/STO-3G zero-virtual edge.
+    # regressions/scf/coupled-cluster) + He/STO-3G zero-virtual edge.
     # hf-capability-gaps-07-guess: Hückel/SAP guess matrices + EDIIS/ADIIS
     # far-field mixers (single-call math only; iteration-count contrast is
-    # regressions/scf/h2o_scf_convergence).
+    # regressions/scf/rhf).
     atv_add_cpp_test(test_cpu_scf_init_guess    cpu/scf/test_init_guess.cpp)
     atv_add_cpp_test(test_cpu_scf_ediis_adiis   cpu/scf/test_ediis_adiis.cpp)
     # Charge/multiplicity resolver + occupation-guard throws (hf-robust-01).
@@ -1027,17 +1009,9 @@ if(ATV_BUILD_HF)
     # parallel reduction order (OpenMP / BLAS) is ULP-non-deterministic, so this
     # test pins serial execution. Do NOT loosen the assertions to tolerances —
     # the spec mandates bit-identity.
-    if(TARGET test_cpu_scf_stages)
-    set_tests_properties(test_cpu_scf_stages PROPERTIES
-        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
-    endif()
     # scf-driver-refactor-03a-convert: RHF/UHF/RKS/UKS as Driver<scf::Phase>,
     # regression-pinned against the 03a-parity energies/eigenvalues. Pins serial
     # execution for the same ULP-determinism reason as test_cpu_scf_stages.
-    if(TARGET test_cpu_scf_method_driver_parity)
-    set_tests_properties(test_cpu_scf_method_driver_parity PROPERTIES
-        ENVIRONMENT "OMP_NUM_THREADS=1;OPENBLAS_NUM_THREADS=1")
-    endif()
     atv_add_cpp_test(test_cpu_evaluate_driver        cpu/test_evaluate_driver.cpp)
     # esmm-contract-05-accumulate-switch (U7): two accumulating stubs co-bound
     # into ONE cpu::Evaluate pass (no SCF; wave-2). QM×MM pin lives in
@@ -1101,7 +1075,7 @@ if(ATV_BUILD_CUDA)
     atv_add_test(test_cuda_cluster_contract cuda/dynamics/test_cuda_cluster_contract.cu)
     atv_add_test(test_cuda_cluster_mask cuda/dynamics/test_cuda_cluster_mask.cu)
     atv_add_test(test_pair_lj_tile_step0 cuda/potentials/test_pair_lj_tile_step0.cu)
-    atv_add_test(test_cuda_atom_cell_sort cuda/dynamics/test_atom_cell_sort.cu)
+    atv_add_unit_exe(test_cuda_atom_cell_sort cuda/dynamics/test_atom_cell_sort.cu)
     # Pulls in the private primitive header src/cuda/neighbor/atom_cell_sort.cuh
     target_include_directories(test_cuda_atom_cell_sort PRIVATE
         ${CMAKE_SOURCE_DIR}/src/cuda/neighbor)
@@ -1120,43 +1094,43 @@ if(ATV_BUILD_CUDA)
     # moved here from the former cpu/potentials/test_pair_kernel.cpp.
     atv_add_test(test_cuda_pair_kernel cuda/potentials/test_pair_kernel.cu)
     if(ATV_BUILD_PW)
-        atv_add_test(test_cuda_pw_fft cuda/planewave/test_fft.cu)
+        atv_add_unit_exe(test_cuda_pw_fft cuda/planewave/test_fft.cu)
         target_link_libraries(test_cuda_pw_fft PRIVATE CUDA::cufft)
-        atv_add_test(test_cuda_pw_poisson cuda/planewave/test_poisson.cu)
+        atv_add_unit_exe(test_cuda_pw_poisson cuda/planewave/test_poisson.cu)
         target_link_libraries(test_cuda_pw_poisson PRIVATE CUDA::cufft)
-        atv_add_test(test_cuda_pw_grid_map cuda/planewave/test_grid_map.cu)
+        atv_add_unit_exe(test_cuda_pw_grid_map cuda/planewave/test_grid_map.cu)
         target_link_libraries(test_cuda_pw_grid_map PRIVATE CUDA::cufft)
-        atv_add_test(test_cuda_pw_xc_lda cuda/planewave/test_xc_lda.cu)
+        atv_add_unit_exe(test_cuda_pw_xc_lda cuda/planewave/test_xc_lda.cu)
         target_link_libraries(test_cuda_pw_xc_lda PRIVATE CUDA::cufft)
-        atv_add_test(test_cuda_pw_xc_pbe cuda/planewave/test_xc_pbe.cu)
+        atv_add_unit_exe(test_cuda_pw_xc_pbe cuda/planewave/test_xc_pbe.cu)
         target_link_libraries(test_cuda_pw_xc_pbe PRIVATE CUDA::cufft)
-        atv_add_test(test_cuda_pw_xc_pbe_spin cuda/planewave/test_xc_pbe_spin.cu)
+        atv_add_unit_exe(test_cuda_pw_xc_pbe_spin cuda/planewave/test_xc_pbe_spin.cu)
         target_link_libraries(test_cuda_pw_xc_pbe_spin PRIVATE CUDA::cufft)
-        atv_add_test(test_cuda_pw_veff cuda/planewave/test_veff.cu)
+        atv_add_unit_exe(test_cuda_pw_veff cuda/planewave/test_veff.cu)
         target_link_libraries(test_cuda_pw_veff PRIVATE CUDA::cufft)
         # cuda::pw::PW surface + honesty guards. No SCF, no device work:
         # every assertion fires before setup_pw_problem and before CUDA.
-        atv_add_test(test_cuda_pw_guards cuda/planewave/test_guards.cu)
+        atv_add_unit_exe(test_cuda_pw_guards cuda/planewave/test_guards.cu)
         if(TARGET test_cuda_pw_guards)
             target_link_libraries(test_cuda_pw_guards PRIVATE CUDA::cufft)
         endif()
         # DeviceDensity stage parity vs the CPU stage helpers. Unit-only:
         # no SCF loop, no Davidson — the end-to-end parity solve lives in
         # regressions/pw/pw-cuda-lda-si.
-        atv_add_test(test_cuda_pw_density cuda/planewave/test_density.cu)
+        atv_add_unit_exe(test_cuda_pw_density cuda/planewave/test_density.cu)
         if(TARGET test_cuda_pw_density)
             target_link_libraries(test_cuda_pw_density PRIVATE CUDA::cufft)
         endif()
         # Device local HF force kernel + public API symmetry (unit-only).
         # Name keeps historical token; full SCF product e2e is regressions.
         # analytic path on CPU); this is a kernel/API unit gate.
-        atv_add_test(test_cuda_pw_force_local cuda/planewave/test_pw_force_local.cu)
+        atv_add_unit_exe(test_cuda_pw_force_local cuda/planewave/test_pw_force_local.cu)
         if(TARGET test_cuda_pw_force_local)
             target_link_libraries(test_cuda_pw_force_local PRIVATE CUDA::cufft)
         endif()
         # Cell stress public API + cheap H isotropy/CUDA↔CPU (unit-only).
         # Name keeps historical token; full SCF product e2e is regressions.
-        atv_add_test(test_cuda_pw_cell_stress cuda/planewave/test_pw_cell_stress.cu)
+        atv_add_unit_exe(test_cuda_pw_cell_stress cuda/planewave/test_pw_cell_stress.cu)
         if(TARGET test_cuda_pw_cell_stress)
             target_link_libraries(test_cuda_pw_cell_stress PRIVATE CUDA::cufft)
         endif()
@@ -1164,7 +1138,7 @@ if(ATV_BUILD_CUDA)
     # CUDA GPW Γ Poisson foothold — needs CPU solve_poisson oracle (GPW+PW)
     # and device kernels.
     if(ATV_BUILD_GPW AND ATV_BUILD_PW)
-        atv_add_test(test_cuda_gpw_device_poisson cuda/gpw/test_device_poisson.cu)
+        atv_add_unit_exe(test_cuda_gpw_device_poisson cuda/gpw/test_device_poisson.cu)
         target_link_libraries(test_cuda_gpw_device_poisson PRIVATE CUDA::cufft)
         # CUDA GPW Padé LDA XC foothold — vs cpu::xc::pade_lsd / xc_grid_pade.
         atv_add_test(test_cuda_gpw_xc_lda cuda/gpw/test_xc_lda.cu)
@@ -1173,32 +1147,32 @@ if(ATV_BUILD_CUDA)
         # CUDA GPW product V·shape integrate foothold — vs CPU collint oracle.
         atv_add_test(test_cuda_gpw_product_integrate cuda/gpw/test_product_integrate.cu)
         # CUDA GPW composed KS chain stage — vs CPU ks_grid_build_rks.
-        atv_add_test(test_cuda_gpw_ks_chain cuda/gpw/test_ks_chain.cu)
+        atv_add_unit_exe(test_cuda_gpw_ks_chain cuda/gpw/test_ks_chain.cu)
         if(TARGET test_cuda_gpw_ks_chain)
             target_link_libraries(test_cuda_gpw_ks_chain PRIVATE CUDA::cufft)
         endif()
-        atv_add_test(test_cuda_gpw_ks_gga cuda/gpw/test_ks_gga.cu)
+        atv_add_unit_exe(test_cuda_gpw_ks_gga cuda/gpw/test_ks_gga.cu)
         if(TARGET test_cuda_gpw_ks_gga)
             target_link_libraries(test_cuda_gpw_ks_gga PRIVATE CUDA::cufft)
         endif()
         # CUDA multi-grid product collocate/integrate KS stage vs CPU Γ
         # multigrid fragment (prolong_fft / restrict_fft + ks_grid_build_rks).
-        atv_add_test(test_cuda_gpw_ks_multigrid cuda/gpw/test_ks_multigrid.cu)
+        atv_add_unit_exe(test_cuda_gpw_ks_multigrid cuda/gpw/test_ks_multigrid.cu)
         if(TARGET test_cuda_gpw_ks_multigrid)
             target_link_libraries(test_cuda_gpw_ks_multigrid PRIVATE CUDA::cufft)
         endif()
-        atv_add_test(test_cuda_gpw_stress cuda/gpw/test_gpw_stress.cu)
+        atv_add_unit_exe(test_cuda_gpw_stress cuda/gpw/test_gpw_stress.cu)
         if(TARGET test_cuda_gpw_stress)
             target_link_libraries(test_cuda_gpw_stress PRIVATE CUDA::cufft)
         endif()
         # Device grid force kernels + free-fn guards (cuda-gpw-device-forces).
-        atv_add_test(test_cuda_gpw_forces cuda/gpw/test_gpw_forces.cu)
+        atv_add_unit_exe(test_cuda_gpw_forces cuda/gpw/test_gpw_forces.cu)
         if(TARGET test_cuda_gpw_forces)
             target_link_libraries(test_cuda_gpw_forces PRIVATE CUDA::cufft)
         endif()
         # Device AO DIIS + cuSOLVER eigen vs host GpwDiis / diagonalize_fock
         # (cuda-gpw-device-diis-eigen).
-        atv_add_test(test_cuda_gpw_diis_eigen cuda/gpw/test_diis_eigen.cu)
+        atv_add_unit_exe(test_cuda_gpw_diis_eigen cuda/gpw/test_diis_eigen.cu)
         if(TARGET test_cuda_gpw_diis_eigen)
             target_link_libraries(test_cuda_gpw_diis_eigen PRIVATE CUDA::cufft
                                   CUDA::cublas CUDA::cusolver)
@@ -1208,7 +1182,7 @@ if(ATV_BUILD_CUDA)
         atv_add_test(test_cuda_gpw_weight_pack cuda/gpw/test_weight_pack.cu)
         # Device multi-k χ^k density collocate vs host collocate_density_k
         # (cuda-gpw-kpoint-device-collocate).
-        atv_add_test(test_cuda_gpw_kpoint_collocate
+        atv_add_unit_exe(test_cuda_gpw_kpoint_collocate
                      cuda/gpw/test_kpoint_collocate.cu)
         if(TARGET test_cuda_gpw_kpoint_collocate)
             target_link_libraries(test_cuda_gpw_kpoint_collocate
@@ -1216,7 +1190,7 @@ if(ATV_BUILD_CUDA)
         endif()
         # Device multi-k V→H_k integrate vs host integrate_potential_k
         # (cuda-gpw-kpoint-device-integrate).
-        atv_add_test(test_cuda_gpw_kpoint_integrate
+        atv_add_unit_exe(test_cuda_gpw_kpoint_integrate
                      cuda/gpw/test_kpoint_integrate.cu)
         if(TARGET test_cuda_gpw_kpoint_integrate)
             target_link_libraries(test_cuda_gpw_kpoint_integrate
@@ -1224,7 +1198,7 @@ if(ATV_BUILD_CUDA)
         endif()
         # Multi-k device Pulay DIIS + zheevd vs host KDiis/diagonalize_k
         # (cuda-gpw-kpoint-device-diis).
-        atv_add_test(test_cuda_gpw_kpoint_diis_eigen
+        atv_add_unit_exe(test_cuda_gpw_kpoint_diis_eigen
                      cuda/gpw/test_kpoint_diis_eigen.cu)
         if(TARGET test_cuda_gpw_kpoint_diis_eigen)
             target_link_libraries(test_cuda_gpw_kpoint_diis_eigen
@@ -1233,14 +1207,14 @@ if(ATV_BUILD_CUDA)
         endif()
         # Device multi-k H_k = H0 + Vmat assemble
         # (cuda-gpw-kpoint-h-assemble).
-        atv_add_test(test_cuda_gpw_kpoint_h_assemble
+        atv_add_unit_exe(test_cuda_gpw_kpoint_h_assemble
                      cuda/gpw/test_kpoint_h_assemble.cu)
         if(TARGET test_cuda_gpw_kpoint_h_assemble)
             target_link_libraries(test_cuda_gpw_kpoint_h_assemble
                                   PRIVATE CUDA::cufft)
         endif()
         # Multi-k device phased STVnl (cuda-gpw-kpoint-device-stvnl).
-        atv_add_test(test_cuda_gpw_kpoint_stvnl
+        atv_add_unit_exe(test_cuda_gpw_kpoint_stvnl
                      cuda/gpw/test_kpoint_stvnl.cu)
         if(TARGET test_cuda_gpw_kpoint_stvnl)
             target_link_libraries(test_cuda_gpw_kpoint_stvnl
@@ -1248,7 +1222,7 @@ if(ATV_BUILD_CUDA)
         endif()
         # Device H residual residency: assemble → ingest → residual_from_device
         # (cuda-gpw-kpoint-h-residency).
-        atv_add_test(test_cuda_gpw_kpoint_h_residency
+        atv_add_unit_exe(test_cuda_gpw_kpoint_h_residency
                      cuda/gpw/test_kpoint_h_residency.cu)
         if(TARGET test_cuda_gpw_kpoint_h_residency)
             target_link_libraries(test_cuda_gpw_kpoint_h_residency
@@ -1260,7 +1234,7 @@ if(ATV_BUILD_CUDA)
     atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
     atv_add_test(test_cuda_scf_device_integrals cuda/scf/test_device_integrals.cu)
     # CPU/CUDA PW parity is an end-to-end SCF solve: it lives in
-    # regressions/pw/pw-cuda-lda-si (--device=both), never under ctest.
+    # regressions/pw/rks (--device=both), never under ctest.
     atv_add_test(test_cuda_driver_role_validation cuda/test_cuda_driver_role_validation.cu)
     atv_add_test(test_cuda_component_provides_probes
         cuda/component/test_provides_probes.cu)
@@ -1285,7 +1259,7 @@ endif()
 
 
 if(ATV_BUILD_MD)
-    atv_add_cpp_test(test_app_input_script
+    atv_add_unit_exe(test_app_input_script
         app/test_input_script.cpp
         ${CMAKE_SOURCE_DIR}/app/atomiverse/input_script.cpp)
     target_include_directories(test_app_input_script PRIVATE
@@ -1300,9 +1274,34 @@ endif()
 # that tree is rebuilt. If a target is registered above, it must be a
 # single-component unit test.
 
-# Enforce the unit timeout on every registration in this directory (including
-# raw add_test scrub scripts). Hard kill — no 300s architecture greps on pre-push.
-get_property(_atv_all_tests DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY TESTS)
-if(_atv_all_tests)
-  set_tests_properties(${_atv_all_tests} PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS})
+# ── Single executables ─────────────────────────────────────────────────
+get_property(_atv_unit_sources GLOBAL PROPERTY ATV_UNIT_SOURCES)
+add_executable(atv_tests ${_atv_unit_sources})
+target_link_libraries(atv_tests PRIVATE atomiverse GTest::gtest_main)
+target_include_directories(atv_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(atv_tests PROPERTIES CXX_STANDARD 20)
+target_precompile_headers(atv_tests PRIVATE <gtest/gtest.h>
+    "${CMAKE_SOURCE_DIR}/include/atomiverse/cpu/frame/frame.h")
+gtest_discover_tests(atv_tests DISCOVERY_MODE PRE_TEST
+    PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
+               ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS};OPENBLAS_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
+
+get_property(_atv_unit_cuda_sources GLOBAL PROPERTY ATV_UNIT_CUDA_SOURCES)
+if(_atv_unit_cuda_sources)
+    add_executable(atv_tests_cuda ${_atv_unit_cuda_sources})
+    target_link_libraries(atv_tests_cuda PRIVATE atomiverse GTest::gtest_main)
+    target_include_directories(atv_tests_cuda PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_target_properties(atv_tests_cuda PROPERTIES CXX_STANDARD 20
+                          CUDA_SEPARABLE_COMPILATION ON)
+    gtest_discover_tests(atv_tests_cuda DISCOVERY_MODE PRE_TEST
+        PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS} LABELS cuda
+                   ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS};OPENBLAS_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
+endif()
+
+get_property(_atv_unit_mpi_sources GLOBAL PROPERTY ATV_UNIT_MPI_SOURCES)
+if(_atv_unit_mpi_sources)
+    add_executable(atv_tests_mpi mpi/main.cpp ${_atv_unit_mpi_sources})
+    target_link_libraries(atv_tests_mpi PRIVATE atomiverse GTest::gtest MPI::MPI_CXX)
+    target_include_directories(atv_tests_mpi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_target_properties(atv_tests_mpi PROPERTIES CXX_STANDARD 20)
 endif()

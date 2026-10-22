@@ -507,10 +507,9 @@ print(rhf.energy())        # total energy [Hartree]
 ```
 
 The printed energy reproduces **−74.961754 Ha**, the value
-`h2o_rhf_sto3g` pins at exactly this geometry (LibreTexts
+section `h2o_rhf_sto3g` of case `scf/rhf` pins at exactly this geometry (LibreTexts
 *Live Textbook of Physical Chemistry* §28.2, cross-checked against PySCF
-2.13), inside that case's stated **1 × 10⁻³ Ha** window —
-see case `h2o_rhf_sto3g` pin. `python/tests/test_scf.py`
+2.13), inside that section's stated **1 × 10⁻³ Ha** window. `python/tests/test_scf.py`
 grades this same geometry against the same number and window.
 
 ## CPU geometry minimization
@@ -939,7 +938,7 @@ the quantum length scale of a free particle of mass m at temperature T. For
 an ideal gas z *is* the number density, so μ = k_BT·ln(zΛ³) turns a target
 density into the number you pass. The −0.177 eV above is exactly that:
 zσ³ = 0.05 for argon (m = 39.948 amu, σ = 3.4 Å) at T = 180 K. This is the
-convention of case `gcmc_lj` pin (Frenkel & Smit
+convention of section `gcmc_lj` of case `mc/metropolis` (Frenkel & Smit
 eq. 5.6.9), which is what its ⟨N⟩(z) pin measures.
 
 **Match the mass.** The `InsertDeleteMove` mass **must** be the mass `GCMC`
@@ -1222,7 +1221,7 @@ A pinned example: Si₂ in the fcc primitive cell at *a* = 5.43 Å with one atom
 displaced +0.08 Å along *x*, `GTH-PBE-q4`, `ecut_ry = 8`, Γ-only
 (`k_mesh = 1`), `tol = 1e-6`, `max_iter = 40`, `xc = "LSDA"` gives
 max|F| = 2.517979 eV/Å — the CPU number
-case `cuda-pw-forces` pin pins (GH200 job 1050105), where
+section `cuda-pw-forces` of case `pw/rks` pins (GH200 job 1050105), where
 it is the oracle for the CUDA twin.
 
 ### Plane-wave Born-Oppenheimer MD

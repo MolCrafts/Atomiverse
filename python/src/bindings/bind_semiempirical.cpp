@@ -56,7 +56,7 @@ namespace {
 ///
 /// Goes through `cpu::single_point` — one `Evaluate` pass with the borrowed
 /// method mounted as a nested node, the same pass
-/// `regressions/semiempirical/am1_water_force` pins against a re-converged
+/// `regressions/semiempirical/am1` pins against a re-converged
 /// finite difference — so the numbers returned here are the C++ numbers and
 /// not a second force recipe: the `Evaluate` preset zeroes forces/energy
 /// first, the method unwraps the molecule across periodic images, and

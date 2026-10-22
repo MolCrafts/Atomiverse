@@ -2,7 +2,7 @@
 /// @brief Unit: `cpu::vib::Hessian` accepts IPEA as a Semiempirical force kind.
 ///
 /// Wiring only — `Hessian::run` (6N displacements) lives in
-/// `regressions/semiempirical/ipea-xtb-analytic-hessian/`.
+/// `regressions/semiempirical/ipea-xtb/`.
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/stage.h"

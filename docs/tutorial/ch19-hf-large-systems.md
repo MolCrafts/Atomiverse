@@ -238,7 +238,7 @@ Default `Coulomb::Direct` is bit-identical to the historical path.
 | System | Quantity | Tolerance | Status |
 |---|---|---|---|
 | H₂O STO-3G | \(\max\|J_{\mathrm{CFMM}}-J_{\mathrm{Direct}}\|\) | \(\le 10^{-8}\) Ha | unit `test_cfmm_j` |
-| C₁₀H₂₂ STO-3G | \(\|E_{\mathrm{CFMM}}-E_{\mathrm{Direct}}\|\) | \(\le 10^{-7}\) Ha | `reg_c10h22_cfmm_j` |
+| C₁₀H₂₂ STO-3G | \(\|E_{\mathrm{CFMM}}-E_{\mathrm{Direct}}\|\) | \(\le 10^{-7}\) Ha | regression `scf/rhf` section `c10h22_cfmm_j` |
 
 Small molecules at default thresholds may be all near-field (CFMM ≡ Direct
 numerically); timing gains appear only for larger systems

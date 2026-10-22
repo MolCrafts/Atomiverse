@@ -129,7 +129,7 @@ of a free particle of mass m [amu] at temperature T [K]; it is what
 carries the "per unit volume" in z. For an ideal gas z *is* the number
 density, so ``mu = k_B T ln(z Lambda**3)`` converts a target density into
 the argument to pass. This is the convention of Frenkel & Smit eq. (5.6.9)
-and of ``regressions/mc/gcmc_lj/REFERENCE.md``, which pins <N>(z) against
+and of ``regressions/mc/metropolis/REFERENCE.md``, which pins <N>(z) against
 the Mayer activity expansion using exactly this relation.
 
 Because ``GCMC(T, mu, m, seed)`` builds ``Lambda`` from its ``m``, the

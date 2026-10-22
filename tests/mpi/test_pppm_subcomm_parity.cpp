@@ -353,12 +353,3 @@ TEST(PppmSubcommParity, FourRanksAgreeOnReducedEnergy) {
                 kRankAgreeRel * std::max(1.0, std::fabs(run.energy)))
         << "ranks disagree on the reduced energy (non-member rank left out?)";
 }
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

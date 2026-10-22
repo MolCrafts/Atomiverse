@@ -1,4 +1,4 @@
-! Offline twin for regressions/gpw/periodic-scs-mp2-si (never launched by ctest).
+! Offline twin for regressions/gpw/periodic-mp2 (never launched by ctest).
 ! Γ-point GPW SCS-MP2 (Grimme SCALE_S=1.2 OS / SCALE_T=1/3 SS) on periodic
 ! sc-Si2: cubic a=5.43 Å, RKS PBE, DZVP-MOLOPT-GTH + GTH-PBE-q4, CUTOFF 30 Ry.
 ! Same algorithm class as periodic-ri-mp2-si with spin-component scales only.

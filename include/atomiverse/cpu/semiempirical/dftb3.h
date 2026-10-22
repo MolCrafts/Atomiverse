@@ -44,7 +44,7 @@ namespace semiempirical {
 /// gradient. Because \f$H=\partial E/\partial P\f$ exactly, the density is
 /// stationary and no coupled-perturbed charge response is needed; gated
 /// against re-SCC finite differences by
-/// `regressions/semiempirical/dftb3-analytic-forces/`. This is **not** a
+/// `regressions/semiempirical/dftb3/`. This is **not** a
 /// finite-difference path: one SCC solve per force evaluation, not \f$6N+1\f$.
 ///
 /// **PBC:** Γ-point lattice-image walk for H⁰/S, γ/Γ, repulsive, and analytic

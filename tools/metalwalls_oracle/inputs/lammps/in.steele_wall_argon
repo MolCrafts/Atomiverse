@@ -5,7 +5,7 @@
 # Pin (run 0, fix_modify energy yes):
 #   PE = -0.035247965699900359 eV
 #   Fz = -0.025162258813859549 eV/Å
-# See regressions/forcefield/steele-wall-argon/REFERENCE.md
+# See regressions/forcefield/pair-styles/REFERENCE.md
 
 units metal
 atom_style atomic

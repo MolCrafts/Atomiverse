@@ -9,7 +9,7 @@
 /// `popcount(a_i & ~a_j)`); `CiSolution` / `dense_ci_solve` / `make_rdm12` are
 /// the `casscf.cpp` superset. On real-symmetric MO integrals the two forks are
 /// numerically equal — the equivalence gate
-/// (regressions/scf/ci-engine-equiv-h2-sto3g) pins that.
+/// (regressions/scf/multireference) pins that.
 
 #include "atomiverse/cpu/scf/internal/ci_engine.h"
 

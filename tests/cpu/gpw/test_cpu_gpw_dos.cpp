@@ -1,6 +1,6 @@
 /// @file test_cpu_gpw_dos.cpp
 /// @brief Unit tests for GPW multi-k DOS free math and parameter guards.
-///        No full SCF e2e (that lives in regressions/gpw/gpw-dos-si).
+///        No full SCF e2e (that lives in regressions/gpw/bands-dos).
 
 #include <cmath>
 #include <stdexcept>

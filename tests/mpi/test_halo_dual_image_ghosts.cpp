@@ -117,7 +117,7 @@ double brute_force_energy(const cpu::Frame& frame, double cutoff) {
 /// read when the runtime builds its topology, so the variable must be set
 /// before the domain is allocated and cleared afterwards (an early `ASSERT_*`
 /// return must not leak it into the next TEST). In-tree precedent:
-/// `regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp:200`.
+/// `regressions/md/constant-potential/const-pot-charge-halo-mpi.cpp:200`.
 class ForcedDims {
   public:
     explicit ForcedDims(const char* grid) {
@@ -390,12 +390,3 @@ TEST(HaloDualImageGhosts, ProductionGridTwoNarrowAxesMatchBruteForce) {
 // ── Custom main that initializes MPI before/after GoogleTest ────────────
 //
 // See test_topology.cpp for the OpenMPI 5.0.x macOS teardown rationale.
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

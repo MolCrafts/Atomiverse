@@ -40,7 +40,7 @@ Central second difference of the **collinear-spin PBE** PW SCF total energy
 C[(0x),(0x)] = (E⁺ − 2E⁰ + E⁻)/h² · 27.211386245988 / h[Å]² =
 **17.3454 eV/Å²** (E⁰ = −7.820593875040 Ha, E± = −7.820306828150 /
 −7.820307232893 Ha; this host, 2026-07-31, Release, OMP=1). Recorded with
-the DFPT gates in `regressions/response/dfpt-gga-spin-si/REFERENCE.md`.
+the DFPT gates in `regressions/response/dfpt/REFERENCE.md`.
 
 ## Twin settings (match regression)
 

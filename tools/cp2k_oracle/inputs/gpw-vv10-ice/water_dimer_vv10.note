@@ -39,7 +39,7 @@ No `VV10_kernel_table.dat` in `CP2K data/`. Only `rVV10_kernel_table.dat`
 
 Use **rVV10** (already productized):
 
-- ATV: `GpwDft::rvv10 = true` → `regressions/gpw/gpw-rvv10-ice`
+- ATV: `GpwDft::rvv10 = true` → `regressions/gpw/vdw-df`
 - CP2K twin: `tools/cp2k_oracle/inputs/gpw-rvv10-ice/` (`TYPE RVV10`, b=6.3)
 
 Do not treat rVV10@b=5.9 as stock VV10.

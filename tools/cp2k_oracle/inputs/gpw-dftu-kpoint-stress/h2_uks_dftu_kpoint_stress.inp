@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-dftu-kpoint-stress
+! CP2K twin for regressions/gpw/dft-plus-u
 ! Multi-k UKS + Dudarev PLUS_U + NUMERICAL stress on high-spin H2.
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
 ! Twin geometry matches reg_gpw-dftu-kpoints / unit dual-gate (8 Bohr cell,

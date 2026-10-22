@@ -1,5 +1,5 @@
 # CP2K twin (offline oracle) — Berry-phase dipole of bulk Si (GPW class)
-# Pairs with regressions/gpw/periodic-berry-gpw/REFERENCE.md.
+# Pairs with regressions/gpw/berry-phase/REFERENCE.md.
 # Never executed at ctest/regression time (offline pin only).
 #
 # Matched algorithm twin of ATV cpu::gpw::BerryPolarization (KSV / modern

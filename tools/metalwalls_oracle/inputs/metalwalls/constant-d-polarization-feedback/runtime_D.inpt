@@ -1,4 +1,4 @@
-# MetalWalls twin of regressions/md/constant-d-polarization-feedback (Gate A).
+# MetalWalls twin of regressions/md/electric-fields (Gate A).
 # Constant-D ensemble: E = D - 4*pi*P (MW atomic units, 4*pi*eps0 = 1).
 #
 # ATV system reproduced here:

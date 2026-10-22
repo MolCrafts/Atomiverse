@@ -342,7 +342,7 @@ struct CoulLongParams {
     /// term harder, moving work out of the neighbor-list sum into the
     /// reciprocal one. The LAMMPS rule of thumb is α ≈ 3.5 / cutoff, at
     /// which the screened pair term has fallen to erfc(3.5) ≈ 7e-7 of the
-    /// bare one at the cutoff (`regressions/md/npt_pme_nacl/REFERENCE.md`).
+    /// bare one at the cutoff (`regressions/md/npt/REFERENCE.md`).
     double alpha;
     /// Real-space cutoff [Å]. The neighbor list must be built with a cutoff
     /// ≥ this value.

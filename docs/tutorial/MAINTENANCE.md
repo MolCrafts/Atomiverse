@@ -65,7 +65,7 @@ roadmap and method reference, not in a timeless physical explanation.
   geometry, and motion. `../developer/cpu-workflow-reference.md` owns the
   detailed execution fragments and is included directly in the print appendix.
 - `ch16-many-body-potentials.md` owns the physical models and validation
-  exercises. `methods/classical-models.md` owns implementation-scope notes.
+  exercises. `methods/md-manybody-potentials.md` owns implementation scope and validation.
 - Keep interpretation beside historical numerical tables, but do not present
   a source listing or a retained result as a newly executed validation.
 - State theorem assumptions beside the theorem. Distinguish a sufficient

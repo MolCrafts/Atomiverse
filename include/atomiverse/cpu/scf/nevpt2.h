@@ -1,5 +1,5 @@
 /// @file cpu/scf/nevpt2.h
-/// @brief Strongly contracted NEVPT2 — public API via `RHF::nevpt2`.
+/// @brief Strongly contracted NEVPT2 — public API `NEVPT2<RHF>{rhf}.run(frame, ncas, nelecas)`.
 ///
 /// Closed-shell SC-NEVPT2 on a CASSCF reference (Angeli, Cimiraglia, Malrieu,
 /// J. Chem. Phys. **114**, 10252 (2001); **117**, 9138 (2002)). Matches PySCF
@@ -38,7 +38,7 @@ struct NEVPT2Result {
 };
 
 // Pack-based entry is private — see internal/nevpt2_pack.h.
-// Public: MeanFieldMethod::nevpt2(frame, ncas, nelecas) (closed-shell RHF).
+// Public: NEVPT2<RHF> (post_hf.h), closed-shell RHF reference.
 
 } // namespace scf
 } // namespace cpu

@@ -4,7 +4,7 @@
 - Method: non-SCC DFTB / DFTB0
 - System: H2, R = 0.74 Å, charge 0, singlet
 - Oracle: DFTB+ 24.1 + mio-1-1 — the transcript in `h2_mio_scc/`
-  (shared with `regressions/semiempirical/dftb2-dftbplus-energy-pin/`).
+  (shared with `regressions/semiempirical/dftb2/`).
 - Pin: E = **-18.36635052 eV** (-0.6749509324 Ha), tol 1e-3 eV.
 
 ## Why the SCC transcript is a valid DFTB0 oracle here

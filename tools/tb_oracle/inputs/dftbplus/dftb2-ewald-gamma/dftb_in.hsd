@@ -1,6 +1,6 @@
 # Offline DFTB+ twin for ATV slug dftb2-ewald-gamma.
 # Family oracle: DFTB+ only. Not run by ctest.
-# Geometry matches regressions/semiempirical/dftb2-ewald-gamma/REFERENCE.md.
+# Geometry matches regressions/semiempirical/dftb2/REFERENCE.md.
 #
 # Polar periodic cell: this is the only periodic DFTB2 twin whose Delta-q is
 # nonzero, so it is the one that actually exercises the Ewald-summed gamma.

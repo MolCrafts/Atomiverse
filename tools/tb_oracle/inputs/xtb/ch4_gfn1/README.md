@@ -28,4 +28,4 @@ Public ATV pin: **−116.30778398 eV** (`Ha × 27.211386245988`).
 
 1-thread wall: **0.02 s**.
 
-Used by `regressions/semiempirical/gfn1-xtb-organic/`.
+Used by `regressions/semiempirical/gfn1-xtb/`.

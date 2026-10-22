@@ -1,4 +1,4 @@
-! Offline CP2K twin note for regressions/pw/periodic-wannier-si
+! Offline CP2K twin note for regressions/pw/wannier
 ! (NOT run by ctest — human/agent pin host only).
 !
 ! Diamond Si 2-atom cell, LOCALIZE Wannier centers. GTH + DZVP-MOLOPT is the

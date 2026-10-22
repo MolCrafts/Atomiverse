@@ -36,7 +36,7 @@ The pins are the closed-form expressions of that functional for a point
   (period 106.329 fs for d0 = 2 Å, m = 1 amu, V = 1000 Å³).
 
 Derivation script (reproducible): `inputs/literature/constant_d_pins.py`.
-Numbers land in `regressions/md/constant-d-polarization-feedback/`
+Numbers land in `regressions/md/electric-fields/`
 (REFERENCE.md + hard-coded asserts). ctest never runs any oracle.
 
 ## perf

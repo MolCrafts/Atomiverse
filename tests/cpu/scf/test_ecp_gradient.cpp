@@ -2,7 +2,7 @@
 /// @brief Unit: ECP nuclear-gradient guard + single-atom translational
 ///        invariance of the semi-numerical dU/dR path (hf-parity-01-ecp-forces).
 ///
-/// The ECP energy path is validated by regressions/scf/ecp_heavy_atom; the
+/// The ECP energy path is validated by regressions/scf/relativistic; the
 /// gradient's binding physics bar (I2 vs pinned PySCF) lives in
 /// regressions/scf/ecp_i2_grad. These are the fast unit checks: the RHF ECP
 /// guard opens (siblings stay shut) and a single ECP atom has zero force for

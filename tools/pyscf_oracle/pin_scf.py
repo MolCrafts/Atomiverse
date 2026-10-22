@@ -9,7 +9,7 @@ Examples:
   python tools/pyscf_oracle/pin_scf.py dhf --geom h2-1A --basis sto-3g
   python tools/pyscf_oracle/pin_scf.py dhf --geom h2-1A --basis cc-pvdz
   # Γ-point PBC RHF (offline only): pyscf.pbc gto+scf on the same geom/cell
-  # as regressions/scf/periodic-rhf-gamma/REFERENCE.md
+  # as regressions/scf/periodic-hf/REFERENCE.md
   python tools/pyscf_oracle/pin_scf.py krhf --kmesh 2,1,1
   python tools/pyscf_oracle/pin_scf.py kuhf --kmesh 2,1,1 --spin 2
   python tools/pyscf_oracle/pin_scf.py uhf --geom o2 --basis sto-3g --spin 2

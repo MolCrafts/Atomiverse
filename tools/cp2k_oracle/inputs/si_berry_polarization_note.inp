@@ -1,5 +1,5 @@
 # CP2K twin (offline oracle note) — Berry-phase dipole of bulk Si
-# Pairs with regressions/pw/berry-polarization/REFERENCE.md.
+# Pairs with regressions/pw/berry-phase/REFERENCE.md.
 # Never executed at ctest/regression time (offline pin only).
 #
 # CP2K evaluates the same modern-theory-of-polarization observable as a

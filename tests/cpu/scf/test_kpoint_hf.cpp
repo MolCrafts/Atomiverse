@@ -2,7 +2,7 @@
 /// @brief Unit pins for the FFTDF k-point HF pieces (no SCF loop).
 ///
 /// Ewald and the FFT mesh are the PySCF 2.14.0 numbers for the H₂
-/// cell used by regressions/scf/periodic-kpoint-hf (4 Bohr cube).
+/// cell used by regressions/scf/periodic-hf (4 Bohr cube).
 
 #if defined(ATV_HAS_HF)
 

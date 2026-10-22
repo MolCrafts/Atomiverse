@@ -15,4 +15,4 @@ oracle_version: 24.1
 
 Inputs and `detailed.out` may live under `/tmp/tb_oracle_dftb2_3ob_organic/`
 on the build host; the hard-coded numbers are in
-`regressions/semiempirical/dftb2-3ob-organic/REFERENCE.md`.
+`regressions/semiempirical/dftb2/REFERENCE.md`.

@@ -10,9 +10,4 @@
 # Labels: gpu_required so CI can skip GPU-less runners; cuda;async for
 # partial selection.
 
-atv_add_test(test_async_rhf_headers       test_async_rhf_headers.cu)
-
-set_tests_properties(
-    test_async_rhf_headers
-    PROPERTIES LABELS "cuda;async;gpu_required"
-)
+atv_add_unit_exe(test_async_rhf_headers       test_async_rhf_headers.cu)

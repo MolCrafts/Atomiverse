@@ -1,4 +1,4 @@
-# CP2K twin sketch for regressions/dynamics/xl-bomd-linearized-forces
+# CP2K twin sketch for regressions/dynamics/xl-bomd
 # (offline oracle — never run at ctest). H2O NVE same geometry as
 # xl_bomd_water_nve.inp. ATV zero-SCF linearized XL evaluates forces of the
 # shadow functional after one KS construction + one diagonalization from the

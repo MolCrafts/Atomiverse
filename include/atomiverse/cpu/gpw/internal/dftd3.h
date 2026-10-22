@@ -44,7 +44,7 @@ namespace gpw {
 /// differentiate different functionals. Verified against offline CP2K 2026.1 on
 /// a periodic water dimer: this value reproduces `Dispersion energy` to
 /// 6.7e-11 Ha, whereas the previously hard-coded 40 Bohr was off by 3.9e-7 Ha
-/// (see regressions/gpw/gpw-d3-forces/REFERENCE.md).
+/// (see regressions/gpw/d3/REFERENCE.md).
 inline constexpr double kD3Cp2kPairCutoffBohr = 2.0 * 20.0 / 0.52917720859;
 
 /// @brief Result of a DFT-D3 evaluation.

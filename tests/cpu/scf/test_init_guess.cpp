@@ -3,7 +3,7 @@
 ///        builders (`internal::HueckelGuess`, `internal::SapGuess`).
 ///
 /// Single-call matrix math only — no SCF loop runs here (the guess-quality
-/// iteration-count contrast lives in regressions/scf/h2o_scf_convergence).
+/// iteration-count contrast lives in regressions/scf/rhf).
 
 #ifdef ATV_HAS_HF
 

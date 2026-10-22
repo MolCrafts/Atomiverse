@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/ot-dftu — Γ-UKS GPW OT + Dudarev PLUS_U
+! CP2K twin for regressions/gpw/orbital-transformation — Γ-UKS GPW OT + Dudarev PLUS_U
 ! on NiO molecule (same chemistry as gpw-dftu-nio; OT is the product path).
 ! Offline only; never launched by ctest.
 &GLOBAL

@@ -16,7 +16,7 @@ the complement, so ``frequencies`` has exactly 3N−6 entries (3N−5 for a
 linear molecule; empty for a lone atom, which ``hessian_diagonalizer.cpp:
 190-197`` short-circuits before the projector). A diatomic therefore reports
 exactly one frequency — the same invariant the C++ regression asserts
-(``regressions/semiempirical/se-analytic-hessian/
+(``regressions/semiempirical/am1/
 reg_se-analytic-hessian.cpp:92-97``).
 
 The physics gate

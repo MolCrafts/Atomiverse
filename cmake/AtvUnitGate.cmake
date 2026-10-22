@@ -8,8 +8,9 @@
 # Rules:
 #   • Optional physics (HF / PW / GPW / KSPACE) is OFF unless the diff needs it.
 #   • Product modules (MD/MC/…) stay at CMake defaults (AtvProductModules).
-#   • Only build + ctest targets that match the selected modules (not "all tests").
-#   • Every test ≤ ATV_TEST_TIMEOUT_SECONDS (default 10). Heavy suite stays OFF.
+#   • The selected modules decide which sources atv_tests compiles; the gate
+#     builds the unit executables and runs every non-MPI unit test.
+#   • Every test ≤ ATV_TEST_TIMEOUT_SECONDS (default 10).
 #
 # Override force-all: ATV_GATE_ALL=1 or env ATV_GATE_ALL=1
 
@@ -37,7 +38,7 @@ if(DEFINED ATV_TEST_TIMEOUT_SECONDS AND NOT ATV_TEST_TIMEOUT_SECONDS STREQUAL ""
   set(_TIMEOUT "${ATV_TEST_TIMEOUT_SECONDS}")
 endif()
 
-set(_OMP 2)
+set(_OMP 1)
 if(DEFINED ATV_TEST_OMP_THREADS AND NOT ATV_TEST_OMP_THREADS STREQUAL "")
   set(_OMP "${ATV_TEST_OMP_THREADS}")
 endif()
@@ -82,14 +83,6 @@ set(_MAP_kspace
   "include/atomiverse/cpu/longrange/pppm"
 )
 
-# ctest -R fragments per optional module (plus always-safe core smoke).
-set(_R_core "test_mat3|test_vec3|test_units|test_real_harmonics|test_cpu_box|test_cpu_chunked_range|test_cpu_frame")
-set(_R_hf "scf|electronic|basis_|ecp|xc_functional|zero_energy_electronic|cart2sph|wannier|x2c|multipole_ints|spherical_basis|gradient_result|init_guess|density_fitting|cfmm|ediis|accelerators|orbital_hessian|stability|ghost_basis|delta_scf|ci_engine|cc_diis")
-set(_R_pw "planewave|test_cpu_pw_|test_pw_|test_upf|test_fft$|test_kpoint|test_g_vector|test_berry|test_crystal|test_dfpt|test_cpu_ewald$")
-set(_R_gpw "gpw")
-set(_R_kspace "pme|pppm")
-# Classical monorepo slice when MD-ish paths change (product modules stay default ON).
-set(_R_md "md_|dynamics|neighbor|potential|pair_|bond_|dihedral|improper|eam|yukawa|brownian|settle|virtual_sites|domain_decomposition|halo_|frame_tag|atom_sort|timestep|write_sets|pe_|const_pot|electrode|qeq|bias_|metadynamics|observe|msd|vacf|widom|voronoi|esp_|lowdin|capacitance|multipole$|species_density|potential_profile|montecarlo|mc_|gcmc|minimize|line_search|triclinic|anisotropic|path_|remd|hremd|replica|string_method|irc|rpmd|vib_|phonon|semiempirical|nddo|am1|rm1|dftb|scc_mixer|xtb|qmmm|link_atom|driver|criterion|materialize|task_|evaluate|install_infra|linalg|eigensolve|linear_solve|canonical_orthogonal|io_|lammps|extxyz|fmm_|gaussian_extent|ewald_sum|ewald_coul|slab_ewald|multipole_expansion|gaussian_charge|pim_|lambda_ti|coul_long|force_efield|force_dfield|force_addforce|force_wall|force_freeze|force_oscillating|charging_work|charge_aspc|atom_variable|analysis_executor|optimize_driver|minimize_driver|minimize_evaluate|cpu_driver|binding_kind|forces_requested|component_ownership|driver_nesting|context_slices|source_cobinding|density_cube|classical_polarization")
 
 # Paths that mean "classical product surface" (not optional HF/PW/…).
 set(_MAP_md
@@ -308,32 +301,9 @@ if(_want_kspace)
   set(_kspace ON)
 endif()
 
-# ctest include regex
-set(_R "${_R_core}")
-if(_want_md OR _want_broad OR _FORCE_ALL)
-  set(_R "${_R}|${_R_md}")
-endif()
-if(_want_hf)
-  set(_R "${_R}|${_R_hf}")
-endif()
-if(_want_pw)
-  set(_R "${_R}|${_R_pw}")
-endif()
-if(_want_gpw)
-  set(_R "${_R}|${_R_gpw}")
-endif()
-if(_want_kspace)
-  set(_R "${_R}|${_R_kspace}")
-endif()
-# _want_core alone keeps _R_core only (already set).
-
-# Always exclude heavy / MPI multi-rank.
-set(_E "no_alloc|^test_mpi_")
-
 message(STATUS "AtvUnitGate: root=${_ATV_ROOT}")
 message(STATUS "AtvUnitGate: build=${_BUILD_DIR}")
 message(STATUS "AtvUnitGate: HF=${_hf} PW=${_pw} GPW=${_gpw} KSPACE=${_kspace}")
-message(STATUS "AtvUnitGate: ctest -R '${_R}'")
 message(STATUS "AtvUnitGate: jobs=${_JOBS} timeout=${_TIMEOUT}s OMP=${_OMP}")
 
 # ── Configure ───────────────────────────────────────────────────────────────
@@ -354,55 +324,21 @@ execute_process(
     -DATV_REAL_STORAGE=double
     -DATV_TEST_TIMEOUT_SECONDS=${_TIMEOUT}
     -DATV_TEST_OMP_THREADS=${_OMP}
-    -DATV_TEST_HEAVY=OFF
   RESULT_VARIABLE _crc
 )
 if(NOT _crc EQUAL 0)
   message(FATAL_ERROR "AtvUnitGate: configure failed (${_crc})")
 endif()
 
-# ── Discover matching test names, build only those targets + atomiverse ─────
+# ── Build: the unit executables of the selected modules ─────────────────────
+# A module that is OFF contributes no sources to atv_tests, so the module
+# selection above is the test selection.
 execute_process(
-  COMMAND "${_CTEST}" --test-dir "${_BUILD_DIR}" -N -R "${_R}" -E "${_E}"
-  OUTPUT_VARIABLE _ctest_n
-  ERROR_VARIABLE _ctest_n_err
-  RESULT_VARIABLE _nrc
-)
-if(NOT _nrc EQUAL 0)
-  message(FATAL_ERROR "AtvUnitGate: ctest -N failed:\n${_ctest_n}\n${_ctest_n_err}")
-endif()
-
-set(_targets atomiverse)
-set(_test_names "")
-string(REGEX MATCHALL "Test +#[0-9]+: +[A-Za-z0-9_]+" _lines "${_ctest_n}")
-foreach(_line IN LISTS _lines)
-  string(REGEX REPLACE "Test +#[0-9]+: +" "" _tname "${_line}")
-  list(APPEND _test_names "${_tname}")
-  # Unit executables share the ctest name; script tests (cmake -P / sh) may not.
-  list(APPEND _targets "${_tname}")
-endforeach()
-list(REMOVE_DUPLICATES _targets)
-list(LENGTH _test_names _ntests)
-if(_ntests EQUAL 0)
-  message(FATAL_ERROR "AtvUnitGate: no tests matched -R '${_R}' (broken map?)")
-endif()
-message(STATUS "AtvUnitGate: ${_ntests} test(s) selected")
-
-execute_process(
-  COMMAND "${CMAKE_COMMAND}" --build "${_BUILD_DIR}" -j "${_JOBS}" --target ${_targets}
+  COMMAND "${CMAKE_COMMAND}" --build "${_BUILD_DIR}" -j "${_JOBS}"
   RESULT_VARIABLE _brc
 )
-# Some selected names are not build targets (script tests). Retry atomiverse-only
-# then let ctest run; missing binaries will fail clearly.
 if(NOT _brc EQUAL 0)
-  message(STATUS "AtvUnitGate: selective target build failed; building default test suite targets via 'all'")
-  execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build "${_BUILD_DIR}" -j "${_JOBS}"
-    RESULT_VARIABLE _brc2
-  )
-  if(NOT _brc2 EQUAL 0)
-    message(FATAL_ERROR "AtvUnitGate: build failed (${_brc2})")
-  endif()
+  message(FATAL_ERROR "AtvUnitGate: build failed (${_brc})")
 endif()
 
 # ── Test ────────────────────────────────────────────────────────────────────
@@ -413,12 +349,11 @@ execute_process(
     -j "${_JOBS}"
     --timeout "${_TIMEOUT}"
     --output-on-failure
-    -R "${_R}"
-    -E "${_E}"
+    -LE "mpi|regression"
   RESULT_VARIABLE _trc
 )
 if(NOT _trc EQUAL 0)
   message(FATAL_ERROR "AtvUnitGate: ctest failed (${_trc})")
 endif()
 
-message(STATUS "AtvUnitGate: OK (${_ntests} tests, HF=${_hf} PW=${_pw} GPW=${_gpw} KSPACE=${_kspace})")
+message(STATUS "AtvUnitGate: OK (HF=${_hf} PW=${_pw} GPW=${_gpw} KSPACE=${_kspace})")

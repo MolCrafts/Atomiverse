@@ -100,7 +100,7 @@ numbers. New subjects use descriptive filenames.
 ## Reference material
 
 - [CPU workflow reference](../developer/cpu-workflow-reference.md)
-- [Classical-model support notes](methods/classical-models.md)
+- [Many-body potentials (EAM, SW)](methods/md-manybody-potentials.md)
 - [Method catalog](methods/catalog.md)
 - [Method report policy](methods/README.md)
 - [External references](appendix-pyscf-oracle.md)

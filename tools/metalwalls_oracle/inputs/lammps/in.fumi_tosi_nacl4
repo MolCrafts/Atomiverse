@@ -1,7 +1,7 @@
 # Offline twin: Fumi–Tosi multi-type Born + Coulomb — 4-ion NaCl square
 # metal units (eV, Å). hybrid/overlay born + coul/cut; pair born shift yes.
 # Not run by ctest. Pin recorded 2026-07-24 →
-# regressions/forcefield/fumi-tosi-nacl/REFERENCE.md
+# regressions/forcefield/pair-styles/REFERENCE.md
 
 units           metal
 atom_style      charge

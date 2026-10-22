@@ -197,15 +197,6 @@ TEST(TestClassicalPolarization, SpatialRanksReduceOwnedMoments) {
     EXPECT_DOUBLE_EQ(polarization.Px(), (rank + 1.0) / 1000.0);
 }
 
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}
-
 TEST(TestCommBrick, TriclinicFractionalMigrationAndPeriodicSelfAxes) {
     int world = 0, rank = 0;
     MPI_Comm_size(MPI_COMM_WORLD, &world);

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Character / wall twin for `regressions/pw/bands-spin-si`. **Not** an absolute
+Character / wall twin for `regressions/pw/bands-dos`. **Not** an absolute
 eigenvalue pin: CP2K Quickstep uses GTH-PADE + DZVP-GTH; Atomiverse PW uses
 ONCV UPF. Record CP2K version, wall, and indirect-gap character when a binary
 is available.
@@ -82,5 +82,5 @@ is available.
 
 ## Pins written to REFERENCE.md
 
-See `regressions/pw/bands-spin-si/REFERENCE.md`. Literature: Yin–Cohen LDA
+See `regressions/pw/bands-dos/REFERENCE.md`. Literature: Yin–Cohen LDA
 Γ→X ~0.45 eV; α≈β and \(M=0\) from fixed occupations.

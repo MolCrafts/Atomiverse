@@ -63,9 +63,9 @@
 /// Phys. Rev. B 45, 9413 (1992); textbook treatment in Marx & Hutter,
 /// *Ab initio Molecular Dynamics*, CUP 2009). Both classes implement the same
 /// half-steps and honour `thermostat`: real-Γ `Cpmd` is regression-pinned by
-/// `regressions/dynamics/cpmd-electronic-thermostat`, and the multi-k GPW
+/// `regressions/dynamics/car-parrinello`, and the multi-k GPW
 /// consumer thermostats one `CpmdCplx` per (k, σ) channel
-/// (`regressions/dynamics/cpmd-thermostat-kpoints`), k-weighting the
+/// (`regressions/dynamics/car-parrinello`), k-weighting the
 /// published \(T_e\) and \(E_{\mathrm{therm}}\) totals.
 ///
 /// Method-agnostic electronic-DOF propagation on `cpu/linalg` matrices: the
@@ -263,7 +263,7 @@ class Cpmd {
 /// half-steps); with real-valued inputs the complex propagator reproduces
 /// `Cpmd` exactly (Γ-limit solver identity, unit-pinned). The GPW consumer
 /// engages one thermostatted instance per (k, σ) channel
-/// (`regressions/dynamics/cpmd-thermostat-kpoints`).
+/// (`regressions/dynamics/car-parrinello`).
 class CpmdCplx {
   public:
     /// @brief Construct with the fictitious electronic mass.

@@ -53,7 +53,7 @@ Printed dispersion energies [Eh]:
 | z, −h | -9.9549659214095867e-04 | -9.9453454831018983e-04 |
 
 These are the dedicated pins behind
-`regressions/gpw/gpw-d4-atm-stress/` (dispersion cell stress
+`regressions/gpw/d4/` (dispersion cell stress
 σ_aa = −[E(+h) − E(−h)]/(2hΩ) and its ATM-only part are FD over these
 printed numbers; the ATM stress contribution is ~10⁻¹⁰ Ha/Bohr³ — far below
 the GPW analytic-vs-FD dual-gate residual, so only these energy pins gate it).

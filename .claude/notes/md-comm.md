@@ -20,7 +20,7 @@ the mechanism and the reasons.
 - An undeclared ghost read returns whatever the row holds. Bogus `q_i q_j` is
   symmetric, so `Σ F = 0` and every momentum check still passes while the energy
   is wrong. Guards: `TestGhostContract.EveryGhostChargeReaderDeclaresIt`,
-  `regressions/md/multihop-widebox-parity`.
+  `regressions/md/domain-decomposition`.
 - Charge is `read_stable` on all Coulomb styles. Fluctuating-charge owners
   (QEq, constant-potential electrodes) refresh ghosts themselves through
   `ChargePacker` on the `ForwardPacker` path, after the solve.

@@ -519,7 +519,7 @@ class TestUnsupportedElement:
 # ── AM1-BCC / ABCG2 charges (the GAFF / GAFF2 charge model) ─────────
 
 #: Acetate at the fixed geometry of
-#: regressions/semiempirical/am1bcc-antechamber-charges (tools/bcc_oracle/
+#: regressions/semiempirical/am1-bcc (tools/bcc_oracle/
 #: inputs/acetate.mol2), and AmberTools 26.1 antechamber's charges there,
 #: transcribed from that case. Tolerance 6e-4 e: sqm prints its AM1 charges
 #: to 1e-3 and antechamber corrects that rounded table (REFERENCE.md).

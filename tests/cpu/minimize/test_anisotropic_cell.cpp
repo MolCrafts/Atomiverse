@@ -1,7 +1,7 @@
 /// @file tests/cpu/minimize/test_anisotropic_cell.cpp
 /// @brief Unit gates for AnisotropicCellRelax (mask, stress convention) and
 ///        the StressConverged criterion. GPW-driven e2e lives in
-///        regressions/gpw/gpw-variable-cell-ice/.
+///        regressions/gpw/variable-cell/.
 #include <gtest/gtest.h>
 
 #include <cmath>

@@ -43,4 +43,4 @@ sigma_XDM_zz (FD, dual-py)  = -6.4031024180e-09 Ha/Bohr3
 Provenance cross-check at pin time: the unstrained value bit-reproduces the
 shipped `gpw-xdm-ice` periodic pin (−2.1148157612879029e-03 Ha).
 
-See `regressions/gpw/gpw-xdm-stress/REFERENCE.md`.
+See `regressions/gpw/xdm/REFERENCE.md`.

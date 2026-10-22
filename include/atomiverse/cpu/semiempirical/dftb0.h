@@ -25,7 +25,7 @@ namespace semiempirical {
 /// Oracle for pins: **DFTB+** 24.1 (non-SCC / DFTB0 path). For a homonuclear
 /// diatomic the Mulliken fluctuations vanish by symmetry, so DFTB2 reduces to
 /// DFTB0 and both pin the same DFTB+ number — see
-/// `regressions/semiempirical/dftb0-h2/`. Units on the public surface:
+/// `regressions/semiempirical/dftb0/`. Units on the public surface:
 /// energy [eV], positions [Å], forces [eV/Å].
 ///
 /// @code

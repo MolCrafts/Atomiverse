@@ -107,7 +107,7 @@ def test_run_returns_control_result_and_mutates_same_frame(argon_frame: object) 
 
 # ── Ar LJ parameters, shared by every case below ────────────────────
 #
-# Identical to regressions/minimizer/lj_dimer, fire_lj_dimer and
+# Identical to regressions/minimizer/geometry, fire_lj_dimer and
 # cell_lj_pressure: eps = 0.0104 eV, sigma = 3.4 A, r_c = 2.5 sigma.
 
 _EPS: float = 0.0104  # [eV]
@@ -119,7 +119,7 @@ _Z_AR: int = 18
 
 #: HARD-CODED GOLDEN — analytic minimum of the 12-6 Lennard-Jones pair
 #: potential, r* = 2^(1/6) sigma. Not measured here; see
-#: regressions/minimizer/fire_lj_dimer/REFERENCE.md ("Analytic LJ minimum").
+#: regressions/minimizer/geometry/REFERENCE.md ("Analytic LJ minimum").
 _R_STAR: float = 2.0 ** (1.0 / 6.0) * _SIGMA  # 3.816371 A
 
 #: Isolation cell for the dimer cases: 40 A, as in both dimer regressions.
@@ -195,7 +195,7 @@ def _lj_dimer_minimize(optimizer: object, criterion: object) -> Minimize:
 def test_cg_minimizes_dimer_to_rmin() -> None:
     """Polak-Ribiere+ CG drives a stretched Ar dimer onto r* = 2^(1/6) sigma.
 
-    Recipe and gates are regressions/minimizer/lj_dimer (the LBFGS twin):
+    Recipe and gates are regressions/minimizer/geometry (the LBFGS twin):
     start at 1.2 r*, |r - r*| < 0.01 A, and the run must stop because the
     criterion said so — ``force_converged`` — not because the iteration
     budget ran out. CG's convergence tolerances are NOT its constructor's
@@ -252,7 +252,7 @@ def test_fire_minimizes_dimer_to_rmin() -> None:
 
 # ── ac-002: variable-cell relaxation ────────────────────────────────
 #
-# Recipe verbatim from regressions/minimizer/cell_lj_pressure
+# Recipe verbatim from regressions/minimizer/cell-relax
 # (reg_cell_lj_pressure.cpp + REFERENCE.md): two Ar atoms 3.0 A apart in a
 # 6.0 A cubic cell — compressed well inside the LJ minimum, so the virial
 # pressure is positive (compressive) and a P_target = 0 relaxer must
@@ -265,7 +265,7 @@ _CELL_MAX_SCALE: float = 0.08  # cap on |s-1| per step
 _CELL_BULK_MOD: float = 0.5  # [eV/A^3] soft modulus
 _CELL_PTOL: float = 5e-4  # [eV/A^3] PressureConverged tolerance
 
-#: Pass gates of regressions/minimizer/cell_lj_pressure/REFERENCE.md
+#: Pass gates of regressions/minimizer/cell-relax/REFERENCE.md
 #: ("Pass"): L1 > L0 + 0.05 A and |P1| < 5e-2 eV/A^3 — a skeleton
 #: expansion test, deliberately NOT an EOS equilibrium (spec
 #: py-minimize-full, DECIDED 2026-08-15).
@@ -316,7 +316,7 @@ def test_cell_relax_expands_compressed_cell() -> None:
     """IsotropicCellRelax expands the compressed cell and drops |P|.
 
     Both gates are the regression's own
-    (regressions/minimizer/cell_lj_pressure/REFERENCE.md "Pass"), read off
+    (regressions/minimizer/cell-relax/REFERENCE.md "Pass"), read off
     the molpy.Frame the Python facade hands back: the relaxed cell is
     written into ``frame.box`` and the virial into ``frame.meta["stress"]``
     by the same ``to_molrs`` boundary MD's NPT cases rely on.

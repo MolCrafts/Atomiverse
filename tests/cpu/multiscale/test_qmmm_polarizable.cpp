@@ -1,7 +1,7 @@
 /// @file tests/cpu/multiscale/test_qmmm_polarizable.cpp
 /// @brief Unit tests for induced-dipole SCC math.
 ///
-/// Full QmmmPolarizable RHF launch energy pin: regressions/multiscale/qmmm_pol_h2o
+/// Full QmmmPolarizable RHF launch energy pin: regressions/multiscale/qmmm
 /// (e2e-in-tests wave-2).
 #include <cmath>
 #include <gtest/gtest.h>

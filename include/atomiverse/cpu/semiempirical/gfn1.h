@@ -28,9 +28,9 @@ namespace semiempirical {
 /// [eV/Å].
 ///
 /// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
-/// `regressions/semiempirical/gfn1-xtb-organic/` (energy),
-/// `regressions/semiempirical/gfn1-xtb-forces/` (forces),
-/// `regressions/semiempirical/gfn-xtb-analytic-hessian/` (FD Hessian).
+/// `regressions/semiempirical/gfn1-xtb/` (energy),
+/// `regressions/semiempirical/gfn1-xtb/` (forces),
+/// `regressions/semiempirical/gfn2-xtb/` (FD Hessian).
 ///
 /// @code
 ///   cpu::Evaluate eval;

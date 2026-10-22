@@ -166,12 +166,3 @@ TEST(CoulEnergyBruteForce, GlobalEnergyMatchesBruteForce) {
         << " disagrees with brute force " << e_bf << " (rel=" << rel
         << ") — ghost charge (border message) is missing or wrong";
 }
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}
