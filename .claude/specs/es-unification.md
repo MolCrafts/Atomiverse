@@ -47,6 +47,16 @@ land).
   next to any method; density-dependent terms stay inside the method.
 - CUDA replaces engines, never the front; host setup may reuse CPU internals.
 
+## Progress
+
+- Phase 1, Gaussian SCF: nested `MeanFieldMethod` runs its stage plan on the
+  parent Runtime (per-solve build/release).
+- Phase 1, NDDO: `AM1`/`RM1` mount directly (`NddoMethod::build_on` /
+  `run_nested_erased`, molecular unwrap, accumulate, force request from the
+  phase); `AM1Evaluator`/`RM1Evaluator` deleted; task wire `AM1Params`;
+  Python `AM1` is the solve object (read-only parameters).
+- Next in phase 1: PW, then GPW (nesting currently rejected), DFTB/xTB.
+
 ## Phases (each keeps every regression green)
 
 1. **Mount** — nested ES methods run on the parent Runtime and accumulate;

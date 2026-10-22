@@ -519,7 +519,7 @@ if(ATV_BUILD_MD AND ATV_BUILD_EVALUATE AND ATV_BUILD_MINIMIZER)
     atv_add_cpp_test(test_cpu_driver_role_validation cpu/test_cpu_driver_role_validation.cpp)
 endif()
 # Registration-time PhaseKind gate + five-driver plan-shape regression
-# (arch-refactor-01-bindings). Uses AM1Evaluator (unconditional, no RHF gate).
+# (arch-refactor-01-bindings). Mounts AM1 (unconditional, no RHF gate).
 # Walks default bindings across MC / PATH / SE / VIB component kinds.
 if(ATV_BUILD_MC AND ATV_BUILD_PATH AND ATV_BUILD_SEMIEMPIRICAL AND ATV_BUILD_VIB)
     atv_add_cpp_test(test_cpu_driver_binding_kind         cpu/test_driver_binding_kind.cpp)

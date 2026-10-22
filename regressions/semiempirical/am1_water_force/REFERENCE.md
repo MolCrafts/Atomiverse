@@ -6,8 +6,8 @@ AM1 (Austin Model 1), Dewar et al., *J. Am. Chem. Soc.* **107**, 3902 (1985).
 
 ## What is checked
 
-1. **Public API path:** `cpu::Evaluate` + `cpu::semiempirical::AM1Evaluator` with
-   `with_gradient(true)` writes a negative bound total energy [eV] and non-zero
+1. **Public API path:** `cpu::Evaluate` + nested `cpu::semiempirical::AM1`
+   (the evaluate phase requests forces) writes a negative bound total energy [eV] and non-zero
    nuclear forces [eV/Å] on a slightly distorted water geometry; net force ≈ 0.
    The net-force gate is a plumbing check, not a physics one: the solver fills
    the last atom's force as minus the sum of the others (translational

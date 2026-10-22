@@ -2,7 +2,7 @@
 /// @brief The one numpy currency for nuclear forces returned to Python.
 ///
 /// Every binding that publishes forces (`RHF/UHF/RKS/UKS.forces`,
-/// `AM1Evaluator.forces`, `PW.forces`) hands back the same thing: a freshly
+/// `AM1.forces`, `PW.forces`) hands back the same thing: a freshly
 /// allocated, numpy-owned `(n_atoms, 3)` double array [eV/Å]. The engine's
 /// own force storage is not exposed — it is either reused by the next solve
 /// (`AM1Result::forces_ev_a`, the Frame force columns) or a temporary

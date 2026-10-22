@@ -50,7 +50,7 @@
 #include "atomiverse/cpu/potentials/pair_wca.h"
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
 #ifdef ATV_HAS_SEMIEMPIRICAL
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #endif
 // The one params-mirror-to-component factory of the catalogue: the Born table
 // crosses as parallel vectors and has to be transposed back into coefficient
@@ -143,24 +143,18 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
 #ifdef ATV_HAS_SEMIEMPIRICAL
     cls.def(
         "set_evaluator_am1",
-        [](Handle& self,
-           const ATV::cpu::semiempirical::AM1Evaluator& evaluator) {
-            // Handed a LIVE component rather than a params mirror: AM1Evaluator
-            // is bound for its own single_point / forces surface, so Python
-            // already holds the real thing. Read the five SCF parameters back
-            // off the owned method — the same five the MPI launcher path
-            // copies in bind_semiempirical.cpp — and let set_categorical build
-            // the driver's own copy from them, so the wire mirror and the
-            // registered component cannot disagree.
-            const ATV::cpu::semiempirical::AM1& method = evaluator.method();
-            const ATV::cpu::task::AM1EvaluatorParams p{
+        [](Handle& self, const ATV::cpu::semiempirical::AM1& method) {
+            // Handed the method itself. Its five SCF parameters — the same
+            // five the MPI launcher path copies in bind_semiempirical.cpp —
+            // build both the wire mirror and the driver's own nested copy, so
+            // the two cannot disagree.
+            const ATV::cpu::task::AM1Params p{
                 method.charge, method.multiplicity, method.max_iter,
                 method.density_tol, method.energy_tol};
             self.set_categorical("set_evaluator", p,
-                                 ATV::cpu::semiempirical::AM1Evaluator{
+                                 ATV::cpu::semiempirical::AM1{
                                      p.charge, p.multiplicity, p.max_iter,
-                                     p.density_tol, p.energy_tol}
-                                     .with_gradient(true));
+                                     p.density_tol, p.energy_tol});
         },
         nb::arg("comp"), am1_doc);
 #endif
@@ -169,9 +163,8 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
     cls.def(
         "set_evaluator_pw",
         [](Handle& self, const ATV::cpu::pw::PWEvaluator& evaluator) {
-            // Handed a LIVE component, like set_evaluator_am1 and for the same
-            // reason: PWEvaluator is bound in bind_pw.cpp so Python already
-            // holds the real thing.
+            // Handed a LIVE component: PWEvaluator is bound in bind_pw.cpp so
+            // Python already holds the real thing.
             const ATV::cpu::pw::PW& method = evaluator.method();
             // The two enum members cross the wire as their integer values:
             // `cpu::task::PwEvaluatorParams` is compiled without the

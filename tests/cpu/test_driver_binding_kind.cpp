@@ -4,9 +4,7 @@
 ///        bindings at registration time.
 ///
 /// Covers:
-///   - `cpu::md::MD::add(AM1Evaluator{})` throws (the evaluator loses its
-///     hardcoded `default_bindings()` and falls onto the existing
-///     "no default bindings" rejection path);
+///   - an MD force slot accepts a nested electronic method (`AM1`);
 ///   - kind-gate errors name BOTH workflows: Evaluate/Minimize rejecting an
 ///     MD-kind `VelocityVerlet` (rvalue `add()` branch), MD rejecting an
 ///     Evaluate-kind probe component (lvalue `add()` branch);
@@ -44,7 +42,7 @@
 #include "atomiverse/cpu/montecarlo/translate_move.h"
 #include "atomiverse/cpu/path/neb.h"
 #include "atomiverse/cpu/path/path_driver.h"
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/cpu/vibration/hessian.h"
 
 #include "cpu/driver_test_helpers.h"
@@ -124,7 +122,7 @@ TEST(DriverBindingKind, MdSetObserverEvaluateKindProbeThrows) {
 // AIMD-style explicit force binding is legal (no default_bindings kind gate).
 TEST(DriverBindingKind, MdSetEvaluatorAm1NoThrow) {
     ATV::cpu::md::MD md;
-    EXPECT_NO_THROW(md.set_evaluator(ATV::cpu::semiempirical::AM1Evaluator{}));
+    EXPECT_NO_THROW(md.set_evaluator(ATV::cpu::semiempirical::AM1{}));
 }
 
 // ─── Same-kind add() unchanged ──────────────────────────────────────────

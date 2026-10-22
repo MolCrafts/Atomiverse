@@ -218,7 +218,7 @@ class MD:
         Python owners alive; their diagnostics remain on the original object.
         These registrations currently require running without the MPI launcher.
 
-        ``AM1Evaluator`` belongs here too: registering it makes the run
+        ``AM1`` belongs here too: registering it makes the run
         Born-Oppenheimer molecular dynamics — one semiempirical SCF solve
         per step, forces from it. It needs no ``NeighborList`` (AM1 is
         molecular, not a pair style) and the driver installs its own

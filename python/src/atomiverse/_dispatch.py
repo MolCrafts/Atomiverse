@@ -43,7 +43,7 @@ if has_domain("kspace"):
 # semiempirical geometry optimization. Capability-probed for the same reason
 # as KSpacePME — the wheel builds it, a staged extension need not.
 if has_domain("am1"):
-    EVALUATOR_DISPATCH[_cpp.AM1Evaluator] = "set_evaluator_am1"
+    EVALUATOR_DISPATCH[_cpp.AM1] = "set_evaluator_am1"
 
 # Plane-wave DFT is the other electronic-structure force source
 # (ATV_BUILD_PW / FFTW3): analytic ionic forces from a re-converged density,

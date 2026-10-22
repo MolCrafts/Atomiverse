@@ -91,7 +91,7 @@ from atomiverse.vibration import Hessian, HessianResult
 # sentinel raises ImportError (not AttributeError), so a bare ``hasattr``
 # would break collection on a pure-Python wheel instead of letting conftest
 # skip the file (idiom from test_md.py / test_surface.py).
-_HAS_AM1: bool = extension_available() and hasattr(_cpp, "AM1Evaluator")
+_HAS_AM1: bool = extension_available() and hasattr(_cpp, "AM1")
 
 
 # ── CODATA-2014 constants, verbatim from the engine's own header ──────
@@ -487,7 +487,7 @@ class TestSemiempiricalForceSource:
         frame.box = molpy.Box.cube(20.0)
 
         driver = Hessian()
-        driver.set_evaluator(av.AM1Evaluator())
+        driver.set_evaluator(av.AM1())
         result = driver.run(frame)
 
         assert result.frequencies.shape == (1,)

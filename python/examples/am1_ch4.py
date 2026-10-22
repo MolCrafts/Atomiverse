@@ -4,12 +4,12 @@
 Demonstrates the always-available electronic-structure surface that needs
 no optional build flag (AM1 ships on every wheel):
 
-* ``single_point(frame, evaluator)`` — one solve at one fixed geometry,
+* ``single_point(frame, method)`` — one solve at one fixed geometry,
   the counterpart of C++ ``cpu::single_point``;
 * the two result channels: the public ``molpy.Frame`` (total energy [eV]
   in ``frame.meta``, per-atom Mulliken charges [e] written back into the
   ``charge`` column) and the solver-internal detail on
-  ``evaluator.last_result()`` (Hartree / kcal·mol⁻¹, iteration count);
+  ``method.last_result()`` (Hartree / kcal·mol⁻¹, iteration count);
 * what AM1 is for — a fitted NDDO model of the valence electrons, cheap
   enough to run interactively yet giving real partial charges.
 
@@ -69,7 +69,7 @@ _TOL_NEUTRALITY: float = 1e-6  # [e]
 def build_ch4_frame() -> "molpy.Frame":
     """Tetrahedral methane as a ``molpy.Frame``.
 
-    The ``atomic_number`` column [Z] is how the evaluator knows which
+    The ``atomic_number`` column [Z] is how the method knows which
     element's AM1 parameters to apply; ``mass`` is carried so the same
     frame could be handed to MD (Born-Oppenheimer dynamics) unchanged.
 
@@ -92,9 +92,9 @@ def main() -> int:
     frame = build_ch4_frame()
     print("=== AM1 single point on CH4 (C-H = 1.0897 Å) ===")
 
-    evaluator = av.AM1Evaluator(charge=0)
-    av.single_point(frame, evaluator)
-    result = evaluator.last_result()
+    method = av.AM1(charge=0)
+    av.single_point(frame, method)
+    result = method.last_result()
 
     # Two views of the same solve: the frame carries the public currency
     # (energy [eV], charges [e]); last_result() carries solver detail.

@@ -101,8 +101,8 @@ TaskSpec make_md_spec() {
     // is the one `SinglePointTask` already writes (i32 charge, i32
     // multiplicity, i32 max_iter, f64 density_tol, f64 energy_tol) — the
     // widening is append-only, so `kWireVersion` stays 4.
-    entries.push_back(MDComponentEntry{
-        AM1EvaluatorParams{-1, 2, 50, 1e-6, 1e-8}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{AM1Params{-1, 2, 50, 1e-6, 1e-8}, std::nullopt});
     // Plane-wave DFT as an MD force source (py-pw-forces): like AM1 above it
     // rides the categorical (`std::nullopt`) evaluator slot, giving
     // plane-wave BOMD from a launcher payload. Wire ID 20 with a fresh
@@ -318,7 +318,7 @@ void expect_runtime_error(const std::vector<std::byte>& bytes,
 
 TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairLJCut), 0u);
-    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::AM1Evaluator), 9u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::AM1), 9u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::LBFGS), 10u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixLangevin), 11u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixCSVR), 12u);
@@ -420,12 +420,11 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     // arm would otherwise decode a filename out of a Thermo frequency.
     EXPECT_EQ(component_id(MDComponentParams{XyzRecorderParams{}}),
               ComponentId::XyzRecorder);
-    // One params struct, one ID, two legal homes: `AM1EvaluatorParams` now
+    // One params struct, one ID, two legal homes: `AM1Params` now
     // sits in BOTH the MD and the SinglePoint payload, and both must map to
     // the same wire ID 9 — a second ID for the MD arm would make the same
     // component decode differently depending on the task that carries it.
-    EXPECT_EQ(component_id(MDComponentParams{AM1EvaluatorParams{}}),
-              ComponentId::AM1Evaluator);
+    EXPECT_EQ(component_id(MDComponentParams{AM1Params{}}), ComponentId::AM1);
     // `PwEvaluatorParams` is the second payload that LEADS with a string
     // (`XyzRecorderParams` was the first), so pin its variant→ID map too: a
     // swapped arm would decode a trajectory filename as a pseudopotential
@@ -453,7 +452,7 @@ TEST(TaskCodec, MdRoundtripIsFieldExact) {
 }
 
 TEST(TaskCodec, SinglePointRoundtripIsFieldExact) {
-    AM1EvaluatorParams p{-1, 2, 50, 1e-6, 1e-8};
+    AM1Params p{-1, 2, 50, 1e-6, 1e-8};
     const TaskSpec spec(SinglePointTask{p});
     const auto bytes = pack(spec);
     const TaskSpec back = unpack(bytes.data(), bytes.size());
@@ -566,9 +565,8 @@ TEST(TaskCodec, CrossKindComponentsNameSourceAndTarget) {
     // rebuilding a Minimize payload that AM1 is SinglePoint-only, which is
     // no longer true.
     auto min_am1_bytes = pack(make_minimize_spec());
-    write_scalar<std::uint16_t>(
-        min_am1_bytes, kFirstComponentIdOffset,
-        static_cast<std::uint16_t>(ComponentId::AM1Evaluator));
+    write_scalar<std::uint16_t>(min_am1_bytes, kFirstComponentIdOffset,
+                                static_cast<std::uint16_t>(ComponentId::AM1));
     expect_runtime_error(min_am1_bytes,
                          "belongs to MD/SinglePoint, not Minimize");
 
@@ -576,7 +574,7 @@ TEST(TaskCodec, CrossKindComponentsNameSourceAndTarget) {
     // component and it is AM1. Widening AM1 into MD must not widen the
     // SinglePoint payload into an anything-goes slot — any other ID there is
     // still refused, naming where that component does belong.
-    auto sp_bytes = pack(TaskSpec(SinglePointTask{AM1EvaluatorParams{}}));
+    auto sp_bytes = pack(TaskSpec(SinglePointTask{AM1Params{}}));
     write_scalar<std::uint16_t>(
         sp_bytes, kSinglePointComponentIdOffset,
         static_cast<std::uint16_t>(ComponentId::VelocityVerlet));

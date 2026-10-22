@@ -1,10 +1,10 @@
 """AM1 semiempirical Python surface tests (specs: python-api-namespaces-am1,
 py-am1-forces).
 
-Exposes the C++-accepted ``cpu::semiempirical::AM1Evaluator`` (AM1: Dewar,
+Exposes ``cpu::semiempirical::AM1`` (AM1: Dewar,
 Zoebisch, Healy, Stewart, J. Am. Chem. Soc. 1985, 107, 3902-3909, DOI
 10.1021/ja00299a024) through ``atv.single_point`` (energy [eV] + Mulliken
-charges [e]) and, per spec py-am1-forces, through ``AM1Evaluator.forces``
+charges [e]) and, per spec py-am1-forces, through ``AM1.forces``
 (nuclear forces [eV/Å] returned as an (N, 3) array and written back to
 fx/fy/fz, same convention as the SCF binding's ``forces``).
 
@@ -176,13 +176,13 @@ def _make_water_frame(coords: "np.ndarray", box_angstrom: float) -> "molpy.Frame
 
 
 @pytest.fixture(scope="module")
-def am1_ch4() -> tuple["molpy.Frame", "av.AM1Evaluator"]:
+def am1_ch4() -> tuple["molpy.Frame", "av.AM1"]:
     """One converged AM1 CH4 single point, shared read-only by the
     oracle assertions below."""
     frame = _make_ch4_frame()
-    evaluator = av.AM1Evaluator()
-    av.single_point(frame, evaluator)
-    return frame, evaluator
+    method = av.AM1()
+    av.single_point(frame, method)
+    return frame, method
 
 
 # ── AM1 construction (parameters assigned in the constructor) ───────
@@ -213,29 +213,13 @@ class TestAM1:
         assert m.density_tol == pytest.approx(1e-6)
         assert m.energy_tol == pytest.approx(1e-8)
 
-    def test_fields_writable(self) -> None:
-        """Members remain read-write after construction."""
+    def test_fields_read_only(self) -> None:
+        """Parameters are fixed by the constructor (no member assignment)."""
         m = av.AM1()
-        m.charge = 1
-        m.max_iter = 300
-        assert m.charge == 1
-        assert m.max_iter == 300
-
-
-class TestAM1EvaluatorConstruction:
-    def test_default_constructible(self) -> None:
-        assert av.AM1Evaluator() is not None
-
-    def test_constructible_from_kwargs(self) -> None:
-        assert av.AM1Evaluator(charge=0, multiplicity=1) is not None
-
-    def test_constructible_from_method(self) -> None:
-        assert av.AM1Evaluator(av.AM1(max_iter=77)) is not None
-
-    def test_method_accessor_roundtrip(self) -> None:
-        """method() exposes the owned AM1 with construction parameters."""
-        evaluator = av.AM1Evaluator(max_iter=77)
-        assert evaluator.method().max_iter == 77
+        with pytest.raises(AttributeError):
+            m.charge = 1
+        with pytest.raises(AttributeError):
+            m.max_iter = 300
 
 
 # ── CH4 single point: energy channel + charge write-back ────────────
@@ -267,8 +251,8 @@ class TestAM1SinglePointCH4:
     def test_last_result_mulliken_charges_match_oracle(self, am1_ch4) -> None:
         """last_result().mulliken_charges (always double) match the pinned
         oracle at the C++ unit test's own tolerance."""
-        _, evaluator = am1_ch4
-        charges = evaluator.last_result().mulliken_charges
+        _, method = am1_ch4
+        charges = method.last_result().mulliken_charges
         assert len(charges) == 5
         assert charges[0] == pytest.approx(_ORACLE_C, abs=_TOL_RESULT_CHARGE)
         for i in range(1, 5):
@@ -277,29 +261,29 @@ class TestAM1SinglePointCH4:
             )
 
     def test_last_result_converged(self, am1_ch4) -> None:
-        _, evaluator = am1_ch4
-        assert evaluator.last_result().converged is True
+        _, method = am1_ch4
+        assert method.last_result().converged is True
 
     def test_last_result_iterations_positive(self, am1_ch4) -> None:
-        _, evaluator = am1_ch4
-        assert evaluator.last_result().iterations > 0
+        _, method = am1_ch4
+        assert method.last_result().iterations > 0
 
     def test_last_result_electronic_energy_finite(self, am1_ch4) -> None:
         """electronic_energy_hartree [Hartree] is readable and finite."""
-        _, evaluator = am1_ch4
-        assert np.isfinite(evaluator.last_result().electronic_energy_hartree)
+        _, method = am1_ch4
+        assert np.isfinite(method.last_result().electronic_energy_hartree)
 
     def test_last_result_heat_of_formation_finite(self, am1_ch4) -> None:
         """heat_of_formation_kcal_mol [kcal/mol] is readable and finite."""
-        _, evaluator = am1_ch4
-        assert np.isfinite(evaluator.last_result().heat_of_formation_kcal_mol)
+        _, method = am1_ch4
+        assert np.isfinite(method.last_result().heat_of_formation_kcal_mol)
 
 
 # ── py-am1-forces: forces(frame) — array out AND fx/fy/fz written back ──
 
 
 class TestAM1Forces:
-    """``AM1Evaluator.forces(frame)``: nuclear forces [eV/Å].
+    """``AM1.forces(frame)``: nuclear forces [eV/Å].
 
     Each solve is shared by a class-scoped fixture (an AM1 SCF plus the
     fixed-density displacement sweep is the expensive part). The fixtures
@@ -310,12 +294,12 @@ class TestAM1Forces:
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def ch4_forces() -> tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]:
+    def ch4_forces() -> tuple["molpy.Frame", "np.ndarray", "av.AM1"]:
         """One AM1 force evaluation on the pinned CH4 geometry."""
         frame = _make_ch4_frame()
-        evaluator = av.AM1Evaluator()
-        forces = np.asarray(evaluator.forces(frame), dtype=np.float64)
-        return frame, forces, evaluator
+        method = av.AM1()
+        forces = np.asarray(method.forces(frame), dtype=np.float64)
+        return frame, forces, method
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -324,7 +308,7 @@ class TestAM1Forces:
         frame = _make_water_frame(
             _c2v_water_coords(_R_OH_MOPAC, _HOH_MOPAC_DEG), _BOX_MOPAC
         )
-        forces = np.asarray(av.AM1Evaluator().forces(frame), dtype=np.float64)
+        forces = np.asarray(av.AM1().forces(frame), dtype=np.float64)
         return frame, forces
 
     @pytest.fixture(scope="class")
@@ -339,7 +323,7 @@ class TestAM1Forces:
         coords = _c2v_water_coords(_R_OH_MOPAC, _HOH_MOPAC_DEG)
         coords[1, 0] += _STRETCH_A
         frame = _make_water_frame(coords, _BOX_MOPAC)
-        forces = np.asarray(av.AM1Evaluator().forces(frame), dtype=np.float64)
+        forces = np.asarray(av.AM1().forces(frame), dtype=np.float64)
         return frame, forces
 
     @pytest.fixture(scope="class")
@@ -351,25 +335,25 @@ class TestAM1Forces:
             dtype=np.float64,
         )
         frame = _make_water_frame(coords, _BOX_FORCE)
-        forces = np.asarray(av.AM1Evaluator().forces(frame), dtype=np.float64)
+        forces = np.asarray(av.AM1().forces(frame), dtype=np.float64)
         return frame, forces
 
     # ── shape / finiteness / write-back ──
 
     def test_returns_n_by_three_array(
-        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1"]
     ) -> None:
         _, forces, _ = ch4_forces
         assert forces.shape == (5, 3)
 
     def test_forces_finite(
-        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1"]
     ) -> None:
         _, forces, _ = ch4_forces
         assert np.all(np.isfinite(forces))
 
     def test_force_columns_written_back(
-        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1"]
     ) -> None:
         """forces() publishes fx/fy/fz on the SAME molpy.Frame, matching the
         returned array (the write-back contract MD and SCF already keep).
@@ -389,7 +373,7 @@ class TestAM1Forces:
         assert fz == pytest.approx(forces[:, 2], abs=_TOL_FRAME_FORCE_EV_A)
 
     def test_energy_written_back_finite_negative(
-        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1"]
     ) -> None:
         """forces() also lands the total energy [eV]: bound, so negative
         (the same gate as reg_am1_water_force.cpp:77-81)."""
@@ -400,7 +384,7 @@ class TestAM1Forces:
         assert energy < 0.0
 
     def test_forces_translation_invariance(
-        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1"]
     ) -> None:
         """Σ_A F_A = 0 per component, at the C++ case's own net-force gate
         (reg_am1_water_force.cpp:101, 1e-5 eV/Å): a rigid translation of an
@@ -411,24 +395,24 @@ class TestAM1Forces:
     # ── AM1Result force / energy fields ──
 
     def test_result_forces_field(
-        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1"]
     ) -> None:
         """last_result().forces_ev_a is the flat (fx0, fy0, fz0, fx1, …)
         layout of NDDOResult, holding exactly the doubles that were
         returned — same buffer, no conversion, so exact equality."""
-        _, forces, evaluator = ch4_forces
-        flat = evaluator.last_result().forces_ev_a
+        _, forces, method = ch4_forces
+        flat = method.last_result().forces_ev_a
         assert len(flat) == 15
         assert np.asarray(flat, dtype=np.float64).tolist() == forces.ravel().tolist()
 
     def test_result_total_energy_ev_matches_frame_meta(
-        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1Evaluator"]
+        self, ch4_forces: tuple["molpy.Frame", "np.ndarray", "av.AM1"]
     ) -> None:
         """AM1Result.total_energy_ev is the number AM1 writes to
         frame.meta['energy'] (src/cpu/semiempirical/am1_solver.cpp:88-92);
         both are double, so the exact-energy tier applies."""
-        frame, _, evaluator = ch4_forces
-        total = evaluator.last_result().total_energy_ev
+        frame, _, method = ch4_forces
+        total = method.last_result().total_energy_ev
         assert np.isfinite(total)
         assert total == pytest.approx(frame.meta["energy"], abs=_TOL_ENERGY_EV)
 
@@ -529,7 +513,7 @@ class TestUnsupportedElement:
         frame.box = molpy.Box.cube(20.0)
 
         with pytest.raises(RuntimeError):
-            av.single_point(frame, av.AM1Evaluator())
+            av.single_point(frame, av.AM1())
 
 
 # ── AM1-BCC / ABCG2 charges (the GAFF / GAFF2 charge model) ─────────

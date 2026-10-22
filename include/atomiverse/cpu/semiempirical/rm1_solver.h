@@ -77,6 +77,9 @@ class RM1 : public NddoMethod, public cpu::QmEngine {
 
     /// @brief Engine label.
     /// @return `"rm1"`.
+    /// @brief Display name in plan dumps and binding diagnostics.
+    /// @return `"rm1"`.
+    std::string name() const { return "rm1"; }
     std::string qm_engine_name() const override { return "rm1"; }
     void prepare(const cpu::BuildContext& qm_ctx) override;
     void evaluate(const cpu::LaunchContext& qm_ctx) override;
@@ -91,14 +94,13 @@ class RM1 : public NddoMethod, public cpu::QmEngine {
     /// @param forces_requested Also compute finite-difference forces.
     /// @param accumulate true → `+=` energy/forces; false → `=`. Charges
     ///        always overwrite.
-    void publish(cpu::Frame& frame, bool forces_requested, bool accumulate);
+    void publish(cpu::Frame& frame, bool forces_requested,
+                 bool accumulate) override;
 
   private:
     void sync_engine_();
     std::unique_ptr<NDDOSolver> engine_;
 };
-
-using RM1Solver = RM1;
 
 } // namespace semiempirical
 } // namespace cpu

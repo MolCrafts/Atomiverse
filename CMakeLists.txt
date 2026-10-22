@@ -368,8 +368,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/nddo_method.cpp
             src/cpu/semiempirical/am1_solver.cpp
             src/cpu/semiempirical/rm1_solver.cpp
-            src/cpu/semiempirical/am1_evaluator.cpp
-            src/cpu/semiempirical/rm1_evaluator.cpp
             src/cpu/semiempirical/dftb2.cpp
             src/cpu/semiempirical/dftb0.cpp
             src/cpu/semiempirical/gfn0.cpp

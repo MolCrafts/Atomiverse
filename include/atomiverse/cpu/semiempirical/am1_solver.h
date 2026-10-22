@@ -25,9 +25,9 @@ using AM1Result = NDDOResult;
 /// being computed.
 ///
 /// Owns an internal NDDO engine. Parameters are public members — there is no
-/// public `NDDOConfig` / `NDDOSolver` bag. `AM1Evaluator` wraps this type.
-/// The self-consistency loop is `NddoMethod`. Implements `cpu::QmEngine`
-/// for multiscale couplings (no embedding path).
+/// public `NDDOConfig` / `NDDOSolver` bag. The self-consistency loop is
+/// `NddoMethod`; mount the method itself in an outer loop. Implements
+/// `cpu::QmEngine` for multiscale couplings (no embedding path).
 class AM1 : public NddoMethod, public cpu::QmEngine {
   public:
     /// @brief Total molecular charge [e].
@@ -112,35 +112,27 @@ class AM1 : public NddoMethod, public cpu::QmEngine {
     const NDDOScfState& state() const;
 
     // ── QmEngine: the QM half of a QM/MM coupling ─────────────────────
+    /// @brief Display name in plan dumps and binding diagnostics.
+    /// @return `"am1"`.
+    std::string name() const { return "am1"; }
     std::string qm_engine_name() const override { return "am1"; }
     void prepare(const cpu::BuildContext& qm_ctx) override;
     void evaluate(const cpu::LaunchContext& qm_ctx) override;
     // as_embedding() default nullptr — NDDO has no external-charge path yet.
     void reset_history() override;
 
-    /// @brief Run the SCF and write every result channel onto the frame:
-    ///        total energy [eV] to `kEnergy` and `kEnergyElectronic`, Mulliken
-    ///        charges [e] to `kAtom_charge`, and — when asked — forces [eV/Å]
-    ///        to `kAtom_f{x,y,z}`.
-    ///
-    /// Shared by both callers so the write-back contract exists once: the
-    /// `QmEngine::evaluate` path (multiscale) and `AM1Evaluator::launch`.
+    /// @brief See `NddoMethod::publish` (energy [eV], charges [e], forces
+    ///        [eV/Å]; accumulate or overwrite).
     /// @param frame Target frame; geometry in, results out.
-    /// @param forces_requested Also compute finite-difference forces and write the
-    ///        gradient. False leaves the force columns untouched.
-    /// @param accumulate true → `+=` energy/forces, the contract for a
-    ///        component summed with other energy sources in a driver phase;
-    ///        false → `=`. Charges are always last-writer-wins (a state
-    ///        channel, not a sum).
-    void publish(cpu::Frame& frame, bool forces_requested, bool accumulate);
+    /// @param forces_requested Also compute finite-difference forces.
+    /// @param accumulate true → `+=` energy/forces; false → `=`.
+    void publish(cpu::Frame& frame, bool forces_requested,
+                 bool accumulate) override;
 
   private:
     void sync_engine_();
     std::unique_ptr<NDDOSolver> engine_;
 };
-
-/// @brief Historical alias of the concrete AM1 method.
-using AM1Solver = AM1;
 
 } // namespace semiempirical
 } // namespace cpu

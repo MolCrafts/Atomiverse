@@ -10,7 +10,7 @@
 /// Binds via `on(phase).add_ref`:
 /// - **Method-driver** (`cpu::scf::RHF` etc.): nested driver node, budget
 ///   defaults to `default_budget()` (= `max_iter`).
-/// - **Component evaluator** (`PWEvaluator`, `AM1Evaluator`, …): component
+/// - **Component evaluator** (`PWEvaluator`, `GPWEvaluator`, …): component
 ///   node on the evaluate phase.
 ///
 /// Usage:

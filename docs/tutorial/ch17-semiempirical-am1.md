@@ -44,7 +44,7 @@ do not relabel it analytic without checking the code revision.
 | Total energy \(E_\mathrm{elec}+E_\mathrm{nuc}\) | eV | `frame.meta.get(kEnergy)` |
 | Heat of formation \(\Delta H_f\) (MOPAC-style) | kcal/mol | `AM1Result::heat_of_formation_kcal_mol` |
 | Mulliken-like charges | e | `kAtom_charge` |
-| Nuclear forces | eV/Å | `kAtom_fx/fy/fz` when `with_gradient(true)` |
+| Nuclear forces | eV/Å | `kAtom_fx/fy/fz` when the phase requests forces |
 
 Heat of formation follows the openmopac definition:
 
@@ -102,25 +102,26 @@ verification stage is planned from the beginning.
 
 ```text
 Preset (Evaluate / MD / Minimize / Hessian)
-  └── AM1Evaluator  :  cpu::Semiempirical   (kind)
-         └── AM1Solver : NDDOSolver         (inner SCF + forces)
+  └── AM1  :  NddoMethod = cpu::Driver<nddo::Phase>   (nested loop node)
+         └── internal NDDO engine                    (Hamiltonian, density, forces)
 ```
 
-There is **no** `SemiempiricalDriver`. DFTB and xTB, if added later, get their
-own Solver + Evaluator + kind — not a seat on `NDDOSolver`.
+The method itself is mounted in the outer loop; it runs its SCF on the
+parent's Runtime and accumulates energy, charges and — when the phase asks —
+forces onto the Frame. There is no evaluator wrapper.
 
 ## Example code
 
 ```cpp
 #include "atomiverse/cpu/evaluate/evaluate.h"
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/core/stage.h"
 
 cpu::Frame frame = /* water: type = Z, positions (Å) */;
 
 cpu::Evaluate eval;
 eval.on(evaluate::Phase::evaluate)
-    .add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+    .add(cpu::semiempirical::AM1{});
 eval.build();
 eval.run(frame);
 
@@ -128,8 +129,7 @@ double E_eV = frame.meta.get(ATV::kEnergy);
 // charges in kAtom_charge; forces in kAtom_fx/fy/fz
 ```
 
-`default_bindings()` is empty on purpose: like SCF and PW, you **must** bind
-with `.on(phase).add(...)`.
+Like Gaussian SCF, bind it with `.on(phase).add(...)` (or `set_evaluator`).
 
 ## Geometry optimization
 
@@ -141,7 +141,7 @@ opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.02, 8});
 opt.add_criterion(cpu::ForceConverged{/*max_f*/0.2, /*rms_f*/0.1,
                                       /*max_d*/0.1, /*rms_d*/0.05, /*dE*/1e-3});
 opt.on(minimizer::Phase::force)
-   .add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+   .add(cpu::semiempirical::AM1{});
 opt.build();
 opt.run(frame, 50);
 ```

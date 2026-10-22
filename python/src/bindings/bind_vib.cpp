@@ -61,7 +61,7 @@
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #endif
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -126,21 +126,16 @@ struct VibHandle {
 #ifdef ATV_HAS_SEMIEMPIRICAL
     /// @brief Append the AM1 semiempirical method as the force source.
     ///
-    /// Handed a LIVE component rather than a params mirror, exactly as
-    /// `MdHandle::set_evaluator_am1` is: `AM1Evaluator` is already bound for
-    /// its own `single_point` / `forces` surface, so Python has the real
-    /// thing. The five SCF settings are read back off the owned method and a
-    /// FRESH gradient-enabled copy is registered — the Hessian differences
-    /// forces, so gradients are not optional here.
+    /// Handed the method itself; a fresh copy of its five SCF settings is
+    /// mounted as the nested force source (the Hessian's force phase
+    /// requests gradients).
     ///
-    /// @param evaluator The evaluator whose settings are copied in.
-    void set_evaluator_am1(const cpu::semiempirical::AM1Evaluator& evaluator) {
+    /// @param method The method whose settings are copied in.
+    void set_evaluator_am1(const cpu::semiempirical::AM1& method) {
         require_configurable_("set_evaluator");
-        const cpu::semiempirical::AM1& method = evaluator.method();
-        driver.set_evaluator(cpu::semiempirical::AM1Evaluator{
+        driver.set_evaluator(cpu::semiempirical::AM1{
             method.charge, method.multiplicity, method.max_iter,
-            method.density_tol, method.energy_tol}
-                                 .with_gradient(true));
+            method.density_tol, method.energy_tol});
     }
 #endif
 

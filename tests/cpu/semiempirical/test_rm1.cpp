@@ -13,7 +13,6 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/am1_parameters.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
-#include "atomiverse/cpu/semiempirical/rm1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/rm1_parameters.h"
 #include "atomiverse/cpu/semiempirical/rm1_solver.h"
 
@@ -77,6 +76,6 @@ TEST(RM1, UnsupportedElementThrows) {
     f.span(kAtom_mass)[0] = 4.0;
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
     f.box = cpu::Box::cubic(10.0);
-    RM1Solver solver;
+    RM1 solver;
     EXPECT_THROW(solver.build(f), std::runtime_error);
 }

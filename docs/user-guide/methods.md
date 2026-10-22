@@ -52,7 +52,7 @@ Two policy slots let you change *when* a run ends without writing a driver:
 | Gaussian SCF — Hartree-Fock and Kohn-Sham | `cpu::scf::RHF` / `UHF` / `ROHF` / `GHF` / `RKS` / `UKS` / `ROKS` (`HF`) | `ATV_BUILD_HF` |
 | Plane-wave DFT | `cpu::pw::PWEvaluator` (`PlaneWave`) | `ATV_BUILD_PW` |
 | Gaussian-and-plane-waves DFT | `cpu::gpw::GPWEvaluator` (`GPW`) | `ATV_BUILD_GPW` |
-| NDDO semiempirics | `cpu::semiempirical::AM1Evaluator` / `RM1Evaluator` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
+| NDDO semiempirics | `cpu::semiempirical::AM1` / `RM1` (nested `Driver<nddo::Phase>`) | `ATV_BUILD_SEMIEMPIRICAL` |
 | DFTB | `cpu::semiempirical::DFTB0` / `DFTB2` / `DFTB3` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
 | Extended tight binding | `cpu::semiempirical::GFN0` / `GFN1` / `GFN2` / `IPEA` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
 
@@ -300,7 +300,7 @@ AM1BCCCharges{am1, BccParameterSet::Bcc}.assign(frame);   // kAtom_charge (e)
 ```
 
 The geometry is used as given. By default antechamber first optimises the
-structure with sqm. To get the same, run a `Minimize` over an `AM1Evaluator`
+structure with sqm. To get the same, run a `Minimize` over a mounted `AM1`
 on the frame before calling `assign`.
 
 ## Vibrations

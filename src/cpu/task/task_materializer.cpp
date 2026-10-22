@@ -50,7 +50,7 @@
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #endif
 #ifdef ATV_HAS_MINIMIZER
 #include "atomiverse/cpu/task/internal/minimize_builders.h"
@@ -126,11 +126,11 @@ namespace {
 #endif
 
 #ifndef ATV_HAS_SEMIEMPIRICAL
-/// @brief Reject an `AM1EvaluatorParams` entry, or a `SinglePointTask`, in a
+/// @brief Reject an `AM1Params` entry, or a `SinglePointTask`, in a
 ///        build without the semiempirical domain.
 ///
 /// `cpu::semiempirical::AM1` sits behind the `ATV_BUILD_SEMIEMPIRICAL` build
-/// flag, while the wire mirror `AM1EvaluatorParams` is compiled
+/// flag, while the wire mirror `AM1Params` is compiled
 /// unconditionally. A payload naming AM1 therefore still *decodes* on an
 /// SE-less build and has to be refused here, at the point where the
 /// component would be constructed. Every AM1 home — explicit binding,
@@ -138,7 +138,7 @@ namespace {
 ///
 /// @throws std::runtime_error Always, naming the flag to rebuild with.
 [[noreturn]] void throw_semiempirical_not_built() {
-    throw std::runtime_error("AM1Evaluator requires ATV_BUILD_SEMIEMPIRICAL=ON "
+    throw std::runtime_error("AM1 requires ATV_BUILD_SEMIEMPIRICAL=ON "
                              "(semiempirical domain not compiled in)");
 }
 #endif
@@ -227,32 +227,22 @@ cpu::md::NoseHooverNPT ramped_nose_hoover_npt(const NoseHooverNptParams& p,
     return nh;
 }
 
-/// @brief Build an `AM1Evaluator` that computes nuclear forces.
+/// @brief Build the `AM1` method an `AM1Params` payload describes.
 ///
-/// The same `AM1EvaluatorParams` payload serves a `SinglePointTask`, where the
-/// caller reads back energy and Mulliken charges, and an `MDTask`, where the
-/// evaluator is a *force* source — Born-Oppenheimer molecular dynamics, one
-/// SCF solve per step with the nuclei moving on the resulting energy surface.
-/// Forces are the point of the MD home, so the flag is spelled out here
-/// rather than inherited from the component default: were that default to
-/// flip, an MD run would keep integrating a frame the SCF never pushed on —
-/// silently, since a force-free evaluator still publishes a plausible
-/// energy.
-///
-/// Both replay paths (explicit binding and categorical setter) go through
-/// this one builder, so neither can drift into registering a gradient-less
-/// AM1 behind the other's back.
+/// The same payload serves a `SinglePointTask`, where the caller reads back
+/// energy and Mulliken charges, and an `MDTask`, where the method is a force
+/// source — Born-Oppenheimer molecular dynamics, one SCF solve per step.
+/// Mounted as a nested node, the method computes forces whenever the phase
+/// requests them; both replay paths (explicit binding and categorical setter)
+/// go through this one builder.
 ///
 /// @param p Typed AM1 params (charge [e], multiplicity, SCF iteration cap,
 ///          density residual tolerance, energy tolerance [eV]).
-/// @return Evaluator with gradients enabled, ready for either registration
-///         path.
+/// @return The method, ready to mount.
 #ifdef ATV_HAS_SEMIEMPIRICAL
-cpu::semiempirical::AM1Evaluator gradient_am1(const AM1EvaluatorParams& p) {
-    cpu::semiempirical::AM1Evaluator evaluator{
-        p.charge, p.multiplicity, p.max_iter, p.density_tol, p.energy_tol};
-    evaluator.with_gradient(true);
-    return evaluator;
+cpu::semiempirical::AM1 am1_method(const AM1Params& p) {
+    return cpu::semiempirical::AM1{p.charge, p.multiplicity, p.max_iter,
+                                   p.density_tol, p.energy_tol};
 }
 #endif
 
@@ -268,9 +258,8 @@ cpu::semiempirical::AM1Evaluator gradient_am1(const AM1EvaluatorParams& p) {
 /// what publishes the forces.
 ///
 /// Gradients are spelled out here rather than inherited from the component
-/// default (`false`) for the same reason as `gradient_am1`: a force-free
-/// evaluator still publishes a plausible energy, so the MD would integrate a
-/// frame nothing ever pushed on.
+/// default (`false`): a force-free evaluator still publishes a plausible
+/// energy, so the MD would integrate a frame nothing ever pushed on.
 ///
 /// The fifteen members are assigned in the params' DECLARATION order — the
 /// order the codec writes and a hand-built twin spells — so a dropped or
@@ -405,9 +394,9 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
                     bind(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
                                            p.bulk_modulus});
-                else if constexpr (std::is_same_v<P, AM1EvaluatorParams>) {
+                else if constexpr (std::is_same_v<P, AM1Params>) {
 #ifdef ATV_HAS_SEMIEMPIRICAL
-                    bind(gradient_am1(p));
+                    bind(am1_method(p));
 #else
                     throw_semiempirical_not_built();
 #endif
@@ -497,9 +486,9 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
                 driver.set_barostat(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
                                                       p.bulk_modulus});
-            else if constexpr (std::is_same_v<P, AM1EvaluatorParams>) {
+            else if constexpr (std::is_same_v<P, AM1Params>) {
 #ifdef ATV_HAS_SEMIEMPIRICAL
-                driver.set_evaluator(gradient_am1(p));
+                driver.set_evaluator(am1_method(p));
 #else
                 throw_semiempirical_not_built();
 #endif
@@ -618,9 +607,8 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
         eval_.emplace();
         eval_->set_serial_on_replica();
         eval_->on(ATV::evaluate::Phase::evaluate)
-            .add(semiempirical::AM1Evaluator{p.charge, p.multiplicity,
-                                             p.max_iter, p.density_tol,
-                                             p.energy_tol});
+            .add(semiempirical::AM1{p.charge, p.multiplicity, p.max_iter,
+                                    p.density_tol, p.energy_tol});
         eval_->build();
         return;
 #else

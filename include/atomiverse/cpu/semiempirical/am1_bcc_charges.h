@@ -31,7 +31,7 @@ enum class BccParameterSet {
 ///
 /// The charges belong to the geometry given: nothing here optimises it.
 /// antechamber's default optimises with sqm first. To match that, compose
-/// a `Minimize` over `AM1Evaluator` before calling `assign`.
+/// a `Minimize` over a mounted `AM1` before calling `assign`.
 class AM1BCCCharges {
   public:
     /// @param am1 AM1 method that supplies the base charges. Its `charge`

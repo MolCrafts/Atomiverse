@@ -394,7 +394,7 @@ inline bool operator==(const KSpacePmeParams& a, const KSpacePmeParams& b) {
            && a.order == b.order;
 }
 
-/// @brief Mirrors the `cpu::semiempirical::AM1Evaluator` constructor exactly.
+/// @brief Mirrors the `cpu::semiempirical::AM1` constructor exactly.
 ///
 /// One params struct with two legal homes. As a `SinglePointTask` payload it
 /// is the whole task; as an `MDComponentParams` alternative it makes the
@@ -404,7 +404,7 @@ inline bool operator==(const KSpacePmeParams& a, const KSpacePmeParams& b) {
 /// replays both paths through the same gradient-enabled builder. Both homes
 /// decode from wire ID 9 with the byte layout written here, so they can never
 /// disagree about what an AM1 payload contains.
-struct AM1EvaluatorParams {
+struct AM1Params {
     /// @brief Total molecular charge [e].
     int charge = 0;
     /// @brief Spin multiplicity 2S+1 (dimensionless).
@@ -419,8 +419,7 @@ struct AM1EvaluatorParams {
     ///        Meeting *either* tolerance ends the loop.
     double energy_tol = 1e-10;
 };
-inline bool operator==(const AM1EvaluatorParams& a,
-                       const AM1EvaluatorParams& b) {
+inline bool operator==(const AM1Params& a, const AM1Params& b) {
     return a.charge == b.charge && a.multiplicity == b.multiplicity
            && a.max_iter == b.max_iter && a.density_tol == b.density_tol
            && a.energy_tol == b.energy_tol;
@@ -429,7 +428,7 @@ inline bool operator==(const AM1EvaluatorParams& a,
 /// @brief Wire mirror of the fifteen public members of `cpu::pw::PW` — the
 ///        plane-wave DFT method as an MD force source (plane-wave BOMD).
 ///
-/// Like `AM1EvaluatorParams` it rides the categorical evaluator slot, so a
+/// Like `AM1Params` it rides the categorical evaluator slot, so a
 /// launcher payload can drive Born-Oppenheimer dynamics on a plane-wave
 /// Hamiltonian — the electrons re-converged at every geometry the nuclei
 /// reach. Budget two SCF solves per force-producing step, not one: the
@@ -1131,7 +1130,7 @@ enum class ComponentId : std::uint16_t {
     InitVelocity = 6,
     NoseHoover = 7,
     Thermo = 8,
-    AM1Evaluator = 9,
+    AM1 = 9,
     LBFGS = 10,
     FixLangevin = 11,
     FixCSVR = 12,
@@ -1204,8 +1203,8 @@ inline const char* component_name(ComponentId id) noexcept {
         return "NoseHoover";
     case ComponentId::Thermo:
         return "Thermo";
-    case ComponentId::AM1Evaluator:
-        return "AM1Evaluator";
+    case ComponentId::AM1:
+        return "AM1";
     case ComponentId::LBFGS:
         return "LBFGS";
     case ComponentId::FixLangevin:
@@ -1299,8 +1298,8 @@ using MDComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, BondHarmonicParams,
                  AngleHarmonicParams, DihedralMultiHarmonicParams,
                  VelocityVerletParams, InitVelocityParams, NoseHooverParams,
-                 ThermoParams, AM1EvaluatorParams, FixLangevinParams,
-                 FixCsvrParams, NoseHooverNptParams, ParrinelloRahmanNptParams,
+                 ThermoParams, AM1Params, FixLangevinParams, FixCsvrParams,
+                 NoseHooverNptParams, ParrinelloRahmanNptParams,
                  BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
                  KSpacePmeParams, XyzRecorderParams, PwEvaluatorParams,
                  PairMorseParams, PairBuckParams, PairBornParams,
@@ -1340,8 +1339,8 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::NoseHoover;
             else if constexpr (std::is_same_v<P, ThermoParams>)
                 return ComponentId::Thermo;
-            else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
-                return ComponentId::AM1Evaluator;
+            else if constexpr (std::is_same_v<P, AM1Params>)
+                return ComponentId::AM1;
             else if constexpr (std::is_same_v<P, FixLangevinParams>)
                 return ComponentId::FixLangevin;
             else if constexpr (std::is_same_v<P, FixCsvrParams>)
@@ -1457,7 +1456,7 @@ inline bool operator==(const MDTask& a, const MDTask& b) {
 }
 
 struct SinglePointTask {
-    AM1EvaluatorParams evaluator;
+    AM1Params evaluator;
 };
 inline bool operator==(const SinglePointTask& a, const SinglePointTask& b) {
     return a.evaluator == b.evaluator;
@@ -1511,7 +1510,7 @@ class TaskSpec {
     /// fresh payloads leave every existing byte layout untouched. No v2 or v3
     /// decoder exists: an older payload is an error, never a best-effort read.
     ///
-    /// Admitting `AM1EvaluatorParams` into the MD payload likewise stays at
+    /// Admitting `AM1Params` into the MD payload likewise stays at
     /// v4: the widening is append-only in the *alternative set*, not in the
     /// bytes. ID 9 already existed and its five fields are written by the one
     /// shared `write`/`read_am1` pair, so every previously encodable MD

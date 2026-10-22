@@ -146,7 +146,7 @@ struct MdHandle {
             driver.set_evaluator(std::move(comp));
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-        else if constexpr (std::is_same_v<P, cpu::task::AM1EvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::AM1Params>)
             // A semiempirical force source rides the same plural evaluator
             // slot as the pair styles — that is what makes an MD run BOMD.
             driver.set_evaluator(std::move(comp));

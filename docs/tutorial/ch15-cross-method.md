@@ -89,7 +89,7 @@ They may omit initialization; use the complete model example when running code.
 // Classical
 sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
 // AM1
-// sim.on(md::Phase::force).add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+// sim.on(md::Phase::force).add(cpu::semiempirical::AM1{});
 // AIMD
 // sim.on(md::Phase::force).add(cpu::scf::RHF{});
 ```

@@ -78,7 +78,6 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("InsertDeleteMove", "atomiverse.montecarlo", "InsertDeleteMove"),
     ("MoveSelector", "atomiverse.montecarlo", "MoveSelector"),
     ("AM1", "atomiverse.semiempirical", "AM1"),
-    ("AM1Evaluator", "atomiverse.semiempirical", "AM1Evaluator"),
     ("AM1Result", "atomiverse.semiempirical", "AM1Result"),
     ("single_point", "atomiverse.driver", "single_point"),
     # Vibrational analysis (spec py-vib): unconditional, ATV_BUILD_VIB
@@ -190,13 +189,13 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 44 entries (18 + the 7 unconditional Monte Carlo
+        """The base has 43 entries (17 + the 7 unconditional Monte Carlo
         rows of spec py-mc + the 2 unconditional vibration rows of spec
         py-vib + the 8 unconditional geometry-optimization rows of spec
         py-minimize-full + the 9 unconditional force-field rows of spec
         py-pair-styles); a PW build contributes two types (PW, PWResult)
         and an HF build the four concrete SCF methods."""
-        expected = 44 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        expected = 43 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(
@@ -283,10 +282,10 @@ class TestDeviceParameter:
         with RuntimeError, so getting ValueError proves the device check
         precedes the calculation."""
         from atomiverse.driver import single_point
-        from atomiverse.semiempirical import AM1Evaluator
+        from atomiverse.semiempirical import AM1
 
         with pytest.raises(ValueError, match="(?i)cuda"):
-            single_point(argon_frame, AM1Evaluator(), device="cuda")
+            single_point(argon_frame, AM1(), device="cuda")
 
 
 # ── A module the extension was built without fails naming its flag ──

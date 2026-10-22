@@ -488,9 +488,9 @@ _MD_EVALUATOR_SAMPLES: tuple[tuple[str, Callable[[], object]], ...] = (
 )
 
 #: AM1 is compile-optional (ATV_BUILD_SEMIEMPIRICAL) and is the marquee
-#: case for the generalized dispatch: Minimize + AM1Evaluator is a real
+#: case for the generalized dispatch: Minimize + AM1 is a real
 #: C++ capability (regressions/semiempirical/am1_water_minimize).
-_HAS_SEMIEMPIRICAL: bool = extension_available() and hasattr(_cpp, "AM1Evaluator")
+_HAS_SEMIEMPIRICAL: bool = extension_available() and hasattr(_cpp, "AM1")
 
 
 @pytest.mark.parametrize(
@@ -517,11 +517,11 @@ def test_minimize_accepts_am1_evaluator() -> None:
     """A semiempirical method is a legal force source for minimization.
 
     The C++ twin is regressions/semiempirical/am1_water_minimize:
-    ``Minimize`` + ``AM1Evaluator`` + LBFGS. Accept-level here.
+    ``Minimize`` + ``AM1`` + LBFGS. Accept-level here.
     """
-    from atomiverse.semiempirical import AM1Evaluator
+    from atomiverse.semiempirical import AM1
 
-    assert Minimize().set_evaluator(AM1Evaluator()) is not None
+    assert Minimize().set_evaluator(AM1()) is not None
 
 
 @needs("ATV_BUILD_MD")
@@ -542,7 +542,7 @@ def test_evaluator_dispatch_is_one_shared_table() -> None:
 def test_minimize_dispatch_covers_every_md_type() -> None:
     """The behavioral half of ac-003, including capability-gated types.
 
-    ``KSpacePME`` / ``AM1Evaluator`` / ``PWEvaluator`` join MD's table only
+    ``KSpacePME`` / ``AM1`` / ``PWEvaluator`` join MD's table only
     on an extension that carries them; asserting key-set equality covers
     them without constructing one.
     """

@@ -30,7 +30,6 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 
 namespace {
@@ -99,14 +98,13 @@ int main() {
 
     bool ok = true;
 
-    // ── 1. Public Evaluate + AM1Evaluator path: total energy [eV] ───────────
+    // ── 1. Public Evaluate + nested AM1 path: total energy [eV] ───────────
     // MOPAC TOTAL ENERGY = ELECTRONIC ENERGY + CORE-CORE REPULSION, which is
     // exactly the quantity AM1 writes to frame.meta[kEnergy].
     {
         auto frame = water(kOptOhAngstrom, kOptHohDegrees);
         cpu::Evaluate eval;
-        eval.on(evaluate::Phase::evaluate)
-            .add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+        eval.on(evaluate::Phase::evaluate).add(cpu::semiempirical::AM1{});
         eval.build();
         eval.run(frame);
 

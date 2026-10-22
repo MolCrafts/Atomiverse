@@ -71,7 +71,7 @@ Three things follow, none of which the API can check for you:
 
 * **The force source must write that virial.** The classical evaluators
   (``PairLJCut``, ``PairCoulCut``, ``CoulLong`` + ``KSpacePME``, the bonded
-  styles) do, by default. ``AM1Evaluator`` writes none — it is a molecular
+  styles) do, by default. ``AM1`` writes none — it is a molecular
   method with no cell — and ``PWEvaluator`` is installed here as a
   gradient-only copy, so neither drives a cell step from Python. With a zero
   virial the cell simply never moves, and a ``PressureConverged(P_target=0)``

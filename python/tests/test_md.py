@@ -21,7 +21,7 @@ collecting on a build whose extension does not bind them yet.
 disk. Same in-body import discipline.
 
 ``TestAm1Bomd`` (spec py-am1-forces) covers semiempirical Born-Oppenheimer
-MD: ``MD.set_evaluator(AM1Evaluator(...))``, i.e. an electronic-structure
+MD: ``MD.set_evaluator(AM1(...))``, i.e. an electronic-structure
 method in the force slot instead of a classical pair style.
 
 ``TestPairStyleCatalogue`` (spec py-pair-styles) covers the nine styles
@@ -1395,7 +1395,7 @@ class TestXyzRecorder:
 #
 # The C++ twin is regressions/semiempirical/am1_water_bomd
 # (reg_am1_water_bomd.cpp): MD + VelocityVerlet{0.25 fs} + InitVelocity{10 K,
-# seed 7} + a gradient-enabled AM1Evaluator carrying max_iter = 300,
+# seed 7} + an AM1 method carrying max_iter = 300,
 # density_tol = 1e-7, energy_tol = 1e-9 — tighter than the AM1 defaults
 # because BOMD needs the force to be consistent from step to step. Those
 # five numbers are reused verbatim here; only the molecule differs.
@@ -1439,7 +1439,7 @@ def _h2_frame() -> "molpy.Frame":
 class TestAm1Bomd:
     """AM1 forces driving the MD loop (spec py-am1-forces).
 
-    ``AM1Evaluator`` is imported inside the test bodies for the same
+    ``AM1`` is imported inside the test bodies for the same
     build-capability reason as ``TestCoulombPme`` / ``TestXyzRecorder`` —
     the name is absent on an extension built with
     ``ATV_BUILD_SEMIEMPIRICAL=OFF``.
@@ -1453,7 +1453,7 @@ class TestAm1Bomd:
     def bomd_h2() -> tuple["molpy.Frame", "np.ndarray"]:
         """One 5-step AM1 NVE run on H2; returns the frame and its starting
         z column (the frame itself is advanced in place)."""
-        from atomiverse.semiempirical import AM1Evaluator
+        from atomiverse.semiempirical import AM1
 
         frame = _h2_frame()
         z_before = np.asarray(frame["atoms"]["z"], dtype=np.float64).copy()
@@ -1461,7 +1461,7 @@ class TestAm1Bomd:
         sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
         sim.set_observer(InitVelocity(_AM1_BOMD_T0, _AM1_BOMD_SEED))
         sim.set_evaluator(
-            AM1Evaluator(
+            AM1(
                 charge=0,
                 multiplicity=1,
                 max_iter=300,
@@ -1476,11 +1476,11 @@ class TestAm1Bomd:
         """The dispatch keyed on the live component type must accept the
         semiempirical evaluator — this is the whole point of the spec, and
         it is checked without running so the failure is unambiguous."""
-        from atomiverse.semiempirical import AM1Evaluator
+        from atomiverse.semiempirical import AM1
 
         sim = MD()
         sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
-        sim.set_evaluator(AM1Evaluator())
+        sim.set_evaluator(AM1())
 
     def test_potential_energy_finite_and_bound(
         self, bomd_h2: tuple["molpy.Frame", "np.ndarray"]
@@ -1534,9 +1534,9 @@ class TestAm1Bomd:
     def test_set_evaluator_still_rejects_unknown_type(self) -> None:
         """Growing the dispatch table must not turn it into an accept-all:
         an unsupported object still raises, and the message names the
-        supported types (which now include AM1Evaluator)."""
+        supported types (which now include AM1)."""
         sim = MD()
-        with pytest.raises(TypeError, match="AM1Evaluator"):
+        with pytest.raises(TypeError, match="AM1"):
             sim.set_evaluator(object())
 
 

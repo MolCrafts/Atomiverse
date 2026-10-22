@@ -9,7 +9,7 @@ namespace (pinned per row in test_namespaces.py):
   ``AngleHarmonic``, ``DihedralMultiHarmonic``) with no legacy aliases
   (``LJ``, ``HarmonicBond``, ``HarmonicAngle``, ``MultiHarmonicDihedral``)
   and no deprecation shims.
-* The AM1 semiempirical single-point trio (``AM1``, ``AM1Evaluator``,
+* The AM1 semiempirical single-point pair (``AM1``,
   ``AM1Result``) plus the ``single_point`` entry point.
 * The old ``optimizer`` facade is gone and FAILS LOUD:
   ``atomiverse.optimizer`` no longer imports, dead package attributes raise
@@ -131,7 +131,6 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "InsertDeleteMove",
         "MoveSelector",
         "AM1",
-        "AM1Evaluator",
         "AM1Result",
         "AM1BCCCharges",
         "BccParameterSet",
@@ -275,8 +274,8 @@ class TestCanonicalSurface:
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
     def test_public_names_are_the_honest_surface(self) -> None:
-        """The public name list is the same 60 names on every build."""
-        assert len(_CANONICAL_ALL) == 60
+        """The public name list is the same 59 names on every build."""
+        assert len(_CANONICAL_ALL) == 59
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:

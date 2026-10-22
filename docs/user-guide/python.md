@@ -319,10 +319,10 @@ are replaced by numbers fitted once per chemical element. It costs far less
 than the Gaussian-basis Hartree-Fock of the next section and far more than a
 classical force field, and it is only as good as its fit.
 
-`AM1Evaluator` computes energy [eV], Mulliken charges [e] — per-atom partial
+`AM1` computes energy [eV], Mulliken charges [e] — per-atom partial
 charges obtained by splitting each electron's population among the orbitals it
 occupies — and nuclear forces [eV/Å]. The `atomic_number` column carries the
-atomic number Z, which is how the evaluator knows which element parameters to
+atomic number Z, which is how the method knows which element parameters to
 use:
 
 ```python
@@ -330,10 +330,10 @@ import numpy as np
 import atomiverse as av
 
 # `frame` is a molpy.Frame with x/y/z + atomic_number columns.
-ev = av.AM1Evaluator(charge=0)
-av.single_point(frame, ev)                     # energy + charges onto frame
+am1 = av.AM1(charge=0)
+av.single_point(frame, am1)                    # energy + charges onto frame
 q = np.asarray(frame["atoms"]["charge"])       # Mulliken charges [e]
-res = ev.last_result()                         # Hartree / kcal-mol detail
+res = am1.last_result()                        # Hartree / kcal-mol detail
 print(res.heat_of_formation_kcal_mol, res.iterations)
 ```
 
@@ -342,7 +342,7 @@ print(res.heat_of_formation_kcal_mol, res.iterations)
 fx/fy/fz columns:
 
 ```python
-f = ev.forces(frame)          # (n_atoms, 3) [eV/Å]
+f = am1.forces(frame)         # (n_atoms, 3) [eV/Å]
 print(f.sum(axis=0))          # exactly 0 — see below, this is not a check
 ```
 
@@ -383,14 +383,14 @@ frame["atoms"].insert("mass", np.array([15.999, 1.008, 1.008]))
 sim = av.MD()
 sim.set_integrator(av.VelocityVerlet(0.25))    # [fs] — light atoms, short dt
 sim.set_observer(av.InitVelocity(300.0, 42))   # [K], seed
-sim.set_evaluator(av.AM1Evaluator(charge=0))
+sim.set_evaluator(av.AM1(charge=0))
 sim.run(frame, 100)
 
 print(frame.meta["energy"], frame.meta["kinetic"])   # [eV]
 ```
 
-The driver installs its own gradient-enabled copy of the evaluator's five SCF
-parameters, so `ev.last_result()` is *not* updated by `run()`; the per-step
+The driver mounts its own copy of the method's five SCF
+parameters, so `am1.last_result()` is *not* updated by `run()`; the per-step
 results (energy, charges, forces) land on the frame.
 
 ## Gaussian SCF single point and forces
@@ -571,7 +571,7 @@ the energy change `etol` (eV).
 
 Any force source `MD.set_evaluator` accepts works here too — the two facades
 read one dispatch table — so a bonded force field, an Ewald split
-(`CoulLong` + `KSpacePME` at the same `alpha`), `AM1Evaluator` or
+(`CoulLong` + `KSpacePME` at the same `alpha`), `AM1` or
 `PWEvaluator` all drive an optimization.
 
 One iteration is free, whichever optimizer you choose: the minimizer phase
@@ -608,7 +608,7 @@ Two more gates the API cannot check for you.
 default — the pair styles (`PairLJCut`, `PairCoulCut`, `CoulLong` +
 `KSpacePME`, `PairMorse`, `PairBuck`, `PairBorn`, `PairYukawa`, `PairWCA`,
 `PairDpd`) and the bonded ones alike; `PairDpd` contributes its *conservative*
-virial only, which is the term a pressure is built from. `AM1Evaluator` writes
+virial only, which is the term a pressure is built from. `AM1` writes
 none — it is a molecular method with no cell — and
 `PWEvaluator` is installed by this facade as a gradient-only copy. With a zero
 virial the cell never moves and `PressureConverged(P_target=0.0, …)` reports
@@ -748,7 +748,7 @@ do not:
 ```python
 # `h2` is a molpy.Frame of two H atoms (atomic_number = 1) in a large cell.
 driver = av.Hessian()
-driver.set_evaluator(av.AM1Evaluator())    # 6N SCF solves, no neighbor list
+driver.set_evaluator(av.AM1())    # 6N SCF solves, no neighbor list
 result = driver.run(h2)
 ```
 
@@ -1247,7 +1247,7 @@ print(frame.meta["energy"])  # [eV]
 ```
 
 `PWEvaluator` rides the same plural `set_evaluator` slot as the pair styles
-and `AM1Evaluator`; registering it makes the loop Born-Oppenheimer dynamics —
+and `AM1`; registering it makes the loop Born-Oppenheimer dynamics —
 the electrons re-converged at every geometry the nuclei reach, with analytic
 forces from the converged density. It takes no `NeighborList` (a plane-wave
 Hamiltonian is not a pair style), needs the frame's `atomic_number` [Z] and

@@ -21,8 +21,8 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
 
     A method's public ``run(frame)`` entry owns its standalone solve (Gaussian
     SCF, PW and DFTB2). Evaluator components use the C++ ``Evaluate`` preset.
-    AM1Evaluator retains its MPI single-point task; generic components reject
-    launcher mode when no task payload can represent them.
+    AM1 keeps its MPI single-point task; generic components reject launcher
+    mode when no task payload can represent them.
 
     Parameters
     ----------
@@ -60,7 +60,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
         return
     # Preserve AM1's existing MPI task transport. Generic components have
     # no serialized task payload and the native entry rejects launcher use.
-    if has_domain("am1") and isinstance(evaluator, _cpp.AM1Evaluator):
+    if has_domain("am1") and isinstance(evaluator, _cpp.AM1):
         _cpp.single_point(frame, evaluator)
     elif isinstance(evaluator, _cpp._Component):
         _cpp._single_point_component(frame, evaluator)

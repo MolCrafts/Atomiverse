@@ -27,7 +27,6 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 
 namespace {
@@ -52,7 +51,7 @@ ATV::cpu::Frame make_water() {
 }
 
 ATV::cpu::semiempirical::AM1Result run_am1(ATV::cpu::Frame frame) {
-    ATV::cpu::semiempirical::AM1Solver solver;
+    ATV::cpu::semiempirical::AM1 solver;
     solver.build(frame);
     return solver.run(frame);
 }
@@ -68,11 +67,10 @@ int main() {
 
     auto frame = make_water();
 
-    // Public Evaluate path with force-capable AM1Evaluator.
+    // Public Evaluate path: AM1 mounted as a nested method.
     {
         cpu::Evaluate eval;
-        eval.on(evaluate::Phase::evaluate)
-            .add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
+        eval.on(evaluate::Phase::evaluate).add(cpu::semiempirical::AM1{});
         eval.build();
         eval.run(frame);
 
@@ -131,7 +129,7 @@ int main() {
     // identity: variational SCF gradient ≡ energy derivative).
     {
         auto f0 = make_water();
-        cpu::semiempirical::AM1Solver solver;
+        cpu::semiempirical::AM1 solver;
         solver.build(f0);
         solver.force_step = 1.0e-4;
         solver.forces(f0); // one SCF + fixed-density FD forces [eV/Å]

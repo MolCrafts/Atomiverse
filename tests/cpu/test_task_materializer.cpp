@@ -73,7 +73,7 @@
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #endif
 #include "atomiverse/cpu/task/task_materializer.h"
 #include "atomiverse/cpu/task/task_spec.h"
@@ -1020,9 +1020,9 @@ cpu::Frame make_h2_frame() {
 }
 
 TEST(TaskMaterializer, SinglePointAm1H2MatchesHandBuiltEvaluateBitwise) {
-    // AM1EvaluatorParams mirroring the NDDOConfig defaults, spelled out so
+    // AM1Params mirroring the NDDOConfig defaults, spelled out so
     // the two pipelines demonstrably share one configuration.
-    AM1EvaluatorParams params{};
+    AM1Params params{};
     params.charge = 0;
     params.multiplicity = 1;
     params.max_iter = 200;
@@ -1035,12 +1035,12 @@ TEST(TaskMaterializer, SinglePointAm1H2MatchesHandBuiltEvaluateBitwise) {
     EXPECT_EQ(mat.kind(), TaskKind::SinglePoint);
     mat.run(materialized_frame);
 
-    // Directly-built single point: Evaluate + AM1Evaluator (same args as
-    // AM1EvaluatorParams / constructor — no intermediate Config bag).
+    // Directly-built single point: Evaluate + AM1 (same args as
+    // AM1Params / constructor — no intermediate Config bag).
     cpu::Frame direct_frame = make_h2_frame();
     cpu::Evaluate eval;
     eval.on(ATV::evaluate::Phase::evaluate)
-        .add(cpu::semiempirical::AM1Evaluator{0, 1, 200, 1.0e-8, 1.0e-10});
+        .add(cpu::semiempirical::AM1{0, 1, 200, 1.0e-8, 1.0e-10});
     eval.build();
     eval.run(direct_frame);
 
@@ -1075,7 +1075,7 @@ cpu::Frame make_h2_bomd_frame() {
 }
 
 // AM1 as an MD force source (py-am1-forces ac-002): the same
-// `AM1EvaluatorParams` payload that drives a SinglePoint task is legal in an
+// `AM1Params` payload that drives a SinglePoint task is legal in an
 // MDTask, where it rides the categorical (`std::nullopt`) evaluator slot —
 // `set_evaluator`, which binds at md::Phase::force order 0, the same slot
 // `on(force).add(evaluator)` fills in
@@ -1098,7 +1098,7 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     entries.push_back(
         MDComponentEntry{InitVelocityParams{kBomdT, kBomdSeed}, std::nullopt});
     entries.push_back(MDComponentEntry{
-        AM1EvaluatorParams{0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol},
+        AM1Params{0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol},
         std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), kBomdSteps});
 
@@ -1107,17 +1107,14 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     EXPECT_EQ(mat.kind(), TaskKind::MD);
     mat.run(materialized_frame);
 
-    // Hand-built twin, registered in the spec's entry order. `with_gradient`
-    // is spelled explicitly on both sides: forces are what makes the
-    // evaluator an MD force source, so the materializer arm must ask for
-    // them rather than inherit the component default.
+    // Hand-built twin, registered in the spec's entry order: the method is
+    // mounted directly and computes forces because the MD force phase asks.
     cpu::Frame direct_frame = make_h2_bomd_frame();
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{kBomdDt});
     sim.set_observer(cpu::md::InitVelocity{kBomdT, kBomdSeed});
-    sim.set_evaluator(cpu::semiempirical::AM1Evaluator{
-        0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol}
-                          .with_gradient(true));
+    sim.set_evaluator(cpu::semiempirical::AM1{0, 1, kBomdMaxIter, kBomdDensTol,
+                                              kBomdEnergyTol});
     sim.build();
     sim.run(direct_frame, kBomdSteps);
 
@@ -1134,7 +1131,7 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
 }
 
 #else
-// Gating contract, same shape as the PW one below: `AM1EvaluatorParams` and
+// Gating contract, same shape as the PW one below: `AM1Params` and
 // `SinglePointTask` decode on an SE-less build and must be refused at
 // materialize time, on every AM1 home.
 TEST(TaskMaterializer, Am1PayloadsWithoutSemiempiricalBuildThrow) {
@@ -1148,15 +1145,14 @@ TEST(TaskMaterializer, Am1PayloadsWithoutSemiempiricalBuildThrow) {
                 << err.what();
         }
     };
-    expect_refused(TaskSpec(SinglePointTask{AM1EvaluatorParams{}}),
+    expect_refused(TaskSpec(SinglePointTask{AM1Params{}}),
                    "a SinglePoint task");
 
     std::vector<MDComponentEntry> entries;
     entries.push_back(
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
-    entries.push_back(MDComponentEntry{AM1EvaluatorParams{}, std::nullopt});
-    expect_refused(TaskSpec(MDTask{std::move(entries), 1}),
-                   "an AM1Evaluator MD entry");
+    entries.push_back(MDComponentEntry{AM1Params{}, std::nullopt});
+    expect_refused(TaskSpec(MDTask{std::move(entries), 1}), "an AM1 MD entry");
 }
 #endif // ATV_HAS_SEMIEMPIRICAL
 
@@ -1636,7 +1632,7 @@ TEST(TaskMaterializer, KindReportsTaskKindOfTheSpec) {
     EXPECT_EQ(TaskMaterializer(md_spec).kind(), TaskKind::MD);
 
 #ifdef ATV_HAS_SEMIEMPIRICAL
-    const TaskSpec sp_spec(SinglePointTask{AM1EvaluatorParams{}});
+    const TaskSpec sp_spec(SinglePointTask{AM1Params{}});
     EXPECT_EQ(TaskMaterializer(sp_spec).kind(), TaskKind::SinglePoint);
 #endif
 

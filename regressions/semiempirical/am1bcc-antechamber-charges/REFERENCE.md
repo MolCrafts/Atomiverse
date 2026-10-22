@@ -93,7 +93,7 @@ the oracle's print precision after the residuals were measured.
   needs another oracle; the NDDO family's oracle is OpenMOPAC.
 - **No geometry optimisation.** antechamber's default optimises with sqm
   first. This case pins the fixed-geometry path. To optimise first, compose
-  `Minimize` over `AM1Evaluator`. That path is not covered here because the
+  `Minimize` over a mounted `AM1`. That path is not covered here because the
   SE-only build has `ATV_BUILD_MINIMIZER=OFF`.
 - **No fair wall-time comparison.** sqm is fast for molecules this small, and
   ATV runs the whole case (4 SCF) in about 0.5 s wall on 48 threads.

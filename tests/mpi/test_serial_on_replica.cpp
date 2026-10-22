@@ -10,10 +10,10 @@
 /// lockstep. Verifies, on the established ms-scale H2 AM1 fixture
 /// (tests/cpu/test_task_materializer.cpp):
 ///   - Backend level: flag ⇒ cart_comm stays NULL, frame stays whole.
-///   - Driver level: a serial-on-replica `cpu::Evaluate` + AM1Evaluator
+///   - Driver level: a serial-on-replica `cpu::Evaluate` + nested AM1
 ///     keeps atoms.nlocal == 2 on every rank (no slab sub-molecules).
 ///   - Energy matches a serially-computed inner-solver reference bitwise
-///     on the same rank (AM1Solver run outside any driver/DD machinery),
+///     on the same rank (AM1 run outside any driver/DD machinery),
 ///     and per-atom charges likewise.
 ///   - Energy is bitwise identical across all ranks (MPI_Allgather).
 /// At N=1 all checks pass trivially. Single-threaded (bitwise claims).
@@ -36,7 +36,6 @@
 #include "atomiverse/cpu/driver/runtime.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 
 using namespace ATV;
@@ -78,7 +77,7 @@ void run_serial_on_replica_am1(cpu::Frame& frame) {
     eval.set_serial_on_replica();
     // charge=0, singlet, max_iter=200, dens/energy tols default.
     eval.on(ATV::evaluate::Phase::evaluate)
-        .add(cpu::semiempirical::AM1Evaluator{0, 1, 200, 1.0e-8, 1.0e-10});
+        .add(cpu::semiempirical::AM1{0, 1, 200, 1.0e-8, 1.0e-10});
     eval.build();
     eval.run(frame);
 }
@@ -131,7 +130,7 @@ TEST(SerialOnReplica,
     auto frame = make_h2_frame();
     cpu::Evaluate eval;
     eval.on(ATV::evaluate::Phase::evaluate)
-        .add(cpu::semiempirical::AM1Evaluator{0, 1, 200, 1.0e-8, 1.0e-10});
+        .add(cpu::semiempirical::AM1{0, 1, 200, 1.0e-8, 1.0e-10});
     eval.build();
     cpu::Runtime runtime;
     runtime.init();

@@ -5,6 +5,7 @@
 
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/semiempirical/internal/nddo_solver.h"
@@ -14,7 +15,89 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
+namespace {
+
+/// @brief Wrapped positions saved around a molecular unwrap.
+struct WrappedPositions {
+    std::vector<StorageReal> x, y, z;
+};
+
+/// @brief Anchor-on-atom-0 minimum-image unwrap for an isolated molecule.
+///
+/// NDDO is molecular (no lattice sums): MD wrapping can place bonded partners
+/// on opposite faces of the box, which the SCF would see as dissociated.
+/// Coordinates are rewritten in place so other components' spans stay valid.
+WrappedPositions unwrap_molecule(cpu::Frame& frame) {
+    const int n = static_cast<int>(frame.nlocal());
+    StorageReal* __restrict x = frame.span(kAtom_x);
+    StorageReal* __restrict y = frame.span(kAtom_y);
+    StorageReal* __restrict z = frame.span(kAtom_z);
+    WrappedPositions saved{std::vector<StorageReal>(x, x + n),
+                           std::vector<StorageReal>(y, y + n),
+                           std::vector<StorageReal>(z, z + n)};
+    if (n <= 1
+        || !(frame.box.length(0) > 0.0 && frame.box.length(1) > 0.0
+             && frame.box.length(2) > 0.0))
+        return saved;
+    const double x0 = x[0], y0 = y[0], z0 = z[0];
+    for (int i = 1; i < n; ++i) {
+        double dx = x[i] - x0, dy = y[i] - y0, dz = z[i] - z0;
+        const double ox = dx, oy = dy, oz = dz;
+        frame.box.min_image(dx, dy, dz);
+        // Preserve the input exactly when no periodic image changed.
+        if (dx != ox)
+            x[i] = static_cast<StorageReal>(x0 + dx);
+        if (dy != oy)
+            y[i] = static_cast<StorageReal>(y0 + dy);
+        if (dz != oz)
+            z[i] = static_cast<StorageReal>(z0 + dz);
+    }
+    return saved;
+}
+
+void restore_positions(cpu::Frame& frame, const WrappedPositions& saved) {
+    StorageReal* __restrict x = frame.span(kAtom_x);
+    StorageReal* __restrict y = frame.span(kAtom_y);
+    StorageReal* __restrict z = frame.span(kAtom_z);
+    for (std::size_t i = 0; i < saved.x.size(); ++i) {
+        x[i] = saved.x[i];
+        y[i] = saved.y[i];
+        z[i] = saved.z[i];
+    }
+}
+
+} // namespace
+
 NddoMethod::NddoMethod() = default;
+
+void NddoMethod::build_on(cpu::Runtime& rt) {
+    if (host_runtime_ && host_runtime_ != &rt)
+        throw std::logic_error("NddoMethod: already nested on another Runtime");
+    host_runtime_ = &rt;
+}
+
+void NddoMethod::destroy_on(cpu::Runtime& rt) {
+    if (host_runtime_ == &rt)
+        host_runtime_ = nullptr;
+}
+
+int NddoMethod::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                                  int /*budget*/) {
+    const WrappedPositions saved = unwrap_molecule(frame);
+    struct Restore {
+        cpu::Frame& frame;
+        const WrappedPositions& saved;
+        bool& nested;
+        ~Restore() {
+            restore_positions(frame, saved);
+            nested = false;
+        }
+    } restore{frame, saved, nested_active_};
+    nested_active_ = true;
+    // The hosting phase owns zeroing, so every write is `+=`.
+    publish(frame, ctx.exec.forces_requested, /*accumulate=*/true);
+    return iterations_;
+}
 
 NddoMethod::~NddoMethod() { reset_built_driver_(); }
 
@@ -77,19 +160,59 @@ NDDOResult& NddoMethod::drive_(NDDOSolver& solver, const cpu::Frame& frame) {
         }
     } pass_guard{*this};
 
+    // Nested: the stage plan runs on the parent Runtime for this solve.
+    // Standalone: this method is the root loop and owns its backend.
+    cpu::Runtime* const host = nested_active_ ? host_runtime_ : nullptr;
     cpu::Frame loop_frame;
-    setup_pass(loop_frame);
-    pass_guard.armed = true;
+    cpu::Context* host_ctx = nullptr;
+    LoopServices parent_loop{};
+    struct HostGuard {
+        NddoMethod& self;
+        cpu::Runtime* host;
+        cpu::Context* ctx = nullptr;
+        LoopServices saved{};
+        ~HostGuard() {
+            if (ctx)
+                ctx->loop = saved;
+            if (host)
+                host->destroy_plan(self.plan());
+        }
+    } host_guard{*this, nullptr};
+    if (host) {
+        host->build_plan(this->plan());
+        host_guard.host = host;
+        host_ctx = &host->context();
+        parent_loop = host_ctx->loop;
+        host_guard.ctx = host_ctx;
+        host_guard.saved = parent_loop;
+        host_ctx->loop.status = &this->mutable_outer_status();
+        host_ctx->loop.metrics = &this->metrics_;
+        this->metrics_ = ConvergenceMetrics{};
+    } else {
+        setup_pass(loop_frame);
+        pass_guard.armed = true;
+    }
 
     const int max_iter = solver.config().max_iter;
+    iterations_ = 0;
     for (int iter = 0; iter < max_iter; ++iter) {
         mutable_outer_status().reset();
-        step_once(iter);
-        if (poll_criteria_(iter) != ATV::Verdict::Continue)
-            break;
+        ++iterations_;
+        if (host) {
+            host->step_plan(this->plan(), iter);
+            if (this->poll_criteria_(iter, frame, *host_ctx)
+                != ATV::Verdict::Continue)
+                break;
+        } else {
+            step_once(iter);
+            if (poll_criteria_(iter) != ATV::Verdict::Continue)
+                break;
+        }
     }
-    pass_guard.armed = false;
-    teardown_pass();
+    if (!host) {
+        pass_guard.armed = false;
+        teardown_pass();
+    }
 
     if (!(this->converged() || loop_converged_))
         throw std::runtime_error("NDDOSolver AM1 SCF did not converge");

@@ -218,7 +218,7 @@ void write(Writer& w, const KSpacePmeParams& p) {
     w.f64(p.grid_spacing);
     w.i32(p.order);
 }
-void write(Writer& w, const AM1EvaluatorParams& p) {
+void write(Writer& w, const AM1Params& p) {
     w.i32(p.charge);
     w.i32(p.multiplicity);
     w.i32(p.max_iter);
@@ -424,7 +424,7 @@ ComponentId decode_component_id(std::uint16_t raw) {
     case 8:
         return ComponentId::Thermo;
     case 9:
-        return ComponentId::AM1Evaluator;
+        return ComponentId::AM1;
     case 10:
         return ComponentId::LBFGS;
     case 11:
@@ -509,7 +509,7 @@ bool is_minimize_only(ComponentId id) noexcept {
     const char* source = "MD";
     if (is_minimize_only(id))
         source = "Minimize";
-    else if (id == ComponentId::AM1Evaluator)
+    else if (id == ComponentId::AM1)
         // Two legal homes: the whole of a SinglePoint task, and an evaluator
         // entry of an MD task (semiempirical Born-Oppenheimer dynamics).
         source = "MD/SinglePoint";
@@ -525,8 +525,8 @@ bool is_minimize_only(ComponentId id) noexcept {
 /// Declared ahead of both readers because ID 9 decodes into two payloads —
 /// the whole of a `SinglePointTask` and an evaluator entry of an `MDTask` —
 /// and one reader is what keeps their field lists from drifting apart.
-AM1EvaluatorParams read_am1(Reader& r) {
-    AM1EvaluatorParams p;
+AM1Params read_am1(Reader& r) {
+    AM1Params p;
     p.charge = r.i32();
     p.multiplicity = r.i32();
     p.max_iter = r.i32();
@@ -637,7 +637,7 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return CoulLongParams{r.f64(), r.f64()};
     case ComponentId::KSpacePME:
         return KSpacePmeParams{r.f64(), r.f64(), r.i32()};
-    case ComponentId::AM1Evaluator:
+    case ComponentId::AM1:
         return read_am1(r);
     case ComponentId::PWEvaluator:
         return read_pw(r);
@@ -785,7 +785,7 @@ std::vector<std::byte> pack(const TaskSpec& spec) {
         }
         w.i64(task.n_steps);
     } else if (spec.kind() == TaskKind::SinglePoint) {
-        w.u16(static_cast<std::uint16_t>(ComponentId::AM1Evaluator));
+        w.u16(static_cast<std::uint16_t>(ComponentId::AM1));
         write(w, spec.single_point().evaluator);
     } else {
         const auto& task = spec.minimize();
@@ -835,7 +835,7 @@ TaskSpec unpack(const std::byte* data, std::size_t size) {
 
     if (kind == TaskKind::SinglePoint) {
         const ComponentId id = decode_component_id(r.u16());
-        if (id != ComponentId::AM1Evaluator)
+        if (id != ComponentId::AM1)
             wrong_task(id, TaskKind::SinglePoint);
         SinglePointTask task{read_am1(r)};
         r.require_end();

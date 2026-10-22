@@ -167,7 +167,7 @@ struct MinimizeHandle {
             driver.set_evaluator(std::move(component));
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-        else if constexpr (std::is_same_v<P, cpu::task::AM1EvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::AM1Params>)
             driver.set_evaluator(std::move(component));
 #endif
 #ifdef ATV_HAS_PW
@@ -483,7 +483,7 @@ void bind_minimizer(nb::module_& m) {
         "STRESS SOURCE (the honest gate). A relaxer can only follow a virial "
         "something actually wrote. The classical evaluators — PairLJCut, "
         "PairCoulCut, CoulLong/KSpacePME and the bonded styles — write it by "
-        "default. AM1Evaluator writes none at all (it is a molecular method "
+        "default. AM1 writes none at all (it is a molecular method "
         "with no cell), and set_evaluator_pw installs a gradient-only "
         "plane-wave copy, so neither drives a cell step from Python: the "
         "virial stays zero, the scale stays 1, and a PressureConverged at "
