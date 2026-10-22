@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -926,6 +927,30 @@ KrhfStatic krhf_assemble(const Frame& frame, BasisSet basis,
     return o;
 }
 
+void eigh_all(const Setup& s, const std::vector<CMat>& f,
+              std::vector<std::vector<double>>& eps,
+              std::vector<linalg::CplxMatrix>& cmo) {
+    const int nk = s.nk;
+    eps.resize(static_cast<std::size_t>(nk));
+    cmo.resize(static_cast<std::size_t>(nk));
+    for (int k = 0; k < nk; ++k)
+        eigh_fock(
+            f[static_cast<std::size_t>(k)], s.orth[static_cast<std::size_t>(k)],
+            eps[static_cast<std::size_t>(k)], cmo[static_cast<std::size_t>(k)]);
+}
+
+void dm_from_eps(const std::vector<std::vector<double>>& eps,
+                 const std::vector<linalg::CplxMatrix>& cmo, int nocc,
+                 double fill, std::vector<CMat>& dm) {
+    std::vector<std::vector<double>> occ;
+    occupy(eps, nocc, fill, occ);
+    const int nk = static_cast<int>(eps.size());
+    dm.resize(static_cast<std::size_t>(nk));
+    for (int k = 0; k < nk; ++k)
+        dm[static_cast<std::size_t>(k)] = make_rdm1(
+            cmo[static_cast<std::size_t>(k)], occ[static_cast<std::size_t>(k)]);
+}
+
 // Restricted (n_b < 0): one density, vhf = J − ½K, occupation 2.
 // Unrestricted: J from α+β, vhf = J−K per spin, occupation 1
 // (pyscf.pbc.scf.kuhf.KUHF.get_veff). Hcore guess is init_guess_by_1e.
@@ -939,20 +964,10 @@ KrhfEnergy scf_kpoint(const Setup& s, int n_a, int n_b, double tol,
 
     auto density_from = [&](const std::vector<CMat>& f, int nocc,
                             std::vector<CMat>& dm) {
-        std::vector<std::vector<double>> eps(static_cast<std::size_t>(nk));
-        std::vector<linalg::CplxMatrix> cmo(static_cast<std::size_t>(nk));
-        for (int k = 0; k < nk; ++k)
-            eigh_fock(f[static_cast<std::size_t>(k)],
-                      s.orth[static_cast<std::size_t>(k)],
-                      eps[static_cast<std::size_t>(k)],
-                      cmo[static_cast<std::size_t>(k)]);
-        std::vector<std::vector<double>> occ;
-        occupy(eps, nocc, nspin == 1 ? 2.0 : 1.0, occ);
-        dm.resize(static_cast<std::size_t>(nk));
-        for (int k = 0; k < nk; ++k)
-            dm[static_cast<std::size_t>(k)] =
-                make_rdm1(cmo[static_cast<std::size_t>(k)],
-                          occ[static_cast<std::size_t>(k)]);
+        std::vector<std::vector<double>> eps;
+        std::vector<linalg::CplxMatrix> cmo;
+        eigh_all(s, f, eps, cmo);
+        dm_from_eps(eps, cmo, nocc, nspin == 1 ? 2.0 : 1.0, dm);
     };
 
     std::vector<CMat> dm[2];
@@ -1047,6 +1062,78 @@ KrhfEnergy kuhf_energy(const Frame& frame, BasisSet basis, const int k_mesh[3],
             + std::to_string(n_alpha) + " n_beta=" + std::to_string(n_beta)
             + " ne=" + std::to_string(s.ne_total));
     return scf_kpoint(s, n_alpha, n_beta, tol, max_iter, "KUHF");
+}
+
+struct KrhfCycle {
+    Setup setup;
+    std::vector<CMat> dm;
+    std::vector<CMat> fock;
+    std::vector<std::vector<double>> eps;
+    std::vector<linalg::CplxMatrix> cmo;
+    double energy = 0.0;
+    double previous = 0.0;
+    bool have_previous = false;
+};
+
+void krhf_cycle_delete(KrhfCycle* cycle) { delete cycle; }
+
+KrhfCycleOwner krhf_cycle_open(const Frame& frame, BasisSet basis,
+                               const int k_mesh[3], int charge) {
+    KrhfCycleOwner own(new KrhfCycle, &krhf_cycle_delete);
+    own->setup = setup_krhf(frame, basis, k_mesh, charge);
+    // init_guess_by_1e: occupy the core Hamiltonian (hf.kernel dm0).
+    own->fock = own->setup.H;
+    krhf_cycle_diagonalize(*own);
+    krhf_cycle_density(*own);
+    return own;
+}
+
+void krhf_cycle_fock(KrhfCycle& c) {
+    // KSCF.get_fock with diis=None: F = H + J[dm] − ½ K[dm].
+    // energy_elec is the symmetric trace of that density, not the next one.
+    const Setup& s = c.setup;
+    const int nk = s.nk;
+    const int nao = s.nao;
+    const auto vj = build_j(s.ao, c.dm, s.coul_j, s.mesh, s.vol);
+    const auto vk =
+        build_k(s.ao, c.dm, s.coords, s.kpts, s.coul_k, s.mesh, s.vol);
+    std::vector<CMat> vhf(static_cast<std::size_t>(nk), CMat::zeros(nao));
+    c.fock.assign(static_cast<std::size_t>(nk), CMat::zeros(nao));
+    for (int k = 0; k < nk; ++k) {
+        for (int i = 0; i < nao; ++i)
+            for (int j = 0; j < nao; ++j)
+                vhf[static_cast<std::size_t>(k)](i, j) =
+                    vj[static_cast<std::size_t>(k)](i, j)
+                    - 0.5 * vk[static_cast<std::size_t>(k)](i, j);
+        vhf[static_cast<std::size_t>(k)].hermitize();
+        for (int i = 0; i < nao; ++i)
+            for (int j = 0; j < nao; ++j)
+                c.fock[static_cast<std::size_t>(k)](i, j) =
+                    s.H[static_cast<std::size_t>(k)](i, j)
+                    + vhf[static_cast<std::size_t>(k)](i, j);
+        c.fock[static_cast<std::size_t>(k)].hermitize();
+    }
+    c.energy = energy_elec(c.dm, s.H, vhf) + s.enuc;
+}
+
+void krhf_cycle_diagonalize(KrhfCycle& c) {
+    eigh_all(c.setup, c.fock, c.eps, c.cmo);
+}
+
+void krhf_cycle_density(KrhfCycle& c) {
+    // khf.get_occ (fill 2) then make_rdm1.
+    dm_from_eps(c.eps, c.cmo, c.setup.nocc, 2.0, c.dm);
+}
+
+double krhf_cycle_energy(const KrhfCycle& c) { return c.energy; }
+
+double krhf_cycle_delta(KrhfCycle& c) {
+    const double delta = c.have_previous
+                             ? std::abs(c.energy - c.previous)
+                             : std::numeric_limits<double>::infinity();
+    c.previous = c.energy;
+    c.have_previous = true;
+    return delta;
 }
 
 } // namespace internal

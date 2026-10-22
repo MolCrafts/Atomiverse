@@ -10,8 +10,11 @@
 #include "atomiverse/cuda/scf/krhf.cuh"
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/scf/internal/kpoint_hf.h"
+#include "atomiverse/cuda/frame/precision.cuh"
 
 #include <cuComplex.h>
 #include <cuda_runtime.h>
@@ -19,8 +22,11 @@
 
 #include <cmath>
 #include <complex>
+#include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace ATV {
@@ -415,322 +421,710 @@ __global__ void k_dm_from_c(const Z* C, const double* occ, Z* dm, int nao,
 
 int div_up(int n, int b) { return (n + b - 1) / b; }
 
+struct Engine {
+    cudaStream_t stream = nullptr;
+    cusolverDnHandle_t sol = nullptr;
+    int nk = 0;
+    int nao = 0;
+    int ng = 0;
+    int nx = 0;
+    int ny = 0;
+    int nz = 0;
+    int nocc = 0;
+    int lwork = 0;
+    double enuc = 0.0;
+    double jw = 0.0;
+    double kw = 0.0;
+    double e_ha = 0.0;
+    double previous = 0.0;
+    bool have_previous = false;
+    std::vector<int> nmo;
+    std::vector<std::array<double, 3>> kpts;
+
+    Z* d_ao = nullptr;
+    Z* d_H = nullptr;
+    Z* d_X = nullptr;
+    Z* d_dm = nullptr;
+    Z* d_vj = nullptr;
+    Z* d_vk = nullptr;
+    Z* d_F = nullptr;
+    Z* d_vhf = nullptr;
+    Z* d_rho = nullptr;
+    Z* d_tmp = nullptr;
+    Z* d_rho1 = nullptr;
+    Z* d_aodm = nullptr;
+    Z* d_vrdm = nullptr;
+    Z* d_Hp = nullptr;
+    Z* d_C = nullptr;
+    double* d_coul_j = nullptr;
+    double* d_coul_k = nullptr;
+    double* d_coords = nullptr;
+    double* d_e = nullptr;
+    double* d_eig = nullptr;
+    double* d_occ = nullptr;
+    double* d_eps = nullptr;
+    cuDoubleComplex* d_col = nullptr;
+    cuDoubleComplex* d_work = nullptr;
+    int* d_idx = nullptr;
+    int* d_infos = nullptr;
+
+    ~Engine() { release(); }
+
+    void release() {
+        if (stream)
+            cudaStreamSynchronize(stream);
+        if (sol) {
+            cusolverDnDestroy(sol);
+            sol = nullptr;
+        }
+        auto freep = [](auto*& p) {
+            if (p) {
+                cudaFree(p);
+                p = nullptr;
+            }
+        };
+        freep(d_ao);
+        freep(d_H);
+        freep(d_X);
+        freep(d_dm);
+        freep(d_vj);
+        freep(d_vk);
+        freep(d_F);
+        freep(d_vhf);
+        freep(d_rho);
+        freep(d_tmp);
+        freep(d_rho1);
+        freep(d_aodm);
+        freep(d_vrdm);
+        freep(d_Hp);
+        freep(d_C);
+        freep(d_coul_j);
+        freep(d_coul_k);
+        freep(d_coords);
+        freep(d_e);
+        freep(d_eig);
+        freep(d_occ);
+        freep(d_eps);
+        freep(d_col);
+        freep(d_work);
+        freep(d_idx);
+        freep(d_infos);
+        stream = nullptr;
+    }
+
+    void open(const cpu::Frame& frame, cpu::scf::BasisSet basis,
+              const std::array<int, 3>& k_mesh, int charge, cudaStream_t s) {
+        if (!s)
+            throw std::runtime_error("cuda::scf::KRHF: no CUDA stream");
+        release();
+        stream = s;
+        const int mesh_k[3] = {k_mesh[0], k_mesh[1], k_mesh[2]};
+        const cpu::scf::internal::KrhfStatic sys =
+            cpu::scf::internal::krhf_assemble(frame, basis, mesh_k, charge);
+        nk = sys.nk;
+        nao = sys.nao;
+        ng = sys.ng;
+        nx = sys.mesh[0];
+        ny = sys.mesh[1];
+        nz = sys.mesh[2];
+        nocc = sys.nocc;
+        enuc = sys.enuc;
+        nmo = sys.nmo;
+        kpts = sys.kpts;
+        if (nk < 1 || nao < 1 || ng != nx * ny * nz)
+            throw std::runtime_error("cuda::scf::KRHF: empty k-point system");
+        if (nocc < 0
+            || static_cast<long long>(nocc) > static_cast<long long>(nk) * nao)
+            throw std::runtime_error(
+                "cuda::scf::KRHF: occupied count exceeds the basis "
+                "(pyscf.pbc.scf.khf.get_occ)");
+
+        auto hz = [](const std::complex<double>& z) {
+            return Z{z.real(), z.imag()};
+        };
+        std::vector<Z> h_ao(sys.ao.size()), h_H(sys.H.size()),
+            h_X(sys.X.size());
+        for (std::size_t i = 0; i < sys.ao.size(); ++i)
+            h_ao[i] = hz(sys.ao[i]);
+        for (std::size_t i = 0; i < sys.H.size(); ++i)
+            h_H[i] = hz(sys.H[i]);
+        for (std::size_t i = 0; i < sys.X.size(); ++i)
+            h_X[i] = hz(sys.X[i]);
+
+        const std::size_t nmat = static_cast<std::size_t>(nk) * nao * nao;
+        try {
+            check_cuda(cudaMalloc(&d_ao, h_ao.size() * sizeof(Z)), "ao");
+            check_cuda(cudaMalloc(&d_H, nmat * sizeof(Z)), "H");
+            check_cuda(cudaMalloc(&d_X, nmat * sizeof(Z)), "X");
+            check_cuda(cudaMalloc(&d_dm, nmat * sizeof(Z)), "dm");
+            check_cuda(cudaMalloc(&d_vj, nmat * sizeof(Z)), "vj");
+            check_cuda(cudaMalloc(&d_vk, nmat * sizeof(Z)), "vk");
+            check_cuda(cudaMalloc(&d_F, nmat * sizeof(Z)), "F");
+            check_cuda(cudaMalloc(&d_vhf, nmat * sizeof(Z)), "vhf");
+            check_cuda(
+                cudaMalloc(&d_rho, static_cast<std::size_t>(ng) * sizeof(Z)),
+                "rho");
+            check_cuda(
+                cudaMalloc(&d_tmp, static_cast<std::size_t>(ng) * sizeof(Z)),
+                "tmp");
+            check_cuda(
+                cudaMalloc(&d_rho1, static_cast<std::size_t>(nao * nao * ng)
+                                        * sizeof(Z)),
+                "rho1");
+            check_cuda(cudaMalloc(&d_aodm, static_cast<std::size_t>(nao * ng)
+                                               * sizeof(Z)),
+                       "aodm");
+            check_cuda(cudaMalloc(&d_vrdm, static_cast<std::size_t>(nao * ng)
+                                               * sizeof(Z)),
+                       "vrdm");
+            check_cuda(cudaMalloc(&d_Hp, static_cast<std::size_t>(nao * nao)
+                                             * sizeof(Z)),
+                       "Hp");
+            check_cuda(cudaMalloc(&d_C, nmat * sizeof(Z)), "C");
+            const std::size_t norb = static_cast<std::size_t>(nk) * nao;
+            check_cuda(cudaMalloc(&d_eps, norb * sizeof(double)), "eps");
+            check_cuda(cudaMalloc(&d_idx, norb * sizeof(int)), "idx");
+            check_cuda(cudaMalloc(&d_infos,
+                                  static_cast<std::size_t>(nk) * sizeof(int)),
+                       "infos");
+            check_cuda(cudaMalloc(&d_occ, norb * sizeof(double)), "occ");
+            check_cuda(cudaMalloc(&d_coul_j, static_cast<std::size_t>(ng)
+                                                 * sizeof(double)),
+                       "coul_j");
+            check_cuda(
+                cudaMalloc(&d_coul_k, sys.coul_k.size() * sizeof(double)),
+                "coul_k");
+            check_cuda(
+                cudaMalloc(&d_coords, sys.coords.size() * sizeof(double)),
+                "coords");
+            check_cuda(cudaMalloc(&d_e, sizeof(double)), "e");
+            check_cuda(cudaMalloc(&d_col, static_cast<std::size_t>(nao * nao)
+                                              * sizeof(cuDoubleComplex)),
+                       "col");
+            check_cuda(cudaMalloc(&d_eig, static_cast<std::size_t>(nao)
+                                              * sizeof(double)),
+                       "eig");
+            check_cuda(cudaMemcpyAsync(d_ao, h_ao.data(),
+                                       h_ao.size() * sizeof(Z),
+                                       cudaMemcpyHostToDevice, stream),
+                       "H2D ao");
+            check_cuda(cudaMemcpyAsync(d_H, h_H.data(), nmat * sizeof(Z),
+                                       cudaMemcpyHostToDevice, stream),
+                       "H2D H");
+            check_cuda(cudaMemcpyAsync(d_X, h_X.data(), nmat * sizeof(Z),
+                                       cudaMemcpyHostToDevice, stream),
+                       "H2D X");
+            check_cuda(
+                cudaMemcpyAsync(d_coul_j, sys.coul_j.data(),
+                                static_cast<std::size_t>(ng) * sizeof(double),
+                                cudaMemcpyHostToDevice, stream),
+                "H2D coul");
+            check_cuda(cudaMemcpyAsync(d_coul_k, sys.coul_k.data(),
+                                       sys.coul_k.size() * sizeof(double),
+                                       cudaMemcpyHostToDevice, stream),
+                       "H2D coulk");
+            check_cuda(cudaMemcpyAsync(d_coords, sys.coords.data(),
+                                       sys.coords.size() * sizeof(double),
+                                       cudaMemcpyHostToDevice, stream),
+                       "H2D coords");
+
+            check_sol(cusolverDnCreate(&sol), "create");
+            check_sol(cusolverDnSetStream(sol, stream), "set stream");
+            check_sol(cusolverDnZheevd_bufferSize(sol, CUSOLVER_EIG_MODE_VECTOR,
+                                                  CUBLAS_FILL_MODE_LOWER, nao,
+                                                  d_col, nao, d_eig, &lwork),
+                      "buffer");
+            check_cuda(cudaMalloc(&d_work, static_cast<std::size_t>(lwork)
+                                               * sizeof(cuDoubleComplex)),
+                       "work");
+
+            check_cuda(cudaMemsetAsync(d_C, 0, nmat * sizeof(Z), stream),
+                       "zero C");
+            k_fill_d<<<(static_cast<int>(norb) + 127) / 128, 128, 0, stream>>>(
+                d_eps, static_cast<int>(norb), 1.0e8);
+            // init_guess_by_1e: occupy the core Hamiltonian (hf.kernel dm0).
+            diagonalize_fock(d_H);
+            density();
+        } catch (...) {
+            release();
+            throw;
+        }
+        jw = sys.vol / static_cast<double>(ng);
+        kw = (1.0 / static_cast<double>(nk))
+             * (sys.vol / static_cast<double>(ng));
+    }
+
+    void diagonalize_fock(const Z* fock) {
+        for (int k = 0; k < nk; ++k) {
+            const int m = nmo[static_cast<std::size_t>(k)];
+            k_xform<<<1, 64, 0, stream>>>(d_X, fock, d_Hp, nao, m, k);
+            k_row_to_col<<<(m * m + 127) / 128, 128, 0, stream>>>(d_Hp, d_col,
+                                                                  m);
+            check_sol(cusolverDnZheevd(sol, CUSOLVER_EIG_MODE_VECTOR,
+                                       CUBLAS_FILL_MODE_LOWER, m, d_col, m,
+                                       d_eig, d_work, lwork, d_infos + k),
+                      "zheevd");
+            check_cuda(cudaMemcpyAsync(
+                           d_eps + static_cast<std::size_t>(k) * nao, d_eig,
+                           sizeof(double) * static_cast<std::size_t>(m),
+                           cudaMemcpyDeviceToDevice, stream),
+                       "D2D eig");
+            k_apply_x<<<m, 32, 0, stream>>>(d_X, d_col, d_C, nao, m, k);
+        }
+        std::vector<int> info(static_cast<std::size_t>(nk));
+        check_cuda(cudaMemcpyAsync(info.data(), d_infos,
+                                   sizeof(int) * static_cast<std::size_t>(nk),
+                                   cudaMemcpyDeviceToHost, stream),
+                   "D2H info");
+        check_cuda(cudaStreamSynchronize(stream), "sync zheevd");
+        for (int k = 0; k < nk; ++k)
+            if (info[static_cast<std::size_t>(k)] != 0)
+                throw std::runtime_error(
+                    "cuda::scf::KRHF: zheevd info="
+                    + std::to_string(info[static_cast<std::size_t>(k)]));
+    }
+
+    void density() {
+        const std::size_t norb = static_cast<std::size_t>(nk) * nao;
+        k_occupy<<<1, 1, 0, stream>>>(d_eps, d_idx, d_occ,
+                                      static_cast<int>(norb), nocc);
+        for (int k = 0; k < nk; ++k)
+            k_dm_from_c<<<1, 32, 0, stream>>>(
+                d_C, d_occ + static_cast<std::size_t>(k) * nao, d_dm, nao, k);
+        k_hermitize<<<nk, 32, 0, stream>>>(d_dm, nk, nao);
+    }
+
+    void fock() {
+        const int blk = 128;
+        const std::size_t nmat = static_cast<std::size_t>(nk) * nao * nao;
+        k_rho<<<div_up(ng, blk), blk, 0, stream>>>(d_ao, d_dm, d_rho, nk, nao,
+                                                   ng);
+        fft3_dev(d_rho, d_tmp, nx, ny, nz, false, stream);
+        k_scale<<<div_up(ng, blk), blk, 0, stream>>>(d_rho, d_coul_j, ng);
+        fft3_dev(d_rho, d_tmp, nx, ny, nz, true, stream);
+        k_j_contract<<<div_up(nk * nao * nao, blk), blk, 0, stream>>>(
+            d_ao, d_rho, d_vj, nk, nao, ng, jw);
+        k_hermitize<<<nk, 32, 0, stream>>>(d_vj, nk, nao);
+
+        k_zero<<<div_up(static_cast<int>(nmat), blk), blk, 0, stream>>>(
+            d_vk, static_cast<int>(nmat));
+        for (int k2 = 0; k2 < nk; ++k2) {
+            k_aodm<<<div_up(ng, blk), blk, 0, stream>>>(d_ao, d_dm, d_aodm, nao,
+                                                        ng, k2);
+            for (int k1 = 0; k1 < nk; ++k1) {
+                const double kd[3] = {kpts[k2][0] - kpts[k1][0],
+                                      kpts[k2][1] - kpts[k1][1],
+                                      kpts[k2][2] - kpts[k1][2]};
+                const int zero =
+                    (std::abs(kd[0]) + std::abs(kd[1]) + std::abs(kd[2]) < 1e-9)
+                        ? 1
+                        : 0;
+                k_rho1<<<div_up(ng, blk), blk, 0, stream>>>(
+                    d_ao, d_ao, d_coords, kd[0], kd[1], kd[2], zero, d_rho1,
+                    nao, ng, k1, k2);
+                const double* coul =
+                    d_coul_k + static_cast<std::size_t>((k2 * nk + k1) * ng);
+                for (int ij = 0; ij < nao * nao; ++ij) {
+                    Z* slice = d_rho1 + static_cast<std::size_t>(ij) * ng;
+                    fft3_dev(slice, d_tmp, nx, ny, nz, false, stream);
+                    k_scale<<<div_up(ng, blk), blk, 0, stream>>>(slice, coul,
+                                                                 ng);
+                    fft3_dev(slice, d_tmp, nx, ny, nz, true, stream);
+                }
+                k_vrdm<<<div_up(ng, blk), blk, 0, stream>>>(
+                    d_rho1, d_aodm, d_coords, kd[0], kd[1], kd[2], zero, d_vrdm,
+                    nao, ng);
+                k_k_accum<<<div_up(nao * nao, blk), blk, 0, stream>>>(
+                    d_vrdm, d_ao, d_vk, nao, ng, k1, kw);
+            }
+        }
+        k_hermitize<<<nk, 32, 0, stream>>>(d_vk, nk, nao);
+        k_vhf<<<div_up(static_cast<int>(nmat), blk), blk, 0, stream>>>(
+            d_vj, d_vk, d_vhf, static_cast<int>(nmat));
+        k_trace_energy<<<1, 1, 0, stream>>>(d_dm, d_H, d_vhf, nk, nao, d_e);
+        check_cuda(cudaMemcpyAsync(&e_ha, d_e, sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream),
+                   "D2H e");
+        check_cuda(cudaStreamSynchronize(stream), "sync e");
+        e_ha += enuc;
+        // KSCF.get_fock, diis=None: F = H + vhf. Built after the energy so
+        // the trace still sees the density that entered this iteration.
+        k_fock<<<div_up(static_cast<int>(nmat), blk), blk, 0, stream>>>(
+            d_H, d_vhf, d_F, static_cast<int>(nmat));
+    }
+
+    void diagonalize() { diagonalize_fock(d_F); }
+
+    double energy() const { return e_ha; }
+
+    double delta() {
+        const double d = have_previous
+                             ? std::abs(e_ha - previous)
+                             : std::numeric_limits<double>::infinity();
+        previous = e_ha;
+        have_previous = true;
+        return d;
+    }
+};
+
+Engine* require_engine(Engine** slot) {
+    if (!slot || !*slot)
+        throw std::runtime_error("cuda::scf::KRHF: SCF engine is not open");
+    return *slot;
+}
+
+class FockStage : public cuda::Component {
+  public:
+    explicit FockStage(Engine** slot) : slot_(slot) {}
+    std::string name() const override { return "krhf_fock"; }
+    void launch(const cuda::LaunchContext& ctx) override {
+        if (!ctx.at(ATV::scf::Phase::fock))
+            return;
+        require_engine(slot_)->fock();
+    }
+
+  private:
+    Engine** slot_ = nullptr;
+};
+
+class MixStage : public cuda::Component {
+  public:
+    explicit MixStage(Engine**) {}
+    std::string name() const override { return "krhf_mix"; }
+    void launch(const cuda::LaunchContext& ctx) override {
+        if (!ctx.at(ATV::scf::Phase::mix))
+            return;
+    }
+};
+
+class DiagonalizeStage : public cuda::Component {
+  public:
+    explicit DiagonalizeStage(Engine** slot) : slot_(slot) {}
+    std::string name() const override { return "krhf_diagonalize"; }
+    void launch(const cuda::LaunchContext& ctx) override {
+        if (!ctx.at(ATV::scf::Phase::diagonalize))
+            return;
+        require_engine(slot_)->diagonalize();
+    }
+
+  private:
+    Engine** slot_ = nullptr;
+};
+
+class DensityStage : public cuda::Component {
+  public:
+    explicit DensityStage(Engine** slot) : slot_(slot) {}
+    std::string name() const override { return "krhf_density"; }
+    void launch(const cuda::LaunchContext& ctx) override {
+        if (!ctx.at(ATV::scf::Phase::density))
+            return;
+        require_engine(slot_)->density();
+    }
+
+  private:
+    Engine** slot_ = nullptr;
+};
+
+class CheckStage : public cuda::Component {
+  public:
+    explicit CheckStage(Engine** slot) : slot_(slot) {}
+    std::string name() const override { return "krhf_check"; }
+    void launch(const cuda::LaunchContext& ctx) override {
+        if (!ctx.at(ATV::scf::Phase::check))
+            return;
+        if (!ctx.runtime.loop.metrics)
+            throw std::runtime_error(
+                "cuda::scf::KRHF: check stage has no ConvergenceMetrics");
+        Engine& eng = *require_engine(slot_);
+        const double ha = eng.energy();
+        const double dha = eng.delta();
+        ctx.runtime.loop.metrics->energy = ha * units::kHartreeInEv;
+        ctx.runtime.loop.metrics->energy_change = dha * units::kHartreeInEv;
+    }
+
+  private:
+    Engine** slot_ = nullptr;
+};
+
+class EnergyDelta : public cuda::Criterion {
+  public:
+    explicit EnergyDelta(double tol_ha)
+        : tol_ev_(tol_ha * units::kHartreeInEv) {}
+    std::string name() const override { return "krhf_energy_delta"; }
+    bool contributes_to_convergence() const override { return true; }
+    ATV::Verdict verdict(const cuda::LoopState& s) override {
+        if (s.metrics.energy_change < tol_ev_)
+            return ATV::Verdict::Converged;
+        return ATV::Verdict::Continue;
+    }
+
+  private:
+    double tol_ev_ = 0.0;
+};
+
+template <typename Span>
+void pull_position(Span col, const pos_t* primary, const pos_t* corr, int n,
+                   cudaStream_t stream) {
+    std::vector<pos_t> hi(static_cast<std::size_t>(n));
+    std::vector<pos_t> lo(static_cast<std::size_t>(n), pos_t(0));
+    check_cuda(cudaMemcpyAsync(hi.data(), primary,
+                               sizeof(pos_t) * static_cast<std::size_t>(n),
+                               cudaMemcpyDeviceToHost, stream),
+               "D2H position");
+    if constexpr (kPositionCorrection)
+        check_cuda(cudaMemcpyAsync(lo.data(), corr,
+                                   sizeof(pos_t) * static_cast<std::size_t>(n),
+                                   cudaMemcpyDeviceToHost, stream),
+                   "D2H position correction");
+    check_cuda(cudaStreamSynchronize(stream), "sync position");
+    for (int i = 0; i < n; ++i)
+        col[i] = static_cast<std::decay_t<decltype(col[i])>>(
+            load_position(hi.data(), lo.data(), i));
+}
+
+cpu::Frame host_geometry(const cuda::Frame& dev, cudaStream_t stream) {
+    const int n = dev.n_atoms();
+    if (n <= 0)
+        throw std::runtime_error("cuda::scf::KRHF: device frame has no atoms");
+    if (!dev.atoms.x || !dev.atoms.y || !dev.atoms.z)
+        throw std::runtime_error(
+            "cuda::scf::KRHF: device frame has no positions");
+    if (!dev.atoms.type)
+        throw std::runtime_error(
+            "cuda::scf::KRHF: device frame has no atom types");
+    if (!dev.box)
+        throw std::runtime_error("cuda::scf::KRHF: device frame has no cell");
+    if constexpr (kPositionCorrection) {
+        if (!dev.atoms.x_corr || !dev.atoms.y_corr || !dev.atoms.z_corr)
+            throw std::runtime_error(
+                "cuda::scf::KRHF: device frame has no position correction");
+    }
+    cpu::Frame host(n);
+    pull_position(host.span(kAtom_x), dev.atoms.x, dev.atoms.x_corr, n, stream);
+    pull_position(host.span(kAtom_y), dev.atoms.y, dev.atoms.y_corr, n, stream);
+    pull_position(host.span(kAtom_z), dev.atoms.z, dev.atoms.z_corr, n, stream);
+    std::vector<int> types(static_cast<std::size_t>(n));
+    check_cuda(cudaMemcpyAsync(types.data(), dev.atoms.type,
+                               sizeof(int) * static_cast<std::size_t>(n),
+                               cudaMemcpyDeviceToHost, stream),
+               "D2H type");
+    geom_t box[9];
+    check_cuda(cudaMemcpyAsync(box, dev.box, 9 * sizeof(geom_t),
+                               cudaMemcpyDeviceToHost, stream),
+               "D2H cell");
+    check_cuda(cudaStreamSynchronize(stream), "sync geometry");
+    auto ty = host.span(kAtom_type);
+    for (int i = 0; i < n; ++i)
+        ty[i] = types[static_cast<std::size_t>(i)];
+    Mat3 cell;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            cell(i, j) = box[i * 3 + j];
+    host.box.set_cell(cell);
+    return host;
+}
+
+void accumulate_energy(cuda::Frame& frame, double e_ev, cudaStream_t stream) {
+    if (!frame.scalars)
+        throw std::runtime_error(
+            "cuda::scf::KRHF: device frame has no energy scalar");
+    double e = 0.0;
+    check_cuda(cudaMemcpyAsync(&e, &frame.scalars->energy, sizeof(double),
+                               cudaMemcpyDeviceToHost, stream),
+               "D2H energy");
+    check_cuda(cudaStreamSynchronize(stream), "sync energy");
+    e += e_ev;
+    check_cuda(cudaMemcpyAsync(&frame.scalars->energy, &e, sizeof(double),
+                               cudaMemcpyHostToDevice, stream),
+               "H2D energy");
+    check_cuda(cudaStreamSynchronize(stream), "sync energy write");
+}
+
 } // namespace
+
+struct KrhfLoop {
+    Engine* eng = nullptr;
+    std::unique_ptr<Engine> owned;
+    FockStage fock;
+    MixStage mix;
+    DiagonalizeStage diag;
+    DensityStage density;
+    CheckStage check;
+    EnergyDelta criterion;
+
+    explicit KrhfLoop(double tol_ha)
+        : fock(&eng), mix(&eng), diag(&eng), density(&eng), check(&eng),
+          criterion(tol_ha) {}
+
+    void release_engine() {
+        owned.reset();
+        eng = nullptr;
+    }
+};
 
 KRHF::KRHF(cpu::scf::BasisSet basis_in, std::array<int, 3> k_mesh_in,
            int charge_in, double tol_in, int max_iter_in)
     : basis(basis_in), k_mesh(k_mesh_in), charge(charge_in), tol(tol_in),
-      max_iter(max_iter_in) {}
+      max_iter(max_iter_in), loop_(std::make_unique<KrhfLoop>(tol)) {
+    wire_stages_();
+}
+
+KRHF::~KRHF() { release_backend_(); }
+
+KRHF::KRHF(KRHF&& other) noexcept
+    : cuda::Driver<ATV::scf::Phase>(std::move(other)),
+      cuda::DriverNode(std::move(other)), cuda::HF(std::move(other)),
+      basis(other.basis), k_mesh(other.k_mesh), charge(other.charge),
+      tol(other.tol), max_iter(other.max_iter), loop_(std::move(other.loop_)),
+      energy_ha_(other.energy_ha_), iterations_(other.iterations_) {}
+
+void KRHF::wire_stages_() {
+    this->on(ATV::scf::Phase::fock).add_ref(loop_->fock);
+    this->on(ATV::scf::Phase::mix).add_ref(loop_->mix);
+    this->on(ATV::scf::Phase::diagonalize).add_ref(loop_->diag);
+    this->on(ATV::scf::Phase::density).add_ref(loop_->density);
+    this->on(ATV::scf::Phase::check).add_ref(loop_->check);
+    this->add_criterion_ref(loop_->criterion);
+    this->build();
+}
+
+void KRHF::build_on(cuda::Context&, cuda::Frame&) {
+    if (this->plan().slots.empty())
+        this->build();
+}
+
+void KRHF::destroy_on(cuda::Context&, cuda::Frame&) {
+    if (loop_)
+        loop_->release_engine();
+}
+
+void KRHF::release_backend_() {
+    if (loop_)
+        loop_->release_engine();
+    if (!this->backend_)
+        return;
+    if (this->backend_->context().stream)
+        this->backend_->sync();
+    this->backend_->destroy_components();
+    this->backend_->shutdown();
+    this->backend_.reset();
+    this->built_plugins_.clear();
+}
+
+void KRHF::step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step) {
+    struct Guard {
+        bool& flag;
+        explicit Guard(bool& f) : flag(f) { flag = true; }
+        ~Guard() { flag = false; }
+    } guard(this->launching_);
+    for (const auto& plan_slot : this->plan().slots) {
+        if (plan_slot.ops.empty())
+            continue;
+        for (const auto& op : plan_slot.ops) {
+            if (!op.component)
+                continue;
+            cuda::LaunchContext lc{ctx, frame, plan_slot.phase, step};
+            op.component->launch(lc);
+        }
+    }
+}
+
+int KRHF::drive(cuda::Context& ctx, cpu::Frame& host, cuda::Frame* device,
+                int budget, Write write) {
+    if (!(tol > 0.0) || max_iter < 1)
+        throw std::runtime_error(
+            "cuda::scf::KRHF: tol must be positive and max_iter >= 1");
+    auto* stream = static_cast<cudaStream_t>(ctx.stream);
+    if (!stream)
+        throw std::runtime_error("cuda::scf::KRHF: no CUDA stream");
+    loop_->owned = std::make_unique<Engine>();
+    loop_->eng = loop_->owned.get();
+    struct Release {
+        KrhfLoop* loop = nullptr;
+        ~Release() {
+            if (loop)
+                loop->release_engine();
+        }
+    } release{loop_.get()};
+    loop_->owned->open(host, basis, k_mesh, charge, stream);
+
+    const cuda::LoopServices saved = ctx.loop;
+    ctx.loop.status = &this->status_;
+    ctx.loop.metrics = &this->metrics_;
+    struct Restore {
+        cuda::Context& ctx;
+        cuda::LoopServices saved;
+        ~Restore() { ctx.loop = saved; }
+    } restore{ctx, saved};
+    this->status_.reset();
+    this->metrics_ = ConvergenceMetrics{};
+
+    cuda::Frame* stage_frame = device;
+    cuda::Frame local;
+    if (!stage_frame)
+        stage_frame = &local;
+
+    const int cap = budget > 0 ? budget : max_iter;
+    int executed = 0;
+    bool ok = false;
+    for (int it = 0; it < cap; ++it) {
+        this->mutable_outer_status().reset();
+        step_stages_(ctx, *stage_frame, it);
+        ++executed;
+        if (this->poll_criteria_(it, *stage_frame, ctx)
+            != ATV::Verdict::Continue) {
+            ok = this->converged();
+            break;
+        }
+    }
+    if (!ok)
+        throw std::runtime_error("cuda::scf::KRHF: SCF did not converge in "
+                                 + std::to_string(cap) + " iterations");
+    energy_ha_ = loop_->eng->energy();
+    iterations_ = executed;
+    if (write == Write::Accumulate) {
+        if (!device)
+            throw std::runtime_error(
+                "cuda::scf::KRHF: nested run has no device frame");
+        accumulate_energy(*device, energy_ha_ * units::kHartreeInEv, stream);
+    } else if (write == Write::Overwrite) {
+        const double e_ev = energy_ha_ * units::kHartreeInEv;
+        host.meta.get(kEnergy) = e_ev;
+        host.meta.get(kEnergyElectronic) = e_ev;
+    }
+    return executed;
+}
 
 void KRHF::run(const cpu::Frame& frame) {
-    const int mesh_k[3] = {k_mesh[0], k_mesh[1], k_mesh[2]};
-    const cpu::scf::internal::KrhfStatic sys =
-        cpu::scf::internal::krhf_assemble(frame, basis, mesh_k, charge);
-    const int nk = sys.nk;
-    const int nao = sys.nao;
-    const int ng = sys.ng;
-    const int nx = sys.mesh[0], ny = sys.mesh[1], nz = sys.mesh[2];
-    if (nk < 1 || nao < 1 || ng != nx * ny * nz)
-        throw std::runtime_error("cuda::scf::KRHF: empty k-point system");
-    if (sys.nocc < 0
-        || static_cast<long long>(sys.nocc) > static_cast<long long>(nk) * nao)
-        throw std::runtime_error(
-            "cuda::scf::KRHF: occupied count exceeds the basis "
-            "(pyscf.pbc.scf.khf.get_occ)");
-
-    auto hz = [](const std::complex<double>& z) {
-        return Z{z.real(), z.imag()};
-    };
-    std::vector<Z> h_ao(sys.ao.size()), h_H(sys.H.size()), h_X(sys.X.size());
-    for (std::size_t i = 0; i < sys.ao.size(); ++i)
-        h_ao[i] = hz(sys.ao[i]);
-    for (std::size_t i = 0; i < sys.H.size(); ++i)
-        h_H[i] = hz(sys.H[i]);
-    for (std::size_t i = 0; i < sys.X.size(); ++i)
-        h_X[i] = hz(sys.X[i]);
-
-    const std::size_t nmat = static_cast<std::size_t>(nk) * nao * nao;
-    Z *d_ao = nullptr, *d_H = nullptr, *d_X = nullptr, *d_dm = nullptr;
-    Z *d_vj = nullptr, *d_vk = nullptr, *d_F = nullptr, *d_vhf = nullptr;
-    Z *d_rho = nullptr, *d_tmp = nullptr, *d_rho1 = nullptr, *d_aodm = nullptr;
-    Z *d_vrdm = nullptr, *d_Hp = nullptr;
-    double *d_coul_j = nullptr, *d_coul_k = nullptr, *d_coords = nullptr;
-    double* d_e = nullptr;
-    cuDoubleComplex* d_col = nullptr;
-    cuDoubleComplex* d_work = nullptr;
-    double* d_eig = nullptr;
-    double* d_occ = nullptr;
-    double* d_eps = nullptr;
-    Z* d_C = nullptr;
-    int* d_idx = nullptr;
-    int* d_infos = nullptr;
-    cudaStream_t stream = nullptr;
-    check_cuda(cudaStreamCreate(&stream), "stream");
-    auto guard = [&]() {
-        cudaFree(d_ao);
-        cudaFree(d_H);
-        cudaFree(d_X);
-        cudaFree(d_dm);
-        cudaFree(d_vj);
-        cudaFree(d_vk);
-        cudaFree(d_F);
-        cudaFree(d_vhf);
-        cudaFree(d_rho);
-        cudaFree(d_tmp);
-        cudaFree(d_rho1);
-        cudaFree(d_aodm);
-        cudaFree(d_vrdm);
-        cudaFree(d_Hp);
-        cudaFree(d_coul_j);
-        cudaFree(d_coul_k);
-        cudaFree(d_coords);
-        cudaFree(d_e);
-        cudaFree(d_col);
-        cudaFree(d_work);
-        cudaFree(d_eig);
-        cudaFree(d_occ);
-        cudaFree(d_eps);
-        cudaFree(d_C);
-        cudaFree(d_idx);
-        cudaFree(d_infos);
-        d_ao = d_H = d_X = d_dm = d_vj = d_vk = d_F = d_vhf = nullptr;
-        d_rho = d_tmp = d_rho1 = d_aodm = d_vrdm = d_Hp = nullptr;
-        d_coul_j = d_coul_k = d_coords = d_e = nullptr;
-        d_col = d_work = nullptr;
-        d_eig = nullptr;
-        d_occ = nullptr;
-        d_eps = nullptr;
-        d_C = nullptr;
-        d_idx = nullptr;
-        d_infos = nullptr;
-        if (stream) {
-            cudaStreamDestroy(stream);
-            stream = nullptr;
-        }
-    };
+    cpu::Frame scratch(frame);
+    this->setup_pass(scratch);
     try {
-        check_cuda(cudaMalloc(&d_ao, h_ao.size() * sizeof(Z)), "ao");
-        check_cuda(cudaMalloc(&d_H, nmat * sizeof(Z)), "H");
-        check_cuda(cudaMalloc(&d_X, nmat * sizeof(Z)), "X");
-        check_cuda(cudaMalloc(&d_dm, nmat * sizeof(Z)), "dm");
-        check_cuda(cudaMalloc(&d_vj, nmat * sizeof(Z)), "vj");
-        check_cuda(cudaMalloc(&d_vk, nmat * sizeof(Z)), "vk");
-        check_cuda(cudaMalloc(&d_F, nmat * sizeof(Z)), "F");
-        check_cuda(cudaMalloc(&d_vhf, nmat * sizeof(Z)), "vhf");
-        check_cuda(cudaMalloc(&d_rho, static_cast<std::size_t>(ng) * sizeof(Z)),
-                   "rho");
-        check_cuda(cudaMalloc(&d_tmp, static_cast<std::size_t>(ng) * sizeof(Z)),
-                   "tmp");
-        check_cuda(cudaMalloc(&d_rho1, static_cast<std::size_t>(nao * nao * ng)
-                                           * sizeof(Z)),
-                   "rho1");
-        check_cuda(
-            cudaMalloc(&d_aodm, static_cast<std::size_t>(nao * ng) * sizeof(Z)),
-            "aodm");
-        check_cuda(
-            cudaMalloc(&d_vrdm, static_cast<std::size_t>(nao * ng) * sizeof(Z)),
-            "vrdm");
-        check_cuda(
-            cudaMalloc(&d_Hp, static_cast<std::size_t>(nao * nao) * sizeof(Z)),
-            "Hp");
-        check_cuda(cudaMalloc(&d_C, nmat * sizeof(Z)), "C");
-        const std::size_t norb = static_cast<std::size_t>(nk) * nao;
-        check_cuda(cudaMalloc(&d_eps, norb * sizeof(double)), "eps");
-        check_cuda(cudaMalloc(&d_idx, norb * sizeof(int)), "idx");
-        check_cuda(
-            cudaMalloc(&d_infos, static_cast<std::size_t>(nk) * sizeof(int)),
-            "infos");
-        check_cuda(cudaMalloc(&d_occ, norb * sizeof(double)), "occ");
-        check_cuda(cudaMalloc(&d_coul_j,
-                              static_cast<std::size_t>(ng) * sizeof(double)),
-                   "coul_j");
-        check_cuda(cudaMalloc(&d_coul_k, sys.coul_k.size() * sizeof(double)),
-                   "coul_k");
-        check_cuda(cudaMalloc(&d_coords, sys.coords.size() * sizeof(double)),
-                   "coords");
-        check_cuda(cudaMalloc(&d_e, sizeof(double)), "e");
-        check_cuda(cudaMalloc(&d_col, static_cast<std::size_t>(nao * nao)
-                                          * sizeof(cuDoubleComplex)),
-                   "col");
-        check_cuda(
-            cudaMalloc(&d_eig, static_cast<std::size_t>(nao) * sizeof(double)),
-            "eig");
-        check_cuda(cudaMemcpyAsync(d_ao, h_ao.data(), h_ao.size() * sizeof(Z),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D ao");
-        check_cuda(cudaMemcpyAsync(d_H, h_H.data(), nmat * sizeof(Z),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D H");
-        check_cuda(cudaMemcpyAsync(d_X, h_X.data(), nmat * sizeof(Z),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D X");
-        check_cuda(
-            cudaMemcpyAsync(d_coul_j, sys.coul_j.data(),
-                            static_cast<std::size_t>(ng) * sizeof(double),
-                            cudaMemcpyHostToDevice, stream),
-            "H2D coul");
-        check_cuda(cudaMemcpyAsync(d_coul_k, sys.coul_k.data(),
-                                   sys.coul_k.size() * sizeof(double),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D coulk");
-        check_cuda(cudaMemcpyAsync(d_coords, sys.coords.data(),
-                                   sys.coords.size() * sizeof(double),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D coords");
-
-        cusolverDnHandle_t sol;
-        check_sol(cusolverDnCreate(&sol), "create");
-        check_sol(cusolverDnSetStream(sol, stream), "set stream");
-        int lwork = 0;
-        check_sol(cusolverDnZheevd_bufferSize(sol, CUSOLVER_EIG_MODE_VECTOR,
-                                              CUBLAS_FILL_MODE_LOWER, nao,
-                                              d_col, nao, d_eig, &lwork),
-                  "buffer");
-        check_cuda(cudaMalloc(&d_work, static_cast<std::size_t>(lwork)
-                                           * sizeof(cuDoubleComplex)),
-                   "work");
-
-        check_cuda(cudaMemsetAsync(d_C, 0, nmat * sizeof(Z), stream), "zero C");
-        k_fill_d<<<(static_cast<int>(norb) + 127) / 128, 128, 0, stream>>>(
-            d_eps, static_cast<int>(norb), 1.0e8);
-        // Eigenvalues stay on device (tail beyond nmo is 1e8). Coefficients
-        // are written to d_C; khf.get_occ does not need them on the host.
-        auto diagonalize_into_dm = [&](const Z* fock) {
-            for (int k = 0; k < nk; ++k) {
-                const int m = sys.nmo[static_cast<std::size_t>(k)];
-                k_xform<<<1, 64, 0, stream>>>(d_X, fock, d_Hp, nao, m, k);
-                k_row_to_col<<<(m * m + 127) / 128, 128, 0, stream>>>(d_Hp,
-                                                                      d_col, m);
-                check_sol(cusolverDnZheevd(sol, CUSOLVER_EIG_MODE_VECTOR,
-                                           CUBLAS_FILL_MODE_LOWER, m, d_col, m,
-                                           d_eig, d_work, lwork, d_infos + k),
-                          "zheevd");
-                check_cuda(cudaMemcpyAsync(
-                               d_eps + static_cast<std::size_t>(k) * nao, d_eig,
-                               sizeof(double) * static_cast<std::size_t>(m),
-                               cudaMemcpyDeviceToDevice, stream),
-                           "D2D eig");
-                k_apply_x<<<m, 32, 0, stream>>>(d_X, d_col, d_C, nao, m, k);
-            }
-            std::vector<int> info(static_cast<std::size_t>(nk));
-            check_cuda(
-                cudaMemcpyAsync(info.data(), d_infos,
-                                sizeof(int) * static_cast<std::size_t>(nk),
-                                cudaMemcpyDeviceToHost, stream),
-                "D2H info");
-            check_cuda(cudaStreamSynchronize(stream), "sync zheevd");
-            for (int k = 0; k < nk; ++k)
-                if (info[static_cast<std::size_t>(k)] != 0)
-                    throw std::runtime_error(
-                        "cuda::scf::KRHF: zheevd info="
-                        + std::to_string(info[static_cast<std::size_t>(k)]));
-            k_occupy<<<1, 1, 0, stream>>>(d_eps, d_idx, d_occ, nk * nao,
-                                          sys.nocc);
-            for (int k = 0; k < nk; ++k)
-                k_dm_from_c<<<1, 32, 0, stream>>>(
-                    d_C, d_occ + static_cast<std::size_t>(k) * nao, d_dm, nao,
-                    k);
-            k_hermitize<<<nk, 32, 0, stream>>>(d_dm, nk, nao);
-        };
-        diagonalize_into_dm(d_H);
-
-        const int blk = 128;
-        const double jw = sys.vol / static_cast<double>(ng);
-        const double kw = (1.0 / static_cast<double>(nk))
-                          * (sys.vol / static_cast<double>(ng));
-
-        auto build_jk = [&]() {
-            k_rho<<<div_up(ng, blk), blk, 0, stream>>>(d_ao, d_dm, d_rho, nk,
-                                                       nao, ng);
-            fft3_dev(d_rho, d_tmp, nx, ny, nz, false, stream);
-            k_scale<<<div_up(ng, blk), blk, 0, stream>>>(d_rho, d_coul_j, ng);
-            fft3_dev(d_rho, d_tmp, nx, ny, nz, true, stream);
-            k_j_contract<<<div_up(nk * nao * nao, blk), blk, 0, stream>>>(
-                d_ao, d_rho, d_vj, nk, nao, ng, jw);
-            k_hermitize<<<nk, 32, 0, stream>>>(d_vj, nk, nao);
-
-            k_zero<<<div_up(static_cast<int>(nmat), blk), blk, 0, stream>>>(
-                d_vk, static_cast<int>(nmat));
-            for (int k2 = 0; k2 < nk; ++k2) {
-                k_aodm<<<div_up(ng, blk), blk, 0, stream>>>(d_ao, d_dm, d_aodm,
-                                                            nao, ng, k2);
-                for (int k1 = 0; k1 < nk; ++k1) {
-                    const double kd[3] = {sys.kpts[k2][0] - sys.kpts[k1][0],
-                                          sys.kpts[k2][1] - sys.kpts[k1][1],
-                                          sys.kpts[k2][2] - sys.kpts[k1][2]};
-                    const int zero =
-                        (std::abs(kd[0]) + std::abs(kd[1]) + std::abs(kd[2])
-                         < 1e-9)
-                            ? 1
-                            : 0;
-                    k_rho1<<<div_up(ng, blk), blk, 0, stream>>>(
-                        d_ao, d_ao, d_coords, kd[0], kd[1], kd[2], zero, d_rho1,
-                        nao, ng, k1, k2);
-                    const double* coul =
-                        d_coul_k
-                        + static_cast<std::size_t>((k2 * nk + k1) * ng);
-                    for (int ij = 0; ij < nao * nao; ++ij) {
-                        Z* slice = d_rho1 + static_cast<std::size_t>(ij) * ng;
-                        // fft3_dev uses d_tmp of size ng; slice is its own buffer.
-                        fft3_dev(slice, d_tmp, nx, ny, nz, false, stream);
-                        k_scale<<<div_up(ng, blk), blk, 0, stream>>>(slice,
-                                                                     coul, ng);
-                        fft3_dev(slice, d_tmp, nx, ny, nz, true, stream);
-                    }
-                    k_vrdm<<<div_up(ng, blk), blk, 0, stream>>>(
-                        d_rho1, d_aodm, d_coords, kd[0], kd[1], kd[2], zero,
-                        d_vrdm, nao, ng);
-                    k_k_accum<<<div_up(nao * nao, blk), blk, 0, stream>>>(
-                        d_vrdm, d_ao, d_vk, nao, ng, k1, kw);
-                }
-            }
-            k_hermitize<<<nk, 32, 0, stream>>>(d_vk, nk, nao);
-            k_vhf<<<div_up(static_cast<int>(nmat), blk), blk, 0, stream>>>(
-                d_vj, d_vk, d_vhf, static_cast<int>(nmat));
-        };
-
-        double e_prev = 0.0;
-        bool conv = false;
-        int iters = 0;
-        double e_ha = 0.0;
-        for (int it = 0; it < max_iter; ++it) {
-            build_jk();
-            k_trace_energy<<<1, 1, 0, stream>>>(d_dm, d_H, d_vhf, nk, nao, d_e);
-            check_cuda(cudaMemcpyAsync(&e_ha, d_e, sizeof(double),
-                                       cudaMemcpyDeviceToHost, stream),
-                       "D2H e");
-            check_cuda(cudaStreamSynchronize(stream), "sync e");
-            e_ha += sys.enuc;
-            iters = it + 1;
-            if (it > 0 && std::abs(e_ha - e_prev) < tol) {
-                conv = true;
-                break;
-            }
-            e_prev = e_ha;
-            k_fock<<<div_up(static_cast<int>(nmat), blk), blk, 0, stream>>>(
-                d_H, d_vhf, d_F, static_cast<int>(nmat));
-            diagonalize_into_dm(d_F);
-        }
-        cusolverDnDestroy(sol);
-        if (!conv)
-            throw std::runtime_error("cuda::scf::KRHF: SCF did not converge in "
-                                     + std::to_string(max_iter)
-                                     + " iterations");
-        energy_ha_ = e_ha;
-        converged_ = true;
-        iterations_ = iters;
-        guard();
+        drive(this->backend_->context(), scratch, nullptr, max_iter,
+              Write::None);
+        release_backend_();
     } catch (...) {
-        guard();
+        release_backend_();
         throw;
     }
 }
 
 void KRHF::run(cpu::Frame& frame) {
-    run(static_cast<const cpu::Frame&>(frame));
-    const double e_ev = energy_ha_ * units::kHartreeInEv;
-    frame.meta.get(kEnergy) = e_ev;
-    frame.meta.get(kEnergyElectronic) = e_ev;
+    this->setup_pass(frame);
+    try {
+        drive(this->backend_->context(), frame, nullptr, max_iter,
+              Write::Overwrite);
+        release_backend_();
+    } catch (...) {
+        release_backend_();
+        throw;
+    }
+}
+
+int KRHF::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame,
+                            int budget) {
+    auto* stream = static_cast<cudaStream_t>(ctx.stream);
+    cpu::Frame host = host_geometry(frame, stream);
+    return drive(ctx, host, &frame, budget, Write::Accumulate);
 }
 
 cpu::scf::GradientResult KRHF::forces(cpu::Frame& /*frame*/) {

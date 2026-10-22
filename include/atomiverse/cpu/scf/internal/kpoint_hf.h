@@ -21,6 +21,7 @@
 
 #include <array>
 #include <complex>
+#include <memory>
 #include <vector>
 
 #include "atomiverse/cpu/frame/frame.h"
@@ -106,6 +107,47 @@ struct KrhfStatic {
 /// @brief Build the density-independent KRHF workspace (no SCF).
 KrhfStatic krhf_assemble(const Frame& frame, BasisSet basis,
                          const int k_mesh[3], int charge);
+
+/// @brief One restricted k-point SCF state. The driver walks it; this type
+///        does not decide convergence.
+///
+/// Steps follow PySCF 2.14.0 `pyscf/pbc/scf/khf.py` (`KRHF`,
+/// `KSCF.get_fock`, `energy_elec`, `eig`, `make_rdm1`) and
+/// `pyscf/scf/hf.py` `kernel`, with DIIS left off (`get_fock` `diis=None`).
+struct KrhfCycle;
+
+/// @brief Destroy a cycle allocated by `krhf_cycle_open`.
+void krhf_cycle_delete(KrhfCycle* cycle);
+
+/// @brief Owning pointer. The deleter is a function so callers need not
+///        see the cycle body.
+using KrhfCycleOwner = std::unique_ptr<KrhfCycle, void (*)(KrhfCycle*)>;
+
+/// @brief Assemble the cell and the core-Hamiltonian density guess.
+/// @param frame Orthorhombic geometry [Å].
+/// @param basis Gaussian basis (s functions).
+/// @param k_mesh Monkhorst–Pack divisions.
+/// @param charge Cell charge [e].
+KrhfCycleOwner krhf_cycle_open(const Frame& frame, BasisSet basis,
+                               const int k_mesh[3], int charge);
+
+/// @brief `KSCF.get_fock` + `energy_elec` for the current density.
+///        vhf = J − ½K. Stores the total energy [Hartree] including E_nn.
+void krhf_cycle_fock(KrhfCycle& cycle);
+
+/// @brief `KRHF.eig`: canonical orthogonalization then Hermitian diagonalize.
+void krhf_cycle_diagonalize(KrhfCycle& cycle);
+
+/// @brief `get_occ` + `make_rdm1` from the orbitals just diagonalized.
+void krhf_cycle_density(KrhfCycle& cycle);
+
+/// @brief Last total energy [Hartree], nuclear repulsion included.
+double krhf_cycle_energy(const KrhfCycle& cycle);
+
+/// @brief |ΔE| [Hartree] against the previous fock energy, or +∞ on the
+///        first call. Records the current energy as the next baseline.
+///        Does not decide convergence.
+double krhf_cycle_delta(KrhfCycle& cycle);
 
 struct KrhfEnergy {
     double hartree = 0.0;
