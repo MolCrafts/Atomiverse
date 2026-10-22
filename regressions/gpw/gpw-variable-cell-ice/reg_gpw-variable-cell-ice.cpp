@@ -13,10 +13,11 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
-#include "atomiverse/cpu/gpw/gpw_evaluator.h"
+#include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/minimize/anisotropic_cell_relax.h"
 #include "atomiverse/cpu/minimize/minimize.h"
@@ -77,11 +78,8 @@ int main() {
     dft.mix = 0.3;
     dft.xc = cpu::gpw::XcKind::PADE;
     dft.nonperiodic = false;
-    cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces*/ false);
-    eval.compute_stress = true;
-    eval.method().stress_strain_h = 2e-3;
-    eval.method().stress_axes = {true, false,
-                                 false}; // only the chain axis relaxes
+    dft.stress_strain_h = 2e-3;
+    dft.stress_axes = {true, false, false}; // only the chain axis relaxes
 
     cpu::minimizer::Minimize opt;
     cpu::minimizer::AnisotropicCellRelax cell(/*P_target*/ 0.0, /*alpha*/ 1.0);
@@ -93,14 +91,16 @@ int main() {
     opt.add_criterion(cpu::StressConverged{0.0, kStol,
                                            /*x*/ true, /*y*/ false,
                                            /*z*/ false});
-    opt.on(minimizer::Phase::force).add_ref(eval);
+    // The method mounted itself; the cell relaxer reads stress, so the
+    // nested GpwDft writes its analytic virial every launch.
+    opt.on(minimizer::Phase::force).add_ref(dft);
     opt.enable_timing(false);
     opt.build();
     opt.run(frame, 12);
 
-    if (!eval.last_result().converged) {
+    if (!dft.last_result().converged) {
         std::printf("FAIL: GPW SCF did not converge (iters=%d)\n",
-                    eval.last_result().iters);
+                    dft.last_result().iters);
         return 1;
     }
     if (!opt.converged()) {
@@ -113,11 +113,12 @@ int main() {
     const double a1 = frame.box.length(0);
     const double b1 = frame.box.length(1);
     const double c1 = frame.box.length(2);
-    const double e_ha = eval.last_energy_hartree();
+    const double e_ha = dft.last_result().e_total;
     // kStress is the extensive Voigt virial [eV]; this gate is written
     // against the intensive stress W_xx/V [eV/A^3].
     const double sxx_ev_a3 = frame.meta.get(kStress)[0] / frame.box.volume();
-    const double sxx_ha_bohr3 = eval.last_stress_ha_bohr3()[0];
+    const double sxx_ha_bohr3 =
+        sxx_ev_a3 / units::kHartreePerBohr3InEvPerAngstrom3;
 
     std::printf(
         "a: start=%.4f  relaxed=%.6f  cp2k CELL_OPT=%.6f  |da|=%.4f A\n", kA0,

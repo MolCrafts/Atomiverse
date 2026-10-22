@@ -60,8 +60,18 @@ land).
   from `requires_system_stress` on components and criteria; cell relaxers and
   stress/pressure criteria now declare it); `PWEvaluator` deleted; task wire
   `PWParams`; Python `set_evaluator(PW)`.
-- Next in phase 1: GPW (nesting rejected, evaluator carries CPMD/XL state),
-  then DFTB/xTB.
+- Phase 1, GPW: `GpwDft` mounts directly for Born–Oppenheimer work (DIIS
+  stages on the parent Runtime, warm start from its previous converged
+  density, forces on request, `gpw_stress_at_state_impl` virial on demand).
+  `gpw-bomd-water` and `gpw-variable-cell-ice` mount it.
+  **Transitional debt (owner: phase 5):** `GPWEvaluator` still hosts the
+  electronic propagators (CPMD, second-gen CP, XL-BOMD) and 33 plain BO
+  regressions plus `test_phonon_gpw_wiring` still use it, so the plain BO
+  write-back exists twice (`GpwDft::run_nested_erased`,
+  `GPWEvaluator::launch`). Phase 5 moves the propagators to the composed
+  node, migrates those users and deletes `GPWEvaluator`.
+- DFTB/xTB already mount directly as Components (accumulating); their loop
+  shape is phase 3. Phase 1 is closed apart from the GPW transitional debt.
 
 ## Phases (each keeps every regression green)
 

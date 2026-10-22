@@ -14,7 +14,7 @@
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
-#include "atomiverse/cpu/gpw/gpw_evaluator.h"
+#include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
 
 using namespace ATV;
@@ -63,7 +63,6 @@ int main() {
     dft.mix = 0.3;
     dft.xc = cpu::gpw::XcKind::PBE;
     dft.nonperiodic = true;
-    cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces=*/true);
 
     constexpr double dt = 0.5; // fs
     constexpr int n_prod = 4;
@@ -76,7 +75,7 @@ int main() {
 
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
-    sim.on(md::Phase::force).add(std::move(eval));
+    sim.on(md::Phase::force).add(std::move(dft));
     sim.enable_timing(false);
     sim.build();
 

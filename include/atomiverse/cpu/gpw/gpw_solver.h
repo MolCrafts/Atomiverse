@@ -552,20 +552,36 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @throws std::runtime_error when the SCF did not converge.
     std::array<double, 6> stress(Frame& frame);
 
-    // The path stages borrow each run's stack. Use the evaluator for composition.
-    void build_on(cpu::Runtime&) override {
-        throw std::logic_error(
-            "GpwDft cannot be nested directly; use GPWEvaluator");
-    }
-    int run_nested_erased(cpu::Context&, cpu::Frame&, int) override {
-        throw std::logic_error(
-            "GpwDft cannot be nested directly; use GPWEvaluator");
-    }
+    /// @brief Display name in plan dumps and binding diagnostics.
+    /// @return `"gpw"`.
+    std::string name() const { return "gpw"; }
+    /// @brief Energy source for an outer loop's validation.
+    /// @return true.
+    bool provides_energy() const { return true; }
+    /// @brief Force source for an outer loop's validation.
+    /// @return true.
+    bool provides_force() const { return true; }
 
-    int run_nested(cpu::Context&, cpu::Frame&, int) {
-        throw std::logic_error(
-            "GpwDft cannot be nested directly; use GPWEvaluator");
-    }
+    /// @brief Nested mount (Born–Oppenheimer): remember the parent Runtime
+    ///        and validate the configuration against its Frame.
+    /// @param rt Parent Runtime.
+    void build_on(cpu::Runtime& rt) override;
+    /// @brief One nested Born–Oppenheimer solve at the frame's geometry and
+    ///        cell, warm-started from the previous converged density. DIIS
+    ///        stages run on the parent Runtime; energy [eV], analytic forces
+    ///        [eV/Å] (when the phase requests forces) and the virial σΩ [eV]
+    ///        (when the plan consumes stress) are accumulated onto the frame.
+    ///        Electronic propagators (CPMD, XL-BOMD, second-generation CP)
+    ///        stay on `GPWEvaluator`.
+    /// @param ctx Parent Context (requests read from `ctx.exec`).
+    /// @param frame Parent Frame.
+    /// @param budget Ignored; the SCF runs to convergence or `max_iter`.
+    /// @return SCF iterations.
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override;
+    /// @brief Detach from the parent Runtime.
+    /// @param rt Parent Runtime.
+    void destroy_on(cpu::Runtime& rt) override;
 
     /// @brief Result of the most recent run, default-constructed before it.
     const GpwResult& last_result() const { return result_; }
@@ -803,6 +819,10 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     RpaResult rpa_result_;   ///< Owned RPA result buffer (last direct_rpa()).
     G0W0Result g0w0_result_; ///< Owned G0W0 result buffer (last g0w0()).
     bool built_ = false;     ///< Whether build() validated the configuration.
+    /// Parent Runtime while nested (`build_on`); null for standalone entries.
+    cpu::Runtime* host_runtime_ = nullptr;
+    /// True during a nested solve: `drive_stage_loop_` steps on the host.
+    bool nested_active_ = false;
 
     // ── Shared DIIS gate flag + Γ RKS loop matrices (path Ops capture) ──
     linalg::RealMatrix loop_P_;

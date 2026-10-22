@@ -36,6 +36,7 @@
 #include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
+#include "atomiverse/cpu/gpw/internal/gpw_stress.h"
 #include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
@@ -5911,6 +5912,123 @@ GpwResult& GpwDft::forces(Frame& frame) {
     return res;
 }
 
+// ── GpwDft — nested Born–Oppenheimer mount ──────────────────────────────────
+
+void GpwDft::build_on(cpu::Runtime& rt) {
+    if (host_runtime_ && host_runtime_ != &rt)
+        throw std::logic_error("GpwDft: already nested on another Runtime");
+    host_runtime_ = &rt;
+    build(rt.frame());
+}
+
+void GpwDft::destroy_on(cpu::Runtime& rt) {
+    if (host_runtime_ == &rt)
+        host_runtime_ = nullptr;
+}
+
+int GpwDft::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                              int /*budget*/) {
+    if (ctx.exec.serial_on_replica && ctx.mpi_size > 1)
+        throw std::runtime_error("GpwDft: independent serial replicas under "
+                                 "multi-rank MPI are unsupported; GPW "
+                                 "collective execution uses MPI_COMM_WORLD");
+    // Variable-cell paths write the cell between launches; re-read it.
+    cell_ = internal::cell_from_box(frame.box);
+    const std::vector<GpwAtom> atoms =
+        internal::GpwDftAccess::atoms_from_frame(*this, frame);
+
+    // Warm start from the previous converged density (CP2K USE_PREV_P). The
+    // guesses are copied: the run overwrites `result_` in place.
+    const bool uks = is_uks();
+    linalg::RealMatrix guess_C, guess_P, guess_P_beta;
+    std::vector<linalg::CplxMatrix> guess_P_k, guess_P_k_beta;
+    const linalg::RealMatrix* pC = nullptr;
+    const linalg::RealMatrix* pP = nullptr;
+    const linalg::RealMatrix* pPb = nullptr;
+    const std::vector<linalg::CplxMatrix>* pPk = nullptr;
+    const std::vector<linalg::CplxMatrix>* pPkb = nullptr;
+    if (result_.n_kpts == 0 && result_.C.size() > 0) {
+        guess_C = result_.C;
+        pC = &guess_C;
+    }
+    if (result_.converged && result_.n_kpts == 0 && result_.P.size() > 0
+        && (!uks || result_.P_beta.size() > 0)) {
+        guess_P = result_.P;
+        pP = &guess_P;
+        if (uks) {
+            guess_P_beta = result_.P_beta;
+            pPb = &guess_P_beta;
+        }
+    }
+    if (result_.converged && result_.n_kpts > 0
+        && static_cast<int>(result_.P_k.size()) == result_.n_kpts
+        && (!uks
+            || static_cast<int>(result_.P_k_beta.size()) == result_.n_kpts)) {
+        guess_P_k = result_.P_k;
+        pPk = &guess_P_k;
+        if (uks) {
+            guess_P_k_beta = result_.P_k_beta;
+            pPkb = &guess_P_k_beta;
+        }
+    }
+
+    {
+        struct Nested {
+            bool& flag;
+            ~Nested() { flag = false; }
+        } nested{nested_active_};
+        nested_active_ = true;
+        run_atoms_(atoms, pC, pP, pPb, pPk, pPkb);
+    }
+    const GpwResult& res = result_;
+    // The hosting phase owns zeroing, so every write is `+=`.
+    frame.meta.get(kEnergy) += res.e_total * units::kHartreeInEv;
+    frame.meta.get(kEnergyElectronic) += res.e_total * units::kHartreeInEv;
+
+    if (ctx.exec.forces_requested) {
+        const bool gamma_payload = res.converged && res.P.size() > 0
+                                   && res.C.size() > 0 && !res.eps.empty();
+        const bool k_payload =
+            res.converged && res.n_kpts > 0
+            && static_cast<int>(res.C_occ_k.size()) == res.n_kpts
+            && static_cast<int>(res.eps_k.size()) == res.n_kpts;
+        // Forces at the density just converged; a fresh SCF only when the
+        // result carries no orbital payload.
+        const std::vector<std::array<double, 3>> F =
+            (gamma_payload || k_payload)
+                ? internal::gpw_forces_from_scf(atoms, *this, res)
+                : internal::gpw_forces_analytic(atoms, *this, nullptr);
+        AccReal* __restrict fx = frame.span(kAtom_fx);
+        AccReal* __restrict fy = frame.span(kAtom_fy);
+        AccReal* __restrict fz = frame.span(kAtom_fz);
+        const int n = frame.nlocal();
+        for (int i = 0; i < n; ++i) {
+            const auto& f = F[static_cast<std::size_t>(i)];
+            fx[i] += f[0] * units::kHartreePerBohrInEvPerAngstrom;
+            fy[i] += f[1] * units::kHartreePerBohrInEvPerAngstrom;
+            fz[i] += f[2] * units::kHartreePerBohrInEvPerAngstrom;
+        }
+    }
+    // The GPW virial is a second assembly, computed only when the hosting
+    // plan reads stress.
+    if (ctx.exec.stress_requested && ctx.exec.runtime
+        && ctx.exec.runtime->stress_consumed()) {
+        if (!res.converged)
+            throw std::runtime_error(
+                "GpwDft: stress requested at an unconverged density");
+        const std::array<double, 6> sigma = internal::gpw_stress_at_state_impl(
+            atoms, *this, res, stress_strain_h, stress_axes);
+        // kStress is the extensive virial W = σΩ [eV].
+        const double vol = frame.box.volume();
+        auto& st = frame.meta.get(kStress);
+        for (int k = 0; k < 6; ++k)
+            st[static_cast<std::size_t>(k)] +=
+                sigma[static_cast<std::size_t>(k)]
+                * units::kHartreePerBohr3InEvPerAngstrom3 * vol;
+    }
+    return res.iters;
+}
+
 // ── internal::GpwDftAccess — the atom-level door ────────────────────────────
 
 namespace internal {
@@ -6121,13 +6239,41 @@ bool GpwDft::drive_stage_loop_(int max_iter, GpwResult& res) {
     mix_stage_->reset();
     converged_stage_->reset();
 
+    // Nested: the stage plan runs on the parent Runtime for this solve.
+    // Standalone: this method is the root loop and owns its backend.
+    cpu::Runtime* const host = nested_active_ ? host_runtime_ : nullptr;
+    struct HostGuard {
+        GpwDft& self;
+        cpu::Runtime* host = nullptr;
+        cpu::Context* ctx = nullptr;
+        LoopServices saved{};
+        ~HostGuard() {
+            if (ctx)
+                ctx->loop = saved;
+            if (host)
+                host->destroy_plan(self.plan());
+        }
+    } host_guard{*this};
     cpu::Frame loop_frame;
-    setup_pass(loop_frame);
+    if (host) {
+        host->build_plan(this->plan());
+        host_guard.host = host;
+        host_guard.ctx = &host->context();
+        host_guard.saved = host_guard.ctx->loop;
+        host_guard.ctx->loop.status = &this->mutable_outer_status();
+        host_guard.ctx->loop.metrics = &this->metrics_;
+        this->metrics_ = ConvergenceMetrics{};
+    } else {
+        setup_pass(loop_frame);
+    }
 
     int executed = 0;
     for (int iter = 0; iter < max_iter; ++iter) {
         mutable_outer_status().reset();
-        step_once(iter);
+        if (host)
+            host->step_plan(this->plan(), iter);
+        else
+            step_once(iter);
         ++executed;
         res.iters = executed;
         res.e_total = loop_e_total_;
@@ -6135,10 +6281,14 @@ bool GpwDft::drive_stage_loop_(int max_iter, GpwResult& res) {
             std::fprintf(
                 stderr, "[gpw it %2d] E=%.8f  dE gate / err=%.2e  skip=%d\n",
                 iter, loop_e_total_, loop_err_norm_, (int)loop_skip_update_);
-        if (poll_criteria_(iter) != ATV::Verdict::Continue)
+        const ATV::Verdict verdict =
+            host ? this->poll_criteria_(iter, loop_frame, *host_guard.ctx)
+                 : poll_criteria_(iter);
+        if (verdict != ATV::Verdict::Continue)
             break;
     }
-    teardown_pass();
+    if (!host)
+        teardown_pass();
 
     const bool conv = this->converged() || loop_skip_update_;
     res.converged = conv;
