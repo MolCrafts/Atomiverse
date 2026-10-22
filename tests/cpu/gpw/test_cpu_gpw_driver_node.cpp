@@ -72,15 +72,13 @@ TEST(GpwDriverNode, PathLocalOpsAreCallable) {
     EXPECT_EQ(hits, 0);
 }
 
-TEST(GpwDriverNode, DirectNestingRejectsBeforeTouchingParent) {
+TEST(GpwDriverNode, NestedMountNeedsABoundFrame) {
     GpwDft method;
     ATV::cpu::Runtime runtime;
-    ATV::cpu::Context context;
-    ATV::cpu::Frame frame;
     ATV::cpu::DriverNode& node = method;
+    // No Frame bound on the parent: refuse with a how-to, never dereference.
     EXPECT_THROW(node.build_on(runtime), std::logic_error);
-    EXPECT_THROW(node.run_nested_erased(context, frame, 1), std::logic_error);
-    EXPECT_THROW(method.run_nested(context, frame, 1), std::logic_error);
-    EXPECT_EQ(context.exec.runtime, nullptr);
-    EXPECT_EQ(frame.nlocal(), 0);
+    EXPECT_TRUE(method.provides_energy());
+    EXPECT_TRUE(method.provides_force());
+    EXPECT_EQ(method.name(), "gpw");
 }

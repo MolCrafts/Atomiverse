@@ -168,6 +168,9 @@ class Runtime {
 
     /// @brief Access the Frame.
     Frame& frame() { return *frame_; }
+    /// @brief Is a Frame bound (`set_frame`)?
+    /// @return True once the Runtime holds a Frame.
+    bool has_frame() const noexcept { return frame_ != nullptr; }
 
     /// @brief The per-component timing registry (opt-in), owned by the device runtime.
     TimerRegistry& timing() { return device_.timing(); }

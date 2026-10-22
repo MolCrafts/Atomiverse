@@ -5917,8 +5917,12 @@ GpwResult& GpwDft::forces(Frame& frame) {
 void GpwDft::build_on(cpu::Runtime& rt) {
     if (host_runtime_ && host_runtime_ != &rt)
         throw std::logic_error("GpwDft: already nested on another Runtime");
-    host_runtime_ = &rt;
+    if (!rt.has_frame())
+        throw std::logic_error("GpwDft::build_on: the parent Runtime has no "
+                               "Frame; mount the method in a driver that has "
+                               "bound one (Driver::build / run)");
     build(rt.frame());
+    host_runtime_ = &rt;
 }
 
 void GpwDft::destroy_on(cpu::Runtime& rt) {
