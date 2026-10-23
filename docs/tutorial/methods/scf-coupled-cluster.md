@@ -15,14 +15,45 @@ The public entry points are post-HF objects that bind a concrete RHF and drive
 a fresh SCF on it (`cpu/scf/post_hf.h`, mirroring `pyscf.cc.CCSD(mf)`):
 
 - `cpu::scf::CCSD<RHF>{rhf, diis, frozen, tol, max_iter}` —
-  `Driver<cc::Phase>` (`update → mix → energy → check`). `diis` defaults
-  true (false = plain Jacobi, same fixed point). `run(frame)` overwrites
-  `kEnergy` with the correlated total [eV] and returns
-  `CCSDResult` [Ha]; `run(const Frame&)` does not write the frame.
-  `ccsd_t(frame)` → `CCSDTResult`; `forces(frame)` overwrites `kAtom_f*`
-  [eV/Å]. The EOM members are documented in [scf-eom-cc.md](scf-eom-cc.md).
+  `cpu::Driver<cc::Phase>` (`update → mix → energy → check`). See
+  [Call](#call). The EOM members are documented in
+  [scf-eom-cc.md](scf-eom-cc.md).
 - `cpu::scf::CC2<RHF>{rhf}` — `run(frame)` → `CC2Result`; `eom_cc2` roots are
   [`eom-cc2-h2`](scf-eom-cc.md#eom-cc2-h2).
+
+### Call
+
+`cpu::scf::CCSD<RHF>` is `cpu::Driver<cc::Phase>`, the same preset shape as
+`cpu::md::MD`. The constructor mounts `update`, `mix`, `energy`, and
+`check` with `on(phase).add`. max|Δt| is published on
+`ConvergenceMetrics::residual`. `AmplitudeConverged` decides. The method
+does not assign convergence. `diis`, `frozen`, `tol`, and `max_iter` are
+constructor arguments (`true`, `0`, `1e-10`, `100`) and are const after
+construction. `diis = false` is Jacobi, the same fixed point. The reference
+is not owned and must outlive the CCSD object. There is no `HF` tag and no
+CUDA path. Closed-shell RHF only; `frozen != 0` throws on `forces`.
+
+Frame in is positions [Å] and species in `kAtom_type`. `run(Frame&)` drives
+the reference SCF, then overwrites `kEnergy` with the correlated total [eV].
+Hartree stays on `CCSDResult`. `run(const Frame&)` writes nothing.
+`forces(Frame&)` overwrites `kAtom_fx` / `kAtom_fy` / `kAtom_fz` [eV/Å] and
+`kEnergy` [eV], and returns `GradientResult` (forces [eV/Å], energy [eV]).
+`ccsd_t(Frame&)` returns `CCSDTResult` [Hartree]. An outer driver that
+mounts CCSD with `on(phase).add` accumulates `kEnergy`, and accumulates
+`kAtom_f*` when the parent requests forces.
+
+```cpp
+cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
+cpu::scf::CCSD<cpu::scf::RHF> ccsd{rhf}; // diis true, frozen 0, tol 1e-10, max_iter 100
+const cpu::scf::CCSDResult energy = ccsd.run(frame); // overwrite kEnergy [eV]
+double e_ev = frame.meta.get(kEnergy);               // correlated total [eV]
+double e_ha = energy.e_tot;                          // Hartree
+bool ok = ccsd.converged();                          // Criterion verdict
+
+const cpu::scf::GradientResult grad = ccsd.forces(frame);
+// grad.forces [eV/Å], grad.energy [eV]; frame kAtom_f* and kEnergy overwritten
+```
 
 `CCSD::run` solves the closed-shell **spatial-orbital** amplitude equations
 (\(n_o^2 n_v^2\) storage) with amplitude DIIS; `ccsd_t` and `CC2::run` use the

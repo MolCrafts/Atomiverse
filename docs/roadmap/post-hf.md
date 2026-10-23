@@ -40,7 +40,7 @@ CIS excitation energies live under
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | CC2 | ✓ | ○ | Closed-shell |
-| CCSD | ✓ | ○ | `cpu::scf::CCSD{mf, diis, frozen, tol, max_iter}` : `Driver<cc::Phase>` (`update → mix → energy → check`). `run(Frame&)` overwrites `kEnergy` [eV]; `run(const Frame&)` does not write; Hartree stays on `CCSDResult`. `forces(Frame&)` overwrites `kAtom_f*` [eV/Å]. max\|Δt\| is a Criterion. No CUDA path |
+| CCSD | ✓ | ○ | `cpu::scf::CCSD<Method>` : `cpu::Driver<cc::Phase>` (not `MeanFieldMethod`, no `HF` tag). Stages `update → mix → energy → check`, mounted with `on(phase).add` in the constructor. max\|Δt\| is published on `ConvergenceMetrics::residual`; `AmplitudeConverged` decides; the method does not assign convergence. `CCSD{mf, diis = true, frozen = 0, tol = 1e-10, max_iter = 100}` — const after construction. The reference is not owned. `run(Frame&)` drives the reference SCF, overwrites `kEnergy` with the correlated total [eV], and returns `CCSDResult` [Hartree]. `run(const Frame&)` writes nothing. `forces(Frame&)` overwrites `kAtom_f*` [eV/Å] and `kEnergy` [eV] and returns `GradientResult`. `ccsd_t(Frame&)` returns `CCSDTResult` [Hartree]. `provides_energy()`, `provides_force()`, and `requires_full_frame()` are true. Nested `on(phase).add` accumulates `kEnergy`, and `kAtom_f*` when the parent requests forces. Closed-shell RHF only. `frozen != 0` throws on `forces`. No CUDA path. Tutorial: [coupled cluster](../tutorial/methods/scf-coupled-cluster.md#call) |
 | CCSD(T) | ✓ | ○ | Non-iterative triples |
 | CCSD nuclear gradient | ✓ | ○ | FD of CCSD energy (not Lagrangian/Z-vector yet) |
 | CCSD(T) gradient / CCSD Hessian | ○ | ○ | |
