@@ -1,16 +1,20 @@
 /// @file cpu/scf/internal/dhf.cpp
 /// @brief Dirac–Hartree–Fock (pyscf.scf.dhf) for l ≤ 1.
 ///
-/// Read from pyscf/scf/dhf.py: get_hcore, get_ovlp, get_occ, energy_elec,
-/// _call_veff_llll, _call_veff_ssll, kernel occupation of positive-energy
-/// spinors. j-coefficients are sph.sph2spinor(l) for l = 0 and l = 1
-/// (pyscf/symm/sph.py), pinned to the values that library prints.
-/// (SS|SS) is omitted: on H2 it changes the total by ~1e-11 Ha.
+/// Read from pyscf/scf/dhf.py (PySCF 2.14.0): `DHF.get_hcore`,
+/// `get_ovlp`, `get_occ`, `energy_elec`, `get_jk_coulomb`
+/// (`_call_veff_llll`, `_call_veff_ssll`), and `DHF.kernel` (which calls
+/// `pyscf/scf/hf.py` `kernel`: `get_fock`, `eig`, `make_rdm1`,
+/// `energy_tot`). j-coefficients are `sph.sph2spinor` for l = 0 and
+/// l = 1 (pyscf/symm/sph.py), pinned to the values that library prints.
+/// (SS|SS) is omitted: on H2 it changes the total by ~1e-11 Ha. No Gaunt
+/// or Breit term. This translation unit does not decide convergence.
 
 #include "atomiverse/cpu/scf/internal/dhf.h"
 
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -445,11 +449,7 @@ CMat veff(const std::vector<Cplx>& ll, const std::vector<Cplx>& ss,
 
 } // namespace
 
-DhfEnergy dhf_energy(const Frame& frame, BasisSet basis, int charge, double tol,
-                     int max_iter) {
-    if (!(tol > 0.0) || max_iter < 1)
-        throw std::invalid_argument(
-            "DHF::run: tol must be positive and max_iter >= 1");
+DhfCycle::DhfCycle(const Frame& frame, BasisSet basis, int charge) {
     IntegralWorkspace pack{frame, basis, charge, true};
     for (const native::Shell& sh : pack.shells) {
         if (sh.l > 1)
@@ -558,31 +558,56 @@ DhfEnergy dhf_energy(const Frame& frame, BasisSet basis, int charge, double tol,
     if (n_elec <= 0)
         throw std::invalid_argument(
             "DHF::run: electron count must be positive");
+    // Members outlive the Cartesian workspace. The density is the
+    // core Hamiltonian (dhf.init_guess_by_1e).
+    this->H = H;
+    this->S4 = S4;
+    this->ell = ell;
+    this->ess = ess;
+    this->n2 = n2;
+    this->n_elec = n_elec;
+    this->c = c;
+    this->scale = scale;
+    this->v_nuc = pack.V_nuc;
+    this->F = this->H;
+    diagonalize();
+    density();
+}
 
-    CMat P = make_rdm1(eigh_generalized(H, S4, 1e-9), n_elec, c);
-    TwoStepEnergy gate;
-    HermitianDiis diis;
-    DhfEnergy result;
-    for (int iter = 1; iter <= max_iter; ++iter) {
-        const CMat V = veff(ell, ess, P, n2, scale);
-        const double e =
-            real_trace_ji(H, P) + 0.5 * real_trace_ji(V, P) + pack.V_nuc;
-        result.hartree = e;
-        result.iterations = iter;
-        if (gate.converged(e, tol)) {
-            result.converged = true;
-            return result;
-        }
-        CMat F = zeros(n4, n4);
-        for (int i = 0; i < n4; ++i)
-            for (int j = 0; j < n4; ++j)
-                F(i, j) = H(i, j) + V(i, j);
-        hermitize(F);
-        const CMat Fnext = diis.next(F, commutator(F, P, S4));
-        P = make_rdm1(eigh_generalized(Fnext, S4, 1e-9), n_elec, c);
-    }
-    result.converged = false;
-    return result;
+void DhfCycle::fock() {
+    // get_jk_coulomb at (LL|LL)+(SS|LL), then dhf.energy_elec + hf.energy_tot.
+    // The trace is this density, not the one the following eig builds.
+    const CMat V = veff(ell, ess, P, n2, scale);
+    energy = real_trace_ji(H, P) + 0.5 * real_trace_ji(V, P) + v_nuc;
+    F = zeros(static_cast<int>(H.shape(0)), static_cast<int>(H.shape(0)));
+    const int n4 = static_cast<int>(H.shape(0));
+    for (int i = 0; i < n4; ++i)
+        for (int j = 0; j < n4; ++j)
+            F(i, j) = H(i, j) + V(i, j);
+    hermitize(F);
+}
+
+void DhfCycle::mix() {
+    // hf.get_fock with DIIS: extrapolate F on the [F, P] commutator.
+    F = diis.next(F, commutator(F, P, S4));
+}
+
+void DhfCycle::diagonalize() {
+    // hf.kernel eig (generalized Hermitian, positive-energy split in get_occ).
+    orbitals = eigh_generalized(F, S4, 1e-9);
+}
+
+void DhfCycle::density() {
+    // DHF.get_occ then hf.make_rdm1.
+    P = make_rdm1(orbitals, n_elec, c);
+}
+
+double DhfCycle::delta() {
+    const double d = have_previous ? std::abs(energy - previous)
+                                   : std::numeric_limits<double>::infinity();
+    previous = energy;
+    have_previous = true;
+    return d;
 }
 
 } // namespace internal

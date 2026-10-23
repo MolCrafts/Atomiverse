@@ -7,7 +7,7 @@ components, so noncollinear spin arrangements are reachable that no UHF
 `guess_spin_rotation` for a per-atom Néel guess); `run(frame)` gives the
 energy and `forces(frame)` returns a `cpu::scf::GradientResult` (energy [eV],
 forces [eV/Å]). Complex spinor variants are `cpu::scf::ComplexGHF` (`cpu::Driver<scf::Phase>` + `cpu::HF`) and
-Dirac–Hartree–Fock `cpu::scf::DHF`.
+Dirac–Hartree–Fock `cpu::scf::DHF` (`cpu::Driver<scf::Phase>` + `cpu::HF`).
 
 All sections run on CPU. Besides the gradient section documented below, the
 case carries `h3_ghf_sto3g` (the H₃ GHF energy and the collinear-trap

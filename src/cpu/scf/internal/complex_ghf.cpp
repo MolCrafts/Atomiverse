@@ -441,15 +441,6 @@ ComplexMatrix HermitianDiis::next(const ComplexMatrix& fock,
     return pulay(fock_, error_);
 }
 
-bool TwoStepEnergy::converged(double energy, double tol) {
-    const bool close = seen_ && std::abs(energy - previous_) < tol;
-    const bool done = close && was_close_;
-    was_close_ = close;
-    previous_ = energy;
-    seen_ = true;
-    return done;
-}
-
 Spnucsp int1e_spnucsp(const ShellList& shells, const AtomList& atoms) {
     for (const native::Shell& sh : shells.shells) {
         if (sh.l > kMaxLOrbital)

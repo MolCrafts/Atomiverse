@@ -607,16 +607,23 @@ cpu::scf::ComplexGHF ghf{cpu::scf::BasisSet::STO3G}; // charge 0, tol 1e-10, max
 ghf.run(frame);   // kEnergy and kEnergyElectronic [eV]; ghf.energy() [Ha]
 ```
 
-Four-component Dirac–Hartree–Fock is `cpu::scf::DHF` : `cpu::HF`, not a
-member of `MeanFieldMethod` or `ComplexGHF`. It follows PySCF `scf.DHF`:
-complex j-adapted spinors, a kinetically balanced large/small metric,
-and Dirac–Coulomb (LL|LL)+(SS|LL). The (SS|SS) block is not assembled,
-and there is no Gaunt or Breit term. Shells with l > 1 throw
-`dhf_ao_lgt1`. `provides_force()` is false; `forces` throws
-`dhf_nuclear_forces`. There is no device path.
+Four-component Dirac–Hartree–Fock is `cpu::scf::DHF` :
+`cpu::Driver<scf::Phase>` + `cpu::HF`, not a `MeanFieldMethod` and not a
+member of `ComplexGHF`. The SCF stages are fock, mix (CDIIS),
+diagonalize, density, and check. A Criterion judges two successive
+energy changes; the method does not assign convergence. It follows
+PySCF `scf.DHF`: complex j-adapted spinors, a kinetically balanced
+large/small metric, and Dirac–Coulomb (LL|LL)+(SS|LL). The (SS|SS)
+block is not assembled, and there is no Gaunt or Breit term. Shells
+with l > 1 throw `dhf_ao_lgt1`. `provides_force()` is false; `forces`
+throws `dhf_nuclear_forces`. There is no device path.
+The CPU call is Frame in / Frame out. `run(Frame&)` overwrites
+`kEnergy` and `kEnergyElectronic` [eV]; `run(const Frame&)` writes
+nothing; `energy()` is the total in Hartree.
 
 ```cpp
-cpu::scf::DHF dhf{cpu::scf::BasisSet::CcPVDZ}; // hydrogen only; l ≤ 1
+cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::scf::DHF dhf{cpu::scf::BasisSet::CcPVDZ}; // hydrogen only; charge 0, tol 1e-10, max_iter 80
 dhf.run(frame);   // kEnergy and kEnergyElectronic [eV]; dhf.energy() [Ha]
 ```
 
