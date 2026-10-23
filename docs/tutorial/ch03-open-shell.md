@@ -589,8 +589,11 @@ to a torsional spin-density-wave sector: magnetisation lies in one spin plane
 (\(\sigma_x,\sigma_z\) real; \(\sigma_y\) imaginary).
 
 Complex coefficients and one-electron spin–orbit coupling are a separate
-method, `cpu::scf::ComplexGHF` : `cpu::HF`, not a `MeanFieldMethod` and
-not a member of real `GHF`. Member `x2c` defaults to true: the core is
+method, `cpu::scf::ComplexGHF` : `cpu::Driver<scf::Phase>` + `cpu::HF`,
+not a `MeanFieldMethod` and not a member of real `GHF`. The SCF stages
+are fock, mix (CDIIS), diagonalize, density, and check. A Criterion
+judges two successive energy changes; the method does not assign
+convergence. Constructor argument `x2c` defaults to true: the core is
 the spin-orbital X2C-1e Hamiltonian (PySCF `GHF.x2c1e`, contracted
 basis). `x2c = false` is non-relativistic complex GHF (block-diagonal
 T+V). Two-electron integrals stay non-relativistic. `provides_force()`
@@ -600,7 +603,7 @@ The CPU call is Frame in / Frame out:
 
 ```cpp
 cpu::Frame frame = /* positions [Å], species in kAtom_type */;
-cpu::scf::ComplexGHF ghf{cpu::scf::BasisSet::STO3G}; // charge 0, tol 1e-10, max_iter 80
+cpu::scf::ComplexGHF ghf{cpu::scf::BasisSet::STO3G}; // charge 0, tol 1e-10, max_iter 80, x2c true
 ghf.run(frame);   // kEnergy and kEnergyElectronic [eV]; ghf.energy() [Ha]
 ```
 
