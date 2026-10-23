@@ -18,8 +18,9 @@ a fresh SCF on it (`cpu/scf/post_hf.h`, mirroring `pyscf.cc.CCSD(mf)`):
   `cpu::Driver<cc::Phase>` (`update → mix → energy → check`). See
   [Call](#call). The EOM members are documented in
   [scf-eom-cc.md](scf-eom-cc.md).
-- `cpu::scf::CC2<RHF>{rhf}` — `run(frame)` → `CC2Result`; `eom_cc2` roots are
-  [`eom-cc2-h2`](scf-eom-cc.md#eom-cc2-h2).
+- `cpu::scf::CC2<RHF>{rhf, diis, tol, max_iter}` —
+  `cpu::Driver<cc::Phase>` (`update → mix → energy → check`). `eom_cc2`
+  roots are [`eom-cc2-h2`](scf-eom-cc.md#eom-cc2-h2).
 
 ### Call
 
@@ -55,12 +56,14 @@ const cpu::scf::GradientResult grad = ccsd.forces(frame);
 // grad.forces [eV/Å], grad.energy [eV]; frame kAtom_f* and kEnergy overwritten
 ```
 
-`CCSD::run` solves the closed-shell **spatial-orbital** amplitude equations
-(\(n_o^2 n_v^2\) storage) with amplitude DIIS; `ccsd_t` and `CC2::run` use the
-**spin-orbital** Gauss–Stanton kernel (Stanton et al. 1991; Gauss & Stanton
-1995 Table III; occupied spin-orbitals α then β over spatial occupied MOs,
-virtuals likewise). The `ccsd-spatial-so-parity` section of the case (H₂O /
-STO-3G; oracle record in the case `REFERENCE.md`) gates the spatial path
+`CCSD::run` and `CC2::run` solve the closed-shell **spatial-orbital**
+amplitude equations (\(n_o^2 n_v^2\) storage) with amplitude DIIS. CC2's
+doubles residual is the `cc.cc2` branch of `rccsd.update_amps` (full
+singles; \(T_2\) at most linear in \(T_2\)). `ccsd_t` and the EOM amplitude
+solves use the **spin-orbital** Gauss–Stanton kernel (Stanton et al. 1991;
+Gauss & Stanton 1995 Table III; occupied spin-orbitals α then β over spatial
+occupied MOs, virtuals likewise). The `ccsd-spatial-so-parity` section of
+the case (H₂O / STO-3G; oracle record in the case `REFERENCE.md`) gates the spatial path
 against the spin-orbital kernel and against plain Jacobi to ≤ 1e-9 Ha, and
 against the PySCF pin to ≤ 1e-6 Ha. All sections run on CPU.
 
@@ -412,15 +415,23 @@ with the CCSD energy expression once the amplitudes are known.
 **CC2 truncation** (Christiansen, Koch & Jørgensen, CPL **243**, 409 (1995)):
 
 - **Singles residual:** full CCSD singles equations (all terms retained).
-- **Doubles residual:** at most **linear** in \(T_2\), with the Fock operator
-  \(T_1\)-dressed; **no** quadratic \(T_2\) ring / ladder contributions that
-  appear in full CCSD.
-- Iteration: Jacobi micro-steps on \(t_1,t_2\) until max\(|\Delta t|\) falls
-  below the internal tolerance; the gate also requires `converged == true`.
+- **Doubles residual:** at most **linear** in \(T_2\); **no** quadratic
+  \(T_2\) ring / ladder contributions that appear in full CCSD. On a
+  canonical HF reference the \(T_1\)-only Fock dressings \(L_{vv}^{(2)}\)
+  and \(L_{oo}^{(2)}\) vanish (`fov = 0`; orbital energies sit in the
+  denominator).
+- Iteration: `Driver<cc::Phase>` (`update → mix → energy → check`).
+  max\(|\Delta t|\) is published on `ConvergenceMetrics::residual`.
+  `AmplitudeConverged` decides. The method does not assign convergence.
+  `diis = false` is Jacobi, the same fixed point. The gate requires
+  `converged == true`.
 
-**Spin treatment.** Spin-orbital residual path shared with the CCSD kernel
-(`ccsd_solve(..., cc2=true)`), matching PySCF `rccsd.RCCSD` with `cc2=True`
-on the same RHF orbitals.
+**Spin treatment.** Spatial-orbital residual (`CcsdSpatialCycle` with
+`cc2`), PySCF 2.14.0 `pyscf/cc/rccsd.py` `update_amps` when `cc.cc2`, and
+`rccsd.energy`. The loop order is `pyscf/cc/ccsd.py` `kernel`
+(`update_amps`, `run_diis`, `energy`); `RCCSD.kernel` calls
+`CCSDBase.ccsd`. EOM-CC2 still reads spin-orbital amplitudes from
+`ccsd_solve(..., cc2=true)`.
 
 **Scope.** Energy only — no \(\Lambda\), no densities, no analytic gradient.
 On H₂/STO-3G CC2 \(E_{\mathrm{corr}}\) equals RMP2; full CCSD / FCI
@@ -429,21 +440,21 @@ On H₂/STO-3G CC2 \(E_{\mathrm{corr}}\) equals RMP2; full CCSD / FCI
 ### Implementation
 
 ```cpp
-cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
-rhf.tol = 1e-12;
-rhf.max_iter = 100;
-
-const cpu::scf::CC2Result cc2 =
-    cpu::scf::CC2<cpu::scf::RHF>{rhf}.run(frame);
-// cc2.e_corr, cc2.e_tot [Ha]; cc2.converged; cc2.iterations
+cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
+cpu::scf::CC2<cpu::scf::RHF> cc2{rhf}; // diis true, tol 1e-10, max_iter 100
+const cpu::scf::CC2Result energy = cc2.run(frame); // overwrite kEnergy [eV]
+double e_ev = frame.meta.get(kEnergy);             // correlated total [eV]
+double e_ha = energy.e_tot;                        // Hartree
+bool ok = cc2.converged();                         // Criterion verdict
 ```
 
 | Path | Role |
 | ---- | ---- |
-| `post_hf.h` | `CC2<Method>` |
+| `post_hf.h` | `CC2<Method>` : `cpu::Driver<cc::Phase>` |
 | `cc2.h` | Public `CC2Result` |
-| `ccsd_pack.h` | Private `cc2_energy` |
-| `src/cpu/scf/ccsd.cpp` | Shared residual / energy (`cc2` flag) |
+| `internal/ccsd_spatial.h` | One amplitude step (`cc2` branch of `update_amps`) |
+| `src/cpu/scf/ccsd.cpp` | Spin-orbital amplitudes for EOM-CC2 only |
 
 ### Validation (vs PySCF)
 
@@ -480,8 +491,9 @@ python <pyscf pin> cc2 \
 - Energy only on closed-shell RHF; no UCC2, no λ / density, no analytic
   gradient or Hessian.
 - On H₂/STO-3G, CC2 is **not** a numerical stress of the approximate-CC
-  doubles truncation relative to MP2 (\(T_1 \approx 0\)); multi-electron /
-  multi-MO systems are needed to exercise the CC2 residual difference.
+  doubles truncation relative to MP2 (\(T_1 \approx 0\)).
+  [cc2-h2o-sto3g](#cc2-h2o-sto3g) is that stress: \(\lVert T_1\rVert \approx 9.7\times 10^{-3}\)
+  and \(E_{\mathrm{corr}}\) differs from MP2 by \(1.23\times 10^{-4}\) Ha.
 - Open-shell / higher CC / local / DF remain ○ — see
   `docs/roadmap/post-hf.md`, `docs/roadmap/excited-states.md`.
 
@@ -491,3 +503,33 @@ python <pyscf pin> cc2 \
   coupled cluster singles and doubles model CC2*, *Chem. Phys. Lett.*
   **243**, 409 (1995). DOI
   [10.1016/0009-2614(95)00841-Q](https://doi.org/10.1016/0009-2614(95)00841-Q)
+
+## cc2-h2o-sto3g — CC2, H₂O / STO-3G {#cc2-h2o-sto3g}
+
+### Summary
+
+Same `CC2<RHF>::run` as [cc2-h2-sto3g](#cc2-h2-sto3g), on the `pin_scf`
+water geometry. PySCF reports \(\lVert T_1\rVert = 9.663220868048\times 10^{-3}\),
+so the singles residual is exercised. CC2 \(E_{\mathrm{corr}}\) is
+**−0.035668770406499 Ha**, 1.231e-4 Ha below MP2
+(**−0.035545651646918 Ha**) on the same RHF reference. Oracle: PySCF 2.14.0
+`cc.rccsd.RCCSD` with `cc2=True`.
+
+### Validation (vs PySCF)
+
+| Quantity | Pin | Tol | Notes |
+| -------- | --: | --- | ----- |
+| \(E_{\mathrm{RHF}}\) | −74.963023138462859 Ha | \(10^{-6}\) Ha | Diagnostic |
+| \(E_{\mathrm{corr}}\) (CC2) | **−0.035668770406499 Ha** | **\(10^{-6}\) Ha** | Gate |
+| \(E_{\mathrm{tot}}\) (CC2) | **−74.998691908869361 Ha** | **\(10^{-6}\) Ha** | Gate |
+| Amplitudes | — | `converged == true` | Gate |
+| Not MP2 | \(\lvert E_{\mathrm{corr,CC2}} - E_{\mathrm{corr,MP2}}\rvert = 1.231\times 10^{-4}\) Ha | \(> 10^{-6}\) Ha | Gate |
+| `kEnergy` | \(E_{\mathrm{tot}}\times\) Ha→eV | \(10^{-8}\) eV | `run(Frame&)` overwrite |
+| `run(const Frame&)` | no `kEnergy` write | — | Gate |
+
+Oracle repro (offline only):
+
+```bash
+python tools/pyscf_oracle/pin_scf.py cc2 \
+    --geom water --basis sto-3g --conv-tol 1e-12
+```

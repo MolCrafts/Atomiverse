@@ -6,7 +6,6 @@
 
 #include <xtensor/containers/xtensor.hpp>
 
-#include "atomiverse/cpu/scf/cc2.h"
 #include "atomiverse/cpu/scf/ccsd.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
@@ -49,9 +48,10 @@ struct CCSDSolution {
     int n_vir_b = 0;
 };
 
-/// The closed-shell product energy is `CCSD::run` (`Driver<cc::Phase>` over
-/// the spatial cycle). Spin-orbital `ccsd_solve` remains the amplitude source
-/// for CCSD(T), CC2, and EOM.
+/// The closed-shell product energies are `CCSD::run` and `CC2::run`
+/// (`Driver<cc::Phase>` over the spatial cycle; CC2 sets `cc2`).
+/// Spin-orbital `ccsd_solve` remains the amplitude source for CCSD(T) and
+/// EOM, including EOM-CC2 (`cc2=true`).
 
 /// @brief Closed-shell CCSD(T): CCSD amplitudes + non-iterative (T).
 ///
@@ -78,22 +78,6 @@ CCSDSolution ccsd_solve(const internal::IntegralView& ints,
                         const SlaterDeterminant& det, double e_scf_ha,
                         double tol = 1e-10, int max_iter = 100,
                         bool cc2 = false);
-
-/// @brief Closed-shell CC2 correlation energy (Christiansen–Koch–Jørgensen).
-///
-/// Spin-orbital CCSD infrastructure with the CC2 T₂
-/// truncation. Matches PySCF `cc.RCCSD(mf)` with `cc2=True`.
-///
-/// @param ints     Integral pack with the dense ERI tensor materialized.
-/// @param det      Converged closed-shell determinant (MO coeffs, ε, n_e).
-/// @param e_scf_ha Converged SCF total energy [Hartree].
-/// @param tol      Amplitude residual tolerance (dimensionless max-norm).
-/// @param max_iter Jacobi iteration budget (dimensionless).
-/// @return CC2 correlation and total energies [Hartree].
-/// @throws std::invalid_argument on open-shell / missing ERI / non-convergence.
-CC2Result cc2_energy(const internal::IntegralView& ints,
-                     const SlaterDeterminant& det, double e_scf_ha,
-                     double tol = 1e-10, int max_iter = 100);
 
 /// @brief Unrestricted (UHF) spin-orbital CCSD — same Gauss–Stanton
 ///        equations as `ccsd_solve`, with independent α/β MO coefficients
