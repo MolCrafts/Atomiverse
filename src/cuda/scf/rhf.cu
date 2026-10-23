@@ -13,7 +13,10 @@
 /// **Forces:** STO-3G s/p analytic on device (`launch_rhf_forces_sp`).
 /// Any other energy with forces requested throws
 /// `launch_rhf_forces_lgt1`. Use `with_gradient(false)` for that energy,
-/// or `cpu::scf::RHF` for gradients.
+/// or `cpu::scf::RHF` for gradients. `run(const Frame&)` does not request
+/// forces and does not write the host Frame. The total is PySCF
+/// `scf.hf.energy_tot` (`energy_elec` + nuclear repulsion), stored on
+/// `energy()` [Hartree].
 
 #ifdef ATV_HAS_HF
 
@@ -271,7 +274,8 @@ void RHF::release_engine_() {
     loop_->slot.frame = nullptr;
 }
 
-void RHF::assemble_(cuda::Context& ctx, cuda::Frame& frame) {
+void RHF::assemble_(cuda::Context& ctx, cuda::Frame& frame,
+                    bool nuclear_forces) {
     const int natm = frame.n_atoms();
     if (natm <= 0) {
         throw std::invalid_argument(
@@ -298,7 +302,7 @@ void RHF::assemble_(cuda::Context& ctx, cuda::Frame& frame) {
               "l<=3 sandwiches with CartToSph). l>=4 needs launch_eri_g. "
               "No host ERI fill — use cpu::scf::RHF for this basis.");
     }
-    if (compute_force
+    if (nuclear_forces
         && route.kind != cpu::scf::internal::CudaRhfRouteKind::Sto3gSp) {
         throw std::invalid_argument(
             std::string("cuda::scf::RHF::forces: missing kernel ")
@@ -390,13 +394,14 @@ void RHF::step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step) {
     }
 }
 
-int RHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
+int RHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
+                     bool nuclear_forces) {
     struct Guard {
         RHF* self;
         ~Guard() { self->release_engine_(); }
     } guard{this};
 
-    assemble_(ctx, frame);
+    assemble_(ctx, frame, nuclear_forces);
     const bool device = loop_->slot.cycle->device_integrals();
     loop_->slot.cycle->begin(ctx.stream);
 
@@ -416,7 +421,7 @@ int RHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
             break;
     }
     loop_->slot.cycle->finish(ctx.stream);
-    if (compute_force)
+    if (nuclear_forces)
         assemble_forces_(ctx, frame);
     pull_energy_(ctx, frame);
     this->iterations_ = iters;
@@ -431,7 +436,18 @@ void RHF::build_on(cuda::Context&, cuda::Frame&) {
 }
 
 int RHF::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame, int budget) {
-    return drive_loop_(ctx, frame, budget);
+    return drive_loop_(ctx, frame, budget, compute_force);
+}
+
+void RHF::release_backend_() {
+    if (!this->backend_)
+        return;
+    if (this->backend_->context().stream)
+        this->backend_->sync();
+    this->backend_->destroy_components();
+    this->backend_->shutdown();
+    this->backend_.reset();
+    this->built_plugins_.clear();
 }
 
 void RHF::destroy_on(cuda::Context&, cuda::Frame&) { release_engine_(); }
@@ -441,12 +457,28 @@ void RHF::run(cpu::Frame& frame) {
     this->setup_pass(frame);
     try {
         drive_loop_(this->backend_->context(), this->backend_->frame(),
-                    max_iter);
+                    max_iter, compute_force);
     } catch (...) {
         this->teardown_pass(frame);
         throw;
     }
     this->teardown_pass(frame);
+}
+
+void RHF::run(const cpu::Frame& frame) {
+    // Scratch so setup cannot touch the caller's columns. No retrieve:
+    // to_cpu would overwrite positions, forces, and kEnergy.
+    cpu::Frame scratch(frame);
+    cache_host_types(scratch);
+    this->setup_pass(scratch);
+    try {
+        drive_loop_(this->backend_->context(), this->backend_->frame(),
+                    max_iter, /*nuclear_forces=*/false);
+        release_backend_();
+    } catch (...) {
+        release_backend_();
+        throw;
+    }
 }
 
 cpu::scf::GradientResult RHF::forces(cpu::Frame& frame) {

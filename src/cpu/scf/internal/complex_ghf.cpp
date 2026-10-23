@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -440,15 +441,6 @@ ComplexMatrix HermitianDiis::next(const ComplexMatrix& fock,
     return pulay(fock_, error_);
 }
 
-bool TwoStepEnergy::converged(double energy, double tol) {
-    const bool close = seen_ && std::abs(energy - previous_) < tol;
-    const bool done = close && was_close_;
-    was_close_ = close;
-    previous_ = energy;
-    seen_ = true;
-    return done;
-}
-
 Spnucsp int1e_spnucsp(const ShellList& shells, const AtomList& atoms) {
     for (const native::Shell& sh : shells.shells) {
         if (sh.l > kMaxLOrbital)
@@ -612,77 +604,108 @@ ComplexMatrix x2c1e_get_hcore(const ComplexMatrix& t, const ComplexMatrix& v,
     return h1;
 }
 
-ComplexGhfEnergy complex_ghf_energy(const Frame& frame, BasisSet basis,
-                                    int charge, double tol, int max_iter,
-                                    bool x2c) {
-    if (!(tol > 0.0) || max_iter < 1)
-        throw std::invalid_argument(
-            "complex_ghf: tol must be positive and max_iter >= 1");
-    IntegralWorkspace pack{frame,
-                           basis,
-                           charge,
-                           /*compute_eri=*/true,
-                           {},
-                           {},
-                           /*compute_pvp=*/x2c};
-    if (pack.ERI.size() == 0)
-        throw std::runtime_error(
-            "complex_ghf: stored dense ERI is required (ghf.get_jk)");
-    const int n_elec = pack.n_electrons;
-    const int nao = pack.n_basis;
-    if (n_elec <= 0 || n_elec > 2 * nao)
-        throw std::invalid_argument(
-            "complex_ghf: electron count " + std::to_string(n_elec)
-            + " does not fit in " + std::to_string(2 * nao) + " spinors");
-
+struct ComplexGhfCycle {
+    IntegralWorkspace pack;
     CMat h;
-    if (x2c) {
-        AtomList atoms{frame, charge};
-        ShellList shells{atoms, basis};
-        Spnucsp q = int1e_spnucsp(shells, atoms);
-        if (pack.spherical()) {
-            q.x = sandwich(q.x, pack.c2s);
-            q.y = sandwich(q.y, pack.c2s);
-            q.z = sandwich(q.z, pack.c2s);
-            q.s = sandwich(q.s, pack.c2s);
-        }
-        const CMat t = block_diag_real(pack.T);
-        const CMat v = block_diag_real(pack.V);
-        const CMat s = block_diag_real(pack.S);
-        const CMat w = sigma_dot(q.x, q.y, q.z, q.s);
-        h = x2c1e_get_hcore(t, v, w, s, kLightSpeedAU);
-    } else {
-        h = block_diag_real(pack.Hcore);
-    }
-    const CMat S = block_diag_real(pack.S);
-    // init_guess_by_1e: diagonalize hcore (ghf.GHF supports it; the
-    // X2C core is already complex, so the guess is a spinor).
-    GenEigen guess = eigh_generalized(h, S, 1e-8);
-    CMat P = make_rdm1(guess, n_elec);
-
-    TwoStepEnergy gate;
+    CMat S;
+    CMat P;
+    CMat F;
+    GenEigen orbitals;
     HermitianDiis diis;
-    ComplexGhfEnergy result;
-    for (int iter = 1; iter <= max_iter; ++iter) {
-        CMat F = ghf_fock(h, pack.ERI, P);
-        CMat vhf = F;
-        for (int i = 0; i < static_cast<int>(h.shape(0)); ++i)
-            for (int j = 0; j < static_cast<int>(h.shape(1)); ++j)
-                vhf(i, j) -= h(i, j);
-        const double e_elec = real_trace_ji(h, P) + 0.5 * real_trace_ji(vhf, P);
-        const double e = e_elec + pack.V_nuc;
-        result.hartree = e;
-        result.iterations = iter;
-        if (gate.converged(e, tol)) {
-            result.converged = true;
-            return result;
+    int n_elec = 0;
+    double energy = 0.0;
+    double previous = 0.0;
+    bool have_previous = false;
+
+    ComplexGhfCycle(const Frame& frame, BasisSet basis, int charge, bool x2c)
+        : pack(frame, basis, charge, /*compute_eri=*/true, {}, {},
+               /*compute_pvp=*/x2c) {
+        if (pack.ERI.size() == 0)
+            throw std::runtime_error(
+                "complex_ghf: stored dense ERI is required (ghf.get_jk)");
+        n_elec = pack.n_electrons;
+        const int nao = pack.n_basis;
+        if (n_elec <= 0 || n_elec > 2 * nao)
+            throw std::invalid_argument(
+                "complex_ghf: electron count " + std::to_string(n_elec)
+                + " does not fit in " + std::to_string(2 * nao) + " spinors");
+        if (x2c) {
+            // GHF.x2c1e → SpinOrbitalX2CHelper.get_hcore / _x2c1e_get_hcore.
+            AtomList atoms{frame, charge};
+            ShellList shells{atoms, basis};
+            Spnucsp q = int1e_spnucsp(shells, atoms);
+            if (pack.spherical()) {
+                q.x = sandwich(q.x, pack.c2s);
+                q.y = sandwich(q.y, pack.c2s);
+                q.z = sandwich(q.z, pack.c2s);
+                q.s = sandwich(q.s, pack.c2s);
+            }
+            const CMat t = block_diag_real(pack.T);
+            const CMat v = block_diag_real(pack.V);
+            const CMat s = block_diag_real(pack.S);
+            const CMat w = sigma_dot(q.x, q.y, q.z, q.s);
+            h = x2c1e_get_hcore(t, v, w, s, kLightSpeedAU);
+        } else {
+            // GHF.get_hcore: block_diag(T+V, T+V).
+            h = block_diag_real(pack.Hcore);
         }
-        const CMat Fnext = diis.next(F, commutator(F, P, S));
-        const GenEigen sol = eigh_generalized(Fnext, S, 1e-8);
-        P = make_rdm1(sol, n_elec);
+        // GHF.get_ovlp: block_diag(S, S).
+        S = block_diag_real(pack.S);
+        // init_guess_by_1e: occupy the core Hamiltonian (hf.kernel dm0).
+        F = h;
     }
-    result.converged = false;
-    return result;
+};
+
+void complex_ghf_cycle_delete(ComplexGhfCycle* cycle) { delete cycle; }
+
+void complex_ghf_cycle_fock(ComplexGhfCycle& c) {
+    // GHF.get_jk / get_veff: F = h + J − K. energy_elec traces this
+    // density, not the one the following eig builds. energy_tot adds Enn.
+    c.F = ghf_fock(c.h, c.pack.ERI, c.P);
+    CMat vhf = c.F;
+    const int n = static_cast<int>(c.h.shape(0));
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            vhf(i, j) -= c.h(i, j);
+    const double e_elec =
+        real_trace_ji(c.h, c.P) + 0.5 * real_trace_ji(vhf, c.P);
+    c.energy = e_elec + c.pack.V_nuc;
+}
+
+void complex_ghf_cycle_mix(ComplexGhfCycle& c) {
+    // hf.get_fock with DIIS: extrapolate F on the [F, P] commutator.
+    c.F = c.diis.next(c.F, commutator(c.F, c.P, c.S));
+}
+
+void complex_ghf_cycle_diagonalize(ComplexGhfCycle& c) {
+    // hf.kernel eig.
+    c.orbitals = eigh_generalized(c.F, c.S, 1e-8);
+}
+
+void complex_ghf_cycle_density(ComplexGhfCycle& c) {
+    // GHF.get_occ (occupation 1, energies rounded to 9 decimals) then
+    // hf.make_rdm1.
+    c.P = make_rdm1(c.orbitals, c.n_elec);
+}
+
+ComplexGhfCycleOwner complex_ghf_cycle_open(const Frame& frame, BasisSet basis,
+                                            int charge, bool x2c) {
+    ComplexGhfCycleOwner own(new ComplexGhfCycle(frame, basis, charge, x2c),
+                             &complex_ghf_cycle_delete);
+    complex_ghf_cycle_diagonalize(*own);
+    complex_ghf_cycle_density(*own);
+    return own;
+}
+
+double complex_ghf_cycle_energy(const ComplexGhfCycle& c) { return c.energy; }
+
+double complex_ghf_cycle_delta(ComplexGhfCycle& c) {
+    const double delta = c.have_previous
+                             ? std::abs(c.energy - c.previous)
+                             : std::numeric_limits<double>::infinity();
+    c.previous = c.energy;
+    c.have_previous = true;
+    return delta;
 }
 
 } // namespace internal

@@ -811,27 +811,6 @@ def main() -> int:
         out["e_tot_mp4_ha"] = float(e) + e_corr
         out["e_corr_mp2_pyscf_ha"] = float(m2.e_corr)
         out["oracle"] = "rspt4_det_on_pyscf_rhf_ao2mo"
-    elif m == "cc2":
-        # Closed-shell CC2 (Christiansen 1995). Stock PySCF has no cc.CC2;
-        # oracle is rccsd.RCCSD with cc2=True (same as rccsd_slow).
-        import numpy as _np
-        from pyscf.cc import rccsd as _rccsd
-
-        mycc = _rccsd.RCCSD(mf)
-        mycc.conv_tol = min(args.conv_tol, 1e-10)
-        mycc.conv_tol_normt = min(args.conv_tol, 1e-10)
-        mycc.cc2 = True
-        e_corr, t1, t2 = mycc.kernel()
-        out["e_hf_ha"] = float(e)
-        out["e_corr_ha"] = float(e_corr)
-        out["e_tot_cc2_ha"] = float(mycc.e_tot)
-        out["e_tot_ha"] = float(mycc.e_tot)
-        out["cc2_converged"] = bool(mycc.converged)
-        t1a = _np.asarray(t1).ravel()
-        t2a = _np.asarray(t2).ravel()
-        out["t1_norm"] = float(_np.sqrt(t1a.dot(t1a)))
-        out["t2_norm"] = float(_np.sqrt(t2a.dot(t2a)))
-        out["oracle"] = "pyscf_cc_rccsd_cc2"
     elif m == "direct-rpa":
         # Exact dRPA correlation (Furche plasmon) on RHF orbitals + MO ERIs.
         # Stock pyscf.gw.rpa.RPA uses DF + Legendre quadrature (near twin).
@@ -900,7 +879,7 @@ def main() -> int:
         out["nstates"] = int(args.nstates)
         out["sf_channel"] = "eomsf_ccsd"
     else:
-        # tda / tdhf / mp2 / mp3 / ccsd ground state: RHF
+        # tda / tdhf / mp2 / mp3 / ccsd / cc2 ground state: RHF
         mf = scf.RHF(mol)
 
 
@@ -1458,6 +1437,28 @@ def main() -> int:
         out["omega_ev"] = (e_eom * _HA_TO_EV).tolist()
         out["omega0_ev"] = float(e_eom[0] * _HA_TO_EV)
         out["nstates"] = int(args.nstates)
+    elif m == "cc2":
+        # Closed-shell CC2 (Christiansen 1995). Stock PySCF has no cc.CC2;
+        # oracle is rccsd.RCCSD with cc2=True (same as rccsd_slow).
+        # Runs after the RHF kernel: the amplitude object needs `mf`.
+        import numpy as _np
+        from pyscf.cc import rccsd as _rccsd
+
+        mycc = _rccsd.RCCSD(mf)
+        mycc.conv_tol = min(args.conv_tol, 1e-10)
+        mycc.conv_tol_normt = min(args.conv_tol, 1e-10)
+        mycc.cc2 = True
+        e_corr, t1, t2 = mycc.kernel()
+        out["e_hf_ha"] = float(e)
+        out["e_corr_ha"] = float(e_corr)
+        out["e_tot_cc2_ha"] = float(mycc.e_tot)
+        out["e_tot_ha"] = float(mycc.e_tot)
+        out["cc2_converged"] = bool(mycc.converged)
+        t1a = _np.asarray(t1).ravel()
+        t2a = _np.asarray(t2).ravel()
+        out["t1_norm"] = float(_np.sqrt(t1a.dot(t1a)))
+        out["t2_norm"] = float(_np.sqrt(t2a.dot(t2a)))
+        out["oracle"] = "pyscf_cc_rccsd_cc2"
     elif m == "eom-cc2":
         # Singlet EOM-CC2: RCCSD(cc2=True) + eomee_ccsd_singlet (full EE
         # Jacobian at CC2 amplitudes — stock PySCF has no top-level EOMCC2).

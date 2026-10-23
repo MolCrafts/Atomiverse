@@ -11,10 +11,13 @@
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
+#include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/scf/internal/casci_pack.h"
-#include "atomiverse/cpu/scf/internal/casscf_pack.h"
+#include "atomiverse/cpu/scf/internal/casscf_cycle.h"
 #include "atomiverse/cpu/scf/internal/ccsd_gradient.h"
 #include "atomiverse/cpu/scf/internal/ccsd_pack.h"
+#include "atomiverse/cpu/scf/internal/ccsd_spatial.h"
 #include "atomiverse/cpu/scf/internal/dispersion.h"
 #include "atomiverse/cpu/scf/internal/eom_cc2_pack.h"
 #include "atomiverse/cpu/scf/internal/eom_ea_ccsd_pack.h"
@@ -76,6 +79,163 @@ void drive_converged(Method& mf, Frame& frame, const SCFInitialGuess* guess,
               "correlation correction on a non-stationary determinant "
               "(no fallback)");
 }
+
+/// One plan op per CC amplitude phase. Math is `CcsdSpatialCycle`.
+class AmpStage : public cpu::Component {
+  public:
+    enum class Kind { Update, Mix, Energy, Check };
+
+    AmpStage(std::unique_ptr<CcsdSpatialCycle>* cycle, Kind kind,
+             const char* prefix, const char* who)
+        : cycle_(cycle), kind_(kind), prefix_(prefix), who_(who) {}
+
+    std::string name() const override {
+        const char* tail = "update";
+        switch (kind_) {
+        case Kind::Update:
+            tail = "update";
+            break;
+        case Kind::Mix:
+            tail = "mix";
+            break;
+        case Kind::Energy:
+            tail = "energy";
+            break;
+        case Kind::Check:
+            tail = "check";
+            break;
+        }
+        return std::string(prefix_) + "_" + tail;
+    }
+
+    void launch(const cpu::LaunchContext& ctx) override {
+        // Bound to one phase, so the runtime only calls this on that phase.
+        if (!cycle_ || !*cycle_)
+            throw std::runtime_error(std::string(who_)
+                                     + ": amplitude cycle is not open");
+        CcsdSpatialCycle& cycle = **cycle_;
+        if (kind_ == Kind::Update) {
+            cycle.update();
+            return;
+        }
+        if (kind_ == Kind::Mix) {
+            cycle.mix();
+            return;
+        }
+        if (kind_ == Kind::Energy) {
+            cycle.energy();
+            return;
+        }
+        if (!ctx.runtime.loop.metrics)
+            throw std::runtime_error(
+                std::string(who_) + ": check stage has no ConvergenceMetrics");
+        const double ha = cycle.e_scf + cycle.e_corr;
+        ctx.runtime.loop.metrics->energy = ha * units::kHartreeInEv;
+        ctx.runtime.loop.metrics->residual = cycle.residual();
+    }
+
+  private:
+    std::unique_ptr<CcsdSpatialCycle>* cycle_ = nullptr;
+    Kind kind_ = Kind::Update;
+    const char* prefix_ = "ccsd";
+    const char* who_ = "cpu::scf::CCSD";
+};
+
+/// @brief max|Δt| on `ConvergenceMetrics::residual`. Does not assign
+///        convergence; `verdict` only returns a Verdict.
+class AmplitudeConverged : public cpu::Criterion {
+  public:
+    AmplitudeConverged(double tol, const char* name) : tol_(tol), name_(name) {}
+
+    std::string name() const override { return name_; }
+
+    bool contributes_to_convergence() const override { return true; }
+
+    void launch(const cpu::LaunchContext&) override {}
+
+    ATV::Verdict verdict(const cpu::LoopState& state) override {
+        if (state.metrics.residual < tol_)
+            return ATV::Verdict::Converged;
+        return ATV::Verdict::Continue;
+    }
+
+  private:
+    double tol_ = 0.0;
+    const char* name_ = "ccsd_amplitude";
+};
+
+/// One plan op per CASSCF macro phase. Math is `CasscfCycle`.
+class McStage : public cpu::Component {
+  public:
+    enum class Kind { Rotate, Casci, Gradient, Check };
+
+    McStage(std::unique_ptr<CasscfCycle>* cycle, Kind kind)
+        : cycle_(cycle), kind_(kind) {}
+
+    std::string name() const override {
+        switch (kind_) {
+        case Kind::Rotate:
+            return "casscf_rotate";
+        case Kind::Casci:
+            return "casscf_casci";
+        case Kind::Gradient:
+            return "casscf_gradient";
+        case Kind::Check:
+            return "casscf_check";
+        }
+        throw std::logic_error("cpu::scf::CASSCF: unknown stage");
+    }
+
+    void launch(const cpu::LaunchContext& ctx) override {
+        if (!cycle_ || !*cycle_)
+            throw std::runtime_error(
+                "cpu::scf::CASSCF: orbital cycle is not open");
+        CasscfCycle& cycle = **cycle_;
+        if (kind_ == Kind::Rotate) {
+            cycle.rotate();
+            return;
+        }
+        if (kind_ == Kind::Casci) {
+            cycle.casci();
+            return;
+        }
+        if (kind_ == Kind::Gradient) {
+            cycle.gradient();
+            return;
+        }
+        if (!ctx.runtime.loop.metrics)
+            throw std::runtime_error(
+                "cpu::scf::CASSCF: check stage has no ConvergenceMetrics");
+        ctx.runtime.loop.metrics->energy = cycle.e_cas * units::kHartreeInEv;
+        ctx.runtime.loop.metrics->residual = cycle.residual();
+    }
+
+  private:
+    std::unique_ptr<CasscfCycle>* cycle_ = nullptr;
+    Kind kind_ = Kind::Rotate;
+};
+
+/// @brief max |g_pq| on `ConvergenceMetrics::residual`. Does not assign
+///        convergence; `verdict` only returns a Verdict.
+class OrbitalGradientConverged : public cpu::Criterion {
+  public:
+    explicit OrbitalGradientConverged(double tol) : tol_(tol) {}
+
+    std::string name() const override { return "casscf_orbital"; }
+
+    bool contributes_to_convergence() const override { return true; }
+
+    void launch(const cpu::LaunchContext&) override {}
+
+    ATV::Verdict verdict(const cpu::LoopState& state) override {
+        if (state.metrics.residual < tol_)
+            return ATV::Verdict::Converged;
+        return ATV::Verdict::Continue;
+    }
+
+  private:
+    double tol_ = 0.0;
+};
 
 } // namespace
 
@@ -255,29 +415,213 @@ CASCIResult CASCI<Method>::run(Frame& frame, int ncas, int nelecas) {
 }
 
 template <typename Method>
-CASSCF<Method>::CASSCF(Method& mf) : mf_(&mf) {}
+struct CASSCF<Method>::Loop {
+    /// Opens one orbital cycle and drops it on every exit, including a throw.
+    struct Hold {
+        Loop* loop = nullptr;
+
+        Hold(Loop& loop_in, const internal::IntegralView& ints,
+             const SlaterDeterminant& det, double e_scf_ha, int ncas_in,
+             int nelecas_in)
+            : loop(&loop_in) {
+            loop->cycle = std::make_unique<CasscfCycle>(ints, det, e_scf_ha,
+                                                        ncas_in, nelecas_in);
+        }
+
+        ~Hold() {
+            if (loop)
+                loop->cycle.reset();
+        }
+
+        Hold(const Hold&) = delete;
+        Hold& operator=(const Hold&) = delete;
+    };
+
+    std::unique_ptr<CasscfCycle> cycle;
+    McStage rotate;
+    McStage casci;
+    McStage gradient;
+    McStage check;
+    OrbitalGradientConverged criterion;
+
+    explicit Loop(double tol_in)
+        : rotate(&cycle, McStage::Kind::Rotate),
+          casci(&cycle, McStage::Kind::Casci),
+          gradient(&cycle, McStage::Kind::Gradient),
+          check(&cycle, McStage::Kind::Check), criterion(tol_in) {}
+};
 
 template <typename Method>
-CASSCFResult CASSCF<Method>::run(Frame& frame, int ncas, int nelecas) {
-    Method& mf = *mf_;
-    refuse_ks(mf.method_, "CASSCF::run");
+CASSCF<Method>::CASSCF(Method& mf, int ncas_in, int nelecas_in)
+    : CASSCF(mf, ncas_in, nelecas_in, std::max(mf.tol, 1e-8), 50) {}
+
+template <typename Method>
+CASSCF<Method>::CASSCF(Method& mf, int ncas_in, int nelecas_in,
+                       double orb_tol_in, int max_macro_in)
+    : ncas(ncas_in), nelecas(nelecas_in), orb_tol(orb_tol_in),
+      max_macro(max_macro_in), mf_(&mf),
+      loop_(std::make_unique<Loop>(orb_tol_in)) {
+    if (ncas <= 0)
+        throw std::invalid_argument("CASSCF: ncas must be positive (got "
+                                    + std::to_string(ncas) + ")");
+    if (nelecas < 0 || (nelecas % 2) != 0)
+        throw std::invalid_argument(
+            "CASSCF: closed-shell CAS requires even nelecas (got "
+            + std::to_string(nelecas) + ")");
+    if (!(orb_tol > 0.0) || max_macro < 1)
+        throw std::invalid_argument(
+            "CASSCF: orb_tol must be positive and max_macro >= 1");
+    this->on(ATV::mc::Phase::rotate).add_ref(loop_->rotate);
+    this->on(ATV::mc::Phase::casci).add_ref(loop_->casci);
+    this->on(ATV::mc::Phase::gradient).add_ref(loop_->gradient);
+    this->on(ATV::mc::Phase::check).add_ref(loop_->check);
+    this->add_criterion_ref(loop_->criterion);
+    this->set_serial_on_replica();
+    this->build();
+}
+
+template <typename Method>
+CASSCF<Method>::~CASSCF() {
+    if (loop_)
+        loop_->cycle.reset();
+    this->shutdown();
+}
+
+template <typename Method>
+CASSCF<Method>::PriorEnergy CASSCF<Method>::capture(const Frame& frame) {
+    PriorEnergy prior;
+    if (frame.meta.contains(kEnergy.key)) {
+        prior.energy = true;
+        prior.energy_v = frame.meta.get(kEnergy);
+    }
+    if (frame.meta.contains(kEnergyElectronic.key)) {
+        prior.electronic = true;
+        prior.electronic_v = frame.meta.get(kEnergyElectronic);
+    }
+    return prior;
+}
+
+template <typename Method>
+void CASSCF<Method>::store_energy(Frame& frame, double e_ev, Write write,
+                                  const PriorEnergy& prior) {
+    if (!frame.meta.contains(kEnergy.key))
+        throw std::runtime_error(
+            "CASSCF: reference SCF did not publish kEnergy");
+    if (write == Write::Accumulate)
+        frame.meta.get(kEnergy) = (prior.energy ? prior.energy_v : 0.0) + e_ev;
+    else
+        frame.meta.get(kEnergy) = e_ev;
+    if (!frame.meta.contains(kEnergyElectronic.key))
+        return;
+    if (write == Write::Accumulate) {
+        frame.meta.get(kEnergyElectronic) =
+            (prior.electronic ? prior.electronic_v : 0.0) + e_ev;
+    } else {
+        frame.meta.get(kEnergyElectronic) = e_ev;
+    }
+}
+
+template <typename Method>
+CASSCFResult CASSCF<Method>::finish(Frame& frame, int executed, int cap,
+                                    Write write, const PriorEnergy& prior) {
+    if (!this->converged()) {
+        throw std::invalid_argument(
+            "CASSCF: orbital gradient did not converge in "
+            + std::to_string(cap)
+            + " macro iterations (orb_tol=" + std::to_string(orb_tol) + ").");
+    }
+    const CasscfCycle& cycle = *loop_->cycle;
+    executed_ = executed;
+    last_ = CASSCFResult{cycle.e_cas, cycle.e_cas - cycle.e_scf,
+                         ncas,        nelecas,
+                         cycle.ncore, executed,
+                         true};
+    if (write != Write::None)
+        store_energy(frame, last_.e_casscf * units::kHartreeInEv, write, prior);
+    return last_;
+}
+
+template <typename Method>
+void CASSCF<Method>::require_reference(const char* what) const {
+    const Method& mf = *mf_;
+    refuse_ks(mf.method_, what);
     if (mf.spin_ == SpinType::RestrictedOpen)
         throw std::invalid_argument(
-            "CASSCF::run: an ROHF reference is not supported — closed-shell "
-            "CASSCF requires RHF.");
+            std::string(what)
+            + ": an ROHF reference is not supported — closed-shell "
+              "CASSCF requires RHF.");
     if (mf.spin_ == SpinType::Generalized)
         throw std::invalid_argument(
-            "CASSCF::run: a GHF (spinor) reference is not supported — "
-            "closed-shell CASSCF requires RHF.");
+            std::string(what)
+            + ": a GHF (spinor) reference is not supported — "
+              "closed-shell CASSCF requires RHF.");
     if (mf.spin_ != SpinType::Restricted)
         throw std::invalid_argument(
-            "CASSCF::run: closed-shell RHF reference only — UHF CASSCF is not "
-            "implemented (no fallback). Use RHF.");
+            std::string(what)
+            + ": closed-shell RHF reference only — UHF CASSCF is not "
+              "implemented (no fallback). Use RHF.");
+}
+
+template <typename Method>
+CASSCFResult CASSCF<Method>::solve(Frame& frame, Write write, int cap,
+                                   cpu::Context* nested) {
+    require_reference("CASSCF::run");
+    if (!(orb_tol > 0.0) || cap < 1)
+        throw std::invalid_argument(
+            "CASSCF: orb_tol must be positive and max_macro >= 1");
+    const PriorEnergy prior = capture(frame);
+    Method& mf = *mf_;
     drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
                     "CASSCF::run");
-    return casscf_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                         ncas, nelecas, /*orb_tol=*/std::max(mf.tol, 1e-8),
-                         /*max_macro=*/50);
+    typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
+                             mf.energy(), ncas, nelecas);
+    if (nested) {
+        const int executed =
+            cpu::Driver<ATV::mc::Phase>::run_nested(*nested, frame, cap);
+        return finish(frame, executed, cap, write, prior);
+    }
+    this->setup_pass(frame);
+    try {
+        int executed = 0;
+        for (int it = 0; it < cap; ++it) {
+            this->mutable_outer_status().reset();
+            this->step_once(it);
+            ++executed;
+            if (this->poll_criteria_(it) != ATV::Verdict::Continue)
+                break;
+        }
+        const CASSCFResult result = finish(frame, executed, cap, write, prior);
+        this->teardown_pass();
+        return result;
+    } catch (...) {
+        this->teardown_pass();
+        throw;
+    }
+}
+
+template <typename Method>
+CASSCFResult CASSCF<Method>::run(Frame& frame) {
+    return solve(frame, Write::Overwrite, max_macro, nullptr);
+}
+
+template <typename Method>
+CASSCFResult CASSCF<Method>::run(const Frame& frame) {
+    Frame scratch(frame);
+    return run(scratch);
+}
+
+template <typename Method>
+int CASSCF<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                                      int budget) {
+    if (!ctx.exec.runtime)
+        throw std::runtime_error("cpu::scf::CASSCF: nested run has no Runtime");
+    if (ctx.exec.forces_requested)
+        throw std::invalid_argument(
+            "CASSCF: nuclear forces are not implemented — this method "
+            "provides energy only");
+    const int cap = budget > 0 ? budget : max_macro;
+    solve(frame, Write::Accumulate, cap, &ctx);
+    return executed_;
 }
 
 template <typename Method>
@@ -307,7 +651,150 @@ NEVPT2Result NEVPT2<Method>::run(Frame& frame, int ncas, int nelecas) {
 }
 
 template <typename Method>
-CCSD<Method>::CCSD(Method& mf) : mf_(&mf) {}
+struct CCSD<Method>::Loop {
+    /// Opens one amplitude cycle and drops it on every exit, including a throw.
+    struct Hold {
+        Loop* loop = nullptr;
+
+        Hold(Loop& loop_in, const internal::IntegralView& ints,
+             const SlaterDeterminant& det, double e_scf_ha, bool use_diis)
+            : loop(&loop_in) {
+            loop->cycle = std::make_unique<CcsdSpatialCycle>(
+                ints, det, e_scf_ha, use_diis);
+        }
+
+        ~Hold() {
+            if (loop)
+                loop->cycle.reset();
+        }
+
+        Hold(const Hold&) = delete;
+        Hold& operator=(const Hold&) = delete;
+    };
+
+    std::unique_ptr<CcsdSpatialCycle> cycle;
+    AmpStage update;
+    AmpStage mix;
+    AmpStage energy;
+    AmpStage check;
+    AmplitudeConverged criterion;
+
+    explicit Loop(double tol_in)
+        : update(&cycle, AmpStage::Kind::Update, "ccsd", "cpu::scf::CCSD"),
+          mix(&cycle, AmpStage::Kind::Mix, "ccsd", "cpu::scf::CCSD"),
+          energy(&cycle, AmpStage::Kind::Energy, "ccsd", "cpu::scf::CCSD"),
+          check(&cycle, AmpStage::Kind::Check, "ccsd", "cpu::scf::CCSD"),
+          criterion(tol_in, "ccsd_amplitude") {}
+};
+
+template <typename Method>
+CCSD<Method>::CCSD(Method& mf, bool diis_in, int frozen_in, double tol_in,
+                   int max_iter_in)
+    : diis(diis_in), frozen(frozen_in), tol(tol_in), max_iter(max_iter_in),
+      mf_(&mf), loop_(std::make_unique<Loop>(tol_in)) {
+    this->on(ATV::cc::Phase::update).add_ref(loop_->update);
+    this->on(ATV::cc::Phase::mix).add_ref(loop_->mix);
+    this->on(ATV::cc::Phase::energy).add_ref(loop_->energy);
+    this->on(ATV::cc::Phase::check).add_ref(loop_->check);
+    this->add_criterion_ref(loop_->criterion);
+    this->set_serial_on_replica();
+    this->build();
+}
+
+template <typename Method>
+CCSD<Method>::~CCSD() {
+    if (loop_)
+        loop_->cycle.reset();
+    this->shutdown();
+}
+
+template <typename Method>
+CCSD<Method>::PriorEnergy CCSD<Method>::capture(const Frame& frame) {
+    PriorEnergy prior;
+    if (frame.meta.contains(kEnergy.key)) {
+        prior.energy = true;
+        prior.energy_v = frame.meta.get(kEnergy);
+    }
+    if (frame.meta.contains(kEnergyElectronic.key)) {
+        prior.electronic = true;
+        prior.electronic_v = frame.meta.get(kEnergyElectronic);
+    }
+    return prior;
+}
+
+template <typename Method>
+void CCSD<Method>::store_energy(Frame& frame, double e_ev, Write write,
+                                const PriorEnergy& prior) {
+    if (!frame.meta.contains(kEnergy.key))
+        throw std::runtime_error("CCSD: reference SCF did not publish kEnergy");
+    if (write == Write::Accumulate)
+        frame.meta.get(kEnergy) = (prior.energy ? prior.energy_v : 0.0) + e_ev;
+    else
+        frame.meta.get(kEnergy) = e_ev;
+    if (!frame.meta.contains(kEnergyElectronic.key))
+        return;
+    if (write == Write::Accumulate) {
+        frame.meta.get(kEnergyElectronic) =
+            (prior.electronic ? prior.electronic_v : 0.0) + e_ev;
+    } else {
+        frame.meta.get(kEnergyElectronic) = e_ev;
+    }
+}
+
+template <typename Method>
+CCSDResult CCSD<Method>::finish(Frame& frame, int executed, int cap,
+                                Write write, const PriorEnergy& prior) {
+    if (!this->converged()) {
+        throw std::invalid_argument(
+            "ccsd_energy_spatial: amplitudes did not converge in "
+            + std::to_string(cap) + " iterations (tol=" + std::to_string(tol)
+            + ").");
+    }
+    const CcsdSpatialCycle& cycle = *loop_->cycle;
+    const double e_corr = cycle.e_corr;
+    const double e_scf = cycle.e_scf;
+    const int reported = cycle.trivial ? 0 : executed;
+    executed_ = executed;
+    last_ = CCSDResult{e_corr, e_scf + e_corr, reported, true};
+    if (write != Write::None) {
+        store_energy(frame, last_.e_tot * units::kHartreeInEv, write, prior);
+    }
+    return last_;
+}
+
+template <typename Method>
+CCSDResult CCSD<Method>::solve_amplitudes(Frame& frame, Write write,
+                                          const PriorEnergy& prior, int cap,
+                                          cpu::Context* nested) {
+    if (!(tol > 0.0) || cap < 1)
+        throw std::invalid_argument(
+            "CCSD: tol must be positive and max_iter >= 1");
+    Method& mf = *mf_;
+    typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
+                             mf.energy(), diis);
+    if (nested) {
+        const int executed =
+            cpu::Driver<ATV::cc::Phase>::run_nested(*nested, frame, cap);
+        return finish(frame, executed, cap, write, prior);
+    }
+    this->setup_pass(frame);
+    try {
+        int executed = 0;
+        for (int it = 0; it < cap; ++it) {
+            this->mutable_outer_status().reset();
+            this->step_once(it);
+            ++executed;
+            if (this->poll_criteria_(it) != ATV::Verdict::Continue)
+                break;
+        }
+        const CCSDResult result = finish(frame, executed, cap, write, prior);
+        this->teardown_pass();
+        return result;
+    } catch (...) {
+        this->teardown_pass();
+        throw;
+    }
+}
 
 template <typename Method>
 CCSDResult CCSD<Method>::run(Frame& frame) {
@@ -317,14 +804,20 @@ CCSDResult CCSD<Method>::run(Frame& frame) {
         throw std::invalid_argument(
             "CCSD::run: closed-shell RHF reference only — UHF / ROHF / GHF "
             "CCSD is not implemented (no fallback). Use RHF.");
+    const PriorEnergy prior = capture(frame);
     drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CCSD::run");
-    return ccsd_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                       /*tol=*/1e-10, /*max_iter=*/100, /*use_diis=*/diis);
+    return solve_amplitudes(frame, Write::Overwrite, prior, max_iter, nullptr);
 }
 
 template <typename Method>
-GradientResult CCSD<Method>::forces(Frame& frame,
-                                    const SCFInitialGuess* guess) {
+CCSDResult CCSD<Method>::run(const Frame& frame) {
+    Frame scratch(frame);
+    return run(scratch);
+}
+
+template <typename Method>
+GradientResult CCSD<Method>::compute_forces(Frame& frame, Write write,
+                                            cpu::Context* nested) {
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CCSD::forces");
     if (mf.spin_ != SpinType::Restricted)
@@ -339,15 +832,59 @@ GradientResult CCSD<Method>::forces(Frame& frame,
         throw std::invalid_argument(
             "CCSD::forces: frozen-core CCSD gradients are not implemented — "
             "set frozen=0");
-    drive_converged(mf, frame, guess, /*materialize_eri=*/true, "CCSD::forces");
+    const PriorEnergy prior = capture(frame);
+    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
+                    "CCSD::forces");
     const CCSDResult corr =
-        ccsd_energy(mf.integral_view_(), mf.determinant(), mf.energy());
+        solve_amplitudes(frame, Write::None, prior, max_iter, nested);
     GradientResult gr = internal::ccsd_analytic_forces(
         frame, mf.integral_view_(), mf.determinant(), mf.energy(), corr.e_corr);
     internal::add_dispersion_forces(frame, mf.d3bj, mf.d4, gr);
     mf.last_grad_ = gr;
-    write_gradient(frame, gr);
+    AccReal* __restrict fx = frame.span(kAtom_fx);
+    AccReal* __restrict fy = frame.span(kAtom_fy);
+    AccReal* __restrict fz = frame.span(kAtom_fz);
+    const int natm = static_cast<int>(frame.nlocal());
+    for (int A = 0; A < natm; ++A) {
+        if (write == Write::Accumulate) {
+            fx[A] += gr.forces(A, 0);
+            fy[A] += gr.forces(A, 1);
+            fz[A] += gr.forces(A, 2);
+        } else {
+            fx[A] = gr.forces(A, 0);
+            fy[A] = gr.forces(A, 1);
+            fz[A] = gr.forces(A, 2);
+        }
+    }
+    store_energy(frame, gr.energy, write, prior);
     return gr;
+}
+
+template <typename Method>
+GradientResult CCSD<Method>::forces(Frame& frame) {
+    return compute_forces(frame, Write::Overwrite, nullptr);
+}
+
+template <typename Method>
+int CCSD<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                                    int budget) {
+    if (!ctx.exec.runtime)
+        throw std::runtime_error("cpu::scf::CCSD: nested run has no Runtime");
+    if (ctx.exec.forces_requested) {
+        compute_forces(frame, Write::Accumulate, &ctx);
+        return executed_;
+    }
+    Method& mf = *mf_;
+    refuse_ks(mf.method_, "CCSD::run");
+    if (mf.spin_ != SpinType::Restricted)
+        throw std::invalid_argument(
+            "CCSD::run: closed-shell RHF reference only — UHF / ROHF / GHF "
+            "CCSD is not implemented (no fallback). Use RHF.");
+    const PriorEnergy prior = capture(frame);
+    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CCSD::run");
+    const int cap = budget > 0 ? budget : max_iter;
+    solve_amplitudes(frame, Write::Accumulate, prior, cap, &ctx);
+    return executed_;
 }
 
 template <typename Method>
@@ -425,18 +962,183 @@ CCSDTResult CCSD<Method>::ccsd_t(Frame& frame) {
 }
 
 template <typename Method>
-CC2<Method>::CC2(Method& mf) : mf_(&mf) {}
+struct CC2<Method>::Loop {
+    struct Hold {
+        Loop* loop = nullptr;
+
+        Hold(Loop& loop_in, const internal::IntegralView& ints,
+             const SlaterDeterminant& det, double e_scf_ha, bool use_diis)
+            : loop(&loop_in) {
+            loop->cycle = std::make_unique<CcsdSpatialCycle>(
+                ints, det, e_scf_ha, use_diis, /*cc2_on=*/true);
+        }
+
+        ~Hold() {
+            if (loop)
+                loop->cycle.reset();
+        }
+
+        Hold(const Hold&) = delete;
+        Hold& operator=(const Hold&) = delete;
+    };
+
+    std::unique_ptr<CcsdSpatialCycle> cycle;
+    AmpStage update;
+    AmpStage mix;
+    AmpStage energy;
+    AmpStage check;
+    AmplitudeConverged criterion;
+
+    explicit Loop(double tol_in)
+        : update(&cycle, AmpStage::Kind::Update, "cc2", "cpu::scf::CC2"),
+          mix(&cycle, AmpStage::Kind::Mix, "cc2", "cpu::scf::CC2"),
+          energy(&cycle, AmpStage::Kind::Energy, "cc2", "cpu::scf::CC2"),
+          check(&cycle, AmpStage::Kind::Check, "cc2", "cpu::scf::CC2"),
+          criterion(tol_in, "cc2_amplitude") {}
+};
+
+template <typename Method>
+CC2<Method>::CC2(Method& mf, bool diis_in, double tol_in, int max_iter_in)
+    : diis(diis_in), tol(tol_in), max_iter(max_iter_in), mf_(&mf),
+      loop_(std::make_unique<Loop>(tol_in)) {
+    this->on(ATV::cc::Phase::update).add_ref(loop_->update);
+    this->on(ATV::cc::Phase::mix).add_ref(loop_->mix);
+    this->on(ATV::cc::Phase::energy).add_ref(loop_->energy);
+    this->on(ATV::cc::Phase::check).add_ref(loop_->check);
+    this->add_criterion_ref(loop_->criterion);
+    this->set_serial_on_replica();
+    this->build();
+}
+
+template <typename Method>
+CC2<Method>::~CC2() {
+    if (loop_)
+        loop_->cycle.reset();
+    this->shutdown();
+}
+
+template <typename Method>
+CC2<Method>::PriorEnergy CC2<Method>::capture(const Frame& frame) {
+    PriorEnergy prior;
+    if (frame.meta.contains(kEnergy.key)) {
+        prior.energy = true;
+        prior.energy_v = frame.meta.get(kEnergy);
+    }
+    if (frame.meta.contains(kEnergyElectronic.key)) {
+        prior.electronic = true;
+        prior.electronic_v = frame.meta.get(kEnergyElectronic);
+    }
+    return prior;
+}
+
+template <typename Method>
+void CC2<Method>::store_energy(Frame& frame, double e_ev, Write write,
+                               const PriorEnergy& prior) {
+    if (!frame.meta.contains(kEnergy.key))
+        throw std::runtime_error("CC2: reference SCF did not publish kEnergy");
+    if (write == Write::Accumulate)
+        frame.meta.get(kEnergy) = (prior.energy ? prior.energy_v : 0.0) + e_ev;
+    else
+        frame.meta.get(kEnergy) = e_ev;
+    if (!frame.meta.contains(kEnergyElectronic.key))
+        return;
+    if (write == Write::Accumulate) {
+        frame.meta.get(kEnergyElectronic) =
+            (prior.electronic ? prior.electronic_v : 0.0) + e_ev;
+    } else {
+        frame.meta.get(kEnergyElectronic) = e_ev;
+    }
+}
+
+template <typename Method>
+CC2Result CC2<Method>::finish(Frame& frame, int executed, int cap, Write write,
+                              const PriorEnergy& prior) {
+    if (!this->converged()) {
+        throw std::invalid_argument("CC2: amplitudes did not converge in "
+                                    + std::to_string(cap) + " iterations (tol="
+                                    + std::to_string(tol) + ").");
+    }
+    const CcsdSpatialCycle& cycle = *loop_->cycle;
+    const double e_corr = cycle.e_corr;
+    const double e_scf = cycle.e_scf;
+    const int reported = cycle.trivial ? 0 : executed;
+    executed_ = executed;
+    last_ = CC2Result{e_corr, e_scf + e_corr, reported, true};
+    if (write != Write::None)
+        store_energy(frame, last_.e_tot * units::kHartreeInEv, write, prior);
+    return last_;
+}
+
+template <typename Method>
+void CC2<Method>::require_reference(const char* what) const {
+    const Method& mf = *mf_;
+    refuse_ks(mf.method_, what);
+    if (mf.spin_ != SpinType::Restricted)
+        throw std::invalid_argument(
+            std::string(what)
+            + ": closed-shell RHF reference only — UHF / ROHF / GHF CC2 "
+              "is not implemented (no fallback). Use RHF.");
+}
+
+template <typename Method>
+CC2Result CC2<Method>::solve(Frame& frame, Write write, int cap,
+                             cpu::Context* nested) {
+    require_reference("CC2::run");
+    if (!(tol > 0.0) || cap < 1)
+        throw std::invalid_argument(
+            "CC2: tol must be positive and max_iter >= 1");
+    const PriorEnergy prior = capture(frame);
+    Method& mf = *mf_;
+    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CC2::run");
+    typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
+                             mf.energy(), diis);
+    if (nested) {
+        const int executed =
+            cpu::Driver<ATV::cc::Phase>::run_nested(*nested, frame, cap);
+        return finish(frame, executed, cap, write, prior);
+    }
+    this->setup_pass(frame);
+    try {
+        int executed = 0;
+        for (int it = 0; it < cap; ++it) {
+            this->mutable_outer_status().reset();
+            this->step_once(it);
+            ++executed;
+            if (this->poll_criteria_(it) != ATV::Verdict::Continue)
+                break;
+        }
+        const CC2Result result = finish(frame, executed, cap, write, prior);
+        this->teardown_pass();
+        return result;
+    } catch (...) {
+        this->teardown_pass();
+        throw;
+    }
+}
 
 template <typename Method>
 CC2Result CC2<Method>::run(Frame& frame) {
-    Method& mf = *mf_;
-    refuse_ks(mf.method_, "CC2::run");
-    if (mf.spin_ != SpinType::Restricted)
+    return solve(frame, Write::Overwrite, max_iter, nullptr);
+}
+
+template <typename Method>
+CC2Result CC2<Method>::run(const Frame& frame) {
+    Frame scratch(frame);
+    return run(scratch);
+}
+
+template <typename Method>
+int CC2<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                                   int budget) {
+    if (!ctx.exec.runtime)
+        throw std::runtime_error("cpu::scf::CC2: nested run has no Runtime");
+    if (ctx.exec.forces_requested)
         throw std::invalid_argument(
-            "CC2::run: closed-shell RHF reference only — UHF / ROHF / GHF CC2 "
-            "is not implemented (no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CC2::run");
-    return cc2_energy(mf.integral_view_(), mf.determinant(), mf.energy());
+            "CC2: nuclear forces are not implemented — this method "
+            "provides energy only");
+    const int cap = budget > 0 ? budget : max_iter;
+    solve(frame, Write::Accumulate, cap, &ctx);
+    return executed_;
 }
 
 template <typename Method>

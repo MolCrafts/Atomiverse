@@ -384,6 +384,63 @@ TEST(RHF, OutOfCoverageForcesThrowHowto) {
     }
 }
 
+// run(const Frame&) is the geometry-read-only entry: same SCF, no host write.
+// H2/STO-3G total is the PySCF 2.14.0 pin already used by scf/rhf (0.74 Å).
+TEST(RHF, ConstRunWritesNothing) {
+    constexpr double kWantHa = -1.1167593073964255;
+    constexpr double kTol = 1e-6;
+    auto frame = make_h2();
+    frame.meta.get(kEnergy) = 42.0;
+    frame.meta.get(kEnergyElectronic) = -7.0;
+    frame.span(kAtom_fx)[0] = 1.5;
+    frame.span(kAtom_fy)[0] = -2.5;
+    frame.span(kAtom_fz)[1] = 3.5;
+    const double x1 = static_cast<double>(frame.span(kAtom_x)[1]);
+    const cpu::Frame& geometry = frame;
+
+    cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, 1e-10, 40};
+    EXPECT_TRUE(rhf.compute_force);
+    rhf.run(geometry);
+    rhf.run(geometry);
+
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.meta.get(kEnergy)), 42.0);
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.meta.get(kEnergyElectronic)),
+                     -7.0);
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fx)[0]), 1.5);
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fy)[0]), -2.5);
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fz)[1]), 3.5);
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_x)[1]), x1);
+    EXPECT_TRUE(rhf.last_scf_on_device());
+    EXPECT_FALSE(rhf.last_force_on_device());
+    EXPECT_TRUE(rhf.converged());
+    EXPECT_NEAR(rhf.energy(), kWantHa, kTol);
+}
+
+// compute_force stays true, but const run must not take the force kernel
+// (def2-SVP throws launch_rhf_forces_lgt1 only when forces are requested).
+TEST(RHF, ConstRunSkipsForceKernel) {
+    auto frame = make_h2();
+    frame.meta.get(kEnergy) = 42.0;
+    frame.span(kAtom_fx)[0] = 1.5;
+    const double x1 = static_cast<double>(frame.span(kAtom_x)[1]);
+    const cpu::Frame& geometry = frame;
+
+    cuda::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP, 0, 1e-8, 1};
+    EXPECT_TRUE(rhf.compute_force);
+    try {
+        rhf.run(geometry);
+    } catch (const std::exception& e) {
+        FAIL() << "const run requested a force kernel: " << e.what();
+    }
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.meta.get(kEnergy)), 42.0);
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fx)[0]), 1.5);
+    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_x)[1]), x1);
+    EXPECT_FALSE(rhf.last_force_on_device());
+    EXPECT_TRUE(rhf.last_scf_on_device());
+    EXPECT_EQ(rhf.iterations(), 1);
+    EXPECT_TRUE(std::isfinite(rhf.energy()));
+}
+
 // ── AIMD milestone (wave-3): multi-step MD + per-launch geometry rebuild ─
 // CPU twin: MethodDriverWire.NestedMultiStepAimd / MdAcceptsNestedRhfForce.
 // No AimdDriver; composition is cuda::md::MD + set_evaluator(RHF) + VV.

@@ -210,6 +210,26 @@ struct PhaseTraits<ATV::scc::Phase> {
     static constexpr auto end_phase = ATV::scc::Phase::check;
 };
 
+/// Coupled cluster (`cpu::scf::CCSD` and `cpu::scf::CC2` :
+/// `Driver<cc::Phase>`): the correlation energy is published at `energy`;
+/// there is no neighbor list; the amplitude residual is judged at `check`.
+template <>
+struct PhaseTraits<ATV::cc::Phase> {
+    static constexpr auto eval_phase = ATV::cc::Phase::energy;
+    static constexpr auto neighbor_phase = ATV::cc::Phase::energy;
+    static constexpr auto end_phase = ATV::cc::Phase::check;
+};
+
+/// CASSCF (`cpu::scf::CASSCF : Driver<mc::Phase>`): the active-space CI
+/// is the energy slot; there is no neighbor list; the orbital-gradient
+/// residual is judged at `check`.
+template <>
+struct PhaseTraits<ATV::mc::Phase> {
+    static constexpr auto eval_phase = ATV::mc::Phase::casci;
+    static constexpr auto neighbor_phase = ATV::mc::Phase::casci;
+    static constexpr auto end_phase = ATV::mc::Phase::check;
+};
+
 /// @brief CPU-backend loop node — the one class every CPU preset derives from.
 template <typename PhaseEnum>
 class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,

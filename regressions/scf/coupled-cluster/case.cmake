@@ -14,3 +14,6 @@ atv_regression(SECTION ccsd-spatial-so-parity
 
 atv_regression(SECTION cc2-h2-sto3g
   REQUIRES HF)
+
+atv_regression(SECTION cc2-h2o-sto3g
+  REQUIRES HF)

@@ -84,6 +84,14 @@ struct ConvergenceMetrics {
     /// out by hand. Left at 0 by every non-replica loop, which is why
     /// `AllReplicasConverged` is the only criterion that reads it.
     double replicas_converged = 0.0;
+
+    /// @brief Dimensionless residual of this iteration (0 when the loop has none).
+    ///
+    /// Amplitude change max|Δt| for coupled cluster; max |g| of the CASSCF
+    /// orbital gradient. Other loops leave it 0 and judge `energy_change` /
+    /// forces instead. The stage publishes it; a Criterion decides. Units
+    /// are not eV.
+    double residual = 0.0;
 };
 
 } // namespace ATV

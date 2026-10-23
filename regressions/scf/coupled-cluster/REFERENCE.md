@@ -388,8 +388,8 @@ print(e_corr)   # -0.049438563031963
 
 ## H2 CC2/STO-3G — correlation + total energy pin
 
-Closed-shell **CC2** on H₂ / STO-3G. Product API: `RHF::cc2(frame)`
-(drives a fresh RHF, then spin-orbital Christiansen–Koch–Jørgensen CC2).
+Closed-shell **CC2** on H₂ / STO-3G. Product API: `CC2<RHF>{rhf}.run(frame)`
+(`cpu::Driver<cc::Phase>`; drives a fresh RHF, then the spatial CC2 residual).
 
 Literature / theory:
 
@@ -487,3 +487,61 @@ export OMP_NUM_THREADS=1
 
 H₂/STO-3G is startup-dominated; ATV is faster than PySCF on this foothold
 (ratio ≪ 1). No performance optimization pass required.
+
+
+## H2O CC2/STO-3G — correlation + total energy pin
+
+Closed-shell **CC2** on H₂O / STO-3G. Same product API as the H₂ section.
+H₂ has \(T_1 = 0\) (CC2 = MP2). This geometry has five occupied and two
+virtual spatial MOs, so the singles residual is nonzero and CC2 is not MP2.
+
+Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md` (offline pin only).
+
+Stock PySCF 2.14 has **no** top-level `cc.CC2`. The oracle is
+`pyscf.cc.rccsd.RCCSD` with `cc2=True`.
+
+### Geometry and settings
+
+| Field | Value |
+|---|---|
+| Molecule | H₂O, charge 0, singlet |
+| Geometry (Å) | O(0, 0, 0.1173); H(0, ±0.7572, −0.4692) — `pin_scf` `water` preset |
+| Basis | STO-3G |
+| Angular convention | `cart=True` (s and p only; engine-neutral) |
+| SCF | RHF, `conv_tol=1e-12` |
+| CC2 | `pyscf.cc.rccsd.RCCSD(mf); my.cc2=True`, `conv_tol=1e-12` (tool clamps the amplitude residual to `min(conv_tol, 1e-10)`) |
+| AO / MO | 7 AO; 5 occupied, 2 virtual spatial MOs |
+| PySCF version | 2.14.0 |
+| Pinned | 2026-10-23, `tools/pyscf_oracle/pin_scf.py` |
+
+### Repro command
+
+```bash
+python tools/pyscf_oracle/pin_scf.py cc2 \
+    --geom water --basis sto-3g --conv-tol 1e-12
+python tools/pyscf_oracle/pin_scf.py mp2 \
+    --geom water --basis sto-3g --conv-tol 1e-12
+```
+
+### Pinned values
+
+| Quantity | Pin | Tolerance |
+|---|---|---|
+| \(E_{\mathrm{RHF}}\) | −74.963023138462859 Ha | 1e-6 Ha |
+| \(E_{\mathrm{corr}}\) (CC2) | −0.035668770406499 Ha | **1e-6 Ha** (product gate) |
+| \(E_{\mathrm{tot}}\) (CC2) | −74.998691908869361 Ha | **1e-6 Ha** (product gate) |
+| \(\lVert T_1\rVert\) (PySCF) | 9.663220868048e-3 | diagnostic, not an ATV gate |
+| \(E_{\mathrm{corr}}\) (MP2, same geom) | −0.035545651646918 Ha | cross-check only |
+
+CC2 lies 1.231e-4 Ha below MP2. A residual that drops the \(T_1\) dressings
+and returns MP2 fails the 1e-6 Ha CC2 gate. `run(const Frame&)` must not
+write `kEnergy`; `run(Frame&)` overwrites `kEnergy` with the correlated
+total [eV].
+
+### Gates (product regression)
+
+- \(|E_{\mathrm{corr,ours}} - \mathrm{pin}| < 10^{-6}\,\mathrm{Ha}\)
+- \(|E_{\mathrm{tot,ours}} - \mathrm{pin}| < 10^{-6}\,\mathrm{Ha}\)
+- \(E_{\mathrm{RHF}}\): \(10^{-6}\) Ha
+- Amplitudes report `converged == true`
+- \(|E_{\mathrm{corr,CC2}} - E_{\mathrm{corr,MP2 pin}}| > 10^{-6}\,\mathrm{Ha}\)

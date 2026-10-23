@@ -14,6 +14,7 @@
 /// pyscf.df.df_jk.density_fit (JK selector; this path stores the dense ERI).
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include <xtensor/containers/xtensor.hpp>
@@ -117,33 +118,52 @@ class HermitianDiis {
     std::vector<ComplexMatrix> error_;
 };
 
-/// @brief True once two successive energies differ by less than `tol`.
-class TwoStepEnergy {
-  public:
-    /// @brief Record `energy` and report the two-step test.
-    /// @param energy Total energy [Hartree].
-    /// @param tol |ΔE| threshold [Hartree].
-    /// @return True on the second consecutive step inside `tol`.
-    bool converged(double energy, double tol);
+/// @brief One complex-GHF SCF state. The driver walks it; this type
+///        does not decide convergence.
+///
+/// Steps follow PySCF 2.14.0 `pyscf/scf/ghf.py` (`GHF.get_hcore`,
+/// `get_ovlp`, `get_jk`, `get_veff`, `get_occ`, `x2c1e`) and
+/// `pyscf/scf/hf.py` (`kernel`, `energy_elec`, `energy_tot`,
+/// `make_rdm1`). `x2c` selects `GHF.x2c1e` or non-relativistic
+/// `GHF.get_hcore`.
+struct ComplexGhfCycle;
 
-  private:
-    double previous_ = 0.0;
-    bool seen_ = false;
-    bool was_close_ = false;
-};
+/// @brief Destroy a cycle allocated by `complex_ghf_cycle_open`.
+void complex_ghf_cycle_delete(ComplexGhfCycle* cycle);
 
-/// @brief Converged (or last) complex-GHF total energy.
-struct ComplexGhfEnergy {
-    double hartree = 0.0;
-    bool converged = false;
-    int iterations = 0;
-};
+/// @brief Owning pointer. The deleter is a function so callers need not
+///        see the cycle body.
+using ComplexGhfCycleOwner =
+    std::unique_ptr<ComplexGhfCycle, void (*)(ComplexGhfCycle*)>;
 
-/// @brief Complex GHF SCF. `x2c` selects `GHF.x2c1e` (`true`) or
-///        non-relativistic `GHF.get_hcore` (`false`).
-ComplexGhfEnergy complex_ghf_energy(const Frame& frame, BasisSet basis,
-                                    int charge, double tol, int max_iter,
-                                    bool x2c);
+/// @brief Assemble hcore, overlap, and the core-Hamiltonian density guess.
+/// @param frame Geometry [Å], species in `kAtom_type`.
+/// @param basis Gaussian basis.
+/// @param charge Molecular charge [e].
+/// @param x2c True: spin-orbital X2C-1e. False: block-diagonal T+V.
+ComplexGhfCycleOwner complex_ghf_cycle_open(const Frame& frame, BasisSet basis,
+                                            int charge, bool x2c);
+
+/// @brief `GHF.get_jk` / `get_veff` and `hf.energy_elec` + `energy_tot`
+///        for the current density. Stores the total energy [Hartree].
+void complex_ghf_cycle_fock(ComplexGhfCycle& cycle);
+
+/// @brief CDIIS mix of the current Fock (`hf.get_fock` with DIIS on).
+void complex_ghf_cycle_mix(ComplexGhfCycle& cycle);
+
+/// @brief `hf.kernel` `eig`: generalized Hermitian diagonalization.
+void complex_ghf_cycle_diagonalize(ComplexGhfCycle& cycle);
+
+/// @brief `GHF.get_occ` + `hf.make_rdm1` from the orbitals just diagonalized.
+void complex_ghf_cycle_density(ComplexGhfCycle& cycle);
+
+/// @brief Last total energy [Hartree], nuclear repulsion included.
+double complex_ghf_cycle_energy(const ComplexGhfCycle& cycle);
+
+/// @brief |ΔE| [Hartree] against the previous fock energy, or +∞ on the
+///        first call. Records the current energy as the next baseline.
+///        Does not decide convergence.
+double complex_ghf_cycle_delta(ComplexGhfCycle& cycle);
 
 } // namespace internal
 } // namespace scf

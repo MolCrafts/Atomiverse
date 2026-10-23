@@ -7,13 +7,49 @@ a CASSCF reference. Each is a concrete class template wrapping the RHF it
 correlates (`post_hf.h`, `cisd.h`), mirroring the PySCF object of the same
 name: `cpu::scf::CISD<RHF>{rhf}.run(n_states)` (after `rhf.run(frame)`),
 `cpu::scf::CASCI<RHF>{rhf}.run(frame, ncas, nelecas)`,
-`cpu::scf::CASSCF<RHF>{rhf}.run(frame, ncas, nelecas)`,
+`cpu::scf::CASSCF<RHF>{rhf, ncas, nelecas}` —
+`cpu::Driver<mc::Phase>` (`rotate → casci → gradient → check`;
+[Call](#call)),
 `cpu::scf::NEVPT2<RHF>{rhf}.run(frame, ncas, nelecas)` and
 `cpu::scf::FCI<RHF>{rhf}.run(frame)`. The active-space entries drive their own
 SCF; CASCI, CASSCF and FCI share one dense determinant-CI engine.
 
-The sections cover CPU only and energies only: CIS(D) on formaldehyde and the
-full-valence CAS(2e,2o) family on H₂, all in STO-3G.
+The sections cover CPU only and energies only: CIS(D) on formaldehyde, the
+full-valence CAS(2e,2o) family on H₂, and CASSCF(2,2) on H₂O (core and one
+virtual, so the orbital step runs), all in STO-3G.
+
+### Call
+
+`cpu::scf::CASSCF<RHF>` is `cpu::Driver<mc::Phase>`, the same preset shape as
+`cpu::md::MD`. The constructor mounts `rotate`, `casci`, `gradient`, and
+`check` with `on(phase).add`. max |g| is published on
+`ConvergenceMetrics::residual`. `OrbitalGradientConverged` decides. The method
+does not assign convergence. `ncas`, `nelecas`, `orb_tol`, and `max_macro` are
+constructor arguments and are const after construction.
+`CASSCF{mf, ncas, nelecas}` sets `orb_tol` to `max(mf.tol, 1e-8)` [Hartree]
+and `max_macro` to 50. The explicit overload is
+`CASSCF{mf, ncas, nelecas, orb_tol, max_macro}`. The reference is not owned
+and must outlive the CASSCF object. There is no `HF` tag and no CUDA path.
+Closed-shell RHF only. There is no `forces(Frame&)`.
+
+Frame in is positions [Å] and species in `kAtom_type`. `run(Frame&)` drives
+the reference SCF, then overwrites `kEnergy` with the correlated total [eV].
+Hartree stays on `CASSCFResult` (`e_casscf`, `e_corr`). `run(const Frame&)`
+writes nothing. `provides_energy()` and `requires_full_frame()` are true;
+`provides_force()` is false, so `kAtom_f*` are not written. An outer driver
+that mounts CASSCF with `on(phase).add` accumulates `kEnergy` and refuses a
+force request.
+
+```cpp
+cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
+cpu::scf::CASSCF<cpu::scf::RHF> cas{rhf, /*ncas=*/2, /*nelecas=*/2};
+// orb_tol = max(rhf.tol, 1e-8) [Hartree], max_macro = 50
+const cpu::scf::CASSCFResult energy = cas.run(frame); // overwrite kEnergy [eV]
+double e_ev = frame.meta.get(kEnergy);                 // correlated total [eV]
+double e_ha = energy.e_casscf;                         // Hartree
+bool ok = cas.converged();                             // Criterion verdict
+```
 
 Case: `ctest -R '^scf/multireference$'` — sources and oracle record in [`regressions/scf/multireference/`](../../../regressions/scf/multireference/). One section of the case per `##` heading below: `atv_regressions --case scf/multireference --section <name>`.
 
@@ -40,7 +76,7 @@ rhf.tol = 1e-12;
 rhf.max_iter = 100;
 
 const cpu::scf::CASSCFResult cas =
-    cpu::scf::CASSCF<cpu::scf::RHF>{rhf}.run(frame, /*ncas=*/2, /*nelecas=*/2);
+    cpu::scf::CASSCF<cpu::scf::RHF>{rhf, /*ncas=*/2, /*nelecas=*/2}.run(frame);
 // cas.e_casscf, cas.e_corr [Ha]; cas.ncas, cas.nelecas, cas.ncore
 // cas.iterations, cas.converged; rhf.energy() = E_RHF [Ha]
 ```
@@ -156,9 +192,11 @@ CI coefficients \(\mathbf{c}\) come from the dense active-space FCI kernel;
 orbital coefficients \(\mathbf{C}\) are updated by a two-step Newton
 macro-loop on the orbital gradient built from spin-summed 1- and 2-RDMs until
 the generalized Fock is symmetric to tolerance (Roos 1987). State-specific,
-single root. `CASSCF<RHF>::run` returns `CASSCFResult{e_casscf, e_corr, ncas,
-nelecas, ncore, iterations, converged}` (`casscf.h`; private pack
-`internal/casscf_pack.h`; implementation `src/cpu/scf/casscf.cpp`). Twin:
+single root. The macro iteration is `cpu::Driver<mc::Phase>` (`rotate →
+casci → gradient → check`); `OrbitalGradientConverged` decides.
+`CASSCF{rhf, ncas, nelecas}.run(frame)` overwrites `kEnergy` [eV] and returns
+`CASSCFResult{e_casscf, e_corr, ncas, nelecas, ncore, iterations, converged}`
+[Hartree] (`casscf.h`, `post_hf.h`; implementation `src/cpu/scf/casscf.cpp`). Twin:
 `pyscf.mcscf.CASSCF(mf, ncas=2, nelecas=2)`, `conv_tol=1e-12`.
 
 On full-valence CAS(2,2) there are no non-redundant orbital rotations
@@ -181,6 +219,29 @@ CI-only macro pass reports `converged`.
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) |
 | ---- | -------------------------: | -----------------------: | ----: |
 | `casscf` (H₂/STO-3G) | 0.2112 | 0.0092 | **0.0435** |
+
+
+## casscf-h2o-sto3g — CASSCF, H₂O / STO-3G {#casscf-h2o-sto3g}
+
+Same product as [casscf-h2-sto3g](#casscf-h2-sto3g), on water. STO-3G has 7
+MOs and RHF has 5 occupied spatial orbitals, so CAS(2,2) freezes `ncore = 4`
+and leaves `nvirt = 1`. Core–active, active–virtual and core–virtual pairs
+are non-redundant: the macro iteration applies an orbital step, and the
+CASSCF energy lies below CASCI on the RHF orbitals. `iterations >= 2`.
+
+Twin: `pyscf.mcscf.CASSCF(mf, ncas=2, nelecas=2)`, `conv_tol=1e-12`, geometry
+the `pin_scf` `water` preset.
+
+### Pins and gates
+
+| Quantity | Pin | Tol | Notes |
+| -------- | --: | --- | ----- |
+| \(E_{\mathrm{RHF}}\) | −74.96302313846292 Ha | \(10^{-6}\) Ha | Diagnostic |
+| \(E_{\mathrm{corr}}\) (CASSCF) | **−0.0012536321488170188 Ha** | **\(10^{-6}\) Ha** | Product gate |
+| \(E_{\mathrm{tot}}\) (CASSCF) | **−74.96427677061173 Ha** | **\(10^{-6}\) Ha** | Primary product gate |
+| Bookkeeping | `ncas=2`, `nelecas=2`, `ncore=4`, `iterations >= 2`, `converged` | exact | Orbital step ran |
+| Consistency | \(E_{\mathrm{tot}} = E_{\mathrm{RHF}} + E_{\mathrm{corr}}\) | \(10^{-12}\) Ha | Regression check |
+| Frame | `kEnergy` [eV] equals \(E_{\mathrm{tot}}\times\) Ha→eV | \(10^{-8}\) eV | `run(Frame&)` overwrite |
 
 ## nevpt2-h2-sto3g — SC-NEVPT2, H₂ / STO-3G {#nevpt2-h2-sto3g}
 
