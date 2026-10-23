@@ -17,6 +17,7 @@
 /// Public API only. <= 60 s.
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -82,9 +83,23 @@ cpu::Frame make_cell(int step) {
     return f;
 }
 
+// Exercise DFTB2's request boundary without enabling an MD/minimizer module.
+// The real presets' orchestration is covered separately by composition tests.
+struct RequestMode : cpu::Component {
+    int& mode;
+    bool clear;
+    RequestMode(int& request, bool reset) : mode(request), clear(reset) {}
+    std::string name() const override { return "scc_history_request"; }
+    void launch(const cpu::LaunchContext& ctx) override {
+        ctx.runtime.exec.initializing_forces = !clear && mode == 1;
+        ctx.runtime.exec.trial_evaluation = !clear && mode == 2;
+    }
+};
+
 /// Walk the trajectory, returning total SCC iterations; @p last_energy gets
 /// the final total energy [eV].
-long walk(bool use_predictor, double& last_energy) {
+long walk(bool use_predictor, double& last_energy, bool probes = false,
+          std::vector<int>* counts = nullptr) {
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     dftb.boundary = cpu::semiempirical::DftbBoundary::lattice;
     dftb.scc_tol = 1e-8;
@@ -93,8 +108,11 @@ long walk(bool use_predictor, double& last_energy) {
     if (use_predictor)
         dftb.predictor(3);
 
+    int mode = 0;
     cpu::Evaluate eval;
+    eval.on(evaluate::Phase::evaluate).add(RequestMode{mode, false}, -1);
     eval.on(evaluate::Phase::evaluate).add_ref(dftb);
+    eval.on(evaluate::Phase::evaluate).add(RequestMode{mode, true}, 1);
     eval.build();
 
     long total = 0;
@@ -103,6 +121,31 @@ long walk(bool use_predictor, double& last_energy) {
         eval.run(f);
         total += dftb.last_scc_iterations();
         last_energy = dftb.last_energy();
+        if (counts)
+            counts->push_back(dftb.last_scc_iterations());
+        if (probes) {
+            // Neither successful probes nor a failed normal solve may record
+            // a new predictor state. Use a distinct geometry to expose leaks.
+            for (mode = 1; mode <= 2; ++mode) {
+                auto probe = make_cell(s + 2);
+                eval.run(probe);
+            }
+            mode = 0;
+            dftb.d3 = true;
+            dftb.d3_cutoff = -1;
+            bool rejected = false;
+            try {
+                auto probe = make_cell(s + 1);
+                eval.run(probe);
+            } catch (const std::runtime_error&) {
+                rejected = true;
+            }
+            dftb.d3 = false;
+            if (!rejected || dftb.converged()
+                || std::isfinite(dftb.last_energy()))
+                throw std::runtime_error(
+                    "DFTB2 failed probe published success");
+        }
     }
     return total;
 }
@@ -112,7 +155,16 @@ long walk(bool use_predictor, double& last_energy) {
 int run() {
     double e_plain = 0, e_pred = 0;
     const long it_plain = walk(false, e_plain);
-    const long it_pred = walk(true, e_pred);
+    std::vector<int> normal_counts, probed_counts;
+    const long it_pred = walk(true, e_pred, false, &normal_counts);
+    double e_probed = 0;
+    walk(true, e_probed, true, &probed_counts);
+    if (normal_counts != probed_counts
+        || std::fabs(e_pred - e_probed) > 1e-10) {
+        std::printf("FAIL initial-force/trial/failure probes changed predictor "
+                    "history\n");
+        return 1;
+    }
 
     std::printf("dftb2-scc-guess: 8 H2O cell, %d launches, scc_tol 1e-8\n",
                 kSteps);

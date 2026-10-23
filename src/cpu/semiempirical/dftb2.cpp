@@ -333,15 +333,16 @@ struct SccResult {
     int iterations = 0;
     std::vector<double> dq;
     std::vector<double> spin; // m_A = Nα − Nβ
+    // Orbitals borrow the owning Workspace until its next solve/rebuild.
     // Restricted-path orbitals for closed-form forces.
-    linalg::RealMatrix C;
-    linalg::RealVector eps;
+    const linalg::RealMatrix* C = nullptr;
+    const linalg::RealVector* eps = nullptr;
     int n_occ = 0;
     // Unrestricted-path orbitals (α/β) for collinear open-shell analytic F.
-    linalg::RealMatrix Ca;
-    linalg::RealMatrix Cb;
-    linalg::RealVector eps_a;
-    linalg::RealVector eps_b;
+    const linalg::RealMatrix* Ca = nullptr;
+    const linalg::RealMatrix* Cb = nullptr;
+    const linalg::RealVector* eps_a = nullptr;
+    const linalg::RealVector* eps_b = nullptr;
     int n_alpha = 0;
     int n_beta = 0;
     bool unrestricted = false;
@@ -364,8 +365,10 @@ void build_h0_s(int n_at, int n_ao,
                 const StorageReal* x, const StorageReal* y,
                 const StorageReal* z, const cpu::Box& box,
                 linalg::RealMatrix& H0, linalg::RealMatrix& S) {
-    H0 = xt::zeros<double>({n_ao, n_ao});
-    S = xt::zeros<double>({n_ao, n_ao});
+    H0.resize({static_cast<std::size_t>(n_ao), static_cast<std::size_t>(n_ao)});
+    S.resize(H0.shape());
+    H0.fill(0.0);
+    S.fill(0.0);
     const auto images = lattice_images_for(box, el);
 
     // Onsite (T = 0, a = b): diagonal e_s / e_p and S = 1.
@@ -1707,8 +1710,8 @@ struct Scc3obResult {
     double residual = 0;
     int iterations = 0;
     std::vector<double> dq;
-    linalg::RealMatrix C;
-    linalg::RealVector eps;
+    const linalg::RealMatrix* C = nullptr;
+    const linalg::RealVector* eps = nullptr;
     int n_occ = 0;
 };
 
@@ -1906,6 +1909,47 @@ struct DFTB2::Workspace {
 
     internal::ChargeMixer mixer{0.3, kSccMixDepth};
 
+    // Gamma-point scientific buffers survive geometries and SCC iterations.
+    // The immutable method identity belongs to owner; species changes rebuild
+    // even when the replacement happens to have the same AO count.
+    std::vector<int> gamma_species;
+    linalg::RealMatrix H0, S, H, Hb, P, Pb;
+    std::unique_ptr<linalg::GeneralizedEigenSolver> eigen, eigen_beta;
+    std::vector<double> ps_diag, ps_diag_beta, dV, dVs, shift_a, shift_b;
+    std::vector<double> mix_in, mix_out;
+
+    void prepare_gamma(int n_at, int n_ao, const int* type, bool unrestricted) {
+        const bool same =
+            eigen && gamma_species.size() == static_cast<std::size_t>(n_at)
+            && std::equal(gamma_species.begin(), gamma_species.end(), type)
+            && H0.shape(0) == static_cast<std::size_t>(n_ao)
+            && static_cast<bool>(eigen_beta) == unrestricted;
+        if (same)
+            return;
+        // Publish the identity last so an allocation failure is retryable.
+        gamma_species.clear();
+        eigen = std::make_unique<linalg::GeneralizedEigenSolver>(n_ao);
+        eigen_beta.reset();
+        if (unrestricted)
+            eigen_beta = std::make_unique<linalg::GeneralizedEigenSolver>(n_ao);
+        const auto nao = static_cast<std::size_t>(n_ao);
+        for (auto* matrix : {&H0, &S, &H, &P})
+            matrix->resize({nao, nao});
+        if (unrestricted) {
+            Hb.resize({nao, nao});
+            Pb.resize({nao, nao});
+        }
+        ps_diag.resize(nao);
+        ps_diag_beta.resize(unrestricted ? nao : 0);
+        dV.resize(n_at);
+        dVs.resize(unrestricted ? n_at : 0);
+        shift_a.resize(unrestricted ? n_at : 0);
+        shift_b.resize(unrestricted ? n_at : 0);
+        mix_in.resize(unrestricted ? 2 * n_at : n_at);
+        mix_out.resize(mix_in.size());
+        gamma_species.assign(type, type + n_at);
+    }
+
     void set_residual(double value) { residual = value; }
 
     template <class Shift, class Diagonalize, class Charges, class Accept,
@@ -2039,7 +2083,7 @@ SccResult DFTB2::Workspace::scc_energy_restricted(
     double mix_beta, const double* dq_guess, Runtime* host) {
     if (n_occ > n_ao)
         throw std::runtime_error("DFTB2: n_occ exceeds basis size");
-    linalg::RealMatrix H0, S;
+    prepare_gamma(n_at, n_ao, type, false);
     build_h0_s(n_at, n_ao, el, ao0, type, x, y, z, box, H0, S);
 
     const std::size_t n = static_cast<std::size_t>(n_at);
@@ -2050,15 +2094,11 @@ SccResult DFTB2::Workspace::scc_energy_restricted(
     if (dq_guess)
         std::copy(dq_guess, dq_guess + n, dq.begin());
     std::vector<double> dq_out(n, 0.0);
-    linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealMatrix C = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealVector eps = xt::zeros<double>({n_ao});
-    std::vector<double> ps_diag;
+    const auto& C = eigen->eigenvectors();
+    const auto& eps = eigen->eigenvalues();
     double residual = 0;
     int iterations = 0;
     mixer.reset(n, mix_beta);
-    std::vector<double> dV;
-    linalg::RealMatrix H;
 
     auto& scc = *this;
     const SccOutcome outcome = scc.solve(
@@ -2074,9 +2114,7 @@ SccResult DFTB2::Workspace::scc_energy_restricted(
             apply_shift(n_at, el, ao0, H0, S, dV, H);
         },
         [&] {
-            auto sol = linalg::diagonalize_fock_generalized(H, S);
-            eps = sol.first;
-            C = sol.second;
+            eigen->solve(H, S);
             build_density(C, n_ao, n_occ, 2.0, P);
         },
         [&] {
@@ -2124,8 +2162,8 @@ SccResult DFTB2::Workspace::scc_energy_restricted(
     out.iterations = iterations;
     out.dq = std::move(dq);
     out.spin.assign(static_cast<std::size_t>(n_at), 0.0);
-    out.C = std::move(C);
-    out.eps = std::move(eps);
+    out.C = &C;
+    out.eps = &eps;
     out.n_occ = n_occ;
     return out;
 }
@@ -2298,7 +2336,7 @@ SccResult DFTB2::Workspace::scc_energy_unrestricted(
     if (n_alpha > n_ao || n_beta > n_ao)
         throw std::runtime_error("DFTB2: n_alpha/n_beta exceeds basis size");
 
-    linalg::RealMatrix H0, S;
+    prepare_gamma(n_at, n_ao, type, true);
     build_h0_s(n_at, n_ao, el, ao0, type, x, y, z, box, H0, S);
 
     const std::size_t n = static_cast<std::size_t>(n_at);
@@ -2322,14 +2360,15 @@ SccResult DFTB2::Workspace::scc_energy_unrestricted(
     int iterations = 0;
     // dq and m are coupled by the same density: mix them as one vector.
     mixer.reset(2 * n, mix_beta);
-    linalg::RealMatrix Pa = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealMatrix Pb = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealMatrix CA = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealMatrix CB = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealVector epsA = xt::zeros<double>({n_ao});
-    linalg::RealVector epsB = xt::zeros<double>({n_ao});
-    std::vector<double> dVc, dVs, eps_shift_a, eps_shift_b;
-    linalg::RealMatrix Ha, Hb;
+    auto& Pa = P;
+    auto& Ha = H;
+    const auto& CA = eigen->eigenvectors();
+    const auto& CB = eigen_beta->eigenvectors();
+    const auto& epsA = eigen->eigenvalues();
+    const auto& epsB = eigen_beta->eigenvalues();
+    auto& dVc = dV;
+    auto& eps_shift_a = shift_a;
+    auto& eps_shift_b = shift_b;
 
     auto& scc = *this;
     const SccOutcome outcome = scc.solve(
@@ -2361,34 +2400,22 @@ SccResult DFTB2::Workspace::scc_energy_unrestricted(
             apply_shift(n_at, el, ao0, H0, S, eps_shift_b, Hb);
         },
         [&] {
-            auto sol_a = linalg::diagonalize_fock_generalized(Ha, S);
-            auto sol_b = linalg::diagonalize_fock_generalized(Hb, S);
-            epsA = sol_a.first;
-            CA = sol_a.second;
-            epsB = sol_b.first;
-            CB = sol_b.second;
-            Pa = xt::zeros<double>({n_ao, n_ao});
-            Pb = xt::zeros<double>({n_ao, n_ao});
-            for (int o = 0; o < n_alpha; ++o)
-                for (int mu = 0; mu < n_ao; ++mu)
-                    for (int nu = 0; nu < n_ao; ++nu)
-                        Pa(mu, nu) += CA(mu, o) * CA(nu, o);
-            for (int o = 0; o < n_beta; ++o)
-                for (int mu = 0; mu < n_ao; ++mu)
-                    for (int nu = 0; nu < n_ao; ++nu)
-                        Pb(mu, nu) += CB(mu, o) * CB(nu, o);
+            eigen->solve(Ha, S);
+            eigen_beta->solve(Hb, S);
+            build_density(CA, n_ao, n_alpha, 1.0, Pa);
+            build_density(CB, n_ao, n_beta, 1.0, Pb);
         },
         [&] {
-            const linalg::RealMatrix PSa = xt::linalg::dot(Pa, S);
-            const linalg::RealMatrix PSb = xt::linalg::dot(Pb, S);
+            ps_diagonal(Pa, S, n_ao, ps_diag);
+            ps_diagonal(Pb, S, n_ao, ps_diag_beta);
             residual = 0;
             for (int a = 0; a < n_at; ++a) {
                 double qa = 0, qb = 0;
                 const int ia = ao0[static_cast<std::size_t>(a)];
                 const int na = el[static_cast<std::size_t>(a)]->n_ao;
                 for (int i = 0; i < na; ++i) {
-                    qa += PSa(ia + i, ia + i);
-                    qb += PSb(ia + i, ia + i);
+                    qa += ps_diag[ia + i];
+                    qb += ps_diag_beta[ia + i];
                 }
                 dq_out[static_cast<std::size_t>(a)] =
                     (qa + qb) - el[static_cast<std::size_t>(a)]->n_val;
@@ -2407,11 +2434,11 @@ SccResult DFTB2::Workspace::scc_energy_unrestricted(
             mspin = mspin_out;
         },
         [&] {
-            std::vector<double> in(dq);
-            in.insert(in.end(), mspin.begin(), mspin.end());
-            std::vector<double> mixed_in(dq_out);
-            mixed_in.insert(mixed_in.end(), mspin_out.begin(), mspin_out.end());
-            const auto& mixed = mixer.next(in, mixed_in);
+            std::copy(dq.begin(), dq.end(), mix_in.begin());
+            std::copy(mspin.begin(), mspin.end(), mix_in.begin() + n);
+            std::copy(dq_out.begin(), dq_out.end(), mix_out.begin());
+            std::copy(mspin_out.begin(), mspin_out.end(), mix_out.begin() + n);
+            const auto& mixed = mixer.next(mix_in, mix_out);
             for (std::size_t a = 0; a < n; ++a) {
                 dq[a] = mixed[a];
                 mspin[a] = mixed[n + a];
@@ -2451,10 +2478,10 @@ SccResult DFTB2::Workspace::scc_energy_unrestricted(
     out.iterations = iterations;
     out.dq = std::move(dq);
     out.spin = std::move(mspin);
-    out.Ca = std::move(CA);
-    out.Cb = std::move(CB);
-    out.eps_a = std::move(epsA);
-    out.eps_b = std::move(epsB);
+    out.Ca = &CA;
+    out.Cb = &CB;
+    out.eps_a = &epsA;
+    out.eps_b = &epsB;
     out.n_alpha = n_alpha;
     out.n_beta = n_beta;
     out.unrestricted = true;
@@ -2834,7 +2861,7 @@ double DFTB2::Workspace::launch_mio(
     // + pair virial: the restricted case is the α/β-degenerate limit. The
     // open-shell multi-SCC affine strain-FD stress fallback is gone.
     const bool have_orbitals =
-        occ.unrestricted ? (res.Ca.shape(0) > 0) : (res.C.shape(0) > 0);
+        occ.unrestricted ? (res.Ca != nullptr) : (res.C != nullptr);
     if (!((with_forces || with_stress) && have_orbitals))
         return energy;
 
@@ -2842,15 +2869,15 @@ double DFTB2::Workspace::launch_mio(
     if (occ.unrestricted)
         analytic_forces_stress(n_at, n_ao, res.n_alpha, res.n_beta, el, ao0,
                                type, x, y, z, f.box, gam, res.dq, res.spin,
-                               spin_w_ev, res.Ca, res.Cb, res.eps_a, res.eps_b,
-                               fx, fy, fz, with_forces,
+                               spin_w_ev, *res.Ca, *res.Cb, *res.eps_a,
+                               *res.eps_b, fx, fy, fz, with_forces,
                                with_stress ? stress_buf : nullptr);
     else
         // Restricted: C^α = C^β = C, ε^α = ε^β = ε, n_α = n_β = n_occ,
         // m ≡ 0 ⇒ P^α = P^β = P/2, W^α = W^β = W/2.
         analytic_forces_stress(n_at, n_ao, res.n_occ, res.n_occ, el, ao0, type,
                                x, y, z, f.box, gam, res.dq, res.spin, spin_w_ev,
-                               res.C, res.C, res.eps, res.eps, fx, fy, fz,
+                               *res.C, *res.C, *res.eps, *res.eps, fx, fy, fz,
                                with_forces, with_stress ? stress_buf : nullptr);
 
     if (with_stress) {
@@ -2877,8 +2904,9 @@ Scc3obResult DFTB2::Workspace::scc_3ob(
         return std::sqrt(dx * dx + dy * dy + dz * dz);
     };
 
-    linalg::RealMatrix H0 = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealMatrix S = xt::zeros<double>({n_ao, n_ao});
+    prepare_gamma(n_at, n_ao, Z.data(), false);
+    H0.fill(0.0);
+    S.fill(0.0);
 
     for (int a = 0; a < n_at; ++a) {
         const auto& ea = *el[static_cast<std::size_t>(a)];
@@ -2906,16 +2934,12 @@ Scc3obResult DFTB2::Workspace::scc_3ob(
     const std::size_t n = static_cast<std::size_t>(n_at);
     std::vector<double> dq(n, 0.0);
     std::vector<double> dq_out(n, 0.0);
-    linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealMatrix C = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealVector eps = xt::zeros<double>({n_ao});
-    std::vector<double> ps_diag;
+    const auto& C = eigen->eigenvectors();
+    const auto& eps = eigen->eigenvalues();
     double e_scc = 0;
     double residual = 0;
     int iterations = 0;
     mixer.reset(n, mix_beta);
-    std::vector<double> dV;
-    linalg::RealMatrix H;
 
     auto& scc = *this;
     const SccOutcome outcome = scc.solve(
@@ -2955,9 +2979,7 @@ Scc3obResult DFTB2::Workspace::scc_3ob(
             }
         },
         [&] {
-            auto sol = linalg::diagonalize_fock_generalized(H, S);
-            eps = sol.first;
-            C = sol.second;
+            eigen->solve(H, S);
             build_density(C, n_ao, n_occ, 2.0, P);
         },
         [&] {
@@ -3021,8 +3043,8 @@ Scc3obResult DFTB2::Workspace::scc_3ob(
     out.residual = residual;
     out.iterations = iterations;
     out.dq = std::move(dq);
-    out.C = std::move(C);
-    out.eps = std::move(eps);
+    out.C = &C;
+    out.eps = &eps;
     out.n_occ = n_occ;
     return out;
 }
@@ -3086,7 +3108,7 @@ double DFTB2::Workspace::launch_3ob(const cpu::Frame& f, double scc_tol,
     if (with_forces || with_stress) {
         double stress_buf[6] = {0, 0, 0, 0, 0, 0};
         analytic_forces_3ob(n_at, n_ao, res.n_occ, el, ao0, Z, xb, yb, zb,
-                            out_dq, res.C, res.eps, fx, fy, fz, with_forces,
+                            out_dq, *res.C, *res.eps, fx, fy, fz, with_forces,
                             with_stress ? stress_buf : nullptr, f.box.volume());
         if (with_stress) {
             for (int v = 0; v < 6; ++v) {
@@ -3773,7 +3795,7 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
             const std::size_t p = static_cast<std::size_t>(io) * n_v + iv;
             out.pair_occ[p] = i;
             out.pair_virt[p] = a;
-            de[p] = gs.eps(a) - gs.eps(i);
+            de[p] = (*gs.eps)(a) - (*gs.eps)(i);
             if (!(de[p] > 0.0))
                 throw std::runtime_error(
                     "DFTB2::td_casida: non-positive orbital gap eps_"
@@ -3786,7 +3808,7 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
 
     // Mulliken transition charges q^{ia}_A = 1/2 sum_{mu in A}
     //   (c_{mu i} (S c_a)_mu + c_{mu a} (S c_i)_mu).
-    const linalg::RealMatrix SC = xt::linalg::dot(S, gs.C);
+    const linalg::RealMatrix SC = xt::linalg::dot(S, *gs.C);
     std::vector<int> ao_atom(static_cast<std::size_t>(n_ao), 0);
     for (int a = 0; a < n_at; ++a)
         for (int m = ao0[static_cast<std::size_t>(a)];
@@ -3800,7 +3822,7 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
             out.transition_charge.data() + static_cast<std::size_t>(p) * n_at;
         for (int mu = 0; mu < n_ao; ++mu)
             qp[ao_atom[static_cast<std::size_t>(mu)]] +=
-                0.5 * (gs.C(mu, i) * SC(mu, a) + gs.C(mu, a) * SC(mu, i));
+                0.5 * ((*gs.C)(mu, i) * SC(mu, a) + (*gs.C)(mu, a) * SC(mu, i));
     }
 
     // Coupling kernel K and the Casida matrix Omega [eV^2]. Assembled exactly

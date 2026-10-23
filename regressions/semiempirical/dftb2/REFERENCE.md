@@ -582,6 +582,13 @@ is per-launch, which is what this exercises.
 | **Converged energy unchanged** | 1×10⁻⁶ eV | **2.3×10⁻¹³ eV** |
 | SCC iteration speedup | ≥ 1.25× | **1.90×** (188 → 99) |
 
+The same scripted trajectory is also run with initial-force requests, trial
+requests at displaced geometries, and failed normal solves (invalid D3 cutoff
+after SCC) inserted between accepted steps. Normal-step iteration counts must
+match the control exactly and final energies must agree within 1e-10 eV.
+These are predictor-history isolation checks at the public Component request
+boundary; they do not claim validation of the MD or Minimize presets.
+
 The energy gate is the load-bearing one: a predictor that moved the answer
 would be a bug wearing a speedup's clothes.
 
@@ -1294,3 +1301,13 @@ SCC-DFTB2 (MioSketch) water + oxygen \(U_{\mathrm{eff}}=4\) eV. Energy-only.
 - No absolute DFTB+ +U pin (Dudarev shell details differ by engine).
 - Stress / multi-k / shell-resolved \(U_\ell\) still open.
 - Forces are re-SCC FD, not analytic \(\partial n/\partial R\).
+
+### Repeated Frame evaluation checks
+
+The existing `h2o_dftb2_mio` section additionally compares retained-workspace
+and fresh-object results after geometry displacement, O-to-C substitution
+(same atom and AO counts), an H2 solve (different sizes), and return to the
+externally pinned water. Energy, charges and every force component must agree
+within 1e-10 in their native eV, e and eV/Å units. Unsupported-element rejection
+must leave the method retryable. These are internal consistency checks that
+supplement the unchanged DFTB+ oracle; they are not new external evidence.

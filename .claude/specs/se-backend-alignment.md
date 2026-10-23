@@ -120,8 +120,25 @@ required modules. GPU validation requires GH200, never inferred from CPU.
   for the Python bridge exposed a missing MD/potentials/neighbor test guard;
   corrected. Full current CPU suite: 692/692 pass (`w1-mixer-python-tests.log`).
   Allocation tracing has not yet been run.
-- W1 is not complete: scientific-matrix workspace retention, stronger
-  predictor lifecycle checks and composition validation remain.
+- W0/W1 API/SCC/mixer work is committed as `1705d834d`; unrelated NDDO and
+  planning changes remain outside that commit.
+- W1 Gamma workspace slice: restricted mio, collinear spin and 3ob retain
+  H0/S/H/P and the generalized LAPACK solver across geometry evaluations.
+  Internal force/TD consumers borrow the converged orbitals from that owner.
+  Open-shell density and Mulliken populations reuse the existing BLAS density
+  builder and quadratic diagonal contraction. Species/atom-count changes
+  rebuild the workspace; unsupported-species failure followed by retry passes.
+  Full CPU suite: 692/692 pass (`w1-gamma-reuse-tests.log`), including periodic,
+  spin, multi-k, 3ob, additions and TD-DFTB regressions. Allocation tracing has
+  not yet been run; analytic-force scratch and multi-k buffers still allocate.
+- W1 predictor boundary validation: the existing scripted trajectory now
+  interleaves initial-force requests, trial evaluations and post-SCC failures.
+  Subsequent normal SCC iteration counts match the unperturbed history exactly,
+  with final energy within 1e-10 eV. DFTB2's full case passes in 2.60 seconds
+  (`w1-history-tests.log`). This exercises request handling, not real MD or
+  Minimize orchestration; those composition checks remain pending.
+- W1 is not complete: finish scientific workspace retention and allocation at
+  the component build/rebuild boundary, then validate MD/Minimize composition.
   The independent build uses `/tmp/atv-se-rust-1.99.1` after a concurrent
   global toolchain replacement interrupted compilation. A later external
   change to molrs/rust-toolchain.toml is preserved.

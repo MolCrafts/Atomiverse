@@ -281,6 +281,66 @@ int run() {
         return 1;
     }
 
+    // Reusing scientific buffers must reproduce a fresh solve after geometry,
+    // species (even at the same AO count), and atom-count changes. The water
+    // endpoint retains the independent DFTB+ pin checked above.
+    for (int variant = 0; variant < 4; ++variant) {
+        auto changed = make_water();
+        if (variant == 0) {
+            changed.span(kAtom_x)[1] += 0.08;
+            changed.span(kAtom_z)[2] += 0.03;
+        } else if (variant == 1) {
+            changed.span(kAtom_type)[0] = 6;
+        } else if (variant == 2) {
+            changed = cpu::Frame(2);
+            changed.box = cpu::Box::cubic(20.0);
+            for (int a = 0; a < 2; ++a) {
+                changed.span(kAtom_type)[a] = 1;
+                changed.span(kAtom_x)[a] = 0.74 * a;
+                changed.span(kAtom_y)[a] = changed.span(kAtom_z)[a] = 0.0;
+            }
+        }
+        auto fresh_frame = changed;
+        cpu::semiempirical::DFTB2 fresh{
+            cpu::semiempirical::DftbSkSet::MioSketch};
+        fresh.boundary = cpu::semiempirical::DftbBoundary::cluster;
+        fresh.scc_tol = 1e-10;
+        fresh.forces(fresh_frame);
+        direct.forces(changed);
+        if (std::fabs(changed.meta.get(kEnergy) - fresh_frame.meta.get(kEnergy))
+            > 1e-10) {
+            std::printf("FAIL DFTB2 rebuilt workspace energy (variant %d)\n",
+                        variant);
+            return 1;
+        }
+        for (auto key : {kAtom_fx, kAtom_fy, kAtom_fz, kAtom_charge})
+            for (int a = 0; a < changed.nlocal(); ++a)
+                if (std::fabs(changed.span(key)[a] - fresh_frame.span(key)[a])
+                    > 1e-10) {
+                    std::printf(
+                        "FAIL DFTB2 rebuilt workspace output (variant %d)\n",
+                        variant);
+                    return 1;
+                }
+    }
+    auto invalid_species = make_water();
+    invalid_species.span(kAtom_type)[0] = 2;
+    rejected = false;
+    try {
+        direct.forces(invalid_species);
+    } catch (const std::runtime_error&) {
+        rejected = true;
+    }
+    if (!rejected || std::isfinite(direct.last_energy())) {
+        std::printf("FAIL DFTB2 invalid species rebuild\n");
+        return 1;
+    }
+    direct.forces(result);
+    if (std::fabs(result.meta.get(kEnergy) - kDftbPlusEV) > kAbsTolEV) {
+        std::printf("FAIL DFTB2 retry after invalid species\n");
+        return 1;
+    }
+
     cpu::semiempirical::DFTB2 extra{cpu::semiempirical::DftbSkSet::MioSketch};
     extra.boundary = cpu::semiempirical::DftbBoundary::cluster;
     extra.scc_tol = 1e-10;
