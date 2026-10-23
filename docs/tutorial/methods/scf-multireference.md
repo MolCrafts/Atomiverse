@@ -7,7 +7,9 @@ a CASSCF reference. Each is a concrete class template wrapping the RHF it
 correlates (`post_hf.h`, `cisd.h`), mirroring the PySCF object of the same
 name: `cpu::scf::CISD<RHF>{rhf}.run(n_states)` (after `rhf.run(frame)`),
 `cpu::scf::CASCI<RHF>{rhf}.run(frame, ncas, nelecas)`,
-`cpu::scf::CASSCF<RHF>{rhf, ncas, nelecas}.run(frame)`,
+`cpu::scf::CASSCF<RHF>{rhf, ncas, nelecas}` —
+`cpu::Driver<mc::Phase>` (`rotate → casci → gradient → check`;
+[Call](#call)),
 `cpu::scf::NEVPT2<RHF>{rhf}.run(frame, ncas, nelecas)` and
 `cpu::scf::FCI<RHF>{rhf}.run(frame)`. The active-space entries drive their own
 SCF; CASCI, CASSCF and FCI share one dense determinant-CI engine.
@@ -15,6 +17,39 @@ SCF; CASCI, CASSCF and FCI share one dense determinant-CI engine.
 The sections cover CPU only and energies only: CIS(D) on formaldehyde, the
 full-valence CAS(2e,2o) family on H₂, and CASSCF(2,2) on H₂O (core and one
 virtual, so the orbital step runs), all in STO-3G.
+
+### Call
+
+`cpu::scf::CASSCF<RHF>` is `cpu::Driver<mc::Phase>`, the same preset shape as
+`cpu::md::MD`. The constructor mounts `rotate`, `casci`, `gradient`, and
+`check` with `on(phase).add`. max |g| is published on
+`ConvergenceMetrics::residual`. `OrbitalGradientConverged` decides. The method
+does not assign convergence. `ncas`, `nelecas`, `orb_tol`, and `max_macro` are
+constructor arguments and are const after construction.
+`CASSCF{mf, ncas, nelecas}` sets `orb_tol` to `max(mf.tol, 1e-8)` [Hartree]
+and `max_macro` to 50. The explicit overload is
+`CASSCF{mf, ncas, nelecas, orb_tol, max_macro}`. The reference is not owned
+and must outlive the CASSCF object. There is no `HF` tag and no CUDA path.
+Closed-shell RHF only. There is no `forces(Frame&)`.
+
+Frame in is positions [Å] and species in `kAtom_type`. `run(Frame&)` drives
+the reference SCF, then overwrites `kEnergy` with the correlated total [eV].
+Hartree stays on `CASSCFResult` (`e_casscf`, `e_corr`). `run(const Frame&)`
+writes nothing. `provides_energy()` and `requires_full_frame()` are true;
+`provides_force()` is false, so `kAtom_f*` are not written. An outer driver
+that mounts CASSCF with `on(phase).add` accumulates `kEnergy` and refuses a
+force request.
+
+```cpp
+cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
+cpu::scf::CASSCF<cpu::scf::RHF> cas{rhf, /*ncas=*/2, /*nelecas=*/2};
+// orb_tol = max(rhf.tol, 1e-8) [Hartree], max_macro = 50
+const cpu::scf::CASSCFResult energy = cas.run(frame); // overwrite kEnergy [eV]
+double e_ev = frame.meta.get(kEnergy);                 // correlated total [eV]
+double e_ha = energy.e_casscf;                         // Hartree
+bool ok = cas.converged();                             // Criterion verdict
+```
 
 Case: `ctest -R '^scf/multireference$'` — sources and oracle record in [`regressions/scf/multireference/`](../../../regressions/scf/multireference/). One section of the case per `##` heading below: `atv_regressions --case scf/multireference --section <name>`.
 
