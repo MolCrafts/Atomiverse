@@ -16,7 +16,8 @@
 ///
 /// v1 is all-electron s functions on an orthorhombic cell. l > 0 throws
 /// naming the missing collocation kernel — no host molecular-ERI fill.
-/// KUHF reuses the same FFT J/K; only the spin assembly differs.
+/// KUHF reuses the same FFT J/K; only the spin assembly differs. The
+/// iteration lives on `cpu::scf::KUHF` (`Driver<scf::Phase>`), not here.
 #pragma once
 
 #include <array>
@@ -149,21 +150,56 @@ double krhf_cycle_energy(const KrhfCycle& cycle);
 ///        Does not decide convergence.
 double krhf_cycle_delta(KrhfCycle& cycle);
 
-struct KrhfEnergy {
-    double hartree = 0.0;
-    int iterations = 0;
-    bool converged = false;
-};
-
-/// @brief Converged KUHF total energy [Hartree].
+/// @brief One unrestricted k-point SCF state. The driver walks it; this
+///        type does not decide convergence.
 ///
-/// `n_alpha` and `n_beta` are mesh totals (`KUHF.nelec` in
-/// `pyscf/pbc/scf/kuhf.py`): `cell.spin = n_alpha - n_beta` is not
-/// multiplied by the number of k-points. `n_alpha + n_beta` must equal
-/// `(ΣZ)*nk − charge`. Same s-function orthorhombic envelope as KRHF.
-KrhfEnergy kuhf_energy(const Frame& frame, BasisSet basis, const int k_mesh[3],
-                       int n_alpha, int n_beta, int charge, double tol,
-                       int max_iter);
+/// Steps follow PySCF 2.14.0 `pyscf/pbc/scf/kuhf.py` (`KUHF.nelec`,
+/// `get_veff` with `J = Ja+Jb` and `vhf = J−K`, `get_occ`, `energy_elec`,
+/// `eig`), `pyscf/pbc/scf/khf.py` `KSCF.eig`, and `pyscf/scf/hf.py`
+/// `kernel`, with DIIS left off (`get_fock` `diis=None`).
+/// `n_alpha` and `n_beta` are mesh totals: `cell.spin = n_alpha - n_beta`
+/// is not multiplied by the number of k-points.
+struct KuhfCycle;
+
+/// @brief Destroy a cycle allocated by `kuhf_cycle_open`.
+void kuhf_cycle_delete(KuhfCycle* cycle);
+
+/// @brief Owning pointer. The deleter is a function so callers need not
+///        see the cycle body.
+using KuhfCycleOwner = std::unique_ptr<KuhfCycle, void (*)(KuhfCycle*)>;
+
+/// @brief Assemble the cell and the core-Hamiltonian density guess.
+/// @param frame Orthorhombic geometry [Å].
+/// @param basis Gaussian basis (s functions).
+/// @param k_mesh Monkhorst–Pack divisions.
+/// @param n_alpha α electrons across the mesh (`KUHF.nelec`).
+/// @param n_beta β electrons across the mesh (`KUHF.nelec`).
+/// @param charge Cell charge [e]. `n_alpha + n_beta` must equal
+///        `(ΣZ)*nk − charge`.
+KuhfCycleOwner kuhf_cycle_open(const Frame& frame, BasisSet basis,
+                               const int k_mesh[3], int n_alpha, int n_beta,
+                               int charge);
+
+/// @brief `KUHF.get_veff` + `energy_elec` for the current spin densities.
+///        J = Ja+Jb, vhf = J−K per spin. Stores the total energy
+///        [Hartree] including E_nn.
+void kuhf_cycle_fock(KuhfCycle& cycle);
+
+/// @brief `KUHF.eig`: canonical orthogonalization then Hermitian
+///        diagonalize, each spin (`KSCF.eig`).
+void kuhf_cycle_diagonalize(KuhfCycle& cycle);
+
+/// @brief `get_occ` (fill 1) + `make_rdm1` from the orbitals just
+///        diagonalized.
+void kuhf_cycle_density(KuhfCycle& cycle);
+
+/// @brief Last total energy [Hartree], nuclear repulsion included.
+double kuhf_cycle_energy(const KuhfCycle& cycle);
+
+/// @brief |ΔE| [Hartree] against the previous fock energy, or +∞ on the
+///        first call. Records the current energy as the next baseline.
+///        Does not decide convergence.
+double kuhf_cycle_delta(KuhfCycle& cycle);
 
 } // namespace internal
 } // namespace scf
