@@ -1035,3 +1035,58 @@ regression pins the **converged total energy** dual gate on C10H22.
 
 All-trans n-decane skeleton (C–C 1.54 Å, C–H 1.09 Å), 32 atoms, cubic
 box 80 Å. Coordinates generated in `reg_c10h22_cfmm_j.cpp`.
+
+
+## Reference — RHF `run(const Frame&)`, H₂/STO-3G and H₂O/STO-3G
+
+**One section, multi-device:** `sto3g_const --device=cpu|cuda|both`
+(default `both` when built with CUDA). The `.cpp` is the CUDA-off path.
+Public `RHF` + Frame only.
+
+`run(const Frame&)` is the geometry-read-only entry. It runs the same SCF
+as `run(Frame&)` — PySCF `scf.hf.kernel`, with the total
+`energy_elec` + nuclear repulsion (`energy_tot`) — and writes nothing.
+`energy()` holds that total [Hartree]. `kEnergy`, `kEnergyElectronic`,
+positions, and `kAtom_f*` keep the caller's values. On CUDA,
+`compute_force` stays true and the const entry still does not call
+`launch_rhf_forces_sp`.
+
+### Oracle
+
+Offline PySCF 2.14.0, `tools/pyscf_oracle/pin_scf.py`, `conv_tol=1e-12`
+(the script default), Cartesian (`cart=True`; STO-3G has no d shell).
+
+```
+python tools/pyscf_oracle/pin_scf.py rhf --geom h2 --basis sto-3g
+python tools/pyscf_oracle/pin_scf.py rhf --geom water --basis sto-3g
+```
+
+| System | Geometry [Å] | E_RHF [Ha] |
+| --- | --- | --- |
+| H₂ | H (0,0,0), H (0,0,0.74) — preset `h2` | −1.1167593073964255 |
+| H₂O | O (0,0,0.1173), H (0, ±0.7572, −0.4692) — preset `water` | −74.96302313846289 |
+
+`oracle: pyscf` 2.14.0 (`pyscf.scf.RHF.kernel` / `e_tot_ha`). Not an
+Atomiverse measurement. Printed by PySCF 2.14.0 as `"e_tot_ha": -1.1167593073964255` (H₂) and
+`"e_tot_ha": -74.96302313846289` (H₂O), both `"converged": true`.
+The H₂ figure matches the `es-cuda-rhf-driver` pin.
+
+### Tolerance
+
+Same energy windows as `h2o_rhf_sto3g_grad` and `es-cuda-rhf-driver`:
+
+| Device | \|E − E_PySCF\| |
+| --- | --- |
+| cpu | 1e-8 Ha |
+| cuda | 1e-6 Ha |
+
+The CUDA leg also requires `last_scf_on_device()` and
+`last_force_on_device() == false` on both molecules. Both are STO-3G
+l ≤ 1, so a host ERI fill or a force-kernel trip fails the section.
+
+### What is checked
+
+Both systems converge. `energy()` [Hartree] matches the pin. Sentinels
+`kEnergy = 42` eV, `kEnergyElectronic = −7` eV, positions, and `kAtom_f*`
+are unchanged. Non-convergence, a device-path miss, a mutated Frame, or
+an out-of-tolerance energy exits non-zero with `got / want / tol`.

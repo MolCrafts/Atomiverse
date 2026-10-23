@@ -4,6 +4,10 @@ atv_regression(SECTION h2o_rhf_sto3g
   REQUIRES HF
   DEVICES both)
 
+atv_regression(SECTION sto3g_const
+  REQUIRES HF
+  DEVICES both)
+
 atv_regression(SECTION h2o_rhf_sto3g_grad
   REQUIRES HF
   DEVICES both)
