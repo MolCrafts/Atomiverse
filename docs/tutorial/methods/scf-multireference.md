@@ -7,7 +7,7 @@ a CASSCF reference. Each is a concrete class template wrapping the RHF it
 correlates (`post_hf.h`, `cisd.h`), mirroring the PySCF object of the same
 name: `cpu::scf::CISD<RHF>{rhf}.run(n_states)` (after `rhf.run(frame)`),
 `cpu::scf::CASCI<RHF>{rhf}.run(frame, ncas, nelecas)`,
-`cpu::scf::CASSCF<RHF>{rhf}.run(frame, ncas, nelecas)`,
+`cpu::scf::CASSCF<RHF>{rhf, ncas, nelecas}.run(frame)`,
 `cpu::scf::NEVPT2<RHF>{rhf}.run(frame, ncas, nelecas)` and
 `cpu::scf::FCI<RHF>{rhf}.run(frame)`. The active-space entries drive their own
 SCF; CASCI, CASSCF and FCI share one dense determinant-CI engine.
@@ -40,7 +40,7 @@ rhf.tol = 1e-12;
 rhf.max_iter = 100;
 
 const cpu::scf::CASSCFResult cas =
-    cpu::scf::CASSCF<cpu::scf::RHF>{rhf}.run(frame, /*ncas=*/2, /*nelecas=*/2);
+    cpu::scf::CASSCF<cpu::scf::RHF>{rhf, /*ncas=*/2, /*nelecas=*/2}.run(frame);
 // cas.e_casscf, cas.e_corr [Ha]; cas.ncas, cas.nelecas, cas.ncore
 // cas.iterations, cas.converged; rhf.energy() = E_RHF [Ha]
 ```
@@ -156,9 +156,11 @@ CI coefficients \(\mathbf{c}\) come from the dense active-space FCI kernel;
 orbital coefficients \(\mathbf{C}\) are updated by a two-step Newton
 macro-loop on the orbital gradient built from spin-summed 1- and 2-RDMs until
 the generalized Fock is symmetric to tolerance (Roos 1987). State-specific,
-single root. `CASSCF<RHF>::run` returns `CASSCFResult{e_casscf, e_corr, ncas,
-nelecas, ncore, iterations, converged}` (`casscf.h`; private pack
-`internal/casscf_pack.h`; implementation `src/cpu/scf/casscf.cpp`). Twin:
+single root. The macro iteration is `cpu::Driver<mc::Phase>` (`rotate →
+casci → gradient → check`); `OrbitalGradientConverged` decides.
+`CASSCF{rhf, ncas, nelecas}.run(frame)` overwrites `kEnergy` [eV] and returns
+`CASSCFResult{e_casscf, e_corr, ncas, nelecas, ncore, iterations, converged}`
+[Hartree] (`casscf.h`, `post_hf.h`; implementation `src/cpu/scf/casscf.cpp`). Twin:
 `pyscf.mcscf.CASSCF(mf, ncas=2, nelecas=2)`, `conv_tol=1e-12`.
 
 On full-valence CAS(2,2) there are no non-redundant orbital rotations

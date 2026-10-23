@@ -8,19 +8,29 @@
 /// Γ_pqrs = Σ_{στ} ⟨a†_{pσ} a†_{rτ} a_{sτ} a_{qσ}⟩.
 /// Generalized Fock: F_pq = Σ_r h_pr γ_rq + Σ_rst (pr|st) Γ_rqst;
 /// orbital gradient g_pq = 2 (F_pq − F_qp) for non-redundant pairs.
+///
+/// Transplanted from PySCF 2.14.0 (not re-derived):
+/// - `pyscf/mcscf/__init__.py` `CASSCF` builds `mc1step.CASSCF(mf, ncas, nelecas)`
+/// - `pyscf/mcscf/mc1step.py` `kernel` is the macro cycle
+/// - `casci` is the active-space CI
+/// - `gen_g_hop` is the orbital gradient (antisymmetric generalized Fock)
+/// - `rotate_mo` applies the stored rotation
+/// The generator itself is the existing diagonal Newton step, not
+/// `rotate_orb_cc`. The product iteration is `CASSCF` (`Driver<mc::Phase>`).
+/// This file does not assign a converged flag; `casscf_energy` only records
+/// whether the residual met `orb_tol` for the NEVPT2 integral entry.
 
-#include "atomiverse/cpu/scf/casscf.h"
+#include "atomiverse/cpu/scf/internal/casscf_cycle.h"
+
 #include "atomiverse/cpu/scf/internal/ao2mo.h"
 #include "atomiverse/cpu/scf/internal/casscf_pack.h"
-#include "atomiverse/cpu/scf/internal/ci_engine.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <stdexcept>
 #include <string>
-#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <xtensor-blas/xlinalg.hpp>
@@ -154,10 +164,10 @@ double approx_hess(const xt::xtensor<double, 2>& F,
 
 } // namespace
 
-CASSCFResult casscf_energy(const internal::IntegralView& ints,
-                           const SlaterDeterminant& det, double e_scf_ha,
-                           int ncas, int nelecas, double orb_tol,
-                           int max_macro) {
+CasscfCycle::CasscfCycle(const internal::IntegralView& view,
+                         const SlaterDeterminant& det, double e_scf_ha,
+                         int ncas_in, int nelecas_in)
+    : ints(view), e_scf(e_scf_ha), ncas(ncas_in), nelecas(nelecas_in) {
     using Spin = SlaterDeterminant::Spin;
     if (ints.ERI.size() == 0) {
         throw std::invalid_argument("casscf_energy: ERI is not materialized; "
@@ -178,18 +188,16 @@ CASSCFResult casscf_energy(const internal::IntegralView& ints,
             + std::to_string(nelecas) + ")");
     }
 
-    // Working MO coefficients (mutable copy of the RHF reference).
-    xt::xtensor<double, 2> C = det.coefficients(Spin::alpha);
-    const int n_mo = static_cast<int>(C.shape(1));
+    C = det.coefficients(Spin::alpha);
+    n_mo = static_cast<int>(C.shape(1));
     const int n_alpha = det.n_electrons(Spin::alpha);
-    const int n_act_a = nelecas / 2;
-    const int n_act_b = n_act_a;
-    const int ncore = n_alpha - n_act_a;
+    n_act = nelecas / 2;
+    ncore = n_alpha - n_act;
     const int nvirt = n_mo - ncore - ncas;
 
-    if (n_act_a > ncas) {
+    if (n_act > ncas) {
         throw std::invalid_argument("casscf_energy: nelecas/2="
-                                    + std::to_string(n_act_a)
+                                    + std::to_string(n_act)
                                     + " exceeds ncas=" + std::to_string(ncas));
     }
     if (ncore < 0) {
@@ -204,125 +212,138 @@ CASSCFResult casscf_energy(const internal::IntegralView& ints,
     }
 
     // Non-redundant orbital pairs: core–active, active–virtual, core–virtual.
-    struct Pair {
-        int p, q; // rotate p < q in the sense κ_qp = −κ_pq; store (lo, hi)
-    };
-    std::vector<Pair> pairs;
     pairs.reserve(
         static_cast<std::size_t>(ncore * ncas + ncas * nvirt + ncore * nvirt));
     for (int i = 0; i < ncore; ++i)
         for (int u = 0; u < ncas; ++u)
-            pairs.push_back({i, ncore + u});
+            pairs.emplace_back(i, ncore + u);
     for (int u = 0; u < ncas; ++u)
         for (int a = 0; a < nvirt; ++a)
-            pairs.push_back({ncore + u, ncore + ncas + a});
+            pairs.emplace_back(ncore + u, ncore + ncas + a);
     for (int i = 0; i < ncore; ++i)
         for (int a = 0; a < nvirt; ++a)
-            pairs.push_back({i, ncore + ncas + a});
+            pairs.emplace_back(i, ncore + ncas + a);
 
-    double e_cas = 0.0;
-    int n_iter = 0;
-    bool converged = false;
+    const auto n = static_cast<std::size_t>(n_mo);
+    K = xt::zeros<double>({n, n});
+}
 
-    for (int macro = 0; macro < max_macro; ++macro) {
-        ++n_iter;
-        const xt::xtensor<double, 2> h_full = mo_hcore(ints.Hcore, C, n_mo);
-        const xt::xtensor<double, 4> g_full = ao2mo_full(ints.ERI, C, n_mo);
+void CasscfCycle::rotate() {
+    if (!have_step)
+        return;
+    C = xt::linalg::dot(C, exp_antisymmetric(K));
+    have_step = false;
+}
 
-        // Frozen-core energy (closed-shell).
-        double e_core = ints.V_nuc;
-        for (int i = 0; i < ncore; ++i) {
-            e_core += 2.0 * h_full(i, i);
-            for (int j = 0; j < ncore; ++j)
-                e_core += 2.0 * g_full(i, i, j, j) - g_full(i, j, j, i);
-        }
+void CasscfCycle::casci() {
+    h_mo = mo_hcore(ints.Hcore, C, n_mo);
+    g_mo = ao2mo_full(ints.ERI, C, n_mo);
 
-        // Effective active Hamiltonian.
-        const std::size_t na = static_cast<std::size_t>(ncas);
-        xt::xtensor<double, 2> h_eff = xt::zeros<double>({na, na});
-        xt::xtensor<double, 4> g_act = xt::zeros<double>({na, na, na, na});
-        for (int u = 0; u < ncas; ++u) {
-            const int U = ncore + u;
-            for (int v = 0; v < ncas; ++v) {
-                const int V = ncore + v;
-                double he = h_full(U, V);
-                for (int i = 0; i < ncore; ++i)
-                    he += 2.0 * g_full(U, V, i, i) - g_full(U, i, i, V);
-                h_eff(u, v) = he;
-                for (int r = 0; r < ncas; ++r) {
-                    const int R = ncore + r;
-                    for (int s = 0; s < ncas; ++s) {
-                        const int S = ncore + s;
-                        g_act(u, v, r, s) = g_full(U, V, R, S);
-                    }
+    // Frozen-core energy (closed-shell).
+    double e_core = ints.V_nuc;
+    for (int i = 0; i < ncore; ++i) {
+        e_core += 2.0 * h_mo(i, i);
+        for (int j = 0; j < ncore; ++j)
+            e_core += 2.0 * g_mo(i, i, j, j) - g_mo(i, j, j, i);
+    }
+
+    // Effective active Hamiltonian.
+    const std::size_t na = static_cast<std::size_t>(ncas);
+    xt::xtensor<double, 2> h_eff = xt::zeros<double>({na, na});
+    xt::xtensor<double, 4> g_act = xt::zeros<double>({na, na, na, na});
+    for (int u = 0; u < ncas; ++u) {
+        const int U = ncore + u;
+        for (int v = 0; v < ncas; ++v) {
+            const int V = ncore + v;
+            double he = h_mo(U, V);
+            for (int i = 0; i < ncore; ++i)
+                he += 2.0 * g_mo(U, V, i, i) - g_mo(U, i, i, V);
+            h_eff(u, v) = he;
+            for (int r = 0; r < ncas; ++r) {
+                const int R = ncore + r;
+                for (int s = 0; s < ncas; ++s) {
+                    const int S = ncore + s;
+                    g_act(u, v, r, s) = g_mo(U, V, R, S);
                 }
             }
         }
-
-        const CiSolution ci =
-            dense_ci_solve(h_eff, g_act, e_core, n_act_a, n_act_b);
-        e_cas = ci.energy;
-
-        // No non-redundant rotations ⇒ CASSCF ≡ CASCI.
-        if (pairs.empty()) {
-            converged = true;
-            break;
-        }
-
-        xt::xtensor<double, 2> act1;
-        xt::xtensor<double, 4> act2;
-        make_rdm12(ci, ncas, act1, act2);
-
-        // Energy consistency check (debug-level; do not throw on tiny noise).
-        // Embed and build Fock for orbital gradient.
-        xt::xtensor<double, 2> g1;
-        xt::xtensor<double, 4> g2;
-        embed_rdms(n_mo, ncore, ncas, act1, act2, g1, g2);
-        const xt::xtensor<double, 2> F =
-            generalized_fock(h_full, g_full, g1, g2);
-
-        double gmax = 0.0;
-        std::vector<double> grad(pairs.size());
-        for (std::size_t k = 0; k < pairs.size(); ++k) {
-            const int p = pairs[k].p;
-            const int q = pairs[k].q;
-            // g_pq = 2 (F_pq − F_qp); step rotates with κ_qp.
-            grad[k] = 2.0 * (F(p, q) - F(q, p));
-            gmax = std::max(gmax, std::abs(grad[k]));
-        }
-        if (gmax < orb_tol) {
-            converged = true;
-            break;
-        }
-
-        // Diagonal Newton: κ_pq = − g_pq / H_pq.
-        xt::xtensor<double, 2> K = xt::zeros<double>(
-            {static_cast<std::size_t>(n_mo), static_cast<std::size_t>(n_mo)});
-        double knorm = 0.0;
-        for (std::size_t k = 0; k < pairs.size(); ++k) {
-            const int p = pairs[k].p;
-            const int q = pairs[k].q;
-            const double H = approx_hess(F, g1, p, q);
-            double kap = -grad[k] / H;
-            // Trust: |κ| ≤ 0.5.
-            if (kap > 0.5)
-                kap = 0.5;
-            if (kap < -0.5)
-                kap = -0.5;
-            // Antisymmetric generator: K_qp = κ, K_pq = −κ with κ = κ_{p→q}.
-            K(q, p) = kap;
-            K(p, q) = -kap;
-            knorm += kap * kap;
-        }
-        (void)knorm;
-        C = xt::linalg::dot(C, exp_antisymmetric(K));
     }
 
-    if (!converged && pairs.empty())
-        converged = true;
+    ci = dense_ci_solve(h_eff, g_act, e_core, n_act, n_act);
+    e_cas = ci.energy;
+}
 
-    return CASSCFResult{e_cas, e_cas - e_scf_ha, ncas,     nelecas,
-                        ncore, n_iter,           converged};
+void CasscfCycle::gradient() {
+    // No non-redundant rotations ⇒ the orbital gradient is identically zero
+    // and CASSCF ≡ CASCI. Do not invent a step.
+    if (pairs.empty()) {
+        gmax = 0.0;
+        have_step = false;
+        return;
+    }
+
+    xt::xtensor<double, 2> act1;
+    xt::xtensor<double, 4> act2;
+    make_rdm12(ci, ncas, act1, act2);
+
+    xt::xtensor<double, 2> g1;
+    xt::xtensor<double, 4> g2;
+    embed_rdms(n_mo, ncore, ncas, act1, act2, g1, g2);
+    const xt::xtensor<double, 2> F = generalized_fock(h_mo, g_mo, g1, g2);
+
+    gmax = 0.0;
+    std::vector<double> grad(pairs.size());
+    for (std::size_t k = 0; k < pairs.size(); ++k) {
+        const int p = pairs[k].first;
+        const int q = pairs[k].second;
+        // g_pq = 2 (F_pq − F_qp); step rotates with κ_qp.
+        grad[k] = 2.0 * (F(p, q) - F(q, p));
+        gmax = std::max(gmax, std::abs(grad[k]));
+    }
+
+    // Diagonal Newton: κ_pq = − g_pq / H_pq. Applied on the next rotate,
+    // so a converged gradient is published before the step is taken.
+    const auto n = static_cast<std::size_t>(n_mo);
+    K = xt::zeros<double>({n, n});
+    for (std::size_t k = 0; k < pairs.size(); ++k) {
+        const int p = pairs[k].first;
+        const int q = pairs[k].second;
+        const double H = approx_hess(F, g1, p, q);
+        double kap = -grad[k] / H;
+        // Trust: |κ| ≤ 0.5.
+        if (kap > 0.5)
+            kap = 0.5;
+        if (kap < -0.5)
+            kap = -0.5;
+        // Antisymmetric generator: K_qp = κ, K_pq = −κ with κ = κ_{p→q}.
+        K(q, p) = kap;
+        K(p, q) = -kap;
+    }
+    have_step = true;
+}
+
+CASSCFResult casscf_energy(const internal::IntegralView& ints,
+                           const SlaterDeterminant& det, double e_scf_ha,
+                           int ncas, int nelecas, double orb_tol,
+                           int max_macro) {
+    // Integral-level entry used by SC-NEVPT2. The product loop is
+    // `CASSCF::run` (`Driver<mc::Phase>`). This walk only records whether
+    // the same residual the Criterion judges fell under `orb_tol`.
+    CasscfCycle cycle(ints, det, e_scf_ha, ncas, nelecas);
+    int executed = 0;
+    for (int it = 0; it < max_macro; ++it) {
+        cycle.rotate();
+        cycle.casci();
+        cycle.gradient();
+        ++executed;
+        if (cycle.residual() < orb_tol)
+            break;
+    }
+    const bool met = executed > 0 && cycle.residual() < orb_tol;
+    return CASSCFResult{cycle.e_cas, cycle.e_cas - e_scf_ha,
+                        ncas,        nelecas,
+                        cycle.ncore, executed,
+                        met};
 }
 
 } // namespace scf

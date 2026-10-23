@@ -13,6 +13,11 @@ namespace scf {
 /// @brief Closed-shell CASSCF ground-state energy (dense active-space CI +
 ///        orbital optimization).
 ///
+/// Integral-level entry for SC-NEVPT2. The product iteration is
+/// `CASSCF::run` (`Driver<mc::Phase>`). This function walks the same
+/// `CasscfCycle` stages and records whether max |g| fell under `orb_tol`.
+/// It does not publish `ConvergenceMetrics`.
+///
 /// Active orbitals are the contiguous block `[ncore, ncore+ncas)` with
 /// `ncore = n_occ − nelecas/2`. Non-redundant rotations are core–active,
 /// active–virtual, and core–virtual; active–active rotations are redundant for

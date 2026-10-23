@@ -477,6 +477,44 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 
 } // namespace cc
 
+/// @brief Closed-shell CASSCF orbital macro-iterations.
+///
+/// `cpu::scf::CASSCF` is `cpu::Driver<mc::Phase>`. One iteration is the
+/// macro cycle of PySCF `pyscf/mcscf/mc1step.py` `kernel`: apply the
+/// pending orbital rotation (`rotate_mo`; identity on the first pass),
+/// solve the active-space CI (`casci`), build the orbital gradient
+/// (`gen_g_hop`'s antisymmetric generalized Fock), then publish max |g|
+/// for a Criterion. `kind_of` returns `PhaseKind::SCF`.
+namespace mc {
+
+/// @brief Phase order for one CASSCF macro iteration.
+enum class Phase {
+    rotate,   ///< Apply the stored orbital step (`rotate_mo`). No-op until
+              ///< a gradient has been built.
+    casci,    ///< Active-space CI (`CASSCF.casci` / dense FCI).
+    gradient, ///< Orbital gradient from the generalized Fock (`gen_g_hop`).
+    check,    ///< Publish max |g| on `ConvergenceMetrics::residual`.
+    COUNT     ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the CASSCF phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in enum order, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"rotate", "casci", "gradient", "check"};
+}
+
+/// @brief Workflow discriminant for `mc::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF`.
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace mc
+
 /// @brief Phase enum → Plan slot index. **The one conversion in the codebase.**
 ///
 /// A Plan is a dense array of slots, so somewhere the typed phase has to become an

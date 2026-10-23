@@ -55,8 +55,8 @@ int run() {
     rhf.max_iter = 100;
 
     const cpu::scf::CASSCFResult cas =
-        ATV::cpu::scf::CASSCF<decltype(rhf)>{rhf}.run(frame, /*ncas=*/2,
-                                                      /*nelecas=*/2);
+        ATV::cpu::scf::CASSCF<decltype(rhf)>{rhf, /*ncas=*/2, /*nelecas=*/2}
+            .run(frame);
     if (!rhf.converged()) {
         std::fprintf(stderr, "FAIL: RHF/STO-3G (H2) did not converge\n");
         return 1;

@@ -5,7 +5,8 @@ Tutorial: [Electron correlation](../tutorial/ch07-correlation.md).
 Correlation on a converged HF reference. Each method is its own type
 (`MP2{mf}`, `MP3`, `MP4`, `CC2`, `CCSD` with `ccsd_t`, `CASCI`, `CASSCF`,
 `FCI`, `NEVPT2`), not a member of `MeanFieldMethod`. CCSD's amplitude
-iteration is `Driver<cc::Phase>`; the others are single-shot and throw on a
+iteration is `Driver<cc::Phase>`; CASSCF's orbital macro-iteration is
+`Driver<mc::Phase>`; the others are single-shot and throw on a
 non-converged reference. Legend: [Roadmap index](index.md).
 
 ## 1. Møller–Plesset
@@ -51,7 +52,7 @@ CIS excitation energies live under
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | CASCI | ✓ | ○ | Dense FCI in active space |
-| CASSCF | ✓ | ○ | Two-step orbital opt |
+| CASSCF | ✓ | ○ | `cpu::scf::CASSCF<Method>` : `cpu::Driver<mc::Phase>` (not `MeanFieldMethod`, no `HF` tag). Stages `rotate → casci → gradient → check`, mounted with `on(phase).add` in the constructor. max \|g\| is published on `ConvergenceMetrics::residual`; `OrbitalGradientConverged` decides; the method does not assign convergence. `CASSCF{mf, ncas, nelecas}` — `orb_tol` defaults to `max(mf.tol, 1e-8)` [Hartree], `max_macro = 50`, const after construction. The reference is not owned. `run(Frame&)` drives the reference SCF, overwrites `kEnergy` with the correlated total [eV], and returns `CASSCFResult` [Hartree]. `run(const Frame&)` writes nothing. No nuclear forces. Nested `on(phase).add` accumulates `kEnergy` and refuses a force request. Closed-shell RHF only. No CUDA path. |
 | SC-NEVPT2 | ✓ | ○ | On closed-shell CASSCF |
 | State-averaged CAS / RAS / GAS / DMRG | ○ | ○ | |
 | CASPT2 / PC-NEVPT2 / QD-NEVPT2 | ○ | ○ | |
