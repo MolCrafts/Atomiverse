@@ -491,8 +491,9 @@ python <pyscf pin> cc2 \
 - Energy only on closed-shell RHF; no UCC2, no λ / density, no analytic
   gradient or Hessian.
 - On H₂/STO-3G, CC2 is **not** a numerical stress of the approximate-CC
-  doubles truncation relative to MP2 (\(T_1 \approx 0\)); multi-electron /
-  multi-MO systems are needed to exercise the CC2 residual difference.
+  doubles truncation relative to MP2 (\(T_1 \approx 0\)).
+  [cc2-h2o-sto3g](#cc2-h2o-sto3g) is that stress: \(\lVert T_1\rVert \approx 9.7\times 10^{-3}\)
+  and \(E_{\mathrm{corr}}\) differs from MP2 by \(1.23\times 10^{-4}\) Ha.
 - Open-shell / higher CC / local / DF remain ○ — see
   `docs/roadmap/post-hf.md`, `docs/roadmap/excited-states.md`.
 
@@ -502,3 +503,33 @@ python <pyscf pin> cc2 \
   coupled cluster singles and doubles model CC2*, *Chem. Phys. Lett.*
   **243**, 409 (1995). DOI
   [10.1016/0009-2614(95)00841-Q](https://doi.org/10.1016/0009-2614(95)00841-Q)
+
+## cc2-h2o-sto3g — CC2, H₂O / STO-3G {#cc2-h2o-sto3g}
+
+### Summary
+
+Same `CC2<RHF>::run` as [cc2-h2-sto3g](#cc2-h2-sto3g), on the `pin_scf`
+water geometry. PySCF reports \(\lVert T_1\rVert = 9.663220868048\times 10^{-3}\),
+so the singles residual is exercised. CC2 \(E_{\mathrm{corr}}\) is
+**−0.035668770406499 Ha**, 1.231e-4 Ha below MP2
+(**−0.035545651646918 Ha**) on the same RHF reference. Oracle: PySCF 2.14.0
+`cc.rccsd.RCCSD` with `cc2=True`.
+
+### Validation (vs PySCF)
+
+| Quantity | Pin | Tol | Notes |
+| -------- | --: | --- | ----- |
+| \(E_{\mathrm{RHF}}\) | −74.963023138462859 Ha | \(10^{-6}\) Ha | Diagnostic |
+| \(E_{\mathrm{corr}}\) (CC2) | **−0.035668770406499 Ha** | **\(10^{-6}\) Ha** | Gate |
+| \(E_{\mathrm{tot}}\) (CC2) | **−74.998691908869361 Ha** | **\(10^{-6}\) Ha** | Gate |
+| Amplitudes | — | `converged == true` | Gate |
+| Not MP2 | \(\lvert E_{\mathrm{corr,CC2}} - E_{\mathrm{corr,MP2}}\rvert = 1.231\times 10^{-4}\) Ha | \(> 10^{-6}\) Ha | Gate |
+| `kEnergy` | \(E_{\mathrm{tot}}\times\) Ha→eV | \(10^{-8}\) eV | `run(Frame&)` overwrite |
+| `run(const Frame&)` | no `kEnergy` write | — | Gate |
+
+Oracle repro (offline only):
+
+```bash
+python tools/pyscf_oracle/pin_scf.py cc2 \
+    --geom water --basis sto-3g --conv-tol 1e-12
+```

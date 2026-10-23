@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/methods.h"
 #include "harness/registry.h"
@@ -75,6 +76,14 @@ int run() {
         return 1;
     if (!check("E_tot = E_HF+E_corr", cc2.e_tot, rhf.energy() + cc2.e_corr,
                1e-12))
+        return 1;
+    if (!frame.meta.contains(kEnergy.key)) {
+        std::fprintf(stderr,
+                     "FAIL: CC2::run(Frame&) did not publish kEnergy\n");
+        return 1;
+    }
+    if (!check("kEnergy [eV]", frame.meta.get(kEnergy),
+               cc2.e_tot * units::kHartreeInEv, 1e-8))
         return 1;
 
     std::printf("  iterations                 %d\n", cc2.iterations);
