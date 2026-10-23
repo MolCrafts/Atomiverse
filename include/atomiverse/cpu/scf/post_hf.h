@@ -332,9 +332,12 @@ class CCSD : public cpu::Driver<ATV::cc::Phase> {
     static void store_energy(Frame& frame, double e_ev, Write write,
                              const PriorEnergy& prior);
 
-    /// @brief Reference SCF, then the amplitude driver on this object's Runtime.
+    /// @brief Amplitude driver. A null `nested` walks this object's Runtime;
+    ///        otherwise `Driver::run_nested` on the parent. The caller has
+    ///        already converged the reference SCF.
     CCSDResult solve_amplitudes(Frame& frame, Write write,
-                                const PriorEnergy& prior, int cap);
+                                const PriorEnergy& prior, int cap,
+                                cpu::Context* nested);
     /// @brief Read the cycle the criterion accepted and write energy if asked.
     CCSDResult finish(Frame& frame, int executed, int cap, Write write,
                       const PriorEnergy& prior);

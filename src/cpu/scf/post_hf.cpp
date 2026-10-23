@@ -80,12 +80,13 @@ void drive_converged(Method& mf, Frame& frame, const SCFInitialGuess* guess,
               "(no fallback)");
 }
 
-/// One plan op per CC amplitude phase. Math is `ccsd_spatial_*`.
+/// One plan op per CC amplitude phase. Math is `CcsdSpatialCycle`.
 class AmpStage : public cpu::Component {
   public:
     enum class Kind { Update, Mix, Energy, Check };
 
-    AmpStage(CcsdSpatialPtr* cycle, Kind kind) : cycle_(cycle), kind_(kind) {}
+    AmpStage(std::unique_ptr<CcsdSpatialCycle>* cycle, Kind kind)
+        : cycle_(cycle), kind_(kind) {}
 
     std::string name() const override {
         switch (kind_) {
@@ -102,49 +103,33 @@ class AmpStage : public cpu::Component {
     }
 
     void launch(const cpu::LaunchContext& ctx) override {
-        if (!ctx.at(phase_of(kind_)))
-            return;
+        // Bound to one phase, so the runtime only calls this on that phase.
         if (!cycle_ || !*cycle_)
             throw std::runtime_error(
                 "cpu::scf::CCSD: amplitude cycle is not open");
         CcsdSpatialCycle& cycle = **cycle_;
         if (kind_ == Kind::Update) {
-            ccsd_spatial_update(cycle);
+            cycle.update();
             return;
         }
         if (kind_ == Kind::Mix) {
-            ccsd_spatial_mix(cycle);
+            cycle.mix();
             return;
         }
         if (kind_ == Kind::Energy) {
-            ccsd_spatial_energy(cycle);
+            cycle.energy();
             return;
         }
         if (!ctx.runtime.loop.metrics)
             throw std::runtime_error(
                 "cpu::scf::CCSD: check stage has no ConvergenceMetrics");
-        const double ha =
-            ccsd_spatial_e_scf(cycle) + ccsd_spatial_e_corr(cycle);
+        const double ha = cycle.e_scf + cycle.e_corr;
         ctx.runtime.loop.metrics->energy = ha * units::kHartreeInEv;
-        ctx.runtime.loop.metrics->residual = ccsd_spatial_residual(cycle);
+        ctx.runtime.loop.metrics->residual = cycle.residual();
     }
 
   private:
-    static ATV::cc::Phase phase_of(Kind kind) {
-        switch (kind) {
-        case Kind::Update:
-            return ATV::cc::Phase::update;
-        case Kind::Mix:
-            return ATV::cc::Phase::mix;
-        case Kind::Energy:
-            return ATV::cc::Phase::energy;
-        case Kind::Check:
-            return ATV::cc::Phase::check;
-        }
-        throw std::logic_error("cpu::scf::CCSD: unknown stage");
-    }
-
-    CcsdSpatialPtr* cycle_ = nullptr;
+    std::unique_ptr<CcsdSpatialCycle>* cycle_ = nullptr;
     Kind kind_ = Kind::Update;
 };
 
@@ -401,7 +386,27 @@ NEVPT2Result NEVPT2<Method>::run(Frame& frame, int ncas, int nelecas) {
 
 template <typename Method>
 struct CCSD<Method>::Loop {
-    CcsdSpatialPtr cycle{nullptr};
+    /// Opens one amplitude cycle and drops it on every exit, including a throw.
+    struct Hold {
+        Loop* loop = nullptr;
+
+        Hold(Loop& loop_in, const internal::IntegralView& ints,
+             const SlaterDeterminant& det, double e_scf_ha, bool use_diis)
+            : loop(&loop_in) {
+            loop->cycle = std::make_unique<CcsdSpatialCycle>(
+                ints, det, e_scf_ha, use_diis);
+        }
+
+        ~Hold() {
+            if (loop)
+                loop->cycle.reset();
+        }
+
+        Hold(const Hold&) = delete;
+        Hold& operator=(const Hold&) = delete;
+    };
+
+    std::unique_ptr<CcsdSpatialCycle> cycle;
     AmpStage update;
     AmpStage mix;
     AmpStage energy;
@@ -478,9 +483,10 @@ CCSDResult CCSD<Method>::finish(Frame& frame, int executed, int cap,
             + std::to_string(cap) + " iterations (tol=" + std::to_string(tol)
             + ").");
     }
-    const double e_corr = ccsd_spatial_e_corr(*loop_->cycle);
-    const double e_scf = ccsd_spatial_e_scf(*loop_->cycle);
-    const int reported = ccsd_spatial_trivial(*loop_->cycle) ? 0 : executed;
+    const CcsdSpatialCycle& cycle = *loop_->cycle;
+    const double e_corr = cycle.e_corr;
+    const double e_scf = cycle.e_scf;
+    const int reported = cycle.trivial ? 0 : executed;
     executed_ = executed;
     last_ = CCSDResult{e_corr, e_scf + e_corr, reported, true};
     if (write != Write::None) {
@@ -491,24 +497,21 @@ CCSDResult CCSD<Method>::finish(Frame& frame, int executed, int cap,
 
 template <typename Method>
 CCSDResult CCSD<Method>::solve_amplitudes(Frame& frame, Write write,
-                                          const PriorEnergy& prior, int cap) {
+                                          const PriorEnergy& prior, int cap,
+                                          cpu::Context* nested) {
     if (!(tol > 0.0) || cap < 1)
         throw std::invalid_argument(
             "CCSD: tol must be positive and max_iter >= 1");
     Method& mf = *mf_;
-    loop_->cycle = ccsd_spatial_open(mf.integral_view_(), mf.determinant(),
-                                     mf.energy(), diis);
-    struct Release {
-        Loop* loop = nullptr;
-        ~Release() {
-            if (loop)
-                loop->cycle.reset();
-        }
-    } release{loop_.get()};
+    typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
+                             mf.energy(), diis);
+    if (nested) {
+        const int executed =
+            cpu::Driver<ATV::cc::Phase>::run_nested(*nested, frame, cap);
+        return finish(frame, executed, cap, write, prior);
+    }
     this->setup_pass(frame);
     try {
-        this->status_.reset();
-        this->metrics_ = ConvergenceMetrics{};
         int executed = 0;
         for (int it = 0; it < cap; ++it) {
             this->mutable_outer_status().reset();
@@ -518,7 +521,6 @@ CCSDResult CCSD<Method>::solve_amplitudes(Frame& frame, Write write,
                 break;
         }
         const CCSDResult result = finish(frame, executed, cap, write, prior);
-        loop_->cycle.reset();
         this->teardown_pass();
         return result;
     } catch (...) {
@@ -537,7 +539,7 @@ CCSDResult CCSD<Method>::run(Frame& frame) {
             "CCSD is not implemented (no fallback). Use RHF.");
     const PriorEnergy prior = capture(frame);
     drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CCSD::run");
-    return solve_amplitudes(frame, Write::Overwrite, prior, max_iter);
+    return solve_amplitudes(frame, Write::Overwrite, prior, max_iter, nullptr);
 }
 
 template <typename Method>
@@ -566,27 +568,8 @@ GradientResult CCSD<Method>::compute_forces(Frame& frame, Write write,
     const PriorEnergy prior = capture(frame);
     drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
                     "CCSD::forces");
-    CCSDResult corr;
-    if (nested) {
-        if (!(tol > 0.0) || max_iter < 1)
-            throw std::invalid_argument(
-                "CCSD: tol must be positive and max_iter >= 1");
-        loop_->cycle = ccsd_spatial_open(mf.integral_view_(), mf.determinant(),
-                                         mf.energy(), diis);
-        struct Release {
-            Loop* loop = nullptr;
-            ~Release() {
-                if (loop)
-                    loop->cycle.reset();
-            }
-        } release{loop_.get()};
-        const int executed =
-            cpu::Driver<ATV::cc::Phase>::run_nested(*nested, frame, max_iter);
-        corr = finish(frame, executed, max_iter, Write::None, prior);
-        loop_->cycle.reset();
-    } else {
-        corr = solve_amplitudes(frame, Write::None, prior, max_iter);
-    }
+    const CCSDResult corr =
+        solve_amplitudes(frame, Write::None, prior, max_iter, nested);
     GradientResult gr = internal::ccsd_analytic_forces(
         frame, mf.integral_view_(), mf.determinant(), mf.energy(), corr.e_corr);
     internal::add_dispersion_forces(frame, mf.d3bj, mf.d4, gr);
@@ -633,23 +616,8 @@ int CCSD<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
     const PriorEnergy prior = capture(frame);
     drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CCSD::run");
     const int cap = budget > 0 ? budget : max_iter;
-    if (!(tol > 0.0) || cap < 1)
-        throw std::invalid_argument(
-            "CCSD: tol must be positive and max_iter >= 1");
-    loop_->cycle = ccsd_spatial_open(mf.integral_view_(), mf.determinant(),
-                                     mf.energy(), diis);
-    struct Release {
-        Loop* loop = nullptr;
-        ~Release() {
-            if (loop)
-                loop->cycle.reset();
-        }
-    } release{loop_.get()};
-    const int executed =
-        cpu::Driver<ATV::cc::Phase>::run_nested(ctx, frame, cap);
-    finish(frame, executed, cap, Write::Accumulate, prior);
-    loop_->cycle.reset();
-    return executed;
+    solve_amplitudes(frame, Write::Accumulate, prior, cap, &ctx);
+    return executed_;
 }
 
 template <typename Method>

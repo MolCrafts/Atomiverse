@@ -27,58 +27,9 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-struct CcsdSpatialCycle {
-    void open(const internal::IntegralView& ints, const SlaterDeterminant& det,
-              double e_scf_ha, bool diis_on);
-    void update();
-    void mix();
-    double energy();
-
-    double OO(int i, int j, int k, int l) const { return eri(i, j, k, l); }
-    double OVOV(int i, int a, int j, int b) const {
-        return eri(i, no + a, j, no + b);
-    }
-    double OOVV(int i, int j, int a, int b) const {
-        return eri(i, j, no + a, no + b);
-    }
-    double OVVO(int i, int a, int b, int j) const {
-        return eri(i, no + a, no + b, j);
-    }
-    double OVVV(int i, int a, int b, int c) const {
-        return eri(i, no + a, no + b, no + c);
-    }
-    double OVOO(int i, int a, int j, int k) const {
-        return eri(i, no + a, j, k);
-    }
-    double VVVV(int a, int b, int c, int d) const {
-        return eri(no + a, no + b, no + c, no + d);
-    }
-
-    xt::xtensor<double, 4> eri;
-    xt::xtensor<double, 2> t1;
-    xt::xtensor<double, 4> t2;
-    xt::xtensor<double, 2> t1new;
-    xt::xtensor<double, 4> t2new;
-    xt::xtensor<double, 2> eia;
-    xt::xtensor<double, 4> eijab;
-    internal::CcAmplitudeDiis diis{8};
-    std::vector<double> amp;
-    std::vector<double> err;
-    int no = 0;
-    int nv = 0;
-    std::size_t No = 0;
-    std::size_t Nv = 0;
-    double e_scf = 0.0;
-    double e_corr = 0.0;
-    double dt1 = 0.0;
-    double dt2 = 0.0;
-    bool use_diis = true;
-    bool trivial = false;
-};
-
-void CcsdSpatialCycle::open(const internal::IntegralView& ints,
-                            const SlaterDeterminant& det, double e_scf_ha,
-                            bool diis_on) {
+CcsdSpatialCycle::CcsdSpatialCycle(const internal::IntegralView& ints,
+                                   const SlaterDeterminant& det,
+                                   double e_scf_ha, bool diis_on) {
     using Spin = SlaterDeterminant::Spin;
     e_scf = e_scf_ha;
     use_diis = diis_on;
@@ -490,36 +441,6 @@ double CcsdSpatialCycle::energy() {
                 }
     e_corr = e;
     return e;
-}
-
-void CcsdSpatialDeleter::operator()(CcsdSpatialCycle* p) const { delete p; }
-
-CcsdSpatialPtr ccsd_spatial_open(const internal::IntegralView& ints,
-                                 const SlaterDeterminant& det, double e_scf_ha,
-                                 bool use_diis) {
-    CcsdSpatialPtr cycle(new CcsdSpatialCycle);
-    cycle->open(ints, det, e_scf_ha, use_diis);
-    return cycle;
-}
-
-void ccsd_spatial_update(CcsdSpatialCycle& cycle) { cycle.update(); }
-
-void ccsd_spatial_mix(CcsdSpatialCycle& cycle) { cycle.mix(); }
-
-double ccsd_spatial_energy(CcsdSpatialCycle& cycle) { return cycle.energy(); }
-
-double ccsd_spatial_e_corr(const CcsdSpatialCycle& cycle) {
-    return cycle.e_corr;
-}
-
-double ccsd_spatial_e_scf(const CcsdSpatialCycle& cycle) { return cycle.e_scf; }
-
-double ccsd_spatial_residual(const CcsdSpatialCycle& cycle) {
-    return std::max(cycle.dt1, cycle.dt2);
-}
-
-bool ccsd_spatial_trivial(const CcsdSpatialCycle& cycle) {
-    return cycle.trivial;
 }
 
 } // namespace scf
