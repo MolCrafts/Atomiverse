@@ -952,6 +952,42 @@ void dm_from_eps(const std::vector<std::vector<double>>& eps,
             cmo[static_cast<std::size_t>(k)], occ[static_cast<std::size_t>(k)]);
 }
 
+namespace {
+
+/// vhf = J + k_coeff*K, F = H + vhf. Both matrices are Hermitian.
+/// k_coeff is −1/2 for KRHF (`KSCF.get_fock`) and −1 for KUHF (`get_veff`).
+void assemble_vhf_fock(const std::vector<CMat>& H, const std::vector<CMat>& vj,
+                       const std::vector<CMat>& vk, double k_coeff,
+                       std::vector<CMat>& fock, std::vector<CMat>& vhf) {
+    const int nk = static_cast<int>(H.size());
+    const int nao = nk == 0 ? 0 : H[0].n;
+    vhf.assign(static_cast<std::size_t>(nk), CMat::zeros(nao));
+    fock.assign(static_cast<std::size_t>(nk), CMat::zeros(nao));
+    for (int k = 0; k < nk; ++k) {
+        const auto ik = static_cast<std::size_t>(k);
+        for (int i = 0; i < nao; ++i)
+            for (int j = 0; j < nao; ++j)
+                vhf[ik](i, j) = vj[ik](i, j) + k_coeff * vk[ik](i, j);
+        vhf[ik].hermitize();
+        for (int i = 0; i < nao; ++i)
+            for (int j = 0; j < nao; ++j)
+                fock[ik](i, j) = H[ik](i, j) + vhf[ik](i, j);
+        fock[ik].hermitize();
+    }
+}
+
+/// |E − E_prev| [Hartree], or +∞ on the first call. Does not judge convergence.
+double energy_step(double energy, double& previous, bool& have_previous) {
+    const double delta = have_previous
+                             ? std::abs(energy - previous)
+                             : std::numeric_limits<double>::infinity();
+    previous = energy;
+    have_previous = true;
+    return delta;
+}
+
+} // namespace
+
 struct KrhfCycle {
     Setup setup;
     std::vector<CMat> dm;
@@ -980,27 +1016,11 @@ void krhf_cycle_fock(KrhfCycle& c) {
     // KSCF.get_fock with diis=None: F = H + J[dm] − ½ K[dm].
     // energy_elec is the symmetric trace of that density, not the next one.
     const Setup& s = c.setup;
-    const int nk = s.nk;
-    const int nao = s.nao;
     const auto vj = build_j(s.ao, c.dm, s.coul_j, s.mesh, s.vol);
     const auto vk =
         build_k(s.ao, c.dm, s.coords, s.kpts, s.coul_k, s.mesh, s.vol);
-    std::vector<CMat> vhf(static_cast<std::size_t>(nk), CMat::zeros(nao));
-    c.fock.assign(static_cast<std::size_t>(nk), CMat::zeros(nao));
-    for (int k = 0; k < nk; ++k) {
-        for (int i = 0; i < nao; ++i)
-            for (int j = 0; j < nao; ++j)
-                vhf[static_cast<std::size_t>(k)](i, j) =
-                    vj[static_cast<std::size_t>(k)](i, j)
-                    - 0.5 * vk[static_cast<std::size_t>(k)](i, j);
-        vhf[static_cast<std::size_t>(k)].hermitize();
-        for (int i = 0; i < nao; ++i)
-            for (int j = 0; j < nao; ++j)
-                c.fock[static_cast<std::size_t>(k)](i, j) =
-                    s.H[static_cast<std::size_t>(k)](i, j)
-                    + vhf[static_cast<std::size_t>(k)](i, j);
-        c.fock[static_cast<std::size_t>(k)].hermitize();
-    }
+    std::vector<CMat> vhf;
+    assemble_vhf_fock(s.H, vj, vk, -0.5, c.fock, vhf);
     c.energy = energy_elec(c.dm, s.H, vhf) + s.enuc;
 }
 
@@ -1016,12 +1036,7 @@ void krhf_cycle_density(KrhfCycle& c) {
 double krhf_cycle_energy(const KrhfCycle& c) { return c.energy; }
 
 double krhf_cycle_delta(KrhfCycle& c) {
-    const double delta = c.have_previous
-                             ? std::abs(c.energy - c.previous)
-                             : std::numeric_limits<double>::infinity();
-    c.previous = c.energy;
-    c.have_previous = true;
-    return delta;
+    return energy_step(c.energy, c.previous, c.have_previous);
 }
 
 struct KuhfCycle {
@@ -1041,14 +1056,15 @@ void kuhf_cycle_delete(KuhfCycle* cycle) { delete cycle; }
 
 void kuhf_cycle_diagonalize(KuhfCycle& c) {
     // KUHF.eig → KSCF.eig, one Hermitian diagonalization per spin.
-    eigh_all(c.setup, c.fock[0], c.eps[0], c.cmo[0]);
-    eigh_all(c.setup, c.fock[1], c.eps[1], c.cmo[1]);
+    for (int sp = 0; sp < 2; ++sp)
+        eigh_all(c.setup, c.fock[sp], c.eps[sp], c.cmo[sp]);
 }
 
 void kuhf_cycle_density(KuhfCycle& c) {
     // kuhf.get_occ (fill 1) then make_rdm1, each spin.
-    dm_from_eps(c.eps[0], c.cmo[0], c.n_alpha, 1.0, c.dm[0]);
-    dm_from_eps(c.eps[1], c.cmo[1], c.n_beta, 1.0, c.dm[1]);
+    const int nocc[2] = {c.n_alpha, c.n_beta};
+    for (int sp = 0; sp < 2; ++sp)
+        dm_from_eps(c.eps[sp], c.cmo[sp], nocc[sp], 1.0, c.dm[sp]);
 }
 
 KuhfCycleOwner kuhf_cycle_open(const Frame& frame, BasisSet basis,
@@ -1081,37 +1097,21 @@ void kuhf_cycle_fock(KuhfCycle& c) {
     const Setup& s = c.setup;
     const int nk = s.nk;
     const int nao = s.nao;
-    const int* mesh = s.mesh;
     std::vector<CMat> dm_j(static_cast<std::size_t>(nk));
     for (int k = 0; k < nk; ++k) {
-        dm_j[static_cast<std::size_t>(k)] = CMat::zeros(nao);
+        const auto ik = static_cast<std::size_t>(k);
+        dm_j[ik] = CMat::zeros(nao);
         for (int i = 0; i < nao; ++i)
             for (int j = 0; j < nao; ++j)
-                dm_j[static_cast<std::size_t>(k)](i, j) =
-                    c.dm[0][static_cast<std::size_t>(k)](i, j)
-                    + c.dm[1][static_cast<std::size_t>(k)](i, j);
+                dm_j[ik](i, j) = c.dm[0][ik](i, j) + c.dm[1][ik](i, j);
     }
-    const auto vj = build_j(s.ao, dm_j, s.coul_j, mesh, s.vol);
+    const auto vj = build_j(s.ao, dm_j, s.coul_j, s.mesh, s.vol);
     double e_elec = 0.0;
     for (int sp = 0; sp < 2; ++sp) {
         const auto vk =
-            build_k(s.ao, c.dm[sp], s.coords, s.kpts, s.coul_k, mesh, s.vol);
-        std::vector<CMat> vhf(static_cast<std::size_t>(nk), CMat::zeros(nao));
-        c.fock[sp].assign(static_cast<std::size_t>(nk), CMat::zeros(nao));
-        for (int k = 0; k < nk; ++k) {
-            for (int i = 0; i < nao; ++i)
-                for (int j = 0; j < nao; ++j)
-                    vhf[static_cast<std::size_t>(k)](i, j) =
-                        vj[static_cast<std::size_t>(k)](i, j)
-                        - vk[static_cast<std::size_t>(k)](i, j);
-            vhf[static_cast<std::size_t>(k)].hermitize();
-            for (int i = 0; i < nao; ++i)
-                for (int j = 0; j < nao; ++j)
-                    c.fock[sp][static_cast<std::size_t>(k)](i, j) =
-                        s.H[static_cast<std::size_t>(k)](i, j)
-                        + vhf[static_cast<std::size_t>(k)](i, j);
-            c.fock[sp][static_cast<std::size_t>(k)].hermitize();
-        }
+            build_k(s.ao, c.dm[sp], s.coords, s.kpts, s.coul_k, s.mesh, s.vol);
+        std::vector<CMat> vhf;
+        assemble_vhf_fock(s.H, vj, vk, -1.0, c.fock[sp], vhf);
         e_elec += energy_elec(c.dm[sp], s.H, vhf);
     }
     c.energy = e_elec + s.enuc;
@@ -1120,12 +1120,7 @@ void kuhf_cycle_fock(KuhfCycle& c) {
 double kuhf_cycle_energy(const KuhfCycle& c) { return c.energy; }
 
 double kuhf_cycle_delta(KuhfCycle& c) {
-    const double delta = c.have_previous
-                             ? std::abs(c.energy - c.previous)
-                             : std::numeric_limits<double>::infinity();
-    c.previous = c.energy;
-    c.have_previous = true;
-    return delta;
+    return energy_step(c.energy, c.previous, c.have_previous);
 }
 
 } // namespace internal
