@@ -1,5 +1,6 @@
 /// @file cpu/scf/internal/kpoint_hf.cpp
 /// @brief Periodic k-point RHF and UHF. See kpoint_hf.h for the PySCF functions.
+///        KUHF iteration is `cpu::scf::KUHF`; this file only steps one cycle.
 
 #include "atomiverse/cpu/scf/internal/kpoint_hf.h"
 
@@ -951,107 +952,6 @@ void dm_from_eps(const std::vector<std::vector<double>>& eps,
             cmo[static_cast<std::size_t>(k)], occ[static_cast<std::size_t>(k)]);
 }
 
-// Unrestricted only. Restricted KRHF is cpu::scf::KRHF (Driver stages);
-// this loop is KUHF: J from α+β, vhf = J−K, occupation 1
-// (pyscf.pbc.scf.kuhf.KUHF.get_veff). Hcore guess is init_guess_by_1e.
-KrhfEnergy scf_kpoint(const Setup& s, int n_a, int n_b, double tol,
-                      int max_iter, const char* tag) {
-    if (n_b < 0)
-        throw std::logic_error(
-            "scf_kpoint: restricted KRHF is the KRHF driver, not this loop");
-    const int nk = s.nk;
-    const int nao = s.nao;
-    const int* mesh = s.mesh;
-    const int nocc_s[2] = {n_a, n_b};
-
-    auto density_from = [&](const std::vector<CMat>& f, int nocc,
-                            std::vector<CMat>& dm) {
-        std::vector<std::vector<double>> eps;
-        std::vector<linalg::CplxMatrix> cmo;
-        eigh_all(s, f, eps, cmo);
-        dm_from_eps(eps, cmo, nocc, 1.0, dm);
-    };
-
-    std::vector<CMat> dm[2];
-    density_from(s.H, nocc_s[0], dm[0]);
-    density_from(s.H, nocc_s[1], dm[1]);
-
-    auto add_dm = [](const std::vector<CMat>& a, const std::vector<CMat>& b) {
-        std::vector<CMat> out(a.size());
-        for (std::size_t k = 0; k < a.size(); ++k) {
-            out[k] = CMat::zeros(a[k].n);
-            for (int i = 0; i < a[k].n; ++i)
-                for (int j = 0; j < a[k].n; ++j)
-                    out[k](i, j) = a[k](i, j) + b[k](i, j);
-        }
-        return out;
-    };
-
-    KrhfEnergy report;
-    double e_prev = 0.0;
-    for (int it = 0; it < max_iter; ++it) {
-        const std::vector<CMat> dm_j = add_dm(dm[0], dm[1]);
-        const auto vj = build_j(s.ao, dm_j, s.coul_j, mesh, s.vol);
-        std::vector<CMat> fock[2];
-        double e_elec = 0.0;
-        for (int sp = 0; sp < 2; ++sp) {
-            const auto vk =
-                build_k(s.ao, dm[sp], s.coords, s.kpts, s.coul_k, mesh, s.vol);
-            std::vector<CMat> vhf(static_cast<std::size_t>(nk),
-                                  CMat::zeros(nao));
-            fock[sp].assign(static_cast<std::size_t>(nk), CMat::zeros(nao));
-            for (int k = 0; k < nk; ++k) {
-                for (int i = 0; i < nao; ++i)
-                    for (int j = 0; j < nao; ++j) {
-                        vhf[static_cast<std::size_t>(k)](i, j) =
-                            vj[static_cast<std::size_t>(k)](i, j)
-                            - vk[static_cast<std::size_t>(k)](i, j);
-                    }
-                vhf[static_cast<std::size_t>(k)].hermitize();
-                for (int i = 0; i < nao; ++i)
-                    for (int j = 0; j < nao; ++j)
-                        fock[sp][static_cast<std::size_t>(k)](i, j) =
-                            s.H[static_cast<std::size_t>(k)](i, j)
-                            + vhf[static_cast<std::size_t>(k)](i, j);
-                fock[sp][static_cast<std::size_t>(k)].hermitize();
-            }
-            e_elec += energy_elec(dm[sp], s.H, vhf);
-        }
-        const double e = e_elec + s.enuc;
-        report.hartree = e;
-        report.iterations = it + 1;
-        if (it > 0 && std::abs(e - e_prev) < tol) {
-            report.converged = true;
-            return report;
-        }
-        e_prev = e;
-        density_from(fock[0], nocc_s[0], dm[0]);
-        density_from(fock[1], nocc_s[1], dm[1]);
-    }
-    throw std::runtime_error(std::string(tag) + ": SCF did not converge in "
-                             + std::to_string(max_iter)
-                             + " iterations (last |energy| = "
-                             + std::to_string(report.hartree) + " Ha)");
-}
-
-KrhfEnergy kuhf_energy(const Frame& frame, BasisSet basis, const int k_mesh[3],
-                       int n_alpha, int n_beta, int charge, double tol,
-                       int max_iter) {
-    if (!(tol > 0.0) || max_iter < 1)
-        throw std::runtime_error(
-            "KUHF: tol must be positive and max_iter >= 1");
-    const Setup s = setup_krhf(frame, basis, k_mesh, charge, "KUHF", false);
-    if (n_alpha < 0 || n_beta < 0 || n_alpha + n_beta != s.ne_total)
-        throw std::runtime_error(
-            "KUHF: n_alpha + n_beta must equal tot_electrons(nk) = "
-            "(sum Z)*nk - charge (pyscf.pbc.scf.kuhf.KUHF.nelec). "
-            "cell.spin = n_alpha - n_beta is the mesh total and is not "
-            "multiplied by nk; got n_alpha="
-            + std::to_string(n_alpha) + " n_beta=" + std::to_string(n_beta)
-            + " ne=" + std::to_string(s.ne_total));
-    return scf_kpoint(s, n_alpha, n_beta, tol, max_iter, "KUHF");
-}
-
 struct KrhfCycle {
     Setup setup;
     std::vector<CMat> dm;
@@ -1116,6 +1016,110 @@ void krhf_cycle_density(KrhfCycle& c) {
 double krhf_cycle_energy(const KrhfCycle& c) { return c.energy; }
 
 double krhf_cycle_delta(KrhfCycle& c) {
+    const double delta = c.have_previous
+                             ? std::abs(c.energy - c.previous)
+                             : std::numeric_limits<double>::infinity();
+    c.previous = c.energy;
+    c.have_previous = true;
+    return delta;
+}
+
+struct KuhfCycle {
+    Setup setup;
+    int n_alpha = 0;
+    int n_beta = 0;
+    std::vector<CMat> dm[2];
+    std::vector<CMat> fock[2];
+    std::vector<std::vector<double>> eps[2];
+    std::vector<linalg::CplxMatrix> cmo[2];
+    double energy = 0.0;
+    double previous = 0.0;
+    bool have_previous = false;
+};
+
+void kuhf_cycle_delete(KuhfCycle* cycle) { delete cycle; }
+
+void kuhf_cycle_diagonalize(KuhfCycle& c) {
+    // KUHF.eig → KSCF.eig, one Hermitian diagonalization per spin.
+    eigh_all(c.setup, c.fock[0], c.eps[0], c.cmo[0]);
+    eigh_all(c.setup, c.fock[1], c.eps[1], c.cmo[1]);
+}
+
+void kuhf_cycle_density(KuhfCycle& c) {
+    // kuhf.get_occ (fill 1) then make_rdm1, each spin.
+    dm_from_eps(c.eps[0], c.cmo[0], c.n_alpha, 1.0, c.dm[0]);
+    dm_from_eps(c.eps[1], c.cmo[1], c.n_beta, 1.0, c.dm[1]);
+}
+
+KuhfCycleOwner kuhf_cycle_open(const Frame& frame, BasisSet basis,
+                               const int k_mesh[3], int n_alpha, int n_beta,
+                               int charge) {
+    KuhfCycleOwner own(new KuhfCycle, &kuhf_cycle_delete);
+    own->setup = setup_krhf(frame, basis, k_mesh, charge, "KUHF", false);
+    if (n_alpha < 0 || n_beta < 0 || n_alpha + n_beta != own->setup.ne_total)
+        throw std::runtime_error(
+            "KUHF: n_alpha + n_beta must equal tot_electrons(nk) = "
+            "(sum Z)*nk - charge (pyscf.pbc.scf.kuhf.KUHF.nelec). "
+            "cell.spin = n_alpha - n_beta is the mesh total and is not "
+            "multiplied by nk; got n_alpha="
+            + std::to_string(n_alpha) + " n_beta=" + std::to_string(n_beta)
+            + " ne=" + std::to_string(own->setup.ne_total));
+    own->n_alpha = n_alpha;
+    own->n_beta = n_beta;
+    // init_guess_by_1e: occupy the core Hamiltonian (hf.kernel dm0).
+    own->fock[0] = own->setup.H;
+    own->fock[1] = own->setup.H;
+    kuhf_cycle_diagonalize(*own);
+    kuhf_cycle_density(*own);
+    return own;
+}
+
+void kuhf_cycle_fock(KuhfCycle& c) {
+    // KUHF.get_veff: J = Ja + Jb, vhf = J − K on each spin.
+    // KUHF.energy_elec sums both spins (1/nk, half the vhf trace).
+    // The trace is this density, not the one the following eig builds.
+    const Setup& s = c.setup;
+    const int nk = s.nk;
+    const int nao = s.nao;
+    const int* mesh = s.mesh;
+    std::vector<CMat> dm_j(static_cast<std::size_t>(nk));
+    for (int k = 0; k < nk; ++k) {
+        dm_j[static_cast<std::size_t>(k)] = CMat::zeros(nao);
+        for (int i = 0; i < nao; ++i)
+            for (int j = 0; j < nao; ++j)
+                dm_j[static_cast<std::size_t>(k)](i, j) =
+                    c.dm[0][static_cast<std::size_t>(k)](i, j)
+                    + c.dm[1][static_cast<std::size_t>(k)](i, j);
+    }
+    const auto vj = build_j(s.ao, dm_j, s.coul_j, mesh, s.vol);
+    double e_elec = 0.0;
+    for (int sp = 0; sp < 2; ++sp) {
+        const auto vk =
+            build_k(s.ao, c.dm[sp], s.coords, s.kpts, s.coul_k, mesh, s.vol);
+        std::vector<CMat> vhf(static_cast<std::size_t>(nk), CMat::zeros(nao));
+        c.fock[sp].assign(static_cast<std::size_t>(nk), CMat::zeros(nao));
+        for (int k = 0; k < nk; ++k) {
+            for (int i = 0; i < nao; ++i)
+                for (int j = 0; j < nao; ++j)
+                    vhf[static_cast<std::size_t>(k)](i, j) =
+                        vj[static_cast<std::size_t>(k)](i, j)
+                        - vk[static_cast<std::size_t>(k)](i, j);
+            vhf[static_cast<std::size_t>(k)].hermitize();
+            for (int i = 0; i < nao; ++i)
+                for (int j = 0; j < nao; ++j)
+                    c.fock[sp][static_cast<std::size_t>(k)](i, j) =
+                        s.H[static_cast<std::size_t>(k)](i, j)
+                        + vhf[static_cast<std::size_t>(k)](i, j);
+            c.fock[sp][static_cast<std::size_t>(k)].hermitize();
+        }
+        e_elec += energy_elec(c.dm[sp], s.H, vhf);
+    }
+    c.energy = e_elec + s.enuc;
+}
+
+double kuhf_cycle_energy(const KuhfCycle& c) { return c.energy; }
+
+double kuhf_cycle_delta(KuhfCycle& c) {
     const double delta = c.have_previous
                              ? std::abs(c.energy - c.previous)
                              : std::numeric_limits<double>::infinity();

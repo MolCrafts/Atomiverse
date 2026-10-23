@@ -6,9 +6,10 @@ lattice; section `periodic-rhf-gamma`, H₂ / STO-3G in a 20 Å cube, oracle
 record in the case `REFERENCE.md`), and the Monkhorst–Pack k-point methods
 `cpu::scf::KRHF{basis, k_mesh, charge, tol, max_iter}` and
 `cpu::scf::KUHF{basis, k_mesh, n_alpha, n_beta, charge, tol, max_iter}`,
-documented below. `cpu::scf::KRHF` is `cpu::Driver<scf::Phase>` plus `cpu::HF`
-(not `MeanFieldMethod`). `cuda::scf::KRHF` is `cuda::Driver<scf::Phase>`,
-`cuda::DriverNode`, and `cuda::HF`. No section of the case runs the device
+documented below. `cpu::scf::KRHF` and `cpu::scf::KUHF` are each
+`cpu::Driver<scf::Phase>` plus `cpu::HF` (not `MeanFieldMethod`).
+`cuda::scf::KRHF` is `cuda::Driver<scf::Phase>`, `cuda::DriverNode`, and
+`cuda::HF`. There is no device KUHF. No section of the case runs the device
 path; both sections run on CPU only.
 
 Case: `ctest -R '^scf/periodic-hf$'` — sources and oracle record in [`regressions/scf/periodic-hf/`](../../../regressions/scf/periodic-hf/). One section of the case per `##` heading below: `atv_regressions --case scf/periodic-hf --section <name>`.
@@ -23,13 +24,16 @@ products, Coulomb kernel `4π/G²`, Ewald probe charge on the exchange
 
 ### Call
 
-`KRHF` is a `Driver<scf::Phase>` preset, the same shape as `cpu::md::MD`.
-The constructor binds stages `fock`, `mix`, `diagonalize`, `density`, and
-`check`. Mix is the identity (no DIIS). The absolute energy change is
-published on `ConvergenceMetrics`; a Criterion judges it and
+`KRHF` and `KUHF` are `Driver<scf::Phase>` presets, the same shape as
+`cpu::md::MD`. The constructor binds stages `fock`, `mix`, `diagonalize`,
+`density`, and `check`. Mix is the identity (no DIIS). The absolute energy
+change is published on `ConvergenceMetrics`; a Criterion judges it and
 `Driver::converged()` is that verdict. The method does not assign
 convergence. Basis, mesh, charge, `tol`, and `max_iter` are constructor
-arguments.
+arguments. `KUHF` also takes mesh-total `n_alpha` and `n_beta`
+(`KUHF.nelec`; spin is not scaled by the number of k-points). Its fock
+stage builds `J = Ja+Jb` and `vhf = J−K` per spin (`KUHF.get_veff`);
+occupation fill is 1 (`get_occ`).
 
 Frame in is an orthorhombic cell: positions [Å], species in `kAtom_type`.
 `run(Frame&)` overwrites `kEnergy` and `kEnergyElectronic` [eV].
@@ -38,6 +42,7 @@ nuclear repulsion included. `iterations()` is the count of that run.
 `forces(Frame&)` throws `krhf_nuclear_forces`. An outer driver that mounts
 the method with `on(phase).add` accumulates energy instead of overwriting it.
 Shells with l > 0 throw `krhf_ao_lgt0`. CPU `requires_full_frame()` is true.
+`KUHF::forces` throws `kuhf_nuclear_forces`. There is no device KUHF.
 
 ```cpp
 cpu::Frame frame = /* orthorhombic cell, positions in Å, species in kAtom_type */;
