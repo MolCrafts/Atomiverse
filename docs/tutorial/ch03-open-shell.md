@@ -617,9 +617,13 @@ large/small metric, and Dirac–Coulomb (LL|LL)+(SS|LL). The (SS|SS)
 block is not assembled, and there is no Gaunt or Breit term. Shells
 with l > 1 throw `dhf_ao_lgt1`. `provides_force()` is false; `forces`
 throws `dhf_nuclear_forces`. There is no device path.
+The CPU call is Frame in / Frame out. `run(Frame&)` overwrites
+`kEnergy` and `kEnergyElectronic` [eV]; `run(const Frame&)` writes
+nothing; `energy()` is the total in Hartree.
 
 ```cpp
-cpu::scf::DHF dhf{cpu::scf::BasisSet::CcPVDZ}; // hydrogen only; l ≤ 1
+cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::scf::DHF dhf{cpu::scf::BasisSet::CcPVDZ}; // hydrogen only; charge 0, tol 1e-10, max_iter 80
 dhf.run(frame);   // kEnergy and kEnergyElectronic [eV]; dhf.energy() [Ha]
 ```
 
