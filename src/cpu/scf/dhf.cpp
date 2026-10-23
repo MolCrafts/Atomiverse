@@ -26,9 +26,10 @@ namespace cpu {
 namespace scf {
 namespace {
 
-using internal::DhfCycleOwner;
+using Cycle = internal::DhfCycle;
+using CyclePtr = std::unique_ptr<Cycle>;
 
-DhfCycleOwner* require_cycle(DhfCycleOwner* cycle) {
+CyclePtr* require_cycle(CyclePtr* cycle) {
     if (!cycle || !*cycle)
         throw std::runtime_error("cpu::scf::DHF: SCF cycle is not open");
     return cycle;
@@ -39,7 +40,7 @@ class Stage : public cpu::Component {
   public:
     enum class Kind { Fock, Mix, Diag, Density, Check };
 
-    Stage(DhfCycleOwner* cycle, Kind kind) : cycle_(cycle), kind_(kind) {}
+    Stage(CyclePtr* cycle, Kind kind) : cycle_(cycle), kind_(kind) {}
 
     std::string name() const override {
         switch (kind_) {
@@ -62,32 +63,32 @@ class Stage : public cpu::Component {
         auto& cycle = **require_cycle(cycle_);
         if (kind_ == Kind::Fock) {
             // get_jk_coulomb, then dhf.energy_elec + hf.energy_tot.
-            internal::dhf_cycle_fock(cycle);
+            cycle.fock();
             return;
         }
         if (kind_ == Kind::Mix) {
-            internal::dhf_cycle_mix(cycle);
+            cycle.mix();
             return;
         }
         if (kind_ == Kind::Diag) {
-            internal::dhf_cycle_diagonalize(cycle);
+            cycle.diagonalize();
             return;
         }
         if (kind_ == Kind::Density) {
-            internal::dhf_cycle_density(cycle);
+            cycle.density();
             return;
         }
         if (!ctx.runtime.loop.metrics)
             throw std::runtime_error(
                 "cpu::scf::DHF: check stage has no ConvergenceMetrics");
-        const double ha = internal::dhf_cycle_energy(cycle);
-        const double dha = internal::dhf_cycle_delta(cycle);
+        const double ha = cycle.energy;
+        const double dha = cycle.delta();
         ctx.runtime.loop.metrics->energy = ha * units::kHartreeInEv;
         ctx.runtime.loop.metrics->energy_change = dha * units::kHartreeInEv;
     }
 
   private:
-    DhfCycleOwner* cycle_ = nullptr;
+    CyclePtr* cycle_ = nullptr;
     Kind kind_ = Kind::Fock;
 };
 
@@ -142,7 +143,7 @@ struct DHF::Loop {
         Hold(Loop& loop_in, const Frame& frame, BasisSet basis, int charge)
             : loop(&loop_in) {
             loop->criterion.reset_history();
-            loop->cycle = internal::dhf_cycle_open(frame, basis, charge);
+            loop->cycle = std::make_unique<Cycle>(frame, basis, charge);
         }
 
         ~Hold() {
@@ -154,7 +155,7 @@ struct DHF::Loop {
         Hold& operator=(const Hold&) = delete;
     };
 
-    internal::DhfCycleOwner cycle{nullptr, &internal::dhf_cycle_delete};
+    CyclePtr cycle;
     Stage fock;
     Stage mix;
     Stage diag;
@@ -202,7 +203,7 @@ void DHF::destroy_on(cpu::Runtime& rt) {
 }
 
 void DHF::commit(Frame& frame, int executed, int cap, Write write) {
-    const double last = internal::dhf_cycle_energy(*loop_->cycle);
+    const double last = loop_->cycle->energy;
     if (!this->converged()) {
         throw std::runtime_error(
             "DHF: SCF did not converge in " + std::to_string(cap)
