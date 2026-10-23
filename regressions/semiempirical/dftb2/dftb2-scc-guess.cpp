@@ -89,7 +89,7 @@ long walk(bool use_predictor, double& last_energy) {
     dftb.boundary = cpu::semiempirical::DftbBoundary::lattice;
     dftb.scc_tol = 1e-8;
     dftb.max_scc = 200;
-    dftb.with_forces = false;
+
     if (use_predictor)
         dftb.predictor(3);
 

@@ -11,12 +11,16 @@ channel), D3(BJ) dispersion, DFTB+U, Γ-point or Monkhorst–Pack periodic
 sums, analytic nuclear forces and analytic cell stress. The concrete method
 is `cpu::semiempirical::DFTB2{sk_set, charge, multiplicity}` (constructor
 arguments; `DftbSkSet::MioSketch` by default) with public members
-(`boundary`, `scc_tol`, `max_scc`, `mix_beta`, `with_forces`, `with_stress`,
+(`boundary`, `scc_tol`, `max_scc`, `mix_beta`,
 `spin_w_ha`, `d3`, `d3_periodic`, `d3_cutoff`, `k_mesh`, `k_time_reversal`,
 `u_eff`, …), bound into `cpu::Evaluate` at `evaluate::Phase::evaluate`. No
-`*Config` bag, no `make_*` / `build_*` factory. It writes `kEnergy` [eV],
-`kAtom_f*` [eV/Å] when `with_forces`, and `kStress` [eV/Å³, Voigt
-`(xx,yy,zz,xy,xz,yz)`] when `with_stress`; Mulliken data are read back
+`*Config` bag, no `make_*` / `build_*` factory. `run(frame)` overwrites energy
+[eV] and charges [e], preserving forces; `forces(frame)` also overwrites
+forces [eV/Å]. `stress(frame)` returns intensive stress [eV/Å³] and writes
+the extensive virial on `kStress` [eV, Voigt `(xx,yy,zz,xy,xz,yz)`]. When
+mounted in Evaluate, the method accumulates the requested energy, force and
+supported stress contributions. +U has no cell-stress implementation; direct
+`stress(frame)` rejects it. Mulliken data are also read back
 through `last_mulliken_dq()` / `last_mulliken_spin()`. Linear-response
 excitations on the same object are on [TD-DFTB](semiempirical-td-dftb.md#td-dftb-h2);
 the third-order extension is [DFTB3](semiempirical-dftb3.md#dftb3-water-mio).
@@ -143,15 +147,11 @@ pin reduces to band + repulsive.
 ```cpp
 cpu::Frame frame = make_h2(0.74);   // box = cpu::Box::cubic(30.0)
 
-cpu::Evaluate eval;
 cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-dftb.with_forces = false;
 dftb.scc_tol = 1e-8;
 dftb.max_scc = 50;
-eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
-eval.build();
-eval.run(frame);
+dftb.run(frame);
 
 const double E_eV = frame.meta.get(kEnergy);
 // gate: |E_eV − (−18.36635052)| ≤ 1e−3 eV
@@ -238,20 +238,16 @@ significant digits).
 | SK | 3ob-3-1 (`H-H`, `C-C`, `C-H`, `H-C`) |
 | System | CH₄, tetrahedral, C at origin; H at \(\pm s,\pm s,\pm s\) with \(s=1.09/\sqrt{3}\), \(r(\mathrm{C{-}H})=1.09\) Å |
 | Cell | cubic \(L = 20\) Å, `boundary = cluster` |
-| Forces | off (`with_forces = false`) |
+| Forces | off (`run(frame)`) |
 
 ```cpp
 cpu::Frame frame = make_ch4();   // s = 1.09 / std::sqrt(3.0); box = cpu::Box::cubic(20.0)
 
-cpu::Evaluate eval;
 cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::ThreeOb};
 dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-dftb.with_forces = false;
 dftb.scc_tol = 1e-10;
 dftb.max_scc = 80;
-eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
-eval.build();
-eval.run(frame);
+dftb.run(frame);
 
 const double e_eV = frame.meta.get(kEnergy);  // [eV]
 ```
@@ -339,7 +335,7 @@ combine the radial derivative of the SK grids with directional factors for
 | Cell | Cubic 20 Å, `boundary = cluster` |
 | Method | SCC-DFTB2, closed shell (`multiplicity = 1`, `charge = 0`), `DftbSkSet::MioSketch` |
 | SCC | `scc_tol = 1e-10` |
-| Forces | `with_forces = true` |
+| Forces | a parent force request |
 | FD protocol | Central re-SCC energy-only, \(h=10^{-4}\) Å |
 
 ```cpp
@@ -347,7 +343,6 @@ cpu::Frame frame = make_water();   // geometry above, box = cpu::Box::cubic(20.0
 
 cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
 dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-dftb.with_forces = true;
 dftb.scc_tol = 1e-10;
 
 cpu::Evaluate eval;
@@ -453,15 +448,11 @@ cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch,
                                /*charge=*/0, /*multiplicity=*/3};
 dftb.boundary = cpu::semiempirical::DftbBoundary::cluster; // DFTB+ `C` geometry
 dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
-dftb.with_forces = false;        // energy + spin gate only
 dftb.scc_tol = 1e-10;
 dftb.max_scc = 80;
 // default shell_resolved_spin = false (DFTB+ ShellResolvedSpin = No)
 
-cpu::Evaluate eval;
-eval.on(evaluate::Phase::evaluate).add_ref(dftb);   // keep it for the accessors
-eval.build();
-eval.run(frame);
+dftb.run(frame);
 
 const double e = frame.meta.get(kEnergy);          // [eV]
 const auto& m = dftb.last_mulliken_spin();         // m_A [e]
@@ -523,7 +514,7 @@ O₂ at a stretched bond: dual \(\alpha/\beta\) Hellmann–Feynman + Pulay with
 spin-dependent onsite shifts on \(\partial S\) + fixed-\(\Delta q\) SCC
 \(\gamma\) + repulsive. \(W_A\) is geometry-independent and the fixed-\(m\)
 spin energy contributes no extra nuclear term. Same public surface as
-[`spin-dftb2-o2`](#spin-dftb2-o2) with `with_forces = true`.
+[`spin-dftb2-o2`](#spin-dftb2-o2) with a parent force request.
 
 ### Settings and gates
 
@@ -603,7 +594,6 @@ Two C atoms at (0, 0, 0) and (1.40, 0, 0) Å, orthorhombic cell
 
 ```cpp
 cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
-dftb.with_forces = false;
 dftb.scc_tol = 1e-10;
 dftb.k_mesh = {4, 1, 1};        // Monkhorst–Pack along chain
 dftb.k_time_reversal = true;
@@ -654,7 +644,7 @@ geometry-independent) but enter the virial.
 Two C atoms at (0, 0, 0) and (1.20, 0, 0) Å, orthorhombic \(L_x=2.8\),
 \(L_y=L_z=12.0\) Å, so left/right image contacts sit at 1.20 Å and 1.60 Å
 (plus farther shells inside \(r_\mathrm{cut}\approx 4.5\) Å) and
-\(F_x\neq 0\); `with_forces = true`, `scc_tol = 1e-10`, `max_scc = 50`,
+\(F_x\neq 0\); a parent force request, `scc_tol = 1e-10`, `max_scc = 50`,
 `d3 = false`. Oracle `literature` (formula level: Elstner 1998; Hourahine et
 al. 2020), family dftb+.
 

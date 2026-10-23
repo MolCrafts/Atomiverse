@@ -130,7 +130,6 @@ int main(int argc, char** argv) {
                                  : cpu::semiempirical::DftbBoundary::cluster;
         dftb.scc_tol = scc_tol;
         dftb.max_scc = 200;
-        dftb.with_forces = true;
 
         cpu::Evaluate eval;
         eval.on(evaluate::Phase::evaluate).add_ref(dftb);

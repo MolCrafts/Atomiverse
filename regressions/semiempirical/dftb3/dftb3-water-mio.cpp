@@ -93,16 +93,12 @@ int run() {
     // DFTB2 on same geometry — third-order must move the energy, and by its
     // own magnitude: the old E_band - (E2 + 2E3) route moved it ~7x |E3|.
     auto frame2 = make_water();
-    cpu::Evaluate eval2;
     cpu::semiempirical::DFTB2 d2{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d2.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    d2.with_forces = false;
     d2.scc_tol = 1e-10;
-    eval2.on(evaluate::Phase::evaluate).add(std::move(d2));
-    eval2.build();
-    eval2.run(frame2);
+    d2.run(frame2);
     const double e2 = frame2.meta.get(kEnergy);
     std::printf("DFTB2 H2O: E=%.12f eV  |dE|=%.6e\n", e2, std::fabs(e - e2));
     if (std::fabs(e - e2) < 1e-6) {

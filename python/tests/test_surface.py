@@ -134,6 +134,7 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "AM1Result",
         "AM1BCCCharges",
         "BccParameterSet",
+        "DFTB0",
         "DFTB2",
         "DftbBoundary",
         "DftbSkSet",
@@ -274,8 +275,8 @@ class TestCanonicalSurface:
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
     def test_public_names_are_the_honest_surface(self) -> None:
-        """The public name list is the same 59 names on every build."""
-        assert len(_CANONICAL_ALL) == 59
+        """The public name list is the same 60 names on every build."""
+        assert len(_CANONICAL_ALL) == 60
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:

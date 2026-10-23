@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/linalg/matrix.h"
 #include "atomiverse/cpu/semiempirical/basis_data/gfn1_tables.h"
 #include "atomiverse/cpu/semiempirical/internal/scc_mixer.h"
+#include "atomiverse/cpu/semiempirical/scc_method.h"
 
 namespace ATV {
 namespace cpu {
@@ -546,76 +547,81 @@ struct SccOut {
 };
 
 SccOut scc_energy(const Gfn1System& sys, double scc_tol, int max_scc,
-                  double mix_beta) {
+                  double mix_beta, Runtime* host = nullptr) {
     std::vector<double> q(static_cast<std::size_t>(sys.n_sh), 0.0);
     internal::ChargeMixer mixer(mix_beta, 6);
-    bool converged = false;
     SccOut out;
     linalg::RealMatrix H = sys.H0;
     std::pair<linalg::RealVector, linalg::RealMatrix> sol;
-    for (int it = 0; it < max_scc; ++it) {
-        std::vector<double> q_at(static_cast<std::size_t>(sys.n_at), 0.0);
-        for (int i = 0; i < sys.n_sh; ++i)
-            q_at[static_cast<std::size_t>(
-                sys.sh[static_cast<std::size_t>(i)].atom)] +=
-                q[static_cast<std::size_t>(i)];
-        std::vector<double> V(static_cast<std::size_t>(sys.n_sh), 0.0);
-        for (int i = 0; i < sys.n_sh; ++i) {
-            double v = 0;
-            for (int j = 0; j < sys.n_sh; ++j)
-                v += sys.gamma[static_cast<std::size_t>(i * sys.n_sh + j)]
-                     * q[static_cast<std::size_t>(j)];
-            const int ia = sys.sh[static_cast<std::size_t>(i)].atom;
-            v += sys.sh[static_cast<std::size_t>(i)].gam3
-                 * q_at[static_cast<std::size_t>(ia)]
-                 * q_at[static_cast<std::size_t>(ia)];
-            V[static_cast<std::size_t>(i)] = v;
-        }
-        H = sys.H0;
-        for (int i = 0; i < sys.n_sh; ++i) {
-            const Shell& si = sys.sh[static_cast<std::size_t>(i)];
-            for (int j = 0; j < sys.n_sh; ++j) {
-                const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
-                const double vij = 0.5
-                                   * (V[static_cast<std::size_t>(i)]
-                                      + V[static_cast<std::size_t>(j)]);
-                for (int ia = 0; ia < si.nao; ++ia)
-                    for (int ja = 0; ja < sj.nao; ++ja)
-                        H(si.ao0 + ia, sj.ao0 + ja) +=
-                            vij * sys.S(si.ao0 + ia, sj.ao0 + ja);
+    linalg::RealMatrix P_it;
+    std::vector<double> q_out;
+    SccDriver scc;
+    const SccOutcome outcome = scc.solve(
+        host, max_scc, scc_tol,
+        [&] {
+            std::vector<double> q_at(static_cast<std::size_t>(sys.n_at), 0.0);
+            for (int i = 0; i < sys.n_sh; ++i)
+                q_at[static_cast<std::size_t>(
+                    sys.sh[static_cast<std::size_t>(i)].atom)] +=
+                    q[static_cast<std::size_t>(i)];
+            std::vector<double> V(static_cast<std::size_t>(sys.n_sh), 0.0);
+            for (int i = 0; i < sys.n_sh; ++i) {
+                double v = 0;
+                for (int j = 0; j < sys.n_sh; ++j)
+                    v += sys.gamma[static_cast<std::size_t>(i * sys.n_sh + j)]
+                         * q[static_cast<std::size_t>(j)];
+                const int ia = sys.sh[static_cast<std::size_t>(i)].atom;
+                v += sys.sh[static_cast<std::size_t>(i)].gam3
+                     * q_at[static_cast<std::size_t>(ia)]
+                     * q_at[static_cast<std::size_t>(ia)];
+                V[static_cast<std::size_t>(i)] = v;
             }
-        }
-        sol = linalg::diagonalize_fock_generalized(H, sys.S);
-        const auto& C = sol.second;
-        linalg::RealMatrix P = xt::zeros<double>({sys.n_ao, sys.n_ao});
-        for (int o = 0; o < sys.n_occ; ++o)
-            for (int mu = 0; mu < sys.n_ao; ++mu)
-                for (int nu = 0; nu < sys.n_ao; ++nu)
-                    P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
-        std::vector<double> q_out(static_cast<std::size_t>(sys.n_sh), 0.0);
-        for (int i = 0; i < sys.n_sh; ++i) {
-            const Shell& si = sys.sh[static_cast<std::size_t>(i)];
-            double pop = 0;
-            for (int ia = 0; ia < si.nao; ++ia)
-                for (int nu = 0; nu < sys.n_ao; ++nu)
-                    pop += P(si.ao0 + ia, nu) * sys.S(si.ao0 + ia, nu);
-            // Electron excess Δn = pop − n0 (DFTB2 / GFN2 / tblite SCC).
-            q_out[static_cast<std::size_t>(i)] = pop - si.n0;
-        }
-        out.residual = 0;
-        for (int i = 0; i < sys.n_sh; ++i)
-            out.residual = std::max(
-                out.residual, std::fabs(q_out[static_cast<std::size_t>(i)]
-                                        - q[static_cast<std::size_t>(i)]));
-        out.iterations = it + 1;
-        if (out.residual < scc_tol) {
-            q = q_out;
-            converged = true;
-            break;
-        }
-        q = mixer.next(q, q_out);
-    }
-    if (!converged)
+            H = sys.H0;
+            for (int i = 0; i < sys.n_sh; ++i) {
+                const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+                for (int j = 0; j < sys.n_sh; ++j) {
+                    const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
+                    const double vij = 0.5
+                                       * (V[static_cast<std::size_t>(i)]
+                                          + V[static_cast<std::size_t>(j)]);
+                    for (int ia = 0; ia < si.nao; ++ia)
+                        for (int ja = 0; ja < sj.nao; ++ja)
+                            H(si.ao0 + ia, sj.ao0 + ja) +=
+                                vij * sys.S(si.ao0 + ia, sj.ao0 + ja);
+                }
+            }
+        },
+        [&] {
+            sol = linalg::diagonalize_fock_generalized(H, sys.S);
+            const auto& C = sol.second;
+            P_it = xt::zeros<double>({sys.n_ao, sys.n_ao});
+            for (int o = 0; o < sys.n_occ; ++o)
+                for (int mu = 0; mu < sys.n_ao; ++mu)
+                    for (int nu = 0; nu < sys.n_ao; ++nu)
+                        P_it(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
+        },
+        [&] {
+            q_out.assign(static_cast<std::size_t>(sys.n_sh), 0.0);
+            for (int i = 0; i < sys.n_sh; ++i) {
+                const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+                double pop = 0;
+                for (int ia = 0; ia < si.nao; ++ia)
+                    for (int nu = 0; nu < sys.n_ao; ++nu)
+                        pop += P_it(si.ao0 + ia, nu) * sys.S(si.ao0 + ia, nu);
+                // Electron excess Δn = pop − n0 (DFTB2 / GFN2 / tblite SCC).
+                q_out[static_cast<std::size_t>(i)] = pop - si.n0;
+            }
+            out.residual = 0;
+            for (int i = 0; i < sys.n_sh; ++i)
+                out.residual = std::max(
+                    out.residual, std::fabs(q_out[static_cast<std::size_t>(i)]
+                                            - q[static_cast<std::size_t>(i)]));
+            scc.set_residual(out.residual);
+        },
+        [&] { q = q_out; }, [&] { q = mixer.next(q, q_out); });
+    out.iterations = outcome.iterations;
+    out.residual = outcome.residual;
+    if (!outcome.converged)
         throw std::runtime_error(
             "GFN1: SCC did not converge in " + std::to_string(max_scc)
             + " iterations (residual " + std::to_string(out.residual)
@@ -900,9 +906,10 @@ struct TotalOut {
 TotalOut total_energy_eV(const StorageReal* x, const StorageReal* y,
                          const StorageReal* z, const int* type, int n_at,
                          int charge, double scc_tol, int max_scc,
-                         double mix_beta, bool want_grad) {
+                         double mix_beta, bool want_grad,
+                         Runtime* host = nullptr) {
     const Gfn1System sys = build_system(x, y, z, type, n_at, charge);
-    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta);
+    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta, host);
     const double e_rep = repulsive_e(sys);
     const double e_disp = dispersion_e(sys, type);
     TotalOut out;
@@ -938,8 +945,9 @@ void GFN1::launch(const LaunchContext& ctx) {
     AccReal* fz = f.span(kAtom_fz);
 
     const bool do_f = with_forces && ctx.forces_requested;
-    const TotalOut out = total_energy_eV(x, y, z, type, n_at, charge, scc_tol,
-                                         max_scc, mix_beta, do_f);
+    const TotalOut out =
+        total_energy_eV(x, y, z, type, n_at, charge, scc_tol, max_scc, mix_beta,
+                        do_f, ctx.runtime.exec.runtime);
     energy_ = out.energy_ev;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;

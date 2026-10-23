@@ -49,14 +49,12 @@ double energy_only(cpu::Frame g, double u_o) {
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    d.with_forces = false;
+
     d.scc_tol = 1e-10;
     if (u_o > 0.0)
         d.u_eff[8] = u_o;
     cpu::Evaluate eval;
-    eval.set_evaluator_ref(d);
-    eval.build();
-    eval.run(g);
+    d.run(g);
     return d.last_energy();
 }
 
@@ -71,13 +69,11 @@ int run() {
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     plain.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    plain.with_forces = false;
+
     plain.scc_tol = 1e-10;
     {
         cpu::Evaluate eval;
-        eval.set_evaluator_ref(plain);
-        eval.build();
-        eval.run(f0);
+        plain.run(f0);
     }
     const double e0 = plain.last_energy();
 
@@ -86,7 +82,7 @@ int run() {
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.with_forces = true;
+
     dftb.scc_tol = 1e-10;
     dftb.u_eff[8] = kU;
     {
@@ -128,8 +124,8 @@ int run() {
         return 1;
     }
 
-    // FD force gate: F_O_x (from Evaluate+with_forces) vs −∂E/∂x_O on the
-    // same +U surface (energy-only Evaluate at ±h).
+    // FD force gate: F_O_x (from Evaluate) vs −∂E/∂x_O on the
+    // same +U surface (energy-only run at ±h).
     constexpr double h = 1e-4;
     auto fp = make_water();
     auto fm = make_water();

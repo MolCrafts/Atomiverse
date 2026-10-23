@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -250,44 +251,81 @@ inline std::pair<RealVector, RealMatrix> natural_orbitals(const RealMatrix& P,
     return diagonalize_fock(xt::linalg::dot(S, xt::linalg::dot(P, S)), X);
 }
 
-/// @brief Solve the generalized symmetric eigenproblem F C = S C ε (LAPACK dsygvd).
-///
-/// The one-step route: no orthogonalizer is formed, LAPACK Cholesky-factorizes
-/// \(S\) internally (ITYPE=1, JOBZ='V', UPLO='L'). Requires \(S\) strictly
-/// positive definite — use the `CanonicalOrth` + `diagonalize_fock` route when
-/// the basis is near linearly dependent. Explicit workspace sizes, no LWORK=-1
-/// query (see the `dsygvd_` binding above for why).
-/// @param F Fock / Kohn–Sham matrix [Hartree], n × n.
-/// @param S Overlap matrix (dimensionless), n × n, positive definite.
-/// @return (orbital energies [Hartree], n of them, ascending; coefficients in
-///         the original atomic-orbital basis, n × n, dimensionless).
-/// @throws std::runtime_error when dsygvd returns info != 0 (info > n signals a
-///         non-positive-definite \(S\)) — no fallback value.
+/// @brief Reusable LAPACK workspace for F C = S C ε, with SPD overlap.
+/// Allocated at construction; solve reuses every application-owned buffer.
+class GeneralizedEigenSolver {
+  public:
+    /// @param n Matrix dimension (positive, within LAPACK integer limits).
+    explicit GeneralizedEigenSolver(int n) : n_(n) {
+        if (n <= 0
+            || 1.0 + 6.0 * n + 2.0 * n * n > std::numeric_limits<int>::max())
+            throw std::invalid_argument(
+                "GeneralizedEigenSolver: invalid dimension");
+        C_.resize({static_cast<std::size_t>(n), static_cast<std::size_t>(n)});
+        B_.resize(C_.shape());
+        eig_.resize({static_cast<std::size_t>(n)});
+        work_.resize(static_cast<std::size_t>(1 + 6 * n + 2 * n * n));
+        iwork_.resize(static_cast<std::size_t>(3 + 5 * n));
+    }
+
+    /// @brief Solve using retained buffers; throws on invalid input or LAPACK failure.
+    /// @param F Symmetric Hamiltonian, n × n; eigenvalues use its energy unit.
+    /// @param S Symmetric positive definite overlap, n × n (dimensionless).
+    void solve(const RealMatrix& F, const RealMatrix& S) {
+        if (F.shape() != C_.shape() || S.shape() != C_.shape())
+            throw std::invalid_argument(
+                "GeneralizedEigenSolver: matrix shape mismatch");
+        for (std::size_t i = 0; i < F.size(); ++i) {
+            if (!std::isfinite(F.data()[i]) || !std::isfinite(S.data()[i]))
+                throw std::invalid_argument(
+                    "GeneralizedEigenSolver: non-finite matrix");
+        }
+        std::copy(F.begin(), F.end(), C_.begin());
+        std::copy(S.begin(), S.end(), B_.begin());
+        const int itype = 1;
+        const char jobz = 'V', uplo = 'L';
+        const int lwork = static_cast<int>(work_.size());
+        const int liwork = static_cast<int>(iwork_.size());
+        int info = 0;
+        // Explicit documented workspace: the bundled LAPACK query is unreliable.
+        dsygvd_(&itype, &jobz, &uplo, &n_, C_.data(), &n_, B_.data(), &n_,
+                eig_.data(), work_.data(), &lwork, iwork_.data(), &liwork,
+                &info);
+        if (info != 0)
+            throw std::runtime_error(
+                "GeneralizedEigenSolver: dsygvd failed, info="
+                + std::to_string(info));
+        for (double e : eig_)
+            if (!std::isfinite(e))
+                throw std::runtime_error(
+                    "GeneralizedEigenSolver: non-finite eigenvalue");
+    }
+
+    /// @brief Ascending orbital energies, valid after a successful solve.
+    /// @return Energies in the Hamiltonian's unit.
+    const RealVector& eigenvalues() const { return eig_; }
+    /// @brief S-orthonormal eigenvectors in columns, after a successful solve.
+    /// @return Dimensionless coefficient matrix.
+    const RealMatrix& eigenvectors() const { return C_; }
+
+  private:
+    int n_;
+    RealMatrix C_, B_;
+    RealVector eig_;
+    std::vector<double> work_;
+    std::vector<int> iwork_;
+};
+
+/// @brief Solve F C = S C ε using a temporary LAPACK workspace.
+/// @param F Symmetric Hamiltonian, n × n (Hartree for SCF callers).
+/// @param S Positive definite overlap, n × n (dimensionless).
+/// @return Ascending eigenvalues in F's units and column eigenvectors.
+/// @throws std::runtime_error on LAPACK failure, including non-SPD overlap.
 inline std::pair<RealVector, RealMatrix>
 diagonalize_fock_generalized(const RealMatrix& F, const RealMatrix& S) {
-    const int n = static_cast<int>(F.shape(0));
-    RealMatrix C = F; // dsygvd overwrites A with the eigenvectors
-    RealMatrix B = S; // ... and B with its Cholesky factor
-    RealVector eig = xt::zeros<double>({n});
-
-    // Documented minimum workspace for ITYPE=1, JOBZ='V' (LAPACK dsygvd):
-    // LWORK >= 1 + 6N + 2N^2, LIWORK >= 3 + 5N (the LWORK=-1 query is broken).
-    const int itype = 1;
-    const char jobz = 'V';
-    const char uplo = 'L';
-    const int lwork = 1 + 6 * n + 2 * n * n;
-    const int liwork = 3 + 5 * n;
-    std::vector<double> work(static_cast<std::size_t>(lwork));
-    std::vector<int> iwork(static_cast<std::size_t>(liwork));
-    int info = 0;
-
-    dsygvd_(&itype, &jobz, &uplo, &n, C.data(), &n, B.data(), &n, eig.data(),
-            work.data(), &lwork, iwork.data(), &liwork, &info);
-    if (info != 0)
-        throw std::runtime_error(
-            "diagonalize_fock_generalized: dsygvd failed, info="
-            + std::to_string(info));
-    return {eig, C};
+    GeneralizedEigenSolver solver(static_cast<int>(F.shape(0)));
+    solver.solve(F, S);
+    return {solver.eigenvalues(), solver.eigenvectors()};
 }
 
 /// @brief Real nonsymmetric eigenproblem A v = λ v (LAPACK dgeev).

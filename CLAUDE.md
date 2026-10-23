@@ -447,6 +447,9 @@ Binding summary; mechanism and LAMMPS source mapping in
   `cpu/scf/stages/`, CUDA stages owned by `RHF` (`DIISMixer`, `EigenSolver`
   stay `internal::`). `scf::Phase` is legal **because** a node carries it.
   `cpu::pw::PW` is `Driver<pw::Phase>`; `GpwDft` DIIS paths are Driver stages.
+  DFTB2 owns `Driver<scc::Phase>` (`shift → diagonalize → charges → mix →
+  check`) and its persistent stages. Other DFTB/xTB methods still use the SCC
+  helper Driver until their method-owned loops are migrated.
 
 ```cpp
 cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10};
@@ -614,7 +617,8 @@ ghost: `read_stable` / `read_each_step`) or **data flow** (ghost → owner:
   post_force, final_integrate, end_of_step`; Minimizer `search_direction,
   line_search, force, convergence_check, end_of_step`; Vib `setup, displace,
   force, accumulate, diagonalize, thermochem, end_of_step`; Sampling `propose,
-  energy, end_of_step`; SCF `fock, mix, diagonalize, density, check`.
+  energy, end_of_step`; SCF `fock, mix, diagonalize, density, check`; SCC
+  `shift, diagonalize, charges, mix, check`.
 - **Units:** eV, Å, fs, amu, eV/Å, K on the public surface (`core/units.h`);
   SCF/PW compute in Hartree/Ry and write eV to `kEnergy`.
 - **Precision:** state it or state the integer role — `Real`/`Int` do not exist.

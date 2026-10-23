@@ -6,7 +6,7 @@ DFTB0 is closed-shell, non-self-consistent density-functional tight binding:
 the Elstner band energy plus a pair repulsive, on H/C/N/O with static in-tree
 **mio-1-1** Slater–Koster tables. There is no Hubbard \(\gamma\), no
 \(\Delta q\) and no SCC shift on the overlap. The concrete method is
-`cpu::semiempirical::DFTB0` (member `with_forces`, default `true`; no public
+`cpu::semiempirical::DFTB0` (`run(frame)` / `forces(frame)`; no public
 `*Config`, no `make_*` / `build_*`), mounted on `cpu::Evaluate` at
 `evaluate::Phase::evaluate`. It writes `kEnergy` [eV] and `kAtom_f*` [eV/Å]
 by accumulation (`+=`), so the caller zeros both before `run`.
@@ -95,7 +95,7 @@ closed radial form.
 | Units | \(E\) [eV], \(\mathbf{R}\) [Å], \(\mathbf{F}\) [eV/Å] |
 | Ha → eV | \(27.211386245988\) (`kHartreeInEv`) |
 | Ha/Bohr → eV/Å | \(51.42206747467393\) (`kHartreePerBohrInEvPerAngstrom`) |
-| Forces | `with_forces = true` (the default) → closed-form path |
+| Forces | `forces(frame)` or a parent force request → closed-form path |
 
 **Geometries [Å]** (the same coordinates as the offline DFTB+ inputs):
 
@@ -136,7 +136,6 @@ frame.box = cpu::Box::cubic(30.0);
 frame.meta.get(kEnergy) = 0;
 
 cpu::semiempirical::DFTB0 dftb0;
-dftb0.with_forces = true;  // default; closed-form, not a re-solve FD
 
 cpu::Evaluate eval;
 eval.on(evaluate::Phase::evaluate).add(std::move(dftb0));
@@ -149,7 +148,7 @@ eval.run(frame);
 
 | Path | Role |
 | ---- | ---- |
-| `dftb0.h` | Public `DFTB0` (`with_forces`, `last_energy`) |
+| `dftb0.h` | Public `DFTB0` (`run`, `forces`, `last_energy`, `last_charges`) |
 | `dftb_mio_sk_tables.h` | Static mio-1-1 SK for H/C/N/O |
 | `src/cpu/semiempirical/dftb0.cpp` | Non-SCC solve + analytic \(F\) |
 | `regressions/semiempirical/dftb0/dftb0-analytic-forces.cpp` | This section |

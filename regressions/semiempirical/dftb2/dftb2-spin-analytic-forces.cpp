@@ -45,19 +45,17 @@ double energy_only_triplet(cpu::Frame g) {
     g.meta.get(kEnergy) = 0;
     for (int i = 0; i < 2; ++i)
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
-    cpu::Evaluate ev;
+
     cpu::semiempirical::DFTB2 d{cpu::semiempirical::DftbSkSet::MioSketch,
                                 /*charge=*/0, /*multiplicity=*/3};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
-    d.with_forces = false;
+
     d.scc_tol = 1e-10;
     d.max_scc = 80;
-    ev.on(evaluate::Phase::evaluate).add(std::move(d));
-    ev.build();
-    ev.run(g);
+    d.run(g);
     return g.meta.get(kEnergy);
 }
 
@@ -73,7 +71,7 @@ int run() {
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
-    dftb.with_forces = true;
+
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;
     eval.on(evaluate::Phase::evaluate).add(std::move(dftb));

@@ -217,6 +217,44 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 
 } // namespace nddo
 
+/// @brief SCC charge self-consistency phases (DFTB2/DFTB3, GFN1/GFN2, IPEA).
+///
+/// One iteration is `shift → diagonalize → charges → mix → check`. The
+/// potential shift is built from the input charges, the eigenproblem and
+/// density update follow, Mulliken charges publish the residual, and the mix
+/// stage either accepts that density's charges or Anderson-mixes them. The
+/// Criterion is polled after the iteration, so the accept-versus-mix branch
+/// lives in the mix stage. `kind_of` returns `PhaseKind::SCF`.
+namespace scc {
+
+/// @brief Phase order for one SCC iteration.
+enum class Phase {
+    shift,       ///< Build the charge potential and the shifted Hamiltonian.
+    diagonalize, ///< Solve the eigenproblem and build the density.
+    charges,     ///< Mulliken populations and the charge residual.
+    mix,   ///< Accept the new charges, or mix them for the next iteration.
+    check, ///< End of the iteration. The Criterion is polled after it.
+    COUNT  ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the SCC phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in enum order, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"shift", "diagonalize", "charges", "mix", "check"};
+}
+
+/// @brief Workflow discriminant for `scc::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF`.
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace scc
+
 /// @brief Gaussian-and-plane-waves (GPW) KS self-consistency phases.
 ///
 /// Same staged-loop shape as `scf::Phase`: the concrete method

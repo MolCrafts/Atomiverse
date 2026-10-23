@@ -26,8 +26,8 @@ namespace internal {
 /// (Pulay, *Chem. Phys. Lett.* **73**, 393 (1980)). With one vector in
 /// history this is exactly linear damping \f$x + \beta f\f$.
 ///
-/// One mixer per SCC solve — construct it inside the loop's scope so no state
-/// leaks between geometries (finite-difference displacements especially).
+/// Reset at each SCC solve so history never leaks between geometries
+/// (finite-difference displacements especially). Storage can be retained.
 /// The vector is whatever the loop iterates on: Δq alone, or Δq concatenated
 /// with the spin population m.
 ///
@@ -40,24 +40,30 @@ class ChargeMixer {
     /// @throws std::invalid_argument on β outside (0,1] or depth < 1.
     ChargeMixer(double beta, int depth);
 
+    /// @brief Start an independent solve, retaining compatible storage.
+    /// @param size Number of mixed populations; zero leaves the mixer unbound.
+    /// @param beta Linear relaxation β in (0,1].
+    void reset(std::size_t size, double beta);
+
     /// @brief Mix one iteration and return the next input vector.
     /// @param x_in Input population vector of this iteration [e].
     /// @param x_out Population vector the SCC map produced from it [e].
-    /// @return Input vector for the next iteration [e], same size.
+    /// @return Retained next-input vector [e], valid until next/reset.
     /// @throws std::invalid_argument on empty or mismatched sizes.
-    std::vector<double> next(const std::vector<double>& x_in,
-                             const std::vector<double>& x_out);
+    const std::vector<double>& next(const std::vector<double>& x_in,
+                                    const std::vector<double>& x_out);
 
   private:
     /// @brief Pulay coefficients for the retained residuals.
-    /// @param out Coefficients c_j, size = history length.
     /// @return False when the DIIS system is numerically singular.
-    bool pulay_coefficients(std::vector<double>& out) const;
+    bool pulay_coefficients();
 
     double beta_;
     std::size_t depth_;
     std::vector<std::vector<double>> x_;
     std::vector<std::vector<double>> f_;
+    std::size_t first_ = 0, count_ = 0;
+    std::vector<double> gram_, rhs_, coefficients_, mixed_;
 };
 
 } // namespace internal

@@ -46,11 +46,10 @@ static double energy_at(double r, bool forces) {
         f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
 
     cpu::semiempirical::DFTB0 dftb0;
-    dftb0.with_forces = forces;
-    cpu::Evaluate eval;
-    eval.on(evaluate::Phase::evaluate).add(std::move(dftb0));
-    eval.build();
-    eval.run(f);
+    if (forces)
+        dftb0.forces(f);
+    else
+        dftb0.run(f);
     return f.meta.get(kEnergy);
 }
 
@@ -93,7 +92,6 @@ int run() {
     for (int i = 0; i < 2; ++i)
         f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
     cpu::semiempirical::DFTB0 dftb0;
-    dftb0.with_forces = true;
     cpu::Evaluate eval;
     eval.on(evaluate::Phase::evaluate).add(std::move(dftb0));
     eval.build();

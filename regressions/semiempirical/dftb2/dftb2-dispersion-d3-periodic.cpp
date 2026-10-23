@@ -62,16 +62,14 @@ cpu::Frame make_dimer() {
 /// Total energy [eV] and E_disp [eV] for one D3 setting.
 void run_case(bool d3, bool d3_periodic, double& e_tot, double& e_disp) {
     auto f = make_dimer();
-    cpu::Evaluate eval;
+
     cpu::semiempirical::DFTB2 m{cpu::semiempirical::DftbSkSet::MioSketch};
     m.d3 = d3;
     m.d3_periodic = d3_periodic;
     m.d3_cutoff = kOracleCutoffBohr * units::kBohrInAngstrom;
-    m.with_forces = false;
+
     m.scc_tol = 1e-10;
-    eval.on(evaluate::Phase::evaluate).add_ref(m);
-    eval.build();
-    eval.run(f);
+    m.run(f);
     e_tot = f.meta.get(kEnergy);
     e_disp = m.last_e_disp();
 }

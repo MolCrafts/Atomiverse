@@ -40,7 +40,7 @@ TEST(QmmmOniom, EnergyIdentityHighPlusLowRealMinusLowModel) {
     const double eps = 0.01, sigma = 3.4, cut = 12.0;
     cpu::QmmmOniom oniom{{{1, 1, eps, sigma}, {18, 18, eps, sigma}}, cut};
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
-    dftb.with_forces = false;
+
     oniom.set_engine(std::move(dftb));
 
     cpu::Context ctx;
@@ -85,7 +85,7 @@ TEST(QmmmOniom, ForcesFiniteWhenRequested) {
 
     cpu::QmmmOniom oniom{{{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 12.0};
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
-    dftb.with_forces = true;
+
     oniom.set_engine(std::move(dftb));
     cpu::Context ctx;
     oniom.build({ctx, f});

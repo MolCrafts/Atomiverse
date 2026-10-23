@@ -98,17 +98,14 @@ double energy_only(cpu::Frame g) {
     g.meta.get(kEnergy) = 0;
     for (int i = 0; i < 3; ++i)
         g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
-    cpu::Evaluate ev;
+
     cpu::semiempirical::DFTB2 d{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    d.with_forces = false;
-    d.with_stress = false;
+
     d.scc_tol = 1e-10;
-    ev.on(evaluate::Phase::evaluate).add(std::move(d));
-    ev.build();
-    ev.run(g);
+    d.run(g);
     return g.meta.get(kEnergy);
 }
 
@@ -122,8 +119,7 @@ int run() {
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.with_forces = false;
-    dftb.with_stress = true;
+
     dftb.scc_tol = 1e-10;
     eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
     eval.build();

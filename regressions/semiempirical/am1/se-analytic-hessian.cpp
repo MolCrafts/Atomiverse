@@ -57,8 +57,7 @@ int run() {
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.with_forces = true;
-    dftb.with_stress = false;
+
     dftb.scc_tol = 1e-10;
 
     cpu::vib::Hessian hess;

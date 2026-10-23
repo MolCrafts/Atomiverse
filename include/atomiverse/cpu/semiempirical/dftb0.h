@@ -2,6 +2,9 @@
 /// @brief Non-SCC DFTB (DFTB0) method — static in-tree SK tables, CPU.
 #pragma once
 
+#include <limits>
+#include <memory>
+#include <span>
 #include <string>
 
 #include "atomiverse/cpu/component/semiempirical.h"
@@ -30,32 +33,60 @@ namespace semiempirical {
 ///
 /// @code
 ///   cpu::semiempirical::DFTB0 dftb0;
-///   dftb0.with_forces = true;
-///   eval.on(evaluate::Phase::evaluate).add(std::move(dftb0));
+///   dftb0.forces(frame);
+///   eval.on(evaluate::Phase::evaluate).add_ref(dftb0);
 /// @endcode
 class DFTB0 : public cpu::Semiempirical {
   public:
-    /// @brief When true, write forces F=−∇E [eV/Å] on launch.
-    ///
-    /// Closed-form Hellmann–Feynman + Pulay + pair-repulsive gradient of the
-    /// non-SCC energy. There is no SCC γ contribution.
-    bool with_forces = true;
+    /// @brief Construct the neutral closed-shell mio-1-1 method.
+    DFTB0();
+    /// @brief Release the retained numerical workspace.
+    ~DFTB0() override;
+    /// @brief Transfer the method and its retained workspace.
+    /// @param other Source method.
+    DFTB0(DFTB0&& other) noexcept;
+    /// @brief Transfer the method and its retained workspace.
+    /// @param other Source method.
+    /// @return This method.
+    DFTB0& operator=(DFTB0&& other) noexcept;
 
-    /// @brief Whether the configured evaluator supplies nuclear forces.
-    bool provides_force() const override { return with_forces; }
-
-    DFTB0() = default;
+    /// @brief Overwrite energy [eV] and charges [e]; preserve existing forces.
+    /// @param frame Input geometry and result destination.
+    void run(Frame& frame);
+    /// @brief Evaluate energy and charges without modifying the input Frame.
+    /// @param frame Input geometry; results remain on the method.
+    void run(const Frame& frame);
+    /// @brief Overwrite energy [eV], charges [e] and analytic forces [eV/Å].
+    /// @param frame Input geometry and result destination.
+    void forces(Frame& frame);
 
     std::string name() const override { return "dftb0"; }
+    /// @brief Declare the Mulliken charge publication to the parent Runtime.
+    /// @return True.
+    bool updates_owned_charges() const override { return true; }
 
+    /// @brief Allocate or rebuild scratch for the Frame's atom identities.
+    /// @param ctx Parent build context.
     void build(const BuildContext& ctx) override;
+    /// @brief Accumulate energy and requested forces; overwrite atomic charges.
+    /// @param ctx Parent launch context.
     void launch(const LaunchContext& ctx) override;
 
-    /// @brief Last electronic+repulsive energy [eV].
+    /// @brief Last electronic+repulsive energy [eV]; NaN before success or after failure.
+    /// @return Total energy [eV].
     double last_energy() const { return energy_; }
 
+    /// @brief Last successful Mulliken charges; empty before a solve or after failure.
+    /// @return Charges [e], in Frame atom order, valid until the next evaluation.
+    std::span<const double> last_charges() const;
+
   private:
-    double energy_ = 0;
+    struct Workspace;
+    std::unique_ptr<Workspace> workspace_;
+    double energy_ = std::numeric_limits<double>::quiet_NaN();
+    void prepare(const Frame& frame);
+    void evaluate(const Frame& frame, bool want_forces);
+    void publish(Frame& frame, bool want_forces, bool accumulate) const;
 };
 
 } // namespace semiempirical

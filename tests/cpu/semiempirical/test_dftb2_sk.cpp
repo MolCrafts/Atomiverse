@@ -2,6 +2,7 @@
 /// Unit tests for multi-element static SK DFTB2 (H/C/N/O).
 #include <cmath>
 #include <gtest/gtest.h>
+#include <limits>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/component/context.h"
@@ -22,9 +23,9 @@ TEST(DFTBOutputs, ForceCapabilityTracksConfiguredOutput) {
     EXPECT_TRUE(zero.provides_force());
     EXPECT_TRUE(two.provides_force());
     EXPECT_TRUE(three.provides_force());
-    zero.with_forces = two.with_forces = three.with_forces = false;
-    EXPECT_FALSE(zero.provides_force());
-    EXPECT_FALSE(two.provides_force());
+    three.with_forces = false;
+    EXPECT_TRUE(zero.provides_force());
+    EXPECT_TRUE(two.provides_force());
     EXPECT_FALSE(three.provides_force());
 }
 
@@ -76,6 +77,28 @@ cpu::Frame make_water() {
 
 } // namespace
 
+TEST(DFTB2SK, RejectsOverfilledBasisBeforeDiagonalization) {
+    auto frame = make_h2();
+    frame.meta.get(kEnergy) = 123.0;
+    DFTB2 method{DftbSkSet::MioSketch, -4};
+    method.boundary = DftbBoundary::cluster;
+    EXPECT_THROW(method.run(frame), std::runtime_error);
+    EXPECT_DOUBLE_EQ(frame.meta.get(kEnergy), 123.0);
+    EXPECT_FALSE(method.converged());
+    EXPECT_FALSE(std::isfinite(method.last_energy()));
+}
+
+TEST(DFTB2SK, RejectsNonfiniteCoordinatesBeforeScc) {
+    auto frame = make_h2();
+    frame.span(kAtom_x)[0] = std::numeric_limits<double>::quiet_NaN();
+    frame.meta.get(kEnergy) = 123.0;
+    DFTB2 method{DftbSkSet::MioSketch};
+    method.boundary = DftbBoundary::cluster;
+    EXPECT_THROW(method.forces(frame), std::invalid_argument);
+    EXPECT_DOUBLE_EQ(frame.meta.get(kEnergy), 123.0);
+    EXPECT_FALSE(method.converged());
+}
+
 TEST(DFTB2SK, TablesCoverHCNO) {
     using namespace basis_data;
     EXPECT_EQ(kDftbNElements, 4u);
@@ -92,8 +115,8 @@ TEST(DFTB2SK, H2EnergyFinite) {
     auto f = make_h2();
     cpu::Context ctx;
     DFTB2 dftb{DftbSkSet::MioSketch};
-    dftb.build({ctx, f});
-    dftb.launch({ctx, f, 0, 0});
+
+    dftb.forces(f);
     EXPECT_TRUE(std::isfinite(dftb.last_energy()));
     EXPECT_NEAR(f.meta.get(kEnergy), dftb.last_energy(), 1e-12);
     EXPECT_NE(f.span(kAtom_fx)[0], 0.0);
@@ -127,8 +150,8 @@ TEST(DFTB2SK, CH4EnergyFinite) {
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;
     DFTB2 dftb{DftbSkSet::MioSketch};
-    dftb.build({ctx, f});
-    dftb.launch({ctx, f, 0, 0});
+
+    dftb.forces(f);
     EXPECT_TRUE(std::isfinite(dftb.last_energy()));
 }
 
@@ -136,9 +159,8 @@ TEST(DFTB2SK, WaterEnergyFinite) {
     auto f = make_water();
     cpu::Context ctx;
     DFTB2 dftb{DftbSkSet::MioSketch};
-    dftb.with_forces = true;
-    dftb.build({ctx, f});
-    dftb.launch({ctx, f, 0, 0});
+
+    dftb.forces(f);
     EXPECT_TRUE(std::isfinite(dftb.last_energy()));
     EXPECT_TRUE(std::isfinite(f.span(kAtom_fx)[0]));
     // Non-zero force somewhere off equilibrium
@@ -157,19 +179,19 @@ TEST(DFTB2SK, UnsupportedElementThrows) {
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;
     DFTB2 dftb{DftbSkSet::MioSketch};
-    dftb.build({ctx, f});
-    EXPECT_THROW(dftb.launch({ctx, f, 0, 0}), std::runtime_error);
+
+    EXPECT_THROW(dftb.forces(f), std::runtime_error);
 }
 
 TEST(DFTB2SK, ForceMatchesFiniteDifferenceOneComponent) {
     auto f = make_water();
     cpu::Context ctx;
     DFTB2 dftb{DftbSkSet::MioSketch};
-    dftb.with_forces = true;
+
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;
-    dftb.build({ctx, f});
-    dftb.launch({ctx, f, 0, 0});
+
+    dftb.forces(f);
     const double fx0 = static_cast<double>(f.span(kAtom_fx)[0]);
 
     const double h = 1e-4; // Å
@@ -180,11 +202,11 @@ TEST(DFTB2SK, ForceMatchesFiniteDifferenceOneComponent) {
         for (int i = 0; i < 3; ++i)
             g.span(kAtom_fx)[i] = g.span(kAtom_fy)[i] = g.span(kAtom_fz)[i] = 0;
         DFTB2 d{DftbSkSet::MioSketch};
-        d.with_forces = false;
+
         d.scc_tol = 1e-10;
         d.max_scc = 80;
-        d.build({ctx, g});
-        d.launch({ctx, g, 0, 0});
+
+        d.run(g);
         return d.last_energy();
     };
     const double fd = -(e_at(h) - e_at(-h)) / (2.0 * h);
@@ -200,10 +222,10 @@ TEST(DFTB2SK, H2EnergyNearDftbPlusMioPin) {
     auto f = make_h2(0.74);
     cpu::Context ctx;
     DFTB2 dftb{DftbSkSet::MioSketch};
-    dftb.with_forces = false;
+
     dftb.scc_tol = 1e-8;
-    dftb.build({ctx, f});
-    dftb.launch({ctx, f, 0, 0});
+
+    dftb.forces(f);
     constexpr double kPin = -18.36635052;
     EXPECT_NEAR(dftb.last_energy(), kPin, 5e-3);
 }

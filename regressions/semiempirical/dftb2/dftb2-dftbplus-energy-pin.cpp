@@ -50,17 +50,15 @@ int run() {
     auto frame = make_h2(0.74);
 
     const auto t0 = std::chrono::steady_clock::now();
-    cpu::Evaluate eval;
+
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.with_forces = false;
+
     dftb.scc_tol = 1e-8;
     dftb.max_scc = 50;
-    eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
-    eval.build();
-    eval.run(frame);
+    dftb.run(frame);
     const auto t1 = std::chrono::steady_clock::now();
     const double wall_s = std::chrono::duration<double>(t1 - t0).count();
 

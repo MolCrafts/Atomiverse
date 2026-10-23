@@ -46,6 +46,49 @@ namespace linalg = ATV::cpu::linalg;
 using linalg::RealMatrix;
 using linalg::RealVector;
 
+TEST(GeneralizedEigenSolver, ReusesStorageAndSatisfiesGeneralizedEquation) {
+    linalg::GeneralizedEigenSolver solver(2);
+    RealMatrix h = {{2.0, 0.4}, {0.4, 3.0}};
+    RealMatrix s = {{1.0, 0.1}, {0.1, 1.2}};
+    const auto* values = solver.eigenvalues().data();
+    const auto* vectors = solver.eigenvectors().data();
+    for (int step = 0; step < 3; ++step) {
+        h(0, 0) += 0.1;
+        solver.solve(h, s);
+        EXPECT_EQ(values, solver.eigenvalues().data());
+        EXPECT_EQ(vectors, solver.eigenvectors().data());
+        const auto& c = solver.eigenvectors();
+        const auto& e = solver.eigenvalues();
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j) {
+                double hc = 0, sc = 0, norm = 0;
+                for (int k = 0; k < 2; ++k) {
+                    hc += h(i, k) * c(k, j);
+                    sc += s(i, k) * c(k, j);
+                    for (int l = 0; l < 2; ++l)
+                        norm += c(k, i) * s(k, l) * c(l, j);
+                }
+                EXPECT_NEAR(hc, sc * e(j), 1e-12);
+                EXPECT_NEAR(norm, i == j ? 1.0 : 0.0, 1e-12);
+            }
+    }
+}
+
+TEST(GeneralizedEigenSolver, RejectsInvalidInputsAndCanRetry) {
+    EXPECT_THROW(linalg::GeneralizedEigenSolver(0), std::invalid_argument);
+    linalg::GeneralizedEigenSolver solver(2);
+    RealMatrix h = {{2.0, 0.0}, {0.0, 3.0}};
+    RealMatrix s = {{1.0, 0.0}, {0.0, -1.0}};
+    EXPECT_THROW(solver.solve(h, s), std::runtime_error);
+    s(1, 1) = 1.0;
+    h(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(solver.solve(h, s), std::invalid_argument);
+    h(0, 0) = 2.0;
+    EXPECT_NO_THROW(solver.solve(h, s));
+    EXPECT_DOUBLE_EQ(solver.eigenvalues()(0), 2.0);
+    EXPECT_DOUBLE_EQ(solver.eigenvalues()(1), 3.0);
+}
+
 namespace {
 
 /// 2×2 matrix from row-major literals (0,0)=a (0,1)=b (1,0)=c (1,1)=d.

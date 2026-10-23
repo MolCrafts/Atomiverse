@@ -38,6 +38,7 @@
 #include "atomiverse/cpu/semiempirical/am1_bcc_charges.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/cpu/semiempirical/basis_data/dftb_spin_constants.h"
+#include "atomiverse/cpu/semiempirical/dftb0.h"
 #include "atomiverse/cpu/semiempirical/dftb2.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
@@ -88,12 +89,10 @@ ForceArray am1_forces(cpu::semiempirical::AM1& method, nb::object frame_obj) {
     return to_force_array(method.last_result().forces_ev_a);
 }
 
-/// @brief Run one SCC-DFTB2 solve over a borrowed molpy.Frame.
+/// @brief Evaluate energy and charges over a borrowed molpy.Frame.
 ///
-/// One `cpu::Evaluate` pass — the same pass every DFTB2 regression drives —
-/// so the numbers returned here are the C++ numbers and not a second recipe.
-/// Energy [eV], Mulliken charges [e] and forces [eV/Å] land back on the frame
-/// through the pinned `to_molrs` round trip.
+/// Calls the method's Frame entry and publishes through the existing molrs
+/// bridge. Existing force columns are preserved by run().
 ///
 /// @param dftb  Borrowed method; its `last_*()` accessors are populated.
 /// @param frame_obj A `molpy.Frame`.
@@ -101,29 +100,31 @@ ForceArray am1_forces(cpu::semiempirical::AM1& method, nb::object frame_obj) {
 ///         converge within `max_scc`, when the frame carries an element
 ///         outside H/C/N/O, or on any of the boundary/k-mesh conflicts the
 ///         method rejects.
-void dftb2_run(cpu::semiempirical::DFTB2& dftb, nb::object frame_obj) {
+template <class Method>
+void dftb_run(Method& dftb, nb::object frame_obj) {
     if (cpu::task::LauncherGate{}.active())
-        throw std::runtime_error("DFTB2 has no MPI single-point task payload; "
+        throw std::runtime_error("DFTB has no MPI single-point task payload; "
                                  "run without the launcher");
     auto fref = borrow_molrs_frame(frame_obj);
     cpu::Frame work = cpu::from_molrs(*fref);
     {
         nb::gil_scoped_release release;
-        cpu::single_point(work, dftb);
+        dftb.run(work);
     }
     cpu::to_molrs(work, *fref);
 }
 
 /// @brief Solve and also return the forces as an (n_atoms, 3) array [eV/Å].
-ForceArray dftb2_forces(cpu::semiempirical::DFTB2& dftb, nb::object frame_obj) {
+template <class Method>
+ForceArray dftb_forces(Method& dftb, nb::object frame_obj) {
     if (cpu::task::LauncherGate{}.active())
-        throw std::runtime_error("DFTB2 has no MPI single-point task payload; "
+        throw std::runtime_error("DFTB has no MPI single-point task payload; "
                                  "run without the launcher");
     auto fref = borrow_molrs_frame(frame_obj);
     cpu::Frame work = cpu::from_molrs(*fref);
     {
         nb::gil_scoped_release release;
-        cpu::single_point(work, dftb);
+        dftb.forces(work);
     }
     const int n = work.nlocal();
     std::vector<double> flat(static_cast<std::size_t>(3 * n));
@@ -142,6 +143,7 @@ void bind_semiempirical(nb::module_& m) {
     using cpu::semiempirical::AM1;
     using cpu::semiempirical::AM1BCCCharges;
     using cpu::semiempirical::AM1Result;
+    using cpu::semiempirical::DFTB0;
     using cpu::semiempirical::DFTB2;
     using cpu::semiempirical::DftbBoundary;
     using cpu::semiempirical::DftbSkSet;
@@ -360,6 +362,20 @@ void bind_semiempirical(nb::module_& m) {
         "launcher the solve runs on the worker ranks and only the Frame "
         "comes back).");
 
+    nb::class_<DFTB0, cpu::Component>(m, "DFTB0",
+                                      "Non-SCC mio-1-1 tight binding for "
+                                      "neutral closed-shell CHNO molecules.")
+        .def(nb::init<>())
+        .def("run", &dftb_run<DFTB0>, nb::arg("frame"),
+             "Overwrite energy [eV] and charges [e]; preserve existing forces.")
+        .def("forces", &dftb_forces<DFTB0>, nb::arg("frame"),
+             "Overwrite energy, charges and forces; return forces [eV/A].")
+        .def("last_energy", &DFTB0::last_energy)
+        .def("last_charges", [](const DFTB0& self) {
+            const auto q = self.last_charges();
+            return std::vector<double>(q.begin(), q.end());
+        });
+
     // ── SCC-DFTB2 ─────────────────────────────────────────────────────
     nb::enum_<DftbBoundary>(
         m, "DftbBoundary",
@@ -485,11 +501,6 @@ void bind_semiempirical(nb::module_& m) {
                 "Anderson/Pulay charge-mixing relaxation in (0, 1]. The 0.3 "
                 "default converges every in-tree case; larger is faster but "
                 "stops converging for hydrogen-bonded systems around 0.7.")
-        .def_rw("with_forces", &DFTB2::with_forces,
-                "Compute analytic nuclear forces F = -dE/dR [eV/A].")
-        .def_rw("with_stress", &DFTB2::with_stress,
-                "Compute the analytic cell stress [eV/A^3] and publish it to "
-                "frame.meta['stress']. Needed for constant-pressure MD.")
         .def_rw("k_mesh", &DFTB2::k_mesh,
                 "Monkhorst-Pack mesh subdivisions per reciprocal axis, "
                 "(1, 1, 1) = Gamma only. Requires boundary=lattice.")
@@ -528,20 +539,31 @@ void bind_semiempirical(nb::module_& m) {
              "Drop the extrapolation history — after a geometry "
              "discontinuity or a restart. History also resets on its own "
              "when the atom count changes.")
-        .def("run", &dftb2_run, nb::arg("frame"),
-             "Solve at the frame's geometry and publish every channel back "
-             "onto it: total energy [eV] on frame.meta['energy'], Mulliken "
-             "charges [e] on the atoms charge column, forces [eV/A] on "
-             "fx/fy/fz when with_forces, and the cell stress on "
-             "frame.meta['stress'] when with_stress. The global interpreter "
-             "lock is released during compute. Raises RuntimeError under the "
-             "MPI launcher because DFTB2 has no task payload.")
-        .def("forces", &dftb2_forces, nb::arg("frame"),
-             "Solve, publish everything run() publishes, and additionally "
-             "RETURN the analytic forces as an (n_atoms, 3) array [eV/A]. "
-             "These are closed-form derivatives (Hellmann-Feynman + Pulay + "
-             "the charge-kernel and repulsive terms), not finite "
-             "differences. Like run(), rejects MPI launcher execution.")
+        .def("run", &dftb_run<DFTB2>, nb::arg("frame"),
+             "Overwrite energy [eV] and charges [e]; preserve existing forces.")
+        .def("forces", &dftb_forces<DFTB2>, nb::arg("frame"),
+             "Overwrite energy, charges and forces; return an (n_atoms, 3) "
+             "force array [eV/A].")
+        .def(
+            "stress",
+            [](DFTB2& self, nb::object frame_obj) {
+                if (cpu::task::LauncherGate{}.active())
+                    throw std::runtime_error(
+                        "DFTB has no MPI single-point task payload; "
+                        "run without the launcher");
+                auto fref = borrow_molrs_frame(frame_obj);
+                auto work = cpu::from_molrs(*fref);
+                std::array<double, 6> stress;
+                {
+                    nb::gil_scoped_release release;
+                    stress = self.stress(work);
+                }
+                cpu::to_molrs(work, *fref);
+                return stress;
+            },
+            nb::arg("frame"),
+            "Overwrite energy, charges and extensive virial [eV]; return "
+            "intensive Voigt stress [eV/A^3].")
         .def("last_energy", &DFTB2::last_energy,
              "Total energy of the most recent solve [eV].")
         .def("last_e_band", &DFTB2::last_e_band,
@@ -561,7 +583,8 @@ void bind_semiempirical(nb::module_& m) {
              "SCC residual max|dq_out - dq_in| at exit [e].")
         .def("last_stress", &DFTB2::last_stress,
              "Intensive cell stress of the last solve, Voigt "
-             "(xx, yy, zz, xy, xz, yz) [eV/A^3]. Zero unless with_stress.")
+             "(xx, yy, zz, xy, xz, yz) [eV/A^3]. Zero when stress was not "
+             "requested.")
         .def("last_mulliken_dq", &DFTB2::last_mulliken_dq,
              "Per-atom Mulliken charge fluctuation dq [e] after the last "
              "solve. NOTE the sign convention: this is population minus "

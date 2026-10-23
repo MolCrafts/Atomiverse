@@ -81,3 +81,28 @@ TEST(ChargeMixer, RejectsMismatchedOrEmptyVectors) {
     EXPECT_THROW(mixer.next({1.0, 2.0}, {1.0}), std::invalid_argument);
     EXPECT_THROW(mixer.next({}, {}), std::invalid_argument);
 }
+
+TEST(ChargeMixer, ResetDiscardsHistoryAndRetainsResultStorage) {
+    ChargeMixer mixer(0.3, 3);
+    mixer.reset(2, 0.3);
+    const std::vector<double> in{0.0, 0.0}, out{0.3, 0.4};
+    const double* storage = mixer.next(in, out).data();
+    std::vector<double> x = mixer.next(in, out);
+    for (int i = 0; i < 8; ++i)
+        x = mixer.next(x, map_g(x));
+    mixer.reset(2, 0.5);
+    const auto& restarted = mixer.next(in, out);
+    EXPECT_EQ(restarted.data(), storage);
+    EXPECT_DOUBLE_EQ(restarted[0], 0.15);
+    EXPECT_DOUBLE_EQ(restarted[1], 0.2);
+    mixer.reset(3, 0.25);
+    const auto& resized = mixer.next({1.0, 2.0, 3.0}, {3.0, 4.0, 5.0});
+    EXPECT_EQ(resized, (std::vector<double>{1.5, 2.5, 3.5}));
+}
+
+TEST(ChargeMixer, DepthOneAndAliasedResultUseLinearDamping) {
+    ChargeMixer mixer(0.5, 1);
+    const auto& first = mixer.next({0.0, 0.0}, {2.0, 4.0});
+    const auto& second = mixer.next(first, {3.0, 6.0});
+    EXPECT_EQ(second, (std::vector<double>{2.0, 4.0}));
+}

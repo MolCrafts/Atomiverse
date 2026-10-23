@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -57,12 +58,11 @@ Result run(cpu::Frame f, bool forces) {
     for (int i = 0; i < n; ++i)
         f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
     cpu::semiempirical::DFTB0 dftb0;
-    dftb0.with_forces = forces;
-    cpu::Evaluate eval;
-    eval.on(evaluate::Phase::evaluate).add(std::move(dftb0));
-    eval.build();
     const auto t0 = std::chrono::steady_clock::now();
-    eval.run(f);
+    if (forces)
+        dftb0.forces(f);
+    else
+        dftb0.run(f);
     const auto t1 = std::chrono::steady_clock::now();
     Result r;
     r.energy = f.meta.get(kEnergy);
@@ -163,6 +163,10 @@ int check_pin(const char* tag, const Result& r, double e_pin,
 // DFTB+ 24.1 detailed.out, SCC = No, mio-1-1. Forces are Ha/Bohr.
 constexpr double kHa = units::kHartreeInEv;
 constexpr double kHaBohr = units::kHartreePerBohrInEvPerAngstrom;
+// DFTB+ 24.1 constants.F90 uses Bohr__AA = 0.529177249. Express its
+// archived GEN geometries in ATV's length convention so both solve at the
+// same coordinates in atomic units. See REFERENCE.md; no pin is adjusted.
+constexpr double kOracleLength = units::kBohrInAngstrom / 0.529177249;
 
 std::array<double, 3> au_to_evA(double x, double y, double z) {
     return {x * kHaBohr, y * kHaBohr, z * kHaBohr};
@@ -178,8 +182,8 @@ int run() {
 
     // H2 r = 0.74 Å. Energy is the existing mio-1-1 pin; the force is the
     // same non-SCC transcript (not an equilibrium, |F| ≠ 0).
-    const std::vector<Atom> h2_074 = {{1, 0.0, 0.0, 0.0, 1.008},
-                                      {1, 0.74, 0.0, 0.0, 1.008}};
+    const std::vector<Atom> h2_074 = {
+        {1, 0.0, 0.0, 0.0, 1.008}, {1, 0.74 * kOracleLength, 0.0, 0.0, 1.008}};
     const auto r074 = run(make_frame(h2_074, 30.0), true);
     if (check_pin("H2/0.74", r074, -0.6749509324 * kHa,
                   {au_to_evA(-0.001976354621, 0.0, 0.0),
@@ -196,8 +200,8 @@ int run() {
 
     // Stretched H2. Homonuclear, so an SCC run would give the same number;
     // the transcript is SCC=No anyway.
-    const std::vector<Atom> h2_090 = {{1, 0.0, 0.0, 0.0, 1.008},
-                                      {1, 0.90, 0.0, 0.0, 1.008}};
+    const std::vector<Atom> h2_090 = {
+        {1, 0.0, 0.0, 0.0, 1.008}, {1, 0.90 * kOracleLength, 0.0, 0.0, 1.008}};
     const auto r090 = run(make_frame(h2_090, 30.0), true);
     if (check_pin("H2/0.90", r090, -0.6630166170 * kHa,
                   {au_to_evA(0.065975227977, 0.0, 0.0),
@@ -211,9 +215,10 @@ int run() {
 
     // Off-equilibrium water. Heteronuclear: Δq ≠ 0, so this is not the
     // homonuclear "SCC reduces to DFTB0" licence. SCC=No is required.
-    const std::vector<Atom> h2o = {{8, 0.00, 0.00, 0.00, 15.999},
-                                   {1, 1.05, 0.00, 0.00, 1.008},
-                                   {1, -0.26, 1.00, 0.00, 1.008}};
+    const std::vector<Atom> h2o = {
+        {8, 0.00, 0.00, 0.00, 15.999},
+        {1, 1.05 * kOracleLength, 0.00, 0.00, 1.008},
+        {1, -0.26 * kOracleLength, kOracleLength, 0.00, 1.008}};
     const auto rw = run(make_frame(h2o, 30.0), true);
     if (check_pin("H2O", rw, -4.0964033746 * kHa,
                   {au_to_evA(0.039206443065, 0.036588999897, 0.0),
@@ -226,9 +231,102 @@ int run() {
     if (check_net("H2O", rw, kNet_tol))
         return 1;
 
+    // The same DFTB+ transcript prints these gross charges to eight decimals.
+    // Its 5e-9 e rounding floor is below the independent 1e-7 e charge gate.
+    const double water_q[] = {-0.78403315, 0.39237282, 0.39166033};
+    auto frame = make_frame(h2o, 30.0);
+    cpu::semiempirical::DFTB0 method;
+    for (int a = 0; a < 3; ++a) {
+        frame.span(kAtom_fx)[a] = 7.0;
+        frame.span(kAtom_fy)[a] = 8.0;
+        frame.span(kAtom_fz)[a] = 9.0;
+        frame.span(kAtom_charge)[a] = 12.0;
+    }
+    frame.meta.get(kEnergy) = 23.0;
+    method.run(static_cast<const cpu::Frame&>(frame));
+    if (frame.meta.get(kEnergy) != 23.0)
+        return fail("const run modified Frame energy");
+    for (int a = 0; a < 3; ++a)
+        if (frame.span(kAtom_charge)[a] != 12.0
+            || std::fabs(method.last_charges()[a] - water_q[a]) > 1e-7)
+            return fail("const run charge output");
+    method.run(frame);
+    if (std::fabs(frame.meta.get(kEnergy) - rw.energy) > kE_tol
+        || frame.meta.get(kEnergyElectronic) != frame.meta.get(kEnergy))
+        return fail("run must overwrite energy and electronic contribution");
+    for (int a = 0; a < 3; ++a) {
+        if (frame.span(kAtom_fx)[a] != 7.0 || frame.span(kAtom_fy)[a] != 8.0
+            || frame.span(kAtom_fz)[a] != 9.0)
+            return fail("run changed existing forces");
+        std::printf("H2O q[%d] got=%.10f want=%.8f tol=1e-7 e\n", a,
+                    static_cast<double>(frame.span(kAtom_charge)[a]),
+                    water_q[a]);
+        if (std::fabs(frame.span(kAtom_charge)[a] - water_q[a]) > 1e-7)
+            return fail("Mulliken charges differ from DFTB+");
+    }
+    method.forces(frame);
+    for (int a = 0; a < 3; ++a)
+        if (std::fabs(frame.span(kAtom_fx)[a] - rw.f[a][0]) > kF_tol
+            || std::fabs(frame.span(kAtom_fy)[a] - rw.f[a][1]) > kF_tol
+            || std::fabs(frame.span(kAtom_fz)[a] - rw.f[a][2]) > kF_tol)
+            return fail("forces must overwrite previous forces");
+
+    // Two independently mounted sources prove accumulation in the parent.
+    cpu::semiempirical::DFTB0 second;
+    cpu::Evaluate combined;
+    combined.on(evaluate::Phase::evaluate).add_ref(method);
+    combined.on(evaluate::Phase::evaluate).add_ref(second);
+    combined.build();
+    combined.run(frame);
+    if (std::fabs(frame.meta.get(kEnergy) - 2 * rw.energy) > kE_tol)
+        return fail("nested energy did not accumulate");
+    for (int a = 0; a < 3; ++a)
+        if (std::fabs(frame.span(kAtom_fx)[a] - 2 * rw.f[a][0]) > kF_tol
+            || std::fabs(frame.span(kAtom_fy)[a] - 2 * rw.f[a][1]) > kF_tol
+            || std::fabs(frame.span(kAtom_fz)[a] - 2 * rw.f[a][2]) > kF_tol
+            || std::fabs(frame.span(kAtom_charge)[a] - water_q[a]) > 1e-7)
+            return fail("nested force/charge publication");
+
+    frame.span(kAtom_x)[1] = std::numeric_limits<double>::quiet_NaN();
+    const double before = frame.meta.get(kEnergy);
+    bool rejected = false;
+    try {
+        method.forces(frame);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    if (!rejected || frame.meta.get(kEnergy) != before
+        || std::isfinite(method.last_energy())
+        || !method.last_charges().empty())
+        return fail("failed calculation published a result");
+    frame.span(kAtom_x)[1] = h2o[1].x;
+    method.forces(frame);
+    if (std::fabs(frame.meta.get(kEnergy) - rw.energy) > kE_tol)
+        return fail("retry after invalid input");
+
+    // Rebuild on atom-count and element changes, including a failed rebuild.
+    auto small = make_frame(h2_074, 30.0);
+    method.forces(small);
+    if (std::fabs(method.last_energy() - r074.energy) > kE_tol)
+        return fail("atom-count rebuild");
+    small.span(kAtom_type)[0] = 2;
+    rejected = false;
+    try {
+        method.run(small);
+    } catch (const std::runtime_error&) {
+        rejected = true;
+    }
+    if (!rejected)
+        return fail("unsupported element was accepted");
+    small.span(kAtom_type)[0] = 1;
+    method.forces(small);
+    if (std::fabs(method.last_energy() - r074.energy) > kE_tol)
+        return fail("retry after failed identity rebuild");
+
     // Tilted CO: ppσ/ppπ blocks and a non-zero transverse force.
-    const std::vector<Atom> co = {{6, 0.00, 0.00, 0.00, 12.011},
-                                  {8, 1.20, 0.15, 0.00, 15.999}};
+    const std::vector<Atom> co = {
+        {6, 0.00, 0.00, 0.00, 12.011},
+        {8, 1.20 * kOracleLength, 0.15 * kOracleLength, 0.00, 15.999}};
     const auto rc = run(make_frame(co, 30.0), true);
     if (check_pin("CO", rc, -5.0270725023 * kHa,
                   {au_to_evA(0.183901804021, 0.022987724205, 0.0),
@@ -239,6 +337,31 @@ int run() {
         return 1;
     if (check_net("CO", rc, kNet_tol))
         return 1;
+
+    small = make_frame(co, 30.0);
+    method.forces(small);
+    if (std::fabs(method.last_energy() - rc.energy) > kE_tol)
+        return fail("element rebuild with unchanged atom count");
+    const double co_q[] = {0.17210262, -0.17210262};
+    for (int a = 0; a < 2; ++a) {
+        std::printf("CO q[%d] got=%.10f want=%.8f tol=1e-7 e\n", a,
+                    static_cast<double>(small.span(kAtom_charge)[a]), co_q[a]);
+        if (std::fabs(small.span(kAtom_charge)[a] - co_q[a]) > 1e-7)
+            return fail("CO charge pin");
+        // Rotate xy by 90 degrees and translate in all three directions.
+        small.span(kAtom_x)[a] = 2.0 - co[a].y;
+        small.span(kAtom_y)[a] = 3.0 + co[a].x;
+        small.span(kAtom_z)[a] = 4.0;
+    }
+    method.forces(small);
+    if (std::fabs(method.last_energy() - rc.energy) > kE_tol)
+        return fail("rotated/translated CO energy");
+    for (int a = 0; a < 2; ++a)
+        if (std::fabs(small.span(kAtom_fx)[a] + rc.f[a][1]) > kF_tol
+            || std::fabs(small.span(kAtom_fy)[a] - rc.f[a][0]) > kF_tol
+            || std::fabs(small.span(kAtom_fz)[a]) > kF_tol
+            || std::fabs(small.span(kAtom_charge)[a] - co_q[a]) > 1e-7)
+            return fail("rotated/translated CO forces and charges");
 
     // Min-image pair that crosses the box face. No DFTB+ cluster twin —
     // the gate is F = −∇E of this same min-image energy.

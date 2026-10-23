@@ -46,7 +46,6 @@ cpu::Frame make_o2(double r_ang = 1.21) {
 int run() {
     auto frame = make_o2();
 
-    cpu::Evaluate eval;
     // ground-state triplet O₂
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch,
                                    /*charge=*/0, /*multiplicity=*/3};
@@ -54,14 +53,12 @@ int run() {
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
     dftb.spin_w_ha = cpu::semiempirical::basis_data::kDftbSpinConstantsPbeHa;
-    dftb.with_forces = false;
+
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;
     // Keep a reference to the component for Mulliken spin after run: register
     // via add_ref so ownership stays here.
-    eval.on(evaluate::Phase::evaluate).add_ref(dftb);
-    eval.build();
-    eval.run(frame);
+    dftb.run(frame);
 
     const double e = frame.meta.get(kEnergy);
     std::printf("spin-DFTB2 O2 triplet: E=%.12f eV\n", e);

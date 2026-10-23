@@ -93,7 +93,7 @@ int run() {
     dftb.boundary = cpu::semiempirical::DftbBoundary::lattice;
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 200;
-    dftb.with_forces = true;
+
     eval.on(evaluate::Phase::evaluate).add_ref(dftb);
     eval.build();
     eval.run(frame);

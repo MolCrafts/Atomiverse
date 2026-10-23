@@ -47,7 +47,7 @@ int run() {
     const double eps = 0.01, sigma = 3.4, cut = 12.0;
     cpu::QmmmOniom oniom{{{1, 1, eps, sigma}, {18, 18, eps, sigma}}, cut};
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
-    dftb.with_forces = false;
+
     oniom.set_engine(std::move(dftb));
 
     // Keep a second instance for last_* after Evaluate takes ownership.

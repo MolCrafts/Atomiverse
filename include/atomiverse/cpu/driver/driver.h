@@ -99,8 +99,8 @@ namespace cpu {
 ///
 /// Maps PhaseEnum → the eval phase (where pair/bonded forces run) and
 /// the end-of-step phase (where thermo output runs). One specialization
-/// below for each of the seven workflows (md, minimizer, evaluate, vib,
-/// sampling, path, scf).
+/// below, one per CPU phase enum (md, minimizer, evaluate, vib, sampling,
+/// path, scf, gpw, pw, nddo, scc).
 template <typename PhaseEnum>
 struct PhaseTraits;
 
@@ -199,6 +199,15 @@ struct PhaseTraits<ATV::nddo::Phase> {
     static constexpr auto eval_phase = ATV::nddo::Phase::fock;
     static constexpr auto neighbor_phase = ATV::nddo::Phase::fock;
     static constexpr auto end_phase = ATV::nddo::Phase::check;
+};
+
+/// SCC (`SccDriver : Driver<scc::Phase>`): the Hamiltonian shift is the
+/// energy slot; no neighbor list; end-of-iteration is `check`.
+template <>
+struct PhaseTraits<ATV::scc::Phase> {
+    static constexpr auto eval_phase = ATV::scc::Phase::shift;
+    static constexpr auto neighbor_phase = ATV::scc::Phase::shift;
+    static constexpr auto end_phase = ATV::scc::Phase::check;
 };
 
 /// @brief CPU-backend loop node — the one class every CPU preset derives from.

@@ -220,10 +220,8 @@ TEST(DftbPublishedConstants, Dftb2LaunchThrowsWhenSpinWHaEmptyOpenShell) {
     cpu::Context ctx;
     DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/3};
     d.boundary = DftbBoundary::cluster;
-    d.with_forces = false;
-    d.build({ctx, f});
     expect_throw_has<std::invalid_argument>(
-        [&] { d.launch({ctx, f, 0, 0}); },
+        [&] { d.run(f); },
         {"spin_w_ha", "d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;"});
 }
 
@@ -336,9 +334,7 @@ TEST(DftbPublishedConstants, Dftb2LaunchThrowsWhenShellResolvedSpinTrue) {
     d.boundary = DftbBoundary::cluster;
     d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
     d.shell_resolved_spin = true;
-    d.with_forces = false;
-    d.build({ctx, f});
-    expect_throw_has<std::runtime_error>([&] { d.launch({ctx, f, 0, 0}); },
+    expect_throw_has<std::runtime_error>([&] { d.run(f); },
                                          {"dftb-shell-resolved-spin"});
 }
 
@@ -361,9 +357,7 @@ TEST(DftbPublishedConstants,
     d.boundary = DftbBoundary::cluster;
     d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
     EXPECT_FALSE(d.shell_resolved_spin);
-    d.with_forces = false;
-    d.build({ctx, f});
-    EXPECT_NO_THROW(d.launch({ctx, f, 0, 0}));
+    EXPECT_NO_THROW(d.run(f));
 }
 
 // ── Edge: DFTB2 Unset sentinel ─────────────────────────────────────────
@@ -383,9 +377,7 @@ TEST(DftbPublishedConstants, Dftb2MioSketchLaunchOnH2Succeeds) {
     auto f = make_h2();
     cpu::Context ctx;
     DFTB2 d{DftbSkSet::MioSketch};
-    d.with_forces = false;
-    d.build({ctx, f});
-    d.launch({ctx, f, 0, 0});
+    d.run(f);
     EXPECT_TRUE(std::isfinite(d.last_energy()));
 }
 
@@ -393,10 +385,7 @@ TEST(DftbPublishedConstants, Dftb2LaunchThrowsWhenSkSetUnset) {
     auto f = make_h2();
     cpu::Context ctx;
     DFTB2 d{DftbSkSet::Unset};
-    d.with_forces = false;
-    d.build({ctx, f});
-    expect_throw_has<std::exception>([&] { d.launch({ctx, f, 0, 0}); },
-                                     {"sk_set"});
+    expect_throw_has<std::exception>([&] { d.run(f); }, {"sk_set"});
 }
 
 // ── Edge: closed-shell lazy validation ─────────────────────────────────
@@ -406,9 +395,7 @@ TEST(DftbPublishedConstants, Dftb2ClosedShellLaunchDoesNotRequireSpinWHa) {
     cpu::Context ctx;
     DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/1};
     EXPECT_TRUE(d.spin_w_ha.empty());
-    d.with_forces = false;
-    d.build({ctx, f});
-    EXPECT_NO_THROW(d.launch({ctx, f, 0, 0}));
+    EXPECT_NO_THROW(d.run(f));
 }
 
 TEST(DftbPublishedConstants,
@@ -417,9 +404,7 @@ TEST(DftbPublishedConstants,
     cpu::Context ctx;
     DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/1};
     d.shell_resolved_spin = true;
-    d.with_forces = false;
-    d.build({ctx, f});
-    EXPECT_NO_THROW(d.launch({ctx, f, 0, 0}));
+    EXPECT_NO_THROW(d.run(f));
 }
 
 // ── Edge: Dftb3Scc ctor gate ───────────────────────────────────────────

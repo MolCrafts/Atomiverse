@@ -48,32 +48,28 @@ cpu::Frame make_dimer() {
 
 int run() {
     auto f_off = make_dimer();
-    cpu::Evaluate eval_off;
+
     cpu::semiempirical::DFTB2 d_off{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d_off.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d_off.d3 = false;
-    d_off.with_forces = false;
+
     d_off.scc_tol = 1e-10;
-    eval_off.on(evaluate::Phase::evaluate).add_ref(d_off);
-    eval_off.build();
-    eval_off.run(f_off);
+    d_off.run(f_off);
     const double e_off = f_off.meta.get(kEnergy);
     std::printf("DFTB2 water dimer (no D3): E=%.10f eV\n", e_off);
 
     auto f_on = make_dimer();
-    cpu::Evaluate eval_on;
+
     cpu::semiempirical::DFTB2 d_on{cpu::semiempirical::DftbSkSet::MioSketch};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d_on.boundary = cpu::semiempirical::DftbBoundary::cluster;
     d_on.d3 = true;
-    d_on.with_forces = false;
+
     d_on.scc_tol = 1e-10;
-    eval_on.on(evaluate::Phase::evaluate).add_ref(d_on);
-    eval_on.build();
-    eval_on.run(f_on);
+    d_on.run(f_on);
     const double e_on = f_on.meta.get(kEnergy);
     const double e_disp = d_on.last_e_disp();
     std::printf("DFTB2+D3 water dimer: E=%.10f eV  E_disp=%.12f eV\n", e_on,

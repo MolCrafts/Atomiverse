@@ -92,7 +92,7 @@ Inputs: `tools/tb_oracle/inputs/dftbplus/h2_mio_scc/`.
 ### Gate
 
 |E_ATV − (−18.36635052 eV)| ≤ **1×10⁻³ eV** on `frame.meta[kEnergy]` via
-`cpu::Evaluate` + `cpu::semiempirical::DFTB2` (`with_forces = false`).
+`cpu::semiempirical::DFTB2::run(frame)` (energy and charges).
 
 ### Perf (optional, not ctest)
 
@@ -163,7 +163,7 @@ DFTB+ detailed components (documentation only):
 ### Gate
 
 - Public API: `cpu::Evaluate` + `cpu::semiempirical::DFTB2` with
-  `sk_set = DftbSkSet::ThreeOb`, `with_forces = false`.
+  `sk_set = DftbSkSet::ThreeOb`, energy-only `run(frame)`.
 - Assert `|E_ATV − (−87.86856831)| ≤ 0.05` eV (SK tables + Elstner
   γ vs DFTB+ poly-interp / γ implementation residual).
 
@@ -176,7 +176,7 @@ double-counting fixes. That is the point: the 3ob path **already** assembled
 converged, so the only in-tree DFTB2 number with a real DFTB+ oracle behind it
 is the one number that must not move — and did not. Only the MioSketch path,
 which was on the `E_band − E²` route, moved. The 3ob analytic *gradient* did
-change (wrong-sign γ term), but this case runs with `with_forces = false`.
+change (wrong-sign γ term), but this case runs with energy-only `run(frame)`.
 
 ### Float → double re-emission (reproducibility, not accuracy)
 
@@ -367,7 +367,7 @@ Voigt order on Frame `kStress`: `(xx, yy, zz, xy, xz, yz)` in **eV/Å³**.
 | H | 1 | 1.05 | 0.00 | 0.00 |
 | H | 1 | −0.26 | 1.00 | 0.00 |
 
-Isolated molecule, cubic box 20 Å. `scc_tol = 1e-10`. `with_stress = true`.
+Isolated molecule, cubic box 20 Å. `scc_tol = 1e-10`. stress requested by Evaluate.
 
 ### Pins (hard-coded gates)
 
@@ -413,7 +413,7 @@ nor the new value is an oracle number — no DFTB+ identity is claimed.
 ### Gaps (still open)
 
 1. ~~**D3 dispersion is absent from the stress.**~~ **Closed 2026-07-29:** with
-   `d3=true` and `with_stress=true`, D3 is folded into `last_stress_` /
+   `d3=true` and stress requested, D3 is folded into `last_stress_` /
    `kStress` from the analytic pair virial of `dftd3_pbe_bj`, image-aware when
    `d3_periodic=true`. Unit gates in
    `tests/cpu/semiempirical/test_dftb2_dispersion_d3.cpp`
@@ -1192,7 +1192,7 @@ twin is archived for NO (this spec's twin is O₂).
 
 Isolated cluster, cubic 20 Å box (\(\Omega=8000\) Å³; every lattice image is
 beyond the SK cutoff). `scc_tol = 1e-12`, `max_scc = 200`,
-`with_forces = true`, `with_stress = true`.
+forces and stress requested by Evaluate.
 
 ### Pins (hard-coded gates)
 

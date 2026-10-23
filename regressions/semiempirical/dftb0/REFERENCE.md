@@ -165,6 +165,32 @@ Conversion, from `core/units.h`: 1 Ha = 27.211386245988 eV,
 1 Ha/Bohr = 51.42206747467393 eV/Å. DFTB+ prints forces in atomic units
 (`Maximal derivative component: … au`).
 
+The force/charge section expresses the archived GEN coordinates in the same
+atomic units before evaluating ATV: multiply each archived Å coordinate by
+`units::kBohrInAngstrom / 0.529177249`. DFTB+ 24.1 uses the latter Bohr→Å
+constant in its [versioned constants module](https://github.com/dftbplus/dftbplus/blob/24.1/src/dftbp/common/constants.F90#L23-L27).
+This is an input-unit conversion; the archived energies, forces and charges
+are unchanged. The separate historical H₂ energy section retains its original
+nominal Å coordinates. Finite differences use displacements in ATV Å.
+
+Without this conversion, tilted CO compares slightly different bond lengths:
+the charge differs by 1.74e-7 e and the energy by 8.30e-7 eV. At identical
+atomic-unit coordinates these differences are 2.4e-9 e and 7.2e-10 eV. No
+tolerance is widened. The charge gate is 1e-7 e; the transcript rounds to eight
+decimals (at most 5e-9 e rounding error).
+
+The same `Atomic gross charges (e)` output blocks supply these charge pins:
+
+| System | Atomic order | Charges [e] |
+| --- | --- | --- |
+| Water | O, H1, H2 | −0.78403315, 0.39237282, 0.39166033 |
+| CO | C, O | 0.17210262, −0.17210262 |
+
+Supplemental checks cover const input, energy-only force preservation,
+overwrite versus nested accumulation, atom-count/species rebuilds, invalid
+input and retry, and rotation/translation covariance. These checks supplement
+the external energy, charge and full-force pins above; they are not new oracles.
+
 #### H₂, \(R = 0.74\) Å (cubic isolation 30 Å)
 
 | Quantity | Transcript | Unit |

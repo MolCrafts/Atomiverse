@@ -195,7 +195,7 @@ int run() {
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     d2.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    d2.with_forces = true;
+
     d2.scc_tol = 1e-10;
     eval2.on(evaluate::Phase::evaluate).add(std::move(d2));
     eval2.build();

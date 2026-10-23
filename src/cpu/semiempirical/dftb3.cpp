@@ -27,6 +27,7 @@
 #include "atomiverse/cpu/semiempirical/internal/mio_sk_block.h"
 #include "atomiverse/cpu/semiempirical/internal/mio_sk_table.h"
 #include "atomiverse/cpu/semiempirical/internal/scc_mixer.h"
+#include "atomiverse/cpu/semiempirical/scc_method.h"
 
 namespace ATV {
 namespace cpu {
@@ -237,7 +238,8 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
                       const std::vector<const DftbElementRow*>& el,
                       const std::vector<double>& hubbard_du_ev,
                       const std::vector<int>& ao0, int n_at, int n_ao,
-                      int n_occ, double scc_tol, int max_scc, double mix_beta) {
+                      int n_occ, double scc_tol, int max_scc, double mix_beta,
+                      Runtime* host = nullptr) {
     const std::size_t n = static_cast<std::size_t>(n_at);
     const auto images = lattice_images_for(f.box, el);
 
@@ -321,7 +323,6 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
     linalg::RealMatrix C = xt::zeros<double>({n_ao, n_ao});
     linalg::RealVector eps = xt::zeros<double>({n_ao});
     SccSolution out;
-    bool converged = false;
     // Retained iterates in the Anderson charge mixer (dimensionless).
     constexpr int kSccMixDepth = 6;
     internal::ChargeMixer mixer(mix_beta, kSccMixDepth);
@@ -352,61 +353,61 @@ SccSolution solve_scc(const cpu::Frame& f, const int* type,
         return v;
     };
 
-    for (int it = 0; it < max_scc; ++it) {
-        const std::vector<double> dV = potential_lat(dq);
-
-        linalg::RealMatrix H = H0;
-        for (int a = 0; a < n_at; ++a) {
-            const int ia = ao0[static_cast<std::size_t>(a)];
-            const int na = el[static_cast<std::size_t>(a)]->n_ao;
-            for (int b = 0; b < n_at; ++b) {
-                const int ib = ao0[static_cast<std::size_t>(b)];
-                const int nb = el[static_cast<std::size_t>(b)]->n_ao;
-                const double half = 0.5
-                                    * (dV[static_cast<std::size_t>(a)]
-                                       + dV[static_cast<std::size_t>(b)]);
-                for (int i = 0; i < na; ++i)
-                    for (int j = 0; j < nb; ++j)
-                        H(ia + i, ib + j) += half * S(ia + i, ib + j);
+    linalg::RealMatrix H;
+    SccDriver scc_drv;
+    const SccOutcome outcome = scc_drv.solve(
+        host, max_scc, scc_tol,
+        [&] {
+            const std::vector<double> dV = potential_lat(dq);
+            H = H0;
+            for (int a = 0; a < n_at; ++a) {
+                const int ia = ao0[static_cast<std::size_t>(a)];
+                const int na = el[static_cast<std::size_t>(a)]->n_ao;
+                for (int b = 0; b < n_at; ++b) {
+                    const int ib = ao0[static_cast<std::size_t>(b)];
+                    const int nb = el[static_cast<std::size_t>(b)]->n_ao;
+                    const double half = 0.5
+                                        * (dV[static_cast<std::size_t>(a)]
+                                           + dV[static_cast<std::size_t>(b)]);
+                    for (int i = 0; i < na; ++i)
+                        for (int j = 0; j < nb; ++j)
+                            H(ia + i, ib + j) += half * S(ia + i, ib + j);
+                }
             }
-        }
+        },
+        [&] {
+            auto sol = linalg::diagonalize_fock_generalized(H, S);
+            eps = sol.first;
+            C = sol.second;
 
-        auto sol = linalg::diagonalize_fock_generalized(H, S);
-        eps = sol.first;
-        C = sol.second;
-
-        P = xt::zeros<double>({n_ao, n_ao});
-        for (int o = 0; o < n_occ; ++o)
-            for (int mu = 0; mu < n_ao; ++mu)
-                for (int nu = 0; nu < n_ao; ++nu)
-                    P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
-
-        const linalg::RealMatrix PS = xt::linalg::dot(P, S);
-        double residual = 0;
-        for (int a = 0; a < n_at; ++a) {
-            double qa = 0;
-            const int ia = ao0[static_cast<std::size_t>(a)];
-            const int na = el[static_cast<std::size_t>(a)]->n_ao;
-            for (int i = 0; i < na; ++i)
-                qa += PS(ia + i, ia + i);
-            dq_out[static_cast<std::size_t>(a)] =
-                qa - el[static_cast<std::size_t>(a)]->n_val;
-            residual =
-                std::max(residual, std::abs(dq_out[static_cast<std::size_t>(a)]
-                                            - dq[static_cast<std::size_t>(a)]));
-        }
-
-        out.residual = residual;
-        out.iterations = it + 1;
-        if (residual < scc_tol) {
-            dq = dq_out;
-            converged = true;
-            break;
-        }
-        dq = mixer.next(dq, dq_out);
-    }
-
-    if (!converged)
+            P = xt::zeros<double>({n_ao, n_ao});
+            for (int o = 0; o < n_occ; ++o)
+                for (int mu = 0; mu < n_ao; ++mu)
+                    for (int nu = 0; nu < n_ao; ++nu)
+                        P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
+        },
+        [&] {
+            const linalg::RealMatrix PS = xt::linalg::dot(P, S);
+            double residual = 0;
+            for (int a = 0; a < n_at; ++a) {
+                double qa = 0;
+                const int ia = ao0[static_cast<std::size_t>(a)];
+                const int na = el[static_cast<std::size_t>(a)]->n_ao;
+                for (int i = 0; i < na; ++i)
+                    qa += PS(ia + i, ia + i);
+                dq_out[static_cast<std::size_t>(a)] =
+                    qa - el[static_cast<std::size_t>(a)]->n_val;
+                residual = std::max(
+                    residual, std::abs(dq_out[static_cast<std::size_t>(a)]
+                                       - dq[static_cast<std::size_t>(a)]));
+            }
+            out.residual = residual;
+            scc_drv.set_residual(residual);
+        },
+        [&] { dq = dq_out; }, [&] { dq = mixer.next(dq, dq_out); });
+    out.iterations = outcome.iterations;
+    out.residual = outcome.residual;
+    if (!outcome.converged)
         throw std::runtime_error(
             "DFTB3: SCC did not converge in " + std::to_string(max_scc)
             + " iterations (residual " + std::to_string(out.residual)
@@ -709,7 +710,7 @@ void DFTB3::launch(const LaunchContext& ctx) {
 
     const SccSolution sol =
         solve_scc(f, type.data(), x, y, z, el, hubbard_du_ev, ao0, n_at, n_ao,
-                  n_occ, scc_tol, max_scc, mix_beta);
+                  n_occ, scc_tol, max_scc, mix_beta, ctx.runtime.exec.runtime);
     e2_ = sol.e2;
     e3_ = sol.e3;
     scc_residual_ = sol.residual;

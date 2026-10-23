@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/scf/dftd4.h"
 #include "atomiverse/cpu/semiempirical/basis_data/gfn2_xtb_tables.h"
 #include "atomiverse/cpu/semiempirical/internal/scc_mixer.h"
+#include "atomiverse/cpu/semiempirical/scc_method.h"
 
 namespace ATV {
 namespace cpu {
@@ -616,7 +617,7 @@ struct SolveOut {
 };
 
 SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
-                    double mix_beta, bool want_grad) {
+                    double mix_beta, bool want_grad, Runtime* host = nullptr) {
     const int n_at = f.nlocal();
     const int* type = f.span(kAtom_type).data();
     const StorageReal* xA = f.span(kAtom_x).data();
@@ -1115,38 +1116,46 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
     unpack(std::vector<double>(nmix, 0.0), dn_in, mom_in);
     std::vector<double> x_in(nmix, 0.0);
     SolveOut out;
-    bool converged = false;
-    for (int it = 0; it < max_scc; ++it) {
-        unpack(x_in, dn_in, mom_in);
-        aes_eval(mom_in, vq, vmu, vth);
-        std::vector<double> dEdq_d4;
-        d4_of(mom_in, dEdq_d4);
-        for (int a = 0; a < n_at; ++a)
-            vq[U(a)] += dEdq_d4[U(a)];
-        shell_potential(dn_in, vq, vsh);
-        const linalg::RealMatrix H = build_fock(vsh, vmu, vth);
-        auto sol = linalg::diagonalize_fock_generalized(H, S);
-        eps_mo = sol.first;
-        Cmat = sol.second;
-        P = xt::zeros<double>({n_ao, n_ao});
-        for (int o = 0; o < n_occ; ++o)
-            for (int mu = 0; mu < n_ao; ++mu)
-                for (int nu = 0; nu < n_ao; ++nu)
-                    P(mu, nu) += 2.0 * Cmat(mu, o) * Cmat(nu, o);
-        moments_of(P, dn, mom);
-        const std::vector<double> x_out = pack(dn, mom);
-        double residual = 0;
-        for (std::size_t i = 0; i < nmix; ++i)
-            residual = std::max(residual, std::abs(x_out[i] - x_in[i]));
-        out.residual = residual;
-        out.iterations = it + 1;
-        if (residual < scc_tol) {
-            converged = true;
-            break;
-        }
-        x_in = mixer.next(x_in, x_out);
-    }
-    if (!converged)
+    linalg::RealMatrix H;
+    std::vector<double> x_out;
+    // Accept is empty: on the converging iteration `moments_of` already stored
+    // the new moments in `dn` / `mom`. Mixing that iterate would move the pin.
+    SccDriver scc;
+    const SccOutcome outcome = scc.solve(
+        host, max_scc, scc_tol,
+        [&] {
+            unpack(x_in, dn_in, mom_in);
+            aes_eval(mom_in, vq, vmu, vth);
+            std::vector<double> dEdq_d4;
+            d4_of(mom_in, dEdq_d4);
+            for (int a = 0; a < n_at; ++a)
+                vq[U(a)] += dEdq_d4[U(a)];
+            shell_potential(dn_in, vq, vsh);
+            H = build_fock(vsh, vmu, vth);
+        },
+        [&] {
+            auto sol = linalg::diagonalize_fock_generalized(H, S);
+            eps_mo = sol.first;
+            Cmat = sol.second;
+            P = xt::zeros<double>({n_ao, n_ao});
+            for (int o = 0; o < n_occ; ++o)
+                for (int mu = 0; mu < n_ao; ++mu)
+                    for (int nu = 0; nu < n_ao; ++nu)
+                        P(mu, nu) += 2.0 * Cmat(mu, o) * Cmat(nu, o);
+            moments_of(P, dn, mom);
+            x_out = pack(dn, mom);
+        },
+        [&] {
+            double residual = 0;
+            for (std::size_t i = 0; i < nmix; ++i)
+                residual = std::max(residual, std::abs(x_out[i] - x_in[i]));
+            out.residual = residual;
+            scc.set_residual(residual);
+        },
+        [&] {}, [&] { x_in = mixer.next(x_in, x_out); });
+    out.iterations = outcome.iterations;
+    out.residual = outcome.residual;
+    if (!outcome.converged)
         throw std::runtime_error("GFN2: SCC did not converge in max_scc="
                                  + std::to_string(max_scc)
                                  + " (residual=" + std::to_string(out.residual)
@@ -1427,7 +1436,8 @@ void GFN2::launch(const LaunchContext& ctx) {
         throw std::invalid_argument("GFN2: mix_beta must be in (0, 1]");
 
     const bool do_f = with_forces && ctx.forces_requested;
-    const auto out = solve_gfn2(f, charge, scc_tol, max_scc, mix_beta, do_f);
+    const auto out = solve_gfn2(f, charge, scc_tol, max_scc, mix_beta, do_f,
+                                ctx.runtime.exec.runtime);
     energy_ = out.energy_eh * units::kHartreeInEv;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;

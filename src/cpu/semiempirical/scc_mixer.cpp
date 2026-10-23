@@ -2,6 +2,7 @@
 /// Anderson/Pulay charge mixing shared by the SCC methods.
 #include "atomiverse/cpu/semiempirical/internal/scc_mixer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -12,25 +13,44 @@ namespace internal {
 
 ChargeMixer::ChargeMixer(double beta, int depth)
     : beta_(beta), depth_(static_cast<std::size_t>(depth)) {
-    if (!(beta > 0.0) || beta > 1.0)
-        throw std::invalid_argument("ChargeMixer: beta must be in (0, 1]");
     if (depth < 1)
         throw std::invalid_argument("ChargeMixer: depth must be >= 1");
+    reset(0, beta);
 }
 
-bool ChargeMixer::pulay_coefficients(std::vector<double>& out) const {
-    const std::size_t m = f_.size();
+void ChargeMixer::reset(std::size_t size, double beta) {
+    if (!(beta > 0.0) || beta > 1.0)
+        throw std::invalid_argument("ChargeMixer: beta must be in (0, 1]");
+    beta_ = beta;
+    first_ = count_ = 0;
+    x_.resize(depth_);
+    f_.resize(depth_);
+    for (std::size_t j = 0; j < depth_; ++j) {
+        x_[j].resize(size);
+        f_[j].resize(size);
+    }
+    mixed_.resize(size);
+    gram_.resize((depth_ + 1) * (depth_ + 1));
+    rhs_.resize(depth_ + 1);
+    coefficients_.resize(depth_ + 1);
+}
+
+bool ChargeMixer::pulay_coefficients() {
+    const std::size_t m = count_;
     const std::size_t dim = m + 1;
 
-    // B = [ <f_i,f_j>  -1 ; -1  0 ],  rhs = (0,...,0,-1)  ⇒  Σ c_j = 1.
-    std::vector<double> B(dim * dim, 0.0);
-    std::vector<double> rhs(dim, 0.0);
+    // B = [ <f_i,f_j>  -1 ; -1  0 ], rhs = (0,...,0,-1) ⇒ Σ c_j = 1.
+    auto& B = gram_;
+    auto& rhs = rhs_;
+    std::fill_n(B.begin(), dim * dim, 0.0);
+    std::fill_n(rhs.begin(), dim, 0.0);
     double scale = 0.0;
     for (std::size_t i = 0; i < m; ++i)
         for (std::size_t j = 0; j < m; ++j) {
             double dot = 0.0;
-            for (std::size_t k = 0; k < f_[i].size(); ++k)
-                dot += f_[i][k] * f_[j][k];
+            for (std::size_t k = 0; k < mixed_.size(); ++k)
+                dot +=
+                    f_[(first_ + i) % depth_][k] * f_[(first_ + j) % depth_][k];
             B[i * dim + j] = dot;
             scale = std::max(scale, std::abs(dot));
         }
@@ -65,7 +85,8 @@ bool ChargeMixer::pulay_coefficients(std::vector<double>& out) const {
             rhs[r] -= factor * rhs[col];
         }
     }
-    std::vector<double> sol(dim, 0.0);
+    auto& sol = coefficients_;
+    std::fill_n(sol.begin(), dim, 0.0);
     for (std::size_t ii = dim; ii-- > 0;) {
         double s = rhs[ii];
         for (std::size_t c = ii + 1; c < dim; ++c)
@@ -74,41 +95,45 @@ bool ChargeMixer::pulay_coefficients(std::vector<double>& out) const {
         if (!std::isfinite(sol[ii]))
             return false;
     }
-    out.assign(sol.begin(), sol.begin() + static_cast<std::ptrdiff_t>(m));
     return true;
 }
 
-std::vector<double> ChargeMixer::next(const std::vector<double>& x_in,
-                                      const std::vector<double>& x_out) {
+const std::vector<double>& ChargeMixer::next(const std::vector<double>& x_in,
+                                             const std::vector<double>& x_out) {
     if (x_in.empty() || x_in.size() != x_out.size())
         throw std::invalid_argument(
             "ChargeMixer: empty or size-mismatched population vectors");
 
-    std::vector<double> residual(x_in.size());
-    for (std::size_t k = 0; k < x_in.size(); ++k)
-        residual[k] = x_out[k] - x_in[k];
-    x_.push_back(x_in);
-    f_.push_back(std::move(residual));
-    if (x_.size() > depth_) {
-        x_.erase(x_.begin());
-        f_.erase(f_.begin());
+    if (mixed_.size() != x_in.size())
+        reset(x_in.size(), beta_);
+    if (count_ == depth_) {
+        first_ = (first_ + 1) % depth_;
+        --count_;
     }
+    const std::size_t row = (first_ + count_) % depth_;
+    for (std::size_t k = 0; k < x_in.size(); ++k) {
+        x_[row][k] = x_in[k];
+        f_[row][k] = x_out[k] - x_in[k];
+    }
+    ++count_;
 
     // Shrink the history until the DIIS system is solvable; a single retained
     // iterate degenerates to plain linear damping, which always is.
-    std::vector<double> c;
-    while (x_.size() > 1 && !pulay_coefficients(c)) {
-        x_.erase(x_.begin());
-        f_.erase(f_.begin());
+    while (count_ > 1 && !pulay_coefficients()) {
+        first_ = (first_ + 1) % depth_;
+        --count_;
     }
-    if (x_.size() == 1)
-        c.assign(1, 1.0);
+    if (count_ == 1)
+        coefficients_[0] = 1.0;
 
-    std::vector<double> mixed(x_in.size(), 0.0);
-    for (std::size_t j = 0; j < x_.size(); ++j)
-        for (std::size_t k = 0; k < mixed.size(); ++k)
-            mixed[k] += c[j] * (x_[j][k] + beta_ * f_[j][k]);
-    return mixed;
+    std::fill(mixed_.begin(), mixed_.end(), 0.0);
+    for (std::size_t j = 0; j < count_; ++j) {
+        const std::size_t retained = (first_ + j) % depth_;
+        for (std::size_t k = 0; k < mixed_.size(); ++k)
+            mixed_[k] +=
+                coefficients_[j] * (x_[retained][k] + beta_ * f_[retained][k]);
+    }
+    return mixed_;
 }
 
 } // namespace internal

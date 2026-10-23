@@ -68,6 +68,9 @@ AM1BCCCharges = _cpp.AM1BCCCharges
 #: Bond-charge-correction table: ``bcc`` (GAFF) or ``abcg2`` (GAFF2).
 BccParameterSet = _cpp.BccParameterSet
 
+#: Non-SCC mio-1-1 energy, charges and forces for neutral closed-shell CHNO.
+DFTB0 = _cpp.DFTB0
+
 #: SCC-DFTB2 for H/C/N/O — Elstner et al., Phys. Rev. B 58, 7260 (1998).
 #:
 #: A tight-binding valence Hamiltonian built from tabulated two-centre
@@ -117,6 +120,7 @@ __all__ = [
     "AM1BCCCharges",
     "AM1Result",
     "BccParameterSet",
+    "DFTB0",
     "DFTB2",
     "DftbBoundary",
     "DftbSkSet",

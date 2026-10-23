@@ -57,17 +57,14 @@ cpu::Frame make_ch4() {
 int run() {
     auto frame = make_ch4();
 
-    cpu::Evaluate eval;
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::ThreeOb};
     // Isolated molecule in an isolation box — the DFTB+ twin is a `C`
     // geometry, so say so rather than letting a cutoff hide the images.
     dftb.boundary = cpu::semiempirical::DftbBoundary::cluster;
-    dftb.with_forces = false;
+
     dftb.scc_tol = 1e-10;
     dftb.max_scc = 80;
-    eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
-    eval.build();
-    eval.run(frame);
+    dftb.run(frame);
 
     const double e = frame.meta.get(kEnergy);
     std::printf("DFTB2 ThreeOb CH4: E=%.8f eV  pin=%.8f eV  |dE|=%.6e\n", e,
