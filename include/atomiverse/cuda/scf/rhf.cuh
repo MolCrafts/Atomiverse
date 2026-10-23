@@ -6,7 +6,9 @@
 /// `cuda::Driver<scf::Phase>` (`fock → mix → diagonalize → density →
 /// check`), the same stage order as `MeanFieldMethod`. PySCF
 /// `scf.hf.kernel` is that loop (`get_fock` / `eig` / `make_rdm1` /
-/// `energy_tot` / convergence); `scf.diis.CDIIS.update` is the mix stage.
+/// `energy_tot` / convergence). `energy_elec` is the electronic piece
+/// (½ Tr((H+F)P)); `energy_tot` adds the nuclear repulsion.
+/// `scf.diis.CDIIS.update` is the mix stage.
 ///
 /// Not a Component. Outer `cuda::Evaluate` / `cuda::md::MD` nest it with
 /// `set_evaluator` / `on(phase).add`, which mounts a private slot.
@@ -16,15 +18,18 @@
 /// with l ≤ 3 (def2-SVP, def2-TZVP) use that Cartesian engine and the
 /// CPU CartToSph sandwich on device. l ≥ 4 throws `launch_eri_g`.
 /// **Forces:** STO-3G s/p (`launch_rhf_forces_sp`). Any other basis
-/// throws `launch_rhf_forces_lgt1` — `with_gradient(false)` for that
-/// energy.
+/// throws `launch_rhf_forces_lgt1` on `run(Frame&)` / `forces(Frame&)`
+/// when `compute_force` is set — `with_gradient(false)` keeps that
+/// energy. `run(const Frame&)` never assembles forces.
 ///
-/// Units: `kEnergy` [eV]; forces `kAtom_f*` [eV/Å]; `energy()` [Hartree].
+/// Units: `kEnergy` [eV] from `run(Frame&)` only; forces `kAtom_f*`
+/// [eV/Å]; `energy()` [Hartree]. `run(const Frame&)` writes nothing.
 ///
 /// @code{.cpp}
 ///   cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
-///   rhf.with_gradient(false);       // energy-only: stay on device for H2
-///   rhf.run(frame);                 // meta kEnergy [eV]
+///   rhf.run(frame);                 // overwrites kEnergy [eV]
+///   const cpu::Frame& geometry = frame;
+///   rhf.run(geometry);              // writes nothing; energy() [Ha]
 ///
 ///   cuda::md::MD sim;
 ///   sim.set_integrator(cuda::md::VelocityVerlet{0.5});
@@ -135,8 +140,20 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     void destroy_on(cuda::Context& ctx, cuda::Frame& frame) override;
 
     /// @brief One-shot SCF on a host Frame (H2D → staged SCF → D2H).
+    ///
+    /// PySCF `scf.hf.kernel`. The total is `energy_elec` + nuclear
+    /// repulsion (`energy_tot`). Overwrites `kEnergy` [eV]. Hartree
+    /// stays on `energy()`.
     /// @param frame System state [Å, Z]; energy written back [eV on meta].
     void run(cpu::Frame& frame);
+
+    /// @brief Same SCF as `run(Frame&)`, geometry read-only.
+    ///
+    /// `kernel` / `energy_elec` / `energy_tot` still run. Nuclear forces
+    /// are not assembled, and the device frame is not retrieved, so
+    /// positions, forces, and meta (including `kEnergy`) are unchanged.
+    /// @param frame System state [Å, Z]. Not written.
+    void run(const cpu::Frame& frame);
 
     /// @brief Analytic nuclear forces after a device SCF.
     /// @param frame Geometry [Å, Z]; forces [eV/Å] and energy [eV] written.
@@ -177,14 +194,25 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     void wire_stages_();
 
     /// @brief SCF on an already-resident device frame.
+    /// @param nuclear_forces Assemble device nuclear forces after the
+    ///        loop. `run(Frame&)` and the nested mount pass
+    ///        `compute_force`. `run(const Frame&)` passes false.
     /// @return Iterations executed.
-    int drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget);
+    int drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
+                    bool nuclear_forces);
 
     /// @brief Walk this Driver's Plan once (one SCF iteration).
     void step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step);
 
     /// @brief Build or rebuild the private integral workspace at `frame`.
-    void assemble_(cuda::Context& ctx, cuda::Frame& frame);
+    /// @param nuclear_forces Refuse a basis with no device force kernel
+    ///        before the SCF starts. Ignored by `run(const Frame&)`.
+    void assemble_(cuda::Context& ctx, cuda::Frame& frame, bool nuclear_forces);
+
+    /// @brief Sync, destroy components, shut the backend down. Does not
+    ///        retrieve: `to_cpu` would overwrite host positions, forces,
+    ///        and `kEnergy`.
+    void release_backend_();
 
     /// @brief Free the private integral workspace, if any.
     void release_engine_();
