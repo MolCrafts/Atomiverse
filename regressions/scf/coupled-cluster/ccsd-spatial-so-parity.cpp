@@ -115,8 +115,8 @@ int run() {
     rhf_jacobi.tol = 1e-12;
     rhf_jacobi.max_iter = 100;
     auto frame_jacobi = make_water();
-    ATV::cpu::scf::CCSD<decltype(rhf_jacobi)> cc_jacobi{rhf_jacobi};
-    cc_jacobi.diis = false;
+    ATV::cpu::scf::CCSD<decltype(rhf_jacobi)> cc_jacobi{rhf_jacobi,
+                                                        /*diis=*/false};
     const cpu::scf::CCSDResult ccsd_jacobi = cc_jacobi.run(frame_jacobi);
     if (!rhf_jacobi.converged() || !ccsd_jacobi.converged) {
         std::fprintf(stderr,

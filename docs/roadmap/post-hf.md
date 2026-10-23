@@ -4,8 +4,9 @@ Tutorial: [Electron correlation](../tutorial/ch07-correlation.md).
 
 Correlation on a converged HF reference. Each method is its own type
 (`MP2{mf}`, `MP3`, `MP4`, `CC2`, `CCSD` with `ccsd_t`, `CASCI`, `CASSCF`,
-`FCI`, `NEVPT2`), not a member of `MeanFieldMethod`. Not Drivers — they throw
-on a non-converged reference. Legend: [Roadmap index](index.md).
+`FCI`, `NEVPT2`), not a member of `MeanFieldMethod`. CCSD's amplitude
+iteration is `Driver<cc::Phase>`; the others are single-shot and throw on a
+non-converged reference. Legend: [Roadmap index](index.md).
 
 ## 1. Møller–Plesset
 
@@ -39,7 +40,7 @@ CIS excitation energies live under
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | CC2 | ✓ | ○ | Closed-shell |
-| CCSD | ✓ | ○ | Closed-shell Gauss–Stanton |
+| CCSD | ✓ | ○ | `cpu::scf::CCSD{mf, diis, frozen, tol, max_iter}` : `Driver<cc::Phase>` (`update → mix → energy → check`). `run(Frame&)` overwrites `kEnergy` [eV]; `run(const Frame&)` does not write; Hartree stays on `CCSDResult`. `forces(Frame&)` overwrites `kAtom_f*` [eV/Å]. max\|Δt\| is a Criterion. No CUDA path |
 | CCSD(T) | ✓ | ○ | Non-iterative triples |
 | CCSD nuclear gradient | ✓ | ○ | FD of CCSD energy (not Lagrangian/Z-vector yet) |
 | CCSD(T) gradient / CCSD Hessian | ○ | ○ | |

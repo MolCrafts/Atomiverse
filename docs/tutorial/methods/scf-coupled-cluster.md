@@ -14,10 +14,12 @@ E_{\mathrm{corr}} = E_{\mathrm{CCSD}} - E_{\mathrm{RHF}}.
 The public entry points are post-HF objects that bind a concrete RHF and drive
 a fresh SCF on it (`cpu/scf/post_hf.h`, mirroring `pyscf.cc.CCSD(mf)`):
 
-- `cpu::scf::CCSD<RHF>{rhf}` — member `diis` (amplitude DIIS, default
-  `true`; `false` = plain Jacobi, same fixed point) and `frozen`;
-  `run(frame)` → `CCSDResult{e_corr, e_tot, iterations, converged}` [Ha];
-  `ccsd_t(frame)` → `CCSDTResult`; `forces(frame)` → `GradientResult`
+- `cpu::scf::CCSD<RHF>{rhf, diis, frozen, tol, max_iter}` —
+  `Driver<cc::Phase>` (`update → mix → energy → check`). `diis` defaults
+  true (false = plain Jacobi, same fixed point). `run(frame)` overwrites
+  `kEnergy` with the correlated total [eV] and returns
+  `CCSDResult` [Ha]; `run(const Frame&)` does not write the frame.
+  `ccsd_t(frame)` → `CCSDTResult`; `forces(frame)` overwrites `kAtom_f*`
   [eV/Å]. The EOM members are documented in [scf-eom-cc.md](scf-eom-cc.md).
 - `cpu::scf::CC2<RHF>{rhf}` — `run(frame)` → `CC2Result`; `eom_cc2` roots are
   [`eom-cc2-h2`](scf-eom-cc.md#eom-cc2-h2).

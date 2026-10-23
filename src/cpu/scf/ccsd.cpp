@@ -27,7 +27,6 @@
 
 #include "atomiverse/cpu/scf/internal/ao2mo.h"
 #include "atomiverse/cpu/scf/internal/cc_diis.h"
-#include "atomiverse/cpu/scf/internal/ccsd_spatial.h"
 #include "atomiverse/cpu/scf/internal/eom_ccsd_common.h"
 #include "atomiverse/cpu/scf/internal/spin_orbital_eri.h"
 
@@ -963,15 +962,6 @@ CCSDSolution ccsd_solve(const internal::IntegralView& ints,
     sol.n_occ_sp = n_occ_sp;
     sol.n_vir_sp = n_vir_sp;
     return sol;
-}
-
-CCSDResult ccsd_energy(const internal::IntegralView& ints,
-                       const SlaterDeterminant& det, double e_scf_ha,
-                       double tol, int max_iter, bool use_diis) {
-    // Closed-shell RHF energy entry: route to the spatial-orbital fast path
-    // (n_o²·n_v² storage, no spin expansion). The spin-orbital `ccsd_solve`
-    // stays the oracle + the backbone for EOM/(T)/CC2/gradient/UCCSD.
-    return ccsd_energy_spatial(ints, det, e_scf_ha, tol, max_iter, use_diis);
 }
 
 CC2Result cc2_energy(const internal::IntegralView& ints,

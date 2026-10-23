@@ -14,6 +14,10 @@
 /// `run` / `forces` only.
 #pragma once
 
+#include <memory>
+
+#include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/casci.h"
 #include "atomiverse/cpu/scf/casscf.h"
@@ -171,23 +175,80 @@ class NEVPT2 {
     Method* mf_ = nullptr;
 };
 
-/// @brief Closed-shell CCSD. Mirrors `pyscf.cc.ccsd.CCSD(mf)`: `run` is
-///        `kernel`, `ccsd_t` is `CCSD.ccsd_t`, `forces` is the nuclear
-///        gradient. `diis` selects amplitude DIIS (false = plain Jacobi).
+/// @brief Closed-shell CCSD. Mirrors `pyscf.cc.ccsd.CCSD(mf)`.
+///
+/// The amplitude iteration is `cpu::Driver<cc::Phase>` (`update → mix →
+/// energy → check`), the same preset shape as `cpu::md::MD`: stages are
+/// mounted with `on(phase).add` in the constructor, the residual is
+/// published on `ConvergenceMetrics`, and `AmplitudeConverged` decides.
+/// This type does not assign convergence.
+///
+/// PySCF 2.14.0: `pyscf/cc/ccsd.py` `kernel` / `CCSD.run_diis` / `energy`,
+/// and `pyscf/cc/rccsd.py` `update_amps` / `energy` (the spatial residual).
+/// `ccsd_t` is `CCSD.ccsd_t`. EOM entries stay methods of this object.
+///
+/// Parameters are constructor arguments, fixed after construction.
+/// `run(Frame&)` drives the reference SCF, then overwrites `kEnergy` with
+/// the correlated total [eV]. Hartree stays on `CCSDResult`.
+/// @tparam Method Concrete mean-field type (`RHF`, …). The reference is not
+///         owned and must outlive `*this`.
 template <typename Method>
-class CCSD {
+class CCSD : public cpu::Driver<ATV::cc::Phase> {
   public:
-    explicit CCSD(Method& mf);
-    /// @brief Amplitude DIIS. Default true. False = Jacobi, same fixed point.
-    bool diis = true;
-    /// @brief Frozen-core gate for `forces` (energy path does not freeze).
-    ///        Nonzero `forces` throws — frozen-core CCSD gradients are not
-    ///        implemented.
-    int frozen = 0;
+    /// @brief Bind a mean-field reference.
+    /// @param mf Mean-field method (not copied).
+    /// @param diis_in Amplitude DIIS. False = Jacobi, same fixed point.
+    /// @param frozen_in Frozen-core gate for `forces`. Nonzero throws —
+    ///        frozen-core CCSD gradients are not implemented. The energy
+    ///        path does not freeze orbitals.
+    /// @param tol_in Amplitude residual tolerance, max|Δt| [dimensionless].
+    /// @param max_iter_in Amplitude iteration cap [dimensionless].
+    explicit CCSD(Method& mf, bool diis_in = true, int frozen_in = 0,
+                  double tol_in = 1e-10, int max_iter_in = 100);
 
-    /// @param frame Geometry [Å]. Drives a fresh SCF, then the amplitude solve.
-    /// @return CCSD correlation and total energy [Hartree].
+    /// @brief Drop the amplitude plan while its stage storage is alive.
+    ~CCSD() override;
+
+    CCSD(const CCSD&) = delete;
+    CCSD& operator=(const CCSD&) = delete;
+    CCSD(CCSD&&) = delete;
+    CCSD& operator=(CCSD&&) = delete;
+
+    /// @brief Amplitude DIIS. Fixed at construction.
+    const bool diis;
+    /// @brief Frozen-core gate for `forces` (0 = correlate every occupied MO).
+    const int frozen;
+    /// @brief max|Δt| tolerance [dimensionless].
+    const double tol;
+    /// @brief Amplitude iteration cap [dimensionless].
+    const int max_iter;
+
+    /// @brief This product contributes a total energy.
+    bool provides_energy() const override { return true; }
+
+    /// @brief Nuclear forces are `forces(Frame&)`.
+    bool provides_force() const override { return true; }
+
+    /// @brief Whole-molecule evaluator.
+    bool requires_full_frame() const override { return true; }
+
+    /// @brief Nested budget is the amplitude iteration cap.
+    /// @return `max_iter` [dimensionless].
+    int default_budget() const override { return max_iter; }
+
+    /// @brief Amplitude stages do not assemble nuclear forces.
+    /// @return False. `run_nested_erased` writes forces when the parent asks.
+    bool phase_wants_forces(ATV::cc::Phase) const override { return false; }
+
+    /// @brief Fresh SCF on the reference, then the amplitude solve.
+    /// @param frame Geometry [Å]. Overwrites `kEnergy` with E_HF + E_corr [eV].
+    /// @return Correlation and total energy [Hartree].
     CCSDResult run(Frame& frame);
+
+    /// @brief Same solve, without writing `frame`.
+    /// @param frame Geometry [Å], read only.
+    /// @return Correlation and total energy [Hartree].
+    CCSDResult run(const Frame& frame);
 
     /// @brief (T) correction. Mirrors `pyscf.cc.ccsd.CCSD.ccsd_t`.
     /// @param frame Geometry [Å].
@@ -195,10 +256,9 @@ class CCSD {
     CCSDTResult ccsd_t(Frame& frame);
 
     /// @brief Nuclear forces on E_HF + E_CCSD [eV/Å].
-    /// @param frame Geometry; forces written to fx/fy/fz, energy to meta.
-    /// @param guess Optional density guess for the reference SCF.
+    /// @param frame Geometry; forces written to fx/fy/fz, energy to meta [eV].
     /// @return Forces [eV/Å] and total CCSD energy [eV].
-    GradientResult forces(Frame& frame, const SCFInitialGuess* guess = nullptr);
+    GradientResult forces(Frame& frame);
 
     /// @brief Singlet EOM-EE-CCSD. Mirrors
     ///        `pyscf.cc.ccsd.CCSD.eomee_ccsd_singlet` (which builds
@@ -241,8 +301,51 @@ class CCSD {
     EOMSFCCSDResult eom_sf_ccsd(Frame& frame, int n_states = 1,
                                 const SCFInitialGuess* guess = nullptr);
 
+    /// @brief One CCSD on the parent's Runtime.
+    ///
+    /// Energy is accumulated onto `kEnergy` [eV]. When the parent requests
+    /// forces, `kAtom_f*` is accumulated too [eV/Å].
+    /// @param ctx Parent context. Loop status is restored on exit.
+    /// @param frame Parent frame.
+    /// @param budget Amplitude iterations; `<= 0` uses `max_iter`.
+    /// @return Iterations the amplitude driver walked.
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override;
+
+  protected:
+    /// @brief The method is the energy source; no extra component is required.
+    void validate_components() const override {}
+
   private:
+    enum class Write { None, Overwrite, Accumulate };
+    struct Loop;
+    struct PriorEnergy {
+        bool energy = false;
+        double energy_v = 0.0;
+        bool electronic = false;
+        double electronic_v = 0.0;
+    };
+
+    /// @brief SCF total that was on the frame before the reference `run`.
+    static PriorEnergy capture(const Frame& frame);
+    /// @brief Write the correlated total [eV] over or onto the saved value.
+    static void store_energy(Frame& frame, double e_ev, Write write,
+                             const PriorEnergy& prior);
+
+    /// @brief Reference SCF, then the amplitude driver on this object's Runtime.
+    CCSDResult solve_amplitudes(Frame& frame, Write write,
+                                const PriorEnergy& prior, int cap);
+    /// @brief Read the cycle the criterion accepted and write energy if asked.
+    CCSDResult finish(Frame& frame, int executed, int cap, Write write,
+                      const PriorEnergy& prior);
+    /// @brief Reference SCF plus finite-difference forces.
+    GradientResult compute_forces(Frame& frame, Write write,
+                                  cpu::Context* nested);
+
     Method* mf_ = nullptr;
+    std::unique_ptr<Loop> loop_;
+    CCSDResult last_{};
+    int executed_ = 0;
 };
 
 /// @brief Closed-shell CC2. Mirrors PySCF `cc.RCCSD` with `cc2=True`.
