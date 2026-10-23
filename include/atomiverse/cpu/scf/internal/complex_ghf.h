@@ -118,21 +118,6 @@ class HermitianDiis {
     std::vector<ComplexMatrix> error_;
 };
 
-/// @brief True once two successive energies differ by less than `tol`.
-class TwoStepEnergy {
-  public:
-    /// @brief Record `energy` and report the two-step test.
-    /// @param energy Total energy [Hartree].
-    /// @param tol |ΔE| threshold [Hartree].
-    /// @return True on the second consecutive step inside `tol`.
-    bool converged(double energy, double tol);
-
-  private:
-    double previous_ = 0.0;
-    bool seen_ = false;
-    bool was_close_ = false;
-};
-
 /// @brief One complex-GHF SCF state. The driver walks it; this type
 ///        does not decide convergence.
 ///

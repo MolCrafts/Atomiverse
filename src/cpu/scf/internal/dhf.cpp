@@ -1,16 +1,20 @@
 /// @file cpu/scf/internal/dhf.cpp
 /// @brief Dirac–Hartree–Fock (pyscf.scf.dhf) for l ≤ 1.
 ///
-/// Read from pyscf/scf/dhf.py: get_hcore, get_ovlp, get_occ, energy_elec,
-/// _call_veff_llll, _call_veff_ssll, kernel occupation of positive-energy
-/// spinors. j-coefficients are sph.sph2spinor(l) for l = 0 and l = 1
-/// (pyscf/symm/sph.py), pinned to the values that library prints.
-/// (SS|SS) is omitted: on H2 it changes the total by ~1e-11 Ha.
+/// Read from pyscf/scf/dhf.py (PySCF 2.14.0): `DHF.get_hcore`,
+/// `get_ovlp`, `get_occ`, `energy_elec`, `get_jk_coulomb`
+/// (`_call_veff_llll`, `_call_veff_ssll`), and `DHF.kernel` (which calls
+/// `pyscf/scf/hf.py` `kernel`: `get_fock`, `eig`, `make_rdm1`,
+/// `energy_tot`). j-coefficients are `sph.sph2spinor` for l = 0 and
+/// l = 1 (pyscf/symm/sph.py), pinned to the values that library prints.
+/// (SS|SS) is omitted: on H2 it changes the total by ~1e-11 Ha. No Gaunt
+/// or Breit term. This translation unit does not decide convergence.
 
 #include "atomiverse/cpu/scf/internal/dhf.h"
 
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -445,144 +449,195 @@ CMat veff(const std::vector<Cplx>& ll, const std::vector<Cplx>& ss,
 
 } // namespace
 
-DhfEnergy dhf_energy(const Frame& frame, BasisSet basis, int charge, double tol,
-                     int max_iter) {
-    if (!(tol > 0.0) || max_iter < 1)
-        throw std::invalid_argument(
-            "DHF::run: tol must be positive and max_iter >= 1");
-    IntegralWorkspace pack{frame, basis, charge, true};
-    for (const native::Shell& sh : pack.shells) {
-        if (sh.l > 1)
-            throw std::runtime_error(
-                "DHF::run: angular momentum l=" + std::to_string(sh.l)
-                + " is not implemented (missing kernel dhf_ao_lgt1)");
-    }
-    const int nao = pack.n_basis;
-    const int ncart = static_cast<int>(pack.shells.size());
-    if (pack.spherical() && nao != ncart)
-        throw std::runtime_error(
-            "DHF::run: spherical AO count differs from Cartesian "
-            "(missing kernel dhf_ao_lgt1)");
-    if (nao != ncart)
-        throw std::runtime_error(
-            "DHF::run: shell count does not match the AO basis");
-
-    const auto blocks = blocks_from_shells(pack.shells);
+struct DhfCycle {
+    CMat H;
+    CMat S4;
+    CMat P;
+    CMat F;
+    GenEigen orbitals;
+    HermitianDiis diis;
+    std::vector<Cplx> ell;
+    std::vector<Cplx> ess;
     int n2 = 0;
-    for (const auto& b : blocks)
-        n2 += 4 * b.l + 2;
-    CMat ca = zeros(nao, n2);
-    CMat cb = zeros(nao, n2);
-    int col = 0;
-    for (const auto& b : blocks) {
-        place_spinor(ca, cb, b.ao_start, col, b.l);
-        col += 4 * b.l + 2;
-    }
+    int n_elec = 0;
+    double c = 0.0;
+    double scale = 0.0;
+    double v_nuc = 0.0;
+    double energy = 0.0;
+    double previous = 0.0;
+    bool have_previous = false;
 
-    const CMat Ts = spinor_real(pack.T, ca, cb);
-    const CMat Vs = spinor_real(pack.V, ca, cb);
-    const CMat Ss = spinor_real(pack.S, ca, cb);
-
-    AtomList atoms{frame, charge};
-    ShellList shells{atoms, basis};
-    Spnucsp q = int1e_spnucsp(shells, atoms);
-    if (pack.spherical()) {
-        q.x = sandwich(q.x, pack.c2s);
-        q.y = sandwich(q.y, pack.c2s);
-        q.z = sandwich(q.z, pack.c2s);
-        q.s = sandwich(q.s, pack.c2s);
-    }
-    const CMat Wso = sigma_dot(q.x, q.y, q.z, q.s);
-    const CMat Ws = spinor_so(Wso, ca, cb);
-
-    const double c = kLightSpeedAU;
-    const double inv_4c2 = 0.25 / (c * c);
-    const double inv_2c2 = 0.5 / (c * c);
-    const int n4 = n2 * 2;
-    CMat H = zeros(n4, n4);
-    CMat S4 = zeros(n4, n4);
-    for (int i = 0; i < n2; ++i) {
-        for (int j = 0; j < n2; ++j) {
-            H(i, j) = Vs(i, j);
-            H(i, n2 + j) = Ts(i, j);
-            H(n2 + i, j) = Ts(i, j);
-            H(n2 + i, n2 + j) = Ws(i, j) * inv_4c2 - Ts(i, j);
-            S4(i, j) = Ss(i, j);
-            S4(n2 + i, n2 + j) = Ts(i, j) * inv_2c2;
+    DhfCycle(const Frame& frame, BasisSet basis, int charge) {
+        IntegralWorkspace pack{frame, basis, charge, true};
+        for (const native::Shell& sh : pack.shells) {
+            if (sh.l > 1)
+                throw std::runtime_error(
+                    "DHF::run: angular momentum l=" + std::to_string(sh.l)
+                    + " is not implemented (missing kernel dhf_ao_lgt1)");
         }
-    }
-    hermitize(H);
-    hermitize(S4);
+        const int nao = pack.n_basis;
+        const int ncart = static_cast<int>(pack.shells.size());
+        if (pack.spherical() && nao != ncart)
+            throw std::runtime_error(
+                "DHF::run: spherical AO count differs from Cartesian "
+                "(missing kernel dhf_ao_lgt1)");
+        if (nao != ncart)
+            throw std::runtime_error(
+                "DHF::run: shell count does not match the AO basis");
 
-    std::vector<int> aang(static_cast<std::size_t>(nao) * 3);
-    for (int i = 0; i < nao; ++i)
-        shell_ang(pack.shells[static_cast<std::size_t>(i)],
-                  &aang[static_cast<std::size_t>(i * 3)]);
-    const int n4ao = nao * nao * nao * nao;
-    std::vector<double> comp[9];
-    for (int c9 = 0; c9 < 9; ++c9)
-        comp[c9].assign(static_cast<std::size_t>(n4ao), 0.0);
-    for (int i = 0; i < nao; ++i) {
-        for (int j = 0; j < nao; ++j) {
-            for (int k = 0; k < nao; ++k) {
-                for (int l = 0; l < nao; ++l) {
-                    double g9[9];
-                    quartet_grad(pack.shells[static_cast<std::size_t>(i)],
-                                 &aang[static_cast<std::size_t>(i * 3)],
-                                 pack.shells[static_cast<std::size_t>(j)],
-                                 &aang[static_cast<std::size_t>(j * 3)],
-                                 pack.shells[static_cast<std::size_t>(k)],
-                                 &aang[static_cast<std::size_t>(k * 3)],
-                                 pack.shells[static_cast<std::size_t>(l)],
-                                 &aang[static_cast<std::size_t>(l * 3)], g9);
-                    const int slot = at4(nao, i, j, k, l);
-                    for (int c9 = 0; c9 < 9; ++c9)
-                        comp[c9][static_cast<std::size_t>(slot)] = g9[c9];
+        const auto blocks = blocks_from_shells(pack.shells);
+        int n2 = 0;
+        for (const auto& b : blocks)
+            n2 += 4 * b.l + 2;
+        CMat ca = zeros(nao, n2);
+        CMat cb = zeros(nao, n2);
+        int col = 0;
+        for (const auto& b : blocks) {
+            place_spinor(ca, cb, b.ao_start, col, b.l);
+            col += 4 * b.l + 2;
+        }
+
+        const CMat Ts = spinor_real(pack.T, ca, cb);
+        const CMat Vs = spinor_real(pack.V, ca, cb);
+        const CMat Ss = spinor_real(pack.S, ca, cb);
+
+        AtomList atoms{frame, charge};
+        ShellList shells{atoms, basis};
+        Spnucsp q = int1e_spnucsp(shells, atoms);
+        if (pack.spherical()) {
+            q.x = sandwich(q.x, pack.c2s);
+            q.y = sandwich(q.y, pack.c2s);
+            q.z = sandwich(q.z, pack.c2s);
+            q.s = sandwich(q.s, pack.c2s);
+        }
+        const CMat Wso = sigma_dot(q.x, q.y, q.z, q.s);
+        const CMat Ws = spinor_so(Wso, ca, cb);
+
+        const double c = kLightSpeedAU;
+        const double inv_4c2 = 0.25 / (c * c);
+        const double inv_2c2 = 0.5 / (c * c);
+        const int n4 = n2 * 2;
+        CMat H = zeros(n4, n4);
+        CMat S4 = zeros(n4, n4);
+        for (int i = 0; i < n2; ++i) {
+            for (int j = 0; j < n2; ++j) {
+                H(i, j) = Vs(i, j);
+                H(i, n2 + j) = Ts(i, j);
+                H(n2 + i, j) = Ts(i, j);
+                H(n2 + i, n2 + j) = Ws(i, j) * inv_4c2 - Ts(i, j);
+                S4(i, j) = Ss(i, j);
+                S4(n2 + i, n2 + j) = Ts(i, j) * inv_2c2;
+            }
+        }
+        hermitize(H);
+        hermitize(S4);
+
+        std::vector<int> aang(static_cast<std::size_t>(nao) * 3);
+        for (int i = 0; i < nao; ++i)
+            shell_ang(pack.shells[static_cast<std::size_t>(i)],
+                      &aang[static_cast<std::size_t>(i * 3)]);
+        const int n4ao = nao * nao * nao * nao;
+        std::vector<double> comp[9];
+        for (int c9 = 0; c9 < 9; ++c9)
+            comp[c9].assign(static_cast<std::size_t>(n4ao), 0.0);
+        for (int i = 0; i < nao; ++i) {
+            for (int j = 0; j < nao; ++j) {
+                for (int k = 0; k < nao; ++k) {
+                    for (int l = 0; l < nao; ++l) {
+                        double g9[9];
+                        quartet_grad(pack.shells[static_cast<std::size_t>(i)],
+                                     &aang[static_cast<std::size_t>(i * 3)],
+                                     pack.shells[static_cast<std::size_t>(j)],
+                                     &aang[static_cast<std::size_t>(j * 3)],
+                                     pack.shells[static_cast<std::size_t>(k)],
+                                     &aang[static_cast<std::size_t>(k * 3)],
+                                     pack.shells[static_cast<std::size_t>(l)],
+                                     &aang[static_cast<std::size_t>(l * 3)],
+                                     g9);
+                        const int slot = at4(nao, i, j, k, l);
+                        for (int c9 = 0; c9 < 9; ++c9)
+                            comp[c9][static_cast<std::size_t>(slot)] = g9[c9];
+                    }
                 }
             }
         }
-    }
-    if (pack.spherical()) {
-        if (static_cast<int>(pack.c2s.shape(0)) != nao
-            || static_cast<int>(pack.c2s.shape(1)) != nao)
-            throw std::runtime_error("DHF::run: CartToSph is not square "
-                                     "(missing kernel dhf_ao_lgt1)");
-        for (int c9 = 0; c9 < 9; ++c9)
-            sandwich4(comp[c9], nao, pack.c2s);
-    }
-
-    const std::vector<Cplx> ell = eri_llll(pack.ERI, ca, cb);
-    const std::vector<Cplx> ess = eri_ssll(comp, nao, ca, cb);
-    const double scale = (0.5 / c) * (0.5 / c);
-    const int n_elec = pack.n_electrons;
-    if (n_elec <= 0)
-        throw std::invalid_argument(
-            "DHF::run: electron count must be positive");
-
-    CMat P = make_rdm1(eigh_generalized(H, S4, 1e-9), n_elec, c);
-    TwoStepEnergy gate;
-    HermitianDiis diis;
-    DhfEnergy result;
-    for (int iter = 1; iter <= max_iter; ++iter) {
-        const CMat V = veff(ell, ess, P, n2, scale);
-        const double e =
-            real_trace_ji(H, P) + 0.5 * real_trace_ji(V, P) + pack.V_nuc;
-        result.hartree = e;
-        result.iterations = iter;
-        if (gate.converged(e, tol)) {
-            result.converged = true;
-            return result;
+        if (pack.spherical()) {
+            if (static_cast<int>(pack.c2s.shape(0)) != nao
+                || static_cast<int>(pack.c2s.shape(1)) != nao)
+                throw std::runtime_error("DHF::run: CartToSph is not square "
+                                         "(missing kernel dhf_ao_lgt1)");
+            for (int c9 = 0; c9 < 9; ++c9)
+                sandwich4(comp[c9], nao, pack.c2s);
         }
-        CMat F = zeros(n4, n4);
-        for (int i = 0; i < n4; ++i)
-            for (int j = 0; j < n4; ++j)
-                F(i, j) = H(i, j) + V(i, j);
-        hermitize(F);
-        const CMat Fnext = diis.next(F, commutator(F, P, S4));
-        P = make_rdm1(eigh_generalized(Fnext, S4, 1e-9), n_elec, c);
+
+        const std::vector<Cplx> ell = eri_llll(pack.ERI, ca, cb);
+        const std::vector<Cplx> ess = eri_ssll(comp, nao, ca, cb);
+        const double scale = (0.5 / c) * (0.5 / c);
+        const int n_elec = pack.n_electrons;
+        if (n_elec <= 0)
+            throw std::invalid_argument(
+                "DHF::run: electron count must be positive");
+        // Members outlive the Cartesian workspace. The initial density
+        // is the core Hamiltonian (dhf.init_guess_by_1e), built by open.
+        this->H = H;
+        this->S4 = S4;
+        this->ell = ell;
+        this->ess = ess;
+        this->n2 = n2;
+        this->n_elec = n_elec;
+        this->c = c;
+        this->scale = scale;
+        this->v_nuc = pack.V_nuc;
+        this->F = this->H;
     }
-    result.converged = false;
-    return result;
+};
+
+void dhf_cycle_delete(DhfCycle* cycle) { delete cycle; }
+
+void dhf_cycle_fock(DhfCycle& c) {
+    // get_jk_coulomb at (LL|LL)+(SS|LL), then dhf.energy_elec + hf.energy_tot.
+    // The trace is this density, not the one the following eig builds.
+    const CMat V = veff(c.ell, c.ess, c.P, c.n2, c.scale);
+    c.energy = real_trace_ji(c.H, c.P) + 0.5 * real_trace_ji(V, c.P) + c.v_nuc;
+    c.F = zeros(static_cast<int>(c.H.shape(0)), static_cast<int>(c.H.shape(0)));
+    const int n4 = static_cast<int>(c.H.shape(0));
+    for (int i = 0; i < n4; ++i)
+        for (int j = 0; j < n4; ++j)
+            c.F(i, j) = c.H(i, j) + V(i, j);
+    hermitize(c.F);
+}
+
+void dhf_cycle_mix(DhfCycle& c) {
+    // hf.get_fock with DIIS: extrapolate F on the [F, P] commutator.
+    c.F = c.diis.next(c.F, commutator(c.F, c.P, c.S4));
+}
+
+void dhf_cycle_diagonalize(DhfCycle& c) {
+    // hf.kernel eig (generalized Hermitian, positive-energy split in get_occ).
+    c.orbitals = eigh_generalized(c.F, c.S4, 1e-9);
+}
+
+void dhf_cycle_density(DhfCycle& c) {
+    // DHF.get_occ then hf.make_rdm1.
+    c.P = make_rdm1(c.orbitals, c.n_elec, c.c);
+}
+
+DhfCycleOwner dhf_cycle_open(const Frame& frame, BasisSet basis, int charge) {
+    DhfCycleOwner own(new DhfCycle(frame, basis, charge), &dhf_cycle_delete);
+    dhf_cycle_diagonalize(*own);
+    dhf_cycle_density(*own);
+    return own;
+}
+
+double dhf_cycle_energy(const DhfCycle& c) { return c.energy; }
+
+double dhf_cycle_delta(DhfCycle& c) {
+    const double delta = c.have_previous
+                             ? std::abs(c.energy - c.previous)
+                             : std::numeric_limits<double>::infinity();
+    c.previous = c.energy;
+    c.have_previous = true;
+    return delta;
 }
 
 } // namespace internal
