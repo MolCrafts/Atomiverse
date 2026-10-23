@@ -442,6 +442,41 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 
 } // namespace path
 
+/// @brief Closed-shell coupled-cluster amplitude iterations.
+///
+/// `cpu::scf::CCSD` is `cpu::Driver<cc::Phase>`. One iteration is PySCF
+/// `pyscf/cc/ccsd.py` `kernel`: `update_amps` → `run_diis` → `energy`, then
+/// the residual is published for a Criterion. `kind_of` returns
+/// `PhaseKind::SCF` (a self-consistency loop, same discriminant as NDDO).
+namespace cc {
+
+/// @brief Phase order for one CCSD amplitude iteration.
+enum class Phase {
+    update, ///< Residual → new amplitudes (`rccsd.update_amps`).
+    mix,    ///< Amplitude DIIS, or the Jacobi amplitudes when DIIS is off.
+    energy, ///< Correlation energy (`rccsd.energy`) [Hartree, internal].
+    check,  ///< Publish max|Δt| on `ConvergenceMetrics::residual`.
+    COUNT   ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the coupled-cluster phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in enum order, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"update", "mix", "energy", "check"};
+}
+
+/// @brief Workflow discriminant for `cc::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF`.
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace cc
+
 /// @brief Phase enum → Plan slot index. **The one conversion in the codebase.**
 ///
 /// A Plan is a dense array of slots, so somewhere the typed phase has to become an
@@ -449,9 +484,9 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 /// asking "is this my stage?", a driver replaying a phase, a binding being declared —
 /// goes through a typed entry point that calls this. The rule is enforceable by grep,
 /// which is the point: `static_cast<int>` applied to a Phase enum anywhere else is a
-/// bug, because the seven Phase enums all start at 0 and an `int` cannot tell them apart.
+/// bug, because the Phase enums all start at 0 and an `int` cannot tell them apart.
 ///
-/// @tparam PhaseEnum One of the seven workflow Phase enums in this header.
+/// @tparam PhaseEnum One of the workflow Phase enums in this header.
 /// @param p Typed phase value.
 /// @return Its dense slot index within that workflow's Plan.
 template <typename PhaseEnum>
@@ -460,7 +495,7 @@ constexpr int slot_of(PhaseEnum p) {
 }
 
 /// @brief Number of Plan slots a workflow's Phase enum declares (its COUNT sentinel).
-/// @tparam PhaseEnum One of the seven workflow Phase enums in this header.
+/// @tparam PhaseEnum One of the workflow Phase enums in this header.
 /// @return `PhaseEnum::COUNT` as a slot count.
 template <typename PhaseEnum>
 constexpr int slot_count() {
@@ -480,7 +515,7 @@ constexpr int slot_count() {
 /// concrete type for every workflow. The `PhaseKind` travelling beside it is what
 /// makes the int safe, and `make_binding` is the only way to make the pair.
 ///
-/// @tparam PhaseEnum One of the seven workflow Phase enums in this header.
+/// @tparam PhaseEnum One of the workflow Phase enums in this header.
 /// @param p Typed phase value the component wants to run in.
 /// @param order Ordering within the phase (lower runs earlier; negative =
 ///        infrastructure, 0 = the op, positive = consumers).
