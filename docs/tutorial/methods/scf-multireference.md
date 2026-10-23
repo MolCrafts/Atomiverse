@@ -12,8 +12,9 @@ name: `cpu::scf::CISD<RHF>{rhf}.run(n_states)` (after `rhf.run(frame)`),
 `cpu::scf::FCI<RHF>{rhf}.run(frame)`. The active-space entries drive their own
 SCF; CASCI, CASSCF and FCI share one dense determinant-CI engine.
 
-The sections cover CPU only and energies only: CIS(D) on formaldehyde and the
-full-valence CAS(2e,2o) family on H₂, all in STO-3G.
+The sections cover CPU only and energies only: CIS(D) on formaldehyde, the
+full-valence CAS(2e,2o) family on H₂, and CASSCF(2,2) on H₂O (core and one
+virtual, so the orbital step runs), all in STO-3G.
 
 Case: `ctest -R '^scf/multireference$'` — sources and oracle record in [`regressions/scf/multireference/`](../../../regressions/scf/multireference/). One section of the case per `##` heading below: `atv_regressions --case scf/multireference --section <name>`.
 
@@ -183,6 +184,29 @@ CI-only macro pass reports `converged`.
 | Twin | \(T_{\mathrm{PySCF}}\) [s] | \(T_{\mathrm{ATV}}\) [s] | \(r\) |
 | ---- | -------------------------: | -----------------------: | ----: |
 | `casscf` (H₂/STO-3G) | 0.2112 | 0.0092 | **0.0435** |
+
+
+## casscf-h2o-sto3g — CASSCF, H₂O / STO-3G {#casscf-h2o-sto3g}
+
+Same product as [casscf-h2-sto3g](#casscf-h2-sto3g), on water. STO-3G has 7
+MOs and RHF has 5 occupied spatial orbitals, so CAS(2,2) freezes `ncore = 4`
+and leaves `nvirt = 1`. Core–active, active–virtual and core–virtual pairs
+are non-redundant: the macro iteration applies an orbital step, and the
+CASSCF energy lies below CASCI on the RHF orbitals. `iterations >= 2`.
+
+Twin: `pyscf.mcscf.CASSCF(mf, ncas=2, nelecas=2)`, `conv_tol=1e-12`, geometry
+the `pin_scf` `water` preset.
+
+### Pins and gates
+
+| Quantity | Pin | Tol | Notes |
+| -------- | --: | --- | ----- |
+| \(E_{\mathrm{RHF}}\) | −74.96302313846292 Ha | \(10^{-6}\) Ha | Diagnostic |
+| \(E_{\mathrm{corr}}\) (CASSCF) | **−0.0012536321488170188 Ha** | **\(10^{-6}\) Ha** | Product gate |
+| \(E_{\mathrm{tot}}\) (CASSCF) | **−74.96427677061173 Ha** | **\(10^{-6}\) Ha** | Primary product gate |
+| Bookkeeping | `ncas=2`, `nelecas=2`, `ncore=4`, `iterations >= 2`, `converged` | exact | Orbital step ran |
+| Consistency | \(E_{\mathrm{tot}} = E_{\mathrm{RHF}} + E_{\mathrm{corr}}\) | \(10^{-12}\) Ha | Regression check |
+| Frame | `kEnergy` [eV] equals \(E_{\mathrm{tot}}\times\) Ha→eV | \(10^{-8}\) eV | `run(Frame&)` overwrite |
 
 ## nevpt2-h2-sto3g — SC-NEVPT2, H₂ / STO-3G {#nevpt2-h2-sto3g}
 

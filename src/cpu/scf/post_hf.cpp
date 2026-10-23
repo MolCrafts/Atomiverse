@@ -533,13 +533,37 @@ CASSCFResult CASSCF<Method>::finish(Frame& frame, int executed, int cap,
 }
 
 template <typename Method>
-CASSCFResult CASSCF<Method>::solve(Frame& frame, Write write,
-                                   const PriorEnergy& prior, int cap,
+void CASSCF<Method>::require_reference(const char* what) const {
+    const Method& mf = *mf_;
+    refuse_ks(mf.method_, what);
+    if (mf.spin_ == SpinType::RestrictedOpen)
+        throw std::invalid_argument(
+            std::string(what)
+            + ": an ROHF reference is not supported — closed-shell "
+              "CASSCF requires RHF.");
+    if (mf.spin_ == SpinType::Generalized)
+        throw std::invalid_argument(
+            std::string(what)
+            + ": a GHF (spinor) reference is not supported — "
+              "closed-shell CASSCF requires RHF.");
+    if (mf.spin_ != SpinType::Restricted)
+        throw std::invalid_argument(
+            std::string(what)
+            + ": closed-shell RHF reference only — UHF CASSCF is not "
+              "implemented (no fallback). Use RHF.");
+}
+
+template <typename Method>
+CASSCFResult CASSCF<Method>::solve(Frame& frame, Write write, int cap,
                                    cpu::Context* nested) {
+    require_reference("CASSCF::run");
     if (!(orb_tol > 0.0) || cap < 1)
         throw std::invalid_argument(
             "CASSCF: orb_tol must be positive and max_macro >= 1");
+    const PriorEnergy prior = capture(frame);
     Method& mf = *mf_;
+    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
+                    "CASSCF::run");
     typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
                              mf.energy(), ncas, nelecas);
     if (nested) {
@@ -568,24 +592,7 @@ CASSCFResult CASSCF<Method>::solve(Frame& frame, Write write,
 
 template <typename Method>
 CASSCFResult CASSCF<Method>::run(Frame& frame) {
-    Method& mf = *mf_;
-    refuse_ks(mf.method_, "CASSCF::run");
-    if (mf.spin_ == SpinType::RestrictedOpen)
-        throw std::invalid_argument(
-            "CASSCF::run: an ROHF reference is not supported — closed-shell "
-            "CASSCF requires RHF.");
-    if (mf.spin_ == SpinType::Generalized)
-        throw std::invalid_argument(
-            "CASSCF::run: a GHF (spinor) reference is not supported — "
-            "closed-shell CASSCF requires RHF.");
-    if (mf.spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "CASSCF::run: closed-shell RHF reference only — UHF CASSCF is not "
-            "implemented (no fallback). Use RHF.");
-    const PriorEnergy prior = capture(frame);
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CASSCF::run");
-    return solve(frame, Write::Overwrite, prior, max_macro, nullptr);
+    return solve(frame, Write::Overwrite, max_macro, nullptr);
 }
 
 template <typename Method>
@@ -603,25 +610,8 @@ int CASSCF<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
         throw std::invalid_argument(
             "CASSCF: nuclear forces are not implemented — this method "
             "provides energy only");
-    Method& mf = *mf_;
-    refuse_ks(mf.method_, "CASSCF::run");
-    if (mf.spin_ == SpinType::RestrictedOpen)
-        throw std::invalid_argument(
-            "CASSCF::run: an ROHF reference is not supported — closed-shell "
-            "CASSCF requires RHF.");
-    if (mf.spin_ == SpinType::Generalized)
-        throw std::invalid_argument(
-            "CASSCF::run: a GHF (spinor) reference is not supported — "
-            "closed-shell CASSCF requires RHF.");
-    if (mf.spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "CASSCF::run: closed-shell RHF reference only — UHF CASSCF is not "
-            "implemented (no fallback). Use RHF.");
-    const PriorEnergy prior = capture(frame);
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CASSCF::run");
     const int cap = budget > 0 ? budget : max_macro;
-    solve(frame, Write::Accumulate, prior, cap, &ctx);
+    solve(frame, Write::Accumulate, cap, &ctx);
     return executed_;
 }
 

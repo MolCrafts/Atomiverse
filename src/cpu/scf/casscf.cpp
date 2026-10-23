@@ -296,20 +296,21 @@ void CasscfCycle::gradient() {
     for (std::size_t k = 0; k < pairs.size(); ++k) {
         const int p = pairs[k].first;
         const int q = pairs[k].second;
-        // g_pq = 2 (F_pq − F_qp); step rotates with κ_qp.
+        // grad = 2(F_pq − F_qp). dE/dκ = −grad for κ = K_qp.
         grad[k] = 2.0 * (F(p, q) - F(q, p));
         gmax = std::max(gmax, std::abs(grad[k]));
     }
 
-    // Diagonal Newton: κ_pq = − g_pq / H_pq. Applied on the next rotate,
-    // so a converged gradient is published before the step is taken.
+    // Diagonal Newton, applied on the next rotate. A converged gradient
+    // is published before the step is taken.
     const auto n = static_cast<std::size_t>(n_mo);
     K = xt::zeros<double>({n, n});
     for (std::size_t k = 0; k < pairs.size(); ++k) {
         const int p = pairs[k].first;
         const int q = pairs[k].second;
         const double H = approx_hess(F, g1, p, q);
-        double kap = -grad[k] / H;
+        // κ = K_qp. dE/dκ = −grad, so κ = −(dE/dκ)/H = grad/H.
+        double kap = grad[k] / H;
         // Trust: |κ| ≤ 0.5.
         if (kap > 0.5)
             kap = 0.5;

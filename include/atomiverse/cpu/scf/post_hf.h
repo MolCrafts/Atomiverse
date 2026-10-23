@@ -261,11 +261,14 @@ class CASSCF : public cpu::Driver<ATV::mc::Phase> {
     static void store_energy(Frame& frame, double e_ev, Write write,
                              const PriorEnergy& prior);
 
-    /// @brief Orbital driver. A null `nested` walks this object's Runtime;
-    ///        otherwise `Driver::run_nested` on the parent. The caller has
-    ///        already converged the reference SCF.
-    CASSCFResult solve(Frame& frame, Write write, const PriorEnergy& prior,
-                       int cap, cpu::Context* nested);
+    /// @brief Closed-shell RHF only. `what` names the throwing entry.
+    void require_reference(const char* what) const;
+
+    /// @brief Reference SCF, then the orbital driver. A null `nested`
+    ///        walks this object's Runtime; otherwise `Driver::run_nested`
+    ///        on the parent.
+    CASSCFResult solve(Frame& frame, Write write, int cap,
+                       cpu::Context* nested);
     /// @brief Read the cycle the criterion accepted and write energy if asked.
     CASSCFResult finish(Frame& frame, int executed, int cap, Write write,
                         const PriorEnergy& prior);
