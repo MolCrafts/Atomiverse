@@ -201,9 +201,9 @@ struct PhaseTraits<ATV::nddo::Phase> {
     static constexpr auto end_phase = ATV::nddo::Phase::check;
 };
 
-/// Coupled cluster (`cpu::scf::CCSD : Driver<cc::Phase>`): the correlation
-/// energy is published at `energy`; there is no neighbor list; the amplitude
-/// residual is judged at `check`.
+/// Coupled cluster (`cpu::scf::CCSD` and `cpu::scf::CC2` :
+/// `Driver<cc::Phase>`): the correlation energy is published at `energy`;
+/// there is no neighbor list; the amplitude residual is judged at `check`.
 template <>
 struct PhaseTraits<ATV::cc::Phase> {
     static constexpr auto eval_phase = ATV::cc::Phase::energy;

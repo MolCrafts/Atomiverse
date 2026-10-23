@@ -4,8 +4,10 @@
 /// Boundary transplanted from PySCF (not re-derived):
 /// - `pyscf.mp.mp2.MP2(mf)` / `kernel` — correlation on a mean-field reference
 /// - `pyscf.cc.ccsd.CCSD` / `ccsd_t` — CCSD and the (T) correction live on the
-///   CC object, not on the SCF class. `eomee_ccsd_singlet`, `ipccsd`,
-///   `eaccsd`, and `eomsf_ccsd` are methods of that CC object — not of
+///   CC object, not on the SCF class. CC2 is `pyscf.cc.rccsd.RCCSD` with
+///   `cc2=True` (`update_amps` / `energy` / `kernel`). Both amplitude
+///   iterations are `Driver<cc::Phase>`. `eomee_ccsd_singlet`, `ipccsd`,
+///   `eaccsd`, and `eomsf_ccsd` are methods of the CC object — not of
 ///   `RHF` / `UHF`. EOM-CC2 is `CC2::eom_cc2`.
 /// - `pyscf.mcscf.CASCI` / `CASSCF(mf, ncas, nelecas)` (`mc1step.kernel`)
 ///   and `mrpt.NEVPT(mc)`. CASSCF's macro iteration is `Driver<mc::Phase>`.
@@ -472,14 +474,78 @@ class CCSD : public cpu::Driver<ATV::cc::Phase> {
     int executed_ = 0;
 };
 
-/// @brief Closed-shell CC2. Mirrors PySCF `cc.RCCSD` with `cc2=True`.
+/// @brief Closed-shell CC2. Mirrors `pyscf.cc.rccsd.RCCSD` with `cc2=True`.
+///
+/// The amplitude iteration is `cpu::Driver<cc::Phase>` (`update → mix →
+/// energy → check`), the same preset shape as `cpu::md::MD` and
+/// `cpu::scf::CCSD`: stages are mounted with `on(phase).add` in the
+/// constructor, the residual is published on `ConvergenceMetrics`, and
+/// `AmplitudeConverged` decides. This type does not assign convergence.
+///
+/// PySCF 2.14.0: `pyscf/cc/ccsd.py` `kernel` (`update_amps`, `run_diis`,
+/// `energy`; `RCCSD.kernel` calls `CCSDBase.ccsd`) and `pyscf/cc/rccsd.py`
+/// `update_amps` when `cc.cc2`, plus `energy`. The optimized
+/// `ccsd.update_amps` raises on `cc2` and is not this residual. `eom_cc2`
+/// stays a method of this object.
+///
+/// Parameters are constructor arguments, fixed after construction.
+/// `run(Frame&)` drives the reference SCF, then overwrites `kEnergy` with
+/// the correlated total [eV]. Hartree stays on `CC2Result`. There is no
+/// `forces` entry.
+/// @tparam Method Concrete mean-field type (`RHF`, …). The reference is not
+///         owned and must outlive `*this`.
 template <typename Method>
-class CC2 {
+class CC2 : public cpu::Driver<ATV::cc::Phase> {
   public:
-    explicit CC2(Method& mf);
-    /// @param frame Geometry [Å].
-    /// @return CC2 correlation and total energy [Hartree].
+    /// @brief Bind a mean-field reference.
+    /// @param mf Mean-field method (not copied).
+    /// @param diis_in Amplitude DIIS. False = Jacobi, same fixed point.
+    /// @param tol_in Amplitude residual tolerance, max|Δt| [dimensionless].
+    /// @param max_iter_in Amplitude iteration cap [dimensionless].
+    explicit CC2(Method& mf, bool diis_in = true, double tol_in = 1e-10,
+                 int max_iter_in = 100);
+
+    /// @brief Drop the amplitude plan while its stage storage is alive.
+    ~CC2() override;
+
+    CC2(const CC2&) = delete;
+    CC2& operator=(const CC2&) = delete;
+    CC2(CC2&&) = delete;
+    CC2& operator=(CC2&&) = delete;
+
+    /// @brief Amplitude DIIS. Fixed at construction.
+    const bool diis;
+    /// @brief max|Δt| tolerance [dimensionless].
+    const double tol;
+    /// @brief Amplitude iteration cap [dimensionless].
+    const int max_iter;
+
+    /// @brief This product contributes a total energy.
+    bool provides_energy() const override { return true; }
+
+    /// @brief Nuclear forces are not implemented.
+    bool provides_force() const override { return false; }
+
+    /// @brief Whole-molecule evaluator.
+    bool requires_full_frame() const override { return true; }
+
+    /// @brief Nested budget is the amplitude iteration cap.
+    /// @return `max_iter` [dimensionless].
+    int default_budget() const override { return max_iter; }
+
+    /// @brief Amplitude stages do not assemble nuclear forces.
+    /// @return False.
+    bool phase_wants_forces(ATV::cc::Phase) const override { return false; }
+
+    /// @brief Fresh SCF on the reference, then the amplitude solve.
+    /// @param frame Geometry [Å]. Overwrites `kEnergy` with E_HF + E_corr [eV].
+    /// @return Correlation and total energy [Hartree].
     CC2Result run(Frame& frame);
+
+    /// @brief Same solve, without writing `frame`.
+    /// @param frame Geometry [Å], read only.
+    /// @return Correlation and total energy [Hartree].
+    CC2Result run(const Frame& frame);
 
     /// @brief Singlet EOM-CC2. Mirrors PySCF `cc.RCCSD` with `cc2=True`
     ///        followed by `eomee_ccsd_singlet`. Not a member of `RHF`.
@@ -490,8 +556,51 @@ class CC2 {
     ///         non-converged SCF or CC2, or n_states out of range.
     EOMCC2Result eom_cc2(Frame& frame, int n_states = 1);
 
+    /// @brief One CC2 on the parent's Runtime.
+    ///
+    /// Energy is accumulated onto `kEnergy` [eV]. A force request throws:
+    /// this method has no nuclear forces.
+    /// @param ctx Parent context. Loop status is restored on exit.
+    /// @param frame Parent frame.
+    /// @param budget Amplitude iterations; `<= 0` uses `max_iter`.
+    /// @return Iterations the amplitude driver walked.
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override;
+
+  protected:
+    /// @brief The method is the energy source; no extra component is required.
+    void validate_components() const override {}
+
   private:
+    enum class Write { None, Overwrite, Accumulate };
+    struct Loop;
+    struct PriorEnergy {
+        bool energy = false;
+        double energy_v = 0.0;
+        bool electronic = false;
+        double electronic_v = 0.0;
+    };
+
+    /// @brief SCF total that was on the frame before the reference `run`.
+    static PriorEnergy capture(const Frame& frame);
+    /// @brief Write the correlated total [eV] over or onto the saved value.
+    static void store_energy(Frame& frame, double e_ev, Write write,
+                             const PriorEnergy& prior);
+
+    /// @brief Amplitude driver. A null `nested` walks this object's Runtime;
+    ///        otherwise `Driver::run_nested` on the parent. The caller has
+    ///        already converged the reference SCF.
+    CC2Result solve_amplitudes(Frame& frame, Write write,
+                               const PriorEnergy& prior, int cap,
+                               cpu::Context* nested);
+    /// @brief Read the cycle the criterion accepted and write energy if asked.
+    CC2Result finish(Frame& frame, int executed, int cap, Write write,
+                     const PriorEnergy& prior);
+
     Method* mf_ = nullptr;
+    std::unique_ptr<Loop> loop_;
+    CC2Result last_{};
+    int executed_ = 0;
 };
 
 } // namespace scf

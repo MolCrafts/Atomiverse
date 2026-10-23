@@ -11,7 +11,6 @@
 /// Matches PySCF `cc.GCCSD` / closed-shell `cc.CCSD` energies on RHF orbitals.
 
 #include "atomiverse/cpu/scf/ccsd.h"
-#include "atomiverse/cpu/scf/cc2.h"
 #include "atomiverse/cpu/scf/internal/ccsd_pack.h"
 
 #include <algorithm>
@@ -100,7 +99,7 @@ so_ccsd_kernel(int no, int nv, xt::xtensor<double, 4> oooo,
     // Pulay amplitude DIIS over flattened [t1; t2] with the Jacobi increment
     // Δt = R/D as the error vector (same fixed point as plain Jacobi; only the
     // convergence rate changes). Benefits every spin-orbital consumer (CCSD,
-    // CCSD(T), CC2, EOM, UCCSD) via `so_ccsd_kernel` / `ccsd_solve`.
+    // CCSD(T), EOM-CC2, EOM, UCCSD) via `so_ccsd_kernel` / `ccsd_solve`.
     internal::CcAmplitudeDiis diis(8);
     const std::vector<double>::size_type ndiis = No * Nv + No * No * Nv * Nv;
     std::vector<double> diis_amp(ndiis), diis_err(ndiis);
@@ -575,7 +574,7 @@ CCSDSolution ccsd_solve(const internal::IntegralView& ints,
     // Pulay amplitude DIIS over flattened [t1; t2] with the Jacobi increment
     // Δt = R/D as the error vector (same fixed point as plain Jacobi; only the
     // convergence rate changes). Benefits every spin-orbital consumer (CCSD,
-    // CCSD(T), CC2, EOM, UCCSD) via `so_ccsd_kernel` / `ccsd_solve`.
+    // CCSD(T), EOM-CC2, EOM, UCCSD) via `so_ccsd_kernel` / `ccsd_solve`.
     internal::CcAmplitudeDiis diis(8);
     const std::vector<double>::size_type ndiis = No * Nv + No * No * Nv * Nv;
     std::vector<double> diis_amp(ndiis), diis_err(ndiis);
@@ -962,14 +961,6 @@ CCSDSolution ccsd_solve(const internal::IntegralView& ints,
     sol.n_occ_sp = n_occ_sp;
     sol.n_vir_sp = n_vir_sp;
     return sol;
-}
-
-CC2Result cc2_energy(const internal::IntegralView& ints,
-                     const SlaterDeterminant& det, double e_scf_ha, double tol,
-                     int max_iter) {
-    const CCSDResult r =
-        ccsd_solve(ints, det, e_scf_ha, tol, max_iter, /*cc2=*/true).result;
-    return CC2Result{r.e_corr, r.e_tot, r.iterations, r.converged};
 }
 
 namespace {

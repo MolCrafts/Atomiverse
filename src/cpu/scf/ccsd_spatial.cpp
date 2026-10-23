@@ -3,10 +3,12 @@
 ///
 /// One amplitude iteration, not the loop. PySCF 2.14.0
 /// `pyscf/cc/rccsd.py` `update_amps` (Hirata et al., J. Chem. Phys. 120,
-/// 2581 (2004) Eqs. 35–36) is `CcsdSpatialCycle::update`; `energy` is
-/// `rccsd.energy`. `pyscf/cc/ccsd.py` `kernel` orders those with
-/// `CCSD.run_diis` — the mix stage — and does not decide convergence here.
-/// The product loop is `cpu::scf::CCSD` (`Driver<cc::Phase>`).
+/// 2581 (2004) Eqs. 35–36) is `CcsdSpatialCycle::update`. `cc2` selects
+/// that function's `if cc.cc2` doubles residual; singles stay full CCSD.
+/// `energy` is `rccsd.energy`. `pyscf/cc/ccsd.py` `kernel` orders those
+/// with `CCSD.run_diis` — the mix stage — and does not decide convergence
+/// here. `RCCSD.kernel` delegates to `CCSDBase.ccsd`. The product loops
+/// are `cpu::scf::CCSD` and `cpu::scf::CC2` (`Driver<cc::Phase>`).
 
 #include "atomiverse/cpu/scf/internal/ccsd_spatial.h"
 
@@ -29,10 +31,11 @@ namespace scf {
 
 CcsdSpatialCycle::CcsdSpatialCycle(const internal::IntegralView& ints,
                                    const SlaterDeterminant& det,
-                                   double e_scf_ha, bool diis_on) {
+                                   double e_scf_ha, bool diis_on, bool cc2_on) {
     using Spin = SlaterDeterminant::Spin;
     e_scf = e_scf_ha;
     use_diis = diis_on;
+    cc2 = cc2_on;
     trivial = false;
     e_corr = 0.0;
     dt1 = 0.0;
@@ -197,9 +200,14 @@ void CcsdSpatialCycle::update() {
                         s += OVOO(k, c, l, j) * t1(i, c);
                     }
                     for (int c = 0; c < nv; ++c)
-                        for (int d = 0; d < nv; ++d)
-                            s += OVOV(k, c, l, d)
-                                 * (t2(i, j, c, d) + t1(i, c) * t1(j, d));
+                        for (int d = 0; d < nv; ++d) {
+                            // `if cc.cc2`: t1⊗t1 only. Full CCSD adds t2.
+                            const double tt = t1(i, c) * t1(j, d);
+                            if (cc2)
+                                s += OVOV(k, c, l, d) * tt;
+                            else
+                                s += OVOV(k, c, l, d) * (t2(i, j, c, d) + tt);
+                        }
                     Woooo(k, l, i, j) = s;
                 }
 
@@ -334,46 +342,61 @@ void CcsdSpatialCycle::update() {
                     s += tmpA(i, j, a, b) + tmpA(j, i, b, a);
                     s -= tmpB(i, j, a, b) + tmpB(j, i, b, a);
 
-                    // Woooo·τ  and  Wvvvv·τ
-                    for (int k = 0; k < no; ++k)
-                        for (int l = 0; l < no; ++l)
-                            s += Woooo(k, l, i, j) * tau(k, l, a, b);
-                    for (int c = 0; c < nv; ++c)
-                        for (int d = 0; d < nv; ++d)
-                            s += Wvvvv(a, b, c, d) * tau(i, j, c, d);
+                    if (cc2) {
+                        // pyscf/cc/rccsd.py update_amps, `if cc.cc2`:
+                        // Woooo2[klij] * t1[ka] * t1[lb] and
+                        // Wvvvv[abcd] * t1[ic] * t1[jd]. No T2 inside W
+                        // and no ring. Canonical HF: Lvv2 and Loo2 are
+                        // zero (fov = 0; diagonal ε lives in eijab), so
+                        // those dressings are not added.
+                        for (int k = 0; k < no; ++k)
+                            for (int l = 0; l < no; ++l)
+                                s += Woooo(k, l, i, j) * t1(k, a) * t1(l, b);
+                        for (int c = 0; c < nv; ++c)
+                            for (int d = 0; d < nv; ++d)
+                                s += Wvvvv(a, b, c, d) * t1(i, c) * t1(j, d);
+                    } else {
+                        // Woooo·τ  and  Wvvvv·τ
+                        for (int k = 0; k < no; ++k)
+                            for (int l = 0; l < no; ++l)
+                                s += Woooo(k, l, i, j) * tau(k, l, a, b);
+                        for (int c = 0; c < nv; ++c)
+                            for (int d = 0; d < nv; ++d)
+                                s += Wvvvv(a, b, c, d) * tau(i, j, c, d);
 
-                    // Lvv / Loo dressings (P-symmetrized)
-                    double fvvp = 0.0, fvvq = 0.0;
-                    for (int c = 0; c < nv; ++c) {
-                        fvvp += Lvv(a, c) * t2(i, j, c, b);
-                        fvvq += Lvv(b, c) * t2(j, i, c, a);
-                    }
-                    s += fvvp + fvvq;
-                    double foop = 0.0, fooq = 0.0;
-                    for (int k = 0; k < no; ++k) {
-                        foop += Loo(k, i) * t2(k, j, a, b);
-                        fooq += Loo(k, j) * t2(k, i, b, a);
-                    }
-                    s -= foop + fooq;
-
-                    // ring terms (P-symmetrized)
-                    double h_ij = 0.0, h_ji = 0.0;
-                    double i_ij = 0.0, i_ji = 0.0;
-                    double j_ij = 0.0, j_ji = 0.0;
-                    for (int k = 0; k < no; ++k)
+                        // Lvv / Loo dressings (P-symmetrized)
+                        double fvvp = 0.0, fvvq = 0.0;
                         for (int c = 0; c < nv; ++c) {
-                            h_ij += 2.0 * Wvoov(a, k, i, c) * t2(k, j, c, b)
-                                    - Wvovo(a, k, c, i) * t2(k, j, c, b);
-                            h_ji += 2.0 * Wvoov(b, k, j, c) * t2(k, i, c, a)
-                                    - Wvovo(b, k, c, j) * t2(k, i, c, a);
-                            i_ij += Wvoov(a, k, i, c) * t2(k, j, b, c);
-                            i_ji += Wvoov(b, k, j, c) * t2(k, i, a, c);
-                            j_ij += Wvovo(b, k, c, i) * t2(k, j, a, c);
-                            j_ji += Wvovo(a, k, c, j) * t2(k, i, b, c);
+                            fvvp += Lvv(a, c) * t2(i, j, c, b);
+                            fvvq += Lvv(b, c) * t2(j, i, c, a);
                         }
-                    s += h_ij + h_ji;
-                    s -= i_ij + i_ji;
-                    s -= j_ij + j_ji;
+                        s += fvvp + fvvq;
+                        double foop = 0.0, fooq = 0.0;
+                        for (int k = 0; k < no; ++k) {
+                            foop += Loo(k, i) * t2(k, j, a, b);
+                            fooq += Loo(k, j) * t2(k, i, b, a);
+                        }
+                        s -= foop + fooq;
+
+                        // ring terms (P-symmetrized)
+                        double h_ij = 0.0, h_ji = 0.0;
+                        double i_ij = 0.0, i_ji = 0.0;
+                        double j_ij = 0.0, j_ji = 0.0;
+                        for (int k = 0; k < no; ++k)
+                            for (int c = 0; c < nv; ++c) {
+                                h_ij += 2.0 * Wvoov(a, k, i, c) * t2(k, j, c, b)
+                                        - Wvovo(a, k, c, i) * t2(k, j, c, b);
+                                h_ji += 2.0 * Wvoov(b, k, j, c) * t2(k, i, c, a)
+                                        - Wvovo(b, k, c, j) * t2(k, i, c, a);
+                                i_ij += Wvoov(a, k, i, c) * t2(k, j, b, c);
+                                i_ji += Wvoov(b, k, j, c) * t2(k, i, a, c);
+                                j_ij += Wvovo(b, k, c, i) * t2(k, j, a, c);
+                                j_ji += Wvovo(a, k, c, j) * t2(k, i, b, c);
+                            }
+                        s += h_ij + h_ji;
+                        s -= i_ij + i_ji;
+                        s -= j_ij + j_ji;
+                    }
 
                     t2new(i, j, a, b) = s / eijab(i, j, a, b);
                 }

@@ -444,10 +444,12 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 
 /// @brief Closed-shell coupled-cluster amplitude iterations.
 ///
-/// `cpu::scf::CCSD` is `cpu::Driver<cc::Phase>`. One iteration is PySCF
-/// `pyscf/cc/ccsd.py` `kernel`: `update_amps` → `run_diis` → `energy`, then
-/// the residual is published for a Criterion. `kind_of` returns
-/// `PhaseKind::SCF` (a self-consistency loop, same discriminant as NDDO).
+/// `cpu::scf::CCSD` and `cpu::scf::CC2` are `cpu::Driver<cc::Phase>`. One
+/// iteration is PySCF `pyscf/cc/ccsd.py` `kernel`: `update_amps` →
+/// `run_diis` → `energy`, then the residual is published for a Criterion.
+/// CC2's doubles residual is `pyscf/cc/rccsd.py` `update_amps` with
+/// `cc.cc2`. `kind_of` returns `PhaseKind::SCF` (a self-consistency loop,
+/// same discriminant as NDDO).
 namespace cc {
 
 /// @brief Phase order for one CCSD amplitude iteration.
