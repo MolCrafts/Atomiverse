@@ -155,9 +155,6 @@ struct KrhfEnergy {
     bool converged = false;
 };
 
-KrhfEnergy krhf_energy(const Frame& frame, BasisSet basis, const int k_mesh[3],
-                       int charge, double tol, int max_iter);
-
 /// @brief Converged KUHF total energy [Hartree].
 ///
 /// `n_alpha` and `n_beta` are mesh totals (`KUHF.nelec` in

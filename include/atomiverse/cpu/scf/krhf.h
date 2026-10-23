@@ -79,10 +79,6 @@ class KRHF : public cpu::Driver<ATV::scf::Phase>, public HF {
     /// @return `max_iter` [dimensionless].
     int default_budget() const override { return max_iter; }
 
-    /// @brief Compile the stage Plan. The density-dependent workspace is
-    ///        built on each solve, not here.
-    void build_on(cpu::Runtime& rt) override;
-
     /// @brief One SCF on the parent's Runtime. Accumulates `kEnergy` [eV].
     /// @param ctx Parent context. Loop status is restored on exit.
     /// @param frame Parent frame.
@@ -124,15 +120,18 @@ class KRHF : public cpu::Driver<ATV::scf::Phase>, public HF {
     struct Loop;
     enum class Write { None, Overwrite, Accumulate };
 
-    /// @brief Walk fock → mix → diagonalize → density → check.
-    /// @param parent Parent Runtime when nested; null for a standalone solve.
-    /// @param ctx Context whose loop slot is re-pointed for the solve.
-    /// @param frame Geometry in, and the energy destination when `write` says so.
-    /// @param budget Iteration cap; `<= 0` uses `max_iter`.
-    /// @param write How the total energy [eV] meets the Frame.
-    /// @return Iterations executed.
-    int drive(cpu::Runtime* parent, cpu::Context& ctx, cpu::Frame& frame,
-              int budget, Write write);
+    /// @brief Standalone SCF on this driver's Runtime.
+    /// @param frame Geometry in. Energy [eV] is written when `write` says so.
+    /// @param write `Overwrite` or `None`.
+    void solve(Frame& frame, Write write);
+
+    /// @brief Store the converged energy [Hartree] and write [eV] when asked.
+    /// @param frame Energy destination.
+    /// @param executed Iterations the driver walked.
+    /// @param cap Iteration cap named in the failure [dimensionless].
+    /// @param write How the total energy meets the Frame.
+    /// @throws std::runtime_error when the criterion did not accept the solve.
+    void commit(Frame& frame, int executed, int cap, Write write);
 
     std::unique_ptr<Loop> loop_;
     double energy_ha_ = 0.0;

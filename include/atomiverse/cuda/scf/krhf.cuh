@@ -110,9 +110,6 @@ class KRHF : public cuda::Driver<ATV::scf::Phase>,
   private:
     enum class Write { None, Overwrite, Accumulate };
 
-    /// @brief Bind fock/mix/diagonalize/density/check and the |ΔE| criterion.
-    void wire_stages_();
-
     /// @brief SCF on `host` geometry, kernels on `ctx.stream`.
     /// @param ctx Stream and loop slot.
     /// @param host Geometry the assembler reads.

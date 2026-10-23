@@ -951,12 +951,14 @@ void dm_from_eps(const std::vector<std::vector<double>>& eps,
             cmo[static_cast<std::size_t>(k)], occ[static_cast<std::size_t>(k)]);
 }
 
-// Restricted (n_b < 0): one density, vhf = J − ½K, occupation 2.
-// Unrestricted: J from α+β, vhf = J−K per spin, occupation 1
+// Unrestricted only. Restricted KRHF is cpu::scf::KRHF (Driver stages);
+// this loop is KUHF: J from α+β, vhf = J−K, occupation 1
 // (pyscf.pbc.scf.kuhf.KUHF.get_veff). Hcore guess is init_guess_by_1e.
 KrhfEnergy scf_kpoint(const Setup& s, int n_a, int n_b, double tol,
                       int max_iter, const char* tag) {
-    const int nspin = n_b < 0 ? 1 : 2;
+    if (n_b < 0)
+        throw std::logic_error(
+            "scf_kpoint: restricted KRHF is the KRHF driver, not this loop");
     const int nk = s.nk;
     const int nao = s.nao;
     const int* mesh = s.mesh;
@@ -967,13 +969,12 @@ KrhfEnergy scf_kpoint(const Setup& s, int n_a, int n_b, double tol,
         std::vector<std::vector<double>> eps;
         std::vector<linalg::CplxMatrix> cmo;
         eigh_all(s, f, eps, cmo);
-        dm_from_eps(eps, cmo, nocc, nspin == 1 ? 2.0 : 1.0, dm);
+        dm_from_eps(eps, cmo, nocc, 1.0, dm);
     };
 
     std::vector<CMat> dm[2];
     density_from(s.H, nocc_s[0], dm[0]);
-    if (nspin == 2)
-        density_from(s.H, nocc_s[1], dm[1]);
+    density_from(s.H, nocc_s[1], dm[1]);
 
     auto add_dm = [](const std::vector<CMat>& a, const std::vector<CMat>& b) {
         std::vector<CMat> out(a.size());
@@ -989,12 +990,11 @@ KrhfEnergy scf_kpoint(const Setup& s, int n_a, int n_b, double tol,
     KrhfEnergy report;
     double e_prev = 0.0;
     for (int it = 0; it < max_iter; ++it) {
-        const std::vector<CMat> dm_j =
-            (nspin == 1) ? dm[0] : add_dm(dm[0], dm[1]);
+        const std::vector<CMat> dm_j = add_dm(dm[0], dm[1]);
         const auto vj = build_j(s.ao, dm_j, s.coul_j, mesh, s.vol);
         std::vector<CMat> fock[2];
         double e_elec = 0.0;
-        for (int sp = 0; sp < nspin; ++sp) {
+        for (int sp = 0; sp < 2; ++sp) {
             const auto vk =
                 build_k(s.ao, dm[sp], s.coords, s.kpts, s.coul_k, mesh, s.vol);
             std::vector<CMat> vhf(static_cast<std::size_t>(nk),
@@ -1003,12 +1003,9 @@ KrhfEnergy scf_kpoint(const Setup& s, int n_a, int n_b, double tol,
             for (int k = 0; k < nk; ++k) {
                 for (int i = 0; i < nao; ++i)
                     for (int j = 0; j < nao; ++j) {
-                        const std::complex<double> kterm =
-                            (nspin == 1)
-                                ? 0.5 * vk[static_cast<std::size_t>(k)](i, j)
-                                : vk[static_cast<std::size_t>(k)](i, j);
                         vhf[static_cast<std::size_t>(k)](i, j) =
-                            vj[static_cast<std::size_t>(k)](i, j) - kterm;
+                            vj[static_cast<std::size_t>(k)](i, j)
+                            - vk[static_cast<std::size_t>(k)](i, j);
                     }
                 vhf[static_cast<std::size_t>(k)].hermitize();
                 for (int i = 0; i < nao; ++i)
@@ -1028,22 +1025,13 @@ KrhfEnergy scf_kpoint(const Setup& s, int n_a, int n_b, double tol,
             return report;
         }
         e_prev = e;
-        for (int sp = 0; sp < nspin; ++sp)
-            density_from(fock[sp], nocc_s[sp], dm[sp]);
+        density_from(fock[0], nocc_s[0], dm[0]);
+        density_from(fock[1], nocc_s[1], dm[1]);
     }
     throw std::runtime_error(std::string(tag) + ": SCF did not converge in "
                              + std::to_string(max_iter)
                              + " iterations (last |energy| = "
                              + std::to_string(report.hartree) + " Ha)");
-}
-
-KrhfEnergy krhf_energy(const Frame& frame, BasisSet basis, const int k_mesh[3],
-                       int charge, double tol, int max_iter) {
-    if (!(tol > 0.0) || max_iter < 1)
-        throw std::runtime_error(
-            "KRHF: tol must be positive and max_iter >= 1");
-    const Setup s = setup_krhf(frame, basis, k_mesh, charge);
-    return scf_kpoint(s, s.nocc, -1, tol, max_iter, "KRHF");
 }
 
 KrhfEnergy kuhf_energy(const Frame& frame, BasisSet basis, const int k_mesh[3],

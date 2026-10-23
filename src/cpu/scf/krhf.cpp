@@ -32,81 +32,49 @@ KrhfCycleOwner* require_cycle(KrhfCycleOwner* cycle) {
     return cycle;
 }
 
-class FockStage : public cpu::Component {
+/// One plan op for every SCF phase. Mix is the identity (`diis=None`).
+class Stage : public cpu::Component {
   public:
-    explicit FockStage(KrhfCycleOwner* cycle) : cycle_(cycle) {}
+    enum class Kind { Fock, Mix, Diag, Density, Check };
 
-    std::string name() const override { return "krhf_fock"; }
+    Stage(KrhfCycleOwner* cycle, Kind kind) : cycle_(cycle), kind_(kind) {}
 
-    void launch(const cpu::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::fock))
-            return;
-        // KSCF.get_fock with diis=None: F = H + J − ½K, then energy_elec.
-        internal::krhf_cycle_fock(**require_cycle(cycle_));
+    std::string name() const override {
+        switch (kind_) {
+        case Kind::Fock:
+            return "krhf_fock";
+        case Kind::Mix:
+            return "krhf_mix";
+        case Kind::Diag:
+            return "krhf_diagonalize";
+        case Kind::Density:
+            return "krhf_density";
+        case Kind::Check:
+            return "krhf_check";
+        }
+        throw std::logic_error("cpu::scf::KRHF: unknown stage");
     }
 
-  private:
-    KrhfCycleOwner* cycle_ = nullptr;
-};
-
-class MixStage : public cpu::Component {
-  public:
-    explicit MixStage(KrhfCycleOwner*) {}
-
-    std::string name() const override { return "krhf_mix"; }
-
     void launch(const cpu::LaunchContext& ctx) override {
-        // Identity. khf.KSCF.get_fock is called with diis=None.
-        if (!ctx.at(ATV::scf::Phase::mix))
+        if (!ctx.at(phase_of(kind_)) || kind_ == Kind::Mix)
             return;
-    }
-};
-
-class DiagonalizeStage : public cpu::Component {
-  public:
-    explicit DiagonalizeStage(KrhfCycleOwner* cycle) : cycle_(cycle) {}
-
-    std::string name() const override { return "krhf_diagonalize"; }
-
-    void launch(const cpu::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::diagonalize))
+        auto& cycle = **require_cycle(cycle_);
+        if (kind_ == Kind::Fock) {
+            // KSCF.get_fock with diis=None: F = H + J − ½K, then energy_elec.
+            internal::krhf_cycle_fock(cycle);
             return;
-        internal::krhf_cycle_diagonalize(**require_cycle(cycle_));
-    }
-
-  private:
-    KrhfCycleOwner* cycle_ = nullptr;
-};
-
-class DensityStage : public cpu::Component {
-  public:
-    explicit DensityStage(KrhfCycleOwner* cycle) : cycle_(cycle) {}
-
-    std::string name() const override { return "krhf_density"; }
-
-    void launch(const cpu::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::density))
+        }
+        if (kind_ == Kind::Diag) {
+            internal::krhf_cycle_diagonalize(cycle);
             return;
-        internal::krhf_cycle_density(**require_cycle(cycle_));
-    }
-
-  private:
-    KrhfCycleOwner* cycle_ = nullptr;
-};
-
-class CheckStage : public cpu::Component {
-  public:
-    explicit CheckStage(KrhfCycleOwner* cycle) : cycle_(cycle) {}
-
-    std::string name() const override { return "krhf_check"; }
-
-    void launch(const cpu::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::check))
+        }
+        if (kind_ == Kind::Density) {
+            internal::krhf_cycle_density(cycle);
             return;
+        }
         if (!ctx.runtime.loop.metrics)
             throw std::runtime_error(
                 "cpu::scf::KRHF: check stage has no ConvergenceMetrics");
-        auto& cycle = **require_cycle(cycle_);
         const double ha = internal::krhf_cycle_energy(cycle);
         const double dha = internal::krhf_cycle_delta(cycle);
         ctx.runtime.loop.metrics->energy = ha * units::kHartreeInEv;
@@ -114,7 +82,24 @@ class CheckStage : public cpu::Component {
     }
 
   private:
+    static ATV::scf::Phase phase_of(Kind kind) {
+        switch (kind) {
+        case Kind::Fock:
+            return ATV::scf::Phase::fock;
+        case Kind::Mix:
+            return ATV::scf::Phase::mix;
+        case Kind::Diag:
+            return ATV::scf::Phase::diagonalize;
+        case Kind::Density:
+            return ATV::scf::Phase::density;
+        case Kind::Check:
+            return ATV::scf::Phase::check;
+        }
+        throw std::logic_error("cpu::scf::KRHF: unknown stage");
+    }
+
     KrhfCycleOwner* cycle_ = nullptr;
+    Kind kind_ = Kind::Fock;
 };
 
 /// @brief |ΔE| only. ScfConverged also demands a DIIS residual this kernel
@@ -140,20 +125,28 @@ class EnergyDelta : public cpu::Criterion {
     double tol_ev_ = 0.0;
 };
 
+void require_controls(double tol, int max_iter) {
+    if (!(tol > 0.0) || max_iter < 1)
+        throw std::runtime_error(
+            "KRHF: tol must be positive and max_iter >= 1");
+}
+
 } // namespace
 
 struct KRHF::Loop {
     internal::KrhfCycleOwner cycle{nullptr, &internal::krhf_cycle_delete};
-    FockStage fock;
-    MixStage mix;
-    DiagonalizeStage diag;
-    DensityStage density;
-    CheckStage check;
+    Stage fock;
+    Stage mix;
+    Stage diag;
+    Stage density;
+    Stage check;
     EnergyDelta criterion;
 
     explicit Loop(double tol_ha)
-        : fock(&cycle), mix(&cycle), diag(&cycle), density(&cycle),
-          check(&cycle), criterion(tol_ha) {}
+        : fock(&cycle, Stage::Kind::Fock), mix(&cycle, Stage::Kind::Mix),
+          diag(&cycle, Stage::Kind::Diag),
+          density(&cycle, Stage::Kind::Density),
+          check(&cycle, Stage::Kind::Check), criterion(tol_ha) {}
 };
 
 KRHF::KRHF(BasisSet basis_in, std::array<int, 3> k_mesh_in, int charge_in,
@@ -183,58 +176,14 @@ KRHF::KRHF(KRHF&& other) noexcept
       tol(other.tol), max_iter(other.max_iter), loop_(std::move(other.loop_)),
       energy_ha_(other.energy_ha_), iterations_(other.iterations_) {}
 
-void KRHF::build_on(cpu::Runtime&) {
-    if (this->plan().slots.empty())
-        this->build();
-}
-
-void KRHF::destroy_on(cpu::Runtime&) {
+void KRHF::destroy_on(cpu::Runtime& rt) {
     if (loop_)
         loop_->cycle.reset();
+    cpu::Driver<ATV::scf::Phase>::destroy_on(rt);
 }
 
-int KRHF::drive(cpu::Runtime* parent, cpu::Context& ctx, cpu::Frame& frame,
-                int budget, Write write) {
-    if (!(tol > 0.0) || max_iter < 1)
-        throw std::runtime_error(
-            "KRHF: tol must be positive and max_iter >= 1");
-    const int mesh[3] = {k_mesh[0], k_mesh[1], k_mesh[2]};
-    loop_->cycle = internal::krhf_cycle_open(frame, basis, mesh, charge);
-    struct ReleaseCycle {
-        Loop* loop = nullptr;
-        ~ReleaseCycle() {
-            if (loop)
-                loop->cycle.reset();
-        }
-    } release{loop_.get()};
-
-    const cpu::LoopServices saved = ctx.loop;
-    ctx.loop.status = &this->status_;
-    ctx.loop.metrics = &this->metrics_;
-    struct RestoreLoop {
-        cpu::Context& ctx;
-        cpu::LoopServices saved;
-        ~RestoreLoop() { ctx.loop = saved; }
-    } restore{ctx, saved};
-    this->status_.reset();
-    this->metrics_ = ConvergenceMetrics{};
-
-    const int cap = budget > 0 ? budget : max_iter;
-    int executed = 0;
-    bool ok = false;
-    for (int it = 0; it < cap; ++it) {
-        this->mutable_outer_status().reset();
-        if (parent)
-            parent->step_plan(this->plan(), it);
-        else
-            this->step_once(it);
-        ++executed;
-        if (this->poll_criteria_(it, frame, ctx) != ATV::Verdict::Continue) {
-            ok = this->converged();
-            break;
-        }
-    }
-    if (!ok) {
+void KRHF::commit(Frame& frame, int executed, int cap, Write write) {
+    if (!this->converged()) {
         const double last = internal::krhf_cycle_energy(*loop_->cycle);
         throw std::runtime_error(
             "KRHF: SCF did not converge in " + std::to_string(cap)
@@ -242,55 +191,75 @@ int KRHF::drive(cpu::Runtime* parent, cpu::Context& ctx, cpu::Frame& frame,
     }
     energy_ha_ = internal::krhf_cycle_energy(*loop_->cycle);
     iterations_ = executed;
-    if (write != Write::None) {
-        const double e_ev = energy_ha_ * units::kHartreeInEv;
-        if (write == Write::Accumulate) {
-            frame.meta.get(kEnergy) += e_ev;
-            frame.meta.get(kEnergyElectronic) += e_ev;
-        } else {
-            frame.meta.get(kEnergy) = e_ev;
-            frame.meta.get(kEnergyElectronic) = e_ev;
-        }
+    if (write == Write::None)
+        return;
+    const double e_ev = energy_ha_ * units::kHartreeInEv;
+    if (write == Write::Accumulate) {
+        frame.meta.get(kEnergy) += e_ev;
+        frame.meta.get(kEnergyElectronic) += e_ev;
+    } else {
+        frame.meta.get(kEnergy) = e_ev;
+        frame.meta.get(kEnergyElectronic) = e_ev;
     }
-    return executed;
+}
+
+void KRHF::solve(Frame& frame, Write write) {
+    require_controls(tol, max_iter);
+    this->setup_pass(frame);
+    try {
+        const int mesh[3] = {k_mesh[0], k_mesh[1], k_mesh[2]};
+        loop_->cycle = internal::krhf_cycle_open(frame, basis, mesh, charge);
+        struct Release {
+            Loop* loop = nullptr;
+            ~Release() {
+                if (loop)
+                    loop->cycle.reset();
+            }
+        } release{loop_.get()};
+        this->status_.reset();
+        this->metrics_ = ConvergenceMetrics{};
+        int executed = 0;
+        for (int it = 0; it < max_iter; ++it) {
+            this->mutable_outer_status().reset();
+            this->step_once(it);
+            ++executed;
+            if (this->poll_criteria_(it) != ATV::Verdict::Continue)
+                break;
+        }
+        commit(frame, executed, max_iter, write);
+        loop_->cycle.reset();
+        this->teardown_pass();
+    } catch (...) {
+        this->teardown_pass();
+        throw;
+    }
 }
 
 void KRHF::run(const Frame& frame) {
     Frame scratch(frame);
-    this->setup_pass(scratch);
-    try {
-        drive(nullptr, this->backend_->context(), scratch, max_iter,
-              Write::None);
-        this->teardown_pass();
-    } catch (...) {
-        this->teardown_pass();
-        throw;
-    }
+    solve(scratch, Write::None);
 }
 
-void KRHF::run(Frame& frame) {
-    this->setup_pass(frame);
-    try {
-        drive(nullptr, this->backend_->context(), frame, max_iter,
-              Write::Overwrite);
-        this->teardown_pass();
-    } catch (...) {
-        this->teardown_pass();
-        throw;
-    }
-}
+void KRHF::run(Frame& frame) { solve(frame, Write::Overwrite); }
 
 int KRHF::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame, int budget) {
     if (!ctx.exec.runtime)
         throw std::runtime_error("cpu::scf::KRHF: nested run has no Runtime");
-    cpu::Runtime& rt = *ctx.exec.runtime;
-    rt.build_plan(this->plan());
-    struct ReleasePlan {
-        cpu::Runtime& rt;
-        const Plan<cpu::Component>& plan;
-        ~ReleasePlan() { rt.destroy_plan(plan); }
-    } release{rt, this->plan()};
-    return drive(&rt, ctx, frame, budget, Write::Accumulate);
+    require_controls(tol, max_iter);
+    const int mesh[3] = {k_mesh[0], k_mesh[1], k_mesh[2]};
+    loop_->cycle = internal::krhf_cycle_open(frame, basis, mesh, charge);
+    struct Release {
+        Loop* loop = nullptr;
+        ~Release() {
+            if (loop)
+                loop->cycle.reset();
+        }
+    } release{loop_.get()};
+    const int cap = budget > 0 ? budget : max_iter;
+    const int executed =
+        cpu::Driver<ATV::scf::Phase>::run_nested(ctx, frame, cap);
+    commit(frame, executed, cap, Write::Accumulate);
+    return executed;
 }
 
 GradientResult KRHF::forces(Frame& /*frame*/) {

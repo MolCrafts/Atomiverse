@@ -753,8 +753,6 @@ struct Engine {
             d_H, d_vhf, d_F, static_cast<int>(nmat));
     }
 
-    void diagonalize() { diagonalize_fock(d_F); }
-
     double energy() const { return e_ha; }
 
     double delta() {
@@ -773,69 +771,48 @@ Engine* require_engine(Engine** slot) {
     return *slot;
 }
 
-class FockStage : public cuda::Component {
+/// One plan op for every SCF phase. Mix is the identity (`diis=None`).
+class Stage : public cuda::Component {
   public:
-    explicit FockStage(Engine** slot) : slot_(slot) {}
-    std::string name() const override { return "krhf_fock"; }
-    void launch(const cuda::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::fock))
-            return;
-        require_engine(slot_)->fock();
+    enum class Kind { Fock, Mix, Diag, Density, Check };
+
+    Stage(Engine** slot, Kind kind) : slot_(slot), kind_(kind) {}
+
+    std::string name() const override {
+        switch (kind_) {
+        case Kind::Fock:
+            return "krhf_fock";
+        case Kind::Mix:
+            return "krhf_mix";
+        case Kind::Diag:
+            return "krhf_diagonalize";
+        case Kind::Density:
+            return "krhf_density";
+        case Kind::Check:
+            return "krhf_check";
+        }
+        throw std::logic_error("cuda::scf::KRHF: unknown stage");
     }
 
-  private:
-    Engine** slot_ = nullptr;
-};
-
-class MixStage : public cuda::Component {
-  public:
-    explicit MixStage(Engine**) {}
-    std::string name() const override { return "krhf_mix"; }
     void launch(const cuda::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::mix))
+        if (!ctx.at(phase_of(kind_)) || kind_ == Kind::Mix)
             return;
-    }
-};
-
-class DiagonalizeStage : public cuda::Component {
-  public:
-    explicit DiagonalizeStage(Engine** slot) : slot_(slot) {}
-    std::string name() const override { return "krhf_diagonalize"; }
-    void launch(const cuda::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::diagonalize))
+        Engine& eng = *require_engine(slot_);
+        if (kind_ == Kind::Fock) {
+            eng.fock();
             return;
-        require_engine(slot_)->diagonalize();
-    }
-
-  private:
-    Engine** slot_ = nullptr;
-};
-
-class DensityStage : public cuda::Component {
-  public:
-    explicit DensityStage(Engine** slot) : slot_(slot) {}
-    std::string name() const override { return "krhf_density"; }
-    void launch(const cuda::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::density))
+        }
+        if (kind_ == Kind::Diag) {
+            eng.diagonalize_fock(eng.d_F);
             return;
-        require_engine(slot_)->density();
-    }
-
-  private:
-    Engine** slot_ = nullptr;
-};
-
-class CheckStage : public cuda::Component {
-  public:
-    explicit CheckStage(Engine** slot) : slot_(slot) {}
-    std::string name() const override { return "krhf_check"; }
-    void launch(const cuda::LaunchContext& ctx) override {
-        if (!ctx.at(ATV::scf::Phase::check))
+        }
+        if (kind_ == Kind::Density) {
+            eng.density();
             return;
+        }
         if (!ctx.runtime.loop.metrics)
             throw std::runtime_error(
                 "cuda::scf::KRHF: check stage has no ConvergenceMetrics");
-        Engine& eng = *require_engine(slot_);
         const double ha = eng.energy();
         const double dha = eng.delta();
         ctx.runtime.loop.metrics->energy = ha * units::kHartreeInEv;
@@ -843,7 +820,24 @@ class CheckStage : public cuda::Component {
     }
 
   private:
+    static ATV::scf::Phase phase_of(Kind kind) {
+        switch (kind) {
+        case Kind::Fock:
+            return ATV::scf::Phase::fock;
+        case Kind::Mix:
+            return ATV::scf::Phase::mix;
+        case Kind::Diag:
+            return ATV::scf::Phase::diagonalize;
+        case Kind::Density:
+            return ATV::scf::Phase::density;
+        case Kind::Check:
+            return ATV::scf::Phase::check;
+        }
+        throw std::logic_error("cuda::scf::KRHF: unknown stage");
+    }
+
     Engine** slot_ = nullptr;
+    Kind kind_ = Kind::Fock;
 };
 
 class EnergyDelta : public cuda::Criterion {
@@ -945,16 +939,17 @@ void accumulate_energy(cuda::Frame& frame, double e_ev, cudaStream_t stream) {
 struct KrhfLoop {
     Engine* eng = nullptr;
     std::unique_ptr<Engine> owned;
-    FockStage fock;
-    MixStage mix;
-    DiagonalizeStage diag;
-    DensityStage density;
-    CheckStage check;
+    Stage fock;
+    Stage mix;
+    Stage diag;
+    Stage density;
+    Stage check;
     EnergyDelta criterion;
 
     explicit KrhfLoop(double tol_ha)
-        : fock(&eng), mix(&eng), diag(&eng), density(&eng), check(&eng),
-          criterion(tol_ha) {}
+        : fock(&eng, Stage::Kind::Fock), mix(&eng, Stage::Kind::Mix),
+          diag(&eng, Stage::Kind::Diag), density(&eng, Stage::Kind::Density),
+          check(&eng, Stage::Kind::Check), criterion(tol_ha) {}
 
     void release_engine() {
         owned.reset();
@@ -966,7 +961,13 @@ KRHF::KRHF(cpu::scf::BasisSet basis_in, std::array<int, 3> k_mesh_in,
            int charge_in, double tol_in, int max_iter_in)
     : basis(basis_in), k_mesh(k_mesh_in), charge(charge_in), tol(tol_in),
       max_iter(max_iter_in), loop_(std::make_unique<KrhfLoop>(tol)) {
-    wire_stages_();
+    this->on(ATV::scf::Phase::fock).add_ref(loop_->fock);
+    this->on(ATV::scf::Phase::mix).add_ref(loop_->mix);
+    this->on(ATV::scf::Phase::diagonalize).add_ref(loop_->diag);
+    this->on(ATV::scf::Phase::density).add_ref(loop_->density);
+    this->on(ATV::scf::Phase::check).add_ref(loop_->check);
+    this->add_criterion_ref(loop_->criterion);
+    this->build();
 }
 
 KRHF::~KRHF() { release_backend_(); }
@@ -977,16 +978,6 @@ KRHF::KRHF(KRHF&& other) noexcept
       basis(other.basis), k_mesh(other.k_mesh), charge(other.charge),
       tol(other.tol), max_iter(other.max_iter), loop_(std::move(other.loop_)),
       energy_ha_(other.energy_ha_), iterations_(other.iterations_) {}
-
-void KRHF::wire_stages_() {
-    this->on(ATV::scf::Phase::fock).add_ref(loop_->fock);
-    this->on(ATV::scf::Phase::mix).add_ref(loop_->mix);
-    this->on(ATV::scf::Phase::diagonalize).add_ref(loop_->diag);
-    this->on(ATV::scf::Phase::density).add_ref(loop_->density);
-    this->on(ATV::scf::Phase::check).add_ref(loop_->check);
-    this->add_criterion_ref(loop_->criterion);
-    this->build();
-}
 
 void KRHF::build_on(cuda::Context&, cuda::Frame&) {
     if (this->plan().slots.empty())
@@ -1059,20 +1050,22 @@ int KRHF::drive(cuda::Context& ctx, cpu::Frame& host, cuda::Frame* device,
     this->status_.reset();
     this->metrics_ = ConvergenceMetrics{};
 
-    cuda::Frame* stage_frame = device;
-    cuda::Frame local;
-    if (!stage_frame)
-        stage_frame = &local;
-
     const int cap = budget > 0 ? budget : max_iter;
     int executed = 0;
     bool ok = false;
     for (int it = 0; it < cap; ++it) {
         this->mutable_outer_status().reset();
-        step_stages_(ctx, *stage_frame, it);
+        // Standalone walks the plan the backend loaded in setup_pass.
+        // Nested has no backend, so the plan is walked here.
+        if (device)
+            step_stages_(ctx, *device, it);
+        else
+            this->step_once(it);
         ++executed;
-        if (this->poll_criteria_(it, *stage_frame, ctx)
-            != ATV::Verdict::Continue) {
+        const ATV::Verdict verdict =
+            device ? this->poll_criteria_(it, *device, ctx)
+                   : this->poll_criteria_(it);
+        if (verdict != ATV::Verdict::Continue) {
             ok = this->converged();
             break;
         }
