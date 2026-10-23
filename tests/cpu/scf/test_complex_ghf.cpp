@@ -9,9 +9,11 @@
 #include <complex>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 
+#include "atomiverse/cpu/component/criterion.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/complex_ghf.h"
 #include "atomiverse/cpu/scf/internal/basis_workspace.h"
@@ -158,4 +160,54 @@ TEST(ComplexGhf, ForcesThrowNamedKernel) {
         const std::string msg = err.what();
         EXPECT_NE(msg.find("complex_ghf_nuclear_forces"), std::string::npos);
     }
+}
+
+// Driver shape only. The SCF solve stays in regressions/scf/ghf.
+TEST(ComplexGhfDriver, PresetIsScfDriver) {
+    static_assert(
+        std::is_base_of_v<cpu::Driver<ATV::scf::Phase>, cpu::scf::ComplexGHF>,
+        "cpu::scf::ComplexGHF must be cpu::Driver<scf::Phase>");
+    static_assert(std::is_base_of_v<cpu::DriverNode, cpu::scf::ComplexGHF>,
+                  "cpu::scf::ComplexGHF must be a nestable DriverNode");
+    static_assert(std::is_base_of_v<cpu::HF, cpu::scf::ComplexGHF>,
+                  "cpu::scf::ComplexGHF must carry the HF tag");
+    static_assert(!std::is_base_of_v<cpu::Component, cpu::scf::ComplexGHF>,
+                  "cpu::scf::ComplexGHF must not be a Component");
+
+    cpu::scf::ComplexGHF ghf{cpu::scf::BasisSet::STO3G, 0, 1e-10, 80, true};
+    EXPECT_TRUE(ghf.provides_energy());
+    EXPECT_FALSE(ghf.provides_force());
+    EXPECT_TRUE(ghf.requires_full_frame());
+    EXPECT_EQ(ghf.default_budget(), ghf.max_iter);
+    EXPECT_EQ(ghf.charge, 0);
+    EXPECT_DOUBLE_EQ(ghf.tol, 1e-10);
+    EXPECT_TRUE(ghf.x2c);
+
+    const auto& plan = ghf.plan();
+    EXPECT_EQ(plan.kind, PhaseKind::SCF);
+    EXPECT_TRUE(plan.requires_full_frame);
+    ASSERT_EQ(plan.slots.size(),
+              static_cast<std::size_t>(ATV::slot_count<ATV::scf::Phase>()));
+    const char* names[] = {"complex_ghf_fock", "complex_ghf_mix",
+                           "complex_ghf_diagonalize", "complex_ghf_density",
+                           "complex_ghf_check"};
+    const ATV::scf::Phase phases[] = {
+        ATV::scf::Phase::fock, ATV::scf::Phase::mix,
+        ATV::scf::Phase::diagonalize, ATV::scf::Phase::density,
+        ATV::scf::Phase::check};
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_EQ(plan.slots[static_cast<std::size_t>(i)].phase,
+                  ATV::slot_of(phases[i]));
+        ASSERT_EQ(plan.slots[static_cast<std::size_t>(i)].ops.size(), 1u);
+        const auto* op =
+            plan.slots[static_cast<std::size_t>(i)].ops[0].component;
+        ASSERT_NE(op, nullptr);
+        EXPECT_EQ(op->name(), names[i]);
+    }
+    ASSERT_EQ(plan.lifecycle_only.size(), 1u);
+    const auto* crit =
+        dynamic_cast<const cpu::Criterion*>(plan.lifecycle_only[0]);
+    ASSERT_NE(crit, nullptr);
+    EXPECT_EQ(crit->name(), "complex_ghf_energy_delta");
+    EXPECT_TRUE(crit->contributes_to_convergence());
 }

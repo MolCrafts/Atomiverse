@@ -44,8 +44,8 @@ ATV::cpu::Frame h2o() {
 }
 
 bool check_ghf(const char* label, ATV::cpu::Frame frame, bool x2c, double pin) {
-    ATV::cpu::scf::ComplexGHF ghf{ATV::cpu::scf::BasisSet::STO3G, 0, 1e-12, 80};
-    ghf.x2c = x2c;
+    ATV::cpu::scf::ComplexGHF ghf{ATV::cpu::scf::BasisSet::STO3G, 0, 1e-12, 80,
+                                  x2c};
     ghf.run(frame);
     const double e = ghf.energy();
     const double diff = std::abs(e - pin);
