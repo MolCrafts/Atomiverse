@@ -58,8 +58,7 @@ class Stage : public cpu::Component {
     }
 
     void launch(const cpu::LaunchContext& ctx) override {
-        if (!ctx.at(phase_of(kind_)))
-            return;
+        // Bound to one phase, so the runtime only calls this on that phase.
         auto& cycle = **require_cycle(cycle_);
         if (kind_ == Kind::Fock) {
             // GHF.get_jk / get_veff, then hf.energy_elec + energy_tot.
@@ -88,22 +87,6 @@ class Stage : public cpu::Component {
     }
 
   private:
-    static ATV::scf::Phase phase_of(Kind kind) {
-        switch (kind) {
-        case Kind::Fock:
-            return ATV::scf::Phase::fock;
-        case Kind::Mix:
-            return ATV::scf::Phase::mix;
-        case Kind::Diag:
-            return ATV::scf::Phase::diagonalize;
-        case Kind::Density:
-            return ATV::scf::Phase::density;
-        case Kind::Check:
-            return ATV::scf::Phase::check;
-        }
-        throw std::logic_error("cpu::scf::ComplexGHF: unknown stage");
-    }
-
     ComplexGhfCycleOwner* cycle_ = nullptr;
     Kind kind_ = Kind::Fock;
 };
@@ -152,6 +135,27 @@ void require_controls(double tol, int max_iter) {
 } // namespace
 
 struct ComplexGHF::Loop {
+    /// Opens one SCF cycle and drops it on every exit, including a throw.
+    struct Hold {
+        Loop* loop = nullptr;
+
+        Hold(Loop& loop_in, const Frame& frame, BasisSet basis, int charge,
+             bool x2c)
+            : loop(&loop_in) {
+            loop->criterion.reset_history();
+            loop->cycle =
+                internal::complex_ghf_cycle_open(frame, basis, charge, x2c);
+        }
+
+        ~Hold() {
+            if (loop)
+                loop->cycle.reset();
+        }
+
+        Hold(const Hold&) = delete;
+        Hold& operator=(const Hold&) = delete;
+    };
+
     internal::ComplexGhfCycleOwner cycle{nullptr,
                                          &internal::complex_ghf_cycle_delete};
     Stage fock;
@@ -202,13 +206,13 @@ void ComplexGHF::destroy_on(cpu::Runtime& rt) {
 }
 
 void ComplexGHF::commit(Frame& frame, int executed, int cap, Write write) {
+    const double last = internal::complex_ghf_cycle_energy(*loop_->cycle);
     if (!this->converged()) {
-        const double last = internal::complex_ghf_cycle_energy(*loop_->cycle);
         throw std::runtime_error(
             "ComplexGHF: SCF did not converge in " + std::to_string(cap)
             + " iterations (last |energy| = " + std::to_string(last) + " Ha)");
     }
-    energy_ha_ = internal::complex_ghf_cycle_energy(*loop_->cycle);
+    energy_ha_ = last;
     iterations_ = executed;
     if (write == Write::None)
         return;
@@ -226,18 +230,7 @@ void ComplexGHF::solve(Frame& frame, Write write) {
     require_controls(tol, max_iter);
     this->setup_pass(frame);
     try {
-        loop_->criterion.reset_history();
-        loop_->cycle =
-            internal::complex_ghf_cycle_open(frame, basis, charge, x2c);
-        struct Release {
-            Loop* loop = nullptr;
-            ~Release() {
-                if (loop)
-                    loop->cycle.reset();
-            }
-        } release{loop_.get()};
-        this->status_.reset();
-        this->metrics_ = ConvergenceMetrics{};
+        Loop::Hold hold(*loop_, frame, basis, charge, x2c);
         int executed = 0;
         for (int it = 0; it < max_iter; ++it) {
             this->mutable_outer_status().reset();
@@ -247,7 +240,6 @@ void ComplexGHF::solve(Frame& frame, Write write) {
                 break;
         }
         commit(frame, executed, max_iter, write);
-        loop_->cycle.reset();
         this->teardown_pass();
     } catch (...) {
         this->teardown_pass();
@@ -268,15 +260,7 @@ int ComplexGHF::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
         throw std::runtime_error(
             "cpu::scf::ComplexGHF: nested run has no Runtime");
     require_controls(tol, max_iter);
-    loop_->criterion.reset_history();
-    loop_->cycle = internal::complex_ghf_cycle_open(frame, basis, charge, x2c);
-    struct Release {
-        Loop* loop = nullptr;
-        ~Release() {
-            if (loop)
-                loop->cycle.reset();
-        }
-    } release{loop_.get()};
+    Loop::Hold hold(*loop_, frame, basis, charge, x2c);
     const int cap = budget > 0 ? budget : max_iter;
     const int executed =
         cpu::Driver<ATV::scf::Phase>::run_nested(ctx, frame, cap);
