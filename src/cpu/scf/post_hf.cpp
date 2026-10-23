@@ -1070,13 +1070,26 @@ CC2Result CC2<Method>::finish(Frame& frame, int executed, int cap, Write write,
 }
 
 template <typename Method>
-CC2Result CC2<Method>::solve_amplitudes(Frame& frame, Write write,
-                                        const PriorEnergy& prior, int cap,
-                                        cpu::Context* nested) {
+void CC2<Method>::require_reference(const char* what) const {
+    const Method& mf = *mf_;
+    refuse_ks(mf.method_, what);
+    if (mf.spin_ != SpinType::Restricted)
+        throw std::invalid_argument(
+            std::string(what)
+            + ": closed-shell RHF reference only — UHF / ROHF / GHF CC2 "
+              "is not implemented (no fallback). Use RHF.");
+}
+
+template <typename Method>
+CC2Result CC2<Method>::solve(Frame& frame, Write write, int cap,
+                             cpu::Context* nested) {
+    require_reference("CC2::run");
     if (!(tol > 0.0) || cap < 1)
         throw std::invalid_argument(
             "CC2: tol must be positive and max_iter >= 1");
+    const PriorEnergy prior = capture(frame);
     Method& mf = *mf_;
+    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CC2::run");
     typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
                              mf.energy(), diis);
     if (nested) {
@@ -1105,15 +1118,7 @@ CC2Result CC2<Method>::solve_amplitudes(Frame& frame, Write write,
 
 template <typename Method>
 CC2Result CC2<Method>::run(Frame& frame) {
-    Method& mf = *mf_;
-    refuse_ks(mf.method_, "CC2::run");
-    if (mf.spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "CC2::run: closed-shell RHF reference only — UHF / ROHF / GHF CC2 "
-            "is not implemented (no fallback). Use RHF.");
-    const PriorEnergy prior = capture(frame);
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CC2::run");
-    return solve_amplitudes(frame, Write::Overwrite, prior, max_iter, nullptr);
+    return solve(frame, Write::Overwrite, max_iter, nullptr);
 }
 
 template <typename Method>
@@ -1131,16 +1136,8 @@ int CC2<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
         throw std::invalid_argument(
             "CC2: nuclear forces are not implemented — this method "
             "provides energy only");
-    Method& mf = *mf_;
-    refuse_ks(mf.method_, "CC2::run");
-    if (mf.spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "CC2::run: closed-shell RHF reference only — UHF / ROHF / GHF CC2 "
-            "is not implemented (no fallback). Use RHF.");
-    const PriorEnergy prior = capture(frame);
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CC2::run");
     const int cap = budget > 0 ? budget : max_iter;
-    solve_amplitudes(frame, Write::Accumulate, prior, cap, &ctx);
+    solve(frame, Write::Accumulate, cap, &ctx);
     return executed_;
 }
 

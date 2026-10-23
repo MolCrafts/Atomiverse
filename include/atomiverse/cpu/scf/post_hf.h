@@ -587,12 +587,13 @@ class CC2 : public cpu::Driver<ATV::cc::Phase> {
     static void store_energy(Frame& frame, double e_ev, Write write,
                              const PriorEnergy& prior);
 
-    /// @brief Amplitude driver. A null `nested` walks this object's Runtime;
-    ///        otherwise `Driver::run_nested` on the parent. The caller has
-    ///        already converged the reference SCF.
-    CC2Result solve_amplitudes(Frame& frame, Write write,
-                               const PriorEnergy& prior, int cap,
-                               cpu::Context* nested);
+    /// @brief Closed-shell RHF only. `what` names the throwing entry.
+    void require_reference(const char* what) const;
+
+    /// @brief Reference SCF, then the amplitude driver. A null `nested`
+    ///        walks this object's Runtime; otherwise `Driver::run_nested`
+    ///        on the parent.
+    CC2Result solve(Frame& frame, Write write, int cap, cpu::Context* nested);
     /// @brief Read the cycle the criterion accepted and write energy if asked.
     CC2Result finish(Frame& frame, int executed, int cap, Write write,
                      const PriorEnergy& prior);

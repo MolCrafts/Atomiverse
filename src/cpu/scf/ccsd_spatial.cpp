@@ -164,28 +164,36 @@ void CcsdSpatialCycle::update() {
             Fov(k, c) = s;
         }
 
-    // Lvv_bar(a,c) = Fvv_bar + 2·(kd|ac)t1 − (kc|ad)t1;
-    // Loo_bar(k,i) = Foo_bar + 2·(lc|ki)t1 − (kc|li)t1  (ovoo accessors).
-    xt::xtensor<double, 2> Lvv = Fvv;
-    xt::xtensor<double, 2> Loo = Foo;
-    for (int a = 0; a < nv; ++a)
-        for (int c = 0; c < nv; ++c) {
-            double s = 0.0;
-            for (int k = 0; k < no; ++k)
-                for (int d = 0; d < nv; ++d)
-                    s += 2.0 * OVVV(k, d, a, c) * t1(k, d)
-                         - OVVV(k, c, a, d) * t1(k, d);
-            Lvv(a, c) += s;
-        }
-    for (int k = 0; k < no; ++k)
-        for (int i = 0; i < no; ++i) {
-            double s = 0.0;
-            for (int l = 0; l < no; ++l)
-                for (int c = 0; c < nv; ++c)
-                    s += 2.0 * OVOO(l, c, k, i) * t1(l, c)
-                         - OVOO(k, c, l, i) * t1(l, c);
-            Loo(k, i) += s;
-        }
+    // Lvv / Loo / Wvoov / Wvovo are the `else` of `if cc.cc2` (rings and
+    // T2 dressings). CC2 does not build them.
+    xt::xtensor<double, 2> Lvv;
+    xt::xtensor<double, 2> Loo;
+    xt::xtensor<double, 4> Wvoov;
+    xt::xtensor<double, 4> Wvovo;
+    if (!cc2) {
+        // Lvv_bar(a,c) = Fvv_bar + 2·(kd|ac)t1 − (kc|ad)t1;
+        // Loo_bar(k,i) = Foo_bar + 2·(lc|ki)t1 − (kc|li)t1.
+        Lvv = Fvv;
+        Loo = Foo;
+        for (int a = 0; a < nv; ++a)
+            for (int c = 0; c < nv; ++c) {
+                double s = 0.0;
+                for (int k = 0; k < no; ++k)
+                    for (int d = 0; d < nv; ++d)
+                        s += 2.0 * OVVV(k, d, a, c) * t1(k, d)
+                             - OVVV(k, c, a, d) * t1(k, d);
+                Lvv(a, c) += s;
+            }
+        for (int k = 0; k < no; ++k)
+            for (int i = 0; i < no; ++i) {
+                double s = 0.0;
+                for (int l = 0; l < no; ++l)
+                    for (int c = 0; c < nv; ++c)
+                        s += 2.0 * OVOO(l, c, k, i) * t1(l, c)
+                             - OVOO(k, c, l, i) * t1(l, c);
+                Loo(k, i) += s;
+            }
+    }
 
     // ── W intermediates ─────────────────────────────────────────────
     // Woooo(k,l,i,j)
@@ -203,53 +211,53 @@ void CcsdSpatialCycle::update() {
                         for (int d = 0; d < nv; ++d) {
                             // `if cc.cc2`: t1⊗t1 only. Full CCSD adds t2.
                             const double tt = t1(i, c) * t1(j, d);
-                            if (cc2)
-                                s += OVOV(k, c, l, d) * tt;
-                            else
-                                s += OVOV(k, c, l, d) * (t2(i, j, c, d) + tt);
+                            const double tau_oo =
+                                cc2 ? tt : (t2(i, j, c, d) + tt);
+                            s += OVOV(k, c, l, d) * tau_oo;
                         }
                     Woooo(k, l, i, j) = s;
                 }
 
-    // Wvoov(a,k,i,c)
-    xt::xtensor<double, 4> Wvoov = xt::zeros<double>({Nv, No, No, Nv});
-    for (int a = 0; a < nv; ++a)
-        for (int k = 0; k < no; ++k)
-            for (int i = 0; i < no; ++i)
-                for (int c = 0; c < nv; ++c) {
-                    double s = OVVO(k, c, a, i);
-                    for (int d = 0; d < nv; ++d)
-                        s += OVVV(k, c, a, d) * t1(i, d);
-                    for (int l = 0; l < no; ++l)
-                        s -= OVOO(k, c, l, i) * t1(l, a);
-                    for (int l = 0; l < no; ++l)
-                        for (int d = 0; d < nv; ++d) {
-                            s -= 0.5 * OVOV(l, d, k, c) * t2(i, l, d, a);
-                            s -= 0.5 * OVOV(l, c, k, d) * t2(i, l, a, d);
-                            s -= OVOV(l, d, k, c) * t1(i, d) * t1(l, a);
-                            s += OVOV(l, d, k, c) * t2(i, l, a, d);
-                        }
-                    Wvoov(a, k, i, c) = s;
-                }
+    // Wvoov / Wvovo: full-CCSD ring intermediates. Not the CC2 residual.
+    if (!cc2) {
+        Wvoov = xt::zeros<double>({Nv, No, No, Nv});
+        for (int a = 0; a < nv; ++a)
+            for (int k = 0; k < no; ++k)
+                for (int i = 0; i < no; ++i)
+                    for (int c = 0; c < nv; ++c) {
+                        double s = OVVO(k, c, a, i);
+                        for (int d = 0; d < nv; ++d)
+                            s += OVVV(k, c, a, d) * t1(i, d);
+                        for (int l = 0; l < no; ++l)
+                            s -= OVOO(k, c, l, i) * t1(l, a);
+                        for (int l = 0; l < no; ++l)
+                            for (int d = 0; d < nv; ++d) {
+                                s -= 0.5 * OVOV(l, d, k, c) * t2(i, l, d, a);
+                                s -= 0.5 * OVOV(l, c, k, d) * t2(i, l, a, d);
+                                s -= OVOV(l, d, k, c) * t1(i, d) * t1(l, a);
+                                s += OVOV(l, d, k, c) * t2(i, l, a, d);
+                            }
+                        Wvoov(a, k, i, c) = s;
+                    }
 
-    // Wvovo(a,k,c,i)
-    xt::xtensor<double, 4> Wvovo = xt::zeros<double>({Nv, No, Nv, No});
-    for (int a = 0; a < nv; ++a)
-        for (int k = 0; k < no; ++k)
-            for (int c = 0; c < nv; ++c)
-                for (int i = 0; i < no; ++i) {
-                    double s = OOVV(k, i, a, c);
-                    for (int d = 0; d < nv; ++d)
-                        s += OVVV(k, d, a, c) * t1(i, d);
-                    for (int l = 0; l < no; ++l)
-                        s -= OVOO(l, c, k, i) * t1(l, a);
-                    for (int l = 0; l < no; ++l)
-                        for (int d = 0; d < nv; ++d) {
-                            s -= 0.5 * OVOV(l, c, k, d) * t2(i, l, d, a);
-                            s -= OVOV(l, c, k, d) * t1(i, d) * t1(l, a);
-                        }
-                    Wvovo(a, k, c, i) = s;
-                }
+        Wvovo = xt::zeros<double>({Nv, No, Nv, No});
+        for (int a = 0; a < nv; ++a)
+            for (int k = 0; k < no; ++k)
+                for (int c = 0; c < nv; ++c)
+                    for (int i = 0; i < no; ++i) {
+                        double s = OOVV(k, i, a, c);
+                        for (int d = 0; d < nv; ++d)
+                            s += OVVV(k, d, a, c) * t1(i, d);
+                        for (int l = 0; l < no; ++l)
+                            s -= OVOO(l, c, k, i) * t1(l, a);
+                        for (int l = 0; l < no; ++l)
+                            for (int d = 0; d < nv; ++d) {
+                                s -= 0.5 * OVOV(l, c, k, d) * t2(i, l, d, a);
+                                s -= OVOV(l, c, k, d) * t1(i, d) * t1(l, a);
+                            }
+                        Wvovo(a, k, c, i) = s;
+                    }
+    }
 
     // Wvvvv(a,b,c,d)
     xt::xtensor<double, 4> Wvvvv = xt::zeros<double>({Nv, Nv, Nv, Nv});
