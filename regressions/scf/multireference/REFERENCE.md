@@ -389,3 +389,76 @@ export OMP_NUM_THREADS=1
 
 H₂/STO-3G is startup-dominated; ATV is faster than PySCF on this foothold
 (ratio ≪ 1). No performance optimization pass required.
+
+
+## H2O CASSCF(2,2)/STO-3G — total energy pin
+
+Closed-shell **CASSCF(2,2)** on H₂O / STO-3G. Unlike the H₂ full-valence
+section, this active space does not span the basis: RHF has 5 occupied
+spatial orbitals and STO-3G has 7 MOs, so `ncore = 4` and `nvirt = 1`.
+Core–active, active–virtual and core–virtual rotations are non-redundant
+and the orbital macro-iteration runs.
+
+Product API: `CASSCF<RHF>{rhf, ncas=2, nelecas=2}.run(frame)`.
+
+Literature / theory: same Roos 1987 review as the H₂ section.
+
+Oracle protocol: `docs/tutorial/appendix-pyscf-oracle.md` (offline pin only;
+**never** import/invoke PySCF from CMake, ctest, or Atomiverse C++).
+
+### Geometry and settings
+
+| Field | Value |
+|---|---|
+| Molecule | H₂O, charge 0, singlet |
+| Geometry (Å) | O(0, 0, 0.1173); H(0, ±0.7572, −0.4692) — `pin_scf` `water` preset |
+| Basis | STO-3G |
+| Angular convention | `cart=True` (no \(d\) shells; engine-neutral) |
+| SCF | RHF, `conv_tol=1e-12` |
+| CASSCF | `pyscf.mcscf.CASSCF(mf, ncas=2, nelecas=2)`, `conv_tol=1e-12` |
+| AO / MO | 7 AO; ncore=4, ncas=2, nvirt=1 |
+| PySCF version | 2.14.0 |
+| Pinned | 2026-10-23 |
+
+### Repro command
+
+```bash
+bash tools/setup_pyscf_env.sh   # once
+~/work/.x86_64/bin/python tools/pyscf_oracle/pin_scf.py casscf \
+    --geom water --basis sto-3g --ncas 2 --nelecas 2 --conv-tol 1e-12
+```
+
+Oracle output lines (`pin_scf.py`, PySCF 2.14.0):
+
+```
+"e_hf_ha": -74.96302313846292,
+"e_corr_ha": -0.0012536321488170188,
+"e_casscf_ha": -74.96427677061173,
+"e_tot_ha": -74.96427677061173,
+"ncore": 4,
+"ncas": 2,
+"nelecas": 2,
+"nao": 7,
+"casscf_converged": true
+```
+
+`nvirt = nao - ncore - ncas = 1`. PySCF's 1-step kernel reports two macro
+iterations on this input (`|grad[o]|` starts at about 4e-3 and the CASSCF
+total is about 5.1e-6 Ha below CASCI on the RHF orbitals).
+
+### Pinned values
+
+| Quantity | Pin | Tolerance |
+|---|---|---|
+| \(E_{\mathrm{RHF}}\) | −74.96302313846292 Ha | 1e-6 Ha |
+| \(E_{\mathrm{corr}}\) (CASSCF) | −0.0012536321488170188 Ha | **1e-6 Ha** |
+| \(E_{\mathrm{tot}}\) (CASSCF) | −74.96427677061173 Ha | **1e-6 Ha** (product gate) |
+
+### Gates (product regression)
+
+- \(|E_{\mathrm{tot,ours}} - \mathrm{pin}| < 10^{-6}\,\mathrm{Ha}\) (primary gate)
+- \(|E_{\mathrm{corr,ours}} - \mathrm{pin}| < 10^{-6}\,\mathrm{Ha}\)
+- \(E_{\mathrm{RHF}}\): \(10^{-6}\) Ha
+- `ncore == 4`, `ncas == 2`, `nelecas == 2`, `converged == true`
+- `iterations >= 2` (the identity first rotation is not the whole solve)
+- `kEnergy` [eV] matches \(E_{\mathrm{tot}}\) converted with `kHartreeInEv` to \(10^{-8}\) eV

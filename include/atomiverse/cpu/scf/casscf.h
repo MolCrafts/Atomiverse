@@ -1,5 +1,6 @@
 /// @file cpu/scf/casscf.h
-/// @brief Complete active-space SCF (CASSCF) — public API `CASSCF<RHF>{rhf}.run(frame, ncas, nelecas)`.
+/// @brief Complete active-space SCF (CASSCF) result. The product type is
+///        `CASSCF` in `post_hf.h` (`Driver<mc::Phase>`): `CASSCF{rhf, ncas, nelecas}.run(frame)`.
 ///
 /// Closed-shell CASSCF on a converged RHF reference: frozen core is doubly
 /// occupied; full CI is solved in the active spatial orbitals; orbitals are
@@ -39,8 +40,8 @@ struct CASSCFResult {
     bool converged = false;
 };
 
-// Pack-based entry is private — see internal/casscf_pack.h.
-// Public: CASSCF<RHF> (post_hf.h), closed-shell RHF reference.
+// Pack-based entry is private — see internal/casscf_pack.h (NEVPT2).
+// Public: CASSCF<RHF> (post_hf.h), `Driver<mc::Phase>`, closed-shell RHF.
 
 } // namespace scf
 } // namespace cpu

@@ -88,7 +88,8 @@ int run() {
 
     // Full-valence CAS(2,2): NEVPT2 ≡ CASSCF ≡ CASCI ≡ FCI.
     const cpu::scf::CASSCFResult cas =
-        ATV::cpu::scf::CASSCF<decltype(rhf)>{rhf}.run(frame, 2, 2);
+        ATV::cpu::scf::CASSCF<decltype(rhf)>{rhf, /*ncas=*/2, /*nelecas=*/2}
+            .run(frame);
     if (!check("NEVPT2 == CASSCF", nev.e_nevpt2, cas.e_casscf, 1e-10))
         return 1;
 

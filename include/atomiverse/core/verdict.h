@@ -87,9 +87,10 @@ struct ConvergenceMetrics {
 
     /// @brief Dimensionless residual of this iteration (0 when the loop has none).
     ///
-    /// Amplitude change max|Δt| for coupled cluster; other loops leave it 0 and
-    /// judge `energy_change` / forces instead. The stage publishes it; a
-    /// Criterion decides. Units are not eV.
+    /// Amplitude change max|Δt| for coupled cluster; max |g| of the CASSCF
+    /// orbital gradient. Other loops leave it 0 and judge `energy_change` /
+    /// forces instead. The stage publishes it; a Criterion decides. Units
+    /// are not eV.
     double residual = 0.0;
 };
 

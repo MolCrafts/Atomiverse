@@ -7,7 +7,8 @@
 ///   CC object, not on the SCF class. `eomee_ccsd_singlet`, `ipccsd`,
 ///   `eaccsd`, and `eomsf_ccsd` are methods of that CC object — not of
 ///   `RHF` / `UHF`. EOM-CC2 is `CC2::eom_cc2`.
-/// - `pyscf.mcscf.CASCI` / `CASSCF(mf, ncas, nelecas)` and `mrpt.NEVPT(mc)`
+/// - `pyscf.mcscf.CASCI` / `CASSCF(mf, ncas, nelecas)` (`mc1step.kernel`)
+///   and `mrpt.NEVPT(mc)`. CASSCF's macro iteration is `Driver<mc::Phase>`.
 ///
 /// Each type holds a reference to a concrete mean-field method (`RHF`, `UHF`,
 /// `ROHF`, `RKS`, …) and drives `run` itself. `MeanFieldMethod` keeps SCF
@@ -144,18 +145,138 @@ class CASCI {
 };
 
 /// @brief Closed-shell CASSCF. Mirrors `pyscf.mcscf.CASSCF(mf, ncas, nelecas)`.
+///
+/// The orbital macro-iteration is `cpu::Driver<mc::Phase>` (`rotate →
+/// casci → gradient → check`), the same preset shape as `cpu::md::MD`:
+/// stages are mounted with `on(phase).add` in the constructor, max |g|
+/// is published on `ConvergenceMetrics`, and `OrbitalGradientConverged`
+/// decides. This type does not assign convergence.
+///
+/// PySCF 2.14.0: `pyscf/mcscf/__init__.py` `CASSCF` and
+/// `pyscf/mcscf/mc1step.py` `kernel` / `casci` / `gen_g_hop` / `rotate_mo`.
+/// The rotation generator is the existing diagonal Newton step, not
+/// `rotate_orb_cc`.
+///
+/// Parameters are constructor arguments, fixed after construction.
+/// `run(Frame&)` drives the reference SCF, then overwrites `kEnergy`
+/// with the correlated total [eV]. Hartree stays on `CASSCFResult`.
+/// Nuclear forces are not implemented.
+/// @tparam Method Concrete mean-field type (`RHF`, …). The reference is
+///         not owned and must outlive `*this`.
 template <typename Method>
-class CASSCF {
+class CASSCF : public cpu::Driver<ATV::mc::Phase> {
   public:
-    explicit CASSCF(Method& mf);
-    /// @param frame Geometry [Å].
-    /// @param ncas Active spatial orbitals.
-    /// @param nelecas Active electrons (even, closed-shell).
-    /// @return CASSCF total and correlation energy [Hartree].
-    CASSCFResult run(Frame& frame, int ncas, int nelecas);
+    /// @brief Bind a mean-field reference. `orb_tol` is
+    ///        `max(mf.tol, 1e-8)` [Hartree] and the macro cap is 50.
+    /// @param mf Mean-field method (not copied).
+    /// @param ncas_in Active spatial orbitals.
+    /// @param nelecas_in Active electrons (even, closed-shell).
+    explicit CASSCF(Method& mf, int ncas_in, int nelecas_in);
+
+    /// @brief Bind a mean-field reference with an explicit gradient
+    ///        tolerance and macro-iteration cap.
+    /// @param mf Mean-field method (not copied).
+    /// @param ncas_in Active spatial orbitals.
+    /// @param nelecas_in Active electrons (even, closed-shell).
+    /// @param orb_tol_in max |g_pq| tolerance [Hartree].
+    /// @param max_macro_in Macro-iteration cap [dimensionless].
+    CASSCF(Method& mf, int ncas_in, int nelecas_in, double orb_tol_in,
+           int max_macro_in);
+
+    /// @brief Drop the orbital plan while its stage storage is alive.
+    ~CASSCF() override;
+
+    CASSCF(const CASSCF&) = delete;
+    CASSCF& operator=(const CASSCF&) = delete;
+    CASSCF(CASSCF&&) = delete;
+    CASSCF& operator=(CASSCF&&) = delete;
+
+    /// @brief Active spatial orbitals. Fixed at construction.
+    const int ncas;
+    /// @brief Active electrons (even, closed-shell). Fixed at construction.
+    const int nelecas;
+    /// @brief max |g_pq| tolerance [Hartree].
+    const double orb_tol;
+    /// @brief Macro-iteration cap [dimensionless].
+    const int max_macro;
+
+    /// @brief This product contributes a total energy.
+    bool provides_energy() const override { return true; }
+
+    /// @brief Nuclear forces are not implemented.
+    bool provides_force() const override { return false; }
+
+    /// @brief Whole-molecule evaluator.
+    bool requires_full_frame() const override { return true; }
+
+    /// @brief Nested budget is the macro-iteration cap.
+    /// @return `max_macro` [dimensionless].
+    int default_budget() const override { return max_macro; }
+
+    /// @brief Orbital stages do not assemble nuclear forces.
+    /// @return False.
+    bool phase_wants_forces(ATV::mc::Phase) const override { return false; }
+
+    /// @brief Fresh SCF on the reference, then the orbital macro-iteration.
+    /// @param frame Geometry [Å]. Overwrites `kEnergy` with E_CASSCF [eV].
+    /// @return Total and correlation energy [Hartree].
+    /// @throws std::invalid_argument if the reference is not closed-shell
+    ///         RHF, the SCF did not converge, or the orbital gradient did
+    ///         not fall under `orb_tol`.
+    CASSCFResult run(Frame& frame);
+
+    /// @brief Same solve, without writing `frame`.
+    /// @param frame Geometry [Å], read only.
+    /// @return Total and correlation energy [Hartree].
+    CASSCFResult run(const Frame& frame);
+
+    /// @brief One CASSCF on the parent's Runtime.
+    ///
+    /// Energy is accumulated onto `kEnergy` [eV]. A parent that requests
+    /// forces is refused: this method has no nuclear gradient.
+    /// @param ctx Parent context. Loop status is restored on exit.
+    /// @param frame Parent frame.
+    /// @param budget Macro iterations; `<= 0` uses `max_macro`.
+    /// @return Iterations the orbital driver walked.
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override;
+
+  protected:
+    /// @brief The method is the energy source; no extra component is required.
+    void validate_components() const override {}
 
   private:
+    enum class Write { None, Overwrite, Accumulate };
+    struct Loop;
+    struct PriorEnergy {
+        bool energy = false;
+        double energy_v = 0.0;
+        bool electronic = false;
+        double electronic_v = 0.0;
+    };
+
+    /// @brief SCF total that was on the frame before the reference `run`.
+    static PriorEnergy capture(const Frame& frame);
+    /// @brief Write the correlated total [eV] over or onto the saved value.
+    static void store_energy(Frame& frame, double e_ev, Write write,
+                             const PriorEnergy& prior);
+
+    /// @brief Closed-shell RHF only. `what` names the throwing entry.
+    void require_reference(const char* what) const;
+
+    /// @brief Reference SCF, then the orbital driver. A null `nested`
+    ///        walks this object's Runtime; otherwise `Driver::run_nested`
+    ///        on the parent.
+    CASSCFResult solve(Frame& frame, Write write, int cap,
+                       cpu::Context* nested);
+    /// @brief Read the cycle the criterion accepted and write energy if asked.
+    CASSCFResult finish(Frame& frame, int executed, int cap, Write write,
+                        const PriorEnergy& prior);
+
     Method* mf_ = nullptr;
+    std::unique_ptr<Loop> loop_;
+    CASSCFResult last_{};
+    int executed_ = 0;
 };
 
 /// @brief Closed-shell SC-NEVPT2. Drives the same RHF→CASSCF→PT2 sequence as
