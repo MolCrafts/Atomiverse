@@ -766,10 +766,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/gpw/internal/ts_dispersion.cpp
             src/cpu/gpw/internal/xdm_dispersion.cpp
             src/cpu/gpw/internal/mbd_dispersion.cpp
-            src/cpu/gpw/internal/vdw_df.cpp
-            src/cpu/gpw/internal/vdw_df_kernel_data.cpp
-            src/cpu/gpw/internal/rvv10.cpp
-            src/cpu/gpw/internal/rvv10_kernel_data.cpp
             src/cpu/gpw/internal/hirshfeld_volumes.cpp
             src/cpu/scf/dftd3.cpp
             src/cpu/scf/dftd4.cpp
@@ -852,6 +848,12 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_PW)
             target_sources(atomiverse PRIVATE
                 src/cpu/gpw/internal/fft_cache.cpp
+                # Nonlocal grid correlation uses GPW FFTs and compressed kernels,
+                # not the molecular dispersion path shared with Gaussian SCF.
+                src/cpu/gpw/internal/vdw_df.cpp
+                src/cpu/gpw/internal/vdw_df_kernel_data.cpp
+                src/cpu/gpw/internal/rvv10.cpp
+                src/cpu/gpw/internal/rvv10_kernel_data.cpp
                 src/cpu/gpw/internal/poisson_fft.cpp
                 src/cpu/gpw/internal/hartree_grid.cpp
                 src/cpu/gpw/internal/grid_fft.cpp
