@@ -379,12 +379,12 @@ int run() {
     // while preserving the parent Runtime and the caller's velocity. These
     // fresh-solver comparisons supplement the external pins in this case.
     const auto check_input_updates = [&]<typename Method>(const char* name) {
+        auto frame = make_water();
         Method method{0, 1, 400, 1.e-10, 1.e-12};
         cpu::md::MD dynamics;
         dynamics.set_integrator(cpu::md::VelocityVerlet{.01});
         dynamics.on(md::Phase::force).add_ref(method);
         dynamics.build();
-        auto frame = make_water();
         frame.span(kAtom_mass)[0] = 16;
         frame.span(kAtom_mass)[1] = frame.span(kAtom_mass)[2] = 1;
         dynamics.run(frame, 2);

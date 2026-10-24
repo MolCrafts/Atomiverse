@@ -256,6 +256,7 @@ int run_cpu_case(const Pin (&pins)[3]) {
                 return 1;
         }
 #ifdef ATV_HAS_MD
+        auto a = make_frame(water), b = a;
         Method chunked{0, 1, 400, 1e-10, 1e-12}, whole{0, 1, 400, 1e-10, 1e-12};
         cpu::md::MD chunks, once;
         chunks.set_integrator(cpu::md::VelocityVerlet{.01});
@@ -264,7 +265,6 @@ int run_cpu_case(const Pin (&pins)[3]) {
         once.on(md::Phase::force).add_ref(whole);
         chunks.build();
         once.build();
-        auto a = make_frame(water), b = a;
         chunks.run(a, 0);
         if (chunked.has_density()
             || !check_result(chunked.last_result(), water, "MD initial"))

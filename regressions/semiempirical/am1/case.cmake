@@ -11,3 +11,7 @@ atv_regression(SECTION nddo-sharp-discriminator
 
 atv_regression(SECTION se-analytic-hessian
   REQUIRES SEMIEMPIRICAL VIB)
+
+# Fixed-duration NVE uses the same archived distorted-water Hamiltonian pin.
+atv_regression(SECTION nddo-nve
+  REQUIRES SEMIEMPIRICAL MD DEVICES both)

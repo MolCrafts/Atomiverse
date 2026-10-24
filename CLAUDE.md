@@ -725,6 +725,11 @@ only on large systems. Wave-local freezes live in `.claude/notes/`.
   GPU job success, reviewed numerical output, sanitizer checks and measured
   residency are distinct evidence; retain the job reference and raw outputs.
   Do not repeat an uncertain or running submission.
+- NVE acceptance compares equal physical durations and sampling times when
+  halving the time step. Report absolute total-energy error with explicit units
+  and sampling cadence; do not normalize by the large binding energy or treat
+  short-trajectory convergence as long-time stability. Frame and borrowed
+  methods must outlive the Driver that uses them, including test teardown.
 - Performance harnesses live in `benchmarks/semiempirical/`, outside CTest.
   Report complete-call boundaries, cold/warm state, SCF controls/iterations,
   thread count and observed allocation/transfer/memory costs. A matrix-storage
@@ -740,9 +745,11 @@ only on large systems. Wave-local freezes live in `.claude/notes/`.
   + single-rank declared-convergence criteria. The `core/plan.h` helpers have one backend
   user — re-unify CPU onto them or move them to `cuda/driver/`; never call them
   shared.
-- **CUDA force validity** ignores host Frame edits between chunks
-  (invalidates only on binding change / rematerialize); CUDA Box revision lives
-  in the device cache (`publish_cell`), host copy 0.
+- **Input refresh coverage:** direct CUDA MD checks host input changes at chunk
+  boundaries and refreshes the mounted plan. Components must explicitly support
+  the changed fields; PME/Ewald charge and identity changes currently reject.
+  QM/MM private-frame forwarding and arbitrary mid-chunk thermostat/RNG rollback
+  are not covered by the direct NDDO input-refresh contract.
 - **CUDA multi-GPU** has no Runtime/DomainRuntime: `cuda::MultiGpu`
   (partition/halo/`run_nve*`) is a second MD stack outside the Plan.
 - **Nested electronic methods:** electronic propagators (CPMD, second-gen CP,

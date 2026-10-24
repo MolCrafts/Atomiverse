@@ -2,7 +2,7 @@
 
 Tutorial: [Semiempirical models](../tutorial/ch17-semiempirical-am1.md).
 This chapter records the current `dev` implementation and executed evidence as
-of 2026-10-24; it is not a claim about the released `master` snapshot.
+of 2026-10-25; it is not a claim about the released `master` snapshot.
 
 CPU AM1/RM1/MNDO/PM3 provide molecular closed-shell energy, charges, heat of
 formation and analytic forces. Native CUDA versions of all four methods
@@ -22,12 +22,16 @@ implementation, not complete AmberTools SQM feature or input-file compatibility.
 | NDDO two-center primitives | ✓ | ✓ | CHNO AM1/RM1 FP64: analytic-STO Hcore, core repulsion, ERI, direct Fock and analytic pair derivatives without a global ERI cache; CPU comparisons, GH200 memcheck and racecheck pass |
 | MNDO | ✓ | ✓ | `semiempirical/mndo`: neutral closed-shell CHNO E/q/ΔHf/analytic F, native composition and Python pass CPU/GH200 external and cross-backend gates; no heavier-element pair corrections |
 | PM3 | ✓ | ✓ | `semiempirical/pm3`: neutral closed-shell CHNO E/q/ΔHf/analytic F, native composition and Python pass CPU/GH200 external and cross-backend gates; no heavier-element pair corrections |
+| PDDG/MNDO, PDDG/PM3, PDDG/PM3-08 | ○ | ○ | Method-specific fitted parameters, corrections and external E/q/full-force qualification remain open; base MNDO/PM3 acceptance does not cover these variants |
+| PM3-CARB1 / ZNB / MAIS | ○ | ○ | No native variant-specific parameter/correction implementation or acceptance |
+| AM1/d / MNDO/d | ○ | ○ | Required d-orbital parameter and integral/derivative paths remain open |
 | PM6 / PM7 | ○ | ○ | No public method or validated parameter/gradient path |
 | OM3 | ○ | ○ | **Blocked** — no OpenMOPAC primary surface |
 | Nuclear forces (CHNO molecules) | ✓ | ✓ | `semiempirical/am1`, `semiempirical/mndo`, `semiempirical/pm3`: all four methods' distorted H₂O, tilted CO and NH₃ full vectors against executed OpenMOPAC 23.2.5 |
 | Analytic integral-derivative forces | ✓ | ✓ | `semiempirical/am1`: analytic pair derivatives with independent CHNO force pins; broader s/p elements have derivative consistency tests only |
 | Evaluate composition | ✓ | ✓ | Standalone/mounted E/q/F agreement, additive contributions and failure/retry; CUDA restricted to the molecular CHNO envelope |
 | Short BOMD / steepest-descent composition | ✓ | ✓ | `semiempirical/am1`: both methods pass initial-force preparation, CUDA 2+2 versus 4 steps and CPU/CUDA four-step agreement at 0.01 fs; three SD steps lower energy, without a minimization-convergence claim |
+| NVE energy conservation and time-step refinement | ✓ | ✓ | Each method case has `nddo-nve`: 10 fs distorted-water trajectories at 0.1/0.05 fs, sampled every 0.5 fs; external initial energy, absolute E+K deviation, approximately fourfold improvement and CPU/CUDA short-trajectory checks pass |
 | Accepted electronic-history transactions | ✓ | ✓ | CPU/CUDA AM1/RM1 actual Armijo accept/reject/exception, final-step commit and later-parent-component failure/retry pass; CUDA complete composed force checks also pass memcheck |
 | Native Python AM1/RM1/MNDO/PM3 | ✓ | ✓ | Same-instance run/forces/Evaluate/MD/Minimize, input edits/retry and twelve independent external E/q/ΔHf/full-force fixtures pass on CPU and GH200. All 53 interface checks pass in the CUDA build. Python CUDA exposes VelocityVerlet and steepest descent; the CPU workflow gate uses LBFGS |
 | Host edits between MD chunks | ✓ | ✓ | Direct AM1/RM1/MNDO/PM3+VelocityVerlet continuation passes coordinate/velocity and count/type edits, plus failed-refresh retry. CPU box refresh and CUDA unsupported-box rejection/restore pass. MPI change/error propagation passes two-rank units. The same-owner Python checks pass on both backends |
@@ -90,10 +94,10 @@ reference program is implemented.
 
 | Method / case | Executed evidence | Main remaining gate |
 | --- | --- | --- |
-| AM1 | `semiempirical/am1` passed, including six AM1/RM1 CHNO energy/q/ΔHf/full-force fixtures; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Longer NVE/time-step convergence, broader-element external forces |
-| RM1 | `semiempirical/rm1` plus the RM1 fixtures in `semiempirical/am1` passed; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Longer NVE/time-step convergence, remaining parameter coverage |
-| MNDO | `semiempirical/mndo`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants, longer NVE and current performance/residency |
-| PM3 | `semiempirical/pm3`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants, longer NVE and current performance/residency |
+| AM1 | `semiempirical/am1` passed, including six AM1/RM1 CHNO energy/q/ΔHf/full-force fixtures; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Broader-element external forces, current force-path resources/performance |
+| RM1 | `semiempirical/rm1` plus the RM1 fixtures in `semiempirical/am1` passed; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Remaining parameter coverage, current force-path resources/performance |
+| MNDO | `semiempirical/mndo`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants and current performance/residency |
+| PM3 | `semiempirical/pm3`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants and current performance/residency |
 | AM1-BCC / ABCG2 | `semiempirical/am1-bcc` and Python acetate checks passed | A charge-correction workflow, not a separate SQM Hamiltonian or CUDA implementation |
 | DFTB0 | `semiempirical/dftb0` passed | Native CUDA implementation and CPU/CUDA/oracle acceptance |
 | DFTB2 | `semiempirical/dftb2` passed; concrete SCC Driver and Frame entry points are present | Native CUDA implementation; multi-k external pins and the variant limits above |
@@ -126,7 +130,8 @@ agreement at `dt = 0.01 fs`. Three steepest-descent steps lowered AM1 energy
 from `-348.562007416316` to `-348.562025788489 eV` and RM1 energy from
 `-345.569010474777` to `-345.569076813789 eV`. This demonstrates short workflow
 composition, not converged optimization or NVE energy conservation.
-Longer NVE with a halved-time-step comparison remains an acceptance gap.
+The separate `nddo-nve` sections now verify 10 fs energy conservation and
+time-step refinement for all four methods; longer-time stability is not established.
 CPU/CUDA AM1/RM1 now pass actual Armijo acceptance, rejection and exception recovery,
 including a later parent component failing after the method succeeds. The
 transaction protects accepted electronic guesses; a method's `last_result`
@@ -145,6 +150,29 @@ workspace; the new public methods expose physical results and keep solver
 indexing/matrices private. This does not extend MNDO/PM3 beyond neutral
 closed-shell CHNO or establish performance, long NVE stability or optimization
 convergence.
+
+The four `nddo-nve` sections pass locally and on GH200 with the same nonzero,
+zero-total-momentum initial velocities, O/H masses of 16/1 amu and SCF residual
+limits of `1e-10` (density) and `1e-12 eV` (energy). Both time steps integrate
+10 fs and sample `E + K` every 0.5 fs. The independently chosen limits are
+1 meV per molecule maximum sampled absolute deviation and a fine/coarse ratio
+at most 0.4. Initial potential energy remains externally pinned at `1e-6 eV`;
+kinetic energy is recomputed from host velocities at every sample.
+
+| Method | CPU maximum deviation at 0.05 fs (eV) | CUDA maximum deviation at 0.05 fs (eV) | Fine/coarse ratio (CPU / CUDA) |
+| --- | ---: | ---: | ---: |
+| AM1 | 2.53708026e-6 | 2.53708015e-6 | 0.249820 / 0.249820 |
+| RM1 | 2.43066472e-6 | 2.43066472e-6 | 0.249794 / 0.249794 |
+| MNDO | 7.36875677e-6 | 7.36875688e-6 | 0.250000 / 0.250000 |
+| PM3 | 3.02258991e-6 | 3.02259002e-6 | 0.249691 / 0.249691 |
+
+Matching-time E+K/kinetic energies and final positions, velocities, charges and
+forces pass the stated CPU/CUDA tolerances in each method's `REFERENCE.md`.
+Each combined CPU/CUDA NVE section completes in 0.7–1.5 seconds on the tested
+GH200 allocation. These are acceptance runtimes for tiny systems, not a
+performance comparison. The local 16-case affected regression selection also
+passes. No continuous-time error bound, long-time trajectory agreement or
+force-path device-residency claim follows from these sampled trajectories.
 
 The [energy/residency benchmark](../../benchmarks/semiempirical/nddo_energy/README.md)
 records the public-force revision with an executable hash, numerical-source
@@ -175,6 +203,7 @@ they establish lower C++ allocation traffic, not a controlled latency gain.
 - CUDA AM1/RM1/MNDO/PM3 molecular E/q/ΔHf/analytic F and Evaluate composition are
   externally validated within neutral closed-shell CHNO FP64. Short MD,
   steepest descent, native line search, direct MD input edits and Python
-  workflows pass the checks above. Longer NVE/time-step convergence
-  and current-revision force-performance/residency evidence remain open.
+  workflows and 10 fs NVE/time-step refinement pass the checks above.
+  Longer-time stability and current-revision force-performance/residency
+  evidence remain open.
   Stress, charged/open-shell, non-CHNO and periodic requests reject.
