@@ -10,6 +10,8 @@
 ///      loop cannot stop its enclosing loop).
 #pragma once
 
+#include "atomiverse/core/input_change.h"
+
 namespace ATV {
 template <typename Component>
 struct Plan;
@@ -47,6 +49,11 @@ class DriverNode {
 
     /// Synchronize live bindings before the enclosing tree begins dispatch.
     virtual void refresh_on(Runtime&) {}
+    virtual bool supports_input_changes(InputChange changes) const {
+        return !has_input_change(changes, InputChange::Identity);
+    }
+    virtual void invalidate_inputs(InputChange, Runtime&) {}
+
     /// Only plans sharing the enclosing Runtime participate in its contracts.
     virtual const Plan<Component>* execution_plan() const { return nullptr; }
 

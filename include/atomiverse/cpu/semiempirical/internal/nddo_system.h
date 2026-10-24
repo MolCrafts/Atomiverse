@@ -9,7 +9,7 @@
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/semiempirical/am1_parameters.h"
-#include "atomiverse/semiempirical/nddo_result.h"
+#include "atomiverse/semiempirical/nddo_parameters.h"
 
 namespace ATV {
 namespace cpu {
@@ -22,7 +22,7 @@ struct NDDOAtom {
     int n_orbitals = 0;
     double core_charge =
         0.0; ///< NDDO reference `tore`: valence electron/core charge.
-    /// Non-owning pointer into the static AM1/RM1 parameter table.
+    /// Non-owning pointer into the static method parameter table.
     const ATV::semiempirical::AM1Parameter* params = nullptr;
 };
 
@@ -48,19 +48,11 @@ struct NDDOSystem {
     /// @param frame         CPU Frame (type column = Z).
     /// @param charge        Molecular charge.
     /// @param multiplicity  Spin multiplicity M = 2S + 1 (>= 1).
-    /// @param method        AM1 or RM1 parameter table.
+    /// @param method        NDDO parameter table.
     NDDOSystem(const cpu::Frame& frame, int charge, int multiplicity,
                ATV::semiempirical::SemiEmpiricalMethod method =
                    ATV::semiempirical::SemiEmpiricalMethod::AM1);
 };
-
-/// @brief Parameter table lookup for the active NDDO method.
-const ATV::semiempirical::AM1Parameter*
-nddo_parameter(ATV::semiempirical::SemiEmpiricalMethod method, int z) noexcept;
-
-/// @brief True when the method table covers atomic number `z`.
-bool nddo_has_parameter(ATV::semiempirical::SemiEmpiricalMethod method,
-                        int z) noexcept;
 
 /// @brief Number of AM1 valence orbitals for atomic number `z`.
 int am1_orbital_count(int z) noexcept;

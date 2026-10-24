@@ -156,36 +156,61 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         if (n_steps < 0)
             throw std::invalid_argument("MD step budget must be nonnegative");
         if (live_ && frame_ptr_ != &frame) {
-            teardown_pass(*frame_ptr_);
+            // The previous successful chunk already wrote back. Retrieving
+            // again here could overwrite caller edits made since that return.
             live_ = false;
+            frame_ptr_ = nullptr;
+            this->backend_->shutdown();
+            this->built_plugins_.clear();
         }
-        if (!live_) {
-            setup_pass(frame);
-            frame_ptr_ = &frame;
-            step_counter_ = 0;
-            live_ = true;
-        } else {
-            this->flush_new_mounts_();
+        try {
+            if (!live_) {
+                setup_pass(frame);
+                frame_ptr_ = &frame;
+                step_counter_ = 0;
+                live_ = true;
+            } else {
+                this->flush_new_mounts_(&frame);
+                this->backend_->refresh_inputs(frame);
+            }
+            this->backend_->prepare_run(step_counter_);
+            BigInt iterations = 0;
+            for (BigInt s = 0; s < n_steps; ++s) {
+                this->mutable_outer_status().reset();
+                step_once(step_counter_);
+                ++step_counter_;
+                ++iterations;
+                if (this->poll_criteria_(s) != Verdict::Continue)
+                    break;
+            }
+            this->backend_->retrieve(frame);
+            return iterations;
+        } catch (...) {
+            if (this->backend_) {
+                this->backend_->mark_inputs_dirty();
+                if (!live_) {
+                    try {
+                        this->backend_->shutdown();
+                    } catch (...) {
+                    }
+                    this->built_plugins_.clear();
+                }
+            }
+            // Never retrieve a failed device evaluation. At an input-boundary
+            // failure, retry restores host inputs without rebuilding integrators.
+            // This is not rollback of thermostat/RNG state after a failure in
+            // the middle of an integration step or a multi-step chunk.
+            throw;
         }
-        this->backend_->prepare_run(step_counter_);
-        BigInt iterations = 0;
-        for (BigInt s = 0; s < n_steps; ++s) {
-            this->mutable_outer_status().reset();
-            step_once(step_counter_++);
-            ++iterations;
-            if (this->poll_criteria_(s) != Verdict::Continue)
-                break;
-        }
-        // Pull device state back to the host frame so the caller can inspect
-        // intermediate observables between chunks. Components remain alive on the
-        // device for subsequent `run()` calls.
-        this->backend_->retrieve(frame);
-        return iterations;
     }
 
     ~MD() {
-        if (live_ && frame_ptr_)
-            teardown_pass(*frame_ptr_);
+        if (this->backend_) {
+            try {
+                this->backend_->shutdown();
+            } catch (...) {
+            }
+        }
     }
 
     // ─── Categorical setter API (LAMMPS-shaped) ─────────────────────

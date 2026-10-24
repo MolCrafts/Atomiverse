@@ -30,6 +30,7 @@
 namespace ATV {
 
 class TimerRegistry;
+class EvaluationTransaction;
 
 namespace cpu {
 
@@ -213,6 +214,8 @@ struct LoopServices {
 struct ExecServices {
     /// @brief The Backend running this node tree. Null outside a run.
     Runtime* runtime = nullptr;
+    /// Physical evaluation transaction; nested solves borrow this ledger.
+    EvaluationTransaction* evaluation_transaction = nullptr;
     /// Full replicas opt out of spatial decomposition. This does not establish
     /// an electronic communicator; collective methods must check that contract.
     bool serial_on_replica = false;

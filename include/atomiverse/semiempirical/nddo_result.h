@@ -8,7 +8,7 @@
 namespace ATV::semiempirical {
 
 /// @brief NDDO parameter family; the fitted Hamiltonian identity.
-enum class SemiEmpiricalMethod { AM1, RM1 };
+enum class SemiEmpiricalMethod { AM1, RM1, MNDO, PM3 };
 
 /// @brief Physical results of an NDDO method; no execution workspace.
 struct NDDOResult {

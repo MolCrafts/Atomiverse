@@ -12,6 +12,7 @@
 #include <cuda_runtime.h>
 
 #include "atomiverse/core/plan.h"
+#include "atomiverse/cpu/frame/input_snapshot.h"
 #include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/timer.h"
@@ -100,6 +101,16 @@ class Backend {
     /// @param frame Host-side Frame to populate with device results.
     void retrieve(cpu::Frame& frame);
 
+    /// Compare with the last write-back and apply caller edits before continuation.
+    void refresh_inputs(const cpu::Frame& frame);
+    /// Classify and preflight edits before new component build can mutate state.
+    InputChange validate_inputs(const cpu::Frame& frame) const;
+    /// A failed evaluation cannot reuse partially advanced device inputs/forces.
+    void mark_inputs_dirty() noexcept {
+        inputs_dirty_ = true;
+        forces_ready_ = false;
+    }
+
     /// @brief Synchronize all CUDA streams.
     void sync();
 
@@ -111,10 +122,15 @@ class Backend {
 
     /// @brief Access the cuda::Frame.
     cuda::Frame& frame() { return frame_; }
+    EvaluationTransaction& evaluation_transaction() { return evaluation_; }
 
   private:
     void publish_box_();
     detail::ComponentLifecycle<Component> lifecycle_;
+    EvaluationTransaction evaluation_;
+    cpu::FrameInputSnapshot input_snapshot_;
+    bool inputs_dirty_ = false;
+    bool identity_dirty_ = false;
     bool forces_ready_ = false;
     bool dispatching_ = false;
     std::vector<std::pair<int, Component*>> force_bindings_;

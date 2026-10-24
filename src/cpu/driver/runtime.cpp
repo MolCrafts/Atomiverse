@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -122,6 +123,7 @@ void Runtime::init() {
     // Publish the Runtime. A node reached through a LaunchContext asks the
     // Runtime here to run its own Plan — this is what lets a sub-driver nest.
     context_.exec.runtime = this;
+    context_.exec.evaluation_transaction = &evaluation_history_;
 
     // Communication: allocate + publish the DomainDecomposition; build topology.
     domain_.allocate(context_);
@@ -148,7 +150,98 @@ void Runtime::set_frame(cpu::Frame& frame) {
                                  "set_serial_on_replica() before build");
     domain_.bind_frame(frame, context_, needs_tag_index);
     frame_ = &frame;
+    input_snapshot_.clear();
+    input_changes_pending_ = InputChange::None;
     forces_ready_ = false;
+}
+
+InputChange Runtime::refresh_external_inputs() {
+    // Like the Verlet neighbor decision, an owned-row edit is rank-local but
+    // entering force/halo preparation must be collective. Full molecular
+    // replicas have no spatial communicator and keep the local path.
+    unsigned flags[2] = {static_cast<unsigned>(input_changes_pending_), 0};
+    std::exception_ptr failure;
+    const auto agree = [&] {
+#ifdef ATV_HAS_MPI
+        const auto* dd = context_.md.dd;
+        if (context_.mpi_size > 1 && dd && dd->cart_comm != MPI_COMM_NULL)
+            MPI_Allreduce(MPI_IN_PLACE, flags, 2, MPI_UNSIGNED, MPI_BOR,
+                          dd->cart_comm);
+#endif
+    };
+    const auto reject = [&](const char* stage) {
+        if (!flags[1])
+            return;
+        if (failure)
+            std::rethrow_exception(failure);
+        throw std::runtime_error(
+            std::string("Runtime input refresh: a spatial peer failed ")
+            + stage);
+    };
+    try {
+        flags[0] |= static_cast<unsigned>(
+            input_snapshot_.changes(*frame_, FrameInputSnapshot::state_input));
+    } catch (...) {
+        failure = std::current_exception();
+        flags[1] = 1;
+    }
+    agree();
+    reject("input comparison");
+    const auto changes = static_cast<InputChange>(flags[0]);
+    if (changes == InputChange::None)
+        return changes;
+
+    std::vector<cpu::Component*> components;
+    try {
+        components = plan_->components();
+        for (const auto* component : components)
+            if (!component->supports_input_changes(changes))
+                throw std::runtime_error(component->name()
+                                         + ": cannot refresh changed input "
+                                           "identity/topology; end this "
+                                           "run before replacing its inputs");
+    } catch (...) {
+        failure = std::current_exception();
+        flags[1] = 1;
+    }
+    agree();
+    reject("input preflight");
+
+    // Retain the invalidation intent until a successful run checkpoints inputs.
+    // A later hook may throw after an earlier consumer changed its cache; even
+    // restoring the old host values must then refresh those consumers again.
+    input_changes_pending_ |= changes;
+    try {
+        // Readers must finish before mappings or row extents are refreshed.
+        // Input hooks update local owned caches; force/halo collectives start
+        // only after every rank has completed this boundary successfully.
+        analysis_.drain();
+        forces_ready_ = false;
+        contracts_ready_ = false;
+        verlet_setup_done_ = false;
+        if (has_input_change(changes, InputChange::Identity)) {
+            bool need_tags = frame_->has_bonded();
+            for (const auto* component : components)
+                need_tags |= component->requires_tag_index();
+            frame_->set_nghost(0);
+            domain_.bind_frame(*frame_, context_, need_tags);
+            if (need_tags)
+                frame_->rebuild_tag_index(0, frame_->nlocal());
+        }
+        for (auto* component : components)
+            component->invalidate_inputs(changes, {context_, *frame_});
+    } catch (...) {
+        failure = std::current_exception();
+        flags[1] = 1;
+    }
+    agree();
+    reject("cache invalidation");
+    return changes;
+}
+
+void Runtime::checkpoint_inputs() {
+    input_snapshot_.capture(*frame_, FrameInputSnapshot::state_input);
+    input_changes_pending_ = InputChange::None;
 }
 
 void Runtime::load(const Plan<cpu::Component>& plan, BigInt step_idx) {
@@ -166,6 +259,7 @@ std::unique_ptr<md::mpi::DomainDecomposition> Runtime::release_dd() {
 }
 
 void Runtime::build_components() {
+    evaluation_history_.reserve(plan_->components().size());
     try {
         build_plan(*plan_);
     } catch (...) {
@@ -783,6 +877,7 @@ void Runtime::prepare_run(BigInt step_idx) {
 
 void Runtime::step(BigInt step_idx) {
     DispatchScope dispatch(this);
+    EvaluationTransaction::Scope history(evaluation_history_);
     prepare_run(step_idx);
     TimerRegistry& timing_reg = device_.timing();
     const bool timing = timing_reg.enabled();
@@ -800,6 +895,7 @@ void Runtime::step(BigInt step_idx) {
             static_cast<int>(frame_->nghost()));
         timing_reg.tick_step();
     }
+    history.accept();
 }
 
 void Runtime::step_stage(int slot, BigInt step_idx) {
@@ -991,11 +1087,17 @@ Runtime::ScopedPlan::~ScopedPlan() {
 void Runtime::step_plan(const Plan<cpu::Component>& plan, BigInt step_idx) {
     DispatchScope dispatch(this);
     ScopedPlan active(*this, plan, step_idx);
+    std::optional<EvaluationTransaction::Scope> history;
+    if (plan.kind == PhaseKind::MD || plan.kind == PhaseKind::Evaluate
+        || plan.kind == PhaseKind::Minimizer)
+        history.emplace(evaluation_history_);
     prepare_run(step_idx);
     if (plan.kind == PhaseKind::MD)
         step_verlet_(step_idx);
     else
         step_linear_(step_idx);
+    if (history)
+        history->accept();
 }
 
 void Runtime::destroy_plan(const Plan<cpu::Component>& plan) {

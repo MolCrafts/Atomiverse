@@ -106,7 +106,7 @@ re-optimizes from the frame's current state.
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp, require_domain
+from atomiverse._binding import _cpp, require_domain, backend_type
 
 require_domain(__name__, "minimize")
 from atomiverse._dispatch import (
@@ -176,7 +176,9 @@ class Minimize:
         Stop policy. If omitted, C++ ``install_defaults()`` attaches a
         default ``ForceConverged`` at build time.
     device : str, optional
-        Execution backend. v1 accepts only ``"cpu"``.
+        Execution backend: ``"cpu"`` or ``"cuda"``. CUDA currently binds
+        AM1/RM1/MNDO/PM3, native SteepestDescent and ForceConverged. CPU optimizers
+        are never silently converted to a different CUDA line-search policy.
     """
 
     def __init__(
@@ -184,13 +186,8 @@ class Minimize:
         convergence: object | None = None,
         device: str = "cpu",
     ) -> None:
-        if device != "cpu":
-            raise ValueError(
-                f"device={device!r}: GPU minimization is deferred; "
-                "only device='cpu' is supported"
-            )
         self.device = device
-        self._cpp = _cpp.Minimize()
+        self._cpp = backend_type(device, "Minimize", "_CudaMinimize")()
         self._built = False
         if convergence is not None:
             self.add_criterion(convergence)
@@ -205,6 +202,13 @@ class Minimize:
         A relaxer also needs a force source that writes the virial, and skips
         its first iteration — see this module's docstring for both gates.
         """
+        if self.device == "cuda":
+            supported = getattr(_cpp, "_CudaSteepestDescent", None)
+            if supported is None or not isinstance(component, supported):
+                raise TypeError("CUDA Minimize currently accepts native SteepestDescent only; CPU optimizer/line-search policies are not converted")
+            self._cpp.set_optimizer(component)
+            self._built = False
+            return self
         if type(component) not in _OPTIMIZER_TYPES:
             supported = ", ".join(t.__name__ for t in _OPTIMIZER_TYPES)
             raise TypeError(
@@ -236,12 +240,19 @@ class Minimize:
         * every Coulomb style reads the per-atom ``charge`` column [e] of the
           frame.
         """
-        _bind_evaluator(self._cpp, component)
+        if getattr(component, "device", "cpu") != self.device:
+            raise ValueError("Evaluator and driver must use the same device")
+        if self.device == "cuda":
+            self._cpp.set_evaluator(component)
+        else:
+            _bind_evaluator(self._cpp, component)
         self._built = False
         return self
 
     def set_neighbor(self, component: object) -> Minimize:
         """Install the neighbor list (``Driver::set_neighbor``)."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_neighbor is not implemented for this molecular slice")
         if type(component) is not _cpp.NeighborList:
             raise TypeError(
                 f"set_neighbor expects NeighborList, got {type(component).__name__}"
@@ -257,6 +268,8 @@ class Minimize:
         (Stop > Converged > Continue), which is how a joint atom-plus-cell
         relaxation gets both a force and a pressure test.
         """
+        if self.device == "cuda" and type(criterion) is not _cpp.ForceConverged:
+            raise TypeError("CUDA molecular Minimize supports ForceConverged only")
         if type(criterion) not in _CRITERION_TYPES:
             supported = ", ".join(t.__name__ for t in _CRITERION_TYPES)
             raise TypeError(
@@ -274,6 +287,8 @@ class Minimize:
         registration entry point, so the refusal lands here rather than at
         ``PhaseBuilder.add``.
         """
+        if self.device == "cuda":
+            raise ValueError("CUDA Python on is not implemented for this molecular slice")
         cpp_phase = _PHASE_MAP.get(phase)
         if cpp_phase is None:
             valid = ", ".join(f'"{p}"' for p in _PHASE_MAP)
@@ -317,6 +332,11 @@ class Minimize:
 # (`cpu/driver/criteria.h`) share this module: `cpu/minimize/` is the one
 # backend-root directory the whole geometry-optimization surface belongs to,
 # and ForceConverged has been re-exported from here since the first binding.
+def SteepestDescent(alpha: float = 0.01, *, device: str = "cuda"):
+    """Construct native CUDA steepest descent; no CPU binding is provided."""
+    return backend_type(device, "_CpuSteepestDescent", "_CudaSteepestDescent")(alpha)
+
+
 LBFGS = _cpp.LBFGS
 CG = _cpp.CG
 FIRE = _cpp.FIRE
@@ -331,6 +351,7 @@ MinimizeResult = _cpp.MinimizeResult
 
 __all__ = [
     "Minimize",
+    "SteepestDescent",
     "LBFGS",
     "CG",
     "FIRE",

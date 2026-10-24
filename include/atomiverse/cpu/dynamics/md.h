@@ -137,6 +137,7 @@ class MD : public Driver<ATV::md::Phase> {
         // Built-in end-of-run report (time + memory), like LAMMPS's loop summary.
         // Collective + rank-0 render; always emitted.
         this->emit_run_summary("md");
+        this->backend_->checkpoint_inputs();
         return iterations;
     }
 

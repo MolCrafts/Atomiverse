@@ -63,6 +63,12 @@ class KSpacePME : public KSpace {
     /// @return {K0, K1, K2} [grid points]; zero before build.
     std::array<int, 3> mesh() const { return {K_[0], K_[1], K_[2]}; }
 
+    // Charge-dependent background data (PME also captures it in a graph)
+    // is fixed at build; reject edits until that cache has an update path.
+    bool supports_input_changes(InputChange changes) const override {
+        return !has_input_change(changes, InputChange::Identity)
+               && !has_input_change(changes, InputChange::Charge);
+    }
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 

@@ -41,6 +41,12 @@ class KSpaceEwald : public KSpace {
     /// @param required True iff a downstream consumer reads stress.
     void set_stress_required(bool required) override { stress_ = required; }
 
+    // Charge-dependent background data (PME also captures it in a graph)
+    // is fixed at build; reject edits until that cache has an update path.
+    bool supports_input_changes(InputChange changes) const override {
+        return !has_input_change(changes, InputChange::Identity)
+               && !has_input_change(changes, InputChange::Charge);
+    }
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 

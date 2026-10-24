@@ -16,8 +16,10 @@
 #pragma once
 
 #include "atomiverse/core/precision.h"
+#include <functional>
 #include <type_traits>
 
+#include "atomiverse/core/evaluation_history.h"
 #include "atomiverse/core/iteration_status.h"
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cuda/frame/box.cuh"
@@ -117,6 +119,12 @@ struct ExecServices {
     bool trial_evaluation = false;
     Backend* backend =
         nullptr; ///< Borrowed execution owner; never a second runtime.
+    EvaluationTransaction* evaluation_transaction = nullptr;
+};
+
+struct OptimizationServices {
+    /// Reentrant force-phase service owned by the active minimizer.
+    std::function<void(bool)> reeval_forces;
 };
 
 /// @brief CUDA execution context passed to components via
@@ -145,6 +153,7 @@ struct Context {
     LoopServices loop;
 
     ExecServices exec; ///< Parent evaluation intent for nested dispatch.
+    OptimizationServices opt;
 
     /// @brief Cell kernel argument with a backend-owned device cache view.
     /// Host values select invariant geometry specializations and initialize

@@ -44,6 +44,7 @@ namespace mpi {
 /// per-step latency-bound collective LAMMPS likewise avoids until thermo output.
 class Reduce : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     Reduce() = default;
     explicit Reduce(int every) : every_(every < 1 ? 1 : every) {}
     std::string name() const override { return "reduce"; }

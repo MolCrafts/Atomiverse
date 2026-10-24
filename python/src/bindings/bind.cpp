@@ -15,6 +15,12 @@
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "molrs_frame_bridge.h"
 #include <nanobind/nanobind.h>
+#ifdef ATV_HAS_SEMIEMPIRICAL
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
+#include "atomiverse/cpu/semiempirical/mndo_solver.h"
+#include "atomiverse/cpu/semiempirical/pm3_solver.h"
+#include "atomiverse/cpu/semiempirical/rm1_solver.h"
+#endif
 
 namespace nb = nanobind;
 
@@ -38,6 +44,9 @@ void bind_pw(nb::module_& m);
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
 void bind_semiempirical(nb::module_& m);
+#ifdef ATV_HAS_CUDA
+void bind_cuda(nb::module_& m);
+#endif
 #endif
 #ifdef ATV_HAS_HF
 void bind_scf(nb::module_& m);
@@ -62,6 +71,64 @@ NB_MODULE(_atomiverse, m) {
               ATV::cpu::to_molrs(work, *frame);
           });
 
+    nb::class_<ATV::cpu::Evaluate>(m, "_Evaluate")
+        .def(nb::init<>())
+#ifdef ATV_HAS_SEMIEMPIRICAL
+        .def(
+            "set_evaluator",
+            [](ATV::cpu::Evaluate& self, ATV::cpu::semiempirical::AM1& method) {
+                self.set_evaluator_ref(method);
+            },
+            nb::arg("method"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](ATV::cpu::Evaluate& self, ATV::cpu::semiempirical::RM1& method) {
+                self.set_evaluator_ref(method);
+            },
+            nb::arg("method"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](ATV::cpu::Evaluate& self,
+               ATV::cpu::semiempirical::MNDO& method) {
+                self.set_evaluator_ref(method);
+            },
+            nb::arg("method"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](ATV::cpu::Evaluate& self, ATV::cpu::semiempirical::PM3& method) {
+                self.set_evaluator_ref(method);
+            },
+            nb::arg("method"), nb::keep_alive<1, 2>())
+#endif
+        .def(
+            "set_evaluator",
+            [](ATV::cpu::Evaluate& self, ATV::cpu::DriverNode& method) {
+                self.set_evaluator_ref(method);
+            },
+            nb::arg("method"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](ATV::cpu::Evaluate& self, ATV::cpu::Component& method) {
+                self.set_evaluator_ref(method);
+            },
+            nb::arg("method"), nb::keep_alive<1, 2>())
+        .def("build", [](ATV::cpu::Evaluate& self) { self.build(); })
+        .def(
+            "run",
+            [](ATV::cpu::Evaluate& self, nb::object obj) {
+                if (ATV::cpu::task::LauncherGate{}.active())
+                    throw std::runtime_error(
+                        "Evaluate has no MPI task payload; run locally");
+                auto frame = borrow_molrs_frame(obj);
+                auto work = ATV::cpu::from_molrs(*frame);
+                {
+                    nb::gil_scoped_release release;
+                    self.run(work);
+                }
+                ATV::cpu::to_molrs(work, *frame);
+            },
+            nb::arg("frame"));
+
     // Force-field parameter types first: every driver binding takes them.
 #ifdef ATV_HAS_POTENTIALS
     bind_potentials(m);
@@ -83,6 +150,9 @@ NB_MODULE(_atomiverse, m) {
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
     bind_semiempirical(m);
+#ifdef ATV_HAS_CUDA
+    bind_cuda(m);
+#endif
 #endif
 #ifdef ATV_HAS_HF
     bind_scf(m);

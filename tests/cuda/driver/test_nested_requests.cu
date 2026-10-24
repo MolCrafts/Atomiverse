@@ -228,3 +228,50 @@ TEST(CudaNestedRequests,
     EXPECT_EQ(probe.calls, 3);
     EXPECT_FALSE(probe.observed.initializing_forces);
 }
+
+namespace {
+class HistoryProbe : public cuda::Component, public EvaluationHistory {
+  public:
+    std::string name() const override { return "history_probe"; }
+    void launch(const cuda::LaunchContext& ctx) override {
+        auto& transaction = *ctx.runtime.exec.evaluation_transaction;
+        EvaluationTransaction::Scope borrowed(transaction);
+        transaction.enlist(*this);
+        pending = true;
+        borrowed.accept();
+        EXPECT_EQ(commits, 0);
+    }
+    void commit_evaluation() noexcept override {
+        pending = false;
+        ++commits;
+    }
+    void discard_evaluation() noexcept override {
+        pending = false;
+        ++discards;
+    }
+    bool pending = false;
+    int commits = 0, discards = 0;
+};
+} // namespace
+
+TEST(CudaNestedRequests, CompletePhysicalStepOwnsHistoryCommit) {
+    HistoryProbe history;
+    RequestProbe trailing;
+    Plan<cuda::Component> plan;
+    plan.slots.push_back({0, {{&history}, {&trailing}}});
+    cuda::Backend backend;
+    backend.init();
+    backend.load(plan);
+    trailing.fail = true;
+    EXPECT_THROW(backend.step(0), std::runtime_error);
+    EXPECT_EQ(history.commits, 0);
+    EXPECT_EQ(history.discards, 1);
+    EXPECT_FALSE(history.pending);
+    EXPECT_FALSE(backend.evaluation_transaction().active());
+    trailing.fail = false;
+    EXPECT_NO_THROW(backend.step(1));
+    EXPECT_EQ(history.commits, 1);
+    EXPECT_FALSE(history.pending);
+    EXPECT_FALSE(backend.evaluation_transaction().active());
+    backend.shutdown();
+}

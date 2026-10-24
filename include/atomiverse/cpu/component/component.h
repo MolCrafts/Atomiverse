@@ -9,6 +9,8 @@
 /// inherit at most one kind: Concrete → Kind → Component.
 #pragma once
 
+#include "atomiverse/core/input_change.h"
+
 #include <memory>
 #include <span>
 #include <string>
@@ -209,6 +211,15 @@ class Component {
     /// @return This component's declarations; empty by default, because most
     ///         components only touch rows they already own.
     virtual std::span<const GhostField> declare_ghosts() const { return {}; }
+
+    /// Numeric inputs are read at launch. Population/schema changes require
+    /// explicit support so an unknown row-indexed cache is never reused.
+    virtual bool supports_input_changes(InputChange changes) const {
+        return !has_input_change(changes, InputChange::Identity);
+    }
+    /// Called after whole-plan preflight, before force/neighbor preparation.
+    /// Update only owned caches; never replay initialization or reset a clock/RNG.
+    virtual void invalidate_inputs(InputChange, const BuildContext&) {}
 
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;

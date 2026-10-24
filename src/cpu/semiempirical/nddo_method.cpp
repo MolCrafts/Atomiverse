@@ -178,6 +178,11 @@ void NddoMethod::publish_in_context_(const cpu::LaunchContext& ctx,
             accumulate);
 }
 
+void NddoMethod::invalidate_inputs(InputChange changes, cpu::Runtime& runtime) {
+    reset_history();
+    cpu::Driver<ATV::nddo::Phase>::invalidate_inputs(changes, runtime);
+}
+
 NddoMethod::~NddoMethod() {
     // The plan contains references into workspace_: release every lifecycle
     // while those objects are still alive, as in the persistent DFTB2 driver.
@@ -311,8 +316,30 @@ void NddoMethod::publish_(NDDOSolver& solver, cpu::Frame& frame,
     }
     // Accept only after the complete requested evaluation has succeeded.
     // Forces use the current SCF state, independently of the accepted guess.
-    if (accept_history_)
-        solver.commit_density();
+    if (accept_history_) {
+        auto* transaction =
+            host_runtime_ ? host_runtime_->context().exec.evaluation_transaction
+                          : nullptr;
+        if (transaction && transaction->active()) {
+            transaction->enlist(*this);
+            pending_solver_ = &solver;
+            solver.stage_density();
+        } else {
+            solver.commit_density();
+        }
+    }
+}
+
+void NddoMethod::commit_evaluation() noexcept {
+    if (pending_solver_)
+        pending_solver_->commit_staged_density();
+    pending_solver_ = nullptr;
+}
+
+void NddoMethod::discard_evaluation() noexcept {
+    if (pending_solver_)
+        pending_solver_->discard_staged_density();
+    pending_solver_ = nullptr;
 }
 
 } // namespace semiempirical

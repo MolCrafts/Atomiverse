@@ -213,13 +213,93 @@ class TestAM1:
         assert m.density_tol == pytest.approx(1e-6)
         assert m.energy_tol == pytest.approx(1e-8)
 
-    def test_fields_read_only(self) -> None:
-        """Parameters are fixed by the constructor (no member assignment)."""
-        m = av.AM1()
-        with pytest.raises(AttributeError):
-            m.charge = 1
-        with pytest.raises(AttributeError):
-            m.max_iter = 300
+    @pytest.mark.parametrize("factory", [av.AM1, av.RM1, av.MNDO, av.PM3])
+    def test_identity_and_live_controls(self, factory) -> None:
+        """Identity is fixed; numerical controls belong to the mounted method."""
+        from atomiverse._binding import _cpp
+        m = factory()
+        assert isinstance(m, getattr(_cpp, factory.__name__))
+        assert m.device == "cpu"
+        for name in ("charge", "multiplicity"):
+            with pytest.raises(AttributeError):
+                setattr(m, name, 2)
+        m.max_iter = 300
+        m.density_tol = 1e-9
+        m.energy_tol = 1e-11
+        assert (m.max_iter, m.density_tol, m.energy_tol) == (300, 1e-9, 1e-11)
+        assert callable(m.run) and callable(m.forces)
+        assert not m.has_density()
+        assert not m.last_result().converged
+        assert av.AM1Result is av.RM1Result is av.MNDOResult is av.PM3Result
+
+    @pytest.mark.parametrize("factory", [av.AM1, av.RM1, av.MNDO, av.PM3])
+    def test_borrowed_evaluate_keeps_method_alive(self, factory) -> None:
+        """Mounting adds an owning Python reference without cloning controls."""
+        import sys
+        method = factory()
+        before = sys.getrefcount(method)
+        evaluation = av.Evaluate().set_evaluator(method)
+        assert sys.getrefcount(method) > before
+        method.max_iter = 7
+        assert method.max_iter == 7
+        del evaluation
+        assert sys.getrefcount(method) == before
+
+    @pytest.mark.parametrize("factory", [av.AM1, av.RM1, av.MNDO, av.PM3])
+    @pytest.mark.parametrize("driver_name", ["MD", "Minimize"])
+    def test_loop_mount_keeps_native_method(self, factory, driver_name) -> None:
+        import sys
+        from atomiverse._binding import _cpp
+        if not hasattr(_cpp, driver_name):
+            pytest.skip(f"{driver_name} binding not built")
+        method = factory()
+        count = sys.getrefcount(method)
+        driver = getattr(av, driver_name)().set_evaluator(method)
+        assert sys.getrefcount(method) > count
+        method.max_iter = 11
+        assert not method.has_density()
+        del driver
+        assert sys.getrefcount(method) == count
+
+    @pytest.mark.parametrize("factory", [av.AM1, av.RM1, av.MNDO, av.PM3])
+    def test_backend_selection_is_explicit(self, factory) -> None:
+        from atomiverse._binding import _cpp
+        with pytest.raises(ValueError, match="Unknown device"):
+            factory(device="metal")
+        if not hasattr(_cpp, "_Cuda" + factory.__name__):
+            with pytest.raises(ValueError, match="CUDA"):
+                factory(device="cuda")
+        else:
+            method = factory(device="cuda")
+            assert isinstance(method, getattr(_cpp, "_Cuda" + factory.__name__))
+            assert method.device == "cuda"
+            with pytest.raises(ValueError, match="same device"):
+                av.Evaluate().set_evaluator(method)
+
+
+    @pytest.mark.parametrize("factory", [av.MNDO, av.PM3])
+    @pytest.mark.parametrize("identity", [{"charge": 1}, {"multiplicity": 3}])
+    def test_cpu_new_method_identity_rejected_before_scf(self, factory, identity) -> None:
+        """CPU stores identity in the ctor, then rejects unsupported preparation."""
+        method = factory(**identity)
+        for key, value in identity.items():
+            assert getattr(method, key) == value
+        frame = _make_water_frame(_c2v_water_coords(.96, 104.5), 20.)
+        frame.meta["energy"] = 123.
+        with pytest.raises(ValueError, match="neutral closed-shell"):
+            method.run(frame)
+        assert not method.has_density()
+        assert not method.last_result().converged
+        assert frame.meta["energy"] == 123.
+
+    @pytest.mark.parametrize("factory", [av.MNDO, av.PM3])
+    @pytest.mark.parametrize("identity", [{"charge": 1}, {"multiplicity": 3}])
+    def test_cuda_new_method_identity_rejected_at_construction(self, factory, identity) -> None:
+        from atomiverse._binding import _cpp
+        if not hasattr(_cpp, "_Cuda" + factory.__name__):
+            pytest.skip("CUDA binding not built")
+        with pytest.raises(ValueError, match="neutral closed-shell"):
+            factory(device="cuda", **identity)
 
 
 # ── CH4 single point: energy channel + charge write-back ────────────

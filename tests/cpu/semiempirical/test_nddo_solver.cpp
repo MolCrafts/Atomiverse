@@ -12,6 +12,32 @@ namespace {
 using namespace ATV;
 using namespace ATV::cpu::semiempirical;
 
+TEST(NddoPreparation, MndoPm3RejectUnvalidatedIdentityBeforeScf) {
+    cpu::Frame frame(2);
+    frame.span(kAtom_type)[0] = frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_x)[1] = .8;
+    for (const auto method : {ATV::semiempirical::SemiEmpiricalMethod::MNDO,
+                              ATV::semiempirical::SemiEmpiricalMethod::PM3}) {
+        NDDOConfig config;
+        config.method = method;
+        NDDOSolver supported{config};
+        EXPECT_NO_THROW(supported.build(frame));
+        EXPECT_EQ(supported.result().method, method);
+        EXPECT_FALSE(supported.result().converged);
+        config.charge = 1;
+        NDDOSolver charged{config};
+        EXPECT_THROW(charged.build(frame), std::invalid_argument);
+        config.charge = 0;
+        config.multiplicity = 3;
+        NDDOSolver triplet{config};
+        EXPECT_THROW(triplet.build(frame), std::invalid_argument);
+        frame.span(kAtom_type)[0] = 16;
+        EXPECT_THROW(supported.scf_prepare(frame), std::runtime_error);
+        frame.span(kAtom_type)[0] = 1;
+        EXPECT_NO_THROW(supported.scf_prepare(frame));
+    }
+}
+
 TEST(NddoPreparation, RebuildsElementIdentityAtUnchangedSize) {
     cpu::Frame frame(1);
     frame.span(kAtom_type)[0] = 6;

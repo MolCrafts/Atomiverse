@@ -20,7 +20,7 @@ writes positions / velocities / forces / energy back into the *same*
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp, require_domain
+from atomiverse._binding import _cpp, require_domain, backend_type
 
 require_domain(__name__, "md")
 from atomiverse._dispatch import (
@@ -86,15 +86,16 @@ class PhaseBuilder:
 
 
 class MD:
-    """Molecular dynamics driver (CPU backend).
+    """Molecular dynamics driver with native backend selection.
 
     Parameters
     ----------
     dt : float, optional
         Timestep in fs. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
     device : str, optional
-        Execution backend, PyTorch-style. v1 accepts only ``"cpu"``;
-        any other value raises ``ValueError`` before any compute.
+        Execution backend: ``"cpu"`` or ``"cuda"``. CUDA currently binds
+        AM1/RM1/MNDO/PM3 molecular forces and VelocityVerlet, with continuation on
+        the same molpy.Frame. Other CUDA components fail explicitly.
 
     Example (mirrors ``examples/07_md_lj.cpp``)::
 
@@ -115,15 +116,8 @@ class MD:
     """
 
     def __init__(self, dt: float | None = None, device: str = "cpu") -> None:
-        if device != "cpu":
-            raise ValueError(
-                f"device={device!r}: CUDA bindings are not yet available; "
-                "only device='cpu' is supported (backend selection is a "
-                "constructor parameter, not a namespace — see the package "
-                "docstring)"
-            )
         self.device = device
-        self._cpp = _cpp.MD()
+        self._cpp = backend_type(device, "MD", "_CudaMD")()
         self._built = False
         if dt is not None:
             self.set_integrator(_cpp.VelocityVerlet(dt))
@@ -153,12 +147,16 @@ class MD:
                 f"set_integrator expects VelocityVerlet, NoseHooverNPT, or "
                 f"ParrinelloRahmanNPT, got {type(component).__name__}"
             )
+        if self.device == "cuda" and type(component) is not _cpp.VelocityVerlet:
+            raise ValueError("CUDA Python MD currently supports VelocityVerlet only")
         self._cpp.set_integrator(component)
         self._built = False
         return self
 
     def set_thermostat(self, component: object) -> MD:
         """Install a thermostat (``cpu::md::MD::set_thermostat``)."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_thermostat is not implemented for this molecular slice")
         if type(component) not in (_cpp.NoseHoover, _cpp.Langevin, _cpp.CSVR):
             raise TypeError(
                 f"set_thermostat expects NoseHoover, Langevin, or CSVR, got "
@@ -182,6 +180,8 @@ class MD:
         Pressure targets are in eV/Å³ (positive means compressive);
         1 bar ≈ 6.2415e-7 eV/Å³.
         """
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_barostat is not implemented for this molecular slice")
         if type(component) not in (_cpp.BerendsenBarostat,):
             raise TypeError(
                 f"set_barostat expects BerendsenBarostat, got "
@@ -196,6 +196,8 @@ class MD:
 
         v1 supports ``InitVelocity`` (Maxwell–Boltzmann seeding).
         """
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_observer is not implemented for this molecular slice")
         if type(component) is not _cpp.InitVelocity:
             raise TypeError(
                 f"set_observer expects InitVelocity, got {type(component).__name__}"
@@ -221,9 +223,9 @@ class MD:
         ``AM1`` belongs here too: registering it makes the run
         Born-Oppenheimer molecular dynamics — one semiempirical SCF solve
         per step, forces from it. It needs no ``NeighborList`` (AM1 is
-        molecular, not a pair style) and the driver installs its own
-        gradient-enabled copy, so results land on the frame rather than on
-        the object you passed.
+        molecular, not a pair style). AM1 and RM1 are borrowed and kept alive;
+        their diagnostics remain on the original object. MPI launcher transport
+        for borrowed methods is explicitly unsupported.
 
         ``PW`` is the same story on a plane-wave Hamiltonian:
         registering it makes the run plane-wave Born-Oppenheimer dynamics,
@@ -249,12 +251,19 @@ class MD:
           refuses a second thermostat beside it; the result is simply
           double-thermostatted.
         """
-        _bind_evaluator(self._cpp, component)
+        if getattr(component, "device", "cpu") != self.device:
+            raise ValueError("Evaluator and driver must use the same device")
+        if self.device == "cuda":
+            self._cpp.set_evaluator(component)
+        else:
+            _bind_evaluator(self._cpp, component)
         self._built = False
         return self
 
     def set_neighbor(self, component: object) -> MD:
         """Install the neighbor list (``Driver::set_neighbor``)."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_neighbor is not implemented for this molecular slice")
         if type(component) is not _cpp.NeighborList:
             raise TypeError(
                 f"set_neighbor expects NeighborList, got {type(component).__name__}"
@@ -265,6 +274,8 @@ class MD:
 
     def set_thermo(self, every: int) -> MD:
         """Set thermo print cadence (``Driver::set_thermo(N)``)."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_thermo is not implemented for this molecular slice")
         self._cpp.set_thermo(int(every))
         self._built = False
         return self
@@ -278,6 +289,8 @@ class MD:
         owns its own stride gate. An unsupported component raises
         ``TypeError`` naming both.
         """
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_record is not implemented for this molecular slice")
         if type(component) in _RECORDER_TYPES:
             self._cpp.set_record(component)
             self._built = False
@@ -299,6 +312,8 @@ class MD:
         registration entry point, so the refusal lands here rather than at
         ``PhaseBuilder.add``.
         """
+        if self.device == "cuda":
+            raise ValueError("CUDA Python on is not implemented for this molecular slice")
         cpp_phase = _PHASE_MAP.get(phase)
         if cpp_phase is None:
             valid = ", ".join(f'"{p}"' for p in _PHASE_MAP)
@@ -342,10 +357,14 @@ class MD:
 
     def enable_timing(self) -> None:
         """Enable per-component timing."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python enable_timing is not implemented for this molecular slice")
         self._cpp.enable_timing()
 
     def summary(self) -> str:
         """Return a timing summary string."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python summary is not implemented for this molecular slice")
         return self._cpp.summary()
 
     def __repr__(self) -> str:

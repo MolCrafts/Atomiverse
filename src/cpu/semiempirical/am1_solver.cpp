@@ -30,6 +30,7 @@ AM1::AM1(const AM1& other)
       energy_tol(other.energy_tol) {}
 
 void AM1::sync_engine_() {
+    discard_evaluation();
     NDDOConfig c;
     c.method = ATV::semiempirical::SemiEmpiricalMethod::AM1;
     c.charge = charge;
@@ -98,8 +99,9 @@ void AM1::evaluate(const cpu::LaunchContext& qm_ctx) {
 }
 
 void AM1::reset_history() {
-    // Drop persisted density by rebuilding the engine on the next run.
-    engine_.reset();
+    discard_evaluation();
+    if (engine_)
+        engine_->reset_history();
 }
 
 const NDDOSystem& AM1::system() const {

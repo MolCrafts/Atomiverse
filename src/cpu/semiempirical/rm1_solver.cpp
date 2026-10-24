@@ -21,6 +21,7 @@ RM1::RM1(RM1&& other)
       engine_(std::move(other.engine_)) {}
 
 void RM1::sync_engine_() {
+    discard_evaluation();
     NDDOConfig c;
     c.method = ATV::semiempirical::SemiEmpiricalMethod::RM1;
     c.charge = charge;
@@ -70,7 +71,11 @@ void RM1::evaluate(const cpu::LaunchContext& qm_ctx) {
     publish_in_context_(qm_ctx, /*accumulate=*/false);
 }
 
-void RM1::reset_history() { engine_.reset(); }
+void RM1::reset_history() {
+    discard_evaluation();
+    if (engine_)
+        engine_->reset_history();
+}
 const RM1Result& RM1::last_result() const {
     if (!engine_) {
         static RM1Result empty;

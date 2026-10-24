@@ -23,6 +23,7 @@
 
 #include "force_array.h"
 #include "molrs_frame_bridge.h"
+#include "nddo_bindings.h"
 
 #include <utility>
 #include <vector>
@@ -40,6 +41,9 @@
 #include "atomiverse/cpu/semiempirical/basis_data/dftb_spin_constants.h"
 #include "atomiverse/cpu/semiempirical/dftb0.h"
 #include "atomiverse/cpu/semiempirical/dftb2.h"
+#include "atomiverse/cpu/semiempirical/mndo_solver.h"
+#include "atomiverse/cpu/semiempirical/pm3_solver.h"
+#include "atomiverse/cpu/semiempirical/rm1_solver.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -52,42 +56,6 @@
 using namespace ATV;
 
 namespace {
-
-/// @brief Run one AM1 solve with gradients and hand the forces to Python.
-///
-/// Goes through `cpu::single_point` — one `Evaluate` pass with the borrowed
-/// method mounted as a nested node, the same pass
-/// `regressions/semiempirical/am1` pins against a re-converged
-/// finite difference — so the numbers returned here are the C++ numbers and
-/// not a second force recipe: the `Evaluate` preset zeroes forces/energy
-/// first, the method unwraps the molecule across periodic images, and
-/// publishes energy [eV], Mulliken charges [e] and forces [eV/Å] onto the
-/// transient frame, which is then written back into the borrowed molpy.Frame.
-///
-/// Local to this process: unlike `single_point`, no MPI launcher task
-/// carries a force request, so an active launcher gate is irrelevant here
-/// and the solve runs on the calling rank (the `bind_scf.cpp` convention).
-///
-/// @param method Borrowed method; its `last_result()` is populated.
-/// @param frame_obj A `molpy.Frame`; energy [eV], charges [e] and fx/fy/fz
-///                  [eV/Å] land on it.
-/// @return Nuclear forces F = −∂E/∂R [eV/Å], shape (n_atoms, 3).
-/// @throws std::runtime_error (Python `RuntimeError`) when the SCF does not
-///         converge within `max_iter`, or when the frame carries an element
-///         AM1 has no parameters for.
-ForceArray am1_forces(cpu::semiempirical::AM1& method, nb::object frame_obj) {
-    auto fref = borrow_molrs_frame(frame_obj);
-    cpu::Frame work = cpu::from_molrs(*fref);
-    {
-        nb::gil_scoped_release release;
-        cpu::single_point(work, method);
-    }
-    cpu::to_molrs(work, *fref);
-
-    // `forces_ev_a` is the flat (fx0, fy0, fz0, …) buffer the method reuses
-    // on the next solve, so the returned array must own a copy.
-    return to_force_array(method.last_result().forces_ev_a);
-}
 
 /// @brief Evaluate energy and charges over a borrowed molpy.Frame.
 ///
@@ -149,68 +117,18 @@ void bind_semiempirical(nb::module_& m) {
     using cpu::semiempirical::DftbSkSet;
     using cpu::semiempirical::basis_data::DftbSpinConstant;
 
-    // ── AM1 concrete method (parameters assigned in the constructor) ──
-    nb::class_<AM1>(m, "AM1",
-                    "AM1 (Austin Model 1) semiempirical method — an NDDO "
-                    "(neglect of diatomic differential overlap) valence "
-                    "Hamiltonian with per-element fitted parameters. Pass it "
-                    "to single_point(frame, method) for one solve, call "
-                    "forces(frame) for the gradient, or hand it to "
-                    "MD.set_evaluator as a force source — Born-Oppenheimer "
-                    "dynamics, the electrons re-converged at every geometry "
-                    "the nuclei reach.")
-        .def(nb::init<int, int, int, double, double>(), nb::arg("charge") = 0,
-             nb::arg("multiplicity") = 1, nb::arg("max_iter") = 200,
-             nb::arg("density_tol") = 1.0e-8, nb::arg("energy_tol") = 1.0e-10,
-             "Construct with total charge [e], spin multiplicity, and the "
-             "three SCF (self-consistent field) loop settings: iteration "
-             "cap, density-change tolerance (dimensionless) and energy "
-             "tolerance [eV].")
-        .def_ro("charge", &AM1::charge, "Total molecular charge [e].")
-        .def_ro("multiplicity", &AM1::multiplicity,
-                "Spin multiplicity 2S + 1, where S is the total electron "
-                "spin: 1 = singlet (all electrons paired), 2 = doublet, "
-                "3 = triplet.")
-        .def_ro("max_iter", &AM1::max_iter,
-                "Iteration cap for the SCF loop; overrunning it raises "
-                "RuntimeError rather than returning an unconverged result.")
-        .def_ro("density_tol", &AM1::density_tol,
-                "Convergence threshold on the largest absolute change of any "
-                "density-matrix element between two successive SCF "
-                "iterations (dimensionless).")
-        .def_ro("energy_tol", &AM1::energy_tol,
-                "Convergence threshold on |dE| between two successive SCF "
-                "iterations [eV].")
-        .def("last_result", &AM1::last_result,
-             nb::rv_policy::reference_internal,
-             "AM1Result of the most recent solve driven through THIS method "
-             "(forces() or single_point()). Borrowed, not copied: the next "
-             "solve overwrites it.")
-        .def("forces", &am1_forces, nb::arg("frame"),
-             "Solve the AM1 SCF at the frame's geometry and return the "
-             "nuclear forces F = -dE/dR as an (n_atoms, 3) array [eV/A].\n\n"
-             "The gradient is analytic: three Cartesian derivatives are "
-             "propagated through each pair's integral expressions and "
-             "contracted with the converged density. SCF stationarity removes "
-             "the density response; the NDDO zero-differential-overlap basis "
-             "has no overlap-matrix Pulay term. No displaced geometries or "
-             "finite-difference step are used. Equal-and-opposite pair "
-             "contributions are accumulated on the two atoms.\n\n"
-             "The same values are written back to the frame's fx/fy/fz "
-             "columns, alongside the energy [eV] on frame.meta['energy'] and "
-             "the Mulliken charges [e] on the atoms charge column. The "
-             "global interpreter lock is released for the duration of the "
-             "solve. Raises RuntimeError if the SCF does not converge within "
-             "max_iter, or for an element AM1 has no parameters for.");
+    bind_nddo_method<AM1>(m, "AM1", "cpu", true);
+    bind_nddo_method<cpu::semiempirical::RM1>(m, "RM1", "cpu", true);
+    bind_nddo_method<cpu::semiempirical::MNDO>(m, "MNDO", "cpu");
+    bind_nddo_method<cpu::semiempirical::PM3>(m, "PM3", "cpu");
 
     // ── AM1Result (= NDDOResult) ──
     nb::class_<AM1Result>(m, "AM1Result",
                           "Converged AM1 solve results (read-only).")
         .def_ro("converged", &AM1Result::converged,
-                "True when the SCF met EITHER tolerance — density_tol or "
-                "energy_tol, not both. A run that meets neither within "
-                "max_iter raises RuntimeError instead of returning, so on a "
-                "result you can actually read this is always True.")
+                "True only when both density_tol and energy_tol are met. "
+                "Failed calculations clear convergence and do not publish "
+                "Frame results.")
         .def_ro("iterations", &AM1Result::iterations,
                 "SCF iterations performed.")
         .def_ro("electronic_energy_hartree",
@@ -242,11 +160,15 @@ void bind_semiempirical(nb::module_& m) {
                 "3 * n_atoms. Empty until a force evaluation ran on THIS "
                 "object: AM1.forces(frame), or single_point(frame, method) — "
                 "the Evaluate pass requests gradients, so it fills this too. "
-                "An MD run does NOT fill it: MD.set_evaluator installs the "
-                "driver's own copy of the method, and that copy's per-step "
-                "forces go to the frame's fx/fy/fz.")
+                "Energy-only run() clears this channel. Native borrowed "
+                "driver mounts retain results on the original method object.")
         .def_ro("reference", &AM1Result::reference,
                 "Literature reference for the parameterization.");
+
+    // Both method aliases refer to the one canonical NDDOResult C++ type.
+    m.attr("RM1Result") = m.attr("AM1Result");
+    m.attr("MNDOResult") = m.attr("AM1Result");
+    m.attr("PM3Result") = m.attr("AM1Result");
 
     // ── AM1-BCC / ABCG2 charges: the GAFF / GAFF2 charge model ──
     nb::enum_<cpu::semiempirical::BccParameterSet>(

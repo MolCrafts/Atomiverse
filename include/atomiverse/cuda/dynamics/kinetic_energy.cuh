@@ -40,6 +40,7 @@ namespace md {
 /// `cuda::md::MD` validation does not count it toward `require_force()`.
 class KineticEnergy : public Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief Component name.
     /// @return "kinetic_energy".
     std::string name() const override { return "kinetic_energy"; }

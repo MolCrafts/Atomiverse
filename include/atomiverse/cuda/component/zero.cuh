@@ -11,6 +11,7 @@ namespace ATV::cuda {
 /// compute kernel.
 class ZeroForces : public Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief Component name.
     /// @return "zero_forces".
     std::string name() const override { return "zero_forces"; }
@@ -34,6 +35,7 @@ class ZeroForces : public Component {
 /// compute kernel.
 class ZeroEnergy : public Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief Component name.
     /// @return "zero_energy".
     std::string name() const override { return "zero_energy"; }
@@ -55,6 +57,7 @@ class ZeroEnergy : public Component {
 /// `force @ -998`, Evaluate at `prepare @ -998`. Mirrors `cpu::ZeroStress`.
 class ZeroStress : public Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "zero_stress"; }
     void launch(const LaunchContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
@@ -68,6 +71,7 @@ class ZeroStress : public Component {
 /// a compute kernel.
 class ZeroKinetic : public Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief Component name.
     /// @return "zero_kinetic".
     std::string name() const override { return "zero_kinetic"; }

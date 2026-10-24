@@ -77,6 +77,13 @@ struct backend_traits<cuda::device_tag> {
                     return node->requires_system_stress();
                 return false;
             }
+            bool supports_input_changes(InputChange changes) const override {
+                return node->supports_input_changes(changes);
+            }
+            void invalidate_inputs(InputChange changes,
+                                   const cuda::BuildContext& ctx) override {
+                node->invalidate_inputs(changes, ctx.runtime, ctx.frame);
+            }
             void build(const cuda::BuildContext& ctx) override {
                 node->build_on(ctx.runtime, ctx.frame);
             }

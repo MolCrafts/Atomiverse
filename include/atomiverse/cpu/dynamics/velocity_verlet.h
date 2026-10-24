@@ -36,6 +36,7 @@ namespace md {
 /// are out of scope (point-mass NVE only).
 class VelocityVerlet : public cpu::Integrator, public cpu::TimestepProvider {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @param dt Timestep [fs]. Mirrors the global LAMMPS `timestep`
     ///           consumed by `fix nve` via `update->dt`.
     explicit VelocityVerlet(double dt);

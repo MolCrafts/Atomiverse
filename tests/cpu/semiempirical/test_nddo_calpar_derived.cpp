@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/nddo_parameters.h"
 #include "atomiverse/semiempirical/rm1_parameters.h"
 
 using namespace ATV::semiempirical;
@@ -149,6 +150,35 @@ TEST(NddoCalparDerived, Rm1TableIsSelfConsistent) {
         expect_row_matches_calpar(*p);
     }
     EXPECT_EQ(rows, 6) << "RM1 v1 coverage is H, C, N, O, P, S";
+}
+
+TEST(NddoCalparDerived, MndoAndPm3UseTheirOwnChnoRows) {
+    for (const auto method :
+         {SemiEmpiricalMethod::MNDO, SemiEmpiricalMethod::PM3}) {
+        SCOPED_TRACE(nddo_method_name(method));
+        int rows = 0;
+        for (int z = 1; z <= 100; ++z) {
+            const auto* p = nddo_parameter(method, z);
+            const bool chno = z == 1 || z == 6 || z == 7 || z == 8;
+            ASSERT_EQ(p != nullptr, chno) << "Z=" << z;
+            if (!p)
+                continue;
+            ++rows;
+            expect_row_matches_calpar(*p);
+            EXPECT_EQ(p->n_orbitals, z == 1 ? 1 : 4);
+            EXPECT_EQ(p->core_charge, p->ios + p->iop + p->iod);
+            int gaussians = 0;
+            for (double term : p->guess1)
+                gaussians += term != 0;
+            EXPECT_EQ(gaussians, method == SemiEmpiricalMethod::MNDO ? 0 : 2);
+        }
+        EXPECT_EQ(rows, 4);
+    }
+    const auto invalid = static_cast<SemiEmpiricalMethod>(999);
+    EXPECT_EQ(nddo_parameter(invalid, 8), nullptr);
+    EXPECT_THROW(nddo_atomic_heat_kcal_mol(invalid, 8), std::invalid_argument);
+    EXPECT_THROW(nddo_atomic_heat_kcal_mol(SemiEmpiricalMethod::PM3, 16),
+                 std::invalid_argument);
 }
 
 TEST(NddoCalparDerived, Rm1OxygenEisolIsNotTheAm1Shift) {

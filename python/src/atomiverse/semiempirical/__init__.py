@@ -1,4 +1,4 @@
-"""AM1 semiempirical electronic structure (mirrors ``cpu/semiempirical/``).
+"""Semiempirical electronic structure with native CPU/CUDA method selection.
 
 **Semiempirical** means a quantum-mechanical model of the valence electrons in
 which the expensive electron-electron integrals are mostly dropped and the
@@ -18,8 +18,8 @@ Cartesian derivatives of the pair integrals and core repulsion, contracted
 with the converged density. The model parameters are unchanged. Electronic
 stationarity is required: both density and energy tolerances must be met.
 The vibrational Hessian remains a finite difference of forces. Canonical deep paths:
-``atomiverse.semiempirical.AM1`` / ``AM1Result``; the
-top-level names are the same classes.
+``atomiverse.semiempirical.AM1`` / ``AM1Result`` and corresponding RM1,
+MNDO and PM3 constructors/results; the top-level names are identity exports.
 
 Example::
 
@@ -40,23 +40,53 @@ single point does not::
     sim.set_evaluator(atv.AM1())
     sim.run(frame, 100)
 
-Neither ``last_result()`` nor the object handed to ``set_evaluator`` is
-updated by an MD run — the driver mounts its own copy of the method, and the
-per-step energy, charges and forces land on the frame.
+Drivers borrow the method and keep its Python owner alive. Results remain
+on the original object. ``run(frame)`` updates energy/charges while preserving
+Frame forces; ``forces(frame)`` also overwrites and returns analytic forces.
+Use ``device="cuda"`` for the supported native CUDA molecular subset.
 """
 
-from atomiverse._binding import _cpp, require_domain
+from atomiverse._binding import _cpp, require_domain, backend_type
 
 require_domain(__name__, "am1")
 
 #: Concrete AM1 method — parameters assigned in the constructor
 #: (``charge``, ``multiplicity``, ``max_iter``, ``density_tol``, ``energy_tol``).
-AM1 = _cpp.AM1
+def AM1(charge: int = 0, multiplicity: int = 1, max_iter: int = 200,
+        density_tol: float = 1e-8, energy_tol: float = 1e-10, *, device: str = "cpu"):
+    """Construct native AM1; CUDA currently accepts neutral closed-shell CHNO."""
+    return backend_type(device, "AM1", "_CudaAM1")(
+        charge, multiplicity, max_iter, density_tol, energy_tol)
+
+
+def RM1(charge: int = 0, multiplicity: int = 1, max_iter: int = 200,
+        density_tol: float = 1e-8, energy_tol: float = 1e-10, *, device: str = "cpu"):
+    """Construct native RM1 with the same Frame/results contract as AM1."""
+    return backend_type(device, "RM1", "_CudaRM1")(
+        charge, multiplicity, max_iter, density_tol, energy_tol)
+
+
+def MNDO(charge: int = 0, multiplicity: int = 1, max_iter: int = 200,
+         density_tol: float = 1e-8, energy_tol: float = 1e-10, *, device: str = "cpu"):
+    """Construct native MNDO; CUDA supports neutral closed-shell CHNO."""
+    return backend_type(device, "MNDO", "_CudaMNDO")(
+        charge, multiplicity, max_iter, density_tol, energy_tol)
+
+
+def PM3(charge: int = 0, multiplicity: int = 1, max_iter: int = 200,
+        density_tol: float = 1e-8, energy_tol: float = 1e-10, *, device: str = "cpu"):
+    """Construct native PM3 with the same Frame/results contract as MNDO."""
+    return backend_type(device, "PM3", "_CudaPM3")(
+        charge, multiplicity, max_iter, density_tol, energy_tol)
+
 
 #: Converged-solve results: energies [eV / Hartree / kcal·mol⁻¹], Mulliken
 #: charges [e], iteration count, and — after a force evaluation — the flat
 #: nuclear-force buffer [eV/Å].
 AM1Result = _cpp.AM1Result
+RM1Result = _cpp.RM1Result
+MNDOResult = _cpp.MNDOResult
+PM3Result = _cpp.PM3Result
 
 #: AM1-BCC / ABCG2 partial charges — the GAFF / GAFF2 charge model, as
 #: antechamber ``-c bcc`` / ``-c abcg2`` compute them, at the frame's
@@ -118,8 +148,14 @@ kDftbSpinConstantsLdaHa = _cpp.kDftbSpinConstantsLdaHa
 
 __all__ = [
     "AM1",
+    "RM1",
+    "MNDO",
+    "PM3",
     "AM1BCCCharges",
     "AM1Result",
+    "RM1Result",
+    "MNDOResult",
+    "PM3Result",
     "BccParameterSet",
     "DFTB0",
     "DFTB2",

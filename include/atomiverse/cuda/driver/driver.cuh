@@ -750,12 +750,14 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
             built_plugins_.insert(c);
     }
 
-    void flush_new_mounts_() {
+    void flush_new_mounts_(const cpu::Frame* boundary_inputs = nullptr) {
         auto* execution =
             borrowed_backend_ ? borrowed_backend_ : this->backend_.get();
         if (!execution)
             return;
         rebind_from_live_table_();
+        if (boundary_inputs)
+            execution->validate_inputs(*boundary_inputs);
         Plan<cuda::Component> added;
         for (auto* c : this->plan_.components())
             if (c && !built_plugins_.count(c))

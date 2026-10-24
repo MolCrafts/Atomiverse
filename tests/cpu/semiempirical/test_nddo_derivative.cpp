@@ -29,11 +29,11 @@ TEST(NddoDerivative, PairIntegralsAllSupportedSpElementsAndPolarAxes) {
     for (const auto method : {ATV::semiempirical::SemiEmpiricalMethod::AM1,
                               ATV::semiempirical::SemiEmpiricalMethod::RM1}) {
         for (int z = 1; z <= 100; ++z) {
-            const auto* pi = nddo_parameter(method, z);
+            const auto* pi = ATV::semiempirical::nddo_parameter(method, z);
             if (!pi || pi->n_orbitals > 4 || pi->n_orbitals == 0)
                 continue;
             for (int zj : {1, 6}) {
-                const auto* pj = nddo_parameter(method, zj);
+                const auto* pj = ATV::semiempirical::nddo_parameter(method, zj);
                 NDDOSystem pair;
                 pair.method = method;
                 pair.atoms = {{zj, 0, pj->n_orbitals - 1, pj->n_orbitals,
@@ -132,8 +132,10 @@ TEST(NddoDerivative, ValueBlockReusesActiveRegionAcrossPairSizes) {
                                     {6, 6}}) {
             SCOPED_TRACE(::testing::Message()
                          << "method=" << int(method) << " step=" << step);
-            const auto* pi = nddo_parameter(method, elements[0]);
-            const auto* pj = nddo_parameter(method, elements[1]);
+            const auto* pi =
+                ATV::semiempirical::nddo_parameter(method, elements[0]);
+            const auto* pj =
+                ATV::semiempirical::nddo_parameter(method, elements[1]);
             NDDOSystem pair;
             pair.method = method;
             pair.atoms = {{elements[0], 0, pi->n_orbitals - 1, pi->n_orbitals,
@@ -173,8 +175,8 @@ TEST(NddoDerivative, ValueBlockReusesActiveRegionAcrossPairSizes) {
 
 TEST(NddoDerivative, RejectsPairOutsideFixedSpCapacity) {
     NDDOSystem pair;
-    const auto* p =
-        nddo_parameter(ATV::semiempirical::SemiEmpiricalMethod::AM1, 6);
+    const auto* p = ATV::semiempirical::nddo_parameter(
+        ATV::semiempirical::SemiEmpiricalMethod::AM1, 6);
     pair.atoms = {{6, 0, 8, 9, p->core_charge, p},
                   {6, 9, 17, 9, p->core_charge, p}};
     pair.n_orbitals = 18;

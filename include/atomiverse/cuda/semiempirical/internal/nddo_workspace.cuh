@@ -31,6 +31,7 @@ struct NddoWorkspace;
 
 class NddoStep final : public cuda::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     NddoStep(NddoWorkspace& work, ATV::nddo::Phase phase)
         : work_(work), phase_(phase) {}
     std::string name() const override;
@@ -43,6 +44,7 @@ class NddoStep final : public cuda::Component {
 
 class NddoConverged final : public cuda::Criterion {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     explicit NddoConverged(NddoWorkspace& work) : work_(work) {}
     std::string name() const override { return "nddo_converged"; }
     bool contributes_to_convergence() const override { return true; }
@@ -69,7 +71,9 @@ struct NddoWorkspace {
     void fock(const cuda::Frame& frame, cudaStream_t stream);
     void check(cudaStream_t stream);
     void compute_forces(const cuda::Frame& frame, cudaStream_t stream);
-    void commit(cudaStream_t stream);
+    void stage() noexcept;
+    void commit() noexcept;
+    void discard() noexcept { pending = false; }
     void publish(cuda::Frame& frame, cudaStream_t stream, bool accumulate);
     void download(cudaStream_t stream);
     void release() noexcept;
@@ -79,12 +83,14 @@ struct NddoWorkspace {
     NddoConverged criterion;
     const ATV::semiempirical::SemiEmpiricalMethod method;
     bool accepted = false, results_on_host = false, forces_valid = false;
+    bool pending = false;
     int n_atoms = 0, n = 0, occupied = 0;
     double sum_eisol = 0, sum_atomic_heat = 0;
-    // Six dense matrices: H, F, C, P, Pnext, Paccepted. No S, X or spin copy.
+    // Seven dense matrices: H, F, C, P, Pnext, Paccepted, Ppending.
     double* matrices = nullptr;
     double *h = nullptr, *f = nullptr, *c = nullptr, *p = nullptr;
     double *next = nullptr, *accepted_p = nullptr, *eigenvalues = nullptr;
+    double* pending_p = nullptr;
     double* charges = nullptr;
     double* forces =
         nullptr; // Interleaved 3*N FP64 force scratch, eV/Angstrom.

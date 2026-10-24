@@ -167,6 +167,8 @@ class NeighborList : public Component, public NeighborProvider {
     /// driver never calls this; its behaviour is unchanged.
     /// @param n_active Current active atom count (<= build-time capacity).
     void set_active_count(int n_active);
+    void invalidate_inputs(InputChange changes,
+                           const BuildContext& ctx) override;
 
     /// @brief Rebuild the list ONLY on explicit request (first launch after a
     ///        set_active_count), never via the per-step Verlet-skin auto-gate.

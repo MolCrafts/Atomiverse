@@ -195,3 +195,15 @@ def require_domain(name: str, module: str) -> None:
     require_cpp()
     if not has_domain(module):
         raise MissingDomainError(name, module)
+
+
+def backend_type(device: str, cpu_name: str, cuda_name: str) -> type:
+    """Select a bound native type without translating method parameters."""
+    if device not in ("cpu", "cuda"):
+        raise ValueError(f"Unknown device {device!r}; expected 'cpu' or 'cuda'")
+    extension = require_cpp()
+    name = cpu_name if device == "cpu" else cuda_name
+    native = getattr(extension, name, None)
+    if native is None:
+        raise ValueError(f"{device.upper()} binding {name} is unavailable in this build")
+    return native

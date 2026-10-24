@@ -17,8 +17,8 @@
 ///     are launched.
 ///   - `convergence_check` runs the shared `ConvCheck` bridge (the
 ///     metrics must reach the host, where the driver polls its
-///     handlers). Line-search scalars (applied α, g·d) ride this sync as
-///     batched pinned D2H copies — no extra synchronize.
+///     handlers). Optional line search reads three origin scalars and one
+///     energy per bounded trial; all geometry and force arrays stay on device.
 ///
 /// **Tolerances are not here.** They belong to the termination policy —
 /// `cuda::ForceConverged`, which `cuda::minimizer::Minimize` attaches by default and
@@ -65,15 +65,14 @@ class LBFGS : public cuda::Optimizer {
 
     /// @brief Enable the backtracking line search (Armijo condition).
     ///
-    /// Same contract as `cpu::minimizer::LBFGS::line_search`: a driver
-    /// step whose trial fails `E_{k+1} − E_k <= c1 · α_k · g_k·d_k` is
+    /// A driver step whose trial fails `E_{k+1} − E_k <= c1 · α_k · g_k·d_k` is
     /// rolled back to `x_k`, α is scaled by @p contract, and the trial
     /// is re-taken along the same direction; history is only updated on
     /// accepted trials. Must be called before `opt.build()`.
     /// @param c1         Armijo constant in (0, 1) (default 1e-4).
     /// @param contract   Backtracking contraction factor (default 0.5).
-    /// @param min_alpha  Minimum α before accepting the trial even on
-    ///                   Armijo failure (default 1e-6).
+    /// @param min_alpha  Smallest trial alpha; failure at the floor or budget
+    ///                   restores the origin and throws (default 1e-6).
     /// @return Reference to self for chaining.
     LBFGS& line_search(double c1 = 1e-4, double contract = 0.5,
                        double min_alpha = 1e-6) {
@@ -93,16 +92,17 @@ class LBFGS : public cuda::Optimizer {
     /// @return ComponentRole::Optimizer.
     /* role via Optimizer base */
 
-    /// @brief Default bindings: search_direction + convergence_check.
+    /// @brief Default bindings: direction, bounded line search, measurement.
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::search_direction, 0),
+                ATV::make_binding(ATV::minimizer::Phase::line_search, 0),
                 ATV::make_binding(ATV::minimizer::Phase::convergence_check, 0)};
     }
 
     /// @brief Allocate + zero history and scratch device buffers.
     void build(const BuildContext& ctx) override;
 
-    /// @brief Dispatch the bound phase (search_direction / convergence_check).
+    /// @brief Dispatch direction, finite Armijo search, or convergence measurement.
     void launch(const LaunchContext& ctx) override;
 
     /// @brief Release all device + pinned buffers.
@@ -154,7 +154,7 @@ class LBFGS : public cuda::Optimizer {
     BigInt step_ = 0;
     bool has_prev_ = false;
 
-    // Line search (optional; off by default, as on the CPU).
+    // Optional finite Armijo search; disabled by default.
     bool ls_enabled_ = false;
     double ls_c1_ = 1e-4;
     double ls_contract_ = 0.5;
@@ -162,8 +162,6 @@ class LBFGS : public cuda::Optimizer {
     double ls_alpha_ = 0;         ///< α of the most recent trial (host copy).
     double ls_gd_ = 0;            ///< g·d at the trial origin (host copy).
     double ls_origin_energy_ = 0; ///< Energy at the trial origin [eV].
-    bool ls_had_trial_ = false;
-    bool ls_fetch_pending_ = false; ///< D2H of {α, g·d} queued for next check.
 
     ConvCheck conv_;
     std::vector<ATV::minimizer::OptRecord> trace_;

@@ -15,22 +15,6 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-const ATV::semiempirical::AM1Parameter*
-nddo_parameter(ATV::semiempirical::SemiEmpiricalMethod method, int z) noexcept {
-    switch (method) {
-    case ATV::semiempirical::SemiEmpiricalMethod::AM1:
-        return ATV::semiempirical::am1_parameter(z);
-    case ATV::semiempirical::SemiEmpiricalMethod::RM1:
-        return ATV::semiempirical::rm1_parameter(z);
-    }
-    return nullptr;
-}
-
-bool nddo_has_parameter(ATV::semiempirical::SemiEmpiricalMethod method,
-                        int z) noexcept {
-    return nddo_parameter(method, z) != nullptr;
-}
-
 int am1_orbital_count(int z) noexcept {
     const auto* p = ATV::semiempirical::am1_parameter(z);
     return p == nullptr ? 0 : p->n_orbitals;
@@ -47,9 +31,7 @@ NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
         throw std::runtime_error("NDDO multiplicity must be positive");
     }
 
-    const char* method_name =
-        (method_in == ATV::semiempirical::SemiEmpiricalMethod::RM1) ? "RM1"
-                                                                    : "AM1";
+    const char* method_name = ATV::semiempirical::nddo_method_name(method_in);
 
     charge = charge_in;
     method = method_in;
@@ -60,7 +42,7 @@ NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
     const int* __restrict sp_type = frame.span(kAtom_type);
     for (int i = 0; i < frame.nlocal(); ++i) {
         const int z = sp_type[i];
-        const auto* p = nddo_parameter(method_in, z);
+        const auto* p = ATV::semiempirical::nddo_parameter(method_in, z);
         if (p == nullptr) {
             throw std::runtime_error(
                 std::string(method_name)

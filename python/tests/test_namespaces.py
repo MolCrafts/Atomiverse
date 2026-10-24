@@ -79,6 +79,13 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("MoveSelector", "atomiverse.montecarlo", "MoveSelector"),
     ("AM1", "atomiverse.semiempirical", "AM1"),
     ("AM1Result", "atomiverse.semiempirical", "AM1Result"),
+    ("RM1", "atomiverse.semiempirical", "RM1"),
+    ("RM1Result", "atomiverse.semiempirical", "RM1Result"),
+    ("MNDO", "atomiverse.semiempirical", "MNDO"),
+    ("MNDOResult", "atomiverse.semiempirical", "MNDOResult"),
+    ("PM3", "atomiverse.semiempirical", "PM3"),
+    ("PM3Result", "atomiverse.semiempirical", "PM3Result"),
+    ("Evaluate", "atomiverse.driver", "Evaluate"),
     ("single_point", "atomiverse.driver", "single_point"),
     # Vibrational analysis (spec py-vib): unconditional, ATV_BUILD_VIB
     # defaults ON. `cpu/vibration/` is a backend-root directory, so the
@@ -262,16 +269,22 @@ class TestDeviceParameter:
         """MD(device="cuda") raises ValueError naming CUDA."""
         from atomiverse.md import MD
 
-        with pytest.raises(ValueError, match="(?i)cuda"):
-            MD(dt=0.001, device="cuda")
+        if hasattr(_cpp, "_CudaMD"):
+            assert MD(dt=0.001, device="cuda").device == "cuda"
+        else:
+            with pytest.raises(ValueError, match="(?i)cuda"):
+                MD(dt=0.001, device="cuda")
 
     @needs("ATV_BUILD_MINIMIZER")
     def test_minimize_cuda_device_raises_value_error(self) -> None:
         """Minimize(device="cuda") fails loud while GPU work is deferred."""
         from atomiverse.minimizer import Minimize
 
-        with pytest.raises(ValueError, match="(?i)gpu|cuda"):
-            Minimize(device="cuda")
+        if hasattr(_cpp, "_CudaMinimize"):
+            assert Minimize(device="cuda").device == "cuda"
+        else:
+            with pytest.raises(ValueError, match="(?i)gpu|cuda"):
+                Minimize(device="cuda")
 
     @needs("ATV_BUILD_SEMIEMPIRICAL")
     def test_single_point_cuda_device_raises_before_compute(

@@ -66,10 +66,9 @@ double max_abs_delta(const std::vector<double>& a,
 NDDOSolver::NDDOSolver(NDDOConfig config) : config_(config) {
     set_scf_controls(config.max_iter, config.density_tol, config.energy_tol);
     result_.method = config_.method;
-    result_.reference =
-        (config_.method == ATV::semiempirical::SemiEmpiricalMethod::RM1)
-            ? "Internal RM1/NDDO reference data (Rocha 2006)"
-            : "Internal AM1/NDDO reference data";
+    result_.reference = std::string("Internal ")
+                        + ATV::semiempirical::nddo_method_name(config_.method)
+                        + "/NDDO reference data";
 }
 
 void NDDOSolver::set_scf_controls(int max_iter, double density_tol,
@@ -118,9 +117,9 @@ void NDDOSolver::build(const cpu::Frame& reference) {
     force_pair_.atoms.resize(2);
     density_.reserve(state_.initial_packed_density.size());
     spin_density_.reserve(state_.initial_spin_density.size());
-    density_.clear();
-    spin_density_.clear();
-    has_density_ = false;
+    pending_density_.reserve(state_.initial_packed_density.size());
+    pending_spin_density_.reserve(state_.initial_spin_density.size());
+    reset_history();
     built_ = true;
 }
 
@@ -221,12 +220,8 @@ void NDDOSolver::scf_check() {
                     "NDDO parameters missing during heat-of-formation");
             }
             sum_eisol += p->eisol;
-            sum_atheat +=
-                (config_.method == ATV::semiempirical::SemiEmpiricalMethod::RM1)
-                    ? ATV::semiempirical::rm1_atomic_heat_kcal_mol(
-                          atom.atomic_number)
-                    : ATV::semiempirical::am1_atomic_heat_kcal_mol(
-                          atom.atomic_number);
+            sum_atheat += ATV::semiempirical::nddo_atomic_heat_kcal_mol(
+                config_.method, atom.atomic_number);
         }
         result_.heat_of_formation_kcal_mol =
             (total_ev - sum_eisol) * ATV::semiempirical::kAm1EvToKcalMol
@@ -236,15 +231,37 @@ void NDDOSolver::scf_check() {
     scf_prev_energy_ev_ = total_ev;
 }
 
-void NDDOSolver::commit_density() {
+void NDDOSolver::stage_density() {
     const auto packed_size = static_cast<std::size_t>(system_.n_orbitals)
                              * (system_.n_orbitals + 1) / 2;
+    pending_density_valid_ = false;
     if (!built_ || !result_.converged || scf_density_.size() != packed_size
         || scf_spin_.size() != packed_size)
         throw std::runtime_error("NDDO cannot accept an unconverged density");
-    density_ = scf_density_;
-    spin_density_ = scf_spin_;
+    pending_density_ = scf_density_;
+    pending_spin_density_ = scf_spin_;
+    pending_density_valid_ = true;
+}
+
+void NDDOSolver::commit_staged_density() noexcept {
+    if (!pending_density_valid_)
+        return;
+    density_.swap(pending_density_);
+    spin_density_.swap(pending_spin_density_);
     has_density_ = true;
+    pending_density_valid_ = false;
+}
+
+void NDDOSolver::commit_density() {
+    stage_density();
+    commit_staged_density();
+}
+
+void NDDOSolver::reset_history() noexcept {
+    density_.clear();
+    spin_density_.clear();
+    has_density_ = false;
+    pending_density_valid_ = false;
 }
 
 ATV::semiempirical::NDDOResult&
@@ -372,10 +389,17 @@ NDDOSolver::compute_forces(cpu::Frame& frame) try {
 
 void NDDOSolver::validate_supported_atoms_(const cpu::Frame& frame) const {
     if (config_.method != ATV::semiempirical::SemiEmpiricalMethod::AM1
-        && config_.method != ATV::semiempirical::SemiEmpiricalMethod::RM1) {
+        && config_.method != ATV::semiempirical::SemiEmpiricalMethod::RM1
+        && config_.method != ATV::semiempirical::SemiEmpiricalMethod::MNDO
+        && config_.method != ATV::semiempirical::SemiEmpiricalMethod::PM3) {
         throw std::runtime_error(
             "NDDOSolver: unsupported semiempirical method");
     }
+    if ((config_.method == ATV::semiempirical::SemiEmpiricalMethod::MNDO
+         || config_.method == ATV::semiempirical::SemiEmpiricalMethod::PM3)
+        && (config_.charge != 0 || config_.multiplicity != 1))
+        throw std::invalid_argument(
+            "MNDO/PM3 currently require neutral closed-shell molecules");
     if (frame.nlocal() < 1)
         throw std::invalid_argument("NDDO requires at least one atom");
     const std::array coordinates{frame.span(kAtom_x), frame.span(kAtom_y),
@@ -398,7 +422,7 @@ void NDDOSolver::validate_supported_atoms_(const cpu::Frame& frame) const {
     const int* __restrict sp_type = frame.span(kAtom_type);
     for (int i = 0; i < frame.nlocal(); ++i) {
         const int z = sp_type[i];
-        if (!nddo_has_parameter(config_.method, z)) {
+        if (!ATV::semiempirical::nddo_has_parameter(config_.method, z)) {
             throw std::runtime_error(
                 "NDDO parameters unavailable for atomic number "
                 + std::to_string(z));

@@ -2,12 +2,16 @@
 /// @brief L-BFGS kernels: device-resident two-loop recursion +
 ///        multi-criteria convergence via the shared ConvCheck.
 
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/minimize/lbfgs.cuh"
+#include <algorithm>
+#include <cmath>
 #include <cuda_runtime.h>
+#include <stdexcept>
 
 namespace ATV {
 namespace cuda {
@@ -221,6 +225,14 @@ __global__ void rollback(pos_t* __restrict__ x, pos_t* __restrict__ y,
 } // anonymous namespace
 
 void LBFGS::build(const BuildContext& ctx) {
+    if (memory_ <= 0 || max_ls_ <= 0 || !std::isfinite(alpha0_) || alpha0_ <= 0
+        || (ls_enabled_
+            && (!std::isfinite(ls_c1_) || ls_c1_ <= 0 || ls_c1_ >= 1
+                || !std::isfinite(ls_contract_) || ls_contract_ <= 0
+                || ls_contract_ >= 1 || !std::isfinite(ls_min_alpha_)
+                || ls_min_alpha_ <= 0)))
+        throw std::invalid_argument("CUDA LBFGS requires finite positive "
+                                    "controls and Armijo c1/contract in (0,1)");
     n_ = ctx.frame.n_atoms();
     n3_ = 3 * n_;
     const size_t bytes3n = static_cast<size_t>(n3_) * sizeof(mixed_t);
@@ -249,8 +261,6 @@ void LBFGS::build(const BuildContext& ctx) {
     oldest_ = 0;
     step_ = 0;
     has_prev_ = false;
-    ls_had_trial_ = false;
-    ls_fetch_pending_ = false;
     ls_alpha_ = 0;
     ls_gd_ = 0;
     trace_.clear();
@@ -260,22 +270,70 @@ void LBFGS::build(const BuildContext& ctx) {
 void LBFGS::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
 
-    // ── Convergence check phase ──────────────────────────────────────
     if (ctx.at(ATV::minimizer::Phase::convergence_check)) {
-        // Batch the line-search scalars produced by this iteration's
-        // search_direction onto the ConvCheck sync — zero extra host blocks.
-        if (ls_fetch_pending_)
-            cudaMemcpyAsync(h_ls_, d_ls_, 3 * sizeof(acc_t),
-                            cudaMemcpyDeviceToHost, stream);
-        // Measure and publish. The Verdict is the loop's, through its handlers.
         conv_.measure(ctx, d_xprev_, step_, trace_);
-        if (ls_fetch_pending_) {
+        return;
+    }
+    if (ctx.at(ATV::minimizer::Phase::line_search)) {
+        if (!ls_enabled_)
+            return;
+        if (!ctx.runtime.opt.reeval_forces)
+            throw std::logic_error(
+                "CUDA LBFGS line search requires Minimize force replay");
+        struct RestoreTrial {
+            cuda::Context& context;
+            bool saved;
+            ~RestoreTrial() { context.exec.trial_evaluation = saved; }
+        } guard{ctx.runtime, ctx.runtime.exec.trial_evaluation};
+        ctx.runtime.exec.trial_evaluation = true;
+        auto& a = ctx.frame.atoms;
+        auto set_trial = [&](double alpha) {
+            rollback<<<cuda::grid_size(n_), cuda::kDefaultBlock, 0, stream>>>(
+                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, d_xprev_, d_dir_,
+                static_cast<mixed_t>(alpha), ctx.runtime.host_box, n_);
+        };
+        try {
+            ATV_CUDA_CHECK(cudaMemcpyAsync(h_ls_, d_ls_, 3 * sizeof(acc_t),
+                                           cudaMemcpyDeviceToHost, stream));
+            ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
             ls_alpha_ = static_cast<double>(h_ls_[0]);
             ls_gd_ = static_cast<double>(h_ls_[1]);
             ls_origin_energy_ = static_cast<double>(h_ls_[2]);
-            ls_fetch_pending_ = false;
+            if (!std::isfinite(ls_origin_energy_) || !std::isfinite(ls_gd_))
+                throw std::runtime_error(
+                    "CUDA LBFGS nonfinite line-search origin");
+            if (!(ls_gd_ < 0)) {
+                set_trial(0);
+                ATV_CUDA_CHECK(cudaGetLastError());
+                return;
+            }
+            for (int attempt = 0; attempt < max_ls_; ++attempt) {
+                ctx.runtime.opt.reeval_forces(true);
+                ATV_CUDA_CHECK(cudaMemcpyAsync(
+                    h_ls_, &ctx.frame.scalars->energy, sizeof(double),
+                    cudaMemcpyDeviceToHost, stream));
+                ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+                const double energy = static_cast<double>(h_ls_[0]);
+                if (!std::isfinite(energy))
+                    throw std::runtime_error(
+                        "CUDA LBFGS nonfinite trial energy");
+                if (energy - ls_origin_energy_ <= ls_c1_ * ls_alpha_ * ls_gd_)
+                    return; // The normal force phase evaluates this accepted point.
+                if (ls_alpha_ <= ls_min_alpha_ || attempt + 1 == max_ls_)
+                    break;
+                ls_alpha_ = std::max(ls_min_alpha_, ls_alpha_ * ls_contract_);
+                set_trial(ls_alpha_);
+                ATV_CUDA_CHECK(cudaGetLastError());
+            }
+            throw std::runtime_error("CUDA LBFGS line search exhausted its "
+                                     "trial budget or alpha floor");
+        } catch (...) {
+            // No failed candidate is returned. The outer driver discards device
+            // results and the evaluation-history transaction on this exception.
+            set_trial(0);
+            cudaStreamSynchronize(stream);
+            throw;
         }
-        return;
     }
 
     // ── Search direction phase ───────────────────────────────────────
@@ -291,25 +349,6 @@ void LBFGS::launch(const LaunchContext& ctx) {
     pack_xg<<<grid, block, 0, stream>>>(a.x, a.y, a.z, a.x_corr, a.y_corr,
                                         a.z_corr, a.fx, a.fy, a.fz, d_x_, d_g_,
                                         n);
-
-    // ── Armijo rejection & rollback (host decision on cached scalars) ─
-    //
-    // Mirrors the CPU flow: the trial taken during the previous
-    // search_direction was evaluated by the force phase; its energy
-    // arrived on the host through the previous ConvCheck sync. On
-    // rejection, roll back to x_prev with the contracted α and return —
-    // history update + new direction happen on the next accepted trial.
-    if (ls_enabled_ && ls_had_trial_) {
-        const double armijo_rhs = ls_c1_ * ls_alpha_ * ls_gd_;
-        const double dE = conv_.last_energy() - ls_origin_energy_;
-        if (!(dE <= armijo_rhs) && ls_alpha_ > ls_min_alpha_) {
-            ls_alpha_ *= ls_contract_;
-            rollback<<<grid, block, 0, stream>>>(
-                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, d_xprev_, d_dir_,
-                static_cast<mixed_t>(ls_alpha_), ctx.runtime.host_box, n);
-            return;
-        }
-    }
 
     // ── History update (one 8-byte D2H — see file header) ────────────
     if (has_prev_) {
@@ -378,15 +417,13 @@ void LBFGS::launch(const LaunchContext& ctx) {
         frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box, n);
 
     if (ls_enabled_) {
-        // g·d at the trial origin, fetched with the next ConvCheck sync.
+        // Origin scalars consumed by the following bounded line-search phase.
         cudaMemsetAsync(d_ls_ + 1, 0, sizeof(acc_t), stream);
         dot3n<<<grid3, block, shmem, stream>>>(d_g_, d_dir_, d_ls_ + 1, n3);
         // Preserve the actual origin energy on device, including the first
         // step after initial-force preparation. Fetch it with the trial metrics.
         cudaMemcpyAsync(d_ls_ + 2, &frame.scalars->energy, sizeof(acc_t),
                         cudaMemcpyDeviceToDevice, stream);
-        ls_had_trial_ = true;
-        ls_fetch_pending_ = true;
     }
 
     has_prev_ = true;

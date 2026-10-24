@@ -304,6 +304,13 @@ void NeighborList::build(const BuildContext& ctx) {
 // driver calls this to reset the active atom/cluster count (<= the build-time
 // capacity) and force a full CSR rebuild on the next launch(). No allocation.
 // The single-GPU path never calls this, so its behaviour is unchanged.
+void NeighborList::invalidate_inputs(InputChange changes,
+                                     const BuildContext& ctx) {
+    if (has_input_change(changes, InputChange::Geometry)
+        || has_input_change(changes, InputChange::Cell))
+        set_active_count(ctx.frame.n_atoms());
+}
+
 void NeighborList::set_active_count(int n_active) {
     auto& s = *state_;
     if (n_active < 0)

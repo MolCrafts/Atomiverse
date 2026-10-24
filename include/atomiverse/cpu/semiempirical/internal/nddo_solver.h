@@ -88,6 +88,11 @@ class NDDOSolver {
     /// Called only after the complete method operation succeeds; initial-force
     /// preparation and rejected or exploratory trials must not call this.
     void commit_density();
+    /// Prepare a complete candidate before the parent physical-step commit.
+    void stage_density();
+    void commit_staged_density() noexcept;
+    void discard_staged_density() noexcept { pending_density_valid_ = false; }
+    void reset_history() noexcept;
 
     /// @brief Max absolute packed-density change of this iteration.
     /// @return |ΔP|, or +∞ before `scf_density`.
@@ -132,6 +137,8 @@ class NDDOSolver {
     std::vector<double> force_scratch_;
     std::vector<double> density_;
     std::vector<double> spin_density_;
+    std::vector<double> pending_density_, pending_spin_density_;
+    bool pending_density_valid_ = false;
 
     const StorageReal* scf_x_ = nullptr;
     const StorageReal* scf_y_ = nullptr;

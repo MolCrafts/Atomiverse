@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/evaluation_history.h"
 #include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/plan.h"
 #include "atomiverse/core/precision.h"
@@ -36,6 +37,7 @@
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/device/device_runtime.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/frame/input_snapshot.h"
 
 namespace ATV {
 namespace cpu {
@@ -83,6 +85,9 @@ class Runtime {
     };
     /// Shared by the tree: structural edits are only legal between dispatches.
     const bool& dispatch_active() const { return dispatch_active_; }
+    EvaluationTransaction& evaluation_transaction() noexcept {
+        return evaluation_history_;
+    }
     void invalidate_plan() {
         contracts_ready_ = false;
         forces_ready_ = false;
@@ -110,6 +115,10 @@ class Runtime {
     /// `DomainRuntime::bind_frame`. This is the only place that knows the whole
     /// driver tree *and* still runs before the frame is bound.
     void set_frame(cpu::Frame& frame);
+    /// Compare host edits with the previous successful run boundary. Preflight
+    /// every participant before invalidating caches; keep the same Runtime.
+    InputChange refresh_external_inputs();
+    void checkpoint_inputs();
 
     /// @brief Build all components in Plan order.
     void build_components();
@@ -280,6 +289,9 @@ class Runtime {
     // to this Runtime once, independently of adapter/budget multiplicity.
     std::unordered_map<cpu::DriverNode*, std::size_t> node_users_;
 
+    FrameInputSnapshot input_snapshot_;
+    InputChange input_changes_pending_ = InputChange::None;
+    EvaluationTransaction evaluation_history_;
     Context context_{};
     cpu::Frame* frame_ = nullptr;
     const Plan<cpu::Component>* plan_ = nullptr;

@@ -19,6 +19,7 @@ namespace semiempirical {
 /// @brief One NDDO SCF stage. The step body is supplied by `NddoMethod`.
 class NddoStep : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief Zero-argument body for this phase.
     using StepFn = std::function<void()>;
 
@@ -60,6 +61,7 @@ class NddoStep : public cpu::Component {
 /// This class does not recompute the residuals.
 class NddoConverged : public cpu::Criterion {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief This criterion must be satisfied for the loop to converge.
     /// @return True.
     bool contributes_to_convergence() const override { return true; }

@@ -214,6 +214,14 @@ TEST(CudaMinimizeContract, FirstArmijoTrialUsesPreparedOriginEnergy) {
     ASSERT_EQ(cudaMemcpyAsync(&device.scalars->energy, &trial_energy,
                               sizeof(double), cudaMemcpyHostToDevice, stream),
               cudaSuccess);
+    int trials = 0;
+    ctx.opt.reeval_forces = [&](bool) {
+        ++trials;
+        EXPECT_TRUE(ctx.exec.trial_evaluation);
+    };
+    optimizer.launch({ctx, device, slot_of(minimizer::Phase::line_search), 0});
+    EXPECT_EQ(trials, 1);
+    EXPECT_FALSE(ctx.exec.trial_evaluation);
     optimizer.launch(
         {ctx, device, slot_of(minimizer::Phase::convergence_check), 0});
     optimizer.launch(
@@ -221,6 +229,51 @@ TEST(CudaMinimizeContract, FirstArmijoTrialUsesPreparedOriginEnergy) {
     backend.sync();
     backend.retrieve(frame);
     EXPECT_NEAR(frame.span(kAtom_x)[0], 1.02, 1e-7);
+    optimizer.destroy({ctx, device});
+    cudaFree(d_force);
+    backend.shutdown();
+}
+
+TEST(CudaMinimizeContract, ArmijoBudgetRestoresOriginAndTrialFlag) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    frame.span(kAtom_x)[0] = 1.0;
+    frame.meta.get(kEnergy) = 100.0;
+    cuda::Backend backend;
+    backend.init();
+    backend.materialize(frame);
+    double* d_force = nullptr;
+    ASSERT_EQ(cudaMalloc(&d_force, 3 * sizeof(double)), cudaSuccess);
+    const double force[3] = {1.0, 0.0, 0.0};
+    ASSERT_EQ(cudaMemcpy(d_force, force, sizeof(force), cudaMemcpyHostToDevice),
+              cudaSuccess);
+    auto& ctx = backend.context();
+    auto& device = backend.frame();
+    cuda::store_forces(device, d_force, d_force + 1, d_force + 2, 1,
+                       ctx.stream);
+    cuda::minimizer::LBFGS optimizer(5, .01, 3);
+    optimizer.line_search();
+    optimizer.build({ctx, device});
+    optimizer.launch(
+        {ctx, device, slot_of(minimizer::Phase::search_direction), 0});
+    int trials = 0;
+    const double rejected_energy = 101.0;
+    ctx.opt.reeval_forces = [&](bool) {
+        ++trials;
+        EXPECT_TRUE(ctx.exec.trial_evaluation);
+        EXPECT_EQ(cudaMemcpyAsync(&device.scalars->energy, &rejected_energy,
+                                  sizeof(double), cudaMemcpyHostToDevice,
+                                  static_cast<cudaStream_t>(ctx.stream)),
+                  cudaSuccess);
+    };
+    EXPECT_THROW(optimizer.launch(
+                     {ctx, device, slot_of(minimizer::Phase::line_search), 0}),
+                 std::runtime_error);
+    EXPECT_EQ(trials, 3);
+    EXPECT_FALSE(ctx.exec.trial_evaluation);
+    backend.sync();
+    backend.retrieve(frame);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_x)[0], 1.0);
     optimizer.destroy({ctx, device});
     cudaFree(d_force);
     backend.shutdown();

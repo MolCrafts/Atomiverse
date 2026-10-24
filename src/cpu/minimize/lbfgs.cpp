@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <stdexcept>
 
 namespace ATV {
 namespace cpu {
@@ -110,9 +111,9 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     StorageReal* __restrict sp_x = f.span(kAtom_x);
     StorageReal* __restrict sp_y = f.span(kAtom_y);
     StorageReal* __restrict sp_z = f.span(kAtom_z);
-    const AccReal* __restrict sp_fx = f.span(kAtom_fx);
-    const AccReal* __restrict sp_fy = f.span(kAtom_fy);
-    const AccReal* __restrict sp_fz = f.span(kAtom_fz);
+    AccReal* __restrict sp_fx = f.span(kAtom_fx);
+    AccReal* __restrict sp_fy = f.span(kAtom_fy);
+    AccReal* __restrict sp_fz = f.span(kAtom_fz);
 
     // Capacity growth (driver-level rebuild_frame after a migration influx)
     // is the one legal re-allocation point.
@@ -292,7 +293,7 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
         LineSearchResult lr;
         // Suppress migration while trials replay the force phase (see
         // Context::line_search_trial); halo exchange still refreshes ghosts.
-        {
+        try {
             struct RestoreTrial {
                 cpu::Context& context;
                 bool migration, evaluation;
@@ -311,12 +312,28 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
                 lr =
                     armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
                                      ls_contract_, max_ls_, ls_min_alpha_);
+            if (!lr.ok && !lr.sufficient_decrease)
+                throw std::runtime_error(
+                    "LBFGS line search found no acceptable step");
+        } catch (...) {
+            // Trials never own the accepted geometry. Restore the origin on
+            // both search exhaustion and evaluator failure, then preserve the error.
+#pragma omp parallel for schedule(static)
+            for (int i = 0; i < n; ++i) {
+                sp_x[i] = xp[i * 3 + 0];
+                sp_y[i] = xp[i * 3 + 1];
+                sp_z[i] = xp[i * 3 + 2];
+                sp_fx[i] = -g_ws_[i * 3 + 0];
+                sp_fy[i] = -g_ws_[i * 3 + 1];
+                sp_fz[i] = -g_ws_[i * 3 + 2];
+            }
+            f.meta.get(kEnergy) = ls_phi0_;
+            throw;
         }
 
-        // Commit the accepted geometry (the last trial may have been a
-        // different alpha). On a failed search (e.g. machine-flat near the
-        // minimum) lr.alpha may be ~0 → effectively no move, which the
-        // convergence check then resolves.
+        // The normal force phase evaluates this selected geometry and stages
+        // its electronic history for the enclosing physical-step transaction.
+
         const double alpha = lr.alpha;
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < n; ++i) {

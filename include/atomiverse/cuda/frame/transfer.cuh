@@ -7,6 +7,7 @@
 /// @see cpu::Frame for the CPU device data
 /// @see cpu::to_cuda() for the reverse direction
 #pragma once
+#include "atomiverse/core/input_change.h"
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/frame/frame.cuh"
@@ -27,6 +28,10 @@ namespace cuda {
 /// @param dst CPU Frame to write into (must be pre-sized).
 /// @throws std::runtime_error naming the atom tag and step of a force fault.
 void to_cpu(const Frame& src, cpu::Frame& dst);
+
+/// Refresh selected caller-edited input columns without replacing device storage.
+/// Identity changes require rematerialization. Caller synchronizes live streams.
+void update_inputs(const cpu::Frame& src, Frame& dst, InputChange changes);
 
 /// @brief Throw when a fixed-point force fault was recorded on `frame`.
 ///

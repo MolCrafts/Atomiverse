@@ -446,7 +446,7 @@ Binding summary; mechanism and LAMMPS source mapping in
 ### A loop is a Driver; a method is concrete
 
 - No generic "SCFSolver", no electronic-structure *category*. The concrete
-  method — `RHF`, `UHF`, `RKS`, `UKS`, `AM1`, `RM1`, `PW`, `GpwDft` — owns its
+  method — `RHF`, `UHF`, `RKS`, `UKS`, `AM1`, `RM1`, `MNDO`, `PM3`, `PW`, `GpwDft` — owns its
   Hamiltonian, density build and parameters as members.
 - Gaussian SCF is a Driver node on both backends (`MeanFieldMethod<D> :
   cpu::Driver<scf::Phase>`, `cuda::scf::RHF : cuda::Driver<scf::Phase>`),
@@ -687,14 +687,36 @@ only on large systems. Wave-local freezes live in `.claude/notes/`.
   [the semiempirical roadmap](docs/roadmap/semiempirical.md). Energy/charges,
   analytic forces, stress, spin, periodicity and language bindings have separate
   evidence. A passing primitive or energy-only solve does not complete a method.
-- CPU/CUDA AM1 and RM1 consume the unique parameter tables and physical result
+- CPU/CUDA NDDO methods consume the unique parameter tables and physical result
   types in `include/atomiverse/semiempirical/` and `src/semiempirical/`.
   Keep numerical kernels and scheduling backend-owned; call suitable LAPACK,
   cuBLAS, cuSOLVER and CUB primitives directly without forwarding adapters.
+  New public methods expose physical results, not internal system indexing or
+  SCF workspace accessors copied from older method interfaces.
 - Accepted electronic history changes only after successful normal evaluation.
   Initial-force preparation, trials and failed solves must not commit guesses.
+  A nested solve stages a candidate until the whole physical parent step
+  succeeds; failure in a later component discards it. The last accepted
+  line-search step commits before returning, without requiring another step.
   Test retry with the same outer Driver and method, not only a fresh parent.
   A failed device evaluation must not retrieve partial physical results.
+- At a chunk boundary, compare host input with the last successful write-back
+  before any device retrieval. Coordinate/velocity/cell edits preserve the
+  integrator's state while invalidating affected forces and guesses; identity
+  edits rebuild mappings. Test host edits with the same Driver and Frame.
+  `supports_input_changes` preflights the entire mounted plan before mutation;
+  `invalidate_inputs` refreshes a component's input-dependent state. Unknown
+  identity changes reject by default. A failed refresh remains pending until
+  a successful checkpoint, even if the caller restores the previous values.
+  Refresh callbacks update local caches; the CPU backend collectively agrees
+  on changes and errors over its spatial communicator before resuming MD.
+- Python methods mount the same native method instance through the existing
+  borrowed-node/lifetime mechanism. Keep controls and electronic state on that
+  instance; do not create an evaluator parameter copy. Concrete NDDO typed
+  setters perform the C++ base conversion: do not register their nonzero-offset
+  `DriverNode` base as a Python inheritance cast. Test mounting, not just
+  construction. Expose only validated backend combinations and reject
+  unsupported launcher requests explicitly.
 - Pin method-specific external energies, charges and full force vectors with
   source/version/input/output and independently justified tolerances. CPU-twin
   comparisons supplement those pins; finite differences supplement analytic

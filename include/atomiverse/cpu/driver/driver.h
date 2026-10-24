@@ -238,6 +238,19 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     using Base = ATV::Driver<PhaseEnum, cpu::device_tag>;
     using Traits = PhaseTraits<PhaseEnum>;
 
+    bool supports_input_changes(InputChange changes) const override {
+        for (const auto* component : this->plan_.components())
+            if (!component->supports_input_changes(changes))
+                return false;
+        return true;
+    }
+    void invalidate_inputs(InputChange changes,
+                           cpu::Runtime& runtime) override {
+        for (auto* component : this->plan_.components())
+            component->invalidate_inputs(changes,
+                                         {runtime.context(), runtime.frame()});
+    }
+
     /// @brief End the owned run and release its Runtime; the next run starts fresh.
     /// @throws std::logic_error during dispatch or while mounted on a parent.
     void shutdown() override {
@@ -686,6 +699,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             validate_long_range_contract_();
             validate_components();
             flush_new_mounts_();
+            const auto changes = this->backend_->refresh_external_inputs();
+            if (has_input_change(changes, InputChange::Identity))
+                publish_dof_(frame, this->backend_->context());
             return false;
         }
         setup_pass(frame);

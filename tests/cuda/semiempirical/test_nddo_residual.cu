@@ -4,6 +4,7 @@
 #include <cmath>
 #include <gtest/gtest.h>
 #include <limits>
+#include <stdexcept>
 
 namespace {
 class CudaNDDOResidual : public ::testing::Test {
@@ -65,3 +66,20 @@ TEST_F(CudaNDDOResidual, NonfiniteValuesCannotBeHiddenByMax) {
     EXPECT_DOUBLE_EQ(reduce(a, a), 0);
 }
 } // namespace
+
+TEST(CudaNDDOWorkspace, MethodIdentityIsExplicitAndInvalidIdentityIsRejected) {
+    using ATV::cuda::semiempirical::internal::NddoWorkspace;
+    using ATV::semiempirical::SemiEmpiricalMethod;
+    for (const auto method :
+         {SemiEmpiricalMethod::AM1, SemiEmpiricalMethod::RM1,
+          SemiEmpiricalMethod::MNDO, SemiEmpiricalMethod::PM3}) {
+        NddoWorkspace workspace(method);
+        EXPECT_EQ(workspace.method, method);
+        EXPECT_EQ(workspace.result.method, method);
+        EXPECT_EQ(workspace.matrices, nullptr);
+        EXPECT_FALSE(workspace.accepted);
+        EXPECT_FALSE(workspace.pending);
+    }
+    EXPECT_THROW(NddoWorkspace(static_cast<SemiEmpiricalMethod>(-1)),
+                 std::invalid_argument);
+}

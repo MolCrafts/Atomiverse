@@ -34,9 +34,42 @@ void Backend::init() {
     ATV_CUDA_CHECK(cudaStreamCreate(&defer));
     context_.defer_stream = defer;
     context_.exec.backend = this;
+    context_.exec.evaluation_transaction = &evaluation_;
 }
 
 namespace {
+// Exactly the input columns consumed by cpu::to_cuda; arbitrary host-only
+// custom fields do not change the single-GPU execution identity.
+bool device_input(std::string_view block, const cpu::ColumnRef& column) {
+    if (block != "atoms")
+        return false;
+    switch (static_cast<AtomFieldId>(column.wire_id)) {
+    case AtomFieldId::x:
+    case AtomFieldId::y:
+    case AtomFieldId::z:
+    case AtomFieldId::vx:
+    case AtomFieldId::vy:
+    case AtomFieldId::vz:
+    case AtomFieldId::mass:
+    case AtomFieldId::charge:
+    case AtomFieldId::type:
+    case AtomFieldId::tag:
+    case AtomFieldId::image:
+    case AtomFieldId::num_bond:
+    case AtomFieldId::bond_atom:
+    case AtomFieldId::bond_type:
+    case AtomFieldId::num_angle:
+    case AtomFieldId::angle_atom:
+    case AtomFieldId::angle_type:
+    case AtomFieldId::num_dihedral:
+    case AtomFieldId::dihedral_atom:
+    case AtomFieldId::dihedral_type:
+        return true;
+    default:
+        return false;
+    }
+}
+
 __global__ void publish_cell(const geom_t* cell, Box seed, Box* cache) {
     const Box previous = *cache;
     seed.resident = nullptr;
@@ -73,6 +106,8 @@ void Backend::materialize(const cpu::Frame& frame) {
     ATV_CUDA_CHECK(cudaMemset(resident, 0, sizeof(Box)));
     box.resident = resident;
     publish_box_();
+    input_snapshot_.capture(frame, device_input);
+    inputs_dirty_ = identity_dirty_ = false;
 }
 
 void Backend::load(const Plan<Component>& plan) {
@@ -96,6 +131,7 @@ void Backend::build_components() {
 }
 
 void Backend::build_plan(const Plan<Component>& plan) {
+    evaluation_.reserve(plan.components().size());
     BuildContext build{context_, frame_};
     DestroyContext destroy{context_, frame_};
     lifecycle_.build(
@@ -213,10 +249,16 @@ void Backend::execute_phases(const Plan<Component>& plan, BigInt step_idx,
 }
 
 void Backend::step(BigInt step_idx) {
+    EvaluationTransaction::Scope evaluation(evaluation_);
     prepare_run(step_idx);
     execute_phases(step_idx, 0, static_cast<int>(plan_->slots.size()));
+    if (!evaluation_.empty()) {
+        sync();
+        throw_if_force_fault(frame_);
+    }
     if (timer_)
         timer_->step_done();
+    evaluation.accept();
 }
 
 void Backend::run(int n_steps) {
@@ -229,7 +271,74 @@ void Backend::destroy_components() {
     lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
 }
 
-void Backend::retrieve(cpu::Frame& frame) { cuda::to_cpu(frame_, frame); }
+void Backend::retrieve(cpu::Frame& frame) {
+    sync();
+    cuda::to_cpu(frame_, frame);
+    input_snapshot_.capture(frame, device_input);
+    inputs_dirty_ = identity_dirty_ = false;
+}
+
+InputChange Backend::validate_inputs(const cpu::Frame& frame) const {
+    auto changes = input_snapshot_.changes(frame, device_input);
+    if (identity_dirty_ || frame.nlocal() != frame_.n_atoms())
+        changes |= InputChange::Identity;
+    if (changes == InputChange::None && !inputs_dirty_)
+        return changes;
+    // Preflight the complete plan before touching device state or any cache.
+    // A retry restores numeric inputs even if the caller returned to the last
+    // checkpoint; that restoration is not a newly edited charge/identity.
+    const auto invalidation =
+        inputs_dirty_ ? changes | InputChange::Geometry | InputChange::Cell
+                      : changes;
+    for (auto* component : plan_->components())
+        if (!component->supports_input_changes(invalidation))
+            throw std::invalid_argument(
+                "CUDA component '" + component->name()
+                + "' does not support these input changes; its input-derived "
+                  "caches require a new run object");
+    return changes;
+}
+
+void Backend::refresh_inputs(const cpu::Frame& frame) {
+    const auto changes = validate_inputs(frame);
+    if (changes == InputChange::None && !inputs_dirty_)
+        return;
+    const auto invalidation =
+        inputs_dirty_ ? changes | InputChange::Geometry | InputChange::Cell
+                      : changes;
+    sync();
+    const bool restore_all = inputs_dirty_;
+    mark_inputs_dirty();
+    if (has_input_change(changes, InputChange::Identity)) {
+        // Build replacement storage before releasing the current allocation.
+        // The Frame object stays at the same address for borrowed method plans.
+        auto replacement = cpu::to_cuda(frame);
+        cuda::destroy(frame_);
+        frame_ = replacement;
+        identity_dirty_ = true;
+    } else {
+        auto upload = changes;
+        if (restore_all)
+            upload |= InputChange::Geometry | InputChange::Velocity
+                      | InputChange::Charge | InputChange::Cell;
+        cuda::update_inputs(frame, frame_, upload);
+    }
+    auto& box = context_.host_box;
+    geom_t cell[9];
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            cell[3 * i + j] = frame.box.cell()(i, j);
+    box.assign_cell(cell);
+    publish_box_();
+    context_.md.n_dof_global = ATV::md::degrees_of_freedom(frame.nlocal());
+    // A reported scientific force fault belongs to the discarded evaluation.
+    // Reset it only at an explicit input/retry boundary, never during a step.
+    const ForceFault clean_fault{};
+    ATV_CUDA_CHECK(cudaMemcpy(frame_.force_fault, &clean_fault,
+                              sizeof(clean_fault), cudaMemcpyHostToDevice));
+    for (auto* component : plan_->components())
+        component->invalidate_inputs(invalidation, {context_, frame_});
+}
 
 void Backend::sync() {
     ATV_CUDA_CHECK(
@@ -277,6 +386,9 @@ void Backend::shutdown() {
     if (defer)
         cleanup([&] { ATV_CUDA_CHECK(cudaStreamDestroy(defer)); });
     context_ = {};
+    input_snapshot_.clear();
+    inputs_dirty_ = identity_dirty_ = false;
+    forces_ready_ = false;
     plan_ = nullptr;
     cuda::unregister_log_callback();
     // Cleanup attempts every release; a poisoned CUDA context can still require

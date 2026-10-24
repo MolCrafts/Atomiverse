@@ -47,6 +47,7 @@
 #include "atomiverse/cuda/component/zero.cuh"
 #include "atomiverse/cuda/driver/criterion.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
+#include "atomiverse/cuda/frame/transfer.cuh"
 
 namespace ATV {
 namespace cuda {
@@ -100,6 +101,12 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
         try {
             setup_pass(frame);
             this->backend_->prepare_run();
+            this->backend_->context().opt.reeval_forces = [this](bool) {
+                const int phase = slot_of(ATV::minimizer::Phase::force);
+                this->backend_->execute_phases(0, phase, phase + 1);
+                this->backend_->sync();
+                cuda::throw_if_force_fault(this->backend_->frame());
+            };
             BigInt iters = 0;
             for (BigInt s = 0; s < max_iter; ++s) {
                 this->mutable_outer_status().reset();
@@ -112,8 +119,13 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
             return iters;
         } catch (...) {
             // The backend ledger owns partial builds and reverse destruction.
-            if (this->backend_)
-                this->backend_->shutdown();
+            if (this->backend_) {
+                try {
+                    this->backend_->shutdown();
+                } catch (...) {
+                }
+            }
+            this->built_plugins_.clear();
             throw;
         }
     }

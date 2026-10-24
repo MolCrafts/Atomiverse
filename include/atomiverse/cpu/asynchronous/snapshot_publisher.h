@@ -36,6 +36,7 @@ class AnalysisExecutor;
 /// @brief Copies frame fields into a ring slot for async consumption.
 class Publish : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "publish"; }
 
     /// @brief No default binding -- drivers wire explicitly at their own

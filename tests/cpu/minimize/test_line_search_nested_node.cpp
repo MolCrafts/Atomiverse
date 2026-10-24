@@ -19,6 +19,8 @@
 /// SCF (no e2e in `tests/`).
 
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -55,11 +57,27 @@ constexpr double kCentre[2][3] = {{0.0, 0.0, 0.0}, {1.2, 0.0, 0.0}};
 ///
 /// Energy [eV] and force [eV/Å] of an anisotropic harmonic well:
 ///   E = ½ Σ_i Σ_d k_d (r_id − c_id)²,   f_id = −k_d (r_id − c_id).
-class HarmonicMethodNode : public cpu::Driver<ATV::scf::Phase>, public cpu::HF {
+class HarmonicMethodNode : public cpu::Driver<ATV::scf::Phase>,
+                           public cpu::HF,
+                           public EvaluationHistory {
   public:
-    int calls = 0;
+    int calls = 0, trials = 0, commits = 0, discards = 0;
+    double accepted_energy = 123.0, candidate_energy = 0.0;
+    bool pending = false;
+    void commit_evaluation() noexcept override {
+        if (pending) {
+            accepted_energy = candidate_energy;
+            ++commits;
+        }
+        pending = false;
+    }
+    void discard_evaluation() noexcept override {
+        ++discards;
+        pending = false;
+    }
 
-    int run_nested_erased(cpu::Context&, cpu::Frame& f, int /*budget*/) final {
+    int run_nested_erased(cpu::Context& context, cpu::Frame& f,
+                          int /*budget*/) final {
         ++calls;
         // Park the resolution window like a real method node does
         // (`MeanFieldMethod::run`): a driver op is dispatched OUTSIDE the
@@ -88,6 +106,14 @@ class HarmonicMethodNode : public cpu::Driver<ATV::scf::Phase>, public cpu::HF {
             fz[i] = -kSpring[2] * dz;
         }
         f.meta.get(kEnergy) = e;
+        if (context.exec.trial_evaluation)
+            ++trials;
+        if (!context.exec.initializing_forces
+            && !context.exec.trial_evaluation) {
+            context.exec.evaluation_transaction->enlist(*this);
+            candidate_energy = e;
+            pending = true;
+        }
         f.restore_resolution_window(saved);
         return 1;
     }
@@ -173,4 +199,78 @@ TEST(MinimizeNestedNode, FixedStepEntersTheNodeOncePerIteration) {
         << "Fixed mode evaluates initial forces once, then one force "
            "evaluation "
            "per iteration, without trial geometries";
+}
+
+namespace {
+struct TrialFailure final : cpu::Component {
+    enum class Mode { Reject, Throw, AfterForce } mode;
+    explicit TrialFailure(Mode value) : mode(value) {}
+    std::string name() const override { return "trial_failure"; }
+    void launch(const cpu::LaunchContext& ctx) override {
+        if (ctx.runtime.exec.initializing_forces)
+            return;
+        if (ctx.runtime.exec.trial_evaluation) {
+            if (mode == Mode::Throw)
+                throw std::runtime_error("injected trial failure");
+            if (mode == Mode::Reject)
+                ctx.frame.meta.get(kEnergy) =
+                    std::numeric_limits<double>::infinity();
+        } else if (mode == Mode::AfterForce) {
+            throw std::runtime_error("injected later component failure");
+        }
+    }
+};
+} // namespace
+
+TEST(MinimizeNestedNode, FinalAcceptedPointCommitsBeforeRunReturns) {
+    auto frame = displaced_pair();
+    HarmonicMethodNode method;
+    cpu::minimizer::Minimize opt;
+    opt.set_optimizer(cpu::minimizer::LBFGS{});
+    opt.on(ATV::minimizer::Phase::force).add_ref(method);
+    opt.add_criterion(never_converges());
+    opt.build();
+    EXPECT_EQ(opt.run(frame, 1), 1);
+    EXPECT_GT(method.trials, 0);
+    EXPECT_EQ(method.commits, 1);
+    EXPECT_DOUBLE_EQ(method.accepted_energy, frame.meta.get(kEnergy));
+}
+
+TEST(MinimizeNestedNode, LaterComponentFailureDiscardsElectronicCandidate) {
+    auto frame = displaced_pair();
+    HarmonicMethodNode method;
+    cpu::minimizer::Minimize opt;
+    opt.set_optimizer(cpu::minimizer::LBFGS{});
+    opt.on(ATV::minimizer::Phase::force).add_ref(method);
+    opt.on(ATV::minimizer::Phase::end_of_step)
+        .add(TrialFailure{TrialFailure::Mode::AfterForce});
+    opt.build();
+    EXPECT_THROW(opt.run(frame, 1), std::runtime_error);
+    EXPECT_DOUBLE_EQ(method.accepted_energy, 123.0);
+    EXPECT_EQ(method.commits, 0);
+    EXPECT_EQ(method.discards, 1);
+}
+
+TEST(MinimizeNestedNode, FailedOrRejectedTrialsRestoreOriginWithoutCommit) {
+    for (auto mode : {TrialFailure::Mode::Reject, TrialFailure::Mode::Throw}) {
+        auto frame = displaced_pair();
+        auto original = frame;
+        HarmonicMethodNode method;
+        cpu::minimizer::Minimize opt;
+        cpu::minimizer::LBFGS optimizer;
+        optimizer.line_search(cpu::minimizer::LineSearchMode::Armijo);
+        opt.set_optimizer(std::move(optimizer));
+        opt.on(ATV::minimizer::Phase::force).add_ref(method);
+        opt.on(ATV::minimizer::Phase::force).add(TrialFailure{mode}, 10);
+        opt.build();
+        EXPECT_THROW(opt.run(frame, 1), std::runtime_error);
+        EXPECT_GT(method.trials, 0);
+        EXPECT_EQ(method.commits, 0);
+        EXPECT_DOUBLE_EQ(method.accepted_energy, 123.0);
+        for (int i = 0; i < frame.nlocal(); ++i) {
+            EXPECT_EQ(frame.span(kAtom_x)[i], original.span(kAtom_x)[i]);
+            EXPECT_EQ(frame.span(kAtom_y)[i], original.span(kAtom_y)[i]);
+            EXPECT_EQ(frame.span(kAtom_z)[i], original.span(kAtom_z)[i]);
+        }
+    }
 }

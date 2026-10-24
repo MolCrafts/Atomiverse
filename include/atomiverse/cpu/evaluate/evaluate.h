@@ -114,8 +114,11 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     /// @param step 0-based step index published to components for this pass.
     void run(cpu::Frame& frame, int step) {
         setup_pass(frame);
+        EvaluationTransaction::Scope history(
+            this->backend_->evaluation_transaction());
         step_once(step);
         teardown_pass();
+        history.accept();
     }
 
     /// @brief User-facing entry — evaluate the system stored in a molrs.Frame.

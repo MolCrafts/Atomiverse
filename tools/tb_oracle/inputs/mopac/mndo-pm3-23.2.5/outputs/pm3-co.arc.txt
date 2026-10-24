@@ -1,0 +1,55 @@
+
+
+                     SUMMARY OF  PM3 CALCULATION
+
+                                                       MOPAC v23.2.5 MacOS
+                                                       Sat Oct 24 22:27:44 2026
+
+           Empirical Formula: C O  =     2 atoms
+
+ PM3 1SCF GRADIENTS XYZ AUX(PRECISION=9) PRECISE SCFCRT=1.D-12 DISP
+ PM3 off-equilibrium co
+ Native standalone OpenMOPAC reference, no geometry optimization
+
+
+     1SCF WAS SPECIFIED, SO BFGS WAS NOT USED                 
+     SCF FIELD WAS ACHIEVED                                   
+
+          HEAT OF FORMATION       =        -13.70720 KCAL/MOL =     -57.35091 KJ/MOL
+
+          TOTAL ENERGY            =      -9481.56881 KCAL/MOL = ELECTRONIC ENERGY + CORE-CORE REPULSION
+          ENERGY OF ATOMS         =       9467.86161 KCAL/MOL
+                              SUM =        -13.70720 KCAL/MOL
+          DISPERSION ENERGY       =          0.00000 KCAL/MOL
+                              SUM =        -13.70720 KCAL/MOL = FINAL HEAT OF FORMATION
+
+          TOTAL ENERGY            =       -411.15974 EV
+          ELECTRONIC ENERGY       =       -637.41722 EV
+          CORE-CORE REPULSION     =        226.25749 EV
+          GRADIENT NORM           =        243.17101          =       171.94787 PER ATOM
+          DIPOLE                  =          0.21855 DEBYE   POINT GROUP:  C*v 
+          NO. OF FILLED LEVELS    =          5
+          IONIZATION POTENTIAL    =         13.166959 EV
+          HOMO LUMO ENERGIES (EV) =        -13.167  0.557
+          MOLECULAR WEIGHT        =         28.0104
+          COSMO AREA              =         58.33 SQUARE ANGSTROMS
+          COSMO VOLUME            =         40.72 CUBIC ANGSTROMS
+
+          MOLECULAR DIMENSIONS (Angstroms)
+
+            Atom       Atom       Distance
+            O     2    C     1     1.20104
+            O     2    C     1     0.00000
+            C     1    O     2     0.00000
+          SCF CALCULATIONS        =          1
+          WALL-CLOCK TIME         =      0.008 SECONDS
+          COMPUTATION TIME        =      0.010 SECONDS
+
+
+          FINAL GEOMETRY OBTAINED
+ PM3 1SCF GRADIENTS XYZ AUX(PRECISION=9) PRECISE SCFCRT=1.D-12 DISP
+ PM3 off-equilibrium co
+ Native standalone OpenMOPAC reference, no geometry optimization
+  C     0.10000000 +1  -0.20000000 +1   0.30000000 +1
+  O     0.95000000 +1   0.40000000 +1   0.90000000 +1
+ 

@@ -15,7 +15,9 @@ using AM1Result = ATV::semiempirical::NDDOResult;
 /// FP64 neutral, closed-shell CHNO molecules without periodic cells.
 /// The concrete method owns diagonalize → density → fock → check and its
 /// Criterion. Device matrices and analytic-force scratch persist across solves.
-class AM1 : public cuda::Driver<ATV::nddo::Phase>, public cuda::DriverNode {
+class AM1 : public cuda::Driver<ATV::nddo::Phase>,
+            public cuda::DriverNode,
+            public EvaluationHistory {
   public:
     const int charge, multiplicity;
     int max_iter;
@@ -46,10 +48,15 @@ class AM1 : public cuda::Driver<ATV::nddo::Phase>, public cuda::DriverNode {
     bool provides_system_stress() const { return false; }
     int default_budget() const override { return -1; }
     void build_on(cuda::Context& ctx, cuda::Frame& frame) override;
+    bool supports_input_changes(InputChange changes) const override;
+    void invalidate_inputs(InputChange, cuda::Context&, cuda::Frame&) override;
+
     int run_nested_erased(cuda::Context& ctx, cuda::Frame& frame,
                           int budget) override;
     void destroy_on(cuda::Context& ctx, cuda::Frame& frame) override;
     void shutdown() override;
+    void commit_evaluation() noexcept override;
+    void discard_evaluation() noexcept override;
 
   protected:
     void validate_components() const override {}

@@ -6,6 +6,7 @@
 /// on phase enums. The child runs on the parent's device frame and stream
 /// (`run_nested_erased`); it does not allocate a second device Frame.
 #pragma once
+#include "atomiverse/core/input_change.h"
 
 namespace ATV {
 namespace cuda {
@@ -41,6 +42,11 @@ class DriverNode {
     /// @brief Nested budget when the caller passes `< 0`.
     /// @return Preset default (0 unless overridden).
     virtual int default_budget() const { return 0; }
+
+    virtual bool supports_input_changes(InputChange changes) const {
+        return !has_input_change(changes, InputChange::Identity);
+    }
+    virtual void invalidate_inputs(InputChange, Context&, Frame&) {}
 };
 
 } // namespace cuda

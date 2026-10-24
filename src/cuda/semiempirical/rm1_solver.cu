@@ -65,7 +65,10 @@ void RM1::start_() {
     workspace_->result.converged = false;
     workspace_->result.iterations = 0;
     workspace_->result.forces_ev_a.clear();
-    if (max_iter <= 0 || !std::isfinite(density_tol) || density_tol <= 0
+    if (max_iter <= 0)
+        throw std::invalid_argument(
+            "CUDA RM1 requires a positive SCF iteration budget");
+    if (!std::isfinite(density_tol) || density_tol <= 0
         || !std::isfinite(energy_tol) || energy_tol <= 0)
         throw std::invalid_argument(
             "CUDA RM1 requires positive finite SCF controls");
@@ -239,6 +242,7 @@ RM1Result& RM1::run_host_(const cpu::Frame& frame, bool force_request) {
     standalone_(frame);
     auto& ctx = this->backend_->context();
     ctx.exec.forces_requested = force_request;
+    EvaluationTransaction::Scope evaluation(*ctx.exec.evaluation_transaction);
     try {
         if (force_request)
             ATV_CUDA_CHECK(
@@ -247,7 +251,9 @@ RM1Result& RM1::run_host_(const cpu::Frame& frame, bool force_request) {
                                 static_cast<cudaStream_t>(ctx.stream)));
         solve_(ctx, this->backend_->frame(), -1, false);
         workspace_->download(static_cast<cudaStream_t>(ctx.stream));
-        workspace_->commit(static_cast<cudaStream_t>(ctx.stream));
+        ctx.exec.evaluation_transaction->enlist(*this);
+        workspace_->stage();
+        evaluation.accept();
     } catch (...) {
         workspace_->result.converged = false;
         workspace_->result.forces_ev_a.clear();
@@ -290,10 +296,32 @@ const RM1Result& RM1::last_result() const {
     workspace_->download(static_cast<cudaStream_t>(last_stream_));
     return workspace_->result;
 }
+void RM1::commit_evaluation() noexcept {
+    if (workspace_)
+        workspace_->commit();
+}
+void RM1::discard_evaluation() noexcept {
+    if (workspace_)
+        workspace_->discard();
+}
 bool RM1::has_density() const noexcept {
     return workspace_ && workspace_->accepted;
 }
 bool RM1::built() const noexcept { return workspace_ && workspace_->matrices; }
+bool RM1::supports_input_changes(InputChange changes) const {
+    for (auto* component : this->plan_.components())
+        if (!component->supports_input_changes(changes))
+            return false;
+    return true;
+}
+void RM1::invalidate_inputs(InputChange changes, cuda::Context& ctx,
+                            cuda::Frame& frame) {
+    workspace_->accepted = false;
+    workspace_->discard();
+    for (auto* component : this->plan_.components())
+        component->invalidate_inputs(changes, {ctx, frame});
+}
+
 void RM1::build_on(cuda::Context& ctx, cuda::Frame& frame) {
     if (!workspace_)
         throw std::logic_error("Moved-from CUDA RM1");
@@ -339,8 +367,13 @@ int RM1::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame, int budget) {
         throw std::logic_error("CUDA RM1 was not built on this parent");
     try {
         const int iterations = solve_(ctx, frame, budget, true);
-        if (!ctx.exec.initializing_forces && !ctx.exec.trial_evaluation)
-            workspace_->commit(static_cast<cudaStream_t>(ctx.stream));
+        if (!ctx.exec.initializing_forces && !ctx.exec.trial_evaluation) {
+            if (!ctx.exec.evaluation_transaction)
+                throw std::logic_error(
+                    "CUDA NDDO requires its parent's evaluation transaction");
+            ctx.exec.evaluation_transaction->enlist(*this);
+            workspace_->stage();
+        }
         return iterations;
     } catch (...) {
         workspace_->result.converged = false;

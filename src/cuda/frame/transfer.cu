@@ -196,6 +196,14 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     // copied. cap == n for the default single-GPU path.
     int cap = (capacity > n) ? capacity : n;
     cuda::Frame d{};
+    struct AllocationGuard {
+        cuda::Frame& frame;
+        bool complete = false;
+        ~AllocationGuard() {
+            if (!complete)
+                cuda::destroy(frame);
+        }
+    } allocation{d};
 
     // Flatten per-atom topology (LAMMPS num_bond[i] / bond_atom[i][m] layout in
     // the atoms Block) into flat (atomi[k] / atomj[k]) host buffers for the
@@ -265,8 +273,9 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     d.n_dihedrals_ = static_cast<int>(flat_dih_i.size());
 
     // Scalar metadata on device
-    cudaMalloc(&d.atoms.d_size, sizeof(int));
-    cudaMemcpy(d.atoms.d_size, &n, sizeof(int), cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.d_size, sizeof(int)));
+    ATV_CUDA_CHECK(
+        cudaMemcpy(d.atoms.d_size, &n, sizeof(int), cudaMemcpyHostToDevice));
 
     // Per-atom arrays (contract types) — allocated to `cap` for ghost headroom.
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.x, cap * sizeof(pos_t)));
@@ -348,61 +357,69 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     // Bond topology — copy from the flattened host buffers built above.
     int nb = d.n_bonds_;
     if (nb > 0) {
-        cudaMalloc(&d.bonds.n_bonds, sizeof(int));
-        cudaMemcpy(d.bonds.n_bonds, &nb, sizeof(int), cudaMemcpyHostToDevice);
-        cudaMalloc(&d.bonds.atomi, bond_cap(nb) * sizeof(int));
-        cudaMalloc(&d.bonds.atomj, bond_cap(nb) * sizeof(int));
-        cudaMalloc(&d.bonds.type, bond_cap(nb) * sizeof(int));
-        cudaMemcpy(d.bonds.atomi, flat_bond_i.data(), nb * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.bonds.atomj, flat_bond_j.data(), nb * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.bonds.type, flat_bond_t.data(), nb * sizeof(int),
-                   cudaMemcpyHostToDevice);
+        ATV_CUDA_CHECK(cudaMalloc(&d.bonds.n_bonds, sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d.bonds.n_bonds, &nb, sizeof(int),
+                                  cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMalloc(&d.bonds.atomi, bond_cap(nb) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMalloc(&d.bonds.atomj, bond_cap(nb) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMalloc(&d.bonds.type, bond_cap(nb) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d.bonds.atomi, flat_bond_i.data(),
+                                  nb * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.bonds.atomj, flat_bond_j.data(),
+                                  nb * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.bonds.type, flat_bond_t.data(),
+                                  nb * sizeof(int), cudaMemcpyHostToDevice));
     }
 
     // Angle topology
     int na = d.n_angles_;
     if (na > 0) {
-        cudaMalloc(&d.angles.n_angles, sizeof(int));
-        cudaMemcpy(d.angles.n_angles, &na, sizeof(int), cudaMemcpyHostToDevice);
-        cudaMalloc(&d.angles.atomi, bond_cap(na) * sizeof(int));
-        cudaMalloc(&d.angles.atomj, bond_cap(na) * sizeof(int));
-        cudaMalloc(&d.angles.atomk, bond_cap(na) * sizeof(int));
-        cudaMalloc(&d.angles.type, bond_cap(na) * sizeof(int));
-        cudaMemcpy(d.angles.atomi, flat_ang_i.data(), na * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.angles.atomj, flat_ang_j.data(), na * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.angles.atomk, flat_ang_k.data(), na * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.angles.type, flat_ang_t.data(), na * sizeof(int),
-                   cudaMemcpyHostToDevice);
+        ATV_CUDA_CHECK(cudaMalloc(&d.angles.n_angles, sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d.angles.n_angles, &na, sizeof(int),
+                                  cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMalloc(&d.angles.atomi, bond_cap(na) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMalloc(&d.angles.atomj, bond_cap(na) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMalloc(&d.angles.atomk, bond_cap(na) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMalloc(&d.angles.type, bond_cap(na) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d.angles.atomi, flat_ang_i.data(),
+                                  na * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.angles.atomj, flat_ang_j.data(),
+                                  na * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.angles.atomk, flat_ang_k.data(),
+                                  na * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.angles.type, flat_ang_t.data(),
+                                  na * sizeof(int), cudaMemcpyHostToDevice));
     }
 
     // Dihedral topology
     int nd = d.n_dihedrals_;
     if (nd > 0) {
-        cudaMalloc(&d.dihedrals.n_dihedrals, sizeof(int));
-        cudaMemcpy(d.dihedrals.n_dihedrals, &nd, sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMalloc(&d.dihedrals.atomi, bond_cap(nd) * sizeof(int));
-        cudaMalloc(&d.dihedrals.atomj, bond_cap(nd) * sizeof(int));
-        cudaMalloc(&d.dihedrals.atomk, bond_cap(nd) * sizeof(int));
-        cudaMalloc(&d.dihedrals.atoml, bond_cap(nd) * sizeof(int));
-        cudaMalloc(&d.dihedrals.type, bond_cap(nd) * sizeof(int));
-        cudaMemcpy(d.dihedrals.atomi, flat_dih_i.data(), nd * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.dihedrals.atomj, flat_dih_j.data(), nd * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.dihedrals.atomk, flat_dih_k.data(), nd * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.dihedrals.atoml, flat_dih_l.data(), nd * sizeof(int),
-                   cudaMemcpyHostToDevice);
-        cudaMemcpy(d.dihedrals.type, flat_dih_t.data(), nd * sizeof(int),
-                   cudaMemcpyHostToDevice);
+        ATV_CUDA_CHECK(cudaMalloc(&d.dihedrals.n_dihedrals, sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d.dihedrals.n_dihedrals, &nd, sizeof(int),
+                                  cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d.dihedrals.atomi, bond_cap(nd) * sizeof(int)));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d.dihedrals.atomj, bond_cap(nd) * sizeof(int)));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d.dihedrals.atomk, bond_cap(nd) * sizeof(int)));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d.dihedrals.atoml, bond_cap(nd) * sizeof(int)));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d.dihedrals.type, bond_cap(nd) * sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d.dihedrals.atomi, flat_dih_i.data(),
+                                  nd * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.dihedrals.atomj, flat_dih_j.data(),
+                                  nd * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.dihedrals.atomk, flat_dih_k.data(),
+                                  nd * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.dihedrals.atoml, flat_dih_l.data(),
+                                  nd * sizeof(int), cudaMemcpyHostToDevice));
+        ATV_CUDA_CHECK(cudaMemcpy(d.dihedrals.type, flat_dih_t.data(),
+                                  nd * sizeof(int), cudaMemcpyHostToDevice));
     }
 
+    allocation.complete = true;
     return d;
 }
 
@@ -470,6 +487,40 @@ void throw_if_force_fault(const Frame& d) {
           "unstable time step.");
 }
 
+void update_inputs(const cpu::Frame& src, Frame& dst, InputChange changes) {
+    if (has_input_change(changes, InputChange::Identity)
+        || src.nlocal() != dst.n_atoms())
+        throw std::invalid_argument(
+            "CUDA input update requires unchanged identity");
+    const int n = dst.n_atoms();
+    if (has_input_change(changes, InputChange::Geometry)) {
+        upload_position(dst.atoms.x, dst.atoms.x_corr, src.span(kAtom_x).data(),
+                        n);
+        upload_position(dst.atoms.y, dst.atoms.y_corr, src.span(kAtom_y).data(),
+                        n);
+        upload_position(dst.atoms.z, dst.atoms.z_corr, src.span(kAtom_z).data(),
+                        n);
+        ATV_CUDA_CHECK(cudaMemcpy(dst.atoms.image, src.span(kAtom_image).data(),
+                                  3 * n * sizeof(std::int8_t),
+                                  cudaMemcpyHostToDevice));
+    }
+    if (has_input_change(changes, InputChange::Velocity)) {
+        copy_h2d(dst.atoms.vx, src.span(kAtom_vx).data(), n);
+        copy_h2d(dst.atoms.vy, src.span(kAtom_vy).data(), n);
+        copy_h2d(dst.atoms.vz, src.span(kAtom_vz).data(), n);
+    }
+    if (has_input_change(changes, InputChange::Charge))
+        copy_h2d(dst.atoms.charge, src.span(kAtom_charge).data(), n);
+    if (has_input_change(changes, InputChange::Cell)) {
+        geom_t cell[9];
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                cell[3 * i + j] = src.box.cell()(i, j);
+        ATV_CUDA_CHECK(
+            cudaMemcpy(dst.box, cell, sizeof(cell), cudaMemcpyHostToDevice));
+    }
+}
+
 void to_cpu(const Frame& d, cpu::Frame& frame) {
     throw_if_force_fault(d);
     int n = frame.nlocal();
@@ -488,8 +539,9 @@ void to_cpu(const Frame& d, cpu::Frame& frame) {
     // by multi-GPU gather/migration to identify atoms after they move between
     // subdomains; previously only copied H2D, leaving stale host tags on D2H).
     if (d.atoms.tag)
-        cudaMemcpy(frame.span(kAtom_tag).data(), d.atoms.tag,
-                   n * sizeof(std::int64_t), cudaMemcpyDeviceToHost);
+        ATV_CUDA_CHECK(cudaMemcpy(frame.span(kAtom_tag).data(), d.atoms.tag,
+                                  n * sizeof(std::int64_t),
+                                  cudaMemcpyDeviceToHost));
 
     // Per-atom partial charge (mutable: charge-equilibration methods)
     if (d.atoms.charge)
@@ -497,15 +549,17 @@ void to_cpu(const Frame& d, cpu::Frame& frame) {
 
     // Per-atom PBC image counts (mutable: updated as atoms cross box faces)
     if (d.atoms.image)
-        cudaMemcpy(frame.span(kAtom_image).data(), d.atoms.image,
-                   3 * n * sizeof(std::int8_t), cudaMemcpyDeviceToHost);
+        ATV_CUDA_CHECK(cudaMemcpy(frame.span(kAtom_image).data(), d.atoms.image,
+                                  3 * n * sizeof(std::int8_t),
+                                  cudaMemcpyDeviceToHost));
 
     // System scalars: read the device SystemScalars back and scatter into the
     // host frame's typed meta.
     if (d.scalars) {
         SystemScalars host_scalars{};
-        cudaMemcpy(&host_scalars, d.scalars, sizeof(SystemScalars),
-                   cudaMemcpyDeviceToHost);
+        ATV_CUDA_CHECK(cudaMemcpy(&host_scalars, d.scalars,
+                                  sizeof(SystemScalars),
+                                  cudaMemcpyDeviceToHost));
         scatter_scalars(frame, host_scalars);
     }
 

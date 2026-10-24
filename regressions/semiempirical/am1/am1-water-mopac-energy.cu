@@ -19,6 +19,7 @@
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #endif
 #ifdef ATV_HAS_MINIMIZER
+#include "atomiverse/cuda/minimize/lbfgs.cuh"
 #include "atomiverse/cuda/minimize/minimize.cuh"
 #include "atomiverse/cuda/minimize/sd.cuh"
 #endif
@@ -232,6 +233,7 @@ cpu::Frame dynamic_molecule(const ModernMopacPin& pin) {
     }
     return frame;
 }
+#endif
 void check_observables(const cpu::Frame& frame,
                        const ATV::semiempirical::NDDOResult& result) {
     near("composition energy", frame.meta.get(kEnergy), result.total_energy_ev,
@@ -241,7 +243,6 @@ void check_observables(const cpu::Frame& frame,
         near("composition charge", frame.span(kAtom_charge)[i],
              result.mulliken_charges[i], 1e-8);
 }
-#endif
 #ifdef ATV_HAS_MD
 void compare_trajectory(const cpu::Frame& a, const cpu::Frame& b) {
     near("four-step potential energy", a.meta.get(kEnergy), b.meta.get(kEnergy),
@@ -303,12 +304,108 @@ void short_md(const ModernMopacPin& pin) {
     require(cpu_md.run(cpu_frame, 4) == 4, "CPU four-step MD");
     compare_trajectory(split_frame, whole_frame);
     compare_trajectory(whole_frame, cpu_frame);
+    // A host edit between chunks must be seen before the first half kick.
+    // Compare with a new driver starting from the edited state, including the
+    // old output force: it must prepare a new force rather than reuse that one.
+    split_frame.span(kAtom_x)[1] += .013;
+    split_frame.span(kAtom_vz)[0] -= .0003;
+    auto edited_reference = split_frame;
+    Gpu edited_method{0, 1, 1000, 1e-10, 1e-12};
+    cuda::md::MD edited;
+    edited.set_integrator(cuda::md::VelocityVerlet{dt});
+    edited.on(md::Phase::force).add_ref(edited_method);
+    edited.build();
+    require(split.run(split_frame, 1) == 1, "MD edited chunk");
+    require(edited.run(edited_reference, 1) == 1, "MD edited fresh reference");
+    compare_trajectory(split_frame, edited_reference);
+    // A rejected box edit must not silently continue from the old device box.
+    const double edited_x = split_frame.span(kAtom_x)[1];
+    split_frame.box = cpu::Box::cubic(20);
+    rejects([&] { split.run(split_frame, 0); },
+            "MD edited periodic box rejected");
+    near("MD rejected box preserves host coordinate",
+         split_frame.span(kAtom_x)[1], edited_x, 0);
+    split_frame.box = cpu::Box{};
+    split.run(split_frame, 0);
+    check_observables(split_frame, direct.forces(edited_reference));
+    split_frame = dynamic_molecule(kModernPins[pin.rm1 ? 4 : 1]);
+    split.run(split_frame, 0);
+    std::swap(split_frame.span(kAtom_type)[0], split_frame.span(kAtom_type)[1]);
+    std::swap(split_frame.span(kAtom_mass)[0], split_frame.span(kAtom_mass)[1]);
+    edited_reference = split_frame;
+    split.run(split_frame, 0);
+    check_observables(split_frame, direct.forces(edited_reference));
+    // Replacing the same host Frame with another atom count rebuilds mappings.
+    split_frame = dynamic_molecule(kModernPins[pin.rm1 ? 3 : 0]);
+    edited_reference = split_frame;
+    split.run(split_frame, 0);
+    check_observables(split_frame, direct.forces(edited_reference));
     std::printf("PASS CUDA %s MD initial force, 2+2 versus 4, CPU four-step "
                 "dt=%.3g fs\n",
                 pin.rm1 ? "RM1" : "AM1", dt);
 }
 #endif
 #ifdef ATV_HAS_MINIMIZER
+__global__ void trial_energy_penalty(cuda::Frame frame) {
+    frame.scalars->energy += 1e6;
+}
+class RejectTrial final : public cuda::Component {
+  public:
+    bool enabled = true;
+    int trials = 0;
+    std::string name() const override { return "reject_nddo_trial"; }
+    bool provides_energy() const override { return true; }
+    void launch(const cuda::LaunchContext& ctx) override {
+        if (enabled && ctx.runtime.exec.trial_evaluation) {
+            ++trials;
+            trial_energy_penalty<<<
+                1, 1, 0, static_cast<cudaStream_t>(ctx.runtime.stream)>>>(
+                ctx.frame);
+            ATV_CUDA_CHECK(cudaGetLastError());
+        }
+    }
+};
+template <class Gpu>
+void line_search_transaction(const ModernMopacPin& pin) {
+    auto frame = dynamic_molecule(pin), reference = dynamic_molecule(pin);
+    Gpu method{0, 1, 1000, 1e-10, 1e-12}, direct{0, 1, 1000, 1e-10, 1e-12};
+    const auto initial = direct.forces(reference);
+    RejectTrial reject;
+    cuda::minimizer::LBFGS optimizer{5, .001, 3};
+    optimizer.line_search();
+    cuda::minimizer::Minimize opt;
+    opt.set_optimizer_ref(optimizer);
+    opt.add_criterion(cuda::ForceConverged{1e-12, 1e-12, 1e-12, 1e-12, 1e-14});
+    opt.on(minimizer::Phase::force).add_ref(method);
+    opt.on(minimizer::Phase::force).add_ref(reject, 100);
+    opt.build();
+    rejects([&] { opt.run(frame, 1); }, "exhausted Armijo search rejects");
+    require(reject.trials > 0 && reject.trials <= 3,
+            "line search obeys its per-step budget");
+    require(!method.has_density(), "rejected trials leave no accepted guess");
+    for (int i = 0; i < pin.count; ++i) {
+        near("rejected search restores x", frame.span(kAtom_x)[i],
+             pin.xyz[i][0], 0);
+        near("rejected search restores y", frame.span(kAtom_y)[i],
+             pin.xyz[i][1], 0);
+        near("rejected search restores z", frame.span(kAtom_z)[i],
+             pin.xyz[i][2], 0);
+    }
+    reject.enabled = false;
+    require(opt.run(frame, 1) == 1,
+            "same minimizer retries after search failure");
+    require(method.has_density(),
+            "final accepted step commits without next step");
+    require(frame.meta.get(kEnergy) < initial.total_energy_ev,
+            "accepted one-step search lowers energy");
+    const auto final = method.last_result();
+    check_observables(frame, final);
+    reference = frame;
+    check_observables(frame, direct.forces(reference));
+    std::printf("PASS CUDA %s bounded real line search, rejection, retry and "
+                "final-step commit\n",
+                pin.rm1 ? "RM1" : "AM1");
+}
 template <class Gpu>
 void short_minimize(const ModernMopacPin& pin) {
     auto frame = dynamic_molecule(pin), reference_frame = dynamic_molecule(pin);
@@ -755,6 +852,31 @@ void grade(int m) {
             check_force_frame(probed_frame, a.forces_ev_a, true);
         }
     }
+    {
+        // The child can finish successfully while a later parent component
+        // fails. Its provisional density must not become the next guess.
+        const auto& pin = kModernPins[m ? 5 : 2];
+        auto failed_frame = molecule(pin), control_frame = molecule(pin);
+        Gpu probed{0, 1, 1000, 1e-10, 1e-12}, control{0, 1, 1000, 1e-10, 1e-12};
+        probed.forces(failed_frame);
+        control.forces(control_frame);
+        SolveFailure later;
+        cuda::Evaluate parent;
+        parent.on(evaluate::Phase::evaluate).add_ref(probed);
+        parent.on(evaluate::Phase::evaluate).add_ref(later, 100);
+        parent.build();
+        failed_frame.span(kAtom_x)[1] += .04;
+        later.fail = true;
+        rejects([&] { parent.run(failed_frame); },
+                "later parent component failure rolls back electronic history");
+        failed_frame.span(kAtom_x)[1] = control_frame.span(kAtom_x)[1] + .002;
+        control_frame.span(kAtom_x)[1] += .002;
+        parent.run(failed_frame);
+        const auto a = probed.last_result(), b = control.forces(control_frame);
+        require(a.iterations == b.iterations,
+                "later parent failure preserves previous accepted guess");
+        check_observables(failed_frame, b);
+    }
     Cpu changed_cpu{0, 1, 1000, 1e-10, 1e-12};
     auto methane = cpu::Frame(5);
     methane.span(kAtom_type)[0] = 6;
@@ -777,6 +899,7 @@ void grade(int m) {
 #endif
 #ifdef ATV_HAS_MINIMIZER
     short_minimize<Gpu>(kModernPins[m ? 5 : 2]);
+    line_search_transaction<Gpu>(kModernPins[m ? 5 : 2]);
 #else
     std::printf(
         "SKIP CUDA %s Minimize composition: ATV_HAS_MINIMIZER disabled\n",

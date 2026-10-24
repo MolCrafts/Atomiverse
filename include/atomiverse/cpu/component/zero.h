@@ -20,6 +20,7 @@ namespace cpu {
 /// own phase. Ghost rows are zeroed by `CommBrick` when it (re)populates them.
 class ZeroForces : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "zero_forces"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
@@ -29,6 +30,7 @@ class ZeroForces : public cpu::Component {
 /// Phase-agnostic — driver binds to its own phase.
 class ZeroEnergy : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "zero_energy"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
@@ -40,6 +42,7 @@ class ZeroEnergy : public cpu::Component {
 /// virials) requires a clean baseline at the start of each step.
 class ZeroStress : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "zero_stress"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
@@ -48,6 +51,7 @@ class ZeroStress : public cpu::Component {
 /// @brief Zero kinetic energy. Phase-agnostic — driver binds to its own phase.
 class ZeroKinetic : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "zero_kinetic"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;

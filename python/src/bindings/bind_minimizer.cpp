@@ -789,18 +789,6 @@ void bind_minimizer(nb::module_& m) {
     // because both facades read one dispatch table.
     bind_evaluator_setters(
         minimize,
-        // set_evaluator_am1 — the geometry-optimization reading of the same
-        // component.
-        "Append the AM1 semiempirical evaluator as the force source of a "
-        "geometry optimization — one self-consistent-field solve per "
-        "iteration, forces from the fixed-density central finite "
-        "difference (step 1e-4 A). The C++ twin is "
-        "regressions/semiempirical/am1_water_minimize. Takes no "
-        "NeighborList (AM1 is molecular, not a pair style) and reads the "
-        "frame's 'atomic_number' column [Z].\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the five "
-        "SCF parameters: the object you pass keeps its own state, so "
-        "last_result() on it is NOT populated by run().",
         // set_evaluator_pw — the geometry-optimization reading of the same
         // component.
         "Append the plane-wave DFT evaluator as the force source of a "

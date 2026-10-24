@@ -20,6 +20,7 @@ namespace md {
 /// KE = 0.5 * units::mass_v2_to_energy * sum(m * v^2), with OpenMP reduction.
 class KineticEnergy : public cpu::Observer {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "kinetic_energy"; }
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::end_of_step, -100)};
@@ -37,6 +38,7 @@ class KineticEnergy : public cpu::Observer {
 /// the freshly-integrated velocities are zeroed before the next step.
 class ZeroMomentum : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @param freq Remove momentum every `freq` steps (LAMMPS default 1).
     explicit ZeroMomentum(int freq = 1) : freq_(freq) {}
 
@@ -97,6 +99,7 @@ enum class VelocityDist {
 /// temperature. No-op during launch().
 class InitVelocity : public cpu::Component {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @param temperature Target temperature [K].
     /// @param seed Random number generator seed.
     /// @param dist Velocity-draw distribution (LAMMPS `dist`; Atomiverse

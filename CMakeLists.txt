@@ -357,6 +357,9 @@ if(NOT ATV_DOCS_ONLY)
         list(APPEND ATOMIVERSE_SRCS
             src/semiempirical/am1_parameters.cpp
             src/semiempirical/rm1_parameters.cpp
+            src/semiempirical/mndo_parameters.cpp
+            src/semiempirical/pm3_parameters.cpp
+            src/semiempirical/nddo_parameters.cpp
             src/cpu/semiempirical/nddo_density.cpp
             src/cpu/semiempirical/nddo_fock.cpp
             src/cpu/semiempirical/nddo_hcore.cpp
@@ -369,6 +372,8 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/scc_method.cpp
             src/cpu/semiempirical/am1_solver.cpp
             src/cpu/semiempirical/rm1_solver.cpp
+            src/cpu/semiempirical/mndo_solver.cpp
+            src/cpu/semiempirical/pm3_solver.cpp
             src/cpu/semiempirical/dftb2.cpp
             src/cpu/semiempirical/dftb0.cpp
             src/cpu/semiempirical/gfn0.cpp
@@ -623,7 +628,9 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/semiempirical/nddo_two_electron.cu
                 src/cuda/semiempirical/nddo_workspace.cu
                 src/cuda/semiempirical/am1_solver.cu
-                src/cuda/semiempirical/rm1_solver.cu)
+                src/cuda/semiempirical/rm1_solver.cu
+                src/cuda/semiempirical/mndo_solver.cu
+                src/cuda/semiempirical/pm3_solver.cu)
         endif()
         if(ATV_BUILD_MINIMIZER)
             list(APPEND ATOMIVERSE_SRCS
@@ -1323,6 +1330,9 @@ if(NOT ATV_DOCS_ONLY)
         endif()
         if(ATV_BUILD_SEMIEMPIRICAL)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_semiempirical.cpp)
+            if(ATV_BUILD_CUDA)
+                list(APPEND _ATV_NB_SRCS python/src/bindings/bind_cuda.cu)
+            endif()
         endif()
         if(ATV_BUILD_HF)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_scf.cpp)

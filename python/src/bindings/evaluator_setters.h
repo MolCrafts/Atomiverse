@@ -17,7 +17,7 @@
 /// `MdHandle` and `MinimizeHandle` satisfy: it registers the component on the
 /// driver's plural evaluator slot and records the TaskSpec mirror entry.
 ///
-/// Two docstrings are the caller's, not this header's: AM1 and plane-wave DFT
+/// The plane-wave docstring belongs to the caller: plane-wave DFT
 /// cost one self-consistent-field solve per *step* under MD and per *iteration*
 /// under a minimizer, and only an MD run also needs a per-atom mass column, so
 /// that guidance cannot be written once. The sixteen classical setters describe
@@ -51,6 +51,9 @@
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
 #ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
+#include "atomiverse/cpu/semiempirical/mndo_solver.h"
+#include "atomiverse/cpu/semiempirical/pm3_solver.h"
+#include "atomiverse/cpu/semiempirical/rm1_solver.h"
 #endif
 // The one params-mirror-to-component factory of the catalogue: the Born table
 // crosses as parallel vectors and has to be transposed back into coefficient
@@ -65,15 +68,39 @@ namespace nb = nanobind;
 /// @tparam Handle    `MdHandle` or `MinimizeHandle` — anything exposing
 ///                   `set_categorical(setter, params, component)`.
 /// @param cls        The bound handle class the methods are added to.
-/// @param am1_doc    Docstring for `set_evaluator_am1`, written in the caller's
-///                   loop vocabulary (step vs iteration). Unused on a build
-///                   without `ATV_HAS_SEMIEMPIRICAL`.
 /// @param pw_doc     Docstring for `set_evaluator_pw`, likewise. Unused on a
 ///                   build without `ATV_HAS_PW`.
 template <typename Handle>
 void bind_evaluator_setters(nb::class_<Handle>& cls,
-                            [[maybe_unused]] const char* am1_doc,
                             [[maybe_unused]] const char* pw_doc) {
+#ifdef ATV_HAS_SEMIEMPIRICAL
+    // Concrete casts preserve the nonzero DriverNode base offset. The driver
+    // still borrows the original method and owns the normal nested adapter.
+    cls.def(
+           "set_evaluator",
+           [](Handle& self, ATV::cpu::semiempirical::AM1& method) {
+               self.set_local_evaluator(method, "AM1");
+           },
+           nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::RM1& method) {
+                self.set_local_evaluator(method, "RM1");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::MNDO& method) {
+                self.set_local_evaluator(method, "MNDO");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::PM3& method) {
+                self.set_local_evaluator(method, "PM3");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>());
+#endif
     cls.def(
            "set_evaluator",
            [](Handle& self, ATV::cpu::Component& evaluator) {
@@ -138,25 +165,6 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "Append the reciprocal-space half of the same Ewald/PME split. build() "
         "requires exactly one real-space partner (CoulLong) at the SAME alpha "
         "[1/A]. Bound only on an extension built with ATV_BUILD_KSPACE=ON.");
-#endif
-
-#ifdef ATV_HAS_SEMIEMPIRICAL
-    cls.def(
-        "set_evaluator_am1",
-        [](Handle& self, const ATV::cpu::semiempirical::AM1& method) {
-            // Handed the method itself. Its five SCF parameters — the same
-            // five the MPI launcher path copies in bind_semiempirical.cpp —
-            // build both the wire mirror and the driver's own nested copy, so
-            // the two cannot disagree.
-            const ATV::cpu::task::AM1Params p{
-                method.charge, method.multiplicity, method.max_iter,
-                method.density_tol, method.energy_tol};
-            self.set_categorical("set_evaluator", p,
-                                 ATV::cpu::semiempirical::AM1{
-                                     p.charge, p.multiplicity, p.max_iter,
-                                     p.density_tol, p.energy_tol});
-        },
-        nb::arg("comp"), am1_doc);
 #endif
 
 #ifdef ATV_HAS_PW

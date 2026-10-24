@@ -643,23 +643,6 @@ void bind_md(nb::module_& m) {
     // eighteen force sources, because `Minimize` exposes the very same names.
     bind_evaluator_setters(
         md,
-        // set_evaluator_am1 — the MD reading of the same component.
-        "Append the AM1 semiempirical evaluator as an MD force source — "
-        "Born-Oppenheimer dynamics, meaning the electrons are "
-        "re-converged at every geometry the nuclei reach: one "
-        "self-consistent-field (SCF) solve per step, with forces from "
-        "three-direction analytic pair-integral and core-repulsion derivatives "
-        "at the converged density. Both density and energy tolerances must "
-        "be met; the model parameters are unchanged. Takes no "
-        "NeighborList (AM1 is molecular, not a pair style) and reads the "
-        "frame's 'atomic_number' column [Z]. Like any MD run it also "
-        "needs a per-atom 'mass' column [amu] — the integrator divides by "
-        "it.\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the five "
-        "SCF parameters: the object you pass keeps its own state, so "
-        "last_result() on it is NOT populated by run() — per-step "
-        "results (energy [eV], charges [e], forces [eV/A]) land on the "
-        "frame.",
         // set_evaluator_pw — the MD reading of the same component.
         "Append the plane-wave DFT evaluator as an MD force source — "
         "Born-Oppenheimer dynamics on a plane-wave Hamiltonian, meaning "

@@ -38,13 +38,6 @@ EVALUATOR_DISPATCH: dict[type, str] = {
 if has_domain("kspace"):
     EVALUATOR_DISPATCH[_cpp.KSpacePME] = "set_evaluator_kspace_pme"
 
-# AM1 is the semiempirical force source (ATV_BUILD_SEMIEMPIRICAL): with it
-# registered an MD loop is Born-Oppenheimer dynamics and a Minimize is a
-# semiempirical geometry optimization. Capability-probed for the same reason
-# as KSpacePME — the wheel builds it, a staged extension need not.
-if has_domain("am1"):
-    EVALUATOR_DISPATCH[_cpp.AM1] = "set_evaluator_am1"
-
 # Plane-wave DFT is the other electronic-structure force source
 # (ATV_BUILD_PW / FFTW3): one SCF per step, analytic ionic forces from its
 # density, and the analytic virial whenever the plan reads stress (a cell
@@ -76,6 +69,14 @@ def bind_evaluator(driver: object, component: object) -> None:
     Existing mirror entries retain their MPI transport behavior. Other live
     objects use the C++ registration protocol and remain owned by Python.
     """
+    # NDDO has multiple inheritance in C++; bind its concrete borrowed setter
+    # instead of asking nanobind to cast through a nonzero DriverNode base.
+    nddo_types = tuple(getattr(_cpp, name) for name in
+                       ("AM1", "RM1", "MNDO", "PM3",
+                        "_CudaAM1", "_CudaRM1", "_CudaMNDO", "_CudaPM3") if hasattr(_cpp, name))
+    if isinstance(component, nddo_types):
+        driver.set_evaluator(component)
+        return
     method = EVALUATOR_DISPATCH.get(type(component))
     if method is not None:
         getattr(driver, method)(component)

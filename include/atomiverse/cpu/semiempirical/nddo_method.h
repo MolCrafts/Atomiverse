@@ -2,6 +2,8 @@
 /// @brief Shared NDDO self-consistency Driver for AM1 and RM1.
 #pragma once
 
+#include "atomiverse/core/evaluation_history.h"
+
 #include <memory>
 
 #include "atomiverse/cpu/driver/driver.h"
@@ -24,10 +26,13 @@ class NDDOSolver;
 /// method is a nested node: each launch runs the SCF on the parent Runtime
 /// and accumulates energy [eV], Mulliken charges [e] and — when the phase
 /// requests forces — analytic forces [eV/Å] onto the Frame.
-class NddoMethod : public cpu::Driver<ATV::nddo::Phase> {
+class NddoMethod : public cpu::Driver<ATV::nddo::Phase>,
+                   private EvaluationHistory {
   public:
     bool requires_full_frame() const override { return true; }
     ~NddoMethod() override;
+    void invalidate_inputs(InputChange changes, cpu::Runtime& runtime) override;
+    virtual void reset_history() = 0;
 
     /// @brief Energy source for an outer loop's validation.
     /// @return true.
@@ -103,12 +108,17 @@ class NddoMethod : public cpu::Driver<ATV::nddo::Phase> {
     void publish_in_context_(const cpu::LaunchContext& ctx, bool accumulate,
                              int budget = -1);
 
+    /// Clear the candidate before replacing a concrete method engine.
+    void discard_evaluation() noexcept override;
+
     void validate_components() const override {}
 
     /// Iterations executed by the most recent solve.
     int iterations_ = 0;
 
   private:
+    void commit_evaluation() noexcept override;
+    NDDOSolver* pending_solver_ = nullptr;
     /// Parent Runtime while nested (`build_on`); null for standalone entries.
     cpu::Runtime* host_runtime_ = nullptr;
     /// True during a nested solve: `drive_` steps on `host_runtime_`.

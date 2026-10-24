@@ -33,6 +33,14 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "harness/registry.h"
+#ifdef ATV_HAS_MD
+#include "atomiverse/cpu/dynamics/md.h"
+#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#endif
+#ifdef ATV_HAS_MINIMIZER
+#include "atomiverse/cpu/minimize/lbfgs.h"
+#include "atomiverse/cpu/minimize/minimize.h"
+#endif
 
 namespace atv_reg_semiempirical_am1_water_force {
 
@@ -67,6 +75,29 @@ struct NddoRequestMode : ATV::cpu::Component {
     void launch(const ATV::cpu::LaunchContext& ctx) override {
         ctx.runtime.exec.initializing_forces = !clear && mode == 1;
         ctx.runtime.exec.trial_evaluation = !clear && mode == 2;
+    }
+};
+
+// Inject a later failure or a rejected trial through the real parent pipeline.
+struct NddoEvaluationGate : ATV::cpu::Component {
+    int& mode;
+    int& trials;
+    NddoEvaluationGate(int& control, int& count)
+        : mode(control), trials(count) {}
+    std::string name() const override { return "nddo_evaluation_gate"; }
+    void launch(const ATV::cpu::LaunchContext& ctx) override {
+        if (ctx.runtime.exec.initializing_forces)
+            return;
+        if (ctx.runtime.exec.trial_evaluation) {
+            ++trials;
+            if (mode == 1)
+                ctx.frame.meta.get(ATV::kEnergy) =
+                    std::numeric_limits<double>::infinity();
+            if (mode == 2)
+                throw std::runtime_error("injected NDDO trial failure");
+        } else if (mode == 3) {
+            throw std::runtime_error("injected failure after NDDO publication");
+        }
     }
 };
 
@@ -229,6 +260,237 @@ int run() {
                              "accepted history\n");
         return 1;
     }
+
+    const auto check_transaction = [&]<typename Method>(const char* name) {
+        const auto same = [&](const Method& a, const Method& b,
+                              const char* phase) {
+            const auto& x = a.last_result();
+            const auto& y = b.last_result();
+            if (x.iterations != y.iterations
+                || std::abs(x.total_energy_ev - y.total_energy_ev) > 1.e-10) {
+                std::fprintf(stderr,
+                             "FAIL %s %s iterations got=%d want=%d tol=0; "
+                             "energy got=%.17g want=%.17g tol=1e-10 eV\n",
+                             name, phase, x.iterations, y.iterations,
+                             x.total_energy_ev, y.total_energy_ev);
+                return false;
+            }
+            for (std::size_t i = 0; i < x.forces_ev_a.size(); ++i)
+                if (std::abs(x.forces_ev_a[i] - y.forces_ev_a[i]) > 1.e-9) {
+                    std::fprintf(stderr,
+                                 "FAIL %s %s force[%zu] got=%.17g "
+                                 "want=%.17g tol=1e-9 eV/A\n",
+                                 name, phase, i, x.forces_ev_a[i],
+                                 y.forces_ev_a[i]);
+                    return false;
+                }
+            return true;
+        };
+        for (int failure : {3, 1, 2, 0}) {
+#ifndef ATV_HAS_MINIMIZER
+            if (failure != 3)
+                continue;
+#endif
+            Method method{0, 1, 400, 1.e-10, 1.e-12};
+            Method control{0, 1, 400, 1.e-10, 1.e-12};
+            auto base = make_water();
+            method.forces(base);
+            control.forces(base);
+            auto evaluated = base;
+            int trials = 0, mode = failure;
+            bool threw = false;
+            if (failure == 3) {
+                evaluated.span(kAtom_x)[1] += 0.1;
+                cpu::Evaluate evaluation;
+                evaluation.on(evaluate::Phase::evaluate).add_ref(method);
+                evaluation.on(evaluate::Phase::finalize)
+                    .add(NddoEvaluationGate{mode, trials});
+                evaluation.build();
+                try {
+                    evaluation.run(evaluated);
+                } catch (const std::runtime_error&) {
+                    threw = true;
+                }
+            }
+#ifdef ATV_HAS_MINIMIZER
+            else {
+                cpu::minimizer::Minimize optimization;
+                cpu::minimizer::LBFGS optimizer;
+                optimizer.line_search(cpu::minimizer::LineSearchMode::Armijo);
+                optimization.set_optimizer(std::move(optimizer));
+                optimization.on(minimizer::Phase::force).add_ref(method);
+                optimization.on(minimizer::Phase::force)
+                    .add(NddoEvaluationGate{mode, trials}, 10);
+                optimization.build();
+                try {
+                    optimization.run(evaluated, 1);
+                } catch (const std::runtime_error&) {
+                    threw = true;
+                }
+                if (trials == 0) {
+                    std::fprintf(
+                        stderr,
+                        "FAIL %s actual line-search trials got=0 want=>0\n",
+                        name);
+                    return false;
+                }
+                if (failure != 0)
+                    for (int i = 0; i < 3; ++i)
+                        for (const auto key : {kAtom_x, kAtom_y, kAtom_z})
+                            if (evaluated.span(key)[i] != base.span(key)[i]) {
+                                std::fprintf(stderr,
+                                             "FAIL %s rejected origin atom=%d "
+                                             "got=%.17g want=%.17g tol=0 A\n",
+                                             name, i,
+                                             double(evaluated.span(key)[i]),
+                                             double(base.span(key)[i]));
+                                return false;
+                            }
+            }
+#endif
+            if (threw != (failure != 0)) {
+                std::fprintf(
+                    stderr,
+                    "FAIL %s transaction mode=%d threw got=%d want=%d\n", name,
+                    failure, threw, failure != 0);
+                return false;
+            }
+            // The successful final geometry must already be the accepted
+            // guess at run return. Failed parent/trial calls keep base's guess.
+            if (failure == 0)
+                control.forces(evaluated);
+            auto next = base;
+            next.span(kAtom_y)[2] += 0.035;
+            auto reference = next;
+            method.forces(next);
+            control.forces(reference);
+            if (!same(method, control,
+                      failure == 0 ? "accepted-final" : "failed-parent-retry"))
+                return false;
+        }
+        return true;
+    };
+    if (!check_transaction.operator()<cpu::semiempirical::AM1>("AM1")
+        || !check_transaction.operator()<cpu::semiempirical::RM1>("RM1"))
+        return 1;
+
+#ifdef ATV_HAS_MD
+    // An edited host Frame must seed the next first half kick with fresh forces,
+    // while preserving the parent Runtime and the caller's velocity. These
+    // fresh-solver comparisons supplement the external pins in this case.
+    const auto check_input_updates = [&]<typename Method>(const char* name) {
+        Method method{0, 1, 400, 1.e-10, 1.e-12};
+        cpu::md::MD dynamics;
+        dynamics.set_integrator(cpu::md::VelocityVerlet{.01});
+        dynamics.on(md::Phase::force).add_ref(method);
+        dynamics.build();
+        auto frame = make_water();
+        frame.span(kAtom_mass)[0] = 16;
+        frame.span(kAtom_mass)[1] = frame.span(kAtom_mass)[2] = 1;
+        dynamics.run(frame, 2);
+        if (!method.has_density()) {
+            std::fprintf(stderr,
+                         "FAIL %s chunk baseline accepted history absent\n",
+                         name);
+            return false;
+        }
+        const auto compare = [&](const cpu::Frame& got, const cpu::Frame& want,
+                                 const char* phase, bool trajectory) {
+            const auto scalar = [&](const char* field, int atom, double a,
+                                    double b, double tol) {
+                if (std::abs(a - b) <= tol)
+                    return true;
+                std::fprintf(
+                    stderr,
+                    "FAIL %s chunk %s %s[%d] got=%.17g want=%.17g tol=%g\n",
+                    name, phase, field, atom, a, b, tol);
+                return false;
+            };
+            if (!scalar("energy", -1, got.meta.get(kEnergy),
+                        want.meta.get(kEnergy), 1.e-8))
+                return false;
+            for (int i = 0; i < got.nlocal(); ++i) {
+                if (!scalar("charge", i, got.span(kAtom_charge)[i],
+                            want.span(kAtom_charge)[i], 1.e-8))
+                    return false;
+                const AccReal gf[]{got.span(kAtom_fx)[i], got.span(kAtom_fy)[i],
+                                   got.span(kAtom_fz)[i]};
+                const AccReal wf[]{want.span(kAtom_fx)[i],
+                                   want.span(kAtom_fy)[i],
+                                   want.span(kAtom_fz)[i]};
+                for (int d = 0; d < 3; ++d)
+                    if (!scalar("force", 3 * i + d, gf[d], wf[d], 1.e-7))
+                        return false;
+                if (trajectory) {
+                    const StorageReal g[]{
+                        got.span(kAtom_x)[i],  got.span(kAtom_y)[i],
+                        got.span(kAtom_z)[i],  got.span(kAtom_vx)[i],
+                        got.span(kAtom_vy)[i], got.span(kAtom_vz)[i]};
+                    const StorageReal w[]{
+                        want.span(kAtom_x)[i],  want.span(kAtom_y)[i],
+                        want.span(kAtom_z)[i],  want.span(kAtom_vx)[i],
+                        want.span(kAtom_vy)[i], want.span(kAtom_vz)[i]};
+                    for (int d = 0; d < 6; ++d)
+                        if (!scalar("x/v", 6 * i + d, g[d], w[d], 1.e-10))
+                            return false;
+                }
+            }
+            return true;
+        };
+        frame.span(kAtom_x)[1] += .03;
+        frame.span(kAtom_vx)[1] = .002;
+        frame.span(kAtom_charge)[0] += .1;
+        frame.box = cpu::Box::cubic(21);
+        auto reference = frame;
+        Method fresh{0, 1, 400, 1.e-10, 1.e-12};
+        cpu::md::MD restart;
+        restart.set_integrator(cpu::md::VelocityVerlet{.01});
+        restart.on(md::Phase::force).add_ref(fresh);
+        restart.build();
+        dynamics.run(frame, 0);
+        restart.run(reference, 0);
+        if (method.has_density()
+            || !compare(frame, reference, "numeric-init", true)) {
+            std::fprintf(
+                stderr,
+                "FAIL %s chunk numeric-init accepted history got=%d want=0\n",
+                name, method.has_density());
+            return false;
+        }
+        dynamics.run(frame, 2);
+        restart.run(reference, 2);
+        if (!compare(frame, reference, "numeric-continued", true))
+            return false;
+        // Replace atom count and species within the same Frame object. The
+        // standard NDDO/VV infrastructure updates its maps without re-running
+        // initialization components or inheriting the old water density.
+        frame = cpu::Frame(2);
+        frame.box = cpu::Box::cubic(21);
+        for (int i = 0; i < 2; ++i) {
+            frame.span(kAtom_type)[i] = 1;
+            frame.span(kAtom_mass)[i] = 1;
+            frame.span(kAtom_tag)[i] = i + 1;
+        }
+        frame.span(kAtom_x)[1] = .8;
+        frame.span(kAtom_vx)[0] = .003;
+        auto hydrogen = frame;
+        Method hydrogen_method{0, 1, 400, 1.e-10, 1.e-12};
+        hydrogen_method.forces(hydrogen);
+        dynamics.run(frame, 0);
+        if (method.has_density()
+            || !compare(frame, hydrogen, "identity-init", true)) {
+            std::fprintf(
+                stderr,
+                "FAIL %s chunk identity-init accepted history got=%d want=0\n",
+                name, method.has_density());
+            return false;
+        }
+        return true;
+    };
+    if (!check_input_updates.operator()<cpu::semiempirical::AM1>("AM1")
+        || !check_input_updates.operator()<cpu::semiempirical::RM1>("RM1"))
+        return 1;
+#endif
 
     // A persistent plan must remain valid when the scientific engine is
     // replaced, resized, or moved. Compare to the same method's fresh solve;

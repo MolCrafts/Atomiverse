@@ -19,7 +19,7 @@
 #include "atomiverse/cuda/semiempirical/internal/nddo_hcore.cuh"
 #include "atomiverse/cuda/semiempirical/internal/nddo_two_electron.cuh"
 #include "atomiverse/semiempirical/am1_parameters.h"
-#include "atomiverse/semiempirical/rm1_parameters.h"
+#include "atomiverse/semiempirical/nddo_parameters.h"
 
 namespace ATV::cuda::semiempirical::internal {
 namespace {
@@ -146,8 +146,19 @@ NddoWorkspace::NddoWorkspace(ATV::semiempirical::SemiEmpiricalMethod identity)
               {*this, ATV::nddo::Phase::fock},
               {*this, ATV::nddo::Phase::check}}},
       criterion(*this), method(identity) {
+    switch (method) {
+    case ATV::semiempirical::SemiEmpiricalMethod::AM1:
+    case ATV::semiempirical::SemiEmpiricalMethod::RM1:
+    case ATV::semiempirical::SemiEmpiricalMethod::MNDO:
+    case ATV::semiempirical::SemiEmpiricalMethod::PM3:
+        break;
+    default:
+        throw std::invalid_argument("CUDA NDDO method identity is invalid");
+    }
     result.method = method;
-    result.reference = "Native CUDA AM1/RM1 NDDO, shared published parameters";
+    result.reference = std::string("Native CUDA ")
+                       + ATV::semiempirical::nddo_method_name(method)
+                       + " NDDO, shared published parameters";
 }
 NddoWorkspace::~NddoWorkspace() { release(); }
 void NddoWorkspace::release() noexcept {
@@ -176,9 +187,10 @@ void NddoWorkspace::release() noexcept {
     metrics = nullptr;
     scratch = nullptr;
     host_metrics = nullptr;
-    h = f = c = p = next = accepted_p = nullptr;
+    h = f = c = p = next = accepted_p = pending_p = nullptr;
     n = n_atoms = occupied = 0;
     accepted = false;
+    pending = false;
     results_on_host = forces_valid = false;
     result.converged = false;
 }
@@ -186,13 +198,13 @@ void NddoWorkspace::release() noexcept {
 void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
                            bool trial_evaluation) {
     if (cuda::kPrecisionMode != cuda::PrecisionMode::Double)
-        throw std::invalid_argument("CUDA AM1/RM1 requires FP64 Frame storage");
+        throw std::invalid_argument("CUDA NDDO requires FP64 Frame storage");
     const int count = frame.n_atoms();
     if (count <= 0 || !frame.atoms.type || !frame.box || !frame.scalars
         || !frame.atoms.charge || !frame.atoms.x || !frame.atoms.y
         || !frame.atoms.z)
         throw std::invalid_argument(
-            "CUDA AM1/RM1 requires a nonempty molecular Frame");
+            "CUDA NDDO requires a nonempty molecular Frame");
     bool changed = count != n_atoms || !matrices;
     if (!changed) {
         ATV_CUDA_CHECK(cudaMemsetAsync(&metrics->identity_changed, 0,
@@ -209,12 +221,12 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
         ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
         if (host_metrics->pair_error)
             throw std::invalid_argument(
-                "CUDA AM1/RM1 supports isolated molecules without a cell");
+                "CUDA NDDO supports isolated molecules without a cell");
         changed = host_metrics->identity_changed != 0;
     }
     if (changed) {
         if (trial_evaluation && matrices)
-            throw std::invalid_argument("CUDA AM1/RM1 trial evaluations cannot "
+            throw std::invalid_argument("CUDA NDDO trial evaluations cannot "
                                         "change molecular identity");
         // Atom identities are build metadata, never electronic scientific arrays.
         std::vector<int> types(count);
@@ -228,7 +240,7 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
         for (double b : box)
             if (!std::isfinite(b) || b != 0)
                 throw std::invalid_argument(
-                    "CUDA AM1/RM1 supports isolated molecules without a cell");
+                    "CUDA NDDO supports isolated molecules without a cell");
         int nao = 0, electrons = 0;
         double eisol = 0, heat = 0;
         std::vector<NDDOAtom> descriptors;
@@ -236,11 +248,8 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
         for (const int z : types) {
             if (z != 1 && z != 6 && z != 7 && z != 8)
                 throw std::invalid_argument(
-                    "CUDA AM1/RM1 currently supports CHNO only");
-            const auto* a =
-                method == ATV::semiempirical::SemiEmpiricalMethod::AM1
-                    ? ATV::semiempirical::am1_parameter(z)
-                    : ATV::semiempirical::rm1_parameter(z);
+                    "CUDA NDDO currently supports CHNO only");
+            const auto* a = ATV::semiempirical::nddo_parameter(method, z);
             if (!a)
                 throw std::invalid_argument("CUDA NDDO parameter is missing");
             NDDOAtom d{nao,    a->n_orbitals, a->core_charge, a->uss, a->upp,
@@ -263,13 +272,11 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
             nao += a->n_orbitals;
             electrons += static_cast<int>(a->core_charge);
             eisol += a->eisol;
-            heat += method == ATV::semiempirical::SemiEmpiricalMethod::AM1
-                        ? ATV::semiempirical::am1_atomic_heat_kcal_mol(z)
-                        : ATV::semiempirical::rm1_atomic_heat_kcal_mol(z);
+            heat += ATV::semiempirical::nddo_atomic_heat_kcal_mol(method, z);
         }
         if (electrons % 2 != 0 || electrons <= 0 || electrons > 2 * nao)
             throw std::invalid_argument(
-                "CUDA AM1/RM1 requires a neutral closed shell");
+                "CUDA NDDO requires a neutral closed shell");
         release();
         try {
             n = nao;
@@ -278,13 +285,14 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
             sum_eisol = eisol;
             sum_atomic_heat = heat;
             const std::size_t nn = matrix_size(n);
-            ATV_CUDA_CHECK(cudaMalloc(&matrices, 6 * nn * sizeof(double)));
+            ATV_CUDA_CHECK(cudaMalloc(&matrices, 7 * nn * sizeof(double)));
             h = matrices;
             f = h + nn;
             c = f + nn;
             p = c + nn;
             next = p + nn;
             accepted_p = next + nn;
+            pending_p = accepted_p + nn;
             ATV_CUDA_CHECK(cudaMalloc(&atoms, n_atoms * sizeof(NDDOAtom)));
             ATV_CUDA_CHECK(cudaMalloc(&eigenvalues, n * sizeof(double)));
             ATV_CUDA_CHECK(cudaMalloc(&charges, n_atoms * sizeof(double)));
@@ -391,12 +399,16 @@ void NddoWorkspace::check(cudaStream_t stream) {
     energy_metrics<<<1, 1, 0, stream>>>(metrics);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
-void NddoWorkspace::commit(cudaStream_t stream) {
-    ATV_CUDA_CHECK(cudaMemcpyAsync(
-        accepted_p, p, static_cast<std::size_t>(n) * n * sizeof(double),
-        cudaMemcpyDeviceToDevice, stream));
-    ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
-    accepted = true;
+void NddoWorkspace::stage() noexcept {
+    std::swap(p, pending_p);
+    pending = true;
+}
+void NddoWorkspace::commit() noexcept {
+    if (pending) {
+        std::swap(accepted_p, pending_p);
+        accepted = true;
+        pending = false;
+    }
 }
 void NddoWorkspace::compute_forces(const cuda::Frame& frame,
                                    cudaStream_t stream) {

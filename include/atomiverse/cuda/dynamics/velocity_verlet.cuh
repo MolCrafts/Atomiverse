@@ -39,6 +39,7 @@ namespace md {
 /// - `Phase::final_integrate`: updates velocities (half-step).
 class VelocityVerlet : public cuda::Integrator {
   public:
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief Construct with a time step.
     /// @param dt Time step [fs].
     explicit VelocityVerlet(double dt) : dt_(dt) {}

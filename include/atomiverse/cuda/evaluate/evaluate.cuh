@@ -59,8 +59,11 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     void run(cpu::Frame& frame) {
         try {
             setup_pass(frame);
+            EvaluationTransaction::Scope evaluation(
+                this->backend_->evaluation_transaction());
             step_once(0);
             teardown_pass(frame);
+            evaluation.accept();
         } catch (...) {
             // Discard failed device results; keep the compiled plan and timing
             // configuration so the same evaluator can be retried.

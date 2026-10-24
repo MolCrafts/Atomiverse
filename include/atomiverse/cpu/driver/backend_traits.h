@@ -89,6 +89,14 @@ struct backend_traits<cpu::device_tag> {
             cpu::TimestepConsumer* as_timestep_consumer() override {
                 return step;
             }
+            bool supports_input_changes(InputChange changes) const override {
+                return node->supports_input_changes(changes);
+            }
+            void invalidate_inputs(InputChange changes,
+                                   const cpu::BuildContext& ctx) override {
+                node->invalidate_inputs(
+                    changes, require_runtime(ctx.runtime, "input update"));
+            }
             void build(const cpu::BuildContext& ctx) override {
                 node->build_on(require_runtime(ctx.runtime, "build"));
             }

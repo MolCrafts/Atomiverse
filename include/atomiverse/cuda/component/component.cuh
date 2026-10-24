@@ -12,6 +12,7 @@
 ///
 /// CUDA-free header.
 #pragma once
+#include "atomiverse/core/input_change.h"
 
 #include "atomiverse/core/precision.h"
 #include <cstddef>
@@ -183,6 +184,14 @@ class Component {
     ///
     /// @param ctx Build context with Runtime and DeviceFrame references.
     virtual void build(const BuildContext& ctx) {}
+
+    /// Whether a boundary input edit can preserve this component's lifecycle.
+    /// Unknown components reject structural changes before any device mutation.
+    virtual bool supports_input_changes(InputChange changes) const {
+        return !has_input_change(changes, InputChange::Identity);
+    }
+    /// Refresh input-derived caches without replaying one-time initialization.
+    virtual void invalidate_inputs(InputChange, const BuildContext&) {}
 
     /// @brief Per-step GPU work submission.
     ///

@@ -36,7 +36,7 @@ use analytic pair-integral derivatives within their supported element envelopes.
 Electronic stationarity is essential: both the density and energy convergence
 tolerances must be satisfied before forces are published.
 
-## What AM1 and RM1 compute
+## What the NDDO methods compute
 
 | Quantity | Units | Where |
 |----------|-------|--------|
@@ -111,14 +111,21 @@ energy/force contributions; its results and failure/retry behavior are checked
 against standalone calls. Both CUDA methods pass initial-force preparation,
 2+2 versus four-step MD continuation and CPU/CUDA four-step agreement at
 `dt = 0.01 fs`. Three steepest-descent steps lower energy; this is not a
-converged optimization result. Actual line-search trial/rejection, host edits
-between chunks, longer NVE with a halved-time-step comparison and Python
-parity remain open.
+converged optimization result. Trial evaluations stage electronic history;
+only a successful complete parent step accepts it. Between chunks, changes to
+coordinates, velocities, elements or atom count invalidate affected state before
+force preparation. Unsupported cell changes raise an error and can be corrected
+on the same object. Consult the roadmap for method-specific numerical,
+longer-NVE and performance evidence.
 
 These methods implement NDDO scientific models using Atomiverse's own Driver,
 workspace and derivative flow. They do not provide the whole SQM method set or
-its input-file format. MNDO/PM3/PM6/PM7 and additional SQM facilities remain
-separate work.
+its input-file format. MNDO and PM3 use their own fitted CHNO parameter tables
+with the same native NDDO integral, SCF and derivative machinery; their initial
+public envelope is neutral closed-shell molecules on both backends. They do not
+inherit AM1's broader element or charged-system support. PM6/PM7 and additional
+SQM facilities remain separate work; acceptance is recorded per method in the
+roadmap.
 
 ## Practice plan
 
@@ -155,6 +162,32 @@ workspace automatically; `build(reference)` is available for explicit setup.
 method result alias. Numerical tolerances and iteration limits can be changed
 between C++ solves; exhausting the budget raises an error rather than publishing
 a successful result.
+
+## Python method ownership
+
+`AM1`, `RM1`, `MNDO` and `PM3` have the same Python call shape. Choose the
+backend at construction; a mounted method retains its own controls and accepted
+electronic state. The parent borrows that same native object.
+
+```python
+import atomiverse as av
+
+# frame is an existing molecular Frame with coordinates, elements and masses.
+method = av.AM1(device="cuda", max_iter=1000,
+                density_tol=1e-10, energy_tol=1e-12)
+force = method.forces(frame)  # owned (N, 3) array; also writes E/q/F to frame
+method.run(frame)            # returns None; overwrites E/q, preserves frame forces
+energy_ev = method.last_result().total_energy_ev
+
+evaluation = av.Evaluate(device="cuda").set_evaluator(method)
+evaluation.run(frame)
+```
+
+Python CUDA composition currently exposes VelocityVerlet MD and steepest
+descent Minimize. The native C++ CUDA path also provides LBFGS. Unsupported
+Python optimizer or MPI-launcher combinations reject explicitly. Continue a
+Python CUDA MD run with the same Frame object; mutate its input columns between
+chunks. Replacing that Python object is not a continuation operation.
 
 ## Example code
 

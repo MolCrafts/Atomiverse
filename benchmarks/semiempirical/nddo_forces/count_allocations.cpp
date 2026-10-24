@@ -197,9 +197,9 @@ int main(int argc, char** argv) {
         for (const auto zs :
              {std::array{1, 1}, std::array{6, 6}, std::array{35, 53}}) {
             NDDOSystem pair;
-            const auto* pi = nddo_parameter(
+            const auto* pi = ATV::semiempirical::nddo_parameter(
                 ATV::semiempirical::SemiEmpiricalMethod::AM1, zs[0]);
-            const auto* pj = nddo_parameter(
+            const auto* pj = ATV::semiempirical::nddo_parameter(
                 ATV::semiempirical::SemiEmpiricalMethod::AM1, zs[1]);
             if (!pi || !pj)
                 throw std::runtime_error("benchmark AM1 parameter unavailable");
