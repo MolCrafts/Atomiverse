@@ -27,9 +27,7 @@ for this row (`docs/developer/tb-method-loop.md`).
 
 ### Offline oracle run
 
-`mopac` is **not installed** on the Atomiverse build hosts, and no regression
-may shell out to an oracle binary. The pin is therefore a *published* MOPAC
-transcript, transcribed verbatim to
+The historical pin is a *published* MOPAC transcript, transcribed verbatim to
 `tools/tb_oracle/inputs/mopac/am1-water/mopac_am1_water.out.txt` with the
 reconstructed deck beside it.
 
@@ -165,9 +163,7 @@ transcript's own precision.
 
 ### Perf
 
-MOPAC is not installed on the build host, so a fair wall
-T_atv / T_oracle is not measurable → **perf_exempt**. ATV wall for the whole
-case (4 SCF solves + 2 force evaluations, 1 thread): ≈ 0.02 s. The archived
+No fair wall comparison is claimed for this historical transcript. The archived
 MOPAC run reports `COMPUTATION TIME = .000 SECONDS` on 2003 hardware — both are
 below the resolution of a meaningful comparison for a 3-atom molecule.
 
@@ -187,14 +183,8 @@ below the resolution of a meaningful comparison for a 3-atom molecule.
 - **Dipole not pinned** (1.860 D total, point-charge 1.094 + hybrid 0.767) —
   no AM1 dipole on the public surface.
 - **Constant convention.** ATV is CODATA, MOPAC 7.00 is frozen 1980s constants;
-  every NDDO pin against a MOPAC transcript will carry a ~5×10⁻⁵ relative floor.
-  Not a defect, but it bounds how tight *any* future AM1/RM1/PM* mopac pin can
-  be, and it should be stated once in the roadmap rather than rediscovered per
-  row.
-- **Modern OpenMOPAC not cross-checked.** The transcript is MOPAC 7.00. A run
-  on a current OpenMOPAC (which has its own constant and optimiser updates)
-  would tell us whether the 1.1×10⁻⁴ eV constant-aligned remainder is
-  ATV-side or a 7.00 artifact. Needs a host with `mopac`.
+  this floor applies to the historical transcript, not modern OpenMOPAC.
+  The independently executed 23.2.5 fixtures below use matching modern constants.
 - **Geometry taken from the transcript, not re-optimized.** `ATV_BUILD_MINIMIZER`
   is OFF in the SE-only build, so the case cannot verify ATV's *own* AM1
   optimum coincides with MOPAC's beyond the stationarity + curvature argument
@@ -212,16 +202,15 @@ AM1 (Austin Model 1), Dewar et al., *J. Am. Chem. Soc.* **107**, 3902 (1985).
 1. **Public API path:** `cpu::Evaluate` + nested `cpu::semiempirical::AM1`
    (the evaluate phase requests forces) writes a negative bound total energy [eV] and non-zero
    nuclear forces [eV/Å] on a slightly distorted water geometry; net force ≈ 0.
-   The net-force gate is a plumbing check, not a physics one: the solver fills
-   the last atom's force as minus the sum of the others (translational
-   invariance), so a non-zero net would mean the write-back path lost a
-   component.
+   The net-force gate is a plumbing check, not a physics one: the solver accumulates
+   equal-and-opposite pair contributions (translational invariance), so a
+   non-zero net would mean accumulation or write-back lost a component.
 2. **Heat of formation:** MOPAC-style
-   `ΔHf = (E_tot − Σ eisol)·23.061 + Σ E_atom` [kcal/mol] near the AM1 water
+   `ΔHf = (E_tot − Σ eisol)·23.060547830619029 + Σ E_atom` [kcal/mol] near the AM1 water
    regime (~−59 kcal/mol; expt. −57.8). See openmopac calc_of_hof.
-3. **SCF gradient identity:** the published forces — a central finite
-   difference of the energy at *fixed* converged density, step `1×10⁻⁴` Å —
-   match a *re-converged* central finite difference of the total energy
+3. **SCF gradient identity:** the published forces — analytic pair-integral
+   derivatives contracted with the converged density — match a
+   *re-converged* central finite difference of the total energy
    (step `5×10⁻⁴` Å) to `5×10⁻³` eV/Å. That agreement is the point: at SCF
    convergence the density-response term of `dE/dR` vanishes, and NDDO's
    orthonormal (zero-differential-overlap) basis contributes no
@@ -248,8 +237,7 @@ family_oracle: mopac
 ```
 
 NDDO family lock: **OpenMOPAC only**. No DFTB+ number appears in this case.
-No `mopac` binary exists on the Atomiverse build host and ctest never shells
-out to one.
+CTest never executes an oracle binary; live outputs are archived offline below.
 
 ### Why this case exists
 
@@ -317,8 +305,8 @@ search termination.
 
 ### Gaps
 
-No live OpenMOPAC binary, so there is no ATV↔mopac wall. `perf_exempt`.
-No closed-form NDDO forces here (see `nddo-closed-form-forces`).
+No fair ATV↔MOPAC timing comparison is recorded for the survey geometries.
+Independent full-force pins are described below.
 
 
 ## se-analytic-hessian
@@ -339,3 +327,107 @@ at 0.74 Å. Unblocks SE-loop VIB policy for electronic SE force sources.
 ### Gaps
 
 Absolute cm⁻¹ not compared to DFTB+/experiment (foothold is API + structural).
+
+
+## Executed OpenMOPAC 23.2.5 — AM1/RM1 energy, charges and full forces
+
+The existing `am1-water-mopac-energy` section also checks six neutral,
+closed-shell fixtures: distorted water, tilted CO and nonplanar ammonia with
+both AM1 and RM1. These are actual runs of the unmodified official release,
+with modern constants (no `OLDCON`). Source commit, binary hashes, input decks,
+raw AUX/output and extraction instructions are in
+[`live-23.2.5`](../../../tools/tb_oracle/inputs/mopac/live-23.2.5/README.md).
+No oracle executable is required by the regression.
+
+| Quantity | Absolute tolerance | Basis |
+| --- | ---: | --- |
+| Total energy | 1e-6 eV | DISP kcal/mol print rounding ≤2.17e-7 eV |
+| Heat of formation | 1e-6 kcal/mol | High-precision AUX, separately checked |
+| Atomic charge | 1e-7 e | Tight SCF and high-precision AUX population output |
+| Every Cartesian force | 1e-5 eV/Å | Independent oracle gradient qualification |
+
+MOPAC's printed gradient is a fixed-density pair finite difference, not an
+analytic derivative. Its error was qualified using 324 independently
+re-converged MOPAC single points and two Richardson refinements: maximum
+refinement difference 2.28e-9 eV/Å, native-gradient discrepancy 7.85e-7 eV/Å.
+No ATV value was used to set this error budget. AUX gradients are converted
+with `F = -gradient / 23.060547830619029`.
+
+Observed CPU maxima over these six fixtures: energy 2.10e-7 eV, charge
+1.25e-8 e, force 7.86e-7 eV/Å. This establishes CHNO full-force evidence for
+these molecular fixtures; broader element, spin and periodic coverage is not
+implied. Independently executed CUDA coverage follows below.
+
+The same `am1-water-mopac-energy` section now runs with `--device=both`.
+CUDA grades energy, heat of formation, charges and every Cartesian analytic
+force against these six external fixtures using the same external tolerances.
+Direct CPU/CUDA differences must additionally stay below 1e-8 eV, 1e-8 e and
+1e-7 eV/Å. Both use density residual 1e-10 and energy change 1e-12 eV, with
+both required for convergence. The CUDA path covers FP64 neutral closed-shell
+CHNO molecules without a cell.
+
+The CUDA section checks standalone `forces()` overwrites energy, charges and
+forces; energy-only mutable/const `run()` clears the method's force result and
+preserves the Frame's existing force columns. Full force vectors rotate with
+the geometry while translation leaves energy and charges unchanged. Default
+Evaluate directly mounts AM1/RM1 and adds the method's energy/forces to an
+independent contribution already present. Molecular methods do not declare
+stress support; the common nested adapter applies capability vetoes rather
+than requesting unavailable stress from default Evaluate.
+
+Coordinate/identity edits, budgets, build and force-solve failures, same-parent
+retry and component lifecycle remain covered. Initial/trial solves are checked
+both before a first accepted guess and after an accepted guess exists. Three
+subsequent normal geometry steps must match an unprobed method's iteration
+count, energy and full force vector; an injected failure also leaves the
+accepted guess intact. The six-fixture public-force, CPU comparison and
+Evaluate checks pass on GH200 in the SE-only build. Compute-sanitizer memcheck
+reports zero errors for the complete section and NDDO primitive tests;
+two-center primitive racecheck reports zero hazards. Full-solve
+transfer/allocation profiling remains separate acceptance work.
+
+A closing lifecycle check injects a component destruction error after that
+component has released its state. Both methods must then recover using the
+same object for standalone `forces()` and a new Evaluate parent, retaining
+external energy, charge and full-force agreement. Cleanup must not destroy
+the freed component twice. A standalone `shutdown()` must propagate the
+original destruction exception after cleanup and permit same-object `forces()`
+recovery. Leaving a standalone method's scope must finish cleanup without
+propagating the user's destruction exception or terminating the process.
+These exception-path checks pass on GH200 together with the external numerical
+checks, including complete-section memcheck with zero errors. The section
+runs within its 60-second budget; cleanup recovery uses the same numerical
+tolerances as normal evaluation.
+
+When `ATV_HAS_MD` is enabled, the same section additionally runs AM1 and RM1
+water with physical atomic masses and deterministic initial velocities. It
+compares `MD::run(frame, 0)` energy, charges and forces with standalone
+`forces()`, then compares a CUDA 2+2 step continuation with one four-step run
+and CPU Velocity Verlet at the same 0.01 fs timestep. Bounds are 1e-10 Å for
+coordinates, 1e-10 Å/fs for velocities, 1e-8 eV for energy, 1e-8 e for charges
+and 1e-7 eV/Å for forces. This is a short composition check, not a long NVE
+conservation or chaotic-trajectory claim.
+
+When `ATV_HAS_MINIMIZER` is enabled, native CUDA Minimize mounts each method
+directly. Zero iterations must prepare the same energy/charges/forces as
+standalone `forces()` without committing an initial electronic guess. Three
+small steepest-descent steps (`alpha=0.01`) must lower energy; the final energy
+and full force vector must match standalone evaluation at that final geometry
+to 1e-8 eV and 1e-7 eV/Å. This does not claim geometry convergence. Each
+conditional leg prints PASS when executed or SKIP with its disabled module.
+Both AM1 and RM1 pass these MD and Minimize checks in the combined GH200 build,
+including initial forces, CUDA chunk equivalence, the four-step CPU comparison,
+energy decrease and standalone reevaluation of the minimizer's final geometry.
+The complete external-plus-composition section stays within its 60-second
+budget. This acceptance is limited to the short trajectories and three descent
+steps specified above; long-time NVE drift, timestep convergence and completed
+geometry optimization remain separate checks.
+
+The CPU force section also exercises direct/nested publication, accumulation,
+changed controls, failed solves and retry. CPU AM1/RM1 initial-force and trial
+solves leave the accepted electronic guess unchanged: six subsequent normal
+steps match an unprobed method in iteration count, energy and full forces.
+QM/MM parent-context and accepted-history checks are exercised in the existing
+`multiscale/oniom` case. CUDA Evaluate trial-history checks are described above;
+optimizer trial acceptance beyond these short composition legs remains
+separate integration work.

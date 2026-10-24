@@ -7,8 +7,7 @@ One case; every section below is run by `atv_regressions --case minimizer/geomet
 
 ### Potential
 
-Lennard-Jones pair (shifted form is irrelevant below the cutoff for this
-isolated dimer):
+Lennard-Jones pair before the constant cutoff shift:
 
 ```text
 U(r) = 4 ε [(σ/r)¹² − (σ/r)⁶]
@@ -22,6 +21,8 @@ U(r*) = −ε
 ```
 
 Force `F = −dU/dr` vanishes at `r*`. Units: ε [eV], σ [Å], force [eV/Å].
+`PairLJCut` subtracts `U(cutoff)`. This leaves forces and the minimum distance
+unchanged, while the reported minimum energy is `−ε − U(cutoff)`.
 
 ### Setup
 
@@ -32,12 +33,22 @@ so no periodic image interacts. Minimize with `PairLJCut` + `NeighborList` +
 Parameters: `ε = 0.0104` eV, `σ = 3.4` Å, `cutoff = 2.5 σ`, same as classical
 argon LJ style used elsewhere in Atomiverse.
 
+The same section runs with `--device=cpu|cuda|both`. CPU retains StrongWolfe
+LBFGS with initial step 0.05; CUDA uses its fixed-step LBFGS with step 1.0,
+subject to its 0.1 Å displacement cap. Both use memory 10, budget 200 and the
+same convergence criterion and analytic minimum gates. This compares the
+physical endpoint, not identical optimizer trajectories. Before optimization,
+`run(frame, 0)` must prepare the shifted energy and all six force components
+from the closed-form LJ expression without moving either atom. Initial-value
+tolerances account for the declared arithmetic precision and fixed-point force
+transport independently of the final minimum gates.
+
 ### Tolerances
 
 | Quantity | Tolerance | Derivation |
 |---|---|---|
 | \|r − r*\| | `0.01` Å | ≪ ForceConverged max-force threshold / curvature |
-| \|U + ε\| | `1e-4` eV | well depth relative residual |
+| U | `−1.1ε < U < −0.9ε` | existing well-depth gate includes the cutoff shift |
 | max \|F\| | `0.05` eV/Å | ForceConverged `ftol` default order |
 | stop reason | contains `force_converged` | handler name |
 

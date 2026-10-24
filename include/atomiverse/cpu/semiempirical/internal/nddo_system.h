@@ -8,17 +8,12 @@
 #include <vector>
 
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/nddo_result.h"
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
-
-/// @brief NDDO method family (parameter table selector).
-enum class SemiEmpiricalMethod {
-    AM1,
-    RM1,
-};
 
 struct NDDOAtom {
     int atomic_number = 0;
@@ -28,7 +23,7 @@ struct NDDOAtom {
     double core_charge =
         0.0; ///< NDDO reference `tore`: valence electron/core charge.
     /// Non-owning pointer into the static AM1/RM1 parameter table.
-    const AM1Parameter* params = nullptr;
+    const ATV::semiempirical::AM1Parameter* params = nullptr;
 };
 
 struct NDDOSystem {
@@ -38,7 +33,8 @@ struct NDDOSystem {
     int n_alpha = 0;
     int n_beta = 0;
     int charge = 0;
-    SemiEmpiricalMethod method = SemiEmpiricalMethod::AM1;
+    ATV::semiempirical::SemiEmpiricalMethod method =
+        ATV::semiempirical::SemiEmpiricalMethod::AM1;
 
     /// @brief Empty system (fields filled by the caller).
     NDDOSystem() = default;
@@ -54,14 +50,17 @@ struct NDDOSystem {
     /// @param multiplicity  Spin multiplicity M = 2S + 1 (>= 1).
     /// @param method        AM1 or RM1 parameter table.
     NDDOSystem(const cpu::Frame& frame, int charge, int multiplicity,
-               SemiEmpiricalMethod method = SemiEmpiricalMethod::AM1);
+               ATV::semiempirical::SemiEmpiricalMethod method =
+                   ATV::semiempirical::SemiEmpiricalMethod::AM1);
 };
 
 /// @brief Parameter table lookup for the active NDDO method.
-const AM1Parameter* nddo_parameter(SemiEmpiricalMethod method, int z) noexcept;
+const ATV::semiempirical::AM1Parameter*
+nddo_parameter(ATV::semiempirical::SemiEmpiricalMethod method, int z) noexcept;
 
 /// @brief True when the method table covers atomic number `z`.
-bool nddo_has_parameter(SemiEmpiricalMethod method, int z) noexcept;
+bool nddo_has_parameter(ATV::semiempirical::SemiEmpiricalMethod method,
+                        int z) noexcept;
 
 /// @brief Number of AM1 valence orbitals for atomic number `z`.
 int am1_orbital_count(int z) noexcept;

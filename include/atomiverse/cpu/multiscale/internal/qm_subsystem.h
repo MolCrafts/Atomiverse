@@ -62,7 +62,7 @@ class QmSubsystem {
 
     /// @brief Resolve mask, derive links from bond topology, allocate private
     ///        frame, prepare engine.
-    /// @param frame User frame with `kAtomQmZ` filled. Covalent QM/MM cuts are
+    /// @param ctx Parent build context with `kAtomQmZ` filled. Covalent QM/MM cuts are
     ///        **derived** from `num_bond`/`bond_atom` × mask (no bonds ⇒ zero
     ///        links). There is no `set_links` / `links()` user API.
     /// @param mpi_size Communicator size (v1 requires 1).
@@ -71,13 +71,13 @@ class QmSubsystem {
     ///        When false (mechanical), any `QmEngine` is accepted and QM
     ///        charges may be nonzero.
     /// @throws std::runtime_error / invalid_argument on validation failure.
-    void build(Frame& frame, int mpi_size, bool require_embedding = true);
+    void build(const BuildContext& ctx, int mpi_size,
+               bool require_embedding = true);
 
     /// @brief Per-launch: refresh geometry, collect sites, evaluate, scatter.
-    /// @param frame User frame.
-    /// @param forces_requested Honor LaunchContext force gate.
+    /// @param ctx Parent launch context; only the Frame is replaced for QM.
     /// @param[out] e_qm QM energy written this step [eV] (before scatter).
-    void launch(Frame& frame, bool forces_requested, double& e_qm);
+    void launch(const LaunchContext& ctx, double& e_qm);
 
     int last_n_links() const {
         return static_cast<int>(resolved_links_.size());

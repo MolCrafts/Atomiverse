@@ -26,6 +26,7 @@ namespace ATV {
 namespace cuda {
 
 struct PairList;
+class Backend;
 
 /// @brief Classical force-pipeline services (publishers: `NeighborList`,
 ///        `PairLJCut::build`, the multi-GPU comm layer). Mirrors
@@ -106,6 +107,18 @@ struct LoopServices {
     ConvergenceMetrics* metrics = nullptr;
 };
 
+/// @brief Requests inherited by a nested loop on the same Backend.
+/// These flags describe evaluation intent, not physical Frame state. A nested
+/// slot narrows output requests and restores this slice even when it throws.
+struct ExecServices {
+    bool forces_requested = true;
+    bool stress_requested = true;
+    bool initializing_forces = false;
+    bool trial_evaluation = false;
+    Backend* backend =
+        nullptr; ///< Borrowed execution owner; never a second runtime.
+};
+
 /// @brief CUDA execution context passed to components via
 ///        build/launch/destroy contexts.
 ///
@@ -131,6 +144,8 @@ struct Context {
     /// @see cuda/driver/criterion.cuh
     LoopServices loop;
 
+    ExecServices exec; ///< Parent evaluation intent for nested dispatch.
+
     /// @brief Cell kernel argument with a backend-owned device cache view.
     /// Host values select invariant geometry specializations and initialize
     /// build resources. Kernels resolve Box::current() at entry; physical cell
@@ -145,6 +160,7 @@ struct Context {
 // Context could be subclassed into carrying behaviour. Mirrors the CPU asserts.
 static_assert(std::is_trivially_copyable_v<DynamicsServices>);
 static_assert(std::is_trivially_copyable_v<LoopServices>);
+static_assert(std::is_trivially_copyable_v<ExecServices>);
 static_assert(!std::is_polymorphic_v<Context>);
 
 } // namespace cuda

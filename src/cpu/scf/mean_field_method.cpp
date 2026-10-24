@@ -664,7 +664,8 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
         }
     }
 
-    if (opts.apply_aspc && use_predictor_ && aspc_alpha_ && aspc_beta_) {
+    if (opts.apply_aspc && this->converged() && use_predictor_ && aspc_alpha_
+        && aspc_beta_) {
         if (predicted) {
             xt::xtensor<double, 2> Pa_corr, Pb_corr;
             aspc_alpha_->correct(P_alpha, density_guess.P_alpha, Pa_corr);
@@ -676,7 +677,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
             aspc_beta_->record(P_beta);
         }
     }
-    if (opts.apply_aspc) {
+    if (opts.apply_aspc && this->converged()) {
         has_last_density_ = true;
         last_P_alpha_ = P_alpha;
         last_P_beta_ = P_beta;
@@ -1834,14 +1835,41 @@ void MeanFieldMethod<D>::prepare(const cpu::BuildContext&) {
 
 template <typename D>
 void MeanFieldMethod<D>::evaluate(const cpu::LaunchContext& qm_ctx) {
+    if (cpmd || xl_bomd)
+        throw std::runtime_error(
+            "MeanFieldMethod::evaluate: QM/MM does not support CPMD or "
+            "XL-BOMD; "
+            "use a directly mounted method for electronic propagation");
+    if (use_predictor_ && qm_ctx.runtime.mc.proposal)
+        throw std::runtime_error(
+            "MeanFieldMethod::evaluate: the ASPC predictor is MD-only; "
+            "disable predictor() for sampling");
+    cpu::Runtime* const host = qm_ctx.runtime.exec.runtime;
+    if (host_runtime_ && host_runtime_ != host)
+        throw std::logic_error(
+            "MeanFieldMethod: already nested on another Runtime");
+    struct RestoreHost {
+        cpu::Runtime*& target;
+        cpu::Runtime* saved;
+        ~RestoreHost() { target = saved; }
+    } restore_host{host_runtime_, host_runtime_};
+    host_runtime_ = host;
     DriveOpts opts;
     opts.write_energy = true;
-    opts.forces = qm_ctx.forces_requested;
+    opts.forces =
+        qm_ctx.forces_requested && qm_ctx.runtime.exec.forces_requested;
+    opts.nested = host != nullptr;
+    opts.apply_aspc = !(qm_ctx.runtime.exec.initializing_forces
+                        || qm_ctx.runtime.exec.trial_evaluation);
     opts.unwrap = true;
     // Standalone-style overwrite of energy/forces on the private QM frame
     // (couplings pre-zero the channels).
     opts.accumulate = false;
     drive_scf_(qm_ctx.frame, /*guess=*/nullptr, opts);
+    if (!this->converged())
+        throw std::runtime_error(
+            "MeanFieldMethod::evaluate: QM SCF did not converge ("
+            + this->stop_reason() + ")");
 
     // Mulliken charges [e] onto the private QM frame when a density exists.
     if (det_sp_ && ints_n_basis_ > 0) {

@@ -6,9 +6,13 @@
 /// force flags. H2O/6-31G is not a device ERI kernel; the host-fill path
 /// is not a pass. See REFERENCE.md.
 
+#include "atomiverse/cuda/device/error.cuh"
+#include "atomiverse/cuda/evaluate/evaluate.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 
@@ -21,6 +25,64 @@
 namespace atv_reg_scf_es_cuda_rhf_driver {
 
 namespace {
+
+__global__ void seed_force_sentinel(ATV::cuda::Frame frame, int n) {
+    const int i = int(blockIdx.x * blockDim.x + threadIdx.x);
+    if (i >= n)
+        return;
+    ATV::cuda::store_force(frame.atoms.fx, i, 0.125, frame.force_fault);
+    ATV::cuda::store_force(frame.atoms.fy, i, -0.25, frame.force_fault);
+    ATV::cuda::store_force(frame.atoms.fz, i, 0.5, frame.force_fault);
+}
+
+class EnergyRequest : public ATV::cuda::Component {
+  public:
+    std::string name() const override { return "energy_request_probe"; }
+    void launch(const ATV::cuda::LaunchContext& ctx) override {
+        ctx.runtime.exec.forces_requested = false;
+        seed_force_sentinel<<<(ctx.frame.n_atoms() + 127) / 128, 128, 0,
+                              static_cast<cudaStream_t>(ctx.runtime.stream)>>>(
+            ctx.frame, ctx.frame.n_atoms());
+        ATV_CUDA_CHECK(cudaGetLastError());
+    }
+};
+
+class ThrowOnce : public ATV::cuda::Component {
+  public:
+    bool fail = false;
+    std::string name() const override { return "scf_failure_probe"; }
+    void launch(const ATV::cuda::LaunchContext&) override {
+        if (fail) {
+            fail = false;
+            throw std::runtime_error("injected SCF check failure");
+        }
+    }
+};
+
+bool sentinel_preserved(const char* method, const ATV::cpu::Frame& frame) {
+    using namespace ATV;
+    const auto fx = frame.span(kAtom_fx), fy = frame.span(kAtom_fy),
+               fz = frame.span(kAtom_fz);
+    double want[3] = {0.125, -0.25, 0.5};
+    // Compare exactly with the public fixed-point transport representation.
+    for (double& value : want) {
+        cuda::fixed_t encoded = 0;
+        if (!cuda::encode_force(value, encoded))
+            throw std::runtime_error("Invalid force sentinel");
+        value = cuda::decode_force<double>(encoded);
+    }
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        const double got[3] = {fx[i], fy[i], fz[i]};
+        for (int axis = 0; axis < 3; ++axis)
+            if (got[axis] != want[axis]) {
+                std::printf("FAIL %s parent force veto atom=%d axis=%d "
+                            "got=%.16g want=%.16g tol=0\n",
+                            method, i, axis, got[axis], want[axis]);
+                return false;
+            }
+    }
+    return true;
+}
 
 enum class Device { Cpu, Cuda };
 
@@ -107,6 +169,54 @@ int check_cuda_h2() {
     constexpr double kWant = -1.1167593073964255;
     cpu::Frame frame = make_h2();
     cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, 1e-12, 200};
+    ThrowOnce failure;
+    rhf.on(scf::Phase::check).add_ref(failure, -1000);
+    rhf.build();
+    auto nested_energy = [&] {
+        cuda::Evaluate eval;
+        eval.on(evaluate::Phase::prepare).add(EnergyRequest{}, 0);
+        eval.on(evaluate::Phase::evaluate).add_ref(rhf);
+        eval.build();
+        eval.run(frame);
+    };
+    nested_energy();
+    if (rhf.last_force_on_device() || !sentinel_preserved("RHF", frame)
+        || !rhf.converged() || std::abs(rhf.energy() - kWant) > kTol) {
+        std::printf("FAIL RHF energy-only got=%.12f want=%.12f tol=%.0e "
+                    "force=%d want=0 converged=%d want=1\n",
+                    rhf.energy(), kWant, kTol, rhf.last_force_on_device(),
+                    rhf.converged());
+        return 1;
+    }
+    // Same N, different element: H-He has three electrons and must be
+    // rejected, rather than silently reusing the cached H-H identity.
+    frame.span(kAtom_type)[1] = 2;
+    bool rejected = false;
+    try {
+        nested_energy();
+    } catch (const std::invalid_argument& e) {
+        rejected =
+            std::string(e.what()).find("closed-shell") != std::string::npos;
+    }
+    if (!rejected) {
+        std::printf("FAIL RHF same-N identity rejection got=0 want=1 tol=0\n");
+        return 1;
+    }
+    frame.span(kAtom_type)[1] = 1;
+    failure.fail = true;
+    rejected = false;
+    try {
+        nested_energy();
+    } catch (const std::runtime_error& e) {
+        rejected = std::string(e.what()) == "injected SCF check failure";
+    }
+    if (!rejected) {
+        std::printf("FAIL RHF injected failure got=0 want=1 tol=0\n");
+        return 1;
+    }
+    nested_energy();
+    if (!sentinel_preserved("RHF retry", frame))
+        return 1;
     rhf.run(frame);
     const double e_ha = rhf.energy();
     const double meta_ha = frame.meta.get(kEnergy) / units::kHartreeInEv;

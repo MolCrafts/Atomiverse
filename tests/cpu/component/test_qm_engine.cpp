@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/cpu/component/qm_engine.h"
+#include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/cpu/scf/methods.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/cpu/semiempirical/dftb2.h"
@@ -44,6 +45,40 @@ TEST(QmEngine, EmbeddingSitesRoundTrip) {
     emb->set_embedding_sites({{0.0, 0.0, 3.0, 0.5}});
     EXPECT_EQ(rhf.point_charges.size(), 1u);
     EXPECT_FALSE(rhf.embed_self_energy);
+}
+
+TEST(QmEngine, RejectsUnwiredElectronicPropagationBeforeSolving) {
+    cpu::Frame frame(0);
+    cpu::Context context;
+    cpu::LaunchContext launch{context, frame, 0, 0};
+    cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> cp{
+        cpu::scf::RHF{cpu::scf::BasisSet::STO3G}, 400.0};
+    EXPECT_THROW(
+        {
+            try {
+                cp.method().evaluate(launch);
+            } catch (const std::runtime_error& error) {
+                EXPECT_NE(std::string(error.what())
+                              .find("QM/MM does not support CPMD or XL-BOMD"),
+                          std::string::npos);
+                throw;
+            }
+        },
+        std::runtime_error);
+    cpu::electronic::XlBomdMethod<cpu::scf::RHF> xl{
+        cpu::scf::RHF{cpu::scf::BasisSet::STO3G}, 5};
+    EXPECT_THROW(
+        {
+            try {
+                xl.method().evaluate(launch);
+            } catch (const std::runtime_error& error) {
+                EXPECT_NE(std::string(error.what())
+                              .find("QM/MM does not support CPMD or XL-BOMD"),
+                          std::string::npos);
+                throw;
+            }
+        },
+        std::runtime_error);
 }
 
 #else

@@ -18,8 +18,8 @@ class DriverNode {
   public:
     virtual ~DriverNode() = default;
 
-    /// @brief Compile this loop's Plan. Device workspace stays deferred
-    ///        until `run_nested_erased` (geometry may still move).
+    /// @brief Prepare this loop's Plan and workspace using the parent execution.
+    /// Geometry-dependent values are refreshed when the loop runs.
     /// @param ctx Parent CUDA context (streams).
     /// @param frame Parent device frame.
     virtual void build_on(Context& ctx, Frame& frame) = 0;
@@ -32,7 +32,8 @@ class DriverNode {
     /// @return Iterations actually executed (≤ budget).
     virtual int run_nested_erased(Context& ctx, Frame& frame, int budget) = 0;
 
-    /// @brief Drop this loop's device workspace.
+    /// @brief Release this loop's attachment to the parent execution.
+    /// Method-owned reusable workspace may survive this detach.
     /// @param ctx Parent context.
     /// @param frame Parent device frame.
     virtual void destroy_on(Context& ctx, Frame& frame) = 0;

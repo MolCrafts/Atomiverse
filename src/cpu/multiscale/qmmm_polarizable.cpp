@@ -137,15 +137,14 @@ void QmmmPolarizable::build(const BuildContext& ctx) {
         throw std::invalid_argument("QmmmPolarizable: thole_a must be >= 0");
     if (!(pol_tol > 0.0) || pol_max_iter < 1)
         throw std::invalid_argument("QmmmPolarizable: invalid pol SCC params");
-    sub_.build(ctx.frame,
-               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+    sub_.build(ctx, cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
                /*require_embedding=*/true);
 }
 
 void QmmmPolarizable::launch(const LaunchContext& ctx) {
     auto& f = ctx.frame;
     // Embedding QM evaluate (writes Mulliken charges onto private frame).
-    sub_.launch(f, ctx.forces_requested, e_qm_);
+    sub_.launch(ctx, e_qm_);
 
     const auto& qm_rows = sub_.qm_rows();
     const Frame* fqm = sub_.private_frame();

@@ -55,8 +55,10 @@ struct LaunchContext {
     cuda::Frame& frame;     ///< Device-resident system state + host metadata.
     int stage;   ///< Current Plan slot index (erased — compare via `at()`).
     BigInt step; ///< Current simulation step index (0-based).
-    bool initializing_forces = false;
-    bool forces_requested = true;
+    bool initializing_forces = runtime.exec.initializing_forces;
+    bool forces_requested = runtime.exec.forces_requested;
+    bool stress_requested = runtime.exec.stress_requested;
+    bool trial_evaluation = runtime.exec.trial_evaluation;
 
     /// @brief Is the component running in `phase` right now? @see cpu::LaunchContext::at
     /// @tparam PhaseEnum The workflow Phase enum the component is bound in.

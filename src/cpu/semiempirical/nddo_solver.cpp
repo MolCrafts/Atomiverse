@@ -4,19 +4,21 @@
 #include "atomiverse/cpu/semiempirical/internal/nddo_solver.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
+#include "atomiverse/cpu/semiempirical/internal/nddo_derivative.h"
 #include "atomiverse/cpu/semiempirical/internal/nddo_system.h"
 #include "atomiverse/cpu/semiempirical/nddo_density.h"
 #include "atomiverse/cpu/semiempirical/nddo_fock.h"
 #include "atomiverse/cpu/semiempirical/nddo_hcore.h"
 #include "atomiverse/cpu/semiempirical/nddo_matrix.h"
-#include "atomiverse/cpu/semiempirical/rm1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/rm1_parameters.h"
 
 namespace ATV {
 namespace cpu {
@@ -51,7 +53,10 @@ double max_abs_delta(const std::vector<double>& a,
     }
     double out = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i) {
-        out = std::max(out, std::abs(a[i] - b[i]));
+        const double delta = std::abs(a[i] - b[i]);
+        if (!std::isfinite(delta))
+            throw std::runtime_error("NDDO non-finite density residual");
+        out = std::max(out, delta);
     }
     return out;
 }
@@ -59,10 +64,23 @@ double max_abs_delta(const std::vector<double>& a,
 } // namespace
 
 NDDOSolver::NDDOSolver(NDDOConfig config) : config_(config) {
+    set_scf_controls(config.max_iter, config.density_tol, config.energy_tol);
     result_.method = config_.method;
-    result_.reference = (config_.method == SemiEmpiricalMethod::RM1)
-                            ? "Internal RM1/NDDO reference data (Rocha 2006)"
-                            : "Internal AM1/NDDO reference data";
+    result_.reference =
+        (config_.method == ATV::semiempirical::SemiEmpiricalMethod::RM1)
+            ? "Internal RM1/NDDO reference data (Rocha 2006)"
+            : "Internal AM1/NDDO reference data";
+}
+
+void NDDOSolver::set_scf_controls(int max_iter, double density_tol,
+                                  double energy_tol) {
+    if (max_iter <= 0 || !(density_tol > 0.0) || !std::isfinite(density_tol)
+        || !(energy_tol > 0.0) || !std::isfinite(energy_tol))
+        throw std::invalid_argument("NDDO requires a positive iteration budget "
+                                    "and positive finite SCF tolerances");
+    config_.max_iter = max_iter;
+    config_.density_tol = density_tol;
+    config_.energy_tol = energy_tol;
 }
 
 void NDDOSolver::build(const cpu::Frame& reference) {
@@ -81,14 +99,25 @@ void NDDOSolver::build(const cpu::Frame& reference) {
         system_, reference, state_.packed_hcore, state_.initial_packed_density,
         state_.initial_spin_density);
 
+    diagonalizer_.build(system_.n_orbitals);
+    scf_coeff_.reserve(static_cast<std::size_t>(system_.n_orbitals)
+                       * system_.n_orbitals);
     n_atoms_ = reference.nlocal();
     result_.converged = false;
+    scf_delta_ = std::numeric_limits<double>::infinity();
+    scf_energy_delta_ = std::numeric_limits<double>::infinity();
     result_.iterations = 0;
     result_.electronic_energy_hartree = 0.0;
     result_.total_energy_ev = 0.0;
     result_.heat_of_formation_kcal_mol = 0.0;
     result_.mulliken_charges.assign(static_cast<std::size_t>(n_atoms_), 0.0);
     result_.forces_ev_a.clear();
+    result_.forces_ev_a.reserve(static_cast<std::size_t>(3 * n_atoms_));
+    force_scratch_.resize(static_cast<std::size_t>(3 * n_atoms_));
+    force_pair_.method = system_.method;
+    force_pair_.atoms.resize(2);
+    density_.reserve(state_.initial_packed_density.size());
+    spin_density_.reserve(state_.initial_spin_density.size());
     density_.clear();
     spin_density_.clear();
     has_density_ = false;
@@ -100,11 +129,15 @@ void NDDOSolver::scf_prepare(const cpu::Frame& frame) {
         throw std::runtime_error(
             "NDDOSolver::scf_prepare called before build()");
     }
-    if (frame.nlocal() != n_atoms_) {
-        throw std::runtime_error("NDDOSolver::scf_prepare requires a fixed "
-                                 "atom count after build()");
-    }
+    result_.converged = false;
+    result_.forces_ev_a.clear();
     validate_supported_atoms_(frame);
+    const auto species = frame.span(kAtom_type);
+    bool same_system = frame.nlocal() == n_atoms_;
+    for (int i = 0; same_system && i < n_atoms_; ++i)
+        same_system = species[i] == system_.atoms[i].atomic_number;
+    if (!same_system)
+        build(frame);
 
     if (system_.n_alpha != system_.n_beta) {
         throw std::runtime_error(
@@ -127,19 +160,17 @@ void NDDOSolver::scf_prepare(const cpu::Frame& frame) {
     // start every step and break multi-step MD/Minimize SCF stability.
     scf_density_ = has_density_ ? density_ : state_.initial_packed_density;
     scf_spin_ = scaled_density(scf_density_, 0.5);
-    has_density_ = false; // cleared until this run reconverges
     scf_fock_ = NDDOFockBuilder{}.build(system_, scf_x_, scf_y_, scf_z_,
                                         scf_hcore_, scf_density_, scf_spin_);
     scf_prev_energy_ev_ = std::numeric_limits<double>::infinity();
-    scf_delta_ = 0.0;
+    scf_delta_ = std::numeric_limits<double>::infinity();
+    scf_energy_delta_ = std::numeric_limits<double>::infinity();
     scf_iter_ = 0;
     scf_coeff_.clear();
 }
 
 void NDDOSolver::scf_diagonalize() {
-    const auto orbitals =
-        NDDODiagonalizer{}.diagonalize_packed(scf_fock_, system_.n_orbitals);
-    scf_coeff_ = orbitals.coefficients_row_major;
+    diagonalizer_.diagonalize_packed(scf_fock_, scf_coeff_);
 }
 
 void NDDOSolver::scf_density() {
@@ -167,6 +198,8 @@ void NDDOSolver::scf_check() {
     const double electronic_ev = electronic_energy_ev(
         system_.n_orbitals, scf_density_, scf_hcore_, scf_fock_);
     const double total_ev = electronic_ev + scf_nuc_ev_;
+    if (!std::isfinite(total_ev))
+        throw std::runtime_error("NDDO non-finite SCF energy");
     const double energy_delta = std::abs(total_ev - scf_prev_energy_ev_);
 
     result_.iterations = scf_iter_;
@@ -174,9 +207,9 @@ void NDDOSolver::scf_check() {
     result_.electronic_energy_hartree = total_ev * units::kEvInHartree;
     result_.mulliken_charges =
         atomic_charges_from_packed_density(system_, scf_density_);
+    scf_energy_delta_ = energy_delta;
     if (scf_delta_ <= config_.density_tol
-        || energy_delta <= config_.energy_tol) {
-        result_.converged = true;
+        && energy_delta <= config_.energy_tol) {
         // MOPAC ΔHf: (E_elec + E_nuc − Σ eisol)·(eV→kcal) + Σ atomic ΔHf
         // (openmopac.net/Manual/calc_of_hof.html).
         double sum_eisol = 0.0;
@@ -188,39 +221,42 @@ void NDDOSolver::scf_check() {
                     "NDDO parameters missing during heat-of-formation");
             }
             sum_eisol += p->eisol;
-            sum_atheat += (config_.method == SemiEmpiricalMethod::RM1)
-                              ? rm1_atomic_heat_kcal_mol(atom.atomic_number)
-                              : am1_atomic_heat_kcal_mol(atom.atomic_number);
+            sum_atheat +=
+                (config_.method == ATV::semiempirical::SemiEmpiricalMethod::RM1)
+                    ? ATV::semiempirical::rm1_atomic_heat_kcal_mol(
+                          atom.atomic_number)
+                    : ATV::semiempirical::am1_atomic_heat_kcal_mol(
+                          atom.atomic_number);
         }
         result_.heat_of_formation_kcal_mol =
-            (total_ev - sum_eisol) * kAm1EvToKcalMol + sum_atheat;
-        density_ = scf_density_;
-        spin_density_ = scf_spin_;
-        has_density_ = true;
+            (total_ev - sum_eisol) * ATV::semiempirical::kAm1EvToKcalMol
+            + sum_atheat;
         return;
     }
-    result_.converged = false;
     scf_prev_energy_ev_ = total_ev;
 }
 
-double NDDOSolver::energy_at_fixed_density_ev_(const StorageReal* sp_x,
-                                               const StorageReal* sp_y,
-                                               const StorageReal* sp_z) const {
-    const auto hcore = NDDOHCoreBuilder{}.build(system_, sp_x, sp_y, sp_z);
-    const auto fock = NDDOFockBuilder{}.build(
-        system_, sp_x, sp_y, sp_z, hcore.packed_hcore, density_, spin_density_);
-    return electronic_energy_ev(system_.n_orbitals, density_,
-                                hcore.packed_hcore, fock)
-           + hcore.nuclear_repulsion_ev;
+void NDDOSolver::commit_density() {
+    const auto packed_size = static_cast<std::size_t>(system_.n_orbitals)
+                             * (system_.n_orbitals + 1) / 2;
+    if (!built_ || !result_.converged || scf_density_.size() != packed_size
+        || scf_spin_.size() != packed_size)
+        throw std::runtime_error("NDDO cannot accept an unconverged density");
+    density_ = scf_density_;
+    spin_density_ = scf_spin_;
+    has_density_ = true;
 }
 
-NDDOResult& NDDOSolver::compute_forces(cpu::Frame& frame,
-                                       double step_angstrom) {
+ATV::semiempirical::NDDOResult&
+NDDOSolver::compute_forces(cpu::Frame& frame) try {
     if (!built_) {
         throw std::runtime_error(
             "NDDOSolver::compute_forces called before build()");
     }
-    if (!has_density_ || !result_.converged) {
+    const auto packed_size = static_cast<std::size_t>(system_.n_orbitals)
+                             * (system_.n_orbitals + 1) / 2;
+    if (!result_.converged || scf_density_.size() != packed_size
+        || scf_spin_.size() != packed_size) {
         throw std::runtime_error(
             "NDDOSolver::compute_forces requires a converged SCF density");
     }
@@ -228,66 +264,136 @@ NDDOResult& NDDOSolver::compute_forces(cpu::Frame& frame,
         throw std::runtime_error(
             "NDDOSolver::compute_forces atom count mismatch");
     }
-    if (!(step_angstrom > 0.0) || !std::isfinite(step_angstrom)) {
-        throw std::invalid_argument(
-            "NDDOSolver::compute_forces step_angstrom must be positive finite");
-    }
-
-    // Local coordinate copies — displace without Frame re-resolution storms.
-    const StorageReal* __restrict fx = frame.span(kAtom_x);
-    const StorageReal* __restrict fy = frame.span(kAtom_y);
-    const StorageReal* __restrict fz = frame.span(kAtom_z);
-    std::vector<StorageReal> x(fx, fx + n_atoms_);
-    std::vector<StorageReal> y(fy, fy + n_atoms_);
-    std::vector<StorageReal> z(fz, fz + n_atoms_);
-
-    result_.forces_ev_a.assign(static_cast<std::size_t>(3 * n_atoms_), 0.0);
-    const double two_h = 2.0 * step_angstrom;
-
-    auto energy_local = [&]() {
-        return energy_at_fixed_density_ev_(x.data(), y.data(), z.data());
-    };
-
-    // Translational invariance: F_N = −Σ_{i<N} F_i, so only 3(N−1) independent
-    // central differences when N ≥ 2 (exact for isolated-molecule AM1).
-    const int n_fd = n_atoms_ >= 2 ? n_atoms_ - 1 : n_atoms_;
-    for (int i = 0; i < n_fd; ++i) {
-        for (int d = 0; d < 3; ++d) {
-            StorageReal* coord =
-                d == 0 ? x.data() : (d == 1 ? y.data() : z.data());
-            const StorageReal x0 = coord[i];
-            coord[i] = static_cast<StorageReal>(static_cast<double>(x0)
-                                                + step_angstrom);
-            const double e_plus = energy_local();
-            coord[i] = static_cast<StorageReal>(static_cast<double>(x0)
-                                                - step_angstrom);
-            const double e_minus = energy_local();
-            coord[i] = x0;
-            // F = −∂E/∂R  [eV/Å]
-            result_.forces_ev_a[static_cast<std::size_t>(3 * i + d)] =
-                -(e_plus - e_minus) / two_h;
+    // At converged density the NDDO energy is stationary. Differentiate only
+    // each pair's scalar integrals, then contract directly with that density.
+    // Three analytic Cartesian directions are propagated together; no displaced
+    // coordinates, SCF response solve, or full-system derivative matrices.
+    const std::array coordinates{frame.span(kAtom_x), frame.span(kAtom_y),
+                                 frame.span(kAtom_z)};
+    auto& forces = force_scratch_;
+    forces.resize(static_cast<std::size_t>(3 * n_atoms_));
+    std::fill(forces.begin(), forces.end(), 0.0);
+    auto& pair = force_pair_;
+    std::array<double, 36> pair_density{}, pair_spin{};
+    std::array<std::array<StorageReal, 2>, 3> positions;
+    for (int i = 1; i < n_atoms_; ++i) {
+        for (int j = 0; j < i; ++j) {
+            const auto& ai = system_.atoms[i];
+            const auto& aj = system_.atoms[j];
+            pair.atoms[0] = aj;
+            pair.atoms[0].first_ao = 0;
+            pair.atoms[0].last_ao = aj.n_orbitals - 1;
+            pair.atoms[1] = ai;
+            pair.atoms[1].first_ao = aj.n_orbitals;
+            pair.atoms[1].last_ao = aj.n_orbitals + ai.n_orbitals - 1;
+            pair.n_orbitals = aj.n_orbitals + ai.n_orbitals;
+            const int n = pair.n_orbitals;
+            for (int mu = 0; mu < n; ++mu) {
+                const int global_mu = mu < aj.n_orbitals
+                                          ? aj.first_ao + mu
+                                          : ai.first_ao + mu - aj.n_orbitals;
+                for (int nu = 0; nu <= mu; ++nu) {
+                    const int global_nu =
+                        nu < aj.n_orbitals ? aj.first_ao + nu
+                                           : ai.first_ao + nu - aj.n_orbitals;
+                    const auto local = packed_index(mu, nu);
+                    const auto global = packed_index(global_mu, global_nu);
+                    pair_density[local] = scf_density_[global];
+                    pair_spin[local] = scf_spin_[global];
+                }
+            }
+            for (int d = 0; d < 3; ++d) {
+                positions[d][0] = coordinates[d][j];
+                positions[d][1] = coordinates[d][i];
+            }
+            const std::array<double, 3> xi{positions[0][1], positions[1][1],
+                                           positions[2][1]};
+            const std::array<double, 3> xj{positions[0][0], positions[1][0],
+                                           positions[2][0]};
+            const auto dh = internal::hcore_pair_derivative(pair, xi, xj);
+            const auto dw = internal::two_center_integral_derivative(
+                pair, positions[0].data(), positions[1].data(),
+                positions[2].data(), 1, 0);
+            for (int d = 0; d < 3; ++d) {
+                double gradient = dh[d].nuclear_repulsion_ev;
+                for (int mu = 0; mu < n; ++mu)
+                    for (int nu = 0; nu <= mu; ++nu) {
+                        const auto k = packed_index(mu, nu);
+                        gradient += (mu == nu ? 1.0 : 2.0) * pair_density[k]
+                                    * dh[d].packed_hcore[k];
+                    }
+                int ip = 0;
+                for (int a = 0; a < ai.n_orbitals; ++a)
+                    for (int b = 0; b <= a; ++b, ++ip) {
+                        const int aa = aj.n_orbitals + a,
+                                  bb = aj.n_orbitals + b;
+                        const double mi = a == b ? 1.0 : 2.0;
+                        int jp = 0;
+                        for (int c = 0; c < aj.n_orbitals; ++c)
+                            for (int e = 0; e <= c; ++e, ++jp) {
+                                const double mj = c == e ? 1.0 : 2.0;
+                                const double coulomb =
+                                    pair_density[packed_index(aa, bb)]
+                                    * pair_density[packed_index(c, e)];
+                                const double exchange =
+                                    0.25
+                                    * (pair_density[packed_index(aa, c)]
+                                           * pair_spin[packed_index(bb, e)]
+                                       + pair_density[packed_index(aa, e)]
+                                             * pair_spin[packed_index(bb, c)]
+                                       + pair_density[packed_index(bb, c)]
+                                             * pair_spin[packed_index(aa, e)]
+                                       + pair_density[packed_index(bb, e)]
+                                             * pair_spin[packed_index(aa, c)]);
+                                gradient +=
+                                    mi * mj * (coulomb - exchange)
+                                    * dw[d][ip
+                                                * (aj.n_orbitals
+                                                   * (aj.n_orbitals + 1) / 2)
+                                            + jp];
+                            }
+                    }
+                if (!std::isfinite(gradient))
+                    throw std::runtime_error("NDDO non-finite analytic force");
+                forces[3 * i + d] -= gradient;
+                forces[3 * j + d] += gradient;
+            }
         }
     }
-    if (n_atoms_ >= 2) {
-        double sx = 0.0, sy = 0.0, sz = 0.0;
-        for (int i = 0; i < n_atoms_ - 1; ++i) {
-            sx += result_.forces_ev_a[static_cast<std::size_t>(3 * i + 0)];
-            sy += result_.forces_ev_a[static_cast<std::size_t>(3 * i + 1)];
-            sz += result_.forces_ev_a[static_cast<std::size_t>(3 * i + 2)];
-        }
-        const int last = n_atoms_ - 1;
-        result_.forces_ev_a[static_cast<std::size_t>(3 * last + 0)] = -sx;
-        result_.forces_ev_a[static_cast<std::size_t>(3 * last + 1)] = -sy;
-        result_.forces_ev_a[static_cast<std::size_t>(3 * last + 2)] = -sz;
-    }
+    result_.forces_ev_a.swap(forces);
     return result_;
+} catch (...) {
+    // Method results must not advertise a successful calculation with partial
+    // derivatives, even when the caller catches and retries the failure.
+    result_.forces_ev_a.clear();
+    result_.converged = false;
+    throw;
 }
 
 void NDDOSolver::validate_supported_atoms_(const cpu::Frame& frame) const {
-    if (config_.method != SemiEmpiricalMethod::AM1
-        && config_.method != SemiEmpiricalMethod::RM1) {
+    if (config_.method != ATV::semiempirical::SemiEmpiricalMethod::AM1
+        && config_.method != ATV::semiempirical::SemiEmpiricalMethod::RM1) {
         throw std::runtime_error(
             "NDDOSolver: unsupported semiempirical method");
+    }
+    if (frame.nlocal() < 1)
+        throw std::invalid_argument("NDDO requires at least one atom");
+    const std::array coordinates{frame.span(kAtom_x), frame.span(kAtom_y),
+                                 frame.span(kAtom_z)};
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        for (const auto& axis : coordinates)
+            if (!std::isfinite(axis[i]))
+                throw std::invalid_argument("NDDO non-finite coordinate");
+        for (int j = 0; j < i; ++j) {
+            double r2 = 0.0;
+            for (const auto& axis : coordinates) {
+                const double delta = axis[i] - axis[j];
+                r2 += delta * delta;
+            }
+            if (!(r2 > 1e-24) || !std::isfinite(r2))
+                throw std::invalid_argument(
+                    "NDDO invalid interatomic distance");
+        }
     }
     const int* __restrict sp_type = frame.span(kAtom_type);
     for (int i = 0; i < frame.nlocal(); ++i) {

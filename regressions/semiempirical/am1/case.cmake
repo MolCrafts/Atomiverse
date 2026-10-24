@@ -1,7 +1,7 @@
 # semiempirical/am1: one case, one section per pinned system or quantity.
 
 atv_regression(SECTION am1-water-mopac-energy
-  REQUIRES SEMIEMPIRICAL)
+  REQUIRES SEMIEMPIRICAL DEVICES both)
 
 atv_regression(SECTION am1_water_force
   REQUIRES SEMIEMPIRICAL)

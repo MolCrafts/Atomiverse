@@ -4,6 +4,7 @@
 #include "atomiverse/core/dynamics_math.h"
 #include "atomiverse/core/precision.h"
 #include <cmath>
+#include <exception>
 #include <stdexcept>
 #include <string>
 
@@ -27,9 +28,12 @@ void Backend::init() {
     cuda::register_log_callback();
     cudaStream_t main, defer;
     ATV_CUDA_CHECK(cudaStreamCreate(&main));
-    ATV_CUDA_CHECK(cudaStreamCreate(&defer));
     context_.stream = main;
+    // Retain each acquired stream immediately so failure cleanup can release
+    // the first stream if creation of the second one fails.
+    ATV_CUDA_CHECK(cudaStreamCreate(&defer));
     context_.defer_stream = defer;
+    context_.exec.backend = this;
 }
 
 namespace {
@@ -109,11 +113,19 @@ void Backend::prepare_run(BigInt step_idx) {
         || (plan_->kind != PhaseKind::MD && plan_->kind != PhaseKind::Minimizer)
         || forces_ready_)
         return;
+    struct DispatchGuard {
+        bool& active;
+        bool saved;
+        ~DispatchGuard() { active = saved; }
+    } guard{dispatching_, dispatching_};
+    dispatching_ = true;
     plan_->prepare_forces(
         [](int) {},
         [&](const auto& slot, const auto& op, bool force_slot) {
-            LaunchContext ctx{context_, frame_, slot.phase,
-                              step_idx, true,   slot.forces_requested};
+            LaunchContext ctx{context_, frame_, slot.phase, step_idx};
+            ctx.initializing_forces = true;
+            ctx.forces_requested &= slot.forces_requested;
+            ctx.stress_requested &= slot.stress_requested;
             if (force_slot)
                 op.component->launch(ctx);
             else
@@ -123,12 +135,26 @@ void Backend::prepare_run(BigInt step_idx) {
 }
 
 void Backend::execute_phases(BigInt step_idx, int first_phase, int end_phase) {
-    if (!plan_ || first_phase < 0 || end_phase < first_phase
-        || end_phase > static_cast<int>(plan_->slots.size()))
+    if (!plan_)
+        throw std::invalid_argument("CUDA Backend has no loaded plan");
+    execute_phases(*plan_, step_idx, first_phase, end_phase);
+}
+
+void Backend::execute_phases(const Plan<Component>& plan, BigInt step_idx,
+                             int first_phase, int end_phase) {
+    if (first_phase < 0 || end_phase < first_phase
+        || end_phase > static_cast<int>(plan.slots.size()))
         throw std::invalid_argument(
             "CUDA Backend phase range is outside the loaded plan");
+    const bool timed = timer_ && !dispatching_;
+    struct DispatchGuard {
+        bool& active;
+        bool saved;
+        ~DispatchGuard() { active = saved; }
+    } guard{dispatching_, dispatching_};
+    dispatching_ = true;
     for (int phase = first_phase; phase < end_phase; ++phase) {
-        auto& slot = plan_->slots[static_cast<std::size_t>(phase)];
+        auto& slot = plan.slots[static_cast<std::size_t>(phase)];
         if (slot.ops.empty())
             continue;
         for (auto& op : slot.ops) {
@@ -139,12 +165,31 @@ void Backend::execute_phases(BigInt step_idx, int first_phase, int end_phase) {
                     ? context_.defer_stream
                     : context_.stream);
             LaunchContext ctx{context_, frame_, slot.phase, step_idx};
-            if (timer_)
+            ctx.forces_requested &= slot.forces_requested;
+            ctx.stress_requested &= slot.stress_requested;
+            if (timed)
                 timer_->impl()->begin(stream);
-            op.component->launch(ctx);
+            try {
+                op.component->launch(ctx);
+            } catch (...) {
+                if (timed) {
+                    try {
+                        timer_->impl()->end(stream, slot.phase,
+                                            op.component->name());
+                    } catch (...) {
+                        // Profiling failure must not replace the component error.
+                    }
+                    try {
+                        timer_->impl()->flush();
+                    } catch (...) {
+                        // Consume the pending batch even if recording end failed.
+                    }
+                }
+                throw;
+            }
             if (op.component->changes_box(slot.phase))
                 publish_box_();
-            if (timer_)
+            if (timed)
                 timer_->impl()->end(stream, slot.phase, op.component->name());
         }
         // Per-phase syncs intentionally removed
@@ -162,7 +207,7 @@ void Backend::execute_phases(BigInt step_idx, int first_phase, int end_phase) {
         //   - End-of-run sync happens in Backend::sync() / retrieve();
         //     individual components issue event syncs when they need
         //     specific host-visible values (NPT, NeighborList).
-        if (timer_)
+        if (timed)
             timer_->impl()->flush();
     }
 }
@@ -187,28 +232,57 @@ void Backend::destroy_components() {
 void Backend::retrieve(cpu::Frame& frame) { cuda::to_cpu(frame_, frame); }
 
 void Backend::sync() {
-    cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream));
-    cudaStreamSynchronize(static_cast<cudaStream_t>(context_.defer_stream));
+    ATV_CUDA_CHECK(
+        cudaStreamSynchronize(static_cast<cudaStream_t>(context_.stream)));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(
+        static_cast<cudaStream_t>(context_.defer_stream)));
 }
 
 void Backend::shutdown() {
+    std::exception_ptr failure;
+    auto cleanup = [&](auto&& operation) {
+        try {
+            operation();
+        } catch (...) {
+            if (!failure)
+                failure = std::current_exception();
+        }
+    };
     if (!lifecycle_.empty()) {
-        sync();
-        destroy_components();
+        // Drain both streams even when one reports an asynchronous error.
+        cleanup([&] {
+            ATV_CUDA_CHECK(cudaStreamSynchronize(
+                static_cast<cudaStream_t>(context_.stream)));
+        });
+        cleanup([&] {
+            ATV_CUDA_CHECK(cudaStreamSynchronize(
+                static_cast<cudaStream_t>(context_.defer_stream)));
+        });
+        DestroyContext ctx{context_, frame_};
+        lifecycle_.destroy_all([&](Component& component) {
+            cleanup([&] { component.destroy(ctx); });
+        });
     }
     if (context_.host_box.resident)
-        ATV_CUDA_CHECK(cudaFree(const_cast<Box*>(context_.host_box.resident)));
+        cleanup([&] {
+            ATV_CUDA_CHECK(
+                cudaFree(const_cast<Box*>(context_.host_box.resident)));
+        });
     cuda::destroy(frame_);
     frame_ = {};
     auto main = static_cast<cudaStream_t>(context_.stream);
     auto defer = static_cast<cudaStream_t>(context_.defer_stream);
     if (main)
-        cudaStreamDestroy(main);
+        cleanup([&] { ATV_CUDA_CHECK(cudaStreamDestroy(main)); });
     if (defer)
-        cudaStreamDestroy(defer);
+        cleanup([&] { ATV_CUDA_CHECK(cudaStreamDestroy(defer)); });
     context_ = {};
     plan_ = nullptr;
     cuda::unregister_log_callback();
+    // Cleanup attempts every release; a poisoned CUDA context can still require
+    // process restart. Reporting an error does not leave a live host-side ledger.
+    if (failure)
+        std::rethrow_exception(failure);
 }
 
 } // namespace cuda
@@ -219,5 +293,8 @@ template class Driver<md::Phase, cuda::device_tag>;
 template class Driver<minimizer::Phase, cuda::device_tag>;
 template class Driver<evaluate::Phase, cuda::device_tag>;
 template class Driver<scf::Phase, cuda::device_tag>;
+#ifdef ATV_HAS_SEMIEMPIRICAL
+template class Driver<nddo::Phase, cuda::device_tag>;
+#endif
 
 } // namespace ATV

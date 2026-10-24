@@ -11,12 +11,13 @@ more than a classical force field, and it is only as good as its fit.
 ``AM1`` publishes energy [eV], Mulliken charges [e] and nuclear forces
 [eV/Å], so it serves both single points and dynamics: hand it to
 ``atomiverse.driver.single_point`` for one solve, call ``forces(frame)`` for
-the gradient, or register it with ``MD.set_evaluator`` for semiempirical
+the forces, or register it with ``MD.set_evaluator`` for semiempirical
 Born-Oppenheimer molecular dynamics (the electrons re-converged at every
-geometry the nuclei reach). Gradients are a central finite difference of the
-energy at fixed converged density (step 1e-4 Å), which is the exact NDDO
-gradient up to the O(h²) truncation of that difference; closed-form NDDO
-derivatives are a separate engine queue. Canonical deep paths:
+geometry the nuclei reach). CPU AM1/RM1 forces use three-direction analytic
+Cartesian derivatives of the pair integrals and core repulsion, contracted
+with the converged density. The model parameters are unchanged. Electronic
+stationarity is required: both density and energy tolerances must be met.
+The vibrational Hessian remains a finite difference of forces. Canonical deep paths:
 ``atomiverse.semiempirical.AM1`` / ``AM1Result``; the
 top-level names are the same classes.
 
@@ -74,8 +75,8 @@ DFTB0 = _cpp.DFTB0
 #: SCC-DFTB2 for H/C/N/O — Elstner et al., Phys. Rev. B 58, 7260 (1998).
 #:
 #: A tight-binding valence Hamiltonian built from tabulated two-centre
-#: integrals with the atomic charges relaxed self-consistently. Unlike AM1 it
-#: has closed-form analytic forces and an analytic cell stress, and it is
+#: integrals with the atomic charges relaxed self-consistently. Like AM1 it
+#: provides analytic forces; it also provides analytic cell stress and is
 #: periodic: `boundary` chooses between an isolated molecule and a 3-D lattice
 #: with an Ewald-summed charge kernel. On the mio-1-1 parameter set it
 #: reproduces DFTB+ to ~1e-8 eV/atom.

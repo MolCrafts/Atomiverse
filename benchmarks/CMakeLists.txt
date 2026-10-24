@@ -9,3 +9,15 @@ endif()
 if(ATV_BUILD_MD)
     add_subdirectory(lj)
 endif()
+
+if(ATV_BUILD_SEMIEMPIRICAL)
+    add_executable(bench_nddo_allocations
+        semiempirical/nddo_forces/count_allocations.cpp)
+    target_link_libraries(bench_nddo_allocations PRIVATE atomiverse)
+    if(ATV_BUILD_CUDA AND ATV_BUILD_EVALUATE)
+        add_executable(bench_nddo_energy semiempirical/nddo_energy/run.cu)
+        target_link_libraries(bench_nddo_energy PRIVATE atomiverse)
+        set_target_properties(bench_nddo_energy PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    endif()
+endif()

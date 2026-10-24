@@ -10,7 +10,7 @@ atv_regression(SECTION fumi-tosi-nacl
   REQUIRES POTENTIALS)
 
 atv_regression(SECTION steele-wall-argon
-  REQUIRES POTENTIALS)
+  REQUIRES POTENTIALS MD)
 
 atv_regression(SECTION coul_soft_dimer
   REQUIRES POTENTIALS)

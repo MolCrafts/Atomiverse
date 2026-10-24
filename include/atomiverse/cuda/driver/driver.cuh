@@ -128,6 +128,14 @@ struct PhaseTraits<ATV::scf::Phase> {
     static constexpr auto end_phase = ATV::scf::Phase::check;
 };
 
+/// NDDO methods use the rebuilt Fock before publishing residuals at check.
+template <>
+struct PhaseTraits<ATV::nddo::Phase> {
+    static constexpr auto eval_phase = ATV::nddo::Phase::fock;
+    static constexpr auto neighbor_phase = ATV::nddo::Phase::fock;
+    static constexpr auto end_phase = ATV::nddo::Phase::check;
+};
+
 /// @brief CUDA-backend loop node — shared by every CUDA preset.
 ///
 /// @tparam PhaseEnum Phase enum type for the workflow (must end with a `COUNT`
@@ -226,11 +234,13 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         this->unmount_(
             name_or_id, launching_,
             [&](cuda::Component* c) {
-                if (this->backend_ && built_plugins_.count(c)) {
+                auto* execution = borrowed_backend_ ? borrowed_backend_
+                                                    : this->backend_.get();
+                if (execution && built_plugins_.count(c)) {
                     Plan<cuda::Component> one;
                     one.slots.resize(1);
                     one.slots[0].ops.push_back({c});
-                    this->backend_->destroy_plan(one);
+                    execution->destroy_plan(one);
                     built_plugins_.erase(c);
                 }
                 std::erase(criteria_, c);
@@ -365,6 +375,89 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         mark_built_from_pending_();
         status_.reset();
         metrics_ = ConvergenceMetrics{};
+    }
+
+    /// @brief Acquire this method's stages on an existing parent execution owner.
+    /// Repeated calls reuse built stages and acquire only newly mounted components.
+    /// The borrowed Frame must be the parent's resident Frame in this implementation.
+    void build_borrowed_(cuda::Context& ctx, cuda::Frame& frame) {
+        auto* execution = ctx.exec.backend;
+        if (!execution || &execution->context() != &ctx
+            || &execution->frame() != &frame)
+            throw std::invalid_argument("CUDA nested driver requires its "
+                                        "parent Backend and device Frame");
+        if (borrowed_backend_) {
+            if (borrowed_backend_ != execution || borrowed_frame_ != &frame)
+                throw std::logic_error(
+                    "CUDA nested driver is bound to another parent");
+            flush_new_mounts_();
+            return;
+        }
+        this->build();
+        borrowed_backend_ = execution;
+        borrowed_frame_ = &frame;
+        try {
+            execution->build_plan(this->plan_);
+            mark_built_from_pending_();
+            this->mutation_lock_ = execution->mutation_lock();
+        } catch (...) {
+            borrowed_backend_ = nullptr;
+            borrowed_frame_ = nullptr;
+            built_plugins_.clear();
+            throw;
+        }
+    }
+
+    /// @brief Dispatch one child iteration without loading over the parent Plan.
+    /// The method owns loop-status binding and convergence; this guard owns the
+    /// mutation lock, and Backend owns requests, frequencies and stream dispatch.
+    void step_borrowed_(cuda::Context& ctx, cuda::Frame& frame, BigInt step) {
+        if (!borrowed_backend_ || ctx.exec.backend != borrowed_backend_
+            || &borrowed_backend_->context() != &ctx
+            || borrowed_frame_ != &frame)
+            throw std::logic_error(
+                "CUDA nested driver has no matching live parent");
+        struct Guard {
+            bool& flag;
+            const bool*& lock;
+            bool saved;
+            const bool* saved_lock;
+            ~Guard() {
+                flag = saved;
+                lock = saved_lock;
+            }
+        } guard{launching_, this->mutation_lock_, launching_,
+                this->mutation_lock_};
+        launching_ = true;
+        this->mutation_lock_ = &launching_;
+        borrowed_backend_->execute_phases(
+            this->plan_, step, 0, static_cast<int>(this->plan_.slots.size()));
+    }
+
+    /// @brief Release mounted stages without freeing the parent's streams/Frame.
+    /// Safe after an unsuccessful initial build; identity mismatch is rejected.
+    void destroy_borrowed_(cuda::Context& ctx, cuda::Frame& frame) {
+        if (!borrowed_backend_)
+            return;
+        if (ctx.exec.backend != borrowed_backend_
+            || &borrowed_backend_->context() != &ctx
+            || borrowed_frame_ != &frame)
+            throw std::logic_error(
+                "CUDA nested driver belongs to another parent");
+        Plan<cuda::Component> acquired;
+        for (auto* c : this->plan_.components())
+            if (built_plugins_.count(c))
+                acquired.lifecycle_only.push_back(c);
+        struct Guard {
+            Driver* self;
+            ~Guard() {
+                self->borrowed_backend_ = nullptr;
+                self->borrowed_frame_ = nullptr;
+                self->built_plugins_.clear();
+                self->mutation_lock_ = nullptr;
+            }
+        } guard{this};
+        borrowed_backend_->destroy_plan(acquired);
     }
 
     /// @brief Single iteration through the compiled Plan.
@@ -658,22 +751,20 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     }
 
     void flush_new_mounts_() {
-        if (!this->backend_)
+        auto* execution =
+            borrowed_backend_ ? borrowed_backend_ : this->backend_.get();
+        if (!execution)
             return;
         rebind_from_live_table_();
-        for (auto* c : this->plan_.components()) {
-            if (!c || built_plugins_.count(c))
-                continue;
-            Plan<cuda::Component> one;
-            one.slots.resize(1);
-            one.slots[0].phase = 0;
-            Operation<cuda::Component> op;
-            op.component = c;
-            one.slots[0].ops.push_back(op);
-            this->backend_->build_plan(one);
+        Plan<cuda::Component> added;
+        for (auto* c : this->plan_.components())
+            if (c && !built_plugins_.count(c))
+                added.lifecycle_only.push_back(c);
+        // Acquire additions together so a later failed build rolls back every
+        // new component from this refresh, preserving the accepted live set.
+        execution->build_plan(added);
+        for (auto* c : added.lifecycle_only)
             built_plugins_.insert(c);
-        }
-        rebind_from_live_table_();
     }
 
     void rebind_from_live_table_() {
@@ -688,7 +779,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         this->plan_ = builder.build(ATV::slot_count<PhaseEnum>());
         this->plan_.kind = kind_of(PhaseEnum{});
         this->plan_.lifecycle_only.assign(criteria_.begin(), criteria_.end());
-        if (this->backend_)
+        if (this->backend_ && !borrowed_backend_)
             this->backend_->load(this->plan());
         validate_long_range_contract_();
         validate_components();
@@ -737,6 +828,8 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// Termination policies — plural, composed by severity. @see poll_criteria_
     std::vector<cuda::Criterion*> criteria_;
     std::vector<std::unique_ptr<cuda::Criterion>> criteria_owned_;
+    Backend* borrowed_backend_ = nullptr;
+    cuda::Frame* borrowed_frame_ = nullptr;
     bool launching_ = false; ///< True inside `step_once` / `launch()`.
     std::unordered_set<cuda::Component*> built_plugins_;
     std::optional<std::string> neighbor_set_;

@@ -25,9 +25,9 @@ namespace {
 /// @brief Per-call callback payload. Heap-allocated by `launch()` and
 ///        freed by `cuda_callback_` after the user hook returns.
 ///
-/// `LaunchContext` is non-trivially-copyable (it holds reference members), so
-/// we capture its scalar fields and the addresses of its reference targets
-/// here, plus the device-ring slot the freeze/D2H used. Lifetime: from the
+/// Copying LaunchContext preserves its borrowed runtime/frame references and
+/// snapshots its scalar requests. Reconstructing those requests from the live
+/// Context in the callback would race with nested dispatch. Lifetime: from the
 /// `cudaLaunchHostFunc` enqueue in `launch()` until the worker thread invokes
 /// `cuda_callback_`. The defer stream's FIFO ordering serializes callbacks, so
 /// each instance has at most ~K outstanding callbacks queued (K = how many
@@ -35,10 +35,7 @@ namespace {
 /// GPU critical path (~50 ns / step on Hopper).
 struct CallbackPayload {
     AsyncBridge* self;
-    cuda::Context* runtime;
-    cuda::Frame* frame;
-    int stage;
-    BigInt step;
+    LaunchContext context;
     int slot;
 };
 
@@ -99,8 +96,7 @@ void AsyncBridge::launch(const LaunchContext& ctx) {
     // 4. Snapshot boundary: enqueue a host callback that runs after the D2H
     //    above completes. The callback fires on a CUDA worker thread; the main
     //    thread is free to issue the next step's kernels in parallel.
-    auto* payload = new CallbackPayload{this,      &ctx.runtime, &ctx.frame,
-                                        ctx.stage, ctx.step,     slot};
+    auto* payload = new CallbackPayload{this, ctx, slot};
     cudaLaunchHostFunc(defer_stream, &AsyncBridge::cuda_callback_, payload);
 }
 
@@ -126,13 +122,10 @@ void AsyncBridge::destroy(const DestroyContext& ctx) {
 }
 
 void AsyncBridge::cuda_callback_(void* user_data) {
-    // CUDA worker thread. Reconstruct the LaunchContext from the captured
-    // pointer/scalar fields and invoke the virtual user hook for the frozen
-    // slot. Then free the payload — single owner pattern.
+    // CUDA worker thread. Use the captured evaluation intent, not the live
+    // Context's requests, which may already belong to a subsequent dispatch.
     auto* payload = static_cast<CallbackPayload*>(user_data);
-    LaunchContext ctx{*payload->runtime, *payload->frame, payload->stage,
-                      payload->step};
-    payload->self->on_data_ready(ctx, payload->slot);
+    payload->self->on_data_ready(payload->context, payload->slot);
     delete payload;
 }
 

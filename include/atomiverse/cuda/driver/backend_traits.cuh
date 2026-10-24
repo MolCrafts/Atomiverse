@@ -54,22 +54,48 @@ struct backend_traits<cuda::device_tag> {
 
     template <typename Node>
     static std::unique_ptr<component_type>
-    nested_slot(std::unique_ptr<Node> owned, Node* node, int cap, bool energy,
-                bool force) {
+    nested_slot(std::unique_ptr<Node> owned, Node* node, int cap, bool, bool) {
         struct Slot : component_type {
             std::unique_ptr<cuda::DriverNode> owned_node;
-            cuda::DriverNode* node = nullptr;
+            Node* node = nullptr;
             int budget = 0;
-            bool energy = false;
-            bool force = false;
 
             std::string name() const override { return "nested_driver"; }
-            bool provides_energy() const override { return energy; }
-            bool provides_force() const override { return force; }
+            bool provides_energy() const override {
+                return backend_traits::node_outputs(*node).first;
+            }
+            bool provides_force() const override {
+                return backend_traits::node_outputs(*node).second;
+            }
+            bool provides_system_stress() const override {
+                if constexpr (requires { node->provides_system_stress(); })
+                    return node->provides_system_stress();
+                return false;
+            }
+            bool requires_system_stress() const override {
+                if constexpr (requires { node->requires_system_stress(); })
+                    return node->requires_system_stress();
+                return false;
+            }
             void build(const cuda::BuildContext& ctx) override {
                 node->build_on(ctx.runtime, ctx.frame);
             }
             void launch(const cuda::LaunchContext& ctx) override {
+                struct Restore {
+                    cuda::Context& runtime;
+                    cuda::ExecServices exec;
+                    cuda::LoopServices loop;
+                    ~Restore() {
+                        runtime.exec = exec;
+                        runtime.loop = loop;
+                    }
+                } restore{ctx.runtime, ctx.runtime.exec, ctx.runtime.loop};
+                auto& exec = ctx.runtime.exec;
+                exec.forces_requested &= ctx.forces_requested;
+                exec.stress_requested &=
+                    ctx.stress_requested && provides_system_stress();
+                exec.initializing_forces |= ctx.initializing_forces;
+                exec.trial_evaluation |= ctx.trial_evaluation;
                 node->run_nested_erased(ctx.runtime, ctx.frame, budget);
             }
             void destroy(const cuda::DestroyContext& ctx) override {
@@ -81,8 +107,6 @@ struct backend_traits<cuda::device_tag> {
         slot->owned_node = std::move(owned);
         slot->node = node;
         slot->budget = cap;
-        slot->energy = energy;
-        slot->force = force;
         return slot;
     }
 };

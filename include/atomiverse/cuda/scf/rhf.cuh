@@ -197,9 +197,10 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     /// @param nuclear_forces Assemble device nuclear forces after the
     ///        loop. `run(Frame&)` and the nested mount pass
     ///        `compute_force`. `run(const Frame&)` passes false.
+    /// @param host_current Nuclear Z was read at this call's host Frame boundary.
     /// @return Iterations executed.
     int drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
-                    bool nuclear_forces);
+                    bool nuclear_forces, bool host_current = false);
 
     /// @brief Walk this Driver's Plan once (one SCF iteration).
     void step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step);
@@ -207,7 +208,8 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     /// @brief Build or rebuild the private integral workspace at `frame`.
     /// @param nuclear_forces Refuse a basis with no device force kernel
     ///        before the SCF starts. Ignored by `run(const Frame&)`.
-    void assemble_(cuda::Context& ctx, cuda::Frame& frame, bool nuclear_forces);
+    void assemble_(cuda::Context& ctx, cuda::Frame& frame, bool nuclear_forces,
+                   bool host_current);
 
     /// @brief Sync, destroy components, shut the backend down. Does not
     ///        retrieve: `to_cpu` would overwrite host positions, forces,
@@ -228,7 +230,7 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     int iterations_ = 0;
     bool last_force_device_ = false;
     bool last_device_sp_ = false;
-    /// Host-side nuclear Z [e] for path select + shell pack (no type[] D2H).
+    /// Nuclear Z [e] for shell packing; refreshed only at an identity change.
     std::vector<int> host_Z_;
 };
 

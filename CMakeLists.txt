@@ -355,8 +355,8 @@ if(NOT ATV_DOCS_ONLY)
 
     if(ATV_BUILD_SEMIEMPIRICAL)
         list(APPEND ATOMIVERSE_SRCS
-            src/cpu/semiempirical/am1_parameters.cpp
-            src/cpu/semiempirical/rm1_parameters.cpp
+            src/semiempirical/am1_parameters.cpp
+            src/semiempirical/rm1_parameters.cpp
             src/cpu/semiempirical/nddo_density.cpp
             src/cpu/semiempirical/nddo_fock.cpp
             src/cpu/semiempirical/nddo_hcore.cpp
@@ -614,6 +614,16 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/neighbor/setup.cu
                 src/cuda/neighbor/export_pairs.cu
             )
+        endif()
+        if(ATV_BUILD_SEMIEMPIRICAL)
+            list(APPEND ATOMIVERSE_SRCS
+                src/cuda/semiempirical/nddo_fock.cu
+                src/cuda/semiempirical/nddo_hcore.cu
+                src/cuda/semiempirical/nddo_forces.cu
+                src/cuda/semiempirical/nddo_two_electron.cu
+                src/cuda/semiempirical/nddo_workspace.cu
+                src/cuda/semiempirical/am1_solver.cu
+                src/cuda/semiempirical/rm1_solver.cu)
         endif()
         if(ATV_BUILD_MINIMIZER)
             list(APPEND ATOMIVERSE_SRCS

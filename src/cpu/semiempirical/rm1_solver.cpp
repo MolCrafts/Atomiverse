@@ -14,17 +14,15 @@ RM1::RM1(int charge_, int multiplicity_, int max_iter_, double density_tol_,
 
 RM1::~RM1() = default;
 
-RM1::RM1(RM1&& other) noexcept
-    : NddoMethod(), charge(other.charge), multiplicity(other.multiplicity),
-      max_iter(other.max_iter), density_tol(other.density_tol),
-      energy_tol(other.energy_tol), force_step(other.force_step),
-      engine_(std::move(other.engine_)) {
-    other.reset_built_driver_();
-}
+RM1::RM1(RM1&& other)
+    : NddoMethod(std::move(other)), charge(other.charge),
+      multiplicity(other.multiplicity), max_iter(other.max_iter),
+      density_tol(other.density_tol), energy_tol(other.energy_tol),
+      engine_(std::move(other.engine_)) {}
 
 void RM1::sync_engine_() {
     NDDOConfig c;
-    c.method = SemiEmpiricalMethod::RM1;
+    c.method = ATV::semiempirical::SemiEmpiricalMethod::RM1;
     c.charge = charge;
     c.multiplicity = multiplicity;
     c.max_iter = max_iter;
@@ -37,42 +35,39 @@ void RM1::build(const cpu::Frame& reference) {
     engine_->build(reference);
 }
 RM1Result& RM1::run(const cpu::Frame& frame) {
-    if (!engine_)
+    if (!engine_ || !engine_->built())
         build(frame);
-    return drive_(*engine_, frame);
+    engine_->set_scf_controls(max_iter, density_tol, energy_tol);
+    auto& result = drive_(*engine_, frame);
+    engine_->commit_density();
+    return result;
 }
 RM1Result& RM1::run(cpu::Frame& frame) {
-    RM1Result& r = run(std::as_const(frame));
-    frame.meta.get(kEnergy) = r.total_energy_ev;
-    return r;
-}
-RM1Result& RM1::forces(cpu::Frame& frame) {
-    RM1Result& r = run(std::as_const(frame));
-    engine_->compute_forces(frame, force_step);
-    const int n = frame.nlocal();
-    AccReal* __restrict fx = frame.span(kAtom_fx);
-    AccReal* __restrict fy = frame.span(kAtom_fy);
-    AccReal* __restrict fz = frame.span(kAtom_fz);
-    for (int i = 0; i < n; ++i) {
-        const std::size_t base = static_cast<std::size_t>(3 * i);
-        fx[i] = static_cast<AccReal>(r.forces_ev_a[base + 0]);
-        fy[i] = static_cast<AccReal>(r.forces_ev_a[base + 1]);
-        fz[i] = static_cast<AccReal>(r.forces_ev_a[base + 2]);
-    }
-    frame.meta.get(kEnergy) = r.total_energy_ev;
-    return r;
+    publish(frame, /*forces_requested=*/false, /*accumulate=*/false);
+    return engine_->result();
 }
 
-void RM1::prepare(const cpu::BuildContext& qm_ctx) { build(qm_ctx.frame); }
+RM1Result& RM1::forces(cpu::Frame& frame) {
+    publish(frame, /*forces_requested=*/true, /*accumulate=*/false);
+    return engine_->result();
+}
+
+void RM1::prepare(const cpu::BuildContext& qm_ctx) {
+    // Repeated parent passes must not erase the last accepted guess.
+    // scf_prepare validates/rebuilds changed atom identities at evaluation.
+    if (!built())
+        build(qm_ctx.frame);
+}
 
 void RM1::publish(cpu::Frame& frame, bool forces_requested, bool accumulate) {
-    if (!engine_)
+    if (!engine_ || !engine_->built())
         build(frame);
-    publish_(*engine_, force_step, frame, forces_requested, accumulate);
+    engine_->set_scf_controls(max_iter, density_tol, energy_tol);
+    publish_(*engine_, frame, forces_requested, accumulate);
 }
 
 void RM1::evaluate(const cpu::LaunchContext& qm_ctx) {
-    publish(qm_ctx.frame, qm_ctx.forces_requested, /*accumulate=*/false);
+    publish_in_context_(qm_ctx, /*accumulate=*/false);
 }
 
 void RM1::reset_history() { engine_.reset(); }

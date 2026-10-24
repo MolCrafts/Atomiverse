@@ -52,17 +52,18 @@ Two policy slots let you change *when* a run ends without writing a driver:
 | Gaussian SCF — Hartree-Fock and Kohn-Sham | `cpu::scf::RHF` / `UHF` / `ROHF` / `GHF` / `RKS` / `UKS` / `ROKS` (`HF`) | `ATV_BUILD_HF` |
 | Plane-wave DFT | `cpu::pw::PW` (nested `Driver<pw::Phase>`) | `ATV_BUILD_PW` |
 | Gaussian-and-plane-waves DFT | `cpu::gpw::GPWEvaluator` (`GPW`) | `ATV_BUILD_GPW` |
-| NDDO semiempirics | `cpu::semiempirical::AM1` / `RM1` (nested `Driver<nddo::Phase>`) | `ATV_BUILD_SEMIEMPIRICAL` |
-| DFTB | `cpu::semiempirical::DFTB0` / `DFTB2` / `DFTB3` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
+| NDDO semiempirics | `cpu::semiempirical::AM1` / `RM1`; CUDA counterparts provide CHNO molecular E/q/analytic F (nested `Driver<nddo::Phase>`) | `ATV_BUILD_SEMIEMPIRICAL`; CUDA additionally `ATV_BUILD_CUDA` |
+| DFTB | `cpu::semiempirical::DFTB0` / `DFTB3` (`Semiempirical`); `DFTB2` is also a nested `Driver<scc::Phase>` | `ATV_BUILD_SEMIEMPIRICAL` |
 | Extended tight binding | `cpu::semiempirical::GFN0` / `GFN1` / `GFN2` / `IPEA` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
 
 Most methods are a **concrete type** carrying its parameters as constructor
 arguments and public members, with `run(frame)` as the entry point —
 `cpu::scf::RHF`/`UHF`/`RKS`/`UKS` (`cpu/scf/methods.h`), `cpu::pw::PW`
 (`cpu/planewave/pw_solver.h`), `cpu::gpw::GpwDft` (`cpu/gpw/gpw_solver.h`),
-`cpu::semiempirical::AM1`/`RM1` (`cpu/semiempirical/am1_solver.h`). `PW`,
-`GpwDft` and `AM1` want one `build(reference)` before the first `run()`; the
-SCF methods build themselves.
+`cpu::semiempirical::AM1`/`RM1` (`cpu/semiempirical/am1_solver.h`). `PW` and
+`GpwDft` want one `build(reference)` before the first `run()`; Gaussian SCF
+and AM1/RM1 build themselves on first use. AM1/RM1 also permit explicit
+`build(reference)` to prepare their workspace.
 
 `GpwDft` takes one `Kind` (element + contracted Gaussian basis + GTH
 pseudopotential) per element and reads positions [Å], Z (`kAtom_type`) and the
@@ -252,23 +253,54 @@ double e = mc.current_energy();            // (eV); mc.acceptance_ratio() in [0,
 
 ## Semiempirical and tight binding
 
-Roughly SCF accuracy at a small fraction of the cost — the right choice when a
-full Gaussian SCF is too expensive per step. Three families, all CPU-only:
+These parameterized electronic models have distinct accuracy and coverage
+limits. All three families have CPU implementations; native CUDA currently
+adds a restricted AM1/RM1 energy/charge/analytic-force path:
 
-- **NDDO** — `AM1` and `RM1`, with finite-difference nuclear forces (central
-  difference at the converged density). Pinned against OpenMOPAC.
+- **NDDO** — `AM1` and `RM1`, with analytic nuclear forces from three-direction
+  Cartesian derivatives of the pair integrals, contracted with the converged
+  density. CPU convergence requires both density and energy tolerances. Model
+  parameters are unchanged; executed OpenMOPAC 23.2.5 pins cover energy, heat
+  of formation, charges and full forces for distorted H₂O, CO and NH₃.
 - **DFTB** — `DFTB0` (non-SCC), `DFTB2` (SCC) and `DFTB3` (third order) on the
-  in-tree mio-1-1 and 3ob-3-1 Slater-Koster tables for H/C/N/O. DFTB2 carries
+  shipped Slater-Koster tables for H/C/N/O. DFTB2 supports mio-1-1 and
+  molecular 3ob-3-1. Its implemented variants carry
   analytic forces and analytic cell stress for closed and open shell, at Gamma
-  and on a k-mesh, plus D3 dispersion, DFTB+U, and linear-response TD-DFTB.
-  Pinned against DFTB+.
+  and on a k-mesh. Additional capabilities include two-body D3 dispersion,
+  energy-only DFTB+U (no +U forces/stress), and TD-DFTB excitation energies.
+  DFTB0/2 have external DFTB+ pins within the documented variants; multi-k
+  external evidence remains open. DFTB3 uses a restricted mixed parameter
+  setup with internal snapshots and FD derivative checks, not a completed
+  external DFTB3 Hamiltonian match.
 - **Extended tight binding** — `GFN0`, `GFN1`, `GFN2` and `IPEA`, each with
-  analytic forces and an FD Hessian. Pinned against xtb.
+  analytic forces and an FD Hessian. Existing xtb cases pass; GFN2 still needs
+  tight external full-force-vector validation before its CUDA migration.
 
-Each is a concrete type with its parameters as members; bind the matching
-evaluator (or the method itself, which is a `Semiempirical` component) into any
-Driver that needs energy and forces. See
-[Chapter 17](../tutorial/ch17-semiempirical-am1.md).
+Mount CPU AM1/RM1 directly in the parent phase; their SCF uses the parent's
+Runtime. Standalone `run(Frame&)` overwrites E/q and preserves forces;
+`run(const Frame&)` updates only the method result; `forces(Frame&)` overwrites
+E/q/F. Mounted evaluation adds energy and requested forces and writes charges.
+Both SCF residual criteria must pass, and failed/trial/initial-force solves do
+not replace the accepted electronic guess. CPU methods remain molecular and
+closed shell, with existing charged and s/p-element support; RM1's shipped
+parameters cover H/C/N/O/P/S. Neither supplies periodic NDDO stress or UHF.
+
+`cuda::semiempirical::AM1` and `RM1` expose the same standalone E/q/F semantics
+for neutral closed-shell CHNO isolated molecules in FP64, including heat of
+formation and analytic forces. They explicitly reject stress, nonzero charge,
+open shells, non-CHNO elements and periodic cells. CUDA Evaluate mounts these
+methods directly; standalone/mounted results, additive contributions and
+failure/retry are verified. Both methods pass CUDA MD initial-force preparation,
+2+2 versus four-step continuation and CPU/CUDA four-step agreement at `0.01 fs`.
+Three steepest-descent steps lower energy, without establishing optimization
+convergence. Line-search trial/rejection, host edits between chunks and longer
+NVE/time-step convergence remain unverified.
+Python exposes CPU AM1; RM1 and CUDA NDDO Python parity remain open.
+
+See [Chapter 17](../tutorial/ch17-semiempirical-am1.md) for usage and the
+[method-by-method roadmap](../roadmap/semiempirical.md) for executed evidence
+and variant limits. AM1/RM1 support is not completion of the full SQM method
+set or input compatibility.
 
 ### AM1-BCC charges (GAFF / GAFF2)
 

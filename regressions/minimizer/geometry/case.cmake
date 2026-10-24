@@ -1,7 +1,8 @@
 # minimizer/geometry: one case, one section per pinned system or quantity.
 
 atv_regression(SECTION lj_dimer
-  REQUIRES MINIMIZER)
+  REQUIRES MINIMIZER
+  DEVICES both)
 
 atv_regression(SECTION fire_lj_dimer
   REQUIRES MINIMIZER)

@@ -98,14 +98,21 @@ bash -lc '
 
 - Skipping the `LD_LIBRARY_PATH` mirror is the #1 cause of `libopenblas.so.0` /
   `GLIBCXX_3.4.32 not found`. `-march=native` is required for the SCF ERI kernels.
-- **CUDA builds and runs only on the aarch64 GH200 node.** From an agent:
-  `sbatch -A <slurm-account> tools/gpu_job.sh` (knobs `ATV_CMAKE_FLAGS`,
-  `ATV_TARGETS`, `ATV_CTEST_RE`; `hpc gpu` needs a TTY). The script is
+- **CUDA builds and runs only on the aarch64 GH200 node.** Agents submit and
+  inspect compute jobs through the public `molq` CLI, using its installed help
+  and the authorized resource budget. Reuse a running job's reference and
+  observer; never duplicate an uncertain submission or bypass its scheduler
+  interface. `tools/gpu_job.sh` supplies the environment recipe (knobs
+  `ATV_CMAKE_FLAGS`, `ATV_TARGETS`, `ATV_CTEST_RE`). The script is
   `#!/bin/bash -l`, loads `GPU/buildenv-gcccuda/2026.03-cu13.0`, and keeps the
   default aarch64 Rust. `tools/gpu_job.sh` / `tools/cpu_job.sh` are
   parameterised templates, not one script per slug. Never pipe `module load`.
 - **molrs** is a hard dependency, submodule `./molrs`; the gitlink is the pin.
   No API version gate before molrs 1.0.0.
+- Source transport into a reused build tree must invalidate changed files;
+  do not preserve older timestamps over newer compiled objects. After class
+  layout changes, rebuild every consuming translation unit, including tests
+  and regressions. Mixed-layout binaries are not numerical acceptance evidence.
 - Never kill a `git commit` / `git push` mid-hook (pre-commit restores stashed
   unstaged changes only on a normal exit).
 - Machines and workbenches: [arrhenius-workbench.md](.claude/notes/arrhenius-workbench.md).
@@ -529,8 +536,10 @@ reached via `LaunchContext::runtime` (`ctx.runtime.md.pair_list`).
 | `analysis` | `AnalysisServices` | `executor` (snapshot-ring analysis) |
 
 Slices are plain aggregates; Context stays non-polymorphic (static-asserted).
-`cuda::Context` carries streams, `host_box`, `loop` and `md`. The CUDA SCF
-solver takes only `SolverContext{stream, frame, step}`.
+`cuda::Context` carries streams, `host_box`, `loop`, `md` and execution requests.
+Nested electronic Driver nodes borrow the parent's Backend and device Frame;
+they must not create a second execution owner. Internal Gaussian SCF stages
+may use `SolverContext{stream, frame, step}`; this is not the public method API.
 
 ### Frame
 
@@ -671,6 +680,33 @@ Architecture and shared algorithm shape before micro-perf; CPU before CUDA ES.
 **CUDA ES open gate** (all, per slice): CPU regressions and external pins
 green; public `run`/`forces` stable; CUDA↔CPU tolerances stated; perf claims
 only on large systems. Wave-local freezes live in `.claude/notes/`.
+
+### Semiempirical method acceptance
+
+- Track each Hamiltonian and backend separately in
+  [the semiempirical roadmap](docs/roadmap/semiempirical.md). Energy/charges,
+  analytic forces, stress, spin, periodicity and language bindings have separate
+  evidence. A passing primitive or energy-only solve does not complete a method.
+- CPU/CUDA AM1 and RM1 consume the unique parameter tables and physical result
+  types in `include/atomiverse/semiempirical/` and `src/semiempirical/`.
+  Keep numerical kernels and scheduling backend-owned; call suitable LAPACK,
+  cuBLAS, cuSOLVER and CUB primitives directly without forwarding adapters.
+- Accepted electronic history changes only after successful normal evaluation.
+  Initial-force preparation, trials and failed solves must not commit guesses.
+  Test retry with the same outer Driver and method, not only a fresh parent.
+  A failed device evaluation must not retrieve partial physical results.
+- Pin method-specific external energies, charges and full force vectors with
+  source/version/input/output and independently justified tolerances. CPU-twin
+  comparisons supplement those pins; finite differences supplement analytic
+  forces. Preserve unexplained SQM/MOPAC convention differences explicitly.
+- Run the SE-only dependency closure as well as affected composed workflows.
+  GPU job success, reviewed numerical output, sanitizer checks and measured
+  residency are distinct evidence; retain the job reference and raw outputs.
+  Do not repeat an uncertain or running submission.
+- Performance harnesses live in `benchmarks/semiempirical/`, outside CTest.
+  Report complete-call boundaries, cold/warm state, SCF controls/iterations,
+  thread count and observed allocation/transfer/memory costs. A matrix-storage
+  estimate or source inspection does not establish device residency.
 
 ## Known debt (do not extend)
 

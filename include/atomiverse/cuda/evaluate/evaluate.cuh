@@ -30,6 +30,8 @@
 /// @see cuda::single_point for the free-function single-evaluator helper
 #pragma once
 
+#include <exception>
+
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/component/zero.cuh"
@@ -55,9 +57,25 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     /// @param frame Host-resident system state; transferred H2D, evaluated
     ///        on the device, retrieved D2H, updated in place.
     void run(cpu::Frame& frame) {
-        setup_pass(frame);
-        step_once(0);
-        teardown_pass(frame);
+        try {
+            setup_pass(frame);
+            step_once(0);
+            teardown_pass(frame);
+        } catch (...) {
+            // Discard failed device results; keep the compiled plan and timing
+            // configuration so the same evaluator can be retried.
+            const auto failure = std::current_exception();
+            if (this->backend_) {
+                try {
+                    this->backend_->shutdown();
+                } catch (...) {
+                    // Backend attempts all releases before reporting cleanup
+                    // errors. Keep the original evaluation failure as the cause.
+                }
+            }
+            this->built_plugins_.clear();
+            std::rethrow_exception(failure);
+        }
     }
 
   protected:

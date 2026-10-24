@@ -416,9 +416,11 @@ class DFTB2 : public cpu::Driver<ATV::scc::Phase>,
 
     /// @brief `QmEngine` name token; same as `name()` (`"dftb2"`).
     std::string qm_engine_name() const override { return name(); }
-    /// @brief `QmEngine` prepare; forwards to `build`.
+    /// @brief Compile the private QM plan without a persistent Runtime mount.
     /// @param qm_ctx Driver build context (unused by DFTB2).
-    void prepare(const BuildContext& qm_ctx) override { build(qm_ctx); }
+    void prepare(const BuildContext&) override {
+        cpu::Driver<ATV::scc::Phase>::build();
+    }
     /// @brief `QmEngine` evaluate; forwards to `launch`.
     /// @param qm_ctx Driver launch context (non-owning `frame` + services).
     void evaluate(const LaunchContext& qm_ctx) override { launch(qm_ctx); }

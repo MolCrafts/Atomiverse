@@ -62,7 +62,11 @@ class Timer::Impl {
     /// @brief Wait for recorded stop events and accumulate valid elapsed times.
     /// Timing is opt-in; unprofiled execution never performs these waits.
     void flush() {
-        for (int k = 0; k < pending_; ++k) {
+        const int count = pending_;
+        // Consume the batch even if a CUDA event fails. Retrying must not replay
+        // stale events or count an already accumulated prefix twice.
+        pending_ = 0;
+        for (int k = 0; k < count; ++k) {
             ATV_CUDA_CHECK(cudaEventSynchronize(stops_[k]));
             float ms = 0.0f;
             ATV_CUDA_CHECK(cudaEventElapsedTime(&ms, starts_[k], stops_[k]));
@@ -76,7 +80,6 @@ class Timer::Impl {
             entries_[it->second].total_ms += ms;
             entries_[it->second].calls++;
         }
-        pending_ = 0;
     }
 
     /// @brief Mark one step completed.

@@ -72,7 +72,10 @@ void QmSubsystem::allocate_private_frame_() {
     qm_frame_ = std::make_unique<Frame>(n_fqm_);
 }
 
-void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
+void QmSubsystem::build(const BuildContext& ctx, int mpi_size,
+                        bool require_embedding) {
+    built_ = false;
+    auto& frame = ctx.frame;
     if (mpi_size > 1)
         throw std::runtime_error(
             "QmSubsystem: MPI (mpi_size > 1) is not supported in v1 "
@@ -174,11 +177,10 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
         resolved_links_[li].fqm_h_row = n_qm_real_ + static_cast<int>(li);
 
     built_n_qm_ = n_qm_real_;
-    built_ = true;
-
-    cpu::Context dummy;
-    cpu::BuildContext bctx{dummy, *qm_frame_};
+    refresh_(frame);
+    cpu::BuildContext bctx{ctx.runtime, *qm_frame_};
     engine_->prepare(bctx);
+    built_ = true;
 }
 
 void QmSubsystem::refresh_(Frame& frame) {
@@ -328,17 +330,26 @@ void QmSubsystem::scatter_(Frame& frame, bool forces_requested, double e_qm) {
     }
 }
 
-void QmSubsystem::launch(Frame& frame, bool forces_requested, double& e_qm) {
+void QmSubsystem::launch(const LaunchContext& ctx, double& e_qm) {
+    auto& frame = ctx.frame;
+    const bool forces_requested =
+        ctx.forces_requested && ctx.runtime.exec.forces_requested;
     if (!built_)
         throw std::runtime_error("QmSubsystem::launch before build()");
     refresh_(frame);
     collect_sites_(frame);
-    if (reset_history_each_launch_)
+    // A reversible probe must not erase the last accepted electronic guess.
+    if (reset_history_each_launch_ && !ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation)
         engine_->reset_history();
 
-    cpu::Context dummy;
-    cpu::LaunchContext lctx{dummy, *qm_frame_, 0, 0};
-    lctx.forces_requested = forces_requested;
+    cpu::LaunchContext lctx{
+        ctx.runtime,
+        *qm_frame_,
+        ctx.stage,
+        ctx.step,
+        forces_requested,
+        ctx.stress_requested && ctx.runtime.exec.stress_requested};
     engine_->evaluate(lctx);
     e_qm = qm_frame_->meta.get(kEnergy);
     scatter_(frame, forces_requested, e_qm);

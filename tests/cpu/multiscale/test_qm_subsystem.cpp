@@ -61,13 +61,14 @@ TEST(QmSubsystem, MissingMaskThrowsHowTo) {
     cpu::Frame f(2);
     f.span(kAtom_type)[0] = 1;
     f.span(kAtom_type)[1] = 1;
+    cpu::Context ctx;
     QmSubsystem sub;
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
     EXPECT_THROW(
         {
             try {
-                sub.build(f, 1);
+                sub.build({ctx, f}, 1);
             } catch (const std::runtime_error& e) {
                 EXPECT_NE(std::string(e.what()).find("qm_z"),
                           std::string::npos);
@@ -81,30 +82,33 @@ TEST(QmSubsystem, AllZeroMaskThrows) {
     auto f = make_h2o_ar();
     auto qm = f.span(cpu::kAtomQmZ);
     qm[0] = qm[1] = qm[2] = 0;
+    cpu::Context ctx;
     QmSubsystem sub;
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
-    EXPECT_THROW(sub.build(f, 1), std::runtime_error);
+    EXPECT_THROW(sub.build({ctx, f}, 1), std::runtime_error);
 }
 
 TEST(QmSubsystem, NonzeroQmChargeThrows) {
     auto f = make_h2o_ar();
     f.span(kAtom_charge)[0] = 0.1;
+    cpu::Context ctx;
     QmSubsystem sub;
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
-    EXPECT_THROW(sub.build(f, 1), std::runtime_error);
+    EXPECT_THROW(sub.build({ctx, f}, 1), std::runtime_error);
 }
 
 TEST(QmSubsystem, Am1EngineRejectedByName) {
     auto f = make_h2o_ar();
+    cpu::Context ctx;
     QmSubsystem sub;
     cpu::semiempirical::AM1 am1;
     sub.set_engine(std::move(am1));
     EXPECT_THROW(
         {
             try {
-                sub.build(f, 1);
+                sub.build({ctx, f}, 1);
             } catch (const std::runtime_error& e) {
                 EXPECT_NE(std::string(e.what()).find("am1"), std::string::npos);
                 throw;
@@ -115,19 +119,21 @@ TEST(QmSubsystem, Am1EngineRejectedByName) {
 
 TEST(QmSubsystem, MpiSizeGreaterThanOneThrows) {
     auto f = make_h2o_ar();
+    cpu::Context ctx;
     QmSubsystem sub;
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
-    EXPECT_THROW(sub.build(f, 2), std::runtime_error);
+    EXPECT_THROW(sub.build({ctx, f}, 2), std::runtime_error);
 }
 
 TEST(QmSubsystem, PrivateFrameAllocatedOnBuild) {
     auto f = make_h2o_ar();
+    cpu::Context ctx;
     QmSubsystem sub;
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     sub.set_engine(std::move(rhf));
     sub.embed_cutoff() = 20.0;
-    sub.build(f, 1);
+    sub.build({ctx, f}, 1);
     ASSERT_NE(sub.private_frame(), nullptr);
     EXPECT_GE(sub.private_frame()->nlocal(), 1);
 }

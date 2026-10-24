@@ -8,45 +8,48 @@
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
-#include "atomiverse/cpu/semiempirical/rm1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/rm1_parameters.h"
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-const AM1Parameter* nddo_parameter(SemiEmpiricalMethod method, int z) noexcept {
+const ATV::semiempirical::AM1Parameter*
+nddo_parameter(ATV::semiempirical::SemiEmpiricalMethod method, int z) noexcept {
     switch (method) {
-    case SemiEmpiricalMethod::AM1:
-        return am1_parameter(z);
-    case SemiEmpiricalMethod::RM1:
-        return rm1_parameter(z);
+    case ATV::semiempirical::SemiEmpiricalMethod::AM1:
+        return ATV::semiempirical::am1_parameter(z);
+    case ATV::semiempirical::SemiEmpiricalMethod::RM1:
+        return ATV::semiempirical::rm1_parameter(z);
     }
     return nullptr;
 }
 
-bool nddo_has_parameter(SemiEmpiricalMethod method, int z) noexcept {
+bool nddo_has_parameter(ATV::semiempirical::SemiEmpiricalMethod method,
+                        int z) noexcept {
     return nddo_parameter(method, z) != nullptr;
 }
 
 int am1_orbital_count(int z) noexcept {
-    const auto* p = am1_parameter(z);
+    const auto* p = ATV::semiempirical::am1_parameter(z);
     return p == nullptr ? 0 : p->n_orbitals;
 }
 
 double am1_core_charge(int z) noexcept {
-    const auto* p = am1_parameter(z);
+    const auto* p = ATV::semiempirical::am1_parameter(z);
     return p == nullptr ? 0.0 : p->core_charge;
 }
 
 NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
-                       SemiEmpiricalMethod method_in) {
+                       ATV::semiempirical::SemiEmpiricalMethod method_in) {
     if (multiplicity < 1) {
         throw std::runtime_error("NDDO multiplicity must be positive");
     }
 
     const char* method_name =
-        (method_in == SemiEmpiricalMethod::RM1) ? "RM1" : "AM1";
+        (method_in == ATV::semiempirical::SemiEmpiricalMethod::RM1) ? "RM1"
+                                                                    : "AM1";
 
     charge = charge_in;
     method = method_in;

@@ -3,6 +3,9 @@
 
 #include "atomiverse/cpu/semiempirical/nddo_method.h"
 
+#include <algorithm>
+#include <array>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -68,161 +71,210 @@ void restore_positions(cpu::Frame& frame, const WrappedPositions& saved) {
 
 } // namespace
 
-NddoMethod::NddoMethod() = default;
+struct NddoMethod::Workspace {
+    NDDOSolver* active_solver = nullptr;
+    int budget = -1;
+    double density_residual = std::numeric_limits<double>::infinity();
+    double energy_residual = std::numeric_limits<double>::infinity();
+    std::array<NddoStep, 4> stages;
+    NddoConverged criterion;
+
+    explicit Workspace(NddoMethod& owner)
+        : stages{{{ATV::nddo::Phase::diagonalize, "nddo_diagonalize",
+                   [this] { solver().scf_diagonalize(); }},
+                  {ATV::nddo::Phase::density, "nddo_density",
+                   [this] { solver().scf_density(); }},
+                  {ATV::nddo::Phase::fock, "nddo_fock",
+                   [this] { solver().scf_fock(); }},
+                  {ATV::nddo::Phase::check, "nddo_check",
+                   [this] {
+                       solver().scf_check();
+                       density_residual = solver().density_residual();
+                       energy_residual = solver().energy_residual();
+                   }}}},
+          criterion(density_residual, energy_residual, 1.0, 1.0) {
+        for (int i = 0; i < 4; ++i)
+            owner.on(static_cast<ATV::nddo::Phase>(i)).add_ref(stages[i]);
+        owner.add_criterion_ref(criterion);
+    }
+
+    NDDOSolver& solver() const {
+        if (!active_solver)
+            throw std::logic_error("NddoMethod: stage outside an active solve");
+        return *active_solver;
+    }
+};
+
+NddoMethod::NddoMethod() : workspace_(std::make_unique<Workspace>(*this)) {
+    cpu::Driver<ATV::nddo::Phase>::build();
+}
+
+NddoMethod::NddoMethod(NddoMethod&& other)
+    : cpu::Driver<ATV::nddo::Phase>([&]() -> NddoMethod&& {
+          if (other.workspace_ && other.workspace_->active_solver)
+              throw std::logic_error("cannot move an active NDDO solve");
+          return std::move(other);
+      }()),
+      iterations_(other.iterations_), workspace_(std::move(other.workspace_)) {}
 
 void NddoMethod::build_on(cpu::Runtime& rt) {
-    if (host_runtime_ && host_runtime_ != &rt)
-        throw std::logic_error("NddoMethod: already nested on another Runtime");
+    cpu::Driver<ATV::nddo::Phase>::build_on(rt);
     host_runtime_ = &rt;
 }
 
 void NddoMethod::destroy_on(cpu::Runtime& rt) {
-    if (host_runtime_ == &rt)
-        host_runtime_ = nullptr;
+    if (attached_runtime_ != &rt)
+        throw std::logic_error("NddoMethod: not attached to this Runtime");
+    host_runtime_ = nullptr;
+    cpu::Driver<ATV::nddo::Phase>::destroy_on(rt);
 }
 
 int NddoMethod::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
-                                  int /*budget*/) {
-    const WrappedPositions saved = unwrap_molecule(frame);
-    struct Restore {
-        cpu::Frame& frame;
-        const WrappedPositions& saved;
-        bool& nested;
-        ~Restore() {
-            restore_positions(frame, saved);
-            nested = false;
-        }
-    } restore{frame, saved, nested_active_};
-    nested_active_ = true;
-    // The hosting phase owns zeroing, so every write is `+=`.
-    publish(frame, ctx.exec.forces_requested, /*accumulate=*/true);
+                                  int budget) {
+    publish_in_context_({ctx, frame, 0, 0, ctx.exec.forces_requested,
+                         ctx.exec.stress_requested},
+                        /*accumulate=*/true, budget);
     return iterations_;
 }
 
-NddoMethod::~NddoMethod() { reset_built_driver_(); }
-
-void NddoMethod::reset_built_driver_() {
-    diagonalize_.reset();
-    density_.reset();
-    fock_.reset();
-    check_.reset();
-    converged_.reset();
-    this->pending_.clear();
-    this->owned_components_.clear();
-    this->plan_ = {};
-    this->criteria_.clear();
-    this->criteria_owned_.clear();
-    this->backend_.reset();
-}
-
-NDDOResult& NddoMethod::drive_(NDDOSolver& solver, const cpu::Frame& frame) {
-    reset_built_driver_();
-    solver.scf_prepare(frame);
-    loop_converged_ = false;
-
-    diagonalize_ = std::make_unique<NddoStep>(
-        ATV::nddo::Phase::diagonalize, "nddo_diagonalize",
-        [&solver]() { solver.scf_diagonalize(); });
-    density_ =
-        std::make_unique<NddoStep>(ATV::nddo::Phase::density, "nddo_density",
-                                   [&solver]() { solver.scf_density(); });
-    fock_ = std::make_unique<NddoStep>(ATV::nddo::Phase::fock, "nddo_fock",
-                                       [&solver]() { solver.scf_fock(); });
-    check_ = std::make_unique<NddoStep>(
-        ATV::nddo::Phase::check, "nddo_check", [&solver, this]() {
-            solver.scf_check();
-            loop_converged_ = solver.result().converged;
-        });
-    converged_ = std::make_unique<NddoConverged>(loop_converged_);
-
-    this->on(ATV::nddo::Phase::diagonalize).add_ref(*diagonalize_);
-    this->on(ATV::nddo::Phase::density).add_ref(*density_);
-    this->on(ATV::nddo::Phase::fock).add_ref(*fock_);
-    this->on(ATV::nddo::Phase::check).add_ref(*check_);
-    this->add_criterion_ref(*converged_);
-
-    this->set_serial_on_replica();
-    cpu::Driver<ATV::nddo::Phase>::build();
-
-    // The stages close over the solver. Destroy them on every exit, including
-    // a throw from setup or from a step, before those unique_ptrs die.
-    struct ResetGuard {
+void NddoMethod::publish_in_context_(const cpu::LaunchContext& ctx,
+                                     bool accumulate, int budget) {
+    if (!workspace_)
+        throw std::logic_error(
+            "NddoMethod: cannot solve with a moved-from method");
+    cpu::Runtime* const host = ctx.runtime.exec.runtime;
+    if (host_runtime_ && host_runtime_ != host)
+        throw std::logic_error("NddoMethod: already nested on another Runtime");
+    auto& frame = ctx.frame;
+    const WrappedPositions saved = unwrap_molecule(frame);
+    struct Restore {
         NddoMethod& self;
-        ~ResetGuard() { self.reset_built_driver_(); }
-    } reset_guard{*this};
-
-    struct PassGuard {
-        NddoMethod& self;
-        bool armed = false;
-        ~PassGuard() {
-            if (armed)
-                self.teardown_pass();
-        }
-    } pass_guard{*this};
-
-    // Nested: the stage plan runs on the parent Runtime for this solve.
-    // Standalone: this method is the root loop and owns its backend.
-    cpu::Runtime* const host = nested_active_ ? host_runtime_ : nullptr;
-    cpu::Frame loop_frame;
-    cpu::Context* host_ctx = nullptr;
-    LoopServices parent_loop{};
-    struct HostGuard {
-        NddoMethod& self;
+        cpu::Frame& frame;
+        const WrappedPositions& positions;
         cpu::Runtime* host;
-        cpu::Context* ctx = nullptr;
-        LoopServices saved{};
-        ~HostGuard() {
-            if (ctx)
-                ctx->loop = saved;
-            if (host)
-                host->destroy_plan(self.plan());
+        bool nested;
+        bool accept_history;
+        int budget;
+        ~Restore() {
+            restore_positions(frame, positions);
+            self.host_runtime_ = host;
+            self.nested_active_ = nested;
+            self.accept_history_ = accept_history;
+            self.workspace_->budget = budget;
         }
-    } host_guard{*this, nullptr};
-    if (host) {
-        host->build_plan(this->plan());
-        host_guard.host = host;
-        host_ctx = &host->context();
-        parent_loop = host_ctx->loop;
-        host_guard.ctx = host_ctx;
-        host_guard.saved = parent_loop;
-        host_ctx->loop.status = &this->mutable_outer_status();
-        host_ctx->loop.metrics = &this->metrics_;
-        this->metrics_ = ConvergenceMetrics{};
-    } else {
-        setup_pass(loop_frame);
-        pass_guard.armed = true;
-    }
-
-    const int max_iter = solver.config().max_iter;
-    iterations_ = 0;
-    for (int iter = 0; iter < max_iter; ++iter) {
-        mutable_outer_status().reset();
-        ++iterations_;
-        if (host) {
-            host->step_plan(this->plan(), iter);
-            if (this->poll_criteria_(iter, frame, *host_ctx)
-                != ATV::Verdict::Continue)
-                break;
-        } else {
-            step_once(iter);
-            if (poll_criteria_(iter) != ATV::Verdict::Continue)
-                break;
-        }
-    }
-    if (!host) {
-        pass_guard.armed = false;
-        teardown_pass();
-    }
-
-    if (!(this->converged() || loop_converged_))
-        throw std::runtime_error("NDDOSolver AM1 SCF did not converge");
-    return solver.result();
+    } restore{*this,
+              frame,
+              saved,
+              host_runtime_,
+              nested_active_,
+              accept_history_,
+              workspace_->budget};
+    workspace_->budget = budget;
+    host_runtime_ = host;
+    nested_active_ = host != nullptr;
+    accept_history_ = !(ctx.runtime.exec.initializing_forces
+                        || ctx.runtime.exec.trial_evaluation);
+    publish(frame, ctx.forces_requested && ctx.runtime.exec.forces_requested,
+            accumulate);
 }
 
-void NddoMethod::publish_(NDDOSolver& solver, double force_step,
-                          cpu::Frame& frame, bool forces_requested,
-                          bool accumulate) {
+NddoMethod::~NddoMethod() {
+    // The plan contains references into workspace_: release every lifecycle
+    // while those objects are still alive, as in the persistent DFTB2 driver.
+    if (attached_runtime_)
+        destroy_on(*attached_runtime_);
+    else
+        this->shutdown();
+}
+
+ATV::semiempirical::NDDOResult& NddoMethod::drive_(NDDOSolver& solver,
+                                                   const cpu::Frame& frame) {
+    if (!workspace_)
+        throw std::logic_error(
+            "NddoMethod: cannot solve with a moved-from method");
+    auto& work = *workspace_;
+    if (work.active_solver)
+        throw std::logic_error("NddoMethod: a solve is already active");
+    if (attached_runtime_ && !nested_active_)
+        throw std::logic_error(
+            "NddoMethod: a mounted method runs through its parent");
+    // Preparation and zero-budget failures happen before run_nested resets
+    // its loop. No new solve may retain a prior successful Driver verdict.
+    this->mutable_outer_status().reset();
+    this->metrics_ = ConvergenceMetrics{};
+    solver.result().converged = false;
+    work.active_solver = &solver;
+    struct ReleaseSolver {
+        Workspace& work;
+        ~ReleaseSolver() { work.active_solver = nullptr; }
+    } release_solver{work};
+    iterations_ = 0;
+    work.density_residual = std::numeric_limits<double>::infinity();
+    work.energy_residual = std::numeric_limits<double>::infinity();
+    work.criterion.set_tolerances(solver.config().density_tol,
+                                  solver.config().energy_tol);
+    const int max_iter = work.budget < 0
+                             ? solver.config().max_iter
+                             : std::min(solver.config().max_iter, work.budget);
+    if (max_iter == 0) {
+        solver.result().iterations = 0;
+        solver.result().converged = false;
+        solver.result().forces_ev_a.clear();
+        throw std::runtime_error("NDDOSolver: zero SCF iteration budget");
+    }
+    solver.scf_prepare(frame);
+
+    // A mounted method keeps its plan on the parent's Runtime. QmEngine borrows
+    // a Runtime for one evaluation; standalone entry owns only this pass.
+    cpu::Runtime* host = nested_active_ ? host_runtime_ : nullptr;
+    cpu::Frame loop_frame;
+    bool standalone = false, temporary_plan = false;
+    auto release = [&] {
+        if (temporary_plan) {
+            temporary_plan = false;
+            host->destroy_plan(this->plan());
+        }
+        if (standalone) {
+            standalone = false;
+            this->teardown_pass();
+        }
+    };
+    try {
+        if (!host) {
+            if (!this->backend_)
+                this->set_serial_on_replica();
+            setup_pass(loop_frame);
+            standalone = true;
+            host = this->backend_.get();
+        } else if (host != attached_runtime_) {
+            host->build_plan(this->plan());
+            temporary_plan = true;
+        }
+        iterations_ = cpu::Driver<ATV::nddo::Phase>::run_nested(
+            host->context(), host->frame(), max_iter);
+        release();
+        solver.result().converged = this->converged();
+        if (!solver.result().converged)
+            throw std::runtime_error("NDDOSolver SCF did not converge");
+        return solver.result();
+    } catch (...) {
+        this->mutable_outer_status().reset();
+        solver.result().converged = false;
+        // Preserve the original failure if teardown also reports a failure.
+        // Runtime destroys its complete component ledger before throwing.
+        try {
+            release();
+        } catch (...) {
+        }
+        throw;
+    }
+}
+
+void NddoMethod::publish_(NDDOSolver& solver, cpu::Frame& frame,
+                          bool forces_requested, bool accumulate) {
     auto& result = drive_(solver, frame);
+    if (forces_requested)
+        solver.compute_forces(frame);
     if (accumulate) {
         frame.meta.get(kEnergy) += result.total_energy_ev;
         frame.meta.get(kEnergyElectronic) += result.total_energy_ev;
@@ -237,7 +289,7 @@ void NddoMethod::publish_(NDDOSolver& solver, double force_step,
             result.mulliken_charges[static_cast<std::size_t>(i)]);
     }
     if (forces_requested) {
-        auto& fr = solver.compute_forces(frame, force_step);
+        const auto& fr = result;
         AccReal* __restrict fx = frame.span(kAtom_fx);
         AccReal* __restrict fy = frame.span(kAtom_fy);
         AccReal* __restrict fz = frame.span(kAtom_fz);
@@ -257,6 +309,10 @@ void NddoMethod::publish_(NDDOSolver& solver, double force_step,
             }
         }
     }
+    // Accept only after the complete requested evaluation has succeeded.
+    // Forces use the current SCF state, independently of the accepted guess.
+    if (accept_history_)
+        solver.commit_density();
 }
 
 } // namespace semiempirical

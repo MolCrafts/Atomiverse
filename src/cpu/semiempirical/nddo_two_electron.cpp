@@ -3,81 +3,49 @@
 
 #include "atomiverse/cpu/semiempirical/nddo_two_electron.h"
 
+#include "atomiverse/cpu/semiempirical/internal/nddo_derivative.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <stdexcept>
+#include <type_traits>
 
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
 namespace {
+using internal::sqrt;
+using std::sqrt;
 
 constexpr double kA0 = 0.529177210903;
 constexpr double kEv = 27.211386245988;
 
+template <class Scalar>
 struct PairRotation {
-    std::array<std::array<double, 3>, 3> sp{};
-    std::array<std::array<std::array<double, 3>, 3>, 6> pp{};
+    std::array<std::array<Scalar, 3>, 3> sp{};
+    std::array<std::array<std::array<Scalar, 3>, 3>, 6> pp{};
 };
-
-std::array<double, 3> atom_xyz(const StorageReal* sp_x, const StorageReal* sp_y,
-                               const StorageReal* sp_z, int atom) {
-    return {static_cast<double>(sp_x[atom]), static_cast<double>(sp_y[atom]),
-            static_cast<double>(sp_z[atom])};
+std::array<double, 3> atom_xyz(const StorageReal* x, const StorageReal* y,
+                               const StorageReal* z, int i) {
+    return {static_cast<double>(x[i]), static_cast<double>(y[i]),
+            static_cast<double>(z[i])};
 }
-
-double distance(const std::array<double, 3>& a,
-                const std::array<double, 3>& b) {
-    const double dx = a[0] - b[0];
-    const double dy = a[1] - b[1];
-    const double dz = a[2] - b[2];
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
+template <class Scalar>
+Scalar distance(const std::array<Scalar, 3>& a,
+                const std::array<Scalar, 3>& b) {
+    const Scalar dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+    return sqrt(dx * dx + dy * dy + dz * dz);
 }
-
-PairRotation pair_rotation(const std::array<double, 3>& xi,
-                           const std::array<double, 3>& xj) {
-    constexpr double kSmall = 1.0e-7;
-
-    const double x11 = xj[0] - xi[0];
-    const double x22 = xj[1] - xi[1];
-    const double x33 = xj[2] - xi[2];
-    const double b = x11 * x11 + x22 * x22;
-    const double r = std::sqrt(b + x33 * x33);
-    const double sqb = std::sqrt(b);
-    const double sb = r == 0.0 ? 0.0 : sqb / r;
-
-    double ca = 0.0;
-    double sa = 0.0;
-    double cb = 0.0;
-    if (sb > kSmall) {
-        ca = x11 / sqb;
-        sa = x22 / sqb;
-        cb = x33 / r;
-    } else {
-        if (x33 < 0.0) {
-            ca = -1.0;
-            cb = -1.0;
-        } else if (x33 > 0.0) {
-            ca = 1.0;
-            cb = 1.0;
-        }
-    }
-
-    PairRotation rot;
+template <class Scalar>
+PairRotation<Scalar> pair_rotation(const std::array<Scalar, 3>& xi,
+                                   const std::array<Scalar, 3>& xj) {
+    PairRotation<Scalar> rot;
+    rot.sp = internal::nddo_pair_axes(
+        std::array<Scalar, 3>{xj[0] - xi[0], xj[1] - xi[1], xj[2] - xi[2]});
     auto& p = rot.sp;
-    p[0][0] = ca * sb;
-    p[1][0] = ca * cb;
-    p[2][0] = -sa;
-    p[0][1] = sa * sb;
-    p[1][1] = sa * cb;
-    p[2][1] = ca;
-    p[0][2] = cb;
-    p[1][2] = -sb;
-    p[2][2] = 0.0;
-
     auto& pp = rot.pp;
     for (int k = 0; k < 3; ++k) {
         pp[0][k][k] = p[k][0] * p[k][0];
@@ -133,34 +101,36 @@ int sp_ind2(int ij, int kl) {
     return -1;
 }
 
-std::array<double, 22> reppd_sp(const AM1Parameter& pi, const AM1Parameter& pj,
-                                double r_angstrom) {
-    const double ev1 = kEv / 2.0;
-    const double ev2 = ev1 / 2.0;
-    const double ev3 = ev2 / 2.0;
-    const double ev4 = ev3 / 2.0;
+template <class Scalar>
+std::array<Scalar, 22> reppd_sp(const ATV::semiempirical::AM1Parameter& pi,
+                                const ATV::semiempirical::AM1Parameter& pj,
+                                Scalar r_angstrom) {
+    const Scalar ev1 = kEv / 2.0;
+    const Scalar ev2 = ev1 / 2.0;
+    const Scalar ev3 = ev2 / 2.0;
+    const Scalar ev4 = ev3 / 2.0;
     constexpr double td = 2.0;
     constexpr double pp = 0.5;
 
-    std::array<double, 22> ri{};
-    std::array<double, 72> arg{};
-    std::array<double, 72> sqr{};
-    const double r = r_angstrom / kA0;
+    std::array<Scalar, 22> ri{};
+    std::array<Scalar, 72> arg{};
+    std::array<Scalar, 72> sqr{};
+    const Scalar r = r_angstrom / kA0;
     const bool si = pi.n_orbitals >= 3;
     const bool sj = pj.n_orbitals >= 3;
 
-    double aee = pp / pi.am + pp / pj.am;
+    Scalar aee = pp / pi.am + pp / pj.am;
     aee = aee * aee;
     if (!si && !sj) {
-        ri[0] = kEv / std::sqrt(r * r + aee);
+        ri[0] = kEv / sqrt(r * r + aee);
     } else if (si && !sj) {
-        const double da = pi.dd;
-        double qa = pi.qq * td;
-        double ade = pp / pi.ad + pp / pj.am;
+        const Scalar da = pi.dd;
+        Scalar qa = pi.qq * td;
+        Scalar ade = pp / pi.ad + pp / pj.am;
         ade *= ade;
-        double aqe = pp / pi.aq + pp / pj.am;
+        Scalar aqe = pp / pi.aq + pp / pj.am;
         aqe *= aqe;
-        const double rsq = r * r;
+        const Scalar rsq = r * r;
         arg[0] = rsq + aee;
         arg[1] = (r + da) * (r + da) + ade;
         arg[2] = (r - da) * (r - da) + ade;
@@ -169,21 +139,21 @@ std::array<double, 22> reppd_sp(const AM1Parameter& pi, const AM1Parameter& pj,
         arg[5] = rsq + aqe;
         arg[6] = arg[5] + qa * qa;
         for (int i = 0; i < 7; ++i) {
-            sqr[i] = std::sqrt(arg[i]);
+            sqr[i] = sqrt(arg[i]);
         }
-        const double ee = kEv / sqr[0];
+        const Scalar ee = kEv / sqr[0];
         ri[0] = ee;
         ri[1] = ev1 / sqr[1] - ev1 / sqr[2];
         ri[2] = ee + ev2 / sqr[3] + ev2 / sqr[4] - ev1 / sqr[5];
         ri[3] = ee + ev1 / sqr[6] - ev1 / sqr[5];
     } else if (!si && sj) {
-        const double db = pj.dd;
-        double qb = pj.qq * td;
-        double aed = pp / pi.am + pp / pj.ad;
+        const Scalar db = pj.dd;
+        Scalar qb = pj.qq * td;
+        Scalar aed = pp / pi.am + pp / pj.ad;
         aed *= aed;
-        double aeq = pp / pi.am + pp / pj.aq;
+        Scalar aeq = pp / pi.am + pp / pj.aq;
         aeq *= aeq;
-        const double rsq = r * r;
+        const Scalar rsq = r * r;
         arg[0] = rsq + aee;
         arg[1] = (r - db) * (r - db) + aed;
         arg[2] = (r + db) * (r + db) + aed;
@@ -192,35 +162,35 @@ std::array<double, 22> reppd_sp(const AM1Parameter& pi, const AM1Parameter& pj,
         arg[5] = rsq + aeq;
         arg[6] = arg[5] + qb * qb;
         for (int i = 0; i < 7; ++i) {
-            sqr[i] = std::sqrt(arg[i]);
+            sqr[i] = sqrt(arg[i]);
         }
-        const double ee = kEv / sqr[0];
+        const Scalar ee = kEv / sqr[0];
         ri[0] = ee;
         ri[4] = ev1 / sqr[1] - ev1 / sqr[2];
         ri[10] = ee + ev2 / sqr[3] + ev2 / sqr[4] - ev1 / sqr[5];
         ri[11] = ee + ev1 / sqr[6] - ev1 / sqr[5];
     } else {
-        const double da = pi.dd;
-        const double db = pj.dd;
-        double qa = pi.qq * td;
-        double qb = pj.qq * td;
-        double ade = pp / pi.ad + pp / pj.am;
+        const Scalar da = pi.dd;
+        const Scalar db = pj.dd;
+        Scalar qa = pi.qq * td;
+        Scalar qb = pj.qq * td;
+        Scalar ade = pp / pi.ad + pp / pj.am;
         ade *= ade;
-        double aqe = pp / pi.aq + pp / pj.am;
+        Scalar aqe = pp / pi.aq + pp / pj.am;
         aqe *= aqe;
-        double aed = pp / pi.am + pp / pj.ad;
+        Scalar aed = pp / pi.am + pp / pj.ad;
         aed *= aed;
-        double aeq = pp / pi.am + pp / pj.aq;
+        Scalar aeq = pp / pi.am + pp / pj.aq;
         aeq *= aeq;
-        double axx = pp / pi.ad + pp / pj.ad;
+        Scalar axx = pp / pi.ad + pp / pj.ad;
         axx *= axx;
-        double adq = pp / pi.ad + pp / pj.aq;
+        Scalar adq = pp / pi.ad + pp / pj.aq;
         adq *= adq;
-        double aqd = pp / pi.aq + pp / pj.ad;
+        Scalar aqd = pp / pi.aq + pp / pj.ad;
         aqd *= aqd;
-        double aqq = pp / pi.aq + pp / pj.aq;
+        Scalar aqq = pp / pi.aq + pp / pj.aq;
         aqq *= aqq;
-        const double rsq = r * r;
+        const Scalar rsq = r * r;
         arg[0] = rsq + aee;
         arg[1] = (r + da) * (r + da) + ade;
         arg[2] = (r - da) * (r - da) + ade;
@@ -296,42 +266,42 @@ std::array<double, 22> reppd_sp(const AM1Parameter& pi, const AM1Parameter& pj,
         arg[70] = (r - qa + qb) * (r - qa + qb) + (qa - qb) * (qa - qb) + aqq;
         arg[71] = (r - qa + qb) * (r - qa + qb) + (qa + qb) * (qa + qb) + aqq;
         for (int i = 0; i < 72; ++i) {
-            sqr[i] = std::sqrt(arg[i]);
+            sqr[i] = sqrt(arg[i]);
         }
-        const double ee = kEv / sqr[0];
-        const double dze = (-ev1 / sqr[1]) + ev1 / sqr[2];
-        const double qzze = ev2 / sqr[3] + ev2 / sqr[4] - ev1 / sqr[5];
-        const double qxxe = ev1 / sqr[6] - ev1 / sqr[5];
-        const double edz = (-ev1 / sqr[7]) + ev1 / sqr[8];
-        const double eqzz = ev2 / sqr[9] + ev2 / sqr[10] - ev1 / sqr[11];
-        const double eqxx = ev1 / sqr[12] - ev1 / sqr[11];
-        const double dxdx = ev1 / sqr[13] - ev1 / sqr[14];
-        const double dzdz =
+        const Scalar ee = kEv / sqr[0];
+        const Scalar dze = (-ev1 / sqr[1]) + ev1 / sqr[2];
+        const Scalar qzze = ev2 / sqr[3] + ev2 / sqr[4] - ev1 / sqr[5];
+        const Scalar qxxe = ev1 / sqr[6] - ev1 / sqr[5];
+        const Scalar edz = (-ev1 / sqr[7]) + ev1 / sqr[8];
+        const Scalar eqzz = ev2 / sqr[9] + ev2 / sqr[10] - ev1 / sqr[11];
+        const Scalar eqxx = ev1 / sqr[12] - ev1 / sqr[11];
+        const Scalar dxdx = ev1 / sqr[13] - ev1 / sqr[14];
+        const Scalar dzdz =
             ev2 / sqr[15] + ev2 / sqr[16] - ev2 / sqr[17] - ev2 / sqr[18];
-        const double dzqxx =
+        const Scalar dzqxx =
             ev2 / sqr[19] - ev2 / sqr[20] - ev2 / sqr[21] + ev2 / sqr[22];
-        const double qxxdz =
+        const Scalar qxxdz =
             ev2 / sqr[23] - ev2 / sqr[24] - ev2 / sqr[25] + ev2 / sqr[26];
-        const double dzqzz = (-ev3 / sqr[27]) + ev3 / sqr[28] - ev3 / sqr[29]
+        const Scalar dzqzz = (-ev3 / sqr[27]) + ev3 / sqr[28] - ev3 / sqr[29]
                              + ev3 / sqr[30] - ev2 / sqr[21] + ev2 / sqr[19];
-        const double qzzdz = (-ev3 / sqr[31]) + ev3 / sqr[32] - ev3 / sqr[33]
+        const Scalar qzzdz = (-ev3 / sqr[31]) + ev3 / sqr[32] - ev3 / sqr[33]
                              + ev3 / sqr[34] + ev2 / sqr[23] - ev2 / sqr[25];
-        const double qxxqxx = ev3 / sqr[36] + ev3 / sqr[37] - ev2 / sqr[38]
+        const Scalar qxxqxx = ev3 / sqr[36] + ev3 / sqr[37] - ev2 / sqr[38]
                               - ev2 / sqr[39] + ev2 / sqr[35];
-        const double qxxqyy =
+        const Scalar qxxqyy =
             ev2 / sqr[40] - ev2 / sqr[38] - ev2 / sqr[39] + ev2 / sqr[35];
-        const double qxxqzz = ev3 / sqr[42] + ev3 / sqr[44] - ev3 / sqr[41]
+        const Scalar qxxqzz = ev3 / sqr[42] + ev3 / sqr[44] - ev3 / sqr[41]
                               - ev3 / sqr[43] - ev2 / sqr[38] + ev2 / sqr[35];
-        const double qzzqxx = ev3 / sqr[46] + ev3 / sqr[48] - ev3 / sqr[45]
+        const Scalar qzzqxx = ev3 / sqr[46] + ev3 / sqr[48] - ev3 / sqr[45]
                               - ev3 / sqr[47] - ev2 / sqr[39] + ev2 / sqr[35];
-        const double qzzqzz = ev4 / sqr[49] + ev4 / sqr[50] + ev4 / sqr[51]
+        const Scalar qzzqzz = ev4 / sqr[49] + ev4 / sqr[50] + ev4 / sqr[51]
                               + ev4 / sqr[52] - ev3 / sqr[47] - ev3 / sqr[45]
                               - ev3 / sqr[41] - ev3 / sqr[43] + ev2 / sqr[35];
-        const double dxqxz =
+        const Scalar dxqxz =
             (-ev2 / sqr[53]) + ev2 / sqr[54] + ev2 / sqr[55] - ev2 / sqr[56];
-        const double qxzdx =
+        const Scalar qxzdx =
             (-ev2 / sqr[57]) + ev2 / sqr[58] + ev2 / sqr[59] - ev2 / sqr[60];
-        const double qxzqxz = ev3 / sqr[64] - ev3 / sqr[66] - ev3 / sqr[68]
+        const Scalar qxzqxz = ev3 / sqr[64] - ev3 / sqr[66] - ev3 / sqr[68]
                               + ev3 / sqr[70] - ev3 / sqr[65] + ev3 / sqr[67]
                               + ev3 / sqr[69] - ev3 / sqr[71];
         ri[0] = ee;
@@ -367,18 +337,20 @@ std::array<double, 22> reppd_sp(const AM1Parameter& pi, const AM1Parameter& pj,
     return ri;
 }
 
-std::array<double, 34> rep_from_ri(const std::array<double, 22>& ri) {
+template <class Scalar>
+std::array<Scalar, 34> rep_from_ri(const std::array<Scalar, 22>& ri) {
     static constexpr int kIpos[34] = {
         1,  5,  11, 12, 12, 2,  6,  13, 14, 14, 3,  8,  16, 18, 18, 7,  15,
         10, 20, 4,  9,  17, 19, 21, 7,  15, 10, 20, 22, 4,  9,  17, 21, 19};
-    std::array<double, 34> rep{};
+    std::array<Scalar, 34> rep{};
     for (int i = 0; i < 34; ++i) {
         rep[i] = ri[kIpos[i] - 1];
     }
     return rep;
 }
 
-double& w_at(std::vector<double>& values, int limkl, int pair_i, int pair_j) {
+template <class Scalar>
+Scalar& w_at(Scalar* values, int limkl, int pair_i, int pair_j) {
     return values[static_cast<std::size_t>(pair_i)
                       * static_cast<std::size_t>(limkl)
                   + static_cast<std::size_t>(pair_j)];
@@ -396,9 +368,16 @@ double NDDOTwoCenterIntegralBlock::at(int pair_i, int pair_j) const {
                   + static_cast<std::size_t>(pair_j)];
 }
 
-NDDOTwoCenterIntegralBlock build_two_center_integral_block(
-    const NDDOSystem& system, const StorageReal* sp_x, const StorageReal* sp_y,
-    const StorageReal* sp_z, int atom_i, int atom_j) {
+namespace {
+template <class Scalar>
+struct IntegralBlock {
+    int atom_i = -1, atom_j = -1, n_pairs_i = 0, n_pairs_j = 0;
+    std::array<Scalar, 100> values{};
+};
+template <class Scalar, class Block>
+void integral_block(const NDDOSystem& system, const std::array<Scalar, 3>& xi,
+                    const std::array<Scalar, 3>& xj, int atom_i, int atom_j,
+                    Block& out) {
     if (atom_i < 0 || atom_j < 0
         || atom_i >= static_cast<int>(system.atoms.size())
         || atom_j >= static_cast<int>(system.atoms.size())) {
@@ -406,10 +385,10 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
     }
     const auto& ai = system.atoms[static_cast<std::size_t>(atom_i)];
     const auto& aj = system.atoms[static_cast<std::size_t>(atom_j)];
-    if (ai.n_orbitals > 4 || aj.n_orbitals > 4) {
-        throw std::runtime_error(
-            "AM1 d-orbital two-center electron-repulsion integrals are not "
-            "ported yet");
+    if ((ai.n_orbitals != 1 && ai.n_orbitals != 4)
+        || (aj.n_orbitals != 1 && aj.n_orbitals != 4)) {
+        throw std::runtime_error("NDDO two-center integrals require complete s "
+                                 "or sp shells (1 or 4 orbitals)");
     }
     const auto* pi = ai.params;
     const auto* pj = aj.params;
@@ -418,9 +397,7 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
             "AM1 parameters unavailable for two-center integrals");
     }
 
-    const auto xi = atom_xyz(sp_x, sp_y, sp_z, atom_i);
-    const auto xj = atom_xyz(sp_x, sp_y, sp_z, atom_j);
-    const double rij = distance(xi, xj);
+    const Scalar rij = distance(xi, xj);
     if (rij < 1.0e-12) {
         throw std::runtime_error(
             "NDDO two-center integrals require distinct atom coordinates");
@@ -433,8 +410,9 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
     const auto rot = pair_rotation(xi, xj);
     const auto rep = rep_from_ri(reppd_sp(*pi, *pj, rij));
 
-    std::array<std::array<double, 46>, 46> v{};
-    std::array<std::array<bool, 46>, 46> logv{};
+    // Only s/p blocks are supported here: indexd <= 25, packed pair <= 10.
+    std::array<std::array<Scalar, 11>, 26> v{};
+
     static constexpr int kMet[46] = {
         0, 1, 2, 3, 2, 3, 3, 2, 3, 3, 3, 4, 5, 5, 5, 6, 4, 5, 5, 5, 6, 6, 4,
         5, 5, 5, 6, 6, 6, 4, 5, 5, 5, 6, 6, 6, 6, 4, 5, 5, 5, 6, 6, 6, 6, 6};
@@ -449,7 +427,7 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
                     if (nd < 0) {
                         continue;
                     }
-                    const double wrepp = rep[static_cast<std::size_t>(nd)];
+                    const Scalar wrepp = rep[static_cast<std::size_t>(nd)];
                     const int ll = indx(k1, l1);
                     switch (kMet[ll]) {
                     case 1:
@@ -480,19 +458,15 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
                     }
                 }
             }
-            for (int kl = 1; kl <= limkl; ++kl) {
-                logv[ij][kl] = v[ij][kl] != 0.0;
-            }
         }
     }
 
-    NDDOTwoCenterIntegralBlock out;
     out.atom_i = atom_i;
     out.atom_j = atom_j;
     out.n_pairs_i = limij;
     out.n_pairs_j = limkl;
-    out.values.assign(
-        static_cast<std::size_t>(limij) * static_cast<std::size_t>(limkl), 0.0);
+    std::fill_n(out.values.data(), static_cast<std::size_t>(limij) * limkl,
+                Scalar{});
 
     for (int i1 = 1; i1 <= ii; ++i1) {
         for (int j1 = 1; j1 <= i1; ++j1) {
@@ -502,19 +476,24 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
             for (int k = 1; k <= kk; ++k) {
                 for (int l = 1; l <= k; ++l) {
                     const int kl = indx(k, l);
-                    if (!logv[ij][kl]) {
-                        continue;
+
+                    // A zero value may still carry a nonzero derivative.
+                    if constexpr (std::is_same_v<Scalar, double>) {
+                        if (v[ij][kl] == 0.0)
+                            continue;
                     }
-                    const double wrepp = v[ij][kl];
+                    const Scalar wrepp = v[ij][kl];
                     switch (mm) {
                     case 1:
-                        w_at(out.values, limkl, indx(1, 1) - 1, kl - 1) = wrepp;
+                        w_at(out.values.data(), limkl, indx(1, 1) - 1, kl - 1) =
+                            wrepp;
                         break;
                     case 2: {
                         const int p_local = i1 - 2;
                         for (int axis = 0; axis < 3; ++axis) {
-                            w_at(out.values, limkl, indx(axis + 2, 1) - 1,
-                                 kl - 1) += rot.sp[p_local][axis] * wrepp;
+                            w_at(out.values.data(), limkl,
+                                 indx(axis + 2, 1) - 1, kl - 1) +=
+                                rot.sp[p_local][axis] * wrepp;
                         }
                         break;
                     }
@@ -522,16 +501,16 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
                         const int p_i = i1 - 2;
                         const int p_j = j1 - 2;
                         for (int axis = 0; axis < 3; ++axis) {
-                            w_at(out.values, limkl,
+                            w_at(out.values.data(), limkl,
                                  indx(axis + 2, axis + 2) - 1, kl - 1) +=
                                 rot.pp[axis][p_i][p_j] * wrepp;
                         }
-                        w_at(out.values, limkl, indx(3, 2) - 1, kl - 1) +=
-                            rot.pp[3][p_i][p_j] * wrepp;
-                        w_at(out.values, limkl, indx(4, 2) - 1, kl - 1) +=
-                            rot.pp[4][p_i][p_j] * wrepp;
-                        w_at(out.values, limkl, indx(4, 3) - 1, kl - 1) +=
-                            rot.pp[5][p_i][p_j] * wrepp;
+                        w_at(out.values.data(), limkl, indx(3, 2) - 1,
+                             kl - 1) += rot.pp[3][p_i][p_j] * wrepp;
+                        w_at(out.values.data(), limkl, indx(4, 2) - 1,
+                             kl - 1) += rot.pp[4][p_i][p_j] * wrepp;
+                        w_at(out.values.data(), limkl, indx(4, 3) - 1,
+                             kl - 1) += rot.pp[5][p_i][p_j] * wrepp;
                         break;
                     }
                     default:
@@ -543,7 +522,39 @@ NDDOTwoCenterIntegralBlock build_two_center_integral_block(
             }
         }
     }
-
+}
+} // namespace
+void build_two_center_integral_block(const NDDOSystem& system,
+                                     const StorageReal* x, const StorageReal* y,
+                                     const StorageReal* z, int i, int j,
+                                     NDDOTwoCenterIntegralBlock& out) {
+    // Check indices before touching coordinate spans.
+    if (i < 0 || j < 0 || i >= static_cast<int>(system.atoms.size())
+        || j >= static_cast<int>(system.atoms.size()))
+        throw std::runtime_error("NDDO two-center atom index out of range");
+    integral_block(system, atom_xyz(x, y, z, i), atom_xyz(x, y, z, j), i, j,
+                   out);
+}
+std::array<std::array<double, 100>, 3> internal::two_center_integral_derivative(
+    const NDDOSystem& system, const StorageReal* x, const StorageReal* y,
+    const StorageReal* z, int i, int j) {
+    if (i < 0 || j < 0 || i >= static_cast<int>(system.atoms.size())
+        || j >= static_cast<int>(system.atoms.size()))
+        throw std::runtime_error("NDDO two-center atom index out of range");
+    const auto ai = atom_xyz(x, y, z, i), aj = atom_xyz(x, y, z, j);
+    std::array<NDDODerivative, 3> xi, xj;
+    for (int d = 0; d < 3; ++d) {
+        xi[d] = ai[d];
+        xj[d] = aj[d];
+        xi[d].gradient[d] = 1.0;
+    }
+    IntegralBlock<NDDODerivative> block;
+    integral_block(system, xi, xj, i, j, block);
+    std::array<std::array<double, 100>, 3> out{};
+    const int count = block.n_pairs_i * block.n_pairs_j;
+    for (int d = 0; d < 3; ++d)
+        for (int k = 0; k < count; ++k)
+            out[d][k] = block.values[k].gradient[d];
     return out;
 }
 

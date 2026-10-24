@@ -22,9 +22,11 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/transfer.h"
 #include "atomiverse/cpu/scf/basis_data/accessors.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
+#include "atomiverse/cuda/scf/internal/nuclear_identity.cuh"
 #include "atomiverse/cuda/scf/internal/uhf_scf_cycle.cuh"
 
 namespace ATV {
@@ -166,6 +168,7 @@ class UhfConverged : public cuda::Criterion {
 
 struct UhfLoopState {
     EngineSlot slot;
+    internal::NuclearIdentity identity;
     UhfStage fock;
     UhfStage mix;
     UhfStage diag;
@@ -244,19 +247,28 @@ void UHF::release_engine_() {
     loop_->slot.frame = nullptr;
 }
 
-void UHF::assemble_(cuda::Context& ctx, cuda::Frame& frame) {
+void UHF::assemble_(cuda::Context& ctx, cuda::Frame& frame, bool host_current) {
     const int natm = frame.n_atoms();
     if (natm <= 0) {
         throw std::invalid_argument(
             "cuda::scf::UHF: device frame has no atoms");
     }
-    if (static_cast<int>(host_Z_.size()) != natm) {
-        host_Z_.resize(static_cast<std::size_t>(natm));
-        auto* stream = static_cast<cudaStream_t>(ctx.stream);
-        cudaMemcpyAsync(host_Z_.data(), frame.atoms.type,
-                        sizeof(int) * static_cast<std::size_t>(natm),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
+    auto stream = static_cast<cudaStream_t>(ctx.stream);
+    // Host entry points already inspected the exact incoming identity. Nested
+    // entries compare on device and return only a boolean; coordinates can
+    // change without repeatedly transferring the nuclear-charge array.
+    const bool changed =
+        host_current
+        || !loop_->identity.matches(frame.atoms.type, natm, stream);
+    if (changed) {
+        if (!host_current) {
+            host_Z_.resize(static_cast<std::size_t>(natm));
+            ATV_CUDA_CHECK(cudaMemcpyAsync(host_Z_.data(), frame.atoms.type,
+                                           natm * sizeof(int),
+                                           cudaMemcpyDeviceToHost, stream));
+            ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+        }
+        loop_->identity.record(frame.atoms.type, natm, stream);
     }
     if (!device_sp_sto3g_ok(basis, host_Z_.data(), natm)) {
         throw std::invalid_argument(
@@ -383,16 +395,21 @@ void UHF::seed_minao_(cuda::Context& ctx, cuda::Frame& frame) {
     loop_->slot.cycle->seed_density(ctx.stream, half.data(), half.data(), n);
 }
 
-int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
+int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
+                     bool host_current) {
     struct Guard {
         UHF* self;
-        ~Guard() { self->release_engine_(); }
-    } guard{this};
+        cuda::Context& context;
+        cuda::LoopServices parent_loop;
+        ~Guard() {
+            context.loop = parent_loop;
+            self->release_engine_();
+        }
+    } guard{this, ctx, ctx.loop};
 
-    assemble_(ctx, frame);
+    assemble_(ctx, frame, host_current);
     loop_->slot.cycle->begin(ctx.stream);
     seed_minao_(ctx, frame);
-    const cuda::LoopServices saved = ctx.loop;
     ctx.loop.status = &this->status_;
     ctx.loop.metrics = &this->metrics_;
     this->status_.reset();
@@ -408,12 +425,11 @@ int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
             break;
     }
     loop_->slot.cycle->finish(ctx.stream);
-    if (compute_force)
+    if (compute_force && ctx.exec.forces_requested)
         assemble_forces_(ctx, frame);
     pull_energy_(ctx, frame);
     this->iterations_ = iters;
     last_device_sp_ = true;
-    ctx.loop = saved;
     return iters;
 }
 
@@ -433,7 +449,7 @@ void UHF::run(cpu::Frame& frame) {
     this->setup_pass(frame);
     try {
         drive_loop_(this->backend_->context(), this->backend_->frame(),
-                    max_iter);
+                    max_iter, /*host_current=*/true);
     } catch (...) {
         this->teardown_pass(frame);
         throw;

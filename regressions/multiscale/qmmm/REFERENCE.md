@@ -373,3 +373,15 @@ cost is microseconds.
 - A. Szabo, N. S. Ostlund, *Modern Quantum Chemistry*, revised 1st ed., Dover,
   1996 — §3.5, minimal-basis H₂ (background; see §2 for why it is not the pin).
 - CODATA 2018 / SI 2019 — `k_B = 8.617333262 × 10⁻⁵ eV/K` (exact).
+
+## Borrowed engine history
+
+The `qmmm_es_h2o_pyscf` section retains its external energy/force pins and
+also compares RHF ASPC evolution with and without initial-force, trial and
+failed evaluations inserted between accepted geometries. It checks iteration
+counts, energy and full force vectors, and reuses the same borrowed engine
+through another parent Runtime. The coupling passes the parent's execution
+context to the private QM Frame; the electronic stage plan borrows that
+Runtime for each evaluation. Nonconverged evaluations do not scatter results
+or commit ASPC/accepted-density history. CPMD and XL-BOMD are explicitly
+unsupported through this QM/MM entry.

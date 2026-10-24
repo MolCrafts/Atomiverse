@@ -1,0 +1,196 @@
+ *******************************************************************************
+ **                                                                           **
+ **                              MOPAC v23.2.5                                **
+ **                                                                           **
+ *******************************************************************************
+ ** MOPAC's Digital Object Identifier: https://doi.org/10.5281/zenodo.6511958 **
+ **                                                                           **
+ ** Please cite the open-source release paper for use of this MOPAC version:  **
+ ** J. E. Moussa and J. J. P. Stewart (2026)                                  **
+ ** MOPAC: An open-source semiempirical molecular orbital program             **
+ ** J. Open Source Softw., 11(119), 8025, https://doi.org/10.21105/joss.08025 **
+ *******************************************************************************
+
+                              AM1 CALCULATION RESULTS
+
+ *******************************************************************************
+ *  CALCULATION DONE:                                Sat Oct 24 00:03:05 2026  *
+ *  AM1        - The AM1 Hamiltonian to be used
+ *  PRECISE    - TIGHTER CRITERIA TO BE USED
+ *  XYZ        - CARTESIAN COORDINATE SYSTEM TO BE USED
+ *  1SCF       - DO 1 SCF AND THEN STOP 
+ *  T=         - A TIME OF 172800.0 SECONDS REQUESTED
+ *  DUMP=N     - RESTART FILE WRITTEN EVERY 7200.0 SECONDS REQUESTED
+ *  SCFCRT     - DEFAULT SCF CRITERION REPLACED BY   0.100E-11
+ *  AUX        - OUTPUT AUXILIARY INFORMATION
+ *  GRADIENTS  - ALL GRADIENTS TO BE PRINTED
+ *  DISP       - PRINT DISPERSION AND HYDROGEN BOND ENERGIES
+ *******************************************************************************
+AM1 1SCF GRADIENTS XYZ AUX(PRECISION=9) PRECISE SCFCRT=1.D-12 DISP
+ AM1 off-equilibrium water
+ Native standalone OpenMOPAC reference, no geometry optimization
+   ATOM   CHEMICAL          X               Y               Z
+  NUMBER   SYMBOL      (ANGSTROMS)     (ANGSTROMS)     (ANGSTROMS)
+ 
+     1       O          0.00000000  *   0.00000000  *   0.00000000  *
+     2       H          0.96000000  *   0.00000000  *   0.00000000  *
+     3       H         -0.24000000  *   0.93000000  *   0.10000000  *
+ 
+
+
+          CARTESIAN COORDINATES 
+
+    NO.       ATOM           X           Y           Z
+
+     1         O          0.0000      0.0000      0.0000
+     2         H          0.9600      0.0000      0.0000
+     3         H         -0.2400      0.9300      0.1000
+
+  H: (AM1): M.J.S. DEWAR ET AL, J. AM. CHEM. SOC. 107 3902-3909 (1985)
+  O: (AM1): M.J.S. DEWAR ET AL, J. AM. CHEM. SOC. 107 3902-3909 (1985)
+
+           Empirical Formula: H2 O  =     3 atoms
+
+
+
+      MOLECULAR POINT GROUP   :   C2v 
+
+
+      RHF CALCULATION, NO. OF DOUBLY OCCUPIED LEVELS = 4
+
+  SCF CRITERION =    0.1000E-11
+
+ -------------------------------------------------------------------------------
+ AM1 1SCF GRADIENTS XYZ AUX(PRECISION=9) PRECISE SCFCRT=1.D-12 DISP
+ AM1 off-equilibrium water
+ Native standalone OpenMOPAC reference, no geometry optimization
+
+
+     1SCF WAS SPECIFIED, SO BFGS WAS NOT USED                 
+     SCF FIELD WAS ACHIEVED                                   
+
+
+                              AM1 CALCULATION
+                                                       MOPAC v23.2.5 MacOS
+                                                       Sat Oct 24 00:03:05 2026
+
+
+
+
+          FINAL HEAT OF FORMATION =        -59.22404 KCAL/MOL =    -247.79340 KJ/MOL
+
+          TOTAL ENERGY            =      -8038.03084 KCAL/MOL = ELECTRONIC ENERGY + CORE-CORE REPULSION
+          ENERGY OF ATOMS         =       7978.80680 KCAL/MOL
+                              SUM =        -59.22404 KCAL/MOL
+          DISPERSION ENERGY       =          0.00000 KCAL/MOL
+                              SUM =        -59.22404 KCAL/MOL = FINAL HEAT OF FORMATION
+
+
+
+          TOTAL ENERGY            =       -348.56201 EV
+          ELECTRONIC ENERGY       =       -493.07499 EV 
+          CORE-CORE REPULSION     =        144.51298 EV
+          COSMO AREA              =         42.50 SQUARE ANGSTROMS
+          COSMO VOLUME            =         25.22 CUBIC ANGSTROMS
+
+          GRADIENT NORM           =          7.24206          =       4.18120 PER ATOM
+          IONIZATION POTENTIAL    =         12.454377 EV
+          HOMO LUMO ENERGIES (EV) =        -12.454  4.378
+          NO. OF FILLED LEVELS    =          4
+          MOLECULAR WEIGHT        =         18.0152         POINT GROUP:  C2v 
+
+          MOLECULAR DIMENSIONS (Angstroms)
+
+            Atom       Atom       Distance
+            H     3    H     2     1.52148
+            H     2    O     1     0.59018
+            O     1    H     3     0.00000
+
+
+          SCF CALCULATIONS        =          1
+ 
+          WALL-CLOCK TIME         =      0.027 SECONDS
+          COMPUTATION TIME        =      0.012 SECONDS
+
+          LARGEST ATOMIC GRADIENTS
+
+          Atom     Label                     Cartesian Gradients           Cartesian Coordinates       |Gradient|
+                                           X          Y          Z        X          Y          Z
+
+             3       H                  -3.288      4.122      0.443   -0.24000    0.93000    0.10000      5.292
+             1       O                   3.928     -1.967     -0.211    0.00000    0.00000    0.00000      4.398
+             2       H                  -0.639     -2.155     -0.232    0.96000    0.00000    0.00000      2.260
+
+
+
+       FINAL  POINT  AND  DERIVATIVES
+
+   PARAMETER     ATOM    TYPE            VALUE        GRADIENT
+      1          1  O    CARTESIAN X     0.000000      3.927648  KCAL/ANGSTROM
+      2          1  O    CARTESIAN Y     0.000000     -1.966759  KCAL/ANGSTROM
+      3          1  O    CARTESIAN Z     0.000000     -0.211480  KCAL/ANGSTROM
+      4          2  H    CARTESIAN X     0.960000     -0.639193  KCAL/ANGSTROM
+      5          2  H    CARTESIAN Y     0.000000     -2.155201  KCAL/ANGSTROM
+      6          2  H    CARTESIAN Z     0.000000     -0.231742  KCAL/ANGSTROM
+      7          3  H    CARTESIAN X    -0.240000     -3.288455  KCAL/ANGSTROM
+      8          3  H    CARTESIAN Y     0.930000      4.121960  KCAL/ANGSTROM
+      9          3  H    CARTESIAN Z     0.100000      0.443222  KCAL/ANGSTROM
+
+
+
+
+   ATOM   CHEMICAL          X               Y               Z
+  NUMBER   SYMBOL      (ANGSTROMS)     (ANGSTROMS)     (ANGSTROMS)
+ 
+     1       O          0.00000000  *   0.00000000  *   0.00000000  *
+     2       H          0.96000000  *   0.00000000  *   0.00000000  *
+     3       H         -0.24000000  *   0.93000000  *   0.10000000  *
+
+                             CARTESIAN COORDINATES
+
+   1    O        0.000000000     0.000000000     0.000000000
+   2    H        0.960000000     0.000000000     0.000000000
+   3    H       -0.240000000     0.930000000     0.100000000
+
+
+           Empirical Formula: H2 O  =     3 atoms
+
+
+
+      MOLECULAR POINT GROUP   :   C2v 
+
+
+                  EIGENVALUES  
+ -36.38120 -18.22561 -14.89828 -12.45438   4.37820   6.21994
+
+
+              NET ATOMIC CHARGES AND DIPOLE CONTRIBUTIONS
+
+  ATOM NO.   TYPE          CHARGE      No. of ELECS.   s-Pop       p-Pop       
+    1          O          -0.385337        6.3853     1.86229     4.52305
+    2          H           0.192306        0.8077     0.80769
+    3          H           0.193032        0.8070     0.80697
+ DIPOLE           X         Y         Z       TOTAL
+ POINT-CHG.     0.664     0.862     0.093     1.092
+ HYBRID         0.472     0.600     0.064     0.766
+ SUM            1.136     1.462     0.157     1.858
+
+
+          ATOMIC ORBITAL ELECTRON POPULATIONS
+
+     Atom    s        px        py        pz   
+    1  O   1.86229   1.24257   1.28870   1.99178
+    2  H   0.80769
+    3  H   0.80697
+
+ **********************
+ *                    *
+ * JOB ENDED NORMALLY *
+ *                    *
+ **********************
+
+
+
+ TOTAL JOB TIME:             0.05 SECONDS
+
+ == MOPAC DONE ==

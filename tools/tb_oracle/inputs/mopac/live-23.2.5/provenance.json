@@ -1,0 +1,95 @@
+{
+  "oracle": "OpenMOPAC",
+  "version": "23.2.5",
+  "source_url": "https://github.com/openmopac/mopac",
+  "source_commit": "052691223d19935a89f0fe18cd12301bd83e4201",
+  "release_url": "https://github.com/openmopac/mopac/releases/download/v23.2.5/mopac-23.2.5-mac.zip",
+  "binary_origin": "Unmodified official release archive; no source patch or local compilation",
+  "execution_platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "executable_architecture": "Mach-O 64-bit x86_64; executed on Apple silicon via Rosetta",
+  "files": {
+    "release_archive": {
+      "filename": "atv-mopac-23.2.5-mac.zip",
+      "sha256": "5df9d98774ae14964d13c1e8bc78e07e88595f415491bf9ee568a56e2e651b68"
+    },
+    "executable": {
+      "filename": "mopac",
+      "sha256": "b0fe585da55033a87a698addaef4924e4b09ad0c0c77960b29b9fbed0e648a63"
+    },
+    "shared_library": {
+      "filename": "libmopac.2.dylib",
+      "sha256": "db7c5409051942d669b691acb279aa5930f6390b19079670f419530623d26a04"
+    },
+    "openmp_library": {
+      "filename": "libiomp5.dylib",
+      "sha256": "19fd559da908bb27d9d8cb757f71162771de72fabf53cbbd5ee73bcc15b743d5"
+    }
+  },
+  "command": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 /path/to/mopac /absolute/path/to/point.mop",
+  "threads": {
+    "OMP_NUM_THREADS": 1,
+    "OPENBLAS_NUM_THREADS": 1
+  },
+  "controls": "Closed-shell neutral AM1/RM1, 1SCF, XYZ, GRADIENTS, PRECISE, SCFCRT=1.D-12, AUX(PRECISION=9), DISP; no OLDCON",
+  "disp_note": "DISP prints energy contributions; does not enable additional model terms. Every archived dispersion contribution is zero.",
+  "units": {
+    "coordinates": "Angstrom",
+    "gradient": "kcal/mol/Angstrom",
+    "forces": "eV/Angstrom; negative gradient divided by 23.060547830619029",
+    "charges": "elementary charge",
+    "total_energy": "DISP total electronic + core energy; kcal/mol print converted to eV",
+    "heat_of_formation": "kcal/mol from AUX"
+  },
+  "ev_to_kcal_mol": 23.06054783061903,
+  "gradient_algorithm": {
+    "source_file": "src/forces/dcart.F90",
+    "source_lines": [
+      83,
+      84,
+      100,
+      289,
+      295,
+      298
+    ],
+    "description": "Fixed-density pair-energy centered finite difference under PRECISE; displacement +/-5e-5 Angstrom, denominator 1e-4 Angstrom. Not an analytic-gradient oracle."
+  },
+  "precision": {
+    "gradient_decimal_places": 13,
+    "charges_decimal_places": 14,
+    "hof_aux_significant_digits": 15,
+    "total_energy_kcal_mol_decimal_places": 5,
+    "total_energy_ev_rounding_bound": 2.1682052120900468e-07
+  },
+  "scientific_files_sha256": {
+    "inputs/am1-ammonia.mop": "a9e1d1b292483a2cb5ecfc5b294f247bdaf5237d9a7622a5a71850574905532c",
+    "inputs/am1-co.mop": "2cdfab1d255719607780a44b44691ba879b32feb2463d3e0ee6e77acad60c6b9",
+    "inputs/am1-water.mop": "56445b994003847aa083297ed124e136f70c7fa53da41b6d3a49b35d40e9e04f",
+    "inputs/rm1-ammonia.mop": "5dba255880c85378c8241a3fd3edba3fc471b7736c2c3aeb1a51dbc34cf7ef9f",
+    "inputs/rm1-co.mop": "04215c964a587df6e585cb6afb8ecf353d3b90f8382886e02764fcc39f62f4b6",
+    "inputs/rm1-water.mop": "2e8c897af8253420a5fa14eabffc1932edd20a96428b6a66fd696dac393cb969",
+    "outputs/am1-ammonia.arc.txt": "23afafdd155ae4d3316d789a727ab71d54f8e310c33cd91b9a57d456fe36946e",
+    "outputs/am1-ammonia.aux.txt": "f67259a210d7c54804d886fd6d553ddda37476247ada9accec1cdee0d36185b3",
+    "outputs/am1-ammonia.out.txt": "1a48a4f6219a9ab2e9d9b54cbc627f912dd52726656527ed272bdb99ac66ffa5",
+    "outputs/am1-ammonia.stdout.txt": "b127b21cca553783a923b689dabd27355b9dd7dee9c8e8f40f5dc9c00143b94c",
+    "outputs/am1-co.arc.txt": "c48c9367e050edc2cac466a8da5777df3824eabb503e4cf877e38d877e849b0b",
+    "outputs/am1-co.aux.txt": "1b109db352c1364c270f1ea022647c3e54f1b204e853a1ea44f8fa20b1e9c4b0",
+    "outputs/am1-co.out.txt": "57f1af795220eb8f5682e7bbfe85f6f57789ccb6c174b49f318ae1fe42bc35b2",
+    "outputs/am1-co.stdout.txt": "4999ce7849ecfd94719888c3e3f649d936ed685a3e7c567e9d8cd615e82b9b12",
+    "outputs/am1-water.arc.txt": "8c83a734cf6c834cbadf70aa8a61b284bf71fcd4df3ad7968d7cb8a721d4d560",
+    "outputs/am1-water.aux.txt": "04b390adfa19e5af9461a8d82b85ebb6b0c3a29d3ba0261200aa9004f56b665c",
+    "outputs/am1-water.out.txt": "ea9340994625e4266a86c6f41c1f621847faf5633c88a33995ab8e2cff7a679d",
+    "outputs/am1-water.stdout.txt": "fefce6921ac858dd5cf481a7a43b36af0995ffdd3fc678dae5f97bfa927f34b1",
+    "outputs/rm1-ammonia.arc.txt": "38709fddea5cdf2c1076289b15a5f20ef9d5860267dedaa19cf1c1e22071e44f",
+    "outputs/rm1-ammonia.aux.txt": "8d1a79c1513802af216cbb5ec790fdc8cace8915f23c7d4a8116e683e67314b7",
+    "outputs/rm1-ammonia.out.txt": "7280432faacf58af9070e2e1ff6c1d153e74a119fb8986b0625989d7303cbc58",
+    "outputs/rm1-ammonia.stdout.txt": "db4a3b85205df3ea0276602a07b626c5856667e88d23553361d2ce13d3f2d036",
+    "outputs/rm1-co.arc.txt": "74bb90f2c7a93b82a7ed4a3878bf87864b2fbdf65c01212954db174dac1c12a4",
+    "outputs/rm1-co.aux.txt": "b04c0532df89d245cce7f3280574fef295d22655d0125f287054c882b4713ab6",
+    "outputs/rm1-co.out.txt": "167e72be677c514a3376dbccb1a07e7c64d38e316c7e6c6099300e3f87ddf617",
+    "outputs/rm1-co.stdout.txt": "85d3cb5349fa4d1b0cf6f2699a3f11b41bdcbe2ee38108a73ad7064a5986f820",
+    "outputs/rm1-water.arc.txt": "60b176ab20871447386cc92dca0fc07b311adff7968de4be20fa8dd6288eda17",
+    "outputs/rm1-water.aux.txt": "e81a88c8ad093f330d0649422f113f8c25573d593943a81b67ea180a2519ea5a",
+    "outputs/rm1-water.out.txt": "0605596a493d99d1afcdc4be47700afb24bfb288ba5b3027ce14a3b60d87bbbc",
+    "outputs/rm1-water.stdout.txt": "ceb4b46c5f56fa066e1f54eab0ddf5e1f82382a227a9556b0d914aa43c762c58"
+  }
+}

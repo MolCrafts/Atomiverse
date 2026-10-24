@@ -74,6 +74,13 @@ class Backend {
     /// @param end_phase First excluded phase index [dimensionless].
     /// @throws std::invalid_argument If the range is outside the loaded plan.
     void execute_phases(BigInt step_idx, int first_phase, int end_phase);
+    /// Dispatch a child schedule using the same lifecycle, requests and streams.
+    /// Nested dispatch is included in its parent's timer entry, not timed twice.
+    void execute_phases(const Plan<Component>& plan, BigInt step_idx,
+                        int first_phase, int end_phase);
+
+    /// Stable mutation lock borrowed by mounted child drivers.
+    const bool* mutation_lock() const { return &dispatching_; }
 
     /// Establish force/scalar readiness without advancing the trajectory.
     void prepare_run(BigInt step_idx = 0);
@@ -109,6 +116,7 @@ class Backend {
     void publish_box_();
     detail::ComponentLifecycle<Component> lifecycle_;
     bool forces_ready_ = false;
+    bool dispatching_ = false;
     std::vector<std::pair<int, Component*>> force_bindings_;
     cuda::Context context_{}; ///< CUDA stream handles.
     cuda::Frame frame_{};     ///< Device-resident system state + host metadata.

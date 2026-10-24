@@ -311,6 +311,13 @@ the PME discretization budget at 0.5 Å / order 6; the equivalent C++ case
 
 ## AM1 semiempirical single point, forces and BOMD
 
+This section uses **CPU AM1**. C++ also has CPU RM1 and a restricted CUDA
+AM1/RM1 energy/charge/analytic-force implementation with short MD and
+steepest-descent composition checks. Neither RM1 nor CUDA NDDO has matching
+Python bindings yet; these C++ checks do not establish Python CUDA support. `device="cuda"` does not turn `av.AM1` into the native
+CUDA method. CPU NDDO is molecular and closed shell; non-singlet requests
+are rejected even though the constructor accepts a `multiplicity` argument.
+
 **AM1** — *Austin Model 1* — is a **semiempirical** electronic-structure
 method: it solves an approximate quantum model of the valence electrons in
 which most of the expensive electron-electron integrals are dropped (the NDDO
@@ -331,41 +338,37 @@ import atomiverse as av
 
 # `frame` is a molpy.Frame with x/y/z + atomic_number columns.
 am1 = av.AM1(charge=0)
-av.single_point(frame, am1)                    # energy + charges onto frame
+av.single_point(frame, am1)                    # overwrite energy + charges; preserve forces
 q = np.asarray(frame["atoms"]["charge"])       # Mulliken charges [e]
 res = am1.last_result()                        # Hartree / kcal-mol detail
 print(res.heat_of_formation_kcal_mol, res.iterations)
 ```
 
-`forces(frame)` runs the same solve and *returns* the gradient as an
+`forces(frame)` runs the same solve and *returns* the forces (negative energy
+gradient) as an
 `(n_atoms, 3)` array [eV/Å], writing the same numbers into the frame's
 fx/fy/fz columns:
 
 ```python
 f = am1.forces(frame)         # (n_atoms, 3) [eV/Å]
-print(f.sum(axis=0))          # exactly 0 — see below, this is not a check
+print(f.sum(axis=0))          # near 0 from equal-and-opposite pair contributions
 ```
 
-The gradient is a **central finite difference of the energy at fixed
-density**, with a step of `h = 1e-4` Å per Cartesian component. The SCF loop —
-*self-consistent field*, the iteration that re-solves the electrons in the
-averaged field they themselves generate, until the two agree — is run once;
-then its converged electron density `P` is held while the energy is
-re-evaluated at the displaced geometries and differenced.
+CPU AM1 and RM1 compute **analytic forces** by propagating three Cartesian
+derivatives through each pair's one-electron, two-electron and core-repulsion
+expressions, then contracting with the converged density. No displaced
+geometries are needed for forces; the model parameters are unchanged.
 
-Holding `P` fixed is not where the approximation lives. At convergence the
-energy is stationary against any change of the density that keeps the electron
-count, so the density-response part of `dE/dR` drops out; and NDDO treats its
-orbital basis as orthonormal, so there is no basis-derivative ("Pulay") term to
-recover either. What is approximate is the difference quotient itself, which
-reproduces the exact NDDO gradient to `O(h²)` plus round-off. Closed-form NDDO
-derivatives are a separate engine queue.
-
-One consequence worth knowing before you use it as a sanity check: only
-`3·(n_atoms − 1)` differences are actually taken, and the force on the last
-atom is filled in as minus the sum of all the others — exact for an isolated
-molecule, since a rigid translation cannot change `E`. So `f.sum(axis=0)` is
-zero *by construction* and tells you nothing about the quality of the gradient.
+The SCF solve must satisfy both `density_tol` and `energy_tol`. At electronic
+stationarity the density-response term vanishes, and the NDDO orthonormal
+basis has no overlap Pulay term. Incomplete SCF convergence still limits force
+accuracy. Equal-and-opposite pair contributions make the net force vanish to
+round-off; this alone does not validate individual force components. The
+existing AM1/RM1 C++ regression independently checks all force components
+against executed OpenMOPAC 23.2.5 H₂O, CO and NH₃ fixtures for both methods.
+See the [semiempirical roadmap](../roadmap/semiempirical.md) for the exact
+element, backend and evidence limits; passing the AM1 Python suite does not
+establish RM1/CUDA Python support.
 
 ### Born-Oppenheimer MD
 
@@ -389,9 +392,12 @@ sim.run(frame, 100)
 print(frame.meta["energy"], frame.meta["kinetic"])   # [eV]
 ```
 
-The driver mounts its own copy of the method's five SCF
-parameters, so `am1.last_result()` is *not* updated by `run()`; the per-step
-results (energy, charges, forces) land on the frame.
+The Python driver constructs its own method from the supplied parameters.
+It retains that method's SCF workspace and accepted density during the run;
+initial-force preparation and trial evaluations do not advance the accepted
+electronic guess. The standalone `am1.last_result()` object is not updated by
+`sim.run()`; per-step energy, charges and forces land on the Frame. This
+Python ownership rule does not apply to a C++ `.add_ref(method)` mount.
 
 ## Gaussian SCF single point and forces
 
@@ -1221,7 +1227,7 @@ A pinned example: Si₂ in the fcc primitive cell at *a* = 5.43 Å with one atom
 displaced +0.08 Å along *x*, `GTH-PBE-q4`, `ecut_ry = 8`, Γ-only
 (`k_mesh = 1`), `tol = 1e-6`, `max_iter = 40`, `xc = "LSDA"` gives
 max|F| = 2.517979 eV/Å — the CPU number
-section `cuda-pw-forces` of case `pw/rks` pins (GH200 job 1050105), where
+section `cuda-pw-forces` of case `pw/rks` pins, where
 it is the oracle for the CUDA twin.
 
 ### Plane-wave Born-Oppenheimer MD

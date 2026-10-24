@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
@@ -18,6 +19,117 @@
 #include "harness/registry.h"
 
 namespace atv_reg_multiscale_qmmm_es_h2o_pyscf {
+
+namespace {
+
+struct HistoryRequest : ATV::cpu::Component {
+    int& mode;
+    bool clear;
+    HistoryRequest(int& m, bool reset) : mode(m), clear(reset) {}
+    std::string name() const override { return "qmmm_history_request"; }
+    void launch(const ATV::cpu::LaunchContext& ctx) override {
+        ctx.runtime.exec.initializing_forces = !clear && mode == 1;
+        ctx.runtime.exec.trial_evaluation = !clear && mode == 2;
+    }
+};
+
+bool check_embedding_history(const ATV::cpu::Frame& reference) {
+    using namespace ATV;
+    cpu::scf::RHF normal{cpu::scf::BasisSet::STO3G};
+    cpu::scf::RHF probed{cpu::scf::BasisSet::STO3G};
+    const auto fail = [](const char* quantity, int step, double got,
+                         double want, double tolerance) {
+        std::fprintf(
+            stderr,
+            "FAIL: RHF QM/MM %s step=%d got=%.16e want=%.16e tol=%.3e\n",
+            quantity, step, got, want, tolerance);
+        return false;
+    };
+    normal.tol = probed.tol = 1e-12;
+    normal.max_iter = probed.max_iter = 200;
+    normal.predictor(1, 2, 1e-12, true);
+    probed.predictor(1, 2, 1e-12, true);
+    cpu::QmmmElectrostatic plain_qm{{}, 10, 20}, probe_qm{{}, 10, 20};
+    plain_qm.set_engine_ref(normal);
+    probe_qm.set_engine_ref(probed);
+    cpu::Evaluate plain, with_probes;
+    int mode = 0;
+    plain.on(evaluate::Phase::evaluate).add_ref(plain_qm);
+    with_probes.on(evaluate::Phase::evaluate)
+        .add(HistoryRequest{mode, false}, -1);
+    with_probes.on(evaluate::Phase::evaluate).add_ref(probe_qm);
+    with_probes.on(evaluate::Phase::evaluate)
+        .add(HistoryRequest{mode, true}, 1);
+    plain.set_threads(1);
+    with_probes.set_threads(1);
+    plain.build();
+    with_probes.build();
+    for (mode = 1; mode <= 2; ++mode) {
+        auto probe = reference;
+        probe.span(kAtom_x)[1] += 0.02 * mode;
+        with_probes.run(probe);
+    }
+    for (int step = 0; step < 4; ++step) {
+        mode = 0;
+        auto a = reference;
+        a.span(kAtom_y)[1] += 0.01 * step;
+        auto b = a;
+        plain.run(a);
+        with_probes.run(b);
+        if (normal.iterations() != probed.iterations())
+            return fail("iterations", step, probed.iterations(),
+                        normal.iterations(), 0);
+        if (std::abs(a.meta.get(kEnergy) - b.meta.get(kEnergy)) > 1e-9)
+            return fail("energy", step, b.meta.get(kEnergy),
+                        a.meta.get(kEnergy), 1e-9);
+        const AccReal* af[] = {a.span(kAtom_fx), a.span(kAtom_fy),
+                               a.span(kAtom_fz)};
+        const AccReal* bf[] = {b.span(kAtom_fx), b.span(kAtom_fy),
+                               b.span(kAtom_fz)};
+        for (int i = 0; i < 5; ++i)
+            for (int d = 0; d < 3; ++d)
+                if (std::abs(af[d][i] - bf[d][i]) > 1e-8) {
+                    std::fprintf(stderr, "atom=%d axis=%d ", i, d);
+                    return fail("force", step, bf[d][i], af[d][i], 1e-8);
+                }
+        probe_qm.reset_history_each_launch() = true;
+        for (mode = 1; mode <= 2; ++mode) {
+            auto trial = b;
+            trial.span(kAtom_z)[2] += 0.08 * mode;
+            with_probes.run(trial);
+        }
+        probe_qm.reset_history_each_launch() = false;
+        mode = 0;
+        auto failed = b;
+        failed.span(kAtom_z)[2] += 0.3;
+        probed.max_iter = 1;
+        bool rejected = false;
+        try {
+            with_probes.run(failed);
+        } catch (const std::runtime_error&) {
+            rejected = true;
+        }
+        probed.max_iter = 200;
+        if (!rejected)
+            return fail("failed SCF rejected", step, 0, 1, 0);
+        if (probed.converged())
+            return fail("failed SCF converged", step, 1, 0, 0);
+    }
+    // Parent release must restore the borrowed method's standalone posture.
+    auto replay = reference;
+    {
+        cpu::Evaluate another;
+        another.on(evaluate::Phase::evaluate).add_ref(probe_qm);
+        another.set_threads(1);
+        another.build();
+        another.run(replay);
+    }
+    if (!probed.converged())
+        return fail("new parent retry converged", 4, 0, 1, 0);
+    return true;
+}
+
+} // namespace
 
 int run() {
     using namespace ATV;
@@ -116,6 +228,12 @@ int run() {
 
     if (!(max_err < tol) || !(net < 1e-9)) {
         std::printf("FAIL\n");
+        return 1;
+    }
+    if (!check_embedding_history(frame)) {
+        std::fprintf(
+            stderr,
+            "FAIL: QM/MM predictor history or failed-retry isolation\n");
         return 1;
     }
     std::printf("PASS\n");

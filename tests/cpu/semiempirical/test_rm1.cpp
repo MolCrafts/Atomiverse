@@ -11,10 +11,10 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
-#include "atomiverse/cpu/semiempirical/rm1_parameters.h"
 #include "atomiverse/cpu/semiempirical/rm1_solver.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/rm1_parameters.h"
 
 using namespace ATV;
 using namespace ATV::cpu::semiempirical;
@@ -58,16 +58,17 @@ TEST(RM1, IsQmEngineAndNddoDriver) {
 }
 
 TEST(RM1, ParameterLookup) {
-    EXPECT_TRUE(rm1_has_parameter(1));
-    EXPECT_TRUE(rm1_has_parameter(6));
-    EXPECT_TRUE(rm1_has_parameter(8));
-    EXPECT_FALSE(rm1_has_parameter(2)); // He not in v1 table
-    const auto* h = rm1_parameter(1);
+    EXPECT_TRUE(ATV::semiempirical::rm1_has_parameter(1));
+    EXPECT_TRUE(ATV::semiempirical::rm1_has_parameter(6));
+    EXPECT_TRUE(ATV::semiempirical::rm1_has_parameter(8));
+    EXPECT_FALSE(
+        ATV::semiempirical::rm1_has_parameter(2)); // He not in v1 table
+    const auto* h = ATV::semiempirical::rm1_parameter(1);
     ASSERT_NE(h, nullptr);
     EXPECT_NEAR(h->uss, -11.960677, 1e-6);
-    const auto* c = rm1_parameter(6);
+    const auto* c = ATV::semiempirical::rm1_parameter(6);
     ASSERT_NE(c, nullptr);
-    EXPECT_NE(c->uss, am1_parameter(6)->uss);
+    EXPECT_NE(c->uss, ATV::semiempirical::am1_parameter(6)->uss);
 }
 
 TEST(RM1, UnsupportedElementThrows) {

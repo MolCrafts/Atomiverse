@@ -143,9 +143,10 @@ class UHF : public cuda::Driver<ATV::scf::Phase>,
   private:
     void cache_host_types(const cpu::Frame& frame);
     void wire_stages_();
-    int drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget);
+    int drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
+                    bool host_current = false);
     void step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step);
-    void assemble_(cuda::Context& ctx, cuda::Frame& frame);
+    void assemble_(cuda::Context& ctx, cuda::Frame& frame, bool host_current);
     void seed_minao_(cuda::Context& ctx, cuda::Frame& frame);
     void release_engine_();
     void assemble_forces_(cuda::Context& ctx, cuda::Frame& frame);

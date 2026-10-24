@@ -14,12 +14,11 @@ QmmmElectrostatic::QmmmElectrostatic(std::vector<LJTypeCoeff> cross_lj,
 }
 
 void QmmmElectrostatic::build(const BuildContext& ctx) {
-    sub_.build(ctx.frame,
-               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1);
+    sub_.build(ctx, cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1);
 }
 
 void QmmmElectrostatic::launch(const LaunchContext& ctx) {
-    sub_.launch(ctx.frame, ctx.forces_requested, e_qm_);
+    sub_.launch(ctx, e_qm_);
     e_vdw_ = vdw_.launch(ctx.frame, sub_.qm_rows(), ctx.forces_requested);
     ctx.frame.meta.get(kEnergy) += e_vdw_;
     // VdW is classical cross term — not counted in kEnergyElectronic.

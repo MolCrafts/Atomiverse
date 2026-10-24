@@ -1,13 +1,12 @@
-/// @file src/cpu/semiempirical/am1_parameters.cpp
+/// @file src/semiempirical/am1_parameters.cpp
 /// @brief AM1 parameter table ported from AM1 reference.
 
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
 
 #include <stdexcept>
 #include <string>
 
 namespace ATV {
-namespace cpu {
 namespace semiempirical {
 namespace {
 
@@ -1786,5 +1785,4 @@ double am1_atomic_heat_kcal_mol(int z) {
 }
 
 } // namespace semiempirical
-} // namespace cpu
 } // namespace ATV

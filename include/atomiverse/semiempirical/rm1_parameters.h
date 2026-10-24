@@ -1,13 +1,12 @@
-/// @file cpu/semiempirical/rm1_parameters.h
+/// @file semiempirical/rm1_parameters.h
 /// @brief RM1 parameter accessors (same `AM1Parameter` shape as AM1).
 ///
 /// Coverage v1: H, C, N, O, P, S. Unsupported Z returns null / throws on heat.
 #pragma once
 
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
 
 namespace ATV {
-namespace cpu {
 namespace semiempirical {
 
 /// @brief Return RM1 parameters for atomic number `z`, or null when absent.
@@ -21,5 +20,4 @@ bool rm1_has_parameter(int z) noexcept;
 double rm1_atomic_heat_kcal_mol(int z);
 
 } // namespace semiempirical
-} // namespace cpu
 } // namespace ATV

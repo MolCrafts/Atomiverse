@@ -5,11 +5,10 @@
 
 #include <algorithm>
 #include <stdexcept>
-#include <utility>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
 #include "atomiverse/cpu/semiempirical/nddo_two_electron.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
 
 namespace ATV {
 namespace cpu {
@@ -36,18 +35,6 @@ void set_matrix(std::vector<double>& values, int dim, int row1, int col1,
 double matrix_value(const std::vector<double>& values, int dim, int row0,
                     int col0) {
     return values[square_index(row0, col0, dim)];
-}
-
-std::vector<std::pair<int, int>> local_pairs(int n_orbitals) {
-    std::vector<std::pair<int, int>> pairs;
-    pairs.reserve(static_cast<std::size_t>(n_orbitals)
-                  * static_cast<std::size_t>(n_orbitals + 1) / 2u);
-    for (int i = 0; i < n_orbitals; ++i) {
-        for (int j = 0; j <= i; ++j) {
-            pairs.emplace_back(i, j);
-        }
-    }
-    return pairs;
 }
 
 void validate_packed_size(const char* name, int n_orbitals,
@@ -193,46 +180,57 @@ std::vector<double> NDDOFockBuilder::add_two_center(
     }
 
     std::vector<double> fock = one_center_fock;
+    // One bounded s/p block is overwritten per pair; no all-pairs cache.
+    NDDOTwoCenterIntegralBlock w;
     // Coordinates are hoisted by the caller (run / force) so the per-pair
     // two-center block path never re-resolves Frame keys (13.7× rule).
     for (std::size_t i = 0; i < system.atoms.size(); ++i) {
         const auto& atom_i = system.atoms[i];
-        const auto pairs_i = local_pairs(atom_i.n_orbitals);
         for (std::size_t j = 0; j < i; ++j) {
             const auto& atom_j = system.atoms[j];
-            const auto pairs_j = local_pairs(atom_j.n_orbitals);
-            const auto w = build_two_center_integral_block(
-                system, sp_x, sp_y, sp_z, static_cast<int>(i),
-                static_cast<int>(j));
+            build_two_center_integral_block(system, sp_x, sp_y, sp_z,
+                                            static_cast<int>(i),
+                                            static_cast<int>(j), w);
 
-            for (std::size_t pi = 0; pi < pairs_i.size(); ++pi) {
-                const auto [li_a, li_b] = pairs_i[pi];
-                const int ao_a = atom_i.first_ao + li_a;
-                const int ao_b = atom_i.first_ao + li_b;
-                const auto ab = packed_index(ao_a, ao_b);
-                const double mult_i = li_a == li_b ? 1.0 : 2.0;
+            // Preserve the former local_pairs order exactly: (0,0), (1,0),
+            // (1,1), ... . This leaves the Fock accumulation order unchanged.
+            for (int li_a = 0; li_a < atom_i.n_orbitals; ++li_a) {
+                for (int li_b = 0; li_b <= li_a; ++li_b) {
+                    const int pi = local_pair_index0(li_a + 1, li_b + 1);
+                    const int ao_a = atom_i.first_ao + li_a;
+                    const int ao_b = atom_i.first_ao + li_b;
+                    const auto ab = packed_index(ao_a, ao_b);
+                    const double mult_i = li_a == li_b ? 1.0 : 2.0;
 
-                for (std::size_t pj = 0; pj < pairs_j.size(); ++pj) {
-                    const auto [lj_c, lj_d] = pairs_j[pj];
-                    const int ao_c = atom_j.first_ao + lj_c;
-                    const int ao_d = atom_j.first_ao + lj_d;
-                    const auto cd = packed_index(ao_c, ao_d);
-                    const double mult_j = lj_c == lj_d ? 1.0 : 2.0;
-                    const double wij =
-                        w.at(static_cast<int>(pi), static_cast<int>(pj));
+                    for (int lj_c = 0; lj_c < atom_j.n_orbitals; ++lj_c) {
+                        for (int lj_d = 0; lj_d <= lj_c; ++lj_d) {
+                            const int pj =
+                                local_pair_index0(lj_c + 1, lj_d + 1);
+                            const int ao_c = atom_j.first_ao + lj_c;
+                            const int ao_d = atom_j.first_ao + lj_d;
+                            const auto cd = packed_index(ao_c, ao_d);
+                            const double mult_j = lj_c == lj_d ? 1.0 : 2.0;
+                            const double wij = w.at(pi, pj);
 
-                    fock[ab] += mult_j * total_density[cd] * wij;
-                    fock[cd] += mult_i * total_density[ab] * wij;
+                            fock[ab] += mult_j * total_density[cd] * wij;
+                            fock[cd] += mult_i * total_density[ab] * wij;
 
-                    const double exchange = 0.25 * mult_i * mult_j * wij;
-                    fock[packed_index(ao_a, ao_c)] -=
-                        exchange * spin_density[packed_index(ao_b, ao_d)];
-                    fock[packed_index(ao_a, ao_d)] -=
-                        exchange * spin_density[packed_index(ao_b, ao_c)];
-                    fock[packed_index(ao_b, ao_c)] -=
-                        exchange * spin_density[packed_index(ao_a, ao_d)];
-                    fock[packed_index(ao_b, ao_d)] -=
-                        exchange * spin_density[packed_index(ao_a, ao_c)];
+                            const double exchange =
+                                0.25 * mult_i * mult_j * wij;
+                            fock[packed_index(ao_a, ao_c)] -=
+                                exchange
+                                * spin_density[packed_index(ao_b, ao_d)];
+                            fock[packed_index(ao_a, ao_d)] -=
+                                exchange
+                                * spin_density[packed_index(ao_b, ao_c)];
+                            fock[packed_index(ao_b, ao_c)] -=
+                                exchange
+                                * spin_density[packed_index(ao_a, ao_d)];
+                            fock[packed_index(ao_b, ao_d)] -=
+                                exchange
+                                * spin_density[packed_index(ao_a, ao_c)];
+                        }
+                    }
                 }
             }
         }

@@ -1,4 +1,4 @@
-/// @file src/cpu/semiempirical/rm1_parameters.cpp
+/// @file src/semiempirical/rm1_parameters.cpp
 /// @brief RM1 parameter table.
 ///
 /// Electronic parameters from Rocha et al., J. Comput. Chem. 27, 1101 (2006),
@@ -13,12 +13,11 @@
 /// obtained by perturbing the AM1 value — each is recomputed here from this
 /// table's own row. `tests/cpu/semiempirical/test_nddo_calpar_derived.cpp`
 /// re-derives all six for every AM1 and RM1 row and fails if they drift.
-#include "atomiverse/cpu/semiempirical/rm1_parameters.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/rm1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
 #include <stdexcept>
 #include <string>
 namespace ATV {
-namespace cpu {
 namespace semiempirical {
 namespace {
 constexpr AM1Parameter kRM1Parameters[] = {
@@ -287,5 +286,4 @@ double rm1_atomic_heat_kcal_mol(int z) {
 }
 
 } // namespace semiempirical
-} // namespace cpu
 } // namespace ATV

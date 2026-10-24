@@ -13,7 +13,7 @@ namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-using RM1Result = NDDOResult;
+using RM1Result = ATV::semiempirical::NDDOResult;
 
 /// @brief RM1 concrete semiempirical method.
 ///
@@ -27,9 +27,6 @@ class RM1 : public NddoMethod, public cpu::QmEngine {
     int max_iter = 200;
     double density_tol = 1.0e-8;
     double energy_tol = 1.0e-10;
-    /// @brief Finite-difference displacement \(h\) [Å] of `forces()`;
-    ///        truncation error \(O(h^{2})\).
-    double force_step = 1.0e-4;
 
     /// @brief Construct with SCF parameters assigned immediately.
     /// @param charge Total molecular charge [e].
@@ -40,26 +37,23 @@ class RM1 : public NddoMethod, public cpu::QmEngine {
     explicit RM1(int charge = 0, int multiplicity = 1, int max_iter = 200,
                  double density_tol = 1.0e-8, double energy_tol = 1.0e-10);
     ~RM1();
-    RM1(RM1&&) noexcept;
+    RM1(RM1&&);
     RM1& operator=(RM1&&) = delete;
     RM1(const RM1&) = delete;
     RM1& operator=(const RM1&) = delete;
 
     void build(const cpu::Frame& reference);
     RM1Result& run(const cpu::Frame& frame);
-    /// @brief `run(const Frame&)`, then writes the total energy [eV] to
-    ///        `frame.meta[kEnergy]`.
-    /// @param frame Geometry [Å]; energy out.
+    /// @brief Write total energy [eV] and Mulliken charges [e], preserving forces.
+    /// @param frame Geometry [Å]; energy and charges out (overwritten).
     /// @return `last_result()`.
     /// @throws std::runtime_error if the SCF does not converge in `max_iter`.
     RM1Result& run(cpu::Frame& frame);
 
-    /// @brief SCF + nuclear forces \(F = -\partial E/\partial R\) [eV/Å] by
-    ///        central finite difference of the energy at the converged
-    ///        density (step `force_step`).
+    /// @brief SCF + analytic nuclear forces \(F = -\partial E/\partial R\) [eV/Å]
+    ///        contracted from pair-integral derivatives at converged density.
     ///
-    /// See `NDDOSolver::compute_forces` for why holding the density fixed is
-    /// exact here and what the difference step costs in accuracy. Writes
+    /// See `NDDOSolver::compute_forces` for the stationary-density derivative. Writes
     /// `kAtom_fx/fy/fz` [eV/Å] (overwritten, not accumulated) and
     /// `frame.meta[kEnergy]` [eV].
     /// @param frame Geometry [Å]; forces and energy out.
@@ -89,7 +83,7 @@ class RM1 : public NddoMethod, public cpu::QmEngine {
     /// `kEnergyElectronic`, Mulliken charges [e] to `kAtom_charge`, and —
     /// when asked — forces [eV/Å] to `kAtom_f{x,y,z}`.
     /// @param frame Target frame; geometry in, results out.
-    /// @param forces_requested Also compute finite-difference forces.
+    /// @param forces_requested Also compute analytic forces.
     /// @param accumulate true → `+=` energy/forces; false → `=`. Charges
     ///        always overwrite.
     void publish(cpu::Frame& frame, bool forces_requested,

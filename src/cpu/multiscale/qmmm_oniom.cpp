@@ -13,14 +13,13 @@ QmmmOniom::QmmmOniom(std::vector<LJTypeCoeff> low_lj, double cutoff,
 
 void QmmmOniom::build(const BuildContext& ctx) {
     // High level is vacuum QM on the model (+ links); no embedding.
-    sub_.build(ctx.frame,
-               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+    sub_.build(ctx, cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
                /*require_embedding=*/false);
 }
 
 void QmmmOniom::launch(const LaunchContext& ctx) {
     // E_high(model): QmSubsystem accumulates e_high into kEnergy / electronic.
-    sub_.launch(ctx.frame, ctx.forces_requested, e_high_);
+    sub_.launch(ctx, e_high_);
 
     // E_low(real) − E_low(model), with matching force signs.
     e_low_real_ = low_.launch(ctx.frame, /*rows=*/{}, ctx.forces_requested,

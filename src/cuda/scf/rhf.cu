@@ -46,6 +46,7 @@
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
+#include "atomiverse/cuda/scf/internal/nuclear_identity.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_scf_cycle.cuh"
 
 namespace ATV {
@@ -189,6 +190,7 @@ class RhfConverged : public cuda::Criterion {
 
 struct RhfLoopState {
     EngineSlot slot;
+    internal::NuclearIdentity identity;
     RhfStage fock;
     RhfStage mix;
     RhfStage diag;
@@ -274,20 +276,29 @@ void RHF::release_engine_() {
     loop_->slot.frame = nullptr;
 }
 
-void RHF::assemble_(cuda::Context& ctx, cuda::Frame& frame,
-                    bool nuclear_forces) {
+void RHF::assemble_(cuda::Context& ctx, cuda::Frame& frame, bool nuclear_forces,
+                    bool host_current) {
     const int natm = frame.n_atoms();
     if (natm <= 0) {
         throw std::invalid_argument(
             "cuda::scf::RHF: device frame has no atoms");
     }
-    if (static_cast<int>(host_Z_.size()) != natm) {
-        host_Z_.resize(static_cast<std::size_t>(natm));
-        auto* stream = static_cast<cudaStream_t>(ctx.stream);
-        cudaMemcpyAsync(host_Z_.data(), frame.atoms.type,
-                        sizeof(int) * static_cast<std::size_t>(natm),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
+    auto stream = static_cast<cudaStream_t>(ctx.stream);
+    // Host entry points already inspected the exact incoming identity. Nested
+    // entries compare on device and return only a boolean; coordinates can
+    // change without repeatedly transferring the nuclear-charge array.
+    const bool changed =
+        host_current
+        || !loop_->identity.matches(frame.atoms.type, natm, stream);
+    if (changed) {
+        if (!host_current) {
+            host_Z_.resize(static_cast<std::size_t>(natm));
+            ATV_CUDA_CHECK(cudaMemcpyAsync(host_Z_.data(), frame.atoms.type,
+                                           natm * sizeof(int),
+                                           cudaMemcpyDeviceToHost, stream));
+            ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+        }
+        loop_->identity.record(frame.atoms.type, natm, stream);
     }
     const int* h_Z = host_Z_.data();
 
@@ -395,17 +406,21 @@ void RHF::step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step) {
 }
 
 int RHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
-                     bool nuclear_forces) {
+                     bool nuclear_forces, bool host_current) {
     struct Guard {
         RHF* self;
-        ~Guard() { self->release_engine_(); }
-    } guard{this};
+        cuda::Context& context;
+        cuda::LoopServices parent_loop;
+        ~Guard() {
+            context.loop = parent_loop;
+            self->release_engine_();
+        }
+    } guard{this, ctx, ctx.loop};
 
-    assemble_(ctx, frame, nuclear_forces);
+    assemble_(ctx, frame, nuclear_forces, host_current);
     const bool device = loop_->slot.cycle->device_integrals();
     loop_->slot.cycle->begin(ctx.stream);
 
-    const cuda::LoopServices saved = ctx.loop;
     ctx.loop.status = &this->status_;
     ctx.loop.metrics = &this->metrics_;
     this->status_.reset();
@@ -426,7 +441,6 @@ int RHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
     pull_energy_(ctx, frame);
     this->iterations_ = iters;
     last_device_sp_ = device;
-    ctx.loop = saved;
     return iters;
 }
 
@@ -436,7 +450,8 @@ void RHF::build_on(cuda::Context&, cuda::Frame&) {
 }
 
 int RHF::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame, int budget) {
-    return drive_loop_(ctx, frame, budget, compute_force);
+    return drive_loop_(ctx, frame, budget,
+                       compute_force && ctx.exec.forces_requested);
 }
 
 void RHF::release_backend_() {
@@ -457,7 +472,7 @@ void RHF::run(cpu::Frame& frame) {
     this->setup_pass(frame);
     try {
         drive_loop_(this->backend_->context(), this->backend_->frame(),
-                    max_iter, compute_force);
+                    max_iter, compute_force, /*host_current=*/true);
     } catch (...) {
         this->teardown_pass(frame);
         throw;
@@ -473,7 +488,7 @@ void RHF::run(const cpu::Frame& frame) {
     this->setup_pass(scratch);
     try {
         drive_loop_(this->backend_->context(), this->backend_->frame(),
-                    max_iter, /*nuclear_forces=*/false);
+                    max_iter, /*nuclear_forces=*/false, /*host_current=*/true);
         release_backend_();
     } catch (...) {
         release_backend_();

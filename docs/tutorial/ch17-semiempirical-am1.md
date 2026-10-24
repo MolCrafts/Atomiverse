@@ -31,59 +31,94 @@ $$\Delta H_f^{\mathrm{model}}=E_{\mathrm{mol}}^{\mathrm{model}}
 Record the convention before comparing programs. Neither value should be
 subtracted indiscriminately from an ab initio energy with a different zero.
 
-Forces must differentiate the actual parameterized energy. A central
-difference remains a numerical derivative with truncation and round-off
-error, even if electronic stationarity eliminates explicit orbital response.
-The preserved implementation discussion describes its own derivative route;
-do not relabel it analytic without checking the code revision.
+Forces must differentiate the actual parameterized energy. CPU and CUDA AM1/RM1
+use analytic pair-integral derivatives within their supported element envelopes.
+Electronic stationarity is essential: both the density and energy convergence
+tolerances must be satisfied before forces are published.
 
-## What AM1 computes
+## What AM1 and RM1 compute
 
 | Quantity | Units | Where |
 |----------|-------|--------|
 | Total energy \(E_\mathrm{elec}+E_\mathrm{nuc}\) | eV | `frame.meta.get(kEnergy)` |
-| Heat of formation \(\Delta H_f\) (MOPAC-style) | kcal/mol | `AM1Result::heat_of_formation_kcal_mol` |
+| Heat of formation \(\Delta H_f\) (MOPAC-style) | kcal/mol | `last_result().heat_of_formation_kcal_mol` |
 | Mulliken-like charges | e | `kAtom_charge` |
 | Nuclear forces | eV/Å | `kAtom_fx/fy/fz` when the phase requests forces |
 
-Heat of formation follows the openmopac definition:
+Heat of formation follows the OpenMOPAC convention:
 
 \[
-\Delta H_f = (E_\mathrm{tot} - \sum_A e_\mathrm{isol}(A))\cdot 23.061
+\Delta H_f = (E_\mathrm{tot} - \sum_A e_\mathrm{isol}(A))\cdot c_{\mathrm{eV}\to\mathrm{kcal/mol}}
   + \sum_A E_\mathrm{atom}(A)
 \]
 
-with \(e_\mathrm{isol}\) from the AM1 parameter table and \(E_\mathrm{atom}\)
-the experimental gas-phase atomic heats at 298 K.
+with \(e_\mathrm{isol}\) from the selected method's parameter table,
+\(E_\mathrm{atom}\) the experimental gas-phase atomic heats at 298 K, and
+the repository's shared eV-to-kcal/mol conversion. Keep this convention and
+the reference program's printed precision with any numerical comparison.
 
-Forces are a **central finite difference of the energy functional at fixed
-density**: converge the SCF once, then displace one nucleus by \(\pm h\)
-(\(h = 10^{-4}\) Å by default), rebuild the geometry-dependent integrals and
-core–core repulsion with the density \(P\) unchanged, and difference the two
-energies.
+Forces use **three-direction analytic differentiation** of the same pair
+integrals and core–core repulsion as the energy. The derivatives are contracted
+with the converged density (P), without displaced geometries or differentiation
+through the SCF iterations.
 
-Freezing \(P\) costs no accuracy. At convergence the energy is stationary with
-respect to density variations that conserve the electron count, so the response
-term \((\partial E/\partial P)(dP/dR)\) vanishes; and NDDO's
-zero-differential-overlap approximation makes the orbital basis orthonormal, so
-there is no basis-derivative ("Pulay") term either. The approximation is the
-difference quotient, which equals the exact NDDO gradient to \(O(h^{2})\) plus
-round-off — which is why these forces match re-SCF energy finite differences.
-Regressions live under `semiempirical`.
+At electronic stationarity the orbital-response term vanishes. NDDO treats its
+secular orbital basis as orthonormal, so no overlap Pulay term is needed.
+Finite SCF tolerances still affect force accuracy; CPU AM1/RM1 require both
+`density_tol` and `energy_tol` to be met. The method parameters are unchanged.
 
-Only \(3(N-1)\) differences are evaluated: the force on the last atom is set to
-minus the sum of the others, exact because a rigid translation cannot change
-\(E\). The forces therefore sum to zero by construction.
+Each pair contributes equal-and-opposite forces, giving zero net force to
+round-off. Independent CPU/CUDA full-vector checks use executed OpenMOPAC 23.2.5
+outputs for distorted H₂O, tilted CO and NH₃, for both AM1 and RM1. The
+oracle numerical-gradient error is qualified separately from Atomiverse.
+These fixtures cover CHNO molecules; broader elements require their own
+external evidence. The [fixture record](../../tools/tb_oracle/inputs/mopac/live-23.2.5/README.md)
+contains the exact inputs, outputs and oracle gradient qualification. The
+vibrational Hessian remains a finite difference of forces.
 
 ## Model selection
 
-- Faster than RHF/STO-3G by roughly an order of magnitude for organics.
-- Same Driver presets as everything else — only the force/energy component
-  changes ([Comparing Models](ch15-cross-method.md)).
+- Cost and accuracy depend on the system, parameter coverage and convergence.
+  Measure complete calls at the required accuracy before choosing a backend.
+- CPU AM1/RM1 mount directly in Evaluate, MD and Minimize
+  ([Comparing Models](ch15-cross-method.md)). CUDA analytic forces and Evaluate
+  are verified in the CHNO envelope. Both CUDA methods also pass short MD
+  continuation and three-step steepest-descent checks. The examples below use CPU.
 - For metals and covalent solids prefer many-body classical potentials
   ([Many-Body Potentials](ch16-many-body-potentials.md)) or GPW/PW DFT.
 
 DFTB/xTB stay out of the NDDO family by design.
+
+## Backend and method boundaries
+
+CPU AM1/RM1 solve closed-shell molecules; open-shell requests throw. CPU retains
+its existing parameter coverage and closed-shell charged calculations. RM1's
+shipped table covers H/C/N/O/P/S; a parameter row is not evidence that every
+chemical environment has been externally validated. The independent complete
+force fixtures currently cover CHNO. A wrapping box can be used to unwrap one
+isolated CPU fragment; it does not introduce periodic electronic interactions.
+There is no NDDO lattice stress, solvent model or UHF implementation.
+
+The C++ CUDA types are `cuda::semiempirical::AM1` and `RM1`. They provide total
+energy, Mulliken charges, heat of formation and analytic forces for **neutral
+closed-shell CHNO isolated molecules in FP64**. `run(frame)` writes energy and charges while
+preserving existing forces. `run(const frame)` updates only the method result.
+`forces(frame)` overwrites energy, charges and forces. An explicit
+`last_result()` after a nested solve can download charges and requested forces.
+Stress, non-CHNO species, nonzero charge, open shells and periodic cells are
+rejected. CUDA Evaluate mounts the method directly and accumulates requested
+energy/force contributions; its results and failure/retry behavior are checked
+against standalone calls. Both CUDA methods pass initial-force preparation,
+2+2 versus four-step MD continuation and CPU/CUDA four-step agreement at
+`dt = 0.01 fs`. Three steepest-descent steps lower energy; this is not a
+converged optimization result. Actual line-search trial/rejection, host edits
+between chunks, longer NVE with a halved-time-step comparison and Python
+parity remain open.
+
+These methods implement NDDO scientific models using Atomiverse's own Driver,
+workspace and derivative flow. They do not provide the whole SQM method set or
+its input-file format. MNDO/PM3/PM6/PM7 and additional SQM facilities remain
+separate work.
 
 ## Practice plan
 
@@ -107,8 +142,19 @@ Preset (Evaluate / MD / Minimize / Hessian)
 ```
 
 The method itself is mounted in the outer loop; it runs its SCF on the
-parent's Runtime and accumulates energy, charges and — when the phase asks —
-forces onto the Frame. There is no evaluator wrapper.
+parent's Runtime. Mounted calls accumulate energy and requested forces, and
+write the method's atomic charges. There is no evaluator wrapper. Successful
+normal calls retain the accepted density as the next guess; initialization,
+trial evaluations and failed solves do not advance that accepted history.
+
+For standalone C++ calls, `run(Frame&)` overwrites energy and charges while
+preserving forces; `forces(Frame&)` overwrites all three. `run(const Frame&)`
+updates the method result without writing the Frame. First use builds the
+workspace automatically; `build(reference)` is available for explicit setup.
+`last_result()` exposes `ATV::semiempirical::NDDOResult` through the existing
+method result alias. Numerical tolerances and iteration limits can be changed
+between C++ solves; exhausting the budget raises an error rather than publishing
+a successful result.
 
 ## Example code
 
@@ -146,33 +192,22 @@ opt.build();
 opt.run(frame, 50);
 ```
 
-The following numerical material is retained from the source snapshot.
-It was not rerun for this editorial revision; match its input and provenance
-before using it as a validation target.
+## Validation and performance evidence
 
-## Reference results
+Use the executed OpenMOPAC fixtures for reproducible numerical targets, rather
+than mixing experimental heat of formation with a model total energy. The
+AM1 regression checks energy, heat of formation, charges and complete CPU
+force vectors for both AM1 and RM1 on CPU and CUDA, using the same six molecular
+fixtures. The numerical-gradient
+oracle's error budget is documented independently of Atomiverse's analytic
+implementation.
 
-Pinned results:
-
-| Quantity | Atomiverse | Reference |
-|----------|-----------:|----------:|
-| \(E\) (initial geometry) (eV) | **−348.295963** | — |
-| \(\Delta H_f\) (kcal/mol) | **−53.093** | −57.8 (expt / MOPAC target) |
-| \(q_\mathrm{O}\) (e) | **−0.3943** | O more negative than H |
-| max\|F\| before Minimize (eV/Å) | 3.3135 | — |
-| \(E\) after L-BFGS (eV) | **−348.562886** | lower |
-| max\|F\| after Minimize (eV/Å) | **0.1513** | converged (`force_converged`) |
-
-A ~5 kcal/mol error on water \(\Delta H_f\) is **typical for the AM1 model**,
-not a bug — the method is parametrized for heats of formation across organics,
-not exact on every molecule.
-
-### Charge polarity
-
-Oxygen carries the negative charge (\(q_O=-0.394\) e); hydrogens are positive
-(\(q_H\approx +0.197\) e each by symmetry so \(\sum q_i=0\)). In MolVis, use a
-darker colour for higher \(|q|\) when colouring by charge through the viewer
-API after `molvis:ready`; the table above is the quantitative record.
+The [standing force benchmark](../../benchmarks/semiempirical/nddo_forces/README.md)
+records CPU complete-call timings and measured C++ allocation counts. The
+[energy benchmark](../../benchmarks/semiempirical/nddo_energy/README.md) separates
+CPU/CUDA host-Frame calls from nested resident CUDA solves. Benchmark source
+alone establishes neither device residency nor a speedup; follow the current
+validation status in the roadmap before relying on a backend.
 
 ## Questions for reflection
 

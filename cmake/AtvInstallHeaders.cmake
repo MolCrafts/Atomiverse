@@ -59,7 +59,7 @@ function(atv_install_headers target)
         list(APPEND excluded "^(cpu|cuda)/evaluate/")
     endif()
     if(NOT ATV_BUILD_SEMIEMPIRICAL)
-        list(APPEND excluded "^cpu/semiempirical/"
+        list(APPEND excluded "^(cpu/|cuda/)?semiempirical/"
             "^cpu/multiscale/qmmm_(mechanical|oniom)\\.h$")
     endif()
     if(NOT ATV_BUILD_SEMIEMPIRICAL OR NOT ATV_BUILD_HF)

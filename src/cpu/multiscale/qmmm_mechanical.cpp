@@ -77,13 +77,12 @@ QmmmMechanical::QmmmMechanical(std::vector<LJTypeCoeff> cross_lj,
 
 void QmmmMechanical::build(const BuildContext& ctx) {
     // Any QmEngine; embedding never required.
-    sub_.build(ctx.frame,
-               cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+    sub_.build(ctx, cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
                /*require_embedding=*/false);
 }
 
 void QmmmMechanical::launch(const LaunchContext& ctx) {
-    sub_.launch(ctx.frame, ctx.forces_requested, e_qm_);
+    sub_.launch(ctx, e_qm_);
     e_vdw_ = vdw_.launch(ctx.frame, sub_.qm_rows(), ctx.forces_requested);
     e_coul_ = classical_qmmm_coulomb(ctx.frame, sub_.qm_rows(), coul_cutoff_,
                                      ctx.forces_requested);

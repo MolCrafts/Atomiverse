@@ -15,10 +15,10 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
-#include "atomiverse/cpu/semiempirical/rm1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/rm1_parameters.h"
 
-using namespace ATV::cpu::semiempirical;
+using namespace ATV::semiempirical;
 
 namespace {
 
@@ -38,7 +38,7 @@ struct CalparDerived {
 /// @brief Re-derive MOPAC's `calpar.F90` block for one parameter row.
 /// @param p Table row (primary parameters only are read).
 /// @return The six derived values in MOPAC's units.
-CalparDerived calpar(const AM1Parameter& p) {
+CalparDerived calpar(const ATV::semiempirical::AM1Parameter& p) {
     const int k = p.iop;
     const int l = std::min(k, 6 - k);
     const double gssc = std::max(p.ios - 1, 0);
@@ -113,7 +113,7 @@ CalparDerived calpar(const AM1Parameter& p) {
     return d;
 }
 
-void expect_row_matches_calpar(const AM1Parameter& p) {
+void expect_row_matches_calpar(const ATV::semiempirical::AM1Parameter& p) {
     const CalparDerived d = calpar(p);
     SCOPED_TRACE(testing::Message()
                  << "Z=" << p.atomic_number << " " << p.symbol);
@@ -130,7 +130,7 @@ void expect_row_matches_calpar(const AM1Parameter& p) {
 TEST(NddoCalparDerived, Am1TableIsSelfConsistent) {
     int rows = 0;
     for (int z = 1; z <= 100; ++z) {
-        const auto* p = am1_parameter(z);
+        const auto* p = ATV::semiempirical::am1_parameter(z);
         if (p == nullptr)
             continue;
         ++rows;
@@ -142,7 +142,7 @@ TEST(NddoCalparDerived, Am1TableIsSelfConsistent) {
 TEST(NddoCalparDerived, Rm1TableIsSelfConsistent) {
     int rows = 0;
     for (int z = 1; z <= 100; ++z) {
-        const auto* p = rm1_parameter(z);
+        const auto* p = ATV::semiempirical::rm1_parameter(z);
         if (p == nullptr)
             continue;
         ++rows;
@@ -152,8 +152,8 @@ TEST(NddoCalparDerived, Rm1TableIsSelfConsistent) {
 }
 
 TEST(NddoCalparDerived, Rm1OxygenEisolIsNotTheAm1Shift) {
-    const auto* o_rm1 = rm1_parameter(8);
-    const auto* o_am1 = am1_parameter(8);
+    const auto* o_rm1 = ATV::semiempirical::rm1_parameter(8);
+    const auto* o_am1 = ATV::semiempirical::am1_parameter(8);
     ASSERT_NE(o_rm1, nullptr);
     ASSERT_NE(o_am1, nullptr);
 

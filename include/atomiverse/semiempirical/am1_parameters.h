@@ -1,4 +1,4 @@
-/// @file cpu/semiempirical/am1_parameters.h
+/// @file semiempirical/am1_parameters.h
 /// @brief AM1 parameter accessors sourced from AM1 reference.
 ///
 /// The table in this module is intentionally a data layer, not an algorithm.
@@ -11,7 +11,6 @@
 #include <array>
 
 namespace ATV {
-namespace cpu {
 namespace semiempirical {
 
 /// @brief One element's AM1 MNDO-form parameters.
@@ -84,5 +83,4 @@ double am1_atomic_heat_kcal_mol(int z);
 inline constexpr double kAm1EvToKcalMol = 23.060547830619029;
 
 } // namespace semiempirical
-} // namespace cpu
 } // namespace ATV
