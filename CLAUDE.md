@@ -734,6 +734,11 @@ only on large systems. Wave-local freezes live in `.claude/notes/`.
   Report complete-call boundaries, cold/warm state, SCF controls/iterations,
   thread count and observed allocation/transfer/memory costs. A matrix-storage
   estimate or source inspection does not establish device residency.
+  Warm the actual measured kernels, including moving-geometry components.
+  Capture allocation lifetimes over the whole process and mark synchronized
+  steady intervals; count device-static initialization as well as allocator
+  APIs. Distinguish observed logical allocation peaks from driver reservations,
+  whole-device free-memory snapshots and cumulative host allocation traffic.
 
 ## Known debt (do not extend)
 

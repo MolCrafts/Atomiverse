@@ -7,10 +7,69 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/semiempirical/internal/nddo_solver.h"
+#include "atomiverse/cpu/semiempirical/nddo_density.h"
 
 namespace {
 using namespace ATV;
 using namespace ATV::cpu::semiempirical;
+
+TEST(NddoDensity, ReusesStorageAcrossSizesAndOccupationBranches) {
+    NDDODensityBuilder builder;
+    std::vector<double> density(10, std::numeric_limits<double>::quiet_NaN());
+    const auto* storage = density.data();
+    const auto capacity = density.capacity();
+    // Orthonormal columns: occupied (3/5, 4/5), virtual (-4/5, 3/5).
+    const std::vector<double> rotated{0.6, -0.8, 0.8, 0.6};
+    const NDDODensityInput small{2, 2, 1, 2.0, 1, 0.0, 1};
+    std::vector<double> identity(16, 0.0);
+    for (int i = 0; i < 4; ++i)
+        identity[5 * i] = 1.0;
+    for (const int mode : {1, 2, 1}) {
+        builder.build_packed(rotated, small, density);
+        ASSERT_EQ(density.size(), 3u);
+        EXPECT_NEAR(density[0], 0.72, 1e-15);
+        EXPECT_NEAR(density[1], 0.96, 1e-15);
+        EXPECT_NEAR(density[2], 1.28, 1e-15);
+        EXPECT_EQ(density.data(), storage);
+        // Fractional occupations (2,.5,.5,0). Modes 1 and 2 exercise the
+        // complementary-orbital and occupied-orbital expressions respectively.
+        const NDDODensityInput large{4, 4, 1, 2.0, 3, 0.5, mode};
+        builder.build_packed(identity, large, density);
+        ASSERT_EQ(density.size(), 10u);
+        const double expected[4] = {2.0, 0.5, 0.5, 0.0};
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j <= i; ++j)
+                EXPECT_DOUBLE_EQ(density[packed_index(i, j)],
+                                 i == j ? expected[i] : 0.0);
+        EXPECT_EQ(density.data(), storage);
+        EXPECT_EQ(density.capacity(), capacity);
+    }
+}
+
+TEST(NddoDensity, InvalidInputPreservesOutputAndAllowsRetry) {
+    NDDODensityBuilder builder;
+    const std::vector<double> coefficients{1.0, 0.0, 0.0, 1.0};
+    const NDDODensityInput valid{2, 2, 1, 2.0, 1, 0.0, 1};
+    std::vector<double> density{731.0, 732.0, 733.0};
+    const auto original = density;
+    for (const NDDODensityInput invalid :
+         {NDDODensityInput{0, 2, 1, 2.0, 1, 0.0, 1},
+          NDDODensityInput{1, 2, 1, 2.0, 1, 0.0, 1},
+          NDDODensityInput{2, 2, 3, 2.0, 3, 0.0, 1}}) {
+        EXPECT_THROW(builder.build_packed(coefficients, invalid, density),
+                     std::runtime_error);
+        EXPECT_EQ(density, original);
+    }
+    EXPECT_THROW(builder.build_packed({1.0}, valid, density),
+                 std::runtime_error);
+    EXPECT_EQ(density, original);
+    auto alias = coefficients;
+    EXPECT_THROW(builder.build_packed(alias, valid, alias),
+                 std::invalid_argument);
+    EXPECT_EQ(alias, coefficients);
+    builder.build_packed(coefficients, valid, density);
+    EXPECT_EQ(density, (std::vector<double>{2.0, 0.0, 0.0}));
+}
 
 TEST(NddoPreparation, MndoPm3RejectUnvalidatedIdentityBeforeScf) {
     cpu::Frame frame(2);

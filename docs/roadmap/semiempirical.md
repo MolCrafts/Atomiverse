@@ -94,10 +94,10 @@ reference program is implemented.
 
 | Method / case | Executed evidence | Main remaining gate |
 | --- | --- | --- |
-| AM1 | `semiempirical/am1` passed, including six AM1/RM1 CHNO energy/q/ΔHf/full-force fixtures; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Broader-element external forces, current force-path resources/performance |
-| RM1 | `semiempirical/rm1` plus the RM1 fixtures in `semiempirical/am1` passed; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Remaining parameter coverage, current force-path resources/performance |
-| MNDO | `semiempirical/mndo`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants and current performance/residency |
-| PM3 | `semiempirical/pm3`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants and current performance/residency |
+| AM1 | `semiempirical/am1` passed, including six AM1/RM1 CHNO energy/q/ΔHf/full-force fixtures; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Broader-element external forces, larger-system performance and full host-allocator coverage |
+| RM1 | `semiempirical/rm1` plus the RM1 fixtures in `semiempirical/am1` passed; CPU/CUDA transaction and direct MD input boundaries pass, with CPU/CUDA Python composition | Remaining parameter coverage, larger-system performance and full host-allocator coverage |
+| MNDO | `semiempirical/mndo`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants and resource/performance qualification beyond the measured clusters |
+| PM3 | `semiempirical/pm3`: three external E/q/ΔHf/full-force pins, Frame/Evaluate, history/line-search, MD inputs and Python composition pass | Broader elements/variants and resource/performance qualification beyond the measured clusters |
 | AM1-BCC / ABCG2 | `semiempirical/am1-bcc` and Python acetate checks passed | A charge-correction workflow, not a separate SQM Hamiltonian or CUDA implementation |
 | DFTB0 | `semiempirical/dftb0` passed | Native CUDA implementation and CPU/CUDA/oracle acceptance |
 | DFTB2 | `semiempirical/dftb2` passed; concrete SCC Driver and Frame entry points are present | Native CUDA implementation; multi-k external pins and the variant limits above |
@@ -174,20 +174,62 @@ performance comparison. The local 16-case affected regression selection also
 passes. No continuous-time error bound, long-time trajectory agreement or
 force-path device-residency claim follows from these sampled trajectories.
 
-The [energy/residency benchmark](../../benchmarks/semiempirical/nddo_energy/README.md)
-records the public-force revision with an executable hash, numerical-source
-hashes, CMake cache and source-archive provenance. All eight AM1/RM1 size
-combinations (3/12/24/48 atoms) pass CPU/CUDA energy and charge comparisons.
-Complete-process traces verify the restricted 48-atom, twenty-call warm energy
-path: only 8/56-byte D2H blocks, no H2D and no visible CUDA allocator/free calls
-inside the synchronized interval. Measured peak memory is unavailable. These
-are energy-path measurements; force performance and force residency remain
-unmeasured. No broad small-system GPU speedup is claimed.
-The measurements precede the new accepted-history transaction buffers; they
-are a retained baseline, not residency or allocation evidence for that revision.
-CPU allocation measurements are recorded in the
-[force benchmark](../../benchmarks/semiempirical/nddo_forces/README.md);
-they establish lower C++ allocation traffic, not a controlled latency gain.
+### Current force resources and performance
+
+The [four-method force benchmark](../../benchmarks/semiempirical/nddo_forces/README.md)
+now records CPU/CUDA complete forces at 3/12/24/48 atoms, cold and independently
+warmed fixed/moving geometry, with exact executable/source hashes, controls,
+per-call SCF counts, full standalone E/q/F and final resident vectors. Six
+alternating before/after runs used one GH200 allocation and one CPU thread;
+profiled runs are separate. This is prescribed geometry, not BOMD throughput.
+
+CPU reuses the existing two density buffers. On both the local CPU and GH200,
+720 allocation-instrumented calls preserve E/HOF/q/full forces and iteration
+counts exactly; all 52 derivative-primitive rows remain allocation-free under
+the C++ counter. Complete calls save `2 * iterations` allocations and
+`16 * packed_size * iterations` requested bytes. At 48 atoms, moving calls
+reduce cumulative requested bytes by 43.5–44.8%, while still making
+1,232–2,688 C++ allocations per complete call. Direct library malloc is not
+covered. Six-round elapsed-time measurements establish **no reliable CPU
+end-to-end speedup**; lower allocation traffic is the accepted benefit.
+
+| Method | 48-atom moving CPU median, before → after (ms) | CUDA public force after (ms) | CUDA resident force after (ms) |
+| --- | ---: | ---: | ---: |
+| AM1 | 40.871 → 40.736 | 29.790 | 29.801 |
+| RM1 | 40.057 → 40.071 | 31.692 | 31.753 |
+| MNDO | 39.569 → 39.328 | 29.801 | 29.462 |
+| PM3 | 40.029 → 39.985 | 34.994 | 35.612 |
+
+Medians pool three runs per revision, twenty warm calls per mode/run. Backend
+SCF counts differ; these are complete-call measurements, not a kernel-only
+speedup or a portable GPU advantage. The benchmark report contains the full
+3–48 atom cold/fixed/moving table and iteration statistics. CUDA production
+remains unchanged: a candidate library eigensolver failed complete AM1
+acceptance and was rejected without changing scientific tolerances.
+
+For each method, a full-process Nsight capture verifies the **48-atom,
+twenty-call moving resident force interval**: no H2D copies, only
+4/8/24/56-byte D2H status blocks, no scientific-array retrieval, and zero
+observed device allocation/release events or runtime allocator calls.
+Device matrix copies remain D2D. Each trace reconstructs 169,924,475 bytes
+peak/live dynamic-device allocation, with matched frees by capture end;
+56 pinned bytes and 3,044 device-static bytes are separate. This includes
+library allocations and is not a measure of reserved VRAM or method ownership.
+The source and trace checks do not establish zero allocations at arbitrary
+sizes, all host allocations, or absence of other-device faults.
+
+Current acceptance also passed 1,301 local units, 16 affected regressions,
+49 local Python checks (four CUDA-only skips), 113 SE-only and 32 targeted
+combined CUDA unit checks, all four external/native composition and NVE cases,
+and all 53 CUDA-build Python checks plus external/composition scripts.
+AM1/RM1 combined forces and MNDO/PM3 cases passed memcheck with zero errors.
+Existing external tolerances are unchanged. Scientific arrays are validated
+against the CPU at `1e-6 eV / 1e-7 e / 1e-5 eV/Å`, separately from the
+OpenMOPAC oracle gates. No unverified eigensolver optimization is retained.
+
+The older [energy-only report](../../benchmarks/semiempirical/nddo_energy/README.md)
+remains historical evidence for the revision it names; current force residency
+and memory claims come from the force captures above.
 
 ### Gaps
 
@@ -204,6 +246,6 @@ they establish lower C++ allocation traffic, not a controlled latency gain.
   externally validated within neutral closed-shell CHNO FP64. Short MD,
   steepest descent, native line search, direct MD input edits and Python
   workflows and 10 fs NVE/time-step refinement pass the checks above.
-  Longer-time stability and current-revision force-performance/residency
-  evidence remain open.
+  Longer-time stability, broader system/resource scaling and complete host
+  allocator coverage remain open; current force measurements are scoped above.
   Stress, charged/open-shell, non-CHNO and periodic requests reject.

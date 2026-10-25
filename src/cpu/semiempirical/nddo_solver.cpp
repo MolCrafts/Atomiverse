@@ -180,11 +180,14 @@ void NDDOSolver::scf_density() {
     density_input.n_fractional = system_.n_beta;
     density_input.full_occupancy = 2.0;
     density_input.fractional_occupancy = 0.0;
-    const auto next_density =
-        NDDODensityBuilder{}.build_packed(scf_coeff_, density_input);
-    scf_delta_ = max_abs_delta(scf_density_, next_density);
-    scf_density_ = next_density;
-    scf_spin_ = scaled_density(scf_density_, 0.5);
+    // The preceding Fock build has consumed spin_density. Reuse that packed
+    // buffer for the next total density, then recycle the previous density as
+    // the new half-spin buffer. No third matrix or changed contraction order.
+    NDDODensityBuilder{}.build_packed(scf_coeff_, density_input, scf_spin_);
+    scf_delta_ = max_abs_delta(scf_density_, scf_spin_);
+    scf_density_.swap(scf_spin_);
+    for (std::size_t i = 0; i < scf_density_.size(); ++i)
+        scf_spin_[i] = scf_density_[i] * 0.5;
 }
 
 void NDDOSolver::scf_fock() {

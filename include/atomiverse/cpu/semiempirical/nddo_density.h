@@ -24,8 +24,14 @@ struct NDDODensityInput {
 /// mirror AM1 reference's `src/matrix/densit.F90`.
 class NDDODensityBuilder {
   public:
-    std::vector<double> build_packed(const std::vector<double>& coefficients,
-                                     const NDDODensityInput& input) const;
+    /// @brief Overwrite the packed density, reusing caller-owned capacity.
+    /// @param coefficients Row-major orbitals; must not alias packed_density.
+    /// @param input Dimensions and occupations.
+    /// @param packed_density Packed lower-triangle output; resized as necessary.
+    /// Invalid dimensions, occupations, storage or aliasing leave output unchanged.
+    void build_packed(const std::vector<double>& coefficients,
+                      const NDDODensityInput& input,
+                      std::vector<double>& packed_density) const;
 };
 
 } // namespace semiempirical

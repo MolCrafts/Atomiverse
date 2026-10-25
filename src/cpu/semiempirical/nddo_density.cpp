@@ -53,10 +53,12 @@ void validate_density_input(const std::vector<double>& coefficients,
 
 } // namespace
 
-std::vector<double>
-NDDODensityBuilder::build_packed(const std::vector<double>& coefficients,
-                                 const NDDODensityInput& input) const {
+void NDDODensityBuilder::build_packed(const std::vector<double>& coefficients,
+                                      const NDDODensityInput& input,
+                                      std::vector<double>& p) const {
     validate_density_input(coefficients, input);
+    if (&coefficients == &p)
+        throw std::invalid_argument("NDDO density output aliases coefficients");
 
     const int norbs2 = input.norbs / 2;
     double sign = 1.0;
@@ -78,9 +80,8 @@ NDDODensityBuilder::build_packed(const std::vector<double>& coefficients,
         nu1 = input.n_fractional;
     }
 
-    std::vector<double> p(static_cast<std::size_t>(input.norbs)
-                              * static_cast<std::size_t>(input.norbs + 1) / 2u,
-                          0.0);
+    p.resize(static_cast<std::size_t>(input.norbs)
+             * static_cast<std::size_t>(input.norbs + 1) / 2u);
     for (int i1 = 1; i1 <= input.norbs; ++i1) {
         for (int j1 = 1; j1 <= i1; ++j1) {
             double sum2 =
@@ -96,7 +97,6 @@ NDDODensityBuilder::build_packed(const std::vector<double>& coefficients,
             }
         }
     }
-    return p;
 }
 
 } // namespace semiempirical

@@ -15,6 +15,10 @@ if(ATV_BUILD_SEMIEMPIRICAL)
         semiempirical/nddo_forces/count_allocations.cpp)
     target_link_libraries(bench_nddo_allocations PRIVATE atomiverse)
     if(ATV_BUILD_CUDA AND ATV_BUILD_EVALUATE)
+        add_executable(bench_nddo_forces semiempirical/nddo_forces/run.cu)
+        target_link_libraries(bench_nddo_forces PRIVATE atomiverse)
+        set_target_properties(bench_nddo_forces PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
         add_executable(bench_nddo_energy semiempirical/nddo_energy/run.cu)
         target_link_libraries(bench_nddo_energy PRIVATE atomiverse)
         set_target_properties(bench_nddo_energy PROPERTIES
