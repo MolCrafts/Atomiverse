@@ -6,12 +6,16 @@
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/internal/collocate.h"
+#include "atomiverse/cpu/gpw/internal/kpoints.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <complex>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -166,98 +170,6 @@ build_neighbors(const std::vector<std::array<double, 3>>& k_frac, int N,
         }
     }
     return nb;
-}
-
-/// ⟨a|e^{-i b·r}|b⟩ for Cartesian Gaussian primitives (product-center phase;
-/// exact for s; product-phase × form-factor for higher ℓ).
-Cdouble prim_overlap_phase(const GridPrimitive& a, const GridPrimitive& b,
-                           const double bvec[3]) {
-    const double s = prim_overlap(a, b);
-    if (s == 0.0)
-        return Cdouble{0.0, 0.0};
-    const double p = a.alpha + b.alpha;
-    if (!(p > 0.0))
-        return Cdouble{s, 0.0};
-    const double Rp[3] = {(a.alpha * a.center[0] + b.alpha * b.center[0]) / p,
-                          (a.alpha * a.center[1] + b.alpha * b.center[1]) / p,
-                          (a.alpha * a.center[2] + b.alpha * b.center[2]) / p};
-    const double b2 = bvec[0] * bvec[0] + bvec[1] * bvec[1] + bvec[2] * bvec[2];
-    const double phase = bvec[0] * Rp[0] + bvec[1] * Rp[1] + bvec[2] * Rp[2];
-    const double damp = std::exp(-b2 / (4.0 * p));
-    return Cdouble{s, 0.0} * damp * std::exp(-I * phase);
-}
-
-/// Cross-k AO overlap S^{k, k+b}_{μν} = Σ_T e^{i q·T} ⟨φ_μ|e^{-ib·r}|φ_ν^T⟩
-/// with q = k+b (phase on ket image) and b = q−k.
-void build_S_cross(const std::vector<GridBasisFunction>& basis,
-                   const std::vector<double>& radii, const double L[3],
-                   const int m[3], double screen,
-                   const std::array<double, 3>& k_frac_nb,
-                   const double b_bohr[3], int nb,
-                   std::vector<Cdouble>& S /* nb*nb row-major */) {
-    S.assign(static_cast<std::size_t>(nb * nb), Cdouble{0, 0});
-    for (int i = 0; i < nb; ++i) {
-        const auto& a = basis[static_cast<std::size_t>(i)];
-        if (a.empty())
-            continue;
-        for (int j = 0; j < nb; ++j) {
-            const auto& b = basis[static_cast<std::size_t>(j)];
-            if (b.empty())
-                continue;
-            // Pair screen (same idea as kpoints.cpp pair_bound).
-            double best = 0.0;
-            for (const auto& p : a)
-                for (const auto& q : b) {
-                    double d2 = 0.0;
-                    for (int d = 0; d < 3; ++d) {
-                        double e = p.center[d] - q.center[d];
-                        if (L[d] > 0.0)
-                            e -= L[d] * std::nearbyint(e / L[d]);
-                        d2 += e * e;
-                    }
-                    best = std::max(best,
-                                    std::abs(p.coeff * q.coeff)
-                                        * std::exp(-p.alpha * q.alpha
-                                                   / (p.alpha + q.alpha) * d2));
-                }
-            if (best < screen)
-                continue;
-            const double reach = radii[static_cast<std::size_t>(i)]
-                                 + radii[static_cast<std::size_t>(j)];
-            const double reach2 = reach * reach;
-            const double* ac = a[0].center;
-            const double* bc = b[0].center;
-            Cdouble s{0, 0};
-            for (int tx = -m[0]; tx <= m[0]; ++tx)
-                for (int ty = -m[1]; ty <= m[1]; ++ty)
-                    for (int tz = -m[2]; tz <= m[2]; ++tz) {
-                        const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
-                        const double dx = ac[0] - bc[0] - T[0];
-                        const double dy = ac[1] - bc[1] - T[1];
-                        const double dz = ac[2] - bc[2] - T[2];
-                        if (dx * dx + dy * dy + dz * dz > reach2)
-                            continue;
-                        // Bloch phase e^{i q · T} with q fractional → 2π κ·t
-                        const double arg =
-                            kTwoPi
-                            * (k_frac_nb[0] * static_cast<double>(tx)
-                               + k_frac_nb[1] * static_cast<double>(ty)
-                               + k_frac_nb[2] * static_cast<double>(tz));
-                        const Cdouble phase(std::cos(arg), std::sin(arg));
-                        Cdouble local{0, 0};
-                        for (const auto& pa : a)
-                            for (const auto& pb : b) {
-                                GridPrimitive q = pb;
-                                q.center[0] += T[0];
-                                q.center[1] += T[1];
-                                q.center[2] += T[2];
-                                local += prim_overlap_phase(pa, q, b_bohr);
-                            }
-                        s += phase * local;
-                    }
-            S[static_cast<std::size_t>(i * nb + j)] = s;
-        }
-    }
 }
 
 /// M = C†(k) S_cross C(k+b); C is nb × n_wann (columns = occupied MOs).
@@ -647,10 +559,9 @@ ChannelLoc localize_channel(const std::vector<std::vector<Cdouble>>& C,
                             int n_wann, int nk,
                             const std::vector<std::array<double, 3>>& k_frac,
                             const std::vector<std::vector<Neighbor>>& nb,
+                            const std::vector<std::vector<Cdouble>>& S_cross,
                             const std::vector<GridBasisFunction>& basis,
-                            const std::vector<double>& radii,
-                            const double cell[3], const int mimg[3],
-                            double screen,
+                            const double cell[3],
                             const std::vector<std::array<double, 3>>& trials,
                             bool use_projection, double proj_alpha_ang,
                             double a0, int max_iter, double tol, double step) {
@@ -662,18 +573,15 @@ ChannelLoc localize_channel(const std::vector<std::vector<Cdouble>>& C,
     // Bare M0(k,b) = C†(k) S_cross C(k+b)
     std::vector<std::vector<std::vector<Cdouble>>> M0(
         static_cast<std::size_t>(nk));
+    std::size_t link = 0;
     for (int ik = 0; ik < nk; ++ik) {
         const auto& neigh = nb[static_cast<std::size_t>(ik)];
         M0[static_cast<std::size_t>(ik)].resize(neigh.size());
         for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
             const auto& e = neigh[ib];
-            const auto& kfn = k_frac[static_cast<std::size_t>(e.ik_nb)];
-            std::vector<Cdouble> S;
-            const double bb[3] = {e.b_bohr[0], e.b_bohr[1], e.b_bohr[2]};
-            build_S_cross(basis, radii, cell, mimg, screen, kfn, bb, nbas, S);
             mo_overlap(C[static_cast<std::size_t>(ik)],
-                       C[static_cast<std::size_t>(e.ik_nb)], S, nbas, n_wann,
-                       M0[static_cast<std::size_t>(ik)][ib]);
+                       C[static_cast<std::size_t>(e.ik_nb)], S_cross[link++],
+                       nbas, n_wann, M0[static_cast<std::size_t>(ik)][ib]);
         }
     }
 
@@ -1123,6 +1031,28 @@ PeriodicWannierResult PeriodicWannier::compute(GpwDft& method,
     const auto nb = build_neighbors(res.k_frac, N, L_ang);
     const int nk = res.n_kpts;
 
+    // The AO Fourier operator depends only on this geometry, basis and
+    // (k,b) link, never on spin or occupied-band count. Build once, retaining
+    // owned matrices locally; both channel contractions borrow them.
+    const bool prof = std::getenv("ATV_GPW_PROF") != nullptr;
+    const auto links_start = std::chrono::steady_clock::now();
+    std::vector<internal::FourierOverlapLink> links;
+    for (int ik = 0; ik < nk; ++ik)
+        for (const auto& e : nb[static_cast<std::size_t>(ik)])
+            links.push_back(
+                {res.k_frac[static_cast<std::size_t>(e.ik_nb)], e.b_bohr});
+    const auto S_cross = internal::build_fourier_overlap_links(
+        basis, radii, method.cell_bohr().data(), mimg, screen, links);
+    const std::size_t n_links = links.size();
+    if (prof)
+        std::fprintf(
+            stderr,
+            "[gpw wannier] AO-links=%zu nk=%d nbas=%d elapsed=%.0f ms\n",
+            n_links, nk, nbas,
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - links_start)
+                .count());
+
     out.centers.clear();
     out.spreads.clear();
     out.spin.clear();
@@ -1147,10 +1077,19 @@ PeriodicWannierResult PeriodicWannier::compute(GpwDft& method,
 
         const auto trials = default_trials(
             n_ch, atoms, method.cell_bohr().data(), trial_centers);
-        ChannelLoc ch = localize_channel(
-            C, n_ch, nk, res.k_frac, nb, basis, radii,
-            method.cell_bohr().data(), mimg, screen, trials, use_projection,
-            proj_alpha_ang, a0, max_iter, tol, step);
+        const auto channel_start = std::chrono::steady_clock::now();
+        ChannelLoc ch =
+            localize_channel(C, n_ch, nk, res.k_frac, nb, S_cross, basis,
+                             method.cell_bohr().data(), trials, use_projection,
+                             proj_alpha_ang, a0, max_iter, tol, step);
+        if (prof)
+            std::fprintf(
+                stderr,
+                "[gpw wannier] spin=%d occupied=%d localization=%.0f ms\n", s,
+                n_ch,
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - channel_start)
+                    .count());
 
         for (std::size_t i = 0; i < ch.centers.size(); ++i) {
             out.centers.push_back(ch.centers[i]);

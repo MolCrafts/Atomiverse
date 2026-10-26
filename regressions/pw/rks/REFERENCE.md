@@ -8,13 +8,13 @@ One case; every section below is run by `atv_regressions --case pw/rks` and keep
 ### Method
 
 Spin-unpolarized plane-wave Kohn–Sham DFT with LDA exchange–correlation
-(Slater exchange + PW92 correlation on the PW real-space grid). Norm-conserving
+(Slater exchange + VWN5 correlation on the PW real-space grid). Norm-conserving
 ONCVPSP pseudopotential (UPF). Brillouin-zone sampling is a uniform
 Monkhorst–Pack mesh (`PW::k_mesh`³). Total energy is reported in Rydberg on
 `PWResult::energy` and in eV on `frame.meta.get(kEnergy)`.
 
-Public path: `cpu::pw::PW` (members) → `cpu::pw::PWEvaluator` →
-`cpu::single_point`.
+Public path: `cpu::single_point(frame, method)` with a concrete `cpu::pw::PW`;
+outer workflows mount `PW` directly on the parent Driver.
 
 ### Pseudopotential
 
@@ -280,7 +280,7 @@ Measured 2026-08-15 with GTH-PBE-q1, spin-polarized doublet:
 \(|F| = 6.58\times10^{-16}\) on both the analytic and the evaluator path
 (\(E = -12.0277\) eV; SCF converged in 5 iterations, \(m = 1\)).
 
-Public `PWEvaluator::with_gradient(true)` must write a finite energy and a force
+The public nested `PW` force request must write a finite energy and a force
 vector satisfying the same bound (analytic path).
 
 ### Shared-state request coverage
@@ -352,7 +352,7 @@ Measured 2026-08-15 with GTH-PBE-q1, spin-polarized doublet:
 \(|F|_\mathrm{FD}=1.4\times10^{-11}\),
 \(|F|_\mathrm{evaluator}=6.58\times10^{-16}\) (\(E=-12.0277\) eV).
 
-Public `PWEvaluator::with_gradient(true)` must write a finite energy and a force
+The public nested `PW` force request must write a finite energy and a force
 vector satisfying the evaluator bound.
 
 
@@ -436,7 +436,7 @@ offline pin only).
 | Lattice \(a\) | 5.43 Å |
 | Basis | (0,0,0), \((a/4,a/4,a/4)\) |
 | PP | `tests/data/pw/Si_lda_nc.upf` (PseudoDojo ONCVPSP-LDA, \(Z_\mathrm{val}=4\)) |
-| XC | LSDA (Slater + PW92) |
+| XC | LSDA (Slater + VWN5) |
 | \(E_\mathrm{cut}\) | 15 Ry (tutorial; incomplete vs production ~60 Ry) |
 | k-mesh | \(2\times2\times2\) |
 | SCF | `tol=10^{-6}`, `max_iter=50` |

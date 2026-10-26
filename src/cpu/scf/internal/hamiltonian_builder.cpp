@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
 
+#include <optional>
 #include <stdexcept>
 
 #include <xtensor-blas/xlinalg.hpp>
@@ -97,11 +98,11 @@ void HamiltonianBuilder::prepare(const internal::IntegralView& integrals,
     }
 }
 
-FockResult HamiltonianBuilder::step(const internal::IntegralView& integrals,
-                                    bool restricted, bool is_hf, XCType xc_type,
-                                    double hybrid_alpha_override,
-                                    const RealMatrix& P_alpha,
-                                    const RealMatrix& P_beta) const {
+FockResult HamiltonianBuilder::step(
+    const internal::IntegralView& integrals, bool restricted, bool is_hf,
+    XCType xc_type, double hybrid_alpha_override, const RealMatrix& P_alpha,
+    const RealMatrix& P_beta,
+    const ATV::electronic::XcFunctional* functional) const {
     FockResult out;
     const RealMatrix& Hcore = integrals.Hcore;
 
@@ -271,12 +272,20 @@ FockResult HamiltonianBuilder::step(const internal::IntegralView& integrals,
         // (first KS iteration, or when the LDA/GGA flavor changes) and reuse
         // it across all SCF iterations; the density-dependent steps run on the
         // cached basis. Bit-identical to the rebuild-every-call path.
-        const bool gga = ATV::cpu::scf::is_gga(xc_type);
+        std::optional<BuiltinXc> builtin;
+        if (!functional) {
+            builtin.emplace(xc_type);
+            functional = &*builtin;
+        }
+        const bool gga =
+            (static_cast<unsigned>(functional->ingredients()) & 2u) != 0;
         if (!xc_basis_.built || xc_basis_.gga != gga)
             xc_basis_.build(grid_, integrals.shells, integrals.n_ao_cart(),
                             gga);
-        auto xc = evaluate_xc_batched(xc_basis_, grid_, P_alpha_xc, P_beta_xc,
-                                      xc_type);
+        auto xc = evaluate_xc_batched(
+            xc_basis_, grid_, P_alpha_xc, P_beta_xc, *functional,
+            restricted ? ATV::electronic::XcSpin::Restricted
+                       : ATV::electronic::XcSpin::Collinear);
         to_ao(xc.Vxc_alpha);
         to_ao(xc.Vxc_beta);
 

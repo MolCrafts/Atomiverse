@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <stdexcept>
 #include <unordered_map>
 
 #include <xsimd/xsimd.hpp>
@@ -1606,6 +1607,114 @@ multigrid_integrate_veff_cells(const MultiGrid& mg, const ProductSet& products,
     }
     return Vt;
 }
+
+namespace internal {
+std::vector<std::array<double, 3>> multigrid_density_center_gradient(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<double>& P, const std::vector<double>& potential,
+    const std::vector<int>& basis_atoms, int n_atoms, double eps) {
+    if (nb < 1 || n_atoms < 1 || mg.levels.empty()
+        || P.size() != static_cast<std::size_t>(nb) * nb
+        || basis_atoms.size() != static_cast<std::size_t>(nb)
+        || potential.size() != static_cast<std::size_t>(mg.levels[0].npts())
+        || products.by_level.size() != mg.levels.size()
+        || products.tasks_by_level.size() != mg.levels.size())
+        throw std::invalid_argument(
+            "Product center gradient: incompatible shapes");
+    for (int atom : basis_atoms)
+        if (atom < 0 || atom >= n_atoms)
+            throw std::invalid_argument(
+                "Product center gradient: invalid AO owner");
+    std::vector<std::array<double, 3>> gradient(n_atoms, {0, 0, 0});
+    for (std::size_t level = 0; level < mg.levels.size(); ++level) {
+        const auto& grid = mg.levels[level];
+        const auto& prods = products.by_level[level];
+        const auto& tasks = products.tasks_by_level[level];
+        const auto V = level == 0
+                           ? potential
+                           : restrict_fft(mg.levels[0], grid, potential, true);
+        double vmax = 0;
+        for (double value : V)
+            vmax = std::max(vmax, std::abs(value));
+        const device::ChunkedRange range(static_cast<long>(tasks.size()), 64);
+        std::vector<std::vector<double>> partial(
+            range.chunks(), std::vector<double>(3 * n_atoms, 0));
+#pragma omp parallel for schedule(dynamic, 1)
+        for (long chunk = 0; chunk < range.chunks(); ++chunk) {
+            std::vector<GridProduct> derivatives;
+            std::vector<double> integrals;
+            auto& accum = partial[static_cast<std::size_t>(chunk)];
+            for (long task_index = range.begin(chunk);
+                 task_index < range.end(chunk); ++task_index) {
+                const auto& task = tasks[static_cast<std::size_t>(task_index)];
+                const int n = task.end - task.beg;
+                derivatives.resize(6 * n);
+                integrals.resize(6 * n);
+                double magnitude = 0;
+                for (int j = 0; j < n; ++j) {
+                    const auto& prod = prods[task.beg + j];
+                    const auto& bra = products.prims[prod.ua];
+                    const double weight = std::abs(product_density_weight(
+                        prod, products.prims, products.contribs, nb, P));
+                    magnitude =
+                        std::max(magnitude,
+                                 weight * vmax
+                                     * std::max({1.0, 2 * bra.alpha,
+                                                 double(prod.la[0] + prod.la[1]
+                                                        + prod.la[2])}));
+                }
+                if (magnitude == 0)
+                    continue;
+                for (int axis = 0; axis < 3; ++axis)
+                    for (int j = 0; j < n; ++j) {
+                        auto& up = derivatives[(2 * axis) * n + j];
+                        auto& down = derivatives[(2 * axis + 1) * n + j];
+                        up = down = prods[task.beg + j];
+                        ++up.la[axis];
+                        if (down.la[axis] > 0)
+                            --down.la[axis];
+                    }
+                // One shared polynomial table/grid traversal for all axes.
+                collint_integrate_group(grid, derivatives.data(), 6 * n,
+                                        magnitude, eps * kProductWindowEps,
+                                        V.data(), integrals.data());
+                for (int axis = 0; axis < 3; ++axis) {
+                    for (int j = 0; j < n; ++j) {
+                        const auto& prod = prods[task.beg + j];
+                        const auto& bra = products.prims[prod.ua];
+                        const auto& ket = products.prims[prod.ub];
+                        const double integral =
+                            grid.weight() * prod.k
+                            * (2 * bra.alpha * integrals[(2 * axis) * n + j]
+                               - prod.la[axis]
+                                     * integrals[(2 * axis + 1) * n + j]);
+                        for (int i = 0; i < bra.cn; ++i) {
+                            const auto& ca = products.contribs[bra.cbeg + i];
+                            double weight = 0;
+                            for (int k = 0; k < ket.cn; ++k) {
+                                const auto& cb =
+                                    products.contribs[ket.cbeg + k];
+                                weight += P[static_cast<std::size_t>(ca.mu) * nb
+                                            + cb.mu]
+                                          * cb.coeff;
+                            }
+                            // Ordered bra/ket products and symmetric P: the
+                            // ket-center contribution equals the bra term.
+                            accum[3 * basis_atoms[ca.mu] + axis] +=
+                                2 * ca.coeff * weight * integral;
+                        }
+                    }
+                }
+            }
+        }
+        for (const auto& chunk : partial)
+            for (int atom = 0; atom < n_atoms; ++atom)
+                for (int axis = 0; axis < 3; ++axis)
+                    gradient[atom][axis] += chunk[3 * atom + axis];
+    }
+    return gradient;
+}
+} // namespace internal
 
 } // namespace gpw
 } // namespace cpu

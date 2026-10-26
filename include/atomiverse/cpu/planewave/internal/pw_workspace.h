@@ -51,7 +51,6 @@ struct PWWorkspace {
     // Local PP in G-space, incl. structure factor Σ_a e^{-iG·R_a}.
     xt::xarray<std::complex<AccReal>> V_loc_G;
     xt::xarray<AccReal> V_eff_r; // V_eff on real-space grid [Hartree]
-    xt::xarray<AccReal> exc_r;   // real-space XC energy density ε_xc(r)
 
     // Wavefunctions: wfc[b][ig] for band b, G-vector ig
     xt::xarray<std::complex<AccReal>> wfc;

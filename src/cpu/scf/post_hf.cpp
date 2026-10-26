@@ -263,24 +263,28 @@ MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
             "MP2::run: frozen-core UMP2/ROMP2 is not supported — set "
             "frozen=0, or use closed-shell RHF.");
     }
+    MP2Result result{};
     if (mf.ri != RI::None) {
         if (mf.spin_ != SpinType::Restricted)
             throw std::invalid_argument(
                 "MP2::run: RI-MP2 is closed-shell only — set ri=RI::None for "
                 "UMP2/ROMP2, or use RHF.");
-        return ri_mp2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                             mf.aux_basis, frozen, os_scale, ss_scale);
+        result =
+            ri_mp2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
+                          mf.aux_basis, frozen, os_scale, ss_scale);
+    } else if (mf.spin_ == SpinType::RestrictedOpen) {
+        result = romp2_energy(mf.integral_view_(), mf.determinant(),
+                              mf.F_alpha_uncoupled_, mf.F_beta_uncoupled_,
+                              mf.energy(), os_scale, ss_scale);
+    } else if (mf.spin_ == SpinType::Unrestricted) {
+        result = ump2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
+                             os_scale, ss_scale);
+    } else {
+        result = mp2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
+                            frozen, os_scale, ss_scale);
     }
-    if (mf.spin_ == SpinType::RestrictedOpen) {
-        return romp2_energy(mf.integral_view_(), mf.determinant(),
-                            mf.F_alpha_uncoupled_, mf.F_beta_uncoupled_,
-                            mf.energy(), os_scale, ss_scale);
-    }
-    if (mf.spin_ == SpinType::Unrestricted)
-        return ump2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                           os_scale, ss_scale);
-    return mp2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                      frozen, os_scale, ss_scale);
+    frame.meta.get(kEnergy) = result.e_tot * units::kHartreeInEv;
+    return result;
 }
 
 template <typename Method>

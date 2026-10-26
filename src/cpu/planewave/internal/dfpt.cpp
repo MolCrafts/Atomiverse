@@ -1078,13 +1078,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     // fixed-occ spin DFPT. Self-consistent Mermin spin-density for open
     // metals reuses the same response; a fully fractional GS density loop is
     // available via PW::run (spin+smear) when needed as a follow-on.
-    // Supercell / sparse-k spin densities can ring with mix_beta ~ 0.7 —
-    // use a conservative channel mix and back off if the residual grows.
+    // Both spin channels share the canonical joint-density Pulay history.
     bool scf_ok = false;
-    AccReal scf_mix = AccReal(method.mix_beta);
-    if (scf_mix > AccReal(0.4))
-        scf_mix = AccReal(0.4);
-    AccReal best_rms = AccReal(1e30);
     for (int iter = 0; iter < method.max_iter; ++iter) {
         for (int ig = 0; ig < ng0; ++ig)
             ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
@@ -1120,29 +1115,10 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
             }
             density.extract(ws, rho_out[s]);
         }
-        for (int s = 0; s < 2; ++s) {
-            for (int ig = 0; ig < ng0; ++ig) {
-                ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                ws.rho_spin_G[s][ig] =
-                    ws.rho_spin_G_old[s][ig]
-                    + scf_mix * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-            }
-        }
-        AccReal dr = 0;
-        for (int ig = 0; ig < ng0; ++ig) {
-            const Cx old = ws.rho_G[ig];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-            const Cx d = ws.rho_G[ig] - old;
-            dr += d.real() * d.real() + d.imag() * d.imag();
-        }
-        const AccReal rms = std::sqrt(dr);
-        if (rms < best_rms)
-            best_rms = rms;
-        else if (rms > AccReal(2) * best_rms && best_rms < AccReal(1e-3))
-            scf_mix = std::max(scf_mix * AccReal(0.5), AccReal(0.1));
+        const AccReal rms = density.mix_spin(ws, rho_out[0], rho_out[1]);
         if ((iter + 1) % 20 == 0 || rms < AccReal(method.tol))
-            ATV_DEBUG("[pw][dfpt] spin SCF iter={} dens_rms={:.3e} mix={:.2f}",
-                      iter + 1, rms, scf_mix);
+            ATV_DEBUG("[pw][dfpt] spin SCF iter={} dens_rms={:.3e}", iter + 1,
+                      rms);
         if (rms < AccReal(method.tol)) {
             scf_ok = true;
             break;
@@ -2586,14 +2562,8 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     davidson.prepare(ws);
 
     // ── Collinear fixed-occupation ground-state SCF ──
-    // Bulk Γ-only meshes can ring with mix_beta ~ 0.7; use a conservative
-    // spin-channel mix and accept the first residual that meets tol (do not
-    // keep mixing into an oscillatory regime).
+    // Both spin channels share the canonical joint-density Pulay history.
     bool scf_ok = false;
-    AccReal scf_mix = AccReal(method.mix_beta);
-    if (scf_mix > AccReal(0.4))
-        scf_mix = AccReal(0.4);
-    AccReal best_rms = AccReal(1e30);
     for (int iter = 0; iter < method.max_iter; ++iter) {
         for (int ig = 0; ig < ng0; ++ig)
             ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
@@ -2629,32 +2599,10 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
             }
             density.extract(ws, rho_out[s]);
         }
-        for (int s = 0; s < 2; ++s) {
-            for (int ig = 0; ig < ng0; ++ig) {
-                ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                ws.rho_spin_G[s][ig] =
-                    ws.rho_spin_G_old[s][ig]
-                    + scf_mix * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-            }
-        }
-        for (int ig = 0; ig < ng0; ++ig) {
-            ws.rho_G_old[ig] = ws.rho_G[ig];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-        }
-        AccReal dr = 0;
-        for (int ig = 0; ig < ng0; ++ig) {
-            const Cx d = ws.rho_G[ig] - ws.rho_G_old[ig];
-            dr += d.real() * d.real() + d.imag() * d.imag();
-        }
-        const AccReal rms = std::sqrt(dr);
-        if (rms < best_rms)
-            best_rms = rms;
-        else if (rms > AccReal(2) * best_rms && best_rms < AccReal(1e-3))
-            scf_mix = std::max(scf_mix * AccReal(0.5), AccReal(0.1));
+        const AccReal rms = density.mix_spin(ws, rho_out[0], rho_out[1]);
         if ((iter + 1) % 20 == 0 || rms < AccReal(method.tol))
-            ATV_DEBUG(
-                "[pw][dfpt_q] spin SCF iter={} dens_rms={:.3e} mix={:.2f}",
-                iter + 1, rms, scf_mix);
+            ATV_DEBUG("[pw][dfpt_q] spin SCF iter={} dens_rms={:.3e}", iter + 1,
+                      rms);
         if (rms < AccReal(method.tol)) {
             scf_ok = true;
             break;

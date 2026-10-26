@@ -1305,20 +1305,9 @@ void nuclear_block(const ShellBlock& A, const ShellBlock& B, const Atom* atoms,
 }
 
 /// @brief Compute Boys functions F_0 .. F_{n_max} in one call.
-/// Uses upward recurrence from F_0 (one erf + one exp total).
+/// Uses the shared stable downward/upward sequence law on both backends.
 static inline void boys_fn_vec(double T, int n_max, double Fm[]) {
-    Fm[0] = boys_f0(T);
-    if (n_max == 0)
-        return;
-    if (T < 1e-12) {
-        for (int m = 1; m <= n_max; ++m)
-            Fm[m] = 1.0 / (2 * m + 1);
-    } else {
-        const double ex = std::exp(-T);
-        const double inv2T = 0.5 / T;
-        for (int m = 1; m <= n_max; ++m)
-            Fm[m] = ((2 * m - 1) * Fm[m - 1] - ex) * inv2T;
-    }
+    ATV::boys_sequence(n_max, T, Fm);
 }
 
 // 2 * π^2.5 — precomputed constant shared by all eri_blk_* functions.

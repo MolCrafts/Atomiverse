@@ -1,5 +1,5 @@
 /// @file tests/cpu/scf/test_accelerators.cpp
-/// @brief Isolated unit tests for the DIIS extrapolator and the level shift.
+/// @brief Isolated unit tests for the level shift.
 ///
 /// These SCF accelerators are otherwise exercised only transitively through
 /// the concrete methods' SCF loop; this file adds direct, isolated
@@ -17,58 +17,9 @@
 #include <xtensor/views/xview.hpp>
 
 #include "atomiverse/cpu/linalg/eigensolve.h"
-#include "atomiverse/cpu/scf/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/level_shift.h"
 
 using namespace ATV::cpu::scf;
-using ATV::cpu::scf::internal::DIISMixer;
-
-TEST(DIIS, RejectsNonpositiveHistoryDepth) {
-    EXPECT_THROW(DIISMixer(0), std::invalid_argument);
-    EXPECT_THROW(DIISMixer(-1), std::invalid_argument);
-}
-
-// ── DIIS (internal::DIISMixer) ───────────────────────────────────────
-
-TEST(DIIS, SingleEntry_ReturnsSameMatrix) {
-    DIISMixer diis(6);
-    RealMatrix F = {{1.0, 0.5}, {0.5, 2.0}};
-    RealMatrix e = {{0.01, 0.0}, {0.0, -0.01}};
-    auto result = diis.step(F, e);
-    EXPECT_NEAR(result(0, 0), 1.0, 1e-12);
-    EXPECT_NEAR(result(0, 1), 0.5, 1e-12);
-    EXPECT_NEAR(result(1, 1), 2.0, 1e-12);
-}
-
-TEST(DIIS, TwoEntries_WeightsSmallError) {
-    DIISMixer diis(6);
-    RealMatrix F1 = {{1.0, 0.0}, {0.0, 2.0}};
-    RealMatrix e1 = {{0.1, 0.0}, {0.0, -0.1}};
-    RealMatrix F2 = {{1.1, 0.0}, {0.0, 1.9}};
-    RealMatrix e2 = {{0.01, 0.0}, {0.0, -0.01}};
-    diis.step(F1, e1);               // push first pair
-    auto result = diis.step(F2, e2); // push second + extrapolate
-    EXPECT_NE(result(0, 0), F1(0, 0));
-    EXPECT_NE(result(0, 0), F2(0, 0));
-}
-
-TEST(DIIS, DualChannel_BothExtracted) {
-    DIISMixer diis(6);
-    RealMatrix Fa = {{1.0}}, Fb = {{2.0}};
-    RealMatrix ea = {{0.01}}, eb = {{0.02}};
-    auto [ra, rb] = diis.step(Fa, ea, Fb, eb);
-    EXPECT_NEAR(ra(0, 0), 1.0, 1e-12);
-    EXPECT_NEAR(rb(0, 0), 2.0, 1e-12);
-}
-
-TEST(DIIS, ResetClearsHistory) {
-    DIISMixer diis(6);
-    RealMatrix F = {{1.0}}, e = {{0.01}};
-    diis.step(F, e);
-    EXPECT_EQ(diis.size(), 1);
-    diis.reset();
-    EXPECT_EQ(diis.size(), 0);
-}
 
 // ── Level shift (internal::apply_level_shift) ────────────────────────
 // hf-robust-03 ac-002: spectral contract of the Saunders–Hillier shift.

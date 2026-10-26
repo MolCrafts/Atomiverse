@@ -67,6 +67,8 @@ struct DfptPhononResult {
     /// @brief Real part of the Cartesian force-constant matrix [eV/Å²],
     ///        shape `[3N, 3N]`, index `3·I + α`. At Γ this is the full
     ///        (symmetric) matrix; at finite q it is \(\mathrm{Re}\,C(q)\).
+    ///        The commensurate path publishes the raw IFC Fourier sum;
+    ///        frequencies use its Hermitian part.
     xt::xtensor<double, 2> force_constants;
 
     /// @brief Imaginary part of \(C(q)\) [eV/Å²], shape `[3N, 3N]`.
@@ -80,6 +82,7 @@ struct DfptPhononResult {
     bool response_converged = false;
 
     /// @brief Max |C − C†|/2 before Hermitian projection [eV/Å²].
+    ///        Commensurate q includes both supercell and raw Fourier asymmetry.
     double max_asymmetry = 0;
 
     /// @brief Atoms in the cell.

@@ -11,6 +11,10 @@
 /// Rev. Mod. Phys. 66, 899 (1994)). Closing links use the short reciprocal
 /// step \(b = 2\pi/(L_i J)\) with wrapped k-labels (same convention as
 /// multi-k MLWF).
+/// The Cartesian Gaussian Fourier overlap is exact in every angular term:
+/// \(\int a(\mathbf r)b(\mathbf r)e^{-i\mathbf q\cdot\mathbf r}d^3r\).
+/// Here \(\mathbf q\) is the short unwrapped ket-minus-bra step [Bohr⁻¹]
+/// and primitive coordinates are [Bohr]; the phase sign is negative.
 ///
 /// **Closed shell** (`!is_uks()`): spin factor \(f=2\),
 /// \(p^\mathrm{el}=f\varphi/2\pi\), total wrapped with quantum 2.
@@ -113,7 +117,9 @@ class BerryPolarization {
     ///
     /// For each requested direction: sets `method.k_points` to the string
     /// mesh (equal weights, TR off), runs `method.run(frame)`, then forms
-    /// link determinants from `last_result()` occupied Bloch MOs.
+    /// link determinants from `last_result()` occupied Bloch MOs. Each
+    /// direction converges independently on its own mesh. The spin-independent
+    /// AO link is shared by the occupied spin manifolds.
     ///
     /// @param method GPW DFT method (`build()` already done; k-mesh / list
     ///               and TR flag are overwritten per direction).

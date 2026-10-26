@@ -41,7 +41,7 @@ void host_ref(double ra, double rb, double gax, double gay, double gaz,
     const auto out = evaluate_xc(XCType::PBE, ra, rb, saa, sab, sbb);
     vxa = out.vrho_alpha;
     vxb = out.vrho_beta;
-    exc = out.exc;
+    exc = out.energy_density / rtot;
     const double caa = 2.0 * out.vsigma_aa;
     const double cbb = 2.0 * out.vsigma_bb;
     const double cab = out.vsigma_ab;

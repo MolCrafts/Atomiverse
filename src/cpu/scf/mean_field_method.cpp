@@ -37,6 +37,7 @@
 #include "atomiverse/cpu/scf/internal/level_shift.h" // kLevelShiftSkipThreshold
 #include "atomiverse/cpu/scf/internal/mean_field_energy.h"
 #include "atomiverse/cpu/scf/internal/minao.h"
+#include "atomiverse/cpu/scf/internal/orbital_canonicalization.h"
 #include "atomiverse/cpu/scf/internal/pcm.h"
 #include "atomiverse/cpu/scf/internal/periodic_hf.h"
 #include "atomiverse/cpu/scf/internal/point_charges.h"
@@ -144,6 +145,27 @@ MeanFieldMethod<D>::PositionGuard::~PositionGuard() {
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+template <typename D>
+XCType MeanFieldMethod<D>::select_functional_(
+    std::shared_ptr<const ATV::electronic::XcFunctional> functional,
+    ATV::electronic::XcSpin spin) {
+    using namespace ATV::electronic;
+    if (!functional)
+        throw std::invalid_argument("KS: XC provider must not be null");
+    const auto mask = static_cast<unsigned>(functional->ingredients());
+    if ((mask & 1u) == 0 || (mask & ~3u) != 0)
+        throw std::invalid_argument("KS: molecular grids implement rho/sigma "
+                                    "only; tau/Laplacian unavailable");
+    if (!functional->supports(spin, XcOrder::Energy)
+        || !functional->supports(spin, XcOrder::First))
+        throw std::invalid_argument("KS: XC provider requires energy and first "
+                                    "derivatives for this spin");
+    const auto* builtin = dynamic_cast<const BuiltinXc*>(functional.get());
+    xc_type_ = builtin ? builtin->type() : XCType::Custom;
+    xc_functional_ = std::move(functional);
+    return xc_type_;
+}
 
 template <typename D>
 MeanFieldMethod<D>::MeanFieldMethod(BasisSet basis_in, int charge_in)
@@ -262,7 +284,8 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
         hybrid_alpha_override, fixed_grid, integral_view_(), P_alpha_, P_beta_,
         F_alpha_, F_beta_, J_, e_xc_grid_, e_exact_exchange_, int_n_alpha_,
         int_n_beta_, ri, aux_basis, generalized, pcm_.get(), e_solvent_,
-        e_pcm_fock_half_, coulomb, cfmm_order, cfmm_threshold);
+        e_pcm_fock_half_, coulomb, cfmm_order, cfmm_threshold,
+        xc_functional_.get());
     if (rohf) {
         rohf_couple_stage_ = std::make_unique<RohfCoupleStage>(
             S_, P_alpha_, P_beta_, F_alpha_, F_beta_, F_alpha_uncoupled_,
@@ -485,6 +508,9 @@ void MeanFieldMethod<D>::engage_xl_bomd_() {
 template <typename D>
 void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
                                     const DriveOpts& opts) {
+    if (xc_type_ == XCType::Custom && hybrid_alpha_override > 0)
+        throw std::invalid_argument(
+            "Custom XC: exact-exchange overrides are unsupported");
     // ECP ↔ x2c double-counting gate (per-element): relativistic ECPs bake
     // scalar relativity into their parameterization, so an atom that hits
     // the ECP table must not additionally be treated with x2c. All-electron
@@ -1271,13 +1297,23 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
 
     const bool did_converge = this->converged();
 
-    // ── Epilogue: de-shift, wavefunction publish, energy / forces ────────────────
-    // De-shifted orbital energies: rebuild one UNSHIFTED Fock from the
-    // converged density and diagonalize it. The SOSCF finish shares this
-    // block: after CIAH rotations the orbitals are only semicanonical, so a
-    // final diagonalization of the Fock of the converged density restores
-    // the canonical ε (and canonical C) the published determinant carries.
-    if (did_converge && (shift_active || soscf_active_)) {
+    // ── Epilogue: physical orbitals, wavefunction publish, energy / forces ──
+    // KS retains the unmodified physical Fock from this loop. HF level shifts
+    // and the SOSCF finish use the existing unshifted canonicalization below.
+    if (did_converge && !is_hf && !rohf && mom == MomStyle::Off) {
+        // KS energy convergence does not constrain the eigenvalues of a DIIS
+        // extrapolate. Publish the physical operator already built by this
+        // solve, retaining the accepted occupied projector for Pulay forces.
+        internal::semicanonicalize(fock_stage_->physical_alpha_, C_alpha_,
+                                   eig_alpha_, n_alpha);
+        if (restricted) {
+            C_beta_ = C_alpha_;
+            eig_beta_ = eig_alpha_;
+        } else {
+            internal::semicanonicalize(fock_stage_->physical_beta_, C_beta_,
+                                       eig_beta_, n_beta);
+        }
+    } else if (did_converge && (shift_active || soscf_active_)) {
         internal::HamiltonianBuilder deshift;
         // Same ri/aux as the loop's Fock build: the de-shifted orbital
         // energies must diagonalize the SAME (possibly fitted) Fock the
@@ -1285,9 +1321,9 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         deshift.prepare(ints, is_hf, grid_level, n_radial, n_angular,
                         fixed_grid, ri, aux_basis, coulomb, cfmm_order,
                         cfmm_threshold);
-        internal::FockResult fock =
-            deshift.step(ints, restricted, is_hf, xc_type_,
-                         hybrid_alpha_override, P_alpha_, P_beta_);
+        internal::FockResult fock = deshift.step(
+            ints, restricted, is_hf, xc_type_, hybrid_alpha_override, P_alpha_,
+            P_beta_, xc_functional_.get());
         std::tie(eig_alpha_, C_alpha_) = diagonalize(fock.F_alpha);
         if (restricted) {
             eig_beta_ = eig_alpha_;
@@ -1349,7 +1385,8 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
                                        n_angular,
                                        xc_grad_project_translation,
                                        d3bj,
-                                       d4};
+                                       d4,
+                                       xc_functional_.get()};
         // Fresh view after env (embed/field/solvent) was written onto storage —
         // IntegralView scalars (V_nuc, embed_self_energy, …) are by value and
         // the prologue view is stale for those; refs alone are not enough.
@@ -1589,6 +1626,9 @@ void MeanFieldMethod<D>::cpmd_seed_() {
 
 template <typename D>
 void MeanFieldMethod<D>::cpmd_step_(Frame& frame, bool advance_electrons) {
+    if (xc_type_ == XCType::Custom && hybrid_alpha_override > 0)
+        throw std::invalid_argument(
+            "Custom XC: exact-exchange overrides are unsupported");
     // A production Car-Parrinello step is NOT the stage Plan: DIIS,
     // diagonalization and the density rebuild are exactly what CP skips, and
     // `DriveOpts.max_iter = 0` cannot express "build one Fock at a given
@@ -1651,8 +1691,9 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame, bool advance_electrons) {
     internal::HamiltonianBuilder hb;
     hb.prepare(ints, is_hf, grid_level, n_radial, n_angular, fixed_grid, ri,
                aux_basis, coulomb, cfmm_order, cfmm_threshold);
-    const internal::FockResult fock = hb.step(ints, restricted, is_hf, xc_type_,
-                                              hybrid_alpha_override, P_a, P_b);
+    const internal::FockResult fock =
+        hb.step(ints, restricted, is_hf, xc_type_, hybrid_alpha_override, P_a,
+                P_b, xc_functional_.get());
     F_alpha_ = fock.F_alpha;
     F_beta_ = fock.F_beta;
     J_ = fock.J;
@@ -1695,7 +1736,8 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame, bool advance_electrons) {
                                    n_angular,
                                    xc_grad_project_translation,
                                    /*d3bj=*/false,
-                                   /*d4=*/false};
+                                   /*d4=*/false,
+                                   xc_functional_.get()};
     const RealMatrix empty;
     last_grad_ = gradient.compute_at_density(
         frame, ints, C_a, F_alpha_, restricted || !has_beta ? empty : beta->C(),
@@ -1742,7 +1784,10 @@ template <typename D>
 void MeanFieldMethod<D>::run(Frame& frame, const SCFInitialGuess* guess) {
     refuse_standalone_cpmd(cpmd, "MeanFieldMethod::run");
     DriveOpts opts;
-    opts.unwrap = true;
+    // A molecular single point evaluates the supplied geometry, matching
+    // the const and force entries. A box alone does not identify bonded
+    // images: anchor minimum-image changes a cluster wider than half a cell.
+    opts.unwrap = false;
     opts.write_energy = true; // Frame-out: the mutating entry always writes.
     opts.forces = false;
     drive_scf_(frame, guess, opts);

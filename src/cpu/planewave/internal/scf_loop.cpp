@@ -146,11 +146,10 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
         }
 #endif
 
-        density.finish(ws);
-        result.iterations = iter + 1;
-
         const auto terms =
             iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+        density.finish(ws);
+        result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
         result.energy = result.energy_ha / qe_units::rydberg_to_hartree;
 
@@ -349,11 +348,10 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
         }
 #endif
 
-        density.finish(ws);
-        result.iterations = iter + 1;
-
         const auto terms =
             iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+        density.finish(ws);
+        result.iterations = iter + 1;
         // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
         const AccReal e_ent_ha = -degauss_ha * entropy_sum;
         const AccReal e_free_ha = terms.total + e_ent_ha;

@@ -1,0 +1,385 @@
+Start testing: Oct 25 23:19 CET
+----------------------------------------------------------
+1826/1853 Testing: pw/rks
+1826/1853 Test: pw/rks
+Command: "/tmp/atv-xc-build/regressions/atv_regressions" "--case" "pw/rks"
+Directory: /tmp/atv-xc-build/regressions
+"pw/rks" start time: Oct 25 23:19 CET
+Output:
+----------------------------------------------------------
+
+=== pw/rks :: h_force_analytic ===
+[2026-10-25 23:19:46.353] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:46.354] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:46.409] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:46.410] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:46.410] [info] all components built
+[2026-10-25 23:19:46.444] [info] [pw] converged iter=6 energy_ry=-0.87807169 mag=1
+[2026-10-25 23:19:46.485] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:46.485] [info] all components built
+[2026-10-25 23:19:46.485] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:46.485] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:46.520] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:46.552] [info] [pw] converged iter=6 energy_ry=-0.87807169 mag=1
+[2026-10-25 23:19:46.593] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:46.593] [info] all components built
+[2026-10-25 23:19:46.593] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:46.593] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:46.647] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:46.701] [info] [pw] converged iter=5 energy_ry=-0.88470720 mag=1
+[2026-10-25 23:19:46.765] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:46.765] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:46.800] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:46.800] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:46.800] [info] all components built
+[2026-10-25 23:19:46.885] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:46.885] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:46.885] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:46.919] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:46.919] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:46.919] [info] all components built
+[2026-10-25 23:19:47.003] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:47.003] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.003] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.038] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.038] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.038] [info] all components built
+[2026-10-25 23:19:47.122] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:47.122] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.122] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.156] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.156] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.156] [info] all components built
+[2026-10-25 23:19:47.239] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:47.240] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.240] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.273] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.273] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.273] [info] all components built
+[2026-10-25 23:19:47.361] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:47.361] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.361] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.396] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.396] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.396] [info] all components built
+[2026-10-25 23:19:47.483] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:47.483] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.483] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.518] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.519] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.519] [info] all components built
+[2026-10-25 23:19:47.600] [info] [pw] converged iter=10 energy_ry=-0.84050103 e_fermi_ry=-0.434669 n_occ=1.000000
+[2026-10-25 23:19:47.600] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.600] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.635] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.635] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.635] [info] all components built
+[2026-10-25 23:19:47.714] [info] [pw] converged iter=10 energy_ry=-0.84079872 e_fermi_ry=-0.434805 n_occ=1.000000
+[2026-10-25 23:19:47.714] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.714] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.750] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.750] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.750] [info] all components built
+[2026-10-25 23:19:47.827] [info] [pw] converged iter=10 energy_ry=-0.84050103 e_fermi_ry=-0.434669 n_occ=1.000000
+[2026-10-25 23:19:47.827] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.827] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.862] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.862] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.862] [info] all components built
+[2026-10-25 23:19:47.940] [info] [pw] converged iter=10 energy_ry=-0.84079872 e_fermi_ry=-0.434805 n_occ=1.000000
+[2026-10-25 23:19:47.940] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:47.940] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:47.974] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:47.974] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:47.974] [info] all components built
+[2026-10-25 23:19:48.057] [info] [pw] converged iter=10 energy_ry=-0.84050103 e_fermi_ry=-0.434669 n_occ=1.000000
+[2026-10-25 23:19:48.057] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.057] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.091] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.091] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.091] [info] all components built
+[2026-10-25 23:19:48.168] [info] [pw] converged iter=10 energy_ry=-0.84079872 e_fermi_ry=-0.434805 n_occ=1.000000
+[2026-10-25 23:19:48.169] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.169] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.201] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.202] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.202] [info] all components built
+[2026-10-25 23:19:48.296] [info] [pw] converged iter=10 energy_ry=-0.84064955 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:48.296] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.296] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.331] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.331] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.331] [info] all components built
+[2026-10-25 23:19:48.431] [info] [pw] converged iter=10 energy_ry=-0.84064955 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:48.431] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.431] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.467] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.467] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.467] [info] all components built
+[2026-10-25 23:19:48.556] [info] [pw] converged iter=10 energy_ry=-0.84064955 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:48.556] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.556] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.591] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.591] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.591] [info] all components built
+[2026-10-25 23:19:48.680] [info] [pw] converged iter=10 energy_ry=-0.84064955 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:48.680] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.680] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.718] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.718] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.718] [info] all components built
+[2026-10-25 23:19:48.815] [info] [pw] converged iter=10 energy_ry=-0.84064955 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:48.815] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.815] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.855] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.855] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.855] [info] all components built
+[2026-10-25 23:19:48.942] [info] [pw] converged iter=10 energy_ry=-0.84064955 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:48.942] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:48.942] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:48.978] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:48.978] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:48.979] [info] all components built
+[2026-10-25 23:19:49.058] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:49.100] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.100] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.137] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=1 mult=1 Na=0 Nb=1 smear=1
+[2026-10-25 23:19:49.137] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:49.137] [info] all components built
+[2026-10-25 23:19:49.210] [info] [pw] converged iter=10 energy_ry=-0.84064981 e_fermi_ry=-0.434737 n_occ=1.000000
+[2026-10-25 23:19:49.211] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.211] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.257] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.257] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.301] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.301] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.347] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.347] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.394] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.394] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.438] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.438] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.486] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.486] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.532] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.532] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.579] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.579] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.624] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.624] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.669] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.669] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.713] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.713] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.759] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.760] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:49.795] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=1
+[2026-10-25 23:19:49.795] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:49.795] [info] all components built
+[2026-10-25 23:19:49.987] [info] [pw] converged iter=8 energy_ry=-0.87806602 e_fermi_ry=-0.272707 n_occ=1.000000 mag=1.0000
+[2026-10-25 23:19:49.987] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:49.987] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:50.021] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=1
+[2026-10-25 23:19:50.021] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:50.021] [info] all components built
+[2026-10-25 23:19:50.213] [info] [pw] converged iter=8 energy_ry=-0.87806602 e_fermi_ry=-0.272707 n_occ=1.000000 mag=1.0000
+[2026-10-25 23:19:50.213] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:50.213] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:50.248] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=1
+[2026-10-25 23:19:50.248] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:50.249] [info] all components built
+[2026-10-25 23:19:50.439] [info] [pw] converged iter=8 energy_ry=-0.87806602 e_fermi_ry=-0.272707 n_occ=1.000000 mag=1.0000
+[2026-10-25 23:19:50.439] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:50.439] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:50.475] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=1
+[2026-10-25 23:19:50.475] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:50.475] [info] all components built
+[2026-10-25 23:19:50.666] [info] [pw] converged iter=8 energy_ry=-0.87806602 e_fermi_ry=-0.272707 n_occ=1.000000 mag=1.0000
+[2026-10-25 23:19:50.666] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:50.666] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:50.701] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=1
+[2026-10-25 23:19:50.702] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:50.702] [info] all components built
+[2026-10-25 23:19:50.894] [info] [pw] converged iter=8 energy_ry=-0.87806602 e_fermi_ry=-0.272707 n_occ=1.000000 mag=1.0000
+[2026-10-25 23:19:50.894] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:50.894] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:50.930] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=1
+[2026-10-25 23:19:50.930] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:50.930] [info] all components built
+[2026-10-25 23:19:51.123] [info] [pw] converged iter=8 energy_ry=-0.87806602 e_fermi_ry=-0.272707 n_occ=1.000000 mag=1.0000
+[2026-10-25 23:19:51.123] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.123] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.158] [info] [pw] start atoms=1 elec=1 bands=3 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=1
+[2026-10-25 23:19:51.158] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.158] [info] all components built
+[2026-10-25 23:19:51.323] [info] [pw] converged iter=8 energy_ry=-0.87806601 e_fermi_ry=-0.272707 n_occ=1.000000 mag=1.0000
+ok: |F|_analytic=4.715e-16  |F|_eval=4.715e-16 eV/Å  E=-12.0371 eV
+PASS: pw analytic forces (single-atom symmetry + nested method)
+
+=== pw/rks :: h_force_fd ===
+[2026-10-25 23:19:51.423] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.423] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.458] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.458] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.458] [info] all components built
+[2026-10-25 23:19:51.490] [info] [pw] converged iter=6 energy_ry=-0.87807170 mag=1
+[2026-10-25 23:19:51.491] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.491] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.524] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.524] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.524] [info] all components built
+[2026-10-25 23:19:51.557] [info] [pw] converged iter=6 energy_ry=-0.87807170 mag=1
+[2026-10-25 23:19:51.557] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.557] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.591] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.591] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.591] [info] all components built
+[2026-10-25 23:19:51.623] [info] [pw] converged iter=6 energy_ry=-0.87807170 mag=1
+[2026-10-25 23:19:51.624] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.624] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.658] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.658] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.658] [info] all components built
+[2026-10-25 23:19:51.692] [info] [pw] converged iter=6 energy_ry=-0.87807170 mag=1
+[2026-10-25 23:19:51.692] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.692] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.727] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.727] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.727] [info] all components built
+[2026-10-25 23:19:51.760] [info] [pw] converged iter=6 energy_ry=-0.87807170 mag=1
+[2026-10-25 23:19:51.760] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.760] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.795] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.795] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.795] [info] all components built
+[2026-10-25 23:19:51.827] [info] [pw] converged iter=6 energy_ry=-0.87807170 mag=1
+[2026-10-25 23:19:51.827] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.827] [info] all components built
+[2026-10-25 23:19:51.827] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.827] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.860] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.893] [info] [pw] converged iter=6 energy_ry=-0.87807169 mag=1
+ok: |F|_fd=4.504e-12  |F|_eval=4.715e-16 eV/Å  E=-11.9468 eV
+PASS: pw FD forces (single-atom symmetry + nested method)
+
+=== pw/rks :: h_stress_cubic ===
+[2026-10-25 23:19:51.933] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:51.933] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:51.968] [info] [pw] start atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1 k_mesh=1 ranks=1 spin=2 mult=2 Na=1 Nb=0 smear=0
+[2026-10-25 23:19:51.968] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:51.968] [info] all components built
+[2026-10-25 23:19:52.001] [info] [pw] converged iter=6 energy_ry=-0.87807169 mag=1
+[2026-10-25 23:19:52.001] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.001] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.040] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.041] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.081] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.081] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.121] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.121] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.162] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.162] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.202] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.202] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.241] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.241] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.282] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.282] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.322] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.322] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.361] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.361] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.402] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.402] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.442] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.442] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+[2026-10-25 23:19:52.482] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.482] [info] [pw] atoms=1 elec=1 bands=1 ecut_ry=5 GTH-PBE-q1
+ok: stress Voigt = -0.005159593182 -0.005159590458 -0.00515959815 | 3.497e-15 8.742e-15 3.497e-14 eV/A3
+ok: diag spread=7.691e-09 (tol 1e-06)  max|off-diag|=3.497e-14 (tol 1e-09)
+PASS: pw cubic H stress symmetry
+
+=== pw/rks :: pw-analytic-stress-si ===
+[2026-10-25 23:19:52.529] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:52.529] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:52.665] [info] [pw] start atoms=2 elec=8 bands=4 ecut_ry=15 upf k_mesh=2 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=0
+[2026-10-25 23:19:52.666] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:52.666] [info] all components built
+[2026-10-25 23:19:53.032] [info] [pw] converged iter=5 energy_ry=-15.67139353 mag=0
+[2026-10-25 23:19:53.034] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:53.034] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:53.242] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:53.242] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:53.448] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:53.448] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:53.661] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:53.661] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:53.869] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:53.869] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:54.078] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:54.078] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:54.284] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:54.284] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:54.492] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:54.492] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:54.701] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:54.701] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:54.908] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:54.908] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:55.118] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:55.118] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:55.328] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:55.328] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+PASS: PW analytic stress Si a=5.43 A ecut=15 k=2  σ=0.0576119 0.0576119 0.0576119 | -2.96e-06 -2.95e-06 -2.95e-06 eV/A3  max|an-FDpin|=6.189e-05
+
+=== pw/rks :: pw-lda-si ===
+[2026-10-25 23:19:55.534] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:55.534] [info] all components built
+[2026-10-25 23:19:55.539] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:55.539] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:55.675] [info] [pw] start atoms=2 elec=8 bands=4 ecut_ry=15 upf k_mesh=2 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=0
+[2026-10-25 23:19:56.131] [info] [pw] converged iter=6 energy_ry=-15.70443534 mag=0
+PASS: PW LDA Si a=5.43 A ecut=15 Ry k=2  E=-15.70443534 Ry (-213.669726 eV)  band [-16.9163, -15.4163] Ry  ABINIT-class E_min=-16.916316 Ry  iters=6
+
+=== pw/rks :: pw-pbe-gga-si ===
+[2026-10-25 23:19:56.252] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:56.252] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:56.389] [info] [pw] start atoms=2 elec=8 bands=4 ecut_ry=15 upf k_mesh=2 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=0
+[2026-10-25 23:19:56.389] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:56.389] [info] all components built
+[2026-10-25 23:19:56.769] [info] [pw] converged iter=6 energy_ry=-15.70443534 mag=0
+[2026-10-25 23:19:56.772] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:56.772] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:56.906] [info] [pw] start atoms=2 elec=8 bands=4 ecut_ry=15 upf k_mesh=2 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=0
+[2026-10-25 23:19:56.906] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:56.907] [info] all components built
+[2026-10-25 23:19:57.287] [info] [pw] converged iter=6 energy_ry=-15.70443534 mag=0
+[2026-10-25 23:19:57.394] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:19:57.394] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=15 UPF
+[2026-10-25 23:19:57.531] [info] [pw] start atoms=2 elec=8 bands=4 ecut_ry=15 upf k_mesh=2 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=0
+[2026-10-25 23:19:57.531] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:19:57.531] [info] all components built
+[2026-10-25 23:19:57.895] [info] [pw] converged iter=6 energy_ry=-15.67139353 mag=0
+ok: E_PBE=-15.70443534 Ry  E_LSDA=-15.67139353 Ry  |Δ|=0.0330418 Ry  iters_pbe=6 converged=1
+ok: |F0|=9.488e-07  |F1|=9.79e-07 eV/Å  upf=/Users/roykid/work/molcrafts/Atomiverse/tests/data/pw/Si_lda_nc.upf
+PASS: pw-pbe-gga-si (true GGA PBE + symmetry forces)
+
+=== pw/rks summary ===
+  PASS     5.1 s  h_force_analytic
+  PASS     0.5 s  h_force_fd
+  PASS     0.6 s  h_stress_cubic
+  PASS     3.0 s  pw-analytic-stress-si
+  PASS     0.7 s  pw-lda-si
+  PASS     1.6 s  pw-pbe-gga-si
+0/6 sections failed
+<end of output>
+Test time =  11.82 sec
+----------------------------------------------------------
+Test Passed.
+"pw/rks" end time: Oct 25 23:19 CET
+"pw/rks" time elapsed: 00:00:11
+----------------------------------------------------------
+
+End testing: Oct 25 23:19 CET
+
+regression =  11.82 sec*proc

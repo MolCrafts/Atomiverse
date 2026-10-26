@@ -51,7 +51,7 @@ Two policy slots let you change *when* a run ends without writing a driver:
 | Reciprocal-space electrostatics | `KSpaceEwald` / `KSpacePME` / `KSpacePPPM` (`Potential`) | `ATV_BUILD_KSPACE` |
 | Gaussian SCF — Hartree-Fock and Kohn-Sham | `cpu::scf::RHF` / `UHF` / `ROHF` / `GHF` / `RKS` / `UKS` / `ROKS` (`HF`) | `ATV_BUILD_HF` |
 | Plane-wave DFT | `cpu::pw::PW` (nested `Driver<pw::Phase>`) | `ATV_BUILD_PW` |
-| Gaussian-and-plane-waves DFT | `cpu::gpw::GPWEvaluator` (`GPW`) | `ATV_BUILD_GPW` |
+| Gaussian-and-plane-waves DFT | `cpu::gpw::GpwDft` (nested `Driver<gpw::Phase>`) | `ATV_BUILD_GPW` |
 | NDDO semiempirics | `cpu::semiempirical::AM1` / `RM1`; CUDA counterparts provide CHNO molecular E/q/analytic F (nested `Driver<nddo::Phase>`) | `ATV_BUILD_SEMIEMPIRICAL`; CUDA additionally `ATV_BUILD_CUDA` |
 | DFTB | `cpu::semiempirical::DFTB0` / `DFTB3` (`Semiempirical`); `DFTB2` is also a nested `Driver<scc::Phase>` | `ATV_BUILD_SEMIEMPIRICAL` |
 | Extended tight binding | `cpu::semiempirical::GFN0` / `GFN1` / `GFN2` / `IPEA` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
@@ -68,17 +68,20 @@ and AM1/RM1 build themselves on first use. AM1/RM1 also permit explicit
 `GpwDft` takes one `Kind` (element + contracted Gaussian basis + GTH
 pseudopotential) per element and reads positions [Å], Z (`kAtom_type`) and the
 orthorhombic box from the Frame; `run(frame)` writes the energy [eV] and
-`forces(frame)` also writes `kAtom_f*` [eV/Å]. To put it on a Driver slot,
-move the configured method into `cpu::gpw::GPWEvaluator`
-(`cpu/gpw/gpw_evaluator.h`):
+`forces(frame)` also writes `kAtom_f*` [eV/Å]. For Born–Oppenheimer work,
+mount the method directly on the outer Driver:
 
 ```cpp
 cpu::gpw::GpwDft dft{{O, H}, 400.0, cpu::gpw::XcKind::PBE};          // cpu::gpw::Kind per element
-cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces=*/true);
+cpu::Evaluate driver;
+driver.on(evaluate::Phase::evaluate).add_ref(dft);
+driver.run(frame);
 ```
 
-Bind the matching evaluator component when a Driver needs energy/forces on a
-Plan slot.
+The parent phase requests energy/forces; stress is assembled when the plan
+consumes it. The borrowed method must outlive the Driver.
+`cpu::gpw::GPWEvaluator` remains for electronic propagators (CPMD,
+second-gen CP, XL-BOMD) and callers awaiting migration.
 
 ## Classical molecular dynamics
 

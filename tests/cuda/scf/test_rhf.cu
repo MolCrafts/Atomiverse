@@ -1,5 +1,5 @@
 /// @file test_rhf.cu
-/// @brief Integration tests for H2/STO-3G/RHF: integrals, CPU solver, CUDA solver, parity.
+/// @brief RHF integral primitives, constructor validation and method contracts.
 
 #ifdef ATV_HAS_HF
 
@@ -228,6 +228,38 @@ TEST(RHF, NegativeNoccThrowsDeviceIntegrals) {
         std::invalid_argument);
 }
 
+TEST(RHF, DenseEriIndexOverflowRejectedBeforeAllocation) {
+    // 216^4 exceeds INT_MAX. The current dense integral kernels use int
+    // indices, so build must refuse the shape before any device allocation.
+    constexpr int n = 216;
+    std::vector<double> alpha(n, 1.0), coeff(n, 1.0);
+    std::vector<int> angular_momentum(n, 0), atom(n, 0);
+    cuda::scf::internal::RHFFockDevice fock{
+        n,           n, 1, alpha.data(), coeff.data(), angular_momentum.data(),
+        atom.data(), 1};
+    cuda::Frame device_frame;
+    device_frame.n_atoms_ = 1;
+    cuda::scf::SCFWorkspace workspace;
+    EXPECT_THROW(fock.build({nullptr, device_frame, 0}, workspace),
+                 std::invalid_argument);
+    EXPECT_EQ(workspace.ERI, nullptr);
+}
+
+TEST(RHF, ExcessOccupationRejectedBeforeAllocation) {
+    const double alpha[] = {1.0, 1.0};
+    const double coeff[] = {1.0, 1.0};
+    const int angular_momentum[] = {0, 0};
+    const int atom[] = {0, 0};
+    cuda::scf::internal::RHFFockDevice fock{
+        2, 2, 1, alpha, coeff, angular_momentum, atom, 3};
+    cuda::Frame device_frame;
+    device_frame.n_atoms_ = 1;
+    cuda::scf::SCFWorkspace workspace;
+    EXPECT_THROW(fock.build({nullptr, device_frame, 0}, workspace),
+                 std::invalid_argument);
+    EXPECT_EQ(workspace.ERI, nullptr);
+}
+
 // ── CUDA RHF single-point tests (cuda::scf::RHF + Evaluate) ───────
 
 // ── CPU/CUDA parity ───────────────────────────────────────────────────
@@ -384,70 +416,10 @@ TEST(RHF, OutOfCoverageForcesThrowHowto) {
     }
 }
 
-// run(const Frame&) is the geometry-read-only entry: same SCF, no host write.
-// H2/STO-3G total is the PySCF 2.14.0 pin already used by scf/rhf (0.74 Å).
-TEST(RHF, ConstRunWritesNothing) {
-    constexpr double kWantHa = -1.1167593073964255;
-    constexpr double kTol = 1e-6;
-    auto frame = make_h2();
-    frame.meta.get(kEnergy) = 42.0;
-    frame.meta.get(kEnergyElectronic) = -7.0;
-    frame.span(kAtom_fx)[0] = 1.5;
-    frame.span(kAtom_fy)[0] = -2.5;
-    frame.span(kAtom_fz)[1] = 3.5;
-    const double x1 = static_cast<double>(frame.span(kAtom_x)[1]);
-    const cpu::Frame& geometry = frame;
-
-    cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, 1e-10, 40};
-    EXPECT_TRUE(rhf.compute_force);
-    rhf.run(geometry);
-    rhf.run(geometry);
-
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.meta.get(kEnergy)), 42.0);
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.meta.get(kEnergyElectronic)),
-                     -7.0);
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fx)[0]), 1.5);
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fy)[0]), -2.5);
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fz)[1]), 3.5);
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_x)[1]), x1);
-    EXPECT_TRUE(rhf.last_scf_on_device());
-    EXPECT_FALSE(rhf.last_force_on_device());
-    EXPECT_TRUE(rhf.converged());
-    EXPECT_NEAR(rhf.energy(), kWantHa, kTol);
-}
-
-// compute_force stays true, but const run must not take the force kernel
-// (def2-SVP throws launch_rhf_forces_lgt1 only when forces are requested).
-TEST(RHF, ConstRunSkipsForceKernel) {
-    auto frame = make_h2();
-    frame.meta.get(kEnergy) = 42.0;
-    frame.span(kAtom_fx)[0] = 1.5;
-    const double x1 = static_cast<double>(frame.span(kAtom_x)[1]);
-    const cpu::Frame& geometry = frame;
-
-    cuda::scf::RHF rhf{cpu::scf::BasisSet::Def2SVP, 0, 1e-8, 1};
-    EXPECT_TRUE(rhf.compute_force);
-    try {
-        rhf.run(geometry);
-    } catch (const std::exception& e) {
-        FAIL() << "const run requested a force kernel: " << e.what();
-    }
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.meta.get(kEnergy)), 42.0);
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_fx)[0]), 1.5);
-    EXPECT_DOUBLE_EQ(static_cast<double>(frame.span(kAtom_x)[1]), x1);
-    EXPECT_FALSE(rhf.last_force_on_device());
-    EXPECT_TRUE(rhf.last_scf_on_device());
-    EXPECT_EQ(rhf.iterations(), 1);
-    EXPECT_TRUE(std::isfinite(rhf.energy()));
-}
+// Const Frame SCF solves are covered in scf/rhf/es-cuda-rhf-driver.
 
 // ── AIMD milestone (wave-3): multi-step MD + per-launch geometry rebuild ─
 // CPU twin: MethodDriverWire.NestedMultiStepAimd / MdAcceptsNestedRhfForce.
 // No AimdDriver; composition is cuda::md::MD + set_evaluator(RHF) + VV.
-
-#else // !ATV_HAS_HF
-
-#include <gtest/gtest.h>
-TEST(RHF, Disabled) { GTEST_SKIP() << "RHF tests require -DATV_BUILD_HF=ON"; }
 
 #endif // ATV_HAS_HF

@@ -13,7 +13,9 @@ namespace internal {
 
 /// @brief Evaluate the LSDA XC potential and energy density on the real grid.
 ///
-/// Per grid point this reproduces `cpu::scf::evaluate_xc(XCType::LSDA, ρ/2,
+/// The device energy channel is epsilon per electron; the CPU point kernel
+/// reports f = rho * epsilon per volume. Potentials use the same convention.
+/// Per grid point this implements the same functional as `cpu::scf::evaluate_xc(XCType::LSDA, ρ/2,
 /// ρ/2)` — Slater exchange + VWN5 correlation — including the `ρ < 1e-12`
 /// cutoff that zeroes both outputs. Spin-unpolarized (ζ = 0): the VWN5 spin
 /// interpolation f(ζ) and its derivative both vanish identically at ζ = 0

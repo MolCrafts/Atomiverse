@@ -4,7 +4,7 @@
 ///        shipping SCF loop, with the DIIS history owned inside the component.
 ///
 /// Wraps the shipping internal helpers `linalg::diis_error`,
-/// `internal::DIISMixer` and `internal::apply_level_shift` behind a
+/// `linalg::internal::DIISMixer` and `internal::apply_level_shift` behind a
 /// `cpu::Component` bound at `scf::Phase::mix`. State flows through named
 /// constructor references (const& reads, & writes) — no config struct, no
 /// workspace bag, no Context slice. `launch()` reproduces the shipping loop
@@ -28,8 +28,8 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
+#include "atomiverse/cpu/linalg/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
-#include "atomiverse/cpu/scf/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/ediis_adiis.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
 
@@ -127,7 +127,7 @@ class MixStage : public cpu::Component {
     /// @brief Clear every mixer history + the escalation latch (called once
     ///        per run start).
     void reset() {
-        diis_ = internal::DIISMixer(diis_max_vectors_);
+        diis_ = linalg::internal::DIISMixer(diis_max_vectors_);
         ediis_.reset();
         adiis_.reset();
         switched_ = false;
@@ -157,10 +157,10 @@ class MixStage : public cpu::Component {
     RealMatrix& err_beta_;
     bool& soscf_active_; ///< SOSCF latch (method-owned; write-once per run).
 
-    internal::DIISMixer diis_;   ///< Private CDIIS subspace history.
-    internal::EDIISMixer ediis_; ///< Far-field EDIIS history (F, D, E).
-    internal::ADIISMixer adiis_; ///< Far-field ADIIS history (F, D).
-    bool switched_ = false;      ///< Permanent EDIIS/ADIIS→CDIIS latch.
+    linalg::internal::DIISMixer diis_; ///< Private CDIIS subspace history.
+    internal::EDIISMixer ediis_;       ///< Far-field EDIIS history (F, D, E).
+    internal::ADIISMixer adiis_;       ///< Far-field ADIIS history (F, D).
+    bool switched_ = false;            ///< Permanent EDIIS/ADIIS→CDIIS latch.
 };
 
 } // namespace scf

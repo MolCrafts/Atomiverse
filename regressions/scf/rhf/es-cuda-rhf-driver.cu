@@ -180,11 +180,20 @@ int check_cuda_h2() {
         eval.run(frame);
     };
     nested_energy();
+    const double nested_energy_ha =
+        frame.meta.get(kEnergy) / units::kHartreeInEv;
+    bool nested_cache_rejected = false;
+    try {
+        (void)rhf.energy();
+    } catch (const std::logic_error&) {
+        nested_cache_rejected = true;
+    }
     if (rhf.last_force_on_device() || !sentinel_preserved("RHF", frame)
-        || !rhf.converged() || std::abs(rhf.energy() - kWant) > kTol) {
+        || !rhf.converged() || !nested_cache_rejected
+        || std::abs(nested_energy_ha - kWant) > kTol) {
         std::printf("FAIL RHF energy-only got=%.12f want=%.12f tol=%.0e "
                     "force=%d want=0 converged=%d want=1\n",
-                    rhf.energy(), kWant, kTol, rhf.last_force_on_device(),
+                    nested_energy_ha, kWant, kTol, rhf.last_force_on_device(),
                     rhf.converged());
         return 1;
     }
@@ -240,6 +249,45 @@ int check_cuda_h2() {
     std::printf("PASS [cuda]: H2/STO-3G E=%.12f Ha (want %.12f +/- %.0e) "
                 "path=device [PySCF 2.14.0]\n",
                 e_ha, kWant, kTol);
+
+    // A read-only geometry solve must preserve every caller-visible field,
+    // even when the method's default force kernel is unavailable. These are
+    // complete SCF solves, so they belong with this product regression.
+    for (const auto basis :
+         {cpu::scf::BasisSet::STO3G, cpu::scf::BasisSet::Def2SVP}) {
+        auto readonly_frame = make_h2();
+        readonly_frame.meta.get(kEnergy) = 42.0;
+        readonly_frame.meta.get(kEnergyElectronic) = -7.0;
+        readonly_frame.span(kAtom_fx)[0] = 1.5;
+        readonly_frame.span(kAtom_fy)[0] = -2.5;
+        readonly_frame.span(kAtom_fz)[1] = 3.5;
+        const double z1 = readonly_frame.span(kAtom_z)[1];
+        cuda::scf::RHF readonly_rhf{basis, 0, 1e-10, 100};
+        const cpu::Frame& geometry = readonly_frame;
+        readonly_rhf.run(geometry);
+        readonly_rhf.run(geometry);
+        const bool preserved =
+            readonly_frame.meta.get(kEnergy) == 42.0
+            && readonly_frame.meta.get(kEnergyElectronic) == -7.0
+            && readonly_frame.span(kAtom_fx)[0] == 1.5
+            && readonly_frame.span(kAtom_fy)[0] == -2.5
+            && readonly_frame.span(kAtom_fz)[1] == 3.5
+            && readonly_frame.span(kAtom_z)[1] == z1;
+        if (!preserved || !readonly_rhf.converged()
+            || !readonly_rhf.last_scf_on_device()
+            || readonly_rhf.last_force_on_device()
+            || !std::isfinite(readonly_rhf.energy())
+            || (basis == cpu::scf::BasisSet::STO3G
+                && std::abs(readonly_rhf.energy() - kWant) > kTol)) {
+            std::printf("FAIL [cuda]: const RHF preserved=%d want=1 "
+                        "converged=%d want=1 force=%d want=0 "
+                        "E=%.12f Ha (STO-3G want %.12f tol=%.0e)\n",
+                        preserved, readonly_rhf.converged(),
+                        readonly_rhf.last_force_on_device(),
+                        readonly_rhf.energy(), kWant, kTol);
+            return 1;
+        }
+    }
     return 0;
 }
 

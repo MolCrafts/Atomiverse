@@ -17,7 +17,9 @@
 #include "atomiverse/cpu/multiscale/internal/qm_subsystem.h"
 #include "atomiverse/cpu/multiscale/qm_mask.h"
 #include "atomiverse/cpu/scf/methods.h"
+#ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
+#endif
 
 using namespace ATV;
 using ATV::cpu::multiscale::internal::QmSubsystem;
@@ -99,6 +101,7 @@ TEST(QmSubsystem, NonzeroQmChargeThrows) {
     EXPECT_THROW(sub.build({ctx, f}, 1), std::runtime_error);
 }
 
+#ifdef ATV_HAS_SEMIEMPIRICAL
 TEST(QmSubsystem, Am1EngineRejectedByName) {
     auto f = make_h2o_ar();
     cpu::Context ctx;
@@ -116,6 +119,8 @@ TEST(QmSubsystem, Am1EngineRejectedByName) {
         },
         std::runtime_error);
 }
+
+#endif
 
 TEST(QmSubsystem, MpiSizeGreaterThanOneThrows) {
     auto f = make_h2o_ar();

@@ -1,0 +1,132 @@
+1774/1834 Testing: gpw/berry-phase
+1774/1834 Test: gpw/berry-phase
+Command: "/tmp/atv-xc-build/regressions/atv_regressions" "--case" "gpw/berry-phase"
+Directory: /tmp/atv-xc-build/regressions
+"gpw/berry-phase" start time: Oct 25 19:58 CET
+Output:
+----------------------------------------------------------
+
+=== gpw/berry-phase :: periodic-berry-gpw ===
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  0 ms
+[gpw setup] local_pp_grid  0 ms
+[gpw setup k] ST_k           465 ms
+[gpw setup k] Vnl_k          84 ms
+[gpw setup k] orth_k         4 ms
+[gpw setup k] kbg_build      371 ms
+[2026-10-25 19:58:38.641] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:58:38.642] [info] all components built
+[gpw prof k] collocate=32 poisson=0 xc=47 integrate=33 ms (ngrid=14520 nk=4 mg=0 build=1)
+[gpw prof k] collocate=59 poisson=0 xc=1 integrate=39 ms (ngrid=14520 nk=4 mg=0 build=2)
+[gpw prof k] collocate=35 poisson=0 xc=0 integrate=29 ms (ngrid=14520 nk=4 mg=0 build=3)
+[gpw prof k] collocate=30 poisson=0 xc=0 integrate=30 ms (ngrid=14520 nk=4 mg=0 build=4)
+[gpw prof k] collocate=31 poisson=0 xc=0 integrate=30 ms (ngrid=14520 nk=4 mg=0 build=5)
+[gpw prof k] collocate=37 poisson=0 xc=0 integrate=29 ms (ngrid=14520 nk=4 mg=0 build=6)
+[gpw prof k] collocate=33 poisson=0 xc=0 integrate=35 ms (ngrid=14520 nk=4 mg=0 build=7)
+[gpw berry] dir=0 scf=1537 ms links=3470 ms iterations=7 energy=-15.494346734088 Ha
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  0 ms
+[gpw setup] local_pp_grid  0 ms
+[gpw setup k] ST_k           703 ms
+[gpw setup k] Vnl_k          116 ms
+[gpw setup k] orth_k         5 ms
+[gpw setup k] kbg_build      637 ms
+[2026-10-25 19:58:44.190] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:58:44.190] [info] all components built
+[gpw prof k] collocate=43 poisson=0 xc=1 integrate=42 ms (ngrid=14520 nk=4 mg=0 build=1)
+[gpw prof k] collocate=42 poisson=0 xc=1 integrate=41 ms (ngrid=14520 nk=4 mg=0 build=2)
+[gpw prof k] collocate=43 poisson=0 xc=1 integrate=43 ms (ngrid=14520 nk=4 mg=0 build=3)
+[gpw prof k] collocate=47 poisson=0 xc=1 integrate=42 ms (ngrid=14520 nk=4 mg=0 build=4)
+[gpw prof k] collocate=43 poisson=0 xc=1 integrate=43 ms (ngrid=14520 nk=4 mg=0 build=5)
+[gpw prof k] collocate=44 poisson=0 xc=1 integrate=49 ms (ngrid=14520 nk=4 mg=0 build=6)
+[gpw prof k] collocate=45 poisson=0 xc=1 integrate=49 ms (ngrid=14520 nk=4 mg=0 build=7)
+[gpw berry] dir=1 scf=2181 ms links=3134 ms iterations=7 energy=-15.494346734089 Ha
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  0 ms
+[gpw setup] local_pp_grid  0 ms
+[gpw setup k] ST_k           647 ms
+[gpw setup k] Vnl_k          100 ms
+[gpw setup k] orth_k         3 ms
+[gpw setup k] kbg_build      572 ms
+[2026-10-25 19:58:49.361] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:58:49.361] [info] all components built
+[gpw prof k] collocate=42 poisson=0 xc=0 integrate=38 ms (ngrid=14520 nk=4 mg=0 build=1)
+[gpw prof k] collocate=41 poisson=0 xc=0 integrate=41 ms (ngrid=14520 nk=4 mg=0 build=2)
+[gpw prof k] collocate=42 poisson=0 xc=1 integrate=40 ms (ngrid=14520 nk=4 mg=0 build=3)
+[gpw prof k] collocate=42 poisson=0 xc=1 integrate=40 ms (ngrid=14520 nk=4 mg=0 build=4)
+[gpw prof k] collocate=42 poisson=0 xc=1 integrate=41 ms (ngrid=14520 nk=4 mg=0 build=5)
+[gpw berry] dir=2 scf=1812 ms links=3313 ms iterations=5 energy=-15.288283416028 Ha
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  0 ms
+[gpw setup] local_pp_grid  0 ms
+[gpw setup k] ST_k           602 ms
+[gpw setup k] Vnl_k          102 ms
+[gpw setup k] orth_k         3 ms
+[gpw setup k] kbg_build      554 ms
+ideal Si: E=-15.288283 Ha
+  dir 0: phase=+0.000000  p_el=+0.000000  p_ion=+4.000000  p=+0.000000
+  dir 1: phase=-0.000000  p_el=-0.000000  p_ion=+4.000000  p=-0.000000
+  dir 2: phase=+0.000000  p_el=+0.000000  p_ion=+6.000000  p=+0.000000
+[2026-10-25 19:58:54.425] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:58:54.425] [info] all components built
+[gpw prof k] collocate=39 poisson=0 xc=0 integrate=38 ms (ngrid=14520 nk=4 mg=0 build=1)
+[gpw prof k] collocate=44 poisson=0 xc=1 integrate=44 ms (ngrid=14520 nk=4 mg=0 build=2)
+[gpw prof k] collocate=61 poisson=0 xc=1 integrate=47 ms (ngrid=14520 nk=4 mg=0 build=3)
+[gpw prof k] collocate=45 poisson=0 xc=1 integrate=50 ms (ngrid=14520 nk=4 mg=0 build=4)
+[gpw prof k] collocate=61 poisson=0 xc=1 integrate=43 ms (ngrid=14520 nk=4 mg=0 build=5)
+[gpw prof k] collocate=44 poisson=0 xc=1 integrate=41 ms (ngrid=14520 nk=4 mg=0 build=6)
+[gpw prof k] collocate=45 poisson=0 xc=1 integrate=49 ms (ngrid=14520 nk=4 mg=0 build=7)
+[gpw prof k] collocate=56 poisson=0 xc=1 integrate=43 ms (ngrid=14520 nk=4 mg=0 build=8)
+[gpw prof k] collocate=46 poisson=0 xc=1 integrate=49 ms (ngrid=14520 nk=4 mg=0 build=9)
+[gpw prof k] collocate=60 poisson=0 xc=1 integrate=45 ms (ngrid=14520 nk=4 mg=0 build=10)
+[gpw prof k] collocate=45 poisson=0 xc=1 integrate=44 ms (ngrid=14520 nk=4 mg=0 build=11)
+[gpw prof k] collocate=43 poisson=0 xc=1 integrate=42 ms (ngrid=14520 nk=4 mg=0 build=12)
+[gpw berry] dir=2 scf=2518 ms links=3301 ms iterations=12 energy=-15.286255339045 Ha
+displaced Si: E=-15.286255 Ha  p_z 0.000000 -> 0.000069  Delta p_z=+0.000069  Z*=+0.0034
+PASS: periodic-berry-gpw (centrosymmetric lattice pin + Z*(Si)=0 ASR pin)
+whole section got=21.266086 want<=60 seconds
+
+=== gpw/berry-phase :: periodic-berry-gpw-uks ===
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  0 ms
+[gpw setup] local_pp_grid  0 ms
+[2026-10-25 19:59:00.272] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:59:00.272] [info] all components built
+[gpw berry] dir=0 scf=2757 ms links=3992 ms iterations=7 energy=-15.494346734088 Ha
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  0 ms
+[gpw setup] local_pp_grid  0 ms
+[2026-10-25 19:59:08.215] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:59:08.216] [info] all components built
+[gpw berry] dir=1 scf=4718 ms links=3506 ms iterations=7 energy=-15.494346734089 Ha
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  0 ms
+[gpw setup] local_pp_grid  0 ms
+[2026-10-25 19:59:15.436] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:59:15.436] [info] all components built
+[gpw berry] dir=2 scf=2630 ms links=4086 ms iterations=5 energy=-15.288283416028 Ha
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  1 ms
+[gpw setup] local_pp_grid  1 ms
+ideal Si (UKS): E=-15.288283 Ha
+  dir 0: phase=+0.000000  p_el=+0.000000  p_ion=+4.000000  p=+0.000000
+  dir 1: phase=-0.000000  p_el=-0.000000  p_ion=+4.000000  p=-0.000000
+  dir 2: phase=+0.000000  p_el=+0.000000  p_ion=+6.000000  p=+0.000000
+[2026-10-25 19:59:22.225] [info] CPU runtime initialized: 8 threads
+[2026-10-25 19:59:22.225] [info] all components built
+[gpw berry] dir=2 scf=3847 ms links=3662 ms iterations=11 energy=-15.286255336513 Ha
+displaced Si (UKS): E=-15.286255 Ha  p_z 0.000000 -> 0.000069  Delta p_z=+0.000069  Z*=+0.0035
+PASS: periodic-berry-gpw-uks (collinear UKS KSV strings; centrosymmetric lattice pin + Z*(Si)=0 ASR pin)
+whole section got=29.198036 want<=60 seconds
+
+=== gpw/berry-phase summary ===
+  PASS    21.3 s  periodic-berry-gpw
+  PASS    29.2 s  periodic-berry-gpw-uks
+0/2 sections failed
+<end of output>
+Test time =  50.48 sec
+----------------------------------------------------------
+Test Passed.
+"gpw/berry-phase" end time: Oct 25 19:59 CET
+"gpw/berry-phase" time elapsed: 00:00:50
+----------------------------------------------------------

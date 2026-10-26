@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.18)
+project(ExternalXcExample LANGUAGES CXX)
+find_package(Atomiverse CONFIG REQUIRED COMPONENTS HF EVALUATE)
+add_executable(xc-extension main.cpp)
+target_link_libraries(xc-extension PRIVATE Atomiverse::atomiverse)

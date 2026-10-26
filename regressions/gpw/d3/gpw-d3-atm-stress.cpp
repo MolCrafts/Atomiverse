@@ -14,8 +14,7 @@
 ///      three-body ATM stress −Ω⁻¹ ∂E_ATM/∂ε.
 /// Decisive dual gate: product analytic fixed-P stress (`d3 = d3_atm = true`,
 /// `stress_use_fd = false`) vs multi-SCF strain-FD (`gpw_stress_fd`) on the
-/// same method. The cheap periodic-H₂ unit twin is
-/// tests/cpu/gpw/test_cpu_gpw_stress.cpp (`AnalyticMatchesFdWithD3Atm`).
+/// same method, along the dimer's x axis.
 ///
 /// No live CP2K. See REFERENCE.md.
 

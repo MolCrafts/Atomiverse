@@ -61,6 +61,7 @@ static void free_workspace_device(SCFWorkspace& workspace_) {
     }
     cudaFree(workspace_.d_scalar_scratch);
     cudaFree(workspace_.d_W);
+    cudaFree(workspace_.d_gradient);
     cudaFree(workspace_.C_prime);
     workspace_ = {};
 }
@@ -203,6 +204,8 @@ void RhfScfCycle::begin(void* stream) {
     auto& scf = workspace_;
     scf.converged = false;
     scf.iteration = 0;
+    polishing_ = false;
+    canonicalized_ = false;
     if (scf.h_converged_mapped)
         *scf.h_converged_mapped = 0;
     if (scf.n > 0 && scf.P)
@@ -210,6 +213,7 @@ void RhfScfCycle::begin(void* stream) {
                         cu_stream);
     if (diis_)
         diis_->reset();
+    convergence_->reset(stream);
 }
 
 void RhfScfCycle::step_fock(void* stream, cuda::Frame& frame, int step) {
@@ -222,7 +226,10 @@ void RhfScfCycle::step_fock(void* stream, cuda::Frame& frame, int step) {
 
 void RhfScfCycle::step_mix(void* stream, cuda::Frame& frame, int step) {
     SolverContext ctx{stream, frame, step};
-    diis_->step(ctx, workspace_);
+    if (polishing_)
+        diis_->canonicalize(ctx, workspace_);
+    else
+        diis_->step(ctx, workspace_);
 }
 
 void RhfScfCycle::step_diagonalize(void* stream, cuda::Frame& frame, int step) {
@@ -237,15 +244,30 @@ void RhfScfCycle::step_density(void* stream, cuda::Frame& frame, int step) {
 
 void RhfScfCycle::step_check(void* stream, cuda::Frame& frame, int step) {
     SolverContext ctx{stream, frame, step};
-    convergence_->step(ctx, workspace_);
+    if (path_ == Path::RHFDeviceIntegrals)
+        convergence_->step_hf(ctx, workspace_, diis_->error());
+    else
+        convergence_->step(ctx, workspace_);
 }
 
 bool RhfScfCycle::poll_converged(void* stream, int step) {
     auto& scf = workspace_;
     if (path_ == Path::RHFDeviceIntegrals) {
         cudaStreamSynchronize(static_cast<cudaStream_t>(stream));
-        if (scf.h_converged_mapped)
-            scf.converged = (*scf.h_converged_mapped != 0);
+        const bool accepted =
+            scf.h_converged_mapped && *scf.h_converged_mapped != 0;
+        if (accepted && !polishing_) {
+            // A candidate must survive one ordinary scheduled iteration with
+            // the fresh physical Fock and no DIIS/level shift. Poll changes
+            // control only; the existing five stages own all science.
+            polishing_ = true;
+            *scf.h_converged_mapped = 0;
+            scf.converged = false;
+            return false;
+        }
+        canonicalized_ = polishing_ && accepted;
+        polishing_ = false;
+        scf.converged = accepted;
         if (scf.converged)
             scf.iteration = step;
     }
@@ -255,28 +277,13 @@ bool RhfScfCycle::poll_converged(void* stream, int step) {
 void RhfScfCycle::finish(void* stream) {
     auto cu_stream = static_cast<cudaStream_t>(stream);
     auto& scf = workspace_;
-    const bool device_no_d2h = (path_ == Path::RHFDeviceIntegrals);
-
-    if (device_no_d2h) {
+    if (path_ == Path::RHFDeviceIntegrals) {
         if (scf.h_converged_mapped)
             scf.converged = (*scf.h_converged_mapped != 0);
-        if (scf.d_residual) {
-            cuda::prec_t h_res = 0;
-            cudaMemcpyAsync(&h_res, scf.d_residual, sizeof(cuda::prec_t),
-                            cudaMemcpyDeviceToHost, cu_stream);
-            cudaStreamSynchronize(cu_stream);
-            scf.residual = static_cast<double>(h_res);
-        }
-        if (scf.d_V_nuc) {
-            cudaMemcpyAsync(&scf.V_nuc, scf.d_V_nuc, sizeof(double),
-                            cudaMemcpyDeviceToHost, cu_stream);
-            cudaStreamSynchronize(cu_stream);
-        }
-        if (!scf.d_residual && !scf.d_V_nuc)
-            cudaStreamSynchronize(cu_stream);
     }
 
-    if (scf.converged && std::abs(level_shift_) > 1e-4 && scf.n_occ < scf.n) {
+    if (scf.converged && !canonicalized_ && std::abs(level_shift_) > 1e-4
+        && scf.n_occ < scf.n) {
         const int n_virt = scf.n - scf.n_occ;
         int blocks = cuda::grid_size(n_virt, cuda::kDefaultBlock);
         deshift_virtuals_kernel<<<blocks, cuda::kDefaultBlock, 0, cu_stream>>>(

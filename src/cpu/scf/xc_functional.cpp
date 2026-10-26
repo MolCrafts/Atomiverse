@@ -9,8 +9,10 @@
 /// sibling translation unit xc_gga.cpp.
 
 #include "atomiverse/cpu/scf/xc_functional.h"
+
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/xc_internal.h"
+#include <stdexcept>
 
 #include <algorithm>
 #include <cmath>
@@ -128,12 +130,11 @@ static double spin_df(double zeta) {
 //   where C_x_spin = 2^{1/3} * C_x = 2^{1/3} * (3/4)(3/π)^{1/3}
 //
 //   Energy density (per volume): f_x = -C_x_spin * [ρ_α^{4/3} + ρ_β^{4/3}]
-//   ε_x = f_x / ρ  (energy per electron, but we track f_x = exc * rho)
 //
 //   v_x^α = ∂f_x/∂ρ_α = -(4/3) C_x_spin ρ_α^{1/3}
 //   v_x^β = ∂f_x/∂ρ_β = -(4/3) C_x_spin ρ_β^{1/3}
 
-static void slater_exchange(double rho_a, double rho_b, double& exc,
+static void slater_exchange(double rho_a, double rho_b, double& fx,
                             double& vx_a, double& vx_b) {
     double Cx_spin = std::pow(2.0, 1.0 / 3.0) * kCx;
 
@@ -141,9 +142,7 @@ static void slater_exchange(double rho_a, double rho_b, double& exc,
     double rb43 = std::pow(rho_b, 4.0 / 3.0);
 
     // f_x = -Cx_spin * (ρ_α^{4/3} + ρ_β^{4/3})  (energy per volume)
-    double fx = -Cx_spin * (ra43 + rb43);
-    double rho = rho_a + rho_b;
-    exc = fx / rho; // energy per electron
+    fx = -Cx_spin * (ra43 + rb43);
 
     vx_a = -(4.0 / 3.0) * Cx_spin * std::pow(rho_a, 1.0 / 3.0);
     vx_b = -(4.0 / 3.0) * Cx_spin * std::pow(rho_b, 1.0 / 3.0);
@@ -209,14 +208,10 @@ static void pw92_G(double rs, const PW92Params& p, double& G, double& dG_drs) {
     dG_drs = -2.0 * p.A * (p.alpha1 * q2 + prefactor * dq2_drs);
 }
 
-static void pw92_correlation(double rho_a, double rho_b, double& ec,
-                             double& vc_a, double& vc_b) {
-    rho_a = std::max(rho_a, kSpinDensMin);
-    rho_b = std::max(rho_b, kSpinDensMin);
-    double rho = rho_a + rho_b;
-    double rs = std::pow(3.0 / (4.0 * units::pi * rho), 1.0 / 3.0);
-    double zeta = (rho_a - rho_b) / rho;
-
+// PW92 epsilon_c(rs,zeta) and its parameter derivatives [Hartree].
+// This is an internal formula, not a density-functional output convention.
+static void pw92_epsilon(double rs, double zeta, double& epsilon,
+                         double& dec_drs, double& dec_dz) {
     double ecP, ecF, ac, decP_drs, decF_drs, dac_drs;
     pw92_G(rs, kPW92_P, ecP, decP_drs);
     pw92_G(rs, kPW92_F, ecF, decF_drs);
@@ -229,23 +224,34 @@ static void pw92_correlation(double rho_a, double rho_b, double& ec,
     double z4 = zeta * zeta * zeta * zeta;
 
     // ε_c
-    ec = ecP + ac * fz / kFppZero * (1.0 - z4) + (ecF - ecP) * fz * z4;
+    epsilon = ecP + ac * fz / kFppZero * (1.0 - z4) + (ecF - ecP) * fz * z4;
 
     // dε_c/drs
-    double dec_drs = decP_drs + dac_drs * fz / kFppZero * (1.0 - z4)
-                     + (decF_drs - decP_drs) * fz * z4;
+    dec_drs = decP_drs + dac_drs * fz / kFppZero * (1.0 - z4)
+              + (decF_drs - decP_drs) * fz * z4;
 
     // dε_c/dζ
     double dfz = spin_df(zeta);
     double dz4 = 4.0 * zeta * zeta * zeta;
-    double dec_dz = ac / kFppZero * (dfz * (1.0 - z4) - fz * dz4)
-                    + (ecF - ecP) * (dfz * z4 + fz * dz4);
+    dec_dz = ac / kFppZero * (dfz * (1.0 - z4) - fz * dz4)
+             + (ecF - ecP) * (dfz * z4 + fz * dz4);
+}
 
-    // v_c^σ = ε_c - (rs/3) dε_c/drs - (ζ ∓ 1) dε_c/dζ
-    // (using -(ζ-1) for α, -(ζ+1) for β -- canonical sign convention)
+// Complete PW92 functional: f_c [Hartree/Bohr^3] and df_c/drho_sigma.
+static void pw92_correlation(double rho_a, double rho_b, double& fc,
+                             double& vc_a, double& vc_b) {
+    const double physical_rho = rho_a + rho_b;
+    rho_a = std::max(rho_a, kSpinDensMin);
+    rho_b = std::max(rho_b, kSpinDensMin);
+    double rho = rho_a + rho_b;
+    double rs = std::pow(3.0 / (4.0 * units::pi * rho), 1.0 / 3.0);
+    double zeta = (rho_a - rho_b) / rho;
+    double epsilon, dec_drs, dec_dz;
+    pw92_epsilon(rs, zeta, epsilon, dec_drs, dec_dz);
     double rs3_dec = (rs / 3.0) * dec_drs;
-    vc_a = ec - rs3_dec - (zeta - 1.0) * dec_dz;
-    vc_b = ec - rs3_dec - (zeta + 1.0) * dec_dz;
+    vc_a = epsilon - rs3_dec - (zeta - 1.0) * dec_dz;
+    vc_b = epsilon - rs3_dec - (zeta + 1.0) * dec_dz;
+    fc = physical_rho * epsilon;
 }
 
 // ── VWN5 correlation ────────────────────────────────────────────────────
@@ -255,8 +261,9 @@ static void pw92_correlation(double rho_a, double rho_b, double& ec,
 //
 // where r_s = (3/(4πρ))^{1/3}, ζ = (ρ_α - ρ_β)/ρ
 
-static void vwn5_correlation(double rho_a, double rho_b, double& ec,
+static void vwn5_correlation(double rho_a, double rho_b, double& fc,
                              double& vc_a, double& vc_b) {
+    const double physical_rho = rho_a + rho_b;
     // Per-spin density floor matching libxc work_lda clamping.
     // Prevents exact zeta = +/-1 while keeping exchange unaffected.
     rho_a = std::max(rho_a, kSpinDensMin);
@@ -276,7 +283,8 @@ static void vwn5_correlation(double rho_a, double rho_b, double& ec,
     double z4 = zeta * zeta * zeta * zeta;
 
     // ε_c = ε_c^P + α_c f(ζ)/f''(0) (1 - ζ⁴) + [ε_c^F - ε_c^P] f(ζ) ζ⁴
-    ec = ecP + ac * fz / kFppZero * (1.0 - z4) + (ecF - ecP) * fz * z4;
+    const double epsilon =
+        ecP + ac * fz / kFppZero * (1.0 - z4) + (ecF - ecP) * fz * z4;
 
     // For the potential v_c^σ = ε_c - (r_s/3) dε_c/dr_s + (∓ζ - 1)(dε_c/dζ)
     // where ∓ = - for α, + for β (i.e., -(ζ-1) for α, -(ζ+1) for β... let's be precise)
@@ -303,8 +311,9 @@ static void vwn5_correlation(double rho_a, double rho_b, double& ec,
     double dec_dz = ac / kFppZero * (dfz * (1.0 - z4) - fz * dz4)
                     + (ecF - ecP) * (dfz * z4 + fz * dz4);
 
-    vc_a = ec - rs3_dec - (zeta - 1.0) * dec_dz;
-    vc_b = ec - rs3_dec - (zeta + 1.0) * dec_dz;
+    vc_a = epsilon - rs3_dec - (zeta - 1.0) * dec_dz;
+    vc_b = epsilon - rs3_dec - (zeta + 1.0) * dec_dz;
+    fc = physical_rho * epsilon;
 }
 
 // ── VWN-RPA correlation ─────────────────────────────────────────────────
@@ -319,11 +328,12 @@ static void vwn5_correlation(double rho_a, double rho_b, double& ec,
 ///
 /// @param rho_a Alpha spin density [electrons/Bohr^3].
 /// @param rho_b Beta spin density [electrons/Bohr^3].
-/// @param[out] ec   Correlation energy density per electron [Hartree].
-/// @param[out] vc_a d(rho*ec)/drho_alpha, alpha potential [Hartree].
-/// @param[out] vc_b d(rho*ec)/drho_beta, beta potential [Hartree].
-void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
+/// @param[out] fc   Correlation energy density [Hartree/Bohr^3].
+/// @param[out] vc_a dfc/drho_alpha, alpha potential [Hartree].
+/// @param[out] vc_b dfc/drho_beta, beta potential [Hartree].
+void vwn_rpa_correlation(double rho_a, double rho_b, double& fc, double& vc_a,
                          double& vc_b) {
+    const double physical_rho = rho_a + rho_b;
     // Per-spin density floor matching libxc work_lda clamping.
     rho_a = std::max(rho_a, kSpinDensMin);
     rho_b = std::max(rho_b, kSpinDensMin);
@@ -336,7 +346,8 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
     double F_P = vwn5_F(x, kVWN_RPA_P);
     double F_F = vwn5_F(x, kVWN_RPA_F);
     double fz = spin_f(zeta);
-    ec = F_P * (1.0 - fz) + F_F * fz; // eps_c = F_P(1-f) + F_F f
+    const double epsilon =
+        F_P * (1.0 - fz) + F_F * fz; // eps_c = F_P(1-f) + F_F f
 
     // d eps_c / dx, then (rs/3) d eps_c/drs = (x/6) d eps_c/dx.
     double dec_dx =
@@ -346,8 +357,9 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
     // d eps_c / d zeta = (F_F - F_P) f'(zeta).
     double dec_dz = (F_F - F_P) * spin_df(zeta);
 
-    vc_a = ec - rs3_dec - (zeta - 1.0) * dec_dz;
-    vc_b = ec - rs3_dec - (zeta + 1.0) * dec_dz;
+    vc_a = epsilon - rs3_dec - (zeta - 1.0) * dec_dz;
+    vc_b = epsilon - rs3_dec - (zeta + 1.0) * dec_dz;
+    fc = physical_rho * epsilon;
 }
 
 // ── PBE exchange ────────────────────────────────────────────────────────
@@ -456,12 +468,25 @@ static double phi_pbe(double zeta) {
               + std::pow(1.0 - zeta, 2.0 / 3.0));
 }
 
-static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
-                            double vc_lda_a, double vc_lda_b, double sigma_aa,
-                            double sigma_ab, double sigma_bb, double& ec_pbe,
+static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
+                            double sigma_ab, double sigma_bb, double& fc_pbe,
                             double& vc_a, double& vc_b, double& vsigma_aa,
                             double& vsigma_ab, double& vsigma_bb,
                             double beta = kPBE_beta) {
+    // The LDA formula uses the same spin floor as standalone PW92; its
+    // epsilon stays local until the final physical-density multiplication.
+    const double lda_a = std::max(rho_a, kSpinDensMin);
+    const double lda_b = std::max(rho_b, kSpinDensMin);
+    const double lda_rho = lda_a + lda_b;
+    const double lda_rs =
+        std::pow(3.0 / (4.0 * units::pi * lda_rho), 1.0 / 3.0);
+    const double lda_zeta = (lda_a - lda_b) / lda_rho;
+    double ec_lda, dec_drs, dec_dz;
+    pw92_epsilon(lda_rs, lda_zeta, ec_lda, dec_drs, dec_dz);
+    const double rs3_dec = (lda_rs / 3.0) * dec_drs;
+    const double vc_lda_a = ec_lda - rs3_dec - (lda_zeta - 1.0) * dec_dz;
+    const double vc_lda_b = ec_lda - rs3_dec - (lda_zeta + 1.0) * dec_dz;
+
     double rho = rho_a + rho_b;
     double zeta = (rho_a - rho_b) / rho;
     zeta = std::max(-1.0 + 1e-14, std::min(1.0 - 1e-14, zeta));
@@ -491,7 +516,7 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
     double ratio = (beta / kPBE_gamma) * t2 * numer / denom;
     double H = kPBE_gamma * phi3 * std::log(1.0 + ratio);
 
-    ec_pbe = ec_lda + H;
+    fc_pbe = rho * (ec_lda + H);
 
     // For the derivatives, we use the chain rule.
     // dH/dt² = γφ³ * 1/(1+ratio) * d(ratio)/dt²
@@ -668,6 +693,7 @@ static void pbe_correlation(double rho_a, double rho_b, double ec_lda,
 
 double hybrid_exchange_fraction(XCType type) {
     switch (type) {
+    case XCType::Custom:
     case XCType::LSDA:
         return 0.0;
     case XCType::PBE:
@@ -708,6 +734,7 @@ double hybrid_pt2_fraction(XCType type) {
     switch (type) {
     case XCType::B2PLYP:
         return 0.27; // Grimme B2PLYP a_c
+    case XCType::Custom:
     case XCType::LSDA:
     case XCType::PBE:
     case XCType::PBEsol:
@@ -725,6 +752,9 @@ double hybrid_pt2_fraction(XCType type) {
 
 bool is_gga(XCType type) {
     switch (type) {
+    case XCType::Custom:
+        throw std::invalid_argument(
+            "XC: custom ingredients belong to the provider");
     case XCType::LSDA:
         return false;
     case XCType::PBE:
@@ -780,7 +810,6 @@ constexpr double kB2PLYP_cLYP = 0.73; ///< (1 − 0.27) absolute LYP-C scale.
 // those enter only the B3LYP hybrid recipe below.
 void blyp_pure(double ra, double rb, double sigma_aa, double sigma_ab,
                double sigma_bb, XCOutput& out) {
-    const double rho = ra + rb;
     double sa = std::max(sigma_aa, 0.0);
     double sb = std::max(sigma_bb, 0.0);
     double s_ave = 0.5 * (sa + sb);
@@ -791,14 +820,13 @@ void blyp_pure(double ra, double rb, double sigma_aa, double sigma_ab,
     double exb_b, vrho_b_b, vsig_b_bb;
     b88_exchange_spin(ra, sa, exb_a, vrho_b_a, vsig_b_aa);
     b88_exchange_spin(rb, sb, exb_b, vrho_b_b, vsig_b_bb);
-    const double ex_b88 = (exb_a + exb_b) / rho; // per-electron
 
-    // Full LYP GGA correlation (per-electron exc + pot).
-    double ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
-    lyp_correlation(ra, rb, sa, sab, sb, ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
+    // Full LYP GGA correlation (per-volume f + potentials).
+    double fc_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
+    lyp_correlation(ra, rb, sa, sab, sb, fc_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
                     vsig_l_ab, vsig_l_bb);
 
-    out.exc = ex_b88 + ec_lyp;
+    out.energy_density = exb_a + exb_b + fc_lyp;
     out.vrho_alpha = vrho_b_a + vc_lyp_a;
     out.vrho_beta = vrho_b_b + vc_lyp_b;
     out.vsigma_aa = vsig_b_aa + vsig_l_aa;
@@ -807,13 +835,11 @@ void blyp_pure(double ra, double rb, double sigma_aa, double sigma_ab,
 }
 
 // Evaluate the B3LYP semi-local energy density / potential at one grid point.
-// Outputs follow the XCOutput convention: exc is the semi-local energy
-// density per electron; vrho_* and vsigma_* are df/d(rho|sigma).
+// All outputs follow the canonical per-volume energy convention;
+// vrho_* and vsigma_* are derivatives of this same energy density.
 void b3lyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
                      double sigma_bb, XCOutput& out) {
-    const double rho = ra + rb;
-
-    // 0.08 * Slater exchange (per-electron exc, per-electron potentials).
+    // 0.08 * Slater exchange (per-volume f + potentials).
     double ex_s, vx_s_a, vx_s_b;
     slater_exchange(ra, rb, ex_s, vx_s_a, vx_s_b);
 
@@ -824,21 +850,20 @@ void b3lyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
     double exb_b, vrho_b_b, vsig_b_bb;
     b88_exchange_spin(ra, sa, exb_a, vrho_b_a, vsig_b_aa);
     b88_exchange_spin(rb, sb, exb_b, vrho_b_b, vsig_b_bb);
-    const double ex_b88 = (exb_a + exb_b) / rho; // per-electron
 
-    // 0.19 * VWN-RPA LDA correlation (per-electron exc, per-electron pot).
-    double ec_vwn, vc_vwn_a, vc_vwn_b;
-    vwn_rpa_correlation(ra, rb, ec_vwn, vc_vwn_a, vc_vwn_b);
+    // 0.19 * VWN-RPA LDA correlation (per-volume f + potentials).
+    double fc_vwn, vc_vwn_a, vc_vwn_b;
+    vwn_rpa_correlation(ra, rb, fc_vwn, vc_vwn_a, vc_vwn_b);
 
-    // 0.81 * LYP GGA correlation (per-electron exc, per-electron pot).
+    // 0.81 * LYP GGA correlation (per-volume f + potentials).
     double s_ave = 0.5 * (sa + sb);
     double sab = std::min(std::max(sigma_ab, -s_ave), +s_ave);
-    double ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
-    lyp_correlation(ra, rb, sa, sab, sb, ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
+    double fc_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
+    lyp_correlation(ra, rb, sa, sab, sb, fc_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
                     vsig_l_ab, vsig_l_bb);
 
-    out.exc = kB3LYP_cSlater * ex_s + kB3LYP_cB88 * ex_b88
-              + kB3LYP_cVWN * ec_vwn + kB3LYP_cLYP * ec_lyp;
+    out.energy_density = kB3LYP_cB88 * (exb_a + exb_b) + kB3LYP_cSlater * ex_s
+                         + kB3LYP_cVWN * fc_vwn + kB3LYP_cLYP * fc_lyp;
     out.vrho_alpha = kB3LYP_cSlater * vx_s_a + kB3LYP_cB88 * vrho_b_a
                      + kB3LYP_cVWN * vc_vwn_a + kB3LYP_cLYP * vc_lyp_a;
     out.vrho_beta = kB3LYP_cSlater * vx_s_b + kB3LYP_cB88 * vrho_b_b
@@ -853,7 +878,6 @@ void b3lyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
 // builder; PT2 a_c=0.27 is applied by the MP2 path after SCF.
 void b2plyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
                       double sigma_bb, XCOutput& out) {
-    const double rho = ra + rb;
     double sa = std::max(sigma_aa, 0.0);
     double sb = std::max(sigma_bb, 0.0);
     double s_ave = 0.5 * (sa + sb);
@@ -863,13 +887,12 @@ void b2plyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
     double exb_b, vrho_b_b, vsig_b_bb;
     b88_exchange_spin(ra, sa, exb_a, vrho_b_a, vsig_b_aa);
     b88_exchange_spin(rb, sb, exb_b, vrho_b_b, vsig_b_bb);
-    const double ex_b88 = (exb_a + exb_b) / rho; // per-electron
 
-    double ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
-    lyp_correlation(ra, rb, sa, sab, sb, ec_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
+    double fc_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa, vsig_l_ab, vsig_l_bb;
+    lyp_correlation(ra, rb, sa, sab, sb, fc_lyp, vc_lyp_a, vc_lyp_b, vsig_l_aa,
                     vsig_l_ab, vsig_l_bb);
 
-    out.exc = kB2PLYP_cB88 * ex_b88 + kB2PLYP_cLYP * ec_lyp;
+    out.energy_density = kB2PLYP_cB88 * (exb_a + exb_b) + kB2PLYP_cLYP * fc_lyp;
     out.vrho_alpha = kB2PLYP_cB88 * vrho_b_a + kB2PLYP_cLYP * vc_lyp_a;
     out.vrho_beta = kB2PLYP_cB88 * vrho_b_b + kB2PLYP_cLYP * vc_lyp_b;
     out.vsigma_aa = kB2PLYP_cB88 * vsig_b_aa + kB2PLYP_cLYP * vsig_l_aa;
@@ -886,7 +909,6 @@ constexpr double kOptB88_gamma = 6.981317007977318;
 
 void optb88_vdw_semilocal(double ra, double rb, double sigma_aa,
                           double sigma_ab, double sigma_bb, XCOutput& out) {
-    const double rho = ra + rb;
     double sa = std::max(sigma_aa, 0.0);
     double sb = std::max(sigma_bb, 0.0);
     (void)sigma_ab; // exchange is per-spin; no cross-spin sigma term
@@ -897,12 +919,11 @@ void optb88_vdw_semilocal(double ra, double rb, double sigma_aa,
                       kOptB88_gamma);
     b88_exchange_spin(rb, sb, exb_b, vrho_x_b, vsig_x_bb, kOptB88_beta,
                       kOptB88_gamma);
-    const double ex = (exb_a + exb_b) / rho; // per-electron
 
-    double ec, vc_a, vc_b;
-    pw92_correlation(ra, rb, ec, vc_a, vc_b);
+    double fc, vc_a, vc_b;
+    pw92_correlation(ra, rb, fc, vc_a, vc_b);
 
-    out.exc = ex + ec;
+    out.energy_density = exb_a + exb_b + fc;
     out.vrho_alpha = vrho_x_a + vc_a;
     out.vrho_beta = vrho_x_b + vc_b;
     out.vsigma_aa = vsig_x_aa;
@@ -915,8 +936,6 @@ void optb88_vdw_semilocal(double ra, double rb, double sigma_aa,
 // by 0.75; PBE correlation stays at 1.0.
 void pbe0_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
                     double sigma_bb, XCOutput& out) {
-    const double rho = ra + rb;
-
     double sa = std::max(sigma_aa, 0.0);
     double sb = std::max(sigma_bb, 0.0);
     double s_ave = 0.5 * (sa + sb);
@@ -927,17 +946,14 @@ void pbe0_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
     double ex_pbe_b, vrho_x_b, vsig_x_bb;
     pbe_exchange_spin(ra, sa, ex_pbe_a, vrho_x_a, vsig_x_aa);
     pbe_exchange_spin(rb, sb, ex_pbe_b, vrho_x_b, vsig_x_bb);
-    const double ex_pbe = (ex_pbe_a + ex_pbe_b) / rho; // per-electron
 
     // PBE correlation: PW92 LDA base + gradient correction.
-    double ec_lda, vc_lda_a, vc_lda_b;
-    pw92_correlation(ra, rb, ec_lda, vc_lda_a, vc_lda_b);
-    double ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab, vsig_c_bb;
-    pbe_correlation(ra, rb, ec_lda, vc_lda_a, vc_lda_b, sa, sab, sb, ec_pbe,
-                    vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab, vsig_c_bb);
+    double fc_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab, vsig_c_bb;
+    pbe_correlation(ra, rb, sa, sab, sb, fc_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa,
+                    vsig_c_ab, vsig_c_bb);
 
     // 0.75 * PBE-X + 1.00 * PBE-C.
-    out.exc = kPBE0_cX * ex_pbe + ec_pbe;
+    out.energy_density = kPBE0_cX * (ex_pbe_a + ex_pbe_b) + fc_pbe;
     out.vrho_alpha = kPBE0_cX * vrho_x_a + vc_pbe_a;
     out.vrho_beta = kPBE0_cX * vrho_x_b + vc_pbe_b;
     out.vsigma_aa = kPBE0_cX * vsig_x_aa + vsig_c_aa;
@@ -951,6 +967,10 @@ void pbe0_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
 
 XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
                      double sigma_ab, double sigma_bb) {
+    if (type < XCType::LSDA || type >= XCType::Custom)
+        throw std::invalid_argument(
+            "XC: select a built-in kernel or supply an XcFunctional");
+
     XCOutput out{};
     double ra = static_cast<double>(rho_a);
     double rb = static_cast<double>(rho_b);
@@ -963,10 +983,10 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         double ex, vx_a, vx_b;
         slater_exchange(ra, rb, ex, vx_a, vx_b);
 
-        double ec, vc_a, vc_b;
-        vwn5_correlation(ra, rb, ec, vc_a, vc_b);
+        double fc, vc_a, vc_b;
+        vwn5_correlation(ra, rb, fc, vc_a, vc_b);
 
-        out.exc = static_cast<double>(ex + ec);
+        out.energy_density = ex + fc;
         out.vrho_alpha = static_cast<double>(vx_a + vc_a);
         out.vrho_beta = static_cast<double>(vx_b + vc_b);
     } else if (type == XCType::PBE || type == XCType::PBEsol
@@ -986,14 +1006,6 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
 
         double ra_pbe = ra;
         double rb_pbe = rb;
-        double rho_pbe = ra_pbe + rb_pbe;
-
-        double ex_lda, vx_lda_a, vx_lda_b;
-        slater_exchange(ra_pbe, rb_pbe, ex_lda, vx_lda_a, vx_lda_b);
-
-        // PBE family uses PW92 (not VWN5) as the LSDA correlation base.
-        double ec_lda, vc_lda_a, vc_lda_b;
-        pw92_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b);
 
         double sa = static_cast<double>(sigma_aa);
         double sab = static_cast<double>(sigma_ab);
@@ -1011,15 +1023,12 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         pbe_exchange_spin(rb_pbe, sb, ex_pbe_b, vrho_x_b, vsig_x_bb, mu, kappa,
                           rpbe_form);
 
-        double ex_pbe = (ex_pbe_a + ex_pbe_b) / rho_pbe;
-
-        double ec_pbe, vc_pbe_a, vc_pbe_b;
+        double fc_pbe, vc_pbe_a, vc_pbe_b;
         double vsig_c_aa, vsig_c_ab, vsig_c_bb;
-        pbe_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b, sa, sab, sb,
-                        ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab,
-                        vsig_c_bb, beta);
+        pbe_correlation(ra_pbe, rb_pbe, sa, sab, sb, fc_pbe, vc_pbe_a, vc_pbe_b,
+                        vsig_c_aa, vsig_c_ab, vsig_c_bb, beta);
 
-        out.exc = static_cast<double>(ex_pbe + ec_pbe);
+        out.energy_density = ex_pbe_a + ex_pbe_b + fc_pbe;
         out.vrho_alpha = static_cast<double>(vrho_x_a + vc_pbe_a);
         out.vrho_beta = static_cast<double>(vrho_x_b + vc_pbe_b);
         out.vsigma_aa = static_cast<double>(vsig_x_aa + vsig_c_aa);
@@ -1050,111 +1059,40 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
     return out;
 }
 
-void evaluate_xc_batch(XCType type, int n, const double* rho_a_arr,
-                       const double* rho_b_arr, const double* sigma_aa_arr,
-                       const double* sigma_ab_arr, const double* sigma_bb_arr,
-                       double* exc_arr, double* vrho_a_arr, double* vrho_b_arr,
-                       double* vsigma_aa_arr, double* vsigma_ab_arr,
-                       double* vsigma_bb_arr) {
-    for (int g = 0; g < n; ++g) {
-        double ra = rho_a_arr[g];
-        double rb = rho_b_arr[g];
-        double rho = ra + rb;
+BuiltinXc::BuiltinXc(XCType type) : type_(type) {
+    if (type < XCType::LSDA || type >= XCType::Custom)
+        throw std::invalid_argument("BuiltinXc: invalid built-in functional");
+}
 
-        if (rho < kRhoMin) {
-            exc_arr[g] = 0;
-            vrho_a_arr[g] = 0;
-            vrho_b_arr[g] = 0;
-            if (vsigma_aa_arr) {
-                vsigma_aa_arr[g] = 0;
-                vsigma_ab_arr[g] = 0;
-                vsigma_bb_arr[g] = 0;
+ATV::electronic::XcIngredients BuiltinXc::ingredients() const noexcept {
+    using I = ATV::electronic::XcIngredients;
+    return is_gga(type_) ? I::Rho | I::Sigma : I::Rho;
+}
+
+bool BuiltinXc::supports(ATV::electronic::XcSpin spin,
+                         ATV::electronic::XcOrder order) const noexcept {
+    using namespace ATV::electronic;
+    return (spin == XcSpin::Restricted || spin == XcSpin::Collinear)
+           && (order == XcOrder::Energy || order == XcOrder::First);
+}
+
+void BuiltinXc::evaluate_batch(const ATV::electronic::XcBatch& in,
+                               ATV::electronic::XcOrder order,
+                               ATV::electronic::XcOutput& out) const {
+    const bool gga = is_gga(type_);
+    for (std::size_t i = 0; i < in.rho_alpha.size(); ++i) {
+        const auto point = evaluate_xc(
+            type_, in.rho_alpha[i], in.rho_beta[i], gga ? in.sigma_aa[i] : 0,
+            gga ? in.sigma_ab[i] : 0, gga ? in.sigma_bb[i] : 0);
+        out.energy_density[i] = point.energy_density;
+        if (order == ATV::electronic::XcOrder::First) {
+            out.vrho_alpha[i] = point.vrho_alpha;
+            out.vrho_beta[i] = point.vrho_beta;
+            if (gga) {
+                out.vsigma_aa[i] = point.vsigma_aa;
+                out.vsigma_ab[i] = point.vsigma_ab;
+                out.vsigma_bb[i] = point.vsigma_bb;
             }
-            continue;
-        }
-
-        if (type == XCType::LSDA) {
-            double ex, vx_a, vx_b;
-            slater_exchange(ra, rb, ex, vx_a, vx_b);
-            double ec, vc_a, vc_b;
-            vwn5_correlation(ra, rb, ec, vc_a, vc_b);
-            exc_arr[g] = ex + ec;
-            vrho_a_arr[g] = vx_a + vc_a;
-            vrho_b_arr[g] = vx_b + vc_b;
-        } else if (type == XCType::PBE || type == XCType::PBEsol
-                   || type == XCType::RevPBE || type == XCType::RPBE) {
-            // See scalar branch for rationale: no per-spin clamping here.
-            const double mu = (type == XCType::PBEsol) ? kPBEsol_mu : kPBE_mu;
-            const double beta =
-                (type == XCType::PBEsol) ? kPBEsol_beta : kPBE_beta;
-            const double kappa =
-                (type == XCType::RevPBE) ? kRevPBE_kappa : kPBE_kappa;
-            const bool rpbe_form = (type == XCType::RPBE);
-
-            double ra_pbe = ra;
-            double rb_pbe = rb;
-            double rho_pbe = ra_pbe + rb_pbe;
-
-            double ex_lda, vx_lda_a, vx_lda_b;
-            slater_exchange(ra_pbe, rb_pbe, ex_lda, vx_lda_a, vx_lda_b);
-            double ec_lda, vc_lda_a, vc_lda_b;
-            pw92_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b);
-
-            double sa = sigma_aa_arr[g], sab = sigma_ab_arr[g],
-                   sb = sigma_bb_arr[g];
-            sa = std::max(sa, 0.0);
-            sb = std::max(sb, 0.0);
-            double s_ave = 0.5 * (sa + sb);
-            sab = std::max(sab, -s_ave);
-            sab = std::min(sab, +s_ave);
-
-            double ex_pbe_a, vrho_x_a, vsig_x_aa;
-            double ex_pbe_b, vrho_x_b, vsig_x_bb;
-            pbe_exchange_spin(ra_pbe, sa, ex_pbe_a, vrho_x_a, vsig_x_aa, mu,
-                              kappa, rpbe_form);
-            pbe_exchange_spin(rb_pbe, sb, ex_pbe_b, vrho_x_b, vsig_x_bb, mu,
-                              kappa, rpbe_form);
-            double ex_pbe = (ex_pbe_a + ex_pbe_b) / rho_pbe;
-
-            double ec_pbe, vc_pbe_a, vc_pbe_b;
-            double vsig_c_aa, vsig_c_ab, vsig_c_bb;
-            pbe_correlation(ra_pbe, rb_pbe, ec_lda, vc_lda_a, vc_lda_b, sa, sab,
-                            sb, ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa,
-                            vsig_c_ab, vsig_c_bb, beta);
-
-            exc_arr[g] = ex_pbe + ec_pbe;
-            vrho_a_arr[g] = vrho_x_a + vc_pbe_a;
-            vrho_b_arr[g] = vrho_x_b + vc_pbe_b;
-            vsigma_aa_arr[g] = vsig_x_aa + vsig_c_aa;
-            vsigma_ab_arr[g] = vsig_c_ab;
-            vsigma_bb_arr[g] = vsig_x_bb + vsig_c_bb;
-        } else if (type == XCType::BLYP || type == XCType::OptB88VdW
-                   || type == XCType::B3LYP || type == XCType::PBE0
-                   || type == XCType::B2PLYP || type == XCType::CAMB3LYP) {
-            // Pure BLYP / OptB88VdW, global hybrids, CAM-B3LYP, and B2PLYP
-            // share the GGA semi-local path. HF-exchange admixture (hybrids
-            // / RSH / double hybrids) is applied by the Fock builder, not
-            // here; PT2 is post-SCF.
-            double sa = sigma_aa_arr ? sigma_aa_arr[g] : 0.0;
-            double sab = sigma_ab_arr ? sigma_ab_arr[g] : 0.0;
-            double sb = sigma_bb_arr ? sigma_bb_arr[g] : 0.0;
-            XCOutput out{};
-            if (type == XCType::BLYP)
-                blyp_pure(ra, rb, sa, sab, sb, out);
-            else if (type == XCType::OptB88VdW)
-                optb88_vdw_semilocal(ra, rb, sa, sab, sb, out);
-            else if (type == XCType::B3LYP || type == XCType::CAMB3LYP)
-                b3lyp_semilocal(ra, rb, sa, sab, sb, out);
-            else if (type == XCType::B2PLYP)
-                b2plyp_semilocal(ra, rb, sa, sab, sb, out);
-            else
-                pbe0_semilocal(ra, rb, sa, sab, sb, out);
-            exc_arr[g] = out.exc;
-            vrho_a_arr[g] = out.vrho_alpha;
-            vrho_b_arr[g] = out.vrho_beta;
-            vsigma_aa_arr[g] = out.vsigma_aa;
-            vsigma_ab_arr[g] = out.vsigma_ab;
-            vsigma_bb_arr[g] = out.vsigma_bb;
         }
     }
 }

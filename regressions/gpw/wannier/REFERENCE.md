@@ -3,6 +3,82 @@
 One case; every section below is run by `atv_regressions --case gpw/wannier` and keeps its own oracle record.
 
 
+The canonical batched exact Fourier-overlap path passed both existing
+regression sections on 2026-10-25 (build12, Release, Apple M4,
+OpenMP/OpenBLAS 8/8, profiling enabled). All numerical bounds, external
+energy pins and the strict whole-section 60 s gate remain unchanged.
+
+### Current native validation
+
+| Section | Whole section | Shared 48 AO links | Channel localization | Maximum midpoint distance | Spread ratio |
+| --- | --- | --- | --- | --- | --- |
+| `periodic-wannier-gpw` | **7.889850 s** | 4.574 s | 0.027 s | 0.02245 Å | 0.1068 |
+| `periodic-wannier-gpw-uks` | **9.886750 s** | 3.971 s | 0.025 / 0.021 s | 0.01726 Å per spin | 0.1041 |
+
+The UKS energy is −15.76993360 Ha, with printed error 2.306724e-5 Ha
+against the unchanged CP2K pin. Each case runs RKS then UKS in one process;
+whole-section timers include construction, SCF, localization and assertions.
+The AO matrices are computed once per call. Exactly equal short wavevectors
+share each image-local Fourier integral before distinct ket Bloch phases are
+accumulated; both spin contractions borrow the resulting operators.
+
+Both sections still print that the MV loop did not flag converged. The
+existing SCF, center/spread/energy and runtime gates pass; **a stationary MV
+optimum is not established by these measurements**.
+
+[Raw output](../../../tools/cp2k_oracle/inputs/periodic-wannier-gpw-uks/native-validation.txt),
+[metadata/hashes](../../../tools/cp2k_oracle/inputs/periodic-wannier-gpw-uks/native-validation.json)
+and [reproduction instructions](../../../tools/cp2k_oracle/inputs/periodic-wannier-gpw-uks/README.md)
+preserve the current proof. Earlier exact-kernel timing failures are retained
+as diagnostics: [build10](../../../tools/cp2k_oracle/inputs/periodic-wannier-gpw-uks/native-build10.txt)
+and [build11](../../../tools/cp2k_oracle/inputs/periodic-wannier-gpw-uks/native-build11.txt).
+The older native numbers and external timing records below remain historical;
+this run supplies no refreshed fair ATV/CP2K timing ratio.
+
+### Exact Gaussian Fourier overlaps
+
+Berry and Wannier links share `prim_overlap_fourier` in the existing GPW
+one-electron integral kernel. It evaluates
+
+\[
+F_{ab}(\mathbf q)=\int a(\mathbf r)b(\mathbf r)
+  e^{-i\mathbf q\cdot\mathbf r}\,d^3r
+= c_a c_b\left(\frac{\pi}{p}\right)^{3/2}
+  e^{-|\mathbf q|^2/(4p)-i\mathbf q\cdot\mathbf P}
+  \prod_{d=x,y,z}\sum_{t=0}^{l_{a,d}+l_{b,d}}
+    E_t^{l_{a,d},l_{b,d}}(-i q_d)^t,
+\]
+
+where \(p=\alpha_a+\alpha_b\),
+\(\mathbf P=(\alpha_a\mathbf A+\alpha_b\mathbf B)/p\), and the existing
+McMurchie–Davidson coefficients \(E_t\) include the Gaussian product's
+center-separation attenuation. The wavevector \(\mathbf q\) is the short,
+unwrapped ket-minus-bra reciprocal step in Bohr⁻¹; primitive coordinates
+are in Bohr and the Fourier sign is **negative**. Periodic image phases
+retain the ket's Bloch convention and wrapped k labels.
+
+Every angular term contributes. In particular a same-center s/pₓ product
+has zero ordinary overlap but Fourier integral
+\(-i q_x F_{ss}(\mathbf q)/(2p)\). Multiplying the ordinary overlap by only
+a scalar damping/center phase loses that term and the higher p/d moments.
+The shared kernel uses the exact Hermite polynomial instead.
+
+The added pure `GpwOneElectron.Fourier*` tests target closed-form s/s,
+odd s/p and d/p, p/p and d/d second/fourth moments, a separated-center p/d
+integral, zero-wavevector overlap identities, and conjugation/exchange
+identities. They do not solve an SCF or use native snapshots as expected
+values. In build13, all 17 `GpwOneElectron` tests (including seven primitive
+Fourier tests) and all three `GpwFourierLinks` tests passed. The batched tests
+cover analytic image sums for equal/distinct wavevectors, split/batch
+identity, mixed-angular translation/conjugation covariance, and invalid-domain
+exception propagation. The [actual unit-output extract](../../../tools/cp2k_oracle/inputs/gpw-berry-phase/native-math-validation.txt)
+and [metadata/hashes](../../../tools/cp2k_oracle/inputs/gpw-berry-phase/native-math-validation.json)
+record all **1771/1771** registered units passing in **46.66 s**. Build13 adds
+test registration; native mathematical code is unchanged from the build12
+regression measurements above.
+
+
+
 ## Reference — Periodic multi-k MLWF (Marzari–Vanderbilt) on GPW, bulk Si
 
 ### Method
@@ -79,7 +155,7 @@ absolute energy band with a cited CP2K total when an offline twin is available.
 | Spread ratio floor | 0.50 |
 | Observed Ω/Ω₀ | ≈ 0.09 |
 
-### Performance
+### Historical external performance record
 
 | Item | Value |
 | ---- | ----- |
@@ -147,8 +223,8 @@ channel has one MLWF per bond at \(M=0\).
    `reg_periodic-wannier-gpw`).
 4. Spread reduction: \(\Omega_\mathrm{final} < 0.5\,\Omega_\mathrm{init}\)
    (sum over both spins).
-5. Finite spreads; `spin` labels size 16 with values in \(\{0,1\}\); ≤ 60 s
-   preferred / product budget soft.
+5. Finite spreads; `spin` labels size 16 with values in \(\{0,1\}\);
+   both complete sections enforce ≤ 60 s at the registered thread width.
 
 ### Offline CP2K pin (energy)
 
@@ -197,7 +273,7 @@ Key log lines:
 | Spread ratio Ω/Ω₀ | ≈ 0.0905 |
 | n_up / n_dn | 8 / 8 |
 
-### Performance
+### Historical external performance record
 
 | Item | Value |
 | ---- | ----- |

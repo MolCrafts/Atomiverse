@@ -7,6 +7,7 @@
 /// Exit non-zero on failure with got / want / tol.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -96,6 +97,7 @@ double max_assigned_distance(const std::vector<std::array<double, 3>>& centers,
 } // namespace
 
 int run() {
+    const auto section_start = std::chrono::steady_clock::now();
     constexpr double kA = 5.43; // lattice constant [Angstrom]
     constexpr double kCutoffRy = 100.0;
     constexpr int kMeshMlwf = 2;
@@ -186,6 +188,15 @@ int run() {
                     "(accepting for foothold)\n");
     }
 
+    const double whole_s = std::chrono::duration<double>(
+                               std::chrono::steady_clock::now() - section_start)
+                               .count();
+    std::printf("Whole section got=%.6f want<=60 seconds\n", whole_s);
+    if (!std::isfinite(whole_s) || whole_s > 60.0) {
+        std::printf("FAIL: whole section wall=%.6f want<=60 seconds\n",
+                    whole_s);
+        return 1;
+    }
     std::printf("PASS: GPW multi-k MLWF Si BCT (dmax=%.5f Ang, "
                 "spread ratio=%.4f)\n",
                 dmax, r.total_spread / r.total_spread_initial);

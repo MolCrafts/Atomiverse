@@ -1,0 +1,127 @@
+{
+  "kind": "native numerical/runtime validation, not oracle pins",
+  "date": "2026-10-25",
+  "build_label": "build10",
+  "case": "gpw/berry-phase",
+  "source_log": "/tmp/atv-xc-build/Testing/Temporary/LastTest.log",
+  "source_log_at_capture_sha256": "032e504564c1c9cfda5d79eb99c082752950257fa02d9c90adf16062b3b7ffbd",
+  "archive_file": "native-build10.txt",
+  "archive_sha256": "294d982852849bd7d7246672d6deec453bd21ca8ade620010b5cafd1c1cc8171",
+  "command": [
+    "/tmp/atv-xc-build/regressions/atv_regressions",
+    "--case",
+    "gpw/berry-phase"
+  ],
+  "cwd": "/tmp/atv-xc-build/regressions",
+  "environment": {
+    "OMP_NUM_THREADS": 8,
+    "OPENBLAS_NUM_THREADS": 8,
+    "ATV_GPW_PROF": "enabled"
+  },
+  "host": {
+    "processor": "Apple M4",
+    "physical_cpus": 10,
+    "logical_cpus": 10
+  },
+  "timing_boundary": "whole native section; RKS then UKS in the same process; profiling enabled",
+  "native_formula": "exact Cartesian Gaussian Fourier overlap with negative exp(-i q.r), existing Hermite table fill, independent AO-row OpenMP, shared UKS AO links",
+  "scf_path": "each axis independently calls method.run(frame), no cross-direction density guess",
+  "sections": [
+    {
+      "section": "periodic-berry-gpw",
+      "whole_section_seconds": 21.266086,
+      "numerical_gates": "PASS",
+      "runtime_gate": "PASS",
+      "profile": [
+        {
+          "direction": 0,
+          "scf_ms": 1537,
+          "links_ms": 3470,
+          "iterations": 7,
+          "energy_ha": -15.494346734088
+        },
+        {
+          "direction": 1,
+          "scf_ms": 2181,
+          "links_ms": 3134,
+          "iterations": 7,
+          "energy_ha": -15.494346734089
+        },
+        {
+          "direction": 2,
+          "scf_ms": 1812,
+          "links_ms": 3313,
+          "iterations": 5,
+          "energy_ha": -15.288283416028
+        },
+        {
+          "direction": 2,
+          "scf_ms": 2518,
+          "links_ms": 3301,
+          "iterations": 12,
+          "energy_ha": -15.286255339045
+        }
+      ],
+      "ideal_total_p_frac_printed": [
+        0,
+        0,
+        0
+      ],
+      "printed_displaced_delta_p_z": 6.9e-05,
+      "printed_born_charge": 0.0034
+    },
+    {
+      "section": "periodic-berry-gpw-uks",
+      "whole_section_seconds": 29.198036,
+      "numerical_gates": "PASS",
+      "runtime_gate": "PASS",
+      "profile": [
+        {
+          "direction": 0,
+          "scf_ms": 2757,
+          "links_ms": 3992,
+          "iterations": 7,
+          "energy_ha": -15.494346734088
+        },
+        {
+          "direction": 1,
+          "scf_ms": 4718,
+          "links_ms": 3506,
+          "iterations": 7,
+          "energy_ha": -15.494346734089
+        },
+        {
+          "direction": 2,
+          "scf_ms": 2630,
+          "links_ms": 4086,
+          "iterations": 5,
+          "energy_ha": -15.288283416028
+        },
+        {
+          "direction": 2,
+          "scf_ms": 3847,
+          "links_ms": 3662,
+          "iterations": 11,
+          "energy_ha": -15.286255336513
+        }
+      ],
+      "ideal_total_p_frac_printed": [
+        0,
+        0,
+        0
+      ],
+      "printed_displaced_delta_p_z": 6.9e-05,
+      "printed_born_charge": 0.0035
+    }
+  ],
+  "pure_math_validation": {
+    "source_log": "/tmp/atv-gpw-repair-evidence/final-unit-build10.log",
+    "source_sha256": "24dbfa799061cf6d2d8d5f85f12eafad7a13cef8ee15101782132c94eae85941",
+    "archive_file": "native-math-build10.txt",
+    "archive_sha256": "ac0ad91654ec9eabd4f44ebdd0f450cde01c2d5930f56ff9cdf11067df4d1f9f",
+    "scope": "GpwOneElectron test-result lines plus full-suite summary, copied from actual CTest output",
+    "gates": "17 GpwOneElectron tests including 7 Fourier tests PASS; all1766 unit tests PASS",
+    "full_unit_seconds": 31.97
+  },
+  "external_oracle_status": "Existing literature symmetry/ASR pins and historical CP2K records retained; no fresh CP2K timing or absolute-phase comparison claimed."
+}

@@ -95,7 +95,7 @@ class RhfScfCycle {
     /// @return True when this iteration met `tol`.
     bool poll_converged(void* stream, int step);
 
-    /// @brief Post-loop host mirrors and virtual-orbital de-shift.
+    /// @brief Post-loop virtual-orbital de-shift on device.
     /// @param stream CUDA stream.
     void finish(void* stream);
 
@@ -115,6 +115,8 @@ class RhfScfCycle {
     double tol_;
     double level_shift_ = 0.0;
     bool built_ = false;
+    bool polishing_ = false;
+    bool canonicalized_ = false;
 
     SCFWorkspace workspace_;
 

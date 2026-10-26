@@ -1,0 +1,71 @@
+{
+  "kind": "native numerical/runtime validation; not oracle pins",
+  "date": "2026-10-25",
+  "build_label": "build12",
+  "source_log": "/tmp/atv-gpw-repair-evidence/build12-berry-wannier-full.txt",
+  "source_log_sha256": "40a2382fc5d0aa331a415fe1c7975dfc28fe96ca6f02a84a674741309ca6dbb3",
+  "cwd": "/tmp/atv-xc-build/regressions",
+  "environment": {
+    "OMP_NUM_THREADS": 8,
+    "OPENBLAS_NUM_THREADS": 8,
+    "ATV_GPW_PROF": "enabled"
+  },
+  "host": {
+    "processor": "Apple M4",
+    "physical_cpus": 10,
+    "logical_cpus": 10
+  },
+  "timing_boundary": "whole sections; RKS then UKS in one process per case; profiling enabled",
+  "formula": "canonical batched exact Gaussian Fourier operators; exactly equal q reuse image-local integrals across ket-k phases, original per-matrix sum order, group/row OpenMP, compute-local sharing across spins",
+  "physical_settings_or_external_pins_changed": false,
+  "case": "gpw/wannier",
+  "archive_file": "native-validation.txt",
+  "archive_sha256": "40220c1a35d630521871066ac8ebb3d8c6a4461352a070301e4d6f655add18ed",
+  "command": [
+    "/tmp/atv-xc-build/regressions/atv_regressions",
+    "--case",
+    "gpw/wannier"
+  ],
+  "numeric_gates": "PASS",
+  "runtime_gates": "PASS: all whole sections <=60s",
+  "sections": [
+    {
+      "section": "periodic-wannier-gpw",
+      "whole_section_seconds": 7.88985,
+      "ao_links": 48,
+      "ao_links_ms": 4574,
+      "channel_localization_ms": [
+        27
+      ],
+      "printed_max_midpoint_distance_angstrom": 0.02245,
+      "printed_spread_ratio": 0.1068
+    },
+    {
+      "section": "periodic-wannier-gpw-uks",
+      "whole_section_seconds": 9.88675,
+      "ao_links": 48,
+      "ao_links_ms": 3971,
+      "channel_localization_ms": [
+        25,
+        21
+      ],
+      "printed_energy_ha": -15.7699336,
+      "printed_external_energy_error_ha": 2.306724e-05,
+      "printed_max_midpoint_distance_angstrom_per_spin": [
+        0.01726,
+        0.01726
+      ],
+      "printed_spread_ratio": 0.1041
+    }
+  ],
+  "localization_status": "Both sections print MV-convergence warnings; current center/spread/energy and SCF-convergence gates pass. No claim of a stationary MV optimum.",
+  "unit_validation": {
+    "build_label": "build13",
+    "archive": "../gpw-berry-phase/native-math-validation.json",
+    "one_electron_fixtures": 17,
+    "batched_link_fixtures": 3,
+    "all_registered_units": 1771,
+    "full_unit_seconds": 46.66,
+    "status": "PASS; productionmath unchanged from regression build12"
+  }
+}

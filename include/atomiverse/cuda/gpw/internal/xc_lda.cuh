@@ -20,7 +20,8 @@ namespace internal {
 /// For each point with total density `rho`, evaluates
 /// `cpu::xc::pade_lsd(rho/2, rho/2)`: when `rho_total < 1e-12` both outputs
 /// are zero; otherwise `vxc = vrho_a` (= `vrho_b` for ζ=0) and
-/// `exc` is the per-electron XC energy density. Spin-unpolarized (ζ=0).
+/// `exc` is the per-electron XC energy; the CPU result's `energy_density`
+/// is rho times this value. Spin-unpolarized (ζ=0).
 ///
 /// @param d_rho_r Real-space total density ρ(r), nr reals [e/Bohr³].
 /// @param d_vxc_r Output V_xc(r) = ∂(ρε_xc)/∂ρ_α, nr reals [Hartree].
@@ -32,7 +33,8 @@ void xc_lda_grid(const double* d_rho_r, double* d_vxc_r, double* d_exc_r,
 
 /// @brief Spin-resolved Padé LSD on the real-space grid (UKS twin).
 ///
-/// Per point: `cpu::xc::pade_lsd(rho_a, rho_b)` → vrho_a / vrho_b / exc.
+/// Per point: same spin potentials as `cpu::xc::pade_lsd(rho_a, rho_b)`;
+/// device energy is per electron, CPU `energy_density` is per volume.
 /// Total density below 1e-12 zeroes all three channels.
 ///
 /// @param d_rho_a Alpha density, nr reals [e/Bohr³].

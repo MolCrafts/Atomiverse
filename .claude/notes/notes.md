@@ -13,6 +13,7 @@ Conclusions only. Binding rules live in CLAUDE.md; history is git's.
 | Machines, accounts, workbenches | [arrhenius-workbench.md](arrhenius-workbench.md) |
 | BLAS threading traps | [openblas-thread-binding.md](openblas-thread-binding.md) |
 | ES public-shape debt | [es-architecture-debt.md](es-architecture-debt.md) |
+| SE loop/model extension review | [se-extensibility-audit.md](se-extensibility-audit.md); design [es-extensibility.md](../specs/es-extensibility.md) |
 | ES optimization state | [es-optimization-order.md](es-optimization-order.md) |
 | CUDA ES (RHF, PW) | [cuda-rhf-device-only.md](cuda-rhf-device-only.md), [cuda-only-no-dh.md](cuda-only-no-dh.md) |
 | CUDA GPW | [cuda-gpw-public-shape.md](cuda-gpw-public-shape.md) |
@@ -32,7 +33,7 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   machinery (CLAUDE.md › Known debt). Open plan:
   `.claude/specs/md-unification.md`; CPU contract work:
   `.claude/specs/cpu-orthogonality.md`.
-- **ES public-shape debt (BLOCK).** Do not extend dialects;
+- **ES public-shape debt.** Do not extend dialects;
   [es-architecture-debt.md](es-architecture-debt.md).
 - **GPW MG MAIN wall** is the worst CP2K ratio (2.33×), but it was measured
   with OpenMP binding on, i.e. ATV BLAS single-threaded — re-measure unbound
@@ -62,10 +63,11 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   /mol:discuss decision, overlaps namespace alignment.
 - RKS/PBE forces: ~3e-3 eV/Å XC-grid noise on Ar₂ at the default grid, and
   slow (28 s per def2-SVP force vs 0.25 s RHF).
-- Over the 60 s regression budget: several GPW UKS/OT/stress cases
-  (`gpw-uks-stress`, `second-gen-cpmd-{ot,uks-ot}`, `gpw-uks-{revpbe,rpbe,blyp,forces}`,
-  `gpw-d3bj-forces`, `gpw-mbd-stress`, `periodic-wannier-gpw`); single-threading
-  makes the OT ones slower — shrink the case or change policy.
+- GPW historical runtime/convergence/repeatability reports need a current
+  run. Surviving method cases and sections are listed in
+  [es-architecture-debt.md](es-architecture-debt.md#numerical-recheck-targets);
+  deleted functional-swap and self-pinned correlated cases are not current
+  failing tests. Keep the ≤60 s per-section policy when selecting smaller cases.
 - DFTB: no open-shell Δq ≠ 0 force gate; 3ob `with_stress` still uses
   multi-SCC strain FD; MioSketch O/H rows give backwards water charges.
 - PW collinear branches: convergence measured on the post-mix density change

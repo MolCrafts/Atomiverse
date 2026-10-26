@@ -99,7 +99,8 @@ class Backend {
 
     /// @brief Retrieve results back to host Frame (calls cuda::to_cpu).
     /// @param frame Host-side Frame to populate with device results.
-    void retrieve(cpu::Frame& frame);
+    /// @param copy_forces Retrieve forces; false preserves host force columns.
+    void retrieve(cpu::Frame& frame, bool copy_forces = true);
 
     /// Compare with the last write-back and apply caller edits before continuation.
     void refresh_inputs(const cpu::Frame& frame);

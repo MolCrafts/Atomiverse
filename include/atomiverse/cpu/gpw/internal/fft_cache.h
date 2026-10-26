@@ -10,9 +10,11 @@
 /// thread-safe); execute uses new-array FFTW APIs so multi-alpha callers can
 /// point at their own buffers.
 ///
-/// Plans use FFTW_MEASURE (timed once at first shape touch). Single r2c/c2r
-/// plans are created eagerly; GGA howmany=3 multi-out plans are **lazy** on
-/// first many_* use so LDA/Poisson-only twins skip that cold MEASURE cost.
+/// Single plans use FFTW_MEASURE. Forward r2c is created at first shape touch;
+/// backward c2r is created on first use, so forward-only MT auxiliary grids
+/// skip its planning cost. Lazy backward planning uses temporary aligned
+/// buffers and cannot overwrite live scratch or caller data. GGA howmany=3
+/// multi-out plans are lazy on first many_* use.
 #pragma once
 
 #include <cstddef>
@@ -105,8 +107,11 @@ class R2cFft {
 
     /// @brief Forward r2c on the primary buffers: `r` → `c`.
     void execute_r2c() { fftw_execute_dft_r2c(fwd_, r(), c()); }
-    /// @brief Backward c2r on the primary buffers: `c` → `r`.
-    void execute_c2r() { fftw_execute_dft_c2r(bwd_, c(), r()); }
+    /// @brief Backward c2r on the primary buffers: `c` → `r` (plan lazy).
+    void execute_c2r() {
+        ensure_backward_plan();
+        fftw_execute_dft_c2r(bwd_, c(), r());
+    }
     /// @brief Backward c2r: `c2` → `r2` (gradient / multi-buffer paths).
     void execute_c2r_alt();
     /// @brief Forward r2c on caller-owned arrays of matching size/alignment.
@@ -115,6 +120,7 @@ class R2cFft {
     }
     /// @brief Backward c2r on caller-owned arrays of matching size/alignment.
     void execute_c2r(fftw_complex* in, double* out) {
+        ensure_backward_plan();
         fftw_execute_dft_c2r(bwd_, in, out);
     }
     /// @brief howmany=3 forward: `r_many` → `c_many` (divergence inputs).
@@ -132,6 +138,7 @@ class R2cFft {
     ~R2cFft();
     R2cFft(const R2cFft&) = delete;
     R2cFft& operator=(const R2cFft&) = delete;
+    void ensure_backward_plan();
 
     int n0_ = 0, n1_ = 0, n2_ = 0, n2c_ = 0;
     long ntot_ = 0, ncplx_ = 0;

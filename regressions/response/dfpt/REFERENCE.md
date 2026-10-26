@@ -2,6 +2,21 @@
 
 One case; every section below is run by `atv_regressions --case response/dfpt` and keeps its own oracle record.
 
+CPU PW GGA uses private 3/2-padded XC quadrature and a weighted-adjoint
+potential projection. Restricted and joint two-spin densities share one Pulay
+mixing implementation; convergence uses the true unmixed spin residuals.
+For the Si Γ PBE fixtures, the row-sum residual is 0.0201 eV/Å² against the
+unchanged 0.05 bound, without acoustic sum-rule projection. The complete
+commensurate output is the Fourier sum of the assembled supercell IFCs;
+its upstream IFC symmetrization still reports preprojection asymmetry.
+
+The seven Γ sections below retain historical Atomiverse energy/free-energy
+finite-difference constants as **internal consistency supplements only**.
+They were produced by native SCF, are not external oracle pins, and do not
+independently qualify the Hessian. Their existing comparison bounds remain
+unchanged. Oracle content is limited to each section's identified external
+spectral reference and analytic translational/symmetry identities; the frozen
+FD values are historical diagnostics rather than newly validated outputs.
 
 ## Reference — Γ-point DFPT phonons (diamond Si, PW LSDA, NC-UPF)
 
@@ -45,7 +60,7 @@ Cite: Baroni, de Gironcoli, Dal Corso, Giannozzi, *Rev. Mod. Phys.* **73**,
 | ----- | ----- |
 | Preferred oracle | CP2K DFPT / `VIBRATIONAL_ANALYSIS` on the same cell |
 | CP2K binary this host | **not available** (no CP2K module on the pin host this shift — same as every prior wave) |
-| Pin 1 (sharp, same-Hamiltonian) | central **second difference of the SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC |
+| Supplement (native frozen FD, not an oracle) | central **second difference of the SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC |
 | Pin 2 (physics) | literature DFPT-LDA / Raman Si TO(Γ) window |
 
 #### Measured pins (this host, 2026-07-25, Release, OMP=8)
@@ -65,7 +80,8 @@ Cite: Baroni, de Gironcoli, Dal Corso, Giannozzi, *Rev. Mod. Phys.* **73**,
 The +12 % optical offset vs the 517 cm⁻¹ anchor is the expected
 minimal-settings bias (10 Ry NC cutoff, 2×2×2 MP, experimental lattice
 constant); the window [500, 650] rejects unit disasters and factor errors
-while the energy-FD pin (0.07 % agreement) is the sharp correctness gate.
+The frozen native energy-FD comparison is an internal consistency supplement,
+not an independent oracle.
 
 #### Why the FD twin is energy-based, not force-based
 
@@ -139,7 +155,7 @@ Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
 | ----- | ----- |
 | Preferred oracle | CP2K DFPT / `VIBRATIONAL_ANALYSIS` on the same cell (PBE) |
 | CP2K binary this host | **not available** (`module avail cp2k` empty) |
-| Pin 1 (sharp, same-Hamiltonian) | central **second difference of the SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC |
+| Supplement (native frozen FD, not an oracle) | central **second difference of the SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC |
 | Pin 2 (physics) | optical Γ triplet in a wide literature-style window; acoustic ≈ 0 without ASR |
 
 #### Measured pins (this host, 2026-07-26, Release, OMP=8)
@@ -156,8 +172,8 @@ Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
 
 The optical offset vs the experimental ~517 cm⁻¹ Raman line is the expected
 minimal-settings bias (10 Ry NC cutoff, 2×2×2 MP, experimental lattice,
-LDA-generated NC UPF used as fixed valence PP). The energy-FD pin is the
-sharp correctness gate for the GGA kernel.
+LDA-generated NC UPF used as fixed valence PP). The frozen native energy-FD comparison is an internal consistency
+supplement, not an independent oracle.
 
 ### CP2K twin (offline only)
 
@@ -219,7 +235,7 @@ Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
 | ----- | ----- |
 | Preferred oracle | CP2K DFPT / `VIBRATIONAL_ANALYSIS` on the same cell (LSD / UKS) |
 | CP2K binary this host | **not available** (`module avail cp2k` empty) |
-| Pin 1 (sharp, same-Hamiltonian) | central **second difference of the collinear-spin SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF/spin |
+| Supplement (native frozen FD, not an oracle) | central **second difference of the collinear-spin SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF/spin |
 | Pin 2 (physics) | optical Γ triplet in a literature-style LDA window; acoustic ≈ 0 without ASR |
 
 #### Measured pins (this host, 2026-07-26, Release, OMP=8)
@@ -235,8 +251,8 @@ Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
 | Regression wall | ≈ **34 s** (≤ 60 s budget) |
 
 Closed-shell collinear (\(M=0\)) matches the restricted LSDA optical window
-to within the minimal-settings bias; the energy-FD pin is the sharp
-correctness gate for the spin kernel.
+to within the minimal-settings bias; the frozen native energy-FD comparison is an internal consistency
+supplement, not an independent oracle.
 
 ### CP2K twin (offline only)
 
@@ -303,7 +319,7 @@ Public path: `cpu::pw::DfptPhonon::compute(method, frame)` with
 | ----- | ----- |
 | Oracle 1 (physics anchor) | **CP2K 2026.1** (rev `85b8a9b49c`, `~/.local/bin/cp2k`, this host, 2026-07-31) — `VIBRATIONAL_ANALYSIS` (FD of analytic UKS k-point forces, `FULLY_PERIODIC T`, DX 0.01 bohr, `EPS_SCF 1e-8`) on the same cell: LSD + `MULTIPLICITY 1` + PBE, DZVP-MOLOPT-SR-GTH / GTH-PBE-q4, CUTOFF 300 Ry, 2×2×2 MP. Input: `tools/cp2k_oracle/inputs/dfpt-gga-spin-si/si2_uks_pbe_vib.inp` |
 | Oracle 1 output line | `VIB\|Frequency (cm^-1)  4.6344295423E+02    5.5219216579E+02    5.5219217231E+02` → optical Γ modes **463.44, 552.19, 552.19 cm⁻¹** (mean 522.6; translations projected out by CP2K; the [111]-polarized member sits 89 cm⁻¹ below its FD-split partners — CP2K's own FD symmetry breaking, identical at `EPS_SCF` 1e-7 and 1e-8, so systematic to its displaced-supercell k-point FD, not SCF noise) |
-| Pin 2 (sharp, same-Hamiltonian) | central **second difference of the collinear-spin PBE SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF/spin |
+| Supplement (native frozen FD, not an oracle) | central **second difference of the collinear-spin PBE SCF total energy**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF/spin |
 | Pin 3 (cross-parent consistency) | \(M=0\) joint kernel must reproduce the restricted-GGA parent (`dfpt-gga-si`) values to the spin-doubling roundoff |
 
 The CP2K twin necessarily differs in PP/basis representation (GPW
@@ -313,7 +329,8 @@ spin×PBE optical Γ modes span 463–552 cm⁻¹ (mean 522.6, near the ~517 cm�
 experimental Raman line); the minimal-twin bias of the in-tree LDA-generated
 NC UPF at 10 Ry shifts ATV to ~580 cm⁻¹, the same offset both parent pins
 show. Window gate `[450, 650]` cm⁻¹ covers both engines' spread;
-the energy-FD pin is the sharp correctness gate for the joint kernel.
+the frozen native energy-FD comparison is an internal consistency
+supplement, not an independent oracle.
 
 #### Measured pins (this host, 2026-07-31, Release, OMP=1)
 
@@ -394,7 +411,7 @@ only); open metals use `extra_bands > 0` with denser k/ecut.
 | ----- | ----- |
 | Preferred oracle | CP2K `VIBRATIONAL_ANALYSIS` + `&SMEAR` (GTH-GPW ≠ NC-UPF absolute E) |
 | CP2K binary this host | **not available** (`module avail cp2k` empty) |
-| Pin 1 (sharp, same-Hamiltonian) | central second difference of free energy F: C[(0x),(0x)] with h = 0.03 Å (identical ecut/k/XC/UPF/FD) |
+| Supplement (native frozen FD, not an oracle) | central second difference of free energy F: C[(0x),(0x)] with h = 0.03 Å (identical ecut/k/XC/UPF/FD) |
 | Pin 2 (physics) | optical Γ triplet in LDA window; acoustic ≈ 0 without ASR |
 
 #### Measured pins (this host, 2026-07-26, Release, OMP=8)
@@ -474,7 +491,7 @@ results track the collinear fixed-occ twin.
 | ----- | ----- |
 | Preferred oracle | CP2K `VIBRATIONAL_ANALYSIS` + LSD + `&SMEAR` (GTH-GPW ≠ NC-UPF absolute E) |
 | CP2K binary this host | **not available** (`module avail cp2k` empty) |
-| Pin 1 (sharp, same-Hamiltonian) | central second difference of collinear-spin free energy: C[(0x),(0x)] with h = 0.03 Å (identical ecut/k/XC/UPF/spin/FD) |
+| Supplement (native frozen FD, not an oracle) | central second difference of collinear-spin free energy: C[(0x),(0x)] with h = 0.03 Å (identical ecut/k/XC/UPF/spin/FD) |
 | Pin 2 (physics) | optical Γ triplet in LDA window; acoustic ≈ 0 without ASR |
 
 #### Measured pins (this host, 2026-07-26, Release, OMP=8)
@@ -562,14 +579,14 @@ Siblings: `dfpt-gga-spin-si` (spin×GGA, fixed occ), `dfpt-spin-smearing`
 | ----- | ----- |
 | Oracle 1 (physics anchor) | **CP2K 2026.1** (rev `git:5e54ba2`, source build `…/cp2k/install/bin/cp2k.psmp`, this host, 2026-08-01) — `VIBRATIONAL_ANALYSIS` (FD of analytic UKS k-point forces, `FULLY_PERIODIC T`, DX 0.01 bohr, `EPS_SCF 1e-8`) on the same cell: LSD + `MULTIPLICITY 1` + PBE + `&SMEAR FERMI_DIRAC` at 3157.75 K (≡ 0.02 Ry), ADDED_MOS 4, DZVP-MOLOPT-SR-GTH / GTH-PBE-q4, CUTOFF 300 Ry, 2×2×2 MP. Input: `tools/cp2k_oracle/inputs/dfpt-gga-spin-smearing/si2_uks_pbe_smear_vib.inp` |
 | Oracle 1 output line | `VIB\|Frequency (cm^-1)   463.983524           534.803847           534.803847` → optical Γ modes **463.98, 534.80, 534.80 cm⁻¹** (mean 511.2; translations projected out by CP2K) |
-| Pin 2 (sharp, same-Hamiltonian) | central **second difference of the collinear-spin PBE free energy** (Mermin \(F\), gapped fill ⇒ \(F=E\)): C[(0x),(0x)] = (F(+h) − 2F₀ + F(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF/spin/FD |
+| Supplement (native frozen FD, not an oracle) | central **second difference of the collinear-spin PBE free energy** (Mermin \(F\), gapped fill ⇒ \(F=E\)): C[(0x),(0x)] = (F(+h) − 2F₀ + F(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF/spin/FD |
 | Pin 3 (cross-parent consistency) | \(M=0\) + gapped FD must reproduce the fixed-occ joint spin×GGA parent (`dfpt-gga-spin-si`) to spin-doubling / near-integer-fill roundoff |
 
 The CP2K twin necessarily differs in PP/basis representation (GPW
 GTH/MOLOPT FD-supercell vs NC-UPF plane-wave DFPT at a 10 Ry minimal
 cutoff), so it anchors the **physics window**, not the digit. Window gate
-`[450, 650]` cm⁻¹ covers both engines' spread; the free-energy FD pin is
-the sharp correctness gate for the joint kernel.
+`[450, 650]` cm⁻¹ covers both engines' spread; the frozen native free-energy FD comparison is an internal consistency
+supplement, not an independent oracle.
 
 #### Measured pins (this host, 2026-08-01, Release, OMP=1)
 
@@ -852,7 +869,7 @@ Burke, Ernzerhof, *Phys. Rev. Lett.* **77**, 3865 (1996).
 | ----- | ----- |
 | Oracle 1 (physics anchor) | **CP2K 2026.1** (rev `85b8a9b49c`, `~/.local/bin/cp2k`, this host, 2026-07-31) — `VIBRATIONAL_ANALYSIS` (FD of analytic RKS k-point forces, `FULLY_PERIODIC T`, DX 0.01 bohr, `EPS_SCF 1e-8`) on the **2×1×1 supercell** (4 atoms): PBE, DZVP-MOLOPT-SR-GTH / GTH-PBE-q4, CUTOFF 300 Ry, 1×2×2 MP (≡ 2×2×2 on the primitive). Input: `tools/cp2k_oracle/inputs/dfpt-gga-finite-q-si/si4_pbe_vib.inp` |
 | Oracle 1 output lines | `VIB\|Frequency (cm^-1)  9.7979172103E+01 1.3126606201E+02 3.7058084483E+02` / `4.2823632486E+02 4.5748021881E+02 4.5868390952E+02` / `5.3831838074E+02 5.3831995025E+02 5.4364491240E+02` — the supercell Γ FD spectrum folds primitive Γ ∪ X; eigenvector phases identify modes 1–6 (cells out of phase = X branch) → **X: 97.98, 131.27 (TA, FD-split doublet), 370.58, 428.24 (LA/LO), 457.48, 458.68 (TO) cm⁻¹**; modes 7–9 = Γ optical 538.32, 538.32, 543.64 |
-| Pin 2 (sharp, same-Hamiltonian) | central **second difference of the restricted-PBE PW SCF total energy on the 2×1×1 supercell**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF |
+| Supplemental same-quantity check | Runtime three-energy curvature of an atom0x (+h,−h) pattern across the two X supercell images, h=0.03 Å. Divide by N_cells=2 to obtain Re C00(X); bound 0.30 eV/Å². This is not an external oracle. |
 | Pin 3 (cross-parent consistency) | PBE spectrum must sit near the LSDA parent (`dfpt-finite-q-si`: \|ω\| 130, 130, 230, 448, 673, 673 cm⁻¹) — an XC-kernel change, not new lattice dynamics |
 
 The CP2K twin necessarily differs in PP/basis representation (GPW GTH/MOLOPT
@@ -861,31 +878,51 @@ FD-supercell at 300 Ry vs the LDA-generated NC-UPF plane-wave twin at a
 **physics window**, not the digit. The same \|ω\| windows the LSDA parent
 uses — low 3 ∈ [50, 400], high 3 ∈ [300, 850] cm⁻¹ — contain both the CP2K
 X branch (98, 131, 371 | 428, 457, 459) and the biased ATV minimal twin
-(108, 108, 239 | 451, 669, 669). The energy-FD pin is the sharp correctness
-gate for the finite-q GGA kernel.
+(108, 108, 239 | 451, 669, 669). The runtime q-pattern curvature is an internal consistency supplement,
+while the external spectrum anchors the stated physics window.
 
-#### Measured pins (this host, 2026-07-31, Release)
+### Force-constant observable and acceptance scope
 
-| Quantity | Value |
-| -------- | ----- |
-| Supercell SCF energy (4-atom, PBE) | −30.242110831216 Ry (−15.121055415608 Ha) |
-| Energy-FD C[(0x),(0x)] (h = 0.03 Å, tol 1e-9) | **21.2006 eV/Å²** (E₀ = −15.121055415608 Ha, E± = −15.120904127510 / −15.120505505958 Ha) |
-| DFPT C[(0x),(0x)] (regression settings) | **21.1974 eV/Å²** → gate `\|Δ\| ≤ 0.30` (~0.015 % agreement) |
-| ATV ω(X) [cm⁻¹] | **−108.49, −107.98, 239.26, 451.36, 668.88, 668.94** |
-| \|ω\| sorted | 108, 108, 239, 451, 669, 669 → gates [50, 400] (low 3), [300, 850] (high 3) |
-| n_imag | 2 (soft TA pair under minimal ecut/k — accepted ≤ 2, same as the LSDA parent) |
-| Pre-symmetrization asymmetry | 7.30e-6 eV/Å² → gate ≤ 1e-4 |
-| Regression wall | ≈ **50 s** (≤ 60 s budget; identical numbers at OMP=1 and OMP=8) |
+The commensurate result now publishes raw complex C(q), obtained by the same
+`PhononDispersion::force_constants_at_q` home-row IFC Fourier sum used by the
+vibration spectrum path. It does not publish the top-left supercell block.
+Frequency diagonalization retains the existing Hermitian LAPACK route;
+raw matrix real/imaginary parts and preprojection asymmetry remain observable.
 
-### Performance
+The original numerical bounds remain: external spectral windows low 3
+[50,400] cm⁻¹/high 3 [300,850] cm⁻¹, at most 2 imaginary modes, asymmetry
+≤1e-4 eV/Å², and runtime q-pattern curvature agreement within 0.30 eV/Å².
+The entire existing section, including supplemental SCFs and parent
+comparisons, enforces 60 s. No parameter section or performance exemption is
+introduced. The previous frozen native supercell-diagonal constants were the
+wrong quantity and have been removed rather than repinned from native output.
 
-| Item | Value |
-| ---- | ----- |
-| `perf_exempt` | **false** |
-| ATV wall | **49.8 s** (serial, OMP=1; 12 supercell responses, Γ-only mesh, GGA kernel FD) |
-| CP2K wall (same observable, comparable job: 25 RKS k-point force evals, FD Hessian; committed input, serial 1 thread) | **288.7 s** |
-| `ratio_atv_over_cp2k` | **0.17** (49.8 / 288.7) |
-| `within_10x` | **true** |
+The q-pattern calculation uses the unchanged method controls and h=0.03 Å.
+For displacement amplitudes (+h,−h),
+
+\[
+\operatorname{Re} C_{00}(X) \simeq
+\frac{E(+h)-2E(0)+E(-h)}{2h^2}.
+\]
+
+The factor 2 is the number of displaced primitive images. Under smearing,
+PW's returned energy includes its entropy term, so the same expression is a
+free-energy curvature. This is an internal consistency supplement. The
+external CP2K frequency data and analytic symmetry identities remain the
+oracle content; there is no independent external digit pin for the complete
+NC-UPF C(q) matrix at these minimal settings.
+
+### Validation and historical timing
+
+The new raw-matrix spring-chain units target the exact q-dependent matrix,
+including complex off-diagonal phases and unprojected asymmetry, without SCF.
+CPU validation on 2026-10-25 passed all 1785 units and all 15 DFPT
+sections. This complete section took 12.50 s at the declared one thread;
+Re C00(X) was 19.46231972 and the q-pattern curvature was 19.45278291 eV/Å².
+These are observed native checks, not replacement oracle pins. Raw output and
+source hashes: [XC/response validation](../../../tools/diagnostics/pw-xc-response/README.md).
+The existing external CP2K reference process wall was 288.7 s.
+It is retained as historical provenance, not a refreshed fair timing ratio.
 
 
 ## Reference — finite-q DFPT + metallic smearing (diamond Si at X, PW LSDA)
@@ -1105,8 +1142,8 @@ Burke, Ernzerhof, *Phys. Rev. Lett.* **77**, 3865 (1996).
 | ----- | ----- |
 | Oracle 1 (physics anchor) | **CP2K 2026.1** (rev `85b8a9b49c`, `~/.local/bin/cp2k`, this host, 2026-07-31) — `VIBRATIONAL_ANALYSIS` (FD of analytic UKS k-point forces, `FULLY_PERIODIC T`, DX 0.01 bohr, `EPS_SCF 1e-8`) on the **2×1×1 supercell** (4 atoms): LSD + `MULTIPLICITY 1` + PBE, DZVP-MOLOPT-SR-GTH / GTH-PBE-q4, CUTOFF 300 Ry, 1×2×2 MP (≡ 2×2×2 on the primitive). Input: `tools/cp2k_oracle/inputs/dfpt-gga-spin-finite-q-si/si4_uks_pbe_vib.inp` |
 | Oracle 1 output lines | `VIB\|Frequency (cm^-1)  9.7979171441E+01 1.3126605303E+02 3.7058085178E+02` / `4.2823632737E+02 4.5748022016E+02 4.5868391248E+02` / `5.3831837242E+02 5.3831998162E+02 5.4364489119E+02` — supercell Γ FD folds primitive Γ ∪ X; eigenvector phases identify modes 1–6 (cells out of phase = X branch) → **X: 97.98, 131.27 (TA, FD-split doublet), 370.58, 428.24 (LA/LO), 457.48, 458.68 (TO) cm⁻¹**; modes 7–9 = Γ optical 538.32, 538.32, 543.64. Digit-identical to the restricted supercell twin at \(M=0\). |
-| Pin 2 (sharp, same-Hamiltonian) | central **second difference of the collinear-spin PBE PW SCF total energy on the 2×1×1 supercell**: C[(0x),(0x)] = (E(+h) − 2E₀ + E(−h))/h², h = 0.03 Å, SCF tol 1e-9, identical ecut/k/XC/UPF/spin |
-| Pin 3 (cross-parent M=0 identity) | joint C00 and \|ω(X)\| must reproduce the restricted finite-q GGA parent (`dfpt-gga-finite-q-si`: C00 21.1974 eV/Å² class, \|ω\| ≈ 108, 108, 239, 451, 669, 669 cm⁻¹) to spin-doubling roundoff |
+| Supplemental same-quantity check | Runtime three-energy curvature of an atom0x (+h,−h) pattern across the two X supercell images, h=0.03 Å. Divide by N_cells=2 to obtain Re C00(X); bound 0.30 eV/Å². This is not an external oracle. |
+| Analytic M=0 identity | Runtime restricted DFPT at the same q with all other controls, including smearing, unchanged: difference in Re C00(X) ≤ 0.05 eV/Å². No frozen native parent value. |
 
 The CP2K twin necessarily differs in PP/basis representation (GPW GTH/MOLOPT
 FD-supercell at 300 Ry vs the LDA-generated NC-UPF plane-wave twin at a
@@ -1114,36 +1151,52 @@ FD-supercell at 300 Ry vs the LDA-generated NC-UPF plane-wave twin at a
 **physics window**, not the digit. The same \|ω\| windows the finite-q
 parents use — low 3 ∈ [50, 400], high 3 ∈ [300, 850] cm⁻¹ — contain both
 the CP2K X branch (98, 131, 371 \| 428, 457, 459) and the biased ATV minimal
-twin (109, 109, 239 \| 451, 669, 669). The energy-FD pin is the sharp
-correctness gate for the joint spin-GGA supercell kernel.
+twin (109, 109, 239 \| 451, 669, 669). The runtime q-pattern curvature supplements the external spectral
+window; it is not an independent numerical oracle.
 
-#### Measured pins (this host, 2026-07-31, Release)
+### Force-constant observable and acceptance scope
 
-| Quantity | Value |
-| -------- | ----- |
-| Energy-FD C[(0x),(0x)] (h = 0.03 Å, spin-PBE SCF on supercell, tol 1e-8, mix_beta 0.3) | **21.2006 eV/Å²** (E₀ = −15.121055565028 Ha, E± = −15.120904278764 / −15.120505654960 Ha; digit-identical to restricted supercell parent) |
-| DFPT C[(0x),(0x)] (regression settings) | **21.1911 eV/Å²** → gate `\|Δ\| ≤ 0.30` vs FD pin (~0.04 %); identity vs restricted parent 21.1974 → gate `\|Δ\| ≤ 0.05` |
-| ATV ω(X) [cm⁻¹] | **−108.83, −108.32, 239.12, 451.33, 668.84, 668.90** |
-| \|ω\| sorted | 109, 109, 239, 451, 669, 669 → gates [50, 400] (low 3), [300, 850] (high 3) |
-| n_imag | 2 (soft TA pair under minimal ecut/k — accepted ≤ 2, same as both parents) |
-| Pre-symmetrization asymmetry | 9.50e-6 eV/Å² → gate ≤ 1e-4 |
-| Regression wall | ≈ **108 s** serial / **101 s** OMP=8 (family 60 s aspirational exceeded by spin doubling of the already-tight finite-q GGA twin; fair ratio is the hard perf gate) |
+The commensurate result now publishes raw complex C(q), obtained by the same
+`PhononDispersion::force_constants_at_q` home-row IFC Fourier sum used by the
+vibration spectrum path. It does not publish the top-left supercell block.
+Frequency diagonalization retains the existing Hermitian LAPACK route;
+raw matrix real/imaginary parts and preprojection asymmetry remain observable.
 
-Cross-parent consistency (\(M=0\) limit): joint spin×GGA DFPT C00
-21.1911 ≈ restricted parent 21.1974 (6e-3 eV/Å²); spectrum matches the
-restricted finite-q GGA twin to the soft-TA digit. The joint kernel adds no
-spurious spin response at \(M=0\) while exercising the full spin-resolved
-supercell Sternheimer + `step_spin` FD path.
+The original numerical bounds remain: external spectral windows low 3
+[50,400] cm⁻¹/high 3 [300,850] cm⁻¹, at most 2 imaginary modes, asymmetry
+≤1e-4 eV/Å², and runtime q-pattern curvature agreement within 0.30 eV/Å².
+The runtime same-q restricted-parent M=0 comparison retains 0.05 eV/Å².
+The entire existing section, including supplemental SCFs and parent
+comparisons, enforces 60 s. No parameter section or performance exemption is
+introduced. The previous frozen native supercell-diagonal constants were the
+wrong quantity and have been removed rather than repinned from native output.
 
-### Performance
+The q-pattern calculation uses the unchanged method controls and h=0.03 Å.
+For displacement amplitudes (+h,−h),
 
-| Item | Value |
-| ---- | ----- |
-| `perf_exempt` | **false** |
-| ATV wall | **107.9 s** (serial, OMP=1; 12 supercell responses × 2 spins, Γ-only mesh, spin-GGA kernel FD) |
-| CP2K wall (same observable, comparable job: 25 UKS k-point force evals, FD Hessian; committed input, serial 1 thread) | **577.8 s** |
-| `ratio_atv_over_cp2k` | **0.19** (107.9 / 577.8) |
-| `within_10x` | **true** |
+\[
+\operatorname{Re} C_{00}(X) \simeq
+\frac{E(+h)-2E(0)+E(-h)}{2h^2}.
+\]
+
+The factor 2 is the number of displaced primitive images. Under smearing,
+PW's returned energy includes its entropy term, so the same expression is a
+free-energy curvature. This is an internal consistency supplement. The
+external CP2K frequency data and analytic symmetry identities remain the
+oracle content; there is no independent external digit pin for the complete
+NC-UPF C(q) matrix at these minimal settings.
+
+### Validation and historical timing
+
+The new raw-matrix spring-chain units target the exact q-dependent matrix,
+including complex off-diagonal phases and unprojected asymmetry, without SCF.
+CPU validation on 2026-10-25 passed all 1785 units and all 15 DFPT
+sections. This complete section took 33.31 s at the declared one thread;
+Re C00(X) was 19.45605115 and the q-pattern curvature was 19.45278288 eV/Å².
+These are observed native checks, not replacement oracle pins. Raw output and
+source hashes: [XC/response validation](../../../tools/diagnostics/pw-xc-response/README.md).
+The existing external CP2K reference process wall was 577.8 s.
+It is retained as historical provenance, not a refreshed fair timing ratio.
 
 
 ## Reference — finite-q DFPT phonons, joint collinear spin × pure GGA × metallic smear (diamond Si at X, PW)
@@ -1216,8 +1269,8 @@ Siblings: `dfpt-gga-spin-smearing` (Γ, spin×GGA×smear),
 | ----- | ----- |
 | Oracle 1 (physics anchor) | **CP2K 2026.1** (rev `git:5e54ba2`, source build `…/cp2k/install/bin/cp2k.psmp`, env `…/install/env.sh`, this host, 2026-08-01) — `VIBRATIONAL_ANALYSIS` (FD of analytic UKS k-point forces, `FULLY_PERIODIC T`, DX 0.01 bohr, `EPS_SCF 1e-8`) on the **2×1×1 supercell** (4 atoms): LSD + `MULTIPLICITY 1` + PBE + `&SMEAR FERMI_DIRAC` at 3157.75 K (≡ 0.02 Ry), ADDED_MOS 4, DZVP-MOLOPT-SR-GTH / GTH-PBE-q4, CUTOFF 300 Ry, 1×2×2 MP (≡ 2×2×2 on the primitive). Input: `tools/cp2k_oracle/inputs/dfpt-gga-spin-finite-q-smearing/si4_uks_pbe_smear_vib.inp` |
 | Oracle 1 output lines | `VIB\|Frequency (cm^-1)    98.223723           130.533918           364.045396` / `427.180368           452.075468           458.190888` / `536.999556           537.000981           541.694572` — supercell Γ FD folds primitive Γ ∪ X; modes 1–6 (cells out of phase) = **X branch: 98.22, 130.53 (TA, FD-split doublet), 364.05, 427.18 (LA/LO), 452.08, 458.19 (TO) cm⁻¹**; modes 7–9 = Γ optical 537.00, 537.00, 541.69. Matches the fixed-occ spin×GGA supercell twin at \(M=0\) to the expected gapped-smear digit. |
-| Pin 2 (sharp, same-Hamiltonian) | central **second difference of the collinear-spin PBE free energy** on the **2×1×1 supercell** under FD smear: C[(0x),(0x)] = (F(+h) − 2F₀ + F(−h))/h², h = 0.03 Å, SCF tol 1e-9, `mix_beta` 0.3, identical ecut/k/XC/UPF/spin/FD |
-| Pin 3 (cross-parent identity) | \(M=0\) + gapped FD must reproduce the fixed-occ joint spin×GGA finite-q parent (`dfpt-gga-spin-finite-q-si`: DFPT C00 21.1911 eV/Å², \|ω\| ≈ 109, 109, 239, 451, 669, 669 cm⁻¹) to spin-doubling / near-integer-fill roundoff |
+| Supplemental same-quantity check | Runtime three-energy curvature of an atom0x (+h,−h) pattern across the two X supercell images, h=0.03 Å. Divide by N_cells=2 to obtain Re C00(X); bound 0.30 eV/Å². This is not an external oracle. |
+| Analytic M=0 identity | Runtime restricted DFPT at the same q with all other controls, including smearing, unchanged: difference in Re C00(X) ≤ 0.05 eV/Å². No frozen native parent value. |
 
 The CP2K twin necessarily differs in PP/basis representation (GPW
 GTH/MOLOPT FD-supercell at 300 Ry vs the LDA-generated NC-UPF plane-wave twin
@@ -1225,34 +1278,49 @@ at a 10 Ry minimal cutoff with a Γ-only supercell mesh), so it anchors the
 **physics window**, not the digit. The same \|ω\| windows the finite-q
 parents use — low 3 ∈ [50, 400], high 3 ∈ [300, 850] cm⁻¹ — contain both
 the CP2K X branch (98, 131, 364 \| 427, 452, 458) and the biased ATV minimal
-twin (109, 109, 239 \| 451, 669, 669). The free-energy FD pin is the sharp
-correctness gate for the joint spin-GGA×smear supercell kernel.
+twin (109, 109, 239 \| 451, 669, 669). The runtime free-energy q-pattern curvature supplements the external
+spectral window and does not supply an independent numerical oracle.
 
-#### Measured pins (this host, 2026-08-01, Release, OMP=1)
+### Force-constant observable and acceptance scope
 
-| Quantity | Value |
-| -------- | ----- |
-| Free-energy FD C[(0x),(0x)] (h = 0.03 Å, spin-PBE + FD on supercell, tol 1e-9, mix_beta 0.3) | **21.2006 eV/Å²** (F₀ = −15.121055430501 Ha, F± = −15.120904142901 / −15.120505520962 Ha; \|TS\| ~ 2e-15 Ry ⇒ F=E; mag=0; digit-identical to fixed-occ supercell parent) |
-| DFPT C[(0x),(0x)] (regression settings) | **21.1911 eV/Å²** → gate `\|Δ\| ≤ 0.30` vs FD pin (~0.04 %); identity vs fixed-occ parent 21.1911 → gate `\|Δ\| ≤ 0.05` |
-| ATV ω(X) [cm⁻¹] | **−108.83, −108.32, 239.12, 451.33, 668.84, 668.90** |
-| \|ω\| sorted | 109, 109, 239, 451, 669, 669 → gates [50, 400] (low 3), [300, 850] (high 3) |
-| n_imag | 2 (soft TA pair under minimal ecut/k — accepted ≤ 2, same as both finite-q GGA parents) |
-| Pre-symmetrization asymmetry | 9.50e-6 eV/Å² → gate ≤ 1e-4 |
-| Regression wall | ≈ **148 s** serial (family 60 s aspirational exceeded by spin+smear doubling of the already-tight finite-q GGA twin; fair ratio is the hard perf gate) |
+The commensurate result now publishes raw complex C(q), obtained by the same
+`PhononDispersion::force_constants_at_q` home-row IFC Fourier sum used by the
+vibration spectrum path. It does not publish the top-left supercell block.
+Frequency diagonalization retains the existing Hermitian LAPACK route;
+raw matrix real/imaginary parts and preprojection asymmetry remain observable.
 
-Cross-parent consistency (\(M=0\) gapped-FD limit): joint spin×GGA×smear
-DFPT C00 21.1911 = fixed-occ spin×GGA finite-q parent 21.1911 (4-decimal
-identical); spectrum matches the parent to the soft-TA digit. The four-way
-product adds no spurious response relative to the fixed-occ joint kernel
-while exercising the full spin-resolved supercell Sternheimer + `step_spin`
-FD + FD occupation weights path.
+The original numerical bounds remain: external spectral windows low 3
+[50,400] cm⁻¹/high 3 [300,850] cm⁻¹, at most 2 imaginary modes, asymmetry
+≤1e-4 eV/Å², and runtime q-pattern curvature agreement within 0.30 eV/Å².
+The runtime same-q restricted-parent M=0 comparison retains 0.05 eV/Å².
+The entire existing section, including supplemental SCFs and parent
+comparisons, enforces 60 s. No parameter section or performance exemption is
+introduced. The previous frozen native supercell-diagonal constants were the
+wrong quantity and have been removed rather than repinned from native output.
 
-### Performance
+The q-pattern calculation uses the unchanged method controls and h=0.03 Å.
+For displacement amplitudes (+h,−h),
 
-| Item | Value |
-| ---- | ----- |
-| `perf_exempt` | **false** |
-| ATV wall | **148.1 s** (serial, OMP=1; 12 supercell responses × 2 spins, Γ-only mesh, spin-GGA kernel FD + smear weights) |
-| CP2K wall (same observable, comparable job: UKS k-point force evals + FD Hessian + SMEAR on the 4-atom supercell; committed input, serial 1 MPI × OMP=1) | **585.9 s** |
-| `ratio_atv_over_cp2k` | **0.25** (148.1 / 585.9) |
-| `within_10x` | **true** |
+\[
+\operatorname{Re} C_{00}(X) \simeq
+\frac{E(+h)-2E(0)+E(-h)}{2h^2}.
+\]
+
+The factor 2 is the number of displaced primitive images. Under smearing,
+PW's returned energy includes its entropy term, so the same expression is a
+free-energy curvature. This is an internal consistency supplement. The
+external CP2K frequency data and analytic symmetry identities remain the
+oracle content; there is no independent external digit pin for the complete
+NC-UPF C(q) matrix at these minimal settings.
+
+### Validation and historical timing
+
+The new raw-matrix spring-chain units target the exact q-dependent matrix,
+including complex off-diagonal phases and unprojected asymmetry, without SCF.
+CPU validation on 2026-10-25 passed all 1785 units and all 15 DFPT
+sections. This complete section took 32.58 s at the declared one thread;
+Re C00(X) was 19.45605115 and the q-pattern curvature was 19.45278288 eV/Å².
+These are observed native checks, not replacement oracle pins. Raw output and
+source hashes: [XC/response validation](../../../tools/diagnostics/pw-xc-response/README.md).
+The existing external CP2K reference process wall was 585.9 s.
+It is retained as historical provenance, not a refreshed fair timing ratio.

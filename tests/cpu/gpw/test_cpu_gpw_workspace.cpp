@@ -17,8 +17,6 @@ TEST(GpwWorkspace, DefaultIsEmpty) {
     EXPECT_TRUE(ws.mg.levels.empty());
     EXPECT_TRUE(ws.products.by_level.empty());
     EXPECT_TRUE(ws.products.prims.empty());
-    EXPECT_TRUE(ws.cbg.gidx.empty());
-    EXPECT_EQ(ws.cbg.npts, 0);
     EXPECT_TRUE(ws.kbg.gidx.empty());
     EXPECT_EQ(ws.kbg.nb, 0);
     EXPECT_TRUE(ws.last_veff.empty());

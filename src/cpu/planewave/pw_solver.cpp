@@ -3,7 +3,7 @@
 ///        through the plane-wave SCF self-consistency cycle.
 ///
 /// Low-level callers construct `PW` explicitly and execute its
-/// build/run lifecycle; workflow callers use `PWEvaluator`.
+/// build/run lifecycle; workflow callers mount `PW` on the parent Driver.
 ///
 /// Problem assembly (Ewald, G-vectors, FFT grids, V_loc, per-k KB
 /// projectors / atomic wavefunctions on q = k+G, initial density) is the
@@ -373,6 +373,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
             n_dav, AccReal(tol) * AccReal(0.1), 40);
         davidson_bands_ = n_dav;
     }
+    davidson_->set_tolerance(AccReal(tol) * AccReal(0.1));
     davidson_->prepare(ws);
     internal::ConvergenceCheck convergence{AccReal(tol), 2};
 
@@ -587,39 +588,17 @@ PWResult& PW::run(const cpu::Frame& frame) {
             },
             /*mix=*/
             [&]() {
-                for (int s = 0; s < 2; ++s) {
-                    for (int ig = 0; ig < ws.n_g; ++ig) {
-                        ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                        ws.rho_spin_G[s][ig] =
-                            ws.rho_spin_G_old[s][ig]
-                            + AccReal(mix_beta)
-                                  * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-                    }
-                }
-                for (int ig = 0; ig < ws.n_g; ++ig) {
-                    ws.rho_G_old[ig] = ws.rho_G[ig];
-                    ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-                }
-
-                AccReal dr = 0;
-                for (int ig = 0; ig < ws.n_g; ++ig) {
-                    auto d = ws.rho_G[ig] - ws.rho_G_old[ig];
-                    dr += d.real() * d.real() + d.imag() * d.imag();
-                }
-                loop_converged_ = (std::sqrt(dr) < AccReal(tol));
+                auto terms = internal::iteration_energy(
+                    ws, e_band, prob.ew_total, vol_bohr);
+                const AccReal e_ent_ha = -degauss_ha * entropy_sum;
+                terms.total += e_ent_ha;
+                loop_converged_ = convergence.step(
+                    density_->mix_spin(ws, rho_out[0], rho_out[1]));
                 result_.magnetization = static_cast<double>(n_up - n_dn);
                 result_.n_elec_occ = static_cast<double>(n_occ);
                 result_.e_fermi =
                     static_cast<double>(mu_ha) / qe_units::rydberg_to_hartree;
 
-                auto terms = internal::iteration_energy(
-                    ws, e_band, prob.ew_total, vol_bohr);
-                terms.e_one =
-                    e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-                terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total
-                              + ws.E_aug;
-                const AccReal e_ent_ha = -degauss_ha * entropy_sum;
-                terms.total += e_ent_ha;
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;
@@ -803,11 +782,12 @@ PWResult& PW::run(const cpu::Frame& frame) {
             },
             /*mix=*/
             [&]() {
-                density_->finish(ws);
-                loop_converged_ = convergence.step(ws);
-
+                // Band energies and potentials were formed at the input
+                // density; finish() replaces rho_G with the mixed update.
                 const auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
+                density_->finish(ws);
+                loop_converged_ = convergence.step(ws);
                 AccReal e_ha = terms.total;
                 AccReal e_ent_ha = AccReal(0);
                 e_ent_ha = -degauss_ha * entropy_sum;
@@ -865,6 +845,15 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 auto* saved_gvec = ws.gvec;
                 e_band = 0;
                 for (int s = 0; s < 2; ++s) {
+                    // A zero-occupation channel contributes no band energy
+                    // or density. Its unconstrained virtual solve must not
+                    // replace the occupied channel's next orbital guess.
+                    if (n_occ[s] == 0) {
+                        rho_out[s].resize(ws.rho_G.shape());
+                        std::fill(rho_out[s].begin(), rho_out[s].end(),
+                                  std::complex<AccReal>(0, 0));
+                        continue;
+                    }
                     for (int ig = 0; ig < ws.n_g; ++ig)
                         ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
                     veff_->step(ws);
@@ -919,33 +908,13 @@ PWResult& PW::run(const cpu::Frame& frame) {
             },
             /*mix=*/
             [&]() {
-                for (int s = 0; s < 2; ++s) {
-                    for (int ig = 0; ig < ws.n_g; ++ig) {
-                        ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                        ws.rho_spin_G[s][ig] =
-                            ws.rho_spin_G_old[s][ig]
-                            + AccReal(mix_beta)
-                                  * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-                    }
-                }
-                for (int ig = 0; ig < ws.n_g; ++ig) {
-                    ws.rho_G_old[ig] = ws.rho_G[ig];
-                    ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-                }
-
-                AccReal dr = 0;
-                for (int ig = 0; ig < ws.n_g; ++ig) {
-                    auto d = ws.rho_G[ig] - ws.rho_G_old[ig];
-                    dr += d.real() * d.real() + d.imag() * d.imag();
-                }
-                loop_converged_ = (std::sqrt(dr) < AccReal(tol));
-
+                // Eigenvalues, Hartree and XC belong to the same input
+                // density. Form their energy before updating that density.
                 auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
-                terms.e_one =
-                    e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-                terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total
-                              + ws.E_aug;
+                loop_converged_ = convergence.step(
+                    density_->mix_spin(ws, rho_out[0], rho_out[1]));
+
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;
@@ -1022,11 +991,12 @@ PWResult& PW::run(const cpu::Frame& frame) {
             },
             /*mix=*/
             [&]() {
-                density_->finish(ws);
-                loop_converged_ = convergence.step(ws);
-
+                // Evaluate at the density that generated this Hamiltonian,
+                // before finish() saves it and applies the Pulay update.
                 const auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
+                density_->finish(ws);
+                loop_converged_ = convergence.step(ws);
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;

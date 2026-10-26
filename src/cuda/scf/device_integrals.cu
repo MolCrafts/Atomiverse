@@ -9,12 +9,12 @@
 ///   Helgaker, Jørgensen, Olsen — MD recurrence
 ///   CPU twin: cpu/scf/native_integrals.cpp (overlap_prim_3d, eri_prim_md)
 
+#include "atomiverse/core/gto.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 
 #include "atomiverse/cuda/frame/types.cuh"
-#include <cfloat>
 #include <cmath>
 #include <cuda_runtime.h>
 #include <stdexcept>
@@ -29,30 +29,7 @@ using cuda::work_t;
 namespace cuda {
 namespace scf {
 
-static constexpr work_t kBoysEpsilon = work_t(1e-12);
-
-// ── Device helpers ────────────────────────────────────────────────────
-
-__device__ __forceinline__ work_t boys_f0_device(work_t x) {
-    if (x < kBoysEpsilon)
-        return work_t(1);
-    work_t sx = sqrt(x);
-    return work_t(0.5) * sqrt(work_t(ATV::units::pi) / x) * erf(sx);
-}
-
-/// Boys F_n via upward recurrence from F_0 (core/gto.h).
-__device__ __forceinline__ work_t boys_fn_device(int n, work_t x) {
-    if (n == 0)
-        return boys_f0_device(x);
-    if (x < kBoysEpsilon)
-        return work_t(1) / work_t(2 * n + 1);
-    work_t ex = exp(-x);
-    work_t inv2x = work_t(0.5) / x;
-    work_t fn = boys_f0_device(x);
-    for (int k = 1; k <= n; ++k)
-        fn = (work_t(2 * k - 1) * fn - ex) * inv2x;
-    return fn;
-}
+// Scalar and batched Boys share the stable law in core/gto.h.
 
 __device__ __forceinline__ work_t dist2_device(work_t ax, work_t ay, work_t az,
                                                work_t bx, work_t by,
@@ -298,8 +275,7 @@ __device__ work_t nuclear_prim_device(const int a_ang[3], const int b_ang[3],
     const int Ltot = Lx + Ly + Lz; // ≤3 with force raise of p
 
     work_t Fm[kDeviceRNuc];
-    for (int m = 0; m <= Ltot && m < kDeviceRNuc; ++m)
-        Fm[m] = boys_fn_device(m, T);
+    ATV::boys_sequence(Ltot, T, Fm);
 
     work_t E[3][kDeviceMDEDim];
     for (int d = 0; d < 3; ++d)
@@ -404,8 +380,7 @@ __device__ work_t eri_prim_md_device(const int a_ang[3], const int b_ang[3],
     const int Ltot = Lx1 + Ly1 + Lz1 + Lx2 + Ly2 + Lz2; // ≤5 with force raise
 
     work_t Fm[kDeviceREri];
-    for (int m = 0; m <= Ltot && m < kDeviceREri; ++m)
-        Fm[m] = boys_fn_device(m, Tval);
+    ATV::boys_sequence(Ltot, Tval, Fm);
 
     work_t E1[3][kDeviceMDEDim], E2[3][kDeviceMDEDim];
     for (int d = 0; d < 3; ++d) {
@@ -417,41 +392,43 @@ __device__ work_t eri_prim_md_device(const int a_ang[3], const int b_ang[3],
     const int Ry_max = Ly1 + Ly2;
     const int Rz_max = Lz1 + Lz2;
 
-    work_t R_tab[kDeviceREri][kDeviceREri][kDeviceREri][kDeviceREri];
-    for (int m = 0; m < kDeviceREri; ++m)
-        for (int t = 0; t < kDeviceREri; ++t)
-            for (int u = 0; u < kDeviceREri; ++u)
-                for (int v = 0; v < kDeviceREri; ++v)
-                    R_tab[m][t][u][v] = work_t(0);
-
+    // A Hermite layer depends only on m+1. Its active entries satisfy
+    // t+u+v <= Ltot-m and the per-axis maxima below. Every source belongs
+    // to the previously written layer; no inactive storage needs clearing.
+    work_t R_tab[2][kDeviceREri][kDeviceREri][kDeviceREri];
     work_t neg2rho = -work_t(2) * rho;
     work_t neg2rho_pow = work_t(1);
     for (int m = 0; m <= Ltot; ++m) {
-        R_tab[m][0][0][0] = neg2rho_pow * Fm[m];
+        Fm[m] = neg2rho_pow * Fm[m];
         neg2rho_pow *= neg2rho;
     }
+    R_tab[Ltot & 1][0][0][0] = Fm[Ltot];
     for (int m = Ltot - 1; m >= 0; --m) {
+        const int current = m & 1, previous = (m + 1) & 1;
         const int max_tuv = Ltot - m;
+        R_tab[current][0][0][0] = Fm[m];
         for (int t = 1; t <= max_tuv && t <= Rx_max; ++t) {
-            R_tab[m][t][0][0] = PQ[0] * R_tab[m + 1][t - 1][0][0];
+            R_tab[current][t][0][0] = PQ[0] * R_tab[previous][t - 1][0][0];
             if (t >= 2)
-                R_tab[m][t][0][0] += work_t(t - 1) * R_tab[m + 1][t - 2][0][0];
+                R_tab[current][t][0][0] +=
+                    work_t(t - 1) * R_tab[previous][t - 2][0][0];
         }
         for (int t = 0; t <= Rx_max && t <= max_tuv; ++t) {
             for (int u = 1; u <= Ry_max && t + u <= max_tuv; ++u) {
-                R_tab[m][t][u][0] = PQ[1] * R_tab[m + 1][t][u - 1][0];
+                R_tab[current][t][u][0] = PQ[1] * R_tab[previous][t][u - 1][0];
                 if (u >= 2)
-                    R_tab[m][t][u][0] +=
-                        work_t(u - 1) * R_tab[m + 1][t][u - 2][0];
+                    R_tab[current][t][u][0] +=
+                        work_t(u - 1) * R_tab[previous][t][u - 2][0];
             }
         }
         for (int t = 0; t <= Rx_max && t <= max_tuv; ++t) {
             for (int u = 0; u <= Ry_max && t + u <= max_tuv; ++u) {
                 for (int v = 1; v <= Rz_max && t + u + v <= max_tuv; ++v) {
-                    R_tab[m][t][u][v] = PQ[2] * R_tab[m + 1][t][u][v - 1];
+                    R_tab[current][t][u][v] =
+                        PQ[2] * R_tab[previous][t][u][v - 1];
                     if (v >= 2)
-                        R_tab[m][t][u][v] +=
-                            work_t(v - 1) * R_tab[m + 1][t][u][v - 2];
+                        R_tab[current][t][u][v] +=
+                            work_t(v - 1) * R_tab[previous][t][u][v - 2];
                 }
             }
         }
@@ -489,7 +466,7 @@ __device__ work_t eri_prim_md_device(const int a_ang[3], const int b_ang[3],
 __global__ void boys_f0_test_kernel(const prec_t* x, prec_t* out, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     for (int i = idx; i < n; i += blockDim.x * gridDim.x)
-        out[i] = boys_f0_device(x[i]);
+        out[i] = ATV::boys_f0(x[i]);
 }
 
 void launch_boys_f0_test(const prec_t* d_x, prec_t* d_out, int n,
@@ -555,7 +532,7 @@ __global__ void compute_1e_kernel(prec_t* S, prec_t* T, prec_t* V,
                     work_t Cz = static_cast<work_t>(atom_pos[a * 3 + 2]);
                     work_t PC2 = dist2_device(Px, Py, Pz, Cx, Cy, Cz);
                     acc_V += v_prefactor * work_t(-atom_Z[a])
-                             * boys_f0_device(gamma * PC2);
+                             * ATV::boys_f0(gamma * PC2);
                 }
             }
         }
@@ -654,7 +631,7 @@ __global__ void __launch_bounds__(256, 2)
                         result += c_p * c_q * c_r * c_s * work_t(2) * pi_val
                                   * pi_val * sqrt(pi_val)
                                   / (gamma1 * gamma2 * sqrt(gamma1 + gamma2))
-                                  * K_AB * K_CD * boys_f0_device(rho * PQ2);
+                                  * K_AB * K_CD * ATV::boys_f0(rho * PQ2);
                     }
                 }
             }
@@ -788,6 +765,111 @@ void launch_1e_integrals_sp(double* S, double* T, double* V,
         ao_cart, atom_Z, atom_pos, n_ao, n_prim, natm);
 }
 
+// MINAO setup: one warp owns a variable-length radial contraction. Its
+// primitive-pair self-overlap reduction shares the existing OS primitive.
+// Tables contain s/p only; cart=0 matches the CPU normalization convention.
+__global__ void normalize_minao_sp_kernel(const double* alpha,
+                                          double* coefficient,
+                                          const int* offset, const int* angular,
+                                          int n_contractions, int* bad) {
+    const int lane = static_cast<int>(threadIdx.x) & 31;
+    const int shell =
+        static_cast<int>(blockIdx.x * (blockDim.x / 32) + threadIdx.x / 32);
+    if (shell >= n_contractions)
+        return;
+    const int begin = offset[shell], np = offset[shell + 1] - begin;
+    for (int p = lane; p < np; p += 32) {
+        const double a = alpha[begin + p];
+        const double norm =
+            angular[shell] == 0 ? ATV::phys_norm_s(a) : ATV::phys_norm_p(a);
+        coefficient[begin + p] *= norm;
+    }
+    __syncwarp();
+    int ang[3];
+    cart_ang_device(angular[shell], 0, ang);
+    const work_t origin[3] = {0, 0, 0};
+    double self = 0;
+    for (int pq = lane; pq < np * np; pq += 32) {
+        const int p = begin + pq / np, q = begin + pq % np;
+        self += coefficient[p] * coefficient[q]
+                * overlap_prim_3d_device(ang, ang, alpha[p], origin, alpha[q],
+                                         origin);
+    }
+    for (int delta = 16; delta > 0; delta /= 2)
+        self += __shfl_down_sync(0xffffffffu, self, delta);
+    self = __shfl_sync(0xffffffffu, self, 0);
+    if (!(self > 0) || !isfinite(self)) {
+        if (lane == 0)
+            atomicExch(bad, 1);
+        return;
+    }
+    const double inverse_norm = 1.0 / sqrt(self);
+    for (int p = lane; p < np; p += 32)
+        coefficient[begin + p] *= inverse_norm;
+}
+
+void launch_normalize_minao_sp(const double* alpha, double* coefficient,
+                               const int* offset, const int* angular,
+                               int n_contractions, int* bad, void* stream) {
+    constexpr int threads = 128;
+    normalize_minao_sp_kernel<<<cuda::grid_size(n_contractions, threads / 32),
+                                threads, 0,
+                                static_cast<cudaStream_t>(stream)>>>(
+        alpha, coefficient, offset, angular, n_contractions, bad);
+}
+
+// Each thread contracts one target--MINAO AO pair (at most 3*14 primitives
+// for current tables). Consecutive threads publish consecutive target rows.
+__global__ void overlap_minao_sp_kernel(
+    double* B, const double* target_alpha, const double* target_coefficient,
+    const double* target_centers, const int* target_angular,
+    const int* target_ao_shell, const int* target_ao_cart, int n_ao,
+    int target_n_prim, const double* minao_alpha,
+    const double* minao_coefficient, const int* minao_offset,
+    const int* minao_angular, const int* minao_atom, const int* minao_ao_shell,
+    const int* minao_ao_cart, int n_minao, const double* atom_pos) {
+    const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+    if (idx >= n_ao * n_minao)
+        return;
+    const int mu = idx % n_ao, j = idx / n_ao;
+    const int si = target_ao_shell[mu], sj = minao_ao_shell[j];
+    int aa[3], bb[3];
+    cart_ang_device(target_angular[si], target_ao_cart[mu], aa);
+    cart_ang_device(minao_angular[sj], minao_ao_cart[j], bb);
+    const int atom = minao_atom[sj];
+    const work_t A[3] = {target_centers[si * 3], target_centers[si * 3 + 1],
+                         target_centers[si * 3 + 2]};
+    const work_t C[3] = {atom_pos[atom * 3], atom_pos[atom * 3 + 1],
+                         atom_pos[atom * 3 + 2]};
+    work_t value = 0;
+    for (int p = 0; p < target_n_prim; ++p) {
+        const int k = si * target_n_prim + p;
+        for (int q = minao_offset[sj]; q < minao_offset[sj + 1]; ++q)
+            value += target_coefficient[k] * minao_coefficient[q]
+                     * overlap_prim_3d_device(aa, bb, target_alpha[k], A,
+                                              minao_alpha[q], C);
+    }
+    B[idx] = value;
+}
+
+void launch_overlap_minao_sp(
+    double* B, const double* target_alpha, const double* target_coefficient,
+    const double* target_centers, const int* target_angular,
+    const int* target_ao_shell, const int* target_ao_cart, int n_ao,
+    int target_n_prim, const double* minao_alpha,
+    const double* minao_coefficient, const int* minao_offset,
+    const int* minao_angular, const int* minao_atom, const int* minao_ao_shell,
+    const int* minao_ao_cart, int n_minao, const double* atom_pos,
+    void* stream) {
+    constexpr int threads = 128;
+    overlap_minao_sp_kernel<<<cuda::grid_size(n_ao * n_minao, threads), threads,
+                              0, static_cast<cudaStream_t>(stream)>>>(
+        B, target_alpha, target_coefficient, target_centers, target_angular,
+        target_ao_shell, target_ao_cart, n_ao, target_n_prim, minao_alpha,
+        minao_coefficient, minao_offset, minao_angular, minao_atom,
+        minao_ao_shell, minao_ao_cart, n_minao, atom_pos);
+}
+
 // Wave 7: s/p ERI is register-heavy (MD raise to d, nested 4-prim loops).
 // __launch_bounds__(256, 2) targets ≥2 blocks/SM occupancy.
 __global__ void __launch_bounds__(256, 2)
@@ -806,6 +888,11 @@ __global__ void __launch_bounds__(256, 2)
         int nu = rem / n_ao;
         int mu = rem % n_ao;
 
+        // One owner per real-AO Coulomb symmetry orbit. All eight writes
+        // below belong to this owner, including coincident-index cases.
+        if (mu > nu || lam > sig
+            || nu * (nu + 1) / 2 + mu > sig * (sig + 1) / 2 + lam)
+            continue;
         const int sa = ao_shell[mu], sb = ao_shell[nu];
         const int sc = ao_shell[lam], sd = ao_shell[sig];
         int a_ang[3], b_ang[3], c_ang[3], d_ang[3];
@@ -852,7 +939,16 @@ __global__ void __launch_bounds__(256, 2)
                 }
             }
         }
-        ERI[q] = result;
+        const int n2 = n_ao * n_ao;
+        const int n3 = n2 * n_ao;
+        ERI[mu + nu * n_ao + lam * n2 + sig * n3] = result;
+        ERI[nu + mu * n_ao + lam * n2 + sig * n3] = result;
+        ERI[mu + nu * n_ao + sig * n2 + lam * n3] = result;
+        ERI[nu + mu * n_ao + sig * n2 + lam * n3] = result;
+        ERI[lam + sig * n_ao + mu * n2 + nu * n3] = result;
+        ERI[sig + lam * n_ao + mu * n2 + nu * n3] = result;
+        ERI[lam + sig * n_ao + nu * n2 + mu * n3] = result;
+        ERI[sig + lam * n_ao + nu * n2 + mu * n3] = result;
     }
 }
 
@@ -1027,7 +1123,7 @@ __device__ void pure_s_nuclear_operator_deriv(
             //       = −Z * 4π K * PC_d * F1
             work_t PC2 = PC[0] * PC[0] + PC[1] * PC[1] + PC[2] * PC[2];
             work_t T = gamma * PC2;
-            work_t F1 = boys_fn_device(1, T);
+            work_t F1 = ATV::boys_fn(1, T);
             work_t pref = cpq * work_t(-Zc) * work_t(4) * work_t(ATV::units::pi)
                           * K_AB * F1;
             for (int d = 0; d < 3; ++d)
@@ -1894,74 +1990,16 @@ void launch_uhf_forces_sp(double* fx, double* fy, double* fz,
 //
 // PySCF `scf.hf.get_jk` calls `scf._vhf.direct` with `intor='int2e_cart'`
 // (`pyscf/scf/hf.py` get_veff = J − ½K). One McMurchie–Davidson quartet
-// (`native::eri_prim` / libcint `int2e_cart`). l ≤ 2 uses upward Boys
-// (`boys_fn_device`) and an R table of order ≤ 8. A quartet that touches
-// l = 3 uses libcint `gamma_inc_like` (`src/fmt.c`): upward recurrence
-// from F_0 is unstable at f-shell order (Ltot ≤ 12). No second primitive
-// loop and no host ERI fill.
+// (`native::eri_prim` / libcint `int2e_cart`). Every angular order reuses
+// the shared stable Boys sequence: upward recurrence alone is unstable
+// at small arguments even for s/p quartets. No second primitive loop and
+// no host ERI fill.
 
-// libcint src/fmt.c turnover (index = Boys order). Nuclear l ≤ 3 needs
-// m ≤ 6; the f ERI kernel needs m ≤ 12.
-static const __device__ work_t kFmtTurnover[] = {
-    0.0,
-    0.0,
-    0.866025403784,
-    1.295010032056,
-    1.705493613097,
-    2.106432965305,
-    2.501471934009,
-    2.892473348218,
-    3.280525047072,
-    3.666320693281,
-    4.05033123037,
-    4.432891808508,
-    4.814249856864,
-    5.194593501454,
-    5.574069276051,
-    5.952793645111,
-    6.330860773135,
-};
-
-static constexpr work_t kSqrtPiE4 = work_t(0.88622692545275801365);
 static constexpr int kL3E = 7;      // E coeff, ai+bj ≤ 6
 static constexpr int kL3I = 5;      // E recurrence rows, ai ≤ 3
 static constexpr int kL3R = 7;      // nuclear Hermite index, Ltot ≤ 6
 static constexpr int kFDim = 13;    // ERI Hermite index, Ltot ≤ 12
 static constexpr int kFOut = 10000; // (ff|ff) = 10^4
-
-__device__ void fmt1_gamma_device(work_t* f, work_t t, int m) {
-    work_t b = work_t(m) + work_t(0.5);
-    work_t e = work_t(0.5) * exp(-t);
-    work_t x = e;
-    work_t s = e;
-    const work_t tol = work_t(DBL_EPSILON * 0.5) * e;
-    for (work_t bi = b + work_t(1); x > tol; bi += work_t(1)) {
-        x *= t / bi;
-        s += x;
-    }
-    f[m] = s / b;
-    for (int i = m; i > 0; --i) {
-        b -= work_t(1);
-        f[i - 1] = (e + t * f[i]) / b;
-    }
-}
-
-__device__ void gamma_inc_like_device(work_t* f, work_t t, int m) {
-    if (m < 0)
-        return;
-    if (t < kFmtTurnover[m]) {
-        fmt1_gamma_device(f, t, m);
-        return;
-    }
-    const work_t tt = sqrt(t);
-    f[0] = kSqrtPiE4 / tt * erf(tt);
-    if (m > 0) {
-        const work_t e = exp(-t);
-        const work_t b = work_t(0.5) / t;
-        for (int i = 1; i <= m; ++i)
-            f[i] = b * (work_t(2 * i - 1) * f[i - 1] - e);
-    }
-}
 
 __device__ void md_e_l3(int ai, int bj, work_t PA, work_t PB, work_t inv2g,
                         work_t E[kL3E]) {
@@ -2020,7 +2058,7 @@ __device__ work_t nuclear_prim_l3_device(const int a_ang[3], const int b_ang[3],
         for (int m = 0; m <= mmax; ++m)
             Fm[m] = work_t(1) / work_t(2 * m + 1);
     } else {
-        gamma_inc_like_device(Fm, T, mmax);
+        ATV::boys_sequence(mmax, T, Fm);
     }
     work_t E[3][kL3E];
     for (int d = 0; d < 3; ++d)
@@ -2165,9 +2203,8 @@ __device__ __forceinline__ int hermite_at(int dim, int m, int t, int u, int v) {
     return ((m * dim + t) * dim + u) * dim + v;
 }
 
-// One Hermite R recurrence. Stable=false is upward Boys (l ≤ 2, order ≤ 8).
-// Stable=true is libcint gamma_inc_like (a quartet that touches f).
-template <bool Stable, int Dim>
+// One Hermite R recurrence; all angular orders use the stable Boys batch.
+template <int Dim>
 __device__ void build_hermite_R(work_t* R, int Ltot, work_t rho, work_t Tval,
                                 const work_t PQ[3]) {
     constexpr int n4 = Dim * Dim * Dim * Dim;
@@ -2175,17 +2212,7 @@ __device__ void build_hermite_R(work_t* R, int Ltot, work_t rho, work_t Tval,
         R[i] = work_t(0);
     const int mmax = Ltot < Dim ? Ltot : Dim - 1;
     work_t Fm[Dim];
-    if constexpr (Stable) {
-        if (Tval < work_t(1e-14)) {
-            for (int m = 0; m <= mmax; ++m)
-                Fm[m] = work_t(1) / work_t(2 * m + 1);
-        } else {
-            gamma_inc_like_device(Fm, Tval, mmax);
-        }
-    } else {
-        for (int m = 0; m <= mmax; ++m)
-            Fm[m] = boys_fn_device(m, Tval);
-    }
+    ATV::boys_sequence(mmax, Tval, Fm);
     const work_t neg2 = -work_t(2) * rho;
     work_t powv = work_t(1);
     for (int m = 0; m <= mmax; ++m) {
@@ -2356,9 +2383,9 @@ eri_quartet_md(prec_t* ERI, const prec_t* prim_alpha, const prec_t* prim_coeff,
                                              / (gamma1 * gamma2 * sqrt(delta))
                                              * K_AB * K_CD * cp * cq * cr * cs;
                     if constexpr (FShell)
-                        build_hermite_R<true, kFDim>(R, Ltot, rho, Tval, PQ);
+                        build_hermite_R<kFDim>(R, Ltot, rho, Tval, PQ);
                     else
-                        build_hermite_R<false, kL2Dim>(R, Ltot, rho, Tval, PQ);
+                        build_hermite_R<kL2Dim>(R, Ltot, rho, Tval, PQ);
                     int cout = 0;
                     for (int ia = 0; ia < na; ++ia) {
                         int a_ang[3] = {0, 0, 0};

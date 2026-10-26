@@ -9,6 +9,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/internal/cart2sph.h"
 #include "atomiverse/cpu/scf/internal/cartesian_shell_pack.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_fock.cuh"
@@ -21,6 +22,7 @@
 #include <cstdio>
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -37,6 +39,15 @@ using cuda::work_t;
 
 namespace scf {
 namespace internal {
+
+// Dense ERI kernels use signed-int linear indices. Check before computing
+// n*n or allocating; widening only the allocation would leave kernel overflow.
+static void require_dense_eri_index_range(int n) {
+    if (n <= 0 || n > std::numeric_limits<int>::max() / n / n / n)
+        throw std::invalid_argument(
+            "CUDA RHF: dense ERI requires nAO^4 within signed-int index range; "
+            "reduce the basis or system size");
+}
 
 // Level-shift diagonal kernel lives in diis_mixer.cu (CDIIS owns shift).
 
@@ -199,6 +210,10 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
     auto& scf = ws;
     int n = n_basis_;
+    require_dense_eri_index_range(n);
+    if (n_occ_ < 0 || n_occ_ > n)
+        throw std::invalid_argument(
+            "CUDA RHF: occupied orbital count must be between zero and nAO");
     int nn = n * n;
     int n4 = nn * nn;
 
@@ -617,6 +632,10 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
             "RHFFockDevice::build: n_ao mismatch vs shell L list");
     }
     const int n = spherical_ ? n_sph : n_cart;
+    require_dense_eri_index_range(n_cart);
+    if (n_occ_ < 0 || n_occ_ > n)
+        throw std::invalid_argument(
+            "CUDA RHF: occupied orbital count must be between zero and nAO");
     int nn = n * n;
     int n4 = nn * nn;
 
@@ -728,8 +747,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     }
 
     // V_nuc: device-only reduction (Wave 7 — no mid-build D2H/H2D rewrite).
-    // Host `scf.V_nuc` is filled post-SCF in RhfScfCycle::finish from d_V_nuc.
-    // Energy during SCF reads d_V_nuc on device (RHFDensity).
+    // Energy reads d_V_nuc on device (RHFDensity); no unused host mirror.
     cudaMalloc(&scf.d_V_nuc, sizeof(double));
     cudaMemsetAsync(scf.d_V_nuc, 0, sizeof(double), stream);
     if (natm >= 2) {
@@ -775,8 +793,12 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     // Device forces (pure-s and mixed s/p) need W after SCF.
     // Ragged l≤2 energy does not own launch_rhf_forces_lgt1.
     scf.device_sp_shells = !ragged_;
-    if (!ragged_)
+    if (!ragged_) {
         cudaMalloc(&scf.d_W, nn * sizeof(prec_t));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&scf.d_gradient,
+                       3 * static_cast<std::size_t>(natm) * sizeof(double)));
+    }
 
     cudaMemsetAsync(scf.P, 0, nn * sizeof(prec_t), stream);
     cudaMemsetAsync(scf.P_old, 0, nn * sizeof(prec_t), stream);
@@ -913,7 +935,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaFree(d_nprim);
     cudaFree(d_prim_off);
     // Wave 7: d_V_nuc stays as the sole nuclear-repulsion source for SCF energy;
-    // host scf.V_nuc mirrored only in RhfScfCycle::finish post-pass.
+    // host scf.V_nuc is unused on the device-integral path.
 }
 
 void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {

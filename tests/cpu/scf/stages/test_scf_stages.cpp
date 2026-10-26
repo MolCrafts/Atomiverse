@@ -102,8 +102,8 @@
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 
+#include "atomiverse/cpu/linalg/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/density_builder.h"
-#include "atomiverse/cpu/scf/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/dual_convergence_check.h"
 #include "atomiverse/cpu/scf/internal/eigen_solver.h"
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
@@ -122,11 +122,11 @@
 
 using namespace ATV;
 using cpu::linalg::diis_error;
+using cpu::linalg::internal::DIISMixer;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::internal::apply_level_shift;
 using cpu::scf::internal::DensityBuilder;
-using cpu::scf::internal::DIISMixer;
 using cpu::scf::internal::DualConvergenceCheck;
 using cpu::scf::internal::EigenSolver;
 using cpu::scf::internal::FockResult;

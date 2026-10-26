@@ -14,8 +14,9 @@
 ///
 /// Physics check carried by the pins themselves: ΔSCF (15.69 eV) < Koopmans
 /// (16.65 eV) because the cation relaxes its orbitals — and lands closer to
-/// the 15.58 eV experiment. Exit non-zero on mismatch. <= 60 s, single CPU.
+/// the 15.58 eV experiment. Exit non-zero on mismatch. <= 60 s at four CPU threads.
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -49,6 +50,7 @@ ATV::cpu::Frame n2_frame() {
 
 int run() {
     using namespace ATV;
+    const auto section_start = std::chrono::steady_clock::now();
 
     // ── Neutral N2: RHF/6-31G* + orbital observer via Evaluate ──────────
     auto frame = n2_frame();
@@ -96,6 +98,12 @@ int run() {
 
     // Relaxation lowers the cation: ΔSCF must sit below Koopmans.
     ok = ok && ip_delta < ip_koopmans;
+
+    const double wall_s = std::chrono::duration<double>(
+                              std::chrono::steady_clock::now() - section_start)
+                              .count();
+    std::printf("Whole section got=%.6f want<=60 seconds\n", wall_s);
+    ok = ok && std::isfinite(wall_s) && wall_s <= 60.0;
 
     if (!ok) {
         std::printf("FAIL: ionization potentials off the PySCF oracle\n");

@@ -445,6 +445,14 @@ Binding summary; mechanism and LAMMPS source mapping in
 
 ### A loop is a Driver; a method is concrete
 
+- A Driver is the execution/iteration framework, not a base required by every
+  named physical method. A genuine SCF/SCC or workflow loop may inherit or own
+  a Driver; its stages publish residuals and a Criterion judges convergence.
+  Single-pass methods (DFTB0, GFN0), XC functionals, basis/PP parameter data,
+  Hamiltonian terms and force kernels do not gain artificial Drivers.
+  Parameter/model variants with the same topology reuse one loop implementation,
+  with independent state per calculation. Numerical library iterations do not
+  require an extra framework node. See `.claude/specs/es-extensibility.md`.
 - No generic "SCFSolver", no electronic-structure *category*. The concrete
   method — `RHF`, `UHF`, `RKS`, `UKS`, `AM1`, `RM1`, `MNDO`, `PM3`, `PW`, `GpwDft` — owns its
   Hamiltonian, density build and parameters as members.
@@ -455,8 +463,9 @@ Binding summary; mechanism and LAMMPS source mapping in
   stay `internal::`). `scf::Phase` is legal **because** a node carries it.
   `cpu::pw::PW` is `Driver<pw::Phase>`; `GpwDft` DIIS paths are Driver stages.
   DFTB2 owns `Driver<scc::Phase>` (`shift → diagonalize → charges → mix →
-  check`) and its persistent stages. Other DFTB/xTB methods still use the SCC
-  helper Driver until their method-owned loops are migrated.
+  check`) and its persistent stages. Other SCC DFTB/xTB methods compose a
+  helper Driver; consolidate matching orchestration and lifecycle contracts,
+  without requiring their public method classes to inherit Driver.
 
 ```cpp
 cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10};
@@ -680,6 +689,15 @@ Architecture and shared algorithm shape before micro-perf; CPU before CUDA ES.
 **CUDA ES open gate** (all, per slice): CPU regressions and external pins
 green; public `run`/`forces` stable; CUDA↔CPU tolerances stated; perf claims
 only on large systems. Wave-local freezes live in `.claude/notes/`.
+
+**CUDA ES implementation ownership:** Atomiverse owns the complete scientific
+algorithm, data flow, execution scheduling and differentiation. After setup,
+scientific computation stays on CUDA, including HF-to-post-HF handoffs. Reuse
+mature primitives directly when they fit the end-to-end performance and
+resource budget; implement missing or unsuitable capabilities locally. Choose
+between them using correctness and measured complete-call performance and
+resource use. Neither library calls nor independent implementation justify
+unnecessary splitting, transfers, intermediate storage or duplicate primitives.
 
 ### Semiempirical method acceptance
 

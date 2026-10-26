@@ -84,10 +84,10 @@ PWResult run_restricted_scf(const cpu::Frame& frame, const PW& method,
             ws.n_g = gv0.count();
         }
 
-        density.finish(ws);
-        result.iterations = iter + 1;
         const auto terms =
             iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+        density.finish(ws);
+        result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
         result.energy = result.energy_ha / qe_units::rydberg_to_hartree;
         log_iteration_energy(terms, ws, prob.ew_total, iter);
@@ -182,6 +182,14 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
         AccReal e_band = 0;
         auto* saved_gvec = ws.gvec;
         for (int s = 0; s < 2; ++s) {
+            // Empty fixed-occupation channels have exactly zero density and
+            // energy; do not seed the occupied solve with virtual orbitals.
+            if (n_occ[s] == 0) {
+                rho_out[s].resize(ws.rho_G.shape());
+                std::fill(rho_out[s].begin(), rho_out[s].end(),
+                          std::complex<AccReal>(0, 0));
+                continue;
+            }
             for (int ig = 0; ig < ng0; ++ig)
                 ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
             veff.step(ws);
@@ -208,31 +216,14 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
             }
             density.extract(ws, rho_out[s]);
         }
-        for (int s = 0; s < 2; ++s) {
-            for (int ig = 0; ig < ng0; ++ig) {
-                ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                ws.rho_spin_G[s][ig] =
-                    ws.rho_spin_G_old[s][ig]
-                    + AccReal(method.mix_beta)
-                          * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-            }
-        }
-        AccReal dr = 0;
-        for (int ig = 0; ig < ng0; ++ig) {
-            const auto old = ws.rho_G[ig];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-            const auto d = ws.rho_G[ig] - old;
-            dr += d.real() * d.real() + d.imag() * d.imag();
-        }
-        result.iterations = iter + 1;
-        // Diagnostic total energy from restricted formula (spin energy
-        // decomposition is not required for Berry NSCF).
         const auto terms =
             iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+        const AccReal residual = density.mix_spin(ws, rho_out[0], rho_out[1]);
+        result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
         result.energy = result.energy_ha / qe_units::rydberg_to_hartree;
         result.magnetization = static_cast<double>(n_alpha - n_beta);
-        if (std::sqrt(static_cast<double>(dr)) < method.tol) {
+        if (residual < AccReal(method.tol)) {
             result.converged = true;
             break;
         }
@@ -455,22 +446,8 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
             density.extract(ws, rho_out[s]);
         }
 
-        for (int s = 0; s < 2; ++s) {
-            for (int ig = 0; ig < ng0; ++ig) {
-                ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                ws.rho_spin_G[s][ig] =
-                    ws.rho_spin_G_old[s][ig]
-                    + AccReal(method.mix_beta)
-                          * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-            }
-        }
-        AccReal dr = 0;
-        for (int ig = 0; ig < ng0; ++ig) {
-            const auto old = ws.rho_G[ig];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-            const auto d = ws.rho_G[ig] - old;
-            dr += d.real() * d.real() + d.imag() * d.imag();
-        }
+        auto terms = iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+        const AccReal residual = density.mix_spin(ws, rho_out[0], rho_out[1]);
 
         result.iterations = iter + 1;
         result.magnetization = static_cast<double>(n_up - n_dn);
@@ -478,10 +455,6 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         result.e_fermi =
             static_cast<double>(mu_ha) / qe_units::rydberg_to_hartree;
 
-        auto terms = iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
-        terms.e_one = e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-        terms.total =
-            terms.e_one + terms.e_h + ws.E_xc + prob.ew_total + ws.E_aug;
         const AccReal e_ent_ha = -degauss_ha * entropy_sum;
         terms.total += e_ent_ha;
         result.energy_ha = static_cast<double>(terms.total);
@@ -489,7 +462,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         result.e_entropy =
             static_cast<double>(e_ent_ha) / qe_units::rydberg_to_hartree;
 
-        if (std::sqrt(static_cast<double>(dr)) < method.tol) {
+        if (residual < AccReal(method.tol)) {
             result.converged = true;
             break;
         }

@@ -76,6 +76,7 @@ ATV::cpu::gpw::GpwDft make_base(int ngrids, double rel_cutoff) {
 int run() {
     using namespace ATV::cpu::gpw;
     using Clock = std::chrono::steady_clock;
+    const auto section_start = Clock::now();
 
     // Offline CP2K 2026.1 (cp2k.psmp rev 85b8a9b49c): water dimer, PBE +
     // NON_LOCAL DRSLL, CUTOFF 200 / NGRIDS 4 / REL_CUTOFF 40, KPOINTS
@@ -89,7 +90,6 @@ int run() {
     constexpr double kGammaLimitTol = 1.0e-8; // Ha
 
     ATV::cpu::Frame frame = make_frame();
-    const auto t0 = Clock::now();
 
     // ── G1: Γ-limit identity (single-grid, cheap) ─────────────────────────
     // Explicit k_points = {(0,0,0)} forces the multi-k runner at effective Γ;
@@ -187,7 +187,10 @@ int run() {
     }
 
     const double wall_all =
-        std::chrono::duration<double>(Clock::now() - t0).count();
+        std::chrono::duration<double>(Clock::now() - section_start).count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall_all);
+    if (wall_all > 60.0)
+        return 1;
     std::printf("PASS gpw-vdw-kpoints (total wall %.1f s)\n", wall_all);
     return 0;
 }

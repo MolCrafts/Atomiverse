@@ -25,6 +25,7 @@
 #include <cuda_runtime.h>
 
 #include <array>
+#include <exception>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -48,6 +49,7 @@
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "atomiverse/cuda/scf/internal/nuclear_identity.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_scf_cycle.cuh"
+#include "atomiverse/cuda/scf/mp2.cuh"
 
 namespace ATV {
 namespace cuda {
@@ -225,11 +227,13 @@ RHF::RHF(RHF&& other) noexcept
       charge(other.charge), tol(other.tol), max_iter(other.max_iter),
       level_shift(other.level_shift), compute_force(other.compute_force),
       loop_(std::move(other.loop_)), energy_ha_(other.energy_ha_),
+      energy_available_(other.energy_available_),
       iterations_(other.iterations_),
       last_force_device_(other.last_force_device_),
       last_device_sp_(other.last_device_sp_),
       host_Z_(std::move(other.host_Z_)) {
     other.energy_ha_ = 0.0;
+    other.energy_available_ = false;
     other.iterations_ = 0;
     other.compute_force = false;
     other.last_force_device_ = false;
@@ -334,91 +338,93 @@ void RHF::assemble_(cuda::Context& ctx, cuda::Frame& frame, bool nuclear_forces,
         loop_->slot.cycle = make_device_lgt1_solver(basis, h_Z, natm, charge,
                                                     tol, max_iter, level_shift);
     }
-    last_device_sp_ = true;
     loop_->slot.cycle->build(ctx.stream, frame);
 }
 
 void RHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
     const auto& ws = loop_->slot.cycle->workspace();
     auto* stream = static_cast<cudaStream_t>(ctx.stream);
-    const bool device_forces = ws.device_sp_shells && ws.n > 0 && ws.P && ws.C
-                               && ws.eig && ws.d_shell_alpha && ws.d_shell_atom
-                               && ws.d_shell_L && ws.d_ao_shell && ws.d_ao_cart
-                               && ws.d_atom_pos && frame.atoms.fx
-                               && frame.atoms.fy && frame.atoms.fz;
+    const bool device_forces =
+        ws.device_sp_shells && ws.n > 0 && ws.P && ws.C && ws.eig
+        && ws.d_shell_alpha && ws.d_shell_atom && ws.d_shell_L && ws.d_ao_shell
+        && ws.d_ao_cart && ws.d_atom_pos && ws.d_W && ws.d_gradient
+        && frame.atoms.fx && frame.atoms.fy && frame.atoms.fz;
     if (!device_forces) {
         throw std::runtime_error(
             "cuda::scf::RHF: compute_force is set but the device "
             "s/p force workspace is incomplete (P/C/eig/shell maps).");
     }
-    prec_t* d_W = ws.d_W;
-    const bool own_W = (d_W == nullptr);
-    const int nn = ws.n * ws.n;
-    if (own_W)
-        cudaMalloc(&d_W, static_cast<std::size_t>(nn) * sizeof(prec_t));
-    launch_build_W_rhf(d_W, ws.C, ws.eig, ws.n, ws.n_occ, stream);
+    launch_build_W_rhf(ws.d_W, ws.C, ws.eig, ws.n, ws.n_occ, stream);
     // The analytic gradient is assembled in FP64 and then published to the
     // Frame's fixed-point force columns (overwrite semantics).
-    double* d_grad = nullptr;
-    ATV_CUDA_CHECK(cudaMalloc(&d_grad, 3 * static_cast<std::size_t>(ws.natm)
-                                           * sizeof(double)));
+    double* d_grad = ws.d_gradient;
     launch_rhf_forces_sp(d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm, ws.P,
-                         d_W, ws.d_shell_alpha, ws.d_shell_coeff,
+                         ws.d_W, ws.d_shell_alpha, ws.d_shell_coeff,
                          ws.d_shell_center, ws.d_shell_atom, ws.d_shell_L,
                          ws.d_ao_shell, ws.d_ao_cart, ws.d_atom_Z,
                          ws.d_atom_pos, ws.n, ws.n_prim, ws.natm, stream);
     cuda::store_forces(frame, d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm,
                        ws.natm, stream);
     last_force_device_ = true;
-    ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
-    cudaFree(d_grad);
-    if (own_W)
-        cudaFree(d_W);
 }
 
 void RHF::pull_energy_(cuda::Context& ctx, cuda::Frame& frame) {
     prec_t e_ev = 0;
     if (frame.scalars) {
         auto* stream = static_cast<cudaStream_t>(ctx.stream);
-        cudaMemcpyAsync(&e_ev, &frame.scalars->energy, sizeof(prec_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(&e_ev, &frame.scalars->energy,
+                                       sizeof(prec_t), cudaMemcpyDeviceToHost,
+                                       stream));
+        ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
     }
     energy_ha_ = static_cast<double>(e_ev) / units::kHartreeInEv;
 }
 
 void RHF::step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step) {
+    if (!this->backend_ || &this->backend_->context() != &ctx
+        || &this->backend_->frame() != &frame) {
+        this->step_borrowed_(ctx, frame, step);
+        return;
+    }
     struct Guard {
         bool& flag;
         explicit Guard(bool& f) : flag(f) { flag = true; }
         ~Guard() { flag = false; }
     } guard(this->launching_);
-    for (const auto& plan_slot : this->plan().slots) {
-        if (plan_slot.ops.empty())
-            continue;
-        for (const auto& op : plan_slot.ops) {
-            if (!op.component)
-                continue;
-            cuda::LaunchContext lc{ctx, frame, plan_slot.phase, step};
-            op.component->launch(lc);
-        }
-    }
+    this->backend_->execute_phases(this->plan(), step, 0,
+                                   static_cast<int>(this->plan().slots.size()));
 }
 
 int RHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
-                     bool nuclear_forces, bool host_current) {
+                     bool nuclear_forces, bool host_current, MP2* correlation,
+                     bool accumulate) {
     struct Guard {
         RHF* self;
         cuda::Context& context;
         cuda::LoopServices parent_loop;
+        bool complete = false;
         ~Guard() {
             context.loop = parent_loop;
             self->release_engine_();
+            if (!complete) {
+                self->last_device_sp_ = false;
+                self->last_force_device_ = false;
+            }
         }
     } guard{this, ctx, ctx.loop};
 
+    last_device_sp_ = false;
+    last_force_device_ = false;
+    energy_available_ = false;
+    this->status_.reset();
     assemble_(ctx, frame, nuclear_forces, host_current);
     const bool device = loop_->slot.cycle->device_integrals();
+    // Correlation scratch is sized and allocated during setup, before the
+    // first HF iteration. The live device orbitals/integrals never leave this
+    // execution owner before the post-HF operation consumes them.
+    if (correlation)
+        correlation->prepare_device_(loop_->slot.cycle->workspace(), ctx, frame,
+                                     accumulate);
     loop_->slot.cycle->begin(ctx.stream);
 
     ctx.loop.status = &this->status_;
@@ -436,17 +442,30 @@ int RHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
             break;
     }
     loop_->slot.cycle->finish(ctx.stream);
+    if (!this->converged())
+        throw std::runtime_error(
+            "cuda::scf::RHF: SCF did not converge within the iteration budget");
     if (nuclear_forces)
         assemble_forces_(ctx, frame);
-    pull_energy_(ctx, frame);
+    const bool retrieve = this->backend_ && &this->backend_->context() == &ctx
+                          && &this->backend_->frame() == &frame;
+    if (correlation) {
+        correlation->evaluate_device_(loop_->slot.cycle->workspace(), ctx,
+                                      frame, retrieve);
+        if (retrieve)
+            energy_ha_ = correlation->retrieve_result_(ctx);
+    } else if (retrieve) {
+        pull_energy_(ctx, frame);
+    }
     this->iterations_ = iters;
+    energy_available_ = retrieve;
     last_device_sp_ = device;
+    guard.complete = true;
     return iters;
 }
 
-void RHF::build_on(cuda::Context&, cuda::Frame&) {
-    if (this->plan().slots.empty())
-        this->build();
+void RHF::build_on(cuda::Context& ctx, cuda::Frame& frame) {
+    this->build_borrowed_(ctx, frame);
 }
 
 int RHF::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame, int budget) {
@@ -457,41 +476,66 @@ int RHF::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame, int budget) {
 void RHF::release_backend_() {
     if (!this->backend_)
         return;
-    if (this->backend_->context().stream)
-        this->backend_->sync();
-    this->backend_->destroy_components();
-    this->backend_->shutdown();
+    std::exception_ptr failure;
+    try {
+        if (this->backend_->context().stream)
+            this->backend_->sync();
+        this->backend_->destroy_components();
+    } catch (...) {
+        failure = std::current_exception();
+    }
+    try {
+        this->backend_->shutdown();
+    } catch (...) {
+        if (!failure)
+            failure = std::current_exception();
+    }
     this->backend_.reset();
     this->built_plugins_.clear();
+    if (failure)
+        std::rethrow_exception(failure);
 }
 
-void RHF::destroy_on(cuda::Context&, cuda::Frame&) { release_engine_(); }
+void RHF::destroy_on(cuda::Context& ctx, cuda::Frame& frame) {
+    release_engine_();
+    this->destroy_borrowed_(ctx, frame);
+}
 
 void RHF::run(cpu::Frame& frame) {
+    energy_available_ = false;
     cache_host_types(frame);
-    this->setup_pass(frame);
     try {
+        this->setup_pass(frame);
         drive_loop_(this->backend_->context(), this->backend_->frame(),
                     max_iter, compute_force, /*host_current=*/true);
+        this->teardown_pass(frame, compute_force);
     } catch (...) {
-        this->teardown_pass(frame);
+        energy_available_ = false;
+        try {
+            release_backend_();
+        } catch (...) {
+        }
         throw;
     }
-    this->teardown_pass(frame);
 }
 
 void RHF::run(const cpu::Frame& frame) {
+    energy_available_ = false;
     // Scratch so setup cannot touch the caller's columns. No retrieve:
     // to_cpu would overwrite positions, forces, and kEnergy.
     cpu::Frame scratch(frame);
     cache_host_types(scratch);
-    this->setup_pass(scratch);
     try {
+        this->setup_pass(scratch);
         drive_loop_(this->backend_->context(), this->backend_->frame(),
                     max_iter, /*nuclear_forces=*/false, /*host_current=*/true);
         release_backend_();
     } catch (...) {
-        release_backend_();
+        energy_available_ = false;
+        try {
+            release_backend_();
+        } catch (...) {
+        }
         throw;
     }
 }
@@ -520,15 +564,6 @@ cpu::scf::GradientResult RHF::forces(cpu::Frame& frame) {
     }
     const double e_ev = static_cast<double>(frame.meta.get(kEnergy));
     return cpu::scf::GradientResult{std::move(f), e_ev};
-}
-
-const SCFWorkspace& RHF::workspace() const {
-    if (!loop_ || !loop_->slot.cycle) {
-        throw std::runtime_error(
-            "cuda::scf::RHF::workspace: no live SCF workspace. Call run() or "
-            "forces(); the workspace is released when that call returns.");
-    }
-    return loop_->slot.cycle->workspace();
 }
 
 } // namespace scf

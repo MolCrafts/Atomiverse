@@ -5,17 +5,11 @@ Residency law: [cuda-only-no-dh.md](cuda-only-no-dh.md). GPW:
 
 ## Process (binding when writing or optimizing CUDA kernels)
 
-Load and follow the matching CUDA skill, not ad-hoc style:
-
-| Concern | Skill |
-| --- | --- |
-| Block/grid size, occupancy, tail | `choose-launch-configuration` |
-| Coalescing / layout | `optimize-global-memory-access` |
-| Elementwise fuse | `fuse-elementwise-ops` |
-| Partial tiles / `idx < N` | `handle-boundary-conditions` |
-| Numerics (thresholds, rsqrt, fp) | `write-numerically-stable-kernel` |
-| Warp divergence | `avoid-warp-divergence` |
-| Correctness after change | `debug-cuda-kernel-correctness` |
+Use the installed `/mol:cuda` workflow and its SIMT design worksheet before
+writing a non-trivial kernel. Record launch ownership, layout/coalescing,
+reductions, reuse, tails and numerical tolerances; check suitable CUDA-X
+primitives before creating local kernels. Correctness, whole-call timing and
+observed resource use are separate acceptance evidence.
 
 GH200 configure: `-DCMAKE_CUDA_ARCHITECTURES=90`; do not link x86 `libxtb`
 (`-DATV_BUILD_SEMIEMPIRICAL=OFF` or empty `ATV_XTB_ROOT`).
@@ -24,21 +18,84 @@ GH200 configure: `-DCMAKE_CUDA_ARCHITECTURES=90`; do not link x86 `libxtb`
 
 | Case | Path |
 | --- | --- |
-| STO-3G, every atom s/p (l ≤ 1, mixed Z) | **Device** energy (`RHFFockDevice` + `launch_*_sp`) and forces (`launch_build_W_rhf` + `launch_rhf_forces_sp` → `frame.f*` eV/Å) |
-| Higher L / other bases | Host fill S/Hcore/ERI → upload → device SCF; host forces |
+| STO-3G, available element tables with s/p shells (l ≤ 1, mixed Z) | **Device** energy (`RHFFockDevice` + `launch_*_sp`) and forces (`launch_build_W_rhf` + `launch_rhf_forces_sp` → `frame.f*` eV/Å) |
+| Cartesian or spherical l ≤ 3 / other supported bases | Device `launch_*_lgt1` integrals and device Cartesian-to-spherical contractions when needed; energy only, unsupported forces throw |
 
 - Device path: Löwdin S^{-1/2}, geometry and V_nuc on device; path selection
   from host Z cached before upload (`cache_host_types`); CDIIS (Pulay) mixer
-  with device history (CPU `MixStage` twin; only the (m+1) Pulay solve on
-  host); `level_shift` (Saunders–Hillier, |λ| ≤ 1e-4 no-op, energy from
+  with device history, cuBLAS history Gram/extrapolation and cuSOLVER pivoted
+  LU for the (m+1) Pulay system; `level_shift` (Saunders–Hillier, |λ| ≤ 1e-4 no-op, energy from
   unshifted F so E is λ-invariant) on both paths; non-default stream.
+- HF diagonalization reuses cuSOLVER batched Jacobi through order 64;
+  orders 65..215 use a bounded device-controlled cyclic Jacobi solve with
+  CUB norms and sorting. The installed vendor's larger-matrix paths download
+  norms during sweeps, and its generic ALGO_1 option was rejected at setup.
+  This dispatch needs boundary residency traces and unchanged eigenpair gates;
+  it is not justified by API names alone. The generic synthetic helper's
+  legacy path above 215 is outside the CUDA-only HF envelope.
+- HF acceptance retains the density tolerance and adds energy change in
+  Hartree plus the unmixed Fock commutator. A final raw-Fock canonical pass
+  must also satisfy these checks before post-HF consumes the orbitals.
 - No scientific D2H during SCF + forces: residual via cuBLAS `nrm2` → device
   scalar with a mapped converge flag; energy via device-pointer `dot` + `d_V_nuc`.
-  After SCF only bookkeeping mirrors (residual, V_nuc, `energy_ha_`).
+  Unused residual/V_nuc host mirrors are not retrieved. Analytic force scratch
+  is reserved during setup; energy is retrieved after force finalization.
+  Failed or unconverged solves throw without retrieving the candidate Frame.
+- Nested RHF/UHF/MP2 leave results in the parent's device Frame. They do not
+  retrieve unused host energy/MP2 payloads; `energy()` after nested or failed
+  RHF/UHF throws instead of returning stale cached science.
 - Never retype STO-3G numbers: `basis_data/accessors.h` over `sto3g.h`.
-- Unit gates (`tests/cuda/scf/test_rhf.cu`): CPU twin |ΔF| 1e-5 (H₂) / 1e-4
+- Product gates (`regressions/scf/rhf`): CPU twin |ΔF| 1e-5 (H₂) / 1e-4
   (H₂O) eV/Å, energy `ha_to_ev(1e-6)`; FD spot checks; level-shift invariance
   1e-8 Ha.
+
+UHF STO-3G s/p MINAO starts pack only element constants on the host. Cross
+overlap, normalization, projection and spin density are computed on device
+with existing overlap primitives, cuSOLVER Cholesky/solve and cuBLAS. Scratch
+is reserved before iteration zero, and geometry changes do not require a
+host projection. Missing MINAO tables retain the existing Hcore start.
+
+Scalar and batched Boys integrals share `core/gto.h`: a positive series and
+downward recurrence near zero, stable upward recurrence at large arguments.
+CPU nuclear blocks and all supported CUDA angular orders use this law.
+Real s/p AO ERIs exploit eightfold permutation symmetry without a second
+tensor. The Hermite primitive retains only adjacent recurrence layers and
+does not clear inactive storage. GH200 job 4409180 measured complete HF
+calls at 16 waters / 112 AOs: 15.710 s before, 1.331 s after (11.80×,
+controlled A→B→B→A). Compiler per-thread ERI stack is 4,176 B instead of
+11,088 B, with unchanged register count. All 78 selected checks and both
+sanitizers passed. CPU direct is still faster at this size (0.909 s);
+[HF timing, resource and residency evidence](../../benchmarks/cuda/hf-validation.md).
+
+## CUDA post-HF handoff
+
+`cuda::scf::MP2{rhf}.run(frame)` borrows the RHF execution owner and consumes
+its private device orbitals, eigenvalues and AO ERIs before that workspace is
+released. Correlation is closed-shell canonical MP2, with frozen occupied
+orbitals and independent OS/SS scales. Force requests reject explicitly.
+
+Four cuBLAS contractions form one occupied-orbital `(ia|jb)` tile; a CUB
+transform reduction produces OS/SS channels without a full MO ERI tensor or
+per-term contribution array. Additional algorithm scratch is bounded by
+`workspace_budget_bytes` (default 512 MiB); HF AO ERIs and library contexts
+are outside that additional budget. Dense HF integral indices currently
+require nAO^4 ≤ INT_MAX; setup rejects larger shapes before allocation.
+
+Correctness targets reuse the PySCF pins in `regressions/scf/mp2` (SCS water /
+STO-3G, frozen-core water / 6-31G*, and the 56-AO eight-water chain). The standalone
+`bench_mp2_cpu_vs_cuda` measures complete RHF→MP2 calls, first and repeated
+calls, with thread counts, iterations and resource planning. Memory snapshots
+do not establish allocation peaks or residency; those need an observed trace.
+New CUDA changes require GH200 validation before numerical or performance
+acceptance.
+
+2026-10-25 acceptance: HF/UHF/MP2 physical cases passed, including frozen/SCS
+and 56-AO external pins; unchanged eigenpair gates passed at 64/65/215.
+The production snapshot in GH200 job 4407744 has 19 traced science windows
+with zero H2D/D2H, dynamic Device events, alloc/free APIs or UM activity.
+Cold immutable module-static events are separate. Fixture-only follow-up
+4407892 passed all selected tests and both sanitizers with exit zero.
+[Complete-call timings, trace scope and resources](../../benchmarks/cuda/mp2-validation.md).
 
 ## `cuda::pw::PW`
 

@@ -75,8 +75,6 @@ int run() {
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
     using cpu::gpw::Kind;
-    using cpu::gpw::mbd_rsscs_pbe;
-    using cpu::gpw::MbdResult;
     using cpu::gpw::ts_pbe;
     using cpu::gpw::TsResult;
     using cpu::gpw::XcKind;
@@ -109,16 +107,16 @@ int run() {
 
     // ── A: isolated volume-scaled MBD energy pin ──────────────────────────
     const double cell0_iso[3] = {0.0, 0.0, 0.0};
-    const MbdResult mbd =
-        mbd_rsscs_pbe(Z, pos, cell0_iso, /*periodic=*/false, 0.83, 6.0, kVol);
-    if (!std::isfinite(mbd.energy)
-        || std::abs(mbd.energy - kEMbdHirsh) > kETol) {
+    const double mbd_energy = cpu::gpw::internal::mbd_rsscs_energy(
+        Z, pos, cell0_iso, /*periodic=*/false, 0.83, 6.0, kVol);
+    if (!std::isfinite(mbd_energy)
+        || std::abs(mbd_energy - kEMbdHirsh) > kETol) {
         std::fprintf(stderr,
                      "FAIL: E_disp MBD+Hirsh volumes got=%.14e want=%.14e\n",
-                     mbd.energy, kEMbdHirsh);
+                     mbd_energy, kEMbdHirsh);
         ++nfail;
     } else {
-        std::printf("  A MBD+Hirsh isolated: E=%.14e Ha\n", mbd.energy);
+        std::printf("  A MBD+Hirsh isolated: E=%.14e Ha\n", mbd_energy);
     }
 
     // ── B: geometry stress dual under strain (fixed dual volumes) ─────────
@@ -135,9 +133,8 @@ int run() {
         auto mbd_e = [&](const std::vector<std::array<double, 3>>& p,
                          const double c[3]) {
             (void)c;
-            return mbd_rsscs_pbe(Z, p, cell0_iso, /*periodic=*/false, 0.83, 6.0,
-                                 kVol)
-                .energy;
+            return cpu::gpw::internal::mbd_rsscs_energy(
+                Z, p, cell0_iso, /*periodic=*/false, 0.83, 6.0, kVol);
         };
         // Isolated MBD is geometry-only (no cell images); strain still moves
         // nuclear coordinates → σ from FD of E_disp is well-defined on the
@@ -349,27 +346,27 @@ int run() {
             auto mbd_h = [&](const std::vector<std::array<double, 3>>& p,
                              const double c[3]) {
                 (void)c;
-                return mbd_rsscs_pbe(Zh, p, cell0_iso, /*periodic=*/false, 0.83,
-                                     6.0, scf.volume_ratios)
-                    .energy;
+                return cpu::gpw::internal::mbd_rsscs_energy(
+                    Zh, p, cell0_iso, /*periodic=*/false, 0.83, 6.0,
+                    scf.volume_ratios);
             };
             auto mbd_free = [&](const std::vector<std::array<double, 3>>& p,
                                 const double c[3]) {
                 (void)c;
-                return mbd_rsscs_pbe(Zh, p, cell0_iso, /*periodic=*/false)
-                    .energy;
+                return cpu::gpw::internal::mbd_rsscs_energy(Zh, p, cell0_iso,
+                                                            /*periodic=*/false);
             };
             const auto sig_geom = sigma_disp_fd(mbd_h, posh, cell_h2, kStrainH);
             const auto sig_geom_free =
                 sigma_disp_fd(mbd_free, posh, cell_h2, kStrainH);
 
-            const MbdResult geom_h =
-                mbd_rsscs_pbe(Zh, posh, cell0_iso, /*periodic=*/false, 0.83,
-                              6.0, scf.volume_ratios);
-            if (std::abs(scf.e_disp - geom_h.energy) > kETol) {
+            const double geom_h = cpu::gpw::internal::mbd_rsscs_energy(
+                Zh, posh, cell0_iso, /*periodic=*/false, 0.83, 6.0,
+                scf.volume_ratios);
+            if (std::abs(scf.e_disp - geom_h) > kETol) {
                 std::fprintf(stderr,
                              "FAIL: multi-k MBD e_disp=%.14e vs geom_h=%.14e\n",
-                             scf.e_disp, geom_h.energy);
+                             scf.e_disp, geom_h);
                 ++nfail;
             }
 

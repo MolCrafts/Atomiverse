@@ -1,7 +1,7 @@
 # dynamics/bomd: one case, one section per pinned system or quantity.
 
 atv_regression(SECTION h2_rhf_sto3g_aimd
-  REQUIRES HF
+  REQUIRES HF MD
   DEVICES both)
 
 atv_regression(SECTION bomd-d3bj-ar2-nve

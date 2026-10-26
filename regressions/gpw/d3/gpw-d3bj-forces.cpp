@@ -12,8 +12,8 @@
 ///   3. Total product forces vs CP2K's `FORCES|` table.
 ///   4. Translation invariance of the Atomiverse force field (Σ_A F_A ≈ 0).
 /// Wiring: the product path's F(D3BJ) − F(plain) must equal the standalone
-/// D3(BJ) gradient. The analytic-vs-multi-SCF-FD gradient identity lives in
-/// tests/cpu/gpw/test_cpu_gpw_forces.cpp (`AnalyticMatchesFdWithD3Bj`).
+/// D3(BJ) gradient. Every total-force component is checked against the
+/// external pin.
 ///
 /// Public API only. No live CP2K. See REFERENCE.md.
 
@@ -119,6 +119,7 @@ ATV::cpu::Frame geometry_copy(const ATV::cpu::Frame& src) {
 
 int run() {
     using clock = std::chrono::steady_clock;
+    const auto whole_start = clock::now();
 
     constexpr double L = 12.0; // Å, PERIODIC XYZ
     const int z[6] = {8, 1, 1, 8, 1, 1};
@@ -293,19 +294,21 @@ int run() {
                     max_total_err, kFTotalTol);
         return 1;
     }
-    if (wall_s > kWallBudget) {
-        std::printf("FAIL: wall=%.2f s exceeds %.0f s e2e budget\n", wall_s,
-                    kWallBudget);
+    const double wall_total_s =
+        std::chrono::duration<double>(clock::now() - whole_start).count();
+    if (wall_total_s > kWallBudget) {
+        std::printf("FAIL: whole section wall=%.2f s exceeds %.0f s budget\n",
+                    wall_total_s, kWallBudget);
         return 1;
     }
 
     std::printf("PASS: gpw-d3bj-forces  |dE_disp|=%.2e Ha  "
                 "max|F_disp-cp2k|=%.3e  max|F_total-cp2k|=%.3e  "
                 "max|wiring|=%.3e  |sum F|=%.3e Ha/Bohr  iters=%d  "
-                "wall=%.2f s\n",
+                "wall_product=%.2f s  wall_total=%.2f s\n",
                 std::abs(e_disp_product - kEDispCp2k), max_fdisp_err,
                 max_total_err, max_wire, net_norm, eval.last_result().iters,
-                wall_s);
+                wall_s, wall_total_s);
     return 0;
 }
 

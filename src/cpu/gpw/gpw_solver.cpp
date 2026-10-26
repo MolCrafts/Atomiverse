@@ -33,7 +33,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
-#include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include "atomiverse/cpu/gpw/internal/gpw_stress.h"
@@ -60,7 +59,8 @@
 #include "atomiverse/cpu/gpw/internal/xdm_dispersion.h"
 #include "atomiverse/cpu/linalg/density.h"    // build_density_matrix
 #include "atomiverse/cpu/linalg/eigensolve.h" // diagonalize_fock_generalized
-#include "atomiverse/cpu/linalg/matrix.h"     // RealMatrix
+#include "atomiverse/cpu/linalg/internal/diis_mixer.h"
+#include "atomiverse/cpu/linalg/matrix.h"               // RealMatrix
 #include "atomiverse/cpu/planewave/internal/smearing.h" // metallic occupations
 #include "atomiverse/cpu/scf/dftd4.h"
 
@@ -1174,16 +1174,8 @@ static GpwResult run_gpw_scf_kpoints(
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
             const double wk = weights[static_cast<std::size_t>(ik)];
             const auto& P = Pk[static_cast<std::size_t>(ik)];
-            for (std::size_t c = 0; c < n_tcells; ++c) {
-                const Cplx ph = tcell_phase[static_cast<std::size_t>(ik)][c];
-                double* Dc = D[c].data();
-                const Cplx* Pd = P.data();
-                const std::size_t nn = static_cast<std::size_t>(nb) * nb;
-                for (std::size_t e = 0; e < nn; ++e)
-                    Dc[e] +=
-                        wk
-                        * (Pd[e].real() * ph.real() - Pd[e].imag() * ph.imag());
-            }
+            internal::accumulate_bloch_density_stack(
+                P, wk, tcell_phase[static_cast<std::size_t>(ik)], D);
         }
 #ifdef ATV_HAS_MPI
         if (layout.active)
@@ -1381,7 +1373,7 @@ static GpwResult run_gpw_scf_kpoints(
                          [layout](double* values, int count) {
                              layout.sum_history(values, count);
                          });
-    constexpr double kDiisErrTolK = 1e-5; // same gate as the Γ DIIS path
+    const double kDiisErrTolK = cfg.residual_tol;
     double e_prev = 0.0;
     const bool periodic_cell = !cfg.nonperiodic;
 
@@ -1441,11 +1433,9 @@ static GpwResult run_gpw_scf_kpoints(
                     throw std::runtime_error(
                         "GPW MBD: mbd_k_mesh requires a periodic cell "
                         "(!nonperiodic)");
-                out.e_disp =
-                    mbd_rsscs_pbe(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
-                                  6.0, out.volume_ratios,
-                                  mbd_per ? cfg.mbd_k_mesh : nullptr)
-                        .energy;
+                out.e_disp = internal::mbd_rsscs_energy(
+                    Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83, 6.0,
+                    out.volume_ratios, mbd_per ? cfg.mbd_k_mesh : nullptr);
             } else {
                 constexpr double kAng2Bohr = 1.0 / 0.52917720859;
                 constexpr double kRcutBohr = 50.0 * kAng2Bohr;
@@ -2221,7 +2211,7 @@ static GpwResult run_gpw_scf_kpoints(
                 const double dE = has_prev
                                       ? (e_total - prev_energy)
                                       : std::numeric_limits<double>::infinity();
-                const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
+                const double err_gate = kDiisErrTolK;
                 skip = !no_stop && has_prev && std::abs(dE) < cfg.tol
                        && err_norm < err_gate;
                 prev_energy = e_total;
@@ -2502,16 +2492,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
             const double wk = weights[static_cast<std::size_t>(ik)];
             const auto& P = Pk[static_cast<std::size_t>(ik)];
-            for (std::size_t c = 0; c < n_tcells; ++c) {
-                const Cplx ph = tcell_phase[static_cast<std::size_t>(ik)][c];
-                double* Dc = D[c].data();
-                const Cplx* Pd = P.data();
-                const std::size_t nn = static_cast<std::size_t>(nb) * nb;
-                for (std::size_t e = 0; e < nn; ++e)
-                    Dc[e] +=
-                        wk
-                        * (Pd[e].real() * ph.real() - Pd[e].imag() * ph.imag());
-            }
+            internal::accumulate_bloch_density_stack(
+                P, wk, tcell_phase[static_cast<std::size_t>(ik)], D);
         }
 #ifdef ATV_HAS_MPI
         if (layout.active)
@@ -2673,7 +2655,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
                            [layout](double* values, int count) {
                                layout.sum_history(values, count);
                            });
-    constexpr double kDiisErrTolK = 1e-5;
+    const double kDiisErrTolK = cfg.residual_tol;
     double e_prev = 0.0;
 
     // Dudarev multi-k setup (empty plus_u → no-op).
@@ -2865,11 +2847,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
                     throw std::runtime_error(
                         "GPW MBD: mbd_k_mesh requires a periodic cell "
                         "(!nonperiodic)");
-                out.e_disp =
-                    mbd_rsscs_pbe(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
-                                  6.0, out.volume_ratios,
-                                  mbd_per ? cfg.mbd_k_mesh : nullptr)
-                        .energy;
+                out.e_disp = internal::mbd_rsscs_energy(
+                    Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83, 6.0,
+                    out.volume_ratios, mbd_per ? cfg.mbd_k_mesh : nullptr);
             } else {
                 constexpr double kAng2Bohr = 1.0 / 0.52917720859;
                 constexpr double kRcutBohr = 50.0 * kAng2Bohr;
@@ -3825,7 +3805,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
                 const double dE = has_prev
                                       ? (e_total - prev_energy)
                                       : std::numeric_limits<double>::infinity();
-                const double err_gate = do_dftu ? 5e-3 : kDiisErrTolK;
+                const double err_gate = kDiisErrTolK;
                 skip = !no_stop && has_prev && std::abs(dE) < cfg.tol
                        && err_norm < err_gate;
                 prev_energy = e_total;
@@ -4086,10 +4066,9 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                     throw std::runtime_error(
                         "GPW MBD: mbd_k_mesh requires a periodic cell "
                         "(!nonperiodic)");
-                e_d3 =
-                    mbd_rsscs_pbe(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
-                                  6.0, {}, mbd_per ? cfg.mbd_k_mesh : nullptr)
-                        .energy;
+                e_d3 = internal::mbd_rsscs_energy(
+                    Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83, 6.0, {},
+                    mbd_per ? cfg.mbd_k_mesh : nullptr);
             }
         } else if (cfg.xdm) {
             constexpr double kAng2Bohr = 1.0 / 0.52917720859;
@@ -4435,14 +4414,20 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
     // cbg pre-contracts primitives into χ_u once, products redo primitive work
     // each iter — so products serve only the genuine multigrid.)
     const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
-    const bool use_prod = use_mg;
+    const bool use_prod = use_mg || cfg.nonperiodic;
     // Only the single-grid path uses cbg; the multigrid path collocates per-level
     // products instead. Building cbg on the fine grid is prohibitive at production
     // cutoff (CUTOFF 320 → ~8M points × diffuse functions = >100 GB of triples), so
     // skip it entirely under multigrid.
-    if (!use_prod)
-        ws.cbg = build_compact_basis_grid(grid, basis, periodic, eps_default);
-    const CompactBasisGrid& cbg = ws.cbg;
+    GpwResult res;
+    if (!use_prod) {
+        // The result owns the geometry payload reused by forces. SCF borrows
+        // that same table, avoiding a second full CBG allocation and copy.
+        res.scf_cbg =
+            build_compact_basis_grid(grid, basis, periodic, eps_default);
+        res.scf_cbg_valid = true;
+    }
+    const CompactBasisGrid& cbg = res.scf_cbg;
     smark("cbg_build");
 
     // CP2K-style REL_CUTOFF multigrid (gated on ngrids>1 && rel_cutoff>0). Each
@@ -4503,11 +4488,9 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                     throw std::runtime_error(
                         "GPW MBD: mbd_k_mesh requires a periodic cell "
                         "(!nonperiodic)");
-                out.e_disp =
-                    mbd_rsscs_pbe(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
-                                  6.0, out.volume_ratios,
-                                  mbd_per ? cfg.mbd_k_mesh : nullptr)
-                        .energy;
+                out.e_disp = internal::mbd_rsscs_energy(
+                    Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83, 6.0,
+                    out.volume_ratios, mbd_per ? cfg.mbd_k_mesh : nullptr);
             } else {
                 constexpr double kAng2Bohr = 1.0 / 0.52917720859;
                 constexpr double kRcutBohr = 50.0 * kAng2Bohr;
@@ -4522,12 +4505,6 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
         out.e_total += e_d3;
     };
 
-    GpwResult res;
-    // Force path reuses geometry-fixed Γ cbg (single-grid only; MG has no cbg).
-    if (!use_prod) {
-        res.scf_cbg = ws.cbg;
-        res.scf_cbg_valid = true;
-    }
     double e_prev = 0.0;
 
     // Convergence acceleration. With diis_depth > 0 we run Pulay DIIS on the KS
@@ -4537,17 +4514,17 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
     // stalls on, and is the prerequisite for scaling to large cells.
     const bool use_diis = cfg.diis_depth > 0;
 
-    internal::GpwDiis diis(use_diis ? cfg.diis_depth : 1);
+    linalg::internal::DIISMixer diis(use_diis ? cfg.diis_depth : 1);
     // DIIS commutator-residual threshold: a converged step must have both a
     // stable energy and a near-zero [H,P]_S residual (guards against declaring
     // convergence on an energy plateau before self-consistency).
-    constexpr double kDiisErrTol = 1e-5;
+    const double kDiisErrTol = cfg.residual_tol;
     // OT convergence: max element of the projected gradient (the SCF error
     // vector). Paired with the energy-stability test for a tight fixed point.
     // Matched to multi-k kOtGradTolK (1e-5): Γ OT often plateaus ~2.7e-6, so
     // the old 1e-6 floor caused thrashing against a non-zero residual floor.
-    // DFT+U softens the residual (same 5e-3 class as DIIS+U): V_U can leave a
-    // small projected-gradient floor while the total energy is fully stable.
+    // OT+U uses its separate projected-gradient threshold: V_U can leave a
+    // small gradient floor while the total energy is fully stable.
     constexpr double kOtGradTol = 1e-5;
     constexpr double kOtGradTolDftu = 1e-2;
     const double ot_grad_tol = do_dftu ? kOtGradTolDftu : kOtGradTol;
@@ -5728,6 +5705,9 @@ GpwDft::run_atoms_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
         throw std::logic_error(
             "GpwDft::run called before build() — validate the "
             "configuration first (no silent auto-build)");
+    if (!(residual_tol > 0) || !std::isfinite(residual_tol))
+        throw std::invalid_argument(
+            "GpwDft: residual_tol must be finite and positive [Hartree]");
     if (guess_P != nullptr || guess_P_beta != nullptr) {
         // Density guess: DIIS replaces P; OT purifies density → natural
         // orbitals for the OT manifold (RKS: total P; UKS: dual-spin —
@@ -6105,6 +6085,7 @@ GpwDft GpwDftAccess::clone(const GpwDft& m) {
     p.n_beta = m.n_beta;
     p.max_iter = m.max_iter;
     p.tol = m.tol;
+    p.residual_tol = m.residual_tol;
     p.eps_default = m.eps_default;
     p.mix = m.mix;
     p.diis_depth = m.diis_depth;
@@ -6334,7 +6315,8 @@ bool GpwDft::drive_gamma_rks_diis_(
     loop_err_ = linalg::RealMatrix{};
 
     // DIIS history lives in the mix Op (reset via MixStage::set_reset).
-    auto diis = std::make_shared<internal::GpwDiis>(use_diis ? diis_depth : 1);
+    auto diis = std::make_shared<linalg::internal::DIISMixer>(
+        use_diis ? diis_depth : 1);
 
     const bool conv = drive_path_diis_(
         [&, build_H = std::move(build_H), diag_fn = std::move(diag_fn), diis,
@@ -6396,22 +6378,20 @@ bool GpwDft::drive_gamma_uks_diis_(
     // Converged raw H (break-before-mix) for store_converged_state_uks.
     auto Ha_raw = std::make_shared<linalg::RealMatrix>();
     auto Hb_raw = std::make_shared<linalg::RealMatrix>();
-    auto diis_a =
-        std::make_shared<internal::GpwDiis>(use_diis ? diis_depth : 1);
-    auto diis_b =
-        std::make_shared<internal::GpwDiis>(use_diis ? diis_depth : 1);
+    auto diis = std::make_shared<linalg::internal::DIISMixer>(
+        use_diis ? diis_depth : 1);
 
     // Keep S/X on members for residual (same as RKS).
     loop_S_ = S;
     loop_X_ = X;
 
     const bool conv = drive_path_diis_(
-        [&, build_uks_H = std::move(build_uks_H), Ha_raw, Hb_raw, diis_a,
-         diis_b, use_diis, mix, n_alpha, n_beta, nb, tol, diis_err_tol, do_dftu,
+        [&, build_uks_H = std::move(build_uks_H), Ha_raw, Hb_raw, diis,
+         use_diis, mix, n_alpha, n_beta, nb, tol, diis_err_tol, do_dftu,
          level_shift](bool& skip, double& e_total, double& err_norm,
                       double& prev_energy) {
             KsBuildStage::Op ks = [&, build_uks_H, Ha_raw, Hb_raw, tol,
-                                   diis_err_tol, do_dftu]() {
+                                   diis_err_tol]() {
                 auto [Ha, Hb, e] = build_uks_H(Pa, Pb);
                 *Ha_raw = Ha;
                 *Hb_raw = Hb;
@@ -6437,7 +6417,7 @@ bool GpwDft::drive_gamma_uks_diis_(
                 const double dE = has_prev
                                       ? (e_total - prev_energy)
                                       : std::numeric_limits<double>::infinity();
-                const double err_gate = do_dftu ? 5e-3 : diis_err_tol;
+                const double err_gate = diis_err_tol;
                 skip = !no_stop && has_prev && std::abs(dE) < tol
                        && err_norm < err_gate;
                 prev_energy = e_total;
@@ -6449,15 +6429,15 @@ bool GpwDft::drive_gamma_uks_diis_(
             // loop_H_ = Ha, loop_H_ext_ temporarily Hb then mixed Ha;
             // use loop_err_ for err_a and loop_C_ unused until dens.
             // Dedicated dual mix state:
-            MixStage::Op mix_op = [&, diis_a, diis_b, use_diis, Ha_raw,
-                                   Hb_raw]() {
+            MixStage::Op mix_op = [&, diis, use_diis, Ha_raw, Hb_raw]() {
                 RealMatrix err_a =
                     linalg::diis_error(*Ha_raw, Pa, loop_S_, loop_X_);
                 RealMatrix err_b =
                     linalg::diis_error(*Hb_raw, Pb, loop_S_, loop_X_);
                 if (use_diis) {
-                    loop_H_ = diis_a->step(*Ha_raw, err_a);     // Ha_use
-                    loop_H_ext_ = diis_b->step(*Hb_raw, err_b); // Hb_use
+                    // Both spin equations form one coupled fixed point.
+                    std::tie(loop_H_, loop_H_ext_) =
+                        diis->step(*Ha_raw, err_a, *Hb_raw, err_b);
                 } else {
                     loop_H_ = *Ha_raw;
                     loop_H_ext_ = *Hb_raw;

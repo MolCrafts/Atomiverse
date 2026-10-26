@@ -204,17 +204,15 @@ if(NOT ATV_DOCS_ONLY)
         GIT_REPOSITORY https://github.com/xtensor-stack/xsimd.git
         GIT_TAG 14.3.0
     )
+    if(NOT SKBUILD)
+        set(SPDLOG_INSTALL ON CACHE BOOL "Install public C++ dependency" FORCE)
+    endif()
     FetchContent_MakeAvailable(xtl xtensor xtensor-blas spdlog xsimd)
 
-    # ── spdlog bundled fmt: Apple Clang 21+ consteval workaround ───────
-    # spdlog 1.15's bundled fmt base.h defines FMT_USE_CONSTEVAL=1 for
-    # Apple Clang >= 14, but Apple Clang 21 has a stricter consteval
-    # enforcement that rejects valid fmt code. Patch the version boundary.
+    # Apple Clang 21 needs fmt's runtime formatting path. Configure the
+    # dependency target instead of rewriting its headers on every configure.
     if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-        execute_process(COMMAND sed -i ""
-            "s/__apple_build_version__ < 14000029L/__apple_build_version__ < 14000029L || __apple_build_version__ >= 21000000L/"
-            "${spdlog_SOURCE_DIR}/include/spdlog/fmt/bundled/base.h"
-        )
+        target_compile_definitions(spdlog PRIVATE FMT_USE_CONSTEVAL=0)
     endif()
 
     # ── Library ──
@@ -259,6 +257,7 @@ if(NOT ATV_DOCS_ONLY)
         # used by the GPW OT minimizer and by the electronic-state propagators,
         # so they are never gated on a method flag.
         src/cpu/linalg/orbital_tangent.cpp
+        src/cpu/linalg/internal/diis_mixer.cpp
         # Niklasson dissipative XL recursion (cpu/electronic/xl_bomd.cpp):
         # depends only on cpu/linalg header types. Consumed by Gaussian SCF /
         # GPW (ATV_BUILD_HF) *and* by the classical extended-Lagrangian PIM
@@ -684,7 +683,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/observe/lowdin.cpp
             src/cpu/observe/esp_charges.cpp
             src/cpu/scf/internal/cart2sph.cpp
-            src/cpu/scf/internal/diis_mixer.cpp
             src/cpu/scf/internal/ediis_adiis.cpp
             src/cpu/scf/internal/hueckel_guess.cpp
             src/cpu/scf/internal/sap_guess.cpp
@@ -705,6 +703,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/internal/point_charges.cpp
             src/cpu/scf/internal/pcm.cpp
             src/cpu/scf/internal/soscf.cpp
+            src/cpu/scf/internal/orbital_canonicalization.cpp
             src/cpu/scf/internal/x2c.cpp
             # Multiscale electrostatic QM/MM (esmm-qmmm-03) — HF engine required.
             src/cpu/multiscale/qmmm_electrostatic.cpp
@@ -792,6 +791,7 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_CUDA)
             target_sources(atomiverse PRIVATE
                 src/cuda/scf/rhf.cu
+                src/cuda/scf/mp2.cu
                 src/cuda/scf/rhf_scf_cycle.cu
                 src/cuda/scf/rhf_fock.cu
                 src/cuda/scf/rhf_density.cu
@@ -799,6 +799,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/scf/device_integrals.cu
                 src/cuda/scf/uhf.cu
                 src/cuda/scf/uhf_minao.cpp
+                src/cuda/scf/uhf_guess.cu
                 src/cuda/scf/uhf_scf_cycle.cu
                 src/cuda/scf/uhf_fock.cu
                 src/cuda/scf/uhf_density.cu
@@ -834,7 +835,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/gpw/internal/local_pp.cpp
             src/cpu/gpw/gaussian_basis.cpp
             src/cpu/gpw/internal/gth_integrals.cpp
-            src/cpu/gpw/internal/diis.cpp
             src/cpu/gpw/internal/ot.cpp
             src/cpu/gpw/internal/collocate.cpp
             src/cpu/gpw/internal/multigrid.cpp
@@ -889,7 +889,9 @@ if(NOT ATV_DOCS_ONLY)
                 $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
                 $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
             if(FFTW3_OMP_LIB AND OpenMP_CXX_FOUND)
-                target_link_libraries(atomiverse PUBLIC ${FFTW3_OMP_LIB} OpenMP::OpenMP_CXX)
+                target_link_libraries(atomiverse PUBLIC
+                    $<BUILD_INTERFACE:${FFTW3_OMP_LIB}>
+                    $<INSTALL_INTERFACE:Atomiverse::fftw_omp> OpenMP::OpenMP_CXX)
                 target_compile_definitions(atomiverse PUBLIC ATV_GPW_FFTW_THREADS)
                 message(STATUS "GPW: FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
             endif()
@@ -982,7 +984,9 @@ if(NOT ATV_DOCS_ONLY)
             target_sources(atomiverse PRIVATE
             )
         endif()
-        target_link_libraries(atomiverse PUBLIC fftw3_stub)
+        target_link_libraries(atomiverse PUBLIC
+            $<BUILD_INTERFACE:fftw3_stub>
+            $<INSTALL_INTERFACE:Atomiverse::fftw>)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_PW)
 
         # CUDA plane-wave backend — device-resident kernels mirroring the CPU
@@ -1023,7 +1027,9 @@ if(NOT ATV_DOCS_ONLY)
             target_link_libraries(fftw3_stub INTERFACE ${FFTW3_LIB})
             target_include_directories(fftw3_stub INTERFACE ${FFTW3_INC})
         endif()
-        target_link_libraries(atomiverse PUBLIC fftw3_stub)
+        target_link_libraries(atomiverse PUBLIC
+            $<BUILD_INTERFACE:fftw3_stub>
+            $<INSTALL_INTERFACE:Atomiverse::fftw>)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_KSPACE)
         # FFTW3 MPI (slab/pencil distributed FFT for multi-rank PPPM).
         if(ATV_USE_MPI)
@@ -1031,7 +1037,9 @@ if(NOT ATV_DOCS_ONLY)
                 $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
                 $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
             if(FFTW3_MPI_LIB)
-                target_link_libraries(atomiverse PUBLIC ${FFTW3_MPI_LIB})
+                target_link_libraries(atomiverse PUBLIC
+                    $<BUILD_INTERFACE:${FFTW3_MPI_LIB}>
+                    $<INSTALL_INTERFACE:Atomiverse::fftw_mpi>)
                 target_compile_definitions(atomiverse PUBLIC ATV_HAS_FFTW_MPI)
                 message(STATUS "KSPACE: FFTW3 MPI enabled (${FFTW3_MPI_LIB})")
             else()
@@ -1120,8 +1128,13 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_BUILD_CUDA)
         target_include_directories(atomiverse PRIVATE src/cuda/neighbor)
     endif()
-    target_include_directories(atomiverse PUBLIC include)
-    target_link_libraries(atomiverse PUBLIC xtensor xtensor-blas xsimd spdlog::spdlog ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+    include(GNUInstallDirs)
+    target_include_directories(atomiverse PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_compile_features(atomiverse PUBLIC cxx_std_20)
+    target_link_libraries(atomiverse PUBLIC xtensor xtensor-blas xsimd spdlog::spdlog
+        LAPACK::LAPACK BLAS::BLAS)
 
     # xsimd is linked for direct use in native_integrals.cpp ERI hot loops.
     # XTENSOR_USE_XSIMD is NOT set globally. Precise reason (traced 2026-07-26,
@@ -1198,8 +1211,7 @@ if(NOT ATV_DOCS_ONLY)
     # No file currently opts in. When the first FF kernel does, add
     # `set_source_files_properties(... PROPERTIES COMPILE_FLAGS ...)`
     # immediately below this comment block.
-    # Apple Clang 21+ enforces consteval strictly; spdlog 1.15 fmt bundled lib
-    # triggers a false consteval-in-non-constexpr-context error. Disable it.
+    # Export the same fmt mode for consumers of the public logging headers.
     if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         target_compile_definitions(atomiverse PUBLIC FMT_USE_CONSTEVAL=0)
     endif()
@@ -1263,7 +1275,9 @@ if(NOT ATV_DOCS_ONLY)
             "${_molrs_cxx_gen_dir}/src/bridge.rs.cc"
             PROPERTIES GENERATED TRUE)
 
-        target_link_libraries(atomiverse PUBLIC molrs_cxx)
+        target_link_libraries(atomiverse PUBLIC
+            $<BUILD_INTERFACE:molrs_cxx>
+            $<INSTALL_INTERFACE:Atomiverse::molrs_cxx>)
         # Headers gate their molrs::FrameRef convenience overloads on this
         # (md.h / minimize.h / evaluate.h compile molrs-free without it).
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLRS)
@@ -1415,11 +1429,12 @@ if(NOT ATV_DOCS_ONLY)
     #    scikit-build-core owns their install tree) ──
     if(NOT SKBUILD)
         include(GNUInstallDirs)
-        install(TARGETS atomiverse
+        install(TARGETS atomiverse EXPORT AtomiverseTargets
                 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
         include(cmake/AtvInstallHeaders.cmake)
         atv_install_headers(atomiverse)
+        include(cmake/AtvPackage.cmake)
     endif()
 
     # ── atomiverse binary: native -in with MD, MPI Python host with LAUNCHER ──

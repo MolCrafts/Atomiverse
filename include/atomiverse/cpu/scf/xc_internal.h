@@ -4,7 +4,8 @@
 /// This header is internal to the native exchange-correlation engine
 /// (`xc_functional.cpp` + `xc_gga.cpp`). It is NOT facade-public: only the
 /// XC engine sources and the libxc-parity tests include it. The public XC
-/// surface (`evaluate_xc` / `evaluate_xc_batch`) lives in `xc_functional.h`.
+/// scalar surface (`evaluate_xc`) and built-in batched provider live in
+/// `xc_functional.h`; the extension contract is `electronic/xc_functional.h`.
 ///
 /// It declares:
 ///   - the three semi-local building-block functionals added for the
@@ -14,7 +15,10 @@
 ///     `vwn5_dFdx`) reused by both `vwn5_correlation` and
 ///     `vwn_rpa_correlation`.
 ///
-/// All formulas use atomic units (Hartree energy, Bohr length). Each
+/// All formulas use atomic units (Hartree energy, Bohr length).
+/// Complete functional operations return energy per volume [Hartree/Bohr^3]
+/// and its density/gradient derivatives. Channel F(x) functions are pure
+/// parameter-space intermediates, not complete functional outputs. Each
 /// functional is spin-polarized and closed-shell-correct as the
 /// `rho_alpha = rho_beta` limit of its spin-polarized expression.
 #pragma once
@@ -46,7 +50,7 @@ struct VWN5Params {
 ///
 /// @param x Wigner-Seitz square root, x = sqrt(r_s) [sqrt(Bohr)].
 /// @param p VWN parameter set for the desired channel.
-/// @return Channel correlation energy density per electron [Hartree].
+/// @return Channel correlation energy per electron [Hartree].
 double vwn5_F(double x, const VWN5Params& p);
 
 /// @brief Derivative dF/dx of the VWN Pade-approximant function.
@@ -65,10 +69,10 @@ double vwn5_dFdx(double x, const VWN5Params& p);
 ///
 /// @param rho_a Alpha spin density [electrons/Bohr^3].
 /// @param rho_b Beta spin density [electrons/Bohr^3].
-/// @param[out] ec   Correlation energy density per electron [Hartree].
-/// @param[out] vc_a d(rho*ec)/drho_alpha, alpha potential [Hartree].
-/// @param[out] vc_b d(rho*ec)/drho_beta, beta potential [Hartree].
-void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
+/// @param[out] fc   Correlation energy density [Hartree/Bohr^3].
+/// @param[out] vc_a dfc/drho_alpha, alpha potential [Hartree].
+/// @param[out] vc_b dfc/drho_beta, beta potential [Hartree].
+void vwn_rpa_correlation(double rho_a, double rho_b, double& fc, double& vc_a,
                          double& vc_b);
 
 /// @brief Becke-1988 GGA exchange for a single spin channel
@@ -87,7 +91,7 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& ec, double& vc_a,
 ///                       spin channel, rho_s*eps_x [Hartree/Bohr^3].
 /// @param[out] vrho_s    d(rho_s*eps_x)/drho_s, exchange potential
 ///                       [Hartree].
-/// @param[out] vsigma_ss d(rho_s*eps_x)/dsigma_ss [Hartree*Bohr^2].
+/// @param[out] vsigma_ss d(rho_s*eps_x)/dsigma_ss [Hartree*Bohr^5].
 /// @param beta     B88 beta (default 0.0042; optB88-vdW uses 0.003368671161).
 /// @param gamma    B88 gamma (default 6.0; optB88-vdW uses 6.981317007977318).
 void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
@@ -107,15 +111,14 @@ void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
 /// @param sigma_aa |grad rho_alpha|^2 [e^2/Bohr^8].
 /// @param sigma_ab grad rho_alpha . grad rho_beta [e^2/Bohr^8].
 /// @param sigma_bb |grad rho_beta|^2 [e^2/Bohr^8].
-/// @param[out] ec        Correlation energy density per electron
-///                       [Hartree].
-/// @param[out] vc_a      d(rho*ec)/drho_alpha [Hartree].
-/// @param[out] vc_b      d(rho*ec)/drho_beta [Hartree].
-/// @param[out] vsigma_aa d(rho*ec)/dsigma_aa [Hartree*Bohr^2].
-/// @param[out] vsigma_ab d(rho*ec)/dsigma_ab [Hartree*Bohr^2].
-/// @param[out] vsigma_bb d(rho*ec)/dsigma_bb [Hartree*Bohr^2].
+/// @param[out] fc        Correlation energy density [Hartree/Bohr^3].
+/// @param[out] vc_a      dfc/drho_alpha [Hartree].
+/// @param[out] vc_b      dfc/drho_beta [Hartree].
+/// @param[out] vsigma_aa dfc/dsigma_aa [Hartree*Bohr^5].
+/// @param[out] vsigma_ab dfc/dsigma_ab [Hartree*Bohr^5].
+/// @param[out] vsigma_bb dfc/dsigma_bb [Hartree*Bohr^5].
 void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
-                     double sigma_ab, double sigma_bb, double& ec, double& vc_a,
+                     double sigma_ab, double sigma_bb, double& fc, double& vc_a,
                      double& vc_b, double& vsigma_aa, double& vsigma_ab,
                      double& vsigma_bb);
 

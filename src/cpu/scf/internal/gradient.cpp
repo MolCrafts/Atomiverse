@@ -21,6 +21,7 @@
 #include "atomiverse/cpu/scf/internal/point_charges.h"
 #include "atomiverse/cpu/scf/internal/x2c.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
+#include <optional>
 
 #include <cmath>
 #include <stdexcept>
@@ -104,9 +105,9 @@ static void accumulate_common_gradient(xt::xtensor<double, 2>& grad,
 /// additionally contracts vsigma with d(grad_rho)/dR_A, whose nuclear
 /// derivative needs the basis-function Hessian (Term2 below).
 ///
-/// The GGA route is selected by `is_gga(config.xc_type)`, true for `PBE`,
-/// `B3LYP` and `PBE0`. The vsigma chain rule is functional-agnostic given the
-/// `vsigma_*` arrays returned by `evaluate_xc_batch`, so the B3LYP B88 / LYP
+/// The GGA route follows the provider's Sigma ingredient declaration.
+/// The vsigma chain rule is functional-agnostic given the
+/// `vsigma_*` arrays returned by `XcFunctional::evaluate`, so the B3LYP B88 / LYP
 /// and PBE0 0.75*PBE-X semi-local exchange-correlation pieces flow through
 /// unchanged — only the exact-exchange admixture (handled in the two-electron
 /// gradient, not here) distinguishes a hybrid from the pure GGA.
@@ -157,14 +158,21 @@ static void accumulate_xc_gradient(
     const xt::xtensor<double, 2>& Pa, const xt::xtensor<double, 2>& Pb,
     XCType xc_type, GridLevel grid_level, int n_radial, int n_angular,
     const std::vector<int>& shell_to_atom,
-    const std::vector<std::vector<int>>& atom_shells, int natm, int n) {
-    // GGA semi-local XC gradient route. True for PBE and the B3LYP / PBE0
-    // global hybrids — all carry a gradient-dependent (vsigma) semi-local
-    // term whose nuclear-derivative chain rule is functional-agnostic given
-    // the vsigma_* arrays from evaluate_xc_batch. Note: the local name
-    // `is_gga` deliberately shadows the free function below; the
-    // ATV::cpu::scf:: qualifier disambiguates the one call site.
-    const bool is_gga = ATV::cpu::scf::is_gga(xc_type);
+    const std::vector<std::vector<int>>& atom_shells, int natm, int n,
+    const ATV::electronic::XcFunctional* functional,
+    ATV::electronic::XcSpin spin) {
+    // Built-in and external providers use the same ingredient declaration
+    // and gradient chain rule; exact exchange belongs to the two-electron term.
+    std::optional<BuiltinXc> builtin;
+    if (!functional) {
+        builtin.emplace(xc_type);
+        functional = &*builtin;
+    }
+    const auto mask = static_cast<unsigned>(functional->ingredients());
+    if ((mask & 1u) == 0 || (mask & ~3u) != 0)
+        throw std::invalid_argument(
+            "Molecular XC gradient supports rho/sigma only");
+    const bool is_gga = (mask & 2u) != 0;
     const int N = static_cast<int>(n);
     const size_t Ns = static_cast<size_t>(N);
 
@@ -264,7 +272,7 @@ static void accumulate_xc_gradient(
     }
 
     // ── 3. Batch XC evaluation ─────────────────────────────────────────
-    xt::xtensor<double, 1> exc_arr = xt::zeros<double>({Gs});
+    xt::xtensor<double, 1> energy_density = xt::zeros<double>({Gs});
     xt::xtensor<double, 1> vrho_a_arr = xt::zeros<double>({Gs});
     xt::xtensor<double, 1> vrho_b_arr = xt::zeros<double>({Gs});
     xt::xtensor<double, 1> vsigma_aa_arr, vsigma_ab_arr, vsigma_bb_arr;
@@ -274,14 +282,25 @@ static void accumulate_xc_gradient(
         vsigma_bb_arr = xt::zeros<double>({Gs});
     }
 
-    evaluate_xc_batch(xc_type, G, rho_a_arr.data(), rho_b_arr.data(),
-                      is_gga ? sigma_aa_arr.data() : nullptr,
-                      is_gga ? sigma_ab_arr.data() : nullptr,
-                      is_gga ? sigma_bb_arr.data() : nullptr, exc_arr.data(),
-                      vrho_a_arr.data(), vrho_b_arr.data(),
-                      is_gga ? vsigma_aa_arr.data() : nullptr,
-                      is_gga ? vsigma_ab_arr.data() : nullptr,
-                      is_gga ? vsigma_bb_arr.data() : nullptr);
+    ATV::electronic::XcBatch batch;
+    batch.spin = spin;
+    batch.rho_alpha = {rho_a_arr.data(), Gs};
+    batch.rho_beta = {rho_b_arr.data(), Gs};
+    if (is_gga) {
+        batch.sigma_aa = {sigma_aa_arr.data(), Gs};
+        batch.sigma_ab = {sigma_ab_arr.data(), Gs};
+        batch.sigma_bb = {sigma_bb_arr.data(), Gs};
+    }
+    ATV::electronic::XcOutput output;
+    output.energy_density = {energy_density.data(), Gs};
+    output.vrho_alpha = {vrho_a_arr.data(), Gs};
+    output.vrho_beta = {vrho_b_arr.data(), Gs};
+    if (is_gga) {
+        output.vsigma_aa = {vsigma_aa_arr.data(), Gs};
+        output.vsigma_ab = {vsigma_ab_arr.data(), Gs};
+        output.vsigma_bb = {vsigma_bb_arr.data(), Gs};
+    }
+    functional->evaluate(batch, ATV::electronic::XcOrder::First, output);
 
     // ── 4. Weights ─────────────────────────────────────────────────────
     xt::xtensor<double, 1> w_arr = xt::zeros<double>({Gs});
@@ -439,11 +458,9 @@ static void accumulate_xc_gradient(
 
     // ── 5c. Becke weight-derivative term ───────────────────────────────
     //
-    // dE_xc/dR_A|weight = sum_g (dW_g/dR_A) * exc(g) * rho(g),  where
-    // dW_g/dR_A = (W_g / w_parent) * d(w_parent_normalized)/dR_A and the
-    // `* rho` factor is mandatory: Atomiverse stores exc PER ELECTRON
-    // (xc_functional.h), so the weight-response carries the density (matches
-    // PySCF's einsum('r,r,nxr->nx', exc, rho, weight1)).
+    // dE_xc/dR_A|weight = sum_g (dW_g/dR_A) * f(g), where the public
+    // provider and the built-in mathematical kernels both supply energy per
+    // volume. Energy integration and weight response use that same f directly.
     {
         std::vector<double> dw(static_cast<size_t>(natm) * 3);
         for (int g = 0; g < G; ++g) {
@@ -460,10 +477,10 @@ static void accumulate_xc_gradient(
                 continue;
             // dW_g/dR_A = (W_g / w_parent) * d(w_parent_normalized)/dR_A.
             const double scale = w_arr(g) / w_parent;
-            const double exc_rho = exc_arr(g) * rho;
+            const double f_xc = energy_density(g);
             for (int A = 0; A < natm; ++A)
                 for (int d = 0; d < 3; ++d)
-                    grad_out(A, d) += scale * dw[A * 3 + d] * exc_rho;
+                    grad_out(A, d) += scale * dw[A * 3 + d] * f_xc;
         }
     }
 }
@@ -474,9 +491,10 @@ namespace internal {
 
 ScfGradient::ScfGradient(MeanFieldType method, SpinType spin, XCType xc_type,
                          GridLevel grid_level, int n_radial, int n_angular,
-                         bool xc_grad_project_translation, bool d3bj, bool d4)
-    : method_(method), spin_(spin), xc_type_(xc_type), grid_level_(grid_level),
-      n_radial_(n_radial), n_angular_(n_angular),
+                         bool xc_grad_project_translation, bool d3bj, bool d4,
+                         const ATV::electronic::XcFunctional* functional)
+    : method_(method), spin_(spin), xc_type_(xc_type), functional_(functional),
+      grid_level_(grid_level), n_radial_(n_radial), n_angular_(n_angular),
       xc_grad_project_translation_(xc_grad_project_translation), d3bj_(d3bj),
       d4_(d4) {}
 
@@ -553,7 +571,7 @@ GradientResult ScfGradient::compute(const Frame& frame,
                    n_angular_, /*fixed_grid=*/nullptr);
         const FockResult fock =
             hb.step(integrals, /*restricted=*/false, /*is_hf=*/!is_ks, xc_type_,
-                    /*hybrid_alpha_override=*/-1.0, Pa, Pb);
+                    /*hybrid_alpha_override=*/-1.0, Pa, Pb, functional_);
         // Occupied-MO projector O = Σ_{i<nocc} c_i c_iᵀ (C_a is the shared
         // RO MO set; the first n_alpha columns are occupied-α, the first
         // n_beta are doubly-occupied).
@@ -1015,9 +1033,11 @@ GradientResult ScfGradient::assemble_(
             }
         }
         xt::xtensor<double, 2> grad_xc = xt::zeros<double>({(int)natm, (int)3});
-        accumulate_xc_gradient(grad_xc, integrals, Pa, Pb, xc_type_,
-                               grid_level_, n_radial_, n_angular_,
-                               shell_to_atom, atom_shells, natm, n);
+        accumulate_xc_gradient(
+            grad_xc, integrals, Pa, Pb, xc_type_, grid_level_, n_radial_,
+            n_angular_, shell_to_atom, atom_shells, natm, n, functional_,
+            spin_ == SpinType::Restricted ? ATV::electronic::XcSpin::Restricted
+                                          : ATV::electronic::XcSpin::Collinear);
 
         // Optional debug: enforce translational invariance of the XC
         // gradient by projecting out the net (sum-over-atoms) component.

@@ -320,8 +320,11 @@ N₂ Koopmans IP ≈ 17.3 eV,实验 15.58 eV —— 冻结轨道高估;6-31G* �
 PySCF 值上,文献带只作宽松 sanity:15.5–17.5 eV)。ΔSCF 让阳离子轨道弛豫,
 15.69 eV 低于 Koopmans 且更接近实验 —— 回归同时断言 ΔSCF < Koopmans。
 
-阳离子只经构造参数配置:`cpu::scf::UHF uhf{Pople631Gs, 7, 6, /*charge=*/1}`
-—— 无新 Config 类型、无工厂函数(验收 ac-005 的 grep 条款)。
+阳离子只经构造参数配置:`cpu::scf::UHF uhf{Pople631Gs, 7, 6, /*charge=*/1}`。
+
+`n2_ionization` 声明 **4 个 CPU 线程**；同一 case 按最高声明线程数运行。
+完整 section 包含中性 RHF、轨道观察器和阳离子 UHF，并强制检查 **≤60 秒**。
+基组、SCF 收敛控制、PySCF 参考值和各 1e-3 eV 容差保持不变。
 
 引文:
 - Koopmans, *Physica* **1**, 104 (1934), DOI 10.1016/S0031-8914(34)90011-2。

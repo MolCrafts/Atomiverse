@@ -124,9 +124,11 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     double tol = 1e-6;
     /// @brief Maximum SCF iterations (dimensionless).
     int max_iter = 50;
-    /// @brief Density mixing parameter (QE mixing_beta, dimensionless).
+    /// @brief Pulay mixing fraction (dimensionless); collinear spin channels
+    ///        share one joint density/residual history.
     double mix_beta = 0.7;
-    /// @brief Pulay mixing history window (dimensionless).
+    /// @brief Pulay history window for restricted or joint spin densities
+    ///        (dimensionless).
     int pulay_depth = 5;
     /// @brief Collinear spin-polarized KS (nspin=2). Default false = restricted.
     ///        Compatible with metallic `smearing` (shared μ, self-consistent mag).
@@ -221,8 +223,8 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     ///         on an odd valence-electron count.
     PWResult& forces(Frame& frame);
 
-    /// @brief SCF + Nielsen–Martin analytic cell stress at the Frame's
-    ///        geometry.
+    /// @brief SCF + frozen-density NSCF strain-FD cell stress at the Frame's
+    ///        geometry (strain step 2e-3, not a closed-form tensor).
     ///
     /// One SCF + Hellmann–Feynman cell derivatives (kinetic, Hartree, local
     /// PP, Ewald, XC, KB nonlocal) as central differences of the
@@ -232,7 +234,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// Mechanical / CP2K sign: \(\sigma=-(1/\Omega)\partial E/\partial
     /// \varepsilon\). Writes the extensive virial \(W=\sigma\Omega\) [eV]
     /// to `frame.meta[kStress]` (overwritten) and the energy [eV] to
-    /// `kEnergy`. Collinear UKS with smearing has no analytic path — use
+    /// `kEnergy`. Collinear UKS with smearing has no one-SCF stress path — use
     /// `pw_stress_fd`.
     /// @param frame Atom positions [Å], types (Z), and simulation cell.
     /// @return Voigt stress \((\sigma_{xx},\sigma_{yy},\sigma_{zz},

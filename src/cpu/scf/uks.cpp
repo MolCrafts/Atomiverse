@@ -13,11 +13,17 @@ namespace cpu {
 namespace scf {
 
 UKS::UKS(BasisSet basis_in, int na, int nb, XCType xc_in, int charge_in)
+    : UKS(basis_in, na, nb, std::make_shared<BuiltinXc>(xc_in), charge_in) {}
+
+UKS::UKS(BasisSet basis_in, int na, int nb,
+         std::shared_ptr<const ATV::electronic::XcFunctional> functional,
+         int charge_in)
     : MeanFieldMethod<UKS>(basis_in, charge_in), n_alpha(na), n_beta(nb),
-      xc(xc_in) {
+      xc(select_functional_(std::move(functional),
+                            ATV::electronic::XcSpin::Collinear)) {
     spin_ = SpinType::Unrestricted;
     method_ = MeanFieldType::KS;
-    xc_type_ = xc_in;
+    xc_type_ = xc;
     init_guess = InitGuess::Hcore;
     damping_factor = 0.5;
     diis_max_vectors = 6;

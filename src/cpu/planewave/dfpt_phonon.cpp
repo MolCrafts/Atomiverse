@@ -6,6 +6,7 @@
 
 #include "atomiverse/cpu/planewave/dfpt_phonon.h"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <optional>
@@ -213,12 +214,16 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
             for (int k = 0; k < dim; ++k)
                 result.frequencies(k) = freqs[static_cast<std::size_t>(k)];
 
-            for (int i = 0; i < n; ++i)
-                for (int a = 0; a < 3; ++a)
-                    for (int j = 0; j < n; ++j)
-                        for (int b = 0; b < 3; ++b)
-                            result.force_constants(3 * i + a, 3 * j + b) =
-                                hess_sc(3 * i + a, 3 * j + b);
+            double fourier_asymmetry = 0;
+            const auto Cq = path.force_constants_at_q(
+                hess_sc, frame, na, nb, nc, q_frac, &fourier_asymmetry);
+            result.max_asymmetry =
+                std::max(result.max_asymmetry, fourier_asymmetry);
+            for (int i = 0; i < dim; ++i)
+                for (int j = 0; j < dim; ++j) {
+                    result.force_constants(i, j) = Cq(i, j).real();
+                    result.force_constants_imag(i, j) = Cq(i, j).imag();
+                }
 
             return result;
         }

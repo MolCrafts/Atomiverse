@@ -4,10 +4,13 @@ atv_regression(SECTION mp2-grad-h2o-sto3g
   REQUIRES HF)
 
 atv_regression(SECTION frozen-core-mp2-h2o
-  REQUIRES HF)
+  REQUIRES HF DEVICES both)
 
 atv_regression(SECTION scs-mp2-h2o-sto3g
-  REQUIRES HF)
+  REQUIRES HF DEVICES both)
+
+atv_regression(SECTION mp2-water-chain
+  REQUIRES HF DEVICES both)
 
 atv_regression(SECTION ump2-o2-sto3g
   REQUIRES HF)

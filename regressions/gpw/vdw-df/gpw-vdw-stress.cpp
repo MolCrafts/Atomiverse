@@ -1,7 +1,7 @@
 /// @file regressions/gpw/gpw-vdw-stress/reg_gpw-vdw-stress.cpp
-/// @brief END-TO-END: analytic fixed-P cell stress with nonlocal vdW-DF (DRSLL).
+/// @brief END-TO-END: fixed-P strain-difference stress with nonlocal vdW-DF (DRSLL).
 ///
-/// Water dimer Γ GPW PBE + NON_LOCAL DRSLL. Dual-gate analytic vs multi-SCF FD
+/// Water dimer Γ GPW PBE + NON_LOCAL DRSLL. Fixed-P vs relaxed-SCF strain FD
 /// of E_tot; soft absolute class vs offline CP2K STRESS + NON_LOCAL twin.
 /// See REFERENCE.md.
 
@@ -73,6 +73,7 @@ std::vector<ATV::cpu::gpw::Kind> water_kinds() {
 
 int run() {
     using namespace ATV::cpu::gpw;
+    const auto section_start = std::chrono::steady_clock::now();
 
     // Energy twin class of gpw-vdw-df-ice / vdw-kpoint-forces (Γ DRSLL).
     constexpr double kEDispCp2k = 0.151943904803; // Ha (post-SCF class)
@@ -93,43 +94,44 @@ int run() {
         return m;
     };
 
+    const double h = 2e-3;
+    // Public stress performs one SCF and publishes that state's energy and
+    // result too. Read them here rather than cold-solving the same state
+    // first for energy and then again for fixed-P stress.
     GpwDft energy = make_cfg();
+    energy.stress_strain_h = h;
     energy.build(frame);
-
-    const auto t0 = std::chrono::steady_clock::now();
-    const auto& r = energy.run(frame);
-    const auto t1 = std::chrono::steady_clock::now();
-    const double wall_scf = std::chrono::duration<double>(t1 - t0).count();
-
-    std::printf("E=%.10f Ha  E_disp=%.10f Ha  iters=%d  wall_scf=%.3f s  "
+    constexpr double kToHaBohr3 =
+        1.0 / ATV::units::kHartreePerBohr3InEvPerAngstrom3;
+    const auto product_start = std::chrono::steady_clock::now();
+    auto san = energy.stress(frame);
+    for (auto& value : san)
+        value *= kToHaBohr3;
+    const auto product_end = std::chrono::steady_clock::now();
+    const double wall_product =
+        std::chrono::duration<double>(product_end - product_start).count();
+    const auto& r = energy.last_result();
+    std::printf("E=%.10f Ha E_disp=%.10f Ha iters=%d wall_energy+stress=%.3f s "
                 "conv=%d\n",
-                r.e_total, r.e_disp, r.iters, wall_scf, r.converged ? 1 : 0);
-
+                r.e_total, r.e_disp, r.iters, wall_product,
+                r.converged ? 1 : 0);
     check(r.converged, "SCF converged");
     check(std::isfinite(r.e_total) && std::isfinite(r.e_disp), "finite E");
     check(std::abs(r.e_disp - kEDispCp2k) <= kEDispTol, "E_disp vs CP2K class");
     check(std::abs(r.e_disp) > 1e-4, "non-vacuous nonlocal E_disp");
-
-    const double h = 2e-3;
-    const auto t2 = std::chrono::steady_clock::now();
-    // Public paths return eV/Å³; gates and prints stay in Ha/Bohr³.
-    constexpr double kToHaBohr3 =
-        1.0 / ATV::units::kHartreePerBohr3InEvPerAngstrom3;
     auto stress_ha_bohr3 = [&](GpwDft m) {
         m.stress_strain_h = h;
         m.build(frame);
-        auto s = m.stress(frame);
-        for (auto& v : s)
-            v *= kToHaBohr3;
-        return s;
+        auto stress = m.stress(frame);
+        for (auto& value : stress)
+            value *= kToHaBohr3;
+        return stress;
     };
-    const auto san = stress_ha_bohr3(make_cfg());
     const auto t3 = std::chrono::steady_clock::now();
     auto sfd = gpw_stress_fd(frame, make_cfg(), h);
     for (auto& v : sfd)
         v *= kToHaBohr3;
     const auto t4 = std::chrono::steady_clock::now();
-    const double wall_an = std::chrono::duration<double>(t3 - t2).count();
     const double wall_fd = std::chrono::duration<double>(t4 - t3).count();
 
     double max_diag_err = 0.0;
@@ -139,7 +141,7 @@ int run() {
         const double fd = sfd[static_cast<std::size_t>(ax)];
         const double err = std::abs(an - fd);
         max_diag_err = std::max(max_diag_err, err);
-        std::printf("  σ_%s  analytic=% .8e  fd=% .8e  |d|=%.3e Ha/Bohr3\n",
+        std::printf("  σ_%s  fixed-P=% .8e  fd=% .8e  |d|=%.3e Ha/Bohr3\n",
                     names[ax], an, fd, err);
         check(std::isfinite(an) && std::isfinite(fd), "finite stress");
     }
@@ -147,12 +149,12 @@ int run() {
         check(std::abs(san[static_cast<std::size_t>(k)]) <= 1e-8,
               "off-diagonal ~ 0");
 
-    // Fixed-P analytic vs multi-SCF FD; residual SCF + O(h²) + nonlocal.
+    // Fixed-P strain difference vs relaxed-SCF strain FD; residual SCF + O(h²) + nonlocal.
     constexpr double kAnFdTol = 5.0e-4; // Ha/Bohr³
-    std::printf(
-        "max|σ_an-σ_fd|=%.3e Ha/Bohr3  wall_an=%.3f s  wall_fd=%.3f s\n",
-        max_diag_err, wall_an, wall_fd);
-    check(max_diag_err <= kAnFdTol, "analytic vs FD max diag (vdW-DF)");
+    std::printf("max|σ_fixedP-σ_fd|=%.3e Ha/Bohr3 wall_energy+stress=%.3f s "
+                "wall_fd=%.3f s\n",
+                max_diag_err, wall_product, wall_fd);
+    check(max_diag_err <= kAnFdTol, "fixed-P vs relaxed FD max diag (vdW-DF)");
 
     // Wiring: stress without nonlocal must differ if E_disp is large enough.
     {
@@ -169,15 +171,21 @@ int run() {
     }
 
     (void)kETotSoftTol;
-    std::printf("T_atv_scf=%.3f s\n", wall_scf);
+    std::printf("T_atv_energy+stress=%.3f s\n", wall_product);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);
         return 1;
     }
+    const double wall = std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - section_start)
+                            .count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall);
+    if (wall > 60.0)
+        return 1;
     std::printf("PASS: gpw-vdw-stress  E=%.10f  E_disp=%.6e  max|dσ|=%.3e  "
-                "T_scf=%.3f s\n",
-                r.e_total, r.e_disp, max_diag_err, wall_scf);
+                "T_energy+stress=%.3f s\n",
+                r.e_total, r.e_disp, max_diag_err, wall_product);
     return 0;
 }
 

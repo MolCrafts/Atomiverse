@@ -25,9 +25,10 @@ namespace internal {
 /// @brief Private GPW SCF workspace (one instance per SCF path / `run()`).
 ///
 /// Default-constructible. Callers fill geometry-fixed members once after
-/// setup, then update `last_veff` each KS build. Empty `cbg` / `kbg` /
+/// setup, then update `last_veff` each KS build. Empty `kbg` /
 /// `products` / `mg.levels` means that path is unused for the current run
-/// (e.g. multigrid leaves `cbg` empty; single-grid leaves `products` empty).
+/// (e.g. single-grid leaves `products` empty). The Γ compact basis table
+/// belongs to GpwResult and is borrowed by SCF before force reuse.
 struct GpwWorkspace {
     /// Density / Poisson / XC fine grid (or multigrid finest level twin).
     UniformGrid grid{};
@@ -37,9 +38,6 @@ struct GpwWorkspace {
 
     /// Geometry-fixed primitive-pair product list (multigrid collocate path).
     ProductSet products{};
-
-    /// Compact Γ basis-on-grid (single-grid path; empty under multigrid).
-    CompactBasisGrid cbg{};
 
     /// Pre-summed χ^k on the fine grid (multi-k single-grid; empty under MG).
     KpointBasisGrid kbg{};

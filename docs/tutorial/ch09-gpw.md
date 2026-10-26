@@ -90,17 +90,16 @@ GPW follows the exact architecture of the other electronic-structure methods in
 this manual. The concrete method is `cpu::gpw::GpwDft` — a
 `cpu::Driver<gpw::Phase>` loop node (KS build → mix → diagonalize → density →
 check), Frame in / Frame out, the same shape as [`cpu::scf::RHF`](ch02-rhf.md).
-It owns the per-element kinds and every SCF/grid parameter as public members;
+It owns per-element kinds, cutoff and XC as constructor identity, with SCF/grid
+controls as public members;
 `dft.run(frame)` writes the total energy to `frame.meta.get(kEnergy)` in eV and
 `dft.forces(frame)` additionally writes `kAtom_fx/fy/fz` in eV/Å.
 
-To put the method in an outer driver, bind it through
-`cpu::gpw::GPWEvaluator`, a thin component that takes the configured `GpwDft`
-by value (`GPWEvaluator(std::move(dft), /*compute_forces=*/true)`). Each
-`launch()` re-runs the method at the frame's current geometry and cell and
-writes energy (and forces / stress when enabled) to the Frame — the same
-contract every evaluator honours. Because it is an ordinary energy source, it
-plugs into the `Evaluate`, `MD`, and `Minimize` drivers with no special support.
+For Born–Oppenheimer outer-loop use (Evaluate, MD, Minimize), mount `GpwDft`
+directly on the parent Driver. It runs on the parent's Runtime, accumulates
+energy/forces, and assembles stress when the parent plan consumes it.
+`cpu::gpw::GPWEvaluator` remains for electronic propagators and callers
+awaiting migration; examples using that wrapper show the transitional path.
 
 ## A GPW water calculation
 
@@ -174,20 +173,20 @@ the scope note below.
 
 ## Using GPW in workflows
 
-Stand back and count the electronic-structure evaluators this manual now has:
+The three electronic-structure families share the outer Driver interface:
 
-| evaluator | basis | electrostatics | chapter |
+| concrete method | basis | electrostatics | chapter |
 |---|---|---|---|
-| `SCF` | Gaussian | analytic ERIs | [2](ch02-rhf.md)–[6](ch06-hybrid-dft.md) |
+| `RHF` / `UHF` / `RKS` / `UKS` | Gaussian | analytic ERIs | [2](ch02-rhf.md)–[6](ch06-hybrid-dft.md) |
 | `PW` | plane wave | reciprocal-space FFT | [8](ch08-plane-wave.md) |
-| `GPWEvaluator` (binds `GpwDft`) | Gaussian + grid | grid FFT (Poisson) | 9 (this) |
+| `GpwDft` | Gaussian + grid | grid FFT (Poisson) | 9 (this) |
 
-All three are `role() == Evaluator`, `capabilities() == Energy`, and all three
-write `frame.meta.get(kEnergy)`. So all three are interchangeable at the *driver*
-level: `cpu::single_point(frame, eval)` for an energy, `on(md::Phase::force)
-.add(eval)` for AIMD, `on(minimizer::Phase::force).add(eval)` for geometry
-optimization. The physics inside each is completely different; the seam the
-driver sees — an Energy-capable component at the force phase — is identical.
+Each concrete method owns its electronic loop and writes Frame energy through
+`run(frame)`. Mount it on the parent's force phase for Born–Oppenheimer MD or
+geometry optimization; the parent requests forces/stress and the nested method
+accumulates those quantities. `GPWEvaluator` is retained for electronic
+propagators and unmigrated callers. No public `role()` / `capabilities()`
+inspection is required.
 This is "swap the evaluator, keep the driver" ([Comparing Models](ch15-cross-method.md))
 paying off for a *third* electronic-structure family.
 
@@ -270,13 +269,14 @@ You will learn:
 1. **The concept** — the dual Gaussian/grid representation and why it scales
    better than pure Gaussians for the electrostatics.
 2. **The representation** — the `GpwDft` Driver node (Frame in / Frame out),
-   bound into outer drivers by a `GPWEvaluator` component, the third member of
-   the evaluator family.
+   mounted directly into outer drivers for Born–Oppenheimer work, with
+   `GPWEvaluator` retained for electronic propagators and unmigrated callers.
 3. **The C++ API** — `Element`, `Kind`, `GpwDft` (kinds + public members), and `run(frame)`,
    walked through for an isolated water molecule.
-4. **The expected result** — CP2K Quickstep parity, to the sub-µHartree.
+4. **The expected result** — comparison with CP2K Quickstep at the recorded
+   basis/grid settings and tolerances.
 5. **The validation** — against CP2K, and the honest experimental scope.
-6. **The recurring pattern** — a third evaluator that drops into the same
+6. **The recurring pattern** — an electronic method that drops into the same
    Evaluate / MD / Minimize drivers as the Gaussian and plane-wave ones.
 
 GPW needs FFTW3 and is off by default; build with

@@ -11,6 +11,7 @@
 
 #include "atomiverse/core/gto.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "cublas_dispatch.cuh"
@@ -20,6 +21,7 @@
 
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -179,7 +181,13 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
     const int natm = ctx.frame.n_atoms();
     const int n_shells = n_shells_;
     const int n = n_ao_;
+    if (n <= 0 || n > std::numeric_limits<int>::max() / n)
+        throw std::invalid_argument(
+            "cuda::scf::UHF: AO dimension exceeds dense ERI index range");
     const int nn = n * n;
+    if (nn > std::numeric_limits<int>::max() / nn)
+        throw std::invalid_argument(
+            "cuda::scf::UHF: n_ao^4 exceeds dense ERI index range");
     const int n4 = nn * nn;
 
     for (int s = 0; s < n_shells; ++s) {
@@ -192,9 +200,9 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
                 + "). Use cpu::scf::UHF.");
         }
     }
-    if (n_alpha_ > n || n_beta_ > n) {
+    if (n_alpha_ < 0 || n_alpha_ > n || n_beta_ < 0 || n_beta_ > n) {
         throw std::invalid_argument(
-            "cuda::scf::UHF: occupation exceeds the AO count (n_ao="
+            "cuda::scf::UHF: each spin occupation must lie in [0,n_ao] (n_ao="
             + std::to_string(n) + ", n_alpha=" + std::to_string(n_alpha_)
             + ", n_beta=" + std::to_string(n_beta_) + ").");
     }
@@ -336,6 +344,8 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
     }
     ws.device_sp_shells = true;
     cudaMalloc(&ws.d_W, mat_bytes);
+    ATV_CUDA_CHECK(cudaMalloc(&ws.d_gradient, 3 * static_cast<std::size_t>(natm)
+                                                  * sizeof(double)));
     cudaMemsetAsync(ws.P, 0, mat_bytes, stream);
     cudaMemsetAsync(ws.P_old, 0, mat_bytes, stream);
     alloc_spin_mats(beta, n, stream);

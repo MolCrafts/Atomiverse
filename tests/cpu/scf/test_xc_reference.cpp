@@ -36,20 +36,19 @@ constexpr double kPi = 3.14159265358979323846;
 // E_x = -C_x_spin ∫ [ρ_α^{4/3} + ρ_β^{4/3}] dτ
 // where C_x_spin = 2^{1/3} * (3/4)(3/π)^{1/3}
 struct SlaterRef {
-    double exc;    // energy per electron
-    double vrho_a; // ∂(ε_x * ρ)/∂ρ_α = -(4/3) C_x_spin ρ_α^{1/3}
+    double energy_density; // energy per volume
+    double vrho_a;         // ∂(ε_x * ρ)/∂ρ_α = -(4/3) C_x_spin ρ_α^{1/3}
     double vrho_b;
 
     static SlaterRef compute(double rho_a, double rho_b) {
         double Cx = (3.0 / 4.0) * std::cbrt(3.0 / kPi);
         double Cx_spin = std::cbrt(2.0) * Cx;
-        double rho = rho_a + rho_b;
         double ra43 = std::pow(rho_a, 4.0 / 3.0);
         double rb43 = std::pow(rho_b, 4.0 / 3.0);
         double fx = -Cx_spin * (ra43 + rb43);
 
         SlaterRef ref;
-        ref.exc = fx / rho;
+        ref.energy_density = fx;
         ref.vrho_a = -(4.0 / 3.0) * Cx_spin * std::cbrt(rho_a);
         ref.vrho_b = -(4.0 / 3.0) * Cx_spin * std::cbrt(rho_b);
         return ref;
@@ -148,11 +147,12 @@ TEST(XCReference, SlaterExchange_Unpolarized_Rho1) {
     auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
 
     // Total LSDA = Slater + VWN5. Exchange part should match exactly.
-    // Correlation adds a negative contribution, so exc < ref.exc.
-    double exc = static_cast<double>(out.exc);
-    EXPECT_LT(exc, ref.exc) << "LSDA exc must be more negative than pure "
-                               "Slater (correlation lowers energy)";
-    double correlation = exc - ref.exc;
+    // Correlation adds a negative contribution, so f_xc < ref.energy_density.
+    double f_xc = static_cast<double>(out.energy_density);
+    EXPECT_LT(f_xc, ref.energy_density)
+        << "LSDA f_xc must be more negative than pure "
+           "Slater (correlation lowers energy)";
+    double correlation = f_xc - ref.energy_density;
     EXPECT_LT(correlation, 0.0) << "VWN5 correlation must be negative";
     // At ρ=1 (r_s≈0.62), VWN5 |ε_c| can be ~0.14 Ha (logarithmic growth at high density)
     EXPECT_GT(correlation, -0.3)
@@ -169,9 +169,9 @@ TEST(XCReference, SlaterExchange_MultiDensity) {
         auto ref = SlaterRef::compute(rho_a, rho_b);
         auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
 
-        double exc = static_cast<double>(out.exc);
+        double f_xc = static_cast<double>(out.energy_density);
         // Exchange typically dominates (5-20x larger than correlation)
-        double ratio = std::abs(exc / ref.exc);
+        double ratio = std::abs(f_xc / ref.energy_density);
         EXPECT_GT(ratio, 0.9) << "Exchange should dominate at rho=" << rho;
         EXPECT_LT(ratio, 1.5) << "Correlation shouldn't be huge at rho=" << rho;
     }
@@ -204,7 +204,7 @@ TEST(XCReference, SlaterExchange_SpinPolarized) {
     auto ref_closed = SlaterRef::compute(rho / 2, rho / 2);
     auto ref_polar = SlaterRef::compute(rho, 1e-15);
 
-    double ratio = ref_polar.exc / ref_closed.exc;
+    double ratio = ref_polar.energy_density / ref_closed.energy_density;
     EXPECT_NEAR(ratio, std::cbrt(2.0), 1e-6)
         << "Spin scaling relation: ε_x(polar)/ε_x(unpolar) = 2^{1/3}";
 }
@@ -220,14 +220,14 @@ TEST(XCReference, VWN5_Unpolarized_MatchesIndependent) {
         double rho_a = rho / 2, rho_b = rho / 2;
         auto slater = SlaterRef::compute(rho_a, rho_b);
         double ec = vwn5_ec(rho_a, rho_b);
-        double exc_ref = slater.exc + ec;
+        double f_ref = slater.energy_density + (rho_a + rho_b) * ec;
 
         auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
-        double exc = static_cast<double>(out.exc);
+        double f_xc = static_cast<double>(out.energy_density);
 
-        EXPECT_NEAR(exc, exc_ref, 1e-6)
-            << "LSDA exc mismatch at rho=" << rho << " (got " << exc << ", ref "
-            << exc_ref << ")";
+        EXPECT_NEAR(f_xc, f_ref, (rho_a + rho_b) * 1e-6)
+            << "LSDA f_xc mismatch at rho=" << rho << " (got " << f_xc
+            << ", ref " << f_ref << ")";
     }
 }
 
@@ -245,12 +245,12 @@ TEST(XCReference, VWN5_SpinPolarized_MatchesIndependent) {
     for (auto [ra, rb] : points) {
         auto slater = SlaterRef::compute(ra, rb);
         double ec = vwn5_ec(ra, rb);
-        double exc_ref = slater.exc + ec;
+        double f_ref = slater.energy_density + (ra + rb) * ec;
 
         auto out = evaluate_xc(XCType::LSDA, double(ra), double(rb));
-        double exc = static_cast<double>(out.exc);
+        double f_xc = static_cast<double>(out.energy_density);
 
-        EXPECT_NEAR(exc, exc_ref, 1e-6)
+        EXPECT_NEAR(f_xc, f_ref, (ra + rb) * 1e-6)
             << "LSDA spin-polarized mismatch at rho_a=" << ra
             << " rho_b=" << rb;
     }
@@ -297,12 +297,12 @@ TEST(XCReference, PBE_ZeroGradient_CloseToButNotEqualLSDA) {
             evaluate_xc(XCType::PBE, double(rho / 2), double(rho / 2), 0, 0, 0);
 
         // Both should be negative (XC lowers energy).
-        EXPECT_LT(static_cast<double>(pbe.exc), 0.0)
-            << "PBE exc should be negative at rho=" << rho;
-        EXPECT_LT(static_cast<double>(lda.exc), 0.0)
-            << "LSDA exc should be negative at rho=" << rho;
+        EXPECT_LT(static_cast<double>(pbe.energy_density), 0.0)
+            << "PBE f_xc should be negative at rho=" << rho;
+        EXPECT_LT(static_cast<double>(lda.energy_density), 0.0)
+            << "LSDA f_xc should be negative at rho=" << rho;
         // They differ but by no more than ~mHa (PW92 vs VWN5 systematic gap).
-        EXPECT_LT(std::abs(pbe.exc - lda.exc), 5e-3)
+        EXPECT_LT(std::abs(pbe.energy_density - lda.energy_density), rho * 5e-3)
             << "PBE(PW92) vs LSDA(VWN5) should differ by < 5 mHa at rho="
             << rho;
     }
@@ -325,7 +325,7 @@ TEST(XCReference, PBE_EnhancementFactor) {
 
 TEST(XCReference, PBE_ExchangeMoreNegativeThanLDA) {
     // PBE exchange enhancement F_x >= 1, so |E_x^PBE| >= |E_x^LDA|.
-    // With gradient present, PBE exc should be more negative (due to exchange).
+    // With gradient present, PBE f_xc should be more negative (due to exchange).
     // Note: correlation correction may partially offset this.
     double rho = 0.3;
     double sigma = 0.1; // nonzero gradient
@@ -335,7 +335,8 @@ TEST(XCReference, PBE_ExchangeMoreNegativeThanLDA) {
 
     // PBE total might not always be more negative due to correlation GGA correction,
     // but the difference should be nonzero.
-    EXPECT_NE(static_cast<double>(pbe.exc), static_cast<double>(lda.exc))
+    EXPECT_NE(static_cast<double>(pbe.energy_density),
+              static_cast<double>(lda.energy_density))
         << "PBE with gradient must differ from LSDA";
 }
 
@@ -377,14 +378,14 @@ TEST(XCReference, LSDA_Total_Sweep) {
 
         auto slater = SlaterRef::compute(rho_a, rho_b);
         double ec = vwn5_ec(rho_a, rho_b);
-        double exc_ref = slater.exc + ec;
+        double f_ref = slater.energy_density + (rho_a + rho_b) * ec;
 
         auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
-        double exc = static_cast<double>(out.exc);
+        double f_xc = static_cast<double>(out.energy_density);
 
-        EXPECT_NEAR(exc, exc_ref, 1e-6)
+        EXPECT_NEAR(f_xc, f_ref, rho * 1e-6)
             << "LSDA total mismatch at rho=" << rho
-            << " (exchange=" << slater.exc << " corr=" << ec << ")";
+            << " (exchange=" << slater.energy_density << " corr=" << ec << ")";
     }
 }
 
@@ -402,10 +403,8 @@ TEST(XCReference, LSDA_Potential_FiniteDifference) {
     auto out_fwd = evaluate_xc(XCType::LSDA, double(rho_a + h), double(rho_b));
     auto out_bwd = evaluate_xc(XCType::LSDA, double(rho_a - h), double(rho_b));
 
-    double rho_fwd = (rho_a + h) + rho_b;
-    double rho_bwd = (rho_a - h) + rho_b;
-    double e_fwd = static_cast<double>(out_fwd.exc) * rho_fwd;
-    double e_bwd = static_cast<double>(out_bwd.exc) * rho_bwd;
+    double e_fwd = out_fwd.energy_density;
+    double e_bwd = out_bwd.energy_density;
     double vrho_fd = (e_fwd - e_bwd) / (2.0 * h);
 
     auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
@@ -430,10 +429,8 @@ TEST(XCReference, PBE_Potential_FiniteDifference) {
         evaluate_xc(XCType::PBE, double(rho_a - h), double(rho_b),
                     double(sigma_aa), double(sigma_ab), double(sigma_bb));
 
-    double rho_fwd = (rho_a + h) + rho_b;
-    double rho_bwd = (rho_a - h) + rho_b;
-    double e_fwd = static_cast<double>(out_fwd.exc) * rho_fwd;
-    double e_bwd = static_cast<double>(out_bwd.exc) * rho_bwd;
+    double e_fwd = out_fwd.energy_density;
+    double e_bwd = out_bwd.energy_density;
     double vrho_fd = (e_fwd - e_bwd) / (2.0 * h);
 
     auto out =
@@ -459,8 +456,8 @@ TEST(XCReference, PBE_Vsigma_FiniteDifference) {
                     double(sigma_aa - h), double(sigma_ab), double(sigma_bb));
 
     double rho = rho_a + rho_b;
-    double e_fwd = static_cast<double>(out_fwd.exc) * rho;
-    double e_bwd = static_cast<double>(out_bwd.exc) * rho;
+    double e_fwd = out_fwd.energy_density;
+    double e_bwd = out_bwd.energy_density;
     double vsigma_fd = (e_fwd - e_bwd) / (2.0 * h);
 
     auto out =

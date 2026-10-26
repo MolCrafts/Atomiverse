@@ -262,6 +262,19 @@ std::vector<double> integrate_products(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<double>& V_level, double eps);
 
+namespace internal {
+/// @brief Nuclear-center gradient of the potential energy from product density.
+/// @param mg Product grid hierarchy. @param products Geometry-fixed products.
+/// @param nb AO count. @param P Symmetric row-major density matrix.
+/// @param potential Potential on the finest grid [Hartree].
+/// @param basis_atoms Nuclear owner of each AO. @param n_atoms Nuclei count.
+/// @param eps Gaussian-tail screening. @return Center gradients [Ha/Bohr].
+std::vector<std::array<double, 3>> multigrid_density_center_gradient(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<double>& P, const std::vector<double>& potential,
+    const std::vector<int>& basis_atoms, int n_atoms, double eps);
+} // namespace internal
+
 /// @brief `collocate_products` with a per-image-cell density-matrix stack —
 ///        the Bloch-sampled product collocation. Each product weighs by
 ///        `D[tcell][μ·nb+ν]` instead of one shared `P`: for k-point sampling

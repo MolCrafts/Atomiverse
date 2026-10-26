@@ -1,11 +1,17 @@
 /// @file core/gto.h
-/// @brief Gaussian-type orbital normalization functions.
+/// @brief Gaussian normalization and stable scalar Boys integrals.
 ///
 /// Pure math, no backend dependency. Used by both CPU and CUDA code.
 /// CUDA-free header (uses only the C++ `<cmath>` header).
 #pragma once
 
 #include <cmath>
+
+#if defined(__CUDACC__)
+#define ATV_GTO_HD __host__ __device__
+#else
+#define ATV_GTO_HD
+#endif
 
 namespace ATV {
 
@@ -14,7 +20,7 @@ namespace ATV {
 ///   single primitive Gaussian exp(-alpha*r^2).
 /// @param alpha Gaussian exponent.
 /// @return Normalization factor.
-inline double phys_norm_s(double alpha) {
+ATV_GTO_HD inline double phys_norm_s(double alpha) {
     return std::pow(2.0 * alpha / M_PI, 0.75);
 }
 
@@ -22,7 +28,7 @@ inline double phys_norm_s(double alpha) {
 /// @details N = (128*alpha^5/pi^3)^{1/4} ensuring <x*g|x*g> = 1.
 /// @param alpha Gaussian exponent.
 /// @return Normalization factor.
-inline double phys_norm_p(double alpha) {
+ATV_GTO_HD inline double phys_norm_p(double alpha) {
     return std::pow(128.0 * std::pow(alpha, 5) / (M_PI * M_PI * M_PI), 0.25);
 }
 
@@ -86,31 +92,68 @@ inline double gto_norm(int l, double alpha) {
 /// @brief Boys function F_0(x) = integral_0^1 exp(-x*t^2) dt.
 /// @param x Non-negative argument.
 /// @return F_0(x).
-inline double boys_f0(double x) {
-    if (x < 1e-12)
-        return 1.0;
+ATV_GTO_HD inline double boys_f0(double x) {
+    if (x < 1e-8)
+        return 1.0 - x / 3.0 + x * x / 10.0;
     double sx = std::sqrt(x);
     return 0.5 * std::sqrt(M_PI / x) * std::erf(sx);
 }
 
 /// @brief General Boys function F_n(x) = integral_0^1 t^{2n} exp(-x*t^2) dt.
-/// @details Uses upward recurrence from F_0:
-///   F_n(x) = [(2n-1)*F_{n-1}(x) - exp(-x)] / (2x)  for x > threshold.
-///   F_n(0) = 1/(2n+1).
+/// @details For x < n+1/2, use the positive incomplete-gamma series
+/// exp(-x)/(2n+1) times sum_k x^k/(n+3/2)_k. Above that boundary,
+/// upward recurrence from F_0 has error amplification below one.
+/// F_n(0) = 1/(2n+1). The same scalar law runs on CPU and CUDA.
 /// @param n Order (n >= 0).
 /// @param x Non-negative argument.
 /// @return F_n(x).
-inline double boys_fn(int n, double x) {
+ATV_GTO_HD inline double boys_fn(int n, double x) {
     if (n == 0)
         return boys_f0(x);
-    if (x < 1e-12)
-        return 1.0 / (2 * n + 1);
+    if (x < n + 0.5) {
+        double term = 1.0 / (2.0 * n + 1.0);
+        double sum = term;
+        for (int k = 1;; ++k) {
+            term *= x / (static_cast<double>(n) + k + 0.5);
+            const double next = sum + term;
+            if (next == sum)
+                return std::exp(-x) * sum;
+            sum = next;
+        }
+    }
     double ex = std::exp(-x);
     double inv2x = 0.5 / x;
     double fn = boys_f0(x);
-    for (int k = 1; k <= n; ++k)
-        fn = ((2 * k - 1) * fn - ex) * inv2x;
+    for (int k = 0; k < n; ++k)
+        fn = ((2.0 * k + 1.0) * fn - ex) * inv2x;
     return fn;
 }
 
+/// @brief Fill Boys integrals F_0(x) through F_max_order(x).
+/// @details For small x, seed the highest order with the positive gamma
+/// series and recur downward without subtraction. Otherwise recur upward
+/// from F_0 where every error amplification factor is below one.
+/// @param max_order Highest requested order (non-negative).
+/// @param x Non-negative dimensionless argument.
+/// @param out Output array with at least max_order + 1 entries.
+ATV_GTO_HD inline void boys_sequence(int max_order, double x, double* out) {
+    if (max_order == 0) {
+        out[0] = boys_f0(x);
+        return;
+    }
+    const double ex = std::exp(-x);
+    if (x < static_cast<double>(max_order) + 0.5) {
+        out[max_order] = boys_fn(max_order, x);
+        for (int m = max_order - 1; m >= 0; --m)
+            out[m] = (2.0 * x * out[m + 1] + ex) / (2.0 * m + 1.0);
+        return;
+    }
+    out[0] = boys_f0(x);
+    const double inv2x = 0.5 / x;
+    for (int m = 0; m < max_order; ++m)
+        out[m + 1] = ((2.0 * m + 1.0) * out[m] - ex) * inv2x;
+}
+
 } // namespace ATV
+
+#undef ATV_GTO_HD

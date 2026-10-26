@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include <xsimd/xsimd.hpp>
@@ -965,6 +966,47 @@ double prim_overlap(const GridPrimitive& a, const GridPrimitive& b) {
     hermite_ensure(hx, hy, hz, key, a.alpha, b.alpha, a.center, b.center);
     return a.coeff * b.coeff * hx.S1d(a.l[0], b.l[0]) * hy.S1d(a.l[1], b.l[1])
            * hz.S1d(a.l[2], b.l[2]);
+}
+
+std::complex<double> prim_overlap_fourier(const GridPrimitive& a,
+                                          const GridPrimitive& b,
+                                          const double q[3]) {
+    if (!(a.alpha > 0.0) || !(b.alpha > 0.0) || !std::isfinite(a.alpha)
+        || !std::isfinite(b.alpha))
+        throw std::invalid_argument("prim_overlap_fourier: Gaussian exponents "
+                                    "must be finite and positive");
+    for (int d = 0; d < 3; ++d)
+        if (a.l[d] < 0 || b.l[d] < 0 || a.l[d] > kMaxAng || b.l[d] > kMaxAng)
+            throw std::invalid_argument("prim_overlap_fourier: Cartesian "
+                                        "angular power exceeds Hermite table");
+
+    thread_local HermiteTab hx, hy, hz;
+    thread_local HermiteGeomKey key;
+    hermite_ensure(hx, hy, hz, key, a.alpha, b.alpha, a.center, b.center);
+    HermiteTab* axes[3] = {&hx, &hy, &hz};
+    const double p = a.alpha + b.alpha;
+    double q2 = 0.0, phase = 0.0;
+    std::complex<double> angular{1.0, 0.0};
+    for (int d = 0; d < 3; ++d) {
+        // ∫ (∂/∂P)^t exp[−p(x−P)²] exp[−iqx] dx
+        // = (−iq)^t sqrt(π/p) exp[−q²/(4p)−iqP].
+        // Horner evaluation preserves every angular contribution; multiplying
+        // the zero-wavevector overlap by a scalar form factor would not.
+        axes[d]->fill_upto(a.l[d], b.l[d]);
+        const double* coefficients = axes[d]->memo[a.l[d]][b.l[d]];
+        const std::complex<double> minus_iq{0.0, -q[d]};
+        std::complex<double> polynomial{0.0, 0.0};
+        for (int t = a.l[d] + b.l[d]; t >= 0; --t)
+            polynomial = polynomial * minus_iq + coefficients[t];
+        angular *= polynomial;
+        const double P = (a.alpha * a.center[d] + b.alpha * b.center[d]) / p;
+        phase += q[d] * P;
+        q2 += q[d] * q[d];
+    }
+    const double scale =
+        a.coeff * b.coeff * std::pow(M_PI / p, 1.5) * std::exp(-q2 / (4.0 * p));
+    return scale * std::complex<double>{std::cos(phase), -std::sin(phase)}
+           * angular;
 }
 
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b) {

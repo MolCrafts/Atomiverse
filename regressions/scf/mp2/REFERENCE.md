@@ -2,6 +2,39 @@
 
 One case; every section below is run by `atv_regressions --case scf/mp2` and keeps its own oracle record.
 
+The `scs-mp2-h2o-sto3g`, `frozen-core-mp2-h2o` and `mp2-water-chain` sections accept
+`--device=cpu|cuda|both`. Their CUDA implementation uses the same geometries,
+bases, frozen-core choices and external PySCF energy pins below, with a
+1e-6 Hartree tolerance on the correlated total, correlation and available
+spin-channel pins. CUDA additionally checks Frame total-energy output in eV,
+the read-only Frame entry, nested accumulation and explicit rejection of
+unsupported force requests. These are energy gates; they do not establish
+CUDA MP2 gradients, device residency or performance.
+
+## Eight-water canonical RMP2 / STO-3G
+
+The `mp2-water-chain` section runs on CPU and CUDA. Molecule `w=0..7`
+has O(4w, 0, 0.1173), H(4w, 0.7572, -0.4692),
+H(4w, -0.7572, -0.4692), in Angstrom. This extends the single-water pin
+to 56 AOs and tests the translated, separated system used by the scaling
+benchmark. All five energies use a 1e-6 Hartree absolute gate.
+
+Offline oracle: PySCF 2.11.0, `cart=True`, `basis='sto-3g'`, RHF
+`init_guess='1e'`, `conv_tol=1e-12`, `max_cycle=200`, `diis_space=8`,
+`diis_start_cycle=1`, `damp=0`; then `mp.MP2(mf).kernel()`.
+An independent MINAO-started solve agrees within 2e-10 Hartree on the
+correlated total. Oracle runs are manual; the executable has no PySCF
+dependency. The local oracle build has no OpenMP, so its wall time is not
+a performance comparison.
+
+| Quantity | Hartree |
+| --- | ---: |
+| HF | -599.6949297548834 |
+| Correlation | -0.2851551624659191 |
+| Opposite spin | -0.2688466882176113 |
+| Same spin | -0.016308474248307774 |
+| Total | -599.9800849173494 |
+
 
 ## Reference — H2O RMP2/STO-3G analytic nuclear gradient
 

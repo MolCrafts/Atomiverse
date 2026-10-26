@@ -36,50 +36,18 @@ int encode_sc(int ia, int ib, int ic, int iu, int n_unit, int nb, int nc) {
 /// (phonopy-style Fourier sum).
 xt::xtensor<std::complex<double>, 2>
 dynamical_matrix_q(const xt::xtensor<double, 2>& hessian_sc,
-                   const std::vector<double>& mass, int n_unit, int na, int nb,
-                   int nc, const std::array<double, 3>& q_frac) {
-    const int dim = 3 * n_unit;
-    const int n_sc = n_unit * na * nb * nc;
-    const double uconv = nist::EV_PER_ANG2_TO_HARTREE_PER_BOHR2;
-
-    xt::xtensor<std::complex<double>, 2> D =
-        xt::zeros<std::complex<double>>({dim, dim});
-
-    for (int i = 0; i < n_unit; ++i) {
-        const int I = encode_sc(0, 0, 0, i, n_unit, nb, nc);
-        const double inv_sqrt_mi =
-            1.0 / std::sqrt(mass[static_cast<std::size_t>(i)]);
-        for (int ja = 0; ja < na; ++ja) {
-            for (int jb = 0; jb < nb; ++jb) {
-                for (int jc = 0; jc < nc; ++jc) {
-                    // phase = q · R, R in fractional cell indices of the
-                    // unit lattice → 2π (q_a ja + q_b jb + q_c jc).
-                    const double phase =
-                        kTwoPi
-                        * (q_frac[0] * static_cast<double>(ja)
-                           + q_frac[1] * static_cast<double>(jb)
-                           + q_frac[2] * static_cast<double>(jc));
-                    const std::complex<double> w(std::cos(phase),
-                                                 std::sin(phase));
-                    for (int j = 0; j < n_unit; ++j) {
-                        const int J = encode_sc(ja, jb, jc, j, n_unit, nb, nc);
-                        if (I >= n_sc || J >= n_sc)
-                            continue;
-                        const double inv_sqrt_mj =
-                            1.0 / std::sqrt(mass[static_cast<std::size_t>(j)]);
-                        const double scale = uconv * inv_sqrt_mi * inv_sqrt_mj;
-                        for (int a = 0; a < 3; ++a) {
-                            for (int b = 0; b < 3; ++b) {
-                                const double phi =
-                                    hessian_sc(3 * I + a, 3 * J + b);
-                                D(3 * i + a, 3 * j + b) += scale * phi * w;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+                   const cpu::Frame& unit, const std::vector<double>& mass,
+                   int na, int nb, int nc,
+                   const std::array<double, 3>& q_frac) {
+    const int dim = 3 * unit.nlocal();
+    auto D = PhononDispersion{}.force_constants_at_q(hessian_sc, unit, na, nb,
+                                                     nc, q_frac);
+    for (int i = 0; i < dim; ++i)
+        for (int j = 0; j < dim; ++j)
+            D(i, j) *=
+                nist::EV_PER_ANG2_TO_HARTREE_PER_BOHR2
+                * (1.0 / std::sqrt(mass[static_cast<std::size_t>(i / 3)]))
+                * (1.0 / std::sqrt(mass[static_cast<std::size_t>(j / 3)]));
 
     // Enforce Hermiticity (numerical FD noise).
     for (int p = 0; p < dim; ++p) {
@@ -147,10 +115,10 @@ std::vector<double> lambdas_to_cm(const std::vector<double>& lambdas) {
 }
 
 std::vector<double> omega_at_q(const xt::xtensor<double, 2>& hessian_sc,
-                               const std::vector<double>& mass, int n_unit,
-                               int na, int nb, int nc,
+                               const std::vector<double>& mass,
+                               const cpu::Frame& unit, int na, int nb, int nc,
                                const std::array<double, 3>& q_frac) {
-    auto D = dynamical_matrix_q(hessian_sc, mass, n_unit, na, nb, nc, q_frac);
+    auto D = dynamical_matrix_q(hessian_sc, unit, mass, na, nb, nc, q_frac);
     auto lam = hermitian_eigenvalues(D);
     return lambdas_to_cm(lam);
 }
@@ -204,6 +172,55 @@ std::vector<std::array<double, 3>> lerp_segment(const std::array<double, 3>& a,
 
 } // namespace
 
+xt::xtensor<std::complex<double>, 2> PhononDispersion::force_constants_at_q(
+    const xt::xtensor<double, 2>& hessian_sc, const cpu::Frame& unit, int na,
+    int nb, int nc, const std::array<double, 3>& q_frac,
+    double* max_asymmetry) const {
+    validate_inputs(hessian_sc, unit, na, nb, nc);
+    const int n_unit = unit.nlocal();
+    const int dim = 3 * n_unit;
+    auto C = xt::xtensor<std::complex<double>, 2>(
+        xt::zeros<std::complex<double>>({dim, dim}));
+    for (int i = 0; i < n_unit; ++i) {
+        const int I = encode_sc(0, 0, 0, i, n_unit, nb, nc);
+        for (int ja = 0; ja < na; ++ja) {
+            for (int jb = 0; jb < nb; ++jb) {
+                for (int jc = 0; jc < nc; ++jc) {
+                    // phase = q · R, R in fractional cell indices of the
+                    // unit lattice → 2π (q_a ja + q_b jb + q_c jc).
+                    const double phase =
+                        kTwoPi
+                        * (q_frac[0] * static_cast<double>(ja)
+                           + q_frac[1] * static_cast<double>(jb)
+                           + q_frac[2] * static_cast<double>(jc));
+                    const std::complex<double> w(std::cos(phase),
+                                                 std::sin(phase));
+                    for (int j = 0; j < n_unit; ++j) {
+                        const int J = encode_sc(ja, jb, jc, j, n_unit, nb, nc);
+                        for (int a = 0; a < 3; ++a) {
+                            for (int b = 0; b < 3; ++b) {
+                                const double phi =
+                                    hessian_sc(3 * I + a, 3 * J + b);
+                                C(3 * i + a, 3 * j + b) += phi * w;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (max_asymmetry) {
+        double asymmetry = 0;
+        for (int i = 0; i < dim; ++i)
+            for (int j = i; j < dim; ++j)
+                asymmetry = std::max(
+                    asymmetry, 0.5 * std::abs(C(i, j) - std::conj(C(j, i))));
+        *max_asymmetry = asymmetry;
+    }
+    return C;
+}
+
 void PhononDispersion::set_diamond_path(int n_seg) {
     // FCC/diamond primitive-cell path (fractional), same as Bands.
     const std::array<double, 3> G = {0.0, 0.0, 0.0};
@@ -251,7 +268,7 @@ PhononDispersion::compute(const xt::xtensor<double, 2>& hessian_sc,
 
     for (std::size_t iq = 0; iq < qs.size(); ++iq) {
         out.frequencies_cm[iq] =
-            omega_at_q(hessian_sc, mass, n_unit, na, nb, nc, qs[iq]);
+            omega_at_q(hessian_sc, mass, unit, na, nb, nc, qs[iq]);
     }
     return out;
 }
@@ -260,9 +277,8 @@ std::vector<double> PhononDispersion::frequencies_at_q(
     const xt::xtensor<double, 2>& hessian_sc, const cpu::Frame& unit, int na,
     int nb, int nc, const std::array<double, 3>& q_frac) const {
     validate_inputs(hessian_sc, unit, na, nb, nc);
-    const int n_unit = unit.nlocal();
     const auto mass = masses_from_frame(unit);
-    return omega_at_q(hessian_sc, mass, n_unit, na, nb, nc, q_frac);
+    return omega_at_q(hessian_sc, mass, unit, na, nb, nc, q_frac);
 }
 
 } // namespace vib

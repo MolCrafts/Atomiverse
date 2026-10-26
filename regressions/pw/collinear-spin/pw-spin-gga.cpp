@@ -4,6 +4,7 @@
 ///
 /// Requires ATV_BUILD_PW. No live CP2K/QE.
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -39,12 +40,13 @@ cpu::Frame o2_frame() {
 } // namespace
 
 int run() {
+    const auto start = std::chrono::steady_clock::now();
     // Offline pins (REFERENCE.md). Magnetization is the literature hard gate.
     constexpr double want_mag = 2.0;
     constexpr double tol_mag = 1e-9;
     // Total energy [Ha] at the exact settings below with true collinear
-    // spin-GGA PBE (spectral ∇ρ_σ). Offline method pin 2026-07-26.
-    constexpr double want_e_ha = -28.7585210635;
+    // spin-GGA PBE (spectral ∇ρ_σ). QE 7.5 printed -57.46535365 Ry.
+    constexpr double want_e_ha = -28.7326768250;
     constexpr double tol_e_ha = 1.0e-3;
     // GGA activation: |E_PBE − E_LSDA| floor [Ha] on the same spin O₂ setup.
     constexpr double de_floor_ha = 1.0e-4;
@@ -62,8 +64,8 @@ int run() {
     auto frame = o2_frame();
 
     PW pbe{UpfPseudopotential{upf}, 12.0, 1, cpu::scf::XCType::PBE};
-    pbe.tol = 5e-4;
-    pbe.max_iter = 60;
+    pbe.tol = 1e-7;
+    pbe.max_iter = 200;
     pbe.mix_beta = 0.3;
     pbe.pulay_depth = 5;
     pbe.spin_polarized = true;
@@ -95,8 +97,8 @@ int run() {
     // LSDA spin twin for GGA activation (same geometry / occupations).
     auto frame_lsda = o2_frame();
     PW lsda{UpfPseudopotential{upf}, 12.0, 1, cpu::scf::XCType::LSDA};
-    lsda.tol = 5e-4;
-    lsda.max_iter = 60;
+    lsda.tol = 1e-7;
+    lsda.max_iter = 200;
     lsda.mix_beta = 0.3;
     lsda.pulay_depth = 5;
     lsda.spin_polarized = true;
@@ -129,6 +131,12 @@ int run() {
     if (!ok)
         return 1;
     std::printf("PASS: pw-spin-gga (mag + true spin-GGA energy + LSDA gap)\n");
+    const double wall =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall);
+    if (wall > 60.0)
+        return 1;
     return 0;
 }
 

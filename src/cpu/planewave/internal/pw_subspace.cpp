@@ -236,6 +236,10 @@ int init_subspace(const PWWorkspace& ws, int n_bands,
                   std::vector<std::complex<AccReal>>& sub_vectors) {
     int ng = ws.n_g;
     int nb = n_bands;
+    const bool have_wavefunctions =
+        ws.wfc.dimension() == 2
+        && ws.wfc.shape()[0] >= static_cast<std::size_t>(nb)
+        && ws.wfc.shape()[1] == static_cast<std::size_t>(ng);
 
     // ── Initialize subspace: lowest T(G) plane waves ──
     struct DiagElem {
@@ -261,7 +265,8 @@ int init_subspace(const PWWorkspace& ws, int n_bands,
     } else {
         n_sub = std::min(ng, nb * 4);
     }
-    sub_vectors.assign(static_cast<size_t>(n_sub) * ng,
+    const int warm_states = have_wavefunctions ? nb : 0;
+    sub_vectors.assign(static_cast<std::size_t>(n_sub + warm_states) * ng,
                        std::complex<AccReal>(0, 0));
 
     if (n_atom_states >= nb) {
@@ -328,12 +333,24 @@ int init_subspace(const PWWorkspace& ws, int n_bands,
         }
     }
 
+    if (have_wavefunctions) {
+        // Keep the atomic/kinetic seed pool: after H changes, old occupied
+        // vectors alone could be an exact excited invariant subspace with
+        // zero residual. Append coefficients only as numerical guesses; all
+        // H images are recomputed in the current Davidson solve.
+        for (int band = 0; band < nb; ++band)
+            for (int ig = 0; ig < ng; ++ig)
+                sub_vectors[static_cast<std::size_t>(n_sub + band) * ng + ig] =
+                    ws.wfc(band, ig);
+        n_sub += nb;
+    }
+
     // ── Orthonormalize (modified Gram-Schmidt, drop dependent columns) ──
     // The Davidson Rayleigh-Ritz treats the subspace as orthonormal; the
-    // atomic-wavefunction guess is strongly non-orthogonal for multi-atom
-    // cells (bonding/antibonding overlap), which biases the eigenpairs and
-    // puts a noise floor under the SCF density. Plane-wave columns pass
-    // through unchanged.
+    // atomic-wavefunction guess can be strongly non-orthogonal for multi-atom
+    // cells. Reused coefficients pass through the same two-pass projection,
+    // dependent-vector removal and plane-wave top-up; no previous H image or
+    // physical eigenvalue is reused.
     int kept = 0;
     for (int j = 0; j < n_sub; ++j) {
         auto* vj = &sub_vectors[static_cast<size_t>(j) * ng];

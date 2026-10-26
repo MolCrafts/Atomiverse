@@ -2,7 +2,7 @@
 /// @brief Implementation of pure GGA XC paths on the grid (see header).
 ///
 /// GGA potential derivation (closed shell). The XC energy is
-///   E_xc = integral e(rho_a,rho_b,sigma_aa,sigma_ab,sigma_bb) dr,  e = rho*exc,
+///   E_xc = integral f_xc(rho_a,rho_b,sigma_aa,sigma_ab,sigma_bb) dr,
 /// with sigma_aa=|grad rho_a|^2, sigma_ab=grad rho_a . grad rho_b, etc. The alpha
 /// functional derivative is
 ///   v_a = de/drho_a - div[ de/d(grad rho_a) ]
@@ -33,7 +33,12 @@ constexpr long kXcChunks = 256;
 } // namespace
 
 XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
-                     cpu::scf::XCType xc) {
+                     cpu::scf::XCType xc, electronic::XcOrder order) {
+    if (order != electronic::XcOrder::Energy
+        && order != electronic::XcOrder::First)
+        throw std::invalid_argument(
+            "xc_grid_gga: unsupported derivative order");
+    const bool potential = order == electronic::XcOrder::First;
     if (!cpu::scf::is_gga(xc)
         || cpu::scf::hybrid_exchange_fraction(xc) != 0.0) {
         throw std::invalid_argument(
@@ -47,11 +52,13 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
     const std::array<std::vector<double>, 3> grad = gradient(grid, rho_r);
 
     XcOnGrid out;
-    out.vxc_r.resize(static_cast<std::size_t>(ng));
+    if (potential)
+        out.vxc_r.resize(static_cast<std::size_t>(ng));
     // flux = (vsigma_aa + 1/2 vsigma_ab) grad rho — filled without zero pass.
     std::array<std::vector<double>, 3> flux;
-    for (int d = 0; d < 3; ++d)
-        flux[d].resize(static_cast<std::size_t>(ng));
+    if (potential)
+        for (int d = 0; d < 3; ++d)
+            flux[d].resize(static_cast<std::size_t>(ng));
 
     const device::ChunkedRange range(ng, kXcChunks);
     std::vector<double> part(static_cast<std::size_t>(range.chunks()), 0.0);
@@ -75,7 +82,9 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
             const double s = 0.25 * sigma;
             const ATV::cpu::scf::XCOutput xco =
                 ATV::cpu::scf::evaluate_xc(xc, ra, rb, s, s, s);
-            acc += w * rho * xco.exc;
+            acc += w * xco.energy_density;
+            if (!potential)
+                continue;
             vxc_p[g] =
                 xco.vrho_alpha; // local part; divergence term added below
             const double vsig_eff = xco.vsigma_aa + 0.5 * xco.vsigma_ab;
@@ -89,6 +98,9 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
     for (double p : part)
         e += p;
     out.e_xc = e;
+
+    if (!potential)
+        return out;
 
     const std::vector<double> divflux = divergence(grid, flux);
     const double* div_p = divflux.data();
@@ -133,7 +145,12 @@ XcOnGrid xc_grid_optb88_vdw(const UniformGrid& grid,
 XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
                               const std::vector<double>& rho_a,
                               const std::vector<double>& rho_b,
-                              cpu::scf::XCType xc) {
+                              cpu::scf::XCType xc, electronic::XcOrder order) {
+    if (order != electronic::XcOrder::Energy
+        && order != electronic::XcOrder::First)
+        throw std::invalid_argument(
+            "xc_grid_gga_spin: unsupported derivative order");
+    const bool potential = order == electronic::XcOrder::First;
     if (!cpu::scf::is_gga(xc)
         || cpu::scf::hybrid_exchange_fraction(xc) != 0.0) {
         throw std::invalid_argument(
@@ -152,14 +169,17 @@ XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
     const std::array<std::vector<double>, 3> gb = gradient(grid, rho_b);
 
     XcOnGridSpin out;
-    out.vxc_a.assign(static_cast<std::size_t>(ng), 0.0);
-    out.vxc_b.assign(static_cast<std::size_t>(ng), 0.0);
+    if (potential) {
+        out.vxc_a.resize(static_cast<std::size_t>(ng));
+        out.vxc_b.resize(static_cast<std::size_t>(ng));
+    }
     std::array<std::vector<double>, 3> flux_a;
     std::array<std::vector<double>, 3> flux_b;
-    for (int d = 0; d < 3; ++d) {
-        flux_a[d].assign(static_cast<std::size_t>(ng), 0.0);
-        flux_b[d].assign(static_cast<std::size_t>(ng), 0.0);
-    }
+    if (potential)
+        for (int d = 0; d < 3; ++d) {
+            flux_a[d].resize(static_cast<std::size_t>(ng));
+            flux_b[d].resize(static_cast<std::size_t>(ng));
+        }
 
     const device::ChunkedRange range(ng, kXcChunks);
     std::vector<double> part(static_cast<std::size_t>(range.chunks()), 0.0);
@@ -176,7 +196,9 @@ XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
             const double sab = gax * gbx + gay * gby + gaz * gbz;
             const ATV::cpu::scf::XCOutput xco =
                 ATV::cpu::scf::evaluate_xc(xc, ra, rb, saa, sab, sbb);
-            acc += w * (ra + rb) * xco.exc;
+            acc += w * xco.energy_density;
+            if (!potential)
+                continue;
             out.vxc_a[static_cast<std::size_t>(g)] = xco.vrho_alpha;
             out.vxc_b[static_cast<std::size_t>(g)] = xco.vrho_beta;
             // flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β
@@ -197,6 +219,9 @@ XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
     for (double p : part)
         e += p;
     out.e_xc = e;
+
+    if (!potential)
+        return out;
 
     const std::vector<double> div_a = divergence(grid, flux_a);
     const std::vector<double> div_b = divergence(grid, flux_b);

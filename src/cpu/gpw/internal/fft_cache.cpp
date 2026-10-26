@@ -4,6 +4,7 @@
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <tuple>
@@ -51,8 +52,8 @@ void ensure_fftw_threads() {
 using ShapeKey = std::tuple<int, int, int>;
 
 // Prefer MEASURE (timed once per shape) over ESTIMATE for production SCF grids.
-// MEASURE overwrites the planning buffers — only call after buffers exist and
-// before any physics content is written.
+// MEASURE overwrites planning buffers. Eager plans precede physics writes;
+// lazy single-transform plans use temporary buffers instead of live scratch.
 constexpr unsigned kPlanFlags = FFTW_MEASURE;
 // howmany=3 multi-out plans are larger and only used on GGA paths; ESTIMATE
 // avoids a second cold MEASURE tax when LDA/Poisson already paid for r2c/c2r.
@@ -73,21 +74,31 @@ R2cFft::R2cFft(int n0, int n1, int n2)
         throw std::invalid_argument("R2cFft: non-positive grid shape");
     r_.resize(static_cast<std::size_t>(ntot_));
     c_.resize(static_cast<std::size_t>(ncplx_));
-    // Single-transform plans only at first shape touch. howmany=3 multi-out
-    // plans (GGA gradient / divergence) are built lazily on first many_* use
-    // so LDA / MT Poisson twins (UKS O₂ Padé) do not pay 2× MEASURE cold cost.
+    // Forward-only auxiliary MT grids never need a backward plan. The latter
+    // and GGA howmany=3 plans are created only when their transforms are used.
     std::lock_guard<std::mutex> lock(fftw_plan_mutex());
     ensure_fftw_threads();
     fwd_ = fftw_plan_dft_r2c_3d(n0_, n1_, n2_, r(), c(), kPlanFlags);
-    bwd_ = fftw_plan_dft_c2r_3d(n0_, n1_, n2_, c(), r(), kPlanFlags);
-    if (!fwd_ || !bwd_) {
-        if (fwd_)
-            fftw_destroy_plan(fwd_);
-        if (bwd_)
-            fftw_destroy_plan(bwd_);
-        fwd_ = bwd_ = nullptr;
-        throw std::runtime_error("R2cFft: fftw_plan_dft_* failed");
-    }
+    if (!fwd_)
+        throw std::runtime_error("R2cFft: fftw_plan_dft_r2c_3d failed");
+}
+
+void R2cFft::ensure_backward_plan() {
+    if (bwd_)
+        return;
+    // MEASURE may destroy both arrays. A caller can already have populated
+    // primary, alternate or external buffers, so none may be planning scratch.
+    // Execution always uses FFTW's new-array API after these buffers are freed.
+    FftwBuffer<double> planning_r(static_cast<std::size_t>(ntot_));
+    FftwBuffer<fftw_complex> planning_c(static_cast<std::size_t>(ncplx_));
+    std::lock_guard<std::mutex> lock(fftw_plan_mutex());
+    if (bwd_)
+        return;
+    ensure_fftw_threads();
+    bwd_ = fftw_plan_dft_c2r_3d(n0_, n1_, n2_, planning_c.data(),
+                                planning_r.data(), kPlanFlags);
+    if (!bwd_)
+        throw std::runtime_error("R2cFft: fftw_plan_dft_c2r_3d failed");
 }
 
 // Lazy howmany=3 plans + buffers for GGA paths only (see R2cFft ctor).
@@ -162,7 +173,10 @@ fftw_complex* R2cFft::c_many() {
     return c_many_.data();
 }
 
-void R2cFft::execute_c2r_alt() { fftw_execute_dft_c2r(bwd_, c2(), r2()); }
+void R2cFft::execute_c2r_alt() {
+    ensure_backward_plan();
+    fftw_execute_dft_c2r(bwd_, c2(), r2());
+}
 
 void R2cFft::execute_many_r2c() {
     ensure_many_plans();
@@ -177,16 +191,18 @@ void R2cFft::execute_many_c2r() {
 R2cFft& R2cFft::for_shape(int n0, int n1, int n2) {
     // Thread-local map: each OpenMP thread owns its plans + scratch (no
     // buffer races). First touch of a shape pays MEASURE plan cost once.
-    thread_local std::map<ShapeKey, R2cFft*> cache;
+    using OwnedFft = std::unique_ptr<R2cFft, void (*)(R2cFft*)>;
+    thread_local std::map<ShapeKey, OwnedFft> cache;
     const ShapeKey key{n0, n1, n2};
     auto it = cache.find(key);
     if (it != cache.end())
         return *it->second;
-    // Leaked deliberately until thread exit: plans must outlive all GPW calls
-    // on this thread; process teardown destroys FFTW state anyway.
-    auto* p = new R2cFft(n0, n1, n2);
-    cache.emplace(key, p);
-    return *p;
+    // The deleter shares this member's access to the private destructor.
+    // Ownership follows the thread; references stay stable as the cache grows.
+    OwnedFft plan(new R2cFft(n0, n1, n2), [](R2cFft* p) { delete p; });
+    auto& result = *plan;
+    cache.emplace(key, std::move(plan));
+    return result;
 }
 
 // ── C2cFft ──────────────────────────────────────────────────────────────────
@@ -223,14 +239,16 @@ C2cFft::~C2cFft() {
 }
 
 C2cFft& C2cFft::for_shape(int n0, int n1, int n2) {
-    thread_local std::map<ShapeKey, C2cFft*> cache;
+    using OwnedFft = std::unique_ptr<C2cFft, void (*)(C2cFft*)>;
+    thread_local std::map<ShapeKey, OwnedFft> cache;
     const ShapeKey key{n0, n1, n2};
     auto it = cache.find(key);
     if (it != cache.end())
         return *it->second;
-    auto* p = new C2cFft(n0, n1, n2);
-    cache.emplace(key, p);
-    return *p;
+    OwnedFft plan(new C2cFft(n0, n1, n2), [](C2cFft* p) { delete p; });
+    auto& result = *plan;
+    cache.emplace(key, std::move(plan));
+    return result;
 }
 
 } // namespace gpw

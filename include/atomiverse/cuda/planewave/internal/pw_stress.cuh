@@ -1,5 +1,5 @@
 /// @file cuda/planewave/internal/pw_stress.cuh
-/// @brief Device Nielsen–Martin analytic cell stress for plane-wave DFT.
+/// @brief Device one-SCF frozen-density NSCF strain-FD cell stress.
 ///
 /// CUDA twin of `cpu::pw::internal::pw_stress_analytic_impl`: one device SCF
 /// then Hellmann–Feynman strain-FD of the non-self-consistent total / free
@@ -20,10 +20,11 @@ namespace cuda {
 namespace pw {
 namespace internal {
 
-/// @brief Nielsen–Martin analytic stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
+/// @brief Frozen-density NSCF strain-FD stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 ///
 /// Runs a full device SCF at the reference geometry, then 12 device NSCF
-/// evaluations under ±h symmetric strain (density remapped Ω₀/Ω). Frame is
+/// evaluations under ±h symmetric strain, h=2e-3 (density remapped Ω₀/Ω).
+/// This is not a closed-form tensor. Frame is
 /// not mutated. Restricted metallic smear (when `smearing != none`) uses
 /// fractional occupations and the Mermin free energy on both the reference
 /// SCF and the NSCF strain samples. Collinear fixed-occupation UKS

@@ -7,13 +7,17 @@
 #include "atomiverse/cpu/gpw/internal/rvv10.h"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <complex>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <vector>
 
 #include <fftw3.h>
 
+#include "atomiverse/cpu/device/chunked_range.h"
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
 #include "atomiverse/cpu/gpw/internal/rvv10_kernel_data.h"
@@ -191,15 +195,19 @@ void rvv10_q0(const std::vector<double>& rho, const std::vector<double>& sigma,
 
 Rvv10Result rvv10_energy(const UniformGrid& grid,
                          const std::vector<double>& rho,
-                         const std::vector<double>& sigma, double b, double C,
-                         bool want_potential) {
+                         const std::array<std::vector<double>, 3>& grad_rho,
+                         double b, double C, bool want_potential) {
     using namespace rvv10_data;
+    const bool prof = std::getenv("ATV_GPW_PROF") != nullptr;
+    const auto profile_start = std::chrono::steady_clock::now();
     const int n0 = grid.n[0];
     const int n1 = grid.n[1];
     const int n2 = grid.n[2];
     const long ntot = static_cast<long>(n0) * n1 * n2;
     if (static_cast<long>(rho.size()) != ntot
-        || static_cast<long>(sigma.size()) != ntot)
+        || static_cast<long>(grad_rho[0].size()) != ntot
+        || static_cast<long>(grad_rho[1].size()) != ntot
+        || static_cast<long>(grad_rho[2].size()) != ntot)
         throw std::runtime_error("rVV10: density size mismatch vs grid");
 
     const double qcut = kRvv10QCut;
@@ -208,11 +216,17 @@ Rvv10Result rvv10_energy(const UniformGrid& grid,
 
     // q0 + derivatives (CP2K get_q0_on_grid_rvv10)
     std::vector<double> q0(static_cast<std::size_t>(ntot));
-    std::vector<double> dq0_drho(static_cast<std::size_t>(ntot), 0.0);
-    std::vector<double> dq0_dgradrho(static_cast<std::size_t>(ntot), 0.0);
+    std::vector<double> dq0_drho(
+        want_potential ? static_cast<std::size_t>(ntot) : 0, 0.0);
+    std::vector<double> dq0_dgradrho(
+        want_potential ? static_cast<std::size_t>(ntot) : 0, 0.0);
+#pragma omp parallel for schedule(static)
     for (long g = 0; g < ntot; ++g) {
         const double mrho = rho[static_cast<std::size_t>(g)];
-        const double gmod2 = sigma[static_cast<std::size_t>(g)];
+        const double gx = grad_rho[0][static_cast<std::size_t>(g)];
+        const double gy = grad_rho[1][static_cast<std::size_t>(g)];
+        const double gz = grad_rho[2][static_cast<std::size_t>(g)];
+        const double gmod2 = gx * gx + gy * gy + gz * gz;
         if (mrho < kRhoCut) {
             q0[static_cast<std::size_t>(g)] = qcut;
             continue;
@@ -230,6 +244,8 @@ Rvv10Result rvv10_energy(const UniformGrid& grid,
         if (qsat < qmin)
             qsat = qmin;
         q0[static_cast<std::size_t>(g)] = qsat;
+        if (!want_potential)
+            continue;
 
         const double dw0_dn =
             1.0 / (2.0 * w0) * (16.0 / 3.0 * kPi - 4.0 * wg2 / mrho);
@@ -256,31 +272,37 @@ Rvv10Result rvv10_energy(const UniformGrid& grid,
     const long ncplx = static_cast<long>(n0) * n1 * n2c;
     const int nalpha = kNAlpha;
 
-    double* rbuf = static_cast<double*>(
-        fftw_malloc(sizeof(double) * static_cast<std::size_t>(ntot * nalpha)));
-    fftw_complex* cbuf = static_cast<fftw_complex*>(fftw_malloc(
-        sizeof(fftw_complex) * static_cast<std::size_t>(ncplx * nalpha)));
-    if (!rbuf || !cbuf)
-        throw std::runtime_error("rVV10: FFTW alloc failed");
+    FftwBuffer<double> real_storage(static_cast<std::size_t>(ntot) * nalpha);
+    FftwBuffer<fftw_complex> complex_storage(static_cast<std::size_t>(ncplx)
+                                             * nalpha);
+    double* rbuf = real_storage.data();
+    fftw_complex* cbuf = complex_storage.data();
 
-    std::vector<double> ptmp(static_cast<std::size_t>(nalpha));
     double nelec = 0.0;
-    for (long g = 0; g < ntot; ++g) {
-        const double rg = rho[static_cast<std::size_t>(g)];
-        nelec += rg;
-        if (rg < kRhoCut) {
+    for (const double density : rho)
+        nelec += density;
+#pragma omp parallel
+    {
+        std::array<double, kNAlpha> ptmp;
+#pragma omp for schedule(static)
+        for (long g = 0; g < ntot; ++g) {
+            const double rg = rho[static_cast<std::size_t>(g)];
+            if (rg < kRhoCut) {
+                for (int a = 0; a < nalpha; ++a)
+                    rbuf[a * ntot + g] = 0.0;
+                continue;
+            }
+            palpha_and_deriv_at_q(qm, d2y, nalpha,
+                                  q0[static_cast<std::size_t>(g)], ptmp.data(),
+                                  nullptr);
+            const double pref = const_theta * std::pow(rg, 0.75);
             for (int a = 0; a < nalpha; ++a)
-                rbuf[a * ntot + g] = 0.0;
-            continue;
+                rbuf[a * ntot + g] = pref * ptmp[static_cast<std::size_t>(a)];
         }
-        palpha_and_deriv_at_q(qm, d2y, nalpha, q0[static_cast<std::size_t>(g)],
-                              ptmp.data(), nullptr);
-        const double pref = const_theta * std::pow(rg, 0.75);
-        for (int a = 0; a < nalpha; ++a)
-            rbuf[a * ntot + g] = pref * ptmp[static_cast<std::size_t>(a)];
     }
     nelec *= dV;
 
+    const auto theta_end = std::chrono::steady_clock::now();
     R2cFft& fft = R2cFft::for_shape(n0, n1, n2);
     for (int a = 0; a < nalpha; ++a) {
         double* rin = rbuf + a * ntot;
@@ -288,58 +310,86 @@ Rvv10Result rvv10_energy(const UniformGrid& grid,
         fft.execute_r2c(rin, cout);
     }
 
+    const auto forward_end = std::chrono::steady_clock::now();
     const double two_pi = 2.0 * kPi;
     const double gx_unit = two_pi / grid.L[0];
     const double gy_unit = two_pi / grid.L[1];
     const double gz_unit = two_pi / grid.L[2];
 
-    std::vector<double> kernel_aa(static_cast<std::size_t>(nalpha * nalpha));
-    double energy = 0.0;
-
-    for (int i0 = 0; i0 < n0; ++i0) {
-        const int m0 = (i0 <= n0 / 2) ? i0 : i0 - n0;
-        const double gx = m0 * gx_unit;
-        for (int i1 = 0; i1 < n1; ++i1) {
+    // The table cardinality is the compile-time kNAlpha for this functional.
+    // Load immutable data before entering workers (inflate errors propagate).
+    (void)kernel_kaa();
+    const device::ChunkedRange reciprocal_chunks(ncplx, 64);
+    std::vector<double> partial_energy(
+        static_cast<std::size_t>(reciprocal_chunks.chunks()), 0.0);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (long chunk = 0; chunk < reciprocal_chunks.chunks(); ++chunk) {
+        std::array<double, kNAlpha * kNAlpha> kernel_aa;
+        std::array<std::complex<double>, kNAlpha> theta;
+        double energy_chunk = 0.0;
+        for (long kindex = reciprocal_chunks.begin(chunk);
+             kindex < reciprocal_chunks.end(chunk); ++kindex) {
+            const int i2 = static_cast<int>(kindex % n2c);
+            const int i1 = static_cast<int>((kindex / n2c) % n1);
+            const int i0 =
+                static_cast<int>(kindex / (static_cast<long>(n1) * n2c));
+            const int m0 = (i0 <= n0 / 2) ? i0 : i0 - n0;
             const int m1 = (i1 <= n1 / 2) ? i1 : i1 - n1;
-            const double gy = m1 * gy_unit;
-            for (int i2 = 0; i2 < n2c; ++i2) {
-                const double gz = i2 * gz_unit;
-                const long kindex =
-                    (static_cast<long>(i0) * n1 + i1) * n2c + i2;
-                const int weight =
-                    (i2 == 0 || (n2 % 2 == 0 && i2 == n2c - 1)) ? 1 : 2;
-                const double k = std::sqrt(gx * gx + gy * gy + gz * gz);
-                interpolate_kernel_linear(k, kernel_aa.data());
-
-                std::vector<std::complex<double>> theta(
-                    static_cast<std::size_t>(nalpha));
-                for (int a = 0; a < nalpha; ++a) {
-                    const fftw_complex& th = cbuf[a * ncplx + kindex];
-                    theta[static_cast<std::size_t>(a)] = {th[0], th[1]};
+            const double gx = m0 * gx_unit, gy = m1 * gy_unit,
+                         gz = i2 * gz_unit;
+            const int weight =
+                (i2 == 0 || (n2 % 2 == 0 && i2 == n2c - 1)) ? 1 : 2;
+            const double k = std::sqrt(gx * gx + gy * gy + gz * gz);
+            interpolate_kernel_linear(k, kernel_aa.data());
+            for (int a = 0; a < nalpha; ++a) {
+                const fftw_complex& th = cbuf[a * ncplx + kindex];
+                theta[static_cast<std::size_t>(a)] = {th[0], th[1]};
+            }
+            for (int a1 = 0; a1 < nalpha; ++a1) {
+                std::complex<double> F(0.0, 0.0);
+                for (int a2 = 0; a2 < nalpha; ++a2) {
+                    const double phi =
+                        kernel_aa[static_cast<std::size_t>(a1 * nalpha + a2)];
+                    F += theta[static_cast<std::size_t>(a2)] * phi;
                 }
-                for (int a1 = 0; a1 < nalpha; ++a1) {
-                    std::complex<double> F(0.0, 0.0);
-                    for (int a2 = 0; a2 < nalpha; ++a2) {
-                        const double phi = kernel_aa[static_cast<std::size_t>(
-                            a1 * nalpha + a2)];
-                        F += theta[static_cast<std::size_t>(a2)] * phi;
-                    }
-                    energy +=
-                        weight
-                        * (theta[static_cast<std::size_t>(a1)].real() * F.real()
-                           + theta[static_cast<std::size_t>(a1)].imag()
-                                 * F.imag());
-                    if (want_potential) {
-                        fftw_complex& u = cbuf[a1 * ncplx + kindex];
-                        u[0] = F.real();
-                        u[1] = F.imag();
-                    }
+                energy_chunk +=
+                    weight
+                    * (theta[static_cast<std::size_t>(a1)].real() * F.real()
+                       + theta[static_cast<std::size_t>(a1)].imag() * F.imag());
+                if (want_potential) {
+                    fftw_complex& u = cbuf[a1 * ncplx + kindex];
+                    u[0] = F.real();
+                    u[1] = F.imag();
                 }
             }
         }
+        partial_energy[static_cast<std::size_t>(chunk)] = energy_chunk;
     }
+    double energy = 0.0;
+    for (const double e : partial_energy)
+        energy += e;
 
     // Same FFT convention as DRSLL; rVV10 applies an extra ½ (CP2K).
+    const auto convolution_end = std::chrono::steady_clock::now();
+    auto profile = [&]() {
+        if (!prof)
+            return;
+        const auto now = std::chrono::steady_clock::now();
+        std::fprintf(
+            stderr,
+            "[gpw nonlocal] rVV10 ngrid=%ld potential=%d theta=%.0f "
+            "forward=%.0f convolution=%.0f response=%.0f ms\n",
+            ntot, static_cast<int>(want_potential),
+            std::chrono::duration<double, std::milli>(theta_end - profile_start)
+                .count(),
+            std::chrono::duration<double, std::milli>(forward_end - theta_end)
+                .count(),
+            std::chrono::duration<double, std::milli>(convolution_end
+                                                      - forward_end)
+                .count(),
+            std::chrono::duration<double, std::milli>(now - convolution_end)
+                .count());
+    };
     energy *= 0.5 * dV / static_cast<double>(ntot);
     const double e_kernel = 0.5 * energy;
     const double e_beta = beta * nelec;
@@ -350,8 +400,7 @@ Rvv10Result rvv10_energy(const UniformGrid& grid,
     res.energy = e_kernel + e_beta;
 
     if (!want_potential) {
-        fftw_free(rbuf);
-        fftw_free(cbuf);
+        profile();
         return res;
     }
 
@@ -365,48 +414,50 @@ Rvv10Result rvv10_energy(const UniformGrid& grid,
             rout[g] *= invN;
     }
 
-    const auto gxyz = gradient(grid, rho);
     res.v_r.assign(static_cast<std::size_t>(ntot), 0.0);
     std::array<std::vector<double>, 3> flux;
     for (int d = 0; d < 3; ++d)
         flux[d].assign(static_cast<std::size_t>(ntot), 0.0);
 
-    std::vector<double> p_a(static_cast<std::size_t>(nalpha));
-    std::vector<double> dp_a(static_cast<std::size_t>(nalpha));
-    for (long g = 0; g < ntot; ++g) {
-        const double rg = rho[static_cast<std::size_t>(g)];
-        const double qg = q0[static_cast<std::size_t>(g)];
-        palpha_and_deriv_at_q(qm, d2y, nalpha, qg, p_a.data(), dp_a.data());
-        double pot = 0.0;
-        double hpref = 0.0;
-        if (rg > kRhoCut) {
-            const double tmp_1_2 = std::sqrt(rg);
-            const double tmp_1_4 = std::sqrt(tmp_1_2);          // ρ^{1/4}
-            const double tmp_3_4 = tmp_1_4 * tmp_1_4 * tmp_1_4; // ρ^{3/4}
-            for (int a = 0; a < nalpha; ++a) {
-                const double u = rbuf[a * ntot + g];
-                // CP2K get_potential RVV10 (before ½ scaling):
-                pot += u
-                       * (const_theta * 0.75 / tmp_1_4
-                              * p_a[static_cast<std::size_t>(a)]
-                          + const_theta * tmp_3_4
-                                * dp_a[static_cast<std::size_t>(a)]
-                                * dq0_drho[static_cast<std::size_t>(g)]);
-                if (qg != qcut)
-                    hpref += u * const_theta * tmp_3_4
-                             * dp_a[static_cast<std::size_t>(a)]
-                             * dq0_dgradrho[static_cast<std::size_t>(g)];
+#pragma omp parallel
+    {
+        std::array<double, kNAlpha> p_a, dp_a;
+#pragma omp for schedule(static)
+        for (long g = 0; g < ntot; ++g) {
+            const double rg = rho[static_cast<std::size_t>(g)];
+            const double qg = q0[static_cast<std::size_t>(g)];
+            palpha_and_deriv_at_q(qm, d2y, nalpha, qg, p_a.data(), dp_a.data());
+            double pot = 0.0;
+            double hpref = 0.0;
+            if (rg > kRhoCut) {
+                const double tmp_1_2 = std::sqrt(rg);
+                const double tmp_1_4 = std::sqrt(tmp_1_2);          // ρ^{1/4}
+                const double tmp_3_4 = tmp_1_4 * tmp_1_4 * tmp_1_4; // ρ^{3/4}
+                for (int a = 0; a < nalpha; ++a) {
+                    const double u = rbuf[a * ntot + g];
+                    // CP2K get_potential RVV10 (before ½ scaling):
+                    pot += u
+                           * (const_theta * 0.75 / tmp_1_4
+                                  * p_a[static_cast<std::size_t>(a)]
+                              + const_theta * tmp_3_4
+                                    * dp_a[static_cast<std::size_t>(a)]
+                                    * dq0_drho[static_cast<std::size_t>(g)]);
+                    if (qg != qcut)
+                        hpref += u * const_theta * tmp_3_4
+                                 * dp_a[static_cast<std::size_t>(a)]
+                                 * dq0_dgradrho[static_cast<std::size_t>(g)];
+                }
             }
+            // CP2K: potential = 0.5 * pot + beta; hpot = 0.5 * hpref
+            res.v_r[static_cast<std::size_t>(g)] = 0.5 * pot + beta;
+            hpref *= 0.5;
+            flux[0][static_cast<std::size_t>(g)] =
+                hpref * grad_rho[0][static_cast<std::size_t>(g)];
+            flux[1][static_cast<std::size_t>(g)] =
+                hpref * grad_rho[1][static_cast<std::size_t>(g)];
+            flux[2][static_cast<std::size_t>(g)] =
+                hpref * grad_rho[2][static_cast<std::size_t>(g)];
         }
-        // CP2K: potential = 0.5 * pot + beta; hpot = 0.5 * hpref
-        res.v_r[static_cast<std::size_t>(g)] = 0.5 * pot + beta;
-        hpref *= 0.5;
-        flux[0][static_cast<std::size_t>(g)] =
-            hpref * gxyz[0][static_cast<std::size_t>(g)];
-        flux[1][static_cast<std::size_t>(g)] =
-            hpref * gxyz[1][static_cast<std::size_t>(g)];
-        flux[2][static_cast<std::size_t>(g)] =
-            hpref * gxyz[2][static_cast<std::size_t>(g)];
     }
 
     const std::vector<double> divflux = divergence(grid, flux);
@@ -414,8 +465,7 @@ Rvv10Result rvv10_energy(const UniformGrid& grid,
         res.v_r[static_cast<std::size_t>(g)] -=
             divflux[static_cast<std::size_t>(g)];
 
-    fftw_free(rbuf);
-    fftw_free(cbuf);
+    profile();
     return res;
 }
 

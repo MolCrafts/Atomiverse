@@ -55,3 +55,10 @@ Atomiverse columns always come from a real binary on this tree.
 
 Build: configure with `-DATV_BUILD_EXAMPLES=ON`, then
 `cmake --build build --target 02_rhf` (any number works the same way).
+
+## External XC provider
+
+[`xc-extension/`](xc-extension/README.md) is an independent CMake project using
+the installed `Atomiverse::atomiverse` target. It demonstrates a batched
+semi-local XC subclass with molecular CPU RKS/UKS and existing execution
+presets. Copy it outside the checkout to exercise the public package.

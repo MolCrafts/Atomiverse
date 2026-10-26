@@ -17,7 +17,9 @@
 #include "atomiverse/cpu/multiscale/qm_mask.h"
 #include "atomiverse/cpu/multiscale/qmmm_electrostatic.h"
 #include "atomiverse/cpu/scf/methods.h"
+#ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
+#endif
 
 using namespace ATV;
 
@@ -60,6 +62,7 @@ cpu::Frame make_embed_h2o() {
 
 } // namespace
 
+#ifdef ATV_HAS_SEMIEMPIRICAL
 TEST(QmmmElectrostatic, Am1EngineThrowsNamed) {
     auto f = make_embed_h2o();
     cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
@@ -77,6 +80,8 @@ TEST(QmmmElectrostatic, Am1EngineThrowsNamed) {
         },
         std::runtime_error);
 }
+
+#endif
 
 TEST(QmmmElectrostatic, RhfBuildSucceedsWithoutLaunch) {
     auto f = make_embed_h2o();

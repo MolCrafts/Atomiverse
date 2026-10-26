@@ -75,9 +75,11 @@ int run() {
         for (int d = 0; d < 3; ++d) {
             const double save = pos_fd[i][d];
             pos_fd[i][d] = save + h;
-            const double ep = mbd_rsscs_pbe(Z, pos_fd, cell0, false).energy;
+            const double ep =
+                cpu::gpw::internal::mbd_rsscs_energy(Z, pos_fd, cell0, false);
             pos_fd[i][d] = save - h;
-            const double em = mbd_rsscs_pbe(Z, pos_fd, cell0, false).energy;
+            const double em =
+                cpu::gpw::internal::mbd_rsscs_energy(Z, pos_fd, cell0, false);
             pos_fd[i][d] = save;
             const double fd = -(ep - em) / (2.0 * h);
             max_err = std::max(max_err, std::abs(fd - mbd.forces[i][d]));

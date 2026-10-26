@@ -67,7 +67,8 @@ class ScfGradient {
     ///        (wins over `d3bj` when both are set, mirroring the energy).
     ScfGradient(MeanFieldType method, SpinType spin, XCType xc_type,
                 GridLevel grid_level, int n_radial, int n_angular,
-                bool xc_grad_project_translation, bool d3bj, bool d4);
+                bool xc_grad_project_translation, bool d3bj, bool d4,
+                const ATV::electronic::XcFunctional* functional = nullptr);
 
     /// @brief Unified analytic nuclear gradient at the current geometry.
     /// @param frame     System geometry (positions in Angstrom, type_id = Z).
@@ -149,9 +150,11 @@ class ScfGradient {
                              const xt::xtensor<double, 2>& W, double e_ha,
                              const SlaterDeterminant* generalized_det) const;
 
-    MeanFieldType method_;             ///< HF or KS mean field.
-    SpinType spin_;                    ///< Restricted / unrestricted.
-    XCType xc_type_;                   ///< XC functional (KS only).
+    MeanFieldType method_; ///< HF or KS mean field.
+    SpinType spin_;        ///< Restricted / unrestricted.
+    XCType xc_type_;
+    const ATV::electronic::XcFunctional*
+        functional_; ///< Borrowed matching XC mathematics.                   ///< XC functional (KS only).
     GridLevel grid_level_;             ///< DFT grid quality (KS only).
     int n_radial_;                     ///< Radial grid points (SG0 only).
     int n_angular_;                    ///< Angular grid points (SG0 only).

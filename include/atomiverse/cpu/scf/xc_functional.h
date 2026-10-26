@@ -39,6 +39,8 @@
 ///     orbitals (double hybrid; PT2 is not inside `evaluate_xc`).
 #pragma once
 
+#include "atomiverse/electronic/xc_functional.h"
+
 namespace ATV {
 namespace cpu {
 namespace scf {
@@ -65,7 +67,8 @@ enum class XCType {
     B3LYP,
     PBE0,
     B2PLYP,
-    CAMB3LYP ///< Yanai CAM-B3LYP; RSH params via `rsh_exchange_params`.
+    CAMB3LYP, ///< Yanai CAM-B3LYP; RSH params via `rsh_exchange_params`.
+    Custom ///< Constructor-injected semi-local provider; not a built-in kernel.
 };
 
 /// @brief Range-separated hybrid (RSH) exact-exchange parameters.
@@ -124,10 +127,9 @@ bool is_gga(XCType type);
 
 /// @brief Output from XC evaluation at a single grid point.
 struct XCOutput {
-    double
-        exc; ///< XC energy density per electron f(rho_alpha, rho_beta) [Hartree].
-    double vrho_alpha; ///< df/drho_alpha (XC potential for alpha).
-    double vrho_beta;  ///< df/drho_beta (XC potential for beta).
+    double energy_density; ///< f_xc [Ha/Bohr^3], E_xc = integral f_xc dr.
+    double vrho_alpha;     ///< df/drho_alpha (XC potential for alpha).
+    double vrho_beta;      ///< df/drho_beta (XC potential for beta).
     // GGA only:
     double vsigma_aa; ///< df/dsigma_alpha_alpha.
     double vsigma_ab; ///< df/dsigma_alpha_beta.
@@ -136,8 +138,8 @@ struct XCOutput {
 
 /// @brief Evaluate XC functional at a single grid point.
 ///
-/// Returns the XC energy density f such that E_xc = integral f(rho) dtau,
-/// along with potential derivatives for V_xc matrix construction.
+/// Returns f_xc per volume, E_xc = integral f_xc dr, and derivatives
+/// of that same energy density for V_xc construction.
 ///
 /// Applies density cutoff: if rho_total < 1e-12, returns zero for all outputs.
 ///
@@ -153,30 +155,27 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b,
                      double sigma_aa = 0, double sigma_ab = 0,
                      double sigma_bb = 0);
 
-/// @brief Batched XC evaluation over an array of grid points.
-///
-/// Processes `n` grid points at once, enabling SIMD auto-vectorization of
-/// transcendental functions (pow, log, exp).
-///
-/// @param type     Functional type (LSDA, PBE, PBEsol, RevPBE, RPBE, BLYP,
-///                 OptB88VdW, B3LYP, PBE0 or B2PLYP).
-/// @param n        Number of grid points.
-/// @param rho_a    Alpha densities [n].
-/// @param rho_b    Beta densities [n].
-/// @param sigma_aa |grad rho_alpha|^2 array [n] (GGA only, may be nullptr for LDA).
-/// @param sigma_ab grad rho_alpha . grad rho_beta array [n] (GGA only).
-/// @param sigma_bb |grad rho_beta|^2 array [n] (GGA only).
-/// @param[out] exc     XC energy density per electron [n].
-/// @param[out] vrho_a  df/drho_alpha [n].
-/// @param[out] vrho_b  df/drho_beta [n].
-/// @param[out] vsigma_aa df/dsigma_alpha_alpha [n] (GGA only, may be nullptr for LDA).
-/// @param[out] vsigma_ab df/dsigma_alpha_beta [n] (GGA only).
-/// @param[out] vsigma_bb df/dsigma_beta_beta [n] (GGA only).
-void evaluate_xc_batch(XCType type, int n, const double* rho_a,
-                       const double* rho_b, const double* sigma_aa,
-                       const double* sigma_ab, const double* sigma_bb,
-                       double* exc, double* vrho_a, double* vrho_b,
-                       double* vsigma_aa, double* vsigma_ab, double* vsigma_bb);
+/// @brief Built-in semi-local XC provider, using the existing native math kernels.
+class BuiltinXc final : public ATV::electronic::XcFunctional {
+  public:
+    /// @brief Select a built-in functional's semi-local part.
+    /// @param type Built-in identity; Custom and invalid identities reject.
+    explicit BuiltinXc(XCType type);
+    /// @brief Built-in identity, including its separately applied exact exchange.
+    /// @return Selected built-in functional.
+    XCType type() const noexcept { return type_; }
+    ATV::electronic::XcIngredients ingredients() const noexcept override;
+    bool supports(ATV::electronic::XcSpin spin,
+                  ATV::electronic::XcOrder order) const noexcept override;
+
+  protected:
+    void evaluate_batch(const ATV::electronic::XcBatch& in,
+                        ATV::electronic::XcOrder order,
+                        ATV::electronic::XcOutput& out) const override;
+
+  private:
+    XCType type_;
+};
 
 } // namespace scf
 } // namespace cpu

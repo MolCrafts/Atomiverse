@@ -17,10 +17,11 @@
 ///     Chem. Phys. Lett. 157, 200 (1989).
 ///
 /// libxc cross-reference: `XC_GGA_X_B88` (id 106), `XC_GGA_C_LYP`
-/// (id 131). The LYP potential kernel is a faithful port of libxc's
-/// maple2c-generated `func_vxc_pol` for `gga_c_lyp`, guaranteeing
-/// 1e-12 channel-wise parity; the B88 kernel uses the closed analytic
-/// derivatives of the readable Becke enhancement factor.
+/// (id 131). LYP follows the Miehlich form and its analytic derivatives,
+/// with direct spin fractions that avoid cancellation near full polarization.
+/// The external parity oracle is libxc 7.0.0; libxc 7.1.2 loses precision in
+/// this regime (see tests/cpu/scf/oracle/README.md). B88 uses the
+/// analytic derivatives of the Becke enhancement factor.
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/xc_internal.h"
@@ -66,7 +67,7 @@ static constexpr double kB88_gamma = 6.0;
 /// @param[out] ex_s      Exchange energy density per volume for this
 ///                       spin channel [Hartree/Bohr^3].
 /// @param[out] vrho_s    d(ex_s)/drho_s, exchange potential [Hartree].
-/// @param[out] vsigma_ss d(ex_s)/dsigma_ss [Hartree*Bohr^2].
+/// @param[out] vsigma_ss d(ex_s)/dsigma_ss [Hartree*Bohr^5].
 void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
                        double& vrho_s, double& vsigma_ss, double beta,
                        double gamma) {
@@ -134,34 +135,33 @@ inline double pw3(bool cond, double a, double b) { return cond ? a : b; }
 /// @brief Lee-Yang-Parr GGA correlation (libxc XC_GGA_C_LYP, id 131),
 ///        spin-polarized.
 ///
-/// Faithful port of libxc's maple2c-generated `func_vxc_pol` kernel for
-/// `gga_c_lyp`, in the Miehlich-Savin-Stoll-Preuss closed form with
-/// empirical constants a = 0.04918, b = 0.132, c = 0.2533, d = 0.349.
-/// The intermediate variables `t1..t377` mirror the libxc kernel so the
-/// port is line-by-line auditable; this guarantees 1e-12 channel-wise
-/// parity with libxc id 131.
+/// Miehlich-Savin-Stoll-Preuss closed form, with empirical constants
+/// a = 0.04918, b = 0.132, c = 0.2533, d = 0.349. Intermediate names
+/// follow libxc's Maple kernel. Spin fractions and their derivatives are
+/// evaluated directly from rho_alpha/rho_beta, avoiding subtraction of
+/// nearly equal terms such as 1-zeta and 1-zeta^2.
 ///
 /// @param rho_a    Alpha spin density [electrons/Bohr^3].
 /// @param rho_b    Beta spin density [electrons/Bohr^3].
 /// @param sigma_aa |grad rho_alpha|^2 [e^2/Bohr^8].
 /// @param sigma_ab grad rho_alpha . grad rho_beta [e^2/Bohr^8].
 /// @param sigma_bb |grad rho_beta|^2 [e^2/Bohr^8].
-/// @param[out] ec        Correlation energy density per electron
-///                       [Hartree].
-/// @param[out] vc_a      d(rho*ec)/drho_alpha [Hartree].
-/// @param[out] vc_b      d(rho*ec)/drho_beta [Hartree].
-/// @param[out] vsigma_aa d(rho*ec)/dsigma_aa [Hartree*Bohr^2].
-/// @param[out] vsigma_ab d(rho*ec)/dsigma_ab [Hartree*Bohr^2].
-/// @param[out] vsigma_bb d(rho*ec)/dsigma_bb [Hartree*Bohr^2].
+/// @param[out] fc        Correlation energy density [Hartree/Bohr^3].
+/// @param[out] vc_a      dfc/drho_alpha [Hartree].
+/// @param[out] vc_b      dfc/drho_beta [Hartree].
+/// @param[out] vsigma_aa dfc/dsigma_aa [Hartree*Bohr^5].
+/// @param[out] vsigma_ab dfc/dsigma_ab [Hartree*Bohr^5].
+/// @param[out] vsigma_bb dfc/dsigma_bb [Hartree*Bohr^5].
 void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
-                     double sigma_ab, double sigma_bb, double& ec, double& vc_a,
+                     double sigma_ab, double sigma_bb, double& fc, double& vc_a,
                      double& vc_b, double& vsigma_aa, double& vsigma_ab,
                      double& vsigma_bb) {
-    // Direct port of libxc's maple2c gga_c_lyp `func_vxc_pol` kernel.
-    // Variable names t1..t377 mirror the generated code so the port is
-    // line-by-line auditable against the libxc reference. `tzk0` is the
+    // Analytic form of libxc's maple2c gga_c_lyp `func_vxc_pol` kernel.
+    // Original intermediate names are retained for auditing, with stable
+    // density-ratio identities for the spin prefactors. `tzk0` is the
     // energy density per electron; `tvrho{0,1}` / `tvsigma{0,1,2}` are
     // d(rho*exc)/d{rho,sigma} in libxc's convention.
+    const double physical_rho = rho_a + rho_b;
     const double a = kLYP_a, b = kLYP_b, c = kLYP_c, d = kLYP_d;
     const double zeta_threshold = kZetaThreshold;
 
@@ -172,7 +172,7 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     double sigma1 = sigma_ab;
     double sigma2 = sigma_bb;
     if (rho0 + rho1 < kRhoMin) {
-        ec = 0.0;
+        fc = 0.0;
         vc_a = 0.0;
         vc_b = 0.0;
         vsigma_aa = 0.0;
@@ -203,11 +203,11 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
 
     // ── energy density tzk0 ──
     const double t1 = rho0 - rho1;
-    const double t2 = t1 * t1;
     const double t3 = rho0 + rho1;
     const double t4 = t3 * t3;
     const double t5 = 1.0 / t4;
-    const double t7 = -t2 * t5 + 1.0;
+    // 1-zeta^2 = 4*rho_alpha*rho_beta/rho^2, without subtraction.
+    const double t7 = 4.0 * rho0 * rho1 * t5;
     const double t8 = POW_1_3(t3);
     const double t9 = 1.0 / t8;
     const double t11 = d * t9 + 1.0;
@@ -229,8 +229,7 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     const double t36 = t35 * t35;
     const double t37 = t33 * t36;
     const double t38 = 1.0 / t3;
-    const double t39 = t1 * t38;
-    const double t40 = 1.0 + t39;
+    const double t40 = 2.0 * rho0 * t38;
     const bool t41 = t40 <= zeta_threshold;
     const double t42 = zeta_threshold * zeta_threshold;
     const double t43 = POW_1_3(zeta_threshold);
@@ -241,7 +240,7 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     const double t48 = t47 * t47;
     const double t49 = t48 * t46;
     const double t50 = pw3(t41, t45, t49);
-    const double t51 = 1.0 - t39;
+    const double t51 = 2.0 * rho1 * t38;
     const bool t52 = t51 <= zeta_threshold;
     const double t53 = t51 * t51;
     const double t54 = POW_1_3(t51);
@@ -288,11 +287,9 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
 
     // ── vrho[0] = tvrho0 ──
     const double t118 = t3 * a;
-    const double t119 = t1 * t5;
     const double t120 = t4 * t3;
     const double t121 = 1.0 / t120;
-    const double t122 = t2 * t121;
-    const double t124 = -2.0 * t119 + 2.0 * t122;
+    const double t124 = -4.0 * rho1 * t1 * t121;
     const double t126 = t11 * t11;
     const double t127 = 1.0 / t126;
     const double t128 = t7 * t127;
@@ -318,7 +315,7 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     const double t159 = t7 * t158;
     const double t161 = t124 * t27 / 72.0 + t159 / 72.0;
     const double t166 = t48 * t40;
-    const double t167 = t38 - t119;
+    const double t167 = 2.0 * rho1 * t5;
     const double t168 = t166 * t167;
     const double t170 = pw3(t41, 0.0, 8.0 / 3.0 * t168);
     const double t171 = t55 * t51;
@@ -364,9 +361,9 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     const double tvrho0 = t118 * t250 + tzk0;
 
     // ── vrho[1] = tvrho1 ──
-    const double t253 = 2.0 * t119 + 2.0 * t122;
+    const double t253 = 4.0 * rho0 * t1 * t121;
     const double t257 = t253 * t27 / 72.0 + t159 / 72.0;
-    const double t262 = -t38 - t119;
+    const double t262 = -2.0 * rho0 * t5;
     const double t263 = t166 * t262;
     const double t265 = pw3(t41, 0.0, 8.0 / 3.0 * t263);
     const double t266 = -t262;
@@ -434,12 +431,9 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     const double t377 = t136 * t376;
     const double tvsigma2 = t337 * t377;
 
-    // Empty spin channels are screened out exactly as libxc's work_gga
-    // does: the maple2c pol kernel handles the (1-zeta)^{-n} terms of an
-    // empty channel through its zeta-threshold piecewise guards (pw3),
-    // so no extra per-spin density floor is needed beyond the total
-    // density cutoff applied above.
-    ec = tzk0;
+    // Output f_c uses the physical total density. Spin floors above only
+    // regularize the internal epsilon formula and its existing derivatives.
+    fc = physical_rho * tzk0;
     vc_a = tvrho0;
     vc_b = tvrho1;
     vsigma_aa = tvsigma0;

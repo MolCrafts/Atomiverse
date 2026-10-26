@@ -1,0 +1,22 @@
+{
+  "oracle": "AmberTools SQM",
+  "package_version": "26.0",
+  "package_build": "cuda_None_nompi_py312h52216ed_100",
+  "binary": "/opt/homebrew/Caskroom/miniconda/base/envs/molcrafts-tools/bin/sqm",
+  "binary_sha256": "e9690435a8519bf43919ebbc8e4cb06244b9e1f748315660735dd6704b9c83d3",
+  "source_reference": "https://github.com/Amber-MD/AmberClassic",
+  "source_commit": "76b00b2e9d7dc41ab1ce7c7aa2fe52b3608ec002",
+  "source_note": "Reference for algorithms, not the source checkout of the conda binary.",
+  "threads": {
+    "OMP_NUM_THREADS": 1,
+    "OPENBLAS_NUM_THREADS": 1
+  },
+  "command": "sqm -O -i sqm.in -o sqm.out",
+  "energy_ev": -348.56087243,
+  "output_gradient_units": "kcal/mol/Angstrom, despite Forces label; negate and divide by SQM EV_TO_KCAL=23.061 to obtain eV/Angstrom forces",
+  "compatibility": "Not yet an Atomiverse parity gate: constants, derived parameters and STO-6G overlap differ from current MOPAC-shaped AM1.",
+  "scientific_files_sha256": {
+    "inputs/am1-water/sqm.in": "18d5a99969e634d93a6c93a31f010f685ff62f10e550d25255bce3e2372e1aa3",
+    "outputs/am1-water/sqm.out.txt": "3f382b76cb8d21fcac60f77dc15b85033fea8207f860258b338816f418bfc6b6"
+  }
+}

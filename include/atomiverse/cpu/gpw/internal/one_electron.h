@@ -9,6 +9,8 @@
 /// `GridPrimitive` type so the GPW basis (`GridBasisFunction`) is used directly.
 #pragma once
 
+#include <complex>
+
 #include "atomiverse/cpu/gpw/internal/collocate.h" // GridPrimitive, GridBasisFunction
 
 namespace ATV {
@@ -17,6 +19,20 @@ namespace gpw {
 
 /// @brief Overlap integral ⟨a|b⟩ of two primitive Cartesian Gaussians.
 double prim_overlap(const GridPrimitive& a, const GridPrimitive& b);
+
+/// @brief Exact Fourier overlap ∫ a(r) b(r) exp(−i q·r) d³r.
+///
+/// Reuses the overlap's McMurchie–Davidson Hermite coefficients. Each
+/// product-center derivative transforms to a factor (−i q_d), retaining
+/// all angular terms, including odd products whose ordinary overlap is zero.
+/// Includes primitive coefficients; Cartesian centers are in Bohr.
+/// @param q Cartesian wavevector [Bohr⁻¹].
+/// @return Complex overlap; q=0 recovers prim_overlap(a,b).
+/// @throws std::invalid_argument for non-positive/non-finite exponents or
+///         Cartesian angular powers outside the Hermite table's [0,8] range.
+std::complex<double> prim_overlap_fourier(const GridPrimitive& a,
+                                          const GridPrimitive& b,
+                                          const double q[3]);
 
 /// @brief Kinetic-energy integral ⟨a|-½∇²|b⟩ of two primitive Gaussians.
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b);

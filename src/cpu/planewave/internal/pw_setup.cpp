@@ -9,6 +9,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
+#include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
 #include "atomiverse/cpu/planewave/internal/gth_upf.h"
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -118,6 +120,8 @@ SphBesselFn sph_bessel_for_l(int l) {
     }
 }
 
+} // namespace
+
 /// Build Kleinman-Bylander non-local projectors in G-space for one
 /// k-sphere. The radial table is evaluated at q = |k+G| — the projector
 /// of a Bloch state lives on k+G, so the table is k-dependent and must
@@ -132,6 +136,16 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
 
     // Precompute f_l(q) for each projector (radial integral, same for all atoms)
     int n_proj = upf.n_proj();
+    upf.validate_radial_mesh();
+    std::size_t radial_points = 0;
+    for (const auto& projector : upf.kb) {
+        if (projector.radial_points < 3
+            || projector.radial_points > projector.beta.size()
+            || projector.beta.size() > upf.r.size())
+            throw std::invalid_argument("KB projectors: declare a valid radial "
+                                        "integration domain within PP_R");
+        radial_points = std::max(radial_points, projector.radial_points);
+    }
     std::vector<std::vector<AccReal>> fl_all(n_proj);
     std::vector<int> proj_l(n_proj);
     for (size_t ip = 0; ip < upf.kb.size(); ++ip) {
@@ -141,113 +155,72 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
         fl_all[ip].resize(ng, AccReal(0));
         const auto& r = upf.r;
         const auto& beta_r = kb.beta;
+        std::vector<AccReal> integrand(radial_points);
         for (int ig = 0; ig < ng; ++ig) {
             Vec3 q{gv.g[ig][0] + gv.kvec[0], gv.g[ig][1] + gv.kvec[1],
                    gv.g[ig][2] + gv.kvec[2]};
             AccReal Q = std::sqrt(q.norm_squared());
-            AccReal sum = 0;
-            for (size_t ir = 1; ir < r.size(); ++ir) {
-                AccReal r_mid = AccReal(0.5) * (r[ir] + r[ir - 1]);
-                AccReal dr = r[ir] - r[ir - 1];
-                AccReal b_mid = AccReal(0.5) * (beta_r[ir] + beta_r[ir - 1]);
-                sum += r_mid * b_mid * j_l(Q * r_mid) * dr;
-            }
-            fl_all[ip][ig] = sum;
+            for (std::size_t ir = 0; ir < radial_points; ++ir)
+                integrand[ir] =
+                    ir < beta_r.size()
+                        ? r[ir] * beta_r[ir] * j_l(Q * r[ir])
+                        : AccReal(0); // outside a supplied compact table
+            fl_all[ip][ig] = upf.integrate_radial(integrand);
         }
     }
 
-    // Diagonalize D_ij per l-block, transform projectors to eigenbasis
-    // This gives the correct effective projector strengths
-    std::vector<AccReal> eff_D(n_proj, AccReal(0));
-    std::vector<std::vector<AccReal>> fl_trans(n_proj); // transformed f_l(G)
-    for (int ip = 0; ip < n_proj; ++ip)
-        fl_trans[ip] = fl_all[ip];
-
-    if (!upf.d_ij.empty()) {
-        // Group projectors by l
-        std::vector<int> l_groups[4]; // l=0,1,2,3
-        for (int ip = 0; ip < n_proj; ++ip)
-            if (proj_l[ip] < 4)
-                l_groups[proj_l[ip]].push_back(ip);
-
-        int ip_out = 0;
-        for (int l = 0; l < 4; ++l) {
-            int nl = static_cast<int>(l_groups[l].size());
-            if (nl == 0)
-                continue;
-
-            // Extract D sub-block for this l
-            std::vector<AccReal> D_sub(nl * nl);
-            for (int i = 0; i < nl; ++i)
-                for (int j = 0; j < nl; ++j) {
-                    int ii = l_groups[l][i], jj = l_groups[l][j];
-                    D_sub[i * nl + j] =
-                        (ii * n_proj + jj < static_cast<int>(upf.d_ij.size()))
-                            ? upf.d_ij[ii * n_proj + jj]
-                            : AccReal(0);
-                }
-
-            // Diagonalize small matrix (nl ≤ 2, use analytic formula)
-            std::vector<AccReal> eig(nl), vecs(nl * nl);
-            if (nl == 1) {
-                eig[0] = D_sub[0];
-                vecs[0] = AccReal(1);
-            } else {
-                AccReal a = D_sub[0], b = D_sub[1], c = D_sub[2], d = D_sub[3];
-                if (std::abs(b) > AccReal(1e-16)) {
-                    AccReal tr = a + d, det = a * d - b * c,
-                            disc = std::sqrt(std::max(
-                                AccReal(0), tr * tr - AccReal(4) * det));
-                    eig[0] = AccReal(0.5) * (tr - disc);
-                    eig[1] = AccReal(0.5) * (tr + disc);
-                    // Eigenvectors, column-major: vecs[i + nl*k]
-                    AccReal n0 = std::sqrt(b * b + (eig[0] - a) * (eig[0] - a));
-                    vecs[0 * nl + 0] = (eig[0] - a) / n0;
-                    vecs[1 * nl + 0] = b / n0; // col 0
-                    AccReal n1 = std::sqrt(b * b + (eig[1] - a) * (eig[1] - a));
-                    vecs[0 * nl + 1] = (eig[1] - a) / n1;
-                    vecs[1 * nl + 1] = b / n1; // col 1
-                } else {
-                    // Already diagonal: keep the ORIGINAL pairing. The old
-                    // code sorted the eigenvalues here while leaving the
-                    // eigenvectors as identity, swapping each projector's
-                    // strength with its partner whenever D11 > D22 (true
-                    // for the ONCV s and p channels — the l=2 block
-                    // happened to be ascending and masked the bug).
-                    eig[0] = a;
-                    eig[1] = d;
-                    vecs[0] = 1;
-                    vecs[1] = 0;
-                    vecs[2] = 0;
-                    vecs[3] = 1;
-                }
-            }
-
-            // Transform f_l(G): f'_k(G) = Σ_i V_{i,k} * f_i(G)
-            // Store in fl_trans
-            for (int k = 0; k < nl; ++k) {
-                fl_trans[ip_out].resize(ng);
-                for (int ig = 0; ig < ng; ++ig)
-                    fl_trans[ip_out][ig] = AccReal(0);
-                for (int i = 0; i < nl; ++i) {
-                    AccReal v = vecs[i * nl + k];
-                    for (int ig = 0; ig < ng; ++ig)
-                        fl_trans[ip_out][ig] += v * fl_all[l_groups[l][i]][ig];
-                }
-                eff_D[ip_out] = eig[k] * AccReal(0.5); // Ry → Ha
-                proj_l[ip_out] = l;
-                ++ip_out;
-            }
+    // D is a real symmetric matrix in Ry. Distinct angular momenta cannot
+    // couple in this spherical KB representation; never silently discard an
+    // incomplete or unsupported matrix.
+    if (upf.d_ij.size() != static_cast<std::size_t>(n_proj) * n_proj)
+        throw std::invalid_argument("KB projectors: D_ij shape mismatch");
+    for (int i = 0; i < n_proj; ++i)
+        for (int j = 0; j < n_proj; ++j) {
+            const auto value =
+                upf.d_ij[static_cast<std::size_t>(i) * n_proj + j];
+            if (!std::isfinite(value)
+                || value != upf.d_ij[static_cast<std::size_t>(j) * n_proj + i])
+                throw std::invalid_argument(
+                    "KB projectors: D_ij must be finite and symmetric");
+            if (proj_l[i] != proj_l[j] && value != AccReal(0))
+                throw std::invalid_argument(
+                    "KB projectors: D_ij couples different angular momenta");
         }
-        // Update number of effective projectors
-        n_proj = ip_out;
+
+    std::map<int, std::vector<int>> angular_blocks;
+    for (int ip = 0; ip < n_proj; ++ip)
+        angular_blocks[proj_l[ip]].push_back(ip);
+    std::vector<AccReal> eff_D(n_proj);
+    std::vector<int> rotated_l(n_proj);
+    std::vector<std::vector<AccReal>> fl_trans(n_proj);
+    int ip_out = 0;
+    for (const auto& [l, indices] : angular_blocks) {
+        const int nl = static_cast<int>(indices.size());
+        linalg::RealMatrix block = xt::zeros<double>({nl, nl});
+        for (int i = 0; i < nl; ++i)
+            for (int j = 0; j < nl; ++j)
+                block(i, j) =
+                    upf.d_ij[static_cast<std::size_t>(indices[i]) * n_proj
+                             + indices[j]];
+        // Canonical LAPACK eigensolve: columns U(:,k), D = U diag(lambda) U^T.
+        // Handles every block size, including already-diagonal permutations.
+        const auto [eigenvalues, eigenvectors] = xt::linalg::eigh(block);
+        for (int k = 0; k < nl; ++k, ++ip_out) {
+            fl_trans[ip_out].assign(ng, AccReal(0));
+            for (int i = 0; i < nl; ++i)
+                for (int ig = 0; ig < ng; ++ig)
+                    fl_trans[ip_out][ig] +=
+                        eigenvectors(i, k) * fl_all[indices[i]][ig];
+            eff_D[ip_out] = eigenvalues(k) * AccReal(0.5); // Ry -> Ha, once.
+            rotated_l[ip_out] = l;
+        }
     }
 
     auto ng_sz = static_cast<std::size_t>(ng);
     for (int ia = 0; ia < n_atoms; ++ia) {
         out[ia].resize(n_proj);
         for (int ip = 0; ip < n_proj; ++ip) {
-            out[ia][ip].l = proj_l[ip];
+            out[ia][ip].l = rotated_l[ip];
             out[ia][ip].d = eff_D[ip];
             out[ia][ip].f_G.resize({ng_sz});
             for (int ig = 0; ig < ng; ++ig)
@@ -255,6 +228,8 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
         }
     }
 }
+
+namespace {
 
 /// Build atomic wavefunctions in G-space for the initial guess on one
 /// k-sphere; the radial transform is evaluated at q = |k+G|
@@ -272,20 +247,18 @@ void setup_atomic_wfc(std::vector<std::vector<PWWorkspace::AtomWfc>>& out,
         auto j_l = sph_bessel_for_l(l);
         const auto& r = upf.r;
         const auto& chi_r = upf.chi[iw];
+        if (chi_r.size() != r.size())
+            throw std::invalid_argument("Atomic wavefunction must match PP_R");
+        std::vector<AccReal> integrand(r.size());
 
         chi_g_all[iw].resize(ng, AccReal(0));
         for (int ig = 0; ig < ng; ++ig) {
             Vec3 q{gv.g[ig][0] + gv.kvec[0], gv.g[ig][1] + gv.kvec[1],
                    gv.g[ig][2] + gv.kvec[2]};
             AccReal Q = std::sqrt(q.norm_squared());
-            AccReal sum = 0;
-            for (size_t ir = 1; ir < r.size(); ++ir) {
-                AccReal r_mid = AccReal(0.5) * (r[ir] + r[ir - 1]);
-                AccReal dr = r[ir] - r[ir - 1];
-                AccReal chi_mid = AccReal(0.5) * (chi_r[ir] + chi_r[ir - 1]);
-                sum += chi_mid * j_l(Q * r_mid) * r_mid * dr;
-            }
-            chi_g_all[iw][ig] = sum * pref;
+            for (std::size_t ir = 0; ir < r.size(); ++ir)
+                integrand[ir] = chi_r[ir] * j_l(Q * r[ir]) * r[ir];
+            chi_g_all[iw][ig] = upf.integrate_radial(integrand) * pref;
         }
     }
 
@@ -322,6 +295,9 @@ std::vector<AccReal> upf_vloc_to_gspace(const internal::UPFData& upf,
     std::vector<AccReal> vg(gv.count(), AccReal(0));
     const auto& r = upf.r;
     const auto& vl = upf.v_loc;
+    if (vl.size() != r.size())
+        throw std::invalid_argument("Local potential PP_LOCAL must match PP_R");
+    std::vector<AccReal> integrand(r.size());
     AccReal inv_omega = AccReal(1) / omega;
     AccReal ry_to_ha = AccReal(0.5); // UPF stores V_loc in Ry
     AccReal z = static_cast<AccReal>(upf.z_val);
@@ -330,26 +306,22 @@ std::vector<AccReal> upf_vloc_to_gspace(const internal::UPFData& upf,
         AccReal G = std::sqrt(gv.g[ig].norm_squared());
         AccReal g2 = gv.g[ig].norm_squared();
         bool g_zero = g2 < AccReal(1e-16);
-        AccReal sum = 0;
-        for (size_t ir = 1; ir < r.size(); ++ir) {
-            AccReal r_mid = AccReal(0.5) * (r[ir] + r[ir - 1]);
-            AccReal dr = r[ir] - r[ir - 1];
-            AccReal v_mid = AccReal(0.5) * (vl[ir] + vl[ir - 1]) * ry_to_ha;
-            if (r_mid < AccReal(1e-12)) {
-                continue; // r²·(V + Z/r) → 0 at the origin
-            }
+        for (std::size_t ir = 0; ir < r.size(); ++ir) {
+            const AccReal radius = r[ir];
+            const AccReal potential = vl[ir] * ry_to_ha;
             if (g_zero) {
                 // r²(V + Z/r): exactly zero beyond the core radius.
-                sum += r_mid * (r_mid * v_mid + z) * dr;
+                integrand[ir] = radius * (radius * potential + z);
             } else {
-                AccReal Gr = G * r_mid;
+                AccReal Gr = G * radius;
                 AccReal j0 = (Gr < AccReal(1e-8))
                                  ? AccReal(1) - Gr * Gr / AccReal(6)
                                  : std::sin(Gr) / Gr;
-                AccReal v_scr = r_mid * v_mid + z * std::erf(r_mid);
-                sum += r_mid * v_scr * j0 * dr;
+                AccReal v_scr = radius * potential + z * std::erf(radius);
+                integrand[ir] = radius * v_scr * j0;
             }
         }
+        const AccReal sum = upf.integrate_radial(integrand);
         if (g_zero)
             vg[ig] = AccReal(4.0 * M_PI) * sum * inv_omega;
         else
@@ -550,6 +522,9 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 
     // === Workspace ===
     PWWorkspace& ws = out.ws;
+    // Orbital guesses are local to this SCF solve. A new frame/cell or a
+    // retry starts from a fresh physical setup, never a failed prior solve.
+    ws.wfc = xt::xarray<std::complex<AccReal>>{};
     ws.n_g = gv0.count();
     ws.gvec = &gv0;
     auto ng = static_cast<std::size_t>(ws.n_g);
@@ -576,20 +551,17 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
         // G-space transform of the atomic pseudocharge. UPF PP_RHOATOM
         // stores 4πr²ρ(r) (integrates to Z_val with plain dr), so
         // ρ_atom(G) = (1/Ω) ∫ PP_RHOATOM(r) j₀(Gr) dr.
+        std::vector<AccReal> integrand(upf.r.size());
         for (int ig = 0; ig < ws.n_g; ++ig) {
             AccReal G = std::sqrt(gv0.g[ig].norm_squared());
-            AccReal sum = 0;
-            for (size_t ir = 1; ir < upf.r.size(); ++ir) {
-                AccReal r_mid = AccReal(0.5) * (upf.r[ir] + upf.r[ir - 1]);
-                AccReal dr = upf.r[ir] - upf.r[ir - 1];
-                AccReal rho_mid =
-                    AccReal(0.5) * (upf.rho_atom[ir] + upf.rho_atom[ir - 1]);
-                AccReal Gr = G * r_mid;
+            for (std::size_t ir = 0; ir < upf.r.size(); ++ir) {
+                AccReal Gr = G * upf.r[ir];
                 AccReal j0 = (Gr < AccReal(1e-8))
                                  ? AccReal(1) - Gr * Gr / AccReal(6)
                                  : std::sin(Gr) / Gr;
-                sum += rho_mid * j0 * dr;
+                integrand[ir] = upf.rho_atom[ir] * j0;
             }
+            const AccReal sum = upf.integrate_radial(integrand);
             AccReal rho_g_atom = sum / vol_bohr;
             // Structure factor: Σ_a exp(-i G·R_a)
             AccReal s_re = 0, s_im = 0;
@@ -614,17 +586,12 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
         ws.rho_G[0] = std::complex<AccReal>(AccReal(n_elec) / vol_bohr, 0);
     }
 
-    // Density FFT grid: gv0 is already the ecutrho = 4·ecut sphere, so
-    // 2× its index extent covers it (equals the old 4× wfc-sphere grid).
-    ws.fft_nx = 2 * gv0.nx;
-    ws.fft_ny = 2 * gv0.ny;
-    ws.fft_nz = 2 * gv0.nz;
-    if (ws.fft_nx % 2)
-        ++ws.fft_nx;
-    if (ws.fft_ny % 2)
-        ++ws.fft_ny;
-    if (ws.fft_nz % 2)
-        ++ws.fft_nz;
+    // gv0 is the density sphere (4*ecut) and its dimensions already cover
+    // every density Fourier index. They also avoid aliasing G-G' between
+    // retained wavefunctions; a second doubling only oversamples the XC grid.
+    ws.fft_nx = gv0.nx;
+    ws.fft_ny = gv0.ny;
+    ws.fft_nz = gv0.nz;
     ws.nr = ws.fft_nx * ws.fft_ny * ws.fft_nz;
     ws.nc = (ws.fft_nx / 2 + 1) * ws.fft_ny * ws.fft_nz;
     ws.rho_r.resize({static_cast<std::size_t>(ws.nr)});
@@ -650,31 +617,21 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
         if (!upf.rho_atom.empty() && upf.rho_atom.size() == upf.r.size()) {
             // PP_RHOATOM stores 4πr²ρ(r): Q = ∫ PP_RHOATOM dr,
             // form factor (G) = (1/ΩQ) ∫ PP_RHOATOM j₀(Gr) dr.
-            AccReal Q_atom = 0;
-            for (size_t ir = 1; ir < upf.r.size(); ++ir) {
-                AccReal dr = upf.r[ir] - upf.r[ir - 1];
-                AccReal rho_mid =
-                    AccReal(0.5) * (upf.rho_atom[ir] + upf.rho_atom[ir - 1]);
-                Q_atom += rho_mid * dr;
-            }
+            const AccReal Q_atom = upf.integrate_radial(upf.rho_atom);
             AccReal inv_Q = (std::abs(Q_atom) > AccReal(1e-16))
                                 ? AccReal(1) / Q_atom
                                 : AccReal(0);
+            std::vector<AccReal> integrand(upf.r.size());
             for (int ig = 0; ig < ws.n_g; ++ig) {
                 AccReal G = std::sqrt(gv0.g[ig].norm_squared());
-                AccReal sum = 0;
-                for (size_t ir = 1; ir < upf.r.size(); ++ir) {
-                    AccReal r_mid = AccReal(0.5) * (upf.r[ir] + upf.r[ir - 1]);
-                    AccReal dr = upf.r[ir] - upf.r[ir - 1];
-                    AccReal rho_mid =
-                        AccReal(0.5)
-                        * (upf.rho_atom[ir] + upf.rho_atom[ir - 1]);
-                    AccReal Gr = G * r_mid;
+                for (std::size_t ir = 0; ir < upf.r.size(); ++ir) {
+                    AccReal Gr = G * upf.r[ir];
                     AccReal j0 = (Gr < AccReal(1e-8))
                                      ? AccReal(1) - Gr * Gr / AccReal(6)
                                      : std::sin(Gr) / Gr;
-                    sum += rho_mid * j0 * dr;
+                    integrand[ir] = upf.rho_atom[ir] * j0;
                 }
+                const AccReal sum = upf.integrate_radial(integrand);
                 ws.aug_form_factor_G[ig] = sum * inv_Q / vol_bohr;
             }
         } else {
@@ -827,56 +784,98 @@ void solve_pulay_coefficients(const AccReal* B, int m, AccReal* c_out) {
         c_out[i] = c[i];
 }
 
-void pulay_mix(PWWorkspace& ws) {
-    // Pulay/DIIS mixing (QE's Anderson/Broyden simplified)
-    // Store residual F = ρ_out - ρ_in
-    xt::xarray<std::complex<AccReal>> F = ws.rho_G - ws.rho_G_old;
-    ws.pulay_res.push_back(F);
-    ws.pulay_rho.push_back(ws.rho_G_old);
+void pulay_mix(xt::xarray<std::complex<AccReal>>& output,
+               const xt::xarray<std::complex<AccReal>>& input,
+               std::vector<xt::xarray<std::complex<AccReal>>>& residual_history,
+               std::vector<xt::xarray<std::complex<AccReal>>>& density_history,
+               AccReal fraction, int history_depth) {
+    const auto n = input.size();
+    if (n == 0 || output.size() != n || history_depth < 0
+        || residual_history.size() != density_history.size()
+        || !std::isfinite(fraction))
+        throw std::invalid_argument("PW Pulay mix: invalid shape or controls");
+    const auto finite_vector = [n](const auto& values) {
+        if (values.size() != n)
+            return false;
+        for (const auto& z : values)
+            if (!std::isfinite(z.real()) || !std::isfinite(z.imag()))
+                return false;
+        return true;
+    };
+    if (!finite_vector(input) || !finite_vector(output))
+        throw std::invalid_argument("PW Pulay mix: nonfinite density");
+    for (std::size_t i = 0; i < residual_history.size(); ++i)
+        if (!finite_vector(residual_history[i])
+            || !finite_vector(density_history[i]))
+            throw std::invalid_argument("PW Pulay mix: invalid history");
 
-    // Sliding window: keep only the newest `pulay_depth` entries. (The
-    // historical form trimmed only past a hard-coded depth of 8, so for
-    // pulay_depth <= 8 the history never slid and the mix kept using the
-    // oldest residuals forever.)
-    while (static_cast<int>(ws.pulay_res.size()) > ws.pulay_depth) {
-        ws.pulay_res.erase(ws.pulay_res.begin());
-        ws.pulay_rho.erase(ws.pulay_rho.begin());
+    xt::xarray<std::complex<AccReal>> residual = output - input;
+    if (!finite_vector(residual))
+        throw std::invalid_argument("PW Pulay mix: nonfinite residual");
+    if (history_depth == 0) {
+        output = input + fraction * residual;
+        residual_history.clear();
+        density_history.clear();
+        return;
     }
-    int depth = static_cast<int>(ws.pulay_res.size());
+    residual_history.push_back(residual);
+    density_history.push_back(input);
+    while (static_cast<int>(residual_history.size()) > history_depth) {
+        residual_history.erase(residual_history.begin());
+        density_history.erase(density_history.begin());
+    }
 
-    if (depth >= 2) {
-        // Build B_{ij} = ⟨F_i|F_j⟩
+    for (;;) {
+        const int depth = static_cast<int>(residual_history.size());
+        if (depth == 1) {
+            output = input + fraction * residual;
+            return;
+        }
         std::vector<AccReal> B(depth * depth, AccReal(0));
+        AccReal scale = 0;
         for (int i = 0; i < depth; ++i) {
             for (int j = i; j < depth; ++j) {
                 AccReal dot = 0;
-                for (int ig = 0; ig < ws.n_g; ++ig) {
-                    auto& fi = ws.pulay_res[i];
-                    auto& fj = ws.pulay_res[j];
-                    dot += fi[ig].real() * fj[ig].real()
-                           + fi[ig].imag() * fj[ig].imag();
-                }
+                for (std::size_t g = 0; g < n; ++g)
+                    dot += std::real(std::conj(residual_history[i][g])
+                                     * residual_history[j][g]);
                 B[i * depth + j] = B[j * depth + i] = dot;
             }
+            scale = std::max(scale, B[i * depth + i]);
         }
-        // Constrained least-squares coefficients — the shared CPU/CUDA
-        // solve (`cuda::pw::internal::DeviceDensity::mix` calls the same
-        // function on its cublasZgemm-built Gram matrix).
-        std::vector<AccReal> c(depth, AccReal(0));
-        solve_pulay_coefficients(B.data(), depth, c.data());
-        // Build mixed density: ρ_new = Σ c_i (ρ_in^(i) + α·F^(i))
-        AccReal alpha = ws.mix_beta;
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.rho_G[ig] = std::complex<AccReal>(0, 0);
-        for (int i = 0; i < depth; ++i) {
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.rho_G[ig] +=
-                    c[i] * (ws.pulay_rho[i][ig] + alpha * ws.pulay_res[i][ig]);
+        // A common Gram scale leaves the constrained minimum unchanged and
+        // prevents the shared solver's absolute pivot guard from discarding
+        // physically small density residuals near self-consistency.
+        if (scale > AccReal(0) && std::isfinite(scale))
+            for (auto& value : B)
+                value /= scale;
+        std::vector<AccReal> coefficients(depth, AccReal(0));
+        solve_pulay_coefficients(B.data(), depth, coefficients.data());
+        AccReal sum = 0;
+        bool valid = std::isfinite(scale);
+        for (const auto value : coefficients) {
+            valid = valid && std::isfinite(value);
+            sum += value;
         }
-    } else {
-        // Simple linear mixing for first iteration
-        for (int i = 0; i < ws.n_g; ++i)
-            ws.rho_G[i] = ws.rho_G_old[i] + ws.mix_beta * F[i];
+        valid = valid && std::isfinite(sum)
+                && std::abs(sum - AccReal(1)) < AccReal(1e-10);
+        if (valid) {
+            xt::xarray<std::complex<AccReal>> mixed =
+                xt::zeros<std::complex<AccReal>>({n});
+            for (int i = 0; i < depth; ++i)
+                for (std::size_t g = 0; g < n; ++g)
+                    mixed[g] += (coefficients[i] / sum)
+                                * (density_history[i][g]
+                                   + fraction * residual_history[i][g]);
+            if (finite_vector(mixed)) {
+                output = std::move(mixed);
+                return;
+            }
+        }
+        // An unusable singular history is reduced to its newest independent
+        // information; the one-entry endpoint is ordinary linear mixing.
+        residual_history.erase(residual_history.begin());
+        density_history.erase(density_history.begin());
     }
 }
 
@@ -906,12 +905,15 @@ PWEnergyTerms iteration_energy(const PWWorkspace& ws, AccReal e_band,
     for (int i = 0; i < ws.n_g; ++i) {
         std::complex<AccReal> rh = ws.rho_G[i];
         e_h += AccReal(0.5) * std::real(std::conj(rh) * ws.V_H_G[i]);
-        e_xc_int += std::real(std::conj(rh) * ws.V_xc_G[i]);
+        if (ws.nspin == 1)
+            e_xc_int += std::real(std::conj(rh) * ws.V_xc_G[i]);
         e_loc += std::real(std::conj(rh) * ws.V_loc_G[i]);
     }
     e_loc *= vol_bohr;
     e_h *= vol_bohr;
-    e_xc_int *= vol_bohr;
+    // XCBuilder already integrates rho_up*v_up + rho_down*v_down,
+    // including the volume; the scratch V_xc_G holds only the last spin.
+    e_xc_int = ws.nspin == 2 ? ws.e_xc_int_spin : e_xc_int * vol_bohr;
 
     return combine_energy_terms(e_band, e_h, e_xc_int, e_loc, ws.E_xc, ew_total,
                                 ws.E_aug);

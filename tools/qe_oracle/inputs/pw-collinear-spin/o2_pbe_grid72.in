@@ -1,0 +1,24 @@
+&CONTROL
+ calculation='scf', prefix='o2_pbe', pseudo_dir='./', outdir='./scratch',
+ tprnfor=.true., verbosity='high'
+/
+&SYSTEM
+ ibrav=0, nat=2, ntyp=1, ecutwfc=12.0, ecutrho=48.0,
+ nspin=2, tot_magnetization=2.0, occupations='fixed', nbnd=7,
+ input_dft='PBE', nosym=.true., noinv=.true.,
+ nr1=72, nr2=72, nr3=72,
+/
+&ELECTRONS
+ conv_thr=1.0d-10, electron_maxstep=200, mixing_beta=0.3,
+ diagonalization='david', diago_thr_init=1.0d-10
+/
+ATOMIC_SPECIES
+O 15.999 O_ONCV_PBE-1.2.upf
+CELL_PARAMETERS angstrom
+8 0 0
+0 8 0
+0 0 8
+ATOMIC_POSITIONS angstrom
+O 0 0 0
+O 0 0 1.2075
+K_POINTS gamma

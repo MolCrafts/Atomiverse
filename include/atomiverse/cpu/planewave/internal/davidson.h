@@ -39,6 +39,10 @@ class DavidsonSolver {
     /// @brief Size the FFT work buffer to the workspace grid (idempotent).
     void prepare(const PWWorkspace& ws);
 
+    /// @brief Refresh convergence control while retaining FFT scratch.
+    /// @param tol Residual tolerance in the workspace's energy units.
+    void set_tolerance(AccReal tol) noexcept { tol_ = tol; }
+
     /// @brief Diagonalize at the workspace's current k-point G-sphere.
     /// @param ws Plane-wave workspace (`gvec`/`n_g`/`T_G` set per k-point).
     void step(PWWorkspace& ws);

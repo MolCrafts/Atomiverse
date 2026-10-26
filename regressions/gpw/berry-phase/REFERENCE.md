@@ -3,6 +3,77 @@
 One case; every section below is run by `atv_regressions --case gpw/berry-phase` and keeps its own oracle record.
 
 
+The canonical batched exact Fourier-overlap implementation was validated on
+2026-10-25 (build12, Release, Apple M4, OpenMP/OpenBLAS 8/8, profiling enabled).
+Both existing sections pass their unchanged numerical gates and strict
+whole-section 60 s bound. Equal short wavevectors reuse image-local Fourier
+integrals, while each ket k retains its Bloch phase and matrix sum order.
+The resulting AO operators are shared by the occupied UKS manifolds.
+
+### Current native validation
+
+| Section | Whole section | Ideal total polarization | Displaced Δp_z | Born charge |
+| --- | --- | --- | --- | --- |
+| `periodic-berry-gpw` | **10.070322 s** | (0, 0, 0) at printed precision | +0.000069 e | +0.0034 e |
+| `periodic-berry-gpw-uks` | **15.201491 s** | (0, 0, 0) at printed precision | +0.000069 e | +0.0035 e |
+
+The timer covers all three ideal-cell directions and the displaced-cell z
+direction, including construction and assertions. RKS then UKS run in the
+same process. Per-axis profiles separate SCF and exact AO/MO link work;
+every axis uses the ordinary `method.run(frame)` path.
+
+[Raw CTest output](../../../tools/cp2k_oracle/inputs/gpw-berry-phase/native-validation.txt),
+[metadata/hashes](../../../tools/cp2k_oracle/inputs/gpw-berry-phase/native-validation.json)
+and [reproduction instructions](../../../tools/cp2k_oracle/inputs/gpw-berry-phase/README.md)
+archive the actual measurements. These native values are validation evidence;
+the literature symmetry/ASR pins remain the oracle. Earlier native measurements
+are retained as historical diagnostics. No fresh CP2K wall ratio is inferred
+from the historical external runs below.
+
+### Exact Gaussian Fourier overlaps
+
+Berry and Wannier links share `prim_overlap_fourier` in the existing GPW
+one-electron integral kernel. It evaluates
+
+\[
+F_{ab}(\mathbf q)=\int a(\mathbf r)b(\mathbf r)
+  e^{-i\mathbf q\cdot\mathbf r}\,d^3r
+= c_a c_b\left(\frac{\pi}{p}\right)^{3/2}
+  e^{-|\mathbf q|^2/(4p)-i\mathbf q\cdot\mathbf P}
+  \prod_{d=x,y,z}\sum_{t=0}^{l_{a,d}+l_{b,d}}
+    E_t^{l_{a,d},l_{b,d}}(-i q_d)^t,
+\]
+
+where \(p=\alpha_a+\alpha_b\),
+\(\mathbf P=(\alpha_a\mathbf A+\alpha_b\mathbf B)/p\), and the existing
+McMurchie–Davidson coefficients \(E_t\) include the Gaussian product's
+center-separation attenuation. The wavevector \(\mathbf q\) is the short,
+unwrapped ket-minus-bra reciprocal step in Bohr⁻¹; primitive coordinates
+are in Bohr and the Fourier sign is **negative**. Periodic image phases
+retain the ket's Bloch convention and wrapped k labels.
+
+Every angular term contributes. In particular a same-center s/pₓ product
+has zero ordinary overlap but Fourier integral
+\(-i q_x F_{ss}(\mathbf q)/(2p)\). Multiplying the ordinary overlap by only
+a scalar damping/center phase loses that term and the higher p/d moments.
+The shared kernel uses the exact Hermite polynomial instead.
+
+The added pure `GpwOneElectron.Fourier*` tests target closed-form s/s,
+odd s/p and d/p, p/p and d/d second/fourth moments, a separated-center p/d
+integral, zero-wavevector overlap identities, and conjugation/exchange
+identities. They do not solve an SCF or use native snapshots as expected
+values. In build13, all 17 `GpwOneElectron` tests (including seven primitive
+Fourier tests) and all three `GpwFourierLinks` tests passed. The batched tests
+cover analytic image sums for equal/distinct wavevectors, split/batch
+identity, mixed-angular translation/conjugation covariance, and invalid-domain
+exception propagation. The [actual unit-output extract](../../../tools/cp2k_oracle/inputs/gpw-berry-phase/native-math-validation.txt)
+and [metadata/hashes](../../../tools/cp2k_oracle/inputs/gpw-berry-phase/native-math-validation.json)
+record all **1771/1771** registered units passing in **46.66 s**. Build13 adds
+test registration; native mathematical code is unchanged from the build12
+regression measurements above.
+
+
+
 ## Reference — Berry-phase (King–Smith–Vanderbilt) polarization, bulk Si (GPW)
 
 ### Method
@@ -81,11 +152,12 @@ direction (quantized), \(p=(0,0,0)\); displaced \(\Delta p_z=+5.5\times10^{-5}\)
 
 ### Acceptance (hard-coded in `reg_periodic-berry-gpw.cpp`)
 
-1. Both SCF runs converge.
+1. All three ideal-cell directional SCFs and the displaced-cell z SCF converge.
 2. Ionic bookkeeping exact (tol 1e-9).
 3. Centrosymmetric pin: distance of every ideal-Si \(p_i\) to the nearest
    multiple of 0.5 < **0.08** \(e\).
 4. Born-charge pin: \(|Z^*| = |\Delta p_z|/\delta < 0.5\).
+5. Entire section completes in ≤60 s at the registered 8-thread width.
 
 ### CP2K twin
 
@@ -115,7 +187,7 @@ SCF+Berry direction (not the multi-gate regression wall).
 | `T_atv` | **11.3 s** (one string-mesh SCF+Berry direction, OMP=8; multi-gate reg wall ≈45 s / 4 SCFs) |
 | `ratio` | \(T_\mathrm{atv}/T_\mathrm{oracle} = 11.3/1.18 \approx \mathbf{9.6}\) |
 
-### Performance
+### Historical external performance record
 
 | Item | Value |
 | ---- | ----- |
@@ -156,8 +228,11 @@ cpu::gpw::BerryPolarization berry; // k_perp, k_string, directions
 auto r = berry.compute(method, frame);
 ```
 
-No public `*Config` bag; no factories. Closed-shell RKS path
-(`n_occ`) is unchanged — see `regressions/gpw/berry-phase`.
+No public `*Config` bag; no factories. RKS and UKS use the same exact
+Gaussian Fourier-overlap kernel. The spin-independent AO link is built once
+and applied to both occupied UKS manifolds. Each direction independently
+runs the canonical `method.run(frame)` path on its own k-mesh with the
+original convergence gates.
 
 ### Pseudopotential / basis
 
@@ -208,11 +283,12 @@ direction (quantized), \(p=(0,0,0)\); displaced \(\Delta p_z=+5.3\times10^{-5}\)
 
 ### Acceptance (hard-coded in `reg_periodic-berry-gpw-uks.cpp`)
 
-1. Both collinear UKS SCF runs converge.
+1. All three ideal-cell directional UKS SCFs and the displaced-cell z SCF converge.
 2. Ionic bookkeeping exact (tol 1e-9).
 3. Centrosymmetric pin: distance of every ideal-Si \(p_i\) to the nearest
    multiple of 0.5 < **0.08** \(e\).
 4. Born-charge pin: \(|Z^*| = |\Delta p_z|/\delta < 0.5\).
+5. Entire section completes in ≤60 s at the registered 8-thread width.
 
 ### CP2K twin
 
@@ -250,7 +326,7 @@ wall ≈ 98 s / 4 SCFs).
 | `T_atv` | **21.09 s** (one string-mesh SCF+Berry direction, OMP=8) |
 | `ratio` | \(T_\mathrm{atv}/T_\mathrm{oracle} = 21.09/98.68 \approx \mathbf{0.214}\) |
 
-### Performance
+### Historical external performance record
 
 | Item | Value |
 | ---- | ----- |

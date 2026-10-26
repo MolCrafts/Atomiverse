@@ -1,14 +1,14 @@
-/// @file cpu/scf/internal/diis_mixer.cpp
+/// @file cpu/linalg/internal/diis_mixer.cpp
 /// @brief Combined DIIS accelerator implementation.
 
-#include "atomiverse/cpu/scf/internal/diis_mixer.h"
+#include "atomiverse/cpu/linalg/internal/diis_mixer.h"
 #include "atomiverse/cpu/linalg/pulay.h"
 
 #include <xtensor/reducers/xnorm.hpp>
 
 namespace ATV {
 namespace cpu {
-namespace scf {
+namespace linalg {
 namespace internal {
 
 std::pair<RealMatrix, RealMatrix> DIISMixer::step(const RealMatrix& F_alpha,
@@ -63,6 +63,6 @@ RealMatrix DIISMixer::step(const RealMatrix& F, const RealMatrix& e) {
 }
 
 } // namespace internal
-} // namespace scf
+} // namespace linalg
 } // namespace cpu
 } // namespace ATV

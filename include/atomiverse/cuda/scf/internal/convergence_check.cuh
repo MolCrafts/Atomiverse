@@ -1,14 +1,14 @@
 /// @file cuda/scf/internal/convergence_check.cuh
-/// @brief internal::ConvergenceCheck -- SCF convergence via Frobenius norm
-///        of P - P_old.
+/// @brief Density convergence and physical HF convergence measurements.
 ///
 /// **Internal SCF helper.** Does NOT inherit `cuda::Component` and is
 /// never registered into a `Driver` Plan. Owned by `the concrete method (cuda::scf::RHF) private cycle`,
 /// which drives its `build` / `step` / `destroy` lifecycle directly.
 ///
-/// Computes ||P - P_old||_F using cuBLAS (axpy + nrm2) and compares against
-/// the specified tolerance. Sets the SCF workspace `ws.converged` when
-/// satisfied.
+/// Synthetic step() measures ||P-P_old||_F. Physical step_hf() also requires
+/// a small energy change and pre-extrapolation Fock commutator. All HF norms,
+/// energy history and comparisons stay on device; only a mapped control flag
+/// is observed by the owning Driver's criterion.
 ///
 /// When compute_energy is true (default), also computes E = dot(H, P) and
 /// writes it to frame.scalars->energy. Set to false when another helper (e.g.
@@ -26,7 +26,7 @@ namespace cuda {
 namespace scf {
 namespace internal {
 
-/// @brief SCF convergence check: ||P_new - P_old||_F < tol.
+/// @brief Density convergence for synthetic paths; physical dual check for HF.
 ///
 /// Optionally computes SCF energy E = trace(H * P) via cuBLAS dot.
 class ConvergenceCheck {
@@ -49,6 +49,21 @@ class ConvergenceCheck {
     /// @param ws SCF electronic-structure workspace.
     void step(const SolverContext& ctx, SCFWorkspace& ws);
 
+    /// @brief HF acceptance requires density, energy and unmixed orbital error.
+    ///
+    /// The error matrices are the pre-extrapolation CDIIS commutators
+    /// X^T(FPS-SPF)X. Energy must change by less than tol [Hartree], the
+    /// combined error norm by less than sqrt(tol), matching the CPU default,
+    /// and the density change must also remain below the CUDA density tol.
+    /// All measurements/history remain on device.
+    void step_hf(const SolverContext& ctx, SCFWorkspace& ws,
+                 const prec_t* error_alpha, const prec_t* error_beta = nullptr,
+                 const prec_t* density_beta = nullptr,
+                 const prec_t* old_density_beta = nullptr);
+
+    /// @brief Reset device energy history before an independent HF solve.
+    void reset(void* stream);
+
     /// @brief Free cuBLAS handle.
     /// @param ctx Destroy context (CUDA stream + device frame).
     /// @param ws SCF electronic-structure workspace.
@@ -58,6 +73,10 @@ class ConvergenceCheck {
     double tol_;                    ///< Convergence tolerance (Frobenius norm).
     bool compute_energy_;           ///< Whether to compute and write energy.
     void* cublas_handle_ = nullptr; ///< cuBLAS handle.
+    prec_t* d_difference_ = nullptr; ///< Reused alpha/beta density difference.
+    prec_t* d_metrics_ =
+        nullptr; ///< Previous E[eV], density/error norms, dE[Ha].
+    int n_ = 0;
 };
 
 } // namespace internal

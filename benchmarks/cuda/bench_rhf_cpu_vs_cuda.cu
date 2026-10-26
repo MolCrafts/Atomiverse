@@ -1,337 +1,365 @@
-/// @file benchmarks/cuda/bench_rhf_cpu_vs_cuda.cu
-/// @brief Fair CPU vs CUDA RHF wall-time + AO-size scaling (STO-3G).
+/// @file bench_rhf_cpu_vs_cuda.cu
+/// @brief Complete-call RHF walls on Cartesian STO-3G water chains.
 ///
-/// Built as `bench_rhf_cpu_vs_cuda` with ATV_BUILD_BENCHMARKS+CUDA+HF (see
-/// benchmarks/cuda/CMakeLists.txt). Run on a GPU node so both backends share
-/// the same hardware.
-///
-/// Usage:
-///   OMP_NUM_THREADS=8 ./bin/bench_rhf_cpu_vs_cuda [n_rep_energy=12] [n_rep_force=8]
-///
-/// Reports mean/min wall ms, SCF iters, energy [Ha], and CUDA/CPU speedup.
+/// Manual GH200 harness, never CTest. Example:
+/// OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 bench_rhf_cpu_vs_cuda 16 3 both
+/// Arguments: max_waters [1..30, default 16], warm_repeats [1..100, default 3],
+/// cpu|cuda|both, SCF tolerance [default 1e-10], admission budget MiB [16384], cpu_eri stored|direct [stored].
+/// Timers cover RHF.run and final GPU synchronization, including setup,
+/// SCF, result output and call teardown. Construction, input Frame copying,
+/// CPU history reset and CUDA context initialization are outside the timer.
+/// The first call uses a fresh instance; warm calls reuse it with Hcore starts.
+/// Device-free-memory snapshots are not peaks or residency evidence.
+
+#include <cuda_runtime.h>
+
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
-#include <cuda_runtime.h>
+#if defined(_OPENMP) || defined(ATV_BENCH_HAS_OPENMP)
 #include <omp.h>
+#endif
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/rhf.h"
-#include "atomiverse/cpu/scf/scf_enums.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/scf/rhf.cuh"
 
-using namespace ATV;
-using clk = std::chrono::steady_clock;
+namespace {
 
-static double ms_since(clk::time_point t0) {
-    return std::chrono::duration<double, std::milli>(clk::now() - t0).count();
+using Clock = std::chrono::steady_clock;
+constexpr int kMaxIterations = 200;
+constexpr double kEnergyToleranceHa = 1e-6;
+constexpr double kRepeatToleranceHa = 1e-8;
+constexpr double kFrameToleranceEv = 1e-8;
+constexpr std::size_t kMiB = std::size_t{1024} * 1024;
+
+int parse_integer(const char* text, int low, int high, const char* label) {
+    std::size_t end = 0;
+    const auto value = std::stoll(text, &end);
+    if (text[end] != '\0' || value < low || value > high)
+        throw std::invalid_argument(std::string(label) + " outside ["
+                                    + std::to_string(low) + ","
+                                    + std::to_string(high) + "]");
+    return static_cast<int>(value);
 }
 
-static void set_atom(cpu::Frame& f, int i, int Z, double x, double y,
-                     double z) {
-    f.span(kAtom_type)[i] = Z;
-    f.span(kAtom_x)[i] = x;
-    f.span(kAtom_y)[i] = y;
-    f.span(kAtom_z)[i] = z;
-    // rough mass by Z (only for Frame completeness)
-    f.span(kAtom_mass)[i] = (Z == 1)   ? 1.008
-                            : (Z == 6) ? 12.011
-                            : (Z == 7) ? 14.007
-                            : (Z == 8) ? 15.999
-                                       : static_cast<double>(Z);
+double parse_tolerance(const char* text) {
+    std::size_t end = 0;
+    const double value = std::stod(text, &end);
+    if (text[end] != '\0' || !std::isfinite(value) || value <= 0
+        || value > 1e-6)
+        throw std::invalid_argument("SCF tolerance must be in (0, 1e-6]");
+    return value;
 }
 
-// ── Geometries (Å), closed-shell, STO-3G ──────────────────────────────
-
-static cpu::Frame mol_h2() {
-    cpu::Frame f(2);
-    set_atom(f, 0, 1, 0.0, 0.0, 0.0);
-    set_atom(f, 1, 1, 0.74, 0.0, 0.0);
-    f.box = cpu::Box::cubic(40.0);
-    return f;
+ATV::cpu::Frame water_chain(int count) {
+    using namespace ATV;
+    cpu::Frame frame(3 * count);
+    constexpr double y[3] = {0, 0.7572, -0.7572};
+    constexpr double z[3] = {0.1173, -0.4692, -0.4692};
+    for (int water = 0; water < count; ++water)
+        for (int atom = 0; atom < 3; ++atom) {
+            const int i = 3 * water + atom;
+            frame.span(kAtom_type)[i] = atom == 0 ? 8 : 1;
+            frame.span(kAtom_mass)[i] = atom == 0 ? 15.999 : 1.008;
+            frame.span(kAtom_x)[i] = 4.0 * water;
+            frame.span(kAtom_y)[i] = y[atom];
+            frame.span(kAtom_z)[i] = z[atom];
+        }
+    // Same supplied molecular geometry as the MP2 standing benchmark.
+    frame.box = cpu::Box::cubic(std::max(40.0, 4.0 * count + 20.0));
+    return frame;
 }
 
-static cpu::Frame mol_h2o() {
-    cpu::Frame f(3);
-    set_atom(f, 0, 8, 0.0, 0.0, 0.1173);
-    set_atom(f, 1, 1, 0.0, 0.7572, -0.4692);
-    set_atom(f, 2, 1, 0.0, -0.7572, -0.4692);
-    f.box = cpu::Box::cubic(40.0);
-    return f;
+std::size_t planned_bytes(int nao) {
+    const std::size_t n = static_cast<std::size_t>(nao);
+    const std::size_t n4 = n * n * n * n;
+    if (n4 > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw std::runtime_error("dense RHF requires nAO^4 <= INT_MAX");
+    // Conservative admission estimate: dense AO ERIs, CPU/device work arrays,
+    // matrices and library slack. This neither enforces an allocator cap nor
+    // measures peak usage; use a full-process allocation trace for that.
+    return 6 * n4 * sizeof(double) + 128 * n * n * sizeof(double) + 64 * kMiB;
 }
 
-static cpu::Frame mol_ch4() {
-    // Tetrahedral CH4, C–H ≈ 1.09 Å
-    cpu::Frame f(5);
-    const double r = 1.09;
-    const double a = r / std::sqrt(3.0);
-    set_atom(f, 0, 6, 0, 0, 0);
-    set_atom(f, 1, 1, a, a, a);
-    set_atom(f, 2, 1, a, -a, -a);
-    set_atom(f, 3, 1, -a, a, -a);
-    set_atom(f, 4, 1, -a, -a, a);
-    f.box = cpu::Box::cubic(40.0);
-    return f;
-}
-
-static cpu::Frame mol_c2h4() {
-    // Planar ethylene, C=C 1.33 Å, C–H 1.09 Å, HCH ~117°
-    cpu::Frame f(6);
-    set_atom(f, 0, 6, -0.665, 0.0, 0.0);
-    set_atom(f, 1, 6, 0.665, 0.0, 0.0);
-    set_atom(f, 2, 1, -1.23, 0.93, 0.0);
-    set_atom(f, 3, 1, -1.23, -0.93, 0.0);
-    set_atom(f, 4, 1, 1.23, 0.93, 0.0);
-    set_atom(f, 5, 1, 1.23, -0.93, 0.0);
-    f.box = cpu::Box::cubic(40.0);
-    return f;
-}
-
-static cpu::Frame mol_c2h6() {
-    // Staggered ethane, C–C 1.54 Å
-    cpu::Frame f(8);
-    set_atom(f, 0, 6, -0.77, 0.0, 0.0);
-    set_atom(f, 1, 6, 0.77, 0.0, 0.0);
-    set_atom(f, 2, 1, -1.15, 1.02, 0.0);
-    set_atom(f, 3, 1, -1.15, -0.51, 0.88);
-    set_atom(f, 4, 1, -1.15, -0.51, -0.88);
-    set_atom(f, 5, 1, 1.15, -1.02, 0.0);
-    set_atom(f, 6, 1, 1.15, 0.51, 0.88);
-    set_atom(f, 7, 1, 1.15, 0.51, -0.88);
-    f.box = cpu::Box::cubic(40.0);
-    return f;
-}
-
-static cpu::Frame mol_c6h6() {
-    // Benzene, planar, C–C 1.40 Å, C–H 1.08 Å
-    cpu::Frame f(12);
-    const double rc = 1.40;
-    const double rh = 1.40 + 1.08;
-    for (int i = 0; i < 6; ++i) {
-        const double th = 2.0 * 3.141592653589793 * i / 6.0;
-        set_atom(f, i, 6, rc * std::cos(th), rc * std::sin(th), 0.0);
-        set_atom(f, 6 + i, 1, rh * std::cos(th), rh * std::sin(th), 0.0);
+void require_pin(int waters, double energy) {
+    double want = 0;
+    switch (waters) {
+    case 1:
+        // regressions/scf/rhf/sto3g_const.cpp, PySCF water pin.
+        want = -74.96302313846289;
+        break;
+    case 8:
+        // regressions/scf/mp2/water-chain.h, PySCF 2.11.0, Hcore start.
+        want = -599.6949297548834;
+        break;
+    case 16:
+        // Offline pyscf-water16.jsonl, PySCF 2.11.0, Hcore start,
+        // Cartesian STO-3G, conv_tol=1e-12, 4 Angstrom water chain.
+        want = -1199.388118981794;
+        break;
+    default:
+        return;
     }
-    f.box = cpu::Box::cubic(50.0);
-    return f;
+    if (std::abs(energy - want) > kEnergyToleranceHa)
+        throw std::runtime_error("RHF external pin mismatch at waters="
+                                 + std::to_string(waters));
 }
 
-/// Linear H_n (pure-s), bond 0.74 Å — device force path + energy.
-static cpu::Frame mol_h_chain(int n) {
-    cpu::Frame f(n);
-    for (int i = 0; i < n; ++i)
-        set_atom(f, i, 1, 0.74 * i, 0.0, 0.0);
-    f.box = cpu::Box::cubic(std::max(40.0, 0.74 * n + 20.0));
-    return f;
-}
-
-// STO-3G AO count: H=1, C/N/O=5
-static int count_ao_sto3g(const cpu::Frame& f) {
-    int nao = 0;
-    auto Z = f.span(kAtom_type);
-    for (int i = 0; i < static_cast<int>(f.nlocal()); ++i) {
-        const int z = static_cast<int>(Z[i]);
-        if (z == 1)
-            nao += 1;
-        else if (z >= 3 && z <= 10)
-            nao += 5; // Li–Ne STO-3G
-        else
-            nao += 5; // conservative
-    }
-    return nao;
-}
-
-struct Stat {
-    double mean_ms = 0, min_ms = 1e300, max_ms = 0;
-    double e_ha = 0;
-    int iters = 0;
-    int n_rep = 0;
-    bool ok = false;
+struct Measurement {
+    double cold_ms = 0;
+    std::vector<double> warm_ms;
+    double energy_ha = 0;
+    double max_frame_error_ev = 0;
+    double max_repeat_error_ha = 0;
+    int cold_iterations = 0;
+    int warm_iterations_min = std::numeric_limits<int>::max();
+    int warm_iterations_max = 0;
+    std::size_t free_before = 0;
+    std::size_t free_after = 0;
+    std::size_t total_memory = 0;
 };
 
-template <typename Fn>
-static Stat time_reps(int n_rep, int n_warm, Fn&& body) {
-    for (int w = 0; w < n_warm; ++w)
-        body();
-    Stat s;
-    s.n_rep = n_rep;
-    double sum = 0;
-    for (int i = 0; i < n_rep; ++i) {
-        auto t0 = clk::now();
-        body();
-        const double dt = ms_since(t0);
-        sum += dt;
-        s.min_ms = std::min(s.min_ms, dt);
-        s.max_ms = std::max(s.max_ms, dt);
+template <typename Method, typename Reset>
+Measurement measure(const ATV::cpu::Frame& prototype, int waters, int repeats,
+                    bool on_cuda, Method& hf, Reset&& reset) {
+    Measurement measured;
+    if (on_cuda) {
+        ATV_CUDA_CHECK(cudaDeviceSynchronize());
+        ATV_CUDA_CHECK(
+            cudaMemGetInfo(&measured.free_before, &measured.total_memory));
     }
-    s.mean_ms = sum / std::max(1, n_rep);
-    s.ok = true;
-    return s;
-}
-
-static Stat bench_cpu_energy(const cpu::Frame& proto, int n_rep, double tol) {
-    Stat s = time_reps(n_rep, /*warm=*/1, [&] {
-        auto f = proto;
-        cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
-        rhf.run(f);
-        s.e_ha = rhf.energy();
-        s.iters = 0; // CPU may not expose iterations the same way
-    });
-    // one more for energy/iters
-    {
-        auto f = proto;
-        cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
-        rhf.run(f);
-        s.e_ha = rhf.energy();
-        s.ok = std::isfinite(s.e_ha);
+    for (int sample = 0; sample <= repeats; ++sample) {
+        auto frame = prototype;
+        reset();
+        // A stale result must not accidentally satisfy the Frame contract.
+        frame.meta.get(ATV::kEnergy) = std::numeric_limits<double>::quiet_NaN();
+        const auto start = Clock::now();
+        hf.run(frame);
+        if (on_cuda)
+            ATV_CUDA_CHECK(cudaDeviceSynchronize());
+        const double elapsed =
+            std::chrono::duration<double, std::milli>(Clock::now() - start)
+                .count();
+        const double energy = hf.energy();
+        const int iterations = hf.iterations();
+        const double frame_energy = frame.meta.get(ATV::kEnergy);
+        if (!hf.converged() || iterations < 1 || iterations > kMaxIterations
+            || !std::isfinite(energy) || !std::isfinite(frame_energy)
+            || !std::isfinite(elapsed) || elapsed <= 0)
+            throw std::runtime_error("nonfinite or unconverged RHF result");
+        const double frame_error =
+            std::abs(frame_energy - energy * ATV::units::kHartreeInEv);
+        if (frame_error > kFrameToleranceEv)
+            throw std::runtime_error("Frame RHF total energy mismatch");
+        require_pin(waters, energy);
+        measured.max_frame_error_ev =
+            std::max(measured.max_frame_error_ev, frame_error);
+        if (sample == 0) {
+            measured.energy_ha = energy;
+            measured.cold_ms = elapsed;
+            measured.cold_iterations = iterations;
+        } else {
+            // Compare every warm solve with the first solve, avoiding drift.
+            const double repeat_error = std::abs(energy - measured.energy_ha);
+            if (repeat_error > kRepeatToleranceHa)
+                throw std::runtime_error("repeated RHF total energy changed");
+            measured.max_repeat_error_ha =
+                std::max(measured.max_repeat_error_ha, repeat_error);
+            measured.warm_ms.push_back(elapsed);
+            measured.warm_iterations_min =
+                std::min(measured.warm_iterations_min, iterations);
+            measured.warm_iterations_max =
+                std::max(measured.warm_iterations_max, iterations);
+        }
     }
-    return s;
+    if (on_cuda)
+        ATV_CUDA_CHECK(
+            cudaMemGetInfo(&measured.free_after, &measured.total_memory));
+    return measured;
 }
 
-static Stat bench_cuda_energy(const cpu::Frame& proto, int n_rep, double tol) {
-    Stat s = time_reps(n_rep, 1, [&] {
-        auto f = proto;
-        cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
-        rhf.with_gradient(false);
-        rhf.run(f);
-        cudaDeviceSynchronize();
-        s.e_ha = rhf.energy();
-        s.iters = rhf.iterations();
-    });
-    s.ok = std::isfinite(s.e_ha);
-    return s;
+Measurement measure_cpu(const ATV::cpu::Frame& prototype, int waters,
+                        int repeats, double tolerance, bool stored_eri) {
+    using namespace ATV;
+    cpu::scf::RHF hf{cpu::scf::BasisSet::STO3G, 0, tolerance, kMaxIterations};
+    hf.with_gradient(false);
+    hf.init_guess = cpu::scf::InitGuess::Hcore;
+    hf.compute_eri = stored_eri;
+    hf.damping_factor = 0;
+    hf.level_shift = 0;
+    hf.use_diis = true;
+    hf.diis_start_iter = 1;
+    hf.diis_max_vectors = 8;
+    return measure(prototype, waters, repeats, false, hf,
+                   [&] { hf.reset_history(); });
 }
 
-static Stat bench_cpu_forces(const cpu::Frame& proto, int n_rep, double tol) {
-    Stat s = time_reps(n_rep, 1, [&] {
-        auto f = proto;
-        cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
-        auto g = rhf.forces(f);
-        s.e_ha = g.energy / units::kHartreeInEv;
-    });
-    s.ok = std::isfinite(s.e_ha);
-    return s;
+Measurement measure_cuda(const ATV::cpu::Frame& prototype, int waters,
+                         int repeats, double tolerance) {
+    using namespace ATV;
+    cuda::scf::RHF hf{
+        cpu::scf::BasisSet::STO3G, 0, tolerance, kMaxIterations, 0.0, false};
+    return measure(prototype, waters, repeats, true, hf, [] {});
 }
 
-static Stat bench_cuda_forces(const cpu::Frame& proto, int n_rep, double tol) {
-    Stat s = time_reps(n_rep, 1, [&] {
-        auto f = proto;
-        cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, tol, 100};
-        auto g = rhf.forces(f); // forces() enables compute_force
-        cudaDeviceSynchronize();
-        s.e_ha = rhf.energy();
-        s.iters = rhf.iterations();
-        (void)g;
-    });
-    s.ok = std::isfinite(s.e_ha);
-    return s;
+void report(const char* backend, int waters, Measurement measured) {
+    std::sort(measured.warm_ms.begin(), measured.warm_ms.end());
+    const auto count = measured.warm_ms.size();
+    const double median = count % 2 ? measured.warm_ms[count / 2]
+                                    : 0.5
+                                          * (measured.warm_ms[count / 2 - 1]
+                                             + measured.warm_ms[count / 2]);
+    std::printf("backend=%s method=rhf waters=%d atoms=%d nao=%d nocc=%d "
+                "cold_instance_ms=%.6f warm_instance_median_ms=%.6f "
+                "warm_min_ms=%.6f warm_max_ms=%.6f warm_repeats=%zu "
+                "cold_scf_iterations=%d warm_scf_iterations_min=%d "
+                "warm_scf_iterations_max=%d converged=1 E_tot_Ha=%.14f "
+                "max_frame_error_eV=%.3e max_repeat_error_Ha=%.3e "
+                "planned_memory_bytes=%zu\n",
+                backend, waters, 3 * waters, 7 * waters, 5 * waters,
+                measured.cold_ms, median, measured.warm_ms.front(),
+                measured.warm_ms.back(), count, measured.cold_iterations,
+                measured.warm_iterations_min, measured.warm_iterations_max,
+                measured.energy_ha, measured.max_frame_error_ev,
+                measured.max_repeat_error_ha, planned_bytes(7 * waters));
+    if (std::string(backend) == "cuda")
+        std::printf("device_memory_snapshot waters=%d free_before_bytes=%zu "
+                    "free_after_bytes=%zu total_bytes=%zu peak=unmeasured\n",
+                    waters, measured.free_before, measured.free_after,
+                    measured.total_memory);
 }
 
-static void print_row(const char* name, int natm, int nao, const Stat& cpu,
-                      const Stat& gpu, const char* note = "") {
-    const double spd =
-        (gpu.mean_ms > 0 && cpu.mean_ms > 0) ? cpu.mean_ms / gpu.mean_ms : 0;
-    std::printf(
-        "%-10s  N=%2d  nAO=%3d | CPU %8.2f ms (min %7.2f)  E=%10.6f | "
-        "CUDA %8.2f ms (min %7.2f) it=%3d E=%10.6f | speedup %6.2fx  %s\n",
-        name, natm, nao, cpu.mean_ms, cpu.min_ms, cpu.e_ha, gpu.mean_ms,
-        gpu.min_ms, gpu.iters, gpu.e_ha, spd, note);
+const char* environment_value(const char* key) {
+    const char* value = std::getenv(key);
+    return value ? value : "unset";
 }
+
+} // namespace
 
 int main(int argc, char** argv) {
-    int n_rep_e = 12;
-    int n_rep_f = 8;
-    if (argc > 1)
-        n_rep_e = std::max(1, std::atoi(argv[1]));
-    if (argc > 2)
-        n_rep_f = std::max(1, std::atoi(argv[2]));
-
-    const double tol = 1e-9;
-
-    int dev = 0;
-    cudaGetDevice(&dev);
-    cudaDeviceProp prop{};
-    cudaGetDeviceProperties(&prop, dev);
-    std::printf("GPU: %s  CC %d.%d\n", prop.name, prop.major, prop.minor);
-    std::printf("OMP_NUM_THREADS=%d  (omp_get_max_threads=%d)\n",
-                omp_get_max_threads(), omp_get_max_threads());
-    std::printf("n_rep energy=%d  force=%d  tol=%.1e  basis=STO-3G\n\n",
-                n_rep_e, n_rep_f, tol);
-
-    struct Case {
-        const char* name;
-        cpu::Frame (*make)();
-    };
-
-    // ── A. Energy-only: s/p molecules (CUDA device integrals) ─────────
-    std::printf("=== ENERGY-ONLY (with_gradient=false on CUDA) ===\n");
-    std::printf("%-10s  %-12s | %-36s | %-42s | %s\n", "mol", "size", "CPU",
-                "CUDA", "CUDA/CPU");
-
-    const Case energy_cases[] = {
-        {"H2", mol_h2},     {"H2O", mol_h2o},   {"CH4", mol_ch4},
-        {"C2H4", mol_c2h4}, {"C2H6", mol_c2h6}, {"C6H6", mol_c6h6},
-    };
-    for (const auto& c : energy_cases) {
-        auto f = c.make();
-        const int natm = static_cast<int>(f.nlocal());
-        const int nao = count_ao_sto3g(f);
-        // Fewer reps for larger systems
-        const int rep = (nao >= 30)   ? std::max(3, n_rep_e / 3)
-                        : (nao >= 14) ? std::max(5, n_rep_e / 2)
-                                      : n_rep_e;
-        Stat cpu = bench_cpu_energy(f, rep, tol);
-        Stat gpu = bench_cuda_energy(f, rep, tol);
-        const char* note = "";
-        if (std::abs(cpu.e_ha - gpu.e_ha) > 1e-4)
-            note = "WARN |E|";
-        print_row(c.name, natm, nao, cpu, gpu, note);
+    try {
+        if (argc > 7)
+            throw std::invalid_argument("too many arguments");
+        // 30 waters = 210 AOs; 31 already exceeds the dense int-index limit.
+        const int max_waters =
+            argc > 1 ? parse_integer(argv[1], 1, 30, "max_waters") : 16;
+        const int repeats =
+            argc > 2 ? parse_integer(argv[2], 1, 100, "warm_repeats") : 3;
+        const std::string backend = argc > 3 ? argv[3] : "both";
+        if (backend != "cpu" && backend != "cuda" && backend != "both")
+            throw std::invalid_argument("backend must be cpu, cuda or both");
+        const double tolerance = argc > 4 ? parse_tolerance(argv[4]) : 1e-10;
+        const std::size_t budget =
+            static_cast<std::size_t>(
+                argc > 5
+                    ? parse_integer(argv[5], 256, 65536, "memory_budget_MiB")
+                    : 16384)
+            * kMiB;
+        const std::string cpu_eri = argc > 6 ? argv[6] : "stored";
+        if (cpu_eri != "stored" && cpu_eri != "direct")
+            throw std::invalid_argument("cpu_eri must be stored or direct");
+        const bool stored_eri = cpu_eri == "stored";
+        const bool use_cpu = backend != "cuda";
+        const bool use_cuda = backend != "cpu";
+        // Validate the largest case before doing any expensive solves.
+        if (planned_bytes(7 * max_waters) > budget)
+            throw std::runtime_error("planned memory exceeds admission budget");
+        int threads = 1;
+#if defined(_OPENMP) || defined(ATV_BENCH_HAS_OPENMP)
+        threads = omp_get_max_threads();
+#endif
+        std::printf("basis=STO-3G method=rhf charge=0 scf_tol=%.3e max_iter=%d "
+                    "level_shift=0 diis_vectors=8 diis_start=1 damping=0 "
+                    "OMP_max_threads=%d OMP_NUM_THREADS=%s "
+                    "OPENBLAS_NUM_THREADS=%s MKL_NUM_THREADS=%s "
+                    "memory_budget_bytes=%zu cpu_eri=%s compute_eri=%d "
+                    "energy_tolerance_Ha=%.3e "
+                    "repeat_tolerance_Ha=%.3e frame_tolerance_eV=%.3e\n",
+                    tolerance, kMaxIterations, threads,
+                    environment_value("OMP_NUM_THREADS"),
+                    environment_value("OPENBLAS_NUM_THREADS"),
+                    environment_value("MKL_NUM_THREADS"), budget,
+                    cpu_eri.c_str(), stored_eri ? 1 : 0, kEnergyToleranceHa,
+                    kRepeatToleranceHa, kFrameToleranceEv);
+        std::puts(
+            "initial_state: cpu=Hcore_density_no_history "
+            "cuda=zero_density_then_Hcore_diagonalization; "
+            "SCF stopping criteria are backend-specific; "
+            "compare complete walls and energies, inspect iteration counts");
+        std::puts(
+            "timing: cold=fresh_instance_first_run "
+            "warm=same_instance_after_one_complete_run; "
+            "construction_and_context_init=excluded; "
+            "Frame_copy_and_history_reset=excluded; "
+            "setup_SCF_final_output_teardown_and_GPU_completion=included; "
+            "memory_budget_is_conservative_admission_not_allocator_cap; "
+            "memory_snapshots_are_not_peak_or_residency_evidence");
+        if (use_cuda) {
+            int device = 0;
+            cudaDeviceProp properties{};
+            ATV_CUDA_CHECK(cudaGetDevice(&device));
+            ATV_CUDA_CHECK(cudaGetDeviceProperties(&properties, device));
+            ATV_CUDA_CHECK(cudaFree(nullptr));
+            int runtime_version = 0;
+            ATV_CUDA_CHECK(cudaRuntimeGetVersion(&runtime_version));
+            std::printf("device=%d name=%s compute_capability=%d.%d "
+                        "runtime_version=%d\n",
+                        device, properties.name, properties.major,
+                        properties.minor, runtime_version);
+        }
+        for (int waters = 1;; waters = std::min(2 * waters, max_waters)) {
+            const auto planned = planned_bytes(7 * waters);
+            if (use_cuda) {
+                std::size_t free_bytes = 0, total_bytes = 0;
+                ATV_CUDA_CHECK(cudaMemGetInfo(&free_bytes, &total_bytes));
+                if (planned > free_bytes - free_bytes / 5)
+                    throw std::runtime_error("planned memory exceeds 80% "
+                                             "of current free device memory");
+            }
+            const auto prototype = water_chain(waters);
+            Measurement cpu_result, cuda_result;
+            if (use_cpu) {
+                cpu_result = measure_cpu(prototype, waters, repeats, tolerance,
+                                         stored_eri);
+                report("cpu", waters, cpu_result);
+            }
+            if (use_cuda) {
+                cuda_result =
+                    measure_cuda(prototype, waters, repeats, tolerance);
+                report("cuda", waters, cuda_result);
+            }
+            if (use_cpu && use_cuda) {
+                const double error =
+                    std::abs(cpu_result.energy_ha - cuda_result.energy_ha);
+                const bool passed = error <= kEnergyToleranceHa;
+                std::printf("comparison waters=%d abs_total_error_Ha=%.3e "
+                            "tolerance_Ha=%.3e %s\n",
+                            waters, error, kEnergyToleranceHa,
+                            passed ? "PASS" : "FAIL");
+                if (!passed)
+                    return 1;
+            }
+            if (waters == max_waters)
+                break;
+        }
+        return 0;
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "FAIL: %s\n", error.what());
+        std::fprintf(stderr, "usage: bench_rhf_cpu_vs_cuda [max_waters=16] "
+                             "[warm_repeats=3] [cpu|cuda|both] "
+                             "[scf_tol=1e-10] [memory_budget_MiB=16384] "
+                             "[cpu_eri=stored|direct]\n");
+        return 1;
     }
-
-    // ── B. Pure-s H-chain energy scaling ───────────────────────────────
-    std::printf("\n=== ENERGY-ONLY pure-s H_n (device path, n_AO = n) ===\n");
-    for (int n : {2, 4, 6, 8, 12, 16, 24}) {
-        auto f = mol_h_chain(n);
-        // even electron count only
-        if (n % 2)
-            continue;
-        const int rep = (n >= 16) ? std::max(3, n_rep_e / 3) : n_rep_e;
-        Stat cpu = bench_cpu_energy(f, rep, tol);
-        Stat gpu = bench_cuda_energy(f, rep, tol);
-        char name[16];
-        std::snprintf(name, sizeof(name), "H%d", n);
-        print_row(name, n, n, cpu, gpu);
-    }
-
-    // ── C. Forces: pure-s (CUDA device forces) vs CPU ──────────────────
-    std::printf("\n=== FORCES (CUDA pure-s device forces; CPU analytic) ===\n");
-    for (int n : {2, 4, 6, 8, 12}) {
-        if (n % 2)
-            continue;
-        auto f = mol_h_chain(n);
-        const int rep = (n >= 8) ? std::max(3, n_rep_f / 2) : n_rep_f;
-        Stat cpu = bench_cpu_forces(f, rep, tol);
-        Stat gpu = bench_cuda_forces(f, rep, tol);
-        char name[16];
-        std::snprintf(name, sizeof(name), "H%d", n);
-        print_row(name, n, n, cpu, gpu, "forces");
-    }
-
-    // H2O forces: CUDA falls back to host for p-shells — still time it
-    std::printf("\n=== FORCES H2O (CUDA uses host force fallback for p) ===\n");
-    {
-        auto f = mol_h2o();
-        Stat cpu = bench_cpu_forces(f, n_rep_f, tol);
-        Stat gpu = bench_cuda_forces(f, std::max(2, n_rep_f / 2), tol);
-        print_row("H2O", 3, 7, cpu, gpu, "CUDA host-F");
-    }
-
-    std::printf("\nDONE\n");
-    return 0;
 }

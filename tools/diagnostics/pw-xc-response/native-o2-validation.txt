@@ -1,0 +1,49 @@
+1825/1853 Testing: pw/collinear-spin
+1825/1853 Test: pw/collinear-spin
+Command: "/tmp/atv-xc-build/regressions/atv_regressions" "--case" "pw/collinear-spin"
+Directory: /tmp/atv-xc-build/regressions
+"pw/collinear-spin" start time: Oct 25 23:23 CET
+Output:
+----------------------------------------------------------
+
+=== pw/collinear-spin :: pw-spin-gga ===
+[2026-10-25 23:23:54.740] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:23:54.740] [info] [pw] atoms=2 elec=12 bands=6 ecut_ry=12 UPF
+[2026-10-25 23:23:54.997] [info] [pw] start atoms=2 elec=12 bands=7 ecut_ry=12 upf k_mesh=1 ranks=1 spin=2 mult=3 Na=7 Nb=5 smear=0
+[2026-10-25 23:23:54.998] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:23:54.998] [info] all components built
+[2026-10-25 23:23:59.440] [info] [pw] converged iter=12 energy_ry=-57.46535257 mag=2
+PBE spin-GGA: E=-28.7326762874 Ha (-57.4653525748 Ry)  mag=2.000000  conv=1 iters=12
+[2026-10-25 23:23:59.442] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:23:59.442] [info] [pw] atoms=2 elec=12 bands=6 ecut_ry=12 UPF
+[2026-10-25 23:23:59.699] [info] [pw] start atoms=2 elec=12 bands=7 ecut_ry=12 upf k_mesh=1 ranks=1 spin=2 mult=3 Na=7 Nb=5 smear=0
+[2026-10-25 23:23:59.699] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:23:59.699] [info] all components built
+[2026-10-25 23:24:03.262] [info] [pw] converged iter=11 energy_ry=-57.21570595 mag=2
+LSDA spin:    E=-28.6078529736 Ha  mag=2.000000  conv=1 iters=11
+|E_PBE - E_LSDA| = 1.248233e-01 Ha (floor 1.0e-04)
+PASS: pw-spin-gga (mag + true spin-GGA energy + LSDA gap)
+whole section got=8.524242 want<=60 seconds
+
+=== pw/collinear-spin :: pw-spin-polarized-o2 ===
+[2026-10-25 23:24:03.264] [info] [pw] ========== PW SCF ==========
+[2026-10-25 23:24:03.264] [info] [pw] atoms=2 elec=12 bands=6 ecut_ry=12 UPF
+[2026-10-25 23:24:03.519] [info] [pw] start atoms=2 elec=12 bands=7 ecut_ry=12 upf k_mesh=1 ranks=1 spin=2 mult=3 Na=7 Nb=5 smear=0
+[2026-10-25 23:24:03.520] [info] CPU runtime initialized: 1 threads
+[2026-10-25 23:24:03.520] [info] all components built
+[2026-10-25 23:24:08.009] [info] [pw] converged iter=12 energy_ry=-57.46535257 mag=2
+E=-28.7326762874 Ha (-57.4653525748 Ry)  mag=2.000000  conv=1 iters=12
+PASS: pw-spin-polarized-o2 (mag + energy)
+whole section got=4.747081 want<=60 seconds
+
+=== pw/collinear-spin summary ===
+  PASS     8.5 s  pw-spin-gga
+  PASS     4.7 s  pw-spin-polarized-o2
+0/2 sections failed
+<end of output>
+Test time =  13.28 sec
+----------------------------------------------------------
+Test Passed.
+"pw/collinear-spin" end time: Oct 25 23:24 CET
+"pw/collinear-spin" time elapsed: 00:00:13
+----------------------------------------------------------

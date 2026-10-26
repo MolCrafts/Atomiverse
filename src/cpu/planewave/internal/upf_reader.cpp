@@ -2,6 +2,7 @@
 /// @brief UPF v1 XML-like format parser.
 
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -86,6 +87,46 @@ std::vector<AccReal> parse_values(std::istream& in,
 
 } // namespace
 
+void UPFData::validate_radial_mesh() const {
+    if (r.size() < 3 || rab.size() != r.size())
+        throw std::invalid_argument("UPF: provide matching PP_R and PP_RAB "
+                                    "arrays with at least three points");
+    for (std::size_t i = 0; i < r.size(); ++i)
+        if (!std::isfinite(r[i]) || r[i] < 0 || !std::isfinite(rab[i])
+            || rab[i] <= 0 || (i && r[i] <= r[i - 1]))
+            throw std::invalid_argument(
+                "UPF: PP_R must be finite, nonnegative and increasing; PP_RAB "
+                "must be finite and positive");
+}
+
+AccReal UPFData::integrate_radial(std::span<const AccReal> values) const {
+    // Ported from Quantum ESPRESSO qe-7.5 upflib/simpsn.f90, simpson,
+    // revision 770a0b2d12928a67048e2f3da8d10d057e52179e,
+    // source blob a9cfb5b33810860f53abbc30a85cb9a8a8618434.
+    // Copyright (C) 2001-2012 Quantum ESPRESSO group.
+    // GNU General Public License; see QE License and this repository LICENSE.
+    // Even meshes use QE's endpoint correction over the full domain.
+    validate_radial_mesh();
+    const std::size_t n = values.size();
+    if (n < 3 || n > r.size())
+        throw std::invalid_argument(
+            "UPF radial integral: provide at least three samples within PP_R");
+    for (AccReal value : values)
+        if (!std::isfinite(value))
+            throw std::invalid_argument(
+                "UPF radial integral: nonfinite sample");
+    AccReal sum = 0;
+    for (std::size_t i = 1; i + 1 < n; ++i)
+        sum += (i % 2 ? AccReal(4) : AccReal(2)) * values[i] * rab[i];
+    if (n % 2)
+        sum += values[0] * rab[0] + values[n - 1] * rab[n - 1];
+    else
+        sum += values[0] * rab[0] - AccReal(0.25) * values[n - 3] * rab[n - 3]
+               + values[n - 2] * rab[n - 2]
+               + AccReal(1.25) * values[n - 1] * rab[n - 1];
+    return sum / AccReal(3);
+}
+
 UPFData read_upf_v1(const std::string& path) {
     std::ifstream f(path);
     if (!f)
@@ -108,11 +149,13 @@ UPFData read_upf_v1(const std::string& path) {
         }
         // PP_MESH
         if (tag_open(line, "PP_MESH")) {
-            // read PP_R
             while (std::getline(f, line)) {
                 if (tag_open(line, "PP_R")) {
+                    line = join_open_tag(f, line);
                     upf.r = parse_values(f, "PP_R");
-                    break;
+                } else if (tag_open(line, "PP_RAB")) {
+                    line = join_open_tag(f, line);
+                    upf.rab = parse_values(f, "PP_RAB");
                 }
                 if (tag_close(line, "PP_MESH"))
                     break;
@@ -146,6 +189,19 @@ UPFData read_upf_v1(const std::string& path) {
                     UPFData::KBProjector kb;
                     kb.l = l;
                     kb.beta = std::move(beta_vals);
+                    const auto cutoff =
+                        extract_attr(line, "cutoff_radius_index");
+                    // No compact domain declaration means the supplied table
+                    // itself declares the full integration domain.
+                    kb.radial_points =
+                        cutoff.empty()
+                            ? kb.beta.size()
+                            : static_cast<std::size_t>(std::stoul(cutoff));
+                    if (kb.radial_points < 3
+                        || kb.radial_points > kb.beta.size())
+                        throw std::invalid_argument(
+                            "UPF: PP_BETA cutoff_radius_index must describe at "
+                            "least three supplied samples");
                     upf.kb.push_back(std::move(kb));
                 }
                 // Read PP_DIJ (after all betas) — full matrix
@@ -184,6 +240,18 @@ UPFData read_upf_v1(const std::string& path) {
 
     if (upf.r.empty())
         throw std::runtime_error("UPF: no mesh found in " + path);
+    upf.validate_radial_mesh();
+    if (upf.v_loc.size() != upf.r.size())
+        throw std::invalid_argument("UPF: PP_LOCAL must match PP_R");
+    for (const auto& projector : upf.kb)
+        if (projector.beta.size() > upf.r.size())
+            throw std::invalid_argument("UPF: PP_BETA exceeds PP_R");
+    if (!upf.rho_atom.empty() && upf.rho_atom.size() != upf.r.size())
+        throw std::invalid_argument("UPF: atomic density must match PP_R");
+    for (const auto& chi : upf.chi)
+        if (chi.size() != upf.r.size())
+            throw std::invalid_argument(
+                "UPF: atomic wavefunction must match PP_R");
 
     // Norm-conserving only. The plane-wave path applies no augmentation
     // charge, so an ultrasoft or PAW pseudopotential would be integrated as

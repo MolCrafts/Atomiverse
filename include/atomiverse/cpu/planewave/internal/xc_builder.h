@@ -28,16 +28,18 @@ namespace internal {
 /// @brief Computes V_xc(r), E_xc, and V_xc(G) from ρ(G).
 ///
 /// FFTs ρ(G) → ρ(r), evaluates the XC functional pointwise (with spectral
-/// density gradients for GGA), then FFTs V_xc(r) → V_xc(G). Scratch is
+/// density gradients for GGA), then FFTs V_xc(r) → V_xc(G).
+/// Pure GGA uses private 3/2-padded quadrature, with the weighted adjoint
+/// Fourier projection back to the unchanged density G-sphere. Scratch is
 /// allocated in `prepare()`; `step()` performs no heap allocation beyond
 /// workspace array resizes already owned by `PWWorkspace`.
 class XCBuilder {
   public:
-    /// @brief Size scratch to the workspace's FFT grid (idempotent).
+    /// @brief Reserve base and 3/2-padded XC quadrature scratch (idempotent).
     /// @param ws Plane-wave workspace (grid dims must be final).
     void prepare(const PWWorkspace& ws);
 
-    /// @brief Compute `ws.V_xc_r`, `ws.exc_r`, `ws.E_xc`, `ws.V_xc_G`.
+    /// @brief Compute coarse `ws.V_xc_r`, `ws.E_xc`, and `ws.V_xc_G`.
     /// @param ws Plane-wave workspace [ρ in Bohr⁻³, V/E in Hartree].
     /// @param xc Functional selector (`LSDA` = local; `PBE` = true GGA).
     void step(PWWorkspace& ws, cpu::scf::XCType xc = cpu::scf::XCType::PBE);
@@ -52,6 +54,13 @@ class XCBuilder {
                    cpu::scf::XCType xc = cpu::scf::XCType::PBE);
 
   private:
+    /// Shape-only plan; physical G vectors and cell volume are read each call.
+    std::unique_ptr<FFTPlan3D> quadrature_fft_;
+    FFTWBuffer<AccReal> restricted_vxc_r_;
+    void check_prepared(const PWWorkspace& ws) const;
+    void project_to_base(const PWWorkspace& ws,
+                         const xt::xarray<std::complex<AccReal>>& potential,
+                         xt::xarray<AccReal>& output);
     FFTWBuffer<fftw_complex> rho_g_half_;
     FFTWBuffer<AccReal> rho_r_;
     FFTWBuffer<fftw_complex> vxc_g_half_;

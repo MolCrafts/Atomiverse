@@ -79,7 +79,7 @@ constexpr double kOffDiagTol = 1.0e-12; // Ha/Bohr³ (must be exactly 0)
 constexpr double kDiagFloor = 1.0e-10;  // Ha/Bohr³ — stress must be nonzero
 // D: σ(xdm)−σ(plain) vs dual-python FD term (Γ XDM stress tier).
 constexpr double kShiftTol = 1.0e-8; // Ha/Bohr³
-constexpr double kWallBudget = 60.0; // s (product path)
+constexpr double kWallBudget = 60.0; // s (whole section, including all twins)
 
 int g_fail = 0;
 
@@ -96,6 +96,7 @@ void check(bool ok, const char* what) {
 
 int run() {
     using clock = std::chrono::steady_clock;
+    const auto whole_start = clock::now();
 
     constexpr double L = 12.0; // Å, PERIODIC XYZ
     const int z[6] = {8, 1, 1, 8, 1, 1};
@@ -252,6 +253,7 @@ int run() {
     // stress() writes kStress/kEnergy: run it on a copy so the kStress
     // gate below still reads the evaluator's published value.
     std::array<double, 6> s_plain{};
+    const auto plain_start = clock::now();
     {
         cpu::Frame fp = frame;
         cpu::gpw::GpwDft plain = make_cfg(false);
@@ -261,6 +263,8 @@ int run() {
         for (auto& v : s_plain)
             v *= kToHaBohr3;
     }
+    const double wall_plain_s =
+        std::chrono::duration<double>(clock::now() - plain_start).count();
     double max_shift_err = 0.0;
     for (int a = 0; a < 3; ++a) {
         const double shift = san[static_cast<std::size_t>(a)]
@@ -293,13 +297,17 @@ int run() {
     check(conv_ok, "E kStress unit conversion");
 
     check(wall_product_s <= kWallBudget, "product wall <= 60 s");
+    const double wall_total_s =
+        std::chrono::duration<double>(clock::now() - whole_start).count();
+    check(wall_total_s <= kWallBudget, "whole section wall <= 60 s");
 
     std::printf("gpw-xdm-kpoint-stress  |dE_disp|=%.2e Ha  "
                 "max|an-fd|=%.3e  max|shift-pin|=%.3e Ha/Bohr3  iters=%d  "
-                "nk=%d  wall_product=%.2f s  wall_fd_twin=%.2f s\n",
+                "nk=%d  wall_product=%.2f s  wall_fd_twin=%.2f s  "
+                "wall_plain=%.2f s  wall_total=%.2f s\n",
                 std::abs(e_disp - kEDispRef), max_diag_err, max_shift_err,
                 eval.last_result().iters, eval.last_result().n_kpts,
-                wall_product_s, wall_fd_s);
+                wall_product_s, wall_fd_s, wall_plain_s, wall_total_s);
 
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);

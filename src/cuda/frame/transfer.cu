@@ -521,7 +521,7 @@ void update_inputs(const cpu::Frame& src, Frame& dst, InputChange changes) {
     }
 }
 
-void to_cpu(const Frame& d, cpu::Frame& frame) {
+void to_cpu(const Frame& d, cpu::Frame& frame, bool copy_forces) {
     throw_if_force_fault(d);
     int n = frame.nlocal();
 
@@ -531,9 +531,11 @@ void to_cpu(const Frame& d, cpu::Frame& frame) {
     copy_d2h(frame.span(kAtom_vx).data(), d.atoms.vx, n);
     copy_d2h(frame.span(kAtom_vy).data(), d.atoms.vy, n);
     copy_d2h(frame.span(kAtom_vz).data(), d.atoms.vz, n);
-    download_force(frame.span(kAtom_fx).data(), d.atoms.fx, n);
-    download_force(frame.span(kAtom_fy).data(), d.atoms.fy, n);
-    download_force(frame.span(kAtom_fz).data(), d.atoms.fz, n);
+    if (copy_forces) {
+        download_force(frame.span(kAtom_fx).data(), d.atoms.fx, n);
+        download_force(frame.span(kAtom_fy).data(), d.atoms.fy, n);
+        download_force(frame.span(kAtom_fz).data(), d.atoms.fz, n);
+    }
 
     // Global atom tags — round-trip so they survive a device round trip (used
     // by multi-GPU gather/migration to identify atoms after they move between

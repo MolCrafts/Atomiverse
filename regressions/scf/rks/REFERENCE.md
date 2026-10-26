@@ -585,3 +585,16 @@ Recorded 2026-07-23 (`OMP_NUM_THREADS=8`, Release build):
 `rks.hessian(frame)` returns a 9×9 Hessian in eV/Å². Product gate: gated
 elements above within **2e-2 eV/Å²** of the pinned PySCF FD twin; failure
 prints got / want / tol and exits non-zero. ≤ 60 s, single node.
+
+## `custom-xc-water` — external XC energy and all force components
+
+- **oracle:** external — PySCF 2.14.0, actual output in
+  `tools/pyscf_oracle/inputs/xc-extension/water.json`.
+- **input / reproduction:** [external XC example](../../../examples/xc-extension/README.md),
+  `0.8*LDA_X,`, STO-3G Cartesian, grid level 3, SCF tolerance 1e-12 Ha.
+- **quantity:** total energy and complete nuclear gradient, pins copied verbatim
+  into `examples/xc-extension/pins.h`, F = −gradient converted to eV/Å.
+- **tolerances (declared before ATV run):** 1e-6 Ha energy; 2e-5 Ha/Bohr per
+  force component for the independently known grid pruning/response difference.
+- **consumer:** external `ScaledSlater` subclass; public headers only, same
+  molecular grid/Fock/analytic-force implementation as built-in XC. One CPU thread.

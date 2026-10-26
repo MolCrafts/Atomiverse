@@ -26,7 +26,9 @@ void* dmalloc(size_t bytes) {
     return p;
 }
 
-/// Host reference: exactly what XCBuilder::step(ws, PBE)'s grid loop
+/// CPU reference energies are converted to the independent CUDA kernel
+// per-electron test currency; the CPU product kernel returns energy per volume.
+// Host reference: exactly what XCBuilder::step(ws, PBE)'s grid loop
 /// computes per point from rho and the spectral gradient.
 void host_ref(double rho, double gx, double gy, double gz, double& vxc,
               double& exc, double& fx, double& fy, double& fz) {
@@ -38,7 +40,7 @@ void host_ref(double rho, double gx, double gy, double gz, double& vxc,
     const double s4 = 0.25 * sigma;
     const auto out = evaluate_xc(XCType::PBE, rho / 2.0, rho / 2.0, s4, s4, s4);
     vxc = out.vrho_alpha;
-    exc = out.exc;
+    exc = out.energy_density / rho;
     const double vsig_eff = out.vsigma_aa + 0.5 * out.vsigma_ab;
     fx = vsig_eff * gx;
     fy = vsig_eff * gy;
@@ -168,9 +170,11 @@ TEST(CudaPWXcPbe, SigmaZeroIsPw92BaseNotVwn5) {
     double max_pbe_gap = 0, max_vwn5_gap = 1e300;
     for (int i = 0; i < nr; ++i) {
         const double exc_pbe0 =
-            evaluate_xc(XCType::PBE, rho[i] / 2.0, rho[i] / 2.0).exc;
+            evaluate_xc(XCType::PBE, rho[i] / 2.0, rho[i] / 2.0).energy_density
+            / rho[i];
         const double exc_lsda =
-            evaluate_xc(XCType::LSDA, rho[i] / 2.0, rho[i] / 2.0).exc;
+            evaluate_xc(XCType::LSDA, rho[i] / 2.0, rho[i] / 2.0).energy_density
+            / rho[i];
         max_pbe_gap = std::max(max_pbe_gap, std::abs(exc[i] - exc_pbe0));
         max_vwn5_gap = std::min(max_vwn5_gap, std::abs(exc[i] - exc_lsda));
     }

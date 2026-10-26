@@ -94,15 +94,15 @@ void check_cache_equivalence(XCType xc, bool is_gga, const char* label) {
     auto Pa = make_density(static_cast<std::size_t>(N));
     auto Pb = Pa;
 
-    // Original path: rebuilds Phi/dPhi inside every call.
+    const BuiltinXc functional(xc);
+    // Rebuild Phi/dPhi inside this call.
     XCGridResult rebuild =
-        evaluate_xc_batched(grid, pack.shells, N, Pa, Pb, xc);
+        evaluate_xc_batched(grid, pack.shells, N, Pa, Pb, functional);
 
-    // Cached path: build the AO-on-grid basis once, then the precomputed
-    // overload runs steps 2–5 (planned API — RED until it exists).
+    // Cache AO-on-grid samples once; both paths consume the same XC provider.
     XCGridBasis aog;
     aog.build(grid, pack.shells, N, is_gga);
-    XCGridResult cached = evaluate_xc_batched(aog, grid, Pa, Pb, xc);
+    XCGridResult cached = evaluate_xc_batched(aog, grid, Pa, Pb, functional);
 
     expect_bitwise_2d(cached.Vxc_alpha, rebuild.Vxc_alpha, label);
     expect_bitwise_2d(cached.Vxc_beta, rebuild.Vxc_beta, label);

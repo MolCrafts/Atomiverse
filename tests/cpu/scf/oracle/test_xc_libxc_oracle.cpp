@@ -17,10 +17,10 @@ using ATV::test::xc_oracle::evaluate_pbe;
 
 TEST(XCLibxcOracle, LsdaUnpolarizedFiniteAndNegativeExc) {
     auto out = evaluate_lsda(0.5, 0.5);
-    EXPECT_TRUE(std::isfinite(out.exc));
+    EXPECT_TRUE(std::isfinite(out.energy_density));
     EXPECT_TRUE(std::isfinite(out.vrho_alpha));
     EXPECT_TRUE(std::isfinite(out.vrho_beta));
-    EXPECT_LT(out.exc, 0.0);
+    EXPECT_LT(out.energy_density, 0.0);
     EXPECT_DOUBLE_EQ(out.vsigma_aa, 0.0);
     EXPECT_DOUBLE_EQ(out.vsigma_ab, 0.0);
     EXPECT_DOUBLE_EQ(out.vsigma_bb, 0.0);
@@ -28,31 +28,31 @@ TEST(XCLibxcOracle, LsdaUnpolarizedFiniteAndNegativeExc) {
 
 TEST(XCLibxcOracle, LsdaSpinPolarizedHasDistinctVrho) {
     auto out = evaluate_lsda(0.8, 0.2);
-    EXPECT_TRUE(std::isfinite(out.exc));
+    EXPECT_TRUE(std::isfinite(out.energy_density));
     EXPECT_NE(out.vrho_alpha, out.vrho_beta);
 }
 
 TEST(XCLibxcOracle, LsdaBelowCutoffReturnsZero) {
     auto out = evaluate_lsda(1e-20, 1e-20);
-    EXPECT_DOUBLE_EQ(out.exc, 0.0);
+    EXPECT_DOUBLE_EQ(out.energy_density, 0.0);
     EXPECT_DOUBLE_EQ(out.vrho_alpha, 0.0);
     EXPECT_DOUBLE_EQ(out.vrho_beta, 0.0);
 }
 
 TEST(XCLibxcOracle, PbeAllChannelsFinite) {
     auto out = evaluate_pbe(0.5, 0.5, 0.1, 0.1, 0.1);
-    EXPECT_TRUE(std::isfinite(out.exc));
+    EXPECT_TRUE(std::isfinite(out.energy_density));
     EXPECT_TRUE(std::isfinite(out.vrho_alpha));
     EXPECT_TRUE(std::isfinite(out.vrho_beta));
     EXPECT_TRUE(std::isfinite(out.vsigma_aa));
     EXPECT_TRUE(std::isfinite(out.vsigma_ab));
     EXPECT_TRUE(std::isfinite(out.vsigma_bb));
-    EXPECT_LT(out.exc, 0.0);
+    EXPECT_LT(out.energy_density, 0.0);
 }
 
 TEST(XCLibxcOracle, PbeBelowCutoffReturnsZero) {
     auto out = evaluate_pbe(1e-20, 1e-20, 0, 0, 0);
-    EXPECT_DOUBLE_EQ(out.exc, 0.0);
+    EXPECT_DOUBLE_EQ(out.energy_density, 0.0);
 }
 
 // Domain-validation: Slater LDA exchange textbook value at rho_alpha = rho_beta = 0.5
@@ -67,5 +67,5 @@ TEST(XCLibxcOracle, PbeBelowCutoffReturnsZero) {
 TEST(XCLibxcOracle, SlaterTextbookValueAtUnitDensity) {
     constexpr double kExpected = -0.7385587663820224;
     auto out = evaluate_lda_x(0.5, 0.5);
-    EXPECT_NEAR(out.exc, kExpected, 1e-10);
+    EXPECT_NEAR(out.energy_density, kExpected, 1e-10);
 }

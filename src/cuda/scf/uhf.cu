@@ -33,12 +33,6 @@ namespace ATV {
 namespace cuda {
 namespace scf {
 
-/// @brief Row-major 1/2 P_MINAO, or empty when MINAO does not cover Z.
-std::vector<double> uhf_minao_half(const int* Z, const double* x_A,
-                                   const double* y_A, const double* z_A,
-                                   int natm, cpu::scf::BasisSet basis,
-                                   int charge, int n_ao);
-
 namespace {
 
 bool device_sp_sto3g_ok(cpu::scf::BasisSet basis, const int* h_Z, int natm) {
@@ -109,7 +103,7 @@ make_device_solver(const int* h_Z, int natm, int n_alpha, int n_beta,
     return std::make_unique<internal::UhfScfCycle>(
         n_shells, n_ao, n_prim, alpha_mol.data(), coeff_mol.data(),
         L_mol.data(), atom_of.data(), n_alpha, n_beta, tol, max_iter,
-        level_shift);
+        level_shift, h_Z, natm);
 }
 
 __global__ void uhf_add_mat_kernel(prec_t* __restrict__ out,
@@ -123,7 +117,7 @@ __global__ void uhf_add_mat_kernel(prec_t* __restrict__ out,
 
 } // namespace
 
-struct EngineSlot {
+struct UhfEngineSlot {
     std::unique_ptr<internal::UhfScfCycle> cycle;
     cuda::Context* ctx = nullptr;
     cuda::Frame* frame = nullptr;
@@ -132,7 +126,7 @@ struct EngineSlot {
 class UhfStage : public cuda::Component {
   public:
     using Step = void (internal::UhfScfCycle::*)(void*, cuda::Frame&, int);
-    UhfStage(EngineSlot* slot, ATV::scf::Phase phase, const char* stage_name,
+    UhfStage(UhfEngineSlot* slot, ATV::scf::Phase phase, const char* stage_name,
              Step step)
         : slot_(slot), phase_(phase), name_(stage_name), step_(step) {}
     std::string name() const override { return name_; }
@@ -143,7 +137,7 @@ class UhfStage : public cuda::Component {
     }
 
   private:
-    EngineSlot* slot_ = nullptr;
+    UhfEngineSlot* slot_ = nullptr;
     ATV::scf::Phase phase_ = ATV::scf::Phase::fock;
     const char* name_ = "";
     Step step_ = nullptr;
@@ -152,7 +146,7 @@ class UhfStage : public cuda::Component {
 class UhfConverged : public cuda::Criterion {
   public:
     bool contributes_to_convergence() const override { return true; }
-    explicit UhfConverged(EngineSlot* slot) : slot_(slot) {}
+    explicit UhfConverged(UhfEngineSlot* slot) : slot_(slot) {}
     std::string name() const override { return "scf_converged"; }
     ATV::Verdict verdict(const cuda::LoopState& state) override {
         if (!slot_ || !slot_->cycle)
@@ -163,11 +157,11 @@ class UhfConverged : public cuda::Criterion {
     }
 
   private:
-    EngineSlot* slot_ = nullptr;
+    UhfEngineSlot* slot_ = nullptr;
 };
 
 struct UhfLoopState {
-    EngineSlot slot;
+    UhfEngineSlot slot;
     internal::NuclearIdentity identity;
     UhfStage fock;
     UhfStage mix;
@@ -204,11 +198,13 @@ UHF::UHF(UHF&& other) noexcept
       n_alpha(other.n_alpha), n_beta(other.n_beta), charge(other.charge),
       tol(other.tol), max_iter(other.max_iter), level_shift(other.level_shift),
       compute_force(other.compute_force), loop_(std::move(other.loop_)),
-      energy_ha_(other.energy_ha_), iterations_(other.iterations_),
+      energy_ha_(other.energy_ha_), energy_available_(other.energy_available_),
+      iterations_(other.iterations_),
       last_force_device_(other.last_force_device_),
       last_device_sp_(other.last_device_sp_),
       host_Z_(std::move(other.host_Z_)) {
     other.energy_ha_ = 0.0;
+    other.energy_available_ = false;
     other.iterations_ = 0;
     other.compute_force = false;
     other.last_force_device_ = false;
@@ -282,8 +278,6 @@ void UHF::assemble_(cuda::Context& ctx, cuda::Frame& frame, bool host_current) {
     loop_->slot.cycle =
         make_device_solver(host_Z_.data(), natm, n_alpha, n_beta, charge, tol,
                            max_iter, level_shift);
-    last_device_sp_ = true;
-    last_force_device_ = false;
     loop_->slot.cycle->build(ctx.stream, frame);
 }
 
@@ -294,18 +288,19 @@ void UHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
     const bool ready = ws.device_sp_shells && ws.n > 0 && ws.P && ws.C && ws.eig
                        && beta.P && beta.C && beta.eig && ws.d_shell_alpha
                        && ws.d_shell_atom && ws.d_shell_L && ws.d_ao_shell
-                       && ws.d_ao_cart && ws.d_atom_pos && ws.d_W
-                       && frame.atoms.fx && frame.atoms.fy && frame.atoms.fz;
+                       && ws.d_ao_cart && ws.d_atom_pos && ws.d_W && ws.work
+                       && beta.work && ws.d_gradient && frame.atoms.fx
+                       && frame.atoms.fy && frame.atoms.fz;
     if (!ready) {
         throw std::runtime_error(
             "cuda::scf::UHF: missing kernel launch_uhf_forces_sp — the device "
             "s/p force workspace is incomplete (P/C/eig/shell maps).");
     }
     const int nn = ws.n * ws.n;
-    prec_t* d_Ptot = nullptr;
-    prec_t* d_Wb = nullptr;
-    cudaMalloc(&d_Ptot, static_cast<std::size_t>(nn) * sizeof(prec_t));
-    cudaMalloc(&d_Wb, static_cast<std::size_t>(nn) * sizeof(prec_t));
+    // The check-stage residual scratch is no longer needed after convergence.
+    // Reuse it for total density and beta energy-weighted density.
+    prec_t* d_Ptot = ws.work;
+    prec_t* d_Wb = beta.work;
     const int threads = 256;
     const int blocks = (nn + threads - 1) / threads;
     uhf_add_mat_kernel<<<blocks, threads, 0, stream>>>(d_Ptot, ws.P, beta.P,
@@ -316,8 +311,7 @@ void UHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
                                                        nn);
     // The analytic gradient is assembled in FP64 and then published to the
     // Frame's fixed-point force columns (overwrite semantics).
-    double* d_grad = nullptr;
-    cudaMalloc(&d_grad, 3 * static_cast<std::size_t>(ws.natm) * sizeof(double));
+    double* d_grad = ws.d_gradient;
     launch_uhf_forces_sp(d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm, d_Ptot,
                          ws.d_W, ws.P, beta.P, ws.d_shell_alpha,
                          ws.d_shell_coeff, ws.d_shell_center, ws.d_shell_atom,
@@ -325,10 +319,7 @@ void UHF::assemble_forces_(cuda::Context& ctx, cuda::Frame& frame) {
                          ws.d_atom_pos, ws.n, ws.n_prim, ws.natm, stream);
     cuda::store_forces(frame, d_grad, d_grad + ws.natm, d_grad + 2 * ws.natm,
                        ws.natm, stream);
-    cudaStreamSynchronize(stream);
-    cudaFree(d_grad);
-    cudaFree(d_Ptot);
-    cudaFree(d_Wb);
+    ATV_CUDA_CHECK(cudaGetLastError());
     last_force_device_ = true;
     (void)ctx;
 }
@@ -337,62 +328,23 @@ void UHF::pull_energy_(cuda::Context& ctx, cuda::Frame& frame) {
     prec_t e_ev = 0;
     if (frame.scalars) {
         auto* stream = static_cast<cudaStream_t>(ctx.stream);
-        cudaMemcpyAsync(&e_ev, &frame.scalars->energy, sizeof(prec_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
+        ATV_CUDA_CHECK(cudaMemcpyAsync(&e_ev, &frame.scalars->energy,
+                                       sizeof(prec_t), cudaMemcpyDeviceToHost,
+                                       stream));
+        ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
     }
     energy_ha_ = static_cast<double>(e_ev) / units::kHartreeInEv;
 }
 
 void UHF::step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step) {
-    struct Guard {
-        bool& flag;
-        explicit Guard(bool& f) : flag(f) { flag = true; }
-        ~Guard() { flag = false; }
-    } guard(this->launching_);
-    for (const auto& plan_slot : this->plan().slots) {
-        if (plan_slot.ops.empty())
-            continue;
-        for (const auto& op : plan_slot.ops) {
-            if (!op.component)
-                continue;
-            cuda::LaunchContext lc{ctx, frame, plan_slot.phase, step};
-            op.component->launch(lc);
-        }
+    if (this->backend_ && &this->backend_->context() == &ctx
+        && &this->backend_->frame() == &frame) {
+        // The standalone Backend has an SCF Plan: prepare_run therefore
+        // does not perform the MD initial-force walk.
+        this->step_once(step);
+    } else {
+        this->step_borrowed_(ctx, frame, step);
     }
-}
-
-void UHF::seed_minao_(cuda::Context& ctx, cuda::Frame& frame) {
-    const int natm = frame.n_atoms();
-    if (natm <= 0 || !loop_ || !loop_->slot.cycle)
-        return;
-    if (static_cast<int>(host_Z_.size()) != natm)
-        return;
-    auto* stream = static_cast<cudaStream_t>(ctx.stream);
-    // Full-precision coordinates: primary plus the mixed-mode correction.
-    const std::size_t count = static_cast<std::size_t>(natm);
-    auto fetch = [&](const pos_t* primary, const pos_t* correction) {
-        std::vector<pos_t> hi(count), lo(count, pos_t(0));
-        cudaMemcpyAsync(hi.data(), primary, count * sizeof(pos_t),
-                        cudaMemcpyDeviceToHost, stream);
-        if (correction)
-            cudaMemcpyAsync(lo.data(), correction, count * sizeof(pos_t),
-                            cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
-        std::vector<double> out(count);
-        for (std::size_t i = 0; i < count; ++i)
-            out[i] = static_cast<double>(hi[i]) + static_cast<double>(lo[i]);
-        return out;
-    };
-    const std::vector<double> x = fetch(frame.atoms.x, frame.atoms.x_corr);
-    const std::vector<double> y = fetch(frame.atoms.y, frame.atoms.y_corr);
-    const std::vector<double> z = fetch(frame.atoms.z, frame.atoms.z_corr);
-    const int n = loop_->slot.cycle->workspace().n;
-    const std::vector<double> half = uhf_minao_half(
-        host_Z_.data(), x.data(), y.data(), z.data(), natm, basis, charge, n);
-    if (half.empty())
-        return;
-    loop_->slot.cycle->seed_density(ctx.stream, half.data(), half.data(), n);
 }
 
 int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
@@ -401,15 +353,23 @@ int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
         UHF* self;
         cuda::Context& context;
         cuda::LoopServices parent_loop;
+        bool complete = false;
         ~Guard() {
             context.loop = parent_loop;
             self->release_engine_();
+            if (!complete) {
+                self->last_device_sp_ = false;
+                self->last_force_device_ = false;
+            }
         }
     } guard{this, ctx, ctx.loop};
 
+    last_device_sp_ = false;
+    last_force_device_ = false;
+    energy_available_ = false;
+    this->status_.reset();
     assemble_(ctx, frame, host_current);
     loop_->slot.cycle->begin(ctx.stream);
-    seed_minao_(ctx, frame);
     ctx.loop.status = &this->status_;
     ctx.loop.metrics = &this->metrics_;
     this->status_.reset();
@@ -425,36 +385,62 @@ int UHF::drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
             break;
     }
     loop_->slot.cycle->finish(ctx.stream);
+    if (!this->converged())
+        throw std::runtime_error("cuda::scf::UHF: SCF did not converge within "
+                                 + std::to_string(cap) + " iterations");
     if (compute_force && ctx.exec.forces_requested)
         assemble_forces_(ctx, frame);
-    pull_energy_(ctx, frame);
+    const bool retrieve = this->backend_ && &this->backend_->context() == &ctx
+                          && &this->backend_->frame() == &frame;
+    if (retrieve)
+        pull_energy_(ctx, frame);
     this->iterations_ = iters;
+    energy_available_ = retrieve;
     last_device_sp_ = true;
+    guard.complete = true;
     return iters;
 }
 
-void UHF::build_on(cuda::Context&, cuda::Frame&) {
-    if (this->plan().slots.empty())
-        this->build();
+void UHF::build_on(cuda::Context& ctx, cuda::Frame& frame) {
+    this->build_borrowed_(ctx, frame);
 }
 
 int UHF::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame, int budget) {
     return drive_loop_(ctx, frame, budget);
 }
 
-void UHF::destroy_on(cuda::Context&, cuda::Frame&) { release_engine_(); }
+void UHF::destroy_on(cuda::Context& ctx, cuda::Frame& frame) {
+    release_engine_();
+    this->destroy_borrowed_(ctx, frame);
+}
 
 void UHF::run(cpu::Frame& frame) {
+    energy_available_ = false;
     cache_host_types(frame);
-    this->setup_pass(frame);
     try {
+        this->setup_pass(frame);
         drive_loop_(this->backend_->context(), this->backend_->frame(),
                     max_iter, /*host_current=*/true);
+        this->teardown_pass(frame, compute_force);
     } catch (...) {
-        this->teardown_pass(frame);
+        energy_available_ = false;
+        // Failed device candidates must never overwrite the host Frame.
+        // Preserve the original failure even if resource teardown also fails.
+        if (this->backend_) {
+            try {
+                this->backend_->sync();
+                this->backend_->destroy_components();
+            } catch (...) {
+            }
+            try {
+                this->backend_->shutdown();
+            } catch (...) {
+            }
+            this->backend_.reset();
+            this->built_plugins_.clear();
+        }
         throw;
     }
-    this->teardown_pass(frame);
 }
 
 cpu::scf::GradientResult UHF::forces(cpu::Frame& frame) {
@@ -480,15 +466,6 @@ cpu::scf::GradientResult UHF::forces(cpu::Frame& frame) {
     }
     const double e_ev = static_cast<double>(frame.meta.get(kEnergy));
     return cpu::scf::GradientResult{std::move(f), e_ev};
-}
-
-const SCFWorkspace& UHF::workspace() const {
-    if (!loop_ || !loop_->slot.cycle) {
-        throw std::runtime_error(
-            "cuda::scf::UHF::workspace: no live SCF workspace. Call run() or "
-            "forces(); the workspace is released when that call returns.");
-    }
-    return loop_->slot.cycle->workspace();
 }
 
 } // namespace scf

@@ -40,6 +40,7 @@
 #pragma once
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -58,6 +59,7 @@ namespace cuda {
 namespace scf {
 
 struct RhfLoopState;
+class MP2;
 
 /// @brief Restricted Hartree–Fock on the CUDA backend.
 ///
@@ -160,8 +162,16 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     /// @return Forces [eV/Å] and energy [eV].
     cpu::scf::GradientResult forces(cpu::Frame& frame);
 
-    /// @brief Last total energy [Hartree].
-    double energy() const { return energy_ha_; }
+    /// @brief Total energy of the last successful standalone solve [Hartree].
+    /// @throws std::logic_error Before standalone success, after failure, or
+    /// after a nested solve; nested results reside on the parent's Frame.
+    double energy() const {
+        if (!energy_available_)
+            throw std::logic_error(
+                "cuda::scf::RHF::energy: no successful standalone result; "
+                "nested energy is on the parent Frame");
+        return energy_ha_;
+    }
 
     /// @brief SCF iterations of the most recent solve.
     int iterations() const { return iterations_; }
@@ -177,16 +187,12 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     ///        a device SCF (a missing kernel throws instead of host-filling).
     bool last_scf_on_device() const { return last_device_sp_; }
 
-    /// @brief Device SCF workspace during a solve.
-    /// @throws std::runtime_error after `run` / `forces` return — the
-    ///         workspace is released at the end of the call.
-    const SCFWorkspace& workspace() const;
-
   protected:
     /// @brief The method is the energy source; no extra component is required.
     void validate_components() const override {}
 
   private:
+    friend class MP2;
     /// @brief Seed nuclear Z from a host Frame (path select before upload).
     void cache_host_types(const cpu::Frame& frame);
 
@@ -200,7 +206,8 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
     /// @param host_current Nuclear Z was read at this call's host Frame boundary.
     /// @return Iterations executed.
     int drive_loop_(cuda::Context& ctx, cuda::Frame& frame, int budget,
-                    bool nuclear_forces, bool host_current = false);
+                    bool nuclear_forces, bool host_current = false,
+                    MP2* correlation = nullptr, bool accumulate = false);
 
     /// @brief Walk this Driver's Plan once (one SCF iteration).
     void step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step);
@@ -227,6 +234,7 @@ class RHF : public cuda::Driver<ATV::scf::Phase>,
 
     std::unique_ptr<RhfLoopState> loop_;
     double energy_ha_ = 0.0;
+    bool energy_available_ = false;
     int iterations_ = 0;
     bool last_force_device_ = false;
     bool last_device_sp_ = false;

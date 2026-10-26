@@ -24,6 +24,8 @@ void* dmalloc(size_t bytes) {
     return p;
 }
 
+// CPU reference energies are converted to the independent CUDA kernel
+// per-electron test currency; the CPU product kernel returns energy per volume.
 // Host reference: exactly what XCBuilder::step(ws, LSDA) computes per point.
 void host_ref(double rho, double& vxc, double& exc) {
     if (rho < 1e-12) {
@@ -33,7 +35,7 @@ void host_ref(double rho, double& vxc, double& exc) {
     }
     auto out = evaluate_xc(XCType::LSDA, rho / 2.0, rho / 2.0);
     vxc = out.vrho_alpha;
-    exc = out.exc;
+    exc = out.energy_density / rho;
 }
 } // namespace
 
@@ -113,7 +115,8 @@ TEST(CudaPWXcLda, IsVwn5NotPw92) {
         // PBE at sigma = 0 is Slater + PW92 — the functional this kernel used
         // to implement.
         const double exc_pw92 =
-            evaluate_xc(XCType::PBE, rho[i] / 2.0, rho[i] / 2.0).exc;
+            evaluate_xc(XCType::PBE, rho[i] / 2.0, rho[i] / 2.0).energy_density
+            / rho[i];
         max_gap = std::max(max_gap, std::abs(exc[i] - exc_pw92));
     }
     EXPECT_GT(max_gap, 1e-6) << "device eps_xc is indistinguishable from the "
@@ -229,7 +232,7 @@ TEST(CudaPWXcLda, SpinMatchesCpuEvaluateXc) {
             auto out = evaluate_xc(XCType::LSDA, ra, rb);
             ref_va = out.vrho_alpha;
             ref_vb = out.vrho_beta;
-            ref_exc = out.exc;
+            ref_exc = out.energy_density / (ra + rb);
         }
         const double t = 1e-12 * std::fmax(1.0, std::abs(ref_exc));
         const double ta = 1e-12 * std::fmax(1.0, std::abs(ref_va));

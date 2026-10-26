@@ -8,20 +8,14 @@
 /// 2×1×1 supercell Γ-DFPT + IFC Fourier where K_xc is the central FD of the
 /// same GGA `XCBuilder` operator the ground-state SCF converged.
 ///
-/// Gates (all pins in REFERENCE.md):
-///   1. diagonal supercell force constant vs the OFFLINE central second
-///      difference of the restricted-PBE SCF total energy on the 2×1×1
-///      supercell at identical settings (hard-coded pin — the true discrete
-///      Hessian; nothing external runs here),
-///   2. |ω(X)| windows anchored by the CP2K 2026.1 supercell FD twin,
-///      widened for the documented minimal-twin bias (LSDA parent shows the
-///      same offset),
-///   3. bounded soft-TA imaginary count (minimal ecut/k twin),
-///   4. pre-symmetrization force-constant asymmetry.
+/// Gates: existing external frequency windows, finite/converged response,
+/// asymmetry and runtime q-pattern curvature supplement. No native frozen
+/// constants are oracles.
 ///
 /// Public API only. Requires ATV_BUILD_PW. Exit non-zero on failure.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -31,6 +25,7 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/dfpt_phonon.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
+#include "finite_q_checks.h"
 #include "harness/registry.h"
 
 namespace atv_reg_response_dfpt_gga_finite_q_si {
@@ -39,6 +34,7 @@ using namespace ATV;
 using namespace ATV::cpu::pw;
 
 int run() {
+    const auto section_start = std::chrono::steady_clock::now();
     // ── Pinned acceptance numbers (see REFERENCE.md) ──
     // CP2K 2026.1 supercell FD twin (X branch): TA 133.7 (×2), LA 373.8,
     // LO 417.9, TO 462.0 (×2) cm⁻¹. ATV minimal twin (10 Ry NC-UPF, k=1
@@ -50,10 +46,8 @@ int run() {
     constexpr double kHi3Max = 850.0;
     constexpr int kMaxImag = 2;
     constexpr double kAsymMaxEvA2 = 1e-4;
-    // Offline energy-FD pin on the 2×1×1 supercell (restricted PBE):
-    // C[(0x),(0x)] = (E(+h) − 2E0 + E(−h))/h², h = 0.03 Å, SCF tol 1e-9,
-    // identical ecut/k/XC/UPF (REFERENCE.md).
-    constexpr double kC00FdPinEvA2 = 21.2006;
+    // Same-q runtime consistency supplements; external frequency gates
+    // remain the independent oracle. No frozen native force constants.
     constexpr double kC00TolEvA2 = 0.30;
 
     constexpr double kA = 5.43; // Å
@@ -147,21 +141,24 @@ int run() {
     }
 
     const double c00 = r.force_constants(0, 0);
-    if (std::abs(c00 - kC00FdPinEvA2) > kC00TolEvA2) {
-        std::printf("FAIL: C[(0x),(0x)] got=%.4f want=%.4f +/- %.2f eV/A^2 "
-                    "(offline supercell PBE energy-FD pin)\n",
-                    c00, kC00FdPinEvA2, kC00TolEvA2);
+    const double curvature =
+        atv_dfpt_finite_q_checks::x_pattern_curvature(method, frame);
+    if (!std::isfinite(c00) || std::abs(c00 - curvature) > kC00TolEvA2) {
+        std::printf(
+            "FAIL: Re C00(X)=%.8f q-pattern curvature=%.8f tol=%.2f eV/Ang^2\n",
+            c00, curvature, kC00TolEvA2);
         return 1;
     }
-
+    const double wall = std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - section_start)
+                            .count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall);
+    if (wall > 60.0)
+        return 1;
     std::printf(
-        "PASS: DFPT Si X PBE  omega (%.2f, %.2f, %.2f | %.2f, %.2f, %.2f) "
-        "cm^-1  |omega|sorted (%.0f,%.0f,%.0f|%.0f,%.0f,%.0f)  n_imag=%d  "
-        "C00 %.4f vs FD pin %.4f (tol %.2f)  asym %.2e\n",
-        r.frequencies(0), r.frequencies(1), r.frequencies(2), r.frequencies(3),
-        r.frequencies(4), r.frequencies(5), abs_w[0], abs_w[1], abs_w[2],
-        abs_w[3], abs_w[4], abs_w[5], n_imag, c00, kC00FdPinEvA2, kC00TolEvA2,
-        r.max_asymmetry);
+        "PASS: dfpt-gga-finite-q-si external spectrum + Re C00(X) runtime "
+        "consistency C00=%.8f curvature=%.8f tol=%.2f asym=%.3e\n",
+        c00, curvature, kC00TolEvA2, r.max_asymmetry);
     return 0;
 }
 

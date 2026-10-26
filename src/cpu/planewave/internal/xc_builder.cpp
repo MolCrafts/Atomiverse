@@ -9,8 +9,10 @@
 ///   v_σ = vrho_σ − div[ 2 vσ_σσ ∇ρ_σ + vσ_αβ ∇ρ_σ̄ ].
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
+#include <stdexcept>
 
 namespace ATV {
 namespace cpu {
@@ -18,6 +20,8 @@ namespace pw {
 namespace internal {
 
 namespace {
+
+int padded_dimension(int n) { return 2 * ((3 * n + 3) / 4); }
 
 /// @brief Map a G-sphere mode into the r2c half-complex FFT layout.
 /// @return flat index in [0, nc); sets `conj` when the sphere G was folded.
@@ -77,13 +81,43 @@ inline void unpack_half_to_sphere(const GVectorList& gv, int ng, int nx, int ny,
     }
 }
 
+// The physical density sphere must be strictly below every even-grid
+// Nyquist plane. This is the PW setup contract; folding two distinct edge
+// modes into one real-grid sample would not be an adjoint projection.
+void validate_density_modes(const PWWorkspace& ws) {
+    if (!ws.gvec || ws.n_g < 1 || ws.nr != ws.fft_nx * ws.fft_ny * ws.fft_nz
+        || !(ws.omega > 0) || !std::isfinite(ws.omega))
+        throw std::invalid_argument("PW XC: invalid grid, G-sphere or volume");
+    const auto& gv = *ws.gvec;
+    const auto ng = static_cast<std::size_t>(ws.n_g);
+    if (gv.g.size() != ng || gv.h.size() != ng || gv.k.size() != ng
+        || gv.l.size() != ng)
+        throw std::invalid_argument("PW XC: inconsistent G-sphere sizes");
+    for (int ig = 0; ig < ws.n_g; ++ig)
+        if (2 * std::abs(gv.h[ig]) >= ws.fft_nx
+            || 2 * std::abs(gv.k[ig]) >= ws.fft_ny
+            || 2 * std::abs(gv.l[ig]) >= ws.fft_nz)
+            throw std::invalid_argument("PW XC: density modes must lie below "
+                                        "the base-grid Nyquist plane");
+}
+
 } // namespace
 
 void XCBuilder::prepare(const PWWorkspace& ws) {
     if (ws.nr <= 0)
         return;
-    const auto nr = static_cast<std::size_t>(ws.nr);
-    const auto nc = static_cast<std::size_t>(ws.nc);
+    // 3/2 padding removes the leading quadratic convolution aliases when
+    // projecting nonlinear GGA fluxes to the physical density sphere.
+    // Round upward to even dimensions; only the shape is retained here.
+    const int nx = padded_dimension(ws.fft_nx),
+              ny = padded_dimension(ws.fft_ny),
+              nz = padded_dimension(ws.fft_nz);
+    if (!quadrature_fft_ || quadrature_fft_->nx() != nx
+        || quadrature_fft_->ny() != ny || quadrature_fft_->nz() != nz)
+        quadrature_fft_ = std::make_unique<FFTPlan3D>(nx, ny, nz);
+    const auto nr = static_cast<std::size_t>(quadrature_fft_->nr());
+    const auto nc = static_cast<std::size_t>(quadrature_fft_->nc());
+    restricted_vxc_r_.resize(nr);
     rho_g_half_.resize(nc);
     rho_r_.resize(nr);
     vxc_g_half_.resize(nc);
@@ -111,6 +145,29 @@ void XCBuilder::prepare(const PWWorkspace& ws) {
     }
 }
 
+void XCBuilder::check_prepared(const PWWorkspace& ws) const {
+    if (!quadrature_fft_ || quadrature_fft_->nx() != padded_dimension(ws.fft_nx)
+        || quadrature_fft_->ny() != padded_dimension(ws.fft_ny)
+        || quadrature_fft_->nz() != padded_dimension(ws.fft_nz)
+        || (ws.nspin == 2
+            && rho_up_r_.size()
+                   < static_cast<std::size_t>(quadrature_fft_->nr())))
+        throw std::logic_error(
+            "PW XC: call prepare after changing the grid or spin layout");
+}
+
+void XCBuilder::project_to_base(
+    const PWWorkspace& ws, const xt::xarray<std::complex<AccReal>>& potential,
+    xt::xarray<AccReal>& output) {
+    if (output.size() != static_cast<std::size_t>(ws.nr))
+        output.resize({static_cast<std::size_t>(ws.nr)});
+    auto* work = work_g_half_.data();
+    pack_sphere_to_half(*ws.gvec, ws.n_g, ws.fft_nx, ws.fft_ny, ws.fft_nz,
+                        ws.fft_nx / 2 + 1, ws.nc, work,
+                        [&](int ig) { return potential[ig]; });
+    ws.fft->c2r(work, output.data());
+}
+
 void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
     const int ng = ws.n_g;
 
@@ -120,12 +177,18 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
         return;
     }
 
-    const int nr = ws.nr;
-    const int nc = ws.nc;
-    const int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
+    validate_density_modes(ws);
+    const bool gga = cpu::scf::is_gga(xc);
+    check_prepared(ws);
+    if (ws.rho_G.size() != static_cast<std::size_t>(ng))
+        throw std::invalid_argument("PW XC: density does not match G-sphere");
+    FFTPlan3D& fft = gga ? *quadrature_fft_ : *ws.fft;
+    const int nr = fft.nr(), nc = fft.nc();
+    const int nx = fft.nx(), ny = fft.ny(), nz = fft.nz();
     const int nxc = nx / 2 + 1;
     auto& gv = *ws.gvec;
-    const bool gga = cpu::scf::is_gga(xc);
+    if (ws.V_xc_G.size() != static_cast<std::size_t>(ng))
+        ws.V_xc_G.resize({static_cast<std::size_t>(ng)});
 
     // ── 1. FFT ρ(G) → ρ(r) ──────────────────────────────────────────
     auto* rho_g_half = rho_g_half_.data();
@@ -136,12 +199,9 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
                                     static_cast<double>(ws.rho_G[ig].imag()));
     });
     // FFTW does NOT normalize: c2r output = Σ_G input[G] exp(iGr)
-    ws.fft->c2r(rho_g_half, rho_r);
+    fft.c2r(rho_g_half, rho_r);
 
-    if (ws.V_xc_r.size() != static_cast<std::size_t>(nr))
-        ws.V_xc_r.resize({static_cast<std::size_t>(nr)});
-    if (ws.exc_r.size() != static_cast<std::size_t>(nr))
-        ws.exc_r.resize({static_cast<std::size_t>(nr)});
+    auto* vxc_r = restricted_vxc_r_.data();
 
     // ── 1b. GGA: spectral ∇ρ from i G ρ(G) ──────────────────────────
     if (gga) {
@@ -156,7 +216,7 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
                     static_cast<double>(ws.rho_G[ig].imag()));
                 return std::complex<double>(0.0, gd) * rho;
             });
-            ws.fft->c2r(work, grad_comp[d]);
+            fft.c2r(work, grad_comp[d]);
         }
     }
 
@@ -170,8 +230,7 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
     for (int i = 0; i < nr; ++i) {
         const AccReal rho = rho_r[i];
         if (rho < AccReal(1e-12)) {
-            ws.V_xc_r[i] = 0;
-            ws.exc_r[i] = 0;
+            vxc_r[i] = 0;
             if (gga)
                 fx[i] = fy[i] = fz[i] = AccReal(0);
             continue;
@@ -191,9 +250,8 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
         const auto out = cpu::scf::evaluate_xc(
             xc, static_cast<double>(rho) / 2.0, static_cast<double>(rho) / 2.0,
             sigma_aa, sigma_ab, sigma_bb);
-        ws.V_xc_r[i] = static_cast<AccReal>(out.vrho_alpha);
-        ws.exc_r[i] = static_cast<AccReal>(out.exc);
-        E_xc += rho * static_cast<AccReal>(out.exc) * dV;
+        vxc_r[i] = static_cast<AccReal>(out.vrho_alpha);
+        E_xc += static_cast<AccReal>(out.energy_density) * dV;
 
         if (gga) {
             const double vsig_eff = out.vsigma_aa + 0.5 * out.vsigma_ab;
@@ -216,7 +274,7 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
             ws.V_xc_G[ig] = std::complex<AccReal>(0, 0);
 
         for (int d = 0; d < 3; ++d) {
-            ws.fft->r2c(flux_comp[d], work);
+            fft.r2c(flux_comp[d], work);
             for (int ig = 0; ig < ng; ++ig) {
                 bool conj = false;
                 const int idx = pack_half_index(gv.h[ig], gv.k[ig], gv.l[ig],
@@ -238,88 +296,25 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
                 static_cast<double>(ws.V_xc_G[ig].real()),
                 static_cast<double>(ws.V_xc_G[ig].imag()));
         });
-        ws.fft->c2r(work, div_r_.data());
+        fft.c2r(work, div_r_.data());
         for (int i = 0; i < nr; ++i)
-            ws.V_xc_r[i] -= div_r_.data()[i];
+            vxc_r[i] -= div_r_.data()[i];
     }
 
     // ── 3. FFT V_xc(r) → V_xc(G) ─────────────────────────────────────
     auto* vxc_g_half = vxc_g_half_.data();
-    ws.fft->r2c(ws.V_xc_r.data(), vxc_g_half);
+    fft.r2c(vxc_r, vxc_g_half);
 
     const AccReal inv_nr = AccReal(1) / static_cast<AccReal>(nr);
     unpack_half_to_sphere(gv, ng, nx, ny, nz, nxc, nc, vxc_g_half, inv_nr,
                           ws.V_xc_G);
 
-    ws.V_xc_G[0] = std::complex<AccReal>(ws.V_xc_G[0].real(), AccReal(0));
-}
-
-void fft_rho_g_to_r(const PWWorkspace& ws,
-                    const xt::xarray<std::complex<AccReal>>& rho_G,
-                    fftw_complex* rho_g_half, AccReal* rho_r) {
-    int ng = ws.n_g;
-    int nc = ws.nc;
-    int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
-    int nxc = nx / 2 + 1;
-    auto& gv = *ws.gvec;
-    for (int i = 0; i < nc; ++i)
-        rho_g_half[i][0] = rho_g_half[i][1] = 0;
-    for (int ig = 0; ig < ng; ++ig) {
-        int h = gv.h[ig], k = gv.k[ig], l = gv.l[ig];
-        int kx = ((h % nx) + nx) % nx;
-        int ky = ((k % ny) + ny) % ny;
-        int kz = ((l % nz) + nz) % nz;
-        bool conj = false;
-        if (kx > nx / 2) {
-            kx = nx - kx;
-            ky = (ny - ky) % ny;
-            kz = (nz - kz) % nz;
-            conj = true;
-        }
-        int idx = kx + nxc * (ky + ny * kz);
-        if (idx >= 0 && idx < nc) {
-            rho_g_half[idx][0] = static_cast<double>(rho_G[ig].real());
-            rho_g_half[idx][1] = static_cast<double>(conj ? -rho_G[ig].imag()
-                                                          : rho_G[ig].imag());
-        }
+    if (gga)
+        project_to_base(ws, ws.V_xc_G, ws.V_xc_r);
+    else {
+        ws.V_xc_r.resize({static_cast<std::size_t>(ws.nr)});
+        std::copy(vxc_r, vxc_r + nr, ws.V_xc_r.begin());
     }
-    ws.fft->c2r(rho_g_half, rho_r);
-}
-
-void fft_vxc_r_to_g(const PWWorkspace& ws, AccReal* vxc_r,
-                    fftw_complex* vxc_g_half,
-                    xt::xarray<std::complex<AccReal>>& V_xc_G) {
-    int ng = ws.n_g;
-    int nc = ws.nc;
-    int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
-    int nxc = nx / 2 + 1;
-    auto& gv = *ws.gvec;
-    ws.fft->r2c(vxc_r, vxc_g_half);
-    AccReal inv_nr = AccReal(1) / static_cast<AccReal>(ws.nr);
-    for (int ig = 0; ig < ng; ++ig) {
-        int h = gv.h[ig], k = gv.k[ig], l = gv.l[ig];
-        int kx = ((h % nx) + nx) % nx;
-        int ky = ((k % ny) + ny) % ny;
-        int kz = ((l % nz) + nz) % nz;
-        bool conj = false;
-        if (kx > nx / 2) {
-            kx = nx - kx;
-            ky = (ny - ky) % ny;
-            kz = (nz - kz) % nz;
-            conj = true;
-        }
-        int idx = kx + nxc * (ky + ny * kz);
-        if (idx >= 0 && idx < nc) {
-            V_xc_G[ig] = std::complex<AccReal>(
-                static_cast<AccReal>(vxc_g_half[idx][0]) * inv_nr,
-                static_cast<AccReal>(conj ? -vxc_g_half[idx][1]
-                                          : vxc_g_half[idx][1])
-                    * inv_nr);
-        } else {
-            V_xc_G[ig] = std::complex<AccReal>(0, 0);
-        }
-    }
-    V_xc_G[0] = std::complex<AccReal>(V_xc_G[0].real(), AccReal(0));
 }
 
 void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
@@ -332,12 +327,20 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
         return;
     }
 
-    const int nr = ws.nr;
-    const int nc = ws.nc;
-    const int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
+    validate_density_modes(ws);
+    const bool gga = cpu::scf::is_gga(xc);
+    check_prepared(ws);
+    for (const auto& channel : ws.rho_spin_G)
+        if (channel.size() != static_cast<std::size_t>(ng))
+            throw std::invalid_argument(
+                "PW XC: spin density does not match G-sphere");
+    FFTPlan3D& fft = gga ? *quadrature_fft_ : *ws.fft;
+    const int nr = fft.nr(), nc = fft.nc();
+    const int nx = fft.nx(), ny = fft.ny(), nz = fft.nz();
     const int nxc = nx / 2 + 1;
     auto& gv = *ws.gvec;
-    const bool gga = cpu::scf::is_gga(xc);
+    if (ws.V_xc_G.size() != static_cast<std::size_t>(ng))
+        ws.V_xc_G.resize({static_cast<std::size_t>(ng)});
 
     auto* rho_g_half = rho_g_half_.data();
     auto* rho_up = rho_up_r_.data();
@@ -345,8 +348,11 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
     auto* vxc_up = vxc_up_r_.data();
     auto* vxc_dn = vxc_dn_r_.data();
 
-    fft_rho_g_to_r(ws, ws.rho_spin_G[0], rho_g_half, rho_up);
-    fft_rho_g_to_r(ws, ws.rho_spin_G[1], rho_g_half, rho_dn);
+    for (int spin = 0; spin < 2; ++spin) {
+        pack_sphere_to_half(gv, ng, nx, ny, nz, nxc, nc, rho_g_half,
+                            [&](int ig) { return ws.rho_spin_G[spin][ig]; });
+        fft.c2r(rho_g_half, spin == 0 ? rho_up : rho_dn);
+    }
 
     if (ws.V_xc_spin_G.size() != 2) {
         ws.V_xc_spin_G.resize(2);
@@ -354,11 +360,9 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
         ws.V_xc_spin_G[1].resize({static_cast<std::size_t>(ng)});
     }
     for (int s = 0; s < 2; ++s) {
-        if (ws.V_xc_spin_r[s].size() != static_cast<std::size_t>(nr))
-            ws.V_xc_spin_r[s].resize({static_cast<std::size_t>(nr)});
+        if (ws.V_xc_spin_G[s].size() != static_cast<std::size_t>(ng))
+            ws.V_xc_spin_G[s].resize({static_cast<std::size_t>(ng)});
     }
-    if (ws.exc_r.size() != static_cast<std::size_t>(nr))
-        ws.exc_r.resize({static_cast<std::size_t>(nr)});
 
     // ── Spectral ∇ρ_σ from i G ρ_σ(G) (true spin-GGA) ────────────────
     // α → grad_*; β → grad_dn_*.
@@ -379,7 +383,7 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                             static_cast<double>(rhoG[ig].imag()));
                         return std::complex<double>(0.0, gd) * rho;
                     });
-                ws.fft->c2r(work, gcomp[d]);
+                fft.c2r(work, gcomp[d]);
             }
         }
     }
@@ -405,9 +409,6 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
         if (rtot < AccReal(1e-12)) {
             vxc_up[i] = 0;
             vxc_dn[i] = 0;
-            ws.V_xc_spin_r[0][i] = 0;
-            ws.V_xc_spin_r[1][i] = 0;
-            ws.exc_r[i] = 0;
             if (gga) {
                 fx_up[i] = fy_up[i] = fz_up[i] = AccReal(0);
                 fx_dn[i] = fy_dn[i] = fz_dn[i] = AccReal(0);
@@ -436,8 +437,7 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                                   static_cast<double>(rb), saa, sab, sbb);
         vxc_up[i] = static_cast<AccReal>(out.vrho_alpha);
         vxc_dn[i] = static_cast<AccReal>(out.vrho_beta);
-        ws.exc_r[i] = static_cast<AccReal>(out.exc);
-        E_xc += rtot * static_cast<AccReal>(out.exc) * dV;
+        E_xc += static_cast<AccReal>(out.energy_density) * dV;
 
         if (gga) {
             // flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β
@@ -471,7 +471,7 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                 ws.V_xc_spin_G[s][ig] = std::complex<AccReal>(0, 0);
 
             for (int d = 0; d < 3; ++d) {
-                ws.fft->r2c(flux[d], work);
+                fft.r2c(flux[d], work);
                 for (int ig = 0; ig < ng; ++ig) {
                     bool conj = false;
                     const int idx = pack_half_index(
@@ -495,7 +495,7 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                     static_cast<double>(ws.V_xc_spin_G[s][ig].real()),
                     static_cast<double>(ws.V_xc_spin_G[s][ig].imag()));
             });
-            ws.fft->c2r(work, div_buf[s]);
+            fft.c2r(work, div_buf[s]);
             for (int i = 0; i < nr; ++i)
                 vxc[s][i] -= div_buf[s][i];
         }
@@ -511,15 +511,24 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
             ra = AccReal(0);
         if (rb < AccReal(0))
             rb = AccReal(0);
-        ws.V_xc_spin_r[0][i] = vxc_up[i];
-        ws.V_xc_spin_r[1][i] = vxc_dn[i];
         e_xc_int += (ra * vxc_up[i] + rb * vxc_dn[i]) * dV;
     }
     ws.e_xc_int_spin = e_xc_int;
 
     auto* vxc_g_half = vxc_g_half_.data();
-    fft_vxc_r_to_g(ws, vxc_up, vxc_g_half, ws.V_xc_spin_G[0]);
-    fft_vxc_r_to_g(ws, vxc_dn, vxc_g_half, ws.V_xc_spin_G[1]);
+    AccReal* potentials[2] = {vxc_up, vxc_dn};
+    for (int spin = 0; spin < 2; ++spin) {
+        fft.r2c(potentials[spin], vxc_g_half);
+        unpack_half_to_sphere(gv, ng, nx, ny, nz, nxc, nc, vxc_g_half,
+                              AccReal(1) / nr, ws.V_xc_spin_G[spin]);
+        if (gga)
+            project_to_base(ws, ws.V_xc_spin_G[spin], ws.V_xc_spin_r[spin]);
+        else {
+            ws.V_xc_spin_r[spin].resize({static_cast<std::size_t>(ws.nr)});
+            std::copy(potentials[spin], potentials[spin] + nr,
+                      ws.V_xc_spin_r[spin].begin());
+        }
+    }
     // Restricted-compatible total Vxc (not used by spin Davidson).
     for (int ig = 0; ig < ng; ++ig)
         ws.V_xc_G[ig] =

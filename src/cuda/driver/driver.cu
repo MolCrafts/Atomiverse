@@ -271,9 +271,9 @@ void Backend::destroy_components() {
     lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
 }
 
-void Backend::retrieve(cpu::Frame& frame) {
+void Backend::retrieve(cpu::Frame& frame, bool copy_forces) {
     sync();
-    cuda::to_cpu(frame_, frame);
+    cuda::to_cpu(frame_, frame, copy_forces);
     input_snapshot_.capture(frame, device_input);
     inputs_dirty_ = identity_dirty_ = false;
 }

@@ -82,6 +82,7 @@ constexpr double kWallBudget = 60.0;    // s
 
 int run() {
     using clock = std::chrono::steady_clock;
+    const auto whole_start = clock::now();
 
     constexpr double L = 12.0; // Å, PERIODIC XYZ
     const int z[6] = {8, 1, 1, 8, 1, 1};
@@ -249,6 +250,7 @@ int run() {
     }
 
     // ── (4) The XDM stress contribution is the pinned number ──────────────
+    const auto plain_start = clock::now();
     cpu::gpw::GpwDft plain({O, H}, 200.0, cpu::gpw::XcKind::PBE);
     plain.n_occ = 8;
     plain.max_iter = 120;
@@ -268,6 +270,8 @@ int run() {
         for (auto& v : s_plain)
             v *= kToHaBohr3;
     }
+    const double wall_plain_s =
+        std::chrono::duration<double>(clock::now() - plain_start).count();
 
     double max_shift_err = 0.0;
     for (int a = 0; a < 3; ++a) {
@@ -311,14 +315,24 @@ int run() {
                     wall_product_s, kWallBudget);
         return 1;
     }
+    const double wall_total_s =
+        std::chrono::duration<double>(clock::now() - whole_start).count();
+    if (wall_total_s > kWallBudget) {
+        std::printf("FAIL: whole section wall=%.2f s exceeds %.0f s budget "
+                    "(product=%.2f plain=%.2f FD=%.2f s)\n",
+                    wall_total_s, kWallBudget, wall_product_s, wall_plain_s,
+                    wall_fd_s);
+        return 1;
+    }
 
     std::printf("PASS: gpw-xdm-stress  |dE_disp|=%.2e Ha  "
                 "max|sigma_an-sigma_fd|=%.3e  max|sigma|=%.3e  "
                 "max|shift-pin|=%.3e Ha/Bohr3  iters=%d  "
-                "wall_product=%.2f s  wall_fd_twin=%.2f s\n",
+                "wall_product=%.2f s  wall_fd_twin=%.2f s  "
+                "wall_plain=%.2f s  wall_total=%.2f s\n",
                 std::abs(e_disp - kEDispRef), max_diag_err, max_diag,
                 max_shift_err, eval.last_result().iters, wall_product_s,
-                wall_fd_s);
+                wall_fd_s, wall_plain_s, wall_total_s);
     return 0;
 }
 

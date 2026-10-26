@@ -1,0 +1,59 @@
+=== pw/collinear-spin :: pw-spin-polarized-o2 ===
+[2026-10-25 19:19:51.275] [info] [pw] ========== PW SCF ==========
+[2026-10-25 19:19:51.275] [info] [pw] atoms=2 elec=12 bands=6 ecut_ry=12 UPF
+[2026-10-25 19:19:51.275] [debug] [pw] --- Ewald (Ha) ---
+[2026-10-25 19:19:51.275] [debug] [pw]   real=1.99442454598688 recip=19.918082648398702 self=-19.239367584019913
+[2026-10-25 19:19:51.275] [debug] [pw]   total=2.3812965059116067 Ha (4.762593011823213 Ry)
+[2026-10-25 19:19:51.276] [debug] [pw] --- G-vectors ---
+[2026-10-25 19:19:51.276] [debug] [pw]   N_G=19381 G_min=0.41561483947167865 G_max=6.917209513710871
+[2026-10-25 19:19:51.276] [debug] [pw]   FFT dims(hkl): 36x36x36
+[2026-10-25 19:19:51.334] [debug] [pw]   Density FFT grid: 36x36x36 (nr=46656)
+[2026-10-25 19:19:51.334] [debug] [pw] --- UPF: Z_val=6 l_max=1 n_proj=4 ---
+[2026-10-25 19:19:51.556] [debug] [pw]   V_loc(G) [1]=-0.25066458302366573 [10]=-0.12433929132383738
+[2026-10-25 19:19:51.571] [debug] [pw]   KB projectors: 4 proj, 2 atoms, 1 k-spheres (atomic wfc: 0)
+[2026-10-25 19:19:51.571] [info] [pw] start atoms=2 elec=12 bands=7 ecut_ry=12 upf k_mesh=1 ranks=1 spin=2 mult=3 Na=7 Nb=5 smear=0
+[2026-10-25 19:19:51.571] [info] CPU runtime initialized: 1 threads
+[2026-10-25 19:19:51.571] [debug] analysis_executor initialized: 1 workers, ring 3
+[2026-10-25 19:19:51.571] [info] all components built
+[2026-10-25 19:19:52.108] [debug] [pw] iter=1 one_e=-53.715012 hartree=28.936261 xc=-6.924840 ewald=2.381297 total_ha=-29.32229508 (-58.64459015 Ry)
+[2026-10-25 19:19:52.666] [debug] [pw] iter=2 one_e=-49.417070 hartree=24.423383 xc=-6.124170 ewald=2.381297 total_ha=-28.73656019 (-57.47312039 Ry)
+[2026-10-25 19:19:53.044] [debug] [pw] iter=3 one_e=-49.539302 hartree=24.460236 xc=-6.030225 ewald=2.381297 total_ha=-28.72799452 (-57.45598903 Ry)
+[2026-10-25 19:19:53.411] [debug] [pw] iter=4 one_e=-49.677340 hartree=24.570906 xc=-5.997704 ewald=2.381297 total_ha=-28.72284113 (-57.44568226 Ry)
+[2026-10-25 19:19:53.786] [debug] [pw] iter=5 one_e=-49.808854 hartree=24.695426 xc=-5.992143 ewald=2.381297 total_ha=-28.72427404 (-57.44854808 Ry)
+[2026-10-25 19:19:54.189] [debug] [pw] iter=6 one_e=-49.909988 hartree=24.797941 xc=-5.996408 ewald=2.381297 total_ha=-28.72715887 (-57.45431773 Ry)
+[2026-10-25 19:19:54.635] [debug] [pw] iter=7 one_e=-49.980808 hartree=24.873374 xc=-6.002940 ewald=2.381297 total_ha=-28.72907788 (-57.45815576 Ry)
+[2026-10-25 19:19:55.149] [debug] [pw] iter=8 one_e=-50.030141 hartree=24.928026 xc=-6.009567 ewald=2.381297 total_ha=-28.73038514 (-57.46077028 Ry)
+[2026-10-25 19:19:55.705] [debug] [pw] iter=9 one_e=-50.063894 hartree=24.967525 xc=-6.015238 ewald=2.381297 total_ha=-28.73031041 (-57.46062082 Ry)
+[2026-10-25 19:19:56.467] [debug] [pw] iter=10 one_e=-50.088989 hartree=24.998206 xc=-6.020092 ewald=2.381297 total_ha=-28.72957827 (-57.45915654 Ry)
+[2026-10-25 19:19:57.321] [debug] [pw] iter=11 one_e=-50.111042 hartree=25.024515 xc=-6.024496 ewald=2.381297 total_ha=-28.72972673 (-57.45945346 Ry)
+[2026-10-25 19:19:58.390] [debug] [pw] iter=12 one_e=-50.127358 hartree=25.044045 xc=-6.027944 ewald=2.381297 total_ha=-28.72996017 (-57.45992035 Ry)
+[2026-10-25 19:19:59.396] [debug] [pw] iter=13 one_e=-50.136504 hartree=25.054340 xc=-6.029918 ewald=2.381297 total_ha=-28.73078599 (-57.46157199 Ry)
+[2026-10-25 19:20:00.141] [debug] [pw] iter=14 one_e=-50.139462 hartree=25.057415 xc=-6.030712 ewald=2.381297 total_ha=-28.73146263 (-57.46292526 Ry)
+[2026-10-25 19:20:00.668] [debug] [pw] iter=15 one_e=-50.139222 hartree=25.056417 xc=-6.030809 ewald=2.381297 total_ha=-28.73231622 (-57.46463245 Ry)
+[2026-10-25 19:20:01.164] [debug] [pw] iter=16 one_e=-50.135161 hartree=25.051545 xc=-6.030240 ewald=2.381297 total_ha=-28.73255880 (-57.46511760 Ry)
+[2026-10-25 19:20:01.628] [debug] [pw] iter=17 one_e=-50.131912 hartree=25.047876 xc=-6.029823 ewald=2.381297 total_ha=-28.73256343 (-57.46512687 Ry)
+[2026-10-25 19:20:02.133] [debug] [pw] iter=18 one_e=-50.130586 hartree=25.046481 xc=-6.029738 ewald=2.381297 total_ha=-28.73254683 (-57.46509367 Ry)
+[2026-10-25 19:20:02.567] [debug] [pw] iter=19 one_e=-50.130142 hartree=25.046014 xc=-6.029772 ewald=2.381297 total_ha=-28.73260363 (-57.46520726 Ry)
+[2026-10-25 19:20:02.976] [debug] [pw] iter=20 one_e=-50.130003 hartree=25.045892 xc=-6.029838 ewald=2.381297 total_ha=-28.73265359 (-57.46530718 Ry)
+[2026-10-25 19:20:03.444] [debug] [pw] iter=21 one_e=-50.129882 hartree=25.045813 xc=-6.029893 ewald=2.381297 total_ha=-28.73266480 (-57.46532959 Ry)
+[2026-10-25 19:20:03.785] [debug] [pw] iter=22 one_e=-50.129861 hartree=25.045840 xc=-6.029947 ewald=2.381297 total_ha=-28.73267120 (-57.46534240 Ry)
+[2026-10-25 19:20:04.124] [debug] [pw] iter=23 one_e=-50.129858 hartree=25.045880 xc=-6.029990 ewald=2.381297 total_ha=-28.73267216 (-57.46534432 Ry)
+[2026-10-25 19:20:04.472] [debug] [pw] iter=24 one_e=-50.129862 hartree=25.045915 xc=-6.030023 ewald=2.381297 total_ha=-28.73267290 (-57.46534580 Ry)
+[2026-10-25 19:20:04.807] [debug] [pw] iter=25 one_e=-50.129867 hartree=25.045945 xc=-6.030047 ewald=2.381297 total_ha=-28.73267319 (-57.46534638 Ry)
+[2026-10-25 19:20:05.141] [debug] [pw] iter=26 one_e=-50.129872 hartree=25.045967 xc=-6.030065 ewald=2.381297 total_ha=-28.73267339 (-57.46534677 Ry)
+[2026-10-25 19:20:05.478] [debug] [pw] iter=27 one_e=-50.129875 hartree=25.045983 xc=-6.030078 ewald=2.381297 total_ha=-28.73267347 (-57.46534694 Ry)
+[2026-10-25 19:20:05.808] [debug] [pw] iter=28 one_e=-50.129878 hartree=25.045994 xc=-6.030088 ewald=2.381297 total_ha=-28.73267511 (-57.46535022 Ry)
+[2026-10-25 19:20:06.165] [debug] [pw] iter=29 one_e=-50.129854 hartree=25.045972 xc=-6.030090 ewald=2.381297 total_ha=-28.73267512 (-57.46535024 Ry)
+[2026-10-25 19:20:06.499] [debug] [pw] iter=30 one_e=-50.129843 hartree=25.045964 xc=-6.030093 ewald=2.381297 total_ha=-28.73267512 (-57.46535025 Ry)
+[2026-10-25 19:20:06.820] [debug] [pw] iter=31 one_e=-50.129837 hartree=25.045961 xc=-6.030095 ewald=2.381297 total_ha=-28.73267513 (-57.46535025 Ry)
+[2026-10-25 19:20:07.154] [debug] [pw] iter=32 one_e=-50.129835 hartree=25.045961 xc=-6.030098 ewald=2.381297 total_ha=-28.73267513 (-57.46535026 Ry)
+[2026-10-25 19:20:07.489] [debug] [pw] iter=33 one_e=-50.129833 hartree=25.045961 xc=-6.030099 ewald=2.381297 total_ha=-28.73267513 (-57.46535026 Ry)
+[2026-10-25 19:20:07.816] [debug] [pw] iter=34 one_e=-50.129833 hartree=25.045962 xc=-6.030101 ewald=2.381297 total_ha=-28.73267513 (-57.46535026 Ry)
+[2026-10-25 19:20:08.138] [debug] [pw] iter=35 one_e=-50.129832 hartree=25.045962 xc=-6.030101 ewald=2.381297 total_ha=-28.73267513 (-57.46535026 Ry)
+[2026-10-25 19:20:08.138] [debug] CPU runtime shutting down
+[2026-10-25 19:20:08.138] [info] [pw] converged iter=35 energy_ry=-57.46535026 mag=2
+E=-28.7326751302 Ha (-57.4653502604 Ry)  mag=2.000000  conv=1 iters=35
+PASS: pw-spin-polarized-o2 (mag + energy)
+whole section got=16.865870 want<=60 seconds
+[2026-10-25 19:20:08.138] [debug] CPU runtime shutting down
+[2026-10-25 19:20:08.138] [debug] CPU runtime shutting down

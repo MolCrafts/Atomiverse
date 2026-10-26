@@ -15,4 +15,5 @@ atv_regression(SECTION delta-scf-n2
   REQUIRES HF)
 
 atv_regression(SECTION n2_ionization
-  REQUIRES HF)
+  REQUIRES HF
+  THREADS 4)

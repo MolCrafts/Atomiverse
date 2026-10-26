@@ -241,10 +241,11 @@ struct GpwResult {
     ///        Null under multigrid products or pure Γ. Shared so `GpwResult`
     ///        stays movable without deep-copying the dense χ table.
     std::shared_ptr<internal::KpointBasisGrid> scf_kbg{};
-    /// @brief Lazy force-path caches of center-derivative basis-on-grid
-    ///        (filled on first `gpw_forces_from_scf` at this density).
+    /// @brief CUDA host force setup's full derivative CBG cache. CPU forces
+    ///        stream each AO's derivatives without populating this payload.
     mutable CompactBasisGrid force_cbgd{};
     mutable bool force_cbgd_valid = false;
+    /// @brief Lazy multi-k force-path center-derivative basis-on-grid cache.
     mutable std::shared_ptr<internal::KpointBasisGrid> force_kbgd{};
     /// @}
     /// @name Fixed-density KS evaluation payload (Car–Parrinello / linearized-XL path)
@@ -329,8 +330,11 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// ignored. High-spin O₂ (GTH-q6, 12 valence e⁻, multiplicity 3) → (7, 5).
     int n_alpha = 0;
     int n_beta = 0;
-    int max_iter = 100;        ///< max SCF iterations.
-    double tol = 1e-8;         ///< SCF energy convergence [Hartree].
+    int max_iter = 100; ///< max SCF iterations.
+    double tol = 1e-8;  ///< SCF energy convergence [Hartree].
+    /// @brief Maximum orthonormal KS-density commutator for DIIS [Hartree].
+    /// Tighten alongside tol when differentiating forces (phonons/Hessians).
+    double residual_tol = 1e-5;
     double eps_default = 1e-8; ///< Gaussian-tail cutoff.
     double mix = 0.5;          ///< linear density-mixing (diis_depth == 0).
     int diis_depth = 6;        ///< Pulay DIIS history depth.
@@ -561,10 +565,10 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     std::string name() const { return "gpw"; }
     /// @brief Energy source for an outer loop's validation.
     /// @return true.
-    bool provides_energy() const { return true; }
+    bool provides_energy() const override { return true; }
     /// @brief Force source for an outer loop's validation.
     /// @return true.
-    bool provides_force() const { return true; }
+    bool provides_force() const override { return true; }
 
     /// @brief Nested mount (Born–Oppenheimer): remember the parent Runtime
     ///        and validate the configuration against its Frame.

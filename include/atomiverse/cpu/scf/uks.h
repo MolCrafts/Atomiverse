@@ -28,6 +28,13 @@ class UKS : public MeanFieldMethod<UKS> {
     /// @param charge  Molecular charge [e].
     UKS(BasisSet basis, int n_alpha, int n_beta, XCType xc = XCType::LSDA,
         int charge = 0);
+    /// @brief Construct with an immutable external semi-local CPU XC provider.
+    /// @param basis Gaussian basis. @param functional Batched XC provider.
+    /// @param charge Molecular charge [e].
+    /// @param n_alpha Alpha electrons. @param n_beta Beta electrons.
+    UKS(BasisSet basis, int n_alpha, int n_beta,
+        std::shared_ptr<const ATV::electronic::XcFunctional> functional,
+        int charge = 0);
     std::string name() const { return "uks"; }
 
   protected:

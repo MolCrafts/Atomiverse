@@ -688,7 +688,22 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
         return static_cast<Derived&&>(*this);
     }
 
+    /// @brief Immutable XC provider retained by this method (null for HF/ROKS).
+    /// @return Shared provider for independent geometry evaluations.
+    const std::shared_ptr<const ATV::electronic::XcFunctional>&
+    xc_functional() const {
+        return xc_functional_;
+    }
+
   protected:
+    /// @brief Admit a CPU molecular XC provider and retain its lifetime.
+    /// @param functional Immutable provider. @param spin Method spin convention.
+    /// @return Built-in identity or Custom for an external semi-local provider.
+    XCType select_functional_(
+        std::shared_ptr<const ATV::electronic::XcFunctional> functional,
+        ATV::electronic::XcSpin spin);
+    std::shared_ptr<const ATV::electronic::XcFunctional> xc_functional_;
+
     void set_predictor_(int order, int corrector_steps, double corrector_tol,
                         bool fallback);
 

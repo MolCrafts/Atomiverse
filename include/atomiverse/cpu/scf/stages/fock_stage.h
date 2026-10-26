@@ -101,7 +101,8 @@ class FockStage : public cpu::Component {
               double& e_solvent = FockStage::discard_double_(),
               double& e_pcm_fock_half = FockStage::discard_double_(),
               Coulomb coulomb = Coulomb::Direct, int cfmm_order = 10,
-              double cfmm_threshold = 1e-9);
+              double cfmm_threshold = 1e-9,
+              const ATV::electronic::XcFunctional* functional = nullptr);
 
     /// @brief Component name.
     /// @return `"scf_fock_stage"`.
@@ -120,6 +121,11 @@ class FockStage : public cpu::Component {
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:
+    template <typename>
+    friend class MeanFieldMethod;
+    // Physical KS operator before DIIS/level shifts, including reaction fields.
+    // Retained through plan teardown for density-preserving publication.
+    RealMatrix physical_alpha_, physical_beta_;
     /// Sink for optional default-bound double& parameters when the caller
     /// does not care about the PCM energy channels (vacuum path).
     static double& discard_double_() {
@@ -131,6 +137,8 @@ class FockStage : public cpu::Component {
     bool is_hf_;
     bool generalized_; ///< GHF spinor build (2n×2n densities/Fock).
     XCType xc_type_;
+    const ATV::electronic::XcFunctional*
+        functional_; ///< Borrowed immutable provider.
     GridLevel grid_level_;
     int n_radial_;
     int n_angular_;

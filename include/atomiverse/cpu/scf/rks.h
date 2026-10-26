@@ -29,6 +29,12 @@ class RKS : public MeanFieldMethod<RKS> {
     ///           PT2 term (KS SCF alone is not the full energy).
     /// @param charge Molecular charge [e].
     RKS(BasisSet basis, XCType xc, int charge = 0);
+    /// @brief Construct with an immutable external semi-local CPU XC provider.
+    /// @param basis Gaussian basis. @param functional Batched XC provider.
+    /// @param charge Molecular charge [e].
+    RKS(BasisSet basis,
+        std::shared_ptr<const ATV::electronic::XcFunctional> functional,
+        int charge = 0);
     std::string name() const { return "rks"; }
 
   protected:

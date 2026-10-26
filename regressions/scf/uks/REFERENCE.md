@@ -154,3 +154,21 @@ Release build; median of 3 runs):
 returns a 6×6 Hessian in eV/Å². Product gate: the nine Cartesian-diagonal /
 stretch elements above within **2e-2 eV/Å²** of the pinned PySCF FD twin;
 failure prints got / want / tol and exits non-zero. ≤ 60 s, single node.
+
+## `custom-xc-h2plus` — external XC energy and all force components
+
+- **oracle:** external — PySCF 2.14.0, actual output in
+  `tools/pyscf_oracle/inputs/xc-extension/h2plus.json`.
+- **input / reproduction:** [external XC example](../../../examples/xc-extension/README.md),
+  `0.8*LDA_X,`, STO-3G Cartesian, grid level 3, SCF tolerance 1e-12 Ha.
+- **quantity:** total energy and complete nuclear gradient, pins copied verbatim
+  into `examples/xc-extension/pins.h`, F = −gradient converted to eV/Å.
+- **tolerances (declared before ATV run):** 1e-6 Ha energy; 2e-5 Ha/Bohr per
+  force component for the independently known grid pruning/response difference.
+- **consumer:** external `ScaledSlater` subclass; public headers only, same
+  molecular grid/Fock/analytic-force implementation as built-in XC. One CPU thread.
+
+The custom-XC H₂⁺ section performs energy requests at 1.00 → 1.01 → 1.00 Å
+before requesting the pinned forces. This checks that DIIS work eigenvalues
+do not become Pulay multipliers after a geometry refresh. DIIS remains enabled;
+the final values are checked against the same independent PySCF vector.

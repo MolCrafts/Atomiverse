@@ -14,3 +14,6 @@ atv_regression(SECTION b2plyp-h2o
 
 atv_regression(SECTION rks-hessian-h2o-sto3g
   REQUIRES HF)
+
+atv_regression(SECTION custom-xc-water
+  REQUIRES HF)

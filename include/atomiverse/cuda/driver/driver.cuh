@@ -482,10 +482,11 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// @brief Tear down — destroy components, retrieve results (D2H),
     ///        shut down the backend.
     /// @param frame Host-resident frame populated from the device.
-    void teardown_pass(cpu::Frame& frame) {
+    /// @param copy_forces Retrieve force columns; false preserves host values.
+    void teardown_pass(cpu::Frame& frame, bool copy_forces = true) {
         this->backend_->sync();
         this->backend_->destroy_components();
-        this->backend_->retrieve(frame);
+        this->backend_->retrieve(frame, copy_forces);
         this->backend_->shutdown();
         built_plugins_.clear();
     }

@@ -1,0 +1,125 @@
+{
+  "kind": "native numerical/runtime validation; not oracle pins",
+  "date": "2026-10-25",
+  "build_label": "build12",
+  "source_log": "/tmp/atv-gpw-repair-evidence/build12-berry-wannier-full.txt",
+  "source_log_sha256": "40a2382fc5d0aa331a415fe1c7975dfc28fe96ca6f02a84a674741309ca6dbb3",
+  "cwd": "/tmp/atv-xc-build/regressions",
+  "environment": {
+    "OMP_NUM_THREADS": 8,
+    "OPENBLAS_NUM_THREADS": 8,
+    "ATV_GPW_PROF": "enabled"
+  },
+  "host": {
+    "processor": "Apple M4",
+    "physical_cpus": 10,
+    "logical_cpus": 10
+  },
+  "timing_boundary": "whole sections; RKS then UKS in one process per case; profiling enabled",
+  "formula": "canonical batched exact Gaussian Fourier operators; exactly equal q reuse image-local integrals across ket-k phases, original per-matrix sum order, group/row OpenMP, compute-local sharing across spins",
+  "physical_settings_or_external_pins_changed": false,
+  "case": "gpw/berry-phase",
+  "archive_file": "native-validation.txt",
+  "archive_sha256": "bd4364c5dfc9b27cf859d05ad543d49f49dec0557caf8ea4360e0c188b2f918e",
+  "command": [
+    "/tmp/atv-xc-build/regressions/atv_regressions",
+    "--case",
+    "gpw/berry-phase"
+  ],
+  "numeric_gates": "PASS",
+  "runtime_gates": "PASS: all whole sections <=60s",
+  "scf_path": "every axis independently calls method.run(frame)",
+  "sections": [
+    {
+      "section": "periodic-berry-gpw",
+      "whole_section_seconds": 10.070322,
+      "profile": [
+        {
+          "direction": 0,
+          "scf_ms": 1065,
+          "links_ms": 442,
+          "iterations": 7,
+          "energy_ha": -15.494346734088
+        },
+        {
+          "direction": 1,
+          "scf_ms": 1348,
+          "links_ms": 593,
+          "iterations": 7,
+          "energy_ha": -15.494346734089
+        },
+        {
+          "direction": 2,
+          "scf_ms": 1845,
+          "links_ms": 841,
+          "iterations": 5,
+          "energy_ha": -15.288283416028
+        },
+        {
+          "direction": 2,
+          "scf_ms": 3022,
+          "links_ms": 914,
+          "iterations": 12,
+          "energy_ha": -15.286255339045
+        }
+      ],
+      "ideal_total_p_frac_printed": [
+        0,
+        0,
+        0
+      ],
+      "printed_displaced_delta_p_z": 6.9e-05,
+      "printed_born_charge": 0.0034
+    },
+    {
+      "section": "periodic-berry-gpw-uks",
+      "whole_section_seconds": 15.201491,
+      "profile": [
+        {
+          "direction": 0,
+          "scf_ms": 2936,
+          "links_ms": 877,
+          "iterations": 7,
+          "energy_ha": -15.494346734088
+        },
+        {
+          "direction": 1,
+          "scf_ms": 2734,
+          "links_ms": 794,
+          "iterations": 7,
+          "energy_ha": -15.494346734089
+        },
+        {
+          "direction": 2,
+          "scf_ms": 2902,
+          "links_ms": 893,
+          "iterations": 5,
+          "energy_ha": -15.288283416028
+        },
+        {
+          "direction": 2,
+          "scf_ms": 3245,
+          "links_ms": 820,
+          "iterations": 11,
+          "energy_ha": -15.286255336513
+        }
+      ],
+      "ideal_total_p_frac_printed": [
+        0,
+        0,
+        0
+      ],
+      "printed_displaced_delta_p_z": 6.9e-05,
+      "printed_born_charge": 0.0035
+    }
+  ],
+  "unit_validation": {
+    "build_label": "build13",
+    "archive": "native-math-validation.json",
+    "one_electron_fixtures": 17,
+    "batched_link_fixtures": 3,
+    "all_registered_units": 1771,
+    "full_unit_seconds": 46.66,
+    "status": "PASS; productionmath unchanged from regression build12"
+  }
+}

@@ -13,12 +13,12 @@ non-converged reference. Legend: [Roadmap index](index.md).
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| RMP2 | ✓ | ○ | Canonical O(N⁵) |
+| RMP2 | ✓ | ✓ | Canonical O(N⁵), energy only on CUDA. `cuda::scf::MP2{cuda_rhf}.run(Frame&)` consumes device RHF orbitals/ERIs; occupied tiling, cuBLAS contractions and CUB spin-channel reduction. Dense reference limit 215 AOs; [GH200 validation](../../benchmarks/cuda/mp2-validation.md) |
 | UMP2 | ✓ | ○ | `MP2` on `UHF` |
 | ROMP2 | ✓ | ○ | UMP2 on ROHF reference |
-| Frozen-core MP2 | ✓ | ○ | `MP2::frozen = N`; RMP2 pinned (RI-MP2 combination reachable) |
+| Frozen-core MP2 | ✓ | ✓ | `MP2::frozen = N`; CUDA canonical RHF energy, pinned by frozen-core water / 6-31G*. CPU RI-MP2 combination reachable |
 | RI-MP2 | ◐ | ○ | `ri = RI::{J,JK}` + aux; RHF only. No external pin; self-pinned case removed |
-| SCS-MP2 / SOS-MP2 | ✓ | ○ | `MP2::os_scale` / `ss_scale` |
+| SCS-MP2 / SOS-MP2 | ✓ | ✓ | `MP2::os_scale` / `ss_scale`; CUDA canonical RHF energy, SCS water external pins and spin-channel kernel checks |
 | RMP2 / UMP2 analytic gradient | ✓ | ○ | Lagrangian + Z-vector |
 | ROMP2 gradient | ○ | ○ | |
 | MP2 Hessian | ○ | ○ | |

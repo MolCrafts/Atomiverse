@@ -9,11 +9,19 @@
 /// steepest-descent polish. Centers come from the Berry-phase formula
 /// \(\mathbf r_n = -N_k^{-1}\sum_{\mathbf k,\mathbf b} w_b\,\mathbf b\,
 /// \operatorname{Im}\ln M_{nn}\).
+/// Neighbor AO matrices use exact Cartesian Gaussian Fourier overlaps
+/// \(\int a(\mathbf r)b(\mathbf r)e^{-i\mathbf q\cdot\mathbf r}d^3r\),
+/// retaining every angular term. The short unwrapped ket-minus-bra step
+/// \(\mathbf q\) is [Bohr⁻¹] with primitive positions [Bohr]; the exponent
+/// has a negative sign. Neighbor vectors used for centers/weights are [Å⁻¹]
+/// and are converted to [Bohr⁻¹] for this integral.
 ///
 /// **Collinear spin:** when `GpwDft::is_uks()` (`n_alpha`/`n_beta`), α and β
 /// occupied manifolds are localized independently from `C_occ_k` /
 /// `C_occ_k_beta` (fixed occupations; insulator only). Centers are
-/// concatenated α then β; see `PeriodicWannierResult::spin`.
+/// concatenated α then β; see `PeriodicWannierResult::spin`. The geometry's
+/// spin-independent AO Fourier operators are built once per compute call
+/// and borrowed by both channel contractions.
 ///
 /// Product: closed-shell insulator or collinear UKS insulator, orthorhombic
 /// cell, no metallic smearing / disentanglement. Parameters are members of

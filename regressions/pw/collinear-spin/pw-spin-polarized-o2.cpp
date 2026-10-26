@@ -3,6 +3,7 @@
 ///
 /// See REFERENCE.md. Public API only. Requires ATV_BUILD_PW.
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -19,20 +20,16 @@ namespace atv_reg_pw_pw_spin_polarized_o2 {
 using namespace ATV;
 using namespace ATV::cpu::pw;
 
-namespace {} // namespace
-
 int run() {
+    const auto start = std::chrono::steady_clock::now();
     // ── Offline pins (REFERENCE.md) ────────────────────────────────────
     // Magnetization: O2 ³Σg⁻, multiplicity 3 → fixed occupations M = 2
     // (Herzberg molecular spectrum; standard computational triplet test).
     constexpr double want_mag = 2.0;
     constexpr double tol_mag = 1e-9;
-    // Total energy [Ha] at the exact settings below (SG15 ONCV O, ecut=12 Ry,
-    // Γ, L=8 Å, R=1.2075 Å, multiplicity 3, default xc=PBE = true collinear
-    // spin-GGA). See REFERENCE.md for oracle note.
-    // Re-pinned 2026-07-26 (`pw-spin-gga`): XCBuilder::step_spin uses spectral
-    // ∇ρ_σ (true spin-GGA); previous −28.6267 Ha was PBE@σ=0 LSDA-limit.
-    constexpr double want_e_ha = -28.7585210635;
+    // Actual QE 7.5 energy at the matching NC-UPF, 12/48 Ry cutoffs,
+    // 36^3 density grid and triplet occupations. See REFERENCE.md.
+    constexpr double want_e_ha = -28.7326768250;
     constexpr double tol_e_ha = 1.0e-3; // Ha — modest ecut / SCF tol
 
     // Compiled-in absolute path (ATV_REG_DATA_DIR): resolves identically from
@@ -57,8 +54,8 @@ int run() {
     frame.box = cpu::Box::cubic(8.0);
 
     PW pw{UpfPseudopotential{upf}, 12.0, 1, cpu::scf::XCType::PBE};
-    pw.tol = 5e-4;
-    pw.max_iter = 60;
+    pw.tol = 1e-7;
+    pw.max_iter = 200;
     pw.mix_beta = 0.3;
     pw.pulay_depth = 5;
     pw.spin_polarized = true;
@@ -95,6 +92,12 @@ int run() {
     if (!ok)
         return 1;
     std::printf("PASS: pw-spin-polarized-o2 (mag + energy)\n");
+    const double wall =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall);
+    if (wall > 60.0)
+        return 1;
     return 0;
 }
 

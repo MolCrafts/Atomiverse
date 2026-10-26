@@ -36,6 +36,66 @@ GridBasisFunction s_gauss(double alpha, double cx, double cy, double cz) {
 }
 } // namespace
 
+TEST(GpwMultigrid, IsolatedProductGradientRetainsWrappedDensityTails) {
+    using namespace ATV::cpu::gpw;
+    const double cell[3] = {8, 8, 8};
+    const double alpha = 0.6, center = 0.3, k = 2 * M_PI / cell[0];
+    const double norm = std::pow(M_PI / (2 * alpha), 1.5);
+    for (int angular : {0, 1, 2}) {
+        // Fourier transform of x^(2l) exp(-2 alpha x^2), l=0,1,2.
+        const double moments[3] = {1, 1 / (4 * alpha),
+                                   3 / (16 * alpha * alpha)};
+        const double fourier[3] = {
+            1, 1 / (4 * alpha) - k * k / (16 * alpha * alpha),
+            3 / (16 * alpha * alpha) - 3 * k * k / (32 * std::pow(alpha, 3))
+                + std::pow(k, 4) / (256 * std::pow(alpha, 4))};
+        const double expected = norm * k * std::exp(-k * k / (8 * alpha))
+                                * std::cos(k * center) * fourier[angular];
+        std::vector<GridBasisFunction> basis = {s_gauss(alpha, center, 4, 4)};
+        basis[0][0].l[0] = angular;
+        for (int levels : {1, 2}) {
+            const auto mg = make_multigrid(cell, 100, levels, 20);
+            const auto products =
+                build_products(mg, basis, cell, 20, 1e-12, false);
+            const auto& grid = mg.levels[0];
+            std::vector<double> potential(grid.npts());
+            for (long i = 0; i < grid.npts(); ++i) {
+                double point[3];
+                grid.point(i, point);
+                potential[i] = std::sin(k * point[0]);
+            }
+            const auto density =
+                multigrid_collocate_rho(mg, products, 1, {1}, 1e-12);
+            EXPECT_NEAR(std::accumulate(density.begin(), density.end(), 0.0)
+                            * grid.weight(),
+                        norm * moments[angular], 1e-9);
+            const auto gradient = internal::multigrid_density_center_gradient(
+                mg, products, 1, {1}, potential, {0}, 1, 1e-12);
+            EXPECT_NEAR(gradient[0][0], expected, 1e-9);
+            EXPECT_NEAR(gradient[0][1], 0, 1e-9);
+            EXPECT_NEAR(gradient[0][2], 0, 1e-9);
+        }
+    }
+}
+
+TEST(GpwMultigrid, ProductGradientRejectsInvalidShapesAndOwners) {
+    using namespace ATV::cpu::gpw;
+    const double cell[3] = {8, 8, 8};
+    const auto mg = make_multigrid(cell, 50, 1, 50);
+    const auto products =
+        build_products(mg, {s_gauss(0.6, 4, 4, 4)}, cell, 50, 1e-12, false);
+    const std::vector<double> potential(mg.levels[0].npts(), 1);
+    EXPECT_THROW(internal::multigrid_density_center_gradient(
+                     mg, products, 1, {}, potential, {0}, 1, 1e-12),
+                 std::invalid_argument);
+    EXPECT_THROW(internal::multigrid_density_center_gradient(
+                     mg, products, 1, {1}, potential, {-1}, 1, 1e-12),
+                 std::invalid_argument);
+    EXPECT_THROW(internal::multigrid_density_center_gradient(
+                     mg, products, 1, {1}, potential, {1}, 1, 1e-12),
+                 std::invalid_argument);
+}
+
 // ngrids=1 -> a single grid at CUTOFF (the unchanged default path).
 TEST(GpwMultigrid, SingleLevelIsCutoffGrid) {
     const double cell[3] = {10.0, 12.0, 14.0};
@@ -461,11 +521,9 @@ TEST(GpwMultigridCells, MatchesKpointBasisGridPath) {
                            * (kpts[0].frac[0] * t[0] + kpts[0].frac[1] * t[1]
                               + kpts[0].frac[2] * t[2]);
         phase[c] = Cplx(std::cos(arg), std::sin(arg));
-        for (int i = 0; i < nb; ++i)
-            for (int j = 0; j < nb; ++j)
-                D[c][static_cast<std::size_t>(i) * nb + j] =
-                    (P(i, j) * phase[c]).real();
     }
+    ATV::cpu::gpw::internal::accumulate_bloch_density_stack(P, kpts[0].weight,
+                                                            phase, D);
 
     // Density: product path vs pre-summed χ^k path.
     const auto rho_prod =

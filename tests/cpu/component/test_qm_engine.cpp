@@ -11,8 +11,12 @@
 #include "atomiverse/cpu/component/qm_engine.h"
 #include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/cpu/scf/methods.h"
+#ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
+#endif
+#ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/dftb2.h"
+#endif
 
 using namespace ATV;
 
@@ -27,6 +31,7 @@ TEST(QmEngine, GaussianMethodsExposeEmbedding) {
     }
 }
 
+#ifdef ATV_HAS_SEMIEMPIRICAL
 TEST(QmEngine, Am1AndDftb2NoEmbedding) {
     cpu::semiempirical::AM1 am1;
     cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
@@ -36,6 +41,8 @@ TEST(QmEngine, Am1AndDftb2NoEmbedding) {
         EXPECT_FALSE(e->qm_engine_name().empty());
     }
 }
+
+#endif
 
 TEST(QmEngine, EmbeddingSitesRoundTrip) {
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};

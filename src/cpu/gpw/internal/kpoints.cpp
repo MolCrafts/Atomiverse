@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <exception>
 #include <stdexcept>
 #include <string>
 
@@ -147,6 +148,143 @@ std::vector<KPoint> monkhorst_pack(const int mesh[3], bool time_reversal) {
         folded.push_back(kp);
     }
     return folded;
+}
+
+std::vector<std::vector<std::complex<double>>>
+build_fourier_overlap_links(const std::vector<GridBasisFunction>& basis,
+                            const std::vector<double>& radii, const double L[3],
+                            const int m[3], double screen,
+                            std::span<const FourierOverlapLink> links) {
+    const int nb = static_cast<int>(basis.size());
+    if (radii.size() != basis.size())
+        throw std::invalid_argument(
+            "Fourier overlap: basis/radius shape mismatch");
+    if (!(screen >= 0.0) || !std::isfinite(screen))
+        throw std::invalid_argument(
+            "Fourier overlap: screen must be finite and nonnegative");
+    for (int d = 0; d < 3; ++d)
+        if (!(L[d] > 0.0) || !std::isfinite(L[d]) || m[d] < 0)
+            throw std::invalid_argument(
+                "Fourier overlap: invalid periodic cell/image extent");
+    for (const double radius : radii)
+        if (!(radius >= 0.0) || !std::isfinite(radius))
+            throw std::invalid_argument(
+                "Fourier overlap: radius must be finite and nonnegative");
+
+    std::vector<std::vector<std::size_t>> groups;
+    for (std::size_t link = 0; link < links.size(); ++link) {
+        for (int d = 0; d < 3; ++d)
+            if (!std::isfinite(links[link].ket_frac[d])
+                || !std::isfinite(links[link].q_bohr[d]))
+                throw std::invalid_argument(
+                    "Fourier overlap: link vectors must be finite");
+        std::size_t group = 0;
+        for (; group < groups.size(); ++group)
+            if (links[link].q_bohr == links[groups[group][0]].q_bohr)
+                break;
+        if (group == groups.size())
+            groups.emplace_back();
+        groups[group].push_back(link);
+    }
+
+    // Full dot-product phases match the individual-link convention. These
+    // depend only on the integer image and ket k, not on the Gaussian pair.
+    const std::size_t n_images = static_cast<std::size_t>(2 * m[0] + 1)
+                                 * static_cast<std::size_t>(2 * m[1] + 1)
+                                 * static_cast<std::size_t>(2 * m[2] + 1);
+    std::vector<std::vector<Cplx>> phases(links.size(),
+                                          std::vector<Cplx>(n_images));
+    std::size_t image = 0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz, ++image)
+                for (std::size_t link = 0; link < links.size(); ++link) {
+                    const auto& k = links[link].ket_frac;
+                    const double arg =
+                        kTwoPi * (k[0] * tx + k[1] * ty + k[2] * tz);
+                    phases[link][image] = {std::cos(arg), std::sin(arg)};
+                }
+    std::vector<std::vector<Cplx>> operators(
+        links.size(), std::vector<Cplx>(static_cast<std::size_t>(nb) * nb));
+    const int n_groups = static_cast<int>(groups.size());
+    std::vector<std::exception_ptr> row_errors(
+        static_cast<std::size_t>(n_groups) * nb);
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+    for (int group = 0; group < n_groups; ++group)
+        for (int i = 0; i < nb; ++i) {
+            try {
+                const auto& a = basis[static_cast<std::size_t>(i)];
+                if (a.empty())
+                    continue;
+                const auto& group_links =
+                    groups[static_cast<std::size_t>(group)];
+                const auto& q_bohr = links[group_links[0]].q_bohr;
+                for (int j = 0; j < nb; ++j) {
+                    const auto& b = basis[static_cast<std::size_t>(j)];
+                    if (b.empty() || pair_bound(a, b, L) < screen)
+                        continue;
+                    const double reach = radii[static_cast<std::size_t>(i)]
+                                         + radii[static_cast<std::size_t>(j)];
+                    const double reach2 = reach * reach;
+                    const double* ac = a[0].center;
+                    const double* bc = b[0].center;
+                    const std::size_t element =
+                        static_cast<std::size_t>(i) * nb + j;
+                    std::size_t image = 0;
+                    for (int tx = -m[0]; tx <= m[0]; ++tx)
+                        for (int ty = -m[1]; ty <= m[1]; ++ty)
+                            for (int tz = -m[2]; tz <= m[2]; ++tz, ++image) {
+                                const double T[3] = {tx * L[0], ty * L[1],
+                                                     tz * L[2]};
+                                const double dx = ac[0] - bc[0] - T[0];
+                                const double dy = ac[1] - bc[1] - T[1];
+                                const double dz = ac[2] - bc[2] - T[2];
+                                if (dx * dx + dy * dy + dz * dz > reach2)
+                                    continue;
+                                Cplx local{0.0, 0.0};
+                                for (const auto& pa : a)
+                                    for (const auto& pb : b) {
+                                        GridPrimitive shifted = pb;
+                                        shifted.center[0] += T[0];
+                                        shifted.center[1] += T[1];
+                                        shifted.center[2] += T[2];
+                                        local += prim_overlap_fourier(
+                                            pa, shifted, q_bohr.data());
+                                    }
+                                for (const std::size_t link : group_links)
+                                    operators[link][element] +=
+                                        phases[link][image] * local;
+                            }
+                }
+            } catch (...) {
+                row_errors[static_cast<std::size_t>(group) * nb + i] =
+                    std::current_exception();
+            }
+        }
+    for (const auto& error : row_errors)
+        if (error)
+            std::rethrow_exception(error);
+    return operators;
+}
+
+void accumulate_bloch_density_stack(
+    const CplxMatrix& P, double weight,
+    std::span<const std::complex<double>> phases,
+    std::vector<std::vector<double>>& density_stack) {
+    if (P.shape()[0] != P.shape()[1] || phases.size() != density_stack.size())
+        throw std::invalid_argument("Bloch density stack: incompatible shapes");
+    for (const auto& cell : density_stack)
+        if (cell.size() != P.size())
+            throw std::invalid_argument(
+                "Bloch density stack: incompatible cell matrix size");
+    const auto* values = P.data();
+    for (std::size_t c = 0; c < density_stack.size(); ++c) {
+        const auto phase = phases[c];
+        for (std::size_t e = 0; e < P.size(); ++e)
+            density_stack[c][e] += weight
+                                   * (values[e].real() * phase.real()
+                                      - values[e].imag() * phase.imag());
+    }
 }
 
 void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
@@ -567,20 +705,33 @@ void collocate_density_k(const KpointBasisGrid& kbg, int ik,
 #pragma omp parallel
     {
         std::vector<Cplx> y(static_cast<std::size_t>(nb));
+        std::vector<int> active(static_cast<std::size_t>(nb));
 #pragma omp for schedule(static)
         for (long g = 0; g < npts; ++g) {
             const Cplx* v = chi.data() + static_cast<std::size_t>(g) * nb;
-            // rho_k(g) = sum_uv P_uv v_u conj(v_v) = sum_u v_u (P conj(v))_u.
-            for (int u = 0; u < nb; ++u) {
+            int nactive = 0;
+            for (int u = 0; u < nb; ++u)
+                if (v[u] != Cplx(0, 0))
+                    active[static_cast<std::size_t>(nactive++)] = u;
+            // rho_k(g) = sum_uv P_uv v_u conj(v_v). Exactly zero basis
+            // values contribute nothing for finite inputs. This temporary
+            // view retains ascending AO indices and the original sums; it
+            // introduces no screening threshold or persistent representation.
+            for (int au = 0; au < nactive; ++au) {
+                const int u = active[static_cast<std::size_t>(au)];
                 Cplx s(0, 0);
                 const Cplx* Pu = &P_k(u, 0);
-                for (int w = 0; w < nb; ++w)
+                for (int aw = 0; aw < nactive; ++aw) {
+                    const int w = active[static_cast<std::size_t>(aw)];
                     s += Pu[w] * std::conj(v[w]);
+                }
                 y[static_cast<std::size_t>(u)] = s;
             }
             double acc = 0.0;
-            for (int u = 0; u < nb; ++u)
+            for (int au = 0; au < nactive; ++au) {
+                const int u = active[static_cast<std::size_t>(au)];
                 acc += (v[u] * y[static_cast<std::size_t>(u)]).real();
+            }
             rho[static_cast<std::size_t>(g)] += wk * acc;
         }
     }
@@ -607,17 +758,25 @@ CplxMatrix integrate_potential_k(const KpointBasisGrid& kbg, int ik,
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
         Cplx* Vloc = &part[static_cast<std::size_t>(c) * nn];
+        std::vector<int> active(static_cast<std::size_t>(nb));
         const long glo = range.begin(c), ghi = range.end(c);
         for (long g = glo; g < ghi; ++g) {
             const double vg = w * V_r[static_cast<std::size_t>(g)];
             if (vg == 0.0)
                 continue;
             const Cplx* v = chi.data() + static_cast<std::size_t>(g) * nb;
-            for (int u = 0; u < nb; ++u) {
+            int nactive = 0;
+            for (int u = 0; u < nb; ++u)
+                if (v[u] != Cplx(0, 0))
+                    active[static_cast<std::size_t>(nactive++)] = u;
+            for (int au = 0; au < nactive; ++au) {
+                const int u = active[static_cast<std::size_t>(au)];
                 const Cplx cu = vg * std::conj(v[u]);
                 Cplx* row = Vloc + static_cast<std::size_t>(u) * nb;
-                for (int t = 0; t < nb; ++t)
+                for (int at = 0; at < nactive; ++at) {
+                    const int t = active[static_cast<std::size_t>(at)];
                     row[t] += cu * v[t];
+                }
             }
         }
     }

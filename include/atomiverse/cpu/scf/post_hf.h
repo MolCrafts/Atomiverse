@@ -69,8 +69,9 @@ class MP2 {
     ///        SOS = 0; B2PLYP = `hybrid_pt2_fraction`.
     double ss_scale = 1.0;
 
-    /// @brief Fresh SCF on `mf`, then the MP2 correction.
-    /// @param frame Geometry [Å].
+    /// @brief Fresh SCF on `mf`, then MP2; writes correlated Frame energy [eV].
+    ///        The bound mean-field method retains its reference energy [Hartree].
+    /// @param frame Geometry [Å]; kEnergy overwritten with MP2 total [eV].
     /// @param guess Optional density guess for the reference SCF.
     /// @return Correlation and total energy [Hartree].
     MP2Result run(Frame& frame, const SCFInitialGuess* guess = nullptr);

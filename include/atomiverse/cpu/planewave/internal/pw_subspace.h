@@ -45,7 +45,9 @@ void jacobi_eigh_hermitian(int n, std::complex<AccReal>* A, AccReal* eig,
 ///
 /// Uses atomic wavefunctions (QE startingwfc='atomic+random') when the
 /// workspace provides enough of them, otherwise the lowest-T(G) plane
-/// waves. `sub_vectors` is resized to n_sub × ws.n_g (row-major).
+/// waves. Shape-matched incoming orbitals supplement this seed pool; the
+/// joint pool is orthogonalized so a warm occupied subspace cannot hide
+/// lower roots. `sub_vectors` is resized to n_sub × ws.n_g (row-major).
 ///
 /// @return n_sub, the number of initial subspace vectors.
 int init_subspace(const PWWorkspace& ws, int n_bands,

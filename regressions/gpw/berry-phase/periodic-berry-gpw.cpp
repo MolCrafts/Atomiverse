@@ -14,6 +14,7 @@
 ///     Z_val * delta term.
 /// Exit non-zero on failure with got / want / tol.
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -59,6 +60,7 @@ cpu::Frame si_bct(double a_ang, double delta_frac_z) {
 } // namespace
 
 int run() {
+    const auto start = std::chrono::steady_clock::now();
     constexpr double kA = 5.43;        // lattice constant [Angstrom]
     constexpr double kCutoffRy = 80.0; // density grid [Ry]
     constexpr double kDelta = 0.02;    // sublattice displacement [frac of c]
@@ -166,6 +168,12 @@ int run() {
 
     std::printf("PASS: periodic-berry-gpw (centrosymmetric lattice pin + "
                 "Z*(Si)=0 ASR pin)\n");
+    const double wall =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall);
+    if (wall > 60.0)
+        return 1;
     return 0;
 }
 

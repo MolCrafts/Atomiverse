@@ -198,109 +198,108 @@ on `vib::Phase::force` is the same public composition path for a later CP2K
 energy/frequency twin.
 
 
-## Reference — FD vibrational spectrum from GPW analytic forces (Si₂)
+## Reference — GPW Si₂ vibrational spectrum
 
-**Status 2026-07-26: registered / green** after UKS density warm-start
-(`GPWEvaluator` passes \(P_\alpha,P_\beta\)) and dual-gate redesign.
+### Oracle and physical inputs
 
-### Method
-
-Finite-displacement (central difference, \(h = 10^{-3}\) Å on Cartesian force
-constants in `Phonon`; dual-gate energy curvature uses \(h = 5\times10^{-3}\) Å)
-mass-weighted dynamical matrix, full \(3N\) spectrum in cm⁻¹, with
-**GPW analytic forces** as the force engine:
-
-```text
-cpu::vib::Phonon(1,1,1)
-  → vib::Phase::force += cpu::gpw::GPWEvaluator{…, compute_forces = true}
-```
-
-No `NeighborList` (GPW is not a `NeighborConsumer`). No public `*Config` /
-`make_*`.
-
-An **isolated diatomic** has \(3N = 6\) modes: one stretch plus five near-zero
-(three translations, two rotations).
-
-### System (ATV-convergent product window)
+CP2K **2026.2**, source revision **git:c92cc08**, actually executed
+2026-10-25 using the native Homebrew binary `/opt/homebrew/bin/cp2k.psmp`.
+The three canonical `si2_matched_{energy_force,geo_opt,vib}.inp` inputs,
+complete outputs, hashes, exact commands and version are recorded in
+[`tools/cp2k_oracle/inputs/gpw-fd-phonon-si/reference.json`](../../../tools/cp2k_oracle/inputs/gpw-fd-phonon-si/reference.json)
+and its neighboring files. The matching CP2K data files are `BASIS_MOLOPT`
+and `GTH_POTENTIALS`; their hashes are also recorded.
 
 | Item | Value |
-|------|-------|
-| System | Si₂, **UKS triplet** (`n_alpha = 5`, `n_beta = 3`) |
-| Bond | \(r = 2.246\) Å |
-| Cell | 8 × 8 × 8 Å, **`nonperiodic` MT**, **centred** |
-| Basis | `DZVP-MOLOPT-GTH` |
-| PP | `GTH-PBE-q4` |
-| XC | PADE |
-| Cutoff | 150 Ry |
-| SCF | `tol = 1e-7`, `max_iter = 200`, `mix = 0.2` |
+| --- | --- |
+| Hamiltonian | PADE / DZVP-MOLOPT-GTH / GTH-PBE-q4 |
+| Local pseudopotential | CP2K `CORE_PPL GRID`, native `local_pp_on_grid=true` |
+| Spin | UKS, Nα=5, Nβ=3 |
+| Cell | 8 Å cube, isolated Martyna–Tuckerman |
+| Density grid | 150 Ry, one level, 60³ points |
+| MT auxiliary grid | Twice each density-grid dimension, 120³ points; CP2K `MT REL_CUTOFF 4`, `ALPHA 7` |
+| Gaussian screening | EPS_DEFAULT 1e-10 |
+| Mass | 28.0855 amu |
+| Actual stationary vibration-input bond | 2.1450905162 Å |
+| Final GRID optimization bond | 2.1450907568000073 Å |
+| Cartesian displacement | 0.001 Å on both engines |
 
-Centring is mandatory: `GpwDft::build` rejects off-centre `nonperiodic` systems.
+### Printed energy, force and frequency pins
 
-### Dual-gate (scientific)
+At the deliberately nonstationary bond 2.246 Å, centred at (4,4,4) Å,
+`si2_matched_energy_force.cp2k.txt` lines 1069–1074 print:
 
-| Check | Gate |
-| ----- | ---- |
-| Mode count | 6 |
-| Near-zero | 5 modes with \(\lvert\omega\rvert < 80\) cm⁻¹ |
-| Stretch vs **1D energy curvature** | \(\lvert\omega_{\mathrm{ph}}-\omega_{1\mathrm{D}}\rvert \le 100\) cm⁻¹ |
-| Finite \(\omega\) | no NaN |
-| Wall (phonon phase) | ≤ 90 s @ OMP=4 (measured ~65 s after UKS density warm-start) |
+```text
+ENERGY| Total FORCE_EVAL ( QS ) energy [hartree] -7.600561394706659
+FORCES| 1  2.72740080E-02  6.32154382E-09  3.51118623E-09
+FORCES| 2 -2.72740080E-02 -6.32099739E-09 -3.51163041E-09
+```
 
-1D curvature: \(k=\partial^2E/\partial r^2\) at \(h=5\times10^{-3}\) Å, reduced mass
-\(m_{\mathrm{Si}}/2\), same unit convention as `MassWeighting` +
-`PhononDiagonalizer` (`nist::au2wavenumber`).
+The GRID optimization completed with energy -7.603345177586373 Ha and
+bond 2.1450907568000073 Å, including tiny transverse coordinate shifts.
+The vibration input deliberately preserves its actual bond 2.1450905162 Å
+and exact centring. Its bond differs from the GRID optimum by
+-2.4060000747e-7 Å; its frequency is pinned at that actual input rather than
+at substituted coordinates.
 
-**Gaps / History (2026-07-29 dual-gate reconditioning):** after the
-determinism fix the dual residual sat at \(\lvert\Delta\omega\rvert\approx 71.5\) cm⁻¹
-vs the old 50 cm⁻¹ gate. Root cause is conditioning, not broken forces: the
-1D energy second difference at \(h=10^{-3}\) Å on this coarse MT grid is
-noisy, and the Si–Si bond is not a true stationary point so residual force
-pollutes the tiny step. Raising \(h\to 5\times10^{-3}\) Å improves SNR; the
-dual-gate tol is 100 cm⁻¹ because coarse MT (8 Å / 150 Ry) + residual force
-at the non-eq bond leave ~70 cm⁻¹ dual residual — the gate checks force/energy
-consistency of the FD pipeline, not absolute spectroscopic accuracy.
+The last, thirteenth evaluation in `si2_matched_vib-r-0.cp2k.txt` is the
+restored **undisplaced vibration input**. The preceding 12 evaluations are
+Cartesian plus/minus samples. Lines 2202 and 2206–2207 print:
 
-Measured (epyc login, OMP=4, Release; pre-recondition at \(h=10^{-3}\)):
+```text
+ENERGY| Total FORCE_EVAL ( QS ) energy [hartree] -7.603345177586478
+FORCES| 1 -7.09733727E-08 -3.89216218E-09  3.95186186E-09
+FORCES| 2  7.09720992E-08  3.89282473E-09 -3.95119886E-09
+```
 
-| Quantity | Value |
-| -------- | ----- |
-| \(\omega_{\mathrm{ph}}\) | **564.55** cm⁻¹ |
-| \(\omega_{1\mathrm{D}}\) | **516.01** cm⁻¹ |
-| \(\lvert\Delta\omega\rvert\) | **48.5** cm⁻¹ (later ~71.5 after determinism) |
-| Phonon wall | **~65 s** |
+Its largest absolute force component is 7.09733727e-8 Ha/Bohr and largest
+force norm is 7.11897870e-8 Ha/Bohr, independently satisfying the unchanged
+1e-5 Ha/Bohr stationarity requirement. The main vibration output line 568
+prints:
 
-### Offline CP2K pin (different window — future mixer twin)
+```text
+VIB|Frequency (cm^-1) 5.7365790135E+02
+```
 
-CP2K converges at 10 Å / 400 Ry where Atomiverse does not (Broyden vs
-linear/DIIS); Atomiverse converges at 8/150 where CP2K does not. Recorded for
-a future open-shell mixer overlap:
+CP2K reports this internal stretch after removing rotations and translations.
+The native phonon output remains the unprojected six Cartesian modes; its
+five near-zero modes have their separate physical-symmetry acceptance bound.
+GEO_OPT generates the restart explicitly read by VIBRATIONAL_ANALYSIS.
+The native regression likewise continues the same method instance from the
+nonstationary input through the stationary geometry and displacements.
+An arbitrary cold guess need not find the same nonlinear SCF root.
 
-| Field | Value |
-| ----- | ----- |
-| Engine | CP2K 2026.1 |
-| Inputs | `tools/cp2k_oracle/inputs/gpw-fd-phonon-si/` |
-| Stretch | **463.489** cm⁻¹ (10 Å / 400 Ry, UKS triplet) |
-| \(F_x\) | **1.99658355×10⁻²** Ha/Bohr |
+### Acceptance
 
-`perf_exempt` for \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) — no fair same-window twin.
+The section mounts `GpwDft` directly in the existing `Evaluate` and `Phonon`
+Drivers. It introduces no extra method Driver or wrapper. Every energy and
+force component of the nonstationary input is compared with CP2K, within
+1e-5 Ha and 1e-4 Ha/Bohr. At the actual vibration input, force components
+must be below 1e-5 Ha/Bohr and energy within 1e-5 Ha of the center-point pin.
 
-### Product fix that unblocked the wall
+Three translations and two rotations must satisfy the original |ω|<80 cm⁻¹
+bound. The stretch must match the independent CP2K frequency within 100 cm⁻¹,
+retaining the original 100 cm⁻¹ energy-curvature consistency bound as an
+additional check. The whole section, including the external-vector preflight
+and energy-curvature solves, must take at most 60 seconds at its registered
+eight-thread width. No acceptance bound has been relaxed.
 
-`GPWEvaluator` previously warm-started only `guess_C` (α columns). UKS then
-built both spin densities from that single C (cold open-shell). It now passes
-converged \(P_\alpha,P_\beta\) into `GpwDft::run` on successive launches
-(Phonon FD, UKS AIMD). Wall 231 s → ~65 s for this case.
+### Performance boundaries and numerical primitives
 
-### History — the earlier “forces wrong by 271×” claim
+Actual CP2K process walls were 70.622467s (energy/force), 118.210183s
+(optimization), and 133.218425s (vibration), one MPI rank, with environment
+requests `OMP_NUM_THREADS=8` / `OPENBLAS_NUM_THREADS=1`, binding unset.
+CP2K's actual internal BLAS width was not queried; those environment requests
+do not establish single-thread BLAS or a fair matched-width wall ratio.
+The native complete section includes energy/force preflight
+and energy-curvature checks beyond the vibration itself. Distinguish that
+whole-section boundary from the external vibration-only process in wall
+comparisons; the section's 60s budget applies to all its work.
 
-Retracted. Analytic forces match energy FD to ~1e-6 Ha/Bohr on a true
-stationary point. The three setup defects were: closed-shell RKS on a triplet,
-off-centre MT placement, and twin mismatch (cluster vs crystal). See queue
-notes on `gpw-fd-phonon-si`.
-
-### Siblings
-
-- Unit wiring: `test_cpu_vib_phonon_gpw_wiring`
-- SW FD phonons: `regressions/response/phonons`
-- PW DFPT: `regressions/response/dfpt`
-- GPW force foothold: `regressions/gpw/rks`
+The CPU operator uses the erf-screened MT kernel, and the isolated density
+is a periodized Gaussian **product** expansion. Clipping individual orbital
+values at cell edges loses charge; summing orbitals before multiplication
+adds cross-image products. The force contracts center derivatives of the
+same product expansion and uses the adjoint grid transfer. Closed-form
+Gaussian electrostatics and s/p/d Gaussian Fourier-moment gradients
+independently test these primitives.

@@ -1,7 +1,7 @@
-/// @file cpu/scf/internal/diis_mixer.h
+/// @file cpu/linalg/internal/diis_mixer.h
 /// @brief internal::DIISMixer — combined DIIS accelerator for spin-resolved SCF.
 ///
-/// **Internal SCF helper.** Does NOT inherit `cpu::Component` and is
+/// **Shared CPU matrix helper.** Does NOT inherit `cpu::Component` and is
 /// not registered into any outer Driver Plan. Owned by the DIIS / mix stage
 /// inside the driver-ized RHF/UHF/RKS/UKS loop (and by tests, via direct
 /// include of this header).
@@ -22,11 +22,11 @@
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/containers/xtensor.hpp>
 
-#include "atomiverse/cpu/scf/dense_matrix.h"
+#include "atomiverse/cpu/linalg/matrix.h"
 
 namespace ATV {
 namespace cpu {
-namespace scf {
+namespace linalg {
 namespace internal {
 
 /// @brief Combined DIIS accelerator for spin-resolved Fock matrices.
@@ -74,6 +74,6 @@ class DIISMixer {
 };
 
 } // namespace internal
-} // namespace scf
+} // namespace linalg
 } // namespace cpu
 } // namespace ATV

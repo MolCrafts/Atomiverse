@@ -13,8 +13,7 @@
 ///      numerical strain-derivative of E_disp alone.
 /// Decisive dual gate: product analytic fixed-P stress (`d3bj = true`,
 /// `stress_use_fd = false`) vs multi-SCF strain-FD (`gpw_stress_fd`) on the
-/// same method. The cheap-H₂ unit twin is
-/// tests/cpu/gpw/test_cpu_gpw_stress.cpp (`AnalyticMatchesFdWithD3Bj`).
+/// same method, along the dimer's x axis.
 ///
 /// No live CP2K. See REFERENCE.md.
 
@@ -69,8 +68,8 @@ constexpr double kSigmaDispTol = 1.0e-10; // Ha/Bohr³
 // re-SCFs the x axis only — the dimer axis, i.e. the component carrying both
 // the dispersion-stress signal (1.15e-7) and the largest measured residual
 // (pinning ran all three: xx 7.39e-7, yy 2.46e-8, zz 1.24e-9 Ha/Bohr³) —
-// to keep the wall inside the 60 s budget; the all-axes identity lives in
-// tests/cpu/gpw/test_cpu_gpw_stress.cpp (AnalyticMatchesFdWithD3Bj).
+// to keep the wall inside the 60 s budget. The external tensor pins cover
+// every diagonal component; this reconverged-FD supplement covers x only.
 constexpr double kAnFdTol = 2.0e-5;    // Ha/Bohr³ (measured 7.4e-7)
 constexpr double kOffDiagTol = 1.0e-8; // Ha/Bohr³
 constexpr double kDiagFloor = 1.0e-10; // Ha/Bohr³

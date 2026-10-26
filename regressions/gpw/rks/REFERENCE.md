@@ -546,96 +546,92 @@ Supporting internal identities (unchanged):
 - Twin input: `tools/cp2k_oracle/inputs/gpw-kpoints-si.inp`
 
 
-## Reference — GPW analytic cell stress at Monkhorst–Pack k-points (diamond Si)
+## Reference — GPW cell-strain stress at Monkhorst–Pack k-points (diamond Si)
 
-### Method
+### Method and system
 
-Closed-shell GPW Kohn–Sham DFT (PBE) with **Monkhorst–Pack k-point sampling**
-and **Hellmann–Feynman fixed-\(P_k\) analytic cell stress**:
+Closed-shell PBE GPW with DZVP-MOLOPT-GTH and GTH-PBE-q4 on the diamond-Si
+BCT four-atom cell: edges `(5.43/sqrt(2), 5.43/sqrt(2), 5.43)` Angstrom;
+fractional positions `(0,0,0)`, `(1/2,1/2,1/2)`, `(1/2,0,1/4)`,
+`(0,1/2,3/4)`. Sixteen valence electrons occupy eight orbitals. Sampling is
+Monkhorst–Pack 1x1x2 with time reversal, CUTOFF 100 Ry, NGRIDS 1.
+The local pseudopotential is integrated on the grid on both engines
+(native `local_pp_on_grid=true`, CP2K `CORE_PPL GRID`).
 
-1. One SCF at the unstrained cell → occupied MOs `C_occ_k` / band energies
-   `eps_k` → rebuild \(P_k\), \(W_k\) per k.
-2. Central finite difference of the **non-self-consistent** Lagrangian
-   \(E_L[\{P_k\},\{W_k\};\varepsilon]\) under orthorhombic diagonal strain at
-   fixed fractional coordinates (rebuild \(S_k,T_k,V_{\mathrm{nl}}^k\), grid,
-   Poisson, XC; do **not** re-converge SCF).
-3. \(\sigma_{aa} = -\Omega^{-1}\partial E_L/\partial\varepsilon_{aa}\)
-   (CP2K `STRESS_TENSOR` sign; E Hartree, \(\Omega\) Bohr³).
+Native stress differentiates the fixed-\(P_k,W_k\) Lagrangian under central
+diagonal strain `h=2e-3`, rebuilding cell-dependent integrals and grid terms.
+This is a strain finite difference, not a closed-form analytical tensor.
+All original reconverged-SCF diagonal strain checks remain: every independent
+plus/minus calculation starts from the same unstrained reference density.
+The separate multigrid stress path is externally pinned in the existing
+`gpw-multigrid-kpoints` section described below.
 
-Oracle twin: multi-SCF strain-FD (`gpw_stress_fd`) on the same mesh.
+### External oracle and values
 
-### System
+**Oracle: CP2K 2026.2, `git:c92cc08`, actually executed 2026-10-25.**
+`/opt/homebrew/bin/cp2k.psmp` supports `STRESS_TENSOR ANALYTICAL` on this
+k-point slice. The complete run exited zero and converged in 12 SCF steps
+at `EPS_SCF 1e-10`. QS uses `EPS_DEFAULT 1e-12`, `EPS_PGF_ORB 1e-12`,
+`EPS_PPNL 1e-12`, matrix filtering disabled, and the default derived
+`EPS_GVG_RSPACE 1e-6`. Broyden mixing uses alpha 0.4 and eight history entries;
+`EPS_DIIS 0` prevents switching to DIAG/DIIS.
 
-Silicon diamond in the **body-centred-tetragonal 4-atom cell** (same twin
-family as `gpw-kpoints-si`):
+| Quantity | CP2K NGRIDS 1 |
+| --- | ---: |
+| `ENERGY\| Total FORCE_EVAL` [Ha] | -15.348312942859359 |
+| analytical sigma_xx / sigma_yy [bar] | 259796.048452 |
+| analytical sigma_zz [bar] | 76792.7848508 |
+| sigma_xx / sigma_yy [Ha/Bohr3] | 8.830288224301885e-4 |
+| sigma_zz [Ha/Bohr3] | 2.610133709961543e-4 |
 
-| | |
+Complete tensors, raw output, unit conversion, exact command, hashes and
+binary version are in
+[`reference.json`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-stress/reference.json)
+and `singlegrid.cp2k.txt` beside it. The actual input is
+[`gpw-kpoint-stress.inp`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-stress.inp).
+Stress is compression positive; conversion from printed bar uses independent
+CODATA2018 SI constants. No Atomiverse result is a reference value.
+
+### Acceptance bounds
+
+| Check | Bound |
 | --- | --- |
-| Lattice | a = 5.43 Å; cell = (a/√2, a/√2, a) |
-| Atoms (fractional) | (0,0,0), (½,½,½), (½,0,¼), (0,½,¾) |
-| Basis | DZVP-MOLOPT-GTH (Si) |
-| Pseudopotential | GTH-PBE-q4 |
-| Valence | 16 e⁻ → n_occ = 8 |
-| XC | PBE |
-| Density cutoff | 100 Ry |
-| k mesh | MONKHORST-PACK 1×1×2, time-reversal folded → 1 k |
-| SCF | DIIS, tol 1e-8 Ha, EPS_DEFAULT 1e-7 |
-| Stress step | h = 2×10⁻³ (dimensionless) |
+| absolute E vs CP2K | 1e-3 Ha |
+| each stress component vs CP2K | 1e-4 Ha/Bohr3 |
+| diagonal fixed-P vs reconverged strain FD | 1e-4 Ha/Bohr3 |
+| off-diagonal tetragonal symmetry | 1e-8 Ha/Bohr3 |
+| largest diagonal magnitude | greater than 1e-6 Ha/Bohr3 |
+| complete section wall | at most 60s at registered OMP8 width |
 
-### Offline oracle status
+All original single-grid numerical checks remain. Native SCF uses energy
+tolerance 1e-10 Ha, residual 1e-8 and screening 1e-12. The multigrid path uses
+the same external numerical bounds in its existing section; an extra set
+of multigrid reconverged FD solves is not required by that section's gates.
 
-**No CP2K binary / module on the worker host at pin time** (2026-07-25) —
-same status as `gpw-kpoints-si`. Absolute CP2K stress digits are **not
-invented**. Pin strategy:
+### Validation and performance boundaries
 
-1. **Internal dual-gate** (decisive): analytic fixed-\(P_k\) vs multi-SCF
-   strain-FD, max diag \(\le 10^{-4}\) Ha/Bohr³.
-2. **Energy band** vs the supercell-folding pin of `gpw-kpoints-si` A2
-   (mesh 1×1×2 at 95 Ry: \(E = -15.3483059090\) Ha) with a soft 5×10⁻³ Ha
-   band at 100 Ry.
-3. Replace with a cited CP2K `STRESS_TENSOR NUMERICAL` / `ANALYTICAL` number
-   by running `tools/cp2k_oracle/inputs/gpw-kpoint-stress.inp` when offline
-   CP2K exists.
+On 2026-10-25 the rebuilt native section passed all original checks:
+energy error 1.0300e-6 Ha, maximum tensor error 2.7888e-8 Ha/Bohr3,
+and maximum fixed-P versus relaxed-FD difference 7.23501e-8 Ha/Bohr3.
+The complete `gpw/rks` case passed 9/9 sections. Its raw native output is
+[`native-validation.txt`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-stress/native-validation.txt).
 
+| Measured boundary | Wall [s] |
+| --- | ---: |
+| Native energy + fixed-P stress product | 20.617223 |
+| Native supplemental relaxed-SCF strain verification | 21.559348 |
+| Native complete section, including all checks | 42.176594 |
+| CP2K complete ENERGY_FORCE process + analytical stress | 63.903604 |
 
-### Atomiverse numbers (first green, 2026-07-25)
-
-| Quantity | Value |
-| --- | --- |
-| **E(mesh 1×1×2 TR, 100 Ry)** | **−15.3483039265 Ha** (SCF 7 iters) |
-| σ_xx analytic | 8.83135454e-04 Ha/Bohr³ |
-| σ_yy analytic | 8.83135454e-04 Ha/Bohr³ |
-| σ_zz analytic | 2.60970168e-04 Ha/Bohr³ |
-| max\|σ_an−σ_fd\| | **7.2e-08** Ha/Bohr³ |
-| T_atv (OMP=8, Release, dual-gate) | ~171 s |
-
-### Tolerances
-
-| Check | Tol |
-| ----- | --- |
-| max\|\σ_an − σ_fd\| diag | 1×10⁻⁴ Ha/Bohr³ |
-| off-diagonal product | 1×10⁻⁸ |
-| \|E − E_fold pin\| soft | 5×10⁻³ Ha |
-| max\|\σ_diag\| floor | > 1×10⁻⁶ Ha/Bohr³ |
-
-### Performance
-
-| Item | Value |
-| ---- | ----- |
-| `perf_exempt` | **true** |
-| reason | No CP2K binary/module on the pin host for a fair wall twin. |
-| r = T_atv/T_cp2k | n/a (exempt) |
-| `within_10x` | n/a (exempt) |
-
-When CP2K is available, run the twin single-rank, record both walls, and
-replace this section (target r ≤ 10).
-
-### Provenance
-
-- Spec: `.claude/specs/gpw-kpoint-stress/`
-- Twin input: `tools/cp2k_oracle/inputs/gpw-kpoint-stress.inp`
-- Deps: `gpw-kpoints-si` ✓, `gpw-analytic-stress` ✓
-
+The native section passed the 60s bound in one shared `gpw/rks` process,
+with CTest environment requests `OMP_NUM_THREADS=8` and
+`OPENBLAS_NUM_THREADS=8`. The independent CP2K process requested
+`OMP_NUM_THREADS=8` and `OPENBLAS_NUM_THREADS=1`, with binding unset.
+CP2K's internal BLAS thread width was not queried; its environment request
+does not establish the actual library width. These validation timings do not
+establish a matched-width speedup. Native stress uses
+fixed-P strain differences, while CP2K evaluates a closed-form tensor;
+that algorithmic distinction also accompanies a wall comparison.
 
 ## Reference — Multi-k GPW RKS with REL_CUTOFF multigrid (diamond Si, NGRIDS 4)
 
@@ -673,10 +669,10 @@ orthorhombic-compatible setting of the fcc diamond lattice) — identical to
 | Basis | DZVP-MOLOPT-GTH (Si), in-tree table |
 | Pseudopotential | GTH-PBE-q4 (16 valence e⁻ → n_occ = 8) |
 | XC | PBE |
-| Density cutoff | 150 Ry (main); 40 Ry / REL 20 (M2/M3 cheap-ladder twin) |
+| Density cutoff | 150 Ry (main energy); 40 Ry / REL 20 (M2/M3); 100 Ry / REL 40 (M6 stress) |
 | Multigrid | **NGRIDS 4, REL_CUTOFF 60 Ry** (ATV + CP2K twin) |
-| k mesh | MONKHORST-PACK 2×2×2, time-reversal folded → 4 k, w = ¼ |
-| SCF | DIIS depth 6, tol 1e-8 Ha, EPS_DEFAULT 1e-7 |
+| k mesh | MP2×2×2 TR (main/M2/M3); MP1×1×2 TR (M6 stress) |
+| SCF | main/M2/M3: tol 1e-8 Ha, EPS_DEFAULT 1e-7; M6: tol 1e-10 Ha, residual 1e-8, EPS_DEFAULT 1e-12 |
 
 ### Offline CP2K pin
 
@@ -704,6 +700,41 @@ Key log line: `ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]
 -15.802416412503845`; SCF converged in 13 steps. CP2K's own NGRIDS 4 ↔ 1 gap
 is 1.5e-10 Ha — the multigrid is a cost optimization, not a physics change,
 which is what gate M3 pins on the ATV side.
+
+### M6 external energy and stress pin
+
+The same existing section also exercises the distinct multigrid stress path
+at CUTOFF 100 Ry, NGRIDS 4/REL_CUTOFF 40 Ry, MP1x1x2 with time reversal.
+This uses the same Si BCT geometry and PBE/basis/GTH potential above, with
+native `local_pp_on_grid=true` and matching CP2K `CORE_PPL GRID`.
+All original 150 Ry energy and 40 Ry identity gates remain unchanged.
+
+**CP2K 2026.2, `git:c92cc08`, actually executed 2026-10-25**, converged in 12 SCF
+steps and exited zero, printing:
+
+| Quantity | Actual CP2K value | Native bound |
+| --- | ---: | ---: |
+| E [Ha] | -15.348312942398339 | 1e-3 Ha |
+| analytical sigma_xx / sigma_yy [bar] | 259796.054263 | — |
+| analytical sigma_zz [bar] | 76792.7681610 | — |
+| sigma_xx / sigma_yy [Ha/Bohr3] | 8.830288421813762e-4 | 1e-4 Ha/Bohr3 |
+| sigma_zz [Ha/Bohr3] | 2.610133142686770e-4 | 1e-4 Ha/Bohr3 |
+
+All six tensor components are checked against the printed external tensor;
+the independent off-diagonal symmetry bound is 1e-8 Ha/Bohr3 and the largest
+diagonal magnitude must exceed 1e-6 Ha/Bohr3. These are the same bounds as
+the single-grid stress section. Native `stress()` supplies both the energy
+and fixed-P strain tensor after one unstrained SCF. Exact product-grid and
+Bloch transfer identities are covered by the existing `GpwMultigridCells`
+unit tests; the primary stress oracle is CP2K's actual analytical tensor.
+
+The actual input is
+[`gpw-kpoint-stress-multigrid.inp`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-stress-multigrid.inp).
+Full output is `multigrid.cp2k.txt`, and command/version/input/output/data
+hashes, precise tensor and unit conversion are in
+[`reference.json`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-stress/reference.json).
+The main 150 Ry pin retains its recorded CP2K 2026.1 provenance; the additional
+100 Ry stress pin explicitly uses 2026.2 and matching grid-local PP.
 
 ### Found & fixed while opening the gate
 
@@ -750,14 +781,25 @@ the pin; mechanisms unit-pinned in `tests/cpu/gpw/test_cpu_gpw_multigrid.cpp`
 | Time reversal (60 Ry mg) / (40 Ry mg) | 2.0e-14 / 2.3e-14 Ha |
 | mg vs sg at 150 Ry / REL 60 | 2.28e-5 Ha |
 
-### Performance
+### Validation and performance boundaries
 
-This file carries no wall numbers. The single binding fair-wall source for
-this twin — host, CP2K binary provenance, PRINT_LEVEL/timer convention,
-reproduction recipe, and the current \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) —
-is [`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
-Case-local walls were last measured here 2026-07-31 and are superseded by
-that note.
+The unchanged M2-M5 gates and new external M6 gate all passed on 2026-10-25.
+M6's printed energy error is 9.9758e-7 Ha and maximum tensor error 2.9487e-8
+Ha/Bohr3. The native M6 product took 13.235127s, and the complete section
+including the original 40 Ry identity and 150 Ry energy gates took 17.708007s,
+passing its 60s bound with registered environment requests
+`OMP_NUM_THREADS=8` / `OPENBLAS_NUM_THREADS=8`. Exact output is in
+[`native-validation.txt`](../../../tools/cp2k_oracle/inputs/gpw-kpoint-stress/native-validation.txt).
+
+The actual CP2K 2026.2 M6 ENERGY_FORCE process with analytical stress took
+17.833723s, one MPI rank, with environment requests `OMP_NUM_THREADS=8`
+and `OPENBLAS_NUM_THREADS=1`, binding unset. CP2K's internal BLAS thread
+width was not queried. Native runs in the shared `gpw/rks` process and
+differentiates fixed-P strain energies; CP2K produces a closed-form tensor
+in its separate process. These environment requests and measurement
+boundaries do not establish a matched-width speedup. The main 150 Ry energy twin's
+fair-wall source remains
+[`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
 
 ### Citations
 

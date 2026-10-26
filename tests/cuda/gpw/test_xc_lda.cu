@@ -30,7 +30,7 @@ void* dmalloc(size_t bytes) {
 void host_ref_closed(double rho, double& vxc, double& exc) {
     auto out = pade_lsd(0.5 * rho, 0.5 * rho);
     vxc = out.vrho_a;
-    exc = out.exc;
+    exc = rho >= 1e-12 ? out.energy_density / rho : 0;
 }
 
 } // namespace
@@ -133,10 +133,12 @@ TEST(CudaGpwXcLda, MatchesCpuPadeLsd) {
 
     for (int i = 0; i < nr; ++i) {
         const auto ref = pade_lsd(ra[i], rb[i]);
-        const double t = 1e-12 * std::fmax(1.0, std::abs(ref.exc));
+        const double epsilon =
+            ra[i] + rb[i] >= 1e-12 ? ref.energy_density / (ra[i] + rb[i]) : 0;
+        const double t = 1e-12 * std::fmax(1.0, std::abs(epsilon));
         const double ta = 1e-12 * std::fmax(1.0, std::abs(ref.vrho_a));
         const double tb = 1e-12 * std::fmax(1.0, std::abs(ref.vrho_b));
-        EXPECT_NEAR(exc[i], ref.exc, t)
+        EXPECT_NEAR(exc[i], epsilon, t)
             << "exc at ra=" << ra[i] << " rb=" << rb[i];
         EXPECT_NEAR(va[i], ref.vrho_a, ta)
             << "vrho_a at ra=" << ra[i] << " rb=" << rb[i];
@@ -224,7 +226,7 @@ TEST(CudaGpwXcLda, EnergyReductionLsd) {
     double sum = 0, c = 0;
     for (int i = 0; i < nr; ++i) {
         const auto ref = pade_lsd(ra[i], rb[i]);
-        const double y = (ra[i] + rb[i]) * ref.exc - c;
+        const double y = ref.energy_density - c;
         const double t = sum + y;
         c = (t - sum) - y;
         sum = t;

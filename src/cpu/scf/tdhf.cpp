@@ -517,6 +517,7 @@ RealMatrix fxc_kernel_fd(const SlaterDeterminant& det,
         throw std::runtime_error(
             "fxc_kernel_fd: internal::IntegralWorkspace has no shells");
 
+    const BuiltinXc functional(xc);
     using Spin = SlaterDeterminant::Spin;
     const RealMatrix& C = det.coefficients(Spin::alpha);
     const RealVector& f = det.occupations(Spin::alpha);
@@ -570,10 +571,10 @@ RealMatrix fxc_kernel_fd(const SlaterDeterminant& det,
 
             RealMatrix Pa_p = Pa0 + kEps * dm_sym;
             RealMatrix Pa_m = Pa0 - kEps * dm_sym;
-            const XCGridResult xp =
-                evaluate_xc_batched(grid, pack.shells, n_basis, Pa_p, Pa_p, xc);
-            const XCGridResult xm =
-                evaluate_xc_batched(grid, pack.shells, n_basis, Pa_m, Pa_m, xc);
+            const XCGridResult xp = evaluate_xc_batched(
+                grid, pack.shells, n_basis, Pa_p, Pa_p, functional);
+            const XCGridResult xm = evaluate_xc_batched(
+                grid, pack.shells, n_basis, Pa_m, Pa_m, functional);
 
             RealMatrix dVa = (xp.Vxc_alpha - xm.Vxc_alpha) / (2.0 * kEps);
 
@@ -790,6 +791,9 @@ template <>
 ExcitedStatesResult TDA<RKS>::run(int n_states,
                                   ExcitationChannel channel) const {
     const RKS& mf = *mf_;
+    if (mf.xc == XCType::Custom)
+        throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
+                                    "kernels are not implemented");
 
     if (!mf.has_result())
         throw std::runtime_error(
@@ -878,6 +882,9 @@ template <>
 ExcitedStatesResult TDDFT<RKS>::run(int n_states,
                                     ExcitationChannel channel) const {
     const RKS& mf = *mf_;
+    if (mf.xc == XCType::Custom)
+        throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
+                                    "kernels are not implemented");
 
     if (!mf.has_result())
         throw std::runtime_error(
@@ -1576,6 +1583,9 @@ ExcitedStatesResult package_uks_excited(const SlaterDeterminant& det,
 template <>
 ExcitedStatesResult TDA<UKS>::run(int n_states, ExcitationChannel) const {
     const UKS& mf = *mf_;
+    if (mf.xc == XCType::Custom)
+        throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
+                                    "kernels are not implemented");
 
     if (!mf.has_result())
         throw std::runtime_error(
@@ -1612,6 +1622,9 @@ ExcitedStatesResult TDA<UKS>::run(int n_states, ExcitationChannel) const {
 template <>
 ExcitedStatesResult TDDFT<UKS>::run(int n_states, ExcitationChannel) const {
     const UKS& mf = *mf_;
+    if (mf.xc == XCType::Custom)
+        throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
+                                    "kernels are not implemented");
 
     if (!mf.has_result())
         throw std::runtime_error(

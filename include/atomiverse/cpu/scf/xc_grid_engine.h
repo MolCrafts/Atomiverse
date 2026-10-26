@@ -205,18 +205,23 @@ grid_contract_tn(const xt::xtensor<double, 2>& A,
 ///                count; must be the grid `aog` was built from).
 /// @param P_alpha Alpha density matrix [n_basis × n_basis].
 /// @param P_beta  Beta density matrix [n_basis × n_basis].
-/// @param xc_type XC functional type (LSDA or PBE).
+/// @param functional Batched XC mathematics.
+/// @param spin Restricted or collinear spin convention.
 /// @return XCGridResult with Vxc matrices, E_xc, and integration diagnostics.
-inline XCGridResult evaluate_xc_batched(const XCGridBasis& aog,
-                                        const MolecularGrid& grid,
-                                        const xt::xtensor<double, 2>& P_alpha,
-                                        const xt::xtensor<double, 2>& P_beta,
-                                        XCType xc_type) {
+inline XCGridResult evaluate_xc_batched(
+    const XCGridBasis& aog, const MolecularGrid& grid,
+    const xt::xtensor<double, 2>& P_alpha, const xt::xtensor<double, 2>& P_beta,
+    const ATV::electronic::XcFunctional& functional,
+    ATV::electronic::XcSpin spin = ATV::electronic::XcSpin::Collinear) {
     const int G = static_cast<int>(grid.points.size());
     const int N = static_cast<int>(aog.Phi.shape()[1]);
     // GGA path is needed for PBE and for the B3LYP / PBE0 hybrids, whose
     // semi-local part carries a gradient-dependent term.
-    const bool is_gga = ATV::cpu::scf::is_gga(xc_type);
+    const auto mask = static_cast<unsigned>(functional.ingredients());
+    if ((mask & 1u) == 0 || (mask & ~3u) != 0)
+        throw std::invalid_argument(
+            "Molecular XC: only rho and sigma channels are implemented");
+    const bool is_gga = (mask & 2u) != 0;
     const size_t Gs = static_cast<size_t>(G);
     const size_t Ns = static_cast<size_t>(N);
 
@@ -289,7 +294,7 @@ inline XCGridResult evaluate_xc_batched(const XCGridBasis& aog,
     }
 
     // ── 3. Batch XC evaluation ─────────────────────────────────────────
-    xt::xtensor<double, 1> exc_arr = xt::zeros<double>({Gs});
+    xt::xtensor<double, 1> energy_density = xt::zeros<double>({Gs});
     xt::xtensor<double, 1> vrho_a_arr = xt::zeros<double>({Gs});
     xt::xtensor<double, 1> vrho_b_arr = xt::zeros<double>({Gs});
     xt::xtensor<double, 1> vsigma_aa_out, vsigma_ab_out, vsigma_bb_out;
@@ -299,21 +304,32 @@ inline XCGridResult evaluate_xc_batched(const XCGridBasis& aog,
         vsigma_bb_out = xt::zeros<double>({Gs});
     }
 
-    evaluate_xc_batch(xc_type, G, rho_a_arr.data(), rho_b_arr.data(),
-                      is_gga ? sigma_aa_arr.data() : nullptr,
-                      is_gga ? sigma_ab_arr.data() : nullptr,
-                      is_gga ? sigma_bb_arr.data() : nullptr, exc_arr.data(),
-                      vrho_a_arr.data(), vrho_b_arr.data(),
-                      is_gga ? vsigma_aa_out.data() : nullptr,
-                      is_gga ? vsigma_ab_out.data() : nullptr,
-                      is_gga ? vsigma_bb_out.data() : nullptr);
+    ATV::electronic::XcBatch batch;
+    batch.spin = spin;
+    batch.rho_alpha = {rho_a_arr.data(), Gs};
+    batch.rho_beta = {rho_b_arr.data(), Gs};
+    if (is_gga) {
+        batch.sigma_aa = {sigma_aa_arr.data(), Gs};
+        batch.sigma_ab = {sigma_ab_arr.data(), Gs};
+        batch.sigma_bb = {sigma_bb_arr.data(), Gs};
+    }
+    ATV::electronic::XcOutput output;
+    output.energy_density = {energy_density.data(), Gs};
+    output.vrho_alpha = {vrho_a_arr.data(), Gs};
+    output.vrho_beta = {vrho_b_arr.data(), Gs};
+    if (is_gga) {
+        output.vsigma_aa = {vsigma_aa_out.data(), Gs};
+        output.vsigma_ab = {vsigma_ab_out.data(), Gs};
+        output.vsigma_bb = {vsigma_bb_out.data(), Gs};
+    }
+    functional.evaluate(batch, ATV::electronic::XcOrder::First, output);
 
     // ── 4. Integrate E_xc and electron counts ──────────────────────────
     xt::xtensor<double, 1> w_arr = xt::zeros<double>({Gs});
     for (int g = 0; g < G; ++g)
         w_arr(g) = static_cast<double>(grid.points[g].weight);
 
-    double E_xc = xt::sum(w_arr * exc_arr * (rho_a_arr + rho_b_arr))();
+    double E_xc = xt::sum(w_arr * energy_density)();
     double n_alpha_int = xt::sum(w_arr * rho_a_arr)();
     double n_beta_int = xt::sum(w_arr * rho_b_arr)();
 
@@ -439,16 +455,18 @@ inline XCGridResult evaluate_xc_batched(const XCGridBasis& aog,
 /// @param n_basis Number of basis functions.
 /// @param P_alpha Alpha density matrix [n_basis × n_basis].
 /// @param P_beta  Beta density matrix [n_basis × n_basis].
-/// @param xc_type XC functional type (LSDA or PBE).
+/// @param functional Batched XC mathematical provider.
 /// @return XCGridResult with Vxc matrices, E_xc, and integration diagnostics.
 inline XCGridResult
 evaluate_xc_batched(const MolecularGrid& grid,
                     const std::vector<native::Shell>& shells, int n_basis,
                     const xt::xtensor<double, 2>& P_alpha,
-                    const xt::xtensor<double, 2>& P_beta, XCType xc_type) {
+                    const xt::xtensor<double, 2>& P_beta,
+                    const ATV::electronic::XcFunctional& functional) {
     XCGridBasis aog;
-    aog.build(grid, shells, n_basis, ATV::cpu::scf::is_gga(xc_type));
-    return evaluate_xc_batched(aog, grid, P_alpha, P_beta, xc_type);
+    aog.build(grid, shells, n_basis,
+              (static_cast<unsigned>(functional.ingredients()) & 2u) != 0);
+    return evaluate_xc_batched(aog, grid, P_alpha, P_beta, functional);
 }
 
 } // namespace scf

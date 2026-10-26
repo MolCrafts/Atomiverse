@@ -10,6 +10,9 @@ tickets: `.claude/notes/notes.md`.
 - [es-unification.md](es-unification.md) — electronic-structure front/back
   split: nested mount, constructor parameters, loops as Drivers, surface,
   composed propagators, CUDA fronts.
+- [es-extensibility.md](es-extensibility.md) — physical extension contracts,
+  real-loop ownership, DFT/SE migration order and out-of-tree acceptance;
+  companion source review: `../notes/se-extensibility-audit.md`.
 - [gaff-m1-open-work.md](gaff-m1-open-work.md) — GAFF milestone 1 (CPU vs
   LAMMPS, CUDA vs OpenMM) remaining phases and the open GPW reds.
 - [cpu-orthogonality.md](cpu-orthogonality.md) — CPU component/execution

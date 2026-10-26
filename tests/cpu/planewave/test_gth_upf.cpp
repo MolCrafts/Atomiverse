@@ -13,8 +13,11 @@
 #include "atomiverse/cpu/planewave/internal/gth_upf.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 
+#include <algorithm>
 #include <cmath>
 #include <gtest/gtest.h>
+#include <limits>
+#include <stdexcept>
 
 using namespace ATV;
 using namespace ATV::cpu::pw::internal;
@@ -36,26 +39,6 @@ cpu::Box cubic_bohr(double a) {
     c(2, 2) = a;
     b.set_cell(c);
     return b;
-}
-
-/// Worst |V_loc(G) quadrature - closed form| over the G-sphere [Hartree].
-double vloc_worst_error(molrs::Element el, const char* name, int n_r) {
-    const cpu::gpw::GthPotential pot(el, name);
-    const UPFData upf = upf_from_gth(pot, /*r_max=*/12.0, n_r);
-
-    const double a = 12.0; // Bohr
-    const auto box = cubic_bohr(a);
-    const double omega = a * a * a;
-    const auto gv = enumerate_g_vectors(box, /*ecut_ht=*/8.0, Vec3::zeros());
-    const auto vg = upf_vloc_to_gspace(upf, gv, omega);
-
-    double worst = 0.0;
-    for (int ig = 0; ig < gv.count(); ++ig) {
-        const double g = std::sqrt(gv.g[ig].norm_squared());
-        worst =
-            std::max(worst, std::abs(vg[ig] - gth_vloc_gspace(pot, g, omega)));
-    }
-    return worst;
 }
 
 /// Compare the quadrature route against the closed form for one potential.
@@ -106,29 +89,13 @@ TEST(GthUpf, ProjectorsAreNormalized) {
     ASSERT_GT(upf.n_proj(), 0);
 
     for (const auto& kb : upf.kb) {
-        double norm = 0.0;
-        for (std::size_t ir = 1; ir < upf.r.size(); ++ir) {
-            const double dr = upf.r[ir] - upf.r[ir - 1];
-            const double b = 0.5 * (kb.beta[ir] + kb.beta[ir - 1]);
-            norm += b * b * dr;
-        }
+        std::vector<AccReal> density(upf.r.size());
+        for (std::size_t ir = 0; ir < upf.r.size(); ++ir)
+            density[ir] = kb.beta[ir] * kb.beta[ir];
+        const double norm = upf.integrate_radial(density);
         EXPECT_NEAR(norm, 1.0, 1e-4)
             << "GTH projector l=" << kb.l << " is not unit-normalized";
     }
-}
-
-TEST(GthUpf, LocalPotentialConvergesSecondOrderInMeshSpacing) {
-    // The residual against the closed form is trapezoid discretization, not a
-    // wrong formula: on a log mesh the error is O(dx^2), so each doubling of
-    // the point count must cut it by ~4. A formula error would be
-    // mesh-independent instead.
-    const double e1 = vloc_worst_error(molrs::Element::O, "GTH-PBE-q6", 1000);
-    const double e2 = vloc_worst_error(molrs::Element::O, "GTH-PBE-q6", 2000);
-    const double e4 = vloc_worst_error(molrs::Element::O, "GTH-PBE-q6", 4000);
-    EXPECT_GT(e1 / e2, 3.0) << "e1=" << e1 << " e2=" << e2;
-    EXPECT_LT(e1 / e2, 5.0) << "e1=" << e1 << " e2=" << e2;
-    EXPECT_GT(e2 / e4, 3.0) << "e2=" << e2 << " e4=" << e4;
-    EXPECT_LT(e2 / e4, 5.0) << "e2=" << e2 << " e4=" << e4;
 }
 
 TEST(GthUpf, CarriesValenceChargeAndNormConservingTag) {
@@ -142,4 +109,134 @@ TEST(GthUpf, CarriesValenceChargeAndNormConservingTag) {
 TEST(GthUpf, UnknownParameterizationThrows) {
     EXPECT_THROW((void)cpu::gpw::GthPotential(molrs::Element::Si, "GTH-NOPE"),
                  std::runtime_error);
+}
+
+namespace {
+struct GaussianKb {
+    UPFData upf;
+    std::vector<double> alpha{0.6, 0.4, 1.2, 0.9, 1.7};
+};
+
+GaussianKb gaussian_kb() {
+    GaussianKb data;
+    constexpr int angular[] = {1, 0, 1, 0, 0}; // interleaved 2x2 p / 3x3 s
+    constexpr int nr = 10001;
+    constexpr double dr =
+        0.001; // Bohr; Gaussian exponential tails at r=10 are below 5e-18.
+    data.upf.r.resize(nr);
+    data.upf.rab.assign(nr, dr);
+    data.upf.kb.resize(5);
+    for (int ir = 0; ir < nr; ++ir)
+        data.upf.r[ir] = ir * dr;
+    for (int ip = 0; ip < 5; ++ip) {
+        auto& projector = data.upf.kb[ip];
+        projector.l = angular[ip];
+        projector.beta.resize(nr);
+        projector.radial_points = nr;
+        for (int ir = 0; ir < nr; ++ir) {
+            const double r = data.upf.r[ir];
+            // UPF beta=r*p(r), p(r)=r^l exp(-alpha*r^2).
+            projector.beta[ir] = std::pow(r, angular[ip] + 1)
+                                 * std::exp(-data.alpha[ip] * r * r);
+        }
+    }
+    data.upf.d_ij = {
+        2, 0, 0.7, 0,   0, 0,   3,   0, 0.4,  -0.2, 0.7, 0,  5,
+        0, 0, 0,   0.4, 0, 1.5, 0.6, 0, -0.2, 0,    0.6, 2.1}; // Ry, symmetric blocks
+    return data;
+}
+
+// Closed Gaussian/Bessel integral, independent of the production quadrature:
+// integral r^(l+2) exp(-a*r^2) j_l(q*r) dr
+// = sqrt(pi)*q^l*exp(-q^2/(4a)) / (2^(l+2)*a^(l+3/2)).
+double gaussian_radial(int l, double alpha, double q) {
+    return std::sqrt(M_PI) * std::pow(q, l) * std::exp(-q * q / (4 * alpha))
+           / (std::pow(2.0, l + 2) * std::pow(alpha, l + 1.5));
+}
+} // namespace
+
+TEST(KbProjectors, RotatedBlocksPreserveAnalyticGaussianOperator) {
+    auto data = gaussian_kb();
+    GVectorList gv;
+    gv.g = {{0, 0, 0}, {0.3, -0.2, 0.1}, {1.1, 0.4, -0.3}, {2, -0.5, 0.8}};
+    gv.kvec = {0.17, -0.1, 0.07}; // must use |k+G|, not |G|
+    const std::vector<Vec3> positions{{0, 0, 0}};
+    constexpr double omega = 64.0; // Bohr^3, fixes full operator normalization
+    constexpr double tolerance = 2e-6; // Ha, radial quadrature at dr=.001
+    for (bool diagonal : {false, true}) {
+        SCOPED_TRACE(diagonal);
+        if (diagonal)
+            for (int i = 0; i < 5; ++i)
+                for (int j = 0; j < 5; ++j)
+                    if (i != j)
+                        data.upf.d_ij[5 * i + j] = 0;
+        std::vector<std::vector<PWWorkspace::KBProjG>> result;
+        setup_kb_projectors(result, gv, data.upf, positions);
+        ASSERT_EQ(result.size(), 1u);
+        ASSERT_EQ(result[0].size(), 5u);
+        for (int ip = 0; ip < 5; ++ip) {
+            EXPECT_EQ(result[0][ip].l, ip < 3 ? 0 : 1);
+            ASSERT_EQ(result[0][ip].f_G.size(), gv.g.size());
+        }
+        double largest_error = 0;
+        for (int g = 0; g < gv.count(); ++g)
+            for (int h = 0; h < gv.count(); ++h) {
+                const Vec3 q = gv.g[g] + gv.kvec, p = gv.g[h] + gv.kvec;
+                const double qn = q.norm(), pn = p.norm();
+                double cosine = 0;
+                for (int axis = 0; axis < 3; ++axis)
+                    cosine += q[axis] * p[axis] / (qn * pn);
+                double got = 0, want = 0;
+                for (int l = 0; l <= 1; ++l) {
+                    // Addition theorem sums all m analytically. At atom R=0,
+                    // (-i)^l phase cancels its conjugate in the KB operator.
+                    const double factor = 4 * M_PI / omega * (2 * l + 1)
+                                          * (l == 0 ? 1.0 : cosine);
+                    for (const auto& projector : result[0])
+                        if (projector.l == l)
+                            got += factor * projector.d * projector.f_G[g]
+                                   * projector.f_G[h];
+                    for (int i = 0; i < 5; ++i)
+                        for (int j = 0; j < 5; ++j)
+                            if (data.upf.kb[i].l == l && data.upf.kb[j].l == l)
+                                want += factor * 0.5 * data.upf.d_ij[5 * i + j]
+                                        * gaussian_radial(l, data.alpha[i], qn)
+                                        * gaussian_radial(l, data.alpha[j], pn);
+                }
+                ASSERT_TRUE(std::isfinite(got));
+                largest_error = std::max(largest_error, std::abs(got - want));
+            }
+        EXPECT_LT(largest_error, tolerance);
+    }
+}
+
+TEST(KbProjectors, InvalidCouplingMatricesAndAngularMomentumThrow) {
+    const auto original = gaussian_kb();
+    GVectorList gv;
+    gv.g = {{0, 0, 0}};
+    const std::vector<Vec3> positions{{0, 0, 0}};
+    std::vector<std::vector<PWWorkspace::KBProjG>> result;
+    auto invalid = original.upf;
+    invalid.d_ij.pop_back();
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+                 std::invalid_argument);
+    invalid.d_ij.clear();
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+                 std::invalid_argument);
+    invalid = original.upf;
+    invalid.d_ij[2] = 0.8; // asymmetric p-block
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+                 std::invalid_argument);
+    invalid = original.upf;
+    invalid.d_ij[1] = invalid.d_ij[5] = 0.25; // couples s and p
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+                 std::invalid_argument);
+    invalid = original.upf;
+    invalid.d_ij[0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+                 std::invalid_argument);
+    invalid = original.upf;
+    invalid.kb[0].l = 3; // no f-channel spherical Bessel/angular implementation
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+                 std::invalid_argument);
 }

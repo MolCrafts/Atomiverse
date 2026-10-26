@@ -126,6 +126,7 @@ atv_add_cpp_test(test_mat3  core/test_mat3.cpp)
 atv_add_cpp_test(test_vec3  core/test_vec3.cpp)
 atv_add_cpp_test(test_real_harmonics core/test_real_harmonics.cpp)
 atv_add_cpp_test(test_units core/test_units.cpp)
+atv_add_cpp_test(test_gto core/test_gto.cpp)
 atv_add_cpp_test(test_driver_contract core/test_driver_contract.cpp)
 atv_add_cpp_test(test_evaluation_history core/test_evaluation_history.cpp)
 atv_add_cpp_test(test_plan_lifecycle core/test_plan_lifecycle.cpp)
@@ -383,6 +384,10 @@ if(ATV_BUILD_GPW)
     atv_add_cpp_test(test_cpu_gpw_workspace        cpu/gpw/test_cpu_gpw_workspace.cpp)
     atv_add_cpp_test(test_cpu_gpw_driver_node     cpu/gpw/test_cpu_gpw_driver_node.cpp)
     atv_add_cpp_test(test_cpu_gpw_diis            cpu/gpw/test_diis.cpp)
+    atv_add_cpp_test(test_cpu_gpw_density_stack   cpu/gpw/test_kpoints_density_stack.cpp)
+    atv_add_cpp_test(test_cpu_gpw_fourier_overlap cpu/gpw/test_kpoints_fourier_overlap.cpp)
+    atv_add_cpp_test(test_cpu_gpw_grid_contractions cpu/gpw/test_kpoints_grid_contractions.cpp)
+    atv_add_cpp_test(test_cpu_gpw_admission       cpu/gpw/test_solver_admission.cpp)
     atv_add_cpp_test(test_cpu_gpw_kpoints_natural_orbitals
                      cpu/gpw/test_kpoints_natural_orbitals.cpp)
     if(ATV_BUILD_PW)
@@ -390,6 +395,7 @@ if(ATV_BUILD_GPW)
     endif()
     atv_add_cpp_test(test_cpu_xc_pade              cpu/xc/test_cpu_xc_pade.cpp)
     if(ATV_BUILD_PW)  # FFT-backed pieces
+        atv_add_cpp_test(test_cpu_gpw_nonlocal_vdw cpu/gpw/test_nonlocal_vdw.cpp)
         atv_add_cpp_test(test_cpu_gpw_poisson_fft  cpu/gpw/test_cpu_gpw_poisson_fft.cpp)
         atv_add_cpp_test(test_cpu_gpw_hartree_grid cpu/gpw/test_cpu_gpw_hartree_grid.cpp)
         atv_add_cpp_test(test_cpu_gpw_grid_fft     cpu/gpw/test_cpu_gpw_grid_fft.cpp)
@@ -838,6 +844,10 @@ endif()
 if(ATV_BUILD_PW)
     # Naming convention: test_{backend}_{domain}_{component}.
     atv_add_cpp_test(test_cpu_pw_g_vector   cpu/planewave/test_g_vector.cpp)
+    atv_add_cpp_test(test_cpu_pw_davidson   cpu/planewave/test_davidson.cpp)
+    atv_add_cpp_test(test_cpu_pw_density    cpu/planewave/test_density_builder.cpp)
+    atv_add_cpp_test(test_cpu_pw_setup      cpu/planewave/test_pw_setup.cpp)
+    atv_add_cpp_test(test_cpu_pw_xc_builder cpu/planewave/test_xc_builder.cpp)
     atv_add_cpp_test(test_cpu_pw_upf        cpu/planewave/test_upf.cpp)
     atv_add_cpp_test(test_cpu_pw_gth_upf    cpu/planewave/test_gth_upf.cpp)
     atv_add_cpp_test(test_cpu_pw_kpoint     cpu/planewave/test_kpoint.cpp)
@@ -878,6 +888,7 @@ atv_add_cpp_test(test_cpu_linalg_eigensolve
 atv_add_cpp_test(test_cpu_linalg_linear_solve
                  cpu/linalg/test_linear_solve.cpp)
 atv_add_cpp_test(test_cpu_linalg_pulay cpu/linalg/test_pulay.cpp)
+atv_add_cpp_test(test_cpu_linalg_diis cpu/linalg/internal/test_diis_mixer.cpp)
 
 # ── Electronic-state propagator tests ─────────────────────────────────
 #
@@ -939,11 +950,14 @@ if(ATV_BUILD_HF)
     # SlaterDeterminant invariants, H2 collapse to UHF, noncollinear win on
     # the frustrated H3 triangle vs externally pinned PySCF, collinear trap.
     atv_add_cpp_test(test_cpu_scf_xc_functional cpu/scf/test_xc_functional.cpp)
+    atv_add_cpp_test(test_cpu_scf_xc_extension cpu/scf/test_xc_extension.cpp)
     # scf-driver-refactor-04b-wire: method-driver is DriverNode + outer Plan
     # bind/build only (no full SCF under tests/; wave-2). Nested energy pins:
     # regressions/multiscale/qmmm + scf/*rhf*.
-    atv_add_cpp_test(test_cpu_scf_method_driver_wire
-                     cpu/scf/test_method_driver_wire.cpp)
+    if(ATV_BUILD_MD AND ATV_BUILD_MINIMIZER AND ATV_BUILD_EVALUATE)
+        atv_add_cpp_test(test_cpu_scf_method_driver_wire
+                         cpu/scf/test_method_driver_wire.cpp)
+    endif()
     # esmm-cpmd-04-ao-cpmd: AO Car-Parrinello on the mean-field methods —
     # the refusal lattice, the TimestepConsumer seam, ScfGradient::
     # compute_at_density parity at a converged determinant, and the
@@ -1011,6 +1025,7 @@ if(ATV_BUILD_HF)
     # region, MixStage latch; KS+soscf throw. No full RHF.run loop (wave-2).
     # Hard-case contrast: regressions/scf/soscf_hard_case.
     atv_add_cpp_test(test_soscf                   cpu/scf/test_soscf.cpp)
+    atv_add_cpp_test(test_orbital_canonicalization cpu/scf/internal/test_orbital_canonicalization.cpp)
     # scf-review-02-eri-hoists: hosted spin-orbital ERI helpers
     # (SpinOrbital / antisym_eri / mp_denominator) in internal/spin_orbital_eri.h.
     atv_add_cpp_test(test_cpu_scf_spin_orbital_eri cpu/scf/test_spin_orbital_eri.cpp)
@@ -1090,11 +1105,15 @@ if(ATV_BUILD_HF)
     # test_cpu_minimizer_lbfgs relocated to benchmarks/qc/rhf/validation/
     # (val_min_lbfgs_geoopt) — full SCF-driven H2 geometry optimizations.
     atv_add_cpp_test(test_cpu_minimizer_line_search cpu/minimize/test_line_search.cpp)
-    atv_add_cpp_test(test_cpu_minimize_driver_swap_optimizer cpu/test_minimize_driver_swap_optimizer.cpp)
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_cpp_test(test_cpu_minimize_driver_swap_optimizer cpu/test_minimize_driver_swap_optimizer.cpp)
+    endif()
     # Vibrational analysis (finite-difference Hessian) is an end-to-end /
     # PySCF-parity suite — too slow for the unit gate. RELOCATED to
     # benchmarks/qc/vib/validation/ (run under -DATV_BUILD_BENCHMARKS=ON).
-    atv_add_cpp_test(test_cpu_recorder_density_cube cpu/record/test_density_cube.cpp)
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_cpp_test(test_cpu_recorder_density_cube cpu/record/test_density_cube.cpp)
+    endif()
     # Mirrors cpu/scf/xc_functional.h — analytical hard-coded goldens (no live libxc).
     atv_add_cpp_test(test_xc_reference         cpu/scf/test_xc_reference.cpp)
     # scf-review-06-scf-perf: geometry-fixed XCGridBasis cache equivalence —
@@ -1124,7 +1143,9 @@ if(ATV_BUILD_CUDA)
     if(ATV_BUILD_MD)
         atv_add_test(test_cuda_multi_gpu  cuda/dynamics/test_multi_gpu.cu)
     endif()
-    atv_add_test(test_cuda_hilbert cuda/dynamics/test_hilbert.cu)
+    if(ATV_BUILD_NEIGHBOR)
+        atv_add_test(test_cuda_hilbert cuda/dynamics/test_hilbert.cu)
+    endif()
     atv_add_test(test_cuda_timer cuda/device/test_timer.cu)
     atv_add_test(test_cuda_frame      cuda/test_frame.cu)
     if(ATV_BUILD_MOLRS)
@@ -1154,18 +1175,24 @@ if(ATV_BUILD_CUDA)
     if(ATV_BUILD_MD)
         atv_add_test(test_cuda_nose_hoover_npt cuda/dynamics/test_nose_hoover_npt.cu)
     endif()
-    atv_add_test(test_cuda_neighborlist_skin_gating cuda/dynamics/test_neighborlist_skin_gating.cu)
+    if(ATV_BUILD_NEIGHBOR)
+        atv_add_test(test_cuda_neighborlist_skin_gating cuda/dynamics/test_neighborlist_skin_gating.cu)
+    endif()
     if(ATV_BUILD_MD)
         atv_add_test(test_cuda_cluster_contract cuda/dynamics/test_cuda_cluster_contract.cu)
     endif()
-    atv_add_test(test_cuda_cluster_mask cuda/dynamics/test_cuda_cluster_mask.cu)
+    if(ATV_BUILD_NEIGHBOR)
+        atv_add_test(test_cuda_cluster_mask cuda/dynamics/test_cuda_cluster_mask.cu)
+    endif()
     if(ATV_BUILD_MD)
         atv_add_test(test_pair_lj_tile_step0 cuda/potentials/test_pair_lj_tile_step0.cu)
     endif()
-    atv_add_unit_exe(test_cuda_atom_cell_sort cuda/dynamics/test_atom_cell_sort.cu)
-    # Pulls in the private primitive header src/cuda/neighbor/atom_cell_sort.cuh
-    target_include_directories(test_cuda_atom_cell_sort PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/cuda/neighbor)
+    if(ATV_BUILD_NEIGHBOR)
+        atv_add_unit_exe(test_cuda_atom_cell_sort cuda/dynamics/test_atom_cell_sort.cu)
+        # Pulls in the private primitive header src/cuda/neighbor/atom_cell_sort.cuh
+        target_include_directories(test_cuda_atom_cell_sort PRIVATE
+            ${CMAKE_SOURCE_DIR}/src/cuda/neighbor)
+    endif()
     # cuda::RDF on the molrs streaming accumulator (arch-refactor-07-molrs):
     # static-trajectory g(r) parity vs a host-fed cpu::compute::RDFAccumulator
     # + fail-fast ctor edges. Needs a GPU node (runs a cuda::md::MD).
@@ -1183,7 +1210,9 @@ if(ATV_BUILD_CUDA)
     atv_add_test(test_cuda_kspace_virial cuda/longrange/test_kspace_virial.cu)
     # pair_kernel is cuda-owned (backend-mirror-02-absorb); its scalar-math test
     # moved here from the former cpu/potentials/test_pair_kernel.cpp.
-    atv_add_test(test_cuda_pair_kernel cuda/potentials/test_pair_kernel.cu)
+    if(ATV_BUILD_POTENTIALS)
+        atv_add_test(test_cuda_pair_kernel cuda/potentials/test_pair_kernel.cu)
+    endif()
     if(ATV_BUILD_PW)
         atv_add_unit_exe(test_cuda_pw_fft cuda/planewave/test_fft.cu)
         target_link_libraries(test_cuda_pw_fft PRIVATE CUDA::cufft)
@@ -1261,7 +1290,7 @@ if(ATV_BUILD_CUDA)
         if(TARGET test_cuda_gpw_forces)
             target_link_libraries(test_cuda_gpw_forces PRIVATE CUDA::cufft)
         endif()
-        # Device AO DIIS + cuSOLVER eigen vs host GpwDiis / diagonalize_fock
+        # Device AO DIIS + cuSOLVER eigen vs host DIISMixer / diagonalize_fock
         # (cuda-gpw-device-diis-eigen).
         atv_add_unit_exe(test_cuda_gpw_diis_eigen cuda/gpw/test_diis_eigen.cu)
         if(TARGET test_cuda_gpw_diis_eigen)
@@ -1322,11 +1351,18 @@ if(ATV_BUILD_CUDA)
         endif()
     endif()
     atv_add_test(test_cuda_scf        cuda/scf/test_scf.cu)
-    atv_add_test(test_cuda_scf_rhf    cuda/scf/test_rhf.cu)
     if(ATV_BUILD_HF)
+        atv_add_test(test_cuda_scf_rhf cuda/scf/test_rhf.cu)
+        atv_add_test(test_cuda_scf_device_integrals cuda/scf/test_device_integrals.cu)
         atv_add_test(test_cuda_nuclear_identity cuda/scf/test_nuclear_identity.cu)
+        atv_add_test(test_cuda_scf_diis_mixer cuda/scf/test_diis_mixer.cu)
+        atv_add_test(test_cuda_scf_eigen_solver cuda/scf/test_eigen_solver.cu)
+        atv_add_test(test_cuda_hf_convergence cuda/scf/test_convergence_check.cu)
+        atv_add_test(test_cuda_gaussian_math cuda/scf/test_boys.cu)
+        atv_add_test(test_cuda_mp2_device cuda/scf/test_mp2_device.cu)
+        atv_add_test(test_cuda_uhf_fock cuda/scf/test_uhf_fock.cu)
+        atv_add_test(test_cuda_uhf_guess cuda/scf/test_uhf_guess.cu)
     endif()
-    atv_add_test(test_cuda_scf_device_integrals cuda/scf/test_device_integrals.cu)
     # CPU/CUDA PW parity is an end-to-end SCF solve: it lives in
     # regressions/pw/rks (--device=both), never under ctest.
     if(ATV_BUILD_MD AND ATV_BUILD_MINIMIZER)
@@ -1346,7 +1382,9 @@ if(ATV_BUILD_CUDA)
         atv_add_test(test_cuda_driver_unfix cuda/driver/test_unfix.cu)
     endif()
     atv_add_test(test_cuda_driver_live_table cuda/driver/test_driver_live_table.cu)
-    atv_add_test(test_cuda_driver_long_range cuda/driver/test_long_range_contract.cu)
+    if(ATV_BUILD_EVALUATE AND ATV_BUILD_NEIGHBOR AND ATV_BUILD_POTENTIALS)
+        atv_add_test(test_cuda_driver_long_range cuda/driver/test_long_range_contract.cu)
+    endif()
     # Registration-time PhaseKind gate, CUDA mirror
     # (arch-refactor-01-bindings). add()-only — needs no CUDA device.
     if(ATV_BUILD_MD AND ATV_BUILD_MINIMIZER)

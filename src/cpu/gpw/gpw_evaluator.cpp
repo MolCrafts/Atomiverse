@@ -1785,13 +1785,14 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         // masked axes (variable-cell relax of constrained boxes).
         const ATV::cpu::linalg::RealMatrix* stress_guess =
             last_.C.size() > 0 ? &last_.C : nullptr;
-        last_stress_ha_ = stress_use_fd
-                              ? internal::gpw_stress_fd_impl(
-                                    atoms, method_, method_.stress_strain_h,
-                                    method_.stress_axes, stress_guess)
-                              : internal::gpw_stress_analytic_impl(
-                                    atoms, method_, method_.stress_strain_h,
-                                    method_.stress_axes, stress_guess);
+        last_stress_ha_ =
+            stress_use_fd
+                ? internal::gpw_stress_fd_impl(
+                      atoms, method_, method_.stress_strain_h,
+                      method_.stress_axes, stress_guess)
+                : internal::gpw_stress_at_state_impl(atoms, method_, last_,
+                                                     method_.stress_strain_h,
+                                                     method_.stress_axes);
         add_stress_to_frame(frame, last_stress_ha_);
     }
 }

@@ -277,4 +277,46 @@ TEST(RysEri, ThreadLocalReuseDeterminism_DShell) {
                    "(thread_local scratch bleed)";
 }
 
+// The scalar MD path is independent of the production Rys block dispatcher.
+// Large separations exercise its asymptotic branch and translation stability.
+TEST(RysEri, WidelySeparatedSpQuartetsMatchScalarMD) {
+    auto one = make_water();
+    cpu::Frame frame(6);
+    for (int a = 0; a < 6; ++a) {
+        const int i = a % 3;
+        frame.span(kAtom_type)[a] = one.span(kAtom_type)[i];
+        frame.span(kAtom_x)[a] = one.span(kAtom_x)[i] + (a >= 3 ? 28.0 : 0.0);
+        frame.span(kAtom_y)[a] = one.span(kAtom_y)[i];
+        frame.span(kAtom_z)[a] = one.span(kAtom_z)[i];
+    }
+    frame.box = cpu::Box::cubic(100.0);
+    cpu::scf::internal::IntegralWorkspace pack{frame, BasisSet::STO3G, 0,
+                                               false};
+    const auto dense = build_eri_via_rys(ShellBlockPairList{pack, 1e-14});
+    double worst = 0.0, got = 0.0, want = 0.0;
+    int at[4]{};
+    const int n = pack.n_basis;
+    for (int a = 0; a < n; ++a)
+        for (int b = 0; b < n; ++b)
+            for (int c = 0; c < n; ++c)
+                for (int d = 0; d < n; ++d) {
+                    const double ref =
+                        native::eri(pack.shells[a], pack.shells[b],
+                                    pack.shells[c], pack.shells[d]);
+                    const double err = std::abs(dense(a, b, c, d) - ref);
+                    if (err > worst) {
+                        worst = err;
+                        got = dense(a, b, c, d);
+                        want = ref;
+                        at[0] = a;
+                        at[1] = b;
+                        at[2] = c;
+                        at[3] = d;
+                    }
+                }
+    EXPECT_LT(worst, 2e-11)
+        << "quartet=" << at[0] << ',' << at[1] << ',' << at[2] << ',' << at[3]
+        << " Rys=" << got << " MD=" << want;
+}
+
 #endif // ATV_HAS_HF

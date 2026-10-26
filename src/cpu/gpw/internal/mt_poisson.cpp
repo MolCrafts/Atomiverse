@@ -1,15 +1,14 @@
 /// @file src/cpu/gpw/internal/mt_poisson.cpp
-/// @brief Implementation of the isolated (truncated-Coulomb) Poisson solver.
+/// @brief Martyna–Tuckerman isolated Poisson kernel and cached FFT application.
 ///
-/// Same FFTW r2c/c2r pipeline and G-vector / 1/N normalization as the periodic
-/// solver (`poisson_fft.cpp`); only the reciprocal-space kernel changes to the
-/// spherically-truncated Coulomb form (Rozzi et al., PRB 73, 205119 (2006)):
-///   v(G) = (4π/|G|²)[1 - cos(|G| R_c)]   for G≠0,    v(0) = 2π R_c²,
-/// with R_c = min(L)/2. For a charge contained within R_c this reproduces the
-/// open-boundary 1/r potential, removing the periodic-image interaction.
+/// Adapted from CP2K v2026.2 src/pw/mt_util.F (blob
+/// 148c8f3b92ba5ec469c2d31e72572343cc8b517c) and pw_poisson_types.F.
+/// Copyright 2000-2026 CP2K developers group <https://cp2k.org>.
+/// CP2K source license: GPL-2.0-or-later; this project uses GPL-2.0-only.
+/// Martyna & Tuckerman, J. Chem. Phys. 110, 2810 (1999).
 ///
-/// Geometry-fixed kernel table is cached (shape + L) so SCF iters skip the
-/// √/cos rebuild; apply / H2D-scale loops are OpenMP.
+/// Fourier transform erf(alpha*r)/r on an auxiliary grid, then add the
+/// analytic short-range complement. No spherical interaction cutoff is used.
 
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
 
@@ -30,7 +29,7 @@ namespace cpu {
 namespace gpw {
 namespace {
 
-// Grow-only MT kernel cache: v(G) depends only on grid shape + box + R_c.
+// MT kernel cache: v(G) depends only on grid shape, box and fixed alpha*L.
 // SCF reuses the same isolated grid every step; rebuild only on shape change.
 struct MtKernelCache {
     int n0 = 0, n1 = 0, n2 = 0;
@@ -48,35 +47,54 @@ struct MtKernelCache {
         L1 = l1;
         L2 = l2;
         const int n2c = c / 2 + 1;
-        const long nc = static_cast<long>(a) * static_cast<long>(b)
-                        * static_cast<long>(n2c);
+        const long nc = static_cast<long>(a) * b * n2c;
         f.resize(static_cast<std::size_t>(nc));
-        const double two_pi = 2.0 * M_PI;
-        const double gx_unit = two_pi / l0;
-        const double gy_unit = two_pi / l1;
-        const double gz_unit = two_pi / l2;
-        const double four_pi = 4.0 * M_PI;
-        const double rc = 0.5 * std::min({l0, l1, l2});
-        const double v_g0 = two_pi * rc * rc;
+        // CP2K's default alpha*min(L)=7. Sample the smooth long-range part
+        // at a finer cutoff, then retain the original reciprocal-space modes.
+        const double alpha = 7.0 / std::min({l0, l1, l2});
+        const double alpha2 = alpha * alpha;
+        const int aa = 2 * a, bb = 2 * b, cc = 2 * c;
+        const int cc2 = cc / 2 + 1;
+        auto& auxiliary = R2cFft::for_shape(aa, bb, cc);
+        double* values = auxiliary.r();
+        const double volume = l0 * l1 * l2;
+        const double dv = volume / (static_cast<double>(aa) * bb * cc);
 #pragma omp parallel for schedule(static) collapse(2)
-        for (int i0 = 0; i0 < a; ++i0) {
-            for (int i1 = 0; i1 < b; ++i1) {
-                const int m0 = (i0 <= a / 2) ? i0 : i0 - a;
-                const int m1 = (i1 <= b / 2) ? i1 : i1 - b;
-                const double gx = m0 * gx_unit;
-                const double gy = m1 * gy_unit;
-                const double gxy2 = gx * gx + gy * gy;
-                double* row = &f[static_cast<std::size_t>(
-                    (static_cast<long>(i0) * b + i1) * n2c)];
-                for (int i2 = 0; i2 < n2c; ++i2) {
-                    const double gz = i2 * gz_unit;
-                    const double g2 = gxy2 + gz * gz;
-                    if (g2 == 0.0)
-                        row[i2] = v_g0;
-                    else {
-                        const double g = std::sqrt(g2);
-                        row[i2] = (four_pi / g2) * (1.0 - std::cos(g * rc));
-                    }
+        for (int i = 0; i < aa; ++i) {
+            for (int j = 0; j < bb; ++j) {
+                const double x = std::min(i, aa - i) * l0 / aa;
+                const double y = std::min(j, bb - j) * l1 / bb;
+                for (int k = 0; k < cc; ++k) {
+                    const double z = std::min(k, cc - k) * l2 / cc;
+                    const double r = std::sqrt(x * x + y * y + z * z);
+                    values[(static_cast<long>(i) * bb + j) * cc + k] =
+                        r > 0 ? std::erf(alpha * r) / r
+                              : 2 * alpha / std::sqrt(M_PI);
+                }
+            }
+        }
+        auxiliary.execute_r2c();
+        const fftw_complex* transformed = auxiliary.c();
+#pragma omp parallel for schedule(static) collapse(2)
+        for (int i = 0; i < a; ++i) {
+            for (int j = 0; j < b; ++j) {
+                const int mi = i <= a / 2 ? i : i - a;
+                const int mj = j <= b / 2 ? j : j - b;
+                const int ai = mi < 0 ? aa + mi : mi;
+                const int aj = mj < 0 ? bb + mj : mj;
+                const double gx = 2 * M_PI * mi / l0;
+                const double gy = 2 * M_PI * mj / l1;
+                for (int k = 0; k < n2c; ++k) {
+                    const double gz = 2 * M_PI * k / l2;
+                    const double g2 = gx * gx + gy * gy + gz * gz;
+                    const double complement =
+                        g2 > 0 ? -4 * M_PI / g2 * std::expm1(-g2 / (4 * alpha2))
+                               : M_PI / alpha2;
+                    const long idx = (static_cast<long>(i) * b + j) * n2c + k;
+                    const long aux =
+                        (static_cast<long>(ai) * bb + aj) * cc2 + k;
+                    f[static_cast<std::size_t>(idx)] =
+                        transformed[aux][0] * dv + complement;
                 }
             }
         }
@@ -84,7 +102,7 @@ struct MtKernelCache {
 };
 
 MtKernelCache& mt_kernel_cache() {
-    static MtKernelCache cache;
+    thread_local MtKernelCache cache;
     return cache;
 }
 
@@ -114,7 +132,7 @@ PoissonResult solve_poisson_mt(const UniformGrid& grid,
 
     fft.execute_r2c(); // rbuf -> cbuf (= rho_hat)
 
-    // Apply cached truncated-Coulomb kernel (bit-identical to on-the-fly f(G)).
+    // Apply the cached Martyna–Tuckerman kernel.
 #pragma omp parallel for schedule(static) if (nc > 4096)
     for (long idx = 0; idx < nc; ++idx) {
         const double f = fker[static_cast<std::size_t>(idx)];

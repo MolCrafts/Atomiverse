@@ -1,7 +1,7 @@
 /// @file cuda/gpw/internal/ao_diis_eigen.cuh
 /// @brief Device Pulay DIIS + cuSOLVER dense eigen for GPW Γ RKS/UKS mid-SCF.
 ///
-/// CUDA twin of host `cpu::gpw::internal::GpwDiis` + `diagonalize_fock` /
+/// CUDA twin of host `cpu::linalg::internal::DIISMixer` + `diagonalize_fock` /
 /// `diagonalize_fock_shifted` + `build_density_matrix` used inside
 /// `cuda::gpw::GpwDft::run` after the device KS product stage builds H.
 ///

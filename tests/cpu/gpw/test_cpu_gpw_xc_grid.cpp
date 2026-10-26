@@ -46,7 +46,7 @@ TEST(GpwXcGrid, ConstantDensityEnergyAndPotential) {
     const ATV::cpu::xc::PadeXC ref =
         ATV::cpu::xc::pade_lsd(0.5 * rho0, 0.5 * rho0);
     const double volume = cell[0] * cell[1] * cell[2];
-    const double e_expected = volume * rho0 * ref.exc;
+    const double e_expected = volume * ref.energy_density;
 
     EXPECT_NEAR(xc.e_xc, e_expected, 1e-10 * std::abs(e_expected));
     ASSERT_EQ(static_cast<long>(xc.vxc_r.size()), grid.npts());
@@ -74,7 +74,8 @@ TEST(GpwXcGrid, CollocatedDensityComposesToSymmetricBlock) {
     const double w = grid.weight();
     for (double r : rho) {
         if (r > 1e-12)
-            e_manual += w * r * ATV::cpu::xc::pade_lsd(0.5 * r, 0.5 * r).exc;
+            e_manual +=
+                w * ATV::cpu::xc::pade_lsd(0.5 * r, 0.5 * r).energy_density;
     }
     EXPECT_NEAR(xc.e_xc, e_manual, 1e-12 * std::max(1.0, std::abs(e_manual)));
     EXPECT_LT(xc.e_xc, 0.0); // XC energy is negative for a real density

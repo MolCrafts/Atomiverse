@@ -14,7 +14,8 @@ on it (`cpu/scf/post_hf.h`, mirroring `pyscf.mp.MP2(mf)`):
 - `cpu::scf::MP3<RHF>{rhf}` / `cpu::scf::MP4<RHF>{rhf}` — member `frozen`;
   `run(frame)` → `MP3Result` / `MP4Result`.
 
-All sections run on CPU. Besides the seven documented below, the case carries
+All sections run on CPU. The frozen-core water, SCS water and eight-water
+chain sections also support `--device=cuda|both`. Besides the seven documented below, the case carries
 `mp2-grad-h2o-sto3g` (H₂O RMP2/STO-3G analytic gradient) and
 `posthf-eri-block-mp2` (H₂O RMP2/STO-3G through the block-assembled dense
 ERI tensor), whose oracle records live in the case `REFERENCE.md`. The
@@ -23,6 +24,41 @@ Background: [Ch. 7 Correlation](../ch07-correlation.md),
 [Ch. 3 Open shell](../ch03-open-shell.md).
 
 Case: `ctest -R '^scf/mp2$'` — sources and oracle record in [`regressions/scf/mp2/`](../../../regressions/scf/mp2/). One section of the case per `##` heading below: `atv_regressions --case scf/mp2 --section <name>`.
+
+## CUDA closed-shell MP2
+
+Bind a CUDA RHF reference that outlives the correlation object:
+
+```cpp
+#include "atomiverse/cuda/scf/rhf.cuh"
+#include "atomiverse/cuda/scf/mp2.cuh"
+
+cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G, 0, 1e-10, 200, 0.0, false};
+cuda::scf::MP2 correlation{rhf};
+correlation.frozen = 0;
+correlation.os_scale = 1.2;       // SCS; leave both scales at 1 for plain MP2
+correlation.ss_scale = 1.0 / 3.0;
+const auto result = correlation.run(frame);
+```
+
+`result` contains Hartree energies; mutable `run(frame)` writes the correlated
+total to `frame.meta.get(kEnergy)` in eV, as does CPU MP2. The CUDA const-Frame
+entry leaves its input unchanged. CUDA MP2 supports canonical RHF correlation,
+frozen occupied orbitals and OS/SS scaling. Unsupported force requests throw.
+It does not provide UMP2, RI-MP2 or MP2 gradients.
+
+The RHF orbitals, eigenvalues and AO ERIs remain on device through the MP2
+calculation. Occupied tiling and cuBLAS/CUB avoid a full MO ERI tensor.
+The optional constructor byte budget bounds additional MP2 scratch (default
+512 MiB), excluding the reference HF workspace and library contexts. The
+current dense HF indices require `nAO^4 <= INT_MAX` (at most 215 AOs).
+The method can also borrow an energy-only parent CUDA driver; its physical
+result remains in that parent's Frame.
+
+`bench_mp2_cpu_vs_cuda` measures complete first and repeated RHF→MP2 calls,
+including setup and final output. Interpret its thread counts, iteration
+counts and memory planning alongside the numerical comparisons; a memory
+snapshot alone does not establish peak use or device residency.
 
 ## Common setup and oracle
 

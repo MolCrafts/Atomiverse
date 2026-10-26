@@ -73,6 +73,27 @@ void launch_1e_integrals_sp(double* S, double* T, double* V,
                             const double* atom_pos, int n_shells, int n_ao,
                             int n_prim, int natm, void* stream);
 
+/// @brief Normalize raw MINAO contraction coefficients entirely on device.
+/// @param alpha,coefficient Concatenated primitive tables; coefficients in/out.
+/// @param offset Primitive ranges [n_contractions+1], angular s/p per contraction.
+/// @param bad Nonzero control flag on an invalid self-overlap.
+void launch_normalize_minao_sp(const double* alpha, double* coefficient,
+                               const int* offset, const int* angular,
+                               int n_contractions, int* bad, void* stream);
+
+/// @brief Rectangular target--MINAO overlap B[mu,j], col-major [n_ao,n_minao].
+/// Target uses the live s/p workspace, MINAO uses variable-length contractions
+/// with offsets and atom owners. Positions are device Bohr; no host geometry.
+void launch_overlap_minao_sp(
+    double* B, const double* target_alpha, const double* target_coefficient,
+    const double* target_centers, const int* target_angular,
+    const int* target_ao_shell, const int* target_ao_cart, int n_ao,
+    int target_n_prim, const double* minao_alpha,
+    const double* minao_coefficient, const int* minao_offset,
+    const int* minao_angular, const int* minao_atom, const int* minao_ao_shell,
+    const int* minao_ao_cart, int n_minao, const double* atom_pos,
+    void* stream);
+
 /// @brief ERI for s+p shells (l ≤ 1), AO-indexed n_ao^4 tensor.
 ///
 /// One thread per AO quartet (μν|λσ). Uses McMurchie–Davidson for l ≤ 1

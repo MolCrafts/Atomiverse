@@ -1,0 +1,47 @@
+{
+  "kind": "native pre-sharing baseline; not oracle pins",
+  "date": "2026-10-25",
+  "build_label": "build10",
+  "case": "gpw/wannier",
+  "source_log": "/tmp/atv-xc-build/Testing/Temporary/LastTest.log",
+  "source_log_at_capture_sha256": "032e504564c1c9cfda5d79eb99c082752950257fa02d9c90adf16062b3b7ffbd",
+  "archive_file": "native-build10.txt",
+  "archive_sha256": "e82e8d3764b7a4f2ecb75dc04d2f817c4c32b007c4c7c1527d32323c006d86b2",
+  "command": [
+    "/tmp/atv-xc-build/regressions/atv_regressions",
+    "--case",
+    "gpw/wannier"
+  ],
+  "cwd": "/tmp/atv-xc-build/regressions",
+  "environment": {
+    "OMP_NUM_THREADS": 8,
+    "OPENBLAS_NUM_THREADS": 8,
+    "ATV_GPW_PROF": "enabled"
+  },
+  "formula": "exact Fourier integral, AO rows parallel; AO operators still repeated per spin in this baseline",
+  "sections": [
+    {
+      "section": "periodic-wannier-gpw",
+      "whole_section_seconds": 44.682597,
+      "numeric_gates": "PASS",
+      "runtime_gate": "PASS",
+      "printed_max_midpoint_distance_angstrom": 0.02245,
+      "printed_spread_ratio": 0.1068
+    },
+    {
+      "section": "periodic-wannier-gpw-uks",
+      "whole_section_seconds": 103.975982,
+      "numeric_gates": "PASS",
+      "runtime_gate": "FAIL (bound60s retained)",
+      "printed_energy_ha": -15.7699336,
+      "printed_external_energy_error_ha": 2.306724e-05,
+      "printed_max_midpoint_distance_angstrom_per_spin": [
+        0.01726,
+        0.01726
+      ],
+      "printed_spread_ratio": 0.1041
+    }
+  ],
+  "localization_status": "Both sections print a warning that the MV loop did not flag converged; existing acceptance checks centers/spread reduction and SCF convergence. No claim of MV stationarity.",
+  "next_change": "AO matrices shared by const reference across spin contractions; qualification pending a rebuilt run."
+}

@@ -117,6 +117,18 @@ UPFData load_pseudopotential(const cpu::Frame& frame,
 std::vector<AccReal> upf_vloc_to_gspace(const UPFData& upf,
                                         const GVectorList& gv, AccReal omega);
 
+/// @brief Transform a spherical UPF nonlocal potential to diagonal KB channels.
+/// @param out Per-atom projectors: angular momentum, strength [Hartree], and
+///        radial Fourier integrals; angular/phase factors are applied by H.
+/// @param gv Wavefunction G-sphere; radial transforms use |G+k| [Bohr^-1].
+/// @param upf Radial beta=r*p(r) tables and complete symmetric D_ij [Ry].
+/// @param pos_bohr Atomic positions [Bohr]; determines the number of outputs.
+/// @throws std::invalid_argument for incomplete/nonfinite/asymmetric D_ij or
+///         couplings between distinct angular momenta.
+void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
+                         const GVectorList& gv, const UPFData& upf,
+                         const std::vector<Vec3>& pos_bohr);
+
 /// @brief Assemble the complete SCF problem from a Frame: Ewald energy,
 ///        G-vectors, k-mesh, FFT grids, V_loc, KB projectors,
 ///        atomic wavefunctions and the initial density.
@@ -174,12 +186,18 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
 /// @param c_out Output coefficients, m entries (dimensionless).
 void solve_pulay_coefficients(const AccReal* B, int m, AccReal* c_out);
 
-/// @brief Pulay/DIIS density mixing on the G-sphere.
-///
-/// Expects `ws.rho_G` = output density of the current iteration and
-/// `ws.rho_G_old` = input density; replaces `ws.rho_G` with the mixed
-/// density and updates the Pulay history.
-void pulay_mix(PWWorkspace& ws);
+/// @brief Pulay/DIIS mixing of a density vector (one or joint spin channels).
+/// @param output Output density, replaced with the mixed density.
+/// @param input Input density at this iteration.
+/// @param residual_history Sliding history of unmixed output-input vectors.
+/// @param density_history Corresponding input-density history.
+/// @param fraction Linear mixing fraction (dimensionless).
+/// @param history_depth Maximum retained entries; zero selects linear mixing.
+void pulay_mix(xt::xarray<std::complex<AccReal>>& output,
+               const xt::xarray<std::complex<AccReal>>& input,
+               std::vector<xt::xarray<std::complex<AccReal>>>& residual_history,
+               std::vector<xt::xarray<std::complex<AccReal>>>& density_history,
+               AccReal fraction, int history_depth);
 
 /// @brief Per-iteration SCF energy decomposition [Hartree].
 ///

@@ -10,9 +10,7 @@
 ///      density is unchanged and the difference is exactly −∇E_disp).
 ///   3. Total product forces vs CP2K's `FORCES| Atomic forces` table.
 /// Wiring: the product path's F(D3) − F(plain) must equal the standalone D3
-/// force. The analytic-vs-multi-SCF-FD gradient identity lives in
-/// tests/cpu/gpw/test_cpu_gpw_forces.cpp (`AnalyticMatchesFdWithD3`) — 6N SCFs
-/// on this cell exceed the <= 60 s regression budget.
+/// force. Every total-force component is checked against the external pin.
 ///
 /// Public API only. No live CP2K. See REFERENCE.md.
 

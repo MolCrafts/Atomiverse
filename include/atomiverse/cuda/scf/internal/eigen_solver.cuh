@@ -8,12 +8,18 @@
 /// Diagonalizes the effective Hamiltonian H each SCF iteration:
 ///   H * C = C * diag(eig)
 ///
-/// Uses cusolverDnSsyevd (float) or cusolverDnDsyevd (double) depending
-/// on compile-time precision.
+/// Uses sorted FP64 cuSOLVER batched Jacobi through order 64, and an
+/// explicitly device-controlled cyclic Jacobi kernel for orders 65..215.
+/// Only mapped integer success/failure state is inspected by the host on
+/// these paths. Larger generic/synthetic matrices retain legacy syevd and
+/// its internal norm readback; molecular HF rejects those dimensions before
+/// this helper, so that branch is outside the CUDA-only HF product envelope.
 ///
 /// @see the concrete method (cuda::scf::RHF) private cycle for the inner solver that owns this helper
 /// @see internal::Hamiltonian for the helper that builds H
 #pragma once
+
+#include <cstddef>
 
 #include "atomiverse/cuda/scf/internal/solver_context.cuh"
 #include "atomiverse/cuda/scf/scf_workspace.cuh"
@@ -23,7 +29,7 @@ namespace cuda {
 namespace scf {
 namespace internal {
 
-/// @brief Dense symmetric eigendecomposition via cuSOLVER syevd.
+/// @brief Symmetric eigendecomposition; CUDA-only molecular envelope 1..215.
 ///
 /// In `build()`, allocates the cuSOLVER workspace.
 /// In `step()`, copies H -> C then solves in-place.
@@ -45,11 +51,22 @@ class EigenSolver {
     /// @param ws SCF electronic-structure workspace.
     void destroy(const SolverContext& ctx, SCFWorkspace& ws);
 
+    /// @brief Device workspace reserved in setup [bytes].
+    /// @return Size from the library buffer query, excluding the SCF matrices.
+    std::size_t device_workspace_bytes() const { return device_work_bytes_; }
+    /// @brief Host workspace requested by the selected library algorithm [bytes].
+    /// @return Zero when the library requires no host workspace.
+    std::size_t host_workspace_bytes() const { return 0; }
+
   private:
     void* cusolver_handle_ = nullptr; ///< cuSOLVER handle.
-    prec_t* d_work_ = nullptr;        ///< cuSOLVER workspace [device].
-    int work_size_ = 0;               ///< Workspace size in elements.
-    int* d_info_ = nullptr; ///< cuSOLVER convergence info [device, 1 element].
+    void* jacobi_params_ = nullptr; ///< Parameters for the small cuSOLVER path.
+    void* d_work_ = nullptr; ///< Library scratch or custom Jacobi matrix.
+    std::size_t device_work_bytes_ = 0; ///< Reserved device workspace [bytes].
+    int library_work_elements_ = 0; ///< Small-matrix library scratch length.
+    int n_ = 0;                     ///< Matrix order reserved in build.
+    int* d_info_ = nullptr; ///< Device alias of the mapped control status.
+    int* h_info_ = nullptr; ///< Host-mapped integer eigensolver status.
 };
 
 } // namespace internal

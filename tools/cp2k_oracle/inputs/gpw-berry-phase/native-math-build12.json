@@ -1,0 +1,11 @@
+{
+  "kind": "actual unit validation excerpt; not oracle pins",
+  "build_label": "build12",
+  "source_log": "/tmp/atv-gpw-repair-evidence/final-unit-build12.log",
+  "source_sha256": "8bf71e80c5648654b4a13631375fbd92462919094f9088e6028e27b58d01dc78",
+  "archive_file": "native-math-build12.txt",
+  "archive_sha256": "d844a86b29ed78bf52f72f3abcc8b0c7326eeefe88019bc5c2c2d5ad76383010",
+  "gates": "17 GpwOneElectron tests including7primitive Fourier testsPASS; all1768registeredunit testsPASS",
+  "full_unit_seconds": 28.15,
+  "batch_unit_coverage": "GpwFourierLinks not present in this CTest run; registration/focused execution pending. Do not claim these3 source tests passed from this log."
+}

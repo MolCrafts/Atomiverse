@@ -25,7 +25,7 @@ TEST(XCFunctional, SlaterExchangeUniformDensity) {
     auto out = evaluate_xc(XCType::LSDA, 0.5, 0.5);
 
     // Exchange part: exc should be negative (exchange lowers energy)
-    EXPECT_LT(static_cast<double>(out.exc), 0.0);
+    EXPECT_LT(static_cast<double>(out.energy_density), 0.0);
     // Potential should also be negative
     EXPECT_LT(static_cast<double>(out.vrho_alpha), 0.0);
     EXPECT_LT(static_cast<double>(out.vrho_beta), 0.0);
@@ -51,7 +51,8 @@ TEST(XCFunctional, SlaterExchangeFullyPolarized) {
 
     // The fully polarized exchange should be more negative (lower energy)
     // than unpolarized, because 2^{1/3} > 1.
-    EXPECT_LT(static_cast<double>(polar.exc), static_cast<double>(closed.exc));
+    EXPECT_LT(static_cast<double>(polar.energy_density),
+              static_cast<double>(closed.energy_density));
 }
 
 // ── VWN5 Correlation ────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ TEST(XCFunctional, VWN5UnpolarizedNegative) {
     for (double rho : {0.01, 0.1, 1.0}) {
         auto out = evaluate_xc(XCType::LSDA, rho / 2, rho / 2);
         // Total exc includes exchange (negative) + correlation (negative)
-        EXPECT_LT(static_cast<double>(out.exc), 0.0);
+        EXPECT_LT(static_cast<double>(out.energy_density), 0.0);
     }
 }
 
@@ -82,8 +83,8 @@ TEST(XCFunctional, VWN5HighDensityCorrelation) {
     auto out = evaluate_xc(XCType::LSDA, rho / 2, rho / 2);
     // Exchange dominates; correlation is a small correction.
     // Just check it doesn't blow up.
-    EXPECT_FALSE(std::isnan(static_cast<double>(out.exc)));
-    EXPECT_FALSE(std::isinf(static_cast<double>(out.exc)));
+    EXPECT_FALSE(std::isnan(static_cast<double>(out.energy_density)));
+    EXPECT_FALSE(std::isinf(static_cast<double>(out.energy_density)));
 }
 
 // ── Density Cutoff ──────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ TEST(XCFunctional, VWN5HighDensityCorrelation) {
 TEST(XCFunctional, DensityCutoffReturnsZero) {
     // Below ρ_min = 1e-12, all outputs should be zero.
     auto out = evaluate_xc(XCType::LSDA, double(1e-14), double(1e-14));
-    EXPECT_EQ(static_cast<double>(out.exc), 0.0);
+    EXPECT_EQ(static_cast<double>(out.energy_density), 0.0);
     EXPECT_EQ(static_cast<double>(out.vrho_alpha), 0.0);
     EXPECT_EQ(static_cast<double>(out.vrho_beta), 0.0);
 }
@@ -99,7 +100,7 @@ TEST(XCFunctional, DensityCutoffReturnsZero) {
 TEST(XCFunctional, DensityCutoffNoNaN) {
     // Even at very small densities just above cutoff, no NaN.
     auto out = evaluate_xc(XCType::LSDA, double(1e-11), double(1e-11));
-    EXPECT_FALSE(std::isnan(static_cast<double>(out.exc)));
+    EXPECT_FALSE(std::isnan(static_cast<double>(out.energy_density)));
     EXPECT_FALSE(std::isnan(static_cast<double>(out.vrho_alpha)));
     EXPECT_FALSE(std::isnan(static_cast<double>(out.vrho_beta)));
 }
@@ -118,7 +119,7 @@ TEST(XCFunctional, PBEAtZeroGradientHasNoEnhancement) {
     double rho = 0.3;
     auto lda = evaluate_xc(XCType::LSDA, rho, rho);
     auto pbe = evaluate_xc(XCType::PBE, rho, rho, 0, 0, 0);
-    EXPECT_LT(std::abs(pbe.exc - lda.exc), 5e-3)
+    EXPECT_LT(std::abs(pbe.energy_density - lda.energy_density), 2 * rho * 5e-3)
         << "PBE@sigma=0 (PW92 base) and VWN5-LSDA should be within ~mHa";
 }
 
@@ -130,7 +131,8 @@ TEST(XCFunctional, PBEEnhancementFactor) {
 
     // PBE exchange enhancement factor F_x >= 1, so |E_x^PBE| >= |E_x^LDA|
     // The total exc may differ due to correlation too.
-    EXPECT_NE(static_cast<double>(pbe.exc), static_cast<double>(lda.exc));
+    EXPECT_NE(static_cast<double>(pbe.energy_density),
+              static_cast<double>(lda.energy_density));
 }
 
 TEST(XCFunctional, PBEVsigmaZeroForLDA) {
@@ -170,7 +172,8 @@ TEST(XCFunctional, PBEsolMatchesPBEAtZeroGradient) {
     for (double rho : {0.01, 0.1, 0.5, 2.0}) {
         auto pbe = evaluate_xc(XCType::PBE, rho / 2, rho / 2, 0, 0, 0);
         auto sol = evaluate_xc(XCType::PBEsol, rho / 2, rho / 2, 0, 0, 0);
-        EXPECT_NEAR(sol.exc, pbe.exc, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(sol.energy_density, pbe.energy_density, rho * 1e-12)
+            << "rho=" << rho;
         EXPECT_NEAR(sol.vrho_alpha, pbe.vrho_alpha, 1e-12) << "rho=" << rho;
         EXPECT_NEAR(sol.vrho_beta, pbe.vrho_beta, 1e-12) << "rho=" << rho;
     }
@@ -180,8 +183,8 @@ TEST(XCFunctional, PBEsolDiffersFromPBEAtFiniteGradient) {
     // μ_sol = 10/81 < μ_PBE → different enhancement at finite s.
     auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
     auto sol = evaluate_xc(XCType::PBEsol, 0.3, 0.3, 0.2, 0.1, 0.2);
-    EXPECT_GT(std::abs(sol.exc - pbe.exc), 1e-8);
-    EXPECT_TRUE(std::isfinite(sol.exc));
+    EXPECT_GT(std::abs(sol.energy_density - pbe.energy_density), 1e-8);
+    EXPECT_TRUE(std::isfinite(sol.energy_density));
     EXPECT_TRUE(std::isfinite(sol.vsigma_aa));
 }
 
@@ -198,7 +201,8 @@ TEST(XCFunctional, RevPBEMatchesPBEAtZeroGradient) {
     for (double rho : {0.01, 0.1, 0.5, 2.0}) {
         auto pbe = evaluate_xc(XCType::PBE, rho / 2, rho / 2, 0, 0, 0);
         auto rev = evaluate_xc(XCType::RevPBE, rho / 2, rho / 2, 0, 0, 0);
-        EXPECT_NEAR(rev.exc, pbe.exc, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(rev.energy_density, pbe.energy_density, rho * 1e-12)
+            << "rho=" << rho;
         EXPECT_NEAR(rev.vrho_alpha, pbe.vrho_alpha, 1e-12) << "rho=" << rho;
         EXPECT_NEAR(rev.vrho_beta, pbe.vrho_beta, 1e-12) << "rho=" << rho;
     }
@@ -208,8 +212,8 @@ TEST(XCFunctional, RevPBEDiffersFromPBEAtFiniteGradient) {
     // κ_rev = 1.245 > κ_PBE → different enhancement at finite s.
     auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
     auto rev = evaluate_xc(XCType::RevPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
-    EXPECT_GT(std::abs(rev.exc - pbe.exc), 1e-8);
-    EXPECT_TRUE(std::isfinite(rev.exc));
+    EXPECT_GT(std::abs(rev.energy_density - pbe.energy_density), 1e-8);
+    EXPECT_TRUE(std::isfinite(rev.energy_density));
     EXPECT_TRUE(std::isfinite(rev.vsigma_aa));
 }
 
@@ -226,7 +230,8 @@ TEST(XCFunctional, RPBEMatchesPBEAtZeroGradient) {
     for (double rho : {0.01, 0.1, 0.5, 2.0}) {
         auto pbe = evaluate_xc(XCType::PBE, rho / 2, rho / 2, 0, 0, 0);
         auto rpbe = evaluate_xc(XCType::RPBE, rho / 2, rho / 2, 0, 0, 0);
-        EXPECT_NEAR(rpbe.exc, pbe.exc, 1e-12) << "rho=" << rho;
+        EXPECT_NEAR(rpbe.energy_density, pbe.energy_density, rho * 1e-12)
+            << "rho=" << rho;
         EXPECT_NEAR(rpbe.vrho_alpha, pbe.vrho_alpha, 1e-12) << "rho=" << rho;
         EXPECT_NEAR(rpbe.vrho_beta, pbe.vrho_beta, 1e-12) << "rho=" << rho;
     }
@@ -236,8 +241,8 @@ TEST(XCFunctional, RPBEDiffersFromPBEAtFiniteGradient) {
     // Exponential F_x vs rational PBE form → different enhancement at finite s.
     auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
     auto rpbe = evaluate_xc(XCType::RPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
-    EXPECT_GT(std::abs(rpbe.exc - pbe.exc), 1e-8);
-    EXPECT_TRUE(std::isfinite(rpbe.exc));
+    EXPECT_GT(std::abs(rpbe.energy_density - pbe.energy_density), 1e-8);
+    EXPECT_TRUE(std::isfinite(rpbe.energy_density));
     EXPECT_TRUE(std::isfinite(rpbe.vsigma_aa));
 }
 
@@ -245,7 +250,7 @@ TEST(XCFunctional, RPBEDiffersFromRevPBEAtFiniteGradient) {
     // RPBE ≠ revPBE (different exchange form / κ).
     auto rev = evaluate_xc(XCType::RevPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
     auto rpbe = evaluate_xc(XCType::RPBE, 0.3, 0.3, 0.2, 0.1, 0.2);
-    EXPECT_GT(std::abs(rpbe.exc - rev.exc), 1e-8);
+    EXPECT_GT(std::abs(rpbe.energy_density - rev.energy_density), 1e-8);
 }
 
 TEST(XCFunctional, OptB88VdWMetadata) {
@@ -258,8 +263,8 @@ TEST(XCFunctional, OptB88VdWDiffersFromB88AtFiniteGradient) {
     // optB88 beta/gamma != B88; pure OptB88VdW uses PW92 not LYP.
     auto blyp = evaluate_xc(XCType::BLYP, 0.3, 0.3, 0.2, 0.1, 0.2);
     auto opt = evaluate_xc(XCType::OptB88VdW, 0.3, 0.3, 0.2, 0.1, 0.2);
-    EXPECT_GT(std::abs(opt.exc - blyp.exc), 1e-6);
-    EXPECT_TRUE(std::isfinite(opt.exc));
+    EXPECT_GT(std::abs(opt.energy_density - blyp.energy_density), 1e-6);
+    EXPECT_TRUE(std::isfinite(opt.energy_density));
     EXPECT_TRUE(std::isfinite(opt.vsigma_aa));
     EXPECT_NEAR(opt.vsigma_ab, 0.0, 1e-15); // LDA-C only
 }
@@ -267,7 +272,7 @@ TEST(XCFunctional, OptB88VdWDiffersFromB88AtFiniteGradient) {
 TEST(XCFunctional, OptB88VdWDiffersFromPBEAtFiniteGradient) {
     auto pbe = evaluate_xc(XCType::PBE, 0.3, 0.3, 0.2, 0.1, 0.2);
     auto opt = evaluate_xc(XCType::OptB88VdW, 0.3, 0.3, 0.2, 0.1, 0.2);
-    EXPECT_GT(std::abs(opt.exc - pbe.exc), 1e-6);
+    EXPECT_GT(std::abs(opt.energy_density - pbe.energy_density), 1e-6);
 }
 
 TEST(XCFunctional, OptB88VdWClosedShellSymmetry) {
@@ -282,9 +287,9 @@ TEST(XCFunctional, NoNaNAtVariousDensities) {
     // Sweep over a range of densities to check for NaN/Inf.
     for (double rho : {1e-11, 1e-6, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0}) {
         auto lda = evaluate_xc(XCType::LSDA, rho / 2, rho / 2);
-        EXPECT_FALSE(std::isnan(static_cast<double>(lda.exc)))
+        EXPECT_FALSE(std::isnan(static_cast<double>(lda.energy_density)))
             << "NaN at rho=" << rho;
-        EXPECT_FALSE(std::isinf(static_cast<double>(lda.exc)))
+        EXPECT_FALSE(std::isinf(static_cast<double>(lda.energy_density)))
             << "Inf at rho=" << rho;
     }
 }
@@ -292,7 +297,7 @@ TEST(XCFunctional, NoNaNAtVariousDensities) {
 TEST(XCFunctional, FullyPolarizedNoNaN) {
     // ρ_β = 0 (within cutoff) should not cause NaN.
     auto out = evaluate_xc(XCType::LSDA, 0.5, double(0));
-    EXPECT_FALSE(std::isnan(static_cast<double>(out.exc)));
+    EXPECT_FALSE(std::isnan(static_cast<double>(out.energy_density)));
     EXPECT_FALSE(std::isnan(static_cast<double>(out.vrho_alpha)));
     // vrho_beta for zero beta density: should still be finite
     EXPECT_FALSE(std::isnan(static_cast<double>(out.vrho_beta)));

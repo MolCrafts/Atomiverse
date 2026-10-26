@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 
+#include "atomiverse/cpu/device/chunked_range.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h" // XcKind
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
 #include "atomiverse/cpu/gpw/internal/poisson_fft.h"
@@ -155,17 +156,24 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
         throw std::runtime_error(
             "GPW ks_grid_build_uks: v_locsr size does not match density grid");
     // Fuse V_eff^α/β assembly + optional ∫ρ V_loc (one grid walk).
-    double e_loc = 0.0;
-#pragma omp parallel for schedule(static) reduction(+ : e_loc) if (ng > 4096)
-    for (std::size_t g = 0; g < ng; ++g) {
-        const double vloc = have_loc ? v_locsr[g] : 0.0;
-        if (have_loc)
-            e_loc += rho[g] * vloc;
-        const double ves = out.v_es[g] + vloc;
-        out.veff_a[g] = ves + xcg.vxc_a[g];
-        out.veff_b[g] = ves + xcg.vxc_b[g];
+    const device::ChunkedRange range(static_cast<long>(ng), 256);
+    std::vector<double> partial(static_cast<std::size_t>(range.chunks()), 0.0);
+#pragma omp parallel for schedule(dynamic, 1) if (ng > 4096)
+    for (long c = 0; c < range.chunks(); ++c) {
+        double e_loc = 0.0;
+        for (long g = range.begin(c); g < range.end(c); ++g) {
+            const double vloc = have_loc ? v_locsr[g] : 0.0;
+            if (have_loc)
+                e_loc += rho[g] * vloc;
+            const double ves = out.v_es[g] + vloc;
+            out.veff_a[g] = ves + xcg.vxc_a[g];
+            out.veff_b[g] = ves + xcg.vxc_b[g];
+        }
+        partial[static_cast<std::size_t>(c)] = e_loc;
     }
-    out.e_locgrid = e_loc * grid.weight();
+    for (double e_loc : partial)
+        out.e_locgrid += e_loc;
+    out.e_locgrid *= grid.weight();
 
     if (vdw_df || vdw_df2 || rvv10) {
         NonlocalVdwOnGrid nl =

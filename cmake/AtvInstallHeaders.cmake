@@ -28,6 +28,9 @@ function(atv_install_headers target)
     if(NOT ATV_BUILD_PATH)
         list(APPEND excluded "^(cpu|cuda)/(path|replica|bias)/")
     endif()
+    if(NOT ATV_BUILD_HF AND NOT ATV_BUILD_PW)
+        list(APPEND excluded "^electronic/xc_functional\\.h$")
+    endif()
     if(NOT ATV_BUILD_HF)
         list(APPEND excluded "^(cpu|cuda)/scf/"
             "^cpu/observe/(multipole|lowdin|esp_charges|mulliken|density)\\.h$"

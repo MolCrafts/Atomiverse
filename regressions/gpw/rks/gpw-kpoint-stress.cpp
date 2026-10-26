@@ -1,10 +1,13 @@
-/// @file regressions/gpw/gpw-kpoint-stress/reg_gpw-kpoint-stress.cpp
-/// @brief END-TO-END: GPW analytic cell stress on a Monkhorst-Pack k mesh.
+/// @file regressions/gpw/rks/gpw-kpoint-stress.cpp
+/// @brief END-TO-END: GPW fixed-P cell-strain stress at Monkhorst-Pack k points.
 ///
 /// Diamond Si bct 4-atom cell (DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE), mesh
-/// 1x1x2. Dual-gate analytic fixed-P_k vs multi-SCF strain-FD. See REFERENCE.md.
+/// 1x1x2, single grid. CP2K analytical tensor is the external
+/// oracle; relaxed strain finite differences supplement it. See REFERENCE.md.
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -54,102 +57,102 @@ ATV::cpu::Frame si_bct(double a_ang) {
 int run() {
     using namespace ATV;
     using namespace ATV::cpu::gpw;
+    g_fail = 0;
+    const auto start = std::chrono::steady_clock::now();
+    const cpu::Frame frame = si_bct(5.43);
 
-    cpu::Frame frame = si_bct(5.43); // Å (10.26120 Bohr)
-
-    auto make_cfg = [&]() {
-        GpwDft m{{Kind{molrs::Element::Si,
-                       GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
-                       GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
-                 100.0,
-                 XcKind::PBE};
-        m.n_occ = 8;
-        m.max_iter = 60;
-        m.tol = 1e-8;
-        m.eps_default = 1e-7;
-        m.local_pp_on_grid = true;
-        m.k_mesh[0] = 1;
-        m.k_mesh[1] = 1;
-        m.k_mesh[2] = 2; // MP → κ_z = ±1/4, TR → one k
-        return m;
+    // Actual CP2K 2026.2 CORE_PPL GRID energy and analytical tensor.
+    // Raw output/input/hash: tools/cp2k_oracle/inputs/gpw-kpoint-stress/.
+    constexpr double energy_pin = -15.348312942859359;
+    constexpr std::array<double, 6> stress_pin = {
+        0.00088302882243018852, 0.00088302882243018852,
+        0.00026101337099615431, -1.2004166081076166e-17,
+        4.1518324258410863e-16, 7.3908856940892354e-18};
+    constexpr double energy_tol = 1e-3; // Ha
+    constexpr double stress_tol = 1e-4; // Ha/Bohr^3
+    constexpr double fd_tol = 1e-4; // Ha/Bohr^3, independent consistency gate
+    constexpr double h = 2e-3;
+    const char* names[] = {"xx", "yy", "zz", "xy", "xz", "yz"};
+    auto check_near = [&](double got, double want, double tol,
+                          const char* quantity) {
+        const bool ok = std::isfinite(got) && std::abs(got - want) <= tol;
+        std::printf("  %s got=% .12e want=% .12e tol=%.3e %s\n", quantity, got,
+                    want, tol, ok ? "ok" : "FAIL");
+        if (!ok)
+            ++g_fail;
     };
 
-    // A1: energy + SCF
-    GpwDft energy = make_cfg();
-    energy.build(frame);
-    const auto& er = energy.run(frame);
-    check(er.converged, "A1 SCF converged");
-    check(std::isfinite(er.e_total), "A1 finite e_total");
-    check(er.n_kpts >= 1 && !er.C_occ_k.empty(), "A1 C_occ_k payload present");
-    std::printf("E(mesh 1x1x2, 100 Ry) = %.12f Ha  iters=%d  nk=%d\n",
-                er.e_total, er.iters, er.n_kpts);
+    auto make_method = []() {
+        GpwDft method{
+            {Kind{molrs::Element::Si,
+                  GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
+                  GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+            100.0,
+            XcKind::PBE};
+        method.n_occ = 8;
+        method.max_iter = 100;
+        method.tol = 1e-10;
+        method.residual_tol = 1e-8;
+        method.eps_default = 1e-12;
+        method.local_pp_on_grid = true;
+        method.k_mesh[0] = 1;
+        method.k_mesh[1] = 1;
+        method.k_mesh[2] = 2; // MP kappa_z=+/-1/4, time reversal folded
+        return method;
+    };
+    const auto begin = std::chrono::steady_clock::now();
+    GpwDft method = make_method();
+    method.stress_strain_h = h;
+    cpu::Frame state = frame;
+    method.build(state);
+    auto stress = method.stress(state);
+    const auto& result = method.last_result();
+    check(result.converged, "unstrained SCF converged");
+    check(result.n_kpts >= 1 && !result.C_occ_k.empty(),
+          "Bloch occupied-orbital payload present");
+    check_near(result.e_total, energy_pin, energy_tol, "energy [Ha] vs CP2K");
+    for (double& value : stress)
+        value /= units::kHartreePerBohr3InEvPerAngstrom3;
+    const auto product_done = std::chrono::steady_clock::now();
 
-    // Frozen first-green energy band (REFERENCE.md; replaced when CP2K pin
-    // exists). Filled after first green run — placeholder until measured.
-    // Gate A4 uses a soft absolute band once set.
-
-    const double h = 2e-3;
-    // GpwDft::stress returns eV/Å³ and writes kStress / kEnergy; run it on a
-    // Frame copy and compare in Ha/Bohr³ (the pins' unit).
-    GpwDft stress_method = make_cfg();
-    stress_method.stress_strain_h = h;
-    cpu::Frame stress_frame = frame;
-    stress_method.build(stress_frame);
-    std::array<double, 6> san = stress_method.stress(stress_frame);
-    for (auto& v : san)
-        v /= units::kHartreePerBohr3InEvPerAngstrom3;
-    // gpw_stress_fd returns eV/Å³; this twin compares in Ha/Bohr³.
-    const auto sfd_ev_a3 = gpw_stress_fd(frame, make_cfg(), h);
-    std::array<double, 6> sfd{};
-    for (std::size_t k = 0; k < 6; ++k)
-        sfd[k] = sfd_ev_a3[k] / units::kHartreePerBohr3InEvPerAngstrom3;
-
-    double max_diag_err = 0.0;
-    const char* names[3] = {"xx", "yy", "zz"};
-    for (int a = 0; a < 3; ++a) {
-        const double an = san[static_cast<std::size_t>(a)];
-        const double fd = sfd[static_cast<std::size_t>(a)];
-        const double err = std::abs(an - fd);
-        max_diag_err = std::max(max_diag_err, err);
-        std::printf("  σ_%s  analytic=% .8e  fd=% .8e  |d|=%.3e Ha/Bohr3\n",
-                    names[a], an, fd, err);
-        check(std::isfinite(an) && std::isfinite(fd), "A1 finite stress");
+    // Additional internal consistency check: all +/- samples start from
+    // the same unstrained density and independently reconverge SCF.
+    const auto relaxed_ev = gpw_stress_fd(frame, make_method(), h);
+    double largest = 0;
+    for (std::size_t component = 0; component < stress.size(); ++component) {
+        char quantity[96];
+        std::snprintf(quantity, sizeof(quantity), "sigma_%s [Ha/Bohr3] vs CP2K",
+                      names[component]);
+        check_near(stress[component], stress_pin[component], stress_tol,
+                   quantity);
+        if (component < 3) {
+            const double relaxed =
+                relaxed_ev[component] / units::kHartreePerBohr3InEvPerAngstrom3;
+            std::snprintf(quantity, sizeof(quantity),
+                          "sigma_%s fixed-P vs relaxed FD", names[component]);
+            check_near(stress[component], relaxed, fd_tol, quantity);
+            largest = std::max(largest, std::abs(stress[component]));
+        } else {
+            check_near(stress[component], 0.0, 1e-8,
+                       "off-diagonal symmetry [Ha/Bohr3]");
+        }
     }
-    for (int k = 3; k < 6; ++k)
-        check(std::abs(san[static_cast<std::size_t>(k)]) <= 1e-8,
-              "A3 off-diagonal ~ 0");
-
-    constexpr double kAnFdTol = 1.0e-4; // Ha/Bohr3 (mesh residual + O(h^2))
-    std::printf("max|σ_an-σ_fd|=%.3e Ha/Bohr3\n", max_diag_err);
-    check(max_diag_err <= kAnFdTol, "A2 analytic vs FD max diag");
-
-    // A4: frozen first-green absolute pins (filled after first green).
-    // Energy pin from this setup; stress diag mean as integrity band.
-    // First-green frozen pins (REFERENCE.md; 100 Ry mesh 1x1x2).
-    constexpr double kEPin = -15.3483039265; // Ha
-    constexpr double kETol = 1.0e-3;
-    const double dE = std::abs(er.e_total - kEPin);
-    std::printf("A4: |E - pin|=%.3e Ha (pin %.10f)\n", dE, kEPin);
-    check(dE <= kETol, "A4 absolute e_tot within 1e-3 Ha of pin");
-
-    constexpr double kSxxPin = 8.83135454e-04;
-    constexpr double kSzzPin = 2.60970168e-04;
-    constexpr double kSTol = 1.0e-4; // Ha/Bohr3 soft absolute band
-    check(std::abs(san[0] - kSxxPin) <= kSTol, "A4 |sigma_xx - pin|");
-    check(std::abs(san[1] - kSxxPin) <= kSTol, "A4 |sigma_yy - pin|");
-    check(std::abs(san[2] - kSzzPin) <= kSTol, "A4 |sigma_zz - pin|");
-
-    const double max_diag =
-        std::max({std::abs(san[0]), std::abs(san[1]), std::abs(san[2])});
-    std::printf("max|sigma_diag|=%.3e Ha/Bohr3\n", max_diag);
-    check(max_diag > 1e-6, "A4 stress magnitude floor");
-
+    std::printf("  stress magnitude got=%.6e want=>1e-6 Ha/Bohr3\n", largest);
+    check(largest > 1e-6, "nonzero stress magnitude floor");
+    const auto end = std::chrono::steady_clock::now();
+    std::printf("  product %.6fs relaxed-FD %.6fs total %.6fs\n",
+                std::chrono::duration<double>(product_done - begin).count(),
+                std::chrono::duration<double>(end - product_done).count(),
+                std::chrono::duration<double>(end - begin).count());
+    const double wall = std::chrono::duration<double>(end - start).count();
+    std::printf("  whole section got=%.6f want<=60 seconds\n", wall);
+    check(wall <= 60.0, "whole section within 60 seconds");
     if (g_fail) {
-        std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);
+        std::fprintf(stderr, "FAILED: gpw-kpoint-stress %d gate(s)\n", g_fail);
         return 1;
     }
-    std::printf("PASS: gpw-kpoint-stress  E=%.10f  max|dσ|=%.3e  max|σ|=%.3e\n",
-                er.e_total, max_diag_err, max_diag);
+    std::printf(
+        "PASS: gpw-kpoint-stress CP2K single-grid tensor and relaxed FD\n");
     return 0;
 }
 

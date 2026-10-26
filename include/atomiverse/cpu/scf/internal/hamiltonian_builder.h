@@ -88,9 +88,11 @@ class HamiltonianBuilder {
     /// @param P_alpha    α density (full density when restricted).
     /// @param P_beta     β density (alias of P_alpha when restricted).
     /// @return Filled FockResult.
-    FockResult step(const internal::IntegralView& integrals, bool restricted,
-                    bool is_hf, XCType xc_type, double hybrid_alpha_override,
-                    const RealMatrix& P_alpha, const RealMatrix& P_beta) const;
+    FockResult
+    step(const internal::IntegralView& integrals, bool restricted, bool is_hf,
+         XCType xc_type, double hybrid_alpha_override,
+         const RealMatrix& P_alpha, const RealMatrix& P_beta,
+         const ATV::electronic::XcFunctional* functional = nullptr) const;
 
   private:
     ShellBlockPairList sp_block_; ///< RHF/RKS shell-block list (libcint-style).

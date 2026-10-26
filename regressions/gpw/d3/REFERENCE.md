@@ -2,6 +2,12 @@
 
 One case; every section below is run by `atv_regressions --case gpw/d3` and keeps its own oracle record.
 
+The complete section budget is **60 s at its registered thread width**, including
+plain/finite-difference twins and standalone checks. There are no dispersion
+timing exemptions. Dated timing tables below are historical observations;
+different grids, core counts and calculation boundaries do not establish a
+matched-engine speedup. Numerical pins and tolerances remain unchanged.
+
 
 ## Reference — isolated water-dimer GPW PBE-D3 (zero damping) analytic forces
 
@@ -152,12 +158,9 @@ molecule does not invalidate the CP2K pin.
 
 ### Dual gate
 
-- **Correctness:** the six gates above, plus the analytic-vs-FD gradient
-  identity in `tests/cpu/gpw/test_cpu_gpw_forces.cpp`
-  (`GpwForces.AnalyticMatchesFdWithD3`, measured 2.4e−6 Ha/Bohr on cheap MT
-  H₂ — 6N SCFs on this cell exceed the e2e budget).
+- **Correctness:** the six gates above.
 - **Speed:** CP2K twin wall ≈ 12.3 s for the same `ENERGY_FORCE`; Atomiverse
-  17.8 s on the same host → ratio ≈ **1.4**, inside the 10× fair wall. The
+  17.8 s on the same host → ratio ≈ **1.4**, recorded for historical context only. The
   Atomiverse figure includes one extra plain SCF that only the wiring gate
   needs.
 
@@ -339,13 +342,11 @@ xx signal 1.71e−8 = 75× the measured residual, tolerance 2e−9 keeps
 
 ### Dual gate
 
-- **Correctness:** the six gates above (all green, measured column), plus the
-  unit-tier analytic-vs-FD identity `GpwStress.AnalyticMatchesFdWithD3` and
-  the `GpwStress.D3ChangesGammaDiagonal` guard (cheap MT H₂) in
-  `tests/cpu/gpw/test_cpu_gpw_stress.cpp` (suite green, 11.6 s).
+- **Correctness:** the six gates above, including the section's complete
+  analytic-fixed-density versus reconverged strain-FD comparison.
 - **Speed:** CP2K NUMERICAL stress twin wall **33.6 s** (np 2 × OMP 2); the
-  fair ATV wall is the analytic product (SCF + fixed-P stress) —
-  **18.5 s** (OMP 8) → ratio **0.55**, inside the 10× fair wall. The
+  historical ATV product wall is SCF + fixed-P stress —
+  **18.5 s** (OMP 8) → ratio **0.55**, recorded for historical context only. The
   regression's extra plain/FD twins (14.9 + 14.3 s) exist only for the
   difference pin and the dual gate, not the product path. Settings caveat:
   cutoffs and core counts differ as stated (ATV single 200 Ry grid, OMP 8 vs
@@ -435,9 +436,9 @@ two-body pin.
 
 ### Perf gate
 
-**perf_exempt = true** — primary deliverable is E_disp pin parity; D3 ATM on
-6 atoms is microseconds; CP2K wall is full QS (~11 s) while the hard-gate
-regression only needs a short SCF to materialize geometry-only `e_disp`.
+The complete section must finish within 60 s. CP2K's full QS wall and a
+dispersion-only sum have different calculation boundaries, so they do not
+supply a matched performance comparison.
 
 
 ## Reference — GPW DFT-D3 three-body ATM (C9) analytic ionic forces
@@ -638,15 +639,15 @@ home-cell branch. `src/cpu/gpw/internal/dftd3.cpp` (`accumulate_atm_c9`):
 - **Speed:** CP2K ATM iso `ENERGY_FORCE` twin ≈ 10.5 s (2 ranks × 2 OMP);
   the regression (one 300 Ry MT SCF + **two** force assemblies + four
   standalone D3 sums) measured 34.5 s at 8 threads on the same host →
-  ratio ≈ **3.3**, inside the 10× fair wall. The second force assembly
+  ratio ≈ **3.3**, recorded for historical context only. The second force assembly
   exists only for the wiring gate.
 
 ### Notes
 
-- **ATM virial is still zero**: `accumulate_atm_c9` adds forces and the CN
-  chain but no `D3Result::virial` contribution, so `d3_atm` under
-  `compute_stress` misses the three-body term — the ATM **stress** pin is a
-  separate queue row (as for D4 ATM).
+- The standalone `D3Result::virial` omits the direct three-body ATM term.
+  GPW cell stress differentiates the complete dispersion energy under strain;
+  its existing `gpw-d3-atm-stress` section checks that path. Those checks do
+  not qualify the standalone ATM virial field.
 - Energy foothold: `regressions/gpw/d3` (isolated E_disp only).
 - Two-body force twin: `regressions/gpw/d3` (same isolated cell;
   its D3 run was rerun here so both members of the difference share one
@@ -833,17 +834,13 @@ oracle's `DX` (and note it if CP2K ever changes the default).
 
 ### Dual gate
 
-- **Correctness:** the pins above, plus the decisive analytic-vs-multi-SCF-FD
-  identity on the same `d3 + d3_atm` method in this binary (x axis — the FD
-  twin is gate overhead, not the product path), plus the cheap **periodic**
-  H₂ unit twin `GpwStress.AnalyticMatchesFdWithD3Atm`
-  (`tests/cpu/gpw/test_cpu_gpw_stress.cpp`) — lattice-image triples engage
-  there (an isolated pair has no triple), and its short `d3_rcut_bohr`
-  exercises the member through both stress paths' config copies.
+- **Correctness:** the pins above and the section's analytic-fixed-density
+  versus reconverged strain-FD comparison on the same `d3 + d3_atm` method
+  along x.
 - **Speed:** CP2K numerical-stress C9 twin 54.5 s (18 perturbed SCFs +
   reference, 2 MPI × 2 OMP, 300 Ry); Atomiverse product analytic pass
   **40.8 s** (one SCF + 7 fixed-P grid evaluations, OMP 8, 150 Ry, load ≈
-  22/48 login node) → ratio ≈ **0.75**, inside the 10× fair wall. Settings
+  22/48 login node) → ratio ≈ **0.75**, recorded for historical context only. Settings
   caveat: cutoffs and core counts differ as stated — both produce the same
   deliverable (the ATM-folded cell stress of this system), which is the wall
   being compared.
@@ -1001,12 +998,10 @@ reproduces it to **1.21E−06 Ha/Bohr**.
 
 ### Dual gate
 
-- **Correctness:** the six gates above, plus the analytic-vs-multi-SCF-FD
-  gradient identity in `tests/cpu/gpw/test_cpu_gpw_forces.cpp`
-  (`GpwForces.AnalyticMatchesFdWithD3Bj`, measured 2.4e−6 Ha/Bohr on cheap MT
-  H₂ — 6N SCFs on this cell exceed the e2e budget).
+- **Correctness:** the six gates above, including every pinned total-force
+  component and the product-minus-plain dispersion-force comparison.
 - **Speed:** CP2K `ENERGY_FORCE` twin ≈ 11.9 s; Atomiverse product pass 32.2 s
-  on the same host → ratio ≈ **2.7**, inside the 10× fair wall. Note the
+  on the same host → ratio ≈ **2.7**, recorded for historical context only. Note the
   Atomiverse figure includes one extra plain SCF for the wiring gate.
 
 ### Notes
@@ -1140,8 +1135,8 @@ Product analytic diagonals (first green, 200 Ry, `tol = 1e−6`, 11 SCF iters,
 
 The e2e FD twin re-SCFs the **x axis only** (dimer axis — carries the
 1.15e−7 dispersion-stress signal **and** the largest measured analytic↔FD
-residual) to hold the 60 s budget; the all-axes identity is the cheap MT H₂
-unit twin `GpwStress.AnalyticMatchesFdWithD3Bj`.
+residual). The full tensor is compared to the external pins; this native
+FD supplement covers x only.
 
 ### Tolerance justification
 
@@ -1162,14 +1157,12 @@ unit twin `GpwStress.AnalyticMatchesFdWithD3Bj`.
 
 ### Dual gate
 
-- **Correctness:** the pins above, plus the decisive analytic-vs-multi-SCF-FD
-  identity on the same `d3bj = true` method in this binary, plus the cheap MT
-  H₂ unit twin `GpwStress.AnalyticMatchesFdWithD3Bj`
-  (`tests/cpu/gpw/test_cpu_gpw_stress.cpp`).
+- **Correctness:** the pins above and the section's analytic-fixed-density
+  versus reconverged strain-FD comparison on the same `d3bj = true` method.
 - **Speed:** CP2K numerical-stress D3BJ twin 83.8 s (18 perturbed SCFs +
   reference, 2 MPI × 2 OMP, 300 Ry); Atomiverse product analytic pass
   **31.1 s** (one SCF + 7 fixed-P grid evaluations, OMP 8, 200 Ry, wave-1
-  loaded login node) → ratio ≈ **0.37**, inside the 10× fair wall.
+  loaded login node) → ratio ≈ **0.37**, recorded for historical context only.
   Settings caveat: the cutoffs and core counts differ as stated — both
   produce the same deliverable (the cell stress of this system), which is
   the wall being compared.
@@ -1281,8 +1274,7 @@ check analytic BJ forces vs FD and that `e_total(d3bj) − e_total(off) = e_disp
 D3 evaluation itself is \(O(N^2)\) over a 6-atom cell (microseconds). Full GPW
 SCF wall is dominated by the electronic structure, not D3. Fair ratio for a
 **dispersion-only** microbenchmark vs CP2K is not meaningful; full twin SCF
-ratio depends on cutoff/OT choices. **perf_exempt = true** for this slug:
-reason — primary deliverable is E_disp pin parity; CP2K wall includes full QS
-(~13 s) while the hard-gate regression only needs a short SCF to materialize
-`e_disp` (geometry-only). Document re-measure if a strict full-SCF twin is
-required later.
+ratio depends on cutoff/OT choices. The complete section still has a 60 s
+budget. CP2K wall includes full QS (~13 s), while the hard-gate regression
+uses a short SCF to materialize geometry-only `e_disp`; these boundaries do
+not establish a matched-engine performance result.

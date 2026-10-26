@@ -4,13 +4,17 @@
 /// Subspace utilities (Y_lm, Jacobi eigensolver, initial subspace) live in
 /// internal/pw_subspace.cpp, shared with the CUDA band solver.
 #include "atomiverse/cpu/planewave/internal/davidson.h"
+#include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstring>
 #include <fftw3.h>
 #include <vector>
+#include <xtensor/containers/xadapt.hpp>
+#include <xtensor/views/xview.hpp>
 
 namespace ATV {
 namespace cpu {
@@ -187,7 +191,6 @@ void DavidsonSolver::step(PWWorkspace& ws) {
     int nb = n_bands_;
     int nr = ws.nr;
 
-    ws.wfc.resize({static_cast<std::size_t>(nb), static_cast<std::size_t>(ng)});
     ws.eigenvalues.resize({static_cast<std::size_t>(nb)});
 
     // FFT work buffer for H·ψ — pre-allocated in prepare(); guard against
@@ -199,11 +202,13 @@ void DavidsonSolver::step(PWWorkspace& ws) {
     // ── Initialize subspace (atomic wavefunctions or lowest-T(G) PWs) ──
     std::vector<std::complex<AccReal>> sub_vectors;
     int n_sub = internal::init_subspace(ws, nb, sub_vectors);
+    ws.wfc.resize({static_cast<std::size_t>(nb), static_cast<std::size_t>(ng)});
     std::vector<std::complex<AccReal>> H_sub_vectors(n_sub * ng);
     std::vector<bool> H_computed(n_sub, false);
 
     // ── Davidson iteration ──
-    int max_david = std::min(max_iter_, 20);
+    const int max_david = max_iter_;
+    const AccReal tolerance2 = tol_ * tol_;
 
     for (int idavid = 0; idavid < max_david; ++idavid) {
         // Compute H·v_j for new subspace vectors
@@ -215,94 +220,60 @@ void DavidsonSolver::step(PWWorkspace& ws) {
             H_computed[j] = true;
         }
 
-        // Build subspace Hamiltonian H_sub[μ,ν] = ⟨v_μ|H|v_ν⟩. It is
-        // complex Hermitian at any k that is not time-reversal invariant;
-        // truncating it to its real part (the historical bug) corrupted
-        // the Ritz VECTORS at first order while leaving the eigenvalues
-        // plausible (second-order error) — fatal for Berry phases and
-        // any wavefunction-sensitive observable.
-        std::vector<std::complex<AccReal>> Hs(
-            static_cast<std::size_t>(n_sub) * static_cast<std::size_t>(n_sub));
+        // Rows hold basis vectors. Hs = V^dagger H V in the physical
+        // column-vector convention; only the first factor is conjugated.
+        const std::array<std::size_t, 2> shape{static_cast<std::size_t>(n_sub),
+                                               static_cast<std::size_t>(ng)};
+        const auto V = xt::adapt(sub_vectors, shape);
+        const auto HV = xt::adapt(H_sub_vectors, shape);
+        linalg::CplxMatrix Hs = xt::linalg::dot(xt::conj(V), xt::transpose(HV));
         for (int mu = 0; mu < n_sub; ++mu) {
-            for (int nu = mu; nu < n_sub; ++nu) {
-                std::complex<AccReal> sum(0, 0);
-                for (int ig = 0; ig < ng; ++ig)
-                    sum += std::conj(sub_vectors[mu * ng + ig])
-                           * H_sub_vectors[nu * ng + ig];
-                if (nu == mu) {
-                    Hs[static_cast<std::size_t>(mu * n_sub + mu)] =
-                        std::complex<AccReal>(sum.real(), 0);
-                } else {
-                    Hs[static_cast<std::size_t>(mu * n_sub + nu)] = sum;
-                    Hs[static_cast<std::size_t>(nu * n_sub + mu)] =
-                        std::conj(sum);
-                }
-            }
+            Hs(mu, mu) = {Hs(mu, mu).real(), 0};
+            for (int nu = mu + 1; nu < n_sub; ++nu)
+                Hs(nu, mu) = std::conj(Hs(mu, nu));
         }
+        std::vector<double> sub_eig;
+        linalg::CplxMatrix sub_vecs;
+        linalg::eigh_hermitian(Hs, sub_eig, sub_vecs);
 
-        // Diagonalize subspace (complex Hermitian Jacobi)
-        std::vector<AccReal> sub_eig(n_sub);
-        std::vector<std::complex<AccReal>> sub_vecs(
-            static_cast<std::size_t>(n_sub) * static_cast<std::size_t>(n_sub));
-        internal::jacobi_eigh_hermitian(n_sub, Hs.data(), sub_eig.data(),
-                                        sub_vecs.data());
-
-        // Build Ritz vectors: ψ_i = Σ_μ x_{μ,i} v_μ
-        std::vector<std::complex<AccReal>> ritz(nb * ng);
-        for (int b = 0; b < nb; ++b) {
-            for (int ig = 0; ig < ng; ++ig)
-                ritz[b * ng + ig] = std::complex<AccReal>(0, 0);
-            for (int mu = 0; mu < n_sub; ++mu)
-                for (int ig = 0; ig < ng; ++ig)
-                    ritz[b * ng + ig] +=
-                        sub_vecs[mu * n_sub + b] * sub_vectors[mu * ng + ig];
-        }
+        // H is fixed during the subspace solve: H(Vc)=(HV)c. Rotate the
+        // retained eigenvectors by ordinary transpose, preserving Bloch phases.
+        const linalg::CplxMatrix coefficients =
+            xt::transpose(xt::view(sub_vecs, xt::all(), xt::range(0, nb)));
+        const linalg::CplxMatrix ritz = xt::linalg::dot(coefficients, V);
+        const linalg::CplxMatrix hritz = xt::linalg::dot(coefficients, HV);
 
         // Compute residuals and check convergence
-        AccReal max_res = 0;
+        std::vector<std::complex<AccReal>> residuals(nb * ng);
+        std::vector<AccReal> residual_norm2(nb, 0);
         for (int b = 0; b < nb; ++b) {
-            // H·ψ_b
-            std::vector<std::complex<AccReal>> Hpsi(ng);
-            apply_hamiltonian(ws, &ritz[b * ng], Hpsi.data(), work_buf);
-
             // R = H·ψ - ε·ψ
-            AccReal res_norm = 0;
             for (int ig = 0; ig < ng; ++ig) {
-                auto R = Hpsi[ig] - sub_eig[b] * ritz[b * ng + ig];
-                res_norm += std::norm(R);
+                auto& R = residuals[b * ng + ig];
+                R = hritz(b, ig) - sub_eig[b] * ritz(b, ig);
+                residual_norm2[b] += std::norm(R);
             }
-            res_norm = std::sqrt(res_norm);
-            if (res_norm > max_res)
-                max_res = res_norm;
 
             // Store eigenvalue
             ws.eigenvalues[b] = sub_eig[b];
 
             // Copy Ritz vector to wfc
             for (int ig = 0; ig < ng; ++ig)
-                ws.wfc(b, ig) = ritz[b * ng + ig];
+                ws.wfc(b, ig) = ritz(b, ig);
         }
+        if (*std::max_element(residual_norm2.begin(), residual_norm2.end())
+            <= tolerance2)
+            break;
 
         // Always add residuals to build crystal field (QE approach)
 
         // Add preconditioned residuals for unconverged bands
-        if (idavid < max_david - 1 && n_sub < ng - 1) {
+        if (idavid < max_david - 1 && n_sub < ng) {
             int n_added = 0;
             for (int b = 0; b < nb && n_sub < ng; ++b) {
-                // Compute residual R = H·ψ - ε·ψ
-                std::vector<std::complex<AccReal>> Hpsi(ng);
-                apply_hamiltonian(ws, &ritz[b * ng], Hpsi.data(), work_buf);
-
-                std::vector<std::complex<AccReal>> R(ng);
-                AccReal res_norm = 0;
-                for (int ig = 0; ig < ng; ++ig) {
-                    R[ig] = Hpsi[ig] - sub_eig[b] * ritz[b * ng + ig];
-                    res_norm += std::norm(R[ig]);
-                }
-
                 // Converged band: appending its residual would only
                 // inject rounding noise into the subspace.
-                if (res_norm < AccReal(1e-12)) // ||R|| < 1e-6
+                if (residual_norm2[b] <= tolerance2)
                     continue;
 
                 // Precondition: δ(G) = -R(G) / (T(G) - ε). The clamp keeps
@@ -317,7 +288,7 @@ void DavidsonSolver::step(PWWorkspace& ws) {
                     AccReal damp = std::abs(denom);
                     if (damp < AccReal(1e-2))
                         denom = (denom >= 0 ? AccReal(1e-2) : AccReal(-1e-2));
-                    delta[ig] = -R[ig] / denom;
+                    delta[ig] = -residuals[b * ng + ig] / denom;
                 }
 
                 // Normalize first so the drop threshold below is

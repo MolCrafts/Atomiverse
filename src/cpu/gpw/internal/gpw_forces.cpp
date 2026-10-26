@@ -14,6 +14,7 @@
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstdio>
@@ -35,6 +36,7 @@
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
 #include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
+#include "atomiverse/cpu/gpw/internal/multigrid.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 #include "atomiverse/cpu/gpw/internal/poisson_fft.h"
@@ -258,6 +260,11 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     const std::vector<double>* scf_veff_b = nullptr,
                     const std::vector<double>* scf_v_es = nullptr,
                     const GpwResult* scf_grids = nullptr) {
+    const bool profile = std::getenv("ATV_GPW_PROF") != nullptr;
+    using ForceClock = std::chrono::steady_clock;
+    const auto force_start =
+        profile ? ForceClock::now() : ForceClock::time_point{};
+
     const std::vector<GridBasisFunction> basis = global_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     const int na = static_cast<int>(atoms.size());
@@ -363,17 +370,32 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     UniformGrid grid = make_uniform_grid(cfg.cell_bohr().data(), cfg.cutoff_ry);
     const long ng = grid.npts();
     const double wgt = grid.weight();
-    // Reuse SCF cbg when single-grid SCF filled it (p2-force-kbg-reuse).
+    // Isolated charge densities are periodized products, not clipped AO
+    // values. Match the SCF product hierarchy and its exact adjoint.
+    const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0;
+    const bool product_grid = use_mg || cfg.nonperiodic;
+    MultiGrid mg;
+    ProductSet products;
     CompactBasisGrid cbg_local;
-    const CompactBasisGrid* cbg_ptr = nullptr;
-    if (scf_grids && scf_grids->scf_cbg_valid
-        && scf_grids->scf_cbg.npts == ng) {
+    const CompactBasisGrid* cbg_ptr = &cbg_local;
+    if (product_grid) {
+        const double rel = use_mg ? cfg.rel_cutoff : cfg.cutoff_ry;
+        mg = make_multigrid(cfg.cell_bohr().data(), cfg.cutoff_ry,
+                            use_mg ? cfg.ngrids : 1, rel);
+        products = build_products(mg, basis, cfg.cell_bohr().data(), rel, eps,
+                                  periodic);
+    } else if (scf_grids && scf_grids->scf_cbg_valid
+               && scf_grids->scf_cbg.npts == ng) {
         cbg_ptr = &scf_grids->scf_cbg;
     } else {
         cbg_local = build_compact_basis_grid(grid, basis, periodic, eps);
-        cbg_ptr = &cbg_local;
     }
     const CompactBasisGrid& cbg = *cbg_ptr;
+    auto collocate = [&](const std::vector<double>& density) {
+        return product_grid
+                   ? multigrid_collocate_rho(mg, products, nb, density, eps)
+                   : collocate_density(cbg, nb, density);
+    };
 
     auto mat_to_vec = [&](const RealMatrix& M) {
         std::vector<double> v(static_cast<std::size_t>(nb) * nb);
@@ -388,13 +410,13 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     if (uks) {
         Pa_vec = mat_to_vec(P);
         Pb_vec = mat_to_vec(*P_beta);
-        rho_a = collocate_density(cbg, nb, Pa_vec);
-        rho_b = collocate_density(cbg, nb, Pb_vec);
+        rho_a = collocate(Pa_vec);
+        rho_b = collocate(Pb_vec);
         rho.resize(rho_a.size());
         for (std::size_t g = 0; g < rho.size(); ++g)
             rho[g] = rho_a[g] + rho_b[g];
     } else {
-        rho = collocate_density(cbg, nb, Ptot_vec);
+        rho = collocate(Ptot_vec);
     }
 
     // V_eff must be the SAME one the SCF converged against. Prefer the
@@ -529,47 +551,21 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     }
     const std::vector<double>& v_es = *v_es_ptr;
 
-    // g -> active index into cbg (for the grid term's Pχ lookup).
-    std::vector<long> g2a(static_cast<std::size_t>(ng), -1);
-    for (std::size_t a = 0; a < cbg.gidx.size(); ++a)
-        g2a[static_cast<std::size_t>(cbg.gidx[a])] = static_cast<long>(a);
-
-    // Multi-image collocation of every center-derivative function dφ_u/dR_u,k
-    // (flat index f = u*3 + k), so the grid term's ∂χ_u is image-consistent.
-    // Lazy-cache on GpwResult when available (first force after SCF).
-    std::vector<GridBasisFunction> dflat(static_cast<std::size_t>(nb) * 3);
-    for (int u = 0; u < nb; ++u)
-        for (int k = 0; k < 3; ++k)
-            dflat[static_cast<std::size_t>(u) * 3 + k] = dphi[u][k];
-    CompactBasisGrid cbgd_local;
-    const CompactBasisGrid* cbgd_ptr = nullptr;
-    if (scf_grids && scf_grids->force_cbgd_valid
-        && scf_grids->force_cbgd.npts == ng) {
-        cbgd_ptr = &scf_grids->force_cbgd;
-    } else if (scf_grids) {
-        scf_grids->force_cbgd =
-            build_compact_basis_grid(grid, dflat, periodic, eps);
-        scf_grids->force_cbgd_valid = true;
-        cbgd_ptr = &scf_grids->force_cbgd;
-    } else {
-        cbgd_local = build_compact_basis_grid(grid, dflat, periodic, eps);
-        cbgd_ptr = &cbgd_local;
-    }
-    const CompactBasisGrid& cbgd = *cbgd_ptr;
-
     std::vector<std::array<double, 3>> forces(na, {0.0, 0.0, 0.0});
 
+    const auto force_prepared =
+        profile ? ForceClock::now() : ForceClock::time_point{};
     // ── AO-basis Pulay terms (periodic image sums) ──────────────────────────
     // Use P_tot for kinetic / V_pp (spin-independent operators).
+    std::vector<const GpwAtom*> all(static_cast<std::size_t>(na));
+    for (int atom = 0; atom < na; ++atom)
+        all[static_cast<std::size_t>(atom)] = &atoms[atom];
+    // Each task owns one force component. Keep its integral accumulation
+    // order fixed; integral scratch is local or thread-local.
+#pragma omp parallel for collapse(2) schedule(static, 1)
     for (int A = 0; A < na; ++A) {
         for (int k = 0; k < 3; ++k) {
             double f = 0.0;
-            const std::vector<const GpwAtom*> all = [&] {
-                std::vector<const GpwAtom*> v(static_cast<std::size_t>(na));
-                for (int a = 0; a < na; ++a)
-                    v[static_cast<std::size_t>(a)] = &atoms[a];
-                return v;
-            }();
             const std::vector<const GpwAtom*> onlyA = {&atoms[A]};
 
             for (int mu = atom_off[A]; mu < atom_off[A + 1]; ++mu) {
@@ -607,47 +603,100 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         }
     }
 
-    // ── Grid term ──────────────────────────────────────────────────────────
-    // RKS: -2 Σ_μ∈A Σ_g w χ_dμ V_eff (Pχ)_μ
-    // UKS: -2 Σ_μ∈A Σ_g w χ_dμ [V_eff^α (Pα χ)_μ + V_eff^β (Pβ χ)_μ]
-    for (std::size_t ad = 0; ad < cbgd.gidx.size(); ++ad) {
-        const long g = cbgd.gidx[ad];
-        const long a = g2a[static_cast<std::size_t>(g)];
-        if (a < 0)
-            continue; // χ_ν all zero here ⇒ Pχ = 0
-        const std::size_t cs = cbg.off[static_cast<std::size_t>(a)];
-        const std::size_t ce = cbg.off[static_cast<std::size_t>(a) + 1];
-        const std::size_t ds = cbgd.off[ad];
-        const std::size_t de = cbgd.off[ad + 1];
-        const double w = wgt;
-        for (std::size_t id = ds; id < de; ++id) {
-            const int fdu = cbgd.fu[id]; // flat index u*3+k
-            const int u = fdu / 3, k = fdu % 3;
-            const double chi_dmu = cbgd.fv[id];
-            if (uks) {
-                const double* Pau = &Pa_vec[static_cast<std::size_t>(u) * nb];
-                const double* Pbu = &Pb_vec[static_cast<std::size_t>(u) * nb];
+    const auto force_ao =
+        profile ? ForceClock::now() : ForceClock::time_point{};
+    // Derivative of the same periodized product energy used by SCF.
+    if (product_grid) {
+        const auto ga = internal::multigrid_density_center_gradient(
+            mg, products, nb, uks ? Pa_vec : Ptot_vec, uks ? veff_a : veff,
+            owner, na, eps);
+        std::vector<std::array<double, 3>> gb;
+        if (uks)
+            gb = internal::multigrid_density_center_gradient(
+                mg, products, nb, Pb_vec, veff_b, owner, na, eps);
+        for (int atom = 0; atom < na; ++atom)
+            for (int axis = 0; axis < 3; ++axis)
+                forces[atom][axis] -=
+                    ga[atom][axis] + (uks ? gb[atom][axis] : 0);
+    } else {
+        // g -> active index into cbg (for the grid term's Pχ lookup).
+        std::vector<long> g2a(static_cast<std::size_t>(ng), -1);
+        for (std::size_t a = 0; a < cbg.gidx.size(); ++a)
+            g2a[static_cast<std::size_t>(cbg.gidx[a])] = static_cast<long>(a);
+
+        // Stream one AO's three center derivatives through the established
+        // image-summed collocation kernel. Materializing all 3*nb functions
+        // at once duplicates the large CSR construction payload and dominates
+        // periodic force time/memory. Each task owns its compact grid and xyz
+        // integral; the shared base CBG and SCF fields are read-only.
+        std::vector<std::array<double, 3>> ao_grid(nb, {0.0, 0.0, 0.0});
+        std::vector<std::array<double, 2>> profile_ao(nb, {0.0, 0.0});
+#pragma omp parallel for schedule(dynamic, 1)
+        for (int u = 0; u < nb; ++u) {
+            const auto build_start =
+                profile ? ForceClock::now() : ForceClock::time_point{};
+            const std::vector<GridBasisFunction> derivatives{
+                dphi[u][0], dphi[u][1], dphi[u][2]};
+            const CompactBasisGrid cbgd =
+                build_compact_basis_grid(grid, derivatives, periodic, eps);
+            const auto contract_start =
+                profile ? ForceClock::now() : ForceClock::time_point{};
+            auto& integral = ao_grid[u];
+            const double* Pa =
+                &(uks ? Pa_vec : Ptot_vec)[static_cast<std::size_t>(u) * nb];
+            const double* Pb =
+                uks ? &Pb_vec[static_cast<std::size_t>(u) * nb] : nullptr;
+            for (std::size_t ad = 0; ad < cbgd.gidx.size(); ++ad) {
+                const long g = cbgd.gidx[ad];
+                const long a = g2a[static_cast<std::size_t>(g)];
+                if (a < 0)
+                    continue; // All chi_nu are zero here, so P*chi is zero.
+                const std::size_t cs = cbg.off[static_cast<std::size_t>(a)];
+                const std::size_t ce = cbg.off[static_cast<std::size_t>(a) + 1];
                 double pchi_a = 0.0, pchi_b = 0.0;
                 for (std::size_t ib = cs; ib < ce; ++ib) {
-                    pchi_a += Pau[cbg.fu[ib]] * cbg.fv[ib];
-                    pchi_b += Pbu[cbg.fu[ib]] * cbg.fv[ib];
+                    pchi_a += Pa[cbg.fu[ib]] * cbg.fv[ib];
+                    if (uks)
+                        pchi_b += Pb[cbg.fu[ib]] * cbg.fv[ib];
                 }
-                forces[owner[u]][k] -=
-                    2.0 * w * chi_dmu
-                    * (veff_a[static_cast<std::size_t>(g)] * pchi_a
-                       + veff_b[static_cast<std::size_t>(g)] * pchi_b);
-            } else {
-                const double* Pu = &Ptot_vec[static_cast<std::size_t>(u) * nb];
-                double pchi = 0.0;
-                for (std::size_t ib = cs; ib < ce; ++ib)
-                    pchi += Pu[cbg.fu[ib]] * cbg.fv[ib];
-                forces[owner[u]][k] -= 2.0 * veff[static_cast<std::size_t>(g)]
-                                       * w * chi_dmu * pchi;
+                const double v_pchi =
+                    uks ? veff_a[static_cast<std::size_t>(g)] * pchi_a
+                              + veff_b[static_cast<std::size_t>(g)] * pchi_b
+                        : veff[static_cast<std::size_t>(g)] * pchi_a;
+                for (std::size_t id = cbgd.off[ad]; id < cbgd.off[ad + 1]; ++id)
+                    integral[cbgd.fu[id]] -= 2.0 * wgt * cbgd.fv[id] * v_pchi;
             }
+            if (profile) {
+                const auto end = ForceClock::now();
+                profile_ao[u] = {std::chrono::duration<double, std::milli>(
+                                     contract_start - build_start)
+                                     .count(),
+                                 std::chrono::duration<double, std::milli>(
+                                     end - contract_start)
+                                     .count()};
+            }
+        }
+        // Fixed AO order makes the fold independent of OpenMP scheduling.
+        for (int u = 0; u < nb; ++u)
+            for (int axis = 0; axis < 3; ++axis)
+                forces[owner[u]][axis] += ao_grid[u][axis];
+        if (profile) {
+            double build_ms = 0.0, contract_ms = 0.0;
+            for (const auto& times : profile_ao) {
+                build_ms += times[0];
+                contract_ms += times[1];
+            }
+            std::fprintf(stderr,
+                         "[gpw force grid] AO-task sums: build=%.1f "
+                         "contract=%.1f ms\n",
+                         build_ms, contract_ms);
         }
     }
 
+    const auto force_grid =
+        profile ? ForceClock::now() : ForceClock::time_point{};
     // ── Ionic Hellmann–Feynman: + ∫ V_es ∂n_c^A/∂R_A,k (min-image, matches SCF) ─
+#pragma omp parallel for schedule(static)
     for (int A = 0; A < na; ++A) {
         const GpwAtom& Aatom = atoms[A];
         const double s2 = Aatom.rloc * Aatom.rloc;
@@ -754,6 +803,18 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 for (int k = 0; k < 3; ++k)
                     forces[i][k] += d3.forces[static_cast<std::size_t>(i)][k];
         }
+    }
+    if (profile) {
+        const auto end = ForceClock::now();
+        const auto ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        std::fprintf(stderr,
+                     "[gpw forces] setup=%.1f ao=%.1f grid=%.1f "
+                     "ionic_dispersion=%.1f ms\n",
+                     ms(force_start, force_prepared),
+                     ms(force_prepared, force_ao), ms(force_ao, force_grid),
+                     ms(force_grid, end));
     }
     return forces;
 }

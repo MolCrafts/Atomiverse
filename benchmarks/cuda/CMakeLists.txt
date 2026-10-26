@@ -24,9 +24,19 @@ endif()
 
 find_package(OpenMP)
 
-# CPU vs CUDA RHF wall + AO scaling.
-# Run: OMP_NUM_THREADS=8 ./bin/bench_rhf_cpu_vs_cuda [n_rep_e] [n_rep_f]
+# CPU vs CUDA RHF/MP2 complete-call walls and water-chain AO scaling.
+# RHF: OMP_NUM_THREADS=8 ./bin/bench_rhf_cpu_vs_cuda [max_waters] [warm_repeats] [backend]
 if(ATV_BUILD_HF)
+    add_executable(bench_mp2_cpu_vs_cuda bench_mp2_cpu_vs_cuda.cu)
+    target_link_libraries(bench_mp2_cpu_vs_cuda PRIVATE atomiverse)
+    set_target_properties(bench_mp2_cpu_vs_cuda PROPERTIES
+                          CUDA_SEPARABLE_COMPILATION ON
+                          RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(bench_mp2_cpu_vs_cuda PRIVATE OpenMP::OpenMP_CXX)
+        target_compile_definitions(bench_mp2_cpu_vs_cuda PRIVATE ATV_BENCH_HAS_OPENMP)
+    endif()
+
     add_executable(bench_rhf_cpu_vs_cuda bench_rhf_cpu_vs_cuda.cu)
     target_link_libraries(bench_rhf_cpu_vs_cuda PRIVATE atomiverse)
     set_target_properties(bench_rhf_cpu_vs_cuda PROPERTIES
@@ -35,6 +45,7 @@ if(ATV_BUILD_HF)
     # OpenMP for a fair multi-thread CPU leg on the GPU node.
     if(OpenMP_CXX_FOUND)
         target_link_libraries(bench_rhf_cpu_vs_cuda PRIVATE OpenMP::OpenMP_CXX)
+        target_compile_definitions(bench_rhf_cpu_vs_cuda PRIVATE ATV_BENCH_HAS_OPENMP)
     endif()
 endif()
 

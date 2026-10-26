@@ -1,7 +1,7 @@
 /// @file cpu/gpw/internal/gpw_stress.cpp
 /// @brief GPW cell stress: Hellmann–Feynman fixed-P product path + multi-SCF FD.
 ///
-/// Analytic product path (gpw_stress / gpw_stress_analytic_impl):
+/// Fixed-P product path (GpwDft::stress / gpw_stress_at_state_impl):
 ///   1. One full SCF at the reference geometry → density matrix P (Γ RKS),
 ///      spin pair {Pα,Pβ,Wα,Wβ} (Γ UKS), per-k {P_k, W_k} from C_occ_k /
 ///      eps_k (multi-k RKS, occ=2), or per-k spin {P_k^σ, W_k^σ} from
@@ -20,8 +20,9 @@
 ///      Quickstep energy surface). Multi-k sums the fixed-P Lagrangian over
 ///      sampled k.
 ///
-/// Oracle path (gpw_stress_fd / gpw_stress_fd_impl): full multi-SCF strain-FD
-/// of E_tot (2 SCFs per diagonal axis).
+/// Check path (gpw_stress_fd / gpw_stress_fd_impl): one unstrained reference
+/// supplies a common density guess, then full multi-SCF strain-FD of E_tot
+/// (2 independent SCFs per diagonal axis).
 ///
 /// Off-diagonal shear remains 0 (orthorhombic GPW cell only). Sign matches
 /// CP2K STRESS_TENSOR: σ_aa = −(1/Ω) ∂E/∂ε_aa.
@@ -44,6 +45,7 @@
 #include "atomiverse/cpu/gpw/internal/local_pp.h"
 #include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
+#include "atomiverse/cpu/gpw/internal/multigrid.h"
 #include "atomiverse/cpu/gpw/internal/one_electron.h"
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 #include "atomiverse/cpu/gpw/internal/poisson_fft.h"
@@ -82,16 +84,6 @@ std::vector<GpwAtom> scale_axis(const std::vector<GpwAtom>& atoms, int ax,
                 p.center[ax] *= s;
     }
     return out;
-}
-
-double scf_energy_ha(const std::vector<GpwAtom>& atoms, const GpwDft& method,
-                     const linalg::RealMatrix* guess_C) {
-    GpwDft solver = GpwDftAccess::clone(method);
-    GpwDftAccess::build(solver, atoms);
-    const GpwResult& r = GpwDftAccess::run(solver, atoms, guess_C);
-    if (!r.converged)
-        throw std::runtime_error("gpw_stress_fd: SCF did not converge");
-    return r.e_total;
 }
 
 Prim to_prim(const GridPrimitive& p) {
@@ -180,6 +172,43 @@ bool uses_kpath(const GpwDft& cfg) {
     // Match SCF dispatch: metallic smear always uses the Bloch path.
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
            || cfg.k_mesh[2] != 1 || cfg.smearing != Smearing::none;
+}
+
+double scf_energy_ha(const std::vector<GpwAtom>& atoms, const GpwDft& method,
+                     const GpwResult& reference) {
+    GpwDft solver = GpwDftAccess::clone(method);
+    GpwDftAccess::build(solver, atoms);
+    const bool kpath = uses_kpath(method);
+    const bool uks = method.is_uks();
+    const GpwResult& r = GpwDftAccess::run(
+        solver, atoms, nullptr, kpath ? nullptr : &reference.P,
+        !kpath && uks ? &reference.P_beta : nullptr,
+        kpath ? &reference.P_k : nullptr,
+        kpath && uks ? &reference.P_k_beta : nullptr);
+    if (!r.converged)
+        throw std::runtime_error("gpw_stress_fd: SCF did not converge");
+    return r.e_total;
+}
+
+cpu::scf::XCType gga_type(XcKind xc) {
+    using cpu::scf::XCType;
+    switch (xc) {
+    case XcKind::PBE:
+        return XCType::PBE;
+    case XcKind::PBEsol:
+        return XCType::PBEsol;
+    case XcKind::RevPBE:
+        return XCType::RevPBE;
+    case XcKind::RPBE:
+        return XCType::RPBE;
+    case XcKind::BLYP:
+        return XCType::BLYP;
+    case XcKind::OptB88VdW:
+        return XCType::OptB88VdW;
+    default:
+        throw std::invalid_argument(
+            "GPW stress: expected a pure GGA functional");
+    }
 }
 
 constexpr double kBuildScreen = 1e-12;
@@ -408,26 +437,61 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     UniformGrid grid = make_uniform_grid(cfg.cell_bohr().data(), cfg.cutoff_ry);
     const long ng = grid.npts();
     const double wgt = grid.weight();
-    const KpointBasisGrid kbg = build_kpoint_basis_grid(grid, basis, kpts, eps);
+    const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
+    MultiGrid mg;
+    ProductSet products;
+    KpointBasisGrid kbg;
+    if (use_mg) {
+        mg = make_multigrid(cfg.cell_bohr().data(), cfg.cutoff_ry, cfg.ngrids,
+                            cfg.rel_cutoff);
+        products = build_products(mg, basis, cfg.cell_bohr().data(),
+                                  cfg.rel_cutoff, eps, /*periodic=*/true);
+    } else {
+        kbg = build_kpoint_basis_grid(grid, basis, kpts, eps);
+    }
+
+    auto collocate = [&](const std::vector<CplxMatrix>& density) {
+        if (!use_mg) {
+            std::vector<double> rho(static_cast<std::size_t>(ng), 0.0);
+            for (int ik = 0; ik < nk; ++ik)
+                collocate_density_k(
+                    kbg, ik, density[static_cast<std::size_t>(ik)],
+                    kpts[static_cast<std::size_t>(ik)].weight, rho);
+            return rho;
+        }
+        // Same real-space density stack as the SCF's MAIN Bloch path:
+        // D(t) = sum_k w_k Re[P_k exp(-2 pi i k.t)]. The shared multigrid
+        // kernel performs product collocation and spectral level transfer.
+        const auto nn = static_cast<std::size_t>(nb) * nb;
+        std::vector<std::vector<double>> D(products.cells.size(),
+                                           std::vector<double>(nn, 0.0));
+        constexpr double two_pi = 6.283185307179586476925286766559;
+        for (int ik = 0; ik < nk; ++ik) {
+            const auto& point = kpts[static_cast<std::size_t>(ik)];
+            std::vector<Cplx> phases(products.cells.size());
+            for (std::size_t c = 0; c < products.cells.size(); ++c) {
+                const auto& t = products.cells[c];
+                const double arg =
+                    -two_pi
+                    * (point.frac[0] * t[0] + point.frac[1] * t[1]
+                       + point.frac[2] * t[2]);
+                phases[c] = Cplx(std::cos(arg), std::sin(arg));
+            }
+            accumulate_bloch_density_stack(
+                density[static_cast<std::size_t>(ik)], point.weight, phases, D);
+        }
+        return multigrid_collocate_rho_cells(mg, products, nb, D, eps);
+    };
 
     std::vector<double> rho(static_cast<std::size_t>(ng), 0.0);
     std::vector<double> rho_a, rho_b;
     if (uks) {
-        rho_a.assign(static_cast<std::size_t>(ng), 0.0);
-        rho_b.assign(static_cast<std::size_t>(ng), 0.0);
-        for (int ik = 0; ik < nk; ++ik) {
-            const double wk = kpts[static_cast<std::size_t>(ik)].weight;
-            collocate_density_k(kbg, ik, (*Pa_k)[static_cast<std::size_t>(ik)],
-                                wk, rho_a);
-            collocate_density_k(kbg, ik, (*Pb_k)[static_cast<std::size_t>(ik)],
-                                wk, rho_b);
-        }
+        rho_a = collocate(*Pa_k);
+        rho_b = collocate(*Pb_k);
         for (std::size_t g = 0; g < rho.size(); ++g)
             rho[g] = rho_a[g] + rho_b[g];
     } else {
-        for (int ik = 0; ik < nk; ++ik)
-            collocate_density_k(kbg, ik, P_k[static_cast<std::size_t>(ik)],
-                                kpts[static_cast<std::size_t>(ik)].weight, rho);
+        rho = collocate(P_k);
     }
 
     // Ionic core density n_c (min-image; matches SCF / forces).
@@ -457,46 +521,17 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         n_tot[g] = rho[g] - n_ion[g];
 
     const PoissonResult es = solve_poisson(grid, n_tot);
-    double e_xc = 0.0;
-    if (uks) {
-        const XcOnGridSpin xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe_spin(grid, rho_a, rho_b)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp_spin(grid, rho_a,
-                                                                rho_b)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw_spin(
-                                                         grid, rho_a, rho_b)
-                                                   : xc_grid_pade_lsd(
-                                                         grid, rho_a,
-                                                         rho_b))))));
-        e_xc = xc.e_xc;
-    } else {
-        const XcOnGrid xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe(grid, rho)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol(grid, rho)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe(grid, rho)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe(grid, rho)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp(grid, rho)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(grid,
-                                                                        rho)
-                                                   : xc_grid_pade(grid,
-                                                                  rho))))));
-        e_xc = xc.e_xc;
-    }
+    // Fixed-P Lagrangian energies do not request V_xc or its divergence FFTs.
+    const double e_xc =
+        cfg.xc == XcKind::PADE
+            ? (uks ? xc_grid_pade_lsd(grid, rho_a, rho_b).e_xc
+                   : xc_grid_pade(grid, rho).e_xc)
+            : (uks ? xc_grid_gga_spin(grid, rho_a, rho_b, gga_type(cfg.xc),
+                                      electronic::XcOrder::Energy)
+                         .e_xc
+                   : xc_grid_gga(grid, rho, gga_type(cfg.xc),
+                                 electronic::XcOrder::Energy)
+                         .e_xc);
 
     const std::vector<double> v_locsr =
         local_pp_grid(grid, atoms, /*periodic=*/true);
@@ -544,9 +579,8 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 throw std::runtime_error(
                     "gpw_stress MBD: hirshfeld requires SCF volume_ratios");
             e_disp =
-                mbd_rsscs_pbe(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
-                              6.0, vr, mbd_per ? cfg.mbd_k_mesh : nullptr)
-                    .energy;
+                mbd_rsscs_energy(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
+                                 6.0, vr, mbd_per ? cfg.mbd_k_mesh : nullptr);
         } else if (cfg.xdm) {
             constexpr double kRcutXdm = 50.0 * kAng2Bohr;
             e_disp = xdm_pbe(Z, pos, cfg.cell_bohr().data(), /*periodic=*/true,
@@ -733,6 +767,10 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     double e_kin = 0.0;
     double e_pp = 0.0;
     double e_pulay = 0.0;
+    std::vector<std::array<double, 3>> row_energy(nb, {0.0, 0.0, 0.0});
+    // Integral scratch is local/thread-local; each row owns its S entries
+    // and energy sums. Fold rows in basis order after the parallel work.
+#pragma omp parallel for schedule(dynamic, 1)
     for (int mu = 0; mu < nb; ++mu) {
         if (basis[static_cast<std::size_t>(mu)].empty())
             continue;
@@ -751,19 +789,39 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 uks ? (P(mu, nu) + (*P_beta)(mu, nu)) : P(mu, nu);
             const double w_tot =
                 uks ? (W(mu, nu) + (*W_beta)(mu, nu)) : W(mu, nu);
-            e_kin += p_tot * t;
-            e_pp += p_tot * vpp;
-            e_pulay += w_tot * s;
+            row_energy[mu][0] += p_tot * t;
+            row_energy[mu][1] += p_tot * vpp;
+            row_energy[mu][2] += w_tot * s;
             if (do_dftu)
                 Smat(mu, nu) = s;
         }
+    }
+    for (const auto& row : row_energy) {
+        e_kin += row[0];
+        e_pp += row[1];
+        e_pulay += row[2];
     }
 
     UniformGrid grid = make_uniform_grid(cfg.cell_bohr().data(), cfg.cutoff_ry);
     const long ng = grid.npts();
     const double wgt = grid.weight();
-    const CompactBasisGrid cbg =
-        build_compact_basis_grid(grid, basis, periodic, eps);
+    // Match the SCF density representation. Isolated Gaussian products are
+    // periodized on the integration grid without adding orbital image cross
+    // terms; clipping each orbital at the box would lose its density tails.
+    const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
+    const bool use_prod = use_mg || cfg.nonperiodic;
+    CompactBasisGrid cbg;
+    MultiGrid mg;
+    ProductSet products;
+    if (use_prod) {
+        const double rcut = use_mg ? cfg.rel_cutoff : cfg.cutoff_ry;
+        mg = make_multigrid(cfg.cell_bohr().data(), cfg.cutoff_ry,
+                            use_mg ? cfg.ngrids : 1, rcut);
+        products = build_products(mg, basis, cfg.cell_bohr().data(), rcut, eps,
+                                  periodic);
+    } else {
+        cbg = build_compact_basis_grid(grid, basis, periodic, eps);
+    }
 
     auto mat_to_vec = [nb](const RealMatrix& M) {
         std::vector<double> v(static_cast<std::size_t>(nb) * nb);
@@ -775,14 +833,19 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 
     std::vector<double> rho;
     std::vector<double> rho_a, rho_b;
+    auto collocate = [&](const RealMatrix& density) {
+        const auto values = mat_to_vec(density);
+        return use_prod ? multigrid_collocate_rho(mg, products, nb, values, eps)
+                        : collocate_density(cbg, nb, values);
+    };
     if (uks) {
-        rho_a = collocate_density(cbg, nb, mat_to_vec(P));
-        rho_b = collocate_density(cbg, nb, mat_to_vec(*P_beta));
+        rho_a = collocate(P);
+        rho_b = collocate(*P_beta);
         rho.resize(rho_a.size());
         for (std::size_t g = 0; g < rho.size(); ++g)
             rho[g] = rho_a[g] + rho_b[g];
     } else {
-        rho = collocate_density(cbg, nb, mat_to_vec(P));
+        rho = collocate(P);
     }
 
     // Ionic core density n_c (min-image; matches SCF / forces).
@@ -816,54 +879,17 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const PoissonResult es = cfg.nonperiodic ? solve_poisson_mt(grid, n_tot)
                                              : solve_poisson(grid, n_tot);
 
-    double e_xc = 0.0;
-    if (uks) {
-        // Spin XC path matches Γ-UKS SCF / forces (PADE LSD + pure GGA spin).
-        if (cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
-            && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
-            && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
-            && cfg.xc != XcKind::OptB88VdW)
-            throw std::invalid_argument(
-                "gpw_stress analytic UKS: XcKind must be PADE, PBE, PBEsol, "
-                "RevPBE, RPBE, BLYP, or OptB88VdW");
-        const XcOnGridSpin xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe_spin(grid, rho_a, rho_b)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp_spin(grid, rho_a,
-                                                                rho_b)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw_spin(
-                                                         grid, rho_a, rho_b)
-                                                   : xc_grid_pade_lsd(
-                                                         grid, rho_a,
-                                                         rho_b))))));
-        e_xc = xc.e_xc;
-    } else {
-        const XcOnGrid xc =
-            cfg.xc == XcKind::PBE
-                ? xc_grid_pbe(grid, rho)
-                : (cfg.xc == XcKind::PBEsol
-                       ? xc_grid_pbesol(grid, rho)
-                       : (cfg.xc == XcKind::RevPBE
-                              ? xc_grid_revpbe(grid, rho)
-                              : (cfg.xc == XcKind::RPBE
-                                     ? xc_grid_rpbe(grid, rho)
-                                     : (cfg.xc == XcKind::BLYP
-                                            ? xc_grid_blyp(grid, rho)
-                                            : (cfg.xc == XcKind::OptB88VdW
-                                                   ? xc_grid_optb88_vdw(grid,
-                                                                        rho)
-                                                   : xc_grid_pade(grid,
-                                                                  rho))))));
-        e_xc = xc.e_xc;
-    }
+    // Fixed-P Lagrangian energies do not request V_xc or its divergence FFTs.
+    const double e_xc =
+        cfg.xc == XcKind::PADE
+            ? (uks ? xc_grid_pade_lsd(grid, rho_a, rho_b).e_xc
+                   : xc_grid_pade(grid, rho).e_xc)
+            : (uks ? xc_grid_gga_spin(grid, rho_a, rho_b, gga_type(cfg.xc),
+                                      electronic::XcOrder::Energy)
+                         .e_xc
+                   : xc_grid_gga(grid, rho, gga_type(cfg.xc),
+                                 electronic::XcOrder::Energy)
+                         .e_xc);
 
     double e_locgrid = 0.0;
     if (!analytic_loc) {
@@ -907,9 +933,8 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                 throw std::runtime_error(
                     "gpw_stress MBD: hirshfeld requires SCF volume_ratios");
             e_disp =
-                mbd_rsscs_pbe(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
-                              6.0, vr, mbd_per ? cfg.mbd_k_mesh : nullptr)
-                    .energy;
+                mbd_rsscs_energy(Z, pos, cfg.cell_bohr().data(), mbd_per, 0.83,
+                                 6.0, vr, mbd_per ? cfg.mbd_k_mesh : nullptr);
         } else if (cfg.xdm) {
             constexpr double kRcutXdm = 50.0 * kAng2Bohr;
             e_disp = xdm_pbe(Z, pos, cfg.cell_bohr().data(), periodic, kRcutXdm)
@@ -1030,25 +1055,6 @@ void validate_stress_args(const std::vector<GpwAtom>& atoms, double h,
 }
 
 } // namespace
-
-std::array<double, 6> gpw_stress_analytic_impl(
-    const std::vector<GpwAtom>& atoms, const GpwDft& method, double h,
-    const std::array<bool, 3>& axes, const linalg::RealMatrix* guess_C) {
-    validate_stress_args(atoms, h, axes, "gpw_stress");
-
-    const double vol =
-        method.cell_bohr()[0] * method.cell_bohr()[1] * method.cell_bohr()[2];
-    if (!(vol > 0.0))
-        throw std::invalid_argument("gpw_stress: non-positive cell volume");
-
-    // Reference SCF → fixed density (Gamma: real P/W; multi-k: P_k/W_k).
-    GpwDft solver = GpwDftAccess::clone(method);
-    GpwDftAccess::build(solver, atoms);
-    const GpwResult scf = GpwDftAccess::run(solver, atoms, guess_C);
-    if (!scf.converged)
-        throw std::runtime_error("gpw_stress: reference SCF did not converge");
-    return gpw_stress_at_state_impl(atoms, method, scf, h, axes);
-}
 
 std::array<double, 6>
 gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
@@ -1340,6 +1346,19 @@ std::array<double, 6> gpw_stress_fd_impl(const std::vector<GpwAtom>& atoms,
         throw std::invalid_argument("gpw_stress_fd: non-positive cell volume");
 
     std::array<double, 6> stress{};
+    if (!axes[0] && !axes[1] && !axes[2])
+        return stress;
+
+    // Every independent strain sample starts from the same converged reference.
+    // In particular UKS needs both spin densities, not alpha orbitals reused as
+    // a beta guess. Never chain +h into -h or let axis order affect the seed.
+    GpwDft reference_solver = GpwDftAccess::clone(method);
+    GpwDftAccess::build(reference_solver, atoms);
+    const GpwResult& reference =
+        GpwDftAccess::run(reference_solver, atoms, guess_C);
+    if (!reference.converged)
+        throw std::runtime_error(
+            "gpw_stress_fd: reference SCF did not converge");
     for (int a = 0; a < 3; ++a) {
         if (!axes[static_cast<std::size_t>(a)])
             continue;
@@ -1354,8 +1373,8 @@ std::array<double, 6> gpw_stress_fd_impl(const std::vector<GpwAtom>& atoms,
         GpwDftAccess::set_cell(mp, strained_cell(method, a, sp));
         GpwDftAccess::set_cell(mm, strained_cell(method, a, sm));
 
-        const double ep = scf_energy_ha(plus, mp, guess_C);
-        const double em = scf_energy_ha(minus, mm, guess_C);
+        const double ep = scf_energy_ha(plus, mp, reference);
+        const double em = scf_energy_ha(minus, mm, reference);
         stress[static_cast<std::size_t>(a)] = -(ep - em) / (2.0 * h) / vol;
     }
     stress[3] = stress[4] = stress[5] = 0.0;

@@ -25,6 +25,9 @@
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include <limits>
 #include <xtensor/generators/xbuilder.hpp>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace ATV;
 
@@ -190,15 +193,22 @@ TEST(GpwEvaluatorForceReuse,
     const auto expected = internal::gpw_forces_at_density(
         atoms, method, shadow_a, c, h, shadow_b, c, h);
     for (int repeat = 0; repeat < 2; ++repeat) {
+#ifdef _OPENMP
+        const int original_threads = omp_get_max_threads();
+        omp_set_num_threads(8);
+#endif
         const auto actual = internal::gpw_forces_at_density(
             atoms, method, shadow_a, c, h, shadow_b, c, h, &cache);
+#ifdef _OPENMP
+        omp_set_num_threads(original_threads);
+#endif
         ASSERT_EQ(actual.size(), expected.size());
         for (std::size_t a = 0; a < actual.size(); ++a)
             for (int k = 0; k < 3; ++k) {
                 EXPECT_TRUE(std::isfinite(actual[a][k]));
                 EXPECT_NEAR(actual[a][k], expected[a][k], 1e-12);
             }
-        EXPECT_TRUE(cache.force_cbgd_valid);
+        EXPECT_FALSE(cache.force_cbgd_valid);
     }
     EXPECT_THROW(internal::gpw_forces_at_density(atoms, method, shadow_a, c, h,
                                                  shadow_b, c, h, &cache,

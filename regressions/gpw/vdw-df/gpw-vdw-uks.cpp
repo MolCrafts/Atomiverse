@@ -7,9 +7,7 @@
 /// iteration; E_c^nl lands on GpwResult::e_disp. Oracle numbers in
 /// REFERENCE.md (offline CP2K only; never live in ctest).
 ///
-/// Exit non-zero on failure. Wall ~3–4 min Release (8 threads) — SC
-/// nonlocal RPS every SCF iter on O₂@400 Ry; family precedent
-/// `gpw-uks-pbe` ~177 s / `gpw-vdw-scf-potential` ~121 s.
+/// Exit non-zero on a numerical failure or whole-section wall >60 seconds.
 
 #include <chrono>
 #include <cmath>
@@ -68,6 +66,7 @@ ATV::cpu::Frame make_water_dimer() {
 int run() {
     using namespace ATV;
     using clock = std::chrono::steady_clock;
+    const auto section_start = clock::now();
 
     // ── Part A: O₂ triplet Γ-UKS PBE + DRSLL vs offline CP2K 2026.1 LSD ──
     // CP2K 2026.1 (rev 85b8a9b49c) LSD PBE + NON_LOCAL TYPE DRSLL, CUTOFF
@@ -180,6 +179,11 @@ int run() {
         std::fprintf(stderr, "FAIL gpw-vdw-uks\n");
         return 1;
     }
+    const double wall =
+        std::chrono::duration<double>(clock::now() - section_start).count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall);
+    if (wall > 60.0)
+        return 1;
     std::printf("PASS gpw-vdw-uks\n");
     return 0;
 }

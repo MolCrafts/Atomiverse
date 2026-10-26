@@ -4,7 +4,6 @@
 /// Single-function checks for `internal::AoDiisEigenDevice` (no full SCF).
 /// Host oracles: `gpw_diis_error`, `diagonalize_fock`, `build_density_matrix`.
 
-#include "atomiverse/cpu/gpw/internal/diis.h"
 #include "atomiverse/cpu/linalg/density.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/linalg/matrix.h"

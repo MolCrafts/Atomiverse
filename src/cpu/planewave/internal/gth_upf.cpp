@@ -49,9 +49,9 @@ AccReal gth_proj_r(AccReal r, int l, int i, AccReal rl) {
 } // namespace
 
 UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
-    if (!(r_max > 0) || n_r < 2)
+    if (!std::isfinite(r_max) || !(r_max > AccReal(1e-5)) || n_r < 3)
         throw std::invalid_argument(
-            "upf_from_gth: r_max must be > 0 and n_r >= 2");
+            "upf_from_gth: r_max must be finite and > 1e-5 Bohr, and n_r >= 3");
     if (!(pot.rloc > 0))
         throw std::invalid_argument("upf_from_gth: GTH rloc must be > 0 for "
                                     + pot.name);
@@ -65,9 +65,13 @@ UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
     const AccReal r_min = AccReal(1e-5);
     const AccReal dx = std::log(r_max / r_min) / static_cast<AccReal>(n_r - 1);
     upf.r.resize(static_cast<std::size_t>(n_r));
-    for (int ir = 0; ir < n_r; ++ir)
+    upf.rab.resize(static_cast<std::size_t>(n_r));
+    for (int ir = 0; ir < n_r; ++ir) {
         upf.r[static_cast<std::size_t>(ir)] =
             r_min * std::exp(dx * static_cast<AccReal>(ir));
+        upf.rab[static_cast<std::size_t>(ir)] =
+            upf.r[static_cast<std::size_t>(ir)] * dx;
+    }
 
     // UPF stores the local potential in Rydberg (upf_vloc_to_gspace halves it).
     upf.v_loc.resize(upf.r.size());
@@ -93,6 +97,7 @@ UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
             UPFData::KBProjector kb;
             kb.l = ch.l;
             kb.beta.resize(upf.r.size());
+            kb.radial_points = upf.r.size();
             for (std::size_t ir = 0; ir < upf.r.size(); ++ir)
                 kb.beta[ir] = upf.r[ir]
                               * gth_proj_r(upf.r[ir], ch.l, i,

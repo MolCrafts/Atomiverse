@@ -181,7 +181,8 @@ class PW {
     ///         rejects.
     PWResult& forces(cpu::Frame& frame);
 
-    /// @brief Device SCF plus analytic stress. Returns σ [eV/Å³] and writes
+    /// @brief Device SCF plus frozen-density NSCF strain-FD stress (h=2e-3).
+    ///        Returns σ [eV/Å³] and writes
     ///        `kStress` = σΩ [eV] and `kEnergy` [eV].
     /// @param frame Geometry in, stress and energy meta out.
     /// @return Intensive stress [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
@@ -225,17 +226,18 @@ std::vector<std::array<double, 3>>
 pw_forces_analytic(const cpu::Frame& frame, const PW& method,
                    double* energy_ha_out = nullptr);
 
-/// @brief Nielsen–Martin analytic cell stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
+/// @brief Frozen-density NSCF strain-FD stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 ///
 /// CUDA twin of `cpu::pw::pw_stress`: one device SCF + Hellmann–Feynman
 /// strain-FD of the non-self-consistent total / free energy under remapped
-/// density. Mechanical / CP2K sign:
+/// density at strain step 2e-3; this is not a closed-form tensor.
+/// Mechanical / CP2K sign:
 /// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\). Restricted metallic
 /// smear uses the Mermin free energy \(F=E_{\mathrm{KS}}-TS\). Supports
 /// restricted fixed closed shell (LSDA/PBE), restricted metallic smear
 /// (FD/Gaussian/MP), and collinear fixed-occupation UKS under **LSDA/PBE**
 /// (remaps both \(\rho_\uparrow\) and \(\rho_\downarrow\)). Rejects
-/// spin∧smear analytic stress (use `cpu::pw::pw_stress_fd`) and other
+/// spin∧smear one-SCF stress (use `cpu::pw::pw_stress_fd`) and other
 /// members `PW::run` rejects.
 ///
 /// @param frame         Geometry [Å], types (Z), cell; not mutated.

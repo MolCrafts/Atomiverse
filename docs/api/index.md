@@ -80,10 +80,29 @@ Start with these CPU headers:
 - [`gradient_result.h` — GradientResult (the `forces()` return)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/gradient_result.h)
 - [`XCType`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
 - [`cpu::pw::PW`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) — plane-wave DFT
-- [`cpu::gpw::GpwDft`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_solver.h) + [`cpu::gpw::GPWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_evaluator.h) — GPW DFT (`GpwDft` is a `Driver<gpw::Phase>` node, Frame in / Frame out via `run(frame)` / `forces(frame)`; `GPWEvaluator(std::move(dft))` binds it into an outer driver)
+- [`cpu::gpw::GpwDft`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_solver.h) — GPW DFT: a `Driver<gpw::Phase>` node with Frame `run` / `forces` / `stress`; mount the method directly for Born–Oppenheimer work. [`GPWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_evaluator.h) remains for electronic propagators and unmigrated callers.
 - [`cpu::semiempirical::AM1` / `RM1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/am1_solver.h) — NDDO
 - [`cpu::semiempirical::DFTB2`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/dftb2.h) (also `DFTB0`, `DFTB3`) — SCC-DFTB on in-tree Slater-Koster tables
 - [`cpu::semiempirical::GFN1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/gfn1.h) (also `GFN0`, `GFN2`, `IPEA`) — extended tight binding, energy + analytic forces (H/C/N/O)
+
+Gaussian `run(frame)` requests energy and preserves unrequested forces;
+`forces(frame)` explicitly requests the analytic nuclear forces.
+
+### Extend molecular CPU exchange–correlation
+
+Implement [`electronic::XcFunctional`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/electronic/xc_functional.h)
+and pass a `shared_ptr<const XcFunctional>` to RKS or UKS. The callback evaluates
+one batch of physical density samples; the existing SCF Driver owns iteration,
+grids and analytic nuclear forces. The checked `evaluate` entry validates
+shapes and complete finite outputs; providers override `evaluate_batch`.
+Energy output is per volume (Ha/Bohr³), with spin-resolved first derivatives.
+
+The [independent consumer example](https://github.com/MolCrafts/Atomiverse/tree/dev/examples/xc-extension)
+uses only installed headers and `find_package(Atomiverse CONFIG REQUIRED
+COMPONENTS HF EVALUATE)`. Rho/sigma are supported for CPU molecular KS;
+tau/Laplacian, custom hybrid operators, second-order response kernels and CUDA
+callbacks require further implementation. No new Driver or per-plugin enum
+member is needed.
 
 ### Run SCF workflows on the CUDA backend
 
@@ -105,9 +124,18 @@ headers:
 
 - [`cuda::scf::RHF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/rhf.cuh)
 - [`cuda::scf::UHF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/uhf.cuh)
+- [`cuda::scf::MP2`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/mp2.cuh)
 - [`cuda::scf::SCFEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/scf_evaluator.cuh)
 - [`cuda::Evaluate`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/evaluate.cuh)
 - [`cuda::single_point`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/single_point.cuh)
+
+`cuda::scf::MP2{cuda_rhf}.run(frame)` performs canonical closed-shell
+correlation on the live device RHF workspace. Frozen core and OS/SS scaling
+are supported; MP2 forces are unavailable. Mutable calls publish the
+correlated total in the Frame [eV] and return spin channels and energies
+[Hartree]. The extra correlation scratch budget defaults to 512 MiB,
+excluding HF and library contexts. See the [CUDA MP2 example](../tutorial/methods/scf-mp2.md#cuda-closed-shell-mp2)
+and [GH200 validation](../../benchmarks/cuda/mp2-validation.md).
 
 ### Record output and analyze results
 

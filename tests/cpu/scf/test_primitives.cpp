@@ -132,6 +132,32 @@ TEST(PrimitiveIntegrals, NuclearPrim_Positive) {
     EXPECT_GT(V, 0.0) << "Raw nuclear integral (without -Z) must be positive";
 }
 
+TEST(PrimitiveIntegrals, NuclearBlockNearProductCenterMatchesScalarAndLimit) {
+    // T=(alpha+beta)|P-C|^2=1.8e-12 is just above the old upward-only
+    // threshold: cancellation in F_1 and F_2 corrupted the p-shell block.
+    const double alpha = 1.0, beta = 0.8, coefficient = 1.0;
+    ShellBlock A{1, &alpha, &coefficient, {0, 0, 0}, 1, 3, 0};
+    ShellBlock B{1, &beta, &coefficient, {0, 0, 0}, 1, 3, 3};
+    const Atom nucleus{1, {1e-6, 0, 0}};
+    double block[9]{};
+    nuclear_block(A, B, &nucleus, 1, block);
+    const double gamma = alpha + beta;
+    // At C=P the unnormalized p-p diagonal Coulomb attraction is
+    // -2*pi/(3*gamma^2); moving C by 1e-6 Bohr changes it by <5e-13.
+    const double coincident_limit = -2 * M_PI / (3 * gamma * gamma);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            const Shell a{1, &alpha, &coefficient, {0, 0, 0}, 1, i};
+            const Shell b{1, &beta, &coefficient, {0, 0, 0}, 1, j};
+            EXPECT_NEAR(block[3 * i + j], nuclear(a, b, &nucleus, 1), 2e-14)
+                << "component=" << i << ',' << j;
+            EXPECT_NEAR(block[3 * i + j], i == j ? coincident_limit : 0.0,
+                        2e-12)
+                << "component=" << i << ',' << j;
+        }
+    }
+}
+
 // ── eri_prim ─────────────────────────────────────────────────────────
 
 TEST(PrimitiveIntegrals, ERIPrim_8FoldSymmetry) {

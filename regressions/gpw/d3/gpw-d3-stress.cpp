@@ -53,11 +53,13 @@ constexpr double kSTotTol = 1.0e-4; // Ha/Bohr³ (sanity: units/sign/blow-up)
 constexpr double kAnFdTol = 2.0e-5;    // Ha/Bohr³ (gpw-d4-stress precedent)
 constexpr double kOffDiagTol = 1.0e-8; // Ha/Bohr³
 constexpr double kDiagFloor = 1.0e-10; // Ha/Bohr³
+constexpr double kWallBudget = 60.0;   // s, product + plain + FD twin
 
 } // namespace
 
 int run() {
     using clock = std::chrono::steady_clock;
+    const auto whole_start = clock::now();
 
     // Periodic water dimer, 12 Å cubic cell (REFERENCE.md; same geometry as
     // the gpw-d3-forces periodic twin and gpw-d4-stress).
@@ -269,10 +271,18 @@ int run() {
                 eval.last_result().iters);
     std::printf("wall_product=%.3f s  wall_plain=%.3f s  wall_fd_twin=%.3f s\n",
                 wall_product_s, wall_plain_s, wall_fd_s);
+    const double wall_total_s =
+        std::chrono::duration<double>(clock::now() - whole_start).count();
+    if (wall_total_s > kWallBudget) {
+        std::printf("FAIL: whole section wall=%.3f s exceeds %.0f s budget\n",
+                    wall_total_s, kWallBudget);
+        return 1;
+    }
 
     std::printf("PASS: gpw-d3-stress  max|dσdisp|=%.3e  |dE_disp|=%.3e  "
-                "wall_prod=%.3f s\n",
-                max_disp_err, std::abs(e_disp - kEDispRef), wall_product_s);
+                "wall_prod=%.3f s  wall_total=%.3f s\n",
+                max_disp_err, std::abs(e_disp - kEDispRef), wall_product_s,
+                wall_total_s);
     return 0;
 }
 

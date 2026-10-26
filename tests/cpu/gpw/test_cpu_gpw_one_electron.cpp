@@ -1,7 +1,10 @@
 /// @file tests/cpu/gpw/test_cpu_gpw_one_electron.cpp
 /// @brief GPW one-electron integrals: McMurchie-Davidson S and T vs closed forms.
 
+#include <array>
 #include <cmath>
+#include <complex>
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -249,4 +252,196 @@ TEST(GpwOneElectron, ContractedAngularMatchesPrimSum) {
     }
     EXPECT_NEAR(s, s_ref, 1e-13 * std::max(1.0, std::abs(s_ref)));
     EXPECT_NEAR(t, t_ref, 1e-13 * std::max(1.0, std::abs(t_ref)));
+}
+
+// The Gaussian characteristic function is
+// F_ss(q) = c_a c_b (π/p)^(3/2) exp[−μ|A−B|²−|q|²/(4p)−iq·P].
+// These closed-form tests differentiate that function analytically; they do
+// not duplicate the Hermite-table implementation.
+TEST(GpwOneElectron, FourierSsSeparatedCenters) {
+    using ATV::cpu::gpw::prim_overlap_fourier;
+    const auto a = prim(0.8, 0.2, -0.3, 0.5, 0, 0, 0, -0.7);
+    const auto b = prim(1.3, -0.6, 0.4, 0.1, 0, 0, 0, 1.2);
+    const double q[3] = {0.7, -0.45, 0.3};
+    const double p = a.alpha + b.alpha;
+    const double mu = a.alpha * b.alpha / p;
+    double phase = 0.0, q2 = 0.0;
+    for (int d = 0; d < 3; ++d) {
+        phase += q[d] * (a.alpha * a.center[d] + b.alpha * b.center[d]) / p;
+        q2 += q[d] * q[d];
+    }
+    const auto want = a.coeff * b.coeff * std::pow(M_PI / p, 1.5)
+                      * std::exp(-mu * dist2(a, b) - q2 / (4.0 * p))
+                      * std::complex<double>{std::cos(phase), -std::sin(phase)};
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(a, b, q) - want), 0.0, 2e-13);
+}
+
+// Odd products can have zero overlap at q=0 and a nonzero Fourier overlap.
+// ∫ x exp(−p r²−iq·r) d³r = −iq_x/(2p) F_ss(q).
+// ∫ x³ exp(...) d³r = i[q_x³/(8p³)−3q_x/(4p²)] F_ss(q).
+TEST(GpwOneElectron, FourierOddProductsRetainNonzeroImaginaryPart) {
+    using ATV::cpu::gpw::prim_overlap_fourier;
+    const double alpha = 0.7, beta = 1.1, p = alpha + beta;
+    const double q[3] = {0.9, -0.6, 0.35};
+    const double q2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2];
+    const double fss = std::pow(M_PI / p, 1.5) * std::exp(-q2 / (4.0 * p));
+    const auto s = prim(alpha, 0, 0, 0, 0, 0, 0);
+    const auto px = prim(beta, 0, 0, 0, 1, 0, 0);
+    const auto dxx = prim(alpha, 0, 0, 0, 2, 0, 0);
+    EXPECT_DOUBLE_EQ(prim_overlap(s, px), 0.0);
+    EXPECT_DOUBLE_EQ(prim_overlap(dxx, px), 0.0);
+    const std::complex<double> want_sp{0.0, -q[0] / (2.0 * p) * fss};
+    const std::complex<double> want_dp{
+        0.0,
+        (q[0] * q[0] * q[0] / (8.0 * p * p * p) - 3.0 * q[0] / (4.0 * p * p))
+            * fss};
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(s, px, q) - want_sp), 0.0, 2e-13);
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(dxx, px, q) - want_dp), 0.0,
+                2e-13);
+}
+
+// Same-center even moments, with nonzero q in every Cartesian direction:
+// m2(q)=1/(2p)−q²/(4p²),
+// m4(q)=3/(4p²)−3q²/(4p³)+q⁴/(16p⁴).
+// The old S(q=0)*form-factor approximation misses the q-dependent terms.
+TEST(GpwOneElectron, FourierPAndDClosedMoments) {
+    using ATV::cpu::gpw::prim_overlap_fourier;
+    const double alpha = 0.7, beta = 1.1, p = alpha + beta;
+    const double center[3] = {0.3, -0.2, 0.4};
+    const double q[3] = {0.9, -0.6, 0.35};
+    const double q2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2];
+    const double phase = q[0] * center[0] + q[1] * center[1] + q[2] * center[2];
+    const auto fss = -0.7 * 0.4 * std::pow(M_PI / p, 1.5)
+                     * std::exp(-q2 / (4.0 * p))
+                     * std::complex<double>{std::cos(phase), -std::sin(phase)};
+    const double m2x = 1.0 / (2.0 * p) - q[0] * q[0] / (4.0 * p * p);
+    const double m2y = 1.0 / (2.0 * p) - q[1] * q[1] / (4.0 * p * p);
+    const double m4x = 3.0 / (4.0 * p * p)
+                       - 3.0 * q[0] * q[0] / (4.0 * p * p * p)
+                       + std::pow(q[0], 4) / (16.0 * p * p * p * p);
+    const auto s = prim(alpha, center[0], center[1], center[2], 0, 0, 0, -0.7);
+    const auto px = prim(alpha, center[0], center[1], center[2], 1, 0, 0, -0.7);
+    const auto px_b = prim(beta, center[0], center[1], center[2], 1, 0, 0, 0.4);
+    const auto dxx =
+        prim(alpha, center[0], center[1], center[2], 2, 0, 0, -0.7);
+    const auto dxx_b =
+        prim(beta, center[0], center[1], center[2], 2, 0, 0, 0.4);
+    const auto dxy =
+        prim(alpha, center[0], center[1], center[2], 1, 1, 0, -0.7);
+    const auto dxy_b =
+        prim(beta, center[0], center[1], center[2], 1, 1, 0, 0.4);
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(s, dxx_b, q) - fss * m2x), 0.0,
+                2e-13);
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(px, px_b, q) - fss * m2x), 0.0,
+                2e-13);
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(dxx, dxx_b, q) - fss * m4x), 0.0,
+                2e-13);
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(dxy, dxy_b, q) - fss * m2x * m2y),
+                0.0, 2e-13);
+}
+
+// For displaced centers, completing the square gives a complex mean
+// z=P−iq/(2p) and variance v=1/(2p). The x-only p(A)*d(B) polynomial
+// has expectation (z−A)(z−B)²+v[(z−A)+2(z−B)].
+TEST(GpwOneElectron, FourierSeparatedPdClosedForm) {
+    using ATV::cpu::gpw::prim_overlap_fourier;
+    const auto a = prim(0.8, 0.2, -0.3, 0.5, 1, 0, 0, -0.7);
+    const auto b = prim(1.3, -0.6, 0.4, 0.1, 2, 0, 0, 1.2);
+    const double q[3] = {0.7, -0.45, 0.3};
+    const double p = a.alpha + b.alpha;
+    const double mu = a.alpha * b.alpha / p;
+    double phase = 0.0, q2 = 0.0;
+    for (int d = 0; d < 3; ++d) {
+        phase += q[d] * (a.alpha * a.center[d] + b.alpha * b.center[d]) / p;
+        q2 += q[d] * q[d];
+    }
+    const auto fss = a.coeff * b.coeff * std::pow(M_PI / p, 1.5)
+                     * std::exp(-mu * dist2(a, b) - q2 / (4.0 * p))
+                     * std::complex<double>{std::cos(phase), -std::sin(phase)};
+    const double P = (a.alpha * a.center[0] + b.alpha * b.center[0]) / p;
+    const std::complex<double> za{P - a.center[0], -q[0] / (2.0 * p)};
+    const std::complex<double> zb{P - b.center[0], -q[0] / (2.0 * p)};
+    const auto want = fss * (za * zb * zb + (za + 2.0 * zb) / (2.0 * p));
+    EXPECT_NEAR(std::abs(prim_overlap_fourier(a, b, q) - want), 0.0, 2e-13);
+}
+
+TEST(GpwOneElectron, FourierZeroWavevectorAndConjugation) {
+    using ATV::cpu::gpw::prim_overlap_fourier;
+    const std::array<std::array<int, 3>, 10> powers{{{0, 0, 0},
+                                                     {1, 0, 0},
+                                                     {0, 1, 0},
+                                                     {0, 0, 1},
+                                                     {2, 0, 0},
+                                                     {1, 1, 0},
+                                                     {1, 0, 1},
+                                                     {0, 2, 0},
+                                                     {0, 1, 1},
+                                                     {0, 0, 2}}};
+    const double zero[3] = {0, 0, 0};
+    const double q[3] = {0.9, -0.6, 0.35};
+    const double minus_q[3] = {-q[0], -q[1], -q[2]};
+    for (const auto& la : powers)
+        for (const auto& lb : powers) {
+            const auto a = prim(0.8, 0.2, -0.3, 0.5, la[0], la[1], la[2], -0.7);
+            const auto b = prim(1.3, -0.6, 0.4, 0.1, lb[0], lb[1], lb[2], 1.2);
+            const auto f0 = prim_overlap_fourier(a, b, zero);
+            EXPECT_NEAR(f0.real(), prim_overlap(a, b), 2e-13);
+            EXPECT_DOUBLE_EQ(f0.imag(), 0.0);
+            const auto fq = prim_overlap_fourier(a, b, q);
+            EXPECT_NEAR(
+                std::abs(prim_overlap_fourier(a, b, minus_q) - std::conj(fq)),
+                0.0, 2e-13);
+            EXPECT_NEAR(std::abs(prim_overlap_fourier(b, a, q) - fq), 0.0,
+                        2e-13);
+        }
+}
+
+TEST(GpwOneElectron, FourierRejectsInvalidPrimitiveDomain) {
+    using ATV::cpu::gpw::prim_overlap_fourier;
+    const double q[3] = {0.2, 0.3, -0.4};
+    auto a = prim(0.8, 0, 0, 0, 0, 0, 0);
+    const auto b = prim(1.1, 0, 0, 0, 0, 0, 0);
+    a.alpha = -0.8;
+    EXPECT_THROW(prim_overlap_fourier(a, b, q), std::invalid_argument);
+    a.alpha = 0.8;
+    a.l[0] = 9;
+    EXPECT_THROW(prim_overlap_fourier(a, b, q), std::invalid_argument);
+    a.l[0] = -1;
+    EXPECT_THROW(prim_overlap_fourier(a, b, q), std::invalid_argument);
+}
+
+// Separate rows call the shared Fourier kernel concurrently during Berry /
+// Wannier assembly. Different exponents, centers and angular powers exercise
+// the per-thread Hermite geometry keys against closed characteristic moments.
+TEST(GpwOneElectron, FourierConcurrentHermiteGeometry) {
+    using ATV::cpu::gpw::prim_overlap_fourier;
+    constexpr int count = 96;
+    std::array<GridPrimitive, count> a, b;
+    std::array<std::array<double, 3>, count> q;
+    std::array<std::complex<double>, count> got, want;
+    for (int n = 0; n < count; ++n) {
+        const double alpha = 0.5 + 0.01 * n, beta = 0.8 + 0.005 * n;
+        const double p = alpha + beta;
+        const double center[3] = {0.01 * n, -0.02 * n, 0.03 * n};
+        const int lx = n % 3 == 0 ? 0 : 1;
+        const int ly = n % 3 == 2 ? 1 : 0;
+        a[n] = prim(alpha, center[0], center[1], center[2], lx, ly, 0, 0.7);
+        b[n] = prim(beta, center[0], center[1], center[2], lx, ly, 0, -0.4);
+        q[n] = {0.2 + 0.001 * n, -0.3 + 0.003 * n, 0.4};
+        const double phase =
+            q[n][0] * center[0] + q[n][1] * center[1] + q[n][2] * center[2];
+        const double q2 =
+            q[n][0] * q[n][0] + q[n][1] * q[n][1] + q[n][2] * q[n][2];
+        want[n] = -0.28 * std::pow(M_PI / p, 1.5) * std::exp(-q2 / (4.0 * p))
+                  * std::complex<double>{std::cos(phase), -std::sin(phase)};
+        if (lx)
+            want[n] *= 1.0 / (2.0 * p) - q[n][0] * q[n][0] / (4.0 * p * p);
+        if (ly)
+            want[n] *= 1.0 / (2.0 * p) - q[n][1] * q[n][1] / (4.0 * p * p);
+    }
+#pragma omp parallel for num_threads(4) schedule(dynamic, 1)
+    for (int n = 0; n < count; ++n)
+        got[n] = prim_overlap_fourier(a[n], b[n], q[n].data());
+    for (int n = 0; n < count; ++n)
+        EXPECT_NEAR(std::abs(got[n] - want[n]), 0.0, 2e-13) << "row " << n;
 }

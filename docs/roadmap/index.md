@@ -3,7 +3,7 @@
 Honest inventory of what Atomiverse can compute today: method × backend ×
 status. Rows are marked implemented only when the method is reachable from the
 public API **and** pinned by an end-to-end pinned case. Snapshot
-against **`master`**.
+against **`dev`** (the development branch; `master` is the released snapshot).
 
 Each roadmap chapter has a **tutorial twin** (theory + practice). The tables
 below are the same spine as the Tutorial nav — status here, pedagogy there.

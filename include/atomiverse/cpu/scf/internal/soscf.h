@@ -178,19 +178,6 @@ class SOSCFStepper {
     ///        channel, α/β consistency, occupation bounds).
     void validate_() const;
 
-    /// @brief Semicanonicalize one spin channel in place: diagonalize the
-    ///        occ-occ and virt-virt blocks of CᵀFC (block-diagonal rotation;
-    ///        density-invariant), write the semicanonical ε, and return the
-    ///        occ-virt gradient block of F in the rotated basis.
-    /// @param F AO Fock matrix [Hartree].
-    /// @param C MO coefficients, rotated in place (dimensionless).
-    /// @param eig Semicanonical orbital energies out [Hartree].
-    /// @param n_occ Occupied count of this channel (dimensionless).
-    /// @return F_ai block (n_virt × n_occ) in the semicanonical basis
-    ///         [Hartree].
-    static RealMatrix semicanonicalize_(const RealMatrix& F, RealMatrix& C,
-                                        RealVector& eig, int n_occ);
-
     /// @brief Full four-index MO transform of the dense chemist-order AO
     ///        tensor (same reshape/dot pattern as
     ///        `OrbitalHessian::transform_block_`); used for the five

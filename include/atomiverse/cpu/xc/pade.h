@@ -13,9 +13,8 @@
 /// spin-interpolation between the para- and ferromagnetic parameter sets.
 ///
 /// Convention matches the project XCOutput (see cpu/scf/xc_functional.h):
-///   - `exc` is the XC energy density PER ELECTRON [Hartree], i.e. E_xc =
-///     integral rho(r) exc(r) dr.
-///   - `vrho_a`, `vrho_b` are d(rho*exc)/d(rho_sigma) (the XC potential).
+///   - `energy_density` is f_xc [Ha/Bohr^3], E_xc = integral f_xc dr.
+///   - `vrho_a`, `vrho_b` are df_xc/d(rho_sigma) (the XC potential).
 #pragma once
 
 namespace ATV {
@@ -24,9 +23,9 @@ namespace xc {
 
 /// @brief PADE LDA output at a single point (LDA: no gradient channels).
 struct PadeXC {
-    double exc = 0.0;    ///< XC energy per electron [Hartree] (= -p/q).
-    double vrho_a = 0.0; ///< d(rho*exc)/drho_alpha.
-    double vrho_b = 0.0; ///< d(rho*exc)/drho_beta.
+    double energy_density = 0.0; ///< f_xc [Ha/Bohr^3] (= -rho*p/q).
+    double vrho_a = 0.0;         ///< df_xc/drho_alpha.
+    double vrho_b = 0.0;         ///< df_xc/drho_beta.
 };
 
 /// @brief Spin-polarized Goedecker-Teter-Hutter Padé LDA at one grid point.
@@ -37,7 +36,7 @@ struct PadeXC {
 ///
 /// @param rho_a Alpha density [electrons/Bohr^3].
 /// @param rho_b Beta density [electrons/Bohr^3].
-/// @return PadeXC with exc and the two spin-resolved potentials.
+/// @return PadeXC with energy_density and the two spin-resolved potentials.
 PadeXC pade_lsd(double rho_a, double rho_b);
 
 } // namespace xc

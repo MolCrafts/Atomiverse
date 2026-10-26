@@ -14,7 +14,9 @@ namespace internal {
 /// @brief Evaluate the closed-shell PBE XC potential (local part), energy
 ///        density, and GGA flux on the real grid.
 ///
-/// Per grid point this reproduces `cpu::scf::evaluate_xc(XCType::PBE, ρ/2,
+/// The device energy channel is epsilon per electron; the CPU point kernel
+/// reports f = rho * epsilon per volume. Potentials use the same convention.
+/// Per grid point this implements the same functional as `cpu::scf::evaluate_xc(XCType::PBE, ρ/2,
 /// ρ/2, σ/4, σ/4, σ/4)` with σ = |∇ρ|² — PBE exchange (κ = 0.804,
 /// μ = 0.21951…) over a PW92 LSDA correlation base plus the PBE H gradient
 /// correction — including the `ρ < 1e-12` cutoff that zeroes every output.

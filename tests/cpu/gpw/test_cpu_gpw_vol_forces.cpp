@@ -9,6 +9,8 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -18,6 +20,7 @@
 
 using ATV::cpu::gpw::mbd_rsscs_pbe;
 using ATV::cpu::gpw::ts_pbe;
+using ATV::cpu::gpw::internal::mbd_rsscs_energy;
 
 namespace {
 
@@ -51,6 +54,8 @@ TEST(GpwVolForces, VolumeScaledMbdForcesMatchFd) {
         mbd_rsscs_pbe(kZ, pos, cell0, /*periodic=*/false, 0.83, 6.0, v);
     ASSERT_EQ(r.forces.size(), 6u);
     EXPECT_TRUE(std::isfinite(r.energy));
+    EXPECT_DOUBLE_EQ(r.energy,
+                     mbd_rsscs_energy(kZ, pos, cell0, false, 0.83, 6.0, v));
     EXPECT_LT(r.energy, 0.0);
     // Distinct from free-atom (v=1) water-dimer pin ~ -1.493e-3 Ha.
     EXPECT_GT(r.energy, -1.4e-3);
@@ -64,11 +69,11 @@ TEST(GpwVolForces, VolumeScaledMbdForcesMatchFd) {
         for (int d = 0; d < 3; ++d) {
             const double save = pos_fd[i][d];
             pos_fd[i][d] = save + h;
-            const double ep =
-                mbd_rsscs_pbe(kZ, pos_fd, cell0, false, 0.83, 6.0, v).energy;
+            const double ep = ATV::cpu::gpw::internal::mbd_rsscs_energy(
+                kZ, pos_fd, cell0, false, 0.83, 6.0, v);
             pos_fd[i][d] = save - h;
-            const double em =
-                mbd_rsscs_pbe(kZ, pos_fd, cell0, false, 0.83, 6.0, v).energy;
+            const double em = ATV::cpu::gpw::internal::mbd_rsscs_energy(
+                kZ, pos_fd, cell0, false, 0.83, 6.0, v);
             pos_fd[i][d] = save;
             const double fd = -(ep - em) / (2.0 * h);
             max_err = std::max(max_err, std::abs(fd - r.forces[i][d]));
@@ -81,6 +86,32 @@ TEST(GpwVolForces, VolumeScaledMbdForcesMatchFd) {
                 max_err, sum_norm);
     EXPECT_LT(max_err, 1e-6);
     EXPECT_LT(sum_norm, 1e-8);
+}
+
+TEST(GpwVolForces, MbdEnergyAdmitsOnlyValidPhysicalInputs) {
+    const std::vector<int> z{1, 1};
+    const std::vector<std::array<double, 3>> pos{{0, 0, 0}, {2, 0, 0}};
+    const double cell[3]{8, 8, 8};
+    EXPECT_THROW(mbd_rsscs_energy(z, {pos[0]}, cell, false),
+                 std::runtime_error);
+    EXPECT_THROW(mbd_rsscs_energy(z, pos, cell, false, 0.83, 6.0, {1.0}),
+                 std::runtime_error);
+    EXPECT_THROW(mbd_rsscs_energy(z, pos, cell, false, 0.83, 6.0, {1.0, 0.0}),
+                 std::runtime_error);
+    EXPECT_THROW(mbd_rsscs_energy(z, pos, cell, false,
+                                  std::numeric_limits<double>::infinity()),
+                 std::runtime_error);
+    auto invalid_pos = pos;
+    invalid_pos[0][0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(mbd_rsscs_energy(z, invalid_pos, cell, false),
+                 std::runtime_error);
+    const int mesh[3]{2, 0, 2};
+    EXPECT_THROW(mbd_rsscs_energy(z, pos, cell, true, 0.83, 6.0, {}, mesh),
+                 std::runtime_error);
+    EXPECT_THROW(mbd_rsscs_energy(z, pos, nullptr, true), std::runtime_error);
+    // The force operation admits inputs through the same energy owner.
+    EXPECT_THROW(mbd_rsscs_pbe(z, invalid_pos, cell, false),
+                 std::runtime_error);
 }
 
 // Same dual-gate for volume-scaled TS.

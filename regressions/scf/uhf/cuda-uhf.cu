@@ -29,6 +29,16 @@ __global__ void seed_force_sentinel(ATV::cuda::Frame frame, int n) {
     ATV::cuda::store_force(frame.atoms.fz, i, 0.5, frame.force_fault);
 }
 
+// Deliberately change device outputs before throwing: a failed run must
+// release its backend without publishing any of these candidate values.
+__global__ void corrupt_failed_candidate(ATV::cuda::Frame frame) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        frame.atoms.x[0] += 3;
+        frame.scalars->energy = 9001;
+        ATV::cuda::store_force(frame.atoms.fx, 0, 987.0, frame.force_fault);
+    }
+}
+
 class EnergyRequest : public ATV::cuda::Component {
   public:
     std::string name() const override { return "energy_request_probe"; }
@@ -44,12 +54,48 @@ class EnergyRequest : public ATV::cuda::Component {
 class ThrowOnce : public ATV::cuda::Component {
   public:
     bool fail = false;
+    int every = 1;
+    int builds = 0;
+    int launches = 0;
+    int destroys = 0;
+    bool live = false;
     std::string name() const override { return "scf_failure_probe"; }
-    void launch(const ATV::cuda::LaunchContext&) override {
+    int frequency() const override { return every; }
+    void build(const ATV::cuda::BuildContext&) override {
+        if (live)
+            throw std::runtime_error(
+                "UHF probe duplicate build got=1 want=0 tol=0");
+        live = true;
+        ++builds;
+    }
+    void launch(const ATV::cuda::LaunchContext& ctx) override {
+        if (!live || ctx.step % every != 0)
+            throw std::runtime_error("UHF probe invalid launch "
+                                     "lifecycle/frequency got=1 want=0 tol=0");
+        ++launches;
         if (fail) {
             fail = false;
+            corrupt_failed_candidate<<<
+                1, 1, 0, static_cast<cudaStream_t>(ctx.runtime.stream)>>>(
+                ctx.frame);
+            ATV_CUDA_CHECK(cudaGetLastError());
             throw std::runtime_error("injected SCF check failure");
         }
+    }
+    void destroy(const ATV::cuda::DestroyContext&) override {
+        if (!live)
+            throw std::runtime_error(
+                "UHF probe duplicate destroy got=1 want=0 tol=0");
+        live = false;
+        ++destroys;
+    }
+    void require_balanced(int want_builds) const {
+        if (live || builds != want_builds || destroys != want_builds)
+            throw std::runtime_error(
+                "UHF probe lifecycle got build=" + std::to_string(builds)
+                + " destroy=" + std::to_string(destroys)
+                + " live=" + std::to_string(live) + " want build=destroy="
+                + std::to_string(want_builds) + " live=0 tol=0");
     }
 };
 
@@ -112,18 +158,42 @@ cuda_uhf_case::Out run_cuda(ATV::cpu::Frame& frame, int na, int nb,
                             int charge) {
     using namespace ATV;
     ThrowOnce failure;
+    ThrowOnce periodic;
+    periodic.every = 3;
     cuda::scf::UHF uhf{cpu::scf::BasisSet::STO3G, na, nb, charge, 1e-12, 100};
     uhf.on(scf::Phase::check).add_ref(failure, -1000);
+    uhf.on(scf::Phase::check).add_ref(periodic, 1000);
     uhf.build();
+    int expected_builds = 0;
     auto nested_energy = [&] {
+        const int previous_launches = periodic.launches;
+        ++expected_builds;
         cuda::Evaluate eval;
         eval.on(evaluate::Phase::prepare).add(EnergyRequest{}, 0);
         eval.on(evaluate::Phase::evaluate).add_ref(uhf);
         eval.build();
         eval.run(frame);
+        failure.require_balanced(expected_builds);
+        periodic.require_balanced(expected_builds);
+        const int want_launches =
+            (uhf.iterations() + periodic.every - 1) / periodic.every;
+        if (periodic.launches - previous_launches != want_launches)
+            throw std::runtime_error(
+                "UHF periodic launch count got="
+                + std::to_string(periodic.launches - previous_launches)
+                + " want=" + std::to_string(want_launches) + " tol=0");
     };
     nested_energy();
-    const double nested_e = uhf.energy();
+    const double nested_e = frame.meta.get(kEnergy) / units::kHartreeInEv;
+    bool nested_cache_rejected = false;
+    try {
+        (void)uhf.energy();
+    } catch (const std::logic_error&) {
+        nested_cache_rejected = true;
+    }
+    if (!nested_cache_rejected)
+        throw std::runtime_error(
+            "UHF nested energy mirror got=available want=unavailable tol=0");
     if (uhf.last_force_on_device() || !sentinel_preserved("UHF", frame)) {
         std::printf("FAIL UHF parent force veto flag got=%d want=0 tol=0\n",
                     uhf.last_force_on_device());
@@ -143,6 +213,8 @@ cuda_uhf_case::Out run_cuda(ATV::cpu::Frame& frame, int na, int nb,
             != std::string::npos;
     }
     types[1] = original_z;
+    failure.require_balanced(expected_builds);
+    periodic.require_balanced(expected_builds);
     if (!identity_rejected) {
         std::printf("FAIL UHF changed identity rejection got=0 want=1 tol=0\n");
         return {};
@@ -155,14 +227,54 @@ cuda_uhf_case::Out run_cuda(ATV::cpu::Frame& frame, int na, int nb,
     } catch (const std::runtime_error& e) {
         rejected = std::string(e.what()) == "injected SCF check failure";
     }
+    failure.require_balanced(expected_builds);
+    periodic.require_balanced(expected_builds);
     if (!rejected) {
         std::printf("FAIL UHF injected failure got=0 want=1 tol=0\n");
         return {};
     }
     nested_energy();
+    // The standalone failure path previously called teardown_pass, which
+    // retrieved incomplete device science into the caller's Frame.
+    const double accepted_x = frame.span(kAtom_x)[0];
+    const double accepted_fx = frame.span(kAtom_fx)[0];
+    const double accepted_energy = frame.meta.get(kEnergy);
+    failure.fail = true;
+    bool standalone_rejected = false;
+    ++expected_builds;
+    try {
+        uhf.run(frame);
+    } catch (const std::runtime_error& e) {
+        standalone_rejected =
+            std::string(e.what()) == "injected SCF check failure";
+    }
+    failure.require_balanced(expected_builds);
+    periodic.require_balanced(expected_builds);
+    if (!standalone_rejected || frame.span(kAtom_x)[0] != accepted_x
+        || frame.span(kAtom_fx)[0] != accepted_fx
+        || frame.meta.get(kEnergy) != accepted_energy) {
+        std::printf(
+            "FAIL UHF failed standalone publication got=%d want=1 tol=0\n",
+            standalone_rejected);
+        return {};
+    }
+    // Reuse the same method after failure; the numerical oracle below still
+    // checks the physical result of this successful retry.
+    nested_energy();
     if (!sentinel_preserved("UHF retry", frame))
         return {};
+    ++expected_builds;
+    const int before_forces_launches = periodic.launches;
     const auto g = uhf.forces(frame);
+    failure.require_balanced(expected_builds);
+    periodic.require_balanced(expected_builds);
+    const int want_force_launches =
+        (uhf.iterations() + periodic.every - 1) / periodic.every;
+    if (periodic.launches - before_forces_launches != want_force_launches)
+        throw std::runtime_error(
+            "UHF standalone frequency count got="
+            + std::to_string(periodic.launches - before_forces_launches)
+            + " want=" + std::to_string(want_force_launches) + " tol=0");
     if (!std::isfinite(nested_e) || std::abs(nested_e - uhf.energy()) > 1e-10) {
         std::printf("FAIL UHF same-N nested energy got=%.16g want=%.16g "
                     "tol=1e-10 Ha\n",

@@ -1,0 +1,201 @@
+{
+  "oracle": "CP2K",
+  "version": "2026.2",
+  "revision": "git:c92cc08",
+  "date": "2026-10-25",
+  "binary": "/opt/homebrew/bin/cp2k.psmp",
+  "binary_sha256": "5cf34ca3c68ce4de9bce1a7a9813466dc19810baca8e27cd12db480f301471c7",
+  "data_directory": "/opt/homebrew/share/cp2k/data",
+  "data_file_sha256": {
+    "BASIS_MOLOPT": "686dd72e7601ee41d4a173e4c7c3946f1e750f03095090f44d3821c180a81a61",
+    "GTH_POTENTIALS": "5a9bfbc3b37a55917ade4fb704b80546d210d843759b94e3915e74acfc3fafb2"
+  },
+  "runs": [
+    {
+      "input": "si2_matched_energy_force.inp",
+      "input_sha256": "fc8e74835b1f8e7e49af5b6ed15c79fbdba7254f58f4f32983bdcb20a76b2e21",
+      "raw_output": "si2_matched_energy_force.cp2k.txt",
+      "raw_output_sha256": "f0d095f454f665696cf849df626d7718e3e0a7fbed0182e2b601e8d7d615c5b6",
+      "command": [
+        "cp2k.psmp",
+        "-i",
+        "si2_matched_energy_force.inp",
+        "-o",
+        "si2_matched_energy_force.out"
+      ],
+      "resolved_binary": "/opt/homebrew/bin/cp2k.psmp",
+      "cwd": "/tmp/atv-gpw-repair-evidence/canonical-si2",
+      "exit_code": 0,
+      "wall_seconds": 70.62246700003743,
+      "environment": {
+        "OMP_NUM_THREADS": "8",
+        "OPENBLAS_NUM_THREADS": "1",
+        "CP2K_DATA_DIR": "/opt/homebrew/share/cp2k/data"
+      }
+    },
+    {
+      "input": "si2_matched_geo_opt.inp",
+      "input_sha256": "c88df43b23305e126ec9167aa0393f239a729f84dee931d405fe9f8251cc523d",
+      "raw_output": "si2_matched_geo_opt.cp2k.txt",
+      "raw_output_sha256": "8fee54c883ca575f797c3c6a5bbf27fb162363b3cd66d66014b2853ee3b7cefa",
+      "command": [
+        "cp2k.psmp",
+        "-i",
+        "si2_matched_geo_opt.inp",
+        "-o",
+        "si2_matched_geo_opt.out"
+      ],
+      "resolved_binary": "/opt/homebrew/bin/cp2k.psmp",
+      "cwd": "/tmp/atv-gpw-repair-evidence/canonical-si2",
+      "exit_code": 0,
+      "wall_seconds": 118.21018333302345,
+      "environment": {
+        "OMP_NUM_THREADS": "8",
+        "OPENBLAS_NUM_THREADS": "1",
+        "CP2K_DATA_DIR": "/opt/homebrew/share/cp2k/data"
+      }
+    },
+    {
+      "input": "si2_matched_vib.inp",
+      "input_sha256": "03cbfbe2623412410ea860a6a10239bb68fc6c69a4227e231b8303ed5312813b",
+      "raw_output": "si2_matched_vib.cp2k.txt",
+      "raw_output_sha256": "07413eadfc6e23e3eb72ba9edfd8c1f1e0ad7a7bd6d756bfa5d8f5072afbd188",
+      "command": [
+        "cp2k.psmp",
+        "-i",
+        "si2_matched_vib.inp",
+        "-o",
+        "si2_matched_vib.out"
+      ],
+      "resolved_binary": "/opt/homebrew/bin/cp2k.psmp",
+      "cwd": "/tmp/atv-gpw-repair-evidence/canonical-si2",
+      "exit_code": 0,
+      "wall_seconds": 133.21842466597445,
+      "environment": {
+        "OMP_NUM_THREADS": "8",
+        "OPENBLAS_NUM_THREADS": "1",
+        "CP2K_DATA_DIR": "/opt/homebrew/share/cp2k/data"
+      }
+    }
+  ],
+  "off_equilibrium": {
+    "bond_Angstrom": 2.246,
+    "energy_Ha": -7.600561394706659,
+    "forces_Ha_Bohr": [
+      [
+        0.027274008,
+        6.32154382e-09,
+        3.51118623e-09
+      ],
+      [
+        -0.027274008,
+        -6.32099739e-09,
+        -3.51163041e-09
+      ]
+    ],
+    "energy_output": {
+      "line": 1069,
+      "text": " ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]             -7.600561394706659"
+    },
+    "force_output": [
+      {
+        "line": 1073,
+        "text": " FORCES|      1  2.72740080E-02  6.32154382E-09  3.51118623E-09   2.72740080E-02"
+      },
+      {
+        "line": 1074,
+        "text": " FORCES|      2 -2.72740080E-02 -6.32099739E-09 -3.51163041E-09   2.72740080E-02"
+      }
+    ]
+  },
+  "stationary_vibration_input": {
+    "positions_Angstrom": [
+      [
+        2.9274547419,
+        4.0,
+        4.0
+      ],
+      [
+        5.0725452581,
+        4.0,
+        4.0
+      ]
+    ],
+    "bond_Angstrom": 2.1450905162,
+    "energy_Ha": -7.603345177586478,
+    "forces_Ha_Bohr": [
+      [
+        -7.09733727e-08,
+        -3.89216218e-09,
+        3.95186186e-09
+      ],
+      [
+        7.09720992e-08,
+        3.89282473e-09,
+        -3.95119886e-09
+      ]
+    ],
+    "energy_output": {
+      "line": 2202,
+      "text": " ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]             -7.603345177586478"
+    },
+    "force_output": [
+      {
+        "line": 2206,
+        "text": " FORCES|      1 -7.09733727E-08 -3.89216218E-09  3.95186186E-09   7.11897870E-08"
+      },
+      {
+        "line": 2207,
+        "text": " FORCES|      2  7.09720992E-08  3.89282473E-09 -3.95119886E-09   7.11885168E-08"
+      }
+    ],
+    "evaluation_index": 13,
+    "max_abs_force_component_Ha_Bohr": 7.09733727e-08,
+    "max_force_norm_Ha_Bohr": 7.118978698527655e-08
+  },
+  "grid_optimized_geometry": {
+    "positions_Angstrom": [
+      [
+        2.9274546216,
+        3.9999999206,
+        3.9999999662
+      ],
+      [
+        5.0725453784,
+        4.0000000794,
+        4.0000000338
+      ]
+    ],
+    "bond_Angstrom": 2.1450907568000073,
+    "energy_Ha": -7.603345177586373,
+    "raw_coordinates": "si2_matched_geo_opt-final.xyz"
+  },
+  "vibration_input_minus_optimized_bond_Angstrom": -2.406000074728354e-07,
+  "stretch_frequency_cm1": 573.65790135,
+  "stretch_output": {
+    "line": 568,
+    "text": " VIB|Frequency (cm^-1)  5.7365790135E+02"
+  },
+  "vibration_force_trace": {
+    "raw_output": "si2_matched_vib-r-0.cp2k.txt",
+    "sha256": "e6663ddbbe933bd9afc2d401664a42bfd3e565494eae2661f4b6ddce35304612",
+    "force_evaluation_count": 13,
+    "interpretation": "First 12 are Cartesian plus/minus displaced samples; last evaluation 13 is the undisplaced vibration input."
+  },
+  "restart": {
+    "generated_by": "si2_matched_geo_opt.inp",
+    "vibration_input_keyword": "WFN_RESTART_FILE_NAME si2_matched_geo_opt-RESTART.wfn",
+    "sha256": "9910bf3db216cbcbc0c888bb7745fc0db1039aaef32dcdc9f7907ef6b718d212"
+  },
+  "acceptance_bounds": {
+    "nonstationary_energy_Ha": 1e-05,
+    "nonstationary_each_force_component_Ha_Bohr": 0.0001,
+    "stationary_energy_Ha": 1e-05,
+    "stationary_each_force_component_Ha_Bohr": 1e-05,
+    "raw_zero_frequency_cm1": 80,
+    "stretch_vs_CP2K_cm1": 100,
+    "stretch_vs_energy_curvature_cm1": 100,
+    "whole_section_seconds": 60
+  },
+  "thread_environment_note": "Recorded OMP_NUM_THREADS=8 and OPENBLAS_NUM_THREADS=1 are process environment requests. CP2K internal BLAS width was not queried and may be set internally; no fair matched-width wall ratio is established."
+}

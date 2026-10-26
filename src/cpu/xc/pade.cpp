@@ -101,9 +101,9 @@ PadeXC pade_lsd(double rho_a, double rho_b) {
     const double dx = 2.0 * (xp * q - p * xq) / (q * q) * fx2 / rhoab;
     const double dc = f13 * rs * dr - p / q;
 
-    out.exc = -p / q;             // epade, energy per electron
-    out.vrho_a = dc - dx * rho_b; // CP2K pade_lsd_1 pota
-    out.vrho_b = dc + dx * rho_a; // CP2K pade_lsd_1 potb
+    out.energy_density = -rhoab * p / q; // f_xc, energy per volume
+    out.vrho_a = dc - dx * rho_b;        // CP2K pade_lsd_1 pota
+    out.vrho_b = dc + dx * rho_a;        // CP2K pade_lsd_1 potb
     return out;
 }
 

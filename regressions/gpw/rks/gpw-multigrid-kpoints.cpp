@@ -1,7 +1,7 @@
-/// @file regressions/gpw/gpw-multigrid-kpoints/reg_gpw-multigrid-kpoints.cpp
+/// @file regressions/gpw/rks/gpw-multigrid-kpoints.cpp
 /// @brief Monkhorst-Pack k-point GPW RKS on diamond Si with CP2K-style
 ///        REL_CUTOFF multigrid product collocation (NGRIDS 4) — internal
-///        exactness gates plus the offline CP2K 2026.1 pin from REFERENCE.md.
+///        exactness gates plus external CP2K energy and stress pins.
 ///
 /// Out-of-library consumer: public GPW headers only, flat main(), hard-coded
 /// numbers, no external process. Gates (spec gpw-multigrid-kpoints):
@@ -10,6 +10,7 @@
 ///   M3 multigrid vs single-grid k discretization stays small (40 Ry twin)
 ///   M4 convergence + finiteness + k payload shapes (150 Ry main)
 ///   M5 absolute e_tot vs the offline CP2K NGRIDS 4 + KPOINTS pin (150 Ry)
+///   M6 energy and full stress tensor vs CP2K 2026.2 (100 Ry / REL 40, MP1x1x2)
 /// The exactness identities live at unit scale in
 /// tests/cpu/gpw/test_cpu_gpw_multigrid.cpp (GpwMultigridCells.*): Γ-limit
 /// (uniform D-stack ≡ Γ product path), D/V_t phase plumbing vs the
@@ -18,12 +19,15 @@
 /// (REFERENCE.md: |Δ| ≤ 3e-14 Ha at 40/60/95 Ry) and are not re-run here —
 /// each multigrid SCF costs ~15 s and the ≤ 60 s budget goes to the pin.
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
@@ -90,6 +94,7 @@ int run() {
     using namespace ATV;
     using cpu::gpw::GpwDft;
 
+    g_fail = 0;
     const auto t_start = std::chrono::steady_clock::now();
     auto mark = [&](const char* what) {
         std::printf("  [wall] %s at %.1f s\n", what,
@@ -167,13 +172,78 @@ int run() {
         check(dpin <= kTolAbs, "M5 absolute e_tot within 1e-3 Ha of CP2K pin");
     }
 
+    // M6: fixed-P cell-strain stress on the matched 100 Ry / REL 40 mesh.
+    // Actual CP2K analytical tensor: inputs/gpw-kpoint-stress/reference.json.
+    // Existing M2-M5 settings and gates above remain independent and unchanged.
+    {
+        const auto begin = std::chrono::steady_clock::now();
+        GpwDft stress_method = si_method(100.0, 4, 40.0);
+        stress_method.max_iter = 100;
+        stress_method.tol = 1e-10;
+        stress_method.residual_tol = 1e-8;
+        stress_method.eps_default = 1e-12;
+        stress_method.local_pp_on_grid = true;
+        stress_method.k_mesh[0] = stress_method.k_mesh[1] = 1;
+        stress_method.k_mesh[2] = 2;
+        stress_method.stress_strain_h = 2e-3;
+        cpu::Frame state = frame;
+        stress_method.build(state);
+        auto stress = stress_method.stress(state);
+        const auto& result = stress_method.last_result();
+        check(result.converged, "M6 unstrained stress SCF converged");
+        check(result.n_kpts >= 1 && !result.C_occ_k.empty(),
+              "M6 Bloch occupied-orbital payload present");
+        constexpr double energy_pin = -15.348312942398339;
+        constexpr std::array<double, 6> stress_pin = {
+            0.00088302884218137618, 0.00088302884218137618,
+            0.00026101331426867699, -2.8441034466934299e-16,
+            2.3791573455322444e-16, 3.7052221084565209e-18};
+        auto near_pin = [&](double got, double want, double tolerance,
+                            const char* quantity) {
+            const bool ok =
+                std::isfinite(got) && std::abs(got - want) <= tolerance;
+            std::printf("M6 %s got=% .12e want=% .12e tol=%.3e %s\n", quantity,
+                        got, want, tolerance, ok ? "ok" : "FAIL");
+            if (!ok)
+                ++g_fail;
+        };
+        near_pin(result.e_total, energy_pin, 1e-3, "energy [Ha] vs CP2K");
+        const char* names[] = {"xx", "yy", "zz", "xy", "xz", "yz"};
+        double largest = 0;
+        for (std::size_t component = 0; component < stress.size();
+             ++component) {
+            stress[component] /= units::kHartreePerBohr3InEvPerAngstrom3;
+            char quantity[96];
+            std::snprintf(quantity, sizeof(quantity),
+                          "sigma_%s [Ha/Bohr3] vs CP2K", names[component]);
+            near_pin(stress[component], stress_pin[component], 1e-4, quantity);
+            if (component < 3)
+                largest = std::max(largest, std::abs(stress[component]));
+            else
+                near_pin(stress[component], 0.0, 1e-8,
+                         "off-diagonal symmetry [Ha/Bohr3]");
+        }
+        std::printf("M6 stress magnitude got=%.6e want=>1e-6 Ha/Bohr3\n",
+                    largest);
+        check(largest > 1e-6, "M6 nonzero stress magnitude floor");
+        const double wall = std::chrono::duration<double>(
+                                std::chrono::steady_clock::now() - begin)
+                                .count();
+        std::printf("M6 fixed-P stress product wall %.6f s\n", wall);
+    }
+    const double wall = std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - t_start)
+                            .count();
+    std::printf("Whole section got=%.6f want<=60 seconds\n", wall);
+    check(wall <= 60.0, "whole section within 60 seconds");
+
     if (g_fail) {
         std::fprintf(stderr, "FAILED: %d gate(s)\n", g_fail);
         return 1;
     }
     std::printf("PASS: gpw-multigrid-kpoints — multi-k GPW RKS with REL_CUTOFF "
                 "multigrid product collocation (TR, grid residual, "
-                "CP2K pin)\n");
+                "CP2K energy/stress pins)\n");
     return 0;
 }
 

@@ -33,6 +33,7 @@
 #pragma once
 
 #include <array>
+#include <complex>
 #include <vector>
 
 #include <xtensor/containers/xtensor.hpp>
@@ -99,6 +100,22 @@ class PhononDispersion {
     PhononDispersionResult compute(const xt::xtensor<double, 2>& hessian_sc,
                                    const cpu::Frame& unit, int na, int nb,
                                    int nc) const;
+
+    /// @brief Raw Cartesian Fourier force constants C(q) [eV/Å²].
+    ///
+    /// Sums home-cell rows over all partner images with exp(+2πi q·R).
+    /// No mass weighting or Hermitian projection is applied to this matrix.
+    /// @param hessian_sc Cartesian IFCs [eV/Å²], shape [3N_sc,3N_sc].
+    /// @param unit Primitive unit-cell Frame (not mutated).
+    /// @param na,nb,nc Supercell repeats in expand_supercell atom order.
+    /// @param q_frac Fractional wavevector in the unit reciprocal basis.
+    /// @param max_asymmetry Optional raw max |C−C†|/2 [eV/Å²].
+    /// @return Raw complex [3N,3N] matrix at q.
+    xt::xtensor<std::complex<double>, 2>
+    force_constants_at_q(const xt::xtensor<double, 2>& hessian_sc,
+                         const cpu::Frame& unit, int na, int nb, int nc,
+                         const std::array<double, 3>& q_frac,
+                         double* max_asymmetry = nullptr) const;
 
     /// @brief Frequencies [cm⁻¹] at a single fractional q (ascending).
     ///

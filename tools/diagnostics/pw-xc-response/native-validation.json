@@ -1,0 +1,45 @@
+{
+  "kind": "native validation, not external oracle pins",
+  "date": "2026-10-25",
+  "backend": "CPU",
+  "threads": 1,
+  "units_passed": 1785,
+  "dfpt_sections_passed": 15,
+  "dfpt_case_seconds": 117.89,
+  "gamma_pbe_asr_max_eV_per_A2": 0.0201,
+  "gamma_asr_limit_eV_per_A2": 0.05,
+  "sections": [
+    {
+      "name": "dfpt-gga-finite-q-si",
+      "C00_eV_per_A2": 19.46231972,
+      "curvature_eV_per_A2": 19.45278291,
+      "seconds": 12.495132
+    },
+    {
+      "name": "dfpt-gga-spin-finite-q-si",
+      "C00_eV_per_A2": 19.45605115,
+      "curvature_eV_per_A2": 19.45278288,
+      "restricted_parent_eV_per_A2": 19.46231972,
+      "seconds": 33.313476
+    },
+    {
+      "name": "dfpt-gga-spin-finite-q-smearing",
+      "C00_eV_per_A2": 19.45605115,
+      "curvature_eV_per_A2": 19.45278288,
+      "restricted_parent_eV_per_A2": 19.46231972,
+      "seconds": 32.577252
+    }
+  ],
+  "source_sha256": {
+    "src/cpu/planewave/internal/xc_builder.cpp": "3379c501d049d13acf807d875f6112953ec4308c1809a02b1d14cf59197ce343",
+    "src/cpu/planewave/internal/density_builder.cpp": "6a9b51ae1010c898e0182c1522230789d92f13a22e5fa13b03376e8687bc2ec6",
+    "src/cpu/planewave/internal/pw_setup.cpp": "b116a5b4ede590d7ed3352f77680dd572c7414627c72d8547c99fe1f06c50a38",
+    "src/cpu/planewave/dfpt_phonon.cpp": "618a58d32bafa615e14de8151faeab953a576d130df4525ae7d02f57f5b7bbb4",
+    "src/cpu/vibration/phonon_dispersion.cpp": "14fc01aa85cf465928133af15afe98abf08e09c7ddcd77b942a4778095c0b004",
+    "src/cpu/planewave/pw_solver.cpp": "bd41d879eda62b43daba3f5de91deff5069ace8203dc14a7987e9d16282f60f6",
+    "src/cpu/planewave/internal/restricted_scf.cpp": "0594c8e77e28c1d92781cedbed2e3e1c58c31e4d32818e70d8070413a751bdbc"
+  },
+  "strict_single_h_force_eV_per_A": 4.715e-16,
+  "strict_single_h_force_bound_eV_per_A": 1e-09,
+  "zero_occupation_policy": "Fixed-occupation zero-spin channels contribute exact zero density without unused virtual solves; smearing and NSCF spectra are unaffected."
+}

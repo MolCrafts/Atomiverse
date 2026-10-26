@@ -31,6 +31,7 @@
 #include <array>
 #include <complex>
 #include <functional>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -59,6 +60,49 @@ struct KPoint {
 /// @param time_reversal Fold ±κ pairs (keep one, double its weight).
 /// @throws std::invalid_argument when any N_d < 1.
 std::vector<KPoint> monkhorst_pack(const int mesh[3], bool time_reversal);
+
+/// @brief Physical reciprocal-space data for one AO Fourier-overlap link.
+struct FourierOverlapLink {
+    std::array<double, 3>
+        ket_frac{};                 ///< Ket Bloch k in fractional coordinates.
+    std::array<double, 3> q_bohr{}; ///< Unwrapped ket-minus-bra step [Bohr⁻¹].
+};
+
+/// @brief Exact cross-k AO operators for all requested links in one batch.
+///
+/// S_link(i,j) = Σ_T exp(2πi ket_frac·t)
+///              ∫ a_i(r) b_j(r−T) exp(−i q_bohr·r) d³r.
+/// Links with exactly equal Cartesian q share each image-local primitive
+/// Fourier integral. Each output retains its original image/primitive sum
+/// order. Independent AO rows are parallel; both spin manifolds can borrow
+/// the same operators. There is no persistent cache.
+/// @param basis Contracted Cartesian Gaussian basis, centers [Bohr].
+/// @param radii Per-function Gaussian radii [Bohr].
+/// @param L Orthorhombic cell edges [Bohr].
+/// @param m Per-axis lattice image half-counts.
+/// @param screen Same Gaussian-product pair screen as overlap/kinetic setup.
+/// @param links Physical ket k and short Fourier step for every output.
+/// @return One row-major nb*nb matrix per link, in input order.
+/// @throws std::invalid_argument for incompatible dimensions or invalid
+///         cell/image/link parameters. Primitive-domain errors propagate
+///         after the row workers join.
+std::vector<std::vector<std::complex<double>>>
+build_fourier_overlap_links(const std::vector<GridBasisFunction>& basis,
+                            const std::vector<double>& radii, const double L[3],
+                            const int m[3], double screen,
+                            std::span<const FourierOverlapLink> links);
+
+/// @brief Add one weighted Bloch density into a real-space image-cell stack.
+/// @param P Hermitian row-major density matrix at one sampled k point.
+/// @param weight Physical k-point quadrature weight [dimensionless].
+/// @param phases exp(-2*pi*i*k.t), in the stack's image-cell order.
+/// @param density_stack Accumulator: D[t] += weight * Re(P * phases[t]);
+///        one preallocated row-major nb*nb matrix per image cell.
+/// @throws std::invalid_argument if matrix or stack shapes do not match.
+void accumulate_bloch_density_stack(
+    const CplxMatrix& P, double weight,
+    std::span<const std::complex<double>> phases,
+    std::vector<std::vector<double>>& density_stack);
 
 /// @brief Build S_k and T_k for every k in ONE lattice-image sweep.
 ///
@@ -185,7 +229,7 @@ CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
 ///
 /// One shared extrapolation: B_ij = Σ_k w_k Re Tr(e_i^k† e_j^k) with the
 /// commutator residual e^k = X†(H_k P_k S_k − S_k P_k H_k)X — the standard
-/// k-point generalization of the Γ `GpwDiis`.
+/// k-point generalization of the Γ `linalg::DIISMixer`.
 class KDiis {
   public:
     using Reducer = std::function<void(double*, int)>;

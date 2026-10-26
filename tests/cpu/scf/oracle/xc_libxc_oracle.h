@@ -20,7 +20,7 @@ namespace xc_oracle {
 /// @brief Evaluate LSDA (Slater + VWN5) via libxc.
 /// @param rho_a Alpha density [electrons/Bohr^3].
 /// @param rho_b Beta density [electrons/Bohr^3].
-/// @return XCOutput populated using libxc's d(rho*exc)/d(rho_sigma) convention.
+/// @return XCOutput with per-volume energy and its spin-density derivatives.
 /// @note Functional IDs: XC_LDA_X + XC_LDA_C_VWN (id 7, VWN5 — not VWN3=5).
 ::ATV::cpu::scf::XCOutput evaluate_lsda(double rho_a, double rho_b);
 
@@ -30,7 +30,7 @@ namespace xc_oracle {
 /// @param sigma_aa |grad rho_alpha|^2.
 /// @param sigma_ab grad rho_alpha . grad rho_beta.
 /// @param sigma_bb |grad rho_beta|^2.
-/// @return XCOutput populated using libxc's d(rho*exc)/d(rho_sigma) convention.
+/// @return XCOutput with per-volume energy and its spin-density derivatives.
 ::ATV::cpu::scf::XCOutput evaluate_pbe(double rho_a, double rho_b,
                                        double sigma_aa, double sigma_ab,
                                        double sigma_bb);
@@ -48,7 +48,7 @@ namespace xc_oracle {
 /// @param sigma_aa |grad rho_alpha|^2 [electrons^2/Bohr^8].
 /// @param sigma_ab grad rho_alpha . grad rho_beta [electrons^2/Bohr^8].
 /// @param sigma_bb |grad rho_beta|^2 [electrons^2/Bohr^8].
-/// @return XCOutput with B88 exchange exc/vrho/vsigma channels populated.
+/// @return XCOutput with B88 exchange energy_density/vrho/vsigma channels populated.
 ::ATV::cpu::scf::XCOutput evaluate_gga_x_b88(double rho_a, double rho_b,
                                              double sigma_aa, double sigma_ab,
                                              double sigma_bb);
@@ -60,7 +60,7 @@ namespace xc_oracle {
 /// @param sigma_aa |grad rho_alpha|^2 [electrons^2/Bohr^8].
 /// @param sigma_ab grad rho_alpha . grad rho_beta [electrons^2/Bohr^8].
 /// @param sigma_bb |grad rho_beta|^2 [electrons^2/Bohr^8].
-/// @return XCOutput with LYP correlation exc/vrho/vsigma channels populated.
+/// @return XCOutput with LYP correlation energy_density/vrho/vsigma channels populated.
 ::ATV::cpu::scf::XCOutput evaluate_gga_c_lyp(double rho_a, double rho_b,
                                              double sigma_aa, double sigma_ab,
                                              double sigma_bb);
@@ -69,7 +69,7 @@ namespace xc_oracle {
 ///        libxc XC_LDA_C_VWN_RPA (id 8).
 /// @param rho_a Alpha density [electrons/Bohr^3].
 /// @param rho_b Beta density [electrons/Bohr^3].
-/// @return XCOutput with VWN-RPA correlation exc/vrho channels populated.
+/// @return XCOutput with VWN-RPA correlation energy_density/vrho channels populated.
 /// @note libxc id 8 (VWN_RPA), the functional PySCF aliases as "VWN3";
 ///       distinct from libxc's own XC_LDA_C_VWN_3 (id 30).
 ::ATV::cpu::scf::XCOutput evaluate_lda_c_vwn_rpa(double rho_a, double rho_b);

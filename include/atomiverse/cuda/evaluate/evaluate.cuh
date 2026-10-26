@@ -47,11 +47,22 @@ namespace cuda {
 /// ZeroEnergy / ZeroStress at `prepare`, matching `cpu::Evaluate`.
 class Evaluate : public Driver<ATV::evaluate::Phase> {
   public:
-    Evaluate() {
-        this->on(ATV::evaluate::Phase::prepare).add(ZeroForces{}, -1000);
+    /// @brief Select the physical outputs of this evaluation.
+    /// @param forces Request nuclear forces and initialize their accumulators.
+    /// @param stress Request stress and initialize its accumulator.
+    explicit Evaluate(bool forces = true, bool stress = true)
+        : compute_force(forces), compute_stress(stress) {
+        if (compute_force)
+            this->on(ATV::evaluate::Phase::prepare).add(ZeroForces{}, -1000);
         this->on(ATV::evaluate::Phase::prepare).add(ZeroEnergy{}, -999);
-        this->on(ATV::evaluate::Phase::prepare).add(ZeroStress{}, -998);
+        if (compute_stress)
+            this->on(ATV::evaluate::Phase::prepare).add(ZeroStress{}, -998);
     }
+
+    /// @brief Whether this evaluation requests nuclear forces.
+    const bool compute_force;
+    /// @brief Whether this evaluation requests system stress.
+    const bool compute_stress;
 
     /// @brief Run a single evaluation pass through the compiled Plan.
     /// @param frame Host-resident system state; transferred H2D, evaluated
@@ -59,10 +70,12 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     void run(cpu::Frame& frame) {
         try {
             setup_pass(frame);
+            this->backend_->context().exec.forces_requested = compute_force;
+            this->backend_->context().exec.stress_requested = compute_stress;
             EvaluationTransaction::Scope evaluation(
                 this->backend_->evaluation_transaction());
             step_once(0);
-            teardown_pass(frame);
+            teardown_pass(frame, compute_force);
             evaluation.accept();
         } catch (...) {
             // Discard failed device results; keep the compiled plan and timing

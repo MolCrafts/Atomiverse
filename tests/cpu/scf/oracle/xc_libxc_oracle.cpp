@@ -42,7 +42,7 @@ void run_lsda_pair(int func_x_id, int func_c_id, double rho_a, double rho_b,
         xc_func_end(&func);
     }
 
-    out.exc = exc[0];
+    out.energy_density = (rho_a + rho_b) * exc[0];
     out.vrho_alpha = vrho[0];
     out.vrho_beta = vrho[1];
     out.vsigma_aa = 0.0;
@@ -77,7 +77,7 @@ void run_gga_pair(int func_x_id, int func_c_id, double rho_a, double rho_b,
         xc_func_end(&func);
     }
 
-    out.exc = exc[0];
+    out.energy_density = (rho_a + rho_b) * exc[0];
     out.vrho_alpha = vrho[0];
     out.vrho_beta = vrho[1];
     out.vsigma_aa = vsigma[0];
@@ -106,7 +106,7 @@ void run_gga_single(int func_id, double rho_a, double rho_b, double sigma_aa,
     xc_gga_exc_vxc(&func, /*np=*/1, rho, sigma, exc, vrho, vsigma);
     xc_func_end(&func);
 
-    out.exc = exc[0];
+    out.energy_density = (rho_a + rho_b) * exc[0];
     out.vrho_alpha = vrho[0];
     out.vrho_beta = vrho[1];
     out.vsigma_aa = vsigma[0];
@@ -126,7 +126,7 @@ void run_lda_single(int func_id, double rho_a, double rho_b,
     xc_lda_exc_vxc(&func, /*np=*/1, rho, exc, vrho);
     xc_func_end(&func);
 
-    out.exc = exc[0];
+    out.energy_density = (rho_a + rho_b) * exc[0];
     out.vrho_alpha = vrho[0];
     out.vrho_beta = vrho[1];
     out.vsigma_aa = 0.0;
@@ -198,7 +198,7 @@ void run_lda_single(int func_id, double rho_a, double rho_b,
     xc_func_end(&func);
 
     ::ATV::cpu::scf::XCOutput out = zero_output();
-    out.exc = exc[0];
+    out.energy_density = (rho_a + rho_b) * exc[0];
     out.vrho_alpha = vrho[0];
     out.vrho_beta = vrho[1];
     return out;

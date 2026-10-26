@@ -37,7 +37,7 @@ XcOnGrid xc_grid_pade(const UniformGrid& grid,
             // low-density cutoff, returning zeros below threshold.
             const ATV::cpu::xc::PadeXC xc =
                 ATV::cpu::xc::pade_lsd(0.5 * rho, 0.5 * rho);
-            s += w * rho * xc.exc;
+            s += w * xc.energy_density;
             out.vxc_r[g] = xc.vrho_a; // = vrho_b in the unpolarized case
         }
         part[static_cast<std::size_t>(c)] = s;
@@ -71,7 +71,7 @@ XcOnGridSpin xc_grid_pade_lsd(const UniformGrid& grid,
             if (ra + rb < kRhoCut)
                 continue;
             const ATV::cpu::xc::PadeXC xc = ATV::cpu::xc::pade_lsd(ra, rb);
-            s += w * (ra + rb) * xc.exc;
+            s += w * xc.energy_density;
             out.vxc_a[static_cast<std::size_t>(g)] = xc.vrho_a;
             out.vxc_b[static_cast<std::size_t>(g)] = xc.vrho_b;
         }

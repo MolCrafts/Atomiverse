@@ -20,7 +20,7 @@ namespace {
 
 // E_xc density [Hartree/Bohr^3] = rho_total * exc.
 double energy_density(double ra, double rb) {
-    return (ra + rb) * pade_lsd(ra, rb).exc;
+    return pade_lsd(ra, rb).energy_density;
 }
 
 struct Pt {
@@ -66,7 +66,7 @@ TEST(PadeLDA, UnpolarizedSymmetry) {
     // Spin swap leaves exc invariant and swaps the potentials.
     PadeXC ab = pade_lsd(0.8, 0.2);
     PadeXC ba = pade_lsd(0.2, 0.8);
-    EXPECT_DOUBLE_EQ(ab.exc, ba.exc);
+    EXPECT_DOUBLE_EQ(ab.energy_density, ba.energy_density);
     EXPECT_DOUBLE_EQ(ab.vrho_a, ba.vrho_b);
     EXPECT_DOUBLE_EQ(ab.vrho_b, ba.vrho_a);
 }
@@ -83,15 +83,15 @@ TEST(PadeLDA, EnergyMatchesFormula) {
     const double q = (b1 + (b2 + (b3 + b4 * rs) * rs) * rs) * rs;
     const double expected = -p / q;
 
-    EXPECT_NEAR(pade_lsd(0.5, 0.5).exc, expected, 1e-12);
+    EXPECT_NEAR(pade_lsd(0.5, 0.5).energy_density, expected, 1e-12);
     // Coarse literal guard so a shared constant error is still caught.
-    EXPECT_NEAR(pade_lsd(0.5, 0.5).exc, -0.8097, 2e-3);
+    EXPECT_NEAR(pade_lsd(0.5, 0.5).energy_density, -0.8097, 2e-3);
 }
 
 // Below the density cutoff everything is zero.
 TEST(PadeLDA, DensityCutoff) {
     PadeXC xc = pade_lsd(1e-14, 1e-14);
-    EXPECT_DOUBLE_EQ(xc.exc, 0.0);
+    EXPECT_DOUBLE_EQ(xc.energy_density, 0.0);
     EXPECT_DOUBLE_EQ(xc.vrho_a, 0.0);
     EXPECT_DOUBLE_EQ(xc.vrho_b, 0.0);
 }

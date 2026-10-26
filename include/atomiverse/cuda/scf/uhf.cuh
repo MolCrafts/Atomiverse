@@ -15,8 +15,9 @@
 /// (`init_guess_by_minao`, `kernel`), `grad/uhf.py` (`grad_elec`, `get_veff`,
 /// `make_rdm1e`). The device loop starts from the spin-averaged MINAO density
 /// (open-shell `_break_dm_spin_symm` is a no-op). Overlap projection of that
-/// guess is packed once at setup; Fock, density, CDIIS, and forces stay on
-/// device. An element without a MINAO table keeps the core-Hamiltonian start.
+/// guess uses device overlap integrals and a device Cholesky solve. Only
+/// geometry-independent element constants are uploaded at setup. An element
+/// without a MINAO table keeps the core-Hamiltonian start.
 /// `scf/dhf.py`, `pbc/scf/khf.py`, `x2c/sfx2c1e_grad.py`, `df/df_jk.py`, and
 /// `hessian/rhf.py` are different products and are not members.
 ///
@@ -34,6 +35,7 @@
 #pragma once
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -125,17 +127,22 @@ class UHF : public cuda::Driver<ATV::scf::Phase>,
     /// @return Forces [eV/Å] and energy [eV].
     cpu::scf::GradientResult forces(cpu::Frame& frame);
 
-    /// @brief Last total energy [Hartree].
-    double energy() const { return energy_ha_; }
+    /// @brief Total energy of the last successful standalone solve [Hartree].
+    /// @throws std::logic_error Before standalone success, after failure, or
+    /// after a nested solve; nested results reside on the parent's Frame.
+    double energy() const {
+        if (!energy_available_)
+            throw std::logic_error(
+                "cuda::scf::UHF::energy: no successful standalone result; "
+                "nested energy is on the parent Frame");
+        return energy_ha_;
+    }
     /// @brief SCF iterations of the most recent solve.
     int iterations() const { return iterations_; }
     /// @brief True when the last force assembly used `launch_uhf_forces_sp`.
     bool last_force_on_device() const { return last_force_device_; }
     /// @brief True when the last SCF used device s/p integrals.
     bool last_scf_on_device() const { return last_device_sp_; }
-
-    /// @brief Alpha-spin workspace during a solve (released when `run` returns).
-    const SCFWorkspace& workspace() const;
 
   protected:
     void validate_components() const override {}
@@ -147,13 +154,13 @@ class UHF : public cuda::Driver<ATV::scf::Phase>,
                     bool host_current = false);
     void step_stages_(cuda::Context& ctx, cuda::Frame& frame, int step);
     void assemble_(cuda::Context& ctx, cuda::Frame& frame, bool host_current);
-    void seed_minao_(cuda::Context& ctx, cuda::Frame& frame);
     void release_engine_();
     void assemble_forces_(cuda::Context& ctx, cuda::Frame& frame);
     void pull_energy_(cuda::Context& ctx, cuda::Frame& frame);
 
     std::unique_ptr<UhfLoopState> loop_;
     double energy_ha_ = 0.0;
+    bool energy_available_ = false;
     int iterations_ = 0;
     bool last_force_device_ = false;
     bool last_device_sp_ = false;

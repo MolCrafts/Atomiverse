@@ -26,8 +26,9 @@ namespace cuda {
 ///
 /// @param src CUDA Frame to read from.
 /// @param dst CPU Frame to write into (must be pre-sized).
+/// @param copy_forces Copy device forces; false preserves host force columns.
 /// @throws std::runtime_error naming the atom tag and step of a force fault.
-void to_cpu(const Frame& src, cpu::Frame& dst);
+void to_cpu(const Frame& src, cpu::Frame& dst, bool copy_forces = true);
 
 /// Refresh selected caller-edited input columns without replacing device storage.
 /// Identity changes require rematerialization. Caller synchronizes live streams.

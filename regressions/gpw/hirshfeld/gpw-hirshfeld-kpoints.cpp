@@ -4,6 +4,7 @@
 /// Out-of-library consumer: public GPW headers only. Geometry and E_disp pin
 /// are in REFERENCE.md (no live oracle in ctest).
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -18,6 +19,7 @@
 namespace atv_reg_gpw_gpw_hirshfeld_kpoints {
 
 int run() {
+    const auto section_start = std::chrono::steady_clock::now();
     using namespace ATV;
     using cpu::gpw::GaussianBasis;
     using cpu::gpw::GpwDft;
@@ -66,8 +68,16 @@ int run() {
     gpw.k_mesh[0] = gpw.k_mesh[1] = gpw.k_mesh[2] = 2;
     gpw.k_time_reversal = true;
 
+    const auto build_start = std::chrono::steady_clock::now();
     gpw.build(frame);
+    const auto run_start = std::chrono::steady_clock::now();
     const auto& res = gpw.run(frame);
+    const auto run_end = std::chrono::steady_clock::now();
+    std::printf(
+        "Hirshfeld build=%.0f ms SCF+post=%.0f ms\n",
+        std::chrono::duration<double, std::milli>(run_start - build_start)
+            .count(),
+        std::chrono::duration<double, std::milli>(run_end - run_start).count());
 
     std::printf("PIN_CANDIDATE E_disp=%.16e Ha  volumes:", res.e_disp);
     for (double v : res.volume_ratios)
@@ -75,6 +85,10 @@ int run() {
     std::printf("  e_total=%.10f iters=%d conv=%d n_kpts=%d\n", res.e_total,
                 res.iters, res.converged ? 1 : 0, res.n_kpts);
 
+    if (!res.converged) {
+        std::fprintf(stderr, "FAIL: multi-k Hirshfeld SCF did not converge\n");
+        return 1;
+    }
     if (res.n_kpts < 2) {
         std::fprintf(stderr, "FAIL: expected multi-k (n_kpts>=2), got %d\n",
                      res.n_kpts);
@@ -104,6 +118,13 @@ int run() {
                      "FAIL: e_total non-finite or E_disp not attractive\n");
         return 1;
     }
+
+    const double wall = std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - section_start)
+                            .count();
+    std::printf("whole section got=%.6f want<=60 seconds\n", wall);
+    if (wall > 60.0)
+        return 1;
 
     std::printf("PASS: E_disp PBE-MBD@rsSCS multi-k Hirshfeld water dimer = "
                 "%.14e Ha (want %.14e +/- %.1e)\n",
