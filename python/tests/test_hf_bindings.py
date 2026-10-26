@@ -45,7 +45,10 @@ def test_cpu_hf_public_methods_and_energy_only_frame_roundtrip(name, args):
     assert name in scf.__all__ and name in av.__all__
     method = cls(basis="STO-3G", tol=1e-10, max_iter=200, **args)
     method.init_guess = "hcore"
-    method.integral_mode = "stored" if name == "GHF" else "direct"
+    assert not hasattr(method, "integral_mode")
+    assert method.max_memory_mb == 4000.0 and method.mpi is False
+    method.max_memory_mb = 4000.0
+    method.set_threads(1)
     method.damping = 0.0
     method.conv_tol_grad = 1e-6
     method.diis_space = 8
@@ -54,8 +57,8 @@ def test_cpu_hf_public_methods_and_energy_only_frame_roundtrip(name, args):
     assert method.max_iter == 200 and method.charge == 0
     assert method.damping == 0.0 and method.diis_space == 8
     assert method.diis_start_cycle == 1 and method.conv_tol_grad == 1e-6
-    with pytest.raises(ValueError, match="integral_mode"):
-        method.integral_mode = "guess"
+    with pytest.raises(ValueError, match="max_memory_mb"):
+        method.max_memory_mb = -1
     with pytest.raises(ValueError, match="init_guess"):
         method.init_guess = "guess"
     frame = h2_frame()

@@ -91,7 +91,7 @@ TEST(MethodDriverWire, CarParrinelloRejectsReversibleTrialBeforeColdSeed) {
     EXPECT_TRUE(ctx.exec.trial_evaluation);
 }
 
-TEST(MethodDriverWire, PostHfRestoresEriSettingWhenReferenceThrows) {
+TEST(MethodDriverWire, PostHfRejectsReferenceThatThrows) {
     // Public wrapper configures CP; standalone reference run refuses it before
     // any integral/SCF work. MP2 still receives the supported concrete RHF type.
     cpu::electronic::CarParrinelloMethod<cpu::scf::RHF> cp(
@@ -99,9 +99,5 @@ TEST(MethodDriverWire, PostHfRestoresEriSettingWhenReferenceThrows) {
     auto& method = cp.method();
     cpu::scf::MP2<cpu::scf::RHF> mp2(method);
     cpu::Frame frame;
-    for (const bool initial : {false, true}) {
-        method.compute_eri = initial;
-        EXPECT_THROW(mp2.run(frame), std::logic_error);
-        EXPECT_EQ(method.compute_eri, initial);
-    }
+    EXPECT_THROW(mp2.run(frame), std::logic_error);
 }

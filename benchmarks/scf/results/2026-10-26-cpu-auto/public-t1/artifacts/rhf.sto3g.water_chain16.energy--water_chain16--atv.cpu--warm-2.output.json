@@ -1,0 +1,118 @@
+{
+  "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-2.output.json",
+  "metadata": {
+    "actual_engine_config": {
+      "backend": "cpu",
+      "backend_info": {
+        "backend": "cpu",
+        "compiler": "14.3.0",
+        "compiler_executable": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/c++",
+        "compiler_id": "GNU",
+        "compiler_version": "14.3.0",
+        "openmp": true,
+        "openmp_max_threads": 1,
+        "openmp_threads": 1,
+        "openmp_version": 201511
+      },
+      "integral_strategy": "auto_s8"
+    },
+    "binaries_sha256": {
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+      "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0": "981268bd9fb8e89a89bcc1c061d0f5a95fa506feaff866629e7675a1a46d00b3",
+      "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so": "43029e5f7ddde3f43883376da318fca65046eb4c974f731cc4961444023e7723"
+    },
+    "binary_path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+    "binary_sha256": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+    "comparison_class": "matched_accuracy",
+    "engine": "atomiverse",
+    "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-2.log",
+    "molpy_version": "0.20.0",
+    "package_version": null,
+    "peak_process_rss_bytes": 221847552,
+    "requested_model": {
+      "basis": "STO-3G",
+      "cartesian": true,
+      "comparison_class": "matched_accuracy",
+      "conv_tol": 1e-10,
+      "conv_tol_grad": 1e-08,
+      "damping": 0.0,
+      "diis_space": 8,
+      "diis_start_cycle": 1,
+      "init_guess": "hcore",
+      "max_cycle": 200,
+      "method": "RHF",
+      "neel": false,
+      "nonzero_force": false,
+      "spin_rotation": 0.0
+    },
+    "requested_threads": 1,
+    "resolved_settings": {
+      "basis": "STO-3G",
+      "charge": 0,
+      "conv_tol_grad": 1e-08,
+      "converged": true,
+      "damping": 0.0,
+      "density_criterion": "not_exposed",
+      "diis_space": 8,
+      "diis_start_cycle": 1,
+      "energy_only": true,
+      "final_residuals": "not_exposed",
+      "init_guess": "hcore",
+      "initial_guess": "hcore",
+      "iterations": 12,
+      "max_iter": 200,
+      "max_memory_mb": 4000.0,
+      "solver_type": "RHF",
+      "spin_rotation": 0.0,
+      "tol": 1e-10
+    },
+    "resource_mismatch": false,
+    "threadpools": [
+      {
+        "architecture": "SkylakeX",
+        "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "threading_layer": "pthreads",
+        "user_api": "blas",
+        "version": "0.3.34.106.0"
+      },
+      {
+        "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+        "internal_api": "openmp",
+        "num_threads": 1,
+        "prefix": "libgomp",
+        "user_api": "openmp",
+        "version": null
+      },
+      {
+        "architecture": "ZEN",
+        "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libopenblas",
+        "threading_layer": "pthreads",
+        "user_api": "blas",
+        "version": "0.3.32"
+      }
+    ],
+    "versions": {
+      "atomiverse": null,
+      "molpy": "0.20.0",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "threadpoolctl": "3.7.0"
+    }
+  },
+  "observables": {
+    "energy_hartree": -1199.3881189817935
+  },
+  "phase": "warm",
+  "process_seconds": 2.32073082900024,
+  "reason": null,
+  "repeat": 2,
+  "seconds": 1.0009103,
+  "status": "completed"
+}

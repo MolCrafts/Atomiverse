@@ -411,3 +411,19 @@ def test_local_molpy_override_is_shared_by_wheel_build(tmp_path: Path, monkeypat
     monkeypatch.setenv("ATV_MOLPY_PATH", str(other))
     command = build_molpy_wheel_command(root, tmp_path / "build")
     assert str(other / "molpy") in command
+
+
+@pytest.mark.parametrize('flags,mpi,cuda', [
+    (['--hf'], 'OFF', 'OFF'),
+    (['--hf', '--mpi'], 'ON', 'OFF'),
+    (['--hf', '--cuda'], 'OFF', 'ON'),
+    (['--hf', '--cuda', '--mpi'], 'ON', 'ON'),
+    (['hf', 'cuda', '--mpi'], 'ON', 'ON'),
+])
+def test_hf_accelerators_compose(flags, mpi, cuda, capsys, tmp_path):
+    root = _fake_checkout(tmp_path, package_version())
+    assert main(['config', *flags, '--src', str(root), '--dry-run']) == 0
+    output = capsys.readouterr().out
+    for key, value in [('ATV_BUILD_HF', 'ON'), ('ATV_BUILD_CUDA', cuda), ('ATV_USE_MPI', mpi)]:
+        assert f'cmake.define.{key}={value}' in output
+    assert 'cmake.define.ATV_BUILD_MD=OFF' in output

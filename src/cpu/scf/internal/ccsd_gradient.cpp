@@ -49,7 +49,6 @@ double ccsd_tot_ha(const Frame& frame, BasisSet basis, double scf_tol) {
     RHF rhf{basis};
     rhf.tol = scf_tol;
     rhf.max_iter = 200;
-    rhf.compute_eri = true;
     Frame f = frame;
     const CCSDResult c = CCSD<RHF>{rhf}.run(f);
     if (!rhf.converged() || !c.converged)

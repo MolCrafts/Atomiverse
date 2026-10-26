@@ -5,6 +5,11 @@ PySCF calculation using the same molecular input and Hamiltonian. They are manua
 scientific benchmarks, not CTest regressions. Each method exports `SPEC`; the
 shared framework owns processes, timing, numerical comparisons and reports.
 
+The automatic CPU engine's implementation checks and targeted 16-water
+measurements are recorded in
+[2026-10-26 CPU automatic HF](results/2026-10-26-cpu-auto/README.md), including
+single/eight-thread public Python results and optional MPI/CUDA build checks.
+
 ## Environment and native backends
 
 Run from the repository root with Python 3.12 or later, NumPy, SciPy, PySCF,
@@ -14,7 +19,17 @@ name is not `molpy`. Rebuild the extension against the compatible molpy interfac
 An older extension missing the public controls is reported as a binding gap.
 
 CPU participants use `atomiverse.scf.RHF`, `UHF`, `ROHF` and `GHF` with the public
-`integral_mode`, `init_guess`, damping, gradient convergence and DIIS controls.
+`max_memory_mb`, `init_guess`, damping, gradient convergence and DIIS controls.
+CPU exact HF has one automatic J/K engine: it caches eightfold-symmetric
+integrals within the memory budget and streams screened shell quartets otherwise.
+The former public `integral_mode` switch and separate direct/stored participants
+have been removed. Historical result bundles retain their original labels.
+OpenMP uses the runtime default unless `OMP_NUM_THREADS` or `set_threads(n)`
+sets a count. MPI is off by default; build with `-DATV_USE_MPI=ON` to enable
+MPI functionality. `method.mpi = true` enables collective CPU HF J/K on an
+initialized `MPI_COMM_WORLD`; every rank supplies the same full Frame. The
+cache is replicated and J/K contraction is distributed. CUDA HF remains local
+to its device.
 The binding also exposes actual `backend_info()` and GHF
 `spin_density_block("alpha", "beta")`. CUDA builds additionally expose
 `CudaRHF`, `CudaUHF`, `cuda_backend_info()` and `cuda_synchronize()`.
@@ -49,15 +64,15 @@ tasks have separate rows. Inputs live in [`../systems/hf.json`](../systems/hf.js
 
 | Method | Current scientific scope | Native ERI strategies |
 | --- | --- | --- |
-| RHF | H2/water; STO-3G, Cartesian 6-31G*, spherical def2-SVP; 16-water STO-3G chain | CPU direct required, stored additional; optional CUDA energy, STO-3G forces |
-| UHF | H2+ doublet and O2 triplet; distinct Hcore/MINAO starts; STO-3G and def2-SVP | CPU direct; optional CUDA STO-3G MINAO energy/forces |
-| ROHF | H2+ and O2 triplet, STO-3G and def2-SVP energy/forces | CPU direct; CUDA not implemented |
-| GHF | H2 collapse in STO-3G/def2-SVP; noncollinear H3/STO-3G energy and spin-mixing gate | Required native CPU stored; direct spinor SCF and CUDA are explicit gaps |
+| RHF | H2/water; STO-3G, Cartesian 6-31G*, spherical def2-SVP; 16-water STO-3G chain | CPU automatic exact J/K; optional CUDA energy, STO-3G forces |
+| UHF | H2+ doublet and O2 triplet; distinct Hcore/MINAO starts; STO-3G and def2-SVP | CPU automatic exact J/K; optional CUDA STO-3G MINAO energy/forces |
+| ROHF | H2+ and O2 triplet, STO-3G and def2-SVP energy/forces | CPU automatic exact J/K; CUDA not implemented |
+| GHF | H2 collapse in STO-3G/def2-SVP; noncollinear H3/STO-3G energy and spin-mixing gate | Required native CPU automatic exact J/K; CUDA is an explicit gap |
 
-GHF needs stored dense ERIs for nonsymmetric spin-off-diagonal exchange. Its
-unavailable direct column stays visible and is never relabeled stored. H3 uses
-the declared localized 120-degree Neel seed, constructed during each solve, and
-requires a noncollinear converged density as well as agreement with live PySCF.
+GHF uses the same J/K engine for nonsymmetric spin-off-diagonal exchange.
+H3 uses the declared localized 120-degree Neel seed, constructed during each
+solve, and requires a noncollinear converged density as well as agreement with
+live PySCF.
 
 PySCF's native `GHF.nuc_grad_method()` is unimplemented. This benchmark therefore
 does not invent a GHF force oracle from archived values or a custom derivative.
@@ -66,7 +81,7 @@ capabilities, including periodic/spinor methods, response and integral/solver
 infrastructure, also remain explicit gaps in [`../roadmap.toml`](../roadmap.toml).
 Ordinary molecular rows do not silently certify those broader capabilities.
 
-The O2/def2-SVP CPU direct rows are deliberately retained. Their open-shell
+The O2/def2-SVP CPU rows are deliberately retained. Their open-shell
 higher-angular-momentum coverage can be expensive, particularly at one thread;
 a time budget should accommodate that cost rather than drop a slow case after
 seeing its result.
@@ -84,7 +99,7 @@ python -m benchmarks catalog
 python -m benchmarks run --tier smoke --threads 1 --repeats 1 --warmup 0 \
   --out .claude/campaigns/hf-smoke-example
 
-# Full declared acceptance inputs, including expensive O2/def2-SVP direct rows.
+# Full declared acceptance inputs, including O2/def2-SVP.
 python -m benchmarks run --tier acceptance --threads 1 --repeats 1 --warmup 0 \
   --timeout 300 --out .claude/campaigns/hf-acceptance-example
 

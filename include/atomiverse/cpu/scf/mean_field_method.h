@@ -173,6 +173,9 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
                         public cpu::QmEngine,
                         public cpu::EmbeddingEngine {
   public:
+    /// @brief Set OpenMP threads for both integral setup and SCF stages.
+    /// @param n Positive thread count; zero keeps the runtime default.
+    void set_threads(int n);
     bool requires_full_frame() const override { return true; }
     bool provides_energy() const override { return true; }
     bool provides_force() const override { return compute_force; }
@@ -383,8 +386,14 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     double hybrid_alpha_override = -1.0;
     const MolecularGrid* fixed_grid = nullptr;
 
-    /// @brief When true, materialize the dense ERI tensor (MP2/FCI/CUDA).
-    bool compute_eri = false;
+    /// @brief Process memory budget [MB], using PySCF's 95% cache admission.
+    /// The exact J/K engine streams screened quartets when s8 does not fit.
+    double max_memory_mb = 4000.0;
+
+    /// @brief Distribute exact HF J/K over MPI_COMM_WORLD (default false).
+    /// Requires ATV_USE_MPI and initialized MPI; every rank calls the solve
+    /// with identical controls and a complete replicated molecular Frame.
+    bool mpi = false;
 
     /// @brief When true (default), nested force-slot runs write forces.
     bool compute_force = true;
@@ -469,6 +478,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     int xl_bomd_order() const { return xl_bomd_k; }
 
   protected:
+    int requested_threads_ = 0;
     // ── Car–Parrinello molecular dynamics (esmm-cpmd-04) ──────────────
     /// @brief Propagate the occupied orbitals with a fictitious mass instead
     ///        of re-converging the SCF at every nuclear step (Car &
@@ -720,6 +730,9 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
 
     /// @brief Set n_alpha/n_beta from electron count (and subclass rules).
     virtual void resolve_occupation(int n_electrons) = 0;
+
+    /// @brief Materialize working-basis ERIs only for a post-HF consumer.
+    void materialize_eri_();
 
     /// @brief Non-owning view of this method's private integral **members**
     ///        (shells, S, c2s, dense ERI when materialized) for derived

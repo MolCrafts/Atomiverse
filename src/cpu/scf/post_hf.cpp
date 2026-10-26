@@ -62,16 +62,8 @@ void write_gradient(Frame& frame, const GradientResult& gr) {
 
 template <typename Method>
 void drive_converged(Method& mf, Frame& frame, const SCFInitialGuess* guess,
-                     bool materialize_eri, const char* entry) {
-    struct RestoreEri {
-        bool& value;
-        bool saved;
-        ~RestoreEri() { value = saved; }
-    } restore{mf.compute_eri, mf.compute_eri};
-    if (materialize_eri)
-        mf.compute_eri = true;
+                     const char* entry) {
     mf.run(frame, guess);
-    mf.compute_eri = restore.saved;
     if (!mf.converged())
         throw std::invalid_argument(
             std::string(entry)
@@ -254,8 +246,9 @@ MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
         throw std::invalid_argument(
             "MP2::run: a GHF (spinor) reference is not supported — the MP2 "
             "pack has no spinor transformation. Use RHF or UHF.");
-    drive_converged(mf, frame, guess, /*materialize_eri=*/mf.ri == RI::None,
-                    "MP2::run");
+    drive_converged(mf, frame, guess, "MP2::run");
+    if (mf.ri == RI::None)
+        mf.materialize_eri_();
     if ((mf.spin_ == SpinType::Unrestricted
          || mf.spin_ == SpinType::RestrictedOpen)
         && frozen != 0) {
@@ -313,7 +306,8 @@ GradientResult MP2<Method>::forces(Frame& frame, const SCFInitialGuess* guess) {
             "MP2::forces: spin-component-scaled MP2 gradients are not "
             "implemented — keep os_scale=ss_scale=1");
 
-    drive_converged(mf, frame, guess, /*materialize_eri=*/true, "MP2::forces");
+    drive_converged(mf, frame, guess, "MP2::forces");
+    mf.materialize_eri_();
 
     GradientResult gr;
     if (mf.spin_ == SpinType::Unrestricted) {
@@ -351,7 +345,8 @@ MP3Result MP3<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
     if (mf.ri != RI::None)
         throw std::invalid_argument(
             "MP3::run: RI-MP3 is not implemented — set ri=RI::None");
-    drive_converged(mf, frame, guess, /*materialize_eri=*/true, "MP3::run");
+    drive_converged(mf, frame, guess, "MP3::run");
+    mf.materialize_eri_();
     return mp3_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
                       frozen);
 }
@@ -370,7 +365,8 @@ MP4Result MP4<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
     if (mf.ri != RI::None)
         throw std::invalid_argument(
             "MP4::run: RI-MP4 is not implemented — set ri=RI::None");
-    drive_converged(mf, frame, guess, /*materialize_eri=*/true, "MP4::run");
+    drive_converged(mf, frame, guess, "MP4::run");
+    mf.materialize_eri_();
     return mp4_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
                       frozen);
 }
@@ -390,7 +386,8 @@ FCIResult FCI<Method>::run(Frame& frame) {
         throw std::invalid_argument(
             "FCI::run: a GHF (spinor) reference is not supported — the FCI "
             "pack requires a closed-shell reference. Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "FCI::run");
+    drive_converged(mf, frame, nullptr, "FCI::run");
+    mf.materialize_eri_();
     return fci_energy(mf.integral_view_(), mf.determinant(), mf.energy());
 }
 
@@ -413,7 +410,8 @@ CASCIResult CASCI<Method>::run(Frame& frame, int ncas, int nelecas) {
         throw std::invalid_argument(
             "CASCI::run: closed-shell RHF reference only — UHF CASCI is not "
             "implemented (no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CASCI::run");
+    drive_converged(mf, frame, nullptr, "CASCI::run");
+    mf.materialize_eri_();
     return casci_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
                         ncas, nelecas);
 }
@@ -575,8 +573,8 @@ CASSCFResult CASSCF<Method>::solve(Frame& frame, Write write, int cap,
             "CASSCF: orb_tol must be positive and max_macro >= 1");
     const PriorEnergy prior = capture(frame);
     Method& mf = *mf_;
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CASSCF::run");
+    drive_converged(mf, frame, nullptr, "CASSCF::run");
+    mf.materialize_eri_();
     typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
                              mf.energy(), ncas, nelecas);
     if (nested) {
@@ -647,8 +645,8 @@ NEVPT2Result NEVPT2<Method>::run(Frame& frame, int ncas, int nelecas) {
         throw std::invalid_argument(
             "NEVPT2::run: closed-shell RHF reference only — UHF NEVPT2 is not "
             "implemented (no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "NEVPT2::run");
+    drive_converged(mf, frame, nullptr, "NEVPT2::run");
+    mf.materialize_eri_();
     return nevpt2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
                          ncas, nelecas, /*orb_tol=*/std::max(mf.tol, 1e-8),
                          /*max_macro=*/50);
@@ -809,7 +807,8 @@ CCSDResult CCSD<Method>::run(Frame& frame) {
             "CCSD::run: closed-shell RHF reference only — UHF / ROHF / GHF "
             "CCSD is not implemented (no fallback). Use RHF.");
     const PriorEnergy prior = capture(frame);
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CCSD::run");
+    drive_converged(mf, frame, nullptr, "CCSD::run");
+    mf.materialize_eri_();
     return solve_amplitudes(frame, Write::Overwrite, prior, max_iter, nullptr);
 }
 
@@ -837,8 +836,8 @@ GradientResult CCSD<Method>::compute_forces(Frame& frame, Write write,
             "CCSD::forces: frozen-core CCSD gradients are not implemented — "
             "set frozen=0");
     const PriorEnergy prior = capture(frame);
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CCSD::forces");
+    drive_converged(mf, frame, nullptr, "CCSD::forces");
+    mf.materialize_eri_();
     const CCSDResult corr =
         solve_amplitudes(frame, Write::None, prior, max_iter, nested);
     GradientResult gr = internal::ccsd_analytic_forces(
@@ -885,7 +884,8 @@ int CCSD<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
             "CCSD::run: closed-shell RHF reference only — UHF / ROHF / GHF "
             "CCSD is not implemented (no fallback). Use RHF.");
     const PriorEnergy prior = capture(frame);
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CCSD::run");
+    drive_converged(mf, frame, nullptr, "CCSD::run");
+    mf.materialize_eri_();
     const int cap = budget > 0 ? budget : max_iter;
     solve_amplitudes(frame, Write::Accumulate, prior, cap, &ctx);
     return executed_;
@@ -900,8 +900,8 @@ EOMEECCSDResult CCSD<Method>::eom_ee_ccsd(Frame& frame, int n_states) {
             "CCSD::eom_ee_ccsd: closed-shell RHF reference only — EOM-EE "
             "singlet is CCSD.eomee_ccsd_singlet (PySCF), not a UHF / ROHF / "
             "GHF entry (no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CCSD::eom_ee_ccsd");
+    drive_converged(mf, frame, nullptr, "CCSD::eom_ee_ccsd");
+    mf.materialize_eri_();
     return eom_ee_ccsd_energies(mf.integral_view_(), mf.determinant(),
                                 mf.energy(), n_states);
 }
@@ -915,8 +915,8 @@ EOMIPCCSDResult CCSD<Method>::eom_ip_ccsd(Frame& frame, int n_states) {
             "CCSD::eom_ip_ccsd: closed-shell RHF reference only — EOM-IP "
             "is CCSD.ipccsd (PySCF), not a UHF / ROHF / GHF entry "
             "(no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CCSD::eom_ip_ccsd");
+    drive_converged(mf, frame, nullptr, "CCSD::eom_ip_ccsd");
+    mf.materialize_eri_();
     return eom_ip_ccsd_energies(mf.integral_view_(), mf.determinant(),
                                 mf.energy(), n_states);
 }
@@ -930,8 +930,8 @@ EOMEACCSDResult CCSD<Method>::eom_ea_ccsd(Frame& frame, int n_states) {
             "CCSD::eom_ea_ccsd: closed-shell RHF reference only — EOM-EA "
             "is CCSD.eaccsd (PySCF), not a UHF / ROHF / GHF entry "
             "(no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CCSD::eom_ea_ccsd");
+    drive_converged(mf, frame, nullptr, "CCSD::eom_ea_ccsd");
+    mf.materialize_eri_();
     return eom_ea_ccsd_energies(mf.integral_view_(), mf.determinant(),
                                 mf.energy(), n_states);
 }
@@ -946,8 +946,8 @@ EOMSFCCSDResult CCSD<Method>::eom_sf_ccsd(Frame& frame, int n_states,
             "CCSD::eom_sf_ccsd: unrestricted UHF reference required "
             "(PySCF cc.UCCSD.eomsf_ccsd). Closed-shell EE is "
             "CCSD::eom_ee_ccsd.");
-    drive_converged(mf, frame, guess, /*materialize_eri=*/true,
-                    "CCSD::eom_sf_ccsd");
+    drive_converged(mf, frame, guess, "CCSD::eom_sf_ccsd");
+    mf.materialize_eri_();
     return eom_sf_ccsd_energies(mf.integral_view_(), mf.determinant(),
                                 mf.energy(), n_states);
 }
@@ -960,8 +960,8 @@ CCSDTResult CCSD<Method>::ccsd_t(Frame& frame) {
         throw std::invalid_argument(
             "CCSD::ccsd_t: closed-shell RHF reference only — UHF / ROHF / GHF "
             "CCSD(T) is not implemented (no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CCSD::ccsd_t");
+    drive_converged(mf, frame, nullptr, "CCSD::ccsd_t");
+    mf.materialize_eri_();
     return ccsd_t_energy(mf.integral_view_(), mf.determinant(), mf.energy());
 }
 
@@ -1093,7 +1093,8 @@ CC2Result CC2<Method>::solve(Frame& frame, Write write, int cap,
             "CC2: tol must be positive and max_iter >= 1");
     const PriorEnergy prior = capture(frame);
     Method& mf = *mf_;
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true, "CC2::run");
+    drive_converged(mf, frame, nullptr, "CC2::run");
+    mf.materialize_eri_();
     typename Loop::Hold hold(*loop_, mf.integral_view_(), mf.determinant(),
                              mf.energy(), diis);
     if (nested) {
@@ -1154,8 +1155,8 @@ EOMCC2Result CC2<Method>::eom_cc2(Frame& frame, int n_states) {
             "CC2::eom_cc2: closed-shell RHF reference only — EOM-CC2 is "
             "the cc2=True EOM-EE singlet (PySCF), not a UHF / ROHF / GHF "
             "entry (no fallback). Use RHF.");
-    drive_converged(mf, frame, nullptr, /*materialize_eri=*/true,
-                    "CC2::eom_cc2");
+    drive_converged(mf, frame, nullptr, "CC2::eom_cc2");
+    mf.materialize_eri_();
     return eom_cc2_energies(mf.integral_view_(), mf.determinant(), mf.energy(),
                             n_states);
 }

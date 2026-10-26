@@ -1,0 +1,15 @@
+[2026-10-26 18:37:35.716] [info] [integrals] start natm=3 basis=STO-3G n_basis=7 electrons=10 charge=0 ecp=- ecp_atoms=0
+[2026-10-26 18:37:35.716] [info] [integrals] start natm=3 basis=STO-3G n_basis=7 electrons=10 charge=0 ecp=- ecp_atoms=0
+[2026-10-26 18:37:35.716] [info] [integrals] one-electron done ms=0.1
+[2026-10-26 18:37:35.716] [info] [integrals] done total_ms=0.2 v_nuc=9.189534
+[2026-10-26 18:37:35.716] [info] [integrals] one-electron done ms=0.1
+[2026-10-26 18:37:35.716] [info] [integrals] done total_ms=0.2 v_nuc=9.189534
+[2026-10-26 18:37:35.716] [info] CPU runtime initialized: 2 threads, MPI rank 0/2
+[2026-10-26 18:37:35.716] [info] [exact_jk] cache_bytes=0 build_ms=0.174 mpi_ranks=2
+[2026-10-26 18:37:35.716] [info] all components built
+[2026-10-26 18:37:35.718] [info] [scf] iterations=9 loop_ms=1.519
+[2026-10-26 18:37:35.718] [info] [gradient] start method=HF spin=restricted natm=3 basis=7
+[2026-10-26 18:37:35.723] [info] [gradient] common_terms max_abs_hb=2.846988 max_atom_norm_hb=2.846988
+[2026-10-26 18:37:35.725] [info] [gradient] two_e_terms max_abs_hb=2.908416 max_atom_norm_hb=2.908416
+[2026-10-26 18:37:35.725] [info] [gradient] done total_ms=6.9 energy_eV=-2039.847777 max_force_component_eVA=3.158742
+{"repeat":0,"energy_hartree":-74.963023138463015,"iterations":9,"forces_hartree_per_bohr":[[-1.1857808344640688e-16,1.0450942481459349e-15,0.061427759156777124],[2.4689822683706284e-16,0.023641338733437992,-0.030713879578388115],[-1.2832014339065823e-16,-0.023641338733439987,-0.030713879578388781]],"threads":2,"seconds":0.0094060559999999994}

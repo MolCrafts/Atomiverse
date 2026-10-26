@@ -42,14 +42,8 @@ def systems(*names: str) -> list[System]:
 
 def participants(method: str, basis: str, task: str, guess: str) -> list[Participant]:
     common = dict(entrypoint="benchmarks.scf.hf:atv_adapter", engine="atomiverse", role="atv")
-    direct_reason = ("Native GHF requires stored dense ERI for nonsymmetric spin-off-diagonal exchange; direct spinor SCF is not implemented"
-                     if method == "GHF" else None)
-    result = [Participant(id="atv.cpu.direct", backend="cpu", required=method != "GHF",
-                          available=direct_reason is None, unavailable_reason=direct_reason,
-                          options={"integral_mode": "direct"}, **common)]
-    if method in {"RHF", "GHF"}:
-        result.append(Participant(id="atv.cpu.stored", backend="cpu", required=method == "GHF",
-                                  options={"integral_mode": "stored"}, **common))
+    result = [Participant(id="atv.cpu", backend="cpu", required=True,
+                          options={"max_memory_mb": 4000.0}, **common)]
     cuda_reason = None
     if method not in {"RHF", "UHF"}:
         cuda_reason = f"CUDA {method} is not implemented"
@@ -143,7 +137,7 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
     limits = threadpoolctl.threadpool_limits(limits=threads)
     backend_info = scf.cuda_backend_info() if participant.backend == "cuda" else scf.backend_info()
     meta = _metadata("atomiverse", module, threadpoolctl, threads, backend=participant.backend,
-                     backend_info=backend_info, integral_mode=participant.options.get("integral_mode", "device_dense"))
+                     backend_info=backend_info, integral_strategy="auto_s8" if participant.backend == "cpu" else "device_dense")
     meta["requested_model"] = row.model
     meta["comparison_class"] = "matched_accuracy"
     meta["resource_mismatch"] = _thread_mismatch(meta["threadpools"], threads) or (
@@ -175,7 +169,7 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
         solver = cls(**kwargs)
         try:
             if participant.backend == "cpu":
-                solver.integral_mode = participant.options["integral_mode"]
+                solver.max_memory_mb = participant.options["max_memory_mb"]
                 solver.init_guess = row.model["init_guess"]
                 for field in ["damping", "conv_tol_grad", "diis_space", "diis_start_cycle"]:
                     setattr(solver, field, row.model[field])
@@ -218,7 +212,7 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
                             tol=float(solver.tol), max_iter=int(solver.max_iter),
                             basis=solver.basis, charge=solver.charge, final_residuals="not_exposed")
             if participant.backend == "cpu":
-                observed.update({key: getattr(solver, key) for key in ["integral_mode", "init_guess", "damping", "conv_tol_grad", "diis_space", "diis_start_cycle"]})
+                observed.update({key: getattr(solver, key) for key in ["max_memory_mb", "init_guess", "damping", "conv_tol_grad", "diis_space", "diis_start_cycle"]})
                 observed["density_criterion"] = "not_exposed"
             else:
                 tol = float(solver.tol)

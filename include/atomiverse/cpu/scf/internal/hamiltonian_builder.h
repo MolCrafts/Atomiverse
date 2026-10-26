@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/internal/cfmm_j.h"
 #include "atomiverse/cpu/scf/internal/density_fitting.h"
+#include "atomiverse/cpu/scf/internal/exact_jk.h"
 #include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/scf_enums.h" // MeanFieldType / SpinType / RI / Coulomb
@@ -75,7 +76,14 @@ class HamiltonianBuilder {
                  const MolecularGrid* fixed_grid, RI ri = RI::None,
                  AuxBasis aux_basis = AuxBasis::Def2JKFIT,
                  Coulomb coulomb = Coulomb::Direct, int cfmm_order = 10,
-                 double cfmm_threshold = 1e-9);
+                 double cfmm_threshold = 1e-9, double max_memory_mb = 4000.0,
+                 bool mpi = false);
+
+    /// Exact J/K in the working AO basis, also for nonsymmetric spin blocks.
+    void exact_jk(const RealMatrix& P, RealMatrix& J, RealMatrix& K,
+                  int channel = 0) const {
+        exact_.step(P, J, K, channel);
+    }
 
     /// @brief Build F from the current α/β densities.
     /// @details Method-dispatched F = Hcore + J − αK + V_xc.
@@ -95,6 +103,7 @@ class HamiltonianBuilder {
          const ATV::electronic::XcFunctional* functional = nullptr) const;
 
   private:
+    ExactJK exact_;
     ShellBlockPairList sp_block_; ///< RHF/RKS shell-block list (libcint-style).
     ShellPairList sp_;            ///< AO-level list for UHF/UKS J/K paths.
     MolecularGrid grid_;          ///< KS XC grid (empty for HF).

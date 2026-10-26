@@ -1,0 +1,10 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.13, pytest-9.1.1, pluggy-1.7.0
+rootdir: /nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/python
+configfile: pyproject.toml
+collected 31 items
+
+python/tests/test_hf_bindings.py ......ssss                              [ 32%]
+python/tests/test_scf.py .....................                           [100%]
+
+======================== 27 passed, 4 skipped in 5.39s =========================

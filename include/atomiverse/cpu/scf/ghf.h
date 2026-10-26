@@ -39,8 +39,8 @@ namespace scf {
 /// supported via the spinor energy-weighted density and the unsymmetrized
 /// four-block exchange contraction (`forces()`). Not supported (throws, no
 /// fallback): `mp2()`, `fci()`, `soscf`, `level_shift`, EDIIS/ADIIS mixers,
-/// the ASPC predictor, and non-Hcore initial guesses. Requires the stored
-/// dense ERI (`compute_eri`, on by default here).
+/// the ASPC predictor, and non-Hcore initial guesses. Uses
+/// the automatic exact J/K engine, including nonsymmetric spin blocks.
 class GHF : public MeanFieldMethod<GHF> {
   public:
     /// @brief Total electron count N (dimensionless; the spinor aufbau fills
@@ -62,7 +62,7 @@ class GHF : public MeanFieldMethod<GHF> {
     double guess_spin_rotation = 0.2;
 
     /// @brief Construct GHF (Hcore guess, 0.7 damping, DIIS 6 vectors from
-    ///        iteration 5, energy tolerance 1e-8 Ha, stored dense ERI, no
+    ///        iteration 5, energy tolerance 1e-8 Ha, automatic exact J/K, no
     ///        nested-force write).
     /// @param basis Basis set.
     /// @param n_electrons Total electrons N (dimensionless, > 0).

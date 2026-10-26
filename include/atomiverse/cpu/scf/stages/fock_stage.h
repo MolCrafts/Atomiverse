@@ -63,8 +63,7 @@ class FockStage : public cpu::Component {
     /// @param ri           Density-fitting mode (RI::None = exact ERIs,
     ///                     bit-identical shipping path). Combining a
     ///                     non-None mode with `generalized` throws — the
-    ///                     GHF spinor build contracts the stored dense
-    ///                     ERI directly and has no RI wiring.
+    ///                     GHF spinor build uses exact J/K and has no RI wiring.
     /// @param aux_basis    Auxiliary basis for the fit (ignored when
     ///                     `ri == RI::None`).
     /// @param generalized  True for the GHF spinor build: `P_alpha` then
@@ -72,8 +71,7 @@ class FockStage : public cpu::Component {
     ///                     receives the 2n×2n spinor Fock
     ///                     F^{σσ'} = δ_{σσ'}(h + J[P^αα+P^ββ]) − K[P^{σσ'}]
     ///                     [Hartree], contracted per n×n spin block from the
-    ///                     stored dense ERI (requires `integrals.ERI`;
-    ///                     HF only).
+    ///                     automatic exact J/K engine (HF only).
     /// @param pcm          Optional non-owning C-PCM workspace (null = off).
     ///                     When set, each fock iteration updates the reaction
     ///                     field from the total density and adds V_pcm to both
@@ -102,7 +100,8 @@ class FockStage : public cpu::Component {
               double& e_pcm_fock_half = FockStage::discard_double_(),
               Coulomb coulomb = Coulomb::Direct, int cfmm_order = 10,
               double cfmm_threshold = 1e-9,
-              const ATV::electronic::XcFunctional* functional = nullptr);
+              const ATV::electronic::XcFunctional* functional = nullptr,
+              double max_memory_mb = 4000.0, bool mpi = false);
 
     /// @brief Component name.
     /// @return `"scf_fock_stage"`.
@@ -123,8 +122,9 @@ class FockStage : public cpu::Component {
   private:
     template <typename>
     friend class MeanFieldMethod;
-    // Physical KS operator before DIIS/level shifts, including reaction fields.
-    // Retained through plan teardown for density-preserving publication.
+    // Physical operator before DIIS/level shifts, including reaction fields.
+    // HF energies must use H + J - K, never the DIIS extrapolate. KS also
+    // retains it through teardown for density-preserving publication.
     RealMatrix physical_alpha_, physical_beta_;
     /// Sink for optional default-bound double& parameters when the caller
     /// does not care about the PCM energy channels (vacuum path).
@@ -136,6 +136,8 @@ class FockStage : public cpu::Component {
     bool restricted_;
     bool is_hf_;
     bool generalized_; ///< GHF spinor build (2n×2n densities/Fock).
+    double max_memory_mb_;
+    bool mpi_;
     XCType xc_type_;
     const ATV::electronic::XcFunctional*
         functional_; ///< Borrowed immutable provider.

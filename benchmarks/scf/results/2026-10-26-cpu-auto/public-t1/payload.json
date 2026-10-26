@@ -1,0 +1,3676 @@
+{
+  "analysis": {
+    "comparison_sha256": "2b1d0665ed94d49abfe5048989f934e679eba2e86210a20de7a4010e42d3d3bc",
+    "reporter_sha256": "c72c652f9d85e11d240e4ede11711ec2221ba4b02c319d91bcc1a6a85958e214"
+  },
+  "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+  "environment": {
+    "affinity": [
+      81,
+      89,
+      101,
+      102,
+      173,
+      174,
+      175,
+      176
+    ],
+    "architecture": "x86_64",
+    "cpu_model": "AMD EPYC 9755 128-Core Processor",
+    "gpu_query_available": false,
+    "gpus": [],
+    "host_memory_bytes": 811083767808,
+    "logical_cpus": 256,
+    "os": "Linux-5.14.0-687.59.1.el9_8.x86_64-x86_64-with-glibc2.34",
+    "physical_cores": 256,
+    "python": "3.13.13",
+    "scheduler": {
+      "SLURM_JOB_ID": "4466409",
+      "SLURM_MEM_PER_NODE": "32768"
+    }
+  },
+  "matrix": {
+    "columns": [
+      "atv.cpu",
+      "atv.cuda",
+      "pyscf.cpu",
+      "gpu4pyscf.cuda"
+    ],
+    "rows": [
+      {
+        "id": "rhf.sto3g.water_chain16.energy",
+        "label": "RHF STO-3G energy (hcore)",
+        "notes": "H1; FP64; reference=pyscf.cpu",
+        "systems": [
+          "16 parallel waters at 4 Angstrom intervals, 112 STO-3G AOs"
+        ],
+        "values": {
+          "atv.cpu": [
+            "water_chain16: pass; 0.987649 s [0.914192, 1.00091]; energy_hartree \u0394max=1.59e-12 (limit 1e-06) Ha; 1.2\u00d7 vs pyscf.cpu"
+          ],
+          "atv.cuda": [
+            "water_chain16: binding_missing; BindingMissing: Public atomiverse.scf.CudaRHF is absent from the loaded binary"
+          ],
+          "gpu4pyscf.cuda": [
+            "water_chain16: dependency_missing; No module named 'gpu4pyscf'"
+          ],
+          "pyscf.cpu": [
+            "water_chain16: pass; 1.18167 s [1.0904, 1.27477]; energy_hartree \u0394max=0 (limit 1e-06) Ha; 1\u00d7 vs pyscf.cpu"
+          ]
+        }
+      }
+    ]
+  },
+  "protocol": {
+    "build_receipt": null,
+    "catalog": {
+      "capabilities": [
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "implemented",
+          "cpu_rows": [
+            "rhf.sto3g.energy",
+            "rhf.631gs.energy",
+            "rhf.def2svp.energy",
+            "rhf.sto3g.water_chain16.energy"
+          ],
+          "cuda": "implemented",
+          "cuda_rows": [
+            "rhf.sto3g.energy",
+            "rhf.631gs.energy",
+            "rhf.def2svp.energy",
+            "rhf.sto3g.water_chain16.energy"
+          ],
+          "id": "hf.rhf.energy",
+          "label": "RHF molecular energy",
+          "reason": "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass.",
+          "rows": [
+            "rhf.sto3g.energy",
+            "rhf.631gs.energy",
+            "rhf.def2svp.energy",
+            "rhf.sto3g.water_chain16.energy"
+          ],
+          "scope": "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "implemented",
+          "cpu_rows": [
+            "rhf.sto3g.forces",
+            "rhf.631gs.forces",
+            "rhf.def2svp.forces"
+          ],
+          "cuda": "implemented",
+          "cuda_rows": [
+            "rhf.sto3g.forces"
+          ],
+          "id": "hf.rhf.gradient",
+          "label": "RHF analytic gradient",
+          "reason": "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass.",
+          "rows": [
+            "rhf.sto3g.forces",
+            "rhf.631gs.forces",
+            "rhf.def2svp.forces"
+          ],
+          "scope": "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "implemented",
+          "cpu_rows": [
+            "uhf.sto3g.minao.energy",
+            "uhf.sto3g.hcore.energy",
+            "uhf.def2svp.energy"
+          ],
+          "cuda": "implemented",
+          "cuda_rows": [
+            "uhf.sto3g.minao.energy"
+          ],
+          "id": "hf.uhf.energy",
+          "label": "UHF molecular energy",
+          "reason": "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass.",
+          "rows": [
+            "uhf.sto3g.minao.energy",
+            "uhf.sto3g.hcore.energy",
+            "uhf.def2svp.energy"
+          ],
+          "scope": "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "implemented",
+          "cpu_rows": [
+            "uhf.sto3g.minao.forces",
+            "uhf.sto3g.hcore.forces",
+            "uhf.def2svp.forces"
+          ],
+          "cuda": "implemented",
+          "cuda_rows": [
+            "uhf.sto3g.minao.forces"
+          ],
+          "id": "hf.uhf.gradient",
+          "label": "UHF analytic gradient",
+          "reason": "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass.",
+          "rows": [
+            "uhf.sto3g.minao.forces",
+            "uhf.sto3g.hcore.forces",
+            "uhf.def2svp.forces"
+          ],
+          "scope": "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "implemented",
+          "cpu_rows": [
+            "rohf.sto3g.energy",
+            "rohf.def2svp.energy"
+          ],
+          "cuda": "not_implemented",
+          "cuda_rows": [],
+          "id": "hf.rohf.energy",
+          "label": "ROHF molecular energy",
+          "reason": "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass.",
+          "rows": [
+            "rohf.sto3g.energy",
+            "rohf.def2svp.energy"
+          ],
+          "scope": "Cartesian STO-3G and spherical def2-SVP open-shell molecules."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "implemented",
+          "cpu_rows": [
+            "rohf.sto3g.forces",
+            "rohf.def2svp.forces"
+          ],
+          "cuda": "not_implemented",
+          "cuda_rows": [],
+          "id": "hf.rohf.gradient",
+          "label": "ROHF analytic gradient",
+          "reason": "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass.",
+          "rows": [
+            "rohf.sto3g.forces",
+            "rohf.def2svp.forces"
+          ],
+          "scope": "Cartesian STO-3G and spherical def2-SVP open-shell molecules."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "implemented",
+          "cpu_rows": [
+            "ghf.sto3g.collapse.energy",
+            "ghf.sto3g.noncollinear.energy",
+            "ghf.def2svp.collapse.energy"
+          ],
+          "cuda": "not_implemented",
+          "cuda_rows": [],
+          "id": "hf.ghf.energy",
+          "label": "GHF molecular energy",
+          "reason": "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass.",
+          "rows": [
+            "ghf.sto3g.collapse.energy",
+            "ghf.sto3g.noncollinear.energy",
+            "ghf.def2svp.collapse.energy"
+          ],
+          "scope": "Native stored-ERI GHF: STO-3G H2 collapse/noncollinear H3 and def2-SVP H2 collapse; direct spinor strategy is unavailable."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.ghf.gradient",
+          "label": "GHF analytic gradient",
+          "reason": "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle.",
+          "rows": [],
+          "scope": "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.complex.energy",
+          "label": "Complex spinor HF / X2C",
+          "reason": "Public complex-spinor oracle/engine adapters remain to be migrated.",
+          "rows": [],
+          "scope": "Public complex-spinor oracle/engine adapters remain to be migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.dhf.energy",
+          "label": "Dirac Coulomb HF",
+          "reason": "Relativistic molecular rows not migrated.",
+          "rows": [],
+          "scope": "Relativistic molecular rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.delta_scf",
+          "label": "Delta-SCF / MOM / IMOM",
+          "reason": "Excited-state occupation and stability inputs not migrated.",
+          "rows": [],
+          "scope": "Excited-state occupation and stability inputs not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.rhf.hessian",
+          "label": "RHF analytic Hessian",
+          "reason": "Independent live CPHF Hessian rows not migrated.",
+          "rows": [],
+          "scope": "Independent live CPHF Hessian rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.uhf.hessian",
+          "label": "UHF analytic Hessian",
+          "reason": "Independent live CPHF Hessian rows not migrated.",
+          "rows": [],
+          "scope": "Independent live CPHF Hessian rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.rohf.hessian",
+          "label": "ROHF finite-difference Hessian",
+          "reason": "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows.",
+          "rows": [],
+          "scope": "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.polarizability",
+          "label": "RHF static polarizability",
+          "reason": "Response rows not migrated.",
+          "rows": [],
+          "scope": "Response rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.stability",
+          "label": "HF stability analysis",
+          "reason": "Noncollinear H3 does not substitute for general stability-analysis rows.",
+          "rows": [],
+          "scope": "Noncollinear H3 does not substitute for general stability-analysis rows."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.periodic.gamma",
+          "label": "Gamma-point periodic RHF",
+          "reason": "Periodic lattice/truncation model and independent oracle not migrated.",
+          "rows": [],
+          "scope": "Periodic lattice/truncation model and independent oracle not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "pending_migration",
+          "id": "hf.periodic.krhf",
+          "label": "k-point RHF",
+          "reason": "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows.",
+          "rows": [],
+          "scope": "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.periodic.kuhf",
+          "label": "k-point UHF",
+          "reason": "Periodic open-shell rows not migrated.",
+          "rows": [],
+          "scope": "Periodic open-shell rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "pending_migration",
+          "id": "hf.diis",
+          "label": "DIIS",
+          "reason": "Using DIIS in molecular rows does not validate its full independent capability envelope.",
+          "rows": [],
+          "scope": "Using DIIS in molecular rows does not validate its full independent capability envelope."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.damping",
+          "label": "Linear damping",
+          "reason": "Damping control-grid rows not migrated.",
+          "rows": [],
+          "scope": "Damping control-grid rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "pending_migration",
+          "id": "hf.level_shift",
+          "label": "Level shift",
+          "reason": "Shifted-SCF branch and matched oracle not migrated.",
+          "rows": [],
+          "scope": "Shifted-SCF branch and matched oracle not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.soscf",
+          "label": "SOSCF",
+          "reason": "Second-order convergence rows not migrated.",
+          "rows": [],
+          "scope": "Second-order convergence rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.orthogonalization",
+          "label": "Canonical orthogonalization",
+          "reason": "Linear-dependence threshold/canonical pruning rows not migrated.",
+          "rows": [],
+          "scope": "Linear-dependence threshold/canonical pruning rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "pending_migration",
+          "id": "hf.guess",
+          "label": "Hcore / MINAO initial guesses",
+          "reason": "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated.",
+          "rows": [],
+          "scope": "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.aspc",
+          "label": "ASPC density prediction",
+          "reason": "Independent trajectory warm-start rows not migrated.",
+          "rows": [],
+          "scope": "Independent trajectory warm-start rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.spin_square",
+          "label": "Spin squared analysis",
+          "reason": "GHF Pab noncollinearity is not a complete S2 analysis benchmark.",
+          "rows": [],
+          "scope": "GHF Pab noncollinearity is not a complete S2 analysis benchmark."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "pending_migration",
+          "id": "hf.spherical",
+          "label": "Spherical AO transformations",
+          "reason": "def2-SVP molecular rows do not cover all l<=3 transformation cases.",
+          "rows": [],
+          "scope": "def2-SVP molecular rows do not cover all l<=3 transformation cases."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.ri_j",
+          "label": "RI-J",
+          "reason": "Auxiliary basis and matched RI model not migrated.",
+          "rows": [],
+          "scope": "Auxiliary basis and matched RI model not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.ri_jk",
+          "label": "RI-JK",
+          "reason": "Auxiliary basis and matched RI model not migrated.",
+          "rows": [],
+          "scope": "Auxiliary basis and matched RI model not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.cfmm",
+          "label": "CFMM-J",
+          "reason": "CFMM accuracy/resource/scaling rows not migrated.",
+          "rows": [],
+          "scope": "CFMM accuracy/resource/scaling rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.native_rys",
+          "label": "Native Rys ERI",
+          "reason": "Public integral-level scientific and resource rows not migrated.",
+          "rows": [],
+          "scope": "Public integral-level scientific and resource rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "not_implemented",
+          "cuda": "pending_migration",
+          "id": "hf.device_eri",
+          "label": "Device ERI",
+          "reason": "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders.",
+          "rows": [],
+          "scope": "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.ecp",
+          "label": "Effective core potentials",
+          "reason": "ECP model and semi-numerical force scope not migrated.",
+          "rows": [],
+          "scope": "ECP model and semi-numerical force scope not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.x2c",
+          "label": "X2C one-electron",
+          "reason": "Relativistic Hamiltonian/gradient rows not migrated.",
+          "rows": [],
+          "scope": "Relativistic Hamiltonian/gradient rows not migrated."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "pending_migration",
+          "id": "hf.diagonalization",
+          "label": "SCF diagonalization",
+          "reason": "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests.",
+          "rows": [],
+          "scope": "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests."
+        },
+        {
+          "chapter": "hartree-fock.md",
+          "cpu": "pending_migration",
+          "cuda": "not_implemented",
+          "id": "hf.ghf.direct_spinor",
+          "label": "Direct-SCF spinor GHF",
+          "reason": "CPU GHF shares the automatic exact J/K engine; a separately budget-constrained benchmark row has not been migrated.",
+          "rows": [],
+          "scope": "Nonsymmetric spin-off-diagonal exchange without a stored dense AO ERI tensor"
+        }
+      ],
+      "schema": "atomiverse.benchmark-catalog/1"
+    },
+    "coverage_policy": {
+      "rhf.631gs.energy": {
+        "systems": [
+          {
+            "id": "water",
+            "tiers": [
+              "acceptance",
+              "performance"
+            ]
+          }
+        ]
+      },
+      "rhf.631gs.forces": {
+        "systems": [
+          {
+            "id": "water",
+            "tiers": [
+              "acceptance",
+              "performance"
+            ]
+          }
+        ]
+      },
+      "rhf.def2svp.energy": {
+        "systems": [
+          {
+            "id": "water",
+            "tiers": [
+              "acceptance",
+              "performance"
+            ]
+          }
+        ]
+      },
+      "rhf.def2svp.forces": {
+        "systems": [
+          {
+            "id": "water",
+            "tiers": [
+              "acceptance",
+              "performance"
+            ]
+          }
+        ]
+      },
+      "rhf.sto3g.energy": {
+        "systems": [
+          {
+            "id": "h2",
+            "tiers": [
+              "smoke",
+              "acceptance",
+              "performance"
+            ]
+          },
+          {
+            "id": "water",
+            "tiers": [
+              "acceptance",
+              "performance"
+            ]
+          }
+        ]
+      },
+      "rhf.sto3g.forces": {
+        "systems": [
+          {
+            "id": "h2_stretched",
+            "tiers": [
+              "smoke",
+              "acceptance",
+              "performance"
+            ]
+          },
+          {
+            "id": "water",
+            "tiers": [
+              "acceptance",
+              "performance"
+            ]
+          }
+        ]
+      },
+      "rhf.sto3g.water_chain16.energy": {
+        "systems": [
+          {
+            "id": "water_chain16",
+            "tiers": [
+              "performance"
+            ]
+          }
+        ]
+      }
+    },
+    "fresh_state": true,
+    "instrumented": false,
+    "precision": "fp64",
+    "sample_schedule": "serial interleaved, reversed on alternate repeats",
+    "selection_partial": true,
+    "spec_sha256": "bd14f59815f39f48b393d5070fabb32be25274c19fceab1fb46b1955d6a03e04",
+    "timing_scope": "warm_e2e",
+    "worker_policy": "fresh process; untimed warmup before each warm sample"
+  },
+  "repeats": 5,
+  "results": [
+    {
+      "checks": [
+        {
+          "atol": 1e-06,
+          "max_abs_error": 1.5916157281026244e-12,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 0,
+          "pass": true,
+          "rms_error": 1.5916157281026244e-12,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 1.5916157281026244e-12,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 1,
+          "pass": true,
+          "rms_error": 1.5916157281026244e-12,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 1.5916157281026244e-12,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 2,
+          "pass": true,
+          "rms_error": 1.5916157281026244e-12,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 1.5916157281026244e-12,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 3,
+          "pass": true,
+          "rms_error": 1.5916157281026244e-12,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 1.5916157281026244e-12,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 4,
+          "pass": true,
+          "rms_error": 1.5916157281026244e-12,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 1.5916157281026244e-12,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 5,
+          "pass": true,
+          "rms_error": 1.5916157281026244e-12,
+          "rtol": 0.0,
+          "unit": "Ha"
+        }
+      ],
+      "cuda_only": "not_applicable",
+      "numerical": "pass",
+      "observations": [
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--cold-0.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "backend_info": {
+                "backend": "cpu",
+                "compiler": "14.3.0",
+                "compiler_executable": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/c++",
+                "compiler_id": "GNU",
+                "compiler_version": "14.3.0",
+                "openmp": true,
+                "openmp_max_threads": 1,
+                "openmp_threads": 1,
+                "openmp_version": 201511
+              },
+              "integral_strategy": "auto_s8"
+            },
+            "binaries_sha256": {
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+              "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0": "981268bd9fb8e89a89bcc1c061d0f5a95fa506feaff866629e7675a1a46d00b3",
+              "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so": "43029e5f7ddde3f43883376da318fca65046eb4c974f731cc4961444023e7723"
+            },
+            "binary_path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+            "binary_sha256": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+            "comparison_class": "matched_accuracy",
+            "engine": "atomiverse",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--cold-0.log",
+            "molpy_version": "0.20.0",
+            "package_version": null,
+            "peak_process_rss_bytes": 220241920,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "basis": "STO-3G",
+              "charge": 0,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "density_criterion": "not_exposed",
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "energy_only": true,
+              "final_residuals": "not_exposed",
+              "init_guess": "hcore",
+              "initial_guess": "hcore",
+              "iterations": 12,
+              "max_iter": 200,
+              "max_memory_mb": 4000.0,
+              "solver_type": "RHF",
+              "spin_rotation": 0.0,
+              "tol": 1e-10
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "ZEN",
+                "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.32"
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              }
+            ],
+            "versions": {
+              "atomiverse": null,
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817935
+          },
+          "phase": "cold",
+          "process_seconds": 1.3680958490003832,
+          "reason": null,
+          "repeat": 0,
+          "seconds": 0.926361027,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-1.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "backend_info": {
+                "backend": "cpu",
+                "compiler": "14.3.0",
+                "compiler_executable": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/c++",
+                "compiler_id": "GNU",
+                "compiler_version": "14.3.0",
+                "openmp": true,
+                "openmp_max_threads": 1,
+                "openmp_threads": 1,
+                "openmp_version": 201511
+              },
+              "integral_strategy": "auto_s8"
+            },
+            "binaries_sha256": {
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+              "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0": "981268bd9fb8e89a89bcc1c061d0f5a95fa506feaff866629e7675a1a46d00b3",
+              "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so": "43029e5f7ddde3f43883376da318fca65046eb4c974f731cc4961444023e7723"
+            },
+            "binary_path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+            "binary_sha256": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+            "comparison_class": "matched_accuracy",
+            "engine": "atomiverse",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-1.log",
+            "molpy_version": "0.20.0",
+            "package_version": null,
+            "peak_process_rss_bytes": 221851648,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "basis": "STO-3G",
+              "charge": 0,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "density_criterion": "not_exposed",
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "energy_only": true,
+              "final_residuals": "not_exposed",
+              "init_guess": "hcore",
+              "initial_guess": "hcore",
+              "iterations": 12,
+              "max_iter": 200,
+              "max_memory_mb": 4000.0,
+              "solver_type": "RHF",
+              "spin_rotation": 0.0,
+              "tol": 1e-10
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "architecture": "ZEN",
+                "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.32"
+              },
+              {
+                "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              }
+            ],
+            "versions": {
+              "atomiverse": null,
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817935
+          },
+          "phase": "warm",
+          "process_seconds": 2.3186897319974378,
+          "reason": null,
+          "repeat": 1,
+          "seconds": 0.987648717,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-2.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "backend_info": {
+                "backend": "cpu",
+                "compiler": "14.3.0",
+                "compiler_executable": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/c++",
+                "compiler_id": "GNU",
+                "compiler_version": "14.3.0",
+                "openmp": true,
+                "openmp_max_threads": 1,
+                "openmp_threads": 1,
+                "openmp_version": 201511
+              },
+              "integral_strategy": "auto_s8"
+            },
+            "binaries_sha256": {
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+              "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0": "981268bd9fb8e89a89bcc1c061d0f5a95fa506feaff866629e7675a1a46d00b3",
+              "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so": "43029e5f7ddde3f43883376da318fca65046eb4c974f731cc4961444023e7723"
+            },
+            "binary_path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+            "binary_sha256": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+            "comparison_class": "matched_accuracy",
+            "engine": "atomiverse",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-2.log",
+            "molpy_version": "0.20.0",
+            "package_version": null,
+            "peak_process_rss_bytes": 221847552,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "basis": "STO-3G",
+              "charge": 0,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "density_criterion": "not_exposed",
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "energy_only": true,
+              "final_residuals": "not_exposed",
+              "init_guess": "hcore",
+              "initial_guess": "hcore",
+              "iterations": 12,
+              "max_iter": 200,
+              "max_memory_mb": 4000.0,
+              "solver_type": "RHF",
+              "spin_rotation": 0.0,
+              "tol": 1e-10
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              },
+              {
+                "architecture": "ZEN",
+                "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.32"
+              }
+            ],
+            "versions": {
+              "atomiverse": null,
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817935
+          },
+          "phase": "warm",
+          "process_seconds": 2.32073082900024,
+          "reason": null,
+          "repeat": 2,
+          "seconds": 1.0009103,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-3.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "backend_info": {
+                "backend": "cpu",
+                "compiler": "14.3.0",
+                "compiler_executable": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/c++",
+                "compiler_id": "GNU",
+                "compiler_version": "14.3.0",
+                "openmp": true,
+                "openmp_max_threads": 1,
+                "openmp_threads": 1,
+                "openmp_version": 201511
+              },
+              "integral_strategy": "auto_s8"
+            },
+            "binaries_sha256": {
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+              "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0": "981268bd9fb8e89a89bcc1c061d0f5a95fa506feaff866629e7675a1a46d00b3",
+              "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so": "43029e5f7ddde3f43883376da318fca65046eb4c974f731cc4961444023e7723"
+            },
+            "binary_path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+            "binary_sha256": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+            "comparison_class": "matched_accuracy",
+            "engine": "atomiverse",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-3.log",
+            "molpy_version": "0.20.0",
+            "package_version": null,
+            "peak_process_rss_bytes": 221843456,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "basis": "STO-3G",
+              "charge": 0,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "density_criterion": "not_exposed",
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "energy_only": true,
+              "final_residuals": "not_exposed",
+              "init_guess": "hcore",
+              "initial_guess": "hcore",
+              "iterations": 12,
+              "max_iter": 200,
+              "max_memory_mb": 4000.0,
+              "solver_type": "RHF",
+              "spin_rotation": 0.0,
+              "tol": 1e-10
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "ZEN",
+                "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.32"
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              }
+            ],
+            "versions": {
+              "atomiverse": null,
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817935
+          },
+          "phase": "warm",
+          "process_seconds": 2.071375530009391,
+          "reason": null,
+          "repeat": 3,
+          "seconds": 0.914191931,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-4.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "backend_info": {
+                "backend": "cpu",
+                "compiler": "14.3.0",
+                "compiler_executable": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/c++",
+                "compiler_id": "GNU",
+                "compiler_version": "14.3.0",
+                "openmp": true,
+                "openmp_max_threads": 1,
+                "openmp_threads": 1,
+                "openmp_version": 201511
+              },
+              "integral_strategy": "auto_s8"
+            },
+            "binaries_sha256": {
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+              "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0": "981268bd9fb8e89a89bcc1c061d0f5a95fa506feaff866629e7675a1a46d00b3",
+              "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so": "43029e5f7ddde3f43883376da318fca65046eb4c974f731cc4961444023e7723"
+            },
+            "binary_path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+            "binary_sha256": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+            "comparison_class": "matched_accuracy",
+            "engine": "atomiverse",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-4.log",
+            "molpy_version": "0.20.0",
+            "package_version": null,
+            "peak_process_rss_bytes": 221773824,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "basis": "STO-3G",
+              "charge": 0,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "density_criterion": "not_exposed",
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "energy_only": true,
+              "final_residuals": "not_exposed",
+              "init_guess": "hcore",
+              "initial_guess": "hcore",
+              "iterations": 12,
+              "max_iter": 200,
+              "max_memory_mb": 4000.0,
+              "solver_type": "RHF",
+              "spin_rotation": 0.0,
+              "tol": 1e-10
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              },
+              {
+                "architecture": "ZEN",
+                "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.32"
+              }
+            ],
+            "versions": {
+              "atomiverse": null,
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817935
+          },
+          "phase": "warm",
+          "process_seconds": 2.2685242230072618,
+          "reason": null,
+          "repeat": 4,
+          "seconds": 0.990171295,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-5.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "backend_info": {
+                "backend": "cpu",
+                "compiler": "14.3.0",
+                "compiler_executable": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/c++",
+                "compiler_id": "GNU",
+                "compiler_version": "14.3.0",
+                "openmp": true,
+                "openmp_max_threads": 1,
+                "openmp_threads": 1,
+                "openmp_version": 201511
+              },
+              "integral_strategy": "auto_s8"
+            },
+            "binaries_sha256": {
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+              "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0": "981268bd9fb8e89a89bcc1c061d0f5a95fa506feaff866629e7675a1a46d00b3",
+              "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so": "43029e5f7ddde3f43883376da318fca65046eb4c974f731cc4961444023e7723"
+            },
+            "binary_path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+            "binary_sha256": "1e5a3db0f38b9fbd11f3291d08ef14d386661172ddec073991ad9846ad0479e2",
+            "comparison_class": "matched_accuracy",
+            "engine": "atomiverse",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cpu--warm-5.log",
+            "molpy_version": "0.20.0",
+            "package_version": null,
+            "peak_process_rss_bytes": 221847552,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "basis": "STO-3G",
+              "charge": 0,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "density_criterion": "not_exposed",
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "energy_only": true,
+              "final_residuals": "not_exposed",
+              "init_guess": "hcore",
+              "initial_guess": "hcore",
+              "iterations": 12,
+              "max_iter": 200,
+              "max_memory_mb": 4000.0,
+              "solver_type": "RHF",
+              "spin_rotation": 0.0,
+              "tol": 1e-10
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "ZEN",
+                "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_zenp-r0.3.32.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.32"
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              }
+            ],
+            "versions": {
+              "atomiverse": null,
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817935
+          },
+          "phase": "warm",
+          "process_seconds": 2.1693064650171436,
+          "reason": null,
+          "repeat": 5,
+          "seconds": 0.936038053,
+          "status": "completed"
+        }
+      ],
+      "participant_id": "atv.cpu",
+      "reason": null,
+      "required": true,
+      "row_id": "rhf.sto3g.water_chain16.energy",
+      "speedup": 1.1964432896640922,
+      "speedup_reason": null,
+      "status": "completed",
+      "system_id": "water_chain16",
+      "timing": {
+        "cold_process_seconds": 1.3680958490003832,
+        "mad_seconds": 0.01326158299999991,
+        "max_seconds": 1.0009103,
+        "median_seconds": 0.987648717,
+        "min_seconds": 0.914191931,
+        "samples_seconds": [
+          0.987648717,
+          1.0009103,
+          0.914191931,
+          0.990171295,
+          0.936038053
+        ],
+        "scope": "warm_e2e"
+      }
+    },
+    {
+      "checks": [],
+      "cuda_only": "unverified",
+      "numerical": "unverified",
+      "observations": [
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cuda--cold-0.output.json",
+          "metadata": {
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--atv.cuda--cold-0.log"
+          },
+          "observables": {},
+          "phase": "cold",
+          "process_seconds": 0.36607354099396616,
+          "reason": "BindingMissing: Public atomiverse.scf.CudaRHF is absent from the loaded binary",
+          "repeat": 0,
+          "seconds": null,
+          "status": "binding_missing"
+        }
+      ],
+      "participant_id": "atv.cuda",
+      "reason": "BindingMissing: Public atomiverse.scf.CudaRHF is absent from the loaded binary",
+      "required": false,
+      "row_id": "rhf.sto3g.water_chain16.energy",
+      "speedup": null,
+      "speedup_reason": "numerical acceptance incomplete or failed",
+      "status": "binding_missing",
+      "system_id": "water_chain16",
+      "timing": {
+        "cold_process_seconds": 0.36607354099396616,
+        "mad_seconds": null,
+        "max_seconds": null,
+        "median_seconds": null,
+        "min_seconds": null,
+        "samples_seconds": [],
+        "scope": "warm_e2e"
+      }
+    },
+    {
+      "checks": [
+        {
+          "atol": 1e-06,
+          "max_abs_error": 0.0,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 0,
+          "pass": true,
+          "rms_error": 0.0,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 0.0,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 1,
+          "pass": true,
+          "rms_error": 0.0,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 0.0,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 2,
+          "pass": true,
+          "rms_error": 0.0,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 0.0,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 3,
+          "pass": true,
+          "rms_error": 0.0,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 0.0,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 4,
+          "pass": true,
+          "rms_error": 0.0,
+          "rtol": 0.0,
+          "unit": "Ha"
+        },
+        {
+          "atol": 1e-06,
+          "max_abs_error": 0.0,
+          "max_limit": 1e-06,
+          "observable": "energy_hartree",
+          "observation": 5,
+          "pass": true,
+          "rms_error": 0.0,
+          "rtol": 0.0,
+          "unit": "Ha"
+        }
+      ],
+      "cuda_only": "not_applicable",
+      "numerical": "pass",
+      "observations": [
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--cold-0.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "pyscf_num_threads": 1,
+              "pyscf_version": "2.14.0"
+            },
+            "binaries_sha256": {
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-040039e1.so.5.0.0": "14afb3129b1a8b50bc40a3b0820c7f1152ea9bc10121aab152943f7057472886",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-91cc3cb1.so.3.0.0": "55e3eb67306c2ff17e6f8a0810eaa0dcb26e94cd83924c5065d5040e87814608",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0": "3a7eaece7231911be2fbb1b3e7cb4cb5c2e0f84e0c2bb73739472b5a1feec8c1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libquadmath-96973f99.so.0.0.0": "934c22ded0e7d169c4d4678876c96051adf3d94545da962f60b41659b075da3b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py": "42754aaf7518664076082bab3e4854a954cda79afe10c8cf7f48e7aa23c16e42",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so": "2a5b4c1a6311873c59132b2ceaaf3c26258a17350b7cd27ea8782a47e3322981",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96"
+            },
+            "binary_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so",
+            "binary_sha256": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+            "comparison_class": "matched_accuracy",
+            "engine": "pyscf",
+            "entrypoint_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--cold-0.log",
+            "molpy_version": "0.20.0",
+            "package_version": "2.14.0",
+            "peak_process_rss_bytes": 254148608,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "cartesian": true,
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "direct_scf": true,
+              "final_residuals": "not_exposed_by_adapter",
+              "initial_guess": "1e",
+              "iterations": 10,
+              "level_shift": 0.0,
+              "max_memory_MiB": 4000.0,
+              "nao": 112,
+              "solver_type": "pyscf.scf.hf.RHF"
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "architecture": "Barcelona",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "disabled",
+                "user_api": "blas",
+                "version": null
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.31.dev"
+              }
+            ],
+            "versions": {
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "pyscf": "2.14.0",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817919
+          },
+          "phase": "cold",
+          "process_seconds": 2.2189130000188015,
+          "reason": null,
+          "repeat": 0,
+          "seconds": 1.293179456,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-1.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "pyscf_num_threads": 1,
+              "pyscf_version": "2.14.0"
+            },
+            "binaries_sha256": {
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-040039e1.so.5.0.0": "14afb3129b1a8b50bc40a3b0820c7f1152ea9bc10121aab152943f7057472886",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-91cc3cb1.so.3.0.0": "55e3eb67306c2ff17e6f8a0810eaa0dcb26e94cd83924c5065d5040e87814608",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0": "3a7eaece7231911be2fbb1b3e7cb4cb5c2e0f84e0c2bb73739472b5a1feec8c1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libquadmath-96973f99.so.0.0.0": "934c22ded0e7d169c4d4678876c96051adf3d94545da962f60b41659b075da3b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py": "42754aaf7518664076082bab3e4854a954cda79afe10c8cf7f48e7aa23c16e42",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so": "2a5b4c1a6311873c59132b2ceaaf3c26258a17350b7cd27ea8782a47e3322981",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96"
+            },
+            "binary_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so",
+            "binary_sha256": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+            "comparison_class": "matched_accuracy",
+            "engine": "pyscf",
+            "entrypoint_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-1.log",
+            "molpy_version": "0.20.0",
+            "package_version": "2.14.0",
+            "peak_process_rss_bytes": 259293184,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "cartesian": true,
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "direct_scf": true,
+              "final_residuals": "not_exposed_by_adapter",
+              "initial_guess": "1e",
+              "iterations": 10,
+              "level_shift": 0.0,
+              "max_memory_MiB": 4000.0,
+              "nao": 112,
+              "solver_type": "pyscf.scf.hf.RHF"
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              },
+              {
+                "architecture": "Barcelona",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "disabled",
+                "user_api": "blas",
+                "version": null
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.31.dev"
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              }
+            ],
+            "versions": {
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "pyscf": "2.14.0",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817919
+          },
+          "phase": "warm",
+          "process_seconds": 3.421773172012763,
+          "reason": null,
+          "repeat": 1,
+          "seconds": 1.274768222,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-2.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "pyscf_num_threads": 1,
+              "pyscf_version": "2.14.0"
+            },
+            "binaries_sha256": {
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-040039e1.so.5.0.0": "14afb3129b1a8b50bc40a3b0820c7f1152ea9bc10121aab152943f7057472886",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-91cc3cb1.so.3.0.0": "55e3eb67306c2ff17e6f8a0810eaa0dcb26e94cd83924c5065d5040e87814608",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0": "3a7eaece7231911be2fbb1b3e7cb4cb5c2e0f84e0c2bb73739472b5a1feec8c1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libquadmath-96973f99.so.0.0.0": "934c22ded0e7d169c4d4678876c96051adf3d94545da962f60b41659b075da3b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py": "42754aaf7518664076082bab3e4854a954cda79afe10c8cf7f48e7aa23c16e42",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so": "2a5b4c1a6311873c59132b2ceaaf3c26258a17350b7cd27ea8782a47e3322981",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96"
+            },
+            "binary_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so",
+            "binary_sha256": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+            "comparison_class": "matched_accuracy",
+            "engine": "pyscf",
+            "entrypoint_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-2.log",
+            "molpy_version": "0.20.0",
+            "package_version": "2.14.0",
+            "peak_process_rss_bytes": 258674688,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "cartesian": true,
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "direct_scf": true,
+              "final_residuals": "not_exposed_by_adapter",
+              "initial_guess": "1e",
+              "iterations": 10,
+              "level_shift": 0.0,
+              "max_memory_MiB": 4000.0,
+              "nao": 112,
+              "solver_type": "pyscf.scf.hf.RHF"
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.31.dev"
+              },
+              {
+                "architecture": "Barcelona",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "disabled",
+                "user_api": "blas",
+                "version": null
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              }
+            ],
+            "versions": {
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "pyscf": "2.14.0",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817919
+          },
+          "phase": "warm",
+          "process_seconds": 3.2703683199943043,
+          "reason": null,
+          "repeat": 2,
+          "seconds": 1.26264019,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-3.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "pyscf_num_threads": 1,
+              "pyscf_version": "2.14.0"
+            },
+            "binaries_sha256": {
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-040039e1.so.5.0.0": "14afb3129b1a8b50bc40a3b0820c7f1152ea9bc10121aab152943f7057472886",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-91cc3cb1.so.3.0.0": "55e3eb67306c2ff17e6f8a0810eaa0dcb26e94cd83924c5065d5040e87814608",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0": "3a7eaece7231911be2fbb1b3e7cb4cb5c2e0f84e0c2bb73739472b5a1feec8c1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libquadmath-96973f99.so.0.0.0": "934c22ded0e7d169c4d4678876c96051adf3d94545da962f60b41659b075da3b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py": "42754aaf7518664076082bab3e4854a954cda79afe10c8cf7f48e7aa23c16e42",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so": "2a5b4c1a6311873c59132b2ceaaf3c26258a17350b7cd27ea8782a47e3322981",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96"
+            },
+            "binary_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so",
+            "binary_sha256": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+            "comparison_class": "matched_accuracy",
+            "engine": "pyscf",
+            "entrypoint_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-3.log",
+            "molpy_version": "0.20.0",
+            "package_version": "2.14.0",
+            "peak_process_rss_bytes": 258277376,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "cartesian": true,
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "direct_scf": true,
+              "final_residuals": "not_exposed_by_adapter",
+              "initial_guess": "1e",
+              "iterations": 10,
+              "level_shift": 0.0,
+              "max_memory_MiB": 4000.0,
+              "nao": 112,
+              "solver_type": "pyscf.scf.hf.RHF"
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.31.dev"
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "architecture": "Barcelona",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "disabled",
+                "user_api": "blas",
+                "version": null
+              },
+              {
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              }
+            ],
+            "versions": {
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "pyscf": "2.14.0",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817919
+          },
+          "phase": "warm",
+          "process_seconds": 3.17035791699891,
+          "reason": null,
+          "repeat": 3,
+          "seconds": 1.18166568,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-4.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "pyscf_num_threads": 1,
+              "pyscf_version": "2.14.0"
+            },
+            "binaries_sha256": {
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-040039e1.so.5.0.0": "14afb3129b1a8b50bc40a3b0820c7f1152ea9bc10121aab152943f7057472886",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-91cc3cb1.so.3.0.0": "55e3eb67306c2ff17e6f8a0810eaa0dcb26e94cd83924c5065d5040e87814608",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0": "3a7eaece7231911be2fbb1b3e7cb4cb5c2e0f84e0c2bb73739472b5a1feec8c1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libquadmath-96973f99.so.0.0.0": "934c22ded0e7d169c4d4678876c96051adf3d94545da962f60b41659b075da3b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py": "42754aaf7518664076082bab3e4854a954cda79afe10c8cf7f48e7aa23c16e42",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so": "2a5b4c1a6311873c59132b2ceaaf3c26258a17350b7cd27ea8782a47e3322981",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96"
+            },
+            "binary_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so",
+            "binary_sha256": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+            "comparison_class": "matched_accuracy",
+            "engine": "pyscf",
+            "entrypoint_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-4.log",
+            "molpy_version": "0.20.0",
+            "package_version": "2.14.0",
+            "peak_process_rss_bytes": 259846144,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "cartesian": true,
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "direct_scf": true,
+              "final_residuals": "not_exposed_by_adapter",
+              "initial_guess": "1e",
+              "iterations": 10,
+              "level_shift": 0.0,
+              "max_memory_MiB": 4000.0,
+              "nao": 112,
+              "solver_type": "pyscf.scf.hf.RHF"
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.31.dev"
+              },
+              {
+                "architecture": "Barcelona",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "disabled",
+                "user_api": "blas",
+                "version": null
+              },
+              {
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              }
+            ],
+            "versions": {
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "pyscf": "2.14.0",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817919
+          },
+          "phase": "warm",
+          "process_seconds": 2.7187652620195877,
+          "reason": null,
+          "repeat": 4,
+          "seconds": 1.090395925,
+          "status": "completed"
+        },
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-5.output.json",
+          "metadata": {
+            "actual_engine_config": {
+              "backend": "cpu",
+              "pyscf_num_threads": 1,
+              "pyscf_version": "2.14.0"
+            },
+            "binaries_sha256": {
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-040039e1.so.5.0.0": "14afb3129b1a8b50bc40a3b0820c7f1152ea9bc10121aab152943f7057472886",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-91cc3cb1.so.3.0.0": "55e3eb67306c2ff17e6f8a0810eaa0dcb26e94cd83924c5065d5040e87814608",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0": "3a7eaece7231911be2fbb1b3e7cb4cb5c2e0f84e0c2bb73739472b5a1feec8c1",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libquadmath-96973f99.so.0.0.0": "934c22ded0e7d169c4d4678876c96051adf3d94545da962f60b41659b075da3b",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py": "42754aaf7518664076082bab3e4854a954cda79afe10c8cf7f48e7aa23c16e42",
+              "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so": "2a5b4c1a6311873c59132b2ceaaf3c26258a17350b7cd27ea8782a47e3322981",
+              "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96"
+            },
+            "binary_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so",
+            "binary_sha256": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+            "comparison_class": "matched_accuracy",
+            "engine": "pyscf",
+            "entrypoint_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py",
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-5.log",
+            "molpy_version": "0.20.0",
+            "package_version": "2.14.0",
+            "peak_process_rss_bytes": 257155072,
+            "requested_model": {
+              "basis": "STO-3G",
+              "cartesian": true,
+              "comparison_class": "matched_accuracy",
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "init_guess": "hcore",
+              "max_cycle": 200,
+              "method": "RHF",
+              "neel": false,
+              "nonzero_force": false,
+              "spin_rotation": 0.0
+            },
+            "requested_threads": 1,
+            "resolved_settings": {
+              "cartesian": true,
+              "conv_tol": 1e-10,
+              "conv_tol_grad": 1e-08,
+              "converged": true,
+              "damping": 0.0,
+              "diis_space": 8,
+              "diis_start_cycle": 1,
+              "direct_scf": true,
+              "final_residuals": "not_exposed_by_adapter",
+              "initial_guess": "1e",
+              "iterations": 10,
+              "level_shift": 0.0,
+              "max_memory_MiB": 4000.0,
+              "nao": 112,
+              "solver_type": "pyscf.scf.hf.RHF"
+            },
+            "resource_mismatch": false,
+            "threadpools": [
+              {
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+                "internal_api": "openmp",
+                "num_threads": 1,
+                "prefix": "libgomp",
+                "user_api": "openmp",
+                "version": null
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.31.dev"
+              },
+              {
+                "architecture": "SkylakeX",
+                "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libscipy_openblas",
+                "threading_layer": "pthreads",
+                "user_api": "blas",
+                "version": "0.3.34.106.0"
+              },
+              {
+                "architecture": "Barcelona",
+                "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+                "internal_api": "openblas",
+                "num_threads": 1,
+                "prefix": "libopenblas",
+                "threading_layer": "disabled",
+                "user_api": "blas",
+                "version": null
+              }
+            ],
+            "versions": {
+              "molpy": "0.20.0",
+              "numpy": "2.5.4",
+              "pyscf": "2.14.0",
+              "scipy": "1.18.1",
+              "threadpoolctl": "3.7.0"
+            }
+          },
+          "observables": {
+            "energy_hartree": -1199.3881189817919
+          },
+          "phase": "warm",
+          "process_seconds": 2.819594747998053,
+          "reason": null,
+          "repeat": 5,
+          "seconds": 1.122336474,
+          "status": "completed"
+        }
+      ],
+      "participant_id": "pyscf.cpu",
+      "reason": null,
+      "required": true,
+      "row_id": "rhf.sto3g.water_chain16.energy",
+      "speedup": 1.0,
+      "speedup_reason": null,
+      "status": "completed",
+      "system_id": "water_chain16",
+      "timing": {
+        "cold_process_seconds": 2.2189130000188015,
+        "mad_seconds": 0.08097450999999989,
+        "max_seconds": 1.274768222,
+        "median_seconds": 1.18166568,
+        "min_seconds": 1.090395925,
+        "samples_seconds": [
+          1.274768222,
+          1.26264019,
+          1.18166568,
+          1.090395925,
+          1.122336474
+        ],
+        "scope": "warm_e2e"
+      }
+    },
+    {
+      "checks": [],
+      "cuda_only": "not_applicable",
+      "numerical": "unverified",
+      "observations": [
+        {
+          "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--gpu4pyscf.cuda--cold-0.output.json",
+          "metadata": {
+            "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--gpu4pyscf.cuda--cold-0.log"
+          },
+          "observables": {},
+          "phase": "cold",
+          "process_seconds": 0.6164968280063476,
+          "reason": "No module named 'gpu4pyscf'",
+          "repeat": 0,
+          "seconds": null,
+          "status": "dependency_missing"
+        }
+      ],
+      "participant_id": "gpu4pyscf.cuda",
+      "reason": "No module named 'gpu4pyscf'",
+      "required": false,
+      "row_id": "rhf.sto3g.water_chain16.energy",
+      "speedup": null,
+      "speedup_reason": "numerical acceptance incomplete or failed",
+      "status": "dependency_missing",
+      "system_id": "water_chain16",
+      "timing": {
+        "cold_process_seconds": 0.6164968280063476,
+        "mad_seconds": null,
+        "max_seconds": null,
+        "median_seconds": null,
+        "min_seconds": null,
+        "samples_seconds": [],
+        "scope": "warm_e2e"
+      }
+    }
+  ],
+  "roadmap": [
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rhf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only.",
+      "label": "RHF molecular energy",
+      "mark": "\u25d0",
+      "numerical_pass": true,
+      "official_source": false,
+      "reason": "required coverage incomplete; official source/build qualification incomplete",
+      "row_ids": [
+        "rhf.631gs.energy",
+        "rhf.def2svp.energy",
+        "rhf.sto3g.energy",
+        "rhf.sto3g.water_chain16.energy"
+      ],
+      "scope": [
+        "water_chain16"
+      ]
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rhf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": false,
+      "declared_scope": "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only.",
+      "label": "RHF molecular energy",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; CUDA-only trace qualification incomplete; official source/build qualification incomplete",
+      "row_ids": [
+        "rhf.631gs.energy",
+        "rhf.def2svp.energy",
+        "rhf.sto3g.energy",
+        "rhf.sto3g.water_chain16.energy"
+      ],
+      "scope": [
+        "water_chain16"
+      ]
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rhf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only.",
+      "label": "RHF analytic gradient",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "rhf.631gs.forces",
+        "rhf.def2svp.forces",
+        "rhf.sto3g.forces"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rhf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only.",
+      "label": "RHF analytic gradient",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "rhf.sto3g.forces"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.uhf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct.",
+      "label": "UHF molecular energy",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "uhf.def2svp.energy",
+        "uhf.sto3g.hcore.energy",
+        "uhf.sto3g.minao.energy"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.uhf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct.",
+      "label": "UHF molecular energy",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "uhf.sto3g.minao.energy"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.uhf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct.",
+      "label": "UHF analytic gradient",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "uhf.def2svp.forces",
+        "uhf.sto3g.hcore.forces",
+        "uhf.sto3g.minao.forces"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.uhf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct.",
+      "label": "UHF analytic gradient",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "uhf.sto3g.minao.forces"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rohf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP open-shell molecules.",
+      "label": "ROHF molecular energy",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "rohf.def2svp.energy",
+        "rohf.sto3g.energy"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rohf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP open-shell molecules.",
+      "label": "ROHF molecular energy",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rohf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP open-shell molecules.",
+      "label": "ROHF analytic gradient",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "rohf.def2svp.forces",
+        "rohf.sto3g.forces"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rohf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Cartesian STO-3G and spherical def2-SVP open-shell molecules.",
+      "label": "ROHF analytic gradient",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ghf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Native stored-ERI GHF: STO-3G H2 collapse/noncollinear H3 and def2-SVP H2 collapse; direct spinor strategy is unavailable.",
+      "label": "GHF molecular energy",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete",
+      "row_ids": [
+        "ghf.def2svp.collapse.energy",
+        "ghf.sto3g.collapse.energy",
+        "ghf.sto3g.noncollinear.energy"
+      ],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ghf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Native stored-ERI GHF: STO-3G H2 collapse/noncollinear H3 and def2-SVP H2 collapse; direct spinor strategy is unavailable.",
+      "label": "GHF molecular energy",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ghf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle.",
+      "label": "GHF analytic gradient",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ghf.gradient",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle.",
+      "label": "GHF analytic gradient",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.complex.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Public complex-spinor oracle/engine adapters remain to be migrated.",
+      "label": "Complex spinor HF / X2C",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Public complex-spinor oracle/engine adapters remain to be migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.complex.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Public complex-spinor oracle/engine adapters remain to be migrated.",
+      "label": "Complex spinor HF / X2C",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.dhf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Relativistic molecular rows not migrated.",
+      "label": "Dirac Coulomb HF",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Relativistic molecular rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.dhf.energy",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Relativistic molecular rows not migrated.",
+      "label": "Dirac Coulomb HF",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.delta_scf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Excited-state occupation and stability inputs not migrated.",
+      "label": "Delta-SCF / MOM / IMOM",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Excited-state occupation and stability inputs not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.delta_scf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Excited-state occupation and stability inputs not migrated.",
+      "label": "Delta-SCF / MOM / IMOM",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rhf.hessian",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Independent live CPHF Hessian rows not migrated.",
+      "label": "RHF analytic Hessian",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Independent live CPHF Hessian rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rhf.hessian",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Independent live CPHF Hessian rows not migrated.",
+      "label": "RHF analytic Hessian",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.uhf.hessian",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Independent live CPHF Hessian rows not migrated.",
+      "label": "UHF analytic Hessian",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Independent live CPHF Hessian rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.uhf.hessian",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Independent live CPHF Hessian rows not migrated.",
+      "label": "UHF analytic Hessian",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rohf.hessian",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows.",
+      "label": "ROHF finite-difference Hessian",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.rohf.hessian",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows.",
+      "label": "ROHF finite-difference Hessian",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.polarizability",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Response rows not migrated.",
+      "label": "RHF static polarizability",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Response rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.polarizability",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Response rows not migrated.",
+      "label": "RHF static polarizability",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.stability",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Noncollinear H3 does not substitute for general stability-analysis rows.",
+      "label": "HF stability analysis",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Noncollinear H3 does not substitute for general stability-analysis rows.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.stability",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Noncollinear H3 does not substitute for general stability-analysis rows.",
+      "label": "HF stability analysis",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.periodic.gamma",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Periodic lattice/truncation model and independent oracle not migrated.",
+      "label": "Gamma-point periodic RHF",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Periodic lattice/truncation model and independent oracle not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.periodic.gamma",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Periodic lattice/truncation model and independent oracle not migrated.",
+      "label": "Gamma-point periodic RHF",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.periodic.krhf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows.",
+      "label": "k-point RHF",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; CPU and partial CUDA public periodic surfaces need separate matched model and residency rows.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.periodic.krhf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows.",
+      "label": "k-point RHF",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; CPU and partial CUDA public periodic surfaces need separate matched model and residency rows.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.periodic.kuhf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Periodic open-shell rows not migrated.",
+      "label": "k-point UHF",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Periodic open-shell rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.periodic.kuhf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Periodic open-shell rows not migrated.",
+      "label": "k-point UHF",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.diis",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Using DIIS in molecular rows does not validate its full independent capability envelope.",
+      "label": "DIIS",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Using DIIS in molecular rows does not validate its full independent capability envelope.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.diis",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Using DIIS in molecular rows does not validate its full independent capability envelope.",
+      "label": "DIIS",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Using DIIS in molecular rows does not validate its full independent capability envelope.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.damping",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Damping control-grid rows not migrated.",
+      "label": "Linear damping",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Damping control-grid rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.damping",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Damping control-grid rows not migrated.",
+      "label": "Linear damping",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.level_shift",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Shifted-SCF branch and matched oracle not migrated.",
+      "label": "Level shift",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Shifted-SCF branch and matched oracle not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.level_shift",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Shifted-SCF branch and matched oracle not migrated.",
+      "label": "Level shift",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Shifted-SCF branch and matched oracle not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.soscf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Second-order convergence rows not migrated.",
+      "label": "SOSCF",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Second-order convergence rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.soscf",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Second-order convergence rows not migrated.",
+      "label": "SOSCF",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.orthogonalization",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Linear-dependence threshold/canonical pruning rows not migrated.",
+      "label": "Canonical orthogonalization",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Linear-dependence threshold/canonical pruning rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.orthogonalization",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Linear-dependence threshold/canonical pruning rows not migrated.",
+      "label": "Canonical orthogonalization",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.guess",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated.",
+      "label": "Hcore / MINAO initial guesses",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.guess",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated.",
+      "label": "Hcore / MINAO initial guesses",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.aspc",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Independent trajectory warm-start rows not migrated.",
+      "label": "ASPC density prediction",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Independent trajectory warm-start rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.aspc",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Independent trajectory warm-start rows not migrated.",
+      "label": "ASPC density prediction",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.spin_square",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "GHF Pab noncollinearity is not a complete S2 analysis benchmark.",
+      "label": "Spin squared analysis",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; GHF Pab noncollinearity is not a complete S2 analysis benchmark.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.spin_square",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "GHF Pab noncollinearity is not a complete S2 analysis benchmark.",
+      "label": "Spin squared analysis",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.spherical",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "def2-SVP molecular rows do not cover all l<=3 transformation cases.",
+      "label": "Spherical AO transformations",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; def2-SVP molecular rows do not cover all l<=3 transformation cases.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.spherical",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "def2-SVP molecular rows do not cover all l<=3 transformation cases.",
+      "label": "Spherical AO transformations",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; def2-SVP molecular rows do not cover all l<=3 transformation cases.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ri_j",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Auxiliary basis and matched RI model not migrated.",
+      "label": "RI-J",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Auxiliary basis and matched RI model not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ri_j",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Auxiliary basis and matched RI model not migrated.",
+      "label": "RI-J",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ri_jk",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Auxiliary basis and matched RI model not migrated.",
+      "label": "RI-JK",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Auxiliary basis and matched RI model not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ri_jk",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Auxiliary basis and matched RI model not migrated.",
+      "label": "RI-JK",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.cfmm",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "CFMM accuracy/resource/scaling rows not migrated.",
+      "label": "CFMM-J",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; CFMM accuracy/resource/scaling rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.cfmm",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "CFMM accuracy/resource/scaling rows not migrated.",
+      "label": "CFMM-J",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.native_rys",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Public integral-level scientific and resource rows not migrated.",
+      "label": "Native Rys ERI",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Public integral-level scientific and resource rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.native_rys",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Public integral-level scientific and resource rows not migrated.",
+      "label": "Native Rys ERI",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.device_eri",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders.",
+      "label": "Device ERI",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.device_eri",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders.",
+      "label": "Device ERI",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ecp",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "ECP model and semi-numerical force scope not migrated.",
+      "label": "Effective core potentials",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; ECP model and semi-numerical force scope not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ecp",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "ECP model and semi-numerical force scope not migrated.",
+      "label": "Effective core potentials",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.x2c",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Relativistic Hamiltonian/gradient rows not migrated.",
+      "label": "X2C one-electron",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Relativistic Hamiltonian/gradient rows not migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.x2c",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Relativistic Hamiltonian/gradient rows not migrated.",
+      "label": "X2C one-electron",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.diagonalization",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests.",
+      "label": "SCF diagonalization",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.diagonalization",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests.",
+      "label": "SCF diagonalization",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cpu",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ghf.direct_spinor",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Nonsymmetric spin-off-diagonal exchange without a stored dense AO ERI tensor",
+      "label": "Direct-SCF spinor GHF",
+      "mark": "\u25d0",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; CPU GHF shares the automatic exact J/K engine; a separately budget-constrained benchmark row has not been migrated.",
+      "row_ids": [],
+      "scope": []
+    },
+    {
+      "backend": "cuda",
+      "campaign_id": "70a70c8f61484e808a2645cbe693b7f0",
+      "capability_id": "hf.ghf.direct_spinor",
+      "chapter": "hartree-fock.md",
+      "coverage_complete": false,
+      "cuda_only_qualified": true,
+      "declared_scope": "Nonsymmetric spin-off-diagonal exchange without a stored dense AO ERI tensor",
+      "label": "Direct-SCF spinor GHF",
+      "mark": "\u25cb",
+      "numerical_pass": false,
+      "official_source": false,
+      "reason": "not implemented",
+      "row_ids": [],
+      "scope": []
+    }
+  ],
+  "schema": "atomiverse.scientific-benchmark/1",
+  "source": {
+    "build_verified": false,
+    "changed_during_run": false,
+    "commit": "c9862a288828e6a1f43f90a2fa1656347c802aed",
+    "diff_sha256": "1d6d76e01d4fb67d321ec70e94af2d846dc482c846408e9f8498ff24871dccae",
+    "dirty": true,
+    "repository": "MolCrafts/Atomiverse",
+    "status": "M CMakeLists.txt\n M README.md\n M benchmarks/CMakeLists.txt\n M benchmarks/cuda/CMakeLists.txt\n M benchmarks/cuda/bench_rhf_cpu_vs_cuda.cu\n M benchmarks/roadmap.toml\n M benchmarks/scf/README.md\n M benchmarks/scf/hf.py\n M docs/developer/project-contract.md\n M include/atomiverse/cpu/scf/ghf.h\n M include/atomiverse/cpu/scf/internal/hamiltonian_builder.h\n M include/atomiverse/cpu/scf/mean_field_method.h\n M include/atomiverse/cpu/scf/stages/fock_stage.h\n M python/src/atomiverse/cli/config.py\n M python/src/atomiverse/cli/main.py\n M python/src/atomiverse/scf.py\n M python/src/bindings/bind_scf.cpp\n M python/tests/test_hf_bindings.py\n M python/tests/test_install_cli.py\n M src/cpu/scf/ghf.cpp\n M src/cpu/scf/internal/ccsd_gradient.cpp\n M src/cpu/scf/internal/hamiltonian_builder.cpp\n M src/cpu/scf/mean_field_method.cpp\n M src/cpu/scf/operators.cpp\n M src/cpu/scf/post_hf.cpp\n M src/cpu/scf/stages/fock_stage.cpp\n M src/cpu/scf/tdhf.cpp\n M tests/CMakeLists.txt\n M tests/benchmarks/test_hf_specification.py\n M tests/cpu/scf/test_method_driver_wire.cpp\n M tests/cpu/scf/test_operators.cpp\n?? .grok/\n?? benchmarks/scf/bench_cpu.cpp\n?? benchmarks/scf/profile_cpu.py\n?? frequencies.tsv\n?? include/atomiverse/cpu/scf/internal/exact_jk.h\n?? src/cpu/scf/internal/exact_jk.cpp\n?? tests/cpu/scf/test_exact_jk.cpp",
+    "tree_sha256": "f1ec02d357abfbf8871079c498f01ba95407fe8f835a3ecff4fe348bde2785dc"
+  },
+  "started": "2026-10-26T17:46:28.787172+00:00",
+  "summary": {
+    "complete": true,
+    "failed": 0,
+    "historical_status": "unbaselined",
+    "incomplete": 0,
+    "optional_unavailable": 2,
+    "passed": 2,
+    "performance_regressions": 0,
+    "required": 2
+  },
+  "threads": 1,
+  "warmup": 1
+}

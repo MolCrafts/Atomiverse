@@ -64,22 +64,14 @@ def test_each_row_names_required_independent_live_reference(row):
     assert row.cuda_only
 
 
-def test_native_ghf_stored_envelope_and_direct_spinor_gap_are_explicit():
-    for row in GHF.rows:
-        stored, direct = participant(row, "atv.cpu.stored"), participant(row, "atv.cpu.direct")
-        assert stored.required and stored.available and stored.options == {"integral_mode": "stored"}
-        assert not direct.required and not direct.available and direct.unavailable_reason
-        assert direct.options == {"integral_mode": "direct"}
-        assert not participant(row, "atv.cuda").available
-    for method in (RHF, UHF, ROHF):
+def test_cpu_hf_has_one_automatic_exact_strategy():
+    for method in (RHF, UHF, ROHF, GHF):
         for row in method.rows:
-            assert participant(row, "atv.cpu.direct").required
-    catalog = tomllib.loads((ROOT / "benchmarks/roadmap.toml").read_text())
-    capabilities = {c["id"]: c for c in catalog["capabilities"]}
-    gap = capabilities["hf.ghf.direct_spinor"]
-    assert gap["rows"] == [] and gap["cpu"] == "not_implemented"
-    gradient = capabilities["hf.ghf.gradient"]
-    assert gradient["rows"] == [] and gradient["cpu"] == "pending_migration"
+            cpu = [p for p in row.participants if p.engine == "atomiverse" and p.backend == "cpu"]
+            assert len(cpu) == 1
+            assert cpu[0].id == "atv.cpu" and cpu[0].required and cpu[0].available
+            assert cpu[0].options == {"max_memory_mb": 4000.0}
+    assert all(not participant(row, "atv.cuda").available for row in GHF.rows)
     assert not any(r.task == "forces" for r in GHF.rows)
 
 
@@ -224,7 +216,7 @@ def lightweight_public_engines(monkeypatch, tmp_path):
 def test_public_adapter_fresh_state_and_actual_settings_metadata(lightweight_public_engines, backend):
     events, binary = lightweight_public_engines
     row = RHF.rows[0]
-    p = participant(row, "atv.cpu.direct" if backend == "cpu" else "atv.cuda")
+    p = participant(row, "atv.cpu" if backend == "cpu" else "atv.cuda")
     run = hf.atv_adapter(row, row.systems[0], p, threads=1)
     assert events == []  # Factory may prepare runtime/metadata, never scientific state.
     outputs = [run(), run()]
@@ -243,7 +235,7 @@ def test_public_adapter_fresh_state_and_actual_settings_metadata(lightweight_pub
     assert actual["converged"] is True and isinstance(actual["iterations"], int)
     assert isinstance(actual["tol"], float) and isinstance(actual["max_iter"], int)
     if backend == "cpu":
-        assert actual["integral_mode"] == "direct"
+        assert actual["max_memory_mb"] == 4000.0
         assert isinstance(actual["conv_tol_grad"], float)
         assert isinstance(actual["diis_space"], int)
     else:
@@ -264,8 +256,8 @@ def test_cuda_adapter_does_not_accept_reported_cpu_fallback(lightweight_public_e
         run()
 
 
-def test_declared_unavailable_ghf_direct_has_explicit_status_before_engine_import():
+def test_declared_unavailable_ghf_cuda_has_explicit_status_before_engine_import():
     row = GHF.rows[0]
     with pytest.raises(hf.CapabilityUnavailable) as failure:
-        hf.atv_adapter(row, row.systems[0], participant(row, "atv.cpu.direct"), threads=1)
+        hf.atv_adapter(row, row.systems[0], participant(row, "atv.cuda"), threads=1)
     assert failure.value.benchmark_status == "not_implemented"

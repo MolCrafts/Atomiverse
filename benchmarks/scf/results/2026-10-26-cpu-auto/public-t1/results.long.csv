@@ -1,0 +1,15 @@
+row_id,system_id,participant_id,required,execution,numerical,phase,repeat,seconds,process_seconds,median_seconds,speedup,reason
+rhf.sto3g.water_chain16.energy,water_chain16,atv.cpu,True,completed,pass,cold,0,0.926361027,1.3680958490003832,0.987648717,1.1964432896640922,
+rhf.sto3g.water_chain16.energy,water_chain16,atv.cpu,True,completed,pass,warm,1,0.987648717,2.3186897319974378,0.987648717,1.1964432896640922,
+rhf.sto3g.water_chain16.energy,water_chain16,atv.cpu,True,completed,pass,warm,2,1.0009103,2.32073082900024,0.987648717,1.1964432896640922,
+rhf.sto3g.water_chain16.energy,water_chain16,atv.cpu,True,completed,pass,warm,3,0.914191931,2.071375530009391,0.987648717,1.1964432896640922,
+rhf.sto3g.water_chain16.energy,water_chain16,atv.cpu,True,completed,pass,warm,4,0.990171295,2.2685242230072618,0.987648717,1.1964432896640922,
+rhf.sto3g.water_chain16.energy,water_chain16,atv.cpu,True,completed,pass,warm,5,0.936038053,2.1693064650171436,0.987648717,1.1964432896640922,
+rhf.sto3g.water_chain16.energy,water_chain16,atv.cuda,False,binding_missing,unverified,cold,0,,0.36607354099396616,,,BindingMissing: Public atomiverse.scf.CudaRHF is absent from the loaded binary
+rhf.sto3g.water_chain16.energy,water_chain16,pyscf.cpu,True,completed,pass,cold,0,1.293179456,2.2189130000188015,1.18166568,1.0,
+rhf.sto3g.water_chain16.energy,water_chain16,pyscf.cpu,True,completed,pass,warm,1,1.274768222,3.421773172012763,1.18166568,1.0,
+rhf.sto3g.water_chain16.energy,water_chain16,pyscf.cpu,True,completed,pass,warm,2,1.26264019,3.2703683199943043,1.18166568,1.0,
+rhf.sto3g.water_chain16.energy,water_chain16,pyscf.cpu,True,completed,pass,warm,3,1.18166568,3.17035791699891,1.18166568,1.0,
+rhf.sto3g.water_chain16.energy,water_chain16,pyscf.cpu,True,completed,pass,warm,4,1.090395925,2.7187652620195877,1.18166568,1.0,
+rhf.sto3g.water_chain16.energy,water_chain16,pyscf.cpu,True,completed,pass,warm,5,1.122336474,2.819594747998053,1.18166568,1.0,
+rhf.sto3g.water_chain16.energy,water_chain16,gpu4pyscf.cuda,False,dependency_missing,unverified,cold,0,,0.6164968280063476,,,No module named 'gpu4pyscf'

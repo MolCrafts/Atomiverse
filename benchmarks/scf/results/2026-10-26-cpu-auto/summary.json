@@ -1,0 +1,68 @@
+{
+  "protocol": "Public Python benchmark; 1 cold plus 5 warm observations; one fresh solve for each warmup and timed call; same n229 allocation; CPU-only selected scope.",
+  "hardware": "AMD EPYC 9755, n229, 8 allocated logical CPUs",
+  "slurm_job": "4466409",
+  "OMP_WAIT_POLICY": "PASSIVE",
+  "native_blas": "OpenBLAS 0.3.32 pthread",
+  "source_build_attestation": false,
+  "tests": {
+    "cpp_passed": 62,
+    "python_passed": 27,
+    "python_cuda_skipped": 4,
+    "cli_passed": 46,
+    "benchmark_contract_passed": 34,
+    "numerical_cases_passed": 16,
+    "mpi_pairs_passed": 8
+  },
+  "performance": {
+    "1": {
+      "atv.cpu": {
+        "median_seconds": 0.987648717,
+        "warm_seconds": [
+          0.987648717,
+          1.0009103,
+          0.914191931,
+          0.990171295,
+          0.936038053
+        ],
+        "numerical": "pass"
+      },
+      "pyscf.cpu": {
+        "median_seconds": 1.18166568,
+        "warm_seconds": [
+          1.274768222,
+          1.26264019,
+          1.18166568,
+          1.090395925,
+          1.122336474
+        ],
+        "numerical": "pass"
+      }
+    },
+    "8": {
+      "atv.cpu": {
+        "median_seconds": 0.576879954,
+        "warm_seconds": [
+          0.54689861,
+          0.537226351,
+          0.698613013,
+          0.576879954,
+          0.908381484
+        ],
+        "numerical": "pass"
+      },
+      "pyscf.cpu": {
+        "median_seconds": 1.917912001,
+        "warm_seconds": [
+          2.513661623,
+          1.059759148,
+          1.575147187,
+          1.917912001,
+          2.163297488
+        ],
+        "numerical": "pass"
+      },
+      "resource_mismatch": "PySCF reports a single-threaded OpenBLAS alongside its eight-thread pools; the framework does not qualify a speedup ratio."
+    }
+  }
+}

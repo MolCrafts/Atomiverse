@@ -1055,6 +1055,7 @@ if(ATV_BUILD_HF)
     # (≤1e-12 Ha F gate, d-shell fixture) + coulomb_exchange_fused thread
     # invariance. Mirrors cpu/scf/operators.cpp.
     atv_add_cpp_test(test_cpu_scf_operators     cpu/scf/test_operators.cpp)
+    atv_add_cpp_test(test_cpu_scf_exact_jk      cpu/scf/test_exact_jk.cpp)
     # hf-capability-gaps-12-df: def2-JKFIT table, g-shell 2c/3c integrals,
     # metric whitening, fitted J/K vs dense (single calls, no SCF).
     atv_add_cpp_test(test_density_fitting       cpu/scf/test_density_fitting.cpp)

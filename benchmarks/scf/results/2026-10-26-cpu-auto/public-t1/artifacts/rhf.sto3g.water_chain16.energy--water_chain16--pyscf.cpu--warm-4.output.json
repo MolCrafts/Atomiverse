@@ -1,0 +1,137 @@
+{
+  "artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-4.output.json",
+  "metadata": {
+    "actual_engine_config": {
+      "backend": "cpu",
+      "pyscf_num_threads": 1,
+      "pyscf_version": "2.14.0"
+    },
+    "binaries_sha256": {
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-040039e1.so.5.0.0": "14afb3129b1a8b50bc40a3b0820c7f1152ea9bc10121aab152943f7057472886",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgfortran-91cc3cb1.so.3.0.0": "55e3eb67306c2ff17e6f8a0810eaa0dcb26e94cd83924c5065d5040e87814608",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0": "3a7eaece7231911be2fbb1b3e7cb4cb5c2e0f84e0c2bb73739472b5a1feec8c1",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libquadmath-96973f99.so.0.0.0": "934c22ded0e7d169c4d4678876c96051adf3d94545da962f60b41659b075da3b",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py": "42754aaf7518664076082bab3e4854a954cda79afe10c8cf7f48e7aa23c16e42",
+      "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so": "2a5b4c1a6311873c59132b2ceaaf3c26258a17350b7cd27ea8782a47e3322981",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so": "432e1c1739731468ba305771af96773939e43016643e2d630f58cb45b6670e96"
+    },
+    "binary_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so",
+    "binary_sha256": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+    "comparison_class": "matched_accuracy",
+    "engine": "pyscf",
+    "entrypoint_path": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/scf/__init__.py",
+    "log_artifact": "artifacts/rhf.sto3g.water_chain16.energy--water_chain16--pyscf.cpu--warm-4.log",
+    "molpy_version": "0.20.0",
+    "package_version": "2.14.0",
+    "peak_process_rss_bytes": 259846144,
+    "requested_model": {
+      "basis": "STO-3G",
+      "cartesian": true,
+      "comparison_class": "matched_accuracy",
+      "conv_tol": 1e-10,
+      "conv_tol_grad": 1e-08,
+      "damping": 0.0,
+      "diis_space": 8,
+      "diis_start_cycle": 1,
+      "init_guess": "hcore",
+      "max_cycle": 200,
+      "method": "RHF",
+      "neel": false,
+      "nonzero_force": false,
+      "spin_rotation": 0.0
+    },
+    "requested_threads": 1,
+    "resolved_settings": {
+      "cartesian": true,
+      "conv_tol": 1e-10,
+      "conv_tol_grad": 1e-08,
+      "converged": true,
+      "damping": 0.0,
+      "diis_space": 8,
+      "diis_start_cycle": 1,
+      "direct_scf": true,
+      "final_residuals": "not_exposed_by_adapter",
+      "initial_guess": "1e",
+      "iterations": 10,
+      "level_shift": 0.0,
+      "max_memory_MiB": 4000.0,
+      "nao": 112,
+      "solver_type": "pyscf.scf.hf.RHF"
+    },
+    "resource_mismatch": false,
+    "threadpools": [
+      {
+        "architecture": "SkylakeX",
+        "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "threading_layer": "pthreads",
+        "user_api": "blas",
+        "version": "0.3.31.dev"
+      },
+      {
+        "architecture": "Barcelona",
+        "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libopenblas",
+        "threading_layer": "disabled",
+        "user_api": "blas",
+        "version": null
+      },
+      {
+        "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+        "internal_api": "openmp",
+        "num_threads": 1,
+        "prefix": "libgomp",
+        "user_api": "openmp",
+        "version": null
+      },
+      {
+        "architecture": "SkylakeX",
+        "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+        "internal_api": "openblas",
+        "num_threads": 1,
+        "prefix": "libscipy_openblas",
+        "threading_layer": "pthreads",
+        "user_api": "blas",
+        "version": "0.3.34.106.0"
+      }
+    ],
+    "versions": {
+      "molpy": "0.20.0",
+      "numpy": "2.5.4",
+      "pyscf": "2.14.0",
+      "scipy": "1.18.1",
+      "threadpoolctl": "3.7.0"
+    }
+  },
+  "observables": {
+    "energy_hartree": -1199.3881189817919
+  },
+  "phase": "warm",
+  "process_seconds": 2.7187652620195877,
+  "reason": null,
+  "repeat": 4,
+  "seconds": 1.090395925,
+  "status": "completed"
+}

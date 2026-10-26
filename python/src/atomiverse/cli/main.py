@@ -160,6 +160,9 @@ def config_cmd(
         "--id-size",
         help="global: ATV_ID_SIZE",
     ),
+    cuda: bool = typer.Option(
+        False, "--cuda", help="enable CUDA (ATV_BUILD_CUDA); combines with --hf and --mpi",
+    ),
     hf: bool = typer.Option(
         False,
         "--hf",
@@ -198,6 +201,8 @@ def config_cmd(
     if hf and "hf" not in mod_list:
         # --hf is the flag spelling of the `hf` product module.
         mod_list.append("hf")
+    if cuda and "cuda" not in mod_list:
+        mod_list.append("cuda")
     for m in mod_list:
         if m not in MODULE_TO_DEFINE:
             typer.echo(

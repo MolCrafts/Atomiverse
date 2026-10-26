@@ -1,0 +1,73 @@
+basis=STO-3G method=rhf charge=0 scf_tol=1.000e-10 max_iter=200 level_shift=0 diis_vectors=8 diis_start=1 damping=0 OMP_max_threads=2 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=unset memory_budget_bytes=17179869184 cpu_eri=auto_s8 energy_tolerance_Ha=1.000e-06 repeat_tolerance_Ha=1.000e-08 frame_tolerance_eV=1.000e-08
+initial_state: cpu=Hcore_density_no_history cuda=zero_density_then_Hcore_diagonalization; SCF stopping criteria are backend-specific; compare complete walls and energies, inspect iteration counts
+timing: cold=fresh_instance_first_run warm=same_instance_after_one_complete_run; construction_and_context_init=excluded; Frame_copy_and_history_reset=excluded; setup_SCF_final_output_teardown_and_GPU_completion=included; memory_budget_is_conservative_admission_not_allocator_cap; memory_snapshots_are_not_peak_or_residency_evidence
+device=0 name=NVIDIA GH200 120GB compute_capability=9.0 runtime_version=13000
+[2026-10-26 18:41:38.326] [info] [integrals] start natm=3 basis=STO-3G n_basis=7 electrons=10 charge=0 ecp=- ecp_atoms=0
+[2026-10-26 18:41:38.327] [info] [integrals] one-electron done ms=0.1
+[2026-10-26 18:41:38.327] [info] [integrals] done total_ms=0.6 v_nuc=9.189534
+[2026-10-26 18:41:38.327] [info] CPU runtime initialized: 2 threads
+[2026-10-26 18:41:38.328] [info] [exact_jk] cache_bytes=3248 build_ms=0.460 mpi_ranks=1
+[2026-10-26 18:41:38.328] [info] all components built
+[2026-10-26 18:41:38.328] [info] [scf] iterations=8 loop_ms=0.186
+[2026-10-26 18:41:38.328] [info] [integrals] start natm=3 basis=STO-3G n_basis=7 electrons=10 charge=0 ecp=- ecp_atoms=0
+[2026-10-26 18:41:38.328] [info] [integrals] one-electron done ms=0.0
+[2026-10-26 18:41:38.328] [info] [integrals] done total_ms=0.1 v_nuc=9.189534
+[2026-10-26 18:41:38.328] [info] CPU runtime initialized: 2 threads
+[2026-10-26 18:41:38.328] [info] [exact_jk] cache_bytes=3248 build_ms=0.272 mpi_ranks=1
+[2026-10-26 18:41:38.328] [info] all components built
+[2026-10-26 18:41:38.328] [info] [scf] iterations=8 loop_ms=0.137
+backend=cpu method=rhf waters=1 atoms=3 nao=7 nocc=5 cold_instance_ms=1.744978 warm_instance_median_ms=0.589520 warm_min_ms=0.589520 warm_max_ms=0.589520 warm_repeats=1 cold_scf_iterations=8 warm_scf_iterations_min=8 warm_scf_iterations_max=8 converged=1 E_tot_Ha=-74.96302313846302 max_frame_error_eV=1.119e-13 max_repeat_error_Ha=0.000e+00 planned_memory_bytes=67274288
+[2026-10-26 18:41:38.331] [warning] [CUDA] Duplicate entry kernels named "_ZN3cub17CUB_300001_SM_9006detail11EmptyKernelIvEEvv" detected. The Runtime will use the one that was registered first
+[2026-10-26 18:41:38.331] [warning] [CUDA] Duplicate entry kernels named "_ZN3cub17CUB_300001_SM_9006detail8for_each13static_kernelINS2_12policy_hub_t12policy_500_tEmN6thrust23THRUST_300001_SM_900_NS8cuda_cub20__uninitialized_fill7functorINS7_10device_ptrIiEEiEEEEvT0_T1_" detected. The Runtime wil
+[2026-10-26 18:41:38.331] [warning] [CUDA] Duplicate entry kernels named "_ZN3cub17CUB_300001_SM_9006detail8for_each13static_kernelINS2_12policy_hub_t12policy_500_tEmN6thrust23THRUST_300001_SM_900_NS8cuda_cub20__uninitialized_fill7functorINS7_10device_ptrIcEEcEEEEvT0_T1_" detected. The Runtime wil
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_23_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_22_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_21_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_20_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_19_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_18_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_17_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_16_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_15_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_14_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_13_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_12_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_11_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_10_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_9_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_8_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_7_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_6_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_5_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_4_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_3_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_2_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_1_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.354] [warning] [CUDA] Kernel ($__internal_0_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_23_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_22_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_21_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_20_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_19_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_18_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_17_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_16_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_15_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_14_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_13_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_12_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_11_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_10_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_9_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_8_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_7_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_6_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_5_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_4_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_3_$__cuda_sm20_rem_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_2_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_1_$__cuda_sm20_div_u64) cannot be found in library
+[2026-10-26 18:41:38.355] [warning] [CUDA] Kernel ($__internal_0_$__cuda_sm20_div_u64) cannot be found in library
+backend=cuda method=rhf waters=1 atoms=3 nao=7 nocc=5 cold_instance_ms=52.476632 warm_instance_median_ms=8.623485 warm_min_ms=8.623485 warm_max_ms=8.623485 warm_repeats=1 cold_scf_iterations=16 warm_scf_iterations_min=16 warm_scf_iterations_max=16 converged=1 E_tot_Ha=-74.96302313846198 max_frame_error_eV=7.737e-14 max_repeat_error_Ha=0.000e+00 planned_memory_bytes=67274288
+device_memory_snapshot waters=1 free_before_bytes=101411651584 free_after_bytes=100239343616 total_bytes=102005473280 peak=unmeasured
+comparison waters=1 abs_total_error_Ha=1.037e-12 tolerance_Ha=1.000e-06 PASS

@@ -959,12 +959,10 @@ std::vector<double> TDA<RHF>::forces(cpu::Frame& frame, int state, double h,
 
     if (analytic) {
         RHF probe = make_rhf();
-        const bool prev = probe.compute_eri;
-        probe.compute_eri = true;
         probe.run(frame);
-        probe.compute_eri = prev;
         if (!probe.converged())
             throw std::runtime_error("TDA::forces: SCF did not converge");
+        probe.materialize_eri_();
         auto es0 = TDA<RHF>{probe}.run(state + 1);
         if (state < 0 || state >= static_cast<int>(es0.energy_ev.size()))
             throw std::invalid_argument("TDA::forces: state out of range");

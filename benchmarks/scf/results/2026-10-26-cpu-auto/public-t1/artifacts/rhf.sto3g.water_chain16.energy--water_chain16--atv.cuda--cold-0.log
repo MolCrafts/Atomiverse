@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/benchmarks/framework/execution.py", line 40, in worker
+    run = adapter(row, system, participant, request["threads"])
+  File "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/benchmarks/scf/hf.py", line 135, in atv_adapter
+    raise BindingMissing(f"Public atomiverse.scf.{name} is absent from the loaded binary")
+benchmarks.scf.hf.BindingMissing: Public atomiverse.scf.CudaRHF is absent from the loaded binary

@@ -380,6 +380,6 @@ chapter = "hartree-fock.md"
 label = "Direct-SCF spinor GHF"
 scope = "Nonsymmetric spin-off-diagonal exchange without a stored dense AO ERI tensor"
 rows = []
-cpu = "not_implemented"
+cpu = "pending_migration"
 cuda = "not_implemented"
-reason = "Public native GHF rejects integral_mode=direct; implemented stored GHF is declared separately and is never relabeled direct."
+reason = "CPU GHF shares the automatic exact J/K engine; a separately budget-constrained benchmark row has not been migrated."

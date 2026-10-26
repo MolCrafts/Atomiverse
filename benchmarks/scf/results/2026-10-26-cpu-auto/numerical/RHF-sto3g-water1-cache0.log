@@ -1,0 +1,35 @@
+[2026-10-26 18:40:39.678] [info] [integrals] start natm=3 basis=STO-3G n_basis=7 electrons=10 charge=0 ecp=- ecp_atoms=0
+[2026-10-26 18:40:39.678] [info] [integrals] one-electron done ms=0.1
+[2026-10-26 18:40:39.678] [info] [integrals] done total_ms=0.2 v_nuc=9.189534
+[2026-10-26 18:40:39.679] [info] CPU runtime initialized: 1 threads
+[2026-10-26 18:40:39.679] [debug] analysis_executor initialized: 1 workers, ring 3
+[2026-10-26 18:40:39.679] [debug] [shell_pair] block grouping done n_basis=7 n_blocks=5
+[2026-10-26 18:40:39.679] [debug] [shell_pair] block pair list built n_blocks=5 pairs=15 screened=0 thr=1.0e-13
+[2026-10-26 18:40:39.679] [info] [exact_jk] cache_bytes=0 build_ms=0.172 mpi_ranks=1
+[2026-10-26 18:40:39.679] [info] all components built
+[2026-10-26 18:40:39.680] [debug] [exact_jk] jk_ms=0.480
+[2026-10-26 18:40:39.680] [debug] [exact_jk] jk_ms=0.431
+[2026-10-26 18:40:39.681] [debug] [exact_jk] jk_ms=0.436
+[2026-10-26 18:40:39.681] [debug] [exact_jk] jk_ms=0.458
+[2026-10-26 18:40:39.682] [debug] [exact_jk] jk_ms=0.432
+[2026-10-26 18:40:39.682] [debug] [exact_jk] jk_ms=0.423
+[2026-10-26 18:40:39.682] [debug] [exact_jk] jk_ms=0.430
+[2026-10-26 18:40:39.683] [debug] [exact_jk] jk_ms=0.428
+[2026-10-26 18:40:39.683] [debug] [exact_jk] jk_ms=0.426
+[2026-10-26 18:40:39.683] [info] [scf] iterations=9 loop_ms=4.179
+[2026-10-26 18:40:39.683] [debug] CPU runtime shutting down
+[2026-10-26 18:40:39.683] [info] [gradient] start method=HF spin=restricted natm=3 basis=7
+[2026-10-26 18:40:39.690] [debug] [gradient] derivative_pack_ms=6.8
+[2026-10-26 18:40:39.690] [debug] [gradient] common_terms_ms=0.0
+[2026-10-26 18:40:39.690] [info] [gradient] common_terms max_abs_hb=2.846988 max_atom_norm_hb=2.846988
+[2026-10-26 18:40:39.690] [debug] [shell_pair] block grouping done n_basis=7 n_blocks=5
+[2026-10-26 18:40:39.690] [debug] [shell_pair] block pair list built n_blocks=5 pairs=15 screened=0 thr=1.0e-10
+[2026-10-26 18:40:39.690] [debug] [gradient] two_e engine=native block-deriv natm=3 basis=7 blocks=5 block_pairs=15
+[2026-10-26 18:40:39.693] [debug] [gradient] two_e block-deriv done ms=3.1
+[2026-10-26 18:40:39.693] [debug] [gradient] two_e contraction total_ms=3.2
+[2026-10-26 18:40:39.693] [debug] [gradient] two_e_ms=3.2
+[2026-10-26 18:40:39.693] [info] [gradient] two_e_terms max_abs_hb=2.908416 max_atom_norm_hb=2.908416
+[2026-10-26 18:40:39.693] [info] [gradient] done total_ms=10.0 energy_eV=-2039.847777 max_force_component_eVA=3.158742
+[2026-10-26 18:40:39.694] [debug] CPU runtime shutting down
+[2026-10-26 18:40:39.694] [debug] CPU runtime shutting down
+{"repeat":0,"energy_hartree":-74.963023138463029,"iterations":9,"forces_hartree_per_bohr":[[-6.6268618324715916e-18,-3.6707732980700767e-16,0.061427759156773565],[-1.2629252310832443e-17,0.023641338733532802,-0.030713879578385672],[1.9256114143304305e-17,-0.023641338733531914,-0.030713879578386338]],"threads":1,"seconds":0.015345375}

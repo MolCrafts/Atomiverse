@@ -31,9 +31,9 @@
 /// `run(frame)` writes the total energy [eV] to the borrowed molpy.Frame's
 /// typed meta and leaves fx/fy/fz untouched; `forces(frame)` additionally
 /// returns an (N, 3) array [eV/Å] and writes fx/fy/fz back. Both are
-/// **local** to this process: unlike the AM1 `single_point` entry there is
-/// no `cpu::task::TaskSpec` mirror for a mean-field method, so nothing is
-/// dispatched to MPI launcher workers.
+/// local by default. With an MPI build and `mpi=True`, every initialized
+/// MPI_COMM_WORLD rank must call with the same full frame; J/K is collective.
+/// This does not dispatch tasks to launcher workers.
 ///
 /// Error surface seen from Python: `ValueError` for an unknown basis /
 /// functional name (at construction) and for an α/β occupation the electron
@@ -55,6 +55,7 @@
 #include "basis_names.h"
 #include "xc_names.h"
 
+#include <cmath>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -224,17 +225,25 @@ void bind_single_point(
             [](const Handle& self) { return self.method.level_shift; },
             [](Handle& self, double value) { self.method.level_shift = value; })
         .def_prop_rw(
-            "integral_mode",
-            [](const Handle& self) {
-                return self.method.compute_eri ? "stored" : "direct";
-            },
-            [](Handle& self, const std::string& mode) {
-                if (mode != "stored" && mode != "direct")
+            "max_memory_mb",
+            [](const Handle& self) { return self.method.max_memory_mb; },
+            [](Handle& self, double value) {
+                if (!std::isfinite(value) || value < 0)
                     throw std::invalid_argument(
-                        "integral_mode must be direct or stored");
-                self.method.compute_eri = mode == "stored";
+                        "max_memory_mb must be finite and nonnegative");
+                self.method.max_memory_mb = value;
             },
-            "Exact ERI strategy: direct recomputation or stored AO tensor.")
+            "Process memory budget in MB; exact-ERI execution is selected "
+            "automatically.")
+        .def(
+            "set_threads",
+            [](Handle& self, int n) { self.method.set_threads(n); },
+            nb::arg("threads"), "Override the default OpenMP thread count.")
+        .def_prop_rw(
+            "mpi", [](const Handle& self) { return self.method.mpi; },
+            [](Handle& self, bool enabled) { self.method.mpi = enabled; },
+            "Collective HF J/K on initialized MPI_COMM_WORLD; all ranks must "
+            "participate.")
         .def_prop_rw(
             "init_guess",
             [](const Handle& self) {

@@ -93,8 +93,9 @@ bash -lc '
 
 | CMake option | Default | Enables |
 | --- | --- | --- |
-| `ATV_BUILD_CUDA` | ON | CUDA backend (`ATV_HAS_CUDA`) |
-| `ATV_BUILD_HF` | OFF | Gaussian SCF (`ATV_HAS_HF`) |
+| `ATV_BUILD_CUDA` | OFF | CUDA backend (`ATV_HAS_CUDA`) |
+| `ATV_BUILD_HF` | OFF | Gaussian SCF (`ATV_HAS_HF`); requires OpenMP |
+| `ATV_USE_MPI` | OFF | Optional MD decomposition and collective CPU HF J/K |
 | `ATV_BUILD_PW` | OFF | Plane-wave DFT (FFTW3) |
 | `ATV_BUILD_GPW` | OFF | GPW (needs HF + PW) |
 | `ATV_BUILD_KSPACE` | OFF | PME reciprocal-space electrostatics (FFTW3) |

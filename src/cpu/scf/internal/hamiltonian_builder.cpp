@@ -23,12 +23,15 @@ void HamiltonianBuilder::prepare(const internal::IntegralView& integrals,
                                  bool is_hf, GridLevel grid_level, int n_radial,
                                  int n_angular, const MolecularGrid* fixed_grid,
                                  RI ri, AuxBasis aux_basis, Coulomb coulomb,
-                                 int cfmm_order, double cfmm_threshold) {
+                                 int cfmm_order, double cfmm_threshold,
+                                 double max_memory_mb, bool mpi) {
     // New geometry: invalidate the AO-on-grid cache so the first KS step()
     // rebuilds Phi/dPhi against the grid built below.
     xc_basis_.built = false;
 
-    if (!integrals.shells.empty()) {
+    if (is_hf && ri == RI::None && coulomb == Coulomb::Direct) {
+        exact_.prepare(integrals, max_memory_mb, mpi);
+    } else if (!integrals.shells.empty()) {
         sp_block_ = ShellBlockPairList{integrals};
         sp_ = ShellPairList{integrals};
     }
@@ -188,17 +191,9 @@ FockResult HamiltonianBuilder::step(
             out.F_beta = out.F_alpha;
         }
     } else if (restricted && is_hf) {
-        // RHF: PySCF approach — store ERI once, then BLAS contraction.
-        // Falls back to direct SCF when ERI is not stored.
-        // Default Coulomb::Direct — bit-identical to the pre-CFMM path.
-        RealMatrix G;
-        if (integrals.ERI.size() > 0) {
-            integrals.coulomb_exchange_fused(P_alpha, G);
-        } else {
-            sp_block_.g_rhf(Pa_eng, G);
-            to_ao(G);
-        }
-        out.F_alpha = Hcore + G;
+        RealMatrix K;
+        exact_.step(P_alpha, out.J, K);
+        out.F_alpha = Hcore + out.J - double(0.5) * K;
         out.F_beta = out.F_alpha;
     } else if (!restricted && is_hf && ri_ != RI::None) {
         // UHF with RI-J / RI-JK: one fitted J from the total density,
@@ -232,12 +227,10 @@ FockResult HamiltonianBuilder::step(
         out.F_alpha = Hcore + out.J - K_alpha;
         out.F_beta = Hcore + out.J - K_beta;
     } else if (!restricted && is_hf) {
-        RealMatrix P_total = Pa_eng + Pb_eng;
-        RealMatrix K_alpha, K_beta;
-        sp_.jk_uhf(P_total, Pa_eng, Pb_eng, out.J, K_alpha, K_beta);
-        to_ao(out.J);
-        to_ao(K_alpha);
-        to_ao(K_beta);
+        RealMatrix J_alpha, J_beta, K_alpha, K_beta;
+        exact_.step(P_alpha, J_alpha, K_alpha, 0);
+        exact_.step(P_beta, J_beta, K_beta, 1);
+        out.J = J_alpha + J_beta;
         out.F_alpha = Hcore + out.J - K_alpha;
         out.F_beta = Hcore + out.J - K_beta;
     } else {

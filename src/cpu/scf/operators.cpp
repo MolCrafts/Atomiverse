@@ -4,6 +4,7 @@
 ///        (ShellPairList / ShellBlockPairList members).
 
 #include "atomiverse/cpu/scf/cart.h"
+#include "atomiverse/cpu/scf/internal/exact_jk.h"
 #include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
@@ -26,66 +27,16 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-// ── Stored-ERI operator (BLAS via xtensor-blas) ─────────────────────────
-//
-// `internal::IntegralView::coulomb_exchange_fused` reshapes the 4-index ERI tensor into
-// an [n²×n²] matrix, turning the Coulomb double-sum into a single DGEMV call.
-// `HamiltonianBuilder` selects this path whenever `IntegralView::ERI` is a
-// materialized dense tensor; otherwise the direct-SCF
-// `ShellBlockPairList::g_rhf` path runs without ever materializing ERI.
+// Dense-input adapter for internal post-HF/operator consumers. All exact
+// contractions use the same s8 engine; SCF retains its engine across iterations.
 
 void internal::IntegralView::coulomb_exchange_fused(const RealMatrix& P_total,
                                                     RealMatrix& G) const {
-    const int n = n_basis;
-    // PySCF approach: J via BLAS DGEMV, K via einsum-equivalent contraction.
-    //   J(i,j) = einsum('ijkl,kl->', ERI, P)  → reshape(n²,n²) @ flatten(P)
-    //   K(i,j) = einsum('ikjl,kl->', ERI, P)  → explicit contraction (no xt::einsum)
-    //   G = J − 0.5 K
-    //
-    // K cannot use DGEMV without materializing a 227 MB transposed copy.
-    // numpy.einsum avoids this internally — xtensor has no einsum, so we
-    // write the equivalent contraction loop. This IS what einsum does.
-    const auto ns = static_cast<std::size_t>(n);
-    const auto nn = ns * ns;
-
-    // J: single DGEMV. ERI is already contiguous row-major, so adapt its
-    // storage as an [n²×n²] matrix zero-copy — the previous
-    // `xt::eval(xt::reshape_view(...))` materialized the full n⁴ tensor
-    // (the 227 MB of the running example) on every SCF iteration.
-    auto P_flat = xt::eval(xt::reshape_view(P_total, {nn}));
-    auto ERI_mat = xt::adapt(ERI.data(), nn * nn, xt::no_ownership(),
-                             std::array<std::size_t, 2>{nn, nn});
-    xt::xtensor<double, 1> J_flat = xt::linalg::dot(ERI_mat, P_flat);
-
-    G = xt::reshape_view(J_flat, {ns, ns});
-
-    // K: einsum('ikjl,kl->ij', ERI, P) — contiguous l-access, no allocation.
-    const double* Pp = P_total.data(); // column-major
-    double* Gp = G.data();             // column-major
-    const double* Ep = ERI.data();     // row-major ERI(i,j,k,l)
-    // Parallel over the outer index i: iteration i is the SOLE writer of the
-    // output element (i, j) and its mirror (j, i) for every j <= i (the
-    // element with the larger index equal to i), so no two iterations touch
-    // the same Gp slot. The k,l reduction for each element stays serial in
-    // ascending order, so the result is bit-for-bit identical for any thread
-    // count.
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic)
-#endif
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j <= i; ++j) {
-            double k_val = 0.0;
-            for (int k = 0; k < n; ++k) {
-                const double* eri_ikj = Ep + ((i * n + k) * n + j) * n;
-                const double* p_k = Pp + k;
-                for (int l = 0; l < n; ++l)
-                    k_val += p_k[l * n] * eri_ikj[l];
-            }
-            Gp[i + j * n] -= 0.5 * k_val;
-            if (i != j)
-                Gp[j + i * n] -= 0.5 * k_val;
-        }
-    }
+    internal::ExactJK engine;
+    engine.prepare(*this);
+    RealMatrix J, K;
+    engine.compute(P_total, J, K);
+    G = J - double(0.5) * K;
 }
 
 // ── Direct-SCF implementations ────────────────────────────────────────────

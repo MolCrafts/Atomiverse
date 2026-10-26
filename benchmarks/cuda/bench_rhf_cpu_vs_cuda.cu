@@ -7,7 +7,7 @@
 /// Manual GH200 harness, never CTest. Example:
 /// OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 bench_rhf_cpu_vs_cuda 16 3 both
 /// Arguments: max_waters [1..30, default 16], warm_repeats [1..100, default 3],
-/// cpu|cuda|both, SCF tolerance [default 1e-10], admission budget MiB [16384], cpu_eri stored|direct [stored].
+/// cpu|cuda|both, SCF tolerance [default 1e-10], admission budget MiB [16384].
 /// Timers cover RHF.run and final GPU synchronization, including setup,
 /// SCF, result output and call teardown. Construction, input Frame copying,
 /// CPU history reset and CUDA context initialization are outside the timer.
@@ -193,12 +193,11 @@ Measurement measure(const ATV::cpu::Frame& prototype, int waters, int repeats,
 }
 
 Measurement measure_cpu(const ATV::cpu::Frame& prototype, int waters,
-                        int repeats, double tolerance, bool stored_eri) {
+                        int repeats, double tolerance) {
     using namespace ATV;
     cpu::scf::RHF hf{cpu::scf::BasisSet::STO3G, 0, tolerance, kMaxIterations};
     hf.with_gradient(false);
     hf.init_guess = cpu::scf::InitGuess::Hcore;
-    hf.compute_eri = stored_eri;
     hf.damping_factor = 0;
     hf.level_shift = 0;
     hf.use_diis = true;
@@ -252,7 +251,7 @@ const char* environment_value(const char* key) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc > 7)
+        if (argc > 6)
             throw std::invalid_argument("too many arguments");
         // 30 waters = 210 AOs; 31 already exceeds the dense int-index limit.
         const int max_waters =
@@ -269,10 +268,6 @@ int main(int argc, char** argv) {
                     ? parse_integer(argv[5], 256, 65536, "memory_budget_MiB")
                     : 16384)
             * kMiB;
-        const std::string cpu_eri = argc > 6 ? argv[6] : "stored";
-        if (cpu_eri != "stored" && cpu_eri != "direct")
-            throw std::invalid_argument("cpu_eri must be stored or direct");
-        const bool stored_eri = cpu_eri == "stored";
         const bool use_cpu = backend != "cuda";
         const bool use_cuda = backend != "cpu";
         // Validate the largest case before doing any expensive solves.
@@ -286,15 +281,14 @@ int main(int argc, char** argv) {
                     "level_shift=0 diis_vectors=8 diis_start=1 damping=0 "
                     "OMP_max_threads=%d OMP_NUM_THREADS=%s "
                     "OPENBLAS_NUM_THREADS=%s MKL_NUM_THREADS=%s "
-                    "memory_budget_bytes=%zu cpu_eri=%s compute_eri=%d "
+                    "memory_budget_bytes=%zu cpu_eri=auto_s8 "
                     "energy_tolerance_Ha=%.3e "
                     "repeat_tolerance_Ha=%.3e frame_tolerance_eV=%.3e\n",
                     tolerance, kMaxIterations, threads,
                     environment_value("OMP_NUM_THREADS"),
                     environment_value("OPENBLAS_NUM_THREADS"),
                     environment_value("MKL_NUM_THREADS"), budget,
-                    cpu_eri.c_str(), stored_eri ? 1 : 0, kEnergyToleranceHa,
-                    kRepeatToleranceHa, kFrameToleranceEv);
+                    kEnergyToleranceHa, kRepeatToleranceHa, kFrameToleranceEv);
         std::puts(
             "initial_state: cpu=Hcore_density_no_history "
             "cuda=zero_density_then_Hcore_diagonalization; "
@@ -333,8 +327,7 @@ int main(int argc, char** argv) {
             const auto prototype = water_chain(waters);
             Measurement cpu_result, cuda_result;
             if (use_cpu) {
-                cpu_result = measure_cpu(prototype, waters, repeats, tolerance,
-                                         stored_eri);
+                cpu_result = measure_cpu(prototype, waters, repeats, tolerance);
                 report("cpu", waters, cpu_result);
             }
             if (use_cuda) {
@@ -362,7 +355,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "usage: bench_rhf_cpu_vs_cuda [max_waters=16] "
                              "[warm_repeats=3] [cpu|cuda|both] "
                              "[scf_tol=1e-10] [memory_budget_MiB=16384] "
-                             "[cpu_eri=stored|direct]\n");
+                             "\n");
         return 1;
     }
 }

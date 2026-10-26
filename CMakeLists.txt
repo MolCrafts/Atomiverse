@@ -33,7 +33,7 @@ if(NOT ATV_DOCS_ONLY)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-    option(ATV_BUILD_CUDA "Build CUDA backend (requires CUDA toolkit)" ON)
+    option(ATV_BUILD_CUDA "Build CUDA backend (requires CUDA toolkit)" OFF)
     option(ATV_BUILD_KOKKOS
         "Build the Kokkos Serial CPU-execution-space LJ foothold (does not vendor Kokkos)"
         OFF)
@@ -215,11 +215,17 @@ if(NOT ATV_DOCS_ONLY)
             include_directories(/opt/homebrew/opt/libomp/include)
         endif()
     endif()
-    find_package(OpenMP)
+    if(ATV_BUILD_HF)
+        find_package(OpenMP REQUIRED COMPONENTS CXX)
+    else()
+        find_package(OpenMP)
+    endif()
 
     # ── MPI (optional) ──
-    find_package(MPI QUIET)
-    option(ATV_USE_MPI "Enable MPI domain decomposition for CPU MD" ${MPI_CXX_FOUND})
+    option(ATV_USE_MPI "Enable optional MPI support (MD decomposition and HF J/K)" OFF)
+    if(ATV_USE_MPI)
+        find_package(MPI QUIET)
+    endif()
     if(ATV_USE_MPI AND NOT MPI_CXX_FOUND)
         message(FATAL_ERROR
             "ATV_USE_MPI=ON but no MPI installation was found. "
@@ -674,6 +680,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/internal/hueckel_guess.cpp
             src/cpu/scf/internal/sap_guess.cpp
             src/cpu/scf/internal/hamiltonian_builder.cpp
+            src/cpu/scf/internal/exact_jk.cpp
             src/cpu/scf/internal/periodic_hf.cpp
             src/cpu/scf/internal/kpoint_hf.cpp
             src/cpu/scf/internal/cfmm_j.cpp

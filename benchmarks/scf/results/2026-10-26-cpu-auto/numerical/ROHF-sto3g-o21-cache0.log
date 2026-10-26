@@ -1,0 +1,47 @@
+[2026-10-26 18:40:41.180] [info] [integrals] start natm=2 basis=STO-3G n_basis=10 electrons=16 charge=0 ecp=- ecp_atoms=0
+[2026-10-26 18:40:41.180] [info] [integrals] one-electron done ms=0.1
+[2026-10-26 18:40:41.180] [info] [integrals] done total_ms=0.3 v_nuc=28.059106
+[2026-10-26 18:40:41.181] [info] CPU runtime initialized: 1 threads
+[2026-10-26 18:40:41.181] [debug] analysis_executor initialized: 1 workers, ring 3
+[2026-10-26 18:40:41.181] [debug] [shell_pair] block grouping done n_basis=10 n_blocks=6
+[2026-10-26 18:40:41.181] [debug] [shell_pair] block pair list built n_blocks=6 pairs=21 screened=0 thr=1.0e-13
+[2026-10-26 18:40:41.181] [info] [exact_jk] cache_bytes=0 build_ms=0.278 mpi_ranks=1
+[2026-10-26 18:40:41.181] [info] all components built
+[2026-10-26 18:40:41.183] [debug] [exact_jk] jk_ms=1.496
+[2026-10-26 18:40:41.184] [debug] [exact_jk] jk_ms=1.423
+[2026-10-26 18:40:41.186] [debug] [exact_jk] jk_ms=1.412
+[2026-10-26 18:40:41.187] [debug] [exact_jk] jk_ms=1.429
+[2026-10-26 18:40:41.189] [debug] [exact_jk] jk_ms=1.440
+[2026-10-26 18:40:41.190] [debug] [exact_jk] jk_ms=1.442
+[2026-10-26 18:40:41.192] [debug] [exact_jk] jk_ms=1.441
+[2026-10-26 18:40:41.193] [debug] [exact_jk] jk_ms=1.399
+[2026-10-26 18:40:41.194] [debug] [exact_jk] jk_ms=1.398
+[2026-10-26 18:40:41.196] [debug] [exact_jk] jk_ms=1.423
+[2026-10-26 18:40:41.197] [debug] [exact_jk] jk_ms=1.412
+[2026-10-26 18:40:41.199] [debug] [exact_jk] jk_ms=1.504
+[2026-10-26 18:40:41.200] [debug] [exact_jk] jk_ms=1.336
+[2026-10-26 18:40:41.201] [debug] [exact_jk] jk_ms=1.344
+[2026-10-26 18:40:41.203] [debug] [exact_jk] jk_ms=1.315
+[2026-10-26 18:40:41.204] [debug] [exact_jk] jk_ms=1.320
+[2026-10-26 18:40:41.204] [info] [scf] iterations=8 loop_ms=22.943
+[2026-10-26 18:40:41.204] [debug] CPU runtime shutting down
+[2026-10-26 18:40:41.204] [debug] [shell_pair] block grouping done n_basis=10 n_blocks=6
+[2026-10-26 18:40:41.204] [debug] [shell_pair] block pair list built n_blocks=6 pairs=21 screened=0 thr=1.0e-13
+[2026-10-26 18:40:41.206] [info] [exact_jk] cache_bytes=12320 build_ms=1.602 mpi_ranks=1
+[2026-10-26 18:40:41.206] [debug] [exact_jk] jk_ms=0.012
+[2026-10-26 18:40:41.206] [debug] [exact_jk] jk_ms=0.008
+[2026-10-26 18:40:41.206] [info] [gradient] start method=HF spin=restricted_open natm=2 basis=10
+[2026-10-26 18:40:41.215] [debug] [gradient] derivative_pack_ms=9.3
+[2026-10-26 18:40:41.215] [debug] [gradient] common_terms_ms=0.0
+[2026-10-26 18:40:41.215] [info] [gradient] common_terms max_abs_hb=12.733536 max_atom_norm_hb=12.733536
+[2026-10-26 18:40:41.215] [debug] [shell_pair] block grouping done n_basis=10 n_blocks=6
+[2026-10-26 18:40:41.215] [debug] [shell_pair] block pair list built n_blocks=6 pairs=21 screened=0 thr=1.0e-10
+[2026-10-26 18:40:41.215] [debug] [gradient] two_e engine=native block-deriv natm=2 basis=10 blocks=6 block_pairs=21
+[2026-10-26 18:40:41.225] [debug] [gradient] two_e block-deriv done ms=9.3
+[2026-10-26 18:40:41.225] [debug] [gradient] two_e contraction total_ms=9.4
+[2026-10-26 18:40:41.225] [debug] [gradient] two_e_ms=9.4
+[2026-10-26 18:40:41.225] [info] [gradient] two_e_terms max_abs_hb=12.760927 max_atom_norm_hb=12.760927
+[2026-10-26 18:40:41.225] [info] [gradient] done total_ms=18.7 energy_eV=-4017.275231 max_force_component_eVA=1.408472
+[2026-10-26 18:40:41.225] [debug] CPU runtime shutting down
+[2026-10-26 18:40:41.225] [debug] CPU runtime shutting down
+{"repeat":0,"energy_hartree":-147.63214173449018,"iterations":8,"forces_hartree_per_bohr":[[-0.027390420233885493,-1.1222533067705279e-16,4.4699664614416009e-18],[0.027390420233622592,1.122253306770488e-16,-4.4699664614419953e-18]],"threads":1,"seconds":0.044726416999999997}

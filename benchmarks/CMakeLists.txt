@@ -6,6 +6,11 @@ if(ATV_BUILD_CUDA)
     add_subdirectory(cuda)
 endif()
 
+if(ATV_BUILD_HF)
+    add_executable(bench_hf_cpu scf/bench_cpu.cpp)
+    target_link_libraries(bench_hf_cpu PRIVATE atomiverse)
+endif()
+
 if(ATV_BUILD_MD)
     add_subdirectory(lj)
 endif()

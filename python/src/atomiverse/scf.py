@@ -15,8 +15,10 @@ identity parameter is a constructor argument — the identity
 ``xc``) is read-only afterwards, and the only I/O currency is a
 ``molpy.Frame``.
 
-CPU algorithm controls are explicit properties: ``integral_mode``
-(``"direct"`` or ``"stored"``), ``init_guess`` (``"hcore"`` or ``"minao"``),
+CPU HF uses one automatic exact J/K strategy with eightfold integral caching
+within ``max_memory_mb`` (4000 MB by default). OpenMP uses the runtime thread
+count by default; ``set_threads(n)`` overrides it. Other controls include
+``init_guess`` (``"hcore"`` or ``"minao"``),
 ``damping``, ``level_shift``, ``conv_tol_grad``, ``diis_space`` and
 ``diis_start_cycle``. They forward native controls; unsupported method/control
 combinations raise in the native solver. CUDA controls retain their native

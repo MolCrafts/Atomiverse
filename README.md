@@ -71,6 +71,33 @@ cmake --build build --target 02_rhf -j
 ./build/examples/02_rhf
 ```
 
+HF uses OpenMP threads by default. `OMP_NUM_THREADS` or `set_threads(n)` sets
+the count. CUDA and MPI default to OFF and are independent build features:
+
+| Build | Options |
+| --- | --- |
+| CPU HF | `-DATV_BUILD_HF=ON` |
+| CPU HF + MPI | `-DATV_BUILD_HF=ON -DATV_USE_MPI=ON` |
+| CPU + CUDA HF | `-DATV_BUILD_HF=ON -DATV_BUILD_CUDA=ON` |
+| CPU + CUDA HF + MPI | `-DATV_BUILD_HF=ON -DATV_BUILD_CUDA=ON -DATV_USE_MPI=ON` |
+
+The Python build CLI supports the same combinations: `python -m atomiverse
+config --hf`, adding `--mpi`, `--cuda`, or both. Positional `hf cuda` also
+remains supported.
+
+CPU molecular HF exposes one automatic exact J/K strategy: eightfold-symmetric
+integrals are cached when the process memory budget permits; otherwise the
+engine contracts screened density differences. `max_memory_mb` defaults to
+4000 MB. The old `integral_mode` and `compute_eri` SCF switches are removed.
+Post-HF methods materialize their required integrals internally after SCF.
+
+With an MPI build, `method.mpi = true` distributes CPU exact HF J/K. Initialize
+MPI first and call the solve on every `MPI_COMM_WORLD` rank with the same full
+molecular Frame and controls. The s8 cache is replicated; J/K work is divided
+between ranks and matrices are summed collectively. Default `mpi = false`
+keeps independent solves local. CUDA HF retains its existing method envelope;
+enabling MPI does not make CUDA HF a distributed GPU implementation.
+
 That prints the restricted Hartree-Fock energy of H₂ at **E_total ≈ -1.1168
 Hartree**, the textbook value (Szabo & Ostlund, Table 3.7) — a complete
 electronic-structure calculation from coordinates to total energy.

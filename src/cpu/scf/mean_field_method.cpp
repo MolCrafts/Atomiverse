@@ -15,6 +15,12 @@
 #include <type_traits>
 #include <utility>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include "atomiverse/core/log.h"
+
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/core/xmath.hpp>
 #include <xtensor/reducers/xnorm.hpp>
@@ -98,6 +104,18 @@ void refuse_standalone_cpmd(bool cpmd, const char* entry) {
 } // namespace
 
 // ── PositionGuard: unwrap for the integral build, restore on exit ─────────────
+
+template <typename D>
+void MeanFieldMethod<D>::set_threads(int n) {
+    if (n < 1)
+        return;
+    requested_threads_ = n;
+    cpu::Driver<ATV::scf::Phase>::set_threads(n);
+#ifdef _OPENMP
+    if (n > 0)
+        omp_set_num_threads(n);
+#endif
+}
 
 template <typename D>
 MeanFieldMethod<D>::PositionGuard::PositionGuard(Frame& frame, bool active)
@@ -250,8 +268,8 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
     const bool generalized = (spin_ == SpinType::Generalized);
     // RI (density fitting) is wired for the RHF/UHF and RKS/UKS Fock
     // builds only. ROHF routes through the unrestricted Fock build but is
-    // deliberately refused until its RI path is validated; GHF contracts
-    // the stored dense ERI directly; the SOSCF stepper builds its own
+    // deliberately refused until its RI path is validated; GHF uses
+    // the exact spin-block J/K engine; the SOSCF stepper builds its own
     // exact-ERI Fock internally and would silently desynchronize from a
     // fitted loop. No silent fallback — throw with the reason.
     if (ri != RI::None) {
@@ -262,7 +280,7 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
         if (generalized)
             throw std::runtime_error(
                 "MeanFieldMethod: RI (density fitting) is not wired for "
-                "GHF (generalized spinor Fock uses the dense ERI) — use "
+                "GHF (generalized spinor Fock uses exact J/K) — use "
                 "ri = RI::None with GHF.");
         if (soscf)
             throw std::runtime_error(
@@ -285,7 +303,7 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
         F_alpha_, F_beta_, J_, e_xc_grid_, e_exact_exchange_, int_n_alpha_,
         int_n_beta_, ri, aux_basis, generalized, pcm_.get(), e_solvent_,
         e_pcm_fock_half_, coulomb, cfmm_order, cfmm_threshold,
-        xc_functional_.get());
+        xc_functional_.get(), max_memory_mb, mpi);
     if (rohf) {
         rohf_couple_stage_ = std::make_unique<RohfCoupleStage>(
             S_, P_alpha_, P_beta_, F_alpha_, F_beta_, F_alpha_uncoupled_,
@@ -308,11 +326,14 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
         soscf_stepper_.get(), soscf_active_);
     density_stage_ = std::make_unique<DensityStage>(
         restricted_, is_hf_, damping_factor, C_alpha_, C_beta_,
-        rohf ? F_alpha_uncoupled_ : F_alpha_,
-        rohf ? F_beta_uncoupled_ : F_beta_, Hcore_, J_, n_alpha_, n_beta_,
-        n_basis_, diis_active_, e_xc_grid_, e_exact_exchange_, v_nuc_, P_alpha_,
-        P_beta_, e_total_, e_one_, e_coulomb_, generalized, e_solvent_,
-        e_pcm_fock_half_, S_, mom, mom_ref_C_alpha_, mom_ref_C_beta_);
+        rohf ? F_alpha_uncoupled_
+             : (is_hf_ ? fock_stage_->physical_alpha_ : F_alpha_),
+        rohf ? F_beta_uncoupled_
+             : (is_hf_ ? fock_stage_->physical_beta_ : F_beta_),
+        Hcore_, J_, n_alpha_, n_beta_, n_basis_, diis_active_, e_xc_grid_,
+        e_exact_exchange_, v_nuc_, P_alpha_, P_beta_, e_total_, e_one_,
+        e_coulomb_, generalized, e_solvent_, e_pcm_fock_half_, S_, mom,
+        mom_ref_C_alpha_, mom_ref_C_beta_);
     converged_stage_ = std::make_unique<ScfConverged>(
         tol, (conv_tol_grad > 0) ? conv_tol_grad : std::sqrt(tol),
         restricted_ || rohf || generalized, e_total_, err_alpha_, err_beta_);
@@ -714,11 +735,17 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
 // occupation — see the header for why PositionGuard and ghost/x2c guards stay
 // with the caller. Fill still uses a transitional temporary storage type.
 template <typename D>
+void MeanFieldMethod<D>::materialize_eri_() {
+    if (ints_ERI_.size() == 0)
+        ints_ERI_ = integral_view_().eri_working();
+}
+
+template <typename D>
 internal::IntegralView
 MeanFieldMethod<D>::rebuild_integrals_(const Frame& frame, bool compute_pvp) {
     // Fill into a temporary, then move into method-owned **fields** (no bag kept).
-    internal::IntegralWorkspace fill{
-        frame, basis, charge, compute_eri, ecp, ghost_atoms, compute_pvp};
+    internal::IntegralWorkspace fill{frame, basis,       charge,     false,
+                                     ecp,   ghost_atoms, compute_pvp};
     if constexpr (requires { static_cast<const D*>(this)->periodic; }) {
         if (static_cast<const D*>(this)->periodic) {
             if (method_ != MeanFieldType::HF || spin_ != SpinType::Restricted)
@@ -789,11 +816,19 @@ template <typename D>
 void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
                                          const SCFInitialGuess* guess,
                                          const DriveOpts& opts) {
+#ifdef _OPENMP
+    if (requested_threads_ > 0)
+        omp_set_num_threads(requested_threads_);
+#endif
     // ── Prologue: per-run assembly ────────────────────────────────────────────
     PositionGuard guard(frame, opts.unwrap);
 
     restricted_ = (spin_ == SpinType::Restricted);
     is_hf_ = (method_ == MeanFieldType::HF);
+    if (mpi
+        && (!is_hf_ || ri != RI::None || coulomb != Coulomb::Direct || soscf))
+        throw std::invalid_argument(
+            "mpi=true currently requires exact HF without SOSCF or RI/CFMM");
     const bool restricted = restricted_;
     const bool is_hf = is_hf_;
 
@@ -864,12 +899,6 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
                 "the MINAO/Hueckel/SAP guesses are spin-balanced, which "
                 "makes the collinearity-breaking spin rotation a no-op "
                 "(silent UHF-saddle trap). Keep the GHF default.");
-        if (!compute_eri)
-            throw std::invalid_argument(
-                "MeanFieldMethod::run: GHF requires compute_eri = true — "
-                "the spinor exchange K[P^ab] of the non-symmetric "
-                "spin-off-diagonal block needs the stored dense ERI tensor "
-                "(no direct-SCF spinor path in this link).");
     }
 
     // ROHF-unsupported knobs — explicit refusal instead of a silently wrong
@@ -1020,6 +1049,12 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
     // Wire stages after pcm_ is ready so FockStage's non-owning pointer is
     // live for the whole SCF loop.
     ensure_driver_built_();
+
+    if (requested_threads_ > 0)
+        cpu::Driver<ATV::scf::Phase>::set_threads(requested_threads_);
+
+    fock_stage_->max_memory_mb_ = max_memory_mb;
+    fock_stage_->mpi_ = mpi;
 
     // n-dimensional Hcore (with environment) kept for the GHF n-dim aufbau
     // seed below; the loop members may then be spinor-embedded.
@@ -1263,6 +1298,7 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         ~ReleaseHostPlan() { method.release_host_plan_(); }
     } release_host_plan{*this};
 
+    const auto loop_start = LogClock::now();
     int executed = 0;
     for (iter_ = 0; iter_ < budget; ++iter_) {
         // diis_active is (diis_->size() >= 2) AFTER the MixStage's step this
@@ -1289,6 +1325,8 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         }
     }
 
+    ATV_INFO("[scf] iterations={} loop_ms={:.3f}", executed,
+             elapsed_ms(loop_start));
     if (!host)
         teardown_pass();
     else
@@ -1320,7 +1358,7 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         // SCF converged, or ε would carry the fit error as an artifact.
         deshift.prepare(ints, is_hf, grid_level, n_radial, n_angular,
                         fixed_grid, ri, aux_basis, coulomb, cfmm_order,
-                        cfmm_threshold);
+                        cfmm_threshold, max_memory_mb, mpi);
         internal::FockResult fock = deshift.step(
             ints, restricted, is_hf, xc_type_, hybrid_alpha_override, P_alpha_,
             P_beta_, xc_functional_.get());
@@ -1690,7 +1728,8 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame, bool advance_electrons) {
     // 4. One Fock/KS build at that fixed density.
     internal::HamiltonianBuilder hb;
     hb.prepare(ints, is_hf, grid_level, n_radial, n_angular, fixed_grid, ri,
-               aux_basis, coulomb, cfmm_order, cfmm_threshold);
+               aux_basis, coulomb, cfmm_order, cfmm_threshold, max_memory_mb,
+               mpi);
     const internal::FockResult fock =
         hb.step(ints, restricted, is_hf, xc_type_, hybrid_alpha_override, P_a,
                 P_b, xc_functional_.get());

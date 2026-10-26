@@ -307,6 +307,8 @@ def resolve_defines(cfg: InstallConfig) -> Dict[str, str]:
         defines[MODULE_TO_DEFINE[name]] = "ON" if modules.get(name) else "OFF"
 
     defines["ATV_BUILD_PYTHON"] = "ON"
+    # Reset a reused build tree: MPI is always opt-in.
+    defines["ATV_USE_MPI"] = "OFF"
 
     for key, value in cfg.options.items():
         if key not in BINDING_TABLE:
