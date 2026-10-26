@@ -3,7 +3,7 @@
 ///
 /// Transcribed once from the published table and committed as plain C++ data.
 /// Nothing is parsed at build, test, or run time — no `.sw` reader exists, per the
-/// GPW precedent (CLAUDE.md). Consumed only by the `SWPotential(molrs::Element, name)`
+/// GPW precedent (docs/developer/project-contract.md). Consumed only by the `SWPotential(molrs::Element, name)`
 /// lookup constructor, which throws on an unsupported element or name.
 ///
 /// Provenance: F. H. Stillinger and T. A. Weber, "Computer simulation of local

@@ -65,7 +65,7 @@ inline constexpr unsigned kColNone = 0;
 inline constexpr unsigned kColCount = 1u << 0;
 inline constexpr unsigned kColTopology = 1u << 1;
 inline constexpr unsigned kColIdentityTail = 1u << 2;
-/// @brief Declares the write-back set: the columns `to_molrs` returns to
+/// @brief Declares the write-back set: the columns `to_molpy` returns to
 ///        the caller's Frame as native f64 (x/y/z, v, f, charge). Tag and
 ///        image stay a separate i32 identity path (narrowing + ix/iy/iz split).
 inline constexpr unsigned kColWriteBack = 1u << 3;

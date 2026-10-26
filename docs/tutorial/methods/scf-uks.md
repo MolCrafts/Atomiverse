@@ -1,5 +1,7 @@
 # Unrestricted Kohn–Sham DFT (UKS)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Unrestricted Kohn–Sham DFT uses separate \(\alpha\)/\(\beta\) spatial MOs and
 densities (\(n_\alpha \neq n_\beta\) for open shells) with an
 exchange–correlation functional integrated on a molecular quadrature grid.

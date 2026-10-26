@@ -1,5 +1,7 @@
 # GPW many-body dispersion (MBD@rsSCS)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Many-body dispersion with range-separated self-consistent screening
 (MBD@rsSCS) is an additive London correction on top of GPW PBE. Free-atom
 polarizabilities, \(C_6\) coefficients and van der Waals radii are screened

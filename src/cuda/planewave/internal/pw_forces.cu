@@ -87,8 +87,7 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 }
 
 std::vector<std::array<double, 3>> pw_forces_analytic_impl(
-    const cpu::Frame& frame, const std::string& upf_path,
-    const std::string& gth_name, double ecut_ry, DeviceDensity& den,
+    const cpu::Frame& frame, double ecut_ry, DeviceDensity& den,
     DeviceBandSolver& solver, cpu::pw::internal::PWProblem& prob,
     cpu::pw::internal::PWWorkspace& ws, int n_alpha, int n_beta, bool use_smear,
     int n_elec, cpu::pw::internal::SmearKind smear_kind, double degauss_ha,
@@ -134,14 +133,13 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
         h_gy[static_cast<std::size_t>(ig)] = prob.gv0.g[ig][1];
         h_gz[static_cast<std::size_t>(ig)] = prob.gv0.g[ig][2];
     }
-    const auto upf =
-        cpu::pw::internal::load_pseudopotential(frame, upf_path, gth_name);
-    const std::vector<AccReal> upf_vg =
-        cpu::pw::internal::upf_vloc_to_gspace(upf, prob.gv0, AccReal(omega));
+    const auto& nc = *prob.potential;
+    const std::vector<AccReal> nc_vg =
+        cpu::pw::internal::nc_vloc_to_gspace(nc, prob.gv0, AccReal(omega));
     std::vector<double> h_vg(static_cast<std::size_t>(ng0));
     for (int ig = 0; ig < ng0; ++ig)
         h_vg[static_cast<std::size_t>(ig)] =
-            static_cast<double>(upf_vg[static_cast<std::size_t>(ig)]);
+            static_cast<double>(nc_vg[static_cast<std::size_t>(ig)]);
 
     std::vector<double> h_pos(static_cast<std::size_t>(3 * n));
     for (int ia = 0; ia < n; ++ia) {
@@ -326,7 +324,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
 
     // Ewald (host classical, shared with CPU energy/force path).
     const std::vector<AccReal> ion_charges(static_cast<std::size_t>(n),
-                                           static_cast<AccReal>(upf.z_val));
+                                           static_cast<AccReal>(nc.z_val));
     std::vector<Vec3> pos_ang(static_cast<std::size_t>(n));
     const StorageReal* sx = frame.span(kAtom_x);
     const StorageReal* sy = frame.span(kAtom_y);

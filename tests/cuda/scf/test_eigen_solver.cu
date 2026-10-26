@@ -120,6 +120,38 @@ class CudaScfEigenSolverLimit : public CudaScfEigenSolver {
     CudaScfEigenSolverLimit() { n = 215; }
 };
 
+class CudaScfEigenSolverWater16 : public CudaScfEigenSolver {
+  public:
+    CudaScfEigenSolverWater16() { n = 112; }
+};
+
+TEST_F(CudaScfEigenSolverWater16, DenseCoreValenceAndRepeatedSpectrum) {
+    check_core_valence_spectrum();
+}
+
+TEST_F(CudaScfEigenSolverWater16, HugeAndTinyFiniteScale) {
+    check_tridiagonal(1e150);
+    check_tridiagonal(1e-150);
+}
+
+class CudaScfEigenSolverSharedEdge : public CudaScfEigenSolver {
+  public:
+    CudaScfEigenSolverSharedEdge() { n = 116; }
+};
+
+TEST_F(CudaScfEigenSolverSharedEdge, AnalyticSpectrumNearSharedCapacity) {
+    check_tridiagonal();
+}
+
+class CudaScfEigenSolverSharedNext : public CudaScfEigenSolver {
+  public:
+    CudaScfEigenSolverSharedNext() { n = 117; }
+};
+
+TEST_F(CudaScfEigenSolverSharedNext, AnalyticSpectrumNearSharedCapacity) {
+    check_tridiagonal();
+}
+
 TEST_F(CudaScfEigenSolverLimit, DenseHfIndexLimitSpectrumAndEigenvectors) {
     check_tridiagonal();
 }

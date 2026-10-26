@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <utility>
 
 #include "atomiverse/core/stage.h"
@@ -43,7 +44,9 @@ int run() {
     frame.span(kAtom_z)[0] = 0.0;
     frame.box = cpu::Box::cubic(6.0);
 
-    PW cfg{GthPseudopotential{"GTH-PBE-q1"}, 5.0, 1};
+    PW cfg{
+        std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1"),
+        5.0, 1};
     cfg.tol = 1e-4;
     cfg.max_iter = 8;
     cfg.mix_beta = 0.5;

@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "atomiverse/core/mat3.h"
@@ -104,9 +105,9 @@ int run_on_device(Device dev, double& energy_ry) {
     energy_ry = 0.0;
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method{
-            cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
-            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+        cpu::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(
+                               ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"),
+                           kEcutRy, kMesh, cpu::scf::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 50;
         method.build(frame);
@@ -115,9 +116,9 @@ int run_on_device(Device dev, double& energy_ry) {
         iterations = r.iterations;
         energy_ry = r.energy;
     } else {
-        cuda::pw::PW method{
-            cpu::pw::UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"},
-            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+        cuda::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(
+                                ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"),
+                            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 50;
         method.build(frame);

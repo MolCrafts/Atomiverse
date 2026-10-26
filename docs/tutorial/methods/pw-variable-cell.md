@@ -1,5 +1,7 @@
 # Plane-wave variable-cell relaxation
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Isotropic cell relaxation (CELL_OPT) on top of the periodic plane-wave KS-DFT
 engine. After each force-phase SCF the directly mounted `cpu::pw::PW` writes the
 Nielsen–Martin analytic stress to `kStress` (the plan consumes stress, so one
@@ -90,7 +92,7 @@ cpu::Frame frame(2);
 set_diamond_si(frame, kA0);       // fcc primitive: type 14, mass 28.0855,
                                   // atom 1 at (a/4.0)(1,1,1), cell (a/2)(0,1,1)…
 
-PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, /*ecut Ry*/ 15.0,
+PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), /*ecut Ry*/ 15.0,
           /*k_mesh 2×2×2*/ 2, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 40;

@@ -1,5 +1,7 @@
 # Møller–Plesset perturbation theory (MP2, MP3, MP4)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Møller–Plesset perturbation theory adds electron correlation to a converged
 Hartree–Fock reference by Rayleigh–Schrödinger perturbation theory with
 \(H_0=\sum_p \varepsilon_p a_p^\dagger a_p\). The public entry points are

@@ -1,5 +1,7 @@
 # Periodic correlated methods on GPW (MP2, RPA, GW)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Post-SCF correlation and quasiparticle methods on a converged periodic GPW
 Kohn–Sham reference: second-order Møller–Plesset perturbation theory (MP2,
 SCS-MP2, UMP2), direct random-phase-approximation correlation energies (dRPA,
@@ -44,7 +46,7 @@ which throw on an unsupported element or name.
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"   // GpwDft; includes mp2.h, rpa.h, g0w0.h
 #include "atomiverse/cpu/gpw/gth_potential.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 using namespace ATV;
 using namespace ATV::cpu::gpw;

@@ -8,8 +8,9 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/internal/g_vector.h"
 #include "atomiverse/cpu/planewave/internal/kpoint.h"
+#include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
-#include "atomiverse/cpu/planewave/internal/upf_reader.h"
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,8 @@ struct PWProblem {
     AccReal vol_bohr = 0; ///< Cell volume [Bohr³].
     int n_elec = 0;
     int n_bands = 0;
+    /// Admitted immutable radial data shared by setup, force and response.
+    std::shared_ptr<const NcPotentialData> potential;
 
     /// Per-k-point nonlocal projector / atomic-wfc tables, evaluated on
     /// q = k+G of each sphere (size and values are k-dependent). The SCF
@@ -45,10 +48,6 @@ struct PWProblem {
     PWProblem(const PWProblem&) = delete;
     PWProblem& operator=(const PWProblem&) = delete;
 };
-
-/// @brief Number of valence electrons assumed for nuclear charge `z`
-///        (H..Ar) when no UPF pseudopotential supplies it.
-int valence_from_z(int z);
 
 /// @brief Refuse an odd valence-electron count on the restricted,
 ///        fixed-occupation path.
@@ -70,38 +69,7 @@ int valence_from_z(int z);
 /// @throws std::invalid_argument when @p n_elec is odd.
 void require_closed_shell(int n_elec, const char* where);
 
-/// @brief Resolve a run's pseudopotential to `UPFData`, from either source.
-///
-/// Exactly one of @p upf_path / @p gth_name must be set — a plane-wave run
-/// has no meaningful default. The analytic GTH branch evaluates the
-/// published parameters onto UPF-shaped radial tables
-/// (`internal::upf_from_gth`), so every downstream consumer — local form
-/// factor, KB projectors, forces, stress, DFPT — sees one representation.
-///
-/// This is the single definition of "which potential does this run use".
-/// `setup_pw_problem` and the analytic force path both call it: when the
-/// force path answered that question on its own it looked only for a UPF
-/// *file*, so GTH runs silently fell back to bare nuclear Coulomb.
-///
-/// **Single species, both branches.** One `UPFData` is returned for the whole
-/// cell and `setup_pw_problem` gives every atom that potential's `z_val`, so
-/// a multi-species frame is outside the model either way. Only the GTH branch
-/// says so today — it throws on mixed atomic numbers; the UPF branch does not
-/// check, and a mixed frame there is silently treated as the file's own
-/// element throughout.
-///
-/// @param frame     Geometry; supplies the atomic numbers (single species).
-/// @param upf_path  Norm-conserving UPF file, or empty to use @p gth_name.
-/// @param gth_name  In-tree GTH parameterization (e.g. "GTH-PBE-q4"), or
-///                  empty to use @p upf_path.
-/// @return Parsed / synthesized pseudopotential tables.
-/// @throws std::invalid_argument if neither or both are set, or if
-///         @p gth_name is used on a frame that mixes atomic numbers.
-UPFData load_pseudopotential(const cpu::Frame& frame,
-                             const std::string& upf_path,
-                             const std::string& gth_name);
-
-/// @brief Radial → G-space form factor v(G) of the UPF local potential
+/// @brief Radial → G-space form factor v(G) of the NC local potential
 ///        [Hartree], one value per G of `gv` (QE `vloc_mod.f90` route:
 ///        erf-screened quadrature + analytic screened-Coulomb transform;
 ///        the G = 0 entry carries the finite "αZ" part only).
@@ -111,22 +79,22 @@ UPFData load_pseudopotential(const cpu::Frame& frame,
 /// assembled `V_loc_G` by the structure factor is ill-defined on shells
 /// where S(G) = 0 (e.g. diamond).
 ///
-/// @param upf   Parsed UPF data.
+/// @param upf Canonical NC radial data in Hartree.
 /// @param gv    G-vector list to evaluate on.
 /// @param omega Cell volume [Bohr³].
-std::vector<AccReal> upf_vloc_to_gspace(const UPFData& upf,
-                                        const GVectorList& gv, AccReal omega);
+std::vector<AccReal> nc_vloc_to_gspace(const NcPotentialData& upf,
+                                       const GVectorList& gv, AccReal omega);
 
-/// @brief Transform a spherical UPF nonlocal potential to diagonal KB channels.
+/// @brief Transform a spherical NC nonlocal potential to diagonal KB channels.
 /// @param out Per-atom projectors: angular momentum, strength [Hartree], and
 ///        radial Fourier integrals; angular/phase factors are applied by H.
 /// @param gv Wavefunction G-sphere; radial transforms use |G+k| [Bohr^-1].
-/// @param upf Radial beta=r*p(r) tables and complete symmetric D_ij [Ry].
+/// @param upf Radial beta=r*p(r) tables and complete symmetric D_ij [Ha].
 /// @param pos_bohr Atomic positions [Bohr]; determines the number of outputs.
 /// @throws std::invalid_argument for incomplete/nonfinite/asymmetric D_ij or
 ///         couplings between distinct angular momenta.
 void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
-                         const GVectorList& gv, const UPFData& upf,
+                         const GVectorList& gv, const NcPotentialData& upf,
                          const std::vector<Vec3>& pos_bohr);
 
 /// @brief Assemble the complete SCF problem from a Frame: Ewald energy,
@@ -138,17 +106,27 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
 ///
 /// @param frame     Input structure: geometry (positions [Å]), species
 ///                  (type = Z) and cell.
-/// @param upf_path  Norm-conserving UPF file, or empty to use @p gth_name.
-/// @param gth_name  In-tree analytic GTH parameterization (e.g.
-///                  "GTH-PBE-q4"), or empty to use @p upf_path. Exactly one
-///                  of the two must be set — a plane-wave run has no
-///                  meaningful default pseudopotential.
+/// @param potential Immutable scalar norm-conserving physical provider.
 /// @param ecut_ry   Wavefunction cutoff [Ry].
 /// @param k_mesh    Monkhorst-Pack mesh size per dimension.
 /// @param out       Problem to fill (must outlive the SCF loop).
-void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
-                      const std::string& gth_name, double ecut_ry, int k_mesh,
-                      PWProblem& out);
+void setup_pw_problem(
+    const cpu::Frame& frame,
+    const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
+    int k_mesh, PWProblem& out);
+
+/// @brief Assemble geometry-dependent operators from admitted NC physics.
+///
+/// Reuses the immutable snapshot for frozen-density strain samples without
+/// invoking the provider or copying its radial data.
+/// @param frame Geometry [Angstrom], species and cell.
+/// @param potential Non-null admitted radial snapshot, shared with the reference.
+/// @param ecut_ry Wavefunction cutoff [Ry].
+/// @param k_mesh Monkhorst-Pack mesh per dimension.
+/// @param out Problem to fill (must outlive its electronic operations).
+void setup_pw_problem(const cpu::Frame& frame,
+                      std::shared_ptr<const NcPotentialData> potential,
+                      double ecut_ry, int k_mesh, PWProblem& out);
 
 /// @brief Replace only the k-mesh tables on an assembled problem.
 ///
@@ -159,14 +137,10 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 ///
 /// @param out      Problem from a prior `setup_pw_problem` (density frozen).
 /// @param frame    Geometry (positions [Å], types); used for KB structure factors.
-/// @param upf_path UPF file, or empty to use @p gth_name.
-/// @param gth_name In-tree GTH parameterization, or empty to use
-///                 @p upf_path.
 /// @param ecut_ry  Wavefunction cutoff [Ry] (same as SCF).
 /// @param kfrac    Fractional (crystal) k-coordinates.
-void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
-                      const std::string& upf_path, const std::string& gth_name,
-                      double ecut_ry, const std::vector<Vec3>& kfrac);
+void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame, double ecut_ry,
+                      const std::vector<Vec3>& kfrac);
 
 /// @brief Solve the Pulay/DIIS constrained least-squares coefficients.
 ///
@@ -209,7 +183,7 @@ struct PWEnergyTerms {
     AccReal e_h = 0;      ///< Hartree energy.
     AccReal e_xc_int = 0; ///< Integral of rho * V_xc (decomposition term).
     AccReal e_loc = 0;    ///< Integral of rho * V_loc (diagnostic only).
-    AccReal total = 0;    ///< Total energy incl. E_xc, Ewald, augmentation.
+    AccReal total = 0;    ///< Total energy incl. E_xc and Ewald.
 };
 
 /// @brief Combine already-integrated SCF energy pieces into the decomposition.
@@ -227,14 +201,12 @@ struct PWEnergyTerms {
 /// @param e_h       Hartree energy ½Ω Σ_G Re[ρ*V_H] [Hartree].
 /// @param e_xc_int  Integral ∫ρ V_xc = Ω Σ_G Re[ρ*V_xc] [Hartree].
 /// @param e_loc     Integral ∫ρ V_loc [Hartree] (diagnostic only).
-/// @param e_xc      XC energy ∫ε_xc[ρ]ρ d³r [Hartree] (`ws.E_xc`).
+/// @param e_xc      XC energy ∫f_xc[ρ] d³r [Hartree] (`ws.E_xc`).
 /// @param ew_total  Ewald energy incl. the QE G=0 term [Hartree].
-/// @param e_aug     Augmentation-charge energy [Hartree] (`ws.E_aug`).
 /// @return Filled decomposition [Hartree].
 PWEnergyTerms combine_energy_terms(AccReal e_band, AccReal e_h,
                                    AccReal e_xc_int, AccReal e_loc,
-                                   AccReal e_xc, AccReal ew_total,
-                                   AccReal e_aug);
+                                   AccReal e_xc, AccReal ew_total);
 
 /// @brief Compute the per-iteration energy decomposition (no I/O).
 PWEnergyTerms iteration_energy(const PWWorkspace& ws, AccReal e_band,

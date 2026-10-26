@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -87,7 +88,8 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf,
                cpu::scf::XCType xc) {
     RunOut o;
     if (dev == Device::Cpu) {
-        cpu::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1, xc};
+        cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                       kEcutRy, 1, xc};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
@@ -101,7 +103,8 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf,
         o.converged = r.converged;
         o.iterations = r.iterations;
     } else {
-        cuda::pw::PW pw{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1, xc};
+        cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                        kEcutRy, 1, xc};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
@@ -197,7 +200,7 @@ int run(int argc, char** argv) {
     constexpr double kForceTolEvA = 5.0e-3;
     constexpr double kStressTolEvA3 = 5.0e-2;
 
-    const cpu::pw::UpfPseudopotential pbe_pp{upf};
+    const auto pbe_pp = std::make_shared<cpu::pw::UpfPseudopotential>(upf);
     auto fill_pbe = [](auto& pw) {
         pw.tol = 5e-4;
         pw.max_iter = 60;

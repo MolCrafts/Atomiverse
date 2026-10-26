@@ -17,8 +17,8 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {
@@ -36,14 +36,14 @@ struct MrecWriter::Impl {
 
     /// @brief Push `src` into the exchange frame.
     ///
-    /// `cpu::to_molrs` carries the write-back state (x/y/z, v, f, charge,
+    /// `cpu::to_molpy` carries the write-back state (x/y/z, v, f, charge,
     /// image, tag, box, serializable meta). `atomic_number` and `mass` are
     /// per-run immutable *inputs* it deliberately leaves alone; a trajectory
     /// store needs them anyway, and molrs pins sparsity per block, not per
     /// column, so they are re-sent with every atoms block rather than once.
     void export_from(const Frame& src) {
         molrs::FrameRef& dst = *frame;
-        to_molrs(src, dst);
+        to_molpy(src, dst);
 
         const int n = src.nlocal();
         // kAtom_type carries Z; a negative value is refused, not wrapped.

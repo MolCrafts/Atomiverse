@@ -1,5 +1,7 @@
 # Constant-pressure MD (NPT)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Isothermal–isobaric molecular dynamics: a Martyna–Tobias–Klein (MTK) Trotter
 barostat coupled to a Nosé–Hoover chain thermostat, run as an **Integrator**
 Component on the `cpu::md::MD` preset (never a separate Driver category). The

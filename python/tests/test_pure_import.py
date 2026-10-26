@@ -181,7 +181,7 @@ def test_single_point_uses_public_method_entry(monkeypatch) -> None:
 
     require = Mock()
     monkeypatch.setattr(driver, "require_cpp", require)
-    method = Mock()
+    method = Mock(device="cpu")
     frame = object()
     assert driver.single_point(frame, method) is None
     require.assert_called_once_with()

@@ -1,5 +1,7 @@
 # Rigid water and virtual sites
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Rigid-water models need massless charge sites (the TIP4P M site, the TIP5P lone
 pairs) whose positions follow the parent atoms and whose forces are projected
 back onto those parents (Feenstra partition) so that total force and torque on

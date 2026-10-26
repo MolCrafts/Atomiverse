@@ -33,15 +33,16 @@
 /// the molrs → Frame conversion before any solve starts.
 ///
 /// Hand a `PW` to `MD.set_evaluator` and the run becomes plane-wave
-/// Born-Oppenheimer dynamics: the driver mounts a copy of the method as a
+/// Born-Oppenheimer dynamics: the driver borrows the same method as a
 /// nested node, which re-converges the electrons at every geometry and
 /// accumulates energy and analytic forces from that one SCF.
 
 #include "force_array.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 #include "result_array.h"
 
 #include <nanobind/ndarray.h>
+#include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
 
 #ifdef ATV_HAS_PW
@@ -58,11 +59,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
-// `copy_pw_params` is the ONE definition of "the same method, no state" (see
-// its comment: two file-local copies once silently dropped `gth_name`), so
-// the binding reuses it rather than writing a third member list.
-#include "atomiverse/cpu/planewave/internal/scf_loop.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 
@@ -136,13 +133,13 @@ std::string smearing_name(Smearing smearing) {
 /// @throws std::runtime_error (Python `RuntimeError`) when the frame carries
 ///         no cell, naming the attribute to set.
 ATV::cpu::Frame periodic_frame(const molrs::FrameRef& src) {
-    ATV::cpu::Frame work = ATV::cpu::from_molrs(src);
+    ATV::cpu::Frame work = ATV::cpu::from_molpy(src);
     if (!(work.box.volume() > 0.0))
         throw std::runtime_error(
             "plane-wave DFT requires a periodic cell, but this molpy.Frame "
             "has no box (or one of zero volume). Set frame.box before "
             "build()/run()/forces()/stress(), e.g. "
-            "frame.box = molrs.Box.cube(10.0).");
+            "frame.box = molpy.Box.cube(10.0).");
     return work;
 }
 
@@ -166,7 +163,7 @@ ATV::cpu::Frame periodic_frame(const molrs::FrameRef& src) {
 ///         restricted fixed-occupation path, incompatible multiplicity
 ///         parity, empty frame.
 ForceArray pw_forces(PW& solver, nb::object frame_obj) {
-    auto fref = borrow_molrs_frame(frame_obj);
+    auto fref = borrow_molpy_frame(frame_obj);
     ATV::cpu::Frame work = periodic_frame(*fref);
     std::vector<double> flat;
     {
@@ -182,7 +179,7 @@ ForceArray pw_forces(PW& solver, nb::object frame_obj) {
             flat.push_back(static_cast<double>(fz[i]));
         }
     }
-    ATV::cpu::to_molrs(work, *fref);
+    ATV::cpu::to_molpy(work, *fref);
     return to_force_array(std::span<const double>(flat.data(), flat.size()));
 }
 
@@ -203,14 +200,14 @@ ForceArray pw_forces(PW& solver, nb::object frame_obj) {
 ///         path, `spin_polarized` with metallic smearing (no analytic stress
 ///         path), incompatible multiplicity parity, empty frame.
 VectorArray pw_cell_stress(PW& solver, nb::object frame_obj) {
-    auto fref = borrow_molrs_frame(frame_obj);
+    auto fref = borrow_molpy_frame(frame_obj);
     ATV::cpu::Frame work = periodic_frame(*fref);
     std::array<double, 6> stress{};
     {
         nb::gil_scoped_release release;
         stress = solver.stress(work);
     }
-    ATV::cpu::to_molrs(work, *fref);
+    ATV::cpu::to_molpy(work, *fref);
     return to_vector_array(
         std::span<const double>(stress.data(), stress.size()));
 }
@@ -274,6 +271,25 @@ void bind_pw(nb::module_& m) {
                    + " Ry, iters=" + std::to_string(r.iterations) + ")";
         });
 
+    using ATV::cpu::pw::GthPseudopotential;
+    using ATV::cpu::pw::UpfPseudopotential;
+    using ATV::electronic::NormConservingPotential;
+    nb::class_<NormConservingPotential>(m, "NormConservingPotential")
+        .def_prop_ro("atomic_number", &NormConservingPotential::atomic_number)
+        .def_prop_ro("valence", &NormConservingPotential::valence);
+    nb::class_<GthPseudopotential, NormConservingPotential>(
+        m, "GthPseudopotential")
+        .def(
+            "__init__",
+            [](GthPseudopotential* self, int z, const std::string& name) {
+                new (self)
+                    GthPseudopotential(static_cast<molrs::Element>(z), name);
+            },
+            nb::arg("atomic_number"), nb::arg("name"));
+    nb::class_<UpfPseudopotential, NormConservingPotential>(
+        m, "UpfPseudopotential")
+        .def(nb::init<const std::string&>(), nb::arg("path"));
+
     nb::class_<PW>(
         m, "PW",
         "Plane-wave density-functional theory (DFT) for a periodic cell: the "
@@ -287,62 +303,18 @@ void bind_pw(nb::module_& m) {
         "[Z], the positions [A] and the box, and refuses a frame with no box.")
         .def(
             "__init__",
-            [](PW* self, double ecut_ry, int k_mesh,
-               const std::string& upf_path, const std::string& gth_name,
-               const std::string& xc) {
-                if (upf_path.empty() == gth_name.empty())
-                    throw std::invalid_argument(
-                        "PW: pass exactly one pseudopotential source, "
-                        "upf_path='<file.upf>' or gth_name='GTH-...' (got "
-                        + std::string(upf_path.empty() ? "neither" : "both")
-                        + ")");
-                const ATV::cpu::scf::XCType functional = xc_from_name(xc);
-                if (!upf_path.empty())
-                    new (self) PW(ATV::cpu::pw::UpfPseudopotential{upf_path},
-                                  ecut_ry, k_mesh, functional);
-                else
-                    new (self) PW(ATV::cpu::pw::GthPseudopotential{gth_name},
-                                  ecut_ry, k_mesh, functional);
+            [](PW* self,
+               std::shared_ptr<const NormConservingPotential> potential,
+               double ecut_ry, int k_mesh, const std::string& xc) {
+                new (self)
+                    PW(std::move(potential), ecut_ry, k_mesh, xc_from_name(xc));
             },
-            nb::kw_only(), nb::arg("ecut_ry"), nb::arg("k_mesh"),
-            nb::arg("upf_path") = "", nb::arg("gth_name") = "",
-            nb::arg("xc") = "PBE",
-            "Construct the method. All arguments are keyword-only.\n\n"
-            "ecut_ry: wavefunction cutoff [Ry]. A plane wave e^{i(k+G)r} is "
-            "kept only when its kinetic energy — |k+G|^2 in Rydberg atomic "
-            "units — stays below this, so it is the one knob that sets basis "
-            "size and cost; converge it for the system.\n\n"
-            "k_mesh: Monkhorst-Pack mesh size per dimension "
-            "(dimensionless). The Brillouin zone is sampled on a uniform "
-            "k_mesh**3 grid of equal weight and no symmetry reduction; "
-            "k_mesh = 1 is the Gamma point alone.\n\n"
-            "upf_path: path to a NORM-CONSERVING pseudopotential file in "
-            "Unified Pseudopotential Format (UPF) — a *pseudopotential* "
-            "replaces the nucleus and the chemically inert core electrons by "
-            "an effective potential, which is what makes a plane-wave "
-            "expansion affordable. Ultrasoft and PAW files are refused on "
-            "read: this path adds no augmentation charge.\n\n"
-            "gth_name: in-tree analytic Goedecker-Teter-Hutter (GTH) "
-            "pseudopotential, e.g. 'GTH-PBE-q4' (Si, 4 valence electrons) or "
-            "'GTH-PBE-q1' (H); no external file is needed. In-tree coverage "
-            "is H, O, Na, Cl, Ar, Si, Ni, Zn. ONE potential serves the whole "
-            "cell, so a frame mixing atomic numbers raises ValueError.\n\n"
-            "Exactly one of upf_path / gth_name must be given — both or "
-            "neither raises ValueError here. There is no default and no "
-            "bare-Coulomb fallback: a point charge has no finite plane-wave "
-            "cutoff.\n\n"
-            "xc: exchange-correlation functional by NAME — the recipe "
-            "supplying the exchange and correlation energy the Kohn-Sham "
-            "reference system leaves out. Same table as RKS(xc=...): "
-            "'LSDA', 'PBE', 'PBEsol', 'RevPBE', 'RPBE', 'BLYP', 'OptB88VdW', "
-            "'B3LYP', 'PBE0', 'B2PLYP', 'CAMB3LYP'. An unknown name raises "
-            "ValueError listing them — there is no fallback functional.")
-        .def_ro("upf_path", &PW::upf_path,
-                "UPF pseudopotential file fixed at construction; empty when "
-                "gth_name is used (read-only).")
-        .def_ro("gth_name", &PW::gth_name,
-                "GTH pseudopotential table entry fixed at construction; empty "
-                "when upf_path is used (read-only).")
+            nb::kw_only(), nb::arg("potential"), nb::arg("ecut_ry"),
+            nb::arg("k_mesh"), nb::arg("xc") = "PBE",
+            "Construct with an immutable NC potential, cutoff [Ry] and k mesh.")
+        .def_prop_ro(
+            "potential", [](const PW& pw) { return pw.potential; },
+            "The immutable NC potential shared by this method.")
         .def_ro("ecut_ry", &PW::ecut_ry,
                 "Wavefunction cutoff [Ry] fixed at construction (read-only).")
         .def_ro("k_mesh", &PW::k_mesh,
@@ -411,7 +383,7 @@ void bind_pw(nb::module_& m) {
         .def(
             "build",
             [](PW& solver, nb::object frame_obj) {
-                auto fref = borrow_molrs_frame(frame_obj);
+                auto fref = borrow_molpy_frame(frame_obj);
                 ATV::cpu::Frame work = periodic_frame(*fref);
                 nb::gil_scoped_release release;
                 solver.build(work);
@@ -428,14 +400,14 @@ void bind_pw(nb::module_& m) {
         .def(
             "run",
             [](PW& solver, nb::object frame_obj) {
-                auto fref = borrow_molrs_frame(frame_obj);
+                auto fref = borrow_molpy_frame(frame_obj);
                 ATV::cpu::Frame work = periodic_frame(*fref);
                 PWResult result;
                 {
                     nb::gil_scoped_release release;
                     result = solver.run(work);
                 }
-                ATV::cpu::to_molrs(work, *fref);
+                ATV::cpu::to_molpy(work, *fref);
                 return result;
             },
             nb::arg("frame"),
@@ -449,9 +421,8 @@ void bind_pw(nb::module_& m) {
             "Raises RuntimeError on a frame with no box, and ValueError when "
             "a restricted run is asked for an odd valence-electron count "
             "(set spin_polarized, or a smearing), when multiplicity and the "
-            "electron count have incompatible parity, and when gth_name is "
-            "used on a frame that mixes atomic numbers (one potential serves "
-            "the whole cell).")
+            "electron count have incompatible parity, or Frame species differ "
+            "from the provider atomic number.")
         .def("forces", &pw_forces, nb::arg("frame"),
              "Run one SCF and return the analytic ionic forces F = -dE/dR as "
              "an (n_atoms, 3) array [eV/A] — local Hellmann-Feynman + Ewald "

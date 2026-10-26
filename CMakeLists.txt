@@ -28,7 +28,7 @@ if(NOT ATV_DOCS_ONLY)
     # propagates to every target linking xtensor. Before this line said 20 the
     # `atomiverse` target was ALREADY compiling at -std=gnu++20 via that
     # interface requirement while this variable claimed 17 — declaring 20 makes
-    # the build honest and also lifts the non-xtensor targets (molrs_cxx) that
+    # the build honest and also lifts the non-xtensor targets (molpy_cxx) that
     # were still getting gnu++17.
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -107,14 +107,14 @@ if(NOT ATV_DOCS_ONLY)
     option(ATV_BUILD_XC_ORACLE
            "Build libxc-backed XC oracle (test-only scaffolding; deletable after native parity is locked in)"
            OFF)
-    # molrs path (optional product — gated by ATV_BUILD_MOLRS after module DAG).
-    # Two documented sources (cmake/MolrsContract.cmake, "Pin policy"):
-    #   * CI / plain `cmake -B`: the ./molrs submodule gitlink (this default);
-    #   * developer presets (CMakePresets.json): the sibling MolCrafts checkout
-    #     ${sourceDir}/../molrs, whose uncommitted dev tree no gitlink can pin.
-    set(ATV_MOLRS_PATH "${CMAKE_SOURCE_DIR}/molrs" CACHE PATH
-        "Path to molrs source tree (default: git submodule ./molrs; presets: ../molrs)")
-    include("${CMAKE_SOURCE_DIR}/cmake/MolrsContract.cmake")
+    # Use the merged local molpy checkout; no source revision is pinned.
+    set(_atv_molpy_default "${CMAKE_SOURCE_DIR}/../molrs")
+    if(DEFINED ENV{ATV_MOLPY_PATH})
+        set(_atv_molpy_default "$ENV{ATV_MOLPY_PATH}")
+    endif()
+    set(ATV_MOLPY_PATH "${_atv_molpy_default}" CACHE PATH
+        "Path to merged molpy repository containing molcxx/ and molpy/")
+    include("${CMAKE_SOURCE_DIR}/cmake/MolpyContract.cmake")
     option(ATV_BUILD_PYTHON "Build Python bindings (nanobind)" OFF)
     # The nanobind module is a shared object linking the static atomiverse
     # and fetched-dependency archives (spdlog, ...): everything must be PIC.
@@ -124,8 +124,6 @@ if(NOT ATV_DOCS_ONLY)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     endif()
     option(ATV_BUILD_TESTS "Build tests" OFF)
-    option(ATV_BUILD_REGRESSIONS
-        "Build end-to-end textbook regression cases (regressions/)" OFF)
     option(ATV_BUILD_BENCHMARKS "Build benchmarks" OFF)
     option(ATV_BUILD_EXAMPLES "Build examples" OFF)
     option(ATV_BUILD_LAUNCHER
@@ -136,42 +134,31 @@ if(NOT ATV_DOCS_ONLY)
     include("${CMAKE_SOURCE_DIR}/cmake/AtvProductModules.cmake")
 
     # molrs contract only when the DAG left MOLRS on.
-    set(ATV_MOLRS_HAS_WHAM OFF)
-    set(ATV_MOLRS_HAS_TRAJECTORY_WRITER OFF)
-    if(ATV_BUILD_MOLRS)
-        if(NOT EXISTS "${ATV_MOLRS_PATH}/Cargo.toml")
+    set(ATV_MOLPY_HAS_WHAM OFF)
+    set(ATV_MOLPY_HAS_TRAJECTORY_WRITER OFF)
+    if(ATV_BUILD_MOLPY)
+        if(NOT EXISTS "${ATV_MOLPY_PATH}/molcxx/Cargo.toml")
             message(FATAL_ERROR
-                "ATV_BUILD_MOLRS=ON but molrs not found at "
-                "ATV_MOLRS_PATH='${ATV_MOLRS_PATH}'.\n"
-                "  Submodule: git submodule update --init --recursive molrs\n"
-                "  Presets:   clone MolCrafts/molrs (branch dev) next to this "
-                "repo as ../molrs\n"
-                "  Or turn off ANALYSIS/IO/PYTHON/GPW/HF/SEMIEMPIRICAL "
-                "(those products enable molrs).")
+                "Merged molpy source not found at ATV_MOLPY_PATH='${ATV_MOLPY_PATH}'. "
+                "Set ATV_MOLPY_PATH to the local MolCrafts/molpy checkout.")
         endif()
-        if(ATV_MOLRS_PATH STREQUAL "${CMAKE_SOURCE_DIR}/molrs")
-            message(STATUS "molrs source: ./molrs submodule (CI pin)")
+        message(STATUS "molpy source: ${ATV_MOLPY_PATH} (local checkout, unpinned)")
+        atv_detect_molpy_wham("${ATV_MOLPY_PATH}" ATV_MOLPY_HAS_WHAM)
+        if(ATV_MOLPY_HAS_WHAM)
+            message(STATUS "molpy WhamCompute: available")
+        else()
+            message(STATUS "molpy WhamCompute: not in this checkout (wham skipped)")
+        endif()
+        atv_detect_molpy_trajectory_writer("${ATV_MOLPY_PATH}"
+                                           ATV_MOLPY_HAS_TRAJECTORY_WRITER)
+        if(ATV_MOLPY_HAS_TRAJECTORY_WRITER)
+            message(STATUS "molpy TrajectoryWriter: available (cpu::MrecRecorder)")
         else()
             message(STATUS
-                "molrs source: ${ATV_MOLRS_PATH} (developer checkout; "
-                "the ./molrs submodule is bypassed)")
-        endif()
-        atv_detect_molrs_wham("${ATV_MOLRS_PATH}" ATV_MOLRS_HAS_WHAM)
-        if(ATV_MOLRS_HAS_WHAM)
-            message(STATUS "molrs WhamCompute: available")
-        else()
-            message(STATUS "molrs WhamCompute: not in this pin (wham skipped)")
-        endif()
-        atv_detect_molrs_trajectory_writer("${ATV_MOLRS_PATH}"
-                                           ATV_MOLRS_HAS_TRAJECTORY_WRITER)
-        if(ATV_MOLRS_HAS_TRAJECTORY_WRITER)
-            message(STATUS "molrs TrajectoryWriter: available (cpu::MrecRecorder)")
-        else()
-            message(STATUS
-                "molrs TrajectoryWriter: not in this pin (MrecRecorder skipped)")
+                "molpy TrajectoryWriter: not in this checkout (MrecRecorder skipped)")
         endif()
     else()
-        message(STATUS "molrs CXX: OFF (no Rust link; pure engine build)")
+        message(STATUS "molpy CXX: OFF (no Rust link; pure engine build)")
     endif()
 
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/deps")
@@ -320,9 +307,9 @@ if(NOT ATV_DOCS_ONLY)
     )
 
     # ── molrs surfaces (IO / ANALYSIS / exchange / Element tables) ─────────
-    if(ATV_BUILD_MOLRS)
+    if(ATV_BUILD_MOLPY)
         list(APPEND ATOMIVERSE_SRCS
-            src/cpu/frame/molrs_exchange.cpp
+            src/cpu/frame/molpy_exchange.cpp
         )
     endif()
     # Products own features; MOLRS is already derived (AtvProductModules).
@@ -335,7 +322,7 @@ if(NOT ATV_DOCS_ONLY)
         )
         # Streaming `*.mrec` recorder — needs the molrs TrajectoryWriter bridge
         # (capability bit 3); gated on the pin like WHAM, sources AND tests.
-        if(ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+        if(ATV_MOLPY_HAS_TRAJECTORY_WRITER)
             list(APPEND ATOMIVERSE_SRCS
                 src/cpu/record/mrec.cpp
                 src/cpu/record/mrec_recorder.cpp
@@ -531,7 +518,7 @@ if(NOT ATV_DOCS_ONLY)
     # Serves the MPI Python launcher only; the materializer instantiates
     # components across domains (EAM/SW/PW headers reach molrs::Element), so
     # the whole block follows MOLRS (LAUNCHER ⇒ PYTHON ⇒ IO ⇒ MOLRS).
-    if(ATV_BUILD_MOLRS)
+    if(ATV_BUILD_MOLPY)
         list(APPEND ATOMIVERSE_SRCS
             src/cpu/task/task_spec.cpp
             src/cpu/task/task_codec.cpp
@@ -554,7 +541,7 @@ if(NOT ATV_DOCS_ONLY)
         file(GLOB CPU_POTENTIALS_SRCS CONFIGURE_DEPENDS
             "${CMAKE_SOURCE_DIR}/src/cpu/potentials/*.cpp"
         )
-        if(NOT ATV_BUILD_MOLRS)
+        if(NOT ATV_BUILD_MOLPY)
             list(FILTER CPU_POTENTIALS_SRCS EXCLUDE REGEX ".*/eam\\.cpp$")
             list(FILTER CPU_POTENTIALS_SRCS EXCLUDE REGEX ".*/sw\\.cpp$")
         endif()
@@ -588,8 +575,8 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/scf/scf_evaluator.cu
             src/cuda/longrange/ewald.cu
         )
-        if(ATV_BUILD_MOLRS)
-            list(APPEND ATOMIVERSE_SRCS src/cuda/frame/molrs_exchange.cu)
+        if(ATV_BUILD_MOLPY)
+            list(APPEND ATOMIVERSE_SRCS src/cuda/frame/molpy_exchange.cu)
         endif()
         if(ATV_BUILD_MD)
             # multi_gpu.cu owns multi-rank NVE and links launch_nve_limit_*;
@@ -653,15 +640,15 @@ if(NOT ATV_DOCS_ONLY)
     add_library(atomiverse ${ATOMIVERSE_SRCS})
     atv_apply_product_module_defs(atomiverse)
 
-    # Multi-window WHAM — needs ANALYSIS + molrs pin with WhamCompute.
-    if(ATV_BUILD_ANALYSIS AND ATV_BUILD_MOLRS AND ATV_MOLRS_HAS_WHAM)
+    # Multi-window WHAM — needs ANALYSIS + molpy checkout with WhamCompute.
+    if(ATV_BUILD_ANALYSIS AND ATV_BUILD_MOLPY AND ATV_MOLPY_HAS_WHAM)
         target_sources(atomiverse PRIVATE src/cpu/observe/wham.cpp)
-        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLRS_WHAM=1)
+        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLPY_WHAM=1)
     endif()
-    # Streaming mrec recorder — needs IO + molrs pin with the TrajectoryWriter.
-    if(ATV_BUILD_IO AND ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+    # Streaming mrec recorder — needs IO + molpy checkout with the TrajectoryWriter.
+    if(ATV_BUILD_IO AND ATV_MOLPY_HAS_TRAJECTORY_WRITER)
         target_compile_definitions(atomiverse PUBLIC
-                                   ATV_HAS_MOLRS_TRAJECTORY_WRITER=1)
+                                   ATV_HAS_MOLPY_TRAJECTORY_WRITER=1)
     endif()
 
     if(ATV_BUILD_HF)
@@ -952,6 +939,8 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/planewave/internal/g_vector.cpp
             src/cpu/planewave/internal/fft.cpp
             src/cpu/planewave/internal/upf_reader.cpp
+            src/cpu/planewave/internal/nc_potential.cpp
+            src/cpu/planewave/norm_conserving_potential.cpp
             # Analytic GTH pseudopotentials. gth_potential.cpp is shared data
             # (GPW consumes it too) and is built here because PW is the wider
             # of the two flags; its home under cpu/gpw/ is a directory-layering
@@ -1240,26 +1229,23 @@ if(NOT ATV_DOCS_ONLY)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_MPI)
     endif()
 
-    # ── molrs CXX (only when products derived ATV_BUILD_MOLRS) ──
-    if(ATV_BUILD_MOLRS)
+    # ── molrs CXX (only when products derived ATV_BUILD_MOLPY) ──
+    if(ATV_BUILD_MOLPY)
         FetchContent_Declare(Corrosion
             GIT_REPOSITORY https://github.com/corrosion-rs/corrosion
             GIT_TAG v0.6.1
         )
         FetchContent_MakeAvailable(Corrosion)
-        # molrs >= 0.14 makes molrs-cxxapi a standalone workspace root (its
-        # own `[workspace]` + Cargo.lock), so it is no longer reachable from
-        # the repo-root manifest; the 0.13 submodule layout resolves the same
-        # path to the root workspace member, so one MANIFEST_PATH serves both.
+        # The merged repository ships its C++ bridge in molcxx/.
         corrosion_import_crate(
-            MANIFEST_PATH "${ATV_MOLRS_PATH}/molrs-cxxapi/Cargo.toml"
-            CRATES molcrafts-molrs-cxxapi
+            MANIFEST_PATH "${ATV_MOLPY_PATH}/molcxx/Cargo.toml"
+            CRATES molcrafts-molcxx
         )
         # molrs-core hardcodes F = f64.  Bridge always uses double.
-        # Package is `molcrafts-molrs-cxxapi` in Cargo.toml, but `[lib] name` is
-        # `molrs_cxxapi` -- corrosion exposes the target under the lib name.
-        corrosion_add_cxxbridge(molrs_cxx
-            CRATE molrs_cxxapi
+        # Package is `molcrafts-molcxx` in Cargo.toml, but `[lib] name` is
+        # `molcxx` -- corrosion exposes the target under the lib name.
+        corrosion_add_cxxbridge(molpy_cxx
+            CRATE molcxx
             FILES bridge.rs
         )
 
@@ -1267,20 +1253,20 @@ if(NOT ATV_DOCS_ONLY)
         if(POLICY CMP0118)
             cmake_policy(SET CMP0118 NEW)
         endif()
-        set(_molrs_cxx_gen_dir
-            "${CMAKE_BINARY_DIR}/corrosion_generated/cxxbridge/molrs_cxx")
+        set(_molpy_cxx_gen_dir
+            "${CMAKE_BINARY_DIR}/corrosion_generated/cxxbridge/molpy_cxx")
         set_source_files_properties(
-            "${_molrs_cxx_gen_dir}/include/rust/cxx.h"
-            "${_molrs_cxx_gen_dir}/include/molrs_cxx/src/bridge.rs.h"
-            "${_molrs_cxx_gen_dir}/src/bridge.rs.cc"
+            "${_molpy_cxx_gen_dir}/include/rust/cxx.h"
+            "${_molpy_cxx_gen_dir}/include/molpy_cxx/src/bridge.rs.h"
+            "${_molpy_cxx_gen_dir}/src/bridge.rs.cc"
             PROPERTIES GENERATED TRUE)
 
         target_link_libraries(atomiverse PUBLIC
-            $<BUILD_INTERFACE:molrs_cxx>
-            $<INSTALL_INTERFACE:Atomiverse::molrs_cxx>)
+            $<BUILD_INTERFACE:molpy_cxx>
+            $<INSTALL_INTERFACE:Atomiverse::molpy_cxx>)
         # Headers gate their molrs::FrameRef convenience overloads on this
         # (md.h / minimize.h / evaluate.h compile molrs-free without it).
-        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLRS)
+        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLPY)
     endif()
 
 
@@ -1293,20 +1279,20 @@ if(NOT ATV_DOCS_ONLY)
         find_package(Python 3.12 COMPONENTS Interpreter Development.Module REQUIRED)
 
         # Compare the runtime molrs token with the ABI of the source actually
-        # linked above, including when ATV_MOLRS_PATH selects a sibling tree.
-        set(_atv_molrs_ffi_manifest "${ATV_MOLRS_PATH}/molrs-ffi/Cargo.toml")
+        # linked above, including when ATV_MOLPY_PATH selects a sibling tree.
+        set(_atv_molpy_ffi_manifest "${ATV_MOLPY_PATH}/crates/molrs-ffi/Cargo.toml")
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-                     "${_atv_molrs_ffi_manifest}")
+                     "${_atv_molpy_ffi_manifest}")
         execute_process(
             COMMAND "${Python_EXECUTABLE}" -c
                 "import sys, tomllib; print('.'.join(tomllib.loads(open(sys.argv[1], encoding='utf-8').read())['package']['version'].split('.')[:2]))"
-                "${_atv_molrs_ffi_manifest}"
-            OUTPUT_VARIABLE _atv_molrs_abi_line
+                "${_atv_molpy_ffi_manifest}"
+            OUTPUT_VARIABLE _atv_molpy_abi_line
             OUTPUT_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE _atv_molrs_abi_result
+            RESULT_VARIABLE _atv_molpy_abi_result
         )
-        if(NOT _atv_molrs_abi_result EQUAL 0 OR NOT _atv_molrs_abi_line)
-            message(FATAL_ERROR "Cannot determine linked molrs ABI from ${_atv_molrs_ffi_manifest}")
+        if(NOT _atv_molpy_abi_result EQUAL 0 OR NOT _atv_molpy_abi_line)
+            message(FATAL_ERROR "Cannot determine linked molrs ABI from ${_atv_molpy_ffi_manifest}")
         endif()
 
         # Locate nanobind from the active Python environment
@@ -1353,7 +1339,7 @@ if(NOT ATV_DOCS_ONLY)
         endif()
         nanobind_add_module(_atomiverse ${_ATV_NB_SRCS})
         target_compile_definitions(_atomiverse PRIVATE
-            ATV_MOLRS_ABI_LINE="${_atv_molrs_abi_line}")
+            ATV_MOLPY_ABI_LINE="${_atv_molpy_abi_line}")
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
 
@@ -1484,12 +1470,6 @@ if(NOT ATV_DOCS_ONLY)
     # adds no Kokkos test target. Requires GTest from add_subdirectory(tests).
     if(ATV_BUILD_TESTS AND ATV_BUILD_KOKKOS)
         add_subdirectory(tests/kokkos)
-    endif()
-
-    # End-to-end textbook regressions. Deliberately NOT registered with ctest —
-    # tests/ is unit-only and "if it is registered, it runs" (see CLAUDE.md).
-    if(ATV_BUILD_REGRESSIONS)
-        add_subdirectory(regressions)
     endif()
 
     if(ATV_BUILD_BENCHMARKS)

@@ -16,7 +16,7 @@
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
-#ifdef ATV_HAS_MOLRS
+#ifdef ATV_HAS_MOLPY
 #include "atomiverse/cpu/potentials/eam.h"
 #include "atomiverse/cpu/potentials/sw.h"
 #include "atomiverse/cpu/potentials/sw_data/sw_tables.h"
@@ -93,10 +93,10 @@ int main(int argc, char** argv) {
                     throw std::invalid_argument("tilts must be finite");
             }
         }
-#ifndef ATV_HAS_MOLRS
+#ifndef ATV_HAS_MOLPY
         if (model != "lj")
             throw std::invalid_argument(
-                "many-body benchmarks require ATV_BUILD_MOLRS=ON");
+                "many-body benchmarks require ATV_BUILD_MOLPY=ON");
 #endif
         if (side < 1 || side > 200 || warm < 0 || steps < 1 || threads < 1)
             throw std::invalid_argument(
@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
                      << frame.span(kAtom_vy)[i] * 1000 << ' '
                      << frame.span(kAtom_vz)[i] * 1000 << '\n';
         }
-#ifdef ATV_HAS_MOLRS
+#ifdef ATV_HAS_MOLPY
         if (rank == 0 && model == "eam") {
             // Export the actual analytic potential to LAMMPS setfl. Fine grids
             // bound interpolation error; only unused r < 1 A is regularized.
@@ -248,7 +248,7 @@ int main(int argc, char** argv) {
         double cutoff = 2.5;
         if (model == "lj")
             sim.set_evaluator(cpu::PairLJCut{1., 1., cutoff});
-#ifdef ATV_HAS_MOLRS
+#ifdef ATV_HAS_MOLPY
         else if (model == "eam") {
             cutoff = 5.5;
             sim.set_evaluator(cpu::EAM{

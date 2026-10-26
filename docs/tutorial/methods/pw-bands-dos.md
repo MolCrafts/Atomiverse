@@ -1,5 +1,7 @@
 # Plane-wave band structure and density of states
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Non-self-consistent band structures and Gaussian-broadened densities of states
 on top of a plane-wave Kohn–Sham SCF. Two post-processors take a configured
 `cpu::pw::PW` and a Frame: `cpu::pw::Bands::compute(method, frame)`
@@ -209,7 +211,7 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method{UpfPseudopotential{upf}, /*ecut Ry*/ 15.0, /*k_mesh 2×2×2*/ 2,
+PW method{std::make_shared<UpfPseudopotential>(upf), /*ecut Ry*/ 15.0, /*k_mesh 2×2×2*/ 2,
           cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 // per section: max_iter, mix_beta, spin_polarized / multiplicity,

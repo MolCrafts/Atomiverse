@@ -1,5 +1,7 @@
 # GFN0-xTB
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 GFN0-xTB (Pracht, Caldeweyher, Ehlert, Grimme, ChemRxiv 2019) is the
 non-self-consistent member of the GFN-xTB family: one electronegativity
 equilibration (EEQ) solve and one extended-Hückel diagonalization of a CN- and

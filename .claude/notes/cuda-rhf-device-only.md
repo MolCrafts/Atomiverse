@@ -28,7 +28,10 @@ GH200 configure: `-DCMAKE_CUDA_ARCHITECTURES=90`; do not link x86 `libxtb`
   unshifted F so E is λ-invariant) on both paths; non-default stream.
 - HF diagonalization reuses cuSOLVER batched Jacobi through order 64;
   orders 65..215 use a bounded device-controlled cyclic Jacobi solve with
-  CUB norms and sorting. The installed vendor's larger-matrix paths download
+  CUB norms and sorting. Both evolving matrices stay in shared memory when
+  actual static + dynamic capacity permits; an odd leading dimension spreads
+  column accesses. Larger orders keep the same CUDA math in global scratch.
+  The installed vendor's larger-matrix paths download
   norms during sweeps, and its generic ALGO_1 option was rejected at setup.
   This dispatch needs boundary residency traces and unchanged eigenpair gates;
   it is not justified by API names alone. The generic synthetic helper's
@@ -59,13 +62,17 @@ Scalar and batched Boys integrals share `core/gto.h`: a positive series and
 downward recurrence near zero, stable upward recurrence at large arguments.
 CPU nuclear blocks and all supported CUDA angular orders use this law.
 Real s/p AO ERIs exploit eightfold permutation symmetry without a second
-tensor. The Hermite primitive retains only adjacent recurrence layers and
-does not clear inactive storage. GH200 job 4409180 measured complete HF
-calls at 16 waters / 112 AOs: 15.710 s before, 1.331 s after (11.80×,
-controlled A→B→B→A). Compiler per-thread ERI stack is 4,176 B instead of
-11,088 B, with unchanged register count. All 78 selected checks and both
-sanitizers passed. CPU direct is still faster at this size (0.909 s);
-[HF timing, resource and residency evidence](../../benchmarks/cuda/hf-validation.md).
+tensor. The Hermite primitive retains only adjacent recurrence layers in
+an axis-bounded box (at most 18 cells per layer) and does not clear inactive
+storage. An exactly zero prefactor skips the primitive tail only within a
+proven finite-arithmetic domain; this is not near-zero screening, and the
+original CUDA path preserves exceptional arithmetic outside that domain.
+Compiler per-thread ERI stack is 1,008 B with 128 registers; packing alone
+has no clear measured latency gain. Shared Jacobi, odd shared leading and
+exact-zero work avoidance reduce the target complete HF call to 568 ms
+at 16 waters/112 AOs versus 918 ms CPU direct (8 threads), with unchanged gates.
+Small-case regressions and latency outliers are retained in the
+[HF timing, resource and residency evidence](../../benchmarks/cuda/hf-optimization-20261026.md).
 
 ## CUDA post-HF handoff
 
@@ -89,13 +96,15 @@ do not establish allocation peaks or residency; those need an observed trace.
 New CUDA changes require GH200 validation before numerical or performance
 acceptance.
 
-2026-10-25 acceptance: HF/UHF/MP2 physical cases passed, including frozen/SCS
-and 56-AO external pins; unchanged eigenpair gates passed at 64/65/215.
-The production snapshot in GH200 job 4407744 has 19 traced science windows
-with zero H2D/D2H, dynamic Device events, alloc/free APIs or UM activity.
-Cold immutable module-static events are separate. Fixture-only follow-up
-4407892 passed all selected tests and both sanitizers with exit zero.
-[Complete-call timings, trace scope and resources](../../benchmarks/cuda/mp2-validation.md).
+2026-10-26 acceptance: GH200 job 4439121 passed all 83 selected HF/UHF/MP2
+unit/physical cases, including frozen/SCS, forces and external pins. All
+25 memcheck and four racecheck selections passed without errors or hazards.
+The final snapshot has ten HF→MP2 and six 64/65/112/116/117/215 eigen science
+windows with zero H2D/D2H, dynamic Device events, alloc/free APIs or UM
+activity and complete collection. Cold immutable module statics are separate.
+The unchanged UHF MINAO projection module retains its earlier six-window
+residency evidence in the
+[post-HF validation record](../../benchmarks/cuda/mp2-validation.md).
 
 ## `cuda::pw::PW`
 

@@ -41,7 +41,7 @@ threads oversubscribes the node and produces false reds. Flags:
 `-DATV_BUILD_CUDA=OFF -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON
 -DATV_BUILD_GPW=ON -DATV_BUILD_KSPACE=ON -DATV_BUILD_REGRESSIONS=ON
 -DATV_USE_MPI=ON -DBLA_VENDOR=OpenBLAS -DCMAKE_PREFIX_PATH=$OPENBLAS_ROOT`;
-copy `molrs/` into the worktree (submodule not initialised there).
+set `ATV_MOLPY_PATH` to the merged molpy checkout for both trees.
 
 ## Mac (M4) workbench — machine-local, may vanish on reboot
 

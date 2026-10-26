@@ -11,6 +11,7 @@
 /// constructed frames. Serial, sub-second, no MPI, no I/O.
 
 #include <gtest/gtest.h>
+#include <memory>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -1233,6 +1234,7 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // functional, no gradient corrections.
     entries.push_back(MDComponentEntry{PWParams{/*upf_path=*/"",
                                                 /*gth_name=*/"GTH-PBE-q4",
+                                                /*atomic_number=*/14,
                                                 /*ecut_ry=*/kPwEcut,
                                                 /*k_mesh=*/kPwKMesh,
                                                 /*tol=*/kPwTol,
@@ -1262,8 +1264,9 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // bitwise mismatch rather than as a silent default. The method is
     // mounted directly; the MD force phase requests its forces.
     cpu::Frame direct_frame = make_si2_bomd_frame();
-    cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q4"}, kPwEcut, kPwKMesh,
-                   cpu::scf::XCType::LSDA};
+    cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
+                       molrs::Element::Si, "GTH-PBE-q4"),
+                   kPwEcut, kPwKMesh, cpu::scf::XCType::LSDA};
     pw.tol = kPwTol;
     pw.max_iter = kPwMaxIter;
     pw.mix_beta = kPwMixBeta;
@@ -1307,8 +1310,8 @@ TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
     entries.push_back(
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
     entries.push_back(
-        MDComponentEntry{PWParams{"", "GTH-PBE-q4", 2.0, 1, 1e-4, 2, 0.7, 5, 0,
-                                  false, 1, 0, 0.02, 1, 4},
+        MDComponentEntry{PWParams{"", "GTH-PBE-q4", 14, 2.0, 1, 1e-4, 2, 0.7, 5,
+                                  0, false, 1, 0, 0.02, 1, 4},
                          std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), 1});
 

@@ -42,7 +42,7 @@ cd /tmp && ln -sf $CP2K_DATA_DIR/{BASIS_MOLOPT,GTH_POTENTIALS} .
 mpirun -np 1 cp2k.psmp -i <twin>.inp -o <twin>.out
 # pin lines: "ENERGY| Total FORCE_EVAL …" and "CP2K … MAXIMUM"
 
-# ATV (CLAUDE.md build recipe, plus)
+# ATV (docs/developer/project-contract.md build recipe, plus)
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON -DATV_BUILD_REGRESSIONS=ON \
   -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
 cmake --build build -j$(nproc) --target atomiverse \

@@ -27,7 +27,7 @@
 #include "atomiverse/cpu/vibration/phonon.h"
 #include "atomiverse/cpu/vibration/phonon_dispersion.h"
 #include "atomiverse/cpu/vibration/supercell.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "harness/registry.h"
 
 namespace atv_reg_response_phonon_dispersion_si {

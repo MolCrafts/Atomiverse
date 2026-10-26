@@ -3,7 +3,7 @@
 ///        scratch.
 ///
 /// Method-specific computed scratch (Fock/ERI/eigenvector buffers, basis
-/// data) for the CUDA SCF self-consistency cycle. Per the CLAUDE.md Frame
+/// data) for the CUDA SCF self-consistency cycle. Per the docs/developer/project-contract.md Frame
 /// purity rule ("hot-path data structures carry only fundamental physical
 /// quantities -- never precomputed indices, caches, or derived maps") this
 /// is **not** part of `cuda::Frame`: it is owned by the concrete method's

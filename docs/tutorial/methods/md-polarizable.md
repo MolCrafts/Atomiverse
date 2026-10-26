@@ -1,5 +1,7 @@
 # Polarizable and fluctuating-charge models
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Classical polarization and charge-response models for electrolytes, molten
 salts and electrode cells. Each is a Component on `cpu::md::MD` (or
 `cpu::Evaluate` for a single point) — never a new Driver category and never a

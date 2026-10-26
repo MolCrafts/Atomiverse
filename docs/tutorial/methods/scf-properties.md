@@ -1,5 +1,7 @@
 # Molecular SCF properties
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Properties of a converged molecular mean-field determinant are computed by
 companion types that bind a concrete method rather than by members of it:
 `cpu::scf::WannierCenters::compute(rhf.result_handle(), frame)` localizes the

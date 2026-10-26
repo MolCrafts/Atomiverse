@@ -101,8 +101,8 @@ set(_MAP_md
 # Paths that force a broader classical unit pass (no HF unless also mapped).
 # CI/gate config alone is core smoke — only product/source contracts widen.
 set(_MAP_broad
-  "CMakeLists.txt" "cmake/AtvProductModules" "cmake/MolrsContract"
-  "molrs/" "cmake/deps"
+  "CMakeLists.txt" "cmake/AtvProductModules" "cmake/MolpyContract"
+  "cmake/deps"
 )
 
 function(atv_gate_path_hit out_var path needles_var)
@@ -315,7 +315,6 @@ execute_process(
     -DATV_BUILD_CUDA=OFF
     -DATV_BUILD_TESTS=ON
     -DATV_BUILD_EXAMPLES=OFF
-    -DATV_BUILD_REGRESSIONS=OFF
     -DATV_BUILD_BENCHMARKS=OFF
     -DATV_BUILD_HF=${_hf}
     -DATV_BUILD_PW=${_pw}

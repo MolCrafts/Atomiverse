@@ -11,6 +11,7 @@
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
+#include <memory>
 
 #include <cmath>
 #include <gtest/gtest.h>
@@ -53,7 +54,9 @@ cpu::Frame make_h2_cubic(double L) {
 /// @return Method with ecut 5 Ry, Γ-only mesh, loose SCF tolerance.
 template <typename Method>
 Method h_gth_method(cpu::scf::XCType xc = cpu::scf::XCType::LSDA) {
-    Method m{cpu::pw::GthPseudopotential{"GTH-PBE-q1"}, /*ecut_ry=*/5.0,
+    Method m{std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::H,
+                                                           "GTH-PBE-q1"),
+             /*ecut_ry=*/5.0,
              /*k_mesh=*/1, xc};
     m.tol = 1e-4;
     m.max_iter = 12;

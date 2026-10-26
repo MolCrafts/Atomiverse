@@ -1,7 +1,7 @@
 <!-- mol:note:topic:md-comm -->
 # CPU MD communication
 
-Binding rules: CLAUDE.md › Ghost data is a lifetime contract. This note keeps
+Binding rules: docs/developer/project-contract.md › Ghost data is a lifetime contract. This note keeps
 the mechanism and the reasons.
 
 ## Wires

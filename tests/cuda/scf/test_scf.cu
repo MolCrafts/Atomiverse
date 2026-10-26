@@ -50,7 +50,7 @@ cpu::Frame make_scf_system(int n) {
 //
 // NOTE: the former ac-001 "cuda::scf::SCF must not exist" sentinel guard is
 // GONE. `cuda::scf::SCF` (the Evaluator component) intentionally ships as
-// transitional debt per CLAUDE.md, so a test asserting its absence was a
+// transitional debt per docs/developer/project-contract.md, so a test asserting its absence was a
 // stale, self-contradictory premise (it then constructed the very type it
 // claimed was deleted). The guards below assert what is actually true of the
 // shipping type: it is a Component, not a Driver, with role()==0.

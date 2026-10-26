@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -99,7 +100,8 @@ int run_on_device(Device dev, const char* upf,
     forces.clear();
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh};
+        cpu::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                           kEcutRy, kMesh};
         configure_smear(method);
         method.build(frame);
         {
@@ -117,7 +119,8 @@ int run_on_device(Device dev, const char* upf,
                              static_cast<double>(fz[i])};
         }
     } else {
-        cuda::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh};
+        cuda::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                            kEcutRy, kMesh};
         configure_smear(method);
         method.build(frame);
         forces = cuda::pw::pw_forces_analytic(frame, method);

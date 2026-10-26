@@ -30,7 +30,7 @@
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/gpw/internal/mbd_dispersion.h"
 #include "atomiverse/cpu/gpw/internal/ts_dispersion.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "harness/registry.h"
 
 namespace atv_reg_gpw_gpw_hirshfeld_forces {

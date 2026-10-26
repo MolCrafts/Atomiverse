@@ -36,7 +36,7 @@
 /// *Rev. Mod. Phys.* **73**, 515 (2001).
 ///
 /// @code
-///   cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"Si.upf"}, /*ecut_ry=*/15.0,
+///   cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf"), /*ecut_ry=*/15.0,
 ///                  /*k_mesh=*/2, cpu::scf::XCType::PBE}; // pure GGA kernel OK
 ///
 ///   cpu::pw::DfptPhonon dfpt;
@@ -119,8 +119,9 @@ class DfptPhonon {
     /// @brief DFPT phonons at `q_frac` for the geometry in `frame`.
     ///
     /// Throws `std::invalid_argument` unless `method.xc` is pure LSDA or
-    /// pure GGA (`hybrid_exchange_fraction == 0`) and `method.upf_path` is
-    /// set. Restricted metallic smearing is allowed at Γ, commensurate
+    /// pure GGA (`hybrid_exchange_fraction == 0`). The NC provider is shared
+    /// with the method's SCF, force and stress operators. Restricted metallic
+    /// smearing is allowed at Γ, commensurate
     /// \(\mathbf{q}\), and direct finite-\(q\) Sternheimer. Collinear spin
     /// (fixed occupations or metallic smear) is allowed at Γ, commensurate
     /// \(\mathbf{q}\), and incommensurate \(\mathbf{q}\).

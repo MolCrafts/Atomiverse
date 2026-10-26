@@ -1,5 +1,7 @@
 # Car–Parrinello molecular dynamics
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Car–Parrinello molecular dynamics (CPMD; Car & Parrinello, *PRL* **55**, 2471
 (1985); Marx & Hutter, *Ab Initio Molecular Dynamics*, CUP 2009, §2.4–2.5)
 treats the occupied orbitals as classical fictitious degrees of freedom with

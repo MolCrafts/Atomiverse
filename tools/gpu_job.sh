@@ -17,14 +17,14 @@
 #   sbatch -A <slurm-account> tools/gpu_job.sh
 #   sbatch -A <slurm-account> \
 #     --export=ALL,ATV_CMAKE_FLAGS="-DATV_BUILD_PW=ON -DATV_BUILD_GPW=OFF",\
-# ATV_TARGETS="atv_tests_cuda atv_regressions",ATV_CTEST_RE='^pw/cuda-pw-' \
+# ATV_TARGETS="atv_tests_cuda",ATV_CTEST_RE='PW' \
 #     tools/gpu_job.sh
 #
 # Environment knobs (all optional):
 #   ATV_CMAKE_FLAGS  extra -D flags appended to the configure line
 #   ATV_TARGETS      space-separated build targets   (default: the ctest deps)
 #   ATV_CTEST_RE     ctest -R regex                  (default: CUDA unit tests,
-#                    label cuda; regression cases are named <domain>/<case>)
+#                    label cuda)
 #   ATV_BUILD_DIR    build tree name                 (default: build-gpu-job)
 #   ATV_KEEP_BUILD   set to 1 to keep the tree for follow-up runs
 #   ATV_RUN          shell command after ctest (GPU module env; ${BUILD}
@@ -33,7 +33,8 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
-git submodule update --init --recursive molrs
+: "${ATV_MOLPY_PATH:=$PWD/../molrs}"
+export ATV_MOLPY_PATH
 
 module load GPU/buildenv-gcccuda/2026.03-cu13.0
 # The login-node x86 shims shadow the aarch64 toolchain on the GPU node.
@@ -61,7 +62,6 @@ cmake -B "${BUILD}" \
   -DCMAKE_CUDA_ARCHITECTURES=90 \
   -DATV_BUILD_CUDA=ON \
   -DATV_BUILD_TESTS=ON \
-  -DATV_BUILD_REGRESSIONS=ON \
   -DBLA_VENDOR=OpenBLAS \
   -DCMAKE_PREFIX_PATH="${OPENBLAS_ROOT}" \
   ${ATV_CMAKE_FLAGS:-}

@@ -60,11 +60,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libblas-dev liblapack-dev libfftw3-dev
 
-      - name: Report molrs submodule pin
-        run: |
-          echo "molrs submodule:"
-          git -C molrs rev-parse HEAD
-          git -C molrs describe --tags --always
+      - uses: actions/checkout@v4
+        with:
+          repository: MolCrafts/molpy
+          ref: dev
+          path: molpy-source
+
+      - name: Select merged molpy source (unpinned dev)
+        run: echo "ATV_MOLPY_PATH=$GITHUB_WORKSPACE/molpy-source" >> "$GITHUB_ENV"
 
       # Full optional slice on manual GHA (path gate is local pre-push).
       - name: CPU unit (cmake gate, all modules)

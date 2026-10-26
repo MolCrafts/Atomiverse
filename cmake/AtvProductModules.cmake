@@ -33,7 +33,7 @@ option(ATV_BUILD_EVALUATE "Advertise Evaluate product surface (ATV_HAS_EVALUATE)
 option(ATV_BUILD_ANALYSIS
     "Trajectory analysis observers (RDF/MSD/VACF/WHAM) — enables molrs" ON)
 option(ATV_BUILD_IO
-    "File I/O + trajectory recorders (extxyz, XYZ/Zarr, from_molrs/to_molrs) — enables molrs" ON)
+    "File I/O + trajectory recorders (extxyz, XYZ/Zarr, from_molpy/to_molpy) — enables molrs" ON)
 
 # ── Auto-enable DAG ──────────────────────────────────────────────────────────
 macro(atv_force_on _opt _because)
@@ -70,46 +70,46 @@ endif()
 
 # ── MOLRS is derived from products (products control molrs, not the reverse) ─
 set(_atv_need_molrs FALSE)
-set(_atv_molrs_why "")
+set(_atv_molpy_why "")
 if(ATV_BUILD_ANALYSIS)
     set(_atv_need_molrs TRUE)
-    list(APPEND _atv_molrs_why "ANALYSIS")
+    list(APPEND _atv_molpy_why "ANALYSIS")
 endif()
 if(ATV_BUILD_IO)
     set(_atv_need_molrs TRUE)
-    list(APPEND _atv_molrs_why "IO")
+    list(APPEND _atv_molpy_why "IO")
 endif()
 if(ATV_BUILD_PYTHON)
     set(_atv_need_molrs TRUE)
-    list(APPEND _atv_molrs_why "PYTHON")
+    list(APPEND _atv_molpy_why "PYTHON")
 endif()
 if(ATV_BUILD_GPW)
     set(_atv_need_molrs TRUE)
-    list(APPEND _atv_molrs_why "GPW")
+    list(APPEND _atv_molpy_why "GPW")
 endif()
 # PW consumes the shared analytic GTH tables, which key on molrs::Element.
 if(ATV_BUILD_PW)
     set(_atv_need_molrs TRUE)
-    list(APPEND _atv_molrs_why "PW")
+    list(APPEND _atv_molpy_why "PW")
 endif()
 if(ATV_BUILD_HF)
     set(_atv_need_molrs TRUE)
-    list(APPEND _atv_molrs_why "HF")
+    list(APPEND _atv_molpy_why "HF")
 endif()
 if(ATV_BUILD_SEMIEMPIRICAL)
     set(_atv_need_molrs TRUE)
-    list(APPEND _atv_molrs_why "SEMIEMPIRICAL")
+    list(APPEND _atv_molpy_why "SEMIEMPIRICAL")
 endif()
 
 if(_atv_need_molrs)
-    string(REPLACE ";" "+" _atv_molrs_why_str "${_atv_molrs_why}")
-    set(ATV_BUILD_MOLRS ON CACHE BOOL
-        "Derived: link molrs CXX when ANALYSIS/IO/… are on" FORCE)
-    message(STATUS "ATV_BUILD_MOLRS=ON (derived from ${_atv_molrs_why_str})")
+    string(REPLACE ";" "+" _atv_molpy_why_str "${_atv_molpy_why}")
+    set(ATV_BUILD_MOLPY ON CACHE BOOL
+        "Derived: link molpy CXX when ANALYSIS/IO/… are on" FORCE)
+    message(STATUS "ATV_BUILD_MOLPY=ON (derived from ${_atv_molpy_why_str})")
 else()
-    set(ATV_BUILD_MOLRS OFF CACHE BOOL
-        "Derived: link molrs CXX when ANALYSIS/IO/… are on" FORCE)
-    message(STATUS "ATV_BUILD_MOLRS=OFF (no product requested molrs)")
+    set(ATV_BUILD_MOLPY OFF CACHE BOOL
+        "Derived: link molpy CXX when ANALYSIS/IO/… are on" FORCE)
+    message(STATUS "ATV_BUILD_MOLPY=OFF (no product requested molpy)")
 endif()
 # EAM/SW table sources compile only when MOLRS is on (see root CMakeLists).
 
@@ -149,8 +149,8 @@ function(atv_apply_product_module_defs _target)
     if(ATV_BUILD_IO)
         target_compile_definitions(${_target} PUBLIC ATV_HAS_IO)
     endif()
-    if(ATV_BUILD_MOLRS)
-        target_compile_definitions(${_target} PUBLIC ATV_HAS_MOLRS)
+    if(ATV_BUILD_MOLPY)
+        target_compile_definitions(${_target} PUBLIC ATV_HAS_MOLPY)
     endif()
 endfunction()
 
@@ -159,4 +159,4 @@ message(STATUS "ATV product modules: "
     "VIB=${ATV_BUILD_VIB} PATH=${ATV_BUILD_PATH} SE=${ATV_BUILD_SEMIEMPIRICAL} "
     "POTENTIALS=${ATV_BUILD_POTENTIALS} NEIGHBOR=${ATV_BUILD_NEIGHBOR} "
     "EVALUATE=${ATV_BUILD_EVALUATE} ANALYSIS=${ATV_BUILD_ANALYSIS} "
-    "IO=${ATV_BUILD_IO} MOLRS=${ATV_BUILD_MOLRS}")
+    "IO=${ATV_BUILD_IO} MOLPY=${ATV_BUILD_MOLPY}")

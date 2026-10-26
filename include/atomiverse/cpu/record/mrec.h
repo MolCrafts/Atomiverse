@@ -32,7 +32,7 @@ class Frame; // fwd -- CUDA-safe
 /// @brief Append `cpu::Frame`s to one `*.mrec` trajectory through molrs.
 ///
 /// Each append exports the frame through the canonical exchange
-/// (`cpu::to_molrs`: positions, velocities, forces, charges, images, tags,
+/// (`cpu::to_molpy`: positions, velocities, forces, charges, images, tags,
 /// box and every serializable meta entry) plus the two per-run inputs the
 /// exchange skips on purpose, `atomic_number` and `mass` — a trajectory is
 /// read by tools that never saw the input file, so species travel with it.

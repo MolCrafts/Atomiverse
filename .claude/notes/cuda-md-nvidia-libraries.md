@@ -1,6 +1,6 @@
 # NVIDIA library ownership in CUDA classical MD
 
-Rule: CLAUDE.md › CUDA classical MD. Scope: `cuda/` dynamics, potentials,
+Rule: docs/developer/project-contract.md › CUDA classical MD. Scope: `cuda/` dynamics, potentials,
 neighbor, longrange, communication, device, frame, driver, classical observers,
 asynchronous recording (plus the RHF/UHF and minimizer call sites of the same
 reductions).
@@ -63,7 +63,7 @@ reductions).
   published cell at entry; the XYZ snapshot freezes its own cell.
 - Lifecycle and initial forces run through core `Plan::prepare_forces` +
   `detail::ComponentLifecycle`, used by CUDA only (CPU has its own Runtime
-  ledger) — CLAUDE.md › Known debt; plan: `.claude/specs/md-unification.md`.
+  ledger) — docs/developer/project-contract.md › Known debt; plan: `.claude/specs/md-unification.md`.
 - Unit fixture `test_cuda_md_primitives` covers nondefault streams, partial
   warps/blocks, all kinetic/stress sums, temperature/COM init, high tag bits
   (adjacent tags share low 32 bits on purpose), noise variance and

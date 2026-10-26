@@ -171,7 +171,7 @@ def config_cmd(
     src: Optional[Path] = typer.Option(
         None,
         "--src",
-        help="Atomiverse checkout root (git clone with the molrs submodule)",
+        help="Atomiverse checkout root (with a local merged molpy checkout)",
         exists=False,
         file_okay=False,
         dir_okay=True,

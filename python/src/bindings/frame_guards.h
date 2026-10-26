@@ -17,12 +17,12 @@
 #include <variant>
 
 #include "atomiverse/cpu/task/task_spec.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 /// @brief Does `block` of a molrs Frame carry the column `key`?
 ///
 /// The molrs boundary is the only place where a column's *absence* is still
-/// visible: `cpu::from_molrs` allocates every optional per-atom column and
+/// visible: `cpu::from_molpy` allocates every optional per-atom column and
 /// leaves an absent one zero-filled, so an evaluator downstream cannot tell
 /// "no charges were given" from "every charge is 0 e".
 ///
@@ -30,8 +30,10 @@
 /// @param block Block name, e.g. `"atoms"`.
 /// @param key   Column name, e.g. `"charge"`.
 /// @return True when that block carries that column.
-inline bool has_molrs_column(const molrs::FrameRef& frame, const char* block,
+inline bool has_molpy_column(const molrs::FrameRef& frame, const char* block,
                              std::string_view key) {
+    if (!molrs::frame_has_block(frame, block))
+        return false;
     for (const ::rust::String& raw : molrs::frame_block_columns(frame, block))
         if (std::string_view{raw.data(), raw.size()} == key)
             return true;

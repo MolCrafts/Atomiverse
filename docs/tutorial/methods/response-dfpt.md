@@ -1,10 +1,12 @@
 # Plane-wave DFPT phonons
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Density-functional perturbation theory (DFPT) computes the phonon dynamical
 matrix analytically from self-consistent first-order density response
 (Sternheimer equations) instead of \(6N\) finite-displacement SCF solves. It
 runs on top of the plane-wave method `cpu::pw::PW`
-(`PW{UpfPseudopotential{path}, ecut_Ry, mesh, cpu::scf::XCType}` plus public
+(`PW{std::make_shared<UpfPseudopotential>(path), ecut_Ry, mesh, cpu::scf::XCType}` plus public
 members `tol`, `max_iter`, `mix_beta`, `spin_polarized`, `multiplicity`,
 `smearing`, `degauss` [Ry], `extra_bands`). The calculator is
 `cpu::pw::DfptPhonon` — public members `response_tol`, `response_max_iter`,
@@ -197,7 +199,7 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0,                      // [Ry]
           2,                         // 2×2×2 MP (1 for X / incommensurate)
           cpu::scf::XCType::LSDA};   // or XCType::PBE
@@ -347,7 +349,7 @@ ground-state twin [pw-pbe-gga-si](pw-rks.md#pw-pbe-gga-si) (true PBE on the
 FFT grid).
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 2, cpu::scf::XCType::PBE};   // pure GGA kernel
 ```
 
@@ -424,7 +426,7 @@ regression checks against both parents' pins
 ([dfpt-spin-si](#dfpt-spin-si) is the LSDA spin parent).
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 2, cpu::scf::XCType::PBE};   // pure GGA kernel
 method.spin_polarized = true;              // joint spin × GGA response
 method.multiplicity   = 1;
@@ -567,7 +569,7 @@ Fermi–Dirac occupation weights (shared \(\mu\)). Parents:
 match the fixed-occupation spin × GGA parent to four decimals.
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 2, cpu::scf::XCType::PBE};
 method.spin_polarized = true;
 method.multiplicity = 1;
@@ -613,7 +615,7 @@ Hartree + LDA \(f_{xc}\) screening, Bloch-phased Ewald + ASR, KB nonlocal
 terms. Restricted LSDA, fixed occupations, 1×1×1 k-mesh.
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::LSDA};
 method.tol = 1e-8;
 method.max_iter = 200;
@@ -667,7 +669,7 @@ collinear twin of [dfpt-incommensurate-si](#dfpt-incommensurate-si); the
 acceptance is identity with that restricted spectrum plus the same windows.
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;   // M = 0 closed-shell collinear
@@ -711,7 +713,7 @@ LA, LO, TO (doublet) in the literature LDA ordering. The minimal settings
 \(|\omega|\) windows and \(n_\mathrm{imag}\le 2\).
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::LSDA};  // Γ on 2×1×1 SC ≡ fold of primitive X
 
 DfptPhonon dfpt;
@@ -761,7 +763,7 @@ plus a CP2K 2026.1 supercell `VIBRATIONAL_ANALYSIS` physics anchor whose
 eigenvector phases identify the folded X branch.
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::PBE};  // pure GGA kernel
 // dfpt: X response settings (q_frac = {0.5, 0, 0}, 1e-4 / 0.25 / 1e-8 / 120)
 ```
@@ -803,7 +805,7 @@ same \(\lvert\omega\rvert\) windows. LSDA kernel (pure GGA is accepted by the
 API but not gated here).
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::LSDA};  // on the 2×1×1 supercell path
 method.smearing = Smearing::fermi_dirac;
 method.degauss = 0.02;             // Ry
@@ -858,7 +860,7 @@ spin + smear path is covered by
 [dfpt-spin-smearing](#dfpt-spin-smearing) at Γ.
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::LSDA};
 method.spin_polarized = true;
 method.multiplicity = 1;
@@ -908,7 +910,7 @@ the sharp pin is the restricted supercell energy-FD pin 21.2006 eV/Å² and the
 joint kernel must reproduce the restricted finite-q GGA parent.
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::PBE};  // pure GGA kernel
 method.spin_polarized = true;              // joint spin × GGA response
 method.multiplicity   = 1;
@@ -954,7 +956,7 @@ occupations), [dfpt-finite-q-spin-smearing](#dfpt-finite-q-spin-smearing)
 kernel must reproduce the fixed-occupation finite-q spin × GGA parent.
 
 ```cpp
-PW method{UpfPseudopotential{"tests/data/pw/Si_lda_nc.upf"},
+PW method{std::make_shared<UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
           10.0, 1, cpu::scf::XCType::PBE};
 method.spin_polarized = true;
 method.multiplicity   = 1;

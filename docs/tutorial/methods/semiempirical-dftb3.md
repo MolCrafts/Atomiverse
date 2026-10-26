@@ -1,5 +1,7 @@
 # SCC-DFTB3
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Case: `ctest -R '^semiempirical/dftb3$'` — sources and oracle record in [`regressions/semiempirical/dftb3/`](../../../regressions/semiempirical/dftb3/). One section of the case per `##` heading below: `atv_regressions --case semiempirical/dftb3 --section <name>`.
 
 Self-consistent-charge **DFTB3** (Gaus, Cui, Elstner, *J. Chem. Theory

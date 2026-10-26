@@ -75,7 +75,7 @@ def format_status(
     lines.append(f"    source:  {active.get('source_root', '?')}")
     lines.append("    modules: " + (", ".join(active.get("modules") or []) or "(none)"))
     lines.append(f"    wheel:   {active.get('wheel') or '(not compiled)'}")
-    lines.append(f"    molrs:   {active.get('molrs_wheel') or '(not compiled)'}")
+    lines.append(f"    molpy:   {active.get('molpy_wheel') or '(not compiled)'}")
     lines.append(f"    installed: {bool(active.get('installed'))}")
     return "\n".join(lines)
 

@@ -1,7 +1,7 @@
 <!-- mol:note:topic:es-optimization-order -->
 ## ES optimization order — current state
 
-Binding law: CLAUDE.md › Electronic structure optimization order. This page
+Binding law: docs/developer/project-contract.md › Electronic structure optimization order. This page
 holds only the current focus; rewrite in place.
 
 ### CPU (architecture closure and numerical recheck before performance)

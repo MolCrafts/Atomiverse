@@ -1,5 +1,7 @@
 # GPW Dudarev DFT+U
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Dudarev DFT+U (CP2K `PLUS_U` / Mulliken occupation) on collinear unrestricted
 GPW corrects self-interaction on partially filled correlated shells by adding an
 effective Hubbard \(U_{\mathrm{eff}}=U-J\) energy and potential. It is a member

@@ -1,5 +1,9 @@
 # CUDA RHF validation, 2026-10-25
 
+These measurements precede the
+[2026-10-26 HF optimizations](hf-optimization-20261026.md), which reduce
+the 16-water complete CUDA call to about 568 ms, versus 918 ms CPU direct.
+
 The s/p ERI primitive now retains two adjacent Hermite recurrence layers,
 instead of six, and writes only the active domain. No new tensor, kernel,
 host transfer or library boundary is introduced. GH200 job **4409180**

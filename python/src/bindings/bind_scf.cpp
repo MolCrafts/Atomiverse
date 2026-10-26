@@ -42,7 +42,7 @@
 /// dtype.
 
 #include "force_array.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
@@ -59,7 +59,7 @@
 #include <utility>
 
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/gradient_result.h"
 #include "atomiverse/cpu/scf/methods.h"
@@ -142,13 +142,13 @@ class MethodHandle : public ATV::cpu::DriverNode {
     /// @throws std::invalid_argument (Python `ValueError`) when the α / β
     ///         occupation does not sum to the electron count ΣZ − charge.
     void run(nb::object frame_obj) {
-        auto fref = borrow_molrs_frame(frame_obj);
-        ATV::cpu::Frame work = ATV::cpu::from_molrs(*fref);
+        auto fref = borrow_molpy_frame(frame_obj);
+        ATV::cpu::Frame work = ATV::cpu::from_molpy(*fref);
         {
             nb::gil_scoped_release release;
             method.run(work);
         }
-        ATV::cpu::to_molrs(work, *fref);
+        ATV::cpu::to_molpy(work, *fref);
     }
 
     /// @brief Run one SCF and return the analytic nuclear forces
@@ -160,14 +160,14 @@ class MethodHandle : public ATV::cpu::DriverNode {
     ///                  on it.
     /// @return Forces [eV/Å], shape (n_atoms, 3).
     ForceArray forces(nb::object frame_obj) {
-        auto fref = borrow_molrs_frame(frame_obj);
-        ATV::cpu::Frame work = ATV::cpu::from_molrs(*fref);
+        auto fref = borrow_molpy_frame(frame_obj);
+        ATV::cpu::Frame work = ATV::cpu::from_molpy(*fref);
         ATV::cpu::scf::GradientResult result;
         {
             nb::gil_scoped_release release;
             result = method.forces(work);
         }
-        ATV::cpu::to_molrs(work, *fref);
+        ATV::cpu::to_molpy(work, *fref);
 
         // `result.forces` is a row-major [n_atoms, 3] container, so its flat
         // storage is already the (fx0, fy0, fz0, …) layout to_force_array

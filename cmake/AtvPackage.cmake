@@ -12,10 +12,10 @@ if(ATV_BUILD_KSPACE AND ATV_USE_MPI AND FFTW3_MPI_LIB)
     set(ATV_PACKAGE_FFTW_MPI ON)
 endif()
 
-if(ATV_BUILD_MOLRS)
-    install(FILES $<TARGET_FILE:molrs_cxx> $<TARGET_FILE:molrs_cxxapi-static>
+if(ATV_BUILD_MOLPY)
+    install(FILES $<TARGET_FILE:molpy_cxx> $<TARGET_FILE:molcxx-static>
             DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    install(DIRECTORY "${_molrs_cxx_gen_dir}/include/"
+    install(DIRECTORY "${_molpy_cxx_gen_dir}/include/"
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 

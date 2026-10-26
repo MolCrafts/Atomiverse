@@ -189,17 +189,18 @@ the CP2K-style hybrid — Gaussian orbitals with a plane-wave density — carryi
 in-tree GTH pseudopotentials, MOLOPT basis sets, and DFT-D3 dispersion, so it
 needs no external data files.
 
-A plane-wave run has **no default pseudopotential**: set exactly one of
-`gth_name` (analytic Goedecker-Teter-Hutter, shipped in-tree — H, O, Na, Cl, Ar,
-Si, Ni, Zn) or `upf_path` (a norm-conserving UPF file). Setting neither, or
-both, throws.
+A plane-wave run takes a `shared_ptr<const electronic::NormConservingPotential>`.
+Use `GthPseudopotential(element, name)`, `UpfPseudopotential(path)`, or derive
+the public physical interface in an independent project. The built-ins and
+custom providers use the same CPU NC operators; every Frame atom must match
+the provider's explicit element. See the [independent extension](../../examples/nc-extension/README.md).
 
 ```cpp
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 using namespace ATV;
 
-cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q4"},  // in-tree analytic GTH (Si, 4 valence e⁻)
+cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::Si, "GTH-PBE-q4"),  // in-tree analytic GTH (Si, 4 valence e⁻)
                30.0,                                       // wavefunction cutoff [Ry]
                4};                                         // Monkhorst-Pack mesh per dimension
 cpu::single_point(frame, pw);             // frame.meta.get(ATV::kEnergy) (eV)

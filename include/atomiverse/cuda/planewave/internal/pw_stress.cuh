@@ -13,7 +13,6 @@
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
 #include <array>
-#include <string>
 
 namespace ATV {
 namespace cuda {
@@ -32,8 +31,7 @@ namespace internal {
 /// is a deeper row gated by the public API).
 ///
 /// @param frame          Geometry [Å], types (Z), cell.
-/// @param upf_path       UPF path (empty if gth_name is set).
-/// @param gth_name       GTH name (empty if upf_path is set).
+/// @param potential      Builtin immutable NC potential.
 /// @param ecut_ry        Wavefunction cutoff [Ry].
 /// @param k_mesh         Monkhorst–Pack mesh per dimension.
 /// @param tol            SCF density residual tolerance.
@@ -50,12 +48,12 @@ namespace internal {
 /// @param energy_ry_out  Optional: reference SCF free/total energy [Ry].
 /// @return Intensive stress [eV/Å³] Voigt.
 std::array<double, 6> pw_stress_analytic_impl(
-    const cpu::Frame& frame, const std::string& upf_path,
-    const std::string& gth_name, double ecut_ry, int k_mesh, double tol,
-    int max_iter, double mix_beta, int pulay_depth, cpu::scf::XCType xc,
-    cpu::pw::Smearing smearing, double degauss, int mp_order, int extra_bands,
-    bool spin_polarized = false, int multiplicity = 1,
-    double* energy_ry_out = nullptr);
+    const cpu::Frame& frame,
+    const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
+    int k_mesh, double tol, int max_iter, double mix_beta, int pulay_depth,
+    cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
+    int mp_order, int extra_bands, bool spin_polarized = false,
+    int multiplicity = 1, double* energy_ry_out = nullptr);
 
 } // namespace internal
 } // namespace pw

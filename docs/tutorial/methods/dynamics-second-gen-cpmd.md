@@ -1,5 +1,7 @@
 # Second-generation Car–Parrinello MD
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Second-generation Car–Parrinello MD (SGCP; Kühne, Krack, Mohamed & Parrinello,
 *Phys. Rev. Lett.* **98**, 066401 (2007), doi:10.1103/PhysRevLett.98.066401)
 keeps the nuclei on ordinary NVE velocity Verlet while the electrons use a

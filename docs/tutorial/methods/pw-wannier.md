@@ -1,5 +1,7 @@
 # Plane-wave periodic maximally localized Wannier functions
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Maximally localized Wannier functions (MLWF) on the CPU plane-wave method: a
 `cpu::pw::PW` Kohn–Sham SCF, non-self-consistent occupied Bloch states on a
 Monkhorst–Pack mesh, neighbor overlap matrices
@@ -110,7 +112,7 @@ not in the bond-centering of the valence manifold of elemental Si.
 cpu::Frame frame = make_si_diamond(5.43);   // type 14, mass 28.0855; atom 1 at a/4.0 (1,1,1);
                                             // cell h = a/2.0: (0,h,h), (h,0,h), (h,h,0)
 
-PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, /*ecut Ry*/ 15.0,
+PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), /*ecut Ry*/ 15.0,
           /*k_mesh 2×2×2*/ 2, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;

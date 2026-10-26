@@ -6,7 +6,7 @@ plan below; do not report it complete until every item is done.
 ## In the tree
 
 - BigInt MD budgets/results/dispatch, ramp clocks and snapshot step
-  propagation; negative MD budgets rejected (residual `int` counters: CLAUDE.md
+  propagation; negative MD budgets rejected (residual `int` counters: docs/developer/project-contract.md
   › Known debt).
 - Shared scalar laws in `core/dynamics_math.h` (NHC half-step, pressure /
   Berendsen, ramps, thermal DOF); MTK denominators use the actual atom count

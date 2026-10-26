@@ -1,5 +1,7 @@
 # Restricted open-shell Kohn–Sham DFT (ROKS)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Restricted open-shell Kohn–Sham keeps a spin-pure high-spin open-shell
 determinant — exact \(\langle S^2\rangle = S(S+1)\) — where UHF/UKS break
 spin symmetry. One spatial MO set has closed / open / virtual spaces with

@@ -115,8 +115,8 @@ def bonded_frame() -> "molpy.Frame":
 
     Topology travels as molrs blocks: ``bonds`` (atomi/atomj/type_id),
     ``dihedrals`` and ``impropers`` (atomi..atoml/type_id), all
-    ``np.uint32`` — the dtypes ``cpu::from_molrs`` requires
-    (src/cpu/frame/molrs_exchange.cpp:147-165, :240-276; connectivity
+    ``np.uint32`` — the dtypes ``cpu::from_molpy`` requires
+    (src/cpu/frame/molpy_exchange.cpp:147-165, :240-276; connectivity
     columns are read as u32, kinds as ``type_id``).
 
     Deliberately **no** ``atoms.tag`` column: without one the CPU frame

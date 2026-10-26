@@ -80,9 +80,9 @@ def numeric_ff(text: str, labels: dict[str, dict[str, int]]) -> str:
 
 
 def convert(directory: Path) -> None:
-    import molrs.io as mio
-    import molrs.io.amber as amber
-    import molrs.io.lammps as lammps
+    import molpy.io as mio
+    import molpy.io.amber as amber
+    import molpy.io.lammps as lammps
 
     ff, frame = amber.AmberPrmtopForcefieldReader().read_system(
         directory / "system.prmtop")

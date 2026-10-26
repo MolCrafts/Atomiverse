@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
@@ -53,7 +54,8 @@ int run() {
     frame.span(kAtom_z)[1] = 1.2075;
     frame.box = cpu::Box::cubic(8.0);
 
-    PW pw{UpfPseudopotential{upf}, 12.0, 1, cpu::scf::XCType::PBE};
+    PW pw{std::make_shared<UpfPseudopotential>(upf), 12.0, 1,
+          cpu::scf::XCType::PBE};
     pw.tol = 1e-7;
     pw.max_iter = 200;
     pw.mix_beta = 0.3;

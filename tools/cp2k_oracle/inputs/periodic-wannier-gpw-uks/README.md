@@ -1,5 +1,7 @@
 # GPW Wannier evidence
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 `si_uks_wannier_bct.inp` is the existing CP2K input supporting the external
 energy pin in `regressions/gpw/wannier/REFERENCE.md`. Native outputs here are
 validation evidence and do not generate oracle pins.

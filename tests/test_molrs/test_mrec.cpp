@@ -14,11 +14,11 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/cpu/io/frame_writer.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "rust/cxx.h"
 
-#if !defined(ATV_HAS_MOLRS_TRAJECTORY_WRITER)
-#error "test_mrec.cpp requires ATV_HAS_MOLRS_TRAJECTORY_WRITER"
+#if !defined(ATV_HAS_MOLPY_TRAJECTORY_WRITER)
+#error "test_mrec.cpp requires ATV_HAS_MOLPY_TRAJECTORY_WRITER"
 #endif
 
 namespace {
@@ -50,8 +50,11 @@ std::string tmp_mrec(const char* name) {
         *fr, "atoms", "mass",
         ::rust::Slice<const double>(mass.data(), mass.size()));
     const std::vector<double> h = {20, 0, 0, 0, 20, 0, 0, 0, 20};
-    molrs::frame_set_box_h(*fr,
-                           ::rust::Slice<const double>(h.data(), h.size()));
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()),
+                         ::rust::Slice<const double>(
+                             std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+                         ::rust::Slice<const bool>(
+                             std::array<bool, 3>{true, true, true}.data(), 3));
     return fr;
 }
 
@@ -95,7 +98,7 @@ TEST(MolrsMrec, WriteMrecFrameThenReadMrecFrame) {
     auto zr = molrs::frame_column_u64(*fr, "atoms", "atomic_number");
     ASSERT_EQ(zr.size(), 1u);
     EXPECT_EQ(zr[0], 18u);
-    const auto h = molrs::frame_box_h(*fr);
+    const auto h = molrs::frame_box(*fr).h;
     ASSERT_EQ(h.size(), 9u);
     EXPECT_DOUBLE_EQ(h[0], 20.0);
     EXPECT_DOUBLE_EQ(h[4], 20.0);
@@ -128,7 +131,7 @@ TEST(MolrsMrec, CpuWriteMrecFrameRoundTripsItsFields) {
     const auto w = molrs::frame_column_f64(*fr, "atoms", "w");
     EXPECT_EQ(std::vector<double>(w.begin(), w.end()),
               (std::vector<double>{3.0, 4.0}));
-    const auto h = molrs::frame_box_h(*fr);
+    const auto h = molrs::frame_box(*fr).h;
     EXPECT_EQ(std::vector<double>(h.begin(), h.end()),
               std::vector<double>(box.begin(), box.end()));
     std::error_code ec;

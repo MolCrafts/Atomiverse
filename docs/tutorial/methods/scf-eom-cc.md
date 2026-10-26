@@ -1,5 +1,7 @@
 # Equation-of-motion coupled cluster (EOM-CC)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Equation-of-motion coupled cluster computes excited, ionized, electron-attached
 and spin-flipped states as right eigenstates of the similarity-transformed
 Hamiltonian \(\bar{H} = e^{-T} H e^{T}\) of a converged ground-state coupled
@@ -65,7 +67,7 @@ const cpu::scf::EOMEECCSDResult eom =
 ```
 
 Build with `-DATV_BUILD_HF=ON -DATV_BUILD_REGRESSIONS=ON` (CPU login-shell
-recipe in `CLAUDE.md`, `module load buildenv-gcc/2026.03-mpich`).
+recipe in `docs/developer/project-contract.md`, `module load buildenv-gcc/2026.03-mpich`).
 
 ### Oracle
 

@@ -1,6 +1,7 @@
 /// @file tests/test_molrs/test_frame_columns.cpp
 /// @brief Drift fence for molrs Frame column / box / meta FFI used by ATV.
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <type_traits>
@@ -8,7 +9,7 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "rust/cxx.h"
 
 namespace {
@@ -33,8 +34,11 @@ namespace {
         *fr, "atoms", "mass",
         ::rust::Slice<const double>(mass.data(), mass.size()));
     const std::vector<double> h = {10, 0, 0, 0, 10, 0, 0, 0, 10};
-    molrs::frame_set_box_h(*fr,
-                           ::rust::Slice<const double>(h.data(), h.size()));
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()),
+                         ::rust::Slice<const double>(
+                             std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+                         ::rust::Slice<const bool>(
+                             std::array<bool, 3>{true, true, true}.data(), 3));
     return fr;
 }
 
@@ -89,10 +93,10 @@ TEST(MolrsFrameColumns, RoundTripU32TypeIdOnBonds) {
     EXPECT_EQ(got[0], 1u);
 }
 
-TEST(MolrsFrameColumns, MissingColumnIsEmptyNotThrow) {
+TEST(MolrsFrameColumns, MissingColumnOrBlockThrows) {
     auto fr = one_atom_frame();
-    EXPECT_TRUE(molrs::frame_column_f64(*fr, "atoms", "nope").empty());
-    EXPECT_TRUE(molrs::frame_column_f64(*fr, "missing", "x").empty());
+    EXPECT_THROW(molrs::frame_column_f64(*fr, "atoms", "nope"), rust::Error);
+    EXPECT_THROW(molrs::frame_column_f64(*fr, "missing", "x"), rust::Error);
 }
 
 // A column read as another dtype is the caller's schema bug: an error, never
@@ -108,7 +112,7 @@ TEST(MolrsFrameColumns, MismatchedDtypeThrows) {
 
 TEST(MolrsFrameColumns, BoxRoundTripNineDoubles) {
     auto fr = one_atom_frame();
-    auto h = molrs::frame_box_h(*fr);
+    auto h = molrs::frame_box(*fr).h;
     ASSERT_EQ(h.size(), 9u);
     EXPECT_DOUBLE_EQ(h[0], 10.0);
     EXPECT_DOUBLE_EQ(h[4], 10.0);
@@ -145,7 +149,7 @@ TEST(MolrsFrameColumns, BlockNamesAndColumnsListAtoms) {
 }
 
 // frame_clone_from_addr is the Python capsule door — it takes the opaque
-// Store address from molrs._ffi, not &FrameRef. Covered in python tests;
+// Store address from molpy._ffi, not &FrameRef. Covered in python tests;
 // here we only assert the symbol links by mentioning the type.
 TEST(MolrsFrameColumns, FrameCloneFromAddrSymbolExists) {
     using Fn = decltype(&molrs::frame_clone_from_addr);

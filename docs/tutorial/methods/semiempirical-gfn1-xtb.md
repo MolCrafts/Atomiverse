@@ -1,5 +1,7 @@
 # GFN1-xTB
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 GFN1-xTB (Grimme, Bannwarth, Shushkov, *J. Chem. Theory Comput.* **13**, 1989
 (2017)) is first-generation extended tight binding on a Stewart STO-\(n\)G
 valence basis: EHT \(H^0\) from overlap, shell-resolved Klopman–Ohno SCC,

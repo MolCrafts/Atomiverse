@@ -1,5 +1,7 @@
 # GPW closed-shell Kohn–Sham DFT
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Gaussian-and-plane-waves (GPW, CP2K Quickstep class) closed-shell Kohn–Sham
 DFT. The density matrix lives in contracted Gaussians (MOLOPT tables), the
 Hartree / XC / local short-range GTH pseudopotential terms are evaluated on a

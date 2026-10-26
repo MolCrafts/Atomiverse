@@ -1,5 +1,7 @@
 # Electrode observables
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Analysis and bookkeeping Components for classical constant-potential electrode
 cells. They never solve electrode charges: they read whatever `kAtom_charge`
 holds on the Frame (typically after `cpu::md::ConstPotBO` has updated it at

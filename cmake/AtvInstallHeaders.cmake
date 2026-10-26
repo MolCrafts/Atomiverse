@@ -40,7 +40,7 @@ function(atv_install_headers target)
             "^cuda/observe/mulliken\\.cuh$")
     endif()
     if(NOT ATV_BUILD_PW)
-        list(APPEND excluded "^(cpu|cuda)/planewave/")
+        list(APPEND excluded "^(cpu|cuda)/planewave/" "^electronic/norm_conserving_potential\\.h$")
     endif()
     if(NOT ATV_BUILD_GPW)
         list(APPEND excluded "^(cpu|cuda)/gpw/" "^cpu/xc/"
@@ -73,7 +73,7 @@ function(atv_install_headers target)
             "^cpu/observe/(rdf|rdf_curve|msd|vacf|trajectory_metrics|wham)\\.h$"
             "^cuda/observe/rdf\\.cuh$")
     endif()
-    if(NOT ATV_MOLRS_HAS_WHAM)
+    if(NOT ATV_MOLPY_HAS_WHAM)
         list(APPEND excluded "^cpu/observe/wham\\.h$")
     endif()
     if(NOT ATV_BUILD_IO)
@@ -82,13 +82,13 @@ function(atv_install_headers target)
             "^cpu/record/(xyz|xyz_recorder|mrec|mrec_recorder)\\.h$"
             "^cpu/minimize/(trajectory_writer|final_geometry)\\.h$")
     endif()
-    if(NOT ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+    if(NOT ATV_MOLPY_HAS_TRAJECTORY_WRITER)
         list(APPEND excluded "^cpu/record/(mrec|mrec_recorder)\\.h$")
     endif()
-    if(NOT ATV_BUILD_MOLRS)
-        list(APPEND excluded "^(cpu|cuda)/frame/molrs_exchange\\.(h|cuh)$"
+    if(NOT ATV_BUILD_MOLPY)
+        list(APPEND excluded "^(cpu|cuda)/frame/molpy_exchange\\.(h|cuh)$"
             "^cpu/task/" "^cpu/multiscale/internal/classical_nonbonded\\.h$"
-            "^cpu/potentials/(eam|eam_potential|sw)\\.h$" "^molrs\\.hpp$")
+            "^cpu/potentials/(eam|eam_potential|sw)\\.h$" "^molpy\\.hpp$")
     endif()
 
     # These are data/protocol contracts, not method implementations. The core

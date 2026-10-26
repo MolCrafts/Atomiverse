@@ -138,7 +138,7 @@ std::vector<SchemaError> validate_ghosts(const GhostContract& required,
                                          const Frame& frame);
 
 /// @brief `validate_ghosts`, but throws a single message listing every
-///        problem. The systematic form of CLAUDE.md's per-component rule:
+///        problem. The systematic form of docs/developer/project-contract.md's per-component rule:
 ///        a missing required field throws with a how-to, never defaults.
 /// @param required Fields the mounted components declared.
 /// @param frame Frame to check.

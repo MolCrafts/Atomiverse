@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.18)
+project(ExternalNcExample LANGUAGES CXX)
+find_package(Atomiverse CONFIG REQUIRED COMPONENTS PW EVALUATE)
+add_executable(nc-extension main.cpp)
+target_compile_features(nc-extension PRIVATE cxx_std_20)
+target_link_libraries(nc-extension PRIVATE Atomiverse::atomiverse)

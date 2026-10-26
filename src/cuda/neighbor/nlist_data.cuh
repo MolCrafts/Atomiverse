@@ -5,7 +5,7 @@
 ///
 /// Canonical CUDA MD neighbor representation: kClusterSize=32 tiles, FULL CSR
 /// of neighboring clusters, multi-word interaction masks (32×32 bit flags per
-/// CSR entry). See cuda-openmm-md chain / CLAUDE.md OpenMM engine rule.
+/// CSR entry). See cuda-openmm-md chain / docs/developer/project-contract.md OpenMM engine rule.
 
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/types.cuh"

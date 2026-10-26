@@ -1,5 +1,7 @@
 # Born–Oppenheimer molecular dynamics
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Born–Oppenheimer MD (BOMD) integrates the nuclei with a fixed-step symplectic
 velocity Verlet and re-solves the electronic problem self-consistently on every
 ionic step. There is no fictitious electronic dynamics (Car–Parrinello) and no
@@ -203,7 +205,7 @@ BOMD with `cpu::pw::PW` mounted directly at `md::Phase::force` as a nested
 Driver node (plane-wave SCF: Poisson → XC → \(V_{\mathrm{eff}}\) → Davidson →
 density mix). The PW method keeps Ry/Ha on `last_result()` only. The
 pseudopotential is the analytic in-tree **GTH-PBE-q1**
-(`GthPseudopotential{"GTH-PBE-q1"}`, no external file); that entry has no
+(`std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")`, no external file); that entry has no
 nonlocal projectors, so the Kleinman–Bylander term is zero. One valence
 electron is a doublet, so the SCF is collinear spin-polarized
 (`spin_polarized = true`, `multiplicity = 2`; the restricted force path rejects
@@ -232,7 +234,7 @@ NVE conservation on the symmetry-stable single-H system.
 
 ```cpp
 frame.box = cpu::Box::cubic(6.0);
-cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q1"}, 5.0, 1};  // PP, Ecut [Ry], k_mesh
+cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1"), 5.0, 1};  // PP, Ecut [Ry], k_mesh
 pw.tol = 1e-4;  pw.max_iter = 12;  pw.mix_beta = 0.5;
 pw.spin_polarized = true;  // lone H: N↑ = 1, N↓ = 0
 pw.multiplicity = 2;

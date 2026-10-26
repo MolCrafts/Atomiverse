@@ -435,7 +435,7 @@ class TestScfSurface:
 
     def test_no_scf_facade_name(self) -> None:
         """There is no ``SCF`` facade / solver bag on either surface — the
-        public API is the concrete method (CLAUDE.md: no `SCFSolver`)."""
+        public API is the concrete method (docs/developer/project-contract.md: no `SCFSolver`)."""
         assert not hasattr(av, "SCF")
         assert not hasattr(_cpp, "SCF")
 

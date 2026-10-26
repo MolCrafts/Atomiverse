@@ -58,10 +58,12 @@ __global__ void pack_lower_kernel(const double* H, double* C, int n,
 ///
 /// A round contains disjoint coordinate pairs. Each unordered pair of pairs
 /// has one owner that loads its old 2x2 block, applies both rotations and
-/// writes it and its transpose. Those blocks never overlap, so no global
-/// matrix ping-pong is needed. Eigenvector tasks own one row and one column
+/// writes it and its transpose. Those blocks never overlap, so no matrix
+/// ping-pong is needed. Eigenvector tasks own one row and one column
 /// pair. Barriers separate every round. CUB owns reductions and final sorting.
-__global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
+/// When capacity permits, both evolving matrices stay in shared memory.
+template <bool SharedMatrices>
+__global__ void cyclic_jacobi_kernel(const double* H, double* work, double* out,
                                      double* eig, int n, int* status) {
     using Reduce = cub::BlockReduce<double, kThreads>;
     using Sort = cub::BlockRadixSort<double, kThreads, 1, int>;
@@ -74,6 +76,12 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
     __shared__ int permutation[kThreads];
     __shared__ double scale, threshold2;
     __shared__ int done;
+    extern __shared__ double matrices[];
+    // An odd FP64 leading dimension spreads cross-column pair accesses
+    // across shared banks. Only logical n*n entries enter the mathematics.
+    const int leading = SharedMatrices ? (n | 1) : n;
+    double* A = SharedMatrices ? matrices : work;
+    double* C = SharedMatrices ? matrices + n * leading : out;
     const int tid = threadIdx.x;
     const int nn = n * n;
     if (tid == 0)
@@ -101,8 +109,8 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
     for (int ij = tid; ij < nn; ij += kThreads) {
         const int i = ij % n, j = ij / n;
         const double value = H[i >= j ? ij : j + i * n] / scale;
-        A[ij] = value;
-        C[ij] = i == j ? 1 : 0;
+        A[i + j * leading] = value;
+        C[i + j * leading] = i == j ? 1 : 0;
         local_norm2 = fma(value, value, local_norm2);
     }
     const double norm2 = Reduce(storage.reduce).Sum(local_norm2);
@@ -116,7 +124,7 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
         double off2 = 0;
         for (int ij = tid; ij < nn; ij += kThreads) {
             const int i = ij % n, j = ij / n;
-            const double value = A[ij];
+            const double value = A[i + j * leading];
             if (!isfinite(value))
                 atomicExch(status, n + 2);
             else if (i != j)
@@ -142,10 +150,10 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
                 right[tid] = j;
                 double t = 0, c = 1, s = 0;
                 if (i < n && j < n) {
-                    const double b = A[i + j * n];
+                    const double b = A[i + j * leading];
                     if (b != 0) {
                         const double delta =
-                            0.5 * (A[j + j * n] - A[i + i * n]);
+                            0.5 * (A[j + j * leading] - A[i + i * leading]);
                         t = b / (delta + copysign(hypot(delta, b), delta));
                         c = 1.0 / sqrt(::fma(t, t, 1.0));
                         s = t * c;
@@ -165,18 +173,20 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
                 const int k = left[q], l = right[q];
                 if (r == q) {
                     if (i < n && j < n) {
-                        const double b = A[i + j * n];
-                        A[i + i * n] = fma(-tangent[r], b, A[i + i * n]);
-                        A[j + j * n] = fma(tangent[r], b, A[j + j * n]);
-                        A[i + j * n] = 0;
-                        A[j + i * n] = 0;
+                        const double b = A[i + j * leading];
+                        A[i + i * leading] =
+                            fma(-tangent[r], b, A[i + i * leading]);
+                        A[j + j * leading] =
+                            fma(tangent[r], b, A[j + j * leading]);
+                        A[i + j * leading] = 0;
+                        A[j + i * leading] = 0;
                     }
                     continue;
                 }
-                const double a00 = i < n && k < n ? A[i + k * n] : 0;
-                const double a01 = i < n && l < n ? A[i + l * n] : 0;
-                const double a10 = j < n && k < n ? A[j + k * n] : 0;
-                const double a11 = j < n && l < n ? A[j + l * n] : 0;
+                const double a00 = i < n && k < n ? A[i + k * leading] : 0;
+                const double a01 = i < n && l < n ? A[i + l * leading] : 0;
+                const double a10 = j < n && k < n ? A[j + k * leading] : 0;
+                const double a11 = j < n && l < n ? A[j + l * leading] : 0;
                 const double cr = cosine[r], sr = sine[r];
                 const double cq = cosine[q], sq = sine[q];
                 const double t00 = fma(-sr, a10, cr * a00);
@@ -188,25 +198,26 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
                 const double b10 = fma(-sq, t11, cq * t10);
                 const double b11 = fma(sq, t10, cq * t11);
                 if (i < n && k < n)
-                    A[i + k * n] = A[k + i * n] = b00;
+                    A[i + k * leading] = A[k + i * leading] = b00;
                 if (i < n && l < n)
-                    A[i + l * n] = A[l + i * n] = b01;
+                    A[i + l * leading] = A[l + i * leading] = b01;
                 if (j < n && k < n)
-                    A[j + k * n] = A[k + j * n] = b10;
+                    A[j + k * leading] = A[k + j * leading] = b10;
                 if (j < n && l < n)
-                    A[j + l * n] = A[l + j * n] = b11;
+                    A[j + l * leading] = A[l + j * leading] = b11;
             }
             // Rows are the fast dimension: adjacent lanes read/write adjacent
             // elements of the two eigenvector columns owned by this pair.
             for (int task = tid; task < n * pairs; task += kThreads) {
                 const int row = task % n, pair = task / n;
                 const int i = left[pair], j = right[pair];
-                const double x = i < n ? C[row + i * n] : 0;
-                const double y = j < n ? C[row + j * n] : 0;
+                const double x = i < n ? C[row + i * leading] : 0;
+                const double y = j < n ? C[row + j * leading] : 0;
                 if (i < n)
-                    C[row + i * n] = fma(-sine[pair], y, cosine[pair] * x);
+                    C[row + i * leading] =
+                        fma(-sine[pair], y, cosine[pair] * x);
                 if (j < n)
-                    C[row + j * n] = fma(sine[pair], x, cosine[pair] * y);
+                    C[row + j * leading] = fma(sine[pair], x, cosine[pair] * y);
             }
             __syncthreads();
         }
@@ -217,7 +228,7 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
         return;
     }
 
-    double key[1] = {tid < n ? A[tid + tid * n] * scale : HUGE_VAL};
+    double key[1] = {tid < n ? A[tid + tid * leading] * scale : HUGE_VAL};
     int column[1] = {tid};
     if (tid < n && !isfinite(key[0]))
         atomicExch(status, n + 2);
@@ -233,11 +244,11 @@ __global__ void cyclic_jacobi_kernel(const double* H, double* A, double* C,
     // eigenvector column permutation instead of a second n*n allocation.
     for (int ij = tid; ij < nn; ij += kThreads) {
         const int row = ij % n, col = ij / n;
-        A[ij] = C[row + permutation[col] * n];
+        A[row + col * leading] = C[row + permutation[col] * leading];
     }
     __syncthreads();
     for (int ij = tid; ij < nn; ij += kThreads)
-        C[ij] = A[ij];
+        out[ij] = A[ij % n + (ij / n) * leading];
 }
 } // namespace
 
@@ -289,8 +300,31 @@ void EigenSolver::build(const SolverContext& ctx, SCFWorkspace& ws) {
                 static_cast<std::size_t>(library_work_elements_)
                 * sizeof(double);
         } else {
-            device_work_bytes_ =
+            int device = 0, shared_limit = 0;
+            cudaFuncAttributes attributes{};
+            ATV_CUDA_CHECK(cudaGetDevice(&device));
+            ATV_CUDA_CHECK(cudaDeviceGetAttribute(
+                &shared_limit, cudaDevAttrMaxSharedMemoryPerBlockOptin,
+                device));
+            ATV_CUDA_CHECK(
+                cudaFuncGetAttributes(&attributes, cyclic_jacobi_kernel<true>));
+            const auto matrix_bytes =
                 static_cast<std::size_t>(n_) * n_ * sizeof(double);
+            const auto requested =
+                2 * static_cast<std::size_t>(n_) * (n_ | 1) * sizeof(double);
+            if (attributes.sharedSizeBytes + requested
+                <= static_cast<std::size_t>(shared_limit)) {
+                // All instances configure the same device capacity. Their
+                // launches reserve only the matrices needed for that order.
+                ATV_CUDA_CHECK(cudaFuncSetAttribute(
+                    cyclic_jacobi_kernel<true>,
+                    cudaFuncAttributeMaxDynamicSharedMemorySize,
+                    shared_limit
+                        - static_cast<int>(attributes.sharedSizeBytes)));
+                shared_matrix_bytes_ = requested;
+            } else {
+                device_work_bytes_ = matrix_bytes;
+            }
         }
         if (device_work_bytes_ > 0)
             ATV_CUDA_CHECK(cudaMalloc(&d_work_, device_work_bytes_));
@@ -333,8 +367,13 @@ void EigenSolver::step(const SolverContext& ctx, SCFWorkspace& ws) {
                                           library_work_elements_, d_info_),
                          "cusolverDnDsyevd");
         }
+    } else if (shared_matrix_bytes_ != 0) {
+        cyclic_jacobi_kernel<true>
+            <<<1, kThreads, shared_matrix_bytes_, stream>>>(
+                ws.H, nullptr, ws.C, ws.eig, n_, d_info_);
+        ATV_CUDA_CHECK(cudaGetLastError());
     } else {
-        cyclic_jacobi_kernel<<<1, kThreads, 0, stream>>>(
+        cyclic_jacobi_kernel<false><<<1, kThreads, 0, stream>>>(
             ws.H, static_cast<double*>(d_work_), ws.C, ws.eig, n_, d_info_);
         ATV_CUDA_CHECK(cudaGetLastError());
     }
@@ -359,6 +398,7 @@ void EigenSolver::destroy(const SolverContext&, SCFWorkspace&) {
     h_info_ = nullptr;
     d_info_ = nullptr;
     device_work_bytes_ = 0;
+    shared_matrix_bytes_ = 0;
     library_work_elements_ = 0;
     n_ = 0;
 }

@@ -4,7 +4,7 @@
 /// The molrs bridge readers and writers are fallible —
 /// `fn read_xyz(path: &str) -> Result<Box<FrameRef>>` and the same for
 /// `read_mrec_frame`, `read_mrec_trajectory_frame`, `write_xyz`,
-/// `write_mrec_frame`, `frame_set_box_h`, the four `frame_set_column_*` and
+/// `write_mrec_frame`, `frame_set_box`, the four `frame_set_column_*` and
 /// the four `frame_column_*` readers (a column of another dtype).
 /// cxx maps `Result<T>` to a C++ function returning `T` that throws
 /// `rust::Error`, which derives from `std::exception`, so a caller's `catch`
@@ -30,7 +30,7 @@
 // `rust::Error` is not emitted into the generated bridge header (Result<T>
 // maps to T + throw, so Error never appears in a signature). This is a
 // private header, so including the cxx runtime here is allowed — the ban
-// in CLAUDE.md is on `rust/cxx.h` in PUBLIC headers.
+// in docs/developer/project-contract.md is on `rust/cxx.h` in PUBLIC headers.
 #include "rust/cxx.h"
 
 namespace ATV {

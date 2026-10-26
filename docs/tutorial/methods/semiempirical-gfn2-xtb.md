@@ -1,5 +1,7 @@
 # GFN2-xTB
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 GFN2-xTB (Bannwarth, Ehlert, Grimme, *J. Chem. Theory Comput.* **15**, 1652
 (2019)) is the third-generation extended tight-binding Hamiltonian. Beyond
 the isotropic shell-resolved SCC of GFN1 it carries anisotropic electrostatics

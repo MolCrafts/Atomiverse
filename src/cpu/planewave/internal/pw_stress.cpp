@@ -277,16 +277,16 @@ void load_rho_spin_real_scaled(PWWorkspace& ws,
 }
 
 /// Non-self-consistent collinear spin total energy [Ry] under remapped ρ_σ.
-double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
-                           const std::vector<AccReal>& rho_a0,
-                           const std::vector<AccReal>& rho_b0,
-                           AccReal omega0_bohr, PoissonSolver& poisson,
-                           XCBuilder& xc, VeffBuilder& veff,
-                           DavidsonSolver& davidson, int n_bands, int n_alpha,
-                           int n_beta) {
+double
+nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
+                    const std::shared_ptr<const NcPotentialData>& potential,
+                    const std::vector<AccReal>& rho_a0,
+                    const std::vector<AccReal>& rho_b0, AccReal omega0_bohr,
+                    PoissonSolver& poisson, XCBuilder& xc, VeffBuilder& veff,
+                    DavidsonSolver& davidson, int n_bands, int n_alpha,
+                    int n_beta) {
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
+    setup_pw_problem(frame, potential, method.ecut_ry, method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
@@ -353,7 +353,7 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
     auto terms = iteration_energy(ws, e_band, prob.ew_total, prob.vol_bohr);
     // Collinear: replace Parseval ∫ρ V_xc (last channel) with e_xc_int_spin.
     terms.e_one = e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-    terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total + ws.E_aug;
+    terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total;
     return static_cast<double>(terms.total) / qe_units::rydberg_to_hartree;
 }
 
@@ -364,12 +364,12 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
 /// μ over the spectrum, fractional f_b∈[0,2], Mermin free energy
 /// F = E_KS − σ·S (σ = degauss in Ha).
 double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
+                      const std::shared_ptr<const NcPotentialData>& potential,
                       const std::vector<AccReal>& rho_r0, AccReal omega0_bohr,
                       PoissonSolver& poisson, XCBuilder& xc, VeffBuilder& veff,
                       DavidsonSolver& davidson, int n_bands) {
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
+    setup_pw_problem(frame, potential, method.ecut_ry, method.k_mesh, prob);
     PWWorkspace& ws = prob.ws;
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
@@ -598,12 +598,8 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
             "pw_stress_fd for multi-SCF FD of F");
 
     const int n = frame.nlocal();
-    int n_elec = 0;
-    {
-        const int* types = frame.span(kAtom_type);
-        for (int i = 0; i < n; ++i)
-            n_elec += valence_from_z(types[i]);
-    }
+    internal::validate_potential_frame(frame, *method.potential);
+    int n_elec = method.potential->valence() * frame.nlocal();
 
     if (solved)
         n_elec = solved->n_elec;
@@ -682,8 +678,8 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
         // whose strain derivative this stress is.
         if (scf_out) {
             scf_out->energy = nscf_energy_spin_ry(
-                frame, method, rho_a0, rho_b0, omega0, poisson, xc, veff,
-                davidson, n_bands, n_alpha, n_beta);
+                frame, method, scf_prob.potential, rho_a0, rho_b0, omega0,
+                poisson, xc, veff, davidson, n_bands, n_alpha, n_beta);
             scf_out->energy_ha = scf_out->energy * qe_units::rydberg_to_hartree;
         }
     } else {
@@ -716,17 +712,19 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
         double ep_ry = 0.0;
         double em_ry = 0.0;
         if (method.spin_polarized) {
-            ep_ry = nscf_energy_spin_ry(fp, method, rho_a0, rho_b0, omega0,
-                                        poisson, xc, veff, davidson, n_bands,
-                                        n_alpha, n_beta);
-            em_ry = nscf_energy_spin_ry(fm, method, rho_a0, rho_b0, omega0,
-                                        poisson, xc, veff, davidson, n_bands,
-                                        n_alpha, n_beta);
+            ep_ry = nscf_energy_spin_ry(fp, method, scf_prob.potential, rho_a0,
+                                        rho_b0, omega0, poisson, xc, veff,
+                                        davidson, n_bands, n_alpha, n_beta);
+            em_ry = nscf_energy_spin_ry(fm, method, scf_prob.potential, rho_a0,
+                                        rho_b0, omega0, poisson, xc, veff,
+                                        davidson, n_bands, n_alpha, n_beta);
         } else {
-            ep_ry = nscf_energy_ry(fp, method, rho_r0, omega0, poisson, xc,
-                                   veff, davidson, n_bands);
-            em_ry = nscf_energy_ry(fm, method, rho_r0, omega0, poisson, xc,
-                                   veff, davidson, n_bands);
+            ep_ry =
+                nscf_energy_ry(fp, method, scf_prob.potential, rho_r0, omega0,
+                               poisson, xc, veff, davidson, n_bands);
+            em_ry =
+                nscf_energy_ry(fm, method, scf_prob.potential, rho_r0, omega0,
+                               poisson, xc, veff, davidson, n_bands);
         }
         const double dE_dev = (ep_ry - em_ry) * ry_to_ev / (2.0 * h);
         // Mechanical / CP2K: σ = −(1/Ω) ∂E/∂ε (matches GPW cell relax).

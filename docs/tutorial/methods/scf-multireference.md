@@ -1,5 +1,7 @@
 # Configuration interaction and multireference methods
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Configuration-interaction and active-space methods built on a closed-shell RHF
 reference: Head–Gordon CIS(D) excitation energies, complete active-space CI
 (CASCI), complete active-space SCF (CASSCF) and strongly contracted NEVPT2 on
@@ -82,7 +84,7 @@ const cpu::scf::CASSCFResult cas =
 ```
 
 Build with `-DATV_BUILD_HF=ON -DATV_BUILD_REGRESSIONS=ON` (CPU login-shell
-recipe in `CLAUDE.md`, `module load buildenv-gcc/2026.03-mpich`).
+recipe in `docs/developer/project-contract.md`, `module load buildenv-gcc/2026.03-mpich`).
 
 ### Oracle
 

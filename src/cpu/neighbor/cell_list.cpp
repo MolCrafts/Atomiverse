@@ -313,7 +313,7 @@ void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
     // once in `compute_grid()` to match `cell_offset_`; copying through
     // it avoids the per-call `auto write_ptr = cell_offset_;` xtensor
     // allocation that otherwise leaks ~1 heap allocation into the MD
-    // hot loop per neighbor-list rebuild (violating CLAUDE.md's
+    // hot loop per neighbor-list rebuild (violating docs/developer/project-contract.md's
     // "no allocation in launch()" contract).
     if (bin_write_ptr_.size() < static_cast<std::size_t>(total_cells_))
         bin_write_ptr_.resize(static_cast<std::size_t>(total_cells_));

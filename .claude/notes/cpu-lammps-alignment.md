@@ -1,6 +1,6 @@
 # CPU MD execution — mechanism and LAMMPS mapping
 
-Binding summary: CLAUDE.md › CPU MD execution. This note holds the mechanism
+Binding summary: docs/developer/project-contract.md › CPU MD execution. This note holds the mechanism
 and which LAMMPS source each piece follows. Numbers: `benchmarks/lj/README.md`.
 
 ## Rebuild boundary and cadence

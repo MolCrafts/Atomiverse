@@ -72,11 +72,11 @@ def test_molrs_abi_mismatch_rejected_before_capsule_access() -> None:
             sys.executable,
             "-c",
             textwrap.dedent("""\
-            import molrs
+            import molpy
             from atomiverse._binding import _cpp
 
-            token = molrs._ffi_abi_token()
-            molrs._ffi_abi_token = lambda: ("999.0", *token[1:])
+            token = molpy._ffi_abi_token()
+            molpy._ffi_abi_token = lambda: ("999.0", *token[1:])
 
             class UnreadableFrame:
                 def _ffi_frameref_capsule(self):

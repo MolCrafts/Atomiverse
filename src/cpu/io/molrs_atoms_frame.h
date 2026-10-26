@@ -10,10 +10,11 @@
 /// header.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "rust/cxx.h"
 
 namespace ATV::cpu::internal {
@@ -40,7 +41,12 @@ molrs_atoms_frame(const std::vector<std::uint64_t>& atomic_number,
     molrs::frame_set_column_f64(*frame, "atoms", "y", {y.data(), y.size()});
     molrs::frame_set_column_f64(*frame, "atoms", "z", {z.data(), z.size()});
     if (h.size() != 0)
-        molrs::frame_set_box_h(*frame, h);
+        molrs::frame_set_box(
+            *frame, h,
+            ::rust::Slice<const double>(
+                std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+            ::rust::Slice<const bool>(
+                std::array<bool, 3>{true, true, true}.data(), 3));
     return frame;
 }
 

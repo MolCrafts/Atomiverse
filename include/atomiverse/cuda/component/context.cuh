@@ -37,7 +37,7 @@ class Backend;
 ///        publish-consume chain as `pair_list`.
 ///
 /// CUDA MD nonbonded path is the **OpenMM cluster/tile engine** only
-/// (see CLAUDE.md + `cuda-openmm-md` specs). There is no style enum.
+/// (see docs/developer/project-contract.md + `cuda-openmm-md` specs). There is no style enum.
 struct DynamicsServices {
     /// Global thermal DOF, published by the backend before component build.
     BigInt n_dof_global = 0;

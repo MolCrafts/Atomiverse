@@ -1,5 +1,7 @@
 # Classical short-range pair styles and walls
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Short-range pair potentials and continuum walls for molten salts, ionic
 crystals and electrode walls, each a Component on `cpu::Evaluate` or
 `cpu::md::MD` (never a Driver category), parameterized by constructor

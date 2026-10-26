@@ -371,6 +371,26 @@ __device__ work_t eri_prim_md_device(const int a_ang[3], const int b_ang[3],
     const work_t prefactor = work_t(2) * pi * pi * sqrt(pi)
                              / (gamma1 * gamma2 * sqrt(delta)) * K_AB * K_CD;
 
+    if (prefactor == work_t(0)) {
+        // This is an exact-zero shortcut, not near-zero screening. In this
+        // bounded domain the Ltot<=5 E/R polynomial is finite; outside it,
+        // preserve the original arithmetic (including 0*Inf/NaN failures).
+        constexpr work_t bound = work_t(1e16);
+        bool finite_domain = Tval >= work_t(0) && isfinite(Tval)
+                             && rho > work_t(0) && inv2g1 > work_t(0)
+                             && inv2g2 > work_t(0)
+                             && fabs(work_t(2) * rho) <= bound
+                             && fabs(inv2g1) <= bound && fabs(inv2g2) <= bound;
+        for (int d = 0; d < 3; ++d) {
+            // Each comparison rejects NaN; fmax could silently discard it.
+            finite_domain = finite_domain && fabs(PA[d]) <= bound
+                            && fabs(PB[d]) <= bound && fabs(QC[d]) <= bound
+                            && fabs(QD[d]) <= bound && fabs(PQ[d]) <= bound;
+        }
+        if (finite_domain)
+            return work_t(0);
+    }
+
     const int Lx1 = a_ang[0] + b_ang[0];
     const int Ly1 = a_ang[1] + b_ang[1];
     const int Lz1 = a_ang[2] + b_ang[2];
@@ -392,43 +412,49 @@ __device__ work_t eri_prim_md_device(const int a_ang[3], const int b_ang[3],
     const int Ry_max = Ly1 + Ly2;
     const int Rz_max = Lz1 + Lz2;
 
-    // A Hermite layer depends only on m+1. Its active entries satisfy
-    // t+u+v <= Ltot-m and the per-axis maxima below. Every source belongs
-    // to the previously written layer; no inactive storage needs clearing.
-    work_t R_tab[2][kDeviceREri][kDeviceREri][kDeviceREri];
+    // Rx+Ry+Rz=Ltot<=5, so the axis-bounded box needs at most 18 cells
+    // (2+1)*(2+1)*(1+1). Pack that box within each existing m-parity layer.
+    // All m+1 sources were written by the previous layer; padding is unread.
+    const int u_stride = Rz_max + 1;
+    const int t_stride = (Ry_max + 1) * u_stride;
+    work_t R_tab[2][18];
     work_t neg2rho = -work_t(2) * rho;
     work_t neg2rho_pow = work_t(1);
     for (int m = 0; m <= Ltot; ++m) {
         Fm[m] = neg2rho_pow * Fm[m];
         neg2rho_pow *= neg2rho;
     }
-    R_tab[Ltot & 1][0][0][0] = Fm[Ltot];
+    R_tab[Ltot & 1][0] = Fm[Ltot];
     for (int m = Ltot - 1; m >= 0; --m) {
         const int current = m & 1, previous = (m + 1) & 1;
         const int max_tuv = Ltot - m;
-        R_tab[current][0][0][0] = Fm[m];
+        R_tab[current][0] = Fm[m];
         for (int t = 1; t <= max_tuv && t <= Rx_max; ++t) {
-            R_tab[current][t][0][0] = PQ[0] * R_tab[previous][t - 1][0][0];
+            const int offset = t * t_stride;
+            R_tab[current][offset] = PQ[0] * R_tab[previous][offset - t_stride];
             if (t >= 2)
-                R_tab[current][t][0][0] +=
-                    work_t(t - 1) * R_tab[previous][t - 2][0][0];
+                R_tab[current][offset] +=
+                    work_t(t - 1) * R_tab[previous][offset - 2 * t_stride];
         }
         for (int t = 0; t <= Rx_max && t <= max_tuv; ++t) {
             for (int u = 1; u <= Ry_max && t + u <= max_tuv; ++u) {
-                R_tab[current][t][u][0] = PQ[1] * R_tab[previous][t][u - 1][0];
+                const int offset = t * t_stride + u * u_stride;
+                R_tab[current][offset] =
+                    PQ[1] * R_tab[previous][offset - u_stride];
                 if (u >= 2)
-                    R_tab[current][t][u][0] +=
-                        work_t(u - 1) * R_tab[previous][t][u - 2][0];
+                    R_tab[current][offset] +=
+                        work_t(u - 1) * R_tab[previous][offset - 2 * u_stride];
             }
         }
         for (int t = 0; t <= Rx_max && t <= max_tuv; ++t) {
             for (int u = 0; u <= Ry_max && t + u <= max_tuv; ++u) {
                 for (int v = 1; v <= Rz_max && t + u + v <= max_tuv; ++v) {
-                    R_tab[current][t][u][v] =
-                        PQ[2] * R_tab[previous][t][u][v - 1];
+                    const int offset = t * t_stride + u * u_stride + v;
+                    R_tab[current][offset] =
+                        PQ[2] * R_tab[previous][offset - 1];
                     if (v >= 2)
-                        R_tab[current][t][u][v] +=
-                            work_t(v - 1) * R_tab[previous][t][u][v - 2];
+                        R_tab[current][offset] +=
+                            work_t(v - 1) * R_tab[previous][offset - 2];
                 }
             }
         }
@@ -450,8 +476,10 @@ __device__ work_t eri_prim_md_device(const int a_ang[3], const int b_ang[3],
                                 continue;
                             work_t sign =
                                 ((tau + nu + phi) & 1) ? work_t(-1) : work_t(1);
-                            eri_val += e1 * e2 * sign
-                                       * R_tab[0][t + tau][u + nu][v + phi];
+                            eri_val +=
+                                e1 * e2 * sign
+                                * R_tab[0][(t + tau) * t_stride
+                                           + (u + nu) * u_stride + v + phi];
                         }
                     }
                 }

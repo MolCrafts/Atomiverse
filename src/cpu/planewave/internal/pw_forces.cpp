@@ -10,6 +10,7 @@
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
+#include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
@@ -17,7 +18,6 @@
 #include "atomiverse/cpu/planewave/internal/restricted_scf.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
 #include "atomiverse/cpu/planewave/internal/smearing.h"
-#include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
@@ -74,18 +74,10 @@ std::complex<AccReal> im_l_factor(int l) {
     return {1, 0};
 }
 
-/// Local Hellmann–Feynman forces [Hartree/Bohr] from ρ(G) and the atomic
-/// form factor: the shared radial v(G) (`upf_vloc_to_gspace`) × phase.
-///
-/// `v(G)` is a required input. It used to be optional, with a bare-Coulomb
-/// −4π Z_v/(Ω G²) fallback when no UPF file was given — the local half of
-/// the deleted toy potential. Every run now carries a real pseudopotential
-/// (UPF file or analytic GTH), so there is nothing left to fall back to.
-///
-/// @param n_atoms Atom count (form factor is per-species, not per-atom).
-/// @param upf_vg  Radial local form factor v(G) [Hartree], one per G.
+/// Local Hellmann–Feynman forces [Hartree/Bohr] from rho(G), the
+/// canonical NC radial form factor and each atomic phase.
 void accumulate_local_forces(const PWWorkspace& ws, const GVectorList& gv,
-                             int n_atoms, const std::vector<AccReal>& upf_vg,
+                             int n_atoms, const std::vector<AccReal>& nc_vg,
                              std::vector<Vec3>& F_ha_bohr) {
     const AccReal omega = ws.omega;
 
@@ -105,7 +97,7 @@ void accumulate_local_forces(const PWWorkspace& ws, const GVectorList& gv,
             AccReal cosph = std::cos(phase);
             AccReal sinph = std::sin(phase);
 
-            const AccReal vg_atom = upf_vg[static_cast<std::size_t>(ig)];
+            const AccReal vg_atom = nc_vg[static_cast<std::size_t>(ig)];
             AccReal scale = omega * vg_atom * (rho_r * sinph + rho_i * cosph);
             F_ha_bohr[static_cast<std::size_t>(ia)] =
                 F_ha_bohr[static_cast<std::size_t>(ia)]
@@ -231,12 +223,8 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
             "pw_forces_analytic: degauss must be > 0 [Ry] when smearing is "
             "enabled");
 
-    int n_elec = 0;
-    {
-        const int* types = frame.span(kAtom_type);
-        for (int i = 0; i < n; ++i)
-            n_elec += valence_from_z(types[i]);
-    }
+    internal::validate_potential_frame(frame, *method.potential);
+    int n_elec = method.potential->valence() * frame.nlocal();
 
     if (solved)
         n_elec = solved->n_elec;
@@ -329,16 +317,10 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
 
     std::vector<Vec3> F_ha(static_cast<std::size_t>(n), Vec3::zeros());
 
-    // The pseudopotential — UPF file or analytic GTH — is the single source
-    // of both the ion charge the Ewald sum sees and the local form factor,
-    // exactly as in setup_pw_problem(). It used to be read only when a UPF
-    // *file* was named: a GTH run took the `else` branches and silently got
-    // bare nuclear Z in the Ewald sum, a bare-Coulomb local force and no KB
-    // term at all, i.e. the deleted toy potential's forces.
-    const UPFData upf =
-        load_pseudopotential(frame, method.upf_path, method.gth_name);
+    // The same immutable radial snapshot supplies SCF, local forces and ions.
+    const NcPotentialData& nc = *scf_prob.potential;
     const std::vector<AccReal> ion_charges(static_cast<std::size_t>(n),
-                                           static_cast<AccReal>(upf.z_val));
+                                           static_cast<AccReal>(nc.z_val));
     const auto& ewald_charges = ion_charges;
 
     // ── Ewald ──
@@ -360,15 +342,11 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
                                             + few[static_cast<std::size_t>(i)];
 
     // ── Local HF ── (total ρ = ρ↑+ρ↓ on the collinear path)
-    // Per-species radial form factor v(G) from the UPF directly. The
-    // historical route divided the assembled V_loc_G by the structure
-    // factor S(G) — ill-defined on extinction shells (diamond S(G) = 0
-    // with nonzero per-atom force contributions, since ρ(G) does not
-    // vanish there) and silently zeroed those shells. Exact per-species
-    // v(G) is shared with setup via internal::upf_vloc_to_gspace.
-    const std::vector<AccReal> upf_vg =
-        upf_vloc_to_gspace(upf, scf_prob.gv0, ws.omega);
-    accumulate_local_forces(ws, scf_prob.gv0, n, upf_vg, F_ha);
+    // Transform the same radial snapshot used by the Hamiltonian directly;
+    // structure-factor extinction shells retain their per-atom derivatives.
+    const std::vector<AccReal> nc_vg =
+        nc_vloc_to_gspace(nc, scf_prob.gv0, ws.omega);
+    accumulate_local_forces(ws, scf_prob.gv0, n, nc_vg, F_ha);
 
     // ── Nonlocal KB ── (absent only for a potential with no projectors,
     // e.g. GTH-PBE-q1 for hydrogen, which is purely local.)

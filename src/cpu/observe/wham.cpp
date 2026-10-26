@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {

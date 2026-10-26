@@ -92,21 +92,8 @@ struct PWWorkspace {
     };
     std::vector<std::vector<AtomWfc>> atom_wfc; // [atom][iwfc]
 
-    // USPP augmentation: Q_ij matrix (n_proj × n_proj, row-major).
-    // Parsed from the UPF and kept as fundamental pseudopotential data;
-    // the augmentation density is not yet applied by the solver, so
-    // E_aug stays 0 in the current implementation.
-    std::vector<AccReal> q_ij;
-    int n_proj_total = 0;
-
-    // Normalized atomic form factor: rho_atom(G) / ∫ rho_atom(r) d³r
-    xt::xarray<AccReal> aug_form_factor_G;
-
     // Atom positions [Bohr] for structure factors
     std::vector<Vec3> atom_pos_bohr;
-
-    // Augmentation energy [Hartree] from current density
-    AccReal E_aug = AccReal(0);
 
     // Pulay mixer history (managed by internal::DensityBuilder)
     std::vector<xt::xarray<std::complex<AccReal>>> pulay_res;

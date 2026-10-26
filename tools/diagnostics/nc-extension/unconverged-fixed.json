@@ -1,0 +1,8 @@
+{
+  "status": "no pin; QE fixed-occupation SCF did not converge in200iterations",
+  "files_sha256": {
+    "qe-unconverged-fixed.txt": "dc65a1cbf84915a4c52d198d4a92878790371f1e40092e34a52bdf7577cbd7d2",
+    "si2-fixed-diagnostic.in": "7b2b6a848d402dacb80e4a301fb6c4aab0789dc0117fb40cb9a88a6b8303373f"
+  },
+  "quantities_accepted": []
+}

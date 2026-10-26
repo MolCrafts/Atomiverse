@@ -15,7 +15,7 @@ if str(_SRC) not in sys.path:
 from atomiverse.cli.build import (  # noqa: E402
     BuildState,
     build_install_command,
-    build_molrs_wheel_command,
+    build_molpy_wheel_command,
     build_wheel_command,
 )
 from atomiverse.cli.config import (  # noqa: E402
@@ -199,10 +199,11 @@ def test_wheel_command_requires_python_define() -> None:
         build_wheel_command(Path("/p"), Path("/b"), {"ATV_BUILD_MD": "ON"})
 
 
-def test_molrs_wheel_command_builds_the_submodule() -> None:
-    cmd = build_molrs_wheel_command(Path("/repo"), Path("/b"), python="/usr/bin/python")
+def test_molpy_wheel_command_builds_local_checkout(tmp_path: Path) -> None:
+    root = _fake_checkout(tmp_path / "atv", "0.1.0")
+    cmd = build_molpy_wheel_command(root, Path("/b"), python="/usr/bin/python")
     assert cmd[:4] == ["/usr/bin/python", "-m", "pip", "wheel"]
-    assert "/repo/molrs/molrs-python" in cmd
+    assert str(root.parent / "molrs" / "molpy") in cmd
     assert "--no-build-isolation" in cmd and "--no-deps" in cmd
     assert cmd[cmd.index("--wheel-dir") + 1] == "/b/dist"
 
@@ -231,7 +232,7 @@ def test_build_state_roundtrip(tmp_path: Path) -> None:
         build_dir=str(tmp_path),
         modules=["md"],
         wheel="/w.whl",
-        molrs_wheel="/m.whl",
+        molpy_wheel="/m.whl",
     )
     path = state.save()
     assert BuildState.load(path) == state
@@ -246,14 +247,18 @@ def test_build_state_missing_fails_loud(tmp_path: Path) -> None:
 
 
 def _fake_checkout(root: Path, version: str, *, molrs: bool = True) -> Path:
+    root = root / "checkout"
     pkg = root / "python" / "src" / "atomiverse"
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
     (root / "python" / "pyproject.toml").write_text("", encoding="utf-8")
     (root / "CMakeLists.txt").write_text("project(x)\n", encoding="utf-8")
     if molrs:
-        (root / "molrs").mkdir()
-        (root / "molrs" / "Cargo.toml").write_text("", encoding="utf-8")
+        dependency = root.parent / "molrs"
+        for relative in ("molcxx/Cargo.toml", "molpy/pyproject.toml", "crates/molrs-ffi/Cargo.toml"):
+            target = dependency / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("", encoding="utf-8")
     return root
 
 
@@ -272,9 +277,9 @@ def test_resolve_source_version_mismatch(tmp_path: Path) -> None:
         resolve_source(str(root), version="0.1.0")
 
 
-def test_resolve_source_needs_molrs(tmp_path: Path) -> None:
+def test_resolve_source_needs_merged_molpy(tmp_path: Path) -> None:
     root = _fake_checkout(tmp_path, "0.1.0", molrs=False)
-    with pytest.raises(ConfigError, match="molrs submodule"):
+    with pytest.raises(ConfigError, match="merged molpy checkout"):
         resolve_source(str(root), version="0.1.0")
 
 
@@ -398,3 +403,11 @@ def test_run_subcommand(tmp_path: Path, capsys) -> None:
     rc = main(["run", str(script)])
     assert rc == 0
     assert "hello-run" in capsys.readouterr().out
+
+
+def test_local_molpy_override_is_shared_by_wheel_build(tmp_path: Path, monkeypatch) -> None:
+    root = _fake_checkout(tmp_path / "default", "0.1.0")
+    other = _fake_checkout(tmp_path / "override", "0.1.0").parent / "molrs"
+    monkeypatch.setenv("ATV_MOLPY_PATH", str(other))
+    command = build_molpy_wheel_command(root, tmp_path / "build")
+    assert str(other / "molpy") in command

@@ -3,10 +3,10 @@
 ///
 /// All XYZ/ExtXYZ parsing lives in molrs (`molrs::io::data::xyz`); this is a
 /// thin C++ wrapper that bridges the parsed `molrs.Frame` into a `cpu::Frame`
-/// through `cpu::from_molrs`. There is no hand-rolled C++ parser -- per the
+/// through `cpu::from_molpy`. There is no hand-rolled C++ parser -- per the
 /// project rule that all I/O goes through molrs.
 ///
-/// @see cpu::from_molrs (cpu/frame/molrs_exchange.h)
+/// @see cpu::from_molpy (cpu/frame/molpy_exchange.h)
 /// @see molrs.hpp for the molrs CXX FFI bridge
 #pragma once
 

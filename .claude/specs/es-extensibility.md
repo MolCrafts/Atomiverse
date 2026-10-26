@@ -143,34 +143,48 @@ data object; GPW support alone does not establish that extension on Gaussian KS.
 in the same analytic form. Validate valence, channel sizes, angular limits,
 symmetry/finite coefficients and element consistency with the basis.
 
-**Norm-conserving potential physics.** Proposed public protocol:
+**Norm-conserving potential physics.** The exported contract is
+`electronic/norm_conserving_potential.h`. `NormConservingPotential` has explicit
+`atomic_number()` and integral `valence()`, checked nonvirtual
+`local_r(radius, value, derivative)` and immutable `projectors()` views.
+Providers override only `evaluate_local` and physical metadata/views.
 
-```cpp
-class NormConservingPotential {
-public:
-    virtual ~NormConservingPotential() = default;
-    virtual int valence() const noexcept = 0;
-    virtual void local_r(RadialPoints r, RadialValues v,
-                         RadialValues dv_dr) const = 0;
-    virtual ProjectorSetView projectors() const = 0;
-};
-```
+- Radius is Bohr, V is Ha, dV/dr is Ha/Bohr. The origin is finite with zero
+  derivative; the asymptotic tail is -Z_val/r.
+- `NcProjectorSetView` supplies radius, positive dr/di Jacobian, radial
+  projectors, complete row-major coupling matrix and optional atomic guess
+  density/orbitals. The header states the QE Simpson index-grid quadrature,
+  including even meshes and each projector's exact integration prefix.
+- beta is r*p_l(r) [Bohr^-1/2], D is Ha; no automatic normalization or hidden
+  Ry conversion is performed by the operator. Spherical harmonics are
+  normalized real spherical functions; different l blocks cannot couple.
+  CPU PW admits scalar l=0,1,2. The header fixes Fourier normalization,
+  atomic Bloch phases and the finite Coulomb-cancelled G=0 convention.
+- `cpu::pw::GthPseudopotential(element,name)` or an explicit `GthPotential`
+  supplies the analytic GTH form; `UpfPseudopotential(path)` parses once.
+  Both derive the same public physical interface. UPF converts Ry to Ha at
+  ingestion. Unknown classification/identity, fractional valence, NLCC,
+  spin-orbit, USPP and PAW reject; no unsupported channel is approximated.
+- CPU `PW` takes `shared_ptr<const NormConservingPotential>` as its sole
+  potential constructor argument. Every Frame atom must match the explicit
+  element; current PW is single-species. There are no source-string slots,
+  source-selector overloads or compatibility aliases.
+- PW setup snapshots provider data into one immutable `NcPotentialData`.
+  Local transforms, nonlocal operators, forces, frozen-density stress,
+  k-table rebuilds and DFPT consume that same physical snapshot. Providers
+  receive no FFT/workspace/history, and are not called per grid point,
+  matrix element or electronic iteration. Parameter copies retain the same
+  immutable provider while owning independent execution state.
+- Built-in UPF radial interpolation preserves every table node and provides a
+  matched C1 derivative. Its small final-node Coulomb residual is continued
+  C1 to the exact tail over one final mesh interval; operator quadrature uses
+  the unchanged supplied nodes.
 
-`local_r` supplies V(r) [Ha] and dV/dr [Ha/Bohr], with r [Bohr], defined
-origin limits and the Coulomb tail -Z_val/r. `ProjectorSetView` supplies
-immutable radial mesh/functions, angular channel/order, quadrature and
-normalization convention, and Hermitian coupling matrices with stated units.
-The representation adapter owns Fourier transforms, Coulomb-tail splitting,
-g=0 conventions, angular expansion, discretization and derivative contractions.
-Those conventions must be fixed in the exported header and its numerical pins
-before this protocol is published; an unlabelled radial array is insufficient.
-
-First normalize the existing CPU PW GTH and NC-UPF inputs through one NC
-operator path, reusing `gth_upf` / `UPFData` internally. Do not duplicate a
-parser or publish `UPFData` as a general workspace. GPW retains its qualified
-Gaussian-projector integrals until a general radial-potential adapter is
-implemented and independently validated. A generic provider is not proof
-that every representation supports it.
+GPW retains its qualified Gaussian-projector integrals until a general
+radial-potential adapter is implemented and independently validated. A generic
+provider is not proof that every representation supports it. CUDA's migrated
+source accepts built-in providers only; third-party CPU providers reject
+before device execution, and numerical CUDA acceptance is a separate gate.
 
 USPP/PAW need nontrivial overlap, augmentation density and associated energy/
 geometry derivatives. They are a separate representation/operator contract,

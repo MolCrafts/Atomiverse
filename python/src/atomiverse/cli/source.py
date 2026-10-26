@@ -1,7 +1,7 @@
 """Source resolution for the native build.
 
 The native extension is built from a local Atomiverse **checkout** (git clone
-with the ``molrs`` submodule); there is no remote-source path. The checkout's
+with a local merged molpy checkout); there is no remote-source path. The checkout's
 version (``__version__`` in ``python/src/atomiverse/__init__.py``) must equal
 the installed package version, so a native build never silently swaps the
 release the user installed for a different tree.
@@ -9,6 +9,7 @@ release the user installed for a different tree.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,8 +86,8 @@ def resolve_source(src: str, *, version: Optional[str] = None) -> SourceSpec:
     @param version: Override the expected version (tests only; production
         uses :func:`package_version`).
     @return :class:`SourceSpec` for the checkout.
-    @raises ConfigError: if *src* is not a checkout, lacks the molrs
-        submodule, or its version differs from the installed one.
+    @raises ConfigError: if *src* is not a checkout, lacks the merged molpy
+        checkout, or its version differs from the installed one.
     """
     path = Path(src).expanduser().resolve()
     if not path.exists():
@@ -100,11 +101,7 @@ def resolve_source(src: str, *, version: Optional[str] = None) -> SourceSpec:
             f"--src does not look like an Atomiverse checkout: {path} "
             "(expected CMakeLists.txt and python/pyproject.toml)"
         )
-    if not (root / "molrs" / "Cargo.toml").is_file():
-        raise ConfigError(
-            f"molrs submodule missing under {root} — run "
-            "`git submodule update --init --recursive molrs` in the checkout"
-        )
+    molpy_source_root(root)
 
     expected = version if version is not None else package_version()
     found = read_source_version(python_dir)
@@ -115,3 +112,15 @@ def resolve_source(src: str, *, version: Optional[str] = None) -> SourceSpec:
             f"`pip install atomiverse=={found}` first"
         )
     return SourceSpec(root=root, python_dir=python_dir, version=found)
+
+
+def molpy_source_root(source_root: Path) -> Path:
+    """Locate the merged local molpy checkout shared by CXX and Python builds."""
+    root = Path(os.environ.get("ATV_MOLPY_PATH", str(source_root.parent / "molrs"))).expanduser().resolve()
+    for relative in ("molcxx/Cargo.toml", "molpy/pyproject.toml", "crates/molrs-ffi/Cargo.toml"):
+        if not (root / relative).is_file():
+            raise ConfigError(
+                f"merged molpy checkout missing {relative} under {root}; "
+                "set ATV_MOLPY_PATH to the local MolCrafts/molpy repository"
+            )
+    return root

@@ -6,7 +6,7 @@
 #SBATCH -J atv-cpu
 
 # Parameterised CPU batch job: configure the full CPU product set, build, and
-# run the unit-test suite. Mirrors the login-shell recipe in CLAUDE.md, but as
+# run the unit-test suite. Mirrors the login-shell recipe in docs/developer/project-contract.md, but as
 # a batch job so a full build does not run on a shared login node.
 #
 # Submit from the repository root:
@@ -27,7 +27,8 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
-git submodule update --init --recursive molrs
+: "${ATV_MOLPY_PATH:=$PWD/../molrs}"
+export ATV_MOLPY_PATH
 
 module load buildenv-gcc/2026.03-mpich
 export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"

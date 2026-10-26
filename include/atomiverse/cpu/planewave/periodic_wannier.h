@@ -21,7 +21,7 @@
 /// no factories. No metallic smearing / disentanglement in this product path.
 ///
 /// @code
-///   cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"Si.upf"}, /*ecut_ry=*/15.0,
+///   cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf"), /*ecut_ry=*/15.0,
 ///                  /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 ///   pw.spin_polarized = true;
 ///   pw.multiplicity = 1;           // M = 0 closed-shell collinear

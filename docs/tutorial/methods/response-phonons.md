@@ -1,5 +1,7 @@
 # Finite-displacement crystal phonons
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Finite-displacement (FD) crystal phonons assemble Cartesian interatomic force
 constants (IFCs) \(\Phi\) on a periodic supercell by central differences of
 forces, mass-weight them into a dynamical matrix, and diagonalize it to

@@ -1,5 +1,7 @@
 # Many-body classical potentials (EAM, Stillinger–Weber)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Classical force styles whose energy does not decompose into independent pairs:
 the analytic embedded-atom method (Sutton–Chen, a long-range Finnis–Sinclair
 form) and the Stillinger–Weber two- plus three-body potential. Derivations and

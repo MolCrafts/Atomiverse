@@ -1,5 +1,7 @@
 # Algebraic diagrammatic construction (ADC)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 The algebraic diagrammatic construction expands a propagator — the
 polarization propagator for excitations, the one-particle Green's function for
 ionization and attachment — in perturbation order and diagonalizes its
@@ -58,7 +60,7 @@ const cpu::scf::ADC2Result adc =
 Each call throws if there is no SCF result, no virtual orbitals, or `n_states`
 lies outside the manifold dimension given in the section. Build with
 `-DATV_BUILD_HF=ON -DATV_BUILD_REGRESSIONS=ON` (CPU login-shell recipe in
-`CLAUDE.md`, `module load buildenv-gcc/2026.03-mpich`).
+`docs/developer/project-contract.md`, `module load buildenv-gcc/2026.03-mpich`).
 
 ### Oracle
 

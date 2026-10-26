@@ -174,7 +174,7 @@ below the resolution of a meaningful comparison for a 3-atom molecule.
   total; the decomposition is reachable only through `AM1::state()`, which
   returns the internal `NDDOScfState`
   (`include/atomiverse/cpu/semiempirical/am1_solver.h:9,60` includes and
-  re-exports `internal/nddo_solver.h`). CLAUDE.md lists that internal-type leak
+  re-exports `internal/nddo_solver.h`). docs/developer/project-contract.md lists that internal-type leak
   as scheduled-for-deletion debt, so this case does **not** consume it. Pinning
   the decomposition — which would localize a defect to the one- vs two-electron
   side — needs a public accessor on `AM1Result` first.

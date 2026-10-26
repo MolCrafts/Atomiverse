@@ -13,7 +13,7 @@
 /// default, attached by the `Minimize` preset — reads them and returns the `Verdict`.
 /// The tolerances live with the policy, in the handler.
 ///
-/// Per the CLAUDE.md "no duplication across methods" rule the shared reduction lives
+/// Per the docs/developer/project-contract.md "no duplication across methods" rule the shared reduction lives
 /// here once, owned by each Optimizer component (it is NOT a Plan component itself).
 ///
 /// Execution-model classification: **host-dependent compute**. The metric reduction is

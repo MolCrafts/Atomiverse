@@ -1,5 +1,7 @@
 # GPW nonlocal vdW correlation (vdW-DF, vdW-DF2, rVV10, optB88-vdW)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Density-based nonlocal correlation evaluated with the Román–Pérez–Soler (RPS)
 FFT method on the GPW uniform grid: vdW-DF (DRSLL / DF1), vdW-DF2
 (LMKLL / DF2) and revised VV10 (rVV10), each additive on a semi-local host

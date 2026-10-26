@@ -1,5 +1,7 @@
 # Native validation: exact GPW Berry Fourier overlaps
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 This directory archives native correctness/runtime evidence, not new CP2K
 oracle pins. The build12 (2026-10-25) CTest case output is
 `native-validation.txt`; `native-validation.json` records SHA-256, command,

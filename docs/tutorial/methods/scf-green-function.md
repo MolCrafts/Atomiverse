@@ -1,5 +1,7 @@
 # Green's-function and RPA methods
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Many-body Green's-function methods on a closed-shell RHF reference:
 quasiparticle (QP) energies from one-shot spectral \(G_0W_0\) and from one-shot
 second-order Green's function theory (G0F2), neutral excitations from the
@@ -55,7 +57,7 @@ QP observables (G0W0, GF2):
 | EA | \(\varepsilon_{\mathrm{LUMO}}^{\mathrm{QP}}\) | eV |
 
 Build with `-DATV_BUILD_HF=ON -DATV_BUILD_REGRESSIONS=ON` (CPU login-shell
-recipe in `CLAUDE.md`, `module load buildenv-gcc/2026.03-mpich`).
+recipe in `docs/developer/project-contract.md`, `module load buildenv-gcc/2026.03-mpich`).
 
 ### Oracle
 

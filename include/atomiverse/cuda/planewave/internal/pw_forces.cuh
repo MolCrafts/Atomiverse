@@ -12,7 +12,6 @@
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 #include <array>
-#include <string>
 #include <vector>
 
 namespace ATV {
@@ -44,8 +43,6 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// \(f\in[0,1]\) via `smear_f_spinor`.
 ///
 /// @param frame     Geometry [Å]; not mutated.
-/// @param upf_path  UPF path (empty if gth_name is set).
-/// @param gth_name  GTH name (empty if upf_path is set).
 /// @param ecut_ry   Wavefunction cutoff [Ry] (Ewald G cut).
 /// @param den       Device density after SCF mix (owns ρ(G)).
 /// @param solver    Band solver bound to den grids, k-tables built.
@@ -56,8 +53,7 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// @param use_smear Restricted metallic-smear fractional NL path.
 /// @param n_elec    Valence electron count (smear μ search; ignored if not smear).
 std::vector<std::array<double, 3>>
-pw_forces_analytic_impl(const cpu::Frame& frame, const std::string& upf_path,
-                        const std::string& gth_name, double ecut_ry,
+pw_forces_analytic_impl(const cpu::Frame& frame, double ecut_ry,
                         DeviceDensity& den, DeviceBandSolver& solver,
                         cpu::pw::internal::PWProblem& prob,
                         cpu::pw::internal::PWWorkspace& ws, int n_alpha = -1,

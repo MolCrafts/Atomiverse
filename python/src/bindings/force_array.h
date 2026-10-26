@@ -15,8 +15,8 @@
 /// lifetime follows the numpy array and nothing in the engine has to outlive
 /// the call.
 ///
-/// This is deliberately *not* in `molrs_frame_bridge.h`, whose charter is the
-/// molrs.Frame capsule boundary; a numpy return currency is a different
+/// This is deliberately *not* in `molpy_frame_bridge.h`, whose charter is the
+/// molpy.Frame capsule boundary; a numpy return currency is a different
 /// concern with a different dependency (`nanobind/ndarray.h`).
 #pragma once
 

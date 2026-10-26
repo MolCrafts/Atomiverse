@@ -63,7 +63,7 @@ Read it before planning work around a method.
 
 ```bash
 git clone --recursive <repo-url> && cd Atomiverse
-# or, in an existing clone:  git submodule update --init --recursive molrs
+# Use the merged local molpy checkout: export ATV_MOLPY_PATH=/path/to/molpy
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
       -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON
@@ -104,13 +104,15 @@ uv run --with zensical --with molcrafts-zensical-theme zensical serve  # live pr
 cmake -B build/docs -DATV_DOCS_ONLY=ON && cmake --build build/docs --target docs
 ```
 
+Project architecture and build conventions: [project contract](docs/developer/project-contract.md).
+
 ## Repository layout
 
 | Path | Contents |
 |---|---|
 | `include/atomiverse/`, `src/` | Mirrored header and implementation trees: `core/` (the CUDA-free contract both backends share), `cpu/`, `cuda/` |
 | `tests/` | Unit tests only — one function or method each, the whole suite in seconds |
-| `regressions/` | End-to-end cases, one directory per delivered capability, each citing its oracle |
+| `regressions/` | Archived scientific case sources and oracle records; no executable runner |
 | `benchmarks/` | Standing performance harnesses; never registered with ctest |
 | `examples/` | The numbered tutorial programs |
 | `docs/` | The manual |
@@ -153,13 +155,11 @@ Every method domain has its own `ATV_BUILD_<DOMAIN>` flag, and turning one off
 excludes its sources, headers, tests and regressions rather than merely hiding
 a symbol — so working on one method never means compiling the whole engine.
 
-**molrs** is a hard dependency, vendored as a git submodule at `./molrs`; the
-gitlink pins the commit this tree was verified against (molrs has no API
-version before 1.0.0, so there is no version gate). Developers working
-on both repositories at once can point `ATV_MOLRS_PATH` at a sibling checkout
-instead — that is what the presets in `CMakePresets.json` do, and optional
-bridge surfaces present only in that tree are detected per pin and compiled out
-otherwise.
+**molpy** supplies the shared Frame, I/O and analysis APIs. During migration,
+build against the merged local repository (currently `../molrs`) using
+`-DATV_MOLPY_PATH=/path/to/merged/molpy` or the `ATV_MOLPY_PATH` environment
+variable. The C++ bridge is `molcxx/`; the Python wheel is `molpy/`. Both must
+come from the same checkout. No molpy source revision or release is pinned.
 
 ## License
 

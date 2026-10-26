@@ -277,7 +277,7 @@ proceeds.
 
 `ATV::RDF` streams each snapshot's positions + cell into the molrs
 `RdfAccumulator` — pair binning (per-frame periodic cell list), ideal-gas
-shell-volume normalisation and the bin centres all come from molrs; the
+shell-volume normalisation and the bin centres all come from molpy; the
 observer keeps only O(n_bins) state:
 
 ```cpp

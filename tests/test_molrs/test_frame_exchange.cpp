@@ -1,6 +1,7 @@
 /// @file tests/test_molrs/test_frame_exchange.cpp
-/// @brief Drift fence for cpu::from_molrs / cpu::to_molrs (ATV's Frame boundary).
+/// @brief Drift fence for cpu::from_molpy / cpu::to_molpy (ATV's Frame boundary).
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
@@ -11,8 +12,8 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
+#include "atomiverse/molpy.hpp"
 
 namespace {
 
@@ -40,14 +41,17 @@ namespace {
         *fr, "atoms", "tag",
         ::rust::Slice<const std::int32_t>(tag.data(), tag.size()));
     const std::vector<double> h = {20, 0, 0, 0, 20, 0, 0, 0, 20};
-    molrs::frame_set_box_h(*fr,
-                           ::rust::Slice<const double>(h.data(), h.size()));
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()),
+                         ::rust::Slice<const double>(
+                             std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+                         ::rust::Slice<const bool>(
+                             std::array<bool, 3>{true, true, true}.data(), 3));
     return fr;
 }
 
 TEST(MolrsFrameExchange, FromMolrsReadsPositionsAndNlocal) {
     auto fr = make_h2_molrs();
-    ATV::cpu::Frame frame = ATV::cpu::from_molrs(*fr);
+    ATV::cpu::Frame frame = ATV::cpu::from_molpy(*fr);
     EXPECT_EQ(frame.nlocal(), 2);
     EXPECT_NEAR(frame.span(ATV::kAtom_x)[0], 0.0, 1e-12);
     EXPECT_NEAR(frame.span(ATV::kAtom_x)[1], 0.74, 1e-12);
@@ -55,9 +59,9 @@ TEST(MolrsFrameExchange, FromMolrsReadsPositionsAndNlocal) {
 
 TEST(MolrsFrameExchange, ToMolrsWritesBackPositions) {
     auto fr = make_h2_molrs();
-    ATV::cpu::Frame frame = ATV::cpu::from_molrs(*fr);
+    ATV::cpu::Frame frame = ATV::cpu::from_molpy(*fr);
     frame.span(ATV::kAtom_x)[0] = 0.1;
-    ATV::cpu::to_molrs(frame, *fr);
+    ATV::cpu::to_molpy(frame, *fr);
     auto x = molrs::frame_column_f64(*fr, "atoms", "x");
     ASSERT_EQ(x.size(), 2u);
     EXPECT_NEAR(x[0], 0.1, 1e-12);
@@ -65,7 +69,7 @@ TEST(MolrsFrameExchange, ToMolrsWritesBackPositions) {
 
 TEST(MolrsFrameExchange, MissingAtomsBlockThrows) {
     auto fr = molrs::frame_new();
-    EXPECT_THROW(ATV::cpu::from_molrs(*fr), std::runtime_error);
+    EXPECT_THROW(ATV::cpu::from_molpy(*fr), std::runtime_error);
 }
 
 // Species cross as Z only. A frame spelling symbols alone is refused with the
@@ -89,8 +93,8 @@ TEST(MolrsFrameExchange, ElementSymbolsNeedTheExplicitConversion) {
         ::rust::Slice<const ::rust::String>(symbols.data(), symbols.size()));
 
     try {
-        (void)ATV::cpu::from_molrs(*fr);
-        FAIL() << "from_molrs accepted a frame without atomic_number";
+        (void)ATV::cpu::from_molpy(*fr);
+        FAIL() << "from_molpy accepted a frame without atomic_number";
     } catch (const std::runtime_error& e) {
         EXPECT_NE(std::string(e.what()).find("fill_atomic_numbers"),
                   std::string::npos)
@@ -98,7 +102,7 @@ TEST(MolrsFrameExchange, ElementSymbolsNeedTheExplicitConversion) {
     }
 
     molrs::frame_fill_atomic_numbers(*fr);
-    ATV::cpu::Frame frame = ATV::cpu::from_molrs(*fr);
+    ATV::cpu::Frame frame = ATV::cpu::from_molpy(*fr);
     ASSERT_EQ(frame.nlocal(), 2);
     EXPECT_EQ(frame.span(ATV::kAtom_type)[0], 8);
     EXPECT_EQ(frame.span(ATV::kAtom_type)[1], 1);
@@ -109,18 +113,46 @@ TEST(MolrsFrameExchange, ElementSymbolsNeedTheExplicitConversion) {
 TEST(MolrsFrameExchange, NonSymmetricCellKeepsColumnLatticeAcrossBoundary) {
     auto fr = make_h2_molrs();
     const std::vector<double> h = {4, 1.5, 0.2, 0, 5, 0.7, 0, 0, 6};
-    molrs::frame_set_box_h(*fr,
-                           ::rust::Slice<const double>(h.data(), h.size()));
-    auto frame = ATV::cpu::from_molrs(*fr);
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()),
+                         ::rust::Slice<const double>(
+                             std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+                         ::rust::Slice<const bool>(
+                             std::array<bool, 3>{true, true, true}.data(), 3));
+    auto frame = ATV::cpu::from_molpy(*fr);
     const ATV::Vec3 frac{0.2, 0.3, 0.4};
     const auto cart = frame.box.cell() * frac;
     EXPECT_NEAR(cart[0], 1.33, 1e-12);
     EXPECT_NEAR(cart[1], 1.78, 1e-12);
     EXPECT_NEAR(cart[2], 2.4, 1e-12);
     frame.box.scale_isotropic(1.1);
-    ATV::cpu::to_molrs(frame, *fr);
-    const auto back = molrs::frame_box_h(*fr);
+    ATV::cpu::to_molpy(frame, *fr);
+    const auto back = molrs::frame_box(*fr).h;
     ASSERT_EQ(back.size(), 9u);
     for (int i = 0; i < 9; ++i)
         EXPECT_NEAR(back[i], 1.1 * h[i], 1e-12);
+}
+
+TEST(MolpyFrameExchange, RejectsUnsupportedBoxOriginAndPartialPeriodicity) {
+    auto frame = make_h2_molrs();
+    const std::array<double, 9> cell{20, 0, 0, 0, 20, 0, 0, 0, 20};
+    const std::array<double, 3> shifted{1, 0, 0};
+    const std::array<double, 3> zero{};
+    const std::array<bool, 3> periodic{true, true, true};
+    const std::array<bool, 3> slab{true, true, false};
+    const auto conversion_error = [&] {
+        try {
+            ATV::cpu::from_molpy(*frame);
+        } catch (const std::runtime_error& error) {
+            return std::string(error.what());
+        }
+        return std::string{};
+    };
+    molrs::frame_set_box(*frame, {cell.data(), cell.size()},
+                         {shifted.data(), shifted.size()},
+                         {periodic.data(), periodic.size()});
+    EXPECT_NE(conversion_error().find("nonzero box origin"), std::string::npos);
+    molrs::frame_set_box(*frame, {cell.data(), cell.size()},
+                         {zero.data(), zero.size()},
+                         {slab.data(), slab.size()});
+    EXPECT_NE(conversion_error().find("periodicity"), std::string::npos);
 }

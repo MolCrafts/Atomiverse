@@ -19,7 +19,7 @@
 
 #include "evaluator_setters.h"
 #include "frame_guards.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -33,7 +33,7 @@
 #include <variant>
 #include <vector>
 
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 // LBFGS and CG are constructed here because their fields ARE their
 // constructor arguments; FIRE, the four cell relaxers and the three criteria
 // come from `task/internal/minimize_builders.h`, and the eighteen force
@@ -250,7 +250,7 @@ struct MinimizeHandle {
     /// Same guard, same rationale as `MdHandle::require_charge_column`
     /// (`bind_md.cpp`), because both handles take the same eighteen sources:
     /// `charge` is an *optional* per-atom column at the C++ boundary, and
-    /// `cpu::from_molrs` zero-fills an absent one, so past that point a
+    /// `cpu::from_molpy` zero-fills an absent one, so past that point a
     /// forgotten charge column is indistinguishable from a deliberately
     /// neutral system — the optimization converges instantly on a Hamiltonian
     /// with no electrostatics in it. The molrs Frame is the last place the
@@ -274,7 +274,7 @@ struct MinimizeHandle {
             unmirrored_coulomb_
             || std::any_of(mirror.begin(), mirror.end(),
                            is_coulomb_entry<MinimizeComponentEntry>);
-        if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
+        if (!coulomb || has_molpy_column(frame, "atoms", "charge"))
             return;
         throw std::runtime_error(
             "this Minimize run registers a Coulomb evaluator but the "
@@ -286,7 +286,7 @@ struct MinimizeHandle {
     TaskResult run(nb::object frame_obj, std::int64_t max_iter) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
-            auto frame = borrow_molrs_frame(frame_obj);
+            auto frame = borrow_molpy_frame(frame_obj);
             require_charge_column(*frame);
             std::int64_t iterations = 0;
             {
@@ -308,9 +308,9 @@ struct MinimizeHandle {
             user_criterion ? convergence : MinimizeCriterionParams{};
         const cpu::task::TaskSpec spec{cpu::task::MinimizeTask{
             mirror, static_cast<std::int64_t>(max_iter), conv}};
-        auto frame = borrow_molrs_frame(frame_obj);
+        auto frame = borrow_molpy_frame(frame_obj);
         require_charge_column(*frame);
-        cpu::Frame work = cpu::from_molrs(*frame);
+        cpu::Frame work = cpu::from_molpy(*frame);
         cpu::task::DispatchResult dispatched{cpu::Frame(0), {}};
         {
             nb::gil_scoped_release release;
@@ -319,7 +319,7 @@ struct MinimizeHandle {
                                                  /*do_handshake=*/false);
             dispatched = dispatcher.dispatch(spec, std::move(work));
         }
-        cpu::to_molrs(dispatched.frame, *frame);
+        cpu::to_molpy(dispatched.frame, *frame);
         ran_ = true;
         return std::move(dispatched.control);
 #else
@@ -794,11 +794,9 @@ void bind_minimizer(nb::module_& m) {
         "Append the plane-wave DFT evaluator as the force source of a "
         "geometry optimization: the electrons are re-converged at every "
         "geometry, with analytic ionic forces taken at the converged "
-        "density. Budget it deliberately — an iteration costs TWO "
-        "self-consistent-field solves. Takes no NeighborList and needs a "
-        "box.\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the fifteen "
-        "method parameters: the object you pass keeps its own state.");
+        "density. A force-producing evaluation uses one electronic solve. "
+        "The driver borrows this same method and keeps its Python owner alive. "
+        "This local provider is not serialized to a launcher task.");
 
     minimize
         .def(

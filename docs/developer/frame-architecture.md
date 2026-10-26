@@ -180,20 +180,20 @@ as raw memory is forbidden.
 
 ## 7. The molrs boundary
 
-`from_molrs()` is the one entry point from `molrs::Frame` to `cpu::Frame`, and
-`to_molrs()` is the one exit. Both read and write Block columns and exact typed
+`from_molpy()` is the one entry point from `molrs::Frame` to `cpu::Frame`, and
+`to_molpy()` is the one exit. Both read and write Block columns and exact typed
 meta directly: there is no intermediate SystemScalars Block, no string
 key/value metadata, and no legacy decoder.
 
 The division of labour:
 
 - molrs flat bonds / angles / dihedrals become CPU per-row global-tag topology
-  during `from_molrs`;
+  during `from_molpy`;
 - element identity has exactly one public owner, `molrs::Element`. Atomiverse
   declares no alias, no second enum and no implicit conversion. The ExtXYZ
   entry point consumes the `species` column that format prescribes, produces
   `atoms.type` through the canonical `molrs::Element`, drops the format column,
-  and only then enters the strict `from_molrs`. The general boundary does no
+  and only then enters the strict `from_molpy`. The general boundary does no
   `type` / `element` / `species` fallback;
 - write-back writes the result columns and serializable meta named in the
   current boundary contract, with an explicit range check on tag narrowing;
@@ -201,7 +201,7 @@ The division of labour:
   serialized;
 - the Box crosses as explicit cell data, never as copied C++ object memory.
 
-molpy uses `molrs.Frame` / `molrs.Block` directly. Atomiverse, molrs and molpy
+molpy uses `molpy.Frame` / `molpy.Block` directly. Atomiverse, molrs and molpy
 share one current format version; anything else is rejected rather than
 implicitly migrated.
 
@@ -217,7 +217,7 @@ repeatedly *inside* an inner loop, so acceptance watches:
   attributable to the Frame representation;
 - LJ neighbor reuse and forced re-neighboring are each compared against the
   cutover baseline;
-- `from_molrs`, write-back, pack/unpack, broadcast, halo, migration and gather
+- `from_molpy`, write-back, pack/unpack, broadcast, halo, migration and gather
   are measured separately;
 - the `StorageReal` / `WorkReal` / `TagInt` configuration matrix round-trips
   bit-exactly.

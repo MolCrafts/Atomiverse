@@ -16,7 +16,8 @@ TEST(UPF, ParseMinimal) {
     {
         std::ofstream o(tmpfile);
         o << "<UPF version=\"1.0\">\n";
-        o << "<PP_HEADER z_valence=\"4\" l_max=\"1\" />\n";
+        o << "<PP_HEADER element=\"Si\" pseudo_type=\"NC\" z_valence=\"4\" "
+             "l_max=\"1\" />\n";
         o << "<PP_MESH>\n  <PP_R>\n";
         o << "0.0 0.5 1.0 1.5 2.0\n";
         o << "  </PP_R>\n  <PP_RAB>\n";
@@ -25,9 +26,9 @@ TEST(UPF, ParseMinimal) {
         o << "<PP_LOCAL>\n";
         o << "-2.0 -2.0 -2.0 -2.0 -2.0\n";
         o << "</PP_LOCAL>\n";
-        o << "<PP_NLCC>\n";
+        o << "<PP_RHOATOM>\n";
         o << "0.1 0.2 0.3 0.4 0.5\n";
-        o << "</PP_NLCC>\n";
+        o << "</PP_RHOATOM>\n";
         o << "<PP_NONLOCAL>\n";
         o << "  <PP_BETA angular_momentum=\"0\" cutoff_radius_index=\"3\">\n";
         o << "  0.1 0.2 0.3 0.4 0.5\n";
@@ -38,7 +39,10 @@ TEST(UPF, ParseMinimal) {
     }
 
     auto upf = read_upf_v1(tmpfile);
+    EXPECT_EQ(upf.atomic_number, 14);
     EXPECT_EQ(upf.z_val, 4);
+    EXPECT_DOUBLE_EQ(upf.v_loc.back(), -1.0);
+    EXPECT_DOUBLE_EQ(upf.d_ij[0], 0.25);
     EXPECT_EQ(upf.l_max, 1);
     EXPECT_EQ(upf.r.size(), 5u);
     EXPECT_EQ(upf.rab, std::vector<AccReal>(5, 0.5));
@@ -46,7 +50,7 @@ TEST(UPF, ParseMinimal) {
     EXPECT_EQ(upf.rho_atom.size(), 5u);
     EXPECT_GE(upf.kb.size(), 1u);
     EXPECT_EQ(upf.kb[0].l, 0);
-    EXPECT_EQ(upf.kb[0].beta.size(), 5u);
+    EXPECT_EQ(upf.kb[0].beta.size(), 3u);
     EXPECT_EQ(upf.kb[0].radial_points, 3u);
 
     std::remove(tmpfile);
@@ -54,7 +58,7 @@ TEST(UPF, ParseMinimal) {
 
 TEST(UPF, RadialIntegralUsesJacobianAndEvenEndpointCorrection) {
     for (int n : {9, 10}) {
-        UPFData upf;
+        NcPotentialData upf;
         upf.r.resize(n);
         upf.rab.assign(n, 0.125);
         std::vector<AccReal> quadratic(n);
@@ -80,7 +84,7 @@ TEST(UPF, RadialIntegralIsFourthOrderOnLogMesh) {
     double errors[3];
     int index = 0;
     for (int n : {33, 65, 129}) {
-        UPFData upf;
+        NcPotentialData upf;
         upf.r.resize(n);
         upf.rab.resize(n);
         std::vector<AccReal> values(n);
@@ -100,7 +104,7 @@ TEST(UPF, RadialIntegralIsFourthOrderOnLogMesh) {
 }
 
 TEST(UPF, RadialIntegralRejectsMissingInvalidOrUnorderedData) {
-    UPFData upf;
+    NcPotentialData upf;
     upf.r = {0, 0.5, 1};
     std::vector<AccReal> values{1, 1, 1};
     EXPECT_THROW(upf.integrate_radial(values), std::invalid_argument);
@@ -116,4 +120,86 @@ TEST(UPF, RadialIntegralRejectsMissingInvalidOrUnorderedData) {
     upf.rab[1] = 0.5;
     upf.r[2] = 0.5;
     EXPECT_THROW(upf.integrate_radial(values), std::invalid_argument);
+}
+
+namespace {
+void write_nc_fixture(const std::string& header,
+                      const std::string& extra = "") {
+    std::ofstream out("/tmp/test_nc_admission.upf");
+    out << "<UPF>\n<PP_HEADER " << header << "/>\n"
+        << "<PP_MESH>\n<PP_R>\n0 .5 1\n</PP_R>\n"
+        << "<PP_RAB>\n.5 .5 .5\n</PP_RAB>\n</PP_MESH>\n"
+        << "<PP_LOCAL>\n-2 -2 -2\n</PP_LOCAL>\n"
+        << extra << "\n</UPF>\n";
+}
+} // namespace
+
+TEST(UPF, RejectsUnknownIdentityAndNonIntegralValence) {
+    for (const auto& header :
+         {"element=\"Si\" z_valence=\"4\"",
+          "element=\"Si\" pseudo_type=\"US\" z_valence=\"4\"",
+          "element=\"Si\" pseudo_type=\"PAW\" z_valence=\"4\"",
+          "element=\"NoSuchElement\" pseudo_type=\"NC\" z_valence=\"4\"",
+          "pseudo_type=\"NC\" z_valence=\"4\"",
+          "element=\"Si\" pseudo_type=\"NC\" z_valence=\"4.5\"",
+          "element=\"Si\" pseudo_type=\"NC\" z_valence=\"15\"",
+          "element=\"Si\" pseudo_type=\"NC\" z_valence=\"nan\""}) {
+        SCOPED_TRACE(header);
+        write_nc_fixture(header);
+        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
+                     std::invalid_argument);
+    }
+    std::remove("/tmp/test_nc_admission.upf");
+}
+
+TEST(UPF, RejectsUnsupportedPhysicalChannelsAtAdmission) {
+    const std::string nc = "element=\"Si\" pseudo_type=\"NC\" z_valence=\"4\" ";
+    for (const auto& flag :
+         {"is_ultrasoft=\"T\"", "is_paw=\"true\"", "has_so=\"T\"",
+          "core_correction=\"true\"", "relativistic=\"full\""}) {
+        SCOPED_TRACE(flag);
+        write_nc_fixture(nc + flag);
+        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
+                     std::invalid_argument);
+    }
+    for (const auto& tag : {"PP_NLCC", "PP_AUGMENTATION", "PP_SPIN_ORB"}) {
+        SCOPED_TRACE(tag);
+        write_nc_fixture(nc,
+                         std::string("<") + tag + ">\n0 0 0\n</" + tag + ">");
+        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
+                     std::invalid_argument);
+        write_nc_fixture(nc, std::string("<") + tag + "/>");
+        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
+                     std::invalid_argument);
+    }
+    std::remove("/tmp/test_nc_admission.upf");
+}
+
+TEST(UPF, ProjectorCutoffRejectsFractionalOrPartialNumericAttribute) {
+    const std::string nc = "element=\"Si\" pseudo_type=\"NC\" z_valence=\"4\"";
+    for (const auto& cutoff : {"3.5", "3junk", "-1", "2", "4", "nan"}) {
+        SCOPED_TRACE(cutoff);
+        write_nc_fixture(
+            nc, std::string("<PP_NONLOCAL>\n<PP_BETA angular_momentum=\"0\" "
+                            "cutoff_radius_index=\"")
+                    + cutoff
+                    + "\">\n0 .5 "
+                      "1\n</PP_BETA>\n<PP_DIJ>\n2\n</PP_DIJ>\n</PP_NONLOCAL>");
+        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
+                     std::invalid_argument);
+    }
+    std::remove("/tmp/test_nc_admission.upf");
+}
+
+TEST(UPF, RejectsInvalidTokensAfterOtherwiseCompleteNumericRows) {
+    const std::string nc = "element=\"Si\" pseudo_type=\"NC\" z_valence=\"4\"";
+    for (const auto& row :
+         {"-2 -2 -2 garbage", "-2 -2 -2 1e999", "-2 -2 -2 nan"}) {
+        SCOPED_TRACE(row);
+        write_nc_fixture(nc,
+                         std::string("<PP_LOCAL>\n") + row + "\n</PP_LOCAL>");
+        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
+                     std::invalid_argument);
+    }
+    std::remove("/tmp/test_nc_admission.upf");
 }

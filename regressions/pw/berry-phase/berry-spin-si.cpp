@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -70,8 +71,9 @@ int run() {
     constexpr double kSymTol = 0.05;
     constexpr double kBornTol = 0.5;
 
-    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
-              kMeshScf, cpu::scf::XCType::LSDA};
+    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                   "/pw/Si_lda_nc.upf"),
+              kEcutRy, kMeshScf, cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
     method.spin_polarized = true;

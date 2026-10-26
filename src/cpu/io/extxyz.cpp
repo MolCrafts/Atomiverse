@@ -5,8 +5,8 @@
 
 #include <stdexcept>
 
-#include "atomiverse/cpu/frame/molrs_exchange.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
+#include "atomiverse/molpy.hpp"
 #include "readable_path.h"
 
 namespace ATV {
@@ -26,13 +26,14 @@ Frame load_extxyz(const std::string& path) {
     // The periodic box is required: a missing `Lattice=` header leaves no
     // box, and materialize treats the box as optional. Fail loud rather
     // than silently substituting a degenerate/identity box (no fallback).
-    if (molrs::frame_box_h(*fref).size() != 9u) {
+    if (!molrs::frame_has_box(*fref)
+        || molrs::frame_box(*fref).h.size() != 9u) {
         throw std::runtime_error("cpu::load_extxyz(" + path
                                  + "): ExtXYZ is missing the required "
                                    "Lattice=\"...\" header (no box)");
     }
 
-    return from_molrs(*fref);
+    return from_molpy(*fref);
 }
 
 } // namespace cpu

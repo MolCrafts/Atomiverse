@@ -54,7 +54,7 @@
 #include "atomiverse/cpu/gpw/stages/ks_build_stage.h"
 #include "atomiverse/cpu/gpw/stages/mix_stage.h"
 #include "atomiverse/cpu/linalg/matrix.h" // RealMatrix
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {

@@ -59,10 +59,8 @@ MPI_Datatype mpi_real_type() {
 } // namespace
 
 PW copy_pw_params(const PW& m) {
-    // Pseudopotential source — exactly one of the two is set.
-    PW p = m.upf_path.empty()
-               ? PW(GthPseudopotential{m.gth_name}, m.ecut_ry, m.k_mesh, m.xc)
-               : PW(UpfPseudopotential{m.upf_path}, m.ecut_ry, m.k_mesh, m.xc);
+    // Share immutable potential physics; never share electronic solve state.
+    PW p(m.potential, m.ecut_ry, m.k_mesh, m.xc);
     // SCF control
     p.tol = m.tol;
     p.max_iter = m.max_iter;
@@ -86,8 +84,8 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
+    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
+                     prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -190,8 +188,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
+    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
+                     prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());

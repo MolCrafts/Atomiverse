@@ -4,17 +4,14 @@
 ``compile`` runs ``pip wheel`` on the checkout's ``python/`` project with
 ``wheel.cmake=true`` — scikit-build-core drives CMake in a persistent build
 tree, so a repeat compile is incremental — and on the checkout's
-``molrs/molrs-python``, leaving two wheels in ``<build_dir>/dist``.
+``<ATV_MOLPY_PATH>/molpy``, leaving two wheels in ``<build_dir>/dist``.
 ``install`` hands both to ``pip install``, so the extension is a
 RECORD-tracked file of the distribution: ``pip uninstall`` removes it and an
 upgrade replaces it.
 
-molrs is built from the submodule because the extension borrows molpy frames
-as molrs objects through a PyCapsule. The extension links the submodule's
-molrs; the molrs extension in the interpreter must be the same tree, or the
-two disagree on the layout behind the pointer. The capsule name carries only
-the ABI line (major.minor), so a molrs release of the same line built from
-other sources would pass that check.
+molpy and the native bridge are built from the same local merged checkout.
+ATV_MOLPY_PATH selects that repository; its default is the sibling ../molrs.
+The capsule ABI handshake remains mandatory even without a release pin.
 
 Raw pip / cmake output streams to the terminal (no capture). State lives in
 ``<build_dir>/atomiverse_cli_state.json``; the active build dir is recorded
@@ -41,7 +38,7 @@ from atomiverse.cli.config import (
     enabled_modules_from_defines,
     resolve_defines,
 )
-from atomiverse.cli.source import SourceSpec
+from atomiverse.cli.source import SourceSpec, molpy_source_root
 
 _STATE_NAME = "atomiverse_cli_state.json"
 
@@ -95,7 +92,7 @@ class BuildState:
     modules: List[str] = field(default_factory=list)
     fingerprint: str = ""
     wheel: str = ""  # native wheel produced by compile
-    molrs_wheel: str = ""  # molrs wheel built from the submodule by compile
+    molpy_wheel: str = ""  # molpy wheel built from the local merged checkout by compile
     installed: bool = False
 
     def save(self, path: Optional[Path] = None) -> Path:
@@ -161,20 +158,20 @@ def build_wheel_command(
     return cmd
 
 
-def build_molrs_wheel_command(
-    source_root: Path, build_dir: Path, *, python: Optional[str] = None
+def build_molpy_wheel_command(
+    source_root: Path, build_dir: Path, *, python: Optional[str] = None, molpy_root: Optional[Path] = None
 ) -> List[str]:
-    """Assemble the ``pip wheel`` command for molrs from the submodule.
+    """Assemble the ``pip wheel`` command for molpy from the local merged checkout.
 
-    Run with ``CARGO_TARGET_DIR=<build_dir>/molrs-target`` (see
-    ``molrs_target_dir``) so a repeat compile reuses the cargo build.
+    Run with ``CARGO_TARGET_DIR=<build_dir>/molpy-target`` (see
+    ``molpy_target_dir``) so a repeat compile reuses the cargo build.
     """
     return [
         python or sys.executable,
         "-m",
         "pip",
         "wheel",
-        str(source_root / "molrs" / "molrs-python"),
+        str((molpy_root if molpy_root is not None else molpy_source_root(source_root)) / "molpy"),
         "--verbose",
         "--no-deps",
         "--no-build-isolation",
@@ -183,18 +180,18 @@ def build_molrs_wheel_command(
     ]
 
 
-def molrs_target_dir(build_dir: Path) -> Path:
-    """Persistent cargo target directory of the molrs wheel build."""
-    return build_dir / "molrs-target"
+def molpy_target_dir(build_dir: Path) -> Path:
+    """Persistent cargo target directory of the molpy wheel build."""
+    return build_dir / "molpy-target"
 
 
 def build_install_command(
     wheels: Sequence[Path], *, python: Optional[str] = None
 ) -> List[str]:
-    """``pip install`` of the native and molrs wheels.
+    """``pip install`` of the native and molpy wheels.
 
     ``--force-reinstall`` because the pure and native wheels share a
-    version, as do the PyPI and submodule molrs of one ABI line;
+    version, as do the PyPI and local molpy of one ABI line;
     ``--no-deps`` because the pure install already resolved them.
     """
     return [
@@ -246,6 +243,7 @@ def run_config(
 ) -> int:
     """Resolve defines and record the build (no compilation)."""
     defines = resolve_defines(cfg)
+    defines["ATV_MOLPY_PATH"] = str(molpy_source_root(source.root))
     fp = define_fingerprint(defines)
     modules = enabled_modules_from_defines(defines)
     bdir = (
@@ -270,7 +268,7 @@ def run_config(
             "+ " + " ".join(build_wheel_command(source.python_dir, bdir, defines)),
             flush=True,
         )
-        print("+ " + " ".join(build_molrs_wheel_command(source.root, bdir)), flush=True)
+        print("+ " + " ".join(build_molpy_wheel_command(source.root, bdir)), flush=True)
         print("config dry-run complete", flush=True)
         return 0
 
@@ -303,6 +301,8 @@ def run_compile(
     """Build the native wheel (``pip wheel`` → scikit-build-core → CMake)."""
     state = BuildState.load(state_file)
     bdir = Path(state.build_dir)
+    if "ATV_MOLPY_PATH" not in state.defines:
+        raise ConfigError("build state has no merged molpy source; run atomiverse config again")
     cmd = build_wheel_command(Path(state.python_dir), bdir, state.defines)
     env = dict(os.environ)
     if jobs is not None and jobs > 0:
@@ -321,25 +321,27 @@ def run_compile(
         print(f"pip wheel failed with exit code {code}", file=sys.stderr)
         return code
 
-    molrs_env = dict(env)
-    molrs_env["CARGO_TARGET_DIR"] = str(molrs_target_dir(bdir))
+    molpy_env = dict(env)
+    molpy_env["CARGO_TARGET_DIR"] = str(molpy_target_dir(bdir))
     if jobs is not None and jobs > 0:
-        molrs_env["CARGO_BUILD_JOBS"] = str(jobs)
-    molrs_cmd = build_molrs_wheel_command(Path(state.source_root), bdir)
-    code = _run_streaming(molrs_cmd, dry_run=dry_run, env=molrs_env)
+        molpy_env["CARGO_BUILD_JOBS"] = str(jobs)
+    molpy_cmd = build_molpy_wheel_command(
+        Path(state.source_root), bdir, molpy_root=Path(state.defines["ATV_MOLPY_PATH"])
+    )
+    code = _run_streaming(molpy_cmd, dry_run=dry_run, env=molpy_env)
     if code != 0:
-        print(f"pip wheel of molrs failed with exit code {code}", file=sys.stderr)
+        print(f"pip wheel of molpy failed with exit code {code}", file=sys.stderr)
         return code
     if dry_run:
         print("compile dry-run complete", flush=True)
         return 0
 
     state.wheel = str(_one_wheel(bdir / "dist", "atomiverse-*.whl"))
-    state.molrs_wheel = str(_one_wheel(bdir / "dist", "molcrafts_molrs-*.whl"))
+    state.molpy_wheel = str(_one_wheel(bdir / "dist", "molcrafts_molpy-*.whl"))
     state.installed = False
     state.save(state_file)
     print(f"  wheel:     {state.wheel}", flush=True)
-    print(f"  molrs:     {state.molrs_wheel}", flush=True)
+    print(f"  molpy:     {state.molpy_wheel}", flush=True)
     print("compile complete", flush=True)
     return 0
 
@@ -356,19 +358,19 @@ def run_install_stage(
     dry_run: bool = False,
     state_file: Optional[Path] = None,
 ) -> int:
-    """Install the native and molrs wheels into this environment with pip."""
+    """Install the native and molpy wheels into this environment with pip."""
     state = BuildState.load(state_file)
-    wheels = [state.wheel, state.molrs_wheel]
+    wheels = [state.wheel, state.molpy_wheel]
     if not all(w and Path(w).is_file() for w in wheels):
         if not dry_run:
             raise ConfigError("no compiled wheels — run `atomiverse compile` first")
     cmd = build_install_command(
-        [Path(state.wheel or "<wheel>"), Path(state.molrs_wheel or "<molrs-wheel>")]
+        [Path(state.wheel or "<wheel>"), Path(state.molpy_wheel or "<molpy-wheel>")]
     )
 
     print("atomiverse install", flush=True)
     print(f"  wheel:   {state.wheel or '(not compiled yet)'}", flush=True)
-    print(f"  molrs:   {state.molrs_wheel or '(not compiled yet)'}", flush=True)
+    print(f"  molpy:   {state.molpy_wheel or '(not compiled yet)'}", flush=True)
     print(f"  modules: {', '.join(state.modules)}", flush=True)
 
     code = _run_streaming(cmd, dry_run=dry_run)

@@ -37,7 +37,7 @@
 
 #ifdef ATV_HAS_VIB
 
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 #include "result_array.h"
 
 #include <nanobind/ndarray.h>
@@ -50,7 +50,7 @@
 #include <utility>
 
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/vibration/hessian.h"
 #include "atomiverse/cpu/vibration/hessian_result.h"
 
@@ -173,8 +173,8 @@ struct VibHandle {
     /// @throws std::invalid_argument when an atom carries an atomic number the
     ///         IUPAC-2013 mass table does not cover (Z outside 1..18).
     cpu::vib::HessianResult run(nb::object frame_obj) {
-        auto fref = borrow_molrs_frame(frame_obj);
-        work_ = cpu::from_molrs(*fref);
+        auto fref = borrow_molpy_frame(frame_obj);
+        work_ = cpu::from_molpy(*fref);
         cpu::vib::HessianResult result;
         {
             nb::gil_scoped_release release;
@@ -184,7 +184,7 @@ struct VibHandle {
             }
             result = driver.run(work_);
         }
-        cpu::to_molrs(work_, *fref);
+        cpu::to_molpy(work_, *fref);
         ran_ = true;
         return result;
     }

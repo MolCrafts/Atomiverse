@@ -1,5 +1,7 @@
 # Non-SCC DFTB0
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Case: `ctest -R '^semiempirical/dftb0$'` — sources and oracle record in [`regressions/semiempirical/dftb0/`](../../../regressions/semiempirical/dftb0/). One section of the case per `##` heading below: `atv_regressions --case semiempirical/dftb0 --section <name>`.
 
 DFTB0 is closed-shell, non-self-consistent density-functional tight binding:
@@ -29,7 +31,7 @@ and GFN-xTB is not a DFTB3 successor. Roadmap row:
 
 SE-only closure: `-DATV_BUILD_SEMIEMPIRICAL=ON -DATV_BUILD_EVALUATE=ON
 -DATV_BUILD_REGRESSIONS=ON`, every other method domain and CUDA OFF, in the
-CPU environment (`module load buildenv-gcc/2026.03-mpich`, see `CLAUDE.md`).
+CPU environment (`module load buildenv-gcc/2026.03-mpich`, see `docs/developer/project-contract.md`).
 
 ## dftb0-analytic-forces — Non-SCC DFTB0 analytic forces — H₂, H₂O, CO (mio-1-1) {#dftb0-analytic-forces}
 

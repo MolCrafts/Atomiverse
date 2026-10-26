@@ -3,7 +3,7 @@
 ///
 /// Each loader rejects an unreadable path on the C++ side first, so the
 /// message names the path in Atomiverse's own wording; a failure inside a
-/// readable file crosses from molrs as `rust::Error` and is rethrown naming
+/// readable file crosses from molpy as `rust::Error` and is rethrown naming
 /// the path. One case per loader: mistyped (nonexistent) path, and a
 /// directory handed to a file loader.
 

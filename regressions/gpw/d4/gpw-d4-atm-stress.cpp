@@ -25,7 +25,7 @@
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/scf/dftd4.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "harness/registry.h"
 
 namespace atv_reg_gpw_gpw_d4_atm_stress {

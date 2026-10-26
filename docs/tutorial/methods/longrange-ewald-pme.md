@@ -1,5 +1,7 @@
 # Ewald and PME electrostatics
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Point-charge Coulomb in periodic cells by the Ewald split: a short-range erfc
 real-space pair style (`cpu::CoulLong`) plus a reciprocal-space solver
 (`cpu::KSpaceEwald` over `longrange::EwaldSum`), bound as the matched

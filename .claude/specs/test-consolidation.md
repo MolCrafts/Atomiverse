@@ -64,4 +64,4 @@ method. Delete when every phase closes.
    deleted unit tests (dftb2/3, td-dftb, car-parrinello, xl-bomd, gpw
    d3/d4/mbd/xdm/uks). Wall per case today (CPU, -j10 shared): dfpt 29 min,
    constant-potential 17 min, pw/bands-dos 14 min — the SCF-sharing targets.
-3. **Harness** — rewrite CLAUDE.md iron law 1a and the build section.
+3. **Harness** — rewrite docs/developer/project-contract.md iron law 1a and the build section.

@@ -178,7 +178,7 @@ energies and never assembles a gradient, ``fx``/``fy``/``fz`` come back
 
 Variable particle number
 ------------------------
-muVT changes N, and ``to_molrs`` cannot write a changed row count into an
+muVT changes N, and ``to_molpy`` cannot write a changed row count into an
 existing block. After a ``GCMC.run()`` that inserted or deleted atoms, the
 frame's ``atoms`` block is therefore *rebuilt* at the new N — every column
 comes back, including ``mass`` and ``atomic_number``, which the fixed-N

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -83,8 +84,8 @@ int run_on_device(Device dev, const char* upf,
     forces.clear();
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
-                           cpu::scf::XCType::LSDA};
+        cpu::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                           kEcutRy, 1, cpu::scf::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;
@@ -107,8 +108,8 @@ int run_on_device(Device dev, const char* upf,
                              static_cast<double>(fz[i])};
         }
     } else {
-        cuda::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, 1,
-                            cpu::scf::XCType::LSDA};
+        cuda::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                            kEcutRy, 1, cpu::scf::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;

@@ -271,8 +271,8 @@ if(ATV_BUILD_PATH) # bias sources ride the PATH domain flag
     atv_add_cpp_test(test_cpu_bias_metadynamics_1d cpu/bias/test_metadynamics_1d.cpp)
     atv_add_cpp_test(test_cpu_bias_metadynamics_nd cpu/bias/test_metadynamics_nd.cpp)
 endif()
-# Requires molrs WhamCompute (gated with ATV_MOLRS_HAS_WHAM / ATV_HAS_MOLRS_WHAM).
-if(ATV_MOLRS_HAS_WHAM)
+# Requires molrs WhamCompute (gated with ATV_MOLPY_HAS_WHAM / ATV_HAS_MOLPY_WHAM).
+if(ATV_MOLPY_HAS_WHAM)
     atv_add_cpp_test(test_cpu_wham                cpu/observe/test_wham.cpp)
 endif()
 if(ATV_BUILD_POTENTIALS)
@@ -452,7 +452,7 @@ endif()
 atv_add_cpp_test(test_cpu_atom_variable_n  cpu/test_atom_variable_n.cpp)
 atv_add_cpp_test(test_cpu_frame_registry  cpu/frame/test_frame_registry.cpp)
 # EAM/SW table lookups key on molrs::Element; sources excluded when MOLRS off.
-if(ATV_BUILD_MOLRS AND ATV_BUILD_POTENTIALS)
+if(ATV_BUILD_MOLPY AND ATV_BUILD_POTENTIALS)
     atv_add_cpp_test(test_cpu_eam  cpu/potentials/test_eam.cpp)
     atv_add_cpp_test(test_cpu_sw  cpu/potentials/test_sw.cpp)
 endif()
@@ -603,28 +603,28 @@ endif()
 if(ATV_BUILD_MINIMIZER)
     atv_add_cpp_test(test_cpu_minimize_evaluate_set_api cpu/test_minimize_evaluate_set_api.cpp)
 endif()
-if(ATV_BUILD_IO) # from_molrs/to_molrs boundary lives in the IO block
+if(ATV_BUILD_IO) # from_molpy/to_molpy boundary lives in the IO block
     atv_add_cpp_test(test_cpu_materialize                 cpu/test_materialize.cpp)
 endif()
-if(ATV_BUILD_MOLRS)
+if(ATV_BUILD_MOLPY)
     # Drift fence: every molrs:: call pattern ATV production code uses.
     atv_add_cpp_test(test_molrs_element                   test_molrs/test_element.cpp)
     atv_add_cpp_test(test_molrs_frame_columns             test_molrs/test_frame_columns.cpp)
 endif()
-if(ATV_BUILD_MOLRS AND ATV_BUILD_IO)
+if(ATV_BUILD_MOLPY AND ATV_BUILD_IO)
     atv_add_cpp_test(test_molrs_frame_exchange            test_molrs/test_frame_exchange.cpp)
     atv_add_cpp_test(test_molrs_xyz_io                    test_molrs/test_xyz_io.cpp)
 endif()
-if(ATV_BUILD_MOLRS AND ATV_BUILD_ANALYSIS)
+if(ATV_BUILD_MOLPY AND ATV_BUILD_ANALYSIS)
     atv_add_cpp_test(test_molrs_observe                   test_molrs/test_observe.cpp)
 endif()
-if(ATV_BUILD_MOLRS AND ATV_BUILD_SEMIEMPIRICAL)
+if(ATV_BUILD_MOLPY AND ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_molrs_am1_bcc                   test_molrs/test_am1_bcc.cpp)
 endif()
-if(ATV_BUILD_MOLRS AND ATV_BUILD_IO AND ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+if(ATV_BUILD_MOLPY AND ATV_BUILD_IO AND ATV_MOLPY_HAS_TRAJECTORY_WRITER)
     atv_add_cpp_test(test_molrs_mrec                      test_molrs/test_mrec.cpp)
 endif()
-if(ATV_BUILD_MOLRS AND ATV_BUILD_ANALYSIS AND ATV_MOLRS_HAS_WHAM)
+if(ATV_BUILD_MOLPY AND ATV_BUILD_ANALYSIS AND ATV_MOLPY_HAS_WHAM)
     atv_add_cpp_test(test_molrs_wham                      test_molrs/test_wham.cpp)
 endif()
 
@@ -632,7 +632,7 @@ endif()
 # TaskSpec data model + MPI-free byte codec + rank-agnostic materializer.
 # Serial, no mpirun; the AM1 single point and the 3-step AM1 BOMD both run on
 # the ms-scale H2 fixture this file owns (mirrored by test_mpi_serial_on_replica).
-if(ATV_BUILD_MOLRS) # cpu/task block follows MOLRS (launcher-only surface)
+if(ATV_BUILD_MOLPY) # cpu/task block follows MOLRS (launcher-only surface)
     atv_add_cpp_test(test_cpu_task_codec                  cpu/test_task_codec.cpp)
     # Replays MD and Minimize tasks; each replay is compiled only with its domain.
     if(ATV_BUILD_MD AND ATV_BUILD_MINIMIZER)
@@ -643,7 +643,7 @@ endif()
 # LauncherGate (mpi-launcher-embedded-python-04, ac-002): the PID-qualified
 # ATV_LAUNCHER marker probe. Serial gtest — MPI is never initialized in this
 # binary, which is exactly the state the degradation contract is about.
-if(ATV_BUILD_MOLRS) # cpu/task block follows MOLRS (launcher-only surface)
+if(ATV_BUILD_MOLPY) # cpu/task block follows MOLRS (launcher-only surface)
     atv_add_cpp_test(test_cpu_launcher_gate               cpu/task/test_launcher_gate.cpp)
 endif()
 
@@ -683,7 +683,7 @@ endif()
 # stride cadence + commit at teardown, frame-0 read-back through the bridge.
 # Same IO+MD gate as the XYZ recorder, plus the molrs pin must declare the
 # TrajectoryWriter bridge (iron law 8: the component is excluded without it).
-if(ATV_BUILD_IO AND ATV_BUILD_MD AND ATV_MOLRS_HAS_TRAJECTORY_WRITER)
+if(ATV_BUILD_IO AND ATV_BUILD_MD AND ATV_MOLPY_HAS_TRAJECTORY_WRITER)
     atv_add_cpp_test(test_cpu_mrec_recorder               cpu/record/test_mrec_recorder.cpp)
 endif()
 
@@ -797,14 +797,14 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
         atv_add_mpi_run(test_mpi_optimizer_metrics_n4 test_mpi_optimizer_metrics 4)
     endif()
 
-    if(ATV_BUILD_MOLRS) # EAM/SW table lookups key on molrs::Element
+    if(ATV_BUILD_MOLPY) # EAM/SW table lookups key on molrs::Element
         atv_add_mpi_exec(test_mpi_eam_multirank mpi/test_eam_multirank.cpp)
         atv_add_mpi_run(test_mpi_eam_multirank_n2 test_mpi_eam_multirank 2)
         atv_add_mpi_run(test_mpi_eam_multirank_n4 test_mpi_eam_multirank 4)
     endif()
 
 
-    if(ATV_BUILD_MOLRS) # EAM/SW table lookups key on molrs::Element
+    if(ATV_BUILD_MOLPY) # EAM/SW table lookups key on molrs::Element
         atv_add_mpi_exec(test_mpi_sw_multirank mpi/test_sw_multirank.cpp)
         atv_add_mpi_run(test_mpi_sw_multirank_n2 test_mpi_sw_multirank 2)
         atv_add_mpi_run(test_mpi_sw_multirank_n4 test_mpi_sw_multirank 4)
@@ -821,7 +821,7 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
     atv_add_mpi_run(test_mpi_rebalance_n8 test_mpi_rebalance 8)
 
     # cpu/task block follows MOLRS; the protocol test runs MD and Minimize tasks.
-    if(ATV_BUILD_MOLRS AND ATV_BUILD_MD AND ATV_BUILD_MINIMIZER)
+    if(ATV_BUILD_MOLPY AND ATV_BUILD_MD AND ATV_BUILD_MINIMIZER)
         atv_add_mpi_exec(test_mpi_task_protocol mpi/test_task_protocol.cpp)
         atv_add_mpi_run(test_mpi_task_protocol_n1 test_mpi_task_protocol 1)
         atv_add_mpi_run(test_mpi_task_protocol_n2 test_mpi_task_protocol 2)
@@ -849,6 +849,7 @@ if(ATV_BUILD_PW)
     atv_add_cpp_test(test_cpu_pw_setup      cpu/planewave/test_pw_setup.cpp)
     atv_add_cpp_test(test_cpu_pw_xc_builder cpu/planewave/test_xc_builder.cpp)
     atv_add_cpp_test(test_cpu_pw_upf        cpu/planewave/test_upf.cpp)
+    atv_add_cpp_test(test_cpu_pw_nc         cpu/planewave/test_nc_potential.cpp)
     atv_add_cpp_test(test_cpu_pw_gth_upf    cpu/planewave/test_gth_upf.cpp)
     atv_add_cpp_test(test_cpu_pw_kpoint     cpu/planewave/test_kpoint.cpp)
     atv_add_cpp_test(test_cpu_pw_crystal    cpu/planewave/test_crystal.cpp)
@@ -1148,7 +1149,7 @@ if(ATV_BUILD_CUDA)
     endif()
     atv_add_test(test_cuda_timer cuda/device/test_timer.cu)
     atv_add_test(test_cuda_frame      cuda/test_frame.cu)
-    if(ATV_BUILD_MOLRS)
+    if(ATV_BUILD_MOLPY)
         atv_add_test(test_cuda_materialize cuda/test_materialize.cu)
     endif()
     atv_add_test(test_cuda_backend    cuda/test_backend.cu)

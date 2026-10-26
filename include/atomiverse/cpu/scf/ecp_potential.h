@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "atomiverse/cpu/scf/basis_data/basis_table.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {

@@ -1,5 +1,7 @@
 # GPW Hirshfeld-scaled MBD@rsSCS
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Hirshfeld volume ratios \(v_A = V_A/V_A^{\mathrm{free}}\), partitioned from the
 converged GPW valence density, rescale the free-atom polarizabilities, \(C_6\)
 coefficients and van der Waals radii of the Tkatchenko–Scheffler family before

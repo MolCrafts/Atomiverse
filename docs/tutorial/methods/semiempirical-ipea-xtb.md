@@ -1,5 +1,7 @@
 # IPEA-xTB
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 IPEA-xTB (Ásgeirsson, Bauer, Grimme, *Chem. Sci.* **8**, 4879 (2017)) is a
 special-purpose **GFN1 reparametrization for vertical ionization potentials
 and electron affinities**, built for a QCEIMS mass-spectrometry context. The

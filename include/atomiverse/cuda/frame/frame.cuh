@@ -15,7 +15,7 @@
 /// H2D transfer), while the multi-GPU domain-decomposition path carries
 /// the per-atom SoA (global-tag partners) needed for migration. CPU is
 /// blocks+meta+box with per-atom topology columns only. Per the
-/// CLAUDE.md Frame purity rule the frame carries only fundamental physical
+/// docs/developer/project-contract.md Frame purity rule the frame carries only fundamental physical
 /// quantities: method-specific scratch (the SCF workspace, the neighbor
 /// pair list) is owned by the components that compute it, not by the frame.
 ///
@@ -83,7 +83,7 @@ struct ForceFault {
 /// n_bonds_, etc.) are host-cached counts set at materialize time to avoid
 /// D2H transfers.
 ///
-/// Created by cpu::to_cuda() / cuda::from_molrs(), freed by cuda::destroy().
+/// Created by cpu::to_cuda() / cuda::from_molpy(), freed by cuda::destroy().
 struct Frame {
     // -- Per-atom arrays (device pointers, molcrafts "atoms" block) --
 

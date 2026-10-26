@@ -26,7 +26,7 @@
 /// deterministically — this test must not pass merely because the compiler
 /// happened to give call #2 a different address.
 ///
-/// The observable is `kStep` frame meta, which `cpu::to_molrs` serializes into
+/// The observable is `kStep` frame meta, which `cpu::to_molpy` serializes into
 /// the molrs frame's `step` entry as the call returns. A minimal probe
 /// component stamps it at `end_of_step`, exactly as the production consumer
 /// does (`cpu::XyzRecorder`, cpu/record/xyz_recorder.cpp: `ctx.frame.meta.get(
@@ -36,6 +36,7 @@
 /// Deterministic: literal geometry, zero initial velocities, no RNG, no
 /// InitVelocity, serial, no filesystem.
 
+#include <array>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -50,7 +51,7 @@
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 using namespace ATV;
 
@@ -66,7 +67,7 @@ constexpr double kDt = 1.0;      // [fs]
 constexpr double kSpacing = 3.8; // [Å]
 
 /// @brief Publish the iteration identity into `kStep` frame meta, so the step
-///        index travels through `cpu::to_molrs` into the molrs frame.
+///        index travels through `cpu::to_molpy` into the molrs frame.
 ///
 /// The one line `cpu::XyzRecorder::launch` runs before it writes a frame
 /// (cpu/record/xyz_recorder.cpp), with the cadence gate and the file removed.
@@ -123,8 +124,11 @@ class StepStamp final : public cpu::Component {
 
     const std::vector<double> h = {20.0, 0.0, 0.0, 0.0, 20.0,
                                    0.0,  0.0, 0.0, 20.0};
-    molrs::frame_set_box_h(*fr,
-                           ::rust::Slice<const double>(h.data(), h.size()));
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()),
+                         ::rust::Slice<const double>(
+                             std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+                         ::rust::Slice<const bool>(
+                             std::array<bool, 3>{true, true, true}.data(), 3));
     return fr;
 }
 
@@ -141,7 +145,7 @@ std::int64_t molrs_step(const molrs::FrameRef& frame) {
         return entry.i64_value;
     }
     ADD_FAILURE() << "molrs frame carries no 'step' meta entry — the probe "
-                     "stamps kStep every end_of_step and to_molrs serializes "
+                     "stamps kStep every end_of_step and to_molpy serializes "
                      "it back";
     return -1;
 }

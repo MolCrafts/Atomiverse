@@ -1,5 +1,7 @@
 # GPW DFT-D3 dispersion
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Grimme's DFT-D3 London correction on the GPW path, on top of PBE: two-body
 zero ("original") damping, two-body Becke–Johnson (rational) damping, and the
 optional Axilrod–Teller–Muto (ATM) three-body C9 term. D3 is geometry-only —
@@ -28,7 +30,7 @@ and analytic cell stress ([gpw-d3-stress](#gpw-d3-stress),
 [gpw-d3bj-stress](#gpw-d3bj-stress), [gpw-d3-atm-stress](#gpw-d3-atm-stress)),
 so both damping functions × both boundary conditions are pinned for the
 force. Build in the CPU environment (`module load buildenv-gcc/2026.03-mpich`,
-see `CLAUDE.md`) with `-DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON`.
+see `docs/developer/project-contract.md`) with `-DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON`.
 
 Case: `ctest -R '^gpw/d3$'` — sources and oracle record in [`regressions/gpw/d3/`](../../../regressions/gpw/d3/). One section of the case per `##` heading below: `atv_regressions --case gpw/d3 --section <name>`.
 

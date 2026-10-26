@@ -1,5 +1,7 @@
 # Molecular DFT dispersion corrections (D3BJ, D4)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Grimme-type dispersion corrections add a geometry-only London dispersion
 energy to a molecular SCF; the correction is independent of the electronic
 density and basis. Two corrections are public as concrete types with their

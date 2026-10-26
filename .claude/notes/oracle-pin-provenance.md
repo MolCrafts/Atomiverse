@@ -53,4 +53,4 @@ real CP2K run (or real literature).
 
 - `tools/cp2k_oracle/README.md`, `tools/metalwalls_oracle/`
 - `docs/developer/oracle-capability-loop.md` — where it disagrees (optional
-  speed, mismatch windows), this note and CLAUDE.md win.
+  speed, mismatch windows), this note and docs/developer/project-contract.md win.

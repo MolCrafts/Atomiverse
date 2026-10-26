@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
@@ -73,8 +74,9 @@ int run() {
     cell(2, 2) = 0;
     frame.box.set_cell(cell);
 
-    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
-              kMesh, cpu::scf::XCType::PBE};
+    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                   "/pw/Si_lda_nc.upf"),
+              kEcutRy, kMesh, cpu::scf::XCType::PBE};
     method.spin_polarized = true;
     method.multiplicity = 1;
     method.smearing = Smearing::fermi_dirac;

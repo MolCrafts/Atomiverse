@@ -1,5 +1,7 @@
 # Restricted open-shell Hartree–Fock (ROHF)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Restricted open-shell Hartree–Fock describes a high-spin open-shell state
 with one set of spatial MOs split into closed, open and virtual spaces
 (\(n_\alpha \ge n_\beta\)). The spin Focks \(F_\alpha,F_\beta\) from the

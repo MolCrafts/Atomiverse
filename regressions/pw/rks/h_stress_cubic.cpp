@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
@@ -21,7 +22,9 @@ int run() {
         0;
     frame.box = cpu::Box::cubic(6.0);
 
-    PW cfg{GthPseudopotential{"GTH-PBE-q1"}, 5.0, 1};
+    PW cfg{
+        std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1"),
+        5.0, 1};
     cfg.tol = 1e-4;
     cfg.max_iter = 8;
     cfg.mix_beta = 0.5;

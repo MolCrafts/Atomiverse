@@ -10,15 +10,14 @@
       "name": "cpu-unit-base",
       "hidden": true,
       "displayName": "CPU unit base (no optional physics)",
-      "description": "Serial unit scaffold: ≤10s, no heavy, no regressions. HF/PW/GPW/KSPACE off — turn on only what you test. Developer builds compile molrs from the sibling checkout ${sourceDir}/../molrs (its uncommitted dev tree cannot be pinned by the ./molrs gitlink); CI keeps the submodule via cmake/AtvUnitGate.cmake.",
+      "description": "Serial unit scaffold. Uses the merged local molpy source in ../molrs without a revision pin.",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "ATV_MOLRS_PATH": "${sourceDir}/../molrs",
+        "ATV_MOLPY_PATH": "${sourceDir}/../molrs",
         "ATV_BUILD_CUDA": "OFF",
         "ATV_BUILD_TESTS": "ON",
         "ATV_BUILD_EXAMPLES": "OFF",
-        "ATV_BUILD_REGRESSIONS": "OFF",
         "ATV_BUILD_BENCHMARKS": "OFF",
         "ATV_BUILD_HF": "OFF",
         "ATV_BUILD_PW": "OFF",
@@ -33,7 +32,7 @@
       "name": "cpu-unit",
       "inherits": "cpu-unit-base",
       "displayName": "CPU unit (classical; optional physics OFF)",
-      "description": "Default local configure. Product modules follow AtvProductModules defaults. Enable HF/PW/… only when testing them."
+      "description": "Default local configure. Product modules follow AtvProductModules defaults. Enable HF/PW/\u2026 only when testing them."
     },
     {
       "name": "cpu-unit-hf",
@@ -103,7 +102,7 @@
     {
       "name": "cpu-unit",
       "configurePreset": "cpu-unit",
-      "displayName": "ctest classical units (≤10s)",
+      "displayName": "ctest classical units (\u226410s)",
       "output": {
         "outputOnFailure": true
       },
@@ -123,7 +122,7 @@
     {
       "name": "cpu-unit-hf",
       "configurePreset": "cpu-unit-hf",
-      "displayName": "ctest HF slice (≤10s)",
+      "displayName": "ctest HF slice (\u226410s)",
       "inherits": "cpu-unit",
       "filter": {
         "include": {
@@ -137,7 +136,7 @@
     {
       "name": "cpu-unit-all",
       "configurePreset": "cpu-unit-all",
-      "displayName": "ctest all registered units (≤10s)",
+      "displayName": "ctest all registered units (\u226410s)",
       "inherits": "cpu-unit"
     }
   ],
@@ -147,9 +146,18 @@
       "displayName": "Classical unit configure+build+test",
       "description": "Manual classical gate (optional physics OFF). Pre-push uses path-scoped cmake -P cmake/AtvUnitGate.cmake instead.",
       "steps": [
-        { "type": "configure", "name": "cpu-unit" },
-        { "type": "build", "name": "cpu-unit" },
-        { "type": "test", "name": "cpu-unit" }
+        {
+          "type": "configure",
+          "name": "cpu-unit"
+        },
+        {
+          "type": "build",
+          "name": "cpu-unit"
+        },
+        {
+          "type": "test",
+          "name": "cpu-unit"
+        }
       ]
     },
     {
@@ -157,18 +165,36 @@
       "displayName": "HF unit configure+build+test",
       "description": "Manual: only when testing HF. Opens ATV_BUILD_HF=ON and filters ctest to scf/electronic.",
       "steps": [
-        { "type": "configure", "name": "cpu-unit-hf" },
-        { "type": "build", "name": "cpu-unit-hf" },
-        { "type": "test", "name": "cpu-unit-hf" }
+        {
+          "type": "configure",
+          "name": "cpu-unit-hf"
+        },
+        {
+          "type": "build",
+          "name": "cpu-unit-hf"
+        },
+        {
+          "type": "test",
+          "name": "cpu-unit-hf"
+        }
       ]
     },
     {
       "name": "cpu-unit-all",
       "displayName": "Full optional unit configure+build+test",
       "steps": [
-        { "type": "configure", "name": "cpu-unit-all" },
-        { "type": "build", "name": "cpu-unit-all" },
-        { "type": "test", "name": "cpu-unit-all" }
+        {
+          "type": "configure",
+          "name": "cpu-unit-all"
+        },
+        {
+          "type": "build",
+          "name": "cpu-unit-all"
+        },
+        {
+          "type": "test",
+          "name": "cpu-unit-all"
+        }
       ]
     }
   ]

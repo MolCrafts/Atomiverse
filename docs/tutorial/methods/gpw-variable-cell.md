@@ -1,5 +1,7 @@
 # GPW variable-cell relaxation (CELL_OPT)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Constrained variable-cell relaxation of a closed-shell Γ-point GPW system
 toward a target pressure. The electronic structure is a `cpu::gpw::GpwDft`
 bound through `cpu::gpw::GPWEvaluator` with cell stress on

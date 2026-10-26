@@ -35,8 +35,8 @@
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nvt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
-#ifdef ATV_HAS_MOLRS
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#ifdef ATV_HAS_MOLPY
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #endif
 #include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/record/timing_report.h"
@@ -158,11 +158,11 @@ class MD : public Driver<ATV::md::Phase> {
     /// @param frame molrs.Frame handle (input geometry + output sink).
     /// @param n_steps Step budget.
     /// @return Number of iterations actually executed.
-#ifdef ATV_HAS_MOLRS
+#ifdef ATV_HAS_MOLPY
     BigInt run(molrs::FrameRef& frame, BigInt n_steps) {
-        cpu::Frame work = cpu::from_molrs(frame);
+        cpu::Frame work = cpu::from_molpy(frame);
         const BigInt iterations = run(work, n_steps);
-        cpu::to_molrs(work, frame);
+        cpu::to_molpy(work, frame);
         this->flush_live_();
         return iterations;
     }

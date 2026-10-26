@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <string>
 
 #include "atomiverse/core/mat3.h"
@@ -74,7 +75,7 @@ int run() {
 
     auto frame = make_si_diamond(kA);
 
-    PW method{UpfPseudopotential{upf}, kEcutRy, kMeshScf,
+    PW method{std::make_shared<UpfPseudopotential>(upf), kEcutRy, kMeshScf,
               cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 80;

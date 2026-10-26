@@ -1,164 +1,32 @@
-"""Plane-wave DFT method API for periodic systems.
+"""CPU plane-wave DFT with immutable norm-conserving potentials.
 
-The PW-enabled wheel exposes the same object lifecycle as C++:
+Construct a physical provider once and share it between independent methods::
 
-``PW(...)`` (identity) → knob members → ``build(frame)`` → ``run(frame)`` →
-``PWResult``.
-
-There is no bag named ``PWConfig`` / ``PWSolver`` and no transient functional
-solve entry point.
-
-Example::
-
-    import atomiverse as av
-
-    # analytic GTH for Si; no external file
-    pw = av.PW(gth_name="GTH-PBE-q4", ecut_ry=30.0, k_mesh=4)
-    pw.build(frame)
+    from atomiverse.pw import PW, GthPseudopotential
+    potential = GthPseudopotential(14, "GTH-PBE-q4")
+    pw = PW(potential=potential, ecut_ry=15.0, k_mesh=2)
     result = pw.run(frame)
-    print(result.energy)  # Ry
+    forces = pw.forces(frame)
 
-A cell is not optional
-----------------------
+``UpfPseudopotential(path)`` reads a scalar NC UPF once and checks its element,
+valence and physical channels. Both providers use the same CPU PW operators.
+Every atom in the Frame must match the provider's explicit atomic number.
+USPP, PAW, NLCC and spin-orbit potentials are refused.
 
-A plane-wave basis *is* the set of plane waves commensurate with the
-simulation cell, selected by ``ecut_ry``. A frame with no ``box`` therefore
-has no basis, and every entry point (``build``, ``run``, ``forces``,
-``stress``) raises ``RuntimeError`` naming the box rather than iterating to a
-NaN energy.
-
-What you can ask for at a geometry
-----------------------------------
-
-============================  ==============================  ================
-Call                          Returns                         Writes back
-============================  ==============================  ================
-``run(frame)``                ``PWResult`` (energies [Ry])    energy [eV]
-``forces(frame)``             ``(n_atoms, 3)`` [eV/Å]         fx/fy/fz, energy
-``stress(frame)``             Voigt 6-vector [eV/Å³]          stress [eV], energy [eV]
-============================  ==============================  ================
-
-``forces`` are analytic — local Hellmann-Feynman + Ewald ion-ion +
-Kleinman-Bylander nonlocal, taken at the converged density rather than by
-differencing energies — and the energy [eV] they land on
-``frame.meta['energy']`` belongs to that same SCF. ``stress`` is the
-Nielsen-Martin cell derivative in the mechanical (CP2K) sign,
-σ = −(1/V)·∂E/∂ε, so a compressed cell gives a positive diagonal; it reports
-on the cell without moving atoms. Each entry updates ``last_result`` to
-its SCF. Frame stress stores the extensive virial σΩ [eV], while the
-returned stress is intensive [eV/Å³].
-
-Guards, all of them loud. A frame with no box raises ``RuntimeError``
-everywhere. ``ValueError`` covers the physics preconditions: an odd
-valence-electron count on the default restricted path, ``spin_polarized``
-combined with a ``smearing`` (neither forces nor stress has that path yet),
-a ``multiplicity`` whose parity contradicts the electron count, and a
-``gth_name`` on a frame that mixes atomic numbers. Failing to converge
-within ``max_iter`` is *not* an error — check ``result.converged``.
-
-Units split at the boundary: ``PWResult`` keeps the solver's own Rydberg
-(``energy``, ``e_fermi``, ``e_entropy``; 1 Ry = ½ Hartree, and the engine
-spells 1 Ry = 13.605693 eV — the Quantum ESPRESSO-rounded
-``cpu::pw::qe_units::rydberg_to_ev``) plus ``energy_ha`` in Hartree, while
-everything written onto the frame is in engine units — eV, eV/Å, eV/Å³.
-
-Constructor arguments (keyword-only, read-only afterwards)
----------------------------------------------------------
-
-``PW(*, ecut_ry, k_mesh, upf_path="", gth_name="", xc="PBE")``
-
-``ecut_ry`` / ``k_mesh``
-    Wavefunction cutoff [Ry] and Monkhorst-Pack mesh per dimension. Both are
-    required — there is no default basis size.
-
-``upf_path`` / ``gth_name``
-    The pseudopotential; exactly one must be given (see below).
-
-``xc``
-    Exchange-correlation functional by *name* (default ``"PBE"``), the same
-    table ``RKS(xc=...)`` uses: ``"LSDA"``, ``"PBE"``, ``"PBEsol"``,
-    ``"RevPBE"``, ``"RPBE"``, ``"BLYP"``, ``"OptB88VdW"``, ``"B3LYP"``,
-    ``"PBE0"``, ``"B2PLYP"``, ``"CAMB3LYP"``. An unknown name raises
-    ``ValueError``.
-
-Knobs beyond the basis
-----------------------
-
-``spin_polarized`` / ``multiplicity``
-    Collinear spin. The default restricted path doubly occupies every band
-    and so needs an even valence-electron count; an open-shell cell (a single
-    H atom, say) sets ``spin_polarized = True`` and ``multiplicity = 2``,
-    which fixes N↑ − N↓ = M − 1 exactly.
-
-``smearing`` / ``degauss`` / ``mp_order`` / ``extra_bands``
-    Metallic occupations by name — ``"none"`` (default, fixed occupations),
-    ``"fermi_dirac"``, ``"methfessel_paxton"``, ``"gaussian"`` — of width
-    ``degauss`` [Ry]. ``mp_order`` is read only by Methfessel-Paxton, and
-    ``extra_bands`` is how many empty states above the Fermi level to solve
-    for.
-
-Plane-wave Born-Oppenheimer MD
-------------------------------
-
-Hand the method itself to ``MD.set_evaluator``::
-
-    from atomiverse.md import MD
-    from atomiverse.md.integrator import VelocityVerlet
-    from atomiverse.pw import PW
-
-    pw = PW(gth_name="GTH-PBE-q4", ecut_ry=8.0, k_mesh=1)
-    pw.max_iter = 12       # one whole SCF per step — budget it
-
-    sim = MD()
-    sim.set_integrator(VelocityVerlet(0.5))   # dt [fs]
-    sim.set_evaluator(pw)
-    sim.run(frame, 3)
-
-Each step costs one SCF solve; the analytic forces reuse its converged
-density. The settings that make a Python-side run finish are a small cell, a
-low ``ecut_ry`` and a modest ``max_iter``. The driver copies the method's
-parameters (a ``PW`` owns FFTW plans, which cannot be shared), so
-the object passed in stays usable and per-step results land on the frame
-rather than on it.
-
-Pseudopotential — exactly one of two, and there is no default
-------------------------------------------------------------
-
-``gth_name``
-    An in-tree analytic Goedecker-Teter-Hutter parameterization, e.g.
-    ``"GTH-PBE-q4"`` (Si) or ``"GTH-PBE-q1"`` (H). Needs no file: the
-    published parameters ship with the engine. In-tree coverage is H, O,
-    Na, Cl, Ar, Si, Ni, Zn, and one potential serves the whole cell, so
-    the frame must be single-species.
-
-``upf_path``
-    A **norm-conserving** UPF file (ONCVPSP and similar). Ultrasoft and
-    PAW files are rejected on read: the plane-wave path applies no
-    augmentation charge, so integrating one would be wrong by an
-    unbounded amount.
-
-Either way the run is single-species: one potential and one valence-electron
-count are applied to every atom in the cell. The ``gth_name`` branch says so
-— a frame mixing atomic numbers raises ``ValueError`` — while the
-``upf_path`` branch does not check, so a mixed-species frame there would
-silently be treated as the UPF's own element throughout. Multi-species
-plane-wave runs are not implemented.
-
-Passing both, or neither, raises ``ValueError`` at construction. There is no toy/bare-Coulomb fallback —
-a bare valence-charge potential is not representable in a plane-wave basis
-at any finite cutoff, so it never converged with ``ecut_ry``.
-
-The types exist on an extension built with the ``pw`` module
-(``ATV_BUILD_PW=ON``). On one built without it, importing this module raises
-``MissingDomainError`` (an ``ImportError``) naming the flag.
+Frame positions and forces use Angstrom and eV/Angstrom; PWResult energies use
+Ry (``energy``) and Ha (``energy_ha``). ``run`` preserves force columns;
+``forces`` overwrites them. ``stress`` returns mechanical stress in eV/A^3.
+SCF controls remain writable on the method. Mount the method with
+``MD.set_evaluator(pw)`` to reuse the same electronic loop in dynamics.
+The C++ public NC interface also supports independent third-party providers;
+Python subclass callbacks are outside this implementation slice.
 """
-
 from __future__ import annotations
-
 from atomiverse._binding import _cpp, require_domain
-
 require_domain(__name__, "pw")
-
 PW = _cpp.PW
 PWResult = _cpp.PWResult
-__all__ = ["PW", "PWResult"]
+NormConservingPotential = _cpp.NormConservingPotential
+GthPseudopotential = _cpp.GthPseudopotential
+UpfPseudopotential = _cpp.UpfPseudopotential
+__all__ = ["PW", "PWResult", "NormConservingPotential", "GthPseudopotential", "UpfPseudopotential"]

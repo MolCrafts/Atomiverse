@@ -19,8 +19,6 @@
 
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
-#include "atomiverse/cpu/gpw/gth_potential.h"
-
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/units.h"
@@ -28,6 +26,7 @@
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
 #include "atomiverse/cpu/planewave/internal/g_vector.h"
+#include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
 #include "atomiverse/cpu/planewave/internal/pw_forces.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
@@ -35,7 +34,6 @@
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
 #include "atomiverse/cpu/planewave/internal/smearing.h"
-#include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
@@ -92,16 +90,12 @@ MPI_Datatype mpi_real_type() {
 
 // Out-of-line where internal::* are complete types (required for the
 // unique_ptr members over forward-declared helpers).
-PW::PW(UpfPseudopotential pp, double ecut, int k, cpu::scf::XCType xc_in)
-    : upf_path(std::move(pp.path)), ecut_ry(ecut), k_mesh(k), xc(xc_in) {
-    if (upf_path.empty())
-        throw std::invalid_argument("PW: empty UPF pseudopotential path");
-}
-
-PW::PW(GthPseudopotential pp, double ecut, int k, cpu::scf::XCType xc_in)
-    : gth_name(std::move(pp.name)), ecut_ry(ecut), k_mesh(k), xc(xc_in) {
-    if (gth_name.empty())
-        throw std::invalid_argument("PW: empty GTH pseudopotential name");
+PW::PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
+       double ecut, int k, cpu::scf::XCType xc_in)
+    : potential(std::move(pp)), ecut_ry(ecut), k_mesh(k), xc(xc_in) {
+    if (!potential)
+        throw std::invalid_argument(
+            "PW: a norm-conserving potential is required");
 }
 
 PW::~PW() = default;
@@ -223,26 +217,15 @@ void PW::build(const cpu::Frame& reference) {
         veff_ = std::make_unique<internal::VeffBuilder>();
         density_ = std::make_unique<internal::DensityBuilder>();
     }
-    // Validate the pseudopotential up front so a bad file or an unknown GTH
-    // name fails at build() rather than mid-SCF. setup_pw_problem() rebuilds
-    // it at each run().
-    if (!upf_path.empty()) {
-        (void)internal::read_upf_v1(upf_path);
-    } else {
-        const int* __restrict sp_type = reference.span(kAtom_type);
-        if (reference.nlocal() > 0)
-            (void)gpw::GthPotential(static_cast<molrs::Element>(sp_type[0]),
-                                    gth_name);
-    }
+    internal::validate_potential_frame(reference, *potential);
     built_ = true;
 }
 
 PWResult& PW::run(const cpu::Frame& frame) {
+    internal::validate_potential_frame(frame, *potential);
     // Lazy build — convenience for callers that skip explicit build().
     if (!built_)
         build(frame);
-
-    result_ = PWResult{};
 
     if (spin_polarized) {
         if (multiplicity < 1)
@@ -254,10 +237,13 @@ PWResult& PW::run(const cpu::Frame& frame) {
     const bool log_rank0 = (layout.rank == 0);
 
     // ── Shared problem assembly (identical to the CUDA backend) ──
-    problem_ = std::make_unique<internal::PWProblem>();
+    // Admission may call third-party radial physics. Preserve the accepted
+    // problem/result until the complete candidate has been assembled.
+    auto candidate = std::make_unique<internal::PWProblem>();
+    internal::setup_pw_problem(frame, *potential, ecut_ry, k_mesh, *candidate);
+    problem_ = std::move(candidate);
+    result_ = PWResult{};
     internal::PWProblem& prob = *problem_;
-    internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry, k_mesh,
-                               prob);
     internal::PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -354,10 +340,9 @@ PWResult& PW::run(const cpu::Frame& frame) {
     if (log_rank0)
         ATV_INFO("[pw] start atoms={} elec={} bands={} ecut_ry={} {} "
                  "k_mesh={} ranks={} spin={} mult={} Na={} Nb={} smear={}",
-                 frame.nlocal(), n_elec, n_bands_eff, ecut_ry,
-                 upf_path.empty() ? gth_name.c_str() : "upf", k_mesh,
-                 layout.nprocs, spin_polarized ? 2 : 1, multiplicity, n_alpha,
-                 n_beta, use_smear ? 1 : 0);
+                 frame.nlocal(), n_elec, n_bands_eff, ecut_ry, "NC provider",
+                 k_mesh, layout.nprocs, spin_polarized ? 2 : 1, multiplicity,
+                 n_alpha, n_beta, use_smear ? 1 : 0);
 
     // ── Step-helper preparation (grid-sized scratch) ──
     xc_->prepare(ws);

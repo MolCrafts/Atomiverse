@@ -319,7 +319,7 @@ TEST(TestGhostContract, CheckPassesWhenTheFrameCarriesEverything) {
 }
 
 /// A declared field the Frame does not carry is refused, and the message
-/// names it — the systematic form of CLAUDE.md's per-component rule.
+/// names it — the systematic form of docs/developer/project-contract.md's per-component rule.
 TEST(TestGhostContract, CheckNamesEveryMissingField) {
     cpu::Frame f(4);
     constexpr std::array table = {

@@ -34,6 +34,7 @@
 
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "atomiverse/core/mat3.h"
@@ -108,11 +109,14 @@ int main(int argc, char** argv) {
     // tol      : SCF convergence tolerance on the density change.
     constexpr double kEcutRy = 15.0;
     constexpr int kKMesh = 2;
-    cpu::pw::PW pw = upf_path.empty()
-                         ? cpu::pw::PW{cpu::pw::GthPseudopotential{gth_name},
-                                       kEcutRy, kKMesh}
-                         : cpu::pw::PW{cpu::pw::UpfPseudopotential{upf_path},
-                                       kEcutRy, kKMesh};
+    cpu::pw::PW pw =
+        upf_path.empty()
+            ? cpu::pw::PW{std::make_shared<cpu::pw::GthPseudopotential>(
+                              molrs::Element::Si, gth_name),
+                          kEcutRy, kKMesh}
+            : cpu::pw::PW{
+                  std::make_shared<cpu::pw::UpfPseudopotential>(upf_path),
+                  kEcutRy, kKMesh};
     pw.tol = 1e-6;
     pw.max_iter = 50;
 

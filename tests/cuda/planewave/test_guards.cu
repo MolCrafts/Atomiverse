@@ -7,6 +7,7 @@
 /// one method (`run`'s member validation), no loop, no oracle.
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
+#include <memory>
 
 #include <gtest/gtest.h>
 #include <stdexcept>
@@ -15,7 +16,7 @@
 using namespace ATV;
 
 // Value semantics of the method object. ("PW is a concrete method, not a
-// Component / Driver node" is an architectural rule — it lives in CLAUDE.md
+// Component / Driver node" is an architectural rule — it lives in docs/developer/project-contract.md
 // and is enforced by review, never by a test artefact.)
 static_assert(!std::is_copy_constructible_v<ATV::cuda::pw::PW>,
               "cuda::pw::PW owns device-backed run state: no copies");
@@ -45,14 +46,16 @@ cpu::Frame make_h_atom() {
 cuda::pw::PW make_supported(cpu::scf::XCType xc = cpu::scf::XCType::LSDA,
                             double ecut_ry = 6.0, int k_mesh = 1) {
     // Real H potential, no file needed.
-    return cuda::pw::PW{cpu::pw::GthPseudopotential{"GTH-PBE-q1"}, ecut_ry,
-                        k_mesh, xc};
+    return cuda::pw::PW{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1"),
+                        ecut_ry, k_mesh, xc};
 }
 
 } // namespace
 
 TEST(CudaPWGuards, DefaultXcIsPbe) {
-    cuda::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q1"},
+    cuda::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
+                        molrs::Element::H, "GTH-PBE-q1"),
                     /*ecut_ry=*/30.0, /*k_mesh=*/4};
     // The default deliberately matches cpu::pw::PW (PBE): identical user
     // code computes the same functional on both backends. PBE has a device
@@ -144,10 +147,14 @@ TEST(CudaPWGuards, ZeroPulayDepthThrows) {
 }
 
 TEST(CudaPWGuards, EmptyPseudopotentialThrowsAtConstruction) {
-    EXPECT_THROW((cuda::pw::PW{cpu::pw::GthPseudopotential{""}, 6.0, 1}),
+    EXPECT_THROW((cuda::pw::PW{std::make_shared<cpu::pw::GthPseudopotential>(
+                                   molrs::Element::H, ""),
+                               6.0, 1}),
                  std::invalid_argument);
-    EXPECT_THROW((cuda::pw::PW{cpu::pw::UpfPseudopotential{""}, 6.0, 1}),
-                 std::invalid_argument);
+    EXPECT_THROW(
+        (cuda::pw::PW{std::make_shared<cpu::pw::UpfPseudopotential>(""), 6.0,
+                      1}),
+        std::invalid_argument);
 }
 
 TEST(CudaPWGuards, FreshResultIsEmpty) {

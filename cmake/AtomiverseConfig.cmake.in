@@ -45,15 +45,15 @@ if(@ATV_BUILD_GPW@)
     find_dependency(ZLIB)
 endif()
 
-if(@ATV_BUILD_MOLRS@ AND NOT TARGET Atomiverse::molrs_cxx)
-    add_library(Atomiverse::molrs_cxx STATIC IMPORTED)
-    set_target_properties(Atomiverse::molrs_cxx PROPERTIES
-        IMPORTED_LOCATION "${_Atomiverse_LIBRARY_DIR}/@CMAKE_STATIC_LIBRARY_PREFIX@molrs_cxx@CMAKE_STATIC_LIBRARY_SUFFIX@"
+if(@ATV_BUILD_MOLPY@ AND NOT TARGET Atomiverse::molpy_cxx)
+    add_library(Atomiverse::molpy_cxx STATIC IMPORTED)
+    set_target_properties(Atomiverse::molpy_cxx PROPERTIES
+        IMPORTED_LOCATION "${_Atomiverse_LIBRARY_DIR}/@CMAKE_STATIC_LIBRARY_PREFIX@molpy_cxx@CMAKE_STATIC_LIBRARY_SUFFIX@"
         INTERFACE_INCLUDE_DIRECTORIES "${_Atomiverse_INCLUDE_DIR}"
-        INTERFACE_LINK_LIBRARIES "Atomiverse::molrs_runtime")
-    add_library(Atomiverse::molrs_runtime STATIC IMPORTED)
-    set_target_properties(Atomiverse::molrs_runtime PROPERTIES
-        IMPORTED_LOCATION "${_Atomiverse_LIBRARY_DIR}/@CMAKE_STATIC_LIBRARY_PREFIX@molrs_cxxapi@CMAKE_STATIC_LIBRARY_SUFFIX@"
+        INTERFACE_LINK_LIBRARIES "Atomiverse::molpy_runtime")
+    add_library(Atomiverse::molpy_runtime STATIC IMPORTED)
+    set_target_properties(Atomiverse::molpy_runtime PROPERTIES
+        IMPORTED_LOCATION "${_Atomiverse_LIBRARY_DIR}/@CMAKE_STATIC_LIBRARY_PREFIX@molcxx@CMAKE_STATIC_LIBRARY_SUFFIX@"
         INTERFACE_LINK_LIBRARIES "@Rust_CARGO_TARGET_LINK_NATIVE_LIBS@"
         INTERFACE_LINK_OPTIONS "@Rust_CARGO_TARGET_LINK_OPTIONS@")
 endif()

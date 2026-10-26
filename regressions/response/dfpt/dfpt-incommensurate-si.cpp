@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -60,8 +61,9 @@ int run() {
     cell(2, 2) = 0;
     frame.box.set_cell(cell);
 
-    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
-              kMesh, cpu::scf::XCType::LSDA};
+    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                   "/pw/Si_lda_nc.upf"),
+              kEcutRy, kMesh, cpu::scf::XCType::LSDA};
     method.tol = 1e-8;
     method.max_iter = 200;
 

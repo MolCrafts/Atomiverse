@@ -42,7 +42,7 @@ openmm_mask_jbits(const std::uint64_t* mask, int pair_idx, int i_slot) {
 /// @brief Neighbor pair list -- all arrays on device.
 ///
 /// Computed method-specific scratch, **not** part of `cuda::Frame` (see the
-/// CLAUDE.md Frame purity rule). Owned by `NeighborList` -- allocated in
+/// docs/developer/project-contract.md Frame purity rule). Owned by `NeighborList` -- allocated in
 /// `build()`, populated in `launch()`, freed in `destroy()` -- and published
 /// to consumers as a non-owning `const PairList*` on `cuda::Context`,
 /// mirroring `cpu::md::NeighborList` / `cpu::Context::pair_list`.

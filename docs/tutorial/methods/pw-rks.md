@@ -1,8 +1,10 @@
 # Plane-wave restricted Kohn–Sham DFT
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Spin-unpolarized periodic plane-wave Kohn–Sham DFT with norm-conserving
 pseudopotentials and Monkhorst–Pack k-point sampling. The concrete method is
-`cpu::pw::PW{UpfPseudopotential{path}, ecut_ry, k_mesh, xc}` with members
+`cpu::pw::PW{std::make_shared<UpfPseudopotential>(path), ecut_ry, k_mesh, xc}` with members
 (`tol`, `max_iter`, `mix_beta`, `pulay_depth`, …) — no `*Config`, no factories.
 `build(frame)` → `run(frame)` returns a `PWResult` (energy in Ry / Ha,
 `converged`, `iterations`, `n_kpts`, `n_kpts_local`); `PW::forces(frame)`
@@ -152,7 +154,7 @@ Frame in, `PW` members, energy on `PWResult` [Ry/Ha] and
 band (not CP2K Quickstep absolute energy).
 
 ```cpp
-PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, /*ecut Ry*/ 15.0,
+PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), /*ecut Ry*/ 15.0,
           /*k_mesh 2×2×2*/ 2, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
@@ -217,7 +219,7 @@ Hellmann–Feynman (plus PP projectors) via `pw.forces(frame)`; on ideal diamond
 sites lattice symmetry requires \(\mathbf{F}=\mathbf{0}\) for every atom.
 
 ```cpp
-PW pbe{UpfPseudopotential{upf}, 15.0, 2, cpu::scf::XCType::PBE};  // true GGA (spectral ∇ρ)
+PW pbe{std::make_shared<UpfPseudopotential>(upf), 15.0, 2, cpu::scf::XCType::PBE};  // true GGA (spectral ∇ρ)
 pbe.tol      = 1e-5;
 pbe.max_iter = 40;
 pbe.mix_beta = 0.5;
@@ -226,7 +228,7 @@ pbe.build(frame);
 const PWResult r_pbe = pbe.run(frame);  // copy: forces() overwrites last_result()
 pbe.forces(frame);                      // own SCF; kAtom_fx/fy/fz [eV/Å], kEnergy [eV]
 
-PW lda{UpfPseudopotential{upf}, 15.0, 2, cpu::scf::XCType::LSDA};  // activation twin
+PW lda{std::make_shared<UpfPseudopotential>(upf), 15.0, 2, cpu::scf::XCType::LSDA};  // activation twin
 ```
 
 Internal XC: `xc_builder.h`, `src/cpu/planewave/internal/xc_builder.cpp`
@@ -303,7 +305,7 @@ cells (\(h = 2\times 10^{-3}\) default).
 | `kStress` | Frame meta write (virial σΩ) by `PW::stress`, or by a mounted `PW` when the plan consumes stress | eV |
 
 ```cpp
-PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, 15.0, 2,
+PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), 15.0, 2,
           cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
@@ -385,7 +387,7 @@ Serial / MPI-inactive: \(n_k^\mathrm{local} = n_k\). Partition identity:
 For \(k_\mathrm{mesh}=2\) (8 k-points) at 4 ranks each rank owns exactly 2.
 
 ```cpp
-PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, 15.0, 2};
+PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), 15.0, 2};
 method.tol = 1e-6;
 method.max_iter = 50;
 method.build(frame);

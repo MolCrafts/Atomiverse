@@ -99,8 +99,8 @@ class PairDpd : public Pair, public cpu::TimestepConsumer {
     /// @brief Multi-component: a per-type-pair amplitude matrix.
     ///
     /// The matrix is indexed by the frame's `kAtom_type` values AS-IS. In this
-    /// tree that column carries the ATOMIC NUMBER (`cpu::from_molrs` fills it
-    /// from molrs `atomic_number`), so the matrix must be square of side
+    /// tree that column carries the ATOMIC NUMBER (`cpu::from_molpy` fills it
+    /// from molpy `atomic_number`), so the matrix must be square of side
     /// max(Z) + 1 — an argon/sodium mixture needs 19 rows, not 2 — and a type
     /// outside it throws at `launch` rather than falling back to a default.
     ///

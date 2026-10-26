@@ -3,7 +3,7 @@
 /// exchange frame, which the molrs writer takes whole.
 
 #include "atomiverse/cpu/io/frame_writer.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 #include <cstddef>
 #include <cstdint>

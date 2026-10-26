@@ -122,7 +122,7 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
 /// `cpu::XYZ::write`, and the task-protocol result path). Copies positions,
 /// velocities, forces, mass, charge, type, tag, and image in the gathered
 /// (global-tag) order and sets the box. Bonded topology does NOT travel
-/// through the gather (a per-run static input by the to_molrs contract).
+/// through the gather (a per-run static input by the to_molpy contract).
 /// Called on a non-root rank (empty buffers) it returns a 0-atom Frame.
 cpu::Frame to_frame(const GatheredFrame& gathered);
 

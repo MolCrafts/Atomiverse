@@ -5,7 +5,7 @@ AM1/RM1/MNDO/PM3 fronts and their shared workspace. No numerical tests or
 residency measurements were run for this review. Existing evidence in the
 SE-backend spec is not a fresh run by this review.
 
-Rules: CLAUDE.md's Frame/Component/Driver boundary, one owner per real loop,
+Rules: docs/developer/project-contract.md's Frame/Component/Driver boundary, one owner per real loop,
 composition, unique physical parameter data and transactional history; user's
 clarification that a small physical method does not require its own Driver.
 Design target: [es-extensibility.md](../specs/es-extensibility.md).

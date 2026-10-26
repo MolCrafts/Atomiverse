@@ -21,7 +21,7 @@ pip install atomiverse
 
 This installs the Python API shell and CLI only — **no C++ compile**, no
 prebuilt `_atomiverse` binary. Requires Python ≥ 3.12, NumPy, and
-`molcrafts-molpy` (the only user-facing Frame type). **Do not `import molrs`**
+`molcrafts-molpy` (the only user-facing Frame type). **Do not `import molpy`**
 from user code — molrs is an engine-private schema, pulled transitively
 by molpy.
 
@@ -36,19 +36,20 @@ raises `ImportError` pointing at phase 2.
 ### Phase 2 — native build from a checkout
 
 The extension is compiled from the **source tag matching the installed
-version** (with the `molrs` submodule), using the toolchain described in
+version**, together with a local merged molpy checkout, using the toolchain described in
 [Getting started](getting-started.md) — a C++20 compiler, CMake, BLAS/LAPACK,
-a Rust toolchain for molrs, and FFTW3 for `pw` / `kspace`.
+a Rust toolchain for molpy's native core, and FFTW3 for `pw` / `kspace`.
 
 ```bash
 V=$(python -m atomiverse --version)
 git clone --recursive --branch v$V https://github.com/MolCrafts/Atomiverse
+export ATV_MOLPY_PATH=/absolute/path/to/merged/molpy
 pip install 'atomiverse[native]'        # build-time: scikit-build-core, nanobind, maturin
 
 # 1) config   resolve modules → CMake defines, record the build
 python -m atomiverse config md pw --mpi --src Atomiverse
 
-# 2) compile  pip wheel → scikit-build-core → CMake, and molrs from the submodule
+# 2) compile  pip wheel → scikit-build-core → CMake, and molpy from the local checkout
 python -m atomiverse compile -j 8
 
 # 3) install  pip install of both wheels over the pure package
@@ -61,17 +62,16 @@ python -m atomiverse run Atomiverse/python/examples/md_lj_argon.py
 `compile` builds in `<src>/build-python` (override with `config
 --build-dir`); a repeat `compile` reuses that CMake tree and only rebuilds
 what changed. It builds two wheels into `<build-dir>/dist/`: the extension,
-and molrs from the checkout's `molrs` submodule (cargo output kept in
-`<build-dir>/molrs-target`, so that rebuild is incremental too). `install`
+and molpy from `<ATV_MOLPY_PATH>/molpy` (cargo output kept in
+`<build-dir>/molpy-target`, so that rebuild is incremental too). `install`
 hands both to `pip install --force-reinstall --no-deps` — the extension and
 its `_build_info.json` (the defines it was compiled with, which `status`
 prints) are ordinary files of the installed distribution.
 
-**Why molrs is rebuilt:** molpy hands each frame to the extension as a
-pointer to a molrs object. The extension was compiled against the
-submodule's molrs, so the molrs in your interpreter must be that same tree.
-The molrs that `pip install atomiverse` pulled from PyPI only serves the
-pure install; `install` replaces it.
+**Why molpy is rebuilt:** its Python extension and Atomiverse's `molcxx`
+bridge exchange a shared native Frame handle. They must use the same local
+source tree and compatible ABI. `install` replaces the installed molpy wheel
+with the one built from that checkout. No molpy release is pinned yet.
 
 **Modules** are positional on `config` only: `md`, `minimize`, `mc`, `evaluate`,
 `vib`, `path`, `hf`, `pw`, `gpw`, `am1`, `cuda`, `kspace`, `potentials`,
@@ -1154,7 +1154,7 @@ argument optional and already at its C++ default:
 ## Plane-wave DFT (`pw` module)
 
 ```python
-pw = av.PW(gth_name="GTH-PBE-q4",   # analytic GTH for Si; no external file
+pw = av.PW(potential=av.GthPseudopotential(14, "GTH-PBE-q4"),   # analytic GTH for Si; no external file
            ecut_ry=30.0, k_mesh=4)
 pw.build(frame)
 result = pw.run(frame)
@@ -1200,7 +1200,7 @@ while everything reaching the frame is in engine units: eV, eV/Å, eV/Å³.
 ### Spin, functionals and metals
 
 ```python
-pw = av.PW(gth_name="GTH-PBE-q4", ecut_ry=30.0, k_mesh=4,
+pw = av.PW(potential=av.GthPseudopotential(14, "GTH-PBE-q4"), ecut_ry=30.0, k_mesh=4,
            xc="LSDA")       # name, not an enum; unknown names raise ValueError
 pw.spin_polarized = True    # collinear; needed for an odd electron count
 pw.multiplicity = 2         # fixed occupations: N↑ − N↓ = M − 1 exactly
@@ -1235,9 +1235,9 @@ it is the oracle for the CUDA twin.
 ```python
 from atomiverse.md import MD
 from atomiverse.md.integrator import VelocityVerlet
-from atomiverse.pw import PW
+from atomiverse.pw import PW, GthPseudopotential
 
-pw = PW(gth_name="GTH-PBE-q4", ecut_ry=8.0, k_mesh=1)
+pw = PW(potential=GthPseudopotential(14, "GTH-PBE-q4"), ecut_ry=8.0, k_mesh=1)
 pw.tol = 1e-4
 pw.max_iter = 12            # one step is one whole SCF — budget it
 
@@ -1253,32 +1253,24 @@ and `AM1`; registering it makes the loop Born-Oppenheimer dynamics —
 the electrons re-converged at every geometry the nuclei reach, with analytic
 forces from the converged density. It takes no `NeighborList` (a plane-wave
 Hamiltonian is not a pair style), needs the frame's `atomic_number` [Z] and
-`mass` [amu] columns and a box, and — like `AM1` — the driver
-mounts its own copy of the method's parameters, so per-step results
-land on the frame rather than on the object you passed. Cost is the thing to
+`mass` [amu] columns and a box, and the driver borrows the same method instance, keeping its Python owner
+alive. Per-step results land on both the frame and the method's `last_result()`. Cost is the thing to
 plan around: a step is *one* SCF solve (the analytic forces reuse the
 converged density), seconds of work at production settings. A
 Python-side run therefore wants a small cell, a low `ecut_ry` and a modest
 `max_iter`.
 
-### Pseudopotential: exactly one of two, and there is no default
+### Immutable norm-conserving potential
 
 | Member | What it takes |
 |--------|---------------|
-| `gth_name` | In-tree analytic Goedecker-Teter-Hutter parameterization, e.g. `"GTH-PBE-q4"` (Si), `"GTH-PBE-q1"` (H), `"GTH-PBE-q6"` (O). No file needed. In-tree coverage: H, O, Na, Cl, Ar, Si, Ni, Zn. One potential serves the whole cell, so the frame must be single-species. |
-| `upf_path` | Path to a **norm-conserving** UPF file, e.g. the in-tree `tests/data/pw/Si_lda_nc.upf` (ONCVPSP). |
+| `potential` | Immutable `GthPseudopotential(atomic_number, name)` or `UpfPseudopotential(path)`. GTH selects a published table for an explicit element; UPF loads its declared element and integral valence once. |
 
-Setting both, or neither, raises. Ultrasoft (`pseudo_type="USPP"`) and PAW
-files are rejected when read: the plane-wave path applies no augmentation
-charge, so integrating one would be wrong by an unbounded amount. There is
-no toy/bare-Coulomb fallback either — a bare valence-charge potential is not
-representable in a plane-wave basis at any finite cutoff.
-
-Either source makes the run single-species: one potential and one valence
-count are applied to every atom. `gth_name` enforces that (a frame mixing
-atomic numbers raises `ValueError`); `upf_path` does not check, so a
-mixed-species frame there is silently treated as the file's own element
-throughout. Multi-species plane-wave runs are not implemented.
+A provider is required. Every Frame atom must match its atomic number;
+mixed-species frames are rejected for both built-ins. USPP, PAW, NLCC and
+spin-orbit channels are rejected at admission. The CPU PW path uses one
+NC operator implementation for built-in and independently authored C++
+providers. A physical provider never owns an electronic Driver.
 
 Without the `pw` module the PW types are not exported; rebuild with
 `python -m atomiverse config pw …` to use this API.

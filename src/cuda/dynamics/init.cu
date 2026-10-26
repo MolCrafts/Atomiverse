@@ -94,7 +94,7 @@ __global__ void remove_com(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
 /// used by the build()-time path with a single per-atom division. Cost:
 /// 3 FP64 divisions per atom (~60 cycles total on Hopper), dwarfed by the
 /// surrounding atomic-accumulate cost. Used by `ZeroMomentum::launch()`
-/// to keep the hot path GPU-pure (`CLAUDE.md ## Architecture § CUDA
+/// to keep the hot path GPU-pure (`docs/developer/project-contract.md ## Architecture § CUDA
 /// execution model` "launch() must be GPU-pure" rule).
 ///
 /// Each thread reads the 4-word scratch as broadcast — coalesced across
@@ -292,7 +292,7 @@ void ZeroMomentum::launch(const LaunchContext& ctx) {
 
     // 3. On-device v_cm broadcast — reads the 4-word scratch, computes
     //    v_cm = Σmv/Σm, subtracts. No D2H, no sync — keeps launch()
-    //    GPU-pure per the CLAUDE.md "## Architecture § CUDA execution
+    //    GPU-pure per the docs/developer/project-contract.md "## Architecture § CUDA execution
     //    model" contract (cuda-md-review-cleanup-03-launch-purity).
     //    The previous host-divide + H2D-as-arg pattern was the last
     //    `cudaStreamSynchronize` on the MD hot path; this rewrite

@@ -60,8 +60,8 @@
 #include "atomiverse/cpu/component/zero.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/driver/driver.h"
-#ifdef ATV_HAS_MOLRS
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#ifdef ATV_HAS_MOLPY
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #endif
 
 namespace ATV {
@@ -122,11 +122,11 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// @param frame molrs.Frame handle (input geometry + output sink).
     /// @param max_iter Iteration budget.
     /// @return Number of iterations actually executed (≤ `max_iter`).
-#ifdef ATV_HAS_MOLRS
+#ifdef ATV_HAS_MOLPY
     BigInt run(molrs::FrameRef& frame, BigInt max_iter) {
-        cpu::Frame work = cpu::from_molrs(frame);
+        cpu::Frame work = cpu::from_molpy(frame);
         const BigInt iters = run(work, max_iter);
-        cpu::to_molrs(work, frame);
+        cpu::to_molpy(work, frame);
         return iters;
     }
 #endif

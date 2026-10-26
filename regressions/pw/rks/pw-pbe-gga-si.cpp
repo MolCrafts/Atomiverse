@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 #include "atomiverse/core/mat3.h"
@@ -67,7 +68,8 @@ int run() {
 
     auto frame = make_si_diamond(5.43);
 
-    PW pbe{UpfPseudopotential{upf}, 15.0, 2, cpu::scf::XCType::PBE};
+    PW pbe{std::make_shared<UpfPseudopotential>(upf), 15.0, 2,
+           cpu::scf::XCType::PBE};
     pbe.tol = 1e-5;
     pbe.max_iter = 40;
     pbe.mix_beta = 0.5;
@@ -97,7 +99,8 @@ int run() {
         }
     }
 
-    PW lda{UpfPseudopotential{upf}, 15.0, 2, cpu::scf::XCType::LSDA};
+    PW lda{std::make_shared<UpfPseudopotential>(upf), 15.0, 2,
+           cpu::scf::XCType::LSDA};
     lda.tol = 1e-5;
     lda.max_iter = 40;
     lda.mix_beta = 0.5;

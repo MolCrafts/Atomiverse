@@ -1,6 +1,6 @@
 # Notes — current understanding
 
-Conclusions only. Binding rules live in CLAUDE.md; history is git's.
+Conclusions only. Binding rules live in docs/developer/project-contract.md; history is git's.
 
 ## Topic notes
 
@@ -30,7 +30,7 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
 ## Open engineering leads
 
 - **MD unification (CPU/CUDA).** CPU and CUDA run different execution
-  machinery (CLAUDE.md › Known debt). Open plan:
+  machinery (docs/developer/project-contract.md › Known debt). Open plan:
   `.claude/specs/md-unification.md`; CPU contract work:
   `.claude/specs/cpu-orthogonality.md`.
 - **ES public-shape debt.** Do not extend dialects;
@@ -78,13 +78,14 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
 
 ## Build-shape conclusions
 
-- **molrs is derived** (`ATV_BUILD_ANALYSIS` / `IO` / `PYTHON` / `GPW` / `HF` /
-  `SEMIEMPIRICAL` force `ATV_BUILD_MOLRS=ON`). Pin-specific slices (WHAM ⇒
-  `ATV_MOLRS_HAS_WHAM`, streaming mrec ⇒ `ATV_MOLRS_HAS_TRAJECTORY_WRITER`)
+- **molpy is derived** (`ATV_BUILD_ANALYSIS` / `IO` / `PYTHON` / `GPW` / `HF` /
+  `SEMIEMPIRICAL` force `ATV_BUILD_MOLPY=ON`). Optional bridge slices (WHAM ⇒
+  `ATV_MOLPY_HAS_WHAM`, streaming mrec ⇒ `ATV_MOLPY_HAS_TRAJECTORY_WRITER`)
   gate sources and regressions on the same condition.
-- **Two molrs sources:** `./molrs` submodule = CI pin; developer presets set
-  `ATV_MOLRS_PATH=${sourceDir}/../molrs` (molrs `dev` with working-tree
-  changes). Corrosion imports `${ATV_MOLRS_PATH}/molrs-cxxapi/Cargo.toml`.
+- **Merged molpy source:** `ATV_MOLPY_PATH` selects the local merged
+  MolCrafts/molpy repository (default `../molrs`). Corrosion imports
+  `molcxx/Cargo.toml`; Python builds `molpy/`. Both consume the same checkout.
+  The retired `./molrs` submodule is unused; no source revision is pinned.
 - **Unit-suite determinism:** bit-for-bit comparisons pin `OMP_NUM_THREADS=1`
   via test ENVIRONMENT; FD-vs-analytic tests choose `h` so round-off does not
   drown the tolerance.

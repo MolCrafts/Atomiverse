@@ -1,5 +1,7 @@
 # Linear-response TD-DFTB (Casida)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Case: `ctest -R '^semiempirical/td-dftb$'` — sources and oracle record in [`regressions/semiempirical/td-dftb/`](../../../regressions/semiempirical/td-dftb/). One section of the case per `##` heading below: `atv_regressions --case semiempirical/td-dftb --section <name>`.
 
 Vertical **singlet** and **triplet** excitation energies from the

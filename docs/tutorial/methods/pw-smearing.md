@@ -1,5 +1,7 @@
 # Plane-wave metallic smearing
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Plane-wave DFT for **metals** needs **fractional band occupations** and a Fermi
 level \(\mu\) that conserves the valence electron count. Atomiverse exposes this
 on the concrete method `cpu::pw::PW` (and `cuda::pw::PW`) as public members —
@@ -150,7 +152,7 @@ cell(1, 0) =  h; cell(1, 1) = -h; cell(1, 2) =  h;
 cell(2, 0) =  h; cell(2, 1) =  h; cell(2, 2) = -h;
 f.box.set_cell(cell);
 
-PW pw{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Fe_ONCV_PBE-1.2.upf"},
+PW pw{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Fe_ONCV_PBE-1.2.upf"),
       12.0,                        // algorithm pin (not production ecut)
       2,                           // 2×2×2 MP
       cpu::scf::XCType::PBE};
@@ -280,7 +282,7 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 f.box.set_cell(cell);
 
-PW pw{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Al_pz_nc.upf"}, 20.0, 2};  // NC, LDA/PZ, Z_val = 3
+PW pw{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Al_pz_nc.upf"), 20.0, 2};  // NC, LDA/PZ, Z_val = 3
 pw.tol = 1e-5;
 pw.max_iter = 60;
 pw.mix_beta = 0.4;

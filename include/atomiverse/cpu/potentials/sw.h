@@ -20,7 +20,7 @@
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/potentials/force_scratch.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {

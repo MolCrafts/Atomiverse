@@ -1,5 +1,7 @@
 # Constant-charge electrodes
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 **Constant-charge (conq) electrode control** is the dual of constant potential:
 each electrode's **total charge** \(Q_e\) is prescribed, the per-site
 distribution is solved from the same Gaussian elastance matrix, and the uniform

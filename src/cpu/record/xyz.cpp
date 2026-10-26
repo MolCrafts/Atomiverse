@@ -8,7 +8,7 @@
 #include "../io/readable_path.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 #include <array>
 #include <string>
@@ -23,7 +23,7 @@ namespace {
 ///
 /// Extract one frame's raw arrays (atomic number, x, y, z, cell matrix H) for
 /// the molrs writer. `kAtom_type` carries Z (the engine keys species on the
-/// atomic number; `from_molrs` fills it from `atoms.atomic_number`), so it
+/// atomic number; `from_molpy` fills it from `atoms.atomic_number`), so it
 /// crosses as molrs' `atomic_number` unchanged.
 void extract(const Frame& frame, std::vector<std::uint64_t>& atomic_number,
              std::vector<double>& x, std::vector<double>& y,
@@ -64,7 +64,7 @@ void XYZ::write_impl(const Frame& frame, bool append) {
     extract(frame, atomic_number_, x_, y_, z_, box);
     // The bridge message does not name the file; with_molrs_context does.
     internal::with_molrs_context("cpu::XYZ", filename_, [&] {
-        // No periodic cell (det == 0) crosses as no box, as in to_molrs.
+        // No periodic cell (det == 0) crosses as no box, as in to_molpy.
         auto out = internal::molrs_atoms_frame(
             atomic_number_, x_, y_, z_,
             {box.data(), frame.box.volume() > 0.0 ? box.size() : 0});

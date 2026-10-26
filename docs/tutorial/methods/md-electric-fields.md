@@ -1,5 +1,7 @@
 # External electric and displacement fields
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Uniform electric fields on classical point charges, and the finite-field
 routes of electrochemical MD built on them. Every variant is a `Bias`
 Component on `cpu::md::MD` (default `md::Phase::post_force`, order +100,

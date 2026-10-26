@@ -2,6 +2,7 @@
 /// @brief Typed TaskSpec registration replay onto MD/Evaluate/Minimize.
 
 #include "atomiverse/cpu/task/task_materializer.h"
+#include <memory>
 
 #include <cstdint>
 #include <stdexcept>
@@ -268,11 +269,15 @@ cpu::pw::PW pw_method(const PWParams& p) {
         throw std::invalid_argument(
             "PWParams: set exactly one of upf_path / gth_name");
     const auto xc = static_cast<cpu::scf::XCType>(p.xc);
-    cpu::pw::PW pw = p.upf_path.empty()
-                         ? cpu::pw::PW(cpu::pw::GthPseudopotential{p.gth_name},
-                                       p.ecut_ry, p.k_mesh, xc)
-                         : cpu::pw::PW(cpu::pw::UpfPseudopotential{p.upf_path},
-                                       p.ecut_ry, p.k_mesh, xc);
+    cpu::pw::PW pw =
+        p.upf_path.empty()
+            ? cpu::pw::PW(
+                  std::make_shared<cpu::pw::GthPseudopotential>(
+                      static_cast<molrs::Element>(p.atomic_number), p.gth_name),
+                  p.ecut_ry, p.k_mesh, xc)
+            : cpu::pw::PW(
+                  std::make_shared<cpu::pw::UpfPseudopotential>(p.upf_path),
+                  p.ecut_ry, p.k_mesh, xc);
     pw.tol = p.tol;
     pw.max_iter = p.max_iter;
     pw.mix_beta = p.mix_beta;

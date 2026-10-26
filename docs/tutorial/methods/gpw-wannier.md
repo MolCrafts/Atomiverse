@@ -1,5 +1,7 @@
 # GPW maximally localized Wannier functions
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Marzari–Vanderbilt maximally localized Wannier functions (MLWFs) from a
 multi-k GPW calculation: overlap matrices between neighbouring \(k\) points,
 the spread functional \(\Omega\) minimized by steepest descent after a

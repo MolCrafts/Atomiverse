@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
@@ -141,8 +142,8 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
         *e_ry = 0.0;
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh,
-                           cpu::scf::XCType::LSDA};
+        cpu::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                           kEcutRy, kMesh, cpu::scf::XCType::LSDA};
         configure_smear(method);
         method.build(frame);
         {
@@ -153,8 +154,8 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
                 *e_ry = method.last_result().energy; // reference SCF [Ry]
         }
     } else {
-        cuda::pw::PW method{cpu::pw::UpfPseudopotential{upf}, kEcutRy, kMesh,
-                            cpu::scf::XCType::LSDA};
+        cuda::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
+                            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
         configure_smear(method);
         method.build(frame);
         stress = cuda::pw::pw_stress(frame, method, e_ry);

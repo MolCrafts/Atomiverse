@@ -1,5 +1,7 @@
 # GPW DFT-D4 dispersion
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Grimme / Caldeweyher DFT-D4 London correction on the Γ-point GPW path, on top
 of PBE: two-body Becke–Johnson (rational) damping with EEQ2019 charges and
 periodic lattice sums, plus the optional Axilrod–Teller–Muto (ATM) three-body
@@ -27,7 +29,7 @@ two-body energy ([gpw-d4-water](#gpw-d4-water)), forces
 forces ([gpw-d4-atm-forces](#gpw-d4-atm-forces)) and stress
 ([gpw-d4-atm-stress](#gpw-d4-atm-stress)). Multi-k D4 forces have no section.
 Build in the CPU environment (`module load buildenv-gcc/2026.03-mpich`, see
-`CLAUDE.md`) with `-DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON`.
+`docs/developer/project-contract.md`) with `-DATV_BUILD_GPW=ON -DATV_BUILD_REGRESSIONS=ON`.
 
 Case: `ctest -R '^gpw/d4$'` — sources and oracle record in [`regressions/gpw/d4/`](../../../regressions/gpw/d4/). One section of the case per `##` heading below: `atv_regressions --case gpw/d4 --section <name>`.
 

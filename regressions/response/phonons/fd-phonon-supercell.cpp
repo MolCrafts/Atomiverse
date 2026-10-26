@@ -11,7 +11,7 @@
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/sw.h"
 #include "atomiverse/cpu/vibration/phonon.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "harness/registry.h"
 
 namespace atv_reg_pw_fd_phonon_supercell {

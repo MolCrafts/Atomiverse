@@ -6,7 +6,7 @@
 ///
 /// This is an OUT-OF-LIBRARY consumer: public headers + link atomiverse, nothing
 /// else. It is deliberately one flat main() — setup, run, and check read top to
-/// bottom, with no single-use helper functions (CLAUDE.md: "Extract on the second
+/// bottom, with no single-use helper functions (docs/developer/project-contract.md: "Extract on the second
 /// caller, not the first").
 ///
 /// Exits non-zero on failure.

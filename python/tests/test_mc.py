@@ -628,7 +628,7 @@ class TestGcmc:
     def test_atoms_block_rebuilt_at_the_new_population(
         self, gcmc_frame: "molpy.Frame"
     ) -> None:
-        """Write-back contract (spec py-mc DECIDED #2): ``to_molrs``
+        """Write-back contract (spec py-mc DECIDED #2): ``to_molpy``
         rejects a changed row count, so the binding rebuilds the molrs
         ``atoms`` block. Every column must come back at the new N.
 

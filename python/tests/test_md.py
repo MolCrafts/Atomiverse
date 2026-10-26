@@ -800,7 +800,7 @@ class TestCoulombPme:
 #   no ``NeighborList`` is installed anywhere below. A style that started
 #   demanding one would fail these tests at build, loudly.
 # * ``atoms.atomic_number`` is what becomes the CPU frame's per-atom type
-#   (src/cpu/frame/molrs_exchange.cpp:185, :201). Type keys handed to
+#   (src/cpu/frame/molpy_exchange.cpp:185, :201). Type keys handed to
 #   ``Born`` from Python are therefore ATOMIC NUMBERS: an Ar dimer keys
 #   {18, 18}, and a real Na/Cl table would key {11, 17}.
 #

@@ -4,7 +4,7 @@
 /// Plain trivially-copyable struct so the type can be uploaded to
 /// `__constant__` memory or passed by value through a kernel argument.
 /// Member methods (`length / volume / min_image / wrap_axis`) mirror the
-/// `cpu::Box` API (CLAUDE.md `## Architecture § Backend directory layering`).
+/// `cpu::Box` API (docs/developer/project-contract.md `## Architecture § Backend directory layering`).
 ///
 /// The physical cell is cuda::Frame::box. Backend::materialize publishes a
 /// derived device Box; box-changing bindings declare changes_box(), and the

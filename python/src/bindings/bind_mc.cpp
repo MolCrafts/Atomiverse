@@ -18,7 +18,7 @@
 ///     and is continuable by contract (block sampling). The handle therefore
 ///     materializes its working frame ONCE and every later `run()` extends the
 ///     same chain; a fresh chain is a fresh handle object.
-///  2. **Variable N.** μVT inserts and deletes atoms, and `cpu::to_molrs`
+///  2. **Variable N.** μVT inserts and deletes atoms, and `cpu::to_molpy`
 ///     rejects a changed row count (molrs `RaggedAxis0`). When N changed the
 ///     binding rebuilds the molrs `atoms` block through the molrs *Python* API
 ///     before exporting — see `rebuild_atoms_block_`.
@@ -31,7 +31,7 @@
 
 #ifdef ATV_HAS_MC
 
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 #include "owned_buffer.h"
 
 #include <nanobind/ndarray.h>
@@ -49,7 +49,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/montecarlo/gcmc.h"
 #include "atomiverse/cpu/montecarlo/insert_delete_move.h"
 #include "atomiverse/cpu/montecarlo/mc.h"
@@ -210,9 +210,9 @@ struct McHandle {
             driver.build();
             built_ = true;
         }
-        auto fref = borrow_molrs_frame(frame_obj);
+        auto fref = borrow_molpy_frame(frame_obj);
         if (!materialized_) {
-            work_ = cpu::from_molrs(*fref);
+            work_ = cpu::from_molpy(*fref);
             materialized_ = true;
         }
         {
@@ -298,10 +298,10 @@ struct McHandle {
 
     /// @brief Export the working frame into the molrs Frame it came from.
     ///
-    /// `cpu::to_molrs` writes into the EXISTING `atoms` block, so it is valid
+    /// `cpu::to_molpy` writes into the EXISTING `atoms` block, so it is valid
     /// only while the row count still matches; μVT changes it, and molrs
     /// rejects a block whose columns disagree in length (`RaggedAxis0`). The
-    /// rebuild below re-establishes the block at the new N first; `to_molrs`
+    /// rebuild below re-establishes the block at the new N first; `to_molpy`
     /// then fills x/v/f, charge, image, tag, the box and the typed metadata as
     /// on every other driver path.
     ///
@@ -311,7 +311,7 @@ struct McHandle {
         const auto rows = molrs::frame_block_n_rows(fref, "atoms");
         if (rows != static_cast<std::int64_t>(work_.nlocal()))
             rebuild_atoms_block_(frame_obj);
-        cpu::to_molrs(work_, fref);
+        cpu::to_molpy(work_, fref);
     }
 
     /// @brief Replace the molrs `atoms` block with one at the chain's current
@@ -320,14 +320,14 @@ struct McHandle {
     /// Every column is rebuilt so the new block is internally consistent at
     /// the new N — a partial rebuild would leave the untouched columns at the
     /// old length and molrs would reject the block. `mass` and
-    /// `atomic_number` are here because `to_molrs` deliberately does NOT write
+    /// `atomic_number` are here because `to_molpy` deliberately does NOT write
     /// them (per-run immutable inputs on the fixed-N path); after an insertion
     /// they are outputs, stamped on the new row by `InsertDeleteMove`.
     ///
     /// @param frame_obj The `molpy.Frame` whose `atoms` block is replaced.
     void rebuild_atoms_block_(nb::object frame_obj) {
         const auto n = static_cast<std::size_t>(work_.nlocal());
-        nb::object block = nb::module_::import_("molrs").attr("Block")();
+        nb::object block = nb::module_::import_("molpy").attr("Block")();
         nb::object insert = block.attr("insert");
         insert("x", numpy_column<double>(work_.span(kAtom_x).data(), n));
         insert("y", numpy_column<double>(work_.span(kAtom_y).data(), n));
@@ -342,7 +342,7 @@ struct McHandle {
                numpy_column<double>(work_.span(kAtom_charge).data(), n));
         insert("mass", numpy_column<double>(work_.span(kAtom_mass).data(), n));
         // Z is the species key on both sides of the boundary: molrs stores it
-        // as an unsigned column, `from_molrs` lands it in `kAtom_type`, and
+        // as an unsigned column, `from_molpy` lands it in `kAtom_type`, and
         // `InsertDeleteMove(z, mass)` stamps that same int on every insertion.
         insert("atomic_number",
                numpy_column<std::uint32_t>(work_.span(kAtom_type).data(), n));

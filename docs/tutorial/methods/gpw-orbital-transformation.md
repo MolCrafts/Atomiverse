@@ -1,5 +1,7 @@
 # GPW orbital transformation (OT)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Orbital Transformation (OT) is a diagonalization-free SCF minimizer for GPW
 Kohn–Sham DFT: occupied MO coefficients are optimized on the Stiefel-type
 manifold \(C^\dagger S C = I\) instead of a dense generalized eigensolve +

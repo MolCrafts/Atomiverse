@@ -214,3 +214,6 @@ logs/
 
 # macOS Finder metadata
 .DS_Store
+
+# Retired molrs submodule checkout; merged molpy is selected via ATV_MOLPY_PATH.
+/molrs/

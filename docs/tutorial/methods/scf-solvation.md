@@ -1,5 +1,7 @@
 # Polarizable continuum solvation (PCM)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 A polarizable continuum model embeds the molecule in a cavity inside a
 dielectric; apparent surface charges \(q_k\) on the cavity tesserae respond
 to the solute potential \(V_k\) and add the electrostatic free energy

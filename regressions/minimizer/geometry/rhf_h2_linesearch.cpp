@@ -107,9 +107,10 @@ int run() {
     // which never re-entered the nested SCF) either froze at alpha = 0 or
     // took the untested initial trial step every time.
     for (const auto& t : lbfgs.trace())
-        std::printf("    step %2d  E=%.8f eV  fmax=%.4e eV/A  "
+        std::printf("    step %2lld  E=%.8f eV  fmax=%.4e eV/A  "
                     "max_disp=%.6e A\n",
-                    t.step, t.energy, t.max_force, t.max_displacement);
+                    static_cast<long long>(t.step), t.energy, t.max_force,
+                    t.max_displacement);
 
     bool ok = true;
     if (!(std::fabs(r - r_ref) < r_tol)) {

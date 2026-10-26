@@ -871,8 +871,8 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                 "spin_polarized");
 
         internal::PWProblem prob;
-        internal::setup_pw_problem(frame, method.upf_path, method.gth_name,
-                                   method.ecut_ry, method.k_mesh, prob);
+        internal::setup_pw_problem(frame, *method.potential, method.ecut_ry,
+                                   method.k_mesh, prob);
         internal::PWWorkspace& ws = prob.ws;
         auto& gv0 = prob.gv0;
         const int n_kpts_scf = static_cast<int>(prob.kg.kpoints.size());
@@ -1019,8 +1019,7 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
         kvec.reserve(static_cast<std::size_t>(nk));
         for (const auto& kf : kg.kpoints)
             kvec.push_back(kf);
-        internal::rebuild_k_tables(prob, frame, method.upf_path,
-                                   method.gth_name, method.ecut_ry, kvec);
+        internal::rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
 
         for (int s = 0; s < 2; ++s) {
             if (n_occ[s] < 1)
@@ -1105,8 +1104,7 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
     for (const auto& kf : kg.kpoints)
         kvec.push_back(kf);
 
-    internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                               method.ecut_ry, kvec);
+    internal::rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
 
     internal::PWWorkspace& ws = prob.ws;
     std::vector<std::vector<std::complex<AccReal>>> coef(

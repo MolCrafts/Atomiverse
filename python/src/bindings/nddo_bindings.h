@@ -1,9 +1,9 @@
 /// @brief Shared Python interface for concrete native CPU/CUDA NDDO methods.
 #pragma once
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "force_array.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 #include <nanobind/nanobind.h>
 
 // Only Python marshaling is shared: every operation invokes the concrete
@@ -29,13 +29,13 @@ void bind_nddo_method(nb::module_& m, const char* name, const char* device,
                 if (ATV::cpu::task::LauncherGate{}.active())
                     throw std::runtime_error(
                         "NDDO.run has no MPI task payload; use a local run");
-                auto frame = borrow_molrs_frame(frame_obj);
-                auto work = ATV::cpu::from_molrs(*frame);
+                auto frame = borrow_molpy_frame(frame_obj);
+                auto work = ATV::cpu::from_molpy(*frame);
                 {
                     nb::gil_scoped_release release;
                     method.run(work);
                 }
-                ATV::cpu::to_molrs(work, *frame);
+                ATV::cpu::to_molpy(work, *frame);
             },
             nb::arg("frame"),
             "Overwrite energy and charges; preserve existing forces.")
@@ -48,13 +48,13 @@ void bind_nddo_method(nb::module_& m, const char* name, const char* device,
                     && ATV::cpu::task::LauncherGate{}.active())
                     throw std::runtime_error(
                         "NDDO forces have no MPI task payload; run locally");
-                auto frame = borrow_molrs_frame(frame_obj);
-                auto work = ATV::cpu::from_molrs(*frame);
+                auto frame = borrow_molpy_frame(frame_obj);
+                auto work = ATV::cpu::from_molpy(*frame);
                 {
                     nb::gil_scoped_release release;
                     method.forces(work);
                 }
-                ATV::cpu::to_molrs(work, *frame);
+                ATV::cpu::to_molpy(work, *frame);
                 return to_force_array(method.last_result().forces_ev_a);
             },
             nb::arg("frame"),

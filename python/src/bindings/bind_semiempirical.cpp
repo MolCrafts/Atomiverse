@@ -18,11 +18,11 @@
 /// `MD.set_evaluator` (`bind_md.cpp`, `set_evaluator_am1`).
 ///
 /// Every result channel writes back into the borrowed molpy.Frame per the
-/// pinned to_molrs round-trip contract: energy onto typed meta, charges onto
+/// pinned to_molpy round-trip contract: energy onto typed meta, charges onto
 /// the atoms charge column, forces onto fx/fy/fz.
 
 #include "force_array.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 #include "nddo_bindings.h"
 
 #include <utility>
@@ -35,7 +35,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/evaluate/single_point.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/semiempirical/am1_bcc_charges.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/cpu/semiempirical/basis_data/dftb_spin_constants.h"
@@ -73,13 +73,13 @@ void dftb_run(Method& dftb, nb::object frame_obj) {
     if (cpu::task::LauncherGate{}.active())
         throw std::runtime_error("DFTB has no MPI single-point task payload; "
                                  "run without the launcher");
-    auto fref = borrow_molrs_frame(frame_obj);
-    cpu::Frame work = cpu::from_molrs(*fref);
+    auto fref = borrow_molpy_frame(frame_obj);
+    cpu::Frame work = cpu::from_molpy(*fref);
     {
         nb::gil_scoped_release release;
         dftb.run(work);
     }
-    cpu::to_molrs(work, *fref);
+    cpu::to_molpy(work, *fref);
 }
 
 /// @brief Solve and also return the forces as an (n_atoms, 3) array [eV/Å].
@@ -88,8 +88,8 @@ ForceArray dftb_forces(Method& dftb, nb::object frame_obj) {
     if (cpu::task::LauncherGate{}.active())
         throw std::runtime_error("DFTB has no MPI single-point task payload; "
                                  "run without the launcher");
-    auto fref = borrow_molrs_frame(frame_obj);
-    cpu::Frame work = cpu::from_molrs(*fref);
+    auto fref = borrow_molpy_frame(frame_obj);
+    cpu::Frame work = cpu::from_molpy(*fref);
     {
         nb::gil_scoped_release release;
         dftb.forces(work);
@@ -101,7 +101,7 @@ ForceArray dftb_forces(Method& dftb, nb::object frame_obj) {
         flat[static_cast<std::size_t>(3 * i + 1)] = work.span(kAtom_fy)[i];
         flat[static_cast<std::size_t>(3 * i + 2)] = work.span(kAtom_fz)[i];
     }
-    cpu::to_molrs(work, *fref);
+    cpu::to_molpy(work, *fref);
     return to_force_array(flat);
 }
 
@@ -196,13 +196,13 @@ void bind_semiempirical(nb::module_& m) {
         .def(
             "assign",
             [](AM1BCCCharges& self, nb::object frame_obj) {
-                auto fref = borrow_molrs_frame(frame_obj);
-                cpu::Frame work = cpu::from_molrs(*fref);
+                auto fref = borrow_molpy_frame(frame_obj);
+                cpu::Frame work = cpu::from_molpy(*fref);
                 {
                     nb::gil_scoped_release release;
                     self.assign(work);
                 }
-                cpu::to_molrs(work, *fref);
+                cpu::to_molpy(work, *fref);
             },
             nb::arg("frame"),
             "Compute the charges [e] and write them to the frame's atoms "
@@ -222,8 +222,8 @@ void bind_semiempirical(nb::module_& m) {
         "single_point",
         [](nb::object frame_obj, AM1& method) {
             const cpu::task::LauncherGate gate;
-            auto fref = borrow_molrs_frame(frame_obj);
-            cpu::Frame work = cpu::from_molrs(*fref);
+            auto fref = borrow_molpy_frame(frame_obj);
+            cpu::Frame work = cpu::from_molpy(*fref);
             if (!gate.active()) {
                 {
                     nb::gil_scoped_release release;
@@ -232,8 +232,8 @@ void bind_semiempirical(nb::module_& m) {
                 // Unlike the PW path, AM1 writes a per-atom output (the
                 // Mulliken charge column, plus fx/fy/fz), so the work frame
                 // must return to the SAME molpy.Frame via the pinned
-                // to_molrs round-trip contract.
-                cpu::to_molrs(work, *fref);
+                // to_molpy round-trip contract.
+                cpu::to_molpy(work, *fref);
                 return;
             }
 #ifdef ATV_HAS_MPI
@@ -256,7 +256,7 @@ void bind_semiempirical(nb::module_& m) {
                     /*handshake=*/false); // main's dispatcher handshook
                 result = dispatcher.dispatch(spec, std::move(work)).frame;
             }
-            cpu::to_molrs(result, *fref);
+            cpu::to_molpy(result, *fref);
 #endif
         },
         nb::arg("frame"), nb::arg("method"),
@@ -461,14 +461,14 @@ void bind_semiempirical(nb::module_& m) {
                     throw std::runtime_error(
                         "DFTB has no MPI single-point task payload; "
                         "run without the launcher");
-                auto fref = borrow_molrs_frame(frame_obj);
-                auto work = cpu::from_molrs(*fref);
+                auto fref = borrow_molpy_frame(frame_obj);
+                auto work = cpu::from_molpy(*fref);
                 std::array<double, 6> stress;
                 {
                     nb::gil_scoped_release release;
                     stress = self.stress(work);
                 }
-                cpu::to_molrs(work, *fref);
+                cpu::to_molpy(work, *fref);
                 return stress;
             },
             nb::arg("frame"),

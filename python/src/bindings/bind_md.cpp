@@ -19,7 +19,7 @@
 
 #include "evaluator_setters.h"
 #include "frame_guards.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/string.h>
@@ -46,7 +46,7 @@
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 // The eighteen force sources this file used to spell out are registered from
 // `evaluator_setters.h`, which owns their build gates. The four headers below
@@ -57,7 +57,9 @@
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
+#ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
+#endif
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -213,13 +215,13 @@ struct MdHandle {
     /// The two boundaries deliberately differ:
     ///
     /// - At the **C++ boundary** `charge` is an *optional* per-atom column.
-    ///   `cpu::from_molrs` allocates it either way and zero-fills it when the
+    ///   `cpu::from_molpy` allocates it either way and zero-fills it when the
     ///   molrs Frame did not carry it, because a C++ caller that hands over a
     ///   frame with no charges is stating a neutral system on purpose.
     /// - At the **Python boundary** that same silence is the common mistake:
     ///   an all-zero charge column and a forgotten charge column produce
     ///   identical, plausible-looking output (energy finite, forces finite,
-    ///   electrostatics simply absent), and by the time `from_molrs` has run
+    ///   electrostatics simply absent), and by the time `from_molpy` has run
     ///   the difference is gone. So the binding checks the molrs Frame — the
     ///   last place where absence is still visible — and throws with a how-to
     ///   instead of running a Coulomb model on charges nobody supplied.
@@ -233,7 +235,7 @@ struct MdHandle {
     void require_charge_column(const molrs::FrameRef& frame) const {
         const bool coulomb = std::any_of(mirror.begin(), mirror.end(),
                                          is_coulomb_entry<MDComponentEntry>);
-        if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
+        if (!coulomb || has_molpy_column(frame, "atoms", "charge"))
             return;
         throw std::runtime_error(
             "this MD run registers a Coulomb evaluator but the molpy.Frame "
@@ -259,7 +261,7 @@ struct MdHandle {
                 npt_owned->set_run_span(0, nlast);
             for (auto& langevin : langevin_owned)
                 langevin->set_run_span(0, nlast);
-            auto frame = borrow_molrs_frame(frame_obj);
+            auto frame = borrow_molpy_frame(frame_obj);
             require_charge_column(*frame);
             {
                 nb::gil_scoped_release release;
@@ -278,9 +280,9 @@ struct MdHandle {
                 + unmirrored_.front() + "; run without the launcher");
         cpu::task::TaskSpec spec(
             cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps)});
-        auto fref = borrow_molrs_frame(frame_obj);
+        auto fref = borrow_molpy_frame(frame_obj);
         require_charge_column(*fref);
-        cpu::Frame work = cpu::from_molrs(*fref);
+        cpu::Frame work = cpu::from_molpy(*fref);
         cpu::Frame result(0);
         {
             nb::gil_scoped_release release;
@@ -289,7 +291,7 @@ struct MdHandle {
                                                  /*handshake=*/false);
             result = dispatcher.dispatch(spec, std::move(work)).frame;
         }
-        cpu::to_molrs(result, *fref);
+        cpu::to_molpy(result, *fref);
         ran_ = true;
 #endif
     }
@@ -653,16 +655,10 @@ void bind_md(nb::module_& m) {
         "style) and reads the frame's 'atomic_number' column [Z]. Like "
         "any MD run it needs a per-atom 'mass' column [amu], and like "
         "any plane-wave run it needs a box.\n\n"
-        "Budget it deliberately: a step costs TWO self-consistent-field "
-        "solves — the energy solve, then the analytic force path's own — "
-        "and each is seconds of work at production settings, so a Python "
-        "smoke run wants a small cell, a low ecut_ry and a modest "
-        "max_iter.\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the "
-        "fifteen method parameters: the object you pass keeps its own "
-        "state, so last_result() on it is NOT populated by run() — "
-        "per-step results (energy [eV], forces [eV/A]) land on the "
-        "frame.");
+        "A force-producing step uses one electronic solve and contracts its "
+        "accepted state for forces. The driver borrows this same method and "
+        "keeps its Python owner alive; last_result() is populated on it. "
+        "This local provider is not serialized to a launcher task.");
 
     md.def(
           "set_neighbor",

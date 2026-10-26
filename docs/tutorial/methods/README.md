@@ -1,5 +1,7 @@
 # Method handbook pages
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 **Purpose: method reference, not textbook reading order.**
 These technical reports own method-specific APIs, validation, performance and
 limitations. The [tutorial chapters](../index.md) own the theory-first teaching

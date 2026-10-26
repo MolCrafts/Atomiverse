@@ -1,5 +1,7 @@
 # Linear-response TDDFT and spin-flip response
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Linear-response time-dependent DFT computes vertical excitation energies from
 the Casida response of a converged Kohn–Sham (or Hartree–Fock) reference. ATV
 exposes each response flavour as a class template wrapping the converged
@@ -80,7 +82,7 @@ uhf.run(frame, &guess);
 ```
 
 Build with `-DATV_BUILD_HF=ON -DATV_BUILD_REGRESSIONS=ON` (CPU login-shell
-recipe in `CLAUDE.md`, `module load buildenv-gcc/2026.03-mpich`).
+recipe in `docs/developer/project-contract.md`, `module load buildenv-gcc/2026.03-mpich`).
 
 ### Oracle
 

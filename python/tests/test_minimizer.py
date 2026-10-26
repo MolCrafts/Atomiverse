@@ -319,7 +319,7 @@ def test_cell_relax_expands_compressed_cell() -> None:
     (regressions/minimizer/cell-relax/REFERENCE.md "Pass"), read off
     the molpy.Frame the Python facade hands back: the relaxed cell is
     written into ``frame.box`` and the virial into ``frame.meta["stress"]``
-    by the same ``to_molrs`` boundary MD's NPT cases rely on.
+    by the same ``to_molpy`` boundary MD's NPT cases rely on.
 
     The 200-iteration budget is the regression's; it deliberately stops on
     the budget rather than on ``PressureConverged`` (measured L1 = 6.3212 A,
@@ -569,7 +569,7 @@ def test_set_evaluator_still_rejects_unknown_type() -> None:
 # column before an electrostatic MD run, and `MinimizeHandle::run`
 # (python/src/bindings/bind_minimizer.cpp:215) has no equivalent. The
 # consequence is the exact failure mode that guard was written for:
-# `cpu::from_molrs` allocates the optional `charge` column and zero-fills
+# `cpu::from_molpy` allocates the optional `charge` column and zero-fills
 # it, so a forgotten charge column and a deliberately neutral system are
 # indistinguishable by the time the optimizer runs — the geometry relaxes
 # under LJ (or under nothing) while the electrostatics the caller asked

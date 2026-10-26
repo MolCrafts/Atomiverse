@@ -1,14 +1,15 @@
 /// @file tests/cuda/test_materialize.cu
-/// @brief Round-trip + alignment tests for cuda::from_molrs / to_molrs.
+/// @brief Round-trip + alignment tests for cuda::from_molpy / to_molpy.
 ///
 /// Covers the rust-frame-lowering-04 acceptance criteria:
-///   - ac-002: a cuda::Frame produced by cuda::from_molrs carries the
+///   - ac-002: a cuda::Frame produced by cuda::from_molpy carries the
 ///             aligned field set -- per-atom charge / tag / image plus a
 ///             device-resident SystemScalars -- matching cpu::Frame.
 ///   - ac-003: molrs.Frame -> cuda::Frame -> molrs.Frame round-trips
 ///             positions / velocities / charge element-wise (explicit
-///             H2D on from_molrs, explicit D2H on to_molrs).
+///             H2D on from_molpy, explicit D2H on to_molpy).
 
+#include <array>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 
@@ -16,9 +17,9 @@
 #include <string>
 #include <vector>
 
-#include "atomiverse/cuda/frame/molrs_exchange.cuh"
+#include "atomiverse/cuda/frame/molpy_exchange.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 using namespace ATV;
 
@@ -65,7 +66,7 @@ namespace {
         *fr, "atoms", "tag",
         ::rust::Slice<const std::int32_t>(tag.data(), tag.size()));
 
-    // bonds reference atoms by GLOBAL TAG (not row index): cpu::from_molrs
+    // bonds reference atoms by GLOBAL TAG (not row index): cpu::from_molpy
     // calls atoms.add_bond(ti, tj, ...) which resolves ti/tj through the
     // tag->local map, mirroring the CPU sibling test. Atom tags are {10,11,12},
     // so this bond joins tags 10 and 11. Using row indices {0,1} here would be
@@ -83,8 +84,11 @@ namespace {
 
     const std::vector<double> h = {20.0, 0.0, 0.0, 0.0, 20.0,
                                    0.0,  0.0, 0.0, 20.0};
-    molrs::frame_set_box_h(*fr,
-                           ::rust::Slice<const double>(h.data(), h.size()));
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()),
+                         ::rust::Slice<const double>(
+                             std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+                         ::rust::Slice<const bool>(
+                             std::array<bool, 3>{true, true, true}.data(), 3));
     return fr;
 }
 
@@ -94,7 +98,7 @@ namespace {
 
 TEST(CudaMaterialize, AlignedFieldSet) {
     auto fr = make_full_frame();
-    cuda::Frame d = cuda::from_molrs(*fr);
+    cuda::Frame d = cuda::from_molpy(*fr);
 
     EXPECT_EQ(d.n_atoms(), 3);
     EXPECT_EQ(d.n_bonds(), 1);
@@ -111,7 +115,7 @@ TEST(CudaMaterialize, AlignedFieldSet) {
     cuda::destroy(d);
 }
 
-// ── ac-003: molrs.Frame -> cuda::Frame -> to_molrs round-trips ────────
+// ── ac-003: molrs.Frame -> cuda::Frame -> to_molpy round-trips ────────
 
 TEST(CudaMaterialize, RoundTrip) {
     auto fr = make_full_frame();
@@ -120,11 +124,11 @@ TEST(CudaMaterialize, RoundTrip) {
     const std::vector<double> vy = {-0.01, -0.02, -0.03};
     const std::vector<double> charge = {-0.5, 0.25, 0.25};
 
-    cuda::Frame d = cuda::from_molrs(*fr);
+    cuda::Frame d = cuda::from_molpy(*fr);
     ASSERT_EQ(d.n_atoms(), 3);
 
     // Explicit D2H write-back into the same molrs.Frame.
-    cuda::to_molrs(d, *fr);
+    cuda::to_molpy(d, *fr);
 
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
     auto rvy = molrs::frame_column_f64(*fr, "atoms", "vy");
@@ -148,7 +152,7 @@ TEST(CudaMaterialize, RoundTrip) {
     cuda::destroy(d);
 }
 
-// ── ac-003: required fields fail loud (delegated to cpu::from_molrs) ───
+// ── ac-003: required fields fail loud (delegated to cpu::from_molpy) ───
 
 TEST(CudaMaterialize, MissingPositionsThrows) {
     auto fr = molrs::frame_new();
@@ -159,9 +163,9 @@ TEST(CudaMaterialize, MissingPositionsThrows) {
         ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
 
     try {
-        cuda::Frame d = cuda::from_molrs(*fr);
+        cuda::Frame d = cuda::from_molpy(*fr);
         cuda::destroy(d);
-        FAIL() << "cuda::from_molrs must throw when atoms.x is absent";
+        FAIL() << "cuda::from_molpy must throw when atoms.x is absent";
     } catch (const std::exception& e) {
         EXPECT_NE(std::string(e.what()).find("x"), std::string::npos)
             << "exception message must name the missing field: " << e.what();

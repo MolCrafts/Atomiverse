@@ -1,5 +1,7 @@
 # Free-energy methods
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Free-energy and steered-sampling workflows composed from ordinary Components on
 the classical drivers. The page documents the constant-force pull: a fixed
 external force on a selected atom type, shipped as `cpu::md::FixAddForce`, a

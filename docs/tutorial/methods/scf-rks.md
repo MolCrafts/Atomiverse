@@ -1,5 +1,7 @@
 # Restricted Kohn–Sham DFT (RKS)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Restricted Kohn–Sham DFT describes a closed-shell system (\(n_\alpha =
 n_\beta\), one set of spatial MOs) with an exchange–correlation functional
 integrated on a molecular quadrature grid; hybrids add a fraction of exact

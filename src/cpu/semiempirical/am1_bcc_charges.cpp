@@ -13,7 +13,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/semiempirical/internal/bcc_graph.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {

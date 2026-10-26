@@ -8,12 +8,10 @@
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
-#include "atomiverse/cpu/planewave/internal/gth_upf.h"
-#include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
+#include "atomiverse/electronic/norm_conserving_potential.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
@@ -50,9 +48,9 @@ bool log_rank0() {
     return true;
 }
 
-void setup_upf_vloc(PWWorkspace& ws, const internal::GVectorList& gv,
-                    const internal::UPFData& upf, AccReal omega) {
-    auto vg = upf_vloc_to_gspace(upf, gv, omega);
+void setup_nc_vloc(PWWorkspace& ws, const internal::GVectorList& gv,
+                   const internal::NcPotentialData& upf, AccReal omega) {
+    auto vg = nc_vloc_to_gspace(upf, gv, omega);
     // Atom form factor × structure factor Σ_a e^{-iG·R_a}.
     // vg[0] already holds only the finite part (QE "αZ" term); the
     // divergent −4πZ/ΩG² jellium piece is cancelled against the
@@ -128,7 +126,7 @@ SphBesselFn sph_bessel_for_l(int l) {
 /// be rebuilt per k-point (size gv.count(), which also differs per k).
 void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
                          const internal::GVectorList& gv,
-                         const internal::UPFData& upf,
+                         const internal::NcPotentialData& upf,
                          const std::vector<Vec3>& pos_bohr) {
     int n_atoms = static_cast<int>(pos_bohr.size());
     int ng = gv.count();
@@ -137,14 +135,12 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
     // Precompute f_l(q) for each projector (radial integral, same for all atoms)
     int n_proj = upf.n_proj();
     upf.validate_radial_mesh();
-    std::size_t radial_points = 0;
     for (const auto& projector : upf.kb) {
         if (projector.radial_points < 3
             || projector.radial_points > projector.beta.size()
             || projector.beta.size() > upf.r.size())
             throw std::invalid_argument("KB projectors: declare a valid radial "
                                         "integration domain within PP_R");
-        radial_points = std::max(radial_points, projector.radial_points);
     }
     std::vector<std::vector<AccReal>> fl_all(n_proj);
     std::vector<int> proj_l(n_proj);
@@ -155,21 +151,19 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
         fl_all[ip].resize(ng, AccReal(0));
         const auto& r = upf.r;
         const auto& beta_r = kb.beta;
+        const auto radial_points = kb.radial_points;
         std::vector<AccReal> integrand(radial_points);
         for (int ig = 0; ig < ng; ++ig) {
             Vec3 q{gv.g[ig][0] + gv.kvec[0], gv.g[ig][1] + gv.kvec[1],
                    gv.g[ig][2] + gv.kvec[2]};
             AccReal Q = std::sqrt(q.norm_squared());
             for (std::size_t ir = 0; ir < radial_points; ++ir)
-                integrand[ir] =
-                    ir < beta_r.size()
-                        ? r[ir] * beta_r[ir] * j_l(Q * r[ir])
-                        : AccReal(0); // outside a supplied compact table
+                integrand[ir] = r[ir] * beta_r[ir] * j_l(Q * r[ir]);
             fl_all[ip][ig] = upf.integrate_radial(integrand);
         }
     }
 
-    // D is a real symmetric matrix in Ry. Distinct angular momenta cannot
+    // D is a real symmetric matrix in Ha. Distinct angular momenta cannot
     // couple in this spherical KB representation; never silently discard an
     // incomplete or unsupported matrix.
     if (upf.d_ij.size() != static_cast<std::size_t>(n_proj) * n_proj)
@@ -211,7 +205,7 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
                 for (int ig = 0; ig < ng; ++ig)
                     fl_trans[ip_out][ig] +=
                         eigenvectors(i, k) * fl_all[indices[i]][ig];
-            eff_D[ip_out] = eigenvalues(k) * AccReal(0.5); // Ry -> Ha, once.
+            eff_D[ip_out] = eigenvalues(k);
             rotated_l[ip_out] = l;
         }
     }
@@ -236,7 +230,7 @@ namespace {
 /// (QE atwfc_mod.f90: chi_G = (4π/√Ω) ∫ χ(r)·j_l(qr)·r dr).
 void setup_atomic_wfc(std::vector<std::vector<PWWorkspace::AtomWfc>>& out,
                       const internal::GVectorList& gv,
-                      const internal::UPFData& upf, int n_atoms,
+                      const internal::NcPotentialData& upf, int n_atoms,
                       AccReal omega) {
     int ng = gv.count();
     AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(omega);
@@ -289,9 +283,9 @@ void setup_atomic_wfc(std::vector<std::vector<PWWorkspace::AtomWfc>>& out,
 /// V(0) = (4π/Ω)∫ r²(V(r) + Z/r) dr — the divergent jellium piece is
 /// cancelled against the Ewald/Hartree G=0 conventions exactly as for
 /// the local potential. All outputs in Hartree.
-std::vector<AccReal> upf_vloc_to_gspace(const internal::UPFData& upf,
-                                        const internal::GVectorList& gv,
-                                        AccReal omega) {
+std::vector<AccReal> nc_vloc_to_gspace(const internal::NcPotentialData& upf,
+                                       const internal::GVectorList& gv,
+                                       AccReal omega) {
     std::vector<AccReal> vg(gv.count(), AccReal(0));
     const auto& r = upf.r;
     const auto& vl = upf.v_loc;
@@ -299,7 +293,6 @@ std::vector<AccReal> upf_vloc_to_gspace(const internal::UPFData& upf,
         throw std::invalid_argument("Local potential PP_LOCAL must match PP_R");
     std::vector<AccReal> integrand(r.size());
     AccReal inv_omega = AccReal(1) / omega;
-    AccReal ry_to_ha = AccReal(0.5); // UPF stores V_loc in Ry
     AccReal z = static_cast<AccReal>(upf.z_val);
 
     for (int ig = 0; ig < gv.count(); ++ig) {
@@ -308,7 +301,7 @@ std::vector<AccReal> upf_vloc_to_gspace(const internal::UPFData& upf,
         bool g_zero = g2 < AccReal(1e-16);
         for (std::size_t ir = 0; ir < r.size(); ++ir) {
             const AccReal radius = r[ir];
-            const AccReal potential = vl[ir] * ry_to_ha;
+            const AccReal potential = vl[ir];
             if (g_zero) {
                 // r²(V + Z/r): exactly zero beyond the core radius.
                 integrand[ir] = radius * (radius * potential + z);
@@ -331,52 +324,6 @@ std::vector<AccReal> upf_vloc_to_gspace(const internal::UPFData& upf,
     return vg;
 }
 
-int valence_from_z(int z) {
-    switch (z) {
-    case 1:
-        return 1;
-    case 2:
-        return 2;
-    case 3:
-        return 1;
-    case 4:
-        return 2;
-    case 5:
-        return 3;
-    case 6:
-        return 4;
-    case 7:
-        return 5;
-    case 8:
-        return 6;
-    case 9:
-        return 7;
-    case 10:
-        return 8;
-    case 11:
-        return 1;
-    case 12:
-        return 2;
-    case 13:
-        return 3;
-    case 14:
-        return 4;
-    case 15:
-        return 5;
-    case 16:
-        return 6;
-    case 17:
-        return 7;
-    case 18:
-        return 8;
-    default:
-        // No-fallback rule: a 0-electron atom would be silently wrong.
-        throw std::invalid_argument(
-            "valence_from_z: no fallback valence count for Z="
-            + std::to_string(z) + " (H..Ar supported); supply a UPF");
-    }
-}
-
 void require_closed_shell(int n_elec, const char* where) {
     if (n_elec % 2 == 0)
         return;
@@ -386,45 +333,29 @@ void require_closed_shell(int n_elec, const char* where) {
           "for open shell, or set smearing for metallic occupations");
 }
 
-UPFData load_pseudopotential(const cpu::Frame& frame,
-                             const std::string& upf_path,
-                             const std::string& gth_name) {
-    // A plane-wave run has no default pseudopotential. Bare valence-charge
-    // Coulomb — the old "toy" path — is not representable in a plane-wave
-    // basis at any finite cutoff, so it produced numbers that neither were
-    // right nor converged with ecut. Exactly one real source is required.
-    if (upf_path.empty() == gth_name.empty())
+void setup_pw_problem(
+    const cpu::Frame& frame,
+    const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
+    int k_mesh, PWProblem& out) {
+    validate_potential_frame(frame, potential);
+    if (!std::isfinite(ecut_ry) || ecut_ry <= 0 || k_mesh < 1)
         throw std::invalid_argument(
-            "load_pseudopotential: set exactly one of PW::upf_path (a "
-            "norm-conserving UPF file) or PW::gth_name (an in-tree analytic "
-            "GTH parameterization such as \"GTH-PBE-q4\"). Both were "
-            + std::string(upf_path.empty() ? "empty" : "set") + ".");
-
-    if (!upf_path.empty())
-        return read_upf_v1(upf_path);
-
-    // Single-species, as for the UPF path: one potential serves every atom.
-    // Element identity comes from the Frame's atomic numbers.
-    const int n_atoms = static_cast<int>(frame.nlocal());
-    if (n_atoms <= 0)
-        throw std::invalid_argument(
-            "load_pseudopotential: frame has no atoms, so PW::gth_name "
-            "cannot be resolved to an element.");
-    const int* __restrict sp_type = frame.span(kAtom_type);
-    const int z0 = sp_type[0];
-    for (int i = 1; i < n_atoms; ++i)
-        if (sp_type[i] != z0)
-            throw std::invalid_argument(
-                "load_pseudopotential: PW::gth_name selects one potential for "
-                "the whole cell, but the frame mixes atomic numbers. "
-                "Multi-species plane-wave runs are not implemented.");
-    return upf_from_gth(
-        gpw::GthPotential(static_cast<molrs::Element>(z0), gth_name));
+            "PW setup requires a positive cutoff and k-mesh");
+    auto admitted = std::make_shared<const NcPotentialData>(potential);
+    setup_pw_problem(frame, std::move(admitted), ecut_ry, k_mesh, out);
 }
 
-void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
-                      const std::string& gth_name, double ecut_ry, int k_mesh,
-                      PWProblem& out) {
+void setup_pw_problem(const cpu::Frame& frame,
+                      std::shared_ptr<const NcPotentialData> potential,
+                      double ecut_ry, int k_mesh, PWProblem& out) {
+    if (!potential)
+        throw std::invalid_argument(
+            "PW setup requires an admitted NC potential");
+    validate_potential_frame(frame, *potential);
+    potential->validate();
+    if (!std::isfinite(ecut_ry) || ecut_ry <= 0 || k_mesh < 1)
+        throw std::invalid_argument(
+            "PW setup requires a positive cutoff and k-mesh");
     int n_atoms = static_cast<int>(frame.nlocal());
     const cpu::Box& box_ang = frame.box;
     cpu::Box box_bohr;
@@ -432,37 +363,27 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 
     AccReal ecut_ht = static_cast<AccReal>(ecut_ry) * AccReal(0.5);
     AccReal vol_bohr = box_bohr.volume();
+    if (!std::isfinite(vol_bohr) || vol_bohr <= 0)
+        throw std::invalid_argument(
+            "PW setup requires a finite positive cell volume");
     out.vol_bohr = vol_bohr;
+    out.potential = std::move(potential);
 
     auto pos_bohr = pos_to_bohr(frame);
 
     const bool rank0 = log_rank0();
 
-    const internal::UPFData upf_early =
-        load_pseudopotential(frame, upf_path, gth_name);
-    // Retained for the branch sites below: a pseudopotential is now always
-    // present, from a file or from the analytic tables.
-    const bool has_upf = true;
-
-    int n_elec = 0;
-    std::vector<AccReal> valence_charges;
-    const int* __restrict sp_type = frame.span(kAtom_type);
-    for (int i = 0; i < n_atoms; ++i) {
-        int z = sp_type[i];
-        int v = has_upf ? static_cast<int>(
-                              std::lround(static_cast<double>(upf_early.z_val)))
-                        : valence_from_z(z);
-        n_elec += v;
-        valence_charges.push_back(static_cast<AccReal>(v));
-    }
+    const NcPotentialData& upf = *out.potential;
+    const int n_elec = n_atoms * upf.z_val;
+    const std::vector<AccReal> valence_charges(
+        static_cast<std::size_t>(n_atoms), static_cast<AccReal>(upf.z_val));
     out.n_elec = n_elec;
     out.n_bands = std::max(n_elec / 2, 1);
 
     if (rank0) {
         ATV_INFO("[pw] ========== PW SCF ==========");
-        ATV_INFO("[pw] atoms={} elec={} bands={} ecut_ry={} {}", n_atoms,
-                 n_elec, out.n_bands, ecut_ry,
-                 gth_name.empty() ? "UPF" : gth_name.c_str());
+        ATV_INFO("[pw] atoms={} elec={} bands={} ecut_ry={} NC(Z={})", n_atoms,
+                 n_elec, out.n_bands, ecut_ry, upf.atomic_number);
     }
 
     // === Ewald ===
@@ -475,7 +396,7 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
                            static_cast<AccReal>(sp_y[i]),
                            static_cast<AccReal>(sp_z[i])});
     // Ewald uses the same charges as V_loc: pseudopotential valence.
-    auto& ewald_charges = valence_charges;
+    const auto& ewald_charges = valence_charges;
     internal::EwaldSummation ewald(pos_ang, ewald_charges, box_ang, ecut_ht);
     AccReal ew_total = ewald.total_energy();
 
@@ -538,16 +459,14 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
     ws.mix_beta = AccReal(0.7); // QE default: mixing_beta = 0.7
     ws.omega = vol_bohr;        // cell volume for real-space integration
     ws.atom_pos_bohr =
-        pos_bohr; // atom positions for augmentation structure factor
+        pos_bohr; // atom positions for local/nonlocal structure factors
 
-    // Initial density: reuse the UPF already parsed for valence counts.
-    const internal::UPFData& upf = upf_early;
+    // Initial density uses the same admitted NC physical data.
 
     for (int i = 0; i < ws.n_g; ++i)
         ws.rho_G[i] = std::complex<AccReal>(0, 0);
 
-    if (has_upf && !upf.rho_atom.empty()
-        && upf.rho_atom.size() == upf.r.size()) {
+    if (!upf.rho_atom.empty()) {
         // G-space transform of the atomic pseudocharge. UPF PP_RHOATOM
         // stores 4πr²ρ(r) (integrates to Z_val with plain dr), so
         // ρ_atom(G) = (1/Ω) ∫ PP_RHOATOM(r) j₀(Gr) dr.
@@ -604,44 +523,12 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
                   ws.fft_ny, ws.fft_nz, ws.nr);
 
     // === V_loc ===
-    if (has_upf) {
-        if (rank0)
-            ATV_DEBUG("[pw] --- UPF: Z_val={} l_max={} n_proj={} ---",
-                      upf.z_val, upf.l_max, upf.kb.size());
-        setup_upf_vloc(ws, gv0, upf, vol_bohr);
-
-        // Setup augmentation form factor: rho_atom(G) / Q_atom
-        ws.q_ij = upf.q_ij;
-        ws.n_proj_total = upf.n_proj();
-        ws.aug_form_factor_G.resize({static_cast<std::size_t>(ws.n_g)});
-        if (!upf.rho_atom.empty() && upf.rho_atom.size() == upf.r.size()) {
-            // PP_RHOATOM stores 4πr²ρ(r): Q = ∫ PP_RHOATOM dr,
-            // form factor (G) = (1/ΩQ) ∫ PP_RHOATOM j₀(Gr) dr.
-            const AccReal Q_atom = upf.integrate_radial(upf.rho_atom);
-            AccReal inv_Q = (std::abs(Q_atom) > AccReal(1e-16))
-                                ? AccReal(1) / Q_atom
-                                : AccReal(0);
-            std::vector<AccReal> integrand(upf.r.size());
-            for (int ig = 0; ig < ws.n_g; ++ig) {
-                AccReal G = std::sqrt(gv0.g[ig].norm_squared());
-                for (std::size_t ir = 0; ir < upf.r.size(); ++ir) {
-                    AccReal Gr = G * upf.r[ir];
-                    AccReal j0 = (Gr < AccReal(1e-8))
-                                     ? AccReal(1) - Gr * Gr / AccReal(6)
-                                     : std::sin(Gr) / Gr;
-                    integrand[ir] = upf.rho_atom[ir] * j0;
-                }
-                const AccReal sum = upf.integrate_radial(integrand);
-                ws.aug_form_factor_G[ig] = sum * inv_Q / vol_bohr;
-            }
-        } else {
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.aug_form_factor_G[ig] = AccReal(0);
-        }
-    }
     if (rank0)
-        ATV_DEBUG("[pw]   V_loc(G) [1]={} [10]={}", ws.V_loc_G[1].real(),
-                  ws.V_loc_G[10].real());
+        ATV_DEBUG("[pw] --- NC: Z_val={} l_max={} n_proj={} ---", upf.z_val,
+                  upf.l_max, upf.kb.size());
+    setup_nc_vloc(ws, gv0, upf, vol_bohr);
+    if (rank0)
+        ATV_DEBUG("[pw]   V_loc(G=0)={}", ws.V_loc_G[0].real());
 
     // Pre-compute k-point G-vectors and the per-k nonlocal / wfc tables
     // (radial parts live on q = k+G, so size and values are k-dependent).
@@ -664,7 +551,7 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
 
     out.kb_proj_k.clear();
     out.atom_wfc_k.clear();
-    if (has_upf) {
+    {
         auto n_k = out.gv_k.size();
         out.kb_proj_k.resize(n_k);
         out.atom_wfc_k.resize(n_k);
@@ -681,9 +568,12 @@ void setup_pw_problem(const cpu::Frame& frame, const std::string& upf_path,
     }
 }
 
-void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
-                      const std::string& upf_path, const std::string& gth_name,
-                      double ecut_ry, const std::vector<Vec3>& kfrac) {
+void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame, double ecut_ry,
+                      const std::vector<Vec3>& kfrac) {
+    if (!out.potential)
+        throw std::logic_error(
+            "rebuild_k_tables requires an admitted NC potential");
+    validate_potential_frame(frame, *out.potential);
     if (kfrac.empty())
         throw std::invalid_argument("rebuild_k_tables: empty k-list");
 
@@ -714,13 +604,7 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame,
     out.kb_proj_k.clear();
     out.atom_wfc_k.clear();
     {
-        // Same pseudopotential source as setup_pw_problem — a k-path rebuild
-        // must not silently switch potentials.
-        const int* __restrict sp_t = frame.span(kAtom_type);
-        auto upf = gth_name.empty()
-                       ? internal::read_upf_v1(upf_path)
-                       : internal::upf_from_gth(gpw::GthPotential(
-                             static_cast<molrs::Element>(sp_t[0]), gth_name));
+        const auto& upf = *out.potential;
         const auto n_k = out.gv_k.size();
         out.kb_proj_k.resize(n_k);
         out.atom_wfc_k.resize(n_k);
@@ -881,16 +765,15 @@ void pulay_mix(xt::xarray<std::complex<AccReal>>& output,
 
 PWEnergyTerms combine_energy_terms(AccReal e_band, AccReal e_h,
                                    AccReal e_xc_int, AccReal e_loc,
-                                   AccReal e_xc, AccReal ew_total,
-                                   AccReal e_aug) {
+                                   AccReal e_xc, AccReal ew_total) {
     PWEnergyTerms t;
     t.e_h = e_h;
     t.e_xc_int = e_xc_int;
     t.e_loc = e_loc;
     // one-electron = Σ ε_i - ∫ρ V_H - ∫ρ V_xc
     t.e_one = e_band - AccReal(2.0) * t.e_h - t.e_xc_int;
-    // total = one-electron + Hartree + XC + Ewald + augmentation
-    t.total = t.e_one + t.e_h + e_xc + ew_total + e_aug;
+    // total = one-electron + Hartree + XC + Ewald
+    t.total = t.e_one + t.e_h + e_xc + ew_total;
     return t;
 }
 
@@ -915,8 +798,8 @@ PWEnergyTerms iteration_energy(const PWWorkspace& ws, AccReal e_band,
     // including the volume; the scratch V_xc_G holds only the last spin.
     e_xc_int = ws.nspin == 2 ? ws.e_xc_int_spin : e_xc_int * vol_bohr;
 
-    return combine_energy_terms(e_band, e_h, e_xc_int, e_loc, ws.E_xc, ew_total,
-                                ws.E_aug);
+    return combine_energy_terms(e_band, e_h, e_xc_int, e_loc, ws.E_xc,
+                                ew_total);
 }
 
 void log_iteration_energy(const PWEnergyTerms& terms, const PWWorkspace& ws,

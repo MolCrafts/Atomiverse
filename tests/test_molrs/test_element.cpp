@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace {
 

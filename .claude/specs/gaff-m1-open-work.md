@@ -67,10 +67,10 @@ items 2–3; (4) resubmit the CPU matrix and the G2 run; (5) CPU perf phase;
 - `tests/cpu/semiempirical/test_gfn2_params.cpp` runs a full SCC — end-to-end
   inside `tests/` (iron law 1). `solve_gfn2` is very long. "wave" history
   wording remains in `docs/tutorial/methods/`.
-- molrs prmtop reader (fixed-width `I` formats split above ~3e5 atoms): fixed
-  in the Roy-Kid/molrs fork `dev` (`molrs/src/io/amber/prmtop.rs`,
-  `integer_field_width` / `split_integer_fields`). The Atomiverse `molrs`
-  submodule (MolCrafts/molrs) does not have it — upstream PR + pin bump.
+- The merged local molpy source includes the fixed-width prmtop integer
+  reader (`crates/molrs/src/io/amber/prmtop.rs`, `integer_field_width` /
+  `split_integer_fields`). Atomiverse consumes it through `ATV_MOLPY_PATH`;
+  there is no pending submodule pin bump.
 - `.github/workflows/{ci,release}.yml` migration to molcrafts-ci reusable
   workflows was committed as found; not exercised.
 

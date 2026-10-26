@@ -7,7 +7,7 @@
 /// Parameters are members of `Bands` / `Dos` — no public `*Config` bag.
 ///
 /// @code
-///   cpu::pw::PW pw{cpu::pw::UpfPseudopotential{"Si.upf"}, /*ecut_ry=*/15.0,
+///   cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf"), /*ecut_ry=*/15.0,
 ///                  /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 ///
 ///   cpu::pw::Bands bands;

@@ -30,9 +30,8 @@ class DavidsonSolver;
 /// "the same method, no state": `pw_forces_fd` and `scf_energy_ry` (strain
 /// FD) both use it, and it must list **every** public member of `PW`.
 ///
-/// Promoted from two file-local copies that each silently dropped the newly
-/// added `gth_name`, so an FD oracle asked for a pseudopotential-free run
-/// and threw. One definition is the only way that stays fixed.
+/// The immutable potential provider is shared; electronic state and helpers
+/// belong to the new solver.
 ///
 /// @param m Source method (not mutated; helpers are not shared).
 /// @return Parameter-identical `PW` with `built_ == false`.

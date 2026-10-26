@@ -12,7 +12,8 @@
 /// `build`/`run` directly.
 ///
 /// @code
-///   cpu::pw::PW pw{cpu::pw::GthPseudopotential{"GTH-PBE-q4"},
+///   cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
+///                      molrs::Element::Si, "GTH-PBE-q4"),
 ///                  /*ecut_ry=*/30.0, /*k_mesh=*/4};
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame); // [Ry]/Ha on result
@@ -30,6 +31,7 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/planewave/norm_conserving_potential.h"
 #include "atomiverse/cpu/planewave/stages/density_stage.h"
 #include "atomiverse/cpu/planewave/stages/diagonalize_stage.h"
 #include "atomiverse/cpu/planewave/stages/mix_stage.h"
@@ -86,19 +88,6 @@ enum class Smearing : int {
     gaussian = 3,          ///< Gaussian (cold/Marzari–Vanderbilt not here).
 };
 
-/// @brief Norm-conserving UPF pseudopotential file.
-struct UpfPseudopotential {
-    std::string path; ///< UPF file path.
-};
-
-/// @brief In-tree analytic Goedecker-Teter-Hutter pseudopotential, e.g.
-///        "GTH-PBE-q4" or "GTH-PADE-q6" (published parameters in
-///        `cpu/gpw/basis_data/gpw_tables.h`; Goedecker-Teter-Hutter, PRB 54,
-///        1703 (1996); Krack, TCA 114, 145 (2005)).
-struct GthPseudopotential {
-    std::string name; ///< Table entry name.
-};
-
 class PW : public cpu::Driver<ATV::pw::Phase> {
   public:
     bool requires_full_frame() const override { return true; }
@@ -106,10 +95,9 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     using cpu::Driver<ATV::pw::Phase>::build;
 
     // ── Identity (constructor arguments, fixed after construction) ────
-    /// @brief UPF file path; empty when a GTH table entry is used.
-    const std::string upf_path;
-    /// @brief GTH table entry; empty when a UPF file is used.
-    const std::string gth_name;
+    /// @brief Immutable shared NC physics; execution state belongs to this PW.
+    const std::shared_ptr<const ::ATV::electronic::NormConservingPotential>
+        potential;
     /// @brief Wavefunction cutoff [Ry].
     const double ecut_ry;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
@@ -148,20 +136,13 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// @brief Extra bands beyond ceil(n_e/2) when smearing is on (per spin if collinear).
     int extra_bands = 4;
 
-    /// @brief Plane-wave DFT from a UPF pseudopotential file.
-    /// @param pp Pseudopotential file.
+    /// @brief Plane-wave DFT using an immutable norm-conserving potential.
+    /// @param pp Shared physical provider; must be non-null.
     /// @param ecut_ry Wavefunction cutoff [Ry].
     /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
-    /// @param xc Exchange–correlation functional.
-    PW(UpfPseudopotential pp, double ecut_ry, int k_mesh,
-       cpu::scf::XCType xc = cpu::scf::XCType::PBE);
-    /// @brief Plane-wave DFT from an in-tree GTH pseudopotential.
-    /// @param pp GTH table entry.
-    /// @param ecut_ry Wavefunction cutoff [Ry].
-    /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
-    /// @param xc Exchange–correlation functional.
-    PW(GthPseudopotential pp, double ecut_ry, int k_mesh,
-       cpu::scf::XCType xc = cpu::scf::XCType::PBE);
+    /// @param xc Exchange-correlation functional.
+    PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
+       double ecut_ry, int k_mesh, cpu::scf::XCType xc = cpu::scf::XCType::PBE);
 
     ~PW();
     PW(PW&&);
@@ -169,15 +150,10 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 
-    /// @brief One-time setup: allocate the step helpers and resolve the
-    ///        pseudopotential up front, so a bad file or an unknown GTH name
-    ///        fails here rather than mid-SCF. `run()` calls it lazily.
-    /// @param reference Frame used only to validate atom types (the first
-    ///        atom's Z selects the GTH entry).
-    /// @throws std::invalid_argument when neither or both of `upf_path` /
-    ///         `gth_name` are set — a plane-wave run has no default
-    ///         pseudopotential — or when the named potential does not
-    ///         resolve.
+    /// @brief Allocate step helpers and validate Frame species against the
+    ///        provider. `run()` calls it lazily and validates every geometry.
+    /// @param reference Frame used to validate every atom's identity.
+    /// @throws std::invalid_argument when any atom differs from the provider.
     void build(const cpu::Frame& reference);
 
     /// @brief Plane-wave SCF at the frame's current geometry.
@@ -251,10 +227,10 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     std::string name() const { return "pw"; }
     /// @brief Energy source for an outer loop's validation.
     /// @return true.
-    bool provides_energy() const { return true; }
+    bool provides_energy() const override { return true; }
     /// @brief Force source for an outer loop's validation.
     /// @return true.
-    bool provides_force() const { return true; }
+    bool provides_force() const override { return true; }
 
     /// @brief Nested mount: remember the parent Runtime the SCF runs on.
     /// @param rt Parent Runtime.

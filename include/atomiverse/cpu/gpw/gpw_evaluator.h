@@ -16,7 +16,7 @@
 #include "atomiverse/cpu/electronic/cpmd.h"
 #include "atomiverse/cpu/electronic/xl_bomd.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {

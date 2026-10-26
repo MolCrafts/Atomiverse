@@ -21,7 +21,7 @@ bases and parameterizations do not need Drivers. Design:
 | --- | --- |
 | Ownership | Concrete method owns Hamiltonian + parameters |
 | Loop | A real self-consistency loop owns/inherits a typed-stage Driver; single-pass methods and model terms do not |
-| I/O | `Frame` (`run` / `forces` / `stress`, CLAUDE.md table) |
+| I/O | `Frame` (`run` / `forces` / `stress`, docs/developer/project-contract.md table) |
 | Kind | `HF` / `Semiempirical` / `PlaneWave` / `GPW` are energy-source tags only |
 | Depth | Inheritance ≤ 2 |
 

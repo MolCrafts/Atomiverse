@@ -50,7 +50,7 @@ export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu
 Smallest useful start — Gaussian SCF + examples, CPU only:
 
 ```bash
-git submodule update --init --recursive molrs   # once per clone
+export ATV_MOLPY_PATH=/absolute/path/to/merged/molpy
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
       -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON \
       -DBLA_VENDOR=OpenBLAS
@@ -59,19 +59,12 @@ cmake --build build --target 02_rhf -j
 
 Add `-DATV_BUILD_PW=ON` for plane-wave, `-DATV_BUILD_TESTS=ON` for tests.
 
-> **molrs path:** molrs is a hard dependency with two documented sources.
-> A plain `cmake -B build` (and CI, via `cmake/AtvUnitGate.cmake`) builds the
-> git submodule at `./molrs` — `ATV_MOLRS_PATH` defaults to
-> `${CMAKE_SOURCE_DIR}/molrs`. Every developer preset
-> (`cmake --preset cpu-unit`, `cpu-unit-hf`, …) instead sets
-> `ATV_MOLRS_PATH=${sourceDir}/../molrs`, the sibling MolCrafts checkout of
-> molrs `dev`: its uncommitted working tree carries the streaming `*.mrec`
-> trajectory writer (`cpu::MrecRecorder`) that no submodule pointer can pin,
-> and the gitlink only tracks the newest committed `dev` commit. In a git
-> worktree or other layout pass an absolute path:
-> `-DATV_MOLRS_PATH=/abs/path/to/molrs`. molrs has no API version before 1.0.0, so
-> no version gate applies; optional bridge surfaces (WHAM, TrajectoryWriter) are
-> detected per pin and reported at configure time.
+> **molpy source:** configure against the merged local MolCrafts/molpy
+> checkout with `ATV_MOLPY_PATH` (environment variable or CMake option).
+> The default is the sibling `../molrs` directory used during migration.
+> The repository must contain `molcxx/`, `molpy/` and `crates/molrs-ffi/`.
+> No version is pinned; build the Python wheel and CXX bridge from this same
+> checkout. Optional bridge surfaces are reported at configure time.
 
 ## 4. Run a first example
 

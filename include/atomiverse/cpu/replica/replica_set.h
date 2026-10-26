@@ -3,7 +3,7 @@
 ///
 /// **This is infrastructure, not a Driver.** The distinction is the whole finding of
 /// probe #3, and it is worth stating plainly, because the Driver taxonomy as written in
-/// CLAUDE.md cannot express it:
+/// docs/developer/project-contract.md cannot express it:
 ///
 /// > "A Driver category is decided by **termination semantics**, never by algorithm or
 /// > method."

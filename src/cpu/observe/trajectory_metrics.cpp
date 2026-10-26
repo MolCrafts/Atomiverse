@@ -12,7 +12,7 @@
 /// analysis math here.
 
 #include "atomiverse/cpu/observe/trajectory_metrics.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 #include <cstdint>
 #include <stdexcept>
@@ -245,7 +245,9 @@ RDFAccumulator& RDFAccumulator::operator=(RDFAccumulator&&) noexcept = default;
 void RDFAccumulator::push(const std::vector<double>& positions,
                           const std::array<double, 9>& cell) {
     molrs_call<std::runtime_error>("cpu::compute::RDFAccumulator::push", [&] {
-        impl_->obj->push(slice(positions), slice(cell));
+        const std::array<bool, 3> periodic{true, true, true};
+        impl_->obj->push(slice(positions), slice(cell),
+                         {periodic.data(), periodic.size()});
     });
 }
 

@@ -670,7 +670,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     //
     // DynamicsDriver and SamplingDriver each carried a private copy of this. It is one
     // mechanism, so it lives in one place — the second caller is what justifies the
-    // extraction (CLAUDE.md: extract on the second caller, not the first).
+    // extraction (docs/developer/project-contract.md: extract on the second caller, not the first).
 
     /// @brief Start a fresh run, or continue the live one.
     ///

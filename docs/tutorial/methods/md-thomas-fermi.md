@@ -1,5 +1,7 @@
 # Thomas–Fermi electrode metallicity
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 **Thomas–Fermi (TF) electrode metallicity** gives constant-potential electrodes
 a finite screening length \(l_{\mathrm{TF}}\): it hardens the diagonal of the
 Gaussian electrode elastance so the metal is imperfect, lowering the induced

@@ -32,12 +32,12 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
+#include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
 #include "atomiverse/cpu/planewave/internal/smearing.h"
-#include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
@@ -984,11 +984,9 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                                      int cg_max_iter, AccReal mix_beta) {
     const int n = frame.nlocal();
     const int dim = 3 * n;
-    const int* types = frame.span(kAtom_type);
 
-    int n_elec = 0;
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    internal::validate_potential_frame(frame, *method.potential);
+    const int n_elec = method.potential->valence() * frame.nlocal();
     if (method.multiplicity < 1)
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: multiplicity must be >= 1 when "
@@ -1031,8 +1029,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
 
     DfptGammaOutput out;
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
+    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
+                     prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -1252,8 +1250,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     ws.gvec = &prob.gv0;
     ws.n_g = ng0;
 
-    const UPFData upf = read_upf_v1(method.upf_path);
-    const std::vector<AccReal> vg = upf_vloc_to_gspace(upf, gv0, omega);
+    const NcPotentialData& nc = *prob.potential;
+    const std::vector<AccReal> vg = nc_vloc_to_gspace(nc, gv0, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -1298,7 +1296,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     std::vector<AccReal> valence(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
+            static_cast<AccReal>(prob.potential->z_val);
     const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<AccReal> C =
         ewald_dynamical_matrix(pos_ang_v, valence, frame.box, ecut_ht);
@@ -1765,13 +1763,6 @@ DfptGammaOutput
 dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                            AccReal response_tol, int response_max_iter,
                            AccReal cg_tol, int cg_max_iter, AccReal mix_beta) {
-    // Fail fast, before any SCF: a run needs a real pseudopotential from one
-    // of the two sources. This used to test `upf_path` alone, which rejected
-    // a perfectly valid analytic-GTH run as if it were the deleted toy path.
-    if (method.upf_path.empty() && method.gth_name.empty())
-        throw std::invalid_argument(
-            "dfpt_gamma_force_constants: requires a pseudopotential — set "
-            "PW::upf_path (UPF file) or PW::gth_name (e.g. \"GTH-PBE-q4\")");
     if (!dfpt_xc_supported(method.xc))
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: hybrid XC unsupported "
@@ -1799,10 +1790,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                                     mix_beta);
 
     // ── Ground-state SCF (fixed or metallic occupations) ──
-    int n_elec = 0;
-    const int* types = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    internal::validate_potential_frame(frame, *method.potential);
+    const int n_elec = method.potential->valence() * frame.nlocal();
     const int n_valence = std::max((n_elec + 1) / 2, 1); // ceil(N_e/2)
     const int n_bands = use_smear ? n_valence + std::max(method.extra_bands, 0)
                                   : std::max(n_elec / 2, 1);
@@ -1940,8 +1929,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     }
 
     // ── Per-atom radial form factor v(G) on the density sphere ──
-    const UPFData upf = read_upf_v1(method.upf_path);
-    const std::vector<AccReal> vg = upf_vloc_to_gspace(upf, gv0, omega);
+    const NcPotentialData& nc = *prob.potential;
+    const std::vector<AccReal> vg = nc_vloc_to_gspace(nc, gv0, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -1989,7 +1978,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     std::vector<AccReal> valence(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
+            static_cast<AccReal>(prob.potential->z_val);
     const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<AccReal> C =
         ewald_dynamical_matrix(pos_ang_v, valence, frame.box, ecut_ht);
@@ -2475,11 +2464,9 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                              int cg_max_iter, AccReal mix_beta) {
     const int n = frame.nlocal();
     const int dim = 3 * n;
-    const int* types = frame.span(kAtom_type);
 
-    int n_elec = 0;
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    internal::validate_potential_frame(frame, *method.potential);
+    const int n_elec = method.potential->valence() * frame.nlocal();
     if (method.multiplicity < 1)
         throw std::invalid_argument(
             "dfpt_q_force_constants: multiplicity must be >= 1 when "
@@ -2522,8 +2509,8 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
 
     DfptQOutput out;
     PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
+    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
+                     prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -2762,8 +2749,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
         kq_frac[static_cast<std::size_t>(ik)] = {
             kf[0] + q_frac[0], kf[1] + q_frac[1], kf[2] + q_frac[2]};
     }
-    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, kq_frac);
+    rebuild_k_tables(prob, frame, method.ecut_ry, kq_frac);
     std::vector<GVectorList> gv_kq = prob.gv_k;
     std::vector<KState> kqstates(static_cast<std::size_t>(2 * n_kpts));
     for (int s = 0; s < 2; ++s) {
@@ -2802,14 +2788,14 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     ws.n_g = ng0;
 
     // v(|G+q|) on the density sphere.
-    const UPFData upf = read_upf_v1(method.upf_path);
+    const NcPotentialData& nc = *prob.potential;
     GVectorList gv_qp = gv0;
     for (int ig = 0; ig < ng0; ++ig) {
         gv_qp.g[static_cast<std::size_t>(ig)] = {gv0.g[ig][0] + q_cart[0],
                                                  gv0.g[ig][1] + q_cart[1],
                                                  gv0.g[ig][2] + q_cart[2]};
     }
-    const std::vector<AccReal> vg_qp = upf_vloc_to_gspace(upf, gv_qp, omega);
+    const std::vector<AccReal> vg_qp = nc_vloc_to_gspace(nc, gv_qp, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -2857,7 +2843,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     std::vector<AccReal> valence(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
+            static_cast<AccReal>(prob.potential->z_val);
     const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<Cx> C = ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box,
                                                  ecut_ht, q_frac);
@@ -3365,12 +3351,6 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                                    const Vec3& q_frac, AccReal response_tol,
                                    int response_max_iter, AccReal cg_tol,
                                    int cg_max_iter, AccReal mix_beta) {
-    // Same fail-fast gate as the Γ path: either pseudopotential source is
-    // valid; only "neither set" is an error.
-    if (method.upf_path.empty() && method.gth_name.empty())
-        throw std::invalid_argument(
-            "dfpt_q_force_constants: requires a pseudopotential — set "
-            "PW::upf_path (UPF file) or PW::gth_name (e.g. \"GTH-PBE-q4\")");
     if (!dfpt_xc_supported(method.xc))
         throw std::invalid_argument(
             "dfpt_q_force_constants: hybrid XC unsupported "
@@ -3396,10 +3376,8 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             "dfpt_q_force_constants: frame has no atoms");
     const int dim = 3 * n;
 
-    int n_elec = 0;
-    const int* types = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    internal::validate_potential_frame(frame, *method.potential);
+    const int n_elec = method.potential->valence() * frame.nlocal();
     const int n_valence = std::max((n_elec + 1) / 2, 1);
     const int n_bands = use_smear ? n_valence + std::max(method.extra_bands, 0)
                                   : std::max(n_elec / 2, 1);
@@ -3563,8 +3541,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
         kq_frac[static_cast<std::size_t>(ik)] = {
             kf[0] + q_frac[0], kf[1] + q_frac[1], kf[2] + q_frac[2]};
     }
-    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, kq_frac);
+    rebuild_k_tables(prob, frame, method.ecut_ry, kq_frac);
     std::vector<GVectorList> gv_kq = prob.gv_k;
     std::vector<KState> kqstates(static_cast<std::size_t>(n_kpts));
     for (int ik = 0; ik < n_kpts; ++ik) {
@@ -3605,14 +3582,14 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     ws.n_g = ng0;
 
     // v(|G+q|) on the density sphere: shift g → G+q for the radial transform.
-    const UPFData upf = read_upf_v1(method.upf_path);
+    const NcPotentialData& nc = *prob.potential;
     GVectorList gv_qp = gv0;
     for (int ig = 0; ig < ng0; ++ig) {
         gv_qp.g[static_cast<std::size_t>(ig)] = {gv0.g[ig][0] + q_cart[0],
                                                  gv0.g[ig][1] + q_cart[1],
                                                  gv0.g[ig][2] + q_cart[2]};
     }
-    const std::vector<AccReal> vg_qp = upf_vloc_to_gspace(upf, gv_qp, omega);
+    const std::vector<AccReal> vg_qp = nc_vloc_to_gspace(nc, gv_qp, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -3661,7 +3638,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     std::vector<AccReal> valence(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
+            static_cast<AccReal>(prob.potential->z_val);
     const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<Cx> C = ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box,
                                                  ecut_ht, q_frac);

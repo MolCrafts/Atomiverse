@@ -8,8 +8,8 @@
 
 #include "atomiverse/cpu/observe/wham.h"
 
-#if !defined(ATV_HAS_MOLRS_WHAM)
-#error "test_wham.cpp requires ATV_HAS_MOLRS_WHAM"
+#if !defined(ATV_HAS_MOLPY_WHAM)
+#error "test_wham.cpp requires ATV_HAS_MOLPY_WHAM"
 #endif
 
 namespace {

@@ -77,6 +77,7 @@ cpu::pw::internal::SmearKind to_smear_kind(cpu::pw::Smearing s) {
 /// Device SCF at `frame`; fills free/total energy and returns host ρ(r) + Ω.
 /// Collinear spin: rho_r is unused; rho_a / rho_b hold the spin channels.
 struct RefScf {
+    std::shared_ptr<const cpu::pw::internal::NcPotentialData> potential;
     std::vector<double> rho_r;
     std::vector<double> rho_a;
     std::vector<double> rho_b;
@@ -90,15 +91,16 @@ struct RefScf {
     int n_beta = 0;
 };
 
-RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
-                      const std::string& gth_name, double ecut_ry, int k_mesh,
-                      double tol, int max_iter, double mix_beta,
-                      int pulay_depth, cpu::scf::XCType xc,
-                      cpu::pw::Smearing smearing, double degauss, int mp_order,
-                      int extra_bands, bool spin_polarized, int multiplicity) {
+RefScf
+run_device_scf(const cpu::Frame& frame,
+               const ::ATV::electronic::NormConservingPotential& potential,
+               double ecut_ry, int k_mesh, double tol, int max_iter,
+               double mix_beta, int pulay_depth, cpu::scf::XCType xc,
+               cpu::pw::Smearing smearing, double degauss, int mp_order,
+               int extra_bands, bool spin_polarized, int multiplicity) {
     cpu::pw::internal::PWProblem prob;
-    cpu::pw::internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry,
-                                        k_mesh, prob);
+    cpu::pw::internal::setup_pw_problem(frame, potential, ecut_ry, k_mesh,
+                                        prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
     const int n_elec = prob.n_elec;
     const bool use_smear = (smearing != cpu::pw::Smearing::none);
@@ -215,12 +217,11 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
             ws.E_xc = AccReal(red.e_xc);
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(red.e_h), AccReal(red.e_xc_int),
-                AccReal(red.e_loc), ws.E_xc, prob.ew_total, ws.E_aug);
+                AccReal(red.e_loc), ws.E_xc, prob.ew_total);
             terms.e_one = e_band - AccReal(2.0) * AccReal(red.e_h)
                           - AccReal(red.e_xc_int);
             last_energy_ha = terms.e_one + AccReal(red.e_h) + ws.E_xc
-                             + prob.ew_total + ws.E_aug
-                             - degauss_ha * entropy_sum;
+                             + prob.ew_total - degauss_ha * entropy_sum;
             last_iter = iter + 1;
             if (conv.step(AccReal(red.resid))) {
                 converged = true;
@@ -255,11 +256,11 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
             ws.E_xc = AccReal(s.e_xc);
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             terms.e_one =
                 e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
-            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
-                          + ws.E_aug;
+            terms.total =
+                terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total;
             last_energy_ha = terms.total;
             last_iter = iter + 1;
             if (conv.step(AccReal(s.resid))) {
@@ -343,7 +344,7 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
             ws.E_xc = AccReal(s.e_xc);
             const auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
             last_energy_ha = terms.total + (-degauss_ha * entropy_sum);
             last_iter = iter + 1;
@@ -375,7 +376,7 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
             ws.E_xc = AccReal(s.e_xc);
             const auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             last_energy_ha = terms.total;
             last_iter = iter + 1;
             if (conv.step(AccReal(s.resid))) {
@@ -386,6 +387,7 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
     }
 
     RefScf out;
+    out.potential = prob.potential;
     out.nr = den.nr();
     out.omega_bohr = den.omega();
     out.spin = spin_polarized;
@@ -408,17 +410,17 @@ RefScf run_device_scf(const cpu::Frame& frame, const std::string& upf_path,
 }
 
 /// Non-self-consistent free / total energy [Ry] with remapped density.
-double nscf_energy_ry(const cpu::Frame& frame, const std::string& upf_path,
-                      const std::string& gth_name, double ecut_ry, int k_mesh,
-                      double mix_beta, int pulay_depth, cpu::scf::XCType xc,
-                      cpu::pw::Smearing smearing, double degauss, int mp_order,
-                      int extra_bands, bool spin_polarized, int n_alpha,
-                      int n_beta, const std::vector<double>& rho_r0,
-                      const std::vector<double>& rho_a0,
-                      const std::vector<double>& rho_b0, double omega0_bohr) {
+double nscf_energy_ry(
+    const cpu::Frame& frame,
+    const std::shared_ptr<const cpu::pw::internal::NcPotentialData>& potential,
+    double ecut_ry, int k_mesh, double mix_beta, int pulay_depth,
+    cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
+    int mp_order, int extra_bands, bool spin_polarized, int n_alpha, int n_beta,
+    const std::vector<double>& rho_r0, const std::vector<double>& rho_a0,
+    const std::vector<double>& rho_b0, double omega0_bohr) {
     cpu::pw::internal::PWProblem prob;
-    cpu::pw::internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry,
-                                        k_mesh, prob);
+    cpu::pw::internal::setup_pw_problem(frame, potential, ecut_ry, k_mesh,
+                                        prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
     ws.mix_beta = AccReal(mix_beta);
     ws.pulay_depth = pulay_depth;
@@ -466,11 +468,11 @@ double nscf_energy_ry(const cpu::Frame& frame, const std::string& upf_path,
         const auto s = den.reduce_spin(static_cast<double>(vol_bohr));
         auto terms = cpu::pw::internal::combine_energy_terms(
             e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-            AccReal(s.e_xc), prob.ew_total, ws.E_aug);
+            AccReal(s.e_xc), prob.ew_total);
         terms.e_one =
             e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
-        terms.total = terms.e_one + AccReal(s.e_h) + AccReal(s.e_xc)
-                      + prob.ew_total + ws.E_aug;
+        terms.total =
+            terms.e_one + AccReal(s.e_h) + AccReal(s.e_xc) + prob.ew_total;
         return static_cast<double>(terms.total)
                / cpu::pw::qe_units::rydberg_to_hartree;
     }
@@ -536,7 +538,7 @@ double nscf_energy_ry(const cpu::Frame& frame, const std::string& upf_path,
         const auto s = den.reduce(static_cast<double>(vol_bohr));
         const auto terms = cpu::pw::internal::combine_energy_terms(
             e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-            AccReal(s.e_xc), prob.ew_total, ws.E_aug);
+            AccReal(s.e_xc), prob.ew_total);
         const AccReal e_ha = terms.total + (-degauss_ha * entropy_sum);
         return static_cast<double>(e_ha)
                / cpu::pw::qe_units::rydberg_to_hartree;
@@ -553,7 +555,7 @@ double nscf_energy_ry(const cpu::Frame& frame, const std::string& upf_path,
     const auto s = den.reduce(static_cast<double>(vol_bohr));
     const auto terms = cpu::pw::internal::combine_energy_terms(
         e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-        AccReal(s.e_xc), prob.ew_total, ws.E_aug);
+        AccReal(s.e_xc), prob.ew_total);
     return static_cast<double>(terms.total)
            / cpu::pw::qe_units::rydberg_to_hartree;
 }
@@ -561,11 +563,12 @@ double nscf_energy_ry(const cpu::Frame& frame, const std::string& upf_path,
 } // namespace
 
 std::array<double, 6> pw_stress_analytic_impl(
-    const cpu::Frame& frame, const std::string& upf_path,
-    const std::string& gth_name, double ecut_ry, int k_mesh, double tol,
-    int max_iter, double mix_beta, int pulay_depth, cpu::scf::XCType xc,
-    cpu::pw::Smearing smearing, double degauss, int mp_order, int extra_bands,
-    bool spin_polarized, int multiplicity, double* energy_ry_out) {
+    const cpu::Frame& frame,
+    const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
+    int k_mesh, double tol, int max_iter, double mix_beta, int pulay_depth,
+    cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
+    int mp_order, int extra_bands, bool spin_polarized, int multiplicity,
+    double* energy_ry_out) {
     if (frame.nlocal() <= 0)
         throw std::invalid_argument("cuda::pw::pw_stress: frame has no atoms");
     if (frame.box.volume() <= 0)
@@ -581,9 +584,9 @@ std::array<double, 6> pw_stress_analytic_impl(
             "spin_polarized");
 
     const RefScf ref =
-        run_device_scf(frame, upf_path, gth_name, ecut_ry, k_mesh, tol,
-                       max_iter, mix_beta, pulay_depth, xc, smearing, degauss,
-                       mp_order, extra_bands, spin_polarized, multiplicity);
+        run_device_scf(frame, potential, ecut_ry, k_mesh, tol, max_iter,
+                       mix_beta, pulay_depth, xc, smearing, degauss, mp_order,
+                       extra_bands, spin_polarized, multiplicity);
     if (energy_ry_out)
         *energy_ry_out = ref.energy_ry;
     if (!ref.converged) {
@@ -623,12 +626,12 @@ std::array<double, 6> pw_stress_analytic_impl(
         apply_strain(fm, em);
 
         const double ep_ry =
-            nscf_energy_ry(fp, upf_path, gth_name, ecut_ry, k_mesh, mix_beta,
+            nscf_energy_ry(fp, ref.potential, ecut_ry, k_mesh, mix_beta,
                            pulay_depth, xc, smearing, degauss, mp_order,
                            extra_bands, spin_polarized, ref.n_alpha, ref.n_beta,
                            ref.rho_r, ref.rho_a, ref.rho_b, ref.omega_bohr);
         const double em_ry =
-            nscf_energy_ry(fm, upf_path, gth_name, ecut_ry, k_mesh, mix_beta,
+            nscf_energy_ry(fm, ref.potential, ecut_ry, k_mesh, mix_beta,
                            pulay_depth, xc, smearing, degauss, mp_order,
                            extra_bands, spin_polarized, ref.n_alpha, ref.n_beta,
                            ref.rho_r, ref.rho_a, ref.rho_b, ref.omega_bohr);

@@ -26,7 +26,7 @@ else()
         if(DEFINED ENV{ATV_KOKKOS_SOURCE} AND NOT "$ENV{ATV_KOKKOS_SOURCE}" STREQUAL "")
             list(APPEND _atv_kokkos_candidates "$ENV{ATV_KOKKOS_SOURCE}")
         endif()
-        # CLAUDE.md names ../../lammps-src from the repo root. A worktree
+        # docs/developer/project-contract.md names ../../lammps-src from the repo root. A worktree
         # sits deeper, so walk parents for lib/kokkos (not copied in).
         set(_atv_walk "${CMAKE_SOURCE_DIR}")
         foreach(_up RANGE 0 8)

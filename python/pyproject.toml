@@ -16,17 +16,14 @@ readme = "README.md"
 license = "GPL-2.0-only"
 # molcrafts-molpy (the Frame currency) requires >=3.12.
 requires-python = ">=3.12"
-# molpy hands frames to the extension as a molrs capsule named by the molrs
-# ABI line (major.minor), so its minor moves in lockstep with the molrs
-# submodule (molrs/Cargo.toml version). The molrs this pulls from PyPI serves
-# the pure install only: `python -m atomiverse install` replaces it with the
-# molrs built from the same submodule the extension links.
-dependencies = ["numpy", "molcrafts-molpy>=0.18.0,<0.19", "typer>=0.12"]
+# The local merged molpy wheel and CXX bridge must come from the same tree.
+# No molpy release version is pinned during the repository migration.
+dependencies = ["numpy", "molcrafts-molpy", "typer>=0.12"]
 
 [project.optional-dependencies]
 dev      = ["pytest", "pytest-cov", "numpy"]
 # Native extension build (`python -m atomiverse compile`): scikit-build-core
-# and nanobind for the extension, maturin for molrs from the submodule. Not
+# and nanobind for the extension, maturin for molpy from the local checkout. Not
 # required for the pure wheel; the build runs without isolation, so all three
 # live in this env.
 native   = ["nanobind>=2.4", "scikit-build-core>=0.10", "maturin>=1.0,<2.0"]

@@ -425,15 +425,15 @@ inline bool operator==(const AM1Params& a, const AM1Params& b) {
            && a.energy_tol == b.energy_tol;
 }
 
-/// @brief Wire mirror of the fifteen public members of `cpu::pw::PW` — the
+/// @brief Built-in pseudopotential and SCF payload for `cpu::pw::PW` — the
 ///        plane-wave DFT method as an MD force source (plane-wave BOMD).
 ///
 /// Like `AM1Params` it rides the categorical evaluator slot, so a
 /// launcher payload can drive Born-Oppenheimer dynamics on a plane-wave
 /// Hamiltonian — the electrons re-converged at every geometry the nuclei
-/// reach. Budget two SCF solves per force-producing step, not one: the
-/// evaluator runs the energy SCF and then the analytic force path, which
-/// converges its own density (`cpu/planewave/pw_evaluator.cpp`).
+/// reach. Forces contract the accepted state of that one SCF. The wire
+/// carries explicit built-in data identity; arbitrary local providers are
+/// not serialized. Python mounts the original method through a borrowed node.
 ///
 /// The solver itself needs `ATV_BUILD_PW` (FFTW3 + the plane-wave sources),
 /// but this mirror does not: the wire layer is always compiled, so a payload
@@ -463,6 +463,9 @@ struct PWParams {
     ///        `upf_path`. One potential serves the whole cell, so a frame
     ///        mixing atomic numbers is refused at run time.
     std::string gth_name;
+    int atomic_number =
+        0; ///< Explicit element Z for GTH lookup; UPF supplies its own.
+
     /// @brief Wavefunction cutoff [Ry] — plane waves with kinetic energy
     ///        above it are dropped, so this sets basis size and cost.
     double ecut_ry = 30.0;
@@ -501,10 +504,10 @@ struct PWParams {
 };
 inline bool operator==(const PWParams& a, const PWParams& b) {
     return a.upf_path == b.upf_path && a.gth_name == b.gth_name
-           && a.ecut_ry == b.ecut_ry && a.k_mesh == b.k_mesh && a.tol == b.tol
-           && a.max_iter == b.max_iter && a.mix_beta == b.mix_beta
-           && a.pulay_depth == b.pulay_depth && a.xc == b.xc
-           && a.spin_polarized == b.spin_polarized
+           && a.atomic_number == b.atomic_number && a.ecut_ry == b.ecut_ry
+           && a.k_mesh == b.k_mesh && a.tol == b.tol && a.max_iter == b.max_iter
+           && a.mix_beta == b.mix_beta && a.pulay_depth == b.pulay_depth
+           && a.xc == b.xc && a.spin_polarized == b.spin_polarized
            && a.multiplicity == b.multiplicity && a.smearing == b.smearing
            && a.degauss == b.degauss && a.mp_order == b.mp_order
            && a.extra_bands == b.extra_bands;
@@ -588,7 +591,7 @@ inline bool operator==(const PairBuckParams& a, const PairBuckParams& b) {
 /// single-type arm's `ctx.md.pair_list` fast path.
 ///
 /// Type keys are frame `kAtom_type` values as-is. In this tree that column
-/// carries the ATOMIC NUMBER (`cpu::from_molrs` fills it from molrs
+/// carries the ATOMIC NUMBER (`cpu::from_molpy` fills it from molpy
 /// `atomic_number`), so a Na-Cl row is `{11, 17}` and an argon dimer is
 /// `{18, 18}` — not a 0-based dense index. Every interacting pair must be
 /// listed; unlisted pairs do not interact (Fumi-Tosi parameters are not
@@ -1530,7 +1533,7 @@ class TaskSpec {
     /// a fresh payload leaves every existing byte layout untouched, so a v5
     /// decoder written before them reads every previously encodable payload
     /// unchanged. Only a LAYOUT change is a bump.
-    static constexpr std::uint32_t kWireVersion = 5;
+    static constexpr std::uint32_t kWireVersion = 6;
 
     explicit TaskSpec(MDTask task);
     explicit TaskSpec(SinglePointTask task);

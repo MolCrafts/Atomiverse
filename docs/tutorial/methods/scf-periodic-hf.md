@@ -1,5 +1,7 @@
 # Periodic Hartree–Fock
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Gaussian-basis Hartree–Fock in a periodic cell. Two public paths exist: the
 Γ-point `cpu::scf::RHF{basis}` with `periodic = true` (a truncated real-space
 lattice; section `periodic-rhf-gamma`, H₂ / STO-3G in a 20 Å cube, oracle

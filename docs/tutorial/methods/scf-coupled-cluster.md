@@ -1,5 +1,7 @@
 # Coupled cluster (CCSD, CCSD(T), CC2)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Coupled-cluster theory writes the correlated wavefunction as an exponential
 of excitation operators on a single closed-shell RHF determinant
 \(\lvert\Phi_0\rangle\):

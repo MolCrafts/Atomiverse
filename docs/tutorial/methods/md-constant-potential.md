@@ -1,5 +1,7 @@
 # Constant-potential electrodes
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 **Constant-potential** (Born–Oppenheimer) electrode electrostatics: metal atom
 groups are held at fixed applied potentials \(\Psi\), and every step the
 electrode site charges \(Q\) are solved from a Gaussian elastance matrix so each

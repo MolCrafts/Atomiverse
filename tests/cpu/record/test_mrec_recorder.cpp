@@ -27,7 +27,7 @@
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/mrec_recorder.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 using namespace ATV;
 
@@ -168,7 +168,7 @@ TEST(MrecRecorderTest, FirstFrameReadsBackCoordinatesSpeciesAndBox) {
     auto z = molrs::frame_column_f64(*fr, "atoms", "z");
     auto species = molrs::frame_column_u64(*fr, "atoms", "atomic_number");
     auto mass = molrs::frame_column_f64(*fr, "atoms", "mass");
-    auto box = molrs::frame_box_h(*fr);
+    auto box = molrs::frame_box(*fr).h;
 
     ASSERT_EQ(x.size(), static_cast<std::size_t>(kN));
     ASSERT_EQ(y.size(), static_cast<std::size_t>(kN));

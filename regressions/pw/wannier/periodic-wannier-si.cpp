@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
@@ -101,8 +102,9 @@ int run() {
     constexpr double kMidTol = 0.90;      // bond-midpoint distance [Angstrom]
     constexpr double kSpreadRatio = 0.25; // Ω_final / Ω_init upper bound
 
-    PW method{UpfPseudopotential{ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"}, kEcutRy,
-              kMeshScf, cpu::scf::XCType::LSDA};
+    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                   "/pw/Si_lda_nc.upf"),
+              kEcutRy, kMeshScf, cpu::scf::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
 

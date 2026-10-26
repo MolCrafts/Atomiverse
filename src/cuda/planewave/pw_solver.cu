@@ -37,12 +37,11 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/precision.h"
-#include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/planewave/internal/convergence.h"
+#include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
 #include "atomiverse/cpu/planewave/internal/smearing.h"
-#include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
@@ -115,34 +114,25 @@ void PW::validate_members() const {
 }
 
 void PW::build(const cpu::Frame& reference) {
-    // Validate the pseudopotential up front so a bad file or unknown GTH
-    // name fails here.
-    if (!upf_path.empty()) {
-        (void)cpu::pw::internal::read_upf_v1(upf_path);
-    } else {
-        const int* sp_type = reference.span(kAtom_type);
-        if (reference.nlocal() > 0)
-            (void)cpu::gpw::GthPotential(
-                static_cast<molrs::Element>(sp_type[0]), gth_name);
-    }
+    cpu::pw::internal::validate_potential_frame(reference, *potential);
     built_ = true;
 }
 
 PWResult& PW::run(const cpu::Frame& frame) {
     // Reject unsupported members before any allocation or CUDA call.
     validate_members();
+    cpu::pw::internal::validate_potential_frame(frame, *potential);
 
     // Lazy build — convenience for callers that skip explicit build().
     if (!built_)
         build(frame);
 
-    result_ = PWResult{};
-
     // ── Shared problem assembly (identical to the CPU backend) ──
     // PWProblem is non-copyable (ws.gvec aliases gv0): construct in place.
     cpu::pw::internal::PWProblem prob;
-    cpu::pw::internal::setup_pw_problem(frame, upf_path, gth_name, ecut_ry,
-                                        k_mesh, prob);
+    cpu::pw::internal::setup_pw_problem(frame, *potential, ecut_ry, k_mesh,
+                                        prob);
+    result_ = PWResult{};
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
 
     // Collinear occupation split: N↑ − N↓ = multiplicity − 1, N↑ + N↓ = n_elec.
@@ -314,12 +304,12 @@ PWResult& PW::run(const cpu::Frame& frame) {
             ws.E_xc = AccReal(s.e_xc);
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             terms.e_one =
                 e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
             const AccReal e_ent_ha = -degauss_ha * entropy_sum;
             terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
-                          + ws.E_aug + e_ent_ha;
+                          + e_ent_ha;
             cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
                                                     iter);
             result_.iterations = iter + 1;
@@ -367,11 +357,11 @@ PWResult& PW::run(const cpu::Frame& frame) {
             // Spin energy: e_one = e_band − 2 e_h − ∫(ρ↑V↑+ρ↓V↓).
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             terms.e_one =
                 e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
-            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
-                          + ws.E_aug;
+            terms.total =
+                terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total;
 
             cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
                                                     iter);
@@ -472,7 +462,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
             const auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
             const AccReal e_ent_ha = -degauss_ha * entropy_sum;
             const AccReal e_ha = terms.total + e_ent_ha;
@@ -539,7 +529,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
         // catastrophic-cancellation term order cannot drift apart.
         const auto terms = cpu::pw::internal::combine_energy_terms(
             e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-            ws.E_xc, prob.ew_total, ws.E_aug);
+            ws.E_xc, prob.ew_total);
 
         cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total, iter);
 
@@ -628,20 +618,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: frame has no atoms");
 
-    // Lazy build on a non-const view of the same public members. build() only
-    // sets built_ and validates the PP source — method is const, so replicate
-    // the PP gate without mutating the caller's object.
-    if (!method.upf_path.empty()) {
-        (void)cpu::pw::internal::read_upf_v1(method.upf_path);
-    } else {
-        const int* sp_type = frame.span(kAtom_type);
-        if (frame.nlocal() > 0)
-            (void)cpu::gpw::GthPotential(
-                static_cast<molrs::Element>(sp_type[0]), method.gth_name);
-    }
+    cpu::pw::internal::validate_potential_frame(frame, *method.potential);
 
     cpu::pw::internal::PWProblem prob;
-    cpu::pw::internal::setup_pw_problem(frame, method.upf_path, method.gth_name,
+    cpu::pw::internal::setup_pw_problem(frame, *method.potential,
                                         method.ecut_ry, method.k_mesh, prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
 
@@ -773,12 +753,11 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
             ws.E_xc = AccReal(red.e_xc);
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(red.e_h), AccReal(red.e_xc_int),
-                AccReal(red.e_loc), ws.E_xc, prob.ew_total, ws.E_aug);
+                AccReal(red.e_loc), ws.E_xc, prob.ew_total);
             terms.e_one = e_band - AccReal(2.0) * AccReal(red.e_h)
                           - AccReal(red.e_xc_int);
             last_energy_ha = terms.e_one + AccReal(red.e_h) + ws.E_xc
-                             + prob.ew_total + ws.E_aug
-                             - degauss_ha * entropy_sum;
+                             + prob.ew_total - degauss_ha * entropy_sum;
             last_iter = iter + 1;
             if (conv.step(AccReal(red.resid)))
                 break;
@@ -812,11 +791,11 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
             ws.E_xc = AccReal(s.e_xc);
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             terms.e_one =
                 e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
-            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
-                          + ws.E_aug;
+            terms.total =
+                terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total;
             last_energy_ha = terms.total;
             last_iter = iter + 1;
             if (conv.step(AccReal(s.resid)))
@@ -902,7 +881,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
             ws.E_xc = AccReal(s.e_xc);
             const auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             const AccReal e_ent_ha = -degauss_ha * entropy_sum;
             last_energy_ha = terms.total + e_ent_ha;
             last_iter = iter + 1;
@@ -932,7 +911,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
             ws.E_xc = AccReal(s.e_xc);
             const auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total, ws.E_aug);
+                ws.E_xc, prob.ew_total);
             last_energy_ha = terms.total;
             last_iter = iter + 1;
             if (conv.step(AccReal(s.resid)))
@@ -951,9 +930,9 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 
     // Forces from the final mixed density + band re-solve at final V_eff.
     return internal::pw_forces_analytic_impl(
-        frame, method.upf_path, method.gth_name, method.ecut_ry, den, solver,
-        prob, ws, n_alpha, n_beta, use_smear, n_elec, smear_kind,
-        static_cast<double>(degauss_ha), method.mp_order);
+        frame, method.ecut_ry, den, solver, prob, ws, n_alpha, n_beta,
+        use_smear, n_elec, smear_kind, static_cast<double>(degauss_ha),
+        method.mp_order);
 }
 
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
@@ -980,21 +959,13 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
         throw std::invalid_argument(
             "cuda::pw::pw_stress: non-positive cell volume");
 
-    if (!method.upf_path.empty()) {
-        (void)cpu::pw::internal::read_upf_v1(method.upf_path);
-    } else {
-        const int* sp_type = frame.span(kAtom_type);
-        if (frame.nlocal() > 0)
-            (void)cpu::gpw::GthPotential(
-                static_cast<molrs::Element>(sp_type[0]), method.gth_name);
-    }
+    cpu::pw::internal::validate_potential_frame(frame, *method.potential);
 
     return internal::pw_stress_analytic_impl(
-        frame, method.upf_path, method.gth_name, method.ecut_ry, method.k_mesh,
-        method.tol, method.max_iter, method.mix_beta, method.pulay_depth,
-        method.xc, method.smearing, method.degauss, method.mp_order,
-        method.extra_bands, method.spin_polarized, method.multiplicity,
-        energy_ry_out);
+        frame, *method.potential, method.ecut_ry, method.k_mesh, method.tol,
+        method.max_iter, method.mix_beta, method.pulay_depth, method.xc,
+        method.smearing, method.degauss, method.mp_order, method.extra_bands,
+        method.spin_polarized, method.multiplicity, energy_ry_out);
 }
 
 } // namespace pw

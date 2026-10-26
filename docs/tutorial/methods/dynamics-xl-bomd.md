@@ -1,5 +1,7 @@
 # Extended-Lagrangian BOMD (XL-BOMD)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Extended-Lagrangian Born–Oppenheimer MD propagates an auxiliary AO density
 matrix alongside the nuclei and uses it, instead of the last converged density,
 as the electronic starting point at every MD step. The auxiliary density is a

@@ -165,8 +165,8 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
     using namespace internal;
     PWResult result{};
 
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
+    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
+                     prob);
     PWWorkspace& ws = prob.ws;
     auto& gv0 = prob.gv0;
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
@@ -268,8 +268,7 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
         // Spin energy: e_one = e_band - 2 EH - ∫(ρ↑Vxc↑+ρ↓Vxc↓)  (PW::run).
         auto terms = iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
         terms.e_one = e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-        terms.total =
-            terms.e_one + terms.e_h + ws.E_xc + prob.ew_total + ws.E_aug;
+        terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total;
         result.energy_ha = static_cast<double>(terms.total);
         result.energy = result.energy_ha / qe_units::rydberg_to_hartree;
         result.iterations = iter + 1;
@@ -458,13 +457,10 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
     out.kfrac = path;
 
     if (!method.spin_polarized) {
-        // Pre-count valence for band-count gates (UPF may refine n_elec).
-        int n_elec_est = 0;
-        {
-            const auto types = frame.span(kAtom_type);
-            for (int i = 0; i < frame.nlocal(); ++i)
-                n_elec_est += internal::valence_from_z(types[i]);
-        }
+        // The provider fixes the electron count before band-count admission.
+        internal::validate_potential_frame(frame, *method.potential);
+        const int n_elec_est = method.potential->valence() * frame.nlocal();
+
         const int n_valence_est = std::max((n_elec_est + 1) / 2, 1);
         if (n_bands < n_valence_est)
             throw std::invalid_argument(
@@ -497,8 +493,7 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
             out.e_fermi_ry = 0;
         }
 
-        rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                         method.ecut_ry, kvec);
+        rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
 
         out.nspin = 1;
         out.magnetization = 0;
@@ -521,13 +516,10 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
         throw std::invalid_argument(
             "Bands::compute: multiplicity must be >= 1 when spin_polarized");
 
-    // Count valence electrons (same valence_from_z as setup_pw_problem).
-    int n_elec = 0;
-    {
-        const auto types = frame.span(kAtom_type);
-        for (int i = 0; i < frame.nlocal(); ++i)
-            n_elec += internal::valence_from_z(types[i]);
-    }
+    // Count the admitted provider valence electrons.
+    internal::validate_potential_frame(frame, *method.potential);
+    const int n_elec = method.potential->valence() * frame.nlocal();
+
     const int mag = method.multiplicity - 1;
     if ((n_elec + mag) % 2 != 0 || mag > n_elec)
         throw std::invalid_argument(
@@ -571,8 +563,7 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
         veff_r[s].assign(ws.V_eff_r.begin(), ws.V_eff_r.begin() + nr);
     }
 
-    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, kvec);
+    rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
 
     // NSCF α
     ws.V_eff_r.resize({static_cast<std::size_t>(nr)});
@@ -610,13 +601,9 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         throw std::invalid_argument(
             "Dos::compute: degauss must be > 0 [Ry] when smearing is enabled");
 
-    // Pre-count valence for band-count gates (UPF may refine n_elec in setup).
-    int n_elec_est = 0;
-    {
-        const int* types = frame.span(kAtom_type);
-        for (int i = 0; i < frame.nlocal(); ++i)
-            n_elec_est += internal::valence_from_z(types[i]);
-    }
+    // The provider fixes the electron count before band-count admission.
+    internal::validate_potential_frame(frame, *method.potential);
+    const int n_elec_est = method.potential->valence() * frame.nlocal();
 
     // ── Collinear spin-polarized DOS (fixed occupations or metallic smear) ──
     if (method.spin_polarized) {
@@ -678,8 +665,7 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         }
 
         auto kg = generate_mp_mesh(k_mesh, k_mesh, k_mesh);
-        rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                         method.ecut_ry, kg.kpoints);
+        rebuild_k_tables(prob, frame, method.ecut_ry, kg.kpoints);
 
         // NSCF α / β on frozen V_eff,σ
         ws.V_eff_r.resize({static_cast<std::size_t>(nr)});
@@ -795,8 +781,7 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
 
     // Replace k-mesh with denser MP grid for the DOS eigenvalues.
     auto kg = internal::generate_mp_mesh(k_mesh, k_mesh, k_mesh);
-    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, kg.kpoints);
+    rebuild_k_tables(prob, frame, method.ecut_ry, kg.kpoints);
 
     auto evals = nscf_evals_ry(prob, n_bands, method.tol * 0.1);
     const int n_kpts = static_cast<int>(evals.size());

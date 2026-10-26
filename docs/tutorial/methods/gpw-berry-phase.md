@@ -1,5 +1,7 @@
 # GPW Berry-phase polarization
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 King–Smith–Vanderbilt (KSV) formal polarization of a periodic insulator on the
 CPU GPW method: string meshes of k-points along each reciprocal lattice vector,
 occupied link determinants between neighbouring k-points, and the electronic

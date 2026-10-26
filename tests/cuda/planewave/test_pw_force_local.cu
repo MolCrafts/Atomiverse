@@ -13,6 +13,7 @@
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/planewave/internal/pw_forces.cuh"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
+#include <memory>
 
 #include <cmath>
 #include <complex>
@@ -149,7 +150,8 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
 
 TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
     cpu::Frame f(0);
-    cuda::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q1"},
+    cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1"),
                         /*ecut_ry=*/4.0, /*k_mesh=*/1, cpu::scf::XCType::LSDA};
     method.tol = 1e-4;
     method.max_iter = 4;
@@ -162,7 +164,8 @@ TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
 // the message must not claim PBE is unsupported.
 TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
     cpu::Frame f(0);
-    cuda::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q1"},
+    cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1"),
                         /*ecut_ry=*/30.0, /*k_mesh=*/4, cpu::scf::XCType::PBE};
     method.spin_polarized = true;
     method.multiplicity = 2;
@@ -179,7 +182,8 @@ TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
 
 TEST(CudaPWForces, PublicApiAcceptsSpinSmearOnEmptyFrameGate) {
     cpu::Frame f(0);
-    cuda::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q1"},
+    cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1"),
                         /*ecut_ry=*/30.0, /*k_mesh=*/4, cpu::scf::XCType::LSDA};
     method.spin_polarized = true;
     method.multiplicity = 2;
@@ -199,7 +203,8 @@ TEST(CudaPWForces, PublicApiAcceptsSpinSmearOnEmptyFrameGate) {
 // still rejects before SCF; the message must not claim PBE is unsupported.
 TEST(CudaPWForces, PublicApiAcceptsPbeOnEmptyFrameGate) {
     cpu::Frame f(0);
-    cuda::pw::PW method{cpu::pw::GthPseudopotential{"GTH-PBE-q1"},
+    cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1"),
                         /*ecut_ry=*/4.0, /*k_mesh=*/1, cpu::scf::XCType::PBE};
     method.tol = 1e-4;
     method.max_iter = 4;

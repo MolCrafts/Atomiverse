@@ -13,7 +13,7 @@
 
 #include "atomiverse/cpu/io/extxyz.h"
 #include "atomiverse/cpu/io/frame_writer.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 #include "rust/cxx.h"
 
 namespace {
@@ -45,8 +45,12 @@ void remove_path(const std::string& path) {
     molrs::frame_set_column_f64(
         *fr, "atoms", "z", ::rust::Slice<const double>(z.data(), z.size()));
     if (!box.empty())
-        molrs::frame_set_box_h(
-            *fr, ::rust::Slice<const double>(box.data(), box.size()));
+        molrs::frame_set_box(
+            *fr, ::rust::Slice<const double>(box.data(), box.size()),
+            ::rust::Slice<const double>(
+                std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+            ::rust::Slice<const bool>(
+                std::array<bool, 3>{true, true, true}.data(), 3));
     return fr;
 }
 

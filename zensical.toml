@@ -113,7 +113,7 @@ nav = [
     "developer/kspace-long-range.md",
     "developer/python-molpy-boundary.md",
     "developer/release.md",
-    "developer/oracle-capability-loop.md",
+    "developer/project-contract.md",
   ] },
   { "Reference" = [
     "api/index.md",

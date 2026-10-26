@@ -393,6 +393,50 @@ TEST(DeviceIntegrals, SpPrimitiveHermiteOrdersZeroThroughFour) {
     }
 }
 
+TEST(DeviceIntegrals, SpExactZeroPrefactorPreservesExceptionalArithmetic) {
+    for (double separation : {1e3, 1e200}) {
+        SCOPED_TRACE(separation);
+        PrimitiveQuartet input(15);
+        input.alpha.fill(1.0);
+        input.coefficient.fill(cpu::scf::native::phys_norm_p(1.0));
+        input.center.fill(0.0);
+        for (int shell = 0; shell < 4; ++shell)
+            input.center[shell * 3] = shell % 2 ? separation : -separation;
+        ATV_CUDA_CHECK(cudaMemcpyAsync(input.d_alpha, input.alpha.data(),
+                                       sizeof(input.alpha),
+                                       cudaMemcpyHostToDevice, input.stream));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(
+            input.d_coefficient, input.coefficient.data(),
+            sizeof(input.coefficient), cudaMemcpyHostToDevice, input.stream));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(input.d_center, input.center.data(),
+                                       sizeof(input.center),
+                                       cudaMemcpyHostToDevice, input.stream));
+        cuda::scf::launch_eri_sp(
+            input.d_eri, input.d_alpha, input.d_coefficient, input.d_center,
+            input.d_angular, input.d_start, input.d_ao_shell, input.d_ao_cart,
+            4, input.n, 1, input.stream);
+        ATV_CUDA_CHECK(cudaGetLastError());
+        // px_A px_B | px_C px_D, with A=C and B=D. Both Gaussian pair
+        // factors underflow exactly to zero. At +/-1e3 all E/R values stay
+        // finite, and exp(-4e6) times the degree4 polynomial rounds to zero.
+        // At +/-1e200 P=Q=0 and T=0 remain finite, but PA*PB=-Inf. The
+        // original 0*nonfinite result must survive an exact-zero shortcut.
+        const int index =
+            input.start[0]
+            + input.n
+                  * (input.start[1]
+                     + input.n * (input.start[2] + input.n * input.start[3]));
+        double got = 0;
+        ATV_CUDA_CHECK(cudaMemcpyAsync(&got, input.d_eri + index, sizeof(got),
+                                       cudaMemcpyDeviceToHost, input.stream));
+        ATV_CUDA_CHECK(cudaStreamSynchronize(input.stream));
+        if (separation == 1e3)
+            EXPECT_EQ(got, 0.0);
+        else
+            EXPECT_FALSE(std::isfinite(got));
+    }
+}
+
 TEST(DeviceIntegrals, SpPrimitiveRaisedHermiteOrderFive) {
     PrimitiveQuartet input(15);
     const int n = input.n;

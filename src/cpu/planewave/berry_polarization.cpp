@@ -188,15 +188,16 @@ double string_phase_for_channel(internal::PWProblem& prob,
     return acc / static_cast<double>(n_strings);
 }
 
-void fill_ionic(BerryPolarizationResult& out, const cpu::Frame& frame) {
+void fill_ionic(BerryPolarizationResult& out, const cpu::Frame& frame,
+                const ::ATV::electronic::NormConservingPotential& potential) {
     const auto recip = frame.box.recip_cell();
     const StorageReal* __restrict sx = frame.span(kAtom_x);
     const StorageReal* __restrict sy = frame.span(kAtom_y);
     const StorageReal* __restrict sz = frame.span(kAtom_z);
-    const int* __restrict st = frame.span(kAtom_type);
+    internal::validate_potential_frame(frame, potential);
     const double two_pi = 2.0 * units::pi;
     for (int a = 0; a < frame.nlocal(); ++a) {
-        const double zv = static_cast<double>(internal::valence_from_z(st[a]));
+        const double zv = static_cast<double>(potential.valence());
         for (int d = 0; d < 3; ++d) {
             double f = (static_cast<double>(recip(0, d)) * sx[a]
                         + static_cast<double>(recip(1, d)) * sy[a]
@@ -304,7 +305,7 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
         const int n_occ = prob.n_bands;
         out.scf_converged = scf.converged;
         out.energy_ry = scf.energy;
-        fill_ionic(out, frame);
+        fill_ionic(out, frame, *method.potential);
 
         for (int dir = 0; dir < 3; ++dir) {
             if (!directions[static_cast<std::size_t>(dir)])
@@ -316,8 +317,7 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
                 kvec.push_back({static_cast<AccReal>(f[0]),
                                 static_cast<AccReal>(f[1]),
                                 static_cast<AccReal>(f[2])});
-            internal::rebuild_k_tables(prob, frame, method.upf_path,
-                                       method.gth_name, method.ecut_ry, kvec);
+            internal::rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
             const double phase =
                 string_phase_for_channel(prob, prob.ws, kf, dir, k_string,
                                          k_perp, n_occ, method.tol, two_pi);
@@ -337,7 +337,7 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
         internal::run_collinear_scf(frame, method, prob, n_alpha, n_beta);
     out.scf_converged = scf.converged;
     out.energy_ry = scf.energy;
-    fill_ionic(out, frame);
+    fill_ionic(out, frame, *method.potential);
 
     internal::PWWorkspace& ws = prob.ws;
     const int ng0 = prob.gv0.count();
@@ -363,8 +363,7 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
             kvec.push_back({static_cast<AccReal>(f[0]),
                             static_cast<AccReal>(f[1]),
                             static_cast<AccReal>(f[2])});
-        internal::rebuild_k_tables(prob, frame, method.upf_path,
-                                   method.gth_name, method.ecut_ry, kvec);
+        internal::rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
 
         double phase_sum = 0.0;
         for (int s = 0; s < 2; ++s) {

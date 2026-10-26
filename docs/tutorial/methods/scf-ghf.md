@@ -1,5 +1,7 @@
 # Generalized Hartree–Fock (GHF)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Generalized Hartree–Fock lets each spinor mix \(\alpha\) and \(\beta\)
 components, so noncollinear spin arrangements are reachable that no UHF
 (collinear) determinant can represent. The real two-component method is

@@ -3,10 +3,10 @@
 ///        tables, checked against the closed-form G-space expression.
 ///
 /// The two routes are genuinely independent: `upf_from_gth` builds V_loc(r)
-/// on a log mesh and `upf_vloc_to_gspace` transforms it by radial quadrature,
+/// on a log mesh and `nc_vloc_to_gspace` transforms it by radial quadrature,
 /// while `gth_vloc_gspace` is Goedecker et al. (1996) Eq. 5 evaluated
 /// directly. Agreement therefore tests the radial synthesis, the unit
-/// conventions (v_loc in Ry, d_ij in Ry, beta = r p(r)) and the adequacy of
+/// conventions (v_loc in Ha, d_ij in Ha, beta = r p(r)) and the adequacy of
 /// the mesh at once.
 #include "atomiverse/cpu/gpw/gth_potential.h"
 #include "atomiverse/cpu/planewave/internal/g_vector.h"
@@ -45,14 +45,14 @@ cpu::Box cubic_bohr(double a) {
 void expect_vloc_matches_closed_form(molrs::Element el, const char* name,
                                      double tol_abs) {
     const cpu::gpw::GthPotential pot(el, name);
-    const UPFData upf = upf_from_gth(pot);
+    const NcPotentialData upf = upf_from_gth(pot);
 
     const double a = 12.0; // Bohr
     const auto box = cubic_bohr(a);
     const double omega = a * a * a;
     const auto gv = enumerate_g_vectors(box, /*ecut_ht=*/8.0, Vec3::zeros());
 
-    const auto vg = upf_vloc_to_gspace(upf, gv, omega);
+    const auto vg = nc_vloc_to_gspace(upf, gv, omega);
     ASSERT_EQ(static_cast<int>(vg.size()), gv.count());
 
     double worst = 0.0;
@@ -85,7 +85,7 @@ TEST(GthUpf, ProjectorsAreNormalized) {
     // p_i^l is normalized as \int p^2 r^2 dr = 1; beta holds r p(r), so the
     // same integral is \int beta^2 dr. Independent of the local part.
     const cpu::gpw::GthPotential pot(molrs::Element::Si, "GTH-PBE-q4");
-    const UPFData upf = upf_from_gth(pot);
+    const NcPotentialData upf = upf_from_gth(pot);
     ASSERT_GT(upf.n_proj(), 0);
 
     for (const auto& kb : upf.kb) {
@@ -98,11 +98,11 @@ TEST(GthUpf, ProjectorsAreNormalized) {
     }
 }
 
-TEST(GthUpf, CarriesValenceChargeAndNormConservingTag) {
+TEST(GthUpf, CarriesChemicalIdentityAndValence) {
     const cpu::gpw::GthPotential pot(molrs::Element::O, "GTH-PBE-q6");
-    const UPFData upf = upf_from_gth(pot);
+    const NcPotentialData upf = upf_from_gth(pot);
     EXPECT_EQ(upf.z_val, 6);
-    EXPECT_EQ(upf.pseudo_type, "NC");
+    EXPECT_EQ(upf.atomic_number, 8);
     EXPECT_TRUE(upf.rho_atom.empty()); // GTH supplies no atomic density
 }
 
@@ -113,7 +113,7 @@ TEST(GthUpf, UnknownParameterizationThrows) {
 
 namespace {
 struct GaussianKb {
-    UPFData upf;
+    NcPotentialData upf;
     std::vector<double> alpha{0.6, 0.4, 1.2, 0.9, 1.7};
 };
 
@@ -140,9 +140,9 @@ GaussianKb gaussian_kb() {
                                  * std::exp(-data.alpha[ip] * r * r);
         }
     }
-    data.upf.d_ij = {
-        2, 0, 0.7, 0,   0, 0,   3,   0, 0.4,  -0.2, 0.7, 0,  5,
-        0, 0, 0,   0.4, 0, 1.5, 0.6, 0, -0.2, 0,    0.6, 2.1}; // Ry, symmetric blocks
+    data.upf.d_ij = {1,    0,    0.35, 0,    0, 0,   1.5, 0,   0.2,
+                     -0.1, 0.35, 0,    2.5,  0, 0,   0,   0.2, 0,
+                     0.75, 0.3,  0,    -0.1, 0, 0.3, 1.05}; // Ha, symmetric blocks
     return data;
 }
 
@@ -199,7 +199,7 @@ TEST(KbProjectors, RotatedBlocksPreserveAnalyticGaussianOperator) {
                     for (int i = 0; i < 5; ++i)
                         for (int j = 0; j < 5; ++j)
                             if (data.upf.kb[i].l == l && data.upf.kb[j].l == l)
-                                want += factor * 0.5 * data.upf.d_ij[5 * i + j]
+                                want += factor * data.upf.d_ij[5 * i + j]
                                         * gaussian_radial(l, data.alpha[i], qn)
                                         * gaussian_radial(l, data.alpha[j], pn);
                 }
@@ -239,4 +239,45 @@ TEST(KbProjectors, InvalidCouplingMatricesAndAngularMomentumThrow) {
     invalid.kb[0].l = 3; // no f-channel spherical Bessel/angular implementation
     EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
                  std::invalid_argument);
+}
+
+TEST(KbProjectors, EachCompactPrefixUsesItsOwnSimpsonEndpoint) {
+    NcPotentialData data;
+    data.r = {0, .5, 1, 1.5, 2, 2.5, 3};
+    data.rab.assign(data.r.size(), .5);
+    data.kb = {{0, {0, .5, 1, 100, 100, 100, 100}, 3},
+               {0, {0, .5, 1, 1.5, 100, 100, 100}, 4},
+               {0, data.r, 7}};
+    data.d_ij = {1, 0, 0, 0, 2, 0, 0, 0, 3};
+    GVectorList gv;
+    gv.g = {{0, 0, 0}};
+    std::vector<std::vector<PWWorkspace::KBProjG>> result;
+    setup_kb_projectors(result, gv, data, {{0, 0, 0}});
+    double operator_value = 0;
+    for (const auto& projector : result[0])
+        operator_value += projector.d * projector.f_G[0] * projector.f_G[0];
+    // beta=r gives integral r*beta dr = R^3/3 exactly. The short
+    // projectors' trailing storage is outside their integration domain.
+    const double want =
+        std::pow(1.0 / 3.0, 2) + 2 * std::pow(1.125, 2) + 3 * 81;
+    EXPECT_NEAR(operator_value, want, 1e-12);
+}
+
+TEST(GthUpf, RejectsMalformedExplicitAnalyticData) {
+    const cpu::gpw::GthPotential original(molrs::Element::Si, "GTH-PBE-q4");
+    auto malformed = original;
+    malformed.channels[0].h.pop_back();
+    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    malformed = original;
+    malformed.rloc = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    malformed = original;
+    malformed.channels[0].nproj = -1;
+    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    malformed = original;
+    malformed.cloc[0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    malformed = original;
+    malformed.channels[0].l = 3;
+    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
 }

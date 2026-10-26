@@ -10,7 +10,7 @@
 /// summarizing the imaginary-mode count, the zero-point energy, and the
 /// Gibbs free energy correction.
 ///
-/// Single responsibility (CLAUDE.md): this component performs I/O only —
+/// Single responsibility (docs/developer/project-contract.md): this component performs I/O only —
 /// it computes nothing. All numbers come straight from the workspace.
 ///
 /// An **empty path disables the report**: `launch()` returns without opening

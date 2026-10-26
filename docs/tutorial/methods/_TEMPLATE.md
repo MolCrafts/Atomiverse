@@ -1,5 +1,7 @@
 # <Method name>
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 What the method computes and where it sits relative to its neighbours
 (RHF/RKS/MP2/…, NVE/NPT/…). Two to four sentences, no pedagogy — the tutorial
 chapters own the teaching narrative.

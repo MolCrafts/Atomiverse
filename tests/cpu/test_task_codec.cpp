@@ -123,6 +123,7 @@ TaskSpec make_md_spec() {
     // a value the string codec has to survive too (zero-length prefix).
     entries.push_back(MDComponentEntry{PWParams{/*upf_path=*/"",
                                                 /*gth_name=*/"GTH-PBE-q4",
+                                                /*atomic_number=*/14,
                                                 /*ecut_ry=*/4.0,
                                                 /*k_mesh=*/2,
                                                 /*tol=*/1e-4,
@@ -439,7 +440,7 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
 // garbage — the NPT precedent: a LAYOUT change is a bump, an appended
 // component ID with a fresh payload is not. The exact-match version gate in
 // `unpack` is what makes the break loud instead of silent.
-TEST(TaskCodec, WireVersionIsFive) { EXPECT_EQ(TaskSpec::kWireVersion, 5u); }
+TEST(TaskCodec, WireVersionIsSix) { EXPECT_EQ(TaskSpec::kWireVersion, 6u); }
 
 TEST(TaskCodec, MdRoundtripIsFieldExact) {
     const TaskSpec spec = make_md_spec();

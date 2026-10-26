@@ -1,5 +1,7 @@
 # GPW Tkatchenko–Scheffler dispersion
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Tkatchenko–Scheffler (TS) pairwise London dispersion added to Γ-point GPW DFT
 on top of PBE, in the free-atom limit (\(V/V_{\mathrm{free}}=1\)). The
 correction is geometry-only: it never enters the Kohn–Sham potential, is
@@ -21,7 +23,7 @@ fixed-\(P\) stress against the multi-SCF strain-FD oracle `gpw_stress_fd`
 at 2e-5 Ha/Bohr³, and \(\sigma(\mathrm{ts})-\sigma(\mathrm{plain})\) against
 the libMBD strain-FD dispersion term at 2e-9 Ha/Bohr³). Multi-k TS forces have
 no section. Build in the CPU environment (`module load
-buildenv-gcc/2026.03-mpich`, see `CLAUDE.md`) with `-DATV_BUILD_GPW=ON
+buildenv-gcc/2026.03-mpich`, see `docs/developer/project-contract.md`) with `-DATV_BUILD_GPW=ON
 -DATV_BUILD_REGRESSIONS=ON`.
 
 Case: `ctest -R '^gpw/tkatchenko-scheffler$'` — sources and oracle record in [`regressions/gpw/tkatchenko-scheffler/`](../../../regressions/gpw/tkatchenko-scheffler/). One section of the case per `##` heading below: `atv_regressions --case gpw/tkatchenko-scheffler --section <name>`.

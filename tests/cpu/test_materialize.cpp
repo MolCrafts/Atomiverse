@@ -1,5 +1,5 @@
 /// @file tests/cpu/test_materialize.cpp
-/// @brief Round-trip + boundary tests for cpu::from_molrs / cpu::to_molrs.
+/// @brief Round-trip + boundary tests for cpu::from_molpy / cpu::to_molpy.
 ///
 /// Covers the rust-frame-lowering-02 acceptance criteria:
 ///   - ac-002: molrs.Frame -> cpu::Frame -> molrs.Frame round-trips
@@ -7,10 +7,10 @@
 ///             typed system metadata element-wise.
 ///   - ac-003: required fields fail loud (named exception); optional fields
 ///             default to zero without throwing.
-///   - ac-004: a cpu::Frame produced by cpu::from_molrs is runnable under
+///   - ac-004: a cpu::Frame produced by cpu::from_molpy is runnable under
 ///             cpu::md::MD and yields a finite energy.
 ///
-/// Plus the arch-refactor-06-frame Design §2 to_molrs field contract
+/// Plus the arch-refactor-06-frame Design §2 to_molpy field contract
 /// (golden round-trip): image (int8 -> i32 ix/iy/iz widen-back) and tag
 /// (TagInt -> i32 checked narrowing, overflow throws) ARE written back;
 /// type / mass / topology are static run inputs, designated non-write-back,
@@ -19,9 +19,10 @@
 /// The **box is a write-back field** (py-md-npt ac-002): barostats
 /// (Parrinello-Rahman / Berendsen / Nose-Hoover NPT) make the cell an output
 /// of a run, so a cpu::Frame whose Box was mutated must present that cell on
-/// the molrs.Frame after to_molrs, or a Python caller can never observe a
+/// the molrs.Frame after to_molpy, or a Python caller can never observe a
 /// barostatted cell.
 
+#include <array>
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -35,14 +36,14 @@
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 using ATV::cpu::Frame;
-using ATV::cpu::from_molrs;
-using ATV::cpu::to_molrs;
+using ATV::cpu::from_molpy;
+using ATV::cpu::to_molpy;
 
 namespace {
 
@@ -146,14 +147,17 @@ namespace {
     // Cubic box, row-major 3x3 H.
     const std::vector<double> h = {20.0, 0.0, 0.0, 0.0, 20.0,
                                    0.0,  0.0, 0.0, 20.0};
-    molrs::frame_set_box_h(*fr,
-                           ::rust::Slice<const double>(h.data(), h.size()));
+    molrs::frame_set_box(*fr, ::rust::Slice<const double>(h.data(), h.size()),
+                         ::rust::Slice<const double>(
+                             std::array<double, 3>{0.0, 0.0, 0.0}.data(), 3),
+                         ::rust::Slice<const bool>(
+                             std::array<bool, 3>{true, true, true}.data(), 3));
 
     return fr;
 }
 
 // Extend the fully-populated frame with per-axis PBC image columns
-// (i32 in molrs, int8 [n,3] in cpu::Frame) for the to_molrs contract
+// (i32 in molrs, int8 [n,3] in cpu::Frame) for the to_molpy contract
 // tests. Values must fit int8 (|image| <= 127).
 ::rust::Box<molrs::FrameRef> make_contract_frame() {
     auto fr = make_full_frame();
@@ -195,12 +199,12 @@ namespace {
 
 } // namespace
 
-// ── ac-002: round-trip from_molrs -> to_molrs -> read back ───────────
+// ── ac-002: round-trip from_molpy -> to_molpy -> read back ───────────
 
 TEST(Materialize, RoundTrip) {
     auto fr = make_full_frame();
 
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
 
     ASSERT_EQ(cf.nlocal(), 3);
     int n_bond = 0, n_angle = 0, n_dihedral = 0;
@@ -226,7 +230,7 @@ TEST(Materialize, RoundTrip) {
         cf.meta.get(ATV::kStressKinetic)[k] = 10.0 + k;
     }
 
-    to_molrs(cf, *fr);
+    to_molpy(cf, *fr);
 
     // Read every per-atom column back out of the molrs.Frame.
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
@@ -254,7 +258,7 @@ TEST(Materialize, RoundTrip) {
         EXPECT_DOUBLE_EQ(rq[i], cf.span(ATV::kAtom_charge)[i]);
     }
 
-    // Topology survives from_molrs (to_molrs leaves it untouched).
+    // Topology survives from_molpy (to_molpy leaves it untouched).
     auto bi = molrs::frame_column_u64(*fr, "bonds", "atomi");
     auto bj = molrs::frame_column_u64(*fr, "bonds", "atomj");
     ASSERT_EQ(bi.size(), 1u);
@@ -274,7 +278,7 @@ TEST(Materialize, RoundTrip) {
     EXPECT_EQ(cf.span(ATV::kAtom_dihedral_atom)(1, 2), 12);
 
     // Box round-trips.
-    auto h = molrs::frame_box_h(*fr);
+    auto h = molrs::frame_box(*fr).h;
     ASSERT_EQ(h.size(), 9u);
     EXPECT_DOUBLE_EQ(h[0], 20.0);
     EXPECT_DOUBLE_EQ(h[4], 20.0);
@@ -334,7 +338,7 @@ TEST(Materialize, MissingPositionsThrows) {
         ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
 
     try {
-        Frame cf = from_molrs(*fr);
+        Frame cf = from_molpy(*fr);
         FAIL() << "materialize must throw when atoms.x is absent";
     } catch (const std::exception& e) {
         EXPECT_NE(std::string(e.what()).find("x"), std::string::npos)
@@ -356,7 +360,7 @@ TEST(Materialize, MissingAtomicNumberThrows) {
         *fr, "atoms", "z", ::rust::Slice<const double>(x.data(), x.size()));
 
     try {
-        Frame cf = from_molrs(*fr);
+        Frame cf = from_molpy(*fr);
         FAIL() << "materialize must throw when atoms.atomic_number is absent";
     } catch (const std::exception& e) {
         EXPECT_NE(std::string(e.what()).find("atomic_number"),
@@ -381,7 +385,7 @@ TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
         *fr, "atoms", "atomic_number",
         ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
 
-    Frame cf = from_molrs(*fr); // must NOT throw
+    Frame cf = from_molpy(*fr); // must NOT throw
 
     ASSERT_EQ(cf.nlocal(), 3);
     for (int i = 0; i < 3; ++i) {
@@ -401,16 +405,16 @@ TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
 
 // ── ac-004: a materialized cpu::Frame is runnable under cpu::md::MD ─────
 
-// ── arch-refactor-06-frame §2: to_molrs field contract (golden) ────────
+// ── arch-refactor-06-frame §2: to_molpy field contract (golden) ────────
 
 // Contract fields (x/v/f/charge, image, tag, typed metadata) mutated on the
-// cpu::Frame must reach the molrs.Frame through to_molrs. image goes back
+// cpu::Frame must reach the molrs.Frame through to_molpy. image goes back
 // through the same ix/iy/iz i32 columns materialize reads (int8 -> i32
 // widen); tag presents the permuted values (TagInt -> i32 narrowing).
 TEST(WriteBackContract, GoldenRoundTripContractFields) {
     auto fr = make_contract_frame();
 
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
     ASSERT_EQ(cf.nlocal(), 3);
 
     // Anchor the materialize read side of the symmetric format first:
@@ -421,7 +425,7 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     ASSERT_EQ(cf.span(ATV::kAtom_tag)[0], 10);
     ASSERT_EQ(cf.span(ATV::kAtom_tag)[2], 12);
 
-    // Mutate every contract field so to_molrs has distinct values to carry.
+    // Mutate every contract field so to_molpy has distinct values to carry.
     cf.span(ATV::kAtom_x)[1] = 6.75;
     cf.span(ATV::kAtom_vy)[0] = -3.5;
     cf.span(ATV::kAtom_fz)[2] = 17.0;
@@ -435,7 +439,7 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     cf.meta.get(ATV::kEnergy) = -77.25;
     cf.meta.get(ATV::kKinetic) = 5.5;
 
-    to_molrs(cf, *fr);
+    to_molpy(cf, *fr);
 
     // Established write set still carries the mutations.
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
@@ -503,20 +507,20 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
 TEST(WriteBackContract, NonContractFieldsUntouched) {
     auto fr = make_contract_frame();
 
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
     ASSERT_EQ(cf.nlocal(), 3);
 
     // Mutate NON-contract fields...
     cf.span(ATV::kAtom_type)[0] = 99;
     cf.span(ATV::kAtom_mass)[1] = 999.9;
-    // ...plus one contract sentinel proving to_molrs actually ran.
+    // ...plus one contract sentinel proving to_molpy actually ran.
     cf.span(ATV::kAtom_x)[0] = 8.5;
 
-    to_molrs(cf, *fr);
+    to_molpy(cf, *fr);
 
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
     ASSERT_EQ(rx.size(), 3u);
-    ASSERT_DOUBLE_EQ(rx[0], 8.5) << "sentinel: to_molrs must have run";
+    ASSERT_DOUBLE_EQ(rx[0], 8.5) << "sentinel: to_molpy must have run";
 
     // type / mass keep the make_full_frame originals.
     auto rtype = molrs::frame_column_u64(*fr, "atoms", "atomic_number");
@@ -550,12 +554,12 @@ TEST(WriteBackContract, NonContractFieldsUntouched) {
 }
 
 // py-md-npt ac-002: a barostatted cell is an OUTPUT of a run, so a Box
-// mutated on the cpu::Frame must reach the molrs.Frame through to_molrs —
+// mutated on the cpu::Frame must reach the molrs.Frame through to_molpy —
 // exact doubles, no rescaling, no rounding.
 TEST(WriteBackContract, MutatedBoxWritesBack) {
     auto fr = make_full_frame();
 
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
     ASSERT_EQ(cf.nlocal(), 3);
     ASSERT_DOUBLE_EQ(cf.box.length(0), 20.0); // anchor the read side
 
@@ -565,10 +569,10 @@ TEST(WriteBackContract, MutatedBoxWritesBack) {
     // displace the established per-atom write set.
     cf.span(ATV::kAtom_x)[1] = 6.75;
 
-    to_molrs(cf, *fr);
+    to_molpy(cf, *fr);
 
     const double scaled = 20.0 * 1.1;
-    auto h = molrs::frame_box_h(*fr);
+    auto h = molrs::frame_box(*fr).h;
     ASSERT_EQ(h.size(), 9u);
     EXPECT_DOUBLE_EQ(h[0], scaled)
         << "a barostatted cell must reach the molrs box; without this a "
@@ -589,7 +593,7 @@ TEST(WriteBackContract, MutatedBoxWritesBack) {
     EXPECT_DOUBLE_EQ(rx[1], 6.75);
     EXPECT_DOUBLE_EQ(rx[2], cf.span(ATV::kAtom_x)[2]);
 
-    // to_molrs is a read-only export: the engine-side Box is unchanged.
+    // to_molpy is a read-only export: the engine-side Box is unchanged.
     EXPECT_DOUBLE_EQ(cf.box.length(0), scaled);
     EXPECT_DOUBLE_EQ(cf.box.cell()(0, 1), 0.0);
 }
@@ -600,7 +604,7 @@ TEST(WriteBackContract, MutatedBoxWritesBack) {
 TEST(WriteBackContract, TriclinicBoxWritesBack) {
     auto fr = make_full_frame();
 
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
     ASSERT_EQ(cf.nlocal(), 3);
     ASSERT_TRUE(cf.box.is_orthorhombic());
 
@@ -617,9 +621,9 @@ TEST(WriteBackContract, TriclinicBoxWritesBack) {
     cf.box.set_cell(cell);
     ASSERT_FALSE(cf.box.is_orthorhombic());
 
-    to_molrs(cf, *fr);
+    to_molpy(cf, *fr);
 
-    auto h = molrs::frame_box_h(*fr);
+    auto h = molrs::frame_box(*fr).h;
     ASSERT_EQ(h.size(), 9u);
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
@@ -630,7 +634,7 @@ TEST(WriteBackContract, TriclinicBoxWritesBack) {
 
     // Symmetric with the read side: materializing the written frame gives
     // back the same cell.
-    Frame back = from_molrs(*fr);
+    Frame back = from_molpy(*fr);
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
             EXPECT_DOUBLE_EQ(static_cast<double>(back.box.cell()(i, j)),
@@ -646,7 +650,7 @@ TEST(WriteBackContract, TagOverflowThrows) {
     }
 
     auto fr = make_minimal_frame();
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
     ASSERT_EQ(cf.nlocal(), 2);
 
     const std::int64_t over =
@@ -654,8 +658,8 @@ TEST(WriteBackContract, TagOverflowThrows) {
     cf.span(ATV::kAtom_tag)[0] = static_cast<ATV::TagInt>(over);
 
     try {
-        to_molrs(cf, *fr);
-        FAIL() << "to_molrs must throw std::runtime_error when a tag "
+        to_molpy(cf, *fr);
+        FAIL() << "to_molpy must throw std::runtime_error when a tag "
                   "exceeds INT32_MAX instead of silently truncating";
     } catch (const std::runtime_error& e) {
         EXPECT_NE(std::string(e.what()).find("tag"), std::string::npos)
@@ -664,16 +668,16 @@ TEST(WriteBackContract, TagOverflowThrows) {
 }
 
 // Boundary: a minimal frame (required columns only, no box / topology /
-// tag / image columns) survives to_molrs without throwing. Note for the box
+// tag / image columns) survives to_molpy without throwing. Note for the box
 // write-back: this frame's Box is default-constructed (cell = 0, singular),
 // and molrs' frame_set_box rejects a singular cell — so the write-back must
 // skip a degenerate cell rather than push it across.
 TEST(WriteBackContract, MinimalFrameWriteBackDoesNotThrow) {
     auto fr = make_minimal_frame();
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
     ASSERT_EQ(cf.nlocal(), 2);
 
-    EXPECT_NO_THROW(to_molrs(cf, *fr));
+    EXPECT_NO_THROW(to_molpy(cf, *fr));
 }
 
 // ── The molrs boundary vs the frame-block mapping facade ────────────────────
@@ -686,7 +690,7 @@ TEST(WriteBackContract, MinimalFrameWriteBackDoesNotThrow) {
 
 TEST(WriteBackContract, ExtensionColumnsStayLocalAndTypedMetaCrosses) {
     auto fr = make_contract_frame();
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
     ASSERT_EQ(cf.nlocal(), 3);
 
     // Attach an extension column and an owned meta entry, then write back.
@@ -706,19 +710,19 @@ TEST(WriteBackContract, ExtensionColumnsStayLocalAndTypedMetaCrosses) {
 
     // A contract field still carries across — the extras do not disturb it.
     cf.span(ATV::kAtom_x)[1] = 6.75;
-    to_molrs(cf, *fr);
+    to_molpy(cf, *fr);
 
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
     ASSERT_EQ(static_cast<int>(rx.size()), 3);
     EXPECT_DOUBLE_EQ(rx[1], 6.75);
 
     // The extension column is NOT exported: molrs has no "rho" column.
-    auto exported_rho = molrs::frame_column_f64(*fr, "atoms", "rho");
-    EXPECT_EQ(exported_rho.size(), 0u)
-        << "an extension column leaked across the FFI boundary — extras are "
-           "engine-local scratch; the exchange schema is the schema";
+    for (const auto& column : molrs::frame_block_columns(*fr, "atoms")) {
+        EXPECT_NE(std::string(column.data(), column.size()), "rho")
+            << "an extension column leaked across the FFI boundary";
+    }
 
-    // …and it is still intact on the engine side (to_molrs is a read-only
+    // …and it is still intact on the engine side (to_molpy is a read-only
     // export; it must not disturb the frame).
     auto rho_after = cf.span(rho_key);
     EXPECT_EQ(rho_after[1], ATV::StorageReal(2.5));
@@ -735,7 +739,7 @@ TEST(Materialize, MaterializedFrameCarriesNoExtras) {
     // columns only — no extension columns are invented from stray molrs
     // columns, and the mapping facade reports exactly that.
     auto fr = make_contract_frame();
-    Frame cf = from_molrs(*fr);
+    Frame cf = from_molpy(*fr);
 
     EXPECT_EQ(static_cast<int>(cf.block("atoms").columns().size()),
               ATV::kAtomFieldCount);
@@ -756,7 +760,7 @@ TEST(Materialize, RejectsSyntheticResultBlocks) {
         EXPECT_THROW(
             {
                 try {
-                    (void)from_molrs(*fr);
+                    (void)from_molpy(*fr);
                 } catch (const std::runtime_error& error) {
                     EXPECT_NE(std::string(error.what()).find(block),
                               std::string::npos);
@@ -773,5 +777,5 @@ TEST(Materialize, RejectsUnknownAtomColumns) {
     molrs::frame_set_column_f64(
         *fr, "atoms", "rho",
         ::rust::Slice<const double>(rho.data(), rho.size()));
-    EXPECT_THROW((void)from_molrs(*fr), std::runtime_error);
+    EXPECT_THROW((void)from_molpy(*fr), std::runtime_error);
 }

@@ -26,7 +26,7 @@
 /// `cpu::pw::PW` under an MPI launcher.
 ///
 /// @code
-///   cuda::pw::PW pw{cpu::pw::UpfPseudopotential{"Si_lda_nc.upf"},
+///   cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si_lda_nc.upf"),
 ///                   /*ecut_ry=*/15.0, /*k_mesh=*/2, cpu::scf::XCType::LSDA};
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame);   // energy [Ry] / energy_ha [Ha]
@@ -61,10 +61,10 @@ using Smearing = ::ATV::cpu::pw::Smearing;
 class PW {
   public:
     // ── Identity (constructor arguments, fixed after construction) ────
-    /// @brief UPF file path; empty when a GTH table entry is used.
-    const std::string upf_path;
-    /// @brief GTH table entry; empty when a UPF file is used.
-    const std::string gth_name;
+    /// @brief Shared immutable builtin NC potential; custom CPU providers are
+    ///        rejected before any device work.
+    const std::shared_ptr<const ::ATV::electronic::NormConservingPotential>
+        potential;
     /// @brief Wavefunction cutoff [Ry].
     const double ecut_ry;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
@@ -93,8 +93,8 @@ class PW {
     /// @brief Spin multiplicity 2S+1. With `spin_polarized`, sets
     ///        N↑ − N↓ = multiplicity − 1. Without spin, must stay 1.
     int multiplicity = 1;
-    /// @brief Metallic smearing kind. Restricted and collinear UKS — with
-    ///        `spin_polarized` any value other than `none` throws.
+    /// @brief Metallic smearing kind. Restricted and collinear UKS use a
+    ///        shared chemical potential over the occupied spin orbitals.
     Smearing smearing = Smearing::none;
     /// @brief Smearing width [Ry] (QE `degauss`). Required > 0 when
     ///        `smearing != none`.
@@ -105,30 +105,21 @@ class PW {
     ///        Fixed-occupation runs ignore this (solve \(n_e/2\) bands).
     int extra_bands = 4;
 
-    /// @brief Plane-wave DFT from a UPF pseudopotential file (same
-    ///        signature as `cpu::pw::PW`).
-    /// @param pp Pseudopotential file.
+    /// @brief Plane-wave DFT using a builtin GTH or UPF NC provider.
+    /// @param pp Immutable potential; custom providers have no CUDA product path.
     /// @param ecut_ry Wavefunction cutoff [Ry].
-    /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
-    /// @param xc Exchange–correlation functional.
-    PW(cpu::pw::UpfPseudopotential pp, double ecut_ry, int k_mesh,
-       cpu::scf::XCType xc = cpu::scf::XCType::PBE)
-        : upf_path(std::move(pp.path)), ecut_ry(ecut_ry), k_mesh(k_mesh),
-          xc(xc) {
-        if (upf_path.empty())
-            throw std::invalid_argument("cuda::pw::PW: empty UPF path");
-    }
-    /// @brief Plane-wave DFT from an in-tree GTH pseudopotential.
-    /// @param pp GTH table entry.
-    /// @param ecut_ry Wavefunction cutoff [Ry].
-    /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
-    /// @param xc Exchange–correlation functional.
-    PW(cpu::pw::GthPseudopotential pp, double ecut_ry, int k_mesh,
-       cpu::scf::XCType xc = cpu::scf::XCType::PBE)
-        : gth_name(std::move(pp.name)), ecut_ry(ecut_ry), k_mesh(k_mesh),
-          xc(xc) {
-        if (gth_name.empty())
-            throw std::invalid_argument("cuda::pw::PW: empty GTH name");
+    /// @param k_mesh Monkhorst-Pack mesh per dimension.
+    /// @param xc Exchange-correlation functional with a device kernel.
+    PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
+       double ecut_ry, int k_mesh, cpu::scf::XCType xc = cpu::scf::XCType::PBE)
+        : potential(std::move(pp)), ecut_ry(ecut_ry), k_mesh(k_mesh), xc(xc) {
+        if (!potential
+            || (!dynamic_cast<const cpu::pw::GthPseudopotential*>(
+                    potential.get())
+                && !dynamic_cast<const cpu::pw::UpfPseudopotential*>(
+                    potential.get())))
+            throw std::invalid_argument("cuda::pw::PW: only builtin GTH/UPF NC "
+                                        "providers are supported");
     }
     ~PW() = default;
     PW(PW&&) noexcept = default;
@@ -136,19 +127,9 @@ class PW {
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 
-    /// @brief One-time setup: resolves the pseudopotential and validates Z.
-    ///
-    /// Validates the chosen source up front so a missing file or an unknown
-    /// GTH name fails here rather than mid-SCF. Same envelope as
-    /// `cpu::pw::PW::build`.
-    ///
-    /// @param reference Frame used only to validate atom types.
-    /// @throws std::invalid_argument if neither or both of `upf_path` and
-    ///         `gth_name` are set — a plane-wave run has no default
-    ///         pseudopotential.
-    /// @throws std::runtime_error if the UPF cannot be parsed, or if
-    ///         `gth_name` names no in-tree parameterization for this element
-    ///         (no silent fallback).
+    /// @brief Validate Frame species against the builtin potential.
+    /// @param reference Frame used to validate every atom's identity.
+    /// @throws std::invalid_argument if any species differs from the provider.
     void build(const cpu::Frame& reference);
 
     /// @brief Plane-wave SCF at the frame's current geometry, on the GPU.

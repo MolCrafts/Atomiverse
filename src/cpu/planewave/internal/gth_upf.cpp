@@ -11,27 +11,6 @@ namespace internal {
 
 namespace {
 
-/// GTH local potential [Hartree], Goedecker et al. (1996) Eq. 1:
-///   V_loc(r) = -(Z/r) erf(r/(sqrt(2) rloc))
-///            + exp(-(r/rloc)^2/2) * sum_i C_i (r/rloc)^{2(i-1)}
-AccReal gth_vloc_r(const gpw::GthPotential& pot, AccReal r) {
-    const AccReal rl = static_cast<AccReal>(pot.rloc);
-    const AccReal x = r / rl;
-    const AccReal z = static_cast<AccReal>(pot.zion);
-
-    // r -> 0: erf(r/(sqrt2 rl))/r -> sqrt(2/pi)/rl, finite.
-    const AccReal erf_over_r =
-        (r < AccReal(1e-10)) ? std::sqrt(AccReal(2) / AccReal(M_PI)) / rl
-                             : std::erf(r / (std::sqrt(AccReal(2)) * rl)) / r;
-
-    AccReal poly = 0, xp = 1;
-    for (std::size_t i = 0; i < pot.cloc.size(); ++i) {
-        poly += static_cast<AccReal>(pot.cloc[i]) * xp;
-        xp *= x * x;
-    }
-    return -z * erf_over_r + std::exp(AccReal(-0.5) * x * x) * poly;
-}
-
 /// GTH nonlocal projector [Bohr^{-3/2}], Goedecker et al. (1996) Eq. 3:
 ///   p_i^l(r) = sqrt(2) r^{l+2(i-1)} exp(-r^2/(2 r_l^2))
 ///              / ( r_l^{l+(4i-1)/2} sqrt(Gamma(l+(4i-1)/2)) )
@@ -48,17 +27,69 @@ AccReal gth_proj_r(AccReal r, int l, int i, AccReal rl) {
 
 } // namespace
 
-UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
+void gth_local_r(const gpw::GthPotential& p, std::span<const AccReal> radius,
+                 std::span<AccReal> value, std::span<AccReal> derivative) {
+    const AccReal a = p.rloc, z = p.zion;
+    const AccReal root = std::sqrt(AccReal(2) / AccReal(M_PI));
+    for (std::size_t i = 0; i < radius.size(); ++i) {
+        const AccReal r = radius[i], x = r / a, x2 = x * x;
+        const AccReal e = std::exp(-x2 / 2);
+        AccReal poly = 0, dpdx = 0;
+        for (std::size_t j = p.cloc.size(); j-- > 0;) {
+            dpdx = dpdx * x2 + 2 * x * poly;
+            poly = poly * x2 + p.cloc[j];
+        }
+        AccReal vc, dvc;
+        if (x < AccReal(1e-4)) {
+            vc = -z * root / a
+                 * (1 - x2 / 6 + x2 * x2 / 40 - x2 * x2 * x2 / 336);
+            dvc = z * root / (a * a) * x
+                  * (AccReal(1) / 3 - x2 / 10 + x2 * x2 / 56);
+        } else {
+            const AccReal erf = std::erf(x / std::sqrt(AccReal(2)));
+            vc = -z * erf / r;
+            dvc = z * (erf / (r * r) - root * e / (a * r));
+        }
+        value[i] = vc + e * poly;
+        derivative[i] = dvc + e * (dpdx - x * poly) / a;
+    }
+}
+
+NcPotentialData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max,
+                             int n_r) {
     if (!std::isfinite(r_max) || !(r_max > AccReal(1e-5)) || n_r < 3)
         throw std::invalid_argument(
             "upf_from_gth: r_max must be finite and > 1e-5 Bohr, and n_r >= 3");
-    if (!(pot.rloc > 0))
+    if (!std::isfinite(pot.rloc) || !(pot.rloc > 0))
         throw std::invalid_argument("upf_from_gth: GTH rloc must be > 0 for "
                                     + pot.name);
 
-    UPFData upf;
+    NcPotentialData upf;
+    upf.atomic_number = static_cast<int>(pot.element);
     upf.z_val = pot.zion;
-    upf.pseudo_type = "NC"; // GTH is norm-conserving by construction.
+    if (pot.cloc.size() > 4)
+        throw std::invalid_argument(
+            "upf_from_gth: GTH local polynomial supports "
+            "at most four coefficients");
+    for (const auto value : pot.cloc)
+        if (!std::isfinite(value))
+            throw std::invalid_argument(
+                "upf_from_gth: GTH coefficients must be finite");
+    for (const auto& ch : pot.channels) {
+        if (ch.l < 0 || ch.l > 2 || ch.nproj < 0
+            || ch.h.size() != static_cast<std::size_t>(ch.nproj) * ch.nproj)
+            throw std::invalid_argument(
+                "upf_from_gth: invalid GTH channel shape or angular momentum");
+        if (ch.nproj && (!std::isfinite(ch.r) || ch.r <= 0))
+            throw std::invalid_argument("upf_from_gth: GTH projector radius "
+                                        "must be finite and positive");
+        for (int i = 0; i < ch.nproj; ++i)
+            for (int j = 0; j < ch.nproj; ++j)
+                if (!std::isfinite(ch.hij(i, j))
+                    || ch.hij(i, j) != ch.hij(j, i))
+                    throw std::invalid_argument("upf_from_gth: GTH coupling "
+                                                "must be finite and symmetric");
+    }
 
     // Log mesh, the UPF convention. r_min is small enough that the r -> 0
     // limits above are never the integrand's dominant contribution.
@@ -73,10 +104,10 @@ UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
             upf.r[static_cast<std::size_t>(ir)] * dx;
     }
 
-    // UPF stores the local potential in Rydberg (upf_vloc_to_gspace halves it).
+    // The canonical radial representation uses Hartree directly.
     upf.v_loc.resize(upf.r.size());
-    for (std::size_t ir = 0; ir < upf.r.size(); ++ir)
-        upf.v_loc[ir] = AccReal(2) * gth_vloc_r(pot, upf.r[ir]);
+    std::vector<AccReal> derivative(upf.r.size());
+    gth_local_r(pot, upf.r, upf.v_loc, derivative);
 
     int l_max = 0;
     for (const auto& ch : pot.channels)
@@ -94,7 +125,7 @@ UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
                 "upf_from_gth: GTH projector radius must be > 0 for "
                 + pot.name);
         for (int i = 1; i <= ch.nproj; ++i) {
-            UPFData::KBProjector kb;
+            NcPotentialData::KBProjector kb;
             kb.l = ch.l;
             kb.beta.resize(upf.r.size());
             kb.radial_points = upf.r.size();
@@ -106,8 +137,7 @@ UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
         }
     }
 
-    // D_ij: block-diagonal over channels, in Rydberg (setup_kb_projectors
-    // applies the 0.5 Ry -> Ha conversion when it diagonalizes each l block).
+    // D_ij: block-diagonal over channels, directly in Hartree.
     const int n_proj = upf.n_proj();
     if (n_proj > 0) {
         upf.d_ij.assign(static_cast<std::size_t>(n_proj) * n_proj, AccReal(0));
@@ -118,12 +148,13 @@ UPFData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max, int n_r) {
             for (int a = 0; a < ch.nproj; ++a)
                 for (int b = 0; b < ch.nproj; ++b)
                     upf.d_ij[static_cast<std::size_t>(off + a) * n_proj + off
-                             + b] = AccReal(2) * ch.hij(a, b);
+                             + b] = ch.hij(a, b);
             off += ch.nproj;
         }
     }
 
     // rho_atom intentionally left empty: GTH supplies no atomic pseudo-charge.
+    upf.validate();
     return upf;
 }
 

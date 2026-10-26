@@ -231,6 +231,7 @@ void write(Writer& w, const AM1Params& p) {
 void write(Writer& w, const PWParams& p) {
     w.string(p.upf_path);
     w.string(p.gth_name);
+    w.i32(p.atomic_number);
     w.f64(p.ecut_ry);
     w.i32(p.k_mesh);
     w.f64(p.tol);
@@ -546,6 +547,7 @@ PWParams read_pw(Reader& r) {
     PWParams p;
     p.upf_path = r.string();
     p.gth_name = r.string();
+    p.atomic_number = r.i32();
     p.ecut_ry = r.f64();
     p.k_mesh = r.i32();
     p.tol = r.f64();

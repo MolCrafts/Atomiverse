@@ -1,5 +1,7 @@
 # GPW unrestricted Kohn–Sham (UKS)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Collinear spin-polarized (unrestricted) Kohn–Sham in the
 Gaussian-and-plane-waves (GPW, Quickstep-family) method. Two spin densities
 \(\rho_\alpha\), \(\rho_\beta\) are built from separate density matrices.
@@ -38,7 +40,7 @@ Case: `ctest -R '^gpw/uks$'` — sources and oracle record in [`regressions/gpw/
 
 Build with `-DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_GPW=ON
 -DATV_BUILD_REGRESSIONS=ON` (FFTW3), using the login-shell recipe in the
-repository `CLAUDE.md` (`module load buildenv-gcc/2026.03-mpich`).
+repository `docs/developer/project-contract.md` (`module load buildenv-gcc/2026.03-mpich`).
 Related: closed-shell GPW on [gpw-rks](gpw-rks.md#gpw-forces-water);
 narrative [Ch. 9 GPW](../ch09-gpw.md); roadmap
 [`docs/roadmap/dft.md`](../../roadmap/dft.md).

@@ -1,5 +1,7 @@
 # GPW free-atom XDM dispersion
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Exchange-hole dipole moment (XDM) pairwise dispersion is an additive London
 correction on top of Γ-point GPW PBE. Atomiverse implements the **free-atom**
 form: the multipole moments \(M_1,M_2,M_3\) and static polarizabilities

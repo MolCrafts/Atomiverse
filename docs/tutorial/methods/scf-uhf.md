@@ -1,5 +1,7 @@
 # Unrestricted Hartree–Fock (UHF)
 
+> The regression runner has been removed. Regression commands below are historical; case sources and oracle records are retained as archived evidence, not current executable checks.
+
 Unrestricted Hartree–Fock lets the α and β spin orbitals relax independently,
 so open-shell, ionized and non-Aufbau (excited) determinants are described by
 one spin-unrestricted Slater determinant. The public entry point is the
