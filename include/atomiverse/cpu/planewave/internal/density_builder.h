@@ -56,7 +56,9 @@ class DensityBuilder {
 
     /// @brief Save ρ_old, extract the new ρ(G) on the density G-sphere,
     ///        and Pulay-mix toward self-consistency.
-    void finish(PWWorkspace& ws);
+    /// @return The unmixed ||rho_out-rho_in||_2, independent of damping
+    ///         and Pulay history. Only this residual measures self-consistency.
+    AccReal finish(PWWorkspace& ws);
 
     /// @brief Mix both spin densities and return their unmixed joint residual.
     /// @param ws Collinear workspace; reads live Pulay controls.

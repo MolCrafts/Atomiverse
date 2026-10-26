@@ -1,0 +1,138 @@
+"""Public HF binding contracts; tiny frames exercise bridges, not new oracles."""
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+molpy = pytest.importorskip("molpy")
+scf = pytest.importorskip("atomiverse.scf")
+
+
+def h2_frame():
+    frame = molpy.Frame()
+    atoms = molpy.Block()
+    atoms.insert("x", np.array([0.0, 0.0], dtype=np.float64))
+    atoms.insert("y", np.array([0.0, 0.0], dtype=np.float64))
+    atoms.insert("z", np.array([0.0, 0.74], dtype=np.float64))
+    atoms.insert("mass", np.array([1.008, 1.008], dtype=np.float64))
+    atoms.insert("atomic_number", np.array([1, 1], dtype=np.uint32))
+    for name, value in (("fx", 0.125), ("fy", -0.25), ("fz", 0.5)):
+        atoms.insert(name, np.full(2, value, dtype=np.float64))
+    frame["atoms"] = atoms
+    frame.box = molpy.Box.cube(20.0)
+    frame.meta["energy"] = -314.15
+    return frame
+
+
+def test_cpu_backend_info_reports_compiler_and_observed_team():
+    info = scf.backend_info()
+    assert info["backend"] == "cpu"
+    assert info["compiler"] and info["compiler_id"] and info["compiler_version"]
+    assert info["compiler_executable"]
+    assert 1 <= info["openmp_threads"] <= info["openmp_max_threads"]
+    if not info["openmp"]:
+        assert info["openmp_threads"] == info["openmp_max_threads"] == 1
+
+
+@pytest.mark.parametrize("name,args", [("RHF", {}), ("UHF", {"n_alpha": 1, "n_beta": 1}),
+                                      ("ROHF", {"n_alpha": 1, "n_beta": 1}),
+                                      ("GHF", {"n_electrons": 2})])
+def test_cpu_hf_public_methods_and_energy_only_frame_roundtrip(name, args):
+    import atomiverse as av
+
+    cls = getattr(scf, name)
+    assert getattr(av, name) is cls
+    assert name in scf.__all__ and name in av.__all__
+    method = cls(basis="STO-3G", tol=1e-10, max_iter=200, **args)
+    method.init_guess = "hcore"
+    method.integral_mode = "stored" if name == "GHF" else "direct"
+    method.damping = 0.0
+    method.conv_tol_grad = 1e-6
+    method.diis_space = 8
+    method.diis_start_cycle = 1
+    assert method.basis == "STO-3G" and method.tol == 1e-10
+    assert method.max_iter == 200 and method.charge == 0
+    assert method.damping == 0.0 and method.diis_space == 8
+    assert method.diis_start_cycle == 1 and method.conv_tol_grad == 1e-6
+    with pytest.raises(ValueError, match="integral_mode"):
+        method.integral_mode = "guess"
+    with pytest.raises(ValueError, match="init_guess"):
+        method.init_guess = "guess"
+    frame = h2_frame()
+    method.run(frame)
+    assert method.converged() and method.iterations() > 0
+    assert frame.meta["energy"] == pytest.approx(method.energy() * 27.211386245988, abs=1e-8)
+    for key, value in (("fx", 0.125), ("fy", -0.25), ("fz", 0.5)):
+        np.testing.assert_array_equal(np.asarray(frame["atoms"][key]), np.full(2, value))
+    if name == "ROHF":
+        assert method.n_alpha == method.n_beta == 1
+    if name == "GHF":
+        assert method.n_electrons == 2 and method.spin_rotation == 0.2
+        ab = np.asarray(method.spin_density_block("alpha", "beta"))
+        ba = np.asarray(method.spin_density_block("beta", "alpha"))
+        assert ab.shape == ba.shape == (2, 2)
+        np.testing.assert_allclose(ab, ba.T, atol=1e-14)
+        assert not np.shares_memory(ab, ba)
+        with pytest.raises(ValueError, match="spin"):
+            method.spin_density_block("up", "beta")
+
+
+def test_ghf_density_requires_converged_result():
+    method = scf.GHF("STO-3G", n_electrons=2, spin_rotation=0.0)
+    assert method.spin_rotation == 0.0
+    with pytest.raises(RuntimeError, match="converged"):
+        method.spin_density_block()
+
+
+_HAS_CUDA = "CudaRHF" in scf.__all__
+
+
+@pytest.mark.skipif(not _HAS_CUDA, reason="extension built without CUDA HF")
+def test_cuda_backend_metadata_completes_synchronization():
+    info = scf.cuda_backend_info()
+    assert info["backend"] == "cuda" and info["device_count"] > 0
+    assert info["device_name"] and len(info["devices"]) == info["device_count"]
+    assert info["total_memory_bytes"] >= info["free_memory_bytes"] > 0
+    assert info["driver_version"] > 0 and info["runtime_version"] > 0
+    assert info["synchronized"] and info["run_forces_synchronize"]
+    scf.cuda_synchronize()
+
+
+@pytest.mark.skipif(not _HAS_CUDA, reason="extension built without CUDA HF")
+@pytest.mark.parametrize("name,args", [("CudaRHF", {}), ("CudaUHF", {"n_alpha": 1, "n_beta": 1})])
+def test_cuda_hf_run_preserves_forces_and_explicit_force_array_is_owned(name, args):
+    import atomiverse as av
+
+    cls = getattr(scf, name)
+    assert getattr(av, name) is cls and name in av.__all__
+    method = cls("STO-3G", tol=1e-10, max_iter=100, **args)
+    with pytest.raises(RuntimeError, match="standalone"):
+        method.energy()
+    frame = h2_frame()
+    method.run(frame)
+    assert method.converged() and method.last_scf_on_device()
+    assert not method.last_force_on_device()
+    for key, value in (("fx", 0.125), ("fy", -0.25), ("fz", 0.5)):
+        np.testing.assert_array_equal(np.asarray(frame["atoms"][key]), np.full(2, value))
+    forces = np.asarray(method.forces(frame))
+    assert forces.shape == (2, 3) and np.isfinite(forces).all()
+    assert method.last_force_on_device()
+    for axis, key in enumerate(("fx", "fy", "fz")):
+        np.testing.assert_allclose(np.asarray(frame["atoms"][key]), forces[:, axis], atol=1e-12)
+    saved = forces.copy()
+    method.run(frame)
+    np.testing.assert_array_equal(forces, saved)
+    assert not method.last_force_on_device()
+    assert frame.meta["energy"] == pytest.approx(method.energy() * 27.211386245988, abs=1e-8)
+
+
+@pytest.mark.skipif(not _HAS_CUDA, reason="extension built without CUDA HF")
+def test_cuda_nonconvergence_does_not_publish_failed_frame():
+    frame = h2_frame()
+    method = scf.CudaRHF("STO-3G", max_iter=1)
+    with pytest.raises(RuntimeError, match="converge"):
+        method.run(frame)
+    assert frame.meta["energy"] == -314.15
+    np.testing.assert_array_equal(np.asarray(frame["atoms"]["fx"]), [0.125, 0.125])
+    with pytest.raises(RuntimeError, match="standalone"):
+        method.energy()

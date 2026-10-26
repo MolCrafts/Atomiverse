@@ -1,0 +1,1004 @@
+{
+  "analyzer": {
+    "path": "/Users/roykid/work/molcrafts/Atomiverse/.claude/campaigns/hf-benchmark-20261026/gpu/analyze_collected.py",
+    "sha256": "54be0e19e8901f646207187cbddf8f7d5c220e819e30a491f8d83534c5b62469"
+  },
+  "archive_source_files_verified": 3570,
+  "artifacts_checked": 422,
+  "binary_sha256": "1cdb05d5a7507508f079b81475bccc399d616be6ad74edd10bc90b0cc724d046",
+  "build_verified": false,
+  "campaigns": {
+    "acceptance-cpu8-gpu1": {
+      "campaign_id": "2f1b284cb0b74db1b52b9b82e632d6ec",
+      "environment": {
+        "affinity": [
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79
+        ],
+        "architecture": "aarch64",
+        "cpu_model": "aarch64",
+        "gpu_query_available": true,
+        "gpus": [
+          "NVIDIA GH200 120GB, GPU-6d2ec6f2-f9df-c924-6ce3-cc43d7f7db1c, 97871, 580.178.04"
+        ],
+        "host_memory_bytes": 921772163072,
+        "logical_cpus": 288,
+        "os": "Linux-5.14.0-687.59.1.el9_8.aarch64+64k-aarch64-with-glibc2.34",
+        "physical_cores": 288,
+        "python": "3.13.17",
+        "scheduler": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "SLURM_CPUS_PER_TASK": "8",
+          "SLURM_JOB_ID": "4451058",
+          "SLURM_MEM_PER_NODE": "61036"
+        }
+      },
+      "finished": "2026-10-26T12:56:52.889865+00:00",
+      "participants": {},
+      "profile": "linux-aarch64-cpu8-acceptance",
+      "raw_bundle_sha256": "eddb956b5612229a3ab249b860631267e7a594d5c8315909e623eb9da4ac59ec",
+      "started": "2026-10-26T12:54:20.558872+00:00",
+      "status_distribution": {
+        "completed/pass/required=False": 8,
+        "completed/pass/required=True": 60,
+        "dependency_missing/unverified/required=False": 25,
+        "not_implemented/unverified/required=False": 18
+      },
+      "summary": {
+        "complete": true,
+        "failed": 0,
+        "historical_status": "unbaselined",
+        "incomplete": 0,
+        "optional_unavailable": 43,
+        "passed": 60,
+        "performance_regressions": 0,
+        "required": 60
+      }
+    },
+    "water16-performance-cpu1-gpu1": {
+      "campaign_id": "d6bc653c63334780be4c929f6eaccd9a",
+      "environment": {
+        "affinity": [
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79
+        ],
+        "architecture": "aarch64",
+        "cpu_model": "aarch64",
+        "gpu_query_available": true,
+        "gpus": [
+          "NVIDIA GH200 120GB, GPU-6d2ec6f2-f9df-c924-6ce3-cc43d7f7db1c, 97871, 580.178.04"
+        ],
+        "host_memory_bytes": 921772163072,
+        "logical_cpus": 288,
+        "os": "Linux-5.14.0-687.59.1.el9_8.aarch64+64k-aarch64-with-glibc2.34",
+        "physical_cores": 288,
+        "python": "3.13.17",
+        "scheduler": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "SLURM_CPUS_PER_TASK": "8",
+          "SLURM_JOB_ID": "4451058",
+          "SLURM_MEM_PER_NODE": "61036"
+        }
+      },
+      "finished": "2026-10-26T13:01:13.471684+00:00",
+      "participants": {
+        "atv.cpu.direct": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189687324,
+            -1199.3881189687324,
+            -1199.3881189687324,
+            -1199.3881189687324,
+            -1199.3881189687324,
+            -1199.3881189687324
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            14,
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "max_energy_error_hartree": 1.3059434422757477e-08,
+          "max_seconds": 5.707679839,
+          "median_seconds": 5.703857899,
+          "min_seconds": 5.70061588,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817919,
+          "required": true,
+          "resolved_settings": {
+            "basis": "STO-3G",
+            "charge": 0,
+            "conv_tol_grad": 1e-08,
+            "converged": true,
+            "damping": 0.0,
+            "density_criterion": "not_exposed",
+            "diis_space": 8,
+            "diis_start_cycle": 1,
+            "energy_only": true,
+            "final_residuals": "not_exposed",
+            "init_guess": "hcore",
+            "initial_guess": "hcore",
+            "integral_mode": "direct",
+            "iterations": 14,
+            "max_iter": 200,
+            "solver_type": "RHF",
+            "spin_rotation": 0.0,
+            "tol": 1e-10
+          },
+          "resource_mismatch": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "speedup_reason": null,
+          "speedup_vs_pyscf_cpu": 0.22001165846365345,
+          "status": "completed",
+          "threadpools": [
+            {
+              "architecture": "NEOVERSEV1",
+              "filepath": "/software/sse2/el9_gh200/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_neoversev1p-r0.3.32.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libopenblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.32"
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            },
+            {
+              "filepath": "/software/sse2/el9_gh200/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 1,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            }
+          ],
+          "warm_seconds": [
+            5.707679839,
+            5.70061588,
+            5.703857899,
+            5.702267062,
+            5.706381145
+          ]
+        },
+        "atv.cpu.stored": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            14,
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "max_energy_error_hartree": 3.1377567211166024e-11,
+          "max_seconds": 14.263369288,
+          "median_seconds": 14.243243085,
+          "min_seconds": 14.202200536,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817919,
+          "required": false,
+          "resolved_settings": {
+            "basis": "STO-3G",
+            "charge": 0,
+            "conv_tol_grad": 1e-08,
+            "converged": true,
+            "damping": 0.0,
+            "density_criterion": "not_exposed",
+            "diis_space": 8,
+            "diis_start_cycle": 1,
+            "energy_only": true,
+            "final_residuals": "not_exposed",
+            "init_guess": "hcore",
+            "initial_guess": "hcore",
+            "integral_mode": "stored",
+            "iterations": 14,
+            "max_iter": 200,
+            "solver_type": "RHF",
+            "spin_rotation": 0.0,
+            "tol": 1e-10
+          },
+          "resource_mismatch": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "speedup_reason": null,
+          "speedup_vs_pyscf_cpu": 0.08810600426539024,
+          "status": "completed",
+          "threadpools": [
+            {
+              "filepath": "/software/sse2/el9_gh200/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 1,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            },
+            {
+              "architecture": "NEOVERSEV1",
+              "filepath": "/software/sse2/el9_gh200/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_neoversev1p-r0.3.32.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libopenblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.32"
+            }
+          ],
+          "warm_seconds": [
+            14.202200536,
+            14.243243085,
+            14.244891315,
+            14.22134888,
+            14.263369288
+          ]
+        },
+        "atv.cuda": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            18,
+            18,
+            18,
+            18,
+            18,
+            18
+          ],
+          "max_energy_error_hartree": 4.638422979041934e-11,
+          "max_seconds": 0.572793865,
+          "median_seconds": 0.570899776,
+          "min_seconds": 0.570003764,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817919,
+          "required": true,
+          "resolved_settings": {
+            "abs_delta_energy_hartree_tol": 1e-10,
+            "basis": "STO-3G",
+            "charge": 0,
+            "conv_tol_grad": "not_exposed; requested CPU control not applied",
+            "converged": true,
+            "criterion_observability": "native CUDA convergence contract; final residual values not exposed",
+            "damping": "not_exposed",
+            "density_residual_tol": 1e-10,
+            "diis_space": "not_exposed",
+            "diis_start_cycle": "not_exposed",
+            "energy_only": true,
+            "final_residuals": "not_exposed",
+            "initial_guess": "hcore",
+            "initial_guess_observability": "documented native policy for declared H/O systems; no public guess getter",
+            "iterations": 18,
+            "last_force_on_device": "not_requested",
+            "last_scf_on_device": true,
+            "level_shift": 0.0,
+            "max_iter": 200,
+            "orbital_residual_tol": 1e-05,
+            "solver_type": "CudaRHF",
+            "spin_rotation": 0.0,
+            "tol": 1e-10
+          },
+          "resource_mismatch": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "speedup_reason": null,
+          "speedup_vs_pyscf_cpu": 2.198135800284497,
+          "status": "completed",
+          "threadpools": [
+            {
+              "architecture": "NEOVERSEV1",
+              "filepath": "/software/sse2/el9_gh200/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_neoversev1p-r0.3.32.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libopenblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.32"
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            },
+            {
+              "filepath": "/software/sse2/el9_gh200/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 1,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            }
+          ],
+          "warm_seconds": [
+            0.572428951,
+            0.570534917,
+            0.570003764,
+            0.570899776,
+            0.572793865
+          ]
+        },
+        "pyscf.cpu": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189817919,
+            -1199.3881189817919,
+            -1199.3881189817919,
+            -1199.3881189817919,
+            -1199.3881189817919,
+            -1199.3881189817919
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            10,
+            10,
+            10,
+            10,
+            10,
+            10
+          ],
+          "max_energy_error_hartree": 0.0,
+          "max_seconds": 1.258420863,
+          "median_seconds": 1.254915236,
+          "min_seconds": 1.25292227,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817919,
+          "required": true,
+          "resolved_settings": {
+            "cartesian": true,
+            "conv_tol": 1e-10,
+            "conv_tol_grad": 1e-08,
+            "converged": true,
+            "damping": 0.0,
+            "diis_space": 8,
+            "diis_start_cycle": 1,
+            "direct_scf": true,
+            "final_residuals": "not_exposed_by_adapter",
+            "initial_guess": "1e",
+            "iterations": 10,
+            "level_shift": 0.0,
+            "max_memory_MiB": 4000.0,
+            "nao": 112,
+            "solver_type": "pyscf.scf.hf.RHF"
+          },
+          "resource_mismatch": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "speedup_reason": null,
+          "speedup_vs_pyscf_cpu": 1.0,
+          "status": "completed",
+          "threadpools": [
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-b7e2810b.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.31.dev"
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            },
+            {
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/pyscf/lib/libgomp-d22c30c5.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 1,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            },
+            {
+              "architecture": "ARMV8",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-8966572e.3.3.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libopenblas",
+              "threading_layer": "disabled",
+              "user_api": "blas",
+              "version": null
+            }
+          ],
+          "warm_seconds": [
+            1.258420863,
+            1.253770162,
+            1.257694308,
+            1.25292227,
+            1.254915236
+          ]
+        }
+      },
+      "profile": "linux-aarch64-cpu1-performance",
+      "raw_bundle_sha256": "364c7103d5f2b8ed55a5a837afbe8f4585b541fefcbaaa2091177ea282953f37",
+      "started": "2026-10-26T12:56:55.316309+00:00",
+      "status_distribution": {
+        "completed/pass/required=False": 1,
+        "completed/pass/required=True": 3,
+        "dependency_missing/unverified/required=False": 1
+      },
+      "summary": {
+        "complete": true,
+        "failed": 0,
+        "historical_status": "unbaselined",
+        "incomplete": 0,
+        "optional_unavailable": 1,
+        "passed": 3,
+        "performance_regressions": 0,
+        "required": 3
+      }
+    },
+    "water16-performance-cpu8-gpu1": {
+      "campaign_id": "df912087ac26491584bac28145d38ec3",
+      "environment": {
+        "affinity": [
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79
+        ],
+        "architecture": "aarch64",
+        "cpu_model": "aarch64",
+        "gpu_query_available": true,
+        "gpus": [
+          "NVIDIA GH200 120GB, GPU-6d2ec6f2-f9df-c924-6ce3-cc43d7f7db1c, 97871, 580.178.04"
+        ],
+        "host_memory_bytes": 921772163072,
+        "logical_cpus": 288,
+        "os": "Linux-5.14.0-687.59.1.el9_8.aarch64+64k-aarch64-with-glibc2.34",
+        "physical_cores": 288,
+        "python": "3.13.17",
+        "scheduler": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "SLURM_CPUS_PER_TASK": "8",
+          "SLURM_JOB_ID": "4451058",
+          "SLURM_MEM_PER_NODE": "61036"
+        }
+      },
+      "finished": "2026-10-26T13:02:53.115356+00:00",
+      "participants": {
+        "atv.cpu.direct": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189687302,
+            -1199.3881189687302,
+            -1199.3881189687309,
+            -1199.3881189687306,
+            -1199.3881189687302,
+            -1199.3881189687304
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            14,
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "max_energy_error_hartree": 1.3062390280538239e-08,
+          "max_seconds": 1.468756693,
+          "median_seconds": 1.464194198,
+          "min_seconds": 1.392714287,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817926,
+          "required": true,
+          "resolved_settings": {
+            "basis": "STO-3G",
+            "charge": 0,
+            "conv_tol_grad": 1e-08,
+            "converged": true,
+            "damping": 0.0,
+            "density_criterion": "not_exposed",
+            "diis_space": 8,
+            "diis_start_cycle": 1,
+            "energy_only": true,
+            "final_residuals": "not_exposed",
+            "init_guess": "hcore",
+            "initial_guess": "hcore",
+            "integral_mode": "direct",
+            "iterations": 14,
+            "max_iter": 200,
+            "solver_type": "RHF",
+            "spin_rotation": 0.0,
+            "tol": 1e-10
+          },
+          "resource_mismatch": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "speedup_reason": "actual engine thread resources differ from the declared profile",
+          "speedup_vs_pyscf_cpu": null,
+          "status": "completed",
+          "threadpools": [
+            {
+              "filepath": "/software/sse2/el9_gh200/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 8,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            },
+            {
+              "architecture": "NEOVERSEV1",
+              "filepath": "/software/sse2/el9_gh200/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_neoversev1p-r0.3.32.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libopenblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.32"
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            }
+          ],
+          "warm_seconds": [
+            1.468558683,
+            1.464194198,
+            1.442475194,
+            1.468756693,
+            1.392714287
+          ]
+        },
+        "atv.cpu.stored": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605,
+            -1199.3881189817605
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            14,
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "max_energy_error_hartree": 3.205968823749572e-11,
+          "max_seconds": 3.304139677,
+          "median_seconds": 3.297144932,
+          "min_seconds": 3.240026453,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817926,
+          "required": false,
+          "resolved_settings": {
+            "basis": "STO-3G",
+            "charge": 0,
+            "conv_tol_grad": 1e-08,
+            "converged": true,
+            "damping": 0.0,
+            "density_criterion": "not_exposed",
+            "diis_space": 8,
+            "diis_start_cycle": 1,
+            "energy_only": true,
+            "final_residuals": "not_exposed",
+            "init_guess": "hcore",
+            "initial_guess": "hcore",
+            "integral_mode": "stored",
+            "iterations": 14,
+            "max_iter": 200,
+            "solver_type": "RHF",
+            "spin_rotation": 0.0,
+            "tol": 1e-10
+          },
+          "resource_mismatch": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "speedup_reason": "actual engine thread resources differ from the declared profile",
+          "speedup_vs_pyscf_cpu": null,
+          "status": "completed",
+          "threadpools": [
+            {
+              "architecture": "NEOVERSEV1",
+              "filepath": "/software/sse2/el9_gh200/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_neoversev1p-r0.3.32.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libopenblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.32"
+            },
+            {
+              "filepath": "/software/sse2/el9_gh200/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 8,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            }
+          ],
+          "warm_seconds": [
+            3.304139677,
+            3.297144932,
+            3.253333368,
+            3.301241297,
+            3.240026453
+          ]
+        },
+        "atv.cuda": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383,
+            -1199.3881189818383
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            18,
+            18,
+            18,
+            18,
+            18,
+            18
+          ],
+          "max_energy_error_hartree": 4.5702108764089644e-11,
+          "max_seconds": 0.570499547,
+          "median_seconds": 0.570016297,
+          "min_seconds": 0.561882138,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817926,
+          "required": true,
+          "resolved_settings": {
+            "abs_delta_energy_hartree_tol": 1e-10,
+            "basis": "STO-3G",
+            "charge": 0,
+            "conv_tol_grad": "not_exposed; requested CPU control not applied",
+            "converged": true,
+            "criterion_observability": "native CUDA convergence contract; final residual values not exposed",
+            "damping": "not_exposed",
+            "density_residual_tol": 1e-10,
+            "diis_space": "not_exposed",
+            "diis_start_cycle": "not_exposed",
+            "energy_only": true,
+            "final_residuals": "not_exposed",
+            "initial_guess": "hcore",
+            "initial_guess_observability": "documented native policy for declared H/O systems; no public guess getter",
+            "iterations": 18,
+            "last_force_on_device": "not_requested",
+            "last_scf_on_device": true,
+            "level_shift": 0.0,
+            "max_iter": 200,
+            "orbital_residual_tol": 1e-05,
+            "solver_type": "CudaRHF",
+            "spin_rotation": 0.0,
+            "tol": 1e-10
+          },
+          "resource_mismatch": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "speedup_reason": "actual engine thread resources differ from the declared profile",
+          "speedup_vs_pyscf_cpu": null,
+          "status": "completed",
+          "threadpools": [
+            {
+              "filepath": "/software/sse2/el9_gh200/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 8,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            },
+            {
+              "architecture": "NEOVERSEV1",
+              "filepath": "/software/sse2/el9_gh200/manual/OpenBLAS/0.3.32/g14/hpc1/pthread/lp64/lib/libopenblas_neoversev1p-r0.3.32.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libopenblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.32"
+            }
+          ],
+          "warm_seconds": [
+            0.561882138,
+            0.570499547,
+            0.570422493,
+            0.570016297,
+            0.56332295
+          ]
+        },
+        "pyscf.cpu": {
+          "energies_hartree_cold_then_warm": [
+            -1199.3881189817926,
+            -1199.3881189817928,
+            -1199.3881189817923,
+            -1199.3881189817937,
+            -1199.388118981792,
+            -1199.3881189817932
+          ],
+          "energy_tolerance_hartree": 1e-06,
+          "iterations": [
+            10,
+            10,
+            10,
+            10,
+            10,
+            10
+          ],
+          "max_energy_error_hartree": 1.1368683772161603e-12,
+          "max_seconds": 1.92006674,
+          "median_seconds": 1.85495661,
+          "min_seconds": 1.705875634,
+          "numerical": "pass",
+          "reference_cold_energy_hartree": -1199.3881189817926,
+          "required": true,
+          "resolved_settings": {
+            "cartesian": true,
+            "conv_tol": 1e-10,
+            "conv_tol_grad": 1e-08,
+            "converged": true,
+            "damping": 0.0,
+            "diis_space": 8,
+            "diis_start_cycle": 1,
+            "direct_scf": true,
+            "final_residuals": "not_exposed_by_adapter",
+            "initial_guess": "1e",
+            "iterations": 10,
+            "level_shift": 0.0,
+            "max_memory_MiB": 4000.0,
+            "nao": 112,
+            "solver_type": "pyscf.scf.hf.RHF"
+          },
+          "resource_mismatch": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "speedup_reason": "actual engine thread resources differ from the declared profile",
+          "speedup_vs_pyscf_cpu": null,
+          "status": "completed",
+          "threadpools": [
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f552eb69.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.34.106.0"
+            },
+            {
+              "architecture": "neoversev2",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-b7e2810b.so",
+              "internal_api": "openblas",
+              "num_threads": 8,
+              "prefix": "libscipy_openblas",
+              "threading_layer": "pthreads",
+              "user_api": "blas",
+              "version": "0.3.31.dev"
+            },
+            {
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/pyscf/lib/libgomp-d22c30c5.so.1.0.0",
+              "internal_api": "openmp",
+              "num_threads": 8,
+              "prefix": "libgomp",
+              "user_api": "openmp",
+              "version": null
+            },
+            {
+              "architecture": "ARMV8",
+              "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-8966572e.3.3.so",
+              "internal_api": "openblas",
+              "num_threads": 1,
+              "prefix": "libopenblas",
+              "threading_layer": "disabled",
+              "user_api": "blas",
+              "version": null
+            }
+          ],
+          "warm_seconds": [
+            1.818576738,
+            1.85495661,
+            1.92006674,
+            1.705875634,
+            1.862598442
+          ]
+        }
+      },
+      "profile": "linux-aarch64-cpu8-performance",
+      "raw_bundle_sha256": "2e1615dc955c986a93da1f508809b59d21210ed3a7a653962717be7afb7f2baa",
+      "started": "2026-10-26T13:01:15.927079+00:00",
+      "status_distribution": {
+        "completed/pass/required=False": 1,
+        "completed/pass/required=True": 3,
+        "dependency_missing/unverified/required=False": 1
+      },
+      "summary": {
+        "complete": true,
+        "failed": 0,
+        "historical_status": "unbaselined",
+        "incomplete": 0,
+        "optional_unavailable": 1,
+        "passed": 3,
+        "performance_regressions": 0,
+        "required": 3
+      }
+    }
+  },
+  "job_successful": true,
+  "native_job": "4451058",
+  "participant_binary_identity": {
+    "atv.cpu.direct": {
+      "hashes": [
+        "1cdb05d5a7507508f079b81475bccc399d616be6ad74edd10bc90b0cc724d046"
+      ],
+      "observations_with_binary": 56,
+      "observations_without_binary": 0,
+      "paths": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/build/_atomiverse.cpython-313-aarch64-linux-gnu.so"
+      ],
+      "unique_binary_count": 1
+    },
+    "atv.cpu.stored": {
+      "hashes": [
+        "1cdb05d5a7507508f079b81475bccc399d616be6ad74edd10bc90b0cc724d046"
+      ],
+      "observations_with_binary": 34,
+      "observations_without_binary": 0,
+      "paths": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/build/_atomiverse.cpython-313-aarch64-linux-gnu.so"
+      ],
+      "unique_binary_count": 1
+    },
+    "atv.cuda": {
+      "hashes": [
+        "1cdb05d5a7507508f079b81475bccc399d616be6ad74edd10bc90b0cc724d046"
+      ],
+      "observations_with_binary": 32,
+      "observations_without_binary": 0,
+      "paths": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/build/_atomiverse.cpython-313-aarch64-linux-gnu.so"
+      ],
+      "unique_binary_count": 1
+    },
+    "gpu4pyscf.cuda": {
+      "hashes": [],
+      "observations_with_binary": 0,
+      "observations_without_binary": 27,
+      "paths": [],
+      "unique_binary_count": 0
+    },
+    "pyscf.cpu": {
+      "hashes": [
+        "f18b19f24491c3b92b856497d5ef85ace7a1ec1b18b78a96baa19edaa4233657"
+      ],
+      "observations_with_binary": 62,
+      "observations_without_binary": 0,
+      "paths": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/atv-hf-python-20261026.p1nSht/env313/lib/python3.13/site-packages/pyscf/lib/libcgto.so"
+      ],
+      "unique_binary_count": 1
+    }
+  },
+  "source_dirty": true,
+  "source_tree_sha256": "cfd36d03d4a3e6e3190d2dabead270a7bee82ef1489d1fd5adbc14941a32c559"
+}

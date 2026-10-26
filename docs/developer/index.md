@@ -45,6 +45,9 @@ way it is, not to assume domain knowledge.
   Python package.
 - **[Releasing the Python package](release.md)** — what goes to PyPI, how
   users build the native extension with pip, and how a tag is published.
+- **[Scientific benchmark framework](scientific-benchmarks.md)** — proposed
+  method-level accuracy/performance suite, hardware-annotated reports,
+  molcrafts-ci integration and evidence-derived roadmap status.
 
 - **[Project contract](project-contract.md)** — architecture, build recipes and conventions.
 

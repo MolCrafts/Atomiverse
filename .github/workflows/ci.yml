@@ -10,7 +10,13 @@ name: ci
 # GitHub-hosted. Manual re-run only when you want a second opinion:
 #   gh workflow run CI.yml
 'on':
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      hf_benchmark_tier:
+        description: HF benchmark coverage (large CUDA performance campaigns run through molq)
+        type: choice
+        options: [smoke, acceptance]
+        default: smoke
 
 env:
   CARGO_TERM_COLOR: always
@@ -83,3 +89,93 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - uses: MolCrafts/molcrafts-ci/actions/check-workflows@master
+
+  hf-benchmark:
+    name: ci / HF scientific benchmark
+    needs: context
+    if: needs.context.outputs.skip-pr != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      ATV_MOLPY_PATH: ${{ github.workspace }}/build/benchmark-partners/molpy
+      RUSTUP_TOOLCHAIN: 1.99.1-x86_64-unknown-linux-gnu
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Select the molpy 0.20 release ABI toolchain
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-pthread-dev liblapack-dev ninja-build
+      - uses: actions/checkout@v4
+        with:
+          repository: MolCrafts/molpy
+          ref: v0.20.0
+          path: build/benchmark-partners/molpy
+      - uses: actions/checkout@v4
+        with:
+          repository: MolCrafts/molcrafts-ci
+          ref: dev
+          path: build/benchmark-partners/molcrafts-ci
+      - name: Install benchmark runtime and observation protocol
+        run: |
+          python -m pip install -e build/benchmark-partners/molcrafts-ci
+          python -m pip install './python[native]' -r benchmarks/requirements.txt pytest
+          python -c "from molci import Manifest; assert 'observation_id' in Manifest.model_fields"
+          python -c "from importlib.metadata import version; assert version('molcrafts-molpy') == '0.20.0'"
+      - name: Build and install the public HF extension
+        id: native
+        run: |
+          cmake -S . -B build/hf-benchmark-native -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE="$(command -v python)" \
+            -DRust_TOOLCHAIN="$RUSTUP_TOOLCHAIN" -DCORROSION_TOOLS_RUST_TOOLCHAIN="$RUSTUP_TOOLCHAIN" \
+            -DATV_BUILD_HF=ON -DATV_BUILD_PYTHON=ON -DATV_BUILD_EVALUATE=ON \
+            -DATV_USE_MPI=OFF \
+            -DATV_BUILD_{CUDA,PW,GPW,KSPACE,TESTS,BENCHMARKS,EXAMPLES,LAUNCHER}=OFF \
+            -DATV_BUILD_{MD,MC,MINIMIZER,VIB,PATH,SEMIEMPIRICAL,POTENTIALS,NEIGHBOR,ANALYSIS}=OFF
+          python -m benchmarks attest-build --build-dir build/hf-benchmark-native \
+            --jobs 2 --out build/hf-build-receipt.json
+          cmake --install build/hf-benchmark-native --component python \
+            --prefix "$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+      - name: Validate the benchmark framework and public bindings
+        run: python -m pytest tests/benchmarks python/tests/test_hf_bindings.py -q
+      - name: Run independent HF comparisons
+        id: benchmark
+        env:
+          BENCHMARK_TIER: ${{ inputs.hf_benchmark_tier }}
+        run: |
+          python -m benchmarks run --tier "$BENCHMARK_TIER" --threads 1 \
+            --repeats 1 --warmup 0 --timeout 600 \
+            --build-receipt build/hf-build-receipt.json --out build/hf-benchmark-results
+      - name: Rebuild and validate the report after scientific failures
+        if: always() && hashFiles('build/hf-benchmark-results/results.json') != ''
+        run: |
+          python -m benchmarks report --input build/hf-benchmark-results/results.json \
+            --out build/hf-benchmark-results
+          molci validate-snapshot build/hf-benchmark-results/snapshots/benchmark.json
+      - name: Submit the untracked benchmark observation
+        if: always() && hashFiles('build/hf-benchmark-results/snapshots/benchmark.json') != ''
+        uses: ./build/benchmark-partners/molcrafts-ci/actions/submit
+        with:
+          snapshot-path: build/hf-benchmark-results/snapshots/benchmark.json
+          project: atomiverse
+          artifact-name: hf-benchmark-observation
+      - name: Preserve all numerical and hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hf-benchmark-evidence
+          path: |
+            build/hf-benchmark-results/
+            build/hf-benchmark-native/CMakeCache.txt
+            build/hf-build-receipt.json
+            build/hf-build-receipt.build.log
+          if-no-files-found: warn

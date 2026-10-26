@@ -113,6 +113,7 @@ nav = [
     "developer/kspace-long-range.md",
     "developer/python-molpy-boundary.md",
     "developer/release.md",
+    "developer/scientific-benchmarks.md",
     "developer/project-contract.md",
   ] },
   { "Reference" = [

@@ -39,6 +39,15 @@ TEST(NcPotential, LocalShapeErrorsPreserveOutput) {
     EXPECT_THROW(potential.local_r(valid, v, dv), std::invalid_argument);
     EXPECT_EQ(v[1], 9);
     EXPECT_EQ(dv[0], 8);
+    std::array<AccReal, 3> storage{0, 1, 2};
+    const auto before = storage;
+    EXPECT_THROW(potential.local_r(std::span(storage).first(2),
+                                   std::span(storage).subspan(1), dv),
+                 std::invalid_argument);
+    EXPECT_EQ(storage, before);
+    const std::array<AccReal, 2> disjoint{0, 1};
+    EXPECT_THROW(potential.local_r(disjoint, v, v), std::invalid_argument);
+    EXPECT_EQ(v[0], 9);
 }
 
 TEST(NcPotential, UpfLocalTableInterpolationPreservesSamplesAndDerivative) {

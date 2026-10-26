@@ -1,0 +1,385 @@
+schema = "atomiverse.benchmark-catalog/1"
+
+[[capabilities]]
+id = "hf.rhf.energy"
+chapter = "hartree-fock.md"
+label = "RHF molecular energy"
+scope = "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only."
+rows = ["rhf.sto3g.energy", "rhf.631gs.energy", "rhf.def2svp.energy", "rhf.sto3g.water_chain16.energy"]
+cpu_rows = ["rhf.sto3g.energy", "rhf.631gs.energy", "rhf.def2svp.energy", "rhf.sto3g.water_chain16.energy"]
+cuda_rows = ["rhf.sto3g.energy", "rhf.631gs.energy", "rhf.def2svp.energy", "rhf.sto3g.water_chain16.energy"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.rhf.gradient"
+chapter = "hartree-fock.md"
+label = "RHF analytic gradient"
+scope = "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only."
+rows = ["rhf.sto3g.forces", "rhf.631gs.forces", "rhf.def2svp.forces"]
+cpu_rows = ["rhf.sto3g.forces", "rhf.631gs.forces", "rhf.def2svp.forces"]
+cuda_rows = ["rhf.sto3g.forces"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.uhf.energy"
+chapter = "hartree-fock.md"
+label = "UHF molecular energy"
+scope = "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct."
+rows = ["uhf.sto3g.minao.energy", "uhf.sto3g.hcore.energy", "uhf.def2svp.energy"]
+cpu_rows = ["uhf.sto3g.minao.energy", "uhf.sto3g.hcore.energy", "uhf.def2svp.energy"]
+cuda_rows = ["uhf.sto3g.minao.energy"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.uhf.gradient"
+chapter = "hartree-fock.md"
+label = "UHF analytic gradient"
+scope = "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct."
+rows = ["uhf.sto3g.minao.forces", "uhf.sto3g.hcore.forces", "uhf.def2svp.forces"]
+cpu_rows = ["uhf.sto3g.minao.forces", "uhf.sto3g.hcore.forces", "uhf.def2svp.forces"]
+cuda_rows = ["uhf.sto3g.minao.forces"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.rohf.energy"
+chapter = "hartree-fock.md"
+label = "ROHF molecular energy"
+scope = "Cartesian STO-3G and spherical def2-SVP open-shell molecules."
+rows = ["rohf.sto3g.energy", "rohf.def2svp.energy"]
+cpu_rows = ["rohf.sto3g.energy", "rohf.def2svp.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.rohf.gradient"
+chapter = "hartree-fock.md"
+label = "ROHF analytic gradient"
+scope = "Cartesian STO-3G and spherical def2-SVP open-shell molecules."
+rows = ["rohf.sto3g.forces", "rohf.def2svp.forces"]
+cpu_rows = ["rohf.sto3g.forces", "rohf.def2svp.forces"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.ghf.energy"
+chapter = "hartree-fock.md"
+label = "GHF molecular energy"
+scope = "Native stored-ERI GHF: STO-3G H2 collapse/noncollinear H3 and def2-SVP H2 collapse; direct spinor strategy is unavailable."
+rows = ["ghf.sto3g.collapse.energy", "ghf.sto3g.noncollinear.energy", "ghf.def2svp.collapse.energy"]
+cpu_rows = ["ghf.sto3g.collapse.energy", "ghf.sto3g.noncollinear.energy", "ghf.def2svp.collapse.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.ghf.gradient"
+chapter = "hartree-fock.md"
+label = "GHF analytic gradient"
+scope = "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle."
+
+[[capabilities]]
+id = "hf.complex.energy"
+chapter = "hartree-fock.md"
+label = "Complex spinor HF / X2C"
+scope = "Public complex-spinor oracle/engine adapters remain to be migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Public complex-spinor oracle/engine adapters remain to be migrated."
+
+[[capabilities]]
+id = "hf.dhf.energy"
+chapter = "hartree-fock.md"
+label = "Dirac Coulomb HF"
+scope = "Relativistic molecular rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Relativistic molecular rows not migrated."
+
+[[capabilities]]
+id = "hf.delta_scf"
+chapter = "hartree-fock.md"
+label = "Delta-SCF / MOM / IMOM"
+scope = "Excited-state occupation and stability inputs not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Excited-state occupation and stability inputs not migrated."
+
+[[capabilities]]
+id = "hf.rhf.hessian"
+chapter = "hartree-fock.md"
+label = "RHF analytic Hessian"
+scope = "Independent live CPHF Hessian rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Independent live CPHF Hessian rows not migrated."
+
+[[capabilities]]
+id = "hf.uhf.hessian"
+chapter = "hartree-fock.md"
+label = "UHF analytic Hessian"
+scope = "Independent live CPHF Hessian rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Independent live CPHF Hessian rows not migrated."
+
+[[capabilities]]
+id = "hf.rohf.hessian"
+chapter = "hartree-fock.md"
+label = "ROHF finite-difference Hessian"
+scope = "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows."
+
+[[capabilities]]
+id = "hf.polarizability"
+chapter = "hartree-fock.md"
+label = "RHF static polarizability"
+scope = "Response rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Response rows not migrated."
+
+[[capabilities]]
+id = "hf.stability"
+chapter = "hartree-fock.md"
+label = "HF stability analysis"
+scope = "Noncollinear H3 does not substitute for general stability-analysis rows."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Noncollinear H3 does not substitute for general stability-analysis rows."
+
+[[capabilities]]
+id = "hf.periodic.gamma"
+chapter = "hartree-fock.md"
+label = "Gamma-point periodic RHF"
+scope = "Periodic lattice/truncation model and independent oracle not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Periodic lattice/truncation model and independent oracle not migrated."
+
+[[capabilities]]
+id = "hf.periodic.krhf"
+chapter = "hartree-fock.md"
+label = "k-point RHF"
+scope = "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows."
+
+[[capabilities]]
+id = "hf.periodic.kuhf"
+chapter = "hartree-fock.md"
+label = "k-point UHF"
+scope = "Periodic open-shell rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Periodic open-shell rows not migrated."
+
+[[capabilities]]
+id = "hf.diis"
+chapter = "hartree-fock.md"
+label = "DIIS"
+scope = "Using DIIS in molecular rows does not validate its full independent capability envelope."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "Using DIIS in molecular rows does not validate its full independent capability envelope."
+
+[[capabilities]]
+id = "hf.damping"
+chapter = "hartree-fock.md"
+label = "Linear damping"
+scope = "Damping control-grid rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Damping control-grid rows not migrated."
+
+[[capabilities]]
+id = "hf.level_shift"
+chapter = "hartree-fock.md"
+label = "Level shift"
+scope = "Shifted-SCF branch and matched oracle not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "Shifted-SCF branch and matched oracle not migrated."
+
+[[capabilities]]
+id = "hf.soscf"
+chapter = "hartree-fock.md"
+label = "SOSCF"
+scope = "Second-order convergence rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Second-order convergence rows not migrated."
+
+[[capabilities]]
+id = "hf.orthogonalization"
+chapter = "hartree-fock.md"
+label = "Canonical orthogonalization"
+scope = "Linear-dependence threshold/canonical pruning rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Linear-dependence threshold/canonical pruning rows not migrated."
+
+[[capabilities]]
+id = "hf.guess"
+chapter = "hartree-fock.md"
+label = "Hcore / MINAO initial guesses"
+scope = "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated."
+
+[[capabilities]]
+id = "hf.aspc"
+chapter = "hartree-fock.md"
+label = "ASPC density prediction"
+scope = "Independent trajectory warm-start rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Independent trajectory warm-start rows not migrated."
+
+[[capabilities]]
+id = "hf.spin_square"
+chapter = "hartree-fock.md"
+label = "Spin squared analysis"
+scope = "GHF Pab noncollinearity is not a complete S2 analysis benchmark."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "GHF Pab noncollinearity is not a complete S2 analysis benchmark."
+
+[[capabilities]]
+id = "hf.spherical"
+chapter = "hartree-fock.md"
+label = "Spherical AO transformations"
+scope = "def2-SVP molecular rows do not cover all l<=3 transformation cases."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "def2-SVP molecular rows do not cover all l<=3 transformation cases."
+
+[[capabilities]]
+id = "hf.ri_j"
+chapter = "hartree-fock.md"
+label = "RI-J"
+scope = "Auxiliary basis and matched RI model not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Auxiliary basis and matched RI model not migrated."
+
+[[capabilities]]
+id = "hf.ri_jk"
+chapter = "hartree-fock.md"
+label = "RI-JK"
+scope = "Auxiliary basis and matched RI model not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Auxiliary basis and matched RI model not migrated."
+
+[[capabilities]]
+id = "hf.cfmm"
+chapter = "hartree-fock.md"
+label = "CFMM-J"
+scope = "CFMM accuracy/resource/scaling rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "CFMM accuracy/resource/scaling rows not migrated."
+
+[[capabilities]]
+id = "hf.native_rys"
+chapter = "hartree-fock.md"
+label = "Native Rys ERI"
+scope = "Public integral-level scientific and resource rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Public integral-level scientific and resource rows not migrated."
+
+[[capabilities]]
+id = "hf.device_eri"
+chapter = "hartree-fock.md"
+label = "Device ERI"
+scope = "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders."
+rows = []
+cpu = "not_implemented"
+cuda = "pending_migration"
+reason = "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders."
+
+[[capabilities]]
+id = "hf.ecp"
+chapter = "hartree-fock.md"
+label = "Effective core potentials"
+scope = "ECP model and semi-numerical force scope not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "ECP model and semi-numerical force scope not migrated."
+
+[[capabilities]]
+id = "hf.x2c"
+chapter = "hartree-fock.md"
+label = "X2C one-electron"
+scope = "Relativistic Hamiltonian/gradient rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Relativistic Hamiltonian/gradient rows not migrated."
+
+[[capabilities]]
+id = "hf.diagonalization"
+chapter = "hartree-fock.md"
+label = "SCF diagonalization"
+scope = "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests."
+
+[[capabilities]]
+id = "hf.ghf.direct_spinor"
+chapter = "hartree-fock.md"
+label = "Direct-SCF spinor GHF"
+scope = "Nonsymmetric spin-off-diagonal exchange without a stored dense AO ERI tensor"
+rows = []
+cpu = "not_implemented"
+cuda = "not_implemented"
+reason = "Public native GHF rejects integral_mode=direct; implemented stored GHF is declared separately and is never relabeled direct."

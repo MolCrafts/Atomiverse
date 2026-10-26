@@ -771,8 +771,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 // density; finish() replaces rho_G with the mixed update.
                 const auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
-                density_->finish(ws);
-                loop_converged_ = convergence.step(ws);
+                loop_converged_ = convergence.step(density_->finish(ws));
                 AccReal e_ha = terms.total;
                 AccReal e_ent_ha = AccReal(0);
                 e_ent_ha = -degauss_ha * entropy_sum;
@@ -980,8 +979,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 // before finish() saves it and applies the Pulay update.
                 const auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
-                density_->finish(ws);
-                loop_converged_ = convergence.step(ws);
+                loop_converged_ = convergence.step(density_->finish(ws));
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;

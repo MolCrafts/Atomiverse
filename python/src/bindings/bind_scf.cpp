@@ -1,6 +1,6 @@
 /// @file python/src/bindings/bind_scf.cpp
 /// @brief Gaussian SCF single-point bindings: the concrete mean-field methods
-///        `RHF` / `UHF` / `RKS` / `UKS`.
+///        `RHF` / `UHF` / `ROHF` / `GHF` / `RKS` / `UKS`.
 ///
 /// **SCF** = *self-consistent field*. A **mean-field** electronic-structure
 /// model replaces the mutual repulsion of the electrons by an averaged field
@@ -43,13 +43,16 @@
 
 #include "force_array.h"
 #include "molpy_frame_bridge.h"
+#include "result_array.h"
 
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 
 #ifdef ATV_HAS_HF
 // The functional-name table is shared with the plane-wave binding (`PW.xc`),
 // so it lives in its own header rather than twice in this file.
+#include "basis_names.h"
 #include "xc_names.h"
 
 #include <span>
@@ -61,41 +64,19 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/scf/basis_set.h"
+#include "atomiverse/cpu/scf/ghf.h"
 #include "atomiverse/cpu/scf/gradient_result.h"
-#include "atomiverse/cpu/scf/methods.h"
+#include "atomiverse/cpu/scf/rhf.h"
+#include "atomiverse/cpu/scf/rks.h"
+#include "atomiverse/cpu/scf/rohf.h"
+#include "atomiverse/cpu/scf/uhf.h"
+#include "atomiverse/cpu/scf/uks.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace {
-
-using ATV::cpu::scf::BasisSet;
-
-/// @brief Basis-set name → `BasisSet` (names verbatim from `basis_set_name`).
-/// @param name Basis-set name, e.g. "STO-3G" or "def2-SVP".
-/// @return The matching enumerator.
-/// @throws std::invalid_argument (Python `ValueError`) on an unsupported
-///         name, listing every supported name — no fallback basis.
-BasisSet basis_from_name(const std::string& name) {
-    static constexpr std::pair<const char*, BasisSet> kTable[] = {
-        {"STO-3G", BasisSet::STO3G},
-        {"6-31G", BasisSet::Pople631G},
-        {"6-31G*", BasisSet::Pople631Gs},
-        {"6-31+G*", BasisSet::Pople631pGs},
-        {"def2-SVP", BasisSet::Def2SVP},
-        {"def2-TZVP", BasisSet::Def2TZVP},
-        {"aug-cc-pVDZ", BasisSet::AugCcPVDZ},
-        {"cc-pVDZ", BasisSet::CcPVDZ},
-    };
-    std::string supported;
-    for (const auto& [key, value] : kTable) {
-        if (name == key)
-            return value;
-        if (!supported.empty())
-            supported += ", ";
-        supported += key;
-    }
-    throw std::invalid_argument("unknown basis set '" + name
-                                + "'; supported: " + supported);
-}
 
 /// @brief Python-side owner of one concrete mean-field method.
 ///
@@ -177,7 +158,7 @@ class MethodHandle : public ATV::cpu::DriverNode {
     }
 };
 
-/// @brief Bind the four methods' shared single-point surface.
+/// @brief Bind the concrete methods' shared single-point surface.
 /// @tparam Method Concrete C++ method the handle owns.
 /// @param cls Class binding of a `MethodHandle` specialization.
 template <typename Method>
@@ -234,7 +215,66 @@ void bind_single_point(
             "Basis-set name fixed at construction (read-only).")
         .def_prop_ro(
             "charge", [](const Handle& self) { return self.method.charge; },
-            "Molecular charge [e] fixed at construction (read-only).");
+            "Molecular charge [e] fixed at construction (read-only).")
+        .def_prop_ro("tol", [](const Handle& self) { return self.method.tol; })
+        .def_prop_ro("max_iter",
+                     [](const Handle& self) { return self.method.max_iter; })
+        .def_prop_rw(
+            "level_shift",
+            [](const Handle& self) { return self.method.level_shift; },
+            [](Handle& self, double value) { self.method.level_shift = value; })
+        .def_prop_rw(
+            "integral_mode",
+            [](const Handle& self) {
+                return self.method.compute_eri ? "stored" : "direct";
+            },
+            [](Handle& self, const std::string& mode) {
+                if (mode != "stored" && mode != "direct")
+                    throw std::invalid_argument(
+                        "integral_mode must be direct or stored");
+                self.method.compute_eri = mode == "stored";
+            },
+            "Exact ERI strategy: direct recomputation or stored AO tensor.")
+        .def_prop_rw(
+            "init_guess",
+            [](const Handle& self) {
+                return self.method.init_guess == ATV::cpu::scf::InitGuess::Hcore
+                           ? "hcore"
+                           : "minao";
+            },
+            [](Handle& self, const std::string& guess) {
+                if (guess != "hcore" && guess != "minao")
+                    throw std::invalid_argument(
+                        "init_guess must be hcore or minao");
+                self.method.init_guess = guess == "hcore"
+                                             ? ATV::cpu::scf::InitGuess::Hcore
+                                             : ATV::cpu::scf::InitGuess::MINAO;
+            },
+            "Initial density policy; no converged state is reused.")
+        .def_prop_rw(
+            "damping",
+            [](const Handle& self) { return self.method.damping_factor; },
+            [](Handle& self, double value) {
+                self.method.damping_factor = value;
+            })
+        .def_prop_rw(
+            "conv_tol_grad",
+            [](const Handle& self) { return self.method.conv_tol_grad; },
+            [](Handle& self, double value) {
+                self.method.conv_tol_grad = value;
+            })
+        .def_prop_rw(
+            "diis_space",
+            [](const Handle& self) { return self.method.diis_max_vectors; },
+            [](Handle& self, int value) {
+                self.method.diis_max_vectors = value;
+            })
+        .def_prop_rw(
+            "diis_start_cycle",
+            [](const Handle& self) { return self.method.diis_start_iter; },
+            [](Handle& self, int value) {
+                self.method.diis_start_iter = value;
+            });
 }
 
 } // namespace
@@ -314,6 +354,126 @@ void bind_scf(nb::module_& m) {
             [](const MethodHandle<UHF>& self) { return self.method.n_beta; },
             "Spin-down electron count fixed at construction (read-only).");
     bind_single_point(uhf);
+
+    using ATV::cpu::scf::ROHF;
+    nb::class_<MethodHandle<ROHF>, ATV::cpu::DriverNode> rohf(
+        m, "ROHF",
+        "Restricted open-shell Hartree-Fock, Guest-Saunders convention.");
+    rohf.def(
+            "__init__",
+            [](MethodHandle<ROHF>* self, const std::string& basis, int n_alpha,
+               int n_beta, int charge, double tol, int max_iter) {
+                new (self) MethodHandle<ROHF>(basis_from_name(basis), n_alpha,
+                                              n_beta, charge);
+                self->method.tol = tol;
+                self->method.max_iter = max_iter;
+            },
+            nb::arg("basis"), nb::arg("n_alpha"), nb::arg("n_beta"),
+            nb::arg("charge") = 0, nb::arg("tol") = 1e-10,
+            nb::arg("max_iter") = 200)
+        .def_prop_ro(
+            "n_alpha",
+            [](const MethodHandle<ROHF>& self) { return self.method.n_alpha; })
+        .def_prop_ro("n_beta", [](const MethodHandle<ROHF>& self) {
+            return self.method.n_beta;
+        });
+    bind_single_point(rohf);
+
+    using ATV::cpu::scf::GHF;
+    nb::class_<MethodHandle<GHF>, ATV::cpu::DriverNode> ghf(
+        m, "GHF", "Real two-component generalized Hartree-Fock.");
+    ghf.def(
+           "__init__",
+           [](MethodHandle<GHF>* self, const std::string& basis,
+              int n_electrons, double tol, int max_iter, double spin_rotation) {
+               new (self)
+                   MethodHandle<GHF>(basis_from_name(basis), n_electrons);
+               self->method.tol = tol;
+               self->method.max_iter = max_iter;
+               self->method.guess_spin_rotation = spin_rotation;
+           },
+           nb::arg("basis"), nb::arg("n_electrons"), nb::arg("tol") = 1e-10,
+           nb::arg("max_iter") = 200, nb::arg("spin_rotation") = 0.2)
+        .def_prop_ro("n_electrons",
+                     [](const MethodHandle<GHF>& self) {
+                         return self.method.n_electrons;
+                     })
+        .def_prop_rw(
+            "spin_rotation",
+            [](const MethodHandle<GHF>& self) {
+                return self.method.guess_spin_rotation;
+            },
+            [](MethodHandle<GHF>& self, double value) {
+                self.method.guess_spin_rotation = value;
+            })
+        .def(
+            "spin_density_block",
+            [](const MethodHandle<GHF>& self, const std::string& bra,
+               const std::string& ket) {
+                if (!self.method.converged())
+                    throw std::logic_error(
+                        "GHF.spin_density_block requires a converged solve");
+                auto spin = [](const std::string& name) {
+                    if (name == "alpha")
+                        return ATV::cpu::scf::SlaterDeterminant::Spin::alpha;
+                    if (name == "beta")
+                        return ATV::cpu::scf::SlaterDeterminant::Spin::beta;
+                    throw std::invalid_argument("spin must be alpha or beta");
+                };
+                // C++ SCF matrices are column-major; the shared numpy helper
+                // expects row-major storage. Let xtensor perform that layout copy.
+                xt::xtensor<double, 2, xt::layout_type::row_major> block;
+                {
+                    nb::gil_scoped_release release;
+                    block = self.method.determinant().spin_block(spin(bra),
+                                                                 spin(ket));
+                }
+                return to_matrix_array(
+                    std::span<const double>(block.data(), block.size()),
+                    block.shape()[0], block.shape()[1]);
+            },
+            nb::arg("bra") = "alpha", nb::arg("ket") = "beta",
+            "Owned AO spin-density block from the converged real spinor "
+            "determinant.");
+    bind_single_point(ghf);
+
+    m.def(
+        "hf_backend_info",
+        []() {
+            nb::dict info;
+            info["backend"] = "cpu";
+            info["compiler_id"] = ATV_HF_CXX_COMPILER_ID;
+            info["compiler_version"] = ATV_HF_CXX_COMPILER_VERSION;
+            info["compiler_executable"] = ATV_HF_CXX_COMPILER_PATH;
+#ifdef __VERSION__
+            info["compiler"] = __VERSION__;
+#else
+            info["compiler"] =
+                ATV_HF_CXX_COMPILER_ID " " ATV_HF_CXX_COMPILER_VERSION;
+#endif
+#ifdef _OPENMP
+            int observed = 1;
+            {
+                nb::gil_scoped_release release;
+#pragma omp parallel
+                {
+#pragma omp single
+                    observed = omp_get_num_threads();
+                }
+            }
+            info["openmp"] = true;
+            info["openmp_version"] = _OPENMP;
+            info["openmp_threads"] = observed;
+            info["openmp_max_threads"] = omp_get_max_threads();
+#else
+            info["openmp"] = false;
+            info["openmp_version"] = 0;
+            info["openmp_threads"] = 1;
+            info["openmp_max_threads"] = 1;
+#endif
+            return info;
+        },
+        "Actual CPU HF compiler and OpenMP runtime configuration.");
 
     nb::class_<MethodHandle<RKS>, ATV::cpu::DriverNode> rks(
         m, "RKS",

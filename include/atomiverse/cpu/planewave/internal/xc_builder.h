@@ -19,6 +19,9 @@
 
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
 #include "atomiverse/cpu/scf/xc_functional.h"
+#include <array>
+#include <span>
+#include <vector>
 
 namespace ATV {
 namespace cpu {
@@ -29,13 +32,15 @@ namespace internal {
 ///
 /// FFTs ρ(G) → ρ(r), evaluates the XC functional pointwise (with spectral
 /// density gradients for GGA), then FFTs V_xc(r) → V_xc(G).
-/// Pure GGA uses private 3/2-padded quadrature, with the weighted adjoint
-/// Fourier projection back to the unchanged density G-sphere. Scratch is
+/// Private quadrature uses 3/2 padding for LDA and 3x padding for GGA,
+/// with the weighted adjoint Fourier projection back to the unchanged density
+/// G-sphere. These fixed integration grids reduce nonlinear quadrature aliasing;
+/// they are not a universal error bound for every density. Scratch is
 /// allocated in `prepare()`; `step()` performs no heap allocation beyond
 /// workspace array resizes already owned by `PWWorkspace`.
 class XCBuilder {
   public:
-    /// @brief Reserve base and 3/2-padded XC quadrature scratch (idempotent).
+    /// @brief Reserve fixed LDA/GGA XC quadrature plans and shared scratch (idempotent).
     /// @param ws Plane-wave workspace (grid dims must be final).
     void prepare(const PWWorkspace& ws);
 
@@ -53,14 +58,39 @@ class XCBuilder {
     void step_spin(PWWorkspace& ws,
                    cpu::scf::XCType xc = cpu::scf::XCType::PBE);
 
+    /// Physical Fourier inputs and preallocated coarse-grid response output.
+    struct ResponseChannel {
+        std::span<const std::complex<AccReal>> reference;
+        std::span<const std::complex<AccReal>> variation;
+        std::span<AccReal> potential;
+    };
+    /// Central difference of the same fixed-grid potential, with caller's
+    /// unchanged epsilon. One channel denotes total restricted density; two
+    /// denote independent alpha/beta densities. Does not mutate accepted ws.
+    void response(const PWWorkspace& ws, cpu::scf::XCType xc,
+                  std::span<const ResponseChannel> channels, AccReal epsilon);
+
   private:
     /// Shape-only plan; physical G vectors and cell volume are read each call.
-    std::unique_ptr<FFTPlan3D> quadrature_fft_;
+    std::unique_ptr<FFTPlan3D> local_quadrature_fft_;
+    std::unique_ptr<FFTPlan3D> gradient_quadrature_fft_;
     FFTWBuffer<AccReal> restricted_vxc_r_;
     void check_prepared(const PWWorkspace& ws) const;
     void project_to_base(const PWWorkspace& ws,
                          const xt::xarray<std::complex<AccReal>>& potential,
-                         xt::xarray<AccReal>& output);
+                         std::span<AccReal> output);
+    void cache_response_reference(const PWWorkspace& ws, cpu::scf::XCType xc,
+                                  std::span<const ResponseChannel> channels);
+    // Fixed reference fields are interpolated once. Keys contain physical
+    // coefficients/modes/metric and quadrature shape, never workspace pointers.
+    int response_channels_ = 0;
+    std::array<int, 3> response_shape_{};
+    std::array<std::vector<std::complex<AccReal>>, 2> response_reference_;
+    std::vector<int> response_h_, response_k_, response_l_;
+    std::vector<Vec3> response_metric_;
+    std::array<FFTWBuffer<AccReal>, 2> response_density_;
+    std::array<std::array<FFTWBuffer<AccReal>, 3>, 2> response_gradient_;
+    std::array<xt::xarray<std::complex<AccReal>>, 2> response_potential_G_;
     FFTWBuffer<fftw_complex> rho_g_half_;
     FFTWBuffer<AccReal> rho_r_;
     FFTWBuffer<fftw_complex> vxc_g_half_;

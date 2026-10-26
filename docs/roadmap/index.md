@@ -32,6 +32,14 @@ Usage: [User Guide — methods](../user-guide/methods.md).
 
 ## Status
 
+The [HF chapter](hartree-fock.md#current-benchmark-evidence) now generates its
+status block from the [scientific benchmark framework](../developer/scientific-benchmarks.md).
+Its current numerical records, missing coverage and independent qualification
+gates determine the marks; archived pins are not imported as current passes.
+Other chapters retain their chapter-specific historical evidence until their
+own benchmark migration. This is not an old-runner or old-format compatibility
+path.
+
 | Symbol | Meaning |
 | ------ | ------- |
 | ○ | Not implemented on that backend |

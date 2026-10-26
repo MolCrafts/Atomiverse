@@ -7,12 +7,20 @@ equations are solved by iterating — build the field, diagonalize, rebuild —
 until the total energy and the residual stop changing. The orbitals are
 expanded in a fixed set of Gaussian functions, the *basis set*.
 
-The surface is the **concrete method** — ``RHF``, ``UHF``, ``RKS``, ``UKS``.
+The surface is the **concrete method** — ``RHF``, ``UHF``, ``ROHF``, ``GHF``,
+``RKS``, ``UKS``; CUDA builds additionally carry ``CudaRHF`` and ``CudaUHF``.
 There is no ``SCF`` facade, no ``SCFConfig`` bag and no factory: every
-parameter is a constructor argument — keyword names match the C++
-constructor — the identity (``basis``, ``charge``, ``n_alpha`` / ``n_beta``,
+identity parameter is a constructor argument — the identity
+(``basis``, ``charge``, ``n_alpha`` / ``n_beta``,
 ``xc``) is read-only afterwards, and the only I/O currency is a
 ``molpy.Frame``.
+
+CPU algorithm controls are explicit properties: ``integral_mode``
+(``"direct"`` or ``"stored"``), ``init_guess`` (``"hcore"`` or ``"minao"``),
+``damping``, ``level_shift``, ``conv_tol_grad``, ``diis_space`` and
+``diis_start_cycle``. They forward native controls; unsupported method/control
+combinations raise in the native solver. CUDA controls retain their native
+constructor settings rather than claiming unsupported CPU controls.
 
 Two letters name each method. ``R`` (restricted) means the spin-up (alpha)
 and spin-down (beta) electrons share one set of spatial orbitals, i.e. a
@@ -55,6 +63,29 @@ Constructors
 ``UKS(basis, n_alpha, n_beta, xc="LSDA", charge=0, tol=1e-8, max_iter=100)``
     Open-shell Kohn-Sham DFT; ``n_alpha`` / ``n_beta`` as for ``UHF``.
 
+``ROHF(basis, n_alpha, n_beta, charge=0, tol=1e-10, max_iter=200)``
+    Restricted open-shell HF with shared spatial orbitals and split occupation.
+
+``GHF(basis, n_electrons, tol=1e-10, max_iter=200, spin_rotation=0.2)``
+    Real two-component spinor HF. ``spin_rotation`` forwards the native per-AO
+    initial moment rotation [radians]. After convergence,
+    ``spin_density_block("alpha", "beta")`` returns an owned AO density block.
+
+``CudaRHF`` / ``CudaUHF`` take the same constructor arguments as ``RHF`` /
+``UHF``. They forward the existing public CUDA methods; unsupported basis,
+element or force envelopes raise without a CPU fallback. ``run`` computes
+energy only, ``forces`` explicitly computes analytic forces, and both complete
+``cudaDeviceSynchronize`` before returning. CUDA nonconvergence raises and
+does not publish the failed candidate to the supplied Frame.
+
+``backend_info()`` reports the actual CPU compiler, OpenMP maximum team size
+and the team size observed by a parallel region in the calling process.
+``cuda_backend_info()`` reports GPU identities, CUDA driver/runtime versions,
+current-device free/total memory snapshots, and completed synchronization.
+``cuda_synchronize()`` completes work on the current device, for timing or
+explicit cleanup boundaries. The CUDA functions exist only on CUDA HF builds;
+memory snapshots are not peak-memory measurements.
+
 ``basis`` is one of ``STO-3G``, ``6-31G``, ``6-31G*``, ``6-31+G*``,
 ``def2-SVP``, ``def2-TZVP``, ``aug-cc-pVDZ``, ``cc-pVDZ``; ``xc`` is one of
 ``LSDA``, ``PBE``, ``PBEsol``, ``RevPBE``, ``RPBE``, ``BLYP``,
@@ -65,7 +96,7 @@ functional.
 Convergence
 -----------
 
-``tol`` is the threshold on |dE|, the total-energy change between two
+For CPU methods, ``tol`` is the threshold on |dE|, the total-energy change between two
 successive iterations [Hartree]. ``converged()`` is True only when that
 *and* a second measure are met: the Frobenius norm of the DIIS error matrix
 below sqrt(``tol``). DIIS (*direct inversion of the iterative subspace*) is
@@ -114,4 +145,14 @@ RHF = _cpp.RHF
 UHF = _cpp.UHF
 RKS = _cpp.RKS
 UKS = _cpp.UKS
-__all__ = ["RHF", "UHF", "RKS", "UKS"]
+ROHF = _cpp.ROHF
+GHF = _cpp.GHF
+backend_info = _cpp.hf_backend_info
+__all__ = ["RHF", "UHF", "ROHF", "GHF", "RKS", "UKS", "backend_info"]
+
+if hasattr(_cpp, "CudaRHF"):
+    CudaRHF = _cpp.CudaRHF
+    CudaUHF = _cpp.CudaUHF
+    cuda_backend_info = _cpp.cuda_hf_backend_info
+    cuda_synchronize = _cpp.cuda_hf_synchronize
+    __all__ += ["CudaRHF", "CudaUHF", "cuda_backend_info", "cuda_synchronize"]

@@ -2,6 +2,7 @@
 /// @brief One fixed Fourier Hamiltonian eigensolve, without an SCF loop.
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/planewave/internal/davidson.h"
+#include "atomiverse/cpu/planewave/internal/dfpt.h"
 #include <cmath>
 #include <complex>
 #include <gtest/gtest.h>
@@ -183,4 +184,30 @@ TEST(PwDavidson, LastIndependentDirectionCompletesFourierEigensolve) {
         residual2 += std::norm(value - ws.eigenvalues[0] * ws.wfc(0, i));
     }
     EXPECT_LE(std::sqrt(residual2), 1e-10);
+}
+
+TEST(PwDavidson, SternheimerAcceptsAlreadySolvedProjectedInitialGuess) {
+    using namespace ATV;
+    using namespace cpu::pw::internal;
+    using Cx = std::complex<AccReal>;
+    PWWorkspace ws;
+    ws.n_g = 3;
+    ws.nr = ws.fft_nx = 8;
+    ws.fft_ny = ws.fft_nz = 1;
+    ws.fft = std::make_unique<FFTPlan3D>(8, 1, 1);
+    ws.gvec = &ws.gvec0;
+    ws.gvec0.h = {0, 1, -1};
+    ws.gvec0.k = ws.gvec0.l = {0, 0, 0};
+    ws.T_G = {0., 1., 2.};
+    ws.V_eff_r = xt::zeros<AccReal>({8});
+    const Cx occupied[] = {{1, 0}, {0, 0}, {0, 0}};
+    const Cx rhs[] = {{7, 3}, {.5, -.25}, {-1, .75}};
+    Cx solution[] = {{9, 2}, {.5, -.25}, {-.5, .375}};
+    FFTWBuffer<fftw_complex> work(ws.nr);
+    EXPECT_EQ(sternheimer_cg(ws, occupied, 1, 0, rhs, solution, 1e-12, 10,
+                             work.data()),
+              0);
+    EXPECT_EQ(solution[0], Cx(0, 0));
+    EXPECT_EQ(solution[1], Cx(.5, -.25));
+    EXPECT_EQ(solution[2], Cx(-.5, .375));
 }

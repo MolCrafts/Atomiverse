@@ -87,11 +87,10 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 }
 
 std::vector<std::array<double, 3>> pw_forces_analytic_impl(
-    const cpu::Frame& frame, double ecut_ry, DeviceDensity& den,
-    DeviceBandSolver& solver, cpu::pw::internal::PWProblem& prob,
-    cpu::pw::internal::PWWorkspace& ws, int n_alpha, int n_beta, bool use_smear,
-    int n_elec, cpu::pw::internal::SmearKind smear_kind, double degauss_ha,
-    int mp_order) {
+    const cpu::Frame& frame, DeviceDensity& den, DeviceBandSolver& solver,
+    cpu::pw::internal::PWProblem& prob, cpu::pw::internal::PWWorkspace& ws,
+    int n_alpha, int n_beta, bool use_smear, int n_elec,
+    cpu::pw::internal::SmearKind smear_kind, double degauss_ha, int mp_order) {
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument(
@@ -334,9 +333,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                                                 static_cast<AccReal>(sy[i]),
                                                 static_cast<AccReal>(sz[i])};
 
-    const AccReal ecut_ht = static_cast<AccReal>(ecut_ry) * AccReal(0.5);
-    cpu::pw::internal::EwaldSummation ewald(pos_ang, ion_charges, frame.box,
-                                            ecut_ht);
+    cpu::pw::internal::EwaldSummation ewald(pos_ang, ion_charges, frame.box);
     const auto& few = ewald.forces_bohr();
     for (int i = 0; i < n; ++i) {
         h_F[static_cast<std::size_t>(3 * i + 0)] +=

@@ -4,6 +4,49 @@
 #include <gtest/gtest.h>
 #include <xtensor/generators/xbuilder.hpp>
 
+TEST(PwDensityBuilder, RestrictedResidualCannotBeHiddenByMixing) {
+    using namespace ATV;
+    using namespace cpu::pw::internal;
+    using Complex = std::complex<AccReal>;
+    for (const AccReal damping : {AccReal(0), AccReal(.25), AccReal(.8)}) {
+        PWWorkspace ws;
+        ws.fft_nx = 8;
+        ws.fft_ny = ws.fft_nz = 4;
+        ws.nr = 8 * 4 * 4;
+        ws.nc = 5 * 4 * 4;
+        ws.fft = std::make_unique<FFTPlan3D>(8, 4, 4);
+        ws.gvec0.h = {0, 1, -1};
+        ws.gvec0.k = ws.gvec0.l = {0, 0, 0};
+        ws.gvec = &ws.gvec0;
+        ws.n_g = 3;
+        ws.mix_beta = damping;
+        ws.rho_G = xt::xarray<Complex>{1., .02, .02};
+        const auto input = ws.rho_G;
+        const xt::xarray<Complex> output = {1., Complex(.3, .2),
+                                            Complex(.3, -.2)};
+        DensityBuilder builder;
+        builder.prepare(ws);
+        builder.begin(ws);
+        // An analytic real Fourier field, independent of the FFT extractor.
+        for (int z = 0; z < 4; ++z)
+            for (int y = 0; y < 4; ++y)
+                for (int x = 0; x < 8; ++x) {
+                    const double phase = 2 * M_PI * x / 8;
+                    builder.accumulation()[x + 8 * (y + 4 * z)] =
+                        1 + .6 * std::cos(phase) - .4 * std::sin(phase);
+                }
+        EXPECT_NEAR(builder.finish(ws), std::sqrt(2 * (.28 * .28 + .2 * .2)),
+                    1e-14);
+        for (int g = 0; g < 3; ++g) {
+            EXPECT_EQ(ws.rho_G_old[g], input[g]);
+            EXPECT_NEAR(
+                std::abs(ws.rho_G[g]
+                         - (input[g] + damping * (output[g] - input[g]))),
+                0, 1e-14);
+        }
+    }
+}
+
 TEST(PwDensityBuilder, OppositeSpinErrorsCannotCancelOrBeHiddenByDamping) {
     using namespace ATV;
     using namespace cpu::pw::internal;

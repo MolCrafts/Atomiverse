@@ -683,6 +683,7 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("comp"),
             "Register a recorder; Thermo is installed via set_thermo cadence.")
+#ifdef ATV_HAS_IO
         .def(
             "set_record",
             [](MdHandle& self, const cpu::task::XyzRecorderParams& p) {
@@ -693,6 +694,7 @@ void bind_md(nb::module_& m) {
             "Register the XYZ trajectory recorder (LAMMPS `dump`). Binds at "
             "end_of_step and writes one frame every freq steps; raises "
             "ValueError on an empty path or freq < 1.")
+#endif
         .def(
             "on",
             [](MdHandle& self, md::Phase phase) {

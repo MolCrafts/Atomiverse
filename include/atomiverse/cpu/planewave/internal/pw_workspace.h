@@ -79,10 +79,13 @@ struct PWWorkspace {
     // Non-local KB projector data in G-space
     struct KBProjG {
         int l;
-        AccReal d;               // D_ij coefficient (diagonal approximation)
-        xt::xarray<AccReal> f_G; // f_l(|G|) = ∫ r·β_upf(r)·j_l(Gr) dr
+        AccReal d;               // diagonalized D_ij eigenvalue [Ha]
+        xt::xarray<AccReal> f_G; // f_l(|G+k|) = ∫ r·β_upf(r)·j_l(|G+k|r) dr
+        // Physical β_lm(G), including angular, atomic Bloch phase and
+        // 4π/√Ω normalization. Shape [2*l+1, n_g], m-major contiguous.
+        xt::xarray<std::complex<AccReal>> beta_G;
     };
-    // kb_proj[atom][proj] — same f_G for all atoms (radial part only)
+    // kb_proj[atom][proj] — prepared for the current geometry and k-sphere.
     std::vector<std::vector<KBProjG>> kb_proj;
 
     // Atomic wavefunctions for initial guess (QE atomic_wfc_mod.f90)

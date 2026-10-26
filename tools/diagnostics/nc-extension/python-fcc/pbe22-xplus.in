@@ -1,0 +1,24 @@
+&CONTROL
+ calculation='scf', prefix='pbe22-xplus', pseudo_dir='../',
+ outdir='./scratch-pbe22-xplus', tprnfor=.true., tstress=.false., verbosity='high'
+/
+&SYSTEM
+ ibrav=0, nat=2, ntyp=1, ecutwfc=8.0, ecutrho=32.0,
+ nr1=22, nr2=22, nr3=22, nr1s=22, nr2s=22, nr3s=22,
+ input_dft='PBE', occupations='fixed', nspin=1, nbnd=4,
+ nosym=.true., noinv=.true.
+/
+&ELECTRONS
+ conv_thr=1.0d-12, electron_maxstep=200, mixing_beta=0.3,
+ diagonalization='david', diago_thr_init=1.0d-13
+/
+ATOMIC_SPECIES
+Si 28.0855 Si_GTH_PBE_q4.gth
+CELL_PARAMETERS angstrom
+0 2.715 2.715
+2.715 0 2.715
+2.715 2.715 0
+ATOMIC_POSITIONS angstrom
+Si 0.001000000000 0 0
+Si 1.438500000000 1.3575 1.3575
+K_POINTS gamma

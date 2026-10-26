@@ -146,12 +146,12 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
 
         const auto terms =
             iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
-        density.finish(ws);
+        const AccReal residual = density.finish(ws);
         result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
         result.energy = result.energy_ha / qe_units::rydberg_to_hartree;
 
-        if (convergence.step(ws)) {
+        if (convergence.step(residual)) {
             result.converged = true;
             if (layout.rank == 0)
                 ATV_INFO("[pw] {}-scf converged iter={} energy_ry={:.8f}", tag,
@@ -348,7 +348,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
 
         const auto terms =
             iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
-        density.finish(ws);
+        const AccReal residual = density.finish(ws);
         result.iterations = iter + 1;
         // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
         const AccReal e_ent_ha = -degauss_ha * entropy_sum;
@@ -361,7 +361,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
             static_cast<double>(e_ent_ha) / qe_units::rydberg_to_hartree;
         result.n_elec_occ = static_cast<double>(n_occ);
 
-        if (convergence.step(ws)) {
+        if (convergence.step(residual)) {
             result.converged = true;
             if (layout.rank == 0)
                 ATV_INFO("[pw] {}-smear-scf converged iter={} F_ry={:.8f} "

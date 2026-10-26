@@ -946,7 +946,7 @@ if(NOT ATV_DOCS_ONLY)
             # of the two flags; its home under cpu/gpw/ is a directory-layering
             # debt, not a dependency — it pulls in only its own table header.
             src/cpu/gpw/gth_potential.cpp
-            src/cpu/planewave/internal/gth_upf.cpp
+            src/cpu/planewave/internal/gth_radial.cpp
             src/cpu/planewave/internal/kpoint.cpp
             src/cpu/planewave/internal/ewald.cpp
             src/cpu/planewave/internal/pw_setup.cpp
@@ -1336,10 +1336,19 @@ if(NOT ATV_DOCS_ONLY)
         endif()
         if(ATV_BUILD_HF)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_scf.cpp)
+            if(ATV_BUILD_CUDA)
+                list(APPEND _ATV_NB_SRCS python/src/bindings/bind_cuda_scf.cu)
+            endif()
         endif()
         nanobind_add_module(_atomiverse ${_ATV_NB_SRCS})
         target_compile_definitions(_atomiverse PRIVATE
             ATV_MOLPY_ABI_LINE="${_atv_molpy_abi_line}")
+        if(ATV_BUILD_HF)
+            target_compile_definitions(_atomiverse PRIVATE
+                ATV_HF_CXX_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+                ATV_HF_CXX_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+                ATV_HF_CXX_COMPILER_PATH="${CMAKE_CXX_COMPILER}")
+        endif()
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
 

@@ -77,10 +77,13 @@ $r_c$, matches the all-electron potential, while inside $r_c$ it
 produces nodeless, norm-conserving pseudo valence wavefunctions with the correct
 scattering properties.
 
-Atomiverse reads pseudopotentials from **UPF v1** (Unified Pseudopotential
-Format) XML files. A UPF file supplies the valence charge $Z_{\mathrm{val}}$,
-the local potential $V_{\mathrm{loc}}(G)$, the Kleinman-Bylander non-local
-projectors $\beta_\ell$, and a reference atomic density. A silicon LDA
+CPU PW consumes an immutable `electronic::NormConservingPotential`.
+`cpu::pw::UpfPseudopotential(path)` reads scalar norm-conserving UPF data once;
+`cpu::pw::GthPseudopotential(element, name)` supplies published analytic GTH
+parameters. Both use the same local and Kleinman–Bylander operator path.
+A UPF file supplies the valence charge $Z_{\mathrm{val}}$, radial local
+potential, nonlocal projectors and optional reference atomic density.
+USPP, PAW, NLCC and spin-orbit payloads reject at admission. A silicon LDA
 pseudopotential ships with the repository at
 `tests/data/pw/Si_lda_nc.upf` (for Si,
 $Z_{\mathrm{val}} = 4$).
@@ -208,6 +211,7 @@ breakdown stays on `last_result()`). Run it through the one-pass
 
 ```cpp
 #include "atomiverse/cpu/evaluate/single_point.h"
+#include "atomiverse/cpu/planewave/norm_conserving_potential.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
 cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
@@ -230,19 +234,20 @@ solver.build(frame);
 const cpu::pw::PWResult& r = solver.run(frame);
 ```
 
-There is no fallback potential. Leaving both `upf_path` and `gth_name` empty
-throws at `build()`, and so does setting both: a plane-wave run has no default
-pseudopotential, and the bare valence-charge Coulomb potential an earlier
-version fell back to is not representable in a plane-wave basis at any finite
-cutoff — it produced finite numbers that never converged with `ecut_ry`. The
-file-free option is `gth_name` (for example `"GTH-PBE-q4"` for silicon), whose
-published parameters ship in the tree.
+The potential is a required constructor argument; a null provider rejects.
+For a file-free silicon calculation, pass
+`std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::Si, "GTH-PBE-q4")`.
+For different scalar NC physics, derive `NormConservingPotential` and supply
+immutable radial tables plus the batched local value/derivative operation.
+PW owns all transforms, force contractions and electronic iteration. The
+[independent installed project](../../examples/nc-extension/README.md)
+demonstrates that extension without a new Driver or a copied solver.
 
 ## Implementation outline
 
 ```
-cpu::Frame (Si diamond, 2 atoms)  +  PW
-  → PW::build(frame)         // parse the UPF
+immutable NC provider + cpu::Frame (Si diamond, 2 atoms) + PW
+  → PW::build(frame)         // validate identity and snapshot physical data
   → PW::run(frame):          // geometry-dependent setup rebuilt each run:
       Ewald sum, G-vectors, FFT plans, V_loc, KB projectors
       SCF loop (internal step helpers, fixed order):
@@ -251,11 +256,11 @@ cpu::Frame (Si diamond, 2 atoms)  +  PW
         VeffBuilder     → V_eff = V_loc + V_H + V_xc
         DavidsonSolver  → lowest N_occ bands per k-point
         DensityBuilder  → ρ(G) + Pulay mixing
-        ConvergenceCheck→ ||Δρ|| < tol
+        ConvergenceCheck→ ||ρ_out − ρ_in|| < tol, before mixing
   → PWResult{energy [Ry], energy_ha, converged, iterations}
 ```
 
-`build()` does the one-time UPF parse; the geometry-dependent structures are
+The provider parses or constructs its data once. The geometry-dependent structures are
 rebuilt inside each `run()`, so the same solver handles a moving geometry (AIMD,
 optimization). Under MPI the solver distributes k-points round-robin across
 `MPI_COMM_WORLD` and Allreduces the density and band-energy accumulations.

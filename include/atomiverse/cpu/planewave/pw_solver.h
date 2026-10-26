@@ -116,7 +116,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     ///        share one joint density/residual history.
     double mix_beta = 0.7;
     /// @brief Pulay history window for restricted or joint spin densities
-    ///        (dimensionless).
+    ///        (dimensionless), also used independently for each DFPT response.
     int pulay_depth = 5;
     /// @brief Collinear spin-polarized KS (nspin=2). Default false = restricted.
     ///        Compatible with metallic `smearing` (shared μ, self-consistent mag).

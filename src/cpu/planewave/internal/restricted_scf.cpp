@@ -86,13 +86,13 @@ PWResult run_restricted_scf(const cpu::Frame& frame, const PW& method,
 
         const auto terms =
             iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
-        density.finish(ws);
+        const AccReal residual = density.finish(ws);
         result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
         result.energy = result.energy_ha / qe_units::rydberg_to_hartree;
         log_iteration_energy(terms, ws, prob.ew_total, iter);
 
-        if (convergence.step(ws)) {
+        if (convergence.step(residual)) {
             result.converged = true;
             break;
         }

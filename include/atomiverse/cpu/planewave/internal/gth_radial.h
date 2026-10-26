@@ -1,4 +1,4 @@
-/// @file cpu/planewave/internal/gth_upf.h
+/// @file cpu/planewave/internal/gth_radial.h
 /// @brief Analytic GTH pseudopotential → `NcPotentialData` radial tables.
 ///
 /// The plane-wave path consumes norm-conserving pseudopotentials through
@@ -31,7 +31,7 @@ void gth_local_r(const gpw::GthPotential& potential,
                  std::span<const AccReal> radius, std::span<AccReal> value,
                  std::span<AccReal> derivative);
 
-/// @brief Evaluate an analytic GTH potential onto UPF-shaped radial tables.
+/// @brief Evaluate an analytic GTH potential onto the canonical NC radial mesh.
 ///
 /// Canonical units are Hartree for `v_loc` and `d_ij`; each projector's
 /// `beta` holds
@@ -47,14 +47,14 @@ void gth_local_r(const gpw::GthPotential& potential,
 ///                assumes; the default is ample for every tabulated entry.
 /// @param n_r     Number of log-spaced mesh points.
 /// @return Canonical scalar NC data for this analytic potential.
-NcPotentialData upf_from_gth(const gpw::GthPotential& pot,
-                             AccReal r_max = AccReal(12), int n_r = 2000);
+NcPotentialData sample_gth(const gpw::GthPotential& pot,
+                           AccReal r_max = AccReal(12), int n_r = 2000);
 
 /// @brief Closed-form GTH local potential form factor \f$V_{loc}(G)\f$
 ///        [Hartree], per atom, already divided by the cell volume.
 ///
 /// Goedecker et al. (1996) Eq. 5. This is an **independent** evaluation of the
-/// same quantity `nc_vloc_to_gspace(upf_from_gth(pot), …)` produces by radial
+/// same quantity `nc_vloc_to_gspace(sample_gth(pot), …)` produces by radial
 /// quadrature; the unit test compares the two, so a mistake in the radial
 /// synthesis or an inadequate mesh cannot pass silently.
 ///

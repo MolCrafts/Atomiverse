@@ -1,75 +1,29 @@
-"""Plane-wave DFT Python surface tests (spec py-pw-forces).
+"""Python PW entry points, Frame publication and existing workflow checks.
 
-The binding now carries the whole tier the CPU engine claims, and this file
-pins it: analytic ionic **forces** (local Hellmann-Feynman + Ewald +
-Kleinman-Bylander), Nielsen-Martin cell **stress**, the spin / smearing /
-functional knobs of ``cpu::pw::PW``, the extra ``PWResult`` channels, a
-fail-loud missing-cell guard, and PW as an MD force source (plane-wave
-Born-Oppenheimer MD via ``MD.set_evaluator(PW(...))``). Before this
-spec it stopped at the single-point SCF energy.
+The Si2 fixture keeps a=5.43 Å, a primitive FCC cell, a +.08 Å displacement,
+GTH-PBE-q4, Gamma, 8/32 Ry, eight electrons and four fixed-occupation bands.
+LSDA means Slater exchange plus VWN5 correlation. Energy and all six force
+components are compared with an actual QE7.5 execution archived under
+``tools/diagnostics/nc-extension/python-fcc``. The reference uses QE's native
+GTH reader and records input, stdout, executable/source hashes and settings.
+The force reference sums the printed contributions before QE's subtraction
+of the total force; that subtraction cannot validate translation invariance.
 
-No new oracle work happens here. Every physical number below is a
-**hard-coded golden** transcribed from an in-tree reference:
+The original bounds remain 1e-3 eV for energy, 5e-3 eV/Å for each force
+component, and 1e-4 eV/Å for the native force sum. The independent net-force
+check also exercises the XC quadrature and finite SCF accuracy. This fixture
+is not a claim of cutoff-converged Si material properties.
 
-=====================================  ======================================
-Pinned quantity                        Source (hard-coded golden)
-=====================================  ======================================
-Stretched Si2 fixture: fcc primitive   ``regressions/pw/rks/
-cell rows [[0,a/2,a/2],[a/2,0,a/2],    reg_cuda-pw-forces.cu:60-83`` +
-[a/2,a/2,0]] with a = 5.43 Å; Si at    ``REFERENCE.md`` (settings table).
-(0,0,0) and (a/4+0.08, a/4, a/4);
-``GTH-PBE-q4``, ecut 8 Ry, k_mesh 1,
-tol 1e-6, max_iter 40
-LSDA analytic max|F| = 2.517979 eV/Å   ``regressions/pw/rks/
-at parity bound 5e-3 eV/Å; force-path  REFERENCE.md:39,42,44-46`` (GH200 job
-SCF energy -13.85556302 Ry;            1050105; the CPU number *is* the
-non-vacuity floor max|F| > 0.05 eV/Å   oracle for the CUDA twin there)
-Stress symmetry window 0.025 eV/Å³     ``regressions/pw/rks/
-(``kSymTol``: soft, incomplete ecut/k) reg_pw-analytic-stress-si.cpp:28``
-Si a0 ≈ 5.468 Å (PseudoDojo EOS), so   ``regressions/pw/rks/
-a = 5.43 Å is compressed and the       REFERENCE.md`` (sign + a0 rows)
-mechanical diagonal must be positive
-Single-H cell: 6 Å cube, ``GTH-PBE-q1``  ``regressions/dynamics/bomd/
-ecut 5 Ry, mix_beta 0.5                reg_pw-bomd-h.cpp:28-46``
-PW BOMD step budget tol 1e-4 /         same file (``pw-bomd-h`` speed
-max_iter 12                            settings), reused on Si2 here
-=====================================  ======================================
-
-Member names, defaults and units are read off the C++ header, not invented:
-``include/atomiverse/cpu/planewave/pw_solver.h:52-70`` (``PWResult``
-channels), ``:79-84`` (the four ``Smearing`` spellings — ``none``,
-``fermi_dirac``, ``methfessel_paxton``, ``gaussian``), ``:104-139`` (PW
-members and their documented defaults). Functional names are the shared SCF
-table of ``python/src/bindings/bind_scf.cpp:101-116`` (``LSDA``, ``PBE``,
-``PBEsol``, ``RevPBE``, ``RPBE``, ``BLYP``, ``OptB88VdW``, ``B3LYP``,
-``PBE0``, ``B2PLYP``) — an unknown name raises, no fallback.
-
-Units: ``PWResult.energy`` [Ry], ``energy_ha`` [Hartree], ``e_fermi`` /
-``e_entropy`` [Ry], ``magnetization`` [electrons]; ``forces`` [eV/Å];
-``stress`` [eV/Å³] Voigt xx,yy,zz,xy,xz,yz with the mechanical (CP2K) sign;
-``frame.meta['energy']`` [eV].
-
-Two Ry→eV constants are in play, deliberately. The *binding* converts with
-the Quantum ESPRESSO-rounded 13.605693 eV/Ry
-(``cpu::pw::qe_units::rydberg_to_ev``); the pin below converts the quoted Ry
-energy with the CODATA Hartree of ``core/units.h:40`` (27.211386245988, so
-13.605693122994 eV/Ry). They differ by 9e-9 relative — 1.7e-6 eV on this
-fixture's -188 eV — which the 1e-3 eV window absorbs by three orders of
-magnitude, so the pin is testing the SCF, not the constant.
-
-Tolerances. The force pin keeps the regression's own 5e-3 eV/Å bound. The
-translation-invariance (ΣF = 0) gate is the 1e-4 eV/Å *numerical* force tier:
-the plane-wave force sum is not analytically exact on a discrete FFT grid at
-a finite SCF tolerance, and the CPU path measures |ΣF| ≈ 3.4e-5 eV/Å (default
-PBE) / 6.5e-6 eV/Å (LSDA) on this fixture — 1e-6 would be a false gate. The
-energy pin is compared at 1e-3 eV, which covers the ~3e-6 Ry spread between
-the force path's own SCF and a standalone ``run()`` on the same geometry.
-
-This file is a unit suite: it exercises one binding entry point per test on a
-sub-second fixture. The end-to-end PW physics lives in ``regressions/pw/``.
+``PWResult.energy`` is Ry, ``energy_ha`` is Hartree; Frame energy is eV,
+forces are eV/Å, and returned stress is eV/Å³. Frame stress stores the
+extensive virial in eV. Stress symmetry/sign and small dynamics checks retain
+their existing settings and bounds; they do not use a new magnitude pin.
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -100,21 +54,20 @@ _MAX_ITER: int = 40
 #: Hartree → eV, include/atomiverse/core/units.h:40.
 _HARTREE_EV: float = 27.211386245988
 
-# ── Hard-coded goldens ───────────────────────────────────────────────
+# ── Independently executed QE reference ──────────────────────────────
 
-#: max|F| of the CPU analytic path on this fixture with xc = LSDA
-#: (REFERENCE.md:44-46; the CUDA twin reproduced it to 2.9e-13 eV/Å).
-_PIN_MAX_FORCE_EV_A: float = 2.517979
-#: Design-time parity bound of that regression (REFERENCE.md:39).
+_QE_REFERENCE = json.loads(
+    (Path(__file__).resolve().parents[2]
+     / "tools/diagnostics/nc-extension/python-fcc/reference.json").read_text()
+)
+_QE_LSDA = next(run for run in _QE_REFERENCE["runs"] if run["name"] == "lsda14")
+#: Preserve each component, including its sign; do not use a native freeze.
+_PIN_FORCE_EV_A = np.asarray(_QE_LSDA["preprojection_forces_ry_bohr"]) * (
+    .5 * _HARTREE_EV / .529177210903
+)
 _TOL_FORCE_PIN_EV_A: float = 5.0e-3
-#: Non-vacuity floor of the same regression (REFERENCE.md:42).
 _MIN_MAX_FORCE_EV_A: float = 0.05
-#: Force-path SCF total energy on this fixture, xc = LSDA (REFERENCE.md:46).
-_PIN_FORCE_PATH_ENERGY_RY: float = -13.85556302
-#: Ry → eV = Hartree/2.
-_PIN_FORCE_PATH_ENERGY_EV: float = _PIN_FORCE_PATH_ENERGY_RY * 0.5 * _HARTREE_EV
-#: Window on the pinned energy [eV] — covers the ~3e-6 Ry difference between
-#: the force path's own SCF and a standalone run() at the same geometry.
+_PIN_FORCE_PATH_ENERGY_EV: float = _QE_LSDA["energy_ry"] * .5 * _HARTREE_EV
 _TOL_PIN_ENERGY_EV: float = 1.0e-3
 
 #: Σ_i F_i = 0 gate [eV/Å]: numerical force tier (see the module docstring).
@@ -428,24 +381,18 @@ class TestPwForces:
         assert np.isfinite(energy)
         assert energy < 0.0
 
-    def test_lsda_max_force_matches_cpu_pin(
+    def test_lsda_all_force_components_match_qe(
         self, lsda_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
-        """HARD-CODED GOLDEN: max|F| = 2.517979 eV/Å on this fixture with
-        xc = LSDA (regressions/pw/rks/REFERENCE.md:44-46, GH200
-        job 1050105 — the CPU analytic path is the oracle there), graded at
-        that regression's own 5e-3 eV/Å parity bound."""
+        """Actual QE7.5 preprojection forces at the original component bound."""
         _, forces = lsda_forces
-        max_force = float(np.max(np.abs(forces)))
-        assert max_force == pytest.approx(_PIN_MAX_FORCE_EV_A, abs=_TOL_FORCE_PIN_EV_A)
+        np.testing.assert_allclose(forces, _PIN_FORCE_EV_A,
+                                   atol=_TOL_FORCE_PIN_EV_A, rtol=0)
 
-    def test_lsda_force_path_energy_matches_cpu_pin(
+    def test_lsda_force_path_energy_matches_qe(
         self, lsda_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
-        """HARD-CODED GOLDEN: the force path's SCF total energy is
-        -13.85556302 Ry (same REFERENCE.md:46 line), read back in eV from
-        the frame metadata, which ``PW.forces`` writes from the same SCF its
-        forces are the gradient of."""
+        """Actual QE7.5 total energy, published to the same Frame in eV."""
         frame, _ = lsda_forces
         assert frame.meta["energy"] == pytest.approx(
             _PIN_FORCE_PATH_ENERGY_EV, abs=_TOL_PIN_ENERGY_EV

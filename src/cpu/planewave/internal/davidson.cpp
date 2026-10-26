@@ -12,7 +12,9 @@
 #include <complex>
 #include <cstring>
 #include <fftw3.h>
+#include <stdexcept>
 #include <vector>
+#include <xtensor-blas/xblas.hpp>
 #include <xtensor/containers/xadapt.hpp>
 #include <xtensor/views/xview.hpp>
 
@@ -21,7 +23,6 @@ namespace cpu {
 namespace pw {
 namespace internal {
 
-using internal::compute_ylm;
 using internal::n_m_for_l;
 
 namespace {
@@ -93,73 +94,34 @@ void apply_hamiltonian(const PWWorkspace& ws,
         Hpsi_g[ig] = Hpsi_g[ig] * inv_N + ws.T_G[ig] * psi_g[ig];
 
     // Step 5: Non-local KB potential: V_NL = Σ_a Σ_lm D_l β_lm^a ⟨β_lm^a|ψ⟩
-    AccReal four_pi_over_sqrt_omega = AccReal(4.0 * M_PI) / std::sqrt(ws.omega);
-    for (size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
-        auto& atom_proj = ws.kb_proj[ia];
-        AccReal ax = ws.atom_pos_bohr[ia][0], ay = ws.atom_pos_bohr[ia][1],
-                az = ws.atom_pos_bohr[ia][2];
-        auto& gv = *ws.gvec;
-
-        for (size_t ip = 0; ip < atom_proj.size(); ++ip) {
-            int l = atom_proj[ip].l;
-            AccReal D = atom_proj[ip].d;
+    for (const auto& atom_proj : ws.kb_proj) {
+        for (const auto& projector : atom_proj) {
+            const int nm = n_m_for_l(projector.l);
+            if (projector.l < 0 || projector.l > 2
+                || projector.beta_G.dimension() != 2
+                || projector.beta_G.shape()[0] != static_cast<std::size_t>(nm)
+                || projector.beta_G.shape()[1] != static_cast<std::size_t>(ng))
+                throw std::invalid_argument(
+                    "PW Hamiltonian: KB columns must be prepared for the "
+                    "current k-sphere");
+            const AccReal D = projector.d;
             if (std::abs(D) < AccReal(1e-16))
                 continue;
-            int nm = n_m_for_l(l);
-
-            // Compute c_lm = ⟨β_lm^a|ψ⟩ and apply V_NL in one pass
-            // β_lm(G) = (4π/√Ω)·(-i)^l·Y_lm(Ĝ)·f_l(G)·exp(-iG·R)
-            std::vector<std::complex<AccReal>> c_lm(
-                nm, std::complex<AccReal>(0, 0));
-            std::vector<AccReal> ylm(nm); // hoisted: no per-G allocation
-            std::complex<AccReal> im_l(1, 0);
-            if (l == 1)
-                im_l = std::complex<AccReal>(0, -1);
-            else if (l == 2)
-                im_l = std::complex<AccReal>(-1, 0);
-            for (int ig = 0; ig < ng; ++ig) {
-                // Bloch states live on q = k+G.
-                AccReal Gx = gv.g[ig][0] + gv.kvec[0],
-                        Gy = gv.g[ig][1] + gv.kvec[1],
-                        Gz = gv.g[ig][2] + gv.kvec[2];
-                AccReal Gr = std::sqrt(Gx * Gx + Gy * Gy + Gz * Gz);
-                AccReal fl_val = atom_proj[ip].f_G[ig];
-                if (std::abs(fl_val) < AccReal(1e-30))
-                    continue;
-                AccReal phase = Gx * ax + Gy * ay + Gz * az;
-                AccReal cos_p = std::cos(phase), sin_p = std::sin(phase);
-
-                compute_ylm(Gx, Gy, Gz, Gr, l, ylm.data());
-
-                for (int m = 0; m < nm; ++m) {
-                    std::complex<AccReal> beta_lm =
-                        four_pi_over_sqrt_omega * im_l * ylm[m] * fl_val
-                        * std::complex<AccReal>(cos_p, -sin_p);
-                    c_lm[m] += std::conj(beta_lm) * psi_g[ig];
-                }
-            }
-
-            // Apply V_NL: Hψ(G) += Σ_m D·β_lm(G)·c_lm
-            for (int ig = 0; ig < ng; ++ig) {
-                AccReal Gx = gv.g[ig][0] + gv.kvec[0],
-                        Gy = gv.g[ig][1] + gv.kvec[1],
-                        Gz = gv.g[ig][2] + gv.kvec[2];
-                AccReal Gr = std::sqrt(Gx * Gx + Gy * Gy + Gz * Gz);
-                AccReal fl_val = atom_proj[ip].f_G[ig];
-                if (std::abs(fl_val) < AccReal(1e-30))
-                    continue;
-                AccReal phase = Gx * ax + Gy * ay + Gz * az;
-                AccReal cos_p = std::cos(phase), sin_p = std::sin(phase);
-
-                compute_ylm(Gx, Gy, Gz, Gr, l, ylm.data());
-
-                for (int m = 0; m < nm; ++m) {
-                    std::complex<AccReal> beta_lm =
-                        four_pi_over_sqrt_omega * im_l * ylm[m] * fl_val
-                        * std::complex<AccReal>(cos_p, -sin_p);
-                    Hpsi_g[ig] += D * beta_lm * c_lm[m];
-                }
-            }
+            std::array<std::complex<AccReal>, 5> c_lm{};
+            const auto* beta = projector.beta_G.data();
+            // The m-major table is an ng-by-nm column-major B matrix:
+            // c = B†ψ, then Hψ += D Bc, without packing or another table.
+            using Index = xt::blas_index_t;
+            const Index rows = static_cast<Index>(ng);
+            const Index columns = static_cast<Index>(nm);
+            const std::complex<AccReal> one(1, 0), zero(0, 0);
+            cxxblas::gemv<Index>(cxxblas::ColMajor, cxxblas::ConjTrans, rows,
+                                 columns, one, beta, rows, psi_g, Index(1),
+                                 zero, c_lm.data(), Index(1));
+            cxxblas::gemv<Index>(cxxblas::ColMajor, cxxblas::NoTrans, rows,
+                                 columns, std::complex<AccReal>(D, 0), beta,
+                                 rows, c_lm.data(), Index(1), one, Hpsi_g,
+                                 Index(1));
         }
     }
 }
@@ -173,10 +135,8 @@ void pw_apply_h(const PWWorkspace& ws, const std::complex<AccReal>* psi_g,
 
 void pw_apply_h(const PWWorkspace& ws, const std::complex<AccReal>* psi_g,
                 std::complex<AccReal>* hpsi_g) {
-    auto* buf = static_cast<fftw_complex*>(
-        fftw_malloc(sizeof(fftw_complex) * static_cast<size_t>(ws.nr)));
-    apply_hamiltonian(ws, psi_g, hpsi_g, buf);
-    fftw_free(buf);
+    FFTWBuffer<fftw_complex> buf(static_cast<std::size_t>(ws.nr));
+    apply_hamiltonian(ws, psi_g, hpsi_g, buf.data());
 }
 
 // ── Public interface ──

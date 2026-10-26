@@ -1,0 +1,190 @@
+{
+  "units": {
+    "rydberg_to_ev": 13.605693122994,
+    "bohr_to_ang": 0.529177210903,
+    "ry_bohr_to_ev_ang": 25.711033738162943
+  },
+  "external_values": [
+    {
+      "name": "lsda14",
+      "energy_ry": -14.29760005,
+      "energy_ha": -7.148800025,
+      "total_forces_ev_ang": [
+        [
+          2.084725691708767,
+          -2.828213711197924e-06,
+          -7.713310121448882e-07
+        ],
+        [
+          -2.084725691708767,
+          2.828213711197924e-06,
+          7.713310121448882e-07
+        ]
+      ],
+      "max_abs_component_ev_ang": 2.084725691708767,
+      "preprojection_net_force_ev_ang": [
+        0.000251711020296503,
+        -1.028441349526517e-06,
+        -4.627986072869329e-06
+      ]
+    },
+    {
+      "name": "lsda56",
+      "energy_ry": -14.29759746,
+      "energy_ha": -7.14879873,
+      "total_forces_ev_ang": [
+        [
+          2.0848976985244754,
+          1.0284413495265177e-06,
+          -2.5711033738162943e-07
+        ],
+        [
+          -2.0848976985244754,
+          -1.0284413495265177e-06,
+          2.5711033738162943e-07
+        ]
+      ],
+      "max_abs_component_ev_ang": 2.0848976985244754,
+      "preprojection_net_force_ev_ang": [
+        2.05688269904082e-06,
+        -2.5711033738162954e-07,
+        1.2855516869081471e-06
+      ]
+    },
+    {
+      "name": "pbe22",
+      "energy_ry": -14.34498873,
+      "energy_ha": -7.172494365,
+      "total_forces_ev_ang": [
+        [
+          2.0626954495605596,
+          5.142206747632589e-07,
+          2.5711033738162943e-07
+        ],
+        [
+          -2.0626954495605596,
+          -5.142206747632589e-07,
+          -2.5711033738162943e-07
+        ]
+      ],
+      "max_abs_component_ev_ang": 2.0626954495605596,
+      "preprojection_net_force_ev_ang": [
+        -0.0010844914030757843,
+        1.0284413495265177e-06,
+        7.713310121448884e-07
+      ]
+    },
+    {
+      "name": "pbe44",
+      "energy_ry": -14.34499483,
+      "energy_ha": -7.172497415,
+      "total_forces_ev_ang": [
+        [
+          2.0622534768906005,
+          5.142206747632589e-07,
+          2.5711033738162943e-07
+        ],
+        [
+          -2.0622534768906005,
+          -5.142206747632589e-07,
+          -2.5711033738162943e-07
+        ]
+      ],
+      "max_abs_component_ev_ang": 2.0622534768906005,
+      "preprojection_net_force_ev_ang": [
+        -6.582024637001986e-05,
+        -2.5711033738162933e-07,
+        -1.2855516869081471e-06
+      ]
+    },
+    {
+      "name": "pbe88",
+      "energy_ry": -14.34499499,
+      "energy_ha": -7.172497495,
+      "total_forces_ev_ang": [
+        [
+          2.0622416498150806,
+          2.5711033738162943e-07,
+          5.142206747632589e-07
+        ],
+        [
+          -2.0622416498150806,
+          -2.5711033738162943e-07,
+          -5.142206747632589e-07
+        ]
+      ],
+      "max_abs_component_ev_ang": 2.0622416498150806,
+      "preprojection_net_force_ev_ang": [
+        -2.1597268340107015e-05,
+        -7.713310121448882e-07,
+        1.285551686908147e-06
+      ]
+    },
+    {
+      "name": "pbe22-xminus",
+      "energy_ry": -14.34498881,
+      "energy_ha": -7.172494405,
+      "total_forces_ev_ang": [
+        [
+          2.0626679387544593,
+          -2.0568826990530355e-06,
+          -3.3424343859611826e-06
+        ],
+        [
+          -2.0626679387544593,
+          2.0568826990530355e-06,
+          3.3424343859611826e-06
+        ]
+      ],
+      "max_abs_component_ev_ang": 2.0626679387544593,
+      "preprojection_net_force_ev_ang": [
+        -0.0010520955005659804,
+        5.399317085014218e-06,
+        -1.0284413495265188e-06
+      ]
+    },
+    {
+      "name": "pbe22-xplus",
+      "energy_ry": -14.34498865,
+      "energy_ha": -7.172494325,
+      "total_forces_ev_ang": [
+        [
+          2.062735558773191,
+          -2.5711033738162942e-06,
+          -2.5711033738162942e-06
+        ],
+        [
+          -2.062735558773191,
+          2.5711033738162942e-06,
+          2.5711033738162942e-06
+        ]
+      ],
+      "max_abs_component_ev_ang": 2.062735558773191,
+      "preprojection_net_force_ev_ang": [
+        -0.0010927189338719476,
+        -2.571103373816297e-07,
+        -3.4028269819048294e-22
+      ]
+    }
+  ],
+  "rigid_translation_pbe22_x": {
+    "step_ang": 0.001,
+    "minus_energy_ry": -14.34498881,
+    "plus_energy_ry": -14.34498865,
+    "force_from_printed_energy_derivative_ev_ang": -0.0010884554553087465,
+    "printed_energy_roundoff_bound_ev_ang": 6.802846561497001e-05,
+    "preprojection_force_ev_ang": -0.0010844914030757843
+  },
+  "native_comparison_reported_by_parent_not_run_here": {
+    "source": "root task message, prior Python run",
+    "energy_ry": -14.29918121,
+    "max_abs_force_ev_ang": 2.0980289816,
+    "energy_minus_qe14_ev": -0.02151277773836185,
+    "max_force_minus_qe14_ev_ang": 0.013303289891233305,
+    "status": "both exceed unchanged existing .001eV energy and .005eV/Ang force windows; no replacement pin authorized"
+  },
+  "qualification": "Actual external values and numerical diagnostics only. No native green status or test/pin/tolerance edits.",
+  "files_sha256": {
+    "reference.json": "64f768fe539872288e7b585a2d6ef70794d25404749ec5e5077308d0e26bafa4"
+  }
+}

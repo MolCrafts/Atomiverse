@@ -1,0 +1,35 @@
+PASS published GTH local limits/derivatives and normalized s/p nonlocal action
+[2026-10-26 17:07:43.640] [info] [pw] ========== PW SCF ==========
+[2026-10-26 17:07:43.641] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=12 NC(Z=14)
+[2026-10-26 17:07:44.074] [info] [pw] start atoms=2 elec=8 bands=6 ecut_ry=12 NC provider k_mesh=1 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=1
+[2026-10-26 17:07:44.077] [info] CPU runtime initialized: 1 threads
+[2026-10-26 17:07:44.077] [info] all components built
+[2026-10-26 17:07:47.082] [info] [pw] converged iter=22 energy_ry=-15.25142660 e_fermi_ry=-0.190487 n_occ=8.000000
+[2026-10-26 17:07:47.082] [info] [pw] ========== PW SCF ==========
+[2026-10-26 17:07:47.082] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=12 NC(Z=14)
+[2026-10-26 17:07:47.511] [info] [pw] start atoms=2 elec=8 bands=6 ecut_ry=12 NC provider k_mesh=1 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=1
+[2026-10-26 17:07:47.511] [info] CPU runtime initialized: 1 threads
+[2026-10-26 17:07:47.511] [info] all components built
+[2026-10-26 17:07:50.423] [info] [pw] converged iter=22 energy_ry=-15.25142660 e_fermi_ry=-0.190487 n_occ=8.000000
+[2026-10-26 17:07:50.424] [info] [pw] ========== PW SCF ==========
+[2026-10-26 17:07:50.424] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=12 NC(Z=14)
+[2026-10-26 17:07:50.847] [info] [pw] start atoms=2 elec=8 bands=6 ecut_ry=12 NC provider k_mesh=1 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=1
+[2026-10-26 17:07:50.847] [info] CPU runtime initialized: 1 threads
+[2026-10-26 17:07:50.847] [info] all components built
+[2026-10-26 17:07:53.781] [info] [pw] converged iter=22 energy_ry=-15.25142660 e_fermi_ry=-0.190487 n_occ=8.000000
+PASS E=-7.625713300700 Ha, 22 iterations, all6 nonzero external force components
+[2026-10-26 17:07:54.248] [info] CPU runtime initialized: 1 threads
+[2026-10-26 17:07:54.248] [info] all components built
+[2026-10-26 17:07:54.249] [info] [pw] ========== PW SCF ==========
+[2026-10-26 17:07:54.249] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=12 NC(Z=14)
+[2026-10-26 17:07:54.678] [info] [pw] start atoms=2 elec=8 bands=6 ecut_ry=12 NC provider k_mesh=1 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=1
+[2026-10-26 17:07:57.604] [info] [pw] converged iter=22 energy_ry=-15.25142660 e_fermi_ry=-0.190487 n_occ=8.000000
+PASS E=-7.625713300700 Ha, 22 iterations, all6 nonzero external force components
+[2026-10-26 17:07:58.067] [info] CPU runtime initialized: 1 threads
+[2026-10-26 17:07:58.067] [info] all components built
+[2026-10-26 17:07:58.068] [info] [pw] ========== PW SCF ==========
+[2026-10-26 17:07:58.068] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=12 NC(Z=14)
+[2026-10-26 17:07:58.492] [info] [pw] start atoms=2 elec=8 bands=6 ecut_ry=12 NC provider k_mesh=1 ranks=1 spin=1 mult=1 Na=4 Nb=4 smear=1
+[2026-10-26 17:08:01.400] [info] [pw] converged iter=22 energy_ry=-15.25142660 e_fermi_ry=-0.190487 n_occ=8.000000
+PASS E=-7.625713300700 Ha, 22 iterations, all6 nonzero external force components
+PASS nc-extension si2 whole=18.259529 seconds (bound60)

@@ -32,10 +32,12 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
+#include "atomiverse/cpu/planewave/internal/ewald.h"
 #include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
+#include "atomiverse/cpu/planewave/internal/response_mixer.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
 #include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
@@ -272,7 +274,7 @@ bool dfpt_xc_supported(cpu::scf::XCType xc) {
 /// Matches the discrete ground-state \(V_{\mathrm{xc}}[n]\) operator (spectral
 /// \(\nabla\rho\) + GGA flux for pure GGA; local for LSDA). Output is
 /// sphere-filtered like the ground-state \(V_{\mathrm{xc}}\) path.
-/// Restores `ws.rho_G` to `rho0_G` on exit. `dn_r` must be real-valued
+/// Leaves the accepted workspace state unchanged. `dn_r` must be real-valued
 /// total density response [e/Bohr³].
 void apply_xc_kernel_fd(XCBuilder& xc, PWWorkspace& ws, const GVectorList& gv0,
                         const std::vector<Cx>& rho0_G, cpu::scf::XCType xc_type,
@@ -295,39 +297,9 @@ void apply_xc_kernel_fd(XCBuilder& xc, PWWorkspace& ws, const GVectorList& gv0,
         eps_use = std::max(eps_use, AccReal(1e-8));
     }
 
-    std::vector<AccReal> v_plus(static_cast<std::size_t>(nr));
-    std::vector<AccReal> v_minus(static_cast<std::size_t>(nr));
-
-    auto set_rho = [&](AccReal sign) {
-        for (int ig = 0; ig < ng0; ++ig)
-            ws.rho_G[ig] =
-                rho0_G[static_cast<std::size_t>(ig)]
-                + sign * eps_use * dn_g[static_cast<std::size_t>(ig)];
-    };
-
-    set_rho(+AccReal(1));
-    xc.step(ws, xc_type);
-    for (int i = 0; i < nr; ++i)
-        v_plus[static_cast<std::size_t>(i)] = ws.V_xc_r[i];
-
-    set_rho(-AccReal(1));
-    xc.step(ws, xc_type);
-    for (int i = 0; i < nr; ++i)
-        v_minus[static_cast<std::size_t>(i)] = ws.V_xc_r[i];
-
-    for (int ig = 0; ig < ng0; ++ig)
-        ws.rho_G[ig] = rho0_G[static_cast<std::size_t>(ig)];
-
-    const AccReal inv_2eps = AccReal(1) / (AccReal(2) * eps_use);
-    for (int i = 0; i < nr; ++i)
-        dv_xc_r[i] = (v_plus[static_cast<std::size_t>(i)]
-                      - v_minus[static_cast<std::size_t>(i)])
-                     * inv_2eps;
-
-    // Sphere-filter like the ground-state V_xc (reject high-G noise).
-    std::vector<Cx> vg(static_cast<std::size_t>(ng0));
-    real_to_sphere(ws, gv0, dv_xc_r, vg.data(), work);
-    sphere_to_real(ws, gv0, vg.data(), dv_xc_r, work);
+    const XCBuilder::ResponseChannel channels[] = {
+        {rho0_G, dn_g, {dv_xc_r, static_cast<std::size_t>(nr)}}};
+    xc.response(ws, xc_type, channels, eps_use);
 }
 
 /// @brief Add \(K_{\mathrm{xc}}[\Delta n]\) into `dv_hxc_r` (Γ, real Δn).
@@ -376,8 +348,8 @@ void project_conduction(const Cx* occ_wfc, int n_occ, int ng, Cx* x) {
 
 std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
                                             const std::vector<AccReal>& charges,
-                                            const cpu::Box& cell,
-                                            AccReal ecut_hartree) {
+                                            const cpu::Box& cell) {
+    const EwaldSummation ewald(pos_ang, charges, cell);
     const AccReal a2b = AccReal(1.8897259886);
     cpu::Box cell_bohr;
     cell_bohr.set_cell(cell.cell() * a2b);
@@ -389,20 +361,14 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     if (n == 0)
         return D;
 
-    std::vector<Vec3> pos(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        pos[static_cast<std::size_t>(i)] = {
-            pos_ang[static_cast<std::size_t>(i)][0] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][1] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][2] * a2b};
+    const auto pos = ewald.positions_bohr();
 
     const AccReal vol = cell_bohr.volume();
     if (vol <= 0)
         return D;
 
-    // α selection and cutoffs identical to EwaldSummation.
-    const AccReal rcut_alpha = cell_bohr.lengths().norm() * AccReal(0.5);
-    const AccReal alpha = std::sqrt(-std::log(AccReal(2e-17))) / rcut_alpha;
+    // Canonical ion-ion precision domains, independent of electronic cutoff.
+    const AccReal alpha = ewald.alpha();
     const AccReal two_alpha_over_sqrt_pi =
         AccReal(2) * alpha / std::sqrt(AccReal(units::pi));
 
@@ -411,7 +377,7 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     };
 
     // ── Real space ──
-    const AccReal r_cut = AccReal(5) / alpha;
+    const AccReal r_cut = ewald.real_cutoff();
     const auto lens = Vec3{cell_bohr.face_height(0), cell_bohr.face_height(1),
                            cell_bohr.face_height(2)};
     const int ncell_r = static_cast<int>(std::ceil(
@@ -478,7 +444,7 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     }
 
     // ── Reciprocal space ──
-    const AccReal g_cut = std::sqrt(AccReal(8) * ecut_hartree);
+    const AccReal g_cut = ewald.reciprocal_cutoff();
     const auto recip = cell_bohr.recip_cell();
     const Vec3 b0{recip(0, 0), recip(1, 0), recip(2, 0)};
     const Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
@@ -535,9 +501,21 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     return D;
 }
 
-std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
-    const std::vector<Vec3>& pos_ang, const std::vector<AccReal>& charges,
-    const cpu::Box& cell, AccReal ecut_hartree, const Vec3& q_frac) {
+std::vector<std::complex<AccReal>>
+ewald_dynamical_matrix_q(const std::vector<Vec3>& pos_ang,
+                         const std::vector<AccReal>& charges,
+                         const cpu::Box& cell, const Vec3& q_frac) {
+    for (int d = 0; d < 3; ++d)
+        if (!std::isfinite(q_frac[d]))
+            throw std::invalid_argument("Ewald Hessian: q must be finite");
+    // Γ uses the identical accumulation and needs no second Ewald assembly.
+    if (std::abs(q_frac[0]) < AccReal(1e-14)
+        && std::abs(q_frac[1]) < AccReal(1e-14)
+        && std::abs(q_frac[2]) < AccReal(1e-14)) {
+        const auto gamma = ewald_dynamical_matrix(pos_ang, charges, cell);
+        return {gamma.begin(), gamma.end()};
+    }
+    const EwaldSummation ewald(pos_ang, charges, cell);
     using Cx = std::complex<AccReal>;
     const AccReal a2b = AccReal(1.8897259886);
     cpu::Box cell_bohr;
@@ -550,23 +528,7 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     if (n == 0)
         return D;
 
-    // Exact Γ matrix when q vanishes (identical α / cutoffs / accumulation).
-    if (std::abs(q_frac[0]) < AccReal(1e-14)
-        && std::abs(q_frac[1]) < AccReal(1e-14)
-        && std::abs(q_frac[2]) < AccReal(1e-14)) {
-        const auto Dg =
-            ewald_dynamical_matrix(pos_ang, charges, cell, ecut_hartree);
-        for (std::size_t i = 0; i < Dg.size(); ++i)
-            D[i] = Dg[i];
-        return D;
-    }
-
-    std::vector<Vec3> pos(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        pos[static_cast<std::size_t>(i)] = {
-            pos_ang[static_cast<std::size_t>(i)][0] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][1] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][2] * a2b};
+    const auto pos = ewald.positions_bohr();
 
     const AccReal vol = cell_bohr.volume();
     if (vol <= 0)
@@ -578,8 +540,7 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     const Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
     const Vec3 b2{recip(0, 2), recip(1, 2), recip(2, 2)};
     const Vec3 q_cart = b0 * q_frac[0] + b1 * q_frac[1] + b2 * q_frac[2];
-    const AccReal rcut_alpha = cell_bohr.lengths().norm() * AccReal(0.5);
-    const AccReal alpha = std::sqrt(-std::log(AccReal(2e-17))) / rcut_alpha;
+    const AccReal alpha = ewald.alpha();
     const AccReal two_alpha_over_sqrt_pi =
         AccReal(2) * alpha / std::sqrt(AccReal(units::pi));
 
@@ -589,7 +550,7 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
 
     // Mirror the Γ real-space pair loop (i < j) with lattice phase e^{iq·L}.
     // Same φ′′ kernel and L = h a + k b + l c (columns) as ewald_dynamical_matrix.
-    const AccReal r_cut = AccReal(5) / alpha;
+    const AccReal r_cut = ewald.real_cutoff();
     const auto lens = Vec3{cell_bohr.face_height(0), cell_bohr.face_height(1),
                            cell_bohr.face_height(2)};
     const int ncell_r = static_cast<int>(std::ceil(
@@ -722,9 +683,9 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     // Reciprocal: Γ uses (2π/Ω)·2·cos for i<j + ASR on diagonals.
     // Finite q: (4π/Ω) Σ_{G+q≠0} e^{-…}/|G+q|² (G+q)_α(G+q)_β
     //   × Z_i Z_j exp(i(G+q)·(R_i−R_j)) for i≤j with Hermitian completion.
-    const AccReal g_cut = std::sqrt(AccReal(8) * ecut_hartree);
+    const AccReal g_cut = ewald.reciprocal_cutoff();
     const AccReal qn = q_cart.norm();
-    const AccReal g_cut_eff = g_cut + qn + AccReal(1e-6);
+    const AccReal g_cut_eff = g_cut + qn;
     const int gmax = static_cast<int>(g_cut_eff
                                       * std::max({cell_bohr.lengths()[0],
                                                   cell_bohr.lengths()[1],
@@ -742,7 +703,7 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                 const Vec3 Gq = {G[0] + q_cart[0], G[1] + q_cart[1],
                                  G[2] + q_cart[2]};
                 const AccReal gq2 = Gq.norm_squared();
-                if (gq2 < AccReal(1e-16) || gq2 > g_cut_eff * g_cut_eff)
+                if (gq2 < AccReal(1e-16) || gq2 > g_cut * g_cut)
                     continue;
                 const AccReal coeff =
                     four_pi_over_vol * std::exp(-gq2 / alpha_sq_4) / gq2;
@@ -777,6 +738,25 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                             }
                     }
             }
+
+    // The lattice sums used primary-cell representatives. Restore the raw
+    // atomic-basis gauge used by electronic exp[-i(G+q)R] perturbations:
+    // C_ij(raw)=exp[i q.(T_i-T_j)] C_ij(primary).
+    std::vector<Cx> image_phase(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        AccReal angle = 0;
+        for (int d = 0; d < 3; ++d)
+            angle += q_cart[d]
+                     * (pos_ang[static_cast<std::size_t>(i)][d] * a2b
+                        - pos[static_cast<std::size_t>(i)][d]);
+        image_phase[static_cast<std::size_t>(i)] = {std::cos(angle),
+                                                    std::sin(angle)};
+    }
+    for (int row = 0; row < dim; ++row)
+        for (int column = 0; column < dim; ++column)
+            D[static_cast<std::size_t>(row) * dim + column] *=
+                image_phase[static_cast<std::size_t>(row / 3)]
+                * std::conj(image_phase[static_cast<std::size_t>(column / 3)]);
 
     // Hermitian projection (numerical noise).
     for (int p = 0; p < dim; ++p)
@@ -842,6 +822,8 @@ int sternheimer_cg(const PWWorkspace& ws, const Cx* occ_wfc, int n_occ,
     for (int ig = 0; ig < ng; ++ig)
         r[static_cast<std::size_t>(ig)] =
             b[static_cast<std::size_t>(ig)] - Ap[static_cast<std::size_t>(ig)];
+    if (std::sqrt(std::max(dot_re(r.data(), r.data()), AccReal(0))) <= stop)
+        return 0; // The projected initial guess already satisfies this solve.
     precond(r.data(), z.data());
     p = z;
     AccReal rz = dot_re(r.data(), z.data());
@@ -926,56 +908,10 @@ void apply_xc_kernel_spin_fd(XCBuilder& xc, PWWorkspace& ws,
         eps_use = std::max(eps_use, AccReal(1e-8));
     }
 
-    auto set_rho = [&](AccReal sign) {
-        for (int ig = 0; ig < ng0; ++ig) {
-            ws.rho_spin_G[0][ig] =
-                rho0_spin[0][static_cast<std::size_t>(ig)]
-                + sign * eps_use * dng_u[static_cast<std::size_t>(ig)];
-            ws.rho_spin_G[1][ig] =
-                rho0_spin[1][static_cast<std::size_t>(ig)]
-                + sign * eps_use * dng_d[static_cast<std::size_t>(ig)];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-        }
-    };
-
-    std::vector<AccReal> vpu(static_cast<std::size_t>(nr));
-    std::vector<AccReal> vpd(static_cast<std::size_t>(nr));
-    std::vector<AccReal> vmu(static_cast<std::size_t>(nr));
-    std::vector<AccReal> vmd(static_cast<std::size_t>(nr));
-
-    set_rho(+AccReal(1));
-    xc.step_spin(ws, xc_type);
-    for (int i = 0; i < nr; ++i) {
-        vpu[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[0][i];
-        vpd[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[1][i];
-    }
-    set_rho(-AccReal(1));
-    xc.step_spin(ws, xc_type);
-    for (int i = 0; i < nr; ++i) {
-        vmu[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[0][i];
-        vmd[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[1][i];
-    }
-    // Restore ground-state spin densities.
-    for (int ig = 0; ig < ng0; ++ig) {
-        ws.rho_spin_G[0][ig] = rho0_spin[0][static_cast<std::size_t>(ig)];
-        ws.rho_spin_G[1][ig] = rho0_spin[1][static_cast<std::size_t>(ig)];
-        ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-    }
-    const AccReal inv = AccReal(1) / (AccReal(2) * eps_use);
-    for (int i = 0; i < nr; ++i) {
-        dv_xc_up[i] = (vpu[static_cast<std::size_t>(i)]
-                       - vmu[static_cast<std::size_t>(i)])
-                      * inv;
-        dv_xc_dn[i] = (vpd[static_cast<std::size_t>(i)]
-                       - vmd[static_cast<std::size_t>(i)])
-                      * inv;
-    }
-    // Sphere-filter each channel.
-    std::vector<Cx> vg(static_cast<std::size_t>(ng0));
-    real_to_sphere(ws, gv0, dv_xc_up, vg.data(), work);
-    sphere_to_real(ws, gv0, vg.data(), dv_xc_up, work);
-    real_to_sphere(ws, gv0, dv_xc_dn, vg.data(), work);
-    sphere_to_real(ws, gv0, vg.data(), dv_xc_dn, work);
+    const XCBuilder::ResponseChannel channels[] = {
+        {rho0_spin[0], dng_u, {dv_xc_up, static_cast<std::size_t>(nr)}},
+        {rho0_spin[1], dng_d, {dv_xc_dn, static_cast<std::size_t>(nr)}}};
+    xc.response(ws, xc_type, channels, eps_use);
 }
 
 DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
@@ -1297,9 +1233,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
             static_cast<AccReal>(prob.potential->z_val);
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<AccReal> C =
-        ewald_dynamical_matrix(pos_ang_v, valence, frame.box, ecut_ht);
+        ewald_dynamical_matrix(pos_ang_v, valence, frame.box);
     auto Cat = [&](int mu, int nu) -> AccReal& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
     };
@@ -1391,7 +1326,11 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs, hpsi_tmp;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 2, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed_u.begin(), dn_mixed_u.end(), AccReal(0));
         std::fill(dn_mixed_d.begin(), dn_mixed_d.end(), AccReal(0));
         std::fill(dv_h_r.begin(), dv_h_r.end(), AccReal(0));
@@ -1595,16 +1534,17 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
-            for (int i = 0; i < nr; ++i) {
-                dn_mixed_u[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_u[static_cast<std::size_t>(i)]
-                       - dn_mixed_u[static_cast<std::size_t>(i)]);
-                dn_mixed_d[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_d[static_cast<std::size_t>(i)]
-                       - dn_mixed_d[static_cast<std::size_t>(i)]);
+            if (this_converged) {
+                std::copy(dn_new_u.begin(), dn_new_u.end(), dn_mixed_u.begin());
+                std::copy(dn_new_d.begin(), dn_new_d.end(), dn_mixed_d.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt] spin response mu={} converged iter={} "
+                          "delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
             }
+            response_mixer.mix<AccReal>(
+                {{dn_mixed_u, dn_new_u}, {dn_mixed_d, dn_new_d}});
 
             // ΔV_H from total Δn.
             std::vector<AccReal> dn_tot(static_cast<std::size_t>(nr));
@@ -1654,14 +1594,6 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                                         dn_mixed_u.data(), dn_mixed_d.data(),
                                         dv_xc_u.data(), dv_xc_d.data(),
                                         work_buf.data(), AccReal(1e-3));
-            }
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt] spin response mu={} converged iter={} "
-                          "delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
             }
         }
         if (!converged) {
@@ -1979,9 +1911,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
             static_cast<AccReal>(prob.potential->z_val);
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<AccReal> C =
-        ewald_dynamical_matrix(pos_ang_v, valence, frame.box, ecut_ht);
+        ewald_dynamical_matrix(pos_ang_v, valence, frame.box);
 
     auto Cat = [&](int mu, int nu) -> AccReal& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
@@ -2063,7 +1994,11 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs, hpsi_tmp;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 1, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed.begin(), dn_mixed.end(), AccReal(0));
         std::fill(dv_hxc_r.begin(), dv_hxc_r.end(), AccReal(0));
         for (auto& v : dpsi)
@@ -2249,13 +2184,17 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
+            if (this_converged) {
+                std::copy(dn_new.begin(), dn_new.end(), dn_mixed.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt] response mu={} converged iter={} "
+                          "delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
+            }
 
-            // Linear mix, then rebuild ΔV_HXC from the mixed Δn.
-            for (int i = 0; i < nr; ++i)
-                dn_mixed[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new[static_cast<std::size_t>(i)]
-                       - dn_mixed[static_cast<std::size_t>(i)]);
+            // Joint Pulay update, then rebuild the next response potential.
+            response_mixer.mix<AccReal>({{dn_mixed, dn_new}});
 
             real_to_sphere(ws, gv0, dn_mixed.data(), dn_g.data(),
                            work_buf.data());
@@ -2274,14 +2213,6 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
             add_xc_kernel_gamma(use_gga, xc, ws, gv0, rho0_G, method.xc,
                                 fxc_r.data(), dn_mixed.data(), dv_hxc_r.data(),
                                 dn_g, work_buf.data());
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt] response mu={} converged iter={} "
-                          "delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
-            }
         }
         if (!converged) {
             all_responses_converged = false;
@@ -2844,9 +2775,8 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
             static_cast<AccReal>(prob.potential->z_val);
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
-    std::vector<Cx> C = ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box,
-                                                 ecut_ht, q_frac);
+    std::vector<Cx> C =
+        ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box, q_frac);
 
     auto Cat = [&](int mu, int nu) -> Cx& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
@@ -2937,7 +2867,11 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 2, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed_u.begin(), dn_mixed_u.end(), Cx(0, 0));
         std::fill(dn_mixed_d.begin(), dn_mixed_d.end(), Cx(0, 0));
         std::fill(dv_h_r.begin(), dv_h_r.end(), Cx(0, 0));
@@ -3138,17 +3072,18 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
-
-            for (int i = 0; i < nr; ++i) {
-                dn_mixed_u[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_u[static_cast<std::size_t>(i)]
-                       - dn_mixed_u[static_cast<std::size_t>(i)]);
-                dn_mixed_d[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_d[static_cast<std::size_t>(i)]
-                       - dn_mixed_d[static_cast<std::size_t>(i)]);
+            if (this_converged) {
+                std::copy(dn_new_u.begin(), dn_new_u.end(), dn_mixed_u.begin());
+                std::copy(dn_new_d.begin(), dn_new_d.end(), dn_mixed_d.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt_q] spin response mu={} converged "
+                          "iter={} delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
             }
+
+            response_mixer.mix<Cx>(
+                {{dn_mixed_u, dn_new_u}, {dn_mixed_d, dn_new_d}});
 
             // ΔV_H from total Δn with |G+q| kernel.
             std::vector<Cx> dn_tot(static_cast<std::size_t>(nr));
@@ -3232,14 +3167,6 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                         Cx(dvre_d[static_cast<std::size_t>(i)],
                            dvim_d[static_cast<std::size_t>(i)]);
                 }
-            }
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt_q] spin response mu={} converged "
-                          "iter={} delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
             }
         }
         if (!converged) {
@@ -3639,9 +3566,8 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     for (int i = 0; i < n; ++i)
         valence[static_cast<std::size_t>(i)] =
             static_cast<AccReal>(prob.potential->z_val);
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
-    std::vector<Cx> C = ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box,
-                                                 ecut_ht, q_frac);
+    std::vector<Cx> C =
+        ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box, q_frac);
 
     auto Cat = [&](int mu, int nu) -> Cx& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
@@ -3724,7 +3650,11 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 1, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed.begin(), dn_mixed.end(), Cx(0, 0));
         std::fill(dv_hxc_r.begin(), dv_hxc_r.end(), Cx(0, 0));
         for (auto& v : dpsi)
@@ -3911,12 +3841,16 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
+            if (this_converged) {
+                std::copy(dn_new.begin(), dn_new.end(), dn_mixed.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt_q] response mu={} converged iter={} "
+                          "delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
+            }
 
-            for (int i = 0; i < nr; ++i)
-                dn_mixed[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new[static_cast<std::size_t>(i)]
-                       - dn_mixed[static_cast<std::size_t>(i)]);
+            response_mixer.mix<Cx>({{dn_mixed, dn_new}});
 
             complex_grid_to_sphere(ws, gv0, dn_mixed.data(), dn_g.data(),
                                    work_buf.data());
@@ -3967,14 +3901,6 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                     dv_hxc_r[static_cast<std::size_t>(i)] +=
                         Cx(dvre[static_cast<std::size_t>(i)],
                            dvim[static_cast<std::size_t>(i)]);
-            }
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt_q] response mu={} converged iter={} "
-                          "delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
             }
         }
         if (!converged) {

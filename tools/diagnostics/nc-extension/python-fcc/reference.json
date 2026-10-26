@@ -1,0 +1,890 @@
+{
+  "bounds_unchanged": {
+    "energy_ev": 0.001,
+    "max_force_ev_ang": 0.005,
+    "net_force_ev_ang": 0.0001
+  },
+  "fixture": "Si fcc primitive a5.43Ang, R0=0,R1=(a/4+.08,a/4,a/4); published GTH-PBE-q4; Gamma;8/32Ry;8e,4bands,fixed restricted",
+  "native_xc": {
+    "LSDA": "Slater+VWN5 (CPU xc_functional.cpp)",
+    "PBE": "Slater/PBE-X+PW92/PBE-C"
+  },
+  "qe_total_force_projection": "PW/src/forces.f90 subtracts sumfor/nat before printing total forces; raw contribution sum is also recorded",
+  "binary": "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+  "binary_sha256": "36c549c4451708f3808606e4458373b7630a907768b0cf591dacf9a30e00942d",
+  "environment_requested": {
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1"
+  },
+  "source_sha256": {
+    "PW/src/forces.f90": "acc46cb14d2f08f2dbedeb0451f69e29d21ae880d3009886041cf71cb1e55efa",
+    "XClib/qe_funct_corr_lda_lsda.f90": "ee2872d664508f1fb57d228d16f325dd7ce7d3f052c02d2a20fda57b2b150046",
+    "upflib/gth.f90": "4b42698314027629e078e4d718c8d31a74f228c0ff8729399dc4d8b5b42ca6a0"
+  },
+  "potential_sha256": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+  "runs": [
+    {
+      "name": "lsda14",
+      "command": [
+        "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "lsda14.in"
+      ],
+      "xc": "SLA VWN",
+      "grid": 14,
+      "rigid_shift_x_ang": 0,
+      "engine": "Program PWSCF v.7.5 starts on 26Oct2026 at 12:24:57",
+      "qe_source_commit": "770a0b2d12928a67048e2f3da8d10d057e52179e-dirty",
+      "scf_iterations": 46,
+      "energy_ry": -14.29760005,
+      "total_forces_ry_bohr": [
+        [
+          0.08108292,
+          -1.1e-07,
+          -3e-08
+        ],
+        [
+          -0.08108292,
+          1.1e-07,
+          3e-08
+        ]
+      ],
+      "preprojection_contributions_ry_bohr": {
+        "non-local contrib.  to forces": [
+          [
+            0.06393615,
+            -4.2e-07,
+            -2.5e-07
+          ],
+          [
+            -0.06389519,
+            9e-08,
+            -1.6e-07
+          ]
+        ],
+        "ionic contribution  to forces": [
+          [
+            0.07463644,
+            -0.0,
+            0.0
+          ],
+          [
+            -0.07463644,
+            0.0,
+            0.0
+          ]
+        ],
+        "local contribution  to forces": [
+          [
+            -0.05748476,
+            3.3e-07,
+            1.9e-07
+          ],
+          [
+            0.05745357,
+            5e-08,
+            1.4e-07
+          ]
+        ],
+        "core correction contribution to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "Hubbard contrib.    to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "SCF correction term to forces": [
+          [
+            -1e-08,
+            -4e-08,
+            -6e-08
+          ],
+          [
+            3e-08,
+            -5e-08,
+            -4e-08
+          ]
+        ]
+      },
+      "preprojection_forces_ry_bohr": [
+        [
+          0.08108781999999999,
+          -1.2999999999999997e-07,
+          -1.1999999999999996e-07
+        ],
+        [
+          -0.08107803,
+          9e-08,
+          -6e-08
+        ]
+      ],
+      "preprojection_net_force_ry_bohr": [
+        9.789999999995636e-06,
+        -3.9999999999999974e-08,
+        -1.7999999999999997e-07
+      ],
+      "printed_process_wall": "PWSCF        :      0.02s CPU      0.03s WALL",
+      "files_sha256": {
+        "lsda14.in": "e5a63bb0432a2a887a2ed95af4f953cca437c23d7d0ba80cc333956ecadf7469",
+        "lsda14.out.txt": "303728b9626cf78f8bc5de95c9a2acacdcfa665c7cd9c5d19cb1e94bdd2bc7ac"
+      }
+    },
+    {
+      "name": "lsda56",
+      "command": [
+        "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "lsda56.in"
+      ],
+      "xc": "SLA VWN",
+      "grid": 56,
+      "rigid_shift_x_ang": 0,
+      "engine": "Program PWSCF v.7.5 starts on 26Oct2026 at 12:24:57",
+      "qe_source_commit": "770a0b2d12928a67048e2f3da8d10d057e52179e-dirty",
+      "scf_iterations": 50,
+      "energy_ry": -14.29759746,
+      "total_forces_ry_bohr": [
+        [
+          0.08108961,
+          4e-08,
+          -1e-08
+        ],
+        [
+          -0.08108961,
+          -4e-08,
+          1e-08
+        ]
+      ],
+      "preprojection_contributions_ry_bohr": {
+        "non-local contrib.  to forces": [
+          [
+            0.063939,
+            1.2e-07,
+            2e-08
+          ],
+          [
+            -0.06393798,
+            -5e-08,
+            3e-08
+          ]
+        ],
+        "ionic contribution  to forces": [
+          [
+            0.07463644,
+            -0.0,
+            0.0
+          ],
+          [
+            -0.07463644,
+            0.0,
+            0.0
+          ]
+        ],
+        "local contribution  to forces": [
+          [
+            -0.05748606,
+            -1.2e-07,
+            2e-08
+          ],
+          [
+            0.05748459,
+            -2e-08,
+            2e-08
+          ]
+        ],
+        "core correction contribution to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "Hubbard contrib.    to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "SCF correction term to forces": [
+          [
+            2.7e-07,
+            3e-08,
+            -2e-08
+          ],
+          [
+            2.6e-07,
+            3e-08,
+            -2e-08
+          ]
+        ]
+      },
+      "preprojection_forces_ry_bohr": [
+        [
+          0.08108965,
+          3e-08,
+          2e-08
+        ],
+        [
+          -0.08108957,
+          -4e-08,
+          3e-08
+        ]
+      ],
+      "preprojection_net_force_ry_bohr": [
+        7.99999999995249e-08,
+        -1.0000000000000004e-08,
+        5e-08
+      ],
+      "printed_process_wall": "PWSCF        :      0.86s CPU      0.87s WALL",
+      "files_sha256": {
+        "lsda56.in": "152e06b53dbca60ddc7b4d81e2ba301e7c4652ddb0f67cabd54299116fff287e",
+        "lsda56.out.txt": "e1264897f957e710c4fb800bc557d5fe005f1d73c5101807cc12e2321a8df40b"
+      }
+    },
+    {
+      "name": "pbe22",
+      "command": [
+        "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "pbe22.in"
+      ],
+      "xc": "PBE",
+      "grid": 22,
+      "rigid_shift_x_ang": 0,
+      "engine": "Program PWSCF v.7.5 starts on 26Oct2026 at 12:24:58",
+      "qe_source_commit": "770a0b2d12928a67048e2f3da8d10d057e52179e-dirty",
+      "scf_iterations": 45,
+      "energy_ry": -14.34498873,
+      "total_forces_ry_bohr": [
+        [
+          0.08022608,
+          2e-08,
+          1e-08
+        ],
+        [
+          -0.08022608,
+          -2e-08,
+          -1e-08
+        ]
+      ],
+      "preprojection_contributions_ry_bohr": {
+        "non-local contrib.  to forces": [
+          [
+            0.06304293,
+            1.5e-07,
+            1.2e-07
+          ],
+          [
+            -0.06320125,
+            7e-08,
+            9e-08
+          ]
+        ],
+        "ionic contribution  to forces": [
+          [
+            0.07463644,
+            -0.0,
+            0.0
+          ],
+          [
+            -0.07463644,
+            0.0,
+            0.0
+          ]
+        ],
+        "local contribution  to forces": [
+          [
+            -0.05747429,
+            -1.3e-07,
+            -1.2e-07
+          ],
+          [
+            0.0575906,
+            -9e-08,
+            -1e-07
+          ]
+        ],
+        "core correction contribution to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "Hubbard contrib.    to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "SCF correction term to forces": [
+          [
+            -9e-08,
+            2e-08,
+            2e-08
+          ],
+          [
+            -8e-08,
+            2e-08,
+            2e-08
+          ]
+        ]
+      },
+      "preprojection_forces_ry_bohr": [
+        [
+          0.08020499,
+          3.9999999999999994e-08,
+          2e-08
+        ],
+        [
+          -0.08024717,
+          6.617444900424222e-24,
+          1.0000000000000004e-08
+        ]
+      ],
+      "preprojection_net_force_ry_bohr": [
+        -4.218000000000277e-05,
+        4e-08,
+        3.0000000000000004e-08
+      ],
+      "printed_process_wall": "PWSCF        :      0.12s CPU      0.12s WALL",
+      "files_sha256": {
+        "pbe22.in": "e34e054ba445c1230d2a65df51cd7b0ffac8f2ff370d89538b902d2a51bd6da6",
+        "pbe22.out.txt": "086b546037961ea805c2d673994ec84fdb6fe4057e4b3fbb2c042f4cd91df340"
+      }
+    },
+    {
+      "name": "pbe44",
+      "command": [
+        "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "pbe44.in"
+      ],
+      "xc": "PBE",
+      "grid": 44,
+      "rigid_shift_x_ang": 0,
+      "engine": "Program PWSCF v.7.5 starts on 26Oct2026 at 12:24:58",
+      "qe_source_commit": "770a0b2d12928a67048e2f3da8d10d057e52179e-dirty",
+      "scf_iterations": 44,
+      "energy_ry": -14.34499483,
+      "total_forces_ry_bohr": [
+        [
+          0.08020889,
+          2e-08,
+          1e-08
+        ],
+        [
+          -0.08020889,
+          -2e-08,
+          -1e-08
+        ]
+      ],
+      "preprojection_contributions_ry_bohr": {
+        "non-local contrib.  to forces": [
+          [
+            0.06306854,
+            1e-07,
+            4e-08
+          ],
+          [
+            -0.06307838,
+            -2e-08,
+            -7e-08
+          ]
+        ],
+        "ionic contribution  to forces": [
+          [
+            0.07463644,
+            -0.0,
+            0.0
+          ],
+          [
+            -0.07463644,
+            0.0,
+            0.0
+          ]
+        ],
+        "local contribution  to forces": [
+          [
+            -0.05749754,
+            -6e-08,
+            1e-08
+          ],
+          [
+            0.05750448,
+            2e-08,
+            5e-08
+          ]
+        ],
+        "core correction contribution to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "Hubbard contrib.    to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "SCF correction term to forces": [
+          [
+            1.7e-07,
+            -2e-08,
+            -6e-08
+          ],
+          [
+            1.7e-07,
+            -3e-08,
+            -2e-08
+          ]
+        ]
+      },
+      "preprojection_forces_ry_bohr": [
+        [
+          0.08020761,
+          2e-08,
+          -9.999999999999994e-09
+        ],
+        [
+          -0.08021017000000001,
+          -3e-08,
+          -4.000000000000001e-08
+        ]
+      ],
+      "preprojection_net_force_ry_bohr": [
+        -2.5600000000125522e-06,
+        -9.999999999999997e-09,
+        -5e-08
+      ],
+      "printed_process_wall": "PWSCF        :      0.81s CPU      0.83s WALL",
+      "files_sha256": {
+        "pbe44.in": "2837dcc5e87e2dd147db555cbe60db0d3c2c00a01d8f3d6dc94f741a60d1e40a",
+        "pbe44.out.txt": "f4914930077adc53e154e2ba84f5ca7555c1c079f3412433992fda0b68906a8d"
+      }
+    },
+    {
+      "name": "pbe88",
+      "command": [
+        "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "pbe88.in"
+      ],
+      "xc": "PBE",
+      "grid": 88,
+      "rigid_shift_x_ang": 0,
+      "engine": "Program PWSCF v.7.5 starts on 26Oct2026 at 12:24:59",
+      "qe_source_commit": "770a0b2d12928a67048e2f3da8d10d057e52179e-dirty",
+      "scf_iterations": 48,
+      "energy_ry": -14.34499499,
+      "total_forces_ry_bohr": [
+        [
+          0.08020843,
+          1e-08,
+          2e-08
+        ],
+        [
+          -0.08020843,
+          -1e-08,
+          -2e-08
+        ]
+      ],
+      "preprojection_contributions_ry_bohr": {
+        "non-local contrib.  to forces": [
+          [
+            0.06307023,
+            -6e-08,
+            1.2e-07
+          ],
+          [
+            -0.06307394,
+            4e-08,
+            7e-08
+          ]
+        ],
+        "ionic contribution  to forces": [
+          [
+            0.07463644,
+            -0.0,
+            0.0
+          ],
+          [
+            -0.07463644,
+            0.0,
+            0.0
+          ]
+        ],
+        "local contribution  to forces": [
+          [
+            -0.05749862,
+            9e-08,
+            -7e-08
+          ],
+          [
+            0.05750155,
+            3e-08,
+            -4e-08
+          ]
+        ],
+        "core correction contribution to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "Hubbard contrib.    to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "SCF correction term to forces": [
+          [
+            -4e-08,
+            -4e-08,
+            -0.0
+          ],
+          [
+            -2e-08,
+            -9e-08,
+            -3e-08
+          ]
+        ]
+      },
+      "preprojection_forces_ry_bohr": [
+        [
+          0.08020801,
+          -9.999999999999997e-09,
+          4.9999999999999985e-08
+        ],
+        [
+          -0.08020885,
+          -2e-08,
+          6.617444900424222e-24
+        ]
+      ],
+      "preprojection_net_force_ry_bohr": [
+        -8.400000000019503e-07,
+        -3e-08,
+        4.999999999999999e-08
+      ],
+      "printed_process_wall": "PWSCF        :      7.31s CPU      7.73s WALL",
+      "files_sha256": {
+        "pbe88.in": "40e7fca0ee967aae80eae0e1f1377a7674eb1fdf4af57dfd4661651baa4d255f",
+        "pbe88.out.txt": "4943345fa003f1312db237532423372f0106ce24122ca8d30dd1ce1d0990d76a"
+      }
+    },
+    {
+      "name": "pbe22-xminus",
+      "command": [
+        "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "pbe22-xminus.in"
+      ],
+      "xc": "PBE",
+      "grid": 22,
+      "rigid_shift_x_ang": -0.001,
+      "engine": "Program PWSCF v.7.5 starts on 26Oct2026 at 12:25: 7",
+      "qe_source_commit": "770a0b2d12928a67048e2f3da8d10d057e52179e-dirty",
+      "scf_iterations": 45,
+      "energy_ry": -14.34498881,
+      "total_forces_ry_bohr": [
+        [
+          0.08022501,
+          -8e-08,
+          -1.3e-07
+        ],
+        [
+          -0.08022501,
+          8e-08,
+          1.3e-07
+        ]
+      ],
+      "preprojection_contributions_ry_bohr": {
+        "non-local contrib.  to forces": [
+          [
+            0.0630418,
+            8e-08,
+            -3.9e-07
+          ],
+          [
+            -0.06319589,
+            4.8e-07,
+            2.4e-07
+          ]
+        ],
+        "ionic contribution  to forces": [
+          [
+            0.07463644,
+            0.0,
+            0.0
+          ],
+          [
+            -0.07463644,
+            0.0,
+            0.0
+          ]
+        ],
+        "local contribution  to forces": [
+          [
+            -0.05747361,
+            -1.2e-07,
+            2.7e-07
+          ],
+          [
+            0.057587,
+            -3.6e-07,
+            -9e-08
+          ]
+        ],
+        "core correction contribution to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "Hubbard contrib.    to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "SCF correction term to forces": [
+          [
+            -8e-08,
+            7e-08,
+            -3e-08
+          ],
+          [
+            -1.4e-07,
+            6e-08,
+            -4e-08
+          ]
+        ]
+      },
+      "preprojection_forces_ry_bohr": [
+        [
+          0.08020454999999999,
+          3.000000000000002e-08,
+          -1.5000000000000002e-07
+        ],
+        [
+          -0.08024547,
+          1.7999999999999997e-07,
+          1.0999999999999998e-07
+        ]
+      ],
+      "preprojection_net_force_ry_bohr": [
+        -4.092000000001372e-05,
+        2.1e-07,
+        -4.000000000000004e-08
+      ],
+      "printed_process_wall": "PWSCF        :      0.12s CPU      0.12s WALL",
+      "files_sha256": {
+        "pbe22-xminus.in": "74db0200b40a1a58d881fe8f8cb876f2614a3a369badfb4d98843a0bffbf1ee1",
+        "pbe22-xminus.out.txt": "7fe5cc8e0a8957da04029852bb100afd2415cd2b352f598dc2ab077d6a735121"
+      }
+    },
+    {
+      "name": "pbe22-xplus",
+      "command": [
+        "/private/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "pbe22-xplus.in"
+      ],
+      "xc": "PBE",
+      "grid": 22,
+      "rigid_shift_x_ang": 0.001,
+      "engine": "Program PWSCF v.7.5 starts on 26Oct2026 at 12:25: 7",
+      "qe_source_commit": "770a0b2d12928a67048e2f3da8d10d057e52179e-dirty",
+      "scf_iterations": 55,
+      "energy_ry": -14.34498865,
+      "total_forces_ry_bohr": [
+        [
+          0.08022764,
+          -1e-07,
+          -1e-07
+        ],
+        [
+          -0.08022764,
+          1e-07,
+          1e-07
+        ]
+      ],
+      "preprojection_contributions_ry_bohr": {
+        "non-local contrib.  to forces": [
+          [
+            0.0630467,
+            -1.5e-07,
+            -2.5e-07
+          ],
+          [
+            -0.06320667,
+            3.4e-07,
+            2.6e-07
+          ]
+        ],
+        "ionic contribution  to forces": [
+          [
+            0.07463644,
+            0.0,
+            0.0
+          ],
+          [
+            -0.07463644,
+            0.0,
+            0.0
+          ]
+        ],
+        "local contribution  to forces": [
+          [
+            -0.05747665,
+            5e-08,
+            9e-08
+          ],
+          [
+            0.05759427,
+            -2.3e-07,
+            -2.2e-07
+          ]
+        ],
+        "core correction contribution to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "Hubbard contrib.    to forces": [
+          [
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "SCF correction term to forces": [
+          [
+            -1e-07,
+            -1e-08,
+            6e-08
+          ],
+          [
+            -5e-08,
+            -1e-08,
+            6e-08
+          ]
+        ]
+      },
+      "preprojection_forces_ry_bohr": [
+        [
+          0.08020639,
+          -1.0999999999999999e-07,
+          -1e-07
+        ],
+        [
+          -0.08024889,
+          9.999999999999998e-08,
+          9.999999999999998e-08
+        ]
+      ],
+      "preprojection_net_force_ry_bohr": [
+        -4.250000000000087e-05,
+        -1.000000000000001e-08,
+        -1.3234889800848443e-23
+      ],
+      "printed_process_wall": "PWSCF        :      0.14s CPU      0.15s WALL",
+      "files_sha256": {
+        "pbe22-xplus.in": "3c47f4be647b3b59b38b4e62be571cadae14679ae28b56c84b746b3cb7cfc990",
+        "pbe22-xplus.out.txt": "2b8a7dafe36460731bf4c2be0a39d35b6a36a82a7252b0d760a64b9de0cf1dde"
+      }
+    }
+  ],
+  "captured_utc": "2026-10-26T11:25:07.278336+00:00",
+  "script_sha256": "2bd61ff33c97f8d2dc4ac21e942a47db9b0aa771f55dc6bdf947b8832d005a39"
+}

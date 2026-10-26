@@ -162,45 +162,23 @@ void DensityBuilder::accumulate_kpoint(const PWWorkspace& ws, AccReal weight,
     }
 }
 
-void DensityBuilder::finish(PWWorkspace& ws) {
+AccReal DensityBuilder::finish(PWWorkspace& ws) {
     if (ws.nr <= 0 || !ws.fft)
-        return;
+        throw std::logic_error("PW density mix: no prepared FFT grid");
+    if (ws.rho_G.size() != static_cast<std::size_t>(ws.n_g))
+        throw std::invalid_argument("PW density mix: incompatible G-sphere");
 
-    int nc = ws.nc;
-    auto* rho_g_full = rho_g_full_.data();
-    ws.fft->r2c(rho_r_accum_.data(), rho_g_full);
-
-    for (int i = 0; i < ws.n_g; ++i)
-        ws.rho_G_old[i] = ws.rho_G[i];
-
-    // Extract ρ(G) at the density G-sphere from the half-complex grid.
-    int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz, nxc = nx / 2 + 1;
-    auto& gv = *ws.gvec;
-    AccReal inv_nr = AccReal(1) / AccReal(ws.nr);
-    for (int ig = 0; ig < ws.n_g; ++ig) {
-        int h = gv.h[ig], k = gv.k[ig], l = gv.l[ig];
-        int kx = ((h % nx) + nx) % nx, ky = ((k % ny) + ny) % ny,
-            kz = ((l % nz) + nz) % nz;
-        bool conj = false;
-        if (kx > nx / 2) {
-            kx = nx - kx;
-            ky = (ny - ky) % ny;
-            kz = (nz - kz) % nz;
-            conj = true;
-        }
-        int idx = kx + nxc * (ky + ny * kz);
-        if (idx >= 0 && idx < nc) {
-            ws.rho_G[ig] = std::complex<AccReal>(
-                static_cast<AccReal>(rho_g_full[idx][0]) * inv_nr,
-                static_cast<AccReal>(conj ? -rho_g_full[idx][1]
-                                          : rho_g_full[idx][1])
-                    * inv_nr);
-        } else
-            ws.rho_G[ig] = std::complex<AccReal>(0, 0);
-    }
-
+    ws.rho_G_old = ws.rho_G;
+    extract(ws, ws.rho_G);
+    AccReal residual2 = 0;
+    for (int ig = 0; ig < ws.n_g; ++ig)
+        residual2 += std::norm(ws.rho_G[ig] - ws.rho_G_old[ig]);
+    const AccReal residual = std::sqrt(residual2);
+    if (!std::isfinite(residual))
+        throw std::invalid_argument("PW density mix: nonfinite residual");
     internal::pulay_mix(ws.rho_G, ws.rho_G_old, ws.pulay_res, ws.pulay_rho,
                         ws.mix_beta, ws.pulay_depth);
+    return residual;
 }
 
 void DensityBuilder::extract(const PWWorkspace& ws,

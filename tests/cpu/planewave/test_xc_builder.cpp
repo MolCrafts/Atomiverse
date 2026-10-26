@@ -47,8 +47,10 @@ void configure(PWWorkspace& ws, int spin, double scale = 1.0) {
 
 // Independent analytic Fourier interpolation/gradient and direct trapezoid
 // integration. Uses current Cartesian G vectors, not the builder's FFT map.
-double quadrature_energy(const PWWorkspace& ws) {
-    const auto pad = [](int n) { return 2 * ((3 * n + 3) / 4); };
+double quadrature_energy(const PWWorkspace& ws, cpu::scf::XCType type) {
+    const auto pad = [type](int n) {
+        return cpu::scf::is_gga(type) ? 3 * n : 2 * ((3 * n + 3) / 4);
+    };
     const int nx = pad(ws.fft_nx), ny = pad(ws.fft_ny), nz = pad(ws.fft_nz);
     const auto& gv = *ws.gvec;
     double energy = 0;
@@ -79,9 +81,12 @@ double quadrature_energy(const PWWorkspace& ws) {
                     ab += grad[0][axis] * grad[1][axis];
                     bb += grad[1][axis] * grad[1][axis];
                 }
-                energy += cpu::scf::evaluate_xc(cpu::scf::XCType::PBE, rho[0],
-                                                rho[1], aa, ab, bb)
-                              .energy_density;
+                rho[0] = std::max(rho[0], 0.0);
+                rho[1] = std::max(rho[1], 0.0);
+                if (rho[0] + rho[1] >= 1e-12)
+                    energy +=
+                        cpu::scf::evaluate_xc(type, rho[0], rho[1], aa, ab, bb)
+                            .energy_density;
             }
     return energy * ws.omega / (nx * ny * nz);
 }
@@ -107,8 +112,8 @@ void expect_base_interpolation(const PWWorkspace& ws,
             }
 }
 
-void expect_energy_adjoint(PWWorkspace& ws, XCBuilder& builder) {
-    const auto type = cpu::scf::XCType::PBE;
+void expect_energy_adjoint(PWWorkspace& ws, XCBuilder& builder,
+                           cpu::scf::XCType type = cpu::scf::XCType::PBE) {
     xt::xarray<Complex> direction =
         xt::zeros<Complex>({static_cast<std::size_t>(ws.n_g)});
     for (int g = 0; g < ws.n_g; ++g) {
@@ -127,7 +132,7 @@ void expect_energy_adjoint(PWWorkspace& ws, XCBuilder& builder) {
         builder.step_spin(ws, type);
     else
         builder.step(ws, type);
-    EXPECT_NEAR(ws.E_xc, quadrature_energy(ws), 2e-11);
+    EXPECT_NEAR(ws.E_xc, quadrature_energy(ws, type), 2e-11);
     double expected = 0, spin_integral = 0;
     for (int g = 0; g < ws.n_g; ++g) {
         if (ws.nspin == 1)
@@ -174,31 +179,33 @@ void expect_energy_adjoint(PWWorkspace& ws, XCBuilder& builder) {
 } // namespace
 
 TEST(PwXcQuadrature, UniformDensityPreservesChargeAndEnergyNormalization) {
-    PWWorkspace ws;
-    configure(ws, 1);
-    ws.rho_G.fill(Complex(0));
-    ws.rho_G[0] = .04;
-    XCBuilder builder;
-    builder.prepare(ws);
-    builder.step(ws, cpu::scf::XCType::PBE);
-    const auto reference =
-        cpu::scf::evaluate_xc(cpu::scf::XCType::PBE, .02, .02);
-    EXPECT_NEAR(ws.E_xc, ws.omega * reference.energy_density, 2e-11);
-    for (double value : ws.V_xc_r)
-        EXPECT_NEAR(value, reference.vrho_alpha, 2e-12);
-    EXPECT_NEAR(ws.V_xc_G[0].real(), reference.vrho_alpha, 2e-12);
-    for (int g = 1; g < ws.n_g; ++g)
-        EXPECT_LT(std::abs(ws.V_xc_G[g]), 2e-12);
+    for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+        PWWorkspace ws;
+        configure(ws, 1);
+        ws.rho_G.fill(Complex(0));
+        ws.rho_G[0] = .04;
+        XCBuilder builder;
+        builder.prepare(ws);
+        builder.step(ws, type);
+        const auto reference = cpu::scf::evaluate_xc(type, .02, .02);
+        EXPECT_NEAR(ws.E_xc, ws.omega * reference.energy_density, 2e-11);
+        for (double value : ws.V_xc_r)
+            EXPECT_NEAR(value, reference.vrho_alpha, 2e-12);
+        EXPECT_NEAR(ws.V_xc_G[0].real(), reference.vrho_alpha, 2e-12);
+        for (int g = 1; g < ws.n_g; ++g)
+            EXPECT_LT(std::abs(ws.V_xc_G[g]), 2e-12);
+    }
 }
 
 TEST(PwXcQuadrature, RestrictedAndSpinWeightedEnergyAdjointsNearNyquist) {
-    for (int spin : {1, 2}) {
-        PWWorkspace ws;
-        configure(ws, spin);
-        XCBuilder builder;
-        builder.prepare(ws);
-        expect_energy_adjoint(ws, builder);
-    }
+    for (int spin : {1, 2})
+        for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+            PWWorkspace ws;
+            configure(ws, spin);
+            XCBuilder builder;
+            builder.prepare(ws);
+            expect_energy_adjoint(ws, builder, type);
+        }
 }
 
 TEST(PwXcQuadrature, SameShapeChangedCellAndModeOrderingUseCurrentMetric) {
@@ -237,4 +244,171 @@ TEST(PwXcQuadrature, PhysicalDensitySpaceRejectsAliasedNyquistModes) {
     ws.gvec0.h[2] = -4;
     EXPECT_THROW(builder.step(ws, cpu::scf::XCType::PBE),
                  std::invalid_argument);
+}
+
+TEST(PwXcQuadrature,
+     ClippedSpinRingingPreservesEnergyVariationAndDoubleCounting) {
+    for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+        PWWorkspace ws;
+        configure(ws, 2);
+        // The alpha Fourier field is negative at some quadrature points,
+        // away from clipping boundaries. Beta keeps the total density finite.
+        ws.rho_spin_G[0].fill(Complex(0));
+        ws.rho_spin_G[0][0] = .001;
+        ws.rho_spin_G[0][1] = Complex(.002, .0007);
+        ws.rho_spin_G[0][2] = std::conj(ws.rho_spin_G[0][1]);
+        ws.rho_G = ws.rho_spin_G[0] + ws.rho_spin_G[1];
+        XCBuilder builder;
+        builder.prepare(ws);
+        expect_energy_adjoint(ws, builder, type);
+    }
+}
+
+namespace {
+void expect_fused_response(PWWorkspace& ws, XCBuilder& response,
+                           cpu::scf::XCType type,
+                           bool cross_density_cutoff = false) {
+    const int channels = ws.nspin;
+    const auto total = ws.rho_G;
+    const auto spin = ws.rho_spin_G;
+    std::array<std::vector<Complex>, 2> reference, variation;
+    for (int s = 0; s < channels; ++s) {
+        const auto& rho = channels == 1 ? total : spin[s];
+        reference[s].assign(rho.begin(), rho.end());
+        variation[s].resize(rho.size());
+        for (int g = 0; g < ws.n_g; ++g) {
+            const auto phase = ws.gvec->h[g] + ws.gvec->k[g] - ws.gvec->l[g];
+            variation[s][g] =
+                rho[g] * Complex(s == 0 ? .11 : -.23, .07 * phase);
+            if (cross_density_cutoff)
+                variation[s][g] =
+                    phase == 0 && ws.gvec->g[g].norm_squared() == 0
+                        ? Complex(2e-10, 0)
+                        : Complex(0, 0);
+        }
+    }
+    constexpr double epsilon = 1e-3;
+    XCBuilder full;
+    full.prepare(ws);
+    std::array<std::array<std::vector<AccReal>, 2>, 2> complete;
+    for (int sign = 0; sign < 2; ++sign) {
+        const double displacement = sign == 0 ? epsilon : -epsilon;
+        for (int s = 0; s < channels; ++s) {
+            auto& rho = channels == 1 ? ws.rho_G : ws.rho_spin_G[s];
+            for (int g = 0; g < ws.n_g; ++g)
+                rho[g] = reference[s][g] + displacement * variation[s][g];
+        }
+        if (channels == 1)
+            full.step(ws, type);
+        else {
+            ws.rho_G = ws.rho_spin_G[0] + ws.rho_spin_G[1];
+            full.step_spin(ws, type);
+        }
+        for (int s = 0; s < channels; ++s) {
+            const auto& v = channels == 1 ? ws.V_xc_r : ws.V_xc_spin_r[s];
+            complete[sign][s].assign(v.begin(), v.end());
+        }
+    }
+    ws.rho_G = total;
+    ws.rho_spin_G = spin;
+    if (channels == 1)
+        full.step(ws, type);
+    else
+        full.step_spin(ws, type);
+    const auto potential = ws.V_xc_G;
+    const auto spin_potential = ws.V_xc_spin_G;
+    const auto coarse_potential = ws.V_xc_r;
+    const auto coarse_spin_potential = ws.V_xc_spin_r;
+    const auto energy = ws.E_xc, double_counting = ws.e_xc_int_spin;
+    std::array<std::vector<AccReal>, 2> actual;
+    std::array<XCBuilder::ResponseChannel, 2> fields;
+    for (int s = 0; s < channels; ++s) {
+        actual[s].resize(ws.nr);
+        fields[s] = {reference[s], variation[s], actual[s]};
+    }
+    response.response(
+        ws, type,
+        std::span<const XCBuilder::ResponseChannel>(fields).first(channels),
+        epsilon);
+    for (int s = 0; s < channels; ++s)
+        for (int i = 0; i < ws.nr; ++i)
+            EXPECT_NEAR(actual[s][i],
+                        (complete[0][s][i] - complete[1][s][i]) / (2 * epsilon),
+                        5e-10);
+    EXPECT_DOUBLE_EQ(ws.E_xc, energy);
+    EXPECT_DOUBLE_EQ(ws.e_xc_int_spin, double_counting);
+    EXPECT_TRUE(std::equal(total.begin(), total.end(), ws.rho_G.begin()));
+    EXPECT_TRUE(
+        std::equal(potential.begin(), potential.end(), ws.V_xc_G.begin()));
+    EXPECT_TRUE(std::equal(coarse_potential.begin(), coarse_potential.end(),
+                           ws.V_xc_r.begin()));
+    for (int s = 0; s < (channels == 2 ? 2 : 0); ++s) {
+        EXPECT_TRUE(std::equal(spin[s].begin(), spin[s].end(),
+                               ws.rho_spin_G[s].begin()));
+        EXPECT_TRUE(std::equal(spin_potential[s].begin(),
+                               spin_potential[s].end(),
+                               ws.V_xc_spin_G[s].begin()));
+        EXPECT_TRUE(std::equal(coarse_spin_potential[s].begin(),
+                               coarse_spin_potential[s].end(),
+                               ws.V_xc_spin_r[s].begin()));
+    }
+}
+} // namespace
+
+TEST(PwXcResponse,
+     MatchesCompleteFiniteDifferencesForRestrictedAndUnequalSpins) {
+    for (int spin : {1, 2})
+        for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+            PWWorkspace ws;
+            configure(ws, spin);
+            XCBuilder response;
+            response.prepare(ws);
+            expect_fused_response(ws, response, type);
+            // Same grid shape, changed density and Cartesian metric: a cached
+            // reference must follow the physical input rather than its address.
+            ws.rho_G *= 1.03;
+            for (auto& rho : ws.rho_spin_G)
+                rho *= 1.03;
+            for (auto& g : ws.gvec0.g)
+                for (int d = 0; d < 3; ++d)
+                    g[d] *= 1.1;
+            expect_fused_response(ws, response, type);
+        }
+}
+
+TEST(PwXcResponse, MatchesFiniteDifferencesAcrossClippingAndLowDensityCutoffs) {
+    for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+        PWWorkspace ws;
+        configure(ws, 2);
+        ws.rho_spin_G[0].fill(Complex(0));
+        ws.rho_spin_G[0][0] = .001;
+        ws.rho_spin_G[0][1] = Complex(.002, .0007);
+        ws.rho_spin_G[0][2] = std::conj(ws.rho_spin_G[0][1]);
+        ws.rho_G = ws.rho_spin_G[0] + ws.rho_spin_G[1];
+        XCBuilder response;
+        response.prepare(ws);
+        expect_fused_response(ws, response, type);
+        for (auto& rho : ws.rho_spin_G)
+            rho.fill(Complex(0));
+        ws.rho_spin_G[0][0] = 4.2e-13;
+        ws.rho_spin_G[1][0] = 6.5e-13;
+        ws.rho_G = ws.rho_spin_G[0] + ws.rho_spin_G[1];
+        expect_fused_response(ws, response, type, true);
+    }
+}
+
+TEST(PwXcResponse, RejectsInvalidCallsBeforeChangingOutput) {
+    PWWorkspace ws;
+    configure(ws, 1);
+    XCBuilder response;
+    response.prepare(ws);
+    std::vector<AccReal> output(ws.nr, 7);
+    const XCBuilder::ResponseChannel channels[] = {
+        {{ws.rho_G.data(), ws.rho_G.size()},
+         {ws.rho_G.data(), ws.rho_G.size()},
+         output}};
+    EXPECT_THROW(response.response(ws, cpu::scf::XCType::PBE, channels, 0),
+                 std::invalid_argument);
+    for (const auto value : output)
+        EXPECT_EQ(value, 7);
 }

@@ -930,9 +930,8 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 
     // Forces from the final mixed density + band re-solve at final V_eff.
     return internal::pw_forces_analytic_impl(
-        frame, method.ecut_ry, den, solver, prob, ws, n_alpha, n_beta,
-        use_smear, n_elec, smear_kind, static_cast<double>(degauss_ha),
-        method.mp_order);
+        frame, den, solver, prob, ws, n_alpha, n_beta, use_smear, n_elec,
+        smear_kind, static_cast<double>(degauss_ha), method.mp_order);
 }
 
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,

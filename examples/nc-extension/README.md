@@ -24,9 +24,21 @@ OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 ./build/nc-extension minimize
 Only `find_package(Atomiverse CONFIG REQUIRED COMPONENTS PW EVALUATE)` and
 `Atomiverse::atomiverse` are used. There is no source-tree include path.
 Each acceptance command enforces a complete 60 s bound at its declared
-thread width: si2/lifecycle at 1, optional md/minimize at 4. These are
-independent workflow checks, not new registered method cases. Native compilation, numerical and relocated
-consumer validation are **pending** at this edit; no passing run is claimed.
+thread width: si2/lifecycle at 1, optional md/minimize at 4. The separate
+project has passed against a relocated SDK with the original install removed.
+Its compile, link and header dependencies contain no checkout, build-tree or
+old-install paths. Recorded complete process times are 0.17 s (`operators`),
+19.16 s (`si2`), 18.31 s (`lifecycle`), 27.72 s (`md`) and 27.76 s (`minimize`).
+Raw native output, commands and hashes are preserved separately from the
+independent oracle in `tools/diagnostics/nc-extension/native-validation.json`.
+These are independent workflow checks, not new registered method cases.
+
+A fresh PW+EVALUATE-only build also passed after installation and relocation,
+with HF, GPW, MD, MINIMIZER, VIB, SE, IO and CUDA disabled. Its independent
+`operators`, `si2` and `lifecycle` runs took 0.33 s, 18.27 s and 18.02 s at one
+thread. Compile/link/header-dependency audits passed for both installations;
+neither SDK contains symlinks. Requesting an omitted optional mode rejects
+explicitly. PW still uses the shared molpy bridge and NC/XC mathematical code.
 
 `PublishedSi` owns its increasing uniform radius mesh and exact positive
 `dr/di` Jacobian, and every beta span is an exact prefix including its
@@ -82,7 +94,7 @@ restricted Fermi–Dirac smearing 0.02 Ry and six bands. The pin is Mermin F,
 including -TS. Native controls are tol 1e-9, max_iter 200, mixing 0.2 and two
 extra bands. QE converged in 35 iterations at conv_thr 1e-11 Ry; its printed
 SCF accuracy is 1.2e-12 Ry. QE explicitly uses 40³ dense/smooth FFT grids.
-Native uses a 26³ base density grid and 40³ private PBE quadrature; both
+Native uses a 26³ base density grid and 78³ private PBE quadrature; both
 represent the same 48 Ry density sphere. This records the discretization
 rather than claiming an identical software implementation.
 

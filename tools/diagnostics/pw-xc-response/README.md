@@ -4,10 +4,17 @@ These files record native validation, not external oracle pins or replacement
 assertion constants. The external spectra, their qualification limits, and the
 unchanged acceptance bounds remain in `regressions/response/dfpt/REFERENCE.md`.
 
-The accepted implementation uses private 3/2-padded GGA XC quadrature with a
+The historical captures here used private 3/2-padded GGA XC quadrature with a
 weighted-adjoint potential projection, and one CPU Pulay mixer for restricted
 and joint alpha/beta densities. Spin residuals retain both unmixed channels.
 No acoustic sum-rule projection is applied to pass the row-sum check.
+
+The subsequent NC-extension repair uses fixed 3/2 LDA and 3x GGA quadrature,
+the same adjoint projection, and the canonical Pulay mixer for each joint
+response solve. Its raw residual and original numerical/time bounds are
+unchanged. Current native evidence is recorded separately in
+[`nc-extension/native-validation.json`](../nc-extension/native-validation.json);
+the older output files here retain their original discretization.
 
 Reproduce with a Release CPU build enabling HF, PW, GPW, VIB, tests and
 regressions, then run:
@@ -31,8 +38,8 @@ zero by the occupation definition. This prevents unconverged empty-channel
 orbitals from replacing an occupied-channel initial guess. Force outputs are
 not projected, and the original tol=1e-4, max_iter=8 and 1e-9 eV/Å gate remain.
 
-`native-o2-validation.txt` records the current O₂ energy/magnetization and GGA
-activation sections. The physical density FFT stays 36³; the private GGA XC
-quadrature is 54³. The external QE energy and the original 1e-3 Ha acceptance
+`native-o2-validation.txt` records the earlier O₂ energy/magnetization and GGA
+activation sections. At capture time the physical density FFT was 36³ and the
+private GGA XC quadrature was 54³. The external QE energy and the original 1e-3 Ha acceptance
 bound are unchanged. These runs are correctness/runtime checks, not fresh
 matched-engine performance ratios.

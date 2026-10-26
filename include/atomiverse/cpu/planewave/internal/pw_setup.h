@@ -87,15 +87,16 @@ std::vector<AccReal> nc_vloc_to_gspace(const NcPotentialData& upf,
 
 /// @brief Transform a spherical NC nonlocal potential to diagonal KB channels.
 /// @param out Per-atom projectors: angular momentum, strength [Hartree], and
-///        radial Fourier integrals; angular/phase factors are applied by H.
+///        radial Fourier integrals and normalized complex β_lm(G) columns.
 /// @param gv Wavefunction G-sphere; radial transforms use |G+k| [Bohr^-1].
 /// @param upf Radial beta=r*p(r) tables and complete symmetric D_ij [Ha].
 /// @param pos_bohr Atomic positions [Bohr]; determines the number of outputs.
+/// @param omega Cell volume [Bohr^3], for physical projector normalization.
 /// @throws std::invalid_argument for incomplete/nonfinite/asymmetric D_ij or
 ///         couplings between distinct angular momenta.
 void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
                          const GVectorList& gv, const NcPotentialData& upf,
-                         const std::vector<Vec3>& pos_bohr);
+                         const std::vector<Vec3>& pos_bohr, AccReal omega);
 
 /// @brief Assemble the complete SCF problem from a Frame: Ewald energy,
 ///        G-vectors, k-mesh, FFT grids, V_loc, KB projectors,

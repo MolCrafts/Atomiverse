@@ -66,6 +66,10 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
 ``scf.RHF``                           ``RHF``                     ``cpu::scf::RHF``
 ``scf.UHF``                           ``UHF``                     ``cpu::scf::UHF``
+``scf.ROHF``                          ``ROHF``                    ``cpu::scf::ROHF``
+``scf.GHF``                           ``GHF``                     ``cpu::scf::GHF``
+``scf.CudaRHF``                       ``CudaRHF``                 ``cuda::scf::RHF``
+``scf.CudaUHF``                       ``CudaUHF``                 ``cuda::scf::UHF``
 ``scf.RKS``                           ``RKS``                     ``cpu::scf::RKS``
 ``scf.UKS``                           ``UKS``                     ``cpu::scf::UKS``
 ``semiempirical.AM1``                 ``AM1``                     ``cpu::semiempirical::AM1``
@@ -277,6 +281,10 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "UpfPseudopotential": ("atomiverse.pw", "UpfPseudopotential"),
     "RHF": ("atomiverse.scf", "RHF"),
     "UHF": ("atomiverse.scf", "UHF"),
+    "ROHF": ("atomiverse.scf", "ROHF"),
+    "GHF": ("atomiverse.scf", "GHF"),
+    "CudaRHF": ("atomiverse.scf", "CudaRHF"),
+    "CudaUHF": ("atomiverse.scf", "CudaUHF"),
     "RKS": ("atomiverse.scf", "RKS"),
     "UKS": ("atomiverse.scf", "UKS"),
 }
@@ -357,6 +365,14 @@ _PUBLIC: tuple[str, ...] = (
     "HessianResult",
     "single_point",
     "Evaluate",
+    "RHF",
+    "UHF",
+    "ROHF",
+    "GHF",
+    "RKS",
+    "UKS",
+    "CudaRHF",
+    "CudaUHF",
 )
 
 

@@ -150,7 +150,8 @@ symmetry/finite coefficients and element consistency with the basis.
 Providers override only `evaluate_local` and physical metadata/views.
 
 - Radius is Bohr, V is Ha, dV/dr is Ha/Bohr. The origin is finite with zero
-  derivative; the asymptotic tail is -Z_val/r.
+  derivative; the asymptotic tail is -Z_val/r. Input and both output spans
+  must be disjoint; invalid shapes, radii or aliasing reject before mutation.
 - `NcProjectorSetView` supplies radius, positive dr/di Jacobian, radial
   projectors, complete row-major coupling matrix and optional atomic guess
   density/orbitals. The header states the QE Simpson index-grid quadrature,
@@ -179,6 +180,22 @@ Providers override only `evaluate_local` and physical metadata/views.
   matched C1 derivative. Its small final-node Coulomb residual is continued
   C1 to the exact tail over one final mesh interval; operator quadrature uses
   the unchanged supplied nodes.
+- Ewald owns its precision domains and charged-background energy independently
+  of the electronic basis cutoff. Force and DFPT consumers use those same
+  domains and canonical periodic positions; finite-q force constants preserve
+  the raw atomic-basis phase convention.
+- Local and nonlocal HF forces use the same orbital density and occupations.
+  SCF convergence measures the unmixed output-minus-input density residual.
+  The CPU XC consumer uses fixed 3/2 LDA and 3x GGA integration grids with
+  weighted-adjoint projection to the physical density sphere. This numerical
+  integration policy does not promise a universal error bound for arbitrary
+  densities or relax any reference tolerance.
+- Geometry/k-point setup caches the complete NC projector columns; Hamiltonian
+  applications reuse them through the existing BLAS operations. DFPT reuses
+  the canonical Pulay mixer for joint real/complex response channels, resetting
+  history for each perturbation. It stops on the original unmixed residual
+  and accepts the density from the same response orbitals/occupations. Shared
+  XC response evaluation leaves the accepted ground-state workspace unchanged.
 
 GPW retains its qualified Gaussian-projector integrals until a general
 radial-potential adapter is implemented and independently validated. A generic
@@ -322,7 +339,7 @@ slice does not qualify the remaining potential, basis, SE or CUDA providers.
 | 0 | Record loop/model distinction in CLAUDE and existing ES specs; review current DFT/SE baselines | No requirement that every method is a Driver; preserve existing user changes and numerical evidence boundaries |
 | 0a | Public consumer build: `CMakeLists.txt`, `cmake/AtvInstallHeaders.cmake` | Add a proper installed CMake config/export with transitive dependencies and module-selected public headers; prove an external consumer builds without the source tree |
 | 1 | CPU Gaussian KS: `scf/xc_functional.h`, `xc_grid_engine.h`, RKS/UKS build path | Built-in LSDA/PBE/BLYP use the batched contract; external XC example A passes; remove old enum-dispatch numerical fork after callers migrate |
-| 2 | CPU PW: `planewave/internal/{upf_reader,gth_upf,pw_setup}` and XC consumer | GTH/NC-UPF share the existing canonical NC operator data; external example B passes; no second PP parser or SCF loop |
+| 2 | CPU PW: `planewave/internal/{upf_reader,gth_radial,pw_setup}` and XC consumer | GTH/NC-UPF share the existing canonical NC operator data; external example B passes; no second PP parser or SCF loop |
 | 3 | CPU GPW: Kind admission, `ks_grid_build`, DIIS/OT and propagator composition | Reuse XC contract, external basis/GTH example C passes; finish existing OT/wrapper migration; delete GPWEvaluator only after propagators/callers move; general radial GPW PP is a separate gated task |
 | 4 | CPU NDDO: parameter lookup + NddoMethod; CPU DFTB2 + shared SCC helper | External SE example D passes; model injection replaces closed enum dependency for external models; preserve NDDO shared loop; one SCC orchestration for matching DFTB/xTB paths, no extra Driver on model terms |
 | 5 | DFTB0, DFTB3, GFN0/1/2, IPEA public/request surfaces | Keep single-pass methods Components; SCC methods may own a loop; remove duplicate with_forces/with_stress controls; migrate QmEngine/Python via same method instance; GFN2/DFTB3 science gates stay independent |

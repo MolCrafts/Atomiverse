@@ -35,28 +35,28 @@ namespace internal {
 /// @param pos_ang Positions [Å].
 /// @param charges Point charges (valence Z for UPF).
 /// @param cell    Simulation cell [Å].
-/// @param ecut_hartree Wavefunction cutoff [Hartree] (sets recip G cut).
 /// @return Row-major `3N × 3N` matrix [Hartree/Bohr²],
 ///         index `3·I + α`.
 std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
                                             const std::vector<AccReal>& charges,
-                                            const cpu::Box& cell,
-                                            AccReal ecut_hartree);
+                                            const cpu::Box& cell);
 
 /// @brief Analytic finite-q ion–ion (Ewald) dynamical matrix \(C(q)\).
 ///
 /// Same α / cutoffs as `ewald_dynamical_matrix`. At \(q = 0\) the result is
 /// real and matches the Γ matrix to roundoff. Output is row-major complex
 /// Hermitian `3N × 3N` [Hartree/Bohr²].
+/// Individual atomic image shifts T_i use the raw atomic Bloch basis:
+/// C_ij transforms by exp[i q.(T_i-T_j)]; the Γ Hessian is image invariant.
 ///
 /// @param pos_ang Positions [Å].
 /// @param charges Point charges (valence Z for UPF).
 /// @param cell    Simulation cell [Å].
-/// @param ecut_hartree Wavefunction cutoff [Hartree] (sets recip G cut).
 /// @param q_frac  Phonon wavevector in fractional crystal coordinates.
-std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
-    const std::vector<Vec3>& pos_ang, const std::vector<AccReal>& charges,
-    const cpu::Box& cell, AccReal ecut_hartree, const Vec3& q_frac);
+std::vector<std::complex<AccReal>>
+ewald_dynamical_matrix_q(const std::vector<Vec3>& pos_ang,
+                         const std::vector<AccReal>& charges,
+                         const cpu::Box& cell, const Vec3& q_frac);
 
 /// @brief Conduction-space projected preconditioned CG for the Sternheimer
 ///        equation `P_c (H − ε) P_c x = P_c b` at the bound k-sphere of `ws`.
@@ -122,7 +122,8 @@ struct DfptQOutput {
 /// @param response_max_iter Response SCF iteration cap.
 /// @param cg_tol            Sternheimer CG residual tolerance.
 /// @param cg_max_iter       Sternheimer CG iteration cap.
-/// @param mix_beta          Linear mixing for the response density.
+/// @param mix_beta          Pulay damping fraction for the response density;
+///                         `method.pulay_depth` sets its history per perturbation.
 DfptGammaOutput
 dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                            AccReal response_tol, int response_max_iter,

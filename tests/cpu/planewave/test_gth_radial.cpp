@@ -1,23 +1,26 @@
-/// @file tests/cpu/planewave/test_gth_upf.cpp
-/// @brief `internal::upf_from_gth` — analytic GTH evaluated onto UPF radial
+/// @file tests/cpu/planewave/test_gth_radial.cpp
+/// @brief `internal::sample_gth` — analytic GTH evaluated onto UPF radial
 ///        tables, checked against the closed-form G-space expression.
 ///
-/// The two routes are genuinely independent: `upf_from_gth` builds V_loc(r)
+/// The two routes are genuinely independent: `sample_gth` builds V_loc(r)
 /// on a log mesh and `nc_vloc_to_gspace` transforms it by radial quadrature,
 /// while `gth_vloc_gspace` is Goedecker et al. (1996) Eq. 5 evaluated
 /// directly. Agreement therefore tests the radial synthesis, the unit
 /// conventions (v_loc in Ha, d_ij in Ha, beta = r p(r)) and the adequacy of
 /// the mesh at once.
 #include "atomiverse/cpu/gpw/gth_potential.h"
+#include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/g_vector.h"
-#include "atomiverse/cpu/planewave/internal/gth_upf.h"
+#include "atomiverse/cpu/planewave/internal/gth_radial.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 
 #include <algorithm>
 #include <cmath>
 #include <gtest/gtest.h>
 #include <limits>
+#include <memory>
 #include <stdexcept>
+#include <xtensor/generators/xbuilder.hpp>
 
 using namespace ATV;
 using namespace ATV::cpu::pw::internal;
@@ -45,7 +48,7 @@ cpu::Box cubic_bohr(double a) {
 void expect_vloc_matches_closed_form(molrs::Element el, const char* name,
                                      double tol_abs) {
     const cpu::gpw::GthPotential pot(el, name);
-    const NcPotentialData upf = upf_from_gth(pot);
+    const NcPotentialData upf = sample_gth(pot);
 
     const double a = 12.0; // Bohr
     const auto box = cubic_bohr(a);
@@ -85,7 +88,7 @@ TEST(GthUpf, ProjectorsAreNormalized) {
     // p_i^l is normalized as \int p^2 r^2 dr = 1; beta holds r p(r), so the
     // same integral is \int beta^2 dr. Independent of the local part.
     const cpu::gpw::GthPotential pot(molrs::Element::Si, "GTH-PBE-q4");
-    const NcPotentialData upf = upf_from_gth(pot);
+    const NcPotentialData upf = sample_gth(pot);
     ASSERT_GT(upf.n_proj(), 0);
 
     for (const auto& kb : upf.kb) {
@@ -100,7 +103,7 @@ TEST(GthUpf, ProjectorsAreNormalized) {
 
 TEST(GthUpf, CarriesChemicalIdentityAndValence) {
     const cpu::gpw::GthPotential pot(molrs::Element::O, "GTH-PBE-q6");
-    const NcPotentialData upf = upf_from_gth(pot);
+    const NcPotentialData upf = sample_gth(pot);
     EXPECT_EQ(upf.z_val, 6);
     EXPECT_EQ(upf.atomic_number, 8);
     EXPECT_TRUE(upf.rho_atom.empty()); // GTH supplies no atomic density
@@ -171,7 +174,7 @@ TEST(KbProjectors, RotatedBlocksPreserveAnalyticGaussianOperator) {
                     if (i != j)
                         data.upf.d_ij[5 * i + j] = 0;
         std::vector<std::vector<PWWorkspace::KBProjG>> result;
-        setup_kb_projectors(result, gv, data.upf, positions);
+        setup_kb_projectors(result, gv, data.upf, positions, omega);
         ASSERT_EQ(result.size(), 1u);
         ASSERT_EQ(result[0].size(), 5u);
         for (int ip = 0; ip < 5; ++ip) {
@@ -216,28 +219,33 @@ TEST(KbProjectors, InvalidCouplingMatricesAndAngularMomentumThrow) {
     gv.g = {{0, 0, 0}};
     const std::vector<Vec3> positions{{0, 0, 0}};
     std::vector<std::vector<PWWorkspace::KBProjG>> result;
+    EXPECT_THROW(setup_kb_projectors(result, gv, original.upf, positions, 0),
+                 std::invalid_argument);
+    EXPECT_THROW(setup_kb_projectors(result, gv, original.upf, positions,
+                                     std::numeric_limits<double>::infinity()),
+                 std::invalid_argument);
     auto invalid = original.upf;
     invalid.d_ij.pop_back();
-    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions, 64),
                  std::invalid_argument);
     invalid.d_ij.clear();
-    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions, 64),
                  std::invalid_argument);
     invalid = original.upf;
     invalid.d_ij[2] = 0.8; // asymmetric p-block
-    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions, 64),
                  std::invalid_argument);
     invalid = original.upf;
     invalid.d_ij[1] = invalid.d_ij[5] = 0.25; // couples s and p
-    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions, 64),
                  std::invalid_argument);
     invalid = original.upf;
     invalid.d_ij[0] = std::numeric_limits<double>::quiet_NaN();
-    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions, 64),
                  std::invalid_argument);
     invalid = original.upf;
     invalid.kb[0].l = 3; // no f-channel spherical Bessel/angular implementation
-    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions),
+    EXPECT_THROW(setup_kb_projectors(result, gv, invalid, positions, 64),
                  std::invalid_argument);
 }
 
@@ -252,7 +260,7 @@ TEST(KbProjectors, EachCompactPrefixUsesItsOwnSimpsonEndpoint) {
     GVectorList gv;
     gv.g = {{0, 0, 0}};
     std::vector<std::vector<PWWorkspace::KBProjG>> result;
-    setup_kb_projectors(result, gv, data, {{0, 0, 0}});
+    setup_kb_projectors(result, gv, data, {{0, 0, 0}}, 64);
     double operator_value = 0;
     for (const auto& projector : result[0])
         operator_value += projector.d * projector.f_G[0] * projector.f_G[0];
@@ -267,17 +275,121 @@ TEST(GthUpf, RejectsMalformedExplicitAnalyticData) {
     const cpu::gpw::GthPotential original(molrs::Element::Si, "GTH-PBE-q4");
     auto malformed = original;
     malformed.channels[0].h.pop_back();
-    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    EXPECT_THROW(sample_gth(malformed), std::invalid_argument);
     malformed = original;
     malformed.rloc = std::numeric_limits<double>::infinity();
-    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    EXPECT_THROW(sample_gth(malformed), std::invalid_argument);
     malformed = original;
     malformed.channels[0].nproj = -1;
-    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    EXPECT_THROW(sample_gth(malformed), std::invalid_argument);
     malformed = original;
     malformed.cloc[0] = std::numeric_limits<double>::quiet_NaN();
-    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    EXPECT_THROW(sample_gth(malformed), std::invalid_argument);
     malformed = original;
     malformed.channels[0].l = 3;
-    EXPECT_THROW(upf_from_gth(malformed), std::invalid_argument);
+    EXPECT_THROW(sample_gth(malformed), std::invalid_argument);
+}
+
+TEST(KbProjectors, PreparedComplexColumnsMatchAnalyticGaussianHamiltonian) {
+    using Cx = std::complex<AccReal>;
+    const auto original = gaussian_kb();
+    for (int l = 0; l <= 2; ++l) {
+        auto data = original.upf;
+        data.kb.resize(1);
+        data.kb[0].l = l;
+        constexpr double alpha = 0.6, strength = -0.7;
+        for (std::size_t ir = 0; ir < data.r.size(); ++ir)
+            data.kb[0].beta[ir] = std::pow(data.r[ir], l + 1)
+                                  * std::exp(-alpha * data.r[ir] * data.r[ir]);
+        data.d_ij = {strength};
+        PWWorkspace ws;
+        ws.n_g = 4;
+        ws.nr = 64;
+        ws.fft_nx = ws.fft_ny = 8;
+        ws.fft_nz = 1;
+        ws.fft = std::make_unique<FFTPlan3D>(8, 8, 1);
+        ws.gvec = &ws.gvec0;
+        ws.gvec0.h = {0, 1, -1, 0};
+        ws.gvec0.k = {0, 0, 0, 1};
+        ws.gvec0.l = {0, 0, 0, 0};
+        ws.V_eff_r = xt::zeros<AccReal>({64});
+        ws.T_G = xt::zeros<AccReal>({4});
+        const std::vector<Cx> psi{{.3, -.2}, {.4, .1}, {-.1, .7}, {.2, -.3}};
+        std::vector<Cx> result(4);
+        FFTWBuffer<fftw_complex> work(ws.nr);
+        // Same shapes, different cell metric, Bloch k and atomic geometry.
+        for (int geometry = 0; geometry < 2; ++geometry) {
+            SCOPED_TRACE(l);
+            SCOPED_TRACE(geometry);
+            ws.omega = geometry == 0 ? 64 : 125;
+            const double scale = geometry == 0 ? 1 : .8;
+            ws.gvec0.g = {
+                {0, 0, 0}, {scale, 0, 0}, {-scale, 0, 0}, {0, scale, 0}};
+            ws.gvec0.kvec =
+                geometry == 0 ? Vec3{.17, -.1, .07} : Vec3{-.11, .23, .13};
+            ws.atom_pos_bohr =
+                geometry == 0
+                    ? std::vector<Vec3>{{.2, -.4, .7}, {1.3, .6, -.2}}
+                    : std::vector<Vec3>{{-.5, .3, 1.1}, {.8, -1.2, .4}};
+            for (int g = 0; g < 4; ++g)
+                ws.T_G[g] = .5 * (ws.gvec0.g[g] + ws.gvec0.kvec).norm_squared();
+            setup_kb_projectors(ws.kb_proj, ws.gvec0, data, ws.atom_pos_bohr,
+                                ws.omega);
+            for (const auto& atom : ws.kb_proj) {
+                ASSERT_EQ(atom[0].beta_G.dimension(), 2u);
+                EXPECT_EQ(atom[0].beta_G.shape()[0], std::size_t(2 * l + 1));
+                EXPECT_EQ(atom[0].beta_G.shape()[1], 4u);
+            }
+            pw_apply_h(ws, psi.data(), result.data(), work.data());
+            // Independent dense H(G,H) = T + Σ D β(G) conj(β(H));
+            // checks the complex BLAS conjugation/layout at roundoff scale.
+            for (int g = 0; g < 4; ++g) {
+                Cx dense_action{};
+                for (int h = 0; h < 4; ++h) {
+                    Cx matrix_element = g == h ? Cx(ws.T_G[g], 0) : Cx{};
+                    for (const auto& atom : ws.kb_proj)
+                        for (const auto& projector : atom)
+                            for (int m = 0; m < 2 * projector.l + 1; ++m)
+                                matrix_element +=
+                                    projector.d * projector.beta_G(m, g)
+                                    * std::conj(projector.beta_G(m, h));
+                    dense_action += matrix_element * psi[h];
+                }
+                EXPECT_NEAR(result[g].real(), dense_action.real(), 1e-12);
+                EXPECT_NEAR(result[g].imag(), dense_action.imag(), 1e-12);
+            }
+            for (int g = 0; g < 4; ++g) {
+                const Vec3 q = ws.gvec0.g[g] + ws.gvec0.kvec;
+                Cx expected = ws.T_G[g] * psi[g];
+                for (int h = 0; h < 4; ++h) {
+                    const Vec3 p = ws.gvec0.g[h] + ws.gvec0.kvec;
+                    const double cosine =
+                        (q[0] * p[0] + q[1] * p[1] + q[2] * p[2])
+                        / (q.norm() * p.norm());
+                    const double legendre =
+                        l == 0   ? 1
+                        : l == 1 ? cosine
+                                 : .5 * (3 * cosine * cosine - 1);
+                    const double radial = strength * 4 * M_PI / ws.omega
+                                          * (2 * l + 1) * legendre
+                                          * gaussian_radial(l, alpha, q.norm())
+                                          * gaussian_radial(l, alpha, p.norm());
+                    for (const auto& position : ws.atom_pos_bohr) {
+                        const Vec3 delta = q - p;
+                        const double phase = delta[0] * position[0]
+                                             + delta[1] * position[1]
+                                             + delta[2] * position[2];
+                        expected += radial
+                                    * Cx(std::cos(phase), -std::sin(phase))
+                                    * psi[h];
+                    }
+                }
+                EXPECT_NEAR(result[g].real(), expected.real(), 2e-6);
+                EXPECT_NEAR(result[g].imag(), expected.imag(), 2e-6);
+            }
+            ws.kb_proj[0][0].beta_G = xt::xarray<Cx>{};
+            EXPECT_THROW(pw_apply_h(ws, psi.data(), result.data(), work.data()),
+                         std::invalid_argument);
+        }
+    }
 }

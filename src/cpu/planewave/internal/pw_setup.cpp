@@ -10,6 +10,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
+#include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 #include "atomiverse/electronic/norm_conserving_potential.h"
 
@@ -18,6 +19,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <map>
@@ -127,7 +129,10 @@ SphBesselFn sph_bessel_for_l(int l) {
 void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
                          const internal::GVectorList& gv,
                          const internal::NcPotentialData& upf,
-                         const std::vector<Vec3>& pos_bohr) {
+                         const std::vector<Vec3>& pos_bohr, AccReal omega) {
+    if (!(omega > AccReal(0)) || !std::isfinite(omega))
+        throw std::invalid_argument(
+            "KB projectors: cell volume must be finite and positive");
     int n_atoms = static_cast<int>(pos_bohr.size());
     int ng = gv.count();
     out.assign(n_atoms, {});
@@ -217,8 +222,32 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
             out[ia][ip].l = rotated_l[ip];
             out[ia][ip].d = eff_D[ip];
             out[ia][ip].f_G.resize({ng_sz});
-            for (int ig = 0; ig < ng; ++ig)
-                out[ia][ip].f_G[ig] = fl_trans[ip][ig];
+            const int l = rotated_l[ip];
+            const int nm = n_m_for_l(l);
+            auto& beta = out[ia][ip].beta_G;
+            beta = xt::zeros<std::complex<AccReal>>(
+                {static_cast<std::size_t>(nm), ng_sz});
+            const AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(omega);
+            const std::complex<AccReal> im_l =
+                l == 1 ? std::complex<AccReal>(0, -1)
+                       : std::complex<AccReal>(l == 2 ? -1 : 1, 0);
+            std::array<AccReal, 5> ylm{};
+            for (int ig = 0; ig < ng; ++ig) {
+                const AccReal fl = fl_trans[ip][ig];
+                out[ia][ip].f_G[ig] = fl;
+                if (std::abs(fl) < AccReal(1e-30))
+                    continue;
+                const Vec3 q = gv.g[ig] + gv.kvec;
+                const AccReal phase = q[0] * pos_bohr[ia][0]
+                                      + q[1] * pos_bohr[ia][1]
+                                      + q[2] * pos_bohr[ia][2];
+                compute_ylm(q[0], q[1], q[2], std::sqrt(q.norm_squared()), l,
+                            ylm.data());
+                const std::complex<AccReal> atomic_phase(std::cos(phase),
+                                                         -std::sin(phase));
+                for (int m = 0; m < nm; ++m)
+                    beta(m, ig) = pref * im_l * ylm[m] * fl * atomic_phase;
+            }
         }
     }
 }
@@ -397,28 +426,15 @@ void setup_pw_problem(const cpu::Frame& frame,
                            static_cast<AccReal>(sp_z[i])});
     // Ewald uses the same charges as V_loc: pseudopotential valence.
     const auto& ewald_charges = valence_charges;
-    internal::EwaldSummation ewald(pos_ang, ewald_charges, box_ang, ecut_ht);
-    AccReal ew_total = ewald.total_energy();
-
-    // Charged-system / jellium G=0 term: -π Q² / (2 α² Ω). NB: QE's
-    // ewald.f90 writes -charge²/(4·alpha)·(2π/Ω), but QE's `alpha` is the
-    // Gaussian exponent η² — our EwaldSummation::alpha() is η, so the
-    // denominator needs α². (With α¹ the term acquires a spurious
-    // cell-size dependence that tilted the Si E(V) curve by ~0.04 Ry
-    // across the EOS scan — comparable to the entire physical span.)
-    AccReal ew_charge = 0;
-    for (auto& z : ewald_charges)
-        ew_charge += z;
-    AccReal ew_alpha = ewald.alpha();
-    AccReal ew_g0 = -ew_charge * ew_charge / (AccReal(4) * ew_alpha * ew_alpha)
-                    * AccReal(2.0 * M_PI) / vol_bohr;
-    ew_total += ew_g0;
+    internal::EwaldSummation ewald(pos_ang, ewald_charges, box_ang);
+    const AccReal ew_total = ewald.total_energy();
     out.ew_total = ew_total;
 
     if (rank0) {
         ATV_DEBUG("[pw] --- Ewald (Ha) ---");
-        ATV_DEBUG("[pw]   real={} recip={} self={}", ewald.real_energy(),
-                  ewald.recip_energy(), ewald.self_energy());
+        ATV_DEBUG("[pw]   real={} recip={} self={} background={}",
+                  ewald.real_energy(), ewald.recip_energy(),
+                  ewald.self_energy(), ewald.background_energy());
         ATV_DEBUG("[pw]   total={} Ha ({} Ry)", ew_total, ew_total * 2.0);
     }
 
@@ -556,7 +572,8 @@ void setup_pw_problem(const cpu::Frame& frame,
         out.kb_proj_k.resize(n_k);
         out.atom_wfc_k.resize(n_k);
         for (size_t ik = 0; ik < n_k; ++ik) {
-            setup_kb_projectors(out.kb_proj_k[ik], out.gv_k[ik], upf, pos_bohr);
+            setup_kb_projectors(out.kb_proj_k[ik], out.gv_k[ik], upf, pos_bohr,
+                                vol_bohr);
             if (upf.nwfc > 0)
                 setup_atomic_wfc(out.atom_wfc_k[ik], out.gv_k[ik], upf, n_atoms,
                                  vol_bohr);
@@ -609,7 +626,8 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame, double ecut_ry,
         out.kb_proj_k.resize(n_k);
         out.atom_wfc_k.resize(n_k);
         for (size_t ik = 0; ik < n_k; ++ik) {
-            setup_kb_projectors(out.kb_proj_k[ik], out.gv_k[ik], upf, pos_bohr);
+            setup_kb_projectors(out.kb_proj_k[ik], out.gv_k[ik], upf, pos_bohr,
+                                vol_bohr);
             if (upf.nwfc > 0)
                 setup_atomic_wfc(out.atom_wfc_k[ik], out.gv_k[ik], upf, n_atoms,
                                  vol_bohr);

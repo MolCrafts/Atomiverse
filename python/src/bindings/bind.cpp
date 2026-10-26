@@ -50,6 +50,9 @@ void bind_cuda(nb::module_& m);
 #endif
 #ifdef ATV_HAS_HF
 void bind_scf(nb::module_& m);
+#ifdef ATV_HAS_CUDA
+void bind_cuda_scf(nb::module_& m);
+#endif
 #endif
 
 NB_MODULE(_atomiverse, m) {
@@ -156,5 +159,8 @@ NB_MODULE(_atomiverse, m) {
 #endif
 #ifdef ATV_HAS_HF
     bind_scf(m);
+#ifdef ATV_HAS_CUDA
+    bind_cuda_scf(m);
+#endif
 #endif
 }

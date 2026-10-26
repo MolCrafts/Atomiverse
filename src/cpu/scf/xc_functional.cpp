@@ -26,7 +26,6 @@ namespace scf {
 static constexpr double kRhoMin = 1e-12; // total density cutoff
 static constexpr double kSpinDensMin =
     1e-15; // per-spin density floor (matches libxc dens_threshold)
-static constexpr double kSigmaMin = 1e-20; // gradient cutoff for GGA
 
 // Slater exchange constant: C_x = (3/4)(3/π)^{1/3}
 static constexpr double kCx =
@@ -75,7 +74,6 @@ double vwn5_F(double x, const VWN5Params& p) {
 double vwn5_dFdx(double x, const VWN5Params& p) {
     double X = x * x + p.b * x + p.c;
     double X0 = p.x0 * p.x0 + p.b * p.x0 + p.c;
-    double Q = std::sqrt(4.0 * p.c - p.b * p.b);
 
     // d/dx [ln(x²/X)] = 2/x - (2x+b)/X
     double dterm1 = 2.0 / x - (2.0 * x + p.b) / X;
@@ -104,20 +102,35 @@ double vwn5_dFdx(double x, const VWN5Params& p) {
 static const double kFppZero = 4.0 / (9.0 * (std::pow(2.0, 1.0 / 3.0) - 1.0));
 // f''(0) = 4 / (9 * (2^{1/3} - 1))
 
-static double spin_f(double zeta) {
-    double denom = 2.0 * (std::pow(2.0, 1.0 / 3.0) - 1.0);
-    return (std::pow(1.0 + zeta, 4.0 / 3.0) + std::pow(1.0 - zeta, 4.0 / 3.0)
-            - 2.0)
-           / denom;
-}
+// Reuse only roots with identical arguments within one point. In particular,
+// keeping the actual 1 +/- zeta arguments retains their rounding at extreme
+// polarization; cross-scale density identities can amplify roundoff when
+// exchange and correlation gradient derivatives nearly cancel.
+struct DensityPowers {
+    double alpha, beta;
+    double alpha13, beta13;
+    DensityPowers(double a, double b)
+        : alpha(a), beta(b), alpha13(std::cbrt(a)),
+          beta13(a == b ? alpha13 : std::cbrt(b)) {}
+};
 
-// df/dζ
-static double spin_df(double zeta) {
-    double denom = 2.0 * (std::pow(2.0, 1.0 / 3.0) - 1.0);
-    return (4.0 / 3.0)
-           * (std::pow(1.0 + zeta, 1.0 / 3.0) - std::pow(1.0 - zeta, 1.0 / 3.0))
-           / denom;
-}
+struct SpinPowers {
+    double zeta, za, zb, a13, b13;
+    explicit SpinPowers(double z) : zeta(z), za(1 + z), zb(1 - z) {
+        if (z == 0) {
+            // Exact equal inputs retain exactly zero interpolation weights.
+            a13 = b13 = 1;
+        } else {
+            a13 = std::cbrt(za);
+            b13 = std::cbrt(zb);
+        }
+    }
+    void interpolation(double& f, double& df) const {
+        static const double denom = 2.0 * (std::pow(2.0, 1.0 / 3.0) - 1.0);
+        f = (za * a13 + zb * b13 - 2.0) / denom;
+        df = (4.0 / 3.0) * (a13 - b13) / denom;
+    }
+};
 
 // ── Slater exchange ─────────────────────────────────────────────────────
 
@@ -168,34 +181,32 @@ static void slater_exchange(double rho_a, double rho_b, double& fx,
 // libxc source studied: libxc/maple/lda_c_pw.mpl and libxc/src/work_lda.c.
 
 struct PW92Params {
-    double A, alpha1, beta1, beta2, beta3, beta4, p;
+    double A, alpha1, beta1, beta2, beta3, beta4;
 };
 
 // Paramagnetic (Table I, ζ = 0)
-static constexpr PW92Params kPW92_P = {0.0310907, 0.21370, 7.5957, 3.5876,
-                                       1.6382,    0.49294, 1.0};
+static constexpr PW92Params kPW92_P = {0.0310907, 0.21370, 7.5957,
+                                       3.5876,    1.6382,  0.49294};
 // Ferromagnetic (Table I, ζ = 1)
-static constexpr PW92Params kPW92_F = {0.01554535, 0.20548, 14.1189, 6.1977,
-                                       3.3662,     0.62517, 1.0};
+static constexpr PW92Params kPW92_F = {0.01554535, 0.20548, 14.1189,
+                                       6.1977,     3.3662,  0.62517};
 // Spin-stiffness -α_c (Table I, "α_c" row, stored as positive G; negated when used)
-static constexpr PW92Params kPW92_A = {0.0168869, 0.11125, 10.357, 3.6231,
-                                       0.88026,   0.49671, 1.0};
+static constexpr PW92Params kPW92_A = {0.0168869, 0.11125, 10.357,
+                                       3.6231,    0.88026, 0.49671};
 
 // Returns G(r_s) and dG/dr_s for PW92 parameter set p.
 static void pw92_G(double rs, const PW92Params& p, double& G, double& dG_drs) {
     double sqrt_rs = std::sqrt(rs);
     double rs_3_2 = rs * sqrt_rs;
-    double rs_p1 = std::pow(rs, p.p + 1.0);
-    double rs_p = std::pow(rs, p.p);
+    const double rs2 = rs * rs; // Every published PW92 channel has p=1.
 
     // q1 = 2A(β1 √rs + β2 rs + β3 rs^{3/2} + β4 rs^{p+1})
-    double q1 = 2.0 * p.A
-                * (p.beta1 * sqrt_rs + p.beta2 * rs + p.beta3 * rs_3_2
-                   + p.beta4 * rs_p1);
-    double dq1_drs =
+    double q1 =
         2.0 * p.A
-        * (0.5 * p.beta1 / sqrt_rs + p.beta2 + 1.5 * p.beta3 * sqrt_rs
-           + (p.p + 1.0) * p.beta4 * rs_p);
+        * (p.beta1 * sqrt_rs + p.beta2 * rs + p.beta3 * rs_3_2 + p.beta4 * rs2);
+    double dq1_drs = 2.0 * p.A
+                     * (0.5 * p.beta1 / sqrt_rs + p.beta2
+                        + 1.5 * p.beta3 * sqrt_rs + 2.0 * p.beta4 * rs);
 
     // q2 = ln(1 + 1/q1)
     double q2 = std::log(1.0 + 1.0 / q1);
@@ -210,17 +221,27 @@ static void pw92_G(double rs, const PW92Params& p, double& G, double& dG_drs) {
 
 // PW92 epsilon_c(rs,zeta) and its parameter derivatives [Hartree].
 // This is an internal formula, not a density-functional output convention.
-static void pw92_epsilon(double rs, double zeta, double& epsilon,
+static void pw92_epsilon(double rs, const SpinPowers& spin, double& epsilon,
                          double& dec_drs, double& dec_dz) {
+    const double zeta = spin.zeta;
     double ecP, ecF, ac, decP_drs, decF_drs, dac_drs;
     pw92_G(rs, kPW92_P, ecP, decP_drs);
+    double fz, dfz;
+    spin.interpolation(fz, dfz);
+    // Zero spin-interpolation weights remove both polarized channels and
+    // their first variations exactly; do not evaluate inactive logarithms.
+    if (fz == 0 && dfz == 0) {
+        epsilon = ecP;
+        dec_drs = decP_drs;
+        dec_dz = 0;
+        return;
+    }
     pw92_G(rs, kPW92_F, ecF, decF_drs);
     pw92_G(rs, kPW92_A, ac, dac_drs);
     // The stiffness row's G function gives -α_c; negate to get α_c.
     ac = -ac;
     dac_drs = -dac_drs;
 
-    double fz = spin_f(zeta);
     double z4 = zeta * zeta * zeta * zeta;
 
     // ε_c
@@ -231,7 +252,6 @@ static void pw92_epsilon(double rs, double zeta, double& epsilon,
               + (decF_drs - decP_drs) * fz * z4;
 
     // dε_c/dζ
-    double dfz = spin_df(zeta);
     double dz4 = 4.0 * zeta * zeta * zeta;
     dec_dz = ac / kFppZero * (dfz * (1.0 - z4) - fz * dz4)
              + (ecF - ecP) * (dfz * z4 + fz * dz4);
@@ -247,7 +267,7 @@ static void pw92_correlation(double rho_a, double rho_b, double& fc,
     double rs = std::pow(3.0 / (4.0 * units::pi * rho), 1.0 / 3.0);
     double zeta = (rho_a - rho_b) / rho;
     double epsilon, dec_drs, dec_dz;
-    pw92_epsilon(rs, zeta, epsilon, dec_drs, dec_dz);
+    pw92_epsilon(rs, SpinPowers(zeta), epsilon, dec_drs, dec_dz);
     double rs3_dec = (rs / 3.0) * dec_drs;
     vc_a = epsilon - rs3_dec - (zeta - 1.0) * dec_dz;
     vc_b = epsilon - rs3_dec - (zeta + 1.0) * dec_dz;
@@ -279,7 +299,8 @@ static void vwn5_correlation(double rho_a, double rho_b, double& fc,
     double ecF = vwn5_F(x, kVWN5_F);
     double ac = vwn5_F(x, kVWN5_A);
 
-    double fz = spin_f(zeta);
+    double fz, dfz;
+    SpinPowers(zeta).interpolation(fz, dfz);
     double z4 = zeta * zeta * zeta * zeta;
 
     // ε_c = ε_c^P + α_c f(ζ)/f''(0) (1 - ζ⁴) + [ε_c^F - ε_c^P] f(ζ) ζ⁴
@@ -305,7 +326,6 @@ static void vwn5_correlation(double rho_a, double rho_b, double& fc,
     double rs3_dec = x / 6.0 * dec_dx;
 
     // ∂ε_c/∂ζ
-    double dfz = spin_df(zeta);
     double dz4 = 4.0 * zeta * zeta * zeta;
 
     double dec_dz = ac / kFppZero * (dfz * (1.0 - z4) - fz * dz4)
@@ -345,7 +365,8 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& fc, double& vc_a,
     // RPA paramagnetic / ferromagnetic Pade channels.
     double F_P = vwn5_F(x, kVWN_RPA_P);
     double F_F = vwn5_F(x, kVWN_RPA_F);
-    double fz = spin_f(zeta);
+    double fz, dfz;
+    SpinPowers(zeta).interpolation(fz, dfz);
     const double epsilon =
         F_P * (1.0 - fz) + F_F * fz; // eps_c = F_P(1-f) + F_F f
 
@@ -355,7 +376,7 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& fc, double& vc_a,
     double rs3_dec = x / 6.0 * dec_dx;
 
     // d eps_c / d zeta = (F_F - F_P) f'(zeta).
-    double dec_dz = (F_F - F_P) * spin_df(zeta);
+    double dec_dz = (F_F - F_P) * dfz;
 
     vc_a = epsilon - rs3_dec - (zeta - 1.0) * dec_dz;
     vc_b = epsilon - rs3_dec - (zeta + 1.0) * dec_dz;
@@ -387,8 +408,8 @@ static constexpr double kRevPBE_kappa = 1.245;
 // PBE/PBEsol/RPBE (0.804) or revPBE (1.245). When `rpbe_form` is true, use
 // the Hammer–Hansen–Nørskov exponential enhancement (RPBE) instead of the
 // rational PBE/revPBE form.
-static void pbe_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
-                              double& vrho_s, double& vsigma_ss,
+static void pbe_exchange_spin(double rho_s, double rho13, double sigma_ss,
+                              double& ex_s, double& vrho_s, double& vsigma_ss,
                               double mu = kPBE_mu, double kappa = kPBE_kappa,
                               bool rpbe_form = false) {
     if (rho_s < kRhoMin * 0.5) {
@@ -401,15 +422,14 @@ static void pbe_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
     double Cx_spin = std::pow(2.0, 1.0 / 3.0) * kCx;
 
     // LSDA exchange for this spin (energy per volume = -Cx_spin * ρ_σ^{4/3})
-    double rs43 = std::pow(rho_s, 4.0 / 3.0);
+    const double rs43 = rho_s * rho13;
     double ex_lda = -Cx_spin * rs43; // per volume
 
     // Reduced gradient s
-    double kf = std::pow(6.0 * units::pi * units::pi, 1.0 / 3.0)
-                * std::pow(rho_s, 1.0 / 3.0);
-    double grad = std::sqrt(std::max(sigma_ss, 0.0));
-    double s = grad / (2.0 * kf * rho_s);
-    double s2 = s * s;
+    const double kf = std::pow(6.0 * units::pi * units::pi, 1.0 / 3.0) * rho13;
+    const double gradient_scale = 2.0 * kf * rho_s;
+    const double ds2_dsigma = 1.0 / (gradient_scale * gradient_scale);
+    const double s2 = std::max(sigma_ss, 0.0) * ds2_dsigma;
 
     // Enhancement factor F_x(s) and dF_x/ds²
     double Fx;
@@ -435,12 +455,9 @@ static void pbe_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
     double ds2_drho = -(8.0 / 3.0) * s2 / rho_s;
 
     // ds²/dσ = 1 / (4 (6π²)^{2/3} ρ^{8/3})
-    double kf2_fac = 4.0 * std::pow(6.0 * units::pi * units::pi, 2.0 / 3.0)
-                     * std::pow(rho_s, 8.0 / 3.0);
-    double ds2_dsigma = 1.0 / kf2_fac;
 
     // v_rho = d(ex_lda * Fx)/dρ = (d ex_lda/dρ) Fx + ex_lda * dFx/dρ
-    double dex_lda_drho = -(4.0 / 3.0) * Cx_spin * std::pow(rho_s, 1.0 / 3.0);
+    double dex_lda_drho = -(4.0 / 3.0) * Cx_spin * rho13;
     vrho_s = dex_lda_drho * Fx + ex_lda * dFx_ds2 * ds2_drho;
 
     // v_sigma = ex_lda * dFx/dσ
@@ -462,27 +479,22 @@ static constexpr double kPBE_gamma = 0.031090690869654895034; // (1 - ln2)/π²
 /// PBEsol correlation β (libxc GGA_C_PBE_SOL / CP2K PBEsol).
 static constexpr double kPBEsol_beta = 0.046;
 
-static double phi_pbe(double zeta) {
-    return 0.5
-           * (std::pow(1.0 + zeta, 2.0 / 3.0)
-              + std::pow(1.0 - zeta, 2.0 / 3.0));
-}
-
-static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
+static void pbe_correlation(const DensityPowers& density, double sigma_aa,
                             double sigma_ab, double sigma_bb, double& fc_pbe,
                             double& vc_a, double& vc_b, double& vsigma_aa,
                             double& vsigma_ab, double& vsigma_bb,
                             double beta = kPBE_beta) {
     // The LDA formula uses the same spin floor as standalone PW92; its
     // epsilon stays local until the final physical-density multiplication.
+    const double rho_a = density.alpha, rho_b = density.beta;
     const double lda_a = std::max(rho_a, kSpinDensMin);
     const double lda_b = std::max(rho_b, kSpinDensMin);
     const double lda_rho = lda_a + lda_b;
-    const double lda_rs =
-        std::pow(3.0 / (4.0 * units::pi * lda_rho), 1.0 / 3.0);
+    const double lda_rs = std::cbrt(3.0 / (4.0 * units::pi * lda_rho));
     const double lda_zeta = (lda_a - lda_b) / lda_rho;
+    const SpinPowers lda_spin(lda_zeta);
     double ec_lda, dec_drs, dec_dz;
-    pw92_epsilon(lda_rs, lda_zeta, ec_lda, dec_drs, dec_dz);
+    pw92_epsilon(lda_rs, lda_spin, ec_lda, dec_drs, dec_dz);
     const double rs3_dec = (lda_rs / 3.0) * dec_drs;
     const double vc_lda_a = ec_lda - rs3_dec - (lda_zeta - 1.0) * dec_dz;
     const double vc_lda_b = ec_lda - rs3_dec - (lda_zeta + 1.0) * dec_dz;
@@ -491,11 +503,15 @@ static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
     double zeta = (rho_a - rho_b) / rho;
     zeta = std::max(-1.0 + 1e-14, std::min(1.0 - 1e-14, zeta));
 
-    double phi = phi_pbe(zeta);
+    const SpinPowers spin = zeta == lda_spin.zeta ? lda_spin : SpinPowers(zeta);
+    const double za = spin.za, zb = spin.zb;
+    const double za13 = spin.a13, zb13 = spin.b13;
+    const double za23 = za13 * za13, zb23 = zb13 * zb13;
+    const double phi = 0.5 * (za23 + zb23);
     double phi3 = phi * phi * phi;
 
     // k_F and k_s
-    double kF = std::pow(3.0 * units::pi * units::pi * rho, 1.0 / 3.0);
+    const double kF = std::cbrt(3.0 * units::pi * units::pi * rho);
     double ks = std::sqrt(4.0 * kF / units::pi);
 
     // t = |∇ρ| / (2 φ k_s ρ)
@@ -514,7 +530,8 @@ static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
     double numer = 1.0 + At2;
     double denom = 1.0 + At2 + A * A * t2 * t2;
     double ratio = (beta / kPBE_gamma) * t2 * numer / denom;
-    double H = kPBE_gamma * phi3 * std::log(1.0 + ratio);
+    const double log_ratio = std::log(1.0 + ratio);
+    double H = kPBE_gamma * phi3 * log_ratio;
 
     fc_pbe = rho * (ec_lda + H);
 
@@ -597,9 +614,6 @@ static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
     static constexpr double kZetaThreshold =
         2.2204460492503131e-16; // DBL_EPSILON
 
-    double za = 1.0 + zeta;
-    double zb = 1.0 - zeta;
-
     // dphi/drho_sigma: direct computation avoiding dphi/dzeta singularity.
     // dzeta/drho_a = (1-zeta)/rho = zb/rho
     // dzeta/drho_b = -(1+zeta)/rho = -za/rho
@@ -617,12 +631,9 @@ static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
     double dphi_drho_a, dphi_drho_b;
     {
         double term_a_da =
-            (za > kZetaThreshold)
-                ? (1.0 / 3.0) * std::pow(za, -1.0 / 3.0) * zb / rho
-                : 0.0;
-        double term_b_da = (zb > kZetaThreshold)
-                               ? -(1.0 / 3.0) * std::pow(zb, 2.0 / 3.0) / rho
-                               : 0.0;
+            (za > kZetaThreshold) ? (1.0 / 3.0) * (1.0 / za13) * zb / rho : 0.0;
+        double term_b_da =
+            (zb > kZetaThreshold) ? -(1.0 / 3.0) * zb23 / rho : 0.0;
         dphi_drho_a = term_a_da + term_b_da;
 
         // Correction: re-derive term_b_da properly.
@@ -631,13 +642,10 @@ static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
         // So d/drho_a [(1-zeta)^{2/3}] = (2/3)*zb^{-1/3}*(-zb/rho) = -(2/3)*zb^{2/3}/rho
         // Then /2 for phi: -(1/3)*zb^{2/3}/rho  -- this matches above.
 
-        double term_a_db = (za > kZetaThreshold)
-                               ? -(1.0 / 3.0) * std::pow(za, 2.0 / 3.0) / rho
-                               : 0.0;
+        double term_a_db =
+            (za > kZetaThreshold) ? -(1.0 / 3.0) * za23 / rho : 0.0;
         double term_b_db =
-            (zb > kZetaThreshold)
-                ? (1.0 / 3.0) * std::pow(zb, -1.0 / 3.0) * za / rho
-                : 0.0;
+            (zb > kZetaThreshold) ? (1.0 / 3.0) * (1.0 / zb13) * za / rho : 0.0;
         dphi_drho_b = term_a_db + term_b_db;
     }
 
@@ -666,8 +674,7 @@ static void pbe_correlation(double rho_a, double rho_b, double sigma_aa,
 
     // dH/dphi: H = gamma * phi^3 * ln(1+ratio)
     // Explicit phi^3 prefactor:
-    double dH_dphi_explicit =
-        3.0 * kPBE_gamma * phi * phi * std::log(1.0 + ratio);
+    double dH_dphi_explicit = 3.0 * kPBE_gamma * phi * phi * log_ratio;
     // Implicit phi dependence through t^2 (t^2 ~ 1/phi^2):
     double dH_dphi_implicit = dH_dt2 * dt2_dphi;
     // Implicit phi dependence through A:
@@ -941,15 +948,16 @@ void pbe0_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
     double s_ave = 0.5 * (sa + sb);
     double sab = std::min(std::max(sigma_ab, -s_ave), +s_ave);
 
+    const DensityPowers density(ra, rb);
     // PBE exchange (per-spin, per-volume).
     double ex_pbe_a, vrho_x_a, vsig_x_aa;
     double ex_pbe_b, vrho_x_b, vsig_x_bb;
-    pbe_exchange_spin(ra, sa, ex_pbe_a, vrho_x_a, vsig_x_aa);
-    pbe_exchange_spin(rb, sb, ex_pbe_b, vrho_x_b, vsig_x_bb);
+    pbe_exchange_spin(ra, density.alpha13, sa, ex_pbe_a, vrho_x_a, vsig_x_aa);
+    pbe_exchange_spin(rb, density.beta13, sb, ex_pbe_b, vrho_x_b, vsig_x_bb);
 
     // PBE correlation: PW92 LDA base + gradient correction.
     double fc_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab, vsig_c_bb;
-    pbe_correlation(ra, rb, sa, sab, sb, fc_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa,
+    pbe_correlation(density, sa, sab, sb, fc_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa,
                     vsig_c_ab, vsig_c_bb);
 
     // 0.75 * PBE-X + 1.00 * PBE-C.
@@ -1016,16 +1024,25 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         sab = std::max(sab, -s_ave);
         sab = std::min(sab, +s_ave);
 
+        const DensityPowers density(ra_pbe, rb_pbe);
         double ex_pbe_a, vrho_x_a, vsig_x_aa;
         double ex_pbe_b, vrho_x_b, vsig_x_bb;
-        pbe_exchange_spin(ra_pbe, sa, ex_pbe_a, vrho_x_a, vsig_x_aa, mu, kappa,
-                          rpbe_form);
-        pbe_exchange_spin(rb_pbe, sb, ex_pbe_b, vrho_x_b, vsig_x_bb, mu, kappa,
-                          rpbe_form);
+        pbe_exchange_spin(ra_pbe, density.alpha13, sa, ex_pbe_a, vrho_x_a,
+                          vsig_x_aa, mu, kappa, rpbe_form);
+        if (rb_pbe == ra_pbe && sb == sa) {
+            // Identical point inputs have identical exchange outputs. Both
+            // spin channels and the joint correlation remain represented.
+            ex_pbe_b = ex_pbe_a;
+            vrho_x_b = vrho_x_a;
+            vsig_x_bb = vsig_x_aa;
+        } else {
+            pbe_exchange_spin(rb_pbe, density.beta13, sb, ex_pbe_b, vrho_x_b,
+                              vsig_x_bb, mu, kappa, rpbe_form);
+        }
 
         double fc_pbe, vc_pbe_a, vc_pbe_b;
         double vsig_c_aa, vsig_c_ab, vsig_c_bb;
-        pbe_correlation(ra_pbe, rb_pbe, sa, sab, sb, fc_pbe, vc_pbe_a, vc_pbe_b,
+        pbe_correlation(density, sa, sab, sb, fc_pbe, vc_pbe_a, vc_pbe_b,
                         vsig_c_aa, vsig_c_ab, vsig_c_bb, beta);
 
         out.energy_density = ex_pbe_a + ex_pbe_b + fc_pbe;

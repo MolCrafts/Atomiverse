@@ -1,0 +1,666 @@
+{
+  "kind": "native consumer validation; independent expectations remain reference.json",
+  "sdk": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/sdk-final",
+  "old_install_removed": true,
+  "source_project": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-source",
+  "build": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-final",
+  "required_components": [
+    "PW",
+    "EVALUATE"
+  ],
+  "optional_components_tested": [
+    "MD",
+    "MINIMIZER"
+  ],
+  "library_sha256": "5188ae9b4e375d347191ec943b123f2528853d77f66d96cc844574aec71b4111",
+  "executable_sha256": "3de604638fe35d7cfbc9e259b6c9834aaf0a775a3d45d10e20c67c02806dcf77",
+  "compile_link_dependency_audit": {
+    "checkout_paths": false,
+    "build_paths": false,
+    "original_install_paths": false,
+    "old_sdk_paths": false,
+    "sdk_symlinks": 0
+  },
+  "cpu_units": {
+    "passed": 1817,
+    "failed": 0,
+    "run": {
+      "label": "units-pulay",
+      "command": [
+        "ctest",
+        "--test-dir",
+        "/tmp/atv-xc-build",
+        "-j1",
+        "--output-on-failure",
+        "--output-junit",
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/units-pulay.xml"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 53.648490875028074,
+      "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/units-pulay.log",
+      "threads": 1,
+      "process_policy": {
+        "exit_code": 0,
+        "stderr": ""
+      }
+    },
+    "log_sha256": "18616067b48c008936d6f13413686cb27c9681d814cbb2e2f9085f6320c63747"
+  },
+  "python_pw": {
+    "passed": 50,
+    "failed": 0,
+    "run": {
+      "label": "python-pw-final",
+      "command": [
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/python-env/bin/pytest",
+        "/Users/roykid/work/molcrafts/Atomiverse/python/tests/test_pw.py",
+        "-q",
+        "--junitxml=/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/python-pw-final.xml"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 2.273965291000195,
+      "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/python-pw-final.log",
+      "threads": 1,
+      "process_policy": {
+        "exit_code": 0,
+        "stderr": ""
+      }
+    },
+    "raw_output_file": "native-python-pw.out.txt",
+    "raw_output_sha256": "286a96e212cd6e4bc1081e22bdff4b74c6b77d6ba72c005b5c5524d35a5807b2"
+  },
+  "regressions": {
+    "cases": 14,
+    "failed": 0,
+    "sections": 63,
+    "section_seconds_max": 26.5,
+    "results": [
+      {
+        "status": "PASS",
+        "seconds": 26.5,
+        "section": "bomd-d3bj-ar2-nve"
+      },
+      {
+        "status": "PASS",
+        "seconds": 7.5,
+        "section": "gpw-bomd-water"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.0,
+        "section": "h2_rhf_sto3g_aimd"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.5,
+        "section": "pw-bomd-h"
+      },
+      {
+        "status": "PASS",
+        "seconds": 16.3,
+        "section": "gpw-analytic-stress"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.9,
+        "section": "gpw-forces-water"
+      },
+      {
+        "status": "PASS",
+        "seconds": 25.4,
+        "section": "gpw-kpoint-stress"
+      },
+      {
+        "status": "PASS",
+        "seconds": 11.0,
+        "section": "gpw-kpoints-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.4,
+        "section": "gpw-metallic-forces"
+      },
+      {
+        "status": "PASS",
+        "seconds": 6.3,
+        "section": "gpw-metallic-stress"
+      },
+      {
+        "status": "PASS",
+        "seconds": 11.1,
+        "section": "gpw-multigrid-kpoints"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.4,
+        "section": "gpw-stress-water"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.6,
+        "section": "gpw-water-pbe-mt"
+      },
+      {
+        "status": "PASS",
+        "seconds": 13.3,
+        "section": "gpw-uks-forces"
+      },
+      {
+        "status": "PASS",
+        "seconds": 7.9,
+        "section": "gpw-uks-metallic-stress"
+      },
+      {
+        "status": "PASS",
+        "seconds": 11.4,
+        "section": "gpw-uks-multigrid"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.9,
+        "section": "gpw-uks-o2-gamma"
+      },
+      {
+        "status": "PASS",
+        "seconds": 4.2,
+        "section": "gpw-uks-pbe"
+      },
+      {
+        "status": "PASS",
+        "seconds": 19.4,
+        "section": "gpw-uks-stress"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.3,
+        "section": "bands-dos-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.8,
+        "section": "bands-metallic-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.2,
+        "section": "bands-spin-metallic-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.8,
+        "section": "bands-spin-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.1,
+        "section": "dos-metallic-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 4.7,
+        "section": "dos-spin-metallic-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 4.7,
+        "section": "dos-spin-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.9,
+        "section": "berry-polarization"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.1,
+        "section": "berry-spin-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 8.1,
+        "section": "pw-spin-gga"
+      },
+      {
+        "status": "PASS",
+        "seconds": 4.7,
+        "section": "pw-spin-polarized-o2"
+      },
+      {
+        "status": "PASS",
+        "seconds": 9.2,
+        "section": "h_force_analytic"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.4,
+        "section": "h_force_fd"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.1,
+        "section": "h_stress_cubic"
+      },
+      {
+        "status": "PASS",
+        "seconds": 2.6,
+        "section": "pw-analytic-stress-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.7,
+        "section": "pw-lda-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.5,
+        "section": "pw-pbe-gga-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.5,
+        "section": "pw-uks-fe-smearing"
+      },
+      {
+        "status": "PASS",
+        "seconds": 8.2,
+        "section": "pw-variable-cell-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.5,
+        "section": "periodic-wannier-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.2,
+        "section": "periodic-wannier-uks"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.7,
+        "section": "dfpt-finite-q-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.7,
+        "section": "dfpt-finite-q-smearing"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.3,
+        "section": "dfpt-finite-q-spin-smearing"
+      },
+      {
+        "status": "PASS",
+        "seconds": 6.7,
+        "section": "dfpt-gga-finite-q-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.8,
+        "section": "dfpt-gga-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 15.9,
+        "section": "dfpt-gga-spin-finite-q-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 14.6,
+        "section": "dfpt-gga-spin-finite-q-smearing"
+      },
+      {
+        "status": "PASS",
+        "seconds": 2.8,
+        "section": "dfpt-gga-spin-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 2.7,
+        "section": "dfpt-gga-spin-smearing"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.2,
+        "section": "dfpt-incommensurate-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.9,
+        "section": "dfpt-metallic-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.9,
+        "section": "dfpt-phonon-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.3,
+        "section": "dfpt-spin-incommensurate"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.7,
+        "section": "dfpt-spin-si"
+      },
+      {
+        "status": "PASS",
+        "seconds": 1.7,
+        "section": "dfpt-spin-smearing"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.3,
+        "section": "b2plyp-h2o"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.3,
+        "section": "b3lyp-fused-jk-h2o"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.4,
+        "section": "blyp-water-sto3g"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.0,
+        "section": "cam-b3lyp-h2-sto3g"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.3,
+        "section": "rks-hessian-h2o-sto3g"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.3,
+        "section": "roks-grad-o2-sto3g"
+      },
+      {
+        "status": "PASS",
+        "seconds": 0.2,
+        "section": "roks-o2-sto3g"
+      },
+      {
+        "status": "PASS",
+        "seconds": 3.8,
+        "section": "uks-hessian-o2-sto3g"
+      }
+    ],
+    "raw_output_file": "native-regressions.out.txt",
+    "raw_output_sha256": "f9fe41f67f8ce731f517f9a08be969e12714a468d5cf762079681e484d26c801",
+    "case_filter": "^(pw/|response/dfpt$|dynamics/bomd$|scf/(rks|uks|roks)$|gpw/(rks|uks)$)",
+    "declared_case_threads": true
+  },
+  "consumer_modes": [
+    {
+      "label": "external-final-operators",
+      "command": [
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-final/nc-extension",
+        "operators"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 0.16818912500002625,
+      "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/external-final-operators.log",
+      "threads": 1,
+      "process_policy": {
+        "exit_code": 0,
+        "stderr": ""
+      },
+      "raw_output_sha256": "26b6738fffab41a7f4c11bed3e93c151bd9d9bc52288fb0ad19344e0fe0707af",
+      "raw_output_file": "native-operators.out.txt"
+    },
+    {
+      "label": "external-final-si2",
+      "command": [
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-final/nc-extension",
+        "si2"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 19.15542179199997,
+      "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/external-final-si2.log",
+      "threads": 1,
+      "process_policy": {
+        "exit_code": 0,
+        "stderr": ""
+      },
+      "raw_output_sha256": "8051991f98091989904e72529d8d78708261a6f8bb9c90e397fe4fc5755bf0ff",
+      "raw_output_file": "native-si2.out.txt"
+    },
+    {
+      "label": "external-final-lifecycle",
+      "command": [
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-final/nc-extension",
+        "lifecycle"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 18.312255499999992,
+      "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/external-final-lifecycle.log",
+      "threads": 1,
+      "process_policy": {
+        "exit_code": 0,
+        "stderr": ""
+      },
+      "raw_output_sha256": "97d819376a6e02c6f2a3b365406b4138ba8835b423da7ebcb015c1a040075e19",
+      "raw_output_file": "native-lifecycle.out.txt"
+    },
+    {
+      "label": "external-final-md",
+      "command": [
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-final/nc-extension",
+        "md"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 27.724712208000028,
+      "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/external-final-md.log",
+      "threads": 4,
+      "process_policy": {
+        "exit_code": 0,
+        "stderr": ""
+      },
+      "raw_output_sha256": "1007ad8fb67429248e1782a9db3f1b3c183c55f6ee67289bba66ffc091a284c7",
+      "raw_output_file": "native-md.out.txt"
+    },
+    {
+      "label": "external-final-minimize",
+      "command": [
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-final/nc-extension",
+        "minimize"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 27.757569625000087,
+      "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/external-final-minimize.log",
+      "threads": 4,
+      "process_policy": {
+        "exit_code": 0,
+        "stderr": ""
+      },
+      "raw_output_sha256": "b3f6f763c8f4416838937660f09257a6747c5150c6d2960636b15e94e190c693",
+      "raw_output_file": "native-minimize.out.txt"
+    }
+  ],
+  "source_sha256": {
+    "include/atomiverse/cpu/planewave/bands_dos.h": "d86081adfc6be20b6553512b92254f2aa92d4b73a8959eb904f1865b7be02dcc",
+    "include/atomiverse/cpu/planewave/berry_polarization.h": "d35d9cb1f2305383a37ec3c3349b496092155d523ac4b5000bc1e171c2ee06e0",
+    "include/atomiverse/cpu/planewave/dfpt_phonon.h": "3adb5c4d2ac3596498b9d704ca4e0fbb6a7ddd8b2dad9e7884f0df8eed10ddb0",
+    "include/atomiverse/cpu/planewave/internal/convergence.h": "f88c6d5a70f3d66c1a47ce4b5e2dc112f78cab6ba4e1569d45e1d41982c677ab",
+    "include/atomiverse/cpu/planewave/internal/davidson.h": "93201d33db8959d31341e69004458f973aef38b0d6c5c24a8226f0e3dce18958",
+    "include/atomiverse/cpu/planewave/internal/density_builder.h": "1f2f3e0aabf0d1e3123be3e2fd724bc664f43b7b3af7a52f63d45e889e829848",
+    "include/atomiverse/cpu/planewave/internal/dfpt.h": "8c3144092d2cdcc45c2db058ddbf3f91e9baf4548c33f3eb5264d79c48c99081",
+    "include/atomiverse/cpu/planewave/internal/ewald.h": "6351a222cdacf55d2d64ba51fc05c9f677a384b747425724354155972626aae9",
+    "include/atomiverse/cpu/planewave/internal/fft.h": "c9258731eb97582eecb9b6cbb6506db6d99a5028159c72a266054902c9209b55",
+    "include/atomiverse/cpu/planewave/internal/g_vector.h": "caba15ab75f54e93088405faba0b552abf5a23dfc7df73c9a1b52cc8e3ea8e9f",
+    "include/atomiverse/cpu/planewave/internal/gth_radial.h": "c2cf8691785f99dde1ee26eae698837c4acc39a2a0b74ac736ce10245ced444b",
+    "include/atomiverse/cpu/planewave/internal/kpoint.h": "77eafa9a1f37e39d65cdc9583f27c248a548a97ff47921652d40b46ce6d638a8",
+    "include/atomiverse/cpu/planewave/internal/nc_potential.h": "c12f8d7df0b33929414ecdd5d3e23ed04a2d0367403c71cf9d66fb52cbe61aa7",
+    "include/atomiverse/cpu/planewave/internal/poisson.h": "a2023310d6c746c82a2446d50ae3e3534de622dd228e1c9cacd3a9af000f62eb",
+    "include/atomiverse/cpu/planewave/internal/pw_forces.h": "7e8c75eea5ea4e733e84473428a52df56a653569e812da89d8cdec6d20ef48ea",
+    "include/atomiverse/cpu/planewave/internal/pw_setup.h": "afbf5eefeb18d196b48fe0285468288030d8bb5f52e6eed89671afd95f0001cf",
+    "include/atomiverse/cpu/planewave/internal/pw_stress.h": "1b2c18df1556aaba981cbcf09beed262af0fd9eaa73a86e1f0de71556943f2c4",
+    "include/atomiverse/cpu/planewave/internal/pw_subspace.h": "69d49adc7b34950ee9d8cc0657497991cfc16c0d2dc37273e4f93d2f1fcaff8a",
+    "include/atomiverse/cpu/planewave/internal/pw_workspace.h": "1efcd824d46dbe25e630ef6e7f4640673476290b0ae01e8f1e7a939c4e51783d",
+    "include/atomiverse/cpu/planewave/internal/response_mixer.h": "3ebe6c6c1c3006f46dbf0b87196266458190fd81de1bc90035ede48c1426608d",
+    "include/atomiverse/cpu/planewave/internal/restricted_scf.h": "c1813eb91f632356926ae95fc2d71de450cea4678eaa202e4277fb5d4cd7b3ed",
+    "include/atomiverse/cpu/planewave/internal/scf_loop.h": "3e7cacfafae663586ee8e3018094c28c38fc4606111c4bd6a865332f3a5319c9",
+    "include/atomiverse/cpu/planewave/internal/smearing.h": "a3a2cd936b03e3b1c69ebb7acd88f9e6fe63a5e9b4cd57791b0728eab8b7c4a0",
+    "include/atomiverse/cpu/planewave/internal/upf_reader.h": "b095a7ca7152c63dd2f561cfc9de079b2e6fa83780338be65aa6eaf68f5afb3c",
+    "include/atomiverse/cpu/planewave/internal/veff_builder.h": "6422f9da5797835213d747f77560f2baed14f64009a8f7b2d5e633af7a1d4997",
+    "include/atomiverse/cpu/planewave/internal/xc_builder.h": "e42976a794c5e84e5da8aca697bdef0da25a010fe98eacbf20c5b76ba0e36f47",
+    "include/atomiverse/cpu/planewave/norm_conserving_potential.h": "d38002b0dab433679405d482ae293931c6e07d157ff633cb394430667e9df4aa",
+    "include/atomiverse/cpu/planewave/periodic_wannier.h": "6af0d9ceb069fb85ead952162d4c1e78640a73d178cba62284dd59ad2010f961",
+    "include/atomiverse/cpu/planewave/pw_solver.h": "807524cd579f5dba86afafa4b3135eb9b61654d2d950a858386ecc917333535a",
+    "include/atomiverse/cpu/planewave/qe_units.h": "1fe262cb4e1d63258f23e4cb1573b1f727e56ea3b543ef5b93fec201565f15ed",
+    "include/atomiverse/cpu/planewave/stages/density_stage.h": "a2991a4918b0c850ae3daae61a9695941ad0ddffc343c4134948d7520788e30d",
+    "include/atomiverse/cpu/planewave/stages/diagonalize_stage.h": "51ba29b7a4eb406c8be36119170a13061d867376fce24ed5315f52824d4ca0dc",
+    "include/atomiverse/cpu/planewave/stages/mix_stage.h": "9ceaaa4ad25c0c3d377b4273e62cd2dcbd0facd49032286a699a5eb3ac4906d9",
+    "include/atomiverse/cpu/planewave/stages/pw_converged.h": "51a0198f3f328e7d3a952cadfdff4fc382542e64d54606afcf452451c7b65b28",
+    "include/atomiverse/cpu/planewave/stages/veff_stage.h": "8f6a576705dfe1e01ec090d695414eb61838e0c2bb867a374f0201d15af21245",
+    "include/atomiverse/electronic/norm_conserving_potential.h": "65147fb5e172a8fb7bced32a6a978ed60854779b3cf4c9fbd1744aeb164d9beb",
+    "src/cpu/planewave/bands_dos.cpp": "bb2ce59260bfcb73e175dada82801112c1a5cdba5f18b7d80bc13c3462338a07",
+    "src/cpu/planewave/berry_polarization.cpp": "00d1bfe5a4512dc8a7f1406879af6778316baed0db29cdd230e150ec1b4ea14b",
+    "src/cpu/planewave/dfpt_phonon.cpp": "618a58d32bafa615e14de8151faeab953a576d130df4525ae7d02f57f5b7bbb4",
+    "src/cpu/planewave/internal/convergence.cpp": "f806bc2b7c5e82b980119422987cc0bdb053e0fa39f4ef31da02514fd9bcf12b",
+    "src/cpu/planewave/internal/davidson.cpp": "d9ef6f68e8ce7ac5da9830d11229dbcf6a6e11fd5b9443024242a0524ea05c7a",
+    "src/cpu/planewave/internal/density_builder.cpp": "428d6d515cd1791a7abd89e67719367e10e51639cc4b4c662f9a708a6e38e4b3",
+    "src/cpu/planewave/internal/dfpt.cpp": "5b65311249f4620ef2b07213c308d99e9dad837d7930018cf8e79885b18ce76e",
+    "src/cpu/planewave/internal/ewald.cpp": "05a996b649c9b69c0f026ebcdedc5371c2e7ddc88f9eac78531d77eec3af7106",
+    "src/cpu/planewave/internal/fft.cpp": "55944b5d88d385eea6a73c449042fe285713bc34645ad3609a7db8d043ef728a",
+    "src/cpu/planewave/internal/g_vector.cpp": "f499e803f005435e18ec84735ec9e6999d64537fed2baf1f08d090f69cbe0e27",
+    "src/cpu/planewave/internal/gth_radial.cpp": "1fd02efe3ac164fe476a3cf9605754b33b620d7edadc208faafc0969e4cf7719",
+    "src/cpu/planewave/internal/kpoint.cpp": "680199a0fef161c4c334369d8504a5a1659cd59e51a118c1180bc781c5a20c66",
+    "src/cpu/planewave/internal/nc_potential.cpp": "23215b34f1c99ca56810acb2d9d203f012e4e02f6d138946884fa66c626032df",
+    "src/cpu/planewave/internal/poisson.cpp": "18e38daabfa1d3850f6d657b8d4907cafcf6cf0b5b5ba424682785a3e9f3cd52",
+    "src/cpu/planewave/internal/pw_forces.cpp": "5883f7e4db9257edec59ac1922b178d309cf92cd4b05a5de924b4135e9422486",
+    "src/cpu/planewave/internal/pw_setup.cpp": "070bdcecdfda51604cff360edd177e7f86c70290254f85195154e6ef4f02bda4",
+    "src/cpu/planewave/internal/pw_stress.cpp": "974f03ee59d7e37df91b3eafdb9b2615ed2866363b7f1b1c2682b76db8be5bdb",
+    "src/cpu/planewave/internal/pw_subspace.cpp": "5cb06f9c1bca9074a8311a3c8090977085eb941fcceb8d2e0c72dee9ff00a937",
+    "src/cpu/planewave/internal/restricted_scf.cpp": "3d2e8cdcf32909e780f909f6c2605f687b59ee6c4d6b7a5c3a9c7e52a95fd49c",
+    "src/cpu/planewave/internal/scf_loop.cpp": "1bedc1a2281ddebd2667a780e7005893c9bd359fc30ca553b5d1530d52a1945b",
+    "src/cpu/planewave/internal/smearing.cpp": "d41838c5e9b773af4778dca829c77f542bd6e393c1d1ba135d3dbbc10eba402a",
+    "src/cpu/planewave/internal/upf_reader.cpp": "26d7fa403441f89152012bb4668ade2c37d1f22a9940c32c71c5fd3bf9831ea1",
+    "src/cpu/planewave/internal/veff_builder.cpp": "1c781244301b8f7a447e93d90ae8186146e447db5bba90e5e78eda2463a5f4d2",
+    "src/cpu/planewave/internal/xc_builder.cpp": "9e07a5328ccd72322273ccecad90e24e848107f2db9c9390bb967b44984dd972",
+    "src/cpu/planewave/norm_conserving_potential.cpp": "f912bf23887c014a5ae138218b8027c3354966016cfe2646655fd7c3074dbc3d",
+    "src/cpu/planewave/periodic_wannier.cpp": "0afc594fae7f181d47dd8be120b54a8f0f265724fd2e87601745e84765ba2b34",
+    "src/cpu/planewave/pw_solver.cpp": "d03281a7fddbf18b33249a5fb57d2cc973edd36bfcf59fbe9adbadd5f0eeed35",
+    "src/cpu/scf/xc_functional.cpp": "6680fcca2b7089ef889196ed1269a08d564d418439a7662448dcb91c4dbf47b0"
+  },
+  "cuda_numerically_validated": false,
+  "minimal_sdk": {
+    "sdk": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/sdk-minimal",
+    "build": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/minimal-build",
+    "library_sha256": "14fd9f05e5c5763dc29330f2ae36e428c85568c6141501e5d3878afdadc702e6",
+    "executable_sha256": "dead6a712944d6f40e243432d2ca44fd7302237dca59321c9454b8aca27003ac",
+    "enabled_products": [
+      "PW",
+      "EVALUATE"
+    ],
+    "derived_runtime": "MOLPY",
+    "disabled_products": [
+      "HF",
+      "GPW",
+      "MD",
+      "MINIMIZER",
+      "VIB",
+      "SEMIEMPIRICAL",
+      "CUDA",
+      "IO",
+      "ANALYSIS",
+      "PYTHON",
+      "MC",
+      "PATH",
+      "POTENTIALS",
+      "NEIGHBOR",
+      "KSPACE"
+    ],
+    "audit": {
+      "violations": {
+        "commands": [],
+        "deps": []
+      },
+      "disabled_domain_macros_found": [],
+      "sdk_symlinks": 0,
+      "original_install_removed": true
+    },
+    "build_run": {
+      "command": [
+        "cmake",
+        "--build",
+        "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/minimal-build",
+        "-j4"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 202.65145000000007
+    },
+    "consumer_modes": [
+      {
+        "label": "minimal-final-operators",
+        "command": [
+          "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-minimal/nc-extension",
+          "operators"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 0.32934350000004997,
+        "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/minimal-final-operators.log",
+        "threads": 1,
+        "process_policy": {
+          "exit_code": 0,
+          "stderr": ""
+        },
+        "raw_output_file": "native-minimal-operators.out.txt",
+        "raw_output_sha256": "26b6738fffab41a7f4c11bed3e93c151bd9d9bc52288fb0ad19344e0fe0707af"
+      },
+      {
+        "label": "minimal-final-si2",
+        "command": [
+          "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-minimal/nc-extension",
+          "si2"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 18.268501583999978,
+        "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/minimal-final-si2.log",
+        "threads": 1,
+        "process_policy": {
+          "exit_code": 0,
+          "stderr": ""
+        },
+        "raw_output_file": "native-minimal-si2.out.txt",
+        "raw_output_sha256": "920f416f328457eb7a6eec0c022c6026c3c6e7ec303c2d2ec128637cb11c6c3f"
+      },
+      {
+        "label": "minimal-final-lifecycle",
+        "command": [
+          "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/consumer-build-minimal/nc-extension",
+          "lifecycle"
+        ],
+        "exit_code": 0,
+        "wall_seconds": 18.016227957999945,
+        "log": "/Users/roykid/.codex/validation/atomiverse-nc-20261026-ebie23jh/records/minimal-final-lifecycle.log",
+        "threads": 1,
+        "process_policy": {
+          "exit_code": 0,
+          "stderr": ""
+        },
+        "raw_output_file": "native-minimal-lifecycle.out.txt",
+        "raw_output_sha256": "49208d3ec015c2afdd17cccc766fe249fbb194c8c47f8d5f270b883784e37a55"
+      }
+    ],
+    "disabled_mode_admission": [
+      {
+        "mode": "md",
+        "exit_code": 1,
+        "output": "FAIL: md mode requires the MD module\nPASS published GTH local limits/derivatives and normalized s/p nonlocal action\n"
+      },
+      {
+        "mode": "minimize",
+        "exit_code": 1,
+        "output": "FAIL: minimize mode requires MINIMIZER\nPASS published GTH local limits/derivatives and normalized s/p nonlocal action\n"
+      }
+    ]
+  },
+  "source_hashes_unchanged_after_validation": true
+}

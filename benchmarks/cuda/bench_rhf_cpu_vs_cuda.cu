@@ -1,6 +1,9 @@
 /// @file bench_rhf_cpu_vs_cuda.cu
 /// @brief Complete-call RHF walls on Cartesian STO-3G water chains.
 ///
+/// Historical optimization source, no longer a CMake benchmark target.
+/// The supported HF/oracle suite is `python -m benchmarks`.
+///
 /// Manual GH200 harness, never CTest. Example:
 /// OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 bench_rhf_cpu_vs_cuda 16 3 both
 /// Arguments: max_waters [1..30, default 16], warm_repeats [1..100, default 3],

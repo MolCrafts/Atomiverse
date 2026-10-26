@@ -43,7 +43,6 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// \(f\in[0,1]\) via `smear_f_spinor`.
 ///
 /// @param frame     Geometry [Å]; not mutated.
-/// @param ecut_ry   Wavefunction cutoff [Ry] (Ewald G cut).
 /// @param den       Device density after SCF mix (owns ρ(G)).
 /// @param solver    Band solver bound to den grids, k-tables built.
 /// @param prob      Assembled problem (same run as SCF).
@@ -52,15 +51,13 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// @param n_beta    Occupied ↓ bands (spin path only).
 /// @param use_smear Restricted metallic-smear fractional NL path.
 /// @param n_elec    Valence electron count (smear μ search; ignored if not smear).
-std::vector<std::array<double, 3>>
-pw_forces_analytic_impl(const cpu::Frame& frame, double ecut_ry,
-                        DeviceDensity& den, DeviceBandSolver& solver,
-                        cpu::pw::internal::PWProblem& prob,
-                        cpu::pw::internal::PWWorkspace& ws, int n_alpha = -1,
-                        int n_beta = -1, bool use_smear = false, int n_elec = 0,
-                        cpu::pw::internal::SmearKind smear_kind =
-                            cpu::pw::internal::SmearKind::fermi_dirac,
-                        double degauss_ha = 0.0, int mp_order = 1);
+std::vector<std::array<double, 3>> pw_forces_analytic_impl(
+    const cpu::Frame& frame, DeviceDensity& den, DeviceBandSolver& solver,
+    cpu::pw::internal::PWProblem& prob, cpu::pw::internal::PWWorkspace& ws,
+    int n_alpha = -1, int n_beta = -1, bool use_smear = false, int n_elec = 0,
+    cpu::pw::internal::SmearKind smear_kind =
+        cpu::pw::internal::SmearKind::fermi_dirac,
+    double degauss_ha = 0.0, int mp_order = 1);
 
 } // namespace internal
 } // namespace pw

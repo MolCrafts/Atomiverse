@@ -5,6 +5,7 @@
 #include "atomiverse/core/precision.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <span>
 #include <stdexcept>
@@ -75,6 +76,7 @@ class NormConservingPotential {
     virtual NcProjectorSetView projectors() const = 0;
 
     /// @brief Evaluate V [Ha] and dV/dr [Ha/Bohr] at radii [Bohr].
+    /// Input and the two output spans must not overlap.
     /// @throws std::invalid_argument for invalid radii or output shapes,
     /// before output mutation; std::runtime_error for incomplete output.
     void local_r(std::span<const AccReal> radius, std::span<AccReal> value,
@@ -82,6 +84,18 @@ class NormConservingPotential {
         if (value.size() != radius.size() || derivative.size() != radius.size())
             throw std::invalid_argument(
                 "NC potential: local output shape mismatch");
+        const auto overlaps = [](std::span<const AccReal> a,
+                                 std::span<const AccReal> b) {
+            if (a.empty() || b.empty())
+                return false;
+            const std::less<const AccReal*> before;
+            return before(a.data(), b.data() + b.size())
+                   && before(b.data(), a.data() + a.size());
+        };
+        if (overlaps(radius, value) || overlaps(radius, derivative)
+            || overlaps(value, derivative))
+            throw std::invalid_argument(
+                "NC potential: local input and outputs must not overlap");
         for (AccReal r : radius)
             if (!std::isfinite(r) || r < 0)
                 throw std::invalid_argument(

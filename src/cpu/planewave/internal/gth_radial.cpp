@@ -1,5 +1,5 @@
-/// @file cpu/planewave/internal/gth_upf.cpp
-#include "atomiverse/cpu/planewave/internal/gth_upf.h"
+/// @file cpu/planewave/internal/gth_radial.cpp
+#include "atomiverse/cpu/planewave/internal/gth_radial.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -55,39 +55,38 @@ void gth_local_r(const gpw::GthPotential& p, std::span<const AccReal> radius,
     }
 }
 
-NcPotentialData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max,
-                             int n_r) {
+NcPotentialData sample_gth(const gpw::GthPotential& pot, AccReal r_max,
+                           int n_r) {
     if (!std::isfinite(r_max) || !(r_max > AccReal(1e-5)) || n_r < 3)
         throw std::invalid_argument(
-            "upf_from_gth: r_max must be finite and > 1e-5 Bohr, and n_r >= 3");
+            "sample_gth: r_max must be finite and > 1e-5 Bohr, and n_r >= 3");
     if (!std::isfinite(pot.rloc) || !(pot.rloc > 0))
-        throw std::invalid_argument("upf_from_gth: GTH rloc must be > 0 for "
+        throw std::invalid_argument("sample_gth: GTH rloc must be > 0 for "
                                     + pot.name);
 
     NcPotentialData upf;
     upf.atomic_number = static_cast<int>(pot.element);
     upf.z_val = pot.zion;
     if (pot.cloc.size() > 4)
-        throw std::invalid_argument(
-            "upf_from_gth: GTH local polynomial supports "
-            "at most four coefficients");
+        throw std::invalid_argument("sample_gth: GTH local polynomial supports "
+                                    "at most four coefficients");
     for (const auto value : pot.cloc)
         if (!std::isfinite(value))
             throw std::invalid_argument(
-                "upf_from_gth: GTH coefficients must be finite");
+                "sample_gth: GTH coefficients must be finite");
     for (const auto& ch : pot.channels) {
         if (ch.l < 0 || ch.l > 2 || ch.nproj < 0
             || ch.h.size() != static_cast<std::size_t>(ch.nproj) * ch.nproj)
             throw std::invalid_argument(
-                "upf_from_gth: invalid GTH channel shape or angular momentum");
+                "sample_gth: invalid GTH channel shape or angular momentum");
         if (ch.nproj && (!std::isfinite(ch.r) || ch.r <= 0))
-            throw std::invalid_argument("upf_from_gth: GTH projector radius "
+            throw std::invalid_argument("sample_gth: GTH projector radius "
                                         "must be finite and positive");
         for (int i = 0; i < ch.nproj; ++i)
             for (int j = 0; j < ch.nproj; ++j)
                 if (!std::isfinite(ch.hij(i, j))
                     || ch.hij(i, j) != ch.hij(j, i))
-                    throw std::invalid_argument("upf_from_gth: GTH coupling "
+                    throw std::invalid_argument("sample_gth: GTH coupling "
                                                 "must be finite and symmetric");
     }
 
@@ -122,8 +121,7 @@ NcPotentialData upf_from_gth(const gpw::GthPotential& pot, AccReal r_max,
             continue;
         if (!(ch.r > 0))
             throw std::invalid_argument(
-                "upf_from_gth: GTH projector radius must be > 0 for "
-                + pot.name);
+                "sample_gth: GTH projector radius must be > 0 for " + pot.name);
         for (int i = 1; i <= ch.nproj; ++i) {
             NcPotentialData::KBProjector kb;
             kb.l = ch.l;

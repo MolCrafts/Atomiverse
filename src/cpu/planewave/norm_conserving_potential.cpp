@@ -1,6 +1,6 @@
 /// @file cpu/planewave/norm_conserving_potential.cpp
 #include "atomiverse/cpu/planewave/norm_conserving_potential.h"
-#include "atomiverse/cpu/planewave/internal/gth_upf.h"
+#include "atomiverse/cpu/planewave/internal/gth_radial.h"
 #include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include <algorithm>
@@ -38,7 +38,7 @@ struct GthPseudopotential::Data {
     gpw::GthPotential analytic;
     RadialStorage samples;
     explicit Data(gpw::GthPotential p)
-        : analytic(std::move(p)), samples(internal::upf_from_gth(analytic)) {}
+        : analytic(std::move(p)), samples(internal::sample_gth(analytic)) {}
 };
 
 GthPseudopotential::GthPseudopotential(molrs::Element element,

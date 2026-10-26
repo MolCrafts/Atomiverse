@@ -107,7 +107,8 @@ class DfptPhonon {
     double cg_tol = 1e-10;
     /// @brief Sternheimer CG iteration cap (dimensionless).
     int cg_max_iter = 200;
-    /// @brief Linear mixing factor for the response density in (0, 1].
+    /// @brief Pulay damping fraction for the response density in (0, 1];
+    ///        the mounted PW method supplies its history depth.
     double mix_beta = 0.5;
     /// @brief Phonon wavevector in fractional crystal coordinates of the
     ///        simulation cell (dimensionless). Default `{0,0,0}` = Γ.

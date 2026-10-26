@@ -597,7 +597,6 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
             "stress path yet — use fixed-occupation collinear stress, or "
             "pw_stress_fd for multi-SCF FD of F");
 
-    const int n = frame.nlocal();
     internal::validate_potential_frame(frame, *method.potential);
     int n_elec = method.potential->valence() * frame.nlocal();
 

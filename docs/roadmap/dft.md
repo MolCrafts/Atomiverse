@@ -14,6 +14,14 @@ accepted results. CUDA was not rerun. Energy, forces and stress have separate
 coverage; a ✓ remains limited to the systems, quantities and settings in its
 cited case. Passing an existing check does not close the qualification gaps below.
 
+The CPU NC-extension repair was rechecked on 2026-10-26: 1817 unit tests and
+14 affected regression cases (63 sections, maximum 26.5 s per section) passed.
+The 50 Python PW tests and all five modes of the relocated independent NC
+project passed, along with its three required modes on a fresh minimal
+PW+Evaluate installation. [Native outputs and hashes](../../tools/diagnostics/nc-extension/native-validation.json)
+record the scope. This is a scoped recheck, not a new run of all 68 cases.
+CUDA was not rerun.
+
 **Blocked on periodic engines** (no CP2K-comparable twin in tree): hybrids,
 meta-GGA, GAPW/PAW, stock VV10. rVV10 ships.
 
@@ -78,7 +86,8 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| Plane-wave DFT | ✓ | ✓ | [pw/rks][pw-rks]; NC-UPF or in-tree GTH; CUDA ⊂ CPU; broad energy/symmetry gates, not a matched absolute-energy qualification |
+| Plane-wave DFT | ✓ | ✓ | [pw/rks][pw-rks]; CPU GTH and scalar NC-UPF share one operator path; the independent NC project below has a matched Si₂ energy/full-force pin. CUDA ⊂ CPU |
+| External scalar NC provider | ✓ | ○ | [Independent installed project](../../examples/nc-extension/README.md): immutable radial data/local callback on existing PW; published Si GTH-PBE-q4, absolute Mermin energy and all six nonzero forces against actual QE. Single species, real scalar l≤2; no USPP/PAW/NLCC/spin-orbit |
 | GPW DFT | ✓ | ◐ | [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; CUDA first product slices |
 | Γ-point RKS | ✓ | ◐ | [gpw/rks][gpw-rks]; CUDA CPU-twin slice |
 | k-point RKS | ✓ | ✓ | [pw/rks][pw-rks] on both; [gpw/rks][gpw-rks] CPU; CUDA GPW remains ◐ |
@@ -96,7 +105,7 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 
 | Capability | Status | Notes |
 | ---------- | :----: | ----- |
-| Analytic ionic forces | ✓ | [pw/rks][pw-rks]: local HF + Ewald exact-zero symmetry gate; general nonzero forces and KB lack a registered external-vector pin |
+| Analytic ionic forces | ✓ | [pw/rks][pw-rks]: local HF + Ewald symmetry gate; [external NC project](../../examples/nc-extension/README.md): local + full off-diagonal KB, all six nonzero Si₂ force components against QE at 1e-4 Ha/Bohr. Broader elements/potentials remain unqualified |
 | Cell stress (one-SCF frozen-density strain FD) | ✓ | [pw/rks][pw-rks]: numerical Nielsen–Martin HF derivative, fixed strain step 2e-3; symmetry + ATV full-SCF FD checks, not a closed-form tensor |
 | Closed-form analytic cell stress | ○ | Current `pw_stress_analytic_impl` differentiates NSCF strained energies numerically; spin×smearing stress rejects |
 | True GGA PBE + collinear spin-GGA | ✓ | [pw/rks][pw-rks]: symmetry/activation gates; [pw/collinear-spin][pw-spin]: O₂ absolute energy pinned to an actual QE 7.5 run, alongside magnetization and GGA activation |
@@ -169,7 +178,7 @@ loop. Keep `local_pp_on_grid` consistent between energy and gradient calls.
 | Monkhorst–Pack k-mesh | ✓ | ✓ | [pw/rks][pw-rks], [gpw/rks][gpw-rks] |
 | Block Davidson | ✓ | ✓ | [pw/rks][pw-rks]; exercised inside the method, no standalone product claim |
 | NC-UPF (KB) | ✓ | ✓ | [pw/rks][pw-rks]; energy path; KB nonzero-force external pin open |
-| GTH PP | ✓ | ◐ | CPU GPW [gpw/rks][gpw-rks]; CUDA PW H local-only symmetry gates and GPW partial slices |
+| GTH PP | ✓ | ◐ | CPU PW uses the public NC protocol and canonical radial operators; [external Si₂ project](../../examples/nc-extension/README.md) pins E/full F. CPU GPW retains its Gaussian-projector path [gpw/rks][gpw-rks]; CUDA PW H local-only symmetry gates and GPW partial slices |
 | FFT Poisson | ✓ | ✓ | [pw/rks][pw-rks], [gpw/rks][gpw-rks] |
 | Martyna–Tuckerman Poisson | ✓ | ○ | [gpw/rks][gpw-rks], `gpw-water-pbe-mt` |
 | OT minimizer | ✓ | ○ | [gpw/orbital-transformation][gpw-ot]; private-loop architecture debt remains |
@@ -184,7 +193,7 @@ coverage gaps.
 
 | State | Scope | Evidence / remaining check |
 | ----- | ----- | -------------------------- |
-| Verified CPU baseline | Registered Gaussian, PW, GPW and composed workflows | 1785 units and all 68 enabled cases pass; all 301 reported section times are ≤60 s (maximum 52.4 s). The independent installed XC project passes RKS/UKS energies, full forces and lifecycle checks after relocation. CPU only; CUDA still requires GH200 validation. |
+| Historical CPU baseline (2026-10-25) | Registered Gaussian, PW, GPW and composed workflows | 1785 units and all 68 enabled cases passed; all 301 reported section times were ≤60 s (maximum 52.4 s). The independent installed XC project passed RKS/UKS energies, full forces and lifecycle checks after relocation. CPU only; CUDA still requires GH200 validation. |
 | Pending external qualification | Molecular PBE0; broader RKS/UKS functional/basis force vectors; GPW functional variants | The custom scaled-Slater water/H₂⁺ force pins cover their declared systems only. Reachable implementation or unit parity is insufficient for a ✓ on another quantity or combination. |
 | Pending matched-model qualification | DFT+U | Gross-Mulliken ATV occupation differs from CP2K's net-Mulliken block. Loose NiO comparisons and ATV finite differences do not close this gap. |
 | Pending oracle replacement | XDM | Literature supplies formulas; the numerical pins are Python reimplementations. Obtain numbers printed by an independent established engine for the same free-atom model. |
@@ -193,7 +202,7 @@ coverage gaps.
 | Verified repaired slice | GPW finite-displacement Si₂ phonons | [response/phonons][phonons], `gpw-fd-phonon-si`: actual MT Poisson and matching Gaussian-product density/force contractions; CP2K stationary input replaces the nonstationary frequency fixture. Original energy/full-force, five raw modes below 80 cm⁻¹, stretch and 60 s bounds retained. |
 | Verified repaired slice | GPW UKS forces / O₂ stress | Coupled-spin DIIS, energy-only XC for strained energies and reuse of the accepted SCF state remove redundant work. Both existing sections pass their numerical gates within 60 s at the declared 8 threads; this is section-runtime evidence, not a matched-engine speedup claim. |
 | Rechecked declared CPU envelope | Γ RI/SCS-MP2, UKS+U/OT repeatability, second-gen CP OT | Surviving registered sections pass their original numerical and runtime gates. This does not close the DFT+U projector-definition mismatch or qualify unregistered settings. |
-| Verified PW XC/response repair | GGA quadrature, joint-spin SCF and finite-q C(q) | [Native validation](../../tools/diagnostics/pw-xc-response/README.md): one Pulay implementation, private 3/2 XC quadrature, true Fourier C(q), and exact-zero empty-channel density. The Γ PBE ASR residual is 0.0201 eV/Å² below the unchanged 0.05 bound; single-H forces satisfy the original 1e-9 eV/Å identity without force/ASR projection. |
+| Verified PW XC/response repair | GGA quadrature, joint-spin SCF and finite-q C(q) | [Historical captures and current scope](../../tools/diagnostics/pw-xc-response/README.md): fixed 3/2 LDA and 3x GGA quadrature with adjoint projection, shared Pulay mixing for ground-state/response solves, true Fourier C(q), and exact-zero empty-channel density. Current 14-case recheck retains the original science and 60 s section bounds, with no force/ASR projection. |
 | Partial device product | CUDA GPW; CUDA PW metallic/spin joints | Public atom-list/cell APIs and host force/stress work remain in GPW; CPU-twin sections do not close device residency or every production combination. |
 | Blocked by missing engine work | Periodic hybrids, meta-GGA, GAPW/PAW | No matched implemented periodic path; meta-GGA also lacks a τ channel. Stock VV10 has no CP2K `TYPE VV10` twin. |
 
