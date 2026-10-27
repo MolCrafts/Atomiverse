@@ -76,7 +76,7 @@ int run() {
                         GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
                         GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
                   150.0,
-                  XcKind::PBE};
+                  ATV::cpu::xc::XCType::PBE};
     method.n_alpha = 8;
     method.n_beta = 8;
     method.max_iter = 60;

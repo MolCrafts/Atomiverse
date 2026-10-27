@@ -59,7 +59,7 @@ int run() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     constexpr double dt = 0.1; // fs — short step for electronic stability
-    cpu::gpw::GpwDft gpw_base_dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft gpw_base_dft{{O, H}, 200.0, cpu::xc::XCType::PBE};
     gpw_base_dft.max_iter = 60;
     gpw_base_dft.tol = 1e-5;
     gpw_base_dft.mix = 0.3;

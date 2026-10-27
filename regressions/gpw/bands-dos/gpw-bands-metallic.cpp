@@ -67,7 +67,7 @@ int run() {
                         GaussianBasis(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH"),
                         GthPotential(molrs::Element::Na, "GTH-PBE-q9")}},
                   150.0,
-                  XcKind::PADE};
+                  ATV::cpu::xc::XCType::PADE};
     method.n_occ = 9;
     method.max_iter = 80;
     method.tol = 1e-6;
@@ -76,7 +76,7 @@ int run() {
     method.mix = 0.4;
     method.k_mesh[0] = method.k_mesh[1] = method.k_mesh[2] = 2;
     method.k_time_reversal = true;
-    method.smearing = Smearing::fermi_dirac;
+    method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.02;
     method.extra_bands = 4;
     method.local_pp_on_grid = true;

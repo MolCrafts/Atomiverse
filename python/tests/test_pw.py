@@ -103,7 +103,7 @@ _BOMD_STEPS: int = 3
 _BOMD_TOL: float = 1.0e-4
 _BOMD_MAX_ITER: int = 12
 
-#: The four Smearing spellings of pw_solver.h:79-84.
+#: The four ATV::electronic::Smearing spellings of pw_solver.h:79-84.
 _SMEARING_NAMES: tuple[str, ...] = (
     "none",
     "fermi_dirac",
@@ -233,7 +233,7 @@ class TestPwKnobRoundTrip:
 
     @pytest.mark.parametrize("name", _SMEARING_NAMES)
     def test_smearing_name_roundtrip(self, name: str) -> None:
-        """Every ``Smearing`` spelling of pw_solver.h:79-84 round-trips."""
+        """Every ``ATV::electronic::Smearing`` spelling of pw_solver.h:79-84 round-trips."""
         pw = _si2_method()
         pw.smearing = name
         assert pw.smearing == name

@@ -1,5 +1,5 @@
 /// @file tests/cuda/planewave/test_xc_pbe.cu
-/// @brief Verifies cuda::pw::internal::xc_pbe_grid against the CPU per-point
+/// @brief Verifies cuda::xc::xc_pbe_grid against the CPU per-point
 ///        XC that `cpu::pw::internal::XCBuilder::step(ws, XCType::PBE)`
 ///        evaluates: evaluate_xc(PBE, rho/2, rho/2, sigma/4, sigma/4,
 ///        sigma/4) with sigma = |grad rho|^2, plus the flux assembly
@@ -7,16 +7,16 @@
 ///        rho < 1e-12 cutoff. Tolerances mirror the LDA parity test:
 ///        1e-12 * max(1, |ref|) absorbing the libdevice-vs-libm
 ///        transcendental spread (PBE chains ~10 pow/exp/log per point).
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cuda/planewave/internal/xc_pbe.cuh"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cuda/xc/xc_pbe.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <vector>
 
-using ATV::cpu::scf::evaluate_xc;
-using ATV::cpu::scf::XCType;
-using ATV::cuda::pw::internal::xc_pbe_grid;
+using ATV::cpu::xc::evaluate_xc;
+using ATV::cpu::xc::XCType;
+using ATV::cuda::xc::xc_pbe_grid;
 
 namespace {
 

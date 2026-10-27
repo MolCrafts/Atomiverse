@@ -8,10 +8,10 @@
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
+#include "atomiverse/electronic/smearing.h"
 
 #include <xtensor/containers/xarray.hpp>
 
@@ -171,7 +171,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
                                   DensityBuilder& density,
                                   DavidsonSolver& davidson, int n_bands,
                                   const char* tag) {
-    if (method.smearing == Smearing::none)
+    if (method.smearing == ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "run_scf_smear_restricted: method.smearing must be set");
     if (!(method.degauss > 0.0))
@@ -197,11 +197,11 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
 
-    SmearKind kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        kind = SmearKind::gaussian;
+    ATV::electronic::Smearing kind = ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;

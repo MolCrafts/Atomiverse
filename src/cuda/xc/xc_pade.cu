@@ -1,15 +1,14 @@
-/// @file cuda/gpw/internal/xc_lda.cu
+/// @file cuda/xc/xc_pade.cu
 /// @brief Device port of GTH Padé LDA used by cpu::gpw::xc_grid_pade /
-///        cpu::xc::pade_lsd. Constants and formulas are transcribed verbatim
+///        evaluate_xc(XCType::PADE). Constants and formulas are transcribed verbatim
 ///        from src/cpu/xc/pade.cpp so device results match the CPU oracle to
 ///        ~1e-12. All scientific loops are device kernels — no host loops over
 ///        grid points.
-#include "atomiverse/cuda/gpw/internal/xc_lda.cuh"
+#include "atomiverse/cuda/xc/xc_pade.cuh"
 
 namespace ATV {
 namespace cuda {
-namespace gpw {
-namespace internal {
+namespace xc {
 
 namespace {
 
@@ -55,7 +54,7 @@ __device__ __forceinline__ void spin_function(double x, double& f, double& df) {
     }
 }
 
-/// @brief One grid point: Padé LSD matching cpu::xc::pade_lsd.
+/// @brief One grid point: Padé LSD matching evaluate_xc(XCType::PADE).
 __device__ __forceinline__ void pade_lsd_point(double rho_a, double rho_b,
                                                double& exc, double& vrho_a,
                                                double& vrho_b) {
@@ -211,7 +210,6 @@ void xc_energy_lsd(const double* d_rho_a, const double* d_rho_b,
     scale_scalar_kernel<<<1, 1, 0, stream>>>(d_Exc, w);
 }
 
-} // namespace internal
-} // namespace gpw
+} // namespace xc
 } // namespace cuda
 } // namespace ATV

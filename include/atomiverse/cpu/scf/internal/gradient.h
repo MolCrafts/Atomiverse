@@ -34,7 +34,7 @@
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
@@ -65,7 +65,7 @@ class ScfGradient {
     ///        energy, so the gradient must carry the matching leg.
     /// @param d4      The method adds PBE-D4 dispersion to its total energy
     ///        (wins over `d3bj` when both are set, mirroring the energy).
-    ScfGradient(MeanFieldType method, SpinType spin, XCType xc_type,
+    ScfGradient(MeanFieldType method, SpinType spin, xc::XCType xc_type,
                 GridLevel grid_level, int n_radial, int n_angular,
                 bool xc_grad_project_translation, bool d3bj, bool d4,
                 const ATV::electronic::XcFunctional* functional = nullptr);
@@ -152,7 +152,7 @@ class ScfGradient {
 
     MeanFieldType method_; ///< HF or KS mean field.
     SpinType spin_;        ///< Restricted / unrestricted.
-    XCType xc_type_;
+    xc::XCType xc_type_;
     const ATV::electronic::XcFunctional*
         functional_; ///< Borrowed matching XC mathematics.                   ///< XC functional (KS only).
     GridLevel grid_level_;             ///< DFT grid quality (KS only).

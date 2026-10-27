@@ -1,7 +1,7 @@
 #include "../../../examples/xc-extension/scaled_slater.h"
 #include "atomiverse/cpu/scf/rks.h"
 #include "atomiverse/cpu/scf/tdhf.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include <array>
 #include <gtest/gtest.h>
 #include <limits>
@@ -10,13 +10,16 @@
 namespace {
 using namespace ATV::electronic;
 using namespace ATV::cpu::scf;
+using namespace ATV::cpu::xc;
 
 TEST(XcExtension, BuiltinBatchPreservesEnergyDensityAndSpinDerivatives) {
     std::array<double, 4> a{0.3, 0.7, 1.0, 0.0}, b{0.2, 0.1, 0.0, 0.0};
     std::array<double, 4> aa{0.1, 0.2, 0.3, 0.0}, ab{0.02, 0.01, 0, 0},
         bb{0.04, 0.03, 0, 0};
-    for (auto type : {XCType::LSDA, XCType::PBE, XCType::BLYP, XCType::B3LYP}) {
-        BuiltinXc functional(type);
+    for (auto type :
+         {ATV::cpu::xc::XCType::LSDA, ATV::cpu::xc::XCType::PBE,
+          ATV::cpu::xc::XCType::BLYP, ATV::cpu::xc::XCType::B3LYP}) {
+        ATV::cpu::xc::BuiltinXc functional(type);
         XcBatch in;
         in.rho_alpha = a;
         in.rho_beta = b;
@@ -31,7 +34,8 @@ TEST(XcExtension, BuiltinBatchPreservesEnergyDensityAndSpinDerivatives) {
         energy_output.energy_density = energy_only;
         functional.evaluate(in, XcOrder::Energy, energy_output);
         for (std::size_t i = 0; i < a.size(); ++i) {
-            const auto ref = evaluate_xc(type, a[i], b[i], aa[i], ab[i], bb[i]);
+            const auto ref = ATV::cpu::xc::evaluate_xc(type, a[i], b[i], aa[i],
+                                                       ab[i], bb[i]);
             EXPECT_NEAR(e[i], ref.energy_density, 1e-12);
             EXPECT_DOUBLE_EQ(e[i], energy_only[i]);
             EXPECT_NEAR(va[i], ref.vrho_alpha, 1e-12);
@@ -98,20 +102,24 @@ TEST(XcExtension, InvalidBatchRejectsBeforeOutputMutation) {
     in.rho_alpha = a;
     XcOutput out;
     out.energy_density = e;
-    EXPECT_THROW(BuiltinXc(XCType::LSDA).evaluate(in, XcOrder::Energy, out),
+    EXPECT_THROW(ATV::cpu::xc::BuiltinXc(ATV::cpu::xc::XCType::LSDA)
+                     .evaluate(in, XcOrder::Energy, out),
                  std::invalid_argument);
     EXPECT_EQ(e[0], 42.0);
     in.rho_beta = a;
     // Input is now valid; an incomplete output shape must still reject before
     // poisoning the valid energy span with NaNs.
-    EXPECT_THROW(BuiltinXc(XCType::LSDA).evaluate(in, XcOrder::First, out),
+    EXPECT_THROW(ATV::cpu::xc::BuiltinXc(ATV::cpu::xc::XCType::LSDA)
+                     .evaluate(in, XcOrder::First, out),
                  std::invalid_argument);
     EXPECT_EQ(e[0], 42.0);
     a[0] = std::numeric_limits<double>::infinity();
-    EXPECT_THROW(BuiltinXc(XCType::LSDA).evaluate(in, XcOrder::Energy, out),
+    EXPECT_THROW(ATV::cpu::xc::BuiltinXc(ATV::cpu::xc::XCType::LSDA)
+                     .evaluate(in, XcOrder::Energy, out),
                  std::invalid_argument);
     EXPECT_EQ(e[0], 42.0);
-    EXPECT_THROW((BuiltinXc(XCType::Custom)), std::invalid_argument);
+    EXPECT_THROW((ATV::cpu::xc::BuiltinXc(ATV::cpu::xc::XCType::Custom)),
+                 std::invalid_argument);
 }
 
 class TauFunctional final : public XcFunctional {

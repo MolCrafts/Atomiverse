@@ -37,7 +37,7 @@ cpu::scf::internal::IntegralWorkspace iodine_pack() {
 cpu::scf::internal::ScfGradient make_grad(cpu::scf::SpinType spin) {
     return cpu::scf::internal::ScfGradient{cpu::scf::MeanFieldType::HF,
                                            spin,
-                                           cpu::scf::XCType::LSDA,
+                                           cpu::xc::XCType::LSDA,
                                            cpu::scf::GridLevel::SG0,
                                            0,
                                            0,

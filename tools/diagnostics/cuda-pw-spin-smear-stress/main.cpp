@@ -89,15 +89,16 @@ Mat3 identity() {
     return out;
 }
 template <class Method>
-void controls(Method& m, cpu::pw::Smearing smear) {
+void controls(Method& m, ATV::electronic::Smearing smear) {
     m.spin_polarized = true;
     m.multiplicity = 2;
     m.tol = 1e-9;
     m.max_iter = 250;
     m.mix_beta = .35;
     m.smearing = smear;
-    m.degauss = smear == cpu::pw::Smearing::fermi_dirac ? selected_width
-                                                        : 2 * selected_width;
+    m.degauss = smear == ATV::electronic::Smearing::fermi_dirac
+                    ? selected_width
+                    : 2 * selected_width;
     m.extra_bands = 3;
     m.mp_order = 1;
 }
@@ -191,13 +192,14 @@ void json_array(std::ostream& out, const Stress& data) {
     }
     out << ']';
 }
-const qe_spin_stress::Pin& expected_pin(cpu::scf::XCType xc,
-                                        cpu::pw::Smearing smear, double width) {
-    const std::string functional =
-        xc == cpu::scf::XCType::LSDA ? "LSDA" : "PBE";
-    const std::string kind = smear == cpu::pw::Smearing::fermi_dirac ? "fd"
-                             : smear == cpu::pw::Smearing::gaussian ? "gaussian"
-                                                                    : "mp1";
+const qe_spin_stress::Pin& expected_pin(cpu::xc::XCType xc,
+                                        ATV::electronic::Smearing smear,
+                                        double width) {
+    const std::string functional = xc == cpu::xc::XCType::LSDA ? "LSDA" : "PBE";
+    const std::string kind =
+        smear == ATV::electronic::Smearing::fermi_dirac ? "fd"
+        : smear == ATV::electronic::Smearing::gaussian  ? "gaussian"
+                                                        : "mp1";
     for (const auto& pin : qe_spin_stress::pins)
         if (functional == pin.xc && kind == pin.smearing
             && std::abs(width - pin.degauss_ry) < 1e-14)
@@ -206,7 +208,7 @@ const qe_spin_stress::Pin& expected_pin(cpu::scf::XCType xc,
         "no actual QE pin for this input; refusing an unmatched comparison");
 }
 void qe_pin(const cpu::pw::PWResult& reference, const Stress& stress,
-            cpu::scf::XCType xc, cpu::pw::Smearing smear, double width) {
+            cpu::xc::XCType xc, ATV::electronic::Smearing smear, double width) {
     const auto& pin = expected_pin(xc, smear, width);
     near(reference.energy_ha, pin.energy_ha, 1e-5,
          "actual QE7.6 H3 absolute free energy");
@@ -221,8 +223,8 @@ void qe_pin(const cpu::pw::PWResult& reference, const Stress& stress,
         difference(stress, pin.stress_ev_ang3));
 }
 
-bool run_case(cpu::scf::XCType xc, cpu::pw::Smearing smear, std::ostream& out,
-              bool rotate, int mesh = 1) {
+bool run_case(cpu::xc::XCType xc, ATV::electronic::Smearing smear,
+              std::ostream& out, bool rotate, int mesh = 1) {
     auto f = geometry();
     if (mesh > 1) {
         auto cell = f.box.cell();
@@ -395,8 +397,8 @@ int main(int argc, char** argv) {
         try {
             auto pp = std::make_shared<cpu::pw::GthPseudopotential>(
                 molrs::Element::H, "GTH-PBE-q1");
-            cuda::pw::PW gpu{pp, 6.0, 1, cpu::scf::XCType::PBE};
-            controls(gpu, cpu::pw::Smearing::fermi_dirac);
+            cuda::pw::PW gpu{pp, 6.0, 1, cpu::xc::XCType::PBE};
+            controls(gpu, ATV::electronic::Smearing::fermi_dirac);
             auto frame = geometry();
             const auto ref = gpu.run(frame);
             require(ref.converged, "stress smoke reference convergence");
@@ -413,11 +415,11 @@ int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--probe") {
         auto pp = std::make_shared<cpu::pw::GthPseudopotential>(
             molrs::Element::H, "GTH-PBE-q1");
-        for (auto xc : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE})
+        for (auto xc : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE})
             for (double width : {.12, .04, .02}) {
                 auto frame = geometry();
                 cuda::pw::PW gpu{pp, 6.0, 1, xc};
-                controls(gpu, cpu::pw::Smearing::fermi_dirac);
+                controls(gpu, ATV::electronic::Smearing::fermi_dirac);
                 gpu.degauss = width;
                 const auto result = gpu.run(frame);
                 std::printf("PROBE xc=%d width=%.9g M=%.12g entropy=%.12g "
@@ -441,8 +443,8 @@ int main(int argc, char** argv) {
         << ",\"fd_tolerance\":" << fd_tol
         << ",\"rotation_tolerance\":" << rotation_tol << ",\"cases\":[";
     bool first = true, all_passed = true;
-    auto append = [&](cpu::scf::XCType xc, cpu::pw::Smearing smear, int mesh,
-                      bool rotate) {
+    auto append = [&](cpu::xc::XCType xc, ATV::electronic::Smearing smear,
+                      int mesh, bool rotate) {
         std::ostringstream row;
         row << std::setprecision(17);
         bool passed = false;
@@ -466,16 +468,16 @@ int main(int argc, char** argv) {
     };
     try {
         if (argc > 3 && std::string(argv[3]) == "multi-k") {
-            append(cpu::scf::XCType::PBE, cpu::pw::Smearing::fermi_dirac, 2,
-                   false);
+            append(cpu::xc::XCType::PBE, ATV::electronic::Smearing::fermi_dirac,
+                   2, false);
         } else {
-            for (const auto xc :
-                 {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE})
-                for (const auto smear : {cpu::pw::Smearing::fermi_dirac,
-                                         cpu::pw::Smearing::gaussian,
-                                         cpu::pw::Smearing::methfessel_paxton})
+            for (const auto xc : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE})
+                for (const auto smear :
+                     {ATV::electronic::Smearing::fermi_dirac,
+                      ATV::electronic::Smearing::gaussian,
+                      ATV::electronic::Smearing::methfessel_paxton})
                     append(xc, smear, 1,
-                           smear == cpu::pw::Smearing::fermi_dirac);
+                           smear == ATV::electronic::Smearing::fermi_dirac);
         }
         out << "],\"passed\":" << (all_passed ? "true" : "false") << "}\n";
         return all_passed ? 0 : 1;

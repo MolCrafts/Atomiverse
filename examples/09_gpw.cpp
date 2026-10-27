@@ -76,7 +76,7 @@ int main() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     // The method carries every parameter; the evaluator binds it to a slot.
-    cpu::gpw::GpwDft dft{{O, H}, /*cutoff_ry=*/400.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft dft{{O, H}, /*cutoff_ry=*/400.0, cpu::xc::XCType::PBE};
     dft.max_iter = 200;
     dft.tol = 1e-7;
     dft.mix = 0.3;

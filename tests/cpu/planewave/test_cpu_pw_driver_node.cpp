@@ -24,9 +24,9 @@ using ATV::cpu::pw::GthPseudopotential;
 using ATV::cpu::pw::MixStage;
 using ATV::cpu::pw::PW;
 using ATV::cpu::pw::PwConverged;
-using ATV::cpu::pw::Smearing;
 using ATV::cpu::pw::UpfPseudopotential;
 using ATV::cpu::pw::VeffStage;
+using ATV::electronic::Smearing;
 
 namespace {
 constexpr double kEcutRy = 30.0; // [Ry]
@@ -87,13 +87,13 @@ TEST(PwDriverNode, MultiPathPublicMembers) {
          kEcutRy, kKMesh};
     m.spin_polarized = true;
     m.multiplicity = 3;
-    m.smearing = Smearing::fermi_dirac;
+    m.smearing = ATV::electronic::Smearing::fermi_dirac;
     m.degauss = 0.02;
     m.extra_bands = 4;
     EXPECT_TRUE(m.spin_polarized);
     EXPECT_EQ(m.multiplicity, 3);
     EXPECT_EQ(static_cast<int>(m.smearing),
-              static_cast<int>(Smearing::fermi_dirac));
+              static_cast<int>(ATV::electronic::Smearing::fermi_dirac));
 }
 
 // Identity is fixed at construction: an empty pseudopotential is refused

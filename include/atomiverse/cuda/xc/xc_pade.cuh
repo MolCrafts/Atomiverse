@@ -1,7 +1,8 @@
-/// @file cuda/gpw/internal/xc_lda.cuh
+/// @file cuda/xc/xc_pade.cuh
 /// @brief Real-space GTH Padé LDA XC on the GPW uniform grid — device path.
 ///
-/// Thin CUDA foothold mirroring `cpu::gpw::xc_grid_pade` / `cpu::xc::pade_lsd`
+/// Thin CUDA foothold mirroring `cpu::gpw::xc_grid_pade` /
+/// `evaluate_xc(XCType::PADE)`
 /// (CP2K-native PADE, not libxc). Per-point arithmetic is transcribed from
 /// `src/cpu/xc/pade.cpp` so device results match the CPU oracle to ~1e-12.
 /// Not a full GPW SCF product: density collocation, KS integrate, and the
@@ -12,14 +13,13 @@
 
 namespace ATV {
 namespace cuda {
-namespace gpw {
-namespace internal {
+namespace xc {
 
 /// @brief Evaluate unpolarized Padé LDA V_xc and ε_xc on a real-space grid.
 ///
 /// For each point with total density `rho`, evaluates
-/// `cpu::xc::pade_lsd(rho/2, rho/2)`: when `rho_total < 1e-12` both outputs
-/// are zero; otherwise `vxc = vrho_a` (= `vrho_b` for ζ=0) and
+/// `evaluate_xc(XCType::PADE, rho/2, rho/2)`: when `rho_total < 1e-12` both
+/// outputs are zero; otherwise `vxc = vrho_alpha` (= `vrho_beta` for ζ=0) and
 /// `exc` is the per-electron XC energy; the CPU result's `energy_density`
 /// is rho times this value. Spin-unpolarized (ζ=0).
 ///
@@ -33,7 +33,7 @@ void xc_lda_grid(const double* d_rho_r, double* d_vxc_r, double* d_exc_r,
 
 /// @brief Spin-resolved Padé LSD on the real-space grid (UKS twin).
 ///
-/// Per point: same spin potentials as `cpu::xc::pade_lsd(rho_a, rho_b)`;
+/// Per point: same spin potentials as `evaluate_xc(XCType::PADE, rho_a, rho_b)`;
 /// device energy is per electron, CPU `energy_density` is per volume.
 /// Total density below 1e-12 zeroes all three channels.
 ///
@@ -79,7 +79,6 @@ void xc_energy_lsd(const double* d_rho_a, const double* d_rho_b,
                    const double* d_exc_r, int nr, double w, double* d_Exc,
                    cudaStream_t stream = nullptr);
 
-} // namespace internal
-} // namespace gpw
+} // namespace xc
 } // namespace cuda
 } // namespace ATV

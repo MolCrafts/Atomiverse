@@ -48,7 +48,7 @@ int run() {
         molrs::Element::Si,
         cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")};
-    cpu::gpw::GpwDft method{{Si}, 150, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft method{{Si}, 150, cpu::xc::XCType::PADE};
     method.max_iter = 200;
     method.tol = 1e-10;
     method.residual_tol = 1e-8;

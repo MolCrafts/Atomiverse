@@ -65,8 +65,8 @@ int run() {
 
     PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
                                                    "/pw/Si_lda_nc.upf"),
-              kEcutRy, kMesh, cpu::scf::XCType::LSDA};
-    method.smearing = Smearing::fermi_dirac;
+              kEcutRy, kMesh, cpu::xc::XCType::LSDA};
+    method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = kDegaussRy;
     // Gapped Si twin: extra empty states optional for FD fill.
     method.extra_bands = 0;

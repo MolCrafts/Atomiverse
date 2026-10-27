@@ -839,7 +839,7 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                                                const cpu::Frame& frame) const {
     using internal::DavidsonSolver;
 
-    if (method.smearing != Smearing::none)
+    if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "PeriodicWannier::compute: requires an insulator (no metallic "
             "smearing)");

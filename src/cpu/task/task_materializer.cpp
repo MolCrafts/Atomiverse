@@ -268,7 +268,7 @@ cpu::pw::PW pw_method(const PWParams& p) {
     if (p.upf_path.empty() == p.gth_name.empty())
         throw std::invalid_argument(
             "PWParams: set exactly one of upf_path / gth_name");
-    const auto xc = static_cast<cpu::scf::XCType>(p.xc);
+    const auto xc = static_cast<cpu::xc::XCType>(p.xc);
     cpu::pw::PW pw =
         p.upf_path.empty()
             ? cpu::pw::PW(
@@ -284,7 +284,7 @@ cpu::pw::PW pw_method(const PWParams& p) {
     pw.pulay_depth = p.pulay_depth;
     pw.spin_polarized = p.spin_polarized;
     pw.multiplicity = p.multiplicity;
-    pw.smearing = static_cast<cpu::pw::Smearing>(p.smearing);
+    pw.smearing = static_cast<ATV::electronic::Smearing>(p.smearing);
     pw.degauss = p.degauss;
     pw.mp_order = p.mp_order;
     pw.extra_bands = p.extra_bands;

@@ -82,7 +82,7 @@ int run() {
         cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
     cpu::Frame frame_o2 = make_o2();
-    cpu::gpw::GpwDft dft_o2({O}, 400.0, cpu::gpw::XcKind::PBE);
+    cpu::gpw::GpwDft dft_o2({O}, 400.0, cpu::xc::XCType::PBE);
     dft_o2.max_iter = 200;
     dft_o2.tol = 1e-7;
     dft_o2.mix = 0.4;
@@ -133,7 +133,7 @@ int run() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     auto make_dimer_eval = [&]() {
-        cpu::gpw::GpwDft dft_ev({Osr, Hsr}, 200.0, cpu::gpw::XcKind::PBE);
+        cpu::gpw::GpwDft dft_ev({Osr, Hsr}, 200.0, cpu::xc::XCType::PBE);
         dft_ev.max_iter = 120;
         dft_ev.tol = 1e-7;
         dft_ev.mix = 0.4;

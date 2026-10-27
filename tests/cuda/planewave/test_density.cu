@@ -20,7 +20,7 @@
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 
@@ -32,7 +32,7 @@
 #include <vector>
 
 using ATV::AccReal;
-using ATV::cpu::scf::XCType;
+using ATV::cpu::xc::XCType;
 using ATV::cuda::pw::internal::DeviceBandSolver;
 using ATV::cuda::pw::internal::DeviceDensity;
 using ATV::cuda::pw::internal::GField;
@@ -303,7 +303,7 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
     po.step(ws);
     cpupw::XCBuilder xcb;
     xcb.prepare(ws);
-    xcb.step(ws, ATV::cpu::scf::XCType::LSDA);
+    xcb.step(ws, ATV::cpu::xc::XCType::LSDA);
     cpupw::VeffBuilder vb;
     vb.prepare(ws);
     vb.step(ws);

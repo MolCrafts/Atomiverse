@@ -17,10 +17,10 @@
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
 #include "atomiverse/cpu/planewave/internal/restricted_scf.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
+#include "atomiverse/electronic/smearing.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
@@ -219,7 +219,7 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument("pw_forces_analytic: frame has no atoms");
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "pw_forces_analytic: degauss must be > 0 [Ry] when smearing is "
@@ -365,11 +365,12 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
             poisson.step(ws);
             xc.step_spin(ws, method.xc);
 
-            SmearKind smear_kind = SmearKind::fermi_dirac;
-            if (method.smearing == Smearing::methfessel_paxton)
-                smear_kind = SmearKind::methfessel_paxton;
-            else if (method.smearing == Smearing::gaussian)
-                smear_kind = SmearKind::gaussian;
+            ATV::electronic::Smearing smear_kind =
+                ATV::electronic::Smearing::fermi_dirac;
+            if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+                smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+            else if (method.smearing == ATV::electronic::Smearing::gaussian)
+                smear_kind = ATV::electronic::Smearing::gaussian;
             const AccReal degauss_ha =
                 static_cast<AccReal>(method.degauss) * AccReal(0.5);
             const int mp_order = method.mp_order;
@@ -537,11 +538,12 @@ pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
             xc.step(ws, method.xc);
             veff.step(ws);
 
-            SmearKind smear_kind = SmearKind::fermi_dirac;
-            if (method.smearing == Smearing::methfessel_paxton)
-                smear_kind = SmearKind::methfessel_paxton;
-            else if (method.smearing == Smearing::gaussian)
-                smear_kind = SmearKind::gaussian;
+            ATV::electronic::Smearing smear_kind =
+                ATV::electronic::Smearing::fermi_dirac;
+            if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+                smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+            else if (method.smearing == ATV::electronic::Smearing::gaussian)
+                smear_kind = ATV::electronic::Smearing::gaussian;
             const AccReal degauss_ha =
                 static_cast<AccReal>(method.degauss) * AccReal(0.5);
             const int mp_order = method.mp_order;

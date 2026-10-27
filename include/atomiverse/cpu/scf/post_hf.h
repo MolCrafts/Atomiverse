@@ -62,11 +62,11 @@ class MP2 {
     int frozen = 0;
 
     /// @brief Opposite-spin scale (dimensionless). 1 = plain MP2; SCS = 1.2;
-    ///        SOS = 1.3; B2PLYP = `hybrid_pt2_fraction`.
+    ///        SOS = 1.3; B2PLYP = `xc::hybrid_pt2_fraction`.
     double os_scale = 1.0;
 
     /// @brief Same-spin scale (dimensionless). 1 = plain MP2; SCS = 1/3;
-    ///        SOS = 0; B2PLYP = `hybrid_pt2_fraction`.
+    ///        SOS = 0; B2PLYP = `xc::hybrid_pt2_fraction`.
     double ss_scale = 1.0;
 
     /// @brief Fresh SCF on `mf`, then MP2; writes correlated Frame energy [eV].

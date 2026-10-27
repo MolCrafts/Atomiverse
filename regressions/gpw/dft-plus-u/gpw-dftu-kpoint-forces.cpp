@@ -125,7 +125,7 @@ int run() {
                        GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                        GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
                  100.0,
-                 XcKind::PADE};
+                 ATV::cpu::xc::XCType::PADE};
         m.n_alpha = 2;
         m.n_beta = 0;
         m.max_iter = 120;
@@ -238,7 +238,7 @@ int run() {
                          GaussianBasis(molrs::Element::O, "SZV-GTH-PADE"),
                          GthPotential(molrs::Element::O, "GTH-PADE-q6")}},
                    250.0,
-                   XcKind::PADE};
+                   ATV::cpu::xc::XCType::PADE};
         scf.max_iter = 300;
         scf.tol = 1e-6;
         scf.mix = 0.35;

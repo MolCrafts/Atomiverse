@@ -63,7 +63,7 @@ int run() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     // Product path: analytic fixed-P stress (default stress_use_fd=false).
-    cpu::gpw::GpwDft dft{{O, H}, 400.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft dft{{O, H}, 400.0, cpu::xc::XCType::PBE};
     dft.max_iter = 200;
     dft.tol = 1e-7;
     dft.mix = 0.3;
@@ -107,7 +107,7 @@ int run() {
 
     // Multi-SCF strain-FD oracle twin (public free function) on the same
     // Frame geometry and method parameters as the evaluator.
-    cpu::gpw::GpwDft method{{O, H}, 400.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft method{{O, H}, 400.0, cpu::xc::XCType::PBE};
     method.n_occ = 4; // H2O GTH: O q6 + 2×H q1 = 8 e → 4 doubly occupied
     method.max_iter = 200;
     method.tol = 1e-7;

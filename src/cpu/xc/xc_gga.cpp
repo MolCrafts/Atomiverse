@@ -1,4 +1,4 @@
-/// @file cpu/scf/xc_gga.cpp
+/// @file cpu/xc/xc_gga.cpp
 /// @brief Becke-88 GGA exchange and Lee-Yang-Parr GGA correlation.
 ///
 /// These two semi-local functionals are the GGA building blocks of the
@@ -24,14 +24,14 @@
 /// analytic derivatives of the Becke enhancement factor.
 
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/scf/xc_internal.h"
+#include "atomiverse/cpu/xc/xc_internal.h"
 
 #include <array>
 #include <cmath>
 
 namespace ATV {
 namespace cpu {
-namespace scf {
+namespace xc {
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -511,6 +511,6 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
     vsigma_bb = tvsigma2;
 }
 
-} // namespace scf
+} // namespace xc
 } // namespace cpu
 } // namespace ATV

@@ -78,7 +78,7 @@ ATV::cpu::gpw::GpwDft si_method(double cutoff_ry, int ngrids,
                    GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
                    GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
              cutoff_ry,
-             ATV::cpu::gpw::XcKind::PBE};
+             ATV::cpu::xc::XCType::PBE};
     m.ngrids = ngrids;
     m.rel_cutoff = rel_cutoff;
     m.n_occ = 8; // 4 atoms × 4 valence e⁻, closed shell

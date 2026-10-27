@@ -9,8 +9,8 @@
 #include "atomiverse/core/vec3.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cuda/device/error.cuh"
+#include "atomiverse/electronic/smearing.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -90,7 +90,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
     const cpu::Frame& frame, DeviceDensity& den, DeviceBandSolver& solver,
     cpu::pw::internal::PWProblem& prob, cpu::pw::internal::PWWorkspace& ws,
     int n_alpha, int n_beta, bool use_smear, int n_elec,
-    cpu::pw::internal::SmearKind smear_kind, double degauss_ha, int mp_order) {
+    ATV::electronic::Smearing smear_kind, double degauss_ha, int mp_order) {
     const int n = frame.nlocal();
     if (n <= 0)
         throw std::invalid_argument(
@@ -211,7 +211,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                     }
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), AccReal(degauss_ha),
                 smear_kind, mp_order, AccReal(1));
             for (int s = 0; s < 2; ++s) {
@@ -224,8 +224,8 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                     const int nb = static_cast<int>(ev.size());
                     std::vector<double> occ(static_cast<std::size_t>(nb));
                     for (int b = 0; b < nb; ++b)
-                        occ[static_cast<std::size_t>(b)] = static_cast<double>(
-                            cpu::pw::internal::smear_f_spinor(
+                        occ[static_cast<std::size_t>(b)] =
+                            static_cast<double>(ATV::electronic::smear_f_spinor(
                                 ev[static_cast<std::size_t>(b)], mu_ha,
                                 AccReal(degauss_ha), smear_kind, mp_order));
                     const double weight = static_cast<double>(
@@ -276,7 +276,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                     all_weights.push_back(w);
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), AccReal(degauss_ha),
                 smear_kind, mp_order);
 
@@ -287,7 +287,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                 std::vector<double> occ(static_cast<std::size_t>(nb));
                 for (int b = 0; b < nb; ++b)
                     occ[static_cast<std::size_t>(b)] =
-                        static_cast<double>(cpu::pw::internal::smear_f_band(
+                        static_cast<double>(ATV::electronic::smear_f_band(
                             ev[static_cast<std::size_t>(b)], mu_ha,
                             AccReal(degauss_ha), smear_kind, mp_order));
                 const double weight = static_cast<double>(

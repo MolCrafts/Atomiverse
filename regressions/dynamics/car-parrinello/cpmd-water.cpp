@@ -69,7 +69,7 @@ int run() {
     // Cheaper than forces pin (200 Ry / tol 1e-5) so cold SCF seed stays
     // inside the ≤60 s gate. CPMD production steps are single KS evals.
     constexpr double dt = 0.1; // fs — short step for electronic stability
-    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::xc::XCType::PBE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;

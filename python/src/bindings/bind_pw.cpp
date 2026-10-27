@@ -67,19 +67,19 @@ namespace {
 
 using ATV::cpu::pw::PW;
 using ATV::cpu::pw::PWResult;
-using ATV::cpu::pw::Smearing;
+using ATV::electronic::Smearing;
 
 /// @brief Metallic-smearing kinds and the names Python spells them with.
 ///
 /// *Smearing* replaces the sharp occupied/empty step at the Fermi level by a
 /// smooth occupation function of a chosen width, which is what makes a metal
 /// converge at a finite k-mesh. Names are the enumerators of
-/// `cpu::pw::Smearing`, `none` being fixed (insulating) occupations.
-constexpr std::pair<const char*, Smearing> kSmearingNames[] = {
-    {"none", Smearing::none},
-    {"fermi_dirac", Smearing::fermi_dirac},
-    {"methfessel_paxton", Smearing::methfessel_paxton},
-    {"gaussian", Smearing::gaussian},
+/// `ATV::electronic::Smearing`, `none` being fixed (insulating) occupations.
+constexpr std::pair<const char*, ATV::electronic::Smearing> kSmearingNames[] = {
+    {"none", ATV::electronic::Smearing::none},
+    {"fermi_dirac", ATV::electronic::Smearing::fermi_dirac},
+    {"methfessel_paxton", ATV::electronic::Smearing::methfessel_paxton},
+    {"gaussian", ATV::electronic::Smearing::gaussian},
 };
 
 /// @brief Smearing name → `Smearing`.
@@ -87,7 +87,7 @@ constexpr std::pair<const char*, Smearing> kSmearingNames[] = {
 /// @return The matching enumerator.
 /// @throws std::invalid_argument (Python `ValueError`) on any other name,
 ///         listing the supported ones — no fallback occupation scheme.
-Smearing smearing_from_name(const std::string& name) {
+ATV::electronic::Smearing smearing_from_name(const std::string& name) {
     std::string supported;
     for (const auto& [key, value] : kSmearingNames) {
         if (name == key)
@@ -106,7 +106,7 @@ Smearing smearing_from_name(const std::string& name) {
 /// @throws std::invalid_argument when the enumerator is missing from the
 ///         table — a binding left behind by a new smearing kind, which would
 ///         otherwise make the property round-trip lie.
-std::string smearing_name(Smearing smearing) {
+std::string smearing_name(ATV::electronic::Smearing smearing) {
     for (const auto& [key, value] : kSmearingNames)
         if (smearing == value)
             return key;
@@ -370,7 +370,8 @@ void bind_pw(nb::module_& m) {
             "lets a metal converge on a finite k-mesh. An unknown name "
             "raises ValueError listing the four.")
         .def_rw("degauss", &PW::degauss,
-                "Smearing width [Ry] (Quantum ESPRESSO `degauss`), default "
+                "ATV::electronic::Smearing width [Ry] (Quantum ESPRESSO "
+                "`degauss`), default "
                 "0.02. Must be > 0 whenever smearing is not 'none'.")
         .def_rw("mp_order", &PW::mp_order,
                 "Methfessel-Paxton expansion order N (default 1), read only "

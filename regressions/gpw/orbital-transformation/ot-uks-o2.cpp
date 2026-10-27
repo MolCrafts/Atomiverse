@@ -48,7 +48,7 @@ cpu::gpw::GPWEvaluator make_eval(bool use_ot) {
         cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
     // 250 Ry: CP2K OT twin + ≤60 s regression budget.
-    cpu::gpw::GpwDft dft{{O}, 250.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{O}, 250.0, cpu::xc::XCType::PADE};
     dft.max_iter = 200;
     dft.tol = 1e-7;
     dft.mix = 0.4;

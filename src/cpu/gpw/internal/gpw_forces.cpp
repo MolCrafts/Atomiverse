@@ -62,7 +62,8 @@ bool uses_kpath(const GpwDft& cfg) {
     // Match SCF dispatch: metallic smear always rides the Bloch path
     // (including effective Γ via k_mesh = {1,1,1}).
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
-           || cfg.k_mesh[2] != 1 || cfg.smearing != Smearing::none;
+           || cfg.k_mesh[2] != 1
+           || cfg.smearing != ATV::electronic::Smearing::none;
 }
 
 /// Volume ratios for TS/MBD force fold. Empty ⇒ free-atom (v=1). When
@@ -260,6 +261,7 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                     const std::vector<double>* scf_veff_b = nullptr,
                     const std::vector<double>* scf_v_es = nullptr,
                     const GpwResult* scf_grids = nullptr) {
+    require_gpw_xc(cfg.xc);
     const bool profile = std::getenv("ATV_GPW_PROF") != nullptr;
     using ForceClock = std::chrono::steady_clock;
     const auto force_start =
@@ -475,26 +477,28 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
                          : local_pp_grid(grid, atoms, periodic);
 
         if (uks) {
-            if (cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
-                && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
-                && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
-                && cfg.xc != XcKind::OptB88VdW)
-                throw std::runtime_error(
-                    "GPW UKS forces: XcKind must be PADE, PBE, PBEsol, RevPBE, "
-                    "RPBE, BLYP, or OptB88VdW");
+            if (cfg.xc != xc::XCType::PADE && cfg.xc != xc::XCType::PBE
+                && cfg.xc != xc::XCType::PBEsol && cfg.xc != xc::XCType::RevPBE
+                && cfg.xc != xc::XCType::RPBE && cfg.xc != xc::XCType::BLYP
+                && cfg.xc != xc::XCType::OptB88VdW)
+                throw std::runtime_error("GPW UKS forces: xc::XCType must be "
+                                         "PADE, PBE, PBEsol, RevPBE, "
+                                         "RPBE, BLYP, or OptB88VdW");
             const XcOnGridSpin xc =
-                cfg.xc == XcKind::PBE
+                cfg.xc == xc::XCType::PBE
                     ? xc_grid_pbe_spin(grid, rho_a, rho_b)
-                    : (cfg.xc == XcKind::PBEsol
+                    : (cfg.xc == xc::XCType::PBEsol
                            ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
-                           : (cfg.xc == XcKind::RevPBE
+                           : (cfg.xc == xc::XCType::RevPBE
                                   ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
-                                  : (cfg.xc == XcKind::RPBE
+                                  : (cfg.xc == xc::XCType::RPBE
                                          ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
-                                         : (cfg.xc == XcKind::BLYP
+                                         : (cfg.xc == xc::XCType::BLYP
                                                 ? xc_grid_blyp_spin(grid, rho_a,
                                                                     rho_b)
-                                                : (cfg.xc == XcKind::OptB88VdW
+                                                : (cfg.xc
+                                                           == xc::XCType::
+                                                               OptB88VdW
                                                        ? xc_grid_optb88_vdw_spin(
                                                              grid, rho_a, rho_b)
                                                        : xc_grid_pade_lsd(
@@ -509,17 +513,19 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             }
         } else {
             const XcOnGrid xc =
-                cfg.xc == XcKind::PBE
+                cfg.xc == xc::XCType::PBE
                     ? xc_grid_pbe(grid, rho)
-                    : (cfg.xc == XcKind::PBEsol
+                    : (cfg.xc == xc::XCType::PBEsol
                            ? xc_grid_pbesol(grid, rho)
-                           : (cfg.xc == XcKind::RevPBE
+                           : (cfg.xc == xc::XCType::RevPBE
                                   ? xc_grid_revpbe(grid, rho)
-                                  : (cfg.xc == XcKind::RPBE
+                                  : (cfg.xc == xc::XCType::RPBE
                                          ? xc_grid_rpbe(grid, rho)
-                                         : (cfg.xc == XcKind::BLYP
+                                         : (cfg.xc == xc::XCType::BLYP
                                                 ? xc_grid_blyp(grid, rho)
-                                                : (cfg.xc == XcKind::OptB88VdW
+                                                : (cfg.xc
+                                                           == xc::XCType::
+                                                               OptB88VdW
                                                        ? xc_grid_optb88_vdw(
                                                              grid, rho)
                                                        : xc_grid_pade(grid,
@@ -1007,11 +1013,12 @@ void add_frac_PW(const CplxMatrix& C, const std::vector<double>& eps,
 std::vector<std::array<double, 3>>
 assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
                             const GpwDft& cfg, const GpwResult& scf) {
+    require_gpw_xc(cfg.xc);
     const std::vector<GridBasisFunction> basis = global_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     const int na = static_cast<int>(atoms.size());
     const bool uks = cfg.is_uks();
-    const bool metallic = (cfg.smearing != Smearing::none);
+    const bool metallic = (cfg.smearing != ATV::electronic::Smearing::none);
     const int n_occ_a = uks ? cfg.n_alpha : cfg.n_occ;
     const int n_occ_b = uks ? cfg.n_beta : 0;
     const int nk = scf.n_kpts;
@@ -1048,13 +1055,13 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
     if (!cfg.local_pp_on_grid)
         throw std::runtime_error(
             "gpw_forces kpoints: requires local_pp_on_grid (energy foothold)");
-    if (uks && cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
-        && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
-        && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
-        && cfg.xc != XcKind::OptB88VdW)
-        throw std::runtime_error(
-            "gpw_forces kpoints UKS: XcKind must be PADE, PBE, PBEsol, RevPBE, "
-            "RPBE, BLYP, or OptB88VdW");
+    if (uks && cfg.xc != xc::XCType::PADE && cfg.xc != xc::XCType::PBE
+        && cfg.xc != xc::XCType::PBEsol && cfg.xc != xc::XCType::RevPBE
+        && cfg.xc != xc::XCType::RPBE && cfg.xc != xc::XCType::BLYP
+        && cfg.xc != xc::XCType::OptB88VdW)
+        throw std::runtime_error("gpw_forces kpoints UKS: xc::XCType must be "
+                                 "PADE, PBE, PBEsol, RevPBE, "
+                                 "RPBE, BLYP, or OptB88VdW");
 
     // Rebuild k list from the SCF payload (frac + weight).
     std::vector<KPoint> kpts(static_cast<std::size_t>(nk));
@@ -1285,18 +1292,20 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
         const std::vector<double> v_locsr = local_pp_grid(grid, atoms, true);
         if (uks) {
             const XcOnGridSpin xc =
-                cfg.xc == XcKind::PBE
+                cfg.xc == xc::XCType::PBE
                     ? xc_grid_pbe_spin(grid, rho_a, rho_b)
-                    : (cfg.xc == XcKind::PBEsol
+                    : (cfg.xc == xc::XCType::PBEsol
                            ? xc_grid_pbesol_spin(grid, rho_a, rho_b)
-                           : (cfg.xc == XcKind::RevPBE
+                           : (cfg.xc == xc::XCType::RevPBE
                                   ? xc_grid_revpbe_spin(grid, rho_a, rho_b)
-                                  : (cfg.xc == XcKind::RPBE
+                                  : (cfg.xc == xc::XCType::RPBE
                                          ? xc_grid_rpbe_spin(grid, rho_a, rho_b)
-                                         : (cfg.xc == XcKind::BLYP
+                                         : (cfg.xc == xc::XCType::BLYP
                                                 ? xc_grid_blyp_spin(grid, rho_a,
                                                                     rho_b)
-                                                : (cfg.xc == XcKind::OptB88VdW
+                                                : (cfg.xc
+                                                           == xc::XCType::
+                                                               OptB88VdW
                                                        ? xc_grid_optb88_vdw_spin(
                                                              grid, rho_a, rho_b)
                                                        : xc_grid_pade_lsd(
@@ -1310,17 +1319,19 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
             }
         } else {
             const XcOnGrid xc =
-                cfg.xc == XcKind::PBE
+                cfg.xc == xc::XCType::PBE
                     ? xc_grid_pbe(grid, rho)
-                    : (cfg.xc == XcKind::PBEsol
+                    : (cfg.xc == xc::XCType::PBEsol
                            ? xc_grid_pbesol(grid, rho)
-                           : (cfg.xc == XcKind::RevPBE
+                           : (cfg.xc == xc::XCType::RevPBE
                                   ? xc_grid_revpbe(grid, rho)
-                                  : (cfg.xc == XcKind::RPBE
+                                  : (cfg.xc == xc::XCType::RPBE
                                          ? xc_grid_rpbe(grid, rho)
-                                         : (cfg.xc == XcKind::BLYP
+                                         : (cfg.xc == xc::XCType::BLYP
                                                 ? xc_grid_blyp(grid, rho)
-                                                : (cfg.xc == XcKind::OptB88VdW
+                                                : (cfg.xc
+                                                           == xc::XCType::
+                                                               OptB88VdW
                                                        ? xc_grid_optb88_vdw(
                                                              grid, rho)
                                                        : xc_grid_pade(grid,

@@ -23,7 +23,7 @@ int run() {
     using cpu::gpw::GaussianBasis;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     // Geometry [Å] (CP2K water dimer, REFERENCE.md).
     const double ang[6][3] = {
@@ -65,7 +65,7 @@ int run() {
     constexpr double kTol = 1.0e-9;                 // Ha
 
     // Low cutoff: e_disp is geometry-only.
-    GpwDft gpw{{O, H}, 200.0, XcKind::PBE};
+    GpwDft gpw{{O, H}, 200.0, ATV::cpu::xc::XCType::PBE};
     gpw.n_occ = 8;
     gpw.max_iter = 8;
     gpw.tol = 1e-6;

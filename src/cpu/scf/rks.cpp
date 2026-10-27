@@ -12,8 +12,8 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-RKS::RKS(BasisSet basis_in, XCType xc_in, int charge_in)
-    : RKS(basis_in, std::make_shared<BuiltinXc>(xc_in), charge_in) {}
+RKS::RKS(BasisSet basis_in, xc::XCType xc_in, int charge_in)
+    : RKS(basis_in, std::make_shared<xc::BuiltinXc>(xc_in), charge_in) {}
 
 RKS::RKS(BasisSet basis_in,
          std::shared_ptr<const ATV::electronic::XcFunctional> functional,

@@ -1,4 +1,4 @@
-/// @file cpu/scf/xc_functional.cpp
+/// @file cpu/xc/xc_functional.cpp
 /// @brief LSDA (Slater + VWN5), PBE GGA, and VWN-RPA exchange-correlation
 ///        functionals. All formulas use atomic units (Hartree, Bohr).
 ///
@@ -8,10 +8,11 @@
 /// component of B3LYP. The B88 / LYP GGA building blocks live in the
 /// sibling translation unit xc_gga.cpp.
 
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/scf/xc_internal.h"
+#include "atomiverse/cpu/xc/internal/pade.h"
+#include "atomiverse/cpu/xc/xc_internal.h"
 #include <stdexcept>
 
 #include <algorithm>
@@ -19,7 +20,7 @@
 
 namespace ATV {
 namespace cpu {
-namespace scf {
+namespace xc {
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -702,6 +703,7 @@ double hybrid_exchange_fraction(XCType type) {
     switch (type) {
     case XCType::Custom:
     case XCType::LSDA:
+    case XCType::PADE:
         return 0.0;
     case XCType::PBE:
         return 0.0;
@@ -743,6 +745,7 @@ double hybrid_pt2_fraction(XCType type) {
         return 0.27; // Grimme B2PLYP a_c
     case XCType::Custom:
     case XCType::LSDA:
+    case XCType::PADE:
     case XCType::PBE:
     case XCType::PBEsol:
     case XCType::RevPBE:
@@ -763,6 +766,7 @@ bool is_gga(XCType type) {
         throw std::invalid_argument(
             "XC: custom ingredients belong to the provider");
     case XCType::LSDA:
+    case XCType::PADE:
         return false;
     case XCType::PBE:
         return true;
@@ -1030,6 +1034,13 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         out.energy_density = ex + fc;
         out.vrho_alpha = static_cast<double>(vx_a + vc_a);
         out.vrho_beta = static_cast<double>(vx_b + vc_b);
+    } else if (type == XCType::PADE) {
+        // GTH Padé. The rho < kRhoMin early-out above already matches the
+        // kernel cutoff, so vacuum stays the zero XCOutput.
+        const detail::PadePoint p = detail::pade_lsd(ra, rb);
+        out.energy_density = p.energy_density;
+        out.vrho_alpha = p.vrho_a;
+        out.vrho_beta = p.vrho_b;
     } else if (type == XCType::PBE || type == XCType::PBEsol
                || type == XCType::RevPBE || type == XCType::RPBE) {
         // PBE family = PW92 LDA base + gradient corrections. Do NOT clamp
@@ -1145,6 +1156,6 @@ void BuiltinXc::evaluate_batch(const ATV::electronic::XcBatch& in,
     }
 }
 
-} // namespace scf
+} // namespace xc
 } // namespace cpu
 } // namespace ATV

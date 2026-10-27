@@ -33,7 +33,7 @@
 ///   cpu::gpw::GpwDft dft{{{molrs::Element::Si,
 ///                          cpu::gpw::GaussianBasis(molrs::Element::Si, "SZV-GTH"),
 ///                          cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PADE-q4")}},
-///                        /*cutoff_ry=*/100.0, cpu::gpw::XcKind::PADE};
+///                        /*cutoff_ry=*/100.0, cpu::xc::XCType::PADE};
 ///   dft.n_occ = 8;
 ///   dft.build(frame);
 ///

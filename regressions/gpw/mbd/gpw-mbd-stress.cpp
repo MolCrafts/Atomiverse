@@ -92,7 +92,7 @@ int run() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
     // ── (1) Product analytic stress with periodic MBD ─────────────────────
-    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::xc::XCType::PBE};
     dft.max_iter = 120;
     dft.tol = 1e-6;
     dft.mix = 0.4;
@@ -141,7 +141,7 @@ int run() {
     }
 
     // ── (2) Multi-SCF strain-FD oracle on the same method ─────────────────
-    cpu::gpw::GpwDft method{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft method{{O, H}, 200.0, cpu::xc::XCType::PBE};
     method.n_occ = 8;
     method.max_iter = 120;
     method.tol = 1e-6;
@@ -186,7 +186,7 @@ int run() {
     }
 
     // ── (3) MBD must actually reach the stress ────────────────────────────
-    cpu::gpw::GpwDft plain{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft plain{{O, H}, 200.0, cpu::xc::XCType::PBE};
     plain.n_occ = 8;
     plain.max_iter = 120;
     plain.tol = 1e-6;

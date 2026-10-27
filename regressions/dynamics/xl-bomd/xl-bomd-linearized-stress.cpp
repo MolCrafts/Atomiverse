@@ -86,7 +86,7 @@ cpu::gpw::GPWEvaluator make_gpw(bool multi_k) {
         molrs::Element::H,
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
-    cpu::gpw::GpwDft dft{{H}, 300.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{H}, 300.0, cpu::xc::XCType::PADE};
     dft.max_iter = 60;
     dft.tol = 1e-7;
     dft.mix = 0.3;
@@ -274,7 +274,7 @@ bool dual_gate_seed(double& id_err, double& an_fd_err) {
                 cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                 cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
             300.0,
-            cpu::gpw::XcKind::PADE};
+            cpu::xc::XCType::PADE};
         m.n_occ = 1;
         m.max_iter = 60;
         m.tol = 1e-7;

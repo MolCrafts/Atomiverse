@@ -1,4 +1,4 @@
-/// @file cuda/planewave/internal/xc_lda.cuh
+/// @file cuda/xc/xc_lsda.cuh
 /// @brief Real-space LSDA exchange-correlation on the plane-wave grid —
 ///        device kernel mirroring `cpu::pw::internal::XCBuilder::step(ws,
 ///        XCType::LSDA)`'s per-point XC evaluation.
@@ -8,14 +8,13 @@
 
 namespace ATV {
 namespace cuda {
-namespace pw {
-namespace internal {
+namespace xc {
 
 /// @brief Evaluate the LSDA XC potential and energy density on the real grid.
 ///
 /// The device energy channel is epsilon per electron; the CPU point kernel
 /// reports f = rho * epsilon per volume. Potentials use the same convention.
-/// Per grid point this implements the same functional as `cpu::scf::evaluate_xc(XCType::LSDA, ρ/2,
+/// Per grid point this implements the same functional as `cpu::xc::evaluate_xc(XCType::LSDA, ρ/2,
 /// ρ/2)` — Slater exchange + VWN5 correlation — including the `ρ < 1e-12`
 /// cutoff that zeroes both outputs. Spin-unpolarized (ζ = 0): the VWN5 spin
 /// interpolation f(ζ) and its derivative both vanish identically at ζ = 0
@@ -37,7 +36,7 @@ void xc_lsda_grid(const double* d_rho_r, double* d_vxc_r, double* d_exc_r,
 
 /// @brief Collinear LSDA XC on spin densities ρ_α(r), ρ_β(r).
 ///
-/// Mirrors `cpu::scf::evaluate_xc(XCType::LSDA, ρ_α, ρ_β)` — Slater exchange +
+/// Mirrors `cpu::xc::evaluate_xc(XCType::LSDA, ρ_α, ρ_β)` — Slater exchange +
 /// full VWN5 correlation with the spin-interpolation channel — including the
 /// total-density `ρ_α+ρ_β < 1e-12` cutoff and the per-spin floor at 1e-15 on
 /// the correlation inputs only (CPU parity).
@@ -99,7 +98,6 @@ void xc_int_spin(const double* d_rho_a, const double* d_rho_b,
                  double dV, double* d_e_xc_int, double* d_scratch,
                  cudaStream_t stream = nullptr);
 
-} // namespace internal
-} // namespace pw
+} // namespace xc
 } // namespace cuda
 } // namespace ATV

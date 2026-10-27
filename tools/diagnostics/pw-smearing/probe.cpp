@@ -1,12 +1,12 @@
 // Compare one production smearing translation unit with actual QE pins.
-#include "atomiverse/cpu/planewave/internal/smearing.h"
+#include "atomiverse/electronic/smearing.h"
 #include "tests/cpu/planewave/smearing_qe_pins.h"
 #include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <vector>
 
-using namespace ATV::cpu::pw::internal;
+using namespace ATV::electronic;
 
 void number(double value) {
     if (std::isfinite(value))
@@ -22,7 +22,7 @@ int main() {
         if (!first)
             std::cout << ',';
         first = false;
-        const auto kind = static_cast<SmearKind>(p.kind);
+        const auto kind = static_cast<ATV::electronic::Smearing>(p.kind);
         std::cout << "{\"f\":";
         number(smear_f_spinless(p.x, kind, p.order));
         std::cout << ",\"s\":";
@@ -35,7 +35,7 @@ int main() {
         if (!first)
             std::cout << ',';
         first = false;
-        const auto kind = static_cast<SmearKind>(p.kind);
+        const auto kind = static_cast<ATV::electronic::Smearing>(p.kind);
         const std::vector<ATV::AccReal> eig(p.evals.begin(), p.evals.end());
         const std::vector<ATV::AccReal> weights(eig.size(), 1);
         const auto fixed = fill_occupations(eig, weights, p.mu, p.width, kind,

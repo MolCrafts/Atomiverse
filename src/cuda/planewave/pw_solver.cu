@@ -41,12 +41,12 @@
 #include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 #include "atomiverse/cuda/planewave/internal/pw_forces.cuh"
 #include "atomiverse/cuda/planewave/internal/pw_stress.cuh"
+#include "atomiverse/electronic/smearing.h"
 
 #include <algorithm>
 #include <array>
@@ -67,15 +67,15 @@ void PW::validate_members() const {
     // passes in DeviceDensity). An explicit whitelist rather than
     // `!is_gga(xc)` keeps the gate honest for the PBE-family variants
     // (PBEsol/revPBE/RPBE) whose constants the device kernel does NOT carry.
-    if (xc != cpu::scf::XCType::LSDA && xc != cpu::scf::XCType::PBE)
+    if (xc != cpu::xc::XCType::LSDA && xc != cpu::xc::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::PW::run: xc has no device path — only XCType::LSDA "
             "(Slater + VWN5) and XCType::PBE are implemented on the GPU. "
             "Construct with one of those, or run this functional on "
             "cpu::pw::PW.");
     // Collinear UKS: LSDA and true spin-GGA PBE are landed; other XC throw.
-    if (spin_polarized && xc != cpu::scf::XCType::LSDA
-        && xc != cpu::scf::XCType::PBE)
+    if (spin_polarized && xc != cpu::xc::XCType::LSDA
+        && xc != cpu::xc::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::PW::run: spin_polarized supports XCType::LSDA and "
             "XCType::PBE only on the device path — set pw.xc to one of those, "
@@ -88,7 +88,7 @@ void PW::validate_members() const {
         throw std::invalid_argument(
             "cuda::pw::PW::run: multiplicity != 1 requires spin_polarized. "
             "Set spin_polarized=true for collinear UKS, or multiplicity=1.");
-    if (smearing != Smearing::none && !(degauss > 0.0))
+    if (smearing != ATV::electronic::Smearing::none && !(degauss > 0.0))
         throw std::invalid_argument(
             "cuda::pw::PW::run: degauss must be > 0 [Ry] when smearing is "
             "enabled");
@@ -137,7 +137,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
     // Collinear occupation split: N↑ − N↓ = multiplicity − 1, N↑ + N↓ = n_elec.
     const int n_elec = prob.n_elec;
-    const bool use_smear = (smearing != Smearing::none);
+    const bool use_smear = (smearing != ATV::electronic::Smearing::none);
     int n_alpha = n_elec / 2;
     int n_beta = n_elec - n_alpha;
     if (spin_polarized) {
@@ -182,14 +182,14 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // stable for the whole run; the k-loop no longer touches ws at all.
     const AccReal omega_bohr = ws.omega;
 
-    cpu::pw::internal::SmearKind smear_kind =
-        cpu::pw::internal::SmearKind::fermi_dirac;
-    if (smearing == Smearing::fermi_dirac)
-        smear_kind = cpu::pw::internal::SmearKind::fermi_dirac;
-    else if (smearing == Smearing::methfessel_paxton)
-        smear_kind = cpu::pw::internal::SmearKind::methfessel_paxton;
-    else if (smearing == Smearing::gaussian)
-        smear_kind = cpu::pw::internal::SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (smearing == ATV::electronic::Smearing::fermi_dirac)
+        smear_kind = ATV::electronic::Smearing::fermi_dirac;
+    else if (smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         AccReal(degauss) * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
 
@@ -260,7 +260,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                     }
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
                 mp_order, AccReal(1));
 
@@ -279,7 +279,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                     const auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     std::vector<AccReal> w_one(ev.size(), w);
-                    auto fill = cpu::pw::internal::fill_occupations(
+                    auto fill = ATV::electronic::fill_occupations(
                         ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
                         AccReal(1));
                     entropy_sum += fill.entropy;
@@ -423,7 +423,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 }
             }
 
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
                 mp_order);
 
@@ -435,13 +435,13 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 std::vector<AccReal> w_one(ev.size(), w);
-                auto fill = cpu::pw::internal::fill_occupations(
+                auto fill = ATV::electronic::fill_occupations(
                     ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
                 occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
                 for (std::size_t b = 0; b < ev.size(); ++b)
                     occ_k[static_cast<std::size_t>(ik)][b] =
-                        cpu::pw::internal::smear_f_band(
-                            ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
+                        ATV::electronic::smear_f_band(ev[b], mu_ha, degauss_ha,
+                                                      smear_kind, mp_order);
                 n_occ += fill.n_occ;
                 entropy_sum += fill.entropy;
             }
@@ -610,13 +610,13 @@ std::vector<std::array<double, 3>> PW::forces_impl(const cpu::Frame& frame,
     // supported. Stress uses the
     // same occupation convention in its strained NSCF evaluations.
     method.validate_members();
-    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA
-        && method.xc != cpu::scf::XCType::PBE)
+    if (method.spin_polarized && method.xc != cpu::xc::XCType::LSDA
+        && method.xc != cpu::xc::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: spin_polarized force path is "
             "XCType::LSDA or XCType::PBE only — use "
             "cpu::pw::pw_forces_analytic for other XC");
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "cuda::pw::pw_forces_analytic: degauss must be > 0 [Ry] when "
@@ -664,17 +664,17 @@ std::vector<std::array<double, 3>> PW::forces_impl(const cpu::Frame& frame,
         method.spin_polarized ? method.multiplicity - 1 : 0;
     int n_bands = method.spin_polarized ? std::max(std::max(n_alpha, n_beta), 1)
                                         : prob.n_bands;
-    cpu::pw::internal::SmearKind smear_kind =
-        cpu::pw::internal::SmearKind::fermi_dirac;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
     AccReal degauss_ha = AccReal(0);
     if (use_smear) {
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
         n_bands = std::max(
             {n_bands, n_occ_ceil + std::max(method.extra_bands, 0), 1});
-        if (method.smearing == Smearing::methfessel_paxton)
-            smear_kind = cpu::pw::internal::SmearKind::methfessel_paxton;
-        else if (method.smearing == Smearing::gaussian)
-            smear_kind = cpu::pw::internal::SmearKind::gaussian;
+        if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+            smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+        else if (method.smearing == ATV::electronic::Smearing::gaussian)
+            smear_kind = ATV::electronic::Smearing::gaussian;
         degauss_ha = AccReal(method.degauss)
                      * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
     }
@@ -735,7 +735,7 @@ std::vector<std::array<double, 3>> PW::forces_impl(const cpu::Frame& frame,
                     }
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
                 mp_order, AccReal(1));
             AccReal e_band = 0;
@@ -752,7 +752,7 @@ std::vector<std::array<double, 3>> PW::forces_impl(const cpu::Frame& frame,
                     const auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     std::vector<AccReal> w_one(ev.size(), w);
-                    auto fill = cpu::pw::internal::fill_occupations(
+                    auto fill = ATV::electronic::fill_occupations(
                         ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
                         AccReal(1));
                     entropy_sum += fill.entropy;
@@ -870,7 +870,7 @@ std::vector<std::array<double, 3>> PW::forces_impl(const cpu::Frame& frame,
                 }
             }
 
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
                 mp_order);
 
@@ -883,13 +883,13 @@ std::vector<std::array<double, 3>> PW::forces_impl(const cpu::Frame& frame,
                 const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 std::vector<AccReal> w_one(ev.size(), w);
-                auto fill = cpu::pw::internal::fill_occupations(
+                auto fill = ATV::electronic::fill_occupations(
                     ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
                 occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
                 for (std::size_t b = 0; b < ev.size(); ++b)
                     occ_k[static_cast<std::size_t>(ik)][b] =
-                        cpu::pw::internal::smear_f_band(
-                            ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
+                        ATV::electronic::smear_f_band(ev[b], mu_ha, degauss_ha,
+                                                      smear_kind, mp_order);
                 entropy_sum += fill.entropy;
                 n_occ += fill.n_occ;
             }
@@ -996,8 +996,8 @@ std::array<double, 6> PW::stress_impl(const cpu::Frame& frame,
         *result_out = PWResult{};
     method.validate_members();
     // Collinear LSDA/PBE stress supports fixed and fractional occupations.
-    if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA
-        && method.xc != cpu::scf::XCType::PBE)
+    if (method.spin_polarized && method.xc != cpu::xc::XCType::LSDA
+        && method.xc != cpu::xc::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: spin_polarized stress path is XCType::LSDA "
             "or XCType::PBE only — use cpu::pw::pw_stress for other XC");
@@ -1007,7 +1007,8 @@ std::array<double, 6> PW::stress_impl(const cpu::Frame& frame,
             "spin_polarized");
     // Restricted and collinear smearing differentiate the same free energy:
     // both strained spin spectra are refilled at a shared chemical potential.
-    if (method.smearing != Smearing::none && !(method.degauss > 0.0))
+    if (method.smearing != ATV::electronic::Smearing::none
+        && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "cuda::pw::pw_stress: degauss must be > 0 [Ry] when smearing is "
             "enabled");

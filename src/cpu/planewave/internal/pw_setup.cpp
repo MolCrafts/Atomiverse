@@ -9,6 +9,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/linalg/eigensolve.h"
+#include "atomiverse/cpu/linalg/pulay_coefficients.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
@@ -22,6 +23,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -695,54 +697,24 @@ void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame, double ecut_ry,
 }
 
 void solve_pulay_coefficients(const AccReal* B, int m, AccReal* c_out) {
-    // Solve B·c = 1 (with constraint Σc=1 via Lagrangian)
-    // Augmented system: [B  1] [c] = [0]
-    //                    [1  0] [λ]   [1]
-    const int depth = m;
-    int n = depth + 1;
-    std::vector<AccReal> A(n * n, AccReal(0));
-    for (int i = 0; i < depth; ++i)
-        for (int j = 0; j < depth; ++j)
-            A[i * n + j] = B[i * depth + j];
-    for (int i = 0; i < depth; ++i)
-        A[i * n + depth] = A[depth * n + i] = AccReal(1);
-
-    std::vector<AccReal> rhs(n, AccReal(0));
-    rhs[depth] = AccReal(1);
-
-    // Solve via Gaussian elimination
-    std::vector<AccReal> c(n, AccReal(0));
-    auto aug = A;
-    auto b = rhs;
-    for (int k = 0; k < n; ++k) {
-        // Pivot
-        int imax = k;
-        for (int i = k + 1; i < n; ++i)
-            if (std::abs(aug[i * n + k]) > std::abs(aug[imax * n + k]))
-                imax = i;
-        if (imax != k) {
-            for (int j = 0; j < n; ++j)
-                std::swap(aug[k * n + j], aug[imax * n + j]);
-            std::swap(b[k], b[imax]);
-        }
-        if (std::abs(aug[k * n + k]) < AccReal(1e-14))
-            continue;
-        for (int i = k + 1; i < n; ++i) {
-            AccReal factor = aug[i * n + k] / aug[k * n + k];
-            for (int j = k; j < n; ++j)
-                aug[i * n + j] -= factor * aug[k * n + j];
-            b[i] -= factor * b[k];
-        }
+    // Same unit-sum system as cpu::linalg::pulay_coefficients. The previous
+    // bordered matrix used +1 on the constraint row; that only flips the
+    // Lagrange multiplier. A rejected solve leaves nonfinite coefficients so
+    // pulay_mix drops the oldest history entry.
+    if (m < 1)
+        return;
+    std::vector<double> gram(static_cast<std::size_t>(m)
+                             * static_cast<std::size_t>(m));
+    std::vector<double> solved(static_cast<std::size_t>(m), 0.0);
+    for (std::size_t i = 0; i < gram.size(); ++i)
+        gram[i] = static_cast<double>(B[i]);
+    if (!cpu::linalg::try_pulay_coefficients(gram.data(), m, solved.data())) {
+        for (int i = 0; i < m; ++i)
+            c_out[i] = std::numeric_limits<AccReal>::quiet_NaN();
+        return;
     }
-    for (int k = n - 1; k >= 0; --k) {
-        AccReal sum = b[k];
-        for (int j = k + 1; j < n; ++j)
-            sum -= aug[k * n + j] * c[j];
-        if (std::abs(aug[k * n + k]) > AccReal(1e-14))
-            c[k] = sum / aug[k * n + k];
-    }
-    for (int i = 0; i < depth; ++i)
-        c_out[i] = c[i];
+    for (int i = 0; i < m; ++i)
+        c_out[i] = static_cast<AccReal>(solved[static_cast<std::size_t>(i)]);
 }
 
 void pulay_mix(xt::xarray<std::complex<AccReal>>& output,

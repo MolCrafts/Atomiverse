@@ -104,7 +104,7 @@ ATV::cpu::gpw::GpwDft make_twin() {
                 Kind{molrs::Element::H,
                      GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
                      GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
-               200.0, ATV::cpu::gpw::XcKind::PBE);
+               200.0, ATV::cpu::xc::XCType::PBE);
     gpw.ngrids = 4;
     gpw.rel_cutoff = 40.0;
     gpw.n_occ = 8;

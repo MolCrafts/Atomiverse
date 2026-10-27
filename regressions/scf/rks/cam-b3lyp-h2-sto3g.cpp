@@ -15,7 +15,7 @@
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/methods.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "harness/registry.h"
 
 namespace atv_reg_scf_cam_b3lyp_h2_sto3g {
@@ -23,8 +23,8 @@ namespace atv_reg_scf_cam_b3lyp_h2_sto3g {
 int run() {
     using namespace ATV;
 
-    const auto xc = cpu::scf::XCType::CAMB3LYP;
-    const auto rsh = cpu::scf::rsh_exchange_params(xc);
+    const auto xc = cpu::xc::XCType::CAMB3LYP;
+    const auto rsh = cpu::xc::rsh_exchange_params(xc);
     if (std::fabs(rsh.alpha - 0.19) > 1e-15
         || std::fabs(rsh.beta - 0.46) > 1e-15
         || std::fabs(rsh.mu - 0.33) > 1e-15) {

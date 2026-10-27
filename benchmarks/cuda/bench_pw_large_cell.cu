@@ -32,7 +32,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 
 using namespace ATV;
@@ -90,7 +90,7 @@ template <class Method>
 double run_leg(const cpu::Frame& frame, const Opts& o, cpu::pw::PWResult& out) {
     // LSDA: the CUDA device envelope.
     Method m{std::make_shared<cpu::pw::UpfPseudopotential>(o.upf), o.ecut_ry,
-             o.k_mesh, cpu::scf::XCType::LSDA};
+             o.k_mesh, cpu::xc::XCType::LSDA};
     m.tol = o.tol;
     m.max_iter = o.max_iter;
     m.build(frame);

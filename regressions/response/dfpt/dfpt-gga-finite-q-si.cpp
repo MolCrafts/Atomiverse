@@ -78,7 +78,7 @@ int run() {
 
     PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
                                                    "/pw/Si_lda_nc.upf"),
-              kEcutRy, kMesh, cpu::scf::XCType::PBE};
+              kEcutRy, kMesh, cpu::xc::XCType::PBE};
     method.tol = 1e-8;
     method.max_iter = 200;
 

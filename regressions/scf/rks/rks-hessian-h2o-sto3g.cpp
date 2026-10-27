@@ -44,7 +44,7 @@ int run() {
 
     auto frame = water_frame();
 
-    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::scf::XCType::LSDA);
+    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::xc::XCType::LSDA);
     rks.tol = 1e-12;
     rks.max_iter = 200;
     rks.grid_level = cpu::scf::GridLevel::MatchPySCF;

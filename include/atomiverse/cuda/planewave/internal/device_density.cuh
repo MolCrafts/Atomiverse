@@ -46,7 +46,7 @@
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/internal/fft.cuh"
 #include <complex>
 #include <cublas_v2.h>
@@ -103,7 +103,7 @@ class DeviceDensity {
     ///         an empty G-sphere / FFT grid, or `xc` has no device kernel.
     /// @throws std::runtime_error on any CUDA / cuFFT / cuBLAS failure.
     DeviceDensity(const cpu::pw::internal::PWProblem& prob, double mix_beta,
-                  int pulay_depth, cpu::scf::XCType xc,
+                  int pulay_depth, cpu::xc::XCType xc,
                   bool spin_polarized = false, int n_alpha = 0, int n_beta = 0,
                   int n_elec = 0);
     ~DeviceDensity();
@@ -288,7 +288,7 @@ class DeviceDensity {
     int depth_ = 0;
     double mix_beta_ = 0;
     double omega_ = 0;
-    cpu::scf::XCType xc_ = cpu::scf::XCType::LSDA;
+    cpu::xc::XCType xc_ = cpu::xc::XCType::LSDA;
     bool gga_ = false;
     bool spin_ = false;
     cudaStream_t stream_ = nullptr; ///< Non-default; owned.

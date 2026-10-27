@@ -13,7 +13,7 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/bands_dos.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "harness/registry.h"
 
 namespace atv_reg_pw_dos_spin_si {
@@ -76,7 +76,7 @@ int run() {
     auto frame = make_si_diamond(kA);
 
     PW method{std::make_shared<UpfPseudopotential>(upf), kEcutRy, kMeshScf,
-              cpu::scf::XCType::LSDA};
+              cpu::xc::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 80;
     method.mix_beta = 0.5;

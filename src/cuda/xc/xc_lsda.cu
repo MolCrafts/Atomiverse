@@ -1,4 +1,4 @@
-/// @file cuda/planewave/internal/xc_lda.cu
+/// @file cuda/xc/xc_lsda.cu
 /// @brief Device port of the LSDA XC path used by
 ///        `cpu::pw::internal::XCBuilder::step(ws, XCType::LSDA)` — Slater
 ///        exchange + VWN5 correlation. Constants and formulas are transcribed
@@ -16,12 +16,11 @@
 ///     from each other, and (being a tree) slightly MORE accurate than the
 ///     host's serial accumulation.
 #include "atomiverse/cuda/device/launch.cuh"
-#include "atomiverse/cuda/planewave/internal/xc_lda.cuh"
+#include "atomiverse/cuda/xc/xc_lsda.cuh"
 
 namespace ATV {
 namespace cuda {
-namespace pw {
-namespace internal {
+namespace xc {
 
 namespace {
 
@@ -198,8 +197,25 @@ __global__ void xc_lsda_kernel(const double* __restrict__ rho_r,
     vxc_r[i] = vx_a + vc_a;
 }
 
-/// One grid point: collinear LSDA from (ρ_α, ρ_β). Floors negatives like
-/// `XCBuilder::step_spin` before evaluating.
+/// Clipped collinear LSDA. `eps` is energy per particle; `va`/`vb` are
+/// potentials. Callers pass non-negative densities whose sum is at least
+/// `kRhoMin`.
+__device__ void lsda_spin_parts(double ra, double rb, double& eps, double& va,
+                                double& vb) {
+    const double rho = ra + rb;
+    const double Cx_spin = pow(2.0, 1.0 / 3.0) * kCx;
+    const double ex_a = -Cx_spin * pow(ra, 4.0 / 3.0);
+    const double ex_b = -Cx_spin * pow(rb, 4.0 / 3.0);
+    double ec, vc_a, vc_b;
+    vwn5_correlation_spin(ra, rb, ec, vc_a, vc_b);
+    eps = (ex_a + ex_b) / rho + ec;
+    va = -(4.0 / 3.0) * Cx_spin * pow(ra, 1.0 / 3.0) + vc_a;
+    vb = -(4.0 / 3.0) * Cx_spin * pow(rb, 1.0 / 3.0) + vc_b;
+}
+
+/// One grid point: collinear LSDA from (ρ_α, ρ_β). Negative samples keep the
+/// clipped-density potential and a linear energy extension, matching CPU
+/// `XCBuilder` LSDA. A hard zero on that side is a VWN step.
 __global__ void xc_lsda_spin_kernel(const double* __restrict__ rho_a,
                                     const double* __restrict__ rho_b,
                                     double* __restrict__ vxc_a,
@@ -208,12 +224,10 @@ __global__ void xc_lsda_spin_kernel(const double* __restrict__ rho_a,
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nr)
         return;
-    double ra = rho_a[i];
-    double rb = rho_b[i];
-    if (ra < 0.0)
-        ra = 0.0;
-    if (rb < 0.0)
-        rb = 0.0;
+    const double ra_raw = rho_a[i];
+    const double rb_raw = rho_b[i];
+    const double ra = fmax(ra_raw, 0.0);
+    const double rb = fmax(rb_raw, 0.0);
     const double rho = ra + rb;
     if (rho < kRhoMin) {
         vxc_a[i] = 0.0;
@@ -222,20 +236,26 @@ __global__ void xc_lsda_spin_kernel(const double* __restrict__ rho_a,
         return;
     }
 
-    const double Cx_spin = pow(2.0, 1.0 / 3.0) * kCx;
-    const double ex_a = -Cx_spin * pow(ra, 4.0 / 3.0);
-    const double ex_b = -Cx_spin * pow(rb, 4.0 / 3.0);
-    const double ex = (ex_a + ex_b) / rho;
-    const double vx_a = -(4.0 / 3.0) * Cx_spin * pow(ra, 1.0 / 3.0);
-    const double vx_b = -(4.0 / 3.0) * Cx_spin * pow(rb, 1.0 / 3.0);
-
-    double ec, vc_a, vc_b;
-    vwn5_correlation_spin(ra, rb, ec, vc_a, vc_b);
-
-    exc_r[i] = ex + ec;
-    // Chain rule for E[max(raw rho, 0)], matching CPU XCBuilder.
-    vxc_a[i] = rho_a[i] > 0.0 ? vx_a + vc_a : 0.0;
-    vxc_b[i] = rho_b[i] > 0.0 ? vx_b + vc_b : 0.0;
+    double eps, va, vb;
+    lsda_spin_parts(ra, rb, eps, va, vb);
+    double e_vol = rho * eps;
+    // Same step as CPU evaluate_point. Only one channel can be negative:
+    // both negative makes the clipped sum miss kRhoMin.
+    constexpr double h = 1e-8;
+    if (ra_raw < 0.0) {
+        e_vol += ra_raw * va;
+        double eps_up, va_up, vb_up;
+        lsda_spin_parts(ra, rb + h, eps_up, va_up, vb_up);
+        vb += ra_raw * (va_up - va) / h;
+    } else if (rb_raw < 0.0) {
+        e_vol += rb_raw * vb;
+        double eps_up, va_up, vb_up;
+        lsda_spin_parts(ra + h, rb, eps_up, va_up, vb_up);
+        va += rb_raw * (vb_up - vb) / h;
+    }
+    exc_r[i] = e_vol / rho;
+    vxc_a[i] = va;
+    vxc_b[i] = vb;
 }
 
 /// Stage 1: fixed grid of `kReduceBlocks` blocks, grid-stride over nr, one
@@ -298,7 +318,8 @@ __global__ void xc_int_spin_stage1(const double* __restrict__ rho_a,
     double acc = 0.0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < nr;
          i += gridDim.x * blockDim.x) {
-        // Full GGA potential includes divergence: use the raw density.
+        // Raw density, including negative ringing. The potential already
+        // carries the LSDA extension or the GGA divergence.
         const double ra = rho_a[i];
         const double rb = rho_b[i];
         acc += ra * vxc_a[i] + rb * vxc_b[i];
@@ -384,7 +405,6 @@ void xc_int_spin(const double* d_rho_a, const double* d_rho_b,
                                                       d_e_xc_int);
 }
 
-} // namespace internal
-} // namespace pw
+} // namespace xc
 } // namespace cuda
 } // namespace ATV

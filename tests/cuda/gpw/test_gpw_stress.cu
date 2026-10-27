@@ -11,7 +11,7 @@
 
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GthPotential;
-using ATV::cpu::gpw::XcKind;
+using ATV::cpu::xc::XCType;
 
 namespace {
 
@@ -29,7 +29,7 @@ std::vector<ATV::cpu::gpw::internal::GpwAtom> h2_atoms() {
 TEST(CudaGpwStress, MultiKBuildIsOnProductPath) {
     auto atoms = h2_atoms();
     ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
-                             /*cutoff_ry=*/80.0, XcKind::PADE};
+                             /*cutoff_ry=*/80.0, XCType::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
     m.n_occ = 1;
     m.k_mesh[0] = 2;
@@ -46,7 +46,7 @@ TEST(CudaGpwStress, MultiKBuildIsOnProductPath) {
 TEST(CudaGpwStress, FailClosedUnconvergedState) {
     auto atoms = h2_atoms();
     ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
-                             /*cutoff_ry=*/80.0, XcKind::PADE};
+                             /*cutoff_ry=*/80.0, XCType::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
     m.n_occ = 1;
     m.build(atoms);

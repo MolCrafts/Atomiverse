@@ -28,7 +28,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 
 #ifndef ATV_REG_DATA_DIR
@@ -104,7 +104,7 @@ void configure_smear(PwT& pw) {
     pw.max_iter = kMaxIter;
     pw.mix_beta = 0.4;
     pw.pulay_depth = 5;
-    pw.smearing = cpu::pw::Smearing::fermi_dirac;
+    pw.smearing = ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = kDegaussRy;
     pw.extra_bands = kExtraBands;
 }
@@ -143,7 +143,7 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
 
     if (dev == Device::Cpu) {
         cpu::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                           kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+                           kEcutRy, kMesh, cpu::xc::XCType::LSDA};
         configure_smear(method);
         method.build(frame);
         {
@@ -155,7 +155,7 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
         }
     } else {
         cuda::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+                            kEcutRy, kMesh, cpu::xc::XCType::LSDA};
         configure_smear(method);
         method.build(frame);
         stress = cuda::pw::pw_stress(frame, method, e_ry);

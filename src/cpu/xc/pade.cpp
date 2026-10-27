@@ -5,7 +5,7 @@
 /// `pade_lsd_1` (potential), with the spin-interpolation function `f(x)` and
 /// its first derivative from `calc_fx_*` in `xc_functionals_utilities.F`.
 
-#include "atomiverse/cpu/xc/pade.h"
+#include "atomiverse/cpu/xc/internal/pade.h"
 
 #include <cmath>
 
@@ -39,7 +39,7 @@ constexpr double f13 = 1.0 / 3.0;
 constexpr double f23 = 2.0 / 3.0;
 constexpr double f43 = 4.0 / 3.0;
 
-// Project density cutoff (matches cpu/scf/xc_functional.cpp). NOTE: CP2K's
+// Project density cutoff (matches cpu/xc/xc_functional.cpp). NOTE: CP2K's
 // xc_pade uses its own eps_rho (default ~1e-10); the difference only affects
 // vanishing densities and is revisited when GPW M1 bit-parity is checked.
 constexpr double kRhoMin = 1.0e-12;
@@ -64,8 +64,10 @@ void spin_function(double x, double& f, double& df) {
 
 } // namespace
 
-PadeXC pade_lsd(double rho_a, double rho_b) {
-    PadeXC out;
+namespace detail {
+
+PadePoint pade_lsd(double rho_a, double rho_b) {
+    PadePoint out;
     const double rhoab = rho_a + rho_b;
     if (rhoab < kRhoMin)
         return out;
@@ -107,6 +109,7 @@ PadeXC pade_lsd(double rho_a, double rho_b) {
     return out;
 }
 
+} // namespace detail
 } // namespace xc
 } // namespace cpu
 } // namespace ATV

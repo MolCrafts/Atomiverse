@@ -16,7 +16,7 @@ namespace cpu {
 namespace scf {
 
 FockStage::FockStage(
-    bool restricted, bool is_hf, XCType xc_type, GridLevel grid_level,
+    bool restricted, bool is_hf, xc::XCType xc_type, GridLevel grid_level,
     int n_radial, int n_angular, double hybrid_alpha_override,
     const MolecularGrid* fixed_grid, internal::IntegralView integrals,
     const RealMatrix& P_alpha, const RealMatrix& P_beta, RealMatrix& F_alpha,

@@ -128,7 +128,7 @@ class OrbitalHessian {
     ///   ³A_ai,bj = δ_ab δ_ij (ε_a − ε_i)           − α_hf (ij|ab)
     ///
     /// `alpha_hf = 1` recovers the pure-HF A used by CIS / RHF-TDA;
-    /// hybrid TDDFT-TDA uses the functional's `hybrid_exchange_fraction`
+    /// hybrid TDDFT-TDA uses the functional's `xc::hybrid_exchange_fraction`
     /// (0.20 B3LYP, 0.25 PBE0) and adds the semi-local \(f^{\mathrm{xc}}\)
     /// kernel separately (Dreuw & Head-Gordon, Chem. Rev. 105, 4009 (2005)).
     /// @param ch        Excitation channel.

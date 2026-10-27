@@ -50,7 +50,7 @@ int run() {
                      cpu::gpw::GaussianBasis(molrs::Element::O, "SZV-GTH-PADE"),
                      cpu::gpw::GthPotential(molrs::Element::O, "GTH-PADE-q6")};
 
-    cpu::gpw::GpwDft dft{{Ni, O}, 250.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{Ni, O}, 250.0, cpu::xc::XCType::PADE};
     dft.max_iter = 300;
     dft.tol = 1e-5;
     dft.mix = 0.35;

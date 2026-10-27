@@ -10,22 +10,24 @@
 #include <cmath>
 
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cpu/scf/xc_internal.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_internal.h"
 #include "oracle/cam_b3lyp_pins.h"
 
-using namespace ATV::cpu::scf;
+using namespace ATV::cpu::xc;
 
 TEST(TestRshExchangeParams, CamB3lypYanaiSet) {
-    const auto p = rsh_exchange_params(XCType::CAMB3LYP);
+    const auto p =
+        ATV::cpu::xc::rsh_exchange_params(ATV::cpu::xc::XCType::CAMB3LYP);
     EXPECT_DOUBLE_EQ(p.alpha, 0.19);
     EXPECT_DOUBLE_EQ(p.beta, 0.46);
     EXPECT_DOUBLE_EQ(p.mu, 0.33);
 }
 
 TEST(TestRshExchangeParams, PureFunctionalsAreNotRsh) {
-    for (auto t : {XCType::LSDA, XCType::PBE, XCType::BLYP}) {
-        const auto p = rsh_exchange_params(t);
+    for (auto t : {ATV::cpu::xc::XCType::LSDA, ATV::cpu::xc::XCType::PBE,
+                   ATV::cpu::xc::XCType::BLYP}) {
+        const auto p = ATV::cpu::xc::rsh_exchange_params(t);
         EXPECT_DOUBLE_EQ(p.alpha, 0.0) << static_cast<int>(t);
         EXPECT_DOUBLE_EQ(p.beta, 0.0) << static_cast<int>(t);
         EXPECT_DOUBLE_EQ(p.mu, 0.0) << static_cast<int>(t);
@@ -33,17 +35,23 @@ TEST(TestRshExchangeParams, PureFunctionalsAreNotRsh) {
 }
 
 TEST(TestRshExchangeParams, B3lypStaysGlobalHybrid) {
-    const auto p = rsh_exchange_params(XCType::B3LYP);
+    const auto p =
+        ATV::cpu::xc::rsh_exchange_params(ATV::cpu::xc::XCType::B3LYP);
     EXPECT_DOUBLE_EQ(p.alpha, 0.20);
     EXPECT_DOUBLE_EQ(p.beta, 0.0);
     EXPECT_DOUBLE_EQ(p.mu, 0.0);
-    EXPECT_DOUBLE_EQ(hybrid_exchange_fraction(XCType::B3LYP), 0.20);
-    EXPECT_DOUBLE_EQ(hybrid_exchange_fraction(XCType::CAMB3LYP), 0.19);
+    EXPECT_DOUBLE_EQ(
+        ATV::cpu::xc::hybrid_exchange_fraction(ATV::cpu::xc::XCType::B3LYP),
+        0.20);
+    EXPECT_DOUBLE_EQ(
+        ATV::cpu::xc::hybrid_exchange_fraction(ATV::cpu::xc::XCType::CAMB3LYP),
+        0.19);
 }
 
 TEST(TestRshExchangeParams, CamIsGgaNoPt2) {
-    EXPECT_TRUE(is_gga(XCType::CAMB3LYP));
-    EXPECT_DOUBLE_EQ(hybrid_pt2_fraction(XCType::CAMB3LYP), 0.0);
+    EXPECT_TRUE(is_gga(ATV::cpu::xc::XCType::CAMB3LYP));
+    EXPECT_DOUBLE_EQ(
+        ATV::cpu::xc::hybrid_pt2_fraction(ATV::cpu::xc::XCType::CAMB3LYP), 0.0);
 }
 
 TEST(TestCamB3lyp, StandardLibxc433EnergyAndAllFirstDerivatives) {
@@ -54,8 +62,8 @@ TEST(TestCamB3lyp, StandardLibxc433EnergyAndAllFirstDerivatives) {
     for (std::size_t i = 0; i < cam_b3lyp_pin::points.size(); ++i) {
         const auto& p = cam_b3lyp_pin::points[i];
         const auto& x = p.input;
-        const auto value =
-            evaluate_xc(XCType::CAMB3LYP, x[0], x[1], x[2], x[3], x[4]);
+        const auto value = ATV::cpu::xc::evaluate_xc(
+            ATV::cpu::xc::XCType::CAMB3LYP, x[0], x[1], x[2], x[3], x[4]);
         const std::array<double, 6> got = {
             value.energy_density, value.vrho_alpha, value.vrho_beta,
             value.vsigma_aa,      value.vsigma_ab,  value.vsigma_bb};
@@ -71,10 +79,10 @@ TEST(TestCamB3lyp, StandardLibxc433EnergyAndAllFirstDerivatives) {
 TEST(TestCamB3lyp, SpinExchangeSymmetryIncludingEmptyChannel) {
     for (const auto& p : cam_b3lyp_pin::all_points) {
         const auto& x = p.input;
-        const auto a =
-            evaluate_xc(XCType::CAMB3LYP, x[0], x[1], x[2], x[3], x[4]);
-        const auto b =
-            evaluate_xc(XCType::CAMB3LYP, x[1], x[0], x[4], x[3], x[2]);
+        const auto a = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::CAMB3LYP,
+                                                 x[0], x[1], x[2], x[3], x[4]);
+        const auto b = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::CAMB3LYP,
+                                                 x[1], x[0], x[4], x[3], x[2]);
         const std::array<double, 6> first = {a.energy_density, a.vrho_alpha,
                                              a.vrho_beta,      a.vsigma_aa,
                                              a.vsigma_ab,      a.vsigma_bb};
@@ -107,8 +115,8 @@ TEST(TestCamB3lyp, FirstDerivativesAreDerivativesOfTheSameEnergy) {
     // Auxiliary variational identity, alongside the genuine libxc pins.
     for (auto x : {std::array{0.3, 0.2, 0.02, 0.001, 0.01},
                    std::array{5e-5, 3e-5, 1e-10, 2e-11, 1e-10}}) {
-        const auto out =
-            evaluate_xc(XCType::CAMB3LYP, x[0], x[1], x[2], x[3], x[4]);
+        const auto out = ATV::cpu::xc::evaluate_xc(
+            ATV::cpu::xc::XCType::CAMB3LYP, x[0], x[1], x[2], x[3], x[4]);
         const std::array<double, 5> derivative = {out.vrho_alpha, out.vrho_beta,
                                                   out.vsigma_aa, out.vsigma_ab,
                                                   out.vsigma_bb};
@@ -117,10 +125,12 @@ TEST(TestCamB3lyp, FirstDerivativesAreDerivativesOfTheSameEnergy) {
             const double h = x[k] * 1e-5;
             xp[k] += h;
             xm[k] -= h;
-            const auto p = evaluate_xc(XCType::CAMB3LYP, xp[0], xp[1], xp[2],
-                                       xp[3], xp[4]);
-            const auto m = evaluate_xc(XCType::CAMB3LYP, xm[0], xm[1], xm[2],
-                                       xm[3], xm[4]);
+            const auto p =
+                ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::CAMB3LYP, xp[0],
+                                          xp[1], xp[2], xp[3], xp[4]);
+            const auto m =
+                ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::CAMB3LYP, xm[0],
+                                          xm[1], xm[2], xm[3], xm[4]);
             EXPECT_NEAR((p.energy_density - m.energy_density) / (2 * h),
                         derivative[k],
                         2e-7 * std::max(1.0, std::abs(derivative[k])))

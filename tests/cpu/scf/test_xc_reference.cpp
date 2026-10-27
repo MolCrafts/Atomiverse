@@ -21,7 +21,7 @@
 
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 using namespace ATV;
 using namespace ATV::cpu::scf;
@@ -144,7 +144,8 @@ TEST(XCReference, SlaterExchange_Unpolarized_Rho1) {
     // ε_x = -C_x = -(3/4)(3/π)^{1/3} = -0.738559
     double rho_a = 0.5, rho_b = 0.5;
     auto ref = SlaterRef::compute(rho_a, rho_b);
-    auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
+    auto out = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                         double(rho_a), double(rho_b));
 
     // Total LSDA = Slater + VWN5. Exchange part should match exactly.
     // Correlation adds a negative contribution, so f_xc < ref.energy_density.
@@ -167,7 +168,8 @@ TEST(XCReference, SlaterExchange_MultiDensity) {
     for (double rho : densities) {
         double rho_a = rho / 2, rho_b = rho / 2;
         auto ref = SlaterRef::compute(rho_a, rho_b);
-        auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
+        auto out = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(rho_a), double(rho_b));
 
         double f_xc = static_cast<double>(out.energy_density);
         // Exchange typically dominates (5-20x larger than correlation)
@@ -186,7 +188,8 @@ TEST(XCReference, SlaterPotential_Analytical) {
     for (double rho_a : test_rhos) {
         double rho_b = rho_a;
         auto ref = SlaterRef::compute(rho_a, rho_b);
-        auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
+        auto out = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(rho_a), double(rho_b));
 
         double vrho = static_cast<double>(out.vrho_alpha);
         // VWN5 potential correction varies; at moderate density ~5-40% of exchange
@@ -214,7 +217,7 @@ TEST(XCReference, SlaterExchange_SpinPolarized) {
 // ═════════════════════════════════════════════════════════════════════════
 
 TEST(XCReference, VWN5_Unpolarized_MatchesIndependent) {
-    // Compare evaluate_xc(LSDA) with independently computed Slater + VWN5
+    // Compare xc::evaluate_xc(LSDA) with independently computed Slater + VWN5
     double test_densities[] = {0.01, 0.1, 0.5, 1.0, 5.0, 10.0};
     for (double rho : test_densities) {
         double rho_a = rho / 2, rho_b = rho / 2;
@@ -222,7 +225,8 @@ TEST(XCReference, VWN5_Unpolarized_MatchesIndependent) {
         double ec = vwn5_ec(rho_a, rho_b);
         double f_ref = slater.energy_density + (rho_a + rho_b) * ec;
 
-        auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
+        auto out = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(rho_a), double(rho_b));
         double f_xc = static_cast<double>(out.energy_density);
 
         EXPECT_NEAR(f_xc, f_ref, (rho_a + rho_b) * 1e-6)
@@ -247,7 +251,8 @@ TEST(XCReference, VWN5_SpinPolarized_MatchesIndependent) {
         double ec = vwn5_ec(ra, rb);
         double f_ref = slater.energy_density + (ra + rb) * ec;
 
-        auto out = evaluate_xc(XCType::LSDA, double(ra), double(rb));
+        auto out = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(ra), double(rb));
         double f_xc = static_cast<double>(out.energy_density);
 
         EXPECT_NEAR(f_xc, f_ref, (ra + rb) * 1e-6)
@@ -292,9 +297,11 @@ TEST(XCReference, PBE_ZeroGradient_CloseToButNotEqualLSDA) {
     // This matches libxc's XC_GGA_C_PBE and the PBE paper (PRL 77, 3865).
     double densities[] = {0.01, 0.1, 0.5, 1.0, 5.0};
     for (double rho : densities) {
-        auto lda = evaluate_xc(XCType::LSDA, double(rho / 2), double(rho / 2));
-        auto pbe =
-            evaluate_xc(XCType::PBE, double(rho / 2), double(rho / 2), 0, 0, 0);
+        auto lda = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(rho / 2), double(rho / 2));
+        auto pbe = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::PBE,
+                                             double(rho / 2), double(rho / 2),
+                                             0, 0, 0);
 
         // Both should be negative (XC lowers energy).
         EXPECT_LT(static_cast<double>(pbe.energy_density), 0.0)
@@ -329,9 +336,10 @@ TEST(XCReference, PBE_ExchangeMoreNegativeThanLDA) {
     // Note: correlation correction may partially offset this.
     double rho = 0.3;
     double sigma = 0.1; // nonzero gradient
-    auto lda = evaluate_xc(XCType::LSDA, double(rho), double(rho));
-    auto pbe =
-        evaluate_xc(XCType::PBE, double(rho), double(rho), sigma, 0, sigma);
+    auto lda = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                         double(rho), double(rho));
+    auto pbe = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::PBE, double(rho),
+                                         double(rho), sigma, 0, sigma);
 
     // PBE total might not always be more negative due to correlation GGA correction,
     // but the difference should be nonzero.
@@ -344,8 +352,9 @@ TEST(XCReference, PBE_VsigmaSign) {
     // For exchange: ∂ε_x/∂σ_αα should be negative (increasing gradient
     // makes exchange more negative). The vsigma should thus be negative.
     double rho = 0.3;
-    auto pbe = evaluate_xc(XCType::PBE, double(rho), double(rho), double(0.1),
-                           double(0.05), double(0.1));
+    auto pbe = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::PBE, double(rho),
+                                         double(rho), double(0.1), double(0.05),
+                                         double(0.1));
     EXPECT_LT(static_cast<double>(pbe.vsigma_aa), 0.0)
         << "PBE exchange vsigma should be negative";
 }
@@ -354,8 +363,9 @@ TEST(XCReference, PBE_SpinSymmetry) {
     // For ρ_α = ρ_β, σ_αα = σ_ββ: must have symmetric potentials
     double rho = 0.5;
     double sigma = 0.2;
-    auto pbe = evaluate_xc(XCType::PBE, double(rho), double(rho), sigma,
-                           double(0.1), sigma);
+    auto pbe =
+        ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::PBE, double(rho),
+                                  double(rho), sigma, double(0.1), sigma);
 
     EXPECT_NEAR(static_cast<double>(pbe.vrho_alpha),
                 static_cast<double>(pbe.vrho_beta), 1e-12)
@@ -380,7 +390,8 @@ TEST(XCReference, LSDA_Total_Sweep) {
         double ec = vwn5_ec(rho_a, rho_b);
         double f_ref = slater.energy_density + (rho_a + rho_b) * ec;
 
-        auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
+        auto out = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(rho_a), double(rho_b));
         double f_xc = static_cast<double>(out.energy_density);
 
         EXPECT_NEAR(f_xc, f_ref, rho * 1e-6)
@@ -400,14 +411,17 @@ TEST(XCReference, LSDA_Potential_FiniteDifference) {
     double rho_a = 0.3, rho_b = 0.3;
     double h = 1e-3;
 
-    auto out_fwd = evaluate_xc(XCType::LSDA, double(rho_a + h), double(rho_b));
-    auto out_bwd = evaluate_xc(XCType::LSDA, double(rho_a - h), double(rho_b));
+    auto out_fwd = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(rho_a + h), double(rho_b));
+    auto out_bwd = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                             double(rho_a - h), double(rho_b));
 
     double e_fwd = out_fwd.energy_density;
     double e_bwd = out_bwd.energy_density;
     double vrho_fd = (e_fwd - e_bwd) / (2.0 * h);
 
-    auto out = evaluate_xc(XCType::LSDA, double(rho_a), double(rho_b));
+    auto out = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA,
+                                         double(rho_a), double(rho_b));
     double vrho = static_cast<double>(out.vrho_alpha);
 
     // FD truncation O(h^2) ≈ 1e-6 + float noise O(ε/h) ≈ 1e-4
@@ -422,20 +436,20 @@ TEST(XCReference, PBE_Potential_FiniteDifference) {
     double sigma_aa = 0.1, sigma_ab = 0.05, sigma_bb = 0.1;
     double h = 1e-3;
 
-    auto out_fwd =
-        evaluate_xc(XCType::PBE, double(rho_a + h), double(rho_b),
-                    double(sigma_aa), double(sigma_ab), double(sigma_bb));
-    auto out_bwd =
-        evaluate_xc(XCType::PBE, double(rho_a - h), double(rho_b),
-                    double(sigma_aa), double(sigma_ab), double(sigma_bb));
+    auto out_fwd = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBE, double(rho_a + h), double(rho_b),
+        double(sigma_aa), double(sigma_ab), double(sigma_bb));
+    auto out_bwd = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBE, double(rho_a - h), double(rho_b),
+        double(sigma_aa), double(sigma_ab), double(sigma_bb));
 
     double e_fwd = out_fwd.energy_density;
     double e_bwd = out_bwd.energy_density;
     double vrho_fd = (e_fwd - e_bwd) / (2.0 * h);
 
-    auto out =
-        evaluate_xc(XCType::PBE, double(rho_a), double(rho_b), double(sigma_aa),
-                    double(sigma_ab), double(sigma_bb));
+    auto out = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBE, double(rho_a), double(rho_b),
+        double(sigma_aa), double(sigma_ab), double(sigma_bb));
     double vrho = static_cast<double>(out.vrho_alpha);
 
     EXPECT_NEAR(vrho, vrho_fd, 0.02)
@@ -448,21 +462,21 @@ TEST(XCReference, PBE_Vsigma_FiniteDifference) {
     double sigma_aa = 0.1, sigma_ab = 0.05, sigma_bb = 0.1;
     double h = 1e-3;
 
-    auto out_fwd =
-        evaluate_xc(XCType::PBE, double(rho_a), double(rho_b),
-                    double(sigma_aa + h), double(sigma_ab), double(sigma_bb));
-    auto out_bwd =
-        evaluate_xc(XCType::PBE, double(rho_a), double(rho_b),
-                    double(sigma_aa - h), double(sigma_ab), double(sigma_bb));
+    auto out_fwd = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBE, double(rho_a), double(rho_b),
+        double(sigma_aa + h), double(sigma_ab), double(sigma_bb));
+    auto out_bwd = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBE, double(rho_a), double(rho_b),
+        double(sigma_aa - h), double(sigma_ab), double(sigma_bb));
 
     double rho = rho_a + rho_b;
     double e_fwd = out_fwd.energy_density;
     double e_bwd = out_bwd.energy_density;
     double vsigma_fd = (e_fwd - e_bwd) / (2.0 * h);
 
-    auto out =
-        evaluate_xc(XCType::PBE, double(rho_a), double(rho_b), double(sigma_aa),
-                    double(sigma_ab), double(sigma_bb));
+    auto out = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBE, double(rho_a), double(rho_b),
+        double(sigma_aa), double(sigma_ab), double(sigma_bb));
     double vsigma = static_cast<double>(out.vsigma_aa);
 
     EXPECT_NEAR(vsigma, vsigma_fd, 0.02)

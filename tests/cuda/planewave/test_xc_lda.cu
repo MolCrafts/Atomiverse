@@ -1,10 +1,10 @@
 /// @file tests/cuda/planewave/test_xc_lda.cu
-/// @brief Verifies cuda::pw::internal::xc_lsda_grid against the CPU per-point
+/// @brief Verifies cuda::xc::xc_lsda_grid against the CPU per-point
 ///        XC that `cpu::pw::internal::XCBuilder::step(ws, XCType::LSDA)`
 ///        evaluates: evaluate_xc(LSDA, rho/2, rho/2) — Slater exchange +
 ///        VWN5 correlation — with the rho < 1e-12 cutoff.
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cuda/planewave/internal/xc_lda.cuh"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cuda/xc/xc_lsda.cuh"
 #include <algorithm>
 #include <cmath>
 #include <cuda_runtime.h>
@@ -12,10 +12,10 @@
 #include <random>
 #include <vector>
 
-using ATV::cpu::scf::evaluate_xc;
-using ATV::cpu::scf::XCType;
+using ATV::cpu::xc::evaluate_xc;
+using ATV::cpu::xc::XCType;
 using ATV::cuda::pw::internal::kXcEnergyPartials;
-using ATV::cuda::pw::internal::xc_lsda_grid;
+using ATV::cuda::xc::xc_lsda_grid;
 
 namespace {
 void* dmalloc(size_t bytes) {
@@ -144,7 +144,7 @@ TEST(CudaPWXcLda, EnergyReduction) {
     cudaMemcpy(d_rho, rho.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
 
     xc_lsda_grid(d_rho, d_vxc, d_exc, nr);
-    ATV::cuda::pw::internal::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
+    ATV::cuda::xc::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     double E_dev = 0;
@@ -168,7 +168,7 @@ TEST(CudaPWXcLda, EnergyReduction) {
 
     // Bitwise reproducibility: same input, same fixed grid, same bits.
     double E_again = 0;
-    ATV::cuda::pw::internal::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
+    ATV::cuda::xc::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
     cudaMemcpy(&E_again, d_E, sizeof(double), cudaMemcpyDeviceToHost);
     EXPECT_EQ(E_dev, E_again);
@@ -215,8 +215,7 @@ TEST(CudaPWXcLda, SpinMatchesCpuEvaluateXc) {
                          cudaMemcpyHostToDevice),
               cudaSuccess);
 
-    ATV::cuda::pw::internal::xc_lsda_spin_grid(d_ra, d_rb, d_va, d_vb, d_exc,
-                                               nr);
+    ATV::cuda::xc::xc_lsda_spin_grid(d_ra, d_rb, d_va, d_vb, d_exc, nr);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     std::vector<double> va(nr), vb(nr), exc(nr);

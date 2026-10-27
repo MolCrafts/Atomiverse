@@ -23,7 +23,7 @@
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 using namespace ATV;
 using namespace ATV::cpu::scf;
@@ -173,7 +173,8 @@ TEST(CfmmJ, DefaultDirectUnaffected) {
 
     internal::HamiltonianBuilder hb;
     hb.prepare(pack, /*is_hf=*/true, GridLevel::SG1, 0, 0, nullptr);
-    auto fr = hb.step(pack, /*restricted=*/true, /*is_hf=*/true, XCType::LSDA,
+    auto fr = hb.step(pack, /*restricted=*/true, /*is_hf=*/true,
+                      ATV::cpu::xc::XCType::LSDA,
                       /*hybrid_alpha_override=*/-1.0, P, P);
     EXPECT_TRUE(std::isfinite(fr.F_alpha(0, 0)));
 }

@@ -22,7 +22,7 @@
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
 #include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/internal/pcm.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
@@ -87,13 +87,13 @@ class FockStage : public cpu::Component {
     ///                     `Coulomb::CFMM` with `ri != RI::None` throws.
     /// @param cfmm_order   Multipole truncation order p for CFMM [dimensionless].
     /// @param cfmm_threshold Extent threshold ε_thr for CFMM (dimensionless).
-    FockStage(bool restricted, bool is_hf, XCType xc_type, GridLevel grid_level,
-              int n_radial, int n_angular, double hybrid_alpha_override,
-              const MolecularGrid* fixed_grid, internal::IntegralView integrals,
-              const RealMatrix& P_alpha, const RealMatrix& P_beta,
-              RealMatrix& F_alpha, RealMatrix& F_beta, RealMatrix& J,
-              double& e_xc_grid, double& e_exact_exchange, double& int_n_alpha,
-              double& int_n_beta, RI ri = RI::None,
+    FockStage(bool restricted, bool is_hf, xc::XCType xc_type,
+              GridLevel grid_level, int n_radial, int n_angular,
+              double hybrid_alpha_override, const MolecularGrid* fixed_grid,
+              internal::IntegralView integrals, const RealMatrix& P_alpha,
+              const RealMatrix& P_beta, RealMatrix& F_alpha, RealMatrix& F_beta,
+              RealMatrix& J, double& e_xc_grid, double& e_exact_exchange,
+              double& int_n_alpha, double& int_n_beta, RI ri = RI::None,
               AuxBasis aux_basis = AuxBasis::Def2JKFIT,
               bool generalized = false, internal::Pcm* pcm = nullptr,
               double& e_solvent = FockStage::discard_double_(),
@@ -138,7 +138,7 @@ class FockStage : public cpu::Component {
     bool generalized_; ///< GHF spinor build (2n×2n densities/Fock).
     double max_memory_mb_;
     bool mpi_;
-    XCType xc_type_;
+    xc::XCType xc_type_;
     const ATV::electronic::XcFunctional*
         functional_; ///< Borrowed immutable provider.
     GridLevel grid_level_;

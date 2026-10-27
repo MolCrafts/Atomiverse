@@ -71,7 +71,7 @@ ATV::cpu::gpw::GpwDft si_method(int nz, double cutoff_ry) {
                    GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
                    GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
              cutoff_ry,
-             ATV::cpu::gpw::XcKind::PBE};
+             ATV::cpu::xc::XCType::PBE};
     m.n_occ = 8 * nz; // 4 atoms × 4 valence e⁻ per repeat, closed shell
     m.max_iter = 60;
     m.tol = 1e-8;
@@ -87,7 +87,7 @@ int run() {
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
     using cpu::gpw::Kind;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     const double a = 5.43; // Si lattice constant [Å] (10.26120 Bohr)
 
@@ -111,14 +111,14 @@ int run() {
                       GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                       GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
-        GpwDft gamma{{kH}, 100.0, XcKind::PADE};
+        GpwDft gamma{{kH}, 100.0, ATV::cpu::xc::XCType::PADE};
         gamma.n_occ = 1;
         gamma.max_iter = 60;
         gamma.tol = 1e-9;
         gamma.build(h2);
         const double e_legacy = gamma.run(h2).e_total;
 
-        GpwDft kg{{kH}, 100.0, XcKind::PADE};
+        GpwDft kg{{kH}, 100.0, ATV::cpu::xc::XCType::PADE};
         kg.n_occ = 1;
         kg.max_iter = 60;
         kg.tol = 1e-9;

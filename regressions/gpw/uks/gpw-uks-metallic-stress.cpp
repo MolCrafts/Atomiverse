@@ -60,10 +60,10 @@ std::vector<ATV::cpu::gpw::Kind> na_kinds() {
 
 int run() {
     using namespace ATV;
+    using ATV::electronic::Smearing;
     using cpu::gpw::gpw_stress_fd;
     using cpu::gpw::GpwDft;
-    using cpu::gpw::Smearing;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     const double f_pin_ha =
         -92.126330608004; // same class as uks-metallic-forces
@@ -74,7 +74,7 @@ int run() {
     auto frame = na_bcc(a_ang);
 
     auto make_uks = [&]() {
-        GpwDft m{na_kinds(), 150.0, XcKind::PADE};
+        GpwDft m{na_kinds(), 150.0, ATV::cpu::xc::XCType::PADE};
         m.n_alpha = 9;
         m.n_beta = 9;
         m.max_iter = 80;
@@ -84,7 +84,7 @@ int run() {
         m.mix = 0.4;
         m.k_mesh[0] = m.k_mesh[1] = m.k_mesh[2] = 2;
         m.k_time_reversal = true;
-        m.smearing = Smearing::fermi_dirac;
+        m.smearing = ATV::electronic::Smearing::fermi_dirac;
         m.degauss = 0.02;
         m.extra_bands = 4;
         m.local_pp_on_grid = true;

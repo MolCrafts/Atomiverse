@@ -26,7 +26,7 @@
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
 #include "atomiverse/cpu/scf/rys_eri.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -698,7 +698,7 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                       const xt::xtensor<double, 2>& P_total_sph,
                                       const SlaterDeterminant& det,
                                       MeanFieldType method, SpinType spin,
-                                      XCType xc_type) {
+                                      xc::XCType xc_type) {
     const auto t_total = LogClock::now();
     const int natm = static_cast<int>(integrals.atoms.size());
     // GHF (generalized): the spin-off-diagonal blocks P^{αβ}, P^{βα} are
@@ -871,7 +871,7 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                       const xt::xtensor<double, 2>& P_alpha_in,
                                       const xt::xtensor<double, 2>& P_beta_in,
                                       MeanFieldType method, SpinType spin,
-                                      XCType xc_type) {
+                                      xc::XCType xc_type) {
     const auto t_total = LogClock::now();
     const int natm = static_cast<int>(integrals.atoms.size());
     // The on-the-fly ERI-derivative engines index Cartesian AOs; n is the
@@ -928,7 +928,7 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
     // PBE0) for a KS hybrid. It enters as a pure scalar multiplier on top of
     // the existing closed-shell exchange prefactors and the
     // 0.5*[P(i,k)P(j,l)+P(j,k)P(i,l)] symmetrization, which are unchanged.
-    const RshExchangeParams rsh = rsh_exchange_params(xc_type);
+    const xc::RshExchangeParams rsh = xc::rsh_exchange_params(xc_type);
     const double alpha_hf = is_ks ? rsh.alpha : 1.0;
     const double beta_lr = is_ks ? rsh.beta : 0.0;
     const bool do_exchange = alpha_hf != 0.0 || beta_lr != 0.0;

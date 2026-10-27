@@ -21,8 +21,8 @@
 using ATV::cpu::gpw::prolong_fft;
 using ATV::cpu::gpw::restrict_fft;
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::ks_grid_build_rks;
+using ATV::cpu::xc::XCType;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceProduct;
 using ATV::cuda::gpw::internal::KsChainEnergies;
@@ -239,7 +239,7 @@ TEST(CudaGpwKsMultigrid, TwoLevelMatchesCpuFragment) {
     std::vector<double> n_ion(n, 0.0);
     std::vector<double> v_loc;
     const auto cpu =
-        ks_grid_build_rks(fine, rho_fine, n_ion, v_loc, XcKind::PADE,
+        ks_grid_build_rks(fine, rho_fine, n_ion, v_loc, XCType::PADE,
                           /*nonperiodic=*/false, false, false, false);
     const auto V1 = restrict_fft(fine, coarse, cpu.veff, /*periodic=*/true);
     const auto acc0 = host_integrate(fine, prods0, cpu.veff);
@@ -310,7 +310,7 @@ TEST(CudaGpwKsMultigrid, SingleLevelMatchesFineOnly) {
     const auto rho = host_collocate(fine, prods);
     std::vector<double> n_ion(rho.size(), 0.0);
     std::vector<double> v_loc;
-    const auto cpu = ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE,
+    const auto cpu = ks_grid_build_rks(fine, rho, n_ion, v_loc, XCType::PADE,
                                        false, false, false, false);
     const auto acc = host_integrate(fine, prods, cpu.veff);
 
@@ -372,7 +372,7 @@ TEST(CudaGpwKsMultigrid, TwoLevelWithIonAndVloc) {
         }
     }
 
-    const auto cpu = ks_grid_build_rks(fine, rho, n_ion, v_loc, XcKind::PADE,
+    const auto cpu = ks_grid_build_rks(fine, rho, n_ion, v_loc, XCType::PADE,
                                        false, false, false, false);
     const auto V1 = restrict_fft(fine, coarse, cpu.veff, true);
     const auto acc0 = host_integrate(fine, prods0, cpu.veff);

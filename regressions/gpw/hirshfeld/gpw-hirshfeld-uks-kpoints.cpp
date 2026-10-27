@@ -65,7 +65,7 @@ constexpr double kEDispFreeAtom = -1.1699749375715385e-04; // Ha
 int run() {
     using namespace ATV;
     using cpu::gpw::GpwDft;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
     using clock = std::chrono::steady_clock;
     const auto t0 = clock::now();
 
@@ -82,7 +82,7 @@ int run() {
             cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-SR-GTH"),
             cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")}},
         120.0,
-        XcKind::PBE};
+        ATV::cpu::xc::XCType::PBE};
     gpw.n_alpha = 7;
     gpw.n_beta = 5;
     gpw.max_iter = 80;

@@ -59,7 +59,7 @@ int run() {
     // Product twin family (forces pin is 400 Ry / 1e-7). BOMD uses a cheaper
     // but same-method envelope so the ≤60 s gate holds; force quality is
     // already CP2K-pinned in gpw-forces-water. See REFERENCE.md.
-    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft dft{{O, H}, 200.0, cpu::xc::XCType::PBE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;

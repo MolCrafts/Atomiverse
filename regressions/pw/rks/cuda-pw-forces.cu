@@ -20,7 +20,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 #include "harness/registry.h"
 
@@ -93,7 +93,7 @@ int run_on_device(Device dev, std::vector<std::array<double, 3>>& forces) {
     if (dev == Device::Cpu) {
         cpu::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
                                molrs::Element::Si, "GTH-PBE-q4"),
-                           kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+                           kEcutRy, kMesh, cpu::xc::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;
@@ -115,7 +115,7 @@ int run_on_device(Device dev, std::vector<std::array<double, 3>>& forces) {
     } else {
         cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
                                 molrs::Element::Si, "GTH-PBE-q4"),
-                            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+                            kEcutRy, kMesh, cpu::xc::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;

@@ -171,7 +171,8 @@ double core_self_energy(const GpwAtom& a) {
 bool uses_kpath(const GpwDft& cfg) {
     // Match SCF dispatch: metallic smear always uses the Bloch path.
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
-           || cfg.k_mesh[2] != 1 || cfg.smearing != Smearing::none;
+           || cfg.k_mesh[2] != 1
+           || cfg.smearing != ATV::electronic::Smearing::none;
 }
 
 double scf_energy_ha(const std::vector<GpwAtom>& atoms, const GpwDft& method,
@@ -188,27 +189,6 @@ double scf_energy_ha(const std::vector<GpwAtom>& atoms, const GpwDft& method,
     if (!r.converged)
         throw std::runtime_error("gpw_stress_fd: SCF did not converge");
     return r.e_total;
-}
-
-cpu::scf::XCType gga_type(XcKind xc) {
-    using cpu::scf::XCType;
-    switch (xc) {
-    case XcKind::PBE:
-        return XCType::PBE;
-    case XcKind::PBEsol:
-        return XCType::PBEsol;
-    case XcKind::RevPBE:
-        return XCType::RevPBE;
-    case XcKind::RPBE:
-        return XCType::RPBE;
-    case XcKind::BLYP:
-        return XCType::BLYP;
-    case XcKind::OptB88VdW:
-        return XCType::OptB88VdW;
-    default:
-        throw std::invalid_argument(
-            "GPW stress: expected a pure GGA functional");
-    }
 }
 
 constexpr double kBuildScreen = 1e-12;
@@ -372,12 +352,12 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
             "gpw_stress analytic k: requires local_pp_on_grid");
     // Spin XC path matches multi-k UKS SCF / forces and Γ-UKS stress
     // (PADE LSD + pure GGA spin: PBE / PBEsol / RevPBE / RPBE / BLYP / OptB88).
-    if (uks && cfg.xc != XcKind::PADE && cfg.xc != XcKind::PBE
-        && cfg.xc != XcKind::PBEsol && cfg.xc != XcKind::RevPBE
-        && cfg.xc != XcKind::RPBE && cfg.xc != XcKind::BLYP
-        && cfg.xc != XcKind::OptB88VdW)
+    if (uks && cfg.xc != xc::XCType::PADE && cfg.xc != xc::XCType::PBE
+        && cfg.xc != xc::XCType::PBEsol && cfg.xc != xc::XCType::RevPBE
+        && cfg.xc != xc::XCType::RPBE && cfg.xc != xc::XCType::BLYP
+        && cfg.xc != xc::XCType::OptB88VdW)
         throw std::invalid_argument(
-            "gpw_stress analytic k UKS: XcKind must be PADE, PBE, PBEsol, "
+            "gpw_stress analytic k UKS: xc::XCType must be PADE, PBE, PBEsol, "
             "RevPBE, RPBE, BLYP, or OptB88VdW");
     const int n_disp = (cfg.d3 ? 1 : 0) + (cfg.d3bj ? 1 : 0) + (cfg.d4 ? 1 : 0)
                        + (cfg.ts ? 1 : 0) + (cfg.xdm ? 1 : 0)
@@ -523,14 +503,13 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     const PoissonResult es = solve_poisson(grid, n_tot);
     // Fixed-P Lagrangian energies do not request V_xc or its divergence FFTs.
     const double e_xc =
-        cfg.xc == XcKind::PADE
+        cfg.xc == xc::XCType::PADE
             ? (uks ? xc_grid_pade_lsd(grid, rho_a, rho_b).e_xc
                    : xc_grid_pade(grid, rho).e_xc)
-            : (uks ? xc_grid_gga_spin(grid, rho_a, rho_b, gga_type(cfg.xc),
+            : (uks ? xc_grid_gga_spin(grid, rho_a, rho_b, cfg.xc,
                                       electronic::XcOrder::Energy)
                          .e_xc
-                   : xc_grid_gga(grid, rho, gga_type(cfg.xc),
-                                 electronic::XcOrder::Energy)
+                   : xc_grid_gga(grid, rho, cfg.xc, electronic::XcOrder::Energy)
                          .e_xc);
 
     const std::vector<double> v_locsr =
@@ -881,14 +860,13 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 
     // Fixed-P Lagrangian energies do not request V_xc or its divergence FFTs.
     const double e_xc =
-        cfg.xc == XcKind::PADE
+        cfg.xc == xc::XCType::PADE
             ? (uks ? xc_grid_pade_lsd(grid, rho_a, rho_b).e_xc
                    : xc_grid_pade(grid, rho).e_xc)
-            : (uks ? xc_grid_gga_spin(grid, rho_a, rho_b, gga_type(cfg.xc),
+            : (uks ? xc_grid_gga_spin(grid, rho_a, rho_b, cfg.xc,
                                       electronic::XcOrder::Energy)
                          .e_xc
-                   : xc_grid_gga(grid, rho, gga_type(cfg.xc),
-                                 electronic::XcOrder::Energy)
+                   : xc_grid_gga(grid, rho, cfg.xc, electronic::XcOrder::Energy)
                          .e_xc);
 
     double e_locgrid = 0.0;

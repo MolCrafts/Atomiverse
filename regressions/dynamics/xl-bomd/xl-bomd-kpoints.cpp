@@ -60,7 +60,7 @@ int run() {
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
 
     // Cheap multi-k envelope (forces quality is pinned in gpw-kpoint-forces).
-    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::xc::XCType::PADE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;

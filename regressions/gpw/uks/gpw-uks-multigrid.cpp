@@ -46,7 +46,7 @@ int run() {
         cpu::gpw::GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::O, "GTH-PBE-q6")};
 
-    cpu::gpw::GpwDft dft{{O}, 400.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{O}, 400.0, cpu::xc::XCType::PADE};
     dft.ngrids = 4;
     dft.rel_cutoff = 60.0;
     dft.max_iter = 200;

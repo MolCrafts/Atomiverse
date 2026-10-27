@@ -89,7 +89,7 @@ void configure_smear(PwT& pw) {
     pw.max_iter = kMaxIter;
     pw.mix_beta = 0.4;
     pw.pulay_depth = 5;
-    pw.smearing = cpu::pw::Smearing::fermi_dirac;
+    pw.smearing = ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = kDegaussRy;
     pw.extra_bands = kExtraBands;
 }

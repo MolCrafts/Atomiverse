@@ -63,7 +63,7 @@
 #include "atomiverse/cpu/scf/stages/mix_stage.h"
 #include "atomiverse/cpu/scf/stages/rohf_couple_stage.h"
 #include "atomiverse/cpu/scf/stages/scf_converged.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
@@ -709,7 +709,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// @brief Admit a CPU molecular XC provider and retain its lifetime.
     /// @param functional Immutable provider. @param spin Method spin convention.
     /// @return Built-in identity or Custom for an external semi-local provider.
-    XCType select_functional_(
+    xc::XCType select_functional_(
         std::shared_ptr<const ATV::electronic::XcFunctional> functional,
         ATV::electronic::XcSpin spin);
     std::shared_ptr<const ATV::electronic::XcFunctional> xc_functional_;
@@ -724,7 +724,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// @brief Fixed by the concrete subclass (RHF/UHF/RKS/UKS).
     SpinType spin_ = SpinType::Restricted;
     MeanFieldType method_ = MeanFieldType::HF;
-    XCType xc_type_ = XCType::LSDA;
+    xc::XCType xc_type_ = xc::XCType::LSDA;
     int n_alpha_ = 0;
     int n_beta_ = 0;
 

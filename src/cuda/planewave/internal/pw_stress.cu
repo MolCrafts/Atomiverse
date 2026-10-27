@@ -11,10 +11,10 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/planewave/internal/convergence.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
+#include "atomiverse/electronic/smearing.h"
 
 #include <algorithm>
 #include <array>
@@ -65,14 +65,14 @@ void apply_strain(cpu::Frame& frame, const Mat3& strain) {
     }
 }
 
-cpu::pw::internal::SmearKind to_smear_kind(cpu::pw::Smearing s) {
-    using cpu::pw::Smearing;
-    using cpu::pw::internal::SmearKind;
-    if (s == Smearing::methfessel_paxton)
-        return SmearKind::methfessel_paxton;
-    if (s == Smearing::gaussian)
-        return SmearKind::gaussian;
-    return SmearKind::fermi_dirac;
+ATV::electronic::Smearing to_smear_kind(ATV::electronic::Smearing s) {
+    // Fixed occupations are not a law. Callers that still ask map onto
+    // Fermi–Dirac, which is what this helper did before the enums merged.
+    if (s == ATV::electronic::Smearing::methfessel_paxton)
+        return ATV::electronic::Smearing::methfessel_paxton;
+    if (s == ATV::electronic::Smearing::gaussian)
+        return ATV::electronic::Smearing::gaussian;
+    return ATV::electronic::Smearing::fermi_dirac;
 }
 
 /// Device SCF at `frame`; fills free/total energy and returns host ρ(r) + Ω.
@@ -99,8 +99,8 @@ RefScf
 run_device_scf(const cpu::Frame& frame,
                const ::ATV::electronic::NormConservingPotential& potential,
                double ecut_ry, int k_mesh, double tol, int max_iter,
-               double mix_beta, int pulay_depth, cpu::scf::XCType xc,
-               cpu::pw::Smearing smearing, double degauss, int mp_order,
+               double mix_beta, int pulay_depth, cpu::xc::XCType xc,
+               ATV::electronic::Smearing smearing, double degauss, int mp_order,
                int extra_bands, bool spin_polarized, int multiplicity) {
     auto owner = std::make_shared<cpu::pw::internal::PWProblem>();
     auto& prob = *owner;
@@ -108,7 +108,7 @@ run_device_scf(const cpu::Frame& frame,
                                         prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
     const int n_elec = prob.n_elec;
-    const bool use_smear = (smearing != cpu::pw::Smearing::none);
+    const bool use_smear = (smearing != ATV::electronic::Smearing::none);
 
     int n_alpha = 0;
     int n_beta = 0;
@@ -141,7 +141,7 @@ run_device_scf(const cpu::Frame& frame,
     const AccReal vol_bohr = prob.vol_bohr;
     const AccReal omega_bohr = ws.omega;
 
-    const cpu::pw::internal::SmearKind smear_kind = to_smear_kind(smearing);
+    const ATV::electronic::Smearing smear_kind = to_smear_kind(smearing);
     const AccReal degauss_ha =
         AccReal(degauss) * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
 
@@ -192,7 +192,7 @@ run_device_scf(const cpu::Frame& frame,
                     }
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
                 mp_order, AccReal(1));
             AccReal e_band = 0;
@@ -209,7 +209,7 @@ run_device_scf(const cpu::Frame& frame,
                     const auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     std::vector<AccReal> w_one(ev.size(), w);
-                    auto fill = cpu::pw::internal::fill_occupations(
+                    auto fill = ATV::electronic::fill_occupations(
                         ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
                         AccReal(1));
                     entropy_sum += fill.entropy;
@@ -321,7 +321,7 @@ run_device_scf(const cpu::Frame& frame,
                     all_weights.push_back(w);
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
                 mp_order);
 
@@ -333,13 +333,13 @@ run_device_scf(const cpu::Frame& frame,
                 const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 std::vector<AccReal> w_one(ev.size(), w);
-                auto fill = cpu::pw::internal::fill_occupations(
+                auto fill = ATV::electronic::fill_occupations(
                     ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
                 occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
                 for (std::size_t b = 0; b < ev.size(); ++b)
                     occ_k[static_cast<std::size_t>(ik)][b] =
-                        cpu::pw::internal::smear_f_band(
-                            ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
+                        ATV::electronic::smear_f_band(ev[b], mu_ha, degauss_ha,
+                                                      smear_kind, mp_order);
                 entropy_sum += fill.entropy;
                 n_occ += fill.n_occ;
             }
@@ -441,15 +441,13 @@ run_device_scf(const cpu::Frame& frame,
 }
 
 /// Non-self-consistent free / total energy [Ry] with remapped density.
-double nscf_energy_ry(const cpu::Frame& frame,
-                      const cpu::pw::internal::PWProblem& reference,
-                      double ecut_ry, int k_mesh, double mix_beta,
-                      int pulay_depth, cpu::scf::XCType xc,
-                      cpu::pw::Smearing smearing, double degauss, int mp_order,
-                      int extra_bands, bool spin_polarized, int n_alpha,
-                      int n_beta, const std::vector<double>& rho_r0,
-                      const std::vector<double>& rho_a0,
-                      const std::vector<double>& rho_b0, double omega0_bohr) {
+double nscf_energy_ry(
+    const cpu::Frame& frame, const cpu::pw::internal::PWProblem& reference,
+    double ecut_ry, int k_mesh, double mix_beta, int pulay_depth,
+    cpu::xc::XCType xc, ATV::electronic::Smearing smearing, double degauss,
+    int mp_order, int extra_bands, bool spin_polarized, int n_alpha, int n_beta,
+    const std::vector<double>& rho_r0, const std::vector<double>& rho_a0,
+    const std::vector<double>& rho_b0, double omega0_bohr) {
     cpu::pw::internal::PWProblem prob;
     cpu::pw::internal::setup_pw_problem_fixed_basis(frame, reference, ecut_ry,
                                                     k_mesh, prob);
@@ -473,7 +471,7 @@ double nscf_energy_ry(const cpu::Frame& frame,
     ws.pulay_depth = pulay_depth;
 
     const int n_elec = prob.n_elec;
-    const bool use_smear = (smearing != cpu::pw::Smearing::none);
+    const bool use_smear = (smearing != ATV::electronic::Smearing::none);
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
     int n_bands =
         spin_polarized ? std::max(std::max(n_alpha, n_beta), 1) : prob.n_bands;
@@ -524,7 +522,7 @@ double nscf_energy_ry(const cpu::Frame& frame,
                     }
                 }
             }
-            const AccReal mu = cpu::pw::internal::find_fermi_level(
+            const AccReal mu = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), width, kind, mp_order,
                 AccReal(1));
             AccReal e_band = 0, entropy = 0;
@@ -533,7 +531,7 @@ double nscf_energy_ry(const cpu::Frame& frame,
                     const auto& ev = spectra[spin * n_kpts + ik];
                     const AccReal weight = prob.kg.weights[ik];
                     const std::vector<AccReal> weights(ev.size(), weight);
-                    const auto fill = cpu::pw::internal::fill_occupations(
+                    const auto fill = ATV::electronic::fill_occupations(
                         ev, weights, mu, width, kind, mp_order, AccReal(1));
                     entropy += fill.entropy;
                     for (int band = 0; band < n_bands; ++band)
@@ -587,7 +585,7 @@ double nscf_energy_ry(const cpu::Frame& frame,
     AccReal entropy_sum = AccReal(0);
 
     if (use_smear) {
-        const cpu::pw::internal::SmearKind smear_kind = to_smear_kind(smearing);
+        const ATV::electronic::Smearing smear_kind = to_smear_kind(smearing);
         const AccReal degauss_ha =
             AccReal(degauss) * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
 
@@ -617,7 +615,7 @@ double nscf_energy_ry(const cpu::Frame& frame,
                 all_weights.push_back(w);
             }
         }
-        const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+        const AccReal mu_ha = ATV::electronic::find_fermi_level(
             all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
             mp_order);
 
@@ -625,11 +623,11 @@ double nscf_energy_ry(const cpu::Frame& frame,
             const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
             const auto& ev = evals_k[static_cast<std::size_t>(ik)];
             std::vector<AccReal> w_one(ev.size(), w);
-            auto fill = cpu::pw::internal::fill_occupations(
+            auto fill = ATV::electronic::fill_occupations(
                 ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
             entropy_sum += fill.entropy;
             for (std::size_t b = 0; b < ev.size(); ++b) {
-                const AccReal f_b = cpu::pw::internal::smear_f_band(
+                const AccReal f_b = ATV::electronic::smear_f_band(
                     ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
                 e_band += w * ev[b] * f_b;
             }
@@ -666,7 +664,7 @@ std::array<double, 6> pw_stress_analytic_impl(
     const cpu::Frame& frame,
     const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
     int k_mesh, double tol, int max_iter, double mix_beta, int pulay_depth,
-    cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
+    cpu::xc::XCType xc, ATV::electronic::Smearing smearing, double degauss,
     int mp_order, int extra_bands, bool spin_polarized, int multiplicity,
     double* energy_ry_out, cpu::pw::PWResult* result_out) {
     if (frame.nlocal() <= 0)
@@ -674,7 +672,7 @@ std::array<double, 6> pw_stress_analytic_impl(
     if (frame.box.volume() <= 0)
         throw std::invalid_argument(
             "cuda::pw::pw_stress: non-positive cell volume");
-    if (smearing != cpu::pw::Smearing::none && !(degauss > 0.0))
+    if (smearing != ATV::electronic::Smearing::none && !(degauss > 0.0))
         throw std::invalid_argument(
             "cuda::pw::pw_stress: degauss must be > 0 [Ry] when smearing is "
             "enabled");
@@ -697,10 +695,10 @@ std::array<double, 6> pw_stress_analytic_impl(
                     "using last density for HF stress (E=%.8f Ry)\n",
                     ref.iterations, ref.energy_ry);
     } else {
-        std::printf("[pw] cuda stress-scf done iter=%d energy_ry=%.8f%s%s\n",
-                    ref.iterations, ref.energy_ry,
-                    spin_polarized ? " spin=1" : "",
-                    smearing != cpu::pw::Smearing::none ? " smear=1" : "");
+        std::printf(
+            "[pw] cuda stress-scf done iter=%d energy_ry=%.8f%s%s\n",
+            ref.iterations, ref.energy_ry, spin_polarized ? " spin=1" : "",
+            smearing != ATV::electronic::Smearing::none ? " smear=1" : "");
     }
 
     // Hellmann–Feynman strain-FD of the NSCF free/total energy (one SCF).

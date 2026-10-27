@@ -64,7 +64,7 @@ int run() {
 
     // One method recipe for the product evaluator and the FD twin.
     auto make_method = [&O]() {
-        cpu::gpw::GpwDft m({O}, 400.0, cpu::gpw::XcKind::PBE);
+        cpu::gpw::GpwDft m({O}, 400.0, cpu::xc::XCType::PBE);
         m.n_alpha = 7;
         m.n_beta = 5;
         m.max_iter = 200;

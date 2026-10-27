@@ -20,7 +20,7 @@
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/product_integrate.cuh"
 #include "atomiverse/cuda/gpw/internal/spectral_fft.cuh"
-#include "atomiverse/cuda/gpw/internal/xc_lda.cuh"
+#include "atomiverse/cuda/xc/xc_pade.cuh"
 
 #include <cuda_runtime.h>
 
@@ -31,16 +31,6 @@ namespace ATV {
 namespace cuda {
 namespace gpw {
 namespace internal {
-
-/// @brief XC functional for one KS-chain launch.
-///
-/// `PADE` = GTH Padé LDA (default; original chain). `PBE` = closed-shell PBE
-/// GGA (spectral ∇ρ, device PBE-X/C, spectral −∇·flux). Requires the plane-wave
-/// CUDA product (`ATV_HAS_PW`) for the shared `xc_pbe_grid` kernel.
-enum class KsXcKind {
-    PADE = 0,
-    PBE = 1,
-};
 
 /// @brief Host-side scalars from one KS-chain launch [Hartree].
 struct KsChainEnergies {
@@ -120,7 +110,8 @@ class KsChainDevice {
     KsChainEnergies run(const DeviceProduct* d_prods, int nprod,
                         const double* d_n_ion = nullptr,
                         const double* d_v_loc = nullptr,
-                        double* d_acc = nullptr, KsXcKind xc = KsXcKind::PADE);
+                        double* d_acc = nullptr,
+                        cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
     /// @brief Run Poisson+XC+assemble from a pre-built fine-grid density.
     ///
@@ -141,7 +132,7 @@ class KsChainDevice {
                                  const double* d_v_loc = nullptr,
                                  const DeviceProduct* d_prods = nullptr,
                                  int nprod = 0, double* d_acc = nullptr,
-                                 KsXcKind xc = KsXcKind::PADE);
+                                 cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
     /// @brief Collinear UKS product chain (Padé LSD first cut).
     ///
@@ -162,7 +153,7 @@ class KsChainDevice {
     /// @param d_v_loc   Optional local PP.
     /// @param d_acc_a   Optional α integrate output (null ⇒ skip).
     /// @param d_acc_b   Optional β integrate output (null ⇒ skip).
-    /// @param xc        Must be `KsXcKind::PADE` (first UKS cut).
+    /// @param xc        Must be `cpu::xc::XCType::PADE` (first UKS cut).
     /// @return Host-side energy pieces after device sync.
     KsChainEnergies run_uks(const DeviceProduct* d_prods_a, int nprod_a,
                             const DeviceProduct* d_prods_b, int nprod_b,
@@ -170,7 +161,7 @@ class KsChainDevice {
                             const double* d_v_loc = nullptr,
                             double* d_acc_a = nullptr,
                             double* d_acc_b = nullptr,
-                            KsXcKind xc = KsXcKind::PADE);
+                            cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
     /// @brief Device pointer to last V_eff (RKS) / V_eff^α (UKS) [Hartree].
     const double* d_veff() const { return d_veff_; }
@@ -245,10 +236,12 @@ class KsMultiGridChainDevice {
     ///        nlevels). Null array ⇒ skip all integrate. Per-level null ⇒ skip
     ///        that level. Each non-null buffer length = nprod_by_level[l].
     /// @param xc XC on the fine grid.
-    KsChainEnergies
-    run(const DeviceProduct* const* d_prods_by_level, const int* nprod_by_level,
-        const double* d_n_ion = nullptr, const double* d_v_loc = nullptr,
-        double* const* d_acc_by_level = nullptr, KsXcKind xc = KsXcKind::PADE);
+    KsChainEnergies run(const DeviceProduct* const* d_prods_by_level,
+                        const int* nprod_by_level,
+                        const double* d_n_ion = nullptr,
+                        const double* d_v_loc = nullptr,
+                        double* const* d_acc_by_level = nullptr,
+                        cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
     const KsChainDevice& fine_chain() const { return *fine_; }
     const MultigridDesc& multigrid() const { return mg_; }

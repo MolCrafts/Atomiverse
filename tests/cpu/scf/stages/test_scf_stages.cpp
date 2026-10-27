@@ -26,7 +26,7 @@
 /// constructor signatures this file assumes (discrete params, then read refs,
 /// then write refs) are:
 ///
-///   FockStage(bool restricted, bool is_hf, XCType, GridLevel, int n_radial,
+///   FockStage(bool restricted, bool is_hf, xc::XCType, GridLevel, int n_radial,
 ///             int n_angular, double hybrid_alpha_override,
 ///             const MolecularGrid* fixed_grid,
 ///             const internal::IntegralWorkspace& integrals,
@@ -100,7 +100,7 @@
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/grid.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 #include "atomiverse/cpu/linalg/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/density_builder.h"
@@ -338,14 +338,14 @@ TEST(FockStage, ReproducesHamiltonianBuilderRestrictedHF) {
     hb.prepare(ints, /*is_hf=*/true, cpu::scf::GridLevel::SG0,
                /*n_radial=*/50, /*n_angular=*/110, /*fixed_grid=*/nullptr);
     FockResult ref = hb.step(ints, /*restricted=*/true, /*is_hf=*/true,
-                             cpu::scf::XCType::LSDA,
+                             cpu::xc::XCType::LSDA,
                              /*hybrid_alpha_override=*/-1.0, P, P);
 
     // Under test: the config-free discrete FockStage on the same P.
     RealMatrix F_a, F_b, J;
     double e_xc = -123.0, e_exact = -123.0, int_na = -123.0, int_nb = -123.0;
     cpu::scf::FockStage fock(
-        /*restricted=*/true, /*is_hf=*/true, cpu::scf::XCType::LSDA,
+        /*restricted=*/true, /*is_hf=*/true, cpu::xc::XCType::LSDA,
         cpu::scf::GridLevel::SG0, /*n_radial=*/50, /*n_angular=*/110,
         /*hybrid_alpha_override=*/-1.0, /*fixed_grid=*/nullptr, ints, P, P, F_a,
         F_b, J, e_xc, e_exact, int_na, int_nb);
@@ -382,13 +382,13 @@ TEST(FockStage, ReproducesHamiltonianBuilderRestrictedKS) {
     hb.prepare(ints, /*is_hf=*/false, cpu::scf::GridLevel::SG0,
                /*n_radial=*/50, /*n_angular=*/110, /*fixed_grid=*/nullptr);
     FockResult ref = hb.step(ints, /*restricted=*/true, /*is_hf=*/false,
-                             cpu::scf::XCType::LSDA,
+                             cpu::xc::XCType::LSDA,
                              /*hybrid_alpha_override=*/-1.0, P, P);
 
     RealMatrix F_a, F_b, J;
     double e_xc = 0, e_exact = 0, int_na = 0, int_nb = 0;
     cpu::scf::FockStage fock(
-        /*restricted=*/true, /*is_hf=*/false, cpu::scf::XCType::LSDA,
+        /*restricted=*/true, /*is_hf=*/false, cpu::xc::XCType::LSDA,
         cpu::scf::GridLevel::SG0, /*n_radial=*/50, /*n_angular=*/110,
         /*hybrid_alpha_override=*/-1.0, /*fixed_grid=*/nullptr, ints, P, P, F_a,
         F_b, J, e_xc, e_exact, int_na, int_nb);
@@ -419,7 +419,7 @@ TEST(FockStage, BindsFockPhaseAndGuardsWithCtxAt) {
     RealMatrix F_b, J;
     double e_xc = 0, e_exact = 0, int_na = 0, int_nb = 0;
     cpu::scf::FockStage fock(
-        true, true, cpu::scf::XCType::LSDA, cpu::scf::GridLevel::SG0, 50, 110,
+        true, true, cpu::xc::XCType::LSDA, cpu::scf::GridLevel::SG0, 50, 110,
         -1.0, nullptr, ints, P, P, F_a, F_b, J, e_xc, e_exact, int_na, int_nb);
 
     // default_bindings() declares exactly the fock phase, via make_binding.

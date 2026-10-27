@@ -8,7 +8,7 @@
 /// pseudopotential are evaluated on a uniform real-space grid (collocate / FFT
 /// Poisson / integrate). It reuses only shared *physics/algebra* from public
 /// headers — `cpu::linalg` (generalized eigensolve, density build) and
-/// `cpu::xc::pade` (functional) — never another domain's `internal`.
+/// `cpu::xc` (`evaluate_xc`) — never another domain's `internal`.
 ///
 /// Scope: closed-shell (RKS, `n_occ`) at Γ **or** on a Monkhorst-Pack k mesh
 /// (`k_mesh` / explicit `k_points`; complex Bloch matrices per k, k-summed
@@ -54,6 +54,8 @@
 #include "atomiverse/cpu/gpw/stages/ks_build_stage.h"
 #include "atomiverse/cpu/gpw/stages/mix_stage.h"
 #include "atomiverse/cpu/linalg/matrix.h" // RealMatrix
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/electronic/smearing.h"
 #include "atomiverse/molpy.hpp"
 
 namespace ATV {
@@ -98,34 +100,28 @@ struct Kind {
         : element(element), basis(std::move(basis)), pot(std::move(pot)) {}
 };
 
-/// @brief Exchange-correlation functional choice.
+/// @brief Reject an `XCType` GPW does not evaluate.
 ///
-/// `PADE` — LDA Padé; `PBE` / `PBEsol` / `RevPBE` / `RPBE` / `BLYP` /
-/// `OptB88VdW` — pure GGA (OptB88VdW = optB88-x + PW92-c; pair with `vdw_df`)
-/// (shared `evaluate_xc`). RKS and Γ-UKS support all six (spin-GGA via
-/// `xc_grid_*_spin`; closed-shell via `xc_grid_*`).
-enum class XcKind : int { PADE, PBE, PBEsol, RevPBE, RPBE, BLYP, OptB88VdW };
-
-/// @brief Whether `xc` needs the density gradient (GGA) rather than ρ alone.
-/// @param xc functional choice.
-/// @return `true` for every functional routed through `xc_grid_gga*`, i.e.
-///         everything except the `PADE` LDA. Owns the question that callers
-///         would otherwise re-enumerate member by member.
-constexpr bool is_gga(XcKind xc) { return xc != XcKind::PADE; }
-
-/// @brief Metallic occupation smearing kind (product path: multi-k RKS/UKS).
-///
-/// Mirrors `cpu::pw::Smearing` for API parity with QE/CP2K. Default `none`
-/// keeps fixed integer fillings (`n_occ` double-occupied, or `n_alpha`/
-/// `n_beta` for UKS). When not `none`, the SCF reports the Mermin free
-/// energy \(F=E_{\mathrm{KS}}-TS\) as `e_total` and fills bands via a
-/// shared chemical potential \(\mu\) (RKS: band form \(f\in[0,2]\); UKS:
-/// spin-orbital form \(f_\sigma\in[0,1]\) over \(\alpha+\beta\)).
-enum class Smearing : int {
-    none = 0,              ///< Fixed integer occupations.
-    fermi_dirac = 1,       ///< Fermi–Dirac (CP2K `METHOD FERMI_DIRAC`).
-    methfessel_paxton = 2, ///< Methfessel–Paxton of order `mp_order`.
-};
+/// Supported: PADE, PBE, PBEsol, RevPBE, RPBE, BLYP, OptB88VdW. LSDA,
+/// hybrids, range-separated hybrids, double hybrids and Custom throw.
+/// A wider catalog than this method implements is allowed; this does not
+/// add the missing kernels.
+inline void require_gpw_xc(xc::XCType xc) {
+    switch (xc) {
+    case xc::XCType::PADE:
+    case xc::XCType::PBE:
+    case xc::XCType::PBEsol:
+    case xc::XCType::RevPBE:
+    case xc::XCType::RPBE:
+    case xc::XCType::BLYP:
+    case xc::XCType::OptB88VdW:
+        return;
+    default:
+        throw std::invalid_argument(
+            "GpwDft: XCType is not a GPW functional (PADE, PBE, PBEsol, "
+            "RevPBE, RPBE, BLYP, OptB88VdW)");
+    }
+}
 
 /// @brief GPW SCF result with an energy decomposition.
 struct GpwResult {
@@ -284,7 +280,7 @@ struct GpwResult {
 /// cpu::gpw::GpwDft dft{{{molrs::Element::H,
 ///                        cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
 ///                        cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
-///                      /*cutoff_ry=*/280.0, cpu::gpw::XcKind::PADE};
+///                      /*cutoff_ry=*/280.0, cpu::xc::XCType::PADE};
 /// dft.build(frame);                  // fail-fast validation
 /// dft.run(frame);                    // eV on frame.meta[kEnergy]
 /// dft.forces(frame);                 // eV/Å on kAtom_f*, eV on kEnergy
@@ -316,7 +312,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     const double cutoff_ry; ///< density grid cutoff [Ry].
     /// @brief LDA (PADE) or GGA (PBE / PBEsol / RevPBE / RPBE / BLYP /
     ///        OptB88VdW) exchange–correlation.
-    const XcKind xc;
+    const xc::XCType xc;
 
     // ── Knobs ──────────────────────────────────────────────────────────
     int ngrids = 1;          ///< CP2K multigrid levels.
@@ -460,7 +456,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     ///        Product path: multi-k RKS (DIIS **and** OT, with or without
     ///        `plus_u`) and multi-k collinear UKS (DIIS **and** OT), including
     ///        multi-k UKS OT + DFT+U + smear (`reg_ot-uks-dftu-smearing`).
-    Smearing smearing = Smearing::none;
+    ATV::electronic::Smearing smearing = ATV::electronic::Smearing::none;
     /// @brief Smearing width [Ry] (QE `degauss` / CP2K \(k_B T_e\)). Required
     ///        `> 0` when `smearing != none`. Converted to Ha inside the SCF.
     double degauss = 0.02;
@@ -482,7 +478,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @param kinds One basis + GTH entry per element in the Frames to solve.
     /// @param cutoff_ry Density grid cutoff [Ry].
     /// @param xc Exchange–correlation functional.
-    GpwDft(std::vector<Kind> kinds, double cutoff_ry, XcKind xc)
+    GpwDft(std::vector<Kind> kinds, double cutoff_ry, xc::XCType xc)
         : kinds(std::move(kinds)), cutoff_ry(cutoff_ry), xc(xc) {}
     GpwDft(const GpwDft&) = delete;
     GpwDft& operator=(const GpwDft&) = delete;

@@ -15,9 +15,9 @@ namespace scf {
 ///        electrons, for open-shell / spin-polarized systems.
 class UKS : public MeanFieldMethod<UKS> {
   public:
-    const int n_alpha; ///< Alpha (spin-up) electrons.
-    const int n_beta;  ///< Beta (spin-down) electrons.
-    const XCType xc;   ///< Exchange–correlation functional.
+    const int n_alpha;   ///< Alpha (spin-up) electrons.
+    const int n_beta;    ///< Beta (spin-down) electrons.
+    const xc::XCType xc; ///< Exchange–correlation functional.
 
     /// @brief Construct UKS (Hcore guess, 0.5 damping, DIIS 6 vectors,
     ///        energy tolerance 1e-8 Ha).
@@ -26,8 +26,8 @@ class UKS : public MeanFieldMethod<UKS> {
     /// @param n_beta  Spin-down electrons.
     /// @param xc      Exchange–correlation functional.
     /// @param charge  Molecular charge [e].
-    UKS(BasisSet basis, int n_alpha, int n_beta, XCType xc = XCType::LSDA,
-        int charge = 0);
+    UKS(BasisSet basis, int n_alpha, int n_beta,
+        xc::XCType xc = xc::XCType::LSDA, int charge = 0);
     /// @brief Construct with an immutable external semi-local CPU XC provider.
     /// @param basis Gaussian basis. @param functional Batched XC provider.
     /// @param charge Molecular charge [e].

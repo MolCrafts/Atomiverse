@@ -51,7 +51,7 @@ int run() {
     using cpu::gpw::Kind;
     using cpu::gpw::mbd_rsscs_pbe;
     using cpu::gpw::MbdResult;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     constexpr double kA2B = 1.0 / 0.52917720859;
 
@@ -131,7 +131,7 @@ int run() {
                        GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                        GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
                  100.0,
-                 XcKind::PADE};
+                 ATV::cpu::xc::XCType::PADE};
         m.n_occ = 1;
         m.tol = 1e-8;
         m.max_iter = 60;

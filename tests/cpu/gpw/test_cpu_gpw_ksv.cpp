@@ -136,7 +136,7 @@ TEST(GpwBerryComputeGates, MetallicAndEmptyThrow) {
                         GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
                         GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
                   /*cutoff_ry=*/50.0,
-                  XcKind::PADE};
+                  ATV::cpu::xc::XCType::PADE};
     method.n_occ = 2;
     method.build(atoms);
 
@@ -145,11 +145,11 @@ TEST(GpwBerryComputeGates, MetallicAndEmptyThrow) {
     berry.k_string = 2;
     berry.directions = {true, false, false};
 
-    method.smearing = Smearing::fermi_dirac;
+    method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.02;
     EXPECT_THROW(berry.compute(method, atoms), std::invalid_argument);
 
-    method.smearing = Smearing::none;
+    method.smearing = ATV::electronic::Smearing::none;
     method.n_occ = 0;
     // rebuild validation for empty occ is on compute, not build if already built
     EXPECT_THROW(berry.compute(method, atoms), std::invalid_argument);

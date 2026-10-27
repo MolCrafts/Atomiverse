@@ -45,16 +45,16 @@ int run() {
     using namespace ATV;
 
     // Functional metadata (no Config bag).
-    constexpr auto xc = cpu::scf::XCType::B2PLYP;
-    if (std::fabs(cpu::scf::hybrid_exchange_fraction(xc) - 0.53) > 1e-15) {
+    constexpr auto xc = cpu::xc::XCType::B2PLYP;
+    if (std::fabs(cpu::xc::hybrid_exchange_fraction(xc) - 0.53) > 1e-15) {
         std::fprintf(stderr, "FAIL: B2PLYP hybrid_exchange_fraction != 0.53\n");
         return 1;
     }
-    if (std::fabs(cpu::scf::hybrid_pt2_fraction(xc) - 0.27) > 1e-15) {
+    if (std::fabs(cpu::xc::hybrid_pt2_fraction(xc) - 0.27) > 1e-15) {
         std::fprintf(stderr, "FAIL: B2PLYP hybrid_pt2_fraction != 0.27\n");
         return 1;
     }
-    if (!cpu::scf::is_gga(xc)) {
+    if (!cpu::xc::is_gga(xc)) {
         std::fprintf(stderr, "FAIL: B2PLYP is_gga == false\n");
         return 1;
     }
@@ -65,7 +65,7 @@ int run() {
     rks.tol = 1e-10;
     rks.max_iter = 100;
     // Double-hybrid PT2 scale: E_tot = E_KS + a_c * E_MP2.
-    const double a_c = cpu::scf::hybrid_pt2_fraction(xc);
+    const double a_c = cpu::xc::hybrid_pt2_fraction(xc);
     ATV::cpu::scf::MP2<decltype(rks)> mp_corr{rks};
     mp_corr.os_scale = a_c;
     mp_corr.ss_scale = a_c;
@@ -84,7 +84,7 @@ int run() {
     const double e_mp2_full = dh.e_corr_os + dh.e_corr_ss;
 
     std::printf("B2PLYP a_x=%.2f a_c=%.2f\n",
-                cpu::scf::hybrid_exchange_fraction(xc), a_c);
+                cpu::xc::hybrid_exchange_fraction(xc), a_c);
     std::printf("KS     E = %.12f Ha (pin %.12f, dE = %.3e)\n", e_ks, want_e_ks,
                 e_ks - want_e_ks);
     std::printf("MP2 OS = %.12f Ha\n", dh.e_corr_os);

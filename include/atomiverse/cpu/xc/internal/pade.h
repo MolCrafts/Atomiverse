@@ -1,4 +1,4 @@
-/// @file cpu/xc/pade.h
+/// @file cpu/xc/internal/pade.h
 /// @brief Goedecker-Teter-Hutter Padé LDA exchange-correlation functional.
 ///
 /// This is CP2K's *native* PADE functional (CP2K evaluates it in
@@ -12,7 +12,8 @@
 /// (1996); Padé form of the Perdew-Wang/Ceperley-Alder LDA) with a
 /// spin-interpolation between the para- and ferromagnetic parameter sets.
 ///
-/// Convention matches the project XCOutput (see cpu/scf/xc_functional.h):
+/// Internal point kernel for `evaluate_xc(XCType::PADE)`. Not a second public
+/// functional: callers use `cpu::xc::evaluate_xc`.
 ///   - `energy_density` is f_xc [Ha/Bohr^3], E_xc = integral f_xc dr.
 ///   - `vrho_a`, `vrho_b` are df_xc/d(rho_sigma) (the XC potential).
 #pragma once
@@ -20,9 +21,10 @@
 namespace ATV {
 namespace cpu {
 namespace xc {
+namespace detail {
 
 /// @brief PADE LDA output at a single point (LDA: no gradient channels).
-struct PadeXC {
+struct PadePoint {
     double energy_density = 0.0; ///< f_xc [Ha/Bohr^3] (= -rho*p/q).
     double vrho_a = 0.0;         ///< df_xc/drho_alpha.
     double vrho_b = 0.0;         ///< df_xc/drho_beta.
@@ -36,9 +38,10 @@ struct PadeXC {
 ///
 /// @param rho_a Alpha density [electrons/Bohr^3].
 /// @param rho_b Beta density [electrons/Bohr^3].
-/// @return PadeXC with energy_density and the two spin-resolved potentials.
-PadeXC pade_lsd(double rho_a, double rho_b);
+/// @return PadePoint with energy_density and the two spin-resolved potentials.
+PadePoint pade_lsd(double rho_a, double rho_b);
 
+} // namespace detail
 } // namespace xc
 } // namespace cpu
 } // namespace ATV

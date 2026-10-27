@@ -14,10 +14,10 @@
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/restricted_scf.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
+#include "atomiverse/electronic/smearing.h"
 
 #include <algorithm>
 #include <cmath>
@@ -436,7 +436,7 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
     if (n_bands < 2)
         throw std::invalid_argument("Bands::compute: n_bands must be >= 2");
 
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument("Bands::compute: degauss must be > 0 [Ry] "
                                     "when smearing is enabled");
@@ -596,7 +596,7 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
     if (n_bins < 2)
         throw std::invalid_argument("Dos::compute: n_bins must be >= 2");
 
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "Dos::compute: degauss must be > 0 [Ry] when smearing is enabled");
@@ -729,11 +729,12 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
         double e_cut = out.e_vbm_ry;
         if (use_smear) {
             // Recompute μ on the DOS mesh over α+β (Ry; spin_degen = 1).
-            SmearKind kind = SmearKind::fermi_dirac;
-            if (method.smearing == Smearing::methfessel_paxton)
-                kind = SmearKind::methfessel_paxton;
-            else if (method.smearing == Smearing::gaussian)
-                kind = SmearKind::gaussian;
+            ATV::electronic::Smearing kind =
+                ATV::electronic::Smearing::fermi_dirac;
+            if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+                kind = ATV::electronic::Smearing::methfessel_paxton;
+            else if (method.smearing == ATV::electronic::Smearing::gaussian)
+                kind = ATV::electronic::Smearing::gaussian;
             std::vector<AccReal> evals_a_ry(flat_all.begin(), flat_all.end());
             std::vector<AccReal> weights_a(flat_w_all.begin(),
                                            flat_w_all.end());
@@ -826,14 +827,14 @@ DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
     double e_cut = out.e_vbm_ry;
     if (use_smear) {
         // Recompute μ on the DOS mesh (NSCF spectrum) in Ry.
-        internal::SmearKind kind = internal::SmearKind::fermi_dirac;
-        if (method.smearing == Smearing::methfessel_paxton)
-            kind = internal::SmearKind::methfessel_paxton;
-        else if (method.smearing == Smearing::gaussian)
-            kind = internal::SmearKind::gaussian;
+        ATV::electronic::Smearing kind = ATV::electronic::Smearing::fermi_dirac;
+        if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+            kind = ATV::electronic::Smearing::methfessel_paxton;
+        else if (method.smearing == ATV::electronic::Smearing::gaussian)
+            kind = ATV::electronic::Smearing::gaussian;
         std::vector<AccReal> evals_a(flat_e.begin(), flat_e.end());
         std::vector<AccReal> weights_a(flat_w.begin(), flat_w.end());
-        const AccReal mu_ry = internal::find_fermi_level(
+        const AccReal mu_ry = ATV::electronic::find_fermi_level(
             evals_a, weights_a, AccReal(prob.n_elec), AccReal(method.degauss),
             kind, method.mp_order, AccReal(2));
         out.e_fermi_ry = static_cast<double>(mu_ry);

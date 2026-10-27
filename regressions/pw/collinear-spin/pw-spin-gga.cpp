@@ -14,7 +14,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "harness/registry.h"
 
 namespace atv_reg_pw_pw_spin_gga {
@@ -65,7 +65,7 @@ int run() {
     auto frame = o2_frame();
 
     PW pbe{std::make_shared<UpfPseudopotential>(upf), 12.0, 1,
-           cpu::scf::XCType::PBE};
+           cpu::xc::XCType::PBE};
     pbe.tol = 1e-7;
     pbe.max_iter = 200;
     pbe.mix_beta = 0.3;
@@ -99,7 +99,7 @@ int run() {
     // LSDA spin twin for GGA activation (same geometry / occupations).
     auto frame_lsda = o2_frame();
     PW lsda{std::make_shared<UpfPseudopotential>(upf), 12.0, 1,
-            cpu::scf::XCType::LSDA};
+            cpu::xc::XCType::LSDA};
     lsda.tol = 1e-7;
     lsda.max_iter = 200;
     lsda.mix_beta = 0.3;

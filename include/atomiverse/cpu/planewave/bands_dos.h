@@ -8,7 +8,7 @@
 ///
 /// @code
 ///   cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf"), /*ecut_ry=*/15.0,
-///                  /*k_mesh=*/2, cpu::scf::XCType::LSDA};
+///                  /*k_mesh=*/2, cpu::xc::XCType::LSDA};
 ///
 ///   cpu::pw::Bands bands;
 ///   bands.n_bands = 8;

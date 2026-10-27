@@ -20,8 +20,8 @@
 #include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/scf_enums.h" // MeanFieldType / SpinType / RI / Coulomb
-#include "atomiverse/cpu/scf/xc_functional.h" // XCType
 #include "atomiverse/cpu/scf/xc_grid_engine.h" // XCGridBasis (per-geometry cache)
+#include "atomiverse/cpu/xc/xc_functional.h"   // xc::XCType
 
 namespace ATV {
 namespace cpu {
@@ -98,7 +98,7 @@ class HamiltonianBuilder {
     /// @return Filled FockResult.
     FockResult
     step(const internal::IntegralView& integrals, bool restricted, bool is_hf,
-         XCType xc_type, double hybrid_alpha_override,
+         xc::XCType xc_type, double hybrid_alpha_override,
          const RealMatrix& P_alpha, const RealMatrix& P_beta,
          const ATV::electronic::XcFunctional* functional = nullptr) const;
 

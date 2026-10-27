@@ -9,7 +9,7 @@
 ///
 /// Energy path keeps the unshifted (DIIS-extrapolated) F in `ws.work`. No host
 /// Fock materialization: history, error, and linear combination stay on device.
-/// The Pulay system is factored and solved on device by cuSOLVER; a singular
+/// The Pulay system is `cuda::linalg::solve_pulay` (cuSOLVER LU). A singular
 /// history retains the most recent Fock. No scientific state crosses to host.
 ///
 /// References: Pulay, Chem. Phys. Lett. 73, 393 (1980); J. Comp. Chem. 3, 556

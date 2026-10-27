@@ -23,7 +23,7 @@ using namespace ATV;
 TEST(QmEngine, GaussianMethodsExposeEmbedding) {
     cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, 0, 0};
-    cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
+    cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::xc::XCType::PBE};
     cpu::QmEngine* engines[] = {&rhf, &uhf, &rks};
     for (cpu::QmEngine* e : engines) {
         ASSERT_NE(e->as_embedding(), nullptr);

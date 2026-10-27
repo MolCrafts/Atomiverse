@@ -50,7 +50,7 @@
 ///
 /// @code{.cpp}
 ///   // SCF energy + forces (default) — bind a concrete method
-///   cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
+///   cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::xc::XCType::PBE};
 ///   cpu::Evaluate eval;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(rks));
 ///   eval.build();

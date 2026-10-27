@@ -1,6 +1,6 @@
 // Scalar diagnostic only: molecular qualification uses the public Python driver.
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cpu/scf/xc_internal.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_internal.h"
 #include <array>
 #include <cstdio>
 #include <string>
@@ -8,7 +8,7 @@
 int main(int argc, char** argv) {
     if (argc != 6)
         return 2;
-    using namespace ATV::cpu::scf;
+    using namespace ATV::cpu::xc;
     std::array<double, 5> x;
     for (int i = 0; i < 5; ++i)
         x[i] = std::stod(argv[i + 1]);

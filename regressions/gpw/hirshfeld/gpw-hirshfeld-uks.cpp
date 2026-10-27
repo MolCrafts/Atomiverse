@@ -23,7 +23,7 @@ int run() {
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
     using cpu::gpw::Kind;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     // O₂, R = 1.2075 Å, centered in 12 Å cubic cell (MT / nonperiodic).
     constexpr double L_ang = 12.0;
@@ -47,7 +47,7 @@ int run() {
                      GaussianBasis(molrs::Element::O, "DZVP-MOLOPT-GTH"),
                      GthPotential(molrs::Element::O, "GTH-PBE-q6")}},
                200.0,
-               XcKind::PBE};
+               ATV::cpu::xc::XCType::PBE};
     gpw.n_alpha = 7; // multiplicity 3, 12 valence e⁻
     gpw.n_beta = 5;
     gpw.max_iter = 150;

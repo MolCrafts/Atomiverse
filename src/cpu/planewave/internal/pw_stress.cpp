@@ -34,11 +34,11 @@
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
 #include "atomiverse/cpu/planewave/internal/restricted_scf.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/electronic/smearing.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
@@ -195,7 +195,7 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
     const auto layout = mpi_layout();
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
     const int n_occ[2] = {n_alpha, n_beta};
-    const bool use_smear = method.smearing != Smearing::none;
+    const bool use_smear = method.smearing != ATV::electronic::Smearing::none;
     AccReal e_band = 0;
     AccReal entropy_sum = 0;
     // Spectra are indexed by spin, k point, then band. Each rank owns
@@ -259,11 +259,12 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
 #endif
 
     if (use_smear) {
-        SmearKind kind = SmearKind::fermi_dirac;
-        if (method.smearing == Smearing::gaussian)
-            kind = SmearKind::gaussian;
-        else if (method.smearing == Smearing::methfessel_paxton)
-            kind = SmearKind::methfessel_paxton;
+        ATV::electronic::Smearing kind = ATV::electronic::Smearing::fermi_dirac;
+        if (method.smearing == ATV::electronic::Smearing::gaussian)
+            kind = ATV::electronic::Smearing::gaussian;
+        else if (method.smearing
+                 == ATV::electronic::Smearing::methfessel_paxton)
+            kind = ATV::electronic::Smearing::methfessel_paxton;
         const AccReal width =
             AccReal(method.degauss) * AccReal(qe_units::rydberg_to_hartree);
         std::vector<AccReal> weights(spectrum.size());
@@ -330,18 +331,19 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
 
     const auto layout = mpi_layout();
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     AccReal e_band = 0;
     AccReal entropy_sum = AccReal(0);
     auto* saved_gvec = ws.gvec;
     auto& gv0 = prob.gv0;
 
     if (use_smear) {
-        SmearKind smear_kind = SmearKind::fermi_dirac;
-        if (method.smearing == Smearing::methfessel_paxton)
-            smear_kind = SmearKind::methfessel_paxton;
-        else if (method.smearing == Smearing::gaussian)
-            smear_kind = SmearKind::gaussian;
+        ATV::electronic::Smearing smear_kind =
+            ATV::electronic::Smearing::fermi_dirac;
+        if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+            smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+        else if (method.smearing == ATV::electronic::Smearing::gaussian)
+            smear_kind = ATV::electronic::Smearing::gaussian;
         const AccReal degauss_ha =
             static_cast<AccReal>(method.degauss) * AccReal(0.5);
         const int mp_order = method.mp_order;
@@ -529,7 +531,7 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
     if (frame.box.volume() <= 0)
         throw std::invalid_argument("pw_stress: non-positive cell volume");
 
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "pw_stress: degauss must be > 0 [Ry] when smearing is enabled");

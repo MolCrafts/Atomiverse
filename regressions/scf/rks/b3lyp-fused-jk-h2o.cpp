@@ -52,7 +52,7 @@ int run() {
     constexpr double kEB3lypHa = -76.35814183099154; // Ha
     constexpr double kTolHa = 1e-6;                  // Ha
 
-    cpu::scf::RKS rks(cpu::scf::BasisSet::Def2SVP, cpu::scf::XCType::B3LYP);
+    cpu::scf::RKS rks(cpu::scf::BasisSet::Def2SVP, cpu::xc::XCType::B3LYP);
     rks.tol = 1e-10;
     rks.max_iter = 200;
     rks.run(f);

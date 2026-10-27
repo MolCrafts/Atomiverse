@@ -4,7 +4,7 @@
 #include "atomiverse/cpu/gpw/internal/xc_grid.h"
 
 #include "atomiverse/cpu/device/chunked_range.h"
-#include "atomiverse/cpu/xc/pade.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
@@ -33,12 +33,12 @@ XcOnGrid xc_grid_pade(const UniformGrid& grid,
         double s = 0.0;
         for (long g = range.begin(c); g < range.end(c); ++g) {
             const double rho = rho_r[g];
-            // Spin-unpolarized: split evenly. pade_lsd applies its own
+            // Spin-unpolarized: split evenly. evaluate_xc applies its own
             // low-density cutoff, returning zeros below threshold.
-            const ATV::cpu::xc::PadeXC xc =
-                ATV::cpu::xc::pade_lsd(0.5 * rho, 0.5 * rho);
+            const ATV::cpu::xc::XCOutput xc = ATV::cpu::xc::evaluate_xc(
+                ATV::cpu::xc::XCType::PADE, 0.5 * rho, 0.5 * rho);
             s += w * xc.energy_density;
-            out.vxc_r[g] = xc.vrho_a; // = vrho_b in the unpolarized case
+            out.vxc_r[g] = xc.vrho_alpha; // = vrho_beta in the unpolarized case
         }
         part[static_cast<std::size_t>(c)] = s;
     }
@@ -59,8 +59,9 @@ XcOnGridSpin xc_grid_pade_lsd(const UniformGrid& grid,
     out.vxc_b.assign(static_cast<std::size_t>(ng), 0.0);
     const device::ChunkedRange range(ng, kXcChunks);
     std::vector<double> part(static_cast<std::size_t>(range.chunks()), 0.0);
-    // Vacuum short-circuit: pade_lsd returns zeros for rho_total < 1e-12; skip
-    // the call (and leave pre-zeroed V_xc) on empty regions of large MT boxes.
+    // Vacuum short-circuit: evaluate_xc returns zeros for rho_total < 1e-12;
+    // skip the call (and leave pre-zeroed V_xc) on empty regions of large
+    // MT boxes.
     constexpr double kRhoCut = 1.0e-12;
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < range.chunks(); ++c) {
@@ -70,10 +71,11 @@ XcOnGridSpin xc_grid_pade_lsd(const UniformGrid& grid,
             const double rb = rho_b[static_cast<std::size_t>(g)];
             if (ra + rb < kRhoCut)
                 continue;
-            const ATV::cpu::xc::PadeXC xc = ATV::cpu::xc::pade_lsd(ra, rb);
+            const ATV::cpu::xc::XCOutput xc =
+                ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::PADE, ra, rb);
             s += w * xc.energy_density;
-            out.vxc_a[static_cast<std::size_t>(g)] = xc.vrho_a;
-            out.vxc_b[static_cast<std::size_t>(g)] = xc.vrho_b;
+            out.vxc_a[static_cast<std::size_t>(g)] = xc.vrho_alpha;
+            out.vxc_b[static_cast<std::size_t>(g)] = xc.vrho_beta;
         }
         part[static_cast<std::size_t>(c)] = s;
     }

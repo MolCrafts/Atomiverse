@@ -1,10 +1,10 @@
 /// @file tests/cuda/gpw/test_xc_lda.cu
 /// @brief CUDA GPW Padé LDA XC foothold vs same-settings CPU oracle.
 ///
-/// Unit only: per-point match to `cpu::xc::pade_lsd` (and the closed-shell
-/// `xc_grid_pade` reduction shape). Not a full GPW SCF product.
-#include "atomiverse/cpu/xc/pade.h"
-#include "atomiverse/cuda/gpw/internal/xc_lda.cuh"
+/// Unit only: per-point match to `evaluate_xc(XCType::PADE)` (and the
+/// closed-shell `xc_grid_pade` reduction shape). Not a full GPW SCF product.
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cuda/xc/xc_pade.cuh"
 
 #include <cmath>
 #include <cuda_runtime.h>
@@ -12,11 +12,12 @@
 #include <random>
 #include <vector>
 
-using ATV::cpu::xc::pade_lsd;
-using ATV::cuda::gpw::internal::xc_energy;
-using ATV::cuda::gpw::internal::xc_energy_lsd;
-using ATV::cuda::gpw::internal::xc_lda_grid;
-using ATV::cuda::gpw::internal::xc_lda_grid_lsd;
+using ATV::cpu::xc::evaluate_xc;
+using ATV::cpu::xc::XCType;
+using ATV::cuda::xc::xc_energy;
+using ATV::cuda::xc::xc_energy_lsd;
+using ATV::cuda::xc::xc_lda_grid;
+using ATV::cuda::xc::xc_lda_grid_lsd;
 
 namespace {
 
@@ -28,8 +29,8 @@ void* dmalloc(size_t bytes) {
 
 // Host reference for closed-shell: exactly cpu::gpw::xc_grid_pade per point.
 void host_ref_closed(double rho, double& vxc, double& exc) {
-    auto out = pade_lsd(0.5 * rho, 0.5 * rho);
-    vxc = out.vrho_a;
+    auto out = evaluate_xc(XCType::PADE, 0.5 * rho, 0.5 * rho);
+    vxc = out.vrho_alpha;
     exc = rho >= 1e-12 ? out.energy_density / rho : 0;
 }
 
@@ -132,18 +133,18 @@ TEST(CudaGpwXcLda, MatchesCpuPadeLsd) {
     cudaMemcpy(exc.data(), d_exc, nr * sizeof(double), cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < nr; ++i) {
-        const auto ref = pade_lsd(ra[i], rb[i]);
+        const auto ref = evaluate_xc(XCType::PADE, ra[i], rb[i]);
         const double epsilon =
             ra[i] + rb[i] >= 1e-12 ? ref.energy_density / (ra[i] + rb[i]) : 0;
         const double t = 1e-12 * std::fmax(1.0, std::abs(epsilon));
-        const double ta = 1e-12 * std::fmax(1.0, std::abs(ref.vrho_a));
-        const double tb = 1e-12 * std::fmax(1.0, std::abs(ref.vrho_b));
+        const double ta = 1e-12 * std::fmax(1.0, std::abs(ref.vrho_alpha));
+        const double tb = 1e-12 * std::fmax(1.0, std::abs(ref.vrho_beta));
         EXPECT_NEAR(exc[i], epsilon, t)
             << "exc at ra=" << ra[i] << " rb=" << rb[i];
-        EXPECT_NEAR(va[i], ref.vrho_a, ta)
-            << "vrho_a at ra=" << ra[i] << " rb=" << rb[i];
-        EXPECT_NEAR(vb[i], ref.vrho_b, tb)
-            << "vrho_b at ra=" << ra[i] << " rb=" << rb[i];
+        EXPECT_NEAR(va[i], ref.vrho_alpha, ta)
+            << "vrho_alpha at ra=" << ra[i] << " rb=" << rb[i];
+        EXPECT_NEAR(vb[i], ref.vrho_beta, tb)
+            << "vrho_beta at ra=" << ra[i] << " rb=" << rb[i];
     }
 
     cudaFree(d_ra);
@@ -225,7 +226,7 @@ TEST(CudaGpwXcLda, EnergyReductionLsd) {
 
     double sum = 0, c = 0;
     for (int i = 0; i < nr; ++i) {
-        const auto ref = pade_lsd(ra[i], rb[i]);
+        const auto ref = evaluate_xc(XCType::PADE, ra[i], rb[i]);
         const double y = ref.energy_density - c;
         const double t = sum + y;
         c = (t - sum) - y;

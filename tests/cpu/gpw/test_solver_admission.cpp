@@ -15,7 +15,7 @@ TEST(GpwAdmission, RejectsInvalidResidualToleranceBeforeEvaluatingFrame) {
         molrs::Element::H,
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
-    cpu::gpw::GpwDft method{{H}, 100, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft method{{H}, 100, cpu::xc::XCType::PADE};
     method.build(frame);
     frame.meta.get(kEnergy) = 42;
     frame.span(kAtom_fx)[0] = 17;

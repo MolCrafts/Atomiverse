@@ -166,7 +166,7 @@ int run() {
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PBE-q1")};
 
-    cpu::gpw::GpwDft dft{{O, H}, 120.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft dft{{O, H}, 120.0, cpu::xc::XCType::PBE};
     dft.max_iter = 120;
     dft.tol = 1e-6;
     dft.mix = 0.4;
@@ -209,7 +209,7 @@ int run() {
     // ── C: multi-SCF strain-FD oracle on the same multi-k method ──────────
     // Same Frame as the product path, so twins share the product geometry.
     auto make_cfg = [&](bool xdm) {
-        cpu::gpw::GpwDft m({O, H}, 120.0, cpu::gpw::XcKind::PBE);
+        cpu::gpw::GpwDft m({O, H}, 120.0, cpu::xc::XCType::PBE);
         m.n_occ = 8;
         m.max_iter = 120;
         m.tol = 1e-6;

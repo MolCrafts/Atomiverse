@@ -22,7 +22,7 @@ int run() {
     using cpu::gpw::GaussianBasis;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     // Geometry [Å] (REFERENCE.md water dimer).
     const double ang[6][3] = {
@@ -56,7 +56,7 @@ int run() {
                         GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
                         GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
         200.0,
-        XcKind::PBE};
+        ATV::cpu::xc::XCType::PBE};
     gpw.n_occ = 8;
     gpw.max_iter = 8;
     gpw.tol = 1e-6;

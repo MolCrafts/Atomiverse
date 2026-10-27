@@ -23,8 +23,8 @@ namespace atv_reg_gpw_cuda_gpw_kpoint_forces {
 
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GthPotential;
-using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::GpwAtom;
+using ATV::cpu::xc::XCType;
 
 namespace {
 
@@ -106,7 +106,7 @@ int run(int argc, char** argv) {
     std::array<double, 6> s_cpu{}, s_cuda{};
 
     if (run_cpu) {
-        ATV::cpu::gpw::GpwDft m({}, 80.0, XcKind::PADE);
+        ATV::cpu::gpw::GpwDft m({}, 80.0, XCType::PADE);
         set_cfg(m);
         ATV::cpu::gpw::internal::GpwDftAccess::build(m, atoms);
         const auto& r = ATV::cpu::gpw::internal::GpwDftAccess::run(m, atoms);
@@ -124,7 +124,7 @@ int run(int argc, char** argv) {
     }
 
     if (run_cuda) {
-        ATV::cuda::gpw::GpwDft m({}, 80.0, XcKind::PADE);
+        ATV::cuda::gpw::GpwDft m({}, 80.0, XCType::PADE);
         set_cfg(m);
         m.build(atoms);
         const auto& r = m.run(atoms);

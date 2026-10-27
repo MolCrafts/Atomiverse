@@ -81,7 +81,7 @@ int run() {
                         GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
                         GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
                   kCutoffRy,
-                  XcKind::PADE};
+                  ATV::cpu::xc::XCType::PADE};
     // Collinear closed-shell UKS: 4 Si × 4 valence e⁻ → 8↑ + 8↓.
     method.n_alpha = 8;
     method.n_beta = 8;

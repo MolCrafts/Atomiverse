@@ -42,16 +42,16 @@ int run() {
     constexpr double kTol = 1.0e-6;                 // Ha
 
     // Pure-GGA metadata: no exact exchange; GGA density-gradient path.
-    if (cpu::scf::hybrid_exchange_fraction(cpu::scf::XCType::BLYP) != 0.0) {
+    if (cpu::xc::hybrid_exchange_fraction(cpu::xc::XCType::BLYP) != 0.0) {
         std::fprintf(stderr, "FAIL: BLYP hybrid_exchange_fraction != 0\n");
         return 1;
     }
-    if (!cpu::scf::is_gga(cpu::scf::XCType::BLYP)) {
+    if (!cpu::xc::is_gga(cpu::xc::XCType::BLYP)) {
         std::fprintf(stderr, "FAIL: BLYP is_gga == false\n");
         return 1;
     }
 
-    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::scf::XCType::BLYP);
+    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::xc::XCType::BLYP);
     rks.tol = 1e-10;
     rks.max_iter = 100;
     rks.run(frame);

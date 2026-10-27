@@ -1,4 +1,4 @@
-/// @file cuda/planewave/internal/xc_pbe.cuh
+/// @file cuda/xc/xc_pbe.cuh
 /// @brief Real-space closed-shell PBE exchange-correlation on the plane-wave
 ///        grid — device kernel mirroring the per-point XC evaluation of
 ///        `cpu::pw::internal::XCBuilder::step(ws, XCType::PBE)`.
@@ -8,15 +8,14 @@
 
 namespace ATV {
 namespace cuda {
-namespace pw {
-namespace internal {
+namespace xc {
 
 /// @brief Evaluate the closed-shell PBE XC potential (local part), energy
 ///        density, and GGA flux on the real grid.
 ///
 /// The device energy channel is epsilon per electron; the CPU point kernel
 /// reports f = rho * epsilon per volume. Potentials use the same convention.
-/// Per grid point this implements the same functional as `cpu::scf::evaluate_xc(XCType::PBE, ρ/2,
+/// Per grid point this implements the same functional as `cpu::xc::evaluate_xc(XCType::PBE, ρ/2,
 /// ρ/2, σ/4, σ/4, σ/4)` with σ = |∇ρ|² — PBE exchange (κ = 0.804,
 /// μ = 0.21951…) over a PW92 LSDA correlation base plus the PBE H gradient
 /// correction — including the `ρ < 1e-12` cutoff that zeroes every output.
@@ -52,7 +51,7 @@ void xc_pbe_grid(const double* d_rho_r, double* d_gx_r, double* d_gy_r,
 
 /// @brief Collinear spin-GGA PBE on ρ_α(r), ρ_β(r) and spectral ∇ρ_σ.
 ///
-/// Mirrors `cpu::scf::evaluate_xc(XCType::PBE, ρ_α, ρ_β, σ_αα, σ_αβ, σ_ββ)`
+/// Mirrors `cpu::xc::evaluate_xc(XCType::PBE, ρ_α, ρ_β, σ_αα, σ_αβ, σ_ββ)`
 /// plus the spin flux assembly of `XCBuilder::step_spin`:
 ///   flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β
 ///   flux_β = 2 vσ_ββ ∇ρ_β + vσ_αβ ∇ρ_α
@@ -80,7 +79,6 @@ void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
                       double* d_vxc_a, double* d_vxc_b, double* d_exc_r, int nr,
                       cudaStream_t stream = nullptr);
 
-} // namespace internal
-} // namespace pw
+} // namespace xc
 } // namespace cuda
 } // namespace ATV

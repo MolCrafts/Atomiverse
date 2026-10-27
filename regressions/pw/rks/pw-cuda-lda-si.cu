@@ -22,7 +22,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 #include "harness/registry.h"
 
@@ -107,7 +107,7 @@ int run_on_device(Device dev, double& energy_ry) {
     if (dev == Device::Cpu) {
         cpu::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(
                                ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"),
-                           kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+                           kEcutRy, kMesh, cpu::xc::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 50;
         method.build(frame);
@@ -118,7 +118,7 @@ int run_on_device(Device dev, double& energy_ry) {
     } else {
         cuda::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(
                                 ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"),
-                            kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+                            kEcutRy, kMesh, cpu::xc::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 50;
         method.build(frame);

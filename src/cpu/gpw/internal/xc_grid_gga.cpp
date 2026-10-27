@@ -18,7 +18,7 @@
 
 #include "atomiverse/cpu/device/chunked_range.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
@@ -33,14 +33,13 @@ constexpr long kXcChunks = 256;
 } // namespace
 
 XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
-                     cpu::scf::XCType xc, electronic::XcOrder order) {
+                     cpu::xc::XCType xc, electronic::XcOrder order) {
     if (order != electronic::XcOrder::Energy
         && order != electronic::XcOrder::First)
         throw std::invalid_argument(
             "xc_grid_gga: unsupported derivative order");
     const bool potential = order == electronic::XcOrder::First;
-    if (!cpu::scf::is_gga(xc)
-        || cpu::scf::hybrid_exchange_fraction(xc) != 0.0) {
+    if (!cpu::xc::is_gga(xc) || cpu::xc::hybrid_exchange_fraction(xc) != 0.0) {
         throw std::invalid_argument(
             "xc_grid_gga: only pure GGA XCType (PBE, PBEsol, BLYP, …) "
             "supported");
@@ -80,8 +79,8 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
             // sigma_aa = sigma_ab = sigma_bb = sigma/4.
             const double ra = 0.5 * rho, rb = 0.5 * rho;
             const double s = 0.25 * sigma;
-            const ATV::cpu::scf::XCOutput xco =
-                ATV::cpu::scf::evaluate_xc(xc, ra, rb, s, s, s);
+            const ATV::cpu::xc::XCOutput xco =
+                ATV::cpu::xc::evaluate_xc(xc, ra, rb, s, s, s);
             acc += w * xco.energy_density;
             if (!potential)
                 continue;
@@ -113,46 +112,45 @@ XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
 
 XcOnGrid xc_grid_pbe(const UniformGrid& grid,
                      const std::vector<double>& rho_r) {
-    return xc_grid_gga(grid, rho_r, cpu::scf::XCType::PBE);
+    return xc_grid_gga(grid, rho_r, cpu::xc::XCType::PBE);
 }
 
 XcOnGrid xc_grid_pbesol(const UniformGrid& grid,
                         const std::vector<double>& rho_r) {
-    return xc_grid_gga(grid, rho_r, cpu::scf::XCType::PBEsol);
+    return xc_grid_gga(grid, rho_r, cpu::xc::XCType::PBEsol);
 }
 
 XcOnGrid xc_grid_revpbe(const UniformGrid& grid,
                         const std::vector<double>& rho_r) {
-    return xc_grid_gga(grid, rho_r, cpu::scf::XCType::RevPBE);
+    return xc_grid_gga(grid, rho_r, cpu::xc::XCType::RevPBE);
 }
 
 XcOnGrid xc_grid_rpbe(const UniformGrid& grid,
                       const std::vector<double>& rho_r) {
-    return xc_grid_gga(grid, rho_r, cpu::scf::XCType::RPBE);
+    return xc_grid_gga(grid, rho_r, cpu::xc::XCType::RPBE);
 }
 
 XcOnGrid xc_grid_blyp(const UniformGrid& grid,
                       const std::vector<double>& rho_r) {
-    return xc_grid_gga(grid, rho_r, cpu::scf::XCType::BLYP);
+    return xc_grid_gga(grid, rho_r, cpu::xc::XCType::BLYP);
 }
 
 XcOnGrid xc_grid_optb88_vdw(const UniformGrid& grid,
                             const std::vector<double>& rho_r) {
-    return xc_grid_gga(grid, rho_r, cpu::scf::XCType::OptB88VdW);
+    return xc_grid_gga(grid, rho_r, cpu::xc::XCType::OptB88VdW);
 }
 
 // Spin-resolved GGA: v_σ = vrho_σ − div[ 2 vσ_σσ ∇ρ_σ + vσ_αβ ∇ρ_σ̄ ].
 XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
                               const std::vector<double>& rho_a,
                               const std::vector<double>& rho_b,
-                              cpu::scf::XCType xc, electronic::XcOrder order) {
+                              cpu::xc::XCType xc, electronic::XcOrder order) {
     if (order != electronic::XcOrder::Energy
         && order != electronic::XcOrder::First)
         throw std::invalid_argument(
             "xc_grid_gga_spin: unsupported derivative order");
     const bool potential = order == electronic::XcOrder::First;
-    if (!cpu::scf::is_gga(xc)
-        || cpu::scf::hybrid_exchange_fraction(xc) != 0.0) {
+    if (!cpu::xc::is_gga(xc) || cpu::xc::hybrid_exchange_fraction(xc) != 0.0) {
         throw std::invalid_argument(
             "xc_grid_gga_spin: only pure GGA XCType (PBE, PBEsol, BLYP, …) "
             "supported");
@@ -194,8 +192,8 @@ XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
             const double saa = gax * gax + gay * gay + gaz * gaz;
             const double sbb = gbx * gbx + gby * gby + gbz * gbz;
             const double sab = gax * gbx + gay * gby + gaz * gbz;
-            const ATV::cpu::scf::XCOutput xco =
-                ATV::cpu::scf::evaluate_xc(xc, ra, rb, saa, sab, sbb);
+            const ATV::cpu::xc::XCOutput xco =
+                ATV::cpu::xc::evaluate_xc(xc, ra, rb, saa, sab, sbb);
             acc += w * xco.energy_density;
             if (!potential)
                 continue;
@@ -236,37 +234,37 @@ XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
 XcOnGridSpin xc_grid_pbe_spin(const UniformGrid& grid,
                               const std::vector<double>& rho_a,
                               const std::vector<double>& rho_b) {
-    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::scf::XCType::PBE);
+    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::xc::XCType::PBE);
 }
 
 XcOnGridSpin xc_grid_pbesol_spin(const UniformGrid& grid,
                                  const std::vector<double>& rho_a,
                                  const std::vector<double>& rho_b) {
-    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::scf::XCType::PBEsol);
+    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::xc::XCType::PBEsol);
 }
 
 XcOnGridSpin xc_grid_revpbe_spin(const UniformGrid& grid,
                                  const std::vector<double>& rho_a,
                                  const std::vector<double>& rho_b) {
-    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::scf::XCType::RevPBE);
+    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::xc::XCType::RevPBE);
 }
 
 XcOnGridSpin xc_grid_rpbe_spin(const UniformGrid& grid,
                                const std::vector<double>& rho_a,
                                const std::vector<double>& rho_b) {
-    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::scf::XCType::RPBE);
+    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::xc::XCType::RPBE);
 }
 
 XcOnGridSpin xc_grid_blyp_spin(const UniformGrid& grid,
                                const std::vector<double>& rho_a,
                                const std::vector<double>& rho_b) {
-    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::scf::XCType::BLYP);
+    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::xc::XCType::BLYP);
 }
 
 XcOnGridSpin xc_grid_optb88_vdw_spin(const UniformGrid& grid,
                                      const std::vector<double>& rho_a,
                                      const std::vector<double>& rho_b) {
-    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::scf::XCType::OptB88VdW);
+    return xc_grid_gga_spin(grid, rho_a, rho_b, cpu::xc::XCType::OptB88VdW);
 }
 
 } // namespace gpw

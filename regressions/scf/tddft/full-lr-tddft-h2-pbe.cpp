@@ -55,7 +55,7 @@ int run() {
     constexpr double kTolEHa = 1e-4;  // Ha — ground-state sanity
     constexpr double kTolF = 0.15;    // generous f band
 
-    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE);
+    cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::xc::XCType::PBE);
     rks.tol = 1e-10;
     rks.max_iter = 100;
     rks.run(f);

@@ -442,7 +442,7 @@ inline bool operator==(const AM1Params& a, const AM1Params& b) {
 /// `KSpacePmeParams` / `XyzRecorderParams` arrangement.
 ///
 /// Two members cross the wire as plain `int` rather than as their C++ enums
-/// (`cpu::scf::XCType`, `cpu::pw::Smearing`): those enums live in headers
+/// (`cpu::xc::XCType`, `ATV::electronic::Smearing`): those enums live in headers
 /// behind the build flag, and this struct is compiled unconditionally. The
 /// materializer casts them back on the way in, so the enumerator VALUES are
 /// part of the wire contract.
@@ -482,14 +482,14 @@ struct PWParams {
     /// @brief Pulay mixing history window (dimensionless count).
     int pulay_depth = 5;
     /// @brief Exchange-correlation functional as the integer value of
-    ///        `cpu::scf::XCType` (0 = LSDA, 1 = PBE = the C++ default, …).
+    ///        `cpu::xc::XCType` (0 = LSDA, 1 = PBE = the C++ default, …).
     int xc = 1;
     /// @brief Collinear spin-polarized KS (nspin = 2); false = restricted.
     bool spin_polarized = false;
     /// @brief Spin multiplicity 2S+1, read only when `spin_polarized`.
     int multiplicity = 1;
     /// @brief Metallic smearing kind as the integer value of
-    ///        `cpu::pw::Smearing` (0 = none = fixed occupations, 1 =
+    ///        `ATV::electronic::Smearing` (0 = none = fixed occupations, 1 =
     ///        Fermi-Dirac, 2 = Methfessel-Paxton, 3 = Gaussian).
     int smearing = 0;
     /// @brief Smearing width [Ry] (QE `degauss`); must be > 0 when smearing

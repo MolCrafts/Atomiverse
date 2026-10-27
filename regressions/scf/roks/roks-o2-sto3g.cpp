@@ -44,8 +44,7 @@ int run() {
 
     // ── O2 triplet, ROKS(9,7)/LSDA/STO-3G ─────────────────────────────
     auto frame = o2_frame();
-    cpu::scf::ROKS roks(cpu::scf::BasisSet::STO3G, 9, 7,
-                        cpu::scf::XCType::LSDA);
+    cpu::scf::ROKS roks(cpu::scf::BasisSet::STO3G, 9, 7, cpu::xc::XCType::LSDA);
     roks.tol = 1e-12;
     roks.max_iter = 200;
     roks.run(frame);
@@ -70,7 +69,7 @@ int run() {
     ok = ok && std::fabs(contamination) <= 1e-10;
 
     // Pure functional metadata: LSDA has no exact exchange.
-    if (cpu::scf::hybrid_exchange_fraction(cpu::scf::XCType::LSDA) != 0.0) {
+    if (cpu::xc::hybrid_exchange_fraction(cpu::xc::XCType::LSDA) != 0.0) {
         std::fprintf(stderr, "FAIL: LSDA hybrid_exchange_fraction != 0\n");
         return 1;
     }

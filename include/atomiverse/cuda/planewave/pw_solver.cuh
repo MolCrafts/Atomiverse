@@ -28,7 +28,7 @@
 ///
 /// @code
 ///   cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si_lda_nc.upf"),
-///                   /*ecut_ry=*/15.0, /*k_mesh=*/2, cpu::scf::XCType::LSDA};
+///                   /*ecut_ry=*/15.0, /*k_mesh=*/2, cpu::xc::XCType::LSDA};
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame);   // energy [Ry] / energy_ha [Ha]
 /// @endcode
@@ -36,7 +36,7 @@
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include <array>
 #include <stdexcept>
 #include <string>
@@ -49,9 +49,6 @@ namespace pw {
 
 /// @brief Result type shared verbatim with the CPU method (energy in Ry).
 using PWResult = ::ATV::cpu::pw::PWResult;
-
-/// @brief Smearing selector shared verbatim with the CPU method.
-using Smearing = ::ATV::cpu::pw::Smearing;
 
 /// @brief Concrete plane-wave DFT method on CUDA — members + `run(frame)`.
 ///
@@ -73,7 +70,7 @@ class PW {
     /// @brief Exchange–correlation functional. `XCType::LSDA` and
     ///        `XCType::PBE` have device paths; `run()` throws for anything
     ///        else (including PBEsol/revPBE/RPBE).
-    const cpu::scf::XCType xc;
+    const cpu::xc::XCType xc;
 
     // ── Knobs ──────────────────────────────────────────────────────────
     /// @brief SCF tolerance on the density-change L2 norm (dimensionless).
@@ -96,7 +93,7 @@ class PW {
     int multiplicity = 1;
     /// @brief Metallic smearing kind. Restricted and collinear UKS use a
     ///        shared chemical potential over the occupied spin orbitals.
-    Smearing smearing = Smearing::none;
+    ATV::electronic::Smearing smearing = ATV::electronic::Smearing::none;
     /// @brief Smearing width [Ry] (QE `degauss`). Required > 0 when
     ///        `smearing != none`.
     double degauss = 0.02;
@@ -112,7 +109,7 @@ class PW {
     /// @param k_mesh Monkhorst-Pack mesh per dimension.
     /// @param xc Exchange-correlation functional with a device kernel.
     PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
-       double ecut_ry, int k_mesh, cpu::scf::XCType xc = cpu::scf::XCType::PBE)
+       double ecut_ry, int k_mesh, cpu::xc::XCType xc = cpu::xc::XCType::PBE)
         : potential(std::move(pp)), ecut_ry(ecut_ry), k_mesh(k_mesh), xc(xc) {
         if (!potential
             || (!dynamic_cast<const cpu::pw::GthPseudopotential*>(

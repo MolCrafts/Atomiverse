@@ -34,7 +34,7 @@
 #include "atomiverse/cpu/electronic/aimd_method.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/rks.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "harness/registry.h"
 
 namespace atv_reg_dynamics_cpmd_rks_water {
@@ -70,7 +70,7 @@ int run() {
     // (TimestepProvider → TimestepConsumer); there is no `cpmd_dt` member.
     constexpr double dt = 0.05; // fs
 
-    cpu::scf::RKS rks_base{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::LSDA};
+    cpu::scf::RKS rks_base{cpu::scf::BasisSet::STO3G, cpu::xc::XCType::LSDA};
     rks_base.tol = 1e-9;
     // Scanned μ ∈ {400, 1000, 2000} a.u. × dt ∈ {0.05, 0.1} fs (REFERENCE.md):
     // the plane-wave textbook μ = 400 a.u. loses adiabaticity on the stiffer AO

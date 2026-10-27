@@ -23,7 +23,7 @@ int run() {
     using cpu::gpw::GaussianBasis;
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     // Geometry [Å] (REFERENCE.md water dimer; same as gpw-d4-water).
     const double ang[6][3] = {
@@ -61,7 +61,7 @@ int run() {
     frame.box = cpu::Box::cubic(12.0);
 
     // Low cutoff: e_disp is geometry-only; short SCF only.
-    GpwDft gpw{{O, H}, 200.0, XcKind::PBE};
+    GpwDft gpw{{O, H}, 200.0, ATV::cpu::xc::XCType::PBE};
     gpw.n_occ = 8;
     gpw.max_iter = 8;
     gpw.tol = 1e-6;

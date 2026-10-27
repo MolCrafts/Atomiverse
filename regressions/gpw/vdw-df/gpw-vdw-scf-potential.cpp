@@ -54,7 +54,7 @@ ATV::cpu::gpw::GpwDft make_gpw() {
                 Kind{molrs::Element::H,
                      GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
                      GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
-               200.0, ATV::cpu::gpw::XcKind::PBE);
+               200.0, ATV::cpu::xc::XCType::PBE);
     gpw.n_occ = 8;
     gpw.max_iter = 40;
     gpw.tol = 1e-7;

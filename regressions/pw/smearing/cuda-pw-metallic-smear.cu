@@ -97,7 +97,7 @@ RunOut run_pw(PwT& pw, const cpu::Frame& frame) {
     pw.max_iter = 60;
     pw.mix_beta = 0.4;
     pw.pulay_depth = 5;
-    pw.smearing = cpu::pw::Smearing::fermi_dirac;
+    pw.smearing = ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = kDegaussRy;
     pw.extra_bands = 4;
     // Match the CPU Al offline pin path (default PBE members; NC LDA UPF).

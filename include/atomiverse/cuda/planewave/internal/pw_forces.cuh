@@ -8,9 +8,9 @@
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
+#include "atomiverse/electronic/smearing.h"
 #include <array>
 #include <vector>
 
@@ -55,8 +55,8 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
     const cpu::Frame& frame, DeviceDensity& den, DeviceBandSolver& solver,
     cpu::pw::internal::PWProblem& prob, cpu::pw::internal::PWWorkspace& ws,
     int n_alpha = -1, int n_beta = -1, bool use_smear = false, int n_elec = 0,
-    cpu::pw::internal::SmearKind smear_kind =
-        cpu::pw::internal::SmearKind::fermi_dirac,
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac,
     double degauss_ha = 0.0, int mp_order = 1);
 
 } // namespace internal

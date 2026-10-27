@@ -56,7 +56,7 @@ cpu::gpw::GPWEvaluator h2_eval(double cutoff_ry = 60.0) {
         molrs::Element::H,
         cpu::gpw::GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
         cpu::gpw::GthPotential(molrs::Element::H, "GTH-PADE-q1")};
-    cpu::gpw::GpwDft dft{{H}, cutoff_ry, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{H}, cutoff_ry, cpu::xc::XCType::PADE};
     dft.max_iter = 1;
     dft.tol = 1e-6;
     dft.mix = 0.3;

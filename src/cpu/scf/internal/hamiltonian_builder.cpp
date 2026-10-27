@@ -103,7 +103,7 @@ void HamiltonianBuilder::prepare(const internal::IntegralView& integrals,
 
 FockResult HamiltonianBuilder::step(
     const internal::IntegralView& integrals, bool restricted, bool is_hf,
-    XCType xc_type, double hybrid_alpha_override, const RealMatrix& P_alpha,
+    xc::XCType xc_type, double hybrid_alpha_override, const RealMatrix& P_alpha,
     const RealMatrix& P_beta,
     const ATV::electronic::XcFunctional* functional) const {
     FockResult out;
@@ -254,7 +254,7 @@ FockResult HamiltonianBuilder::step(
         // applied at exactly ONE site below: the bare K matrix is scaled
         // by alpha_hf once, and both the Fock term (-alpha_hf*K) and the
         // energy term (alpha_hf*E_K) consume that single scaled matrix.
-        const RshExchangeParams rsh = rsh_exchange_params(xc_type);
+        const xc::RshExchangeParams rsh = xc::rsh_exchange_params(xc_type);
         const double alpha_hf = (hybrid_alpha_override >= double(0))
                                     ? hybrid_alpha_override
                                     : rsh.alpha;
@@ -265,7 +265,7 @@ FockResult HamiltonianBuilder::step(
         // (first KS iteration, or when the LDA/GGA flavor changes) and reuse
         // it across all SCF iterations; the density-dependent steps run on the
         // cached basis. Bit-identical to the rebuild-every-call path.
-        std::optional<BuiltinXc> builtin;
+        std::optional<xc::BuiltinXc> builtin;
         if (!functional) {
             builtin.emplace(xc_type);
             functional = &*builtin;

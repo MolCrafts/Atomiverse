@@ -1,17 +1,17 @@
 /// @file tests/cuda/planewave/test_xc_pbe_spin.cu
 /// @brief Verifies cuda::pw::internal::xc_pbe_spin_grid against
-///        cpu::scf::evaluate_xc(PBE, ρ_α, ρ_β, σ_αα, σ_αβ, σ_ββ) plus the
+///        cpu::xc::evaluate_xc(PBE, ρ_α, ρ_β, σ_αα, σ_αβ, σ_ββ) plus the
 ///        spin flux assembly of XCBuilder::step_spin.
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cuda/planewave/internal/xc_pbe.cuh"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cuda/xc/xc_pbe.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
 #include <vector>
 
-using ATV::cpu::scf::evaluate_xc;
-using ATV::cpu::scf::XCType;
-using ATV::cuda::pw::internal::xc_pbe_spin_grid;
+using ATV::cpu::xc::evaluate_xc;
+using ATV::cpu::xc::XCType;
+using ATV::cuda::xc::xc_pbe_spin_grid;
 
 namespace {
 

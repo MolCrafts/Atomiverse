@@ -23,7 +23,7 @@ TEST_P(DfptMpAdmission, RejectsSignedWeightsBeforeScfOrSupercellWork) {
         6., 1};
     method.spin_polarized = spin;
     method.multiplicity = spin ? 2 : 1;
-    method.smearing = Smearing::methfessel_paxton;
+    method.smearing = ATV::electronic::Smearing::methfessel_paxton;
     method.degauss = .04;
     DfptPhonon phonon;
     const std::array<std::array<double, 3>, 3> q{

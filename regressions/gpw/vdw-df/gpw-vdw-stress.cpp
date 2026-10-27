@@ -83,7 +83,7 @@ int run() {
     ATV::cpu::Frame frame = make_frame();
 
     auto make_cfg = [&]() {
-        GpwDft m(water_kinds(), 200.0, XcKind::PBE);
+        GpwDft m(water_kinds(), 200.0, ATV::cpu::xc::XCType::PBE);
         m.n_occ = 8;
         m.max_iter = 40;
         m.tol = 1e-7;

@@ -1,4 +1,4 @@
-/// @file cpu/scf/xc_functional.h
+/// @file cpu/xc/xc_functional.h
 /// @brief Exchange-correlation functional evaluator for KS / UKS.
 ///
 /// Supports LSDA (Slater exchange + VWN5 correlation), pure GGAs (PBE,
@@ -43,7 +43,7 @@
 
 namespace ATV {
 namespace cpu {
-namespace scf {
+namespace xc {
 
 /// @brief XC functional type selector.
 ///
@@ -56,7 +56,8 @@ namespace scf {
 /// \(\alpha K[1/r] + \beta K[\mathrm{erf}(\mu r)/r]\) (see
 /// `rsh_exchange_params`). `B2PLYP` is a **double hybrid**: same hybrid-KS
 /// build with a_x=0.53 plus a PT2 correlation scale a_c=0.27 applied by
-/// the MP2 path (see `hybrid_pt2_fraction`).
+/// the MP2 path (see `hybrid_pt2_fraction`). `PADE` is the GTH Padé LDA
+/// (Goedecker–Teter–Hutter), distinct from Slater+VWN5 `LSDA`.
 enum class XCType {
     LSDA,
     PBE,
@@ -69,6 +70,7 @@ enum class XCType {
     PBE0,
     B2PLYP,
     CAMB3LYP, ///< Yanai CAM-B3LYP; RSH params via `rsh_exchange_params`.
+    PADE,     ///< GTH Padé LDA. Not an alias of `LSDA`.
     Custom ///< Constructor-injected semi-local provider; not a built-in kernel.
 };
 
@@ -119,7 +121,7 @@ double hybrid_pt2_fraction(XCType type);
 ///
 /// True for `PBE`, `PBEsol`, `RevPBE`, `RPBE`, `BLYP`, `OptB88VdW`, `B3LYP`,
 /// `PBE0`, `CAMB3LYP` and `B2PLYP` (all carry a semi-local GGA term); false for the pure-LDA
-/// `LSDA`. Used to decide whether the XC grid engine must build
+/// `LSDA` and the GTH Padé `PADE`. Used to decide whether the XC grid engine must build
 /// basis-function gradients.
 ///
 /// @param type XC functional type.
@@ -145,7 +147,7 @@ struct XCOutput {
 /// Applies density cutoff: if rho_total < 1e-12, returns zero for all outputs.
 ///
 /// @param type  Functional type (LSDA, PBE, PBEsol, RevPBE, RPBE, BLYP,
-///              OptB88VdW, B3LYP, PBE0, CAMB3LYP or B2PLYP).
+///              OptB88VdW, B3LYP, PBE0, CAMB3LYP, B2PLYP or PADE).
 /// @param rho_a Alpha density at grid point [electrons/Bohr^3].
 /// @param rho_b Beta density at grid point [electrons/Bohr^3].
 /// @param sigma_aa |grad rho_alpha|^2 (GGA only, ignored for LSDA).
@@ -178,6 +180,6 @@ class BuiltinXc final : public ATV::electronic::XcFunctional {
     XCType type_;
 };
 
-} // namespace scf
+} // namespace xc
 } // namespace cpu
 } // namespace ATV

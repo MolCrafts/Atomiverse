@@ -46,7 +46,7 @@ int run() {
     using cpu::gpw::MbdResult;
     using cpu::gpw::ts_pbe;
     using cpu::gpw::TsResult;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     constexpr double kA2B = 1.0 / 0.52917720859;
     const double ang[6][3] = {
@@ -208,7 +208,7 @@ int run() {
                          GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
                          GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
                    120.0,
-                   XcKind::PBE};
+                   ATV::cpu::xc::XCType::PBE};
         cfg.n_occ = 8;
         cfg.max_iter = 80;
         cfg.tol = 1e-6;

@@ -28,7 +28,7 @@ void controls(PW& method) {
     method.tol = 1e-9;
     method.max_iter = 200;
     method.mix_beta = .2;
-    method.smearing = cpu::pw::Smearing::fermi_dirac;
+    method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = .02; // Ry; match the independently executed QE input.
     method.extra_bands = 2;
 }
@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
             reference.span(kAtom_y)[i] = xyz[i][1];
             reference.span(kAtom_z)[i] = xyz[i][2];
         }
-        PW method(provider, 12, 1, cpu::scf::XCType::PBE);
+        PW method(provider, 12, 1, cpu::xc::XCType::PBE);
         controls(method);
         if (method.potential.get() != provider.get())
             throw std::runtime_error(
@@ -250,7 +250,7 @@ int main(int argc, char** argv) {
             method.run(frame);
             energy(method, frame);
             const auto accepted = method.last_result();
-            PW peer(provider, 12, 1, cpu::scf::XCType::PBE);
+            PW peer(provider, 12, 1, cpu::xc::XCType::PBE);
             controls(peer);
             if (peer.potential.get() != method.potential.get())
                 throw std::runtime_error(

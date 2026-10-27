@@ -50,7 +50,7 @@ int run() {
                    GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
                    GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
              30.0,
-             XcKind::PBE};
+             ATV::cpu::xc::XCType::PBE};
     m.n_occ = 4;
     // Closed-shell Si₂ π² has an exactly degenerate HOMO in the core-H
     // guess; last-bit noise picks one of two stationary points

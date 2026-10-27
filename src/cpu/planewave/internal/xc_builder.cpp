@@ -91,7 +91,7 @@ struct XcPointOutput {
     AccReal potential[2]{};
     AccReal flux[2][3]{};
 };
-XcPointOutput evaluate_point(cpu::scf::XCType xc, bool gga,
+XcPointOutput evaluate_point(cpu::xc::XCType xc, bool gga,
                              const XcPointInput& input) {
     XcPointOutput result;
     const double ra = std::max(input.rho[0], 0.0);
@@ -105,7 +105,7 @@ XcPointOutput evaluate_point(cpu::scf::XCType xc, bool gga,
             ab += input.gradient[0][d] * input.gradient[1][d];
             bb += input.gradient[1][d] * input.gradient[1][d];
         }
-    const auto point = cpu::scf::evaluate_xc(xc, ra, rb, aa, ab, bb);
+    const auto point = cpu::xc::evaluate_xc(xc, ra, rb, aa, ab, bb);
     result.energy = static_cast<AccReal>(point.energy_density);
     result.potential[0] =
         input.rho[0] > 0 ? static_cast<AccReal>(point.vrho_alpha) : AccReal(0);
@@ -228,7 +228,7 @@ void XCBuilder::project_to_base(
     ws.fft->c2r(work, output.data());
 }
 
-void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
+void XCBuilder::step(PWWorkspace& ws, cpu::xc::XCType xc) {
     const int ng = ws.n_g;
 
     if (!ws.fft || ws.nr <= 0) {
@@ -238,7 +238,7 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
     }
 
     validate_density_modes(ws);
-    const bool gga = cpu::scf::is_gga(xc);
+    const bool gga = cpu::xc::is_gga(xc);
     check_prepared(ws);
     if (ws.rho_G.size() != static_cast<std::size_t>(ng))
         throw std::invalid_argument("PW XC: density does not match G-sphere");
@@ -358,7 +358,7 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
                     {ws.V_xc_r.data(), static_cast<std::size_t>(ws.nr)});
 }
 
-void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
+void XCBuilder::step_spin(PWWorkspace& ws, cpu::xc::XCType xc) {
     int ng = ws.n_g;
     if (!ws.fft || ws.nr <= 0 || ws.nspin != 2 || ws.rho_spin_G.size() != 2) {
         for (int i = 0; i < ng; ++i)
@@ -369,7 +369,7 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
     }
 
     validate_density_modes(ws);
-    const bool gga = cpu::scf::is_gga(xc);
+    const bool gga = cpu::xc::is_gga(xc);
     check_prepared(ws);
     for (const auto& channel : ws.rho_spin_G)
         if (channel.size() != static_cast<std::size_t>(ng))
@@ -537,10 +537,10 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
 }
 
 void XCBuilder::cache_response_reference(
-    const PWWorkspace& ws, cpu::scf::XCType xc,
+    const PWWorkspace& ws, cpu::xc::XCType xc,
     std::span<const ResponseChannel> channels) {
-    FFTPlan3D& fft = cpu::scf::is_gga(xc) ? *gradient_quadrature_fft_
-                                          : *local_quadrature_fft_;
+    FFTPlan3D& fft = cpu::xc::is_gga(xc) ? *gradient_quadrature_fft_
+                                         : *local_quadrature_fft_;
     const std::array<int, 3> shape{fft.nx(), fft.ny(), fft.nz()};
     const auto& gv = *ws.gvec;
     bool same = response_channels_ == static_cast<int>(channels.size())
@@ -572,7 +572,7 @@ void XCBuilder::cache_response_reference(
                             fft.nx() / 2 + 1, fft.nc(), work,
                             [&](int g) { return channels[spin].reference[g]; });
         fft.c2r(work, response_density_[spin].data());
-        if (cpu::scf::is_gga(xc))
+        if (cpu::xc::is_gga(xc))
             for (int d = 0; d < 3; ++d) {
                 response_gradient_[spin][d].resize(nr);
                 pack_sphere_to_half(
@@ -594,7 +594,7 @@ void XCBuilder::cache_response_reference(
     response_channels_ = static_cast<int>(channels.size());
 }
 
-void XCBuilder::response(const PWWorkspace& ws, cpu::scf::XCType xc,
+void XCBuilder::response(const PWWorkspace& ws, cpu::xc::XCType xc,
                          std::span<const ResponseChannel> channels,
                          AccReal epsilon) {
     validate_density_modes(ws);
@@ -619,7 +619,7 @@ void XCBuilder::response(const PWWorkspace& ws, cpu::scf::XCType xc,
                     "PW XC response: nonfinite Fourier coefficient");
     }
     cache_response_reference(ws, xc, channels);
-    const bool gga = cpu::scf::is_gga(xc);
+    const bool gga = cpu::xc::is_gga(xc);
     FFTPlan3D& fft = gga ? *gradient_quadrature_fft_ : *local_quadrature_fft_;
     const int nr = fft.nr(), nc = fft.nc(), ng = ws.n_g;
     const int nx = fft.nx(), ny = fft.ny(), nz = fft.nz(), nxc = nx / 2 + 1;

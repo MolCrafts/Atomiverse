@@ -71,13 +71,13 @@ void hydrogen_case(bool spin, bool smear) {
     auto f = hydrogen(spin);
     auto pp = std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::H,
                                                             "GTH-PBE-q1");
-    cuda::pw::PW run{pp, 6.0, 1, cpu::scf::XCType::PBE};
-    cuda::pw::PW deriv{pp, 6.0, 1, cpu::scf::XCType::PBE};
+    cuda::pw::PW run{pp, 6.0, 1, cpu::xc::XCType::PBE};
+    cuda::pw::PW deriv{pp, 6.0, 1, cpu::xc::XCType::PBE};
     for (auto* method : {&run, &deriv}) {
         method->spin_polarized = spin;
         method->multiplicity = spin ? 2 : 1;
-        method->smearing =
-            smear ? cpu::pw::Smearing::fermi_dirac : cpu::pw::Smearing::none;
+        method->smearing = smear ? ATV::electronic::Smearing::fermi_dirac
+                                 : ATV::electronic::Smearing::none;
         method->degauss = 0.02;
         method->extra_bands = 2;
         method->max_iter = 100;
@@ -138,11 +138,11 @@ void qe_silicon_case() {
     }
     auto pp = std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::Si,
                                                             "GTH-PBE-q4");
-    cuda::pw::PW gpu{pp, 12.0, 1, cpu::scf::XCType::PBE};
+    cuda::pw::PW gpu{pp, 12.0, 1, cpu::xc::XCType::PBE};
     gpu.tol = 1e-9;
     gpu.max_iter = 200;
     gpu.mix_beta = 0.2;
-    gpu.smearing = cpu::pw::Smearing::fermi_dirac;
+    gpu.smearing = ATV::electronic::Smearing::fermi_dirac;
     gpu.degauss = 0.02;
     gpu.extra_bands = 2;
     const auto result = gpu.forces(frame);
@@ -175,8 +175,8 @@ void silicon_case() {
     auto cpu_f = f;
     auto pp = std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::Si,
                                                             "GTH-PBE-q4");
-    cpu::pw::PW cpu{pp, 8.0, 1, cpu::scf::XCType::PBE};
-    cuda::pw::PW gpu{pp, 8.0, 1, cpu::scf::XCType::PBE};
+    cpu::pw::PW cpu{pp, 8.0, 1, cpu::xc::XCType::PBE};
+    cuda::pw::PW gpu{pp, 8.0, 1, cpu::xc::XCType::PBE};
     cpu.tol = gpu.tol = 1e-6;
     cpu.max_iter = gpu.max_iter = 80;
     cpu.mix_beta = gpu.mix_beta = 0.5;

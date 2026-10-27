@@ -9,7 +9,7 @@
 
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/xc_grid.h"
-#include "atomiverse/cpu/xc/pade.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 using ATV::cpu::gpw::collocate_density;
 using ATV::cpu::gpw::GridBasisFunction;
@@ -43,15 +43,15 @@ TEST(GpwXcGrid, ConstantDensityEnergyAndPotential) {
 
     XcOnGrid xc = xc_grid_pade(grid, rho_r);
 
-    const ATV::cpu::xc::PadeXC ref =
-        ATV::cpu::xc::pade_lsd(0.5 * rho0, 0.5 * rho0);
+    const ATV::cpu::xc::XCOutput ref = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PADE, 0.5 * rho0, 0.5 * rho0);
     const double volume = cell[0] * cell[1] * cell[2];
     const double e_expected = volume * ref.energy_density;
 
     EXPECT_NEAR(xc.e_xc, e_expected, 1e-10 * std::abs(e_expected));
     ASSERT_EQ(static_cast<long>(xc.vxc_r.size()), grid.npts());
-    EXPECT_DOUBLE_EQ(xc.vxc_r[0], ref.vrho_a);
-    EXPECT_DOUBLE_EQ(xc.vxc_r[grid.npts() / 2], ref.vrho_a);
+    EXPECT_DOUBLE_EQ(xc.vxc_r[0], ref.vrho_alpha);
+    EXPECT_DOUBLE_EQ(xc.vxc_r[grid.npts() / 2], ref.vrho_alpha);
 }
 
 // From a real collocated density: energy equals the explicit weighted sum, and
@@ -74,8 +74,10 @@ TEST(GpwXcGrid, CollocatedDensityComposesToSymmetricBlock) {
     const double w = grid.weight();
     for (double r : rho) {
         if (r > 1e-12)
-            e_manual +=
-                w * ATV::cpu::xc::pade_lsd(0.5 * r, 0.5 * r).energy_density;
+            e_manual += w
+                        * ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::PADE,
+                                                    0.5 * r, 0.5 * r)
+                              .energy_density;
     }
     EXPECT_NEAR(xc.e_xc, e_manual, 1e-12 * std::max(1.0, std::abs(e_manual)));
     EXPECT_LT(xc.e_xc, 0.0); // XC energy is negative for a real density

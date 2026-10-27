@@ -18,14 +18,14 @@
 #include <vector>
 
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::ks_grid_build_rks;
+using ATV::cpu::xc::XCType;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceProduct;
 using ATV::cuda::gpw::internal::GpwGridDesc;
 using ATV::cuda::gpw::internal::KsChainDevice;
 using ATV::cuda::gpw::internal::KsChainEnergies;
-using ATV::cuda::gpw::internal::KsXcKind;
+
 using ATV::cuda::gpw::internal::SpectralFftDevice;
 
 namespace {
@@ -171,7 +171,7 @@ ChainHost run_device(const UniformGrid& grid,
                      const std::vector<DeviceProduct>& prods,
                      const std::vector<double>& n_ion,
                      const std::vector<double>& v_loc, bool do_integrate,
-                     KsXcKind xc) {
+                     XCType xc) {
     const long ng = grid.npts();
     const int nprod = static_cast<int>(prods.size());
     auto* d_prods = static_cast<DeviceProduct*>(
@@ -321,11 +321,11 @@ TEST(CudaGpwKsGga, SSMatchesCpuKsGridPbe) {
     std::vector<double> n_ion(n, 0.0);
     std::vector<double> v_loc;
     const auto cpu =
-        ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PBE,
+        ks_grid_build_rks(grid, rho, n_ion, v_loc, XCType::PBE,
                           /*nonperiodic=*/false, false, false, false);
 
     const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/true,
-                                KsXcKind::PBE);
+                                cpu::xc::XCType::PBE);
 
     EXPECT_NEAR(dev.e.e_hartree, cpu.e_hartree,
                 1e-10 * std::max(1.0, std::abs(cpu.e_hartree)));
@@ -382,10 +382,10 @@ TEST(CudaGpwKsGga, MultiWithIonAndVlocPbe) {
         }
     }
 
-    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PBE,
+    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XCType::PBE,
                                        false, false, false, false);
     const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/true,
-                                KsXcKind::PBE);
+                                cpu::xc::XCType::PBE);
 
     EXPECT_NEAR(dev.e.e_hartree, cpu.e_hartree,
                 1e-10 * std::max(1.0, std::abs(cpu.e_hartree)));
@@ -416,10 +416,10 @@ TEST(CudaGpwKsGga, DefaultPadeUnchanged) {
     const std::size_t n = rho.size();
     std::vector<double> n_ion(n, 0.0);
     std::vector<double> v_loc;
-    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PADE,
+    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XCType::PADE,
                                        false, false, false, false);
     const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/false,
-                                KsXcKind::PADE);
+                                cpu::xc::XCType::PADE);
     EXPECT_NEAR(dev.e.e_xc, cpu.e_xc,
                 1e-10 * std::max(1.0, std::abs(cpu.e_xc)));
     const double peak_v = max_abs(cpu.veff);

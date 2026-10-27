@@ -37,7 +37,8 @@
 #include "atomiverse/cpu/planewave/stages/mix_stage.h"
 #include "atomiverse/cpu/planewave/stages/pw_converged.h"
 #include "atomiverse/cpu/planewave/stages/veff_stage.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/electronic/smearing.h"
 
 namespace ATV {
 namespace cpu {
@@ -81,13 +82,6 @@ struct PWResult {
 /// structures rebuild inside each `run()` (AIMD / optimize safe).
 /// All product SCF paths are driven by the same Driver stages with
 /// path-local StepFn bodies (restricted / collinear × fixed / smear).
-enum class Smearing : int {
-    none = 0,              ///< Fixed closed-shell occupations.
-    fermi_dirac = 1,       ///< Fermi–Dirac.
-    methfessel_paxton = 2, ///< Methfessel–Paxton of order `mp_order`.
-    gaussian = 3,          ///< Gaussian (cold/Marzari–Vanderbilt not here).
-};
-
 class PW : public cpu::Driver<ATV::pw::Phase> {
   public:
     bool requires_full_frame() const override { return true; }
@@ -105,7 +99,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// @brief Exchange–correlation functional. `XCType::PBE` uses spectral
     ///        density gradients (true GGA) for restricted and collinear spin
     ///        paths; pure LDA is `XCType::LSDA`.
-    const cpu::scf::XCType xc;
+    const cpu::xc::XCType xc;
 
     // ── Knobs ──────────────────────────────────────────────────────────
     /// @brief SCF tolerance on the density-change L2 norm (dimensionless).
@@ -128,7 +122,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     int multiplicity = 1;
     /// @brief Metallic smearing kind (default: fixed occupations).
     ///        May be combined with `spin_polarized` (collinear metals).
-    Smearing smearing = Smearing::none;
+    ATV::electronic::Smearing smearing = ATV::electronic::Smearing::none;
     /// @brief Smearing width [Ry] (QE `degauss`). Required > 0 when smearing is on.
     double degauss = 0.02;
     /// @brief Methfessel–Paxton order \(N\) (used when `smearing == methfessel_paxton`).
@@ -142,7 +136,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
     /// @param xc Exchange-correlation functional.
     PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
-       double ecut_ry, int k_mesh, cpu::scf::XCType xc = cpu::scf::XCType::PBE);
+       double ecut_ry, int k_mesh, cpu::xc::XCType xc = cpu::xc::XCType::PBE);
 
     ~PW();
     PW(PW&&);

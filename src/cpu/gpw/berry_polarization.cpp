@@ -317,7 +317,7 @@ BerryPolarizationResult BerryPolarization::compute(GpwDft& method,
                                      internal::cell_from_box(frame.box));
     const std::vector<GpwAtom> atoms =
         internal::GpwDftAccess::atoms_from_frame(method, frame);
-    if (method.smearing != Smearing::none)
+    if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "BerryPolarization::compute: Berry-phase polarization requires "
             "an insulator (no metallic smearing)");

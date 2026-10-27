@@ -74,7 +74,7 @@ int run() {
         cpu::gpw::GthPotential(molrs::Element::O, "GTH-PADE-q6")};
 
     // Product path: analytic fixed-P UKS + DFT+U stress.
-    cpu::gpw::GpwDft dft{{Ni, O}, 250.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{Ni, O}, 250.0, cpu::xc::XCType::PADE};
     dft.max_iter = 300;
     dft.tol = 1e-5;
     dft.mix = 0.35;

@@ -20,7 +20,7 @@
 #include "atomiverse/cpu/scf/internal/pcm.h"
 #include "atomiverse/cpu/scf/internal/point_charges.h"
 #include "atomiverse/cpu/scf/internal/x2c.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include <optional>
 
 #include <cmath>
@@ -156,14 +156,14 @@ static void accumulate_common_gradient(xt::xtensor<double, 2>& grad,
 static void accumulate_xc_gradient(
     xt::xtensor<double, 2>& grad_out, const internal::IntegralView& integrals,
     const xt::xtensor<double, 2>& Pa, const xt::xtensor<double, 2>& Pb,
-    XCType xc_type, GridLevel grid_level, int n_radial, int n_angular,
+    xc::XCType xc_type, GridLevel grid_level, int n_radial, int n_angular,
     const std::vector<int>& shell_to_atom,
     const std::vector<std::vector<int>>& atom_shells, int natm, int n,
     const ATV::electronic::XcFunctional* functional,
     ATV::electronic::XcSpin spin) {
     // Built-in and external providers use the same ingredient declaration
     // and gradient chain rule; exact exchange belongs to the two-electron term.
-    std::optional<BuiltinXc> builtin;
+    std::optional<xc::BuiltinXc> builtin;
     if (!functional) {
         builtin.emplace(xc_type);
         functional = &*builtin;
@@ -489,9 +489,10 @@ static void accumulate_xc_gradient(
 
 namespace internal {
 
-ScfGradient::ScfGradient(MeanFieldType method, SpinType spin, XCType xc_type,
-                         GridLevel grid_level, int n_radial, int n_angular,
-                         bool xc_grad_project_translation, bool d3bj, bool d4,
+ScfGradient::ScfGradient(MeanFieldType method, SpinType spin,
+                         xc::XCType xc_type, GridLevel grid_level, int n_radial,
+                         int n_angular, bool xc_grad_project_translation,
+                         bool d3bj, bool d4,
                          const ATV::electronic::XcFunctional* functional)
     : method_(method), spin_(spin), xc_type_(xc_type), functional_(functional),
       grid_level_(grid_level), n_radial_(n_radial), n_angular_(n_angular),

@@ -165,7 +165,7 @@ MeanFieldMethod<D>::PositionGuard::~PositionGuard() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 template <typename D>
-XCType MeanFieldMethod<D>::select_functional_(
+xc::XCType MeanFieldMethod<D>::select_functional_(
     std::shared_ptr<const ATV::electronic::XcFunctional> functional,
     ATV::electronic::XcSpin spin) {
     using namespace ATV::electronic;
@@ -179,8 +179,8 @@ XCType MeanFieldMethod<D>::select_functional_(
         || !functional->supports(spin, XcOrder::First))
         throw std::invalid_argument("KS: XC provider requires energy and first "
                                     "derivatives for this spin");
-    const auto* builtin = dynamic_cast<const BuiltinXc*>(functional.get());
-    xc_type_ = builtin ? builtin->type() : XCType::Custom;
+    const auto* builtin = dynamic_cast<const xc::BuiltinXc*>(functional.get());
+    xc_type_ = builtin ? builtin->type() : xc::XCType::Custom;
     xc_functional_ = std::move(functional);
     return xc_type_;
 }
@@ -529,7 +529,7 @@ void MeanFieldMethod<D>::engage_xl_bomd_() {
 template <typename D>
 void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
                                     const DriveOpts& opts) {
-    if (xc_type_ == XCType::Custom && hybrid_alpha_override > 0)
+    if (xc_type_ == xc::XCType::Custom && hybrid_alpha_override > 0)
         throw std::invalid_argument(
             "Custom XC: exact-exchange overrides are unsupported");
     // ECP ↔ x2c double-counting gate (per-element): relativistic ECPs bake
@@ -1664,7 +1664,7 @@ void MeanFieldMethod<D>::cpmd_seed_() {
 
 template <typename D>
 void MeanFieldMethod<D>::cpmd_step_(Frame& frame, bool advance_electrons) {
-    if (xc_type_ == XCType::Custom && hybrid_alpha_override > 0)
+    if (xc_type_ == xc::XCType::Custom && hybrid_alpha_override > 0)
         throw std::invalid_argument(
             "Custom XC: exact-exchange overrides are unsupported");
     // A production Car-Parrinello step is NOT the stage Plan: DIIS,

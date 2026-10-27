@@ -72,7 +72,7 @@
 #include "atomiverse/cpu/scf/rohf.h"
 #include "atomiverse/cpu/scf/uhf.h"
 #include "atomiverse/cpu/scf/uks.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif

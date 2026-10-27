@@ -18,7 +18,7 @@
 #pragma once
 
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include <array>
 #include <span>
 #include <vector>
@@ -47,7 +47,7 @@ class XCBuilder {
     /// @brief Compute coarse `ws.V_xc_r`, `ws.E_xc`, and `ws.V_xc_G`.
     /// @param ws Plane-wave workspace [ρ in Bohr⁻³, V/E in Hartree].
     /// @param xc Functional selector (`LSDA` = local; `PBE` = true GGA).
-    void step(PWWorkspace& ws, cpu::scf::XCType xc = cpu::scf::XCType::PBE);
+    void step(PWWorkspace& ws, cpu::xc::XCType xc = cpu::xc::XCType::PBE);
 
     /// @brief Collinear spin XC from `ws.rho_spin_G[0/1]`.
     ///        Writes `V_xc_spin_G`, `E_xc`, and `e_xc_int_spin`.
@@ -55,8 +55,7 @@ class XCBuilder {
     ///        `XCType::LSDA` remains local-only.
     /// @param ws Plane-wave workspace [ρ_σ in Bohr⁻³, V/E in Hartree].
     /// @param xc Functional selector (default true GGA PBE).
-    void step_spin(PWWorkspace& ws,
-                   cpu::scf::XCType xc = cpu::scf::XCType::PBE);
+    void step_spin(PWWorkspace& ws, cpu::xc::XCType xc = cpu::xc::XCType::PBE);
 
     /// Physical Fourier inputs and preallocated coarse-grid response output.
     struct ResponseChannel {
@@ -67,7 +66,7 @@ class XCBuilder {
     /// Central difference of the same fixed-grid potential, with caller's
     /// unchanged epsilon. One channel denotes total restricted density; two
     /// denote independent alpha/beta densities. Does not mutate accepted ws.
-    void response(const PWWorkspace& ws, cpu::scf::XCType xc,
+    void response(const PWWorkspace& ws, cpu::xc::XCType xc,
                   std::span<const ResponseChannel> channels, AccReal epsilon);
 
   private:
@@ -79,7 +78,7 @@ class XCBuilder {
     void project_to_base(const PWWorkspace& ws,
                          const xt::xarray<std::complex<AccReal>>& potential,
                          std::span<AccReal> output);
-    void cache_response_reference(const PWWorkspace& ws, cpu::scf::XCType xc,
+    void cache_response_reference(const PWWorkspace& ws, cpu::xc::XCType xc,
                                   std::span<const ResponseChannel> channels);
     // Fixed reference fields are interpolated once. Keys contain physical
     // coefficients/modes/metric and quadrature shape, never workspace pointers.

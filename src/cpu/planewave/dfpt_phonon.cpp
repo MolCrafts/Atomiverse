@@ -107,7 +107,7 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
     // currently assume probability weights. Ground-state MP supports signed
     // quasi-occupations; carrying those through Sternheimer response needs
     // a separate implementation and validation before admitting this model.
-    if (method.smearing == Smearing::methfessel_paxton)
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
         throw std::invalid_argument(
             "DfptPhonon::compute: signed Methfessel-Paxton response is not "
             "implemented; use Fermi-Dirac, Gaussian or fixed occupations");

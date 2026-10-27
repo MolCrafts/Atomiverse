@@ -42,7 +42,7 @@
 #include "atomiverse/cpu/scf/rhf.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"

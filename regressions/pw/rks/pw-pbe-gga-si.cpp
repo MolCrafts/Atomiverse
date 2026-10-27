@@ -13,7 +13,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "harness/registry.h"
 
 namespace atv_reg_pw_pw_pbe_gga_si {
@@ -69,7 +69,7 @@ int run() {
     auto frame = make_si_diamond(5.43);
 
     PW pbe{std::make_shared<UpfPseudopotential>(upf), 15.0, 2,
-           cpu::scf::XCType::PBE};
+           cpu::xc::XCType::PBE};
     pbe.tol = 1e-5;
     pbe.max_iter = 40;
     pbe.mix_beta = 0.5;
@@ -100,7 +100,7 @@ int run() {
     }
 
     PW lda{std::make_shared<UpfPseudopotential>(upf), 15.0, 2,
-           cpu::scf::XCType::LSDA};
+           cpu::xc::XCType::LSDA};
     lda.tol = 1e-5;
     lda.max_iter = 40;
     lda.mix_beta = 0.5;

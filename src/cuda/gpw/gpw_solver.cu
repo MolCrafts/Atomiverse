@@ -130,7 +130,6 @@ using internal::KpointStvnlDevice;
 using internal::KsChainDevice;
 using internal::KsChainEnergies;
 using internal::KsMultiGridChainDevice;
-using internal::KsXcKind;
 using internal::MultigridDesc;
 using internal::ProductWeightPackDevice;
 
@@ -433,14 +432,13 @@ CollocateGridDesc to_coll(const UniformGrid& g, double eps_win = 1.0e-14) {
     return d;
 }
 
-KsXcKind to_ks_xc(XcKind xc) {
-    if (xc == XcKind::PADE)
-        return KsXcKind::PADE;
-    if (xc == XcKind::PBE)
-        return KsXcKind::PBE;
+cpu::xc::XCType to_ks_xc(cpu::xc::XCType xc) {
+    if (xc == cpu::xc::XCType::PADE || xc == cpu::xc::XCType::PBE)
+        return xc;
     throw std::invalid_argument(
-        "cuda::gpw::GpwDft: xc has no device path — only XcKind::PADE and "
-        "XcKind::PBE. Use cpu::gpw::GpwDft for other functionals.");
+        "cuda::gpw::GpwDft: xc has no device path — only cpu::xc::XCType::PADE "
+        "and cpu::xc::XCType::PBE. Use cpu::gpw::GpwDft for other "
+        "functionals.");
 }
 
 struct DeviceKsBuffers {
@@ -817,7 +815,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     }
 
     KsChainDevice ks(to_coll(grid), stream);
-    const KsXcKind kxc = to_ks_xc(cfg.xc);
+    const cpu::xc::XCType kxc = to_ks_xc(cfg.xc);
     const bool use_diis = cfg.diis_depth > 0;
 
     // Device χ^k integrate + H_k assemble: χ and H0_k = T_k+Vnl_k uploaded
@@ -1055,6 +1053,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
 } // namespace
 
 void GpwDft::validate_slice_() const {
+    cpu::gpw::require_gpw_xc(xc);
     if (is_uks()) {
         if (n_alpha < 0 || n_beta < 0)
             throw std::invalid_argument(
@@ -1063,9 +1062,10 @@ void GpwDft::validate_slice_() const {
             throw std::invalid_argument(
                 "cuda::gpw::GpwDft: UKS requires n_alpha+n_beta >= 1");
         // First UKS product cut: Padé LSD only (PBE-UKS → uks-pbe-gate).
-        if (xc != XcKind::PADE)
+        if (xc != cpu::xc::XCType::PADE)
             throw std::invalid_argument(
-                "cuda::gpw::GpwDft: collinear UKS first cut is XcKind::PADE "
+                "cuda::gpw::GpwDft: collinear UKS first cut is "
+                "xc::XCType::PADE "
                 "only (Padé LSD). Set xc=PADE or use cpu::gpw::GpwDft; "
                 "PBE-UKS is a deeper slug (cuda-gpw-uks-pbe-gate).");
         // UKS multigrid is not on the product path (single-grid run_uks only).
@@ -1128,9 +1128,10 @@ void GpwDft::validate_slice_() const {
                 "product path yet — set ngrids=1 for multi-k RKS, or use "
                 "cpu::gpw::GpwDft (deeper slug cuda-gpw-multigrid-kpoints).");
     }
-    if (xc != XcKind::PADE && xc != XcKind::PBE)
+    if (xc != cpu::xc::XCType::PADE && xc != cpu::xc::XCType::PBE)
         throw std::invalid_argument(
-            "cuda::gpw::GpwDft: only XcKind::PADE and XcKind::PBE have device "
+            "cuda::gpw::GpwDft: only xc::XCType::PADE and xc::XCType::PBE have "
+            "device "
             "KS paths. Use cpu::gpw::GpwDft for other functionals.");
     if (!local_pp_on_grid)
         throw std::invalid_argument(
@@ -1431,7 +1432,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         check_cuda(cudaMemsetAsync(dev.d_v_loc, 0, bytes, stream),
                    "zero v_loc");
 
-    const KsXcKind kxc = to_ks_xc(xc);
+    const cpu::xc::XCType kxc = to_ks_xc(xc);
     const double* d_vloc_arg = v_locsr.empty() ? nullptr : dev.d_v_loc;
     const double eps_drop = eps * kProductMassMargin;
     const bool use_diis = diis_depth > 0;

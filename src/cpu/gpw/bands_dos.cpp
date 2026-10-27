@@ -102,24 +102,27 @@ std::vector<std::array<double, 3>> lerp_segment(const std::array<double, 3>& a,
     return pts;
 }
 
-XcOnGrid eval_xc(XcKind xc, const UniformGrid& grid,
+XcOnGrid eval_xc(xc::XCType xc, const UniformGrid& grid,
                  const std::vector<double>& rho) {
     switch (xc) {
-    case XcKind::PBE:
+    case xc::XCType::PBE:
         return xc_grid_pbe(grid, rho);
-    case XcKind::PBEsol:
+    case xc::XCType::PBEsol:
         return xc_grid_pbesol(grid, rho);
-    case XcKind::RevPBE:
+    case xc::XCType::RevPBE:
         return xc_grid_revpbe(grid, rho);
-    case XcKind::RPBE:
+    case xc::XCType::RPBE:
         return xc_grid_rpbe(grid, rho);
-    case XcKind::BLYP:
+    case xc::XCType::BLYP:
         return xc_grid_blyp(grid, rho);
-    case XcKind::OptB88VdW:
+    case xc::XCType::OptB88VdW:
         return xc_grid_optb88_vdw(grid, rho);
-    case XcKind::PADE:
-    default:
+    case xc::XCType::PADE:
         return xc_grid_pade(grid, rho);
+    default:
+        throw std::invalid_argument(
+            "GpwDft: XCType is not a GPW functional (PADE, PBE, PBEsol, "
+            "RevPBE, RPBE, BLYP, OptB88VdW)");
     }
 }
 
@@ -147,25 +150,28 @@ void reject_unsupported(const GpwDft& m) {
             "(clear d3/d3bj/d4/ts/xdm/mbd/vdw_df/vdw_df2/rvv10)");
 }
 
-XcOnGridSpin eval_xc_spin(XcKind xc, const UniformGrid& grid,
+XcOnGridSpin eval_xc_spin(xc::XCType xc, const UniformGrid& grid,
                           const std::vector<double>& rho_a,
                           const std::vector<double>& rho_b) {
     switch (xc) {
-    case XcKind::PBE:
+    case xc::XCType::PBE:
         return xc_grid_pbe_spin(grid, rho_a, rho_b);
-    case XcKind::PBEsol:
+    case xc::XCType::PBEsol:
         return xc_grid_pbesol_spin(grid, rho_a, rho_b);
-    case XcKind::RevPBE:
+    case xc::XCType::RevPBE:
         return xc_grid_revpbe_spin(grid, rho_a, rho_b);
-    case XcKind::RPBE:
+    case xc::XCType::RPBE:
         return xc_grid_rpbe_spin(grid, rho_a, rho_b);
-    case XcKind::BLYP:
+    case xc::XCType::BLYP:
         return xc_grid_blyp_spin(grid, rho_a, rho_b);
-    case XcKind::OptB88VdW:
+    case xc::XCType::OptB88VdW:
         return xc_grid_optb88_vdw_spin(grid, rho_a, rho_b);
-    case XcKind::PADE:
-    default:
+    case xc::XCType::PADE:
         return xc_grid_pade_lsd(grid, rho_a, rho_b);
+    default:
+        throw std::invalid_argument(
+            "GpwDft: XCType is not a GPW functional (PADE, PBE, PBEsol, "
+            "RevPBE, RPBE, BLYP, OptB88VdW)");
     }
 }
 
@@ -250,7 +256,7 @@ BandsResult Bands::compute(GpwDft& method, Frame& frame) const {
         throw std::invalid_argument(
             "gpw::Bands::compute: n_bands must be >= 2");
     const bool uks = method.is_uks();
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (!uks) {
         if (method.n_occ < 1)
             throw std::invalid_argument(
@@ -665,7 +671,7 @@ DosResult Dos::compute(GpwDft& method, Frame& frame) const {
     out.e_fermi_ha = scf.e_fermi;
 
     const bool uks = method.is_uks();
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     out.nspin = uks ? 2 : 1;
 
     // Cap band count; GPW diagonalizes the full AO spectrum.

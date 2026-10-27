@@ -4,7 +4,7 @@
 ///
 /// The GGA counterpart of `xc_grid_pade` (LDA). Density gradients are computed
 /// spectrally (`grid_fft`), the pointwise functional is reused from the
-/// project's libxc-parity `cpu::scf::evaluate_xc`, and the gradient-dependent
+/// project's libxc-parity `cpu::xc::evaluate_xc`, and the gradient-dependent
 /// part of the potential is assembled via the divergence term. Closed-shell
 /// (spin-unpolarized): rho split evenly between spins. Spin-resolved
 /// (`xc_grid_gga_spin`) is the UKS path (paired with `xc_grid_pade_lsd`).
@@ -14,7 +14,7 @@
 
 #include "atomiverse/cpu/gpw/internal/collocate.h" // UniformGrid
 #include "atomiverse/cpu/gpw/internal/xc_grid.h"   // XcOnGrid, XcOnGridSpin
-#include "atomiverse/cpu/scf/xc_functional.h"      // XCType
+#include "atomiverse/cpu/xc/xc_functional.h"       // XCType
 
 namespace ATV {
 namespace cpu {
@@ -35,7 +35,7 @@ namespace gpw {
 ///              requests skip the potential's divergence FFTs.
 /// @return XC energy [Ha]; potential [Ha] is empty for an Energy request.
 XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
-                     cpu::scf::XCType xc,
+                     cpu::xc::XCType xc,
                      electronic::XcOrder order = electronic::XcOrder::First);
 
 /// @brief PBE GGA on the grid (`xc_grid_gga` with `XCType::PBE`).
@@ -77,7 +77,7 @@ XcOnGrid xc_grid_optb88_vdw(const UniformGrid& grid,
 /// @return XC energy [Ha]; both potentials [Ha] are empty for Energy requests.
 XcOnGridSpin
 xc_grid_gga_spin(const UniformGrid& grid, const std::vector<double>& rho_a,
-                 const std::vector<double>& rho_b, cpu::scf::XCType xc,
+                 const std::vector<double>& rho_b, cpu::xc::XCType xc,
                  electronic::XcOrder order = electronic::XcOrder::First);
 
 /// @brief Spin-resolved PBE (`xc_grid_gga_spin` with `XCType::PBE`).

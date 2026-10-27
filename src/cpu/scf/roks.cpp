@@ -14,7 +14,7 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-ROKS::ROKS(BasisSet basis_in, int na, int nb, XCType xc_in, int charge_in)
+ROKS::ROKS(BasisSet basis_in, int na, int nb, xc::XCType xc_in, int charge_in)
     : MeanFieldMethod<ROKS>(basis_in, charge_in), n_alpha(na), n_beta(nb),
       xc(xc_in) {
     spin_ = SpinType::RestrictedOpen;

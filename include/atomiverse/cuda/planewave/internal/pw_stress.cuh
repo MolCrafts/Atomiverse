@@ -9,9 +9,9 @@
 #pragma once
 
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/electronic/smearing.h"
 #include <array>
 
 namespace ATV {
@@ -54,7 +54,7 @@ std::array<double, 6> pw_stress_analytic_impl(
     const cpu::Frame& frame,
     const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
     int k_mesh, double tol, int max_iter, double mix_beta, int pulay_depth,
-    cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
+    cpu::xc::XCType xc, ATV::electronic::Smearing smearing, double degauss,
     int mp_order, int extra_bands, bool spin_polarized = false,
     int multiplicity = 1, double* energy_ry_out = nullptr,
     cpu::pw::PWResult* result_out = nullptr);

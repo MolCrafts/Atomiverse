@@ -73,9 +73,9 @@ def main():
         source_root / "src/cpu/scf/internal/gradient.cpp",
         source_root / "src/cpu/scf/internal/integral_derivatives.cpp",
         source_root / "src/cpu/scf/rys_eri.cpp",
-        source_root / "src/cpu/scf/xc_functional.cpp",
-        source_root / "src/cpu/scf/xc_gga.cpp",
-        source_root / "include/atomiverse/cpu/scf/xc_internal.h",
+        source_root / "src/cpu/xc/xc_functional.cpp",
+        source_root / "src/cpu/xc/xc_gga.cpp",
+        source_root / "include/atomiverse/cpu/xc/xc_internal.h",
         source_root / "src/cpu/scf/internal/hamiltonian_builder.cpp",
     ]
     evidence = {

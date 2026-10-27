@@ -33,10 +33,10 @@
 #include "atomiverse/cpu/planewave/internal/pw_stress.h"
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
+#include "atomiverse/electronic/smearing.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
@@ -91,7 +91,7 @@ MPI_Datatype mpi_real_type() {
 // Out-of-line where internal::* are complete types (required for the
 // unique_ptr members over forward-declared helpers).
 PW::PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
-       double ecut, int k, cpu::scf::XCType xc_in)
+       double ecut, int k, cpu::xc::XCType xc_in)
     : potential(std::move(pp)), ecut_ry(ecut), k_mesh(k), xc(xc_in) {
     if (!potential)
         throw std::invalid_argument(
@@ -262,7 +262,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
     // Declared here rather than beside the band count below because the
     // occupation split needs it: metallic smearing is what makes an odd
     // valence-electron count legal on the restricted path.
-    const bool use_smear = (smearing != Smearing::none);
+    const bool use_smear = (smearing != ATV::electronic::Smearing::none);
 
     // Collinear occupation split: N↑ − N↓ = multiplicity − 1, N↑ + N↓ = n_elec.
     int n_alpha = n_elec / 2;
@@ -329,13 +329,14 @@ PWResult& PW::run(const cpu::Frame& frame) {
     }
     const AccReal degauss_ha =
         AccReal(degauss) * AccReal(qe_units::rydberg_to_hartree);
-    internal::SmearKind smear_kind = internal::SmearKind::fermi_dirac;
-    if (smearing == Smearing::fermi_dirac)
-        smear_kind = internal::SmearKind::fermi_dirac;
-    else if (smearing == Smearing::methfessel_paxton)
-        smear_kind = internal::SmearKind::methfessel_paxton;
-    else if (smearing == Smearing::gaussian)
-        smear_kind = internal::SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (smearing == ATV::electronic::Smearing::fermi_dirac)
+        smear_kind = ATV::electronic::Smearing::fermi_dirac;
+    else if (smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
 
     if (log_rank0)
         ATV_INFO("[pw] start atoms={} elec={} bands={} ecut_ry={} {} "
@@ -491,7 +492,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                     }
                 }
 
-                mu_ha = internal::find_fermi_level(
+                mu_ha = ATV::electronic::find_fermi_level(
                     all_evals, all_weights, AccReal(prob.n_elec), degauss_ha,
                     smear_kind, mp_order, AccReal(1));
 
@@ -509,7 +510,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                         const auto& ev =
                             evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                         std::vector<AccReal> w_one(ev.size(), w);
-                        auto fill = internal::fill_occupations(
+                        auto fill = ATV::electronic::fill_occupations(
                             ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
                             AccReal(1));
                         occ_sk[static_cast<std::size_t>(s * n_kpts + ik)] =
@@ -705,7 +706,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                     }
                 }
 
-                mu_ha = internal::find_fermi_level(
+                mu_ha = ATV::electronic::find_fermi_level(
                     all_evals, all_weights, AccReal(prob.n_elec), degauss_ha,
                     smear_kind, mp_order);
                 n_occ = AccReal(0);
@@ -718,13 +719,13 @@ PWResult& PW::run(const cpu::Frame& frame) {
                         prob.kg.weights[static_cast<std::size_t>(ik)];
                     const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                     std::vector<AccReal> w_one(ev.size(), w);
-                    auto fill = internal::fill_occupations(
+                    auto fill = ATV::electronic::fill_occupations(
                         ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
                     occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
                     for (std::size_t b = 0; b < ev.size(); ++b)
                         occ_k[static_cast<std::size_t>(ik)][b] =
-                            internal::smear_f_band(ev[b], mu_ha, degauss_ha,
-                                                   smear_kind, mp_order);
+                            ATV::electronic::smear_f_band(
+                                ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
                     n_occ += fill.n_occ;
                     entropy_sum += fill.entropy;
                 }

@@ -61,7 +61,7 @@ int run() {
     // Same envelope family as gpw-bomd-water (200 Ry / tol 1e-5 keeps the
     // multi-step run inside the ≤60 s gate; absolute E/F parity is the
     // gpw-forces-water pin's job). XL-BOMD K=5 (Niklasson 2009 Table I).
-    cpu::gpw::GpwDft gpw_base_dft{{O, H}, 200.0, cpu::gpw::XcKind::PBE};
+    cpu::gpw::GpwDft gpw_base_dft{{O, H}, 200.0, cpu::xc::XCType::PBE};
     gpw_base_dft.max_iter = 60;
     gpw_base_dft.tol = 1e-5;
     gpw_base_dft.mix = 0.3;

@@ -54,7 +54,7 @@
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #ifdef ATV_HAS_PW
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #endif
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
@@ -1266,14 +1266,14 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     cpu::Frame direct_frame = make_si2_bomd_frame();
     cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
                        molrs::Element::Si, "GTH-PBE-q4"),
-                   kPwEcut, kPwKMesh, cpu::scf::XCType::LSDA};
+                   kPwEcut, kPwKMesh, cpu::xc::XCType::LSDA};
     pw.tol = kPwTol;
     pw.max_iter = kPwMaxIter;
     pw.mix_beta = kPwMixBeta;
     pw.pulay_depth = kPwPulayDepth;
     pw.spin_polarized = false;
     pw.multiplicity = 1;
-    pw.smearing = cpu::pw::Smearing::none;
+    pw.smearing = ATV::electronic::Smearing::none;
     pw.degauss = kPwDegauss;
     pw.mp_order = kPwMpOrder;
     pw.extra_bands = kPwExtraBands;

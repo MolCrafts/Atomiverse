@@ -183,7 +183,7 @@ int run() {
     // Method parameters shared by the D3 product run and the plain twin.
     auto make_method = [&](bool d3_on) {
         // Cutoff matches CP2K CUTOFF 300.
-        cpu::gpw::GpwDft m{{O, H}, 300.0, cpu::gpw::XcKind::PBE};
+        cpu::gpw::GpwDft m{{O, H}, 300.0, cpu::xc::XCType::PBE};
         m.max_iter = 120;
         m.tol = 1e-7; // CP2K EPS_SCF 1e-7
         m.mix = 0.4;

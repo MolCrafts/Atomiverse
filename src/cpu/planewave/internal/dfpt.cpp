@@ -39,10 +39,10 @@
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include "atomiverse/cpu/planewave/internal/response_mixer.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/electronic/smearing.h"
 
 #include <algorithm>
 #include <cmath>
@@ -252,21 +252,21 @@ void add_dnl_psi(const PWWorkspace& ws, std::size_t ia, int alpha,
     }
 }
 
-AccReal lda_fxc_at(AccReal rho, cpu::scf::XCType xc) {
+AccReal lda_fxc_at(AccReal rho, cpu::xc::XCType xc) {
     if (rho < AccReal(1e-10))
         return AccReal(0);
     const double r = static_cast<double>(rho);
     const double h = std::max(1e-6 * r, 1e-12);
     const double vp =
-        cpu::scf::evaluate_xc(xc, (r + h) / 2.0, (r + h) / 2.0).vrho_alpha;
+        cpu::xc::evaluate_xc(xc, (r + h) / 2.0, (r + h) / 2.0).vrho_alpha;
     const double vm =
-        cpu::scf::evaluate_xc(xc, (r - h) / 2.0, (r - h) / 2.0).vrho_alpha;
+        cpu::xc::evaluate_xc(xc, (r - h) / 2.0, (r - h) / 2.0).vrho_alpha;
     return static_cast<AccReal>((vp - vm) / (2.0 * h));
 }
 
 /// @brief Pure semi-local XC only (LSDA + pure GGA). Hybrids need HF-X response.
-bool dfpt_xc_supported(cpu::scf::XCType xc) {
-    return cpu::scf::hybrid_exchange_fraction(xc) == 0.0;
+bool dfpt_xc_supported(cpu::xc::XCType xc) {
+    return cpu::xc::hybrid_exchange_fraction(xc) == 0.0;
 }
 
 /// @brief \(K_{\mathrm{xc}}[\Delta n]\) via central FD of `XCBuilder::step`.
@@ -277,7 +277,7 @@ bool dfpt_xc_supported(cpu::scf::XCType xc) {
 /// Leaves the accepted workspace state unchanged. `dn_r` must be real-valued
 /// total density response [e/Bohr³].
 void apply_xc_kernel_fd(XCBuilder& xc, PWWorkspace& ws, const GVectorList& gv0,
-                        const std::vector<Cx>& rho0_G, cpu::scf::XCType xc_type,
+                        const std::vector<Cx>& rho0_G, cpu::xc::XCType xc_type,
                         const AccReal* dn_r, AccReal* dv_xc_r,
                         fftw_complex* work, AccReal eps) {
     const int ng0 = gv0.count();
@@ -308,7 +308,7 @@ void apply_xc_kernel_fd(XCBuilder& xc, PWWorkspace& ws, const GVectorList& gv0,
 /// Pure GGA: FD of `XCBuilder` (true gradient kernel).
 void add_xc_kernel_gamma(bool use_gga, XCBuilder& xc, PWWorkspace& ws,
                          const GVectorList& gv0, const std::vector<Cx>& rho0_G,
-                         cpu::scf::XCType xc_type, const AccReal* fxc_r,
+                         cpu::xc::XCType xc_type, const AccReal* fxc_r,
                          const AccReal* dn_mixed, AccReal* dv_hxc_r,
                          std::vector<Cx>& scratch_g, fftw_complex* work) {
     const int nr = ws.nr;
@@ -867,15 +867,15 @@ int sternheimer_cg(const PWWorkspace& ws, const Cx* occ_wfc, int n_occ,
 namespace {
 
 /// Local collinear LSDA kernel \(f_{\mathrm{xc}}^{\sigma\sigma'}\) at one grid point.
-void lda_spin_fxc(AccReal rho_up, AccReal rho_dn, cpu::scf::XCType xc,
+void lda_spin_fxc(AccReal rho_up, AccReal rho_dn, cpu::xc::XCType xc,
                   AccReal& fuu, AccReal& fud, AccReal& fdu, AccReal& fdd) {
     const double ru = std::max(static_cast<double>(rho_up), 1e-14);
     const double rd = std::max(static_cast<double>(rho_dn), 1e-14);
     const double h = std::max(1e-6 * std::max(ru, rd), 1e-12);
-    const auto vpu = cpu::scf::evaluate_xc(xc, ru + h, rd);
-    const auto vmu = cpu::scf::evaluate_xc(xc, ru - h, rd);
-    const auto vpd = cpu::scf::evaluate_xc(xc, ru, rd + h);
-    const auto vmd = cpu::scf::evaluate_xc(xc, ru, rd - h);
+    const auto vpu = cpu::xc::evaluate_xc(xc, ru + h, rd);
+    const auto vmu = cpu::xc::evaluate_xc(xc, ru - h, rd);
+    const auto vpd = cpu::xc::evaluate_xc(xc, ru, rd + h);
+    const auto vmd = cpu::xc::evaluate_xc(xc, ru, rd - h);
     fuu = static_cast<AccReal>((vpu.vrho_alpha - vmu.vrho_alpha) / (2.0 * h));
     fdu = static_cast<AccReal>((vpu.vrho_beta - vmu.vrho_beta) / (2.0 * h));
     fud = static_cast<AccReal>((vpd.vrho_alpha - vmd.vrho_alpha) / (2.0 * h));
@@ -886,7 +886,7 @@ void lda_spin_fxc(AccReal rho_up, AccReal rho_dn, cpu::scf::XCType xc,
 void apply_xc_kernel_spin_fd(XCBuilder& xc, PWWorkspace& ws,
                              const GVectorList& gv0,
                              const std::vector<Cx> rho0_spin[2],
-                             cpu::scf::XCType xc_type, const AccReal* dn_up,
+                             cpu::xc::XCType xc_type, const AccReal* dn_up,
                              const AccReal* dn_dn, AccReal* dv_xc_up,
                              AccReal* dv_xc_dn, fftw_complex* work,
                              AccReal eps) {
@@ -935,16 +935,17 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     const int n_alpha = (n_elec + mag) / 2;
     const int n_beta = (n_elec - mag) / 2;
     const int n_occ_fixed[2] = {n_alpha, n_beta};
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: degauss must be > 0 [Ry] when "
             "smearing is enabled");
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -1069,7 +1070,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     poisson.step(ws);
     xc.step_spin(ws, method.xc);
 
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_spin[2];
     for (int s = 0; s < 2; ++s) {
         rho0_spin[s].resize(ngs);
@@ -1478,7 +1479,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                             const AccReal x =
                                 (ks.eps[static_cast<std::size_t>(b)] - mu_ha)
                                 / degauss_ha;
-                            if (smear_kind == SmearKind::fermi_dirac) {
+                            if (smear_kind
+                                == ATV::electronic::Smearing::fermi_dirac) {
                                 if (f_b > AccReal(1e-14)
                                     && f_b < AccReal(1) - AccReal(1e-14))
                                     df_dmu =
@@ -1699,7 +1701,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: hybrid XC unsupported "
             "(pure LSDA / pure GGA only; no exact-exchange response)");
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: degauss must be > 0 [Ry] when "
@@ -1732,11 +1734,12 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
             "dfpt_gamma_force_constants: odd electron count needs "
             "spin/smearing");
 
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -1781,7 +1784,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     veff.step(ws);
 
     // Ground-state density (real + G) for the XC kernel.
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_G(static_cast<std::size_t>(ng0));
     for (int ig = 0; ig < ng0; ++ig)
         rho0_G[static_cast<std::size_t>(ig)] = ws.rho_G[ig];
@@ -2131,7 +2134,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                         const AccReal x =
                             (ks.eps[static_cast<std::size_t>(b)] - mu_ha)
                             / degauss_ha;
-                        if (smear_kind == SmearKind::fermi_dirac) {
+                        if (smear_kind
+                            == ATV::electronic::Smearing::fermi_dirac) {
                             const AccReal f_s = f_b * AccReal(0.5);
                             if (f_s > AccReal(1e-14)
                                 && f_s < AccReal(1) - AccReal(1e-14))
@@ -2410,16 +2414,17 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     const int n_alpha = (n_elec + mag) / 2;
     const int n_beta = (n_elec - mag) / 2;
     const int n_occ_fixed[2] = {n_alpha, n_beta};
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_q_force_constants: degauss must be > 0 [Ry] when "
             "smearing is enabled");
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -2536,7 +2541,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     poisson.step(ws);
     xc.step_spin(ws, method.xc);
 
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_spin[2];
     for (int s = 0; s < 2; ++s) {
         rho0_spin[s].resize(ngs);
@@ -3282,7 +3287,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
         throw std::invalid_argument(
             "dfpt_q_force_constants: hybrid XC unsupported "
             "(pure LSDA / pure GGA only; no exact-exchange response)");
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_q_force_constants: degauss must be > 0 [Ry] when "
@@ -3313,11 +3318,12 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             "dfpt_q_force_constants: odd electron count needs "
             "spin/smearing (unsupported)");
 
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -3372,7 +3378,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     veff.step(ws);
 
     // Ground-state density for the XC kernel (real Δn split for GGA).
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_G(static_cast<std::size_t>(ng0));
     for (int ig = 0; ig < ng0; ++ig)
         rho0_G[static_cast<std::size_t>(ig)] = ws.rho_G[ig];

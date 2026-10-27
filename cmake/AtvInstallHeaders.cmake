@@ -100,7 +100,7 @@ function(atv_install_headers target)
         "^cpu/neighbor/pair_list\\.h$"
         "^cpu/potentials/lj_type_coeff\\.h$")
     if(ATV_BUILD_PW)
-        list(APPEND shared "^cpu/scf/xc_functional\\.h$")
+        list(APPEND shared "^cpu/xc/xc_functional\\.h$")
     endif()
     if(ATV_BUILD_CUDA)
         # The synthetic SCF kernels are in the always-on CUDA source set.

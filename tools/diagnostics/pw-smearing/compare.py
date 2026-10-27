@@ -120,13 +120,13 @@ if not compiler:
 probe = Path(__file__).with_name("probe.cpp")
 sources = {
     "before": args.before_source.resolve(),
-    "after": root / "src/cpu/planewave/internal/smearing.cpp",
+    "after": root / "src/cpu/electronic/smearing.cpp",
 }
 report = {
     "qe_reference_sha256": sha(args.qe_reference),
     "probe_sha256": sha(probe),
     "script_sha256": sha(__file__),
-    "header_sha256": sha(root / "include/atomiverse/cpu/planewave/internal/smearing.h"),
+    "header_sha256": sha(root / "include/atomiverse/electronic/smearing.h"),
     "fixture_sha256": sha(root / "tests/cpu/planewave/smearing_qe_pins.h"),
     "compiler_sha256": sha(compiler),
     "compiler_version": subprocess.run(

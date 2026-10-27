@@ -77,7 +77,7 @@ int run() {
     using cpu::gpw::Kind;
     using cpu::gpw::ts_pbe;
     using cpu::gpw::TsResult;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     const double ang[6][3] = {
         {0.000000, 0.000000, 0.000000},  // O
@@ -210,7 +210,7 @@ int run() {
                        GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                        GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
                  100.0,
-                 XcKind::PADE};
+                 ATV::cpu::xc::XCType::PADE};
         m.n_occ = 1;
         m.tol = 1e-8;
         m.max_iter = 60;

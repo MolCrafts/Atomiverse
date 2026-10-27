@@ -474,7 +474,7 @@ TEST(SoscfMixStage, StaysInactiveAboveThresholdAndLatchesBelow) {
 
 TEST(SoscfDefaultOff, SoscfOnKohnShamThrows) {
     cpu::Frame f = make_h2_frame();
-    cpu::scf::RKS rks{BasisSet::STO3G, cpu::scf::XCType::PBE};
+    cpu::scf::RKS rks{BasisSet::STO3G, cpu::xc::XCType::PBE};
     rks.soscf = true; // HF-only in this link — no fallback
     EXPECT_THROW(rks.run(f), std::invalid_argument);
 }

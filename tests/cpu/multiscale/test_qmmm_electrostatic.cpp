@@ -105,7 +105,7 @@ TEST(QmmmElectrostatic, EngineSwapRhfRksBuildOnly) {
     {
         auto f2 = make_embed_h2o();
         cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-        cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
+        cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::xc::XCType::PBE};
         qmmm.set_engine(std::move(rks));
         EXPECT_NO_THROW(qmmm.build({ctx, f2}));
     }

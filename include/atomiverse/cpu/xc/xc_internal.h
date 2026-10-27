@@ -1,4 +1,4 @@
-/// @file cpu/scf/xc_internal.h
+/// @file cpu/xc/xc_internal.h
 /// @brief Private declarations shared across the native XC translation units.
 ///
 /// This header is internal to the native exchange-correlation engine
@@ -25,7 +25,7 @@
 
 namespace ATV {
 namespace cpu {
-namespace scf {
+namespace xc {
 
 /// @brief Parameter set for one channel of a VWN Pade-approximant
 ///        correlation functional (paramagnetic / ferromagnetic /
@@ -130,6 +130,6 @@ void lyp_correlation(double rho_a, double rho_b, double sigma_aa,
                      double& vc_b, double& vsigma_aa, double& vsigma_ab,
                      double& vsigma_bb);
 
-} // namespace scf
+} // namespace xc
 } // namespace cpu
 } // namespace ATV

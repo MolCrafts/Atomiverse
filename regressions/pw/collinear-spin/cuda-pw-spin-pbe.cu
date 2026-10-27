@@ -17,7 +17,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 
 #ifndef ATV_REG_DATA_DIR
@@ -85,7 +85,7 @@ struct RunOut {
 };
 
 RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf,
-               cpu::scf::XCType xc) {
+               cpu::xc::XCType xc) {
     RunOut o;
     if (dev == Device::Cpu) {
         cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
@@ -161,9 +161,9 @@ int run(int argc, char** argv) {
 
     // Always run CPU PBE (oracle) when cpu or both; CUDA PBE when cuda/both.
     if (want == "cpu" || want == "both") {
-        cpu_pbe = run_one(Device::Cpu, frame, upf, cpu::scf::XCType::PBE);
+        cpu_pbe = run_one(Device::Cpu, frame, upf, cpu::xc::XCType::PBE);
         ok = check_one(cpu_pbe, Device::Cpu, "PBE") && ok;
-        cpu_lsda = run_one(Device::Cpu, frame, upf, cpu::scf::XCType::LSDA);
+        cpu_lsda = run_one(Device::Cpu, frame, upf, cpu::xc::XCType::LSDA);
         ok = check_one(cpu_lsda, Device::Cpu, "LSDA") && ok;
         if (ok) {
             const double de = std::fabs(cpu_pbe.energy_ha - cpu_lsda.energy_ha);
@@ -177,7 +177,7 @@ int run(int argc, char** argv) {
         }
     }
     if (want == "cuda" || want == "both") {
-        cuda_pbe = run_one(Device::Cuda, frame, upf, cpu::scf::XCType::PBE);
+        cuda_pbe = run_one(Device::Cuda, frame, upf, cpu::xc::XCType::PBE);
         ok = check_one(cuda_pbe, Device::Cuda, "PBE") && ok;
     }
     if (want == "both") {
@@ -230,7 +230,7 @@ int run(int argc, char** argv) {
     std::vector<std::array<double, 3>> F_cpu, F_cuda;
     std::array<double, 6> S_cpu{}, S_cuda{};
     if (want == "cpu" || want == "both") {
-        cpu::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
+        cpu::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
         fill_pbe(pw);
         pw.build(frame_f);
         F_cpu = cpu_forces(frame_f, pw);
@@ -240,7 +240,7 @@ int run(int argc, char** argv) {
         }
     }
     if (want == "cuda" || want == "both") {
-        cuda::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
+        cuda::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
         fill_pbe(pw);
         pw.build(frame_f);
         F_cuda = cuda::pw::pw_forces_analytic(frame_f, pw);
@@ -297,12 +297,12 @@ int run(int argc, char** argv) {
 
     // Collinear spin × FD smear (energy + forces). Same O2 / UPF / ecut.
     {
-        cpu::pw::PW cpu_s{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
-        cuda::pw::PW cuda_s{pbe_pp, kEcutRy, 1, cpu::scf::XCType::PBE};
+        cpu::pw::PW cpu_s{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
+        cuda::pw::PW cuda_s{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
         fill_pbe(cpu_s);
         fill_pbe(cuda_s);
-        cpu_s.smearing = cpu::pw::Smearing::fermi_dirac;
-        cuda_s.smearing = cuda::pw::Smearing::fermi_dirac;
+        cpu_s.smearing = ATV::electronic::Smearing::fermi_dirac;
+        cuda_s.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
         cpu_s.degauss = 0.02;
         cuda_s.degauss = 0.02;
         cpu_s.extra_bands = 4;

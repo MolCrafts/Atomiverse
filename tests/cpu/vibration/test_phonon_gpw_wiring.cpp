@@ -20,7 +20,7 @@ TEST(PhononGpw, BuildAcceptsGpwWithoutNeighborList) {
         molrs::Element::Si,
         cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")};
-    cpu::gpw::GpwDft dft{{Si}, /*cutoff_ry=*/150.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{Si}, /*cutoff_ry=*/150.0, cpu::xc::XCType::PADE};
     dft.max_iter = 20;
     dft.tol = 1e-6;
     dft.mix = 0.4;

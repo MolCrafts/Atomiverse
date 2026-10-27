@@ -38,8 +38,7 @@ namespace {
 using namespace ATV;
 using PW = cpu::pw::PW;
 using Result = cpu::pw::PWResult;
-using Smearing = cpu::pw::Smearing;
-using XC = cpu::scf::XCType;
+using XC = cpu::xc::XCType;
 using Six = std::array<double, 6>;
 constexpr int ia[6] = {0, 1, 2, 0, 0, 1}, ib[6] = {0, 1, 2, 1, 2, 2};
 constexpr double h = 2e-3;
@@ -98,7 +97,8 @@ cpu::Frame frame() {
     return f;
 }
 
-PW method(XC xc, Smearing smear, int kmesh = 1, bool spin = true) {
+PW method(XC xc, ATV::electronic::Smearing smear, int kmesh = 1,
+          bool spin = true) {
     PW m{std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::H,
                                                        "GTH-PBE-q1"),
          6., kmesh, xc};
@@ -139,7 +139,8 @@ cpu::Frame transform(const cpu::Frame& input, const Mat3& F) {
 // Independent deformation: change ONLY F_ab. For a!=b this includes an
 // infinitesimal rigid rotation, which cannot contribute to dE. There is no
 // symmetric-shear multiplicity or production stress helper in this path.
-Six simple_fd(const cpu::Frame& f, XC xc, Smearing smear, int mesh = 1) {
+Six simple_fd(const cpu::Frame& f, XC xc, ATV::electronic::Smearing smear,
+              int mesh = 1) {
     Six sigma{};
     for (int v = 0; v < 6; ++v) {
         double energy[2] = {};
@@ -228,7 +229,7 @@ void metadata(const Result& run, const Result& stress) {
                 "reference energy/occupation metadata changed");
 }
 
-std::string check_case(XC xc, Smearing smear, bool rotate) {
+std::string check_case(XC xc, ATV::electronic::Smearing smear, bool rotate) {
     auto f = frame();
     auto run_m = method(xc, smear);
     const auto reference = run_m.run(f);
@@ -257,9 +258,10 @@ std::string check_case(XC xc, Smearing smear, bool rotate) {
         require(std::abs(sigma[v]) > 1e-4, "trivial shear component");
     // Actual QE 7.6 observations. A model has to match its own XC, smear
     // kind and width; another smearing's energy is never substituted.
-    const std::string smear_name = smear == Smearing::fermi_dirac ? "fd"
-                                   : smear == Smearing::gaussian  ? "gaussian"
-                                                                  : "mp1";
+    const std::string smear_name =
+        smear == ATV::electronic::Smearing::fermi_dirac ? "fd"
+        : smear == ATV::electronic::Smearing::gaussian  ? "gaussian"
+                                                        : "mp1";
     const qe_spin_stress::Pin* pin = nullptr;
     for (const auto& candidate : qe_spin_stress::pins)
         if (std::string(candidate.xc) == (xc == XC::PBE ? "PBE" : "LSDA")
@@ -335,7 +337,7 @@ std::string check_case(XC xc, Smearing smear, bool rotate) {
     return out.str();
 }
 
-std::string checked_case(XC xc, Smearing smear, bool rotate) {
+std::string checked_case(XC xc, ATV::electronic::Smearing smear, bool rotate) {
     try {
         return check_case(xc, smear, rotate);
     } catch (const std::exception& exception) {
@@ -360,7 +362,7 @@ auto mode_set(const GVectorList& gv) {
 
 void cutoff_survey(std::vector<std::string>& records) {
     auto f = frame();
-    auto m = method(XC::LSDA, Smearing::fermi_dirac);
+    auto m = method(XC::LSDA, ATV::electronic::Smearing::fermi_dirac);
     cpu::pw::internal::PWProblem base;
     cpu::pw::internal::setup_pw_problem(f, *m.potential, 6., 1, base);
     for (int v = 0; v < 6; ++v)
@@ -396,7 +398,8 @@ void cutoff_survey(std::vector<std::string>& records) {
                 records.push_back(out.str());
             }
     const Six symmetric = cpu::pw::pw_stress_fd(f, m, h);
-    const Six simple = simple_fd(f, XC::LSDA, Smearing::fermi_dirac);
+    const Six simple =
+        simple_fd(f, XC::LSDA, ATV::electronic::Smearing::fermi_dirac);
     std::ostringstream out;
     out << std::setprecision(17)
         << "{\"mode\":\"invalid-hard-cutoff-reference\",\"symmetric_full_scf_"
@@ -413,7 +416,7 @@ void cutoff_survey(std::vector<std::string>& records) {
 
 std::string check_mpi() {
     auto f = frame();
-    auto m = method(XC::PBE, Smearing::fermi_dirac, 2);
+    auto m = method(XC::PBE, ATV::electronic::Smearing::fermi_dirac, 2);
     const Six sigma = m.stress(f);
     const auto result = m.last_result();
     require(result.converged, "MPI spin-smear reference failed");
@@ -429,7 +432,8 @@ std::string check_mpi() {
 
 std::string metadata_baseline(bool spin) {
     auto f = frame();
-    const auto smear = spin ? Smearing::none : Smearing::fermi_dirac;
+    const auto smear = spin ? ATV::electronic::Smearing::none
+                            : ATV::electronic::Smearing::fermi_dirac;
     auto a = method(XC::PBE, smear, 1, spin);
     const Result reference = a.run(f);
     auto b = method(XC::PBE, smear, 1, spin);
@@ -439,7 +443,7 @@ std::string metadata_baseline(bool spin) {
            + (spin ? "true" : "false") + ",\"passed\":true}";
 }
 
-std::string probe(XC xc, Smearing smear) {
+std::string probe(XC xc, ATV::electronic::Smearing smear) {
     auto f = frame();
     auto m = method(xc, smear);
     const auto r = m.run(f);
@@ -485,41 +489,46 @@ int main(int argc, char** argv) {
             records.push_back(check_mpi());
         else if (mode == "probe")
             for (XC xc : {XC::LSDA, XC::PBE})
-                for (Smearing smear :
-                     {Smearing::fermi_dirac, Smearing::gaussian,
-                      Smearing::methfessel_paxton})
+                for (ATV::electronic::Smearing smear :
+                     {ATV::electronic::Smearing::fermi_dirac,
+                      ATV::electronic::Smearing::gaussian,
+                      ATV::electronic::Smearing::methfessel_paxton})
                     records.push_back(probe(xc, smear));
         else if (mode == "mp-strains") {
             width_ry = mp_width_override;
             for (XC xc : {XC::LSDA, XC::PBE})
-                records.push_back(
-                    checked_case(xc, Smearing::methfessel_paxton, false));
+                records.push_back(checked_case(
+                    xc, ATV::electronic::Smearing::methfessel_paxton, false));
         } else if (mode == "matrix") {
             records.push_back(metadata_baseline(true));
             records.push_back(metadata_baseline(false));
             for (XC xc : {XC::LSDA, XC::PBE})
-                for (Smearing smear :
-                     {Smearing::fermi_dirac, Smearing::gaussian,
-                      Smearing::methfessel_paxton}) {
+                for (ATV::electronic::Smearing smear :
+                     {ATV::electronic::Smearing::fermi_dirac,
+                      ATV::electronic::Smearing::gaussian,
+                      ATV::electronic::Smearing::methfessel_paxton}) {
                     const double base_width = width_ry;
-                    if (smear == Smearing::gaussian)
+                    if (smear == ATV::electronic::Smearing::gaussian)
                         width_ry *=
                             2; // .04 Ry, selected by the recorded probe.
-                    else if (smear == Smearing::methfessel_paxton
+                    else if (smear
+                                 == ATV::electronic::Smearing::methfessel_paxton
                              && mp_width_override > 0)
                         width_ry = mp_width_override;
                     records.push_back(checked_case(
-                        xc, smear, smear == Smearing::fermi_dirac));
+                        xc, smear,
+                        smear == ATV::electronic::Smearing::fermi_dirac));
                     width_ry = base_width;
                 }
         }
 #ifdef ATV_PW_STRESS_BEFORE
         else if (mode == "negative") {
             auto f = frame();
-            auto m = method(XC::PBE, Smearing::none);
+            auto m = method(XC::PBE, ATV::electronic::Smearing::none);
             const Six old = cpu::pw::internal::pw_stress_analytic_impl_before(
                 f, m, nullptr, nullptr);
-            const Six reference = simple_fd(f, XC::PBE, Smearing::none);
+            const Six reference =
+                simple_fd(f, XC::PBE, ATV::electronic::Smearing::none);
             std::ostringstream record;
             record << std::setprecision(17)
                    << "{\"mode\":\"negative\",\"original_stress_ev_ang3\":"

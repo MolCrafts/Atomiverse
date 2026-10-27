@@ -63,7 +63,7 @@ TEST(GpwBandsGuards, RejectsDispersionOnPath) {
                       GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                       GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
                 /*cutoff_ry=*/80.0,
-                XcKind::PADE};
+                ATV::cpu::xc::XCType::PADE};
     disp.n_occ = 1;
     disp.max_iter = 1;
     disp.k_mesh[0] = disp.k_mesh[1] = disp.k_mesh[2] = 2;

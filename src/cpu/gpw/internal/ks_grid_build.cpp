@@ -4,7 +4,7 @@
 #include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 
 #include "atomiverse/cpu/device/chunked_range.h"
-#include "atomiverse/cpu/gpw/gpw_solver.h" // XcKind
+#include "atomiverse/cpu/gpw/gpw_solver.h" // xc::XCType
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
 #include "atomiverse/cpu/gpw/internal/poisson_fft.h"
 #include "atomiverse/cpu/gpw/internal/vdw_df.h"
@@ -18,46 +18,52 @@ namespace gpw {
 namespace internal {
 
 XcOnGrid evaluate_xc_rks(const UniformGrid& grid,
-                         const std::vector<double>& rho, XcKind xc) {
+                         const std::vector<double>& rho, xc::XCType xc) {
     switch (xc) {
-    case XcKind::PBE:
+    case xc::XCType::PBE:
         return xc_grid_pbe(grid, rho);
-    case XcKind::PBEsol:
+    case xc::XCType::PBEsol:
         return xc_grid_pbesol(grid, rho);
-    case XcKind::RevPBE:
+    case xc::XCType::RevPBE:
         return xc_grid_revpbe(grid, rho);
-    case XcKind::RPBE:
+    case xc::XCType::RPBE:
         return xc_grid_rpbe(grid, rho);
-    case XcKind::BLYP:
+    case xc::XCType::BLYP:
         return xc_grid_blyp(grid, rho);
-    case XcKind::OptB88VdW:
+    case xc::XCType::OptB88VdW:
         return xc_grid_optb88_vdw(grid, rho);
-    case XcKind::PADE:
+    case xc::XCType::PADE:
         return xc_grid_pade(grid, rho);
+    default:
+        throw std::invalid_argument(
+            "GpwDft: XCType is not a GPW functional (PADE, PBE, PBEsol, "
+            "RevPBE, RPBE, BLYP, OptB88VdW)");
     }
-    return xc_grid_pade(grid, rho);
 }
 
 XcOnGridSpin evaluate_xc_uks(const UniformGrid& grid,
                              const std::vector<double>& rho_a,
-                             const std::vector<double>& rho_b, XcKind xc) {
+                             const std::vector<double>& rho_b, xc::XCType xc) {
     switch (xc) {
-    case XcKind::PBE:
+    case xc::XCType::PBE:
         return xc_grid_pbe_spin(grid, rho_a, rho_b);
-    case XcKind::PBEsol:
+    case xc::XCType::PBEsol:
         return xc_grid_pbesol_spin(grid, rho_a, rho_b);
-    case XcKind::RevPBE:
+    case xc::XCType::RevPBE:
         return xc_grid_revpbe_spin(grid, rho_a, rho_b);
-    case XcKind::RPBE:
+    case xc::XCType::RPBE:
         return xc_grid_rpbe_spin(grid, rho_a, rho_b);
-    case XcKind::BLYP:
+    case xc::XCType::BLYP:
         return xc_grid_blyp_spin(grid, rho_a, rho_b);
-    case XcKind::OptB88VdW:
+    case xc::XCType::OptB88VdW:
         return xc_grid_optb88_vdw_spin(grid, rho_a, rho_b);
-    case XcKind::PADE:
+    case xc::XCType::PADE:
         return xc_grid_pade_lsd(grid, rho_a, rho_b);
+    default:
+        throw std::invalid_argument(
+            "GpwDft: XCType is not a GPW functional (PADE, PBE, PBEsol, "
+            "RevPBE, RPBE, BLYP, OptB88VdW)");
     }
-    return xc_grid_pade_lsd(grid, rho_a, rho_b);
 }
 
 namespace {
@@ -83,7 +89,7 @@ PoissonResult poisson(const UniformGrid& grid, const std::vector<double>& n_tot,
 KsGridRks ks_grid_build_rks(const UniformGrid& grid,
                             const std::vector<double>& rho,
                             const std::vector<double>& n_ion,
-                            const std::vector<double>& v_locsr, XcKind xc,
+                            const std::vector<double>& v_locsr, xc::XCType xc,
                             bool nonperiodic, bool vdw_df, bool vdw_df2,
                             bool rvv10) {
     check_density_sizes(grid, rho.size(), n_ion.size(), "ks_grid_build_rks");
@@ -125,7 +131,7 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
                             const std::vector<double>& rho_a,
                             const std::vector<double>& rho_b,
                             const std::vector<double>& n_ion,
-                            const std::vector<double>& v_locsr, XcKind xc,
+                            const std::vector<double>& v_locsr, xc::XCType xc,
                             bool nonperiodic, bool vdw_df, bool vdw_df2,
                             bool rvv10) {
     if (rho_a.size() != rho_b.size())

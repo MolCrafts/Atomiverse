@@ -12,7 +12,7 @@
 ///   auto f = d3.forces(frame);         // f[A] = −∂E_disp/∂R_A [Hartree/Bohr]
 ///
 ///   // Or fold into RKS total energy AND its analytic gradient:
-///   cpu::scf::RKS rks(cpu::scf::XCType::PBE);
+///   cpu::scf::RKS rks(cpu::xc::XCType::PBE);
 ///   rks.d3bj = true;
 ///   rks.run(frame);
 ///   double ed = rks.energy_disp();     // [Hartree]

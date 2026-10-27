@@ -39,7 +39,7 @@
 ///
 /// @code
 ///   cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf"), /*ecut_ry=*/15.0,
-///                  /*k_mesh=*/2, cpu::scf::XCType::PBE}; // pure GGA kernel OK
+///                  /*k_mesh=*/2, cpu::xc::XCType::PBE}; // pure GGA kernel OK
 ///
 ///   cpu::pw::DfptPhonon dfpt;
 ///   dfpt.q_frac = {0.3, 0.0, 0.0};   // incommensurate along Γ–X

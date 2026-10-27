@@ -152,7 +152,7 @@ TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
     cpu::Frame f(0);
     cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
                             molrs::Element::H, "GTH-PBE-q1"),
-                        /*ecut_ry=*/4.0, /*k_mesh=*/1, cpu::scf::XCType::LSDA};
+                        /*ecut_ry=*/4.0, /*k_mesh=*/1, cpu::xc::XCType::LSDA};
     method.tol = 1e-4;
     method.max_iter = 4;
     EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method),
@@ -166,7 +166,7 @@ TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
     cpu::Frame f(0);
     cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
                             molrs::Element::H, "GTH-PBE-q1"),
-                        /*ecut_ry=*/30.0, /*k_mesh=*/4, cpu::scf::XCType::PBE};
+                        /*ecut_ry=*/30.0, /*k_mesh=*/4, cpu::xc::XCType::PBE};
     method.spin_polarized = true;
     method.multiplicity = 2;
     try {
@@ -184,10 +184,10 @@ TEST(CudaPWForces, PublicApiAcceptsSpinSmearOnEmptyFrameGate) {
     cpu::Frame f(0);
     cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
                             molrs::Element::H, "GTH-PBE-q1"),
-                        /*ecut_ry=*/30.0, /*k_mesh=*/4, cpu::scf::XCType::LSDA};
+                        /*ecut_ry=*/30.0, /*k_mesh=*/4, cpu::xc::XCType::LSDA};
     method.spin_polarized = true;
     method.multiplicity = 2;
-    method.smearing = cuda::pw::Smearing::fermi_dirac;
+    method.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.01;
     try {
         (void)cuda::pw::pw_forces_analytic(f, method);
@@ -205,7 +205,7 @@ TEST(CudaPWForces, PublicApiAcceptsPbeOnEmptyFrameGate) {
     cpu::Frame f(0);
     cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
                             molrs::Element::H, "GTH-PBE-q1"),
-                        /*ecut_ry=*/4.0, /*k_mesh=*/1, cpu::scf::XCType::PBE};
+                        /*ecut_ry=*/4.0, /*k_mesh=*/1, cpu::xc::XCType::PBE};
     method.tol = 1e-4;
     method.max_iter = 4;
     try {

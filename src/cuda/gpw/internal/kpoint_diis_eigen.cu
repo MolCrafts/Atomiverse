@@ -3,6 +3,7 @@
 
 #include "atomiverse/cuda/gpw/internal/kpoint_diis_eigen.cuh"
 
+#include "atomiverse/cpu/linalg/pulay_coefficients.h"
 #include "atomiverse/cuda/device/launch.cuh"
 
 #include <cuComplex.h>
@@ -43,66 +44,13 @@ void check_cusolver(cusolverStatus_t s, const char* what) {
                                  + std::to_string(int(s)));
 }
 
-/// Host solve of the real Pulay system B c = rhs (same as AoDiisEigenDevice).
+/// Host solve of the real Pulay system (same coefficients as AoDiisEigenDevice).
 bool solve_pulay_host(const std::vector<double>& Bmm, int m,
                       std::vector<double>& c_out) {
-    const int dim = m + 1;
-    std::vector<double> A(static_cast<size_t>(dim * dim), 0.0);
-    std::vector<double> b(static_cast<size_t>(dim), 0.0);
-    for (int i = 0; i < m; ++i)
-        for (int j = 0; j < m; ++j)
-            A[static_cast<size_t>(i * dim + j)] =
-                Bmm[static_cast<size_t>(i * m + j)];
-    for (int i = 0; i < m; ++i) {
-        A[static_cast<size_t>(m * dim + i)] = -1.0;
-        A[static_cast<size_t>(i * dim + m)] = -1.0;
-    }
-    A[static_cast<size_t>(m * dim + m)] = 0.0;
-    b[static_cast<size_t>(m)] = -1.0;
-
-    for (int k = 0; k < dim; ++k) {
-        int piv = k;
-        double best = std::abs(A[static_cast<size_t>(k * dim + k)]);
-        for (int i = k + 1; i < dim; ++i) {
-            const double v = std::abs(A[static_cast<size_t>(i * dim + k)]);
-            if (v > best) {
-                best = v;
-                piv = i;
-            }
-        }
-        if (best < 1e-14)
-            return false;
-        if (piv != k) {
-            for (int j = k; j < dim; ++j)
-                std::swap(A[static_cast<size_t>(k * dim + j)],
-                          A[static_cast<size_t>(piv * dim + j)]);
-            std::swap(b[static_cast<size_t>(k)], b[static_cast<size_t>(piv)]);
-        }
-        const double akk = A[static_cast<size_t>(k * dim + k)];
-        for (int i = k + 1; i < dim; ++i) {
-            const double f = A[static_cast<size_t>(i * dim + k)] / akk;
-            A[static_cast<size_t>(i * dim + k)] = 0.0;
-            for (int j = k + 1; j < dim; ++j)
-                A[static_cast<size_t>(i * dim + j)] -=
-                    f * A[static_cast<size_t>(k * dim + j)];
-            b[static_cast<size_t>(i)] -= f * b[static_cast<size_t>(k)];
-        }
-    }
-    std::vector<double> x(static_cast<size_t>(dim), 0.0);
-    for (int i = dim - 1; i >= 0; --i) {
-        double s = b[static_cast<size_t>(i)];
-        for (int j = i + 1; j < dim; ++j)
-            s -=
-                A[static_cast<size_t>(i * dim + j)] * x[static_cast<size_t>(j)];
-        const double aii = A[static_cast<size_t>(i * dim + i)];
-        if (std::abs(aii) < 1e-14)
-            return false;
-        x[static_cast<size_t>(i)] = s / aii;
-    }
-    c_out.resize(static_cast<size_t>(m));
-    for (int i = 0; i < m; ++i)
-        c_out[static_cast<size_t>(i)] = x[static_cast<size_t>(i)];
-    return true;
+    if (m < 1 || static_cast<int>(Bmm.size()) < m * m)
+        return false;
+    c_out.resize(static_cast<std::size_t>(m));
+    return cpu::linalg::try_pulay_coefficients(Bmm.data(), m, c_out.data());
 }
 
 /// y = Σ_i c_i hist[slot_i] for complex circular history (one thread / element).

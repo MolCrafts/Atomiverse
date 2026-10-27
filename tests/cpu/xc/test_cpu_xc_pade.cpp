@@ -11,16 +11,17 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/cpu/xc/pade.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
-using ATV::cpu::xc::pade_lsd;
-using ATV::cpu::xc::PadeXC;
+using ATV::cpu::xc::evaluate_xc;
+using ATV::cpu::xc::XCOutput;
+using ATV::cpu::xc::XCType;
 
 namespace {
 
 // E_xc density [Hartree/Bohr^3] = rho_total * exc.
 double energy_density(double ra, double rb) {
-    return pade_lsd(ra, rb).energy_density;
+    return evaluate_xc(XCType::PADE, ra, rb).energy_density;
 }
 
 struct Pt {
@@ -49,26 +50,26 @@ TEST(PadeLDA, PotentialIsEnergyDerivative) {
                             - energy_density(pt.ra, pt.rb - h))
                            / (2.0 * h);
 
-        PadeXC xc = pade_lsd(pt.ra, pt.rb);
-        EXPECT_NEAR(xc.vrho_a, dEa, 1e-5 * std::max(1.0, std::abs(dEa)))
-            << "vrho_a vs FD at " << pt.label;
-        EXPECT_NEAR(xc.vrho_b, dEb, 1e-5 * std::max(1.0, std::abs(dEb)))
-            << "vrho_b vs FD at " << pt.label;
+        XCOutput xc = evaluate_xc(XCType::PADE, pt.ra, pt.rb);
+        EXPECT_NEAR(xc.vrho_alpha, dEa, 1e-5 * std::max(1.0, std::abs(dEa)))
+            << "vrho_alpha vs FD at " << pt.label;
+        EXPECT_NEAR(xc.vrho_beta, dEb, 1e-5 * std::max(1.0, std::abs(dEb)))
+            << "vrho_beta vs FD at " << pt.label;
     }
 }
 
 // (2) Unpolarized: equal spins give equal potentials.
 TEST(PadeLDA, UnpolarizedSymmetry) {
     for (double rho : {0.1, 1.0, 10.0}) {
-        PadeXC xc = pade_lsd(0.5 * rho, 0.5 * rho);
-        EXPECT_DOUBLE_EQ(xc.vrho_a, xc.vrho_b);
+        XCOutput xc = evaluate_xc(XCType::PADE, 0.5 * rho, 0.5 * rho);
+        EXPECT_DOUBLE_EQ(xc.vrho_alpha, xc.vrho_beta);
     }
     // Spin swap leaves exc invariant and swaps the potentials.
-    PadeXC ab = pade_lsd(0.8, 0.2);
-    PadeXC ba = pade_lsd(0.2, 0.8);
+    XCOutput ab = evaluate_xc(XCType::PADE, 0.8, 0.2);
+    XCOutput ba = evaluate_xc(XCType::PADE, 0.2, 0.8);
     EXPECT_DOUBLE_EQ(ab.energy_density, ba.energy_density);
-    EXPECT_DOUBLE_EQ(ab.vrho_a, ba.vrho_b);
-    EXPECT_DOUBLE_EQ(ab.vrho_b, ba.vrho_a);
+    EXPECT_DOUBLE_EQ(ab.vrho_alpha, ba.vrho_beta);
+    EXPECT_DOUBLE_EQ(ab.vrho_beta, ba.vrho_alpha);
 }
 
 // (3) Energy matches the Padé [3/4] formula evaluated independently.
@@ -83,15 +84,17 @@ TEST(PadeLDA, EnergyMatchesFormula) {
     const double q = (b1 + (b2 + (b3 + b4 * rs) * rs) * rs) * rs;
     const double expected = -p / q;
 
-    EXPECT_NEAR(pade_lsd(0.5, 0.5).energy_density, expected, 1e-12);
+    EXPECT_NEAR(evaluate_xc(XCType::PADE, 0.5, 0.5).energy_density, expected,
+                1e-12);
     // Coarse literal guard so a shared constant error is still caught.
-    EXPECT_NEAR(pade_lsd(0.5, 0.5).energy_density, -0.8097, 2e-3);
+    EXPECT_NEAR(evaluate_xc(XCType::PADE, 0.5, 0.5).energy_density, -0.8097,
+                2e-3);
 }
 
 // Below the density cutoff everything is zero.
 TEST(PadeLDA, DensityCutoff) {
-    PadeXC xc = pade_lsd(1e-14, 1e-14);
+    XCOutput xc = evaluate_xc(XCType::PADE, 1e-14, 1e-14);
     EXPECT_DOUBLE_EQ(xc.energy_density, 0.0);
-    EXPECT_DOUBLE_EQ(xc.vrho_a, 0.0);
-    EXPECT_DOUBLE_EQ(xc.vrho_b, 0.0);
+    EXPECT_DOUBLE_EQ(xc.vrho_alpha, 0.0);
+    EXPECT_DOUBLE_EQ(xc.vrho_beta, 0.0);
 }

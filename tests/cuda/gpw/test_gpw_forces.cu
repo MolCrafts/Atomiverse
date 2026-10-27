@@ -25,8 +25,8 @@ using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GthPotential;
 using ATV::cpu::gpw::make_uniform_grid;
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::GpwAtom;
+using ATV::cpu::xc::XCType;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceForceAtom;
 using ATV::cuda::gpw::internal::kMaxCloc;
@@ -216,7 +216,7 @@ TEST(CudaGpwForces, LocalPpHfKernelMatchesHost) {
 
 TEST(CudaGpwForces, FreeFnRejectsMissingGrids) {
     ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
-                             /*cutoff_ry=*/80.0, XcKind::PADE};
+                             /*cutoff_ry=*/80.0, XCType::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
     m.n_occ = 1;
     m.local_pp_on_grid = true;
@@ -234,7 +234,7 @@ TEST(CudaGpwForces, FreeFnRejectsMissingGrids) {
 
 TEST(CudaGpwForces, UksDoesNotHitFirstSliceReject) {
     ATV::cuda::gpw::GpwDft m{std::vector<ATV::cpu::gpw::Kind>{},
-                             /*cutoff_ry=*/80.0, XcKind::PADE};
+                             /*cutoff_ry=*/80.0, XCType::PADE};
     m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
     m.n_occ = 0;
     m.n_alpha = 1;

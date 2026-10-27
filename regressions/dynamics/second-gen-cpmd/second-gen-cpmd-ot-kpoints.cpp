@@ -62,7 +62,7 @@ int run() {
         auto make = [&](bool ot) {
             cpu::gpw::GpwDft m{{cpu::gpw::Kind{molrs::Element::H, bH, pH}},
                                100.0,
-                               cpu::gpw::XcKind::PADE};
+                               cpu::xc::XCType::PADE};
             m.n_occ = 1;
             m.max_iter = 200;
             m.tol = 1e-7;
@@ -129,7 +129,7 @@ int run() {
     constexpr double rmin = 0.4;
     constexpr double rmax = 1.5;
 
-    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::xc::XCType::PADE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;

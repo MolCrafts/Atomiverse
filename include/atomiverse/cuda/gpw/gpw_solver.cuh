@@ -27,7 +27,7 @@
 ///
 /// @code
 ///   cuda::gpw::GpwDft m({{el, basis, pot}}, /*cutoff_ry=*/100.0,
-///                       cpu::gpw::XcKind::PADE);
+///                       cpu::xc::XCType::PADE);
 ///   m.n_occ = 5;                   // or n_alpha / n_beta for UKS
 ///   m.build(frame);                // cell from frame.box, Z → kinds
 ///   const auto& res = m.run(frame); // kEnergy [eV]; result in Hartree
@@ -48,8 +48,6 @@ namespace gpw {
 
 /// @brief Result type shared verbatim with the CPU method (energy in Hartree).
 using GpwResult = ::ATV::cpu::gpw::GpwResult;
-/// @brief XC selector shared with the CPU method.
-using XcKind = ::ATV::cpu::gpw::XcKind;
 /// @brief Atom type shared with the CPU method.
 using GpwAtom = ::ATV::cpu::gpw::internal::GpwAtom;
 
@@ -67,8 +65,8 @@ class GpwDft {
     ///        map `kAtom_type` (Z) onto these entries. The atom-list entry
     ///        points do not read this member.
     const std::vector<cpu::gpw::Kind> kinds;
-    const double cutoff_ry; ///< density grid cutoff [Ry].
-    const XcKind xc;        ///< RKS: PADE or PBE; UKS: PADE only (first cut).
+    const double cutoff_ry;   ///< density grid cutoff [Ry].
+    const cpu::xc::XCType xc; ///< RKS: PADE or PBE; UKS: PADE only (first cut).
 
     // ── Knobs ──────────────────────────────────────────────────────────
     double cell[3] = {0, 0, 0}; ///< orthorhombic box lengths [Bohr].
@@ -101,7 +99,8 @@ class GpwDft {
     /// @param kinds One basis + GTH entry per element in the Frames to solve.
     /// @param cutoff_ry Density grid cutoff [Ry].
     /// @param xc Exchange–correlation functional.
-    GpwDft(std::vector<cpu::gpw::Kind> kinds, double cutoff_ry, XcKind xc)
+    GpwDft(std::vector<cpu::gpw::Kind> kinds, double cutoff_ry,
+           cpu::xc::XCType xc)
         : kinds(std::move(kinds)), cutoff_ry(cutoff_ry), xc(xc) {}
     ~GpwDft() = default;
     GpwDft(const GpwDft&) = delete;

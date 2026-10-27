@@ -68,7 +68,7 @@ int run() {
                        GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
                        GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
                  100.0,
-                 XcKind::PADE};
+                 ATV::cpu::xc::XCType::PADE};
         m.n_occ = 1;
         m.tol = 1e-8;
         m.max_iter = 60;
@@ -78,7 +78,7 @@ int run() {
         m.k_mesh[0] = 1;
         m.k_mesh[1] = 1;
         m.k_mesh[2] = 2;
-        m.smearing = Smearing::fermi_dirac;
+        m.smearing = ATV::electronic::Smearing::fermi_dirac;
         m.degauss = 0.02; // Ry
         m.extra_bands = 2;
         return m;

@@ -35,8 +35,8 @@
 #include "atomiverse/cuda/planewave/internal/grid_map.cuh"
 #include "atomiverse/cuda/planewave/internal/poisson.cuh"
 #include "atomiverse/cuda/planewave/internal/veff.cuh"
-#include "atomiverse/cuda/planewave/internal/xc_lda.cuh"
-#include "atomiverse/cuda/planewave/internal/xc_pbe.cuh"
+#include "atomiverse/cuda/xc/xc_lsda.cuh"
+#include "atomiverse/cuda/xc/xc_pbe.cuh"
 
 #include <algorithm>
 #include <cmath>
@@ -285,12 +285,12 @@ inline void check_cublas(cublasStatus_t s, const char* what) {
 
 DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
                              double mix_beta, int pulay_depth,
-                             cpu::scf::XCType xc, bool spin_polarized,
+                             cpu::xc::XCType xc, bool spin_polarized,
                              int n_alpha, int n_beta, int n_elec)
     : ng0_(prob.gv0.count()), nr_(prob.ws.nr), nc_(prob.ws.nc),
       depth_(pulay_depth), mix_beta_(mix_beta),
       omega_(static_cast<double>(prob.ws.omega)), xc_(xc),
-      gga_(cpu::scf::is_gga(xc)), spin_(spin_polarized),
+      gga_(cpu::xc::is_gga(xc)), spin_(spin_polarized),
       // Temporary default-stream FFT; rebound after stream_ is created below.
       // FFTPlan3D cannot be default-constructed, so we build it first then
       // rebind via set_stream once stream_ exists.
@@ -305,12 +305,12 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
     // Only the two functionals with device kernels; no silent fallback. The
     // PBE-family variants (PBEsol/revPBE/RPBE) differ by constants the
     // xc_pbe.cu kernel hard-wires, so they are NOT accepted here.
-    if (xc_ != cpu::scf::XCType::LSDA && xc_ != cpu::scf::XCType::PBE)
+    if (xc_ != cpu::xc::XCType::LSDA && xc_ != cpu::xc::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: only XCType::LSDA and "
             "XCType::PBE have device XC kernels");
     // Collinear: LSDA and true spin-GGA PBE are landed; other GGAs are not.
-    if (spin_ && xc_ != cpu::scf::XCType::LSDA && xc_ != cpu::scf::XCType::PBE)
+    if (spin_ && xc_ != cpu::xc::XCType::LSDA && xc_ != cpu::xc::XCType::PBE)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: spin_polarized supports "
             "XCType::LSDA and XCType::PBE only on the device path");
@@ -598,10 +598,12 @@ void DeviceDensity::exchange_correlation() {
         // over the gradient arrays. E_xc quadrature exactly as the LSDA path
         // (dV = Ω/nr); the CPU accumulates it in the same grid loop, BEFORE
         // the divergence correction, and ε_xc is untouched by it.
-        xc_pbe_grid(d_rho_r_in_, d_grad_x_r_, d_grad_y_r_, d_grad_z_r_,
-                    d_V_xc_r_, d_exc_r_, nr, stream_);
-        xc_energy(d_rho_r_in_, d_exc_r_, nr, omega_ / static_cast<double>(nr),
-                  d_scalars_ + 0, d_xc_partials_, stream_);
+        ::ATV::cuda::xc::xc_pbe_grid(d_rho_r_in_, d_grad_x_r_, d_grad_y_r_,
+                                     d_grad_z_r_, d_V_xc_r_, d_exc_r_, nr,
+                                     stream_);
+        ::ATV::cuda::xc::xc_energy(d_rho_r_in_, d_exc_r_, nr,
+                                   omega_ / static_cast<double>(nr),
+                                   d_scalars_ + 0, d_xc_partials_, stream_);
 
         // ── v_xc −= ∇·flux, via div(G) = Σ_d i G_d flux_d(G) ──
         // d_V_xc_G_ is the accumulation scratch here, exactly as the CPU
@@ -626,9 +628,11 @@ void DeviceDensity::exchange_correlation() {
         ATV_CUDA_CHECK(cudaGetLastError());
     } else {
         // Pointwise LSDA + the E_xc quadrature (dV = Ω/nr, as on the CPU).
-        xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr, stream_);
-        xc_energy(d_rho_r_in_, d_exc_r_, nr, omega_ / static_cast<double>(nr),
-                  d_scalars_ + 0, d_xc_partials_, stream_);
+        ::ATV::cuda::xc::xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr,
+                                      stream_);
+        ::ATV::cuda::xc::xc_energy(d_rho_r_in_, d_exc_r_, nr,
+                                   omega_ / static_cast<double>(nr),
+                                   d_scalars_ + 0, d_xc_partials_, stream_);
     }
 
     // V_xc(r) → V_xc(G), scaled by 1/nr (r2c is unnormalized).
@@ -1018,7 +1022,7 @@ void DeviceDensity::exchange_correlation_spin() {
         throw std::runtime_error(
             "cuda::pw::internal::DeviceDensity::exchange_correlation_spin: "
             "not a spin density object");
-    if (xc_ != cpu::scf::XCType::LSDA && xc_ != cpu::scf::XCType::PBE)
+    if (xc_ != cpu::xc::XCType::LSDA && xc_ != cpu::xc::XCType::PBE)
         throw std::runtime_error(
             "cuda::pw::internal::DeviceDensity::exchange_correlation_spin: "
             "only XCType::LSDA and XCType::PBE are implemented");
@@ -1054,12 +1058,13 @@ void DeviceDensity::exchange_correlation_spin() {
 
         // Pointwise collinear PBE + flux assembly (grads → fluxes).
         // E_xc uses local ε_xc before the divergence correction (CPU order).
-        xc_pbe_spin_grid(d_rho_spin_r_[0], d_rho_spin_r_[1], d_grad_x_r_,
-                         d_grad_y_r_, d_grad_z_r_, d_grad_dn_x_r_,
-                         d_grad_dn_y_r_, d_grad_dn_z_r_, d_V_xc_spin_r_[0],
-                         d_V_xc_spin_r_[1], d_exc_r_, nr, stream_);
-        xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_exc_r_, nr, dV,
-                       d_scalars_ + 0, d_xc_partials_, stream_);
+        ::ATV::cuda::xc::xc_pbe_spin_grid(
+            d_rho_spin_r_[0], d_rho_spin_r_[1], d_grad_x_r_, d_grad_y_r_,
+            d_grad_z_r_, d_grad_dn_x_r_, d_grad_dn_y_r_, d_grad_dn_z_r_,
+            d_V_xc_spin_r_[0], d_V_xc_spin_r_[1], d_exc_r_, nr, stream_);
+        ::ATV::cuda::xc::xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1],
+                                        d_exc_r_, nr, dV, d_scalars_ + 0,
+                                        d_xc_partials_, stream_);
 
         // ── v_σ −= ∇·flux_σ ──
         double* flux_up[3] = {d_grad_x_r_, d_grad_y_r_, d_grad_z_r_};
@@ -1090,19 +1095,21 @@ void DeviceDensity::exchange_correlation_spin() {
 
         // Double-counting ∫(ρ↑V↑+ρ↓V↓) uses the FULL functional derivative
         // (local + div), matching CPU step_spin after the GGA correction.
-        xc_int_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
-                    d_V_xc_spin_r_[1], nr, dV, d_scalars_ + 2, d_xc_partials_,
-                    stream_);
+        ::ATV::cuda::xc::xc_int_spin(
+            d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
+            d_V_xc_spin_r_[1], nr, dV, d_scalars_ + 2, d_xc_partials_, stream_);
     } else {
         // Pointwise collinear LSDA + E_xc + e_xc_int_spin (real-space).
-        xc_lsda_spin_grid(d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
-                          d_V_xc_spin_r_[1], d_exc_r_, nr, stream_);
-        xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_exc_r_, nr, dV,
-                       d_scalars_ + 0, d_xc_partials_, stream_);
+        ::ATV::cuda::xc::xc_lsda_spin_grid(d_rho_spin_r_[0], d_rho_spin_r_[1],
+                                           d_V_xc_spin_r_[0], d_V_xc_spin_r_[1],
+                                           d_exc_r_, nr, stream_);
+        ::ATV::cuda::xc::xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1],
+                                        d_exc_r_, nr, dV, d_scalars_ + 0,
+                                        d_xc_partials_, stream_);
         // e_xc_int into scalars[2] temporarily (reduce_spin remaps).
-        xc_int_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
-                    d_V_xc_spin_r_[1], nr, dV, d_scalars_ + 2, d_xc_partials_,
-                    stream_);
+        ::ATV::cuda::xc::xc_int_spin(
+            d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
+            d_V_xc_spin_r_[1], nr, dV, d_scalars_ + 2, d_xc_partials_, stream_);
     }
 
     // V_xc_σ(r) → V_xc_σ(G)

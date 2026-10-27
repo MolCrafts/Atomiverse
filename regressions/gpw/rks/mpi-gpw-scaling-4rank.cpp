@@ -76,7 +76,7 @@ ATV::cpu::gpw::GpwDft si_method() {
             molrs::Element::Si,
             cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
             cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
-        80.0, ATV::cpu::gpw::XcKind::PBE);
+        80.0, ATV::cpu::xc::XCType::PBE);
     // Lightweight twin for self-launch wall (≤ 60 s total parent+worker).
     m.n_occ = 8;
     m.max_iter = 40;

@@ -58,7 +58,7 @@ int run() {
     // Envelope run: 200 Ry / tol 1e-5 keeps multi-step UKS inside ≤60 s.
     // Absolute E/F parity is gpw-uks-forces / gpw-uks-o2-gamma's job.
     constexpr double dt = 0.1; // fs — short step for electronic stability
-    cpu::gpw::GpwDft dft{{O}, 200.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{O}, 200.0, cpu::xc::XCType::PADE};
     dft.max_iter = 80;
     dft.tol = 1e-5;
     dft.mix = 0.4;

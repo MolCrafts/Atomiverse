@@ -250,6 +250,7 @@ if(NOT ATV_DOCS_ONLY)
         # used by the GPW OT minimizer and by the electronic-state propagators,
         # so they are never gated on a method flag.
         src/cpu/linalg/orbital_tangent.cpp
+        src/cpu/linalg/pulay.cpp
         src/cpu/linalg/internal/diis_mixer.cpp
         # Niklasson dissipative XL recursion (cpu/electronic/xl_bomd.cpp):
         # depends only on cpu/linalg header types. Consumed by Gaussian SCF /
@@ -789,6 +790,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/scf/rhf_scf_cycle.cu
                 src/cuda/scf/rhf_fock.cu
                 src/cuda/scf/rhf_density.cu
+                src/cuda/linalg/pulay.cu
                 src/cuda/scf/diis_mixer.cu
                 src/cuda/scf/device_integrals.cu
                 src/cuda/scf/uhf.cu
@@ -807,8 +809,9 @@ if(NOT ATV_DOCS_ONLY)
     # product must not depend on enabling the Gaussian method domain.
     if(ATV_BUILD_HF OR ATV_BUILD_PW)
         target_sources(atomiverse PRIVATE
-            src/cpu/scf/xc_functional.cpp
-            src/cpu/scf/xc_gga.cpp)
+            src/cpu/xc/xc_functional.cpp
+            src/cpu/xc/xc_gga.cpp
+            src/cpu/xc/pade.cpp)
     endif()
 
     if(ATV_BUILD_GPW)
@@ -833,10 +836,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/gpw/internal/collocate.cpp
             src/cpu/gpw/internal/multigrid.cpp
             src/cpu/gpw/internal/xc_grid.cpp
-            # PADE (GTH Padé) LDA XC — CP2K-native functional used by the first
-            # GPW examples; lives under cpu/xc/, built with the GPW module until
-            # a dedicated ATV_BUILD_XC flag exists.
-            src/cpu/xc/pade.cpp
             src/cpu/gpw/internal/one_electron.cpp
             # The electronic-state propagators GPWEvaluator drives live in
             # src/cpu/electronic/: CPMD + ASPC compile under ATV_BUILD_HF
@@ -898,7 +897,7 @@ if(NOT ATV_DOCS_ONLY)
             if(ATV_BUILD_CUDA)
                 target_sources(atomiverse PRIVATE
                     src/cuda/gpw/internal/poisson_fft.cu
-                    src/cuda/gpw/internal/xc_lda.cu
+                    src/cuda/xc/xc_pade.cu
                     src/cuda/gpw/internal/product_collocate.cu
                     src/cuda/gpw/internal/product_integrate.cu
                     src/cuda/gpw/internal/spectral_fft.cu
@@ -968,7 +967,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/planewave/internal/davidson.cpp
             src/cpu/planewave/internal/density_builder.cpp
             src/cpu/planewave/internal/convergence.cpp
-            src/cpu/planewave/internal/smearing.cpp
+            src/cpu/electronic/smearing.cpp
             src/cpu/planewave/internal/restricted_scf.cpp
             src/cpu/planewave/pw_solver.cpp
             src/cpu/planewave/bands_dos.cpp
@@ -1002,8 +1001,8 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/planewave/internal/fft.cu
                 src/cuda/planewave/internal/poisson.cu
                 src/cuda/planewave/internal/grid_map.cu
-                src/cuda/planewave/internal/xc_lda.cu
-                src/cuda/planewave/internal/xc_pbe.cu
+                src/cuda/xc/xc_lsda.cu
+                src/cuda/xc/xc_pbe.cu
                 src/cuda/planewave/internal/veff.cu
                 src/cuda/planewave/internal/device_solver.cu
                 src/cuda/planewave/internal/device_density.cu

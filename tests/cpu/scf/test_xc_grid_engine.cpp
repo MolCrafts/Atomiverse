@@ -29,8 +29,8 @@
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cpu/scf/xc_grid_engine.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 using namespace ATV;
 using namespace ATV::cpu::scf;
@@ -84,7 +84,8 @@ void expect_bitwise_2d(const xt::xtensor<double, 2>& cached,
 
 /// @brief Compare the cached-basis overload to the rebuild-every-call overload
 ///        for one functional; both must be bitwise-equal on the same inputs.
-void check_cache_equivalence(XCType xc, bool is_gga, const char* label) {
+void check_cache_equivalence(ATV::cpu::xc::XCType xc, bool is_gga,
+                             const char* label) {
     auto frame = make_h2();
     auto pack = internal::IntegralWorkspace{frame, BasisSet::STO3G};
     const int N = pack.n_ao_cart();
@@ -94,7 +95,7 @@ void check_cache_equivalence(XCType xc, bool is_gga, const char* label) {
     auto Pa = make_density(static_cast<std::size_t>(N));
     auto Pb = Pa;
 
-    const BuiltinXc functional(xc);
+    const ATV::cpu::xc::BuiltinXc functional(xc);
     // Rebuild Phi/dPhi inside this call.
     XCGridResult rebuild =
         evaluate_xc_batched(grid, pack.shells, N, Pa, Pb, functional);
@@ -118,13 +119,13 @@ void check_cache_equivalence(XCType xc, bool is_gga, const char* label) {
 // ── ac-001: cached vs rebuild bitwise equality ─────────────────────────
 
 TEST(TestXcGridEngine, CachedBasisMatchesRebuild_LDA) {
-    check_cache_equivalence(XCType::LSDA, /*is_gga=*/false,
+    check_cache_equivalence(ATV::cpu::xc::XCType::LSDA, /*is_gga=*/false,
                             "LDA cache vs rebuild");
 }
 
 TEST(TestXcGridEngine, CachedBasisMatchesRebuild_PBE) {
     // GGA path also exercises dPhi_x/y/z in the cached basis.
-    check_cache_equivalence(XCType::PBE, /*is_gga=*/true,
+    check_cache_equivalence(ATV::cpu::xc::XCType::PBE, /*is_gga=*/true,
                             "PBE cache vs rebuild");
 }
 

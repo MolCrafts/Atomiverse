@@ -24,7 +24,7 @@ int run() {
     using cpu::gpw::GpwDft;
     using cpu::gpw::GthPotential;
     using cpu::gpw::Kind;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     // Geometry [Å] (CP2K water dimer, REFERENCE.md).
     const double ang[6][3] = {
@@ -56,7 +56,7 @@ int run() {
                      GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
                      GthPotential(molrs::Element::H, "GTH-PBE-q1")}},
                /*cutoff_ry=*/200.0,
-               XcKind::PBE};
+               ATV::cpu::xc::XCType::PBE};
     // e_disp is geometry-only; SCF settings only need to run.
     gpw.n_occ = 8; // 2×O (6e) + 4×H (4e) = 16e → 8 doubly occupied
     gpw.max_iter = 8;

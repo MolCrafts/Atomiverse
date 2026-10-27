@@ -15,8 +15,8 @@
 #include <vector>
 
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::ks_grid_build_rks;
+using ATV::cpu::xc::XCType;
 using ATV::cuda::gpw::internal::CollocateGridDesc;
 using ATV::cuda::gpw::internal::DeviceProduct;
 using ATV::cuda::gpw::internal::KsChainDevice;
@@ -230,7 +230,7 @@ TEST(CudaGpwKsChain, SSMatchesCpuKsGrid) {
     std::vector<double> n_ion(n, 0.0);
     std::vector<double> v_loc; // empty
     const auto cpu =
-        ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PADE,
+        ks_grid_build_rks(grid, rho, n_ion, v_loc, XCType::PADE,
                           /*nonperiodic=*/false, false, false, false);
 
     const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/true);
@@ -295,7 +295,7 @@ TEST(CudaGpwKsChain, MultiWithIonAndVloc) {
         }
     }
 
-    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PADE,
+    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XCType::PADE,
                                        false, false, false, false);
     const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/true);
 
@@ -347,7 +347,7 @@ TEST(CudaGpwKsChain, PTypeMatchesCpu) {
     std::vector<double> n_ion(n, 0.0);
     std::vector<double> v_loc;
 
-    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PADE,
+    const auto cpu = ks_grid_build_rks(grid, rho, n_ion, v_loc, XCType::PADE,
                                        false, false, false, false);
     const auto dev = run_device(grid, prods, n_ion, v_loc, /*integrate=*/true);
 

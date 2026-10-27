@@ -7,6 +7,8 @@
 
 #include "atomiverse/cuda/scf/internal/diis_mixer.cuh"
 
+#include "atomiverse/cuda/linalg/pulay.cuh"
+
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "cublas_dispatch.cuh"
@@ -43,44 +45,6 @@ void check_solver(cusolverStatus_t status) {
     if (status != CUSOLVER_STATUS_SUCCESS)
         throw std::runtime_error("CUDA DIIS cuSOLVER status "
                                  + std::to_string(static_cast<int>(status)));
-}
-
-/// @brief Assemble [Gram,-1;-1,0] and rhs (0,...,0,-1), column major.
-///
-/// Elementwise map: one thread per entry, contiguous column-major writes.
-/// No reduction or shared storage; cuBLAS computed the error inner products.
-/// Physical history slots are sufficient: a permutation of Pulay rows and
-/// columns leaves the extrapolation invariant, including circular overwrite.
-__global__ void assemble_pulay_kernel(const prec_t* gram, prec_t* A,
-                                      prec_t* rhs, int m) {
-    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const int dim = m + 1;
-    if (idx >= dim * dim)
-        return;
-    const int row = idx % dim;
-    const int col = idx / dim;
-    A[idx] = row < m && col < m     ? gram[row + col * m]
-             : row == m && col == m ? prec_t(0)
-                                    : prec_t(-1);
-    if (col == 0)
-        rhs[row] = row == m ? prec_t(-1) : prec_t(0);
-}
-
-/// @brief On a singular/invalid solve select the most recent Fock exactly.
-///
-/// This tiny control operation inspects at most max_vectors+1 LU pivots and
-/// coefficients. A single thread avoids a second scratch reduction/launch;
-/// dense matrix science is performed by cuSOLVER and cuBLAS, not here.
-__global__ void validate_pulay_kernel(const prec_t* lu, prec_t* c,
-                                      const int* info, int m, int latest) {
-    const int dim = m + 1;
-    bool valid = info[0] == 0 && info[1] == 0;
-    for (int i = 0; i < dim; ++i)
-        valid = valid && isfinite(c[i]) && isfinite(lu[i + i * dim])
-                && fabs(lu[i + i * dim]) >= 1e-14;
-    if (!valid)
-        for (int i = 0; i < m; ++i)
-            c[i] = i == latest ? prec_t(1) : prec_t(0);
 }
 
 } // namespace
@@ -277,22 +241,10 @@ void DIISMixer::step(const SolverContext& ctx, SCFWorkspace& ws) {
             check_blas(cublasDgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, m, m, nn,
                                    &one, d_e_hist_, nn, d_e_hist_, nn, &zero,
                                    d_B_, m));
-            const int dim = m + 1;
-            assemble_pulay_kernel<<<cuda::grid_size(dim * dim,
-                                                    cuda::kDefaultBlock),
-                                    cuda::kDefaultBlock, 0, stream>>>(
-                d_B_, d_pulay_, d_c_, m);
-            ATV_CUDA_CHECK(cudaGetLastError());
             auto solver = static_cast<cusolverDnHandle_t>(cusolver_handle_);
-            check_solver(cusolverDnSetStream(solver, stream));
-            check_solver(cusolverDnDgetrf(solver, dim, dim, d_pulay_, dim,
-                                          d_solver_work_, d_pivots_, d_info_));
-            check_solver(cusolverDnDgetrs(solver, CUBLAS_OP_N, dim, 1, d_pulay_,
-                                          dim, d_pivots_, d_c_, dim,
-                                          d_info_ + 1));
-            validate_pulay_kernel<<<1, 1, 0, stream>>>(d_pulay_, d_c_, d_info_,
-                                                       m, slot);
-            ATV_CUDA_CHECK(cudaGetLastError());
+            cuda::linalg::solve_pulay(solver, stream, d_B_, d_pulay_, d_c_,
+                                      d_solver_work_, d_pivots_, d_info_, m,
+                                      slot);
             check_blas(cublasDgemv(handle, CUBLAS_OP_N, nn, m, &one, d_F_hist_,
                                    nn, d_c_, 1, &zero, scf.work, 1));
         }

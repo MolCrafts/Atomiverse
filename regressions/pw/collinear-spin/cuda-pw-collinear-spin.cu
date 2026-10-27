@@ -18,7 +18,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 
 #ifndef ATV_REG_DATA_DIR
@@ -87,7 +87,7 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
     RunOut o;
     if (dev == Device::Cpu) {
         cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                       kEcutRy, 1, cpu::scf::XCType::LSDA};
+                       kEcutRy, 1, cpu::xc::XCType::LSDA};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
@@ -102,7 +102,7 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
         o.iterations = r.iterations;
     } else {
         cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                        kEcutRy, 1, cpu::scf::XCType::LSDA};
+                        kEcutRy, 1, cpu::xc::XCType::LSDA};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;

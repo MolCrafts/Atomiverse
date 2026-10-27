@@ -91,7 +91,7 @@ memory snapshots are not peak-memory measurements.
 ``basis`` is one of ``STO-3G``, ``6-31G``, ``6-31G*``, ``6-31+G*``,
 ``def2-SVP``, ``def2-TZVP``, ``aug-cc-pVDZ``, ``cc-pVDZ``; ``xc`` is one of
 ``LSDA``, ``PBE``, ``PBEsol``, ``RevPBE``, ``RPBE``, ``BLYP``,
-``OptB88VdW``, ``B3LYP``, ``PBE0``, ``B2PLYP``, ``CAMB3LYP``. An unsupported name raises
+``OptB88VdW``, ``B3LYP``, ``PBE0``, ``B2PLYP``, ``CAMB3LYP``, ``PADE``. An unsupported name raises
 ``ValueError`` listing the supported ones — there is no fallback basis or
 functional.
 

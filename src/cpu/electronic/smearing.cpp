@@ -1,15 +1,13 @@
-/// @file cpu/planewave/internal/smearing.cpp
+/// @file src/cpu/electronic/smearing.cpp
 /// @brief Metallic occupation smearing implementations.
-#include "atomiverse/cpu/planewave/internal/smearing.h"
+#include "atomiverse/electronic/smearing.h"
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace ATV {
-namespace cpu {
-namespace pw {
-namespace internal {
+namespace electronic {
 
 namespace {
 
@@ -57,9 +55,12 @@ AccReal fd_entropy(AccReal f) {
 
 } // namespace
 
-AccReal smear_f_spinless(AccReal x, SmearKind kind, int mp_order) {
+AccReal smear_f_spinless(AccReal x, Smearing kind, int mp_order) {
     switch (kind) {
-    case SmearKind::fermi_dirac: {
+    case Smearing::none:
+        throw std::invalid_argument(
+            "smear_f_spinless: Smearing::none is fixed filling, not a law");
+    case Smearing::fermi_dirac: {
         // f = 1 / (1 + exp(x)); stable limits
         if (x > AccReal(36))
             return AccReal(0);
@@ -67,10 +68,10 @@ AccReal smear_f_spinless(AccReal x, SmearKind kind, int mp_order) {
             return AccReal(1);
         return AccReal(1) / (AccReal(1) + std::exp(x));
     }
-    case SmearKind::gaussian: {
+    case Smearing::gaussian: {
         return AccReal(0.5) * std::erfc(static_cast<double>(x));
     }
-    case SmearKind::methfessel_paxton: {
+    case Smearing::methfessel_paxton: {
         if (mp_order < 1)
             throw std::invalid_argument("smear_f_spinless: mp_order must be >= "
                                         "1 for Methfessel-Paxton");
@@ -83,7 +84,7 @@ AccReal smear_f_spinless(AccReal x, SmearKind kind, int mp_order) {
     throw std::invalid_argument("smear_f_spinless: unknown kind");
 }
 
-AccReal smear_f_band(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
+AccReal smear_f_band(AccReal eig, AccReal mu, AccReal degauss, Smearing kind,
                      int mp_order) {
     if (!(degauss > AccReal(0)))
         throw std::invalid_argument("smear_f_band: degauss must be > 0");
@@ -91,7 +92,7 @@ AccReal smear_f_band(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
     return AccReal(2) * smear_f_spinless(x, kind, mp_order);
 }
 
-AccReal smear_f_spinor(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
+AccReal smear_f_spinor(AccReal eig, AccReal mu, AccReal degauss, Smearing kind,
                        int mp_order) {
     if (!(degauss > AccReal(0)))
         throw std::invalid_argument("smear_f_spinor: degauss must be > 0");
@@ -100,19 +101,22 @@ AccReal smear_f_spinor(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
 }
 
 AccReal smear_entropy_band(AccReal eig, AccReal mu, AccReal degauss,
-                           SmearKind kind, int mp_order) {
+                           Smearing kind, int mp_order) {
     if (!(degauss > AccReal(0)))
         throw std::invalid_argument("smear_entropy_band: degauss must be > 0");
     const AccReal x = (eig - mu) / degauss;
     switch (kind) {
-    case SmearKind::fermi_dirac: {
+    case Smearing::none:
+        throw std::invalid_argument(
+            "smear_entropy_band: Smearing::none is fixed filling, not a law");
+    case Smearing::fermi_dirac: {
         return AccReal(2) * fd_entropy(smear_f_spinless(x, kind, mp_order));
     }
-    case SmearKind::gaussian: {
+    case Smearing::gaussian: {
         return std::abs(x) > AccReal(40) ? AccReal(0)
                                          : std::exp(-x * x) / kSqrtPi;
     }
-    case SmearKind::methfessel_paxton: {
+    case Smearing::methfessel_paxton: {
         if (mp_order < 1)
             throw std::invalid_argument(
                 "smear_entropy_band: mp_order must be >= 1");
@@ -125,7 +129,7 @@ AccReal smear_entropy_band(AccReal eig, AccReal mu, AccReal degauss,
 }
 
 AccReal smear_entropy_spinor(AccReal eig, AccReal mu, AccReal degauss,
-                             SmearKind kind, int mp_order) {
+                             Smearing kind, int mp_order) {
     // Half the closed-shell band entropy (one spin channel).
     return AccReal(0.5) * smear_entropy_band(eig, mu, degauss, kind, mp_order);
 }
@@ -134,7 +138,7 @@ namespace {
 
 AccReal nelec_of_mu(const std::vector<AccReal>& evals,
                     const std::vector<AccReal>& weights, AccReal mu,
-                    AccReal degauss, SmearKind kind, int mp_order,
+                    AccReal degauss, Smearing kind, int mp_order,
                     AccReal spin_degen) {
     AccReal n = 0;
     const std::size_t m = evals.size();
@@ -148,7 +152,7 @@ AccReal nelec_of_mu(const std::vector<AccReal>& evals,
 
 AccReal find_fermi_level(const std::vector<AccReal>& evals,
                          const std::vector<AccReal>& weights, AccReal n_elec,
-                         AccReal degauss, SmearKind kind, int mp_order,
+                         AccReal degauss, Smearing kind, int mp_order,
                          AccReal spin_degen) {
     if (evals.empty())
         throw std::invalid_argument("find_fermi_level: empty spectrum");
@@ -180,18 +184,18 @@ AccReal find_fermi_level(const std::vector<AccReal>& evals,
     if (n_elec > capacity)
         throw std::invalid_argument(
             "find_fermi_level: electron count exceeds weighted band capacity");
-    if (kind == SmearKind::methfessel_paxton && mp_order < 1)
+    if (kind == Smearing::methfessel_paxton && mp_order < 1)
         throw std::invalid_argument("find_fermi_level: mp_order must be >= 1");
 
     // QE efermig uses an absolute 1e-10 electron-count stopping criterion.
     constexpr AccReal count_tol = AccReal(1e-10);
     AccReal lo = emin - AccReal(10) * degauss;
     AccReal hi = emax + AccReal(10) * degauss;
-    const auto count = [&](AccReal mu, SmearKind mode) {
+    const auto count = [&](AccReal mu, Smearing mode) {
         return nelec_of_mu(evals, weights, mu, degauss, mode, mp_order,
                            spin_degen);
     };
-    const auto bisect = [&](SmearKind mode) {
+    const auto bisect = [&](Smearing mode) {
         AccReal lower = lo, upper = hi;
         for (int expand = 0;
              expand < 20
@@ -221,12 +225,12 @@ AccReal find_fermi_level(const std::vector<AccReal>& evals,
         throw std::runtime_error(
             "find_fermi_level: electron count did not converge");
     };
-    if (kind != SmearKind::methfessel_paxton)
+    if (kind != Smearing::methfessel_paxton)
         return bisect(kind);
 
     // MP N(mu) need not be monotone. QE first obtains a Gaussian root,
     // accepts an already-correct plateau, then minimizes [N(mu)-Ntarget]^2.
-    AccReal mu = bisect(SmearKind::gaussian);
+    AccReal mu = bisect(Smearing::gaussian);
     AccReal residual = count(mu, kind) - n_elec;
     for (int it = 0; it < 100; ++it) {
         if (std::abs(residual) <= count_tol)
@@ -266,7 +270,7 @@ AccReal find_fermi_level(const std::vector<AccReal>& evals,
 
 SmearFill fill_occupations(const std::vector<AccReal>& evals,
                            const std::vector<AccReal>& weights, AccReal mu,
-                           AccReal degauss, SmearKind kind, int mp_order,
+                           AccReal degauss, Smearing kind, int mp_order,
                            AccReal spin_degen) {
     if (evals.size() != weights.size())
         throw std::invalid_argument(
@@ -288,7 +292,5 @@ SmearFill fill_occupations(const std::vector<AccReal>& evals,
     return out;
 }
 
-} // namespace internal
-} // namespace pw
-} // namespace cpu
+} // namespace electronic
 } // namespace ATV

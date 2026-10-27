@@ -13,7 +13,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "harness/registry.h"
 
 namespace atv_reg_pw_pw_spin_polarized_o2 {
@@ -55,7 +55,7 @@ int run() {
     frame.box = cpu::Box::cubic(8.0);
 
     PW pw{std::make_shared<UpfPseudopotential>(upf), 12.0, 1,
-          cpu::scf::XCType::PBE};
+          cpu::xc::XCType::PBE};
     pw.tol = 1e-7;
     pw.max_iter = 200;
     pw.mix_beta = 0.3;

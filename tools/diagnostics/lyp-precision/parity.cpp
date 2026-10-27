@@ -1,4 +1,4 @@
-#include "atomiverse/cpu/scf/xc_internal.h"
+#include "atomiverse/cpu/xc/xc_internal.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -22,9 +22,9 @@ int main() {
         for (double s : sigmas) {
             double native[6], oracle[6], eps;
             double sigma[3] = {s, s, s};
-            ATV::cpu::scf::lyp_correlation(rho[0], rho[1], s, s, s, native[0],
-                                           native[1], native[2], native[3],
-                                           native[4], native[5]);
+            ATV::cpu::xc::lyp_correlation(rho[0], rho[1], s, s, s, native[0],
+                                          native[1], native[2], native[3],
+                                          native[4], native[5]);
             xc_gga_exc_vxc(&func, 1, rho, sigma, &eps, oracle + 1, oracle + 3);
             oracle[0] = eps * (rho[0] + rho[1]);
             if (rho[0] == 1e-6)

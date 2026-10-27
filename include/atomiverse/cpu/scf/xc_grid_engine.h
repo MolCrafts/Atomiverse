@@ -40,7 +40,7 @@
 #include "atomiverse/cpu/scf/basis_eval.h"
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {

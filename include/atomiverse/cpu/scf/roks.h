@@ -42,8 +42,8 @@ class ROKS : public MeanFieldMethod<ROKS> {
   public:
     const int n_alpha; ///< Alpha (spin-up) electrons.
     const int
-        n_beta;      ///< Beta (spin-down) electrons; requires n_alpha ≥ n_beta.
-    const XCType xc; ///< Exchange–correlation functional.
+        n_beta; ///< Beta (spin-down) electrons; requires n_alpha ≥ n_beta.
+    const xc::XCType xc; ///< Exchange–correlation functional.
 
     /// @brief Construct ROKS (MINAO guess, MatchPySCF grid, 0.5 damping,
     ///        DIIS 6 vectors from iteration 1, energy tolerance 1e-8 Ha).
@@ -53,8 +53,8 @@ class ROKS : public MeanFieldMethod<ROKS> {
     ///                violated at run() with std::invalid_argument).
     /// @param xc      Exchange–correlation functional.
     /// @param charge  Molecular charge [e].
-    ROKS(BasisSet basis, int n_alpha, int n_beta, XCType xc = XCType::LSDA,
-         int charge = 0);
+    ROKS(BasisSet basis, int n_alpha, int n_beta,
+         xc::XCType xc = xc::XCType::LSDA, int charge = 0);
     std::string name() const { return "roks"; }
 
   protected:

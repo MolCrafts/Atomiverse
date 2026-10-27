@@ -1,4 +1,4 @@
-/// @file cpu/planewave/internal/smearing.h
+/// @file electronic/smearing.h
 /// @brief Metallic occupation smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton).
 ///
 /// Spin-unpolarized convention: spinless f is doubled to a band occupation.
@@ -13,15 +13,18 @@
 #include <vector>
 
 namespace ATV {
-namespace cpu {
-namespace pw {
-namespace internal {
+namespace electronic {
 
-/// @brief Smearing kind (mirrors public `cpu::pw::Smearing`, without `none`).
-enum class SmearKind : int {
-    fermi_dirac = 1,
-    methfessel_paxton = 2,
-    gaussian = 3,
+/// @brief Occupation smearing shared by plane-wave and GPW.
+///
+/// `none` is fixed integer filling. The three metallic laws are the same
+/// function for both methods. GPW does not implement `gaussian` and throws
+/// if a run asks for it.
+enum class Smearing : int {
+    none = 0,              ///< Fixed occupations.
+    fermi_dirac = 1,       ///< Fermi–Dirac.
+    methfessel_paxton = 2, ///< Methfessel–Paxton of order `mp_order`.
+    gaussian = 3,          ///< Gaussian (cold smearing is not this).
 };
 
 /// @brief Spinless (quasi-)occupation f(x), \(x=(\varepsilon-\mu)/\sigma\).
@@ -29,14 +32,14 @@ enum class SmearKind : int {
 /// @param kind     Smearing kind.
 /// @param mp_order Methfessel–Paxton order \(N\ge 1\) (ignored otherwise).
 /// @return FD/Gaussian occupancy in [0,1], or an unclamped MP quasi-occupancy.
-AccReal smear_f_spinless(AccReal x, SmearKind kind, int mp_order = 1);
+AccReal smear_f_spinless(AccReal x, Smearing kind, int mp_order = 1);
 
 /// @brief Closed-shell band (quasi-)occupation: \(2\,f(x)\).
-AccReal smear_f_band(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
+AccReal smear_f_band(AccReal eig, AccReal mu, AccReal degauss, Smearing kind,
                      int mp_order = 1);
 
 /// @brief Collinear spin-orbital (quasi-)occupation: \(f(x)\) (no ×2).
-AccReal smear_f_spinor(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
+AccReal smear_f_spinor(AccReal eig, AccReal mu, AccReal degauss, Smearing kind,
                        int mp_order = 1);
 
 /// @brief Entropy weight \(s(x)\) such that \(TS = \sigma\sum w\,s\) per band
@@ -45,13 +48,13 @@ AccReal smear_f_spinor(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
 /// For Fermi–Dirac: \(s = -2[f\ln f+(1-f)\ln(1-f)]\) with spinless \(f\).
 /// For Gaussian/MP: QE-style \(w1gauss\) contribution \(\times 2\).
 AccReal smear_entropy_band(AccReal eig, AccReal mu, AccReal degauss,
-                           SmearKind kind, int mp_order = 1);
+                           Smearing kind, int mp_order = 1);
 
 /// @brief Spin-orbital entropy weight (half the closed-shell band form).
 ///
 /// For Fermi–Dirac: \(s = -[f\ln f+(1-f)\ln(1-f)]\).
 AccReal smear_entropy_spinor(AccReal eig, AccReal mu, AccReal degauss,
-                             SmearKind kind, int mp_order = 1);
+                             Smearing kind, int mp_order = 1);
 
 /// @brief Find \(\mu\) so \(\sum_i w_i f(\varepsilon_i,\mu)=n_{\mathrm{elec}}\).
 ///
@@ -65,7 +68,7 @@ AccReal smear_entropy_spinor(AccReal eig, AccReal mu, AccReal degauss,
 /// @return Fermi level \(\mu\).
 AccReal find_fermi_level(const std::vector<AccReal>& evals,
                          const std::vector<AccReal>& weights, AccReal n_elec,
-                         AccReal degauss, SmearKind kind, int mp_order = 1,
+                         AccReal degauss, Smearing kind, int mp_order = 1,
                          AccReal spin_degen = AccReal(2));
 
 /// @brief Occupations, electron sum, and entropy sum for a spectrum at fixed \(\mu\).
@@ -81,10 +84,8 @@ struct SmearFill {
 
 SmearFill fill_occupations(const std::vector<AccReal>& evals,
                            const std::vector<AccReal>& weights, AccReal mu,
-                           AccReal degauss, SmearKind kind, int mp_order = 1,
+                           AccReal degauss, Smearing kind, int mp_order = 1,
                            AccReal spin_degen = AccReal(2));
 
-} // namespace internal
-} // namespace pw
-} // namespace cpu
+} // namespace electronic
 } // namespace ATV

@@ -1,4 +1,4 @@
-#include "atomiverse/cpu/planewave/internal/smearing.h"
+#include "atomiverse/electronic/smearing.h"
 #include "smearing_qe_pins.h"
 #include <cmath>
 #include <gtest/gtest.h>
@@ -6,11 +6,11 @@
 #include <vector>
 
 using ATV::AccReal;
-using namespace ATV::cpu::pw::internal;
+using namespace ATV::electronic;
 
 TEST(PWSmearing, ActualQe76LocalOccupationAndEntropyPins) {
     for (const auto& p : qe_smearing_pin::points) {
-        const auto kind = static_cast<SmearKind>(p.kind);
+        const auto kind = static_cast<ATV::electronic::Smearing>(p.kind);
         EXPECT_NEAR(smear_f_spinless(p.x, kind, p.order), p.f, 2e-13)
             << "kind=" << p.kind << " order=" << p.order << " x=" << p.x;
         EXPECT_NEAR(smear_entropy_spinor(p.x, 0, 1, kind, p.order), p.s, 2e-13)
@@ -22,9 +22,9 @@ TEST(PWSmearing, ActualQe76FixedMuWeightedSpectrumPins) {
     for (const auto& p : qe_smearing_pin::spectra) {
         const std::vector<AccReal> eig(p.evals.begin(), p.evals.end());
         const std::vector<AccReal> weights(eig.size(), 1);
-        const auto fill =
-            fill_occupations(eig, weights, p.mu, p.width,
-                             static_cast<SmearKind>(p.kind), p.order, p.degen);
+        const auto fill = fill_occupations(
+            eig, weights, p.mu, p.width,
+            static_cast<ATV::electronic::Smearing>(p.kind), p.order, p.degen);
         EXPECT_NEAR(fill.n_occ, p.n, 2e-12);
         EXPECT_NEAR(fill.entropy, p.s, 2e-12)
             << "spectrum=" << p.id << " kind=" << p.kind
@@ -36,7 +36,7 @@ TEST(PWSmearing, ActualQe76FermiSearchAndInsulatingPlateau) {
     for (const auto& p : qe_smearing_pin::spectra) {
         const std::vector<AccReal> eig(p.evals.begin(), p.evals.end());
         const std::vector<AccReal> weights(eig.size(), 1);
-        const auto kind = static_cast<SmearKind>(p.kind);
+        const auto kind = static_cast<ATV::electronic::Smearing>(p.kind);
         const auto mu = find_fermi_level(eig, weights, p.target, p.width, kind,
                                          p.order, p.degen);
         const auto fill =
@@ -58,7 +58,7 @@ TEST(PWSmearing, ActualQe76FermiSearchAndInsulatingPlateau) {
 }
 
 TEST(PWSmearing, MethfesselPaxtonSignedQuasiOccupationsAndEntropy) {
-    const auto mp = SmearKind::methfessel_paxton;
+    const auto mp = ATV::electronic::Smearing::methfessel_paxton;
     EXPECT_LT(smear_f_spinless(2, mp, 1), 0);
     EXPECT_GT(smear_f_spinless(-2, mp, 1), 1);
     EXPECT_LT(smear_entropy_spinor(2, 0, 1, mp, 1), 0);
@@ -68,8 +68,9 @@ TEST(PWSmearing, MethfesselPaxtonSignedQuasiOccupationsAndEntropy) {
 
 TEST(PWSmearing,
      EntropyDerivativeEqualsReducedEnergyTimesOccupationDerivative) {
-    for (auto kind : {SmearKind::fermi_dirac, SmearKind::gaussian,
-                      SmearKind::methfessel_paxton})
+    for (auto kind : {ATV::electronic::Smearing::fermi_dirac,
+                      ATV::electronic::Smearing::gaussian,
+                      ATV::electronic::Smearing::methfessel_paxton})
         for (int order : {1, 2, 3, 5})
             for (double x : {-3., -2., -.6, 0., .4, 1.3, 2., 3.}) {
                 constexpr double h = 2e-6;
@@ -90,8 +91,9 @@ TEST(PWSmearing, GrandPotentialDerivativeIsSignedBandOccupation) {
     const std::vector<AccReal> eig = {-.2, 0., .2, .7};
     const std::vector<AccReal> weights = {.3, .2, .1, .4};
     constexpr double mu = .1234, width = .1, h = 2e-6;
-    for (auto kind : {SmearKind::fermi_dirac, SmearKind::gaussian,
-                      SmearKind::methfessel_paxton}) {
+    for (auto kind : {ATV::electronic::Smearing::fermi_dirac,
+                      ATV::electronic::Smearing::gaussian,
+                      ATV::electronic::Smearing::methfessel_paxton}) {
         const auto omega = [&](const std::vector<AccReal>& e) {
             const auto fill =
                 fill_occupations(e, weights, mu, width, kind, 1, 2);
@@ -113,18 +115,21 @@ TEST(PWSmearing, GrandPotentialDerivativeIsSignedBandOccupation) {
 
 TEST(PWSmearing, FermiDiracExactEndpointsHaveZeroEntropyWithoutNan) {
     for (double x : {-1e300, -100., 100., 1e300}) {
-        const double s = smear_entropy_band(x, 0, 1, SmearKind::fermi_dirac);
+        const double s =
+            smear_entropy_band(x, 0, 1, ATV::electronic::Smearing::fermi_dirac);
         EXPECT_TRUE(std::isfinite(s));
         EXPECT_DOUBLE_EQ(s, 0);
     }
-    const auto fill = fill_occupations({-100., 100.}, {1., 1.}, 0, 1,
-                                       SmearKind::fermi_dirac, 1, 2);
+    const auto fill =
+        fill_occupations({-100., 100.}, {1., 1.}, 0, 1,
+                         ATV::electronic::Smearing::fermi_dirac, 1, 2);
     EXPECT_DOUBLE_EQ(fill.n_occ, 2);
     EXPECT_DOUBLE_EQ(fill.entropy, 0);
 }
 
 TEST(PWSmearing, ExtremeGaussianAndMpTailsAreFiniteExactLimits) {
-    for (auto kind : {SmearKind::gaussian, SmearKind::methfessel_paxton})
+    for (auto kind : {ATV::electronic::Smearing::gaussian,
+                      ATV::electronic::Smearing::methfessel_paxton})
         for (int order : {1, 2, 10, 50})
             for (double x : {-1e300, -100., 100., 1e300}) {
                 EXPECT_DOUBLE_EQ(smear_f_spinless(x, kind, order),
@@ -135,14 +140,19 @@ TEST(PWSmearing, ExtremeGaussianAndMpTailsAreFiniteExactLimits) {
 }
 
 TEST(PWSmearing, ValidatesUnsupportedOrderSpectrumAndBandCapacity) {
-    EXPECT_THROW(smear_f_spinless(1e300, SmearKind::methfessel_paxton, 0),
+    EXPECT_THROW(smear_f_spinless(
+                     1e300, ATV::electronic::Smearing::methfessel_paxton, 0),
                  std::invalid_argument);
-    EXPECT_THROW(smear_entropy_band(0, 0, 1, SmearKind::methfessel_paxton, 0),
+    EXPECT_THROW(smear_entropy_band(
+                     0, 0, 1, ATV::electronic::Smearing::methfessel_paxton, 0),
                  std::invalid_argument);
-    EXPECT_THROW(find_fermi_level({0, 1}, {1, 1}, 5, .1, SmearKind::gaussian),
+    EXPECT_THROW(find_fermi_level({0, 1}, {1, 1}, 5, .1,
+                                  ATV::electronic::Smearing::gaussian),
                  std::invalid_argument);
-    EXPECT_THROW(find_fermi_level({0, 1}, {1, -1}, 1, .1, SmearKind::gaussian),
+    EXPECT_THROW(find_fermi_level({0, 1}, {1, -1}, 1, .1,
+                                  ATV::electronic::Smearing::gaussian),
                  std::invalid_argument);
-    EXPECT_THROW(fill_occupations({0, 1}, {1}, 0, .1, SmearKind::gaussian),
+    EXPECT_THROW(fill_occupations({0, 1}, {1}, 0, .1,
+                                  ATV::electronic::Smearing::gaussian),
                  std::invalid_argument);
 }

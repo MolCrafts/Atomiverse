@@ -12,8 +12,9 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-UKS::UKS(BasisSet basis_in, int na, int nb, XCType xc_in, int charge_in)
-    : UKS(basis_in, na, nb, std::make_shared<BuiltinXc>(xc_in), charge_in) {}
+UKS::UKS(BasisSet basis_in, int na, int nb, xc::XCType xc_in, int charge_in)
+    : UKS(basis_in, na, nb, std::make_shared<xc::BuiltinXc>(xc_in), charge_in) {
+}
 
 UKS::UKS(BasisSet basis_in, int na, int nb,
          std::shared_ptr<const ATV::electronic::XcFunctional> functional,

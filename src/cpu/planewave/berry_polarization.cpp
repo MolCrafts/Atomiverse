@@ -287,7 +287,7 @@ BerryPolarization::string_kpoints(int dir) const {
 
 BerryPolarizationResult
 BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
-    if (method.smearing != Smearing::none)
+    if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "BerryPolarization::compute: Berry-phase polarization requires "
             "an insulator (no metallic smearing)");

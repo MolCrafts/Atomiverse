@@ -67,10 +67,10 @@ int run() {
 
     PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
                                                    "/pw/Si_lda_nc.upf"),
-              kEcutRy, kMesh, cpu::scf::XCType::LSDA};
+              kEcutRy, kMesh, cpu::xc::XCType::LSDA};
     method.spin_polarized = true;
     method.multiplicity = 1;
-    method.smearing = Smearing::fermi_dirac;
+    method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = kDegaussRy;
     method.extra_bands = 0;
     method.tol = 1e-6;

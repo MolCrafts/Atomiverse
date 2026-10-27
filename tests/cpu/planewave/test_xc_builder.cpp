@@ -47,9 +47,9 @@ void configure(PWWorkspace& ws, int spin, double scale = 1.0) {
 
 // Independent analytic Fourier interpolation/gradient and direct trapezoid
 // integration. Uses current Cartesian G vectors, not the builder's FFT map.
-double quadrature_energy(const PWWorkspace& ws, cpu::scf::XCType type) {
+double quadrature_energy(const PWWorkspace& ws, cpu::xc::XCType type) {
     const auto pad = [type](int n) {
-        return cpu::scf::is_gga(type) ? 3 * n : 2 * ((3 * n + 3) / 4);
+        return cpu::xc::is_gga(type) ? 3 * n : 2 * ((3 * n + 3) / 4);
     };
     const int nx = pad(ws.fft_nx), ny = pad(ws.fft_ny), nz = pad(ws.fft_nz);
     const auto& gv = *ws.gvec;
@@ -85,7 +85,7 @@ double quadrature_energy(const PWWorkspace& ws, cpu::scf::XCType type) {
                 rho[1] = std::max(rho[1], 0.0);
                 if (rho[0] + rho[1] >= 1e-12)
                     energy +=
-                        cpu::scf::evaluate_xc(type, rho[0], rho[1], aa, ab, bb)
+                        cpu::xc::evaluate_xc(type, rho[0], rho[1], aa, ab, bb)
                             .energy_density;
             }
     return energy * ws.omega / (nx * ny * nz);
@@ -113,7 +113,7 @@ void expect_base_interpolation(const PWWorkspace& ws,
 }
 
 void expect_energy_adjoint(PWWorkspace& ws, XCBuilder& builder,
-                           cpu::scf::XCType type = cpu::scf::XCType::PBE) {
+                           cpu::xc::XCType type = cpu::xc::XCType::PBE) {
     xt::xarray<Complex> direction =
         xt::zeros<Complex>({static_cast<std::size_t>(ws.n_g)});
     for (int g = 0; g < ws.n_g; ++g) {
@@ -179,7 +179,7 @@ void expect_energy_adjoint(PWWorkspace& ws, XCBuilder& builder,
 } // namespace
 
 TEST(PwXcQuadrature, UniformDensityPreservesChargeAndEnergyNormalization) {
-    for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+    for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
         PWWorkspace ws;
         configure(ws, 1);
         ws.rho_G.fill(Complex(0));
@@ -187,7 +187,7 @@ TEST(PwXcQuadrature, UniformDensityPreservesChargeAndEnergyNormalization) {
         XCBuilder builder;
         builder.prepare(ws);
         builder.step(ws, type);
-        const auto reference = cpu::scf::evaluate_xc(type, .02, .02);
+        const auto reference = cpu::xc::evaluate_xc(type, .02, .02);
         EXPECT_NEAR(ws.E_xc, ws.omega * reference.energy_density, 2e-11);
         for (double value : ws.V_xc_r)
             EXPECT_NEAR(value, reference.vrho_alpha, 2e-12);
@@ -199,7 +199,7 @@ TEST(PwXcQuadrature, UniformDensityPreservesChargeAndEnergyNormalization) {
 
 TEST(PwXcQuadrature, RestrictedAndSpinWeightedEnergyAdjointsNearNyquist) {
     for (int spin : {1, 2})
-        for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+        for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
             PWWorkspace ws;
             configure(ws, spin);
             XCBuilder builder;
@@ -242,13 +242,12 @@ TEST(PwXcQuadrature, PhysicalDensitySpaceRejectsAliasedNyquistModes) {
     builder.prepare(ws);
     ws.gvec0.h[1] = 4;
     ws.gvec0.h[2] = -4;
-    EXPECT_THROW(builder.step(ws, cpu::scf::XCType::PBE),
-                 std::invalid_argument);
+    EXPECT_THROW(builder.step(ws, cpu::xc::XCType::PBE), std::invalid_argument);
 }
 
 TEST(PwXcQuadrature,
      ClippedSpinRingingPreservesEnergyVariationAndDoubleCounting) {
-    for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+    for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
         PWWorkspace ws;
         configure(ws, 2);
         // The alpha Fourier field is negative at some quadrature points,
@@ -266,7 +265,7 @@ TEST(PwXcQuadrature,
 
 namespace {
 void expect_fused_response(PWWorkspace& ws, XCBuilder& response,
-                           cpu::scf::XCType type,
+                           cpu::xc::XCType type,
                            bool cross_density_cutoff = false) {
     const int channels = ws.nspin;
     const auto total = ws.rho_G;
@@ -358,7 +357,7 @@ void expect_fused_response(PWWorkspace& ws, XCBuilder& response,
 TEST(PwXcResponse,
      MatchesCompleteFiniteDifferencesForRestrictedAndUnequalSpins) {
     for (int spin : {1, 2})
-        for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+        for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
             PWWorkspace ws;
             configure(ws, spin);
             XCBuilder response;
@@ -377,7 +376,7 @@ TEST(PwXcResponse,
 }
 
 TEST(PwXcResponse, MatchesFiniteDifferencesAcrossClippingAndLowDensityCutoffs) {
-    for (auto type : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+    for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
         PWWorkspace ws;
         configure(ws, 2);
         ws.rho_spin_G[0].fill(Complex(0));
@@ -407,7 +406,7 @@ TEST(PwXcResponse, RejectsInvalidCallsBeforeChangingOutput) {
         {{ws.rho_G.data(), ws.rho_G.size()},
          {ws.rho_G.data(), ws.rho_G.size()},
          output}};
-    EXPECT_THROW(response.response(ws, cpu::scf::XCType::PBE, channels, 0),
+    EXPECT_THROW(response.response(ws, cpu::xc::XCType::PBE, channels, 0),
                  std::invalid_argument);
     for (const auto value : output)
         EXPECT_EQ(value, 7);

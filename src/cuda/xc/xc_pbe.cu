@@ -1,4 +1,4 @@
-/// @file cuda/planewave/internal/xc_pbe.cu
+/// @file cuda/xc/xc_pbe.cu
 /// @brief Device port of the closed-shell PBE path used by
 ///        `cpu::pw::internal::XCBuilder::step(ws, XCType::PBE)` — PBE
 ///        exchange + PW92-based PBE correlation. Constants and formulas are
@@ -19,12 +19,11 @@
 ///     absorbed by the same bound (this file introduces no reduction; E_xc
 ///     reuses `xc_energy` from xc_lda.cu unchanged).
 #include "atomiverse/cuda/device/launch.cuh"
-#include "atomiverse/cuda/planewave/internal/xc_pbe.cuh"
+#include "atomiverse/cuda/xc/xc_pbe.cuh"
 
 namespace ATV {
 namespace cuda {
-namespace pw {
-namespace internal {
+namespace xc {
 
 namespace {
 
@@ -571,7 +570,6 @@ void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
                                    d_exc_r, nr);
 }
 
-} // namespace internal
-} // namespace pw
+} // namespace xc
 } // namespace cuda
 } // namespace ATV

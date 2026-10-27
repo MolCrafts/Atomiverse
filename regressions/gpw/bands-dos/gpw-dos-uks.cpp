@@ -61,7 +61,7 @@ int run() {
     using cpu::gpw::DosResult;
     using cpu::gpw::GpwDft;
     using cpu::gpw::integrate_dos_to;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     cpu::Frame frame = si_bct(5.43); // Å (10.26120 Bohr)
 
@@ -72,7 +72,7 @@ int run() {
             cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
             cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
         150.0,
-        XcKind::PBE};
+        ATV::cpu::xc::XCType::PBE};
     method.n_alpha = 8;
     method.n_beta = 8;
     method.max_iter = 60;

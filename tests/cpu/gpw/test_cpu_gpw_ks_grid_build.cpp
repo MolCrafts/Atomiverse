@@ -14,9 +14,9 @@
 #include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::ks_grid_build_rks;
 using ATV::cpu::gpw::internal::ks_grid_build_uks;
+using ATV::cpu::xc::XCType;
 
 namespace {
 
@@ -36,7 +36,7 @@ TEST(KsGridBuild, RksUniformDensityProducesVeff) {
     std::vector<double> rho(n, 0.02);
     std::vector<double> n_ion(n, 0.02); // neutral
     std::vector<double> v_loc;
-    const auto out = ks_grid_build_rks(grid, rho, n_ion, v_loc, XcKind::PADE,
+    const auto out = ks_grid_build_rks(grid, rho, n_ion, v_loc, XCType::PADE,
                                        /*nonperiodic=*/false,
                                        /*vdw_df=*/false, /*vdw_df2=*/false,
                                        /*rvv10=*/false);
@@ -58,7 +58,7 @@ TEST(KsGridBuild, UksDualVeffSameLength) {
     std::vector<double> n_ion(n, 0.02);
     std::vector<double> v_loc(n, -0.1);
     const auto out =
-        ks_grid_build_uks(grid, rho_a, rho_b, n_ion, v_loc, XcKind::PADE,
+        ks_grid_build_uks(grid, rho_a, rho_b, n_ion, v_loc, XCType::PADE,
                           /*nonperiodic=*/false, false, false, false);
     ASSERT_EQ(out.veff_a.size(), n);
     ASSERT_EQ(out.veff_b.size(), n);
@@ -97,14 +97,14 @@ TEST(KsGridBuild, UksLocalEnergyHasFixedReductionOrder) {
     } restore{saved_threads};
     omp_set_num_threads(1);
 #endif
-    const auto serial = ks_grid_build_uks(grid, ra, rb, ion, vloc, XcKind::PADE,
+    const auto serial = ks_grid_build_uks(grid, ra, rb, ion, vloc, XCType::PADE,
                                           false, false, false, false);
     EXPECT_NEAR(serial.e_locgrid, static_cast<double>(expected), 1e-13);
 #ifdef _OPENMP
     for (int threads : {2, 4}) {
         omp_set_num_threads(threads);
         const auto parallel = ks_grid_build_uks(
-            grid, ra, rb, ion, vloc, XcKind::PADE, false, false, false, false);
+            grid, ra, rb, ion, vloc, XCType::PADE, false, false, false, false);
         EXPECT_DOUBLE_EQ(parallel.e_locgrid, serial.e_locgrid);
     }
 #endif

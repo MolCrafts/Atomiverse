@@ -59,11 +59,11 @@ ATV::cpu::Frame na_bcc(double a_ang) {
 
 int run() {
     using namespace ATV;
+    using ATV::electronic::Smearing;
     using cpu::gpw::Dos;
     using cpu::gpw::DosResult;
     using cpu::gpw::GpwDft;
-    using cpu::gpw::Smearing;
-    using cpu::gpw::XcKind;
+    using cpu::xc::XCType;
 
     cpu::Frame frame = na_bcc(4.225); // Å
 
@@ -73,7 +73,7 @@ int run() {
             cpu::gpw::GaussianBasis(molrs::Element::Na, "DZVP-MOLOPT-SR-GTH"),
             cpu::gpw::GthPotential(molrs::Element::Na, "GTH-PBE-q9")}},
         150.0,
-        XcKind::PADE};
+        ATV::cpu::xc::XCType::PADE};
     method.n_occ = 9; // Ne/2 seed for metallic path
     method.max_iter = 80;
     method.tol = 1e-6;
@@ -81,7 +81,7 @@ int run() {
     method.diis_depth = 6;
     method.mix = 0.4;
     method.k_time_reversal = true;
-    method.smearing = Smearing::fermi_dirac;
+    method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.02; // Ry → same class as CP2K Te = 3157.75 K
     method.extra_bands = 4;
     method.build(frame);

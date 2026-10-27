@@ -31,8 +31,8 @@
 #include "atomiverse/cpu/scf/tdhf.h"
 #include "atomiverse/cpu/scf/uhf.h"
 #include "atomiverse/cpu/scf/uks.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cpu/scf/xc_grid_engine.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
@@ -508,7 +508,7 @@ internal::Channel internal_channel(ExcitationChannel ch) {
 /// full LR-TDDFT (PySCF get_ab hybrid path). Returns K such that A and B
 /// both receive K under the adiabatic approximation.
 RealMatrix fxc_kernel_fd(const SlaterDeterminant& det,
-                         const internal::IntegralView& pack, XCType xc,
+                         const internal::IntegralView& pack, xc::XCType xc,
                          GridLevel grid_level, int n_radial, int n_angular) {
     if (!det.restricted())
         throw std::runtime_error(
@@ -517,7 +517,7 @@ RealMatrix fxc_kernel_fd(const SlaterDeterminant& det,
         throw std::runtime_error(
             "fxc_kernel_fd: internal::IntegralWorkspace has no shells");
 
-    const BuiltinXc functional(xc);
+    const xc::BuiltinXc functional(xc);
     using Spin = SlaterDeterminant::Spin;
     const RealMatrix& C = det.coefficients(Spin::alpha);
     const RealVector& f = det.occupations(Spin::alpha);
@@ -791,7 +791,7 @@ template <>
 ExcitedStatesResult TDA<RKS>::run(int n_states,
                                   ExcitationChannel channel) const {
     const RKS& mf = *mf_;
-    if (mf.xc == XCType::Custom)
+    if (mf.xc == xc::XCType::Custom)
         throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
                                     "kernels are not implemented");
 
@@ -832,7 +832,7 @@ ExcitedStatesResult TDA<RKS>::run(int n_states,
     // A_ia,jb += 2 (ia|f_xc|jb) (singlet) or (ia|f_xc|jb) (triplet), with
     // (ia|f_xc|jb) = ∫ φ_i φ_a f_ALDA(n) φ_j φ_b dτ from Dirac-exchange
     // second derivative on the molecular quadrature.
-    if (mf.xc == XCType::LSDA && hessian.n_ov() <= 512) {
+    if (mf.xc == xc::XCType::LSDA && hessian.n_ov() <= 512) {
         RealMatrix A = 0.5 * (hessian.dense_plus(ch) + hessian.dense_minus(ch));
         const MolecularGrid grid(pack.atoms.data(),
                                  static_cast<int>(pack.atoms.size()),
@@ -854,7 +854,7 @@ ExcitedStatesResult TDA<RKS>::run(int n_states,
     // matches PySCF tdscf.TDA / get_ab hybrid path).
     //
     //   ¹A = δε + 2(ia|jb) − α_hf (ij|ab) + A_xc
-    const double alpha_hf = hybrid_exchange_fraction(mf.xc);
+    const double alpha_hf = xc::hybrid_exchange_fraction(mf.xc);
     if (alpha_hf > 0.0 && hessian.n_ov() <= 512
         && channel == ExcitationChannel::singlet) {
         RealMatrix A = hessian.dense_A(ch, alpha_hf);
@@ -882,7 +882,7 @@ template <>
 ExcitedStatesResult TDDFT<RKS>::run(int n_states,
                                     ExcitationChannel channel) const {
     const RKS& mf = *mf_;
-    if (mf.xc == XCType::Custom)
+    if (mf.xc == xc::XCType::Custom)
         throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
                                     "kernels are not implemented");
 
@@ -906,13 +906,13 @@ ExcitedStatesResult TDDFT<RKS>::run(int n_states,
             + " exceeds dense threshold 512 (no fallback)");
 
     // Casida A,B with exact-exchange fraction α_hf; pure functionals use α=0.
-    const double alpha_hf = hybrid_exchange_fraction(mf.xc);
+    const double alpha_hf = xc::hybrid_exchange_fraction(mf.xc);
     RealMatrix A = hessian.dense_A(ch, alpha_hf);
     RealMatrix B = hessian.dense_B(ch, alpha_hf);
     bool alda_flag = false;
 
     // Adiabatic f^xc on both A and B (Casida 1995; Dreuw & Head-Gordon 2005).
-    if (mf.xc == XCType::LSDA) {
+    if (mf.xc == xc::XCType::LSDA) {
         const MolecularGrid grid(pack.atoms.data(),
                                  static_cast<int>(pack.atoms.size()),
                                  mf.grid_level, mf.n_radial, mf.n_angular);
@@ -1194,10 +1194,10 @@ void lsda_fxc_fd(double ra, double rb, double& faa, double& fab, double& fbb) {
     rb = std::max(rb, kFloor);
     const double h_a = std::min(kH, 0.1 * ra);
     const double h_b = std::min(kH, 0.1 * rb);
-    const XCOutput xp = evaluate_xc(XCType::LSDA, ra + h_a, rb);
-    const XCOutput xm = evaluate_xc(XCType::LSDA, ra - h_a, rb);
-    const XCOutput yp = evaluate_xc(XCType::LSDA, ra, rb + h_b);
-    const XCOutput ym = evaluate_xc(XCType::LSDA, ra, rb - h_b);
+    const xc::XCOutput xp = xc::evaluate_xc(xc::XCType::LSDA, ra + h_a, rb);
+    const xc::XCOutput xm = xc::evaluate_xc(xc::XCType::LSDA, ra - h_a, rb);
+    const xc::XCOutput yp = xc::evaluate_xc(xc::XCType::LSDA, ra, rb + h_b);
+    const xc::XCOutput ym = xc::evaluate_xc(xc::XCType::LSDA, ra, rb - h_b);
     faa = (xp.vrho_alpha - xm.vrho_alpha) / (2.0 * h_a);
     fab = (yp.vrho_alpha - ym.vrho_alpha) / (2.0 * h_b);
     fbb = (yp.vrho_beta - ym.vrho_beta) / (2.0 * h_b);
@@ -1581,7 +1581,7 @@ ExcitedStatesResult package_uks_excited(const SlaterDeterminant& det,
 template <>
 ExcitedStatesResult TDA<UKS>::run(int n_states, ExcitationChannel) const {
     const UKS& mf = *mf_;
-    if (mf.xc == XCType::Custom)
+    if (mf.xc == xc::XCType::Custom)
         throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
                                     "kernels are not implemented");
 
@@ -1592,7 +1592,7 @@ ExcitedStatesResult TDA<UKS>::run(int n_states, ExcitationChannel) const {
     if (det.restricted() || det.generalized())
         throw std::runtime_error(
             "TDA::run: requires an unrestricted (UKS) determinant");
-    if (mf.xc != XCType::LSDA)
+    if (mf.xc != xc::XCType::LSDA)
         throw std::runtime_error(
             "TDA::run: only LSDA is implemented (pure open-shell ALDA); "
             "requested functional is not LSDA (no fallback)");
@@ -1620,7 +1620,7 @@ ExcitedStatesResult TDA<UKS>::run(int n_states, ExcitationChannel) const {
 template <>
 ExcitedStatesResult TDDFT<UKS>::run(int n_states, ExcitationChannel) const {
     const UKS& mf = *mf_;
-    if (mf.xc == XCType::Custom)
+    if (mf.xc == xc::XCType::Custom)
         throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
                                     "kernels are not implemented");
 
@@ -1631,7 +1631,7 @@ ExcitedStatesResult TDDFT<UKS>::run(int n_states, ExcitationChannel) const {
     if (det.restricted() || det.generalized())
         throw std::runtime_error(
             "TDDFT::run: requires an unrestricted (UKS) determinant");
-    if (mf.xc != XCType::LSDA)
+    if (mf.xc != xc::XCType::LSDA)
         throw std::runtime_error(
             "TDDFT::run: only LSDA is implemented (pure open-shell ALDA); "
             "requested functional is not LSDA (no fallback)");

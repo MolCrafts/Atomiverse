@@ -9,7 +9,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
 #include <memory>
 
@@ -53,7 +53,7 @@ cpu::Frame make_h2_cubic(double L) {
 /// @param xc Exchange–correlation functional.
 /// @return Method with ecut 5 Ry, Γ-only mesh, loose SCF tolerance.
 template <typename Method>
-Method h_gth_method(cpu::scf::XCType xc = cpu::scf::XCType::LSDA) {
+Method h_gth_method(cpu::xc::XCType xc = cpu::xc::XCType::LSDA) {
     Method m{std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::H,
                                                            "GTH-PBE-q1"),
              /*ecut_ry=*/5.0,
@@ -118,7 +118,7 @@ TEST(CudaPWCellStress, H2ClosedShellCpuTwin) {
 TEST(CudaPWCellStress, SmearZeroDegaussThrows) {
     auto frame = make_h2_cubic(6.0);
     auto method = h_gth_method<cuda::pw::PW>();
-    method.smearing = cuda::pw::Smearing::fermi_dirac;
+    method.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.0;
     method.build(frame);
     EXPECT_THROW(cuda::pw::pw_stress(frame, method), std::invalid_argument);
@@ -132,7 +132,7 @@ TEST(CudaPWCellStress, SmearZeroDegaussThrows) {
 TEST(CudaPWCellStress, HSmearRestrictedFinite) {
     auto frame = make_h_cubic(6.0);
     auto cuda_m = h_gth_method<cuda::pw::PW>();
-    cuda_m.smearing = cuda::pw::Smearing::fermi_dirac;
+    cuda_m.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
     cuda_m.degauss = 0.02;
     cuda_m.extra_bands = 2;
     cuda_m.max_iter = 12;
@@ -149,12 +149,12 @@ TEST(CudaPWCellStress, HSmearRestrictedFinite) {
 TEST(CudaPWCellStress, H2ClosedShellPbeCpuTwin) {
     auto frame = make_h2_cubic(6.0);
 
-    auto cpu_m = h_gth_method<cpu::pw::PW>(cpu::scf::XCType::PBE);
+    auto cpu_m = h_gth_method<cpu::pw::PW>(cpu::xc::XCType::PBE);
     cpu_m.build(frame);
     cpu::Frame frame_copy = frame; // stress() writes kStress/kEnergy
     const auto s_cpu = cpu_m.stress(frame_copy); // σ [eV/Å³]
 
-    auto cuda_m = h_gth_method<cuda::pw::PW>(cpu::scf::XCType::PBE);
+    auto cuda_m = h_gth_method<cuda::pw::PW>(cpu::xc::XCType::PBE);
     cuda_m.build(frame);
     double e_ry = 0.0;
     const auto s_cuda = cuda::pw::pw_stress(frame, cuda_m, &e_ry);

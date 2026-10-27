@@ -43,7 +43,7 @@ cpu::Frame make_h_atom() {
 /// @param xc Exchange–correlation functional.
 /// @param ecut_ry Wavefunction cutoff [Ry].
 /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
-cuda::pw::PW make_supported(cpu::scf::XCType xc = cpu::scf::XCType::LSDA,
+cuda::pw::PW make_supported(cpu::xc::XCType xc = cpu::xc::XCType::LSDA,
                             double ecut_ry = 6.0, int k_mesh = 1) {
     // Real H potential, no file needed.
     return cuda::pw::PW{std::make_shared<cpu::pw::GthPseudopotential>(
@@ -60,14 +60,14 @@ TEST(CudaPWGuards, DefaultXcIsPbe) {
     // The default deliberately matches cpu::pw::PW (PBE): identical user
     // code computes the same functional on both backends. PBE has a device
     // path, so the default is runnable — no throw to assert here.
-    EXPECT_EQ(pw.xc, cpu::scf::XCType::PBE);
+    EXPECT_EQ(pw.xc, cpu::xc::XCType::PBE);
 }
 
 TEST(CudaPWGuards, UnsupportedXcThrows) {
     auto frame = make_h_atom();
     // BLYP has no device kernel — only LSDA and PBE do. The gate must throw
     // rather than silently compute a different functional.
-    auto pw = make_supported(cpu::scf::XCType::BLYP);
+    auto pw = make_supported(cpu::xc::XCType::BLYP);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
@@ -75,8 +75,8 @@ TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
     auto frame = make_h_atom();
     // PBEsol/revPBE/RPBE differ from PBE by μ/κ/β constants the device
     // kernel hard-wires; accepting them would silently compute plain PBE.
-    for (const auto xc : {cpu::scf::XCType::PBEsol, cpu::scf::XCType::RevPBE,
-                          cpu::scf::XCType::RPBE}) {
+    for (const auto xc : {cpu::xc::XCType::PBEsol, cpu::xc::XCType::RevPBE,
+                          cpu::xc::XCType::RPBE}) {
         auto pw = make_supported(xc);
         EXPECT_THROW(pw.run(frame), std::invalid_argument);
     }
@@ -86,7 +86,7 @@ TEST(CudaPWGuards, SpinPolarizedWithPbesolThrows) {
     // Collinear spin-GGA on device is plain PBE only; PBEsol/revPBE/RPBE
     // hard-wire different μ/κ/β and must still throw under spin.
     auto frame = make_h_atom();
-    auto pw = make_supported(cpu::scf::XCType::PBEsol);
+    auto pw = make_supported(cpu::xc::XCType::PBEsol);
     pw.spin_polarized = true;
     pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
@@ -104,7 +104,7 @@ TEST(CudaPWGuards, SpinSmearZeroDegaussThrows) {
     auto pw = make_supported();
     pw.spin_polarized = true;
     pw.multiplicity = 2;
-    pw.smearing = cuda::pw::Smearing::fermi_dirac;
+    pw.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
@@ -112,7 +112,7 @@ TEST(CudaPWGuards, SpinSmearZeroDegaussThrows) {
 TEST(CudaPWGuards, SmearZeroDegaussThrows) {
     auto frame = make_h_atom();
     auto pw = make_supported();
-    pw.smearing = cuda::pw::Smearing::fermi_dirac;
+    pw.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
@@ -128,14 +128,14 @@ TEST(CudaPWGuards, ZeroKMeshThrows) {
     auto frame = make_h_atom();
     // generate_mp_mesh returns an empty grid for 0 without throwing, so an
     // ungated k_mesh = 0 reports a "converged" run with e_band == 0.
-    auto pw = make_supported(cpu::scf::XCType::LSDA, /*ecut_ry=*/6.0,
+    auto pw = make_supported(cpu::xc::XCType::LSDA, /*ecut_ry=*/6.0,
                              /*k_mesh=*/0);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
 TEST(CudaPWGuards, NonPositiveEcutThrows) {
     auto frame = make_h_atom();
-    auto pw = make_supported(cpu::scf::XCType::LSDA, /*ecut_ry=*/0.0);
+    auto pw = make_supported(cpu::xc::XCType::LSDA, /*ecut_ry=*/0.0);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
@@ -167,13 +167,14 @@ TEST(CudaPWGuards, FreshResultIsEmpty) {
 // fail before CUDA setup through both public entries.
 TEST(CudaPWGuards, SpinSmearStressRejectsInvalidWidthBeforeDeviceWork) {
     auto frame = make_h_atom();
-    for (const auto xc : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+    for (const auto xc : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
         auto pw = make_supported(xc);
         pw.spin_polarized = true;
         pw.multiplicity = 2;
         for (const auto smear :
-             {cuda::pw::Smearing::fermi_dirac, cuda::pw::Smearing::gaussian,
-              cuda::pw::Smearing::methfessel_paxton}) {
+             {cuda::ATV::electronic::Smearing::fermi_dirac,
+              cuda::ATV::electronic::Smearing::gaussian,
+              cuda::ATV::electronic::Smearing::methfessel_paxton}) {
             pw.smearing = smear;
             pw.degauss = 0;
             EXPECT_THROW(pw.stress(frame), std::invalid_argument);

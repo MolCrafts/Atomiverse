@@ -7,10 +7,10 @@
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
+#include "atomiverse/electronic/smearing.h"
 
 #include <algorithm>
 #include <cmath>
@@ -110,7 +110,7 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
     if (!method.spin_polarized)
         throw std::invalid_argument(
             "run_collinear_scf: requires method.spin_polarized");
-    if (method.smearing != Smearing::none)
+    if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "run_collinear_scf: metallic smearing not supported");
     if (method.multiplicity < 1)
@@ -246,7 +246,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
     if (!method.spin_polarized)
         throw std::invalid_argument(
             "run_collinear_smear_scf: requires method.spin_polarized");
-    if (method.smearing == Smearing::none)
+    if (method.smearing == ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "run_collinear_smear_scf: requires metallic smearing");
     if (!(method.degauss > 0.0))
@@ -277,13 +277,14 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         std::max({n_bands_min, n_occ_ceil + std::max(method.extra_bands, 0),
                   std::max(n_alpha0, n_beta0), 1});
 
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::fermi_dirac)
-        smear_kind = SmearKind::fermi_dirac;
-    else if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::fermi_dirac)
+        smear_kind = ATV::electronic::Smearing::fermi_dirac;
+    else if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const int mp_order = method.mp_order;
     const AccReal degauss_ha =
         AccReal(method.degauss) * AccReal(qe_units::rydberg_to_hartree);

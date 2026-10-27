@@ -60,9 +60,9 @@
 #include "atomiverse/cpu/linalg/density.h"    // build_density_matrix
 #include "atomiverse/cpu/linalg/eigensolve.h" // diagonalize_fock_generalized
 #include "atomiverse/cpu/linalg/internal/diis_mixer.h"
-#include "atomiverse/cpu/linalg/matrix.h"               // RealMatrix
-#include "atomiverse/cpu/planewave/internal/smearing.h" // metallic occupations
+#include "atomiverse/cpu/linalg/matrix.h" // RealMatrix
 #include "atomiverse/cpu/scf/dftd4.h"
+#include "atomiverse/electronic/smearing.h" // metallic occupations
 
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/views/xview.hpp>
@@ -745,7 +745,8 @@ std::vector<internal::KPoint> sampled_kpoints(const GpwDft& cfg) {
 // Γ / k halves of the same split.
 bool uses_kpath(const GpwDft& cfg) {
     return !cfg.k_points.empty() || cfg.k_mesh[0] != 1 || cfg.k_mesh[1] != 1
-           || cfg.k_mesh[2] != 1 || cfg.smearing != Smearing::none;
+           || cfg.k_mesh[2] != 1
+           || cfg.smearing != ATV::electronic::Smearing::none;
 }
 
 // Ionic core density n_ion(r) = sum_A z_A (2 pi rloc^2)^{-3/2} exp(-|r-R|^2/2 rloc^2).
@@ -1092,14 +1093,14 @@ static GpwResult run_gpw_scf_kpoints(
 
     // Metallic smearing (FD / MP) — shared μ over all k, Mermin free energy.
     // Occupation math is `cpu::pw::internal` (unit-tested); units: Ha inside.
-    const bool use_smear = (cfg.smearing != Smearing::none);
+    const bool use_smear = (cfg.smearing != ATV::electronic::Smearing::none);
     const double n_elec = 2.0 * static_cast<double>(cfg.n_occ);
     const double degauss_ha =
         use_smear ? cfg.degauss * 0.5 : 0.0; // Ry → Ha (1 Ry = 0.5 Ha)
-    using pw::internal::SmearKind;
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (cfg.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (cfg.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
     const int mp_order = cfg.mp_order;
     if (use_smear && m_min < cfg.n_occ + std::max(cfg.extra_bands, 0)
         && std::getenv("ATV_GPW_TRACE") && layout.rank == 0)
@@ -1263,7 +1264,7 @@ static GpwResult run_gpw_scf_kpoints(
                 all_weights.push_back(static_cast<AccReal>(wk));
             }
         }
-        mu_ha = static_cast<double>(pw::internal::find_fermi_level(
+        mu_ha = static_cast<double>(ATV::electronic::find_fermi_level(
             all_evals, all_weights, static_cast<AccReal>(n_elec),
             static_cast<AccReal>(degauss_ha), smear_kind, mp_order));
         n_occ_sum = 0.0;
@@ -1275,17 +1276,18 @@ static GpwResult run_gpw_scf_kpoints(
             occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
             std::vector<AccReal> ev_a(ev.begin(), ev.end());
             std::vector<AccReal> w_one(ev.size(), static_cast<AccReal>(wk));
-            auto fill = pw::internal::fill_occupations(
+            auto fill = ATV::electronic::fill_occupations(
                 ev_a, w_one, static_cast<AccReal>(mu_ha),
                 static_cast<AccReal>(degauss_ha), smear_kind, mp_order);
             n_occ_sum += static_cast<double>(fill.n_occ);
             entropy_sum += static_cast<double>(fill.entropy);
             for (std::size_t b = 0; b < ev.size(); ++b)
-                occ_k[static_cast<std::size_t>(ik)][b] = static_cast<double>(
-                    pw::internal::smear_f_band(static_cast<AccReal>(ev[b]),
-                                               static_cast<AccReal>(mu_ha),
-                                               static_cast<AccReal>(degauss_ha),
-                                               smear_kind, mp_order));
+                occ_k[static_cast<std::size_t>(ik)][b] =
+                    static_cast<double>(ATV::electronic::smear_f_band(
+                        static_cast<AccReal>(ev[b]),
+                        static_cast<AccReal>(mu_ha),
+                        static_cast<AccReal>(degauss_ha), smear_kind,
+                        mp_order));
         }
         return occ_k;
     };
@@ -2398,13 +2400,13 @@ static GpwResult run_gpw_scf_kpoints_uks(
 
     // Metallic smearing (FD / MP) — shared μ over α+β spin-orbitals at all k.
     // Occupation math is `cpu::pw::internal` with spin_degen=1; units: Ha.
-    const bool use_smear = (cfg.smearing != Smearing::none);
+    const bool use_smear = (cfg.smearing != ATV::electronic::Smearing::none);
     const double n_elec = static_cast<double>(n_a) + static_cast<double>(n_b);
     const double degauss_ha = use_smear ? cfg.degauss * 0.5 : 0.0; // Ry → Ha
-    using pw::internal::SmearKind;
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (cfg.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (cfg.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
     const int mp_order = cfg.mp_order;
     if (use_smear && m_min < n_need + std::max(cfg.extra_bands, 0)
         && std::getenv("ATV_GPW_TRACE") && layout.rank == 0)
@@ -2568,7 +2570,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
                     all_weights.push_back(static_cast<AccReal>(wk));
                 }
             }
-            mu_ha = static_cast<double>(pw::internal::find_fermi_level(
+            mu_ha = static_cast<double>(ATV::electronic::find_fermi_level(
                 all_evals, all_weights, static_cast<AccReal>(n_elec),
                 static_cast<AccReal>(degauss_ha), smear_kind, mp_order,
                 AccReal(1)));
@@ -2586,7 +2588,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
                     std::vector<AccReal> ev_a(ev.begin(), ev.end());
                     std::vector<AccReal> w_one(ev.size(),
                                                static_cast<AccReal>(wk));
-                    auto fill = pw::internal::fill_occupations(
+                    auto fill = ATV::electronic::fill_occupations(
                         ev_a, w_one, static_cast<AccReal>(mu_ha),
                         static_cast<AccReal>(degauss_ha), smear_kind, mp_order,
                         AccReal(1));
@@ -2594,7 +2596,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
                     entropy_sum += static_cast<double>(fill.entropy);
                     for (std::size_t b = 0; b < ev.size(); ++b)
                         occ_out[b] =
-                            static_cast<double>(pw::internal::smear_f_spinor(
+                            static_cast<double>(ATV::electronic::smear_f_spinor(
                                 static_cast<AccReal>(ev[b]),
                                 static_cast<AccReal>(mu_ha),
                                 static_cast<AccReal>(degauss_ha), smear_kind,
@@ -5527,6 +5529,10 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
 // ── GpwDft — the public solver face over run_gpw_scf_impl ────────
 
 void GpwDft::build_atoms_(const std::vector<GpwAtom>& reference) {
+    require_gpw_xc(xc);
+    if (smearing == electronic::Smearing::gaussian)
+        throw std::invalid_argument(
+            "GpwDft: gaussian smearing is not implemented");
     if (reference.empty())
         throw std::invalid_argument(
             "GpwDft::build: empty atom set (nothing to solve)");
@@ -5548,7 +5554,7 @@ void GpwDft::build_atoms_(const std::vector<GpwAtom>& reference) {
             "GpwDft::build: n_occ must be >= 1 for closed-shell RKS (got "
             + std::to_string(n_occ) + "); or set n_alpha/n_beta for UKS");
     }
-    if (smearing != Smearing::none) {
+    if (smearing != ATV::electronic::Smearing::none) {
         // Multi-k RKS (DIIS and OT, with or without PLUS_U) + multi-k
         // collinear UKS (DIIS and OT, with or without PLUS_U) productized.
         if (!(degauss > 0.0) || !std::isfinite(degauss))
@@ -5556,7 +5562,8 @@ void GpwDft::build_atoms_(const std::vector<GpwAtom>& reference) {
                 "GpwDft::build: degauss must be finite and > 0 [Ry] when "
                 "smearing is enabled (got "
                 + std::to_string(degauss) + ")");
-        if (smearing == Smearing::methfessel_paxton && mp_order < 1)
+        if (smearing == ATV::electronic::Smearing::methfessel_paxton
+            && mp_order < 1)
             throw std::invalid_argument(
                 "GpwDft::build: mp_order must be >= 1 for Methfessel-Paxton");
         if (extra_bands < 0)
@@ -5627,7 +5634,8 @@ void GpwDft::build_atoms_(const std::vector<GpwAtom>& reference) {
     // Match run_gpw_scf_impl: metallic smear always takes the k-point path
     // (including effective Γ via k_mesh = {1,1,1}).
     const bool kpath = !k_points.empty() || k_mesh[0] != 1 || k_mesh[1] != 1
-                       || k_mesh[2] != 1 || smearing != Smearing::none;
+                       || k_mesh[2] != 1
+                       || smearing != ATV::electronic::Smearing::none;
     if (!kpath && !is_uks()) {
         // The Γ-point closed-shell RKS SCF has no +U fold — reject instead of
         // silently ignoring an active plus_u entry (no-fallback rule).
@@ -5857,6 +5865,9 @@ void GpwDft::build(const Frame& reference) {
 }
 
 GpwResult& GpwDft::run(const Frame& frame) {
+    if (smearing == electronic::Smearing::gaussian)
+        throw std::invalid_argument(
+            "GpwDft: gaussian smearing is not implemented");
     if (!built_)
         throw std::logic_error(
             "GpwDft::run called before build(frame) — validate the "

@@ -23,8 +23,8 @@ namespace atv_reg_gpw_cuda_gpw_multigrid_si_energy_path {
 
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GthPotential;
-using ATV::cpu::gpw::XcKind;
 using ATV::cpu::gpw::internal::GpwAtom;
+using ATV::cpu::xc::XCType;
 
 namespace {
 
@@ -112,7 +112,7 @@ int run(int argc, char** argv) {
     double e_cpu = 0.0, e_cuda = 0.0;
 
     if (run_cpu) {
-        ATV::cpu::gpw::GpwDft m({}, 40.0, XcKind::PADE);
+        ATV::cpu::gpw::GpwDft m({}, 40.0, XCType::PADE);
         set_si_mg(m, a);
         ATV::cpu::gpw::internal::GpwDftAccess::build(m, atoms);
         const auto& r = ATV::cpu::gpw::internal::GpwDftAccess::run(m, atoms);
@@ -130,7 +130,7 @@ int run(int argc, char** argv) {
     }
 
     if (run_cuda) {
-        ATV::cuda::gpw::GpwDft m({}, 40.0, XcKind::PADE);
+        ATV::cuda::gpw::GpwDft m({}, 40.0, XCType::PADE);
         set_si_mg(m, a);
         m.build(atoms);
         const auto& r = m.run(atoms);

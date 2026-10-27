@@ -65,7 +65,7 @@ int run() {
     constexpr double rmin = 0.4;
     constexpr double rmax = 1.5;
 
-    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::gpw::XcKind::PADE};
+    cpu::gpw::GpwDft dft{{H}, 100.0, cpu::xc::XCType::PADE};
     dft.max_iter = 60;
     dft.tol = 1e-5;
     dft.mix = 0.3;

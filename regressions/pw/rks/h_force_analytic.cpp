@@ -117,7 +117,7 @@ int run() {
         smear.mix_beta = 0.5;
         smear.spin_polarized = spin;
         smear.multiplicity = spin ? 2 : 1;
-        smear.smearing = Smearing::fermi_dirac;
+        smear.smearing = ATV::electronic::Smearing::fermi_dirac;
         smear.degauss = 0.02;
         smear.extra_bands = 2;
         const auto fd = pw_forces_fd(metallic, smear, 5e-3);
