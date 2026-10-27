@@ -1,0 +1,1115 @@
+{
+  "source": "Actual compiled QE 7.6 wgauss/w1gauss/efermig/sumkg routines, no formula reimplementation",
+  "scope": "one serial pool; support modules define kinds/constants and identity serial reductions only",
+  "compile_command": [
+    "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/gfortran",
+    "-O2",
+    "-cpp",
+    "-ffree-line-length-none",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/qe_support.f90",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/final-oracle-v2/sources/wgauss.f90",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/final-oracle-v2/sources/w0gauss.f90",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/final-oracle-v2/sources/w1gauss.f90",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/final-oracle-v2/sources/sumkg.f90",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/final-oracle-v2/sources/efermig.f90",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/qe_driver.f90",
+    "-o",
+    "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/final-oracle-v2/qe-smearing-oracle"
+  ],
+  "compiler_version": "GNU Fortran (GCC) 14.3.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "compiler_sha256": "d1a9121e633e6c2d4c998e3ba00a3a144677c1b78ffbf6c07b3947688c8a015b",
+  "binary_sha256": "b6c1c9b96698970aea4b0e2c24c75c22cca91e6c415d482a3ea432ddc6401980",
+  "source_files": {
+    "wgauss.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/Modules/wgauss.f90",
+      "sha256": "78145ca2423a14f3a761737f9eb54ed6e52755c441bd79997da3a138f5d42a8c"
+    },
+    "w0gauss.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/Modules/w0gauss.f90",
+      "sha256": "a2fd9cc385eb81b582f869898f03ec10eebc6f7aa2d3906f4c4494059c80a572"
+    },
+    "w1gauss.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/Modules/w1gauss.f90",
+      "sha256": "05b26a47181e8cacfe02f40b4e34bde594708a97966a947f863165c5b5c8bd6f"
+    },
+    "sumkg.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/PW/src/sumkg.f90",
+      "sha256": "26b937cef67fee45c3b40a998f019992bcb29634e69252ff2135ba3daf0fc46f"
+    },
+    "efermig.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/PW/src/efermig.f90",
+      "sha256": "24097d64cb4607630a0e700b83a0c6d966dd58327938a8dfcb547fd6dc6badaa"
+    }
+  },
+  "support_sha256": "90b8b1d929358f901a61fdfa9eb1c301b3cac8ca5adbeae6f38dcfd51b1c21aa",
+  "driver_sha256": "6cad070970a9ecb0c4461a3a65b8f592523fc3ba5ccabc8558d502ccbfc935e1",
+  "script_sha256": "e341a7a7f3dec78f768321b7c2ebf18796b7c56fc655c7c358f3f406e9260f0b",
+  "scheduler": {
+    "SLURM_JOB_ID": "4477595",
+    "SLURM_JOB_NODELIST": "n215"
+  },
+  "points": [
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": -40.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": -0.0
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": -8.0,
+      "occupation_spinless": 0.9996646498695336,
+      "entropy_spinless": 0.003018207416626744
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": -2.0,
+      "occupation_spinless": 0.8807970779778823,
+      "entropy_spinless": 0.36533385508720784
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": -1.0,
+      "occupation_spinless": 0.7310585786300049,
+      "entropy_spinless": 0.5822031088882179
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": -0.25,
+      "occupation_spinless": 0.5621765008857981,
+      "entropy_spinless": 0.685395294657394
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": 0.0,
+      "occupation_spinless": 0.5,
+      "entropy_spinless": 0.6931471805599453
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": 0.25,
+      "occupation_spinless": 0.43782349911420193,
+      "entropy_spinless": 0.685395294657394
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": 1.0,
+      "occupation_spinless": 0.2689414213699951,
+      "entropy_spinless": 0.5822031088882179
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": 2.0,
+      "occupation_spinless": 0.11920292202211755,
+      "entropy_spinless": 0.36533385508720767
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": 8.0,
+      "occupation_spinless": 0.0003353501304664781,
+      "entropy_spinless": 0.0030182074166275985
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": 40.0,
+      "occupation_spinless": 4.248354255291589e-18,
+      "entropy_spinless": -0.0
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": -36.0,
+      "occupation_spinless": 0.9999999999999998,
+      "entropy_spinless": 8.225343381766315e-15
+    },
+    {
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "x": 36.0,
+      "occupation_spinless": 2.319522830243569e-16,
+      "entropy_spinless": 8.57232679380188e-15
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": -40.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": 3.903900025463932e-88
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": -8.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": 4.524266992139961e-29
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": -2.0,
+      "occupation_spinless": 0.9976611325094764,
+      "entropy_spinless": 0.005166746338523013
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": -1.0,
+      "occupation_spinless": 0.9213503964748575,
+      "entropy_spinless": 0.1037768743551487
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": -0.25,
+      "occupation_spinless": 0.6381631950841185,
+      "entropy_spinless": 0.26500353234402857
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": 0.0,
+      "occupation_spinless": 0.5,
+      "entropy_spinless": 0.28209479177387814
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": 0.25,
+      "occupation_spinless": 0.36183680491588155,
+      "entropy_spinless": 0.26500353234402857
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": 1.0,
+      "occupation_spinless": 0.07864960352514257,
+      "entropy_spinless": 0.1037768743551487
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": 2.0,
+      "occupation_spinless": 0.0023388674905236327,
+      "entropy_spinless": 0.005166746338523013
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": 8.0,
+      "occupation_spinless": 5.612148586491464e-30,
+      "entropy_spinless": 4.524266992139961e-29
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": 40.0,
+      "occupation_spinless": 0.0,
+      "entropy_spinless": 3.903900025463932e-88
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": -36.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": 3.903900025463932e-88
+    },
+    {
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "x": 36.0,
+      "occupation_spinless": 0.0,
+      "entropy_spinless": 3.903900025463932e-88
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": -40.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": -6.244288090729558e-85
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": -8.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": -2.8729095400088748e-27
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": -2.0,
+      "occupation_spinless": 1.0079946251865224,
+      "entropy_spinless": -0.018083612184830546
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": -1.0,
+      "occupation_spinless": 1.025127270830006,
+      "entropy_spinless": -0.05188843717757431
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": -0.25,
+      "occupation_spinless": 0.7044140781701256,
+      "entropy_spinless": 0.1159390454005125
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": 0.0,
+      "occupation_spinless": 0.5,
+      "entropy_spinless": 0.14104739588693907
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": 0.25,
+      "occupation_spinless": 0.2955859218298744,
+      "entropy_spinless": 0.1159390454005125
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": 1.0,
+      "occupation_spinless": -0.025127270830006113,
+      "entropy_spinless": -0.05188843717757431
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": 2.0,
+      "occupation_spinless": -0.007994625186522393,
+      "entropy_spinless": -0.018083612184830546
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": 8.0,
+      "occupation_spinless": -3.563292107847054e-28,
+      "entropy_spinless": -2.8729095400088748e-27
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": 40.0,
+      "occupation_spinless": -1.5615600101855725e-86,
+      "entropy_spinless": -6.244288090729558e-85
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": -36.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": -5.057502482988523e-85
+    },
+    {
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "x": 36.0,
+      "occupation_spinless": -1.4054040091670154e-86,
+      "entropy_spinless": -5.057502482988523e-85
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": -40.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": 4.9876241364952294e-82
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": -8.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": 8.833065768779256e-26
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": -2.0,
+      "occupation_spinless": 0.9950777593402148,
+      "entropy_spinless": 0.01227102255399216
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": -1.0,
+      "occupation_spinless": 1.0510714894187934,
+      "entropy_spinless": -0.0648605464719679
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": -0.25,
+      "occupation_spinless": 0.7520319003881932,
+      "entropy_spinless": 0.07504982849586747
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": 0.0,
+      "occupation_spinless": 0.5,
+      "entropy_spinless": 0.10578554691520431
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": 0.25,
+      "occupation_spinless": 0.2479680996118068,
+      "entropy_spinless": 0.07504982849586747
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": 1.0,
+      "occupation_spinless": -0.05107148941879328,
+      "entropy_spinless": -0.0648605464719679
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": 2.0,
+      "occupation_spinless": 0.004922240659785141,
+      "entropy_spinless": 0.01227102255399216
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": 8.0,
+      "occupation_spinless": 1.0954338269565196e-26,
+      "entropy_spinless": 8.833065768779256e-26
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": 40.0,
+      "occupation_spinless": 1.2465152781306334e-83,
+      "entropy_spinless": 4.9876241364952294e-82
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": -36.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": 3.2709387548978204e-82
+    },
+    {
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "x": 36.0,
+      "occupation_spinless": 9.082423409241834e-84,
+      "entropy_spinless": 3.2709387548978204e-82
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": -40.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": -2.652581647782001e-79
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": -8.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": -1.750454922704548e-24
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": -2.0,
+      "occupation_spinless": 0.9946471971453379,
+      "entropy_spinless": 0.011086976518080636
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": -1.0,
+      "occupation_spinless": 1.0467474529873289,
+      "entropy_spinless": -0.04972641896184205
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": -0.25,
+      "occupation_spinless": 0.790031267574894,
+      "entropy_spinless": 0.053041681949881056
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": 0.0,
+      "occupation_spinless": 0.5,
+      "entropy_spinless": 0.08815462242933693
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": 0.25,
+      "occupation_spinless": 0.20996873242510608,
+      "entropy_spinless": 0.053041681949881056
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": 1.0,
+      "occupation_spinless": -0.046747452987328755,
+      "entropy_spinless": -0.04972641896184205
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": 2.0,
+      "occupation_spinless": 0.005352802854662058,
+      "entropy_spinless": 0.011086976518080636
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": 8.0,
+      "occupation_spinless": -2.1705363724431503e-25,
+      "entropy_spinless": -1.750454922704548e-24
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": 40.0,
+      "occupation_spinless": -6.629379850291394e-81,
+      "entropy_spinless": -2.652581647782001e-79
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": -36.0,
+      "occupation_spinless": 1.0,
+      "entropy_spinless": -1.4081366052322704e-79
+    },
+    {
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "x": 36.0,
+      "occupation_spinless": -3.9099797641685883e-81,
+      "entropy_spinless": -1.4081366052322704e-79
+    }
+  ],
+  "spectra": [
+    {
+      "case": 1,
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "evals": [
+        -0.5,
+        -0.3,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 4.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": -0.03749999999999998,
+      "n_occ": 4.000000000088989,
+      "entropy": 2.6163049637982847e-09,
+      "free_energy_correction": -2.6163049637982847e-11
+    },
+    {
+      "case": 1,
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "evals": [
+        -0.5,
+        -0.3,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 4.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": 0.15000000000000002,
+      "n_occ": 4.000000000001537,
+      "entropy": 7.835433265508725e-12,
+      "free_energy_correction": -7.835433265508725e-14
+    },
+    {
+      "case": 1,
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "evals": [
+        -0.5,
+        -0.3,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 4.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": 0.15000000000000002,
+      "n_occ": 3.9999999999623603,
+      "entropy": -1.9196811500496361e-10,
+      "free_energy_correction": 1.919681150049636e-12
+    },
+    {
+      "case": 1,
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "evals": [
+        -0.5,
+        -0.3,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 4.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": 0.15000000000000002,
+      "n_occ": 4.000000000422692,
+      "entropy": 2.157682435489463e-09,
+      "free_energy_correction": -2.1576824354894633e-11
+    },
+    {
+      "case": 1,
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "evals": [
+        -0.5,
+        -0.3,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 4.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": 0.15000000000000002,
+      "n_occ": 3.9999999971334423,
+      "entropy": -1.4648179251675509e-08,
+      "free_energy_correction": 1.464817925167551e-10
+    },
+    {
+      "case": 2,
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 3.1,
+      "width": 0.05,
+      "spin_degen": 2.0,
+      "mu": -0.08343151125125586,
+      "n_occ": 3.1000000000386354,
+      "entropy": 2.9930013231247172,
+      "free_energy_correction": -0.14965006615623586
+    },
+    {
+      "case": 2,
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 3.1,
+      "width": 0.05,
+      "spin_degen": 2.0,
+      "mu": -0.07619552335992918,
+      "n_occ": 3.1000000000022534,
+      "entropy": 0.5910506633337455,
+      "free_energy_correction": -0.029552533166687274
+    },
+    {
+      "case": 2,
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 3.1,
+      "width": 0.05,
+      "spin_degen": 2.0,
+      "mu": -0.07606608001404513,
+      "n_occ": 3.0999999999932437,
+      "entropy": 0.19824631155423977,
+      "free_energy_correction": -0.009912315577711989
+    },
+    {
+      "case": 2,
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 3.1,
+      "width": 0.05,
+      "spin_degen": 2.0,
+      "mu": -0.07759728962415065,
+      "n_occ": 3.0999999999999415,
+      "entropy": 0.234943649571558,
+      "free_energy_correction": -0.011747182478577901
+    },
+    {
+      "case": 2,
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 3.1,
+      "width": 0.05,
+      "spin_degen": 2.0,
+      "mu": -0.07838163619568195,
+      "n_occ": 3.0999999999984564,
+      "entropy": 0.21159766594266666,
+      "free_energy_correction": -0.010579883297133334
+    },
+    {
+      "case": 3,
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "evals": [
+        -0.02,
+        0.02,
+        0.8,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": -1.7462337657409426e-12,
+      "n_occ": 1.9999999999266627,
+      "entropy": 1.4613354203488305,
+      "free_energy_correction": -0.014613354203488305
+    },
+    {
+      "case": 3,
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "evals": [
+        -0.02,
+        0.02,
+        0.8,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": -1.7462337657409426e-12,
+      "n_occ": 1.999999999992782,
+      "entropy": 0.020666985354092053,
+      "free_energy_correction": -0.00020666985354092054
+    },
+    {
+      "case": 3,
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "evals": [
+        -0.02,
+        0.02,
+        0.8,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": -1.7462337657409426e-12,
+      "n_occ": 2.0000000000180442,
+      "entropy": -0.0723344487393222,
+      "free_energy_correction": 0.0007233444873932219
+    },
+    {
+      "case": 3,
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "evals": [
+        -0.02,
+        0.02,
+        0.8,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": -1.7462337657409426e-12,
+      "n_occ": 2.000000000000902,
+      "entropy": 0.049084090215968615,
+      "free_energy_correction": -0.0004908409021596861
+    },
+    {
+      "case": 3,
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "evals": [
+        -0.02,
+        0.02,
+        0.8,
+        1.0,
+        2.0
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.0,
+      "width": 0.01,
+      "spin_degen": 2.0,
+      "mu": -1.7462337657409426e-12,
+      "n_occ": 1.9999999999854134,
+      "entropy": 0.044347906072322515,
+      "free_energy_correction": -0.00044347906072322515
+    },
+    {
+      "case": 4,
+      "kind": 1,
+      "mp_order": 1,
+      "qe_order": -99,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.7,
+      "width": 0.07,
+      "spin_degen": 1.0,
+      "mu": 0.03516179914819074,
+      "n_occ": 2.7000000000583055,
+      "entropy": 2.0362768241049602,
+      "free_energy_correction": -0.14253937768734723
+    },
+    {
+      "case": 4,
+      "kind": 3,
+      "mp_order": 1,
+      "qe_order": 0,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.7,
+      "width": 0.07,
+      "spin_degen": 1.0,
+      "mu": 0.03030939364223737,
+      "n_occ": 2.6999999999631057,
+      "entropy": 0.3600926387853859,
+      "free_energy_correction": -0.025206484714977013
+    },
+    {
+      "case": 4,
+      "kind": 2,
+      "mp_order": 1,
+      "qe_order": 1,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.7,
+      "width": 0.07,
+      "spin_degen": 1.0,
+      "mu": 0.027951940983158497,
+      "n_occ": 2.699999999999945,
+      "entropy": 0.002851708958814785,
+      "free_energy_correction": -0.00019961962711703498
+    },
+    {
+      "case": 4,
+      "kind": 2,
+      "mp_order": 2,
+      "qe_order": 2,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.7,
+      "width": 0.07,
+      "spin_degen": 1.0,
+      "mu": 0.025592863487900925,
+      "n_occ": 2.7,
+      "entropy": 0.019688737154305785,
+      "free_energy_correction": -0.001378211600801405
+    },
+    {
+      "case": 4,
+      "kind": 2,
+      "mp_order": 3,
+      "qe_order": 3,
+      "evals": [
+        -0.2,
+        -0.08,
+        0.01,
+        0.11,
+        0.24
+      ],
+      "weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "target": 2.7,
+      "width": 0.07,
+      "spin_degen": 1.0,
+      "mu": 0.022883240790271073,
+      "n_occ": 2.7000000000000006,
+      "entropy": 0.06741400346323183,
+      "free_energy_correction": -0.004718980242426229
+    }
+  ]
+}

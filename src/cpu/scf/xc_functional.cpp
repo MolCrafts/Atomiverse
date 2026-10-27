@@ -783,7 +783,7 @@ bool is_gga(XCType type) {
     case XCType::B2PLYP:
         return true; // B88 + LYP semi-local GGA
     case XCType::CAMB3LYP:
-        return true; // same B3LYP semi-local GGA mix
+        return true; // short-range B88 exchange + VWN5/LYP correlation
     }
     return false;
 }
@@ -878,6 +878,39 @@ void b3lyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
     out.vsigma_aa = kB3LYP_cB88 * vsig_b_aa + kB3LYP_cLYP * vsig_l_aa;
     out.vsigma_ab = kB3LYP_cLYP * vsig_l_ab;
     out.vsigma_bb = kB3LYP_cB88 * vsig_b_bb + kB3LYP_cLYP * vsig_l_bb;
+}
+
+// Standard CAM-B3LYP (Yanai 2004; libxc id 433):
+// (1-alpha-beta)*B88 + beta*ITYH-B88(mu) + .19*VWN5 + .81*LYP.
+// ITYH is short-range exchange. The Fock builder separately carries
+// alpha*K[1/r] + beta*K[erf(mu*r)/r]. CAM uses VWN5, unlike B3LYP's VWN-RPA.
+void cam_b3lyp_semilocal(double ra, double rb, double sigma_aa, double sigma_ab,
+                         double sigma_bb, XCOutput& out) {
+    const auto cam = rsh_exchange_params(XCType::CAMB3LYP);
+    const double full = 1.0 - cam.alpha - cam.beta;
+    const double sa = std::max(sigma_aa, 0.0);
+    const double sb = std::max(sigma_bb, 0.0);
+    const double s_ave = 0.5 * (sa + sb);
+    const double sab = std::clamp(sigma_ab, -s_ave, s_ave);
+    double ex_a, vx_a, vs_a, ex_b, vx_b, vs_b;
+    double sr_a, vr_a, vss_a, sr_b, vr_b, vss_b;
+    b88_exchange_spin(ra, sa, ex_a, vx_a, vs_a);
+    b88_exchange_spin(rb, sb, ex_b, vx_b, vs_b);
+    b88_short_range_exchange_spin(ra, sa, cam.mu, sr_a, vr_a, vss_a);
+    b88_short_range_exchange_spin(rb, sb, cam.mu, sr_b, vr_b, vss_b);
+    double vwn, vwn_a, vwn_b;
+    vwn5_correlation(ra, rb, vwn, vwn_a, vwn_b);
+    double lyp, lyp_a, lyp_b, lyp_aa, lyp_ab, lyp_bb;
+    lyp_correlation(ra, rb, sa, sab, sb, lyp, lyp_a, lyp_b, lyp_aa, lyp_ab,
+                    lyp_bb);
+    out.energy_density = full * (ex_a + ex_b) + cam.beta * (sr_a + sr_b)
+                         + 0.19 * vwn + 0.81 * lyp;
+    out.vrho_alpha =
+        full * vx_a + cam.beta * vr_a + 0.19 * vwn_a + 0.81 * lyp_a;
+    out.vrho_beta = full * vx_b + cam.beta * vr_b + 0.19 * vwn_b + 0.81 * lyp_b;
+    out.vsigma_aa = full * vs_a + cam.beta * vss_a + 0.81 * lyp_aa;
+    out.vsigma_ab = 0.81 * lyp_ab;
+    out.vsigma_bb = full * vs_b + cam.beta * vss_b + 0.81 * lyp_bb;
 }
 
 // Evaluate the B2PLYP semi-local energy density / potential at one grid point.
@@ -1057,12 +1090,10 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
     } else if (type == XCType::OptB88VdW) {
         // optB88 exchange + PW92 LDA-C (nonlocal DRSLL via GPW vdw_df).
         optb88_vdw_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
-    } else if (type == XCType::B3LYP || type == XCType::CAMB3LYP) {
-        // B3LYP / CAM-B3LYP v1 share the same semi-local mix
-        // (0.08 Slater + 0.72 B88 + 0.19 VWN-RPA + 0.81 LYP). CAM
-        // additionally mixes erf-attenuated HF exchange in the Fock
-        // builder (`rsh_exchange_params`).
+    } else if (type == XCType::B3LYP) {
         b3lyp_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
+    } else if (type == XCType::CAMB3LYP) {
+        cam_b3lyp_semilocal(ra, rb, sigma_aa, sigma_ab, sigma_bb, out);
     } else if (type == XCType::PBE0) {
         // PBE0 semi-local part only; HF-exchange admixture (alpha=0.25)
         // is added by the Fock builder.

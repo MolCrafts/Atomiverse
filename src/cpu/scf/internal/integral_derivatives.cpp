@@ -928,8 +928,10 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
     // PBE0) for a KS hybrid. It enters as a pure scalar multiplier on top of
     // the existing closed-shell exchange prefactors and the
     // 0.5*[P(i,k)P(j,l)+P(j,k)P(i,l)] symmetrization, which are unchanged.
-    const double alpha_hf = is_ks ? hybrid_exchange_fraction(xc_type) : 1.0;
-    const bool do_exchange = (alpha_hf > 0.0);
+    const RshExchangeParams rsh = rsh_exchange_params(xc_type);
+    const double alpha_hf = is_ks ? rsh.alpha : 1.0;
+    const double beta_lr = is_ks ? rsh.beta : 0.0;
+    const bool do_exchange = alpha_hf != 0.0 || beta_lr != 0.0;
 
     // ── Native 2e gradient: block-level + Schwarz + OpenMP + Rys ───────
     //
@@ -1044,6 +1046,18 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
             native::rys_eri_block_deriv(Bsi, Bsj, Bsk, Bsl, 0, deriv_A.data());
             native::rys_eri_block_deriv(Bsi, Bsj, Bsk, Bsl, 1, deriv_B.data());
             native::rys_eri_block_deriv(Bsi, Bsj, Bsk, Bsl, 2, deriv_C.data());
+            std::vector<double> lr_A, lr_B, lr_C;
+            if (beta_lr != 0.0) {
+                lr_A.assign(3 * block_n, 0.0);
+                lr_B.assign(3 * block_n, 0.0);
+                lr_C.assign(3 * block_n, 0.0);
+                native::rys_eri_erf_block_deriv(Bsi, Bsj, Bsk, Bsl, 0, rsh.mu,
+                                                lr_A.data());
+                native::rys_eri_erf_block_deriv(Bsi, Bsj, Bsk, Bsl, 1, rsh.mu,
+                                                lr_B.data());
+                native::rys_eri_erf_block_deriv(Bsi, Bsj, Bsk, Bsl, 2, rsh.mu,
+                                                lr_C.data());
+            }
 
             // Multiplicities are BLOCK-level (matching the libcint
             // branch above and operators.cpp's Fock build): within a
@@ -1071,12 +1085,10 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                             const double factor_J =
                                 0.5 * mult * P_total(i, j) * P_total(k, l);
 
-                            // Exchange factor (K) — scaled by the exact-
-                            // exchange fraction alpha_hf: 1.0 for HF, 0.0 for
-                            // a pure functional (K skipped), and the
-                            // global-hybrid admixture for B3LYP / PBE0. The
-                            // grid XC handles the semi-local exchange
-                            // separately.
+                            // Unscaled exchange density factor. Bare and
+                            // erf-attenuated integral derivatives carry their
+                            // respective alpha and beta weights below. The
+                            // grid XC carries the semilocal contribution.
                             //
                             // Canonical enumeration of (ij|kl) uses 8-fold
                             // ERI symmetry, but the exchange density product
@@ -1084,24 +1096,26 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                             // k↔l. Symmetrize (average over the 8 perms):
                             //   sym_factor = ½·[P(i,k)·P(j,l) + P(j,k)·P(i,l)]
                             // so canonical + mult recovers the full sum.
-                            // alpha_hf multiplies that whole expression.
+                            // Both exchange operators use that same factor.
                             double factor_K = 0.0;
                             if (do_exchange) {
                                 if (restricted) {
                                     factor_K =
-                                        -0.25 * mult * alpha_hf * 0.5
+                                        -0.25 * mult * 0.5
                                         * (P_total(i, k) * P_total(j, l)
                                            + P_total(j, k) * P_total(i, l));
                                 } else {
-                                    factor_K = -0.5 * mult * alpha_hf * 0.5
+                                    factor_K = -0.5 * mult * 0.5
                                                * (Pa(i, k) * Pa(j, l)
                                                   + Pa(j, k) * Pa(i, l)
                                                   + Pb(i, k) * Pb(j, l)
                                                   + Pb(j, k) * Pb(i, l));
                                 }
                             }
-                            const double factor = factor_J + factor_K;
-                            if (std::abs(factor) < 1e-18)
+                            const double factor =
+                                factor_J + alpha_hf * factor_K;
+                            const double factor_lr = beta_lr * factor_K;
+                            if (std::abs(factor) + std::abs(factor_lr) < 1e-18)
                                 continue;
 
                             const int ao_idx =
@@ -1118,6 +1132,16 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                 Gl(atom_j, axis) += factor * dB;
                                 Gl(atom_k, axis) += factor * dC;
                                 Gl(atom_l, axis) += factor * dD;
+                                if (beta_lr != 0.0) {
+                                    const int idx = axis * block_n + ao_idx;
+                                    const double a = factor_lr * lr_A[idx];
+                                    const double b = factor_lr * lr_B[idx];
+                                    const double c = factor_lr * lr_C[idx];
+                                    Gl(atom_i, axis) += a;
+                                    Gl(atom_j, axis) += b;
+                                    Gl(atom_k, axis) += c;
+                                    Gl(atom_l, axis) -= a + b + c;
+                                }
                             }
                         }
                     }

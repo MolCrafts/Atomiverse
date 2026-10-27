@@ -1,0 +1,62 @@
+{
+  "pyscf": "2.14.0",
+  "command": [
+    "tools/diagnostics/molecular-dft/pin_erf.py"
+  ],
+  "utc": "2026-10-26T21:03:03.237089+00:00",
+  "script_sha256": "802796d91df50041ee6f83dd0d104c8a764a6edec842ed8e8d5c15d7592fd839",
+  "python_executable": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/bin/python",
+  "oracle_binaries": {
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/deps/lib/libcint.so": "950bb0a297507369dce95b9013ef2c5b64b0fa36a0018c303c98e95efce7db7e",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/deps/lib/libxc.so": "d120371b37f4729dfc21f3b0575e563ef9b0254839926c41c0c02f5082143548",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/deps/lib64/libxcfun.so": "69a381159a6dc1646a963d23f3376f2770f8d2cb2148cce015c2b9184ec55c5e",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac"
+  },
+  "coordinates_bohr": [
+    [
+      0.1,
+      -0.2,
+      0.3
+    ],
+    [
+      0.8,
+      0.1,
+      -0.4
+    ],
+    [
+      -0.2,
+      0.6,
+      0.5
+    ],
+    [
+      0.3,
+      -0.5,
+      0.9
+    ]
+  ],
+  "exponent_bohr_inverse_square": 1.0,
+  "operator": "erf(0.33*r12)/r12",
+  "eri_hartree": 0.08996683143489044,
+  "derivative_first_center_ha_bohr": [
+    0.06182119282155195,
+    0.02727894672618497,
+    -0.06081005228653951
+  ]
+}

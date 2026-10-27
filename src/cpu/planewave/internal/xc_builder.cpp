@@ -8,6 +8,7 @@
 /// Collinear spin-GGA (same as GPW `xc_grid_gga_spin`):
 ///   v_σ = vrho_σ − div[ 2 vσ_σσ ∇ρ_σ + vσ_αβ ∇ρ_σ̄ ].
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
+#include "atomiverse/cpu/planewave/internal/xc_quadrature.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,10 +21,6 @@ namespace pw {
 namespace internal {
 
 namespace {
-
-int padded_dimension(int n, bool gga) {
-    return 2 * (((gga ? 6 : 3) * n + 3) / 4);
-}
 
 /// @brief Map a G-sphere mode into the r2c half-complex FFT layout.
 /// @return flat index in [0, nc); sets `conj` when the sphere G was folded.
@@ -155,16 +152,16 @@ void XCBuilder::prepare(const PWWorkspace& ws) {
     // non-polynomial. Use fixed numerical oversampling on both paths, with
     // more points for the GGA gradient dependence. Keep these grids fixed
     // throughout energy/potential evaluation and response differences.
-    const int lx = padded_dimension(ws.fft_nx, false),
-              ly = padded_dimension(ws.fft_ny, false),
-              lz = padded_dimension(ws.fft_nz, false);
+    const int lx = xc_quadrature_dimension(ws.fft_nx, false),
+              ly = xc_quadrature_dimension(ws.fft_ny, false),
+              lz = xc_quadrature_dimension(ws.fft_nz, false);
     if (!local_quadrature_fft_ || local_quadrature_fft_->nx() != lx
         || local_quadrature_fft_->ny() != ly
         || local_quadrature_fft_->nz() != lz)
         local_quadrature_fft_ = std::make_unique<FFTPlan3D>(lx, ly, lz);
-    const int gx = padded_dimension(ws.fft_nx, true),
-              gy = padded_dimension(ws.fft_ny, true),
-              gz = padded_dimension(ws.fft_nz, true);
+    const int gx = xc_quadrature_dimension(ws.fft_nx, true),
+              gy = xc_quadrature_dimension(ws.fft_ny, true),
+              gz = xc_quadrature_dimension(ws.fft_nz, true);
     if (!gradient_quadrature_fft_ || gradient_quadrature_fft_->nx() != gx
         || gradient_quadrature_fft_->ny() != gy
         || gradient_quadrature_fft_->nz() != gz)
@@ -202,12 +199,18 @@ void XCBuilder::prepare(const PWWorkspace& ws) {
 
 void XCBuilder::check_prepared(const PWWorkspace& ws) const {
     if (!local_quadrature_fft_ || !gradient_quadrature_fft_
-        || local_quadrature_fft_->nx() != padded_dimension(ws.fft_nx, false)
-        || local_quadrature_fft_->ny() != padded_dimension(ws.fft_ny, false)
-        || local_quadrature_fft_->nz() != padded_dimension(ws.fft_nz, false)
-        || gradient_quadrature_fft_->nx() != padded_dimension(ws.fft_nx, true)
-        || gradient_quadrature_fft_->ny() != padded_dimension(ws.fft_ny, true)
-        || gradient_quadrature_fft_->nz() != padded_dimension(ws.fft_nz, true)
+        || local_quadrature_fft_->nx()
+               != xc_quadrature_dimension(ws.fft_nx, false)
+        || local_quadrature_fft_->ny()
+               != xc_quadrature_dimension(ws.fft_ny, false)
+        || local_quadrature_fft_->nz()
+               != xc_quadrature_dimension(ws.fft_nz, false)
+        || gradient_quadrature_fft_->nx()
+               != xc_quadrature_dimension(ws.fft_nx, true)
+        || gradient_quadrature_fft_->ny()
+               != xc_quadrature_dimension(ws.fft_ny, true)
+        || gradient_quadrature_fft_->nz()
+               != xc_quadrature_dimension(ws.fft_nz, true)
         || (ws.nspin == 2
             && rho_up_r_.size()
                    < static_cast<std::size_t>(gradient_quadrature_fft_->nr())))

@@ -233,8 +233,9 @@ __global__ void xc_lsda_spin_kernel(const double* __restrict__ rho_a,
     vwn5_correlation_spin(ra, rb, ec, vc_a, vc_b);
 
     exc_r[i] = ex + ec;
-    vxc_a[i] = vx_a + vc_a;
-    vxc_b[i] = vx_b + vc_b;
+    // Chain rule for E[max(raw rho, 0)], matching CPU XCBuilder.
+    vxc_a[i] = rho_a[i] > 0.0 ? vx_a + vc_a : 0.0;
+    vxc_b[i] = rho_b[i] > 0.0 ? vx_b + vc_b : 0.0;
 }
 
 /// Stage 1: fixed grid of `kReduceBlocks` blocks, grid-stride over nr, one
@@ -297,12 +298,9 @@ __global__ void xc_int_spin_stage1(const double* __restrict__ rho_a,
     double acc = 0.0;
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < nr;
          i += gridDim.x * blockDim.x) {
-        double ra = rho_a[i];
-        double rb = rho_b[i];
-        if (ra < 0.0)
-            ra = 0.0;
-        if (rb < 0.0)
-            rb = 0.0;
+        // Full GGA potential includes divergence: use the raw density.
+        const double ra = rho_a[i];
+        const double rb = rho_b[i];
         acc += ra * vxc_a[i] + rb * vxc_b[i];
     }
     s[threadIdx.x] = acc;

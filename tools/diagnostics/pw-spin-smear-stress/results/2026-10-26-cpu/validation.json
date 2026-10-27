@@ -1,0 +1,51 @@
+{
+  "job": 4478398,
+  "scope": "CPU builtin H3 LSDA/PBE x FD/Gaussian/MP1 physical numerical stress; MPI FD 2x2x2 mesh, not closed-form stress or response qualification",
+  "build_verified": false,
+  "dirty_worktree": true,
+  "external_oracle": "actual QE7.6 with complete independent captures in tools/qe_oracle/inputs/pw-spin-smear-stress/",
+  "all_checks_passed": false,
+  "qualified_qe_energy_stress_cases": 6,
+  "qualified_full_scf_fd_cases": 5,
+  "matrix_cases": 6,
+  "metadata_baselines": 2,
+  "max_qe_energy_error_ha": 1.1923989553519476e-06,
+  "max_qe_stress_error_ev_ang3": 1.9833623581908683e-05,
+  "max_simple_fd_error_ev_ang3": 4.161676091518629e-07,
+  "max_rotation_error_ev_ang3": 3.364155364282695e-07,
+  "mpi": {
+    "passed": true,
+    "energy_error_ha": 3.0460078903615795e-12,
+    "stress_error_ev_ang3": 2.0385365617769935e-09,
+    "energy_gate_ha": 1e-06,
+    "stress_gate_ev_ang3": 2e-05
+  },
+  "binary_sha256": {
+    "bin/pw-spin-smear-stress": "73d73ed3bf26d10248c71e218d38cec37c8379317cb889257bc08d4a8ca9eb09",
+    "libatomiverse.a": "966ff5ad8dad5d9d8f8aa1e89f5717f07fcc482092e656a5ca665668d2c011bd"
+  },
+  "source_manifest": {
+    "src/cpu/planewave/internal/pw_stress.cpp": "dacdb23223d92e5e614653c49688d76c5d4d0a780f2c488477d37403a08fc0c1",
+    "src/cpu/planewave/internal/pw_setup.cpp": "c282668283c11bfda4301a941ae83db8f2cc75d44c0198f759e9981aff380ea5",
+    "src/cpu/planewave/internal/smearing.cpp": "cffe8476e6ac1e1bf724807518775aa90d42a3b22ea103a035141e2c5da696fe",
+    "include/atomiverse/cpu/planewave/internal/pw_setup.h": "7551e478f470e56e7a77c6e4fc241f24238170c76dc3940365d504f31faa2b4e",
+    "include/atomiverse/cpu/planewave/internal/pw_stress.h": "d373cacac7996c6c9980008cfd356f2757eb159a842c696a2eea52e65eb103ba",
+    "include/atomiverse/cpu/planewave/internal/smearing.h": "972409f869d74dd5219ab175af78a5ea05c69e0fc3b18a55460f9a7f92de6881",
+    "include/atomiverse/cpu/planewave/pw_solver.h": "d1b385ba232ede35eddfd6ce12daeddf94e75186bb83d0bf3b3db6b9aaf54047",
+    "tools/diagnostics/pw-spin-smear-stress/main.cpp": "8ab0001b4b5afeb7088f9bc155add34ccc5beb35ccfefdbf3820d9f9f6d53807",
+    "tools/diagnostics/pw-spin-smear-stress/register.cmake": "3959dfa7de5b2b0b23c53c3246edef18f3f5faa674a1fbd873e55abd62feb5f0",
+    "tools/qe_oracle/inputs/pw-spin-smear-stress/pins.h": "066581ce0b67dfaae272def4919f88751350732ad62b7aea66d392a0e646bb90"
+  },
+  "all_sample_modes_fixed": "setup_pw_problem_fixed_basis checks density/wave hkl order and FFT shape for every strain sample",
+  "negative_control": "original stress source fails physical simple-shear test; original recut full-SCF comparison still fails cutoff-mode diagnostic; both are preserved as failures",
+  "old_mp_results": "fixed-matrix.json predates signed-MP occupation/entropy correction; its MP consistency results are not physical/external qualification",
+  "incomplete_checks": [
+    {
+      "xc": "LSDA",
+      "smearing": 2,
+      "width_ry": 0.04,
+      "error": "full-SCF strain sample did not converge: xc=LSDA smear=2 axis=0 sign=-1"
+    }
+  ],
+  "convergence_evidence": "convergence/analysis.json: original .35/250 and .2/1000 both fail LSDA MP -xx; native root equals actual QE and all inner Ritz residuals pass; spin-XC clip derivative jumps at rho=0"
+}

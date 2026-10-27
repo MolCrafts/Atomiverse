@@ -6,8 +6,9 @@ import argparse
 import importlib
 import json
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 from .framework.execution import run_campaign, worker, write_json
 from .framework.provenance import source_info
@@ -23,7 +24,7 @@ def methods() -> list[Method]:
         module = ".".join(path.relative_to(ROOT).with_suffix("").parts)
         spec = getattr(importlib.import_module(module), "SPEC", None)
         if not isinstance(spec, Method):
-            raise ValueError(f"{path}: expected a Method SPEC")
+            raise TypeError(f"{path}: expected a Method SPEC")
         specs.append(spec)
     if len({s.id for s in specs}) != len(specs):
         raise ValueError("duplicate method IDs")
@@ -53,6 +54,8 @@ def catalog_check(specs: list[Method]) -> dict:
 
 
 def run_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--no-snapshot", action="store_true",
+                        help="Write local scientific results without the molci CI snapshot envelope")
     parser.add_argument("--method", action="append", help="method ID; repeat to select several")
     parser.add_argument("--tier", choices=("smoke", "acceptance", "performance"), default="smoke")
     parser.add_argument("--system", action="append", help="explicit system IDs (partial coverage)")
@@ -83,7 +86,9 @@ def execute(args: argparse.Namespace, specs: list[Method]) -> int:
                           out=args.out, root=ROOT, require_cuda=args.require_cuda,
                           system_ids=args.system, catalog=catalog, source_manifest=args.source_manifest,
                           build_receipt=args.build_receipt)
-    report(bundle, args.out.resolve())
+    if args.no_snapshot:
+        bundle.protocol["ci_snapshot"] = "disabled explicitly by --no-snapshot"
+    report(bundle, args.out.resolve(), snapshot=not args.no_snapshot)
     print(json.dumps(bundle.summary, sort_keys=True))
     print(f"Table: {args.out.resolve() / 'matrix.html'}")
     return 0 if bundle.summary["complete"] else 1
@@ -115,6 +120,8 @@ def main() -> int:
         item.add_argument("--input", type=Path, required=True)
         if action == "report":
             item.add_argument("--out", type=Path, required=True)
+            item.add_argument("--no-snapshot", action="store_true",
+                              help="Write local results without the molci CI snapshot envelope")
     roadmap = sub.add_parser("roadmap", help="check or update the generated evidence block")
     roadmap.add_argument("--input", type=Path, required=True)
     roadmap.add_argument("--chapter", default="hartree-fock.md")
@@ -160,7 +167,9 @@ def main() -> int:
     if args.command in ("report", "validate"):
         bundle = Bundle.model_validate_json(args.input.read_text())
         if args.command == "report":
-            report(bundle, args.out)
+            if args.no_snapshot:
+                bundle.protocol["ci_snapshot"] = "disabled explicitly by --no-snapshot"
+            report(bundle, args.out, snapshot=not args.no_snapshot)
         else:
             print(f"Valid {bundle.schema_version}: {len(bundle.cells)} declared cells")
         return 0

@@ -21,6 +21,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/semiempirical/am1_bcc_charges.h"
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "harness/registry.h"
@@ -31,7 +32,6 @@ namespace {
 
 using ATV::cpu::semiempirical::AM1;
 using ATV::cpu::semiempirical::AM1BCCCharges;
-using ATV::cpu::semiempirical::BccParameterSet;
 
 struct Atom {
     int z;
@@ -173,15 +173,18 @@ bool run_case(const Molecule& m) {
     bool ok = true;
     const int n = static_cast<int>(m.atoms.size());
 
-    for (BccParameterSet set : {BccParameterSet::Bcc, BccParameterSet::Abcg2}) {
-        const bool is_bcc = set == BccParameterSet::Bcc;
+    for (const char* set : {"bcc", "abcg2"}) {
+        const bool is_bcc = std::string(set) == "bcc";
         const char* label = is_bcc ? "bcc" : "abcg2";
 
         auto frame = build(m);
         AM1 am1{m.net_charge};
         am1.density_tol = 1.0e-10;
         AM1BCCCharges model{am1, set};
-        model.assign(frame);
+        auto transport = molrs::frame_new();
+        ATV::cpu::to_molpy(frame, *transport);
+        auto molecule = molrs::atomistic_from_frame(*transport);
+        auto q = model.assign(*molecule);
 
         if (is_bcc) {
             // Base stage: ATV AM1 Mulliken vs sqm's, before any averaging.
@@ -190,11 +193,8 @@ bool run_case(const Molecule& m) {
                                  m.sqm_mulliken, kBaseTolE);
         }
 
-        std::vector<double> q(static_cast<std::size_t>(n));
         double total = 0.0;
         for (int i = 0; i < n; ++i) {
-            q[static_cast<std::size_t>(i)] =
-                frame.span(ATV::kAtom_charge)[static_cast<std::size_t>(i)];
             total += q[static_cast<std::size_t>(i)];
         }
         ok &=

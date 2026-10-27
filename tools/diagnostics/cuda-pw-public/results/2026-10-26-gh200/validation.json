@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "date": "2026-10-26",
+  "scope": "CUDA PW builtin GTH LSDA/PBE private XC quadrature and public derivative-result repairs; no GPW parity or performance claim",
+  "base_commit": "911457aef4f18f509fa91a2c05dab745803fdd71",
+  "worktree_dirty": true,
+  "full_build_attestation": false,
+  "hardware": {
+    "architecture": "aarch64",
+    "gpu": "NVIDIA GH200 120GB",
+    "before_node": "n211",
+    "after_node": "n207",
+    "negative_and_memcheck_node": "n68",
+    "allocated_cpus": 8,
+    "requested_omp_threads": 8,
+    "requested_openblas_threads": 8,
+    "compiler": "GCC 14.3.0",
+    "cuda_toolkit": "13.0",
+    "precision": "double",
+    "sm_architecture": 90
+  },
+  "jobs": {
+    "4475114": {
+      "state": "failed",
+      "reason": "configuration used obsolete molrs source path; no science"
+    },
+    "4475234": {
+      "state": "completed",
+      "scope": "before quadrature: metadata public checks passed, Si CPU twin barely passed; CTest regex selected zero tests, not counted as any unit pass"
+    },
+    "4475642": {
+      "state": "completed",
+      "scope": "after quadrature: 37 actual Google Tests, all public diagnostics, QE pin"
+    },
+    "4475710": {
+      "state": "failed",
+      "reason": "negative-control duplicate CUDA registration symbols at link; no negative-control numerical result"
+    },
+    "4475731": {
+      "state": "completed",
+      "scope": "original-source negative control fails new high-frequency gate as expected; repaired two padded-stage tests pass memcheck"
+    }
+  },
+  "units": {
+    "actual_tests_passed": 37,
+    "executables": {
+      "guards": 14,
+      "xc_pbe": 3,
+      "xc_pbe_spin": 1,
+      "force_local": 5,
+      "cell_stress": 6,
+      "density": 8
+    },
+    "execution": "dedicated Google Test executables, all selected tests actually ran",
+    "logs": [
+      "after-guards.log.gz",
+      "after-xc_pbe.log.gz",
+      "after-xc_pbe_spin.log.gz",
+      "after-force_local.log.gz",
+      "after-cell_stress.log.gz",
+      "after-density.log.gz"
+    ]
+  },
+  "derivative_results": {
+    "four_hydrogen_paths": "PBE restricted/collinear x fixed/Fermi-Dirac forces: full PWResult agrees with independent run; supported stress agrees with its reference SCF",
+    "reuse": "after converged call, max_iter=1 reports false convergence and fresh iteration/occupation metadata",
+    "spin_smear_stress": "rejects before CUDA work for LSDA/PBE x FD/Gaussian/MP, tested through both public entries",
+    "log": "after-public.log.gz"
+  },
+  "stretched_si_cpu_twin": {
+    "model": "Si2 diamond primitive, GTH-PBE-q4, PBE, 8 Ry, Gamma, fixed occupations, stretch 0.08 Ang",
+    "force_tolerance_ev_ang": 0.005,
+    "energy_tolerance_ev": 0.0001,
+    "before_max_force_error_ev_ang": 0.00457858202637,
+    "after_max_force_error_ev_ang": 9.09376435607e-05,
+    "force_amplitude_ev_ang": 2.0622302677,
+    "before_log": "before-quadrature-public.log.gz",
+    "after_log": "after-public.log.gz",
+    "qualification": "CPU twin only; remaining residual includes differing SCF stopping and is not rounding-level equality"
+  },
+  "external_qe_si2": {
+    "oracle": "actual previously executed QE7.5 native .gth reader and analytic Fourier operators; original printed E/full F, not ATV output",
+    "inputs_sha256": {
+      "examples/nc-extension/pins.h": "dda4d93a6901b1c901e4ba69b0249e4b8865259eb51c6cca27849c10d52cd247",
+      "tools/diagnostics/nc-extension/si2.in": "28f591716d47437426b4ec15b2c91b226c8f548d441a74485115583901bbab7d",
+      "tools/diagnostics/nc-extension/Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+      "tools/diagnostics/nc-extension/qe-raw.txt": "2240f0cfee11d9440e81b2532a34ba577ce15f9d18a28b820b27bfede015ae8c",
+      "tools/diagnostics/nc-extension/reference.json": "1f13c1f69720033c937816bdd0c622d937af34278a2ce4658be95932b86172bc"
+    },
+    "model": "Si2 cubic 6 Ang; positions (2,2,2)/(3.8,3.2,3) Ang; builtin GTH-PBE-q4 published coefficients; PBE; Gamma; 12/48 Ry; six bands; Fermi-Dirac 0.02 Ry; tol=1e-9,max_iter=200,mix=0.2",
+    "target_mermin_energy_ha": -7.62571443,
+    "observed_mermin_energy_ha": -7.6257133041,
+    "abs_energy_error_ha": 1.1258988e-06,
+    "energy_tolerance_ha": 1e-05,
+    "max_abs_force_error_ha_bohr": 1.16058933e-05,
+    "force_tolerance_ha_bohr": 0.0001,
+    "all_six_nonzero_force_components_passed": true,
+    "iterations": 19,
+    "log": "after-public.log.gz",
+    "limits": "stated builtin Si/PBE/Gamma/smearing energy and full-force envelope only; no custom-provider, other-element, multi-k or stress qualification"
+  },
+  "negative_control": {
+    "base_commit": "911457aef4f18f509fa91a2c05dab745803fdd71",
+    "original_files_sha256": {
+      "device_density.cu": "d8bc6ef4489fb381d9127c884e1283c16cb9453e37fcec7da09471e8755e6f01",
+      "include/atomiverse/cuda/planewave/internal/device_density.cuh": "aa23144a52bc06300ee97cb4152172a9bf0c38b158b9817b4d3b73e9478e5b0c"
+    },
+    "symbol_rename": "DeviceDensity=DeviceDensityBefore only, to avoid duplicate registration objects when linking the old implementation alongside the current library",
+    "test": "CudaPWDensity.PaddedXcResolvesHighFrequencyDensity",
+    "expected_exit_code": 1,
+    "observed_exit_code": 1,
+    "example_original_zero_mode_error_ha": 0.013057403112092192,
+    "unchanged_potential_tolerance_ha": 1e-10,
+    "log": "before-high-frequency.log.gz",
+    "source_snapshot": "before-density-source.tar.gz",
+    "note": "the old smooth-atomic-seed stage suite passed and was insufficient to reveal this aliasing defect"
+  },
+  "memcheck": {
+    "command": "compute-sanitizer --tool memcheck --error-exitcode 86 test_cuda_pw_density --gtest_filter='CudaPWDensity.Padded*'",
+    "tests_passed": 2,
+    "errors": 0,
+    "log": "memcheck.log.gz"
+  },
+  "binary_sha256": {
+    "cuda-pw-public": "1b5a98d8e4d9d50a3a269c92d6bd8fd6ba7dd7e043bf34eac55b25da8070e0cc",
+    "libatomiverse.a": "6e1eb413ef20b58cb06dcbad65d0b7b49492559278f03ab335326c2edb30b307"
+  },
+  "source_manifest": "source-manifest.json",
+  "selected_source_snapshot": "source-files.tar.gz",
+  "source_snapshot_limits": "selected changed sources only, not a complete dependency/build attestation",
+  "remaining": [
+    "CUDA Gaussian KS absent",
+    "GPW CUDA partial with host force/stress assembly debt",
+    "PW stress remains frozen-density NSCF strain FD",
+    "spin x smearing stress is explicitly rejected",
+    "custom NC providers and PBE-family variants have no CUDA product path",
+    "existing band solver retains documented host scalar/spectrum transfers"
+  ]
+}

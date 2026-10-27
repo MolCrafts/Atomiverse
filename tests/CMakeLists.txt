@@ -844,6 +844,7 @@ endif()
 if(ATV_BUILD_PW)
     # Naming convention: test_{backend}_{domain}_{component}.
     atv_add_cpp_test(test_cpu_pw_g_vector   cpu/planewave/test_g_vector.cpp)
+    atv_add_cpp_test(test_cpu_pw_smearing   cpu/planewave/test_smearing.cpp)
     atv_add_cpp_test(test_cpu_pw_davidson   cpu/planewave/test_davidson.cpp)
     atv_add_cpp_test(test_cpu_pw_density    cpu/planewave/test_density_builder.cpp)
     atv_add_cpp_test(test_cpu_pw_setup      cpu/planewave/test_pw_setup.cpp)
@@ -856,6 +857,7 @@ if(ATV_BUILD_PW)
     atv_add_cpp_test(test_cpu_pw_crystal    cpu/planewave/test_crystal.cpp)
     atv_add_cpp_test(test_cpu_pw_ewald      cpu/planewave/test_ewald.cpp)
     atv_add_cpp_test(test_cpu_pw_driver_node cpu/planewave/test_cpu_pw_driver_node.cpp)
+    atv_add_cpp_test(test_cpu_pw_dfpt_admission cpu/planewave/test_dfpt_admission.cpp)
     # ctest runs from the build tree, so the in-tree Si UPF must be located
     # absolutely — a relative path silently GTEST_SKIPped the only UPF force
     # coverage in the suite.

@@ -1,0 +1,5 @@
+source leaprc.gaff2
+loadAmberParams ligand.frcmod
+LIG = loadMol2 typed.mol2
+saveAmberParm LIG ligand.prmtop ligand.inpcrd
+quit

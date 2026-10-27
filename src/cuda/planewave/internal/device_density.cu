@@ -27,6 +27,7 @@
 /// the Pulay coefficient solve and the SCF convergence/energy report are
 /// host decisions.
 
+#include "atomiverse/cpu/planewave/internal/xc_quadrature.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 
 #include "atomiverse/cuda/device/error.cuh"
@@ -293,7 +294,11 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
       // Temporary default-stream FFT; rebound after stream_ is created below.
       // FFTPlan3D cannot be default-constructed, so we build it first then
       // rebind via set_stream once stream_ exists.
-      fft_(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz) {
+      fft_(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz),
+      xc_fft_(
+          cpu::pw::internal::xc_quadrature_dimension(prob.ws.fft_nx, gga_),
+          cpu::pw::internal::xc_quadrature_dimension(prob.ws.fft_ny, gga_),
+          cpu::pw::internal::xc_quadrature_dimension(prob.ws.fft_nz, gga_)) {
     if (pulay_depth < 1)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: pulay_depth must be >= 1");
@@ -326,13 +331,15 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         // borrows it so SCF stages stay ordered without events.
         ATV_CUDA_CHECK(cudaStreamCreate(&stream_));
         fft_.set_stream(stream_);
+        xc_fft_.set_stream(stream_);
 
         check_cublas(cublasCreate(&blas_), "cublasCreate");
         check_cublas(cublasSetStream(blas_, stream_), "cublasSetStream");
 
         const size_t ng = static_cast<size_t>(ng0_);
         const size_t nr = static_cast<size_t>(nr_);
-        const size_t nc = static_cast<size_t>(nc_);
+        const size_t xc_nr = static_cast<size_t>(xc_fft_.nr());
+        const size_t xc_nc = static_cast<size_t>(xc_fft_.nc());
         const size_t ring = static_cast<size_t>(depth_) * ng;
 
         d_h_ = device_alloc<int>(ng);
@@ -350,11 +357,11 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         d_gram_ = device_alloc<cufftDoubleComplex>(static_cast<size_t>(depth_)
                                                    * depth_);
         d_coeff_ = device_alloc<double>(static_cast<size_t>(depth_));
-        d_half_ = device_alloc<cufftDoubleComplex>(nc);
-        d_rho_r_in_ = device_alloc<double>(nr);
+        d_half_ = device_alloc<cufftDoubleComplex>(xc_nc);
+        d_rho_r_in_ = device_alloc<double>(xc_nr);
         d_rho_r_acc_ = device_alloc<double>(nr);
-        d_V_xc_r_ = device_alloc<double>(nr);
-        d_exc_r_ = device_alloc<double>(nr);
+        d_V_xc_r_ = device_alloc<double>(xc_nr);
+        d_exc_r_ = device_alloc<double>(xc_nr);
         d_V_eff_r_ = device_alloc<double>(nr);
         d_partials_ =
             device_alloc<double>(static_cast<size_t>(kLanes) * kReduceBlocks);
@@ -367,26 +374,27 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             d_gy_ = device_alloc<double>(ng);
             d_gz_ = device_alloc<double>(ng);
             d_sph_ = device_alloc<cufftDoubleComplex>(ng);
-            d_grad_x_r_ = device_alloc<double>(nr);
-            d_grad_y_r_ = device_alloc<double>(nr);
-            d_grad_z_r_ = device_alloc<double>(nr);
-            d_div_r_ = device_alloc<double>(nr);
+            d_grad_x_r_ = device_alloc<double>(xc_nr);
+            d_grad_y_r_ = device_alloc<double>(xc_nr);
+            d_grad_z_r_ = device_alloc<double>(xc_nr);
+            d_div_r_ = device_alloc<double>(xc_nr);
             if (spin_) {
-                d_grad_dn_x_r_ = device_alloc<double>(nr);
-                d_grad_dn_y_r_ = device_alloc<double>(nr);
-                d_grad_dn_z_r_ = device_alloc<double>(nr);
-                d_div_dn_r_ = device_alloc<double>(nr);
+                d_grad_dn_x_r_ = device_alloc<double>(xc_nr);
+                d_grad_dn_y_r_ = device_alloc<double>(xc_nr);
+                d_grad_dn_z_r_ = device_alloc<double>(xc_nr);
+                d_div_dn_r_ = device_alloc<double>(xc_nr);
             }
         }
 
         if (spin_) {
+            d_spin_residual_ = device_alloc<cufftDoubleComplex>(2 * ng);
             for (int s = 0; s < 2; ++s) {
                 d_rho_spin_G_[s] = device_alloc<cufftDoubleComplex>(ng);
                 d_rho_spin_G_old_[s] = device_alloc<cufftDoubleComplex>(ng);
                 d_rho_spin_out_G_[s] = device_alloc<cufftDoubleComplex>(ng);
                 d_V_xc_spin_G_[s] = device_alloc<cufftDoubleComplex>(ng);
-                d_rho_spin_r_[s] = device_alloc<double>(nr);
-                d_V_xc_spin_r_[s] = device_alloc<double>(nr);
+                d_rho_spin_r_[s] = device_alloc<double>(xc_nr);
+                d_V_xc_spin_r_[s] = device_alloc<double>(xc_nr);
             }
         }
 
@@ -497,6 +505,7 @@ void DeviceDensity::free_all() {
         cudaStreamSynchronize(stream_);
         try {
             fft_.set_stream(nullptr);
+            xc_fft_.set_stream(nullptr);
         } catch (...) {
             // Best-effort rebind on the teardown path.
         }
@@ -536,6 +545,7 @@ void DeviceDensity::free_all() {
     device_free(d_grad_dn_y_r_);
     device_free(d_grad_dn_z_r_);
     device_free(d_div_dn_r_);
+    device_free(d_spin_residual_);
     for (int s = 0; s < 2; ++s) {
         device_free(d_rho_spin_G_[s]);
         device_free(d_rho_spin_G_old_[s]);
@@ -560,13 +570,16 @@ void DeviceDensity::hartree() {
 }
 
 void DeviceDensity::exchange_correlation() {
-    const int nx = fft_.nx(), ny = fft_.ny(), nz = fft_.nz();
+    const int nx = xc_fft_.nx(), ny = xc_fft_.ny(), nz = xc_fft_.nz();
+    const int nr = xc_fft_.nr();
+    // Interpolate the unchanged density sphere onto private XC quadrature;
+    // the final normalized gather is the adjoint projection to that sphere.
 
     // ρ(G) → ρ(r). c2r is UNNORMALIZED on both backends:
     // ρ(r) = Σ_G ρ(G) e^{iGr}.
     scatter_g_to_halfcomplex(d_rho_G_, d_h_, d_k_, d_l_, ng0_, d_half_, nx, ny,
                              nz, stream_);
-    fft_.c2r(d_half_, d_rho_r_in_);
+    xc_fft_.c2r(d_half_, d_rho_r_in_);
 
     if (gga_) {
         // ── Spectral ∇ρ: ∂_dρ(r) = c2r[ i G_d ρ(G) ], per axis ──
@@ -578,7 +591,7 @@ void DeviceDensity::exchange_correlation() {
             ATV_CUDA_CHECK(cudaGetLastError());
             scatter_g_to_halfcomplex(d_sph_, d_h_, d_k_, d_l_, ng0_, d_half_,
                                      nx, ny, nz, stream_);
-            fft_.c2r(d_half_, grad_r[d]);
+            xc_fft_.c2r(d_half_, grad_r[d]);
         }
 
         // Pointwise closed-shell PBE: local v_ρ, ε_xc, and the flux written
@@ -586,8 +599,8 @@ void DeviceDensity::exchange_correlation() {
         // (dV = Ω/nr); the CPU accumulates it in the same grid loop, BEFORE
         // the divergence correction, and ε_xc is untouched by it.
         xc_pbe_grid(d_rho_r_in_, d_grad_x_r_, d_grad_y_r_, d_grad_z_r_,
-                    d_V_xc_r_, d_exc_r_, nr_, stream_);
-        xc_energy(d_rho_r_in_, d_exc_r_, nr_, omega_ / static_cast<double>(nr_),
+                    d_V_xc_r_, d_exc_r_, nr, stream_);
+        xc_energy(d_rho_r_in_, d_exc_r_, nr, omega_ / static_cast<double>(nr),
                   d_scalars_ + 0, d_xc_partials_, stream_);
 
         // ── v_xc −= ∇·flux, via div(G) = Σ_d i G_d flux_d(G) ──
@@ -597,9 +610,9 @@ void DeviceDensity::exchange_correlation() {
             d_V_xc_G_, 0,
             static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex), stream_));
         for (int d = 0; d < 3; ++d) {
-            fft_.r2c(grad_r[d], d_half_); // grad_r now holds flux_d
+            xc_fft_.r2c(grad_r[d], d_half_); // grad_r now holds flux_d
             gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_sph_, nx,
-                                    ny, nz, 1.0 / static_cast<double>(nr_),
+                                    ny, nz, 1.0 / static_cast<double>(nr),
                                     stream_);
             pw_axpy_ig_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
                 d_sph_, gcart[d], ng0_, d_V_xc_G_);
@@ -607,14 +620,14 @@ void DeviceDensity::exchange_correlation() {
         }
         scatter_g_to_halfcomplex(d_V_xc_G_, d_h_, d_k_, d_l_, ng0_, d_half_, nx,
                                  ny, nz, stream_);
-        fft_.c2r(d_half_, d_div_r_);
-        pw_sub_kernel<<<n_blocks(nr_), kBlock, 0, stream_>>>(d_V_xc_r_,
-                                                             d_div_r_, nr_);
+        xc_fft_.c2r(d_half_, d_div_r_);
+        pw_sub_kernel<<<n_blocks(nr), kBlock, 0, stream_>>>(d_V_xc_r_, d_div_r_,
+                                                            nr);
         ATV_CUDA_CHECK(cudaGetLastError());
     } else {
         // Pointwise LSDA + the E_xc quadrature (dV = Ω/nr, as on the CPU).
-        xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr_, stream_);
-        xc_energy(d_rho_r_in_, d_exc_r_, nr_, omega_ / static_cast<double>(nr_),
+        xc_lsda_grid(d_rho_r_in_, d_V_xc_r_, d_exc_r_, nr, stream_);
+        xc_energy(d_rho_r_in_, d_exc_r_, nr, omega_ / static_cast<double>(nr),
                   d_scalars_ + 0, d_xc_partials_, stream_);
     }
 
@@ -624,9 +637,9 @@ void DeviceDensity::exchange_correlation() {
     // FFTPlan3D::c2r copies its input into private scratch first, so no pair
     // can clobber another. An "optimization" that drops a re-scatter would
     // break that silently.
-    fft_.r2c(d_V_xc_r_, d_half_);
+    xc_fft_.r2c(d_V_xc_r_, d_half_);
     gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_V_xc_G_, nx, ny,
-                            nz, 1.0 / static_cast<double>(nr_), stream_);
+                            nz, 1.0 / static_cast<double>(nr), stream_);
     pw_zero_imag0_kernel<<<1, 1, 0, stream_>>>(d_V_xc_G_);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
@@ -828,34 +841,20 @@ void DeviceDensity::fetch_rho_r(double* out) {
 
 void DeviceDensity::load_rho_r_scaled(const double* rho_r0, int nr0,
                                       double scale) {
-    // Host-side scale + optional mean fallback when FFT dims differ under
-    // strain (rare at fixed ecut for small h). Then r2c → ρ(G) with 1/nr.
-    std::vector<double> rho_r(static_cast<size_t>(nr_), 0.0);
-    if (nr0 == nr_ && rho_r0 != nullptr) {
-        for (int i = 0; i < nr_; ++i)
-            rho_r[static_cast<size_t>(i)] =
-                rho_r0[static_cast<size_t>(i)] * scale;
-    } else {
-        double mean = 0.0;
-        if (rho_r0 != nullptr && nr0 > 0) {
-            for (int i = 0; i < nr0; ++i)
-                mean += rho_r0[static_cast<size_t>(i)];
-            mean /= static_cast<double>(nr0);
-        }
-        const double v = mean * scale;
-        for (int i = 0; i < nr_; ++i)
-            rho_r[static_cast<size_t>(i)] = v;
-    }
-    ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_r_acc_, rho_r.data(),
+    if (rho_r0 == nullptr || nr0 != nr_)
+        throw std::invalid_argument(
+            "PW frozen density requires its reference FFT shape; refusing "
+            "to replace a nonuniform density by its mean");
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_r_acc_, rho_r0,
                                    static_cast<size_t>(nr_) * sizeof(double),
                                    cudaMemcpyHostToDevice, stream_));
     fft_.r2c(d_rho_r_acc_, d_half_);
+    // The shape and Miller labels are those of the reference basis. Apply
+    // the volume scale while projecting on device, preserving every mode.
     gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_rho_G_,
                             fft_.nx(), fft_.ny(), fft_.nz(),
-                            1.0 / static_cast<double>(nr_), stream_);
+                            scale / static_cast<double>(nr_), stream_);
     ATV_CUDA_CHECK(cudaGetLastError());
-    // Keep rho_old in sync so a stray reduce() residual is not huge noise
-    // (NSCF stress never mixes; residual is unused).
     ATV_CUDA_CHECK(
         cudaMemcpyAsync(d_rho_G_old_, d_rho_G_,
                         static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
@@ -891,31 +890,17 @@ void DeviceDensity::load_rho_spin_r_scaled(const double* rho_a0,
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity::load_rho_spin_r_scaled: not a "
             "spin density object");
+    if (rho_a0 == nullptr || rho_b0 == nullptr || nr0 != nr_)
+        throw std::invalid_argument(
+            "PW frozen spin densities require the reference FFT shape");
     auto load_one = [&](const double* rho0, cufftDoubleComplex* d_rho_G) {
-        std::vector<double> rho_r(static_cast<size_t>(nr_), 0.0);
-        if (nr0 == nr_ && rho0 != nullptr) {
-            for (int i = 0; i < nr_; ++i)
-                rho_r[static_cast<size_t>(i)] =
-                    rho0[static_cast<size_t>(i)] * scale;
-        } else {
-            double mean = 0.0;
-            if (rho0 != nullptr && nr0 > 0) {
-                for (int i = 0; i < nr0; ++i)
-                    mean += rho0[static_cast<size_t>(i)];
-                mean /= static_cast<double>(nr0);
-            }
-            const double v = mean * scale;
-            for (int i = 0; i < nr_; ++i)
-                rho_r[static_cast<size_t>(i)] = v;
-        }
-        ATV_CUDA_CHECK(
-            cudaMemcpyAsync(d_rho_r_acc_, rho_r.data(),
-                            static_cast<size_t>(nr_) * sizeof(double),
-                            cudaMemcpyHostToDevice, stream_));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(
+            d_rho_r_acc_, rho0, static_cast<size_t>(nr_) * sizeof(double),
+            cudaMemcpyHostToDevice, stream_));
         fft_.r2c(d_rho_r_acc_, d_half_);
         gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_rho_G,
                                 fft_.nx(), fft_.ny(), fft_.nz(),
-                                1.0 / static_cast<double>(nr_), stream_);
+                                scale / static_cast<double>(nr_), stream_);
         ATV_CUDA_CHECK(cudaMemcpyAsync(
             // keep spin old in sync for residual hygiene
             (d_rho_G == d_rho_spin_G_[0]) ? d_rho_spin_G_old_[0]
@@ -961,45 +946,6 @@ pw_linear_mix_spin_kernel(cufftDoubleComplex* __restrict__ rho,
     const cufftDoubleComplex n = rho_out[i];
     rho[i].x = o.x + beta * (n.x - o.x);
     rho[i].y = o.y + beta * (n.y - o.y);
-}
-
-/// ‖Δρ‖₂ residual partials over total density change (G-sphere).
-__global__ void
-pw_resid_total_stage1(const cufftDoubleComplex* __restrict__ rho,
-                      const cufftDoubleComplex* __restrict__ rho_old, int n_g,
-                      double* __restrict__ partials) {
-    __shared__ double s[kBlock];
-    double acc = 0.0;
-    for (int i = blockIdx.x * kBlock + threadIdx.x; i < n_g;
-         i += kReduceBlocks * kBlock) {
-        const double dr = rho[i].x - rho_old[i].x;
-        const double di = rho[i].y - rho_old[i].y;
-        acc += dr * dr + di * di;
-    }
-    s[threadIdx.x] = acc;
-    __syncthreads();
-    for (int stride = kBlock / 2; stride > 0; stride >>= 1) {
-        if (threadIdx.x < stride)
-            s[threadIdx.x] += s[threadIdx.x + stride];
-        __syncthreads();
-    }
-    if (threadIdx.x == 0)
-        partials[blockIdx.x] = s[0];
-}
-
-__global__ void pw_resid_total_stage2(const double* __restrict__ partials,
-                                      double* __restrict__ out) {
-    __shared__ double s[kReduceBlocks];
-    const int t = threadIdx.x;
-    s[t] = partials[t];
-    __syncthreads();
-    for (int stride = kReduceBlocks / 2; stride > 0; stride >>= 1) {
-        if (t < stride)
-            s[t] += s[t + stride];
-        __syncthreads();
-    }
-    if (t == 0)
-        *out = sqrt(s[0]);
 }
 
 /// Hartree + local-PP energy partials only (spin uses real-space e_xc_int).
@@ -1077,14 +1023,15 @@ void DeviceDensity::exchange_correlation_spin() {
             "cuda::pw::internal::DeviceDensity::exchange_correlation_spin: "
             "only XCType::LSDA and XCType::PBE are implemented");
 
-    const int nx = fft_.nx(), ny = fft_.ny(), nz = fft_.nz();
-    const double dV = omega_ / static_cast<double>(nr_);
+    const int nx = xc_fft_.nx(), ny = xc_fft_.ny(), nz = xc_fft_.nz();
+    const int nr = xc_fft_.nr();
+    const double dV = omega_ / static_cast<double>(nr);
 
     // ρ_σ(G) → ρ_σ(r)
     for (int s = 0; s < 2; ++s) {
         scatter_g_to_halfcomplex(d_rho_spin_G_[s], d_h_, d_k_, d_l_, ng0_,
                                  d_half_, nx, ny, nz, stream_);
-        fft_.c2r(d_half_, d_rho_spin_r_[s]);
+        xc_fft_.c2r(d_half_, d_rho_spin_r_[s]);
     }
 
     if (gga_) {
@@ -1101,7 +1048,7 @@ void DeviceDensity::exchange_correlation_spin() {
                 ATV_CUDA_CHECK(cudaGetLastError());
                 scatter_g_to_halfcomplex(d_sph_, d_h_, d_k_, d_l_, ng0_,
                                          d_half_, nx, ny, nz, stream_);
-                fft_.c2r(d_half_, gcomp[d]);
+                xc_fft_.c2r(d_half_, gcomp[d]);
             }
         }
 
@@ -1110,8 +1057,8 @@ void DeviceDensity::exchange_correlation_spin() {
         xc_pbe_spin_grid(d_rho_spin_r_[0], d_rho_spin_r_[1], d_grad_x_r_,
                          d_grad_y_r_, d_grad_z_r_, d_grad_dn_x_r_,
                          d_grad_dn_y_r_, d_grad_dn_z_r_, d_V_xc_spin_r_[0],
-                         d_V_xc_spin_r_[1], d_exc_r_, nr_, stream_);
-        xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_exc_r_, nr_, dV,
+                         d_V_xc_spin_r_[1], d_exc_r_, nr, stream_);
+        xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_exc_r_, nr, dV,
                        d_scalars_ + 0, d_xc_partials_, stream_);
 
         // ── v_σ −= ∇·flux_σ ──
@@ -1125,45 +1072,45 @@ void DeviceDensity::exchange_correlation_spin() {
                                                * sizeof(cufftDoubleComplex),
                                            stream_));
             for (int d = 0; d < 3; ++d) {
-                fft_.r2c(flux[d], d_half_);
-                gather_halfcomplex_to_g(
-                    d_half_, d_h_, d_k_, d_l_, ng0_, d_sph_, nx, ny, nz,
-                    1.0 / static_cast<double>(nr_), stream_);
+                xc_fft_.r2c(flux[d], d_half_);
+                gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_, d_sph_,
+                                        nx, ny, nz,
+                                        1.0 / static_cast<double>(nr), stream_);
                 pw_axpy_ig_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
                     d_sph_, gcart[d], ng0_, d_V_xc_spin_G_[s]);
                 ATV_CUDA_CHECK(cudaGetLastError());
             }
             scatter_g_to_halfcomplex(d_V_xc_spin_G_[s], d_h_, d_k_, d_l_, ng0_,
                                      d_half_, nx, ny, nz, stream_);
-            fft_.c2r(d_half_, div_buf[s]);
-            pw_sub_kernel<<<n_blocks(nr_), kBlock, 0, stream_>>>(
-                d_V_xc_spin_r_[s], div_buf[s], nr_);
+            xc_fft_.c2r(d_half_, div_buf[s]);
+            pw_sub_kernel<<<n_blocks(nr), kBlock, 0, stream_>>>(
+                d_V_xc_spin_r_[s], div_buf[s], nr);
             ATV_CUDA_CHECK(cudaGetLastError());
         }
 
         // Double-counting ∫(ρ↑V↑+ρ↓V↓) uses the FULL functional derivative
         // (local + div), matching CPU step_spin after the GGA correction.
         xc_int_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
-                    d_V_xc_spin_r_[1], nr_, dV, d_scalars_ + 2, d_xc_partials_,
+                    d_V_xc_spin_r_[1], nr, dV, d_scalars_ + 2, d_xc_partials_,
                     stream_);
     } else {
         // Pointwise collinear LSDA + E_xc + e_xc_int_spin (real-space).
         xc_lsda_spin_grid(d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
-                          d_V_xc_spin_r_[1], d_exc_r_, nr_, stream_);
-        xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_exc_r_, nr_, dV,
+                          d_V_xc_spin_r_[1], d_exc_r_, nr, stream_);
+        xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_exc_r_, nr, dV,
                        d_scalars_ + 0, d_xc_partials_, stream_);
         // e_xc_int into scalars[2] temporarily (reduce_spin remaps).
         xc_int_spin(d_rho_spin_r_[0], d_rho_spin_r_[1], d_V_xc_spin_r_[0],
-                    d_V_xc_spin_r_[1], nr_, dV, d_scalars_ + 2, d_xc_partials_,
+                    d_V_xc_spin_r_[1], nr, dV, d_scalars_ + 2, d_xc_partials_,
                     stream_);
     }
 
     // V_xc_σ(r) → V_xc_σ(G)
     for (int s = 0; s < 2; ++s) {
-        fft_.r2c(d_V_xc_spin_r_[s], d_half_);
+        xc_fft_.r2c(d_V_xc_spin_r_[s], d_half_);
         gather_halfcomplex_to_g(d_half_, d_h_, d_k_, d_l_, ng0_,
                                 d_V_xc_spin_G_[s], nx, ny, nz,
-                                1.0 / static_cast<double>(nr_), stream_);
+                                1.0 / static_cast<double>(nr), stream_);
         pw_zero_imag0_kernel<<<1, 1, 0, stream_>>>(d_V_xc_spin_G_[s]);
     }
     ATV_CUDA_CHECK(cudaGetLastError());
@@ -1207,9 +1154,41 @@ void DeviceDensity::mix_spin_linear() {
         throw std::runtime_error(
             "cuda::pw::internal::DeviceDensity::mix_spin_linear: not a spin "
             "density object");
-    // Snapshot total ρ before the mix for residual (CPU uses pre-mix total as
-    // rho_G_old after rewriting rho_G from mixed spins — equivalent: residual
-    // on total density change).
+    // Form the joint UNMIXED residual with existing vendor primitives.
+    // The output-input spin changes can cancel in total charge, and scaling
+    // by the mixing fraction would change the meaning of method.tol.
+    cublasPointerMode_t pointer_mode;
+    check_cublas(cublasGetPointerMode(blas_, &pointer_mode),
+                 "get pointer mode");
+    check_cublas(cublasSetPointerMode(blas_, CUBLAS_POINTER_MODE_HOST),
+                 "spin residual scalar pointer mode");
+    const cuDoubleComplex minus_one = make_cuDoubleComplex(-1.0, 0.0);
+    for (int spin = 0; spin < 2; ++spin) {
+        auto* delta = reinterpret_cast<cuDoubleComplex*>(d_spin_residual_)
+                      + static_cast<std::size_t>(spin) * ng0_;
+        check_cublas(cublasZcopy(blas_, ng0_,
+                                 reinterpret_cast<const cuDoubleComplex*>(
+                                     d_rho_spin_out_G_[spin]),
+                                 1, delta, 1),
+                     "copy unmixed spin output");
+        check_cublas(cublasZaxpy(blas_, ng0_, &minus_one,
+                                 reinterpret_cast<const cuDoubleComplex*>(
+                                     d_rho_spin_G_[spin]),
+                                 1, delta, 1),
+                     "subtract spin input");
+    }
+    check_cublas(cublasSetPointerMode(blas_, CUBLAS_POINTER_MODE_DEVICE),
+                 "spin norm device result mode");
+    check_cublas(
+        cublasDznrm2(blas_, 2 * ng0_,
+                     reinterpret_cast<const cuDoubleComplex*>(d_spin_residual_),
+                     1, d_scalars_ + 4),
+        "joint unmixed spin residual");
+    check_cublas(cublasSetPointerMode(blas_, pointer_mode),
+                 "restore pointer mode");
+
+    // Preserve the previous total density for the existing energy bookkeeping;
+    // convergence now uses the independently cached joint spin norm.
     ATV_CUDA_CHECK(
         cudaMemcpyAsync(d_rho_G_old_, d_rho_G_,
                         static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
@@ -1245,12 +1224,8 @@ DeviceDensity::IterationScalars DeviceDensity::reduce_spin(double vol_bohr) {
         d_partials_, 0.5 * vol_bohr, vol_bohr, d_hl);
     ATV_CUDA_CHECK(cudaGetLastError());
 
-    // Residual ‖ρ − ρ_old‖₂ on total density.
-    pw_resid_total_stage1<<<kReduceBlocks, kBlock, 0, stream_>>>(
-        d_rho_G_, d_rho_G_old_, ng0_, d_partials_);
-    pw_resid_total_stage2<<<1, kReduceBlocks, 0, stream_>>>(d_partials_,
-                                                            d_scalars_ + 4);
-    ATV_CUDA_CHECK(cudaGetLastError());
+    // scalars[4] already holds the joint unmixed spin norm from
+    // mix_spin_linear(); keep it while reducing the energy channels.
 
     // Pack e_h / e_loc into the host-facing slots.
     ATV_CUDA_CHECK(cudaMemcpyAsync(d_scalars_ + 1, d_hl, sizeof(double),

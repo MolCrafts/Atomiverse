@@ -90,14 +90,12 @@ PM3Result = _cpp.PM3Result
 
 #: AM1-BCC / ABCG2 partial charges — the GAFF / GAFF2 charge model, as
 #: antechamber ``-c bcc`` / ``-c abcg2`` compute them, at the frame's
-#: geometry. The frame needs a ``bonds`` block::
+#: geometry. The molecule is a molpy.Atomistic chemical graph::
 #:
-#:     model = atv.AM1BCCCharges(atv.AM1(charge=-1), atv.BccParameterSet.bcc)
-#:     model.assign(frame)          # charges [e] on the atoms charge column
+#:     model = atv.AM1BCCCharges(method=atv.AM1(charge=-1), correction="bcc")
+#:     charges = model.assign(molecule)  # owned float64 charges [e], graph unchanged
 AM1BCCCharges = _cpp.AM1BCCCharges
 
-#: Bond-charge-correction table: ``bcc`` (GAFF) or ``abcg2`` (GAFF2).
-BccParameterSet = _cpp.BccParameterSet
 
 #: Non-SCC mio-1-1 energy, charges and forces for neutral closed-shell CHNO.
 DFTB0 = _cpp.DFTB0
@@ -156,7 +154,6 @@ __all__ = [
     "RM1Result",
     "MNDOResult",
     "PM3Result",
-    "BccParameterSet",
     "DFTB0",
     "DFTB2",
     "DftbBoundary",

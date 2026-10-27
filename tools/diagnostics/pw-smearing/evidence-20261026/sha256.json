@@ -1,0 +1,16 @@
+{
+  "after.json": "b9fb728799baf23b934efa92bbf2424efbb84b1d5491be857acd31b04275bdbd",
+  "before-production.cpp": "d41838c5e9b773af4778dca829c77f542bd6e393c1d1ba135d3dbbc10eba402a",
+  "before-production.h": "a3a2cd936b03e3b1c69ebb7acd88f9e6fe63a5e9b4cd57791b0728eab8b7c4a0",
+  "before.json": "6b67705e55473503ed158c3fcc35e6651d9f68ab98818b2f6ea8837a566b648c",
+  "capture-and-compare.sh": "f748a50c5e33bf7e50209260366581ed9ea7d142432dba6f76d28290d67f6ba1",
+  "comparison.json": "2490a0a28e358ba673577fbc57f48dc10fabadbcfdf4f91505c0382788580cb2",
+  "qe-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "qe-reference.json": "73598cd1b6407add91e3476c405e98ac989ffa42d1ffedd48ebf88dfe34b34d8",
+  "qe.out": "bc2234b56ad15af9aa4df63f78f9d6ee5855468dc473c830a8a4dfdbed53759c",
+  "source-frozen.json": "058c6ba6b62caceb2f81229f3de65c05fcb01c7e4b642f544e5ab86c7ec2c5fa",
+  "summary.json": "938e0b43d604639d32c4a93d83dec897fab1b5c5355304405f1e1a1d6326a98d",
+  "unit-build.sh": "9885fc37368f14290269a37a6e6a561079e55f83388d2d6854bfd3a5f3f6641c",
+  "unit-provenance.json": "9fb3dfc6996c03b70b4a7b0fe66d5d9d68600789a45df86596c4024ed02c8bed",
+  "unit.log": "be56a25133e6e93f6c5efdbe7911d7f507ea5821800714b6457b979772b785f1"
+}

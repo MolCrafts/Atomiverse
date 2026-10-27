@@ -162,3 +162,24 @@ TEST(CudaPWGuards, FreshResultIsEmpty) {
     EXPECT_EQ(pw.last_result().iterations, 0);
     EXPECT_FALSE(pw.last_result().converged);
 }
+
+// Spin-smear stress is supported, but invalid thermal widths must still
+// fail before CUDA setup through both public entries.
+TEST(CudaPWGuards, SpinSmearStressRejectsInvalidWidthBeforeDeviceWork) {
+    auto frame = make_h_atom();
+    for (const auto xc : {cpu::scf::XCType::LSDA, cpu::scf::XCType::PBE}) {
+        auto pw = make_supported(xc);
+        pw.spin_polarized = true;
+        pw.multiplicity = 2;
+        for (const auto smear :
+             {cuda::pw::Smearing::fermi_dirac, cuda::pw::Smearing::gaussian,
+              cuda::pw::Smearing::methfessel_paxton}) {
+            pw.smearing = smear;
+            pw.degauss = 0;
+            EXPECT_THROW(pw.stress(frame), std::invalid_argument);
+            EXPECT_THROW(cuda::pw::pw_stress(frame, pw), std::invalid_argument);
+        }
+        EXPECT_EQ(pw.last_result().iterations, 0);
+        EXPECT_FALSE(pw.last_result().converged);
+    }
+}

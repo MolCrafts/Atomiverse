@@ -103,6 +103,14 @@ void diagonalize_complex_C(const std::vector<std::complex<AccReal>>& C, int n,
 
 DfptPhononResult DfptPhonon::compute(const PW& method,
                                      const cpu::Frame& frame) const {
+    // The response occupied-space projectors and occupation thresholds
+    // currently assume probability weights. Ground-state MP supports signed
+    // quasi-occupations; carrying those through Sternheimer response needs
+    // a separate implementation and validation before admitting this model.
+    if (method.smearing == Smearing::methfessel_paxton)
+        throw std::invalid_argument(
+            "DfptPhonon::compute: signed Methfessel-Paxton response is not "
+            "implemented; use Fermi-Dirac, Gaussian or fixed occupations");
     const int n = frame.nlocal();
     const int dim = 3 * n;
     const double to_ev_ang2 = 1.0 / vib::nist::EV_PER_ANG2_TO_HARTREE_PER_BOHR2;

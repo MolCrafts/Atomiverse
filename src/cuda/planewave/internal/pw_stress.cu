@@ -1,8 +1,9 @@
 /// @file cuda/planewave/internal/pw_stress.cu
-/// @brief Device Nielsen–Martin analytic cell stress (one SCF + NSCF strain-FD).
+/// @brief Device frozen-density cell stress (one SCF + NSCF strain-FD).
 ///
-/// Restricted fixed closed shell, restricted metallic smear (Mermin free
-/// energy), and collinear fixed-occupation LSDA spin (ρ_↑/ρ_↓ remap).
+/// Restricted/collinear LSDA or PBE, with fixed or fractional occupations.
+/// Each strained spin-smearing spectrum is refilled at a shared chemical
+/// potential and includes the same free-energy correction as its SCF.
 
 #include "atomiverse/cuda/planewave/internal/pw_stress.cuh"
 
@@ -77,12 +78,15 @@ cpu::pw::internal::SmearKind to_smear_kind(cpu::pw::Smearing s) {
 /// Device SCF at `frame`; fills free/total energy and returns host ρ(r) + Ω.
 /// Collinear spin: rho_r is unused; rho_a / rho_b hold the spin channels.
 struct RefScf {
-    std::shared_ptr<const cpu::pw::internal::NcPotentialData> potential;
+    // Stable ownership: ws.gvec aliases this problem's gv0. Strained samples
+    // reuse its discrete Miller labels and FFT shape, never its stale host rho.
+    std::shared_ptr<cpu::pw::internal::PWProblem> problem;
     std::vector<double> rho_r;
     std::vector<double> rho_a;
     std::vector<double> rho_b;
     double omega_bohr = 0;
     double energy_ry = 0;
+    cpu::pw::PWResult result;
     int nr = 0;
     int iterations = 0;
     bool converged = false;
@@ -98,7 +102,8 @@ run_device_scf(const cpu::Frame& frame,
                double mix_beta, int pulay_depth, cpu::scf::XCType xc,
                cpu::pw::Smearing smearing, double degauss, int mp_order,
                int extra_bands, bool spin_polarized, int multiplicity) {
-    cpu::pw::internal::PWProblem prob;
+    auto owner = std::make_shared<cpu::pw::internal::PWProblem>();
+    auto& prob = *owner;
     cpu::pw::internal::setup_pw_problem(frame, potential, ecut_ry, k_mesh,
                                         prob);
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
@@ -153,6 +158,10 @@ run_device_scf(const cpu::Frame& frame,
     AccReal last_energy_ha = AccReal(0);
     int last_iter = 0;
     bool converged = false;
+    cpu::pw::PWResult result;
+    result.n_kpts = n_kpts;
+    result.n_kpts_local = n_kpts;
+    result.magnetization = spin_polarized ? multiplicity - 1 : 0;
 
     if (spin_polarized && use_smear) {
         for (int iter = 0; iter < max_iter; ++iter) {
@@ -188,6 +197,7 @@ run_device_scf(const cpu::Frame& frame,
                 mp_order, AccReal(1));
             AccReal e_band = 0;
             AccReal entropy_sum = 0;
+            AccReal spin_count[2] = {0, 0};
             for (int s = 0; s < 2; ++s) {
                 den.assemble_veff_spin(s);
                 den.zero_accumulator();
@@ -203,6 +213,7 @@ run_device_scf(const cpu::Frame& frame,
                         ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
                         AccReal(1));
                     entropy_sum += fill.entropy;
+                    spin_count[s] += fill.n_occ;
                     const int nb = static_cast<int>(fill.occ.size());
                     for (int b = 0; b < nb; ++b)
                         e_band += w * ev[static_cast<std::size_t>(b)]
@@ -222,6 +233,14 @@ run_device_scf(const cpu::Frame& frame,
                           - AccReal(red.e_xc_int);
             last_energy_ha = terms.e_one + AccReal(red.e_h) + ws.E_xc
                              + prob.ew_total - degauss_ha * entropy_sum;
+            result.magnetization =
+                static_cast<double>(spin_count[0] - spin_count[1]);
+            result.n_elec_occ =
+                static_cast<double>(spin_count[0] + spin_count[1]);
+            result.e_fermi = static_cast<double>(mu_ha)
+                             / cpu::pw::qe_units::rydberg_to_hartree;
+            result.e_entropy = static_cast<double>(-degauss_ha * entropy_sum)
+                               / cpu::pw::qe_units::rydberg_to_hartree;
             last_iter = iter + 1;
             if (conv.step(AccReal(red.resid))) {
                 converged = true;
@@ -307,6 +326,7 @@ run_device_scf(const cpu::Frame& frame,
                 mp_order);
 
             AccReal entropy_sum = AccReal(0);
+            AccReal n_occ = 0;
             std::vector<std::vector<AccReal>> occ_k(
                 static_cast<std::size_t>(n_kpts));
             for (int ik = 0; ik < n_kpts; ++ik) {
@@ -321,6 +341,7 @@ run_device_scf(const cpu::Frame& frame,
                         cpu::pw::internal::smear_f_band(
                             ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
                 entropy_sum += fill.entropy;
+                n_occ += fill.n_occ;
             }
 
             den.zero_accumulator();
@@ -347,6 +368,11 @@ run_device_scf(const cpu::Frame& frame,
                 ws.E_xc, prob.ew_total);
             // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
             last_energy_ha = terms.total + (-degauss_ha * entropy_sum);
+            result.n_elec_occ = static_cast<double>(n_occ);
+            result.e_fermi = static_cast<double>(mu_ha)
+                             / cpu::pw::qe_units::rydberg_to_hartree;
+            result.e_entropy = static_cast<double>(-degauss_ha * entropy_sum)
+                               / cpu::pw::qe_units::rydberg_to_hartree;
             last_iter = iter + 1;
             if (conv.step(AccReal(s.resid))) {
                 converged = true;
@@ -387,7 +413,7 @@ run_device_scf(const cpu::Frame& frame,
     }
 
     RefScf out;
-    out.potential = prob.potential;
+    out.problem = owner;
     out.nr = den.nr();
     out.omega_bohr = den.omega();
     out.spin = spin_polarized;
@@ -406,21 +432,42 @@ run_device_scf(const cpu::Frame& frame,
                     / cpu::pw::qe_units::rydberg_to_hartree;
     out.iterations = last_iter;
     out.converged = converged;
+    result.energy = out.energy_ry;
+    result.energy_ha = static_cast<double>(last_energy_ha);
+    result.iterations = last_iter;
+    result.converged = converged;
+    out.result = result;
     return out;
 }
 
 /// Non-self-consistent free / total energy [Ry] with remapped density.
-double nscf_energy_ry(
-    const cpu::Frame& frame,
-    const std::shared_ptr<const cpu::pw::internal::NcPotentialData>& potential,
-    double ecut_ry, int k_mesh, double mix_beta, int pulay_depth,
-    cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
-    int mp_order, int extra_bands, bool spin_polarized, int n_alpha, int n_beta,
-    const std::vector<double>& rho_r0, const std::vector<double>& rho_a0,
-    const std::vector<double>& rho_b0, double omega0_bohr) {
+double nscf_energy_ry(const cpu::Frame& frame,
+                      const cpu::pw::internal::PWProblem& reference,
+                      double ecut_ry, int k_mesh, double mix_beta,
+                      int pulay_depth, cpu::scf::XCType xc,
+                      cpu::pw::Smearing smearing, double degauss, int mp_order,
+                      int extra_bands, bool spin_polarized, int n_alpha,
+                      int n_beta, const std::vector<double>& rho_r0,
+                      const std::vector<double>& rho_a0,
+                      const std::vector<double>& rho_b0, double omega0_bohr) {
     cpu::pw::internal::PWProblem prob;
-    cpu::pw::internal::setup_pw_problem(frame, potential, ecut_ry, k_mesh,
-                                        prob);
+    cpu::pw::internal::setup_pw_problem_fixed_basis(frame, reference, ecut_ry,
+                                                    k_mesh, prob);
+    // Every one of the 12 samples must differentiate the same finite
+    // variational space, including all k-point Miller labels and FFT shapes.
+    const auto same_labels = [](const auto& a, const auto& b) {
+        return a.h == b.h && a.k == b.k && a.l == b.l && a.nx == b.nx
+               && a.ny == b.ny && a.nz == b.nz;
+    };
+    bool fixed = same_labels(prob.gv0, reference.gv0)
+                 && prob.gv_k.size() == reference.gv_k.size()
+                 && prob.ws.fft_nx == reference.ws.fft_nx
+                 && prob.ws.fft_ny == reference.ws.fft_ny
+                 && prob.ws.fft_nz == reference.ws.fft_nz;
+    for (std::size_t k = 0; fixed && k < prob.gv_k.size(); ++k)
+        fixed = same_labels(prob.gv_k[k], reference.gv_k[k]);
+    if (!fixed)
+        throw std::logic_error("PW stress sample changed its reference basis");
     cpu::pw::internal::PWWorkspace& ws = prob.ws;
     ws.mix_beta = AccReal(mix_beta);
     ws.pulay_depth = pulay_depth;
@@ -430,9 +477,11 @@ double nscf_energy_ry(
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
     int n_bands =
         spin_polarized ? std::max(std::max(n_alpha, n_beta), 1) : prob.n_bands;
-    if (use_smear && !spin_polarized) {
+    if (use_smear) {
+        // Match the reference SCF, including enough empty states in each
+        // spin channel for its shared-chemical-potential filling problem.
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
-        n_bands = n_occ_ceil + std::max(extra_bands, 0);
+        n_bands = std::max({n_bands, n_occ_ceil + std::max(extra_bands, 0), 1});
     }
     const AccReal vol_bohr = prob.vol_bohr;
     const double scale = omega0_bohr / static_cast<double>(ws.omega);
@@ -449,6 +498,57 @@ double nscf_energy_ry(
                                    static_cast<int>(rho_a0.size()), scale);
         den.hartree();
         den.exchange_correlation_spin();
+
+        if (use_smear) {
+            // A strain changes both spin spectra. Refill the complete set
+            // with ONE chemical potential at fixed total electron count;
+            // neither the reference occupations nor integer N_up/N_dn can
+            // be reused when differentiating the Mermin free energy.
+            const auto kind = to_smear_kind(smearing);
+            const AccReal width =
+                AccReal(degauss)
+                * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
+            std::vector<std::vector<AccReal>> spectra(2 * n_kpts);
+            std::vector<AccReal> all_evals, all_weights;
+            for (int spin = 0; spin < 2; ++spin) {
+                den.assemble_veff_spin(spin);
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    solver.bind_kpoint(ik);
+                    solver.solve(ws, 40);
+                    auto& ev = spectra[spin * n_kpts + ik];
+                    ev.assign(ws.eigenvalues.begin(), ws.eigenvalues.end());
+                    ev.resize(static_cast<std::size_t>(n_bands));
+                    for (const auto value : ev) {
+                        all_evals.push_back(value);
+                        all_weights.push_back(prob.kg.weights[ik]);
+                    }
+                }
+            }
+            const AccReal mu = cpu::pw::internal::find_fermi_level(
+                all_evals, all_weights, AccReal(n_elec), width, kind, mp_order,
+                AccReal(1));
+            AccReal e_band = 0, entropy = 0;
+            for (int spin = 0; spin < 2; ++spin)
+                for (int ik = 0; ik < n_kpts; ++ik) {
+                    const auto& ev = spectra[spin * n_kpts + ik];
+                    const AccReal weight = prob.kg.weights[ik];
+                    const std::vector<AccReal> weights(ev.size(), weight);
+                    const auto fill = cpu::pw::internal::fill_occupations(
+                        ev, weights, mu, width, kind, mp_order, AccReal(1));
+                    entropy += fill.entropy;
+                    for (int band = 0; band < n_bands; ++band)
+                        e_band += weight * ev[band] * fill.occ[band];
+                }
+            const auto red = den.reduce_spin(static_cast<double>(vol_bohr));
+            // The frozen input density supplies the double-counting terms;
+            // only the band occupations are reoptimized at this geometry.
+            const AccReal e_one =
+                e_band - AccReal(2) * AccReal(red.e_h) - AccReal(red.e_xc_int);
+            const AccReal energy = e_one + AccReal(red.e_h) + AccReal(red.e_xc)
+                                   + prob.ew_total - width * entropy;
+            return static_cast<double>(energy)
+                   / cpu::pw::qe_units::rydberg_to_hartree;
+        }
 
         const int n_occ[2] = {n_alpha, n_beta};
         AccReal e_band = 0;
@@ -568,7 +668,7 @@ std::array<double, 6> pw_stress_analytic_impl(
     int k_mesh, double tol, int max_iter, double mix_beta, int pulay_depth,
     cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
     int mp_order, int extra_bands, bool spin_polarized, int multiplicity,
-    double* energy_ry_out) {
+    double* energy_ry_out, cpu::pw::PWResult* result_out) {
     if (frame.nlocal() <= 0)
         throw std::invalid_argument("cuda::pw::pw_stress: frame has no atoms");
     if (frame.box.volume() <= 0)
@@ -589,6 +689,8 @@ std::array<double, 6> pw_stress_analytic_impl(
                        extra_bands, spin_polarized, multiplicity);
     if (energy_ry_out)
         *energy_ry_out = ref.energy_ry;
+    if (result_out)
+        *result_out = ref.result;
     if (!ref.converged) {
         // No core/log.h from .cu — printf matches forces-scf breadcrumb.
         std::printf("[pw] cuda pw_stress: SCF not converged after %d iters; "
@@ -626,18 +728,21 @@ std::array<double, 6> pw_stress_analytic_impl(
         apply_strain(fm, em);
 
         const double ep_ry =
-            nscf_energy_ry(fp, ref.potential, ecut_ry, k_mesh, mix_beta,
+            nscf_energy_ry(fp, *ref.problem, ecut_ry, k_mesh, mix_beta,
                            pulay_depth, xc, smearing, degauss, mp_order,
                            extra_bands, spin_polarized, ref.n_alpha, ref.n_beta,
                            ref.rho_r, ref.rho_a, ref.rho_b, ref.omega_bohr);
         const double em_ry =
-            nscf_energy_ry(fm, ref.potential, ecut_ry, k_mesh, mix_beta,
+            nscf_energy_ry(fm, *ref.problem, ecut_ry, k_mesh, mix_beta,
                            pulay_depth, xc, smearing, degauss, mp_order,
                            extra_bands, spin_polarized, ref.n_alpha, ref.n_beta,
                            ref.rho_r, ref.rho_a, ref.rho_b, ref.omega_bohr);
         const double dE_dev = (ep_ry - em_ry) * ry_to_ev / (2.0 * h);
         // Mechanical / CP2K: σ = −(1/Ω) ∂E/∂ε (E = F under smear).
-        stress[static_cast<std::size_t>(v)] = -dE_dev / vol;
+        // A symmetric off-diagonal probe varies epsilon_ab AND epsilon_ba.
+        // Divide that derivative by two to publish the physical tensor entry.
+        stress[static_cast<std::size_t>(v)] =
+            -dE_dev / (vol * (a == b ? 1.0 : 2.0));
     }
     return stress;
 }

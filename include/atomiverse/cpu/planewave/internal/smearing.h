@@ -1,8 +1,9 @@
 /// @file cpu/planewave/internal/smearing.h
 /// @brief Metallic occupation smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton).
 ///
-/// Spin-unpolarized convention: spinless \(f\in[0,1]\) is doubled to a band
-/// occupation in \([0,2]\). Width `degauss` is in the same energy unit as the
+/// Spin-unpolarized convention: spinless f is doubled to a band occupation.
+/// FD/Gaussian f lies in [0,1]; MP is a signed quasi-occupation and may
+/// overshoot these bounds. Width `degauss` is in the same energy unit as the
 /// eigenvalues (Hartree inside the PW SCF).
 #pragma once
 
@@ -23,18 +24,18 @@ enum class SmearKind : int {
     gaussian = 3,
 };
 
-/// @brief Spinless occupation \(f(x)\in[0,1]\), \(x=(\varepsilon-\mu)/\sigma\).
+/// @brief Spinless (quasi-)occupation f(x), \(x=(\varepsilon-\mu)/\sigma\).
 /// @param x        Reduced energy (dimensionless).
 /// @param kind     Smearing kind.
 /// @param mp_order Methfessel–Paxton order \(N\ge 1\) (ignored otherwise).
-/// @return Occupation in \([0,1]\).
+/// @return FD/Gaussian occupancy in [0,1], or an unclamped MP quasi-occupancy.
 AccReal smear_f_spinless(AccReal x, SmearKind kind, int mp_order = 1);
 
-/// @brief Closed-shell band occupation in \([0,2]\): \(2\,f(x)\).
+/// @brief Closed-shell band (quasi-)occupation: \(2\,f(x)\).
 AccReal smear_f_band(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
                      int mp_order = 1);
 
-/// @brief Collinear spin-orbital occupation in \([0,1]\): \(f(x)\) (no ×2).
+/// @brief Collinear spin-orbital (quasi-)occupation: \(f(x)\) (no ×2).
 AccReal smear_f_spinor(AccReal eig, AccReal mu, AccReal degauss, SmearKind kind,
                        int mp_order = 1);
 
@@ -70,8 +71,8 @@ AccReal find_fermi_level(const std::vector<AccReal>& evals,
 /// @brief Occupations, electron sum, and entropy sum for a spectrum at fixed \(\mu\).
 /// @return `{occupations, n_occ, entropy_sum}` where
 ///         \(E_{\mathrm{free}} = E_{\mathrm{KS}} - \sigma\cdot\mathrm{entropy\_sum}\).
-///         Occupations are in \([0,2]\) when `spin_degen=2` and \([0,1]\) when
-///         `spin_degen=1`.
+///         FD/Gaussian occupations lie in [0,spin_degen]. MP occupations
+///         may be negative or exceed spin_degen; its entropy may be signed.
 struct SmearFill {
     std::vector<AccReal> occ; ///< Band / spin-orbital occupations.
     AccReal n_occ = 0;        ///< \(\sum w f\).

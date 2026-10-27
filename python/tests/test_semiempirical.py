@@ -217,6 +217,7 @@ class TestAM1:
     def test_identity_and_live_controls(self, factory) -> None:
         """Identity is fixed; numerical controls belong to the mounted method."""
         from atomiverse._binding import _cpp
+
         m = factory()
         assert isinstance(m, getattr(_cpp, factory.__name__))
         assert m.device == "cpu"
@@ -236,6 +237,7 @@ class TestAM1:
     def test_borrowed_evaluate_keeps_method_alive(self, factory) -> None:
         """Mounting adds an owning Python reference without cloning controls."""
         import sys
+
         method = factory()
         before = sys.getrefcount(method)
         evaluation = av.Evaluate().set_evaluator(method)
@@ -250,6 +252,7 @@ class TestAM1:
     def test_loop_mount_keeps_native_method(self, factory, driver_name) -> None:
         import sys
         from atomiverse._binding import _cpp
+
         if not hasattr(_cpp, driver_name):
             pytest.skip(f"{driver_name} binding not built")
         method = factory()
@@ -264,6 +267,7 @@ class TestAM1:
     @pytest.mark.parametrize("factory", [av.AM1, av.RM1, av.MNDO, av.PM3])
     def test_backend_selection_is_explicit(self, factory) -> None:
         from atomiverse._binding import _cpp
+
         with pytest.raises(ValueError, match="Unknown device"):
             factory(device="metal")
         if not hasattr(_cpp, "_Cuda" + factory.__name__):
@@ -276,26 +280,30 @@ class TestAM1:
             with pytest.raises(ValueError, match="same device"):
                 av.Evaluate().set_evaluator(method)
 
-
     @pytest.mark.parametrize("factory", [av.MNDO, av.PM3])
     @pytest.mark.parametrize("identity", [{"charge": 1}, {"multiplicity": 3}])
-    def test_cpu_new_method_identity_rejected_before_scf(self, factory, identity) -> None:
+    def test_cpu_new_method_identity_rejected_before_scf(
+        self, factory, identity
+    ) -> None:
         """CPU stores identity in the ctor, then rejects unsupported preparation."""
         method = factory(**identity)
         for key, value in identity.items():
             assert getattr(method, key) == value
-        frame = _make_water_frame(_c2v_water_coords(.96, 104.5), 20.)
-        frame.meta["energy"] = 123.
+        frame = _make_water_frame(_c2v_water_coords(0.96, 104.5), 20.0)
+        frame.meta["energy"] = 123.0
         with pytest.raises(ValueError, match="neutral closed-shell"):
             method.run(frame)
         assert not method.has_density()
         assert not method.last_result().converged
-        assert frame.meta["energy"] == 123.
+        assert frame.meta["energy"] == 123.0
 
     @pytest.mark.parametrize("factory", [av.MNDO, av.PM3])
     @pytest.mark.parametrize("identity", [{"charge": 1}, {"multiplicity": 3}])
-    def test_cuda_new_method_identity_rejected_at_construction(self, factory, identity) -> None:
+    def test_cuda_new_method_identity_rejected_at_construction(
+        self, factory, identity
+    ) -> None:
         from atomiverse._binding import _cpp
+
         if not hasattr(_cpp, "_Cuda" + factory.__name__):
             pytest.skip("CUDA binding not built")
         with pytest.raises(ValueError, match="neutral closed-shell"):
@@ -615,7 +623,15 @@ _ACETATE_XYZ = [
 ]
 _ACETATE_BONDS = [(0, 1), (1, 2), (1, 3), (0, 4), (0, 5), (0, 6)]
 _ACETATE_BCC = [-0.204100, 0.899600, -0.861300, -0.861300, 0.009367, 0.009367, 0.009367]
-_ACETATE_ABCG2 = [-0.204100, 0.689000, -0.756000, -0.756000, 0.009367, 0.009367, 0.009367]
+_ACETATE_ABCG2 = [
+    -0.204100,
+    0.689000,
+    -0.756000,
+    -0.756000,
+    0.009367,
+    0.009367,
+    0.009367,
+]
 _TOL_BCC = 6.0e-4  # [e]
 
 
@@ -641,17 +657,16 @@ def _make_acetate_frame(with_bonds: bool = True) -> "molpy.Frame":
 
 class TestAM1BCCCharges:
     @pytest.mark.parametrize(
-        ("parameter_set", "expected"),
+        ("correction", "expected"),
         [("bcc", _ACETATE_BCC), ("abcg2", _ACETATE_ABCG2)],
     )
-    def test_acetate_matches_antechamber(self, parameter_set: str, expected: list[float]) -> None:
-        """assign() writes antechamber's AM1-BCC / ABCG2 charges onto the
-        frame's charge column; equivalent atoms share one charge and the
-        total is the net charge."""
-        frame = _make_acetate_frame()
-        model = av.AM1BCCCharges(av.AM1(charge=-1), getattr(av.BccParameterSet, parameter_set))
-        model.assign(frame)
-        q = np.asarray(frame["atoms"]["charge"], dtype=np.float64)
+    def test_acetate_matches_antechamber(
+        self, correction: str, expected: list[float]
+    ) -> None:
+        """Equivalent atoms share one charge and the total is the net charge."""
+        molecule = molpy.Atomistic.from_frame(_make_acetate_frame())
+        model = av.AM1BCCCharges(method=av.AM1(charge=-1), correction=correction)
+        q = model.assign(molecule)
         np.testing.assert_allclose(q, expected, atol=_TOL_BCC, rtol=0.0)
         assert q[2] == q[3] and q[4] == q[5] == q[6]
         assert q.sum() == pytest.approx(-1.0, abs=1e-6)
@@ -660,4 +675,5 @@ class TestAM1BCCCharges:
         """BCC corrections are looked up per bond: a multi-atom frame with
         no bonds is refused before any SCF, never silently left as AM1."""
         with pytest.raises(ValueError, match="no bonds"):
-            av.AM1BCCCharges(av.AM1(charge=-1)).assign(_make_acetate_frame(with_bonds=False))
+            molecule = molpy.Atomistic.from_frame(_make_acetate_frame(with_bonds=False))
+            av.AM1BCCCharges(method=av.AM1(charge=-1)).assign(molecule)

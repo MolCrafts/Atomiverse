@@ -1010,12 +1010,25 @@ GradientResult ScfGradient::assemble_(
     // XC grid contribution (KS only)
     if (is_ks) {
         const auto t_xc = LogClock::now();
-        std::vector<int> shell_to_atom(n);
+        // Basis evaluation uses Cartesian shells even when SCF works in
+        // spherical AOs. Transform the density dual, as the energy and
+        // two-electron derivative paths do: P_cart = C2S P_sph C2S^T.
+        // Using the spherical density with the first n_sph Cartesian shells
+        // drops a d component and contracts unrelated AO indices.
+        const int n_cart = integrals.n_ao_cart();
+        xt::xtensor<double, 2> Pa_cart, Pb_cart;
+        if (integrals.spherical()) {
+            const auto& c2s = integrals.c2s;
+            const auto ct = xt::transpose(c2s);
+            Pa_cart = xt::linalg::dot(c2s, xt::linalg::dot(Pa, ct));
+            Pb_cart = xt::linalg::dot(c2s, xt::linalg::dot(Pb, ct));
+        }
+        std::vector<int> shell_to_atom(n_cart);
         std::vector<std::vector<int>> atom_shells(natm);
         {
             int idx = 0;
             for (int a = 0; a < natm; ++a) {
-                for (int mu = idx; mu < n; ++mu) {
+                for (int mu = idx; mu < n_cart; ++mu) {
                     double dx = integrals.shells[mu].center[0]
                                 - integrals.atoms[a].pos[0];
                     double dy = integrals.shells[mu].center[1]
@@ -1034,8 +1047,10 @@ GradientResult ScfGradient::assemble_(
         }
         xt::xtensor<double, 2> grad_xc = xt::zeros<double>({(int)natm, (int)3});
         accumulate_xc_gradient(
-            grad_xc, integrals, Pa, Pb, xc_type_, grid_level_, n_radial_,
-            n_angular_, shell_to_atom, atom_shells, natm, n, functional_,
+            grad_xc, integrals, integrals.spherical() ? Pa_cart : Pa,
+            integrals.spherical() ? Pb_cart : Pb, xc_type_, grid_level_,
+            n_radial_, n_angular_, shell_to_atom, atom_shells, natm, n_cart,
+            functional_,
             spin_ == SpinType::Restricted ? ATV::electronic::XcSpin::Restricted
                                           : ATV::electronic::XcSpin::Collinear);
 

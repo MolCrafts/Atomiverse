@@ -1,0 +1,17 @@
+{
+  "all_loaded_binaries_match_receipt": true,
+  "all_receipts_consistent": true,
+  "all_sibling_trees_consistent": true,
+  "molpy_post_tree_sha256": "3d088925b8cb9934702c98def2ed4468d139b5c6078f296d4a75da949837ac46",
+  "molpy_pre_tree_sha256": "3d088925b8cb9934702c98def2ed4468d139b5c6078f296d4a75da949837ac46",
+  "molpy_source_unchanged": true,
+  "native_observations": 288,
+  "observed_molpy_tree_sha256": [
+    "3d088925b8cb9934702c98def2ed4468d139b5c6078f296d4a75da949837ac46"
+  ],
+  "observed_receipt_sha256": [
+    "fc157df5cb53b98333121f3889b42509dd932f9845edd132cf23bec4b4e164b7"
+  ],
+  "pass": true,
+  "receipt_sha256": "fc157df5cb53b98333121f3889b42509dd932f9845edd132cf23bec4b4e164b7"
+}

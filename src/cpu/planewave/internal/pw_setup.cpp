@@ -374,9 +374,29 @@ void setup_pw_problem(
     setup_pw_problem(frame, std::move(admitted), ecut_ry, k_mesh, out);
 }
 
-void setup_pw_problem(const cpu::Frame& frame,
-                      std::shared_ptr<const NcPotentialData> potential,
-                      double ecut_ry, int k_mesh, PWProblem& out) {
+// Keep integer mode labels and the quadrature geometry fixed while changing
+// their metric. Sorting or re-enumerating at the strained cutoff would give a
+// discontinuous band space rather than the derivative of the reference basis.
+static GVectorList strained_g_vectors(const GVectorList& reference,
+                                      const cpu::Box& box_bohr,
+                                      const Vec3& kcart) {
+    GVectorList out = reference;
+    out.kvec = kcart;
+    const auto recip = box_bohr.recip_cell();
+    for (int ig = 0; ig < out.count(); ++ig) {
+        for (int axis = 0; axis < 3; ++axis)
+            out.g[ig][axis] = recip(axis, 0) * AccReal(out.h[ig])
+                              + recip(axis, 1) * AccReal(out.k[ig])
+                              + recip(axis, 2) * AccReal(out.l[ig]);
+        const Vec3 q = out.g[ig] + kcart;
+        out.ekin[ig] = AccReal(.5) * q.norm_squared();
+    }
+    return out;
+}
+
+static void setup_pw_problem_impl(
+    const cpu::Frame& frame, std::shared_ptr<const NcPotentialData> potential,
+    double ecut_ry, int k_mesh, PWProblem& out, const PWProblem* reference) {
     if (!potential)
         throw std::invalid_argument(
             "PW setup requires an admitted NC potential");
@@ -443,8 +463,10 @@ void setup_pw_problem(const cpu::Frame& frame,
     // 2·G_max(wfc), i.e. ecutrho = 4·ecut (QE default). All density-side
     // quantities (ρ, V_H, V_xc, V_loc, V_eff, mixing, energy sums) live
     // on this sphere; the per-k wavefunction spheres stay at ecut.
-    out.gv0 = internal::enumerate_g_vectors(box_bohr, AccReal(4) * ecut_ht,
-                                            Vec3::zeros());
+    out.gv0 = reference
+                  ? strained_g_vectors(reference->gv0, box_bohr, Vec3::zeros())
+                  : internal::enumerate_g_vectors(
+                        box_bohr, AccReal(4) * ecut_ht, Vec3::zeros());
     auto& gv0 = out.gv0;
     if (rank0) {
         ATV_DEBUG("[pw] --- G-vectors ---");
@@ -455,7 +477,8 @@ void setup_pw_problem(const cpu::Frame& frame,
     }
 
     // k-points
-    out.kg = internal::generate_mp_mesh(k_mesh, k_mesh, k_mesh);
+    out.kg = reference ? reference->kg
+                       : internal::generate_mp_mesh(k_mesh, k_mesh, k_mesh);
 
     // === Workspace ===
     PWWorkspace& ws = out.ws;
@@ -554,14 +577,17 @@ void setup_pw_problem(const cpu::Frame& frame,
         // MP mesh k-points are fractional (crystal) coordinates;
         // enumerate_g_vectors needs Cartesian [1/Bohr].
         auto recip = box_bohr.recip_cell();
-        for (auto& kf : out.kg.kpoints) {
+        for (std::size_t ik = 0; ik < out.kg.kpoints.size(); ++ik) {
+            const auto& kf = out.kg.kpoints[ik];
             Vec3 kc{
                 recip(0, 0) * kf[0] + recip(0, 1) * kf[1] + recip(0, 2) * kf[2],
                 recip(1, 0) * kf[0] + recip(1, 1) * kf[1] + recip(1, 2) * kf[2],
                 recip(2, 0) * kf[0] + recip(2, 1) * kf[1]
                     + recip(2, 2) * kf[2]};
             out.gv_k.push_back(
-                internal::enumerate_g_vectors(box_bohr, ecut_ht, kc));
+                reference
+                    ? strained_g_vectors(reference->gv_k[ik], box_bohr, kc)
+                    : internal::enumerate_g_vectors(box_bohr, ecut_ht, kc));
         }
     }
 
@@ -583,6 +609,39 @@ void setup_pw_problem(const cpu::Frame& frame,
                       "(atomic wfc: {})",
                       upf.kb.size(), n_atoms, n_k, upf.nwfc);
     }
+}
+
+void setup_pw_problem(const cpu::Frame& frame,
+                      std::shared_ptr<const NcPotentialData> potential,
+                      double ecut_ry, int k_mesh, PWProblem& out) {
+    setup_pw_problem_impl(frame, std::move(potential), ecut_ry, k_mesh, out,
+                          nullptr);
+}
+
+void setup_pw_problem_fixed_basis(const cpu::Frame& frame,
+                                  const PWProblem& reference, double ecut_ry,
+                                  int k_mesh, PWProblem& out) {
+    if (&reference == &out || reference.gv0.count() == 0
+        || reference.gv_k.size() != reference.kg.kpoints.size()
+        || reference.kg.kpoints.empty())
+        throw std::invalid_argument(
+            "PW fixed-basis setup requires a distinct complete reference");
+    const auto mesh = static_cast<std::size_t>(k_mesh);
+    if (k_mesh < 1 || mesh * mesh * mesh != reference.kg.kpoints.size())
+        throw std::invalid_argument(
+            "PW fixed-basis k-mesh differs from reference");
+    setup_pw_problem_impl(frame, reference.potential, ecut_ry, k_mesh, out,
+                          &reference);
+    const auto same_modes = [](const GVectorList& a, const GVectorList& b) {
+        return a.h == b.h && a.k == b.k && a.l == b.l && a.nx == b.nx
+               && a.ny == b.ny && a.nz == b.nz && a.count() == b.count();
+    };
+    if (!same_modes(out.gv0, reference.gv0)
+        || out.gv_k.size() != reference.gv_k.size())
+        throw std::logic_error("PW fixed-basis density modes changed");
+    for (std::size_t ik = 0; ik < out.gv_k.size(); ++ik)
+        if (!same_modes(out.gv_k[ik], reference.gv_k[ik]))
+            throw std::logic_error("PW fixed-basis wavefunction modes changed");
 }
 
 void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame, double ecut_ry,

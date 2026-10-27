@@ -308,28 +308,31 @@ set or input compatibility.
 
 ### AM1-BCC charges (GAFF / GAFF2)
 
-`AM1BCCCharges` computes the partial charges GAFF and GAFF2 expect.
+`AM1BCCCharges` computes molecular AM1-BCC or ABCG2 partial charges.
+The correction family is independent of the GAFF generation.
 
-1. It runs AM1 at the Frame's geometry to get the Mulliken base charges.
+1. It runs AM1 at the molecular graph's geometry to get the Mulliken base charges.
 2. It averages those charges over topologically equivalent atoms.
-3. It adds the AM1-BCC bond charge increments (`BccParameterSet::Bcc`, for
-   GAFF) or the ABCG2 increments (`BccParameterSet::Abcg2`, for GAFF2).
+3. It adds the AM1-BCC (`"bcc"`) or ABCG2 (`"abcg2"`) bond charge increments.
 
-The result matches AmberTools `antechamber -c bcc` / `-c abcg2` at the same
-geometry. The Frame must carry the molecule's bonds, and the net charge is the
-`AM1` constructor argument `charge`.
+The fixed-geometry benchmark compares the result with AmberTools
+`antechamber -c bcc` / `-c abcg2`. The graph must carry the molecule's bonds
+and coordinates; the net charge is the `AM1` constructor argument `charge`.
 
 ```cpp
 #include "atomiverse/cpu/semiempirical/am1_bcc_charges.h"
 using namespace ATV::cpu::semiempirical;
 
 AM1 am1{/*charge=*/-1};  // net molecular charge (e)
-AM1BCCCharges{am1, BccParameterSet::Bcc}.assign(frame);   // kAtom_charge (e)
+auto charges = AM1BCCCharges{am1, "bcc"}.assign(molecule); // owned charges [e]
 ```
 
 The geometry is used as given. By default antechamber first optimises the
 structure with sqm. To get the same, run a `Minimize` over a mounted `AM1`
-on the frame before calling `assign`.
+before calling `assign`. The charge model accepts a chemical molecular graph
+and returns charges in atom order without modifying that graph. Python uses
+`AM1BCCCharges(method=AM1(charge=-1), correction="bcc").assign(molecule)`,
+where `molecule` is a molpy `Atomistic`.
 
 ## Vibrations
 

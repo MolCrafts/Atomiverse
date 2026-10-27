@@ -1,0 +1,70 @@
+{
+  "all_checks_passed": false,
+  "failing_model": "LSDA MP1 .04Ry simple F_xx=-.002",
+  "original_protocol": {
+    "mix_beta": 0.35,
+    "max_iter": 250,
+    "converged": false
+  },
+  "resource_protocol": {
+    "mix_beta": 0.2,
+    "max_iter": 1000,
+    "converged": false
+  },
+  "joint_unmixed_residual_last100_min": 1.425815879218128e-08,
+  "joint_unmixed_residual_last100_max": 7.991563016349382e-08,
+  "joint_unmixed_gate": 1e-09,
+  "davidson_solves": 500,
+  "davidson_max_ritz_residual": 8.612429957528697e-11,
+  "davidson_max_iterations": 11,
+  "davidson_bad_solves": 0,
+  "alpha_nearest_zero_index": 7844,
+  "alpha_zero_crossings_last100": 29,
+  "alpha_nearest_zero_rho_last100_min": -3.2876242361183465e-08,
+  "alpha_nearest_zero_rho_last100_max": 5.1474606256249333e-08,
+  "actual_qe_root_replay": {
+    "spectra_count": 716,
+    "max_abs_mu_native_vs_actual_qe": 4.163336342344337e-16,
+    "max_abs_number_residual_at_native_mu": 9.789280497329855e-11,
+    "min_abs_dN_dmu_at_native_mu": 0.6910063955889734,
+    "negative_slope_count": 691,
+    "scheduler": {
+      "SLURM_JOB_ID": "4477947",
+      "SLURM_JOB_NODELIST": "n233"
+    },
+    "compile_command": [
+      "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/gfortran",
+      "-O2",
+      "-cpp",
+      "-ffree-line-length-none",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/qe_support.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/wgauss.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w0gauss.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w1gauss.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/sumkg.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/efermig.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/replay_qe.f90",
+      "-o",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/mp-replay-250/qe-replay"
+    ],
+    "files_sha256": {
+      ".claude/campaigns/dft-gap-wave2-20261026/cpu-pw/mp-trace-250.log": "65401edd39e004d9d92ab0c6e4b58a3db3a88dd9c6a2f4ce7d9a4f2f21e7f9bc",
+      "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/gfortran": "d1a9121e633e6c2d4c998e3ba00a3a144677c1b78ffbf6c07b3947688c8a015b",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/mp-replay-250/qe-replay": "9a9b0573138940ec2211626ec6ffca1b8bf1a78106c9b5bcf8db12d4ab2efa5e",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/replay.py": "c40e99ebe2aff14b43e52557380038775a50bbee50590b74f1c8870e7a682cc7",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/replay_qe.f90": "749d6f8b36460ada74d0405175540ce0cf15100ce32de4cbd20d921255000c17",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/qe_support.f90": "90b8b1d929358f901a61fdfa9eb1c301b3cac8ca5adbeae6f38dcfd51b1c21aa",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/wgauss.f90": "78145ca2423a14f3a761737f9eb54ed6e52755c441bd79997da3a138f5d42a8c",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w0gauss.f90": "a2fd9cc385eb81b582f869898f03ec10eebc6f7aa2d3906f4c4494059c80a572",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w1gauss.f90": "05b26a47181e8cacfe02f40b4e34bde594708a97966a947f863165c5b5c8bd6f",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/sumkg.f90": "26b937cef67fee45c3b40a998f019992bcb29634e69252ff2135ba3daf0fc46f",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/efermig.f90": "24097d64cb4607630a0e700b83a0c6d966dd58327938a8dfcb547fd6dc6badaa"
+    }
+  },
+  "conclusion": "The frozen-density stress baseline energy and stress match actual QE. Independent LSDA MP strain full-SCF qualification remains false: alpha quadrature point 7844 repeatedly crosses zero and the variational clipped-density XC derivative jumps from finite negative potential to zero. Neither more SCF iterations nor smaller mixing resolves it. All inner eigenproblems satisfy their tolerance; native chemical potentials agree with actual QE on the same spectra. No XC extension or science gate was changed.",
+  "jobs": {
+    "final_original": 4477209,
+    "root_trace": 4477947,
+    "xc_and_inner_trace": 4478175
+  }
+}

@@ -2,8 +2,8 @@
 /// @brief Exchange-correlation functional evaluator for KS / UKS.
 ///
 /// Supports LSDA (Slater exchange + VWN5 correlation), pure GGAs (PBE,
-/// PBEsol, revPBE, RPBE, BLYP), the B3LYP / PBE0 global hybrids, and the
-/// B2PLYP double hybrid.
+/// PBEsol, revPBE, RPBE, BLYP), the B3LYP / PBE0 global hybrids, the
+/// CAM-B3LYP range-separated hybrid, and the B2PLYP double hybrid.
 /// A global hybrid mixes a functional-specific fraction of exact
 /// Hartree-Fock exchange (see `hybrid_exchange_fraction`) on top of a
 /// semi-local exchange-correlation part; `evaluate_xc` returns only the
@@ -51,7 +51,8 @@ namespace scf {
 /// (semi-local) functionals. `B3LYP` and `PBE0` are global hybrids: their semi-local part
 /// is evaluated by `evaluate_xc` while a fixed fraction of exact HF exchange
 /// (`hybrid_exchange_fraction`) is added by the Fock builder. `CAMB3LYP` is
-/// a range-separated hybrid: the same B3LYP semi-local mix plus
+/// a range-separated hybrid: .35 B88 + .46 short-range ITYH-B88 +
+/// .19 VWN5 + .81 LYP, plus
 /// \(\alpha K[1/r] + \beta K[\mathrm{erf}(\mu r)/r]\) (see
 /// `rsh_exchange_params`). `B2PLYP` is a **double hybrid**: same hybrid-KS
 /// build with a_x=0.53 plus a PT2 correlation scale a_c=0.27 applied by
@@ -117,7 +118,7 @@ double hybrid_pt2_fraction(XCType type);
 /// @brief Whether a functional has a gradient (GGA) dependence.
 ///
 /// True for `PBE`, `PBEsol`, `RevPBE`, `RPBE`, `BLYP`, `OptB88VdW`, `B3LYP`,
-/// `PBE0` and `B2PLYP` (all carry a semi-local GGA term); false for the pure-LDA
+/// `PBE0`, `CAMB3LYP` and `B2PLYP` (all carry a semi-local GGA term); false for the pure-LDA
 /// `LSDA`. Used to decide whether the XC grid engine must build
 /// basis-function gradients.
 ///
@@ -144,7 +145,7 @@ struct XCOutput {
 /// Applies density cutoff: if rho_total < 1e-12, returns zero for all outputs.
 ///
 /// @param type  Functional type (LSDA, PBE, PBEsol, RevPBE, RPBE, BLYP,
-///              OptB88VdW, B3LYP, PBE0 or B2PLYP).
+///              OptB88VdW, B3LYP, PBE0, CAMB3LYP or B2PLYP).
 /// @param rho_a Alpha density at grid point [electrons/Bohr^3].
 /// @param rho_b Beta density at grid point [electrons/Bohr^3].
 /// @param sigma_aa |grad rho_alpha|^2 (GGA only, ignored for LSDA).

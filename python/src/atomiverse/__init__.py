@@ -74,7 +74,6 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``scf.UKS``                           ``UKS``                     ``cpu::scf::UKS``
 ``semiempirical.AM1``                 ``AM1``                     ``cpu::semiempirical::AM1``
 ``semiempirical.AM1BCCCharges``       ``AM1BCCCharges``           ``cpu::semiempirical::AM1BCCCharges``
-``semiempirical.BccParameterSet``     ``BccParameterSet``         ``cpu::semiempirical::BccParameterSet``
 ``semiempirical.AM1Result``           ``AM1Result``               ``cpu::semiempirical::AM1Result``
 ``semiempirical.DFTB2``               ``DFTB2``                   ``cpu::semiempirical::DFTB2``
 ``semiempirical.DftbBoundary``        ``DftbBoundary``            ``cpu::semiempirical::DftbBoundary``
@@ -252,7 +251,6 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "MNDO": ("atomiverse.semiempirical", "MNDO"),
     "PM3": ("atomiverse.semiempirical", "PM3"),
     "AM1BCCCharges": ("atomiverse.semiempirical", "AM1BCCCharges"),
-    "BccParameterSet": ("atomiverse.semiempirical", "BccParameterSet"),
     "AM1Result": ("atomiverse.semiempirical", "AM1Result"),
     "RM1Result": ("atomiverse.semiempirical", "RM1Result"),
     "MNDOResult": ("atomiverse.semiempirical", "MNDOResult"),
@@ -349,7 +347,6 @@ _PUBLIC: tuple[str, ...] = (
     "MNDO",
     "PM3",
     "AM1BCCCharges",
-    "BccParameterSet",
     "AM1Result",
     "RM1Result",
     "MNDOResult",

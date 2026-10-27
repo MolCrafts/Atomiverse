@@ -33,6 +33,11 @@ hardware/environment. A controlled speedup needs five samples, passing
 observables, consistent native binary fingerprints and matched resource policy;
 raw times remain visible otherwise.
 
+Local runs can explicitly add `--no-snapshot` to produce scientific results,
+tables and raw evidence without the optional molci CI envelope. This choice is
+recorded in the result protocol; the default still requires the coordinated
+molcrafts-ci 0.3 API and never substitutes an older envelope schema.
+
 Run `python -m benchmarks validate --input <results.json>` for the strict result
 contract and `molci validate-snapshot <snapshot.json>` for its storage envelope.
 `report` regenerates views from the observations. `source` captures hashes for

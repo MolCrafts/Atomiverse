@@ -538,8 +538,10 @@ xc_pbe_spin_kernel(const double* __restrict__ rho_a,
                          vsig_c_bb);
 
     exc_r[i] = ex_pbe + ec_pbe;
-    vxc_a[i] = vrho_x_a + vc_pbe_a;
-    vxc_b[i] = vrho_x_b + vc_pbe_b;
+    // Only the local density derivative carries the clamp chain rule.
+    // Raw-gradient flux below remains unmasked before divergence.
+    vxc_a[i] = rho_a[i] > 0.0 ? vrho_x_a + vc_pbe_a : 0.0;
+    vxc_b[i] = rho_b[i] > 0.0 ? vrho_x_b + vc_pbe_b : 0.0;
 
     // flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β  (exchange contributes only to aa/bb)
     const double v_aa = vsig_x_aa + vsig_c_aa;

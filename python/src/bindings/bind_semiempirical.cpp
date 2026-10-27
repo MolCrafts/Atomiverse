@@ -24,6 +24,7 @@
 #include "force_array.h"
 #include "molpy_frame_bridge.h"
 #include "nddo_bindings.h"
+#include "result_array.h"
 
 #include <utility>
 #include <vector>
@@ -31,6 +32,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/string_view.h>
 #include <nanobind/stl/vector.h>
 
 #include "atomiverse/core/frame_schema.h"
@@ -170,52 +172,43 @@ void bind_semiempirical(nb::module_& m) {
     m.attr("MNDOResult") = m.attr("AM1Result");
     m.attr("PM3Result") = m.attr("AM1Result");
 
-    // ── AM1-BCC / ABCG2 charges: the GAFF / GAFF2 charge model ──
-    nb::enum_<cpu::semiempirical::BccParameterSet>(
-        m, "BccParameterSet",
-        "Bond-charge-correction table applied on top of the AM1 charges: "
-        "`bcc` (BCCPARM.DAT, AM1-BCC, the GAFF charge model) or `abcg2` "
-        "(BCCPARM_ABCG2.DAT, the GAFF2 charge model).")
-        .value("bcc", cpu::semiempirical::BccParameterSet::Bcc)
-        .value("abcg2", cpu::semiempirical::BccParameterSet::Abcg2);
-
+    // Molecular charge models accept the chemical graph, not a compute Frame.
     nb::class_<AM1BCCCharges>(
         m, "AM1BCCCharges",
-        "AM1-BCC partial charges (Jakalian, Jack & Bayly, J. Comput. Chem. "
-        "23, 1623 (2002)) and their ABCG2 refit, as antechamber -c bcc / "
-        "-c abcg2 compute them: AM1 Mulliken charges at the frame's "
-        "geometry, averaged over topologically equivalent atoms, plus bond "
-        "charge increments looked up from the bond graph. The geometry is "
-        "used as given (antechamber's default optimises it with sqm first).")
-        .def(nb::init<AM1, cpu::semiempirical::BccParameterSet>(),
-             nb::arg("method") = AM1{},
-             nb::arg("parameter_set") =
-                 cpu::semiempirical::BccParameterSet::Bcc,
-             "Take a configured AM1 (its `charge` is the net molecular "
-             "charge [e]; closed-shell singlet only) and a correction table.")
+        "AM1-BCC or ABCG2 charges at the molecule's current geometry. "
+        "assign(molecule) returns an owned float64 array in graph atom order "
+        "without modifying the input molpy.Atomistic. Geometry optimization "
+        "is a separate operation; correction is independent of GAFF "
+        "generation.")
+        .def(nb::init<AM1, std::string_view>(), nb::arg("method") = AM1{},
+             nb::arg("correction") = "bcc")
         .def(
             "assign",
-            [](AM1BCCCharges& self, nb::object frame_obj) {
-                auto fref = borrow_molpy_frame(frame_obj);
-                cpu::Frame work = cpu::from_molpy(*fref);
+            [](AM1BCCCharges& self, nb::object molecule) {
+                auto atomistic =
+                    nb::module_::import_("molpy").attr("Atomistic");
+                if (!nb::isinstance(molecule, atomistic))
+                    throw nb::type_error("AM1BCCCharges.assign expects a "
+                                         "molpy.Atomistic molecular graph");
+                auto frame = molecule.attr("to_frame")();
+                auto transport = borrow_molpy_frame(frame);
+                auto graph = molrs::atomistic_from_frame(*transport);
+                std::vector<double> charges;
                 {
                     nb::gil_scoped_release release;
-                    self.assign(work);
+                    charges = self.assign(*graph);
                 }
-                cpu::to_molpy(work, *fref);
+                return to_vector_array(charges);
             },
-            nb::arg("frame"),
-            "Compute the charges [e] and write them to the frame's atoms "
-            "charge column. The frame needs atomic_number, x/y/z [A] and a "
-            "bonds block (atomi/atomj) covering the whole molecule. Raises "
-            "ValueError for a multi-atom frame without bonds, RuntimeError "
-            "when the AM1 SCF does not converge or a bond has no BCC row.")
+            nb::arg("molecule"),
+            "Return partial charges [e] in molecule atom order without "
+            "mutation. "
+            "Requires a complete molpy.Atomistic with x/y/z coordinates [A].")
         .def("last_am1_result", &AM1BCCCharges::last_am1_result,
              nb::rv_policy::reference_internal,
-             "AM1Result of the last assign(): energies and the base Mulliken "
-             "charges [e] before equivalencing and correction. Borrowed.")
-        .def_prop_ro("parameter_set", &AM1BCCCharges::parameter_set,
-                     "The correction table this model applies.");
+             "AM1 result before equivalencing and correction; borrowed.")
+        .def_prop_ro("correction", &AM1BCCCharges::correction)
+        .def("needs_equivalencing", &AM1BCCCharges::needs_equivalencing);
 
     // ── single_point: one Evaluate pass over a borrowed molpy.Frame ──
     m.def(

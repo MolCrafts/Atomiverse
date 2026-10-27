@@ -1,0 +1,12 @@
+{
+  "src/cuda/planewave/internal/pw_stress.cu": "5662a41c160744cd4ecb4919294edbd6c1fb11a0dbf5e5c66a6b20b7d0206bd8",
+  "src/cuda/planewave/pw_solver.cu": "5280444e5383dbd5f80c03edf39c3770608e18c6caedf2d496401a818c4ba378",
+  "include/atomiverse/cuda/planewave/internal/pw_stress.cuh": "d3cacdd70ffc13d6b54998316b4258ce2bfd9c4a3f86da37f49c4870dd10d07a",
+  "include/atomiverse/cuda/planewave/pw_solver.cuh": "45f1eedddece8fcebd6e3580509703a5373ba93eadb3cdff497493920688856b",
+  "tests/cuda/planewave/test_guards.cu": "70a13642b099c0dcf4719b7307c73b48930068485caa0d47b30395ba8660e149",
+  "src/cpu/planewave/internal/pw_stress.cpp": "a8a73cf7c1d411ecc104e9458c4430a4ca34da76cc4a13963ce869fcd2cad75f",
+  "include/atomiverse/cpu/planewave/pw_solver.h": "a69aacd779f809bddc55d50931a984a7b6b95be538d30f25a28c52aa5c11afb6",
+  "include/atomiverse/cpu/planewave/internal/pw_stress.h": "c7b569fca2f1ccdb2679260795b76231b073dbcc1a3a1da9b451d1e4bb113d0b",
+  "tools/diagnostics/cuda-pw-spin-smear-stress/main.cpp": "2ef903a2064ec59f96aa627eea1601d409e034ebc4512e57d483aada4fc15c6d",
+  "tools/diagnostics/cuda-pw-spin-smear-stress/register.cmake": "808a5be7c7c0c6b397eef487978899027f9b301772835a43106e65819d92f286"
+}

@@ -26,6 +26,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/xc_internal.h"
 
+#include <array>
 #include <cmath>
 
 namespace ATV {
@@ -115,6 +116,75 @@ void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
     vsigma_ss = -C * dF_over_x / (2.0 * r43);
     (void)kB88_beta;
     (void)kB88_gamma;
+}
+
+namespace {
+
+// Short-range attenuation from Iikura/Tawada, as in libxc 7.0.0
+// maple/{gga_exc/gga_x_ityh,attenuation}.mpl. Evaluate the large-a series
+// through a^-16 (the upstream cutoff/order) to avoid subtracting O(a^4)
+// terms. g = A + a*A'/2 is evaluated separately: its leading a^-2 term
+// cancels exactly, so reconstructing it from A and a*A' loses precision.
+void short_range_attenuation(double a, double& attenuation,
+                             double& a_derivative, double& g) {
+    if (a == 0.0) {
+        attenuation = g = 1.0;
+        a_derivative = 0.0;
+    } else if (a >= 1.35) {
+        constexpr std::array<double, 8> c = {
+            1.0 / 36.0,          -1.0 / 960.0,          1.0 / 26880.0,
+            -1.0 / 829440.0,     1.0 / 28385280.0,      -1.0 / 1073479680.0,
+            1.0 / 44590694400.0, -1.0 / 2021444812800.0};
+        const double q = 1.0 / (a * a);
+        double p = c.back(), dp = 0.0;
+        for (int i = static_cast<int>(c.size()) - 2; i >= 0; --i) {
+            dp = p + q * dp;
+            p = c[static_cast<std::size_t>(i)] + q * p;
+        }
+        attenuation = q * p;
+        a_derivative = -2.0 * q * (p + q * dp);
+        g = -q * q * dp;
+    } else {
+        const long double x = a;
+        const long double x2 = x * x;
+        const long double em1 = std::expm1(-1.0L / (4.0L * x2));
+        const long double erf_term =
+            std::sqrt(static_cast<long double>(units::pi)) * std::erf(0.5L / x);
+        const long double value =
+            1.0L
+            - (8.0L / 3.0L) * x
+                  * (erf_term + 2.0L * x * ((1.0L - 2.0L * x2) * em1 - 0.5L));
+        const long double derivative =
+            -(8.0L / 3.0L) * x * erf_term
+            + (16.0L / 3.0L) * x2 * (2.0L - em1 + 8.0L * x2 * em1);
+        attenuation = static_cast<double>(value);
+        a_derivative = static_cast<double>(derivative);
+        g = static_cast<double>(value + 0.5L * derivative);
+    }
+}
+
+} // namespace
+
+void b88_short_range_exchange_spin(double rho_s, double sigma_ss, double mu,
+                                   double& ex_s, double& vrho_s,
+                                   double& vsigma_ss) {
+    double ex, vrho, vsigma;
+    b88_exchange_spin(rho_s, sigma_ss, ex, vrho, vsigma);
+    if (ex == 0.0) {
+        ex_s = vrho_s = vsigma_ss = 0.0;
+        return;
+    }
+    const double r13 = std::cbrt(rho_s);
+    const double enhancement = -ex / (kXFactorC * rho_s * r13);
+    const double a =
+        mu * std::sqrt(2.0 * kXFactorC * enhancement / (9.0 * units::pi))
+        / (2.0 * r13);
+    double attenuation, a_derivative, g;
+    short_range_attenuation(a, attenuation, a_derivative, g);
+    ex_s = ex * attenuation;
+    // ln(a) = ln(-ex)/2 - ln(rho); all derivatives are analytic.
+    vrho_s = vrho * g - ex * a_derivative / rho_s;
+    vsigma_ss = vsigma * g;
 }
 
 // ── LYP correlation ──────────────────────────────────────────────────────

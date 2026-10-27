@@ -352,29 +352,13 @@ FockResult HamiltonianBuilder::step(
                 // basis-invariant, so compute in engine space BEFORE the
                 // spherical bridge. The hybrid contribution is alpha_hf*E_K.
                 const double E_K = double(-0.25) * xt::sum(P_total_J * K)();
-                if (rsh.beta == double(0)) {
-                    out.E_exact_exchange = alpha_hf * E_K;
-                    to_ao(J_eng);
-                    to_ao(K);
-                    out.J = J_eng; // Coulomb-only, for E_J
-                    out.F_alpha = Hcore + J_eng - double(0.5) * alpha_hf * K
-                                  + xc.Vxc_alpha;
-                    out.F_beta = out.F_alpha;
-                } else {
-                    // CAM / RSH: F -= 0.5 (α K[1/r] + β K[erf]).
-                    RealMatrix K_erf;
-                    sp_block_.k_erf(P_total_J, rsh.mu, K_erf);
-                    const double E_K_erf =
-                        double(-0.25) * xt::sum(P_total_J * K_erf)();
-                    out.E_exact_exchange = alpha_hf * E_K + rsh.beta * E_K_erf;
-                    RealMatrix K_mix = alpha_hf * K + rsh.beta * K_erf;
-                    to_ao(J_eng);
-                    to_ao(K_mix);
-                    out.J = J_eng;
-                    out.F_alpha =
-                        Hcore + J_eng - double(0.5) * K_mix + xc.Vxc_alpha;
-                    out.F_beta = out.F_alpha;
-                }
+                out.E_exact_exchange = alpha_hf * E_K;
+                to_ao(J_eng);
+                to_ao(K);
+                out.J = J_eng;
+                out.F_alpha =
+                    Hcore + J_eng - double(0.5) * alpha_hf * K + xc.Vxc_alpha;
+                out.F_beta = out.F_alpha;
             }
         } else if (is_hybrid) {
             // Unrestricted KS hybrid (open-shell). Out of the closed-shell
@@ -416,6 +400,26 @@ FockResult HamiltonianBuilder::step(
             to_ao(out.J);
             out.F_alpha = Hcore + out.J + xc.Vxc_alpha;
             out.F_beta = Hcore + out.J + xc.Vxc_beta;
+        }
+
+        // Add the long-range exchange on every KS path, including UKS.
+        // The bare exact/fitted exchange above carries alpha only; the
+        // additional beta*erf(mu*r)/r operator is contracted separately.
+        // In particular, an unrestricted RSH must not silently drop beta.
+        if (rsh.beta != 0.0) {
+            RealMatrix Ka_lr, Kb_lr;
+            sp_block_.k_erf(P_alpha_xc, rsh.mu, Ka_lr);
+            if (restricted)
+                Kb_lr = Ka_lr;
+            else
+                sp_block_.k_erf(P_beta_xc, rsh.mu, Kb_lr);
+            out.E_exact_exchange -= double(0.5) * rsh.beta
+                                    * (xt::sum(P_alpha_xc * Ka_lr)()
+                                       + xt::sum(P_beta_xc * Kb_lr)());
+            to_ao(Ka_lr);
+            to_ao(Kb_lr);
+            out.F_alpha -= rsh.beta * Ka_lr;
+            out.F_beta -= rsh.beta * Kb_lr;
         }
 
         out.E_xc_grid = xc.E_xc;

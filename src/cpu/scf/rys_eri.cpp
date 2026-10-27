@@ -516,10 +516,9 @@ static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
                 const double a1 = aij * akl;
                 const double delta = aij + akl;
                 double a0 = a1 / delta;
-                if (omega > 0.0) {
-                    const double w2 = omega * omega;
-                    a0 *= w2 / (w2 + a0);
-                }
+                const double theta =
+                    omega > 0.0 ? 1.0 / (1.0 + a0 / (omega * omega)) : 1.0;
+                a0 *= theta;
                 const double rijkl[3] = {
                     rij[0] - rkl[0],
                     rij[1] - rkl[1],
@@ -544,7 +543,12 @@ static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
 
                 Rys2eCoeff bc;
                 for (int irys = 0; irys < env.nroots; ++irys) {
-                    const double u2 = a0 * u[irys];
+                    // Rys roots store u=t^2/(1-t^2). Attenuation maps
+                    // t^2 -> theta*t^2, hence u -> theta*u /
+                    // (1+(1-theta)*u); rescaling rho alone is insufficient
+                    // for off-center angular integrals and their derivatives.
+                    const double u2 =
+                        a0 * u[irys] / (1.0 + (1.0 - theta) * u[irys]);
                     const double tmp4 = 0.5 / (u2 * delta + a1);
                     const double tmp5 = u2 * tmp4;
                     const double tmp1 = 2.0 * tmp5;
@@ -719,7 +723,7 @@ static void rys_eri_block_deriv_canonical(const ShellBlock& A,
                                           const ShellBlock& B,
                                           const ShellBlock& C,
                                           const ShellBlock& D, int deriv_center,
-                                          double* out_axes) {
+                                          double omega, double* out_axes) {
     RysEnv env;
     init_env(env, A, B, C, D);
     enlarge_env_for_deriv(env, deriv_center);
@@ -882,7 +886,10 @@ static void rys_eri_block_deriv_canonical(const ShellBlock& A,
 
                 const double a1 = aij * akl;
                 const double delta = aij + akl;
-                const double a0 = a1 / delta;
+                double a0 = a1 / delta;
+                const double theta =
+                    omega > 0.0 ? 1.0 / (1.0 + a0 / (omega * omega)) : 1.0;
+                a0 *= theta;
                 const double rijkl[3] = {
                     rij[0] - rkl[0],
                     rij[1] - rkl[1],
@@ -900,7 +907,12 @@ static void rys_eri_block_deriv_canonical(const ShellBlock& A,
 
                 Rys2eCoeff bc;
                 for (int irys = 0; irys < env.nroots; ++irys) {
-                    const double u2 = a0 * u[irys];
+                    // Rys roots store u=t^2/(1-t^2). Attenuation maps
+                    // t^2 -> theta*t^2, hence u -> theta*u /
+                    // (1+(1-theta)*u); rescaling rho alone is insufficient
+                    // for off-center angular integrals and their derivatives.
+                    const double u2 =
+                        a0 * u[irys] / (1.0 + (1.0 - theta) * u[irys]);
                     const double tmp4 = 0.5 / (u2 * delta + a1);
                     const double tmp5 = u2 * tmp4;
                     const double tmp1 = 2.0 * tmp5;
@@ -1013,9 +1025,10 @@ static inline int remap_deriv_center(int dc, bool swap_ab, bool swap_cd) {
     return dc;
 }
 
-void rys_eri_block_deriv(const ShellBlock& A, const ShellBlock& B,
-                         const ShellBlock& C, const ShellBlock& D,
-                         int deriv_center, double* out_axes) {
+static void rys_eri_deriv_dispatch(const ShellBlock& A, const ShellBlock& B,
+                                   const ShellBlock& C, const ShellBlock& D,
+                                   int deriv_center, double omega,
+                                   double* out_axes) {
     check_root_budget(A, B, C, D, /*extra_l=*/1);
     const bool swap_ab = A.l < B.l;
     const bool swap_cd = C.l < D.l;
@@ -1037,7 +1050,8 @@ void rys_eri_block_deriv(const ShellBlock& A, const ShellBlock& B,
     const int nde = De.n_cart;
 
     if (!swap_ab && !swap_cd) {
-        rys_eri_block_deriv_canonical(Ae, Be, Ce, De, dc_kernel, out_axes);
+        rys_eri_block_deriv_canonical(Ae, Be, Ce, De, dc_kernel, omega,
+                                      out_axes);
         return;
     }
 
@@ -1048,7 +1062,8 @@ void rys_eri_block_deriv(const ShellBlock& A, const ShellBlock& B,
     const size_t n_out_orig = static_cast<size_t>(na) * nb * nc * nd;
     std::vector<double> scratch(static_cast<size_t>(nae) * nbe * nce * nde * 3,
                                 0.0);
-    rys_eri_block_deriv_canonical(Ae, Be, Ce, De, dc_kernel, scratch.data());
+    rys_eri_block_deriv_canonical(Ae, Be, Ce, De, dc_kernel, omega,
+                                  scratch.data());
 
     const size_t n_out_kernel = static_cast<size_t>(nae) * nbe * nce * nde;
     for (int axis = 0; axis < 3; ++axis) {
@@ -1066,6 +1081,24 @@ void rys_eri_block_deriv(const ShellBlock& A, const ShellBlock& B,
                             sa[((iae * nbe + ibe) * nce + ice) * nde + ide];
                     }
     }
+}
+
+void rys_eri_block_deriv(const ShellBlock& A, const ShellBlock& B,
+                         const ShellBlock& C, const ShellBlock& D,
+                         int deriv_center, double* out_axes) {
+    rys_eri_deriv_dispatch(A, B, C, D, deriv_center, 0.0, out_axes);
+}
+
+void rys_eri_erf_block_deriv(const ShellBlock& A, const ShellBlock& B,
+                             const ShellBlock& C, const ShellBlock& D,
+                             int deriv_center, double omega, double* out_axes) {
+    if (!(omega >= 0.0) || !std::isfinite(omega))
+        throw std::invalid_argument(
+            "rys_eri_erf_block_deriv: omega must be finite and >= 0");
+    if (deriv_center < 0 || deriv_center > 3)
+        throw std::invalid_argument(
+            "rys_eri_erf_block_deriv: deriv_center must be in [0, 3]");
+    rys_eri_deriv_dispatch(A, B, C, D, deriv_center, omega, out_axes);
 }
 
 // ── Public API ───────────────────────────────────────────────────────

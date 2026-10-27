@@ -1,0 +1,9 @@
+{
+  "status": "source_frozen_ready_for_CPU_and_CUDA_rebuild",
+  "owner": "cpu_dft",
+  "no_pending_production_edits": true,
+  "source_sha256": {
+    "src/cpu/planewave/internal/smearing.cpp": "cffe8476e6ac1e1bf724807518775aa90d42a3b22ea103a035141e2c5da696fe",
+    "include/atomiverse/cpu/planewave/internal/smearing.h": "972409f869d74dd5219ab175af78a5ea05c69e0fc3b18a55460f9a7f92de6881"
+  }
+}

@@ -976,6 +976,14 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/planewave/berry_polarization.cpp
             src/cpu/planewave/periodic_wannier.cpp
         )
+        # Public DFPT phonons use supercell construction and IFC Fourier
+        # assembly even when the optional vibration product is disabled.
+        if(NOT ATV_BUILD_VIB)
+            target_sources(atomiverse PRIVATE
+                src/cpu/vibration/supercell.cpp
+                src/cpu/vibration/phonon_dispersion.cpp
+            )
+        endif()
         if(NOT ATV_BUILD_HF)
             target_sources(atomiverse PRIVATE
             )

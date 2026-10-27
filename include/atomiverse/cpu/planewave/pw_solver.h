@@ -205,18 +205,23 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// One SCF + Hellmann–Feynman cell derivatives (kinetic, Hartree, local
     /// PP, Ewald, XC, KB nonlocal) as central differences of the
     /// non-self-consistent energy under symmetric strain at the converged
-    /// density. Matches strain-FD of the total energy for fixed occupations,
-    /// or of the Mermin free energy under restricted metallic `smearing`.
+    /// density. Reference integer modes and FFT shapes remain fixed; their
+    /// metric, kinetic energies and ionic operators follow the strain.
+    /// Matches strain-FD of the total energy for fixed occupations,
+    /// or of the Mermin free energy under restricted or collinear metallic
+    /// `smearing`. Collinear smeared samples use one chemical potential
+    /// shared by both spin channels, fractional occupations and entropy.
     /// Mechanical / CP2K sign: \(\sigma=-(1/\Omega)\partial E/\partial
     /// \varepsilon\). Writes the extensive virial \(W=\sigma\Omega\) [eV]
     /// to `frame.meta[kStress]` (overwritten) and the energy [eV] to
-    /// `kEnergy`. Collinear UKS with smearing has no one-SCF stress path — use
-    /// `pw_stress_fd`.
+    /// `kEnergy`. `last_result()` retains the complete reference SCF result.
+    /// Off-diagonal Voigt entries are physical tensor components, with the
+    /// factor of two from symmetric shear included in the normalization.
     /// @param frame Atom positions [Å], types (Z), and simulation cell.
     /// @return Voigt stress \((\sigma_{xx},\sigma_{yy},\sigma_{zz},
     ///         \sigma_{xy},\sigma_{xz},\sigma_{yz})\) [eV/Å³].
     /// @throws std::invalid_argument on an empty frame or non-positive cell
-    ///         volume; on `spin_polarized` combined with `smearing`; on
+    ///         volume; on
     ///         `degauss <= 0` with smearing on; on an incompatible
     ///         `multiplicity`; and on an odd valence count on the restricted
     ///         fixed-occupation path.
@@ -327,7 +332,10 @@ pw_forces_fd(const cpu::Frame& frame, const PW& method, double h_ang = 1e-3);
 ///
 /// Central differences of SCF energy under symmetric strain at fixed
 /// fractional coordinates (12 SCF solves). Dual-gate oracle for
-/// `PW::stress`; not the production path.
+/// `PW::stress` when the cutoff mode sets remain unchanged. This helper
+/// re-enumerates the hard cutoff at each sample; modes crossing the cutoff
+/// can produce discontinuous finite differences. The production NSCF path
+/// instead holds the reference integer basis fixed.
 ///
 /// @param frame Geometry [Å]; not mutated.
 /// @param method Plane-wave method members.

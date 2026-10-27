@@ -13,12 +13,13 @@
 /// metallic smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton) and
 /// `XCType::LSDA` / `XCType::PBE`; collinear UKS (`spin_polarized`,
 /// integer multiplicity) with **`XCType::LSDA` or `XCType::PBE`**,
-/// fixed occupation **or** metallic smear (shared μ, \(f\in[0,1]\)).
+/// fixed occupation **or** metallic smear with shared μ. Methfessel–Paxton
+/// corrections admit signed quasi-occupations outside the probability range.
 /// Restricted smear forces and restricted smear cell stress are on
 /// device; collinear LSDA/PBE spin forces (fixed-occ **and** smear)
-/// and LSDA/PBE spin cell stress (fixed-occ) are on device.
-/// spin∧smear analytic stress stays on `cpu::pw::pw_stress_fd` (or a
-/// deeper CUDA product row).
+/// and LSDA/PBE spin cell stress (fixed-occ or fractional occupations) are
+/// supported. Cell stress is a frozen-density NSCF strain finite difference,
+/// with both strained spin spectra refilled at one shared chemical potential.
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -142,7 +143,7 @@ class PW {
     /// @return Owned `PWResult` (valid until the next `run()`).
     /// @throws std::invalid_argument for an `xc` other than `XCType::LSDA` /
     ///         `XCType::PBE`, collinear spin with non-LSDA/PBE XC, multiplicity
-    ///         without spin, spin+smear, `degauss ≤ 0` with smear, non-positive
+    ///         without spin, `degauss ≤ 0` with smear, non-positive
     ///         `tol`/`mix_beta`, `pulay_depth < 1`, `max_iter < 1`,
     ///         incompatible n_elec/multiplicity parity, or (restricted fixed
     ///         occupation only) an odd valence-electron count. Every message
@@ -157,7 +158,8 @@ class PW {
     /// @brief Device SCF plus analytic forces into `kAtom_f*` [eV/Å] and
     ///        `kEnergy` [eV].
     /// @param frame Geometry in, forces and energy out.
-    /// @return The SCF result that produced the forces.
+    /// @return The complete SCF result that produced the forces, including
+    ///         convergence, iterations, occupations and k-point counts.
     /// @throws std::invalid_argument for the same members `pw_forces_analytic`
     ///         rejects.
     PWResult& forces(cpu::Frame& frame);
@@ -167,13 +169,16 @@ class PW {
     ///        `kStress` = σΩ [eV] and `kEnergy` [eV].
     /// @param frame Geometry in, stress and energy meta out.
     /// @return Intensive stress [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
+    ///         `last_result()` describes the reference SCF of this stress call.
     /// @throws std::invalid_argument for the same members `pw_stress` rejects.
     std::array<double, 6> stress(cpu::Frame& frame);
 
     /// @brief Most recent SCF result.
     /// @return Owned `PWResult` (`energy` [Ry], `energy_ha` [Hartree]);
     ///         zero-initialised before the first `run()` and re-initialised
-    ///         at the start of each `run()`. Valid until the next `run()`.
+    ///         at the start of each `run()`. Derivative members also replace
+    ///         it with their own SCF result; a truncated solve cannot retain
+    ///         a previous call's convergence or occupation metadata.
     const PWResult& last_result() const { return result_; }
 
   private:
@@ -184,6 +189,15 @@ class PW {
     pw_stress(const cpu::Frame& frame, const PW& method, double* energy_ry_out);
     /// @brief Reject every member with no device path (throws, never warns).
     void validate_members() const;
+
+    // Shared execution for the Frame member and the compatibility free function.
+    // The optional result is the very SCF used for these derivatives.
+    std::vector<std::array<double, 3>> forces_impl(const cpu::Frame& frame,
+                                                   double* energy_ha_out,
+                                                   PWResult* result_out) const;
+    std::array<double, 6> stress_impl(const cpu::Frame& frame,
+                                      double* energy_ry_out,
+                                      PWResult* result_out) const;
 
     bool built_ = false;
     PWResult result_;
@@ -196,7 +210,8 @@ class PW {
 /// run on the device; Ewald is the shared host classical sum. Supports
 /// restricted closed shell (LSDA/PBE), restricted metallic smear
 /// (FD/Gaussian/MP fractional occupations), collinear fixed-occupation
-/// UKS (LSDA/PBE), and collinear spin×smear (shared μ, \(f\in[0,1]\)).
+/// UKS (LSDA/PBE), and collinear spin×smear with a shared μ (signed MP
+/// quasi-occupations are preserved).
 /// Rejects unsupported XC / members with a how-to.
 ///
 /// @param frame  Geometry [Å], types (Z), cell; not mutated.
@@ -216,10 +231,9 @@ pw_forces_analytic(const cpu::Frame& frame, const PW& method,
 /// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\). Restricted metallic
 /// smear uses the Mermin free energy \(F=E_{\mathrm{KS}}-TS\). Supports
 /// restricted fixed closed shell (LSDA/PBE), restricted metallic smear
-/// (FD/Gaussian/MP), and collinear fixed-occupation UKS under **LSDA/PBE**
-/// (remaps both \(\rho_\uparrow\) and \(\rho_\downarrow\)). Rejects
-/// spin∧smear one-SCF stress (use `cpu::pw::pw_stress_fd`) and other
-/// members `PW::run` rejects.
+/// (FD/Gaussian/MP), and collinear UKS under **LSDA/PBE**, with fixed or
+/// fractional occupations (remaps both spin densities). Rejects the same
+/// unsupported members as `PW::run`.
 ///
 /// @param frame         Geometry [Å], types (Z), cell; not mutated.
 /// @param method        Plane-wave method members.

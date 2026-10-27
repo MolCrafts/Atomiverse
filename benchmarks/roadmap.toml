@@ -1,6 +1,18 @@
 schema = "atomiverse.benchmark-catalog/1"
 
 [[capabilities]]
+id = "forcefield.gaff.parameterization"
+chapter = "force-fields.md"
+label = "GAFF/GAFF2 with AM1-BCC/ABCG2 parameterization"
+scope = "Fixed-geometry closed-shell organic molecules, including cation/anion, S/P/halogens and alkane size series. Exact atom types and parameter instances against live antechamber+parmchk2+tleap; per-atom charges within 1e-3 e. No geometry optimization, external force evaluator, dynamics or general chemical-coverage claim."
+rows = ["forcefield.gaff.bcc.parameterize", "forcefield.gaff.abcg2.parameterize", "forcefield.gaff2.bcc.parameterize", "forcefield.gaff2.abcg2.parameterize"]
+cpu_rows = ["forcefield.gaff.bcc.parameterize", "forcefield.gaff.abcg2.parameterize", "forcefield.gaff2.bcc.parameterize", "forcefield.gaff2.abcg2.parameterize"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Only fresh public-API CPU executions of the declared fixed-geometry inputs qualify; local dirty/unattested builds retain provisional roadmap status."
+
+[[capabilities]]
 id = "hf.rhf.energy"
 chapter = "hartree-fock.md"
 label = "RHF molecular energy"
@@ -383,3 +395,51 @@ rows = []
 cpu = "pending_migration"
 cuda = "not_implemented"
 reason = "CPU GHF shares the automatic exact J/K engine; a separately budget-constrained benchmark row has not been migrated."
+
+[[capabilities]]
+id = "dft.rks.energy"
+chapter = "dft.md"
+label = "RKS molecular energy"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["rks.lsda.sto3g.energy", "rks.pbe.sto3g.energy", "rks.pbesol.sto3g.energy", "rks.revpbe.sto3g.energy", "rks.rpbe.sto3g.energy", "rks.blyp.sto3g.energy", "rks.b3lyp.sto3g.energy", "rks.pbe0.sto3g.energy", "rks.camb3lyp.sto3g.energy", "rks.pbe.def2svp.energy", "rks.pbe0.def2svp.energy", "rks.camb3lyp.def2svp.energy"]
+cpu_rows = ["rks.lsda.sto3g.energy", "rks.pbe.sto3g.energy", "rks.pbesol.sto3g.energy", "rks.revpbe.sto3g.energy", "rks.rpbe.sto3g.energy", "rks.blyp.sto3g.energy", "rks.b3lyp.sto3g.energy", "rks.pbe0.sto3g.energy", "rks.camb3lyp.sto3g.energy", "rks.pbe.def2svp.energy", "rks.pbe0.def2svp.energy", "rks.camb3lyp.def2svp.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.rks.gradient"
+chapter = "dft.md"
+label = "RKS molecular gradient"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["rks.pbe.sto3g.forces", "rks.pbe0.sto3g.forces", "rks.camb3lyp.sto3g.forces", "rks.pbesol.sto3g.forces", "rks.revpbe.sto3g.forces", "rks.rpbe.sto3g.forces", "rks.pbe.def2svp.forces", "rks.pbe0.def2svp.forces", "rks.camb3lyp.def2svp.forces"]
+cpu_rows = ["rks.pbe.sto3g.forces", "rks.pbe0.sto3g.forces", "rks.camb3lyp.sto3g.forces", "rks.pbesol.sto3g.forces", "rks.revpbe.sto3g.forces", "rks.rpbe.sto3g.forces", "rks.pbe.def2svp.forces", "rks.pbe0.def2svp.forces", "rks.camb3lyp.def2svp.forces"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.uks.energy"
+chapter = "dft.md"
+label = "UKS molecular energy"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["uks.lsda.sto3g.energy", "uks.pbe.sto3g.energy", "uks.pbesol.sto3g.energy", "uks.revpbe.sto3g.energy", "uks.rpbe.sto3g.energy", "uks.pbe0.sto3g.energy", "uks.camb3lyp.sto3g.energy", "uks.pbe.def2svp.energy", "uks.pbe0.def2svp.energy", "uks.camb3lyp.def2svp.energy"]
+cpu_rows = ["uks.lsda.sto3g.energy", "uks.pbe.sto3g.energy", "uks.pbesol.sto3g.energy", "uks.revpbe.sto3g.energy", "uks.rpbe.sto3g.energy", "uks.pbe0.sto3g.energy", "uks.camb3lyp.sto3g.energy", "uks.pbe.def2svp.energy", "uks.pbe0.def2svp.energy", "uks.camb3lyp.def2svp.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.uks.gradient"
+chapter = "dft.md"
+label = "UKS molecular gradient"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["uks.lsda.sto3g.forces", "uks.pbe.sto3g.forces", "uks.pbesol.sto3g.forces", "uks.revpbe.sto3g.forces", "uks.rpbe.sto3g.forces", "uks.pbe0.sto3g.forces", "uks.camb3lyp.sto3g.forces", "uks.pbe.def2svp.forces", "uks.pbe0.def2svp.forces", "uks.camb3lyp.def2svp.forces"]
+cpu_rows = ["uks.lsda.sto3g.forces", "uks.pbe.sto3g.forces", "uks.pbesol.sto3g.forces", "uks.revpbe.sto3g.forces", "uks.rpbe.sto3g.forces", "uks.pbe0.sto3g.forces", "uks.camb3lyp.sto3g.forces", "uks.pbe.def2svp.forces", "uks.pbe0.def2svp.forces", "uks.camb3lyp.def2svp.forces"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."

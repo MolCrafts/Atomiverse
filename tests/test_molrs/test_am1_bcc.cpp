@@ -12,7 +12,7 @@
 
 namespace {
 
-::rust::Box<molrs::FrameRef> methane_like() {
+::rust::Box<molrs::Atomistic> methane_like() {
     auto fr = molrs::frame_new();
     const std::vector<double> x = {0.0, 0.63, -0.63, -0.63, 0.63};
     const std::vector<double> y = {0.0, 0.63, -0.63, 0.63, -0.63};
@@ -35,7 +35,7 @@ namespace {
     molrs::frame_set_column_u64(
         *fr, "bonds", "atomj",
         ::rust::Slice<const std::uint64_t>(bj.data(), bj.size()));
-    return fr;
+    return molrs::atomistic_from_frame(*fr);
 }
 
 // BCCPARM.DAT C(sp3)–H increment: +0.0393 e moved from C to each H.

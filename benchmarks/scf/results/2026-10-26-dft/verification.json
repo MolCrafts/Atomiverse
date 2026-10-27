@@ -1,0 +1,45 @@
+{
+  "scope": "Public molecular KS live PySCF acceptance; no performance or clean-build qualification",
+  "job": 4475712,
+  "job_exit_code": 0,
+  "rows": 21,
+  "scientific_workloads": 35,
+  "summary": {
+    "complete": true,
+    "failed": 0,
+    "historical_status": "unbaselined",
+    "incomplete": 0,
+    "optional_unavailable": 35,
+    "passed": 70,
+    "performance_regressions": 0,
+    "required": 70
+  },
+  "native_binary_sha256": "a0854aec15a0232eb1e979b117b643788fe432142135e7f56eebe984502a5c77",
+  "all_native_samples_and_current_binary_match": true,
+  "energy_atol_ha": 1e-08,
+  "force_atol_ha_bohr": 1e-06,
+  "max_energy_error_ha": 1.0948510986708015e-09,
+  "max_force_error_ha_bohr": 1.1990295423203179e-09,
+  "dirty": true,
+  "changed_during_run": true,
+  "build_verified": false,
+  "selected_current_sources_match_measured_manifest": {
+    "src/cpu/scf/internal/gradient.cpp": true,
+    "src/cpu/scf/internal/integral_derivatives.cpp": true,
+    "src/cpu/scf/internal/hamiltonian_builder.cpp": true,
+    "src/cpu/scf/rys_eri.cpp": true,
+    "python/src/bindings/bind_scf.cpp": true,
+    "benchmarks/scf/dft.py": true,
+    "benchmarks/scf/bench_rks.py": true,
+    "benchmarks/scf/bench_uks.py": true,
+    "benchmarks/systems/dft.json": true,
+    "benchmarks/framework/comparison.py": true,
+    "benchmarks/framework/execution.py": true,
+    "benchmarks/framework/specification.py": true
+  },
+  "initial_attempt": {
+    "job": 4475288,
+    "state": "cancelled",
+    "reason": "Native molpy Frame capsule build fingerprint mismatch; aborted partial record retained, no acceptance claimed"
+  }
+}

@@ -6,7 +6,7 @@
 /// SCF solves. Pure LSDA **or pure GGA** (PBE, PBEsol, revPBE, RPBE, BLYP)
 /// with a UPF norm-conserving pseudopotential. **Fixed occupations** or
 /// **metallic smearing** (restricted or collinear spin) (`method.smearing` = Fermi–Dirac /
-/// Methfessel–Paxton / Gaussian with `degauss` [Ry] and `extra_bands`) at
+/// Gaussian with `degauss` [Ry] and `extra_bands`) at
 /// Γ, commensurate finite \(\mathbf{q}\), and **direct** finite-\(q\)
 /// Sternheimer. **Collinear spin** (`method.spin_polarized`) is supported
 /// at Γ, commensurate finite \(\mathbf{q}\) (supercell Γ path), and
@@ -18,7 +18,9 @@
 /// direct finite-\(q\) Sternheimer. **Collinear spin + metallic smearing**
 /// (shared \(\mu\), spinor \(f\)) is allowed at Γ, commensurate
 /// \(\mathbf{q}\) (supercell Γ path), and **direct** finite-\(q\) Sternheimer
-/// (no \(\delta\mu\) at \(q\neq 0\)). Hybrids are rejected. Default
+/// (no \(\delta\mu\) at \(q\neq 0\)). Hybrids and Methfessel–Paxton response
+/// are rejected; signed MP ground-state weights require a different
+/// response treatment. Default
 /// `q_frac = {0,0,0}` is the Γ path. Finite \(\mathbf{q}\) that is
 /// **commensurate** with a small supercell (e.g. \(X=(1/2,0,0)\) →
 /// \(2\times1\times1\)) is evaluated as Γ-DFPT on that supercell plus IFC
@@ -126,6 +128,9 @@ class DfptPhonon {
     /// \(\mathbf{q}\), and direct finite-\(q\) Sternheimer. Collinear spin
     /// (fixed occupations or metallic smear) is allowed at Γ, commensurate
     /// \(\mathbf{q}\), and incommensurate \(\mathbf{q}\).
+    /// Methfessel–Paxton is rejected before any SCF or supercell work:
+    /// signed quasi-occupation response is not implemented. Ground-state
+    /// PW energies, forces and stress retain MP support.
     ///
     /// @param method Plane-wave method (members only; not mutated).
     /// @param frame  Atom positions [Å], types (Z), simulation cell.

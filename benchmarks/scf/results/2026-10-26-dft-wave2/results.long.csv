@@ -1,0 +1,336 @@
+row_id,system_id,participant_id,required,execution,numerical,phase,repeat,seconds,process_seconds,median_seconds,speedup,reason
+rks.lsda.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.193112205,1.9676275669480674,0.212628787,,at least five samples per participant required
+rks.lsda.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.212628787,0.6160136729595251,0.212628787,,at least five samples per participant required
+rks.lsda.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.lsda.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.109010242,0.8659220320405439,0.101334774,,at least five samples per participant required
+rks.lsda.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.101334774,0.8661125630023889,0.101334774,,at least five samples per participant required
+rks.pbe.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.405563291,0.7159047640161589,0.387891226,,at least five samples per participant required
+rks.pbe.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.387891226,0.6658728470210917,0.387891226,,at least five samples per participant required
+rks.pbe.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.128622816,0.8661996910232119,0.129300217,,at least five samples per participant required
+rks.pbe.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.129300217,0.8158151670359075,0.129300217,,at least five samples per participant required
+rks.pbesol.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.485656946,0.7660298589617014,0.461526738,,at least five samples per participant required
+rks.pbesol.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.461526738,0.7158941569505259,0.461526738,,at least five samples per participant required
+rks.pbesol.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbesol.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.123158515,0.7658322470379062,0.123333791,,at least five samples per participant required
+rks.pbesol.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.123333791,0.7159378670039587,0.123333791,,at least five samples per participant required
+rks.revpbe.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.40169274,0.6659044669941068,0.386895371,,at least five samples per participant required
+rks.revpbe.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.386895371,0.6658378720167093,0.386895371,,at least five samples per participant required
+rks.revpbe.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.revpbe.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.129396829,0.7158683169982396,0.158998059,,at least five samples per participant required
+rks.revpbe.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.158998059,0.8660344299860299,0.158998059,,at least five samples per participant required
+rks.rpbe.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.427760452,0.7159948970074765,0.392868848,,at least five samples per participant required
+rks.rpbe.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.392868848,0.670109529979527,0.392868848,,at least five samples per participant required
+rks.rpbe.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.rpbe.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.127388364,0.7158148019807413,0.125735249,,at least five samples per participant required
+rks.rpbe.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.125735249,0.7158310880186036,0.125735249,,at least five samples per participant required
+rks.blyp.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.453415799,0.8164642340270802,0.414525027,,at least five samples per participant required
+rks.blyp.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.414525027,0.6657399300020188,0.414525027,,at least five samples per participant required
+rks.blyp.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.blyp.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.150000439,0.8661601099884138,0.130454318,,at least five samples per participant required
+rks.blyp.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.130454318,0.7661004329565912,0.130454318,,at least five samples per participant required
+rks.b3lyp.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.415451032,0.6657287920243107,0.404647011,,at least five samples per participant required
+rks.b3lyp.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.404647011,0.66600148397265,0.404647011,,at least five samples per participant required
+rks.b3lyp.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.b3lyp.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.170360187,0.7670761159970425,0.166650449,,at least five samples per participant required
+rks.b3lyp.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.166650449,0.7158168780151755,0.166650449,,at least five samples per participant required
+rks.pbe0.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.350355886,0.6157305580563843,0.347320305,,at least five samples per participant required
+rks.pbe0.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.347320305,0.6156776950228959,0.347320305,,at least five samples per participant required
+rks.pbe0.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe0.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.120045182,0.6658293519867584,0.12102333,,at least five samples per participant required
+rks.pbe0.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.12102333,0.7661478880327195,0.12102333,,at least five samples per participant required
+rks.camb3lyp.sto3g.energy,water,atv.cpu,True,completed,pass,cold,0,0.502323748,0.7662227159598842,0.502422895,,at least five samples per participant required
+rks.camb3lyp.sto3g.energy,water,atv.cpu,True,completed,pass,warm,1,0.502422895,0.7659589889808558,0.502422895,,at least five samples per participant required
+rks.camb3lyp.sto3g.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.camb3lyp.sto3g.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.177758891,0.7659401390119456,0.175897256,,at least five samples per participant required
+rks.camb3lyp.sto3g.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.175897256,0.7665863520232961,0.175897256,,at least five samples per participant required
+rks.pbe.sto3g.forces,h2_stretched,atv.cpu,True,completed,pass,cold,0,0.037786726,0.26510521600721404,0.038107473,,at least five samples per participant required
+rks.pbe.sto3g.forces,h2_stretched,atv.cpu,True,completed,pass,warm,1,0.038107473,0.3155654009897262,0.038107473,,at least five samples per participant required
+rks.pbe.sto3g.forces,h2_stretched,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe.sto3g.forces,h2_stretched,pyscf.cpu,True,completed,pass,cold,0,0.311277046,0.8661305630230345,0.152957387,,at least five samples per participant required
+rks.pbe.sto3g.forces,h2_stretched,pyscf.cpu,True,completed,pass,warm,1,0.152957387,0.7159563889726996,0.152957387,,at least five samples per participant required
+rks.pbe.sto3g.forces,water,atv.cpu,True,completed,pass,cold,0,0.471393549,0.7677687219693325,0.489658442,,at least five samples per participant required
+rks.pbe.sto3g.forces,water,atv.cpu,True,completed,pass,warm,1,0.489658442,0.8166186590096913,0.489658442,,at least five samples per participant required
+rks.pbe.sto3g.forces,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe.sto3g.forces,water,pyscf.cpu,True,completed,pass,cold,0,0.27380009,0.8665988140273839,0.259812344,,at least five samples per participant required
+rks.pbe.sto3g.forces,water,pyscf.cpu,True,completed,pass,warm,1,0.259812344,0.8163698149728589,0.259812344,,at least five samples per participant required
+rks.pbe0.sto3g.forces,h2_stretched,atv.cpu,True,completed,pass,cold,0,0.03764998,0.2655359680065885,0.038909542,,at least five samples per participant required
+rks.pbe0.sto3g.forces,h2_stretched,atv.cpu,True,completed,pass,warm,1,0.038909542,0.31582365900976583,0.038909542,,at least five samples per participant required
+rks.pbe0.sto3g.forces,h2_stretched,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe0.sto3g.forces,h2_stretched,pyscf.cpu,True,completed,pass,cold,0,0.137859453,0.7667382819927298,0.108684461,,at least five samples per participant required
+rks.pbe0.sto3g.forces,h2_stretched,pyscf.cpu,True,completed,pass,warm,1,0.108684461,0.6662329999962822,0.108684461,,at least five samples per participant required
+rks.pbe0.sto3g.forces,water,atv.cpu,True,completed,pass,cold,0,0.438326559,0.7165364570100792,0.4190128,,at least five samples per participant required
+rks.pbe0.sto3g.forces,water,atv.cpu,True,completed,pass,warm,1,0.4190128,0.6661406789789908,0.4190128,,at least five samples per participant required
+rks.pbe0.sto3g.forces,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe0.sto3g.forces,water,pyscf.cpu,True,completed,pass,cold,0,0.213901086,0.8667039989959449,0.210532819,,at least five samples per participant required
+rks.pbe0.sto3g.forces,water,pyscf.cpu,True,completed,pass,warm,1,0.210532819,0.8180904019973241,0.210532819,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,h2_stretched,atv.cpu,True,completed,pass,cold,0,0.075511353,0.31556685600662604,0.074418665,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,h2_stretched,atv.cpu,True,completed,pass,warm,1,0.074418665,0.31570847902912647,0.074418665,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,h2_stretched,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.camb3lyp.sto3g.forces,h2_stretched,pyscf.cpu,True,completed,pass,cold,0,0.133570479,0.766543498961255,0.134939635,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,h2_stretched,pyscf.cpu,True,completed,pass,warm,1,0.134939635,0.8167608790099621,0.134939635,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,water,atv.cpu,True,completed,pass,cold,0,0.585666233,0.8165373160154559,0.58970321,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,water,atv.cpu,True,completed,pass,warm,1,0.58970321,0.8164120779838413,0.58970321,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.camb3lyp.sto3g.forces,water,pyscf.cpu,True,completed,pass,cold,0,0.27728764,0.9671151900547557,0.277747217,,at least five samples per participant required
+rks.camb3lyp.sto3g.forces,water,pyscf.cpu,True,completed,pass,warm,1,0.277747217,0.8664874940295704,0.277747217,,at least five samples per participant required
+rks.pbesol.sto3g.forces,water_asymmetric,atv.cpu,True,completed,pass,cold,0,0.556902442,0.8163078330107965,0.589215438,,at least five samples per participant required
+rks.pbesol.sto3g.forces,water_asymmetric,atv.cpu,True,completed,pass,warm,1,0.589215438,0.8666608370258473,0.589215438,,at least five samples per participant required
+rks.pbesol.sto3g.forces,water_asymmetric,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbesol.sto3g.forces,water_asymmetric,pyscf.cpu,True,completed,pass,cold,0,0.243160363,0.9167164120008238,0.241218802,,at least five samples per participant required
+rks.pbesol.sto3g.forces,water_asymmetric,pyscf.cpu,True,completed,pass,warm,1,0.241218802,0.8164788029971533,0.241218802,,at least five samples per participant required
+rks.revpbe.sto3g.forces,water_asymmetric,atv.cpu,True,completed,pass,cold,0,0.557340344,0.8163840539637022,0.634321243,,at least five samples per participant required
+rks.revpbe.sto3g.forces,water_asymmetric,atv.cpu,True,completed,pass,warm,1,0.634321243,0.9668068919563666,0.634321243,,at least five samples per participant required
+rks.revpbe.sto3g.forces,water_asymmetric,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.revpbe.sto3g.forces,water_asymmetric,pyscf.cpu,True,completed,pass,cold,0,0.239811976,0.8164828899898566,0.239110787,,at least five samples per participant required
+rks.revpbe.sto3g.forces,water_asymmetric,pyscf.cpu,True,completed,pass,warm,1,0.239110787,0.8219044959987514,0.239110787,,at least five samples per participant required
+rks.rpbe.sto3g.forces,water_asymmetric,atv.cpu,True,completed,pass,cold,0,0.590861632,0.8670896459952928,0.56140866,,at least five samples per participant required
+rks.rpbe.sto3g.forces,water_asymmetric,atv.cpu,True,completed,pass,warm,1,0.56140866,0.8165289929602295,0.56140866,,at least five samples per participant required
+rks.rpbe.sto3g.forces,water_asymmetric,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.rpbe.sto3g.forces,water_asymmetric,pyscf.cpu,True,completed,pass,cold,0,0.241300901,0.816365203994792,0.243307606,,at least five samples per participant required
+rks.rpbe.sto3g.forces,water_asymmetric,pyscf.cpu,True,completed,pass,warm,1,0.243307606,0.8165155619499274,0.243307606,,at least five samples per participant required
+rks.pbe.def2svp.energy,water,atv.cpu,True,completed,pass,cold,0,7.211687946,7.475899629993364,7.747648028,,at least five samples per participant required
+rks.pbe.def2svp.energy,water,atv.cpu,True,completed,pass,warm,1,7.747648028,8.029205552011263,7.747648028,,at least five samples per participant required
+rks.pbe.def2svp.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe.def2svp.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.253571462,0.8666570920031518,0.234437735,,at least five samples per participant required
+rks.pbe.def2svp.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.234437735,0.8162247519940138,0.234437735,,at least five samples per participant required
+rks.pbe.def2svp.forces,water,atv.cpu,True,completed,pass,cold,0,7.792451363,8.076928807015065,7.754249911,,at least five samples per participant required
+rks.pbe.def2svp.forces,water,atv.cpu,True,completed,pass,warm,1,7.754249911,8.026989576988854,7.754249911,,at least five samples per participant required
+rks.pbe.def2svp.forces,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe.def2svp.forces,water,pyscf.cpu,True,completed,pass,cold,0,0.484668302,1.2170759600121528,0.365338641,,at least five samples per participant required
+rks.pbe.def2svp.forces,water,pyscf.cpu,True,completed,pass,warm,1,0.365338641,0.9667611000477336,0.365338641,,at least five samples per participant required
+rks.pbe.def2svp.forces,water_asymmetric,atv.cpu,True,completed,pass,cold,0,9.235382591,9.479009992966894,9.67474345,,at least five samples per participant required
+rks.pbe.def2svp.forces,water_asymmetric,atv.cpu,True,completed,pass,warm,1,9.67474345,9.929573995003011,9.67474345,,at least five samples per participant required
+rks.pbe.def2svp.forces,water_asymmetric,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe.def2svp.forces,water_asymmetric,pyscf.cpu,True,completed,pass,cold,0,0.549583844,1.2674234170117415,0.452201652,,at least five samples per participant required
+rks.pbe.def2svp.forces,water_asymmetric,pyscf.cpu,True,completed,pass,warm,1,0.452201652,1.1673365460010245,0.452201652,,at least five samples per participant required
+rks.pbe0.def2svp.energy,water,atv.cpu,True,completed,pass,cold,0,3.926771703,4.2216628909809515,3.845652899,,at least five samples per participant required
+rks.pbe0.def2svp.energy,water,atv.cpu,True,completed,pass,warm,1,3.845652899,4.1210451609804295,3.845652899,,at least five samples per participant required
+rks.pbe0.def2svp.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe0.def2svp.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.237278138,0.8162718759849668,0.237996314,,at least five samples per participant required
+rks.pbe0.def2svp.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.237996314,0.8163801570190117,0.237996314,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water,atv.cpu,True,completed,pass,cold,0,4.259895101,4.521312907047104,4.490186947,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water,atv.cpu,True,completed,pass,warm,1,4.490186947,4.772098110988736,4.490186947,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe0.def2svp.forces,water,pyscf.cpu,True,completed,pass,cold,0,0.374273595,0.9668055099900812,0.401605502,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water,pyscf.cpu,True,completed,pass,warm,1,0.401605502,1.0167559779947624,0.401605502,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water_asymmetric,atv.cpu,True,completed,pass,cold,0,4.905040638,5.172489522956312,4.964554895,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water_asymmetric,atv.cpu,True,completed,pass,warm,1,4.964554895,5.222516261972487,4.964554895,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water_asymmetric,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.pbe0.def2svp.forces,water_asymmetric,pyscf.cpu,True,completed,pass,cold,0,0.40773549,1.0169789909850806,0.534909861,,at least five samples per participant required
+rks.pbe0.def2svp.forces,water_asymmetric,pyscf.cpu,True,completed,pass,warm,1,0.534909861,1.217207117995713,0.534909861,,at least five samples per participant required
+rks.camb3lyp.def2svp.energy,water,atv.cpu,True,completed,pass,cold,0,5.078713726,5.374091484001838,5.239176748,,at least five samples per participant required
+rks.camb3lyp.def2svp.energy,water,atv.cpu,True,completed,pass,warm,1,5.239176748,5.57561420899583,5.239176748,,at least five samples per participant required
+rks.camb3lyp.def2svp.energy,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.camb3lyp.def2svp.energy,water,pyscf.cpu,True,completed,pass,cold,0,0.37492122,0.9667098590289243,0.410014575,,at least five samples per participant required
+rks.camb3lyp.def2svp.energy,water,pyscf.cpu,True,completed,pass,warm,1,0.410014575,1.017073650029488,0.410014575,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water,atv.cpu,True,completed,pass,cold,0,5.439137723,5.7262734620017,5.336472938,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water,atv.cpu,True,completed,pass,warm,1,5.336472938,5.625463358999696,5.336472938,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.camb3lyp.def2svp.forces,water,pyscf.cpu,True,completed,pass,cold,0,0.564588611,1.217680678004399,0.632315901,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water,pyscf.cpu,True,completed,pass,warm,1,0.632315901,1.3678609769558534,0.632315901,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water_asymmetric,atv.cpu,True,completed,pass,cold,0,5.982677364,6.276667493046261,5.913532221,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water_asymmetric,atv.cpu,True,completed,pass,warm,1,5.913532221,6.1763252829550765,5.913532221,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water_asymmetric,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA RKS is not implemented; CUDA PW/GPW are separate representations
+rks.camb3lyp.def2svp.forces,water_asymmetric,pyscf.cpu,True,completed,pass,cold,0,0.558504113,1.1673648189753294,0.56127778,,at least five samples per participant required
+rks.camb3lyp.def2svp.forces,water_asymmetric,pyscf.cpu,True,completed,pass,warm,1,0.56127778,1.1674072669702582,0.56127778,,at least five samples per participant required
+uks.lsda.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.014991964,0.26589796296320856,0.015538979,,at least five samples per participant required
+uks.lsda.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.015538979,0.2656967240036465,0.015538979,,at least five samples per participant required
+uks.lsda.sto3g.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.lsda.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.051029808,0.7666018890449777,0.046462193,,at least five samples per participant required
+uks.lsda.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.046462193,0.7166588800027966,0.046462193,,at least five samples per participant required
+uks.lsda.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.295794443,0.5663224100135267,0.303675099,,at least five samples per participant required
+uks.lsda.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.303675099,0.5661753070307896,0.303675099,,at least five samples per participant required
+uks.lsda.sto3g.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.lsda.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.113270129,0.7164792250259779,0.112059413,,at least five samples per participant required
+uks.lsda.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.112059413,0.7164832819835283,0.112059413,,at least five samples per participant required
+uks.lsda.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.023703404,0.2665383860003203,0.022775676,,at least five samples per participant required
+uks.lsda.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.022775676,0.2656814799993299,0.022775676,,at least five samples per participant required
+uks.lsda.sto3g.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.lsda.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.120827102,0.7665789219900034,0.115519136,,at least five samples per participant required
+uks.lsda.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.115519136,0.7164450910058804,0.115519136,,at least five samples per participant required
+uks.lsda.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.333975487,0.6164520439924672,0.354623197,,at least five samples per participant required
+uks.lsda.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.354623197,0.6664160059881397,0.354623197,,at least five samples per participant required
+uks.lsda.sto3g.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.lsda.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.213625239,0.8164759489591233,0.243479523,,at least five samples per participant required
+uks.lsda.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.243479523,0.9670627749874257,0.243479523,,at least five samples per participant required
+uks.pbe.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.027369533,0.26561881200177595,0.027410678,,at least five samples per participant required
+uks.pbe.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.027410678,0.265663712983951,0.027410678,,at least five samples per participant required
+uks.pbe.sto3g.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.049729902,0.666642384021543,0.04979858,,at least five samples per participant required
+uks.pbe.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.04979858,0.6663573529804125,0.04979858,,at least five samples per participant required
+uks.pbe.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.598227967,0.8665363329928368,0.602339221,,at least five samples per participant required
+uks.pbe.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.602339221,0.8667195030138828,0.602339221,,at least five samples per participant required
+uks.pbe.sto3g.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.168820657,0.816829398041591,0.170071346,,at least five samples per participant required
+uks.pbe.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.170071346,0.7666014779824764,0.170071346,,at least five samples per participant required
+uks.pbe.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.044976483,0.3159258170053363,0.042352983,,at least five samples per participant required
+uks.pbe.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.042352983,0.315921169007197,0.042352983,,at least five samples per participant required
+uks.pbe.sto3g.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.123263717,0.7164946499979123,0.123565904,,at least five samples per participant required
+uks.pbe.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.123565904,0.7178021580330096,0.123565904,,at least five samples per participant required
+uks.pbe.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.681419108,0.916649672028143,0.69229428,,at least five samples per participant required
+uks.pbe.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.69229428,0.9666566319647245,0.69229428,,at least five samples per participant required
+uks.pbe.sto3g.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.294599022,0.916639094997663,0.274297679,,at least five samples per participant required
+uks.pbe.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.274297679,0.8664975919527933,0.274297679,,at least five samples per participant required
+uks.pbesol.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.027626529,0.26538934896234423,0.026947726,,at least five samples per participant required
+uks.pbesol.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.026947726,0.26599299401277676,0.026947726,,at least five samples per participant required
+uks.pbesol.sto3g.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbesol.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.051304162,0.6160808370332234,0.049191009,,at least five samples per participant required
+uks.pbesol.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.049191009,0.6662326470250264,0.049191009,,at least five samples per participant required
+uks.pbesol.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.648408943,0.9666333350469358,0.601612872,,at least five samples per participant required
+uks.pbesol.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.601612872,0.8661104200291447,0.601612872,,at least five samples per participant required
+uks.pbesol.sto3g.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbesol.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.167148693,0.7664410040015355,0.168410369,,at least five samples per participant required
+uks.pbesol.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.168410369,0.7664698800072074,0.168410369,,at least five samples per participant required
+uks.pbesol.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.043824721,0.3158107749768533,0.044225265,,at least five samples per participant required
+uks.pbesol.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.044225265,0.3157458319910802,0.044225265,,at least five samples per participant required
+uks.pbesol.sto3g.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbesol.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.140923811,0.7661482310504653,0.138106745,,at least five samples per participant required
+uks.pbesol.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.138106745,0.7662217180477455,0.138106745,,at least five samples per participant required
+uks.pbesol.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.703766797,0.9662547869957052,0.694313594,,at least five samples per participant required
+uks.pbesol.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.694313594,0.9667176990187727,0.694313594,,at least five samples per participant required
+uks.pbesol.sto3g.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbesol.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.302278879,0.9667314999969676,0.30398557,,at least five samples per participant required
+uks.pbesol.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.30398557,0.9167110290145501,0.30398557,,at least five samples per participant required
+uks.revpbe.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.026806632,0.2658445480046794,0.028332295,,at least five samples per participant required
+uks.revpbe.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.028332295,0.31596516800345853,0.028332295,,at least five samples per participant required
+uks.revpbe.sto3g.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.revpbe.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.050090011,0.6662802819628268,0.050062758,,at least five samples per participant required
+uks.revpbe.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.050062758,0.6165450210100971,0.050062758,,at least five samples per participant required
+uks.revpbe.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.605112608,0.8664907320053317,0.601737319,,at least five samples per participant required
+uks.revpbe.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.601737319,0.8667137040174566,0.601737319,,at least five samples per participant required
+uks.revpbe.sto3g.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.revpbe.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.165834675,0.7666641080286354,0.167161203,,at least five samples per participant required
+uks.revpbe.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.167161203,0.7664562879945152,0.167161203,,at least five samples per participant required
+uks.revpbe.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.04251553,0.31582673999946564,0.042598201,,at least five samples per participant required
+uks.revpbe.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.042598201,0.31582603900460526,0.042598201,,at least five samples per participant required
+uks.revpbe.sto3g.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.revpbe.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.126674141,0.8170305859530345,0.132244412,,at least five samples per participant required
+uks.revpbe.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.132244412,0.7667356010060757,0.132244412,,at least five samples per participant required
+uks.revpbe.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.722856823,1.0169346010079607,0.708269708,,at least five samples per participant required
+uks.revpbe.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.708269708,0.9668264429783449,0.708269708,,at least five samples per participant required
+uks.revpbe.sto3g.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.revpbe.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.276493914,0.9166851579793729,0.306190098,,at least five samples per participant required
+uks.revpbe.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.306190098,0.9669505400233902,0.306190098,,at least five samples per participant required
+uks.rpbe.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.027519614,0.2658191919908859,0.028156071,,at least five samples per participant required
+uks.rpbe.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.028156071,0.3158704510424286,0.028156071,,at least five samples per participant required
+uks.rpbe.sto3g.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.rpbe.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.055758987,0.6664517400204204,0.05376959,,at least five samples per participant required
+uks.rpbe.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.05376959,0.6663150630192831,0.05376959,,at least five samples per participant required
+uks.rpbe.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.596432809,0.8666409829747863,0.625252189,,at least five samples per participant required
+uks.rpbe.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.625252189,0.9168160079861991,0.625252189,,at least five samples per participant required
+uks.rpbe.sto3g.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.rpbe.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.205418584,0.8666194780380465,0.188358141,,at least five samples per participant required
+uks.rpbe.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.188358141,0.8166395020089112,0.188358141,,at least five samples per participant required
+uks.rpbe.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.043192482,0.31596301699755713,0.042688104,,at least five samples per participant required
+uks.rpbe.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.042688104,0.315749118977692,0.042688104,,at least five samples per participant required
+uks.rpbe.sto3g.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.rpbe.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.127155285,0.7162231359980069,0.126840987,,at least five samples per participant required
+uks.rpbe.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.126840987,0.7665181810152717,0.126840987,,at least five samples per participant required
+uks.rpbe.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.70945336,0.9665951380156912,0.698156994,,at least five samples per participant required
+uks.rpbe.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.698156994,0.9664679959532805,0.698156994,,at least five samples per participant required
+uks.rpbe.sto3g.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.rpbe.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.303126645,0.9167035699938424,0.339795931,,at least five samples per participant required
+uks.rpbe.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.339795931,1.0716092840302736,0.339795931,,at least five samples per participant required
+uks.pbe0.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.028880667,0.3156934909638949,0.027212248,,at least five samples per participant required
+uks.pbe0.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.027212248,0.26549037103541195,0.027212248,,at least five samples per participant required
+uks.pbe0.sto3g.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.049973426,0.6158506899955682,0.053170152,,at least five samples per participant required
+uks.pbe0.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.053170152,0.7163273709593341,0.053170152,,at least five samples per participant required
+uks.pbe0.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.637723464,0.9668111180071719,0.59956892,,at least five samples per participant required
+uks.pbe0.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.59956892,0.866399910999462,0.59956892,,at least five samples per participant required
+uks.pbe0.sto3g.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.181617761,0.7663292319630273,0.216131317,,at least five samples per participant required
+uks.pbe0.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.216131317,0.9167046520160511,0.216131317,,at least five samples per participant required
+uks.pbe0.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.04236965,0.3157746900105849,0.042408883,,at least five samples per participant required
+uks.pbe0.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.042408883,0.315603559021838,0.042408883,,at least five samples per participant required
+uks.pbe0.sto3g.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.126682187,0.7664231809903868,0.125461746,,at least five samples per participant required
+uks.pbe0.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.125461746,0.7161076340125874,0.125461746,,at least five samples per participant required
+uks.pbe0.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.708185845,0.9667352780234069,0.776085032,,at least five samples per participant required
+uks.pbe0.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.776085032,1.1169979289988987,0.776085032,,at least five samples per participant required
+uks.pbe0.sto3g.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.269605901,0.8665909529663622,0.270706401,,at least five samples per participant required
+uks.pbe0.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.270706401,0.8668810520321131,0.270706401,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.049016483,0.3158439990365878,0.047700532,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.047700532,0.31552569597261027,0.047700532,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.085231469,0.6660429029725492,0.095768194,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.095768194,0.866895705985371,0.095768194,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.782284927,1.0165908279595897,0.830107152,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.830107152,1.117747695010621,0.830107152,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.291743283,0.9166520190192387,0.288485039,,at least five samples per participant required
+uks.camb3lyp.sto3g.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.288485039,0.9167470089741983,0.288485039,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.068486997,0.3157111890031956,0.070307206,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.070307206,0.3657506100134924,0.070307206,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.182726275,0.866678291989956,0.183921284,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.183921284,0.816355643037241,0.183921284,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,0.952556314,1.2171015699859709,0.909442066,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,0.909442066,1.1668593990034424,0.909442066,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.387721628,0.9670638180105016,0.423134246,,at least five samples per participant required
+uks.camb3lyp.sto3g.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.423134246,1.0667477959650569,0.423134246,,at least five samples per participant required
+uks.pbe.def2svp.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.242804131,0.5160018529859371,0.2550695,,at least five samples per participant required
+uks.pbe.def2svp.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.2550695,0.5662219889927655,0.2550695,,at least five samples per participant required
+uks.pbe.def2svp.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.def2svp.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.106091872,0.7164345909841359,0.099746226,,at least five samples per participant required
+uks.pbe.def2svp.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.099746226,0.6662272050161846,0.099746226,,at least five samples per participant required
+uks.pbe.def2svp.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,24.127551924,24.400766236998606,23.090235531,,at least five samples per participant required
+uks.pbe.def2svp.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,23.090235531,23.350368639978115,23.090235531,,at least five samples per participant required
+uks.pbe.def2svp.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.def2svp.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.357391115,0.916608344996348,0.360559215,,at least five samples per participant required
+uks.pbe.def2svp.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.360559215,0.9166926449979655,0.360559215,,at least five samples per participant required
+uks.pbe.def2svp.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.306043893,0.5659878340084106,0.291849046,,at least five samples per participant required
+uks.pbe.def2svp.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.291849046,0.5658099329448305,0.291849046,,at least five samples per participant required
+uks.pbe.def2svp.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.def2svp.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.185911674,0.8161907789763063,0.19545116,,at least five samples per participant required
+uks.pbe.def2svp.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.19545116,0.8167990510119125,0.19545116,,at least five samples per participant required
+uks.pbe.def2svp.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,23.871054917,24.149818088975735,23.792351324,,at least five samples per participant required
+uks.pbe.def2svp.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,23.792351324,24.04934566200245,23.792351324,,at least five samples per participant required
+uks.pbe.def2svp.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe.def2svp.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.548225776,1.1669210150139406,0.660650234,,at least five samples per participant required
+uks.pbe.def2svp.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.660650234,1.3677789809880778,0.660650234,,at least five samples per participant required
+uks.pbe0.def2svp.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.229721706,0.46596893499372527,0.258767936,,at least five samples per participant required
+uks.pbe0.def2svp.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.258767936,0.5661076590185985,0.258767936,,at least five samples per participant required
+uks.pbe0.def2svp.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.def2svp.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.095056654,0.7164714150130749,0.093297862,,at least five samples per participant required
+uks.pbe0.def2svp.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.093297862,0.7161080499645323,0.093297862,,at least five samples per participant required
+uks.pbe0.def2svp.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,27.757725325,28.00373669003602,27.678492922,,at least five samples per participant required
+uks.pbe0.def2svp.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,27.678492922,27.95278066000901,27.678492922,,at least five samples per participant required
+uks.pbe0.def2svp.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.def2svp.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.397782308,1.0666602230048738,0.360043518,,at least five samples per participant required
+uks.pbe0.def2svp.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.360043518,0.9162534280330874,0.360043518,,at least five samples per participant required
+uks.pbe0.def2svp.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.283307372,0.516115735983476,0.295915878,,at least five samples per participant required
+uks.pbe0.def2svp.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.295915878,0.5661495479871519,0.295915878,,at least five samples per participant required
+uks.pbe0.def2svp.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.def2svp.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.183440386,0.8165075659635477,0.168936471,,at least five samples per participant required
+uks.pbe0.def2svp.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.168936471,0.7663162249955349,0.168936471,,at least five samples per participant required
+uks.pbe0.def2svp.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,28.795831648,29.05597556498833,29.488892648,,at least five samples per participant required
+uks.pbe0.def2svp.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,29.488892648,29.75659258302767,29.488892648,,at least five samples per participant required
+uks.pbe0.def2svp.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.pbe0.def2svp.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.54508829,1.1671827310346998,0.544438222,,at least five samples per participant required
+uks.pbe0.def2svp.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.544438222,1.1168814959819429,0.544438222,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,h2_plus,atv.cpu,True,completed,pass,cold,0,0.280960518,0.5661096210242249,0.273714015,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,h2_plus,atv.cpu,True,completed,pass,warm,1,0.273714015,0.515507536008954,0.273714015,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.def2svp.energy,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.18280524,0.8161392199690454,0.172580406,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.172580406,0.7660539430216886,0.172580406,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,o2_triplet,atv.cpu,True,completed,pass,cold,0,28.329627838,28.600776654027868,28.484953453,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,o2_triplet,atv.cpu,True,completed,pass,warm,1,28.484953453,28.752024262037594,28.484953453,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.def2svp.energy,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.655382047,1.2669701380073093,0.647582338,,at least five samples per participant required
+uks.camb3lyp.def2svp.energy,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.647582338,1.217371460981667,0.647582338,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,h2_plus,atv.cpu,True,completed,pass,cold,0,0.364866299,0.6666365969576873,0.350653866,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,h2_plus,atv.cpu,True,completed,pass,warm,1,0.350653866,0.6169856649939902,0.350653866,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,h2_plus,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.def2svp.forces,h2_plus,pyscf.cpu,True,completed,pass,cold,0,0.292123438,0.9170644270488992,0.269210332,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,h2_plus,pyscf.cpu,True,completed,pass,warm,1,0.269210332,0.8669794180314057,0.269210332,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,o2_triplet,atv.cpu,True,completed,pass,cold,0,29.01640769,29.266065612027887,28.769614916,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,o2_triplet,atv.cpu,True,completed,pass,warm,1,28.769614916,29.06660685199313,28.769614916,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,o2_triplet,atv.cuda,False,not_implemented,unverified,,,,,,,Gaussian CUDA UKS is not implemented; CUDA PW/GPW are separate representations
+uks.camb3lyp.def2svp.forces,o2_triplet,pyscf.cpu,True,completed,pass,cold,0,0.937584046,1.5686527390498668,0.95292226,,at least five samples per participant required
+uks.camb3lyp.def2svp.forces,o2_triplet,pyscf.cpu,True,completed,pass,warm,1,0.95292226,1.5690086520044133,0.95292226,,at least five samples per participant required

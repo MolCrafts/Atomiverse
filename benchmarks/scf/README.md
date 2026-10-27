@@ -173,3 +173,38 @@ the formal 20-row acceptance matrix (60/60 required cells) and both 16-water
 performance profiles. A separate [Apple M4 profile](results/2026-10-26-m4/README.md)
 is retained without cross-machine speedup claims. Original observations are
 preserved separately from regenerated report projections.
+
+## Molecular density-functional theory
+
+`rks` and `uks` use the public Python KS methods and a live PySCF reference.
+Run the complete declared acceptance matrix on a CPU compute allocation:
+
+```sh
+python -m benchmarks run --method rks --method uks --tier acceptance \
+  --threads 1 --repeats 1 --warmup 0 --timeout 300 --no-snapshot \
+  --out /path/to/fresh/dft-acceptance
+```
+
+The rows name their XC ingredients explicitly: LSDA uses VWN5; B3LYP uses
+VWN-RPA; PBE0 includes 25% exact exchange. Standard CAM-B3LYP uses libxc
+functional 433 on the reference side, including short-range ITYH-B88 and
+VWN5. PBEsol, revPBE and RPBE use their explicit exchange/correlation pairs.
+Both engines use the declared
+MatchPySCF/level-3 quadrature. Native `RKS.grid` and `UKS.grid` accept `SG0`,
+`SG1` and `MatchPySCF`; this benchmark explicitly selects `MatchPySCF` rather
+than relying on their different defaults. PySCF forces include moving-grid
+response, and every force component is compared at 1e-6 Ha/Bohr, alongside
+the 1e-8 Ha energy gate. Spherical def2-SVP PBE/PBE0/CAM rows cover the Cartesian
+XC-density transformation needed by analytic gradients.
+
+The [follow-up acceptance record](results/2026-10-26-dft-wave2/README.md)
+contains 67 workloads and 134 passing CPU/reference cells. Its CAM molecular
+comparisons do not resolve the extreme scalar spin/density differences
+recorded in the separate diagnostic. The GGA-family additions are scoped to
+the declared STO-3G molecular rows.
+
+Each observation constructs and releases a fresh solver, molecule and grid.
+Gaussian CUDA KS is explicitly unavailable in this matrix; CUDA PW and GPW
+have different representations and require their own validation. This command
+records numerical acceptance and diagnostic timings; it does not qualify a
+performance ratio or replace the remaining DFT roadmap gaps.

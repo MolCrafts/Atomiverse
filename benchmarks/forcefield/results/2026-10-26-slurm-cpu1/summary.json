@@ -1,0 +1,667 @@
+{
+  "accepted_molecule_model_cases": 46,
+  "accepted_participant_cells": 94,
+  "affinity": [
+    2
+  ],
+  "ci_snapshot": "disabled explicitly by --no-snapshot",
+  "cpu_model": "AMD EPYC 9745 128-Core Processor",
+  "exceptions": [
+    {
+      "failed_observables": [
+        "dihedral_parameters"
+      ],
+      "row_id": "forcefield.gaff2.bcc.parameterize",
+      "speedup": null,
+      "system_id": "dmso"
+    },
+    {
+      "failed_observables": [
+        "dihedral_parameters"
+      ],
+      "row_id": "forcefield.gaff2.abcg2.parameterize",
+      "speedup": null,
+      "system_id": "dmso"
+    }
+  ],
+  "gaff2_bcc_examples": [
+    {
+      "atoms": 9,
+      "native": {
+        "cold_process_seconds": 0.4660768960020505,
+        "mad_seconds": 0.0004438819999999996,
+        "max_seconds": 0.008795077,
+        "median_seconds": 0.007054902,
+        "min_seconds": 0.006403346,
+        "samples_seconds": [
+          0.006403346,
+          0.008795077,
+          0.007054902,
+          0.006807057,
+          0.007498784
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.0036916800017934293,
+          "gaff_typing": 0.0013598290097434074
+        },
+        "reference": {
+          "antechamber": 0.4576063099957537,
+          "parmchk2": 0.07221908099018037,
+          "tleap": 0.08464700900367461
+        }
+      },
+      "ratio": 85.23911132996604,
+      "reference": {
+        "cold_process_seconds": 0.7164739079889841,
+        "mad_seconds": 0.05921359999999998,
+        "max_seconds": 0.700793795,
+        "median_seconds": 0.601353577,
+        "min_seconds": 0.529496744,
+        "samples_seconds": [
+          0.700793795,
+          0.529496744,
+          0.542139977,
+          0.648362947,
+          0.601353577
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "acetamide"
+    },
+    {
+      "atoms": 7,
+      "native": {
+        "cold_process_seconds": 0.46619432300212793,
+        "mad_seconds": 0.00036892799999999927,
+        "max_seconds": 0.006109411,
+        "median_seconds": 0.005658297,
+        "min_seconds": 0.005227506,
+        "samples_seconds": [
+          0.005227506,
+          0.005787153,
+          0.006109411,
+          0.005658297,
+          0.005289369
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.002703944017412141,
+          "gaff_typing": 0.001086695003323257
+        },
+        "reference": {
+          "antechamber": 0.39200460800202563,
+          "parmchk2": 0.07054713999968953,
+          "tleap": 0.0699691750050988
+        }
+      },
+      "ratio": 94.95067650213483,
+      "reference": {
+        "cold_process_seconds": 0.7164276179973967,
+        "mad_seconds": 0.10848785899999996,
+        "max_seconds": 0.904939335,
+        "median_seconds": 0.537259128,
+        "min_seconds": 0.428771269,
+        "samples_seconds": [
+          0.501123803,
+          0.537259128,
+          0.904939335,
+          0.428771269,
+          0.663917178
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "acetate"
+    },
+    {
+      "atoms": 10,
+      "native": {
+        "cold_process_seconds": 0.46583578299032524,
+        "mad_seconds": 0.00018374800000000007,
+        "max_seconds": 0.007885559,
+        "median_seconds": 0.006827968,
+        "min_seconds": 0.00664422,
+        "samples_seconds": [
+          0.006827968,
+          0.006693014,
+          0.007885559,
+          0.00664422,
+          0.007365502
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "fail",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.0035554429923649877,
+          "gaff_typing": 0.0014849989966023713
+        },
+        "reference": {
+          "antechamber": 0.41014477200224064,
+          "parmchk2": 0.04229479798232205,
+          "tleap": 0.07478280799114145
+        }
+      },
+      "ratio": null,
+      "reference": {
+        "cold_process_seconds": 0.8668039219919592,
+        "mad_seconds": 0.04776050399999998,
+        "max_seconds": 0.644881624,
+        "median_seconds": 0.528775389,
+        "min_seconds": 0.468111108,
+        "samples_seconds": [
+          0.644881624,
+          0.528775389,
+          0.468111108,
+          0.576535893,
+          0.498410795
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "dmso"
+    },
+    {
+      "atoms": 9,
+      "native": {
+        "cold_process_seconds": 0.4660641289956402,
+        "mad_seconds": 0.00034316899999999994,
+        "max_seconds": 0.006216663,
+        "median_seconds": 0.005091198,
+        "min_seconds": 0.004748029,
+        "samples_seconds": [
+          0.005091198,
+          0.006216663,
+          0.006041808,
+          0.004748029,
+          0.004901521
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.002106719999574125,
+          "gaff_typing": 0.0012572139967232943
+        },
+        "reference": {
+          "antechamber": 0.3140537930012215,
+          "parmchk2": 0.03853348200209439,
+          "tleap": 0.05991584699950181
+        }
+      },
+      "ratio": 80.43286197079745,
+      "reference": {
+        "cold_process_seconds": 0.8163471269945148,
+        "mad_seconds": 0.08358919100000001,
+        "max_seconds": 0.591141757,
+        "median_seconds": 0.409499626,
+        "min_seconds": 0.325910435,
+        "samples_seconds": [
+          0.502614088,
+          0.591141757,
+          0.407435351,
+          0.409499626,
+          0.325910435
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "ethanol"
+    },
+    {
+      "atoms": 8,
+      "native": {
+        "cold_process_seconds": 0.4658325490017887,
+        "mad_seconds": 0.00027046899999999974,
+        "max_seconds": 0.009170625,
+        "median_seconds": 0.007793179,
+        "min_seconds": 0.00752271,
+        "samples_seconds": [
+          0.00752271,
+          0.008069538,
+          0.007701621,
+          0.009170625,
+          0.007793179
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.00507926000864245,
+          "gaff_typing": 0.0010655430087354034
+        },
+        "reference": {
+          "antechamber": 0.3176261920016259,
+          "parmchk2": 0.04058667100616731,
+          "tleap": 0.08012830102234147
+        }
+      },
+      "ratio": 59.43209555433027,
+      "reference": {
+        "cold_process_seconds": 0.8676656860043295,
+        "mad_seconds": 0.04997090999999998,
+        "max_seconds": 0.616484097,
+        "median_seconds": 0.463164959,
+        "min_seconds": 0.413194049,
+        "samples_seconds": [
+          0.424034022,
+          0.463164959,
+          0.525902139,
+          0.413194049,
+          0.616484097
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "halogenated"
+    },
+    {
+      "atoms": 50,
+      "native": {
+        "cold_process_seconds": 0.566144007985713,
+        "mad_seconds": 0.0001886360000000059,
+        "max_seconds": 0.11941235,
+        "median_seconds": 0.119223714,
+        "min_seconds": 0.117076674,
+        "samples_seconds": [
+          0.119223714,
+          0.117076674,
+          0.118593851,
+          0.119340101,
+          0.11941235
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.11202091898303479,
+          "gaff_typing": 0.0038439799973275512
+        },
+        "reference": {
+          "antechamber": 0.5924688359955326,
+          "parmchk2": 0.07003926500328816,
+          "tleap": 0.09850048800581135
+        }
+      },
+      "ratio": 6.30382921974734,
+      "reference": {
+        "cold_process_seconds": 1.0186460529803298,
+        "mad_seconds": 0.10858306399999995,
+        "max_seconds": 0.900524568,
+        "median_seconds": 0.751565932,
+        "min_seconds": 0.632707901,
+        "samples_seconds": [
+          0.900524568,
+          0.632707901,
+          0.751565932,
+          0.642982868,
+          0.810483579
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "hexadecane"
+    },
+    {
+      "atoms": 8,
+      "native": {
+        "cold_process_seconds": 0.4659563959867228,
+        "mad_seconds": 0.00019088800000000017,
+        "max_seconds": 0.005523643,
+        "median_seconds": 0.005332755,
+        "min_seconds": 0.003712201,
+        "samples_seconds": [
+          0.003712201,
+          0.005332755,
+          0.005523643,
+          0.005498805,
+          0.004102782
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.0013084509992040694,
+          "gaff_typing": 0.001247599022462964
+        },
+        "reference": {
+          "antechamber": 0.44563917399500497,
+          "parmchk2": 0.04767924000043422,
+          "tleap": 0.08055341499857605
+        }
+      },
+      "ratio": 112.55728099265765,
+      "reference": {
+        "cold_process_seconds": 0.6162485110107809,
+        "mad_seconds": 0.04054970599999996,
+        "max_seconds": 0.640790109,
+        "median_seconds": 0.600240403,
+        "min_seconds": 0.51344645,
+        "samples_seconds": [
+          0.600240403,
+          0.640790109,
+          0.51344645,
+          0.525274939,
+          0.629609089
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "methylammonium"
+    },
+    {
+      "atoms": 26,
+      "native": {
+        "cold_process_seconds": 0.4660724519926589,
+        "mad_seconds": 0.0001872829999999999,
+        "max_seconds": 0.018577776,
+        "median_seconds": 0.015401648,
+        "min_seconds": 0.015214365,
+        "samples_seconds": [
+          0.016307501,
+          0.015214365,
+          0.018577776,
+          0.015289317,
+          0.015401648
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.010865070013096556,
+          "gaff_typing": 0.0022722310095559806
+        },
+        "reference": {
+          "antechamber": 0.4943284629844129,
+          "parmchk2": 0.05707304598763585,
+          "tleap": 0.06991546801873483
+        }
+      },
+      "ratio": 39.99632325060279,
+      "reference": {
+        "cold_process_seconds": 0.7166811540082563,
+        "mad_seconds": 0.163381463,
+        "max_seconds": 0.871671782,
+        "median_seconds": 0.616009292,
+        "min_seconds": 0.452627829,
+        "samples_seconds": [
+          0.871671782,
+          0.822506672,
+          0.538885913,
+          0.616009292,
+          0.452627829
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "octane"
+    },
+    {
+      "atoms": 13,
+      "native": {
+        "cold_process_seconds": 0.4660710020107217,
+        "mad_seconds": 1.7927000000000914e-05,
+        "max_seconds": 0.015473776,
+        "median_seconds": 0.015285662,
+        "min_seconds": 0.015233022,
+        "samples_seconds": [
+          0.015285662,
+          0.015295937,
+          0.015233022,
+          0.015267735,
+          0.015473776
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.009090653009479865,
+          "gaff_typing": 0.0042645859939511865
+        },
+        "reference": {
+          "antechamber": 0.43092617398360744,
+          "parmchk2": 0.05151911798748188,
+          "tleap": 0.06494381200172938
+        }
+      },
+      "ratio": 37.003856751510014,
+      "reference": {
+        "cold_process_seconds": 1.217927580990363,
+        "mad_seconds": 0.07928296199999996,
+        "max_seconds": 0.730155585,
+        "median_seconds": 0.565628447,
+        "min_seconds": 0.397109988,
+        "samples_seconds": [
+          0.50069433,
+          0.565628447,
+          0.730155585,
+          0.644911409,
+          0.397109988
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "phenol"
+    },
+    {
+      "atoms": 11,
+      "native": {
+        "cold_process_seconds": 0.46621400900767185,
+        "mad_seconds": 0.00021385400000000117,
+        "max_seconds": 0.013796157,
+        "median_seconds": 0.012871447,
+        "min_seconds": 0.012417319,
+        "samples_seconds": [
+          0.013085301,
+          0.012871447,
+          0.012417319,
+          0.012659576,
+          0.013796157
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.006348891998641193,
+          "gaff_typing": 0.004787948011653498
+        },
+        "reference": {
+          "antechamber": 0.330024383001728,
+          "parmchk2": 0.04356286200345494,
+          "tleap": 0.06933816499076784
+        }
+      },
+      "ratio": 36.761625790791044,
+      "reference": {
+        "cold_process_seconds": 1.0169736359966919,
+        "mad_seconds": 0.04765182300000004,
+        "max_seconds": 0.613018484,
+        "median_seconds": 0.473175318,
+        "min_seconds": 0.40187394,
+        "samples_seconds": [
+          0.40187394,
+          0.473175318,
+          0.490582141,
+          0.613018484,
+          0.425523495
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "pyridine"
+    },
+    {
+      "atoms": 9,
+      "native": {
+        "cold_process_seconds": 0.465896948997397,
+        "mad_seconds": 0.0002447810000000012,
+        "max_seconds": 0.017501858,
+        "median_seconds": 0.015558305,
+        "min_seconds": 0.015049093,
+        "samples_seconds": [
+          0.015049093,
+          0.017501858,
+          0.015558305,
+          0.015803086,
+          0.015419194
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.004061599000124261,
+          "gaff_typing": 0.009796681988518685
+        },
+        "reference": {
+          "antechamber": 0.4622429959999863,
+          "parmchk2": 0.052128359995549545,
+          "tleap": 0.09043123899027705
+        }
+      },
+      "ratio": 42.422633378121844,
+      "reference": {
+        "cold_process_seconds": 0.7674967980128713,
+        "mad_seconds": 0.10815057500000003,
+        "max_seconds": 0.781101655,
+        "median_seconds": 0.660024269,
+        "min_seconds": 0.439749442,
+        "samples_seconds": [
+          0.781101655,
+          0.602941688,
+          0.439749442,
+          0.660024269,
+          0.768174844
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "thiophene"
+    },
+    {
+      "atoms": 17,
+      "native": {
+        "cold_process_seconds": 0.46589175998815335,
+        "mad_seconds": 7.994100000000004e-05,
+        "max_seconds": 0.018691789,
+        "median_seconds": 0.017430649,
+        "min_seconds": 0.017253491,
+        "samples_seconds": [
+          0.01751059,
+          0.017253491,
+          0.017430649,
+          0.018691789,
+          0.017388345
+        ],
+        "scope": "warm_e2e"
+      },
+      "numerical": "pass",
+      "phase_medians_seconds": {
+        "native": {
+          "am1_bcc": 0.013314026989974082,
+          "gaff_typing": 0.0022356440022122115
+        },
+        "reference": {
+          "antechamber": 0.41229316499084234,
+          "parmchk2": 0.06913533800980076,
+          "tleap": 0.06840561298304237
+        }
+      },
+      "ratio": 34.3373449835402,
+      "reference": {
+        "cold_process_seconds": 0.7664843550010119,
+        "mad_seconds": 0.06836076400000002,
+        "max_seconds": 0.696351477,
+        "median_seconds": 0.598522208,
+        "min_seconds": 0.470861064,
+        "samples_seconds": [
+          0.696351477,
+          0.598522208,
+          0.470861064,
+          0.590521254,
+          0.666882972
+        ],
+        "scope": "warm_e2e"
+      },
+      "system": "trimethylphosphate"
+    }
+  ],
+  "groups": [
+    {
+      "accepted_cases": 12,
+      "eligible_ratio_count": 12,
+      "ratio_max": 160.86201019332063,
+      "ratio_median_across_cases": 65.08810140046393,
+      "ratio_min": 6.504664238269719,
+      "row_id": "forcefield.gaff.bcc.parameterize",
+      "total_cases": 12
+    },
+    {
+      "accepted_cases": 12,
+      "eligible_ratio_count": 12,
+      "ratio_max": 138.85040284893108,
+      "ratio_median_across_cases": 63.22906000867921,
+      "ratio_min": 6.832516961788798,
+      "row_id": "forcefield.gaff.abcg2.parameterize",
+      "total_cases": 12
+    },
+    {
+      "accepted_cases": 11,
+      "eligible_ratio_count": 11,
+      "ratio_max": 112.55728099265765,
+      "ratio_median_across_cases": 42.422633378121844,
+      "ratio_min": 6.30382921974734,
+      "row_id": "forcefield.gaff2.bcc.parameterize",
+      "total_cases": 12
+    },
+    {
+      "accepted_cases": 11,
+      "eligible_ratio_count": 11,
+      "ratio_max": 117.27970890591449,
+      "ratio_median_across_cases": 43.404859390793135,
+      "ratio_min": 6.177744637899225,
+      "row_id": "forcefield.gaff2.abcg2.parameterize",
+      "total_cases": 12
+    }
+  ],
+  "historical_baseline": "unbaselined",
+  "hostname": "n1",
+  "job_id": "4473906",
+  "max_abs_errors": {
+    "angle_parameters": 5.610846116610446e-05,
+    "atom_lj_parameters": 3.825836980553277e-09,
+    "atom_masses": 0.0,
+    "atomtype_codes": 0.0,
+    "bond_parameters": 0.0,
+    "charges_e": 0.000869442664434894,
+    "dihedral_parameters": 4.4444445346236705e-10,
+    "improper_parameters": 0.0,
+    "special_bonds": 0.0
+  },
+  "observations": 576,
+  "provenance_verification": {
+    "all_loaded_binaries_match_receipt": true,
+    "all_receipts_consistent": true,
+    "all_sibling_trees_consistent": true,
+    "molpy_post_tree_sha256": "3d088925b8cb9934702c98def2ed4468d139b5c6078f296d4a75da949837ac46",
+    "molpy_pre_tree_sha256": "3d088925b8cb9934702c98def2ed4468d139b5c6078f296d4a75da949837ac46",
+    "molpy_source_unchanged": true,
+    "native_observations": 288,
+    "observed_molpy_tree_sha256": [
+      "3d088925b8cb9934702c98def2ed4468d139b5c6078f296d4a75da949837ac46"
+    ],
+    "observed_receipt_sha256": [
+      "fc157df5cb53b98333121f3889b42509dd932f9845edd132cf23bec4b4e164b7"
+    ],
+    "pass": true,
+    "receipt_sha256": "fc157df5cb53b98333121f3889b42509dd932f9845edd132cf23bec4b4e164b7"
+  },
+  "required_participant_cells": 96,
+  "scope": "Fixed-geometry warm full parameterization route; fresh state, graph/input conversion, AM1, BCC, GAFF and common parameter materialization; external includes antechamber+parmchk2+tleap process and file overhead. Not isolated AM1 kernel speedup.",
+  "threads": 1,
+  "total_molecule_model_cases": 48
+}

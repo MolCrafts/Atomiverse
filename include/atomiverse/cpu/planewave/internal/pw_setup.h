@@ -129,6 +129,19 @@ void setup_pw_problem(const cpu::Frame& frame,
                       std::shared_ptr<const NcPotentialData> potential,
                       double ecut_ry, int k_mesh, PWProblem& out);
 
+/// @brief Rebuild geometry-dependent operators at a fixed reference PW basis.
+///
+/// The integer density/wavefunction modes, their order, k mesh and FFT shapes
+/// are retained. Cartesian G/k vectors, kinetic energies and ionic operators
+/// are recomputed for the strained cell. This defines the smooth finite-basis
+/// strain derivative without modes entering/leaving the energy cutoff.
+/// The immutable admitted potential is shared without repeating admission or
+/// copying radial tables. Its form factors are evaluated at the new vectors.
+/// @param reference Reference problem (must differ from out).
+void setup_pw_problem_fixed_basis(const cpu::Frame& frame,
+                                  const PWProblem& reference, double ecut_ry,
+                                  int k_mesh, PWProblem& out);
+
 /// @brief Replace only the k-mesh tables on an assembled problem.
 ///
 /// Keeps density-side fields on `out.ws` (ρ, \(V_\mathrm{eff}\), \(V_\mathrm{loc}\),

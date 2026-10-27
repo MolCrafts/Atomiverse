@@ -1,0 +1,105 @@
+{
+  "qualification": "Shared CPU/CUDA scalar smearing implementation against actual compiled Quantum ESPRESSO 7.6 routines; separate full SCF/stress qualification belongs to sibling diagnostics.",
+  "point_count": 65,
+  "spectrum_count": 20,
+  "point_modes": [
+    "Fermi-Dirac",
+    "Gaussian",
+    "Methfessel-Paxton 1",
+    "Methfessel-Paxton 2",
+    "Methfessel-Paxton 3"
+  ],
+  "unit_tests_passed": 9,
+  "unit_job": {
+    "id": "4477219",
+    "state": "COMPLETED",
+    "elapsed": "00:00:14",
+    "node": "n213"
+  },
+  "oracle_and_before_after_job": {
+    "id": "4477595",
+    "state": "COMPLETED",
+    "elapsed": "00:00:11",
+    "node": "n215"
+  },
+  "before": {
+    "source_sha256": "d41838c5e9b773af4778dca829c77f542bd6e393c1d1ba135d3dbbc10eba402a",
+    "binary_sha256": "f64dabb4f7b2e1d81c508df4638a9af747a014c8cf8a6e81280a370ff7e06c18",
+    "passed": false,
+    "failure_count": 61,
+    "point_count": 65,
+    "spectrum_count": 20,
+    "nonfinite_count": 1,
+    "max_abs_errors": {
+      "point_f": 0.05107148941879336,
+      "point_s": 0.14104739588693907,
+      "fixed_mu_n": 0.032711815644959064,
+      "fixed_mu_s": 0.234943649571558,
+      "root_n": 1.3677947663381929e-13,
+      "metallic_root_mu": 0.014712014925333755,
+      "metallic_root_s": 0.23494364957152702
+    }
+  },
+  "after": {
+    "source_sha256": "cffe8476e6ac1e1bf724807518775aa90d42a3b22ea103a035141e2c5da696fe",
+    "binary_sha256": "2b590bd249b879050674d95f82a11ab1a2add55c7d5f583aeeca2ac2ec6d4dd4",
+    "passed": true,
+    "failure_count": 0,
+    "point_count": 65,
+    "spectrum_count": 20,
+    "nonfinite_count": 0,
+    "max_abs_errors": {
+      "point_f": 1.1102230246251565e-16,
+      "point_s": 5.551115123125783e-17,
+      "fixed_mu_n": 4.440892098500626e-16,
+      "fixed_mu_s": 1.1102230246251565e-16,
+      "root_n": 9.174971893344264e-11,
+      "metallic_root_mu": 3.8163916471489756e-17,
+      "metallic_root_s": 1.491862189340054e-16
+    }
+  },
+  "header_sha256": "972409f869d74dd5219ab175af78a5ea05c69e0fc3b18a55460f9a7f92de6881",
+  "fixture_sha256": "f9777e94abf545501127596431ad261491b4c29a6d7249feb46732556b2e95a1",
+  "qe_reference_sha256": "73598cd1b6407add91e3476c405e98ac989ffa42d1ffedd48ebf88dfe34b34d8",
+  "oracle_source_files": {
+    "wgauss.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/Modules/wgauss.f90",
+      "sha256": "78145ca2423a14f3a761737f9eb54ed6e52755c441bd79997da3a138f5d42a8c"
+    },
+    "w0gauss.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/Modules/w0gauss.f90",
+      "sha256": "a2fd9cc385eb81b582f869898f03ec10eebc6f7aa2d3906f4c4494059c80a572"
+    },
+    "w1gauss.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/Modules/w1gauss.f90",
+      "sha256": "05b26a47181e8cacfe02f40b4e34bde594708a97966a947f863165c5b5c8bd6f"
+    },
+    "sumkg.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/PW/src/sumkg.f90",
+      "sha256": "26b937cef67fee45c3b40a998f019992bcb29634e69252ff2135ba3daf0fc46f"
+    },
+    "efermig.f90": {
+      "url": "https://raw.githubusercontent.com/QEF/q-e/qe-7.6/PW/src/efermig.f90",
+      "sha256": "24097d64cb4607630a0e700b83a0c6d966dd58327938a8dfcb547fd6dc6badaa"
+    }
+  },
+  "input_script_sha256": {
+    "capture_qe.py": "e341a7a7f3dec78f768321b7c2ebf18796b7c56fc655c7c358f3f406e9260f0b",
+    "compare.py": "08c7f3b79e9f758b7cffd7c0ed6fcae583b8907c6827ea8d4cf6910d9dc703f7",
+    "probe.cpp": "eedff455cc87912f5a0d9c27065f960fa996ffe81ab26a072c4a1ac7346e7079"
+  },
+  "limits": [
+    "MP ground-state occupation/stress is supported; DFPT rejects MP pending signed-projector and MP occupation-derivative implementation.",
+    "Insulating mu is nonunique: root number/gap margin/negligible entropy are tested instead of arbitrary mu equality.",
+    "No full-SCF energy, stress, or nonempty-entropy gate is relaxed."
+  ],
+  "evidence": {
+    "compiled_qe": "qe-reference.json",
+    "raw_qe_output": "qe.out",
+    "complete_failures_and_commands": "comparison.json",
+    "before_output": "before.json",
+    "after_output": "after.json",
+    "unit_log": "unit.log",
+    "unit_provenance": "unit-provenance.json"
+  }
+}

@@ -286,6 +286,41 @@ void bind_single_point(
             });
 }
 
+/// Named quadrature policy shared by the two Python Kohn–Sham methods.
+/// Keep the native defaults; callers can explicitly match an oracle grid.
+template <typename Method>
+void bind_ks_grid(nb::class_<MethodHandle<Method>, ATV::cpu::DriverNode>& cls) {
+    using Handle = MethodHandle<Method>;
+    using ATV::cpu::scf::GridLevel;
+    cls.def_prop_rw(
+        "grid",
+        [](const Handle& self) {
+            switch (self.method.grid_level) {
+            case GridLevel::SG0:
+                return "SG0";
+            case GridLevel::SG1:
+                return "SG1";
+            case GridLevel::MatchPySCF:
+                return "MatchPySCF";
+            }
+            throw std::logic_error("unknown Kohn-Sham grid policy");
+        },
+        [](Handle& self, const std::string& value) {
+            if (value == "SG0")
+                self.method.grid_level = GridLevel::SG0;
+            else if (value == "SG1")
+                self.method.grid_level = GridLevel::SG1;
+            else if (value == "MatchPySCF")
+                self.method.grid_level = GridLevel::MatchPySCF;
+            else
+                throw std::invalid_argument(
+                    "grid must be SG0, SG1 or MatchPySCF");
+        },
+        "Atom-centered XC quadrature for subsequent run()/forces() calls: "
+        "SG0, SG1 or MatchPySCF (PySCF level 3, NWChem pruning and "
+        "Treutler radial/partition policy). Native defaults are preserved.");
+}
+
 } // namespace
 #endif // ATV_HAS_HF
 
@@ -493,7 +528,9 @@ void bind_scf(nb::module_& m) {
         "correlation — is supplied by an exchange-correlation functional, a "
         "recipe mapping the density to an energy (named by `xc`). "
         "'Restricted' means closed shell: alpha and beta electrons share one "
-        "set of spatial orbitals.");
+        "set of spatial orbitals. With B2PLYP, energy() is the hybrid KS "
+        "reference energy; the scaled MP2 correlation correction is a "
+        "separate calculation and is not included here.");
     rks.def(
            "__init__",
            [](MethodHandle<RKS>* self, const std::string& basis,
@@ -518,13 +555,16 @@ void bind_scf(nb::module_& m) {
             "Exchange-correlation functional name fixed at construction "
             "(read-only).");
     bind_single_point(rks);
+    bind_ks_grid(rks);
 
     nb::class_<MethodHandle<UKS>, ATV::cpu::DriverNode> uks(
         m, "UKS",
         "Unrestricted Kohn-Sham (UKS) density-functional theory: RKS with "
         "independent spatial orbitals for the spin-up (alpha) and spin-down "
         "(beta) channels, for open-shell systems with unpaired electrons "
-        "(radicals, triplet ground states such as O2).");
+        "(radicals, triplet ground states such as O2). With B2PLYP, this "
+        "method computes the hybrid KS reference, without the separate "
+        "scaled MP2 correlation correction.");
     uks.def(
            "__init__",
            [](MethodHandle<UKS>* self, const std::string& basis, int n_alpha,
@@ -560,6 +600,7 @@ void bind_scf(nb::module_& m) {
             "Exchange-correlation functional name fixed at construction "
             "(read-only).");
     bind_single_point(uks);
+    bind_ks_grid(uks);
 #else
     (void)m;
 #endif

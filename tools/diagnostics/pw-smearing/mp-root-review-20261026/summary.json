@@ -1,0 +1,89 @@
+{
+  "full_scf_sample_passed": false,
+  "conclusion": "The observed failure is not explained by MP root branch selection or the 1e-10 electron-number tolerance. Do not modify frozen smearing based on this failure.",
+  "observed_failure": "LSDA MP1, degauss=0.04 Ry, simple strain Fxx=-0.002, mix_beta=0.35, max_iter=250, tol=1e-9. Mix_beta=0.2 with 1000 iterations also failed.",
+  "actual_qe_replay": {
+    "spectra_count": 716,
+    "max_abs_mu_native_vs_actual_qe": 4.163336342344337e-16,
+    "max_abs_number_residual_at_native_mu": 9.789280497329855e-11,
+    "min_abs_dN_dmu_at_native_mu": 0.6910063955889734,
+    "negative_slope_count": 691,
+    "scheduler": {
+      "SLURM_JOB_ID": "4477947",
+      "SLURM_JOB_NODELIST": "n233"
+    },
+    "compile_command": [
+      "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/gfortran",
+      "-O2",
+      "-cpp",
+      "-ffree-line-length-none",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/qe_support.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/wgauss.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w0gauss.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w1gauss.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/sumkg.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/efermig.f90",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/replay_qe.f90",
+      "-o",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/mp-replay-250/qe-replay"
+    ],
+    "files_sha256": {
+      ".claude/campaigns/dft-gap-wave2-20261026/cpu-pw/mp-trace-250.log": "65401edd39e004d9d92ab0c6e4b58a3db3a88dd9c6a2f4ce7d9a4f2f21e7f9bc",
+      "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/bin/gfortran": "d1a9121e633e6c2d4c998e3ba00a3a144677c1b78ffbf6c07b3947688c8a015b",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/mp-replay-250/qe-replay": "9a9b0573138940ec2211626ec6ffca1b8bf1a78106c9b5bcf8db12d4ab2efa5e",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/replay.py": "c40e99ebe2aff14b43e52557380038775a50bbee50590b74f1c8870e7a682cc7",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/replay_qe.f90": "749d6f8b36460ada74d0405175540ce0cf15100ce32de4cbd20d921255000c17",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pw-smearing/qe_support.f90": "90b8b1d929358f901a61fdfa9eb1c301b3cac8ca5adbeae6f38dcfd51b1c21aa",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/wgauss.f90": "78145ca2423a14f3a761737f9eb54ed6e52755c441bd79997da3a138f5d42a8c",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w0gauss.f90": "a2fd9cc385eb81b582f869898f03ec10eebc6f7aa2d3906f4c4494059c80a572",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/w1gauss.f90": "05b26a47181e8cacfe02f40b4e34bde594708a97966a947f863165c5b5c8bd6f",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/sumkg.f90": "26b937cef67fee45c3b40a998f019992bcb29634e69252ff2135ba3daf0fc46f",
+      "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-wave2-20261026/smearing/qe-sources/efermig.f90": "24097d64cb4607630a0e700b83a0c6d966dd58327938a8dfcb547fd6dc6badaa"
+    }
+  },
+  "failed_solve": {
+    "solve_index": 4,
+    "sample": "STRAIN_SAMPLE xc=LSDA smear=2 axis=0 sign=-1",
+    "iterations": 250,
+    "final_joint_residual": 1.4628170579191377e-08,
+    "minimum_joint_residual": 1.4235976550368434e-08,
+    "tail_start_iter": 40,
+    "tail_max_abs_mu_step_minus_implicit_spectral_prediction_ha": 5.152671424635739e-10,
+    "tail_mu_range_ha": 4.492067858127141e-06,
+    "tail_min_abs_actual_qe_dN_dmu": 5.54938293089296,
+    "tail_max_abs_actual_qe_number_residual": 3.29802851695149e-11,
+    "tail_max_abs_tight_mu_shift_ha": 5.942288328064649e-12,
+    "tail_max_spinless_occupation_change": 1.3631762385557522e-11,
+    "tail_eigenvalue_range_ha": [
+      2.3215487460204187e-06,
+      2.2620246845628245e-06,
+      1.1374195168910306e-05,
+      2.73615810904293e-06,
+      3.1339973048383207e-06,
+      1.3872402787051819e-06,
+      1.5519581979435426e-06,
+      2.5174041039695283e-06,
+      1.0167449315673371e-06,
+      1.1780025399865668e-06
+    ]
+  },
+  "root_refinement": "At each supplied spectrum, local MP1 Newton refinement uses compensated number sums and a 2e-15 residual stopping criterion. Every step stays near the native root. The analytic MP1 function was independently qualified by the actual-QE local/spectrum pins.",
+  "evidence_inference": "Late-iteration |dN/dmu| exceeds 5.549 Ha^-1, root refinement changes mu at most 5.943e-12 Ha and occupations at most 1.364e-11; measured mu instead spans 4.493e-6 Ha. Changes in supplied eigenvalues predict adjacent mu changes to within 5.153e-10 Ha through the implicit-function derivative. No branch jump is indicated.",
+  "next_diagnostic_recommendations": [
+    "Log actual achieved per-band Davidson Ritz residuals and termination reason; the current solver silently returns after its iteration cap or no added vectors.",
+    "If achieved Ritz residuals pass, inspect negative real-space spin density and XC clipping transitions.",
+    "Retain failing 250/1000 logs and original stress/energy/convergence gates. A genuine convergence fix or a qualified solver-control change needs a new after record."
+  ],
+  "production_changed": false,
+  "production_sha256": {
+    "src/cpu/planewave/internal/smearing.cpp": "cffe8476e6ac1e1bf724807518775aa90d42a3b22ea103a035141e2c5da696fe",
+    "include/atomiverse/cpu/planewave/internal/smearing.h": "972409f869d74dd5219ab175af78a5ea05c69e0fc3b18a55460f9a7f92de6881"
+  },
+  "analysis_script_sha256": "f1a6570971d3af6f34f91db64cc8cb8dfae31bd4ef31e53b6d7e3004488bb001",
+  "full_1000_trace_sha256": "368b505d1768bdaa1775562397b4011b6aa8a9c003039ee2983667db304dd9d5",
+  "replay_job": {
+    "id": "4477947",
+    "node": "n233"
+  },
+  "provenance_note": "Actual QE replay ran in the CPU owner allocation; lightweight local root/error arithmetic ran afterward, with no new SCF calculation or extension/library relink."
+}

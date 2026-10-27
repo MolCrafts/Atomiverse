@@ -26,9 +26,10 @@ namespace internal {
 /// This is not a closed-form tensor. Frame is
 /// not mutated. Restricted metallic smear (when `smearing != none`) uses
 /// fractional occupations and the Mermin free energy on both the reference
-/// SCF and the NSCF strain samples. Collinear fixed-occupation UKS
-/// (`spin_polarized`) remaps both ρ_↑ and ρ_↓ (LSDA product; spin-PBE stress
-/// is a deeper row gated by the public API).
+/// SCF and the NSCF strain samples. Collinear UKS remaps both spin densities;
+/// with smearing, both strained spectra share one chemical potential and the
+/// same entropy correction as the reference SCF. Off-diagonal Voigt values
+/// are physical tensor entries, accounting for both symmetric strain lanes.
 ///
 /// @param frame          Geometry [Å], types (Z), cell.
 /// @param potential      Builtin immutable NC potential.
@@ -46,6 +47,8 @@ namespace internal {
 /// @param spin_polarized Collinear fixed-occupation UKS (nspin=2).
 /// @param multiplicity   2S+1 when spin_polarized (else 1).
 /// @param energy_ry_out  Optional: reference SCF free/total energy [Ry].
+/// @param result_out     Optional: complete reference SCF result, without a
+///                       second solve or additional device transfers.
 /// @return Intensive stress [eV/Å³] Voigt.
 std::array<double, 6> pw_stress_analytic_impl(
     const cpu::Frame& frame,
@@ -53,7 +56,8 @@ std::array<double, 6> pw_stress_analytic_impl(
     int k_mesh, double tol, int max_iter, double mix_beta, int pulay_depth,
     cpu::scf::XCType xc, cpu::pw::Smearing smearing, double degauss,
     int mp_order, int extra_bands, bool spin_polarized = false,
-    int multiplicity = 1, double* energy_ry_out = nullptr);
+    int multiplicity = 1, double* energy_ry_out = nullptr,
+    cpu::pw::PWResult* result_out = nullptr);
 
 } // namespace internal
 } // namespace pw

@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "energy_error_ha": 3.0460078903615795e-12,
+  "stress_error_ev_ang3": 2.0385365617769935e-09,
+  "energy_gate_ha": 1e-06,
+  "stress_gate_ev_ang3": 2e-05
+}

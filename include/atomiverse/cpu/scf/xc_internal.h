@@ -98,6 +98,14 @@ void b88_exchange_spin(double rho_s, double sigma_ss, double& ex_s,
                        double& vrho_s, double& vsigma_ss, double beta = 0.0042,
                        double gamma = 6.0);
 
+/// @brief Iikura short-range B88 exchange for one spin channel.
+/// The erf partition uses a = mu/(2 k_GGA), with the B88 enhancement in
+/// k_GGA. Returns energy per volume and analytic rho/sigma derivatives.
+/// mu is in inverse Bohr; zero recovers full B88 exchange.
+void b88_short_range_exchange_spin(double rho_s, double sigma_ss, double mu,
+                                   double& ex_s, double& vrho_s,
+                                   double& vsigma_ss);
+
 /// @brief Lee-Yang-Parr GGA correlation (libxc XC_GGA_C_LYP, id 131),
 ///        spin-polarized, in the Miehlich-Savin-Stoll-Preuss closed form.
 ///

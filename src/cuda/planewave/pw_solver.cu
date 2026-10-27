@@ -218,7 +218,8 @@ PWResult& PW::run(const cpu::Frame& frame) {
 
     if (spin_polarized && use_smear) {
         // Collinear UKS + metallic smear: shared μ over spin-orbitals,
-        // f∈[0,1] (CPU twin in pw_solver.cpp). Ritz cache is per-k only,
+        // FD/Gaussian probabilities or signed MP quasi-occupations (CPU twin).
+        // Ritz cache is per-k only,
         // so pass 2 re-solves after μ (Γ dual-gate cost; not a new kernel).
         const int n_bs = n_bands;
         const int mp_order = this->mp_order;
@@ -317,6 +318,11 @@ PWResult& PW::run(const cpu::Frame& frame) {
             result_.energy =
                 result_.energy_ha / cpu::pw::qe_units::rydberg_to_hartree;
             result_.magnetization = static_cast<double>(n_up - n_dn);
+            result_.n_elec_occ = static_cast<double>(n_up + n_dn);
+            result_.e_fermi = static_cast<double>(mu_ha)
+                              / cpu::pw::qe_units::rydberg_to_hartree;
+            result_.e_entropy = static_cast<double>(e_ent_ha)
+                                / cpu::pw::qe_units::rydberg_to_hartree;
             if (conv.step(AccReal(s.resid))) {
                 result_.converged = true;
                 break;
@@ -556,11 +562,8 @@ PWResult& PW::run(cpu::Frame& frame) {
 PWResult& PW::forces(cpu::Frame& frame) {
     if (!built_)
         build(frame);
-    double energy_ha = 0.0;
     const std::vector<std::array<double, 3>> F =
-        pw_forces_analytic(frame, *this, &energy_ha);
-    result_.energy_ha = energy_ha;
-    result_.energy = energy_ha / cpu::pw::qe_units::rydberg_to_hartree;
+        forces_impl(frame, nullptr, &result_);
     AccReal* __restrict fx = frame.span(kAtom_fx);
     AccReal* __restrict fy = frame.span(kAtom_fy);
     AccReal* __restrict fz = frame.span(kAtom_fz);
@@ -578,10 +581,7 @@ PWResult& PW::forces(cpu::Frame& frame) {
 std::array<double, 6> PW::stress(cpu::Frame& frame) {
     if (!built_)
         build(frame);
-    double energy_ry = 0.0;
-    const std::array<double, 6> sigma = pw_stress(frame, *this, &energy_ry);
-    result_.energy = energy_ry;
-    result_.energy_ha = energy_ry * cpu::pw::qe_units::rydberg_to_hartree;
+    const std::array<double, 6> sigma = stress_impl(frame, nullptr, &result_);
     const double vol = frame.box.volume();
     auto& st = frame.meta.get(kStress);
     for (int k = 0; k < 6; ++k)
@@ -594,10 +594,21 @@ std::array<double, 6> PW::stress(cpu::Frame& frame) {
 std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                                                       const PW& method,
                                                       double* energy_ha_out) {
+    return method.forces_impl(frame, energy_ha_out, nullptr);
+}
+
+std::vector<std::array<double, 3>> PW::forces_impl(const cpu::Frame& frame,
+                                                   double* energy_ha_out,
+                                                   PWResult* result_out) const {
+    const PW& method = *this;
+    PWResult force_result{};
+    if (result_out)
+        *result_out = PWResult{};
     // Gate unsupported force surface before any CUDA work. Restricted fixed
     // + restricted metallic smear + collinear LSDA/PBE fixed-occ + collinear
-    // spin×smear (shared μ, f∈[0,1]) forces landed; spin∧smear stress stays
-    // closed on both backends.
+    // spin×smear forces with a shared μ and signed MP quasi-occupations are
+    // supported. Stress uses the
+    // same occupation convention in its strained NSCF evaluations.
     method.validate_members();
     if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA
         && method.xc != cpu::scf::XCType::PBE)
@@ -647,6 +658,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     ws.pulay_depth = method.pulay_depth;
 
     const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    force_result.n_kpts = n_kpts;
+    force_result.n_kpts_local = n_kpts;
+    force_result.magnetization =
+        method.spin_polarized ? method.multiplicity - 1 : 0;
     int n_bands = method.spin_polarized ? std::max(std::max(n_alpha, n_beta), 1)
                                         : prob.n_bands;
     cpu::pw::internal::SmearKind smear_kind =
@@ -681,7 +696,8 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     int last_iter = 0;
 
     if (method.spin_polarized && use_smear) {
-        // Same SCF as PW::run: shared μ over spin-orbitals, f∈[0,1].
+        // Same SCF as PW::run: shared μ over both spin spectra, preserving
+        // signed MP quasi-occupations as well as FD/Gaussian probabilities.
         // Must not fall through to the fixed-occ UKS branch (that SCF
         // energy is the spin-PBE closed-shell value, not the Mermin F).
         const int n_bs = n_bands;
@@ -724,6 +740,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                 mp_order, AccReal(1));
             AccReal e_band = 0;
             AccReal entropy_sum = 0;
+            AccReal spin_count[2] = {0, 0};
             for (int s = 0; s < 2; ++s) {
                 den.assemble_veff_spin(s);
                 den.zero_accumulator();
@@ -739,6 +756,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                         ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
                         AccReal(1));
                     entropy_sum += fill.entropy;
+                    spin_count[s] += fill.n_occ;
                     const int nb = static_cast<int>(fill.occ.size());
                     for (int b = 0; b < nb; ++b)
                         e_band += w * ev[static_cast<std::size_t>(b)]
@@ -758,9 +776,20 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                           - AccReal(red.e_xc_int);
             last_energy_ha = terms.e_one + AccReal(red.e_h) + ws.E_xc
                              + prob.ew_total - degauss_ha * entropy_sum;
+            force_result.magnetization =
+                static_cast<double>(spin_count[0] - spin_count[1]);
+            force_result.n_elec_occ =
+                static_cast<double>(spin_count[0] + spin_count[1]);
+            force_result.e_fermi = static_cast<double>(mu_ha)
+                                   / cpu::pw::qe_units::rydberg_to_hartree;
+            force_result.e_entropy =
+                static_cast<double>(-degauss_ha * entropy_sum)
+                / cpu::pw::qe_units::rydberg_to_hartree;
             last_iter = iter + 1;
-            if (conv.step(AccReal(red.resid)))
+            if (conv.step(AccReal(red.resid))) {
+                force_result.converged = true;
                 break;
+            }
         }
     } else if (method.spin_polarized) {
         // Collinear fixed-occupation UKS force-path SCF (CPU twin).
@@ -798,8 +827,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                 terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total;
             last_energy_ha = terms.total;
             last_iter = iter + 1;
-            if (conv.step(AccReal(s.resid)))
+            if (conv.step(AccReal(s.resid))) {
+                force_result.converged = true;
                 break;
+            }
         }
     } else if (use_smear) {
         // Restricted metallic-smear force-path SCF (CPU twin via
@@ -845,6 +876,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
 
             AccReal e_band = 0;
             AccReal entropy_sum = AccReal(0);
+            AccReal n_occ = 0;
             std::vector<std::vector<AccReal>> occ_k(
                 static_cast<std::size_t>(n_kpts));
             for (int ik = 0; ik < n_kpts; ++ik) {
@@ -859,6 +891,7 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                         cpu::pw::internal::smear_f_band(
                             ev[b], mu_ha, degauss_ha, smear_kind, mp_order);
                 entropy_sum += fill.entropy;
+                n_occ += fill.n_occ;
             }
 
             den.zero_accumulator();
@@ -884,9 +917,16 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                 ws.E_xc, prob.ew_total);
             const AccReal e_ent_ha = -degauss_ha * entropy_sum;
             last_energy_ha = terms.total + e_ent_ha;
+            force_result.n_elec_occ = static_cast<double>(n_occ);
+            force_result.e_fermi = static_cast<double>(mu_ha)
+                                   / cpu::pw::qe_units::rydberg_to_hartree;
+            force_result.e_entropy = static_cast<double>(e_ent_ha)
+                                     / cpu::pw::qe_units::rydberg_to_hartree;
             last_iter = iter + 1;
-            if (conv.step(AccReal(s.resid)))
+            if (conv.step(AccReal(s.resid))) {
+                force_result.converged = true;
                 break;
+            }
         }
     } else {
         for (int iter = 0; iter < method.max_iter; ++iter) {
@@ -914,8 +954,10 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
                 ws.E_xc, prob.ew_total);
             last_energy_ha = terms.total;
             last_iter = iter + 1;
-            if (conv.step(AccReal(s.resid)))
+            if (conv.step(AccReal(s.resid))) {
+                force_result.converged = true;
                 break;
+            }
         }
     }
     // Host-visible breadcrumb: energy of the force-path SCF (Ry). Mirrors the
@@ -928,16 +970,32 @@ std::vector<std::array<double, 3>> pw_forces_analytic(const cpu::Frame& frame,
     if (energy_ha_out != nullptr)
         *energy_ha_out = static_cast<double>(last_energy_ha);
 
+    force_result.iterations = last_iter;
+    force_result.energy_ha = static_cast<double>(last_energy_ha);
+    force_result.energy =
+        force_result.energy_ha / cpu::pw::qe_units::rydberg_to_hartree;
     // Forces from the final mixed density + band re-solve at final V_eff.
-    return internal::pw_forces_analytic_impl(
+    auto forces = internal::pw_forces_analytic_impl(
         frame, den, solver, prob, ws, n_alpha, n_beta, use_smear, n_elec,
         smear_kind, static_cast<double>(degauss_ha), method.mp_order);
+    if (result_out)
+        *result_out = force_result;
+    return forces;
 }
 
 std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
                                 double* energy_ry_out) {
+    return method.stress_impl(frame, energy_ry_out, nullptr);
+}
+
+std::array<double, 6> PW::stress_impl(const cpu::Frame& frame,
+                                      double* energy_ry_out,
+                                      PWResult* result_out) const {
+    const PW& method = *this;
+    if (result_out)
+        *result_out = PWResult{};
     method.validate_members();
-    // Collinear LSDA/PBE fixed-occ stress is landed; spin∧smear stays closed.
+    // Collinear LSDA/PBE stress supports fixed and fractional occupations.
     if (method.spin_polarized && method.xc != cpu::scf::XCType::LSDA
         && method.xc != cpu::scf::XCType::PBE)
         throw std::invalid_argument(
@@ -947,7 +1005,8 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
         throw std::invalid_argument(
             "cuda::pw::pw_stress: multiplicity must be >= 1 when "
             "spin_polarized");
-    // Restricted metallic smear stress is landed; spin∧smear stays closed.
+    // Restricted and collinear smearing differentiate the same free energy:
+    // both strained spin spectra are refilled at a shared chemical potential.
     if (method.smearing != Smearing::none && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "cuda::pw::pw_stress: degauss must be > 0 [Ry] when smearing is "
@@ -964,7 +1023,7 @@ std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
         frame, *method.potential, method.ecut_ry, method.k_mesh, method.tol,
         method.max_iter, method.mix_beta, method.pulay_depth, method.xc,
         method.smearing, method.degauss, method.mp_order, method.extra_bands,
-        method.spin_polarized, method.multiplicity, energy_ry_out);
+        method.spin_polarized, method.multiplicity, energy_ry_out, result_out);
 }
 
 } // namespace pw

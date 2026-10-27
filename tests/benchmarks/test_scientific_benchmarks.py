@@ -99,6 +99,17 @@ def test_actual_resource_mismatch_prevents_ratio():
     assert "resources" in data.cells[0].speedup_reason
 
 
+def test_observed_cpu_contention_preserves_science_but_prevents_ratio():
+    data = bundle()
+    data.protocol["timing_contaminated"] = True
+    data.protocol["timing_contamination_reason"] = "Measured CPU contention"
+    evaluate(data)
+    assert data.summary["complete"]
+    assert data.cells[0].numerical == "pass"
+    assert data.cells[0].speedup is None
+    assert "contention" in data.cells[0].speedup_reason
+
+
 @pytest.mark.parametrize("participant", [0, 1])
 @pytest.mark.parametrize("fingerprint", [None, "invalid", ["a" * 64], "b" * 64])
 def test_unidentified_or_changed_binary_withholds_ratio_without_erasing_accuracy(participant, fingerprint):

@@ -153,9 +153,10 @@ class DeviceDensity {
     ///        after both channels are collected.
     void collect_spin_out(int spin);
 
-    /// @brief Collinear linear mix of both spin channels (CPU twin: no Pulay
-    ///        on the fixed-occupation collinear molecule path), then
-    ///        ρ_total = ρ_↑ + ρ_↓ and residual ‖Δρ_total‖₂.
+    /// @brief Collinear linear mix of both spin channels, followed by their
+    ///        total density. Convergence uses the joint UNMIXED output-input
+    ///        norm sqrt(||delta rho_up||² + ||delta rho_down||²), matching CPU;
+    ///        equal-opposite spin changes must not cancel the stopping test.
     void mix_spin_linear();
 
     /// @brief Collinear: ρ_total(G) = ρ_↑(G) + ρ_↓(G) into d_rho_G_ for
@@ -190,7 +191,8 @@ class DeviceDensity {
     /// @brief Collinear energy + residual reductions.
     ///
     /// Hartree / local from total ρ; e_xc_int is the real-space spin integral
-    /// (`e_xc_int_spin`); residual is ‖Δρ_total‖₂ after `mix_spin_linear`.
+    /// (`e_xc_int_spin`); residual is the joint unmixed spin norm cached by
+    /// `mix_spin_linear`, independent of the chosen mixing fraction.
     /// @param vol_bohr Cell volume Ω [Bohr³].
     IterationScalars reduce_spin(double vol_bohr);
 
@@ -240,7 +242,7 @@ class DeviceDensity {
 
     /// @brief Overwrite ρ(G) from a real-space density, scaled by `scale`.
     ///
-    /// Twin of CPU `load_rho_real_scaled`: ρ'(r) = ρ₀(r)·scale then r2c /
+    /// Frozen reference ρ'(r) = ρ₀(r)·scale with identical FFT shape, then r2c /
     /// gather with 1/nr. When `nr0 != nr()` falls back to a uniform mean
     /// density (rare under small strain at fixed ecut).
     ///
@@ -261,7 +263,7 @@ class DeviceDensity {
 
     /// @brief Overwrite both spin ρ_σ(G) and total ρ from real-space densities.
     ///
-    /// Twin of CPU `load_rho_spin_real_scaled`: ρ'_σ(r) = ρ_σ0(r)·scale then
+    /// Frozen spin densities on the identical reference FFT shape, then
     /// r2c / gather, then ρ_total = ρ_↑ + ρ_↓.
     ///
     /// @param rho_a0 Host ρ_↑ [Bohr⁻³], length `nr0`.
@@ -290,7 +292,8 @@ class DeviceDensity {
     bool gga_ = false;
     bool spin_ = false;
     cudaStream_t stream_ = nullptr; ///< Non-default; owned.
-    FFTPlan3D fft_;
+    FFTPlan3D fft_;    ///< Base density/band grid, never resized by XC.
+    FFTPlan3D xc_fft_; ///< CPU-matched private padded XC quadrature.
     cublasHandle_t blas_ = nullptr;
 
     // Density-sphere arrays (ng0_)
@@ -312,6 +315,7 @@ class DeviceDensity {
     cufftDoubleComplex* d_V_xc_spin_G_[2] = {nullptr, nullptr};
     double* d_rho_spin_r_[2] = {nullptr, nullptr};
     double* d_V_xc_spin_r_[2] = {nullptr, nullptr};
+    cufftDoubleComplex* d_spin_residual_ = nullptr; ///< 2*ng0_ unmixed deltas.
 
     // Pulay history ring (depth_ × ng0_ each) + Gram / coefficients
     cufftDoubleComplex* d_res_hist_ = nullptr;
@@ -320,9 +324,11 @@ class DeviceDensity {
     double* d_coeff_ = nullptr;            ///< depth_ mixing coefficients.
 
     // Grids
-    cufftDoubleComplex* d_half_ = nullptr; ///< nc_ half-complex staging.
-    double* d_rho_r_in_ = nullptr;         ///< ρ(r) input to XC.
-    double* d_rho_r_acc_ = nullptr;        ///< band-solver accumulator.
+    // The shared staging and XC-only real arrays are sized for xc_fft_.
+    // Base-grid transforms reuse their prefixes; accumulator/Veff stay nr_.
+    cufftDoubleComplex* d_half_ = nullptr;
+    double* d_rho_r_in_ = nullptr;  ///< ρ(r) input to XC.
+    double* d_rho_r_acc_ = nullptr; ///< band-solver accumulator.
     double* d_V_xc_r_ = nullptr;
     double* d_exc_r_ = nullptr;
     double* d_V_eff_r_ = nullptr;

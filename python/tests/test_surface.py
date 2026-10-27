@@ -18,9 +18,10 @@ namespace (pinned per row in test_namespaces.py):
   ``scf_gradient``, ...) — the SCF surface is the concrete methods, never a
   config bag.
 * Gaussian SCF (spec py-scf-single-point) exposes the concrete methods
-  ``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` through ``atomiverse.scf``. They are
-  compile-optional (``ATV_BUILD_HF``) and therefore reachable only through
-  the lazy attribute + the deep module, never through ``__all__``.
+  ``RHF`` / ``UHF`` / ``ROHF`` / ``GHF`` / ``RKS`` / ``UKS`` through
+  ``atomiverse.scf``. They are compile-optional (``ATV_BUILD_HF``) and are
+  included in the top-level ``__all__`` when the installed extension carries them.
+  CUDA HF builds additionally expose ``CudaRHF`` and ``CudaUHF``.
 * Plane-wave DFT uses the concrete ``PW`` method (members → build → run).
   PW types are present only when the extension was
   built with ``ATV_BUILD_PW=ON``; the deleted functional entry is absent on
@@ -73,9 +74,11 @@ from _domains import needs
 _HAS_PW: bool = extension_available() and hasattr(_cpp, "PW")
 _HAS_KSPACE: bool = extension_available() and hasattr(_cpp, "KSpacePME")
 _HAS_HF: bool = extension_available() and hasattr(_cpp, "RHF")
+_HAS_CUDA_HF: bool = extension_available() and hasattr(_cpp, "CudaRHF")
 
 # The concrete Gaussian SCF methods (spec py-scf-single-point).
-_SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "RKS", "UKS")
+_SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "ROHF", "GHF", "RKS", "UKS")
+_CUDA_SCF_METHODS: tuple[str, ...] = ("CudaRHF", "CudaUHF")
 
 # ── Shared surface definitions ──────────────────────────────────────
 
@@ -90,7 +93,8 @@ _CANONICAL_NEW_NAMES: tuple[str, ...] = (
 # build. Compile-optional object types (``PW`` / ``PWResult``, ``KSpacePME``)
 # are NOT among them: they are reachable through the lazy ``__getattr__`` +
 # their deep module when the extension carries them, and raise a
-# build-flag-naming AttributeError when it does not.
+# build-flag-naming AttributeError when it does not. The Gaussian CPU/CUDA
+# methods are among the public candidates; __all__ filters them by availability.
 _CANONICAL_ALL: frozenset[str] = frozenset(
     {
         "MD",
@@ -103,6 +107,7 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "Langevin",
         "CSVR",
         "Minimize",
+        "SteepestDescent",
         "LBFGS",
         "CG",
         "FIRE",
@@ -131,9 +136,14 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "InsertDeleteMove",
         "MoveSelector",
         "AM1",
+        "RM1",
+        "MNDO",
+        "PM3",
         "AM1Result",
+        "RM1Result",
+        "MNDOResult",
+        "PM3Result",
         "AM1BCCCharges",
-        "BccParameterSet",
         "DFTB0",
         "DFTB2",
         "DftbBoundary",
@@ -142,6 +152,15 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "kDftbSpinConstantsPbeHa",
         "kDftbSpinConstantsLdaHa",
         "single_point",
+        "Evaluate",
+        "RHF",
+        "UHF",
+        "ROHF",
+        "GHF",
+        "RKS",
+        "UKS",
+        "CudaRHF",
+        "CudaUHF",
         "Hessian",
         "HessianResult",
         # Force-field catalogue growth (spec py-pair-styles): six pair
@@ -275,8 +294,8 @@ class TestCanonicalSurface:
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
     def test_public_names_are_the_honest_surface(self) -> None:
-        """The public name list is the same 60 names on every build."""
-        assert len(_CANONICAL_ALL) == 60
+        """The public candidate list is fixed; availability filters __all__."""
+        assert len(_CANONICAL_ALL) == 75
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:
@@ -414,10 +433,15 @@ class TestScfSurface:
         assert getattr(av, name) is getattr(scf, name)
 
     @pytest.mark.skipif(not _HAS_HF, reason="extension built without ATV_BUILD_HF")
-    def test_scf_module_exports_the_four_methods(self) -> None:
-        """``atomiverse.scf.__all__`` is exactly the four concrete methods."""
+    def test_scf_module_exports_methods_and_backend_queries(self) -> None:
+        """SCF exports the carried methods and their documented backend queries."""
         scf = importlib.import_module("atomiverse.scf")
-        assert set(scf.__all__) == set(_SCF_METHODS)
+        expected = {*_SCF_METHODS, "backend_info"}
+        if _HAS_CUDA_HF:
+            expected.update(
+                (*_CUDA_SCF_METHODS, "cuda_backend_info", "cuda_synchronize")
+            )
+        assert set(scf.__all__) == expected
 
     @pytest.mark.skipif(_HAS_HF, reason="extension built with ATV_BUILD_HF")
     @pytest.mark.parametrize("name", _SCF_METHODS)
@@ -429,9 +453,17 @@ class TestScfSurface:
         assert not hasattr(_cpp, name)
 
     @pytest.mark.parametrize("name", _SCF_METHODS)
-    def test_scf_method_is_never_in_all(self, name: str) -> None:
-        """Compile-optional types stay out of the static ``__all__``."""
-        assert name not in av.__all__
+    def test_scf_method_in_all_follows_capability(self, name: str) -> None:
+        """The public candidate resolves and joins __all__ when HF is carried."""
+        assert (name in av.__all__) is _HAS_HF
+
+    @pytest.mark.parametrize("name", _CUDA_SCF_METHODS)
+    def test_cuda_scf_method_in_all_follows_capability(self, name: str) -> None:
+        """CUDA methods are public only on builds carrying CUDA HF."""
+        assert (name in av.__all__) is _HAS_CUDA_HF
+        if _HAS_CUDA_HF:
+            scf = importlib.import_module("atomiverse.scf")
+            assert getattr(av, name) is getattr(scf, name) is getattr(_cpp, name)
 
     def test_no_scf_facade_name(self) -> None:
         """There is no ``SCF`` facade / solver bag on either surface — the

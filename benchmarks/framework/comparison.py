@@ -97,6 +97,8 @@ def evaluate(bundle: Bundle) -> Bundle:
                     reason = "at least five samples per participant required"
                 elif any(o.metadata.get("resource_mismatch") for c in (cell, ref) for o in c.observations):
                     reason = "actual engine thread resources differ from the declared profile"
+                elif bundle.protocol.get("timing_contaminated"):
+                    reason = bundle.protocol.get("timing_contamination_reason") or "observed CPU contention invalidates timing ratios"
                 elif any(len({str(o.metadata.get("binary_sha256")) for o in c.observations}) != 1 or
                          any(not re.fullmatch(r"[0-9a-f]{64}", str(o.metadata.get("binary_sha256")))
                              for o in c.observations) for c in (cell, ref)):

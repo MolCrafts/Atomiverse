@@ -1,0 +1,13 @@
+{
+  "water_asymmetric": {
+    "id": "water_asymmetric",
+    "label": "Asymmetric distorted water, nine nonzero Cartesian force components",
+    "atomic_numbers": [8, 1, 1],
+    "positions_angstrom": [
+      [0.2, -0.1, 0.3],
+      [0.97, 0.36, -0.14],
+      [-0.31, 0.64, -0.37]
+    ],
+    "tiers": ["acceptance", "performance"]
+  }
+}

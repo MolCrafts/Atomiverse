@@ -1,0 +1,1664 @@
+{
+  "command": [
+    "tools/diagnostics/molecular-dft/validate.py",
+    "--out",
+    ".claude/campaigns/dft-gap-20261026/cpu/validated",
+    "--threads",
+    "1"
+  ],
+  "utc": "2026-10-26T21:05:40.119728+00:00",
+  "python": "3.13.13 (main, May 10 2026, 19:26:54) [Clang 22.1.3 ]",
+  "python_executable": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/bin/python",
+  "hardware": {
+    "system": "Linux",
+    "node": "n213",
+    "release": "5.14.0-687.59.1.el9_8.x86_64",
+    "version": "#1 SMP PREEMPT_DYNAMIC Wed Oct 21 06:02:14 EDT 2026",
+    "machine": "x86_64",
+    "processor": "x86_64"
+  },
+  "affinity": [
+    17,
+    21
+  ],
+  "scheduler": {
+    "SLURM_JOB_ID": "4475911",
+    "SLURM_CPUS_PER_TASK": "2",
+    "SLURM_JOB_NODELIST": "n213"
+  },
+  "native_binary": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/build-hf-auto/_atomiverse.cpython-313-x86_64-linux-gnu.so",
+  "native_binary_sha256": "a0854aec15a0232eb1e979b117b643788fe432142135e7f56eebe984502a5c77",
+  "source_sha256": {
+    "tools/diagnostics/molecular-dft/validate.py": "952407682ce5c32f052e4641c2a7bcfc568861939e8a506ae36002d9a0bbbde5",
+    "src/cpu/scf/internal/gradient.cpp": "bb799a313a09898defdcf861c3a1607bed612ba3e88a38063aeffd3355b9b52e",
+    "src/cpu/scf/internal/integral_derivatives.cpp": "0911b6d1472ea109ebecbc97774f0c7e6eaabf1f61c6f7e8b3ec341192fdc2a7",
+    "src/cpu/scf/rys_eri.cpp": "715917f30aa5f922439c4e4f757dd9fef099bdfcb82cbc4aa420e07d0057e5b5",
+    "src/cpu/scf/internal/hamiltonian_builder.cpp": "0f18eb7c55c50c99d73bdb26d831ae1bde02d4bc9a592d5337c8623049d90be0"
+  },
+  "build_verified": false,
+  "pyscf": "2.14.0",
+  "oracle_binaries": {
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/deps/lib/libcint.so": "950bb0a297507369dce95b9013ef2c5b64b0fa36a0018c303c98e95efce7db7e",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/deps/lib/libxc.so": "d120371b37f4729dfc21f3b0575e563ef9b0254839926c41c0c02f5082143548",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/deps/lib64/libxcfun.so": "69a381159a6dc1646a963d23f3376f2770f8d2cb2148cce015c2b9184ec55c5e",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libagf2.so": "302fca3489bf88d81d64b3a2e98d3c2b5cb3960a1780683c34d9986724d607d1",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libao2mo.so": "db9c39a886621416b69e698e6e8c521356428b4a40ac37143ad014160574f36b",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcc.so": "667287f7cf22bea0796b34435fde2b2ad04598ea18d061622730ffbdc20771b0",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libccsdt.so": "855b57c237145ebadc9c6f14bebde4a4351d93567549273b2b73fb7ccf8e212d",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcgto.so": "337d956486a156f1aa7ca636ac5a91c6277058ffedb6db2efe714fee65f726e0",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libcvhf.so": "5d7461e3976fd40fce7c9ba571e45b01830dd018d75927e389c32a6f4d09df0c",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libdft.so": "f955b2fd7b6fb2d66d0786145f5bb910cf859c49a940f5268bf718c87d34e05e",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libfci.so": "df1a6c5f5c175a536e2d2f4727e9af47cc0ce60ff334f10e0796315df05adcde",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmcscf.so": "b9ff5ebe2a9f10a7418d407b56658300a6d3e0f4f927c3d517eca84d667907df",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libmp.so": "c6c2aa1bcf962d90a6aeabf82ea8001ec7706d06facf89b11e709b3bdb2b0c73",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libnp_helper.so": "22367859ca19057d29013075accc0c1d47e78e7d213295e686bf9a40fee735eb",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so": "79ec02b53f573cd7116a89f04c397473018e7fda05720b354d43505c19d47958",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpbc.so": "c9580c7d41044505c1f27565fb53aaa257bf4770127090adc4068146020107c7",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libpdft.so": "ddae4328048c360b75f7d1bd1da98c1dff42288ddd33d396c813522518e6734f",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libri.so": "7c549d5c0a068d1c1ea5b13ae1e47aa58eaec13b0b326b649397906372fcfe40",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libsolvent.so": "6b5ac2a3e60e71c71f905c9506ddac773ae3ffa2582d0ee7c6915520d2f53bdf",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxc_itrf.so": "5f09c9ad1296e1ab106ca00a2ad9a4f1a29e102c9e06c23511d6ba9710a69613",
+    "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libxcfun_itrf.so": "5ba15b20c81767b2ef434b087caceb2f4f163db5fe376d2ec267501b25136aac"
+  },
+  "numpy": "2.5.4",
+  "requested_threads": 1,
+  "threadpools": [
+    {
+      "user_api": "blas",
+      "internal_api": "openblas",
+      "num_threads": 1,
+      "prefix": "libopenblas",
+      "filepath": "/software/sse2/el9_epyc9005/manual/OpenBLAS/0.3.32/g14/hpc1/openmp/lp64/lib/libopenblas_zenp-r0.3.32.so",
+      "version": "0.3.32",
+      "threading_layer": "openmp",
+      "architecture": "ZEN"
+    },
+    {
+      "user_api": "blas",
+      "internal_api": "openblas",
+      "num_threads": 1,
+      "prefix": "libscipy_openblas",
+      "filepath": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/scratch/hf-auto/env/lib/python3.13/site-packages/numpy.libs/libscipy_openblas64_-f48b354e.so",
+      "version": "0.3.34.106.0",
+      "threading_layer": "pthreads",
+      "architecture": "SkylakeX"
+    },
+    {
+      "user_api": "openmp",
+      "internal_api": "openmp",
+      "num_threads": 1,
+      "prefix": "libgomp",
+      "filepath": "/software/sse2/el9_epyc9005/manual/GCC/14.3.0/hpc1/lib64/libgomp.so.1.0.0",
+      "version": null
+    },
+    {
+      "user_api": "openmp",
+      "internal_api": "openmp",
+      "num_threads": 1,
+      "prefix": "libgomp",
+      "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libgomp-a34b3233.so.1.0.0",
+      "version": null
+    },
+    {
+      "user_api": "blas",
+      "internal_api": "openblas",
+      "num_threads": 1,
+      "prefix": "libscipy_openblas",
+      "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/scipy.libs/libscipy_openblas-5f890258.so",
+      "version": "0.3.31.dev",
+      "threading_layer": "pthreads",
+      "architecture": "SkylakeX"
+    },
+    {
+      "user_api": "blas",
+      "internal_api": "openblas",
+      "num_threads": 1,
+      "prefix": "libopenblas",
+      "filepath": "/home/jicli594/.local/x86_64/lib/python3.13/site-packages/pyscf/lib/libopenblas-r0-f650aae0.3.3.so",
+      "version": null,
+      "threading_layer": "disabled",
+      "architecture": "Barcelona"
+    }
+  ],
+  "controls": {
+    "native_grid": "MatchPySCF",
+    "pyscf_grid_level": 3,
+    "analytic_grid_response": true,
+    "tolerance_ha": 1e-12,
+    "residual_tolerance": 1e-08,
+    "max_iter": 200,
+    "initial_guess": "minao",
+    "damping": 0.0,
+    "diis_space": 8,
+    "diis_start_cycle": 1
+  },
+  "gates": {
+    "energy_ha": 1e-08,
+    "full_force_component_ha_bohr": 1e-06,
+    "both_engines_converged": true,
+    "finite_observables": true
+  },
+  "records": [
+    {
+      "case": "RKS-water-STO-3G-PBE",
+      "method": "RKS",
+      "system": "water",
+      "basis": "STO-3G",
+      "xc": "PBE",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": true,
+      "native_energy_ha": -75.22693219607955,
+      "oracle_energy_ha": -75.22693219607942,
+      "native_force_ha_bohr": [
+        [
+          -0.004775339002772739,
+          0.007304714604269867,
+          0.11221276219394509
+        ],
+        [
+          0.008273688999814406,
+          0.04201436130901189,
+          -0.05327851770627004
+        ],
+        [
+          -0.003498349997041513,
+          -0.04931907591327492,
+          -0.058934244487684216
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.004775339009861129,
+          0.007304714603732956,
+          0.11221276233135047
+        ],
+        [
+          0.008273689007525953,
+          0.04201436134313452,
+          -0.053278517769106415
+        ],
+        [
+          -0.0034983499976651566,
+          -0.04931907594686935,
+          -0.058934244562237836
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.2789769243681803e-13,
+      "max_force_error_ha_bohr": 1.3740537874173953e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "RKS-water-STO-3G-PBE0",
+      "method": "RKS",
+      "system": "water",
+      "basis": "STO-3G",
+      "xc": "PBE0",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": true,
+      "native_energy_ha": -75.24677974158618,
+      "oracle_energy_ha": -75.24677974158631,
+      "native_force_ha_bohr": [
+        [
+          -0.003764380715950005,
+          0.007327296809790817,
+          0.09250378166035184
+        ],
+        [
+          0.00639895244452818,
+          0.031638475315874874,
+          -0.04341505921951976
+        ],
+        [
+          -0.002634571728577823,
+          -0.038965772125669255,
+          -0.049088722440842704
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.0037643807358766768,
+          0.007327296904007914,
+          0.09250378229310652
+        ],
+        [
+          0.0063989524666089315,
+          0.03163847536893738,
+          -0.043415059516627164
+        ],
+        [
+          -0.0026345717307326155,
+          -0.038965772272946175,
+          -0.04908872277647358
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.2789769243681803e-13,
+      "max_force_error_ha_bohr": 6.327546819839824e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "RKS-water-STO-3G-BLYP",
+      "method": "RKS",
+      "system": "water",
+      "basis": "STO-3G",
+      "xc": "BLYP",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": true,
+      "native_energy_ha": -75.27892463015407,
+      "oracle_energy_ha": -75.27892463018044,
+      "native_force_ha_bohr": [
+        [
+          -0.005051944705401045,
+          0.0072828411146343966,
+          0.11757764411761912
+        ],
+        [
+          0.008961698582200929,
+          0.046182998458839,
+          -0.05596947009542776
+        ],
+        [
+          -0.003909753876799058,
+          -0.05346583957346834,
+          -0.06160817402218171
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.005051944721574303,
+          0.007282841110268924,
+          0.11757764442896113
+        ],
+        [
+          0.008961698600713996,
+          0.04618299854462826,
+          -0.0559694702276905
+        ],
+        [
+          -0.003909753879139943,
+          -0.053465839654898595,
+          -0.061608174201268184
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 2.637534635141492e-11,
+      "max_force_error_ha_bohr": 3.1134200773053067e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "RKS-water-STO-3G-B3LYP",
+      "method": "RKS",
+      "system": "water",
+      "basis": "STO-3G",
+      "xc": "B3LYP",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": true,
+      "native_energy_ha": -75.31374496324338,
+      "oracle_energy_ha": -75.3137449632623,
+      "native_force_ha_bohr": [
+        [
+          -0.0041568920264346675,
+          0.007296329100467763,
+          0.10010851388596277
+        ],
+        [
+          0.007299812066104908,
+          0.036983564758533365,
+          -0.047229505937138296
+        ],
+        [
+          -0.0031429200396703156,
+          -0.04427989385900568,
+          -0.05287900794882429
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.004156892043408189,
+          0.007296329211493445,
+          0.10010851450553915
+        ],
+        [
+          0.007299812090044655,
+          0.03698356482348664,
+          -0.04722950622828592
+        ],
+        [
+          -0.003142920046636466,
+          -0.04427989403497978,
+          -0.05287900827725189
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.8914647625933867e-11,
+      "max_force_error_ha_bohr": 6.195763763150453e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "RKS-water-def2-SVP-PBE",
+      "method": "RKS",
+      "system": "water",
+      "basis": "def2-SVP",
+      "xc": "PBE",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": false,
+      "native_energy_ha": -76.27220797509364,
+      "oracle_energy_ha": -76.2722079750934,
+      "native_force_ha_bohr": [
+        [
+          -0.0001884285251630563,
+          0.005158255787598039,
+          0.017000330204380465
+        ],
+        [
+          0.0006884862228105914,
+          0.002695830675978505,
+          -0.006503660202881344
+        ],
+        [
+          -0.000500057697651289,
+          -0.007854086463568555,
+          -0.010496670001483964
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.00018842850837136327,
+          0.0051582559383500995,
+          0.017000330265831032
+        ],
+        [
+          0.0006884862245862267,
+          0.002695830709499747,
+          -0.006503660151252921
+        ],
+        [
+          -0.0005000577162150299,
+          -0.007854086647846259,
+          -0.010496670114562345
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 2.4158453015843406e-13,
+      "max_force_error_ha_bohr": 1.842777042071475e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "RKS-water-def2-SVP-PBE0",
+      "method": "RKS",
+      "system": "water",
+      "basis": "def2-SVP",
+      "xc": "PBE0",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": false,
+      "native_energy_ha": -76.27624497561911,
+      "oracle_energy_ha": -76.27624497561929,
+      "native_force_ha_bohr": [
+        [
+          0.0005631679854877571,
+          0.005133765384495976,
+          0.002245135717708013
+        ],
+        [
+          -0.0007721327554972359,
+          -0.005510393131525793,
+          0.0008647549802378861
+        ],
+        [
+          0.00020896477001305575,
+          0.0003766277470673429,
+          -0.0031098906980841497
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          0.0005631679834596504,
+          0.005133765368461621,
+          0.0022451357161998864
+        ],
+        [
+          -0.0007721327573118608,
+          -0.005510393149739334,
+          0.0008647549686353617
+        ],
+        [
+          0.00020896477385248802,
+          0.0003766277812791152,
+          -0.003109890684834582
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.8474111129762605e-13,
+      "max_force_error_ha_bohr": 3.421177230400474e-11,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "RKS-water-def2-SVP-BLYP",
+      "method": "RKS",
+      "system": "water",
+      "basis": "def2-SVP",
+      "xc": "BLYP",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": false,
+      "native_energy_ha": -76.3367701766616,
+      "oracle_energy_ha": -76.33677017667596,
+      "native_force_ha_bohr": [
+        [
+          -0.00034293034555551993,
+          0.0051064461968548976,
+          0.0198718280830254
+        ],
+        [
+          0.0010605168290503742,
+          0.004947817303875779,
+          -0.007959714593901074
+        ],
+        [
+          -0.0007175864834824858,
+          -0.010054263500762271,
+          -0.01191211348900195
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.0003429303325269417,
+          0.005106446360531029,
+          0.019871828297515215
+        ],
+        [
+          0.00106051685506664,
+          0.0049478174968746735,
+          -0.007959714614543145
+        ],
+        [
+          -0.0007175865225392264,
+          -0.010054263857400159,
+          -0.011912113682971404
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.4352963262354024e-11,
+      "max_force_error_ha_bohr": 3.5663788762463344e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "RKS-water-def2-SVP-B3LYP",
+      "method": "RKS",
+      "system": "water",
+      "basis": "def2-SVP",
+      "xc": "B3LYP",
+      "atomic_numbers": [
+        8,
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          0.0,
+          0.0,
+          0.1173
+        ],
+        [
+          0.13,
+          0.7572,
+          -0.4692
+        ],
+        [
+          -0.07,
+          -0.7572,
+          -0.4692
+        ]
+      ],
+      "charge": 0,
+      "spin": 0,
+      "cart": false,
+      "native_energy_ha": -76.35820979187392,
+      "oracle_energy_ha": -76.35820979188274,
+      "native_force_ha_bohr": [
+        [
+          0.0003202723220183979,
+          0.005088324822078904,
+          0.006860593015808435
+        ],
+        [
+          -0.00022183070436258137,
+          -0.0022452631354678287,
+          -0.001460869241321605
+        ],
+        [
+          -9.844161764981789e-05,
+          -0.0028430616865622034,
+          -0.005399723774499681
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          0.0003202722589610574,
+          0.005088324295991771,
+          0.006860592898285223
+        ],
+        [
+          -0.00022183067372083531,
+          -0.002245263019026167,
+          -0.0014608695256839166
+        ],
+        [
+          -9.844158524122126e-05,
+          -0.0028430612769621,
+          -0.005399723372597087
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 8.824940778140444e-12,
+      "max_force_error_ha_bohr": 5.26087133058406e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-STO-3G-PBE",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "STO-3G",
+      "xc": "PBE",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": true,
+      "native_energy_ha": -0.5721187254529501,
+      "oracle_energy_ha": -0.5721187243707687,
+      "native_force_ha_bohr": [
+        [
+          -0.09687393807508489,
+          -0.019119825558341002,
+          -0.0446130220083538
+        ],
+        [
+          0.09687393807508468,
+          0.01911982555834102,
+          0.04461302200835369
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.0968739379553511,
+          -0.019119825534711407,
+          -0.044613021953215246
+        ],
+        [
+          0.09687393795535107,
+          0.019119825534711407,
+          0.04461302195321526
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.0821813445360817e-09,
+      "max_force_error_ha_bohr": 1.1973379232532722e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-STO-3G-PBE0",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "STO-3G",
+      "xc": "PBE0",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": true,
+      "native_energy_ha": -0.5724954543892102,
+      "oracle_energy_ha": -0.572495453307034,
+      "native_force_ha_bohr": [
+        [
+          -0.09332298160739438,
+          -0.01841898481302154,
+          -0.042977709272409396
+        ],
+        [
+          0.09332298160739415,
+          0.018418984813021684,
+          0.04297770927240974
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.09332298148766388,
+          -0.01841898478939169,
+          -0.042977709217271634
+        ],
+        [
+          0.09332298148766394,
+          0.018418984789391704,
+          0.04297770921727166
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.0821762375101684e-09,
+      "max_force_error_ha_bohr": 1.1973050328961676e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-STO-3G-BLYP",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "STO-3G",
+      "xc": "BLYP",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": true,
+      "native_energy_ha": -0.5698638899201496,
+      "oracle_energy_ha": -0.5698638899418719,
+      "native_force_ha_bohr": [
+        [
+          -0.09767838057660426,
+          -0.019278611085235507,
+          -0.04498347675316598
+        ],
+        [
+          0.09767838057660468,
+          0.019278611085235677,
+          0.04498347675316562
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.09767838057620237,
+          -0.0192786110854403,
+          -0.04498347675308498
+        ],
+        [
+          0.09767838057620232,
+          0.019278611085440295,
+          0.044983476753085005
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 2.1722290632908425e-11,
+      "max_force_error_ha_bohr": 4.0235870191196454e-13,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-STO-3G-B3LYP",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "STO-3G",
+      "xc": "B3LYP",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": true,
+      "native_energy_ha": -0.5734373035742508,
+      "oracle_energy_ha": -0.5734373035899,
+      "native_force_ha_bohr": [
+        [
+          -0.09464615150456457,
+          -0.01868014851790546,
+          -0.043587052003206395
+        ],
+        [
+          0.09464615150456379,
+          0.01868014851790557,
+          0.04358705200320659
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.09464615150427247,
+          -0.01868014851805295,
+          -0.043587052003147
+        ],
+        [
+          0.09464615150427252,
+          0.01868014851805295,
+          0.043587052003147025
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.5649148643603894e-11,
+      "max_force_error_ha_bohr": 2.920996777788787e-13,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-def2-SVP-PBE",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "def2-SVP",
+      "xc": "PBE",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": false,
+      "native_energy_ha": -0.589996085687094,
+      "oracle_energy_ha": -0.5899960847754205,
+      "native_force_ha_bohr": [
+        [
+          -0.07808946266143982,
+          -0.015412388631861595,
+          -0.03596229594803955
+        ],
+        [
+          0.07808946266144214,
+          0.015412388631861769,
+          0.0359622959480406
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.07808946244381593,
+          -0.015412388588904008,
+          -0.03596229584781607
+        ],
+        [
+          0.07808946244381593,
+          0.015412388588903952,
+          0.035962295847816
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 9.116735144587551e-10,
+      "max_force_error_ha_bohr": 2.1762620872056715e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-def2-SVP-PBE0",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "def2-SVP",
+      "xc": "PBE0",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": false,
+      "native_energy_ha": -0.5915664081802063,
+      "oracle_energy_ha": -0.5915664072717576,
+      "native_force_ha_bohr": [
+        [
+          -0.0744756332590552,
+          -0.014699123299452327,
+          -0.03429802055019229
+        ],
+        [
+          0.0744756332590554,
+          0.014699123299452119,
+          0.034298020550191585
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.07447563300305066,
+          -0.014699123248918172,
+          -0.03429802043229371
+        ],
+        [
+          0.07447563300305082,
+          0.01469912324891813,
+          0.03429802043229371
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 9.084487606614289e-10,
+      "max_force_error_ha_bohr": 2.5600457864705106e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-def2-SVP-BLYP",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "def2-SVP",
+      "xc": "BLYP",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": false,
+      "native_energy_ha": -0.5875403892116271,
+      "oracle_energy_ha": -0.5875403892146184,
+      "native_force_ha_bohr": [
+        [
+          -0.078328371005959,
+          -0.015459588662289286,
+          -0.0360723289913678
+        ],
+        [
+          0.07832837100596023,
+          0.015459588662289568,
+          0.03607232899136887
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.0783283710156189,
+          -0.015459588664164622,
+          -0.036072328995833236
+        ],
+        [
+          0.07832837101561885,
+          0.015459588664164643,
+          0.03607232899583321
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 2.9912738952475593e-12,
+      "max_force_error_ha_bohr": 9.659897881597601e-12,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-h2plus-def2-SVP-B3LYP",
+      "method": "UKS",
+      "system": "h2plus",
+      "basis": "def2-SVP",
+      "xc": "B3LYP",
+      "atomic_numbers": [
+        1,
+        1
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.66,
+          0.22,
+          0.15
+        ]
+      ],
+      "charge": 1,
+      "spin": 1,
+      "cart": false,
+      "native_energy_ha": -0.5919338178552787,
+      "oracle_energy_ha": -0.5919338178575114,
+      "native_force_ha_bohr": [
+        [
+          -0.07549608578033747,
+          -0.01490056699386,
+          -0.034767978883954775
+        ],
+        [
+          0.07549608578033712,
+          0.01490056699386032,
+          0.03476797888395478
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.0754960857687012,
+          -0.014900566991538869,
+          -0.034767978878608385
+        ],
+        [
+          0.0754960857687012,
+          0.014900566991538855,
+          0.034767978878608385
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 2.2327695248236523e-12,
+      "max_force_error_ha_bohr": 1.1636261398884074e-11,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-STO-3G-PBE",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "STO-3G",
+      "xc": "PBE",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": true,
+      "native_energy_ha": -148.13892324648114,
+      "oracle_energy_ha": -148.1389232464818,
+      "native_force_ha_bohr": [
+        [
+          -0.017003272805996974,
+          0.014178912541140154,
+          -0.17031238465477652
+        ],
+        [
+          0.017003272806000443,
+          -0.014178912541127428,
+          0.1703123846547259
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.017003272685423454,
+          0.014178912444354652,
+          -0.1703123834647844
+        ],
+        [
+          0.017003272685425452,
+          -0.01417891244435554,
+          0.1703123834647844
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 6.536993168992922e-13,
+      "max_force_error_ha_bohr": 1.1899921326108398e-09,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-STO-3G-PBE0",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "STO-3G",
+      "xc": "PBE0",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": true,
+      "native_energy_ha": -148.15350385467724,
+      "oracle_energy_ha": -148.15350385467815,
+      "native_force_ha_bohr": [
+        [
+          -0.012196406708488731,
+          0.010171283637272658,
+          -0.12216787344000928
+        ],
+        [
+          0.012196406708488717,
+          -0.010171283637261667,
+          0.12216787343992401
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.012196406678296023,
+          0.010171283699898725,
+          -0.12216787347497338
+        ],
+        [
+          0.01219640667829669,
+          -0.010171283699899059,
+          0.12216787347497338
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 9.094947017729282e-13,
+      "max_force_error_ha_bohr": 6.26373918011236e-11,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-STO-3G-BLYP",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "STO-3G",
+      "xc": "BLYP",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": true,
+      "native_energy_ha": -148.2418826912959,
+      "oracle_energy_ha": -148.2418826913119,
+      "native_force_ha_bohr": [
+        [
+          -0.018900888713101714,
+          0.015760806746979744,
+          -0.1893183989658864
+        ],
+        [
+          0.018900888713107928,
+          -0.015760806746967598,
+          0.18931839896583133
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.01890088857658445,
+          0.01576080663504653,
+          -0.18931839761843428
+        ],
+        [
+          0.01890088857658534,
+          -0.015760806635045976,
+          0.1893183976184254
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.6001422409317456e-11,
+      "max_force_error_ha_bohr": 1.3474521221024105e-09,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-STO-3G-B3LYP",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "STO-3G",
+      "xc": "B3LYP",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": true,
+      "native_energy_ha": -148.2710754731051,
+      "oracle_energy_ha": -148.27107547311698,
+      "native_force_ha_bohr": [
+        [
+          -0.014718327632325442,
+          0.01227384837500141,
+          -0.14742609521854244
+        ],
+        [
+          0.014718327632327206,
+          -0.012273848374989767,
+          0.14742609521853553
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.0147183276258398,
+          0.012273848386543995,
+          -0.14742609526014938
+        ],
+        [
+          0.014718327625841576,
+          -0.012273848386543662,
+          0.14742609526014938
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.1880274541908875e-11,
+      "max_force_error_ha_bohr": 4.161385125378558e-11,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-def2-SVP-PBE",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "def2-SVP",
+      "xc": "PBE",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": false,
+      "native_energy_ha": -150.065775932403,
+      "oracle_energy_ha": -150.06577593240314,
+      "native_force_ha_bohr": [
+        [
+          -0.00029450818984405597,
+          0.0002535025837487325,
+          -0.002999395365787971
+        ],
+        [
+          0.00029450818983614563,
+          -0.00025350258370948614,
+          0.0029993953654240397
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.00029450818017040525,
+          0.00025350257567469114,
+          -0.002999395270288474
+        ],
+        [
+          0.0002945081801701832,
+          -0.0002535025756755793,
+          0.0029993952702902504
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.4210854715202004e-13,
+      "max_force_error_ha_bohr": 9.549949676543323e-11,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-def2-SVP-PBE0",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "def2-SVP",
+      "xc": "PBE0",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": false,
+      "native_energy_ha": -150.05145526053232,
+      "oracle_energy_ha": -150.05145526052206,
+      "native_force_ha_bohr": [
+        [
+          0.0038244464687507136,
+          -0.0031807320116945047,
+          0.03825320099811524
+        ],
+        [
+          -0.0038244464688124004,
+          0.0031807320117143915,
+          -0.038253200998375925
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          0.0038244464851144855,
+          -0.003180732018586596,
+          0.0382532011148875
+        ],
+        [
+          -0.0038244464851153737,
+          0.0031807320185874843,
+          -0.0382532011148875
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 1.0260237104375847e-11,
+      "max_force_error_ha_bohr": 1.167722654682457e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-def2-SVP-BLYP",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "def2-SVP",
+      "xc": "BLYP",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": false,
+      "native_energy_ha": -150.20070447425124,
+      "oracle_energy_ha": -150.20070447425832,
+      "native_force_ha_bohr": [
+        [
+          -0.0018543146591104493,
+          0.0015534272844600695,
+          -0.018617407887142886
+        ],
+        [
+          0.0018543146590678722,
+          -0.0015534272844559339,
+          0.01861740788671767
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          -0.0018543146471241556,
+          0.001553427274390673,
+          -0.0186174077694492
+        ],
+        [
+          0.0018543146471241556,
+          -0.001553427274390673,
+          0.018617407769466965
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 7.077005648170598e-12,
+      "max_force_error_ha_bohr": 1.176936846591925e-10,
+      "finite": true,
+      "passed": true
+    },
+    {
+      "case": "UKS-o2-def2-SVP-B3LYP",
+      "method": "UKS",
+      "system": "o2",
+      "basis": "def2-SVP",
+      "xc": "B3LYP",
+      "atomic_numbers": [
+        8,
+        8
+      ],
+      "positions_angstrom": [
+        [
+          -0.1,
+          0.07,
+          -0.2
+        ],
+        [
+          0.02,
+          -0.03,
+          1.0015
+        ]
+      ],
+      "charge": 0,
+      "spin": 2,
+      "cart": false,
+      "native_energy_ha": -150.20459302708878,
+      "oracle_energy_ha": -150.204593027082,
+      "native_force_ha_bohr": [
+        [
+          0.0018261514894757564,
+          -0.0015149457839597755,
+          0.018243134182438166
+        ],
+        [
+          -0.0018261514894953102,
+          0.0015149457840419737,
+          -0.018243134182763687
+        ]
+      ],
+      "oracle_force_ha_bohr": [
+        [
+          0.0018261515113027205,
+          -0.001514945801660339,
+          0.018243134386596083
+        ],
+        [
+          -0.0018261515113022764,
+          0.001514945801659895,
+          -0.01824313438661207
+        ]
+      ],
+      "native_converged": true,
+      "oracle_converged": true,
+      "energy_error_ha": 6.764366844436154e-12,
+      "max_force_error_ha_bohr": 2.0415791626704483e-10,
+      "finite": true,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

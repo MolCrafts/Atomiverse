@@ -9,6 +9,20 @@ bond/angle and polynomial-torsion GAFF subset on one GPU. Legend:
 
 **⚡** — only LJ 12-6 (CPU xsimd + CUDA OpenMM tile engine vs LAMMPS/Kokkos).
 
+Molecular GAFF/GAFF2 parameterization has a separate
+[scientific benchmark](../../benchmarks/forcefield/README.md), using native
+Atomiverse AM1 charges and molpy typing against live AmberTools. Its scope is
+fixed-geometry closed-shell molecules and parameter-level comparisons; these
+checks do not qualify geometry optimization, force evaluation or dynamics.
+
+<!-- benchmark-evidence:start -->
+
+No source-qualified parameterization campaign has been recorded here. Local
+accuracy and timing results remain provisional until the declared coverage and
+build provenance pass the scientific benchmark policy.
+
+<!-- benchmark-evidence:end -->
+
 ## 1. Bonded
 
 | Capability | CPU | CUDA | Notes |

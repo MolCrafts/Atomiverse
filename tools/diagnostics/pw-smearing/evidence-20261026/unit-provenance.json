@@ -1,0 +1,23 @@
+{
+  "job": {
+    "id": "4477219",
+    "state": "COMPLETED",
+    "elapsed": "00:00:14",
+    "node": "n213"
+  },
+  "passed_tests": 9,
+  "build_script": "unit-build.sh",
+  "build_script_sha256": "9885fc37368f14290269a37a6e6a561079e55f83388d2d6854bfd3a5f3f6641c",
+  "command_note": "Exact Slurm build/run script retained; linked only standalone smearing source and gtest, no Atomiverse extension/library relink.",
+  "compiler_module": "buildenv-gcc/2026.03-mpich",
+  "compiler_identity_note": "GCC 14.3.0 from the same versioned module as the independently captured comparison job.",
+  "files_sha256": {
+    "tests/cpu/planewave/test_smearing.cpp": "5799016d2643ce38ad2786940d57ae14f27d9f4b6ef5d29d4b2d007aebea7a2e",
+    "tests/cpu/planewave/smearing_qe_pins.h": "f9777e94abf545501127596431ad261491b4c29a6d7249feb46732556b2e95a1",
+    "src/cpu/planewave/internal/smearing.cpp": "cffe8476e6ac1e1bf724807518775aa90d42a3b22ea103a035141e2c5da696fe",
+    "include/atomiverse/cpu/planewave/internal/smearing.h": "972409f869d74dd5219ab175af78a5ea05c69e0fc3b18a55460f9a7f92de6881",
+    "build-hf-auto/lib/libgtest_main.a": "f2b2a351be709a3d8f0e29ad046ba7c5345c25f7d80860e668e0c632dba5d01c",
+    "build-hf-auto/lib/libgtest.a": "97f2e4114d26c440c53482845d8fdcc0f77b2cc79e8569609e4c409a61ad902f",
+    ".claude/campaigns/dft-gap-wave2-20261026/smearing/smearing-units": "39bf4649714db9150e4dfe9a7bdf6cccd86fa74608c354d39c04a9abe92cd61c"
+  }
+}
