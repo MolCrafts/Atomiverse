@@ -18,27 +18,41 @@ AM1BCCCharges::AM1BCCCharges(AM1 method, std::string_view correction)
                                     + "'; expected bcc or abcg2");
 }
 
-std::vector<double> AM1BCCCharges::assign(const molrs::Atomistic& molecule) {
-    molrs::MolecularGeometry geometry;
+std::vector<double> AM1BCCCharges::assign(molrs::FrameRef& molecule) {
+    ::rust::Vec<double> x, y, z;
+    ::rust::Vec<std::uint64_t> atomic_numbers, bond_i, bond_j;
     try {
-        geometry = molecule.geometry();
+        x = molrs::frame_column_f64(molecule, "atoms", "x");
+        y = molrs::frame_column_f64(molecule, "atoms", "y");
+        z = molrs::frame_column_f64(molecule, "atoms", "z");
+        try {
+            atomic_numbers =
+                molrs::frame_column_u64(molecule, "atoms", "atomic_number");
+        } catch (const ::rust::Error&) {
+            molrs::frame_fill_atomic_numbers(molecule);
+            atomic_numbers =
+                molrs::frame_column_u64(molecule, "atoms", "atomic_number");
+        }
+        bond_i = molrs::frame_column_u64(molecule, "bonds", "atomi");
+        bond_j = molrs::frame_column_u64(molecule, "bonds", "atomj");
     } catch (const ::rust::Error& error) {
         throw std::invalid_argument(std::string("AM1BCCCharges: ")
                                     + error.what());
     }
-    const std::size_t n = geometry.atomic_numbers.size();
+    const std::size_t n = x.size();
+    if (n == 0 || y.size() != n || z.size() != n || atomic_numbers.size() != n
+        || bond_i.empty() || bond_j.size() != bond_i.size())
+        throw std::invalid_argument(
+            "AM1BCCCharges: molecule is missing coordinates or connectivity");
     if (n > static_cast<std::size_t>(std::numeric_limits<int>::max()))
         throw std::invalid_argument(
             "AM1BCCCharges: molecule has too many atoms");
     Frame work(static_cast<int>(n));
     for (std::size_t i = 0; i < n; ++i) {
-        work.span(kAtom_type)[i] = static_cast<int>(geometry.atomic_numbers[i]);
-        work.span(kAtom_x)[i] =
-            static_cast<StorageReal>(geometry.positions[3 * i]);
-        work.span(kAtom_y)[i] =
-            static_cast<StorageReal>(geometry.positions[3 * i + 1]);
-        work.span(kAtom_z)[i] =
-            static_cast<StorageReal>(geometry.positions[3 * i + 2]);
+        work.span(kAtom_type)[i] = static_cast<int>(atomic_numbers[i]);
+        work.span(kAtom_x)[i] = static_cast<StorageReal>(x[i]);
+        work.span(kAtom_y)[i] = static_cast<StorageReal>(y[i]);
+        work.span(kAtom_z)[i] = static_cast<StorageReal>(z[i]);
     }
     am1_.build(work);
     const auto& base =

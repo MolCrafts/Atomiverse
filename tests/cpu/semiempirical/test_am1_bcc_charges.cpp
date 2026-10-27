@@ -19,8 +19,7 @@ TEST(AM1BCCCharges, MoleculeWithoutBondsIsRefused) {
     const std::vector<std::uint64_t> zs = {6, 6};
     molrs::frame_set_column_u64(*frame, "atoms", "atomic_number",
                                 {zs.data(), zs.size()});
-    auto mol = molrs::atomistic_from_frame(*frame);
-    EXPECT_THROW(AM1BCCCharges{}.assign(*mol), std::invalid_argument);
+    EXPECT_THROW(AM1BCCCharges{}.assign(*frame), std::invalid_argument);
 }
 
 TEST(AM1BCCCharges, MoleculeWithoutCoordinatesIsRefused) {
@@ -30,6 +29,5 @@ TEST(AM1BCCCharges, MoleculeWithoutCoordinatesIsRefused) {
                                 {zs.data(), zs.size()});
     molrs::frame_set_column_u64(*frame, "bonds", "atomi", {i.data(), i.size()});
     molrs::frame_set_column_u64(*frame, "bonds", "atomj", {j.data(), j.size()});
-    auto mol = molrs::atomistic_from_frame(*frame);
-    EXPECT_THROW(AM1BCCCharges{}.assign(*mol), std::invalid_argument);
+    EXPECT_THROW(AM1BCCCharges{}.assign(*frame), std::invalid_argument);
 }

@@ -192,11 +192,10 @@ void bind_semiempirical(nb::module_& m) {
                                          "molpy.Atomistic molecular graph");
                 auto frame = molecule.attr("to_frame")();
                 auto transport = borrow_molpy_frame(frame);
-                auto graph = molrs::atomistic_from_frame(*transport);
                 std::vector<double> charges;
                 {
                     nb::gil_scoped_release release;
-                    charges = self.assign(*graph);
+                    charges = self.assign(*transport);
                 }
                 return to_vector_array(charges);
             },

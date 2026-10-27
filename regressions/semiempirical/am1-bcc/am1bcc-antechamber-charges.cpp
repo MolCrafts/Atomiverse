@@ -183,8 +183,7 @@ bool run_case(const Molecule& m) {
         AM1BCCCharges model{am1, set};
         auto transport = molrs::frame_new();
         ATV::cpu::to_molpy(frame, *transport);
-        auto molecule = molrs::atomistic_from_frame(*transport);
-        auto q = model.assign(*molecule);
+        auto q = model.assign(*transport);
 
         if (is_bcc) {
             // Base stage: ATV AM1 Mulliken vs sqm's, before any averaging.

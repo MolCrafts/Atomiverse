@@ -25,9 +25,11 @@ class AM1BCCCharges {
                            std::string_view correction = "bcc");
 
     /// Compute owned partial charges [e] for one complete chemical molecule.
+    /// @param molecule Frame with atoms.{atomic_number,x,y,z} and
+    ///                 bonds.{atomi,atomj}. Coordinates are angstrom.
     /// @throws std::invalid_argument for missing coordinates or connectivity.
     /// @throws std::runtime_error for SCF failure or unsupported chemistry.
-    std::vector<double> assign(const molrs::Atomistic& molecule);
+    std::vector<double> assign(molrs::FrameRef& molecule);
 
     /// AM1 result before equivalencing and bond corrections; borrowed.
     const AM1Result& last_am1_result() const { return am1_.last_result(); }
