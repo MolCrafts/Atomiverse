@@ -39,8 +39,10 @@
 #include "atomiverse/cuda/xc/xc_pbe.cuh"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -286,7 +288,8 @@ inline void check_cublas(cublasStatus_t s, const char* what) {
 DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
                              double mix_beta, int pulay_depth,
                              cpu::xc::XCType xc, bool spin_polarized,
-                             int n_alpha, int n_beta, int n_elec)
+                             int n_alpha, int n_beta, int n_elec,
+                             cudaStream_t borrowed_stream)
     : ng0_(prob.gv0.count()), nr_(prob.ws.nr), nc_(prob.ws.nc),
       depth_(pulay_depth), mix_beta_(mix_beta),
       omega_(static_cast<double>(prob.ws.omega)), xc_(xc),
@@ -302,22 +305,17 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
     if (pulay_depth < 1)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: pulay_depth must be >= 1");
-    // Only the two functionals with device kernels; no silent fallback. The
-    // PBE-family variants (PBEsol/revPBE/RPBE) differ by constants the
-    // xc_pbe.cu kernel hard-wires, so they are NOT accepted here.
-    if (xc_ != cpu::xc::XCType::LSDA && xc_ != cpu::xc::XCType::PBE)
+    if (xc_ != cpu::xc::XCType::LSDA && !cpu::xc::is_pbe_family(xc_))
         throw std::invalid_argument(
-            "cuda::pw::internal::DeviceDensity: only XCType::LSDA and "
-            "XCType::PBE have device XC kernels");
-    // Collinear: LSDA and true spin-GGA PBE are landed; other GGAs are not.
-    if (spin_ && xc_ != cpu::xc::XCType::LSDA && xc_ != cpu::xc::XCType::PBE)
-        throw std::invalid_argument(
-            "cuda::pw::internal::DeviceDensity: spin_polarized supports "
-            "XCType::LSDA and XCType::PBE only on the device path");
+            "cuda::pw::internal::DeviceDensity: device XC supports LSDA, "
+            "PBE, PBEsol, revPBE and RPBE");
     if (ng0_ <= 0 || nr_ <= 0 || nc_ <= 0)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: the assembled problem has an "
             "empty density G-sphere or FFT grid");
+    if (spin_ && ng0_ > std::numeric_limits<int>::max() / 2)
+        throw std::invalid_argument(
+            "PW spin mixer: joint vector exceeds BLAS range");
     // d_half_ is sized from ws.nc, the transforms from ws.fft_n*. If those
     // ever disagree, `scatter_g_to_halfcomplex` writes past the buffer and
     // the only symptom is garbage or an illegal-access at run time.
@@ -326,10 +324,21 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             "cuda::pw::internal::DeviceDensity: ws.nr/ws.nc disagree with the "
             "ws.fft_nx/ny/nz grid the cuFFT plans were built from");
 
+    // Cold host upload sources also outlive failure-path stream draining in
+    // catch. Each Cartesian axis has distinct storage until the final fence.
+    std::vector<double> g2;
+    std::array<std::vector<double>, 3> gcart;
+    std::vector<std::complex<double>> rho_tot, rho_a, rho_b;
     try {
+        host_coefficients_.resize(static_cast<size_t>(depth_));
         // One non-default stream for the whole density side. The band solver
         // borrows it so SCF stages stay ordered without events.
-        ATV_CUDA_CHECK(cudaStreamCreate(&stream_));
+        if (borrowed_stream) {
+            stream_ = borrowed_stream;
+        } else {
+            ATV_CUDA_CHECK(cudaStreamCreate(&stream_));
+            owns_stream_ = true;
+        }
         fft_.set_stream(stream_);
         xc_fft_.set_stream(stream_);
 
@@ -340,7 +349,7 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         const size_t nr = static_cast<size_t>(nr_);
         const size_t xc_nr = static_cast<size_t>(xc_fft_.nr());
         const size_t xc_nc = static_cast<size_t>(xc_fft_.nc());
-        const size_t ring = static_cast<size_t>(depth_) * ng;
+        const size_t ring = static_cast<size_t>(depth_) * ng * (spin_ ? 2 : 1);
 
         d_h_ = device_alloc<int>(ng);
         d_k_ = device_alloc<int>(ng);
@@ -365,8 +374,8 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         d_V_eff_r_ = device_alloc<double>(nr);
         d_partials_ =
             device_alloc<double>(static_cast<size_t>(kLanes) * kReduceBlocks);
-        d_xc_partials_ =
-            device_alloc<double>(static_cast<size_t>(kXcEnergyPartials));
+        d_xc_partials_ = device_alloc<double>(
+            static_cast<size_t>(::ATV::cuda::xc::kXcEnergyPartials));
         d_scalars_ = device_alloc<double>(5);
 
         if (gga_) {
@@ -388,6 +397,7 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
 
         if (spin_) {
             d_spin_residual_ = device_alloc<cufftDoubleComplex>(2 * ng);
+            d_spin_input_ = device_alloc<cufftDoubleComplex>(2 * ng);
             for (int s = 0; s < 2; ++s) {
                 d_rho_spin_G_[s] = device_alloc<cufftDoubleComplex>(ng);
                 d_rho_spin_G_old_[s] = device_alloc<cufftDoubleComplex>(ng);
@@ -414,7 +424,7 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
 
         // ── One-time uploads (never repeated per SCF iteration) ──
         const auto& gv = prob.gv0;
-        std::vector<double> g2(ng);
+        g2.resize(ng);
         for (int i = 0; i < ng0_; ++i)
             g2[static_cast<size_t>(i)] = static_cast<double>(
                 gv.g[static_cast<size_t>(i)].norm_squared());
@@ -442,12 +452,13 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             const double fb = (n_elec > 0) ? static_cast<double>(n_beta)
                                                  / static_cast<double>(n_elec)
                                            : 0.5;
-            std::vector<std::complex<double>> rho_tot(ng);
+            rho_tot.resize(ng);
             ATV_CUDA_CHECK(cudaMemcpyAsync(rho_tot.data(), d_rho_G_,
                                            ng * sizeof(cufftDoubleComplex),
                                            cudaMemcpyDeviceToHost, stream_));
             ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
-            std::vector<std::complex<double>> rho_a(ng), rho_b(ng);
+            rho_a.resize(ng);
+            rho_b.resize(ng);
             for (size_t ig = 0; ig < ng; ++ig) {
                 rho_a[ig] = fa * rho_tot[ig];
                 rho_b[ig] = fb * rho_tot[ig];
@@ -475,15 +486,15 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         if (gga_) {
             // Cartesian G components per axis — the CPU's gv.g[ig][d],
             // geometry only, uploaded once for the spectral ∇ρ / divergence.
-            std::vector<double> gcart(ng);
             double* dst[3] = {d_gx_, d_gy_, d_gz_};
             for (int d = 0; d < 3; ++d) {
+                gcart[d].resize(ng);
                 for (int i = 0; i < ng0_; ++i)
-                    gcart[static_cast<size_t>(i)] =
+                    gcart[d][static_cast<size_t>(i)] =
                         static_cast<double>(gv.g[static_cast<size_t>(i)][d]);
-                ATV_CUDA_CHECK(
-                    cudaMemcpyAsync(dst[d], gcart.data(), ng * sizeof(double),
-                                    cudaMemcpyHostToDevice, stream_));
+                ATV_CUDA_CHECK(cudaMemcpyAsync(
+                    dst[d], gcart[d].data(), ng * sizeof(double),
+                    cudaMemcpyHostToDevice, stream_));
             }
         }
         // Fence before the host returns: the atomic ρ seed and V_loc must be
@@ -546,6 +557,7 @@ void DeviceDensity::free_all() {
     device_free(d_grad_dn_z_r_);
     device_free(d_div_dn_r_);
     device_free(d_spin_residual_);
+    device_free(d_spin_input_);
     for (int s = 0; s < 2; ++s) {
         device_free(d_rho_spin_G_[s]);
         device_free(d_rho_spin_G_old_[s]);
@@ -558,10 +570,10 @@ void DeviceDensity::free_all() {
         cublasDestroy(blas_);
         blas_ = nullptr;
     }
-    if (stream_) {
+    if (stream_ && owns_stream_)
         cudaStreamDestroy(stream_);
-        stream_ = nullptr;
-    }
+    stream_ = nullptr;
+    owns_stream_ = false;
 }
 
 void DeviceDensity::hartree() {
@@ -598,7 +610,7 @@ void DeviceDensity::exchange_correlation() {
         // over the gradient arrays. E_xc quadrature exactly as the LSDA path
         // (dV = Ω/nr); the CPU accumulates it in the same grid loop, BEFORE
         // the divergence correction, and ε_xc is untouched by it.
-        ::ATV::cuda::xc::xc_pbe_grid(d_rho_r_in_, d_grad_x_r_, d_grad_y_r_,
+        ::ATV::cuda::xc::xc_pbe_grid(xc_, d_rho_r_in_, d_grad_x_r_, d_grad_y_r_,
                                      d_grad_z_r_, d_V_xc_r_, d_exc_r_, nr,
                                      stream_);
         ::ATV::cuda::xc::xc_energy(d_rho_r_in_, d_exc_r_, nr,
@@ -675,24 +687,30 @@ void DeviceDensity::collect() {
 }
 
 void DeviceDensity::mix(int iter) {
-    const size_t ng = static_cast<size_t>(ng0_);
+    mix_density(iter, d_rho_G_, d_rho_G_old_, ng0_);
+}
+
+void DeviceDensity::mix_density(int iter, cufftDoubleComplex* output,
+                                const cufftDoubleComplex* input, int count) {
+    if (iter < 0 || iter == std::numeric_limits<int>::max())
+        throw std::invalid_argument("PW mixer: invalid iteration");
+    const size_t ng = static_cast<size_t>(count);
     // Ring bookkeeping reproducing the CPU's front-trimmed std::vector:
     // history entry i of m corresponds to SCF iteration (iter - m + 1 + i).
     const int slot_push = iter % depth_;
     const int m = std::min(iter + 1, depth_);
     const int hist_start = (iter + 1 > depth_) ? (iter + 1) % depth_ : 0;
 
-    pw_push_history_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
-        d_rho_G_, d_rho_G_old_, ng0_,
-        d_res_hist_ + static_cast<size_t>(slot_push) * ng,
+    pw_push_history_kernel<<<n_blocks(count), kBlock, 0, stream_>>>(
+        output, input, count, d_res_hist_ + static_cast<size_t>(slot_push) * ng,
         d_rho_hist_ + static_cast<size_t>(slot_push) * ng);
     ATV_CUDA_CHECK(cudaGetLastError());
 
     if (m < 2) {
         // CPU's `depth < 2` branch: plain linear mixing.
-        pw_linear_mix_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
-            d_rho_G_, d_rho_G_old_,
-            d_res_hist_ + static_cast<size_t>(slot_push) * ng, mix_beta_, ng0_);
+        pw_linear_mix_kernel<<<n_blocks(count), kBlock, 0, stream_>>>(
+            output, input, d_res_hist_ + static_cast<size_t>(slot_push) * ng,
+            mix_beta_, count);
         ATV_CUDA_CHECK(cudaGetLastError());
         return;
     }
@@ -704,10 +722,11 @@ void DeviceDensity::mix(int iter) {
     // of which would be its own launch.
     const cuDoubleComplex one{1.0, 0.0}, zero{0.0, 0.0};
     check_cublas(
-        cublasZgemm(blas_, CUBLAS_OP_C, CUBLAS_OP_N, depth_, depth_, ng0_, &one,
-                    reinterpret_cast<const cuDoubleComplex*>(d_res_hist_), ng0_,
-                    reinterpret_cast<const cuDoubleComplex*>(d_res_hist_), ng0_,
-                    &zero, reinterpret_cast<cuDoubleComplex*>(d_gram_), depth_),
+        cublasZgemm(
+            blas_, CUBLAS_OP_C, CUBLAS_OP_N, depth_, depth_, count, &one,
+            reinterpret_cast<const cuDoubleComplex*>(d_res_hist_), count,
+            reinterpret_cast<const cuDoubleComplex*>(d_res_hist_), count, &zero,
+            reinterpret_cast<cuDoubleComplex*>(d_gram_), depth_),
         "Zgemm pulay gram");
 
     // ── SYNC POINT 1 (per iteration) ──
@@ -744,13 +763,15 @@ void DeviceDensity::mix(int iter) {
     std::vector<AccReal> c(static_cast<size_t>(m), AccReal(0));
     cpu::pw::internal::solve_pulay_coefficients(B.data(), m, c.data());
 
-    std::vector<double> c_d(c.begin(), c.end());
-    ATV_CUDA_CHECK(cudaMemcpyAsync(d_coeff_, c_d.data(),
+    // The Gram readback above drains any prior upload before this storage is
+    // reused. Ownership also covers this upload until the next stream fence.
+    std::copy(c.begin(), c.end(), host_coefficients_.begin());
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_coeff_, host_coefficients_.data(),
                                    static_cast<size_t>(m) * sizeof(double),
                                    cudaMemcpyHostToDevice, stream_));
 
-    pw_pulay_combine_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
-        d_rho_G_, d_rho_hist_, d_res_hist_, d_coeff_, mix_beta_, ng0_, m,
+    pw_pulay_combine_kernel<<<n_blocks(count), kBlock, 0, stream_>>>(
+        output, d_rho_hist_, d_res_hist_, d_coeff_, mix_beta_, count, m,
         hist_start, depth_);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
@@ -937,21 +958,6 @@ __global__ void pw_sum_spin_rho_kernel(const cufftDoubleComplex* __restrict__ a,
     tot[i].y = a[i].y + b[i].y;
 }
 
-__global__ void
-pw_linear_mix_spin_kernel(cufftDoubleComplex* __restrict__ rho,
-                          cufftDoubleComplex* __restrict__ rho_old,
-                          const cufftDoubleComplex* __restrict__ rho_out,
-                          double beta, int n_g) {
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n_g)
-        return;
-    const cufftDoubleComplex o = rho[i];
-    rho_old[i] = o;
-    const cufftDoubleComplex n = rho_out[i];
-    rho[i].x = o.x + beta * (n.x - o.x);
-    rho[i].y = o.y + beta * (n.y - o.y);
-}
-
 /// Hartree + local-PP energy partials only (spin uses real-space e_xc_int).
 __global__ void pw_reduce_hl_kernel(const cufftDoubleComplex* __restrict__ rho,
                                     const cufftDoubleComplex* __restrict__ vh,
@@ -1022,10 +1028,10 @@ void DeviceDensity::exchange_correlation_spin() {
         throw std::runtime_error(
             "cuda::pw::internal::DeviceDensity::exchange_correlation_spin: "
             "not a spin density object");
-    if (xc_ != cpu::xc::XCType::LSDA && xc_ != cpu::xc::XCType::PBE)
+    if (xc_ != cpu::xc::XCType::LSDA && !cpu::xc::is_pbe_family(xc_))
         throw std::runtime_error(
             "cuda::pw::internal::DeviceDensity::exchange_correlation_spin: "
-            "only XCType::LSDA and XCType::PBE are implemented");
+            "only LSDA and the PBE family are implemented");
 
     const int nx = xc_fft_.nx(), ny = xc_fft_.ny(), nz = xc_fft_.nz();
     const int nr = xc_fft_.nr();
@@ -1059,7 +1065,7 @@ void DeviceDensity::exchange_correlation_spin() {
         // Pointwise collinear PBE + flux assembly (grads → fluxes).
         // E_xc uses local ε_xc before the divergence correction (CPU order).
         ::ATV::cuda::xc::xc_pbe_spin_grid(
-            d_rho_spin_r_[0], d_rho_spin_r_[1], d_grad_x_r_, d_grad_y_r_,
+            xc_, d_rho_spin_r_[0], d_rho_spin_r_[1], d_grad_x_r_, d_grad_y_r_,
             d_grad_z_r_, d_grad_dn_x_r_, d_grad_dn_y_r_, d_grad_dn_z_r_,
             d_V_xc_spin_r_[0], d_V_xc_spin_r_[1], d_exc_r_, nr, stream_);
         ::ATV::cuda::xc::xc_energy_spin(d_rho_spin_r_[0], d_rho_spin_r_[1],
@@ -1156,10 +1162,10 @@ void DeviceDensity::collect_spin_out(int spin) {
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
-void DeviceDensity::mix_spin_linear() {
+void DeviceDensity::prepare_spin_mix() {
     if (!spin_)
         throw std::runtime_error(
-            "cuda::pw::internal::DeviceDensity::mix_spin_linear: not a spin "
+            "cuda::pw::internal::DeviceDensity::prepare_spin_mix: not a spin "
             "density object");
     // Form the joint UNMIXED residual with existing vendor primitives.
     // The output-input spin changes can cancel in total charge, and scaling
@@ -1200,16 +1206,34 @@ void DeviceDensity::mix_spin_linear() {
         cudaMemcpyAsync(d_rho_G_old_, d_rho_G_,
                         static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex),
                         cudaMemcpyDeviceToDevice, stream_));
+}
 
-    for (int s = 0; s < 2; ++s) {
-        pw_linear_mix_spin_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
-            d_rho_spin_G_[s], d_rho_spin_G_old_[s], d_rho_spin_out_G_[s],
-            mix_beta_, ng0_);
+void DeviceDensity::mix_spin(int iter) {
+    if (iter < 0 || iter == std::numeric_limits<int>::max())
+        throw std::invalid_argument("PW spin mixer: invalid iteration");
+    prepare_spin_mix();
+    const size_t bytes = static_cast<size_t>(ng0_) * sizeof(cufftDoubleComplex);
+    for (int spin = 0; spin < 2; ++spin) {
+        const size_t offset = static_cast<size_t>(spin) * ng0_;
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_spin_input_ + offset,
+                                       d_rho_spin_G_[spin], bytes,
+                                       cudaMemcpyDeviceToDevice, stream_));
+        // Residual reduction is ordered before reusing this scratch as output.
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_spin_residual_ + offset,
+                                       d_rho_spin_out_G_[spin], bytes,
+                                       cudaMemcpyDeviceToDevice, stream_));
     }
-    // Mixed total for next Poisson / residual.
-    pw_sum_spin_rho_kernel<<<n_blocks(ng0_), kBlock, 0, stream_>>>(
-        d_rho_spin_G_[0], d_rho_spin_G_[1], d_rho_G_, ng0_);
-    ATV_CUDA_CHECK(cudaGetLastError());
+    mix_density(iter, d_spin_residual_, d_spin_input_, 2 * ng0_);
+    for (int spin = 0; spin < 2; ++spin) {
+        const size_t offset = static_cast<size_t>(spin) * ng0_;
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_spin_G_old_[spin],
+                                       d_spin_input_ + offset, bytes,
+                                       cudaMemcpyDeviceToDevice, stream_));
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_spin_G_[spin],
+                                       d_spin_residual_ + offset, bytes,
+                                       cudaMemcpyDeviceToDevice, stream_));
+    }
+    sync_total_rho();
 }
 
 DeviceDensity::IterationScalars DeviceDensity::reduce_spin(double vol_bohr) {
@@ -1232,7 +1256,7 @@ DeviceDensity::IterationScalars DeviceDensity::reduce_spin(double vol_bohr) {
     ATV_CUDA_CHECK(cudaGetLastError());
 
     // scalars[4] already holds the joint unmixed spin norm from
-    // mix_spin_linear(); keep it while reducing the energy channels.
+    // mix_spin(); keep it while reducing the energy channels.
 
     // Pack e_h / e_loc into the host-facing slots.
     ATV_CUDA_CHECK(cudaMemcpyAsync(d_scalars_ + 1, d_hl, sizeof(double),

@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "tangent",
+    "ranks": 1,
+    "rotated": false,
+    "exit": 0
+  },
+  {
+    "kind": "public",
+    "ranks": 1,
+    "rotated": false,
+    "exit": 0
+  },
+  {
+    "kind": "public",
+    "ranks": 2,
+    "rotated": false,
+    "exit": 0
+  },
+  {
+    "kind": "public",
+    "ranks": 1,
+    "rotated": true,
+    "exit": 0
+  },
+  {
+    "kind": "public",
+    "ranks": 2,
+    "rotated": true,
+    "exit": 0
+  }
+]

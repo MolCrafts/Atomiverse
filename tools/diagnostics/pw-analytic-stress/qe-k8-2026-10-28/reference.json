@@ -1,0 +1,268 @@
+{
+  "scope": "Actual independent QE7.6 eight-k fixed RKS Slater/VWN Si2 reference. Rotation uses exact covariance only; no rotated QE execution.",
+  "predeclared_gates_unchanged": {
+    "energy_Ha": 1e-05,
+    "each_force_Ha_Bohr": 0.0001,
+    "each_stress_eV_A3": 0.002
+  },
+  "QE": {
+    "version": "7.6",
+    "binary": "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+    "binary_sha256": "5e03776776ed71bf3f6e1cc01f46a8216a680a0179eaf41fdb3a8e99d6f89f5b",
+    "host": "n222",
+    "MPI_ranks": 1,
+    "OpenMP_threads": 1,
+    "resource_bound_cpu_cores": 1,
+    "process_exit_code": 0,
+    "scientific_converged": true,
+    "SCF_iterations": 32,
+    "scf_error_Ha": 8.092701361840637e-14
+  },
+  "potential_sha256": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+  "model": {
+    "CPU": "XCType::LSDA Slater exchange+VWN5 correlation",
+    "QE_input_dft": "SLA+VWN+NOGX+NOGC",
+    "QE_printed_XC": "SLA+VWN+NOGX+NOGC",
+    "indices": {
+      "exchange": 1,
+      "correlation": 2,
+      "gradient_exchange": 0,
+      "gradient_correlation": 0
+    },
+    "VWN_unpolarized_parameters_Ha": {
+      "A": 0.0310907,
+      "b": 3.72744,
+      "c": 12.9352,
+      "x0": -0.10498
+    },
+    "model_scope": "RKS positive-density LSDA model equality; no blanket claim for all clipping/floor/fully polarized spin regularization domains"
+  },
+  "fixture": {
+    "H_columns_A": [
+      [
+        0.1,
+        2.7,
+        2.65
+      ],
+      [
+        2.75,
+        0.05,
+        2.7
+      ],
+      [
+        2.65,
+        2.75,
+        0.15
+      ]
+    ],
+    "positions_A": [
+      [
+        0.2,
+        0.3,
+        0.4
+      ],
+      [
+        1.57,
+        1.66,
+        1.75
+      ]
+    ],
+    "species": "Si",
+    "potential": "Si_GTH_PBE_q4.gth",
+    "potential_format": "QE GTH text norm-conserving; not UPF",
+    "electrons": 8,
+    "ecutwfc_Ry": 12,
+    "ecutrho_Ry": 48,
+    "kpoint": "Explicit unshifted 2x2x2 crystal mesh",
+    "SCF_bands": 4,
+    "occupied_bands": 4,
+    "occupation": "Fixed RKS f=2 per band, normalized geometric k weights 1/8",
+    "native_base_FFT": [
+      16,
+      18,
+      16
+    ],
+    "QE_Dense_Smooth_and_native_LSDA_padded_FFT": [
+      24,
+      28,
+      24
+    ],
+    "native_density_G": 1393,
+    "mixing_beta": 0.2,
+    "QE_max_scf": 250,
+    "QE_conv_thr_Ry": 1e-12,
+    "k_mesh": 2,
+    "k_crystal_points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0.5
+      ],
+      [
+        0,
+        0.5,
+        0
+      ],
+      [
+        0,
+        0.5,
+        0.5
+      ],
+      [
+        0.5,
+        0,
+        0
+      ],
+      [
+        0.5,
+        0,
+        0.5
+      ],
+      [
+        0.5,
+        0.5,
+        0
+      ],
+      [
+        0.5,
+        0.5,
+        0.5
+      ]
+    ],
+    "k_weights": [
+      0.125,
+      0.125,
+      0.125,
+      0.125,
+      0.125,
+      0.125,
+      0.125,
+      0.125
+    ],
+    "QE_wave_PW_each_k": [
+      171,
+      170,
+      170,
+      180,
+      172,
+      178,
+      180,
+      172
+    ]
+  },
+  "reference": {
+    "energy_Ha": -7.7175672985039,
+    "forces_Ha_Bohr": [
+      [
+        0.002702401679011487,
+        0.01685861726477207,
+        -0.005140554553371032
+      ],
+      [
+        -0.002702401679011487,
+        -0.01685861726477207,
+        0.005140554553371032
+      ]
+    ],
+    "stress_tensor_Ha_Bohr3": [
+      [
+        0.0004561940017631799,
+        -3.758096908712424e-05,
+        -0.0003608593350292536
+      ],
+      [
+        -3.758096908712424e-05,
+        0.0003749013517068012,
+        -9.184095324101427e-05
+      ],
+      [
+        -0.0003608593350292536,
+        -9.184095324101427e-05,
+        0.000520709905801657
+      ]
+    ],
+    "stress_voigt_eV_A3": [
+      0.08377160546290773,
+      0.06884371123098748,
+      0.09561876004693437,
+      -0.006901051094737125,
+      -0.06626515413363718,
+      -0.01686489535265207
+    ]
+  },
+  "shared_primary_provenance": {
+    "package": "../qe-2026-10-28",
+    "manifest_sha256": "5396a232c0396e30a289558288488f47d1a9340b0668f8752fc14ca7ca737425",
+    "primary_QE_source": {
+      "tag": "qe-7.6",
+      "commit": "9f93ddec427d2b9a45bb72d828c6d324f62fcabd",
+      "files": {
+        "funct.f90": {
+          "sha256": "ba2e9ecb7024fa98393e2b67e7a090670ec7feda0ff3dd60d6886cdb1dc22737",
+          "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/Modules/funct.f90",
+          "local": "sources/funct.f90"
+        },
+        "qe_drivers_lda_lsda.f90": {
+          "sha256": "46f5ddbe100a99c99115d374351e3dee7a579965d0bd35aad8fff34d260eee2d",
+          "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/qe_drivers_lda_lsda.f90",
+          "local": "sources/qe_drivers_lda_lsda.f90"
+        },
+        "qe_funct_corr_lda_lsda.f90": {
+          "sha256": "ee2872d664508f1fb57d228d16f325dd7ce7d3f052c02d2a20fda57b2b150046",
+          "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/qe_funct_corr_lda_lsda.f90",
+          "local": "sources/qe_funct_corr_lda_lsda.f90"
+        },
+        "qe_funct_exch_lda_lsda.f90": {
+          "sha256": "711e63e57465aea9a8085cbccc96070c8690be129f3560d5d96a3c2e22699797",
+          "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/qe_funct_exch_lda_lsda.f90",
+          "local": "sources/qe_funct_exch_lda_lsda.f90"
+        },
+        "xc_lib.f90": {
+          "sha256": "84d221145fbef74175e519312e8619793f23b867599703ede625a6bafa885903",
+          "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/xc_lib.f90",
+          "local": "sources/xc_lib.f90"
+        },
+        "constants.f90": {
+          "sha256": "56c39e90c6f0592aff13972cd090292024a3d4e9e86d0ce4fdfdb5643f1ac1c0",
+          "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/Modules/constants.f90",
+          "local": "sources/constants.f90"
+        }
+      }
+    },
+    "units": {
+      "Hartree_eV": 27.211386245988034,
+      "Bohr_A": 0.529177210903
+    }
+  },
+  "k_weight_convention": {
+    "input_XML_geometric_sum": 1,
+    "output_printed_RKS_band_weight_sum": 2,
+    "fixed_XML_band_occupations": 1,
+    "native_physical_band_f": 2,
+    "note": "QE input/starting weights1/8, output ks/printed weights1/4 include the restricted spin factor. Do not apply that factor twice."
+  },
+  "raw_sha256": {
+    "Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+    "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+    "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+    "data-file-schema.xml": "2f641226800e846a258b67280310de2b98d83fbe31870bbbffef09391f687aea",
+    "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "finished.txt": "f51ea35b1c9cf4cbdfa7e2da0e2c6aec960c35de6fc48994ec1a9fdf5c7ffb56",
+    "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+    "input-sha256.json": "5465d45700d8c4bd6e1299083818fdc9e305f65103fac07f0793c8d77b776491",
+    "input.in": "6e6be4e261c441190e2ec14cdb473e5862c39b2672ca47d7d3e406cba6cc9952",
+    "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+    "qe.out": "b7ad2f0220e57a981b806931f8786efb42a2554b7bd60309b41188a79b1cca09",
+    "qe.stderr": "59f4a47f3a9fb3c8fb3a0eb73dbc50e880f5063ce35db88e6b18b6c12a26d1ec",
+    "run.sh": "6250a190edfa34abaf7bbe0a5edec166ffbc1f7a81f6d51cd594ef3031a21d9d",
+    "started.txt": "50cd36054c289b753400d3f27ce9ebd8b8d3819b854dd7156c8b911b280aa48c"
+  },
+  "pins_header": "../k8_pins.h",
+  "pins_header_sha256": "10425e475864df721d114c61aa7821334658bcf8b0225e8f41451658340faecd",
+  "stress_conversion_order": "stress_Ha_Bohr3 * (Hartree_eV / Bohr_A**3), identical to k8_pins.h generation"
+}

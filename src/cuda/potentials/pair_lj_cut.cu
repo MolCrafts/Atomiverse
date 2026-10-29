@@ -12,15 +12,18 @@
 #include "atomiverse/cuda/potentials/lj_kernel.cuh"
 #include "atomiverse/cuda/potentials/pair_kernel.h"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cuda_runtime.h>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <thrust/binary_search.h>
 #include <thrust/execution_policy.h>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -244,22 +247,29 @@ PairLJCut::PairLJCut(double epsilon, double sigma, double cutoff)
 }
 
 PairLJCut& PairLJCut::set_special_bonds(double s12, double s13, double s14) & {
-    // Supported combinations: all equal (incl. (0,0,0)) or all 1.0.
+    // The baker drops partners. It does not apply a fractional weight, so
+    // each scale is 0 (drop that topological shell) or 1 (keep it). Equal
+    // fractional scales such as (0.5, 0.5, 0.5) are still refused: there is
+    // no weighted kernel behind this CSR.
+    const auto binary = [](double s) { return s == 0.0 || s == 1.0; };
+    if (!binary(s12) || !binary(s13) || !binary(s14)) {
+        throw std::invalid_argument(
+            "cuda::PairLJCut::set_special_bonds: each scale must be 0 or 1. "
+            "Fractional special-bond weights are not applied by the "
+            "exclusion baker.");
+    }
+    s12_ = s12;
+    s13_ = s13;
+    s14_ = s14;
     if (s12 == 1.0 && s13 == 1.0 && s14 == 1.0) {
-        s12_ = s13_ = s14_ = 1.0;
         s_excl_ = 1.0;
         has_exclusions_ = false;
         return *this;
     }
-    if (s12 != s13 || s12 != s14) {
-        throw std::invalid_argument(
-            "cuda::PairLJCut::set_special_bonds: mixed scaling combinations "
-            "(s12 != s13 or s12 != s14) are not supported in this revision. "
-            "Pass three equal values (typically (0,0,0) for Dreiding-UA).");
-    }
-    s12_ = s13_ = s14_ = s12;
-    s_excl_ = s12;
-    has_exclusions_ = true; // exclusions enumerated at build()
+    // CSR holds only the scale-0 partners, so the baker's scale is 0 even
+    // when a nearer shell (s12 = 1) stays in the pair list.
+    s_excl_ = 0.0;
+    has_exclusions_ = true;
     return *this;
 }
 
@@ -322,48 +332,140 @@ void PairLJCut::build(const BuildContext& ctx) {
         return;
     }
     auto& f = ctx.frame;
-    int n = f.n_atoms();
-    int n_b = f.n_bonds();
-    int n_a = f.n_angles();
-    int n_d = f.n_dihedrals();
+    // n_atoms_ is the owned count on the single-GPU path and owned+ghost
+    // after MultiGpu::rebuild_bonded_tuples. The CSR is indexed by the
+    // local row the neighbor list stores in orig_index.
+    const int n = std::max(f.n_atoms(), f.n_all());
+    const int n_owned = f.n_local() > 0 ? f.n_local() : n;
+    std::vector<std::set<int>> excl(static_cast<std::size_t>(n));
 
-    // D2H read of topology (build-time cost; not in hot path).
-    std::vector<int> bi(n_b), bj(n_b);
-    std::vector<int> ai(n_a), ak(n_a);
-    std::vector<int> di(n_d), dl(n_d);
-    if (n_b > 0) {
-        cudaMemcpy(bi.data(), f.bonds.atomi, n_b * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-        cudaMemcpy(bj.data(), f.bonds.atomj, n_b * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-    }
-    if (n_a > 0) {
-        cudaMemcpy(ai.data(), f.angles.atomi, n_a * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-        cudaMemcpy(ak.data(), f.angles.atomk, n_a * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-    }
-    if (n_d > 0) {
-        cudaMemcpy(di.data(), f.dihedrals.atomi, n_d * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-        cudaMemcpy(dl.data(), f.dihedrals.atoml, n_d * sizeof(int),
-                   cudaMemcpyDeviceToHost);
-    }
-
-    // Per-atom sorted-unique partner sets.
-    std::vector<std::set<int>> excl(n);
-    auto add_pair = [&](int a, int b) {
-        if (a >= 0 && a < n && b >= 0 && b < n && a != b) {
-            excl[a].insert(b);
-            excl[b].insert(a);
+    // Frame::build_special_list is the bond-graph BFS to depth 3. It records
+    // a 1-4 with no dihedral term. Partner values are tags; the force kernel
+    // binary-searches local indices, so resolve tags through the current
+    // tag column (owned rows and halo ghosts). Nearest shell wins, then
+    // only scale-0 shells enter the CSR. s12 = 1 leaves the bond pair in
+    // the list; s13 = s14 = 0 drops 1-3 and 1-4.
+    const int ms = f.atoms.maxspecial;
+    const bool have_special =
+        f.atoms.nspecial != nullptr && f.atoms.special != nullptr
+        && f.atoms.tag != nullptr && ms > 0 && n_owned > 0 && n > 0;
+    if (have_special) {
+        std::vector<int> ns(static_cast<std::size_t>(n_owned) * 3);
+        std::vector<std::int64_t> sp(static_cast<std::size_t>(n_owned)
+                                     * static_cast<std::size_t>(ms));
+        std::vector<std::int64_t> tags(static_cast<std::size_t>(n));
+        ATV_CUDA_CHECK(cudaMemcpy(ns.data(), f.atoms.nspecial,
+                                  ns.size() * sizeof(int),
+                                  cudaMemcpyDeviceToHost));
+        ATV_CUDA_CHECK(cudaMemcpy(sp.data(), f.atoms.special,
+                                  sp.size() * sizeof(std::int64_t),
+                                  cudaMemcpyDeviceToHost));
+        ATV_CUDA_CHECK(cudaMemcpy(tags.data(), f.atoms.tag,
+                                  tags.size() * sizeof(std::int64_t),
+                                  cudaMemcpyDeviceToHost));
+        std::unordered_map<std::int64_t, int> local_of;
+        local_of.reserve(static_cast<std::size_t>(n) * 2);
+        for (int row = 0; row < n; ++row)
+            local_of.emplace(tags[static_cast<std::size_t>(row)], row);
+        const double scale_of[3] = {s12_, s13_, s14_};
+        for (int i = 0; i < n_owned && i < n; ++i) {
+            auto clamp = [ms](int c) {
+                if (c < 0)
+                    return 0;
+                return c > ms ? ms : c;
+            };
+            int n12 = clamp(ns[static_cast<std::size_t>(i) * 3 + 0]);
+            int n13 = clamp(ns[static_cast<std::size_t>(i) * 3 + 1]);
+            int n14 = clamp(ns[static_cast<std::size_t>(i) * 3 + 2]);
+            if (n13 < n12)
+                n13 = n12;
+            if (n14 < n13)
+                n14 = n13;
+            const int begin[3] = {0, n12, n13};
+            const int end[3] = {n12, n13, n14};
+            // local partner -> nearest shell (1, 2, or 3).
+            std::map<int, int> rel;
+            for (int shell = 0; shell < 3; ++shell) {
+                for (int s = begin[shell]; s < end[shell]; ++s) {
+                    const std::int64_t tj =
+                        sp[static_cast<std::size_t>(i)
+                               * static_cast<std::size_t>(ms)
+                           + static_cast<std::size_t>(s)];
+                    const auto found = local_of.find(tj);
+                    if (found == local_of.end())
+                        continue;
+                    const int j = found->second;
+                    if (j == i || j < 0 || j >= n)
+                        continue;
+                    rel.emplace(j, shell + 1);
+                }
+            }
+            for (const auto& entry : rel) {
+                if (scale_of[entry.second - 1] == 0.0)
+                    excl[static_cast<std::size_t>(i)].insert(entry.first);
+            }
         }
-    };
-    for (int k = 0; k < n_b; ++k)
-        add_pair(bi[k], bj[k]);
-    for (int k = 0; k < n_a; ++k)
-        add_pair(ai[k], ak[k]);
-    for (int k = 0; k < n_d; ++k)
-        add_pair(di[k], dl[k]);
+    } else {
+        // No special list on the device (build_special_list was not run).
+        // Bonds, angle endpoints, and dihedral endpoints are the only
+        // topology this frame uploaded. A 1-4 still requires a dihedral.
+        int n_b = f.n_bonds();
+        int n_a = f.n_angles();
+        int n_d = f.n_dihedrals();
+        std::vector<int> bi(n_b), bj(n_b);
+        std::vector<int> ai(n_a), ak(n_a);
+        std::vector<int> di(n_d), dl(n_d);
+        if (n_b > 0) {
+            ATV_CUDA_CHECK(cudaMemcpy(bi.data(), f.bonds.atomi,
+                                      n_b * sizeof(int),
+                                      cudaMemcpyDeviceToHost));
+            ATV_CUDA_CHECK(cudaMemcpy(bj.data(), f.bonds.atomj,
+                                      n_b * sizeof(int),
+                                      cudaMemcpyDeviceToHost));
+        }
+        if (n_a > 0) {
+            ATV_CUDA_CHECK(cudaMemcpy(ai.data(), f.angles.atomi,
+                                      n_a * sizeof(int),
+                                      cudaMemcpyDeviceToHost));
+            ATV_CUDA_CHECK(cudaMemcpy(ak.data(), f.angles.atomk,
+                                      n_a * sizeof(int),
+                                      cudaMemcpyDeviceToHost));
+        }
+        if (n_d > 0) {
+            ATV_CUDA_CHECK(cudaMemcpy(di.data(), f.dihedrals.atomi,
+                                      n_d * sizeof(int),
+                                      cudaMemcpyDeviceToHost));
+            ATV_CUDA_CHECK(cudaMemcpy(dl.data(), f.dihedrals.atoml,
+                                      n_d * sizeof(int),
+                                      cudaMemcpyDeviceToHost));
+        }
+        std::vector<std::map<int, int>> rel(static_cast<std::size_t>(n));
+        auto note = [&](int a, int b, int dist) {
+            if (a < 0 || b < 0 || a >= n || b >= n || a == b)
+                return;
+            auto touch = [&](int i, int j) {
+                auto it = rel[static_cast<std::size_t>(i)].find(j);
+                if (it == rel[static_cast<std::size_t>(i)].end()
+                    || dist < it->second)
+                    rel[static_cast<std::size_t>(i)][j] = dist;
+            };
+            touch(a, b);
+            touch(b, a);
+        };
+        for (int k = 0; k < n_b; ++k)
+            note(bi[k], bj[k], 1);
+        for (int k = 0; k < n_a; ++k)
+            note(ai[k], ak[k], 2);
+        for (int k = 0; k < n_d; ++k)
+            note(di[k], dl[k], 3);
+        const double scale_of[4] = {1.0, s12_, s13_, s14_};
+        for (int i = 0; i < n; ++i) {
+            for (const auto& entry : rel[static_cast<std::size_t>(i)]) {
+                if (scale_of[entry.second] == 0.0)
+                    excl[static_cast<std::size_t>(i)].insert(entry.first);
+            }
+        }
+    }
 
     // Pack into CSR.
     std::vector<int> offsets(n + 1, 0);

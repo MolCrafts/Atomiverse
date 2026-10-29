@@ -102,6 +102,11 @@ class Frame {
     void add_improper(TagInt ti, TagInt tj, TagInt tk, TagInt tl, int type);
     void build_special_list();
     void reshuffle_topology_to_tags();
+    /// Permute owned rows so row i holds `original[i]`. Returns false and
+    /// leaves the frame unchanged unless `n == nlocal()`, `n > 1`, and the
+    /// two tag lists are the same unique set. Ghost rows are not touched;
+    /// a successful permute rebuilds the tag index for owned rows only.
+    bool restore_import_order(const TagInt* original, int n);
 
     std::size_t memory_bytes() const noexcept;
 

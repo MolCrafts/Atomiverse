@@ -1,0 +1,182 @@
+{
+  "qualified_baseline_E": [
+    {
+      "id": "h2-2A-triplet-lsda",
+      "model": "lsda",
+      "index": 0,
+      "path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.molq/next/empty-beta-tangent/attempt-2/qe/lsda",
+      "quad": [
+        34,
+        30,
+        30
+      ],
+      "PP_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "input_sha256": "e92813ac9ff9f23d38c6401632924ab6e1df80bd64371086d43bce94e1ac88de",
+      "QE_program_mode": "original gamma-only optimized path, unchanged recipe",
+      "H_H_Angstrom": 2.0,
+      "positions_Angstrom": [
+        [
+          2.485758378549775,
+          2.6571628993408067,
+          2.5857303194726455
+        ],
+        [
+          4.214241621450225,
+          3.442837100659193,
+          3.2142696805273543
+        ]
+      ],
+      "QE_converged": true,
+      "baseline_E_Ha": -0.8535008045316019,
+      "baseline_converged": true,
+      "raw_sha256": {
+        "qe/lsda/input.in": "e92813ac9ff9f23d38c6401632924ab6e1df80bd64371086d43bce94e1ac88de",
+        "qe/lsda/qe.out": "e87eb51e5b0691b74721326aa2721ee44d15c1cfd0337ff42ce10b445e9b1574",
+        "qe/lsda/exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "qe/lsda/H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "qe/lsda/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "qe/lsda/modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "qe/lsda/host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "qe/lsda/scratch/h2_2A_triplet_lsda.save/data-file-schema.xml": "5357196fdb162b5fe6b7d4e66ce327b706685b7c44958230ac9305e7bc654e9e"
+      },
+      "E": -0.8535007960285887,
+      "f": [
+        [
+          -0.01398002319698378,
+          -0.006826987800558206,
+          -0.005474265984285787
+        ],
+        [
+          0.01398002319698378,
+          0.006826987800558206,
+          0.005474265984285787
+        ]
+      ],
+      "s": [
+        -3.361301034931294e-06,
+        -3.820220475316097e-05,
+        -4.120527786627126e-05,
+        1.192214786198661e-05,
+        1.025054043990059e-05,
+        4.463033425050194e-06
+      ],
+      "Ne": 2.0,
+      "M": 1.999999999999996,
+      "S_Ry": 0.0,
+      "qualified": "baseline_E_only_public_derivatives_pending"
+    }
+  ],
+  "failed": [
+    {
+      "id": "h2-2A-triplet-pbe",
+      "model": "pbe",
+      "index": 1,
+      "path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.molq/next/empty-beta-tangent/attempt-2/qe/pbe",
+      "quad": [
+        66,
+        60,
+        60
+      ],
+      "PP_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "input_sha256": "6170507df0de8ac50277e204db8ba4af4667b71226e20c703f7d1ca5f2197920",
+      "QE_program_mode": "original gamma-only optimized path, unchanged recipe",
+      "H_H_Angstrom": 2.0,
+      "positions_Angstrom": [
+        [
+          2.485758378549775,
+          2.6571628993408067,
+          2.5857303194726455
+        ],
+        [
+          4.214241621450225,
+          3.442837100659193,
+          3.2142696805273543
+        ]
+      ],
+      "QE_converged": true,
+      "baseline_E_Ha": -0.8856295716115162,
+      "baseline_converged": true,
+      "raw_sha256": {
+        "qe/pbe/input.in": "6170507df0de8ac50277e204db8ba4af4667b71226e20c703f7d1ca5f2197920",
+        "qe/pbe/qe.out": "f29fa74203c92ce57d51e9946aeeb5deb9ed95102f1a811f716bc7efd1be11dd",
+        "qe/pbe/exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "qe/pbe/H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "qe/pbe/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "qe/pbe/modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "qe/pbe/host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "qe/pbe/scratch/h2_2A_triplet_pbe.save/data-file-schema.xml": "8282b451cf7791838df65051b70c1784104a7a0eb7007e26b37a13f7dcaa1826"
+      },
+      "E": -0.8894081174054634,
+      "f": [
+        [
+          -0.01929153970344913,
+          -0.0148758465060526,
+          -0.01131112312739239
+        ],
+        [
+          0.01929153970344913,
+          0.0148758465060526,
+          0.01131112312739239
+        ]
+      ],
+      "s": [
+        -6.676659459174099e-06,
+        -4.367847444088928e-05,
+        -4.661085196572911e-05,
+        1.345217255453283e-05,
+        1.15790712855008e-05,
+        4.978239617011687e-06
+      ],
+      "Ne": 2.0,
+      "M": 2.000000000000007,
+      "S_Ry": 0.0,
+      "qualified": false,
+      "reason": "baseline_native_vs_QE_energy_gate_failed"
+    },
+    {
+      "id": "h2-2A-triplet-pbesol",
+      "model": "pbesol",
+      "index": 2,
+      "path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.molq/next/empty-beta-tangent/attempt-2/qe/pbesol",
+      "quad": [
+        66,
+        60,
+        60
+      ],
+      "PP_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "input_sha256": "4f5eca655526cca4a7cbb0b83809d6e9c98f8d46765f18690c76376733486aad",
+      "QE_program_mode": "original gamma-only optimized path, unchanged recipe",
+      "H_H_Angstrom": 2.0,
+      "positions_Angstrom": [
+        [
+          2.485758378549775,
+          2.6571628993408067,
+          2.5857303194726455
+        ],
+        [
+          4.214241621450225,
+          3.442837100659193,
+          3.2142696805273543
+        ]
+      ],
+      "QE_converged": false,
+      "baseline_E_Ha": -0.8688438912709634,
+      "baseline_converged": true,
+      "raw_sha256": {
+        "qe/pbesol/input.in": "4f5eca655526cca4a7cbb0b83809d6e9c98f8d46765f18690c76376733486aad",
+        "qe/pbesol/qe.out": "bbbd209a442997d466cd433b3ffbcc909f5f5ba543335576cc977cd5e2f3076a",
+        "qe/pbesol/exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "qe/pbesol/H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "qe/pbesol/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "qe/pbesol/modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "qe/pbesol/host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0"
+      },
+      "qualified": false,
+      "E": null,
+      "f": null,
+      "s": null,
+      "reason": "actual_QE_SCF_NOT_achieved250"
+    }
+  ],
+  "source_failures_not_overwritten": "../attempt-1/checkpoint.json"
+}

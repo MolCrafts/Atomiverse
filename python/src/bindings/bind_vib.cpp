@@ -119,7 +119,9 @@ struct VibHandle {
     /// @param p Lennard-Jones parameters, as the shared task mirror.
     void set_evaluator_lj(const cpu::task::PairLJCutParams& p) {
         require_configurable_("set_evaluator");
-        driver.set_evaluator(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+        driver.set_evaluator(
+            cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}.set_special_bonds(
+                p.s12, p.s13, p.s14));
     }
 #endif
 

@@ -222,11 +222,32 @@ TEST(TestNeighborDecide, CellScalingBypassesDelayAndEvery) {
     nl.build({ctx, frame});
     nl.launch({ctx, frame, 0, 0});
     EXPECT_FALSE(nl.decide_reneighbor(ctx, frame, true));
-    frame.box.scale_isotropic(1.01);
+    // 5% of a 10 Å edge is 0.5 Å, past the 0.4 Å skin. A 0.1% Berendsen
+    // step is not: see SubSkinIsotropicScaleStaysOnCadence.
+    frame.box.scale_isotropic(1.05);
     EXPECT_TRUE(nl.decide_reneighbor(ctx, frame, true));
     ctx.md.reneighbor = true;
     nl.launch({ctx, frame, 0, 0});
     EXPECT_FALSE(nl.strategy().grid_stale(frame));
     EXPECT_EQ(nl.n_rebuilds(), 2);
     EXPECT_FALSE(nl.decide_reneighbor(ctx, frame, true));
+}
+
+TEST(TestNeighborDecide, SubSkinIsotropicScaleStaysOnCadence) {
+    auto frame = two_atoms();
+    cpu::Context ctx;
+    cpu::md::NeighborList<> nl(2.0, 0.4, 1, 10, true);
+    nl.set_atom_sort(1000, 0.0, false);
+    nl.build({ctx, frame});
+    nl.launch({ctx, frame, 0, 0});
+    frame.box.scale_isotropic(1.001);
+    for (int i = 0; i < 2; ++i) {
+        frame.span(kAtom_x)[i] *= 1.001;
+        frame.span(kAtom_y)[i] *= 1.001;
+        frame.span(kAtom_z)[i] *= 1.001;
+    }
+    EXPECT_TRUE(nl.strategy().grid_stale(frame));
+    EXPECT_LT(nl.strategy().lattice_drift(frame), nl.strategy().skin());
+    EXPECT_FALSE(nl.decide_reneighbor(ctx, frame, true));
+    EXPECT_EQ(nl.n_rebuilds(), 1);
 }

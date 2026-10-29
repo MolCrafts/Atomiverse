@@ -1,0 +1,50 @@
+{
+  "new_independent_fixture": true,
+  "original_short_bond_failures_untouched": "../attempt-1/checkpoint.json",
+  "HH_Angstrom": 2.0,
+  "center_Angstrom": [
+    3.35,
+    3.05,
+    2.9
+  ],
+  "tilted_direction": [
+    1.1,
+    0.5,
+    0.4
+  ],
+  "cell_columns_Angstrom": [
+    [
+      6.2,
+      0,
+      0
+    ],
+    [
+      0.3,
+      6,
+      0
+    ],
+    [
+      0.2,
+      0.1,
+      5.8
+    ]
+  ],
+  "PW_cutoff_Ry": 6,
+  "PP": "GTH-PBE-q1",
+  "Na": 2,
+  "Nb": 0,
+  "kmesh": "Gamma",
+  "smearing": "none",
+  "max_iter": 250,
+  "mix_beta": 0.35,
+  "tol": 1e-09,
+  "auxiliary_budget": 40,
+  "aux_residual_target": "method.tol*.1",
+  "original_gates": {
+    "E_Ha": 1e-05,
+    "F_HaBohr": 0.0001,
+    "sigma_eVA3": 0.002
+  },
+  "fixture_sha256": "57873e098a7770f47e6aa539e01975c704268a08e82d6b6ae19d9cfa0247f0b7",
+  "baseline_archive": "../attempt-1/libbaseline.a"
+}

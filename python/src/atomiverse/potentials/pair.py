@@ -20,7 +20,8 @@ vanishes there on its own.
 
 from atomiverse._binding import _cpp
 
-#: Lennard-Jones 12-6 — ``cpu::PairLJCut(epsilon [eV], sigma [Å], cutoff [Å])``.
+#: Lennard-Jones 12-6 — ``cpu::PairLJCut(epsilon [eV], sigma [Å], cutoff [Å], s12=1, s13=1, s14=1)``.
+#: ``s12``, ``s13``, ``s14`` are the 1-2 / 1-3 / 1-4 weights. The task codec stores them.
 LJCut = _cpp.PairLJCut
 
 #: Truncated Coulomb — ``cpu::PairCoulCut(cutoff [Å])``. The bare

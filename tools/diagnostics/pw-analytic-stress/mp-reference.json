@@ -1,0 +1,16 @@
+{
+  "case": "h3-gamma-uks-pbe-mp1-004",
+  "reference_root": "results/2026-10-28-mp-gamma-pbe/private-candidate",
+  "ready_sha256": "b4e68a9f3d9a450bb68f8e2ab84259d4788c24c38d9a14dbaf309bf48fe22b33",
+  "primary_files_sha256": {
+    "qe/input.in": "6bab560112edf89d4da3d3fb249542499fcaf65e8e228bcbe50ec83278049560",
+    "qe/qe.out": "9ee5ffc955c2d0c4f9562b68b6608d4e33474490b8e68a4cdcaa087de1dba4d6",
+    "qe/exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "qe/H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+    "qe/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+    "qe/scratch/h3.save/data-file-schema.xml": "9302500230fb9570ac1dd495012f3c6f1369da33d310c17aebef342ab58a6ad8",
+    "qe-reference.json": "5cd23d4dd45faa36a3ca6f86fbd808b79caad112fef9d71e0e85bc1730ea9220"
+  },
+  "old_72_grid_not_reused": true,
+  "scope": "one actualQE7.6 matched48x42x42 Gamma/PBE/UKS/MP1/.04Ry"
+}

@@ -93,6 +93,13 @@ class AoDiisEigenDevice {
     /// Pushes (H, e) into history when DIIS is enabled.
     void advance();
 
+    /// Coupled UKS Pulay step: sum both error Grams and use one coefficient
+    /// vector for both H histories, then the original two eigen/density steps.
+    /// Matching dimensions/stream/history are checked before either mutates.
+    /// Empty-spin channels are allowed. Scientific matrices stay on device;
+    /// only the existing tiny host Pulay control system is solved on the host.
+    void advance_paired(AoDiisEigenDevice& other);
+
     /// @brief residual() then advance() — convenience for tests.
     double step(const double* H_host);
 
@@ -111,6 +118,15 @@ class AoDiisEigenDevice {
     const double* d_C() const { return d_C_; }
     /// @brief Device eigenvalues (m); valid after first step.
     const double* d_eig() const { return d_eig_; }
+
+    /// Reserve immutable-force handoff scratch during cold geometry setup.
+    /// W is n*n, and one n*n backup protects the accepted SCF density.
+    void reserve_force_state();
+    /// Canonicalize the supplied physical KS H without DIIS/level shift,
+    /// construct W=f C_occ eps C_occ^T on device, and restore accepted P.
+    /// No scientific payload is downloaded; only cuSOLVER status is a scalar.
+    void finalize_physical_force_state(const double* d_H);
+    const double* d_W() const { return d_W_; }
 
     // ── Test / oracle surface (host ↔ device single-shot) ───────────────
 
@@ -138,6 +154,7 @@ class AoDiisEigenDevice {
     void eigen_from_device(const double* d_H, double* eig_host, double* C_host);
 
   private:
+    friend struct PairedDiisProbe; // internal component-unit access only
     void ensure_built_() const;
     void form_error_();              ///< d_err_ = Xᵀ(HPS−SPH)X using d_H_
     void diis_extrapolate_();        ///< d_H_ ← extrapolated H (or unchanged)
@@ -161,17 +178,20 @@ class AoDiisEigenDevice {
     int hist_count_ = 0;
     int hist_start_ = 0;
 
-    double* d_S_ = nullptr;      ///< n×n
-    double* d_X_ = nullptr;      ///< n×m
-    double* d_P_ = nullptr;      ///< n×n
-    double* d_H_ = nullptr;      ///< n×n work / extrapolated H
-    double* d_C_ = nullptr;      ///< n×m AO MOs
-    double* d_Cp_ = nullptr;     ///< m×m orthonormal eigenvectors (syevd)
-    double* d_eig_ = nullptr;    ///< m
-    double* d_err_ = nullptr;    ///< m×m DIIS residual
-    double* d_t1_ = nullptr;     ///< scratch max(n×n, n×m, m×m)
-    double* d_t2_ = nullptr;     ///< scratch
-    double* d_t3_ = nullptr;     ///< scratch n×n (PH copy / commutator aux)
+    double* d_S_ = nullptr; ///< n×n
+    double* d_X_ = nullptr; ///< n×m
+    double* d_W_ = nullptr; ///< n*n physical energy-weighted density
+    double* d_P_saved_ =
+        nullptr;              ///< n*n accepted density during canonical eigen
+    double* d_P_ = nullptr;   ///< n×n
+    double* d_H_ = nullptr;   ///< n×n work / extrapolated H
+    double* d_C_ = nullptr;   ///< n×m AO MOs
+    double* d_Cp_ = nullptr;  ///< m×m orthonormal eigenvectors (syevd)
+    double* d_eig_ = nullptr; ///< m
+    double* d_err_ = nullptr; ///< m×m DIIS residual
+    double* d_t1_ = nullptr;  ///< scratch max(n×n, n×m, m×m)
+    double* d_t2_ = nullptr;  ///< scratch
+    double* d_t3_ = nullptr;  ///< scratch n×n (PH copy / commutator aux)
     double* d_H_hist_ = nullptr; ///< max_vectors × n×n
     double* d_e_hist_ = nullptr; ///< max_vectors × m×m
     double* d_c_ = nullptr;      ///< max_vectors coefficients

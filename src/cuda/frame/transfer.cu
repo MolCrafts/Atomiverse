@@ -419,6 +419,36 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
                                   nd * sizeof(int), cudaMemcpyHostToDevice));
     }
 
+    // Single-GPU never calls materialize_per_atom_bonded, so without this
+    // copy the LJ baker cannot see Frame::build_special_list. A 1-4 that
+    // has no dihedral term (PEGM angles stop at 1-3) would stay at full LJ.
+    // Partner entries are tags. Multi-GPU frees these and recopies the
+    // subdomain rows in materialize_per_atom_bonded.
+    if (frame.has_bonded()) {
+        const int MS = stride_or_zero(frame, kMaxSpecial);
+        d.atoms.maxspecial = MS;
+        if (MS > 0 && n > 0) {
+            const std::size_t ns_n = static_cast<std::size_t>(cap) * 3;
+            const std::size_t sp_n =
+                static_cast<std::size_t>(cap) * static_cast<std::size_t>(MS);
+            ATV_CUDA_CHECK(cudaMalloc(&d.atoms.nspecial, ns_n * sizeof(int)));
+            ATV_CUDA_CHECK(cudaMemset(d.atoms.nspecial, 0, ns_n * sizeof(int)));
+            ATV_CUDA_CHECK(
+                cudaMemcpy(d.atoms.nspecial, frame.span(kAtom_nspecial).data(),
+                           static_cast<std::size_t>(n) * 3 * sizeof(int),
+                           cudaMemcpyHostToDevice));
+            ATV_CUDA_CHECK(
+                cudaMalloc(&d.atoms.special, sp_n * sizeof(std::int64_t)));
+            ATV_CUDA_CHECK(
+                cudaMemset(d.atoms.special, 0, sp_n * sizeof(std::int64_t)));
+            ATV_CUDA_CHECK(cudaMemcpy(
+                d.atoms.special, frame.span(kAtom_special).data(),
+                static_cast<std::size_t>(n) * static_cast<std::size_t>(MS)
+                    * sizeof(std::int64_t),
+                cudaMemcpyHostToDevice));
+        }
+    }
+
     allocation.complete = true;
     return d;
 }
@@ -476,6 +506,9 @@ void throw_if_force_fault(const Frame& d) {
     if (fault.kinds & ForceFault::kAccumulation)
         what += std::string(what.empty() ? "" : "; ")
                 + "a fixed-point force sum wrapped";
+    if (fault.kinds & ForceFault::kBond)
+        what += std::string(what.empty() ? "" : "; ")
+                + "a FENE bond length reached R0";
     throw std::runtime_error(
         "CUDA force fault: " + what + " (|F| must stay below "
         + std::to_string(kFixedLimit * kForceFixedResolution)
@@ -620,6 +653,12 @@ void materialize_per_atom_bonded(Frame& d, const cpu::Frame& src) {
     alloc_i(d.atoms.num_dihedral, c);
     alloc_t(d.atoms.dihedral_atom, c * 3 * MD);
     alloc_i(d.atoms.dihedral_type, c * MD);
+    // to_cuda already uploaded these for the single-GPU path. Free first so
+    // a subdomain rematerialize does not leak that allocation.
+    cudaFree(d.atoms.nspecial);
+    d.atoms.nspecial = nullptr;
+    cudaFree(d.atoms.special);
+    d.atoms.special = nullptr;
     alloc_i(d.atoms.nspecial, c * 3);
     alloc_t(d.atoms.special, c * MS);
     if (n <= 0 || !src.has_bonded())

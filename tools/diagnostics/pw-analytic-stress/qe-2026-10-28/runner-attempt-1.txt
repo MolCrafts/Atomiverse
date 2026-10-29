@@ -1,0 +1,2 @@
+Command: srun --jobid=4525698 --overlap --nodes=1 --ntasks=1 --cpus-per-task=1 bash .molq/pw-analytic-stress/qe-lsda/run.sh
+Exit127 before QE: module: command not found. Invoking explicit bash without -l ignored script login shebang; corrected runner invocation uses bash -l. No reference QE output produced by this attempt.

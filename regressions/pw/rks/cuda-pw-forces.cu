@@ -120,7 +120,16 @@ int run_on_device(Device dev, std::vector<std::array<double, 3>>& forces) {
         method.max_iter = 40;
         method.mix_beta = 0.5;
         method.build(frame);
-        forces = cuda::pw::pw_forces_analytic(frame, method);
+        forces = ([&]() {
+            ATV::cpu::Frame result_frame(frame);
+            method.forces(result_frame);
+            std::vector<std::array<double, 3>> result(result_frame.nlocal());
+            for (int i = 0; i < result_frame.nlocal(); ++i)
+                result[i] = {result_frame.span(ATV::kAtom_fx)[i],
+                             result_frame.span(ATV::kAtom_fy)[i],
+                             result_frame.span(ATV::kAtom_fz)[i]};
+            return result;
+        }());
     }
 
     if (forces.size() != 2u) {

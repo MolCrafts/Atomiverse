@@ -23,10 +23,19 @@ are the acceptance bar.
 
 | Priority | Surface | Fix slug |
 | --- | --- | --- |
-| P1 | GPW force free-fn: grid re-H2D, host densify ρ, host AO Pulay | `force-device-handoff` / `device-ao-pulay` |
+| P1 | GPW UKS/MG/multi-k force payload and host assembly | `force-device-handoff-depth` |
 | P1 | GPW multi-k payload / cold-start (host re-diag / densify) | `kpoint-payload-device` / `kpoint-device-cold-start` / `device-cold-start` |
 | P1 | GPW multi-k setup residency (host χ / Löwdin / KB Vnl / H0) | `kpoint-device-{chi,orth,vnl}` / `h0-residency` |
 | P2 | GPW stress free-fn host assembly | `device-stress` |
+
+Γ RKS single-grid force handoff is closed within its declared envelope:
+accepted P and raw-H W stay resident, AO/grid/ionic force contractions execute
+on device, and immutable derivative tables upload before SCF. Actual Nsight
+capture has zero H2D and only scalar eigensolver metadata D2H (4-byte status;
+8-byte matrix max-abs confirmed by a separate CUPTI numerical probe).
+[Native evidence](../../tools/diagnostics/gpw-residency/results/2026-10-27/residency-validation.json)
+includes 45 units, five water cases, unchanged Driver/model gates and zero-error,
+zero-leak memcheck. Cold setup, other force branches and stress remain open.
 
 ## Worker checklist (CUDA slug)
 

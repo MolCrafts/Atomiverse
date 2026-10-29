@@ -1,9 +1,10 @@
 /// @file tests/cuda/planewave/test_xc_pbe_spin.cu
-/// @brief Verifies cuda::pw::internal::xc_pbe_spin_grid against
+/// @brief Verifies cuda::xc::xc_pbe_spin_grid against
 ///        cpu::xc::evaluate_xc(PBE, ρ_α, ρ_β, σ_αα, σ_αβ, σ_ββ) plus the
 ///        spin flux assembly of XCBuilder::step_spin.
 #include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/xc/xc_pbe.cuh"
+#include <array>
 #include <cmath>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
@@ -21,10 +22,12 @@ void* dmalloc(size_t bytes) {
     return p;
 }
 
-void host_ref(double ra, double rb, double gax, double gay, double gaz,
-              double gbx, double gby, double gbz, double& vxa, double& vxb,
-              double& exc, double& fax, double& fay, double& faz, double& fbx,
-              double& fby, double& fbz) {
+void host_ref(XCType type, double ra, double rb, double gax, double gay,
+              double gaz, double gbx, double gby, double gbz, double& vxa,
+              double& vxb, double& exc, double& fax, double& fay, double& faz,
+              double& fbx, double& fby, double& fbz) {
+    const bool active_a = ra > 0.0;
+    const bool active_b = rb > 0.0;
     if (ra < 0.0)
         ra = 0.0;
     if (rb < 0.0)
@@ -38,9 +41,9 @@ void host_ref(double ra, double rb, double gax, double gay, double gaz,
     double saa = gax * gax + gay * gay + gaz * gaz;
     double sbb = gbx * gbx + gby * gby + gbz * gbz;
     double sab = gax * gbx + gay * gby + gaz * gbz;
-    const auto out = evaluate_xc(XCType::PBE, ra, rb, saa, sab, sbb);
-    vxa = out.vrho_alpha;
-    vxb = out.vrho_beta;
+    const auto out = evaluate_xc(type, ra, rb, saa, sab, sbb);
+    vxa = active_a ? out.vrho_alpha : 0.0;
+    vxb = active_b ? out.vrho_beta : 0.0;
     exc = out.energy_density / rtot;
     const double caa = 2.0 * out.vsigma_aa;
     const double cbb = 2.0 * out.vsigma_bb;
@@ -77,7 +80,13 @@ void make_sweep(std::vector<double>& ra, std::vector<double>& rb,
 
 } // namespace
 
-TEST(CudaPWXcPbeSpin, MatchesCpuEvaluateXc) {
+class CudaPWXcPbeSpin : public ::testing::TestWithParam<XCType> {};
+
+INSTANTIATE_TEST_SUITE_P(PbeFamily, CudaPWXcPbeSpin,
+                         ::testing::Values(XCType::PBE, XCType::PBEsol,
+                                           XCType::RevPBE, XCType::RPBE));
+
+TEST_P(CudaPWXcPbeSpin, MatchesCpuEvaluateXc) {
     std::vector<double> ra, rb, gax, gay, gaz, gbx, gby, gbz;
     make_sweep(ra, rb, gax, gay, gaz, gbx, gby, gbz);
     const int nr = static_cast<int>(ra.size());
@@ -119,8 +128,8 @@ TEST(CudaPWXcPbeSpin, MatchesCpuEvaluateXc) {
                          cudaMemcpyHostToDevice),
               cudaSuccess);
 
-    xc_pbe_spin_grid(d_ra, d_rb, d_gax, d_gay, d_gaz, d_gbx, d_gby, d_gbz,
-                     d_vxa, d_vxb, d_exc, nr);
+    xc_pbe_spin_grid(GetParam(), d_ra, d_rb, d_gax, d_gay, d_gaz, d_gbx, d_gby,
+                     d_gbz, d_vxa, d_vxb, d_exc, nr);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     std::vector<double> vxa(nr), vxb(nr), exc(nr);
@@ -162,8 +171,9 @@ TEST(CudaPWXcPbeSpin, MatchesCpuEvaluateXc) {
     };
     for (int i = 0; i < nr; ++i) {
         double rvxa, rvxb, re, rfax, rfay, rfaz, rfbx, rfby, rfbz;
-        host_ref(ra[i], rb[i], gax[i], gay[i], gaz[i], gbx[i], gby[i], gbz[i],
-                 rvxa, rvxb, re, rfax, rfay, rfaz, rfbx, rfby, rfbz);
+        host_ref(GetParam(), ra[i], rb[i], gax[i], gay[i], gaz[i], gbx[i],
+                 gby[i], gbz[i], rvxa, rvxb, re, rfax, rfay, rfaz, rfbx, rfby,
+                 rfbz);
         EXPECT_NEAR(vxa[i], rvxa, tol(rvxa)) << "i=" << i << " vxa";
         EXPECT_NEAR(vxb[i], rvxb, tol(rvxb)) << "i=" << i << " vxb";
         EXPECT_NEAR(exc[i], re, tol(re)) << "i=" << i << " exc";
@@ -186,4 +196,68 @@ TEST(CudaPWXcPbeSpin, MatchesCpuEvaluateXc) {
     cudaFree(d_vxa);
     cudaFree(d_vxb);
     cudaFree(d_exc);
+}
+
+// Differentiate the actual device energy, independently of CPU derivatives:
+// d(rho*epsilon)/d rho_sigma = local v_sigma and
+// d(rho*epsilon)/d grad_d rho_sigma = flux_sigma,d.
+TEST_P(CudaPWXcPbeSpin, DeviceEnergyDerivativesMatchPotentialAndFlux) {
+    constexpr int nc = 8;
+    constexpr int nr = 1 + 2 * nc;
+    constexpr double h = 1e-6;
+    const std::array<double, nc> base = {.2, .07, .1, -.2, .08, -.04, .06, .03};
+    std::array<std::array<double, nr>, nc> inputs{}, outputs{};
+    std::array<double, nr> epsilon{};
+    for (int c = 0; c < nc; ++c) {
+        inputs[c].fill(base[c]);
+        inputs[c][1 + 2 * c] += h;
+        inputs[c][2 + 2 * c] -= h;
+    }
+    std::array<double*, nc> device{};
+    std::array<double*, 2> potential{};
+    double* d_epsilon = static_cast<double*>(dmalloc(nr * sizeof(double)));
+    for (int c = 0; c < nc; ++c) {
+        device[c] = static_cast<double*>(dmalloc(nr * sizeof(double)));
+        ASSERT_EQ(cudaMemcpy(device[c], inputs[c].data(), nr * sizeof(double),
+                             cudaMemcpyHostToDevice),
+                  cudaSuccess);
+    }
+    for (auto& p : potential)
+        p = static_cast<double*>(dmalloc(nr * sizeof(double)));
+    xc_pbe_spin_grid(GetParam(), device[0], device[1], device[2], device[3],
+                     device[4], device[5], device[6], device[7], potential[0],
+                     potential[1], d_epsilon, nr);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(epsilon.data(), d_epsilon, nr * sizeof(double),
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int c = 0; c < nc; ++c) {
+        const auto* source = c < 2 ? potential[c] : device[c];
+        ASSERT_EQ(cudaMemcpy(outputs[c].data(), source, nr * sizeof(double),
+                             cudaMemcpyDeviceToHost),
+                  cudaSuccess);
+        const int plus = 1 + 2 * c, minus = 2 + 2 * c;
+        const double f_plus =
+            (inputs[0][plus] + inputs[1][plus]) * epsilon[plus];
+        const double f_minus =
+            (inputs[0][minus] + inputs[1][minus]) * epsilon[minus];
+        EXPECT_NEAR(outputs[c][0], (f_plus - f_minus) / (2 * h), 5e-9)
+            << "density/gradient channel=" << c;
+    }
+    for (auto* p : device)
+        cudaFree(p);
+    for (auto* p : potential)
+        cudaFree(p);
+    cudaFree(d_epsilon);
+}
+
+TEST(CudaPWXcPbeSpinAdmission, RejectsUnsupportedBeforeDeviceAccess) {
+    for (const auto type :
+         {XCType::LSDA, XCType::PADE, XCType::PBE0, XCType::BLYP,
+          XCType::Custom, static_cast<XCType>(-1)}) {
+        EXPECT_THROW(xc_pbe_spin_grid(type, nullptr, nullptr, nullptr, nullptr,
+                                      nullptr, nullptr, nullptr, nullptr,
+                                      nullptr, nullptr, nullptr, 0),
+                     std::invalid_argument);
+    }
 }

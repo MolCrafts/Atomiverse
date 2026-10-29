@@ -44,6 +44,7 @@
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/nvt_sllod.h"
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
@@ -115,6 +116,29 @@ struct MdHandle {
         require_configurable_("set_evaluator");
         driver.set_evaluator_ref(evaluator);
         unmirrored_.push_back(name);
+    }
+
+    /// @brief Register a force source the task wire cannot carry.
+    ///
+    /// `KSpacePPPM` is move-only and is not an `MDComponentParams`
+    /// alternative. `set_categorical` would either fail its variant
+    /// static_assert or append a mirror entry and then drop the solver on
+    /// a launcher replay. `coulomb` feeds `require_charge_column`, because
+    /// this registration never lands in `mirror`.
+    template <typename Component>
+    void set_unmirrored_evaluator(Component comp, const char* name,
+                                  bool coulomb) {
+        require_configurable_("set_evaluator");
+        if (coulomb)
+            unmirrored_coulomb_ = true;
+        unmirrored_.push_back(name);
+        driver.set_evaluator(std::move(comp));
+    }
+
+    void set_nvt_sllod_(cpu::md::NvtSllod integrator) {
+        require_configurable_("set_integrator");
+        unmirrored_.push_back("nvt_sllod");
+        driver.set_integrator(std::move(integrator));
     }
 
     template <typename Params, typename Component>
@@ -233,8 +257,9 @@ struct MdHandle {
     /// @throws std::runtime_error when a Coulomb evaluator is registered and
     ///         the frame's `atoms` block has no `charge` column.
     void require_charge_column(const molrs::FrameRef& frame) const {
-        const bool coulomb = std::any_of(mirror.begin(), mirror.end(),
-                                         is_coulomb_entry<MDComponentEntry>);
+        const bool coulomb = unmirrored_coulomb_
+                             || std::any_of(mirror.begin(), mirror.end(),
+                                            is_coulomb_entry<MDComponentEntry>);
         if (!coulomb || has_molpy_column(frame, "atoms", "charge"))
             return;
         throw std::runtime_error(
@@ -283,6 +308,12 @@ struct MdHandle {
         auto fref = borrow_molpy_frame(frame_obj);
         require_charge_column(*fref);
         cpu::Frame work = cpu::from_molpy(*fref);
+        const int n_import = work.nlocal();
+        std::vector<TagInt> import_tags(
+            static_cast<std::size_t>(std::max(n_import, 0)));
+        if (n_import > 0)
+            std::copy_n(work.span(kAtom_tag).data(), n_import,
+                        import_tags.begin());
         cpu::Frame result(0);
         {
             nb::gil_scoped_release release;
@@ -291,6 +322,7 @@ struct MdHandle {
                                                  /*handshake=*/false);
             result = dispatcher.dispatch(spec, std::move(work)).frame;
         }
+        result.restore_import_order(import_tags.data(), n_import);
         cpu::to_molpy(result, *fref);
         ran_ = true;
 #endif
@@ -300,6 +332,9 @@ struct MdHandle {
     /// True once a `run()` has completed; see `require_configurable_`.
     bool ran_ = false;
     std::vector<std::string> unmirrored_;
+    /// True once `set_unmirrored_evaluator` registered an electrostatic
+    /// source. `require_charge_column` ORs this with the mirror scan.
+    bool unmirrored_coulomb_ = false;
 };
 
 struct MdPhaseBuilder {
@@ -328,6 +363,29 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::VelocityVerletParams{dt};
             },
             nb::arg("dt"), "Construct with timestep dt [fs].");
+
+    nb::class_<ATV::md::NvtSllodSpec>(
+        m, "NvtSllod",
+        "NVT SLLOD integrator (LAMMPS `fix nvt/sllod` + `fix deform` ERATE, "
+        "`remap v`).\n\n"
+        "Replaces VelocityVerlet and thermostats peculiar velocities itself. "
+        "Do not add NoseHoover or Langevin beside it. `direction` is the "
+        "Voigt index 0..5: x, y, z, yz, xz, xy. `rate` is the engineering "
+        "strain rate [1/fs]. The strain clock is internal and restarts when "
+        "the driver is built again.\n\n"
+        "This record is not part of the MPI task payload. `MD.run` under the "
+        "launcher rejects it.")
+        .def(
+            "__init__",
+            [](ATV::md::NvtSllodSpec* p, double temperature, double tau,
+               double dt, double rate, int direction) {
+                new (p) ATV::md::NvtSllodSpec{temperature, tau, dt, rate,
+                                              direction};
+            },
+            nb::arg("temperature"), nb::arg("tau"), nb::arg("dt"),
+            nb::arg("rate"), nb::arg("direction"),
+            "temperature [K], tau [fs] (LAMMPS Tdamp), dt [fs], "
+            "engineering rate [1/fs], direction 0..5.");
 
     nb::class_<cpu::task::InitVelocityParams>(
         m, "InitVelocity", "Maxwell-Boltzmann velocity initialization.")
@@ -591,6 +649,15 @@ void bind_md(nb::module_& m) {
             "full-cell (shearable) variant of the same MTK NPT scheme and "
             "likewise takes the integrator slot.")
         .def(
+            "set_integrator",
+            [](MdHandle& self, const ATV::md::NvtSllodSpec& p) {
+                self.set_nvt_sllod_(cpu::md::NvtSllod{p.temperature_K, p.tau_fs,
+                                                      p.dt_fs, p.rate_per_fs,
+                                                      p.direction});
+            },
+            nb::arg("comp"),
+            "NVT SLLOD. Not mirrored into the MPI task payload.")
+        .def(
             "set_barostat",
             [](MdHandle& self, const cpu::task::BerendsenBarostatParams& p) {
                 self.set_categorical("set_barostat", p,
@@ -744,7 +811,9 @@ void bind_md(nb::module_& m) {
             [](MdPhaseBuilder& self, const cpu::task::PairLJCutParams& p,
                int order) -> MdPhaseBuilder& {
                 self.handle->add_on_phase(
-                    p, cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff},
+                    p,
+                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+                        .set_special_bonds(p.s12, p.s13, p.s14),
                     MDBinding{self.phase, order});
                 return self;
             },

@@ -17,7 +17,8 @@
 /// per-k table binding and for `ws.E_xc` (written back from `reduce()` so the
 /// shared `log_iteration_energy` formatter keeps working).
 ///
-/// Stream: construction creates one non-default `cudaStream_t` and runs every
+/// Stream: construction borrows the parent stream or creates one non-default
+/// `cudaStream_t`, and runs every
 /// density-side kernel, cuFFT transform and cuBLAS call on it. The band
 /// solver borrows the same stream via `stream()` so density and band work
 /// stay strictly ordered without events. Host decisions (Pulay coefficients,
@@ -26,7 +27,7 @@
 /// NUMERICAL PARITY CONTRACT vs `cpu::pw::PW`
 /// ------------------------------------------
 /// The device path is algorithmically identical to the CPU stage helpers
-/// (`PoissonSolver`, `XCBuilder` with `XCType::LSDA` or `XCType::PBE`,
+/// (`PoissonSolver`, `XCBuilder` with LSDA or a pure PBE-family functional,
 /// `VeffBuilder`, `DensityBuilder::finish`, `pulay_mix`, `ConvergenceCheck`,
 /// `iteration_energy`), including every cutoff, floor and G = 0 special case.
 /// It is deliberately NOT bit-exact against the CPU:
@@ -51,6 +52,8 @@
 #include <complex>
 #include <cublas_v2.h>
 #include <cufft.h>
+#include <stdexcept>
+#include <vector>
 
 namespace ATV {
 namespace cuda {
@@ -64,6 +67,14 @@ enum class GField {
     v_xc,      ///< V_xc(G) [Hartree]
     v_loc,     ///< V_loc(G) incl. structure factor [Hartree]
     v_eff,     ///< V_eff(G) [Hartree]
+};
+
+// Borrowed immutable spin fields. Valid only while this density owner and its
+// stream remain live; no transfer or allocation occurs when obtaining the view.
+struct SpinDensityDeviceView {
+    const cufftDoubleComplex* rho[2];
+    int count;
+    cudaStream_t stream;
 };
 
 /// @brief Device-resident density-side buffers and stages of one PW SCF run.
@@ -90,22 +101,23 @@ class DeviceDensity {
     /// @param mix_beta    Density mixing parameter (dimensionless).
     /// @param pulay_depth Pulay history window ≥ 1 (dimensionless).
     /// @param xc          Functional `exchange_correlation()` evaluates. Only
-    ///                    `XCType::LSDA` and `XCType::PBE` have device
-    ///                    kernels; anything else throws (no fallback).
-    /// @param spin_polarized Collinear UKS (nspin=2). Supports `XCType::LSDA`
-    ///                    and `XCType::PBE` (true spin-GGA); seeds ρ_↑/ρ_↓
+    ///                    LSDA and the pure PBE family (PBE, PBEsol, RevPBE,
+    ///                    RPBE) have device kernels; anything else throws.
+    /// @param spin_polarized Collinear UKS (nspin=2). Supports LSDA and the
+    ///                    pure PBE-family spin GGAs; seeds ρ_↑/ρ_↓
     ///                    from the atomic total density with fractions
     ///                    n_alpha/n_elec and n_beta/n_elec.
     /// @param n_alpha     Occupied ↑ bands (spin path only; may be 0).
     /// @param n_beta      Occupied ↓ bands (spin path only; may be 0).
     /// @param n_elec      Valence electron count used for the spin seed.
+    /// @param borrowed_stream Parent execution stream; null creates an owned one.
     /// @throws std::invalid_argument if `pulay_depth < 1`, the problem has
     ///         an empty G-sphere / FFT grid, or `xc` has no device kernel.
     /// @throws std::runtime_error on any CUDA / cuFFT / cuBLAS failure.
     DeviceDensity(const cpu::pw::internal::PWProblem& prob, double mix_beta,
                   int pulay_depth, cpu::xc::XCType xc,
                   bool spin_polarized = false, int n_alpha = 0, int n_beta = 0,
-                  int n_elec = 0);
+                  int n_elec = 0, cudaStream_t borrowed_stream = nullptr);
     ~DeviceDensity();
     DeviceDensity(const DeviceDensity&) = delete;
     DeviceDensity& operator=(const DeviceDensity&) = delete;
@@ -118,16 +130,16 @@ class DeviceDensity {
     /// @brief ρ(G)→ρ(r), V_xc(r)/ε_xc(r), E_xc, then V_xc(G) [Hartree].
     ///        Mirrors `cpu::pw::internal::XCBuilder::step(ws, xc)` for the
     ///        constructor's functional, including the ρ < 1e-12 cutoff and
-    ///        zeroing Im[V_xc(G = 0)]. For `XCType::PBE` this adds the CPU's
+    ///        zeroing Im[V_xc(G = 0)]. PBE-family XC adds the CPU's
     ///        GGA passes in the same order: spectral ∇ρ from i G ρ(G), the
-    ///        pointwise PBE evaluation with flux assembly, and
+    ///        pointwise selected-family evaluation with flux assembly, and
     ///        v_xc −= ∇·flux via three r2c + one c2r transform.
     ///        Restricted path only — collinear uses `exchange_correlation_spin`.
     void exchange_correlation();
 
     /// @brief Collinear spin XC: ρ_σ(G)→ρ_σ(r), V_xc^σ / ε_xc / E_xc /
     ///        e_xc_int_spin, then V_xc_σ(G). Mirrors `XCBuilder::step_spin`
-    ///        for `XCType::LSDA` and true spin-GGA `XCType::PBE` (spectral
+    ///        for LSDA and the pure PBE-family spin GGAs (spectral
     ///        ∇ρ_σ + flux divergence).
     void exchange_correlation_spin();
 
@@ -149,15 +161,16 @@ class DeviceDensity {
     void collect();
 
     /// @brief Collinear: r2c ρ_acc → ρ_out_σ(G) into a scratch slot for spin
-    ///        `spin` (does not overwrite mixed ρ_σ yet). Call `mix_spin_linear`
+    ///        `spin` (does not overwrite mixed ρ_σ yet). Call `mix_spin`
     ///        after both channels are collected.
     void collect_spin_out(int spin);
 
-    /// @brief Collinear linear mix of both spin channels, followed by their
-    ///        total density. Convergence uses the joint UNMIXED output-input
-    ///        norm sqrt(||delta rho_up||² + ||delta rho_down||²), matching CPU;
-    ///        equal-opposite spin changes must not cancel the stopping test.
-    void mix_spin_linear();
+    /// @brief Joint alpha/beta Pulay mixing using the shared restricted engine.
+    /// Histories contain concatenated spin channels. Convergence uses the joint
+    /// UNMIXED output-input norm, independent of damping and Pulay weights;
+    /// equal-opposite spin updates cannot cancel the stopping test.
+    /// @param iter Zero-based SCF iteration; selects the history ring slot.
+    void mix_spin(int iter);
 
     /// @brief Collinear: ρ_total(G) = ρ_↑(G) + ρ_↓(G) into d_rho_G_ for
     ///        Poisson / energy. Call at the top of every SCF iteration.
@@ -192,12 +205,17 @@ class DeviceDensity {
     ///
     /// Hartree / local from total ρ; e_xc_int is the real-space spin integral
     /// (`e_xc_int_spin`); residual is the joint unmixed spin norm cached by
-    /// `mix_spin_linear`, independent of the chosen mixing fraction.
+    /// `mix_spin`, independent of the chosen mixing fraction.
     /// @param vol_bohr Cell volume Ω [Bohr³].
     IterationScalars reduce_spin(double vol_bohr);
 
     /// @brief True when this object was constructed for collinear UKS.
     bool spin_polarized() const { return spin_; }
+    SpinDensityDeviceView spin_density_device_view() const {
+        if (!spin_)
+            throw std::logic_error("spin density view requested from RKS");
+        return {{d_rho_spin_G_[0], d_rho_spin_G_[1]}, ng0_, stream_};
+    }
 
     /// @brief Real-space density accumulator ρ_acc(r), nr doubles (device).
     ///        The band solver writes here; it never frees the buffer.
@@ -283,6 +301,9 @@ class DeviceDensity {
 
   private:
     void free_all();
+    void prepare_spin_mix();
+    void mix_density(int iter, cufftDoubleComplex* output,
+                     const cufftDoubleComplex* input, int count);
 
     int ng0_ = 0, nr_ = 0, nc_ = 0;
     int depth_ = 0;
@@ -291,7 +312,8 @@ class DeviceDensity {
     cpu::xc::XCType xc_ = cpu::xc::XCType::LSDA;
     bool gga_ = false;
     bool spin_ = false;
-    cudaStream_t stream_ = nullptr; ///< Non-default; owned.
+    cudaStream_t stream_ = nullptr; ///< Non-default, borrowed or owned.
+    bool owns_stream_ = false;
     FFTPlan3D fft_;    ///< Base density/band grid, never resized by XC.
     FFTPlan3D xc_fft_; ///< CPU-matched private padded XC quadrature.
     cublasHandle_t blas_ = nullptr;
@@ -315,13 +337,16 @@ class DeviceDensity {
     cufftDoubleComplex* d_V_xc_spin_G_[2] = {nullptr, nullptr};
     double* d_rho_spin_r_[2] = {nullptr, nullptr};
     double* d_V_xc_spin_r_[2] = {nullptr, nullptr};
-    cufftDoubleComplex* d_spin_residual_ = nullptr; ///< 2*ng0_ unmixed deltas.
+    cufftDoubleComplex* d_spin_residual_ =
+        nullptr; ///< 2*ng0_ deltas/output scratch.
 
-    // Pulay history ring (depth_ × ng0_ each) + Gram / coefficients
+    // Pulay history ring (depth_ × (spin_ ? 2 : 1) × ng0_) + Gram / coefficients
     cufftDoubleComplex* d_res_hist_ = nullptr;
     cufftDoubleComplex* d_rho_hist_ = nullptr;
     cufftDoubleComplex* d_gram_ = nullptr; ///< depth_ × depth_, column-major.
-    double* d_coeff_ = nullptr;            ///< depth_ mixing coefficients.
+    // Fixed host upload storage outlives asynchronous copies; teardown drains stream.
+    std::vector<double> host_coefficients_;
+    double* d_coeff_ = nullptr; ///< depth_ mixing coefficients.
 
     // Grids
     // The shared staging and XC-only real arrays are sized for xc_fft_.
@@ -334,7 +359,7 @@ class DeviceDensity {
     double* d_V_eff_r_ = nullptr;
 
     // GGA-only scratch (allocated only when is_gga(xc_); else null).
-    // Restricted PBE uses the α (unsigned) set only; collinear spin-GGA
+    // Restricted PBE-family XC uses the α (unsigned) set only; collinear spin-GGA
     // also allocates the β (dn) gradients / div.
     double* d_gx_ = nullptr; ///< Cartesian G_x per sphere entry [1/Bohr].
     double* d_gy_ = nullptr; ///< Cartesian G_y per sphere entry [1/Bohr].
@@ -353,8 +378,10 @@ class DeviceDensity {
     // Reduction scratch and outputs
     double* d_partials_ = nullptr;    ///< 4 × kReduceBlocks stage-1 partials.
     double* d_xc_partials_ = nullptr; ///< kXcEnergyPartials for xc_energy.
-    double* d_scalars_ = nullptr;     ///< 5 doubles: E_xc, e_h, e_xc_int,
-                                      ///< e_loc, resid.
+    cufftDoubleComplex* d_spin_input_ =
+        nullptr;                  ///< Packed immutable spin input.
+    double* d_scalars_ = nullptr; ///< 5 doubles: E_xc, e_h, e_xc_int,
+                                  ///< e_loc, resid.
 };
 
 } // namespace internal

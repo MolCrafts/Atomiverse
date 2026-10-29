@@ -1,0 +1,662 @@
+{
+  "state": "captured",
+  "scope": "Actual independent QE outputs for PBEsol/revPBE/RPBE; no native pass implied",
+  "captured_utc": "2026-10-27T22:31:48.152175+00:00",
+  "binary": "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+  "binary_sha256": "5e03776776ed71bf3f6e1cc01f46a8216a680a0179eaf41fdb3a8e99d6f89f5b",
+  "capture_script_sha256": "61346bb2635efb0b803aa8da2f1c5679b74eb1133543fa0ddf899b7da33e5bb9",
+  "predeclared_bounds": {
+    "energy_ha": 1e-05,
+    "each_force_ha_bohr": 0.0001,
+    "each_stress_ev_ang3": 0.002
+  },
+  "published_potential_source": "/software/sse2/el9_epyc9005/easybuild/prefix/software/CP2K/2026.2-gmpflf-2026.03/share/cp2k/data/GTH_POTENTIALS",
+  "published_potential_source_sha256": "5a9bfbc3b37a55917ade4fb704b80546d210d843759b94e3915e74acfc3fafb2",
+  "xc_definition_source": "https://github.com/QEF/q-e/blob/qe-7.6/Modules/funct.f90",
+  "stress_convention": "QE compressive-positive Cartesian tensor; Voigt xx,yy,zz,xy,xz,yz",
+  "environment": {
+    "OMP_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "SLURM_JOB_ID": null,
+    "SLURM_STEP_ID": null,
+    "SLURM_JOB_NODELIST": null
+  },
+  "cases": [
+    {
+      "id": "si2-rks-pbesol",
+      "system": "si2-rks",
+      "xc": "PBEsol",
+      "input_dft": "pbesol",
+      "nat": 2,
+      "command": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/gpw-driver/run-allocation.sh",
+        "cpu",
+        "--cpus",
+        "4",
+        "--",
+        "bash",
+        "-lc",
+        "module load QuantumESPRESSO/7.6-gcc-2026.03-mpich-eb\nexport OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1\ncd \"$1\"\nshift\npython3 -c 'import json,os,socket;print(json.dumps({\"hostname\":socket.gethostname(),\"environment\":{k:os.environ.get(k) for k in [\"OMP_NUM_THREADS\",\"OPENBLAS_NUM_THREADS\",\"SLURM_JOB_ID\",\"SLURM_STEP_ID\",\"SLURM_JOB_NODELIST\"]}},indent=2))' > execution.json\nexec \"$@\"\n",
+        "qe-oracle",
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pbe-periodic-oracles/qe-2026-10-27/si2-rks-pbesol",
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "input.in"
+      ],
+      "input": "si2-rks-pbesol/input.in",
+      "input_sha256": "5e5d327864c51af9983f0a4a83ad96f87a91a9ae39826f1714355882c4214c2a",
+      "original_template": "tools/diagnostics/nc-extension/si2.in",
+      "original_template_sha256": "28f591716d47437426b4ec15b2c91b226c8f548d441a74485115583901bbab7d",
+      "potential": "Si_GTH_PBE_q4.gth",
+      "potential_sha256": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+      "output": "si2-rks-pbesol/qe.out",
+      "engine": "Program PWSCF v.7.6 starts on 27Oct2026 at 23:31:50",
+      "converged": true,
+      "energy_ry": -15.18716658,
+      "forces_ry_bohr": [
+        [
+          0.03512296,
+          0.04249543,
+          0.0374028
+        ],
+        [
+          -0.03512296,
+          -0.04249543,
+          -0.0374028
+        ]
+      ],
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00017033,
+          -7.408e-05,
+          -6.157e-05
+        ],
+        [
+          -7.408e-05,
+          -0.00014174,
+          -6.027e-05
+        ],
+        [
+          -6.157e-05,
+          -6.027e-05,
+          -0.00012575
+        ]
+      ],
+      "printed_xc": "PBESOL",
+      "entropy_energy_ry": -0.06904068,
+      "magnetization_e": null,
+      "printed_process_wall": "PWSCF        :      4.59s CPU      1.58s WALL",
+      "energy_ha": -7.59358329,
+      "forces_ha_bohr": [
+        [
+          0.01756148,
+          0.021247715,
+          0.0187014
+        ],
+        [
+          -0.01756148,
+          -0.021247715,
+          -0.0187014
+        ]
+      ],
+      "stress_voigt_ha_bohr3": [
+        -8.5165e-05,
+        -7.087e-05,
+        -6.2875e-05,
+        -3.704e-05,
+        -3.0785e-05,
+        -3.0135e-05
+      ],
+      "complete_printed_quantities": true,
+      "exit_code": 0,
+      "output_sha256": "c04ecf0d31cc8c2bb9e54e333a45888fa501bc6b47be5acbfa85bd5365668bc2",
+      "execution": {
+        "hostname": "n222",
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "1",
+          "SLURM_JOB_ID": "4522778",
+          "SLURM_STEP_ID": "9",
+          "SLURM_JOB_NODELIST": "n222"
+        }
+      },
+      "accepted_external_output": true,
+      "elapsed_wall_seconds": 3.4995503099635243
+    },
+    {
+      "id": "si2-rks-revpbe",
+      "system": "si2-rks",
+      "xc": "revPBE",
+      "input_dft": "revpbe",
+      "nat": 2,
+      "command": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/gpw-driver/run-allocation.sh",
+        "cpu",
+        "--cpus",
+        "4",
+        "--",
+        "bash",
+        "-lc",
+        "module load QuantumESPRESSO/7.6-gcc-2026.03-mpich-eb\nexport OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1\ncd \"$1\"\nshift\npython3 -c 'import json,os,socket;print(json.dumps({\"hostname\":socket.gethostname(),\"environment\":{k:os.environ.get(k) for k in [\"OMP_NUM_THREADS\",\"OPENBLAS_NUM_THREADS\",\"SLURM_JOB_ID\",\"SLURM_STEP_ID\",\"SLURM_JOB_NODELIST\"]}},indent=2))' > execution.json\nexec \"$@\"\n",
+        "qe-oracle",
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pbe-periodic-oracles/qe-2026-10-27/si2-rks-revpbe",
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "input.in"
+      ],
+      "input": "si2-rks-revpbe/input.in",
+      "input_sha256": "4701d1ed2cabf0ccc11556c11f7903e0d3185c6b7a8bbfb6c23533db84f0a0ae",
+      "original_template": "tools/diagnostics/nc-extension/si2.in",
+      "original_template_sha256": "28f591716d47437426b4ec15b2c91b226c8f548d441a74485115583901bbab7d",
+      "potential": "Si_GTH_PBE_q4.gth",
+      "potential_sha256": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+      "output": "si2-rks-revpbe/qe.out",
+      "engine": "Program PWSCF v.7.6 starts on 27Oct2026 at 23:31:52",
+      "converged": true,
+      "energy_ry": -15.28360078,
+      "forces_ry_bohr": [
+        [
+          0.0364143,
+          0.04060594,
+          0.03571369
+        ],
+        [
+          -0.0364143,
+          -0.04060594,
+          -0.03571369
+        ]
+      ],
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00016417,
+          -7.624e-05,
+          -6.34e-05
+        ],
+        [
+          -7.624e-05,
+          -0.0001397,
+          -5.816e-05
+        ],
+        [
+          -6.34e-05,
+          -5.816e-05,
+          -0.00012523
+        ]
+      ],
+      "printed_xc": "REVPBE",
+      "entropy_energy_ry": -0.06851085,
+      "magnetization_e": null,
+      "printed_process_wall": "PWSCF        :      3.59s CPU      1.31s WALL",
+      "energy_ha": -7.64180039,
+      "forces_ha_bohr": [
+        [
+          0.01820715,
+          0.02030297,
+          0.017856845
+        ],
+        [
+          -0.01820715,
+          -0.02030297,
+          -0.017856845
+        ]
+      ],
+      "stress_voigt_ha_bohr3": [
+        -8.2085e-05,
+        -6.985e-05,
+        -6.2615e-05,
+        -3.812e-05,
+        -3.17e-05,
+        -2.908e-05
+      ],
+      "complete_printed_quantities": true,
+      "exit_code": 0,
+      "output_sha256": "6da6af392cc8760ffb6af3cc2a67b7a899db0ada925ac572bd98d7b724de3dfa",
+      "execution": {
+        "hostname": "n222",
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "1",
+          "SLURM_JOB_ID": "4522778",
+          "SLURM_STEP_ID": "10",
+          "SLURM_JOB_NODELIST": "n222"
+        }
+      },
+      "accepted_external_output": true,
+      "elapsed_wall_seconds": 2.1720124279381707
+    },
+    {
+      "id": "si2-rks-rpbe",
+      "system": "si2-rks",
+      "xc": "RPBE",
+      "input_dft": "rpbe",
+      "nat": 2,
+      "command": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/gpw-driver/run-allocation.sh",
+        "cpu",
+        "--cpus",
+        "4",
+        "--",
+        "bash",
+        "-lc",
+        "module load QuantumESPRESSO/7.6-gcc-2026.03-mpich-eb\nexport OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1\ncd \"$1\"\nshift\npython3 -c 'import json,os,socket;print(json.dumps({\"hostname\":socket.gethostname(),\"environment\":{k:os.environ.get(k) for k in [\"OMP_NUM_THREADS\",\"OPENBLAS_NUM_THREADS\",\"SLURM_JOB_ID\",\"SLURM_STEP_ID\",\"SLURM_JOB_NODELIST\"]}},indent=2))' > execution.json\nexec \"$@\"\n",
+        "qe-oracle",
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pbe-periodic-oracles/qe-2026-10-27/si2-rks-rpbe",
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "input.in"
+      ],
+      "input": "si2-rks-rpbe/input.in",
+      "input_sha256": "065ca0db51859cb63b650de0a5abde8ccf393ac4be87c4a4f4a22258c8d9882d",
+      "original_template": "tools/diagnostics/nc-extension/si2.in",
+      "original_template_sha256": "28f591716d47437426b4ec15b2c91b226c8f548d441a74485115583901bbab7d",
+      "potential": "Si_GTH_PBE_q4.gth",
+      "potential_sha256": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+      "output": "si2-rks-rpbe/qe.out",
+      "engine": "Program PWSCF v.7.6 starts on 27Oct2026 at 23:31:55",
+      "converged": true,
+      "energy_ry": -15.29157664,
+      "forces_ry_bohr": [
+        [
+          0.03682992,
+          0.04021872,
+          0.03548774
+        ],
+        [
+          -0.03682992,
+          -0.04021872,
+          -0.03548774
+        ]
+      ],
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00016538,
+          -7.646e-05,
+          -6.379e-05
+        ],
+        [
+          -7.646e-05,
+          -0.00014101,
+          -5.741e-05
+        ],
+        [
+          -6.379e-05,
+          -5.741e-05,
+          -0.00012657
+        ]
+      ],
+      "printed_xc": "RPBE",
+      "entropy_energy_ry": -0.06834883,
+      "magnetization_e": null,
+      "printed_process_wall": "PWSCF        :      5.48s CPU      1.87s WALL",
+      "energy_ha": -7.64578832,
+      "forces_ha_bohr": [
+        [
+          0.01841496,
+          0.02010936,
+          0.01774387
+        ],
+        [
+          -0.01841496,
+          -0.02010936,
+          -0.01774387
+        ]
+      ],
+      "stress_voigt_ha_bohr3": [
+        -8.269e-05,
+        -7.0505e-05,
+        -6.3285e-05,
+        -3.823e-05,
+        -3.1895e-05,
+        -2.8705e-05
+      ],
+      "complete_printed_quantities": true,
+      "exit_code": 0,
+      "output_sha256": "7fea38193825deda75a357956db176581152a59c61122cf410e031707a5f647e",
+      "execution": {
+        "hostname": "n222",
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "1",
+          "SLURM_JOB_ID": "4522778",
+          "SLURM_STEP_ID": "11",
+          "SLURM_JOB_NODELIST": "n222"
+        }
+      },
+      "accepted_external_output": true,
+      "elapsed_wall_seconds": 2.975029899040237
+    },
+    {
+      "id": "h3-uks-pbesol",
+      "system": "h3-uks",
+      "xc": "PBEsol",
+      "input_dft": "pbesol",
+      "nat": 3,
+      "command": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/gpw-driver/run-allocation.sh",
+        "cpu",
+        "--cpus",
+        "4",
+        "--",
+        "bash",
+        "-lc",
+        "module load QuantumESPRESSO/7.6-gcc-2026.03-mpich-eb\nexport OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1\ncd \"$1\"\nshift\npython3 -c 'import json,os,socket;print(json.dumps({\"hostname\":socket.gethostname(),\"environment\":{k:os.environ.get(k) for k in [\"OMP_NUM_THREADS\",\"OPENBLAS_NUM_THREADS\",\"SLURM_JOB_ID\",\"SLURM_STEP_ID\",\"SLURM_JOB_NODELIST\"]}},indent=2))' > execution.json\nexec \"$@\"\n",
+        "qe-oracle",
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pbe-periodic-oracles/qe-2026-10-27/h3-uks-pbesol",
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "input.in"
+      ],
+      "input": "h3-uks-pbesol/input.in",
+      "input_sha256": "e036078023a85a209a3b8f688b46a686f7c209039877227d30c0778790c7cf7d",
+      "original_template": "tools/qe_oracle/inputs/pw-spin-smear-stress/h3.in",
+      "original_template_sha256": "51bbec3c151cc18c713064eee72922d458d0c99dc526218682df2b4ec2691a34",
+      "potential": "H_GTH_PBE_q1.gth",
+      "potential_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "output": "h3-uks-pbesol/qe.out",
+      "engine": "Program PWSCF v.7.6 starts on 27Oct2026 at 23:31:57",
+      "converged": true,
+      "energy_ry": -2.8789618,
+      "forces_ry_bohr": [
+        [
+          -0.05455974,
+          -0.07876191,
+          -0.05890816
+        ],
+        [
+          0.016182,
+          0.0292538,
+          0.02488711
+        ],
+        [
+          0.03837774,
+          0.04950811,
+          0.03402105
+        ]
+      ],
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00050478,
+          0.00016251,
+          6.474e-05
+        ],
+        [
+          0.00016251,
+          0.00019044,
+          0.00023735
+        ],
+        [
+          6.474e-05,
+          0.00023735,
+          -0.00046041
+        ]
+      ],
+      "printed_xc": "PBESOL",
+      "entropy_energy_ry": -0.00472728,
+      "magnetization_e": 0.98,
+      "printed_process_wall": "PWSCF        :      9.95s CPU      3.35s WALL",
+      "energy_ha": -1.4394809,
+      "forces_ha_bohr": [
+        [
+          -0.02727987,
+          -0.039380955,
+          -0.02945408
+        ],
+        [
+          0.008091,
+          0.0146269,
+          0.012443555
+        ],
+        [
+          0.01918887,
+          0.024754055,
+          0.017010525
+        ]
+      ],
+      "stress_voigt_ha_bohr3": [
+        -0.00025239,
+        9.522e-05,
+        -0.000230205,
+        8.1255e-05,
+        3.237e-05,
+        0.000118675
+      ],
+      "complete_printed_quantities": true,
+      "exit_code": 0,
+      "output_sha256": "e6c609123b1fb07234f5f66b44aa67de16e28ef3e49004ca9a04b4594ed939f1",
+      "execution": {
+        "hostname": "n222",
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "1",
+          "SLURM_JOB_ID": "4522778",
+          "SLURM_STEP_ID": "12",
+          "SLURM_JOB_NODELIST": "n222"
+        }
+      },
+      "accepted_external_output": true,
+      "elapsed_wall_seconds": 4.22494666907005
+    },
+    {
+      "id": "h3-uks-revpbe",
+      "system": "h3-uks",
+      "xc": "revPBE",
+      "input_dft": "revpbe",
+      "nat": 3,
+      "command": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/gpw-driver/run-allocation.sh",
+        "cpu",
+        "--cpus",
+        "4",
+        "--",
+        "bash",
+        "-lc",
+        "module load QuantumESPRESSO/7.6-gcc-2026.03-mpich-eb\nexport OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1\ncd \"$1\"\nshift\npython3 -c 'import json,os,socket;print(json.dumps({\"hostname\":socket.gethostname(),\"environment\":{k:os.environ.get(k) for k in [\"OMP_NUM_THREADS\",\"OPENBLAS_NUM_THREADS\",\"SLURM_JOB_ID\",\"SLURM_STEP_ID\",\"SLURM_JOB_NODELIST\"]}},indent=2))' > execution.json\nexec \"$@\"\n",
+        "qe-oracle",
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pbe-periodic-oracles/qe-2026-10-27/h3-uks-revpbe",
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "input.in"
+      ],
+      "input": "h3-uks-revpbe/input.in",
+      "input_sha256": "4a063edf6fa035ea757fa3e15b716d4aa2ded9e224d4f94441a316a0cf2638a6",
+      "original_template": "tools/qe_oracle/inputs/pw-spin-smear-stress/h3.in",
+      "original_template_sha256": "51bbec3c151cc18c713064eee72922d458d0c99dc526218682df2b4ec2691a34",
+      "potential": "H_GTH_PBE_q1.gth",
+      "potential_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "output": "h3-uks-revpbe/qe.out",
+      "engine": "Program PWSCF v.7.6 starts on 27Oct2026 at 23:32: 2",
+      "converged": true,
+      "energy_ry": -2.94093417,
+      "forces_ry_bohr": [
+        [
+          -0.04896267,
+          -0.07715169,
+          -0.05886752
+        ],
+        [
+          0.00712613,
+          0.02951141,
+          0.0260941
+        ],
+        [
+          0.04183654,
+          0.04764028,
+          0.03277342
+        ]
+      ],
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00053874,
+          0.00016457,
+          6.632e-05
+        ],
+        [
+          0.00016457,
+          0.00016791,
+          0.0002387
+        ],
+        [
+          6.632e-05,
+          0.0002387,
+          -0.00046047
+        ]
+      ],
+      "printed_xc": "REVPBE",
+      "entropy_energy_ry": -0.00310497,
+      "magnetization_e": 0.99,
+      "printed_process_wall": "PWSCF        :      8.50s CPU      2.89s WALL",
+      "energy_ha": -1.470467085,
+      "forces_ha_bohr": [
+        [
+          -0.024481335,
+          -0.038575845,
+          -0.02943376
+        ],
+        [
+          0.003563065,
+          0.014755705,
+          0.01304705
+        ],
+        [
+          0.02091827,
+          0.02382014,
+          0.01638671
+        ]
+      ],
+      "stress_voigt_ha_bohr3": [
+        -0.00026937,
+        8.3955e-05,
+        -0.000230235,
+        8.2285e-05,
+        3.316e-05,
+        0.00011935
+      ],
+      "complete_printed_quantities": true,
+      "exit_code": 0,
+      "output_sha256": "3602955a86920043bddb02c4f3e2639a085dd40e199d28cb1bae13632013c654",
+      "execution": {
+        "hostname": "n222",
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "1",
+          "SLURM_JOB_ID": "4522778",
+          "SLURM_STEP_ID": "13",
+          "SLURM_JOB_NODELIST": "n222"
+        }
+      },
+      "accepted_external_output": true,
+      "elapsed_wall_seconds": 3.7775615020655096
+    },
+    {
+      "id": "h3-uks-rpbe",
+      "system": "h3-uks",
+      "xc": "RPBE",
+      "input_dft": "rpbe",
+      "nat": 3,
+      "command": [
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/gpw-driver/run-allocation.sh",
+        "cpu",
+        "--cpus",
+        "4",
+        "--",
+        "bash",
+        "-lc",
+        "module load QuantumESPRESSO/7.6-gcc-2026.03-mpich-eb\nexport OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1\ncd \"$1\"\nshift\npython3 -c 'import json,os,socket;print(json.dumps({\"hostname\":socket.gethostname(),\"environment\":{k:os.environ.get(k) for k in [\"OMP_NUM_THREADS\",\"OPENBLAS_NUM_THREADS\",\"SLURM_JOB_ID\",\"SLURM_STEP_ID\",\"SLURM_JOB_NODELIST\"]}},indent=2))' > execution.json\nexec \"$@\"\n",
+        "qe-oracle",
+        "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/pbe-periodic-oracles/qe-2026-10-27/h3-uks-rpbe",
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "input.in"
+      ],
+      "input": "h3-uks-rpbe/input.in",
+      "input_sha256": "c8d479bc688ee2daa03053897aace9587baf97796d1bd75b66a6c9bea76b4c71",
+      "original_template": "tools/qe_oracle/inputs/pw-spin-smear-stress/h3.in",
+      "original_template_sha256": "51bbec3c151cc18c713064eee72922d458d0c99dc526218682df2b4ec2691a34",
+      "potential": "H_GTH_PBE_q1.gth",
+      "potential_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "output": "h3-uks-rpbe/qe.out",
+      "engine": "Program PWSCF v.7.6 starts on 27Oct2026 at 23:32: 5",
+      "converged": true,
+      "energy_ry": -2.94546681,
+      "forces_ry_bohr": [
+        [
+          -0.04914545,
+          -0.07733084,
+          -0.05907632
+        ],
+        [
+          0.00786165,
+          0.02890798,
+          0.02570855
+        ],
+        [
+          0.04128381,
+          0.04842286,
+          0.03336777
+        ]
+      ],
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.0005454,
+          0.00016446,
+          6.555e-05
+        ],
+        [
+          0.00016446,
+          0.00015977,
+          0.0002439
+        ],
+        [
+          6.555e-05,
+          0.0002439,
+          -0.00046888
+        ]
+      ],
+      "printed_xc": "RPBE",
+      "entropy_energy_ry": -0.00361702,
+      "magnetization_e": 0.99,
+      "printed_process_wall": "PWSCF        :     10.21s CPU      3.45s WALL",
+      "energy_ha": -1.472733405,
+      "forces_ha_bohr": [
+        [
+          -0.024572725,
+          -0.03866542,
+          -0.02953816
+        ],
+        [
+          0.003930825,
+          0.01445399,
+          0.012854275
+        ],
+        [
+          0.020641905,
+          0.02421143,
+          0.016683885
+        ]
+      ],
+      "stress_voigt_ha_bohr3": [
+        -0.0002727,
+        7.9885e-05,
+        -0.00023444,
+        8.223e-05,
+        3.2775e-05,
+        0.00012195
+      ],
+      "complete_printed_quantities": true,
+      "exit_code": 0,
+      "output_sha256": "59ad11ef19a3f26a08e5e10c1b875186600df97a76eb6d6ff8becc159cfd3ed6",
+      "execution": {
+        "hostname": "n222",
+        "environment": {
+          "OMP_NUM_THREADS": "4",
+          "OPENBLAS_NUM_THREADS": "1",
+          "SLURM_JOB_ID": "4522778",
+          "SLURM_STEP_ID": "14",
+          "SLURM_JOB_NODELIST": "n222"
+        }
+      },
+      "accepted_external_output": true,
+      "elapsed_wall_seconds": 4.477992829983123
+    }
+  ]
+}

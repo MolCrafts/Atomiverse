@@ -87,9 +87,18 @@ class Evaluate:
         self._built = False
 
     def set_evaluator(self, method: object):
-        if getattr(method, "device", "cpu") != self.device:
+        # A classical parameter mirror has no device. A borrowed electronic
+        # method does, and it has to match this driver.
+        method_device = getattr(method, "device", None)
+        if method_device is not None and method_device != self.device:
             raise ValueError("Evaluator and driver must use the same device")
         self._cpp.set_evaluator(method)
+        self._built = False
+        return self
+
+    def set_neighbor(self, component: object):
+        """Install the neighbor list. Coulomb and Lennard-Jones read it."""
+        self._cpp.set_neighbor(component)
         self._built = False
         return self
 

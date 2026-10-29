@@ -83,7 +83,10 @@ TEST(CellListGridStale, SameDiagonalShearInvalidatesAndRebuilds) {
     neighbors.build({context, frame});
     neighbors.launch({context, frame, 0, 0});
     Mat3 cell = frame.box.cell();
-    cell(0, 1) = 0.3;
+    // 0.8 Å of shear is past the 0.5 Å skin, so the list cannot be reused.
+    // A sub-skin shear stays on the Verlet cadence; `grid_stale` is still
+    // true for any off-diagonal change and `build()` resizes the bins.
+    cell(0, 1) = 0.8;
     frame.box.set_cell(cell);
     EXPECT_TRUE(cells.grid_stale(frame));
     EXPECT_TRUE(neighbors.decide_reneighbor(context, frame, true));

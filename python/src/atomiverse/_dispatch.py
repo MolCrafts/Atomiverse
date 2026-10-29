@@ -37,6 +37,7 @@ EVALUATOR_DISPATCH: dict[type, str] = {
 # so it joins the allow-list only on an extension that carries it.
 if has_domain("kspace"):
     EVALUATOR_DISPATCH[_cpp.KSpacePME] = "set_evaluator_kspace_pme"
+    EVALUATOR_DISPATCH[_cpp.KSpacePPPM] = "set_evaluator_kspace_pppm"
 
 # Plane-wave DFT is the other electronic-structure force source
 # (ATV_BUILD_PW / FFTW3): one SCF per step, analytic ionic forces from its

@@ -9,6 +9,7 @@
 #include <queue>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -1038,6 +1039,70 @@ void Frame::reshuffle_topology_to_tags() {
                             + static_cast<std::size_t>(source[row]) * width,
                         width);
     }
+}
+
+bool Frame::restore_import_order(const TagInt* original, int n) {
+    if (original == nullptr || n != nlocal() || n <= 1)
+        return false;
+
+    const TagInt* tags = span(kAtom_tag).data();
+    std::unordered_map<TagInt, int> row_of;
+    row_of.reserve(static_cast<std::size_t>(n));
+    for (int row = 0; row < n; ++row) {
+        if (!row_of.emplace(tags[row], row).second)
+            return false;
+    }
+
+    std::vector<int> source(static_cast<std::size_t>(n), -1);
+    std::vector<char> used(static_cast<std::size_t>(n), 0);
+    bool already = true;
+    for (int row = 0; row < n; ++row) {
+        const auto it = row_of.find(original[row]);
+        if (it == row_of.end())
+            return false;
+        const int src = it->second;
+        if (used[static_cast<std::size_t>(src)] != 0)
+            return false;
+        used[static_cast<std::size_t>(src)] = 1;
+        source[static_cast<std::size_t>(row)] = src;
+        if (src != row)
+            already = false;
+    }
+    if (already)
+        return true;
+
+    auto refs = atoms_block_().resolve_columns(kColMigrate);
+    struct Snapshot {
+        ColumnRef ref;
+        std::vector<std::byte> bytes;
+    };
+    std::vector<Snapshot> snapshots;
+    snapshots.reserve(refs.size());
+    for (const auto& ref : refs) {
+        Snapshot snap{ref, {}};
+        snap.bytes.resize(static_cast<std::size_t>(n) * ref.row_bytes());
+        if (!snap.bytes.empty())
+            std::memcpy(snap.bytes.data(), ref.bytes(), snap.bytes.size());
+        snapshots.push_back(std::move(snap));
+    }
+    for (auto& snap : snapshots) {
+        const std::size_t width = snap.ref.row_bytes();
+        if (width == 0)
+            continue;
+        auto* dst = snap.ref.mutable_bytes();
+        for (int row = 0; row < n; ++row) {
+            const int src = source[static_cast<std::size_t>(row)];
+            if (src == row)
+                continue;
+            std::memcpy(dst + static_cast<std::size_t>(row) * width,
+                        snap.bytes.data()
+                            + static_cast<std::size_t>(src) * width,
+                        width);
+        }
+    }
+    clear_tag_index();
+    rebuild_tag_index(0, n);
+    return true;
 }
 
 std::size_t Frame::memory_bytes() const noexcept {

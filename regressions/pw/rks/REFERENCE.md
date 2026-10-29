@@ -2,6 +2,18 @@
 
 One case; every section below is run by `atv_regressions --case pw/rks` and keeps its own oracle record.
 
+**2026-10-28 model audit:** the archived 2026-08-09 fair-wall records for
+`pw-pbe-gga-si` and `pw-analytic-stress-si` use QE `input_dft='SLA PW'`
+(Slater/PW92), whereas current `XCType::LSDA` uses Slater/VWN5. Those timings
+and decks are retained as historical records; their exact-model twin claims
+do not qualify current VWN5 science or matched-model performance. The original
+Si QE printed-XC outputs were not located, so they cannot be relabeled VWN.
+The current H3 LSDA FD/Gaussian/MP references independently use explicit
+`SLA+VWN+NOGX+NOGC` in both their raw inputs and printed QE output and are
+unaffected. Native activation, symmetry and full-SCF finite-difference gates
+remain distinct from an absolute external LSDA comparison.
+[Audit and raw-reference hashes](../../../tools/qe_oracle/inputs/pw-analytic-stress-si/model-audit-2026-10-28.json).
+
 
 ## Reference — plane-wave LDA bulk silicon (k-mesh energy)
 

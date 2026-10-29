@@ -1,0 +1,88 @@
+{
+  "cases": [
+    {
+      "id": "h2-2A-triplet-lsda",
+      "model": "lsda",
+      "index": 0,
+      "path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.molq/next/empty-beta-tangent/attempt-2/qe/lsda",
+      "quad": [
+        34,
+        30,
+        30
+      ],
+      "PP_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "input_sha256": "e92813ac9ff9f23d38c6401632924ab6e1df80bd64371086d43bce94e1ac88de",
+      "QE_program_mode": "original gamma-only optimized path, unchanged recipe",
+      "H_H_Angstrom": 2.0,
+      "positions_Angstrom": [
+        [
+          2.485758378549775,
+          2.6571628993408067,
+          2.5857303194726455
+        ],
+        [
+          4.214241621450225,
+          3.442837100659193,
+          3.2142696805273543
+        ]
+      ]
+    },
+    {
+      "id": "h2-2A-triplet-pbe",
+      "model": "pbe",
+      "index": 1,
+      "path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.molq/next/empty-beta-tangent/attempt-2/qe/pbe",
+      "quad": [
+        66,
+        60,
+        60
+      ],
+      "PP_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "input_sha256": "6170507df0de8ac50277e204db8ba4af4667b71226e20c703f7d1ca5f2197920",
+      "QE_program_mode": "original gamma-only optimized path, unchanged recipe",
+      "H_H_Angstrom": 2.0,
+      "positions_Angstrom": [
+        [
+          2.485758378549775,
+          2.6571628993408067,
+          2.5857303194726455
+        ],
+        [
+          4.214241621450225,
+          3.442837100659193,
+          3.2142696805273543
+        ]
+      ]
+    },
+    {
+      "id": "h2-2A-triplet-pbesol",
+      "model": "pbesol",
+      "index": 2,
+      "path": "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.molq/next/empty-beta-tangent/attempt-2/qe/pbesol",
+      "quad": [
+        66,
+        60,
+        60
+      ],
+      "PP_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "input_sha256": "4f5eca655526cca4a7cbb0b83809d6e9c98f8d46765f18690c76376733486aad",
+      "QE_program_mode": "original gamma-only optimized path, unchanged recipe",
+      "H_H_Angstrom": 2.0,
+      "positions_Angstrom": [
+        [
+          2.485758378549775,
+          2.6571628993408067,
+          2.5857303194726455
+        ],
+        [
+          4.214241621450225,
+          3.442837100659193,
+          3.2142696805273543
+        ]
+      ]
+    }
+  ],
+  "prior_failures_retained": "../attempt-1/checkpoint.json",
+  "actual_query_base": "22,20,20",
+  "no_budget_or_gate_changes": true
+}

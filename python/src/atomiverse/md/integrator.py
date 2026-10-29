@@ -34,4 +34,16 @@ NoseHooverNPT = _cpp.NoseHooverNPT
 #: coupling times — the reverse pairing of ``NoseHooverNPT``.
 ParrinelloRahmanNPT = _cpp.ParrinelloRahmanNPT
 
-__all__ = ["VelocityVerlet", "NoseHooverNPT", "ParrinelloRahmanNPT"]
+#: NVT SLLOD (LAMMPS ``fix nvt/sllod`` + ``fix deform`` ERATE, ``remap v``).
+#: ``NvtSllod(temperature [K], tau [fs], dt [fs], rate [1/fs], direction)``.
+#: ``direction`` is 0..5 for x, y, z, yz, xz, xy. Replaces ``VelocityVerlet``
+#: and includes the peculiar-velocity thermostat, so do not add another
+#: thermostat. The MPI launcher cannot carry this integrator.
+NvtSllod = _cpp.NvtSllod
+
+__all__ = [
+    "VelocityVerlet",
+    "NoseHooverNPT",
+    "ParrinelloRahmanNPT",
+    "NvtSllod",
+]

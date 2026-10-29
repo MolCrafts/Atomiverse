@@ -1,0 +1,236 @@
+{
+  "version": "Actual QE7.6",
+  "scope": "Gamma RKS FD, same Si2/PP/12Ry,6bands,degauss.02Ry,mix.2,conv1e-12Ry/budget250.",
+  "cases": [
+    {
+      "model": "lsda",
+      "F_Ha": -7.166854329430495,
+      "forces_ha_bohr": [
+        [
+          -0.004360274186264633,
+          0.01742028846443919,
+          -0.01042234927066723
+        ],
+        [
+          0.004360274186264633,
+          -0.01742028846443919,
+          0.01042234927066723
+        ]
+      ],
+      "stress_ev_ang3": [
+        0.334518287339437,
+        0.3545875441144542,
+        0.33678416470849987,
+        0.04852299234972134,
+        0.08215944523133069,
+        0.039522003352944625
+      ],
+      "occupations": [
+        2.0,
+        1.9850374328265765,
+        1.9394497309499235,
+        1.7742873995977264,
+        0.2633830335757624,
+        0.03784240314779306
+      ],
+      "grid": [
+        24,
+        28,
+        24
+      ],
+      "iterations": 20,
+      "files_sha256": {
+        "qe/lsda/input.in": "d834d771a414edee2a575e544eb637a644ac803f3ec551f9974a25c19bc5905d",
+        "qe/lsda/qe.out": "3f159439d898e6f6a6469ee9fa9e1ad0f56dcb108164c2476b72ab04776605b6",
+        "qe/lsda/qe.stderr": "cde5e7d17e64813704a51a756095eaf585d28601c664fa68a1f27038b6399fcc",
+        "qe/lsda/scratch/skew_si2_fd_lsda.save/data-file-schema.xml": "c0c10a68d8564dcc4291ec71c374703016e2fe55e0334bc3c9e74ace9497b80d",
+        "qe/lsda/Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "qe/lsda/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6"
+      }
+    },
+    {
+      "model": "pbe",
+      "F_Ha": -7.189807700086259,
+      "forces_ha_bohr": [
+        [
+          -0.003663618909004292,
+          0.01512702743837407,
+          -0.01074146539348035
+        ],
+        [
+          0.003663618909004292,
+          -0.01512702743837407,
+          0.01074146539348035
+        ]
+      ],
+      "stress_ev_ang3": [
+        0.33506091798805054,
+        0.34684251803127614,
+        0.33756996317290655,
+        0.035822047911162516,
+        0.05489255535436111,
+        0.02585628380983638
+      ],
+      "occupations": [
+        2.0,
+        1.989904859357207,
+        1.9581337454906371,
+        1.8319705683076708,
+        0.1935931430194189,
+        0.02639768381617822
+      ],
+      "grid": [
+        48,
+        54,
+        48
+      ],
+      "iterations": 20,
+      "files_sha256": {
+        "qe/pbe/input.in": "a70a5bf88323bf686bfbf8409a94a52dd1a96cc880a31737df3e5658d3f4aff0",
+        "qe/pbe/qe.out": "ff97f4a5d3b055c2a9a0c7e43a43932e5ebc053e5d6bf71ff7f2b47e902c357a",
+        "qe/pbe/qe.stderr": "cde5e7d17e64813704a51a756095eaf585d28601c664fa68a1f27038b6399fcc",
+        "qe/pbe/scratch/skew_si2_fd_pbe.save/data-file-schema.xml": "9846d787bddce292e6c3705c66379b61a634e27cf9ffd4fe9e06606d79ba9691",
+        "qe/pbe/Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "qe/pbe/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6"
+      }
+    },
+    {
+      "model": "pbesol",
+      "F_Ha": -7.164612990891914,
+      "forces_ha_bohr": [
+        [
+          -0.004206271555811516,
+          0.01690690283924252,
+          -0.01047658467451432
+        ],
+        [
+          0.004206271555811516,
+          -0.01690690283924252,
+          0.01047658467451432
+        ]
+      ],
+      "stress_ev_ang3": [
+        0.33571695074305935,
+        0.3539072235486719,
+        0.3378622263420406,
+        0.045266448385591615,
+        0.07537821965943635,
+        0.03600228438171606
+      ],
+      "occupations": [
+        2.0,
+        1.9862613049505282,
+        1.9442027626022067,
+        1.787987279819645,
+        0.2467611648827556,
+        0.03478748781762552
+      ],
+      "grid": [
+        48,
+        54,
+        48
+      ],
+      "iterations": 19,
+      "files_sha256": {
+        "qe/pbesol/input.in": "bc46392cc197aab193384f6f1c5cb2be5dabad4ce547f010b9ba83930b45464f",
+        "qe/pbesol/qe.out": "acc144f0cfa71687264b9faf05c0a5f7bbf13595519708ac039bfc0ad8c5d742",
+        "qe/pbesol/qe.stderr": "cde5e7d17e64813704a51a756095eaf585d28601c664fa68a1f27038b6399fcc",
+        "qe/pbesol/scratch/skew_si2_fd_pbesol.save/data-file-schema.xml": "f5ae500880a39a63adec362760d5eba9ef6877183f2d0f0a8f6447a486813731",
+        "qe/pbesol/Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "qe/pbesol/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6"
+      }
+    },
+    {
+      "model": "revpbe",
+      "F_Ha": -7.196356555504086,
+      "forces_ha_bohr": [
+        [
+          -0.003388844549087712,
+          0.01453649776334176,
+          -0.01078272286208275
+        ],
+        [
+          0.003388844549087712,
+          -0.01453649776334176,
+          0.01078272286208275
+        ]
+      ],
+      "stress_ev_ang3": [
+        0.33731101447611855,
+        0.3469868111164115,
+        0.33973316577167284,
+        0.03215021498429082,
+        0.04675223757632035,
+        0.021911678823400144
+      ],
+      "occupations": [
+        2.0,
+        1.9910327675525836,
+        1.962684237663255,
+        1.8477020182478041,
+        0.1748456326127376,
+        0.0237353438537274
+      ],
+      "grid": [
+        48,
+        54,
+        48
+      ],
+      "iterations": 20,
+      "files_sha256": {
+        "qe/revpbe/input.in": "da5e3a5803e8cf4e35efde02a4c93f80fab7bca73470ce8865ad2cabd4d1ec87",
+        "qe/revpbe/qe.out": "ce474b98d35d2403c240288ab56d2b65f19aa13fa1268364445c1b295f061caa",
+        "qe/revpbe/qe.stderr": "cde5e7d17e64813704a51a756095eaf585d28601c664fa68a1f27038b6399fcc",
+        "qe/revpbe/scratch/skew_si2_fd_revpbe.save/data-file-schema.xml": "6d9983118a6873a5538814b09c611c69e282b030dbc77b2dff1e293d45f5178c",
+        "qe/revpbe/Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "qe/revpbe/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6"
+      }
+    },
+    {
+      "model": "rpbe",
+      "F_Ha": -7.198670701861588,
+      "forces_ha_bohr": [
+        [
+          -0.003288439860320748,
+          0.01433955775981242,
+          -0.01079623411214705
+        ],
+        [
+          0.003288439860320748,
+          -0.01433955775981242,
+          0.01079623411214705
+        ]
+      ],
+      "stress_ev_ang3": [
+        0.33836213261414333,
+        0.3473211162468472,
+        0.340745152459734,
+        0.03092193830194636,
+        0.043940717133684165,
+        0.020588780257411676
+      ],
+      "occupations": [
+        2.0,
+        1.9914062900255158,
+        1.964204955171837,
+        1.8531565962242635,
+        0.16835730238380278,
+        0.0228748561356435
+      ],
+      "grid": [
+        48,
+        54,
+        48
+      ],
+      "iterations": 22,
+      "files_sha256": {
+        "qe/rpbe/input.in": "92f5471ddfba9b1b85492ea391250504aabed1d31e72f78d11f30b4bbee40b6d",
+        "qe/rpbe/qe.out": "0feae2b46bb9232bf5d050d3dd73d1922be4efd25c0fb5a327b8fe9e5ada7bed",
+        "qe/rpbe/qe.stderr": "cde5e7d17e64813704a51a756095eaf585d28601c664fa68a1f27038b6399fcc",
+        "qe/rpbe/scratch/skew_si2_fd_rpbe.save/data-file-schema.xml": "9adb0dc01a0883a49193f4d38b250c55cc43bec4898f71b3dfb3b7e99a610be0",
+        "qe/rpbe/Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "qe/rpbe/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6"
+      }
+    }
+  ]
+}

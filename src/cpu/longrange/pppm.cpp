@@ -26,6 +26,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/longrange_math.h"
+#include "atomiverse/core/pppm_ik.h"
 #include "atomiverse/core/timer.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
@@ -83,6 +84,20 @@ inline int wrap_k(int g, int K) noexcept {
     return g;
 }
 
+// i·k·V̂ for one r2c mode. Real = −k Im V, imag = k Re V. Nyquist is −K/2.
+inline void assign_ik_mode(std::complex<double>& out,
+                           std::complex<double> potential, int m0, int m1,
+                           int m2, int K0, int K1, int K2, int axis,
+                           const double* inv) {
+    const int h0 = longrange::pppm_signed_mode(m0, K0);
+    const int h1 = longrange::pppm_signed_mode(m1, K1);
+    const int h2 = longrange::pppm_signed_mode(m2, K2);
+    double k[3];
+    longrange::pppm_wavevector(h0, h1, h2, inv, k);
+    const double ka = k[axis];
+    out = {-ka * potential.imag(), ka * potential.real()};
+}
+
 // Sub-key convention for ATV_PROFILE_SCOPE (this file is its first consumer):
 // "<component>/<region>", one key per region and the SAME key on every mesh
 // arm, so the three-arm matrix is read by comparing like-named rows. The five
@@ -102,8 +117,8 @@ KSpacePPPM::KSpacePPPM(double alpha, double grid_spacing, int order,
         throw std::invalid_argument("KSpacePPPM: alpha must be > 0");
     if (!(grid_spacing > 0.0))
         throw std::invalid_argument("KSpacePPPM: grid_spacing must be > 0");
-    if (order < 3)
-        throw std::invalid_argument("KSpacePPPM: order must be ≥ 3");
+    if (order < 3 || order > 12)
+        throw std::invalid_argument("KSpacePPPM: order must be in [3, 12]");
     if (fft_ranks < 0)
         throw std::invalid_argument(
             "KSpacePPPM: fft_ranks must be ≥ 0 (0 = derive from the mesh)");
@@ -283,46 +298,19 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         }
     }
 
-    // SPME H(m) on half-spectrum (full m0,m1, m2=0..K2/2).
+    // Hockney–Eastwood G(k) on the r2c half-spectrum. The B-spline moduli
+    // stay allocated with the solver; the influence itself is not the
+    // Essmann Euler factor.
     {
         const auto& ic = box.inv_cell();
-        const int K0 = K_[0], K1 = K_[1], K2 = K_[2];
-        const int n2 = K2 / 2 + 1;
-        const double inv_pi2_a2 =
-            ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
-        const double* bm0 = bsp_mod_[0].data();
-        const double* bm1 = bsp_mod_[1].data();
-        const double* bm2 = bsp_mod_[2].data();
-        for (int m0 = 0; m0 < K0; ++m0) {
-            const int h0 = (m0 <= K0 / 2) ? m0 : m0 - K0;
-            const double b0 = bm0[m0];
-            for (int m1 = 0; m1 < K1; ++m1) {
-                const int h1 = (m1 <= K1 / 2) ? m1 : m1 - K1;
-                const double b01 = b0 * bm1[m1];
-                for (int m2 = 0; m2 < n2; ++m2) {
-                    const int idx = m2 + n2 * (m1 + K1 * m0);
-                    if (m0 == 0 && m1 == 0 && m2 == 0) {
-                        green_[static_cast<std::size_t>(idx)] = 0.0;
-                        continue;
-                    }
-                    const int h2 = m2;
-                    double mx = 0, my = 0, mz = 0;
-                    const int hh[3] = {h0, h1, h2};
-                    for (int d = 0; d < 3; ++d) {
-                        mx += hh[d] * ic(d, 0);
-                        my += hh[d] * ic(d, 1);
-                        mz += hh[d] * ic(d, 2);
-                    }
-                    const double msq = mx * mx + my * my + mz * mz;
-                    if (msq < 1e-30) {
-                        green_[static_cast<std::size_t>(idx)] = 0.0;
-                        continue;
-                    }
-                    green_[static_cast<std::size_t>(idx)] =
-                        std::exp(-inv_pi2_a2 * msq) / msq * b01 * bm2[m2];
-                }
-            }
-        }
+        const auto edges = box.lengths();
+        double inv[9];
+        for (int d = 0; d < 3; ++d)
+            for (int r = 0; r < 3; ++r)
+                inv[3 * d + r] = ic(d, r);
+        const double L[3] = {edges[0], edges[1], edges[2]};
+        longrange::pppm_fill_green_r2c(K_, L, inv, alpha_, order_,
+                                       green_.data());
     }
 
     // Default serial brick = full mesh (overwritten under multi-rank).
@@ -690,26 +678,37 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
 
     double e_recip = 0;
     double stress[6]{};
-    const double energy_scale =
-        ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
+    // ρ̂ here is the unnormalized FFT of q·θ, with no N/V. LAMMPS stores
+    // (N/V) times that density, so its (G/N) ρ̂_lammps is our (G/V) ρ̂ and
+    // the energy prefactor is coulomb/(2V), not the SPME coulomb/(2πV).
+    const double energy_scale = ATV::units::coulomb / (2.0 * vol);
+    const double coulomb = ATV::units::coulomb;
     const double pi2_alpha2 =
         ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
-    // The r2c grid and FFT slabs share the PME influence function. Tally in
-    // global reciprocal coordinates; Hermitian multiplicity is in ug.
+    double inv9[9];
+    for (int d = 0; d < 3; ++d)
+        for (int r = 0; r < 3; ++r)
+            inv9[3 * d + r] = ic(d, r);
+    // ug = herm·G·|ρ̂|². pme_mode_virial wants m = k/(2π); (2π)² cancels
+    // inside vt, matching LAMMPS vg = δ + vterm·k⊗k.
     auto tally_mode = [&](int m0, int m1, int m2, double ug) {
         if (!ctx.stress_requested)
             return;
-        const int h[3] = {m0 <= K0 / 2 ? m0 : m0 - K0,
-                          m1 <= K1 / 2 ? m1 : m1 - K1, m2};
+        const int h0 = longrange::pppm_signed_mode(m0, K0);
+        const int h1 = longrange::pppm_signed_mode(m1, K1);
+        const int h2 = longrange::pppm_signed_mode(m2, K2);
         double mx = 0, my = 0, mz = 0;
+        const int h[3] = {h0, h1, h2};
         for (int d = 0; d < 3; ++d) {
-            mx += h[d] * ic(d, 0);
-            my += h[d] * ic(d, 1);
-            mz += h[d] * ic(d, 2);
+            mx += h[d] * inv9[3 * d + 0];
+            my += h[d] * inv9[3 * d + 1];
+            mz += h[d] * inv9[3 * d + 2];
         }
-        longrange::pme_mode_virial(ug, mx, my, mz,
-                                   1.0 / (mx * mx + my * my + mz * mz),
-                                   pi2_alpha2, stress);
+        const double msq = mx * mx + my * my + mz * mz;
+        if (!(msq > 0.0))
+            return;
+        longrange::pme_mode_virial(ug, mx, my, mz, 1.0 / msq, pi2_alpha2,
+                                   stress);
     };
 
     // ── Mesh arm selection (three arms, decided once per compute) ──────
@@ -787,91 +786,77 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                           MPI_SUM, dd->cart_comm);
         }
 #endif
-        // Every rank runs the (small) FFT + influence identically on the
-        // Allreduced grid — deterministic, so no Bcast is needed and no
-        // rank idles. e_recip is identical on every rank; the caller adds
-        // it on first_rank only.
+        // Every rank runs the same forward FFT and G(k) on the Allreduced
+        // grid. e_recip is identical on every rank; the caller adds it on
+        // first_rank only. Forces are three ik inverse FFTs, gathered with θ.
         {
             ATV_PROFILE_SCOPE(ctx, "pppm/fft", ctx.stage, kTimerCategory);
             fftw_execute(static_cast<fftw_plan>(plan_fwd_));
             const int n2 = K2 / 2 + 1;
             const int m2_nyquist = (K2 % 2 == 0) ? (K2 / 2) : -1;
+            const double inv_vol = 1.0 / vol;
+            std::vector<std::complex<double>> potential(work_.size());
             for (int m0 = 0; m0 < K0; ++m0)
                 for (int m1 = 0; m1 < K1; ++m1)
                     for (int m2 = 0; m2 < n2; ++m2) {
-                        const int idx = m2 + n2 * (m1 + K1 * m0);
-                        const double H = green_[static_cast<std::size_t>(idx)];
-                        auto& w = work_[static_cast<std::size_t>(idx)];
-                        if (H == 0.0) {
-                            w = 0;
+                        const std::size_t u =
+                            static_cast<std::size_t>(m2 + n2 * (m1 + K1 * m0));
+                        const double G = green_[u];
+                        const auto w = work_[u];
+                        if (G == 0.0) {
+                            potential[u] = 0;
                             continue;
                         }
                         const double q2 =
                             w.real() * w.real() + w.imag() * w.imag();
                         const double herm =
                             (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
-                        e_recip += herm * H * q2;
-                        tally_mode(m0, m1, m2, herm * H * q2);
-                        w *= H;
+                        e_recip += herm * G * q2;
+                        tally_mode(m0, m1, m2, herm * G * q2);
+                        potential[u] = w * (G * inv_vol);
                     }
-            e_recip *= ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
-            fftw_execute(static_cast<fftw_plan>(plan_bwd_));
-        }
-
-        // Force from dens_full_ (same as pre-brick serial path).
-        ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage, kTimerCategory);
-        const double fscale = ATV::units::coulomb / (ATV::units::pi * vol);
-        const double ic00 = ic(0, 0), ic01 = ic(1, 0), ic02 = ic(2, 0);
-        const double ic10 = ic(0, 1), ic11 = ic(1, 1), ic12 = ic(2, 1);
-        const double ic20 = ic(0, 2), ic21 = ic(1, 2), ic22 = ic(2, 2);
-        const double K0d = static_cast<double>(K0);
-        const double K1d = static_cast<double>(K1);
-        const double K2d = static_cast<double>(K2);
-        const double* dens = dens_full_.data();
-        for (int i = 0; i < n_local; ++i) {
-            const double qi = q[i];
-            if (qi == 0.0)
-                continue;
-            const double* thx = &theta_[(3 * i + 0) * n];
-            const double* thy = &theta_[(3 * i + 1) * n];
-            const double* thz = &theta_[(3 * i + 2) * n];
-            const double* dthx = &dtheta_[(3 * i + 0) * n];
-            const double* dthy = &dtheta_[(3 * i + 1) * n];
-            const double* dthz = &dtheta_[(3 * i + 2) * n];
-            const int b0 = base_[3 * i + 0] - nm1;
-            const int b1 = base_[3 * i + 1] - nm1;
-            const int b2 = base_[3 * i + 2] - nm1;
-            double g0s = 0, g1s = 0, g2s = 0;
-            for (int a = 0; a < n; ++a) {
-                const int g0 = wrap_k(b0 + a, K0);
-                const double tx = thx[a];
-                const double dxa = dthx[a];
-                for (int b = 0; b < n; ++b) {
-                    const int g1 = wrap_k(b1 + b, K1);
-                    const int plane = K2 * (g1 + K1 * g0);
-                    double s0 = 0, s1 = 0;
-                    for (int c = 0; c < n; ++c) {
-                        const int g2 = wrap_k(b2 + c, K2);
-                        const double cval = dens[plane + g2];
-                        s0 += cval * thz[c];
-                        s1 += cval * dthz[c];
-                    }
-                    g0s += dxa * thy[b] * s0;
-                    g1s += tx * dthy[b] * s0;
-                    g2s += tx * thy[b] * s1;
-                }
-            }
-            const double fxi =
-                g0s * K0d * ic00 + g1s * K1d * ic10 + g2s * K2d * ic20;
-            const double fyi =
-                g0s * K0d * ic01 + g1s * K1d * ic11 + g2s * K2d * ic21;
-            const double fzi =
-                g0s * K0d * ic02 + g1s * K1d * ic12 + g2s * K2d * ic22;
-            const double s = -fscale * qi;
+            e_recip *= energy_scale;
             if (ctx.forces_requested) {
-                fx[i] += s * fxi;
-                fy[i] += s * fyi;
-                fz[i] += s * fzi;
+                const double* dens = dens_full_.data();
+                AccReal* fout[3] = {fx, fy, fz};
+                for (int axis = 0; axis < 3; ++axis) {
+                    for (int m0 = 0; m0 < K0; ++m0)
+                        for (int m1 = 0; m1 < K1; ++m1)
+                            for (int m2 = 0; m2 < n2; ++m2) {
+                                const std::size_t u = static_cast<std::size_t>(
+                                    m2 + n2 * (m1 + K1 * m0));
+                                assign_ik_mode(work_[u], potential[u], m0, m1,
+                                               m2, K0, K1, K2, axis, inv9);
+                            }
+                    fftw_execute(static_cast<fftw_plan>(plan_bwd_));
+                    for (int i = 0; i < n_local; ++i) {
+                        const double qi = q[i];
+                        if (qi == 0.0)
+                            continue;
+                        const double* thx = &theta_[(3 * i + 0) * n];
+                        const double* thy = &theta_[(3 * i + 1) * n];
+                        const double* thz = &theta_[(3 * i + 2) * n];
+                        const int b0 = base_[3 * i + 0] - nm1;
+                        const int b1 = base_[3 * i + 1] - nm1;
+                        const int b2 = base_[3 * i + 2] - nm1;
+                        double acc = 0;
+                        for (int a = 0; a < n; ++a) {
+                            const int g0 = wrap_k(b0 + a, K0);
+                            const double tx = thx[a];
+                            for (int b = 0; b < n; ++b) {
+                                const int g1 = wrap_k(b1 + b, K1);
+                                const int plane = K2 * (g1 + K1 * g0);
+                                const double txy = tx * thy[b];
+                                for (int c = 0; c < n; ++c) {
+                                    const int g2 = wrap_k(b2 + c, K2);
+                                    acc += dens[plane + g2] * txy * thz[c];
+                                }
+                            }
+                        }
+                        fout[axis][i] +=
+                            static_cast<AccReal>(-coulomb * qi * acc);
+                    }
+                }
             }
         }
     } else
@@ -1066,125 +1051,139 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                            /*add=*/false);
         }
 
-        // ── forward FFT + influence + backward FFT (FFT group only) ───
+        // ── forward FFT + ik Green's function (FFT group only) ────────
+        // V̂ = (G/V) ρ̂ is kept aside. Each Cartesian force is one c2r of
+        // i·k·V̂, then the same brick remap and a θ gather. Energy and the
+        // virial are reduced once, before that axis loop.
+        std::vector<std::complex<double>> potential;
         {
             ATV_PROFILE_SCOPE(ctx, "pppm/fft", ctx.stage, kTimerCategory);
             if (fft_member)
                 fftw_execute(static_cast<fftw_plan>(plan_mpi_fwd_));
 
-            auto* cdata = reinterpret_cast<fftw_complex*>(mpi_data_);
             const int m2_nyquist = (K2 % 2 == 0) ? (K2 / 2) : -1;
+            const double inv_vol = 1.0 / vol;
             double e_local = 0;
-            for (ptrdiff_t a = 0; a < ln0; ++a) {
-                const int m0 = static_cast<int>(l0s + a);
-                for (int m1 = 0; m1 < K1; ++m1) {
-                    for (int m2 = 0; m2 < n2c; ++m2) {
-                        const ptrdiff_t cidx =
-                            m2 + static_cast<ptrdiff_t>(n2c) * (m1 + K1 * a);
-                        const int gidx = m2 + n2c * (m1 + K1 * m0);
-                        const double H = green_[static_cast<std::size_t>(gidx)];
-                        double& re = cdata[cidx][0];
-                        double& im = cdata[cidx][1];
-                        if (H == 0.0) {
-                            re = im = 0;
-                            continue;
+            if (fft_member) {
+                auto* cdata = reinterpret_cast<fftw_complex*>(mpi_data_);
+                potential.assign(static_cast<std::size_t>(ln0)
+                                     * static_cast<std::size_t>(K1)
+                                     * static_cast<std::size_t>(n2c),
+                                 {});
+                for (ptrdiff_t a = 0; a < ln0; ++a) {
+                    const int m0 = static_cast<int>(l0s + a);
+                    for (int m1 = 0; m1 < K1; ++m1) {
+                        for (int m2 = 0; m2 < n2c; ++m2) {
+                            const ptrdiff_t cidx =
+                                m2
+                                + static_cast<ptrdiff_t>(n2c) * (m1 + K1 * a);
+                            const int gidx = m2 + n2c * (m1 + K1 * m0);
+                            const double G =
+                                green_[static_cast<std::size_t>(gidx)];
+                            const double re = cdata[cidx][0];
+                            const double im = cdata[cidx][1];
+                            if (G == 0.0)
+                                continue;
+                            const double q2 = re * re + im * im;
+                            const double herm =
+                                (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
+                            e_local += herm * G * q2;
+                            tally_mode(m0, m1, m2, herm * G * q2);
+                            potential[static_cast<std::size_t>(cidx)] = {
+                                re * (G * inv_vol), im * (G * inv_vol)};
                         }
-                        const double q2 = re * re + im * im;
-                        const double herm =
-                            (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
-                        e_local += herm * H * q2;
-                        tally_mode(m0, m1, m2, herm * H * q2);
-                        re *= H;
-                        im *= H;
                     }
                 }
-            }
-            // Reciprocal energy lives entirely on the FFT group, so the sum
-            // stays inside it — one fewer world collective. A non-member keeps
-            // e_recip = 0 and never reads it: only first_rank (cart rank 0,
-            // always a member) accumulates it into the Frame below.
-            if (fft_member) {
+                // Reciprocal energy lives on the FFT group. A non-member
+                // keeps e_recip = 0: only first_rank (cart rank 0, always a
+                // member) banks it into the Frame below.
                 MPI_Allreduce(&e_local, &e_recip, 1, MPI_DOUBLE, MPI_SUM,
                               fft_comm_);
                 e_recip *= energy_scale;
                 if (ctx.stress_requested)
                     MPI_Allreduce(MPI_IN_PLACE, stress, 6, MPI_DOUBLE, MPI_SUM,
                                   fft_comm_);
-
-                fftw_execute(static_cast<fftw_plan>(plan_mpi_bwd_));
             }
         }
 
-        // ── FFT → brick remap: slab potential back to brick owners ─────
-        {
-            ATV_PROFILE_SCOPE(ctx, "pppm/remap", ctx.stage, kTimerCategory);
-            run_grid_plan_(remap_bwd_, comm, /*tag_base=*/340,
-                           /*src_brick=*/false, /*dst_brick=*/true,
-                           /*add=*/false);
-        }
-
-        // ── mesh forward fill: ghost potential from owners ─────────────
-        {
-            ATV_PROFILE_SCOPE(ctx, "pppm/halo", ctx.stage, kTimerCategory);
-            run_grid_plan_(mesh_fwd_, comm, /*tag_base=*/320,
-                           /*src_brick=*/true, /*dst_brick=*/true,
-                           /*add=*/false);
-        }
-
-        // AD force interpolation from the local brick — stencil rows are
-        // contiguous (z-fastest) and in-range by map_stencils_; the mesh
-        // forward fill above populated every ghost cell they touch.
-        ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage, kTimerCategory);
-        const double fscale = ATV::units::coulomb / (ATV::units::pi * vol);
-        const double ic00 = ic(0, 0), ic01 = ic(1, 0), ic02 = ic(2, 0);
-        const double ic10 = ic(0, 1), ic11 = ic(1, 1), ic12 = ic(2, 1);
-        const double ic20 = ic(0, 2), ic21 = ic(1, 2), ic22 = ic(2, 2);
-        const double K0d = static_cast<double>(K0);
-        const double K1d = static_cast<double>(K1);
-        const double K2d = static_cast<double>(K2);
-        for (int i = 0; i < n_local; ++i) {
-            const double qi = q[i];
-            if (qi == 0.0)
-                continue;
-            const double* thx = &theta_[(3 * i + 0) * n];
-            const double* thy = &theta_[(3 * i + 1) * n];
-            const double* thz = &theta_[(3 * i + 2) * n];
-            const double* dthx = &dtheta_[(3 * i + 0) * n];
-            const double* dthy = &dtheta_[(3 * i + 1) * n];
-            const double* dthz = &dtheta_[(3 * i + 2) * n];
-            const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
-            const int by = stencil_min_[3 * i + 1] - nylo_out_;
-            const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
-            double g0s = 0, g1s = 0, g2s = 0;
-            for (int a = 0; a < n; ++a) {
-                const int xoff = (bx + a) * nyl_;
-                const double tx = thx[a];
-                const double dxa = dthx[a];
-                for (int b = 0; b < n; ++b) {
-                    const double* __restrict row =
-                        &brick_[static_cast<std::size_t>((xoff + by + b) * nzl_
-                                                         + bz)];
-                    double s0 = 0, s1 = 0;
-                    for (int c = 0; c < n; ++c) {
-                        s0 += row[c] * thz[c];
-                        s1 += row[c] * dthz[c];
+        if (ctx.forces_requested) {
+            AccReal* fout[3] = {fx, fy, fz};
+            for (int axis = 0; axis < 3; ++axis) {
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/fft", ctx.stage,
+                                      kTimerCategory);
+                    if (fft_member) {
+                        auto* cdata =
+                            reinterpret_cast<fftw_complex*>(mpi_data_);
+                        for (ptrdiff_t a = 0; a < ln0; ++a) {
+                            const int m0 = static_cast<int>(l0s + a);
+                            for (int m1 = 0; m1 < K1; ++m1) {
+                                for (int m2 = 0; m2 < n2c; ++m2) {
+                                    const ptrdiff_t cidx =
+                                        m2
+                                        + static_cast<ptrdiff_t>(n2c)
+                                              * (m1 + K1 * a);
+                                    std::complex<double> mode;
+                                    assign_ik_mode(
+                                        mode,
+                                        potential[static_cast<std::size_t>(
+                                            cidx)],
+                                        m0, m1, m2, K0, K1, K2, axis, inv9);
+                                    cdata[cidx][0] = mode.real();
+                                    cdata[cidx][1] = mode.imag();
+                                }
+                            }
+                        }
+                        fftw_execute(static_cast<fftw_plan>(plan_mpi_bwd_));
                     }
-                    g0s += dxa * thy[b] * s0;
-                    g1s += tx * dthy[b] * s0;
-                    g2s += tx * thy[b] * s1;
                 }
-            }
-            const double fxi =
-                g0s * K0d * ic00 + g1s * K1d * ic10 + g2s * K2d * ic20;
-            const double fyi =
-                g0s * K0d * ic01 + g1s * K1d * ic11 + g2s * K2d * ic21;
-            const double fzi =
-                g0s * K0d * ic02 + g1s * K1d * ic12 + g2s * K2d * ic22;
-            const double s = -fscale * qi;
-            if (ctx.forces_requested) {
-                fx[i] += s * fxi;
-                fy[i] += s * fyi;
-                fz[i] += s * fzi;
+                // Members finish the backward FFT before this collective.
+                // Non-members still remap and interpolate. Waitall inside
+                // the plan reclaims the tag, so the next axis can reuse it.
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/remap", ctx.stage,
+                                      kTimerCategory);
+                    run_grid_plan_(remap_bwd_, comm, /*tag_base=*/340,
+                                   /*src_brick=*/false, /*dst_brick=*/true,
+                                   /*add=*/false);
+                }
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/halo", ctx.stage,
+                                      kTimerCategory);
+                    run_grid_plan_(mesh_fwd_, comm, /*tag_base=*/320,
+                                   /*src_brick=*/true, /*dst_brick=*/true,
+                                   /*add=*/false);
+                }
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage,
+                                      kTimerCategory);
+                    for (int i = 0; i < n_local; ++i) {
+                        const double qi = q[i];
+                        if (qi == 0.0)
+                            continue;
+                        const double* thx = &theta_[(3 * i + 0) * n];
+                        const double* thy = &theta_[(3 * i + 1) * n];
+                        const double* thz = &theta_[(3 * i + 2) * n];
+                        const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
+                        const int by = stencil_min_[3 * i + 1] - nylo_out_;
+                        const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
+                        double acc = 0;
+                        for (int a = 0; a < n; ++a) {
+                            const int xoff = (bx + a) * nyl_;
+                            const double tx = thx[a];
+                            for (int b = 0; b < n; ++b) {
+                                const double* __restrict row =
+                                    &brick_[static_cast<std::size_t>(
+                                        (xoff + by + b) * nzl_ + bz)];
+                                const double txy = tx * thy[b];
+                                for (int c = 0; c < n; ++c)
+                                    acc += row[c] * txy * thz[c];
+                            }
+                        }
+                        fout[axis][i] +=
+                            static_cast<AccReal>(-coulomb * qi * acc);
+                    }
+                }
             }
         }
     } else

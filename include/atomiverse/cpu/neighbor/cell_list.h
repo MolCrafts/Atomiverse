@@ -57,7 +57,27 @@ class CellList {
 
     /// @brief True when the grid extents no longer match the live box /
     /// subdomain bounds (NPT rescale or RCB rebalance since last build).
+    ///
+    /// This is the predicate `build()` uses to resize bins. It is true for
+    /// any cell-matrix change, including a Berendsen step of order 1e-4 Å.
+    /// That is not a reason to throw the Verlet list away: see
+    /// `geometry_forces_rebuild`.
     bool grid_stale(const cpu::Frame& frame) const;
+
+    /// @brief Largest Cartesian change of a lattice vector since the last
+    /// `build()` [Angstrom]. Zero when the cell matrix matches.
+    double lattice_drift(const cpu::Frame& frame) const;
+
+    /// @brief Geometry the Verlet skin cannot absorb, so the list must be
+    /// rebuilt before the next force.
+    ///
+    /// A cell rescaling whose lattice vectors moved by at most `skin()`
+    /// returns false. NPT updates the box every step; treating that as a
+    /// stale grid forced a full binning, halo, and pair-list rebuild on
+    /// every step and disabled `neigh_modify delay/check`. Halo-pad and
+    /// subdomain changes still return true. `build()` consults
+    /// `grid_stale()` and resizes the bins whenever a rebuild does run.
+    bool geometry_forces_rebuild(const cpu::Frame& frame) const;
 
     /// @brief Produce LAMMPS-style half-neighbor list (CSR) into a fresh
     /// `PairList`. Newton on. Thin wrapper around `refresh_half` for

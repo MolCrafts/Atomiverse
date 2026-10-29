@@ -132,6 +132,20 @@ void write(Writer& w, const PairLJCutParams& p) {
     w.f64(p.epsilon);
     w.f64(p.sigma);
     w.f64(p.cutoff);
+    w.f64(p.s12);
+    w.f64(p.s13);
+    w.f64(p.s14);
+}
+
+PairLJCutParams read_pair_lj(Reader& r) {
+    PairLJCutParams p;
+    p.epsilon = r.f64();
+    p.sigma = r.f64();
+    p.cutoff = r.f64();
+    p.s12 = r.f64();
+    p.s13 = r.f64();
+    p.s14 = r.f64();
+    return p;
 }
 void write(Writer& w, const NeighborListParams& p) {
     w.f64(p.cutoff);
@@ -588,7 +602,7 @@ PairBornParams read_born(Reader& r) {
 MDComponentParams read_md_params(Reader& r, ComponentId id) {
     switch (id) {
     case ComponentId::PairLJCut:
-        return PairLJCutParams{r.f64(), r.f64(), r.f64()};
+        return read_pair_lj(r);
     case ComponentId::NeighborList:
         return NeighborListParams{r.f64(), r.f64()};
     case ComponentId::BondHarmonic:
@@ -682,7 +696,7 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
 MinimizeComponentParams read_minimize_params(Reader& r, ComponentId id) {
     switch (id) {
     case ComponentId::PairLJCut:
-        return PairLJCutParams{r.f64(), r.f64(), r.f64()};
+        return read_pair_lj(r);
     case ComponentId::NeighborList:
         return NeighborListParams{r.f64(), r.f64()};
     case ComponentId::LBFGS:

@@ -67,14 +67,13 @@
 /// mesh pipeline that lost a plane, mis-addressed an FFT owner or skipped a
 /// halo would break the cancellation and show up as a force.
 ///
-/// Off-node ions would NOT do: `cpu::KSpacePPPM` interpolates forces by pure
-/// analytic differentiation (`src/cpu/longrange/pppm.cpp:1178`) with no
-/// self-force correction (LAMMPS `PPPM::compute_sf_precoeff` /
-/// `fieldforce_ad`), so an ion displaced to a generic sub-cell fraction feels a
-/// spurious force proportional to q_i^2 — same sign on every ion, ~1.4e-3 eV/A
-/// each at this resolution, summing to ~0.3 eV/A over 216 ions. That is a
-/// pre-existing accuracy artifact of the AD scheme, identical on all three
-/// arms, and it is not what this case is about.
+/// Off-node ions are not this case. Both arms gather ik forces with the same
+/// B-spline θ that spread the charge. There is no analytic differentiation of
+/// θ and no LAMMPS `fieldforce_ad` self-force term. An earlier AD interpolator
+/// put a same-sign q_i^2 force on an ion at a generic sub-cell fraction
+/// (~1.4e-3 eV/A each, ~0.3 eV/A over 216 ions). Those numbers belong to that
+/// AD scheme. This case still seats every ion on a mesh node so the θ stencil
+/// cancels sharply.
 
 #include <mpi.h>
 #include <unistd.h>

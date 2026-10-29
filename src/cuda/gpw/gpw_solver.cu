@@ -4,8 +4,9 @@
 /// Hybrid composition (stated):
 ///   * host — Γ STVnl (S/T + KB Vnl via add_nonlocal_kb_k@Γ) / product-list
 ///     build; multi-k χ^k build (once);
-///     multi-k host residual: energy ctrace, payload diag, cold-start;
-///     force AO Pulay on Γ free-fn path
+///     multi-k payload diag / cold-start; Gamma single-grid sparse AO force
+///     coefficient setup once per geometry; host force assembly for UKS,
+///     multigrid and multi-k, and fixed-P stress assembly
 ///   * device — product collocate + KS + product integrate (mid-SCF):
 ///     single-grid RKS device product KS (`KsChainDevice` + PBC min-image
 ///     collocate/integrate — cuda-gpw-product-collocate-pbc) + device
@@ -38,18 +39,21 @@
 ///     DIIS (cuda-gpw-uks-device-diis);
 ///     **device P→weight + acc→V_AO scatter** via
 ///     `internal::ProductWeightPackDevice` (cuda-gpw-device-weight-pack);
-///     force grid product (V_eff·dχ·Pχ + ionic HF + local-PP HF) on Γ RKS
-///     single-grid free-fn path.
-/// Final KS still D2Hs V_eff/V_es for force reuse on the free-fn path.
-/// Mid-SCF product work runs on a non-default `cudaStream_t` owned for
-/// the duration of `run()` (cuda-gpw-nondefault-stream).
+///     Gamma RKS single-grid forces consume accepted P, raw physical-H W,
+///     resident V_eff/V_es and cold sparse AO/grid tables on the same stream.
+/// Gamma single-grid final scientific payload is retrieved only after its
+/// force contractions complete. Other paths retain their stated host boundary.
+/// Mid-SCF product work borrows the execution owner's non-default stream.
+/// Standalone calls own a Backend; nested calls use their parent Backend.
 
 #include "atomiverse/cuda/gpw/gpw_solver.cuh"
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/frame/precision.cuh"
 
 #include "atomiverse/cpu/gpw/internal/collocate.h"
+#include "atomiverse/cpu/gpw/internal/core_overlap.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
 #include "atomiverse/cpu/gpw/internal/gpw_stress.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
@@ -77,7 +81,17 @@
 #include <complex>
 #include <cstdio>
 #include <cstdlib>
+#if __has_include(<cuda_profiler_api.h>)
+#include <cuda_profiler_api.h>
+#else
+// Minimal CUDA runtime packages omit the optional profiler header. These
+// stable C runtime entry points are exported by the already-linked cudart.
+extern "C" cudaError_t CUDARTAPI cudaProfilerStart(void);
+extern "C" cudaError_t CUDARTAPI cudaProfilerStop(void);
+#endif
 #include <cuda_runtime.h>
+#include <exception>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -90,10 +104,10 @@ namespace cuda {
 namespace gpw {
 namespace {
 
+using GpwAtom = cpu::gpw::internal::GpwAtom;
 using cpu::gpw::basis_function_radius;
 using cpu::gpw::build_compact_basis_grid;
 using cpu::gpw::build_products;
-using cpu::gpw::collocate_density;
 using cpu::gpw::CompactBasisGrid;
 using cpu::gpw::contracted_ST_periodic;
 using cpu::gpw::GridBasisFunction;
@@ -134,7 +148,6 @@ using internal::MultigridDesc;
 using internal::ProductWeightPackDevice;
 
 constexpr double kBuildScreen = 1.0e-14;
-constexpr double kDiisErrTol = 1.0e-5;
 /// DIIS subspace reset when energy rises by more than this [Ha]. Device KS
 /// residual (cuFFT / tree reductions) can make pure Pulay non-stationary on
 /// multi-center systems (water class); clearing history restarts the warm-up
@@ -215,23 +228,6 @@ void launch_re_dot_cm(const double* d_P, const double* d_M, int n_complex,
     re_dot_cm_kernel<<<1, 256, 0, stream>>>(d_P, d_M, n_complex, d_out);
     check_cuda(cudaGetLastError(), "re_dot_cm_kernel");
 }
-
-/// Non-default SCF stream for product mid-SCF (cuda-gpw-nondefault-stream).
-/// Destroyed after the last device use in `run` (fences this stream only).
-struct ScfStream {
-    cudaStream_t s = nullptr;
-    ScfStream() { check_cuda(cudaStreamCreate(&s), "cudaStreamCreate SCF"); }
-    ~ScfStream() {
-        if (s) {
-            cudaStreamSynchronize(s);
-            cudaStreamDestroy(s);
-            s = nullptr;
-        }
-    }
-    ScfStream(const ScfStream&) = delete;
-    ScfStream& operator=(const ScfStream&) = delete;
-    operator cudaStream_t() const { return s; }
-};
 
 std::vector<GridBasisFunction>
 flatten_basis(const std::vector<GpwAtom>& atoms) {
@@ -378,22 +374,6 @@ void build_STVpp(const std::vector<GpwAtom>& atoms,
     (void)periodic;
 }
 
-std::vector<double> mat_to_vec(const RealMatrix& m, int n) {
-    std::vector<double> v(static_cast<std::size_t>(n) * n);
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            v[static_cast<std::size_t>(i) * n + j] = m(i, j);
-    return v;
-}
-
-double trace_product(const RealMatrix& P, const RealMatrix& M, int n) {
-    double t = 0.0;
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            t += P(i, j) * M(i, j);
-    return t;
-}
-
 // Γ RKS final payload: AoDiisEigenDevice::eigen_from_device (device-payload).
 // Γ UKS final payload: dual eigen_from_device (uks-payload-device) — no host
 // diagonalize_fock re-diag of Ha/Hb.
@@ -433,11 +413,11 @@ CollocateGridDesc to_coll(const UniformGrid& g, double eps_win = 1.0e-14) {
 }
 
 cpu::xc::XCType to_ks_xc(cpu::xc::XCType xc) {
-    if (xc == cpu::xc::XCType::PADE || xc == cpu::xc::XCType::PBE)
+    if (xc == cpu::xc::XCType::PADE || cpu::xc::is_pbe_family(xc))
         return xc;
     throw std::invalid_argument(
         "cuda::gpw::GpwDft: xc has no device path — only cpu::xc::XCType::PADE "
-        "and cpu::xc::XCType::PBE. Use cpu::gpw::GpwDft for other "
+        "and the PBE family. Use cpu::gpw::GpwDft for other "
         "functionals.");
 }
 
@@ -648,17 +628,292 @@ CplxMatrix density_from_fixed_k(const CplxMatrix& C, int n_occ, int nb) {
     return P;
 }
 
-double ctrace_k(const CplxMatrix& P, const CplxMatrix& M, int nb) {
-    double s = 0.0;
-    for (int i = 0; i < nb; ++i)
-        for (int j = 0; j < nb; ++j)
-            s += (P(i, j) * M(j, i)).real();
-    return s;
+} // namespace
+
+using GpwStep = std::function<void(int)>;
+namespace {
+class GpwStage final : public cuda::Component {
+    GpwStep* step_;
+    ATV::gpw::Phase phase_;
+    const char* name_;
+
+  public:
+    GpwStage(GpwStep& step, ATV::gpw::Phase phase, const char* name)
+        : step_(&step), phase_(phase), name_(name) {}
+    std::string name() const override { return name_; }
+    void launch(const cuda::LaunchContext& context) override {
+        if (context.at(phase_) && *step_)
+            (*step_)(static_cast<int>(context.step));
+    }
+};
+class GpwConverged final : public cuda::Criterion {
+    const bool* gate_;
+
+  public:
+    explicit GpwConverged(const bool& gate) : gate_(&gate) {}
+    std::string name() const override { return "gpw_converged"; }
+    bool contributes_to_convergence() const override { return true; }
+    Verdict verdict(const cuda::LoopState&) override {
+        return *gate_ ? Verdict::Converged : Verdict::Continue;
+    }
+};
+
+// A cold geometry boundary is required by the existing host AO/grid setup.
+// Scientific density/orbital arrays stay under the device SCF's ownership.
+cpu::Frame host_geometry(const cuda::Frame& device, cudaStream_t stream) {
+    const int n = device.n_atoms();
+    if (n <= 0 || !device.atoms.x || !device.atoms.y || !device.atoms.z
+        || !device.atoms.type || !device.box)
+        throw std::invalid_argument(
+            "cuda::gpw::GpwDft: incomplete parent geometry");
+    const pos_t* primary[3] = {device.atoms.x, device.atoms.y, device.atoms.z};
+    const pos_t* correction[3] = {device.atoms.x_corr, device.atoms.y_corr,
+                                  device.atoms.z_corr};
+    if constexpr (kPositionCorrection)
+        for (const auto* column : correction)
+            if (!column)
+                throw std::invalid_argument(
+                    "cuda::gpw::GpwDft: missing position correction");
+    cpu::Frame host(n);
+    std::array<std::vector<pos_t>, 3> hi, lo;
+    for (int d = 0; d < 3; ++d) {
+        hi[d].resize(n);
+        lo[d].assign(n, pos_t(0));
+    }
+    std::vector<int> types(n);
+    geom_t cell[9];
+    struct Transfers {
+        cudaStream_t stream;
+        bool pending = true;
+        ~Transfers() {
+            if (pending)
+                cudaStreamSynchronize(stream);
+        }
+    } transfers{stream};
+    for (int d = 0; d < 3; ++d) {
+        check_cuda(cudaMemcpyAsync(hi[d].data(), primary[d], n * sizeof(pos_t),
+                                   cudaMemcpyDeviceToHost, stream),
+                   "D2H parent geometry");
+        if constexpr (kPositionCorrection)
+            check_cuda(cudaMemcpyAsync(lo[d].data(), correction[d],
+                                       n * sizeof(pos_t),
+                                       cudaMemcpyDeviceToHost, stream),
+                       "D2H parent geometry correction");
+    }
+    check_cuda(cudaMemcpyAsync(types.data(), device.atoms.type, n * sizeof(int),
+                               cudaMemcpyDeviceToHost, stream),
+               "D2H parent species");
+    check_cuda(cudaMemcpyAsync(cell, device.box, sizeof(cell),
+                               cudaMemcpyDeviceToHost, stream),
+               "D2H parent cell");
+    check_cuda(cudaStreamSynchronize(stream), "parent geometry fence");
+    transfers.pending = false;
+    auto x = host.span(kAtom_x), y = host.span(kAtom_y), z = host.span(kAtom_z);
+    auto type = host.span(kAtom_type);
+    for (int i = 0; i < n; ++i) {
+        x[i] = load_position(hi[0].data(), lo[0].data(), i);
+        y[i] = load_position(hi[1].data(), lo[1].data(), i);
+        z[i] = load_position(hi[2].data(), lo[2].data(), i);
+        type[i] = types[i];
+    }
+    Mat3 matrix;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            matrix(i, j) = cell[3 * i + j];
+    host.box.set_cell(matrix);
+    return host;
+}
+class ForceProfileRange {
+    cudaStream_t stream_;
+    bool active_ = false;
+
+  public:
+    explicit ForceProfileRange(cudaStream_t stream) : stream_(stream) {
+        if (std::getenv("ATV_GPW_PROFILE_FORCE")) {
+            check_cuda(cudaStreamSynchronize(stream_),
+                       "force capture initial fence");
+            check_cuda(cudaProfilerStart(), "start accepted force capture");
+            active_ = true;
+        }
+    }
+    ~ForceProfileRange() {
+        if (active_) {
+            cudaStreamSynchronize(stream_);
+            cudaProfilerStop();
+        }
+    }
+};
+
+struct ScalarPublication {
+    double energy;
+    double virial[6];
+};
+__global__ void accumulate_scalars(SystemScalars* out, ScalarPublication value,
+                                   bool stress) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        out->energy += value.energy;
+        if (stress)
+            for (int k = 0; k < 6; ++k)
+                out->stress[k] += value.virial[k];
+    }
+}
+__global__ void publish_force(cuda::Frame target, const double* force,
+                              const double* host_part, int n, double scale) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n)
+        return;
+    add_force(target.atoms.fx, i,
+              (force[3 * i] + (host_part ? host_part[3 * i] : 0)) * scale,
+              target.force_fault);
+    add_force(target.atoms.fy, i,
+              (force[3 * i + 1] + (host_part ? host_part[3 * i + 1] : 0))
+                  * scale,
+              target.force_fault);
+    add_force(target.atoms.fz, i,
+              (force[3 * i + 2] + (host_part ? host_part[3 * i + 2] : 0))
+                  * scale,
+              target.force_fault);
+}
+void accumulate_host_forces(const std::vector<std::array<double, 3>>& force,
+                            cuda::Frame& target, cudaStream_t stream) {
+    std::vector<double> packed(3 * force.size());
+    for (std::size_t i = 0; i < force.size(); ++i)
+        for (int k = 0; k < 3; ++k)
+            packed[3 * i + k] = force[i][k];
+    struct Buffer {
+        double* p = nullptr;
+        cudaStream_t stream;
+        ~Buffer() {
+            cudaStreamSynchronize(stream);
+            if (p)
+                cudaFree(p);
+        }
+    } buffer{nullptr, stream};
+    check_cuda(cudaMalloc(&buffer.p, packed.size() * sizeof(double)),
+               "allocate host force publication");
+    check_cuda(cudaMemcpyAsync(buffer.p, packed.data(),
+                               packed.size() * sizeof(double),
+                               cudaMemcpyHostToDevice, stream),
+               "upload host force contribution");
+    publish_force<<<(force.size() + 255) / 256, 256, 0, stream>>>(
+        target, buffer.p, nullptr, static_cast<int>(force.size()),
+        units::kHartreePerBohrInEvPerAngstrom);
+    check_cuda(cudaGetLastError(), "publish host force contribution");
+}
+} // namespace
+
+struct GpwLoopState {
+    GpwStep ks_build, advance;
+    bool gate = false;
+    GpwStage ks_stage{ks_build, ATV::gpw::Phase::ks_build,
+                      "gpw_ks_build_stage"};
+    // The existing device operation fuses DIIS, eigen and density update.
+    GpwStage eigen_stage{advance, ATV::gpw::Phase::diagonalize,
+                         "gpw_diis_eigen_density_stage"};
+    GpwConverged criterion{gate};
+    void clear() {
+        ks_build = {};
+        advance = {};
+    }
+};
+
+GpwDft::GpwDft(std::vector<cpu::gpw::Kind> species, double cutoff,
+               cpu::xc::XCType functional)
+    : kinds(std::move(species)), cutoff_ry(cutoff), xc(functional),
+      loop_(std::make_unique<GpwLoopState>()) {
+    this->on(ATV::gpw::Phase::ks_build).add_ref(loop_->ks_stage);
+    this->on(ATV::gpw::Phase::diagonalize).add_ref(loop_->eigen_stage);
+    this->add_criterion_ref(loop_->criterion);
+    cuda::Driver<ATV::gpw::Phase>::build();
+}
+GpwDft::~GpwDft() {
+    try {
+        release_backend_();
+    } catch (...) {
+    }
+}
+GpwDft::GpwDft(GpwDft&& other)
+    : cuda::Driver<ATV::gpw::Phase>(std::move(other)),
+      kinds(std::move(other.kinds)), cutoff_ry(other.cutoff_ry), xc(other.xc),
+      ngrids(other.ngrids), rel_cutoff(other.rel_cutoff), n_occ(other.n_occ),
+      n_alpha(other.n_alpha), n_beta(other.n_beta), max_iter(other.max_iter),
+      tol(other.tol), residual_tol(other.residual_tol),
+      eps_default(other.eps_default), mix(other.mix),
+      diis_depth(other.diis_depth), lindep_threshold(other.lindep_threshold),
+      level_shift(other.level_shift), nonperiodic(other.nonperiodic),
+      local_pp_on_grid(other.local_pp_on_grid), use_ot(other.use_ot),
+      k_mesh{other.k_mesh[0], other.k_mesh[1], other.k_mesh[2]},
+      k_points(std::move(other.k_points)),
+      k_point_weights(std::move(other.k_point_weights)),
+      k_time_reversal(other.k_time_reversal),
+      stress_strain_h(other.stress_strain_h), stress_axes(other.stress_axes),
+      cell_{other.cell_[0], other.cell_[1], other.cell_[2]},
+      result_(std::move(other.result_)), built_(other.built_),
+      loop_(std::move(other.loop_)) {
+    other.built_ = false;
+    other.result_ = GpwResult{};
+}
+void GpwDft::release_backend_() {
+    if (!this->backend_)
+        return;
+    std::exception_ptr failure;
+    try {
+        this->backend_->sync();
+        this->backend_->destroy_components();
+    } catch (...) {
+        failure = std::current_exception();
+    }
+    try {
+        this->backend_->shutdown();
+    } catch (...) {
+        if (!failure)
+            failure = std::current_exception();
+    }
+    this->backend_.reset();
+    this->built_plugins_.clear();
+    if (failure)
+        std::rethrow_exception(failure);
+}
+void GpwDft::drive_stages_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
+    struct Restore {
+        cuda::Context& ctx;
+        cuda::LoopServices saved;
+        GpwLoopState& loop;
+        ~Restore() {
+            ctx.loop = saved;
+            loop.clear();
+        }
+    } restore{ctx, ctx.loop, *loop_};
+    status_.reset();
+    metrics_ = ConvergenceMetrics{};
+    loop_->gate = false;
+    ctx.loop.status = &status_;
+    ctx.loop.metrics = &metrics_;
+    const int cap = budget < 0 ? max_iter : std::min(budget, max_iter);
+    double previous = 0;
+    for (int iter = 0; iter < cap; ++iter) {
+        mutable_outer_status().reset();
+        result_.iters = iter + 1;
+        if (this->backend_ && &this->backend_->context() == &ctx
+            && &this->backend_->frame() == &frame)
+            this->step_once(iter);
+        else
+            this->step_borrowed_(ctx, frame, iter);
+        metrics_.energy = result_.e_total * units::kHartreeInEv;
+        metrics_.energy_change = iter ? std::abs(metrics_.energy - previous)
+                                      : std::numeric_limits<double>::infinity();
+        previous = metrics_.energy;
+        if (this->poll_criteria_(iter, frame, ctx) != Verdict::Continue)
+            break;
+    }
+    result_.converged = this->converged();
 }
 
-/// Multi-k closed-shell RKS DIIS energy (device ρ collocate + KS + V→H_k).
-GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
-                               const GpwDft& cfg) {
+GpwResult& GpwDft::solve_kpoints_(const std::vector<GpwAtom>& atoms,
+                                  cuda::Context& ctx, cuda::Frame& frame,
+                                  int budget) {
+    const auto& cfg = *this;
+    const auto stream = static_cast<cudaStream_t>(ctx.stream);
     const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
     const int nb = static_cast<int>(basis.size());
     if (nb < 1)
@@ -673,7 +928,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
         rmax = std::max(rmax, radii[static_cast<std::size_t>(i)]);
     }
     int mimg[3] = {0, 0, 0};
-    pair_image_counts(cfg.cell, /*periodic=*/true, 2.0 * rmax, mimg);
+    pair_image_counts(cfg.cell_, /*periodic=*/true, 2.0 * rmax, mimg);
 
     const std::vector<KPoint> kpts = sampled_kpoints_cuda(cfg);
     const int nk = static_cast<int>(kpts.size());
@@ -698,9 +953,9 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             kpts[static_cast<std::size_t>(ik)].frac[2];
     }
     KpointStvnlDevice stvnl;
-    // Stream not yet created; null stream for setup (geometry-fixed once).
-    stvnl.compute(/*stream=*/nullptr, basis, radii, atoms, cfg.cell, mimg,
-                  kBuildScreen, k_frac_flat.data(), nk);
+    // Geometry setup shares the execution owner's stream.
+    stvnl.compute(stream, basis, radii, atoms, cfg.cell_, mimg, kBuildScreen,
+                  k_frac_flat.data(), nk);
     std::vector<Cplx> S_flat(static_cast<std::size_t>(nk)
                              * static_cast<std::size_t>(nb)
                              * static_cast<std::size_t>(nb));
@@ -742,7 +997,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
 
     // Single-grid density grid + ion / local-PP (same Γ setup).
     const MultiGrid mg =
-        make_multigrid(cfg.cell, cfg.cutoff_ry, /*nlev=*/1, cfg.cutoff_ry);
+        make_multigrid(cfg.cell_, cfg.cutoff_ry, /*nlev=*/1, cfg.cutoff_ry);
     if (mg.levels.empty())
         throw std::runtime_error(
             "cuda::gpw::GpwDft multi-k: make_multigrid returned empty levels");
@@ -759,6 +1014,8 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
     double e_self = 0.0;
     for (const auto& a : atoms)
         e_self += core_self_energy(a);
+    const double e_overlap = cpu::gpw::internal::core_overlap_energy(
+        atoms, cfg.cell_, /*periodic=*/true);
     const std::vector<double> v_locsr =
         local_pp_grid(grid, atoms, /*periodic=*/true);
 
@@ -777,8 +1034,6 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             density_from_fixed_k(C0k, cfg.n_occ, nb);
     }
 
-    ScfStream scf_stream;
-    const cudaStream_t stream = scf_stream;
     const long npts = grid.npts();
     const size_t bytes = static_cast<size_t>(npts) * sizeof(double);
     DeviceKsBuffers dev;
@@ -868,7 +1123,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
         return Hk;
     };
 
-    GpwResult res;
+    GpwResult& res = result_;
     res.n_kpts = nk;
     res.n_kpts_local = nk;
     res.scf_kbg = std::make_shared<KpointBasisGrid>(kbg);
@@ -968,7 +1223,7 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
         res.e_kinetic = e_kin;
         res.e_nonlocal = 0.0;
         res.e_loc_sr = e_nl + e.e_locgrid;
-        res.e_es = e.e_hartree - e_self;
+        res.e_es = e.e_hartree - e_self + e_overlap;
         res.e_xc = e.e_xc;
         if (store_grids) {
             res.veff = last_veff;
@@ -1019,41 +1274,46 @@ GpwResult run_cuda_kpoints_rks(const std::vector<GpwAtom>& atoms,
             "mid-path (linear mix needs host P blend)");
 
     double prev_energy = std::numeric_limits<double>::quiet_NaN();
-    bool conv = false;
-    int it = 0;
-    for (it = 0; it < cfg.max_iter; ++it) {
+    loop_->ks_build = [&](int it) {
         const double e_total = build_k_energy(/*store_grids=*/false);
         res.e_total = e_total;
-
         const double err_norm = kdiis.residual_from_device();
         const bool has_prev = !std::isnan(prev_energy);
         const double dE = has_prev ? (e_total - prev_energy)
                                    : std::numeric_limits<double>::infinity();
         prev_energy = e_total;
-        if (has_prev && std::abs(dE) < cfg.tol && err_norm < kDiisErrTol) {
-            conv = true;
-            break;
-        }
-
-        // Device DIIS + zheevd + density — P stays on device (no mid-SCF D2H).
-        kdiis.advance();
-    }
+        metrics_.residual = err_norm;
+        loop_->gate =
+            has_prev && std::abs(dE) < cfg.tol && err_norm < cfg.residual_tol;
+    };
+    loop_->advance = [&](int) {
+        if (!loop_->gate)
+            kdiis.advance();
+    };
+    drive_stages_(ctx, frame, budget);
 
     // Final KS at the last density (energy pieces + V_eff for force follow-on).
     {
         const double e_final = build_k_energy(/*store_grids=*/true);
         res.e_total = e_final;
         store_payload();
-        res.converged = conv;
-        res.iters = conv ? (it + 1) : cfg.max_iter;
     }
     return res;
 }
 
-} // namespace
-
 void GpwDft::validate_slice_() const {
+    if (!loop_)
+        throw std::logic_error(
+            "cuda::gpw::GpwDft: moved-from method has no loop");
+    if (!(residual_tol > 0) || !std::isfinite(residual_tol))
+        throw std::invalid_argument("cuda::gpw::GpwDft: residual_tol must be "
+                                    "finite and positive [Hartree]");
     cpu::gpw::require_gpw_xc(xc);
+#if !defined(ATV_HAS_PW)
+    if (cpu::xc::is_pbe_family(xc))
+        throw std::invalid_argument("cuda::gpw::GpwDft: PBE-family XC requires "
+                                    "ATV_BUILD_PW (shared device XC)");
+#endif
     if (is_uks()) {
         if (n_alpha < 0 || n_beta < 0)
             throw std::invalid_argument(
@@ -1061,13 +1321,6 @@ void GpwDft::validate_slice_() const {
         if (n_alpha + n_beta < 1)
             throw std::invalid_argument(
                 "cuda::gpw::GpwDft: UKS requires n_alpha+n_beta >= 1");
-        // First UKS product cut: Padé LSD only (PBE-UKS → uks-pbe-gate).
-        if (xc != cpu::xc::XCType::PADE)
-            throw std::invalid_argument(
-                "cuda::gpw::GpwDft: collinear UKS first cut is "
-                "xc::XCType::PADE "
-                "only (Padé LSD). Set xc=PADE or use cpu::gpw::GpwDft; "
-                "PBE-UKS is a deeper slug (cuda-gpw-uks-pbe-gate).");
         // UKS multigrid is not on the product path (single-grid run_uks only).
         if (ngrids > 1)
             throw std::invalid_argument(
@@ -1128,9 +1381,9 @@ void GpwDft::validate_slice_() const {
                 "product path yet — set ngrids=1 for multi-k RKS, or use "
                 "cpu::gpw::GpwDft (deeper slug cuda-gpw-multigrid-kpoints).");
     }
-    if (xc != cpu::xc::XCType::PADE && xc != cpu::xc::XCType::PBE)
+    if (xc != cpu::xc::XCType::PADE && !cpu::xc::is_pbe_family(xc))
         throw std::invalid_argument(
-            "cuda::gpw::GpwDft: only xc::XCType::PADE and xc::XCType::PBE have "
+            "cuda::gpw::GpwDft: only Padé LDA and the PBE family have "
             "device "
             "KS paths. Use cpu::gpw::GpwDft for other functionals.");
     if (!local_pp_on_grid)
@@ -1148,18 +1401,10 @@ void GpwDft::validate_slice_() const {
         throw std::invalid_argument(
             "cuda::gpw::GpwDft: diis_depth must be >= 0");
     for (int d = 0; d < 3; ++d)
-        if (!(cell[d] > 0.0))
+        if (!(cell_[d] > 0.0))
             throw std::invalid_argument(
                 "cuda::gpw::GpwDft: periodic cell edge " + std::to_string(d)
-                + " must be > 0 Bohr (got " + std::to_string(cell[d]) + ")");
-}
-
-void GpwDft::build(const std::vector<GpwAtom>& reference) {
-    if (reference.empty())
-        throw std::invalid_argument(
-            "cuda::gpw::GpwDft::build: empty atom set (nothing to solve)");
-    validate_slice_();
-    built_ = true;
+                + " must be > 0 Bohr (got " + std::to_string(cell_[d]) + ")");
 }
 
 namespace {
@@ -1219,73 +1464,171 @@ void fill_closed_shell_occ(GpwDft& m, const std::vector<GpwAtom>& atoms) {
 
 } // namespace
 
-void GpwDft::build(const cpu::Frame& reference) {
-    const auto edges = cpu::gpw::internal::cell_from_box(reference.box);
-    cell[0] = edges[0];
-    cell[1] = edges[1];
-    cell[2] = edges[2];
-    const std::vector<GpwAtom> atoms = atoms_from_frame(*this, reference);
+std::vector<GpwDft::GpwAtom> GpwDft::prepare_(const cpu::Frame& frame) {
+    const auto edges = cpu::gpw::internal::cell_from_box(frame.box);
+    for (int d = 0; d < 3; ++d)
+        cell_[d] = edges[d];
+    auto atoms = atoms_from_frame(*this, frame);
     fill_closed_shell_occ(*this, atoms);
-    build(atoms);
+    validate_slice_();
+    return atoms;
+}
+void GpwDft::build(const cpu::Frame& reference) {
+    prepare_(reference);
+    built_ = true;
 }
 
-GpwResult& GpwDft::run(const cpu::Frame& frame, const RealMatrix* guess_C,
-                       const RealMatrix* guess_P,
-                       const RealMatrix* guess_P_beta) {
+GpwResult& GpwDft::standalone_(const cpu::Frame& geometry,
+                               const RealMatrix* guess_C,
+                               const RealMatrix* guess_P,
+                               const RealMatrix* guess_P_beta,
+                               std::vector<std::array<double, 3>>* force,
+                               std::array<double, 6>* stress) {
+    if (stress)
+        cpu::gpw::internal::validate_stress_probe(stress_strain_h, stress_axes,
+                                                  "cuda::gpw::GpwDft::stress");
     if (!built_)
         throw std::logic_error(
             "cuda::gpw::GpwDft::run called before build(frame) — validate the "
-            "configuration first (no silent auto-build)");
-    const auto edges = cpu::gpw::internal::cell_from_box(frame.box);
-    cell[0] = edges[0];
-    cell[1] = edges[1];
-    cell[2] = edges[2];
-    return run(atoms_from_frame(*this, frame), guess_C, guess_P, guess_P_beta);
+            "configuration first");
+    if (this->borrowed_backend_)
+        throw std::logic_error(
+            "cuda::gpw::GpwDft: standalone entry while mounted on a parent");
+    auto atoms = prepare_(geometry);
+    cuda::Driver<ATV::gpw::Phase>::build();
+    cpu::Frame scratch(geometry);
+    try {
+        this->setup_pass(scratch);
+        auto& ctx = this->backend_->context();
+        const bool resident =
+            force && !is_uks() && ngrids == 1 && !uses_kpath();
+        solve_(atoms, guess_C, guess_P, guess_P_beta, ctx,
+               this->backend_->frame(), max_iter, resident ? force : nullptr);
+        if ((force || stress) && !result_.converged)
+            throw std::runtime_error(
+                "cuda::gpw::GpwDft: derivative requires a converged SCF — "
+                "raise max_iter or adjust solver settings");
+        if (force && !resident)
+            *force = forces_from_state_(atoms, result_,
+                                        static_cast<cudaStream_t>(ctx.stream));
+        if (stress) {
+            *stress = stress_from_state_(atoms, result_);
+            for (auto& entry : *stress)
+                entry *= units::kHartreePerBohr3InEvPerAngstrom3;
+        }
+        release_backend_();
+    } catch (...) {
+        loop_->clear();
+        try {
+            release_backend_();
+        } catch (...) {
+        }
+        throw;
+    }
+    return result_;
 }
-
+GpwResult& GpwDft::run(const cpu::Frame& frame, const RealMatrix* guess_C,
+                       const RealMatrix* guess_P,
+                       const RealMatrix* guess_P_beta) {
+    return standalone_(frame, guess_C, guess_P, guess_P_beta, nullptr, nullptr);
+}
 GpwResult& GpwDft::run(cpu::Frame& frame, const RealMatrix* guess_C,
                        const RealMatrix* guess_P,
                        const RealMatrix* guess_P_beta) {
-    GpwResult& res = run(std::as_const(frame), guess_C, guess_P, guess_P_beta);
-    frame.meta.get(kEnergy) = res.e_total * units::kHartreeInEv;
-    return res;
+    standalone_(frame, guess_C, guess_P, guess_P_beta, nullptr, nullptr);
+    frame.meta.get(kEnergy) = result_.e_total * units::kHartreeInEv;
+    return result_;
 }
-
 GpwResult& GpwDft::forces(cpu::Frame& frame) {
-    GpwResult& res = run(frame);
-    if (!res.converged)
-        throw std::runtime_error(
-            "cuda::gpw::GpwDft::forces: SCF did not converge — raise max_iter "
-            "or loosen tol; forces at an unconverged density are not a "
-            "gradient");
-    const std::vector<GpwAtom> atoms = atoms_from_frame(*this, frame);
-    const std::vector<std::array<double, 3>> F =
-        gpw_forces_from_scf(atoms, *this, res);
-    AccReal* fx = frame.span(kAtom_fx);
-    AccReal* fy = frame.span(kAtom_fy);
-    AccReal* fz = frame.span(kAtom_fz);
-    const int n = frame.nlocal();
-    for (int i = 0; i < n; ++i) {
-        const auto& f = F[static_cast<std::size_t>(i)];
-        fx[i] =
-            static_cast<AccReal>(f[0] * units::kHartreePerBohrInEvPerAngstrom);
-        fy[i] =
-            static_cast<AccReal>(f[1] * units::kHartreePerBohrInEvPerAngstrom);
-        fz[i] =
-            static_cast<AccReal>(f[2] * units::kHartreePerBohrInEvPerAngstrom);
+    std::vector<std::array<double, 3>> force;
+    standalone_(frame, nullptr, nullptr, nullptr, &force, nullptr);
+    auto fx = frame.span(kAtom_fx), fy = frame.span(kAtom_fy),
+         fz = frame.span(kAtom_fz);
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        fx[i] = force[i][0] * units::kHartreePerBohrInEvPerAngstrom;
+        fy[i] = force[i][1] * units::kHartreePerBohrInEvPerAngstrom;
+        fz[i] = force[i][2] * units::kHartreePerBohrInEvPerAngstrom;
     }
-    return res;
+    frame.meta.get(kEnergy) = result_.e_total * units::kHartreeInEv;
+    return result_;
+}
+std::array<double, 6> GpwDft::stress(cpu::Frame& frame) {
+    std::array<double, 6> sigma{};
+    standalone_(frame, nullptr, nullptr, nullptr, nullptr, &sigma);
+    frame.meta.get(kEnergy) = result_.e_total * units::kHartreeInEv;
+    auto& virial = frame.meta.get(kStress);
+    for (std::size_t k = 0; k < 6; ++k)
+        virial[k] = sigma[k] * frame.box.volume();
+    return sigma;
+}
+void GpwDft::build_on(cuda::Context& ctx, cuda::Frame& frame) {
+    if (!loop_)
+        throw std::logic_error(
+            "cuda::gpw::GpwDft: moved-from method has no loop");
+    this->build_borrowed_(ctx, frame);
+}
+void GpwDft::destroy_on(cuda::Context& ctx, cuda::Frame& frame) {
+    if (loop_)
+        loop_->clear();
+    this->destroy_borrowed_(ctx, frame);
+}
+int GpwDft::run_nested_erased(cuda::Context& ctx, cuda::Frame& frame,
+                              int budget) {
+    if (!loop_ || !this->borrowed_backend_
+        || ctx.exec.backend != this->borrowed_backend_
+        || this->borrowed_frame_ != &frame)
+        throw std::logic_error(
+            "cuda::gpw::GpwDft: nested entry requires a matching parent");
+    if (!frame.scalars
+        || (ctx.exec.forces_requested
+            && (!frame.atoms.fx || !frame.atoms.fy || !frame.atoms.fz)))
+        throw std::invalid_argument(
+            "cuda::gpw::GpwDft: incomplete parent outputs");
+    if (ctx.exec.stress_requested)
+        cpu::gpw::internal::validate_stress_probe(stress_strain_h, stress_axes,
+                                                  "cuda::gpw::GpwDft::stress");
+    const auto stream = static_cast<cudaStream_t>(ctx.stream);
+    const auto geometry = host_geometry(frame, stream);
+    auto atoms = prepare_(geometry);
+    built_ = true;
+    const bool resident =
+        ctx.exec.forces_requested && !is_uks() && ngrids == 1 && !uses_kpath();
+    std::array<double, 6> sigma{};
+    solve_(atoms, nullptr, nullptr, nullptr, ctx, frame, budget, nullptr,
+           resident ? &frame : nullptr,
+           resident && ctx.exec.stress_requested ? &sigma : nullptr);
+    if ((ctx.exec.forces_requested || ctx.exec.stress_requested)
+        && !result_.converged)
+        throw std::runtime_error(
+            "cuda::gpw::GpwDft: nested derivatives require a converged SCF");
+    if (ctx.exec.stress_requested && !resident)
+        sigma = stress_from_state_(atoms, result_);
+    if (ctx.exec.forces_requested && !resident)
+        forces_from_state_(atoms, result_, stream, &frame);
+    ScalarPublication value{};
+    value.energy = result_.e_total * units::kHartreeInEv;
+    for (int k = 0; k < 6; ++k)
+        value.virial[k] = sigma[k] * units::kHartreePerBohr3InEvPerAngstrom3
+                          * geometry.box.volume();
+    accumulate_scalars<<<1, 1, 0, stream>>>(frame.scalars, value,
+                                            ctx.exec.stress_requested);
+    check_cuda(cudaGetLastError(), "publish nested GPW scalars");
+    return result_.iters;
 }
 
-GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
-                       const RealMatrix* guess_C, const RealMatrix* guess_P,
-                       const RealMatrix* guess_P_beta) {
-    validate_slice_();
-    if (!built_)
-        build(atoms);
-    if (atoms.empty())
-        throw std::invalid_argument("cuda::gpw::GpwDft::run: empty atom set");
-
+GpwResult& GpwDft::solve_(const std::vector<GpwAtom>& atoms,
+                          const RealMatrix* guess_C, const RealMatrix* guess_P,
+                          const RealMatrix* guess_P_beta, cuda::Context& ctx,
+                          cuda::Frame& frame, int budget,
+                          std::vector<std::array<double, 3>>* resident_force,
+                          cuda::Frame* resident_target,
+                          std::array<double, 6>* resident_stress) {
+    struct ClearCallbacks {
+        GpwLoopState& loop;
+        ~ClearCallbacks() { loop.clear(); }
+    } clear{*loop_};
+    const auto stream = static_cast<cudaStream_t>(ctx.stream);
+    result_ = GpwResult{};
     // Multi-k RKS DIIS branch (cuda-gpw-kpoints): host χ^k + device ρ→V_eff.
     // Γ product path (guess_C/P) is not used here — multi-k cold-starts H0.
     if (uses_kpath()) {
@@ -1294,8 +1637,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 "cuda::gpw::GpwDft::run: multi-k path ignores real Γ "
                 "guess_C/guess_P; pass nullptr (complex P_k warm-start is a "
                 "deeper slug)");
-        result_ = run_cuda_kpoints_rks(atoms, *this);
-        return result_;
+        return solve_kpoints_(atoms, ctx, frame, budget);
     }
 
     result_ = GpwResult{};
@@ -1320,10 +1662,10 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         rmax = std::max(rmax, radii[static_cast<std::size_t>(i)]);
     }
     int mimg[3] = {0, 0, 0};
-    pair_image_counts(cell, periodic, 2.0 * rmax, mimg);
+    pair_image_counts(cell_, periodic, 2.0 * rmax, mimg);
 
     RealMatrix S, T, Vpp;
-    build_STVpp(atoms, basis, radii, cell, periodic, local_pp_on_grid, mimg, S,
+    build_STVpp(atoms, basis, radii, cell_, periodic, local_pp_on_grid, mimg, S,
                 T, Vpp);
     const RealMatrix H0 = T + Vpp;
 
@@ -1333,7 +1675,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     const bool use_mg = ngrids > 1 && rel_cutoff > 0.0;
     const int nlev = use_mg ? ngrids : 1;
     const double rel_for_build = use_mg ? rel_cutoff : cutoff_ry;
-    const MultiGrid mg = make_multigrid(cell, cutoff_ry, nlev, rel_for_build);
+    const MultiGrid mg = make_multigrid(cell_, cutoff_ry, nlev, rel_for_build);
     if (mg.levels.empty())
         throw std::runtime_error(
             "cuda::gpw::GpwDft::run: make_multigrid returned empty levels");
@@ -1353,6 +1695,10 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     double e_self = 0.0;
     for (const auto& a : atoms)
         e_self += core_self_energy(a);
+    const auto core_overlap =
+        cpu::gpw::internal::make_core_overlap_model(atoms, cell_, periodic);
+    const double e_overlap =
+        cpu::gpw::internal::core_overlap_energy(core_overlap);
     const std::vector<double> v_locsr =
         local_pp_on_grid ? local_pp_grid(grid, atoms, periodic)
                          : std::vector<double>{};
@@ -1368,10 +1714,19 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         result_.scf_cbg_valid = false;
     }
 
+    const bool want_resident_force = resident_force || resident_target;
+    std::unique_ptr<internal::GpwForceWorkspace> force_workspace;
+    if (want_resident_force) {
+        if (uks || use_mg)
+            throw std::logic_error(
+                "resident GPW force handoff requires Gamma RKS single grid");
+        force_workspace = prepare_force_workspace_(atoms, core_overlap, stream);
+    }
+
     // Geometry-fixed product list (per level under MG). Device collocate /
     // integrate consume DeviceProduct views; P enters only as weights.
     const ProductSet pset =
-        build_products(mg, basis, cell, rel_for_build, eps, periodic);
+        build_products(mg, basis, cell_, rel_for_build, eps, periodic);
     const int nlevels = static_cast<int>(pset.by_level.size());
     if (nlevels < 1)
         throw std::runtime_error(
@@ -1410,8 +1765,6 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     }
 
     // Non-default stream for product SCF: grid upload + mid-SCF H2D/D2H + KS.
-    ScfStream scf_stream;
-    const cudaStream_t stream = scf_stream;
 
     // Device KS workspace: n_ion / v_loc on fine grid once (stream-ordered).
     DeviceKsBuffers dev;
@@ -1604,7 +1957,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         return V;
     };
 
-    // ── Collinear UKS (Padé LSD + dual device DIIS; single-grid only) ─────
+    // ── Collinear UKS (Padé LSD / spin GGA; dual device DIIS, single grid) ──
     if (uks) {
         // use_mg is impossible after validate_slice_; ks_sg is live.
         RealMatrix Pa = build_density_matrix(C0, n_alpha, nb, 1.0);
@@ -1710,7 +2063,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             result_.e_nonlocal = 0.0;
             result_.e_loc_sr = wpack.frobenius(d_Pa_use, d_Vpp)
                                + wpack.frobenius(d_Pb_use, d_Vpp) + e.e_locgrid;
-            result_.e_es = e.e_hartree - e_self;
+            result_.e_es = e.e_hartree - e_self + e_overlap;
             result_.e_xc = e.e_xc;
             return result_.e_kinetic + result_.e_loc_sr + result_.e_es
                    + result_.e_xc;
@@ -1747,10 +2100,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                 "mid-path");
 
         double prev_energy = std::numeric_limits<double>::quiet_NaN();
-        bool conv = false;
-        int it = 0;
         const bool scf_trace_uks = std::getenv("ATV_GPW_CUDA_TRACE") != nullptr;
-        for (it = 0; it < max_iter; ++it) {
+        loop_->ks_build = [&](int it) {
             const double e_total = build_uks_energy_device(
                 ao_a.d_P(), ao_b.d_P(), /*store_grids=*/false);
             result_.e_total = e_total;
@@ -1767,14 +2118,18 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                              "err_a=%.3e err_b=%.3e\n",
                              it, e_total, has_prev ? dE : 0.0, err_a, err_b);
             prev_energy = e_total;
-            if (has_prev && std::abs(dE) < tol && err_norm < kDiisErrTol) {
-                conv = true;
-                break;
+            metrics_.residual = err_norm;
+            loop_->gate =
+                has_prev && std::abs(dE) < tol && err_norm < residual_tol;
+        };
+        loop_->advance = [&](int) {
+            if (!loop_->gate) {
+                // Both spin equations form one coupled fixed point, matching
+                // the CPU dual-spin DIISMixer's shared Pulay coefficients.
+                ao_a.advance_paired(ao_b);
             }
-            ao_a.advance();
-            ao_b.advance();
-            // P stays on device under DIIS (no mid-SCF download_P).
-        }
+        };
+        drive_stages_(ctx, frame, budget);
         // Final KS at last density: energy + veff boundary + dual device eigen
         // payload. Device eigen of d_Ha/d_Hb replaces host store_converged_state_uks
         // → dual diagonalize_fock (cuda-gpw-uks-payload-device).
@@ -1809,8 +2164,6 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             result_.P = Pa;
             result_.P_beta = Pb;
             result_.S = S;
-            result_.converged = conv;
-            result_.iters = conv ? (it + 1) : max_iter;
         }
         return result_;
     }
@@ -1835,6 +2188,8 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
     AoDiisEigenDevice ao_scf;
     ao_scf.build(stream, nb, n_mo, use_diis ? diis_depth : 0, n_occ,
                  /*occ_factor=*/2.0, level_shift);
+    if (want_resident_force)
+        ao_scf.reserve_force_state();
     ao_scf.reset(); // clear DIIS history; does not touch S/X/P
     ao_scf.upload_SX(S.data(), orth.X.data());
     ao_scf.upload_P(P.data());
@@ -1855,7 +2210,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             // Single-grid device product KS (cuda-gpw-product-collocate-pbc):
             // pack P→weights → sphere-window PBC collocate → Poisson/XC →
             // integrate → scatter V_AO. No mid-SCF P/ρ/V_AO DH (iron law).
-            // CompactBasisGrid retained only for force free-fn / payload.
+            // Immutable compact-basis geometry is retained for resident forces / payload.
             wpack.pack_weights(d_P_use, d_geom0, dev.d_prods, nprod_geom,
                                eps_drop);
             if (ntask_by_level[0] > 0)
@@ -2045,7 +2400,7 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
         result_.e_kinetic = wpack.frobenius(d_P_use, d_T);
         result_.e_nonlocal = 0.0;
         result_.e_loc_sr = wpack.frobenius(d_P_use, d_Vpp) + e.e_locgrid;
-        result_.e_es = e.e_hartree - e_self;
+        result_.e_es = e.e_hartree - e_self + e_overlap;
         result_.e_xc = e.e_xc;
         return result_.e_kinetic + result_.e_loc_sr + result_.e_es
                + result_.e_xc;
@@ -2077,15 +2432,11 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
             "(default), or use cpu::gpw::GpwDft.");
 
     double prev_energy = std::numeric_limits<double>::quiet_NaN();
-    bool conv = false;
-    int it = 0;
     const bool scf_trace = std::getenv("ATV_GPW_CUDA_TRACE") != nullptr;
-    for (it = 0; it < max_iter; ++it) {
-        // Mid-SCF: device pack + KS + H assemble; P stays on device (DIIS).
+    loop_->ks_build = [&](int it) {
         const double e_total =
             build_energy_device(ao_scf.d_P(), /*store_grids=*/false);
         result_.e_total = e_total;
-        // Residual from device H (no H2D of KS matrix).
         const double err_norm = ao_scf.residual_device(d_H_work);
         const bool has_prev = !std::isnan(prev_energy);
         const double dE = has_prev ? (e_total - prev_energy)
@@ -2097,46 +2448,95 @@ GpwResult& GpwDft::run(const std::vector<GpwAtom>& atoms,
                          "[cuda gpw scf %3d] E=%.10f  dE=%.3e  err=%.3e\n", it,
                          e_total, has_prev ? dE : 0.0, err_norm);
         prev_energy = e_total;
-        if (has_prev && std::abs(dE) < tol && err_norm < kDiisErrTol) {
-            conv = true;
-            break;
-        }
-        ao_scf.advance();
-    }
-    // Final KS at the last density: energy pieces + V_eff/V_es for forces.
-    // Boundary D2H only (payload). Device eigen of assembled H replaces host
-    // store_converged_state → diagonalize_fock (cuda-gpw-device-payload).
+        metrics_.residual = err_norm;
+        loop_->gate = has_prev && std::abs(dE) < tol && err_norm < residual_tol;
+    };
+    loop_->advance = [&](int) {
+        if (!loop_->gate)
+            ao_scf.advance();
+    };
+    drive_stages_(ctx, frame, budget);
+    // Final physical KS at accepted P. A force request consumes that device
+    // state before any scientific payload is retrieved or any workspace dies.
     {
-        ao_scf.download_P(P.data()); // DIIS density used for final energy
+        const bool live_force = want_resident_force && result_.converged;
         const double e_final =
-            build_energy_device(ao_scf.d_P(), /*store_grids=*/true);
+            build_energy_device(ao_scf.d_P(), /*store_grids=*/!live_force);
         result_.e_total = e_final;
-        // Device eigen of d_H_work = H0 + V (already assembled mid final KS).
-        // Boundary D2H of C/ε; densified d_P_ is not the SCF energy density.
+        if (live_force) {
+            {
+                ForceProfileRange profile(stream);
+                ao_scf.finalize_physical_force_state(d_H_work);
+                force_workspace->evaluate(ao_scf.d_P(), ao_scf.d_W(),
+                                          ks_sg->d_veff(), ks_sg->d_v_es(),
+                                          local_pp_on_grid);
+            } // End capture before all final Frame / last_result retrieval.
+            result_.veff.resize(static_cast<std::size_t>(npts));
+            result_.v_es.resize(static_cast<std::size_t>(npts));
+            check_cuda(cudaMemcpyAsync(result_.veff.data(), ks_sg->d_veff(),
+                                       bytes, cudaMemcpyDeviceToHost, stream),
+                       "final veff payload");
+            check_cuda(cudaMemcpyAsync(result_.v_es.data(), ks_sg->d_v_es(),
+                                       bytes, cudaMemcpyDeviceToHost, stream),
+                       "final v_es payload");
+        }
+        // Accepted P is retained independently of the final raw-H eigenspace.
+        ao_scf.download_P(P.data());
         result_.C = xt::zeros<double>({nb, n_mo});
         result_.eps.assign(static_cast<std::size_t>(n_mo), 0.0);
-        ao_scf.eigen_from_device(d_H_work, result_.eps.data(),
-                                 result_.C.data());
-        // H_ks: boundary D2H of assembled device H (no host H0+V rebuild).
+        if (live_force) {
+            ao_scf.download_eig(result_.eps.data());
+            ao_scf.download_C(result_.C.data());
+        } else {
+            ao_scf.eigen_from_device(d_H_work, result_.eps.data(),
+                                     result_.C.data());
+        }
         result_.H_ks = xt::zeros<double>({nb, nb});
         check_cuda(cudaMemcpyAsync(result_.H_ks.data(), d_H_work, mat_bytes,
                                    cudaMemcpyDeviceToHost, stream),
-                   "D2H H_ks payload");
-        check_cuda(cudaStreamSynchronize(stream), "sync H_ks payload");
+                   "final H_ks payload");
+        check_cuda(cudaStreamSynchronize(stream),
+                   "final accepted-state payload fence");
         result_.P = P;
         result_.S = S;
-        result_.converged = conv;
-        if (conv)
-            result_.iters = it + 1;
-        else
-            result_.iters = max_iter;
+        if (live_force) {
+            // Match the original transaction: a fallible requested stress
+            // assembly must succeed before parent force columns are touched.
+            if (resident_stress)
+                *resident_stress = stress_from_state_(atoms, result_);
+            if (resident_target) {
+                const int na = static_cast<int>(atoms.size());
+                publish_force<<<(na + 255) / 256, 256, 0, stream>>>(
+                    *resident_target, force_workspace->d_forces(), nullptr, na,
+                    units::kHartreePerBohrInEvPerAngstrom);
+                check_cuda(cudaGetLastError(), "publish resident GPW forces");
+            }
+            if (resident_force) {
+                std::vector<double> final_force(3 * atoms.size());
+                struct ReadbackFence {
+                    cudaStream_t stream;
+                    ~ReadbackFence() { cudaStreamSynchronize(stream); }
+                } fence{stream};
+                check_cuda(cudaMemcpyAsync(final_force.data(),
+                                           force_workspace->d_forces(),
+                                           final_force.size() * sizeof(double),
+                                           cudaMemcpyDeviceToHost, stream),
+                           "final Frame force boundary");
+                check_cuda(cudaStreamSynchronize(stream),
+                           "final Frame force fence");
+                resident_force->resize(atoms.size());
+                for (std::size_t a = 0; a < atoms.size(); ++a)
+                    for (int k = 0; k < 3; ++k)
+                        (*resident_force)[a][k] = final_force[3 * a + k];
+            }
+        }
     }
     return result_;
 }
 
 namespace {
 
-// ── First-slice Γ RKS force assembly (host AO Pulay + device grid product) ──
+// ── Cold Gamma RKS force geometry and legacy hybrid-state admission ──
 
 using cpu::gpw::GridPrimitive;
 using cpu::gpw::Prim;
@@ -2232,33 +2632,131 @@ double vpp_images(const GridBasisFunction& a, const GridBasisFunction& b,
     return v;
 }
 
-RealMatrix energy_weighted(const RealMatrix& C, const std::vector<double>& eps,
-                           int n_occ, double occ) {
-    const int nb = static_cast<int>(C.shape(0));
-    RealMatrix W = xt::zeros<double>({nb, nb});
-    for (int i = 0; i < n_occ; ++i) {
-        const double w = occ * eps[static_cast<std::size_t>(i)];
-        for (int mu = 0; mu < nb; ++mu) {
-            const double cmu = w * C(mu, i);
-            for (int nu = 0; nu < nb; ++nu)
-                W(mu, nu) += cmu * C(nu, i);
+} // namespace
+
+std::unique_ptr<internal::GpwForceWorkspace>
+GpwDft::prepare_force_workspace_(const std::vector<GpwAtom>& atoms,
+                                 const gaussian_core::Model& core_overlap,
+                                 cudaStream_t stream) {
+    // Geometry-only work, performed before iteration zero. The coefficients
+    // below exactly match the old AO Pulay expression and image convention;
+    // neither density P nor energy-weighted density W exists on the host here.
+    const auto basis = flatten_basis(atoms);
+    const int nb = static_cast<int>(basis.size());
+    const int na = static_cast<int>(atoms.size());
+    const bool periodic = !nonperiodic, analytic_loc = !local_pp_on_grid;
+    const auto grid = make_uniform_grid(cell_, cutoff_ry);
+    if (!result_.scf_cbg_valid || result_.scf_cbg.npts != grid.npts())
+        throw std::logic_error(
+            "resident GPW forces require the cold compact basis grid");
+    std::vector<int> offsets(atoms.size() + 1, 0),
+        owner(static_cast<std::size_t>(nb), 0);
+    for (int a = 0; a < na; ++a)
+        offsets[a + 1] = offsets[a] + static_cast<int>(atoms[a].basis.size());
+    for (int a = 0; a < na; ++a)
+        for (int mu = offsets[a]; mu < offsets[a + 1]; ++mu)
+            owner[mu] = a;
+    std::vector<double> radii(static_cast<std::size_t>(nb));
+    std::vector<std::array<GridBasisFunction, 3>> derivative(
+        static_cast<std::size_t>(nb));
+    std::vector<std::array<double, 3>> derivative_radius(
+        static_cast<std::size_t>(nb));
+    double rmax = 0, drmax = 0;
+    for (int mu = 0; mu < nb; ++mu) {
+        radii[mu] = basis_function_radius(basis[mu], eps_default);
+        rmax = std::max(rmax, radii[mu]);
+        for (int k = 0; k < 3; ++k) {
+            derivative[mu][k] = deriv_bf(basis[mu], k);
+            derivative_radius[mu][k] =
+                basis_function_radius(derivative[mu][k], eps_default);
+            drmax = std::max(drmax, derivative_radius[mu][k]);
         }
     }
-    return W;
+    int images[3];
+    pair_image_counts(cell_, periodic, std::max(2 * rmax, drmax + rmax),
+                      images);
+    std::vector<const GpwAtom*> all;
+    all.reserve(atoms.size());
+    bool any_nonlocal = false;
+    for (const auto& atom : atoms) {
+        all.push_back(&atom);
+        any_nonlocal |= !atom.nonlocal.empty();
+    }
+    std::vector<internal::AoForceEntry> entries;
+    // Reserve a small streaming prefix, never a Nat*nb*nb tensor.
+    entries.reserve(
+        std::min<std::size_t>(3 * basis.size() * basis.size(), 65536));
+    for (int a = 0; a < na; ++a)
+        for (int k = 0; k < 3; ++k) {
+            for (int mu = offsets[a]; mu < offsets[a + 1]; ++mu)
+                for (int nu = 0; nu < nb; ++nu) {
+                    double overlap = 0, kinetic = 0;
+                    const double reach = derivative_radius[mu][k] + radii[nu];
+                    contracted_ST_periodic(derivative[mu][k], basis[nu], cell_,
+                                           images, reach, overlap, kinetic);
+                    const double v =
+                        (any_nonlocal || analytic_loc)
+                            ? vpp_images(derivative[mu][k], basis[nu], all,
+                                         cell_, images, reach, analytic_loc)
+                            : 0;
+                    const double s = 2 * overlap, p = -2 * kinetic - 2 * v;
+                    if (s != 0 || p != 0)
+                        entries.push_back({3 * a + k, mu + nu * nb, s, p});
+                }
+            // Exact-zero absence of a GTH operator is not numerical screening.
+            if (atoms[a].nonlocal.empty()
+                && (!analytic_loc || atoms[a].cloc.empty()))
+                continue;
+            const std::vector<const GpwAtom*> only = {&atoms[a]};
+            for (int mu = 0; mu < nb; ++mu)
+                for (int nu = 0; nu < nb; ++nu) {
+                    const double reach = derivative_radius[mu][k] + radii[nu];
+                    const double p =
+                        2
+                        * vpp_images(derivative[mu][k], basis[nu], only, cell_,
+                                     images, reach, analytic_loc);
+                    if (p != 0)
+                        entries.push_back({3 * a + k, mu + nu * nb, 0, p});
+                }
+        }
+    std::vector<GridBasisFunction> derivative_flat(3 * basis.size());
+    for (int mu = 0; mu < nb; ++mu)
+        for (int k = 0; k < 3; ++k)
+            derivative_flat[3 * mu + k] = std::move(derivative[mu][k]);
+    result_.force_cbgd =
+        build_compact_basis_grid(grid, derivative_flat, periodic, eps_default);
+    result_.force_cbgd_valid = true;
+    std::vector<internal::DeviceForceAtom> force_atoms(atoms.size());
+    for (int a = 0; a < na; ++a) {
+        auto& out = force_atoms[a];
+        const auto& atom = atoms[a];
+        for (int k = 0; k < 3; ++k)
+            out.pos[k] = atom.pos[k];
+        out.z_val = atom.z_val;
+        out.rloc = atom.rloc;
+        out.n_cloc = static_cast<int>(std::min(
+            atom.cloc.size(), static_cast<std::size_t>(internal::kMaxCloc)));
+        for (int k = 0; k < out.n_cloc; ++k)
+            out.cloc[k] = atom.cloc[k];
+    }
+    auto workspace = std::make_unique<internal::GpwForceWorkspace>();
+    workspace->build(to_coll(grid), result_.scf_cbg, result_.force_cbgd, owner,
+                     force_atoms, entries, core_overlap.pairs(), stream);
+    if (std::getenv("ATV_GPW_CUDA_TRACE"))
+        std::fprintf(stderr,
+                     "[cuda gpw force cold] ao_entries=%zu geometry_bytes=%zu "
+                     "scratch_bytes=%zu W_P_bytes=%zu\n",
+                     workspace->ao_entries(), workspace->geometry_bytes(),
+                     workspace->scratch_bytes(),
+                     2 * basis.size() * basis.size() * sizeof(double));
+    return workspace;
 }
 
-template <typename T>
-T* d_alloc(std::size_t n) {
-    T* p = nullptr;
-    check_cuda(cudaMalloc(&p, n * sizeof(T)), "cudaMalloc force");
-    return p;
-}
-
-/// Map CUDA product members onto a CPU shell for host force/stress assembly.
-cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
+cpu::gpw::GpwDft GpwDft::cpu_shell_() const {
+    const auto& m = *this;
     cpu::gpw::GpwDft c(m.kinds, m.cutoff_ry, m.xc);
     cpu::gpw::internal::GpwDftAccess::set_cell(
-        c, {m.cell[0], m.cell[1], m.cell[2]});
+        c, {m.cell_[0], m.cell_[1], m.cell_[2]});
     c.ngrids = m.ngrids;
     c.rel_cutoff = m.rel_cutoff;
     c.n_occ = m.n_occ;
@@ -2266,6 +2764,7 @@ cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
     c.n_beta = m.n_beta;
     c.max_iter = m.max_iter;
     c.tol = m.tol;
+    c.residual_tol = m.residual_tol;
     c.eps_default = m.eps_default;
     c.mix = m.mix;
     c.diis_depth = m.diis_depth;
@@ -2275,6 +2774,8 @@ cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
     c.local_pp_on_grid = m.local_pp_on_grid;
     c.use_ot = m.use_ot;
     c.k_time_reversal = m.k_time_reversal;
+    c.stress_strain_h = m.stress_strain_h;
+    c.stress_axes = m.stress_axes;
     c.k_points = m.k_points;
     c.k_point_weights = m.k_point_weights;
     for (int d = 0; d < 3; ++d)
@@ -2282,392 +2783,42 @@ cpu::gpw::GpwDft cpu_shell_from_cuda(const GpwDft& m) {
     return c;
 }
 
-} // namespace
-
 std::vector<std::array<double, 3>>
-gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& method,
-                    const GpwResult& scf) {
+GpwDft::forces_from_state_(const std::vector<GpwAtom>& atoms, GpwResult& scf,
+                           cudaStream_t stream, cuda::Frame* accumulate_into) {
     if (!scf.converged)
         throw std::runtime_error(
-            "cuda::gpw::gpw_forces_from_scf: SCF did not converge");
-    // Γ RKS single-grid: device grid HF + host AO Pulay (below).
-    // UKS / multi-k / multigrid: CUDA SCF density payload + CPU force
-    // assembly (same hybrid as gpw_stress). Device-native AO Pulay is a
-    // deeper slug.
-    if (method.is_uks() || method.uses_kpath() || method.ngrids != 1) {
-        cpu::gpw::GpwDft shell = cpu_shell_from_cuda(method);
-        return cpu::gpw::internal::gpw_forces_from_scf(atoms, shell, scf);
+            "cuda::gpw::GpwDft::forces: SCF did not converge");
+    if (!is_uks() && !uses_kpath() && ngrids == 1) {
+        if (scf.P.size() == 0 || scf.C.size() == 0 || scf.eps.empty())
+            throw std::runtime_error(
+                "cuda::gpw::GpwDft::forces: converged result missing P/C/eps");
+        if (scf.veff.empty() || scf.v_es.empty())
+            throw std::runtime_error(
+                "cuda::gpw::GpwDft::forces: missing SCF grids");
+        throw std::runtime_error("cuda::gpw::GpwDft::forces: Gamma single-grid "
+                                 "force requires live device SCF state");
     }
-    if (method.n_occ < 1)
-        throw std::invalid_argument(
-            "cuda::gpw::gpw_forces_from_scf: n_occ must be >= 1");
-    if (scf.P.size() == 0 || scf.C.size() == 0 || scf.eps.empty())
-        throw std::runtime_error(
-            "cuda::gpw::gpw_forces_from_scf: converged result missing P/C/eps");
-    if (scf.veff.empty() || scf.v_es.empty())
-        throw std::runtime_error(
-            "cuda::gpw::gpw_forces_from_scf: missing SCF V_eff/V_es "
-            "(need store_grids from final KS)");
-
-    const int na = static_cast<int>(atoms.size());
-    const std::vector<GridBasisFunction> basis = flatten_basis(atoms);
-    const int nb = static_cast<int>(basis.size());
-    if (static_cast<int>(scf.P.shape(0)) != nb
-        || static_cast<int>(scf.P.shape(1)) != nb)
-        throw std::runtime_error(
-            "cuda::gpw::gpw_forces_from_scf: P shape does not match basis");
-
-    const bool periodic = true;
-    const double eps = method.eps_default;
-    const bool analytic_loc = !method.local_pp_on_grid; // first slice: false
-
-    // Map atoms ↔ AO blocks.
-    std::vector<int> atom_off(static_cast<std::size_t>(na) + 1, 0);
-    for (int a = 0; a < na; ++a)
-        atom_off[static_cast<std::size_t>(a) + 1] =
-            atom_off[static_cast<std::size_t>(a)]
-            + static_cast<int>(atoms[static_cast<std::size_t>(a)].basis.size());
-    std::vector<int> owner(static_cast<std::size_t>(nb), 0);
-    for (int a = 0; a < na; ++a)
-        for (int u = atom_off[static_cast<std::size_t>(a)];
-             u < atom_off[static_cast<std::size_t>(a) + 1]; ++u)
-            owner[static_cast<std::size_t>(u)] = a;
-
-    std::vector<double> radii(static_cast<std::size_t>(nb));
-    double rmax = 0.0;
-    for (int u = 0; u < nb; ++u) {
-        radii[static_cast<std::size_t>(u)] =
-            basis_function_radius(basis[static_cast<std::size_t>(u)], eps);
-        rmax = std::max(rmax, radii[static_cast<std::size_t>(u)]);
+    // These explicitly remaining paths consume the original host payload.
+    // They do not claim the Gamma single-grid accepted-state residency repair.
+    auto shell = cpu_shell_();
+    auto force = cpu::gpw::internal::gpw_forces_from_scf(atoms, shell, scf);
+    if (accumulate_into) {
+        accumulate_host_forces(force, *accumulate_into, stream);
+        return {};
     }
-    std::vector<std::array<GridBasisFunction, 3>> dphi(
-        static_cast<std::size_t>(nb));
-    std::vector<std::array<double, 3>> drad(static_cast<std::size_t>(nb));
-    double drmax = 0.0;
-    for (int u = 0; u < nb; ++u)
-        for (int k = 0; k < 3; ++k) {
-            dphi[static_cast<std::size_t>(u)][k] =
-                deriv_bf(basis[static_cast<std::size_t>(u)], k);
-            drad[static_cast<std::size_t>(u)][k] = basis_function_radius(
-                dphi[static_cast<std::size_t>(u)][k], eps);
-            drmax = std::max(drmax, drad[static_cast<std::size_t>(u)][k]);
-        }
-    int mimg[3];
-    pair_image_counts(method.cell, periodic, std::max(2.0 * rmax, drmax + rmax),
-                      mimg);
-
-    // Energy-weighted density W = Σ_i 2 ε_i c_i c_iᵀ (closed-shell).
-    const RealMatrix& P = scf.P;
-    RealMatrix W = energy_weighted(scf.C, scf.eps, method.n_occ, 2.0);
-
-    std::vector<std::array<double, 3>> forces(static_cast<std::size_t>(na),
-                                              {0.0, 0.0, 0.0});
-
-    // ── Host AO Pulay: +2 W dS − 2 P dT − 2 P dV_pp(basis) + op-center ──
-    std::vector<const GpwAtom*> all(static_cast<std::size_t>(na));
-    for (int a = 0; a < na; ++a)
-        all[static_cast<std::size_t>(a)] = &atoms[static_cast<std::size_t>(a)];
-    for (int A = 0; A < na; ++A) {
-        const std::vector<const GpwAtom*> onlyA = {
-            &atoms[static_cast<std::size_t>(A)]};
-        for (int k = 0; k < 3; ++k) {
-            double f = 0.0;
-            for (int mu = atom_off[static_cast<std::size_t>(A)];
-                 mu < atom_off[static_cast<std::size_t>(A) + 1]; ++mu) {
-                const GridBasisFunction& dmu =
-                    dphi[static_cast<std::size_t>(mu)][k];
-                const double rdmu = drad[static_cast<std::size_t>(mu)][k];
-                for (int nu = 0; nu < nb; ++nu) {
-                    const double reach =
-                        rdmu + radii[static_cast<std::size_t>(nu)];
-                    double s = 0.0, t = 0.0;
-                    contracted_ST_periodic(dmu,
-                                           basis[static_cast<std::size_t>(nu)],
-                                           method.cell, mimg, reach, s, t);
-                    f += 2.0 * W(mu, nu) * s;
-                    f -= 2.0 * P(mu, nu) * t;
-                    f -= 2.0 * P(mu, nu)
-                         * vpp_images(dmu, basis[static_cast<std::size_t>(nu)],
-                                      all, method.cell, mimg, reach,
-                                      analytic_loc);
-                }
-            }
-            for (int mu = 0; mu < nb; ++mu) {
-                const GridBasisFunction& dmu =
-                    dphi[static_cast<std::size_t>(mu)][k];
-                const double rdmu = drad[static_cast<std::size_t>(mu)][k];
-                for (int nu = 0; nu < nb; ++nu) {
-                    const double reach =
-                        rdmu + radii[static_cast<std::size_t>(nu)];
-                    f += 2.0 * P(mu, nu)
-                         * vpp_images(dmu, basis[static_cast<std::size_t>(nu)],
-                                      onlyA, method.cell, mimg, reach,
-                                      analytic_loc);
-                }
-            }
-            forces[static_cast<std::size_t>(A)][k] = f;
-        }
-    }
-
-    // ── Device grid product: V_eff grid + ionic HF + local-PP HF ──────────
-    // Force free-fn is a **post-SCF boundary**: one setup H2D of SCF payload
-    // + tables, then device kernels on a non-default stream (no default-stream
-    // cudaDeviceSynchronize). Host AO Pulay above remains hybrid residual.
-    UniformGrid grid = make_uniform_grid(method.cell, method.cutoff_ry);
-    const long ng = grid.npts();
-    if (static_cast<long>(scf.veff.size()) != ng
-        || static_cast<long>(scf.v_es.size()) != ng)
-        throw std::runtime_error(
-            "cuda::gpw::gpw_forces_from_scf: V_eff/V_es size != grid npts");
-
-    CompactBasisGrid cbg_local;
-    const CompactBasisGrid* cbg_ptr = nullptr;
-    if (scf.scf_cbg_valid && scf.scf_cbg.npts == ng) {
-        cbg_ptr = &scf.scf_cbg;
-    } else {
-        cbg_local = build_compact_basis_grid(grid, basis, periodic, eps);
-        cbg_ptr = &cbg_local;
-    }
-    const CompactBasisGrid& cbg = *cbg_ptr;
-
-    std::vector<GridBasisFunction> dflat(static_cast<std::size_t>(nb) * 3);
-    for (int u = 0; u < nb; ++u)
-        for (int k = 0; k < 3; ++k)
-            dflat[static_cast<std::size_t>(u) * 3 + k] =
-                dphi[static_cast<std::size_t>(u)][k];
-    CompactBasisGrid cbgd_local;
-    const CompactBasisGrid* cbgd_ptr = nullptr;
-    if (scf.force_cbgd_valid && scf.force_cbgd.npts == ng) {
-        cbgd_ptr = &scf.force_cbgd;
-    } else {
-        GpwResult& scf_mut = const_cast<GpwResult&>(scf);
-        scf_mut.force_cbgd =
-            build_compact_basis_grid(grid, dflat, periodic, eps);
-        scf_mut.force_cbgd_valid = true;
-        cbgd_ptr = &scf_mut.force_cbgd;
-    }
-    const CompactBasisGrid& cbgd = *cbgd_ptr;
-
-    const std::vector<double> Pvec = mat_to_vec(P, nb);
-    // Host densify is force-setup (geometry CSR + P); device kernels own
-    // the O(N_grid) HF. Prefer scf.rho if ever cached (not yet).
-    const std::vector<double> rho = collocate_density(cbg, nb, Pvec);
-
-    std::vector<int> g2a(static_cast<std::size_t>(ng), -1);
-    for (std::size_t a = 0; a < cbg.gidx.size(); ++a)
-        g2a[static_cast<std::size_t>(cbg.gidx[a])] = static_cast<int>(a);
-
-    const int n_act = static_cast<int>(cbg.gidx.size());
-    const int n_act_d = static_cast<int>(cbgd.gidx.size());
-    const std::size_t nnz = cbg.fu.size();
-    const std::size_t nnz_d = cbgd.fu.size();
-
-    ScfStream force_stream;
-    const cudaStream_t stream = force_stream;
-
-    double* d_veff = d_alloc<double>(static_cast<std::size_t>(ng));
-    double* d_v_es = d_alloc<double>(static_cast<std::size_t>(ng));
-    double* d_rho = d_alloc<double>(static_cast<std::size_t>(ng));
-    double* d_P = d_alloc<double>(Pvec.size());
-    double* d_forces = d_alloc<double>(static_cast<std::size_t>(3 * na));
-    int* d_owner = d_alloc<int>(static_cast<std::size_t>(nb));
-    long* d_cbg_gidx = d_alloc<long>(static_cast<std::size_t>(n_act));
-    std::size_t* d_cbg_off =
-        d_alloc<std::size_t>(static_cast<std::size_t>(n_act) + 1);
-    int* d_cbg_fu = d_alloc<int>(nnz);
-    double* d_cbg_fv = d_alloc<double>(nnz);
-    long* d_cbgd_gidx = d_alloc<long>(static_cast<std::size_t>(n_act_d));
-    std::size_t* d_cbgd_off =
-        d_alloc<std::size_t>(static_cast<std::size_t>(n_act_d) + 1);
-    int* d_cbgd_fu = d_alloc<int>(nnz_d);
-    double* d_cbgd_fv = d_alloc<double>(nnz_d);
-    int* d_g2a = d_alloc<int>(static_cast<std::size_t>(ng));
-    internal::DeviceForceAtom* d_atoms =
-        d_alloc<internal::DeviceForceAtom>(static_cast<std::size_t>(na));
-
-    auto free_all = [&]() {
-        cudaFree(d_veff);
-        cudaFree(d_v_es);
-        cudaFree(d_rho);
-        cudaFree(d_P);
-        cudaFree(d_forces);
-        cudaFree(d_owner);
-        cudaFree(d_cbg_gidx);
-        cudaFree(d_cbg_off);
-        cudaFree(d_cbg_fu);
-        cudaFree(d_cbg_fv);
-        cudaFree(d_cbgd_gidx);
-        cudaFree(d_cbgd_off);
-        cudaFree(d_cbgd_fu);
-        cudaFree(d_cbgd_fv);
-        cudaFree(d_g2a);
-        cudaFree(d_atoms);
-    };
-
-    try {
-        const size_t bytes_g = static_cast<size_t>(ng) * sizeof(double);
-        // Force-setup H2D (boundary for free-fn), all async on force stream.
-        check_cuda(cudaMemcpyAsync(d_veff, scf.veff.data(), bytes_g,
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D veff force-setup");
-        check_cuda(cudaMemcpyAsync(d_v_es, scf.v_es.data(), bytes_g,
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D v_es force-setup");
-        check_cuda(cudaMemcpyAsync(d_rho, rho.data(), bytes_g,
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D rho force-setup");
-        check_cuda(cudaMemcpyAsync(d_P, Pvec.data(),
-                                   Pvec.size() * sizeof(double),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D P force-setup");
-        check_cuda(cudaMemsetAsync(d_forces, 0,
-                                   static_cast<size_t>(3 * na) * sizeof(double),
-                                   stream),
-                   "zero forces");
-        check_cuda(cudaMemcpyAsync(d_owner, owner.data(),
-                                   static_cast<size_t>(nb) * sizeof(int),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D owner");
-        check_cuda(cudaMemcpyAsync(d_cbg_gidx, cbg.gidx.data(),
-                                   static_cast<size_t>(n_act) * sizeof(long),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D cbg.gidx");
-        check_cuda(cudaMemcpyAsync(d_cbg_off, cbg.off.data(),
-                                   (static_cast<size_t>(n_act) + 1)
-                                       * sizeof(std::size_t),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D cbg.off");
-        check_cuda(cudaMemcpyAsync(d_cbg_fu, cbg.fu.data(), nnz * sizeof(int),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D cbg.fu");
-        check_cuda(cudaMemcpyAsync(d_cbg_fv, cbg.fv.data(),
-                                   nnz * sizeof(double), cudaMemcpyHostToDevice,
-                                   stream),
-                   "H2D cbg.fv");
-        check_cuda(cudaMemcpyAsync(d_cbgd_gidx, cbgd.gidx.data(),
-                                   static_cast<size_t>(n_act_d) * sizeof(long),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D cbgd.gidx");
-        check_cuda(cudaMemcpyAsync(d_cbgd_off, cbgd.off.data(),
-                                   (static_cast<size_t>(n_act_d) + 1)
-                                       * sizeof(std::size_t),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D cbgd.off");
-        check_cuda(cudaMemcpyAsync(d_cbgd_fu, cbgd.fu.data(),
-                                   nnz_d * sizeof(int), cudaMemcpyHostToDevice,
-                                   stream),
-                   "H2D cbgd.fu");
-        check_cuda(cudaMemcpyAsync(d_cbgd_fv, cbgd.fv.data(),
-                                   nnz_d * sizeof(double),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D cbgd.fv");
-        check_cuda(cudaMemcpyAsync(d_g2a, g2a.data(),
-                                   static_cast<size_t>(ng) * sizeof(int),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D g2a");
-
-        std::vector<internal::DeviceForceAtom> h_atoms(
-            static_cast<std::size_t>(na));
-        for (int a = 0; a < na; ++a) {
-            const GpwAtom& A = atoms[static_cast<std::size_t>(a)];
-            internal::DeviceForceAtom& da =
-                h_atoms[static_cast<std::size_t>(a)];
-            da.pos[0] = A.pos[0];
-            da.pos[1] = A.pos[1];
-            da.pos[2] = A.pos[2];
-            da.z_val = A.z_val;
-            da.rloc = A.rloc;
-            da.n_cloc = static_cast<int>(std::min(
-                A.cloc.size(), static_cast<std::size_t>(internal::kMaxCloc)));
-            for (int k = 0; k < da.n_cloc; ++k)
-                da.cloc[k] = A.cloc[static_cast<std::size_t>(k)];
-        }
-        check_cuda(cudaMemcpyAsync(d_atoms, h_atoms.data(),
-                                   static_cast<size_t>(na)
-                                       * sizeof(internal::DeviceForceAtom),
-                                   cudaMemcpyHostToDevice, stream),
-                   "H2D atoms");
-
-        internal::DeviceCbgView cbg_view;
-        cbg_view.gidx = d_cbg_gidx;
-        cbg_view.off = d_cbg_off;
-        cbg_view.fu = d_cbg_fu;
-        cbg_view.fv = d_cbg_fv;
-        cbg_view.g2a = d_g2a;
-        cbg_view.n_active = n_act;
-        cbg_view.npts = ng;
-
-        internal::DeviceCbgView cbgd_view;
-        cbgd_view.gidx = d_cbgd_gidx;
-        cbgd_view.off = d_cbgd_off;
-        cbgd_view.fu = d_cbgd_fu;
-        cbgd_view.fv = d_cbgd_fv;
-        cbgd_view.g2a = nullptr;
-        cbgd_view.n_active = n_act_d;
-        cbgd_view.npts = ng;
-
-        const CollocateGridDesc coll = to_coll(grid);
-        internal::accumulate_grid_veff_forces_device(coll, cbg_view, cbgd_view,
-                                                     d_veff, d_P, nb, d_owner,
-                                                     d_forces, stream);
-        internal::accumulate_ionic_hf_forces_device(coll, d_atoms, na, d_v_es,
-                                                    periodic, d_forces, stream);
-        if (method.local_pp_on_grid)
-            internal::accumulate_local_pp_hf_forces_device(
-                coll, d_atoms, na, d_rho, periodic, d_forces, stream);
-
-        // Boundary D2H of force vector only (not full grids).
-        std::vector<double> h_f(static_cast<std::size_t>(3 * na), 0.0);
-        check_cuda(cudaMemcpyAsync(h_f.data(), d_forces,
-                                   static_cast<size_t>(3 * na) * sizeof(double),
-                                   cudaMemcpyDeviceToHost, stream),
-                   "D2H forces boundary");
-        check_cuda(cudaStreamSynchronize(stream), "force stream fence");
-        for (int a = 0; a < na; ++a)
-            for (int k = 0; k < 3; ++k)
-                forces[static_cast<std::size_t>(a)][k] +=
-                    h_f[static_cast<std::size_t>(3 * a + k)];
-    } catch (...) {
-        free_all();
-        throw;
-    }
-    free_all();
-    return forces;
+    return force;
 }
 
-std::vector<std::array<double, 3>>
-gpw_forces_analytic(const std::vector<GpwAtom>& atoms, GpwDft& method) {
-    const GpwResult& scf = method.run(atoms);
-    if (!scf.converged)
-        throw std::runtime_error(
-            "cuda::gpw::gpw_forces_analytic: SCF did not converge (iters="
-            + std::to_string(scf.iters) + ")");
-    return gpw_forces_from_scf(atoms, method, scf);
-}
-
-std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
-                                 GpwDft& method, double h,
-                                 const std::array<bool, 3>& axes) {
-    const GpwResult& scf = method.run(atoms);
-    if (!scf.converged)
-        throw std::runtime_error(
-            "cuda::gpw::gpw_stress: SCF did not converge (iters="
-            + std::to_string(scf.iters) + ")");
-    return gpw_stress(atoms, method, scf, h, axes);
-}
-
-std::array<double, 6> gpw_stress(const std::vector<GpwAtom>& atoms,
-                                 const GpwDft& method, const GpwResult& scf,
-                                 double h, const std::array<bool, 3>& axes) {
+std::array<double, 6>
+GpwDft::stress_from_state_(const std::vector<GpwAtom>& atoms,
+                           const GpwResult& scf) const {
     if (!scf.converged)
         throw std::invalid_argument(
-            "cuda::gpw::gpw_stress: supplied state is not converged");
-    // First cut: host fixed-P analytic assembly at the CUDA density payload
-    // (mirrors early free-fn force hybrid — density from device SCF, stress
-    // assembly reuses CPU product twin). No silent re-SCF on CPU.
-    cpu::gpw::GpwDft shell = cpu_shell_from_cuda(method);
-    return cpu::gpw::internal::gpw_stress_at_state_impl(atoms, shell, scf, h,
-                                                        axes);
+            "cuda::gpw::GpwDft::stress: supplied state is not converged");
+    auto shell = cpu_shell_();
+    return cpu::gpw::internal::gpw_stress_at_state_impl(
+        atoms, shell, scf, stress_strain_h, stress_axes);
 }
 
 } // namespace gpw

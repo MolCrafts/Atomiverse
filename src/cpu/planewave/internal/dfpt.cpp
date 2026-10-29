@@ -173,7 +173,7 @@ void kb_moments(const PWWorkspace& ws, std::size_t ia, std::size_t ip,
 
     for (int ig = 0; ig < ws.n_g; ++ig) {
         const AccReal fl = proj.f_G[ig];
-        if (std::abs(fl) < AccReal(1e-30))
+        if (fl == AccReal(0))
             continue;
         const AccReal qx = gv.g[ig][0] + gv.kvec[0];
         const AccReal qy = gv.g[ig][1] + gv.kvec[1];
@@ -221,7 +221,7 @@ void add_dnl_psi(const PWWorkspace& ws, std::size_t ia, int alpha,
     for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
         const auto& proj = ws.kb_proj[ia][ip];
         const AccReal D = proj.d;
-        if (std::abs(D) < AccReal(1e-16))
+        if (D == AccReal(0))
             continue;
         const int l = proj.l;
         const int nm = n_m_for_l(l);
@@ -231,7 +231,7 @@ void add_dnl_psi(const PWWorkspace& ws, std::size_t ia, int alpha,
         std::vector<AccReal> ylm(static_cast<std::size_t>(nm));
         for (int ig = 0; ig < ws.n_g; ++ig) {
             const AccReal fl = proj.f_G[ig];
-            if (std::abs(fl) < AccReal(1e-30))
+            if (fl == AccReal(0))
                 continue;
             const AccReal qx = gv.g[ig][0] + gv.kvec[0];
             const AccReal qy = gv.g[ig][1] + gv.kvec[1];
@@ -1278,7 +1278,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                         for (std::size_t ip = 0; ip < ws.kb_proj[ia].size();
                              ++ip) {
                             const AccReal Dc = ws.kb_proj[ia][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            if (Dc == AccReal(0))
                                 continue;
                             kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
                             for (const auto& mm : mo) {
@@ -1643,7 +1643,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                             for (std::size_t ip = 0; ip < ws.kb_proj[ja].size();
                                  ++ip) {
                                 const AccReal Dc = ws.kb_proj[ja][ip].d;
-                                if (std::abs(Dc) < AccReal(1e-16))
+                                if (Dc == AccReal(0))
                                     continue;
                                 kb_moments(ws, ja, ip, psi, false, mo_psi);
                                 kb_moments(ws, ja, ip, x.data(), false,
@@ -1956,7 +1956,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                 for (std::size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
                     for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
                         const AccReal Dc = ws.kb_proj[ia][ip].d;
-                        if (std::abs(Dc) < AccReal(1e-16))
+                        if (Dc == AccReal(0))
                             continue;
                         kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
                         for (const auto& mm : mo) {
@@ -2257,7 +2257,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                         for (std::size_t ip = 0; ip < ws.kb_proj[ja].size();
                              ++ip) {
                             const AccReal Dc = ws.kb_proj[ja][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            if (Dc == AccReal(0))
                                 continue;
                             kb_moments(ws, ja, ip, psi, false, mo_psi);
                             kb_moments(ws, ja, ip, x.data(), false, mo_dpsi);
@@ -2326,7 +2326,7 @@ void add_dnl_psi_q(const PWWorkspace& ws_k, const PWWorkspace& ws_kq,
         const auto& proj_k = ws_k.kb_proj[ia][ip];
         const auto& proj_kq = ws_kq.kb_proj[ia][ip];
         const AccReal D = proj_k.d;
-        if (std::abs(D) < AccReal(1e-16))
+        if (D == AccReal(0))
             continue;
         const int l = proj_k.l;
         const int nm = n_m_for_l(l);
@@ -2341,7 +2341,7 @@ void add_dnl_psi_q(const PWWorkspace& ws_k, const PWWorkspace& ws_kq,
         std::vector<AccReal> ylm(static_cast<std::size_t>(nm));
         for (int ig = 0; ig < ws_kq.n_g; ++ig) {
             const AccReal fl = proj_kq.f_G[ig];
-            if (std::abs(fl) < AccReal(1e-30))
+            if (fl == AccReal(0))
                 continue;
             const AccReal qx = gv_kq.g[ig][0] + gv_kq.kvec[0];
             const AccReal qy = gv_kq.g[ig][1] + gv_kq.kvec[1];
@@ -2825,7 +2825,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                         for (std::size_t ip = 0; ip < ws.kb_proj[ia].size();
                              ++ip) {
                             const AccReal Dc = ws.kb_proj[ia][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            if (Dc == AccReal(0))
                                 continue;
                             kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
                             for (const auto& mm : mo) {
@@ -3230,7 +3230,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                                 ks.kb_proj[ja].size(), kqs.kb_proj[ja].size());
                             for (std::size_t ip = 0; ip < nproj; ++ip) {
                                 const AccReal Dc = ks.kb_proj[ja][ip].d;
-                                if (std::abs(Dc) < AccReal(1e-16))
+                                if (Dc == AccReal(0))
                                     continue;
                                 kb_moments(ws, ja, ip, psi, false, mo_psi);
                                 kb_moments(ws_kq, ja, ip, x.data(), false,
@@ -3618,7 +3618,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                 for (std::size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
                     for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
                         const AccReal Dc = ws.kb_proj[ia][ip].d;
-                        if (std::abs(Dc) < AccReal(1e-16))
+                        if (Dc == AccReal(0))
                             continue;
                         kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
                         for (const auto& mm : mo) {
@@ -3960,7 +3960,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                             ks.kb_proj[ja].size(), kqs.kb_proj[ja].size());
                         for (std::size_t ip = 0; ip < nproj; ++ip) {
                             const AccReal Dc = ks.kb_proj[ja][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            if (Dc == AccReal(0))
                                 continue;
                             kb_moments(ws, ja, ip, psi, false, mo_psi);
                             kb_moments(ws_kq, ja, ip, x.data(), false, mo_dpsi);

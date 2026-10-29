@@ -1,0 +1,15 @@
+
+Currently Loaded Modules:
+  1) hpc_sysenv/.1                            (H,S)
+  2) hpc/.2.1.0                               (H,S)
+  3) GCC/.14.3.0                              (H)
+  4) MPICH/.4.3.2-hpc2                        (H)
+  5) OpenBLAS/.0.3.32-openmp                  (H)
+  6) ScaLAPACK/.2.2.3-OpenBLAS-0.3.32         (H)
+  7) FFTW/.3.3.11                             (H)
+  8) buildenv-gcc/2026.03-mpich
+  9) QuantumESPRESSO/7.6-gcc-2026.03-mpich-eb
+
+  Where:
+   H:  Hidden Module
+   S:  Module is Sticky, requires --force to unload or purge

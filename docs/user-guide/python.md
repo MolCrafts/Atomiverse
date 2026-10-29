@@ -1187,15 +1187,22 @@ by differencing energies — and are written back to the frame's `fx`/`fy`/`fz`
 columns along with that SCF's total energy in eV. `stress` is the
 Nielsen-Martin cell derivative in the mechanical (CP2K) sign,
 σ = −(1/V)·∂E/∂ε, so a cell compressed below its equilibrium lattice
-constant returns a positive diagonal; it reports on the cell and writes
-nothing back. Each call runs its own SCF (the stress adds twelve
-non-self-consistent strained diagonalizations on top of it) and neither
-updates `last_result`, which stays the result of the last `run`.
+constant returns a positive diagonal. Its returned vector is intensive
+[eV/Å³], while `frame.meta["stress"]` stores the extensive virial
+`stress * frame.box.volume()` [eV], excluding the kinetic contribution.
+Each standalone derivative call runs its own reference SCF and updates
+`last_result` with that call's convergence status and energy. Recorded
+closed-form domains consume certified unstrained final bands; other domains
+retain frozen-density NSCF strain differences. The current domain limits and
+validation records are listed in the [DFT roadmap](../roadmap/dft.md).
 
 Note the unit split: `PWResult` keeps the solver's Rydberg — 1 Ry = ½
 Hartree, spelled 1 Ry = 13.605693 eV in the engine
 (`cpu::pw::qe_units::rydberg_to_ev`, the Quantum ESPRESSO-rounded value) —
-while everything reaching the frame is in engine units: eV, eV/Å, eV/Å³.
+while Frame energies use eV, forces use eV/Å, and the Frame's extensive
+virial uses eV. Divide that virial by the cell volume [Å³] to obtain stress
+[eV/Å³]. Molecular SCF and GPW result energies use Hartree; these method
+result conventions do not change the shared Frame units.
 
 ### Spin, functionals and metals
 

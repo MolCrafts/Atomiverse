@@ -155,13 +155,26 @@ class MD : public Driver<ATV::md::Phase> {
     /// re-runs `setup_pass` from a zeroed step counter — no stateful integrator,
     /// thermostat ramp or recorder cadence carries over.
     ///
+    /// Owned rows may be spatially sorted during the run. This overload puts
+    /// each atom back in the row it occupied at import before export, so a
+    /// row-indexed molpy bond table still names the same atoms. The restore
+    /// is skipped when the owned count changed or the tags are not a unique
+    /// permutation of the import snapshot.
+    ///
     /// @param frame molrs.Frame handle (input geometry + output sink).
     /// @param n_steps Step budget.
     /// @return Number of iterations actually executed.
 #ifdef ATV_HAS_MOLPY
     BigInt run(molrs::FrameRef& frame, BigInt n_steps) {
         cpu::Frame work = cpu::from_molpy(frame);
+        const int n_import = work.nlocal();
+        std::vector<TagInt> import_tags(
+            static_cast<std::size_t>(std::max(n_import, 0)));
+        if (n_import > 0)
+            std::copy_n(work.span(kAtom_tag).data(), n_import,
+                        import_tags.begin());
         const BigInt iterations = run(work, n_steps);
+        work.restore_import_order(import_tags.data(), n_import);
         cpu::to_molpy(work, frame);
         this->flush_live_();
         return iterations;

@@ -28,6 +28,7 @@
 
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
+#include "atomiverse/cpu/longrange/pppm.h"
 #endif
 #ifdef ATV_HAS_PW
 #include "atomiverse/cpu/planewave/pw_solver.h"
@@ -117,7 +118,8 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         [](Handle& self, const ATV::cpu::task::PairLJCutParams& p) {
             self.set_categorical(
                 "set_evaluator", p,
-                ATV::cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                ATV::cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+                    .set_special_bonds(p.s12, p.s13, p.s14));
         },
         nb::arg("comp"),
         "Append the Lennard-Jones 12-6 pair evaluator. Needs a NeighborList "
@@ -163,6 +165,20 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "Append the reciprocal-space half of the same Ewald/PME split. build() "
         "requires exactly one real-space partner (CoulLong) at the SAME alpha "
         "[1/A]. Bound only on an extension built with ATV_BUILD_KSPACE=ON.");
+    cls.def(
+        "set_evaluator_kspace_pppm",
+        [](Handle& self, const ATV::cpu::task::KSpacePppmParams& p) {
+            // Move-only (FFTW plans). Not a wire alternative: the handle
+            // records the name and the charge requirement itself.
+            self.set_unmirrored_evaluator(
+                ATV::cpu::KSpacePPPM{p.alpha, p.grid_spacing, p.order},
+                "KSpacePPPM", true);
+        },
+        nb::arg("comp"),
+        "Append ik PPPM, the Hockney-Eastwood reciprocal half. build() "
+        "requires exactly one CoulLong at the SAME alpha [1/A]. Not an MPI "
+        "task-wire component: a launcher run that names it is refused. "
+        "Bound only on an extension built with ATV_BUILD_KSPACE=ON.");
 #endif
 
 #ifdef ATV_HAS_PW

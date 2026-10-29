@@ -24,6 +24,13 @@ boundary between them falls:
     transformed back — O(N log N) instead of the O(N²) direct sum
     (``cpu::KSpacePME``).
 
+``KSpacePPPM``
+    The same split with Hockney–Eastwood PPPM and ik differentiation, the
+    LAMMPS ``pppm`` default. The mesh Green's function is the alias-sum
+    G(k), the energy scale is ``coulomb / (2V)``, and the force is the
+    Cartesian field ``i·k·V`` gathered with the spreading weights. It is
+    not the Essmann solver and it is not carried by the MPI task wire.
+
 Neither half is a Hamiltonian on its own. The driver enforces exactly one
 matched real/reciprocal pair at ``build()``, so installing one without the
 other raises there rather than running half an electrostatic model, and
@@ -50,8 +57,8 @@ neutral system is still expressible — insert an explicit zero column.
 this module raises ``MissingDomainError`` naming ``ATV_BUILD_POTENTIALS``.
 The reciprocal solver needs FFTW3 and is its own module, ``kspace``: on an
 extension built without ``ATV_BUILD_KSPACE=ON`` this module still exports
-``CoulLong``, and asking for ``KSpacePME`` raises ``AttributeError`` naming
-the flag.
+``CoulLong``, and asking for ``KSpacePME`` or ``KSpacePPPM`` raises
+``AttributeError`` naming the flag.
 For the cutoff (non-Ewald) Coulomb style see
 :data:`atomiverse.potentials.pair.CoulCut`.
 """
@@ -76,12 +83,15 @@ if has_domain("kspace"):
     #: Reciprocal-space Ewald/PME half —
     #: ``cpu::KSpacePME(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6)``.
     KSpacePME = _cpp.KSpacePME
-    __all__ = ["CoulLong", "KSpacePME"]
+    #: ik PPPM reciprocal half —
+    #: ``cpu::KSpacePPPM(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6)``.
+    KSpacePPPM = _cpp.KSpacePPPM
+    __all__ = ["CoulLong", "KSpacePME", "KSpacePPPM"]
 else:
     __all__ = ["CoulLong"]
 
 
 def __getattr__(name: str) -> Any:
-    if name == "KSpacePME":
+    if name in ("KSpacePME", "KSpacePPPM"):
         raise AttributeError(missing_domain_message(f"{__name__}.{name}", "kspace"))
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

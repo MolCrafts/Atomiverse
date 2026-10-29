@@ -179,7 +179,9 @@ void expect_energy_adjoint(PWWorkspace& ws, XCBuilder& builder,
 } // namespace
 
 TEST(PwXcQuadrature, UniformDensityPreservesChargeAndEnergyNormalization) {
-    for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
+    for (auto type :
+         {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
+          cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE}) {
         PWWorkspace ws;
         configure(ws, 1);
         ws.rho_G.fill(Complex(0));
@@ -199,7 +201,9 @@ TEST(PwXcQuadrature, UniformDensityPreservesChargeAndEnergyNormalization) {
 
 TEST(PwXcQuadrature, RestrictedAndSpinWeightedEnergyAdjointsNearNyquist) {
     for (int spin : {1, 2})
-        for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
+        for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE,
+                          cpu::xc::XCType::PBEsol, cpu::xc::XCType::RevPBE,
+                          cpu::xc::XCType::RPBE}) {
             PWWorkspace ws;
             configure(ws, spin);
             XCBuilder builder;
@@ -247,7 +251,9 @@ TEST(PwXcQuadrature, PhysicalDensitySpaceRejectsAliasedNyquistModes) {
 
 TEST(PwXcQuadrature,
      ClippedSpinRingingPreservesEnergyVariationAndDoubleCounting) {
-    for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
+    for (auto type :
+         {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
+          cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE}) {
         PWWorkspace ws;
         configure(ws, 2);
         // The alpha Fourier field is negative at some quadrature points,
@@ -357,7 +363,9 @@ void expect_fused_response(PWWorkspace& ws, XCBuilder& response,
 TEST(PwXcResponse,
      MatchesCompleteFiniteDifferencesForRestrictedAndUnequalSpins) {
     for (int spin : {1, 2})
-        for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
+        for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE,
+                          cpu::xc::XCType::PBEsol, cpu::xc::XCType::RevPBE,
+                          cpu::xc::XCType::RPBE}) {
             PWWorkspace ws;
             configure(ws, spin);
             XCBuilder response;
@@ -376,7 +384,9 @@ TEST(PwXcResponse,
 }
 
 TEST(PwXcResponse, MatchesFiniteDifferencesAcrossClippingAndLowDensityCutoffs) {
-    for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
+    for (auto type :
+         {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
+          cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE}) {
         PWWorkspace ws;
         configure(ws, 2);
         ws.rho_spin_G[0].fill(Complex(0));

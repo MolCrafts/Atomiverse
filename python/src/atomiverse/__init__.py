@@ -19,6 +19,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``md.integrator.VelocityVerlet``      ``VelocityVerlet``          ``cpu::md::VelocityVerlet``
 ``md.integrator.NoseHooverNPT``       ``NoseHooverNPT``           ``cpu::md::NoseHooverNPT``
 ``md.integrator.ParrinelloRahmanNPT`` ``ParrinelloRahmanNPT``     ``cpu::md::ParrinelloRahmanNPT``
+``md.integrator.NvtSllod``            ``NvtSllod``                ``cpu::md::NvtSllod``
 ``md.thermostat.NoseHoover``          ``NoseHoover``              ``cpu::md::NoseHoover``
 ``md.thermostat.Langevin``            ``Langevin``                ``cpu::md::FixLangevin``
 ``md.thermostat.CSVR``                ``CSVR``                    ``cpu::md::FixCSVR``
@@ -47,6 +48,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.pair.Dpd``               ``PairDpd``                 ``cpu::PairDpd``
 ``longrange.CoulLong``                ``CoulLong``                ``cpu::CoulLong``
 ``longrange.KSpacePME``               ``KSpacePME``               ``cpu::KSpacePME``
+``longrange.KSpacePPPM``              ``KSpacePPPM``              ``cpu::KSpacePPPM``
 ``potentials.bond.Harmonic``          ``BondHarmonic``            ``cpu::BondHarmonic``
 ``potentials.bond.Fene``              ``BondFene``                ``cpu::BondFene``
 ``potentials.angle.Harmonic``         ``AngleHarmonic``           ``cpu::AngleHarmonic``
@@ -203,6 +205,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "VelocityVerlet": ("atomiverse.md.integrator", "VelocityVerlet"),
     "NoseHooverNPT": ("atomiverse.md.integrator", "NoseHooverNPT"),
     "ParrinelloRahmanNPT": ("atomiverse.md.integrator", "ParrinelloRahmanNPT"),
+    "NvtSllod": ("atomiverse.md.integrator", "NvtSllod"),
     "NoseHoover": ("atomiverse.md.thermostat", "NoseHoover"),
     "Langevin": ("atomiverse.md.thermostat", "Langevin"),
     "CSVR": ("atomiverse.md.thermostat", "CSVR"),
@@ -231,6 +234,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "PairDpd": ("atomiverse.potentials.pair", "Dpd"),
     "CoulLong": ("atomiverse.longrange", "CoulLong"),
     "KSpacePME": ("atomiverse.longrange", "KSpacePME"),
+    "KSpacePPPM": ("atomiverse.longrange", "KSpacePPPM"),
     "BondHarmonic": ("atomiverse.potentials.bond", "Harmonic"),
     "BondFene": ("atomiverse.potentials.bond", "Fene"),
     "AngleHarmonic": ("atomiverse.potentials.angle", "Harmonic"),
@@ -290,7 +294,10 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
 # Names whose product module is not the one their deep module needs: the
 # reciprocal solver lives in `longrange` (a `potentials` module) but is built
 # by `kspace`, which pulls `potentials` in.
-_NAME_DOMAINS: dict[str, str] = {"KSpacePME": "kspace"}
+_NAME_DOMAINS: dict[str, str] = {
+    "KSpacePME": "kspace",
+    "KSpacePPPM": "kspace",
+}
 
 # The public top-level names. `__all__` is the subset the installed extension
 # carries, computed on first access in `__getattr__`.
@@ -299,6 +306,7 @@ _PUBLIC: tuple[str, ...] = (
     "VelocityVerlet",
     "NoseHooverNPT",
     "ParrinelloRahmanNPT",
+    "NvtSllod",
     "InitVelocity",
     "NoseHoover",
     "Langevin",

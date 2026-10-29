@@ -6,6 +6,7 @@
 /// potential and includes the same free-energy correction as its SCF.
 
 #include "atomiverse/cuda/planewave/internal/pw_stress.cuh"
+#include "atomiverse/cuda/planewave/pw_solver.cuh"
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
@@ -75,371 +76,6 @@ ATV::electronic::Smearing to_smear_kind(ATV::electronic::Smearing s) {
     return ATV::electronic::Smearing::fermi_dirac;
 }
 
-/// Device SCF at `frame`; fills free/total energy and returns host ρ(r) + Ω.
-/// Collinear spin: rho_r is unused; rho_a / rho_b hold the spin channels.
-struct RefScf {
-    // Stable ownership: ws.gvec aliases this problem's gv0. Strained samples
-    // reuse its discrete Miller labels and FFT shape, never its stale host rho.
-    std::shared_ptr<cpu::pw::internal::PWProblem> problem;
-    std::vector<double> rho_r;
-    std::vector<double> rho_a;
-    std::vector<double> rho_b;
-    double omega_bohr = 0;
-    double energy_ry = 0;
-    cpu::pw::PWResult result;
-    int nr = 0;
-    int iterations = 0;
-    bool converged = false;
-    bool spin = false;
-    int n_alpha = 0;
-    int n_beta = 0;
-};
-
-RefScf
-run_device_scf(const cpu::Frame& frame,
-               const ::ATV::electronic::NormConservingPotential& potential,
-               double ecut_ry, int k_mesh, double tol, int max_iter,
-               double mix_beta, int pulay_depth, cpu::xc::XCType xc,
-               ATV::electronic::Smearing smearing, double degauss, int mp_order,
-               int extra_bands, bool spin_polarized, int multiplicity) {
-    auto owner = std::make_shared<cpu::pw::internal::PWProblem>();
-    auto& prob = *owner;
-    cpu::pw::internal::setup_pw_problem(frame, potential, ecut_ry, k_mesh,
-                                        prob);
-    cpu::pw::internal::PWWorkspace& ws = prob.ws;
-    const int n_elec = prob.n_elec;
-    const bool use_smear = (smearing != ATV::electronic::Smearing::none);
-
-    int n_alpha = 0;
-    int n_beta = 0;
-    if (spin_polarized) {
-        const int mag = multiplicity - 1;
-        if ((n_elec + mag) % 2 != 0 || mag > n_elec)
-            throw std::invalid_argument(
-                "cuda::pw::pw_stress: n_elec and multiplicity have "
-                "incompatible parity");
-        n_alpha = (n_elec + mag) / 2;
-        n_beta = (n_elec - mag) / 2;
-    } else if (!use_smear && n_elec % 2 != 0) {
-        throw std::invalid_argument(
-            "cuda::pw::pw_stress: " + std::to_string(n_elec)
-            + " valence electrons is not closed-shell — use restricted "
-              "metallic smearing for open-shell / metallic paths, or "
-              "spin_polarized for collinear spin");
-    }
-
-    ws.mix_beta = AccReal(mix_beta);
-    ws.pulay_depth = pulay_depth;
-
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    int n_bands =
-        spin_polarized ? std::max(std::max(n_alpha, n_beta), 1) : prob.n_bands;
-    if (use_smear) {
-        const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
-        n_bands = std::max({n_bands, n_occ_ceil + std::max(extra_bands, 0), 1});
-    }
-    const AccReal vol_bohr = prob.vol_bohr;
-    const AccReal omega_bohr = ws.omega;
-
-    const ATV::electronic::Smearing smear_kind = to_smear_kind(smearing);
-    const AccReal degauss_ha =
-        AccReal(degauss) * AccReal(cpu::pw::qe_units::rydberg_to_hartree);
-
-    DeviceDensity den(prob, mix_beta, pulay_depth, xc, spin_polarized, n_alpha,
-                      n_beta, n_elec);
-    DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
-                            den.stream());
-    solver.bind_grids(den.density_accumulator(), den.effective_potential());
-    solver.build_kpoints(prob);
-    if (use_smear && !spin_polarized)
-        solver.ensure_ritz_cache();
-
-    cpu::pw::internal::ConvergenceCheck conv{AccReal(tol), 2};
-    AccReal last_energy_ha = AccReal(0);
-    int last_iter = 0;
-    bool converged = false;
-    cpu::pw::PWResult result;
-    result.n_kpts = n_kpts;
-    result.n_kpts_local = n_kpts;
-    result.magnetization = spin_polarized ? multiplicity - 1 : 0;
-
-    if (spin_polarized && use_smear) {
-        for (int iter = 0; iter < max_iter; ++iter) {
-            den.sync_total_rho();
-            den.hartree();
-            den.exchange_correlation_spin();
-            std::vector<std::vector<AccReal>> evals_sk(
-                static_cast<std::size_t>(2 * n_kpts));
-            for (int s = 0; s < 2; ++s) {
-                den.assemble_veff_spin(s);
-                for (int ik = 0; ik < n_kpts; ++ik) {
-                    solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
-                    evals_sk[static_cast<std::size_t>(s * n_kpts + ik)].assign(
-                        ws.eigenvalues.begin(), ws.eigenvalues.end());
-                }
-            }
-            std::vector<AccReal> all_evals;
-            std::vector<AccReal> all_weights;
-            for (int s = 0; s < 2; ++s) {
-                for (int ik = 0; ik < n_kpts; ++ik) {
-                    const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
-                    for (AccReal e :
-                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)]) {
-                        all_evals.push_back(e);
-                        all_weights.push_back(w);
-                    }
-                }
-            }
-            const AccReal mu_ha = ATV::electronic::find_fermi_level(
-                all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
-                mp_order, AccReal(1));
-            AccReal e_band = 0;
-            AccReal entropy_sum = 0;
-            AccReal spin_count[2] = {0, 0};
-            for (int s = 0; s < 2; ++s) {
-                den.assemble_veff_spin(s);
-                den.zero_accumulator();
-                for (int ik = 0; ik < n_kpts; ++ik) {
-                    solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
-                    const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
-                    const auto& ev =
-                        evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
-                    std::vector<AccReal> w_one(ev.size(), w);
-                    auto fill = ATV::electronic::fill_occupations(
-                        ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order,
-                        AccReal(1));
-                    entropy_sum += fill.entropy;
-                    spin_count[s] += fill.n_occ;
-                    const int nb = static_cast<int>(fill.occ.size());
-                    for (int b = 0; b < nb; ++b)
-                        e_band += w * ev[static_cast<std::size_t>(b)]
-                                  * fill.occ[static_cast<std::size_t>(b)];
-                    solver.accumulate_density(w, omega_bohr, fill.occ.data(),
-                                              nb);
-                }
-                den.collect_spin_out(s);
-            }
-            den.mix_spin_linear();
-            const auto red = den.reduce_spin(static_cast<double>(vol_bohr));
-            ws.E_xc = AccReal(red.e_xc);
-            auto terms = cpu::pw::internal::combine_energy_terms(
-                e_band, AccReal(red.e_h), AccReal(red.e_xc_int),
-                AccReal(red.e_loc), ws.E_xc, prob.ew_total);
-            terms.e_one = e_band - AccReal(2.0) * AccReal(red.e_h)
-                          - AccReal(red.e_xc_int);
-            last_energy_ha = terms.e_one + AccReal(red.e_h) + ws.E_xc
-                             + prob.ew_total - degauss_ha * entropy_sum;
-            result.magnetization =
-                static_cast<double>(spin_count[0] - spin_count[1]);
-            result.n_elec_occ =
-                static_cast<double>(spin_count[0] + spin_count[1]);
-            result.e_fermi = static_cast<double>(mu_ha)
-                             / cpu::pw::qe_units::rydberg_to_hartree;
-            result.e_entropy = static_cast<double>(-degauss_ha * entropy_sum)
-                               / cpu::pw::qe_units::rydberg_to_hartree;
-            last_iter = iter + 1;
-            if (conv.step(AccReal(red.resid))) {
-                converged = true;
-                break;
-            }
-        }
-    } else if (spin_polarized) {
-        const int n_occ[2] = {n_alpha, n_beta};
-        for (int iter = 0; iter < max_iter; ++iter) {
-            den.sync_total_rho();
-            den.hartree();
-            den.exchange_correlation_spin();
-
-            AccReal e_band = 0;
-            for (int s = 0; s < 2; ++s) {
-                den.assemble_veff_spin(s);
-                den.zero_accumulator();
-                for (int ik = 0; ik < n_kpts; ++ik) {
-                    solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
-                    const AccReal weight = prob.kg.weights[ik];
-                    for (int b = 0; b < n_occ[s]; ++b)
-                        e_band += weight * ws.eigenvalues[b];
-                    solver.accumulate_density(weight, omega_bohr, n_occ[s],
-                                              1.0);
-                }
-                den.collect_spin_out(s);
-            }
-
-            den.mix_spin_linear();
-            const auto s = den.reduce_spin(static_cast<double>(vol_bohr));
-            ws.E_xc = AccReal(s.e_xc);
-            auto terms = cpu::pw::internal::combine_energy_terms(
-                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total);
-            terms.e_one =
-                e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
-            terms.total =
-                terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total;
-            last_energy_ha = terms.total;
-            last_iter = iter + 1;
-            if (conv.step(AccReal(s.resid))) {
-                converged = true;
-                break;
-            }
-        }
-    } else if (use_smear) {
-        std::vector<std::vector<AccReal>> evals_k(
-            static_cast<std::size_t>(n_kpts));
-        for (int iter = 0; iter < max_iter; ++iter) {
-            den.hartree();
-            den.exchange_correlation();
-            den.assemble_veff();
-
-            for (int ik = 0; ik < n_kpts; ++ik) {
-                solver.bind_kpoint(ik);
-                solver.solve(ws, 40);
-                evals_k[static_cast<std::size_t>(ik)].assign(
-                    ws.eigenvalues.begin(), ws.eigenvalues.end());
-                if (static_cast<int>(
-                        evals_k[static_cast<std::size_t>(ik)].size())
-                    > n_bands)
-                    evals_k[static_cast<std::size_t>(ik)].resize(
-                        static_cast<std::size_t>(n_bands));
-                solver.stash_ritz();
-            }
-
-            std::vector<AccReal> all_evals;
-            std::vector<AccReal> all_weights;
-            all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands));
-            all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands));
-            for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
-                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
-                for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
-                     ++b) {
-                    all_evals.push_back(ev[static_cast<std::size_t>(b)]);
-                    all_weights.push_back(w);
-                }
-            }
-            const AccReal mu_ha = ATV::electronic::find_fermi_level(
-                all_evals, all_weights, AccReal(n_elec), degauss_ha, smear_kind,
-                mp_order);
-
-            AccReal entropy_sum = AccReal(0);
-            AccReal n_occ = 0;
-            std::vector<std::vector<AccReal>> occ_k(
-                static_cast<std::size_t>(n_kpts));
-            for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
-                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
-                std::vector<AccReal> w_one(ev.size(), w);
-                auto fill = ATV::electronic::fill_occupations(
-                    ev, w_one, mu_ha, degauss_ha, smear_kind, mp_order);
-                occ_k[static_cast<std::size_t>(ik)].resize(ev.size());
-                for (std::size_t b = 0; b < ev.size(); ++b)
-                    occ_k[static_cast<std::size_t>(ik)][b] =
-                        ATV::electronic::smear_f_band(ev[b], mu_ha, degauss_ha,
-                                                      smear_kind, mp_order);
-                entropy_sum += fill.entropy;
-                n_occ += fill.n_occ;
-            }
-
-            den.zero_accumulator();
-            AccReal e_band = 0;
-            for (int ik = 0; ik < n_kpts; ++ik) {
-                solver.load_ritz(ik);
-                const AccReal weight =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
-                const auto& occ = occ_k[static_cast<std::size_t>(ik)];
-                const auto& ev = evals_k[static_cast<std::size_t>(ik)];
-                const int nb = static_cast<int>(occ.size());
-                for (int b = 0; b < nb; ++b)
-                    e_band += weight * ev[static_cast<std::size_t>(b)]
-                              * occ[static_cast<std::size_t>(b)];
-                solver.accumulate_density(weight, omega_bohr, occ.data(), nb);
-            }
-
-            den.collect();
-            den.mix(iter);
-            const auto s = den.reduce(static_cast<double>(vol_bohr));
-            ws.E_xc = AccReal(s.e_xc);
-            const auto terms = cpu::pw::internal::combine_energy_terms(
-                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total);
-            // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
-            last_energy_ha = terms.total + (-degauss_ha * entropy_sum);
-            result.n_elec_occ = static_cast<double>(n_occ);
-            result.e_fermi = static_cast<double>(mu_ha)
-                             / cpu::pw::qe_units::rydberg_to_hartree;
-            result.e_entropy = static_cast<double>(-degauss_ha * entropy_sum)
-                               / cpu::pw::qe_units::rydberg_to_hartree;
-            last_iter = iter + 1;
-            if (conv.step(AccReal(s.resid))) {
-                converged = true;
-                break;
-            }
-        }
-    } else {
-        for (int iter = 0; iter < max_iter; ++iter) {
-            den.hartree();
-            den.exchange_correlation();
-            den.assemble_veff();
-            den.zero_accumulator();
-
-            AccReal e_band = 0;
-            for (int ik = 0; ik < n_kpts; ++ik) {
-                solver.bind_kpoint(ik);
-                solver.solve(ws, 40);
-                const AccReal weight = prob.kg.weights[ik];
-                for (int b = 0; b < n_bands; ++b)
-                    e_band += weight * ws.eigenvalues[b] * AccReal(2);
-                solver.accumulate_density(weight, omega_bohr);
-            }
-
-            den.collect();
-            den.mix(iter);
-            const auto s = den.reduce(static_cast<double>(vol_bohr));
-            ws.E_xc = AccReal(s.e_xc);
-            const auto terms = cpu::pw::internal::combine_energy_terms(
-                e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total);
-            last_energy_ha = terms.total;
-            last_iter = iter + 1;
-            if (conv.step(AccReal(s.resid))) {
-                converged = true;
-                break;
-            }
-        }
-    }
-
-    RefScf out;
-    out.problem = owner;
-    out.nr = den.nr();
-    out.omega_bohr = den.omega();
-    out.spin = spin_polarized;
-    out.n_alpha = n_alpha;
-    out.n_beta = n_beta;
-    if (spin_polarized) {
-        out.rho_a.resize(static_cast<std::size_t>(out.nr));
-        out.rho_b.resize(static_cast<std::size_t>(out.nr));
-        den.fetch_rho_spin_r(0, out.rho_a.data());
-        den.fetch_rho_spin_r(1, out.rho_b.data());
-    } else {
-        out.rho_r.resize(static_cast<std::size_t>(out.nr));
-        den.fetch_rho_r(out.rho_r.data());
-    }
-    out.energy_ry = static_cast<double>(last_energy_ha)
-                    / cpu::pw::qe_units::rydberg_to_hartree;
-    out.iterations = last_iter;
-    out.converged = converged;
-    result.energy = out.energy_ry;
-    result.energy_ha = static_cast<double>(last_energy_ha);
-    result.iterations = last_iter;
-    result.converged = converged;
-    out.result = result;
-    return out;
-}
-
 /// Non-self-consistent free / total energy [Ry] with remapped density.
 double nscf_energy_ry(
     const cpu::Frame& frame, const cpu::pw::internal::PWProblem& reference,
@@ -447,7 +83,8 @@ double nscf_energy_ry(
     cpu::xc::XCType xc, ATV::electronic::Smearing smearing, double degauss,
     int mp_order, int extra_bands, bool spin_polarized, int n_alpha, int n_beta,
     const std::vector<double>& rho_r0, const std::vector<double>& rho_a0,
-    const std::vector<double>& rho_b0, double omega0_bohr) {
+    const std::vector<double>& rho_b0, double omega0_bohr,
+    cudaStream_t stream) {
     cpu::pw::internal::PWProblem prob;
     cpu::pw::internal::setup_pw_problem_fixed_basis(frame, reference, ecut_ry,
                                                     k_mesh, prob);
@@ -485,7 +122,7 @@ double nscf_energy_ry(
     const double scale = omega0_bohr / static_cast<double>(ws.omega);
 
     DeviceDensity den(prob, mix_beta, pulay_depth, xc, spin_polarized, n_alpha,
-                      n_beta, n_elec);
+                      n_beta, n_elec, stream);
     DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
                             den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
@@ -660,46 +297,33 @@ double nscf_energy_ry(
 
 } // namespace
 
-std::array<double, 6> pw_stress_analytic_impl(
-    const cpu::Frame& frame,
-    const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
-    int k_mesh, double tol, int max_iter, double mix_beta, int pulay_depth,
-    cpu::xc::XCType xc, ATV::electronic::Smearing smearing, double degauss,
-    int mp_order, int extra_bands, bool spin_polarized, int multiplicity,
-    double* energy_ry_out, cpu::pw::PWResult* result_out) {
-    if (frame.nlocal() <= 0)
-        throw std::invalid_argument("cuda::pw::pw_stress: frame has no atoms");
-    if (frame.box.volume() <= 0)
-        throw std::invalid_argument(
-            "cuda::pw::pw_stress: non-positive cell volume");
-    if (smearing != ATV::electronic::Smearing::none && !(degauss > 0.0))
-        throw std::invalid_argument(
-            "cuda::pw::pw_stress: degauss must be > 0 [Ry] when smearing is "
-            "enabled");
-    if (spin_polarized && multiplicity < 1)
-        throw std::invalid_argument(
-            "cuda::pw::pw_stress: multiplicity must be >= 1 when "
-            "spin_polarized");
-
-    const RefScf ref =
-        run_device_scf(frame, potential, ecut_ry, k_mesh, tol, max_iter,
-                       mix_beta, pulay_depth, xc, smearing, degauss, mp_order,
-                       extra_bands, spin_polarized, multiplicity);
-    if (energy_ry_out)
-        *energy_ry_out = ref.energy_ry;
-    if (result_out)
-        *result_out = ref.result;
-    if (!ref.converged) {
-        // No core/log.h from .cu — printf matches forces-scf breadcrumb.
-        std::printf("[pw] cuda pw_stress: SCF not converged after %d iters; "
-                    "using last density for HF stress (E=%.8f Ry)\n",
-                    ref.iterations, ref.energy_ry);
+std::array<double, 6>
+pw_stress_from_state(const cpu::Frame& frame, const PW& method,
+                     const cpu::pw::internal::PWProblem& reference,
+                     DeviceDensity& density, int n_alpha, int n_beta) {
+    const bool spin_polarized = method.spin_polarized;
+    const auto stream = density.stream();
+    const int nr = density.nr();
+    std::vector<double> rho, rho_a, rho_b;
+    if (spin_polarized) {
+        rho_a.resize(nr);
+        rho_b.resize(nr);
+        density.fetch_rho_spin_r(0, rho_a.data());
+        density.fetch_rho_spin_r(1, rho_b.data());
     } else {
-        std::printf(
-            "[pw] cuda stress-scf done iter=%d energy_ry=%.8f%s%s\n",
-            ref.iterations, ref.energy_ry, spin_polarized ? " spin=1" : "",
-            smearing != ATV::electronic::Smearing::none ? " smear=1" : "");
+        rho.resize(nr);
+        density.fetch_rho_r(rho.data());
     }
+    const double omega0 = density.omega();
+    const double ecut_ry = method.ecut_ry;
+    const int k_mesh = method.k_mesh;
+    const double mix_beta = method.mix_beta;
+    const int pulay_depth = method.pulay_depth;
+    const auto xc = method.xc;
+    const auto smearing = method.smearing;
+    const double degauss = method.degauss;
+    const int mp_order = method.mp_order;
+    const int extra_bands = method.extra_bands;
 
     // Hellmann–Feynman strain-FD of the NSCF free/total energy (one SCF).
     // Same step as CPU `pw_stress_analytic_impl`.
@@ -725,16 +349,14 @@ std::array<double, 6> pw_stress_analytic_impl(
         apply_strain(fp, ep);
         apply_strain(fm, em);
 
-        const double ep_ry =
-            nscf_energy_ry(fp, *ref.problem, ecut_ry, k_mesh, mix_beta,
-                           pulay_depth, xc, smearing, degauss, mp_order,
-                           extra_bands, spin_polarized, ref.n_alpha, ref.n_beta,
-                           ref.rho_r, ref.rho_a, ref.rho_b, ref.omega_bohr);
-        const double em_ry =
-            nscf_energy_ry(fm, *ref.problem, ecut_ry, k_mesh, mix_beta,
-                           pulay_depth, xc, smearing, degauss, mp_order,
-                           extra_bands, spin_polarized, ref.n_alpha, ref.n_beta,
-                           ref.rho_r, ref.rho_a, ref.rho_b, ref.omega_bohr);
+        const double ep_ry = nscf_energy_ry(
+            fp, reference, ecut_ry, k_mesh, mix_beta, pulay_depth, xc, smearing,
+            degauss, mp_order, extra_bands, spin_polarized, n_alpha, n_beta,
+            rho, rho_a, rho_b, omega0, stream);
+        const double em_ry = nscf_energy_ry(
+            fm, reference, ecut_ry, k_mesh, mix_beta, pulay_depth, xc, smearing,
+            degauss, mp_order, extra_bands, spin_polarized, n_alpha, n_beta,
+            rho, rho_a, rho_b, omega0, stream);
         const double dE_dev = (ep_ry - em_ry) * ry_to_ev / (2.0 * h);
         // Mechanical / CP2K: σ = −(1/Ω) ∂E/∂ε (E = F under smear).
         // A symmetric off-diagonal probe varies epsilon_ab AND epsilon_ba.

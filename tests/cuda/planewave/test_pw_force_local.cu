@@ -155,8 +155,7 @@ TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
                         /*ecut_ry=*/4.0, /*k_mesh=*/1, cpu::xc::XCType::LSDA};
     method.tol = 1e-4;
     method.max_iter = 4;
-    EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method),
-                 std::invalid_argument);
+    EXPECT_THROW(method.forces(f), std::invalid_argument);
 }
 
 // Spin-PBE forces are on the device whitelist (exchange_correlation_spin
@@ -170,11 +169,11 @@ TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
     method.spin_polarized = true;
     method.multiplicity = 2;
     try {
-        (void)cuda::pw::pw_forces_analytic(f, method);
+        (void)method.forces(f);
         FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_NE(msg.find("nonempty"), std::string::npos) << "msg=" << msg;
         EXPECT_EQ(msg.find("LSDA only"), std::string::npos)
             << "spin-PBE must not hit the XC reject; msg=" << msg;
     }
@@ -187,14 +186,14 @@ TEST(CudaPWForces, PublicApiAcceptsSpinSmearOnEmptyFrameGate) {
                         /*ecut_ry=*/30.0, /*k_mesh=*/4, cpu::xc::XCType::LSDA};
     method.spin_polarized = true;
     method.multiplicity = 2;
-    method.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
+    method.smearing = ::ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.01;
     try {
-        (void)cuda::pw::pw_forces_analytic(f, method);
+        (void)method.forces(f);
         FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_NE(msg.find("nonempty"), std::string::npos) << "msg=" << msg;
         EXPECT_EQ(msg.find("no force path"), std::string::npos) << msg;
     }
 }
@@ -209,11 +208,11 @@ TEST(CudaPWForces, PublicApiAcceptsPbeOnEmptyFrameGate) {
     method.tol = 1e-4;
     method.max_iter = 4;
     try {
-        (void)cuda::pw::pw_forces_analytic(f, method);
+        (void)method.forces(f);
         FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_NE(msg.find("nonempty"), std::string::npos) << "msg=" << msg;
         EXPECT_EQ(msg.find("no device path"), std::string::npos)
             << "PBE must not hit the XC whitelist reject; msg=" << msg;
     }

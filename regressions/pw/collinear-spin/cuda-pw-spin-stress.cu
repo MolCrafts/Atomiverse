@@ -118,7 +118,13 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
         method.spin_polarized = true;
         method.multiplicity = 3;
         method.build(frame);
-        stress = cuda::pw::pw_stress(frame, method, e_ry);
+        stress = ([&]() {
+            ATV::cpu::Frame result_frame(frame);
+            const auto result = method.stress(result_frame);
+            if (e_ry)
+                *e_ry = method.last_result().energy;
+            return result;
+        }());
     }
 
     for (int v = 0; v < 6; ++v) {

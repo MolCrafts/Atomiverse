@@ -1,0 +1,27 @@
+{
+  "query": {
+    "model": "revpbe",
+    "enum": 3,
+    "Ne": 12,
+    "setup_bands": 6,
+    "waveG": 331,
+    "base": [
+      20,
+      20,
+      20
+    ],
+    "quad": [
+      60,
+      60,
+      60
+    ],
+    "GGA": 1,
+    "SCF": 0
+  },
+  "source_sha256": "b38996c199cbe11b03e088f10eea0861155be13419fa2fe629b15777b90a78bb",
+  "query_binary_sha256": "1d351f6cce983bc9623cfac100b2b3e740dbac8007cdfc2f5225e4425d0ff4da",
+  "query_log_sha256": "ebb32a142ca309c5f97fb03a0623a0206f04413bb47257ed9b8e2bf019b4f198",
+  "scope": "Actual cold setup and same canonical per-model quadrature used by productionDeviceDensity; noSCF.",
+  "input_sha256": "3a83faf19793f72774090c56b7ac9886ed290c34bed57ab4b8448bee5ddb7d18",
+  "physics": "Identical predeclaredSi3 geometry/PP/12Ry/Ne12/M2/fixed7+5, only XC and its canonical integration grid differ. OriginalPBEref untouched."
+}

@@ -123,6 +123,28 @@ XcPointOutput evaluate_point(cpu::xc::XCType xc, bool gga,
     return result;
 }
 
+// Explicit cell derivative of the same point energy. Raw density partials
+// already carry the positive-part chain rule; gradients retain the existing
+// unclipped spectral definition, including a clipped channel's GGA flux.
+void add_point_virial(const XcPointInput& input, const XcPointOutput& point,
+                      AccReal dV, std::array<AccReal, 6>& virial) {
+    constexpr int aa[6] = {0, 1, 2, 0, 0, 1};
+    constexpr int bb[6] = {0, 1, 2, 1, 2, 2};
+    AccReal isotropic = -point.energy;
+    for (int spin = 0; spin < 2; ++spin) {
+        isotropic += input.rho[spin] * point.potential[spin];
+        for (int d = 0; d < 3; ++d)
+            isotropic += input.gradient[spin][d] * point.flux[spin][d];
+    }
+    for (int lane = 0; lane < 6; ++lane) {
+        AccReal value = lane < 3 ? isotropic : AccReal(0);
+        for (int spin = 0; spin < 2; ++spin)
+            value +=
+                input.gradient[spin][aa[lane]] * point.flux[spin][bb[lane]];
+        virial[lane] += dV * value;
+    }
+}
+
 // The physical density sphere must be strictly below every even-grid
 // Nyquist plane. This is the PW setup contract; folding two distinct edge
 // modes into one real-grid sample would not be an adjoint projection.
@@ -283,6 +305,8 @@ void XCBuilder::step(PWWorkspace& ws, cpu::xc::XCType xc) {
     // ── 2. Pointwise XC (+ flux for GGA) ─────────────────────────────
     const AccReal dV = ws.omega / static_cast<AccReal>(nr);
     AccReal E_xc = 0;
+    AccReal energy_compensation = 0;
+    std::array<AccReal, 6> virial{};
     auto* fx = flux_x_.data();
     auto* fy = flux_y_.data();
     auto* fz = flux_z_.data();
@@ -298,8 +322,12 @@ void XCBuilder::step(PWWorkspace& ws, cpu::xc::XCType xc) {
                 input.gradient[0][d] = input.gradient[1][d] =
                     static_cast<double>(gradients[d][i]) / 2;
         const auto point = evaluate_point(xc, gga, input);
+        add_point_virial(input, point, dV, virial);
         vxc_r[i] = point.potential[0];
-        E_xc += point.energy * dV;
+        const AccReal contribution = point.energy * dV - energy_compensation;
+        const AccReal updated_energy = E_xc + contribution;
+        energy_compensation = (updated_energy - E_xc) - contribution;
+        E_xc = updated_energy;
         if (gga)
             for (int d = 0; d < 3; ++d)
                 fluxes[d][i] = point.flux[0][d];
@@ -356,6 +384,7 @@ void XCBuilder::step(PWWorkspace& ws, cpu::xc::XCType xc) {
     ws.V_xc_r.resize({static_cast<std::size_t>(ws.nr)});
     project_to_base(ws, ws.V_xc_G,
                     {ws.V_xc_r.data(), static_cast<std::size_t>(ws.nr)});
+    virial_ha_ = virial;
 }
 
 void XCBuilder::step_spin(PWWorkspace& ws, cpu::xc::XCType xc) {
@@ -431,6 +460,8 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::xc::XCType xc) {
 
     AccReal dV = ws.omega / static_cast<AccReal>(nr);
     AccReal E_xc = 0;
+    AccReal energy_compensation = 0;
+    std::array<AccReal, 6> virial{};
     auto* fx_up = flux_x_.data();
     auto* fy_up = flux_y_.data();
     auto* fz_up = flux_z_.data();
@@ -452,9 +483,13 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::xc::XCType xc) {
                     input.gradient[spin][d] =
                         static_cast<double>(gradients[spin][d][i]);
         const auto point = evaluate_point(xc, gga, input);
+        add_point_virial(input, point, dV, virial);
         vxc_up[i] = point.potential[0];
         vxc_dn[i] = point.potential[1];
-        E_xc += point.energy * dV;
+        const AccReal contribution = point.energy * dV - energy_compensation;
+        const AccReal updated_energy = E_xc + contribution;
+        energy_compensation = (updated_energy - E_xc) - contribution;
+        E_xc = updated_energy;
         if (gga)
             for (int spin = 0; spin < 2; ++spin)
                 for (int d = 0; d < 3; ++d)
@@ -534,6 +569,7 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::xc::XCType xc) {
     for (int ig = 0; ig < ng; ++ig)
         ws.V_xc_G[ig] =
             AccReal(0.5) * (ws.V_xc_spin_G[0][ig] + ws.V_xc_spin_G[1][ig]);
+    virial_ha_ = virial;
 }
 
 void XCBuilder::cache_response_reference(

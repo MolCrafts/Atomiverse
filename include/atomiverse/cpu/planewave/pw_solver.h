@@ -193,8 +193,18 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     ///         on an odd valence-electron count.
     PWResult& forces(Frame& frame);
 
-    /// @brief SCF + frozen-density NSCF strain-FD cell stress at the Frame's
-    ///        geometry (strain step 2e-3, not a closed-form tensor).
+    /// @brief Cell stress after one reference SCF at the Frame's geometry.
+    ///
+    /// Admitted LSDA/PBE-family RKS/UKS fixed, FD or Gaussian ensembles use
+    /// a closed-form six-component orbital-functional virial and one unstrained
+    /// final-band sweep, shared with forces in a combined request. Fixed/Gaussian
+    /// Fixed LSDA UKS at actual Gamma also supports canonical empty beta
+    /// (Na>0, Nb=0); other nominally empty fixed/Gaussian channels retain
+    /// the numerical path. Reference SCF
+    /// metadata is preserved. The same tensor supports general k meshes with one
+    /// distributed sweep. Fixed band-index filling imposes explicit occupations
+    /// per k point; it does not assert a global insulating gap.
+    /// Other domains use the numerical path below.
     ///
     /// One SCF + Hellmann–Feynman cell derivatives (kinetic, Hartree, local
     /// PP, Ewald, XC, KB nonlocal) as central differences of the
@@ -202,7 +212,7 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// density. Reference integer modes and FFT shapes remain fixed; their
     /// metric, kinetic energies and ionic operators follow the strain.
     /// Matches strain-FD of the total energy for fixed occupations,
-    /// or of the Mermin free energy under restricted or collinear metallic
+    /// or of the smearing free energy (Mermin for FD) under restricted or collinear metallic
     /// `smearing`. Collinear smeared samples use one chemical potential
     /// shared by both spin channels, fractional occupations and entropy.
     /// Mechanical / CP2K sign: \(\sigma=-(1/\Omega)\partial E/\partial
@@ -272,7 +282,8 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// @param max_iter_in SCF iteration budget (dimensionless).
     /// @param res Result buffer (writes iterations / converged).
     /// @return true if the residual gate fired (Driver converged).
-    bool drive_stage_loop_(int max_iter_in, PWResult& res);
+    bool drive_stage_loop_(int max_iter_in, PWResult& res,
+                           const cpu::Frame& reference);
 
     bool built_ = false;
     std::unique_ptr<internal::PoissonSolver> poisson_;

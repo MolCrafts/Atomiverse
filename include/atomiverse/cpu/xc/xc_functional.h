@@ -39,6 +39,7 @@
 ///     orbitals (double hybrid; PT2 is not inside `evaluate_xc`).
 #pragma once
 
+#include "atomiverse/electronic/pbe_parameters.h"
 #include "atomiverse/electronic/xc_functional.h"
 
 namespace ATV {
@@ -73,6 +74,33 @@ enum class XCType {
     PADE,     ///< GTH Padé LDA. Not an alias of `LSDA`.
     Custom ///< Constructor-injected semi-local provider; not a built-in kernel.
 };
+
+/// @brief Whether a functional is one of the four pure PBE variants.
+/// @param type Functional identity. @return True for PBE/PBEsol/revPBE/RPBE.
+constexpr bool is_pbe_family(XCType type) noexcept {
+    return type == XCType::PBE || type == XCType::PBEsol
+           || type == XCType::RevPBE || type == XCType::RPBE;
+}
+
+/// @brief Select immutable parameters for one pure PBE-family functional.
+/// @param type PBE, PBEsol, RevPBE or RPBE.
+/// @return Physical exchange/correlation parameters, usable by either backend.
+/// @throws std::invalid_argument for any other functional, including hybrids.
+constexpr ATV::electronic::PbeParameters pbe_parameters(XCType type) {
+    using namespace ATV::electronic;
+    switch (type) {
+    case XCType::PBE:
+        return kPbeParameters;
+    case XCType::PBEsol:
+        return kPbeSolParameters;
+    case XCType::RevPBE:
+        return kRevPbeParameters;
+    case XCType::RPBE:
+        return kRpbeParameters;
+    default:
+        throw std::invalid_argument("XC: functional is not a pure PBE variant");
+    }
+}
 
 /// @brief Range-separated hybrid (RSH) exact-exchange parameters.
 ///

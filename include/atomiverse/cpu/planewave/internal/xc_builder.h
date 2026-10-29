@@ -69,7 +69,14 @@ class XCBuilder {
     void response(const PWWorkspace& ws, cpu::xc::XCType xc,
                   std::span<const ResponseChannel> channels, AccReal epsilon);
 
+    /// Extensive XC virial W=-dE_xc/dstrain [Ha], xx,yy,zz,xy,xz,yz,
+    /// from the last completed ordinary step/step_spin at that evaluation's
+    /// geometry and exact padded quadrature. Not the total PW stress.
+    /// prepare/response and incomplete evaluations preserve this value.
+    const std::array<AccReal, 6>& virial_ha() const { return virial_ha_; }
+
   private:
+    std::array<AccReal, 6> virial_ha_{};
     /// Shape-only plan; physical G vectors and cell volume are read each call.
     std::unique_ptr<FFTPlan3D> local_quadrature_fft_;
     std::unique_ptr<FFTPlan3D> gradient_quadrature_fft_;

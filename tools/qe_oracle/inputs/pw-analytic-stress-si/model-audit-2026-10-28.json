@@ -1,0 +1,81 @@
+{
+  "current_H3_sixref_LSDA_cases": [
+    {
+      "case": "lsda-fd-0.02",
+      "input_dft": "SLA+VWN+NOGX+NOGC",
+      "printed": [
+        "Program PWSCF v.7.6 starts on 26Oct2026 at 23:23:14",
+        "Exchange-correlation= SLA+VWN+NOGX+NOGC",
+        "Exchange-correlation= SLA+VWN+NOGX+NOGC",
+        "!    total energy              =      -2.85851778 Ry"
+      ],
+      "input": "tools/qe_oracle/inputs/pw-spin-smear-stress/captures/lsda-fd-0.02/h3.in",
+      "raw_output": "tools/qe_oracle/inputs/pw-spin-smear-stress/captures/lsda-fd-0.02/qe.out.gz",
+      "input_sha256": "a28f0be5e22b2e62ca2c1d29e3284fa6e94803a6b5429790db94a275b6bc0f28",
+      "raw_gzip_sha256": "97228c3553d0f34b0efdcf48d3719e3ac8a4293cda547451b725246b097e9caf",
+      "raw_uncompressed_sha256": "89a7677ee7fc183d59b612ec69c87f1c8e52ec1456d3f1d68d5eccac7abaf3e1",
+      "result": "Correct VWN model; no PW/PZ substitution."
+    },
+    {
+      "case": "lsda-gaussian-0.04",
+      "input_dft": "SLA+VWN+NOGX+NOGC",
+      "printed": [
+        "Program PWSCF v.7.6 starts on 26Oct2026 at 23:23:17",
+        "Exchange-correlation= SLA+VWN+NOGX+NOGC",
+        "Exchange-correlation= SLA+VWN+NOGX+NOGC",
+        "!    total energy              =      -2.85669328 Ry"
+      ],
+      "input": "tools/qe_oracle/inputs/pw-spin-smear-stress/captures/lsda-gaussian-0.04/h3.in",
+      "raw_output": "tools/qe_oracle/inputs/pw-spin-smear-stress/captures/lsda-gaussian-0.04/qe.out.gz",
+      "input_sha256": "088fd309259cd6fdf41aca63ffa67df1942c349266db4959240cb36633e69ab2",
+      "raw_gzip_sha256": "8b611e841451a12501769d8bb856a66c7c6f230f695b24c08e8445a7b1b2a7ed",
+      "raw_uncompressed_sha256": "83215af2f98373cb464a2aaa484268aa4d5aeaf225b4e82b3aefeed090b724ac",
+      "result": "Correct VWN model; no PW/PZ substitution."
+    },
+    {
+      "case": "lsda-mp1-0.04",
+      "input_dft": "SLA+VWN+NOGX+NOGC",
+      "printed": [
+        "Program PWSCF v.7.6 starts on 26Oct2026 at 23:28:31",
+        "Exchange-correlation= SLA+VWN+NOGX+NOGC",
+        "Exchange-correlation= SLA+VWN+NOGX+NOGC",
+        "!    total energy              =      -2.85589692 Ry"
+      ],
+      "input": "tools/qe_oracle/inputs/pw-spin-smear-stress/captures/lsda-mp1-0.04/h3.in",
+      "raw_output": "tools/qe_oracle/inputs/pw-spin-smear-stress/captures/lsda-mp1-0.04/qe.out.gz",
+      "input_sha256": "11b11418c1215e880f783a536d723e82c77497831c1142f8115be8d401cea81c",
+      "raw_gzip_sha256": "8e009d9bb2aa6507ddaa51d86db1dc84d8a625ee7801da17b3fc80bc6012107f",
+      "raw_uncompressed_sha256": "b8cc69ba7114d87e0bbcb0121f3ab2c0fb89c2d5fe1ae7d2873f817658067885",
+      "result": "Correct VWN model; no PW/PZ substitution."
+    }
+  ],
+  "current_consumer_pin_header": "tools/qe_oracle/inputs/pw-spin-smear-stress/pins.h",
+  "current_consumer_sources": [
+    "tools/diagnostics/pw-spin-smear-stress/main.cpp",
+    "tools/diagnostics/cuda-pw-spin-smear-stress/main.cpp"
+  ],
+  "historical_Si_cases": [
+    {
+      "input": "tools/qe_oracle/inputs/pw-pbe-gga-si/si_lsda.in",
+      "input_sha256": "56709b2d2461219556eddb03b17044097bd5b4b8b55b47e801f2eb93981402ba",
+      "actual_input_dft": "SLA PW",
+      "correlation_index": 4,
+      "current_CPU_LSDA_correlation": "VWN5 (icorr2)",
+      "qualification_issue": "The declared exact-model fair-wall twin is mismatched. Do not inherit this historical timing/reference receipt as current VWN5 physical qualification.",
+      "original_printed_XC": "No complete old raw QE output located; REFERENCE.md explicitly quotes this input and energies, but not printed XC. Cannot relabel original raw XC as VWN.",
+      "affected_receipt": "regressions/pw/rks/REFERENCE.md: Performance gate \u2014 measured fair wall for pw-pbe-gga-si (2026-08-09)"
+    },
+    {
+      "input": "tools/qe_oracle/inputs/pw-analytic-stress-si/si_stress.in",
+      "input_sha256": "3fcba74f8162145fefe2a93bf3afb03699eef3c7e7c3bb750846a6fc9773c04c",
+      "actual_input_dft": "SLA PW",
+      "correlation_index": 4,
+      "current_CPU_LSDA_correlation": "VWN5 (icorr2)",
+      "qualification_issue": "The declared exact-model fair-wall twin is mismatched. Do not inherit this historical timing/reference receipt as current VWN5 physical qualification.",
+      "original_printed_XC": "No complete old raw QE output located; REFERENCE.md explicitly quotes this input and energies, but not printed XC. Cannot relabel original raw XC as VWN.",
+      "affected_receipt": "regressions/pw/rks/REFERENCE.md: Performance \u2014 measured fair wall for pw-analytic-stress-si (2026-08-09)"
+    }
+  ],
+  "scope": "Historical cpp science gates are native PBE-vs-LSDA activation/symmetry and native full-SCF strain-FD stress pins; they are not absolute actual-QE LSDA pins. Existing native gate passes are not invalidated by the model error in those fair-wall reference inputs, but cannot establish matched-QE VWN5 parity.",
+  "source_modified": false
+}

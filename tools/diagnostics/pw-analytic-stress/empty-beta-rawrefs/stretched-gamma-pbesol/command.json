@@ -1,0 +1,11 @@
+[
+  "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/tools/diagnostics/gpw-driver/run-allocation.sh",
+  "cpu",
+  "--tasks",
+  "1",
+  "--cpus",
+  "1",
+  "--",
+  "bash",
+  "/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.molq/next/empty-beta-tangent/attempt-2/qe/pbesol/run.sh"
+]

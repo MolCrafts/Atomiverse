@@ -25,9 +25,12 @@
 #include "atomiverse/cpu/planewave/internal/convergence.h"
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
+#include "atomiverse/cpu/planewave/internal/ewald.h"
+#include "atomiverse/cpu/planewave/internal/frozen_functional_virial.h"
 #include "atomiverse/cpu/planewave/internal/g_vector.h"
 #include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
+#include "atomiverse/cpu/planewave/internal/pw_final_state.h"
 #include "atomiverse/cpu/planewave/internal/pw_forces.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_stress.h"
@@ -45,6 +48,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -108,17 +112,28 @@ PW::PW(PW&&) = default;
 // drive_stage_loop_. No free residual `for (iter) { … break; }` on product.
 
 void PW::reset_built_driver_() {
+    // Only the method's path-local callbacks are replaced. User stages and
+    // criteria must survive a new geometry, solver path or standalone call.
+    const auto internal_stage = [&](const cpu::Component* component) {
+        return component == veff_stage_.get() || component == diag_stage_.get()
+               || component == density_stage_.get()
+               || component == mix_stage_.get()
+               || component == converged_stage_.get();
+    };
+    // Finish any old execution before releasing the stages its Plan borrows.
+    this->backend_.reset();
+    this->mutation_lock_ = nullptr;
+    this->built_plugins_.clear();
+    std::erase_if(this->pending_, [&](const auto& binding) {
+        return internal_stage(binding.component);
+    });
+    std::erase_if(this->criteria_, internal_stage);
+    this->plan_ = {};
     veff_stage_.reset();
     diag_stage_.reset();
     density_stage_.reset();
     mix_stage_.reset();
     converged_stage_.reset();
-    this->pending_.clear();
-    this->owned_components_.clear();
-    this->plan_ = {};
-    this->criteria_.clear();
-    this->criteria_owned_.clear();
-    this->backend_.reset();
     driver_built_ = false;
     wired_self_ = nullptr;
 }
@@ -150,13 +165,16 @@ void PW::ensure_driver_built_(VeffStage::StepFn veff,
     wired_self_ = this;
 }
 
-bool PW::drive_stage_loop_(int max_iter_in, PWResult& res) {
-    // Stages must already be wired via ensure_driver_built_ (lambdas capture
-    // the run() prologue). Serial whole-molecule loop — empty Frame is fine
-    // under set_serial_on_replica.
+bool PW::drive_stage_loop_(int max_iter_in, PWResult& res,
+                           const cpu::Frame& reference) {
+    // Stages are wired from this run's prologue. Standalone stages receive an
+    // owned geometry snapshot; nested stages use the parent's actual Frame.
     loop_converged_ = false;
     if (converged_stage_)
         converged_stage_->reset();
+    // Include user bindings and criterion lifecycle entries added since the
+    // previous solve before either standalone setup or parent-plan admission.
+    cpu::Driver<ATV::pw::Phase>::build();
 
     // Nested: the stage plan runs on the parent Runtime for this solve.
     // Standalone: this method is the root loop and owns its backend.
@@ -174,6 +192,8 @@ bool PW::drive_stage_loop_(int max_iter_in, PWResult& res) {
         }
     } host_guard{*this};
     cpu::Frame loop_frame;
+    if (!host)
+        loop_frame = reference;
     if (host) {
         host->build_plan(this->plan());
         host_guard.host = host;
@@ -193,7 +213,7 @@ bool PW::drive_stage_loop_(int max_iter_in, PWResult& res) {
         res.iterations = executed;
         if (host) {
             host->step_plan(this->plan(), iter);
-            if (this->poll_criteria_(iter, loop_frame, *host_guard.ctx)
+            if (this->poll_criteria_(iter, host->frame(), *host_guard.ctx)
                 != ATV::Verdict::Continue)
                 break;
         } else {
@@ -362,6 +382,17 @@ PWResult& PW::run(const cpu::Frame& frame) {
     davidson_->set_tolerance(AccReal(tol) * AccReal(0.1));
     davidson_->prepare(ws);
     internal::ConvergenceCheck convergence{AccReal(tol), 2};
+    // Publish the actual accepted-iteration energy and mixing residual before
+    // user mix stages/criteria run, with the same eV metric convention as CUDA.
+    const auto publish_metrics = [&](AccReal energy_ha, AccReal residual,
+                                     int iteration) {
+        const double previous = metrics_.energy;
+        metrics_.energy = static_cast<double>(energy_ha) * units::kHartreeInEv;
+        metrics_.residual = static_cast<double>(residual);
+        metrics_.energy_change = iteration == 0
+                                     ? std::numeric_limits<double>::infinity()
+                                     : std::abs(metrics_.energy - previous);
+    };
 
     // ── SCF loop (all product paths → Driver stages) ──
     // Path-local StepFns capture prologue state; drive_stage_loop_ owns
@@ -578,8 +609,10 @@ PWResult& PW::run(const cpu::Frame& frame) {
                     ws, e_band, prob.ew_total, vol_bohr);
                 const AccReal e_ent_ha = -degauss_ha * entropy_sum;
                 terms.total += e_ent_ha;
-                loop_converged_ = convergence.step(
-                    density_->mix_spin(ws, rho_out[0], rho_out[1]));
+                const auto residual =
+                    density_->mix_spin(ws, rho_out[0], rho_out[1]);
+                loop_converged_ = convergence.step(residual);
+                publish_metrics(terms.total, residual, iter_log);
                 result_.magnetization = static_cast<double>(n_up - n_dn);
                 result_.n_elec_occ = static_cast<double>(n_occ);
                 result_.e_fermi =
@@ -595,7 +628,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 ++iter_log;
             });
 
-        const bool conv = drive_stage_loop_(max_iter, result_);
+        const bool conv = drive_stage_loop_(max_iter, result_, frame);
         if (conv) {
             if (log_rank0)
                 ATV_INFO("[pw] converged iter={} energy_ry={:.8f} "
@@ -772,11 +805,13 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 // density; finish() replaces rho_G with the mixed update.
                 const auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
-                loop_converged_ = convergence.step(density_->finish(ws));
+                const auto residual = density_->finish(ws);
+                loop_converged_ = convergence.step(residual);
                 AccReal e_ha = terms.total;
                 AccReal e_ent_ha = AccReal(0);
                 e_ent_ha = -degauss_ha * entropy_sum;
                 e_ha += e_ent_ha;
+                publish_metrics(e_ha, residual, iter_log);
                 result_.energy_ha = static_cast<double>(e_ha);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;
@@ -791,7 +826,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 ++iter_log;
             });
 
-        const bool conv = drive_stage_loop_(max_iter, result_);
+        const bool conv = drive_stage_loop_(max_iter, result_, frame);
         if (conv) {
             if (log_rank0)
                 ATV_INFO("[pw] converged iter={} energy_ry={:.8f} "
@@ -897,8 +932,10 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 // density. Form their energy before updating that density.
                 auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
-                loop_converged_ = convergence.step(
-                    density_->mix_spin(ws, rho_out[0], rho_out[1]));
+                const auto residual =
+                    density_->mix_spin(ws, rho_out[0], rho_out[1]);
+                loop_converged_ = convergence.step(residual);
+                publish_metrics(terms.total, residual, iter_log);
 
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
@@ -908,7 +945,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 ++iter_log;
             });
 
-        const bool conv = drive_stage_loop_(max_iter, result_);
+        const bool conv = drive_stage_loop_(max_iter, result_, frame);
         if (conv) {
             if (log_rank0)
                 ATV_INFO("[pw] converged iter={} energy_ry={:.8f} mag={}",
@@ -980,7 +1017,9 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 // before finish() saves it and applies the Pulay update.
                 const auto terms = internal::iteration_energy(
                     ws, e_band, prob.ew_total, vol_bohr);
-                loop_converged_ = convergence.step(density_->finish(ws));
+                const auto residual = density_->finish(ws);
+                loop_converged_ = convergence.step(residual);
+                publish_metrics(terms.total, residual, iter_log);
                 result_.energy_ha = static_cast<double>(terms.total);
                 result_.energy =
                     result_.energy_ha / qe_units::rydberg_to_hartree;
@@ -989,7 +1028,7 @@ PWResult& PW::run(const cpu::Frame& frame) {
                 ++iter_log;
             });
 
-        const bool conv = drive_stage_loop_(max_iter, result_);
+        const bool conv = drive_stage_loop_(max_iter, result_, frame);
         if (conv) {
             if (log_rank0)
                 ATV_INFO("[pw] converged iter={} energy_ry={:.8f} mag={}",
@@ -1039,14 +1078,15 @@ int PW::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
         evaluate_(frame, want_forces ? &forces : nullptr,
                   want_stress ? &stress : nullptr);
     }
+    if (want_forces
+        && forces.size() != static_cast<std::size_t>(frame.nlocal()))
+        throw std::runtime_error("PW: force count mismatch");
     // The hosting phase owns zeroing, so every write is `+=`.
     const double energy = result_.energy * qe_units::rydberg_to_ev;
     frame.meta.get(kEnergy) += energy;
     frame.meta.get(kEnergyElectronic) += energy;
     if (want_forces) {
         const int n = frame.nlocal();
-        if (static_cast<int>(forces.size()) != n)
-            throw std::runtime_error("PW: force count mismatch");
         AccReal* __restrict fx = frame.span(kAtom_fx);
         AccReal* __restrict fy = frame.span(kAtom_fy);
         AccReal* __restrict fz = frame.span(kAtom_fz);
@@ -1071,8 +1111,75 @@ int PW::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
 void PW::evaluate_(const Frame& frame,
                    std::vector<std::array<double, 3>>* forces_out,
                    std::array<double, 6>* stress_out) {
+    if (frame.nlocal() == 0 && (forces_out || stress_out))
+        throw std::invalid_argument("PW derivatives require a nonempty frame");
     run(frame);
-    // Stress snapshots the final density before force assembly reuses workspace.
+    // Fixed/FD/Gaussian semilocal ensembles share all-k tensor assembly.
+    // Fixed band-index occupations retain their explicit per-k spin counts.
+    // Only fixed LSDA at actual Gamma admits canonical empty beta.
+    // MP1 additionally uses this tensor for RKS/populated UKS PBE at actual Gamma.
+    // Its signed occupations and clipped-XC extension are retained unchanged.
+    // Other empty fixed/Gaussian channels and MP settings keep earlier paths.
+    // Independent external evidence covers Gamma and full2x2x2 meshes.
+    const bool qualified_model =
+        xc == cpu::xc::XCType::LSDA || cpu::xc::is_pbe_family(xc);
+    const bool qualified_filling =
+        smearing == electronic::Smearing::none
+        || smearing == electronic::Smearing::fermi_dirac
+        || smearing == electronic::Smearing::gaussian
+        || (smearing == electronic::Smearing::methfessel_paxton && mp_order == 1
+            && xc == cpu::xc::XCType::PBE && problem_
+            && problem_->gv_k.size() == 1
+            && problem_->gv_k[0].kvec.norm_squared() == 0);
+    const bool qualified_spin_occupations =
+        !spin_polarized || smearing == electronic::Smearing::fermi_dirac
+        || (problem_ && problem_->n_elec > multiplicity - 1)
+        || (smearing == electronic::Smearing::none
+            && xc == cpu::xc::XCType::LSDA && problem_ && problem_->n_elec > 0
+            && problem_->n_elec == multiplicity - 1
+            && problem_->gv_k.size() == 1
+            && problem_->gv_k[0].kvec.norm_squared() == 0);
+    const bool closed_form = stress_out && qualified_model && qualified_filling
+                             && qualified_spin_occupations && problem_;
+    if (closed_form) {
+        const auto bands =
+            internal::extract_final_bands(*problem_, *this, result_);
+        std::vector<Vec3> positions(static_cast<std::size_t>(frame.nlocal()));
+        for (int i = 0; i < frame.nlocal(); ++i)
+            positions[i] = {frame.span(kAtom_x)[i], frame.span(kAtom_y)[i],
+                            frame.span(kAtom_z)[i]};
+        const std::vector<AccReal> charges(positions.size(),
+                                           problem_->potential->z_val);
+        const internal::EwaldSummation ionic(positions, charges, frame.box);
+        internal::XCBuilder xc_scratch;
+        const auto tensor = internal::assemble_frozen_functional_virial(
+            *problem_, bands, xc, ionic, xc_scratch);
+        if (!std::isfinite(tensor.max_antisymmetric_ha)
+            || tensor.max_antisymmetric_ha > AccReal(1e-9))
+            throw std::runtime_error(
+                "PW closed-form stress: nonsymmetric virial");
+        constexpr int a[6] = {0, 1, 2, 0, 0, 1}, b[6] = {0, 1, 2, 1, 2, 2};
+        std::array<double, 6> stress;
+        const double conversion = units::kHartreeInEv / frame.box.volume();
+        for (int k = 0; k < 6; ++k) {
+            const auto w = (tensor.total.virial_ha[3 * a[k] + b[k]]
+                            + tensor.total.virial_ha[3 * b[k] + a[k]])
+                           / 2;
+            if (!std::isfinite(w))
+                throw std::runtime_error(
+                    "PW closed-form stress: nonfinite virial");
+            stress[k] = static_cast<double>(w) * conversion;
+        }
+        std::vector<std::array<double, 3>> forces;
+        if (forces_out)
+            forces =
+                internal::pw_forces_from_bands(frame, *problem_, bands, &ionic);
+        *stress_out = stress;
+        if (forces_out)
+            *forces_out = std::move(forces);
+        return;
+    }
+    // The numerical stress consumes the retained mixed reference density.
     if (stress_out)
         *stress_out = internal::pw_stress_analytic_impl(frame, *this, &result_,
                                                         problem_.get());

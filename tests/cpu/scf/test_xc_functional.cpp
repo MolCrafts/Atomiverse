@@ -3,6 +3,7 @@
 
 #ifdef ATV_HAS_HF
 
+#include <array>
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -286,6 +287,56 @@ TEST(XCFunctional, RPBEDiffersFromRevPBEAtFiniteGradient) {
     auto rpbe = ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::RPBE, 0.3, 0.3,
                                           0.2, 0.1, 0.2);
     EXPECT_GT(std::abs(rpbe.energy_density - rev.energy_density), 1e-8);
+}
+
+TEST(XCFunctional, PbeFamilyDerivativesMatchEnergy) {
+    // Vary each physical input independently. Mixed-sign sigma_ab and
+    // unequal spin densities exercise exchange and correlation derivatives,
+    // including PBEsol's changed beta and RPBE's exponential enhancement.
+    const std::array<std::array<double, 5>, 3> samples = {{
+        {0.3, 0.1, 0.2, -0.05, 0.12},
+        {0.02, 0.4, 0.003, 0.0005, 0.05},
+        {2.0, 1.0, 0.8, 0.2, 0.3},
+    }};
+    for (const auto type :
+         {XCType::PBE, XCType::PBEsol, XCType::RevPBE, XCType::RPBE}) {
+        for (const auto& sample : samples) {
+            const auto evaluate = [type](const auto& input) {
+                return evaluate_xc(type, input[0], input[1], input[2], input[3],
+                                   input[4]);
+            };
+            const auto point = evaluate(sample);
+            const std::array<double, 5> derivatives = {
+                point.vrho_alpha, point.vrho_beta, point.vsigma_aa,
+                point.vsigma_ab, point.vsigma_bb};
+            for (std::size_t axis = 0; axis < sample.size(); ++axis) {
+                auto plus = sample, minus = sample;
+                const double step =
+                    1e-6 * std::max(1.0, std::abs(sample[axis]));
+                plus[axis] += step;
+                minus[axis] -= step;
+                const double numerical = (evaluate(plus).energy_density
+                                          - evaluate(minus).energy_density)
+                                         / (2.0 * step);
+                EXPECT_NEAR(derivatives[axis], numerical,
+                            3e-8 * std::max(1.0, std::abs(numerical)))
+                    << "functional=" << static_cast<int>(type)
+                    << "rho_a=" << sample[0] << " rho_b=" << sample[1]
+                    << " input axis=" << axis;
+            }
+        }
+    }
+}
+
+TEST(XCFunctional, PbeFamilyParametersRejectOtherFunctionals) {
+    // A hybrid's semi-local PBE contribution is not the complete hybrid.
+    // Device PBE-family admission must never silently accept it as pure PBE.
+    for (const auto type :
+         {XCType::LSDA, XCType::PADE, XCType::BLYP, XCType::PBE0,
+          XCType::Custom, static_cast<XCType>(-1)}) {
+        EXPECT_FALSE(is_pbe_family(type));
+        EXPECT_THROW((void)pbe_parameters(type), std::invalid_argument);
+    }
 }
 
 TEST(XCFunctional, OptB88VdWMetadata) {

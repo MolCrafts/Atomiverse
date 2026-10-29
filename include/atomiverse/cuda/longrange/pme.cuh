@@ -39,14 +39,28 @@
 namespace ATV {
 namespace cuda {
 
+/// @brief Which influence and differentiation the shared mesh path uses.
+enum class ReciprocalKind {
+    /// Essmann smooth PME: Euler-B influence, analytic B-spline derivatives.
+    Spme,
+    /// Hockney–Eastwood PPPM, ik differentiation (LAMMPS `pppm` default).
+    PppmIk
+};
+
 /// @brief Smooth Particle-Mesh Ewald reciprocal electrostatics (CUDA).
+///
+/// `ReciprocalKind::PppmIk` keeps this class's spread, forward cuFFT and graph.
+/// The three ik fields are one batched inverse transform, then one θ gather.
+/// `cuda::KSpacePPPM` is that setting.
 class KSpacePME : public KSpace {
   public:
     /// @param alpha        Ewald splitting parameter α [1/Å] (match CoulLong).
     /// @param grid_spacing Target real-space grid spacing [Å] used to choose
     ///                     the FFT dimensions at build. Default 1.0.
-    /// @param order        B-spline order (≥ 3). Default 6.
-    explicit KSpacePME(double alpha, double grid_spacing = 1.0, int order = 6);
+    /// @param order        B-spline order in [3, 12]. Default 6.
+    /// @param kind         SPME, or ik PPPM. Default SPME.
+    explicit KSpacePME(double alpha, double grid_spacing = 1.0, int order = 6,
+                       ReciprocalKind kind = ReciprocalKind::Spme);
     ~KSpacePME() override;
 
     std::string name() const override { return "pme"; }
@@ -82,6 +96,7 @@ class KSpacePME : public KSpace {
     double alpha_;
     double spacing_;
     int order_;
+    ReciprocalKind kind_ = ReciprocalKind::Spme;
     bool stress_ = true;
     double background_coef_ = 0; ///< k_e π Q² / (2α²) [eV·Å³].
 
@@ -91,13 +106,27 @@ class KSpacePME : public KSpace {
 
     void* d_tables_ = nullptr;      ///< Coefficient-table revision (PmeTables).
     double* d_moduli_ = nullptr;    ///< B-spline moduli, K0 + K1 + K2 entries.
+    double* d_gf_b_ = nullptr;      ///< PPPM denominator coefficients, `order`.
+    void* d_potential_ = nullptr;   ///< PPPM V̂ half-spectrum, nhalf.
     double* d_influence_ = nullptr; ///< Conjugate-averaged influence, nhalf.
     double* d_virial_ = nullptr;    ///< Six virial coefficient planes, 6·nhalf.
-    void* d_grid_ = nullptr;        ///< force_t real mesh, ntot entries.
+    void* d_grid_ = nullptr; ///< Real mesh. SPME: ntot. PPPM: 3·ntot, batched.
     void* d_spectrum_ =
-        nullptr;            ///< force_t complex half-spectrum, nhalf entries.
+        nullptr; ///< Half-spectrum. SPME: nhalf. PPPM: 3·nhalf, batched.
     int forward_plan_ = -1; ///< R2C/D2Z cufftHandle; -1 when uncreated.
-    int inverse_plan_ = -1; ///< C2R/Z2D cufftHandle; -1 when uncreated.
+    int inverse_plan_ = -1; ///< C2R/Z2D. PPPM is batch 3; -1 when uncreated.
+};
+
+/// @brief Hockney–Eastwood ik PPPM on the shared CUDA mesh path.
+class KSpacePPPM : public KSpacePME {
+  public:
+    /// @param alpha        Ewald α [1/Å], the same value as CoulLong.
+    /// @param grid_spacing Target mesh spacing [Å]. Factors 2, 3 and 5 only.
+    /// @param order        B-spline order in [3, 12]. Default 6.
+    explicit KSpacePPPM(double alpha, double grid_spacing = 1.0, int order = 6)
+        : KSpacePME(alpha, grid_spacing, order, ReciprocalKind::PppmIk) {}
+
+    std::string name() const override { return "pppm"; }
 };
 
 } // namespace cuda

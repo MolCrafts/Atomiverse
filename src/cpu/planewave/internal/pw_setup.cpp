@@ -11,6 +11,7 @@
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/linalg/pulay_coefficients.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
+#include "atomiverse/cpu/planewave/internal/pw_radial_derivatives.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include "atomiverse/cpu/planewave/qe_units.h"
 #include "atomiverse/electronic/norm_conserving_potential.h"
@@ -86,22 +87,12 @@ std::vector<Vec3> pos_to_bohr(const cpu::Frame& frame) {
 }
 
 // Spherical Bessel functions j_l(x)
-AccReal sph_bessel_j0(AccReal x) {
-    if (std::abs(x) < AccReal(1e-8))
-        return AccReal(1) - x * x / AccReal(6);
-    return std::sin(x) / x;
-}
+AccReal sph_bessel_j0(AccReal x) { return regularized_bessel_jet(0, x).value; }
 AccReal sph_bessel_j1(AccReal x) {
-    if (std::abs(x) < AccReal(1e-8))
-        return x / AccReal(3);
-    return (std::sin(x) / (x * x)) - (std::cos(x) / x);
+    return x * regularized_bessel_jet(1, x).value;
 }
 AccReal sph_bessel_j2(AccReal x) {
-    if (std::abs(x) < AccReal(1e-8))
-        return x * x / AccReal(15);
-    AccReal x2 = x * x, x3 = x * x2;
-    return (AccReal(3) / x3 - AccReal(1) / x) * std::sin(x)
-           - (AccReal(3) / x2) * std::cos(x);
+    return x * x * regularized_bessel_jet(2, x).value;
 }
 
 using SphBesselFn = AccReal (*)(AccReal);
@@ -154,19 +145,12 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
     for (size_t ip = 0; ip < upf.kb.size(); ++ip) {
         auto& kb = upf.kb[ip];
         proj_l[ip] = kb.l;
-        auto j_l = sph_bessel_for_l(kb.l);
         fl_all[ip].resize(ng, AccReal(0));
-        const auto& r = upf.r;
-        const auto& beta_r = kb.beta;
-        const auto radial_points = kb.radial_points;
-        std::vector<AccReal> integrand(radial_points);
         for (int ig = 0; ig < ng; ++ig) {
             Vec3 q{gv.g[ig][0] + gv.kvec[0], gv.g[ig][1] + gv.kvec[1],
                    gv.g[ig][2] + gv.kvec[2]};
             AccReal Q = std::sqrt(q.norm_squared());
-            for (std::size_t ir = 0; ir < radial_points; ++ir)
-                integrand[ir] = r[ir] * beta_r[ir] * j_l(Q * r[ir]);
-            fl_all[ip][ig] = upf.integrate_radial(integrand);
+            fl_all[ip][ig] = nc_projector_radial_value(upf, ip, Q);
         }
     }
 
@@ -237,7 +221,7 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
             for (int ig = 0; ig < ng; ++ig) {
                 const AccReal fl = fl_trans[ip][ig];
                 out[ia][ip].f_G[ig] = fl;
-                if (std::abs(fl) < AccReal(1e-30))
+                if (fl == AccReal(0))
                     continue;
                 const Vec3 q = gv.g[ig] + gv.kvec;
                 const AccReal phase = q[0] * pos_bohr[ia][0]
@@ -318,39 +302,9 @@ std::vector<AccReal> nc_vloc_to_gspace(const internal::NcPotentialData& upf,
                                        const internal::GVectorList& gv,
                                        AccReal omega) {
     std::vector<AccReal> vg(gv.count(), AccReal(0));
-    const auto& r = upf.r;
-    const auto& vl = upf.v_loc;
-    if (vl.size() != r.size())
-        throw std::invalid_argument("Local potential PP_LOCAL must match PP_R");
-    std::vector<AccReal> integrand(r.size());
-    AccReal inv_omega = AccReal(1) / omega;
-    AccReal z = static_cast<AccReal>(upf.z_val);
-
     for (int ig = 0; ig < gv.count(); ++ig) {
         AccReal G = std::sqrt(gv.g[ig].norm_squared());
-        AccReal g2 = gv.g[ig].norm_squared();
-        bool g_zero = g2 < AccReal(1e-16);
-        for (std::size_t ir = 0; ir < r.size(); ++ir) {
-            const AccReal radius = r[ir];
-            const AccReal potential = vl[ir];
-            if (g_zero) {
-                // r²(V + Z/r): exactly zero beyond the core radius.
-                integrand[ir] = radius * (radius * potential + z);
-            } else {
-                AccReal Gr = G * radius;
-                AccReal j0 = (Gr < AccReal(1e-8))
-                                 ? AccReal(1) - Gr * Gr / AccReal(6)
-                                 : std::sin(Gr) / Gr;
-                AccReal v_scr = radius * potential + z * std::erf(radius);
-                integrand[ir] = radius * v_scr * j0;
-            }
-        }
-        const AccReal sum = upf.integrate_radial(integrand);
-        if (g_zero)
-            vg[ig] = AccReal(4.0 * M_PI) * sum * inv_omega;
-        else
-            vg[ig] = AccReal(4.0 * M_PI) * inv_omega
-                     * (sum - z * std::exp(-g2 / AccReal(4)) / g2);
+        vg[ig] = nc_vloc_fourier_value(upf, G, omega);
     }
     return vg;
 }

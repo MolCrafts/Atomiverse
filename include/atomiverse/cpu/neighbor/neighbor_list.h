@@ -29,8 +29,14 @@
 ///     return check_distance();          // check yes → displacement-gated
 ///   } else return 0;
 /// ```
-/// `NeighborList::decide_reneighbor()` is that function (LAMMPS `nflag`).
-/// MD Verlet calls it from `Runtime::step` and then either
+/// `NeighborList::decide_reneighbor()` is that function (LAMMPS `nflag`),
+/// plus one gate LAMMPS expresses as `box_change` on fixes that edit the
+/// cell without moving atoms: a lattice-vector change larger than the
+/// skin, a halo-pad change, or a subdomain change rebuilds immediately.
+/// A Berendsen rescaling smaller than the skin does not — the affine
+/// coordinate change is visible to `check_distance`, and
+/// `CellList::build` still resizes bins from the live box when a rebuild
+/// runs. MD Verlet calls this from `Runtime::step` and then either
 /// `forward_comm` or `exchange+sort+borders+launch()` (build).
 /// `launch()` always rebuilds; Runtime owns the decision to invoke it.
 // Per-consumer half/full requests and derived half lists follow LAMMPS
@@ -156,8 +162,13 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     bool decide_reneighbor(cpu::Context& rt, cpu::Frame& frame,
                            bool md_cadence) override {
         ++ago_;
+        // `grid_stale()` is true on every NPT step (the cell matrix is
+        // compared exactly). That must not bypass delay/check: a sub-skin
+        // rescaling is absorbed by the Verlet list, and bin sizes are
+        // refreshed inside `launch()` when a rebuild does happen.
         if (lists_stale_ || frame.nlocal() != saved_owned_
-            || frame.n_total() != saved_active_ || strategy_.grid_stale(frame)
+            || frame.n_total() != saved_active_
+            || strategy_.geometry_forces_rebuild(frame)
             || (rt.md.dd
                 && (rt.md.dd->partition_dirty
                     || rt.md.dd->halo_generation != last_halo_generation_)))

@@ -158,7 +158,13 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
                             kEcutRy, kMesh, cpu::xc::XCType::LSDA};
         configure_smear(method);
         method.build(frame);
-        stress = cuda::pw::pw_stress(frame, method, e_ry);
+        stress = ([&]() {
+            ATV::cpu::Frame result_frame(frame);
+            const auto result = method.stress(result_frame);
+            if (e_ry)
+                *e_ry = method.last_result().energy;
+            return result;
+        }());
     }
 
     if (check_cubic(device_name(dev), stress) != 0)

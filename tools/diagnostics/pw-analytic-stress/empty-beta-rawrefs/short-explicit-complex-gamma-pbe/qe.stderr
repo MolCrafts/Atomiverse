@@ -1,0 +1,4 @@
+Note: The following floating-point exceptions are signalling: IEEE_UNDERFLOW_FLAG IEEE_DENORMAL
+real 29.89
+user 27.62
+sys 1.81

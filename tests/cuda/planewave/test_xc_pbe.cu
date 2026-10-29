@@ -30,15 +30,15 @@ void* dmalloc(size_t bytes) {
 // per-electron test currency; the CPU product kernel returns energy per volume.
 // Host reference: exactly what XCBuilder::step(ws, PBE)'s grid loop
 /// computes per point from rho and the spectral gradient.
-void host_ref(double rho, double gx, double gy, double gz, double& vxc,
-              double& exc, double& fx, double& fy, double& fz) {
+void host_ref(XCType type, double rho, double gx, double gy, double gz,
+              double& vxc, double& exc, double& fx, double& fy, double& fz) {
     if (rho < 1e-12) {
         vxc = exc = fx = fy = fz = 0.0;
         return;
     }
     const double sigma = gx * gx + gy * gy + gz * gz;
     const double s4 = 0.25 * sigma;
-    const auto out = evaluate_xc(XCType::PBE, rho / 2.0, rho / 2.0, s4, s4, s4);
+    const auto out = evaluate_xc(type, rho / 2.0, rho / 2.0, s4, s4, s4);
     vxc = out.vrho_alpha;
     exc = out.energy_density / rho;
     const double vsig_eff = out.vsigma_aa + 0.5 * out.vsigma_ab;
@@ -67,7 +67,13 @@ void make_sweep(std::vector<double>& rho, std::vector<double>& gx,
 
 } // namespace
 
-TEST(CudaPWXcPbe, MatchesCpuEvaluateXc) {
+class CudaPWXcPbe : public ::testing::TestWithParam<XCType> {};
+
+INSTANTIATE_TEST_SUITE_P(PbeFamily, CudaPWXcPbe,
+                         ::testing::Values(XCType::PBE, XCType::PBEsol,
+                                           XCType::RevPBE, XCType::RPBE));
+
+TEST_P(CudaPWXcPbe, MatchesCpuEvaluateXc) {
     std::vector<double> rho, gx, gy, gz;
     make_sweep(rho, gx, gy, gz);
     const int nr = static_cast<int>(rho.size());
@@ -91,7 +97,7 @@ TEST(CudaPWXcPbe, MatchesCpuEvaluateXc) {
                          cudaMemcpyHostToDevice),
               cudaSuccess);
 
-    xc_pbe_grid(d_rho, d_gx, d_gy, d_gz, d_vxc, d_exc, nr);
+    xc_pbe_grid(GetParam(), d_rho, d_gx, d_gy, d_gz, d_vxc, d_exc, nr);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     std::vector<double> vxc(nr), exc(nr), fx(nr), fy(nr), fz(nr);
@@ -114,7 +120,8 @@ TEST(CudaPWXcPbe, MatchesCpuEvaluateXc) {
 
     for (int i = 0; i < nr; ++i) {
         double rv, re, rfx, rfy, rfz;
-        host_ref(rho[i], gx[i], gy[i], gz[i], rv, re, rfx, rfy, rfz);
+        host_ref(GetParam(), rho[i], gx[i], gy[i], gz[i], rv, re, rfx, rfy,
+                 rfz);
         // Same relative-aware bound as the LDA kernel test (1e-12·max(1,|·|)):
         // the residual is the libdevice/libm spread over the chained
         // pow/exp/log, ≲ 1 ulp each.
@@ -145,7 +152,7 @@ TEST(CudaPWXcPbe, MatchesCpuEvaluateXc) {
 // VWN5 LSDA that xc_lsda_grid implements. The two correlation bases disagree
 // by ~1e-4 Ha at valence densities, so a kernel that silently reused the
 // LSDA path would sail past a loose tolerance; this pins the base.
-TEST(CudaPWXcPbe, SigmaZeroIsPw92BaseNotVwn5) {
+TEST_P(CudaPWXcPbe, SigmaZeroIsPw92BaseNotVwn5) {
     const std::vector<double> rho = {0.005, 0.05, 0.5, 2.0};
     const int nr = static_cast<int>(rho.size());
     std::vector<double> zeros(nr, 0.0);
@@ -161,7 +168,7 @@ TEST(CudaPWXcPbe, SigmaZeroIsPw92BaseNotVwn5) {
     cudaMemcpy(d_gy, zeros.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_gz, zeros.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
 
-    xc_pbe_grid(d_rho, d_gx, d_gy, d_gz, d_vxc, d_exc, nr);
+    xc_pbe_grid(GetParam(), d_rho, d_gx, d_gy, d_gz, d_vxc, d_exc, nr);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     std::vector<double> exc(nr);
@@ -170,7 +177,7 @@ TEST(CudaPWXcPbe, SigmaZeroIsPw92BaseNotVwn5) {
     double max_pbe_gap = 0, max_vwn5_gap = 1e300;
     for (int i = 0; i < nr; ++i) {
         const double exc_pbe0 =
-            evaluate_xc(XCType::PBE, rho[i] / 2.0, rho[i] / 2.0).energy_density
+            evaluate_xc(GetParam(), rho[i] / 2.0, rho[i] / 2.0).energy_density
             / rho[i];
         const double exc_lsda =
             evaluate_xc(XCType::LSDA, rho[i] / 2.0, rho[i] / 2.0).energy_density
@@ -192,7 +199,7 @@ TEST(CudaPWXcPbe, SigmaZeroIsPw92BaseNotVwn5) {
 
 // The sub-cutoff points must be exactly zero (cutoff branch), including the
 // flux the kernel writes over the gradient arrays.
-TEST(CudaPWXcPbe, SubCutoffIsZero) {
+TEST_P(CudaPWXcPbe, SubCutoffIsZero) {
     std::vector<double> rho = {0.0, 1e-14, 5e-13, 9.99e-13};
     const int nr = static_cast<int>(rho.size());
     std::vector<double> g(nr, 0.7); // nonzero gradient: must still zero out
@@ -208,7 +215,7 @@ TEST(CudaPWXcPbe, SubCutoffIsZero) {
     cudaMemcpy(d_gy, g.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_gz, g.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
 
-    xc_pbe_grid(d_rho, d_gx, d_gy, d_gz, d_vxc, d_exc, nr);
+    xc_pbe_grid(GetParam(), d_rho, d_gx, d_gy, d_gz, d_vxc, d_exc, nr);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     std::vector<double> vxc(nr), exc(nr), fx(nr);
@@ -226,4 +233,14 @@ TEST(CudaPWXcPbe, SubCutoffIsZero) {
     cudaFree(d_gz);
     cudaFree(d_vxc);
     cudaFree(d_exc);
+}
+
+TEST(CudaPWXcPbeAdmission, RejectsUnsupportedBeforeDeviceAccess) {
+    for (const auto type :
+         {XCType::LSDA, XCType::PADE, XCType::PBE0, XCType::BLYP,
+          XCType::Custom, static_cast<XCType>(-1)}) {
+        EXPECT_THROW(xc_pbe_grid(type, nullptr, nullptr, nullptr, nullptr,
+                                 nullptr, nullptr, 0),
+                     std::invalid_argument);
+    }
 }

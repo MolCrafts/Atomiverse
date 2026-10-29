@@ -93,9 +93,10 @@ class MD:
     dt : float, optional
         Timestep in fs. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
     device : str, optional
-        Execution backend: ``"cpu"`` or ``"cuda"``. CUDA currently binds
-        AM1/RM1/MNDO/PM3 molecular forces and VelocityVerlet, with continuation on
-        the same molpy.Frame. Other CUDA components fail explicitly.
+        Execution backend: ``"cpu"`` or ``"cuda"``. CUDA binds the same
+        pair, FENE, harmonic angle, neighbor list, Langevin and Berendsen
+        parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3.
+        Continuation stays on one molpy.Frame.
 
     Example (mirrors ``examples/07_md_lj.cpp``)::
 
@@ -137,33 +138,72 @@ class MD:
         (the same scheme with a full, shearable cell matrix) *replace* the
         plain integrator — they integrate, thermostat and barostat in one
         step, so do not add a separate thermostat or barostat with them.
+        ``NvtSllod`` likewise replaces the plain integrator and already
+        thermostats peculiar velocities. Do not add a thermostat beside it.
+        It runs on CPU and CUDA. The MPI launcher cannot carry it.
         """
         if type(component) not in (
             _cpp.VelocityVerlet,
             _cpp.NoseHooverNPT,
             _cpp.ParrinelloRahmanNPT,
+            _cpp.NvtSllod,
         ):
             raise TypeError(
-                f"set_integrator expects VelocityVerlet, NoseHooverNPT, or "
-                f"ParrinelloRahmanNPT, got {type(component).__name__}"
+                f"set_integrator expects VelocityVerlet, NoseHooverNPT, "
+                f"ParrinelloRahmanNPT, or NvtSllod, got {type(component).__name__}"
             )
-        if self.device == "cuda" and type(component) is not _cpp.VelocityVerlet:
-            raise ValueError("CUDA Python MD currently supports VelocityVerlet only")
+        if self.device == "cuda" and type(component) not in (
+            _cpp.VelocityVerlet,
+            _cpp.NvtSllod,
+        ):
+            raise ValueError(
+                "CUDA Python MD currently supports VelocityVerlet and NvtSllod"
+            )
+        if type(component) is _cpp.NvtSllod and getattr(self, "_thermostatted", False):
+            raise ValueError(
+                "NvtSllod already thermostats; do not also set a thermostat"
+            )
+        self._nvt_sllod = type(component) is _cpp.NvtSllod
         self._cpp.set_integrator(component)
         self._built = False
         return self
 
     def set_thermostat(self, component: object) -> MD:
         """Install a thermostat (``cpu::md::MD::set_thermostat``)."""
+        if getattr(self, "_nvt_sllod", False):
+            raise ValueError(
+                "NvtSllod already thermostats; do not also set a thermostat"
+            )
         if self.device == "cuda":
-            raise ValueError("CUDA Python set_thermostat is not implemented for this molecular slice")
-        if type(component) not in (_cpp.NoseHoover, _cpp.Langevin, _cpp.CSVR):
+            if type(component) is not _cpp.Langevin:
+                raise ValueError(
+                    "CUDA MD set_thermostat currently accepts Langevin"
+                )
+        elif type(component) not in (_cpp.NoseHoover, _cpp.Langevin, _cpp.CSVR):
             raise TypeError(
                 f"set_thermostat expects NoseHoover, Langevin, or CSVR, got "
                 f"{type(component).__name__}"
             )
+        self._thermostatted = True
         self._cpp.set_thermostat(component)
         self._built = False
+        return self
+
+    def set_run_span(self, nfirst: int, nlast: int) -> MD:
+        """Fix the Langevin ramp to ``[nfirst, nlast]`` before the first chunk.
+
+        CUDA continuation keeps the step counter, so one cool is many
+        ``run(chunk)`` calls on one driver and the span is the whole cool.
+        Call this after ``set_thermostat`` and before ``run``.
+        """
+        if self.device != "cuda":
+            raise ValueError(
+                "set_run_span is the CUDA continuation ramp; CPU MD takes "
+                "the span from each run()"
+            )
+        if int(nlast) <= int(nfirst):
+            raise ValueError(f"run span [{nfirst}, {nlast}] is empty")
+        self._cpp.set_run_span(int(nfirst), int(nlast))
         return self
 
     def set_barostat(self, component: object) -> MD:
@@ -180,8 +220,6 @@ class MD:
         Pressure targets are in eV/Å³ (positive means compressive);
         1 bar ≈ 6.2415e-7 eV/Å³.
         """
-        if self.device == "cuda":
-            raise ValueError("CUDA Python set_barostat is not implemented for this molecular slice")
         if type(component) not in (_cpp.BerendsenBarostat,):
             raise TypeError(
                 f"set_barostat expects BerendsenBarostat, got "
@@ -251,7 +289,8 @@ class MD:
           refuses a second thermostat beside it; the result is simply
           double-thermostatted.
         """
-        if getattr(component, "device", "cpu") != self.device:
+        method_device = getattr(component, "device", None)
+        if method_device is not None and method_device != self.device:
             raise ValueError("Evaluator and driver must use the same device")
         if self.device == "cuda":
             self._cpp.set_evaluator(component)
@@ -262,13 +301,26 @@ class MD:
 
     def set_neighbor(self, component: object) -> MD:
         """Install the neighbor list (``Driver::set_neighbor``)."""
-        if self.device == "cuda":
-            raise ValueError("CUDA Python set_neighbor is not implemented for this molecular slice")
         if type(component) is not _cpp.NeighborList:
             raise TypeError(
                 f"set_neighbor expects NeighborList, got {type(component).__name__}"
             )
         self._cpp.set_neighbor(component)
+        self._built = False
+        return self
+
+    def set_pressure_series(
+        self, path: str, every: int, epsilon_ev: float, direction: int
+    ) -> MD:
+        """Record −P* during one continuous CUDA run.
+
+        ``NvtSllod`` restarts its strain clock when the driver is built
+        again, and a chunked ``run`` builds again. The series is written
+        from inside the single deform ``run``. ``direction`` is 0..5.
+        """
+        if self.device != "cuda":
+            raise ValueError("pressure series is recorded on the CUDA driver")
+        self._cpp.set_pressure_series(str(path), int(every), float(epsilon_ev), int(direction))
         self._built = False
         return self
 

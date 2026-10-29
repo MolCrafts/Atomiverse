@@ -1,0 +1,8 @@
+{
+  "process_exit_code": 0,
+  "scientific_converged": false,
+  "iterations": 250,
+  "final_estimated_scf_accuracy_Ry": 0.05722072,
+  "printed_xc": "SLA+VWN+NOGX+NOGC",
+  "eligible_as_pin": false
+}

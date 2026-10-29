@@ -31,7 +31,472 @@ PW+Evaluate installation. [Native outputs and hashes](../../tools/diagnostics/nc
 record the scope. This is a scoped recheck, not a new run of all 68 cases.
 CUDA was not rerun.
 
+## Execution checklist
+
+This is the working queue for autonomous design, implementation, validation
+and optimization. Work on the highest-priority item whose dependencies are
+ready; CPU and CUDA proceed independently when a hardware queue is pending.
+The capability tables below retain their narrower evidence scopes.
+
+An item is checked only for its stated backend and envelope after its required
+checks pass. Source implementation, compilation, native numerical acceptance
+and external-engine qualification are recorded separately. A queued job is
+unfinished. Preserve failed runs and original numerical gates; extend a check
+when a physical boundary is missing, rather than dropping the failed setting.
+
+For each item: inspect the public contract and accepted state ownership;
+implement the smallest complete vertical slice; run primitive and public-method
+checks appropriate to it; compare energy, full forces and supported stress
+against an independent reference; record convergence, settings, native outputs
+and source/binary hashes. Profile accepted calculations before optimizing;
+remeasure with the same physical settings and retain their numerical gates.
+Complete-method solves stay in opt-in diagnostics, outside unit tests.
+
+**P0 — finish current numerical acceptance**
+
+- [x] `nc-projector-normalization`: twenty normalization-dependent amplitude
+  skips now use exact-zero semantics across setup, CPU/CUDA Hamiltonians,
+  forces and response. The original beta -> a beta, D -> D/a^2 controls
+  dropped a 0.187354647692 Ha nonlocal term to zero at a=1e9 or1e-35;
+  the repaired finite controls recover H*C, full forces and strain terms.
+  Actual CPU/CUDA H*C, Sternheimer and selected finite-q response checks
+  pass. Five of thirteen response screen sites have direct numerical
+  coverage; the remaining edits retain compilation/algebraic coverage,
+  not a new Hessian qualification. Arbitrary exponent ranges remain limited
+  by representable intermediates.
+  [Scoped final wave](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28/source-review/wave-validation.json).
+- [x] `pbe-cpu`: shared PBE-family parameters, point/gradient checks and
+  public fixed/FD PW checks; final CPU run passes 39 units and 16 cases.
+  [Evidence](../../tools/diagnostics/pbe-family/results/2026-10-27-pw-driver/cpu/validation.json).
+- [x] `gpw-stage-reference`: correct periodic images and Gaussian-tail
+  support without changing production kernels or gates; all ten native
+  GH200 stage tests pass, including the five previously failed comparisons.
+  [Evidence](../../tools/diagnostics/pbe-family/results/2026-10-27-gpw-stage-recheck/validation.json).
+- [x] `pw-cuda-acceptance`: native post-refactor fixed/FD, move/reuse,
+  standalone and nested lifecycle/accumulation, original stress baselines,
+  and existing actual-QE Si₂ energy/full-force pin. The unused queued job
+  4521991 is superseded by combined PW/GPW acceptance directly on reusable
+  GH200 allocation 4522779. The scoped envelope passes 72 units, three moved
+  full-SCF cases, 16 fixed/FD model cases, four nested branches and the existing
+  actual-QE Si₂ energy/full-force pin. [Evidence](../../tools/diagnostics/pbe-family/results/2026-10-27-pw-driver/gh200/validation.json).
+- [x] `pbe-pw-periodic-oracles-cpu`: six actual QE 7.6 references for
+  PBEsol/revPBE/RPBE × Si₂ RKS/skew H₃ UKS at Γ with FD smearing. Absolute
+  Mermin energy, every force and six numerical strain-FD stress components
+  pass the original gates. [Evidence](../../tools/diagnostics/pbe-periodic-oracles/results/2026-10-27/cpu/validation.json).
+- [x] `pbe-pw-periodic-oracles-cuda`: the same six independent references
+  pass on GH200, including nonzero thermal and collinear-spin states.
+  [Evidence](../../tools/diagnostics/pbe-periodic-oracles/results/2026-10-27/gh200/validation.json).
+- [x] `pbe-gpw-periodic-oracles-cpu`: qualify the actual CP2K 2026.2
+  PBEsol/revPBE/RPBE Γ RKS references after repairing Gaussian-core overlap.
+  Absolute energy, every force and supported diagonal stress pass their
+  unchanged gates after the core correction. [Evidence](../../tools/diagnostics/pbe-periodic-oracles/results/2026-10-28/core-cpu/validation.json).
+- [x] `pbe-gpw-periodic-oracles-cuda`: the same independent GPW gates
+  pass natively on GH200. [Evidence](../../tools/diagnostics/pbe-periodic-oracles/results/2026-10-28/core-gh200/validation.json).
+- [x] `pbe-gpw-uks-periodic-oracles-cpu`: four actual CP2K 2026.2
+  PBE/PBEsol/revPBE/RPBE H3 Gamma UKS references (alpha2/beta1), with
+  matched grids, basis and CORE_PPL GRID. Absolute energy, all nine forces
+  and three supported diagonal stresses pass unchanged independent gates;
+  the current CPU envelope also passes 233 units and existing Driver/MPI
+  checks. This does not qualify empty-beta boundary derivatives or shear.
+  [Evidence](../../tools/diagnostics/pbe-periodic-oracles/results/2026-10-28/uks-paired-cpu/validation.json).
+- [x] `pbe-gpw-uks-periodic-oracles-cuda`: the same four actual CP2K
+  Gamma H3 UKS references pass on GH200 with unchanged absolute E/full-F/
+  diagonal-stress gates, after coupled-spin DIIS and residual control.
+  [Evidence](../../tools/diagnostics/pbe-periodic-oracles/results/2026-10-28/uks-paired-gh200/validation.json).
+- [x] `gpw-gaussian-core-overlap`: include the missing short-range correction
+  between Gaussian ionic cores in every supported CPU/CUDA energy, full-force
+  and cell-strain path. Actual CP2K 2026.2 H₂ references expose a
+  `5.338928237e-6` Ha energy term and an `8.0368611e-5` Ha/Bohr x-force
+  correction; the original independent gates currently fail. Preserve those
+  runs, periodic/self-image counting and controlled tails, then verify ionic
+  and strain derivatives and repeat the unchanged independent gates.
+  [Independent raw references](../../tools/diagnostics/pbe-periodic-oracles/cp2k-2026-10-27/reference.json).
+  The repaired scoped envelope passes 188 CPU units, 46 native CUDA units,
+  29 x86 host guards, existing Driver/MPI/physical differences and both new
+  three-case independent CP2K matrices. Maximum E/full-F errors are below
+  `7e-10` Ha / `8e-9` Ha/Bohr; original failed runs remain failed.
+  [Complete scoped receipt](../../tools/diagnostics/pbe-periodic-oracles/results/2026-10-28/core-validation.json).
+
+**P1 — unify GPW execution and complete the periodic foundation**
+
+- [x] `gpw-cpu-ot-driver`: route all six existing OT outer paths
+  through the method's typed-stage Driver; preserve line searches, DIIS
+  polish and total iteration budget. Preserve user stages/criteria across
+  paths and moves. Require Γ RKS/UKS and supported multi-k physical checks,
+  force/energy consistency, reuse and nested lifecycle checks. Allocation
+  4522778 passes 180 units, the 11-case Driver matrix, four one/two-rank
+  k-point comparisons, eight physical preflights and the retained CP2K water
+  gates. [Scoped evidence](../../tools/diagnostics/gpw-driver/results/2026-10-27/cpu/validation.json).
+- [x] `gpw-cuda-driver-frame`: use `Driver<gpw::Phase>` for Γ RKS
+  SG/MG, Γ UKS and multi-k RKS; remove public atom-list/cell/free-function
+  entry points. Require one reference SCF per derivative call, real standalone
+  Frame, borrowed parent Backend/Frame/stream, request preservation, nested
+  accumulation, move/exception/reuse checks and unchanged physical gates.
+  GH200 allocation 4522779 passes 41 units, all four complete Driver cases
+  and four public PBE-family twins. The initial lifecycle-check count failure
+  is retained; only its diagnostic expectation changed, with the production
+  archive byte-identical. [Evidence](../../tools/diagnostics/gpw-driver/results/2026-10-27/gh200/validation.json).
+- [ ] `gpw-propagator-mount`: migrate remaining `GPWEvaluator` consumers
+  together with CPMD/XL/second-generation electronic propagation state;
+  preserve each propagator's accepted-history and zero-SCF contracts.
+- [x] `gpw-cuda-gamma-uks-pbe`: single-grid PBE/PBEsol/revPBE/RPBE
+  through the existing typed Driver and Frame. Coupled alpha/beta DIIS
+  matches the CPU algorithm; explicit positive finite `residual_tol` retains
+  its old 1e-5 production default. All eight strict H3/empty-beta complete
+  Driver cases pass at residual 1e-9 and original H3 100/H2 200 budgets,
+  including nested request/stream/exception/retry checks. The scoped current
+  envelope passes 233 CPU units, 131 distinct native CUDA units, 30 x86 host
+  guards, original public gates and both actual CP2K UKS matrices. Five new
+  coupled-DIIS primitives also pass memcheck with zero errors/leaks. UKS
+  forces remain host-assembled; empty-beta parity does not qualify XC floor
+  derivatives. [Complete scoped receipt](../../tools/diagnostics/gpw-driver/results/2026-10-28-uks-paired/validation.json).
+- [ ] `gpw-cuda-semilocal-depth`: UKS multigrid and multi-k UKS beyond
+  the accepted Gamma single-grid slice; qualify multi-k/MG energy, every force
+  and supported stress on asymmetric multi-atom systems.
+- [ ] `xc-spin-domain-derivatives`: define the admitted spin domain and
+  regularization/pullback contract before qualifying negative-spin, floor
+  and fully polarized boundaries. The retained negative-beta probe returns
+  PBE `v_beta≈99.42` while differentiating the raw composite energy gives
+  `≈-0.03354` Ha. Research against LibXC 7 distinguishes its admitted
+  nonnegative-density analytic endpoint convention from derivatives through
+  caller-side clipping. A global raw-energy Jacobian replacement changes
+  published empty-beta virtual spectra by hundreds of Ha and is therefore
+  not an accepted repair. Preserve the established physical point law;
+  qualify any discrete caller map and its derivative as a separate contract.
+  Positive-density finite differences and CPU/device parity alone do not
+  close these boundary questions. [Contract and compatibility study](../developer/xc-spin-domain.md).
+- [ ] `gpw-cuda-residency`: retain accepted SCF grid/density state for force
+  assembly without re-upload, implement device AO Pulay and cold start, then
+  close multi-k setup/payload and stress transfers. Native consistency and
+  Driver conformance do not close these device-residency defects.
+- [x] `gpw-cuda-gamma-force-handoff`: Γ RKS single-grid force assembly
+  consumes accepted device P, physical raw-H W and resident potentials, with
+  cold immutable derivative tables and no host AO contraction or field
+  re-upload. Native acceptance passes 45 units, four Driver cases, four
+  public PBE-family twins and five p-shell water cases (90 force lanes).
+  Captured H2D is zero; only the 4-byte eigensolver status and independently
+  proven 8-byte vendor matrix-norm scalar return to the host. Memcheck reports
+  zero errors/leaks. This does not close UKS/MG/k force, cold setup or stress
+  residency. [Evidence](../../tools/diagnostics/gpw-residency/results/2026-10-27/residency-validation.json).
+- [x] `pw-analytic-stress-cpu-components`: closed-form Ewald and XC
+  six-component virials plus NC radial/Cartesian projector and local-potential
+  derivatives. All 37 component tests pass, including independent discrete
+  energy strain differences, shear and rotations. Existing energy/potential
+  laws and the public numerical total-stress path are preserved. The broader
+  current CPU envelope passes 233 units and actual QE/CP2K comparisons.
+  [Component receipt](../../tools/diagnostics/pbe-family/results/2026-10-28-pw-stress-components/final-cpu/validation.json).
+- [x] `pw-analytic-stress-cpu-gamma-fixed-lsda`: the public Gamma RKS,
+  fixed-occupation LSDA path now assembles all six closed-form tensor entries
+  from one final-band ensemble, with no strained band solves. Force/stress
+  combined requests share that one unstrained sweep and derivative Ewald
+  object, and preserve accepted SCF metadata. Public run/forces/stress and a
+  nested combined call pass the actual QE VWN5 E/full-F/six-stress gates,
+  real Frame/metrics/criterion checks and one SCF lifecycle per call.
+  [Public receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28/cpu/validation.json).
+  The affected envelope passes 268 CPU units, 106 native CUDA units,
+  three opt-in SCF stress baselines, 31 x86 guards and nine memcheck cases
+  with no errors/leaks. Existing PW and actual QE matrices pass unchanged.
+  [Wave receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28/source-review/wave-validation.json).
+- [x] `pw-analytic-stress-cuda-operator-components`: device kinetic,
+  Hartree, local and full-D nonlocal energy/W9 operators with borrowed
+  stream/BLAS/scratch. Eight native tests cover signed f, full/unequal radial
+  prefixes, Gamma/nonzero k, rotations, all strain lanes and normalization
+  controls. Cold radial setup remains on the host; this is not CUDA total
+  analytic stress or a device-only complete workflow.
+  [Wave receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28/source-review/wave-validation.json).
+- [x] `pw-analytic-stress-cpu-gamma-semilocal`: extend the same public tensor
+  assembly to Gamma LSDA/PBE-family RKS/UKS with fixed or Fermi–Dirac
+  occupations. Six actual-QE thermal/spin references pass unchanged E/full-F/
+  six-stress gates; measured internal calls prove one SCF and one all-spin
+  unstrained sweep per standalone stress or nested combined request. The
+  original 16-family numerical stress comparison also passes. Final-library
+  acceptance passes 278 CPU units, the new public/general/family checks on
+  x86 and ARM, 14 affected native CUDA units and existing physical matrices;
+  all 1426 captured source fingerprints agree. Fixed empty-spin, Gaussian/MP
+  and multiple-k dispatch retain their earlier paths. This wave adds no new
+  MPI or auxiliary-eigenstate completion qualification.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-gamma-general/source-review/wave-validation.json).
+- [x] `pw-final-state-completion`: CPU final bands now require the existing
+  Davidson target `tol*.1` in the actual Hpsi residual and norm-squared error
+  below 1e-8, within the unchanged 40-expansion budget. Local auxiliary-work
+  failures are synchronized before spectrum/density collectives. Real short
+  budgets reject without publishing outputs; the same parent can retry.
+  Prepared false reference verdicts remain false. Serial and MPI2 Gamma/
+  eight-k checks cover empty ranks and remote failures. This guard does not
+  cover every earlier admission/allocation error.
+  [Final scoped wave](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-final-cpu-cuda/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cpu-k-fixed-lsda`: restricted fixed LSDA now uses
+  the same tensor on general k meshes. Distributed T/nonlocal E+W and weighted
+  electron count share one 21-scalar SUM; replicated terms are not multiplied
+  by rank count. Actual QE eight-k Si2, serial/MPI2 public and nested calls,
+  rotation and fixed-Miller full-SCF strain checks pass their original gates.
+  Separate zero-SCF admission checks reject remote bad counts/shapes/weights
+  consistently. Native acceptance includes 280 CPU units and ARM components.
+  [Final scoped wave](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-final-cpu-cuda/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cuda-gamma-fixed-lsda`: the public Gamma RKS fixed
+  LSDA derivative path now owns one final-band ensemble, requested device
+  force/virial scratch and one parent publication kernel. Force and virial
+  share a raw full-D projection; energy-only allocates no derivative workspace.
+  Actual auxiliary Hpsi/norm and device finite/reference/raw-antisymmetry
+  checks precede publication. Nine complete modes, 15 affected GTests (one
+  with eight certificate controls), original physical matrices and two fresh
+  zero-error/leak memchecks pass. Three initial ARM MPI startup failures remain
+  failed and are closed by explicit unchanged-binary supplemental executions.
+  Cold radial/Ewald work, auxiliary metadata and requested host outputs remain
+  explicit boundaries; PBE-family, smear, spin and multi-k total tensors are
+  separate open capabilities.
+  [Final scoped wave](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-final-cpu-cuda/collection-portable/wave-validation.json).
+- [x] `pw-xc-energy-precision`: compensate the two existing padded-grid
+  XC energy reductions without changing the point law, potentials or W.
+  The retained Si2 tiny-strain failure is reproduced by the old accumulator;
+  the actual candidate passes all original RKS/UKS component gates with
+  active density/potential/force/W payloads bit-identical. Ten uniform-density
+  exact-integral cases fail on the old library and pass the unchanged
+  precision bound on both x86 and ARM. The scoped wave passes 278 CPU units,
+  ARM precision/public checks and the original physical matrices.
+  [Evidence](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-accuracy-stream/source-review/wave-validation.json).
+- [x] `pw-analytic-stress-cpu-k-fd-semilocal`: reuse the final-band tensor
+  for semilocal Fermi–Dirac RKS/UKS on supported k layouts. Ten matched actual
+  QE cases cover full 2x2x2 meshes, five models, nonzero UKS magnetization and
+  nontrivial entropy. Serial/MPI2 energy, full forces and six stress entries
+  pass unchanged gates, with exact local band budgets and one publication.
+  ARM repeats all ten cases. General-k admission does not imply independent
+  qualification of every k layout; Gaussian/MP retain their earlier path.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-semilocal-depth/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cuda-gamma-fixed-pbe-family`: extend the existing
+  certified owner to PBE/PBEsol/revPBE/RPBE with the shared XC point law,
+  distinct raw-gradient/flux buffers and 3x quadrature. Four matched actual
+  QE references pass E/full-F/six-stress gates; 36 complete request/retry modes,
+  four pure model controls and two current memchecks pass. Force-only skips
+  tensor quadrature; energy-only has no owner. Current native acceptance
+  binds 1453 source files, 18 CUDA artifacts, 16 affected GTests and the old
+  physical matrices. The private missing-return diagnostic exit 139 remains
+  false; its corrected current binary passes. Spin, smear and multiple-k
+  CUDA total tensors remain open.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-semilocal-depth/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cpu-gaussian`: the common final-band tensor now
+  admits semilocal Gaussian RKS/UKS at Gamma and supported k layouts. Twelve
+  matched actual-QE primary cases cover two Gamma and ten full-eight-k cases;
+  serial/MPI2 E/full-F/six-stress, Ne/M/generalized entropy, exact band budgets
+  and shared C/f/Ewald checks pass. The original near-integer .02-Ry control
+  keeps its failed entropy qualification; an independent .04-Ry case supplies
+  nontrivial broadening. Nominally empty fixed/Gaussian spin channels and MP
+  retain their earlier paths. Gaussian entropy is not physical temperature.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-filling-depth/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cuda-gamma-fd`: Gamma RKS LSDA/PBE-family final
+  spectra now determine consistent mu/f/S and exact orbital density. Five
+  matched QE references, 45 FD and 45 retained fixed method modes pass; full
+  reference metadata remains unchanged on normal and exceptional exits.
+  Auxiliary internal energy/free energy are separate; no entropy pressure is
+  added. Actual Hpsi1e-6/norm1e-8 and the 20-round budget are unchanged.
+  Native acceptance binds 1463 sources and 21 CUDA artifacts, with 17 GTests
+  and four zero-error/leak memchecks. Spin, other smear kinds and k meshes
+  remain separate CUDA total-tensor work.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-filling-depth/collection-portable/wave-validation.json).
+- [x] `pw-final-occupation-tails`: CPU final nonlocal force and CUDA final
+  density retain every nonzero occupation. Prepared positive/signed tiny-tail
+  controls fail old screening and pass the scaled original gates; ordinary
+  CUDA SCF density remains bit-identical and retains its prior cutoff policy.
+  CPU/ARM NC and native GPU controls pass. This does not qualify signed-XC
+  SCF, a density-floor extension or MP response.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-filling-depth/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cpu-k-fixed-semilocal`: general-k fixed band-index
+  semilocal RKS/populated UKS shares the final-band tensor. Ten matched actual-QE
+  cases pass E/full-F/six-stress on serial/MPI2 and ARM, with original budgets,
+  Ne/M/S and one publication. This is a per-k occupation constraint; the observed
+  negative indirect-gap control remains unqualified as a global insulator.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-fixed-spin-xc-depth/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cuda-spin-xc`: strictly positive-spin LSDA/PBE-family
+  device XC tensors pass all nine strain lanes at two steps, CPU/point/primal
+  checks, rotation and nontrivial negative cross-gradient controls. One GTest
+  covers five models with zero SCF/band solves; current memcheck has zero
+  errors/leaks. This component does not qualify a public UKS owner or empty,
+  clipped or signed-density XC domains.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-fixed-spin-xc-depth/collection-portable/wave-validation.json).
+- [x] `pw-analytic-stress-cpu-empty-beta`: Gamma fixed LSDA with Na>0/Nb=0
+  uses a producer declaration, canonical zero-row beta blocks and collective
+  validation. A matched actual-QE stretched-triplet reference passes E/full-F/
+  six-stress on serial/MPI2 and ARM, including rotation; all nine frozen strain
+  lanes pass at two steps. Zero-band/full-D and malformed/empty-rank controls
+  pass. Short-bond and GGA failures remain independently unqualified. Other
+  empty-spin/filling/k domains retain their earlier paths.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-empty-spin-mixing-depth/collection-portable/wave-validation.json).
+- [x] `pw-cuda-joint-spin-pulay`: alpha/beta histories reuse the restricted
+  Pulay engine and retain the unmixed joint residual. Depth-one/history-wrap,
+  opposite-spin and CPU parity checks pass, together with original public
+  fixed/FD/Gaussian/MP1 and request/retry scopes. Asynchronous coefficient and
+  cold upload sources have explicit lifetime ownership; the separate linear
+  kernel is removed. An isolated same-input Si2 control converges in 105 rounds within the
+  unchanged 200-round budget; its different QE electronic state remains false.
+  This is no wall-time speedup or new signed-XC variational qualification.
+  [Scoped receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-empty-spin-mixing-depth/collection-portable/wave-validation.json).
+- [x] `pw-cuda-packed-spin-operators`: independent spin blocks share one
+  band-sum projection/force/tensor implementation. Seventeen zero-SCF controls
+  cover full-D projectors, signed/tiny weights, scale gauges, all-nine strain
+  and ionic force differences, collapsed RKS and packed bands exceeding G.
+  The shared header owns the project → force → virial scratch contract;
+  nonfinite expected oracles reject. Current native unit and memcheck pass.
+  This is a pure operator component, separate from the public UKS owner.
+  [Receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-spin-packing-component/receipt.json).
+- [x] `pw-analytic-stress-cpu-gamma-mp1-pbe`: the integrated MP1 PBE tensor
+  for actual Gamma and initially populated UKS channels passes matched QE
+  E/full-F/six-stress on serial/MPI2, together with independent
+  all-nine frozen strains and twelve independent full-SCF deformations.
+  Its actual negative occupations, signed density and generalized entropy
+  are retained. The 1487-source CPU wave covers 84 groups/126 rank records,
+  281 units and 16 private artifact identities, including relocated replay.
+  Three original parser-helper exits remain failed; seven same-log strict
+  recollections pass without another SCF. The LSDA compressed-strain failure
+  and broader MP/response gaps remain open.
+  [Scoped archive](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-mp-gamma-pbe/cpu-integrated/archive-manifest.json).
+- [x] `pw-analytic-stress-cpu-gamma-rks-mp1-pbe`: restricted MP1 PBE at
+  actual Gamma passes the Si2 12-Ry/.02-Ry/six-band matched-QE envelope.
+  Actual occupations below zero and above two retain degeneracy two,
+  total charge eight, zero moment and generalized entropy. Nonzero nonlocal
+  energy/tensor, all forces/six stresses, all-nine frozen strains at two
+  steps and twelve independent full-SCF deformations pass their original
+  gates. The fresh 1508-source main wave completes 88 groups/132 rank
+  records, 281 units and 18 artifact identities with unchanged input hashes.
+  Its current-library mathematical oracle is separately linked against the
+  normal build's actual Rust/vendor/bridge dependencies. Independent review
+  and relocated parser replay hide the original repository, molpy and SDK.
+  Earlier declaration/tool refusals remain recorded; other MP domains and
+  the LSDA signed-density boundary remain open.
+  [Scoped archive](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-mp-rks-gamma-pbe/cpu-integrated/archive-manifest.json).
+- [x] `pw-analytic-stress-cuda-gamma-uks`: two immutable final spin ensembles,
+  shared total/spin densities, nonlocal force/tensor accumulation and one
+  publication for fixed occupations and nonempty spin channels. The current
+  joint-mixer source passes 162 native GH200 records: 135 request cases,
+  33 unit tests, independent frozen strain/force differences, finite-domain
+  fallback/retry and three zero-error/zero-leak memchecks. Eighteen separate
+  artifact copies and a repository-independent relocated parser replay are
+  sealed and independently reviewed. The original gate-representation refusal
+  and archive-tool failures remain recorded; physical gates are unchanged.
+  Finite unsupported spin-XC fields retain numerical epilogues and explicit
+  host transfers. FD, multiple k points and empty endpoints remain separate.
+  [Scoped archive](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-cuda-uks-depth/archive-index.json).
+- [ ] `pw-analytic-stress-cuda-gamma-uks-fd`: cache both fresh spin spectra
+  and coefficient blocks, fill once at a shared chemical potential, and build
+  both orbital densities from their corresponding cached coefficients through
+  one density implementation. Preserve accepted result metadata and the
+  per-call publication/fallback contract. Require shared-mu and tiny-tail
+  component controls, matched-QE H3 plus a nonzero-projector spin case,
+  full force/stress and all-nine frozen strains, request/lifecycle checks
+  and native memcheck. Fixed-UKS or hydrogen-only coverage is insufficient.
+- [x] `pw-cuda-nl-force-stream`: both legacy nonlocal-force kernel launches
+  now explicitly use the solver's borrowed stream. Captured before/after
+  execution moves the twelve custom launches from the default stream to the
+  same stream as all twelve cuBLAS GEMVs; original force and public gates pass.
+  The old numerical pass is retained as insufficient proof of stream
+  ownership. This does not remove legacy per-call force scratch allocation.
+  [Evidence](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-accuracy-stream/source-review/wave-validation.json).
+- [ ] `pw-analytic-stress-cpu`: implement closed-form kinetic, ionic,
+  nonlocal, Hartree and XC strain derivatives with correct fixed-basis and
+  thermal/free-energy conventions. Require six-component reference stress,
+  full-SCF deformation checks and rotation checks, fixed/FD/Gaussian/MP
+  and restricted/collinear envelopes recorded separately.
+  [Algorithm and operator-derivative design](../developer/pw-analytic-stress.md)
+  is available; this does not mark its implementation complete.
+- [ ] `pw-analytic-stress-cuda`: device counterpart with the same physical
+  definitions and independent six-component gates; do not qualify it from
+  the existing frozen-density strain-FD implementation.
+- [ ] `gpw-general-cell-stress`: general cells and physical shear, followed
+  by analytic derivatives and device assembly. Current orthorhombic fixed-P
+  diagonal differences do not close a six-component tensor.
+- [ ] `pw-mp-density-boundary`: resolve the observed LSDA×MP near-zero
+  signed-density SCF failure with a variationally consistent treatment;
+  retain the failed compressed-H₃ case and independent energy derivatives.
+
+**P2 — expand physical models through the existing methods**
+
+- [ ] `molecular-ks-cuda`: RKS/UKS LSDA/PBE energy and analytic full forces,
+  then broader basis/GGA and hybrid coverage; require live matched PySCF
+  references, open-shell/empty-spin cases and actual device execution.
+- [ ] `xc-provider-periodic`: extend the public batched mathematical XC
+  contract to CPU PW/GPW; add device implementations with explicit admission.
+  Preserve energy-density, spin/sigma, derivative-order and ownership units.
+- [ ] `meta-gga`: kinetic-density τ ingredients and matched operator/force/
+  stress derivatives before adding r2SCAN/TPSS models; qualify each backend.
+- [ ] `periodic-hybrids`: orbital-dependent exact/screened exchange for
+  periodic PBE0/HSE, with separate convergence, energy, force and stress
+  qualification. Do not encode exchange in a density-only XC callback.
+- [ ] `dispersion-depth`: public-consumer D3/D4/TS/MBD energy/full-F/stress
+  coverage and device counterparts; replace XDM's reimplementation pins
+  with an accepted independent engine reference.
+- [ ] `dftu-matched-model`: align projector/occupation definitions with an
+  independent engine before promoting DFT+U comparisons; qualify Γ/multi-k,
+  spin, OT and forces/stress separately.
+
+**P3 — response, long trajectories and scale**
+
+- [ ] `response-depth`: MP signed-weight DFPT projectors, metallic/spin
+  response boundaries and analytic CPKS/Hessian; retain existing CPU scopes.
+- [ ] `analysis-cuda`: device bands/DOS, phonons, Berry polarization and
+  MLWF over an accepted reference state, with no implicit duplicate SCF.
+- [ ] `aimd-reuse`: density/orbital prediction and cache reuse across geometry
+  edits; preserve trial rejection and accepted history. Check long-trajectory
+  energy drift, cell changes and thread/MPI repeatability.
+- [ ] `pw-device-synchronization`: reduce PW band-side scalar synchronization
+  after profiling; GPW scientific-state transfers remain P1 above.
+- [ ] `large-engine-extensions`: PAW/USPP/GAPW, noncollinear/SOC and multi-GPU,
+  each as a separately designed and independently validated capability.
+
 ## Current executable evidence
+
+The [current empty-beta and mixing wave](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-empty-spin-mixing-depth/collection-portable/wave-validation.json)
+covers CPU Gamma/supported general-k semilocal fixed/FD/Gaussian derivatives
+with populated spins, plus the narrow Gamma fixed-LSDA empty-beta tangent.
+The ten fixed, ten FD and twelve Gaussian references retain their original
+E/full-F/six-stress gates; one new stretched-triplet LSDA reference adds
+serial/MPI2, rotation and ARM checks. All 102 primary per-rank records pass.
+Fixed band indices per k do not imply a global insulating gap.
+CUDA retains its Gamma RKS fixed/FD tensor and positive-spin pure XC component;
+joint-spin Pulay now passes its own density and public filling/mode checks.
+The public CUDA UKS tensor owner remains open.
+Current acceptance records 281 CPU units, 82 groups/123 rank records/15 identities,
+183 GH200 command leaves (121 GPU and62 CPU-only ARM),31 component GTests,
+90 RKS method modes,31 x86 guards, five separate ARM primitives and six
+zero-error/leak memchecks. ARM overlapping steps use disjoint cores, live PMI
+and no GPU GRES, with observed peak eight. Three CPU and one ARM entropy
+controls retain raw exit1 and false scientific qualification.
+All 1480 captured source identities match in an actual read-only execution
+view. Shared-workspace PPPM updates caused the first host-view precheck to
+reject before science; this attempt and a launcher/parser rejection remain
+separate. The accepted view preserves the captured source without overwriting
+host work. Exact source bytes and50 native archive/ELF copies are archived;
+relocated replay passes through the same source and artifact views. Prior
+profiles, negative-gap and unmatched-state failures retain their attribution.
+Broader source/build/repository qualification flags remain false.
+
+The [PBE-family follow-up](../../tools/diagnostics/pbe-family/results/2026-10-27-followup/README.md)
+passes 39 distinct CPU units, eight public PW RKS/UKS cases and four public
+GPW RKS cases across PBE, PBEsol, revPBE and RPBE. Independent ionic force
+differences are within 2.705e-7 eV/Å on PW and 2.249e-5 eV/Å on GPW. Both
+backends share immutable model parameters and GPW probe admission. CUDA GPW
+now has `stress(Frame&)`, using one device solve plus host fixed-density
+strain assembly, with orthorhombic shear still zero. The CUDA library and
+both diagnostics compile, and 20 host admission checks pass. Actual GH200
+job 4519883 passed all eight PW and four GPW public CPU/CUDA cases, but five
+GPW stage comparisons failed among 74 units; its overall record remains
+failed. The [separate frozen-library recheck](../../tools/diagnostics/pbe-family/results/2026-10-27-gpw-stage-recheck/validation.json)
+passes all ten corrected periodic/windowed stage references at the original
+gates (GH200 job 4521262). The subsequent CUDA PW Driver refactor still needs
+its own native acceptance. These consistency results supply no new
+independent periodic qualification.
+
+The subsequent [PW Driver recheck](../../tools/diagnostics/pbe-family/results/2026-10-27-pw-driver/README.md)
+unifies CUDA PW under `Driver<pw::Phase>` and fixes CPU/CUDA preservation
+and execution of user-mounted stages/criteria. The final CPU run passes 39
+units and 16 fixed/FD public cases with actual stage measurements; a frozen
+pre-fix CPU archive fails all eight intended lifecycle probes. Reusable
+GH200 allocation 4522779 now passes the complete PW post-refactor envelope:
+72 units, three moved SCF baselines, 16 fixed/FD model cases, four nested
+branches and the existing QE Si₂ energy/full-force pin. The separate
+[GPW Driver envelope](../../tools/diagnostics/gpw-driver/results/2026-10-27/gh200/validation.json)
+passes 41 units, four complete Driver cases and four PBE-family public twins;
+overlapping unit cases are counted once. Final x86 CUDA compilation and
+29 host admission checks also pass. CPU allocation 4522778 supplies direct build/test/MPI
+steps; each allocation lasts two hours and avoids a new queue per iteration.
 
 The [follow-up public molecular matrix](../../benchmarks/scf/results/2026-10-26-dft-wave2/README.md)
 passed 67 workloads / 134 required CPU-oracle cells, retaining the preceding
@@ -111,7 +576,7 @@ Hand-coded; libxc is an optional test oracle only (`ATV_BUILD_XC_ORACLE`).
 | PW92 correlation base | ◐ | ◐ | Used inside PBE correlation on both backends; no standalone PW92 `XCType` or registered PW92-functional energy pin; `XCType::LSDA` selects VWN5 |
 | PBE | ✓ | ✓ | CPU molecular energy: [scf/tddft][scf-td]; GPW: [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; CUDA PW: [pw/rks][pw-rks], [pw/collinear-spin][pw-spin]; see PW limits below |
 | BLYP | ✓ | ○ | [scf/rks][scf-rks], `blyp-water-sto3g`; GPW reachable, not separately pinned |
-| PBEsol / revPBE / RPBE | ◐ | ○ | [Current live matrix](../../benchmarks/scf/results/2026-10-26-dft-wave2/README.md): RKS/UKS STO-3G energies/full forces against live PySCF; RKS asymmetric water and UKS H₂⁺/O₂. GPW and CUDA variants do not inherit these passes |
+| PBEsol / revPBE / RPBE | ◐ | ◐ | [Current live matrix](../../benchmarks/scf/results/2026-10-26-dft-wave2/README.md): CPU molecular RKS/UKS energies/full forces against live PySCF. [Shared-model follow-up](../../tools/diagnostics/pbe-family/README.md): native PW fixed/FD RKS/UKS and GPW RKS energy/full-force/supported-stress twins now pass, including post-Driver acceptance. The five original stage-reference failures are retained and separately repaired. [Matched periodic PW follow-up](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-semilocal-depth/README.md) adds CPU FD eight-k RKS/UKS and CUDA Γ fixed-RKS E/full-F/six-stress pins; broader periodic ranges, GPW independent pins and molecular CUDA KS remain open |
 | optB88 | ◐ | ○ | GPW (with vdW-DF); no end-to-end pin (cases removed) |
 | BP86 / other GGA catalog | ○ | ○ | |
 | Meta-GGA (TPSS, r2SCAN, …) | ○ | ○ | No τ channel in grid engine |
@@ -171,7 +636,7 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 | ---------- | :----: | ----- |
 | Analytic ionic forces | ✓ | [pw/rks][pw-rks]: local HF + Ewald symmetry gate; [external NC project](../../examples/nc-extension/README.md): local + full off-diagonal KB, all six nonzero Si₂ force components against QE at 1e-4 Ha/Bohr. Broader elements/potentials remain unqualified |
 | Cell stress (one-SCF frozen-density strain FD) | ✓ | [Current public diagnostic](../../tools/diagnostics/pw-spin-smear-stress/README.md): fixed reference basis, physical shear and shared-μ spin/smearing free energy at strain step 2e-3. Six Γ reference-cell E/σ QE pins pass; five independent full-SCF deformation checks pass, with the LSDA-MP compressed sample explicitly failed. Not a closed-form tensor |
-| Closed-form analytic cell stress | ○ | Current `pw_stress_analytic_impl` differentiates NSCF strained energies numerically; spin×smearing uses fractional occupations and the matching free-energy correction |
+| Closed-form analytic cell stress | ◐ | [Fixed/FD/Gaussian scoped wave](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-empty-spin-mixing-depth/collection-portable/wave-validation.json): Γ and supported general-k semilocal RKS/populated UKS share one final-band tensor, with serial/MPI2 and ARM checks. MP1 PBE Γ [populated UKS](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-mp-gamma-pbe/cpu-integrated/archive-manifest.json) and [restricted Si2](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-mp-rks-gamma-pbe/cpu-integrated/archive-manifest.json) additionally pass their declared signed-occupation envelopes. Fixed per-k band indices do not imply a global insulating gap. Other MP and nominally empty fixed/Gaussian channels retain numerical paths; Γ fixed-LSDA Na>0/Nb0 has its own zero-channel tangent qualification |
 | True GGA PBE + collinear spin-GGA | ✓ | [pw/rks][pw-rks]: symmetry/activation gates; [pw/collinear-spin][pw-spin]: O₂ absolute energy pinned to an actual QE 7.5 run, alongside magnetization and GGA activation |
 | Metallic smearing | ✓ | [Current shared implementation](../../tools/diagnostics/pw-smearing/README.md): FD/Gaussian/MP occupation, entropy and chemical-potential pins from real QE 7.6; nine variational/endpoint units. Full-SCF stress and response have separate qualification limits |
 | Bands / DOS | ✓ | [pw/bands-dos][pw-bands]; includes spin + metallic sections |
@@ -185,10 +650,10 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 | Capability | Status | Notes |
 | ---------- | :----: | ----- |
 | LSDA + PBE energy | ✓ | [Current GH200 diagnostic](../../tools/diagnostics/cuda-pw-public/README.md): shared CPU/device padded XC quadrature; builtin GTH Si₂ PBE/Γ/FD-smearing Mermin energy pinned to actual QE 7.5. Broader LSDA/PBE evidence remains the archived CPU-twin/symmetry envelope |
-| Analytic forces + cell stress (closed-shell) | ✓ | [Current GH200 diagnostic](../../tools/diagnostics/cuda-pw-public/README.md): builtin GTH Si₂ PBE/Γ/FD-smearing all six nonzero forces against QE, plus stretched-Si CPU twin. Stress remains one-SCF NSCF strain FD; its archived checks do not qualify a closed-form tensor or external stress |
+| Analytic forces + cell stress (closed-shell) | ◐ | [Current scoped wave](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-empty-spin-mixing-depth/collection-portable/wave-validation.json): Γ fixed/FD LSDA/PBE-family has certified device force/tensor assembly and matched actual-QE full-force/six-stress pins. The new FD scope has five matched actual-QE references; broader spin/smear/k settings remain separate |
 | Collinear spin forces / cell stress | ✓ | [pw/collinear-spin][pw-spin]; includes spin-PBE CPU twins; stress uses NSCF strain FD; general external-vector qualification remains open |
-| Closed-form analytic cell stress | ○ | Current device stress implementation also uses strained NSCF energies at step 2e-3 |
-| Metallic smear energy + F/σ | ◐ | [pw/smearing][pw-smear]: restricted path; multi-atom stress residual; spin×smear stress ○ |
+| Closed-form analytic cell stress | ◐ | Γ RKS fixed/FD LSDA/PBE-family and [fixed nonempty UKS](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-cuda-uks-depth/archive-index.json) pass their matched-QE/public/native scopes. The UKS owner shares independent spin band sums and one publication with the current joint mixer; finite unsupported XC fields retain numerical epilogues. UKS FD, Gaussian/MP, multiple k points and empty endpoints remain open |
+| Metallic smear energy + F/σ | ◐ | Current Γ RKS FD LSDA/PBE-family has matched actual-QE E/full-F/six-stress pins and closed-form tensors. Earlier spin/Gaussian/MP settings retain their separate numerical-stress and qualification limits |
 | Host Ritz + SCF control | — | Hot path (H·ψ, FFT, Poisson, V_eff) on device |
 
 ### GPW depth (CPU)
@@ -202,7 +667,7 @@ of solver, functional, spin, grid, dispersion and k-mesh.
 | Functionals | ✓ | [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]: PADE/LSD, PBE; other reachable functionals lack GPW pins (§2) |
 | DFT+U | ◐ | [gpw/dft-plus-u][gpw-u], [gpw/orbital-transformation][gpw-ot]: projector mismatch; OT reachability does not close external validation |
 | Smearing / multigrid / OT | ✓ | [gpw/rks][gpw-rks], [gpw/uks][gpw-uks], [gpw/orbital-transformation][gpw-ot]; only the recorded combinations |
-| Analytic F + analytic stress | ✓ | [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; Γ water external pins; broader k/spin/metallic depth has FD-only gaps |
+| Analytic forces + fixed-P strain-FD stress | ◐ | Public stress is an orthorhombic diagonal strain difference with zero shear; it is not a closed-form tensor. [gpw/rks][gpw-rks], [gpw/uks][gpw-uks] retain their quantity-specific historical pins; broader k/spin/metallic depth remains open |
 | Dispersion / vdW | ◐ | §3: energy pins for several methods; XDM oracle and public force/stress coverage remain open |
 | Bands / DOS / Berry / MLWF | ✓ | [gpw/bands-dos][gpw-bands], [gpw/berry-phase][gpw-berry], [gpw/wannier][gpw-wannier]; recorded spin/metallic sections |
 | BOMD / CPMD / SGCP / XL-BOMD | ✓ | [dynamics/bomd][bomd], [dynamics/car-parrinello][cpmd], [dynamics/second-gen-cpmd][sgcp], [dynamics/xl-bomd][xlbomd]; see [MD § AIMD](molecular-dynamics.md#5-ab-initio-md) |
@@ -212,8 +677,10 @@ of solver, functional, spin, grid, dispersion and k-mesh.
 constructor identity and Frame `run` / `forces` / `stress`. Born–Oppenheimer
 work mounts the method directly on the parent Driver; forces/stress follow
 the parent's requests and use the converged state. `GPWEvaluator` remains for
-electronic propagators and unmigrated callers. OT still has a private free
-loop. Keep `local_pp_on_grid` consistent between energy and gradient calls.
+electronic propagators and unmigrated callers. DIIS and all six OT outer
+paths now share the method's typed Driver loop; bounded line searches and
+fixed-H optimizers remain internal numerical kernels. Keep
+`local_pp_on_grid` consistent between energy and gradient calls.
 
 ### CUDA GPW
 
@@ -229,7 +696,7 @@ loop. Keep `local_pp_on_grid` consistent between energy and gradient calls.
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | Periodic analytic forces | ✓ | ◐ | [pw/rks][pw-rks], [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; quantity limits in §4 |
-| Periodic analytic stress | ✓ | ◐ | GPW CPU fixed-P stress: [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; PW CPU/CUDA stress is numerical NSCF strain FD (§4); CUDA GPW host-assembly slice |
+| Periodic cell stress | ◐ | ◐ | PW has scoped closed-form CPU semilocal fixed/FD/Gaussian and CUDA Γ fixed/FD LSDA/PBE-family tensors (§4); other PW domains retain numerical paths. GPW public stress remains fixed-P orthorhombic diagonal strain FD; CUDA GPW uses host assembly |
 | DFPT | ✓ | ○ | [response/dfpt][dfpt], PW only |
 | FD phonons / ω(q) | ✓ | ○ | [response/phonons][phonons]: classical SW supercell/dispersion pins; isolated GPW Si₂ energy/full forces, stationary geometry and stretch pinned to actual CP2K 2026.2 outputs, with five unprojected near-zero modes |
 | Berry polarization | ✓ | ○ | [pw/berry-phase][pw-berry], [gpw/berry-phase][gpw-berry]; spin |
@@ -245,9 +712,9 @@ loop. Keep `local_pp_on_grid` consistent between energy and gradient calls.
 | GTH PP | ✓ | ◐ | CPU PW uses the public NC protocol and canonical radial operators; [external Si₂ project](../../examples/nc-extension/README.md) pins E/full F. [CUDA builtin Si₂](../../tools/diagnostics/cuda-pw-public/README.md) now has a matched QE PBE/Γ/smearing E/full-F pin. CPU GPW retains its Gaussian-projector path; CUDA GPW remains partial |
 | FFT Poisson | ✓ | ✓ | [pw/rks][pw-rks], [gpw/rks][gpw-rks] |
 | Martyna–Tuckerman Poisson | ✓ | ○ | [gpw/rks][gpw-rks], `gpw-water-pbe-mt` |
-| OT minimizer | ✓ | ○ | [gpw/orbital-transformation][gpw-ot]; private-loop architecture debt remains |
+| OT minimizer | ✓ | ○ | [gpw/orbital-transformation][gpw-ot]; CPU DIIS/OT now share typed Driver execution, with current scoped lifecycle/MPI checks above. CUDA OT remains unsupported |
 | Multigrid collocation | ✓ | ◐ | [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; CUDA MG energy CPU-twin slice exists |
-| Metallic smearing | ✓ | ◐ | [pw/smearing][pw-smear], [gpw/rks][gpw-rks]; CUDA restricted PW (+ spin×smear F; stress open) |
+| Metallic smearing | ✓ | ◐ | [pw/smearing][pw-smear], [gpw/rks][gpw-rks]; current CUDA PW Γ fixed/FD restricted/collinear E/F/strain-FD stress passes. Broader settings and CUDA GPW metallic support remain open |
 | Bands / DOS post-process | ✓ | ○ | [pw/bands-dos][pw-bands], [gpw/bands-dos][gpw-bands] |
 
 ## 7. Validation gaps
@@ -262,7 +729,7 @@ coverage gaps.
 | Pending matched-model qualification | DFT+U | Gross-Mulliken ATV occupation differs from CP2K's net-Mulliken block. Loose NiO comparisons and ATV finite differences do not close this gap. |
 | Verified model repair, limited scalar boundary parity | Standard CAM-B3LYP | [New standard-model evidence](../../tools/diagnostics/molecular-dft/cam-standard-20261026/README.md) passes molecular E/full F and normal-domain scalar/ITYH checks. The original four failed standard-CAM comparisons remain historical records. Three extreme scalar points still differ in underlying B88/LYP/VWN components; they are not marked passed. |
 | Pending oracle replacement | XDM | Literature supplies formulas; the numerical pins are Python reimplementations. Obtain numbers printed by an independent established engine for the same free-atom model. |
-| Missing algorithm | Closed-form PW cell stress, CPU and CUDA | Functions named `analytic` currently use one reference SCF + frozen-density NSCF strain FD at step 2e-3. Existing cell-stress gates do not establish a closed-form implementation. |
+| Partial algorithm coverage | Closed-form PW cell stress, CPU and CUDA | Scoped waves qualify CPU Γ/supported general-k semilocal fixed/FD/Gaussian RKS/populated UKS, Γ fixed-LSDA empty-beta tangent and Γ PBE MP1 RKS/populated UKS; CUDA Γ RKS fixed/FD and fixed nonempty UKS LSDA/PBE-family have their own native evidence. Other MP, further empty-spin domains and CUDA UKS FD/Gaussian/MP/k remain open; numerical NSCF strain gates do not qualify closed-form implementations. |
 | Missing response algorithm | Methfessel–Paxton DFPT | Correct MP ground-state quasi-occupations can be negative or exceed their spin degeneracy. DFPT occupation thresholds and occupied-space projectors assume probability weights; the public phonon interface rejects MP at all q and spin settings before SCF. Ground-state E/F/σ qualification does not extend to response. |
 | Unclosed convergence boundary | LSDA × MP signed density near zero | The H₃ MP1/.04-Ry simple −xx strain sample fails joint density tol 1e-9 at both 250 and 1000 iterations. A quadrature spin density crosses zero and its clipped-functional potential jumps between about −.0444 Ha and zero. Inner Ritz residuals meet 1e-10; [716 exact-spectrum QE replays](../../tools/diagnostics/pw-smearing/mp-root-review-20261026/summary.json) and tighter-root checks exclude a chemical-potential branch/precision defect. This independent full-SCF FD row remains failed. Removing the potential clip would break the existing energy derivative; a consistent XC extension or constrained solver is still required. |
 | Verified repaired slice | Molecular spherical XC forces and range-separated integrals | [CPU evidence](../../tools/diagnostics/molecular-dft/README.md): correct Cartesian density dual, erf Rys-root mapping and analytic derivatives, and the missing UKS long-range term. The follow-up standard-CAM repair has its own separate evidence; the earlier native-composition FD checks do not substitute for standard-functional pins. |
@@ -272,7 +739,7 @@ coverage gaps.
 | Verified repaired slice | GPW UKS forces / O₂ stress | Coupled-spin DIIS, energy-only XC for strained energies and reuse of the accepted SCF state remove redundant work. Both existing sections pass their numerical gates within 60 s at the declared 8 threads; this is section-runtime evidence, not a matched-engine speedup claim. |
 | Rechecked declared CPU envelope | Γ RI/SCS-MP2, UKS+U/OT repeatability, second-gen CP OT | Surviving registered sections pass their original numerical and runtime gates. This does not close the DFT+U projector-definition mismatch or qualify unregistered settings. |
 | Verified PW XC/response repair | GGA quadrature, joint-spin SCF and finite-q C(q) | [Historical captures and current scope](../../tools/diagnostics/pw-xc-response/README.md): fixed 3/2 LDA and 3x GGA quadrature with adjoint projection, shared Pulay mixing for ground-state/response solves, true Fourier C(q), and exact-zero empty-channel density. Current 14-case recheck retains the original science and 60 s section bounds, with no force/ASR projection. |
-| Partial device product | CUDA GPW; CUDA PW metallic/spin joints | Public atom-list/cell APIs and host force/stress work remain in GPW; CPU-twin sections do not close device residency or every production combination. |
+| Partial device product | CUDA GPW; broader CUDA PW metallic/spin settings | GPW public methods now use Frame/Kind and typed Driver execution; remaining scientific-state transfers and host force/stress assembly have separate residency tasks. CPU-twin sections do not qualify every physical combination. |
 | Blocked by missing engine work | Periodic hybrids, meta-GGA, GAPW/PAW | No matched implemented periodic path; meta-GGA also lacks a τ channel. Stock VV10 has no CP2K `TYPE VV10` twin. |
 
 The PW references also contain matched Quantum ESPRESSO timing/output records.

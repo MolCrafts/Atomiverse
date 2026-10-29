@@ -262,6 +262,15 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         return *this;
     }
 
+    /// @brief Borrow a thermostat so the caller can set its ramp span.
+    /// The Python CUDA driver keeps the Langevin and calls
+    /// `set_run_span` before a continued cool.
+    template <typename T>
+    MD& set_thermostat_ref(T& t) {
+        this->bind_defaults_ref(t);
+        return *this;
+    }
+
     /// @brief Add a barostat (LAMMPS `fix … press/berendsen`). Plural.
     /// `install_infra_()` auto-injects a `cuda::Virial{}` if a
     /// Barostat-role component is present and no `virial_stress` is

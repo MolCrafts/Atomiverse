@@ -211,7 +211,7 @@ k_build_beta(const double* __restrict__ gx, const double* __restrict__ gy,
 
     cufftDoubleComplex out{0.0, 0.0};
     double fl = (i < col_fglen[j]) ? fg[col_fgoff[j] + i] : 0.0;
-    if (fabs(fl) >= 1e-30) {
+    if (fl != 0.0) {
         double Gx = gx[i], Gy = gy[i], Gz = gz[i];
         double Gr = sqrt(Gx * Gx + Gy * Gy + Gz * Gz);
         int l = col_l[j];
@@ -256,7 +256,7 @@ __global__ void k_nl_force_from_proj(const cufftDoubleComplex* __restrict__ c,
     if (j >= ncol)
         return;
     const double Dj = D[j];
-    if (fabs(Dj) < 1e-16)
+    if (Dj == 0.0)
         return;
     const int ia = atom[j];
     if (ia < 0)
@@ -467,7 +467,7 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
             const auto& pos = ws.atom_pos_bohr[ia];
             for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
                 const auto& proj = ws.kb_proj[ia][ip];
-                if (std::abs(proj.d) < AccReal(1e-16))
+                if (proj.d == AccReal(0))
                     continue;
                 const int fg_off = static_cast<int>(h_fg.size() - fg_base);
                 const int fg_len = static_cast<int>(std::min<std::size_t>(
@@ -975,12 +975,25 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
 
 void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
                                           const AccReal* occ, int n_use) {
+    accumulate_fractional_density_(weight, omega, occ, n_use, false);
+}
+void DeviceBandSolver::accumulate_final_density(
+    AccReal weight, AccReal omega, std::span<const AccReal> occupations) {
+    if (occupations.size() > static_cast<std::size_t>(n_bands_))
+        throw std::invalid_argument("final-density occupation shape");
+    accumulate_fractional_density_(weight, omega, occupations.data(),
+                                   static_cast<int>(occupations.size()), true);
+}
+void DeviceBandSolver::accumulate_fractional_density_(AccReal weight,
+                                                      AccReal omega,
+                                                      const AccReal* occ,
+                                                      int n_use, bool exact) {
     require_bound(rho_accum_, veff_r_);
     if (!d_ritz_ || !d_idx_ || ng_ <= 0)
         throw std::runtime_error(
             "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
             "bind_kpoint()/solve() or load_ritz() must run first");
-    if (!occ)
+    if (!occ && (!exact || n_use != 0))
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceBandSolver::accumulate_density: "
             "occ pointer is null");
@@ -990,11 +1003,19 @@ void DeviceBandSolver::accumulate_density(AccReal weight, AccReal omega,
             "n_use must be in [0, n_bands]");
     if (n_use == 0)
         return;
+    if (exact) {
+        if (!std::isfinite(weight) || !std::isfinite(omega) || omega <= 0)
+            throw std::invalid_argument("final-density weight/volume");
+        for (int b = 0; b < n_use; ++b)
+            if (!std::isfinite(occ[b]))
+                throw std::invalid_argument(
+                    "nonfinite final-density occupation");
+    }
     const double inv_omega = 1.0 / static_cast<double>(omega);
     const double w = static_cast<double>(weight);
     for (int b = 0; b < n_use; ++b) {
         const double f = static_cast<double>(occ[b]);
-        if (std::abs(f) < 1e-14)
+        if (exact ? f == 0. : std::abs(f) < 1e-14)
             continue;
         const double scale = w * f * inv_omega;
         ATV_CUDA_CHECK(cudaMemsetAsync(
@@ -1120,7 +1141,8 @@ void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
 
         // s_α = βᴴ (q_α ⊙ ψ)
         auto proj_q = [&](const double* q, cufftDoubleComplex* s) {
-            k_mul_real_scale<<<n_blocks(ng_), kBlock>>>(psi, q, ng_, d_work_);
+            k_mul_real_scale<<<n_blocks(ng_), kBlock, 0, stream_>>>(psi, q, ng_,
+                                                                    d_work_);
             ATV_CUDA_CHECK(cudaGetLastError());
             check_cublas(
                 cublasZgemv(blas_, CUBLAS_OP_C, ng_, n_proj_, &one,
@@ -1134,7 +1156,7 @@ void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
         proj_q(qy, d_sy);
         proj_q(qz, d_sz);
 
-        k_nl_force_from_proj<<<n_blocks(n_proj_), kBlock>>>(
+        k_nl_force_from_proj<<<n_blocks(n_proj_), kBlock, 0, stream_>>>(
             d_c, d_sx, d_sy, d_sz, d_betad_, cia, pref, n_proj_, d_forces);
         ATV_CUDA_CHECK(cudaGetLastError());
         (void)n_atoms; // bounds already enforced by column atom indices
@@ -1150,3 +1172,77 @@ void DeviceBandSolver::accumulate_nl_forces(double weight, int n_atoms,
 } // namespace pw
 } // namespace cuda
 } // namespace ATV
+
+namespace ATV::cuda::pw::internal {
+namespace {
+// Legal in-place update: one read/write H/R range, disjoint from psi.
+__global__ void
+final_residual_in_place(cufftDoubleComplex* hpsi,
+                        const cufftDoubleComplex* __restrict__ psi, double eps,
+                        int ng) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < ng) {
+        const auto h = hpsi[i], c = psi[i];
+        hpsi[i] = {h.x - eps * c.x, h.y - eps * c.y};
+    }
+}
+} // namespace
+FinalBandStatus
+DeviceBandSolver::solve_final_bands(cpu::pw::internal::PWWorkspace& ws,
+                                    FinalBandDestination out, int max_iter) {
+    if (max_iter < 1 || out.expected_k != bound_k_ || out.ng != ng_
+        || out.bands != n_bands_ || !out.coefficients || !out.residual_work
+        || !out.device_norms
+        || out.host_norms.size() != static_cast<std::size_t>(2 * n_bands_))
+        throw std::invalid_argument(
+            "final-band fresh solve binding/dimensions/budget");
+    solve(ws, max_iter);
+    return copy_final_bands(out,
+                            {ws.eigenvalues.data(), ws.eigenvalues.size()});
+}
+FinalBandStatus
+DeviceBandSolver::copy_final_bands(FinalBandDestination out,
+                                   std::span<const AccReal> eigenvalues) {
+    if (!d_ritz_ || bound_k_ < 0 || out.expected_k != bound_k_ || out.ng != ng_
+        || out.bands != n_bands_
+        || eigenvalues.size() != static_cast<std::size_t>(n_bands_)
+        || out.host_norms.size() != static_cast<std::size_t>(2 * n_bands_)
+        || !out.coefficients || !out.residual_work || !out.device_norms)
+        throw std::invalid_argument(
+            "final-band destination or bound state mismatch");
+    for (int b = 0; b < n_bands_; ++b) {
+        const auto offset = static_cast<std::size_t>(b) * ng_;
+        apply_h(d_ritz_ + offset, out.residual_work + offset);
+        final_residual_in_place<<<n_blocks(ng_), kBlock, 0, stream_>>>(
+            out.residual_work + offset, d_ritz_ + offset, eigenvalues[b], ng_);
+        ATV_CUDA_CHECK(cudaGetLastError());
+        check_cublas(cublasDznrm2(blas_dev_, ng_, out.residual_work + offset, 1,
+                                  out.device_norms + b),
+                     "final residual");
+        check_cublas(cublasDznrm2(blas_dev_, ng_, d_ritz_ + offset, 1,
+                                  out.device_norms + n_bands_ + b),
+                     "final norm");
+    }
+    ATV_CUDA_CHECK(cudaMemcpyAsync(out.host_norms.data(), out.device_norms,
+                                   2 * n_bands_ * sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream_));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream_));
+    FinalBandStatus status;
+    status.complete = true;
+    for (int b = 0; b < n_bands_; ++b) {
+        const double r = out.host_norms[b], n = out.host_norms[n_bands_ + b];
+        status.max_residual_ha = std::max(status.max_residual_ha, r);
+        status.max_normalization_error =
+            std::max(status.max_normalization_error, std::abs(n - 1));
+        status.complete = status.complete && std::isfinite(r)
+                          && std::isfinite(n) && r < 1e-6
+                          && std::abs(n - 1) < 1e-8;
+    }
+    if (status.complete)
+        ATV_CUDA_CHECK(cudaMemcpyAsync(out.coefficients, d_ritz_,
+                                       static_cast<std::size_t>(ng_) * n_bands_
+                                           * sizeof(cufftDoubleComplex),
+                                       cudaMemcpyDeviceToDevice, stream_));
+    return status;
+}
+} // namespace ATV::cuda::pw::internal

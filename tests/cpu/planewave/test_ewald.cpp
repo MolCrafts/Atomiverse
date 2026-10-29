@@ -30,6 +30,8 @@ TEST(Ewald, ZeroCharges) {
     std::vector<AccReal> charges = {0, 0};
     EwaldSummation e(pos, charges, box);
     EXPECT_NEAR(static_cast<double>(e.total_energy()), 0.0, 1e-12);
+    for (const auto value : e.virial_ha())
+        EXPECT_EQ(value, 0);
 }
 
 TEST(Ewald, ForceMatchesEnergyFd) {
@@ -93,6 +95,20 @@ TEST(Ewald, NonSymmetricCellAndForcesRotateTogether) {
         for (int d = 0; d < 3; ++d)
             EXPECT_NEAR(b.forces_bohr()[atom][d], expected[d], 1e-11);
     }
+    constexpr int ia[6] = {0, 1, 2, 0, 0, 1};
+    constexpr int ib[6] = {0, 1, 2, 1, 2, 2};
+    AccReal tensor[3][3]{};
+    for (int lane = 0; lane < 6; ++lane)
+        tensor[ia[lane]][ib[lane]] = tensor[ib[lane]][ia[lane]] =
+            a.virial_ha()[lane];
+    for (int lane = 0; lane < 6; ++lane) {
+        AccReal expected = 0;
+        for (int row = 0; row < 3; ++row)
+            for (int column = 0; column < 3; ++column)
+                expected += rotation(ia[lane], row) * tensor[row][column]
+                            * rotation(ib[lane], column);
+        EXPECT_NEAR(b.virial_ha()[lane], expected, 1e-11);
+    }
 }
 
 TEST(Ewald, ChargedCubicUniformBackgroundMadelung) {
@@ -105,10 +121,15 @@ TEST(Ewald, ChargedCubicUniformBackgroundMadelung) {
     const cpu::Box box = cpu::Box::cubic(6);
     const EwaldSummation e({{0, 0, 0}}, {1}, box);
     EXPECT_NEAR(e.total_energy(), -alpha_m / (AccReal(2) * 6 * a2b), 1e-12);
+    for (int lane = 0; lane < 6; ++lane)
+        EXPECT_NEAR(e.virial_ha()[lane],
+                    lane < 3 ? -alpha_m / (AccReal(6) * 6 * a2b) : 0, 1e-12);
     EXPECT_LT(e.background_energy(), 0);
     EXPECT_NEAR(e.forces_bohr()[0].norm(), 0, 1e-12);
     const EwaldSummation translated({{66, -78, 114}}, {1}, box);
     EXPECT_NEAR(translated.total_energy(), e.total_energy(), 1e-12);
+    for (int lane = 0; lane < 6; ++lane)
+        EXPECT_NEAR(translated.virial_ha()[lane], e.virial_ha()[lane], 1e-12);
     EXPECT_NEAR(translated.forces_bohr()[0].norm(), 0, 1e-12);
     EXPECT_DOUBLE_EQ(e.total_energy(), e.real_energy() + e.recip_energy()
                                            + e.self_energy()
@@ -128,9 +149,60 @@ TEST(Ewald, NeutralRockSaltMadelung) {
     const EwaldSummation e(pos, {1, 1, 1, 1, -1, -1, -1, -1},
                            cpu::Box::cubic(side));
     EXPECT_NEAR(e.total_energy(), -8 * madelung / (side * a2b), 1e-11);
+    for (int lane = 0; lane < 6; ++lane)
+        EXPECT_NEAR(e.virial_ha()[lane],
+                    lane < 3 ? -8 * madelung / (3 * side * a2b) : 0, 1e-11);
     EXPECT_DOUBLE_EQ(e.background_energy(), 0);
     for (const auto& force : e.forces_bohr())
         EXPECT_NEAR(force.norm(), 0, 1e-11);
+}
+
+TEST(Ewald, AllSixVirialComponentsDifferentiateAffineCellEnergy) {
+    Mat3 cell = Mat3::diagonal(4.1, 5.2, 6.3);
+    cell(0, 1) = .6;
+    cell(0, 2) = -.35;
+    cell(1, 2) = .4;
+    const std::vector<Vec3> positions{cell * Vec3{.12, .27, .31},
+                                      cell * Vec3{.43, .61, .17},
+                                      cell * Vec3{.72, .18, .68}};
+    const std::vector<AccReal> charges{2, -.7, 1.3};
+    const EwaldSummation reference(positions, charges, cpu::Box(cell));
+    ASSERT_LT(reference.background_energy(), 0);
+    constexpr int ia[6] = {0, 1, 2, 0, 0, 1};
+    constexpr int ib[6] = {0, 1, 2, 1, 2, 2};
+    for (int lane = 0; lane < 6; ++lane) {
+        EXPECT_GT(std::abs(reference.virial_ha()[lane]), 1e-5);
+        for (const AccReal step :
+             {AccReal(1e-3), AccReal(3e-4), AccReal(1e-4)}) {
+            auto energy = [&](AccReal strain) {
+                Mat3 affine = Mat3::diagonal(1, 1, 1);
+                affine(ia[lane], ib[lane]) += strain;
+                if (ia[lane] != ib[lane])
+                    affine(ib[lane], ia[lane]) += strain;
+                std::vector<Vec3> deformed;
+                for (const auto& r : positions)
+                    deformed.push_back(affine * r);
+                // This independently differentiates the existing energy,
+                // including its automatically reselected precision domains
+                // and alpha. Their cancellation is controlled by the tails.
+                return EwaldSummation(deformed, charges,
+                                      cpu::Box(affine * cell))
+                    .total_energy();
+            };
+            const AccReal derivative = (energy(-2 * step) - 8 * energy(-step)
+                                        + 8 * energy(step) - energy(2 * step))
+                                       / (12 * step);
+            const AccReal expected =
+                -derivative / (ia[lane] == ib[lane] ? 1 : 2);
+            EXPECT_NEAR(reference.virial_ha()[lane], expected,
+                        1e-8 + 1e-7 * std::abs(expected))
+                << "lane=" << lane << " strain step=" << step;
+        }
+    }
+    EXPECT_NEAR(reference.virial_ha()[0] + reference.virial_ha()[1]
+                    + reference.virial_ha()[2],
+                reference.total_energy(), 1e-11)
+        << "homogeneous Coulomb energy scales as inverse cell length";
 }
 
 TEST(Ewald, InvalidPhysicalInputsRejectBeforeIndexing) {

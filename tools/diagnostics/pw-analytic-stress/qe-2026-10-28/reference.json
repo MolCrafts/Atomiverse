@@ -1,0 +1,277 @@
+{
+  "status": "independent actual QE reference converged; native analytic tensor qualification not implied",
+  "fixture": {
+    "H_columns_A": [
+      [
+        0.1,
+        2.7,
+        2.65
+      ],
+      [
+        2.75,
+        0.05,
+        2.7
+      ],
+      [
+        2.65,
+        2.75,
+        0.15
+      ]
+    ],
+    "positions_A": [
+      [
+        0.2,
+        0.3,
+        0.4
+      ],
+      [
+        1.57,
+        1.66,
+        1.75
+      ]
+    ],
+    "species": "Si",
+    "potential": "Si_GTH_PBE_q4.gth",
+    "potential_format": "QE GTH text norm-conserving; not UPF",
+    "electrons": 8,
+    "ecutwfc_Ry": 12,
+    "ecutrho_Ry": 48,
+    "kpoint": "Gamma",
+    "SCF_bands": 4,
+    "occupied_bands": 4,
+    "occupation": "fixed RKS; physical f=[2,2,2,2] with k weight1",
+    "native_base_FFT": [
+      16,
+      18,
+      16
+    ],
+    "QE_Dense_Smooth_and_native_LSDA_padded_FFT": [
+      24,
+      28,
+      24
+    ],
+    "native_density_G": 1393,
+    "native_wave_G_fullcomplex": 171,
+    "QE_wave_PW_Gamma_compressed": 86,
+    "native_setup_log": "native-setup.log",
+    "mixing_beta": 0.2,
+    "QE_max_scf": 250,
+    "QE_conv_thr_Ry": 1e-12
+  },
+  "model": {
+    "CPU": "XCType::LSDA Slater exchange+VWN5 correlation",
+    "QE_input_dft": "SLA+VWN+NOGX+NOGC",
+    "QE_printed_XC": "SLA+VWN+NOGX+NOGC",
+    "indices": {
+      "exchange": 1,
+      "correlation": 2,
+      "gradient_exchange": 0,
+      "gradient_correlation": 0
+    },
+    "VWN_unpolarized_parameters_Ha": {
+      "A": 0.0310907,
+      "b": 3.72744,
+      "c": 12.9352,
+      "x0": -0.10498
+    },
+    "model_scope": "RKS positive-density LSDA model equality; no blanket claim for all clipping/floor/fully polarized spin regularization domains"
+  },
+  "QE": {
+    "version": "7.6",
+    "binary": "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+    "binary_sha256": "5e03776776ed71bf3f6e1cc01f46a8216a680a0179eaf41fdb3a8e99d6f89f5b",
+    "allocation": "4525698",
+    "host": "n222",
+    "MPI_ranks": 1,
+    "OpenMP_threads": 1,
+    "resource_bound_cpu_cores": 1,
+    "process_exit_code": 0,
+    "scientific_converged": true,
+    "SCF_iterations": 63,
+    "scf_error_Ha": 4.976418865417872e-13,
+    "easybuild_recipe": "QE-7.6-install.eb",
+    "easybuild_recipe_sha256": "8ef9e39a04f74c3630823b7ea4cb6a5daf5705b7518879480d3dcb3a8c4bb59a"
+  },
+  "reference": {
+    "source": "scf-data-file-schema.xml explicitly Units=Hartree atomic units; independently cross-check printed qe.out",
+    "energy_Ha": -7.159845224831926,
+    "energy_Ry": -14.319690449663852,
+    "forces_Ha_Bohr": [
+      [
+        0.0002016635749736829,
+        0.009735033562325909,
+        -0.01182484721661555
+      ],
+      [
+        -0.0002016635749736829,
+        -0.009735033562325909,
+        0.01182484721661555
+      ]
+    ],
+    "forces_eV_A": [
+      [
+        0.01036995795981384,
+        0.5005955527262207,
+        -0.60805809147005
+      ],
+      [
+        -0.01036995795981384,
+        -0.5005955527262207,
+        0.60805809147005
+      ]
+    ],
+    "stress_tensor_Ha_Bohr3": [
+      [
+        0.001914002078288445,
+        3.861771733211347e-05,
+        1.107184874000441e-05
+      ],
+      [
+        3.861771733211347e-05,
+        0.001844573169553373,
+        -3.360327686905275e-05
+      ],
+      [
+        1.107184874000441e-05,
+        -3.360327686905275e-05,
+        0.001929027705514149
+      ]
+    ],
+    "stress_voigt_eV_A3": [
+      0.3514711424040171,
+      0.33872180521897016,
+      0.3542303214175935,
+      0.0070914307678760224,
+      0.0020331405954656322,
+      -0.006170621361208662
+    ],
+    "stress_sign": "compressive positive, physical tensor",
+    "voigt": "xx yy zz xy xz yz"
+  },
+  "separate_fixed_charge_spectral_probe": {
+    "calculation": "nscf, no density iteration",
+    "bands": 6,
+    "occupied": 4,
+    "eigenvalues_Ha": [
+      -0.1707216305708484,
+      0.280754169812866,
+      0.2978637778060681,
+      0.3159882997925715,
+      0.350019825543379,
+      0.3706005295017861
+    ],
+    "eigenvalues_eV": [
+      -4.645572230008235,
+      7.6397101549496105,
+      8.105286306570077,
+      8.598479674868724,
+      9.524524666614235,
+      10.084554151240786
+    ],
+    "XML_occupations": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    "XML_kweight": 2,
+    "physical_occupations_CPU_convention": [
+      2,
+      2,
+      2,
+      2,
+      0,
+      0
+    ],
+    "physical_kweight_CPU_convention": 1,
+    "gap_4_to_5_Ha": 0.034031525750807534,
+    "gap_4_to_5_eV": 0.9260449917455118,
+    "highest_occupied_lowest_unoccupied_printed_eV": [
+      8.5985,
+      9.5245
+    ]
+  },
+  "predeclared_gates_unchanged": {
+    "energy_Ha": 1e-05,
+    "each_force_Ha_Bohr": 0.0001,
+    "each_stress_eV_A3": 0.002
+  },
+  "conversion": {
+    "Hartree_eV": 27.211386245988034,
+    "Bohr_A": 0.529177210903,
+    "source": "official QE7.6 Modules/constants.f90 pinned below",
+    "note": "Native qe_units retains its existing older rounded length/energy conversion. No production constants changed; original parity bounds retained."
+  },
+  "prior_failures": [
+    "runner-attempt-1.txt",
+    "failed-dimer/status.json"
+  ],
+  "historical_model_audit": "historical-lsda-model-audit.json",
+  "raw_sha256": {
+    "successful/input.in": "a72725976159a1383bd02a4d805578b4cc09e82178edb00ae5e85461aadf1b64",
+    "successful/qe.out": "20e023fd50385c892a8be708df7a45fbeebeca599b352191bd82cd65a0cad9e6",
+    "successful/qe.stderr": "e5bb77b45c1c56182d82f23945e789d8a8fcb02c47d7926fbec8066fd067e862",
+    "successful/scf-data-file-schema.xml": "533dff01c1dd9f736c08d40b7edb168da7f7e4fdb638713739e96bb5a88110b9",
+    "successful/bands.in": "a50e3d68e18d896bd7176851bc6413f91b4082ff687e0277c01faaa344a23b6e",
+    "successful/bands.out": "45f3509426927640d0b050cc9a3db9955ce4af5570fede04b0e1f18b5bb15cf2",
+    "successful/bands.stderr": "09c59e9511e0e9d1fefd01eb09e31b1092353e9d23becfadc04015df3d1f3525",
+    "successful/bands-data-file-schema.xml": "ba40b82cd3934dda7ce1091097b0e13a577aee177d8f700408482d6ce089823d",
+    "successful/run.sh": "1be4557b2d176a0e14253f054b05bf4b789bab2c4b32aef38102cb8ba4157765",
+    "successful/run-bands.sh": "9e94d303ddb471274076e3b85636c869a6be25ac98b1e01fac8dd0c5a3dab66b",
+    "successful/binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+    "successful/modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19"
+  },
+  "primary_QE_source": {
+    "tag": "qe-7.6",
+    "commit": "9f93ddec427d2b9a45bb72d828c6d324f62fcabd",
+    "files": {
+      "funct.f90": {
+        "sha256": "ba2e9ecb7024fa98393e2b67e7a090670ec7feda0ff3dd60d6886cdb1dc22737",
+        "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/Modules/funct.f90",
+        "local": "sources/funct.f90"
+      },
+      "qe_drivers_lda_lsda.f90": {
+        "sha256": "46f5ddbe100a99c99115d374351e3dee7a579965d0bd35aad8fff34d260eee2d",
+        "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/qe_drivers_lda_lsda.f90",
+        "local": "sources/qe_drivers_lda_lsda.f90"
+      },
+      "qe_funct_corr_lda_lsda.f90": {
+        "sha256": "ee2872d664508f1fb57d228d16f325dd7ce7d3f052c02d2a20fda57b2b150046",
+        "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/qe_funct_corr_lda_lsda.f90",
+        "local": "sources/qe_funct_corr_lda_lsda.f90"
+      },
+      "qe_funct_exch_lda_lsda.f90": {
+        "sha256": "711e63e57465aea9a8085cbccc96070c8690be129f3560d5d96a3c2e22699797",
+        "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/qe_funct_exch_lda_lsda.f90",
+        "local": "sources/qe_funct_exch_lda_lsda.f90"
+      },
+      "xc_lib.f90": {
+        "sha256": "84d221145fbef74175e519312e8619793f23b867599703ede625a6bafa885903",
+        "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/XClib/xc_lib.f90",
+        "local": "sources/xc_lib.f90"
+      },
+      "constants.f90": {
+        "sha256": "56c39e90c6f0592aff13972cd090292024a3d4e9e86d0ce4fdfdb5643f1ac1c0",
+        "url": "https://raw.githubusercontent.com/QEF/q-e/9f93ddec427d2b9a45bb72d828c6d324f62fcabd/Modules/constants.f90",
+        "local": "sources/constants.f90"
+      }
+    }
+  },
+  "native_source_sha256": {
+    "include/atomiverse/cpu/xc/xc_functional.h": "5b446923f0efe63a790c7e49f6ddec7c885c88bb7f942e409786dc4b611b7211",
+    "src/cpu/xc/xc_functional.cpp": "47182548604ba6d0582f5a56981b64ce34a717a5003f5d47a1e5359a44ebb92d",
+    "include/atomiverse/cpu/planewave/internal/xc_quadrature.h": "366a389bba9d9e5f8a66515bef7f51e8fcd8b00ee68369cabe1d1cfcbd351f55",
+    "src/cpu/planewave/internal/g_vector.cpp": "f499e803f005435e18ec84735ec9e6999d64537fed2baf1f08d090f69cbe0e27",
+    "include/atomiverse/cpu/planewave/qe_units.h": "1fe262cb4e1d63258f23e4cb1573b1f727e56ea3b543ef5b93fec201565f15ed"
+  },
+  "potential_sha256": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+  "printed_cross_checks": {
+    "energy_print_xml_difference_Ha": 1.680735550735335e-10,
+    "max_force_print_xml_difference_Ha_Bohr": 2.216615549097134e-09,
+    "max_stress_print_xml_difference_Ha_Bohr3": 2.2944858508837374e-09
+  },
+  "fixture_selection": "Initial low-density Si2 dimer-like cell failed fixed-RKS SCF after250steps; the agreed slightly distorted diamond primitive keeps Si2, GTH-PBE-q4 NC, Gamma, fixed8e/4occupied and12Ry, but yields a measured0.926eV gap. No old fixture or oracle was changed.",
+  "canonical_success_dir": "successful"
+}

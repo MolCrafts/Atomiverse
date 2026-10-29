@@ -45,9 +45,16 @@ struct PairLJCutParams {
     double epsilon;
     double sigma;
     double cutoff;
+    /// 1-2 / 1-3 / 1-4 pair weights (LAMMPS special_bonds). Default 1 keeps
+    /// every pair. The task codec writes these three scales after cutoff.
+    /// A payload that stops after cutoff is rejected.
+    double s12 = 1.0;
+    double s13 = 1.0;
+    double s14 = 1.0;
 };
 inline bool operator==(const PairLJCutParams& a, const PairLJCutParams& b) {
-    return a.epsilon == b.epsilon && a.sigma == b.sigma && a.cutoff == b.cutoff;
+    return a.epsilon == b.epsilon && a.sigma == b.sigma && a.cutoff == b.cutoff
+           && a.s12 == b.s12 && a.s13 == b.s13 && a.s14 == b.s14;
 }
 
 struct NeighborListParams {
@@ -390,6 +397,26 @@ struct KSpacePmeParams {
     int order;
 };
 inline bool operator==(const KSpacePmeParams& a, const KSpacePmeParams& b) {
+    return a.alpha == b.alpha && a.grid_spacing == b.grid_spacing
+           && a.order == b.order;
+}
+
+/// @brief Constructor arguments of ik PPPM (`cpu::KSpacePPPM`, `cuda::KSpacePPPM`).
+///
+/// Same three numbers as `KSpacePmeParams`. This struct is not an
+/// `MDComponentParams` or `MinimizeComponentParams` alternative: PPPM owns
+/// FFT plans and is registered beside the wire, so a launcher payload cannot
+/// name it and then run without the reciprocal term. The ik Green's function
+/// is selected by the C++ type, not by a flag on the PME mirror.
+struct KSpacePppmParams {
+    /// Ewald splitting parameter α [1/Å]. Must equal the paired `CoulLong`.
+    double alpha;
+    /// Target real-space mesh spacing [Å]. Rounded to FFT sizes of factors 2, 3, 5.
+    double grid_spacing;
+    /// B-spline order [count]. Python supplies 6; the CPU C++ default is 5.
+    int order;
+};
+inline bool operator==(const KSpacePppmParams& a, const KSpacePppmParams& b) {
     return a.alpha == b.alpha && a.grid_spacing == b.grid_spacing
            && a.order == b.order;
 }

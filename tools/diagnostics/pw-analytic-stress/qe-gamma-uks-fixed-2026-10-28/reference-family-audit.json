@@ -1,0 +1,131 @@
+{
+  "passed": true,
+  "scope": "Actual independent QE XML model/grid/spin/unit audit only; no native owner F/stress qualification inherited.",
+  "models": {
+    "pbe": {
+      "xml": ".molq/cuda-pw-spin-next/si3-baseline/qe/scratch/skew_si3_fixed_uks_m2_pbe.save/data-file-schema.xml",
+      "xml_sha256": "fca8b77625ab5cea8b94093f5742bc71e5d8f92e5cced14ac17d2677b18f7edd",
+      "xml_functional": "PBE",
+      "grid": [
+        60,
+        60,
+        60
+      ],
+      "grid_matches_native_canonical_query": true,
+      "Ne": 12.0,
+      "M": 1.999999999999979,
+      "Na_from_actual_occupations": 7.0,
+      "Nb_from_actual_occupations": 5.0,
+      "actual_band_count_each": 7,
+      "qe_gamma_stored_plane_waves": 166,
+      "native_full_complex_wave_count": 331,
+      "units": {
+        "energy": "Ha",
+        "forces": "Ha/Bohr",
+        "stress_xml": "Ha/Bohr^3",
+        "published_stress": "eV/Angstrom^3",
+        "stress_multiplier": 183.63153644969526
+      }
+    },
+    "lsda": {
+      "xml": ".molq/cuda-pw-spin-next/si3-baseline/qe-family/lsda/scratch/si3_fixed_uks_m2_lsda.save/data-file-schema.xml",
+      "xml_sha256": "d443f920fe104eb214ed4d429d0e3b51d1c72ec8d368a0077684642e4c09bb6a",
+      "xml_functional": "SLA+VWN+NOGX+NOGC",
+      "grid": [
+        30,
+        30,
+        30
+      ],
+      "grid_matches_native_canonical_query": true,
+      "Ne": 12.0,
+      "M": 1.999999999999998,
+      "Na_from_actual_occupations": 7.0,
+      "Nb_from_actual_occupations": 5.0,
+      "actual_band_count_each": 7,
+      "qe_gamma_stored_plane_waves": 166,
+      "native_full_complex_wave_count": 331,
+      "units": {
+        "energy": "Ha",
+        "forces": "Ha/Bohr",
+        "stress_xml": "Ha/Bohr^3",
+        "published_stress": "eV/Angstrom^3",
+        "stress_multiplier": 183.63153644969526
+      }
+    },
+    "pbesol": {
+      "xml": ".molq/cuda-pw-spin-next/si3-baseline/qe-family/pbesol/scratch/si3_fixed_uks_m2_pbesol.save/data-file-schema.xml",
+      "xml_sha256": "f040c7749e47abe2303519a5bc859ade1dc7a55f1a9bd712417a80d6a03e23bc",
+      "xml_functional": "PBESOL",
+      "grid": [
+        60,
+        60,
+        60
+      ],
+      "grid_matches_native_canonical_query": true,
+      "Ne": 12.0,
+      "M": 1.999999999999988,
+      "Na_from_actual_occupations": 7.0,
+      "Nb_from_actual_occupations": 5.0,
+      "actual_band_count_each": 7,
+      "qe_gamma_stored_plane_waves": 166,
+      "native_full_complex_wave_count": 331,
+      "units": {
+        "energy": "Ha",
+        "forces": "Ha/Bohr",
+        "stress_xml": "Ha/Bohr^3",
+        "published_stress": "eV/Angstrom^3",
+        "stress_multiplier": 183.63153644969526
+      }
+    },
+    "revpbe": {
+      "xml": ".molq/cuda-pw-spin-next/si3-baseline/qe-family/revpbe/scratch/si3_fixed_uks_m2_revpbe.save/data-file-schema.xml",
+      "xml_sha256": "f6821e72bb94b9aa4fd9eba6202165e25c31be9b258e1314a8076142405b715e",
+      "xml_functional": "REVPBE",
+      "grid": [
+        60,
+        60,
+        60
+      ],
+      "grid_matches_native_canonical_query": true,
+      "Ne": 12.0,
+      "M": 2.000000000000015,
+      "Na_from_actual_occupations": 7.0,
+      "Nb_from_actual_occupations": 5.0,
+      "actual_band_count_each": 7,
+      "qe_gamma_stored_plane_waves": 166,
+      "native_full_complex_wave_count": 331,
+      "units": {
+        "energy": "Ha",
+        "forces": "Ha/Bohr",
+        "stress_xml": "Ha/Bohr^3",
+        "published_stress": "eV/Angstrom^3",
+        "stress_multiplier": 183.63153644969526
+      }
+    },
+    "rpbe": {
+      "xml": ".molq/cuda-pw-spin-next/si3-baseline/qe-family/rpbe/scratch/si3_fixed_uks_m2_rpbe.save/data-file-schema.xml",
+      "xml_sha256": "c34c3bf94010f55f5a795d90b6f6e3a46edddb5f3cc4f9717d3543b4aab8ead9",
+      "xml_functional": "RPBE",
+      "grid": [
+        60,
+        60,
+        60
+      ],
+      "grid_matches_native_canonical_query": true,
+      "Ne": 12.0,
+      "M": 2.000000000000011,
+      "Na_from_actual_occupations": 7.0,
+      "Nb_from_actual_occupations": 5.0,
+      "actual_band_count_each": 7,
+      "qe_gamma_stored_plane_waves": 166,
+      "native_full_complex_wave_count": 331,
+      "units": {
+        "energy": "Ha",
+        "forces": "Ha/Bohr",
+        "stress_xml": "Ha/Bohr^3",
+        "published_stress": "eV/Angstrom^3",
+        "stress_multiplier": 183.63153644969526
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 /// @file cpu/potentials/bond_fene.cpp
 #include "atomiverse/cpu/potentials/bond_fene.h"
+#include "atomiverse/core/fene.h"
 #include "atomiverse/cpu/potentials/resolve_view.h"
 
 #include <cmath>
@@ -107,21 +108,14 @@ void BondFene::compute(const LaunchContext& ctx) {
 
             const double r2 = dx * dx + dy * dy + dz * dz;
             const double r = std::sqrt(r2);
-            const double R0 = R0_[type];
-            const double K = K_[type];
-            if (!(r < R0)) {
+            const FeneTerm<double> term = fene_term(r, K_[type], R0_[type]);
+            if (term.overstretched) {
                 ++overstretched;
                 continue;
             }
 
-            const double rr = r / R0;
-            const double rr2 = rr * rr;
-            const double one_m = 1.0 - rr2;
-            // U = −½ K R0² ln(1 − (r/R0)²)
-            energy_total += -0.5 * K * R0 * R0 * std::log(one_m);
-            // dU/dr = K r / (1 − (r/R0)²)
-            const double dUdr = K * r / one_m;
-            const double fpair = -dUdr / r;
+            energy_total += term.energy;
+            const double fpair = term.fpair;
 
             const double fx_val = fpair * dx;
             const double fy_val = fpair * dy;

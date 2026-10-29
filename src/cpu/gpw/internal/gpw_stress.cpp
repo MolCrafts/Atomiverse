@@ -33,11 +33,13 @@
 #include <cmath>
 #include <complex>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/internal/collocate.h"
+#include "atomiverse/cpu/gpw/internal/core_overlap.h"
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
@@ -519,7 +521,9 @@ double energy_fixed_P_k(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         e_locgrid += rho[g] * v_locsr[g];
     e_locgrid *= wgt;
 
-    const double e_es = es.e_hartree - e_self;
+    const double e_es =
+        es.e_hartree - e_self
+        + core_overlap_energy(atoms, cfg.cell_bohr().data(), true);
 
     double e_disp = 0.0;
     if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
@@ -878,7 +882,9 @@ double energy_fixed_P(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
         e_locgrid *= wgt;
     }
 
-    const double e_es = es.e_hartree - e_self;
+    const double e_es =
+        es.e_hartree - e_self
+        + core_overlap_energy(atoms, cfg.cell_bohr().data(), periodic);
 
     double e_disp = 0.0;
     if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10) {
@@ -1025,14 +1031,19 @@ void validate_stress_args(const std::vector<GpwAtom>& atoms, double h,
                           const std::array<bool, 3>& axes, const char* tag) {
     if (atoms.empty())
         throw std::invalid_argument(std::string(tag) + ": empty atom list");
+    validate_stress_probe(h, axes, tag);
+}
+
+} // namespace
+
+void validate_stress_probe(double h, const std::array<bool, 3>& axes,
+                           const char* tag) {
     if (!(h > 0.0) || !(h < 0.1))
         throw std::invalid_argument(std::string(tag)
                                     + ": strain step h out of range");
     if (!axes[0] && !axes[1] && !axes[2])
         throw std::invalid_argument(std::string(tag) + ": all axes masked");
 }
-
-} // namespace
 
 std::array<double, 6>
 gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
@@ -1384,7 +1395,9 @@ std::array<double, 6> gpw_stress_fd(const Frame& frame, const GpwDft& method,
 }
 
 std::array<double, 6> GpwDft::stress(Frame& frame) {
-    const GpwResult& scf = run(frame);
+    internal::validate_stress_probe(stress_strain_h, stress_axes,
+                                    "GpwDft::stress");
+    const GpwResult& scf = run(std::as_const(frame));
     if (!scf.converged)
         throw std::runtime_error(
             "GpwDft::stress: SCF did not converge — raise max_iter or loosen "
@@ -1400,6 +1413,7 @@ std::array<double, 6> GpwDft::stress(Frame& frame) {
         sigma[k] *= units::kHartreePerBohr3InEvPerAngstrom3;
         st[k] = sigma[k] * vol;
     }
+    frame.meta.get(kEnergy) = scf.e_total * units::kHartreeInEv;
     return sigma;
 }
 

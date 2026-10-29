@@ -405,6 +405,12 @@ template class Driver<md::Phase, cuda::device_tag>;
 template class Driver<minimizer::Phase, cuda::device_tag>;
 template class Driver<evaluate::Phase, cuda::device_tag>;
 template class Driver<scf::Phase, cuda::device_tag>;
+#ifdef ATV_HAS_PW
+template class Driver<pw::Phase, cuda::device_tag>;
+#endif
+#ifdef ATV_HAS_GPW
+template class Driver<gpw::Phase, cuda::device_tag>;
+#endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
 template class Driver<nddo::Phase, cuda::device_tag>;
 #endif

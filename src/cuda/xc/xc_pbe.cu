@@ -1,9 +1,7 @@
 /// @file cuda/xc/xc_pbe.cu
-/// @brief Device port of the closed-shell PBE path used by
-///        `cpu::pw::internal::XCBuilder::step(ws, XCType::PBE)` — PBE
-///        exchange + PW92-based PBE correlation. Constants and formulas are
-///        transcribed verbatim from src/cpu/scf/xc_functional.cpp, then
-///        collapsed at ζ = 0 exactly (see below).
+/// @brief Device PBE-family exchange and PW92-based gradient correlation.
+///        The shared model parameters select PBE, PBEsol, revPBE or RPBE;
+///        restricted and collinear paths share the exchange implementation.
 ///
 /// NUMERICAL PARITY CONTRACT (device vs CPU, per grid point):
 ///   * The algebra is identical term for term and in the same association.
@@ -25,6 +23,8 @@ namespace ATV {
 namespace cuda {
 namespace xc {
 
+using electronic::PbeParameters;
+
 namespace {
 
 constexpr int kBlock = ::ATV::cuda::kDefaultBlock; // 256
@@ -35,11 +35,7 @@ __device__ constexpr double kRhoMin = 1e-12;      // total density cutoff
 __device__ constexpr double kSpinDensMin = 1e-15; // per-spin density floor
 // Slater exchange constant C_x = (3/4)(3/π)^{1/3}.
 __device__ constexpr double kCx = 0.7385587663820224;
-// PBE exchange: F(s) = 1 + κ − κ/(1 + μ s²/κ).
-__device__ constexpr double kKappa = 0.804;
-__device__ constexpr double kMu = 0.2195149727645171; // beta*pi^2/3
 // PBE correlation: H = γ φ³ ln{1 + (β/γ) t² (1+At²)/(1+At²+A²t⁴)}.
-__device__ constexpr double kBeta = 0.06672455060314922;
 __device__ constexpr double kGamma = 0.031090690869654895034; // (1 − ln2)/π²
 // PW92 paramagnetic parameter row (Table I, ζ = 0) — the only channel that
 // survives at ζ = 0 (the ferromagnetic and spin-stiffness terms carry exact
@@ -97,10 +93,11 @@ pw92_correlation_zeta0(double rho_a, double rho_b, double& ec, double& vc_a) {
 }
 
 /// PBE exchange for one spin channel — verbatim `pbe_exchange_spin(rho_s,
-/// sigma_ss, …)` with the PBE μ/κ and the rational (non-RPBE) form.
+/// sigma_ss, …)` with shared μ/κ and rational or RPBE exponential form.
 __device__ __forceinline__ void pbe_exchange_spin(double rho_s, double sigma_ss,
                                                   double& ex_s, double& vrho_s,
-                                                  double& vsigma_ss) {
+                                                  double& vsigma_ss,
+                                                  PbeParameters parameters) {
     // Transcribed empty-spin early-return. Behind the caller's ρ < 1e-12
     // floor it is unreachable (ρ/2 < kRhoMin·0.5 ⇔ ρ < kRhoMin), matching
     // the CPU where the outer XCBuilder floor fires first.
@@ -121,9 +118,16 @@ __device__ __forceinline__ void pbe_exchange_spin(double rho_s, double sigma_ss,
     const double s = grad / (2.0 * kf * rho_s);
     const double s2 = s * s;
 
-    const double denom = 1.0 + kMu * s2 / kKappa;
-    const double Fx = 1.0 + kKappa - kKappa / denom;
-    const double dFx_ds2 = kMu / (denom * denom);
+    double Fx, dFx_ds2;
+    if (parameters.exponential) {
+        const double expm = exp(-parameters.mu * s2 / parameters.kappa);
+        Fx = 1.0 + parameters.kappa * (1.0 - expm);
+        dFx_ds2 = parameters.mu * expm;
+    } else {
+        const double denom = 1.0 + parameters.mu * s2 / parameters.kappa;
+        Fx = 1.0 + parameters.kappa - parameters.kappa / denom;
+        dFx_ds2 = parameters.mu / (denom * denom);
+    }
 
     ex_s = ex_lda * Fx;
 
@@ -145,7 +149,7 @@ __device__ __forceinline__ void pbe_exchange_spin(double rho_s, double sigma_ss,
 __device__ __forceinline__ void
 pbe_correlation_zeta0(double rho, double ec_lda, double vc_lda,
                       double sigma_total, double& ec_pbe, double& vc_a,
-                      double& vsigma_aa, double& vsigma_ab) {
+                      double& vsigma_aa, double& vsigma_ab, double beta) {
     const double kF = pow(3.0 * kPi * kPi * rho, 1.0 / 3.0);
     const double ks = sqrt(4.0 * kF / kPi);
 
@@ -155,12 +159,12 @@ pbe_correlation_zeta0(double rho, double ec_lda, double vc_lda,
 
     const double exp_arg = -ec_lda / kGamma; // γφ³ = γ
     const double exp_val = exp(exp_arg);
-    const double A = (kBeta / kGamma) / (exp_val - 1.0);
+    const double A = (beta / kGamma) / (exp_val - 1.0);
 
     const double At2 = A * t2;
     const double numer = 1.0 + At2;
     const double denom = 1.0 + At2 + A * A * t2 * t2;
-    const double ratio = (kBeta / kGamma) * t2 * numer / denom;
+    const double ratio = (beta / kGamma) * t2 * numer / denom;
     const double H = kGamma * log(1.0 + ratio); // γφ³ = γ
 
     ec_pbe = ec_lda + H;
@@ -172,7 +176,7 @@ pbe_correlation_zeta0(double rho, double ec_lda, double vc_lda,
         (1.0 * one_u_u2 - one_u * (1.0 + 2.0 * u)) / (one_u_u2 * one_u_u2);
 
     const double dratio_dt2 =
-        (kBeta / kGamma) * (one_u / one_u_u2 + t2 * A * d_frac_du);
+        (beta / kGamma) * (one_u / one_u_u2 + t2 * A * d_frac_du);
     const double dH_dt2 = kGamma / (1.0 + ratio) * dratio_dt2; // γφ³ = γ
 
     const double dt2_dsigma =
@@ -183,12 +187,12 @@ pbe_correlation_zeta0(double rho, double ec_lda, double vc_lda,
     vsigma_ab = 2.0 * rho * dH_dsigma_total;
 
     const double dt2_drho = -(7.0 / 3.0) * t2 / rho;
-    const double dA_dfactor = A * A * exp_val / (kBeta / kGamma);
+    const double dA_dfactor = A * A * exp_val / (beta / kGamma);
     const double dA_dec_lda = dA_dfactor / kGamma; // γφ³ = γ
     const double dec_lda_drho_a = (vc_lda - ec_lda) / rho;
 
     const double d_frac_dA = -t2 * u * (2.0 + u) / (one_u_u2 * one_u_u2);
-    const double dratio_dA = (kBeta / kGamma) * t2 * d_frac_dA;
+    const double dratio_dA = (beta / kGamma) * t2 * d_frac_dA;
     const double dH_dA = kGamma / (1.0 + ratio) * dratio_dA; // γφ³ = γ
 
     // dH_dphi_total · dφ/dρ_σ is an exact CPU zero at ζ = 0 — dropped.
@@ -205,7 +209,8 @@ pbe_correlation_zeta0(double rho, double ec_lda, double vc_lda,
 __global__ void
 xc_pbe_kernel(const double* __restrict__ rho_r, double* __restrict__ gx_r,
               double* __restrict__ gy_r, double* __restrict__ gz_r,
-              double* __restrict__ vxc_r, double* __restrict__ exc_r, int nr) {
+              double* __restrict__ vxc_r, double* __restrict__ exc_r, int nr,
+              PbeParameters parameters) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nr)
         return;
@@ -232,7 +237,7 @@ xc_pbe_kernel(const double* __restrict__ rho_r, double* __restrict__ gx_r,
 
     // PBE-family exchange, both spin channels identical.
     double ex_s, vrho_x, vsig_x;
-    pbe_exchange_spin(ra, sig4, ex_s, vrho_x, vsig_x);
+    pbe_exchange_spin(ra, sig4, ex_s, vrho_x, vsig_x, parameters);
     const double ex_pbe = (ex_s + ex_s) / rho; // (ex_a + ex_b)/ρ, per electron
 
     // PW92 LSDA correlation base (NOT VWN5 — see xc_functional.cpp).
@@ -244,7 +249,7 @@ xc_pbe_kernel(const double* __restrict__ rho_r, double* __restrict__ gx_r,
     const double sigma_total = sig4 + 2.0 * sig4 + sig4;
     double ec_pbe, vc_pbe, vsig_c_aa, vsig_c_ab;
     pbe_correlation_zeta0(rho, ec_lda, vc_lda, sigma_total, ec_pbe, vc_pbe,
-                          vsig_c_aa, vsig_c_ab);
+                          vsig_c_aa, vsig_c_ab, parameters.beta);
 
     exc_r[i] = ex_pbe + ec_pbe;
     vxc_r[i] = vrho_x + vc_pbe;
@@ -259,18 +264,19 @@ xc_pbe_kernel(const double* __restrict__ rho_r, double* __restrict__ gx_r,
 
 } // namespace
 
-void xc_pbe_grid(const double* d_rho_r, double* d_gx_r, double* d_gy_r,
-                 double* d_gz_r, double* d_vxc_r, double* d_exc_r, int nr,
-                 cudaStream_t stream) {
+void xc_pbe_grid(cpu::xc::XCType type, const double* d_rho_r, double* d_gx_r,
+                 double* d_gy_r, double* d_gz_r, double* d_vxc_r,
+                 double* d_exc_r, int nr, cudaStream_t stream) {
+    const auto parameters = cpu::xc::pbe_parameters(type);
     if (nr <= 0)
         return;
     xc_pbe_kernel<<<::ATV::cuda::grid_size(nr, kBlock), kBlock, 0, stream>>>(
-        d_rho_r, d_gx_r, d_gy_r, d_gz_r, d_vxc_r, d_exc_r, nr);
+        d_rho_r, d_gx_r, d_gy_r, d_gz_r, d_vxc_r, d_exc_r, nr, parameters);
 }
 
 // ── Collinear spin-GGA PBE ────────────────────────────────────────────────
 // Full PW92 + PBE-H with ζ ≠ 0, transcribed from
-// src/cpu/scf/xc_functional.cpp (pw92_correlation + pbe_correlation +
+// src/cpu/xc/xc_functional.cpp (pw92_correlation + pbe_correlation +
 // evaluate_xc PBE branch) and the flux assembly of XCBuilder::step_spin.
 
 // PW92 ferromagnetic and spin-stiffness rows (paramagnetic already above).
@@ -376,7 +382,7 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
                      double vc_lda_b, double sigma_aa, double sigma_ab,
                      double sigma_bb, double& ec_pbe, double& vc_a,
                      double& vc_b, double& vsigma_aa, double& vsigma_ab,
-                     double& vsigma_bb) {
+                     double& vsigma_bb, double beta) {
     const double rho = rho_a + rho_b;
     double zeta = (rho_a - rho_b) / rho;
     zeta = fmax(-1.0 + 1e-14, fmin(1.0 - 1e-14, zeta));
@@ -395,12 +401,12 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
 
     const double exp_arg = -ec_lda / (kGamma * phi3);
     const double exp_val = exp(exp_arg);
-    const double A = (kBeta / kGamma) / (exp_val - 1.0);
+    const double A = (beta / kGamma) / (exp_val - 1.0);
 
     const double At2 = A * t2;
     const double numer = 1.0 + At2;
     const double denom = 1.0 + At2 + A * A * t2 * t2;
-    const double ratio = (kBeta / kGamma) * t2 * numer / denom;
+    const double ratio = (beta / kGamma) * t2 * numer / denom;
     const double H = kGamma * phi3 * log(1.0 + ratio);
 
     ec_pbe = ec_lda + H;
@@ -412,7 +418,7 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
         (1.0 * one_u_u2 - one_u * (1.0 + 2.0 * u)) / (one_u_u2 * one_u_u2);
 
     const double dratio_dt2 =
-        (kBeta / kGamma) * (one_u / one_u_u2 + t2 * A * d_frac_du);
+        (beta / kGamma) * (one_u / one_u_u2 + t2 * A * d_frac_du);
     const double dH_dt2 = kGamma * phi3 / (1.0 + ratio) * dratio_dt2;
 
     const double dt2_dsigma = 1.0 / (4.0 * phi * phi * ks * ks * rho * rho);
@@ -448,7 +454,7 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
     const double dt2_drho = -(7.0 / 3.0) * t2 / rho;
     const double dt2_dphi = -2.0 * t2 / phi;
 
-    const double dA_dfactor = A * A * exp_val / (kBeta / kGamma);
+    const double dA_dfactor = A * A * exp_val / (beta / kGamma);
     const double dA_dec_lda = dA_dfactor / (kGamma * phi3);
     const double dA_dphi = dA_dfactor * (-3.0 * ec_lda / (kGamma * phi3 * phi));
 
@@ -456,7 +462,7 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
     const double dec_lda_drho_b = (vc_lda_b - ec_lda) / rho;
 
     const double d_frac_dA = -t2 * u * (2.0 + u) / (one_u_u2 * one_u_u2);
-    const double dratio_dA = (kBeta / kGamma) * t2 * d_frac_dA;
+    const double dratio_dA = (beta / kGamma) * t2 * d_frac_dA;
     const double dH_dA = kGamma * phi3 / (1.0 + ratio) * dratio_dA;
 
     const double dH_dphi_explicit = 3.0 * kGamma * phi * phi * log(1.0 + ratio);
@@ -476,6 +482,7 @@ pbe_correlation_spin(double rho_a, double rho_b, double ec_lda, double vc_lda_a,
     vc_b = vc_lda_b + H + rho * dH_drho_b;
 }
 
+template <SpinDensityPolicy Policy>
 __global__ void
 xc_pbe_spin_kernel(const double* __restrict__ rho_a,
                    const double* __restrict__ rho_b, double* __restrict__ gax,
@@ -483,18 +490,21 @@ xc_pbe_spin_kernel(const double* __restrict__ rho_a,
                    double* __restrict__ gbx, double* __restrict__ gby,
                    double* __restrict__ gbz, double* __restrict__ vxc_a,
                    double* __restrict__ vxc_b, double* __restrict__ exc_r,
-                   int nr) {
+                   int nr, PbeParameters parameters) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= nr)
         return;
 
-    // Floor negatives from FFT ringing (CPU step_spin).
     double ra = rho_a[i];
     double rb = rho_b[i];
-    if (ra < 0.0)
-        ra = 0.0;
-    if (rb < 0.0)
-        rb = 0.0;
+    if constexpr (Policy == SpinDensityPolicy::PositivePart) {
+        // PW step_spin differentiates positive-part spin densities. GPW's
+        // CPU grid point functional instead consumes the raw spin fields.
+        if (ra < 0.0)
+            ra = 0.0;
+        if (rb < 0.0)
+            rb = 0.0;
+    }
     const double rtot = ra + rb;
     if (rtot < kRhoMin) {
         vxc_a[i] = 0.0;
@@ -523,8 +533,8 @@ xc_pbe_spin_kernel(const double* __restrict__ rho_a,
     // PBE exchange per spin (per volume).
     double ex_a, vrho_x_a, vsig_x_aa;
     double ex_b, vrho_x_b, vsig_x_bb;
-    pbe_exchange_spin(ra, saa, ex_a, vrho_x_a, vsig_x_aa);
-    pbe_exchange_spin(rb, sbb, ex_b, vrho_x_b, vsig_x_bb);
+    pbe_exchange_spin(ra, saa, ex_a, vrho_x_a, vsig_x_aa, parameters);
+    pbe_exchange_spin(rb, sbb, ex_b, vrho_x_b, vsig_x_bb, parameters);
     const double ex_pbe = (ex_a + ex_b) / rtot;
 
     // PW92 LSDA base + PBE H (full ζ).
@@ -534,13 +544,18 @@ xc_pbe_spin_kernel(const double* __restrict__ rho_a,
     double ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab, vsig_c_bb;
     pbe_correlation_spin(ra, rb, ec_lda, vc_lda_a, vc_lda_b, saa, sab, sbb,
                          ec_pbe, vc_pbe_a, vc_pbe_b, vsig_c_aa, vsig_c_ab,
-                         vsig_c_bb);
+                         vsig_c_bb, parameters.beta);
 
     exc_r[i] = ex_pbe + ec_pbe;
-    // Only the local density derivative carries the clamp chain rule.
-    // Raw-gradient flux below remains unmasked before divergence.
-    vxc_a[i] = rho_a[i] > 0.0 ? vrho_x_a + vc_pbe_a : 0.0;
-    vxc_b[i] = rho_b[i] > 0.0 ? vrho_x_b + vc_pbe_b : 0.0;
+    if constexpr (Policy == SpinDensityPolicy::PositivePart) {
+        // Only the PW local density derivative carries the clamp chain rule.
+        // Raw-gradient flux below remains unmasked before divergence.
+        vxc_a[i] = rho_a[i] > 0.0 ? vrho_x_a + vc_pbe_a : 0.0;
+        vxc_b[i] = rho_b[i] > 0.0 ? vrho_x_b + vc_pbe_b : 0.0;
+    } else {
+        vxc_a[i] = vrho_x_a + vc_pbe_a;
+        vxc_b[i] = vrho_x_b + vc_pbe_b;
+    }
 
     // flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β  (exchange contributes only to aa/bb)
     const double v_aa = vsig_x_aa + vsig_c_aa;
@@ -557,17 +572,29 @@ xc_pbe_spin_kernel(const double* __restrict__ rho_a,
     gbz[i] = cbb * gbz_i + cab * gaz_i;
 }
 
-void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
-                      double* d_gax_r, double* d_gay_r, double* d_gaz_r,
-                      double* d_gbx_r, double* d_gby_r, double* d_gbz_r,
-                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r, int nr,
-                      cudaStream_t stream) {
+void xc_pbe_spin_grid(cpu::xc::XCType type, const double* d_rho_a,
+                      const double* d_rho_b, double* d_gax_r, double* d_gay_r,
+                      double* d_gaz_r, double* d_gbx_r, double* d_gby_r,
+                      double* d_gbz_r, double* d_vxc_a, double* d_vxc_b,
+                      double* d_exc_r, int nr, cudaStream_t stream,
+                      SpinDensityPolicy policy) {
+    const auto parameters = cpu::xc::pbe_parameters(type);
     if (nr <= 0)
         return;
-    xc_pbe_spin_kernel<<<::ATV::cuda::grid_size(nr, kBlock), kBlock, 0,
-                         stream>>>(d_rho_a, d_rho_b, d_gax_r, d_gay_r, d_gaz_r,
-                                   d_gbx_r, d_gby_r, d_gbz_r, d_vxc_a, d_vxc_b,
-                                   d_exc_r, nr);
+    if (policy == SpinDensityPolicy::PositivePart) {
+        xc_pbe_spin_kernel<SpinDensityPolicy::PositivePart>
+            <<<::ATV::cuda::grid_size(nr, kBlock), kBlock, 0, stream>>>(
+                d_rho_a, d_rho_b, d_gax_r, d_gay_r, d_gaz_r, d_gbx_r, d_gby_r,
+                d_gbz_r, d_vxc_a, d_vxc_b, d_exc_r, nr, parameters);
+    } else if (policy == SpinDensityPolicy::RawFunctional) {
+        xc_pbe_spin_kernel<SpinDensityPolicy::RawFunctional>
+            <<<::ATV::cuda::grid_size(nr, kBlock), kBlock, 0, stream>>>(
+                d_rho_a, d_rho_b, d_gax_r, d_gay_r, d_gaz_r, d_gbx_r, d_gby_r,
+                d_gbz_r, d_vxc_a, d_vxc_b, d_exc_r, nr, parameters);
+    } else {
+        throw std::invalid_argument(
+            "xc_pbe_spin_grid: unsupported density policy");
+    }
 }
 
 } // namespace xc

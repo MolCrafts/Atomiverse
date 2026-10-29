@@ -30,14 +30,11 @@ class PairLJCut : public Pair {
     ///        pair exclusions.
     ///
     /// Mirrors LAMMPS `special_bonds lj/coul s12 s13 s14` semantics.
-    /// The CUDA arm supports two combinations in this revision (per
-    /// `msu-pe-cuda-components-05-cuda-lj-exclusions` design):
-    ///   - `(1.0, 1.0, 1.0)` — no exclusions, kernel takes fast path.
-    ///   - All three equal (typically `(0.0, 0.0, 0.0)` for Dreiding-UA
-    ///     polyethylene): every 1-2/1-3/1-4 pair is multiplied by the
-    ///     shared scale `s`. `s == 0` ⇒ completely skipped.
-    /// Other combinations throw `std::invalid_argument`. The supported
-    /// pair (0,0,0) is what MSU PE protocol uses.
+    /// Each scale is 0 (drop that shell) or 1 (keep it). Mixed binary
+    /// weights such as `(1, 0, 0)` keep 1-2 pairs and drop 1-3 and 1-4.
+    /// The nearest shell wins when one pair has two topological distances.
+    /// A fractional scale throws `std::invalid_argument`: the baker drops
+    /// partners, it does not reweight them.
     ///
     /// Exclusion partner lists are enumerated from `frame.bonds /
     /// angles / dihedrals` at `build()` time, sorted+uniqued per atom,

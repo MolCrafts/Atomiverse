@@ -8,6 +8,7 @@
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
+#include "atomiverse/cuda/frame/frame.cuh"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 #include "atomiverse/electronic/smearing.h"
@@ -51,13 +52,17 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// @param n_beta    Occupied ↓ bands (spin path only).
 /// @param use_smear Restricted metallic-smear fractional NL path.
 /// @param n_elec    Valence electron count (smear μ search; ignored if not smear).
+/// @param accumulate_into Optional parent device Frame: add the resident force
+///        directly after unit conversion, returning no host vector. Only the
+///        existing classical host Ewald contribution is uploaded in this mode.
 std::vector<std::array<double, 3>> pw_forces_analytic_impl(
     const cpu::Frame& frame, DeviceDensity& den, DeviceBandSolver& solver,
     cpu::pw::internal::PWProblem& prob, cpu::pw::internal::PWWorkspace& ws,
     int n_alpha = -1, int n_beta = -1, bool use_smear = false, int n_elec = 0,
     ATV::electronic::Smearing smear_kind =
         ATV::electronic::Smearing::fermi_dirac,
-    double degauss_ha = 0.0, int mp_order = 1);
+    double degauss_ha = 0.0, int mp_order = 1,
+    cuda::Frame* accumulate_into = nullptr);
 
 } // namespace internal
 } // namespace pw

@@ -224,8 +224,12 @@ TEST(CudaPWDensity, HartreeXcVeffMatchCpu) {
 // kernel, and the v_xc −= ∇·flux divergence pass against
 // XCBuilder::step(ws, PBE) — the CPU twin runs its true-GGA branch on the
 // same atomic seed density.
-TEST(CudaPWDensity, HartreeXcVeffMatchCpuPbe) {
-    expect_stage_parity(XCType::PBE);
+TEST(CudaPWDensity, HartreeXcVeffMatchCpuPbeFamily) {
+    for (const auto xc :
+         {XCType::PBE, XCType::PBEsol, XCType::RevPBE, XCType::RPBE}) {
+        SCOPED_TRACE(static_cast<int>(xc));
+        expect_stage_parity(xc);
+    }
 }
 
 // ── Pulay mixing parity, including the ring wrap ─────────────────────────
@@ -401,10 +405,47 @@ TEST(CudaPWDensity, NonDefaultStreamOwnedAndShareable) {
     EXPECT_NE(own.stream(), den.stream());
 }
 
+TEST(CudaPWDensity, BorrowedStreamSurvivesDensityDestruction) {
+    cpupw::PWProblem prob;
+    build_problem(prob);
+    cudaStream_t parent = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&parent), cudaSuccess);
+    struct Release {
+        cudaStream_t stream;
+        ~Release() { cudaStreamDestroy(stream); }
+    } release{parent};
+    // Run one actual density stage on the borrowed stream, then destroy all
+    // density buffers and plans. The parent must retain a usable stream.
+    {
+        DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA, false, 0, 0, 0,
+                          parent);
+        ASSERT_EQ(den.stream(), parent);
+        den.hartree();
+    }
+    cudaEvent_t event = nullptr;
+    ASSERT_EQ(cudaEventCreate(&event), cudaSuccess);
+    struct EventRelease {
+        cudaEvent_t event;
+        ~EventRelease() { cudaEventDestroy(event); }
+    } event_release{event};
+    ASSERT_EQ(cudaEventRecord(event, parent), cudaSuccess);
+    EXPECT_EQ(cudaEventSynchronize(event), cudaSuccess);
+    // A second independent density stage can acquire that same execution
+    // stream after the first owner of scientific scratch has gone away.
+    {
+        DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA, false, 0, 0, 0,
+                          parent);
+        den.hartree();
+    }
+    ASSERT_EQ(cudaEventRecord(event, parent), cudaSuccess);
+    EXPECT_EQ(cudaEventSynchronize(event), cudaSuccess);
+}
+
 // Each spin channel must use the same padded quadrature and adjoint
 // projection as the restricted path. One XC stage, no SCF solve.
 TEST(CudaPWDensity, PaddedSpinXcMatchesCpu) {
-    for (const auto xc : {XCType::LSDA, XCType::PBE}) {
+    for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
+                          XCType::RevPBE, XCType::RPBE}) {
         cpupw::PWProblem prob;
         build_problem(prob);
         auto& ws = prob.ws;
@@ -446,7 +487,8 @@ TEST(CudaPWDensity, PaddedSpinXcMatchesCpu) {
 // is what makes the clamp chain rule and the raw-density double counting
 // observable: a potential that ignores max(ρ, 0) diverges from XCBuilder.
 TEST(CudaPWDensity, NegativeSpinRingingMatchesCpuClamp) {
-    for (const auto xc : {XCType::LSDA, XCType::PBE}) {
+    for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
+                          XCType::RevPBE, XCType::RPBE}) {
         cpupw::PWProblem prob;
         build_problem(prob);
         auto& ws = prob.ws;
@@ -512,8 +554,11 @@ TEST(CudaPWDensity, NegativeSpinRingingMatchesCpuClamp) {
 }
 
 TEST(CudaPWDensity, PaddedXcResolvesHighFrequencyDensity) {
-    expect_stage_parity(XCType::LSDA, true);
-    expect_stage_parity(XCType::PBE, true);
+    for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
+                          XCType::RevPBE, XCType::RPBE}) {
+        SCOPED_TRACE(static_cast<int>(xc));
+        expect_stage_parity(xc, true);
+    }
 }
 
 // A pure magnetization rearrangement has zero total-charge residual. It must
@@ -538,7 +583,7 @@ TEST(CudaPWDensity, OppositeSpinUpdatesHaveJointUnmixedResidual) {
                       cudaSuccess);
             den.collect_spin_out(spin);
         }
-        den.mix_spin_linear();
+        den.mix_spin(0);
         const auto values = den.reduce_spin(static_cast<double>(prob.vol_bohr));
         // A constant real-space update changes only G=0, so the independent
         // analytic joint norm is sqrt(delta²+(-delta)²), before mixing.
@@ -575,4 +620,68 @@ TEST(CudaPWDensity, FrozenSpinDensityRetainsEveryModeAndVolumeScale) {
                  std::invalid_argument);
     EXPECT_THROW(den.load_rho_r_scaled(alpha.data(), prob.ws.nr - 1, scale),
                  std::invalid_argument);
+}
+
+// Joint history must retain both channels, including wrap and depth-one fallback.
+TEST(CudaPWDensity, JointSpinPulayMatchesCpuThroughHistoryWrap) {
+    for (const int depth : {1, 3})
+        for (const double beta : {0.2, 0.7}) {
+            SCOPED_TRACE(depth);
+            SCOPED_TRACE(beta);
+            cpupw::PWProblem prob;
+            build_problem(prob);
+            auto& ws = prob.ws;
+            const int ng = prob.gv0.count(), nr = ws.nr;
+            DeviceDensity den(prob, beta, depth, XCType::LSDA, true, 5, 3, 8);
+            ws.nspin = 2;
+            ws.mix_beta = beta;
+            ws.pulay_depth = depth;
+            ws.rho_spin_G.resize(2);
+            ws.rho_spin_G_old.resize(2);
+            for (int spin = 0; spin < 2; ++spin) {
+                ws.rho_spin_G[spin] =
+                    ws.rho_G * (spin == 0 ? 5.0 / 8 : 3.0 / 8);
+                ws.rho_spin_G_old[spin] = ws.rho_spin_G[spin];
+            }
+            cpupw::DensityBuilder db;
+            db.prepare(ws);
+            db.reset(ws);
+            xt::xarray<std::complex<AccReal>> out[2];
+            std::vector<double> fetched(nr);
+            for (int t = 0; t < 7; ++t) {
+                for (int spin = 0; spin < 2; ++spin) {
+                    auto real = synth_accumulation(nr, 2 * t + spin);
+                    std::memcpy(db.accumulation(), real.data(),
+                                nr * sizeof(double));
+                    db.extract(ws, out[spin]);
+                    ASSERT_EQ(cudaMemcpyAsync(den.density_accumulator(),
+                                              real.data(), nr * sizeof(double),
+                                              cudaMemcpyHostToDevice,
+                                              den.stream()),
+                              cudaSuccess);
+                    den.collect_spin_out(spin);
+                    ASSERT_EQ(cudaStreamSynchronize(den.stream()), cudaSuccess);
+                }
+                const double expected_residual =
+                    db.mix_spin(ws, out[0], out[1]);
+                den.mix_spin(t);
+                EXPECT_NEAR(den.reduce_spin(prob.vol_bohr).resid,
+                            expected_residual, 1e-11);
+                for (int spin = 0; spin < 2; ++spin) {
+                    den.fetch_rho_spin_r(spin, fetched.data());
+                    std::memcpy(db.accumulation(), fetched.data(),
+                                nr * sizeof(double));
+                    xt::xarray<std::complex<AccReal>> got;
+                    db.extract(ws, got);
+                    double scale = 0;
+                    for (const auto value : ws.rho_spin_G[spin])
+                        scale = std::max(scale, std::abs(value));
+                    ASSERT_GT(scale, 0);
+                    for (int g = 0; g < ng; ++g)
+                        EXPECT_LE(std::abs(got[g] - ws.rho_spin_G[spin][g]),
+                                  1e-9 * scale)
+                            << "step=" << t << " spin=" << spin << " G=" << g;
+                }
+            }
+        }
 }

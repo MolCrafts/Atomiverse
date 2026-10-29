@@ -28,6 +28,7 @@
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/internal/collocate.h"
+#include "atomiverse/cpu/gpw/internal/core_overlap.h"
 #include "atomiverse/cpu/gpw/internal/dft_plus_u.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
@@ -734,6 +735,12 @@ assemble_gpw_forces(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
     // per-pair operator-center derivative above.
     if (!analytic_loc)
         add_local_pp_hf_forces(grid, atoms, periodic, rho, forces);
+
+    // Restore the point-ion interaction removed by Gaussian core smearing.
+    // This density-independent term also applies to fixed-density forces.
+    const auto core_overlap =
+        make_core_overlap_model(atoms, cfg.cell_bohr().data(), periodic);
+    add_core_overlap_forces(core_overlap, forces);
 
     // Dispersion forces (additive, geometry-only). D3/BJ, D4, TS, XDM, and
     // MBD@rsSCS are product paths (mutually exclusive).
@@ -1576,6 +1583,10 @@ assemble_gpw_forces_kpoints(const std::vector<GpwAtom>& atoms,
 
     // Local-PP HF (grid route).
     add_local_pp_hf_forces(grid, atoms, /*periodic=*/true, rho, forces);
+
+    const auto core_overlap =
+        make_core_overlap_model(atoms, cfg.cell_bohr().data(), true);
+    add_core_overlap_forces(core_overlap, forces);
 
     // Geometry-only dispersion (same as Γ assemble_gpw_forces).
     // MBD was previously counted for mutual exclusion but not folded in —

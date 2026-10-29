@@ -105,7 +105,7 @@ void apply_hamiltonian(const PWWorkspace& ws,
                     "PW Hamiltonian: KB columns must be prepared for the "
                     "current k-sphere");
             const AccReal D = projector.d;
-            if (std::abs(D) < AccReal(1e-16))
+            if (D == AccReal(0))
                 continue;
             std::array<std::complex<AccReal>, 5> c_lm{};
             const auto* beta = projector.beta_G.data();

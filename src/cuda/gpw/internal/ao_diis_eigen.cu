@@ -197,6 +197,8 @@ void AoDiisEigenDevice::destroy() {
     free_p(d_S_);
     free_p(d_X_);
     free_p(d_P_);
+    free_p(d_W_);
+    free_p(d_P_saved_);
     free_p(d_H_);
     free_p(d_C_);
     free_p(d_Cp_);
@@ -531,6 +533,103 @@ void AoDiisEigenDevice::advance() {
     diagonalize_and_density_();
 }
 
+void AoDiisEigenDevice::advance_paired(AoDiisEigenDevice& other) {
+    ensure_built_();
+    other.ensure_built_();
+    if (&other == this || n_ != other.n_ || m_ != other.m_
+        || stream_ != other.stream_ || use_diis_ != other.use_diis_
+        || max_vectors_ != other.max_vectors_
+        || hist_count_ != other.hist_count_ || hist_start_ != other.hist_start_)
+        throw std::invalid_argument(
+            "paired GPW DIIS needs synchronized matching channels");
+    const int nn = n_ * n_, mm = m_ * m_;
+    // Both weighted sums consume this host vector's asynchronous upload.
+    // Normal eigen solves synchronize before it dies. On an earlier error,
+    // drain this stream while the vector is still alive, without masking the
+    // original exception or synchronizing the normal path a second time.
+    std::vector<double> coefficients;
+    struct FailureFence {
+        cudaStream_t stream;
+        bool complete = false;
+        ~FailureFence() {
+            if (!complete)
+                cudaStreamSynchronize(stream);
+        }
+    } failure_fence{stream_};
+    if (use_diis_) {
+        auto push = [&](AoDiisEigenDevice& channel) {
+            int slot;
+            if (channel.hist_count_ < channel.max_vectors_) {
+                slot = (channel.hist_start_ + channel.hist_count_)
+                       % channel.max_vectors_;
+                ++channel.hist_count_;
+            } else {
+                slot = channel.hist_start_;
+                channel.hist_start_ =
+                    (channel.hist_start_ + 1) % channel.max_vectors_;
+            }
+            check_cuda(
+                cudaMemcpyAsync(
+                    channel.d_H_hist_ + static_cast<std::size_t>(slot) * nn,
+                    channel.d_H_, static_cast<std::size_t>(nn) * sizeof(double),
+                    cudaMemcpyDeviceToDevice, stream_),
+                "paired push H");
+            check_cuda(
+                cudaMemcpyAsync(channel.d_e_hist_
+                                    + static_cast<std::size_t>(slot) * mm,
+                                channel.d_err_,
+                                static_cast<std::size_t>(mm) * sizeof(double),
+                                cudaMemcpyDeviceToDevice, stream_),
+                "paired push error");
+        };
+        push(*this);
+        push(other);
+        const int mh = hist_count_;
+        if (mh >= 2) {
+            std::vector<double> gram(static_cast<std::size_t>(mh) * mh, 0.);
+            for (int i = 0; i < mh; ++i)
+                for (int j = 0; j <= i; ++j) {
+                    const int si = (hist_start_ + i) % max_vectors_,
+                              sj = (hist_start_ + j) % max_vectors_;
+                    double a = 0, b = 0;
+                    check_cublas(
+                        cublasDdot(
+                            static_cast<cublasHandle_t>(cublas_), mm,
+                            d_e_hist_ + static_cast<std::size_t>(si) * mm, 1,
+                            d_e_hist_ + static_cast<std::size_t>(sj) * mm, 1,
+                            &a),
+                        "paired alpha Gram");
+                    check_cublas(
+                        cublasDdot(
+                            static_cast<cublasHandle_t>(other.cublas_), mm,
+                            other.d_e_hist_ + static_cast<std::size_t>(si) * mm,
+                            1,
+                            other.d_e_hist_ + static_cast<std::size_t>(sj) * mm,
+                            1, &b),
+                        "paired beta Gram");
+                    gram[i * mh + j] = gram[j * mh + i] = a + b;
+                }
+            if (solve_pulay_host(gram, mh, coefficients)) {
+                check_cuda(cudaMemcpyAsync(d_c_, coefficients.data(),
+                                           mh * sizeof(double),
+                                           cudaMemcpyHostToDevice, stream_),
+                           "paired coefficients");
+                const int blocks = grid_size(nn, kDefaultBlock);
+                weighted_sum_hist_kernel<<<blocks, kDefaultBlock, 0, stream_>>>(
+                    d_H_, d_H_hist_, d_c_, nn, mh, hist_start_, max_vectors_);
+                check_cuda(cudaGetLastError(), "paired alpha extrapolate");
+                weighted_sum_hist_kernel<<<blocks, kDefaultBlock, 0, stream_>>>(
+                    other.d_H_, other.d_H_hist_, d_c_, nn, mh, hist_start_,
+                    max_vectors_);
+                check_cuda(cudaGetLastError(), "paired beta extrapolate");
+            }
+        }
+    }
+    diagonalize_and_density_();
+    other.diagonalize_and_density_();
+    failure_fence.complete = true;
+}
+
 double AoDiisEigenDevice::step(const double* H_host) {
     const double err_norm = residual(H_host);
     advance();
@@ -575,6 +674,57 @@ void AoDiisEigenDevice::eigen_to_host(const double* H_host, double* eig_host,
                                cudaMemcpyDeviceToHost, stream_),
                "D2H C");
     check_cuda(cudaStreamSynchronize(stream_), "sync eigen");
+}
+
+void AoDiisEigenDevice::reserve_force_state() {
+    ensure_built_();
+    if (d_W_ && d_P_saved_)
+        return;
+    const size_t bytes = static_cast<size_t>(n_) * n_ * sizeof(double);
+    double* physical_W = nullptr;
+    double* accepted_P = nullptr;
+    try {
+        check_cuda(cudaMalloc(&physical_W, bytes), "malloc physical W");
+        check_cuda(cudaMalloc(&accepted_P, bytes), "malloc accepted P backup");
+    } catch (...) {
+        if (physical_W)
+            cudaFree(physical_W);
+        if (accepted_P)
+            cudaFree(accepted_P);
+        throw;
+    }
+    d_W_ = physical_W;
+    d_P_saved_ = accepted_P;
+}
+
+void AoDiisEigenDevice::finalize_physical_force_state(const double* d_H) {
+    ensure_built_();
+    if (!d_W_ || !d_P_saved_)
+        throw std::logic_error(
+            "AoDiisEigenDevice: reserve force state before SCF");
+    const size_t bytes = static_cast<size_t>(n_) * n_ * sizeof(double);
+    check_cuda(cudaMemcpyAsync(d_P_saved_, d_P_, bytes,
+                               cudaMemcpyDeviceToDevice, stream_),
+               "protect accepted density");
+    eigen_from_device(d_H, nullptr, nullptr);
+    check_cuda(cudaMemcpyAsync(d_P_, d_P_saved_, bytes,
+                               cudaMemcpyDeviceToDevice, stream_),
+               "restore accepted density");
+    if (n_occ_ == 0) {
+        check_cuda(cudaMemsetAsync(d_W_, 0, bytes, stream_), "zero physical W");
+        return;
+    }
+    const auto handle = static_cast<cublasHandle_t>(cublas_);
+    // The final raw-H eigenspace supplies W, while P remains the accepted
+    // variational density. d_t1_ is available after the canonical eigen.
+    check_cublas(cublasDdgmm(handle, CUBLAS_SIDE_RIGHT, n_, n_occ_, d_C_, n_,
+                             d_eig_, 1, d_t1_, n_),
+                 "weight physical occupied orbitals");
+    const double zero = 0;
+    check_cublas(cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, n_, n_, n_occ_,
+                             &occ_factor_, d_t1_, n_, d_C_, n_, &zero, d_W_,
+                             n_),
+                 "physical energy-weighted density");
 }
 
 void AoDiisEigenDevice::eigen_from_device(const double* d_H, double* eig_host,

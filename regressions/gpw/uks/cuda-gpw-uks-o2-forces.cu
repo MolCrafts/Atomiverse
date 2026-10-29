@@ -11,11 +11,10 @@
 #include <string>
 #include <vector>
 
+#include "../frame_fixture.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
-#include "atomiverse/cpu/gpw/internal/gpw_forces.h"
-#include "atomiverse/cpu/gpw/internal/gpw_stress.h"
 #include "atomiverse/cuda/gpw/gpw_solver.cuh"
 #include "harness/registry.h"
 
@@ -23,8 +22,8 @@ namespace atv_reg_gpw_cuda_gpw_uks_o2_forces {
 
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GthPotential;
-using ATV::cpu::gpw::internal::GpwAtom;
 using ATV::cpu::xc::XCType;
+namespace fixture = ATV::regression::gpw_fixture;
 
 namespace {
 
@@ -40,31 +39,24 @@ void die(const char* msg) {
     std::exit(1);
 }
 
-std::vector<GpwAtom> o2_atoms() {
+std::vector<ATV::cpu::gpw::Kind> kinds() {
     const auto basis = GaussianBasis(molrs::Element::O, "SZV-GTH-PADE");
     const auto pot = GthPotential(molrs::Element::O, "GTH-PADE-q6");
+    return {{molrs::Element::O, basis, pot}};
+}
+
+ATV::cpu::Frame o2_frame() {
     const double half = 0.5 * kBondBohr;
     const double c = 0.5 * kCellBohr;
     const double rA[3] = {c, c, c - half};
     const double rB[3] = {c, c, c + half};
-    return {GpwAtom(rA, basis, pot, 8), GpwAtom(rB, basis, pot, 8)};
+    return fixture::frame_bohr({rA, rB}, {8, 8},
+                               {kCellBohr, kCellBohr, kCellBohr});
 }
 
-// Orthorhombic cell [Bohr]. The CPU oracle is driven at the atom level
-// through the engine-private door; the CUDA product keeps its `cell` member.
-void set_cell_bohr(ATV::cpu::gpw::GpwDft& m, double a, double b, double c) {
-    ATV::cpu::gpw::internal::GpwDftAccess::set_cell(m, {a, b, c});
-}
-
-void set_cell_bohr(ATV::cuda::gpw::GpwDft& m, double a, double b, double c) {
-    m.cell[0] = a;
-    m.cell[1] = b;
-    m.cell[2] = c;
-}
-
+// Geometry and cell belong to the shared public Frame fixture.
 template <typename Method>
 void set_uks(Method& m) {
-    set_cell_bohr(m, kCellBohr, kCellBohr, kCellBohr);
     m.n_occ = 0;
     m.n_alpha = 7;
     m.n_beta = 5;
@@ -102,33 +94,36 @@ int run(int argc, char** argv) {
     if (!run_cpu && !run_cuda)
         die("unknown --device (use cpu|cuda|both)");
 
-    auto atoms = o2_atoms();
+    const auto reference_frame = o2_frame();
     double e_cpu = 0.0, e_cuda = 0.0;
     std::vector<std::array<double, 3>> F_cpu, F_cuda;
     std::array<double, 6> s_cpu{}, s_cuda{};
 
     if (run_cpu) {
-        ATV::cpu::gpw::GpwDft m({}, 100.0, XCType::PADE);
+        auto frame = reference_frame;
+        ATV::cpu::gpw::GpwDft m(kinds(), 100.0, XCType::PADE);
         set_uks(m);
-        ATV::cpu::gpw::internal::GpwDftAccess::build(m, atoms);
-        const auto& r = ATV::cpu::gpw::internal::GpwDftAccess::run(m, atoms);
+        m.build(frame);
+        const auto& r = m.run(frame);
         if (!r.converged) {
             std::fprintf(stderr, "FAIL: CPU UKS SCF not converged (iters=%d)\n",
                          r.iters);
             return 1;
         }
         e_cpu = r.e_total;
-        F_cpu = ATV::cpu::gpw::internal::gpw_forces_analytic(atoms, m);
-        s_cpu =
-            ATV::cpu::gpw::internal::gpw_stress_at_state_impl(atoms, m, r, kH);
+        m.forces(frame);
+        F_cpu = fixture::forces_ha_bohr(frame);
+        m.stress_strain_h = kH;
+        s_cpu = fixture::stress_ha_bohr3(m.stress(frame));
         std::printf("CPU:  E=%.12f Ha  iters=%d\n", e_cpu, r.iters);
     }
 
     if (run_cuda) {
-        ATV::cuda::gpw::GpwDft m({}, 100.0, XCType::PADE);
+        auto frame = reference_frame;
+        ATV::cuda::gpw::GpwDft m(kinds(), 100.0, XCType::PADE);
         set_uks(m);
-        m.build(atoms);
-        const auto& r = m.run(atoms);
+        m.build(frame);
+        const auto& r = m.run(frame);
         if (!r.converged) {
             std::fprintf(stderr,
                          "FAIL: CUDA UKS SCF not converged (iters=%d)\n",
@@ -136,8 +131,10 @@ int run(int argc, char** argv) {
             return 1;
         }
         e_cuda = r.e_total;
-        F_cuda = ATV::cuda::gpw::gpw_forces_analytic(atoms, m);
-        s_cuda = ATV::cuda::gpw::gpw_stress(atoms, m, r, kH);
+        m.forces(frame);
+        F_cuda = fixture::forces_ha_bohr(frame);
+        m.stress_strain_h = kH;
+        s_cuda = fixture::stress_ha_bohr3(m.stress(frame));
         std::printf("CUDA: E=%.12f Ha  iters=%d\n", e_cuda, r.iters);
     }
 

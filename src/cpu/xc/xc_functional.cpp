@@ -396,23 +396,16 @@ void vwn_rpa_correlation(double rho_a, double rho_b, double& fc, double& vc_a,
 //
 // Implementation: compute per-spin exchange with enhancement.
 
-static constexpr double kPBE_kappa = 0.804;
-static constexpr double kPBE_mu = 0.2195149727645171; // beta*pi^2/3
-/// PBEsol exchange μ from the gradient expansion (Perdew et al. 2008).
-static constexpr double kPBEsol_mu = 10.0 / 81.0;
-/// revPBE exchange κ (Zhang & Yang, PRL 80, 890 (1998); libxc GGA_X_PBE_R).
-static constexpr double kRevPBE_kappa = 1.245;
-
 // Compute PBE-family exchange for a single spin channel.
 // Returns: (energy density contribution, v_rho, v_sigma) for this spin.
-// `mu` selects PBE (`kPBE_mu`) or PBEsol (`kPBEsol_mu`); `kappa` selects
-// PBE/PBEsol/RPBE (0.804) or revPBE (1.245). When `rpbe_form` is true, use
+// The shared parameters select PBE/PBEsol/revPBE exchange and correlation.
+// When `params.exponential` is true, use
 // the Hammer–Hansen–Nørskov exponential enhancement (RPBE) instead of the
 // rational PBE/revPBE form.
 static void pbe_exchange_spin(double rho_s, double rho13, double sigma_ss,
                               double& ex_s, double& vrho_s, double& vsigma_ss,
-                              double mu = kPBE_mu, double kappa = kPBE_kappa,
-                              bool rpbe_form = false) {
+                              const ATV::electronic::PbeParameters& params =
+                                  ATV::electronic::kPbeParameters) {
     if (rho_s < kRhoMin * 0.5) {
         ex_s = 0;
         vrho_s = 0;
@@ -435,7 +428,8 @@ static void pbe_exchange_spin(double rho_s, double rho13, double sigma_ss,
     // Enhancement factor F_x(s) and dF_x/ds²
     double Fx;
     double dFx_ds2;
-    if (rpbe_form) {
+    const double mu = params.mu, kappa = params.kappa;
+    if (params.exponential) {
         // RPBE: F = 1 + κ (1 − exp(−μ s² / κ));  dF/ds² = μ exp(−μ s² / κ)
         const double expm = std::exp(-mu * s2 / kappa);
         Fx = 1.0 + kappa * (1.0 - expm);
@@ -475,16 +469,13 @@ static void pbe_exchange_spin(double rho_s, double rho13, double sigma_ss,
 //   k_s = √(4k_F/π),  k_F = (3π²ρ)^{1/3}
 //   β = 0.066725,  γ = (1 - ln2)/π² ≈ 0.031091
 
-static constexpr double kPBE_beta = 0.06672455060314922;
 static constexpr double kPBE_gamma = 0.031090690869654895034; // (1 - ln2)/π²
-/// PBEsol correlation β (libxc GGA_C_PBE_SOL / CP2K PBEsol).
-static constexpr double kPBEsol_beta = 0.046;
 
-static void pbe_correlation(const DensityPowers& density, double sigma_aa,
-                            double sigma_ab, double sigma_bb, double& fc_pbe,
-                            double& vc_a, double& vc_b, double& vsigma_aa,
-                            double& vsigma_ab, double& vsigma_bb,
-                            double beta = kPBE_beta) {
+static void
+pbe_correlation(const DensityPowers& density, double sigma_aa, double sigma_ab,
+                double sigma_bb, double& fc_pbe, double& vc_a, double& vc_b,
+                double& vsigma_aa, double& vsigma_ab, double& vsigma_bb,
+                double beta = ATV::electronic::kPbeParameters.beta) {
     // The LDA formula uses the same spin floor as standalone PW92; its
     // epsilon stays local until the final physical-density multiplication.
     const double rho_a = density.alpha, rho_b = density.beta;
@@ -1041,8 +1032,7 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         out.energy_density = p.energy_density;
         out.vrho_alpha = p.vrho_a;
         out.vrho_beta = p.vrho_b;
-    } else if (type == XCType::PBE || type == XCType::PBEsol
-               || type == XCType::RevPBE || type == XCType::RPBE) {
+    } else if (is_pbe_family(type)) {
         // PBE family = PW92 LDA base + gradient corrections. Do NOT clamp
         // per-spin densities to kRhoMin here -- inflating rho_s = 0 to 1e-12
         // makes ds2_dsigma ~ 1/rho_s^{8/3} explode by O(1e30). Exchange has
@@ -1050,11 +1040,7 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         // PBEsol: μ=10/81, β=0.046 (Perdew 2008 / libxc PBE_SOL).
         // revPBE: κ=1.245, μ/β as PBE (Zhang & Yang 1998 / libxc PBE_R).
         // RPBE: κ/μ/β as PBE, exponential F_x (Hammer et al. 1999 / GGA_X_RPBE).
-        const double mu = (type == XCType::PBEsol) ? kPBEsol_mu : kPBE_mu;
-        const double beta = (type == XCType::PBEsol) ? kPBEsol_beta : kPBE_beta;
-        const double kappa =
-            (type == XCType::RevPBE) ? kRevPBE_kappa : kPBE_kappa;
-        const bool rpbe_form = (type == XCType::RPBE);
+        const auto params = pbe_parameters(type);
 
         double ra_pbe = ra;
         double rb_pbe = rb;
@@ -1072,7 +1058,7 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
         double ex_pbe_a, vrho_x_a, vsig_x_aa;
         double ex_pbe_b, vrho_x_b, vsig_x_bb;
         pbe_exchange_spin(ra_pbe, density.alpha13, sa, ex_pbe_a, vrho_x_a,
-                          vsig_x_aa, mu, kappa, rpbe_form);
+                          vsig_x_aa, params);
         if (rb_pbe == ra_pbe && sb == sa) {
             // Identical point inputs have identical exchange outputs. Both
             // spin channels and the joint correlation remain represented.
@@ -1081,13 +1067,13 @@ XCOutput evaluate_xc(XCType type, double rho_a, double rho_b, double sigma_aa,
             vsig_x_bb = vsig_x_aa;
         } else {
             pbe_exchange_spin(rb_pbe, density.beta13, sb, ex_pbe_b, vrho_x_b,
-                              vsig_x_bb, mu, kappa, rpbe_form);
+                              vsig_x_bb, params);
         }
 
         double fc_pbe, vc_pbe_a, vc_pbe_b;
         double vsig_c_aa, vsig_c_ab, vsig_c_bb;
         pbe_correlation(density, sa, sab, sb, fc_pbe, vc_pbe_a, vc_pbe_b,
-                        vsig_c_aa, vsig_c_ab, vsig_c_bb, beta);
+                        vsig_c_aa, vsig_c_ab, vsig_c_bb, params.beta);
 
         out.energy_density = ex_pbe_a + ex_pbe_b + fc_pbe;
         out.vrho_alpha = static_cast<double>(vrho_x_a + vc_pbe_a);

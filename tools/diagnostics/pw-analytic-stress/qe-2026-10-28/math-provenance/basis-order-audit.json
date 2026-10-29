@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "source_sha256": "5e9d135c9c09e582b682679a1ad6d2dddcb2a0805f0f23b0c84c579d5a3f41d1",
+  "binary_sha256": "bd39975a96aef55510f4c7d4b48232bcb1dee78b8736fe56acf105b570fc5fbb",
+  "command_sha256": "afb3ddedea857411dbcf033dd612450d60a8f59a538c0ead06428e2f77e3369b",
+  "raw_output_sha256": "30100b2469994fb30ab0a1eff5f4e10d2d0798eb37ca6ec703f0a1be7d940d8c",
+  "samples": 72,
+  "ordered_Miller_and_FFT_equality_all": true,
+  "SCF_calls": 0,
+  "band_solves": 0,
+  "h": [
+    3e-05,
+    1e-05,
+    3e-06
+  ],
+  "lanes": "xx yy zz xy xz yz",
+  "multiples": [
+    -2,
+    -1,
+    1,
+    2
+  ]
+}

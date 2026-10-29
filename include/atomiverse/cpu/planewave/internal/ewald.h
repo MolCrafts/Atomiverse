@@ -5,6 +5,7 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/vec3.h"
 #include "atomiverse/cpu/frame/box.h"
+#include <array>
 #include <span>
 #include <vector>
 
@@ -25,6 +26,7 @@ class EwaldSummation {
     AccReal e_background_ = 0;
     AccReal alpha_ = AccReal(1);
     AccReal real_cutoff_ = 0, reciprocal_cutoff_ = 0;
+    std::array<AccReal, 6> virial_ha_{};
     std::vector<Vec3> positions_bohr_;
     std::vector<Vec3> forces_bohr_; ///< F = −∂E/∂R [Hartree/Bohr]
 
@@ -53,6 +55,12 @@ class EwaldSummation {
 
     /// @brief Ionic Ewald forces [Hartree/Bohr], one per input charge.
     const std::vector<Vec3>& forces_bohr() const { return forces_bohr_; }
+
+    /// Compressive-positive -dE/d epsilon at fixed fractional coordinates,
+    /// in Hartree; Voigt xx,yy,zz,xy,xz,yz. Includes the charged background.
+    /// Alpha is held fixed in the analytic sum; its cancellation error is
+    /// controlled by the same independent 1e-14-Ha precision domains.
+    const std::array<AccReal, 6>& virial_ha() const { return virial_ha_; }
 };
 
 } // namespace internal

@@ -31,6 +31,7 @@
 #include <cublas_v2.h>
 #include <cufft.h>
 #include <cusolverDn.h>
+#include <span>
 #include <vector>
 
 namespace ATV {
@@ -46,6 +47,19 @@ namespace cuda {
 namespace pw {
 namespace internal {
 
+// Internal final-band destination: caller-owned device cache and residual work.
+// No allocation or scientific array host transfer; host_norms is 2*bands scalars.
+struct FinalBandDestination {
+    int ng, bands;
+    cufftDoubleComplex *coefficients, *residual_work;
+    double* device_norms;
+    std::span<double> host_norms;
+    int expected_k = 0;
+};
+struct FinalBandStatus {
+    bool complete = false;
+    double max_residual_ha = 0, max_normalization_error = 0;
+};
 /// @brief GPU band solver for one plane-wave SCF run.
 ///
 /// The real-space V_eff(r) it reads and the density accumulator it writes are
@@ -164,6 +178,10 @@ class DeviceBandSolver {
     /// @param n_use   Number of bands to accumulate (`≤ n_bands`).
     void accumulate_density(AccReal weight, AccReal omega, const AccReal* occ,
                             int n_use);
+    // Final-state density: every nonzero finite occupation participates,
+    // including tails below the legacy SCF accumulation threshold.
+    void accumulate_final_density(AccReal weight, AccReal omega,
+                                  std::span<const AccReal> occupations);
 
     /// @brief Allocate the per-k Ritz cache (metallic multi-k density rebuild).
     ///
@@ -224,7 +242,14 @@ class DeviceBandSolver {
     void apply_h_host(const std::complex<AccReal>* psi,
                       std::complex<AccReal>* hpsi);
 
+    // Reapply the actual bound physical H, certify the existing 1e-6-Ha
+    // residual policy, then D2D-copy the completed block. No new solver flag.
+    FinalBandStatus solve_final_bands(cpu::pw::internal::PWWorkspace&,
+                                      FinalBandDestination, int max_iter = 20);
+
   private:
+    FinalBandStatus copy_final_bands(FinalBandDestination,
+                                     std::span<const AccReal> eigenvalues);
     /// H·ψ for one device vector (cuFFT + V_eff + KB projectors).
     void apply_h(const cufftDoubleComplex* psi, cufftDoubleComplex* hpsi);
     void ensure_subspace_capacity(int ng, int cap);
@@ -233,6 +258,10 @@ class DeviceBandSolver {
 
     int nx_, ny_, nz_, nr_;
     int n_bands_;
+    void accumulate_fractional_density_(AccReal weight, AccReal omega,
+                                        const AccReal* occupations, int count,
+                                        bool exact);
+
     int ng_ = 0;       ///< G-sphere size of the bound k-point.
     int n_proj_ = 0;   ///< KB projector columns (Σ_atoms Σ_proj (2l+1)).
     int n_sub0_ = 0;   ///< Initial subspace vectors of the bound k-point.

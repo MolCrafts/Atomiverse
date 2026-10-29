@@ -1,0 +1,17 @@
+{
+  "Ne": 12,
+  "setup_bands": 6,
+  "wave_G": 331,
+  "base": [
+    20,
+    20,
+    20
+  ],
+  "quad": [
+    60,
+    60,
+    60
+  ],
+  "query": "Actual host setup_pw_problem from exact Frame/PP/cutoff plus shared canonical xc_quadrature_dimension, same code used by DeviceDensity. NoSCF in query.",
+  "predicted54_matched": false
+}

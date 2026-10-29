@@ -1,16 +1,16 @@
 /// @file cuda/xc/xc_pbe.cuh
-/// @brief Real-space closed-shell PBE exchange-correlation on the plane-wave
-///        grid — device kernel mirroring the per-point XC evaluation of
-///        `cpu::pw::internal::XCBuilder::step(ws, XCType::PBE)`.
+/// @brief Real-space PBE-family XC mirroring the CPU point evaluator. Shared physical parameters select
+///        PBE, PBEsol, revPBE or RPBE without a separate grid pipeline.
 #pragma once
 
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include <cuda_runtime.h>
 
 namespace ATV {
 namespace cuda {
 namespace xc {
 
-/// @brief Evaluate the closed-shell PBE XC potential (local part), energy
+/// @brief Evaluate a closed-shell PBE-family XC potential (local part), energy
 ///        density, and GGA flux on the real grid.
 ///
 /// The device energy channel is epsilon per electron; the CPU point kernel
@@ -18,7 +18,9 @@ namespace xc {
 /// Per grid point this implements the same functional as `cpu::xc::evaluate_xc(XCType::PBE, ρ/2,
 /// ρ/2, σ/4, σ/4, σ/4)` with σ = |∇ρ|² — PBE exchange (κ = 0.804,
 /// μ = 0.21951…) over a PW92 LSDA correlation base plus the PBE H gradient
-/// correction — including the `ρ < 1e-12` cutoff that zeroes every output.
+/// correction. PBEsol changes mu/beta, revPBE changes kappa and RPBE uses
+/// exponential exchange; shared PbeParameters supply those choices.
+/// The `ρ < 1e-12` cutoff zeroes every output.
 /// Spin-unpolarized (ζ = 0 exactly, since ρ_α = ρ_β = ρ/2 bitwise): the spin
 /// interpolation f(ζ), its derivative, ζ⁴ and dφ/dρ_σ all vanish identically
 /// in IEEE arithmetic, so only the paramagnetic PW92 channel and the φ = 1
@@ -37,6 +39,8 @@ namespace xc {
 /// divergence of the flux (`v_xc = v_ρ − ∇·flux`) after its own FFT pass,
 /// exactly as `XCBuilder::step` does.
 ///
+/// @param type PBE, PBEsol, RevPBE or RPBE. Other functionals throw before
+///        touching device outputs or launching work, including empty grids.
 /// @param d_rho_r  Real-space total density ρ(r), nr reals [electrons/Bohr³].
 /// @param d_gx_r   In: ∂ρ/∂x [Bohr⁻⁴]; out: flux_x = vσ_eff·∂ρ/∂x [Hartree·Bohr⁻¹·Bohr⁻³].
 /// @param d_gy_r   In: ∂ρ/∂y; out: flux_y. Same units as @p d_gx_r.
@@ -45,21 +49,33 @@ namespace xc {
 /// @param d_exc_r  Output ε_xc(r) per electron, nr reals [Hartree].
 /// @param nr       Number of real-space grid points.
 /// @param stream   CUDA stream (default stream if null).
-void xc_pbe_grid(const double* d_rho_r, double* d_gx_r, double* d_gy_r,
-                 double* d_gz_r, double* d_vxc_r, double* d_exc_r, int nr,
-                 cudaStream_t stream = nullptr);
+void xc_pbe_grid(cpu::xc::XCType type, const double* d_rho_r, double* d_gx_r,
+                 double* d_gy_r, double* d_gz_r, double* d_vxc_r,
+                 double* d_exc_r, int nr, cudaStream_t stream = nullptr);
 
-/// @brief Collinear spin-GGA PBE on ρ_α(r), ρ_β(r) and spectral ∇ρ_σ.
+/// Density preparation is part of each electronic grid's functional contract.
+/// PW differentiates the positive part of each spin density; GPW evaluates its
+/// raw spin fields, including the empty-spin local derivative returned by its
+/// CPU point functional. Neither policy changes the shared PBE point formula.
+enum class SpinDensityPolicy { PositivePart, RawFunctional };
+
+/// @brief Collinear spin-GGA PBE family on ρ_α(r), ρ_β(r) and spectral ∇ρ_σ.
 ///
 /// Mirrors `cpu::xc::evaluate_xc(XCType::PBE, ρ_α, ρ_β, σ_αα, σ_αβ, σ_ββ)`
 /// plus the spin flux assembly of `XCBuilder::step_spin`:
 ///   flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β
 ///   flux_β = 2 vσ_ββ ∇ρ_β + vσ_αβ ∇ρ_α
 /// Gradient arrays are OVERWRITTEN with the fluxes. Local v_ρ only — the
-/// caller subtracts ∇·flux_σ after its own FFT pass. Floors negatives of
-/// each spin density to 0 (FFT ringing) and zeroes all outputs when
-/// ρ_α+ρ_β < 1e-12, matching the CPU grid loop.
+/// caller subtracts ∇·flux_σ after its own FFT pass. The default PositivePart
+/// policy floors each spin density to 0 (PW FFT ringing), masks the local
+/// derivative at nonpositive raw spins, and retains raw-gradient fluxes.
+/// RawFunctional is the GPW CPU point contract: raw spin densities and
+/// unmasked local derivatives, including the empty-spin correlation term.
+/// Both policies zero all outputs when their total density is below 1e-12.
+/// The raw signed-density extension and the regulated empty-spin derivative
+/// are CPU contracts, not a claim of verified variational endpoint limits.
 ///
+/// @param type PBE, PBEsol, RevPBE or RPBE, checked before device work.
 /// @param d_rho_a   Real-space α density [electrons/Bohr³].
 /// @param d_rho_b   Real-space β density [electrons/Bohr³].
 /// @param d_gax_r   In: ∂ρ_α/∂x; out: flux_α,x.
@@ -73,11 +89,13 @@ void xc_pbe_grid(const double* d_rho_r, double* d_gx_r, double* d_gy_r,
 /// @param d_exc_r   Output ε_xc(r) per electron [Hartree].
 /// @param nr        Number of real-space grid points.
 /// @param stream    CUDA stream (default stream if null).
-void xc_pbe_spin_grid(const double* d_rho_a, const double* d_rho_b,
-                      double* d_gax_r, double* d_gay_r, double* d_gaz_r,
-                      double* d_gbx_r, double* d_gby_r, double* d_gbz_r,
-                      double* d_vxc_a, double* d_vxc_b, double* d_exc_r, int nr,
-                      cudaStream_t stream = nullptr);
+/// @param policy    PW positive-part default or the GPW raw-functional contract.
+void xc_pbe_spin_grid(
+    cpu::xc::XCType type, const double* d_rho_a, const double* d_rho_b,
+    double* d_gax_r, double* d_gay_r, double* d_gaz_r, double* d_gbx_r,
+    double* d_gby_r, double* d_gbz_r, double* d_vxc_a, double* d_vxc_b,
+    double* d_exc_r, int nr, cudaStream_t stream = nullptr,
+    SpinDensityPolicy policy = SpinDensityPolicy::PositivePart);
 
 } // namespace xc
 } // namespace cuda

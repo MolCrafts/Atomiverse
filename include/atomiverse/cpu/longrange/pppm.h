@@ -24,9 +24,9 @@
 /// Brick layout and slab layout cut the mesh differently, so a **remap** (a
 /// plan-based point-to-point exchange between overlapping ranks, LAMMPS
 /// `remap_3d`) converts between them before and after the FFT.
-/// Forces are taken in the **AD** (analytic differentiation) scheme: each atom
-/// differentiates the interpolation weights it spread with, rather than reading
-/// a separately differentiated mesh.
+/// Forces are **ik** differentiation, the LAMMPS `pppm` default: the mesh
+/// potential's Cartesian gradient is i·k·G(k)·ρ̂(k), inverse-transformed, and
+/// gathered with the same B-spline θ that spread the charge.
 ///
 /// ## Architecture (LAMMPS-aligned)
 ///
@@ -36,9 +36,9 @@
 /// | 2 | Spread **owned atoms only** onto brick |
 /// | 3 | **mesh reverse fold**: ghost density to owners (Grid3d plan, p2p) |
 /// | 4 | **brick→FFT remap** (remap_3d plan, p2p) into FFTW-MPI dim-0 slabs |
-/// | 5 | Distributed r2c FFT → SPME H(m) → c2r |
-/// | 6 | **FFT→brick remap** + **mesh forward fill** of potential ghosts |
-/// | 7 | AD force interpolation from local brick |
+/// | 5 | Distributed r2c FFT → Hockney–Eastwood G(k) → three ik c2r transforms |
+/// | 6 | **FFT→brick remap** + **mesh forward fill** of each field component |
+/// | 7 | θ interpolation of the Cartesian electric field |
 ///
 /// ### Mesh arms
 ///
@@ -194,16 +194,19 @@ class KSpacePPPM : public cpu::KSpace {
     ///        from this mesh part; a larger alpha moves work onto the mesh.
     /// @param grid_spacing Target mesh spacing (Å), > 0; the mesh counts
     ///        `K0,K1,K2` are derived from it and the cell at grid setup.
-    /// @param order B-spline interpolation order (count), ≥ 3 — how many mesh
-    ///        points along each axis one charge is spread over (order 5 spreads
-    ///        it over 5³ points). It also fixes the ghost depth, `order - 1`.
+    /// @param order B-spline interpolation order (count), in [3, 12] — how
+    ///        many mesh points along each axis one charge is spread over
+    ///        (order 5 spreads it over 5³ points). It also fixes the ghost
+    ///        depth, `order - 1`. The ik denominator keeps 12 coefficient
+    ///        slots, which is why the order stops at 12.
     /// @param fft_ranks Requested FFT group size (rank count); 0 (the default)
     ///        derives it from the mesh with pppm_fft_ranks() at the first
     ///        reciprocal solve, and again whenever the mesh or the rank count
     ///        changes. Ignored on the replicated arm and when
     ///        `ATV_PPPM_BRICK=1` forces the world arm.
     /// @throws std::invalid_argument at construction on a non-positive alpha
-    ///         or grid_spacing, an order < 3, or a negative fft_ranks; and at
+    ///         or grid_spacing, an order outside [3, 12], or a negative
+    ///         fft_ranks; and at
     ///         the first multi-rank reciprocal solve when a positive fft_ranks
     ///         exceeds `min(nprocs, K0)` — an FFTW-MPI slab member needs at
     ///         least one mesh plane, so no such group can exist.
@@ -331,7 +334,7 @@ class KSpacePPPM : public cpu::KSpace {
     // Serial full-mesh buffers (1-rank path / green tables).
     std::vector<double> dens_full_; ///< full K0·K1·K2 real buffer (serial FFT)
     std::vector<std::complex<double>> work_;
-    std::vector<double> green_; ///< H(m) half-spectrum, full K0×K1×n2c
+    std::vector<double> green_; ///< ik G(k) half-spectrum, full K0×K1×n2c
     std::vector<double> bsp_mod_[3];
 
     void* plan_fwd_ = nullptr;

@@ -3,23 +3,26 @@
 ///
 /// The CUDA twin of `cpu::pw::PW`: parameters are public members, `Frame`
 /// is the only I/O currency, and the self-consistency loop is owned by
-/// this method object (no public `*Config` bag, no `make_*` factory, no
-/// Driver, no phase enum, no Plan registration).
+/// this method object as `cuda::Driver<pw::Phase>`. Standalone and nested
+/// calls share the same staged SCF and its accepted device density.
 ///
 /// The device path is a strict subset of the CPU path. Members the GPU
 /// cannot honour make `run()` throw with a how-to — the class never
 /// silently degrades to a different Hamiltonian. Supported today:
 /// restricted (nspin = 1) with fixed closed-shell occupations **or**
 /// metallic smearing (Fermi–Dirac / Gaussian / Methfessel–Paxton) and
-/// `XCType::LSDA` / `XCType::PBE`; collinear UKS (`spin_polarized`,
-/// integer multiplicity) with **`XCType::LSDA` or `XCType::PBE`**,
+/// `XCType::LSDA` or the PBE family (`PBE`, `PBEsol`, `RevPBE`, `RPBE`);
+/// collinear UKS (`spin_polarized`, integer multiplicity) with the same XC set,
 /// fixed occupation **or** metallic smear with shared μ. Methfessel–Paxton
 /// corrections admit signed quasi-occupations outside the probability range.
 /// Restricted smear forces and restricted smear cell stress are on
-/// device; collinear LSDA/PBE spin forces (fixed-occ **and** smear)
-/// and LSDA/PBE spin cell stress (fixed-occ or fractional occupations) are
-/// supported. Cell stress is a frozen-density NSCF strain finite difference,
-/// with both strained spin spectra refilled at one shared chemical potential.
+/// device; collinear LSDA/PBE-family spin forces (fixed-occ **and** smear)
+/// and spin cell stress (fixed-occ or fractional occupations) are
+/// supported. Gamma RKS fixed/FD LSDA/PBE-family uses one certified final-band ensemble
+/// for closed-form force/stress assembly and one nested device publication.
+/// Cold radial/Ewald setup remains host work. Other cell-stress paths use
+/// frozen-density NSCF strain differences, with both strained spin spectra
+/// refilled at one shared chemical potential.
 ///
 /// k-points are NOT distributed across MPI ranks on this backend: every
 /// rank computes every k-point of the Monkhorst-Pack set, so `n_kpts_local`
@@ -37,11 +40,18 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cuda/driver/driver.cuh"
+#include "atomiverse/cuda/driver/driver_node.h"
 #include <array>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+
+namespace ATV::cpu::pw::internal {
+struct PWProblem;
+}
 
 namespace ATV {
 namespace cuda {
@@ -56,7 +66,9 @@ using PWResult = ::ATV::cpu::pw::PWResult;
 /// `last_result()` is valid after each `run()`. Every geometry-dependent
 /// structure (host problem, device buffers, cuFFT plans) is rebuilt inside
 /// each `run()`, so the object is safe to reuse across AIMD / optimize steps.
-class PW {
+struct PwLoopState;
+
+class PW : public cuda::Driver<ATV::pw::Phase>, public cuda::DriverNode {
   public:
     // ── Identity (constructor arguments, fixed after construction) ────
     /// @brief Shared immutable builtin NC potential; custom CPU providers are
@@ -67,9 +79,9 @@ class PW {
     const double ecut_ry;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
     const int k_mesh;
-    /// @brief Exchange–correlation functional. `XCType::LSDA` and
-    ///        `XCType::PBE` have device paths; `run()` throws for anything
-    ///        else (including PBEsol/revPBE/RPBE).
+    /// @brief Exchange–correlation functional. Device paths accept LSDA and
+    ///        the pure PBE family (PBE, PBEsol, RevPBE, RPBE); `run()` throws
+    ///        for every other functional.
     const cpu::xc::XCType xc;
 
     // ── Knobs ──────────────────────────────────────────────────────────
@@ -85,8 +97,8 @@ class PW {
     double mix_beta = 0.7;
     /// @brief Pulay mixing history window (dimensionless).
     int pulay_depth = 5;
-    /// @brief Collinear spin-polarized KS (fixed occupations). Device path
-    ///        supports `XCType::LSDA` and true spin-GGA `XCType::PBE`.
+    /// @brief Collinear spin-polarized KS with fixed or smeared occupations.
+    ///        Device XC supports LSDA and the pure PBE-family spin GGAs.
     bool spin_polarized = false;
     /// @brief Spin multiplicity 2S+1. With `spin_polarized`, sets
     ///        N↑ − N↓ = multiplicity − 1. Without spin, must stay 1.
@@ -109,18 +121,10 @@ class PW {
     /// @param k_mesh Monkhorst-Pack mesh per dimension.
     /// @param xc Exchange-correlation functional with a device kernel.
     PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
-       double ecut_ry, int k_mesh, cpu::xc::XCType xc = cpu::xc::XCType::PBE)
-        : potential(std::move(pp)), ecut_ry(ecut_ry), k_mesh(k_mesh), xc(xc) {
-        if (!potential
-            || (!dynamic_cast<const cpu::pw::GthPseudopotential*>(
-                    potential.get())
-                && !dynamic_cast<const cpu::pw::UpfPseudopotential*>(
-                    potential.get())))
-            throw std::invalid_argument("cuda::pw::PW: only builtin GTH/UPF NC "
-                                        "providers are supported");
-    }
-    ~PW() = default;
-    PW(PW&&) noexcept = default;
+       double ecut_ry, int k_mesh, cpu::xc::XCType xc = cpu::xc::XCType::PBE);
+    ~PW() override;
+    /// @brief Move an unattached method; a live Runtime binding rejects moves.
+    PW(PW&&);
     PW& operator=(PW&&) = delete;
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
@@ -138,9 +142,9 @@ class PW {
     ///
     /// @param frame Atom positions [Å], types (Z), and simulation cell.
     /// @return Owned `PWResult` (valid until the next `run()`).
-    /// @throws std::invalid_argument for an `xc` other than `XCType::LSDA` /
-    ///         `XCType::PBE`, collinear spin with non-LSDA/PBE XC, multiplicity
-    ///         without spin, `degauss ≤ 0` with smear, non-positive
+    /// @throws std::invalid_argument for an `xc` outside LSDA and the pure
+    ///         PBE family (PBE, PBEsol, RevPBE, RPBE), multiplicity without
+    ///         spin, `degauss ≤ 0` with smear, non-positive
     ///         `tol`/`mix_beta`, `pulay_depth < 1`, `max_iter < 1`,
     ///         incompatible n_elec/multiplicity parity, or (restricted fixed
     ///         occupation only) an odd valence-electron count. Every message
@@ -157,17 +161,22 @@ class PW {
     /// @param frame Geometry in, forces and energy out.
     /// @return The complete SCF result that produced the forces, including
     ///         convergence, iterations, occupations and k-point counts.
-    /// @throws std::invalid_argument for the same members `pw_forces_analytic`
-    ///         rejects.
+    /// @throws std::invalid_argument for unsupported members, as in `run`.
     PWResult& forces(cpu::Frame& frame);
 
-    /// @brief Device SCF plus frozen-density NSCF strain-FD stress (h=2e-3).
+    /// @brief One reference SCF plus six-component cell stress.
+    ///        Gamma RKS fixed/FD and fixed nonempty UKS LSDA/PBE-family use
+    ///        certified unstrained final bands and closed-form assembly.
+    ///        UKS checks the orbital XC domain; finite floor/cap domains use
+    ///        the existing numerical epilogue after the two spin band solves.
+    ///        Other domains use frozen-density NSCF strain differences
+    ///        (h=2e-3). Neither path starts another reference SCF.
     ///        Returns σ [eV/Å³] and writes
     ///        `kStress` = σΩ [eV] and `kEnergy` [eV].
     /// @param frame Geometry in, stress and energy meta out.
     /// @return Intensive stress [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
     ///         `last_result()` describes the reference SCF of this stress call.
-    /// @throws std::invalid_argument for the same members `pw_stress` rejects.
+    /// @throws std::invalid_argument for unsupported members, as in `run`.
     std::array<double, 6> stress(cpu::Frame& frame);
 
     /// @brief Most recent SCF result.
@@ -178,68 +187,45 @@ class PW {
     ///         a previous call's convergence or occupation metadata.
     const PWResult& last_result() const { return result_; }
 
-  private:
-    friend std::vector<std::array<double, 3>>
-    pw_forces_analytic(const cpu::Frame& frame, const PW& method,
-                       double* energy_ha_out);
-    friend std::array<double, 6>
-    pw_stress(const cpu::Frame& frame, const PW& method, double* energy_ry_out);
-    /// @brief Reject every member with no device path (throws, never warns).
-    void validate_members() const;
+    /// @brief Electronic energy/force/virial source for an outer CUDA Driver.
+    bool provides_energy() const { return true; }
+    bool provides_force() const { return true; }
+    bool provides_system_stress() const { return true; }
+    int default_budget() const override { return max_iter; }
 
-    // Shared execution for the Frame member and the compatibility free function.
-    // The optional result is the very SCF used for these derivatives.
-    std::vector<std::array<double, 3>> forces_impl(const cpu::Frame& frame,
-                                                   double* energy_ha_out,
-                                                   PWResult* result_out) const;
-    std::array<double, 6> stress_impl(const cpu::Frame& frame,
-                                      double* energy_ry_out,
-                                      PWResult* result_out) const;
+    /// @brief Mount stages on the parent's existing Backend and device Frame.
+    void build_on(cuda::Context& ctx, cuda::Frame& frame) override;
+    /// @brief Evaluate on the parent's execution, accumulating requested outputs.
+    int run_nested_erased(cuda::Context& ctx, cuda::Frame& frame,
+                          int budget) override;
+    /// @brief Detach stages without destroying the parent execution owner.
+    void destroy_on(cuda::Context& ctx, cuda::Frame& frame) override;
+
+  protected:
+    void validate_components() const override {}
+
+  private:
+    void validate_members() const;
+    void release_backend_();
+    void drive_stages_(cuda::Context& ctx, cuda::Frame& frame, int budget);
+    std::array<int, 2> prepare_(const cpu::Frame& geometry,
+                                cpu::pw::internal::PWProblem& problem) const;
+    enum class DerivativePublication { ordinary, device_committed };
+    DerivativePublication
+    evaluate_(const cpu::Frame& geometry, cpu::pw::internal::PWProblem& problem,
+              const std::array<int, 2>& spin_occupations, cuda::Context& ctx,
+              cuda::Frame& frame, int budget,
+              std::vector<std::array<double, 3>>* forces_out,
+              std::array<double, 6>* stress_out,
+              cuda::Frame* force_target = nullptr);
+    PWResult& standalone_(const cpu::Frame& geometry,
+                          std::vector<std::array<double, 3>>* forces_out,
+                          std::array<double, 6>* stress_out);
 
     bool built_ = false;
     PWResult result_;
+    std::unique_ptr<PwLoopState> loop_;
 };
-
-/// @brief Analytic ionic forces [eV/Å] after a full device SCF.
-///
-/// CUDA twin of `cpu::pw::pw_forces_analytic`: local Hellmann–Feynman +
-/// Ewald + Kleinman–Bylander nonlocal. Local and nonlocal force kernels
-/// run on the device; Ewald is the shared host classical sum. Supports
-/// restricted closed shell (LSDA/PBE), restricted metallic smear
-/// (FD/Gaussian/MP fractional occupations), collinear fixed-occupation
-/// UKS (LSDA/PBE), and collinear spin×smear with a shared μ (signed MP
-/// quasi-occupations are preserved).
-/// Rejects unsupported XC / members with a how-to.
-///
-/// @param frame  Geometry [Å], types (Z), cell; not mutated.
-/// @param method Plane-wave method members (upf/gth, ecut, k_mesh, tol, …).
-/// @return Forces [eV/Å], one xyz triple per atom.
-/// @throws std::invalid_argument for empty frame or unsupported members.
-std::vector<std::array<double, 3>>
-pw_forces_analytic(const cpu::Frame& frame, const PW& method,
-                   double* energy_ha_out = nullptr);
-
-/// @brief Frozen-density NSCF strain-FD stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
-///
-/// CUDA twin of `cpu::pw::pw_stress`: one device SCF + Hellmann–Feynman
-/// strain-FD of the non-self-consistent total / free energy under remapped
-/// density at strain step 2e-3; this is not a closed-form tensor.
-/// Mechanical / CP2K sign:
-/// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\). Restricted metallic
-/// smear uses the Mermin free energy \(F=E_{\mathrm{KS}}-TS\). Supports
-/// restricted fixed closed shell (LSDA/PBE), restricted metallic smear
-/// (FD/Gaussian/MP), and collinear UKS under **LSDA/PBE**, with fixed or
-/// fractional occupations (remaps both spin densities). Rejects the same
-/// unsupported members as `PW::run`.
-///
-/// @param frame         Geometry [Å], types (Z), cell; not mutated.
-/// @param method        Plane-wave method members.
-/// @param energy_ry_out Optional: reference SCF free/total energy [Ry].
-/// @return Intensive stress [eV/Å³] Voigt.
-/// @throws std::invalid_argument for empty frame, bad cell, or unsupported
-///         members.
-std::array<double, 6> pw_stress(const cpu::Frame& frame, const PW& method,
-                                double* energy_ry_out = nullptr);
 
 } // namespace pw
 } // namespace cuda

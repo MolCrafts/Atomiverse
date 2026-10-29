@@ -2,8 +2,8 @@
 /// @brief Composed device KS stage: collocate → Poisson → XC → V_eff → integrate.
 ///
 /// All scientific loops are device kernels. Host only owns the plan/workspace
-/// object and D2H of energy scalars at the end of `run`. Closed-shell PBE-GGA
-/// reuses `cuda::xc::xc_pbe_grid` and `SpectralFftDevice` (CPU
+/// object and D2H of energy scalars at the end of `run`. Restricted/collinear GGA
+/// reuses shared `cuda::xc` point laws and `SpectralFftDevice` (CPU
 /// `gradient` / `divergence` conventions). Multigrid path reuses
 /// `MultigridTransferDevice` (CPU `prolong_fft` / `restrict_fft`).
 
@@ -14,6 +14,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <string>
 
@@ -30,6 +31,22 @@ void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
         throw std::runtime_error(std::string("cuda::gpw KsChainDevice: ") + what
                                  + " failed (" + cudaGetErrorString(e) + ")");
+}
+
+// Publish a complete buffer set only after every allocation succeeds. Retrying
+// a first UKS/GGA launch after allocation failure must not see partial state.
+template <std::size_t N>
+std::array<double*, N> allocate_fields(std::size_t bytes) {
+    std::array<double*, N> fields{};
+    try {
+        for (auto& field : fields)
+            check_cuda(cudaMalloc(&field, bytes), "allocate spin fields");
+    } catch (...) {
+        for (auto* field : fields)
+            cudaFree(field);
+        throw;
+    }
+    return fields;
 }
 
 /// @brief n[i] = rho[i] − n_ion[i]  (n_ion null ⇒ n = rho).
@@ -176,16 +193,29 @@ KsChainDevice::~KsChainDevice() {
     cudaFree(d_rho_b_);
     cudaFree(d_vxc_b_);
     cudaFree(d_veff_b_);
+    cudaFree(d_gbx_);
+    cudaFree(d_gby_);
+    cudaFree(d_gbz_);
 }
 
 void KsChainDevice::ensure_uks_buffers_() {
-    if (d_rho_a_ != nullptr)
+    if (d_rho_a_)
         return;
-    const size_t bytes = static_cast<size_t>(ntot_) * sizeof(double);
-    check_cuda(cudaMalloc(&d_rho_a_, bytes), "malloc rho_a");
-    check_cuda(cudaMalloc(&d_rho_b_, bytes), "malloc rho_b");
-    check_cuda(cudaMalloc(&d_vxc_b_, bytes), "malloc vxc_b");
-    check_cuda(cudaMalloc(&d_veff_b_, bytes), "malloc veff_b");
+    const auto fields =
+        allocate_fields<4>(static_cast<std::size_t>(ntot_) * sizeof(double));
+    d_rho_a_ = fields[0];
+    d_rho_b_ = fields[1];
+    d_vxc_b_ = fields[2];
+    d_veff_b_ = fields[3];
+}
+void KsChainDevice::ensure_uks_gga_buffers_() {
+    if (d_gbx_)
+        return;
+    const auto fields =
+        allocate_fields<3>(static_cast<std::size_t>(ntot_) * sizeof(double));
+    d_gbx_ = fields[0];
+    d_gby_ = fields[1];
+    d_gbz_ = fields[2];
 }
 
 KsChainEnergies
@@ -214,10 +244,10 @@ KsChainDevice::run_from_rho(const double* d_rho_in, const double* d_n_ion,
         ::ATV::cuda::xc::xc_lda_grid(d_rho_, d_vxc_, d_exc_, nr, stream_);
         ::ATV::cuda::xc::xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_,
                                    stream_);
-    } else if (xc == cpu::xc::XCType::PBE) {
+    } else if (cpu::xc::is_pbe_family(xc)) {
 #if defined(ATV_HAS_PW)
         spectral_.gradient(d_rho_, d_gx_, d_gy_, d_gz_);
-        ::ATV::cuda::xc::xc_pbe_grid(d_rho_, d_gx_, d_gy_, d_gz_, d_vxc_,
+        ::ATV::cuda::xc::xc_pbe_grid(xc, d_rho_, d_gx_, d_gy_, d_gz_, d_vxc_,
                                      d_exc_, nr, stream_);
         ::ATV::cuda::xc::xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_,
                                    stream_);
@@ -227,7 +257,7 @@ KsChainDevice::run_from_rho(const double* d_rho_in, const double* d_n_ion,
         check_cuda(cudaGetLastError(), "vxc_sub_div_kernel");
 #else
         throw std::runtime_error("cuda::gpw KsChainDevice::run_from_rho: "
-                                 "cpu::xc::XCType::PBE requires "
+                                 "PBE-family XC requires "
                                  "ATV_BUILD_PW (shared cuda::xc::xc_pbe_grid)");
 #endif
     } else {
@@ -309,12 +339,17 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     if (nprod_a == 0 && nprod_b == 0)
         throw std::runtime_error(
             "cuda::gpw KsChainDevice::run_uks: need ≥1 product in α or β");
-    if (xc != cpu::xc::XCType::PADE)
+    if (xc != cpu::xc::XCType::PADE && !cpu::xc::is_pbe_family(xc))
         throw std::invalid_argument(
-            "cuda::gpw KsChainDevice::run_uks: first UKS cut is Padé LSD only "
-            "(cpu::xc::XCType::PADE). PBE-UKS is a deeper product slug.");
-
+            "cuda::gpw KsChainDevice::run_uks: unsupported cpu::xc::XCType");
+#if !defined(ATV_HAS_PW)
+    if (cpu::xc::is_pbe_family(xc))
+        throw std::runtime_error("cuda::gpw KsChainDevice::run_uks: PBE-family "
+                                 "XC requires ATV_BUILD_PW");
+#endif
     ensure_uks_buffers_();
+    if (cpu::xc::is_pbe_family(xc))
+        ensure_uks_gga_buffers_();
     const size_t bytes_rho = static_cast<size_t>(ntot_) * sizeof(double);
     const int grid_dim =
         static_cast<int>((ntot_ + kBlock - 1) / static_cast<long>(kBlock));
@@ -337,9 +372,31 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     // 3. Poisson(n) → V_es
     poisson_.solve(d_n_tot_, d_v_es_);
 
-    // 4. Padé LSD → V_xc^α/β, E_xc
-    ::ATV::cuda::xc::xc_lda_grid_lsd(d_rho_a_, d_rho_b_, d_vxc_, d_vxc_b_,
-                                     d_exc_, nr, stream_);
+    // 4. Spin XC -> both complete functional potentials before integration.
+    if (xc == cpu::xc::XCType::PADE) {
+        ::ATV::cuda::xc::xc_lda_grid_lsd(d_rho_a_, d_rho_b_, d_vxc_, d_vxc_b_,
+                                         d_exc_, nr, stream_);
+    } else {
+#if defined(ATV_HAS_PW)
+        spectral_.gradient(d_rho_a_, d_gx_, d_gy_, d_gz_);
+        spectral_.gradient(d_rho_b_, d_gbx_, d_gby_, d_gbz_);
+        ::ATV::cuda::xc::xc_pbe_spin_grid(
+            xc, d_rho_a_, d_rho_b_, d_gx_, d_gy_, d_gz_, d_gbx_, d_gby_, d_gbz_,
+            d_vxc_, d_vxc_b_, d_exc_, nr, stream_,
+            ::ATV::cuda::xc::SpinDensityPolicy::RawFunctional);
+        check_cuda(cudaGetLastError(), "spin GGA point functional");
+        spectral_.divergence(d_gx_, d_gy_, d_gz_, d_div_);
+        vxc_sub_div_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_vxc_, d_div_,
+                                                             ntot_);
+        check_cuda(cudaGetLastError(), "alpha spin GGA divergence subtraction");
+        spectral_.divergence(d_gbx_, d_gby_, d_gbz_, d_div_);
+        vxc_sub_div_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_vxc_b_, d_div_,
+                                                             ntot_);
+        check_cuda(cudaGetLastError(), "beta spin GGA divergence subtraction");
+#endif
+    }
+    // RawFunctional matches GPW's raw-density energy convention. Keep the
+    // unmodified densities; do not use PW's positive-part energy preparation.
     ::ATV::cuda::xc::xc_energy_lsd(d_rho_a_, d_rho_b_, d_exc_, nr, weight_,
                                    d_e_xc_, stream_);
 

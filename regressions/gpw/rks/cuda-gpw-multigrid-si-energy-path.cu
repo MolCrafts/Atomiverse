@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "../frame_fixture.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
@@ -23,8 +24,8 @@ namespace atv_reg_gpw_cuda_gpw_multigrid_si_energy_path {
 
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GthPotential;
-using ATV::cpu::gpw::internal::GpwAtom;
 using ATV::cpu::xc::XCType;
+namespace fixture = ATV::regression::gpw_fixture;
 
 namespace {
 
@@ -41,36 +42,31 @@ void die(const char* msg) {
 }
 
 // Diamond Si body-centred-tetragonal 4-atom cell (a_t = a/√2, c = a).
-std::vector<GpwAtom> si_bct(double a_bohr) {
-    const double at = a_bohr / std::sqrt(2.0);
+std::vector<ATV::cpu::gpw::Kind> kinds() {
     const GaussianBasis bSi(molrs::Element::Si, "DZVP-MOLOPT-GTH");
     const GthPotential pSi(molrs::Element::Si, "GTH-PBE-q4");
+    return {{molrs::Element::Si, bSi, pSi}};
+}
+
+ATV::cpu::Frame si_bct(double a_bohr) {
+    const double at = a_bohr / std::sqrt(2.0);
     const double frac[4][3] = {
         {0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}, {0.5, 0.0, 0.25}, {0.0, 0.5, 0.75}};
-    std::vector<GpwAtom> atoms;
+    double positions[4][3];
     for (int i = 0; i < 4; ++i) {
         const double pos[3] = {frac[i][0] * at, frac[i][1] * at,
                                frac[i][2] * a_bohr};
-        atoms.emplace_back(pos, bSi, pSi, 14);
+        for (int d = 0; d < 3; ++d)
+            positions[i][d] = pos[d];
     }
-    return atoms;
+    return fixture::frame_bohr(
+        {positions[0], positions[1], positions[2], positions[3]},
+        {14, 14, 14, 14}, {at, at, a_bohr});
 }
 
-// Orthorhombic cell [Bohr]. The CPU oracle is driven at the atom level
-// through the engine-private door; the CUDA product keeps its `cell` member.
-void set_cell_bohr(ATV::cpu::gpw::GpwDft& m, double a, double b, double c) {
-    ATV::cpu::gpw::internal::GpwDftAccess::set_cell(m, {a, b, c});
-}
-
-void set_cell_bohr(ATV::cuda::gpw::GpwDft& m, double a, double b, double c) {
-    m.cell[0] = a;
-    m.cell[1] = b;
-    m.cell[2] = c;
-}
-
+// Geometry and cell belong to the shared public Frame fixture.
 template <typename Method>
-void set_si_mg(Method& m, double a_bohr) {
-    set_cell_bohr(m, a_bohr / std::sqrt(2.0), a_bohr / std::sqrt(2.0), a_bohr);
+void set_si_mg(Method& m) {
     m.ngrids = 4;
     m.rel_cutoff = 20.0; // < cutoff → true multi-level (make_multigrid gate)
     m.n_occ = 8;         // 4 atoms × 4 valence e⁻
@@ -108,14 +104,15 @@ int run(int argc, char** argv) {
         die("unknown --device (use cpu|cuda|both)");
 
     const double a = 5.43 * kA2B; // Si lattice constant 5.43 Å → Bohr
-    auto atoms = si_bct(a);
+    const auto reference_frame = si_bct(a);
     double e_cpu = 0.0, e_cuda = 0.0;
 
     if (run_cpu) {
-        ATV::cpu::gpw::GpwDft m({}, 40.0, XCType::PADE);
-        set_si_mg(m, a);
-        ATV::cpu::gpw::internal::GpwDftAccess::build(m, atoms);
-        const auto& r = ATV::cpu::gpw::internal::GpwDftAccess::run(m, atoms);
+        auto frame = reference_frame;
+        ATV::cpu::gpw::GpwDft m(kinds(), 40.0, XCType::PADE);
+        set_si_mg(m);
+        m.build(frame);
+        const auto& r = m.run(frame);
         if (!r.converged) {
             std::fprintf(
                 stderr,
@@ -130,10 +127,11 @@ int run(int argc, char** argv) {
     }
 
     if (run_cuda) {
-        ATV::cuda::gpw::GpwDft m({}, 40.0, XCType::PADE);
-        set_si_mg(m, a);
-        m.build(atoms);
-        const auto& r = m.run(atoms);
+        auto frame = reference_frame;
+        ATV::cuda::gpw::GpwDft m(kinds(), 40.0, XCType::PADE);
+        set_si_mg(m);
+        m.build(frame);
+        const auto& r = m.run(frame);
         if (!r.converged) {
             std::fprintf(
                 stderr,

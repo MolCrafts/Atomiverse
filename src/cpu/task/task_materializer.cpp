@@ -326,7 +326,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                         .add(std::move(component), entry.binding->order);
                 };
                 if constexpr (std::is_same_v<P, PairLJCutParams>)
-                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+                             .set_special_bonds(p.s12, p.s13, p.s14));
                 else if constexpr (std::is_same_v<P, NeighborListParams>)
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, BondHarmonicParams>)
@@ -420,7 +421,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             // Categorical path — no public Driver::add
             if constexpr (std::is_same_v<P, PairLJCutParams>)
                 driver.set_evaluator(
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+                        .set_special_bonds(p.s12, p.s13, p.s14));
             else if constexpr (std::is_same_v<P, NeighborListParams>)
                 driver.set_neighbor(cpu::md::NeighborList<>{p.cutoff, p.skin});
             else if constexpr (std::is_same_v<P, BondHarmonicParams>)
@@ -532,7 +534,8 @@ void register_minimize_entry(minimizer::Minimize& driver,
                         .add(std::move(component), entry.binding->order);
                 };
                 if constexpr (std::is_same_v<P, PairLJCutParams>)
-                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+                             .set_special_bonds(p.s12, p.s13, p.s14));
                 else if constexpr (std::is_same_v<P, NeighborListParams>)
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, LBFGSParams>)
@@ -556,7 +559,8 @@ void register_minimize_entry(minimizer::Minimize& driver,
             }
             if constexpr (std::is_same_v<P, PairLJCutParams>)
                 driver.set_evaluator(
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+                        .set_special_bonds(p.s12, p.s13, p.s14));
             else if constexpr (std::is_same_v<P, NeighborListParams>)
                 driver.set_neighbor(cpu::md::NeighborList<>{p.cutoff, p.skin});
             else if constexpr (std::is_same_v<P, LBFGSParams>)

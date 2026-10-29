@@ -14,6 +14,11 @@ namespace cpu {
 namespace pw {
 namespace internal {
 
+namespace {
+constexpr int virial_a[6] = {0, 1, 2, 0, 0, 1};
+constexpr int virial_b[6] = {0, 1, 2, 1, 2, 2};
+} // namespace
+
 EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
                                const std::vector<AccReal>& charges,
                                const cpu::Box& cell) {
@@ -114,6 +119,8 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
     reciprocal_cutoff_ = AccReal(2) * alpha * s;
     e_background_ = -AccReal(units::pi) * q_total * q_total
                     / (AccReal(2) * alpha * alpha * vol);
+    for (int axis = 0; axis < 3; ++axis)
+        virial_ha_[axis] = e_background_;
     if (q_abs == 0)
         return;
 
@@ -177,6 +184,12 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
                             // force magnitude factor: −fac·zi·zj·dE_dr / r on r_vec
                             AccReal pref =
                                 -fac * zi * zj * dE_dr * inv_r; // multiplies dr
+                            // Affine motion strains both lattice images and
+                            // ionic positions. Self images contribute virial
+                            // even though their total atomic force is zero.
+                            for (int lane = 0; lane < 6; ++lane)
+                                virial_ha_[lane] += pref * dr[virial_a[lane]]
+                                                    * dr[virial_b[lane]];
                             Vec3 f = {pref * dr[0], pref * dr[1], pref * dr[2]};
                             forces_bohr_[static_cast<std::size_t>(i)] =
                                 forces_bohr_[static_cast<std::size_t>(i)] + f;
@@ -234,6 +247,17 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
                 AccReal sgn = std::norm(sg);
                 AccReal gauss = std::exp(-g2 / alpha_sq_4);
                 e_recip_ += sgn * gauss / g2;
+                // The structure factor is invariant at fixed fractional
+                // coordinates. Differentiate 1/Omega, 1/G^2 and the Gaussian.
+                const AccReal eg = two_pi_over_vol * sgn * gauss / g2;
+                const AccReal metric =
+                    AccReal(2) / g2 + AccReal(2) / alpha_sq_4;
+                for (int lane = 0; lane < 6; ++lane) {
+                    const int a = virial_a[lane], b = virial_b[lane];
+                    virial_ha_[lane] += eg
+                                        * ((a == b ? AccReal(1) : AccReal(0))
+                                           - metric * g[a] * g[b]);
+                }
 
                 // F_i,α = (4π/Ω) Z_i Σ_G G_α (exp/G²) (Sr sin + Si cos)
                 // from E = (2π/Ω) Σ exp/G² |S|²  (see header notes)

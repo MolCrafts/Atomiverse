@@ -247,7 +247,8 @@ struct GpwResult {
     /// @name Fixed-density KS evaluation payload (Car–Parrinello / linearized-XL path)
     /// Populated when `GpwDft::run` is called with `max_iter == 0` and a
     /// density guess — one collocate→Poisson→XC→integrate, no SCF. Empty
-    /// after a normal multi-iteration SCF. RKS: `H_ks` only. UKS: `H_ks` is
+    /// after a normal multi-iteration SCF, except Γ overlap `S` below.
+    /// RKS: `H_ks` only. UKS: `H_ks` is
     /// \(H_\alpha\), `H_ks_beta` is \(H_\beta\). Multi-k RKS fixed-density
     /// fills `H_ks_k` / `S_k` (size == `n_kpts`) instead of the Γ fields;
     /// multi-k UKS additionally fills `H_ks_k_beta`.
@@ -255,8 +256,10 @@ struct GpwResult {
     linalg::RealMatrix
         H_ks; ///< KS matrix H[P] / \(H_\alpha\) [Hartree] (nb × nb).
     linalg::RealMatrix
-        H_ks_beta;        ///< UKS \(H_\beta\) [Hartree] (empty for RKS).
-    linalg::RealMatrix S; ///< Overlap matrix at this geometry (nb × nb).
+        H_ks_beta; ///< UKS \(H_\beta\) [Hartree] (empty for RKS).
+    /// @brief Same-geometry Γ overlap (nb × nb), exported with C/P after
+    /// normal or partial RKS/UKS SCF and for fixed-density evaluation.
+    linalg::RealMatrix S;
     /// @brief Multi-k fixed-density KS matrices \(H_k\) [Hartree] (empty for Γ
     ///        / multi-iteration SCF). One Hermitian nb×nb per sampled k.
     ///        RKS: total. Multi-k UKS fixed-density: the α channel
@@ -293,8 +296,9 @@ struct GpwResult {
 /// structures per call (grids, lattice images, S/T/Vpp — same policy as
 /// `PW`). All **DIIS** / linear-mix self-consistency paths (Γ RKS, Γ UKS,
 /// multi-k RKS, multi-k UKS) are owned as Driver stages (`ks_build → mix →
-/// diagonalize → density → check`) with path-local stage Ops. **OT** free
-/// loops remain residual (different control flow). Move-only.
+/// diagonalize → density → check`) with path-local stage Ops. OT uses the
+/// same loop: KS/gradient measurement followed by the orbital update, with
+/// bounded line-search kernels inside that update. Move-only.
 ///
 /// **CUDA product freeze:** a full CUDA GPW method must present this same
 /// public shape (members + `build`/`run`/`last_result` + forces/stress family);
@@ -565,6 +569,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @brief Force source for an outer loop's validation.
     /// @return true.
     bool provides_force() const override { return true; }
+    int default_budget() const override { return max_iter; }
 
     /// @brief Nested mount (Born–Oppenheimer): remember the parent Runtime
     ///        and validate the configuration against its Frame.
@@ -579,7 +584,9 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     ///        stay on `GPWEvaluator`.
     /// @param ctx Parent Context (requests read from `ctx.exec`).
     /// @param frame Parent Frame.
-    /// @param budget Ignored; the SCF runs to convergence or `max_iter`.
+    /// @param budget Hard SCF cap (including OT polish), at most `max_iter`.
+    ///        Zero is rejected unless `max_iter==0` selects the existing
+    ///        warm fixed-density mode.
     /// @return SCF iterations.
     int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
                           int budget) override;
@@ -759,7 +766,8 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @param diag `gpw::Phase::diagonalize` body (skipped when skip_).
     /// @param dens `gpw::Phase::density` body (skipped when skip_).
     void ensure_path_stages_(KsBuildStage::Op ks, MixStage::Op mix,
-                             DiagonalizeStage::Op diag, DensityStage::Op dens);
+                             DiagonalizeStage::Op diag, DensityStage::Op dens,
+                             bool respect_nostop = true);
 
     /// @brief Path-local Op factory: receives DIIS gate refs, returns stage Ops.
     using PathOpFactory = std::function<std::tuple<
@@ -772,6 +780,14 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @param res Result buffer (writes iters / e_total / converged).
     /// @return true if the residual gate fired (Driver converged).
     bool drive_path_diis_(PathOpFactory factory, int max_iter, GpwResult& res);
+
+    /// @brief One OT measurement and orbital-update operation per Driver step.
+    /// Measurement returns the original convergence gate and physical residual.
+    /// Update returns true only for an exhausted bounded polish, never success.
+    using OtMeasure = std::function<std::pair<bool, double>(int)>;
+    using OtUpdate = std::function<bool(int)>;
+    bool drive_path_ot_(OtMeasure measure, OtUpdate update, int max_iter,
+                        GpwResult& res);
 
     /// @brief Drop wired stages / Plan / criteria so the next ensure rebinds.
     void reset_built_driver_();
@@ -823,10 +839,13 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     RpaResult rpa_result_;   ///< Owned RPA result buffer (last direct_rpa()).
     G0W0Result g0w0_result_; ///< Owned G0W0 result buffer (last g0w0()).
     bool built_ = false;     ///< Whether build() validated the configuration.
+    bool solving_ = false;   ///< Reject reentry from user lifecycle callbacks.
     /// Parent Runtime while nested (`build_on`); null for standalone entries.
     cpu::Runtime* host_runtime_ = nullptr;
     /// True during a nested solve: `drive_stage_loop_` steps on the host.
     bool nested_active_ = false;
+    int nested_budget_ =
+        -1; ///< Call-scoped cap; public max_iter never changes.
 
     // ── Shared DIIS gate flag + Γ RKS loop matrices (path Ops capture) ──
     linalg::RealMatrix loop_P_;
@@ -840,6 +859,8 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     double loop_err_norm_ = 0;
     double loop_prev_energy_ = std::numeric_limits<double>::quiet_NaN();
     bool loop_skip_update_ = false;
+    int loop_iteration_ = 0;
+    bool loop_ot_path_ = false; ///< OT updates can carry a newer trial energy.
     bool driver_built_ = false;
     const void* wired_self_ = nullptr;
 

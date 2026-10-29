@@ -119,6 +119,20 @@ struct MinimizeHandle {
         unmirrored_.push_back(name);
     }
 
+    /// @brief Register a force source the Minimize wire cannot carry.
+    ///
+    /// Same contract as `MdHandle::set_unmirrored_evaluator`. `KSpacePPPM`
+    /// is not a `MinimizeComponentParams` alternative.
+    template <typename Component>
+    void set_unmirrored_evaluator(Component comp, const char* name,
+                                  bool coulomb) {
+        require_configurable_("set_evaluator");
+        if (coulomb)
+            unmirrored_coulomb_ = true;
+        unmirrored_.push_back(name);
+        driver.set_evaluator(std::move(comp));
+    }
+
     template <typename Params, typename Component>
     void set_categorical(const char* setter, const Params& p,
                          Component component) {
@@ -891,7 +905,9 @@ void bind_minimizer(nb::module_& m) {
             [](MinimizePhaseBuilder& self, const cpu::task::PairLJCutParams& p,
                int order) -> MinimizePhaseBuilder& {
                 self.handle->add_on_phase(
-                    p, cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff},
+                    p,
+                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+                        .set_special_bonds(p.s12, p.s13, p.s14),
                     MinimizeBinding{self.phase, order});
                 return self;
             },

@@ -190,6 +190,39 @@ bool CellList::grid_stale(const cpu::Frame& frame) const {
     return false;
 }
 
+double CellList::lattice_drift(const cpu::Frame& frame) const {
+    const Mat3& now = frame.box.cell();
+    double drift = 0.0;
+    for (int col = 0; col < 3; ++col) {
+        double acc = 0.0;
+        for (int row = 0; row < 3; ++row) {
+            const double d = now(row, col) - box_at_last_build_(row, col);
+            acc += d * d;
+        }
+        drift = std::max(drift, std::sqrt(acc));
+    }
+    return drift;
+}
+
+bool CellList::geometry_forces_rebuild(const cpu::Frame& frame) const {
+    // A pair just outside cutoff+skin enters the force cutoff only when a
+    // lattice vector moves by more than the skin. Berendsen steps are far
+    // smaller than that; the owner displacement check covers the affine
+    // part. Bin resize happens in `build()` via `grid_stale()`, not here.
+    if (lattice_drift(frame) > skin_)
+        return true;
+    if (dd_ == nullptr)
+        return false;
+    if (halo_pad_() != halo_pad_at_grid_)
+        return true;
+    for (int d = 0; d < 3; ++d) {
+        if (dd_->sublo[d] != sublo_at_grid_[d]
+            || dd_->subhi[d] != subhi_at_grid_[d])
+            return true;
+    }
+    return false;
+}
+
 void CellList::build_stencil() {
     half_stencil_.clear();
     full_stencil_.clear();

@@ -12,6 +12,14 @@ namespace cpu {
 namespace gpw {
 namespace internal {
 
+/// @brief Validate the mathematical strain probe before any SCF or Frame work.
+/// @param h Dimensionless central strain step, strictly between 0 and 0.1.
+/// @param axes Per-axis mask; at least one axis must be enabled.
+/// @param tag Calling operation's name for the error message.
+/// @throws std::invalid_argument for invalid h (including NaN/Inf) or no axes.
+void validate_stress_probe(double h, const std::array<bool, 3>& axes,
+                           const char* tag);
+
 /// @brief Fixed-\(P\) strain-FD stress at a **supplied** state
 ///        [Hartree/Bohr³] — no reference SCF.
 ///

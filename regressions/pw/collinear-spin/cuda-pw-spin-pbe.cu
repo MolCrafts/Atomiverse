@@ -243,8 +243,21 @@ int run(int argc, char** argv) {
         cuda::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
         fill_pbe(pw);
         pw.build(frame_f);
-        F_cuda = cuda::pw::pw_forces_analytic(frame_f, pw);
-        S_cuda = cuda::pw::pw_stress(frame_f, pw);
+        F_cuda = ([&]() {
+            ATV::cpu::Frame result_frame(frame_f);
+            pw.forces(result_frame);
+            std::vector<std::array<double, 3>> result(result_frame.nlocal());
+            for (int i = 0; i < result_frame.nlocal(); ++i)
+                result[i] = {result_frame.span(ATV::kAtom_fx)[i],
+                             result_frame.span(ATV::kAtom_fy)[i],
+                             result_frame.span(ATV::kAtom_fz)[i]};
+            return result;
+        }());
+        S_cuda = ([&]() {
+            ATV::cpu::Frame result_frame(frame_f);
+            const auto result = pw.stress(result_frame);
+            return result;
+        }());
     }
     if (want == "both") {
         double max_df = 0.0;
@@ -319,7 +332,16 @@ int run(int argc, char** argv) {
             return 1;
         }
         auto Fc = cpu_forces(frame_f, cpu_s);
-        auto Fg = cuda::pw::pw_forces_analytic(frame_f, cuda_s);
+        auto Fg = ([&]() {
+            ATV::cpu::Frame result_frame(frame_f);
+            cuda_s.forces(result_frame);
+            std::vector<std::array<double, 3>> result(result_frame.nlocal());
+            for (int i = 0; i < result_frame.nlocal(); ++i)
+                result[i] = {result_frame.span(ATV::kAtom_fx)[i],
+                             result_frame.span(ATV::kAtom_fy)[i],
+                             result_frame.span(ATV::kAtom_fz)[i]};
+            return result;
+        }());
         double max_df = 0.0;
         double max_f = 0.0;
         for (int ia = 0; ia < 2; ++ia) {

@@ -54,7 +54,9 @@ inline double pppm_gf_denom(const std::vector<double>& gf_b, double x, double y,
         ypow *= y;
         zpow *= z;
     }
-    return sx * sy * sz;
+    // Same square as LAMMPS `PPPM::gf_denom` (`return s*s`).
+    const double s = sx * sy * sz;
+    return s * s;
 }
 
 inline double pppm_powsinxx(double arg, int twoorder) {

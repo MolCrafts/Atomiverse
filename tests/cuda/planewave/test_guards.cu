@@ -15,9 +15,8 @@
 
 using namespace ATV;
 
-// Value semantics of the method object. ("PW is a concrete method, not a
-// Component / Driver node" is an architectural rule — it lives in docs/developer/project-contract.md
-// and is enforced by review, never by a test artefact.)
+// PW owns device-backed state and can be transferred by move. Its execution
+// topology is tracked separately in the architecture debt ledger.
 static_assert(!std::is_copy_constructible_v<ATV::cuda::pw::PW>,
               "cuda::pw::PW owns device-backed run state: no copies");
 static_assert(std::is_move_constructible_v<ATV::cuda::pw::PW>,
@@ -65,31 +64,31 @@ TEST(CudaPWGuards, DefaultXcIsPbe) {
 
 TEST(CudaPWGuards, UnsupportedXcThrows) {
     auto frame = make_h_atom();
-    // BLYP has no device kernel — only LSDA and PBE do. The gate must throw
+    // BLYP has no device kernel — LSDA and the PBE family do. The gate must throw
     // rather than silently compute a different functional.
     auto pw = make_supported(cpu::xc::XCType::BLYP);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
-TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
+TEST(CudaPWGuards, PbeFamilyValidatesOtherSettingsBeforeDeviceWork) {
     auto frame = make_h_atom();
-    // PBEsol/revPBE/RPBE differ from PBE by μ/κ/β constants the device
-    // kernel hard-wires; accepting them would silently compute plain PBE.
-    for (const auto xc : {cpu::xc::XCType::PBEsol, cpu::xc::XCType::RevPBE,
-                          cpu::xc::XCType::RPBE}) {
-        auto pw = make_supported(xc);
-        EXPECT_THROW(pw.run(frame), std::invalid_argument);
-    }
-}
-
-TEST(CudaPWGuards, SpinPolarizedWithPbesolThrows) {
-    // Collinear spin-GGA on device is plain PBE only; PBEsol/revPBE/RPBE
-    // hard-wire different μ/κ/β and must still throw under spin.
-    auto frame = make_h_atom();
-    auto pw = make_supported(cpu::xc::XCType::PBEsol);
-    pw.spin_polarized = true;
-    pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
-    EXPECT_THROW(pw.run(frame), std::invalid_argument);
+    for (const auto xc : {cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
+                          cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE})
+        for (const bool spin : {false, true}) {
+            auto pw = make_supported(xc);
+            pw.spin_polarized = spin;
+            pw.multiplicity = spin ? 2 : 1;
+            pw.tol = 0;
+            // Reach numerical validation without an SCF or device work.
+            try {
+                pw.run(frame);
+                FAIL() << "invalid tolerance accepted";
+            } catch (const std::invalid_argument& error) {
+                EXPECT_NE(std::string(error.what()).find("tol"),
+                          std::string::npos)
+                    << error.what();
+            }
+        }
 }
 
 TEST(CudaPWGuards, MultiplicityWithoutSpinThrows) {
@@ -104,7 +103,7 @@ TEST(CudaPWGuards, SpinSmearZeroDegaussThrows) {
     auto pw = make_supported();
     pw.spin_polarized = true;
     pw.multiplicity = 2;
-    pw.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
+    pw.smearing = ::ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
@@ -112,7 +111,7 @@ TEST(CudaPWGuards, SpinSmearZeroDegaussThrows) {
 TEST(CudaPWGuards, SmearZeroDegaussThrows) {
     auto frame = make_h_atom();
     auto pw = make_supported();
-    pw.smearing = cuda::ATV::electronic::Smearing::fermi_dirac;
+    pw.smearing = ::ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
@@ -172,13 +171,13 @@ TEST(CudaPWGuards, SpinSmearStressRejectsInvalidWidthBeforeDeviceWork) {
         pw.spin_polarized = true;
         pw.multiplicity = 2;
         for (const auto smear :
-             {cuda::ATV::electronic::Smearing::fermi_dirac,
-              cuda::ATV::electronic::Smearing::gaussian,
-              cuda::ATV::electronic::Smearing::methfessel_paxton}) {
+             {::ATV::electronic::Smearing::fermi_dirac,
+              ::ATV::electronic::Smearing::gaussian,
+              ::ATV::electronic::Smearing::methfessel_paxton}) {
             pw.smearing = smear;
             pw.degauss = 0;
             EXPECT_THROW(pw.stress(frame), std::invalid_argument);
-            EXPECT_THROW(cuda::pw::pw_stress(frame, pw), std::invalid_argument);
+            EXPECT_THROW(pw.stress(frame), std::invalid_argument);
         }
         EXPECT_EQ(pw.last_result().iterations, 0);
         EXPECT_FALSE(pw.last_result().converged);

@@ -55,7 +55,7 @@ namespace md {
 /// | Sign convention     | `+R` = stretch, `-R` = compress                  | `+rate` = stretch, `-rate` = compress     | aligned  |
 /// | Axis selection      | per-axis `x`/`y`/`z` keywords                    | `int axis` (0 = x, 1 = y, 2 = z)          | aligned  |
 /// | Remap               | `remap x` (default) -- affine atom remap         | always affine remap (= `remap x`)         | aligned  |
-/// | `remap none` / `v`  | optional non-affine remap modes                  | not supported (deferred, out of scope)    | gap      |
+/// | `remap none` / `v`  | optional non-affine remap modes                  | not here; `NvtSllod` owns `remap v`       | gap      |
 /// | `vel`/`final`/`delta` modes | absolute-velocity / target-length modes  | not supported (deferred, out of scope)    | gap      |
 ///
 /// `erate` and `trate` coincide only to first order in `R*t`; `trate`

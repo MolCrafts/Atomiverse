@@ -128,6 +128,22 @@ struct PhaseTraits<ATV::scf::Phase> {
     static constexpr auto end_phase = ATV::scf::Phase::check;
 };
 
+/// Plane-wave SCF uses potential, band, density, mix and check phases.
+template <>
+struct PhaseTraits<ATV::pw::Phase> {
+    static constexpr auto eval_phase = ATV::pw::Phase::veff;
+    static constexpr auto neighbor_phase = ATV::pw::Phase::veff;
+    static constexpr auto end_phase = ATV::pw::Phase::check;
+};
+
+/// GPW builds the KS operator before mixing, orbitals and density updates.
+template <>
+struct PhaseTraits<ATV::gpw::Phase> {
+    static constexpr auto eval_phase = ATV::gpw::Phase::ks_build;
+    static constexpr auto neighbor_phase = ATV::gpw::Phase::ks_build;
+    static constexpr auto end_phase = ATV::gpw::Phase::check;
+};
+
 /// NDDO methods use the rebuilt Fock before publishing residuals at check.
 template <>
 struct PhaseTraits<ATV::nddo::Phase> {

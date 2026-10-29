@@ -27,11 +27,16 @@ void bind_potentials(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::PairLJCutParams* p, double epsilon, double sigma,
-               double cutoff) {
-                new (p) cpu::task::PairLJCutParams{epsilon, sigma, cutoff};
+               double cutoff, double s12, double s13, double s14) {
+                new (p) cpu::task::PairLJCutParams{epsilon, sigma, cutoff,
+                                                   s12,     s13,   s14};
             },
             nb::arg("epsilon"), nb::arg("sigma"), nb::arg("cutoff"),
-            "Construct with epsilon [eV], sigma [A], and cutoff [A].");
+            nb::arg("s12") = 1.0, nb::arg("s13") = 1.0, nb::arg("s14") = 1.0,
+            "Construct with epsilon [eV], sigma [A], and cutoff [A].\n\n"
+            "s12, s13, s14 are the 1-2 / 1-3 / 1-4 pair weights (LAMMPS "
+            "special_bonds). 0 drops that shell, 1 keeps it. The default "
+            "is (1, 1, 1). The task codec does not store these weights.");
 
     // ── The widened real-space catalogue ──
     //
@@ -363,6 +368,33 @@ void bind_potentials(nb::module_& m) {
             "  order         B-spline interpolation order [count, >= 3; "
             "default 6] — the width of the charge-spreading stencil per "
             "dimension.");
+
+    nb::class_<cpu::task::KSpacePppmParams>(
+        m, "KSpacePPPM",
+        "Reciprocal-space half of an Ewald split evaluated as "
+        "Hockney-Eastwood PPPM with ik differentiation, the LAMMPS "
+        "`pppm` default (`differentiation_flag = 0`).\n\n"
+        "Charge is spread with the same B-splines as smooth PME. The mesh "
+        "is multiplied by the ik Green's function G(k) (alias sum, not the "
+        "Essmann Euler modulus), the energy is coulomb/(2V) * |rho|^2 * G, "
+        "and the force is q times the Cartesian field i*k*V gathered with "
+        "the spreading weights. Install it with CoulLong at the SAME alpha. "
+        "It is not carried by the MPI task wire.\n\n"
+        "This type exists only in an extension built with "
+        "ATV_BUILD_KSPACE=ON.")
+        .def(
+            "__init__",
+            [](cpu::task::KSpacePppmParams* p, double alpha,
+               double grid_spacing, int order) {
+                new (p) cpu::task::KSpacePppmParams{alpha, grid_spacing, order};
+            },
+            nb::arg("alpha"), nb::arg("grid_spacing") = double(1),
+            nb::arg("order") = 6,
+            "Construct with alpha [1/A], which must equal the CoulLong "
+            "alpha.\n\n"
+            "  grid_spacing  target mesh spacing [A] (default 1.0). Rounded "
+            "to sizes whose factors are 2, 3 and 5.\n"
+            "  order         B-spline order [count, 3..12; default 6].");
 #endif
 
     nb::class_<cpu::task::NeighborListParams>(

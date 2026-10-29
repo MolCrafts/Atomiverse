@@ -129,17 +129,14 @@ pipeline that lost a plane, mis-addressed an FFT owner or skipped a halo breaks
 that cancellation and shows up as a force — falsifications D2b and D3 below
 move maxᵢ |Fᵢ| to 3.4e-2 and 6.4e-1 eV/Å respectively.
 
-Off-node ions would **not** do. `cpu::KSpacePPPM` interpolates forces by pure
-analytic differentiation (`src/cpu/longrange/pppm.cpp:1178`) with no self-force
-correction (the LAMMPS `PPPM::compute_sf_precoeff` / `fieldforce_ad` `sf_coeff`
-term). An ion at a generic sub-cell fraction therefore feels a spurious force
-∝ q_i², i.e. the **same sign on every ion**. Measured while developing this
-case, with the lattice displaced to (0.37, 0.53, 0.29) Å: 1.385e-3 eV/Å per ion
-and ‖Σᵢ Fᵢ‖ = 2.991e-1 eV/Å over 216 ions, identical on all three arms and at
-np = 1. That is a pre-existing accuracy artifact of the AD scheme, unrelated to
-this spec and not what this case is about — but it is why the origin is a whole
-mesh cell rather than an arbitrary offset, and it is reported as a
-found-not-fixed item rather than absorbed into a loosened tolerance.
+Off-node ions are not this case. Both arms gather ik forces with the same
+B-spline θ that spread the charge. There is no analytic differentiation of θ
+and no LAMMPS `fieldforce_ad` self-force term. An earlier AD interpolator, the
+one this note used to describe, put a same-sign force ∝ q_i² on an ion at a
+generic sub-cell fraction. Measured on that AD scheme with the lattice
+displaced to (0.37, 0.53, 0.29) Å: 1.385e-3 eV/Å per ion and ‖Σᵢ Fᵢ‖ = 2.991e-1
+eV/Å over 216 ions. Those numbers are historical. The origin stays a whole
+mesh cell so the θ stencil cancellation stays sharp.
 
 #### The three legs
 

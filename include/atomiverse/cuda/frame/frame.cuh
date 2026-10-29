@@ -71,6 +71,7 @@ struct DihedralList {
 struct ForceFault {
     static constexpr unsigned kConversion = 1u;   ///< Encode out of range.
     static constexpr unsigned kAccumulation = 2u; ///< Fixed-point sum wrapped.
+    static constexpr unsigned kBond = 4u;         ///< FENE bond reached R0.
     unsigned kinds = 0;  ///< Bitwise OR of fault kinds.
     int row = -1;        ///< First offending local row, -1 if unknown.
     long long step = -1; ///< Step at which integration was refused, -1 if none.

@@ -450,6 +450,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/dynamics/brownian.cpp
             src/cpu/dynamics/barostat.cpp
             src/cpu/dynamics/deform.cpp
+            src/cpu/dynamics/nvt_sllod.cpp
             # Electrochemical electrode bookkeeping (MetalWalls E1/E2 map)
             src/cpu/electrodes/charging_work.cpp
             src/cpu/electrodes/charge_aspc.cpp
@@ -599,6 +600,8 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/dynamics/kinetic_energy.cu
                 src/cuda/dynamics/nose_hoover.cu
                 src/cuda/dynamics/deform.cu
+                src/cuda/dynamics/nvt_sllod.cu
+                src/cuda/record/pressure_series.cu
                 src/cuda/dynamics/barostat.cu
             )
         endif()
@@ -956,6 +959,10 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/planewave/internal/kpoint.cpp
             src/cpu/planewave/internal/ewald.cpp
             src/cpu/planewave/internal/pw_setup.cpp
+            src/cpu/planewave/internal/pw_radial_derivatives.cpp
+            src/cpu/planewave/internal/frozen_operator_virial.cpp
+            src/cpu/planewave/internal/frozen_functional_virial.cpp
+            src/cpu/planewave/internal/pw_final_state.cpp
             src/cpu/planewave/internal/scf_loop.cpp
             src/cpu/planewave/internal/pw_forces.cpp
             src/cpu/planewave/internal/pw_stress.cpp
@@ -1005,6 +1012,9 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/xc/xc_pbe.cu
                 src/cuda/planewave/internal/veff.cu
                 src/cuda/planewave/internal/device_solver.cu
+                src/cuda/planewave/internal/frozen_operator_virial.cu
+                src/cuda/planewave/internal/xc_frozen_virial.cu
+                src/cuda/planewave/internal/frozen_functional_virial.cu
                 src/cuda/planewave/internal/device_density.cu
                 src/cuda/planewave/internal/pw_forces.cu
                 src/cuda/planewave/internal/pw_stress.cu

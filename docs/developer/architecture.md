@@ -327,10 +327,71 @@ home of single-point energy and force calculations.
 concrete method (`cpu::scf::RHF` / `UHF` / `RKS` / `UKS`), and the CRTP base
 they share, `cpu::scf::MeanFieldMethod<D>`, **is** a `cpu::Driver<scf::Phase>`
 — the same loop-node shape as MD and Minimize. CPU plane-wave DFT also runs
-through `Driver<pw::Phase>`; `cpu::pw::PW` itself is mounted as a nested node
-on a force slot. There is no `Capability` write-set — components write Frame
-keys and plug into the *same* Evaluate, MD, and Minimize drivers ("swap the
+through `Driver<pw::Phase>`; both `cpu::pw::PW` and `cuda::pw::PW` mount
+directly as nested nodes on a force slot. CPU PW publishes actual iteration
+energy, energy change and density residual before user checks. Standalone
+stages receive an owned geometry snapshot, while nested stages and criteria
+use the parent's actual Frame and restore its services afterwards. A private,
+call-scoped final-band state owns all local C/f/k weights and orbital densities,
+retaining reference metadata separately. CPU Gamma semilocal fixed/FD/Gaussian RKS/populated UKS,
+semilocal fixed/FD/Gaussian general-k derivatives with populated spins share one unstrained sweep and
+closed-form tensor. Separately qualified MP1/PBE Gamma RKS/populated-UKS slices
+retain their signed occupations and generalized entropy. Gamma fixed-LSDA with Na>0/Nb=0 additionally carries a
+producer declaration and canonical zero-row beta blocks. Collective admission
+checks the declaration, counts, layout and exactly zero beta densities,
+including ranks without local k points; reference result metadata stays
+independent. Actual auxiliary residual/normalization checks reject an
+incomplete state within the existing budget; local auxiliary failures are
+synchronized before later spectrum/density collectives. CUDA PW uses one typed-stage SCF
+loop for `run`, `forces` and `stress`. Nested calls borrow the parent's
+Backend, device Frame and stream, then restore the parent's loop services.
+The CUDA Gamma RKS fixed/FD LSDA/PBE-family epilogue builds a separate certified orbital
+density, preserves the retained reference density/result and shares its raw
+full-D projection between requested force and virial terms. Its per-call
+workspace owns device scratch and drains the borrowed stream before release;
+it never owns or destroys that stream. Finite/reference/antisymmetry checks
+precede one nested E/F/W publication kernel. Energy-only calls construct no
+derivative workspace. Force-only requests skip XC tensor quadrature; PBE-family
+virials reuse the existing XC point law with distinct raw-gradient and flux
+buffers. Spin SCF mixes concatenated alpha/beta histories through the same
+Pulay engine as RKS, retaining the unmixed joint stopping norm. Fixed-size host
+coefficient upload storage lives through its stream fences; cold upload arrays
+also outlive normal and exceptional stream draining. FD refills the final spectrum at one chemical potential and retains
+every nonzero final occupation. The fixed nonempty UKS owner packs independent
+spin band sums and checks each spin's completion and charge. It reuses the
+positive-spin XC component with distinct six-gradient/six-flux storage. A
+typed per-call finish result distinguishes completion from a finite XC domain
+outside the supported interior. The latter stages the inherited stress and
+force candidates from the same accepted state before one publication; actual
+auxiliary, reference and nonfinite failures still throw. The nested caller
+uses the actual per-call publication result. No persistent solver flag or
+second static selector decides whether to publish. This owner has
+[scoped native GH200 qualification](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-cuda-uks-depth/archive-index.json)
+with the current joint mixer for Gamma fixed nonempty UKS LSDA/PBE-family;
+UKS FD, multiple k points and empty endpoints remain separate gaps.
+Cold radial/Ewald setup, host scalar filling
+and its small occupation upload, and requested host-output boundaries remain explicit; other stress domains retain their numerical paths.
+Both PW backends
+preserve user stages and criteria when rebuilding their internal callbacks,
+and compile the current mount table before an SCF execution. There is no
+`Capability` write-set — components write Frame keys and plug into the
+*same* Evaluate, MD, and Minimize drivers ("swap the
 energy source, keep the driver").
+
+CPU and CUDA GPW likewise own `Driver<gpw::Phase>` execution. CPU DIIS and
+all six supported OT outer paths use that loop; bounded OT line searches
+remain numerical helpers inside a stage. CUDA Γ RKS/UKS, RKS multigrid and
+multi-k RKS use one stage loop. Derivative calls consume one accepted SCF
+state. Standalone calls materialize the input Frame; nested calls borrow the
+parent execution services and restore them on success or exception. Internal
+callback refresh preserves user stages and criteria, and nested budgets also
+bound OT polish. Live-bound methods reject moves, mutation and recursive
+execution. Public geometry is expressed through `Frame` and `Kind`.
+Driver conformance has separate device-residency checks. Γ RKS single-grid
+forces now contract accepted device P, physical raw-H W and resident grid
+potentials using immutable derivative tables prepared before SCF. Final payload
+retrieval follows force assembly. Other GPW force branches, cold setup and
+numerical diagonal cell stress retain open residency work in the DFT roadmap.
 
 The SCF cycle is a typed stage sequence, `fock → mix → diagonalize → density
 → check`. Each stage under
@@ -367,6 +428,17 @@ STO-3G l ≤ 1 (`launch_eri_sp`, `launch_uhf_forces_sp`).
 So the duplication is not accidental: one emphasizes breadth and
 reference-quality clarity, the other device-resident execution. Their
 agreement is what the dual-device SCF end-to-end cases pin.
+
+Shared physical contracts and immutable model data live under `electronic/`.
+The PBE family uses one `PbeParameters` definition for exchange μ/κ,
+correlation β and the RPBE enhancement form. The CPU XC evaluator and CUDA
+grid kernels consume these same values; PW and GPW pass the functional
+identity through to the kernels. Backend admission uses the explicit pure
+PBE-family predicate, since a generic GGA predicate would also admit models
+without device implementations. Numerical kernels stay under `cpu/xc` and
+`cuda/xc`; each method retains its own grid, workspace and iteration history.
+Sharing a physical model does not require sharing execution state or adding
+another SCF loop.
 
 ## Where To Make Changes
 

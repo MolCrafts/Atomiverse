@@ -1,0 +1,805 @@
+{
+  "schema": "actual-QE-fixed-band-k-v1",
+  "primary_cases": [
+    {
+      "id": "si2-primitive-rks-pbe",
+      "model": "pbe",
+      "spin": false,
+      "actual_native_quad": [
+        48,
+        54,
+        48
+      ],
+      "QE_nbnd": 4,
+      "filling": "none",
+      "Na": 4,
+      "Nb": 4,
+      "Ne": 8.0,
+      "M": 0.0,
+      "S_Ry": 0.0,
+      "E": -7.732881820711193,
+      "f": [
+        [
+          0.002563240887532094,
+          0.01627526358272139,
+          -0.005322275016254596
+        ],
+        [
+          -0.002563240887532094,
+          -0.01627526358272139,
+          0.005322275016254596
+        ]
+      ],
+      "s": [
+        0.0004669780810588487,
+        0.0003824748690084544,
+        0.000536365917961884,
+        -4.053010515596487e-05,
+        -0.0003663975435840163,
+        -9.337354598144349e-05
+      ],
+      "index": 0,
+      "raw_dir": "si2-primitive-rks-pbe",
+      "raw_files_sha256": {
+        "input.in": "892927e3bd45f966f30f8fa70b35972336778bdd9ecb9f4da401c9e15546e2b8",
+        "qe.out": "3b7739118bacacfd21b385c03fa41c5889132d058b3482a72058728a06d0fc16",
+        "data-file-schema.xml": "5e38bed0a06c0ab274583c7802000d82d63a28ad57781a9ddc40ad8c63c9ebb3",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "f5016515d88e7208d1261778abecde6227259f8fcfa635f6e10b0e70c047679c",
+        "started.txt": "f284ff186f04acb4cbc1e694ad532c6c3e32e0ceab631c945abae445a2eb84d4",
+        "finished.txt": "1dfab75c985df5157348e14d9578a521ec6a54878822b4540b9d296e2741b1c9"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/scratch/si2-primitive-rks-pbe.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/exit-code.txt",
+        "Si_GTH_PBE_q4.gth": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/Si_GTH_PBE_q4.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-pbe/modules.txt"
+      },
+      "matched_quad": [
+        48,
+        54,
+        48
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "h3-isolated-uks-pbe",
+      "model": "pbe",
+      "spin": true,
+      "actual_native_quad": [
+        66,
+        60,
+        60
+      ],
+      "QE_nbnd": 2,
+      "filling": "none",
+      "Na": 2,
+      "Nb": 1,
+      "Ne": 3.0,
+      "M": 0.9999999999999939,
+      "S_Ry": 0.0,
+      "E": -1.47067184461794,
+      "f": [
+        [
+          0.0003308077939854472,
+          -0.01987628294500867,
+          -0.01434068502846291
+        ],
+        [
+          -0.01474118616999545,
+          0.002399683075878555,
+          0.002400163845029999
+        ],
+        [
+          0.01441037837601,
+          0.01747659986913011,
+          0.01194052118343291
+        ]
+      ],
+      "s": [
+        -6.410051308131825e-05,
+        -3.22993834971885e-05,
+        -6.076464652254706e-05,
+        8.793159346247354e-06,
+        5.359623870643304e-06,
+        4.0156258788097e-05
+      ],
+      "index": 1,
+      "raw_dir": "h3-isolated-uks-pbe",
+      "raw_files_sha256": {
+        "input.in": "5fce345cee8196ac590b36fc0c612bc592de52ea14e03dffe5a36bcb162f4eba",
+        "qe.out": "bcba8462ecfeddb56b68a8e9f32ceae2283ceddaaae670c154d9b6f60fc28709",
+        "data-file-schema.xml": "b30853967f1b883f849205c8fbfdd699178ee3c01449f3c89a1fefcf37b27855",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "3dea5f4bac10dbc94a36b2dd7d69af0a067874eafe556ca56e8395f928503e38",
+        "started.txt": "f284ff186f04acb4cbc1e694ad532c6c3e32e0ceab631c945abae445a2eb84d4",
+        "finished.txt": "4bbe84b98cc1260c4867f51537204c4478e277ad8dfc427020d4ba3005883af8"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/scratch/h3-isolated-uks-pbe.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/exit-code.txt",
+        "H_GTH_PBE_q1.gth": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/H_GTH_PBE_q1.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-pbe/modules.txt"
+      },
+      "matched_quad": [
+        66,
+        60,
+        60
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "si2-primitive-rks-pbesol",
+      "model": "pbesol",
+      "spin": false,
+      "kmesh": 2,
+      "cutoff_Ry": 12,
+      "filling": "none/fixed",
+      "Na": 4,
+      "Nb": 4,
+      "Ne": 8.0,
+      "M": 0.0,
+      "entropy_Ry": 0,
+      "QE_nbnd": 4,
+      "native_SCF_max_iter": 200,
+      "native_tol": 1e-10,
+      "mix_beta": 0.2,
+      "quad_expected_not_yet_actual_queried": [
+        48,
+        54,
+        48
+      ],
+      "quadrature_basis": "Same geometry/cutoff G lists as existing matched probes. LSDA >=1.5x, GGA >=3x; fresh setup-only query required before actual QE launch.",
+      "input_sha256": "e327129114da6d39ac047d9cc28cd88c22288b32998d6c9fea7eef7aca258292",
+      "pp_sha256": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+      "source_input": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/input.in",
+      "source_input_sha256": "6e6be4e261c441190e2ec14cdb473e5862c39b2672ca47d7d3e406cba6cc9952",
+      "actual_native_quad": [
+        48,
+        54,
+        48
+      ],
+      "E": -7.714402780878905,
+      "f": [
+        [
+          0.002700875300098784,
+          0.01687365045367673,
+          -0.005151864763007121
+        ],
+        [
+          -0.002700875300098784,
+          -0.01687365045367673,
+          0.005151864763007121
+        ]
+      ],
+      "s": [
+        0.0004578128129514147,
+        0.0003763225241389563,
+        0.000523289354998709,
+        -3.812162573081328e-05,
+        -0.0003624098782758909,
+        -9.220905942494874e-05
+      ],
+      "S_Ry": 0.0,
+      "index": 2,
+      "raw_dir": "si2-primitive-rks-pbesol",
+      "raw_files_sha256": {
+        "input.in": "e327129114da6d39ac047d9cc28cd88c22288b32998d6c9fea7eef7aca258292",
+        "qe.out": "54038e35ff3123ec716f6165e1985b4db639f61d0d416580a5727c086468850d",
+        "data-file-schema.xml": "13c15b7d5ac7d770b7ab3b52bc2d65c8f8fc9937399e210dd65a0cb33bd24177",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "7e6192f593def67d10e76e71b3850c10ed7c6547f544e5f698ab003651e3639b",
+        "started.txt": "90d832cc8e8587c5820cf3837f4c9dc3a47c57fdceb84f6c78afc06611846538",
+        "finished.txt": "302b1f23e20fd8082aa0a9fabf08c38755c5ac66fc10bcb43c8875a1759d8146"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/scratch/si2-primitive-rks-pbesol.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/exit-code.txt",
+        "Si_GTH_PBE_q4.gth": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/Si_GTH_PBE_q4.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/proposal-1/si2-primitive-rks-pbesol/modules.txt"
+      },
+      "matched_quad": [
+        48,
+        54,
+        48
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "h3-isolated-uks-pbesol",
+      "model": "pbesol",
+      "spin": true,
+      "kmesh": 2,
+      "cutoff_Ry": 6,
+      "filling": "none/fixed",
+      "Na": 2,
+      "Nb": 1,
+      "Ne": 3.0,
+      "M": 0.999999999999994,
+      "entropy_Ry": 0,
+      "QE_nbnd": 2,
+      "native_SCF_max_iter": 250,
+      "native_tol": 1e-09,
+      "mix_beta": 0.35,
+      "quad_expected_not_yet_actual_queried": [
+        66,
+        60,
+        60
+      ],
+      "quadrature_basis": "Same geometry/cutoff G lists as existing matched probes. LSDA >=1.5x, GGA >=3x; fresh setup-only query required before actual QE launch.",
+      "input_sha256": "110a84c2ed29819a317aedee8dfdbd96e97507d5dcfede750d28ca0ebcea57db",
+      "pp_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "source_input": "tools/diagnostics/pw-analytic-stress/rawrefs/h3-isolated-uks-pbesol/input.in",
+      "source_input_sha256": "a9e8c2f864e225cc6245fa69a6af1d80c5c8ace74ed925fd0616c6706f2e67ca",
+      "actual_native_quad": [
+        66,
+        60,
+        60
+      ],
+      "E": -1.450843434938144,
+      "f": [
+        [
+          -0.0003054686840030797,
+          -0.01979276113737972,
+          -0.01425043367124635
+        ],
+        [
+          -0.01276105491340703,
+          0.001305727925198945,
+          0.001496873563689061
+        ],
+        [
+          0.01306652359741011,
+          0.01848703321218077,
+          0.01275356010755728
+        ]
+      ],
+      "s": [
+        -6.029952245605811e-05,
+        -2.923056026633399e-05,
+        -5.731848120777782e-05,
+        8.018658096835256e-06,
+        4.771475426860195e-06,
+        3.97526099642033e-05
+      ],
+      "S_Ry": 0.0,
+      "index": 3,
+      "raw_dir": "h3-isolated-uks-pbesol",
+      "raw_files_sha256": {
+        "input.in": "110a84c2ed29819a317aedee8dfdbd96e97507d5dcfede750d28ca0ebcea57db",
+        "qe.out": "858a64c46386eb1bfd960d5d0a4b89e60bfb50c563b033e4b4b942830508938d",
+        "data-file-schema.xml": "7873262e247023d5333071338f68595bbcf979b924ca04f59463ffe88eec285b",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "05f351b38c6a85b43a52fce624b4bc15e686a08dfa96c9a6526c31167958b2b3",
+        "started.txt": "90d832cc8e8587c5820cf3837f4c9dc3a47c57fdceb84f6c78afc06611846538",
+        "finished.txt": "46ba16349597b8ba34d3d6fed4fadd7a3be85f8de7bae94adec2294c381a5ff3"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/scratch/h3-isolated-uks-pbesol.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/exit-code.txt",
+        "H_GTH_PBE_q1.gth": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/H_GTH_PBE_q1.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-pbesol/modules.txt"
+      },
+      "matched_quad": [
+        66,
+        60,
+        60
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "si2-primitive-rks-revpbe",
+      "model": "revpbe",
+      "spin": false,
+      "actual_native_quad": [
+        48,
+        54,
+        48
+      ],
+      "QE_nbnd": 4,
+      "filling": "none",
+      "Na": 4,
+      "Nb": 4,
+      "Ne": 8.0,
+      "M": 0.0,
+      "S_Ry": 0.0,
+      "E": -7.737403387816437,
+      "f": [
+        [
+          0.002535285724121236,
+          0.01616093871282714,
+          -0.005375912799076718
+        ],
+        [
+          -0.002535285724121236,
+          -0.01616093871282714,
+          0.005375912799076718
+        ]
+      ],
+      "s": [
+        0.000476701157712478,
+        0.0003912772043902762,
+        0.0005479548229049159,
+        -4.158714695582708e-05,
+        -0.000369046755042095,
+        -9.408475611469354e-05
+      ],
+      "index": 4,
+      "raw_dir": "si2-primitive-rks-revpbe",
+      "raw_files_sha256": {
+        "input.in": "e29ffd84eecc2d8c73ed5e56f3a436cbe71323eb6b48d6acb061e3cd8c669993",
+        "qe.out": "8090e5ffdce56bf79b6ff12fe2e790b3b7c25efcb93c1bc25e8eb6b5fffb7d0b",
+        "data-file-schema.xml": "61cc0c1f523460e305480ac8a6eb111dff3f412b5ad3bb49e82a81da51055cc0",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "34cab887848f1e6148584153cb03670c76fbe41bd535b589b7e507276a2d6d53",
+        "started.txt": "f284ff186f04acb4cbc1e694ad532c6c3e32e0ceab631c945abae445a2eb84d4",
+        "finished.txt": "d865842f883bbaf8f3382d2313442b82eef1280ad45e04bb83d32d0e746dbfa4"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/scratch/si2-primitive-rks-revpbe.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/exit-code.txt",
+        "Si_GTH_PBE_q4.gth": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/Si_GTH_PBE_q4.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-revpbe/modules.txt"
+      },
+      "matched_quad": [
+        48,
+        54,
+        48
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "h3-isolated-uks-revpbe",
+      "model": "revpbe",
+      "spin": true,
+      "actual_native_quad": [
+        66,
+        60,
+        60
+      ],
+      "QE_nbnd": 2,
+      "filling": "none",
+      "Na": 2,
+      "Nb": 1,
+      "Ne": 3.0,
+      "M": 0.9999999999999853,
+      "S_Ry": 0.0,
+      "E": -1.48249556101038,
+      "f": [
+        [
+          0.0008146428722509324,
+          -0.0200445614625559,
+          -0.01451098718601392
+        ],
+        [
+          -0.01615156357246777,
+          0.002941891795432027,
+          0.002877639200207586
+        ],
+        [
+          0.01533692070021684,
+          0.01710266966712388,
+          0.01163334798580633
+        ]
+      ],
+      "s": [
+        -6.547003203831415e-05,
+        -3.263846081154255e-05,
+        -6.115790436238691e-05,
+        9.117810781916202e-06,
+        5.670925888249986e-06,
+        3.988409516054336e-05
+      ],
+      "index": 5,
+      "raw_dir": "h3-isolated-uks-revpbe",
+      "raw_files_sha256": {
+        "input.in": "cfbecefce62ecd41c9caa52bfaf4a79960998ca0292c8120d819ad1f89dcd624",
+        "qe.out": "7d5ab099e099bd4922d9e020319d790a143f07872e67976759a279e5853e0131",
+        "data-file-schema.xml": "c1155d13400bba9850905f079e8aeb290e91138537dde3f9cf7c962195c495bc",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "6067381c8bb92de37fa29163277b278315c1c6fe0a167b206d70a64402130e05",
+        "started.txt": "1dfab75c985df5157348e14d9578a521ec6a54878822b4540b9d296e2741b1c9",
+        "finished.txt": "dd3c002a24b1eb2b6fba1089bd0d94c12e5cfda0f8bb4e271c85daf462baeb62"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/scratch/h3-isolated-uks-revpbe.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/exit-code.txt",
+        "H_GTH_PBE_q1.gth": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/H_GTH_PBE_q1.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-revpbe/modules.txt"
+      },
+      "matched_quad": [
+        66,
+        60,
+        60
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "si2-primitive-rks-rpbe",
+      "model": "rpbe",
+      "spin": false,
+      "actual_native_quad": [
+        48,
+        54,
+        48
+      ],
+      "QE_nbnd": 4,
+      "filling": "none",
+      "Na": 4,
+      "Nb": 4,
+      "Ne": 8.0,
+      "M": 0.0,
+      "S_Ry": 0.0,
+      "E": -7.739009239418479,
+      "f": [
+        [
+          0.002525857706271598,
+          0.0161157828820596,
+          -0.005393822176530943
+        ],
+        [
+          -0.002525857706271598,
+          -0.0161157828820596,
+          0.005393822176530943
+        ]
+      ],
+      "s": [
+        0.0004825262527627106,
+        0.0003967278876455364,
+        0.0005544419796904686,
+        -4.197226322895948e-05,
+        -0.0003700912758975902,
+        -9.435950227874062e-05
+      ],
+      "index": 6,
+      "raw_dir": "si2-primitive-rks-rpbe",
+      "raw_files_sha256": {
+        "input.in": "d020045f8e7087f3ff5bc6d228424799e015179cd486d06a9415714ab6dfff1c",
+        "qe.out": "77370ac80b7f92ffc0899698fceb7e6429612bffba6a989b416077a18ccc5f26",
+        "data-file-schema.xml": "bdfa596558f8b4ac72e357b12e21f0ecbe04c468edd74b978cf940f2ed580154",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "adcd6d6b0018eb7c2232e9f4116c3dcf519150020004badabe14cb2f934f7e0d",
+        "started.txt": "7ff2da50c65c8375b10d093b43c38230787047613cbdfb86207c19657ffa6a72",
+        "finished.txt": "a49fbdfdcb569c9d367d7b3d30ae7fa10ff8726896205e6e4ddb07d124960a1b"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/scratch/si2-primitive-rks-rpbe.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/exit-code.txt",
+        "Si_GTH_PBE_q4.gth": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/Si_GTH_PBE_q4.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/families-1/qe/si2-primitive-rks-rpbe/modules.txt"
+      },
+      "matched_quad": [
+        48,
+        54,
+        48
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "h3-isolated-uks-rpbe",
+      "model": "rpbe",
+      "spin": true,
+      "actual_native_quad": [
+        66,
+        60,
+        60
+      ],
+      "QE_nbnd": 2,
+      "filling": "none",
+      "Na": 2,
+      "Nb": 1,
+      "Ne": 3.0,
+      "M": 1.000000000000009,
+      "S_Ry": 0.0,
+      "E": -1.484118904437792,
+      "f": [
+        [
+          0.0007614598590502658,
+          -0.02020433813216841,
+          -0.01462246860640574
+        ],
+        [
+          -0.01616498647854169,
+          0.00298502770861384,
+          0.002904368092280019
+        ],
+        [
+          0.01540352661949143,
+          0.01721931042355456,
+          0.01171810051412572
+        ]
+      ],
+      "s": [
+        -6.599802400952362e-05,
+        -3.324012674793951e-05,
+        -6.215274920233348e-05,
+        9.285353447989826e-06,
+        5.75706784436279e-06,
+        4.052640491633672e-05
+      ],
+      "index": 7,
+      "raw_dir": "h3-isolated-uks-rpbe",
+      "raw_files_sha256": {
+        "input.in": "d8908af31b4658457b8981c4b07647e7a2e48fba6605c09973b63854756f7661",
+        "qe.out": "271e72596fbe94fc4c402b2ff2dc613a29300a7a501a138345fbefd7a818f6fc",
+        "data-file-schema.xml": "8d94158c6e4457dcbe7b411b3e7d8585403fe578e040d9a43ca3022d7a2eba45",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "b8edb5f7ee19ef7df5f6f5cc19b4df47abdcca05a1d40b87a572f4861578266e",
+        "started.txt": "a49fbdfdcb569c9d367d7b3d30ae7fa10ff8726896205e6e4ddb07d124960a1b",
+        "finished.txt": "297daf7a6a3b770bdccf5d08c57c19c184cc2ace7bb5d6bb66616bf57dd26337"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/scratch/h3-isolated-uks-rpbe.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/exit-code.txt",
+        "H_GTH_PBE_q1.gth": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/H_GTH_PBE_q1.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/families-1/qe/h3-isolated-uks-rpbe/modules.txt"
+      },
+      "matched_quad": [
+        66,
+        60,
+        60
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "si2-primitive-rks-lsda",
+      "model": "lsda",
+      "spin": false,
+      "actual_native_quad": [
+        24,
+        28,
+        24
+      ],
+      "QE_nbnd": 4,
+      "filling": "none",
+      "Na": 4,
+      "Nb": 4,
+      "Ne": 8.0,
+      "M": 0.0,
+      "S_Ry": 0.0,
+      "reused_original_raw": true,
+      "E": -7.7175672985039,
+      "f": [
+        [
+          0.002702401679011487,
+          0.01685861726477207,
+          -0.005140554553371032
+        ],
+        [
+          -0.002702401679011487,
+          -0.01685861726477207,
+          0.005140554553371032
+        ]
+      ],
+      "s": [
+        0.0004561940017631799,
+        0.0003749013517068012,
+        0.000520709905801657,
+        -3.758096908712424e-05,
+        -0.0003608593350292536,
+        -9.184095324101427e-05
+      ],
+      "index": 8,
+      "raw_dir": "si2-primitive-rks-lsda",
+      "raw_files_sha256": {
+        "input.in": "6e6be4e261c441190e2ec14cdb473e5862c39b2672ca47d7d3e406cba6cc9952",
+        "qe.out": "b7ad2f0220e57a981b806931f8786efb42a2554b7bd60309b41188a79b1cca09",
+        "data-file-schema.xml": "2f641226800e846a258b67280310de2b98d83fbe31870bbbffef09391f687aea",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "Si_GTH_PBE_q4.gth": "222587513bae95c817cba4b9120d634876ce868ee08e019a284c04f109e297c8",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "6250a190edfa34abaf7bbe0a5edec166ffbc1f7a81f6d51cd594ef3031a21d9d",
+        "started.txt": "50cd36054c289b753400d3f27ce9ebd8b8d3819b854dd7156c8b911b280aa48c",
+        "finished.txt": "f51ea35b1c9cf4cbdfa7e2da0e2c6aec960c35de6fc48994ec1a9fdf5c7ffb56"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/input.in",
+        "qe.out": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/qe.out",
+        "data-file-schema.xml": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/scratch/skew_si2_k8_lsda.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/exit-code.txt",
+        "Si_GTH_PBE_q4.gth": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/Si_GTH_PBE_q4.gth",
+        "binary.sha256": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/binary.sha256",
+        "host.txt": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/host.txt",
+        "modules.txt": ".molq/next/public-k/qe-si2-fixed-lsda/attempt-1/modules.txt"
+      },
+      "matched_quad": [
+        24,
+        28,
+        24
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    },
+    {
+      "id": "h3-isolated-uks-lsda",
+      "model": "lsda",
+      "spin": true,
+      "kmesh": 2,
+      "cutoff_Ry": 6,
+      "filling": "none/fixed",
+      "Na": 2,
+      "Nb": 1,
+      "Ne": 3.0,
+      "M": 0.9999999999999951,
+      "entropy_Ry": 0,
+      "QE_nbnd": 2,
+      "native_SCF_max_iter": 250,
+      "native_tol": 1e-09,
+      "mix_beta": 0.35,
+      "quad_expected_not_yet_actual_queried": [
+        34,
+        30,
+        30
+      ],
+      "quadrature_basis": "Same geometry/cutoff G lists as existing matched probes. LSDA >=1.5x, GGA >=3x; fresh setup-only query required before actual QE launch.",
+      "input_sha256": "70845506a7b09643da0b5e6a5de4b9587243188bc34993ac3b1f6a723ea8d9e8",
+      "pp_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+      "source_input": "tools/diagnostics/pw-analytic-stress/rawrefs/h3-isolated-uks-lsda/input.in",
+      "source_input_sha256": "a322eefecc423568f69e48405e912da1efcf59bed57ac5c50b0c43f9c890e304",
+      "actual_native_quad": [
+        34,
+        30,
+        30
+      ],
+      "E": -1.43922183576883,
+      "f": [
+        [
+          -0.001317974726652955,
+          -0.01980723024894214,
+          -0.01416916102383344
+        ],
+        [
+          -0.01000860470274029,
+          9.250922554349579e-05,
+          0.0004513304491028557
+        ],
+        [
+          0.01132657942939324,
+          0.01971472102339865,
+          0.01371783057473058
+        ]
+      ],
+      "s": [
+        -5.791620300976187e-05,
+        -2.840955596958392e-05,
+        -5.677295458613429e-05,
+        7.419788685979072e-06,
+        4.177524789159095e-06,
+        4.082089833248544e-05
+      ],
+      "S_Ry": 0.0,
+      "index": 9,
+      "raw_dir": "h3-isolated-uks-lsda",
+      "raw_files_sha256": {
+        "input.in": "70845506a7b09643da0b5e6a5de4b9587243188bc34993ac3b1f6a723ea8d9e8",
+        "qe.out": "91b4880954d1c86ec64ccb81c5ee69dde48319fec4601a71226d542d85db2b17",
+        "data-file-schema.xml": "bb99aee92c71000f9ee1fe3abeab0bbcc72e2ad290c6d92379093a8c0f3d98e0",
+        "exit-code.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "H_GTH_PBE_q1.gth": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+        "binary.sha256": "24dbab9430c2f1dab1cb1009c3fbc6328e0f7c62417fd53fd7535159b4148fe6",
+        "host.txt": "5036f1662c4f9acd121767bb383908114676f4d8a846de6031bb713b1105f8b0",
+        "modules.txt": "ef1ea0a74c884cea9cd518453fea42bd610e4131bb8bd8c6e4b2a7de5e244a19",
+        "binary-path.txt": "d9e82c280dac15698d89798fef3f8697a249185cd3598394a7b5774ae7d27bf9",
+        "run.sh": "5c8e1951985a9c3810f882e01e8b7249adeb00710cfdbcd9555f623289c372cf",
+        "started.txt": "90d832cc8e8587c5820cf3837f4c9dc3a47c57fdceb84f6c78afc06611846538",
+        "finished.txt": "364a26431a7b3d0322e2313e048bf2012e30c62e06503e7136786698bc80c779"
+      },
+      "original_raw_paths": {
+        "input.in": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/input.in",
+        "qe.out": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/qe.out",
+        "data-file-schema.xml": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/scratch/h3-isolated-uks-lsda.save/data-file-schema.xml",
+        "exit-code.txt": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/exit-code.txt",
+        "H_GTH_PBE_q1.gth": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/H_GTH_PBE_q1.gth",
+        "binary.sha256": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/binary.sha256",
+        "host.txt": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/host.txt",
+        "modules.txt": ".molq/next/fixed-semilocal-k/proposal-1/h3-isolated-uks-lsda/modules.txt"
+      },
+      "matched_quad": [
+        34,
+        30,
+        30
+      ],
+      "global_insulator_qualification": false,
+      "occupation_contract": "fixed same band count per k; RKS f0/2, UKS f0/1 with Na2Nb1"
+    }
+  ],
+  "scope": "5semilocal models x RKS/populatedUKS, full2x2x2 fixed per-k band-index occupations. External E/F/sixstress, not global insulating ground-state qualification.",
+  "gates": {
+    "energy_ha": 1e-05,
+    "force_ha_bohr": 0.0001,
+    "stress_ev_ang3": 0.002,
+    "electron_count": 1e-08,
+    "magnetization": 1e-08,
+    "entropy_exact_zero": true
+  },
+  "units": {
+    "E": "Ha, no entropy term for none filling",
+    "f": "Ha/Bohr",
+    "s": "Ha/Bohr^3 compression-positive; xx yy zz xy xz yz"
+  },
+  "separate_controls": "controls/global-gap-negative",
+  "old_FD_Gaussian": "Default recipes, output protocols and nontrivial-entropy gates unchanged."
+}
