@@ -34,6 +34,7 @@
 #include <string>
 
 #include "atomiverse/core/precision.h"
+#include "atomiverse/cuda/device/graph_ring.cuh"
 #include "atomiverse/cuda/longrange/kspace.cuh"
 
 namespace ATV {
@@ -62,8 +63,11 @@ class KSpacePME : public KSpace {
     explicit KSpacePME(double alpha, double grid_spacing = 1.0, int order = 6,
                        ReciprocalKind kind = ReciprocalKind::Spme);
     ~KSpacePME() override;
+    KSpacePME(KSpacePME&&) noexcept = default;
+    KSpacePME& operator=(KSpacePME&&) noexcept = default;
 
     std::string name() const override { return "pme"; }
+    bool graph_capturable() const override { return true; }
     LongRangeContract long_range_contract() const override {
         return {LongRangeRole::ReciprocalSpace, AccReal(alpha_), AccReal(0),
                 AccReal(0)};
@@ -71,7 +75,6 @@ class KSpacePME : public KSpace {
 
     /// @brief Gate the reciprocal virial (set before build).
     /// @param required True iff a downstream consumer reads stress.
-    void set_stress_required(bool required) override { stress_ = required; }
 
     /// @brief FFT dimensions chosen at build.
     /// @return {K0, K1, K2} [grid points]; zero before build.
@@ -90,14 +93,15 @@ class KSpacePME : public KSpace {
     void compute(const LaunchContext& ctx) override;
 
   private:
-    void enqueue_(const LaunchContext& ctx);
-    void* graph_exec_ = nullptr; ///< cudaGraphExec_t, allocated only in build.
+    void enqueue_(const LaunchContext& ctx, bool want_energy, bool want_virial);
+    /// Graph per (eflag | vflag << 1), captured and instantiated in build.
+    GraphRing graph_exec_[4];
+    void* graphs_[4] = {}; ///< cudaGraph_t of each variant (for splicing).
     int built_atoms_ = 0;
     double alpha_;
     double spacing_;
     int order_;
     ReciprocalKind kind_ = ReciprocalKind::Spme;
-    bool stress_ = true;
     double background_coef_ = 0; ///< k_e π Q² / (2α²) [eV·Å³].
 
     int K_[3] = {0, 0, 0};

@@ -293,9 +293,10 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.vx, cap * sizeof(cuda::mixed_t)));
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.vy, cap * sizeof(cuda::mixed_t)));
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.vz, cap * sizeof(cuda::mixed_t)));
-    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.fx, cap * sizeof(fixed_t)));
-    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.fy, cap * sizeof(fixed_t)));
-    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.fz, cap * sizeof(fixed_t)));
+    // One block fx|fy|fz (stride = capacity) so a step clears it at once.
+    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.fx, 3 * cap * sizeof(fixed_t)));
+    d.atoms.fy = d.atoms.fx + cap;
+    d.atoms.fz = d.atoms.fx + 2 * cap;
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.mass, cap * sizeof(cuda::mixed_t)));
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.charge, cap * sizeof(cuda::force_t)));
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.type, cap * sizeof(int)));
@@ -331,9 +332,7 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
                               3 * n * sizeof(std::int8_t),
                               cudaMemcpyHostToDevice));
 
-    ATV_CUDA_CHECK(cudaMemset(d.atoms.fx, 0, cap * sizeof(fixed_t)));
-    ATV_CUDA_CHECK(cudaMemset(d.atoms.fy, 0, cap * sizeof(fixed_t)));
-    ATV_CUDA_CHECK(cudaMemset(d.atoms.fz, 0, cap * sizeof(fixed_t)));
+    ATV_CUDA_CHECK(cudaMemset(d.atoms.fx, 0, 3 * cap * sizeof(fixed_t)));
 
     // Box: 3x3 row-major on device (geometry precision)
     ATV_CUDA_CHECK(cudaMalloc(&d.box, 9 * sizeof(geom_t)));
@@ -509,6 +508,17 @@ void throw_if_force_fault(const Frame& d) {
     if (fault.kinds & ForceFault::kBond)
         what += std::string(what.empty() ? "" : "; ")
                 + "a FENE bond length reached R0";
+    if (fault.kinds & ForceFault::kCapacity)
+        throw std::runtime_error(
+            "CUDA neighbor fault: the cluster pair reserve is too small; a "
+            "rebuild needed "
+            + std::to_string(fault.required)
+            + " entries; construct NeighborList(cutoff, skin, "
+            + std::to_string(fault.required) + ") or a larger reserve"
+            + (fault.step >= 0 ? " (integration refused at step "
+                                     + std::to_string(fault.step) + ")"
+                               : std::string())
+            + ". The device state is frozen at that step.");
     throw std::runtime_error(
         "CUDA force fault: " + what + " (|F| must stay below "
         + std::to_string(kFixedLimit * kForceFixedResolution)
@@ -699,9 +709,7 @@ void destroy(Frame& d) {
     cudaFree(d.atoms.vx);
     cudaFree(d.atoms.vy);
     cudaFree(d.atoms.vz);
-    cudaFree(d.atoms.fx);
-    cudaFree(d.atoms.fy);
-    cudaFree(d.atoms.fz);
+    cudaFree(d.atoms.fx); // fy, fz live in the same block
     cudaFree(d.atoms.mass);
     cudaFree(d.atoms.charge);
     cudaFree(d.atoms.type);

@@ -119,6 +119,28 @@ __device__ __forceinline__ void raise_force_fault(ForceFault* fault,
     atomicOr(&fault->kinds, kind);
 }
 
+/// @brief Record a device reserve that a rebuild outgrew.
+/// @param fault Frame fault record (null: ignored).
+/// @param required Entries the rebuild needed.
+__device__ __forceinline__ void raise_capacity_fault(ForceFault* fault,
+                                                     long long required) {
+    if (fault == nullptr)
+        return;
+    atomicMax(&fault->required, required);
+    atomicOr(&fault->kinds, ForceFault::kCapacity);
+}
+
+/// @brief State-writer gate: true once any fault froze the device state.
+///
+/// Thermostats, barostats, box writers and momentum removal return early so
+/// a run that faulted stays at its faulting step while the host has not yet
+/// observed the fault. Uniform across the grid: faults are raised by earlier
+/// kernels in stream order.
+/// @param fault Frame fault record (null: never frozen).
+__device__ __forceinline__ bool state_frozen(const ForceFault* fault) {
+    return fault != nullptr && fault->kinds != 0;
+}
+
 /// @brief Check one returned fixed-point accumulation for wraparound.
 ///
 /// Split from the atomic so a kernel can issue several atomics, do other
@@ -291,6 +313,17 @@ forces_consumable(ForceFault* fault, const std::int64_t* tag, long long step) {
         fault->tag = (fault->row >= 0 && tag != nullptr) ? tag[fault->row] : -1;
     }
     return false;
+}
+
+/// @brief Integrator gate reading the step index from device memory, so a
+///        replayed graph stamps the step it actually ran (null: `step`).
+__device__ __forceinline__ bool forces_consumable(ForceFault* fault,
+                                                  const std::int64_t* tag,
+                                                  const long long* step_ptr,
+                                                  long long step) {
+    if (fault == nullptr || fault->kinds == 0)
+        return true;
+    return forces_consumable(fault, tag, step_ptr ? *step_ptr : step);
 }
 
 } // namespace cuda

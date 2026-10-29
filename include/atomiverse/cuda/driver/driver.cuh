@@ -356,8 +356,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     }
 
     /// @brief Mutable variant of for_each_pending — visitor may mutate the
-    /// component (e.g. `install_defaults()` gating per-step virial via
-    /// `set_stress_required`). @tparam Fn Callable `fn(cuda::Component&)`.
+    /// component. @tparam Fn Callable `fn(cuda::Component&)`.
     template <typename Fn>
     void for_each_pending_mut(Fn&& fn) {
         for (auto& pb : this->pending_)

@@ -60,7 +60,11 @@ __global__ void berendsen_dilation_k(const geom_t* box,
 
 __global__ void berendsen_scale_k(pos_t* x, pos_t* y, pos_t* z, pos_t* xc,
                                   pos_t* yc, pos_t* zc, geom_t* box,
-                                  const mixed_t* dilation, int n) {
+                                  const mixed_t* dilation, int n,
+                                  const ForceFault* fault) {
+    // A faulted run keeps its cell and positions at the faulting step.
+    if (state_frozen(fault))
+        return;
     const mixed_t mu = *dilation;
     if (threadIdx.x == 0 && blockIdx.x == 0)
         for (int d = 0; d < 9; ++d)
@@ -91,7 +95,7 @@ void Barostat::launch(const LaunchContext& ctx) {
         f.box, f.scalars, P_target_, dt_, tau_p_, bulk_modulus_, state_->d_mu);
     berendsen_scale_k<<<std::max(1, grid), block, 0, stream>>>(
         f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.x_corr, f.atoms.y_corr,
-        f.atoms.z_corr, f.box, state_->d_mu, n);
+        f.atoms.z_corr, f.box, state_->d_mu, n, f.force_fault);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 

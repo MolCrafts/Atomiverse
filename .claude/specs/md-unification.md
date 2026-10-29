@@ -36,7 +36,9 @@ plan below; do not report it complete until every item is done.
 3. Driver-lifetime trajectories independent of Frame object address; fix the
    molrs transient-frame lifecycle; unify setup / segment epilogue / defaults /
    protocols.
-4. CUDA conditional WHILE execution, device criteria and cumulative clock;
+4. (Single-GPU MD part tracked in
+   [cuda-md-device-control.md](cuda-md-device-control.md).)
+   CUDA conditional WHILE execution, device criteria and cumulative clock;
    neighbor-list overflow service and fully device-controlled rebuilds;
    graph-compatible long-range / packed-force consumers.
 5. Remove the separate `MultiGpu` production MD loops; shared Plan, bounded

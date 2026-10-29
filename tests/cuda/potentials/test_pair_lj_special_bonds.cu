@@ -179,7 +179,10 @@ TEST(CudaPairLJSpecialBonds, FourAtomChainKeepsBondPairsOnly) {
         cuda::PairLJCut{1.0, 1.0, cutoff}.set_special_bonds(1.0, 0.0, 0.0));
     sim.set_integrator(cuda::md::VelocityVerlet{0.001});
     sim.build();
-    sim.run(frame, 1);
+    // Zero steps: the initial force pass reports the energy of this
+    // geometry. One step would move the strained bonds (|F| = 24 eV/A) and
+    // shift the energy by ~6e-6 eV.
+    sim.run(frame, 0);
     // Three bonds at r = 1. 1-3 (r = 2) and 1-4 (r = 3) are scale 0.
     auto lj = [](double r) {
         const double sr6 = std::pow(1.0 / r, 6.0);
@@ -201,7 +204,7 @@ TEST(CudaPairLJSpecialBonds, FoldedChainWithoutDihedralDrops14) {
         cuda::PairLJCut{1.0, 1.0, cutoff}.set_special_bonds(1.0, 0.0, 0.0));
     sim.set_integrator(cuda::md::VelocityVerlet{0.001});
     sim.build();
-    sim.run(frame, 1);
+    sim.run(frame, 0); // energy of this geometry, as above
     // Three bonds at r = 1. The 1-4 (atom 0, atom 3) is also at r = 1 and
     // must not contribute. 1-3 pairs sit at r = sqrt(2) and are scale 0.
     auto lj = [](double r) {

@@ -46,10 +46,11 @@ excluded from throughput.
   throws before fill. Multi-GPU headroom is capacity: count actual owned+ghost
   rows.
 - The skin gate checks current minimum-image displacements before force
-  evaluation (a previous-step flag misses pairs). Mapped block flags avoid the
-  per-step clear and copy; the host reads after the stream event. Cell changes
-  force a rebuild. The decision still needs a sync — never hide it behind an
-  unsafe delayed check. Rebuild-count probes use build-owned pinned scalars.
+  evaluation (a previous-step flag misses pairs). Cell changes force a
+  rebuild. The decision is made **on the device for the current step** and
+  drives a conditional rebuild graph — never a host read (iron law 10), and
+  never a delayed check that lets one step run on a stale list. Rebuild counts
+  and generations are device counters read at the end of the run.
 
 ## PME / Ewald
 

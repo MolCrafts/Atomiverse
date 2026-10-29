@@ -166,7 +166,8 @@ __global__ void pme_refresh_tables(Box box_arg, PmeTables* __restrict__ tables,
     t.revision = box.revision;
     // E_bg ∝ 1/V: its virial −∂E/∂ε_aa is E_bg on each diagonal component.
     const double background = -background_coef / box.volume();
-    atomicAdd(energy, background);
+    if (energy != nullptr)
+        atomicAdd(energy, background);
     if constexpr (Virial)
         for (int d = 0; d < 3; ++d)
             atomicAdd(stress + d, background);
@@ -270,14 +271,18 @@ __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
     }
 
     // Tail lanes and the zero mode contribute zero but must participate in
-    // the collective. One atomic per block and component.
+    // the collective. One atomic per block and component. A step without
+    // eflag/vflag (null energy, no Virial) skips it; the branch is uniform.
+    if (energy == nullptr && !Virial)
+        return;
     using Reduce =
         cub::BlockReduce<::cuda::std::array<acc_t, components>, kDefaultBlock>;
     __shared__ typename Reduce::TempStorage reduction;
     const auto sum =
         Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
     if (threadIdx.x == 0) {
-        atomicAdd(energy, sum[0]);
+        if (energy != nullptr)
+            atomicAdd(energy, sum[0]);
         if constexpr (Virial)
             for (int k = 0; k < 6; ++k)
                 atomicAdd(stress + k, sum[k + 1]);
@@ -296,12 +301,15 @@ pme_interp(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = (i < natoms) ? double(q[i]) : 0.0;
     // Reduce before the neutral/tail early exit so every lane reaches the
-    // block barriers, including partially populated final blocks.
-    using Reduce = cub::BlockReduce<double, kDefaultBlock>;
-    __shared__ typename Reduce::TempStorage reduction;
-    const double block_energy = Reduce(reduction).Sum(self_pref * qi * qi);
-    if (threadIdx.x == 0)
-        atomicAdd(energy, block_energy);
+    // block barriers, including partially populated final blocks. The
+    // energy pointer is uniform: a step without eflag skips the reduction.
+    if (energy != nullptr) {
+        using Reduce = cub::BlockReduce<double, kDefaultBlock>;
+        __shared__ typename Reduce::TempStorage reduction;
+        const double block_energy = Reduce(reduction).Sum(self_pref * qi * qi);
+        if (threadIdx.x == 0)
+            atomicAdd(energy, block_energy);
+    }
     if (i >= natoms || qi == 0.0)
         return;
     const Box box = box_arg.current();
@@ -447,13 +455,16 @@ __global__ void pppm_energy(const PmeComplex* __restrict__ density,
         potential[idx].x = G * inv_vol * qr;
         potential[idx].y = G * inv_vol * qi;
     }
+    if (energy == nullptr && !Virial)
+        return; // uniform: no eflag/vflag this step
     using Reduce =
         cub::BlockReduce<::cuda::std::array<acc_t, components>, kDefaultBlock>;
     __shared__ typename Reduce::TempStorage reduction;
     const auto sum =
         Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
     if (threadIdx.x == 0) {
-        atomicAdd(energy, sum[0]);
+        if (energy != nullptr)
+            atomicAdd(energy, sum[0]);
         if constexpr (Virial)
             for (int k = 0; k < 6; ++k)
                 atomicAdd(stress + k, sum[k + 1]);
@@ -505,11 +516,13 @@ pppm_gather(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
             acc_t* __restrict__ energy) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = (i < natoms) ? double(q[i]) : 0.0;
-    using Reduce = cub::BlockReduce<double, kDefaultBlock>;
-    __shared__ typename Reduce::TempStorage reduction;
-    const double block_energy = Reduce(reduction).Sum(self_pref * qi * qi);
-    if (threadIdx.x == 0)
-        atomicAdd(energy, block_energy);
+    if (energy != nullptr) { // uniform: no eflag skips the self energy
+        using Reduce = cub::BlockReduce<double, kDefaultBlock>;
+        __shared__ typename Reduce::TempStorage reduction;
+        const double block_energy = Reduce(reduction).Sum(self_pref * qi * qi);
+        if (threadIdx.x == 0)
+            atomicAdd(energy, block_energy);
+    }
     if (i >= natoms || qi == 0.0)
         return;
     const Box box = box_arg.current();
@@ -771,9 +784,10 @@ void KSpacePME::build(const BuildContext& ctx) {
     ATV_CUDA_CHECK(cudaMemset(d_tables_, 0xff, sizeof(PmeTables)));
     ATV_CUDA_CHECK(
         cudaMalloc(&d_influence_, std::size_t(nhalf_) * sizeof(double)));
-    if (stress_)
-        ATV_CUDA_CHECK(
-            cudaMalloc(&d_virial_, 6 * std::size_t(nhalf_) * sizeof(double)));
+    // Virial coefficients are refreshed with the influence table on every
+    // cell change, so a later vflag step never reads a stale table.
+    ATV_CUDA_CHECK(
+        cudaMalloc(&d_virial_, 6 * std::size_t(nhalf_) * sizeof(double)));
     // PPPM stores three ik fields back to back. The forward density uses
     // only the first batch; the inverse plan transforms all three at once.
     const int field_batch = pppm ? 3 : 1;
@@ -835,36 +849,46 @@ void KSpacePME::build(const BuildContext& ctx) {
         throw std::runtime_error(pppm ? "KSpacePPPM: FFT build warmup failed"
                                       : "KSpacePME: FFT build warmup failed");
     ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
-    cudaGraph_t graph = nullptr;
-    ATV_CUDA_CHECK(
-        cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal));
-    try {
-        enqueue_(LaunchContext{ctx.runtime, ctx.frame, 0, 0});
-    } catch (...) {
-        cudaStreamEndCapture(stream, &graph);
-        if (graph)
-            cudaGraphDestroy(graph);
-        throw;
+    // One replayable graph per (eflag, vflag) combination; a step picks the
+    // one its consumers asked for (LAMMPS ev_set).
+    for (int variant = 0; variant < 4; ++variant) {
+        cudaGraph_t graph = nullptr;
+        ATV_CUDA_CHECK(
+            cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal));
+        try {
+            enqueue_(LaunchContext{ctx.runtime, ctx.frame, 0, 0},
+                     (variant & 1) != 0, (variant & 2) != 0);
+        } catch (...) {
+            cudaStreamEndCapture(stream, &graph);
+            if (graph)
+                cudaGraphDestroy(graph);
+            throw;
+        }
+        ATV_CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
+        // Kept: a step segment splices it as a child node.
+        graphs_[variant] = graph;
+        graph_exec_[variant].instantiate(graph);
     }
-    ATV_CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
-    cudaGraphExec_t executable = nullptr;
-    const auto status = cudaGraphInstantiate(&executable, graph, 0);
-    cudaGraphDestroy(graph);
-    ATV_CUDA_CHECK(status);
-    graph_exec_ = executable;
 }
 
 void KSpacePME::compute(const LaunchContext& ctx) {
     if (ctx.frame.n_local() != built_atoms_)
         throw std::runtime_error(
             "KSpacePME: atom set changed; rebuild the driver");
-    if (built_atoms_)
-        ATV_CUDA_CHECK(
-            cudaGraphLaunch(static_cast<cudaGraphExec_t>(graph_exec_),
-                            static_cast<cudaStream_t>(ctx.runtime.stream)));
+    const int variant =
+        (ctx.energy_requested ? 1 : 0) | (ctx.stress_requested ? 2 : 0);
+    const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+    if (!built_atoms_)
+        return;
+    if (graph_capture::active(stream))
+        graph_capture::splice(stream,
+                              static_cast<cudaGraph_t>(graphs_[variant]));
+    else
+        ATV_CUDA_CHECK(graph_exec_[variant].launch(stream));
 }
 
-void KSpacePME::enqueue_(const LaunchContext& ctx) {
+void KSpacePME::enqueue_(const LaunchContext& ctx, bool want_energy,
+                         bool want_virial) {
     const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
     const int n = built_atoms_;
@@ -885,25 +909,27 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
     const double inv_pi2_a2 =
         ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
     const int blk = kDefaultBlock;
-    acc_t* energy = &frame.scalars->energy;
+    acc_t* energy = want_energy ? &frame.scalars->energy : nullptr;
     acc_t* stress = frame.scalars->stress;
 
     const bool pppm = kind_ == ReciprocalKind::PppmIk;
+    // Influence and virial coefficients refresh together on a cell change,
+    // whatever this variant reports, so every variant reads current tables.
     auto refresh = [&]<bool Virial>() {
         kernels::pme_refresh_tables<Virial><<<1, 1, 0, stream>>>(
             box, tables, background_coef_, energy, stress);
         if (pppm)
-            kernels::pppm_refresh_influence<Virial>
+            kernels::pppm_refresh_influence<true>
                 <<<grid_size(nhalf_), blk, 0, stream>>>(
                     tables, box, geom, d_gf_b_, alpha_, d_influence_, d_virial_,
                     nhalf_);
         else
-            kernels::pme_refresh_influence<Virial>
+            kernels::pme_refresh_influence<true>
                 <<<grid_size(nhalf_), blk, 0, stream>>>(
                     tables, box, geom, d_moduli_, inv_pi2_a2, d_influence_,
                     d_virial_, nhalf_);
     };
-    if (stress_)
+    if (want_virial)
         refresh.template operator()<true>();
     else
         refresh.template operator()<false>();
@@ -925,7 +951,7 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
                                       : "KSpacePME: forward FFT failed");
     if (pppm) {
         auto* potential = static_cast<PmeComplex*>(d_potential_);
-        if (stress_)
+        if (want_virial)
             kernels::pppm_energy<true><<<grid_size(nhalf_), blk, 0, stream>>>(
                 spectrum, potential, geom, box, d_influence_, d_virial_, nhalf_,
                 energy, stress);
@@ -951,7 +977,7 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
         else
             gather.template operator()<0>();
     } else {
-        if (stress_)
+        if (want_virial)
             kernels::pme_influence<true><<<grid_size(nhalf_), blk, 0, stream>>>(
                 spectrum, geom, box, d_influence_, d_virial_, nhalf_, energy,
                 stress);
@@ -981,10 +1007,13 @@ void KSpacePME::enqueue_(const LaunchContext& ctx) {
 void KSpacePME::destroy(const DestroyContext& ctx) {
     ATV_CUDA_CHECK(
         cudaStreamSynchronize(static_cast<cudaStream_t>(ctx.runtime.stream)));
-    if (graph_exec_) {
-        cudaGraphExecDestroy(static_cast<cudaGraphExec_t>(graph_exec_));
-        graph_exec_ = nullptr;
-    }
+    for (auto& ring : graph_exec_)
+        ring.reset();
+    for (auto& graph : graphs_)
+        if (graph) {
+            cudaGraphDestroy(static_cast<cudaGraph_t>(graph));
+            graph = nullptr;
+        }
     built_atoms_ = 0;
     if (forward_plan_ >= 0) {
         cufftDestroy(static_cast<cufftHandle>(forward_plan_));

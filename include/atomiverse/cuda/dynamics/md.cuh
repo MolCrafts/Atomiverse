@@ -16,9 +16,8 @@
 /// phase-agnostic (`cuda/md/init.cuh`); `MD` binds them explicitly to
 /// `md::Phase` via `on(phase).add()`:
 /// - ZeroForces at pre_force (order -1000) -- zeros fx, fy, fz.
-/// - ZeroEnergy at pre_force (order -999) -- zeros potential energy.
-/// - ZeroStress at pre_force (order -998) -- zeros the virial tensor.
-/// - ZeroKinetic at end_of_step (order -1000) -- zeros kinetic energy.
+/// - ZeroScalars at pre_force (order -999) -- zeros every system scalar
+///   (energies, kinetic energy and stress, virial) in one memset.
 /// - KineticEnergy at end_of_step (order -100) -- accumulates KE.
 ///
 /// ## Execution model (shared with the CPU backend)
@@ -93,6 +92,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -121,9 +121,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     ///        KineticEnergy infrastructure components to `md::Phase`.
     MD() {
         on(ATV::md::Phase::pre_force).add(ZeroForces{}, -1000);
-        on(ATV::md::Phase::pre_force).add(ZeroEnergy{}, -999);
-        on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
-        on(ATV::md::Phase::end_of_step).add(ZeroKinetic{}, -1000);
+        on(ATV::md::Phase::pre_force).add(ZeroScalars{}, -999);
         on(ATV::md::Phase::end_of_step).add(KineticEnergy{}, -100);
     }
 
@@ -174,15 +172,29 @@ class MD : public cuda::Driver<ATV::md::Phase> {
                 this->backend_->refresh_inputs(frame);
             }
             this->backend_->prepare_run(step_counter_);
+            // The final step evaluates the energy the retrieved Frame reports.
+            this->backend_->set_report_step(step_counter_ + n_steps - 1);
             BigInt iterations = 0;
+            bool early = false;
             for (BigInt s = 0; s < n_steps; ++s) {
                 this->mutable_outer_status().reset();
                 step_once(step_counter_);
                 ++step_counter_;
                 ++iterations;
-                if (this->poll_criteria_(s) != Verdict::Continue)
+                // A device fault froze the state at its step; issuing more
+                // steps only burns GPU time. retrieve() reports it.
+                if (this->backend_->fault_observed())
                     break;
+                if (this->poll_criteria_(s) != Verdict::Continue) {
+                    early = s + 1 < n_steps;
+                    break;
+                }
             }
+            this->backend_->set_report_step(-1);
+            // A criterion stopped before the reported step: evaluate the
+            // current state once so the retrieved scalars belong to it.
+            if (early)
+                this->backend_->evaluate_current(step_counter_);
             this->backend_->retrieve(frame);
             return iterations;
         } catch (...) {
@@ -281,22 +293,27 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         return *this;
     }
 
-    /// @brief Configure the thermo print cadence (LAMMPS `thermo N`).
-    /// Singular: re-call with a different cadence throws.
-    /// Binds `cuda::Thermo{every}` at `end_of_step @ +20`.
-    /// @param every Print cadence [steps]. `0` is treated as "every step"
-    ///        per the `Thermo` constructor contract.
-    MD& set_thermo(int every) {
+    /// @brief Configure thermo output (LAMMPS `thermo N` +
+    ///        `thermo_style custom`). Singular: a re-call with a different
+    ///        cadence or keyword list throws.
+    /// Binds `cuda::Thermo{every, keywords}` at `end_of_step @ +20`; its
+    /// keywords decide which steps evaluate the energy and the virial.
+    /// @param every Print cadence [steps]. `0` prints every step.
+    /// @param keywords `thermo_style custom` keywords; empty selects the
+    ///        LAMMPS default `step temp pe ke etotal`.
+    MD& set_thermo(int every, std::vector<std::string> keywords = {}) {
         if (thermo_every_) {
-            if (*thermo_every_ == every)
+            if (*thermo_every_ == every && thermo_keywords_ == keywords)
                 return *this;
-            throw std::invalid_argument("set_thermo already configured with "
-                                        + std::to_string(*thermo_every_)
-                                        + ", rejected re-call with "
-                                        + std::to_string(every));
+            throw std::invalid_argument(
+                "set_thermo already configured with cadence "
+                + std::to_string(*thermo_every_)
+                + "; rejected a re-call with a different cadence or style");
         }
+        cuda::Thermo thermo{every, keywords}; // validates the keywords
         thermo_every_ = every;
-        this->on(ATV::md::Phase::end_of_step).add(cuda::Thermo{every}, +20);
+        thermo_keywords_ = std::move(keywords);
+        this->on(ATV::md::Phase::end_of_step).add(std::move(thermo), +20);
         return *this;
     }
 
@@ -335,22 +352,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
             this->on(ATV::md::Phase::post_force).add(cuda::Virial{}, -50);
         }
 
-        // Per-run virial gating: tell every virial-producing evaluator whether
-        // its stress/virial contribution is consumed downstream. The pair virial
-        // is needed iff either (a) some component reads stress directly (barostat
-        // / NPT — `needs_stress`), or (b) a `cuda::Virial` observer is
-        // present (`has_virial_stress`): that observer AGGREGATES the pair
-        // virial into the reported stress tensor, so its presence — whether
-        // user-added or auto-injected above — means the pair must produce it.
-        // In a plain NVE plan (neither holds) this disables the pair kernel's
-        // virial path: skips 6 inner-loop products + the stress reduction and
-        // frees the accumulator registers (ncu: ~80M->0 spill requests; measured
-        // +8% @1M / +33% @4M atoms on a single GH200). Mirrors the multi-GPU NVE
-        // path, which already gates its default pair off.
-        const bool stress_consumed = s.needs_stress || s.has_virial_stress;
-        this->for_each_pending_mut([&](cuda::Component& c) {
-            c.set_stress_required(stress_consumed);
-        });
+        // Energy and virial are evaluated per step on demand (each
+        // component's `demand()`, LAMMPS ev_set); no build-time gating.
 
         this->throw_if_missing_neighbor_list_(
             s, "cuda::md::MD",
@@ -412,6 +415,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     std::optional<std::string> dihedral_set_;
     std::optional<std::string> integrator_set_;
     std::optional<int> thermo_every_;
+    std::vector<std::string> thermo_keywords_;
 
     // ── Continuation bookkeeping (folded down from cuda::DynamicsDriver) ──
 

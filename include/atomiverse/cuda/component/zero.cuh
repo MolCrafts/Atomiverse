@@ -15,6 +15,7 @@ class ZeroForces : public Component {
     /// @brief Component name.
     /// @return "zero_forces".
     std::string name() const override { return "zero_forces"; }
+    bool graph_capturable() const override { return true; }
 
     /// @brief Structural role — none. Zeroing an accumulator is not a
     ///        loop slot; the driver decides where it binds.
@@ -39,6 +40,7 @@ class ZeroEnergy : public Component {
     /// @brief Component name.
     /// @return "zero_energy".
     std::string name() const override { return "zero_energy"; }
+    bool graph_capturable() const override { return true; }
 
     /// @brief Structural role — none. Zeroing an accumulator is not a
     ///        loop slot; the driver decides where it binds.
@@ -59,30 +61,22 @@ class ZeroStress : public Component {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
     std::string name() const override { return "zero_stress"; }
+    bool graph_capturable() const override { return true; }
     void launch(const LaunchContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
-/// @brief Zeros kinetic energy scalar on device using cudaMemsetAsync.
+/// @brief Zeros every system scalar (energies, kinetic energy, conserved
+///        quantity, virial and kinetic stress) in one cudaMemsetAsync.
 ///
-/// Phase-agnostic infrastructure component — the driver binds it to its
-/// own phase via explicit `on(phase).add()` (md::MD binds it at
-/// end_of_step, order -1000). Uses the DMA engine (cudaMemsetAsync), not
-/// a compute kernel.
-class ZeroKinetic : public Component {
+/// MD binds it at pre_force (order -999): every accumulator a step fills is
+/// produced after it (forces at force, KE and kinetic stress at end_of_step),
+/// and everything read before it (initial_integrate) is the previous step's.
+class ZeroScalars : public Component {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
-    /// @brief Component name.
-    /// @return "zero_kinetic".
-    std::string name() const override { return "zero_kinetic"; }
-
-    /// @brief Structural role — none. Zeroing an accumulator is not a
-    ///        loop slot; the driver decides where it binds.
-    /// @return ComponentRole::None.
-    /* role default default role 0 */
-
-    /// @brief Zero kinetic energy scalar via cudaMemsetAsync.
-    /// @param ctx Launch context.
+    std::string name() const override { return "zero_scalars"; }
+    bool graph_capturable() const override { return true; }
     void launch(const LaunchContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };

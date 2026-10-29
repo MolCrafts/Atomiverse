@@ -47,6 +47,7 @@ class VelocityVerlet : public cuda::Integrator {
     /// @brief Component name.
     /// @return "velocity_verlet".
     std::string name() const override { return "velocity_verlet"; }
+    bool graph_capturable() const override { return true; }
     Role role() const override { return 0; }
 
     /// @brief Structural role — the time-step integrator.

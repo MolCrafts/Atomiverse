@@ -19,6 +19,8 @@ struct NptParameters {
     int atom_chain, barostat_chain, pressure_dimensions;
     BigInt first, last, dof, atoms;
     bool coupled[3];
+    // A faulted run keeps every chain, cell and atom at the faulting step.
+    const ForceFault* fault;
 };
 
 struct NptHistory {
@@ -55,6 +57,8 @@ __device__ void barostat_chain(NptHistory& h, const NptParameters& p) {
 
 __global__ void atom_chain(NptHistory* history, NptParameters p, BigInt step,
                            bool initial) {
+    if (state_frozen(p.fault))
+        return;
     auto& h = *history;
     if (initial) {
         h.kt = units::kB_ev_per_k
@@ -71,9 +75,10 @@ __global__ void atom_chain(NptHistory* history, NptParameters p, BigInt step,
 }
 
 __global__ void scale_velocities(mixed_t* vx, mixed_t* vy, mixed_t* vz,
-                                 const NptHistory* history, int n) {
+                                 const NptHistory* history, int n,
+                                 const ForceFault* fault) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) {
+    if (i < n && !state_frozen(fault)) {
         vx[i] *= mixed_t(history->scale[0]);
         vy[i] *= mixed_t(history->scale[1]);
         vz[i] *= mixed_t(history->scale[2]);
@@ -81,6 +86,8 @@ __global__ void scale_velocities(mixed_t* vx, mixed_t* vy, mixed_t* vz,
 }
 
 __global__ void barostat_scale(NptHistory* history, NptParameters p) {
+    if (state_frozen(p.fault))
+        return;
     auto& h = *history;
     double sum = 0;
     for (int a = 0; a < 3; ++a)
@@ -149,13 +156,18 @@ __global__ void seed_kinetic(NptHistory* history,
                              const SystemScalars* scalars) {
     history->kinetic = scalars->kinetic;
 }
-__global__ void reduced_kinetic(NptHistory* history, const double* ke) {
+__global__ void reduced_kinetic(NptHistory* history, const double* ke,
+                                const ForceFault* fault) {
+    if (state_frozen(fault))
+        return;
     history->kinetic = 0.5 * units::mass_v2_to_energy * ke[0];
 }
 
 __global__ void pressure_update(NptHistory* history, NptParameters p,
                                 const double* ke, const SystemScalars* scalars,
                                 const geom_t* cell) {
+    if (state_frozen(p.fault))
+        return;
     auto& h = *history;
     const double volume = cell[0] * cell[4] * cell[8];
     if (!(volume > 0))
@@ -189,6 +201,8 @@ __global__ void pressure_update(NptHistory* history, NptParameters p,
 
 __global__ void propagate_cell(NptHistory* history, NptParameters p,
                                geom_t* cell, Box seed) {
+    if (state_frozen(p.fault))
+        return;
     auto& h = *history;
     for (int a = 0; a < 3; ++a) {
         double x = h.eps[a] * p.dt;
@@ -208,9 +222,9 @@ __global__ void propagate_positions(pos_t* x, pos_t* y, pos_t* z, pos_t* xc,
                                     pos_t* yc, pos_t* zc, const mixed_t* vx,
                                     const mixed_t* vy, const mixed_t* vz,
                                     const NptHistory* history, mixed_t dt,
-                                    int n) {
+                                    int n, const ForceFault* fault) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n)
+    if (i >= n || state_frozen(fault))
         return;
     const auto& h = *history;
     mixed_t value[3] = {load_position(x, xc, i) * mixed_t(h.scale[0])
@@ -229,6 +243,8 @@ __global__ void propagate_positions(pos_t* x, pos_t* y, pos_t* z, pos_t* xc,
 
 __global__ void finish(NptHistory* history, NptParameters p,
                        SystemScalars* scalars, const geom_t* cell) {
+    if (state_frozen(p.fault))
+        return;
     auto& h = *history;
     barostat_chain(h, p); // P11, after the atom thermostat P10
     double energy = h.kinetic + scalars->energy;
@@ -298,7 +314,8 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
                     nlast_,
                     ctx.runtime.md.n_dof_global,
                     ctx.frame.n_atoms(),
-                    {couple_axis_[0], couple_axis_[1], couple_axis_[2]}};
+                    {couple_axis_[0], couple_axis_[1], couple_axis_[2]},
+                    nullptr};
     s.chain.resize(3 * (mtchain_ + mpchain_));
     NptHistory h{};
     h.qt = thrust::raw_pointer_cast(s.chain.data());
@@ -335,10 +352,11 @@ void NoseHooverNPT::launch(const LaunchContext& ctx) {
     auto p = s.parameters;
     p.first = nfirst_;
     p.last = nlast_;
+    p.fault = f.force_fault;
     auto scale = [&] {
         scale_velocities<<<blocks, kDefaultBlock, 0, stream>>>(
             f.atoms.vx, f.atoms.vy, f.atoms.vz,
-            thrust::raw_pointer_cast(s.history.data()), n);
+            thrust::raw_pointer_cast(s.history.data()), n, f.force_fault);
     };
     auto reduce = [&] {
         ATV_CUDA_CHECK(cudaMemsetAsync(thrust::raw_pointer_cast(s.ke.data()), 0,
@@ -374,14 +392,15 @@ void NoseHooverNPT::launch(const LaunchContext& ctx) {
         propagate_positions<<<blocks, kDefaultBlock, 0, stream>>>(
             f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.x_corr, f.atoms.y_corr,
             f.atoms.z_corr, f.atoms.vx, f.atoms.vy, f.atoms.vz,
-            thrust::raw_pointer_cast(s.history.data()), mixed_t(dt_), n);
+            thrust::raw_pointer_cast(s.history.data()), mixed_t(dt_), n,
+            f.force_fault);
     } else if (ctx.at(ATV::md::Phase::final_integrate)) {
         force_kick(); // P7
     } else if (ctx.at(ATV::md::Phase::end_of_step)) {
         reduce();
         reduced_kinetic<<<1, 1, 0, stream>>>(
             thrust::raw_pointer_cast(s.history.data()),
-            thrust::raw_pointer_cast(s.ke.data()));
+            thrust::raw_pointer_cast(s.ke.data()), f.force_fault);
         barostat_scale<<<1, 1, 0, stream>>>(
             thrust::raw_pointer_cast(s.history.data()), p); // P8
         scale();

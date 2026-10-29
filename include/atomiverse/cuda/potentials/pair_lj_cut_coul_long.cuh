@@ -26,6 +26,7 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     PairLJCutCoulLong& operator=(PairLJCutCoulLong&&) noexcept;
 
     std::string name() const override { return "lj/cut/coul/long"; }
+    bool graph_capturable() const override { return true; }
     const LongRangeParticipant* as_long_range_participant() const override {
         return this;
     }
@@ -38,14 +39,15 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     /// @brief Set Amber exceptions on a temporary evaluator.
     /// @return The configured evaluator by value.
     PairLJCutCoulLong set_special_bonds_amber() &&;
-    void set_stress_required(bool required) override { stress_ = required; }
     /// @brief Packed I×J tiles of the latest neighbor rebuild (diagnostics).
+    ///        Reads the device count; call outside a run (it synchronizes).
     /// @return Tile count [dimensionless]; 0 before the first force call.
-    int packed_tiles() const noexcept;
+    int packed_tiles() const;
     /// @brief Cluster-pair CSR entries with at least one interacting pair in
-    ///        the upper triangle at the latest rebuild (diagnostics).
+    ///        the upper triangle at the latest rebuild (diagnostics). Reads
+    ///        the device count; call outside a run (it synchronizes).
     /// @return Entry count [dimensionless]; 0 before the first force call.
-    int valid_tiles() const noexcept;
+    int valid_tiles() const;
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
@@ -55,7 +57,7 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
   private:
     std::vector<double> epsilon_, sigma_;
     double alpha_;
-    bool amber_ = false, stress_ = true;
+    bool amber_ = false;
     struct State;
     std::unique_ptr<State> state_;
 };

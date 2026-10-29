@@ -164,8 +164,12 @@ class AsyncRecordBase : public Component {
             alloc(&device_ring_[i]);
             cudaEventCreateWithFlags(&pack_done_event_[i],
                                      cudaEventDisableTiming);
+            // The worker thread waits on this event: block instead of
+            // spinning, so a packed process with one core keeps it for the
+            // stepping thread (iron law 10 / MPS packing).
             cudaEventCreateWithFlags(&copy_done_event_[i],
-                                     cudaEventDisableTiming);
+                                     cudaEventDisableTiming
+                                         | cudaEventBlockingSync);
             slot_busy_[i].store(false, std::memory_order_relaxed);
         }
         compute_stream_ = static_cast<cudaStream_t>(ctx.runtime.stream);

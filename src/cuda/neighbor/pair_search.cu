@@ -4,6 +4,7 @@
 #include "nlist_impl.cuh"
 #include "triclinic.cuh"
 
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cmath>
 #include <cooperative_groups.h>
@@ -213,13 +214,25 @@ template <bool Ortho, bool CountOnly, typename T>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock) void fill_pairs(
     ClusterBounds bounds, const force_t* __restrict__ large_bounds,
     int num_clusters, bool periodic, T cutoff_plus_skin_sq, cuda::Box box_arg,
-    const int* __restrict__ row_ptr, int* __restrict__ col_idx,
-    int* __restrict__ pair_counts) {
+    int* __restrict__ row_ptr, int* __restrict__ col_idx,
+    int* __restrict__ pair_counts, const int* __restrict__ overflow) {
     const auto box = box_arg.current().as<T>();
     int ci = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
     int lane = threadIdx.x % 32;
     if (ci >= num_clusters)
         return;
+    if constexpr (!CountOnly) {
+        // An outgrown reserve empties the CSR: no consumer may read past it.
+        // Uniform across the grid; each warp writes only its own offset.
+        if (*overflow) {
+            if (lane == 0) {
+                row_ptr[ci] = 0;
+                if (ci == 0)
+                    row_ptr[num_clusters] = 0;
+            }
+            return;
+        }
+    }
     const int num_groups = (num_clusters + 31) / 32;
     ClusterBounds large{large_bounds,
                         large_bounds + num_groups,
@@ -266,8 +279,8 @@ template <typename T>
 void launch_fill_cluster_pairs(ClusterBounds bounds,
                                const force_t* large_bounds, int num_clusters,
                                bool periodic, T cutoff_plus_skin_sq,
-                               cuda::Box box, const int* row_ptr, int* col_idx,
-                               cudaStream_t stream) {
+                               cuda::Box box, int* row_ptr, int* col_idx,
+                               const int* overflow, cudaStream_t stream) {
     if (num_clusters <= 0)
         return;
     int grid = ATV::cuda::grid_size(num_clusters * 32);
@@ -275,11 +288,11 @@ void launch_fill_cluster_pairs(ClusterBounds bounds,
     if (box.ortho) {
         fill_pairs<true, false, T><<<grid, block, 0, stream>>>(
             bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
-            box, row_ptr, col_idx, nullptr);
+            box, row_ptr, col_idx, nullptr, overflow);
     } else {
         fill_pairs<false, false, T><<<grid, block, 0, stream>>>(
             bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
-            box, row_ptr, col_idx, nullptr);
+            box, row_ptr, col_idx, nullptr, overflow);
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }
@@ -297,30 +310,34 @@ void launch_count_cluster_pairs(ClusterBounds bounds,
     if (box.ortho) {
         fill_pairs<true, true, T><<<grid, block, 0, stream>>>(
             bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
-            box, nullptr, nullptr, pair_counts);
+            box, nullptr, nullptr, pair_counts, nullptr);
     } else {
         fill_pairs<false, true, T><<<grid, block, 0, stream>>>(
             bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
-            box, nullptr, nullptr, pair_counts);
+            box, nullptr, nullptr, pair_counts, nullptr);
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
-__global__ void write_row_ptr_sentinel(int* __restrict__ row_ptr,
-                                       const int* __restrict__ pair_counts,
-                                       int num_clusters) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        row_ptr[num_clusters] =
-            num_clusters > 0
-                ? row_ptr[num_clusters - 1] + pair_counts[num_clusters - 1]
-                : 0;
-    }
+__global__ void close_csr_k(int* __restrict__ row_ptr,
+                            const int* __restrict__ pair_counts,
+                            int num_clusters, int capacity,
+                            int* __restrict__ overflow, ForceFault* fault) {
+    const int total = num_clusters > 0 ? row_ptr[num_clusters - 1]
+                                             + pair_counts[num_clusters - 1]
+                                       : 0;
+    row_ptr[num_clusters] = total;
+    const bool outgrown = total > capacity;
+    *overflow = outgrown;
+    if (outgrown)
+        raise_capacity_fault(fault, total);
 }
 
-void launch_write_row_ptr_sentinel(int* row_ptr, const int* pair_counts,
-                                   int num_clusters, cudaStream_t stream) {
-    write_row_ptr_sentinel<<<1, 1, 0, stream>>>(row_ptr, pair_counts,
-                                                num_clusters);
+void launch_close_csr(int* row_ptr, const int* pair_counts, int num_clusters,
+                      int capacity, int* overflow, ForceFault* fault,
+                      cudaStream_t stream) {
+    close_csr_k<<<1, 1, 0, stream>>>(row_ptr, pair_counts, num_clusters,
+                                     capacity, overflow, fault);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 

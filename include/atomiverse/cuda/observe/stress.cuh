@@ -51,7 +51,10 @@ class Virial : public Observer {
     Virial& operator=(Virial&&) noexcept;
 
     std::string name() const override { return "virial"; }
+    bool graph_capturable() const override { return true; }
     bool provides_system_stress() const override { return true; }
+    /// The stress tensor this observer publishes needs the virial each step.
+    EvaluationDemand demand() const override { return {false, true, 1}; }
     /* role via Observer */
     /// @brief Zero the kinetic-stress accumulator. Pair/bonded virial
     ///        writes stay on the force kernels; this Observer only

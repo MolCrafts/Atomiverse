@@ -18,6 +18,9 @@ tickets: `.claude/notes/notes.md`.
 - [cpu-orthogonality.md](cpu-orthogonality.md) — CPU component/execution
   contracts; open: electronic execution communicator, PW/GPW borrowed nesting,
   FixMove origin migration, wider perf coverage.
+- [cuda-md-device-control.md](cuda-md-device-control.md) — single-GPU CUDA MD
+  with no device→host sync (device rebuild/fault/stop), LAMMPS-style on-demand
+  energy/virial, merged launches and whole-step graphs, MPS packing benchmark.
 - [md-unification.md](md-unification.md) — one MD execution model across CPU and
   CUDA: Frame edit/commit, typed model parameters, driver-lifetime
   trajectories, device-controlled CUDA loops, retiring `MultiGpu`.

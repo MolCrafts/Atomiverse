@@ -211,6 +211,22 @@ otherwise **stop** and report `path:line`. Never "pre-existing", never
 skip-mark, never weaken an assert, never land on known rot. Name it in the
 summary (found / fixed / blocking). Outranks "stay in scope" and "minimal diff".
 
+### 10. CUDA-only means no device→host synchronization
+
+Inside a CUDA run loop (MD step, SCF iteration, force body) the stepping
+thread never waits on the device: no `cudaStreamSynchronize` /
+`cudaEventSynchronize` / `cudaDeviceSynchronize`, no synchronous `cudaMemcpy` /
+`cudaMemset`, no D2H into pageable memory, no allocation, no host branch on a
+value the device computed this step. Every decision (neighbor rebuild,
+capacity overflow, fault, stop) is made **on the device** for the current step;
+anything the CPU consumes (thermo, recorders, fault and stop reports) arrives
+asynchronously — pinned `cudaMemcpyAsync`, non-blocking `cudaEventQuery`,
+off-thread workers — and the device state freezes at the deciding step so a
+late host is never wrong. Only setup, the end-of-run retrieve and the error
+path may synchronize. A "small" sync is still a violation; there is no hybrid
+exception. Detail and open violations:
+[cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md).
+
 ## Design defaults
 
 - **OOP by default** — domain concepts are types with methods

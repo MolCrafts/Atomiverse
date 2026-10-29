@@ -21,6 +21,7 @@ class BondFene : public Bond {
     BondFene& operator=(BondFene&&) noexcept;
 
     std::string name() const override { return "fene_bond"; }
+    bool graph_capturable() const override { return true; }
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

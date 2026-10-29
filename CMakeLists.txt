@@ -238,6 +238,7 @@ if(NOT ATV_DOCS_ONLY)
         # Cross-cutting core (logging registry, metrics)
         src/core/log.cpp
         src/core/real_harmonics.cpp
+        src/core/thermo_style.cpp
         # Backend-agnostic longrange operator math (Ewald/PME headers are
         # header-only; FMM needs translation-operator / tree sources). Always
         # compiled — not gated by ATV_BUILD_*.
@@ -613,7 +614,6 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/neighbor/fused_search.cu
                 src/cuda/neighbor/atom_cell_sort.cu
                 src/cuda/neighbor/setup.cu
-                src/cuda/neighbor/export_pairs.cu
             )
         endif()
         if(ATV_BUILD_SEMIEMPIRICAL)

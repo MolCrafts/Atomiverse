@@ -24,16 +24,13 @@ class CoulLong : public Pair, public LongRangeParticipant {
     CoulLong(double alpha, double cutoff);
 
     std::string name() const override { return "coul/long"; }
+    bool graph_capturable() const override { return true; }
     const LongRangeParticipant* as_long_range_participant() const override {
         return this;
     }
     LongRangeContract long_range_contract() const override {
         return {LongRangeRole::RealSpace, AccReal(alpha_),
                 AccReal(pair_cutoff()), AccReal(0)};
-    }
-
-    void set_stress_required(bool required) override {
-        compute_stress_ = required;
     }
 
     bool supports_force_rows() const override {
@@ -50,7 +47,6 @@ class CoulLong : public Pair, public LongRangeParticipant {
 
   private:
     double alpha_;
-    bool compute_stress_ = true;
 
     // Cluster-sorted positions and charge, allocated to padded Frame capacity
     // in build(). compute() only gathers into the standing scratch.

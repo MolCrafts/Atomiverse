@@ -290,9 +290,12 @@ TEST(CudaClusterMask, FillWideClustersMatchesExactOffsets) {
     DeviceVector<int> device_rows(rows.size()), columns(rows.back());
     cudaMemcpy(device_rows.data(), rows.data(), rows.size() * sizeof(int),
                cudaMemcpyHostToDevice);
+    DeviceVector<int> overflow(1);
+    ASSERT_EQ(cudaSuccess, cudaMemset(overflow.data(), 0, sizeof(int)));
     launch_fill_cluster_pairs<ATV::cuda::force_t>(
         input.bounds(), input.large.data(), WideClusterBounds::count, false,
-        ATV::cuda::force_t(1), input.box, device_rows.data(), columns.data());
+        ATV::cuda::force_t(1), input.box, device_rows.data(), columns.data(),
+        overflow.data());
     std::vector<int> actual(rows.back());
     ASSERT_EQ(cudaSuccess,
               cudaMemcpy(actual.data(), columns.data(),
@@ -303,6 +306,18 @@ TEST(CudaClusterMask, FillWideClustersMatchesExactOffsets) {
     EXPECT_EQ(actual[3], 1);
     for (int i = 2; i < WideClusterBounds::count; ++i)
         EXPECT_EQ(actual[rows[i]], i) << "cluster " << i;
+
+    // An outgrown reserve empties the CSR instead of writing past it.
+    ASSERT_EQ(cudaSuccess, cudaMemset(overflow.data(), 1, sizeof(int)));
+    launch_fill_cluster_pairs<ATV::cuda::force_t>(
+        input.bounds(), input.large.data(), WideClusterBounds::count, false,
+        ATV::cuda::force_t(1), input.box, device_rows.data(), columns.data(),
+        overflow.data());
+    std::vector<int> emptied(rows.size(), -1);
+    ASSERT_EQ(cudaSuccess,
+              cudaMemcpy(emptied.data(), device_rows.data(),
+                         emptied.size() * sizeof(int), cudaMemcpyDeviceToHost));
+    EXPECT_EQ(emptied, std::vector<int>(rows.size(), 0));
 }
 
 namespace {
@@ -371,11 +386,13 @@ TEST(CudaClusterMask, PartialSpecialScalePreservesGeometricMask) {
     EXPECT_EQ(actual, input.initial);
 }
 
-TEST(CudaClusterMask, CurrentPeriodicMotionOverwritesMappedPartialBlockFlags) {
+TEST(CudaClusterMask, SkinGateDecidesCurrentPeriodicMotionOnDevice) {
     using namespace ATV::cuda::md::nlist;
     using ATV::cuda::force_t;
     constexpr int n = 257;
     DeviceVector<force_t> x(n), ref(n), zero(n);
+    DeviceVector<Control> control(1);
+    DeviceVector<int> body_ran(1);
     std::vector<force_t> host(n, 0), reference(n, 0);
     reference[0] = force_t(9.9);
     host[0] = force_t(0.1);     // Only 0.2 A across the periodic face.
@@ -384,10 +401,7 @@ TEST(CudaClusterMask, CurrentPeriodicMotionOverwritesMappedPartialBlockFlags) {
               cudaMemcpy(ref.data(), reference.data(), n * sizeof(force_t),
                          cudaMemcpyHostToDevice));
     ASSERT_EQ(cudaSuccess, cudaMemset(zero.data(), 0, n * sizeof(force_t)));
-    int *flags = nullptr, *device_flags = nullptr;
-    ASSERT_EQ(cudaSuccess,
-              cudaHostAlloc(&flags, 2 * sizeof(int), cudaHostAllocMapped));
-    ASSERT_EQ(cudaSuccess, cudaHostGetDevicePointer(&device_flags, flags, 0));
+    ASSERT_EQ(cudaSuccess, cudaMemset(control.data(), 0, sizeof(Control)));
     ATV::cuda::Box box{};
     box.ortho = true;
     for (int d = 0; d < 3; ++d) {
@@ -395,20 +409,71 @@ TEST(CudaClusterMask, CurrentPeriodicMotionOverwritesMappedPartialBlockFlags) {
         box.inv_l[d] = 0.1;
         box.periodic[d] = true;
     }
+
+    // gate → IF(body): the body only records that it ran.
+    cudaStream_t cs = nullptr;
+    ASSERT_EQ(cudaSuccess,
+              cudaStreamCreateWithFlags(&cs, cudaStreamNonBlocking));
+    cudaGraph_t graph = nullptr;
+    ASSERT_EQ(cudaSuccess, cudaGraphCreate(&graph, 0));
+    cudaGraphConditionalHandle handle;
+    ASSERT_EQ(cudaSuccess, cudaGraphConditionalHandleCreate(
+                               &handle, graph, 0, cudaGraphCondAssignDefault));
+    constexpr auto mode = cudaStreamCaptureModeThreadLocal;
+    cudaGraph_t captured = nullptr;
+    ASSERT_EQ(cudaSuccess, cudaStreamBeginCaptureToGraph(cs, graph, nullptr,
+                                                         nullptr, 0, mode));
+    launch_skin_gate<force_t>(x.data(), zero.data(), zero.data(), ref.data(),
+                              zero.data(), zero.data(), n, force_t(0.25), box,
+                              nullptr, control.data(), handle, cs);
+    ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(cs, &captured));
+    cudaGraphNode_t gate = nullptr;
+    std::size_t roots = 1;
+    ASSERT_EQ(cudaSuccess, cudaGraphGetRootNodes(graph, &gate, &roots));
+    ASSERT_EQ(roots, 1u);
+    cudaGraphNodeParams params{};
+    params.type = cudaGraphNodeTypeConditional;
+    params.conditional.handle = handle;
+    params.conditional.type = cudaGraphCondTypeIf;
+    params.conditional.size = 1;
+    cudaGraphNode_t branch = nullptr;
+    ASSERT_EQ(cudaSuccess,
+              cudaGraphAddNode(&branch, graph, &gate, nullptr, 1, &params));
+    ASSERT_EQ(cudaSuccess, cudaStreamBeginCaptureToGraph(
+                               cs, params.conditional.phGraph_out[0], nullptr,
+                               nullptr, 0, mode));
+    ASSERT_EQ(cudaSuccess,
+              cudaMemsetAsync(body_ran.data(), 1, sizeof(int), cs));
+    ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(cs, &captured));
+    cudaGraphExec_t exec = nullptr;
+    ASSERT_EQ(cudaSuccess, cudaGraphInstantiate(&exec, graph, 0));
+
     for (int pass = 0; pass < 2; ++pass) {
         ASSERT_EQ(cudaSuccess,
                   cudaMemcpy(x.data(), host.data(), n * sizeof(force_t),
                              cudaMemcpyHostToDevice));
-        launch_atom_displacement_max<ATV::cuda::force_t>(
-            x.data(), zero.data(), zero.data(), ref.data(), zero.data(),
-            zero.data(), n, ATV::cuda::force_t(0.25), box, device_flags);
-        ASSERT_EQ(cudaSuccess, cudaDeviceSynchronize());
-        EXPECT_EQ(flags[0], 0) << "periodic crossing is inside skin/2";
-        EXPECT_EQ(flags[1], pass == 0 ? 1 : 0)
-            << "current tail block overwrites prior flag";
+        ASSERT_EQ(cudaSuccess, cudaMemset(body_ran.data(), 0, sizeof(int)));
+        ASSERT_EQ(cudaSuccess, cudaGraphLaunch(exec, cs));
+        ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(cs));
+        Control c{};
+        int ran = 0;
+        ASSERT_EQ(cudaSuccess, cudaMemcpy(&c, control.data(), sizeof(Control),
+                                          cudaMemcpyDeviceToHost));
+        ASSERT_EQ(cudaSuccess, cudaMemcpy(&ran, body_ran.data(), sizeof(int),
+                                          cudaMemcpyDeviceToHost));
+        // Pass 0: only the tail atom moved past skin/2 (the periodic crossing
+        // is 0.2 A). Pass 1: nothing moved; the gate re-arms itself.
+        EXPECT_EQ(c.rebuilt, pass == 0 ? 1 : 0);
+        EXPECT_EQ(ran != 0, pass == 0);
+        EXPECT_EQ(c.rebuilds, 1);
+        EXPECT_GT(c.generation, 0ULL);
+        EXPECT_EQ(c.motion, 0);
+        EXPECT_EQ(c.done, 0u);
         host[n - 1] = 0;
     }
-    ASSERT_EQ(cudaSuccess, cudaFreeHost(flags));
+    ASSERT_EQ(cudaSuccess, cudaGraphExecDestroy(exec));
+    ASSERT_EQ(cudaSuccess, cudaGraphDestroy(graph));
+    ASSERT_EQ(cudaSuccess, cudaStreamDestroy(cs));
 }
 
 namespace {

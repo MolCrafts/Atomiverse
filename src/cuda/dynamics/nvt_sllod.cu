@@ -44,14 +44,16 @@ void read_upper(const geom_t* box, double h[6]) {
     h[5] = static_cast<double>(box[1]);
 }
 
-__global__ void
-kick_bias(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
-          mixed_t* __restrict__ vz, const pos_t* __restrict__ x,
-          const pos_t* __restrict__ y, const pos_t* __restrict__ z,
-          const pos_t* __restrict__ xc, const pos_t* __restrict__ yc,
-          const pos_t* __restrict__ zc, ATV::md::SllodFlow flow, int n) {
+__global__ void kick_bias(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+                          mixed_t* __restrict__ vz, const pos_t* __restrict__ x,
+                          const pos_t* __restrict__ y,
+                          const pos_t* __restrict__ z,
+                          const pos_t* __restrict__ xc,
+                          const pos_t* __restrict__ yc,
+                          const pos_t* __restrict__ zc, ATV::md::SllodFlow flow,
+                          int n, const ForceFault* fault) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n)
+    if (i >= n || state_frozen(fault))
         return;
     double ux = vx[i], uy = vy[i], uz = vz[i];
     ATV::md::sllod_apply_bias(ux, uy, uz, load_position(x, xc, i),
@@ -69,7 +71,10 @@ __global__ void reduce_peculiar_ke(
     const pos_t* __restrict__ xc, const pos_t* __restrict__ yc,
     const pos_t* __restrict__ zc, const mixed_t* __restrict__ mass,
     Thermo* thermo, ATV::md::SllodFlow flow, int n, int ndof, double target,
-    double kT, double Q, double dt) {
+    double kT, double Q, double dt, const ForceFault* fault) {
+    // A faulted run keeps its thermostat chain at the faulting step.
+    if (state_frozen(fault))
+        return;
     using Reduce = cub::BlockReduce<double, kDefaultBlock>;
     __shared__ typename Reduce::TempStorage reduction;
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -113,9 +118,9 @@ scale_peculiar(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
                const pos_t* __restrict__ y, const pos_t* __restrict__ z,
                const pos_t* __restrict__ xc, const pos_t* __restrict__ yc,
                const pos_t* __restrict__ zc, const Thermo* thermo,
-               ATV::md::SllodFlow flow, int n) {
+               ATV::md::SllodFlow flow, int n, const ForceFault* fault) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n)
+    if (i >= n || state_frozen(fault))
         return;
     double bx, by, bz;
     const double px = load_position(x, xc, i);
@@ -200,8 +205,11 @@ __global__ void end_of_step(pos_t* __restrict__ x, pos_t* __restrict__ y,
                             mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
                             mixed_t* __restrict__ vz, geom_t* __restrict__ box,
                             ATV::md::SllodFlow flow, double shift, int slot,
-                            double new_value, int axis, int n_local,
-                            int n_all) {
+                            double new_value, int axis, int n_local, int n_all,
+                            const ForceFault* fault) {
+    // A faulted run keeps its cell and positions at the faulting step.
+    if (state_frozen(fault))
+        return;
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i == 0)
         box[slot] = static_cast<geom_t>(new_value);
@@ -326,18 +334,18 @@ void NvtSllod::launch(const LaunchContext& ctx) {
         reduce_peculiar_ke<<<grid, block, 0, stream>>>(
             a.vx, a.vy, a.vz, a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr,
             a.mass, state_->thermo, flow, n, state_->ndof, target, kT,
-            state_->Q, dt_);
+            state_->Q, dt_, frame.force_fault);
         scale_peculiar<<<grid, block, 0, stream>>>(
             a.vx, a.vy, a.vz, a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr,
-            state_->thermo, flow, n);
+            state_->thermo, flow, n, frame.force_fault);
     };
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
         const int grid = cuda::grid_size(n);
         if (!kicked_) {
-            kick_bias<<<grid, block, 0, stream>>>(a.vx, a.vy, a.vz, a.x, a.y,
-                                                  a.z, a.x_corr, a.y_corr,
-                                                  a.z_corr, flow, n);
+            kick_bias<<<grid, block, 0, stream>>>(
+                a.vx, a.vy, a.vz, a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr,
+                flow, n, frame.force_fault);
             kicked_ = true;
         }
         thermostate();
@@ -368,7 +376,7 @@ void NvtSllod::launch(const LaunchContext& ctx) {
         end_of_step<<<grid, block, 0, stream>>>(
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz,
             frame.box, flow, shift, box_slot(dir_), h_new[dir_],
-            dir_ < 3 ? dir_ : -1, n, n_all);
+            dir_ < 3 ? dir_ : -1, n, n_all, frame.force_fault);
         step_ = next;
     }
 }

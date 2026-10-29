@@ -9,7 +9,6 @@
 
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
-#include "flat_pair_list.cuh"
 
 #include <cstddef>
 #include <cstdint>
@@ -33,9 +32,6 @@ static_assert(kClusterSize == 32, "OpenMM cluster size is 32");
 inline constexpr int kMaskWords = (kClusterSize * kClusterSize + 63) / 64; // 16
 static_assert(kMaskWords == 16, "CS=32 ⇒ 16×uint64 mask words");
 
-/// @brief uint32 rows per mask (= kClusterSize). Helper for host/device.
-inline constexpr int kMaskU32PerPair = kClusterSize;
-
 /// @brief Read the 32-bit j-interaction flags for i_slot of CSR pair p.
 __host__ __device__ inline std::uint32_t mask_jbits(const std::uint64_t* mask,
                                                     int pair_idx, int i_slot) {
@@ -52,59 +48,5 @@ __host__ __device__ inline void mask_set_jbits(std::uint64_t* mask,
         mask + static_cast<std::size_t>(pair_idx) * kMaskWords);
     rows[i_slot] = bits;
 }
-
-/// @brief Legacy per-atom Verlet column capacity (multi-GPU transitional only).
-///
-/// Single-GPU force does not use vl_*. multi_gpu may still allocate until
-/// cuda-openmm-md-04 retires it. Auto-grows on overflow in rebuild.
-inline constexpr int kMaxVerletNeigh = 116;
-
-/// @brief Per-cluster atom data in SoA layout.
-/// @note Non-owning view; lifetime managed by NListBuffers.
-template <typename T>
-struct ClusterData {
-    T* x;                ///< [num_clusters * kClusterSize]
-    T* y;                ///< [num_clusters * kClusterSize]
-    T* z;                ///< [num_clusters * kClusterSize]
-    int* original_index; ///< [num_clusters * kClusterSize] map to input order
-    int* cluster_count;  ///< [num_clusters] actual atom count (<=kClusterSize)
-    T* aabb_min_x;       ///< [num_clusters]
-    T* aabb_min_y;       ///< [num_clusters]
-    T* aabb_min_z;       ///< [num_clusters]
-    T* aabb_max_x;       ///< [num_clusters]
-    T* aabb_max_y;       ///< [num_clusters]
-    T* aabb_max_z;       ///< [num_clusters]
-    int num_clusters;
-    int num_atoms;
-};
-
-/// @brief Cluster pair list in CSR format (OpenMM-style tile neighbors).
-/// @note Non-owning view; lifetime managed by NListBuffers.
-/// @note FULL neighbor list: every neighboring cluster appears for both
-///       endpoints (cj < ci, cj == ci, and cj > ci). Atom-centric / tile force
-///       kernels own each atom's force and walk the full set; energy must be
-///       de-duplicated (e.g. ×0.5) if both endpoints contribute.
-template <typename T>
-struct ClusterPairList {
-    int* row_ptr; ///< [num_clusters + 1] CSR row pointer
-    int* col_idx; ///< [num_pairs] j-cluster index per pair
-    /// [num_pairs * kMaskWords] multi-word interaction masks (see kMaskWords).
-    uint64_t* interaction_mask;
-    int num_pairs;
-    int num_clusters;
-};
-
-/// @brief Spatial grid of clusters for stencil-based pair search.
-/// @note Non-owning view; lifetime managed by NListBuffers.
-template <typename T>
-struct ClusterGrid {
-    int* cell_start;    ///< [ncells + 1] CSR: cluster start per cell
-    int* cell_clusters; ///< [num_clusters] cluster indices sorted by cell
-    int dims_x, dims_y, dims_z;   ///< Grid dimensions
-    T cell_matrix[9];             ///< Cell matrix (row-major)
-    T inv_cell[9];                ///< Inverse cell matrix
-    const force_t* d_cell_matrix; ///< Device pointer to row-major cell matrix
-    const force_t* d_inv_cell;    ///< Device pointer to inverse cell matrix
-};
 
 } // namespace ATV::cuda::md::nlist

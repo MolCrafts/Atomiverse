@@ -67,16 +67,16 @@ struct Input {
         work.scan_temp = temp.data;
         work.scan_bytes =
             ATV::cuda::internal::packed_tiles_scan_bytes(source.num_clusters);
-        ATV_CUDA_CHECK(cudaMallocHost(&work.host_count, sizeof(int)));
     }
     ~Input() {
         cudaStreamSynchronize(stream);
-        cudaFreeHost(work.host_count);
         cudaStreamDestroy(stream);
     }
+    // The packer publishes its tile count on the device only.
     int pack(const std::vector<std::uint32_t>& bits) {
         masks.upload(bits, stream);
-        return ATV::cuda::internal::pack_tiles(source, work, stream);
+        ATV::cuda::internal::pack_tiles(source, work, nullptr, stream);
+        return offsets.download(source.num_clusters + 1, stream).back();
     }
 };
 } // namespace

@@ -1164,7 +1164,6 @@ void MultiGpu::setup_force_engine(double cutoff, double epsilon, double sigma,
         ctx_[s].defer_stream = dm_.defer_stream(s);
         ctx_[s].host_box = box;
         ctx_[s].md.pair_list = nullptr;
-        ctx_[s].md.flat_pairs_requested = false;
         nlist_[s] = std::make_unique<cuda::NeighborList>(cutoff, force_skin_);
         // This driver reneighbors on a fixed cadence (reneigh_every) and re-arms
         // the list via set_active_count, so disable the per-step skin auto-gate:

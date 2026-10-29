@@ -69,17 +69,22 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void fene_bond_k(
 
     ::cuda::std::array<acc_t, 7> my_vals = {v,       my_v[0], my_v[1], my_v[2],
                                             my_v[3], my_v[4], my_v[5]};
-    using Reduce =
-        cub::BlockReduce<::cuda::std::array<acc_t, 7>, kDefaultBlock>;
-    __shared__ typename Reduce::TempStorage reduction;
-    const auto out =
-        Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
-    if (threadIdx.x == 0) {
-        atomicAdd(energy, out[0]);
-        if (stress != nullptr) {
+    // Null energy/stress: the step has no eflag/vflag (LAMMPS ev_set). The
+    // pointers are uniform, so skipping the collective is safe.
+    if (energy != nullptr || stress != nullptr) {
+        using Reduce =
+            cub::BlockReduce<::cuda::std::array<acc_t, 7>, kDefaultBlock>;
+        __shared__ typename Reduce::TempStorage reduction;
+        const auto out =
+            Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
+        if (threadIdx.x == 0) {
+            if (energy != nullptr)
+                atomicAdd(energy, out[0]);
+            if (stress != nullptr) {
 #pragma unroll
-            for (int c = 0; c < 6; ++c)
-                atomicAdd(&stress[c], out[c + 1]);
+                for (int c = 0; c < 6; ++c)
+                    atomicAdd(&stress[c], out[c + 1]);
+            }
         }
     }
     adds.check(fault);
@@ -131,7 +136,8 @@ void BondFene::compute(const LaunchContext& ctx) {
     int grid = grid_size(static_cast<int>(nb));
     kernels::fene_bond_k<<<grid, block, 0, stream>>>(
         f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.fx, f.atoms.fy, f.atoms.fz,
-        f.force_fault, &f.scalars->energy, &f.scalars->stress[0], f.bonds.atomi,
+        f.force_fault, ctx.energy_requested ? &f.scalars->energy : nullptr,
+        ctx.stress_requested ? &f.scalars->stress[0] : nullptr, f.bonds.atomi,
         f.bonds.atomj, f.bonds.type, state_->d_K, state_->d_R0, state_->n_types,
         ctx.runtime.host_box, nb);
 }

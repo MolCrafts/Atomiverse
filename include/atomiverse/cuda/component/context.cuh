@@ -52,15 +52,6 @@ struct DynamicsServices {
     /// @see cuda::PairList
     const PairList* pair_list = nullptr;
 
-    /// @brief Opt-in request for the flat (i,j,dx,dy,dz,r²) atom pair list.
-    ///
-    /// Cluster force kernels read the cluster CSR and do not need the flat
-    /// list; NeighborList skips prune+export by default. Consumers that
-    /// genuinely need the flat list set this true in their build();
-    /// NeighborList::launch() then emits it every step. Set before the
-    /// first launch (all build()s precede any launch()).
-    bool flat_pairs_requested = false;
-
     /// @brief Sorted exclusion CSR in original/local atom indices.
     /// Pair evaluators publish their fully excluded ordinary interactions
     /// here. NeighborList removes these pairs from geometric tile masks at
@@ -120,6 +111,7 @@ struct ExecServices {
     Backend* backend =
         nullptr; ///< Borrowed execution owner; never a second runtime.
     EvaluationTransaction* evaluation_transaction = nullptr;
+    bool energy_requested = true;
 };
 
 struct OptimizationServices {
@@ -160,6 +152,12 @@ struct Context {
     /// build resources. Kernels resolve Box::current() at entry; physical cell
     /// changes are published by the backend after changes_box() bindings.
     cuda::Box host_box;
+
+    /// @brief Device copy of the current step index, maintained by the
+    ///        backend each step. Kernels that need the step read it here so
+    ///        a replayed step graph sees the step it runs; null outside a
+    ///        backend (kernels then fall back to the host step).
+    const long long* device_step = nullptr;
 
     DynamicsServices md; ///< Classical force-pipeline slice.
 };

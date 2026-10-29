@@ -48,7 +48,8 @@ ewald_refresh_tables(Box box_arg, EwaldTables* __restrict__ tables,
     t.revision = box.revision;
     // E_bg ∝ 1/V: its virial −∂E/∂ε_aa is E_bg on each diagonal component.
     const double background = -background_coef / box.volume();
-    atomicAdd(energy, background);
+    if (energy != nullptr)
+        atomicAdd(energy, background);
     if constexpr (Virial)
         for (int d = 0; d < 3; ++d)
             atomicAdd(stress + d, background);
@@ -147,7 +148,8 @@ ewald_energy(const double* __restrict__ kw, const double* __restrict__ virial,
     const auto sum =
         Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
     if (threadIdx.x == 0) {
-        atomicAdd(energy, sum[0]);
+        if (energy != nullptr)
+            atomicAdd(energy, sum[0]);
         if constexpr (Virial)
             for (int c = 0; c < 6; ++c)
                 atomicAdd(stress + c, sum[c + 1]);
@@ -167,11 +169,13 @@ ewald_forces(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
              acc_t* __restrict__ energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = i < n ? double(q[i]) : 0;
-    using Reduce = cub::BlockReduce<double, kDefaultBlock>;
-    __shared__ typename Reduce::TempStorage reduction;
-    const double self_energy = Reduce(reduction).Sum(self_pref * qi * qi);
-    if (threadIdx.x == 0)
-        atomicAdd(energy, self_energy);
+    if (energy != nullptr) { // uniform: a step without eflag skips it
+        using Reduce = cub::BlockReduce<double, kDefaultBlock>;
+        __shared__ typename Reduce::TempStorage reduction;
+        const double self_energy = Reduce(reduction).Sum(self_pref * qi * qi);
+        if (threadIdx.x == 0)
+            atomicAdd(energy, self_energy);
+    }
     if (i >= n)
         return;
     const double K =
@@ -241,8 +245,9 @@ void KSpaceEwald::build(const BuildContext& ctx) {
                               cudaMemcpyHostToDevice));
     for (double** table : {&d_kx_, &d_ky_, &d_kz_, &d_kw_, &d_sr_, &d_si_})
         ATV_CUDA_CHECK(cudaMalloc(table, bytes));
-    if (stress_)
-        ATV_CUDA_CHECK(cudaMalloc(&d_virial_, 6 * bytes));
+    // Strain coefficients refresh with the wave vectors on every cell change,
+    // so a later vflag step never reads a stale table.
+    ATV_CUDA_CHECK(cudaMalloc(&d_virial_, 6 * bytes));
     ATV_CUDA_CHECK(cudaMalloc(&d_tables_, sizeof(EwaldTables)));
     // Revision ~0 never matches a published Box: the first launch fills them.
     ATV_CUDA_CHECK(cudaMemset(d_tables_, 0xff, sizeof(EwaldTables)));
@@ -270,22 +275,25 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
     const double self_pref = longrange::self_energy_prefactor(alpha_);
     const double inv4a2 = 1.0 / (4.0 * alpha_ * alpha_);
     auto* tables = static_cast<EwaldTables*>(d_tables_);
-    acc_t* energy = &frame.scalars->energy;
+    // Per-step LAMMPS eflag/vflag.
+    acc_t* energy = ctx.energy_requested ? &frame.scalars->energy : nullptr;
     acc_t* stress = frame.scalars->stress;
+    const bool virial = ctx.stress_requested;
     const int blk = kDefaultBlock;
     auto run = [&]<bool Virial>() {
         kernels::ewald_refresh_tables<Virial><<<1, 1, 0, stream>>>(
             box, tables, background_coef_, energy, stress);
-        kernels::ewald_refresh_k<Virial><<<grid_size(ng_), blk, 0, stream>>>(
+        kernels::ewald_refresh_k<true><<<grid_size(ng_), blk, 0, stream>>>(
             tables, box, d_modes_, ng_, inv4a2, d_kx_, d_ky_, d_kz_, d_kw_,
             d_virial_);
         kernels::ewald_structure_factor<<<ng_, blk, 0, stream>>>(
             frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
             d_kx_, d_ky_, d_kz_, ng_, d_sr_, d_si_);
-        kernels::ewald_energy<Virial><<<grid_size(ng_), blk, 0, stream>>>(
-            d_kw_, d_virial_, d_sr_, d_si_, ng_, box, energy, stress);
+        if (energy != nullptr || Virial)
+            kernels::ewald_energy<Virial><<<grid_size(ng_), blk, 0, stream>>>(
+                d_kw_, d_virial_, d_sr_, d_si_, ng_, box, energy, stress);
     };
-    if (stress_)
+    if (virial)
         run.template operator()<true>();
     else
         run.template operator()<false>();

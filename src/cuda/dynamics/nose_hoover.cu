@@ -5,6 +5,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cuda_runtime.h>
 
@@ -48,7 +49,11 @@ __global__ void reduce_ke_and_update(
     const mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
     acc_t* __restrict__ ke_out, int n, acc_t kMvv2e_val,
     mixed_t* __restrict__ xi, mixed_t* __restrict__ scale, mixed_t Q,
-    mixed_t ndof_kbT, mixed_t half_dt, unsigned int* __restrict__ block_count) {
+    mixed_t ndof_kbT, mixed_t half_dt, unsigned int* __restrict__ block_count,
+    const ForceFault* fault) {
+    // A faulted run keeps its thermostat state at the faulting step.
+    if (state_frozen(fault))
+        return;
     using Reduce = cub::BlockReduce<acc_t, kDefaultBlock>;
     __shared__ typename Reduce::TempStorage reduction;
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -82,9 +87,10 @@ __global__ void reduce_ke_and_update(
 
 __global__ void scale_vel(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
                           mixed_t* __restrict__ vz,
-                          const mixed_t* __restrict__ scale, int n) {
+                          const mixed_t* __restrict__ scale, int n,
+                          const ForceFault* fault) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= n)
+    if (idx >= n || state_frozen(fault))
         return;
     const mixed_t s = *scale;
     vx[idx] *= s;
@@ -127,11 +133,11 @@ void NoseHoover::launch(const LaunchContext& ctx) {
     reduce_ke_and_update<<<grid, block, 0, stream>>>(
         f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.mass, state_->d_ke_temp, n,
         ATV::units::mass_v2_to_energy, state_->d_xi, state_->d_scale, state_->Q,
-        ndof_kbT, half_dt, state_->d_block_count);
+        ndof_kbT, half_dt, state_->d_block_count, f.force_fault);
 
     // Scale velocities (reads scale written by the last block above)
     scale_vel<<<grid, block, 0, stream>>>(f.atoms.vx, f.atoms.vy, f.atoms.vz,
-                                          state_->d_scale, n);
+                                          state_->d_scale, n, f.force_fault);
 }
 
 void NoseHoover::destroy(const DestroyContext& ctx) {

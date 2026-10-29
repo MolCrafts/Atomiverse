@@ -25,6 +25,7 @@ class PairLJCut : public Pair {
     PairLJCut(double epsilon, double sigma, double cutoff);
 
     std::string name() const override { return "lj"; }
+    bool graph_capturable() const override { return true; }
 
     /// @brief Enable LAMMPS-style `special_bonds` 1-2 / 1-3 / 1-4
     ///        pair exclusions.
@@ -65,18 +66,11 @@ class PairLJCut : public Pair {
     /// Disabling it selects a kernel template that skips the 6 inner-loop
     /// virial products AND frees their registers (relieving the spill the
     /// `__launch_bounds__(256,4)` budget otherwise forces) and drops the
-    /// per-block stress reduction. Mirrors LAMMPS per-step `vflag` gating;
-    /// forces and energy are unaffected. Default: enabled.
+    /// per-block stress reduction. A veto on top of the per-step demand
+    /// (LAMMPS `vflag`): the virial is computed only on steps whose
+    /// consumers ask for it. Forces are unaffected. Default: enabled.
     PairLJCut& set_compute_stress(bool on) &;
     PairLJCut set_compute_stress(bool on) &&;
-
-    /// @brief `Component` hook — the driver gates per-step virial on
-    ///        whether any downstream component consumes stress. Equivalent to
-    ///        `set_compute_stress(required)`; lets the MD driver disable the
-    ///        virial path for plain NVE plans without name matching.
-    void set_stress_required(bool required) override {
-        compute_stress_ = required;
-    }
 
     /// @brief `cuda::Pair` hook — enables full (0,0,0) special-bonds
     ///        exclusions, equivalent to `set_special_bonds(0,0,0)`. Lets the

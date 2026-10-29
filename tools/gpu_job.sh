@@ -29,6 +29,8 @@
 #   ATV_KEEP_BUILD   set to 1 to keep the tree for follow-up runs
 #   ATV_RUN          shell command after ctest (GPU module env; ${BUILD}
 #                    expands in that shell).
+#   ATV_CUDA_ROOT    CUDA toolkit (default: the GH200 manual 13.2.1 install;
+#                    the module's 13.0 toolkit is not used)
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
@@ -37,6 +39,25 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 export ATV_MOLPY_PATH
 
 module load GPU/buildenv-gcccuda/2026.03-cu13.0
+# Host toolchain, MPI and OpenBLAS come from the module; the CUDA toolkit is
+# 13.2 (no module ships it). It runs on the node's R580 driver through CUDA
+# minor-version compatibility because the build embeds sm_90 SASS.
+: "${ATV_CUDA_ROOT:=/software/sse2/el9_gh200/manual/CUDA/13.2.1_595.58.03}"
+export ATV_CUDA_ROOT
+# Drop every search-path entry of the module's own toolkit, or nvcc 13.2
+# picks up 13.0 headers/libraries ("compiler and toolkit headers are
+# incompatible").
+drop_other_cuda() {
+    printf '%s' "$1" | tr ':' '\n' | grep -v '/CUDA/' | paste -sd:
+}
+for var in PATH CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH \
+    LD_LIBRARY_PATH CMAKE_PREFIX_PATH PKG_CONFIG_PATH; do
+    export "${var}=$(drop_other_cuda "${!var:-}")"
+done
+unset EBROOTCUDA EBVERSIONCUDA CUDA_ROOT
+export CUDA_HOME="${ATV_CUDA_ROOT}" CUDA_PATH="${ATV_CUDA_ROOT}"
+export PATH="${ATV_CUDA_ROOT}/bin:${PATH}"
+export LD_LIBRARY_PATH="${ATV_CUDA_ROOT}/lib64:${LD_LIBRARY_PATH:-}"
 # The login-node x86 shims shadow the aarch64 toolchain on the GPU node.
 PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v '/\.x86/' | paste -sd:)
 export PATH
@@ -46,11 +67,12 @@ hash -r
 if [[ "$(uname -m)" == aarch64 ]]; then
     export RUSTUP_TOOLCHAIN=stable-aarch64-unknown-linux-gnu
 fi
-export LD_LIBRARY_PATH="${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="${ATV_CUDA_ROOT}/lib64:${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
 
 echo "host=$(hostname) arch=$(uname -m)"
 echo "cmake=$(command -v cmake) nvcc=$(command -v nvcc || true)"
+nvcc --version | tail -1
 echo "HEAD=$(git rev-parse HEAD)"
 nvidia-smi -L || true
 
@@ -60,6 +82,8 @@ BUILD="${ATV_BUILD_DIR:-build-gpu-job}"
 cmake -B "${BUILD}" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CUDA_ARCHITECTURES=90 \
+  -DCMAKE_CUDA_COMPILER="${ATV_CUDA_ROOT}/bin/nvcc" \
+  -DCUDAToolkit_ROOT="${ATV_CUDA_ROOT}" \
   -DATV_BUILD_CUDA=ON \
   -DATV_BUILD_TESTS=ON \
   -DBLA_VENDOR=OpenBLAS \

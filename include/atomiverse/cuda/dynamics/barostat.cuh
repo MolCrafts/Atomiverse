@@ -36,6 +36,7 @@ class Barostat : public cuda::Barostat {
 
     bool changes_box(int) const override { return true; }
     std::string name() const override { return "barostat"; }
+    bool graph_capturable() const override { return true; }
     Role role() const override { return 0; }
     bool requires_system_stress() const override { return true; }
 

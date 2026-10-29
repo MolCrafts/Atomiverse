@@ -1,13 +1,15 @@
 /// @file cpu/record/thermo.h
-/// @brief CPU thermodynamic output: Thermo component + thermo_print free function.
+/// @brief CPU thermodynamic output component (LAMMPS `thermo` +
+///        `thermo_style custom`).
 ///
-/// `Thermo` is the per-step recorder component; `thermo_print` is the
-/// low-level formatted-print helper called by `cuda::Thermo` after async D2H.
+/// Keywords and line format are shared with `cuda::Thermo` through
+/// `ATV::ThermoStyle`.
 #pragma once
 
-#include <fstream>
 #include <string>
+#include <vector>
 
+#include "atomiverse/core/thermo_style.h"
 #include "atomiverse/cpu/component/recorder.h"
 
 namespace ATV {
@@ -15,13 +17,14 @@ namespace cpu {
 
 /// @brief Thermodynamic output recorder component (CPU backend).
 ///
-/// Prints step, PE, KE, temperature, total energy, and the
-/// integrator's conserved quantity (`frame.conserved` — the extended
-/// Hamiltonian for Nosé-Hoover NVT/NPT) at the given frequency.
-/// MPI-aware: only rank 0 prints.
+/// Prints the `thermo_style custom` columns of the frame state at the given
+/// frequency. MPI-aware: only rank 0 prints.
 class Thermo : public cpu::Recorder {
   public:
-    explicit Thermo(int freq);
+    /// @param freq Print cadence [steps]; 0 prints every step.
+    /// @param keywords `thermo_style custom` keywords; empty selects the
+    ///        LAMMPS default `step temp pe ke etotal`.
+    explicit Thermo(int freq, std::vector<std::string> keywords = {});
 
     std::string name() const override { return "thermo"; }
     /* role via Recorder base */
@@ -30,21 +33,9 @@ class Thermo : public cpu::Recorder {
 
   private:
     int freq_;
+    ThermoStyle style_;
+    bool header_printed_ = false;
 };
-
-/// @brief Print one thermodynamic output line.
-///
-/// Prints a column header on the first call (guarded by header_printed).
-/// Writes to stdout and, if file is open, to the optional log file as well.
-///
-/// @param step           Current step number.
-/// @param pe             Potential energy [eV].
-/// @param ke             Kinetic energy [eV].
-/// @param n_dof          Degrees of freedom, used for the temperature.
-/// @param header_printed Guard flag; set to true after the first call.
-/// @param file           Optional open output stream (may be a closed fstream).
-void thermo_print(BigInt step, double pe, double ke, int n_dof,
-                  bool& header_printed, std::ofstream& file);
 
 } // namespace cpu
 } // namespace ATV

@@ -13,6 +13,7 @@
 /// CUDA-free header.
 #pragma once
 #include "atomiverse/core/input_change.h"
+#include <cstdint>
 
 #include "atomiverse/core/precision.h"
 #include <cstddef>
@@ -45,6 +46,15 @@ struct BuildContext {
     cuda::Frame& frame;     ///< Device-resident system state + host metadata.
 };
 
+/// @brief Energy / virial a component consumes on the steps with
+///        `step % every == phase` (`every` = 0: never).
+struct EvaluationDemand {
+    bool energy = false;
+    bool virial = false;
+    int every = 0;
+    int phase = 0;
+};
+
 /// @brief Context for per-step GPU work submission.
 ///
 /// Passed to Component::launch() every simulation step. launch() must
@@ -58,6 +68,10 @@ struct LaunchContext {
     BigInt step; ///< Current simulation step index (0-based).
     bool initializing_forces = runtime.exec.initializing_forces;
     bool forces_requested = runtime.exec.forces_requested;
+    /// Potential energy wanted this step (LAMMPS `eflag_global`). An MD
+    /// step clears it unless a consumer's demand falls on the step.
+    bool energy_requested = runtime.exec.energy_requested;
+    /// Virial wanted this step (LAMMPS `vflag_global`), same rule.
     bool stress_requested = runtime.exec.stress_requested;
     bool trial_evaluation = runtime.exec.trial_evaluation;
 
@@ -124,20 +138,24 @@ class Component {
     /// @return Dimensionless predicate. Default false.
     virtual bool provides_hessian() const { return false; }
 
-    /// @brief Per-run hint: does any component downstream consume this
-    ///        evaluator's stress/virial contribution?
+    /// @brief What this component consumes from the force field, and how
+    ///        often (LAMMPS `Integrate::ev_setup` / `ev_set`).
     ///
-    /// `cuda::md::MD::install_defaults()` calls this on every pending
-    /// component with the plan-level verdict (`needs_stress` — true iff
-    /// some component `requires_system_stress()`). Virial-producing
-    /// evaluators (pair / bonded) override it to gate their per-step virial
-    /// accumulation: in a plain NVE run (no barostat/stress observer) the
-    /// pair kernel then skips the 6 inner-loop virial products and the
-    /// stress reduction, and frees the accumulator registers under its
-    /// launch-bounds budget. Default no-op: components that produce no
-    /// virial ignore it. No `dynamic_cast` / `name()` matching.
-    /// @param required true iff a downstream consumer needs the virial.
-    virtual void set_stress_required(bool /*required*/) {}
+    /// The backend ORs the demands whose cadence hits a step into that
+    /// step's `energy_requested` / `stress_requested`; producers skip the
+    /// accumulation, reductions and atomics of what nobody asked for. The
+    /// last step of every run evaluates the energy (and the virial when
+    /// anything demands it) so the retrieved Frame carries it. Default: a
+    /// component that
+    /// `requires_system_stress()` wants the virial every step.
+    virtual EvaluationDemand demand() const {
+        EvaluationDemand d;
+        if (requires_system_stress()) {
+            d.virial = true;
+            d.every = 1;
+        }
+        return d;
+    }
 
     /// @brief Typed accessor for the consumer side of the opt-in
     ///        neighbor protocol (mirrors
@@ -171,6 +189,24 @@ class Component {
     /// @brief Execution frequency: 0 = every step, N = every Nth step.
     /// @return Step frequency. 0 means execute on every step.
     virtual int frequency() const { return 0; }
+
+    /// @brief launch() may be captured once into a step graph and replayed.
+    ///
+    /// True only when launch() enqueues main-stream work that is a pure
+    /// function of build-time state, device state and the step's
+    /// `energy_requested` / `stress_requested` (never `ctx.step` or other
+    /// host state that changes per step; the step is on
+    /// `runtime.device_step`). The backend captures runs of such components
+    /// into one graph per step signature. Default false: launched directly.
+    virtual bool graph_capturable() const { return false; }
+
+    /// @brief Changes whenever state baked into a captured launch changes
+    ///        (active count, attached hooks). Part of the step-graph key.
+    virtual std::uint64_t graph_epoch() const { return 0; }
+
+    /// @brief Also run on the last step of every run, off cadence (LAMMPS
+    ///        prints thermo on the final step). Default false.
+    virtual bool samples_final_step() const { return false; }
 
     /// @brief Default stage bindings. Empty = must bind explicitly via on().add().
     /// @return Vector of DefaultBinding (phase index + order pairs).

@@ -39,9 +39,10 @@ __global__ void
 deform_k(pos_t* __restrict__ pos,  // x, y, or z depending on axis
          pos_t* __restrict__ corr, // matching correction column (or null)
          geom_t* __restrict__ box, // 3x3 row-major
-         int axis, mixed_t scale_factor, int n) {
+         int axis, mixed_t scale_factor, int n, const ForceFault* fault) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= n)
+    // A faulted run keeps its cell and positions at the faulting step.
+    if (idx >= n || state_frozen(fault))
         return;
 
     // Remap atom position proportionally
@@ -91,7 +92,8 @@ void Deform::launch(const LaunchContext& ctx) {
         break;
     }
 
-    deform_k<<<grid, block, 0, stream>>>(pos, corr, f.box, axis_, scale, n);
+    deform_k<<<grid, block, 0, stream>>>(pos, corr, f.box, axis_, scale, n,
+                                         f.force_fault);
 }
 
 } // namespace md

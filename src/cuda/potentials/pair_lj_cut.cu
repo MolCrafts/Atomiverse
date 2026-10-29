@@ -71,7 +71,7 @@ __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
 /// OpenMM-style tile force: one warp per cluster (CS=32). Neighbor cluster
 /// positions are staged in per-warp shared memory; interaction mask selects
 /// active j-slots. FULL neighbor + 0.5 energy (both endpoints accumulate).
-template <bool Ortho, bool Virial>
+template <bool Ortho, bool Energy, bool Virial>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
     fixed_t* __restrict__ fz, ForceFault* fault, acc_t* __restrict__ energy,
@@ -180,9 +180,12 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
                     fxi += -f_over_r * dx;
                     fyi += -f_over_r * dy;
                     fzi += -f_over_r * dz;
-                    force_t e_pair =
-                        scale * (force_t(4) * eps_r * (sr12 - sr6) - vshift_r);
-                    my_energy += acc_t(0.5) * acc_t(e_pair);
+                    if constexpr (Energy) {
+                        force_t e_pair =
+                            scale
+                            * (force_t(4) * eps_r * (sr12 - sr6) - vshift_r);
+                        my_energy += acc_t(0.5) * acc_t(e_pair);
+                    }
                     if constexpr (Virial) {
                         my_vxx += acc_t(0.5) * acc_t(dx * (f_over_r * dx));
                         my_vyy += acc_t(0.5) * acc_t(dy * (f_over_r * dy));
@@ -204,6 +207,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     }
 
     // CUB reduces energy and each virial component in a single collective.
+    // A step that asked for neither skips the reduction and every atomic.
     if constexpr (Virial) {
         ::cuda::std::array<acc_t, 7> my_vals = {
             my_energy, my_vxx, my_vyy, my_vzz, my_vxy, my_vxz, my_vyz};
@@ -214,14 +218,15 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
         const auto out =
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
         if (threadIdx.x == 0) {
-            atomicAdd(energy, out[0]);
+            if constexpr (Energy)
+                atomicAdd(energy, out[0]);
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
                     atomicAdd(&stress[c], out[c + 1]);
             }
         }
-    } else {
+    } else if constexpr (Energy) {
         // Virial gated off: reduce energy alone; the my_v* accumulators stay
         // 0 and are dead-code-eliminated, freeing their registers.
         ::cuda::std::array<acc_t, 1> my_vals = {my_energy};
@@ -535,8 +540,10 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         static_cast<force_t>(kernels::kMinPairDist)
         * static_cast<force_t>(kernels::kMinPairDist);
     cuda::Box box = ctx.runtime.host_box;
-    acc_t* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
-    const bool virial = (stress_ptr != nullptr);
+    // Per-step LAMMPS eflag/vflag; set_compute_stress(false) vetoes the virial.
+    const bool energy = ctx.energy_requested;
+    const bool virial = compute_stress_ && ctx.stress_requested;
+    acc_t* stress_ptr = virial ? &frame.scalars->stress[0] : nullptr;
 
     // OpenMM cluster force — sole CUDA MD nonbonded path (cuda-openmm-md).
     if (pairs->cl_row_ptr == nullptr || pairs->cl_col_idx == nullptr
@@ -566,10 +573,11 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     int grid = grid_size(n_slots);
     constexpr int shmem = 0;
 
-    auto launch = [&](auto ortho_t, auto vir_t) {
+    auto launch = [&](auto ortho_t, auto energy_t, auto vir_t) {
         constexpr bool O = decltype(ortho_t)::value;
+        constexpr bool E = decltype(energy_t)::value;
         constexpr bool V = decltype(vir_t)::value;
-        kernels::lj_force_tile<O, V><<<grid, block, shmem, stream>>>(
+        kernels::lj_force_tile<O, E, V><<<grid, block, shmem, stream>>>(
             frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.force_fault,
             &frame.scalars->energy, stress_ptr, spx_, spy_, spz_,
             pairs->cl_row_ptr, pairs->cl_col_idx, mask, pairs->cl_orig_index,
@@ -578,19 +586,22 @@ void PairLJCut::compute(const LaunchContext& ctx) {
             min_pair_dist_sq, static_cast<force_t>(v_shift_), excl_off,
             excl_par, static_cast<force_t>(s_excl_));
     };
-    using T = std::true_type;
-    using F = std::false_type;
-    if (box.ortho) {
-        if (virial)
-            launch(T{}, T{});
+    auto by_flags = [&](auto ortho_t) {
+        using T = std::true_type;
+        using F = std::false_type;
+        if (energy && virial)
+            launch(ortho_t, T{}, T{});
+        else if (energy)
+            launch(ortho_t, T{}, F{});
+        else if (virial)
+            launch(ortho_t, F{}, T{});
         else
-            launch(T{}, F{});
-    } else {
-        if (virial)
-            launch(F{}, T{});
-        else
-            launch(F{}, F{});
-    }
+            launch(ortho_t, F{}, F{});
+    };
+    if (box.ortho)
+        by_flags(std::true_type{});
+    else
+        by_flags(std::false_type{});
 }
 
 } // namespace cuda

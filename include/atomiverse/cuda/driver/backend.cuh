@@ -9,12 +9,16 @@
 #pragma once
 
 #include "atomiverse/core/precision.h"
+#include <cstdint>
 #include <cuda_runtime.h>
+#include <map>
+#include <vector>
 
 #include "atomiverse/core/plan.h"
 #include "atomiverse/cpu/frame/input_snapshot.h"
 #include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/component/context.cuh"
+#include "atomiverse/cuda/device/graph_ring.cuh"
 #include "atomiverse/cuda/device/timer.h"
 #include "atomiverse/cuda/frame/frame.cuh"
 
@@ -87,8 +91,32 @@ class Backend {
     void prepare_run(BigInt step_idx = 0);
 
     /// @brief Execute one simulation step (launch all components by phase).
+    ///
+    /// Never waits on the device (iron law 10): the step ends with an async
+    /// copy of the fault word into a pinned ring, observed later by
+    /// `fault_observed()`.
     /// @param step_idx Zero-based step index within the simulation.
     void step(BigInt step_idx);
+
+    /// @brief True once a completed step reported a device fault.
+    ///
+    /// Non-blocking: the fault word is copied every `kFaultPollEvery` steps
+    /// and only completed copies are read, so a fault is seen late. The device state froze at the
+    /// faulting step, so a loop that stops issuing steps here loses nothing;
+    /// `retrieve()` then reports the fault.
+    bool fault_observed() const noexcept { return fault_observed_; }
+
+    /// @brief Last step of the current MD run: it evaluates the energy (and
+    ///        a demanded virial) whatever the cadences say, so `retrieve()`
+    ///        returns the final state's scalars. -1: none.
+    void set_report_step(BigInt step) noexcept { report_step_ = step; }
+
+    /// @brief Re-evaluate forces, energy and a demanded virial at the
+    ///        current state (a run that stopped before its report step).
+    void evaluate_current(BigInt step_idx) {
+        forces_ready_ = false;
+        prepare_run(step_idx);
+    }
 
     /// @brief Execute multiple simulation steps.
     /// @param n_steps Number of steps to execute.
@@ -127,6 +155,29 @@ class Backend {
 
   private:
     void publish_box_();
+    void observe_fault_(BigInt step_idx);
+    void apply_demand_(LaunchContext& ctx, BigInt step) const;
+    void execute_step_graphed_(BigInt step_idx);
+    void sync_device_step_(BigInt step_idx);
+    void advance_device_step_(cudaStream_t stream);
+    void forget_graphs_() noexcept;
+    long long* device_step_ = nullptr; ///< context_.device_step storage.
+    BigInt device_step_next_ = -1;     ///< Value the device copy holds next.
+    /// Step graphs keyed by the ordered (component, phase, flags) segment.
+    std::map<std::vector<std::uintptr_t>, GraphRing> step_graphs_;
+    std::vector<EvaluationDemand> demands_; ///< MD plans only.
+    bool gate_evaluation_ = false;
+    bool virial_demanded_ = false;
+    BigInt report_step_ = -1;
+    void forget_fault_();
+    void release_fault_ring_();
+    static constexpr int kFaultRing = 4;
+    static constexpr int kFaultPollEvery = 64; ///< Steps between copies.
+    unsigned* fault_ring_ = nullptr;           ///< Pinned fault-word copies.
+    cudaEvent_t fault_ready_[kFaultRing] = {};
+    bool fault_pending_[kFaultRing] = {};
+    int fault_slot_ = 0;
+    bool fault_observed_ = false;
     detail::ComponentLifecycle<Component> lifecycle_;
     EvaluationTransaction evaluation_;
     cpu::FrameInputSnapshot input_snapshot_;

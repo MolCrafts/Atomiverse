@@ -22,7 +22,13 @@ class PressureSeries : public AsyncRecorder {
                    int direction);
 
     std::string name() const override { return "pressure_series"; }
-    int frequency() const override { return every_; }
+    // Rows are written after every `every_` completed steps (`can_run`), i.e.
+    // at step indices every_-1, 2 every_-1, ...; the plan therefore enters
+    // every step and the virial is demanded exactly on the sampled ones.
+    int frequency() const override { return 0; }
+    EvaluationDemand demand() const override {
+        return {false, true, every_, every_ - 1};
+    }
 
   protected:
     void on_build(const BuildContext& ctx) override;

@@ -26,9 +26,9 @@ __global__ void initial_integrate(
     mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
     const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
     const mixed_t* __restrict__ mass, ForceFault* fault,
-    const std::int64_t* __restrict__ tag, long long step, cuda::Box box,
-    mixed_t dt, int n) {
-    if (!forces_consumable(fault, tag, step))
+    const std::int64_t* __restrict__ tag, const long long* step_ptr,
+    long long step, cuda::Box box, mixed_t dt, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -57,9 +57,9 @@ final_integrate(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
                 mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
                 const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
                 const mixed_t* __restrict__ mass, ForceFault* fault,
-                const std::int64_t* __restrict__ tag, long long step,
-                mixed_t dt, int n) {
-    if (!forces_consumable(fault, tag, step))
+                const std::int64_t* __restrict__ tag, const long long* step_ptr,
+                long long step, mixed_t dt, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
@@ -83,12 +83,13 @@ void VelocityVerlet::launch(const LaunchContext& ctx) {
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
         initial_integrate<<<grid, block, 0, stream>>>(
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
-            a.fy, a.fz, a.mass, frame.force_fault, a.tag, ctx.step,
-            ctx.runtime.host_box, mixed_t(dt_), n);
+            a.fy, a.fz, a.mass, frame.force_fault, a.tag,
+            ctx.runtime.device_step, ctx.step, ctx.runtime.host_box,
+            mixed_t(dt_), n);
     } else {
         final_integrate<<<grid, block, 0, stream>>>(
             a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, frame.force_fault,
-            a.tag, ctx.step, mixed_t(dt_), n);
+            a.tag, ctx.runtime.device_step, ctx.step, mixed_t(dt_), n);
     }
 }
 

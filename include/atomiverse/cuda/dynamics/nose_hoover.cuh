@@ -34,6 +34,7 @@ class NoseHoover : public cuda::Thermostat {
     NoseHoover& operator=(NoseHoover&&) noexcept;
 
     std::string name() const override { return "nose_hoover"; }
+    bool graph_capturable() const override { return true; }
     Role role() const override { return 0; }
 
     /// @brief Structural role — the temperature controller.

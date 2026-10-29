@@ -3,14 +3,13 @@
 ///        the full rebuild pipeline when per-atom displacement stays
 ///        below `skin/2`.
 ///
-/// Covers `cuda-md-review-cleanup-02-nlist-skin-gating` ac-001/ac-002/
-/// ac-003: the existing dead code (`launch_cluster_displacement`,
-/// `ref_cluster_{x,y,z}`, `rebuild_flag`) is now wired into `launch()`
-/// and gates the rebuild pipeline on a 1-step-lagged D2H of the device
-/// flag.
+/// The gate is decided on the device for the current step and selects a
+/// conditional rebuild graph; the host never reads it (iron law 10). An
+/// outgrown reserve raises `ForceFault::kCapacity` instead of throwing in
+/// launch().
 ///
-/// Direct introspection: `cuda::NeighborList::rebuild_count()` exposes
-/// the host-side rebuild counter; we drive NeighborList manually
+/// Direct introspection: `cuda::NeighborList::rebuild_count()` reads the
+/// device rebuild counter after the run; we drive NeighborList manually
 /// through the Backend so the component instance stays addressable
 /// (the categorical `set_neighbor` in `cuda::md::MD` moves the value
 /// into the Plan, hiding it from test code).
@@ -18,6 +17,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
@@ -102,18 +102,11 @@ TEST(NeighborListSkinGating, FrozenLatticeStaysAtOneRebuild) {
     }
     backend.sync();
 
-    // The first launch always rebuilds (no prior flag) → rebuild_count
-    // is exactly 1 if the skin gate works. We allow `<= 2` to absorb a
-    // theoretical 1-step-lag carry-over (the second launch reads the
-    // first launch's flag-event; if the event hasn't materialized yet
-    // on the host side, the implementation may treat it conservatively
-    // and rebuild — though in practice the synchronous lattice keeps
-    // the displacement flag exactly 0).
-    EXPECT_LE(nl.rebuild_count(), 2)
+    // The first launch always rebuilds; the current-step gate then sees
+    // exactly zero displacement on every later step.
+    EXPECT_EQ(nl.rebuild_count(), 1)
         << "Skin gate should suppress rebuilds for a frozen lattice (got "
         << nl.rebuild_count() << " rebuilds over " << n_steps << " steps)";
-    EXPECT_GE(nl.rebuild_count(), 1)
-        << "Initial launch must rebuild at least once";
 
     cuda::DestroyContext dctx{backend.context(), backend.frame()};
     nl.destroy(dctx);
@@ -159,22 +152,55 @@ TEST(NeighborListSkinGating, RebuildsWhenDisplacementExceedsHalfSkin) {
     frame.span(kAtom_x)[0] += 0.5;
     backend.materialize(frame);
 
-    // Two more launches: the first arrives with the lagged flag from
-    // the previous (initial) step (which saw zero displacement, so it
-    // skips). The atom_displacement_max on this step will see the 0.5
-    // displacement and set the flag. The third launch reads that flag
-    // and rebuilds.
+    // The gate decides on the current positions: the very next launch
+    // rebuilds, and the one after sees the new reference and skips.
     backend.step(1);
     backend.sync();
-    backend.step(2);
-    backend.sync();
-
-    // After 3 total launches, expect ≥ 2 rebuilds (initial + the one
-    // triggered by the perturbation, with 1-step lag).
-    EXPECT_GE(nl.rebuild_count(), 2) << "Skin gate must rebuild after a "
+    EXPECT_EQ(nl.rebuild_count(), 2) << "Skin gate must rebuild after a "
                                         "displacement of 0.5 > half_skin=0.45 "
                                         "(got "
                                      << nl.rebuild_count() << " rebuilds)";
+    backend.step(2);
+    backend.sync();
+    EXPECT_EQ(nl.rebuild_count(), 2);
+
+    cuda::DestroyContext dctx{backend.context(), backend.frame()};
+    nl.destroy(dctx);
+    backend.shutdown();
+}
+
+// ── An outgrown reserve is a device fault, not a host check ────────────
+
+TEST(NeighborListSkinGating, OutgrownReserveEmptiesListAndRaisesCapacityFault) {
+    // Two clusters whose full directed CSR needs four entries; reserve one.
+    auto frame = make_frozen_lattice(4, 1.5);
+    cuda::Backend backend;
+    backend.init();
+    backend.materialize(frame);
+
+    cuda::NeighborList nl{3.0, 0.9, 1};
+    PlanBuilder<cuda::Component> builder;
+    builder.add({0, 0, &nl});
+    auto plan = builder.build(ATV::slot_count<md::Phase>());
+    backend.load(plan);
+    cuda::BuildContext bctx{backend.context(), backend.frame()};
+    nl.build(bctx);
+
+    backend.step(0); // launch() itself must not throw or read back
+    backend.step(1);
+    backend.sync();
+    backend.step(2); // folds the completed fault copies in
+    backend.sync();
+    EXPECT_TRUE(backend.fault_observed());
+    EXPECT_EQ(nl.candidate_tiles(), 0)
+        << "an outgrown reserve must leave an empty CSR, never a partial one";
+
+    cuda::ForceFault fault{};
+    ASSERT_EQ(cudaSuccess, cudaMemcpy(&fault, backend.frame().force_fault,
+                                      sizeof(fault), cudaMemcpyDeviceToHost));
+    EXPECT_NE(fault.kinds & cuda::ForceFault::kCapacity, 0u);
+    EXPECT_GT(fault.required, 1);
+    EXPECT_THROW(backend.retrieve(frame), std::runtime_error);
 
     cuda::DestroyContext dctx{backend.context(), backend.frame()};
     nl.destroy(dctx);

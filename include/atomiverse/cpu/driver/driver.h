@@ -1231,20 +1231,27 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @brief Which criterion ended the loop (empty if it simply ran out of budget).
     const std::string& stop_reason() const { return status_.reason; }
 
-    /// @brief Configure the thermo print cadence (LAMMPS `thermo N`).
-    /// Singular: re-call with a different cadence throws.
-    /// Binds `cpu::Thermo{every}` at the driver's end-of-step phase @ +20.
-    void set_thermo(int every) {
+    /// @brief Configure thermo output (LAMMPS `thermo N` +
+    ///        `thermo_style custom`). Singular: a re-call with a different
+    ///        cadence or keyword list throws.
+    /// Binds `cpu::Thermo{every, keywords}` at the driver's end-of-step
+    /// phase @ +20.
+    /// @param every Print cadence [steps]; 0 prints every step.
+    /// @param keywords `thermo_style custom` keywords; empty selects the
+    ///        LAMMPS default `step temp pe ke etotal`.
+    void set_thermo(int every, std::vector<std::string> keywords = {}) {
         if (thermo_every_) {
-            if (*thermo_every_ == every)
+            if (*thermo_every_ == every && thermo_keywords_ == keywords)
                 return;
-            throw std::invalid_argument("set_thermo already configured with "
-                                        + std::to_string(*thermo_every_)
-                                        + ", rejected re-call with "
-                                        + std::to_string(every));
+            throw std::invalid_argument(
+                "set_thermo already configured with cadence "
+                + std::to_string(*thermo_every_)
+                + "; rejected a re-call with a different cadence or style");
         }
+        ATV::cpu::Thermo thermo{every, keywords}; // validates the keywords
         thermo_every_ = every;
-        this->on(Traits::end_phase).add(ATV::cpu::Thermo{every}, +20);
+        thermo_keywords_ = std::move(keywords);
+        this->on(Traits::end_phase).add(std::move(thermo), +20);
     }
 
     /// @brief Let a preset clear its categorical slot after unmounting.
@@ -1757,6 +1764,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     std::optional<std::string> dihedral_set_;
     std::optional<std::string> neighbor_set_;
     std::optional<int> thermo_every_;
+    std::vector<std::string> thermo_keywords_;
 };
 
 } // namespace cpu

@@ -32,6 +32,8 @@ class KSpaceEwald : public KSpace {
     ~KSpaceEwald() override;
 
     std::string name() const override { return "ewald"; }
+
+    bool graph_capturable() const override { return true; }
     LongRangeContract long_range_contract() const override {
         return {LongRangeRole::ReciprocalSpace, AccReal(alpha_), AccReal(0),
                 AccReal(accuracy_)};
@@ -39,7 +41,6 @@ class KSpaceEwald : public KSpace {
 
     /// @brief Record whether a consumer reads stress (enables the virial).
     /// @param required True iff a downstream consumer reads stress.
-    void set_stress_required(bool required) override { stress_ = required; }
 
     // Charge-dependent background data (PME also captures it in a graph)
     // is fixed at build; reject edits until that cache has an update path.
@@ -56,7 +57,6 @@ class KSpaceEwald : public KSpace {
   private:
     double alpha_;
     double accuracy_;
-    bool stress_ = true;
     /// Background energy times volume, k_e π Q² / (2α²) [eV·Å³].
     double background_coef_ = 0;
 

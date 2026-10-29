@@ -3,8 +3,9 @@
 ///
 /// Demonstrates the build/launch/destroy lifecycle:
 /// - build(): allocates owned PairList and all internal GPU buffers.
-/// - launch(): skin-gated hierarchical tile search; no allocation.
-///   Rebuild decisions and capacity checks use scalar device readbacks.
+/// - launch(): one graph launch: a device skin gate and a conditional
+///   hierarchical tile rebuild. No allocation and no host readback; the
+///   rebuild decision and capacity verdict stay on the device.
 /// - destroy(): frees PairList and all internal buffers.
 ///
 /// Cross-driver component: returns empty default_bindings(), must be
@@ -14,8 +15,11 @@
 #include "atomiverse/core/role.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/component/neighbor_protocol.cuh"
@@ -47,25 +51,32 @@ openmm_mask_jbits(const std::uint64_t* mask, int pair_idx, int i_slot) {
 /// to consumers as a non-owning `const PairList*` on `cuda::Context`,
 /// mirroring `cpu::md::NeighborList` / `cpu::Context::pair_list`.
 ///
-/// Exported geometry (displacements, r²) is force-path `force_t`; the
-/// cluster coordinate copies keep the stored coordinate type `pos_t`.
-struct PairList {
-    int* i = nullptr;      ///< First atom index [device].
-    int* j = nullptr;      ///< Second atom index [device].
-    force_t* dx = nullptr; ///< x-displacement (j - i) [Angstrom, device].
-    force_t* dy = nullptr; ///< y-displacement (j - i) [Angstrom, device].
-    force_t* dz = nullptr; ///< z-displacement (j - i) [Angstrom, device].
-    force_t* dist_sq =
-        nullptr; ///< Squared pair distance dx²+dy²+dz² [Å², device].
-    ///<
-    ///< Per cuda-md-review-cleanup-06-launch-config-streams, the
-    ///< neighbor-list export stores r² rather than r — pair styles
-    ///< need inv_r² for the LJ force calculation and can skip the
-    ///< sqrt entirely. A consumer that needs r takes the sqrt at
-    ///< read time.
-    int* n_pairs = nullptr;  ///< Current pair count [device, 1 element].
-    int* capacity = nullptr; ///< Pre-allocated slot count [device, 1 element].
+/// @brief Rebuild-time work a consumer attaches to its neighbor list.
+///
+/// Each hook enqueues on the given stream (a `cudaStream_t`) inside the
+/// rebuild, after the CSR masks are final, so a consumer that keeps derived
+/// per-rebuild state (packed tiles) runs exactly when the list changes,
+/// without a separate device decision or launch. Owners remove their hook
+/// before they are destroyed.
+struct RebuildHooks {
+    struct Hook {
+        const void* owner;
+        std::function<void(void* stream)> enqueue;
+    };
+    std::vector<Hook> list;
+    std::uint64_t version = 0; ///< Bumped on every change (recapture).
+    void add(const void* owner, std::function<void(void*)> enqueue) {
+        list.push_back({owner, std::move(enqueue)});
+        ++version;
+    }
+    void remove(const void* owner) {
+        std::erase_if(list, [&](const Hook& h) { return h.owner == owner; });
+        ++version;
+    }
+};
 
+/// The cluster coordinate copies keep the stored coordinate type `pos_t`.
+struct PairList {
     // ── OpenMM cluster neighbor CSR (CUDA MD force source of truth) ──────
     // FULL neighbor: every neighboring cluster in both directions. Force
     // kernels (tile / cluster) consume these only — not vl_*. Addresses are
@@ -85,16 +96,22 @@ struct PairList {
     const pos_t* cl_y = nullptr;
     const pos_t* cl_z = nullptr;
     int num_clusters = 0;          ///< cluster count (host scalar).
-    int num_cluster_pairs = 0;     ///< Directed CSR entries (host scalar).
     int cluster_pair_capacity = 0; ///< Build-time directed CSR reserve.
-    std::uint64_t rebuild_generation = 0; ///< Unique baked-mask publication.
+    /// Device word: nonzero when the current step rebuilt the CSR. The live
+    /// directed entry count is `cl_row_ptr[num_clusters]` on the device.
+    const int* rebuilt = nullptr;
+    /// Device word: unique id of the published masks; zero before the first
+    /// rebuild. Survives provider replacement and address reuse.
+    const unsigned long long* generation = nullptr;
+    /// Rebuild-time consumer work, run inside every rebuild (owned by the
+    /// NeighborList).
+    RebuildHooks* hooks = nullptr;
 };
 
 /// @brief Cluster-based neighbor list builder.
 ///
-/// Builds atom-level pair lists using a cluster-based algorithm:
-/// Hilbert sort, hierarchical AABB rejection, exact directed cluster CSR,
-/// and geometric interaction masks; atom-level export is opt-in at build time.
+/// Builds the cluster pair list: Hilbert sort, hierarchical AABB rejection,
+/// exact directed cluster CSR and geometric interaction masks.
 ///
 /// @see PairList for the output data structure
 class NeighborList : public Component, public NeighborProvider {
@@ -104,7 +121,7 @@ class NeighborList : public Component, public NeighborProvider {
     /// @param skin   Verlet skin width [Angstrom]. Negative = auto (0.3 * cutoff).
     /// @param cluster_pair_capacity Reserved directed cluster-pair entries;
     ///        zero measures the initial list and adds density-based headroom.
-    ///        Overflow throws before fill.
+    ///        A rebuild that outgrows it raises `ForceFault::kCapacity`.
     explicit NeighborList(double cutoff, double skin = -1.0,
                           int cluster_pair_capacity = 0);
 
@@ -129,24 +146,22 @@ class NeighborList : public Component, public NeighborProvider {
     /// Cluster capacity uses the larger of twice the exact initial count
     /// and max(128, 8*rho*sphere(search)/32) entries per cluster, bounded by
     /// the full nc*nc list. An explicit constructor reserve overrides this
-    /// measurement. Flat consumers must request export
-    /// before this call. Capacity overflow throws before writing the CSR.
+    /// measurement.
     ///
     /// @param ctx Build context with Runtime and DeviceFrame.
     void build(const BuildContext& ctx) override;
 
     /// @brief Rebuild pair list from current positions, gated by the
-    ///        Verlet-skin rebuild check.
+    ///        Verlet-skin rebuild check — decided on the device.
     ///
-    /// Rebuild: Hilbert sort, scatter+AABB, 32-cluster group bounds, exact
-    /// count, prefix scan, CSR fill, geometric masks and optional exclusion
-    /// baking, then snapshot reference positions. No buffers grow in launch.
-    /// Optional flat export follows; every automatic-gate step checks current
-    /// motion before deciding whether this force evaluation needs a rebuild.
-    ///
-    /// First launch always rebuilds. Later launches check current minimum-
-    /// image motion against skin/2 before force evaluation. Any box change
-    /// also rebuilds. Mapped block flags are read only after their CUDA event.
+    /// One graph launch per step: the skin gate checks current minimum-image
+    /// motion against skin/2 (and any cell change) and selects a conditional
+    /// rebuild body: Hilbert sort, scatter+AABB, 32-cluster group bounds,
+    /// exact count, prefix scan, capacity verdict, CSR fill, geometric masks
+    /// and optional exclusion baking, then snapshot reference positions. The
+    /// first launch forces a rebuild. An outgrown reserve empties the CSR and
+    /// raises `ForceFault::kCapacity`, freezing the run at that step. The
+    /// graph is captured on the first launch after any input change.
     ///
     /// Re-publishes the owned pair list to `ctx.runtime.md.pair_list`.
     ///
@@ -180,10 +195,10 @@ class NeighborList : public Component, public NeighborProvider {
     /// the displacement-driven gate.
     void set_rebuild_on_request(bool on) { rebuild_on_request_ = on; }
 
-    /// @brief Submit a full cluster rebuild for driver-owned cadence.
-    /// Uses the same fixed-capacity hierarchy and masks as launch(). The
-    /// exact count is read back before CSR fill; overflow throws with the
-    /// required constructor reserve. Requires a prior set_active_count().
+    /// @brief Submit a full cluster rebuild for driver-owned cadence
+    ///        (multi-GPU only; that loop still reads the count back and
+    ///        throws on overflow before fill). Requires a prior
+    ///        set_active_count().
     /// Subsequent launch() calls republish without rebuilding.
     void rebuild_issue(const LaunchContext& ctx);
 
@@ -214,21 +229,28 @@ class NeighborList : public Component, public NeighborProvider {
     /// over many steps. Production code should not depend on this
     /// counter (the rebuild cadence is a perf-tuning detail, not a
     /// public contract).
+    /// Reads the device counter; call outside a run (it synchronizes).
     /// @return Rebuild count over the lifetime of this component.
-    int rebuild_count() const noexcept;
+    int rebuild_count() const;
 
     /// @brief Candidate cluster pairs (directed CSR entries) of the latest
-    ///        rebuild, before exact masks (diagnostics).
+    ///        rebuild, before exact masks (diagnostics). Reads the device
+    ///        CSR; call outside a run (it synchronizes).
     /// @return Entry count [dimensionless].
-    int candidate_tiles() const noexcept { return pairs_.num_cluster_pairs; }
+    int candidate_tiles() const;
+
+    /// Captured into the step graph after the forced first rebuild.
+    bool graph_capturable() const override;
+    std::uint64_t graph_epoch() const override;
 
   private:
     double cutoff_;                 ///< Interaction cutoff [Angstrom].
     double skin_;                   ///< Verlet skin width [Angstrom].
     int cluster_pair_capacity_ = 0; ///< Explicit CSR capacity; zero = estimate.
     bool rebuild_on_request_ = false; ///< Skip the skin auto-gate (multi-GPU).
-    PairList pairs_; ///< Owned device pair list (allocated in build()).
-    struct State;    ///< Opaque GPU state (pimpl, defined in .cu).
+    PairList pairs_;     ///< Owned device pair list (allocated in build()).
+    RebuildHooks hooks_; ///< Consumer rebuild work (see `PairList::hooks`).
+    struct State;        ///< Opaque GPU state (pimpl, defined in .cu).
     std::unique_ptr<State> state_; ///< Internal GPU buffers.
 };
 

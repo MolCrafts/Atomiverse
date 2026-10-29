@@ -6,6 +6,7 @@
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
 #include "atomiverse/cuda/dynamics/kinetic_energy.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include <cublas_v2.h>
 #include <memory>
 #include <type_traits>
@@ -103,10 +104,11 @@ __global__ void remove_com_from_scratch(mixed_t* __restrict__ vx,
                                         mixed_t* __restrict__ vy,
                                         mixed_t* __restrict__ vz,
                                         const acc_t* __restrict__ scratch_pM,
-                                        const int* __restrict__ n_ptr) {
+                                        const int* __restrict__ n_ptr,
+                                        const ForceFault* fault) {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= *n_ptr)
+    if (i >= *n_ptr || state_frozen(fault))
         return;
 
     acc_t M = scratch_pM[3];
@@ -301,7 +303,7 @@ void ZeroMomentum::launch(const LaunchContext& ctx) {
     //    device-local sums are already the global sums.
     remove_com_from_scratch<<<grid, block, 0, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, scratch,
-        frame.atoms.d_size);
+        frame.atoms.d_size, frame.force_fault);
 }
 
 void ZeroMomentum::destroy(const DestroyContext& /*ctx*/) {

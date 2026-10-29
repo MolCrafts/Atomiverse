@@ -19,6 +19,18 @@ Violations are defects, not "hybrid footholds": staff a residency fix rather
 than more dual-gates around the exchange. RHF s/p and PW density-side residency
 are the acceptance bar.
 
+## Classical MD (iron law 10)
+
+The CUDA MD step loop follows the same law, stricter: **no device→host
+synchronization at all** on the stepping thread between setup and the
+end-of-run retrieve — not even a 4-byte flag. Rebuild, overflow, fault and stop
+are decided on the device for the current step (conditional graph nodes,
+capacity-sized grids reading device counts, fault-frozen state); the host
+observes them late through pinned async copies and `cudaEventQuery`.
+Thermo/recorder output is async (defer stream + worker). Evidence is an Nsight
+audit of steady steps (`tools/diagnostics/md-residency/`), not a source grep.
+Open violations and fix order: [cuda-md-device-control.md](../specs/cuda-md-device-control.md).
+
 ## Open violations (fix order)
 
 | Priority | Surface | Fix slug |

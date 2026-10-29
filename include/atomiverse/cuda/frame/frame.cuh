@@ -65,17 +65,21 @@ struct DihedralList {
 ///
 /// Writers raise it when a value does not fit the fixed-point range
 /// (`kConversion`, including NaN/Inf) or an accumulation wraps
-/// (`kAccumulation`). `row` is the first offending local row. The first
-/// integrator that refuses the forces stamps `step` and that row's global
-/// `tag`; `cuda::to_cpu` throws when any kind is set.
+/// (`kAccumulation`). `row` is the first offending local row. A device-side
+/// reserve that a rebuild outgrew raises `kCapacity` with the entry count it
+/// needed. The first integrator that refuses the forces stamps `step` and
+/// that row's global `tag`; every state writer stops at the first fault, so
+/// the device state stays at the faulting step until `cuda::to_cpu` throws.
 struct ForceFault {
     static constexpr unsigned kConversion = 1u;   ///< Encode out of range.
     static constexpr unsigned kAccumulation = 2u; ///< Fixed-point sum wrapped.
     static constexpr unsigned kBond = 4u;         ///< FENE bond reached R0.
-    unsigned kinds = 0;  ///< Bitwise OR of fault kinds.
+    static constexpr unsigned kCapacity = 8u; ///< Neighbor reserve overflowed.
+    unsigned kinds = 0;                       ///< Bitwise OR of fault kinds.
     int row = -1;        ///< First offending local row, -1 if unknown.
     long long step = -1; ///< Step at which integration was refused, -1 if none.
     long long tag = -1;  ///< Global tag of `row` at that step, -1 if unknown.
+    long long required = -1; ///< Entries a `kCapacity` fault needed.
 };
 
 /// @brief GPU-side system state -- device pointers + host-cached metadata.
@@ -109,7 +113,9 @@ struct Frame {
         mixed_t* vx = nullptr; ///< x velocities [Angstrom/fs, device].
         mixed_t* vy = nullptr; ///< y velocities [Angstrom/fs, device].
         mixed_t* vz = nullptr; ///< z velocities [Angstrom/fs, device].
-        fixed_t* fx = nullptr; ///< x forces [fixed-point eV/Angstrom, device].
+        /// x forces [fixed-point eV/Angstrom, device]. fx, fy, fz are one
+        /// allocation: fy = fx + capacity, fz = fx + 2 capacity.
+        fixed_t* fx = nullptr;
         fixed_t* fy = nullptr; ///< y forces [fixed-point eV/Angstrom, device].
         fixed_t* fz = nullptr; ///< z forces [fixed-point eV/Angstrom, device].
         mixed_t* mass = nullptr;   ///< Masses [amu, device].

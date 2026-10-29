@@ -32,6 +32,23 @@ Machine facts for GAFF / regression work. Open work:
   - `runs/` — job outputs; `runs/regdiff/{current,head}-<case>.log`.
 - CP2K: see [gpw-perf-baseline.md](gpw-perf-baseline.md).
 
+### GH200 workbench (CUDA iteration)
+
+Root `/nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/atv-gh200/`:
+`bin/` (snapshot, prune, accept, mps-bench payload scripts), `src/<tag>/`
+frozen source snapshots with their build trees, `runs/<tag>/` every raw output
+(states, timings, Nsight reports, MPS logs, the molq spec and ref),
+`molq/arrhenius-gpu.json` (molq 0.9 Slurm destination, local transport,
+account `naiss2026-1-53-gpu`, partition `gpu`).
+Submit **only with the molq CLI** — no wrapper script:
+`molq submit arrhenius-gpu --spec @runs/<tag>/spec.json`, the spec carrying an
+explicit `execution.cwd` under `runs/<tag>`. molq keeps job script, stdout and
+stderr under `~/.molcrafts/molq/jobs/<id>`; no job file lands in a working
+tree. Payloads call `bin/prune.sh` first (runs older than 7 days, snapshots
+beyond the newest two). The repository receives only small evidence (audit
+JSON, summaries, tables). CUDA toolkit is the GH200 manual 13.2.1 install
+(`tools/gpu_job.sh`).
+
 ### Current-vs-HEAD regression diff
 
 To tell a new red from a pre-existing one, build the same targets on the

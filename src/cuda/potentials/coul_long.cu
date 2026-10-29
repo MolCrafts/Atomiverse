@@ -46,7 +46,7 @@ gather_cluster_pos_q(const int* __restrict__ orig_index,
     }
 }
 
-template <bool Ortho, bool Virial>
+template <bool Ortho, bool Energy, bool Virial>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
     fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
     fixed_t* __restrict__ fz, ForceFault* fault, acc_t* __restrict__ energy,
@@ -134,8 +134,8 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
                     fxi += -f_over_r * dx;
                     fyi += -f_over_r * dy;
                     fzi += -f_over_r * dz;
-                    force_t e_pair = prefactor * erfcv;
-                    my_energy += acc_t(0.5) * acc_t(e_pair);
+                    if constexpr (Energy)
+                        my_energy += acc_t(0.5) * acc_t(prefactor * erfcv);
                     if constexpr (Virial) {
                         my_vxx += acc_t(0.5) * acc_t(dx * (f_over_r * dx));
                         my_vyy += acc_t(0.5) * acc_t(dy * (f_over_r * dy));
@@ -166,14 +166,16 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
         const auto out =
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
         if (threadIdx.x == 0) {
-            atomicAdd(energy, out[0]);
+            if constexpr (Energy)
+                atomicAdd(energy, out[0]);
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
                     atomicAdd(&stress[c], out[c + 1]);
             }
         }
-    } else {
+    } else if constexpr (Energy) {
+        // A step that asked for neither skips the reduction entirely.
         ::cuda::std::array<acc_t, 1> my_vals = {my_energy};
 
         using Reduce =
@@ -234,7 +236,9 @@ void CoulLong::compute(const LaunchContext& ctx) {
     const force_t cutoff_sq =
         static_cast<force_t>(cutoff_) * static_cast<force_t>(cutoff_);
     cuda::Box box = ctx.runtime.host_box;
-    acc_t* stress_ptr = compute_stress_ ? &frame.scalars->stress[0] : nullptr;
+    // Per-step LAMMPS vflag (the step's consumers decide).
+    acc_t* stress_ptr =
+        ctx.stress_requested ? &frame.scalars->stress[0] : nullptr;
 
     // OpenMM cluster force — sole CUDA MD nonbonded path (cuda-openmm-md).
     if (pairs->cl_row_ptr == nullptr || pairs->cl_col_idx == nullptr
@@ -256,15 +260,17 @@ void CoulLong::compute(const LaunchContext& ctx) {
             frame.atoms.charge, n_slots, spx_, spy_, spz_, spq_);
     }
 
+    const bool energy = ctx.energy_requested;
     const bool virial = (stress_ptr != nullptr);
     int block = kDefaultBlock;
     int grid = grid_size(n_slots);
     constexpr int shmem = 0;
 
-    auto launch = [&](auto ortho_t, auto vir_t) {
+    auto launch = [&](auto ortho_t, auto energy_t, auto vir_t) {
         constexpr bool O = decltype(ortho_t)::value;
+        constexpr bool E = decltype(energy_t)::value;
         constexpr bool V = decltype(vir_t)::value;
-        kernels::coul_long_tile<O, V><<<grid, block, shmem, stream>>>(
+        kernels::coul_long_tile<O, E, V><<<grid, block, shmem, stream>>>(
             frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.force_fault,
             &frame.scalars->energy, stress_ptr, spx_, spy_, spz_, spq_,
             pairs->cl_row_ptr, pairs->cl_col_idx, pairs->cl_mask,
@@ -272,19 +278,22 @@ void CoulLong::compute(const LaunchContext& ctx) {
             static_cast<force_t>(alpha_), cutoff_sq,
             static_cast<force_t>(ATV::units::coulomb));
     };
-    using T = std::true_type;
-    using F = std::false_type;
-    if (box.ortho) {
-        if (virial)
-            launch(T{}, T{});
+    auto by_flags = [&](auto ortho_t) {
+        using T = std::true_type;
+        using F = std::false_type;
+        if (energy && virial)
+            launch(ortho_t, T{}, T{});
+        else if (energy)
+            launch(ortho_t, T{}, F{});
+        else if (virial)
+            launch(ortho_t, F{}, T{});
         else
-            launch(T{}, F{});
-    } else {
-        if (virial)
-            launch(F{}, T{});
-        else
-            launch(F{}, F{});
-    }
+            launch(ortho_t, F{}, F{});
+    };
+    if (box.ortho)
+        by_flags(std::true_type{});
+    else
+        by_flags(std::false_type{});
 }
 
 } // namespace cuda
