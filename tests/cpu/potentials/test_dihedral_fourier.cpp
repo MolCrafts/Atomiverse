@@ -123,7 +123,10 @@ TEST(DihedralFourier, ForcesMatchFiniteDifference) {
 
 TEST(DihedralFourier, AllZeroTypeContributesNothing) {
     auto frame = make_chain();
-    cpu::DihedralFourier pot({{}});
+    // Name the table. `{{}}` is ambiguous on GCC 11: it also matches the
+    // implicit copy and move constructors.
+    std::vector<std::vector<cpu::TorsionTerm>> terms(1);
+    cpu::DihedralFourier pot(terms);
     EXPECT_EQ(eval_torsion(frame, pot), 0.0);
     EXPECT_EQ(frame.span(kAtom_fx)[0], 0.0);
 }
