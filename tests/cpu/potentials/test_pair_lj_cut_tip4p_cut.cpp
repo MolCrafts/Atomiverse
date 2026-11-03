@@ -2,7 +2,9 @@
 /// @brief Unit: TIP4P M-site geometry + dimer energy/force vs offline LAMMPS pin.
 ///
 /// Pin: tools/metalwalls_oracle/inputs/lammps/four-site-tip4p-foothold/
-/// (units metal, pair_style lj/cut/tip4p/cut, pair_modify shift yes).
+/// (units lj on the metal data file, pair_style lj/cut/tip4p/cut,
+/// pair_modify shift yes). Classical MD multiplies the lj row
+/// (md_qqr2e = 1), so the pin is the lj twin of the units metal run.
 /// No live LAMMPS in ctest.
 
 #include <cmath>
@@ -31,15 +33,20 @@ constexpr double kCut = 10.0;
 constexpr double kQO = -1.04;
 constexpr double kQH = 0.52;
 
-// Offline pin — LAMMPS 30 Mar 2026 develop, units metal, shift yes.
-// See tools/metalwalls_oracle/inputs/lammps/four-site-tip4p-foothold/log.metal
-constexpr double kPinE = 0.52924228894955327451; // eV
+// Offline pin — LAMMPS 30 Mar 2026 develop, units lj, shift yes,
+// thermo_modify norm no. See
+// tools/metalwalls_oracle/inputs/lammps/four-site-tip4p-foothold/log.lj
+// (the units metal run is log.metal; evdwl is identical, ecoul is
+// log.metal's divided by qqr2e = 14.399645).
+constexpr double kPinE = 0.089967579970548813839;
 constexpr double kPinFx[6] = {
-    -0.094382238074752045076, -1.0593571566097745862, -0.057823257196248978307,
-    0.094382238074751600987,  1.0593571566097748082,  0.057823257196249200351};
+    -0.34395137810991172067,   -0.073568282871541268442,
+    -0.0040156029677293472377, 0.34395137810991160965,
+    0.073568282871541296197,   0.0040156029677293515745};
 constexpr double kPinFz[6] = {
-    0.33187666441899288383, -0.31522207906906996033, -0.016654585349923187176,
-    0.33187666441899305037, -0.31522207906906962727, -0.01665458534992322534};
+    0.023047558770996984245,   -0.02189096183059165493,
+    -0.0011565969404053501324, 0.023047558770996998123,
+    -0.021890961830591634113,  -0.0011565969404053520839};
 
 double theta_rad() { return kThetaDeg * units::kDegreeInRad; }
 

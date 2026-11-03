@@ -26,6 +26,12 @@ using namespace ATV;
 
 namespace {
 
+// Classical MD runs on the LAMMPS lj row (md_boltz = md_mvv2e = md_ftm2v =
+// 1): with the RHF energies in eV, lengths in Å and masses in amu the time
+// unit is sqrt(amu·Å²/eV) ≈ 10.18 fs and temperatures are k_B·T in eV.
+constexpr double kFs = 0.09822694585667956; // 1 fs = 1/sqrt(103.6427)
+constexpr double kT100 = 8.617333262e-3;    // k_B · 100 K [eV]
+
 struct Endpoint {
     double potential_ev;
     double bond_angstrom;
@@ -46,9 +52,9 @@ Endpoint run_h2_nvt(bool with_predictor) {
         rhf.predictor(/*order=*/3);
 
     cpu::md::MD sim;
-    sim.set_observer(cpu::md::InitVelocity{100.0, /*seed=*/42u});
-    sim.set_integrator(cpu::md::VelocityVerlet{0.5});
-    sim.set_thermostat(cpu::md::NoseHoover{100.0, 200.0, 0.5});
+    sim.set_observer(cpu::md::InitVelocity{kT100, /*seed=*/42u});
+    sim.set_integrator(cpu::md::VelocityVerlet{0.5 * kFs});
+    sim.set_thermostat(cpu::md::NoseHoover{kT100, 200.0 * kFs, 0.5 * kFs});
     sim.on(md::Phase::force).add(std::move(rhf));
     sim.build();
     sim.run(frame, 100);

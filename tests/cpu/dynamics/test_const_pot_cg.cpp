@@ -116,7 +116,7 @@ TEST(ConstPotCG, NameAndNoConfigFactory) {
 }
 
 TEST(ConstPotCG, MatchesDenseBoMadelungPrimary) {
-    constexpr double kQTopBo = 0.27175356;
+    constexpr double kQTopBo = 0.61748665; // lj units (md_qqr2e = 1)
     auto f = madelung_primary();
     cpu::md::ConstPotCG conp(2.0);
     conp.add_electrode(1, 0.0);

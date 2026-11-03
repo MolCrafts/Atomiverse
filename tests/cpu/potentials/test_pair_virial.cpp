@@ -191,6 +191,13 @@ void run_style(Style& style, cpu::Frame& f, double& energy, Voigt& stress) {
     style.build({ctx, f});
     style.launch({ctx, f, 0, 0});
     energy = f.meta.get(kEnergy);
+    // Every pair style books its whole energy as pair energy (LAMMPS
+    // `epair`), so `energy` stays the sum of the per-term scalars.
+    EXPECT_DOUBLE_EQ(f.meta.get(kEnergyPair), energy) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyBond), 0.0) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyAngle), 0.0) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyDihedral), 0.0) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyImproper), 0.0) << style.name();
     for (int k = 0; k < 6; ++k)
         stress.v[k] = f.meta.get(kStress)[k];
 }
@@ -538,7 +545,7 @@ TEST(PairGaussianCoul, VirialMatchesPairSum) {
     Voigt got;
     run_style(gc, f, e, got);
 
-    const double K = units::coulomb;
+    const double K = units::md_qqr2e;
     const Voigt want =
         reference_virial(f, kCutoff, [&](int i, int j, double r2) {
             const double r = std::sqrt(r2);
@@ -764,7 +771,9 @@ TEST(PairLJCutTip4pCut, VirialMatchesRedistributedAtomicSum) {
         EXPECT_NEAR(got.v[k], want.v[k],
                     1e-9 * std::max(1.0, std::fabs(want.v[k])))
             << "Voigt component " << k;
-    EXPECT_GT(std::fabs(want.trace()), 0.1);
+    // Non-vacuity guard: the cluster virial is ~0.045 on the lj row
+    // (md_qqr2e = 1), the Coulomb part 14.4x below its metal value.
+    EXPECT_GT(std::fabs(want.trace()), 0.01);
 }
 
 TEST(PairLJCutTip4pCut, VirialTraceIsMinusThreeVdEdV) {
@@ -772,7 +781,7 @@ TEST(PairLJCutTip4pCut, VirialTraceIsMinusThreeVdEdV) {
     fd_identity([] { return make_tip4p(); },
                 [](double l) { return water_cluster(l); }, trace, dedv);
     EXPECT_NEAR(trace, dedv, 1e-6 * std::fabs(dedv));
-    EXPECT_GT(std::fabs(dedv), 0.1);
+    EXPECT_GT(std::fabs(dedv), 0.01); // ~0.045 on the lj row
 }
 
 TEST(ClassicalPairRequests, ForceAndStressRequestsAreIndependent) {

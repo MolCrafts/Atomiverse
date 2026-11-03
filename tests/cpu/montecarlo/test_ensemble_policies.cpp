@@ -94,7 +94,7 @@ TEST(GcmcMetropolis, DisplacementAcceptanceMatchesBoltzmannFactor) {
             ASSERT_EQ(p.after_stages(h.state()), Outcome::Commit);
         }
     }
-    const double expected = std::exp(-dE / (units::kB_ev_per_k * T));
+    const double expected = std::exp(-dE / (units::md_boltz * T));
     const double observed = static_cast<double>(commits) / n_trials;
     const double sigma = std::sqrt(expected * (1.0 - expected) / n_trials);
     EXPECT_NEAR(observed, expected, 4.0 * sigma);
@@ -112,9 +112,10 @@ TEST(GcmcMetropolis, InsertionPrefactorGovernsTheDecision) {
 }
 
 TEST(GcmcMetropolis, HopelessInsertionIsRejected) {
-    // μ = −10 eV at 120 K: βμ ≈ −967 ⇒ exp(-arg) ≈ 0 — rejected every time.
+    // lj units (md_boltz = 1): μ = −1000 at T = 1 gives βμ = −1000, so
+    // exp(-arg) ≈ 0 and every trial is rejected.
     PolicyHarness h;
-    cpu::mc::GcmcMetropolis p{120.0, -10.0, 39.948, h.rng};
+    cpu::mc::GcmcMetropolis p{1.0, -1000.0, 1.0, h.rng};
     h.frame.meta.get(ATV::kEnergy) = 0.0;
     p.on_start(h.state());
     h.stamp(Verb::Insert);
@@ -124,10 +125,11 @@ TEST(GcmcMetropolis, HopelessInsertionIsRejected) {
 
 TEST(GcmcMetropolis, DeletionPrefactorGovernsTheDecision) {
     // dE = 0, μ = 0: arg = −ln(Λ³·N_old / V). Make the box tiny so
-    // Λ³·N_old > V ⇒ deterministic commit.
+    // Λ³·N_old > V ⇒ deterministic commit. lj units: m = T = 1 gives
+    // Λ³ = (2π)^(-3/2) ≈ 0.063, and Λ³·5 / 0.1³ ≈ 317.
     PolicyHarness h;
     h.frame.box.set_cell(Mat3::diagonal(0.1, 0.1, 0.1));
-    cpu::mc::GcmcMetropolis p{120.0, 0.0, 39.948, h.rng};
+    cpu::mc::GcmcMetropolis p{1.0, 0.0, 1.0, h.rng};
     h.frame.meta.get(ATV::kEnergy) = 0.0;
     p.on_start(h.state());
     h.stamp(Verb::Delete);

@@ -401,7 +401,9 @@ TEST(TimestepConsumers, ConcreteOwnersUsePublishedTimestep) {
         reference.destroy({context, reference_frame});
         old.destroy({context, old_frame});
     };
-    check([](double dt) { return cpu::md::Berendsen(300, 100, dt); },
+    // lj units: the frame is at T ≈ 2.7e-3, so a 300 setpoint would pin
+    // λ to the 1.25 clamp for every dt. T₀ = 5e-3 keeps λ dt-dependent.
+    check([](double dt) { return cpu::md::Berendsen(0.005, 100, dt); },
           md::Phase::end_of_step);
     check([](double dt) { return cpu::md::NoseHoover(300, 100, dt); },
           md::Phase::initial_integrate);
@@ -530,4 +532,20 @@ TEST(TimestepProtocol, LiveSecondIntegratorIsRejectedBeforeDispatch) {
     sim.run(frame, 0);
     sim.on(ATV::md::Phase::final_integrate).add_ref(second);
     EXPECT_THROW(sim.run(frame, 1), std::runtime_error);
+}
+
+// A zero / negative / non-finite setpoint, coupling time or step would make
+// the chain mass Q = N k_B T tau^2 vanish: refused at construction and by
+// set_T_target, the same refusal as cuda::md::NoseHoover.
+TEST(NoseHooverParameters, NonPositiveOrNonFiniteParametersAreRefused) {
+    using ATV::cpu::md::NoseHoover;
+    const double inf = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(NoseHoover(0.0, 100.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(-5.0, 100.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(300.0, 0.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(300.0, 100.0, 0.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(inf, 100.0, 1.0), std::invalid_argument);
+    NoseHoover nh(300.0, 100.0, 1.0);
+    EXPECT_THROW(nh.set_T_target(0.0), std::invalid_argument);
+    EXPECT_NO_THROW(nh.set_T_target(250.0));
 }
