@@ -56,11 +56,12 @@ class PairCoulCut : public cpu::PairPotential {
     PairCoulCut& set_special_bonds(double s12, double s13, double s14) &;
     PairCoulCut set_special_bonds(double s12, double s13, double s14) &&;
 
-    /// @brief Coulomb constant k in E = k q_i q_j / r [eV·Å/e²].
+    /// @brief Coulomb constant k in E = k q_i q_j / r [energy·length/charge²].
     ///
-    /// Default `units::coulomb` (14.399645, LAMMPS metal `qqr2e`). A force
-    /// field that states its own constant (Amber: 332.0522173 kcal·Å/(mol·e²)
-    /// = 14.399140 eV·Å/e²), or a dielectric ε folded in as k/ε, sets it here.
+    /// Default `units::md_qqr2e` (1, the LAMMPS lj row every classical kernel
+    /// multiplies, `core/unit_system.h`). A force field that states its own
+    /// constant in its own units (Amber: 332.0522173 kcal·Å/(mol·e²); metal:
+    /// 14.399645 eV·Å/e²), or a dielectric ε folded in as k/ε, sets it here.
     /// @throws std::invalid_argument if `k` is not finite and positive.
     PairCoulCut& set_coulomb_constant(double k) &;
     PairCoulCut set_coulomb_constant(double k) &&;

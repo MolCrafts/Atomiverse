@@ -162,7 +162,7 @@ void RM1::standalone_(const cpu::Frame& frame) {
                                        frame.span(kAtom_z).data(), bytes,
                                        cudaMemcpyHostToDevice, stream));
         ATV_CUDA_CHECK(cudaMemcpyAsync(
-            device.atoms.type, frame.span(kAtom_type).data(),
+            device.atoms.atomic_number, frame.span(kAtom_atomic_number).data(),
             count * sizeof(int), cudaMemcpyHostToDevice, stream));
         double cell[9];
         for (int i = 0; i < 3; ++i)

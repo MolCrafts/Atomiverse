@@ -85,7 +85,7 @@ void FixCSVR::launch(const cpu::LaunchContext& ctx) {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::mass_v2_to_energy;
+    ke_local *= 0.5 * units::md_mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -102,7 +102,7 @@ void FixCSVR::launch(const cpu::LaunchContext& ctx) {
         return;
 
     const double ke_bar =
-        0.5 * static_cast<double>(n_dof) * units::kB_ev_per_k * T_live_;
+        0.5 * static_cast<double>(n_dof) * units::md_boltz * T_live_;
 
     // Two GLOBAL random draws, identical on every rank (seeded from step only).
     std::mt19937_64 rng(step_seed(seed_, ctx.step));

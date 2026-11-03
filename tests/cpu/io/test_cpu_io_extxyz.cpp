@@ -50,9 +50,9 @@ TEST(CpuIoExtxyz, InlineFixtureLoadsAtomsBoxAndZ) {
     std::remove(path.c_str());
 
     ASSERT_EQ(f.nlocal(), 3);
-    EXPECT_EQ(f.span(ATV::kAtom_type)[0], 8); // O
-    EXPECT_EQ(f.span(ATV::kAtom_type)[1], 1); // H
-    EXPECT_EQ(f.span(ATV::kAtom_type)[2], 1); // H
+    EXPECT_EQ(f.span(ATV::kAtom_atomic_number)[0], 8); // O
+    EXPECT_EQ(f.span(ATV::kAtom_atomic_number)[1], 1); // H
+    EXPECT_EQ(f.span(ATV::kAtom_atomic_number)[2], 1); // H
 
     EXPECT_NEAR(f.box.length(0), 5.0, 1e-6);
     EXPECT_NEAR(f.box.length(1), 6.0, 1e-6);

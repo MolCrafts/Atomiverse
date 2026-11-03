@@ -50,7 +50,7 @@ TEST(GpwBandsGuards, RejectsDispersionOnPath) {
     ATV::cpu::Frame h2(2);
     const double xs[2] = {0.5 * L - 0.7, 0.5 * L + 0.7};
     for (int i = 0; i < 2; ++i) {
-        h2.span(ATV::kAtom_type)[i] = 1;
+        h2.span(ATV::kAtom_atomic_number)[i] = 1;
         h2.span(ATV::kAtom_x)[i] = xs[i] * b2a;
         h2.span(ATV::kAtom_y)[i] = 0.5 * L * b2a;
         h2.span(ATV::kAtom_z)[i] = 0.5 * L * b2a;

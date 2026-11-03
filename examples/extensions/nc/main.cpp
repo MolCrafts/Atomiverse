@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
         reference.box = cpu::Box::cubic(6);
         const double xyz[2][3] = {{2, 2, 2}, {3.8, 3.2, 3}};
         for (int i = 0; i < 2; ++i) {
-            reference.span(kAtom_type)[i] = 14;
+            reference.span(kAtom_atomic_number)[i] = 14;
             reference.span(kAtom_mass)[i] = 28.0855;
             reference.span(kAtom_x)[i] = xyz[i][0];
             reference.span(kAtom_y)[i] = xyz[i][1];
@@ -186,8 +186,7 @@ int main(int argc, char** argv) {
                     for (int d = 0; d < 3; ++d) {
                         const double got = d == 0 ? x[i] : d == 1 ? y[i] : z[i];
                         const double want = xyz[i][d]
-                                            + .5 * dt * dt
-                                                  * units::force_to_accel
+                                            + .5 * dt * dt * units::md_ftm2v
                                                   * initial_force[i][d]
                                                   / frame.span(kAtom_mass)[i];
                         nc_example::near(got, want, 2e-12,
@@ -266,7 +265,8 @@ int main(int argc, char** argv) {
                              0, "independent accepted electronic state");
             mark_forces(frame);
             frame.meta.get(kEnergy) = 123;
-            frame.span(kAtom_type)[1] = 8; // provider describes Si only.
+            frame.span(kAtom_atomic_number)[1] =
+                8; // provider describes Si only.
             bool rejected = false;
             try {
                 method.run(frame);
@@ -282,7 +282,7 @@ int main(int argc, char** argv) {
             nc_example::near(method.last_result().energy_ha, accepted.energy_ha,
                              0,
                              "species rejection accepted-state preservation");
-            frame.span(kAtom_type)[1] = 14;
+            frame.span(kAtom_atomic_number)[1] = 14;
             method.forces(frame);
             force(method, frame);
             // Refresh the same peer object back to the original cell/geometry.

@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence
@@ -219,6 +220,23 @@ def _require_native_build_deps() -> None:
         )
 
 
+def build_env(jobs: Optional[int] = None) -> Dict[str, str]:
+    """Environment of the two ``pip wheel`` builds.
+
+    maturin's PEP 517 hook execs the ``maturin`` executable from PATH, and an
+    environment's scripts directory is on PATH only when it is activated —
+    ``.venv/bin/python -m atomiverse compile`` is not. Putting this
+    interpreter's scripts directory first makes the build use the tools the
+    native extra installed beside it.
+    """
+    env = dict(os.environ)
+    scripts = sysconfig.get_path("scripts")
+    env["PATH"] = os.pathsep.join(p for p in (scripts, env.get("PATH", "")) if p)
+    if jobs is not None and jobs > 0:
+        env["CMAKE_BUILD_PARALLEL_LEVEL"] = str(jobs)
+    return env
+
+
 def _run_streaming(
     cmd: Sequence[str],
     *,
@@ -304,9 +322,7 @@ def run_compile(
     if "ATV_MOLPY_PATH" not in state.defines:
         raise ConfigError("build state has no molpy source; run atomiverse config again")
     cmd = build_wheel_command(Path(state.python_dir), bdir, state.defines)
-    env = dict(os.environ)
-    if jobs is not None and jobs > 0:
-        env["CMAKE_BUILD_PARALLEL_LEVEL"] = str(jobs)
+    env = build_env(jobs)
 
     print("atomiverse compile", flush=True)
     print(f"  build_dir: {bdir}", flush=True)

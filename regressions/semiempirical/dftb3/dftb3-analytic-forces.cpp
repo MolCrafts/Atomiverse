@@ -37,15 +37,15 @@ constexpr double kPinTol = 1e-6;
 cpu::Frame make_water() {
     // Off-equilibrium water (Å) so |F| != 0 and the Mulliken Δq != 0.
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 1.05;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = -0.26;
     f.span(kAtom_y)[2] = 1.0;
     f.span(kAtom_z)[2] = 0.0;

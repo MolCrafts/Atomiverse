@@ -20,7 +20,6 @@
 #include <vector>
 
 #include "atomiverse/cpu/asynchronous/async_observer.h"
-#include "atomiverse/cpu/asynchronous/frame_snapshot.h"
 #include "atomiverse/cpu/observe/constant_count_gate.h"
 #include "atomiverse/cpu/observe/trajectory_metrics.h"
 
@@ -47,7 +46,8 @@ namespace ATV {
 class RDF : public cpu::md::AsyncObserver {
   public:
     /// @param r_max upper edge of the last bin [Å]. @param n_bins radial bin
-    /// count. @param freq capture every `freq` steps (0 = every snapshot).
+    /// count. @param freq sample cadence [steps]: the state after every `freq`-th
+    ///              completed step, step 0 included (0 = every step).
     /// @param output_file g(r) output path.
     /// @throws std::invalid_argument on n_bins < 1 or r_max <= 0 (refused by
     /// molpy `Rdf::new`).
@@ -60,8 +60,8 @@ class RDF : public cpu::md::AsyncObserver {
     /* role via Observer base */
     int frequency() const override { return freq_; }
 
-    cpu::CaptureMask capture_mask() const override {
-        cpu::CaptureMask m;
+    CaptureColumns capture_columns() const override {
+        CaptureColumns m;
         m.positions = true;
         return m;
     }

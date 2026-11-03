@@ -136,28 +136,31 @@ int run() {
 
     // 3 QM water + 2 MM point-charge atoms (same geometry as embed_h2o_mm_forces)
     cpu::Frame frame(5);
+    frame.span(kAtom_atomic_number)[0] = 8;
     frame.span(kAtom_type)[0] = 8;
     frame.span(kAtom_z)[0] = 0.1173;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_type)[1] = 1;
     frame.span(kAtom_y)[1] = 0.7572;
     frame.span(kAtom_z)[1] = -0.4692;
+    frame.span(kAtom_atomic_number)[2] = 1;
     frame.span(kAtom_type)[2] = 1;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
-    frame.span(kAtom_type)[3] = 99;
+    frame.span(kAtom_type)[3] = 99; // MM site type
     frame.span(kAtom_z)[3] = 3.0;
     frame.span(kAtom_charge)[3] = 0.5;
-    frame.span(kAtom_type)[4] = 99;
+    frame.span(kAtom_type)[4] = 99; // MM site type
     frame.span(kAtom_z)[4] = -3.0;
     frame.span(kAtom_charge)[4] = -0.5;
     for (int i = 0; i < 5; ++i)
         frame.span(kAtom_tag)[i] = i + 1;
     frame.box = cpu::Box::cubic(20.0);
     frame.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
-    auto qm = frame.span(cpu::kAtomQmZ);
-    qm[0] = 8;
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    auto qm = frame.span(cpu::kAtomQm);
+    qm[0] = 1;
     qm[1] = 1;
     qm[2] = 1;
     qm[3] = 0;

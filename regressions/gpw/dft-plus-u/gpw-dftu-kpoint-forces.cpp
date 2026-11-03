@@ -58,7 +58,7 @@ ATV::cpu::Frame h2_hs(double L) {
     const double x[2] = {0.5 * L - 0.5, 0.5 * L + 0.5};
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = x[i] * b2a;
         frame.span(kAtom_y)[i] = 0.5 * L * b2a;
         frame.span(kAtom_z)[i] = 0.5 * L * b2a;
@@ -225,7 +225,7 @@ int run() {
         const int zz[2] = {28, 8};
         const double zpos[2] = {4.1, 5.9};
         for (int i = 0; i < 2; ++i) {
-            nio.span(kAtom_type)[i] = zz[i];
+            nio.span(kAtom_atomic_number)[i] = zz[i];
             nio.span(kAtom_x)[i] = 5.0;
             nio.span(kAtom_y)[i] = 5.0;
             nio.span(kAtom_z)[i] = zpos[i];

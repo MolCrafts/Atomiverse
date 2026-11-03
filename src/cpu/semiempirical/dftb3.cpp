@@ -656,7 +656,7 @@ void DFTB3::launch(const LaunchContext& ctx) {
         break;
     }
 
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     // U^d completeness before element_row so unsupported Z (e.g. 9) still
     // reports hubbard_du_ha rather than "unsupported element".
     std::vector<double> hubbard_du_ev(static_cast<std::size_t>(n_at), 0.0);

@@ -40,7 +40,7 @@ namespace cpu {
 ///
 /// @param outputs A mean-field method's `result_handle()` (determinant +
 ///        shells + optional c2s), read after the method ran.
-/// @param frame   Geometry (positions [Å], atomic numbers in the type
+/// @param frame   Geometry (positions [Å], species Z in the atomic_number
 ///        column) — supplies the AO → atom map and the Z_A.
 /// @return Per-atom Löwdin net charges [e], indexed by Frame atom order.
 /// @throws std::invalid_argument when the handle is null or not ready.

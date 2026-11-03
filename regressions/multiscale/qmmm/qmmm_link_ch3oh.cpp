@@ -46,6 +46,7 @@ cpu::Frame make_methanol_like() {
     f.span(kAtom_z)[5] = -0.87;
     const int Z[] = {8, 1, 6, 1, 1, 1};
     for (int i = 0; i < 6; ++i) {
+        f.span(kAtom_atomic_number)[i] = Z[i];
         f.span(kAtom_type)[i] = Z[i];
         f.span(kAtom_tag)[i] = static_cast<TagInt>(i + 1);
         f.span(kAtom_mass)[i] = 1.0;
@@ -54,10 +55,10 @@ cpu::Frame make_methanol_like() {
     }
     f.box = cpu::Box::cubic(30.0);
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
-    auto qm = f.span(cpu::kAtomQmZ);
-    qm[0] = 8; // O
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    auto qm = f.span(cpu::kAtomQm);
+    qm[0] = 1; // O
     qm[1] = 1; // H
     // C and methyl H stay 0 = MM
     // Covalent QM/MM cut is derived from topology (O–C bond), not set_links.

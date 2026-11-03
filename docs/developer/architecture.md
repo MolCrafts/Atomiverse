@@ -234,26 +234,29 @@ the component explicitly exists to bridge data, and no repeated allocation.
 `destroy()` is the cleanup phase. The backend runs it in reverse plan order so
 that dependent resources are torn down safely.
 
-## Scheduling And Async Bridges
+## Asynchronous Consumers And The Capture Buffer
 
-Most components are `Scheduling::blocking`, which means they run on the main
-execution stream. A smaller set of components are `Scheduling::deferrable`. On
-the CUDA backend, those components run on a defer stream that can wait on the
-main stream and then perform side work.
-
-This is the purpose of
-[`AsyncBridge`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/asynchronous/async_bridge.cuh). It is the base
-class for CUDA observers and recorders such as:
+Recorders and online-analysis observers whose real work is host-side (file
+I/O, molpy analysis) run off the stepping thread. Each derives from one base
+per backend —
+[`cuda::AsyncConsumer`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/asynchronous/async_consumer.cuh)
+or `cpu::AsyncConsumer` — and reads its steps from the driver's ONE shared
+capture buffer (`cuda::CaptureBuffer` / `cpu::CaptureBuffer`, both on the
+host-side `ATV::CaptureLedger`). CUDA consumers include:
 
 - `Thermo`
-- `Recorder`
+- `XyzRecorder`, `MrecRecorder`, `md::PressureSeries`, `DensityRecorder`
 - `RDF`
 - `MullikenObs`
 
-The pattern is always the same. The main GPU computation runs first. Then the
-bridge records an event, waits on the defer stream, performs the needed
-device-to-host copy into pinned memory, synchronizes that small side path, and
-finally calls a CPU helper that owns the actual formatting or analysis logic.
+The pattern is always the same. A consumer declares the columns it reads and
+its cadence. On a step it is due, the host admits the capture on the ledger
+(host counters only; it waits only when the driver's byte budget is full),
+the step's state is frozen once into a buffer slot shared by every consumer
+due on that step (CUDA: graph-capturable kernels on the compute stream writing
+pinned host-mapped memory), and each consumer's worker thread reads the slot,
+calls the CPU helper that owns the formatting or analysis, and releases it.
+Nothing is dropped; a consumer failure stops the run with an error naming it.
 
 This separation keeps file I/O and host-side post-processing out of the hot GPU
 components while still letting simulations produce usable output.

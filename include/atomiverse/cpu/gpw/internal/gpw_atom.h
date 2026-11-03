@@ -127,7 +127,7 @@ struct GpwDftAccess {
     static GpwDft clone(const GpwDft& m);
 
     /// @brief Assemble the atom set at the Frame's geometry (Å → Bohr) from
-    ///        `m.kinds` (Z in `kAtom_type`).
+    ///        `m.kinds` (Z in `kAtom_atomic_number`).
     /// @param m Method owning the kinds.
     /// @param frame Geometry [Å] + Z.
     /// @return One `GpwAtom` per local atom.

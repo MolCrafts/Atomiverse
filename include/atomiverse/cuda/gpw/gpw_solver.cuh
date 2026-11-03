@@ -78,7 +78,7 @@ class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
   public:
     // ── Identity (constructor arguments, same as `cpu::gpw::GpwDft`) ─────
     /// @brief Per-element basis + GTH potential. `build(Frame)` / `run(Frame)`
-    ///        map `kAtom_type` (Z) onto these entries.
+    ///        map `kAtom_atomic_number` (Z) onto these entries.
     const std::vector<cpu::gpw::Kind> kinds;
     const double cutoff_ry; ///< density grid cutoff [Ry].
     /// @brief RKS/UKS: PADE or PBE/PBEsol/RevPBE/RPBE.

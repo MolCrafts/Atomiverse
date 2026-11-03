@@ -147,7 +147,7 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
                     * to_ev_ang2;
             }
 
-        const int* types = frame.span(kAtom_type);
+        const int* types = frame.span(kAtom_atomic_number);
         std::vector<double> inv_sqrt_m(static_cast<std::size_t>(n));
         for (int i = 0; i < n; ++i)
             inv_sqrt_m[static_cast<std::size_t>(i)] =
@@ -248,7 +248,7 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
     result.response_converged = out.response_converged;
     result.max_asymmetry = static_cast<double>(out.max_asymmetry) * to_ev_ang2;
 
-    const int* types = frame.span(kAtom_type);
+    const int* types = frame.span(kAtom_atomic_number);
     diagonalize_complex_C(out.force_constants, n, dim, types, result);
     return result;
 }

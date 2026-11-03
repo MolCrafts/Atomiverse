@@ -117,7 +117,7 @@ void PistonElectrode::apply_forces_(cpu::Frame& f) {
     // F_damp = -M * v_com / (tau * force_to_accel)  [eV/Å].
     double F_damp = 0.0;
     if (tau_damp > 0.0) {
-        F_damp = -M * vz_com / (tau_damp * units::force_to_accel);
+        F_damp = -M * vz_com / (tau_damp * units::md_ftm2v);
     }
 
     last_F_net_ = F_atoms + F_ext + F_damp;

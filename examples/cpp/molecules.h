@@ -2,7 +2,7 @@
 /// @brief Small isolated molecules shared by the numbered C++ examples.
 ///
 /// A `cpu::Frame` is the only input every method reads: positions [Å],
-/// atomic number in `kAtom_type`, masses [amu] and a box. The examples are
+/// atomic number in `kAtom_atomic_number`, masses [amu] and a box. The examples are
 /// isolated molecules, so the box is a large cubic vacuum cell.
 #pragma once
 
@@ -26,7 +26,7 @@ template <std::size_t N>
 ATV::cpu::Frame molecule(const std::array<Atom, N>& atoms, double box = 20.0) {
     ATV::cpu::Frame f(static_cast<int>(N));
     for (std::size_t i = 0; i < N; ++i) {
-        f.span(ATV::kAtom_type)[i] = atoms[i].number;
+        f.span(ATV::kAtom_atomic_number)[i] = atoms[i].number;
         f.span(ATV::kAtom_mass)[i] = atoms[i].mass;
         f.span(ATV::kAtom_x)[i] = atoms[i].x;
         f.span(ATV::kAtom_y)[i] = atoms[i].y;

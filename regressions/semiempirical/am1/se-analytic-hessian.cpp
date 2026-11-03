@@ -30,11 +30,11 @@ namespace {
 
 cpu::Frame make_h2() {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;

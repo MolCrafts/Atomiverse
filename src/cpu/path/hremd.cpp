@@ -95,7 +95,7 @@ double HRemd::energy_at_(const cpu::Frame& frame, double lambda) {
 void HRemd::exchange_round_(bool even_edges) {
     const int n = band_->size();
     std::uniform_real_distribution<double> u01(0.0, 1.0);
-    const double beta = 1.0 / (units::kB_ev_per_k * temperature);
+    const double beta = 1.0 / (units::md_boltz * temperature);
     for (int i = even_edges ? 0 : 1; i + 1 < n; i += 2) {
         ++attempts_;
         auto& fi = band_->frame(i);

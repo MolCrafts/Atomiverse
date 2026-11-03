@@ -52,8 +52,8 @@ int run() {
 
     // Diamond Si primitive fcc cell, 2 atoms.
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 14;
-    frame.span(kAtom_type)[1] = 14;
+    frame.span(kAtom_atomic_number)[0] = 14;
+    frame.span(kAtom_atomic_number)[1] = 14;
     frame.span(kAtom_mass)[0] = 28.0855;
     frame.span(kAtom_mass)[1] = 28.0855;
     frame.span(kAtom_x)[1] = kA / 4.0;

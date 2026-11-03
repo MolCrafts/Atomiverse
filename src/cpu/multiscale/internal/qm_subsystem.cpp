@@ -22,12 +22,12 @@ namespace internal {
 namespace {
 
 constexpr const char* kMaskHowto =
-    "Insert and fill kAtomQmZ before build():\n"
-    "  frame.blocks.at(\"atoms\").insert(\"qm_z\",\n"
+    "Insert and fill kAtomQm before build():\n"
+    "  frame.block(\"atoms\").insert(\"qm\",\n"
     "      ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,\n"
     "                 kDynamicFieldId});\n"
-    "  auto qm = frame.span(cpu::kAtomQmZ);\n"
-    "  qm[i] = Z;  // >0 = QM with atomic number Z; 0 = MM\n"
+    "  auto qm = frame.span(cpu::kAtomQm);\n"
+    "  qm[i] = 1;  // 1 = QM, 0 = MM; species from kAtom_atomic_number\n"
     "See atomiverse/cpu/multiscale/qm_mask.h.";
 
 } // namespace
@@ -43,26 +43,36 @@ void QmSubsystem::resolve_mask_(const Frame& frame) {
         throw std::runtime_error(
             std::string("QmSubsystem: atoms block missing. ") + kMaskHowto);
     }
-    if (!atoms->contains("qm_z")) {
+    if (!atoms->contains(kAtomQm.key)) {
         throw std::runtime_error(
-            std::string("QmSubsystem: kAtomQmZ (atoms.qm_z) column missing. ")
+            std::string("QmSubsystem: kAtomQm (atoms.qm) column missing. ")
             + kMaskHowto);
     }
-    const auto qm = frame.span(kAtomQmZ);
+    const auto qm = frame.span(kAtomQm);
     for (int i = 0; i < n; ++i) {
-        const int z = qm[i];
-        if (z > 0) {
+        if (qm[i] == 1)
             qm_rows_.push_back(i);
-            qm_z_.push_back(z);
-        } else if (z < 0) {
+        else if (qm[i] != 0)
             throw std::invalid_argument(
-                "QmSubsystem: kAtomQmZ values must be ≥ 0 (0=MM, >0=QM Z)");
-        }
+                "QmSubsystem: kAtomQm values must be 0 (MM) or 1 (QM); row "
+                + std::to_string(i) + " is " + std::to_string(qm[i]));
     }
     if (qm_rows_.empty()) {
         throw std::runtime_error(
-            std::string("QmSubsystem: kAtomQmZ is all-zero (no QM atoms). ")
+            std::string("QmSubsystem: kAtomQm is all-zero (no QM atoms). ")
             + kMaskHowto);
+    }
+    // The QM engine keys basis / parameters on species, which is the
+    // Frame's species column — never the force-field type.
+    const auto species = frame.span(kAtom_atomic_number);
+    for (const int i : qm_rows_) {
+        if (species[i] <= 0)
+            throw std::invalid_argument(
+                "QmSubsystem: QM atom row " + std::to_string(i)
+                + " has atomic number " + std::to_string(species[i])
+                + "; a QM atom needs a real element (Z > 0) in "
+                  "kAtom_atomic_number");
+        qm_z_.push_back(species[i]);
     }
     n_qm_real_ = static_cast<int>(qm_rows_.size());
 }
@@ -70,6 +80,9 @@ void QmSubsystem::resolve_mask_(const Frame& frame) {
 void QmSubsystem::allocate_private_frame_() {
     n_fqm_ = n_qm_real_ + static_cast<int>(resolved_links_.size());
     qm_frame_ = std::make_unique<Frame>(n_fqm_);
+    // The QM engine reads species; the private frame carries no
+    // force-field type it could be confused with.
+    qm_frame_->block("atoms").erase(kAtom_type.key);
 }
 
 void QmSubsystem::build(const BuildContext& ctx, int mpi_size,
@@ -142,7 +155,7 @@ void QmSubsystem::build(const BuildContext& ctx, int mpi_size,
     if (has_bonds) {
         const auto num_bond = frame.span(kAtom_num_bond);
         const auto bond_atom = frame.span(kAtom_bond_atom);
-        const auto qm_z = frame.span(kAtomQmZ);
+        const auto qm_mask = frame.span(kAtomQm);
         for (int i = 0; i < n; ++i) {
             const int nb = num_bond[static_cast<std::size_t>(i)];
             for (int m = 0; m < nb; ++m) {
@@ -151,8 +164,8 @@ void QmSubsystem::build(const BuildContext& ctx, int mpi_size,
                 if (it == tag_to_row.end())
                     continue;
                 const int j = it->second;
-                const bool qi = qm_z[i] > 0;
-                const bool qj = qm_z[j] > 0;
+                const bool qi = qm_mask[i] == 1;
+                const bool qj = qm_mask[j] == 1;
                 if (qi == qj)
                     continue; // both QM or both MM
                 const int qm_row = qi ? i : j;
@@ -187,7 +200,7 @@ void QmSubsystem::refresh_(Frame& frame) {
     resolve_mask_(frame);
     if (n_qm_real_ != built_n_qm_)
         throw std::runtime_error("QmSubsystem: QM atom count changed mid-run "
-                                 "(kAtomQmZ is per-run static in v1)");
+                                 "(kAtomQm is per-run static in v1)");
 
     const StorageReal* x = frame.span(kAtom_x);
     const StorageReal* y = frame.span(kAtom_y);
@@ -196,7 +209,7 @@ void QmSubsystem::refresh_(Frame& frame) {
     auto qx = qm_frame_->span(kAtom_x);
     auto qy = qm_frame_->span(kAtom_y);
     auto qz = qm_frame_->span(kAtom_z);
-    auto qtype = qm_frame_->span(kAtom_type);
+    auto qtype = qm_frame_->span(kAtom_atomic_number);
     auto qtag = qm_frame_->span(kAtom_tag);
     auto qmass = qm_frame_->span(kAtom_mass);
     auto qfx = qm_frame_->span(kAtom_fx);
@@ -208,7 +221,7 @@ void QmSubsystem::refresh_(Frame& frame) {
         qx[k] = x[i];
         qy[k] = y[i];
         qz[k] = z[i];
-        qtype[k] = qm_z_[k]; // Z from mask, not force-field type
+        qtype[k] = qm_z_[k]; // species Z of the parent row
         qtag[k] = static_cast<TagInt>(k + 1);
         qmass[k] = 1.0;
         qfx[k] = qfy[k] = qfz[k] = 0;

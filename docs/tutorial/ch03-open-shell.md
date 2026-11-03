@@ -181,8 +181,8 @@ Frame; `forces` writes that energy and the nuclear forces.
 
 ```cpp
 cpu::Frame frame(2);
-frame.span(kAtom_type)[0] = 1;
-frame.span(kAtom_type)[1] = 1;
+frame.span(kAtom_atomic_number)[0] = 1;
+frame.span(kAtom_atomic_number)[1] = 1;
 frame.span(kAtom_x)[0] = 0;
 frame.span(kAtom_y)[0] = 0;
 frame.span(kAtom_z)[0] = 0;
@@ -602,7 +602,7 @@ shells with l > 3 throw `complex_ghf_ao_lgt3`. There is no device path.
 The CPU call is Frame in / Frame out:
 
 ```cpp
-cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::Frame frame = /* positions [Å], species in kAtom_atomic_number */;
 cpu::scf::ComplexGHF ghf{cpu::scf::BasisSet::STO3G}; // charge 0, tol 1e-10, max_iter 80, x2c true
 ghf.run(frame);   // kEnergy and kEnergyElectronic [eV]; ghf.energy() [Ha]
 ```
@@ -622,7 +622,7 @@ The CPU call is Frame in / Frame out. `run(Frame&)` overwrites
 nothing; `energy()` is the total in Hartree.
 
 ```cpp
-cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::Frame frame = /* positions [Å], species in kAtom_atomic_number */;
 cpu::scf::DHF dhf{cpu::scf::BasisSet::CcPVDZ}; // hydrogen only; charge 0, tol 1e-10, max_iter 80
 dhf.run(frame);   // kEnergy and kEnergyElectronic [eV]; dhf.energy() [Ha]
 ```

@@ -24,7 +24,7 @@ namespace {
 /// @brief 1-atom cubic cell (mass via Z=14).
 cpu::Frame mono_cubic(double a) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 14;
+    f.span(kAtom_atomic_number)[0] = 14;
     f.span(kAtom_mass)[0] = 28.085;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
@@ -179,7 +179,7 @@ TEST(PhononDispersion, RawFourierSpringChainMatrixHasTrueQDependence) {
 // observable, which cannot be obtained from the top-left primitive block.
 TEST(PhononDispersion, RawFourierAlternatingChainRetainsComplexPhase) {
     cpu::Frame unit(2);
-    unit.span(kAtom_type)[0] = unit.span(kAtom_type)[1] = 14;
+    unit.span(kAtom_atomic_number)[0] = unit.span(kAtom_atomic_number)[1] = 14;
     unit.box = cpu::Box::cubic(4.0);
     constexpr int cells = 4;
     constexpr double spring = 3.25;

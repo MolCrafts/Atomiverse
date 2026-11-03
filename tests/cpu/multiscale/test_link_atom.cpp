@@ -21,10 +21,10 @@ using namespace ATV;
 
 namespace {
 
-void insert_qm_z(cpu::Frame& f) {
+void insert_qm_mask(cpu::Frame& f) {
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
 }
 
 } // namespace
@@ -65,7 +65,9 @@ TEST(LinkAtom, NoBondsMeansZeroLinks) {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_x)[2] = 5.0;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 18;
     f.span(kAtom_type)[2] = 18;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -74,10 +76,10 @@ TEST(LinkAtom, NoBondsMeansZeroLinks) {
         f.span(kAtom_charge)[i] = 0;
     f.box = cpu::Box::cubic(20);
     f.meta.get(kEnergy) = 0;
-    insert_qm_z(f);
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
-    f.span(cpu::kAtomQmZ)[2] = 0;
+    insert_qm_mask(f);
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
+    f.span(cpu::kAtomQm)[2] = 0;
 
     cpu::Context ctx;
     cpu::QmmmElectrostatic q{
@@ -93,8 +95,11 @@ TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 1.5;
     f.span(kAtom_x)[2] = 4.0;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 6;
     f.span(kAtom_type)[1] = 6;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_type)[2] = 1;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -103,8 +108,8 @@ TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
         f.span(kAtom_charge)[2] = 0;
     f.box = cpu::Box::cubic(20);
     f.meta.get(kEnergy) = 0;
-    insert_qm_z(f);
-    auto qmcol = f.span(cpu::kAtomQmZ);
+    insert_qm_mask(f);
+    auto qmcol = f.span(cpu::kAtomQm);
     qmcol[0] = 1; // H QM
     qmcol[1] = 0; // C MM
     qmcol[2] = 0;
@@ -125,15 +130,16 @@ TEST(LinkAtom, BothQmBondIsNotALink) {
     cpu::Frame f(2);
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
     f.span(kAtom_charge)[0] = f.span(kAtom_charge)[1] = 0;
     f.box = cpu::Box::cubic(20);
     f.meta.get(kEnergy) = 0;
-    insert_qm_z(f);
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
+    insert_qm_mask(f);
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
     f.rebuild_tag_index(0, 2);
     f.add_bond(1, 2, 1);
 

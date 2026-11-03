@@ -30,7 +30,7 @@ namespace md {
 /// unwrapped coordinates, and the electric-enthalpy term
 /// \(U_D = V (D_z - 4\pi k_e P_z)^2 / (8\pi k_e)\) enters the energy so that
 /// \(F_{i,z} = -\partial U_D/\partial z_i = q_i E_z\) exactly
-/// (\(k_e =\) `units::coulomb` converts \(P\) [e/Å²] into a field [V/Å]).
+/// (\(k_e =\) `units::md_qqr2e` converts \(P\) [e/Å²] into a field [V/Å]).
 /// x,y keep the foothold coupling — MetalWalls applies \(D\) along the cell
 /// normal only. Berry-phase / electronic polarization is out of scope.
 class FixDfield : public cpu::Bias {

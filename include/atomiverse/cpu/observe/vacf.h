@@ -17,7 +17,6 @@
 #include <vector>
 
 #include "atomiverse/cpu/asynchronous/async_observer.h"
-#include "atomiverse/cpu/asynchronous/frame_snapshot.h"
 #include "atomiverse/cpu/observe/constant_count_gate.h"
 #include "atomiverse/cpu/observe/trajectory_metrics.h"
 
@@ -37,7 +36,8 @@ class VACF : public cpu::md::AsyncObserver {
     ///                   ring to O(resolution · n_atoms) memory. The run must
     ///                   capture at least `resolution + 1` frames — molpy
     ///                   refuses a lag with no origin rather than clamping it.
-    /// @param freq       capture every `freq` steps (0 = every snapshot).
+    /// @param freq       sample cadence [steps]: the state after every `freq`-th
+    ///              completed step, step 0 included (0 = every step).
     /// @param output_file VACF(t) output path.
     /// @throws std::invalid_argument when `dt <= 0` or `resolution < 1`.
     explicit VACF(double dt, int resolution = 256, int freq = 0,
@@ -49,8 +49,8 @@ class VACF : public cpu::md::AsyncObserver {
     /* role via Observer base */
     int frequency() const override { return freq_; }
 
-    cpu::CaptureMask capture_mask() const override {
-        cpu::CaptureMask m;
+    CaptureColumns capture_columns() const override {
+        CaptureColumns m;
         m.tags = true;
         m.velocities = true;
         return m;

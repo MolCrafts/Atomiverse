@@ -59,7 +59,7 @@ class MKCharges {
     double density_per_ang2 = 1.0;
 
     /// @brief Generate the MK sampling grid for a geometry.
-    /// @param frame Geometry (positions [Å], atomic numbers in `type`).
+    /// @param frame Geometry (positions [Å], species Z in `kAtom_atomic_number`).
     /// @return Grid points [Å], in the documented deterministic order.
     /// @throws std::invalid_argument for an element without a Bondi radius.
     std::vector<std::array<double, 3>> grid(const Frame& frame) const;
@@ -67,7 +67,7 @@ class MKCharges {
     /// @brief Fit ESP charges from a converged mean-field wavefunction.
     /// @param outputs A method's `result_handle()` (determinant + shells +
     ///        c2s), read after the method ran.
-    /// @param frame   Geometry (positions [Å], atomic numbers in `type`).
+    /// @param frame   Geometry (positions [Å], species Z in `kAtom_atomic_number`).
     /// @return Per-atom fitted charges [e], Frame atom order; the total
     ///         charge constraint Σq = Z_tot − N_el holds by construction.
     /// @throws std::invalid_argument on a null / not-ready handle or an
@@ -101,14 +101,14 @@ class ChelpgCharges {
     double band_ang = 2.8;
 
     /// @brief Generate the CHELPG sampling grid for a geometry.
-    /// @param frame Geometry (positions [Å], atomic numbers in `type`).
+    /// @param frame Geometry (positions [Å], species Z in `kAtom_atomic_number`).
     /// @return Grid points [Å], in the documented deterministic order.
     /// @throws std::invalid_argument for an element without a Bondi radius.
     std::vector<std::array<double, 3>> grid(const Frame& frame) const;
 
     /// @brief Fit ESP charges from a converged mean-field wavefunction.
     /// @param outputs A method's `result_handle()`.
-    /// @param frame   Geometry (positions [Å], atomic numbers in `type`).
+    /// @param frame   Geometry (positions [Å], species Z in `kAtom_atomic_number`).
     /// @return Per-atom fitted charges [e], Frame atom order; Σq equals the
     ///         molecular net charge by construction.
     /// @throws std::invalid_argument on a null / not-ready handle or an

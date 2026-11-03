@@ -26,7 +26,7 @@ cpu::Frame make_h2(double r = 0.74) {
     f.span(kAtom_x)[1] = r;
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -39,7 +39,7 @@ cpu::Frame make_h2(double r = 0.74) {
 
 cpu::Frame make_ch4() {
     cpu::Frame f(5);
-    f.span(kAtom_type)[0] = 6;
+    f.span(kAtom_atomic_number)[0] = 6;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
     f.span(kAtom_z)[0] = 0;
@@ -47,7 +47,7 @@ cpu::Frame make_ch4() {
     const double hpos[4][3] = {
         {s, s, s}, {s, -s, -s}, {-s, s, -s}, {-s, -s, s}};
     for (int i = 0; i < 4; ++i) {
-        f.span(kAtom_type)[i + 1] = 1;
+        f.span(kAtom_atomic_number)[i + 1] = 1;
         f.span(kAtom_x)[i + 1] = hpos[i][0];
         f.span(kAtom_y)[i + 1] = hpos[i][1];
         f.span(kAtom_z)[i + 1] = hpos[i][2];
@@ -90,7 +90,7 @@ TEST(GFN1, ProvidesForceTrue) {
 
 TEST(GFN1, UnsupportedZThrows) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 9; // F — not in organic tables
+    f.span(kAtom_atomic_number)[0] = 9; // F — not in organic tables
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0;
     f.span(kAtom_mass)[0] = 19.0;
     f.span(kAtom_tag)[0] = 1;
@@ -111,15 +111,15 @@ TEST(GFN1, UnsupportedZThrows) {
 
 cpu::Frame make_h2o_offeq() {
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.96;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = -0.24;
     f.span(kAtom_y)[2] = 0.93;
     f.span(kAtom_z)[2] = 0.0;

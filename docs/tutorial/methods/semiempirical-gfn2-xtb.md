@@ -208,7 +208,7 @@ internals in Hartree / Bohr (tblite convention). Conversions:
 \(F=-\nabla E\times\) `units::kHartreePerBohrInEvPerAngstrom`.
 
 ```cpp
-cpu::Frame frame(3);                 // one of the geometries above, kAtom_type = Z
+cpu::Frame frame(3);                 // one of the geometries above, kAtom_atomic_number = Z
 // ... kAtom_x/y/z, kAtom_mass, kAtom_tag, zeroed kAtom_f*
 frame.box = cpu::Box::cubic(20.0);
 frame.meta.get(kEnergy) = 0;
@@ -639,7 +639,7 @@ pass (restore \(R_0\), mass-weight, TR-project, diagonalize). The driver
 is `cpu::vib::Hessian` (`Driver<vib::Phase>`); stages
 `setup → displace → force → accumulate → diagonalize → thermochem →
 end_of_step`. Masses for \(\omega\) come from IUPAC-2013 `mass_amu(Z)`
-(`kAtom_type`), **not** `kAtom_mass`. (The GFN0 twin is analytic \(G\),
+(`kAtom_atomic_number`), **not** `kAtom_mass`. (The GFN0 twin is analytic \(G\),
 numerical \(H\) at step \(0.005\,a_0\).)
 
 **Not included.** Closed-form \(\partial^2 E/\partial R_i\partial R_j\)

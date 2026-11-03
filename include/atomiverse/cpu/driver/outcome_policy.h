@@ -196,7 +196,7 @@ class Metropolis : public OutcomePolicy {
         if (dE <= AccReal(0))
             return true;
         const double beta =
-            1.0 / (ATV::units::kB_ev_per_k * static_cast<double>(temperature_));
+            1.0 / (ATV::units::md_boltz * static_cast<double>(temperature_));
         const double p = std::exp(-static_cast<double>(dE) * beta);
         std::uniform_real_distribution<double> u(0.0, 1.0);
         return u(rng_) < p;

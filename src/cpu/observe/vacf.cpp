@@ -39,8 +39,8 @@ void VACF::on_snapshot(const cpu::FrameSnapshot& snap) {
 
     // Snapshot velocity fields are double (widened from StorageReal at capture).
 
-    // Worker thread: a molpy refusal is tallied for finalize(), never thrown
-    // out of the analysis executor.
+    // Worker thread: a molpy refusal is tallied for finalize(), not a
+    // reason to stop the run.
     try {
         input_.pack(scratch_, snap.tag, snap.vx, snap.vy, snap.vz, n, snap.step,
                     freq_ > 0 ? freq_ : 1);
@@ -58,10 +58,10 @@ void VACF::finalize() {
                  rejected_.first_reason());
         return;
     }
-    if (gate_.dropped() > 0)
-        ATV_WARN("[vacf] dropped {} snapshot(s) with changed atom count "
+    if (gate_.rejected() > 0)
+        ATV_WARN("[vacf] rejected {} snapshot(s) with a changed atom count "
                  "(constant count required)",
-                 gate_.dropped());
+                 gate_.rejected());
     if (rejected_.count() > 0)
         ATV_WARN("[vacf] molpy refused {} snapshot(s); first: {}",
                  rejected_.count(), rejected_.first_reason());

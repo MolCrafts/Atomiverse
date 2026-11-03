@@ -22,11 +22,11 @@ using ATV::cpu::Frame;
 Frame make_h2() {
     using namespace ATV;
     Frame frame(2);
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.0;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.0;
     frame.span(kAtom_z)[1] = 0.74;
@@ -37,15 +37,15 @@ Frame make_h2() {
 Frame make_h2o() {
     using namespace ATV;
     Frame frame(3);
-    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_atomic_number)[0] = 8;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.1173;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.7572;
     frame.span(kAtom_z)[1] = -0.4692;
-    frame.span(kAtom_type)[2] = 1;
+    frame.span(kAtom_atomic_number)[2] = 1;
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;

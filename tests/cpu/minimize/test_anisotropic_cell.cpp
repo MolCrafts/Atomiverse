@@ -26,7 +26,7 @@ cpu::Frame one_atom_box(double L) {
     cpu::Frame f(1);
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.25 * L;
     f.span(kAtom_mass)[0] = 1.0;
-    f.span(kAtom_type)[0] = 0;
+    f.span(kAtom_atomic_number)[0] = 0;
     f.span(kAtom_tag)[0] = 1;
     f.box = cpu::Box::cubic(L);
     return f;

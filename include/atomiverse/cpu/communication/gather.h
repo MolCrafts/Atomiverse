@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -80,12 +81,16 @@ struct GatheredFrame {
     /// charge-writing evaluators (Capability::Charge), not just a static
     /// input -- the task-protocol result path returns it to rank 0.
     std::vector<StorageReal> charge;
-    /// @brief Atom types, ordered by global tag.
-    std::vector<int> type;
+    /// @brief Force-field type index per atom (`kAtom_type`), ordered by
+    /// global tag; disengaged when the source Frame carries no type column.
+    std::optional<std::vector<int>> type;
+    /// @brief Species Z per atom (`kAtom_atomic_number`), ordered by global
+    /// tag; disengaged when the source Frame carries no species column.
+    std::optional<std::vector<int>> atomic_number;
     /// @brief Global atom tags. Ascending: `tag[i] == i` after a clean run.
     std::vector<TagInt> tag;
     /// @brief PBC crossing counts in flat row-major `[n_total * 3]` layout.
-    std::vector<std::int8_t> image;
+    std::vector<ImageInt> image;
     /// Runtime-added exchanged columns, native and row-major. The schema is
     /// the atoms Block's own `kColExchange` selection
     /// (`Block::resolve_columns`); no gather-only field list, and no
@@ -120,7 +125,8 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
 /// @brief Materialize a `GatheredFrame` into a host `cpu::Frame` (root-side
 /// I/O convenience for recorders that consume `Frame`-shaped geometry, e.g.
 /// `cpu::XYZ::write`, and the task-protocol result path). Copies positions,
-/// velocities, forces, mass, charge, type, tag, and image in the gathered
+/// velocities, forces, mass, charge, type and atomic_number (each only when
+/// gathered), tag, and image in the gathered
 /// (global-tag) order and sets the box. Bonded topology does NOT travel
 /// through the gather (a per-run static input by the to_molpy contract).
 /// Called on a non-root rank (empty buffers) it returns a 0-atom Frame.

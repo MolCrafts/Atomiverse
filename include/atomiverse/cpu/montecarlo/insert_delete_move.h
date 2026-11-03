@@ -20,7 +20,10 @@ namespace mc {
 ///
 /// Insertion appends a fully zeroed row at `nlocal` (velocity, force, charge,
 /// image, topology counts — rows past `nlocal` may hold stale content from
-/// earlier deletions), stamps the configured type/mass, and takes its tag
+/// earlier deletions), stamps the configured identity and mass — the
+/// force-field type into `kAtom_type` and the species Z into
+/// `kAtom_atomic_number`, each only when the Frame carries that column (a
+/// coarse-grained frame has no species) — and takes its tag
 /// from `Frame::acquire_tag()` — never from identity seeding, which would
 /// duplicate a survivor's tag after a delete-compaction. Deletion is the
 /// migration compaction primitive: snapshot the victim and the end row into
@@ -35,12 +38,17 @@ namespace mc {
 /// Role `Mover`, capabilities `None`. Bound to `sampling::Phase::propose`.
 class InsertDeleteMove : public cpu::Mover {
   public:
-    /// @param type Atom type stamped on inserted atoms (must be > 0).
+    /// @param type Force-field type stamped on inserted atoms (must be > 0;
+    ///        written when the Frame carries `kAtom_type`).
+    /// @param atomic_number Species Z stamped on inserted atoms (0..118, 0 =
+    ///        no element; written when the Frame carries
+    ///        `kAtom_atomic_number`).
     /// @param mass_amu Mass [amu] stamped on inserted atoms (must be > 0;
     ///        use the same species mass the `GcmcMetropolis` Λ was built
     ///        from).
-    /// @throws std::invalid_argument on a non-positive type or mass.
-    InsertDeleteMove(int type, double mass_amu);
+    /// @throws std::invalid_argument on a non-positive type or mass, or Z
+    ///         outside 0..118.
+    InsertDeleteMove(int type, int atomic_number, double mass_amu);
 
     /// @brief Component identifier.
     /// @return "insert_delete".
@@ -62,8 +70,9 @@ class InsertDeleteMove : public cpu::Mover {
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:
-    int type_;        ///< Type stamped on inserted atoms.
-    double mass_amu_; ///< Mass [amu] stamped on inserted atoms.
+    int type_;          ///< Force-field type stamped on inserted atoms.
+    int atomic_number_; ///< Species Z stamped on inserted atoms.
+    double mass_amu_;   ///< Mass [amu] stamped on inserted atoms.
 };
 
 } // namespace mc

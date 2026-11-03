@@ -5,6 +5,8 @@
 #include "nlist_impl.cuh"
 #include "triclinic.cuh"
 
+#include "atomiverse/core/neighbor_check.h"
+
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cuda_runtime.h>
@@ -171,30 +173,41 @@ void launch_compute_csr_masks(const pos_t* cluster_x, const pos_t* cluster_y,
 // on the device. Blocks fold their verdict into `control->motion`; the last
 // block (ticket counter) consumes motion and the forced flag, publishes the
 // decision and selects the conditional rebuild body. No host read.
+//
+// Box change follows LAMMPS Neighbor::check_distance (src/neighbor.cpp,
+// SHA e8c4c278a8599165a0321ebfcb4e4046ef79ad79; Copyright (2003) Sandia
+// Corporation, GPL-2.0-only): the half-skin trigger shrinks by the motion
+// of the cell corners since the reference build (`core/neighbor_check.h`),
+// and a cell change that alone consumes the skin rebuilds. A changing cell
+// therefore no longer rebuilds on every step.
 // ---------------------------------------------------------------------------
-// The cell-change test compares the FP64 cells exactly; the motion test runs
-// on the primary coordinates against a cell narrowed once to the scratch type.
+// The trigger is computed once per block in FP64 from the FP64 cells; the
+// motion test runs on the primary coordinates against a cell narrowed once
+// to the scratch type.
 template <typename T>
 __global__ void
 skin_gate_k(const pos_t* __restrict__ pos_x, const pos_t* __restrict__ pos_y,
             const pos_t* __restrict__ pos_z, const pos_t* __restrict__ ref_x,
             const pos_t* __restrict__ ref_y, const pos_t* __restrict__ ref_z,
-            int num_atoms, T half_skin_sq, Box box_arg,
-            const Box* reference_box, Control* control,
-            cudaGraphConditionalHandle handle) {
+            int num_atoms, double skin, Box box_arg, const Box* reference_box,
+            Control* control, cudaGraphConditionalHandle handle) {
     const Box geom = box_arg.current();
+    __shared__ double trigger_sq;
+    if (threadIdx.x == 0)
+        trigger_sq =
+            reference_box
+                ? ATV::md::skin_trigger_sq(reference_box->cell, geom.cell, skin)
+                : 0.25 * skin * skin;
+    __syncthreads();
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    bool moved = false;
-    if (reference_box)
-        for (int k = 0; k < 9; ++k)
-            moved |= geom.cell[k] != reference_box->cell[k];
-    if (i < num_atoms) {
+    bool moved = trigger_sq < 0.0;
+    if (i < num_atoms && !moved) {
         const auto box = geom.as<T>();
         T dx = pos_x[i] - ref_x[i];
         T dy = pos_y[i] - ref_y[i];
         T dz = pos_z[i] - ref_z[i];
         box.min_image(dx, dy, dz);
-        moved |= dx * dx + dy * dy + dz * dz > half_skin_sq;
+        moved = dx * dx + dy * dy + dz * dz > T(trigger_sq);
     }
     const int count = __syncthreads_count(moved);
     if (threadIdx.x != 0)
@@ -219,13 +232,13 @@ template <typename T>
 void launch_skin_gate(const pos_t* pos_x, const pos_t* pos_y,
                       const pos_t* pos_z, const pos_t* ref_x,
                       const pos_t* ref_y, const pos_t* ref_z, int num_atoms,
-                      T half_skin_sq, Box box, const Box* reference_box,
+                      double skin, Box box, const Box* reference_box,
                       Control* control, cudaGraphConditionalHandle handle,
                       cudaStream_t stream) {
     const int grid = ATV::cuda::grid_size(num_atoms, 256);
-    skin_gate_k<T><<<grid, 256, 0, stream>>>(
-        pos_x, pos_y, pos_z, ref_x, ref_y, ref_z, num_atoms, half_skin_sq, box,
-        reference_box, control, handle);
+    skin_gate_k<T><<<grid, 256, 0, stream>>>(pos_x, pos_y, pos_z, ref_x, ref_y,
+                                             ref_z, num_atoms, skin, box,
+                                             reference_box, control, handle);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 

@@ -765,6 +765,11 @@ void MultiGpu::partition(const cpu::Frame& global, double ghost_headroom) {
         cpu::Frame sub(cnt > 0 ? cnt : 1);
         sub.set_nlocal(cnt);
         sub.box = global.box;
+        // The subdomain SoA (halo, migration) carries the force-field type
+        // and not the species: no multi-GPU force term reads Z, and results
+        // return to the global frame by tag (gather / gather_forces), whose
+        // own species column is untouched.
+        sub.block("atoms").erase(kAtom_atomic_number.key);
         // The partition writes the wide bonded arrays directly (not via
         // add_bond), so explicitly size them on the fresh sub frame to the
         // global frame's runtime strides — otherwise the lazy
@@ -1990,7 +1995,7 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
     // velocity-Verlet diverges within a few steps here: atoms accelerate under
     // the overlap force spikes, the system clumps, and the neighbor count grows
     // without bound until it overflows int32 at ~1M atoms. Match LAMMPS:
-    // displacement-capped integration (ATV::units::force_to_accel units + orthorhombic PBC wrap).
+    // displacement-capped integration (ATV::units::md_ftm2v units + orthorhombic PBC wrap).
     // Å, == `fix nve/limit 0.05`
     constexpr mixed_t kNveLimitXmax = mixed_t(0.05);
     if (reneigh_every < 1)
@@ -2111,7 +2116,7 @@ struct MigBuf {
     force_t* charge;
     int* type;
     std::int64_t* tag;
-    std::int8_t* image;
+    ImageInt* image;
 };
 void mig_alloc(MigBuf& b, int m) {
     CKM(mallocp(&b.x, m * sizeof(pos_t)));
@@ -2132,7 +2137,7 @@ void mig_alloc(MigBuf& b, int m) {
     CKM(mallocp(&b.charge, m * sizeof(force_t)));
     CKM(mallocp(&b.type, m * sizeof(int)));
     CKM(mallocp(&b.tag, m * sizeof(std::int64_t)));
-    CKM(mallocp(&b.image, 3 * m * sizeof(std::int8_t)));
+    CKM(mallocp(&b.image, 3 * m * sizeof(ImageInt)));
 }
 void mig_free(MigBuf& b) {
     freep(b.x);
@@ -2269,7 +2274,7 @@ __global__ void fill_holes(const int* holes, const int* fillers,
                            pos_t* xc, pos_t* yc, pos_t* zc, mixed_t* vx,
                            mixed_t* vy, mixed_t* vz, mixed_t* mass, fixed_t* fx,
                            fixed_t* fy, fixed_t* fz, force_t* charge, int* type,
-                           std::int64_t* tag, std::int8_t* image) {
+                           std::int64_t* tag, ImageInt* image) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= *m_ctr)
         return;
@@ -2638,7 +2643,7 @@ void MultiGpu::migrate() {
             peer(da.type + o, B.type, c * sizeof(int));
             peer(da.tag + o, B.tag, c * sizeof(std::int64_t));
             peer(da.image + 3 * static_cast<std::size_t>(o), B.image,
-                 3 * static_cast<std::size_t>(c) * sizeof(std::int8_t));
+                 3 * static_cast<std::size_t>(c) * sizeof(ImageInt));
             if (bonded_) {
                 MigBondedBuf& BB = sbb[src][dst];
                 auto peer_i = [&](int* dstp, int* srcp, int width) {

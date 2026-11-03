@@ -33,15 +33,15 @@ int run() {
     // Pinned geometry (identical to the PySCF `water` preset in REFERENCE.md):
     // O(0,0,0.1173), H(0,±0.7572,−0.4692) Å.
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.1173;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.0;
     f.span(kAtom_y)[1] = 0.7572;
     f.span(kAtom_z)[1] = -0.4692;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = 0.0;
     f.span(kAtom_y)[2] = -0.7572;
     f.span(kAtom_z)[2] = -0.4692;

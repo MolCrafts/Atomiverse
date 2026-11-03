@@ -1,5 +1,5 @@
 /// @file cuda/minimize/sd.cu
-/// @brief cuda::minimizer::SteepestDescent kernel: x += alpha * f / m * ATV::units::force_to_accel.
+/// @brief cuda::minimizer::SteepestDescent kernel: x += alpha * f / m * ATV::units::md_ftm2v.
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/device/launch.cuh"
@@ -18,7 +18,7 @@ namespace {
 /// @brief Steepest descent position update.
 ///
 /// Moves each atom along the force direction:
-///   x[i] += alpha * fx[i] / mass[i] * ATV::units::force_to_accel
+///   x[i] += alpha * fx[i] / mass[i] * ATV::units::md_ftm2v
 ///
 /// Same unit conversion as VelocityVerlet. The backend prepares initial forces
 /// before the first optimizer step. The update runs in
@@ -29,8 +29,9 @@ sd_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
         pos_t* __restrict__ xc, pos_t* __restrict__ yc, pos_t* __restrict__ zc,
         const fixed_t* __restrict__ fx, const fixed_t* __restrict__ fy,
         const fixed_t* __restrict__ fz, const mixed_t* __restrict__ mass,
-        ForceFault* fault, const std::int64_t* __restrict__ tag, long long step,
-        cuda::Box box, mixed_t alpha, int n) {
+        ImageInt* __restrict__ image, ForceFault* fault,
+        const std::int64_t* __restrict__ tag, long long step, cuda::Box box,
+        mixed_t alpha, int n) {
     if (!forces_consumable(fault, tag, step))
         return;
     box = box.current();
@@ -39,12 +40,13 @@ sd_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
     if (i >= n)
         return;
 
-    const mixed_t scale = alpha * mixed_t(ATV::units::force_to_accel) / mass[i];
+    const mixed_t scale = alpha * mixed_t(ATV::units::md_ftm2v) / mass[i];
     mixed_t px = load_position(x, xc, i) + scale * decode_force<mixed_t>(fx[i]);
     mixed_t py = load_position(y, yc, i) + scale * decode_force<mixed_t>(fy[i]);
     mixed_t pz = load_position(z, zc, i) + scale * decode_force<mixed_t>(fz[i]);
-    // PBC wrap by whole lattice vectors, as in the MD integrators.
-    box.wrap_position(px, py, pz);
+    // PBC wrap by whole lattice vectors, counted into the image flags as in
+    // the MD integrators (r + H·image follows the relaxation).
+    box.wrap_position(px, py, pz, image ? image + 3 * i : nullptr);
     store_position(x, xc, i, px);
     store_position(y, yc, i, py);
     store_position(z, zc, i, pz);
@@ -78,7 +80,7 @@ void SteepestDescent::launch(const LaunchContext& ctx) {
     int grid = cuda::grid_size(static_cast<int>(n));
     sd_step<<<grid, block, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, a.mass,
-        frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box,
+        a.image, frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box,
         mixed_t(alpha_), n);
     ++step_;
 }

@@ -36,7 +36,7 @@ Endpoint run_h2_nvt(bool with_predictor) {
     cpu::Frame frame(2);
     frame.span(kAtom_x)[1] = 0.74;
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_mass)[i] = 1.008;
     }
     frame.box = cpu::Box::cubic(20.0);

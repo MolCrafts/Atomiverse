@@ -11,7 +11,7 @@
 ///             cpu::md::MD and yields a finite energy.
 ///
 /// Plus the arch-refactor-06-frame Design §2 to_molpy field contract
-/// (golden round-trip): image (int8 -> i32 ix/iy/iz widen-back) and tag
+/// (golden round-trip): image (ImageInt = i32 ix/iy/iz, exact both ways) and tag
 /// (TagInt -> i32 checked narrowing, overflow throws) ARE written back;
 /// type / mass / topology are static run inputs, designated non-write-back,
 /// and must keep their pre-materialize molpy values.
@@ -157,12 +157,14 @@ namespace {
 }
 
 // Extend the fully-populated frame with per-axis PBC image columns
-// (i32 in molpy, int8 [n,3] in cpu::Frame) for the to_molpy contract
-// tests. Values must fit int8 (|image| <= 127).
+// (i32 in molpy, ImageInt = int32 [n,3] in cpu::Frame) for the to_molpy
+// contract tests. Values beyond the old int8 range (|image| > 127) prove the
+// round trip is exact, not a narrowing.
+
 ::rust::Box<molrs::FrameRef> make_contract_frame() {
     auto fr = make_full_frame();
 
-    const std::vector<std::int32_t> ix = {1, -1, 2};
+    const std::vector<std::int32_t> ix = {1, -1, 200000};
     const std::vector<std::int32_t> iy = {0, 3, -2};
     const std::vector<std::int32_t> iz = {-1, 0, 4};
     molrs::frame_set_column_i32(
@@ -346,51 +348,87 @@ TEST(Materialize, MissingPositionsThrows) {
     }
 }
 
-TEST(Materialize, MissingAtomicNumberThrows) {
+namespace {
+
+/// @brief A molpy frame with three atoms' positions and nothing else.
+::rust::Box<molrs::FrameRef> positions_only_frame() {
     auto fr = molrs::frame_new();
-    // Positions present, atomic_number absent. In molpy the element
-    // identity lives in `atoms.atomic_number` (UInt); `type` is a String
-    // force-field label this boundary does not import.
-    const std::vector<double> x = {0.0, 1.0};
+    const std::vector<double> x = {0.0, 1.0, 2.0};
     molrs::frame_set_column_f64(
         *fr, "atoms", "x", ::rust::Slice<const double>(x.data(), x.size()));
     molrs::frame_set_column_f64(
         *fr, "atoms", "y", ::rust::Slice<const double>(x.data(), x.size()));
     molrs::frame_set_column_f64(
         *fr, "atoms", "z", ::rust::Slice<const double>(x.data(), x.size()));
+    return fr;
+}
 
+} // namespace
+
+// Neither identity column is required at the boundary: an absent one is left
+// OUT of the Frame (not zero-filled), and reading it throws the how-to.
+TEST(Materialize, AbsentIdentityColumnsAreLeftOut) {
+    auto fr = positions_only_frame();
+    Frame cf = from_molpy(*fr);
+    ASSERT_EQ(cf.nlocal(), 3);
+    EXPECT_FALSE(cf.has("atoms", "type"));
+    EXPECT_FALSE(cf.has("atoms", "atomic_number"));
     try {
-        Frame cf = from_molpy(*fr);
-        FAIL() << "materialize must throw when atoms.atomic_number is absent";
+        (void)cf.span(ATV::kAtom_type);
+        FAIL() << "reading an absent type column must throw";
     } catch (const std::exception& e) {
-        EXPECT_NE(std::string(e.what()).find("atomic_number"),
+        EXPECT_NE(std::string(e.what()).find("type_id"), std::string::npos)
+            << "the how-to must name molpy atoms.type_id: " << e.what();
+    }
+    try {
+        (void)cf.span(ATV::kAtom_atomic_number);
+        FAIL() << "reading an absent species column must throw";
+    } catch (const std::exception& e) {
+        EXPECT_NE(std::string(e.what()).find("fill_atomic_numbers"),
                   std::string::npos)
-            << "exception message must name the missing field: " << e.what();
+            << "the how-to must name the explicit converter: " << e.what();
     }
 }
 
-TEST(Materialize, ForceFieldTypeIdIsTheAtomKind) {
-    // Two carbons of different GAFF kinds (c3 = 0, ca = 1): the per-type
-    // pair table is keyed by `type_id`, so it, not Z, is the atom kind.
-    auto fr = molrs::frame_new();
-    const std::vector<double> x = {0.0, 1.5};
-    for (const char* axis : {"x", "y", "z"})
-        molrs::frame_set_column_f64(
-            *fr, "atoms", axis,
-            ::rust::Slice<const double>(x.data(), x.size()));
-    const std::vector<std::uint64_t> z_num = {6, 6};
-    const std::vector<std::uint64_t> kind = {0, 1};
+// `type_id` and `atomic_number` land in two columns, one meaning each.
+TEST(Materialize, TypeIdAndAtomicNumberLandInTheirOwnColumns) {
+    auto fr = positions_only_frame();
+    const std::vector<std::uint64_t> type_id = {1, 2, 2};
+    const std::vector<std::uint64_t> z_num = {0, 8, 1};
+    molrs::frame_set_column_u64(
+        *fr, "atoms", "type_id",
+        ::rust::Slice<const std::uint64_t>(type_id.data(), type_id.size()));
     molrs::frame_set_column_u64(
         *fr, "atoms", "atomic_number",
         ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
+    Frame cf = from_molpy(*fr);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(cf.span(ATV::kAtom_type)[i], static_cast<int>(type_id[i]));
+        EXPECT_EQ(cf.span(ATV::kAtom_atomic_number)[i],
+                  static_cast<int>(z_num[i]));
+    }
+}
+
+// A coarse-grained frame: force-field types, no species column at all.
+TEST(Materialize, TypeIdAloneLeavesNoSpecies) {
+    auto fr = positions_only_frame();
+    const std::vector<std::uint64_t> type_id = {3, 1, 2};
     molrs::frame_set_column_u64(
         *fr, "atoms", "type_id",
-        ::rust::Slice<const std::uint64_t>(kind.data(), kind.size()));
-
+        ::rust::Slice<const std::uint64_t>(type_id.data(), type_id.size()));
     Frame cf = from_molpy(*fr);
-    const int* type = cf.span(ATV::kAtom_type).data();
-    EXPECT_EQ(type[0], 0);
-    EXPECT_EQ(type[1], 1);
+    EXPECT_TRUE(cf.has("atoms", "type"));
+    EXPECT_FALSE(cf.has("atoms", "atomic_number"));
+    EXPECT_EQ(cf.span(ATV::kAtom_type)[0], 3);
+}
+
+TEST(Materialize, AtomicNumberAbove118Throws) {
+    auto fr = positions_only_frame();
+    const std::vector<std::uint64_t> z_num = {1, 119, 1};
+    molrs::frame_set_column_u64(
+        *fr, "atoms", "atomic_number",
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
+    EXPECT_THROW((void)from_molpy(*fr), std::runtime_error);
 }
 
 TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
@@ -433,8 +471,8 @@ TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
 
 // Contract fields (x/v/f/charge, image, tag, typed metadata) mutated on the
 // cpu::Frame must reach the molpy.Frame through to_molpy. image goes back
-// through the same ix/iy/iz i32 columns materialize reads (int8 -> i32
-// widen); tag presents the permuted values (TagInt -> i32 narrowing).
+// through the same ix/iy/iz i32 columns materialize reads (exact i32 both
+// ways); tag presents the permuted values (TagInt -> i32 narrowing).
 TEST(WriteBackContract, GoldenRoundTripContractFields) {
     auto fr = make_contract_frame();
 
@@ -442,8 +480,9 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     ASSERT_EQ(cf.nlocal(), 3);
 
     // Anchor the materialize read side of the symmetric format first:
-    // ix/iy/iz i32 columns landed in the int8 [n,3] image array.
+    // ix/iy/iz i32 columns landed in the int32 [n,3] image array.
     ASSERT_EQ(cf.span(ATV::kAtom_image)(0, 0), 1);
+    ASSERT_EQ(cf.span(ATV::kAtom_image)(2, 0), 200000);
     ASSERT_EQ(cf.span(ATV::kAtom_image)(1, 1), 3);
     ASSERT_EQ(cf.span(ATV::kAtom_image)(2, 2), 4);
     ASSERT_EQ(cf.span(ATV::kAtom_tag)[0], 10);
@@ -454,9 +493,9 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     cf.span(ATV::kAtom_vy)[0] = -3.5;
     cf.span(ATV::kAtom_fz)[2] = 17.0;
     cf.span(ATV::kAtom_charge)[1] = 0.125;
-    cf.span(ATV::kAtom_image)(0, 0) = 3;  // ix[0]: 1 -> 3
-    cf.span(ATV::kAtom_image)(1, 1) = -7; // iy[1]: 3 -> -7
-    cf.span(ATV::kAtom_image)(2, 2) = 90; // iz[2]: 4 -> 90
+    cf.span(ATV::kAtom_image)(0, 0) = 3;          // ix[0]: 1 -> 3
+    cf.span(ATV::kAtom_image)(1, 1) = -7;         // iy[1]: 3 -> -7
+    cf.span(ATV::kAtom_image)(2, 2) = -1'000'000; // iz[2]: 4 -> -1e6
     // Permute the tags (reverse): {10, 11, 12} -> {12, 11, 10}.
     cf.span(ATV::kAtom_tag)[0] = 12;
     cf.span(ATV::kAtom_tag)[2] = 10;
@@ -476,7 +515,7 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     EXPECT_DOUBLE_EQ(rfz[2], 17.0);
     EXPECT_DOUBLE_EQ(rq[1], 0.125);
 
-    // NEW contract: image writes back through ix/iy/iz (int8 -> i32 widen,
+    // NEW contract: image writes back through ix/iy/iz (exact i32,
     // symmetric with the materialize read format).
     auto rix = molrs::frame_column_i32(*fr, "atoms", "ix");
     auto riy = molrs::frame_column_i32(*fr, "atoms", "iy");
@@ -486,13 +525,14 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     ASSERT_EQ(riz.size(), 3u);
     EXPECT_EQ(rix[0], 3) << "mutated image(0,0) must reach molpy atoms.ix";
     EXPECT_EQ(rix[1], -1);
-    EXPECT_EQ(rix[2], 2);
+    EXPECT_EQ(rix[2], 200000);
     EXPECT_EQ(riy[0], 0);
     EXPECT_EQ(riy[1], -7) << "mutated image(1,1) must reach molpy atoms.iy";
     EXPECT_EQ(riy[2], -2);
     EXPECT_EQ(riz[0], -1);
     EXPECT_EQ(riz[1], 0);
-    EXPECT_EQ(riz[2], 90) << "mutated image(2,2) must reach molpy atoms.iz";
+    EXPECT_EQ(riz[2], -1'000'000)
+        << "mutated image(2,2) must reach molpy atoms.iz";
 
     // NEW contract: tag writes back (TagInt -> i32 checked narrowing) and
     // presents the permutation.
@@ -535,7 +575,7 @@ TEST(WriteBackContract, NonContractFieldsUntouched) {
     ASSERT_EQ(cf.nlocal(), 3);
 
     // Mutate NON-contract fields...
-    cf.span(ATV::kAtom_type)[0] = 99;
+    cf.span(ATV::kAtom_atomic_number)[0] = 99;
     cf.span(ATV::kAtom_mass)[1] = 999.9;
     // ...plus one contract sentinel proving to_molpy actually ran.
     cf.span(ATV::kAtom_x)[0] = 8.5;
@@ -549,7 +589,7 @@ TEST(WriteBackContract, NonContractFieldsUntouched) {
     // type / mass keep the make_full_frame originals.
     auto rtype = molrs::frame_column_u64(*fr, "atoms", "atomic_number");
     ASSERT_EQ(rtype.size(), 3u);
-    EXPECT_EQ(rtype[0], 1) << "atoms.type is non-write-back";
+    EXPECT_EQ(rtype[0], 1) << "atoms.atomic_number is non-write-back";
     EXPECT_EQ(rtype[1], 2);
     EXPECT_EQ(rtype[2], 3);
     auto rmass = molrs::frame_column_f64(*fr, "atoms", "mass");
@@ -765,8 +805,12 @@ TEST(Materialize, MaterializedFrameCarriesNoExtras) {
     auto fr = make_contract_frame();
     Frame cf = from_molpy(*fr);
 
+    // Every schema column but `type`: the contract frame carries no
+    // `type_id`, so the identity column is left out, not invented.
     EXPECT_EQ(static_cast<int>(cf.block("atoms").columns().size()),
-              ATV::kAtomFieldCount);
+              ATV::kAtomFieldCount - 1);
+    EXPECT_FALSE(cf.has("atoms", "type"));
+    EXPECT_TRUE(cf.has("atoms", "atomic_number"));
     EXPECT_TRUE(cf.has("atoms", "x"));
     EXPECT_FALSE(cf.has("atoms", "rho"));
 

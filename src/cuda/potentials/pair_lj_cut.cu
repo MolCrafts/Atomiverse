@@ -1,18 +1,40 @@
 /// @file cuda/potentials/pair_lj_cut.cu
 /// @brief CUDA PairLJCut — Lennard-Jones 12-6 shifted (kernel + class).
 ///        Includes LAMMPS-style `special_bonds` 1-2/1-3/1-4 exclusions.
+///
+/// Fractional special-bond weights follow LAMMPS `PairLJCut::compute`
+/// (`src/pair_lj_cut.cpp`: factor_lj · forcelj and factor_lj · (evdwl −
+/// offset) inside cutsq[itype][jtype]); the tail correction follows
+/// `PairLJCut::init_one` (etail_ij / ptail_ij, `core/lj_type_table.h`),
+/// `src/compute_pe.cpp` (etail/V) and `ComputePressure::virial_compute`
+/// (`src/compute_pressure.cpp`, ptail/V on the diagonal). LAMMPS checkout
+/// `e8c4c278a8`:
+///
+///   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+///   https://www.lammps.org/, Sandia National Laboratories
+///   LAMMPS development team: developers@lammps.org
+///
+///   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+///   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+///   certain rights in this software.  This software is distributed under
+///   the GNU General Public License.
 
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/lj_type_table.h"
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/energy_term.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/lj_kernel.cuh"
 #include "atomiverse/cuda/potentials/pair_kernel.h"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
+#include "internal/lj_tail.cuh"
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cuda_runtime.h>
@@ -37,13 +59,13 @@ namespace kernels {
 // per cluster) instead of scattering x[orig_index[..]] ~80×/atom. One scattered
 // read per slot here amortises the scatter that previously happened per pair —
 // the dominant cost of the pre-tile atom-walk force (latency-bound gathers).
-__global__ void gather_cluster_pos(const int* __restrict__ orig_index,
-                                   const pos_t* __restrict__ x,
-                                   const pos_t* __restrict__ y,
-                                   const pos_t* __restrict__ z, int n_slots,
-                                   force_t* __restrict__ spx,
-                                   force_t* __restrict__ spy,
-                                   force_t* __restrict__ spz) {
+__global__ void
+gather_cluster_pos(const int* __restrict__ orig_index,
+                   const pos_t* __restrict__ x, const pos_t* __restrict__ y,
+                   const pos_t* __restrict__ z, const int* __restrict__ type,
+                   int n_slots, force_t* __restrict__ spx,
+                   force_t* __restrict__ spy, force_t* __restrict__ spz,
+                   int* __restrict__ spt) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= n_slots)
         return;
@@ -52,8 +74,17 @@ __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
         spx[k] = x[a];
         spy[k] = y[a];
         spz[k] = z[a];
+        // Typed path only: the slot's atom type indexes the pair table.
+        if (spt != nullptr)
+            spt[k] = type[a];
     }
 }
+
+// One resolved (type_i, type_j) record of `LJTypeTable` in force_t.
+struct LJTypedCoeff {
+    force_t lj1, lj2, lj3, lj4, cut_ljsq, offset;
+    force_t r4_a, r4_cutsq, r4_rc5inv, r4_e0;
+};
 
 /// @brief Atom-centric, **atomic-free** LJ force. One thread owns one atom
 ///        (cluster slot). It walks its cluster's FULL neighbor-cluster list
@@ -71,10 +102,10 @@ __global__ void gather_cluster_pos(const int* __restrict__ orig_index,
 /// OpenMM-style tile force: one warp per cluster (CS=32). Neighbor cluster
 /// positions are staged in per-warp shared memory; interaction mask selects
 /// active j-slots. FULL neighbor + 0.5 energy (both endpoints accumulate).
-template <bool Ortho, bool Energy, bool Virial>
+template <bool Ortho, bool Energy, bool Virial, bool Typed>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
-    fixed_t* __restrict__ fz, ForceFault* fault, acc_t* __restrict__ energy,
+    fixed_t* __restrict__ fz, ForceFault* fault, EnergyTerm energy,
     acc_t* __restrict__ stress, const force_t* __restrict__ spx,
     const force_t* __restrict__ spy, const force_t* __restrict__ spz,
     const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
@@ -83,7 +114,8 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     cuda::Box box_arg, bool periodic, force_t epsilon, force_t sigma_sq,
     force_t cutoff_sq, force_t min_pair_dist_sq, force_t v_shift,
     const int* __restrict__ excl_offsets, const int* __restrict__ excl_partners,
-    force_t s_excl) {
+    force_t s_excl, const int* __restrict__ spt,
+    const LJTypedCoeff* __restrict__ table, int n_types) {
     const auto box = box_arg.current().as<force_t>();
     constexpr int CS = ATV::cuda::kOpenmmClusterSize;
     static_assert(CS == 32, "tile force assumes OpenMM CS=32");
@@ -94,6 +126,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
     __shared__ force_t shy[kMaxWarps][CS];
     __shared__ force_t shz[kMaxWarps][CS];
     __shared__ int sh_aj[kMaxWarps][CS];
+    __shared__ int sh_t[Typed ? kMaxWarps : 1][CS];
 
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int ci = tid / CS;
@@ -118,12 +151,16 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
         ai = -1;
     force_t xi = 0, yi = 0, zi = 0;
     force_t fxi = 0, fyi = 0, fzi = 0;
+    const LJTypedCoeff* row = nullptr;
     bool has_excl = false;
     int beg_excl = 0, end_excl = 0;
     if (ai >= 0) {
         xi = spx[ci * CS + slot];
         yi = spy[ci * CS + slot];
         zi = spz[ci * CS + slot];
+        if constexpr (Typed)
+            row =
+                table + static_cast<std::size_t>(spt[ci * CS + slot]) * n_types;
         has_excl = (excl_offsets != nullptr);
         beg_excl = has_excl ? excl_offsets[ai] : 0;
         end_excl = has_excl ? excl_offsets[ai + 1] : 0;
@@ -137,6 +174,9 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
             shy[warp_in_block][slot] = spy[cj * CS + slot];
             shz[warp_in_block][slot] = spz[cj * CS + slot];
             sh_aj[warp_in_block][slot] = orig_index[cj * CS + slot];
+            if constexpr (Typed)
+                sh_t[warp_in_block][slot] =
+                    sh_aj[warp_in_block][slot] >= 0 ? spt[cj * CS + slot] : 0;
             __syncwarp();
 
             if (ai >= 0) {
@@ -172,20 +212,49 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
                         scale = sexcl_r;
                     }
                     force_t inv_r2 = force_t(1) / r2;
-                    force_t sr2 = sigsq_r * inv_r2;
-                    force_t sr6 = sr2 * sr2 * sr2;
-                    force_t sr12 = sr6 * sr6;
-                    force_t f_over_r = scale * force_t(24) * eps_r
-                                       * (force_t(2) * sr12 - sr6) * inv_r2;
+                    force_t f_over_r, e_pair = 0;
+                    if constexpr (Typed) {
+                        // LAMMPS init_one record: own cut_ljsq and offset,
+                        // plus the r^-4 term inside its own cutoff.
+                        const LJTypedCoeff* c = row + sh_t[warp_in_block][sj];
+                        f_over_r = 0;
+                        if (r2 < __ldg(&c->cut_ljsq)) {
+                            const force_t r6inv = inv_r2 * inv_r2 * inv_r2;
+                            f_over_r =
+                                inv_r2 * r6inv
+                                * (__ldg(&c->lj1) * r6inv - __ldg(&c->lj2));
+                            if constexpr (Energy)
+                                e_pair = r6inv
+                                             * (__ldg(&c->lj3) * r6inv
+                                                - __ldg(&c->lj4))
+                                         - __ldg(&c->offset);
+                        }
+                        if (r2 < __ldg(&c->r4_cutsq)) {
+                            const R4Term<force_t> t = r4_attraction<force_t>(
+                                r2, __ldg(&c->r4_a), __ldg(&c->r4_rc5inv),
+                                __ldg(&c->r4_e0));
+                            f_over_r += t.fpair;
+                            if constexpr (Energy)
+                                e_pair += t.energy;
+                        }
+                        f_over_r *= scale;
+                        e_pair *= scale;
+                    } else {
+                        force_t sr2 = sigsq_r * inv_r2;
+                        force_t sr6 = sr2 * sr2 * sr2;
+                        force_t sr12 = sr6 * sr6;
+                        f_over_r = scale * force_t(24) * eps_r
+                                   * (force_t(2) * sr12 - sr6) * inv_r2;
+                        if constexpr (Energy)
+                            e_pair = scale
+                                     * (force_t(4) * eps_r * (sr12 - sr6)
+                                        - vshift_r);
+                    }
                     fxi += -f_over_r * dx;
                     fyi += -f_over_r * dy;
                     fzi += -f_over_r * dz;
-                    if constexpr (Energy) {
-                        force_t e_pair =
-                            scale
-                            * (force_t(4) * eps_r * (sr12 - sr6) - vshift_r);
+                    if constexpr (Energy)
                         my_energy += acc_t(0.5) * acc_t(e_pair);
-                    }
                     if constexpr (Virial) {
                         my_vxx += acc_t(0.5) * acc_t(dx * (f_over_r * dx));
                         my_vyy += acc_t(0.5) * acc_t(dy * (f_over_r * dy));
@@ -219,7 +288,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
         if (threadIdx.x == 0) {
             if constexpr (Energy)
-                atomicAdd(energy, out[0]);
+                energy.add(out[0]);
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
@@ -237,11 +306,114 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void lj_force_tile(
         const auto out =
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 1>{});
         if (threadIdx.x == 0)
-            atomicAdd(energy, out[0]);
+            energy.add(out[0]);
     }
 }
 
+/// One fractional special-bond pair (i < j) and its table record.
+struct LJException {
+    int i, j, ab;  ///< Atom rows and table index of (type_i, type_j).
+    force_t scale; ///< LAMMPS factor_lj of the pair's nearest shell.
+};
+
+/// @brief Sparse pass over fractional special-bond pairs (LAMMPS
+///        `factor_lj`): w · (LJ − offset) inside the pair's LJ cutoff and
+///        w · r⁻⁴ inside its r⁻⁴ cutoff, minimum image. The tiles excluded
+///        these pairs, so each is evaluated exactly once here.
+template <bool Energy, bool Virial>
+__global__ void
+lj_exceptions(const LJException* __restrict__ pairs, int count,
+              const pos_t* __restrict__ x, const pos_t* __restrict__ y,
+              const pos_t* __restrict__ z,
+              const LJTypedCoeff* __restrict__ table, cuda::Box box_arg,
+              fixed_t* fx, fixed_t* fy, fixed_t* fz, ForceFault* fault,
+              EnergyTerm energy, acc_t* stress) {
+    const auto box = box_arg.current().as<force_t>();
+    const int p = blockIdx.x * blockDim.x + threadIdx.x;
+    acc_t e = 0, v[6] = {};
+    if (p < count) {
+        const LJException t = pairs[p];
+        force_t dx = x[t.j] - x[t.i], dy = y[t.j] - y[t.i],
+                dz = z[t.j] - z[t.i];
+        box.min_image(dx, dy, dz);
+        const force_t r2 = dx * dx + dy * dy + dz * dz;
+        if (r2 > force_t(0)) {
+            const LJTypedCoeff* c = table + t.ab;
+            const force_t inv2 = force_t(1) / r2;
+            force_t fr = 0, en = 0;
+            if (r2 < __ldg(&c->cut_ljsq)) {
+                const force_t r6inv = inv2 * inv2 * inv2;
+                fr = inv2 * r6inv * (__ldg(&c->lj1) * r6inv - __ldg(&c->lj2));
+                en = r6inv * (__ldg(&c->lj3) * r6inv - __ldg(&c->lj4))
+                     - __ldg(&c->offset);
+            }
+            if (r2 < __ldg(&c->r4_cutsq)) {
+                const R4Term<force_t> r4 = r4_attraction<force_t>(
+                    r2, __ldg(&c->r4_a), __ldg(&c->r4_rc5inv),
+                    __ldg(&c->r4_e0));
+                fr += r4.fpair;
+                en += r4.energy;
+            }
+            fr *= t.scale;
+            en *= t.scale;
+            // fr = -(dU/dr)/r with d = x_j - x_i: F_i = -fr d, F_j = +fr d.
+            add_force(fx, t.i, -fr * dx, fault);
+            add_force(fy, t.i, -fr * dy, fault);
+            add_force(fz, t.i, -fr * dz, fault);
+            add_force(fx, t.j, fr * dx, fault);
+            add_force(fy, t.j, fr * dy, fault);
+            add_force(fz, t.j, fr * dz, fault);
+            e = acc_t(en);
+            v[0] = acc_t(fr * dx * dx);
+            v[1] = acc_t(fr * dy * dy);
+            v[2] = acc_t(fr * dz * dz);
+            v[3] = acc_t(fr * dx * dy);
+            v[4] = acc_t(fr * dx * dz);
+            v[5] = acc_t(fr * dy * dz);
+        }
+    }
+    if constexpr (Energy || Virial) {
+        ::cuda::std::array<acc_t, 7> vals = {e,    v[0], v[1], v[2],
+                                             v[3], v[4], v[5]};
+        using Reduce =
+            cub::BlockReduce<::cuda::std::array<acc_t, 7>, kDefaultBlock>;
+        __shared__ typename Reduce::TempStorage reduction;
+        const auto out =
+            Reduce(reduction).Reduce(vals, SumComponents<acc_t, 7>{});
+        if (threadIdx.x == 0) {
+            if constexpr (Energy)
+                energy.add(out[0]);
+            if constexpr (Virial)
+                for (int d = 0; d < 6; ++d)
+                    atomicAdd(&stress[d], out[d + 1]);
+        }
+    }
+}
+
+/// LAMMPS `pair_modify tail yes`: etail/V and ptail/V from the live cell.
+__global__ void lj_tail(cuda::Box box_arg, double etail, double ptail,
+                        EnergyTerm energy, acc_t* stress) {
+    const cuda::Box box = box_arg.current();
+    const double inv_volume = 1.0 / static_cast<double>(box.volume());
+    if (energy)
+        energy.add(acc_t(etail * inv_volume));
+    if (stress != nullptr)
+        for (int d = 0; d < 3; ++d)
+            atomicAdd(&stress[d], acc_t(ptail * inv_volume));
+}
+
 } // namespace kernels
+
+void internal::launch_lj_tail(const Box& box, const LJTail& tail,
+                              EnergyTerm energy, acc_t* stress,
+                              cudaStream_t stream) {
+    if (!energy && stress == nullptr)
+        return;
+    kernels::lj_tail<<<1, 1, 0, stream>>>(box, tail.energy, tail.virial, energy,
+                                          stress);
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
+
 } // namespace cuda
 
 namespace cuda {
@@ -251,18 +423,64 @@ PairLJCut::PairLJCut(double epsilon, double sigma, double cutoff)
     v_shift_ = kernels::lj_shift(epsilon, sigma, cutoff);
 }
 
-PairLJCut& PairLJCut::set_special_bonds(double s12, double s13, double s14) & {
-    // The baker drops partners. It does not apply a fractional weight, so
-    // each scale is 0 (drop that topological shell) or 1 (keep it). Equal
-    // fractional scales such as (0.5, 0.5, 0.5) are still refused: there is
-    // no weighted kernel behind this CSR.
-    const auto binary = [](double s) { return s == 0.0 || s == 1.0; };
-    if (!binary(s12) || !binary(s13) || !binary(s14)) {
+PairLJCut::PairLJCut(std::vector<LJTypeCoeff> coeffs, double cutoff)
+    : Pair(cutoff), epsilon_(0.0), sigma_(0.0), v_shift_(0.0) {
+    if (coeffs.empty())
         throw std::invalid_argument(
-            "cuda::PairLJCut::set_special_bonds: each scale must be 0 or 1. "
-            "Fractional special-bond weights are not applied by the "
-            "exclusion baker.");
-    }
+            "cuda::PairLJCut: the per-type constructor needs at least one "
+            "coefficient; there is no system-wide epsilon/sigma to fall back "
+            "on");
+    table_.emplace(std::move(coeffs), cutoff);
+    cutoff_ = table_->max_cutoff();
+}
+
+PairLJCut& PairLJCut::set_type_coeff(const LJTypeCoeff& row) & {
+    if (!table_)
+        throw std::logic_error(
+            "cuda::PairLJCut::set_type_coeff: this PairLJCut was built with a "
+            "single epsilon/sigma and has no type table. Construct it from a "
+            "coefficient list instead.");
+    table_->set_coeff(row);
+    cutoff_ = table_->max_cutoff();
+    return *this;
+}
+
+PairLJCut PairLJCut::set_type_coeff(const LJTypeCoeff& row) && {
+    set_type_coeff(row);
+    return std::move(*this);
+}
+
+PairLJCut& PairLJCut::set_tail_correction(bool on) & {
+    tail_ = on;
+    return *this;
+}
+
+PairLJCut PairLJCut::set_tail_correction(bool on) && {
+    tail_ = on;
+    return std::move(*this);
+}
+
+PairLJCut& PairLJCut::set_r4_attraction(std::vector<R4TypeCoeff> rows) & {
+    if (!table_)
+        throw std::logic_error(
+            "cuda::PairLJCut::set_r4_attraction: this PairLJCut was built "
+            "with a single epsilon/sigma and has no type table; the r^-4 term "
+            "is per type pair. Construct it from a coefficient list instead.");
+    table_->set_r4(std::move(rows));
+    cutoff_ = table_->max_cutoff();
+    return *this;
+}
+
+PairLJCut PairLJCut::set_r4_attraction(std::vector<R4TypeCoeff> rows) && {
+    set_r4_attraction(std::move(rows));
+    return std::move(*this);
+}
+
+PairLJCut& PairLJCut::set_special_bonds(double s12, double s13, double s14) & {
+    for (double w : {s12, s13, s14})
+        if (!std::isfinite(w))
+            throw std::invalid_argument(
+                "cuda::PairLJCut::set_special_bonds: weights must be finite");
     s12_ = s12;
     s13_ = s13;
     s14_ = s14;
@@ -271,8 +489,10 @@ PairLJCut& PairLJCut::set_special_bonds(double s12, double s13, double s14) & {
         has_exclusions_ = false;
         return *this;
     }
-    // CSR holds only the scale-0 partners, so the baker's scale is 0 even
-    // when a nearer shell (s12 = 1) stays in the pair list.
+    // The CSR holds every partner whose shell weight is not 1, so the baker
+    // drops them all from the tiles (scale 0) even when a nearer shell
+    // (s12 = 1) stays in the pair list; fractional weights come back through
+    // the exception pass.
     s_excl_ = 0.0;
     has_exclusions_ = true;
     return *this;
@@ -310,12 +530,83 @@ void PairLJCut::build(const BuildContext& ctx) {
         cudaFree(spx_);
         cudaFree(spy_);
         cudaFree(spz_);
+        cudaFree(spt_);
         spx_ = spy_ = spz_ = nullptr;
+        spt_ = nullptr;
         ATV_CUDA_CHECK(cudaMalloc(&spx_, slots * sizeof(force_t)));
         ATV_CUDA_CHECK(cudaMalloc(&spy_, slots * sizeof(force_t)));
         ATV_CUDA_CHECK(cudaMalloc(&spz_, slots * sizeof(force_t)));
+        if (table_)
+            ATV_CUDA_CHECK(cudaMalloc(&spt_, slots * sizeof(int)));
         spos_cap_ = slots;
     }
+    const auto fractional = [](double w) { return w != 0.0 && w != 1.0; };
+    const bool any_fractional =
+        fractional(s12_) || fractional(s13_) || fractional(s14_);
+    if ((any_fractional || tail_) && ctx.frame.n_ghost() != 0)
+        throw std::invalid_argument(
+            "cuda::PairLJCut: fractional special-bond weights and the tail "
+            "correction need a single GPU (no ghost rows)");
+    std::vector<int> types;
+    if (table_) {
+        // LAMMPS init_one over every type the Frame rows carry (owned and,
+        // on the multi-GPU path, ghost); a type no row names has no LJ site.
+        auto& fr = ctx.frame;
+        const int rows = std::max(fr.n_atoms(), fr.n_all());
+        if (rows > 0 && !fr.atoms.type)
+            throw std::invalid_argument(
+                std::string("cuda::PairLJCut: a per-type table needs the "
+                            "force-field type column; ")
+                + atom_field_how_to("type"));
+        types.resize(static_cast<std::size_t>(rows));
+        if (rows > 0)
+            ATV_CUDA_CHECK(cudaMemcpy(types.data(), fr.atoms.type,
+                                      types.size() * sizeof(int),
+                                      cudaMemcpyDeviceToHost));
+        int max_type = -1;
+        for (int t : types) {
+            if (t < 0)
+                throw std::invalid_argument(
+                    "cuda::PairLJCut: atom types must be >= 0 for a per-type "
+                    "table");
+            max_type = std::max(max_type, t);
+        }
+        table_->build(max_type + 1, /*shift=*/true);
+        n_types_ = table_->n_types();
+        std::vector<kernels::LJTypedCoeff> host(table_->pairs().size());
+        for (std::size_t k = 0; k < host.size(); ++k) {
+            const LJPairCoeff& c = table_->pairs()[k];
+            host[k] = kernels::LJTypedCoeff{
+                force_t(c.lj1),  force_t(c.lj2),      force_t(c.lj3),
+                force_t(c.lj4),  force_t(c.cut_ljsq), force_t(c.offset),
+                force_t(c.r4_a), force_t(c.r4_cutsq), force_t(c.r4_rc5inv),
+                force_t(c.r4_e0)};
+        }
+        cudaFree(d_table_);
+        d_table_ = nullptr;
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d_table_, host.size() * sizeof(kernels::LJTypedCoeff)));
+        ATV_CUDA_CHECK(cudaMemcpy(d_table_, host.data(),
+                                  host.size() * sizeof(kernels::LJTypedCoeff),
+                                  cudaMemcpyHostToDevice));
+    }
+    // LAMMPS init_one tail over the global type counts of this build.
+    tail_pref_ = LJTail{};
+    if (tail_) {
+        const int n = ctx.frame.n_atoms();
+        if (table_) {
+            std::vector<double> counts(static_cast<std::size_t>(n_types_), 0.0);
+            for (int i = 0; i < n; ++i)
+                counts[static_cast<std::size_t>(types[i])] += 1.0;
+            tail_pref_ = table_->tail(counts);
+        } else {
+            tail_pref_ =
+                lj_tail_pair(epsilon_, sigma_, cutoff_, double(n), double(n));
+        }
+    }
+    cudaFree(d_exceptions_);
+    d_exceptions_ = nullptr;
+    n_exceptions_ = 0;
     // Re-callable: the multi-GPU bonded path rebuilds the exclusion CSR every
     // reneighbor (the flat topology's local indices change as ghosts move), so
     // free any prior CSR first to avoid leaking on repeated build().
@@ -343,6 +634,7 @@ void PairLJCut::build(const BuildContext& ctx) {
     const int n = std::max(f.n_atoms(), f.n_all());
     const int n_owned = f.n_local() > 0 ? f.n_local() : n;
     std::vector<std::set<int>> excl(static_cast<std::size_t>(n));
+    std::vector<kernels::LJException> exceptions;
 
     // Frame::build_special_list is the bond-graph BFS to depth 3. It records
     // a 1-4 with no dihedral term. Partner values are tags; the force kernel
@@ -373,6 +665,7 @@ void PairLJCut::build(const BuildContext& ctx) {
         for (int row = 0; row < n; ++row)
             local_of.emplace(tags[static_cast<std::size_t>(row)], row);
         const double scale_of[3] = {s12_, s13_, s14_};
+        const int nt = table_ ? n_types_ : 1;
         for (int i = 0; i < n_owned && i < n; ++i) {
             auto clamp = [ms](int c) {
                 if (c < 0)
@@ -406,8 +699,15 @@ void PairLJCut::build(const BuildContext& ctx) {
                 }
             }
             for (const auto& entry : rel) {
-                if (scale_of[entry.second - 1] == 0.0)
-                    excl[static_cast<std::size_t>(i)].insert(entry.first);
+                const double w = scale_of[entry.second - 1];
+                if (w == 1.0)
+                    continue; // an ordinary pair: stays in the tiles
+                excl[static_cast<std::size_t>(i)].insert(entry.first);
+                if (w != 0.0 && i < entry.first)
+                    exceptions.push_back(
+                        {i, entry.first,
+                         table_ ? types[i] * nt + types[entry.first] : 0,
+                         force_t(w)});
             }
         }
     } else {
@@ -464,12 +764,49 @@ void PairLJCut::build(const BuildContext& ctx) {
         for (int k = 0; k < n_d; ++k)
             note(di[k], dl[k], 3);
         const double scale_of[4] = {1.0, s12_, s13_, s14_};
+        const int nt = table_ ? n_types_ : 1;
         for (int i = 0; i < n; ++i) {
             for (const auto& entry : rel[static_cast<std::size_t>(i)]) {
-                if (scale_of[entry.second] == 0.0)
-                    excl[static_cast<std::size_t>(i)].insert(entry.first);
+                const double w = scale_of[entry.second];
+                if (w == 1.0)
+                    continue;
+                excl[static_cast<std::size_t>(i)].insert(entry.first);
+                if (w != 0.0 && i < entry.first)
+                    exceptions.push_back(
+                        {i, entry.first,
+                         table_ ? types[i] * nt + types[entry.first] : 0,
+                         force_t(w)});
             }
         }
+    }
+
+    if (!exceptions.empty()) {
+        if (!table_) {
+            // Single-type form: one record serves every exception.
+            const double s6 = std::pow(sigma_, 6.0);
+            const kernels::LJTypedCoeff one{force_t(48.0 * epsilon_ * s6 * s6),
+                                            force_t(24.0 * epsilon_ * s6),
+                                            force_t(4.0 * epsilon_ * s6 * s6),
+                                            force_t(4.0 * epsilon_ * s6),
+                                            force_t(cutoff_ * cutoff_),
+                                            force_t(v_shift_),
+                                            force_t(0),
+                                            force_t(0),
+                                            force_t(0),
+                                            force_t(0)};
+            cudaFree(d_table_);
+            d_table_ = nullptr;
+            ATV_CUDA_CHECK(cudaMalloc(&d_table_, sizeof(one)));
+            ATV_CUDA_CHECK(cudaMemcpy(d_table_, &one, sizeof(one),
+                                      cudaMemcpyHostToDevice));
+        }
+        n_exceptions_ = static_cast<int>(exceptions.size());
+        ATV_CUDA_CHECK(cudaMalloc(
+            &d_exceptions_, exceptions.size() * sizeof(kernels::LJException)));
+        ATV_CUDA_CHECK(
+            cudaMemcpy(d_exceptions_, exceptions.data(),
+                       exceptions.size() * sizeof(kernels::LJException),
+                       cudaMemcpyHostToDevice));
     }
 
     // Pack into CSR.
@@ -515,9 +852,16 @@ void PairLJCut::destroy(const DestroyContext& /*ctx*/) {
         cudaFree(spx_);
         cudaFree(spy_);
         cudaFree(spz_);
+        cudaFree(spt_);
         spx_ = spy_ = spz_ = nullptr;
+        spt_ = nullptr;
         spos_cap_ = 0;
     }
+    cudaFree(d_table_);
+    d_table_ = nullptr;
+    cudaFree(d_exceptions_);
+    d_exceptions_ = nullptr;
+    n_exceptions_ = 0;
 }
 
 void PairLJCut::compute(const LaunchContext& ctx) {
@@ -565,7 +909,8 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         int grid = grid_size(n_slots);
         kernels::gather_cluster_pos<<<grid, block, 0, stream>>>(
             pairs->cl_orig_index, frame.atoms.x, frame.atoms.y, frame.atoms.z,
-            n_slots, spx_, spy_, spz_);
+            frame.atoms.type, n_slots, spx_, spy_, spz_,
+            table_ ? spt_ : nullptr);
     }
 
     const uint64_t* mask = pairs->cl_mask;
@@ -573,18 +918,34 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     int grid = grid_size(n_slots);
     constexpr int shmem = 0;
 
+    const auto* d_table = static_cast<const kernels::LJTypedCoeff*>(d_table_);
     auto launch = [&](auto ortho_t, auto energy_t, auto vir_t) {
         constexpr bool O = decltype(ortho_t)::value;
         constexpr bool E = decltype(energy_t)::value;
         constexpr bool V = decltype(vir_t)::value;
-        kernels::lj_force_tile<O, E, V><<<grid, block, shmem, stream>>>(
-            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.force_fault,
-            &frame.scalars->energy, stress_ptr, spx_, spy_, spz_,
-            pairs->cl_row_ptr, pairs->cl_col_idx, mask, pairs->cl_orig_index,
-            nc, frame.n_local(), box, /*periodic=*/true,
-            static_cast<force_t>(epsilon_), sigma_sq, cutoff_sq,
-            min_pair_dist_sq, static_cast<force_t>(v_shift_), excl_off,
-            excl_par, static_cast<force_t>(s_excl_));
+        if (table_)
+            kernels::lj_force_tile<O, E, V, true>
+                <<<grid, block, shmem, stream>>>(
+                    frame.atoms.fx, frame.atoms.fy, frame.atoms.fz,
+                    frame.force_fault,
+                    energy_term(frame.scalars, EnergyKind::Pair, E), stress_ptr,
+                    spx_, spy_, spz_, pairs->cl_row_ptr, pairs->cl_col_idx,
+                    mask, pairs->cl_orig_index, nc, frame.n_local(), box,
+                    /*periodic=*/true, force_t(0), force_t(0), cutoff_sq,
+                    min_pair_dist_sq, force_t(0), excl_off, excl_par,
+                    static_cast<force_t>(s_excl_), spt_, d_table, n_types_);
+        else
+            kernels::lj_force_tile<O, E, V, false>
+                <<<grid, block, shmem, stream>>>(
+                    frame.atoms.fx, frame.atoms.fy, frame.atoms.fz,
+                    frame.force_fault,
+                    energy_term(frame.scalars, EnergyKind::Pair, E), stress_ptr,
+                    spx_, spy_, spz_, pairs->cl_row_ptr, pairs->cl_col_idx,
+                    mask, pairs->cl_orig_index, nc, frame.n_local(), box,
+                    /*periodic=*/true, static_cast<force_t>(epsilon_), sigma_sq,
+                    cutoff_sq, min_pair_dist_sq, static_cast<force_t>(v_shift_),
+                    excl_off, excl_par, static_cast<force_t>(s_excl_), nullptr,
+                    nullptr, 0);
     };
     auto by_flags = [&](auto ortho_t) {
         using T = std::true_type;
@@ -602,6 +963,38 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         by_flags(std::true_type{});
     else
         by_flags(std::false_type{});
+
+    if (n_exceptions_ > 0) {
+        const auto* pairs_d =
+            static_cast<const kernels::LJException*>(d_exceptions_);
+        auto exceptions = [&](auto energy_t, auto vir_t) {
+            constexpr bool E = decltype(energy_t)::value;
+            constexpr bool V = decltype(vir_t)::value;
+            kernels::lj_exceptions<E, V>
+                <<<grid_size(n_exceptions_), kDefaultBlock, 0, stream>>>(
+                    pairs_d, n_exceptions_, frame.atoms.x, frame.atoms.y,
+                    frame.atoms.z, d_table, box, frame.atoms.fx, frame.atoms.fy,
+                    frame.atoms.fz, frame.force_fault,
+                    energy_term(frame.scalars, EnergyKind::Pair, E),
+                    stress_ptr);
+        };
+        using T = std::true_type;
+        using F = std::false_type;
+        if (energy && virial)
+            exceptions(T{}, T{});
+        else if (energy)
+            exceptions(T{}, F{});
+        else if (virial)
+            exceptions(F{}, T{});
+        else
+            exceptions(F{}, F{});
+    }
+    if (tail_)
+        internal::launch_lj_tail(
+            box, tail_pref_,
+            energy_term(frame.scalars, EnergyKind::Pair, energy), stress_ptr,
+            stream);
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 } // namespace cuda

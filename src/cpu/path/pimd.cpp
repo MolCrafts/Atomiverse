@@ -64,11 +64,10 @@ static void seed_bead_velocity_(cpu::Frame& f, double temperature_K,
     auto vy = f.span(kAtom_vy);
     auto vz = f.span(kAtom_vz);
     const auto mass = f.span(kAtom_mass);
-    const double kT = units::kB_ev_per_k * temperature_K;
+    const double kT = units::md_boltz * temperature_K;
     for (int i = 0; i < n; ++i) {
         const double m = static_cast<double>(mass[i]);
-        const double sig =
-            std::sqrt(kT / (units::mass_v2_to_energy * m)); // [Å/fs]
+        const double sig = std::sqrt(kT / (units::md_mvv2e * m));
         vx[i] = sig * g(rng);
         vy[i] = sig * g(rng);
         vz[i] = sig * g(rng);
@@ -94,12 +93,11 @@ static void seed_bead_velocity_(cpu::Frame& f, double temperature_K,
 
 double Pimd::compute_k_spring_(double temperature_K, int n_beads,
                                double mass_amu) {
-    // ℏ = h / 2π [eV·fs]
-    const double hbar = units::h_planck_ev_fs / (2.0 * units::pi);
-    const double kT = units::kB_ev_per_k * temperature_K;
+    // ℏ = md_hplanck / 2π. m_eff = md_mvv2e * m. β = 1/(md_boltz T).
+    const double hbar = units::md_hplanck / (2.0 * units::pi);
+    const double kT = units::md_boltz * temperature_K;
     const double beta = 1.0 / kT;
-    // k = m_eff * P / (β² ℏ²) with m_eff = mass_v2_to_energy * m [eV·fs²/Å²]
-    const double m_eff = units::mass_v2_to_energy * mass_amu;
+    const double m_eff = units::md_mvv2e * mass_amu;
     const double beta_hbar = beta * hbar;
     return m_eff * static_cast<double>(n_beads) / (beta_hbar * beta_hbar);
 }
@@ -111,9 +109,9 @@ Pimd::Pimd(int n_beads_, double temperature_, double dt_, int steps_per_block_,
     if (n_beads < 2)
         throw std::invalid_argument("Pimd: n_beads must be ≥ 2");
     if (!(temperature > 0.0))
-        throw std::invalid_argument("Pimd: temperature must be > 0 K");
+        throw std::invalid_argument("Pimd: temperature must be > 0");
     if (!(dt > 0.0))
-        throw std::invalid_argument("Pimd: dt must be > 0 fs");
+        throw std::invalid_argument("Pimd: dt must be > 0");
     if (steps_per_block < 1)
         throw std::invalid_argument("Pimd: steps_per_block must be ≥ 1");
     if (!(k_external >= 0.0))
@@ -237,13 +235,12 @@ void Pimd::collapse_centroid_(cpu::Frame& out) {
 
 double Pimd::free_particle_rg2_analytic() const {
     // 3D free ring polymer (single particle):
-    // ⟨R_g²⟩ = (ℏ² β² / (4 m_eff)) (1 − 1/P²)
-    // with m_eff = mass_v2_to_energy * m [eV fs² / Å²], ℏ in eV·fs.
+    // ⟨R_g²⟩ = (ℏ² β² / (4 m_eff)) (1 − 1/P²), lj row.
     // Ref: Tuckerman, Statistical Mechanics; Chandler & Wolynes (1981).
-    const double hbar = units::h_planck_ev_fs / (2.0 * units::pi);
-    const double kT = units::kB_ev_per_k * temperature;
+    const double hbar = units::md_hplanck / (2.0 * units::pi);
+    const double kT = units::md_boltz * temperature;
     const double beta = 1.0 / kT;
-    const double m_eff = units::mass_v2_to_energy * mass_amu_;
+    const double m_eff = units::md_mvv2e * mass_amu_;
     const double P = static_cast<double>(n_beads);
     const double hb = hbar * beta;
     return (hb * hb / (4.0 * m_eff)) * (1.0 - 1.0 / (P * P));

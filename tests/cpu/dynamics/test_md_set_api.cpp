@@ -23,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <map>
 #include <string>
 
@@ -373,6 +374,37 @@ TEST(MDSetApi, NoStressReadsLeavesVirialStressOut) {
     EXPECT_NO_THROW(sim.build());
     EXPECT_EQ(sim.name_counts["virial"], 0)
         << "VelocityVerlet does not read Stress → no Virial injection";
+}
+
+// The pair virial in `stress` is the virial of the step, also when nothing
+// consumes it: two-row argon frozen in place (v = 0, dt = 1e-9 fs) gives the
+// same virial after one step as after three. A missing ZeroStress made it a
+// running sum over the setup evaluation and every step (2× vs 4×).
+TEST(MDSetApi, UnconsumedStressIsThePerStepVirial) {
+    auto run = [](int steps) {
+        ATV::cpu::Frame frame(10);
+        for (int i = 0; i < 10; ++i) {
+            frame.span(ATV::kAtom_x)[i] = 8.0 + 3.8 * (i % 5);
+            frame.span(ATV::kAtom_y)[i] = 10.0 + 3.8 * (i / 5);
+            frame.span(ATV::kAtom_z)[i] = 15.0;
+            frame.span(ATV::kAtom_mass)[i] = 39.948;
+            frame.span(ATV::kAtom_type)[i] = 18;
+        }
+        frame.box = ATV::cpu::Box::cubic(30.0);
+        ATV::cpu::md::MD sim;
+        sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+        sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
+        sim.set_integrator(ATV::cpu::md::VelocityVerlet{1e-9});
+        sim.build();
+        sim.run(frame, steps);
+        return frame.meta.get(ATV::kStress);
+    };
+    const auto one = run(1);
+    const auto three = run(3);
+    ASSERT_NE(one[0], 0.0) << "the LJ rows must produce a virial";
+    for (int c = 0; c < 6; ++c)
+        EXPECT_NEAR(three[c], one[c], 1e-12 + 1e-9 * std::abs(one[c]))
+            << "stress[" << c << "]";
 }
 
 // ─── install_infra: missing-NL throw ────────────────────────────────

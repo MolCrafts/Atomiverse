@@ -35,8 +35,8 @@ cpu::Frame make_si_diamond(double a_ang, double delta_frac_a3) {
     // 2-atom fcc primitive cell; atom 1 optionally displaced by
     // delta_frac_a3 (fractional) along the third lattice vector a3.
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 14;
-    frame.span(kAtom_type)[1] = 14;
+    frame.span(kAtom_atomic_number)[0] = 14;
+    frame.span(kAtom_atomic_number)[1] = 14;
     frame.span(kAtom_mass)[0] = 28.0855;
     frame.span(kAtom_mass)[1] = 28.0855;
     const double h = a_ang / 2.0;

@@ -177,7 +177,7 @@ int run() {
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
         const double* r = (i == 0) ? rA : rB;
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = r[0] * units::kBohrInAngstrom;
         frame.span(kAtom_y)[i] = r[1] * units::kBohrInAngstrom;
         frame.span(kAtom_z)[i] = r[2] * units::kBohrInAngstrom;

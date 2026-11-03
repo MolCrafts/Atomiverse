@@ -201,7 +201,7 @@ cuda_uhf_case::Out run_cuda(ATV::cpu::Frame& frame, int na, int nb,
     }
     // Identity parameters belong to the method. A same-size nuclear edit that
     // violates its electron count must fail, then permit a corrected retry.
-    auto types = frame.span(kAtom_type);
+    auto types = frame.span(kAtom_atomic_number);
     const int original_z = types[1];
     types[1] = original_z == 1 ? 8 : 1;
     bool identity_rejected = false;

@@ -100,18 +100,22 @@ TEST(CpuMSD, EinsteinSlopeOfABallisticCurve) {
 // ── ATV::MSD observer: snapshot packing + the Einstein composition ─────────
 
 namespace {
-ATV::cpu::FrameSnapshot ballistic_snapshot(double a, double b, int t,
-                                           double box) {
+/// @brief Storage behind one hand-built snapshot view.
+struct BallisticFrame {
+    std::vector<std::int64_t> tag{1, 2};
+    std::vector<double> x, y, z;
     ATV::cpu::FrameSnapshot snap;
-    snap.step = t;
-    snap.n_owned = 2;
-    snap.tag = {1, 2};
-    snap.box = ATV::cpu::Box::cubic(box);
-    snap.x = {a * t, 0.0};
-    snap.y = {0.0, b * t};
-    snap.z = {0.0, 0.0};
-    return snap;
-}
+    BallisticFrame(double a, double b, int t, double box)
+        : x{a * t, 0.0}, y{0.0, b * t}, z{0.0, 0.0} {
+        snap.step = t;
+        snap.n_owned = 2;
+        snap.tag = tag;
+        snap.box = ATV::cpu::Box::cubic(box);
+        snap.x = x;
+        snap.y = y;
+        snap.z = z;
+    }
+};
 
 std::string scratch_path(const char* name) {
     return (std::filesystem::temp_directory_path() / name).string();
@@ -129,7 +133,7 @@ TEST(CpuMSDObserver, CurveAndEinsteinDFromStreamedSnapshots) {
 
     ATV::MSD msd{dt, /*freq=*/0, out, window};
     for (int t = 0; t < n_frames; ++t)
-        msd.on_snapshot(ballistic_snapshot(a, b, t, /*box=*/100.0));
+        msd.on_snapshot(BallisticFrame(a, b, t, /*box=*/100.0).snap);
     msd.finalize();
 
     EXPECT_EQ(msd.n_frames(), n_frames);
@@ -154,7 +158,7 @@ TEST(CpuMSDObserver, TooShortRunWritesNothing) {
     std::filesystem::remove(out);
     ATV::MSD msd{/*dt=*/1.0, /*freq=*/0, out, /*window=*/5};
     for (int t = 0; t < 3; ++t)
-        msd.on_snapshot(ballistic_snapshot(1.0, 2.0, t, 100.0));
+        msd.on_snapshot(BallisticFrame(1.0, 2.0, t, 100.0).snap);
     EXPECT_NO_THROW(msd.finalize());
     EXPECT_TRUE(msd.curve().empty());
     EXPECT_TRUE(std::isnan(msd.diffusion()));
@@ -165,8 +169,8 @@ TEST(CpuMSDObserver, TooShortRunWritesNothing) {
 // refuses that snapshot and the observer counts only accepted frames.
 TEST(CpuMSDObserver, WrappedStepIsRefusedNotAccumulated) {
     ATV::MSD msd{/*dt=*/1.0, /*freq=*/0, "unused_msd.dat", /*window=*/1};
-    msd.on_snapshot(ballistic_snapshot(1.0, 2.0, 0, /*box=*/10.0));
-    msd.on_snapshot(ballistic_snapshot(6.0, 0.0, 1, /*box=*/10.0)); // 6 Å > 5
+    msd.on_snapshot(BallisticFrame(1.0, 2.0, 0, /*box=*/10.0).snap);
+    msd.on_snapshot(BallisticFrame(6.0, 0.0, 1, /*box=*/10.0).snap); // 6 Å > 5
     EXPECT_EQ(msd.n_frames(), 1);
 }
 
@@ -178,20 +182,25 @@ TEST(CpuMSDObserver, ConstructorRefusesBadArguments) {
 }
 
 TEST(CorrelationInput, AtomPermutationPreservesPackedIdentity) {
+    using V = std::vector<double>;
+    using T = std::vector<std::int64_t>;
     ATV::cpu::CorrelationInput input;
     std::vector<double> packed;
-    input.pack(packed, {20, 10}, {2, 1}, {4, 3}, {6, 5}, 2, 1, 1);
+    input.pack(packed, T{20, 10}, V{2, 1}, V{4, 3}, V{6, 5}, 2, 1, 1);
     EXPECT_EQ(packed, (std::vector<double>{1, 2, 3, 4, 5, 6}));
-    input.pack(packed, {10, 20}, {1, 2}, {3, 4}, {5, 6}, 2, 2, 1);
+    input.pack(packed, T{10, 20}, V{1, 2}, V{3, 4}, V{5, 6}, 2, 2, 1);
     EXPECT_EQ(packed, (std::vector<double>{1, 2, 3, 4, 5, 6}));
-    EXPECT_THROW(input.pack(packed, {10, 30}, {1, 2}, {3, 4}, {5, 6}, 2, 3, 1),
-                 std::runtime_error);
+    EXPECT_THROW(
+        input.pack(packed, T{10, 30}, V{1, 2}, V{3, 4}, V{5, 6}, 2, 3, 1),
+        std::runtime_error);
 }
 
-TEST(CorrelationInput, DroppedCaptureDoesNotCompressTimeAxis) {
+TEST(CorrelationInput, MissingCaptureDoesNotCompressTimeAxis) {
+    using V = std::vector<double>;
+    using T = std::vector<std::int64_t>;
     ATV::cpu::CorrelationInput input;
     std::vector<double> packed;
-    input.pack(packed, {1}, {0}, {0}, {0}, 1, 10, 10);
-    EXPECT_THROW(input.pack(packed, {1}, {0}, {0}, {0}, 1, 30, 10),
+    input.pack(packed, T{1}, V{0}, V{0}, V{0}, 1, 10, 10);
+    EXPECT_THROW(input.pack(packed, T{1}, V{0}, V{0}, V{0}, 1, 30, 10),
                  std::runtime_error);
 }

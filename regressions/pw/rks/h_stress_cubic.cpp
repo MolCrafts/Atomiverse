@@ -16,7 +16,7 @@ using namespace ATV::cpu::pw;
 
 int run() {
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
     frame.span(kAtom_mass)[0] = 1.008;
     frame.span(kAtom_x)[0] = frame.span(kAtom_y)[0] = frame.span(kAtom_z)[0] =
         0;

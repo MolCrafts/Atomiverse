@@ -83,9 +83,9 @@ cpu::Frame make_reference_frame() {
             StorageReal((i % 2 == 0 ? 0.42 : -0.42) + 0.01 * i); // nonzero
         f.span(ATV::kAtom_type)[i] = 1 + (i % 3);
         f.span(ATV::kAtom_tag)[i] = kRefTags[i]; // noncontiguous
-        f.span(ATV::kAtom_image)(i, 0) = static_cast<std::int8_t>(i - 4);
-        f.span(ATV::kAtom_image)(i, 1) = static_cast<std::int8_t>(2 * i - 7);
-        f.span(ATV::kAtom_image)(i, 2) = static_cast<std::int8_t>(-i);
+        f.span(ATV::kAtom_image)(i, 0) = static_cast<ATV::ImageInt>(i - 4);
+        f.span(ATV::kAtom_image)(i, 1) = static_cast<ATV::ImageInt>(2 * i - 7);
+        f.span(ATV::kAtom_image)(i, 2) = static_cast<ATV::ImageInt>(-i);
     }
     // add_* prerequisites: nlocal set (Frame ctor), tags set, map usable.
     f.clear_tag_index();
@@ -310,6 +310,37 @@ TEST(MpiBcastFrame, NoTopologyFrameStaysAtomic) {
         EXPECT_EQ(frame.span(ATV::kAtom_tag)[i], TagInt(20 + 3 * i));
         EXPECT_EQ(frame.span(ATV::kAtom_num_bond)[i], 0);
     }
+}
+
+// ── (d') Identity columns: receivers adopt the root's choice ────────────────
+//
+// A boundary leaves out an identity column its source did not carry (a
+// coarse-grained frame has no species). The receivers start from Frame(0),
+// which has both; after the broadcast they hold exactly the root's set, and
+// the root's values.
+TEST(MpiBcastFrame, ReceiversAdoptTheRootsIdentityColumns) {
+    constexpr int n = 3;
+    cpu::Frame frame = (world_rank() == 0) ? cpu::Frame(n) : cpu::Frame(0);
+    if (world_rank() == 0) {
+        frame.block("atoms").erase(ATV::kAtom_atomic_number.key);
+        for (int i = 0; i < n; ++i) {
+            frame.span(ATV::kAtom_x)[i] = StorageReal(1.0 + i);
+            frame.span(ATV::kAtom_tag)[i] = TagInt(i);
+            frame.span(ATV::kAtom_type)[i] = 7 + i;
+        }
+        frame.box = ATV::cpu::Box::cubic(10.0);
+    } else {
+        // A receiver that arrives without the root's type column gets it.
+        frame.block("atoms").erase(ATV::kAtom_type.key);
+    }
+
+    cpu::comm::bcast_frame(frame, /*root=*/0);
+
+    EXPECT_EQ(frame.nlocal(), n);
+    EXPECT_FALSE(frame.has("atoms", "atomic_number"));
+    ASSERT_TRUE(frame.has("atoms", "type"));
+    for (int i = 0; i < n; ++i)
+        EXPECT_EQ(frame.span(ATV::kAtom_type)[i], 7 + i);
 }
 
 // ── (e-i) Exchanged extension column rides the roundtrip exactly ────────────

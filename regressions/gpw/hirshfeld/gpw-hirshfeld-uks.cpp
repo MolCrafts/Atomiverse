@@ -31,7 +31,7 @@ int run() {
     const double z[2] = {0.5 * L_ang - 0.5 * R_ang, 0.5 * L_ang + 0.5 * R_ang};
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 8;
+        frame.span(kAtom_atomic_number)[i] = 8;
         frame.span(kAtom_x)[i] = 0.5 * L_ang;
         frame.span(kAtom_y)[i] = 0.5 * L_ang;
         frame.span(kAtom_z)[i] = z[i];

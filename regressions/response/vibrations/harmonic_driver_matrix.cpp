@@ -76,7 +76,7 @@ cpu::Frame make_atom(double x, double mass) {
     f.span(ATV::kAtom_y)[0] = 0.0;
     f.span(ATV::kAtom_z)[0] = 0.0;
     f.span(ATV::kAtom_mass)[0] = mass;
-    f.span(ATV::kAtom_type)[0] = 6;
+    f.span(ATV::kAtom_atomic_number)[0] = 6;
     f.span(ATV::kAtom_tag)[0] = 1;
     f.box = cpu::Box::cubic(50.0);
     return f;

@@ -41,8 +41,8 @@ int run() {
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.0;
     frame.span(kAtom_z)[1] = 0.74;
-    frame.span(kAtom_type)[0] = 1;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.box = cpu::Box::cubic(20.0);
 
     // Pins — REFERENCE.md (PySCF 2.14.0 cc.CCSD / RHF STO-3G).

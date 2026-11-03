@@ -35,15 +35,15 @@ int run() {
     // ── Argon-flavoured LJ, truncated AND shifted at 2.5σ ────────────────
     // The engine's PairLJCut is cut-and-shifted, so B₂ below is computed for
     // exactly that potential — convention-exact, no long-range correction.
-    const double eps = 120.0 * units::kB_ev_per_k;      // ε/k_B = 120 K [eV]
-    const double sigma = 3.4;                           // [Å]
-    const double cutoff = 2.5 * sigma;                  // [Å]
-    const double t_red = 1.5;                           // supercritical vapor
-    const double temperature = t_red * 120.0;           // 180 K
-    const double kT = units::kB_ev_per_k * temperature; // [eV]
-    const double mass = 39.948;                         // argon [amu]
-    const double box_len = 12.0 * sigma;                // 40.8 Å; > 2 rc
-    const double volume = box_len * box_len * box_len;  // [Å³]
+    const double eps = 120.0 * units::md_boltz;        // ε/k_B = 120 K [eV]
+    const double sigma = 3.4;                          // [Å]
+    const double cutoff = 2.5 * sigma;                 // [Å]
+    const double t_red = 1.5;                          // supercritical vapor
+    const double temperature = t_red * 120.0;          // 180 K
+    const double kT = units::md_boltz * temperature;   // [eV]
+    const double mass = 39.948;                        // argon [amu]
+    const double box_len = 12.0 * sigma;               // 40.8 Å; > 2 rc
+    const double volume = box_len * box_len * box_len; // [Å³]
 
     // ── B₂ of the cut-shifted potential by quadrature (exact reference) ──
     // B₂(T) = −2π ∫₀^rc [exp(−βu_s(r)) − 1] r² dr;  u_s ≡ 0 beyond rc.
@@ -113,7 +113,7 @@ int run() {
             cpu::md::NeighborList<>{cutoff, /*skin=*/1.0, 1, 0, true});
         mc.set_mover(cpu::mc::MoveSelector{}
                          .add(cpu::mc::TranslateMove{0.4 * sigma}, 0.5)
-                         .add(cpu::mc::InsertDeleteMove{1, mass}, 0.5));
+                         .add(cpu::mc::InsertDeleteMove{1, 18, mass}, 0.5));
         mc.build();
 
         mc.run(frame, 50000); // equilibrate

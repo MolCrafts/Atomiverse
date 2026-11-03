@@ -44,7 +44,7 @@ class D3BJ {
 
     /// @brief Dispersion energy for the Frame geometry.
     ///
-    /// Reads `kAtom_type` (atomic number Z) and `kAtom_x/y/z` [Å]. Isolated
+    /// Reads `kAtom_atomic_number` (atomic number Z) and `kAtom_x/y/z` [Å]. Isolated
     /// (non-periodic) evaluation — the Frame box is ignored (gas-phase
     /// molecular path). Unsupported Z (outside the in-tree D3 table) throws.
     ///

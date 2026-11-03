@@ -34,7 +34,7 @@ and `max_macro` to 50. The explicit overload is
 and must outlive the CASSCF object. There is no `HF` tag and no CUDA path.
 Closed-shell RHF only. There is no `forces(Frame&)`.
 
-Frame in is positions [Å] and species in `kAtom_type`. `run(Frame&)` drives
+Frame in is positions [Å] and species in `kAtom_atomic_number`. `run(Frame&)` drives
 the reference SCF, then overwrites `kEnergy` with the correlated total [eV].
 Hartree stays on `CASSCFResult` (`e_casscf`, `e_corr`). `run(const Frame&)`
 writes nothing. `provides_energy()` and `requires_full_frame()` are true;
@@ -43,7 +43,7 @@ that mounts CASSCF with `on(phase).add` accumulates `kEnergy` and refuses a
 force request.
 
 ```cpp
-cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::Frame frame = /* positions [Å], species in kAtom_atomic_number */;
 cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
 cpu::scf::CASSCF<cpu::scf::RHF> cas{rhf, /*ncas=*/2, /*nelecas=*/2};
 // orb_tol = max(rhf.tol, 1e-8) [Hartree], max_macro = 50

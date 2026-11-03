@@ -107,14 +107,32 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
                 this->backend_->sync();
                 cuda::throw_if_force_fault(this->backend_->frame());
             };
+            // LAMMPS src/min.cpp Min::setup → Output::setup, e8c4c278a8
+            // (Copyright (2003) Sandia Corporation, GPL-2.0-only): the
+            // initial state is written as step 0; iteration s ends at
+            // completed iteration s + 1 (`++update->ntimestep`). The
+            // budget's last iteration is `update->laststep`: thermo prints
+            // it whatever the cadence (`samples_final_step`).
+            this->backend_->setup_output(0);
+            this->backend_->set_report_step(max_iter - 1);
             BigInt iters = 0;
+            bool stopped = false;
             for (BigInt s = 0; s < max_iter; ++s) {
                 this->mutable_outer_status().reset();
                 step_once(s);
                 ++iters;
-                if (this->poll_criteria_(s) != Verdict::Continue)
+                if (this->poll_criteria_(s) != Verdict::Continue) {
+                    stopped = true;
                     break;
+                }
             }
+            this->backend_->set_report_step(-1);
+            // LAMMPS Min::run: a stop before MAXITER forces output of the
+            // final state (dumps and thermo, each unless already written).
+            // The verdict is host-side already; this enqueues device work
+            // and reads nothing back.
+            if (stopped)
+                this->backend_->final_output(iters);
             teardown_pass(frame);
             return iters;
         } catch (...) {

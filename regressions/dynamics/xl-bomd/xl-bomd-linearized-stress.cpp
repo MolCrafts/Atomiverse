@@ -65,7 +65,7 @@ cpu::Frame make_frame() {
     const double x0[2] = {(kLBohr / 2.0 - 0.5 * kR0Bohr) * kBohr2Ang,
                           (kLBohr / 2.0 + 0.5 * kR0Bohr) * kBohr2Ang};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_mass)[i] = 1.008;
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_x)[i] = x0[i];
@@ -173,7 +173,7 @@ bool run_leg(const char* name, bool multi_k, bool linearized, LegResult& out) {
     double ke0 = 0.0;
     for (int i = 0; i < 2; ++i) {
         const double vx = static_cast<double>(frame.span(kAtom_vx)[i]);
-        ke0 += 0.5 * 1.008 * vx * vx / units::force_to_accel;
+        ke0 += 0.5 * 1.008 * vx * vx / units::md_ftm2v;
     }
     out.pot_ha.push_back(eval.last_result().e_total);
     out.stress_ha.push_back(s0);
@@ -260,7 +260,7 @@ bool dual_gate_seed(double& id_err, double& an_fd_err) {
     const double xa[2] = {kLBohr / 2.0 - 0.5 * kR0Bohr,
                           kLBohr / 2.0 + 0.5 * kR0Bohr};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = xa[i] * units::kBohrInAngstrom;
         frame.span(kAtom_y)[i] = kLBohr / 2.0 * units::kBohrInAngstrom;
         frame.span(kAtom_z)[i] = kLBohr / 2.0 * units::kBohrInAngstrom;

@@ -46,7 +46,7 @@ cpu::Frame make_dimer() {
     };
     const int Z[6] = {8, 1, 1, 8, 1, 1};
     for (int i = 0; i < 6; ++i) {
-        f.span(kAtom_type)[i] = Z[i];
+        f.span(kAtom_atomic_number)[i] = Z[i];
         f.span(kAtom_x)[i] = static_cast<StorageReal>(xyz[i][0]);
         f.span(kAtom_y)[i] = static_cast<StorageReal>(xyz[i][1]);
         f.span(kAtom_z)[i] = static_cast<StorageReal>(xyz[i][2]);

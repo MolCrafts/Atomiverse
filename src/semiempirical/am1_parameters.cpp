@@ -13,7 +13,7 @@ namespace {
 // Provenance: AM1 reference `src/models/parameters_for_AM1_C.F90`,
 // `src/models/parameters_C.F90`, and `src/models/calpar.F90`. NDDO reference
 // pseudo entries 102/104/106 (capped bond and sparkles) are intentionally
-// excluded because Atomiverse atom types are real atomic numbers.
+// excluded because Atomiverse species are real atomic numbers.
 constexpr AM1Parameter kAM1Parameters[] = {
     // H (1)
     {1,

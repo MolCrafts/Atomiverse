@@ -17,7 +17,7 @@ inline ATV::cpu::Frame geometry() {
     for (int w = 0; w < 8; ++w)
         for (int a = 0; a < 3; ++a) {
             const int i = 3 * w + a;
-            frame.span(kAtom_type)[i] = a == 0 ? 8 : 1;
+            frame.span(kAtom_atomic_number)[i] = a == 0 ? 8 : 1;
             frame.span(kAtom_x)[i] = 4.0 * w;
             frame.span(kAtom_y)[i] = y[a];
             frame.span(kAtom_z)[i] = z[a];

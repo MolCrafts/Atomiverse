@@ -14,6 +14,7 @@ from atomiverse._binding import _cpp, has_domain
 #: and mutated only by the capability probes below.
 EVALUATOR_DISPATCH: dict[type, str] = {
     _cpp.PairLJCut: "set_evaluator_pair_lj_cut",
+    _cpp.PairLJCutCoulLong: "set_evaluator_pair_lj_cut_coul_long",
     _cpp.PairCoulCut: "set_evaluator_pair_coul_cut",
     _cpp.CoulLong: "set_evaluator_coul_long",
     _cpp.BondHarmonic: "set_evaluator_bond_harmonic",
@@ -31,11 +32,15 @@ EVALUATOR_DISPATCH: dict[type, str] = {
     _cpp.BondFene: "set_evaluator_bond_fene",
     _cpp.DihedralCharmm: "set_evaluator_dihedral_charmm",
     _cpp.ImproperHarmonic: "set_evaluator_improper_harmonic",
-    # Amber/GAFF styles registered beside the MPI task wire (like
+    _cpp.AngleCosine: "set_evaluator_angle_cosine",
+    # Amber/GAFF improper registered beside the MPI task wire (like
     # KSpacePPPM): local runs only.
-    _cpp.PairLJCutCoulLong: "set_evaluator_pair_lj_cut_coul_long",
     _cpp.ImproperCvff: "set_evaluator_improper_cvff",
 }
+
+# A uniform electric field is an MD-domain force source (ATV_BUILD_MD).
+if has_domain("md"):
+    EVALUATOR_DISPATCH[_cpp.FixEfield] = "set_evaluator_fix_efield"
 
 # The PME reciprocal solver is compile-optional (ATV_BUILD_KSPACE / FFTW3),
 # so it joins the allow-list only on an extension that carries it.
@@ -52,11 +57,13 @@ if has_domain("pw"):
     EVALUATOR_DISPATCH[_cpp.PW] = "set_evaluator_pw"
 
 
-#: Electronic methods ``bind_evaluator`` mounts by their concrete setter,
-#: outside the mirror table; present only on an extension that carries them.
-NDDO_TYPES: tuple[type, ...] = tuple(
+#: Borrowed native methods with multiple inheritance in C++: their Component /
+#: DriverNode base sits at a nonzero offset, so each is bound through its own
+#: concrete setter rather than a nanobind base cast. Only the names this
+#: extension carries.
+CONCRETE_METHOD_TYPES: tuple[type, ...] = tuple(
     getattr(_cpp, name)
-    for name in ("AM1", "RM1", "MNDO", "PM3",
+    for name in ("AM1", "RM1", "MNDO", "PM3", "DFTB2",
                  "_CudaAM1", "_CudaRM1", "_CudaMNDO", "_CudaPM3")
     if hasattr(_cpp, name)
 )
@@ -72,7 +79,10 @@ def unsupported_evaluator_message(component: object) -> str:
     @param component: The object handed to ``set_evaluator``.
     @return Message naming the rejected type and every accepted one.
     """
-    accepted = [*EVALUATOR_DISPATCH, *(t for t in NDDO_TYPES if not t.__name__.startswith("_"))]
+    accepted = [
+        *EVALUATOR_DISPATCH,
+        *(t for t in CONCRETE_METHOD_TYPES if not t.__name__.startswith("_")),
+    ]
     supported = ", ".join(t.__name__ for t in accepted)
     return (
         f"set_evaluator does not support {type(component).__name__}. "
@@ -86,9 +96,7 @@ def bind_evaluator(driver: object, component: object) -> None:
     Existing mirror entries retain their MPI transport behavior. Other live
     objects use the C++ registration protocol and remain owned by Python.
     """
-    # NDDO has multiple inheritance in C++; bind its concrete borrowed setter
-    # instead of asking nanobind to cast through a nonzero DriverNode base.
-    if isinstance(component, NDDO_TYPES):
+    if isinstance(component, CONCRETE_METHOD_TYPES):
         driver.set_evaluator(component)
         return
     method = EVALUATOR_DISPATCH.get(type(component))
@@ -100,4 +108,9 @@ def bind_evaluator(driver: object, component: object) -> None:
         raise TypeError(unsupported_evaluator_message(component))
 
 
-__all__ = ["EVALUATOR_DISPATCH", "NDDO_TYPES", "unsupported_evaluator_message", "bind_evaluator"]
+__all__ = [
+    "EVALUATOR_DISPATCH",
+    "CONCRETE_METHOD_TYPES",
+    "unsupported_evaluator_message",
+    "bind_evaluator",
+]

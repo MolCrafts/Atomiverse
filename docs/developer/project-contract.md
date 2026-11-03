@@ -24,10 +24,11 @@ so parallel machinery is **ported from LAMMPS, not independently derived**.
   k-space parallel FFT decomposition and remap, load balancing, neighbor-build
   parallel structure. Read the LAMMPS implementation first and transplant its
   algorithm and communication structure; do not invent an alternative and A/B it.
-- **Reference checkout:** `../../lammps-src` (shallow sparse `src/` at
-  `970d4ba`). Deepen or re-clone rather than trust memory; stamp the SHA you
-  read into every header you touch. Headers naming `78a7ddf` came from an
-  earlier checkout — do not rewrite them wholesale.
+- **Reference checkout:** `../../lammps/src` (full checkout; sources under
+  `src/`, GPU library under `lib/gpu/`), at `e8c4c278a8`. Deepen or re-clone
+  rather than trust memory; stamp the SHA you read into every header you
+  touch. Headers naming `78a7ddf` or `970d4ba` came from earlier checkouts —
+  do not rewrite them wholesale.
 - **Provenance headers are mandatory:** name the LAMMPS source file
   (e.g. `src/comm_brick.cpp`) and keep the Sandia copyright notice.
 - ATV's laws still govern the *shape* of ported code; public API stays
@@ -225,7 +226,13 @@ asynchronously — pinned `cudaMemcpyAsync`, non-blocking `cudaEventQuery`,
 off-thread workers — and the device state freezes at the deciding step so a
 late host is never wrong. Only setup, the end-of-run retrieve and the error
 path may synchronize. A "small" sync is still a violation; there is no hybrid
-exception. Detail and open violations:
+exception. The one sanctioned wait is lossless capture backpressure: every
+asynchronous consumer of a driver (recorders and online analysis) reads its
+steps from the driver's one shared capture buffer, and when that buffer's
+byte budget is exhausted the stepping thread waits on a host condition
+variable (no CUDA sync call) in `Component::before_launch`, before enqueueing
+the step, until a consumer frees space — output is never dropped. Detail and
+open violations:
 [cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md).
 
 ## Design defaults
@@ -261,7 +268,7 @@ feature lives in the same directory on every backend.
 <backend>/
   frame/ driver/ component/ evaluate/       pillars (+ Evaluate preset)
   device/ communication/ neighbor/          Device/Domain runtimes, PairList
-  asynchronous/                             AnalysisRuntime, snapshot ring, D2H bridge
+  asynchronous/                             CaptureBuffer (shared, lossless), AsyncConsumer
   dynamics/ minimize/ scf/ planewave/ gpw/  method domains on both backends
   longrange/ potentials/ observe/ record/   (CUDA gpw = method over internal stages)
   io/ linalg/ electronic/ montecarlo/ replica/ path/ semiempirical/ xc/
@@ -477,7 +484,8 @@ rhf.run(frame);        // Frame in / Frame out; workspace private
 - **Opt-in protocols** the engine probes for (no `dynamic_cast`):
   `NeighborConsumer`, `NeighborProvider`, `LongRangeParticipant` (exactly one
   matched real/reciprocal pair), `PairEvaluator`, `ConstraintProvider`,
-  `TimestepProvider` / `TimestepConsumer`. `AsyncComponentBase` is a class.
+  `TimestepProvider` / `TimestepConsumer`. `AsyncConsumer` (the one base of
+  every asynchronous recorder / observer, per backend) is a class.
 - `Component` carries default-false **declared-requirement** virtuals
   (`requires_full_frame`, `requires_tag_index`, `requires/provides_system_stress`,
   `updates_owned_charges`, `provides_hessian`, `initialize_forces`,
@@ -530,8 +538,16 @@ Boundary vocabulary: typed **blocks**, exact-dtype **meta**, **box**.
 - `from_molpy()` / `to_molpy()` — strict schema boundary, once per `run()`.
   Unknown blocks/columns, wrong dtypes and row counts fail immediately.
   `to_molpy` writes x/v/f, charge, image, tag (checked i32 narrowing), box and
-  serializable meta; type, mass, topology are static inputs. `cpu::to_cuda()` /
-  `cuda::to_cpu()` move host ⇄ device.
+  serializable meta; the identity columns, mass and topology are static
+  inputs. `cpu::to_cuda()` / `cuda::to_cpu()` move host ⇄ device.
+- **Identity is two columns, one meaning each** (LAMMPS semantics):
+  `kAtom_type` = force-field type index (molpy `atoms.type_id`), read by
+  every per-type table; `kAtom_atomic_number` = species Z (molpy
+  `atoms.atomic_number`, 0 = no element), read by every element lookup.
+  A boundary whose source lacks one leaves it out of the Frame (never
+  zero-fills it, never derives one from the other or Z from a mass), and the
+  consumer throws the how-to (`atom_field_how_to`). Detail:
+  [frame-architecture.md](frame-architecture.md) §1.
 - **CPU precision:** `StorageReal` / `WorkReal` / `AccReal` (accumulators
   double).
 - **CUDA classical MD precision:** one type per role (`cuda/frame/types.cuh`,
@@ -543,8 +559,10 @@ Boundary vocabulary: typed **blocks**, exact-dtype **meta**, **box**.
   `cuda::to_cpu` reports tag and step). Every per-atom move (sort, migration,
   snapshot, transfer) carries correction and velocity columns untruncated.
   Gaussian SCF CUDA tiers `real_t` / `work_t` / `prec_t` are FP64 in every mode.
-- Integer IDs by LAMMPS role: `LocalInt`, `TagInt`, `ImageInt`, `BigInt`
-  (always 64-bit).
+- Integer IDs by LAMMPS role: `LocalInt`, `TagInt`, `ImageInt` (one int32
+  counter per image component, unpacked, on both backends), `BigInt`
+  (always 64-bit). Every wrap of atom state counts its lattice translation
+  into the image (`cpu::Box::wrap_into` / `cuda::BoxGeometry::wrap_position`).
 - **Frame purity:** no method scratch (integrals, AO maps, grids, DIIS history
   belong to the method); the pair list stays on `NeighborList`. No implicit
   transfer in low-level operators; CUDA stays on device between explicit

@@ -73,7 +73,7 @@ ATV::cpu::Frame water_chain(int count) {
         constexpr double z[3] = {0.1173, -0.4692, -0.4692};
         for (int atom = 0; atom < 3; ++atom) {
             const int i = 3 * water + atom;
-            frame.span(kAtom_type)[i] = atom == 0 ? 8 : 1;
+            frame.span(kAtom_atomic_number)[i] = atom == 0 ? 8 : 1;
             frame.span(kAtom_mass)[i] = atom == 0 ? 15.999 : 1.008;
             frame.span(kAtom_x)[i] = 4.0 * water;
             frame.span(kAtom_y)[i] = y[atom];

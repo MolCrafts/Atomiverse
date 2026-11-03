@@ -74,8 +74,8 @@ double weight(double r, double lambda, double beta) {
 ///
 ///   ⟨min(1, exp[−β(λ_i−λ_j)(u(r')−u(r))])⟩  over  P_i(r)·P_j(r')
 double accept_exact(double li, double lj) {
-    const double beta = 1.0 / (units::kB_ev_per_k * kT);
-    const double s_max = std::sqrt(units::kB_ev_per_k * kT / std::min(li, lj));
+    const double beta = 1.0 / (units::md_boltz * kT);
+    const double s_max = std::sqrt(units::md_boltz * kT / std::min(li, lj));
     const double lo = std::max(0.0, kR0 - 9.0 * s_max);
     const double hi = kR0 + 9.0 * s_max;
     constexpr int n = 4000;
@@ -189,7 +189,7 @@ int run() {
     }
     // Collapse writes slot 0; the bond must still be a thermal sample of the
     // softest slot (the spring cannot break).
-    const double sigma0 = std::sqrt(units::kB_ev_per_k * kT / kLambda[0]);
+    const double sigma0 = std::sqrt(units::md_boltz * kT / kLambda[0]);
     double dx = f.span(kAtom_x)[0] - f.span(kAtom_x)[1];
     double dy = f.span(kAtom_y)[0] - f.span(kAtom_y)[1];
     double dz = f.span(kAtom_z)[0] - f.span(kAtom_z)[1];

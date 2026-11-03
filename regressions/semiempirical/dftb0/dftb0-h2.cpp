@@ -36,7 +36,7 @@ static double energy_at(double r, bool forces) {
     f.span(kAtom_x)[1] = r;
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -83,7 +83,7 @@ int run() {
     f.span(kAtom_x)[1] = 0.90;
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;

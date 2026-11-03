@@ -139,7 +139,7 @@ const double y[5] = {0, s, -s, s, -s};
 const double z[5] = {0, s, -s, -s, s};
 const int Z[5] = {6, 1, 1, 1, 1};
 for (int i = 0; i < 5; ++i) {
-    frame.span(kAtom_type)[i] = Z[i];
+    frame.span(kAtom_atomic_number)[i] = Z[i];
     frame.span(kAtom_x)[i] = x[i];
     frame.span(kAtom_y)[i] = y[i];
     frame.span(kAtom_z)[i] = z[i];
@@ -567,7 +567,7 @@ pass (restore \(R_0\), mass-weight, TR-project, diagonalize). The driver
 is `cpu::vib::Hessian` (`Driver<vib::Phase>`); stages
 `setup → displace → force → accumulate → diagonalize → thermochem →
 end_of_step`. Masses for \(\omega\) come from IUPAC-2013 `mass_amu(Z)`
-(`kAtom_type`), **not** `kAtom_mass`.
+(`kAtom_atomic_number`), **not** `kAtom_mass`.
 
 **Not included.** Closed-form \(\partial^2 E/\partial R_i\partial R_j\)
 (CPHF / IPEA second-derivative kernel). IR intensities from an APT (the FD

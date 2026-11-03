@@ -107,11 +107,11 @@ std::string parse_device_arg(int argc, char** argv) {
 ATV::cpu::Frame make_h2() {
     using namespace ATV;
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.0;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.0;
     frame.span(kAtom_z)[1] = 0.74;
@@ -122,15 +122,15 @@ ATV::cpu::Frame make_h2() {
 ATV::cpu::Frame make_h2o() {
     using namespace ATV;
     cpu::Frame frame(3);
-    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_atomic_number)[0] = 8;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.1173;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.7572;
     frame.span(kAtom_z)[1] = -0.4692;
-    frame.span(kAtom_type)[2] = 1;
+    frame.span(kAtom_atomic_number)[2] = 1;
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
@@ -199,7 +199,7 @@ int check_cuda_h2() {
     }
     // Same N, different element: H-He has three electrons and must be
     // rejected, rather than silently reusing the cached H-H identity.
-    frame.span(kAtom_type)[1] = 2;
+    frame.span(kAtom_atomic_number)[1] = 2;
     bool rejected = false;
     try {
         nested_energy();
@@ -211,7 +211,7 @@ int check_cuda_h2() {
         std::printf("FAIL RHF same-N identity rejection got=0 want=1 tol=0\n");
         return 1;
     }
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     failure.fail = true;
     rejected = false;
     try {

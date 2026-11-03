@@ -60,18 +60,16 @@ int run() {
 
     // ── Pinned constants (derivation:
     //    tools/metalwalls_oracle/inputs/literature/constant_d_pins.py) ──
-    // k_e = 14.399645 eV·Å/e² (units::coulomb); 4π k_e = 1.8095127578520399e2.
-    const double V = 1000.0; // [Å³]
+    const double V = 1000.0;
+    const double ke = units::md_qqr2e;
 
-    // ── Gate A: static field / energy pins at D_z = 0.5 V/Å ────────────
-    // P_z = q d / V = 2e-3 e/Å²
-    // E_z = D_z − 4π k_e P_z          = 1.3809744842959204e-1 V/Å
-    // U_D = V E_z² / (8π k_e)         = 5.2696244279044818e-2 eV
-    // Vacuum foothold twin at the same D keeps E_z = 0.5 (no screening).
+    // ── Gate A: static field / energy at D_z = 0.5 ─────────────────────
+    // P_z = q d / V = 2e-3. E_z = D_z − 4π k_e P_z.
+    // U_D = V E_z² / (8π k_e). Vacuum twin keeps E_z = D_z.
     {
         const double Pz_pin = 2.0e-3;
-        const double Ez_pin = 1.3809744842959204e-1;
-        const double U_pin = 5.2696244279044818e-2;
+        const double Ez_pin = 0.5 - 4.0 * units::pi * ke * Pz_pin;
+        const double U_pin = V * Ez_pin * Ez_pin / (8.0 * units::pi * ke);
         const double tol = 1e-13;
 
         auto f = pair_frame(1.0);
@@ -123,17 +121,16 @@ int run() {
 
     // ── Gate B: constant-D dynamics at D_z = 0 — itinerant-polarization
     //    harmonic well (Cox & Sprik JCP 151, 064506 (2019)) ─────────────
-    // Relative coordinate d: U = 2π k_e q² d² / V →
-    //   ω = sqrt(4π k_e q² / (μ V) · force_to_accel)
-    //     = 5.9091697154893236e-2 fs⁻¹   (period 106.33 fs)
-    //   d(t) = d0 cos(ωt), d0 = 2 Å; U0 = 3.6190255157040796e-1 eV.
-    // Pins are the CONTINUOUS analytic values; dt = 0.1 fs keeps the VV
-    // discretization error below 5e-6 Å (tolerance 5e-5).
+    // Relative coordinate d: U = 2π k_e q² d² / V,
+    // ω = sqrt(4π k_e q² / (μ V) · md_ftm2v), μ = 1/2 for two unit masses.
+    // d(t) = d0 cos(ωt). dt = 0.1 in the style's time unit.
     {
-        const double dt = 0.1;                      // [fs]
-        const double d0 = 2.0;                      // [Å]
-        const double omega = 5.9091697154893236e-2; // [1/fs]
-        const double U0 = 3.6190255157040796e-1;    // [eV]
+        const double dt = 0.1;
+        const double d0 = 2.0;
+        const double mu = 0.5;
+        const double omega =
+            std::sqrt(4.0 * units::pi * ke * 1.0 / (mu * V) * units::md_ftm2v);
+        const double U0 = 2.0 * units::pi * ke * d0 * d0 / V;
         const double tol_z = 5e-5;
 
         auto f = pair_frame(d0 / 2.0);
@@ -184,7 +181,7 @@ int run() {
         double ke = 0.0;
         for (int i = 0; i < 2; ++i) {
             const double vz = double(f.span(kAtom_vz)[i]);
-            ke += 0.5 * units::mass_v2_to_energy * 1.0 * vz * vz;
+            ke += 0.5 * units::md_mvv2e * 1.0 * vz * vz;
         }
         const double e_tot = ke + f.meta.get(kEnergy);
         std::printf("Gate B: KE+U=%.16e U0=%.16e\n", e_tot, U0);
@@ -196,7 +193,7 @@ int run() {
         std::printf("Gate B: Ez(final)=%.16e Pz(final)=%.16e\n",
                     dfield.last_Ez(), dfield.last_Pz());
         if (std::fabs(dfield.last_Ez()
-                      - (-4.0 * units::pi * units::coulomb * dfield.last_Pz()))
+                      - (-4.0 * units::pi * units::md_qqr2e * dfield.last_Pz()))
             > 1e-13) {
             std::printf("FAIL B Ez = -4*pi*k_e*Pz self-consistency\n");
             ok = false;

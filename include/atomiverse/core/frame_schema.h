@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include "atomiverse/core/precision.h"
 
@@ -17,8 +18,10 @@ namespace ATV {
 
 /// Runtime dtype of one Block column.  The tag is semantic; the wire schema
 /// also fingerprints the configured sizeof(StorageReal/TagInt), so different
-/// precision/ID builds cannot accidentally exchange payloads.
-enum class ColDType : std::uint8_t { Storage, Acc, Tag, Int, Int8 };
+/// precision/ID builds cannot accidentally exchange payloads.  `Image` is the
+/// per-component periodic image counter `ImageInt` (int32, core/precision.h);
+/// it is its own semantic tag even though it shares `int`'s representation.
+enum class ColDType : std::uint8_t { Storage, Acc, Tag, Int, Image };
 
 constexpr std::size_t col_dtype_size(ColDType dtype) noexcept {
     switch (dtype) {
@@ -30,8 +33,8 @@ constexpr std::size_t col_dtype_size(ColDType dtype) noexcept {
         return sizeof(TagInt);
     case ColDType::Int:
         return sizeof(int);
-    case ColDType::Int8:
-        return sizeof(std::int8_t);
+    case ColDType::Image:
+        return sizeof(ImageInt);
     }
     return 0;
 }
@@ -100,6 +103,21 @@ struct FieldSpec {
 };
 
 // id, key, element tier, dtype, stride, group, entries/item, flags
+//
+// Two per-atom identity columns, one meaning each (LAMMPS semantics: an atom
+// type is independent of its element):
+//   type          -- force-field type index (`kAtom_type`). Keys every
+//                    per-type parameter table (typed LJ, Born, DPD, TIP4P,
+//                    per-type polarizability, electrode / fix type selectors).
+//                    molpy `atoms.type_id`; LAMMPS data `Atoms` type column.
+//   atomic_number -- chemical species Z (`kAtom_atomic_number`, 0..118, 0 =
+//                    wildcard / no element, e.g. a coarse-grained bead). Keys
+//                    every element lookup (basis sets, pseudopotentials,
+//                    semiempirical / DFTB parameters, dispersion, masses by
+//                    element, element symbols on output). molpy
+//                    `atoms.atomic_number`; never guessed from a mass or name.
+// Neither column stands in for the other. A source that does not carry one
+// leaves it out of the Frame (see `atom_field_how_to`).
 #define ATV_ATOM_FIELDS(X)                                                     \
     X(x, "x", StorageReal, Storage, One, Core, 0,                              \
       kColState | kColWriteBack | kColPbcShift)                                \
@@ -117,8 +135,9 @@ struct FieldSpec {
     X(charge, "charge", StorageReal, Storage, One, Core, 0,                    \
       kColState | kColWriteBack)                                               \
     X(type, "type", int, Int, One, Core, 0, kColState)                         \
+    X(atomic_number, "atomic_number", int, Int, One, Core, 0, kColState)       \
     X(tag, "tag", TagInt, Tag, One, Core, 0, kColState | kColIdentityTail)     \
-    X(image, "image", std::int8_t, Int8, Fixed3, Core, 0, kColState)           \
+    X(image, "image", ImageInt, Image, Fixed3, Core, 0, kColState)             \
     X(num_bond, "num_bond", int, Int, One, Bond, 0, kColState | kColCount)     \
     X(bond_atom, "bond_atom", TagInt, Tag, BondPA, Bond, 1,                    \
       kColState | kColTopology)                                                \
@@ -194,6 +213,34 @@ struct ColKey {
         ColDType::DTag};
 ATV_ATOM_FIELDS(ATV_FIELD_KEY)
 #undef ATV_FIELD_KEY
+
+/// @brief The how-to for an atoms-Block column a source may leave out.
+///
+/// `Frame(n)` allocates every schema column. The two identity columns are the
+/// exception to "always present": `cpu::from_molpy` and the file readers
+/// remove `type` / `atomic_number` when their source does not carry it, so a
+/// consumer that needs one reads a missing column — and throws this message —
+/// instead of a silent zero (a coarse-grained frame has no species; a QM
+/// geometry has no force-field types).
+///
+/// @param key Column key in the atoms Block.
+/// @return The how-to sentence for `type` / `atomic_number`, else nullptr.
+constexpr const char* atom_field_how_to(std::string_view key) noexcept {
+    if (key == "type")
+        return "the per-atom force-field type index (kAtom_type) is required "
+               "here; provide it as molpy atoms.type_id (u64, the same "
+               "convention as bonds/angles type_id), a LAMMPS data Atoms type "
+               "column, or write frame.span(kAtom_type) on a C++ Frame. "
+               "atomic_number is the chemical species and is not a type";
+    if (key == "atomic_number")
+        return "the per-atom chemical species Z (kAtom_atomic_number, "
+               "0..118) is required here; provide it as molpy "
+               "atoms.atomic_number (convert element symbols explicitly with "
+               "molpy Element::fill_atomic_numbers) or write "
+               "frame.span(kAtom_atomic_number) on a C++ Frame. A force-field "
+               "type is not a species";
+    return nullptr;
+}
 
 /// A typed metadata key.  `serializable` is part of the semantic schema;
 /// backend-only entries (population/capacity/index caches) never cross FFI.

@@ -70,6 +70,8 @@ PolResult run_pim(double r, double thole_a, double tt_b,
         out.fz[i] = f.span(kAtom_fz)[i];
     }
     EXPECT_NEAR(f.meta.get(kEnergy), out.e_pol, 1e-14);
+    // Polarization is pair energy: the total stays the sum of the terms.
+    EXPECT_DOUBLE_EQ(f.meta.get(kEnergyPair), f.meta.get(kEnergy));
     return out;
 }
 
@@ -85,7 +87,7 @@ void undamped_two_site(double r, double q0, double q1, double a0, double a1,
     const double den = 1.0 - a0 * a1 * T * T;
     mu0 = (a0 * E0 + a0 * a1 * T * E1) / den;
     mu1 = (a1 * E1 + a1 * a0 * T * E0) / den;
-    e_pol = units::coulomb * (-0.5 * (mu0 * E0 + mu1 * E1));
+    e_pol = units::md_qqr2e * (-0.5 * (mu0 * E0 + mu1 * E1));
 }
 
 } // namespace
@@ -109,7 +111,7 @@ TEST(PimInducedDipole, OnePolUndampedAnalyticForce) {
     // U=-½ k α/r⁴, F0x = 2 k α / r⁵, F1x = −F0x.
     const double r = 3.0, a0 = 1.0;
     auto out = run_pim(r, 0.0, 0.0, {0.0, a0, 0.0});
-    const double k = units::coulomb;
+    const double k = units::md_qqr2e;
     const double F0 = 2.0 * k * a0 / std::pow(r, 5);
     const double U = -0.5 * k * a0 / std::pow(r, 4);
     EXPECT_NEAR(out.e_pol, U, 1e-12);

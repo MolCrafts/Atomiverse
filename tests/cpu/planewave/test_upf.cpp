@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include <stdexcept>
+#include <string>
+#include <unistd.h>
 
 using namespace ATV;
 using namespace ATV::cpu::pw::internal;
@@ -123,9 +125,17 @@ TEST(UPF, RadialIntegralRejectsMissingInvalidOrUnorderedData) {
 }
 
 namespace {
+// One fixture file per test and process: ctest runs these tests in parallel
+// processes, and a shared name let one test delete another's file.
+std::string nc_fixture_path() {
+    return std::string("/tmp/atv_test_nc_admission_")
+           + ::testing::UnitTest::GetInstance()->current_test_info()->name()
+           + "_" + std::to_string(::getpid()) + ".upf";
+}
+
 void write_nc_fixture(const std::string& header,
                       const std::string& extra = "") {
-    std::ofstream out("/tmp/test_nc_admission.upf");
+    std::ofstream out(nc_fixture_path());
     out << "<UPF>\n<PP_HEADER " << header << "/>\n"
         << "<PP_MESH>\n<PP_R>\n0 .5 1\n</PP_R>\n"
         << "<PP_RAB>\n.5 .5 .5\n</PP_RAB>\n</PP_MESH>\n"
@@ -146,10 +156,9 @@ TEST(UPF, RejectsUnknownIdentityAndNonIntegralValence) {
           "element=\"Si\" pseudo_type=\"NC\" z_valence=\"nan\""}) {
         SCOPED_TRACE(header);
         write_nc_fixture(header);
-        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
-                     std::invalid_argument);
+        EXPECT_THROW(read_upf_v1(nc_fixture_path()), std::invalid_argument);
     }
-    std::remove("/tmp/test_nc_admission.upf");
+    std::remove(nc_fixture_path().c_str());
 }
 
 TEST(UPF, RejectsUnsupportedPhysicalChannelsAtAdmission) {
@@ -159,20 +168,17 @@ TEST(UPF, RejectsUnsupportedPhysicalChannelsAtAdmission) {
           "core_correction=\"true\"", "relativistic=\"full\""}) {
         SCOPED_TRACE(flag);
         write_nc_fixture(nc + flag);
-        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
-                     std::invalid_argument);
+        EXPECT_THROW(read_upf_v1(nc_fixture_path()), std::invalid_argument);
     }
     for (const auto& tag : {"PP_NLCC", "PP_AUGMENTATION", "PP_SPIN_ORB"}) {
         SCOPED_TRACE(tag);
         write_nc_fixture(nc,
                          std::string("<") + tag + ">\n0 0 0\n</" + tag + ">");
-        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
-                     std::invalid_argument);
+        EXPECT_THROW(read_upf_v1(nc_fixture_path()), std::invalid_argument);
         write_nc_fixture(nc, std::string("<") + tag + "/>");
-        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
-                     std::invalid_argument);
+        EXPECT_THROW(read_upf_v1(nc_fixture_path()), std::invalid_argument);
     }
-    std::remove("/tmp/test_nc_admission.upf");
+    std::remove(nc_fixture_path().c_str());
 }
 
 TEST(UPF, ProjectorCutoffRejectsFractionalOrPartialNumericAttribute) {
@@ -185,10 +191,9 @@ TEST(UPF, ProjectorCutoffRejectsFractionalOrPartialNumericAttribute) {
                     + cutoff
                     + "\">\n0 .5 "
                       "1\n</PP_BETA>\n<PP_DIJ>\n2\n</PP_DIJ>\n</PP_NONLOCAL>");
-        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
-                     std::invalid_argument);
+        EXPECT_THROW(read_upf_v1(nc_fixture_path()), std::invalid_argument);
     }
-    std::remove("/tmp/test_nc_admission.upf");
+    std::remove(nc_fixture_path().c_str());
 }
 
 TEST(UPF, RejectsInvalidTokensAfterOtherwiseCompleteNumericRows) {
@@ -198,8 +203,7 @@ TEST(UPF, RejectsInvalidTokensAfterOtherwiseCompleteNumericRows) {
         SCOPED_TRACE(row);
         write_nc_fixture(nc,
                          std::string("<PP_LOCAL>\n") + row + "\n</PP_LOCAL>");
-        EXPECT_THROW(read_upf_v1("/tmp/test_nc_admission.upf"),
-                     std::invalid_argument);
+        EXPECT_THROW(read_upf_v1(nc_fixture_path()), std::invalid_argument);
     }
-    std::remove("/tmp/test_nc_admission.upf");
+    std::remove(nc_fixture_path().c_str());
 }

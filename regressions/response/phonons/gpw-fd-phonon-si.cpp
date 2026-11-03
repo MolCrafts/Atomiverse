@@ -32,7 +32,7 @@ constexpr double kWallBudget = 60.0; // Whole section, repository limit.
 cpu::Frame si2(double bond) {
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 14;
+        frame.span(kAtom_atomic_number)[i] = 14;
         frame.span(kAtom_mass)[i] = kMassSi;
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_x)[i] = 4 + (i == 0 ? -0.5 : 0.5) * bond;

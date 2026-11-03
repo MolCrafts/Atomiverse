@@ -108,6 +108,44 @@ TEST(FrameRegistry, HasTracksTheLazyTopologyGroup) {
     EXPECT_FALSE(frame.has("bonds", "x"));
 }
 
+// ── Identity columns: type and species ──────────────────────────────────────
+
+// Two columns, one meaning each, both allocated by Frame(n).
+TEST(FrameRegistry, TypeAndSpeciesAreDistinctSchemaColumns) {
+    cpu::Frame frame(2);
+    ASSERT_TRUE(frame.has("atoms", "type"));
+    ASSERT_TRUE(frame.has("atoms", "atomic_number"));
+    frame.span(kAtom_type)[0] = 3;
+    frame.span(kAtom_atomic_number)[0] = 8;
+    EXPECT_EQ(frame.span(kAtom_type)[0], 3);
+    EXPECT_EQ(frame.span(kAtom_atomic_number)[0], 8);
+    EXPECT_NE(kAtom_type.wire_id, kAtom_atomic_number.wire_id);
+}
+
+// A left-out identity column throws the how-to on read, stays out of a
+// structural clone, and comes back zero-filled through insert_field.
+TEST(FrameRegistry, LeftOutIdentityColumnThrowsTheHowToAndStaysOut) {
+    cpu::Frame frame(2);
+    frame.block("atoms").erase(kAtom_atomic_number.key);
+    try {
+        (void)frame.span(kAtom_atomic_number);
+        FAIL() << "a removed species column must not read";
+    } catch (const cpu::column_error& e) {
+        EXPECT_NE(std::string(e.what()).find("atoms.atomic_number"),
+                  std::string::npos)
+            << e.what();
+    }
+    const cpu::Frame clone = frame.clone_structure(4);
+    EXPECT_FALSE(clone.has("atoms", "atomic_number"));
+    EXPECT_TRUE(clone.has("atoms", "type"));
+
+    frame.insert_field(AtomFieldId::atomic_number);
+    ASSERT_TRUE(frame.has("atoms", "atomic_number"));
+    EXPECT_EQ(frame.span(kAtom_atomic_number)[1], 0);
+    frame.insert_field(AtomFieldId::atomic_number); // present: a no-op
+    EXPECT_TRUE(frame.has("atoms", "atomic_number"));
+}
+
 // ── Extension columns (ac-002) ──────────────────────────────────────────────
 
 TEST(FrameRegistry, ExtensionColumnLivesTheFullLifecycle) {

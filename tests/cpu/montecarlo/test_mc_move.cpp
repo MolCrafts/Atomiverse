@@ -87,6 +87,64 @@ TEST(TranslateMoveUnit, DisplacesOneAtomAndRecordsChangeset) {
     }
 }
 
+// The wrap back into the cell counts its lattice translation into the image
+// (LAMMPS Domain::pbc), so r + H·image moves by exactly the proposed
+// displacement; a rejected move (rollback) restores position AND image.
+TEST(TranslateMoveUnit, WrapCountsImageAndRollbackRestoresIt) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(4.0);
+    frame.span(ATV::kAtom_x)[0] = 0.05;
+    frame.span(ATV::kAtom_y)[0] = 3.95;
+    frame.span(ATV::kAtom_z)[0] = 2.0;
+    auto unwrapped = [&](int a) {
+        const double r[3] = {frame.span(ATV::kAtom_x)[0],
+                             frame.span(ATV::kAtom_y)[0],
+                             frame.span(ATV::kAtom_z)[0]};
+        return r[a] + 4.0 * frame.span(ATV::kAtom_image)(0, a);
+    };
+
+    std::mt19937_64 rng(2024u);
+    cpu::mc::Transaction txn;
+    cpu::Context ctx;
+    ctx.mc.rng = &rng;
+    ctx.mc.proposal = &txn;
+    constexpr double kDelta = 1.0;
+    cpu::mc::TranslateMove mv{kDelta};
+    cpu::LaunchContext lctx{ctx, frame, /*stage=*/0, /*step=*/0};
+
+    int crossed = 0, restored = 0;
+    for (int trial = 0; trial < 64; ++trial) {
+        double u0[3], r0[3];
+        ATV::ImageInt n0[3];
+        for (int a = 0; a < 3; ++a) {
+            u0[a] = unwrapped(a);
+            n0[a] = frame.span(ATV::kAtom_image)(0, a);
+        }
+        r0[0] = frame.span(ATV::kAtom_x)[0];
+        r0[1] = frame.span(ATV::kAtom_y)[0];
+        r0[2] = frame.span(ATV::kAtom_z)[0];
+        mv.launch(lctx);
+        bool image_moved = false;
+        for (int a = 0; a < 3; ++a) {
+            EXPECT_LE(std::abs(unwrapped(a) - u0[a]), kDelta + 1e-12)
+                << "trial " << trial << " axis " << a;
+            image_moved |= frame.span(ATV::kAtom_image)(0, a) != n0[a];
+        }
+        crossed += image_moved ? 1 : 0;
+        if (image_moved && restored < 4) { // reject: everything comes back
+            txn.rollback(frame);
+            ++restored;
+            EXPECT_EQ(frame.span(ATV::kAtom_x)[0], r0[0]);
+            EXPECT_EQ(frame.span(ATV::kAtom_y)[0], r0[1]);
+            EXPECT_EQ(frame.span(ATV::kAtom_z)[0], r0[2]);
+            for (int a = 0; a < 3; ++a)
+                EXPECT_EQ(frame.span(ATV::kAtom_image)(0, a), n0[a]);
+        }
+    }
+    EXPECT_GT(crossed, 4); // the start sits next to two faces
+    EXPECT_EQ(restored, 4);
+}
+
 TEST(TranslateMoveUnit, BootstrapPassIsNoOp) {
     cpu::Frame frame(2);
     frame.span(ATV::kAtom_x)[0] = 0.0;

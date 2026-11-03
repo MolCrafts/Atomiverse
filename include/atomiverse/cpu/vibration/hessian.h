@@ -135,7 +135,7 @@ class Hessian : public Driver<ATV::vib::Phase> {
     ///
     /// Same mass-weight + TR-project + diagonalize finalize as after a FD
     /// `run()`, without the 6N force loop. Use when the matrix already exists
-    /// (e.g. `cpu::scf::Hessian<RHF>`). Frame supplies masses (`kAtom_type`)
+    /// (e.g. `cpu::scf::Hessian<RHF>`). Frame supplies masses (`kAtom_atomic_number`)
     /// and equilibrium geometry for the TR projector.
     ///
     /// Does not require a force evaluator on this driver. Result is cached in

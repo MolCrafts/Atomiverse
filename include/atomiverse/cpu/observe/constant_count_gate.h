@@ -5,9 +5,9 @@
 ///
 /// The async trajectory observers (RDF/MSD/VACF) require a constant atom count
 /// across the captured window (single-rank MVP; no migration). Each previously
-/// copy-pasted the first-frame latch + mismatch drop; this header is the single
-/// implementation. Dropped and molpy-rejected frames are counted so
-/// `finalize()` can warn instead of losing data silently.
+/// copy-pasted the first-frame latch + mismatch rejection; this header is the
+/// single implementation. Count-rejected and molpy-rejected frames are
+/// counted so `finalize()` warns instead of losing data silently.
 #pragma once
 
 #include <algorithm>
@@ -16,11 +16,13 @@
 #include <cstdint>
 #include <exception>
 #include <numeric>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/precision.h"
+#include "atomiverse/core/types.h"
 #include "atomiverse/cpu/frame/box.h"
 
 namespace ATV {
@@ -40,7 +42,7 @@ class ConstantCountGate {
             return true;
         }
         if (n != n_atoms_) {
-            ++n_dropped_;
+            ++n_rejected_;
             return false;
         }
         return true;
@@ -49,18 +51,20 @@ class ConstantCountGate {
     /// @brief Latched atom count (0 before the first admitted frame).
     int n_atoms() const { return n_atoms_; }
     /// @brief Number of rejected snapshots (changed atom count).
-    BigInt dropped() const { return n_dropped_; }
+    BigInt rejected() const { return n_rejected_; }
 
   private:
     int n_atoms_ = 0;
-    BigInt n_dropped_ = 0;
+    BigInt n_rejected_ = 0;
 };
 
 /// @brief Tally of snapshots the molpy accumulator refused.
 ///
-/// `on_snapshot` runs on an analysis worker thread, where an escaping
-/// exception would terminate the process; an observer catches the molpy
-/// refusal there, records it here, and reports the tally in `finalize()`.
+/// A frame molpy refuses (a wrapped step, a degenerate cell) is a property
+/// of the trajectory, not a failure of the observer: the observer catches
+/// the refusal in `on_snapshot`, records it here and reports the tally in
+/// `finalize()`, instead of stopping the run (which an escaping exception
+/// would do).
 class RejectedFrames {
   public:
     /// @brief Count one refused frame; the first reason is kept verbatim.
@@ -82,13 +86,13 @@ class RejectedFrames {
 };
 
 /// @brief Keep correlator rows tied to stable atom tags and equally spaced captures.
-/// Atom replacement or a dropped capture invalidates a time correlation rather
+/// Atom replacement or a missing capture invalidates a time correlation rather
 /// than silently joining unrelated atoms or compressing its time axis.
 class CorrelationInput {
   public:
-    void pack(std::vector<double>& out, const std::vector<std::int64_t>& tags,
-              const std::vector<double>& a, const std::vector<double>& b,
-              const std::vector<double>& c, int n, int step, int stride) {
+    void pack(std::vector<double>& out, std::span<const std::int64_t> tags,
+              std::span<const double> a, std::span<const double> b,
+              std::span<const double> c, int n, BigInt step, int stride) {
         const auto count = static_cast<std::size_t>(n);
         if (tags.size() < count || a.size() < count || b.size() < count
             || c.size() < count)
@@ -153,9 +157,8 @@ inline std::array<double, 9> cell_matrix(const Box& box) {
 /// allocation. @param a,b,c per-atom source fields (e.g. x/y/z or vx/vy/vz).
 /// @param n number of owned atoms to copy from each field.
 inline void pack_blocked(std::vector<double>& scratch,
-                         const std::vector<double>& a,
-                         const std::vector<double>& b,
-                         const std::vector<double>& c, int n) {
+                         std::span<const double> a, std::span<const double> b,
+                         std::span<const double> c, int n) {
     const auto un = static_cast<std::size_t>(n);
     scratch.resize(3 * un);
     for (std::size_t i = 0; i < un; ++i) {

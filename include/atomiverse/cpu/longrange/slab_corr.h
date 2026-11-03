@@ -5,9 +5,8 @@
 /// boundaries in z (LAMMPS `kspace_modify slab <volfactor>`). Citation:
 /// Yeh & Berkowitz, *J. Chem. Phys.* **111**, 3155 (1999); non-neutral
 /// extension Ballenegger et al., *J. Chem. Phys.* **131**, 094107 (2009).
-/// Formulae match LAMMPS `Ewald::slabcorr` (metal units via `units::coulomb`).
-///
-/// Units: positions [Å], charges [e], volume [Å³], energy [eV], force [eV/Å].
+/// Formulae match LAMMPS `Ewald::slabcorr`. The prefactor is the lj row
+/// (`md_qqr2e`).
 #pragma once
 
 #include <cmath>
@@ -19,16 +18,16 @@
 namespace ATV {
 namespace longrange {
 
-/// @brief Yeh–Berkowitz energy [eV] for the global dipole (and optional net Q).
+/// @brief Yeh–Berkowitz energy (lj row) for the global dipole (and optional net Q).
 /// @param mz      Global dipole \(M_z = \sum q_i z_i\) [e·Å].
 /// @param q_total Net charge \(\sum q_i\) [e].
 /// @param mz_r2   \(\sum q_i z_i^2\) [e·Å²]; used only when \(|Q|>0\).
 /// @param volume  Extended k-space volume \(L_x L_y (L_z f)\) [Å³].
 /// @param zprd_slab Extended z period \(L_z f\) [Å].
-/// @return \(E_{\mathrm{slab}}\) [eV].
+/// @return \(E_{\mathrm{slab}}\) in the lj energy unit (`md_qqr2e` times the geometric sum).
 inline double slab_corr_energy(double mz, double q_total, double mz_r2,
                                double volume, double zprd_slab) {
-    const double ke = ATV::units::coulomb;
+    const double ke = ATV::units::md_qqr2e;
     const double two_pi = 2.0 * ATV::units::pi;
     // LAMMPS: e_slabcorr = 2π (Mz² − Q·Σ q z² − Q² Lz'²/12) / V'
     const double raw = two_pi
@@ -45,12 +44,13 @@ inline double slab_corr_energy(double mz, double q_total, double mz_r2,
 /// @param mz      Global \(M_z\) [e·Å].
 /// @param q_total Global net charge [e].
 /// @param volume  Extended k-space volume [Å³].
-/// @param[in,out] fz Force z accumulators [eV/Å], length @p n.
+/// @param[in,out] fz Force z accumulators (lj force), length @p n.
 inline void slab_corr_add_forces(const StorageReal* q, const StorageReal* z,
                                  int n, double mz, double q_total,
                                  double volume, AccReal* fz) {
     // ffact = ke * (−4π / V');  Fz_i += ffact * q_i * (Mz − Q z_i)
-    const double ffact = ATV::units::coulomb * (-4.0 * ATV::units::pi / volume);
+    const double ffact =
+        ATV::units::md_qqr2e * (-4.0 * ATV::units::pi / volume);
     for (int i = 0; i < n; ++i) {
         const double qi = static_cast<double>(q[i]);
         if (qi == 0.0)

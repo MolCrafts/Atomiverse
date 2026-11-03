@@ -44,8 +44,8 @@ cpu::Frame make_h2() {
     frame.span(kAtom_z)[1] = double(0);
     frame.span(kAtom_mass)[0] = double(1.008);
     frame.span(kAtom_mass)[1] = double(1.008);
-    frame.span(kAtom_type)[0] = 1;
-    frame.span(kAtom_type)[1] = 1; // H: Z=1
+    frame.span(kAtom_atomic_number)[0] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1; // H: Z=1
     frame.box = cpu::Box::cubic(100.0);
     return frame;
 }
@@ -57,7 +57,7 @@ cpu::Frame make_h_atom() {
     frame.span(kAtom_y)[0] = double(0);
     frame.span(kAtom_z)[0] = double(0);
     frame.span(kAtom_mass)[0] = double(1.008);
-    frame.span(kAtom_type)[0] = 1; // H: Z=1, 1 electron
+    frame.span(kAtom_atomic_number)[0] = 1; // H: Z=1, 1 electron
     frame.box = cpu::Box::cubic(100.0);
     return frame;
 }
@@ -65,15 +65,15 @@ cpu::Frame make_h_atom() {
 // Water (Å) — same geometry as CPU SCF H2O pins; s+p STO-3G force twin.
 cpu::Frame make_h2o() {
     cpu::Frame frame(3);
-    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_atomic_number)[0] = 8;
     frame.span(kAtom_x)[0] = double(0);
     frame.span(kAtom_y)[0] = double(0);
     frame.span(kAtom_z)[0] = double(0.1173);
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = double(0);
     frame.span(kAtom_y)[1] = double(0.7572);
     frame.span(kAtom_z)[1] = double(-0.4692);
-    frame.span(kAtom_type)[2] = 1;
+    frame.span(kAtom_atomic_number)[2] = 1;
     frame.span(kAtom_x)[2] = double(0);
     frame.span(kAtom_y)[2] = double(-0.7572);
     frame.span(kAtom_z)[2] = double(-0.4692);
@@ -274,7 +274,7 @@ static cpu::Frame make_he() {
     f.span(kAtom_y)[0] = 0;
     f.span(kAtom_z)[0] = 0;
     f.span(kAtom_mass)[0] = double(4.003);
-    f.span(kAtom_type)[0] = 2;
+    f.span(kAtom_atomic_number)[0] = 2;
     f.box = cpu::Box::cubic(100.0);
     return f;
 }
@@ -289,8 +289,8 @@ static cpu::Frame make_heh_plus() {
     f.span(kAtom_z)[1] = 0;
     f.span(kAtom_mass)[0] = double(4.003);
     f.span(kAtom_mass)[1] = double(1.008);
-    f.span(kAtom_type)[0] = 2;
-    f.span(kAtom_type)[1] = 1; // HeH+ has 2 electrons
+    f.span(kAtom_atomic_number)[0] = 2;
+    f.span(kAtom_atomic_number)[1] = 1; // HeH+ has 2 electrons
     f.box = cpu::Box::cubic(100.0);
     return f;
 }
@@ -305,8 +305,8 @@ static cpu::Frame make_lih() {
     f.span(kAtom_z)[1] = 0;
     f.span(kAtom_mass)[0] = double(6.941);
     f.span(kAtom_mass)[1] = double(1.008);
-    f.span(kAtom_type)[0] = 3;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = 3;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.box = cpu::Box::cubic(100.0);
     return f;
 }

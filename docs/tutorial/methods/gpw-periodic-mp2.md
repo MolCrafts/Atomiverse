@@ -35,7 +35,7 @@ Case: `ctest -R '^gpw/periodic-mp2$'` — sources and oracle record in [`regress
 ### Calling sequence
 
 Every section follows the same shape; only the members and the post-SCF call
-differ. Geometry is a `cpu::Frame` (positions [Å], Z in `kAtom_type`,
+differ. Geometry is a `cpu::Frame` (positions [Å], Z in `kAtom_atomic_number`,
 orthorhombic `box`); basis and pseudopotential come from the lookup
 constructors `GaussianBasis(Element, name)` / `GthPotential(Element, name)`,
 which throw on an unsupported element or name.
@@ -59,7 +59,7 @@ const Kind si{molrs::Element::Si,
 constexpr double a = 5.43;                    // cubic cell [Å]
 cpu::Frame frame(2);
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 14;
+    frame.span(kAtom_atomic_number)[i] = 14;
     frame.span(kAtom_x)[i] = frame.span(kAtom_y)[i] =
         frame.span(kAtom_z)[i] = i * a / 4.0;
 }
@@ -71,7 +71,7 @@ const double at = a / std::sqrt(2.0);
 const double frac[4][3] = {{0, 0, 0}, {0.5, 0.5, 0.5}, {0.5, 0, 0.25}, {0, 0.5, 0.75}};
 cpu::Frame frame4(4);
 for (int i = 0; i < 4; ++i) {
-    frame4.span(kAtom_type)[i] = 14;
+    frame4.span(kAtom_atomic_number)[i] = 14;
     frame4.span(kAtom_x)[i] = frac[i][0] * at;
     frame4.span(kAtom_y)[i] = frac[i][1] * at;
     frame4.span(kAtom_z)[i] = frac[i][2] * a;

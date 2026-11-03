@@ -75,9 +75,15 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     if isinstance(evaluator, _cpp._Component):
         _cpp._single_point_component(frame, evaluator)
     else:
+        hint = (
+            ""
+            if has_domain("am1")
+            else "; the NDDO evaluators (AM1, RM1, MNDO, PM3) need an "
+            "extension built with ATV_BUILD_SEMIEMPIRICAL"
+        )
         raise TypeError(
             f"single_point cannot run {type(evaluator).__name__}: "
-            "expected a method with run(frame) or an evaluator component"
+            "expected a method with run(frame) or an evaluator component" + hint
         )
 
 

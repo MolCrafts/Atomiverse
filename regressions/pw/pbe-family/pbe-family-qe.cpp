@@ -56,7 +56,7 @@ cpu::Frame frame(const pbe_periodic_qe::Pin& pin) {
     } else
         f.box = cpu::Box::cubic(6);
     for (int i = 0; i < pin.nat; ++i) {
-        f.span(kAtom_type)[i] = pin.spin ? 1 : 14;
+        f.span(kAtom_atomic_number)[i] = pin.spin ? 1 : 14;
         f.span(kAtom_tag)[i] = i + 1;
         f.span(kAtom_mass)[i] = pin.spin ? 1.008 : 28.0855;
         f.span(kAtom_x)[i] = pin.spin ? h[i][0] : si[i][0];

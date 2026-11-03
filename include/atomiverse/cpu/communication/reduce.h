@@ -6,13 +6,14 @@
 /// energy_dihedral, energy_improper, energy_charging_work, kinetic,
 /// stress[6], stress_kinetic[6]}` into a single
 /// collective, so per-rank bookkeeping is globally consistent before
-/// observers or the snapshot publisher read the frame's scalar state.
+/// observers or the asynchronous capture read the frame's scalar state.
 /// `n_local` is NOT reduced — it is authoritative per rank from
 /// `frame.nlocal()`. Single-rank: no-op early-return.
 ///
 /// Order is tight: must run after `KineticEnergy @ -100` so the reduced KE
-/// is the locally-summed one, and before `Publish @ +10` so async
-/// observers see globally-reduced scalars.
+/// is the locally-summed one, and before the asynchronous consumers
+/// (`end_of_step` >= +10) capture the frame, so they see globally-reduced
+/// scalars.
 ///
 /// @see .claude/specs/parallel-md-engine.md  § A.4
 #pragma once
@@ -36,7 +37,9 @@ namespace mpi {
 /// collective fires every step — the only correct setting whenever a per-step
 /// consumer reads the global scalars (a NoseHoover thermostat integrates the
 /// global temperature, a barostat the global pressure, every step). With
-/// `every > 1` the reduce fires only on step 0 and every `every`-th step,
+/// `every > 1` the reduce fires only at setup, after every `every`-th
+/// completed step (`ctx.step + 1`, the step a thermo / recorder of the same
+/// cadence writes) and on the last step of a run,
 /// gated on the all-ranks-identical `ctx.step` so the collective stays in
 /// lockstep (no rank-divergent skip → no deadlock). That is safe ONLY for runs
 /// whose global scalars are pure diagnostics sampled at a known cadence — plain

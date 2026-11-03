@@ -87,7 +87,7 @@ sections warm-start UHF from ROHF \(\alpha/\beta\) densities:
 
 ```cpp
 cpu::Frame frame(2);   // O₂ along z
-frame.span(kAtom_type)[0] = frame.span(kAtom_type)[1] = 8;
+frame.span(kAtom_atomic_number)[0] = frame.span(kAtom_atomic_number)[1] = 8;
 frame.span(kAtom_z)[0] = 0.0;
 frame.span(kAtom_z)[1] = 1.2075;
 frame.box = cpu::Box::cubic(20.0);

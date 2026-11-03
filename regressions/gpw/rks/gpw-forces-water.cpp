@@ -48,7 +48,7 @@ int run() {
     const double y[3] = {5.0000, 5.0000, 5.0000};
     const double zc[3] = {5.0000, 5.5043, 5.5043};
     for (int i = 0; i < 3; ++i) {
-        frame.span(kAtom_type)[i] = z[i];
+        frame.span(kAtom_atomic_number)[i] = z[i];
         frame.span(kAtom_x)[i] = x[i];
         frame.span(kAtom_y)[i] = y[i];
         frame.span(kAtom_z)[i] = zc[i];

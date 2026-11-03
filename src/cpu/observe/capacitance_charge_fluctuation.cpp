@@ -51,7 +51,7 @@ void CapacitanceChargeFluctuation::launch(const LaunchContext& ctx) {
     sum_q_ += Q;
     sum_q2_ += Q * Q;
 
-    const double kT = units::kB_ev_per_k * temperature_K_; // eV; 1 e·V = 1 eV
+    const double kT = units::md_boltz * temperature_K_; // eV; 1 e·V = 1 eV
     const double var = charge_variance();
     last_c_diff_ = var / kT;
 

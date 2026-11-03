@@ -138,7 +138,7 @@ using namespace ATV;
 
 cpu::Frame frame(3);                       // three atoms: an H2O
 
-auto type = frame.span(kAtom_type);
+auto type = frame.span(kAtom_atomic_number);
 auto x = frame.span(kAtom_x);
 auto y = frame.span(kAtom_y);
 auto z = frame.span(kAtom_z);
@@ -165,7 +165,7 @@ const double y[] = {0.0, 0.7555, -0.7555};
 const double z[] = {0.1178, -0.4712, -0.4712};
 const double mass[] = {15.999, 1.008, 1.008};
 for (int i = 0; i < frame.nlocal(); ++i) {
-    frame.span(kAtom_type)[i] = type[i];
+    frame.span(kAtom_atomic_number)[i] = type[i];
     frame.span(kAtom_x)[i] = x[i];
     frame.span(kAtom_y)[i] = y[i];
     frame.span(kAtom_z)[i] = z[i];
@@ -175,8 +175,10 @@ frame.box = cpu::Box::cubic(100.0);
 ```
 
 Two conventions here are load-bearing and reused in every quantum chapter:
-`frame.span(kAtom_type)[i]` stores the **atomic number Z** (not a force-field type
-index), and positions are in **Ångström**. Results land back on the same
+`frame.span(kAtom_atomic_number)[i]` stores the **atomic number Z** — the
+species column. The force-field type index is a separate column,
+`kAtom_type`, read only by per-type force-field tables; a quantum method
+never reads it. Positions are in **Ångström**. Results land back on the same
 object: `frame.meta.get(kEnergy)` (potential energy, eV) and the
 `kAtom_fx/fy/fz` columns (eV/Å) after a driver runs.
 
@@ -263,16 +265,20 @@ The same "size by role" idea applies to integers (a port of LAMMPS
 `lmptype.h`), so 64-bit width is paid only where a count can actually
 overflow 32 bits:
 
-| tier | role | SMALLBIG (default) | BIGBIG |
+| tier | role | SMALLBIG | BIGBIG (default) |
 |---|---|---|---|
 | `ATV::LocalInt` | on-rank counts / indices | int32 | int32 |
-| `ATV::ImageInt` | periodic image flags | int32 | int64 |
+| `ATV::ImageInt` | one periodic image flag (per component) | int32 | int32 |
 | `ATV::TagInt` | global atom / molecule IDs | int32 | int64 |
 | `ATV::BigInt` | global totals (natoms, ntimestep) | int64 | int64 |
 
-`-DATV_ID_SIZE=bigbig` widens `TagInt` and `ImageInt` to 64-bit for
-billion-atom runs; `BigInt` is always 64-bit to increase the representable range of global counts; any finite-width
-integer still has a maximum value.
+The default `-DATV_ID_SIZE=bigbig` keeps `TagInt` 64-bit for billion-atom
+runs; `smallbig` narrows it to 32-bit.
+`ImageInt` stays int32 in both builds: Atomiverse stores the three image
+counters unpacked, so each reaches ±2³¹ box crossings (LAMMPS packs three
+into one `imageint`, ±2²⁰ each under BIGBIG). `BigInt` is always 64-bit to
+increase the representable range of global counts; any finite-width integer
+still has a maximum value.
 There is no catch-all floating-point or integer type: every declaration names
 the tier matching its physical role.
 

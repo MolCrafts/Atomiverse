@@ -7,10 +7,9 @@
 /// Components cast to cudaStream_t in their .cu implementations.
 ///
 /// Homomorphic with `cpu::Context`: same-named slices carry the same
-/// semantics. CUDA has no Sampling / Path driver and no analysis
-/// executor (async observation goes through `AsyncBridge`), so only the
-/// `loop` and `md` slices exist on this backend — homomorphism means
-/// "same slice, same meaning", not "same field set".
+/// semantics. CUDA has no Sampling / Path driver, so only the `loop`, `md`
+/// and `capture` slices exist on this backend — homomorphism means "same
+/// slice, same meaning", not "same field set".
 ///
 /// @see cuda::Frame for the device-side data
 #pragma once
@@ -29,6 +28,7 @@ namespace cuda {
 
 struct PairList;
 class Backend;
+class CaptureBuffer;
 
 /// @brief Classical force-pipeline services (publishers: `NeighborList`,
 ///        `PairLJCut::build`, the multi-GPU comm layer). Mirrors
@@ -160,6 +160,11 @@ struct Context {
     const long long* device_step = nullptr;
 
     DynamicsServices md; ///< Classical force-pipeline slice.
+
+    /// @brief The driver's shared asynchronous capture buffer (owned by the
+    ///        Backend; `cuda::CaptureBuffer`). Every asynchronous consumer
+    ///        (`cuda::AsyncConsumer`) subscribes to it at build.
+    CaptureBuffer* capture = nullptr;
 };
 
 // Slices are plain aggregates and the Context stays non-polymorphic — components

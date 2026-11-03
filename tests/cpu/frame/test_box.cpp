@@ -329,10 +329,34 @@ TEST(BoxWrap, WrapAxisParity10kRandom) {
 TEST(BoxWrap, WrapIntoCallsAllAxes) {
     auto bx = Box::orthorhombic(10.0, 12.0, 8.0);
     double x = 25.0, y = -5.0, z = 19.5;
-    bx.wrap_into(x, y, z);
+    bx.wrap_into(x, y, z, nullptr);
     EXPECT_DOUBLE_EQ(x, 5.0);
     EXPECT_DOUBLE_EQ(y, 7.0);
     EXPECT_DOUBLE_EQ(z, 3.5);
+}
+
+TEST(BoxWrap, WrapIntoCountsOrthorhombicTranslationsIntoImage) {
+    auto bx = Box::orthorhombic(10.0, 12.0, 8.0);
+    // Far beyond an int8 counter: 1000 cells along x, -300 along y.
+    double x = 10000.0 + 5.0, y = -300.0 * 12.0 + 7.0, z = 19.5;
+    ATV::ImageInt image[3] = {127, -128, 5};
+    bx.wrap_into(x, y, z, image);
+    EXPECT_NEAR(x, 5.0, 1e-9);
+    EXPECT_NEAR(y, 7.0, 1e-9);
+    EXPECT_DOUBLE_EQ(z, 3.5);
+    EXPECT_EQ(image[0], 127 + 1000);
+    EXPECT_EQ(image[1], -128 - 300);
+    EXPECT_EQ(image[2], 5 + 2);
+}
+
+TEST(BoxWrap, WrapIntoLeavesImageOfAnInsidePointAlone) {
+    auto bx = Box::orthorhombic(10.0, 12.0, 8.0);
+    double x = 0.0, y = 11.999, z = 4.0;
+    ATV::ImageInt image[3] = {3, -4, 0};
+    bx.wrap_into(x, y, z, image);
+    EXPECT_EQ(image[0], 3);
+    EXPECT_EQ(image[1], -4);
+    EXPECT_EQ(image[2], 0);
 }
 
 TEST(BoxGeometry, GeneralCellTransformsWrapAndBounds) {
@@ -348,11 +372,16 @@ TEST(BoxGeometry, GeneralCellTransformsWrapAndBounds) {
     for (int d = 0; d < 3; ++d)
         EXPECT_NEAR(restored[d], fractional[d], 1e-14);
     double x = r[0], y = r[1], z = r[2];
-    box.wrap_into(x, y, z);
+    ATV::ImageInt image[3] = {0, 0, 0};
+    box.wrap_into(x, y, z, image);
     const auto wrapped = box.to_fractional({x, y, z});
     EXPECT_NEAR(wrapped[0], .75, 1e-14);
     EXPECT_NEAR(wrapped[1], .5, 1e-14);
     EXPECT_NEAR(wrapped[2], .75, 1e-14);
+    // s = (-1.25, 2.5, .75) → (.75, .5, .75): n = (-2, 2, 0).
+    EXPECT_EQ(image[0], -2);
+    EXPECT_EQ(image[1], 2);
+    EXPECT_EQ(image[2], 0);
     const auto [lo, hi] = box.cartesian_bounds({0, 0, 0}, {1, 1, 1});
     EXPECT_DOUBLE_EQ(lo[0], 0);
     EXPECT_DOUBLE_EQ(hi[0], 6);
@@ -584,7 +613,13 @@ TEST(BoxWrap, TinyNegativeFractionDoesNotRoundToUpperFace) {
     h(0, 1) = 1;
     const Box box(h);
     double x = -1e-300, y = 0, z = 0;
-    box.wrap_into(x, y, z);
+    // The fraction rounds back to 0, not to the upper face: no lattice
+    // vector was removed, so the image must not move either.
+    ATV::ImageInt image[3] = {0, 0, 0};
+    box.wrap_into(x, y, z, image);
+    EXPECT_EQ(image[0], 0);
+    EXPECT_EQ(image[1], 0);
+    EXPECT_EQ(image[2], 0);
     const auto f = box.to_fractional({x, y, z});
     for (int d = 0; d < 3; ++d) {
         EXPECT_GE(f[d], 0);

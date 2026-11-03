@@ -48,11 +48,15 @@ inline bool has_molpy_column(const molrs::FrameRef& frame, const char* block,
 /// build gate belongs here.
 ///
 /// @tparam P One `*Params` mirror type.
+/// `FixEfieldParams` belongs here too: the field force is q E, so a missing
+/// charge column would silently switch the field off.
 template <typename P>
 inline constexpr bool is_coulomb_params_v =
     std::is_same_v<P, ATV::cpu::task::PairCoulCutParams>
     || std::is_same_v<P, ATV::cpu::task::CoulLongParams>
-    || std::is_same_v<P, ATV::cpu::task::KSpacePmeParams>;
+    || std::is_same_v<P, ATV::cpu::task::PairLJCutCoulLongParams>
+    || std::is_same_v<P, ATV::cpu::task::KSpacePmeParams>
+    || std::is_same_v<P, ATV::cpu::task::FixEfieldParams>;
 
 /// @brief Is this mirror entry an electrostatic evaluator?
 ///

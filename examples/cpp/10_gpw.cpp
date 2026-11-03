@@ -51,7 +51,7 @@ cpu::Frame make_water() {
     const double y[3] = {5.0000, 5.0000, 5.0000};
     const double zc[3] = {5.0000, 5.5043, 5.5043};
     for (int i = 0; i < 3; ++i) {
-        f.span(ATV::kAtom_type)[i] = z[i];
+        f.span(ATV::kAtom_atomic_number)[i] = z[i];
         f.span(ATV::kAtom_x)[i] = x[i];
         f.span(ATV::kAtom_y)[i] = y[i];
         f.span(ATV::kAtom_z)[i] = zc[i];

@@ -7,10 +7,10 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/multiscale/internal/classical_nonbonded.h"
 #include "atomiverse/cpu/multiscale/internal/qm_subsystem.h"
-#include "atomiverse/cpu/potentials/lj_type_coeff.h"
 
 namespace ATV {
 namespace cpu {
@@ -23,7 +23,7 @@ namespace cpu {
 ///     - E_{\mathrm{low}}(\mathrm{model})
 /// \f]
 ///
-/// - **model** — QM atoms from Frame `kAtomQmZ` (high also gets topology-derived
+/// - **model** — QM atoms from Frame `kAtomQm` (high also gets topology-derived
 ///   link H via `QmSubsystem`).
 /// - **high** — any vacuum `QmEngine` (`set_engine`).
 /// - **low** — classical nonbonded (LJ table + optional Coulomb) on the full

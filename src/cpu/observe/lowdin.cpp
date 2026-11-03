@@ -175,7 +175,7 @@ std::vector<double> lowdin_charge(const scf::MeanFieldOutputs& outputs,
     check_handle(outputs);
     const auto pop =
         lowdin_populations(outputs, frame, outputs.result->density_total());
-    const auto type = frame.span(kAtom_type);
+    const auto type = frame.span(kAtom_atomic_number);
     std::vector<double> q(pop.size());
     for (std::size_t A = 0; A < pop.size(); ++A)
         q[A] = static_cast<double>(type[static_cast<int>(A)]) - pop[A];

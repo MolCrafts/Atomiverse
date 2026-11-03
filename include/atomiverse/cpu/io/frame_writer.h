@@ -18,7 +18,7 @@ namespace cpu {
 /// @brief Write one frame to a standard-XYZ file (element + coordinates).
 ///
 /// Delegates to molpy `write_xyz`. @param atomic_number per-atom atomic
-/// number Z, the engine's `kAtom_type` (0..118; 0 is the wildcard `*`); molpy
+/// number Z, the engine's `kAtom_atomic_number` (0..118; 0 is the wildcard `*`); molpy
 /// spells the symbols explicitly (`Element::fill_symbols`). @param x,y,z
 /// per-atom coordinates [Å]. @param box_h row-major 3×3 cell matrix H [Å];
 /// all zeros means no cell, any other singular H is an error. @param append
@@ -42,7 +42,7 @@ void write_xyz_frame(const std::string& path,
 /// species as `atoms.atomic_number` (no `element` symbols).
 /// @param path store path; must not use the retired `.zarr` suffix (molpy
 /// refuses it), conventionally `*.mrec`. @param atomic_number per-atom atomic
-/// number Z, the engine's `kAtom_type` (0..118; 0 is the wildcard).
+/// number Z, the engine's `kAtom_atomic_number` (0..118; 0 is the wildcard).
 /// @param x,y,z per-atom coordinates [Å]. @param field_names one name per
 /// extra per-atom column; unique, and none of `atomic_number`/`x`/`y`/`z`.
 /// @param field_data row-major `[n_fields, n_atoms]`, matching `field_names`

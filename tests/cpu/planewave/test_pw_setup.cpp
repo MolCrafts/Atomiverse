@@ -109,11 +109,11 @@ TEST(NcAdmission, EveryFrameSpeciesMustMatchTheImmutableProvider) {
     using namespace cpu::pw::internal;
     SampledNc provider;
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = frame.span(kAtom_type)[1] = 2;
+    frame.span(kAtom_atomic_number)[0] = frame.span(kAtom_atomic_number)[1] = 2;
     EXPECT_NO_THROW(validate_potential_frame(frame, provider));
     const NcPotentialData snapshot(provider);
     EXPECT_NO_THROW(validate_potential_frame(frame, snapshot));
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     EXPECT_THROW(validate_potential_frame(frame, provider),
                  std::invalid_argument);
     EXPECT_THROW(validate_potential_frame(frame, snapshot),
@@ -129,7 +129,7 @@ TEST(NcAdmission,
     using namespace cpu::pw::internal;
     SampledNc provider;
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 2;
+    frame.span(kAtom_atomic_number)[0] = 2;
     frame.span(kAtom_x)[0] = frame.span(kAtom_y)[0] = frame.span(kAtom_z)[0] =
         0;
     frame.box = cpu::Box::cubic(4);
@@ -152,7 +152,7 @@ TEST(NcAdmission,
     EXPECT_NEAR(sample.ws.omega / reference.ws.omega, std::pow(4.1 / 4, 3),
                 1e-13);
 
-    strained.span(kAtom_type)[0] = 1;
+    strained.span(kAtom_atomic_number)[0] = 1;
     PWProblem rejected;
     rejected.n_elec = 77;
     EXPECT_THROW(

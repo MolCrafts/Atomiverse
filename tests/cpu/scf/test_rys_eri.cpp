@@ -45,9 +45,9 @@ cpu::Frame make_water() {
     f.span(ATV::kAtom_x)[2] = -0.7572;
     f.span(ATV::kAtom_y)[2] = 0.5859;
     f.span(ATV::kAtom_z)[2] = 0.0;
-    f.span(ATV::kAtom_type)[0] = 8;
-    f.span(ATV::kAtom_type)[1] = 1;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.span(ATV::kAtom_mass)[0] = 15.999;
     f.span(ATV::kAtom_mass)[1] = 1.008;
     f.span(ATV::kAtom_mass)[2] = 1.008;
@@ -64,8 +64,8 @@ cpu::Frame make_co() {
     f.span(ATV::kAtom_x)[1] = 1.128;
     f.span(ATV::kAtom_y)[1] = 0.0;
     f.span(ATV::kAtom_z)[1] = 0.0;
-    f.span(ATV::kAtom_type)[0] = 6;
-    f.span(ATV::kAtom_type)[1] = 8;
+    f.span(ATV::kAtom_atomic_number)[0] = 6;
+    f.span(ATV::kAtom_atomic_number)[1] = 8;
     f.span(ATV::kAtom_mass)[0] = 12.011;
     f.span(ATV::kAtom_mass)[1] = 15.999;
     f.box = ATV::cpu::Box::cubic(100.0);
@@ -284,7 +284,7 @@ TEST(RysEri, WidelySeparatedSpQuartetsMatchScalarMD) {
     cpu::Frame frame(6);
     for (int a = 0; a < 6; ++a) {
         const int i = a % 3;
-        frame.span(kAtom_type)[a] = one.span(kAtom_type)[i];
+        frame.span(kAtom_atomic_number)[a] = one.span(kAtom_atomic_number)[i];
         frame.span(kAtom_x)[a] = one.span(kAtom_x)[i] + (a >= 3 ? 28.0 : 0.0);
         frame.span(kAtom_y)[a] = one.span(kAtom_y)[i];
         frame.span(kAtom_z)[a] = one.span(kAtom_z)[i];

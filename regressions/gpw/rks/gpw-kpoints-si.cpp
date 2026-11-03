@@ -56,7 +56,7 @@ ATV::cpu::Frame si_bct(double a_ang, int nz) {
     for (int r = 0; r < nz; ++r)
         for (int i = 0; i < 4; ++i) {
             const int j = 4 * r + i;
-            frame.span(kAtom_type)[j] = 14;
+            frame.span(kAtom_atomic_number)[j] = 14;
             frame.span(kAtom_x)[j] = frac[i][0] * at;
             frame.span(kAtom_y)[j] = frac[i][1] * at;
             frame.span(kAtom_z)[j] = (frac[i][2] + r) * a_ang;
@@ -101,7 +101,7 @@ int run() {
         const double xh[2] = {0.5 * L - 0.7, 0.5 * L + 0.7};
         cpu::Frame h2(2);
         for (int i = 0; i < 2; ++i) {
-            h2.span(kAtom_type)[i] = 1;
+            h2.span(kAtom_atomic_number)[i] = 1;
             h2.span(kAtom_x)[i] = xh[i] * b2a;
             h2.span(kAtom_y)[i] = 0.5 * L * b2a;
             h2.span(kAtom_z)[i] = 0.5 * L * b2a;

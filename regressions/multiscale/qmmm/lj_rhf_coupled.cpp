@@ -97,6 +97,12 @@ int run() {
     frame.span(kAtom_type)[2] =
         1; // H: QM, no LJ site (no diagonal in the table)
     frame.span(kAtom_type)[3] = 1;
+    // Species for the QM Hamiltonian (He ghosts + H2); the LJ table keys on
+    // the type column above.
+    frame.span(kAtom_atomic_number)[0] = 2;
+    frame.span(kAtom_atomic_number)[1] = 2;
+    frame.span(kAtom_atomic_number)[2] = 1;
+    frame.span(kAtom_atomic_number)[3] = 1;
     frame.span(kAtom_mass)[0] = 4.0026;
     frame.span(kAtom_mass)[1] = 4.0026;
     frame.span(kAtom_mass)[2] = 1.008;
@@ -175,8 +181,8 @@ int run() {
     // 30 A is exp(-mu R^2) with mu = 0.1098 bohr^-2 and R = 56.69 bohr, i.e.
     // ~1e-153, so the QM energy must be the bare-H2 one to machine precision.
     cpu::Frame bare(2);
-    bare.span(kAtom_type)[0] = 1;
-    bare.span(kAtom_type)[1] = 1;
+    bare.span(kAtom_atomic_number)[0] = 1;
+    bare.span(kAtom_atomic_number)[1] = 1;
     bare.span(kAtom_mass)[0] = 1.008;
     bare.span(kAtom_mass)[1] = 1.008;
     bare.span(kAtom_x)[0] = sep - 0.5 * r_h2;

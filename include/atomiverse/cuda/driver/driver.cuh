@@ -377,6 +377,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         if (!this->backend_)
             this->backend_ = std::make_unique<typename Base::BackendT>();
         this->backend_->init();
+        this->backend_->capture().set_budget(this->capture_buffer_bytes_);
         if (this->timer_)
             this->backend_->set_timer(this->timer_.get());
         this->backend_->load(this->plan_);

@@ -544,8 +544,9 @@ sim.set_observer(ATV::RDF{/*r_max=*/5.5, /*n_bins=*/200,
 `set_thermo(N)` binds `cpu::Thermo{N}` at `end_of_step @ +20`; it prints the
 LAMMPS-style "step PE KE T" line synchronously on rank 0. `ATV::RDF` is an
 async observer — it inherits `cpu::md::AsyncObserver`, runs on a background
-thread, and accumulates a half-list pair-distance histogram from the published
-snapshots. At the end of the run its `finalize()` writes the normalized
+thread, and accumulates a half-list pair-distance histogram from the frames the
+driver captures for it (lossless: a slow analysis makes the run wait, it
+never skips a frame). At the end of the run its `finalize()` writes the normalized
 $g(r)$ to disk. Note that `set_observer` takes an **rvalue**; to keep the
 observer around and read `rdf.gr()` after the run, declare it first and borrow
 it with `set_observer_ref(rdf)`.
@@ -559,11 +560,15 @@ trajectories that component is `cpu::XyzRecorder`, and it goes in through
 sim.set_record(cpu::XyzRecorder{"traj.xyz", /*freq=*/100});
 ```
 
-It binds itself at `end_of_step @ +10` and writes one XYZ frame whenever
-`step % freq == 0`. Step indices start at 0 and keep counting across
-consecutive `run(frame, n)` calls on the same `cpu::Frame`, so a 1000-step run
-at `freq=100` writes frames for steps 0, 100, …, 900 — ten of them, with no
-extra write at step 1000. The recorder truncates the file on its first write
+It binds itself at `end_of_step @ +10` and follows the LAMMPS `dump` step
+convention: a frame's step is the number of completed MD steps and the frame
+is the state after exactly that many steps. Every `run()` first writes the
+current state when its step is a multiple of `freq` (LAMMPS `Output::setup`),
+and the end of every step whose completed count is a multiple of `freq` writes
+another; no step is written twice. The count keeps going across consecutive
+`run(frame, n)` calls on the same `cpu::Frame`, so a 1000-step run at
+`freq=100` writes frames for steps 0, 100, …, 1000 — eleven of them, the
+initial and the final state included. The recorder truncates the file on its first write
 and appends afterwards, so one recorder owns one trajectory file; MPI runs
 gather to rank 0, which writes the complete tag-ordered geometry.
 

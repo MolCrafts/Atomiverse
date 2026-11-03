@@ -1741,7 +1741,7 @@ D4Result evaluate_d4(const Frame& frame, const D4& m, bool want_forces) {
     if (n <= 0)
         return res;
 
-    const auto type = frame.span(kAtom_type);
+    const auto type = frame.span(kAtom_atomic_number);
     const auto x = frame.span(kAtom_x);
     const auto y = frame.span(kAtom_y);
     const auto z = frame.span(kAtom_z);

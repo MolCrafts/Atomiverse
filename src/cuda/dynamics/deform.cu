@@ -1,99 +1,142 @@
 /// @file cuda/dynamics/deform.cu
-/// @brief Deform -- uniaxial constant-strain-rate deformation.
+/// @brief Deform -- uniaxial constant-strain-rate deformation, the device
+///        twin of `cpu::md::Deform` (LAMMPS `fix deform` erate / trate,
+///        `remap x`; `src/fix_deform.cpp` FixDeform::init / apply_strain).
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/deform.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
+#include <cmath>
 #include <cuda_runtime.h>
+#include <stdexcept>
 
 namespace ATV {
 
 namespace cuda {
 namespace md {
 
-Deform::Deform(int axis, double strain_rate, double dt)
-    : axis_(axis), strain_rate_(strain_rate), dt_(dt) {}
-
-std::vector<DefaultBinding> Deform::default_bindings() const {
-    // initial_integrate @ +200, matching cpu::md::Deform: the affine box
-    // remap runs AFTER the integrator's kick/drift (order 0), so the deformed
-    // box wraps the just-updated positions consistently across backends.
-    return {ATV::make_binding(ATV::md::Phase::initial_integrate, 200)};
-}
-
-void Deform::build(const BuildContext& ctx) {
-    // Cache the initial box edge on the deform axis so launch() can
-    // compute L_k = L0 · (1 + erate · k · dt). One D2H at build time.
-    geom_t host_box[9];
-    cudaMemcpy(host_box, ctx.frame.box, 9 * sizeof(geom_t),
-               cudaMemcpyDeviceToHost);
-    L0_ = static_cast<double>(host_box[axis_ * 3 + axis_]);
-    step_count_ = 0;
-}
-
 namespace {
 
-__global__ void
-deform_k(pos_t* __restrict__ pos,  // x, y, or z depending on axis
-         pos_t* __restrict__ corr, // matching correction column (or null)
-         geom_t* __restrict__ box, // 3x3 row-major
-         int axis, mixed_t scale_factor, int n, const ForceFault* fault) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // A faulted run keeps its cell and positions at the faulting step.
-    if (idx >= n || state_frozen(fault))
+struct DeviceState {
+    double L0 = 0;    ///< Deformed edge at the first launch [Angstrom].
+    double scale = 1; ///< This step's L_target / L_current.
+    int armed = 0;
+};
+
+// One thread: snapshot L0 on the first launch (FixDeform::init lo_start /
+// hi_start), set this step's scale from the live cell and scale the cell's
+// `axis` row (r = H s keeps s when row `axis` of H and r scale together).
+__global__ void deform_box(geom_t* __restrict__ box, DeviceState* s, int axis,
+                           int trate, double rate, double t_elapsed,
+                           const ForceFault* fault) {
+    if (state_frozen(fault))
         return;
+    const double L_prev = static_cast<double>(box[4 * axis]);
+    if (!s->armed) {
+        s->L0 = L_prev;
+        s->armed = 1;
+    }
+    const double L_target = trate ? s->L0 * exp(rate * t_elapsed)
+                                  : s->L0 * (1.0 + rate * t_elapsed);
+    const double scale = L_prev > 0.0 ? L_target / L_prev : 1.0;
+    s->scale = scale;
+    if (scale == 1.0)
+        return;
+    for (int j = 0; j < 3; ++j)
+        box[3 * axis + j] = static_cast<geom_t>(box[3 * axis + j] * scale);
+}
 
-    // Remap atom position proportionally
-    store_position(pos, corr, idx,
-                   load_position(pos, corr, idx) * scale_factor);
-
-    // Thread 0 updates the box diagonal element
-    if (idx == 0)
-        box[axis * 3 + axis] *= geom_t(scale_factor);
+__global__ void deform_rows(pos_t* __restrict__ pos, pos_t* __restrict__ corr,
+                            const DeviceState* __restrict__ s, int n,
+                            const ForceFault* fault) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    // A faulted run keeps its cell and positions at the faulting step.
+    if (i >= n || state_frozen(fault))
+        return;
+    const double scale = s->scale;
+    if (scale == 1.0)
+        return;
+    store_position(
+        pos, corr, i,
+        static_cast<mixed_t>(static_cast<double>(load_position(pos, corr, i))
+                             * scale));
 }
 
 } // anonymous namespace
 
+struct Deform::State {
+    DeviceState* device = nullptr;
+    void release() {
+        if (device)
+            cudaFree(device);
+        device = nullptr;
+    }
+    ~State() { release(); }
+};
+
+Deform::Deform(Mode mode, double rate, double dt, int axis)
+    : mode_(mode), rate_(rate), dt_(dt), axis_(axis),
+      state_(std::make_unique<State>()) {
+    if (!std::isfinite(rate_))
+        throw std::invalid_argument("Deform: rate must be finite");
+    if (!(dt_ > 0.0) || !std::isfinite(dt_))
+        throw std::invalid_argument("Deform: dt must be finite and positive");
+    if (axis_ < 0 || axis_ > 2)
+        throw std::invalid_argument("Deform: axis must be 0, 1 or 2");
+}
+
+Deform::~Deform() = default;
+Deform::Deform(Deform&&) noexcept = default;
+Deform& Deform::operator=(Deform&&) noexcept = default;
+
+std::vector<DefaultBinding> Deform::default_bindings() const {
+    // initial_integrate @ +200, matching cpu::md::Deform: the affine box
+    // remap runs AFTER the integrator's kick/drift (order 0).
+    return {ATV::make_binding(ATV::md::Phase::initial_integrate, 200)};
+}
+
+void Deform::build(const BuildContext&) {
+    // Re-arm the activation snapshot: L0 is taken on the next launch, as
+    // LAMMPS re-issuing `fix deform` re-snapshots lo_start / hi_start.
+    state_->release();
+    ATV_CUDA_CHECK(cudaMalloc(&state_->device, sizeof(DeviceState)));
+    const DeviceState zero{};
+    ATV_CUDA_CHECK(cudaMemcpy(state_->device, &zero, sizeof(DeviceState),
+                              cudaMemcpyHostToDevice));
+    origin_step_ = -1;
+}
+
+void Deform::destroy(const DestroyContext&) {
+    if (state_)
+        state_->release();
+    origin_step_ = -1;
+}
+
 void Deform::launch(const LaunchContext& ctx) {
+    if (!state_ || !state_->device)
+        throw std::logic_error("Deform: launch before build");
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& f = ctx.frame;
-    int n = f.n_atoms();
-    int block = cuda::kDefaultBlock;
-    int grid = cuda::grid_size(static_cast<int>(n));
-
-    // LAMMPS-equivalent engineering strain: box grows LINEARLY in time
-    // (`fix deform x erate value` doc § "Units box remap x"). Compute the
-    // target edge L_k = L0·(1 + erate·k·dt) and apply the per-step ratio
-    // L_k / L_{k-1} so the box and atom positions land exactly on the
-    // engineering-strain ramp. Previous `scale = 1 + erate·dt` compounded
-    // to L0·exp(erate·t) — fine at small strain but ~2.05× too long at
-    // the stage-5 full strain ε=1.7 (L/L0 = 5.57 vs LAMMPS 2.72).
-    ++step_count_;
-    const double L_prev = L0_ * (1.0 + strain_rate_ * dt_ * (step_count_ - 1));
-    const double L_curr = L0_ * (1.0 + strain_rate_ * dt_ * step_count_);
-    const mixed_t scale = static_cast<mixed_t>(L_curr / L_prev);
-
-    pos_t* pos = nullptr;
-    pos_t* corr = nullptr;
-    switch (axis_) {
-    case 0:
-        pos = f.atoms.x;
-        corr = f.atoms.x_corr;
-        break;
-    case 1:
-        pos = f.atoms.y;
-        corr = f.atoms.y_corr;
-        break;
-    case 2:
-        pos = f.atoms.z;
-        corr = f.atoms.z_corr;
-        break;
-    }
-
-    deform_k<<<grid, block, 0, stream>>>(pos, corr, f.box, axis_, scale, n,
-                                         f.force_fault);
+    // Elapsed time since activation, from the host's own step indices:
+    // after the launch at step s the box reflects s - origin + 1 steps.
+    if (origin_step_ < 0)
+        origin_step_ = ctx.step;
+    const double t_elapsed =
+        static_cast<double>(ctx.step - origin_step_ + 1) * dt_;
+    deform_box<<<1, 1, 0, stream>>>(f.box, state_->device, axis_,
+                                    mode_ == Mode::trate ? 1 : 0, rate_,
+                                    t_elapsed, f.force_fault);
+    pos_t* pos = axis_ == 0 ? f.atoms.x : axis_ == 1 ? f.atoms.y : f.atoms.z;
+    pos_t* corr = axis_ == 0   ? f.atoms.x_corr
+                  : axis_ == 1 ? f.atoms.y_corr
+                               : f.atoms.z_corr;
+    const int n = f.n_all();
+    deform_rows<<<cuda::grid_size(n), cuda::kDefaultBlock, 0, stream>>>(
+        pos, corr, state_->device, n, f.force_fault);
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 } // namespace md

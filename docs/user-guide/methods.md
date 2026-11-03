@@ -66,7 +66,7 @@ and AM1/RM1 build themselves on first use. AM1/RM1 also permit explicit
 `build(reference)` to prepare their workspace.
 
 `GpwDft` takes one `Kind` (element + contracted Gaussian basis + GTH
-pseudopotential) per element and reads positions [Å], Z (`kAtom_type`) and the
+pseudopotential) per element and reads positions [Å], Z (`kAtom_atomic_number`) and the
 orthorhombic box from the Frame; `run(frame)` writes the energy [eV] and
 `forces(frame)` also writes `kAtom_f*` [eV/Å]. For Born–Oppenheimer work,
 mount the method directly on the outer Driver:

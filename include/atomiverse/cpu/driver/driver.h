@@ -400,7 +400,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             Operation<cpu::Component> op;
             op.component = c;
             one.slots[0].ops.push_back(op);
-            runtime->drain_analysis();
+            runtime->drain_capture();
             runtime->destroy_plan(one);
             built_plugins_.erase(c);
         }
@@ -613,6 +613,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         this->backend_->enable_driver_unwind();
         try {
             this->backend_->init();
+            this->backend_->capture().set_budget(this->capture_buffer_bytes_);
             this->backend_->load(this->plan_);
             this->backend_->set_frame(frame);
             publish_dof_(frame, this->backend_->context());
@@ -777,6 +778,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
     /// @brief Tear down — destroy components + shut down backend.
     void teardown_pass() {
+        // Normal completion: every asynchronous capture is consumed, and a
+        // consumer failure fails the run, before it reports success.
+        this->backend_->drain_capture();
         this->backend_->destroy_components();
         this->backend_->shutdown();
         this->mutation_lock_ = nullptr;
@@ -788,6 +792,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// destruction but before the Cartesian communicator is released. This
     /// boundary enforces that ordering without extending Runtime lifetime.
     std::unique_ptr<md::mpi::DomainDecomposition> teardown_pass_releasing_dd() {
+        this->backend_->drain_capture();
         this->backend_->destroy_components();
         auto dd = this->backend_->release_dd();
         this->backend_->shutdown();
@@ -1036,17 +1041,32 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         if (this->plan_.kind == PhaseKind::MD)
             publish_dof_(frame, ctx);
         runtime->prepare_run(continuous ? step_counter_ : 0);
+        // A nested MD run or minimization is a LAMMPS `run` / `minimize`
+        // too: Output::setup first (no-op for other plan kinds).
+        const bool minimizer = this->plan_.kind == PhaseKind::Minimizer;
+        if (continuous || minimizer)
+            runtime->setup_output(continuous ? step_counter_ : 0);
         int iters = 0;
+        bool stopped = false;
+        const bool parent_last_step = ctx.md.is_last_step;
         for (int s = 0; s < budget; ++s) {
             status_.reset();
-            if (this->plan_.kind == PhaseKind::MD)
+            if (continuous || minimizer)
                 ctx.md.is_last_step = (s == budget - 1);
             const BigInt step = continuous ? next_step_() : s;
             runtime->step_plan(this->plan_, step);
             ++iters;
-            if (poll_criteria_(step, frame, ctx) != Verdict::Continue)
+            if (poll_criteria_(step, frame, ctx) != Verdict::Continue) {
+                stopped = true;
                 break;
+            }
         }
+        // The enclosing loop's own last-step flag comes back.
+        ctx.md.is_last_step = parent_last_step;
+        // LAMMPS Min::run: a minimization stopped before its budget writes
+        // its final state (once).
+        if (minimizer && stopped)
+            runtime->final_output(iters);
 
         // Hand the Context back to the parent. The child's verdict stays on the child.
         return iters;
@@ -1236,7 +1256,8 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     ///        cadence or keyword list throws.
     /// Binds `cpu::Thermo{every, keywords}` at the driver's end-of-step
     /// phase @ +20.
-    /// @param every Print cadence [steps]; 0 prints every step.
+    /// @param every Print cadence [steps]; 0 prints the first and last step
+    ///        of each run only (LAMMPS `thermo 0`).
     /// @param keywords `thermo_style custom` keywords; empty selects the
     ///        LAMMPS default `step temp pe ke etotal`.
     void set_thermo(int every, std::vector<std::string> keywords = {}) {

@@ -51,7 +51,7 @@ cpu::Frame make_h2(double r = 0.74) {
     f.span(kAtom_x)[1] = r;
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -64,15 +64,15 @@ cpu::Frame make_h2(double r = 0.74) {
 
 cpu::Frame make_water() {
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.96;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = -0.24;
     f.span(kAtom_y)[2] = 0.93;
     f.span(kAtom_z)[2] = 0.0;
@@ -88,7 +88,7 @@ cpu::Frame make_water() {
 
 cpu::Frame make_o2(double r = 1.21) {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 8;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
@@ -107,7 +107,7 @@ cpu::Frame make_o2(double r = 1.21) {
 
 cpu::Frame make_fluorine() {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 9;
+    f.span(kAtom_atomic_number)[0] = 9;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
     f.span(kAtom_z)[0] = 0;

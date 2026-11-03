@@ -104,7 +104,7 @@ DFTB0::Workspace::Workspace(const Frame& f) {
     if (f.nlocal() < 1 || f.nlocal() > std::numeric_limits<int>::max() / 8)
         throw std::invalid_argument("DFTB0: invalid atom count");
     n_at = static_cast<int>(f.nlocal());
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     species.assign(type.data(), type.data() + n_at);
     el.resize(n_at);
     ao0.resize(n_at + 1, 0);
@@ -139,7 +139,7 @@ DFTB0::Workspace::Workspace(const Frame& f) {
 bool DFTB0::Workspace::matches(const Frame& f) const {
     if (f.nlocal() != n_at)
         return false;
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     return std::equal(species.begin(), species.end(), type.data());
 }
 
@@ -148,7 +148,7 @@ bool DFTB0::Workspace::matches(const Frame& f) const {
 /// pair — the same geometry the force walk differentiates.
 void DFTB0::Workspace::assemble(const Frame& f) {
     const auto x = f.span(kAtom_x), y = f.span(kAtom_y), z = f.span(kAtom_z);
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     H0.fill(0.0);
     S.fill(0.0);
     auto dist_vec = [&](int i, int j, double& dx, double& dy, double& dz) {
@@ -256,7 +256,7 @@ void DFTB0::Workspace::solve(const Frame& f, bool want_forces) {
 /// \f$W\f$ already carry the closed-shell occupation 2.
 void DFTB0::Workspace::analytic_forces(const Frame& f) {
     const auto x = f.span(kAtom_x), y = f.span(kAtom_y), z = f.span(kAtom_z);
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     // At most 4 x 4; set_block_derivative assigns every contracted entry.
     for (int a = 0; a < n_at; ++a) {
         const auto& ea = *el[static_cast<std::size_t>(a)];

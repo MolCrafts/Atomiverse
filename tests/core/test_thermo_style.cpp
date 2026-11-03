@@ -55,7 +55,7 @@ TEST(ThermoStyle, PressureIsVirialPlusKineticOverVolumeInBar) {
 TEST(ThermoStyle, TemperatureUsesDegreesOfFreedom) {
     const ThermoStyle style({"temp"});
     ThermoSample s;
-    s.ke = 0.5 * 3.0 * units::kB_ev_per_k * 300.0;
+    s.ke = 0.5 * 3.0 * units::md_boltz * 300.0;
     s.ndof = 3;
     double temp = 0;
     ASSERT_EQ(std::sscanf(style.line(s).c_str(), "%lf", &temp), 1);

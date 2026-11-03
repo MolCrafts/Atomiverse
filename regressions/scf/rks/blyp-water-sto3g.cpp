@@ -23,15 +23,15 @@ int run() {
 
     // Geometry [Å] — pin_scf.py water preset / REFERENCE.md.
     cpu::Frame frame(3);
-    frame.span(kAtom_type)[0] = 8; // O
+    frame.span(kAtom_atomic_number)[0] = 8; // O
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.1173;
-    frame.span(kAtom_type)[1] = 1; // H
+    frame.span(kAtom_atomic_number)[1] = 1; // H
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.7572;
     frame.span(kAtom_z)[1] = -0.4692;
-    frame.span(kAtom_type)[2] = 1; // H
+    frame.span(kAtom_atomic_number)[2] = 1; // H
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;

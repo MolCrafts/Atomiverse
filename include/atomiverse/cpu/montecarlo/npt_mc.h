@@ -66,7 +66,7 @@ class NptMetropolis : public OutcomePolicy {
                 "under an MC preset");
         const AccReal e_trial = s.frame.meta.get(kEnergy);
         const double beta =
-            1.0 / (units::kB_ev_per_k * static_cast<double>(temperature_));
+            1.0 / (units::md_boltz * static_cast<double>(temperature_));
         const double dE = static_cast<double>(e_trial - e_cur_);
 
         double arg; // exponent of the Boltzmann acceptance factor

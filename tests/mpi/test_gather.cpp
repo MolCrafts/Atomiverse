@@ -78,11 +78,15 @@ TEST(Gather, SingleRankCopiesOwners) {
     auto g = cpu::md::mpi::gather_to_root(frame, *dd);
     EXPECT_EQ(g.n_total, 27);
     ASSERT_EQ(static_cast<int>(g.x.size()), 27);
+    ASSERT_TRUE(g.type.has_value());
+    ASSERT_TRUE(g.atomic_number.has_value());
     for (int i = 0; i < 27; ++i) {
         EXPECT_DOUBLE_EQ(g.x[i], frame.span(ATV::kAtom_x)[i]);
         EXPECT_DOUBLE_EQ(g.vx[i], frame.span(ATV::kAtom_vx)[i]);
         EXPECT_EQ(g.tag[i], frame.span(ATV::kAtom_tag)[i]);
-        EXPECT_EQ(g.type[i], frame.span(ATV::kAtom_type)[i]);
+        EXPECT_EQ((*g.type)[i], frame.span(ATV::kAtom_type)[i]);
+        EXPECT_EQ((*g.atomic_number)[i],
+                  frame.span(ATV::kAtom_atomic_number)[i]);
     }
     const cpu::Frame roundtrip = cpu::md::mpi::to_frame(g);
     for (int i = 0; i < 27; ++i) {
@@ -90,6 +94,31 @@ TEST(Gather, SingleRankCopiesOwners) {
         EXPECT_EQ(roundtrip.span(kGatherAux)(i, 1), StorageReal(-200 - i));
     }
 
+    backend.shutdown();
+}
+
+// An identity column the Frame does not carry is not gathered, and the
+// rebuilt Frame leaves it out instead of zero-filling it.
+TEST(Gather, AbsentIdentityColumnStaysAbsent) {
+    int world_size = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    if (world_size != 1)
+        GTEST_SKIP() << "single-rank guard";
+
+    auto frame = make_grid_frame(30.0, 3);
+    frame.block("atoms").erase(ATV::kAtom_atomic_number.key);
+    cpu::Runtime backend;
+    backend.init();
+    backend.set_frame(frame);
+    auto* dd = backend.context().md.dd;
+    ASSERT_NE(dd, nullptr);
+
+    auto g = cpu::md::mpi::gather_to_root(frame, *dd);
+    EXPECT_TRUE(g.type.has_value());
+    EXPECT_FALSE(g.atomic_number.has_value());
+    const cpu::Frame roundtrip = cpu::md::mpi::to_frame(g);
+    EXPECT_TRUE(roundtrip.has("atoms", "type"));
+    EXPECT_FALSE(roundtrip.has("atoms", "atomic_number"));
     backend.shutdown();
 }
 
@@ -122,8 +151,9 @@ TEST(Gather, MultiRankSortsByTag) {
         }
         // Type field index aligns with tag (since type[i] = i % 3 was the
         // original assignment, and tags are global atom IDs == initial idx).
+        ASSERT_TRUE(g.type.has_value());
         for (int i = 0; i < 27; ++i) {
-            EXPECT_EQ(g.type[i], i % 3);
+            EXPECT_EQ((*g.type)[i], i % 3);
         }
         const cpu::Frame roundtrip = cpu::md::mpi::to_frame(g);
         for (int i = 0; i < 27; ++i) {

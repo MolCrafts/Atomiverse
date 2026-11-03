@@ -44,7 +44,7 @@ int run() {
     const double xyz[3][3] = {
         {0, 0, 0.1173}, {0, 0.7572, -0.4692}, {0, -0.7572, -0.4692}};
     for (int i = 0; i < 3; ++i) {
-        frame.span(kAtom_type)[i] = i == 0 ? 8 : 1;
+        frame.span(kAtom_atomic_number)[i] = i == 0 ? 8 : 1;
         frame.span(kAtom_x)[i] = xyz[i][0];
         frame.span(kAtom_y)[i] = xyz[i][1];
         frame.span(kAtom_z)[i] = xyz[i][2];

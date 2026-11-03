@@ -662,8 +662,13 @@ class GpwConverged final : public cuda::Criterion {
 // Scientific density/orbital arrays stay under the device SCF's ownership.
 cpu::Frame host_geometry(const cuda::Frame& device, cudaStream_t stream) {
     const int n = device.n_atoms();
+    if (n > 0 && !device.atoms.atomic_number)
+        throw std::invalid_argument(
+            std::string("cuda::gpw::GpwDft: parent frame has no species "
+                        "column; ")
+            + atom_field_how_to("atomic_number"));
     if (n <= 0 || !device.atoms.x || !device.atoms.y || !device.atoms.z
-        || !device.atoms.type || !device.box)
+        || !device.box)
         throw std::invalid_argument(
             "cuda::gpw::GpwDft: incomplete parent geometry");
     const pos_t* primary[3] = {device.atoms.x, device.atoms.y, device.atoms.z};
@@ -700,8 +705,8 @@ cpu::Frame host_geometry(const cuda::Frame& device, cudaStream_t stream) {
                                        cudaMemcpyDeviceToHost, stream),
                        "D2H parent geometry correction");
     }
-    check_cuda(cudaMemcpyAsync(types.data(), device.atoms.type, n * sizeof(int),
-                               cudaMemcpyDeviceToHost, stream),
+    check_cuda(cudaMemcpyAsync(types.data(), device.atoms.atomic_number,
+                               n * sizeof(int), cudaMemcpyDeviceToHost, stream),
                "D2H parent species");
     check_cuda(cudaMemcpyAsync(cell, device.box, sizeof(cell),
                                cudaMemcpyDeviceToHost, stream),
@@ -709,7 +714,7 @@ cpu::Frame host_geometry(const cuda::Frame& device, cudaStream_t stream) {
     check_cuda(cudaStreamSynchronize(stream), "parent geometry fence");
     transfers.pending = false;
     auto x = host.span(kAtom_x), y = host.span(kAtom_y), z = host.span(kAtom_z);
-    auto type = host.span(kAtom_type);
+    auto type = host.span(kAtom_atomic_number);
     for (int i = 0; i < n; ++i) {
         x[i] = load_position(hi[0].data(), lo[0].data(), i);
         y[i] = load_position(hi[1].data(), lo[1].data(), i);
@@ -1415,8 +1420,8 @@ std::vector<GpwAtom> atoms_from_frame(const GpwDft& m,
     if (n < 1)
         throw std::invalid_argument(
             "cuda::gpw::GpwDft: empty Frame (nothing to solve) — fill "
-            "kAtom_x/y/z and kAtom_type (Z) first");
-    const int* sp_type = frame.span(kAtom_type);
+            "kAtom_x/y/z and kAtom_atomic_number (Z) first");
+    const int* sp_type = frame.span(kAtom_atomic_number);
     const StorageReal* sp_x = frame.span(kAtom_x);
     const StorageReal* sp_y = frame.span(kAtom_y);
     const StorageReal* sp_z = frame.span(kAtom_z);

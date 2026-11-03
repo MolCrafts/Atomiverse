@@ -52,15 +52,8 @@ void PairBuck::compute(const LaunchContext& ctx) {
         double dx = x[j] - x[i];
         double dy = y[j] - y[i];
         double dz = z[j] - z[i];
-        if (pair_list) {
-            // The list image is attached to j; this kernel uses r_j-r_i.
-            dx = -dx;
-            dy = -dy;
-            dz = -dz;
-            dx = -dx;
-            dy = -dy;
-            dz = -dz;
-        } else
+        // Listed rows carry their explicit periodic image.
+        if (!pair_list)
             f.box.min_image(dx, dy, dz);
         const double r2 = dx * dx + dy * dy + dz * dz;
         if (r2 >= cutoff_sq_ || r2 == 0.0)
@@ -111,6 +104,7 @@ void PairBuck::compute(const LaunchContext& ctx) {
                 accumulate_pair(i, j);
     }
     f.meta.get(kEnergy) += energy;
+    f.meta.get(kEnergyPair) += energy;
     if (ctx.stress_requested)
         vir.flush_to(f.meta.get(kStress));
 }

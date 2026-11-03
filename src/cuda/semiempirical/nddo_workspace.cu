@@ -1,5 +1,6 @@
 /// @file cuda/semiempirical/nddo_workspace.cu
 /// @brief Native NDDO physical steps over persistent FP64 device storage.
+#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cuda/semiempirical/internal/nddo_workspace.cuh"
 
 #include <algorithm>
@@ -200,9 +201,12 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
     if (cuda::kPrecisionMode != cuda::PrecisionMode::Double)
         throw std::invalid_argument("CUDA NDDO requires FP64 Frame storage");
     const int count = frame.n_atoms();
-    if (count <= 0 || !frame.atoms.type || !frame.box || !frame.scalars
-        || !frame.atoms.charge || !frame.atoms.x || !frame.atoms.y
-        || !frame.atoms.z)
+    if (count > 0 && !frame.atoms.atomic_number)
+        throw std::invalid_argument(
+            std::string("CUDA NDDO: device frame has no species column; ")
+            + atom_field_how_to("atomic_number"));
+    if (count <= 0 || !frame.box || !frame.scalars || !frame.atoms.charge
+        || !frame.atoms.x || !frame.atoms.y || !frame.atoms.z)
         throw std::invalid_argument(
             "CUDA NDDO requires a nonempty molecular Frame");
     bool changed = count != n_atoms || !matrices;
@@ -212,8 +216,8 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
         ATV_CUDA_CHECK(
             cudaMemsetAsync(&metrics->pair_error, 0, sizeof(int), stream));
         inspect_identity<<<grid_size(std::max(count, 9)), kDefaultBlock, 0,
-                           stream>>>(count, frame.atoms.type, atoms, frame.box,
-                                     metrics);
+                           stream>>>(count, frame.atoms.atomic_number, atoms,
+                                     frame.box, metrics);
         ATV_CUDA_CHECK(cudaGetLastError());
         ATV_CUDA_CHECK(cudaMemcpyAsync(host_metrics, metrics,
                                        sizeof(NddoMetrics),
@@ -231,7 +235,7 @@ void NddoWorkspace::ensure(const cuda::Frame& frame, cudaStream_t stream,
         // Atom identities are build metadata, never electronic scientific arrays.
         std::vector<int> types(count);
         double box[9];
-        ATV_CUDA_CHECK(cudaMemcpyAsync(types.data(), frame.atoms.type,
+        ATV_CUDA_CHECK(cudaMemcpyAsync(types.data(), frame.atoms.atomic_number,
                                        count * sizeof(int),
                                        cudaMemcpyDeviceToHost, stream));
         ATV_CUDA_CHECK(cudaMemcpyAsync(box, frame.box, sizeof(box),

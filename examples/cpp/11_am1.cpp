@@ -24,22 +24,22 @@ namespace {
 
 ATV::cpu::Frame make_water() {
     ATV::cpu::Frame f(3);
-    f.span(ATV::kAtom_type)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
     f.span(ATV::kAtom_x)[0] = 0.0;
     f.span(ATV::kAtom_y)[0] = 0.0;
     f.span(ATV::kAtom_z)[0] = 0.0;
-    f.span(ATV::kAtom_type)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
     f.span(ATV::kAtom_x)[1] = 1.05; // slightly stretched
     f.span(ATV::kAtom_y)[1] = 0.0;
     f.span(ATV::kAtom_z)[1] = 0.0;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.span(ATV::kAtom_x)[2] = -0.26;
     f.span(ATV::kAtom_y)[2] = 1.0;
     f.span(ATV::kAtom_z)[2] = 0.0;
     for (int i = 0; i < 3; ++i) {
         f.span(ATV::kAtom_tag)[i] = i + 1;
         f.span(ATV::kAtom_mass)[i] =
-            (f.span(ATV::kAtom_type)[i] == 8) ? 15.999 : 1.008;
+            (f.span(ATV::kAtom_atomic_number)[i] == 8) ? 15.999 : 1.008;
     }
     f.box = ATV::cpu::Box::cubic(20.0);
     return f;

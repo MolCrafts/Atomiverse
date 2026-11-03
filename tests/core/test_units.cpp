@@ -23,11 +23,11 @@ TEST(Units, RoundtripAngstromBohr) {
     EXPECT_NEAR(back, a, 1e-12);
 }
 
-TEST(Units, ThermalDeBroglieHydrogenAt300K) {
-    // Λ = h/sqrt(2π m kB T): H (1.008 amu) at 300 K → 1.0037 Å
-    // (h = 4.135667696e-15 eV·s, kB = 8.617333262e-5 eV/K, CODATA 2018).
+TEST(Units, ThermalDeBroglieUsesTheLjRow) {
+    // lj: h = k = mvv2e = 1, so Λ = 1/sqrt(2π m T).
     const double lambda = units::lambda_thermal(1.008, 300.0);
-    EXPECT_NEAR(lambda, 1.0038, 2e-3);
+    const double expect = 1.0 / std::sqrt(2.0 * units::pi * 1.008 * 300.0);
+    EXPECT_NEAR(lambda, expect, 1e-12);
     // Heavier + hotter shrinks it: Λ ~ 1/sqrt(mT).
     EXPECT_NEAR(units::lambda_thermal(4.032, 300.0), lambda / 2.0, 1e-12);
     EXPECT_NEAR(units::lambda_thermal(1.008, 1200.0), lambda / 2.0, 1e-12);

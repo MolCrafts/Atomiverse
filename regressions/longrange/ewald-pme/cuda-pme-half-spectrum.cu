@@ -80,7 +80,7 @@ Result full_fourier_oracle(const cpu::Frame& f, const std::array<int, 3>& K,
         }
     }
     Result result;
-    const double escale = units::coulomb / (2 * pi * f.box.volume());
+    const double escale = units::md_qqr2e / (2 * pi * f.box.volume());
     for (int m0 = 0; m0 < K[0]; ++m0)
         for (int m1 = 0; m1 < K[1]; ++m1)
             for (int m2 = 0; m2 < K[2]; ++m2) {
@@ -130,7 +130,7 @@ Result full_fourier_oracle(const cpu::Frame& f, const std::array<int, 3>& K,
                             2 * escale * H * std::real(std::conj(Q) * dQ[i][j]);
             }
     for (double q : charge)
-        result.energy -= units::coulomb * alpha / std::sqrt(pi) * q * q;
+        result.energy -= units::md_qqr2e * alpha / std::sqrt(pi) * q * q;
     return result;
 }
 

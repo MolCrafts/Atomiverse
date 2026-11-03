@@ -137,7 +137,7 @@ using ComplexGhfCycleOwner =
     std::unique_ptr<ComplexGhfCycle, void (*)(ComplexGhfCycle*)>;
 
 /// @brief Assemble hcore, overlap, and the core-Hamiltonian density guess.
-/// @param frame Geometry [Å], species in `kAtom_type`.
+/// @param frame Geometry [Å], species in `kAtom_atomic_number`.
 /// @param basis Gaussian basis.
 /// @param charge Molecular charge [e].
 /// @param x2c True: spin-orbital X2C-1e. False: block-diagonal T+V.

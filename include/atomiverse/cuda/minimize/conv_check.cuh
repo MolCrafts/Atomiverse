@@ -21,8 +21,8 @@
 /// driver polls its handlers on the host after each `step_once()`. `measure()` therefore
 /// issues one pinned D2H + `cudaStreamSynchronize` per minimizer iteration. This is the
 /// documented exception for the minimizer (an iteration is dominated by the force
-/// evaluation; the deferred `AsyncBridge` ring is not applicable because its K-step lag
-/// would overrun the convergence point).
+/// evaluation; the asynchronous capture buffer is not applicable because a verdict
+/// consumed later than its iteration would overrun the convergence point).
 ///
 /// @see cuda/driver/criterion.cuh for the handler that judges these metrics
 /// @see cpu/minimizer/lbfgs.cpp for the CPU publish-don't-decide sibling

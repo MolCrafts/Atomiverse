@@ -26,7 +26,7 @@ namespace cpu {
 
 PairCoulCut::PairCoulCut(double cutoff)
     : PairPotential(cutoff), cutoff_sq_(cutoff * cutoff),
-      qqr2e_(ATV::units::coulomb) {
+      qqr2e_(ATV::units::md_qqr2e) {
     if (cutoff <= 0.0)
         throw std::invalid_argument("PairCoulCut: cutoff must be > 0");
 }

@@ -40,7 +40,7 @@ static cpu::Frame make_ch4() {
     const int Z[kNat] = {6, 1, 1, 1, 1};
     const double mass[kNat] = {12.011, 1.008, 1.008, 1.008, 1.008};
     for (int i = 0; i < kNat; ++i) {
-        f.span(kAtom_type)[i] = Z[i];
+        f.span(kAtom_atomic_number)[i] = Z[i];
         f.span(kAtom_x)[i] = xyz[i][0];
         f.span(kAtom_y)[i] = xyz[i][1];
         f.span(kAtom_z)[i] = xyz[i][2];

@@ -77,7 +77,7 @@ TEST(CapacitanceChargeFluctuation, KnownSeriesDiffAndIntegral) {
     EXPECT_NEAR(obs.mean_charge(), 0.5, 1e-15);
     EXPECT_NEAR(obs.charge_variance(), 0.01, 1e-15);
 
-    const double kT = units::kB_ev_per_k * T;
+    const double kT = units::md_boltz * T;
     const double c_diff_pin = 0.01 / kT;
     EXPECT_NEAR(obs.differential_capacitance(), c_diff_pin, 1e-12);
     EXPECT_NEAR(obs.integral_capacitance(), 0.5, 1e-15);

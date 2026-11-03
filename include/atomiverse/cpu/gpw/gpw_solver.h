@@ -84,7 +84,7 @@ struct PlusU {
 
 /// @brief Per-element GPW inputs: contracted Gaussian basis + GTH potential.
 ///
-/// The method maps every atom's Z (`kAtom_type`) onto the matching entry of
+/// The method maps every atom's Z (`kAtom_atomic_number`) onto the matching entry of
 /// `GpwDft::kinds`; a Z with no entry throws at `build()` / `run()`.
 struct Kind {
     molrs::Element element; ///< Element this entry applies to.
@@ -289,7 +289,7 @@ struct GpwResult {
 /// dft.forces(frame);                 // eV/Å on kAtom_f*, eV on kEnergy
 /// ```
 ///
-/// Geometry (positions [Å], Z in `kAtom_type`, orthorhombic `box`) comes from
+/// Geometry (positions [Å], Z in `kAtom_atomic_number`, orthorhombic `box`) comes from
 /// the Frame; per-element basis + GTH from `kinds`; algorithm parameters are
 /// public members (no `*Config`). `build()` runs one-time fail-fast validation
 /// (no-fallback); `run()` is re-entrant and rebuilds geometry-dependent
@@ -311,7 +311,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     using cpu::Driver<ATV::gpw::Phase>::build;
 
     // ── Identity (constructor arguments, fixed after construction) ────
-    /// @brief Per-element basis + GTH potential, matched on Z (`kAtom_type`).
+    /// @brief Per-element basis + GTH potential, matched on Z (`kAtom_atomic_number`).
     const std::vector<Kind> kinds;
     const double cutoff_ry; ///< density grid cutoff [Ry].
     /// @brief LDA (PADE) or GGA (PBE / PBEsol / RevPBE / RPBE / BLYP /
@@ -495,7 +495,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// every Z onto `kinds`, and derives `n_occ` from the valence count when
     /// RKS and `n_occ == 0`.
     /// @param reference Frame the method will be run on (positions [Å], Z in
-    ///        `kAtom_type`, orthorhombic `box` [Å]).
+    ///        `kAtom_atomic_number`, orthorhombic `box` [Å]).
     /// @throws std::invalid_argument when the Frame is empty, a Z has no
     ///         `Kind`, the box is sheared, the RKS valence count is odd with
     ///         `n_occ == 0`, or a parameter combination is unsupported.
@@ -514,7 +514,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// so a Frame whose atoms or box moved since `build()` is solved as is.
     /// Writes the total energy [eV] (Mermin free energy under smearing) to
     /// `frame.meta[kEnergy]`.
-    /// @param frame Positions [Å], Z in `kAtom_type`, orthorhombic box [Å].
+    /// @param frame Positions [Å], Z in `kAtom_atomic_number`, orthorhombic box [Å].
     /// @return The owned result of this run [Hartree] (valid until the next
     ///         `run()` / `forces()`).
     /// @throws std::logic_error when called before `build()`.
@@ -524,7 +524,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
 
     /// @brief Const-geometry SCF: as `run(Frame&)` but writes nothing to the
     ///        Frame (results on the returned `GpwResult` / `last_result()`).
-    /// @param frame Positions [Å], Z in `kAtom_type`, orthorhombic box [Å].
+    /// @param frame Positions [Å], Z in `kAtom_atomic_number`, orthorhombic box [Å].
     /// @return The owned result of this run [Hartree].
     /// @throws as `run(Frame&)`.
     GpwResult& run(const Frame& frame);
@@ -535,7 +535,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// converged density (Γ/multi-k, RKS/UKS, smearing, DFT+U, dispersion as
     /// configured). Writes `kAtom_fx/fy/fz` [eV/Å] (overwritten, not
     /// accumulated) and `frame.meta[kEnergy]` [eV].
-    /// @param frame Positions [Å], Z in `kAtom_type`, orthorhombic box [Å].
+    /// @param frame Positions [Å], Z in `kAtom_atomic_number`, orthorhombic box [Å].
     /// @return The owned SCF result of this call [Hartree].
     /// @throws std::logic_error when called before `build()`.
     /// @throws std::runtime_error when the SCF did not converge (forces at an
@@ -554,7 +554,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// extensive virial \(W=\sigma\Omega\) [eV] to `frame.meta[kStress]`
     /// (overwritten) and the energy [eV] to `kEnergy`. Multi-SCF oracle:
     /// `gpw_stress_fd`.
-    /// @param frame Positions [Å], Z in `kAtom_type`, orthorhombic box [Å].
+    /// @param frame Positions [Å], Z in `kAtom_atomic_number`, orthorhombic box [Å].
     /// @return Voigt σ \((xx,yy,zz,xy,xz,yz)\) [eV/Å³].
     /// @throws std::logic_error when called before `build()`.
     /// @throws std::runtime_error when the SCF did not converge.
@@ -877,7 +877,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
 /// Runs a fresh copy of `method` at ±h displacements of each atom along each
 /// axis (6·N SCF solves). Correct but expensive — the product path is
 /// `GpwDft::forces`. `frame` is not modified.
-/// @param frame Geometry (positions [Å], Z in `kAtom_type`, orthorhombic box).
+/// @param frame Geometry (positions [Å], Z in `kAtom_atomic_number`, orthorhombic box).
 /// @param method Configured method (parameters + kinds; need not be built).
 /// @param h Displacement step [Å] (default 10⁻³ Bohr).
 /// @return Forces [eV/Å], one xyz triple per atom.

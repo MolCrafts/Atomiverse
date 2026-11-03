@@ -31,6 +31,11 @@ struct Operation {
     Component* component = nullptr; ///< Plugin occupying this slot.
     Scheduling scheduling = Scheduling::blocking; ///< Cached scheduling.
     int frequency = 0; ///< Cached frequency (0 = every step).
+    /// Cached cadence phase: launched when `step % frequency ==
+    /// frequency_phase` (`step` the zero-based index of the step in progress).
+    /// End-of-step output sets `frequency - 1`, i.e. it fires after every
+    /// `frequency`-th completed step (LAMMPS `update->ntimestep % every`).
+    int frequency_phase = 0;
     bool operator==(const Operation&) const = default;
 };
 
@@ -77,7 +82,9 @@ struct Plan {
 
     /// Initial force preparation schedule for MD and minimization. Force-slot evaluators run normally;
     /// other operations opt in through initialize_forces. Integration and
-    /// ordinary observer/recorder launches are never part of preparation.
+    /// ordinary observer/recorder launches are never part of preparation;
+    /// a recorder's write of the initial state is the separate per-run
+    /// `setup_output` pass (LAMMPS `Output::setup`).
     template <typename BeforePhase, typename Visit>
     void prepare_forces(BeforePhase&& before_phase, Visit&& visit) const {
         if (kind == PhaseKind::Minimizer) {
@@ -255,6 +262,9 @@ class PlanBuilder {
             op.component = e.component;
             op.scheduling = e.component->scheduling();
             op.frequency = e.component->frequency();
+            // Optional on a component type (contract probes omit it).
+            if constexpr (requires { e.component->frequency_phase(); })
+                op.frequency_phase = e.component->frequency_phase();
             slot_entries[e.phase].push_back({e.order, op});
         }
 

@@ -968,7 +968,7 @@ void IPEA::launch(const LaunchContext& ctx) {
             "IPEA: open shell (multiplicity!=1) is not a product path; "
             "closed-shell only (see queue spin-gfn-xtb). VIP/VEA start from "
             "a closed-shell N-electron state (set compute_vip/compute_vea)");
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     const StorageReal* x = f.span(kAtom_x);
     const StorageReal* y = f.span(kAtom_y);
     const StorageReal* z = f.span(kAtom_z);

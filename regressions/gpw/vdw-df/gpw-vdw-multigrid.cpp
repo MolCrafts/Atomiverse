@@ -42,7 +42,7 @@ ATV::cpu::Frame make_frame() {
     using namespace ATV;
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = kZ[i];
+        frame.span(kAtom_atomic_number)[i] = kZ[i];
         frame.span(kAtom_x)[i] = kAng[i][0];
         frame.span(kAtom_y)[i] = kAng[i][1];
         frame.span(kAtom_z)[i] = kAng[i][2];

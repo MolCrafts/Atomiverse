@@ -36,7 +36,7 @@ construction. `diis = false` is Jacobi, the same fixed point. The reference
 is not owned and must outlive the CCSD object. There is no `HF` tag and no
 CUDA path. Closed-shell RHF only; `frozen != 0` throws on `forces`.
 
-Frame in is positions [Å] and species in `kAtom_type`. `run(Frame&)` drives
+Frame in is positions [Å] and species in `kAtom_atomic_number`. `run(Frame&)` drives
 the reference SCF, then overwrites `kEnergy` with the correlated total [eV].
 Hartree stays on `CCSDResult`. `run(const Frame&)` writes nothing.
 `forces(Frame&)` overwrites `kAtom_fx` / `kAtom_fy` / `kAtom_fz` [eV/Å] and
@@ -46,7 +46,7 @@ mounts CCSD with `on(phase).add` accumulates `kEnergy`, and accumulates
 `kAtom_f*` when the parent requests forces.
 
 ```cpp
-cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::Frame frame = /* positions [Å], species in kAtom_atomic_number */;
 cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
 cpu::scf::CCSD<cpu::scf::RHF> ccsd{rhf}; // diis true, frozen 0, tol 1e-10, max_iter 100
 const cpu::scf::CCSDResult energy = ccsd.run(frame); // overwrite kEnergy [eV]
@@ -442,7 +442,7 @@ On H₂/STO-3G CC2 \(E_{\mathrm{corr}}\) equals RMP2; full CCSD / FCI
 ### Implementation
 
 ```cpp
-cpu::Frame frame = /* positions [Å], species in kAtom_type */;
+cpu::Frame frame = /* positions [Å], species in kAtom_atomic_number */;
 cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
 cpu::scf::CC2<cpu::scf::RHF> cc2{rhf}; // diis true, tol 1e-10, max_iter 100
 const cpu::scf::CC2Result energy = cc2.run(frame); // overwrite kEnergy [eV]

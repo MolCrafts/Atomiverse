@@ -45,7 +45,7 @@ Frame make_c10h22() {
     Frame frame(32);
     int a = 0;
     for (int i = 0; i < 10; ++i) {
-        frame.span(ATV::kAtom_type)[a] = 6;
+        frame.span(ATV::kAtom_atomic_number)[a] = 6;
         frame.span(ATV::kAtom_x)[a] = cx[static_cast<std::size_t>(i)];
         frame.span(ATV::kAtom_y)[a] = cy[static_cast<std::size_t>(i)];
         frame.span(ATV::kAtom_z)[a] = cz[static_cast<std::size_t>(i)];
@@ -54,7 +54,7 @@ Frame make_c10h22() {
 
     // Terminal CH3 on C0 and C9: 3 H each; interior CH2: 2 H each.
     auto add_h = [&](double x, double y, double z) {
-        frame.span(ATV::kAtom_type)[a] = 1;
+        frame.span(ATV::kAtom_atomic_number)[a] = 1;
         frame.span(ATV::kAtom_x)[a] = x;
         frame.span(ATV::kAtom_y)[a] = y;
         frame.span(ATV::kAtom_z)[a] = z;

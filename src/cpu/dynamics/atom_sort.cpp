@@ -50,7 +50,7 @@ bool sort_owned_atoms(Frame& f, int n_local, double binsize) {
     std::vector<int> counts(static_cast<std::size_t>(nbin), 0);
     auto bin_of = [&](int i) -> int {
         double px = x[i], py = y[i], pz = z[i];
-        f.box.wrap_into(px, py, pz);
+        f.box.wrap_into(px, py, pz, /*image=*/nullptr); // bin of a copy
         px -= lower[0];
         py -= lower[1];
         pz -= lower[2];

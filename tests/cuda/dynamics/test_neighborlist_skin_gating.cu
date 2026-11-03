@@ -206,3 +206,60 @@ TEST(NeighborListSkinGating, OutgrownReserveEmptiesListAndRaisesCapacityFault) {
     nl.destroy(dctx);
     backend.shutdown();
 }
+
+// ── Box change: LAMMPS Neighbor::check_distance corner shrink ────────
+//
+// A changing cell no longer forces a rebuild by itself. The half-skin
+// trigger shrinks by the motion of the cell corners since the reference
+// build (lo corner fixed, hi corner moved by |dL| for an orthogonal cell),
+// and a cell change that alone consumes the skin rebuilds.
+
+namespace {
+
+int rebuilds_after_strain(double edge, double move) {
+    auto frame = make_frozen_lattice(4, 1.5); // box 6.0
+    cuda::Backend backend;
+    backend.init();
+    backend.materialize(frame);
+    cuda::NeighborList nl{3.0, 0.9};
+    PlanBuilder<cuda::Component> builder;
+    builder.add({0, 0, &nl});
+    auto plan = builder.build(ATV::slot_count<md::Phase>());
+    backend.load(plan);
+    cuda::BuildContext bctx{backend.context(), backend.frame()};
+    nl.build(bctx);
+    backend.step(0);
+    backend.sync();
+    EXPECT_EQ(nl.rebuild_count(), 1);
+    frame.box = cpu::Box::orthorhombic(edge, edge, edge);
+    frame.span(kAtom_x)[5] += move;
+    backend.materialize(frame);
+    backend.step(1);
+    backend.sync();
+    const int count = nl.rebuild_count();
+    cuda::DestroyContext dctx{backend.context(), backend.frame()};
+    nl.destroy(dctx);
+    backend.shutdown();
+    return count;
+}
+
+} // namespace
+
+TEST(NeighborListSkinGating, SubSkinCellStrainAloneDoesNotRebuild) {
+    // Each edge +0.2: the hi corner moves 0.35 < skin 0.9.
+    EXPECT_EQ(rebuilds_after_strain(6.2, 0.0), 1);
+}
+
+TEST(NeighborListSkinGating, CellStrainShrinksTheDisplacementTrigger) {
+    // Trigger 0.5 (0.9 - 0.346) = 0.277: 0.35 (below half skin 0.45)
+    // rebuilds, 0.2 does not.
+    EXPECT_EQ(rebuilds_after_strain(6.2, 0.35), 2);
+    EXPECT_EQ(rebuilds_after_strain(6.2, 0.2), 1);
+    // Unchanged cell: 0.35 stays inside the half skin.
+    EXPECT_EQ(rebuilds_after_strain(6.0, 0.35), 1);
+}
+
+TEST(NeighborListSkinGating, CellChangeThatConsumesTheSkinRebuilds) {
+    // Each edge +0.6: the hi corner moves 1.04 > skin.
+    EXPECT_EQ(rebuilds_after_strain(6.6, 0.0), 2);
+}

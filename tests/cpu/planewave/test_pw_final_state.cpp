@@ -26,7 +26,7 @@ cpu::Frame silicon() {
     frame.box.set_cell(h);
     constexpr double positions[2][3] = {{.2, .3, .4}, {1.57, 1.66, 1.75}};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 14;
+        frame.span(kAtom_atomic_number)[i] = 14;
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_mass)[i] = 28.0855;
         frame.span(kAtom_x)[i] = positions[i][0];

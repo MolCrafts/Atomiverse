@@ -62,7 +62,7 @@ int run() {
         frame.span(kAtom_x)[i] = xs[i];
         frame.span(kAtom_y)[i] = ys[i];
         frame.span(kAtom_z)[i] = zs[i];
-        frame.span(kAtom_type)[i] = types[i];
+        frame.span(kAtom_atomic_number)[i] = types[i];
     }
     frame.box = cpu::Box::cubic(30.0);
 

@@ -31,8 +31,8 @@ namespace {
 
 cpu::Frame make_si_diamond(double a_ang, double delta_frac_a3) {
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 14;
-    frame.span(kAtom_type)[1] = 14;
+    frame.span(kAtom_atomic_number)[0] = 14;
+    frame.span(kAtom_atomic_number)[1] = 14;
     frame.span(kAtom_mass)[0] = 28.0855;
     frame.span(kAtom_mass)[1] = 28.0855;
     const double h = a_ang / 2.0;

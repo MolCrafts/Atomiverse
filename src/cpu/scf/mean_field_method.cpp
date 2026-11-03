@@ -539,7 +539,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
     if (x2c && !ecp.empty()) {
         const auto& table = EcpPotential::family_table(ecp);
         const int natm = static_cast<int>(frame.nlocal());
-        const int* __restrict sp_type = frame.span(kAtom_type);
+        const int* __restrict sp_type = frame.span(kAtom_atomic_number);
         for (int i = 0; i < natm; ++i) {
             const int Z = sp_type[i];
             if (Z >= 1 && Z < static_cast<int>(table.size())

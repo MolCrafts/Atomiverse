@@ -100,7 +100,7 @@ struct Dummy {
 
 cpu::Frame single_atom_frame(int Z) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = Z;
+    f.span(kAtom_atomic_number)[0] = Z;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
@@ -111,7 +111,7 @@ cpu::Frame single_atom_frame(int Z) {
 cpu::Frame h2_frame(double bond_ang = 0.74) {
     cpu::Frame f(2);
     for (int i = 0; i < 2; ++i) {
-        f.span(kAtom_type)[i] = 1;
+        f.span(kAtom_atomic_number)[i] = 1;
         f.span(kAtom_x)[i] = 0.0;
         f.span(kAtom_y)[i] = 0.0;
     }

@@ -59,7 +59,7 @@ ATV::cpu::Frame si_bct(double a_ang) {
         {0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}, {0.5, 0.0, 0.25}, {0.0, 0.5, 0.75}};
     ATV::cpu::Frame frame(4);
     for (int i = 0; i < 4; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 14;
+        frame.span(ATV::kAtom_atomic_number)[i] = 14;
         frame.span(ATV::kAtom_x)[i] = frac[i][0] * at;
         frame.span(ATV::kAtom_y)[i] = frac[i][1] * at;
         frame.span(ATV::kAtom_z)[i] = frac[i][2] * a_ang;

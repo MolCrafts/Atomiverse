@@ -26,15 +26,46 @@ XyzRecorder::XyzRecorder(std::string filename, int freq)
                                     + std::to_string(freq_));
 }
 
-void XyzRecorder::launch(const cpu::LaunchContext& ctx) {
-    // Stride gate first: ctx.step is identical on every rank, so the
-    // collective below is still entered in lockstep.
-    if ((ctx.step % freq_) != 0)
-        return;
+// LAMMPS src/output.cpp Output::setup / Output::write and src/verlet.cpp
+// Verlet::run, e8c4c278a8. Copyright (2003) Sandia Corporation.
+// GPL-2.0-only. `update->ntimestep` is incremented at the top of every step,
+// so an end-of-step dump at timestep N holds the state after N steps; setup
+// writes the current timestep when it is a multiple of `every`, and
+// `last_dump` keeps a timestep from being written twice across runs.
 
-    // Publish iteration identity through the Frame's typed metadata channel,
-    // so the step travels with the geometry into the XYZ comment line.
-    ctx.frame.meta.get(kStep) = static_cast<std::int64_t>(ctx.step);
+void XyzRecorder::setup_output(const cpu::LaunchContext& ctx) {
+    // ctx.step = steps completed so far (identical on every rank).
+    if ((ctx.step % freq_) != 0 || ctx.step == last_step_)
+        return;
+    write_(ctx, ctx.step);
+}
+
+void XyzRecorder::launch(const cpu::LaunchContext& ctx) {
+    // End of the step with zero-based index ctx.step: ctx.step + 1 steps are
+    // complete. Stride gate first: identical on every rank, so the
+    // collective below is still entered in lockstep.
+    const BigInt step = loop_output_step(ctx);
+    if ((step % freq_) != 0 || step == last_step_)
+        return;
+    write_(ctx, step);
+}
+
+void XyzRecorder::final_output(const cpu::LaunchContext& ctx) {
+    // LAMMPS Min::run: a minimization that stops early writes its final
+    // state at the final timestep, unless already written (`last_dump`).
+    if (ctx.step == last_step_)
+        return;
+    write_(ctx, ctx.step);
+}
+
+void XyzRecorder::write_(const cpu::LaunchContext& ctx, BigInt step) {
+    // Every rank records the step before the rank gate (they all take part
+    // in the gather), so the never-twice rule stays rank-identical.
+    last_step_ = step;
+
+    // Publish the step through the Frame's typed metadata channel, so it
+    // travels with the geometry into the XYZ comment line.
+    ctx.frame.meta.get(kStep) = static_cast<std::int64_t>(step);
 
     // Multi-rank: collective owner gather (every rank participates before
     // the rank gate) so the written frame holds the complete tag-ordered

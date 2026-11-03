@@ -20,8 +20,10 @@
 /// @see include/atomiverse/cpu/frame/box.h for the CPU mirror.
 #pragma once
 
+#include <cstdint>
 #include <type_traits>
 
+#include "atomiverse/core/precision.h"
 #include "atomiverse/cuda/frame/types.cuh"
 
 // Host TUs (the core Driver template) include this header. nvcc defines the
@@ -105,28 +107,46 @@ struct BoxGeometry {
         }
     }
 
-    /// @brief Map a position into the primary cell by a lattice translation.
+    /// @brief Map a position into the primary cell by a lattice translation
+    ///        and count it into one atom's image flags (LAMMPS `Domain::pbc`
+    ///        bookkeeping; CPU mirror `cpu::Box::wrap_into`).
     ///
     /// Orthorhombic cells wrap each axis independently. Skew cells wrap the
     /// fractional coordinates s = cell⁻¹·r into [0, 1) (lattice vectors are
     /// the cell columns): only whole lattice vectors are subtracted, so the
-    /// position stays a valid periodic image.
+    /// position stays a valid periodic image. The position moves by
+    /// \(-H\mathbf s\) and `image[d] += s_d`, so the unwrapped coordinate
+    /// \(\mathbf r + H\,\mathrm{image}\) is unchanged.
+    /// @param x Position x [Å], wrapped in place.
+    /// @param y Position y [Å], wrapped in place.
+    /// @param z Position z [Å], wrapped in place.
+    /// @param image The atom's three `ImageInt` image flags
+    ///        (`Frame::atoms.image + 3 i`). `nullptr` only for a scratch
+    ///        coordinate that is not atom state; wrapping a Frame row without
+    ///        its image corrupts every unwrapped consumer.
     template <typename U>
     __host__ __device__ __forceinline__ void
-    wrap_position(U& x, U& y, U& z) const noexcept {
-        if (ortho) {
-            x -= U(cell[0]) * floor(x * U(inv_l[0]));
-            y -= U(cell[4]) * floor(y * U(inv_l[1]));
-            z -= U(cell[8]) * floor(z * U(inv_l[2]));
-            return;
-        }
+    wrap_position(U& x, U& y, U& z, ImageInt* image) const noexcept {
         U s[3];
-        for (int k = 0; k < 3; ++k)
-            s[k] = floor(U(inv_cell[3 * k]) * x + U(inv_cell[3 * k + 1]) * y
-                         + U(inv_cell[3 * k + 2]) * z);
-        x -= U(cell[0]) * s[0] + U(cell[1]) * s[1] + U(cell[2]) * s[2];
-        y -= U(cell[3]) * s[0] + U(cell[4]) * s[1] + U(cell[5]) * s[2];
-        z -= U(cell[6]) * s[0] + U(cell[7]) * s[1] + U(cell[8]) * s[2];
+        if (ortho) {
+            s[0] = floor(x * U(inv_l[0]));
+            s[1] = floor(y * U(inv_l[1]));
+            s[2] = floor(z * U(inv_l[2]));
+            x -= U(cell[0]) * s[0];
+            y -= U(cell[4]) * s[1];
+            z -= U(cell[8]) * s[2];
+        } else {
+            for (int k = 0; k < 3; ++k)
+                s[k] = floor(U(inv_cell[3 * k]) * x + U(inv_cell[3 * k + 1]) * y
+                             + U(inv_cell[3 * k + 2]) * z);
+            x -= U(cell[0]) * s[0] + U(cell[1]) * s[1] + U(cell[2]) * s[2];
+            y -= U(cell[3]) * s[0] + U(cell[4]) * s[1] + U(cell[5]) * s[2];
+            z -= U(cell[6]) * s[0] + U(cell[7]) * s[1] + U(cell[8]) * s[2];
+        }
+        if (image != nullptr)
+            for (int d = 0; d < 3; ++d)
+                image[d] = static_cast<ImageInt>(image[d]
+                                                 + static_cast<ImageInt>(s[d]));
     }
 
     /// @brief Wrap one axis into `[0, L_d)`. Orthorhombic only.

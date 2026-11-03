@@ -18,7 +18,7 @@
 /// `result_array.h` (dense 1-D/2-D double results): those headers carry the
 /// semantics — element type, shape, units, size checks — and this one carries
 /// none. It is also the only one of the three usable for a non-`double`
-/// element, which is what `bind_mc.cpp`'s `uint32` type column needs.
+/// element, which is what `bind_mc.cpp`'s `uint32` identity columns need.
 #pragma once
 
 #include <nanobind/ndarray.h>

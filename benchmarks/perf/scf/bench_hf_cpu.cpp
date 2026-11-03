@@ -37,7 +37,7 @@ cpu::Frame geometry(const std::string& system, int waters) {
                                                    : 0)
                                    : 0;
         f.span(kAtom_z)[i] = water ? (i % 3 == 0 ? 0.1173 : -0.4692) : 0;
-        f.span(kAtom_type)[i] =
+        f.span(kAtom_atomic_number)[i] =
             water ? (i % 3 == 0 ? 8 : 1) : (system == "o2" ? 8 : 1);
     }
     if (system == "h3") {

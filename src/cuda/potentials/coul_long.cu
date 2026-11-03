@@ -13,6 +13,7 @@
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/energy_term.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
@@ -49,7 +50,7 @@ gather_cluster_pos_q(const int* __restrict__ orig_index,
 template <bool Ortho, bool Energy, bool Virial>
 __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
     fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
-    fixed_t* __restrict__ fz, ForceFault* fault, acc_t* __restrict__ energy,
+    fixed_t* __restrict__ fz, ForceFault* fault, EnergyTerm energy,
     acc_t* __restrict__ stress, const force_t* __restrict__ spx,
     const force_t* __restrict__ spy, const force_t* __restrict__ spz,
     const force_t* __restrict__ spq, const int* __restrict__ row_ptr,
@@ -167,7 +168,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
         if (threadIdx.x == 0) {
             if constexpr (Energy)
-                atomicAdd(energy, out[0]);
+                energy.add(out[0]);
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
@@ -184,7 +185,7 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void coul_long_tile(
         const auto out =
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 1>{});
         if (threadIdx.x == 0)
-            atomicAdd(energy, out[0]);
+            energy.add(out[0]);
     }
 }
 
@@ -272,11 +273,11 @@ void CoulLong::compute(const LaunchContext& ctx) {
         constexpr bool V = decltype(vir_t)::value;
         kernels::coul_long_tile<O, E, V><<<grid, block, shmem, stream>>>(
             frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.force_fault,
-            &frame.scalars->energy, stress_ptr, spx_, spy_, spz_, spq_,
-            pairs->cl_row_ptr, pairs->cl_col_idx, pairs->cl_mask,
-            pairs->cl_orig_index, nc, box, /*periodic=*/true,
+            energy_term(frame.scalars, EnergyKind::Pair, E), stress_ptr, spx_,
+            spy_, spz_, spq_, pairs->cl_row_ptr, pairs->cl_col_idx,
+            pairs->cl_mask, pairs->cl_orig_index, nc, box, /*periodic=*/true,
             static_cast<force_t>(alpha_), cutoff_sq,
-            static_cast<force_t>(ATV::units::coulomb));
+            static_cast<force_t>(ATV::units::md_qqr2e));
     };
     auto by_flags = [&](auto ortho_t) {
         using T = std::true_type;

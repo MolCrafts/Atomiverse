@@ -80,8 +80,7 @@ class Block {
         using U = std::remove_const_t<T>;
         auto it = columns_.find(key.key);
         if (it == columns_.end())
-            throw column_error("Frame block has no column '"
-                               + std::string(key.key) + "'");
+            throw missing_column_(key.key);
         Column& col = it->second;
         if (key.wire_id != kDynamicFieldId && col.wire_id() != key.wire_id)
             throw column_error("Frame column wire-id mismatch for '"
@@ -98,8 +97,7 @@ class Block {
         note_resolution_();
         auto it = columns_.find(key.key);
         if (it == columns_.end())
-            throw column_error("Frame block has no column '"
-                               + std::string(key.key) + "'");
+            throw missing_column_(key.key);
         const Column& col = it->second;
         if (key.wire_id != kDynamicFieldId && col.wire_id() != key.wire_id)
             throw column_error("Frame column wire-id mismatch for '"
@@ -137,6 +135,16 @@ class Block {
 
   private:
     friend class Frame;
+    /// @brief The error for a column this Block does not hold; names the
+    ///        how-to for an identity column a source left out
+    ///        (`atom_field_how_to`).
+    static column_error missing_column_(const char* key) {
+        std::string what =
+            "Frame block has no column '" + std::string(key) + "'";
+        if (const char* how = atom_field_how_to(key))
+            what += ": " + std::string(how);
+        return column_error(what);
+    }
 
     template <typename T>
     static bool dtype_matches_(ColDType dtype) noexcept {
@@ -155,8 +163,8 @@ class Block {
             return std::is_same_v<U, TagInt>;
         case ColDType::Int:
             return std::is_same_v<U, int>;
-        case ColDType::Int8:
-            return std::is_same_v<U, std::int8_t>;
+        case ColDType::Image:
+            return std::is_same_v<U, ImageInt>;
         }
         return false;
     }

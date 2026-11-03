@@ -46,7 +46,7 @@ ATV::cpu::Frame na_bcc(double a_ang) {
     const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 11;
+        frame.span(kAtom_atomic_number)[i] = 11;
         frame.span(kAtom_x)[i] = frac[i][0] * a_ang;
         frame.span(kAtom_y)[i] = frac[i][1] * a_ang;
         frame.span(kAtom_z)[i] = frac[i][2] * a_ang;

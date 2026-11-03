@@ -48,7 +48,8 @@ constexpr int kDepth = 3;
 /// ecut = 6 Ry / k_mesh = 1 runs in milliseconds.
 ATV::cpu::Frame make_si_fcc() {
     ATV::cpu::Frame f(2);
-    f.span(ATV::kAtom_type)[0] = f.span(ATV::kAtom_type)[1] = 14;
+    f.span(ATV::kAtom_atomic_number)[0] = f.span(ATV::kAtom_atomic_number)[1] =
+        14;
     f.span(ATV::kAtom_mass)[0] = f.span(ATV::kAtom_mass)[1] = 28.0855;
     f.span(ATV::kAtom_x)[0] = 0;
     f.span(ATV::kAtom_y)[0] = 0;

@@ -12,19 +12,12 @@
 /// `ATV_BUILD_HF` (`ATV_HAS_HF`); its sole consumer,
 /// `cuda::DensityRecorder`, is gated the same way.
 ///
-/// **Phase 1 note:** unlike `cpu::observer::RDF`, this is **not** wrapped as
-/// a `cpu::AsyncComponentBase` subclass. The evaluation requires a
-/// density matrix P from SCF, which is not a `cpu::Frame` field and is not
-/// carried in the default `FrameSnapshot`. The natural async-observer
-/// integration point is an SCF-driver observer wrapper that uses
-/// `FrameSnapshot::custom_payload` to shuttle P from the SCF solver to the
-/// analysis thread. That hook depends on the concrete Gaussian method
-/// (`cpu::scf::RHF` / `UHF` / `RKS` / `UKS`) being extended to publish P into
-/// custom_payload, plus the matching `Publish`. Deferred to Phase 1b
-/// or to the AIMD density-observation workstream.
+/// **Not an asynchronous consumer on CPU:** the evaluation needs the SCF
+/// density matrix P, which is not a `cpu::Frame` column, so it is not
+/// captured by `cpu::CaptureBuffer`. The CUDA `cuda::DensityRecorder`
+/// captures P as its own payload block of the shared `cuda::CaptureBuffer`.
 ///
 /// @see cuda::DensityRecorder (cuda/recorder/density_recorder.cuh)
-/// @see .claude/specs/parallel-md-engine.md  § B.1 custom_payload
 #pragma once
 
 #include <vector>

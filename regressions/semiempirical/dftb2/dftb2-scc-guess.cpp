@@ -71,7 +71,7 @@ double offset(int i, int s, int axis) {
 cpu::Frame make_cell(int step) {
     cpu::Frame f(kNat);
     for (int i = 0; i < kNat; ++i) {
-        f.span(kAtom_type)[i] = kZnum[i];
+        f.span(kAtom_atomic_number)[i] = kZnum[i];
         f.span(kAtom_x)[i] = kPx[i] + offset(i, step, 0);
         f.span(kAtom_y)[i] = kPy[i] + offset(i, step, 1);
         f.span(kAtom_z)[i] = kPz[i] + offset(i, step, 2);

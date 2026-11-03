@@ -44,7 +44,7 @@ cpu::Frame make_frame(int n) {
         mass[i] = 39.948;
         charge[i] = 0.5 - 0.25 * i;
         type[i] = 1 + (i % 2);
-        image(i, 0) = static_cast<std::int8_t>(i % 3 - 1);
+        image(i, 0) = static_cast<ATV::ImageInt>(i % 3 - 1);
     }
     // A bond and an angle so a deleted row carries real topology.
     frame.clear_tag_index();

@@ -30,7 +30,7 @@ namespace internal {
 struct DhfCycle {
     /// @brief Assemble `get_hcore`, `get_ovlp`, the (LL|LL)+(SS|LL)
     ///        integrals, and the core-Hamiltonian density.
-    /// @param frame Geometry [Å], species in `kAtom_type`.
+    /// @param frame Geometry [Å], species in `kAtom_atomic_number`.
     /// @param basis Gaussian basis (l ≤ 1).
     /// @param charge Molecular charge [e].
     /// @throws std::runtime_error naming `dhf_ao_lgt1` when a shell has l > 1.

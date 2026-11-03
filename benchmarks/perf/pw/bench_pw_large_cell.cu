@@ -63,7 +63,7 @@ cpu::Frame make_si_supercell(double a, int n) {
         for (int iy = 0; iy < n; ++iy)
             for (int iz = 0; iz < n; ++iz)
                 for (int b = 0; b < 8; ++b) {
-                    f.span(kAtom_type)[i] = 14;
+                    f.span(kAtom_atomic_number)[i] = 14;
                     f.span(kAtom_mass)[i] = 28.0855;
                     f.span(kAtom_x)[i] = (ix + frac[b][0]) * a;
                     f.span(kAtom_y)[i] = (iy + frac[b][1]) * a;

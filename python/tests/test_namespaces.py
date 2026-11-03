@@ -20,6 +20,8 @@ parameters (Ar, epsilon=0.0104 eV, sigma=3.4 A).
 
 from __future__ import annotations
 
+import json
+
 import importlib
 
 import numpy as np
@@ -65,6 +67,9 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("StressConverged", "atomiverse.minimizer", "StressConverged"),
     ("NeighborList", "atomiverse.neighbor", "NeighborList"),
     ("PairLJCut", "atomiverse.potentials.pair", "LJCut"),
+    ("PairLJCutCoulLong", "atomiverse.potentials.pair", "LJCutCoulLong"),
+    ("LJTypeCoeff", "atomiverse.potentials.pair", "LJTypeCoeff"),
+    ("R4TypeCoeff", "atomiverse.potentials.pair", "R4TypeCoeff"),
     ("BondHarmonic", "atomiverse.potentials.bond", "Harmonic"),
     ("AngleHarmonic", "atomiverse.potentials.angle", "Harmonic"),
     ("DihedralMultiHarmonic", "atomiverse.potentials.dihedral", "MultiHarmonic"),
@@ -107,10 +112,11 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("BondFene", "atomiverse.potentials.bond", "Fene"),
     ("DihedralCharmm", "atomiverse.potentials.dihedral", "Charmm"),
     ("ImproperHarmonic", "atomiverse.potentials.improper", "Harmonic"),
-    # Amber/GAFF styles (atomiverse.forcefield): the fused LJ + real-space
-    # Ewald pair is the real-space half of a long-range split, so it lives
-    # beside CoulLong.
-    ("PairLJCutCoulLong", "atomiverse.longrange", "LJCutCoulLong"),
+    # Coarse-grained polymer electrolytes: cosine bending angle and the
+    # uniform electric field (an MD-domain force source).
+    ("AngleCosine", "atomiverse.potentials.angle", "Cosine"),
+    ("FixEfield", "atomiverse.md", "FixEfield"),
+    # The Amber/GAFF improper of molpy force fields (atomiverse.forcefield).
     ("ImproperCvff", "atomiverse.potentials.improper", "Cvff"),
 )
 
@@ -202,12 +208,14 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 52 unconditional rows (the ``_MAPPING`` table above:
-        drivers, Monte Carlo, vibration, minimization, the force-field
-        catalogue, the NDDO methods and the two Amber/GAFF styles of
-        atomiverse.forcefield); a PW build contributes two types (PW,
-        PWResult) and an HF build the four concrete SCF methods."""
-        expected = 52 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        """The base has 56 entries: 14 core rows, 7 Monte Carlo, 8 NDDO
+        semiempirical (AM1/RM1/MNDO/PM3 + results), Evaluate and
+        single_point, 2 vibration, 8 geometry-optimization, 9 force-field
+        catalogue rows, the typed-LJ trio (PairLJCutCoulLong, LJTypeCoeff,
+        R4TypeCoeff), AngleCosine + FixEfield, and the Amber/GAFF
+        ImproperCvff of atomiverse.forcefield; a PW build contributes two
+        types (PW, PWResult) and an HF build the four concrete SCF methods."""
+        expected = 56 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(
@@ -279,6 +287,22 @@ class TestDeviceParameter:
         else:
             with pytest.raises(ValueError, match="(?i)cuda"):
                 MD(dt=0.001, device="cuda")
+
+    @needs("ATV_BUILD_MD")
+    def test_cuda_md_binding_does_not_need_semiempirical(self) -> None:
+        """A CUDA build with MD binds _CudaMD whatever else it builds: the
+        NDDO solvers are one client of the CUDA drivers, not their gate.
+        The configured flags come from the wheel's _build_info.json, not
+        from probing the binding under test."""
+        from atomiverse.cli.status import _installed_build_info_path
+
+        info = _installed_build_info_path()
+        if not info.is_file():
+            pytest.skip("no _build_info.json (not an installed native wheel)")
+        defines = json.loads(info.read_text(encoding="utf-8"))["defines"]
+        if defines.get("ATV_BUILD_CUDA") != "ON":
+            pytest.skip("needs ATV_BUILD_CUDA")
+        assert hasattr(_cpp, "_CudaMD")
 
     @needs("ATV_BUILD_MINIMIZER")
     def test_minimize_cuda_device_raises_value_error(self) -> None:

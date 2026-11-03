@@ -62,7 +62,7 @@ std::string parse_device_arg(int argc, char** argv) {
 cpu::Frame make_si_dimer() {
     cpu::Frame f(2);
     for (int i = 0; i < 2; ++i) {
-        f.span(kAtom_type)[i] = 14;
+        f.span(kAtom_atomic_number)[i] = 14;
         f.span(kAtom_mass)[i] = 28.0855;
     }
     f.span(kAtom_x)[0] = 0.0;

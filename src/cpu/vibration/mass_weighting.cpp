@@ -23,7 +23,7 @@ void MassWeighting::launch(const cpu::LaunchContext& ctx) {
     // Fetch IUPAC-2013 atomic masses from each atom's atomic number.
     // mass_amu() throws on an unsupported element (no fallback).
     // Hoisted once before the loop -- the 13.7x rule.
-    const int* __restrict sp_type = ctx.frame.span(kAtom_type);
+    const int* __restrict sp_type = ctx.frame.span(kAtom_atomic_number);
     for (int i = 0; i < n; ++i)
         ws_->mass_amu[i] = vib::mass_amu(sp_type[i]);
 

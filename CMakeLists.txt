@@ -100,6 +100,20 @@ if(NOT ATV_DOCS_ONLY)
     set(ATV_ID_SIZE "bigbig" CACHE STRING "Global-ID integer width: bigbig (64-bit IDs, default) or smallbig (32-bit IDs)")
     set_property(CACHE ATV_ID_SIZE PROPERTY STRINGS smallbig bigbig)
 
+    # Byte budget of a driver's shared asynchronous capture buffer: every
+    # frame captured for an asynchronous recorder or online-analysis
+    # observer and not yet consumed lives in it, allocated once when a run
+    # starts. A full buffer makes the run wait, never drops a step. A
+    # driver's `set_capture_buffer_bytes` (Python `capture_buffer_bytes=`)
+    # overrides it at run time.
+    set(ATV_CAPTURE_BUFFER_BYTES "268435456" CACHE STRING
+        "Default asynchronous capture buffer budget per driver [bytes] (256 MiB)")
+    if(NOT ATV_CAPTURE_BUFFER_BYTES MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "ATV_CAPTURE_BUFFER_BYTES must be a positive integer byte count "
+            "(got '${ATV_CAPTURE_BUFFER_BYTES}')")
+    endif()
+
     option(ATV_BUILD_HF "Build RHF electronic structure code" OFF)
     option(ATV_BUILD_PW "Build plane-wave DFT module (requires FFTW3)" OFF)
     option(ATV_BUILD_GPW "Build GPW DFT module (Gaussian + uniform-grid Hartree/XC + GTH PP)" OFF)
@@ -219,7 +233,10 @@ if(NOT ATV_DOCS_ONLY)
     # Always-on core + product-module gated domain sources (see AtvProductModules.cmake).
     set(ATOMIVERSE_SRCS
         # Cross-cutting core (logging registry, metrics)
+        src/core/capture_ledger.cpp
         src/core/log.cpp
+        src/core/lj_type_table.cpp
+        src/core/pppm_accuracy.cpp
         src/core/real_harmonics.cpp
         src/core/thermo_style.cpp
         # Backend-agnostic longrange operator math (Ewald/PME headers are
@@ -257,7 +274,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/driver/runtime.cpp
         src/cpu/communication/domain_runtime.cpp
         src/cpu/device/device_runtime.cpp
-        src/cpu/asynchronous/analysis_runtime.cpp
+        src/cpu/asynchronous/capture_buffer.cpp
         src/cpu/driver/dof.cpp
         src/cpu/frame/box.cpp
         src/cpu/component/zero.cpp
@@ -265,9 +282,7 @@ if(NOT ATV_DOCS_ONLY)
         # Multiscale shared machinery (QmEngine slot; used by SE and HF couplings)
         src/cpu/multiscale/internal/qm_subsystem.cpp
         src/cpu/multiscale/internal/qm_mm_vdw.cpp
-        src/cpu/asynchronous/analysis_executor.cpp
-        src/cpu/asynchronous/async_component_base.cpp
-        src/cpu/asynchronous/snapshot_publisher.cpp
+        src/cpu/asynchronous/async_consumer.cpp
         src/cpu/observe/virial_stress.cpp
         src/cpu/observe/widom.cpp
         src/cpu/observe/electrode_charge.cpp
@@ -547,8 +562,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/device/log_callback.cpp
             src/cuda/device/device_manager.cu
             src/cuda/communication/spatial_grid.cu
-            src/cuda/asynchronous/async_bridge.cu
-            src/cuda/asynchronous/record_base.cu
+            src/cuda/asynchronous/capture_buffer.cu
             src/cuda/frame/transfer.cu
             src/cuda/device/timer.cu
             src/cuda/driver/driver.cu
@@ -573,6 +587,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/dynamics/velocity_verlet.cu
                 src/cuda/dynamics/nve_limit.cu
                 src/cuda/dynamics/fix_langevin.cu
+                src/cuda/dynamics/fix_efield.cu
                 src/cuda/dynamics/brownian.cu
                 src/cuda/dynamics/nose_hoover_npt.cu
                 src/cuda/dynamics/init.cu
@@ -583,6 +598,11 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/record/pressure_series.cu
                 src/cuda/dynamics/barostat.cu
             )
+            # The CUDA `*.mrec` recorder appends through cpu::MrecWriter, so
+            # it follows the same IO gate.
+            if(ATV_BUILD_IO)
+                list(APPEND ATOMIVERSE_SRCS src/cuda/record/mrec_recorder.cu)
+            endif()
         endif()
         if(ATV_BUILD_NEIGHBOR)
             list(APPEND ATOMIVERSE_SRCS
@@ -1210,6 +1230,8 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_ID_SIZE STREQUAL "bigbig")
         target_compile_definitions(atomiverse PUBLIC ATV_ID_BIGBIG)
     endif()
+    target_compile_definitions(atomiverse PUBLIC
+        ATV_CAPTURE_BUFFER_BYTES=${ATV_CAPTURE_BUFFER_BYTES})
 
     if(OpenMP_CXX_FOUND)
         target_link_libraries(atomiverse PUBLIC OpenMP::OpenMP_CXX)
@@ -1321,9 +1343,12 @@ if(NOT ATV_DOCS_ONLY)
         endif()
         if(ATV_BUILD_SEMIEMPIRICAL)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_semiempirical.cpp)
-            if(ATV_BUILD_CUDA)
-                list(APPEND _ATV_NB_SRCS python/src/bindings/bind_cuda.cu)
-            endif()
+        endif()
+        # CUDA Evaluate / MD / Minimize handles. Semiempirical is one client,
+        # not the gate (bind.cpp mirrors this condition).
+        if(ATV_BUILD_CUDA AND (ATV_BUILD_SEMIEMPIRICAL OR ATV_BUILD_MD
+                               OR ATV_BUILD_MINIMIZER))
+            list(APPEND _ATV_NB_SRCS python/src/bindings/bind_cuda.cu)
         endif()
         if(ATV_BUILD_HF)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_scf.cpp)
@@ -1398,7 +1423,7 @@ if(NOT ATV_DOCS_ONLY)
                 ATV_BUILD_PW ATV_BUILD_GPW ATV_BUILD_SEMIEMPIRICAL
                 ATV_BUILD_CUDA ATV_BUILD_KSPACE ATV_BUILD_POTENTIALS
                 ATV_BUILD_NEIGHBOR ATV_USE_MPI ATV_REAL_STORAGE ATV_REAL_WORK
-                ATV_ID_SIZE)
+                ATV_ID_SIZE ATV_CAPTURE_BUFFER_BYTES)
             if(_atv_build_info)
                 string(APPEND _atv_build_info ",\n")
             endif()
@@ -1457,11 +1482,8 @@ if(NOT ATV_DOCS_ONLY)
 
     if(ATV_BUILD_TESTS)
         # Surface the build option as a compile definition so library code
-        # that wants to enable test-only hooks (e.g. the
-        # cuda::stream_synchronize counter in src/cuda/asynchronous/record_base.cu
-        # used by msu-pe-cuda-components-07's hot-path zero-sync gate) can
-        # compile in those hooks. PUBLIC so test executables that link
-        # atomiverse pick up the same definition.
+        # that wants to enable test-only hooks can compile them in. PUBLIC so
+        # test executables that link atomiverse pick up the same definition.
         target_compile_definitions(atomiverse PUBLIC ATV_BUILD_TESTS)
         add_subdirectory(tests)
     endif()

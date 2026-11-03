@@ -111,7 +111,7 @@ void CoulLong::launch(const LaunchContext& ctx) {
 
     const double alpha = alpha_;
     const double rc_sq = cutoff_sq_;
-    const double qqr2e = ATV::units::coulomb;
+    const double qqr2e = ATV::units::md_qqr2e;
 
     double energy_total = 0;
     double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;

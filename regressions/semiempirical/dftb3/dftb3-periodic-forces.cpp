@@ -24,8 +24,8 @@ namespace {
 // Off-eq 1-D C dimer: r=1.20 Å, Lx=2.8 Å → images at 1.20 and 1.60 Å (etc.).
 cpu::Frame make_c_chain_offeq() {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 6;
-    f.span(kAtom_type)[1] = 6;
+    f.span(kAtom_atomic_number)[0] = 6;
+    f.span(kAtom_atomic_number)[1] = 6;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;

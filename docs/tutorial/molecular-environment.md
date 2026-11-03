@@ -151,18 +151,22 @@ Regressions: `h2o_rhf_631gs_cpcm`, `ief-pcm-h2o`, `pcm-grad-h2o`.
 ## QM/MM electrostatic embedding
 
 Same shape as AIMD: one outer `MD` (or `Evaluate` / `Minimize`) and plural
-`set_evaluator`. Declare the QM region with **`kAtomQmZ`** (0 = MM, >0 = QM
-with atomic number Z). Hand any embedding-capable engine to
+`set_evaluator`. Declare the QM region with the **`kAtomQm`** mask (0 = MM,
+1 = QM); a QM atom's element is its species `kAtom_atomic_number`, and the MM
+pair tables key on the force-field `kAtom_type` — a QM/MM frame carries both
+columns. Hand any embedding-capable engine to
 `QmmmElectrostatic` via **`set_engine`**. Covalent **link cuts** come from
 mask × Frame bond topology (no `set_links`; no bonds ⇒ zero links). MM–MM
 uses ordinary pair styles; the coupling owns QM–MM cross terms and third-law
 site forces.
 
 ```cpp
-frame.blocks.at("atoms").insert("qm_z",
+frame.block("atoms").insert("qm",
     cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone, kDynamicFieldId});
-auto qm = frame.span(cpu::kAtomQmZ);
-qm[0] = 8; qm[1] = 1; qm[2] = 1; // water QM
+auto qm = frame.span(cpu::kAtomQm);
+qm[0] = qm[1] = qm[2] = 1;                  // water QM
+auto z = frame.span(kAtom_atomic_number);
+z[0] = 8; z[1] = 1; z[2] = 1;               // its species
 // optional: frame.add_bond(...) across QM–MM for link H
 
 cpu::QmmmElectrostatic qmmm{{{2, 2, 0.0065, 3.15}}, 10.0, 12.0};

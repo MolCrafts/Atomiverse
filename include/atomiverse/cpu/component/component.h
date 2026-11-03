@@ -190,6 +190,15 @@ class Component {
 
     virtual Scheduling scheduling() const { return Scheduling::blocking; }
     virtual int frequency() const { return 0; }
+    /// @brief Cadence phase: with `frequency() = N > 0` the Runtime launches
+    ///        this component when `step % N == frequency_phase()`, `step`
+    ///        being the zero-based index of the step in progress.
+    ///
+    /// Default 0 (steps 0, N, 2N, …). End-of-step output keyed on the
+    /// completed-step count (LAMMPS `update->ntimestep`, incremented at the
+    /// top of `Verlet::run`) returns `N - 1`, so it fires after steps
+    /// N, 2N, ….
+    virtual int frequency_phase() const { return 0; }
     virtual std::size_t memory_bytes() const { return 0; }
     virtual std::vector<DefaultBinding> default_bindings() const { return {}; }
 
@@ -240,6 +249,28 @@ class Component {
     /// use launch() with runtime.exec.initializing_forces set.
     /// Opt in only to establish forces at the current configuration.
     virtual void initialize_forces(const LaunchContext& ctx) { (void)ctx; }
+    /// @brief Output of the current state at the start of a run (LAMMPS
+    ///        `Output::setup`, src/output.cpp).
+    ///
+    /// The MD and minimizer drivers call it once per `run()` — fresh or
+    /// continued — after the setup force evaluation and before the first
+    /// step (LAMMPS `Min::setup` ends with `output->setup` too), on every
+    /// rank in lockstep, with `ctx.step` = the steps / iterations completed
+    /// so far (LAMMPS `update->ntimestep`; 0 on a fresh run). Default: nothing. Recorders
+    /// override it to write the initial state; their in-loop end_of_step
+    /// writes are labelled with the completed-step count `ctx.step + 1`, so
+    /// a frame labelled `s` is always the state after `s` steps.
+    virtual void setup_output(const LaunchContext& ctx) { (void)ctx; }
+    /// @brief Forced output of the final state when a minimization stops
+    ///        before its iteration budget (LAMMPS `Min::run`, src/min.cpp:
+    ///        on any stop condition but MAXITER, `output->write` runs at the
+    ///        final `update->ntimestep` with every dump and thermo due).
+    ///
+    /// `cpu::minimizer::Minimize` calls it once after its loop, on every
+    /// rank in lockstep, with `ctx.step` = iterations completed. Recorders
+    /// write the current state unless that step was already written
+    /// (LAMMPS `last_dump` / `last_thermo`). Default: nothing.
+    virtual void final_output(const LaunchContext& ctx) { (void)ctx; }
     virtual void destroy(const DestroyContext& ctx) { (void)ctx; }
 
   private:

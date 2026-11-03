@@ -106,7 +106,7 @@ TEST(TestPeriodicExchangeLattice, KIsHermitian) {
 TEST(TestPeriodicExchangeLattice, OverlapImagesAreHermitianAndSpd) {
     using namespace ATV;
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
     f.span(kAtom_x)[1] = f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.74;

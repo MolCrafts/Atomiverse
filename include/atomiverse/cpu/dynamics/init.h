@@ -17,7 +17,7 @@ namespace md {
 
 /// @brief Compute kinetic energy at end_of_step phase.
 ///
-/// KE = 0.5 * units::mass_v2_to_energy * sum(m * v^2), with OpenMP reduction.
+/// KE = 0.5 * units::md_mvv2e * sum(m * v^2), with OpenMP reduction.
 class KineticEnergy : public cpu::Observer {
   public:
     bool supports_input_changes(InputChange) const override { return true; }

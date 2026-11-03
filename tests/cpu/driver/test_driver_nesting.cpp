@@ -194,7 +194,7 @@ cpu::Frame two_atoms() {
         f.span(ATV::kAtom_y)[i] = 0.0;
         f.span(ATV::kAtom_z)[i] = 0.0;
         f.span(ATV::kAtom_mass)[i] = 1.0;
-        f.span(ATV::kAtom_type)[i] = 1;
+        f.span(ATV::kAtom_atomic_number)[i] = 1;
     }
     f.box = ATV::cpu::Box::cubic(10.0);
     return f;

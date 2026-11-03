@@ -46,7 +46,7 @@ static cpu::Frame make_h2(double r_ang) {
     f.span(kAtom_x)[1] = static_cast<StorageReal>(r_ang);
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -63,7 +63,7 @@ static cpu::Frame make_water() {
     const double ys[3] = {0.0, 0.0, 1.0};
     const int zs[3] = {8, 1, 1};
     for (int i = 0; i < 3; ++i) {
-        f.span(kAtom_type)[i] = zs[i];
+        f.span(kAtom_atomic_number)[i] = zs[i];
         f.span(kAtom_x)[i] = static_cast<StorageReal>(xs[i]);
         f.span(kAtom_y)[i] = static_cast<StorageReal>(ys[i]);
         f.span(kAtom_z)[i] = 0;

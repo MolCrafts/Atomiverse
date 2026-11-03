@@ -49,14 +49,27 @@ cpu::Frame make_frame(double x0) {
     return f;
 }
 
+// LAMMPS kspace_style pppm 1e-4 (order 5) for the two ±1 charges in the
+// 20 Å cube, cutoff 9 Å.
+longrange::PppmAccuracyRequest pppm_request() {
+    longrange::PppmAccuracyRequest r;
+    r.accuracy = 1.0e-4;
+    r.cutoff = 9.0;
+    r.order = 5;
+    r.cell[0] = r.cell[4] = r.cell[8] = 20.0;
+    r.natoms = 2;
+    r.qsqsum = 2.0;
+    return r;
+}
+
 double energy_at(double x0, double eps) {
-    const double alpha = cpu::pppm_alpha_from_accuracy(1.0e-4, 9.0);
+    const double alpha = longrange::pppm_from_accuracy(pppm_request()).alpha;
     cpu::Frame f = make_frame(x0);
     cpu::Evaluate eval;
     eval.set_neighbor(cpu::md::NeighborList<>{9.0, 1.0});
     eval.set_evaluator(cpu::PairLJCutCoulLong{{{0, 0, eps, 1.0}}, alpha, 9.0}
                            .set_special_bonds(1, 1, 1, 1, 1, 1));
-    eval.set_evaluator(cpu::KSpacePPPM::from_accuracy(1.0e-4, 9.0, 2.0));
+    eval.set_evaluator(cpu::KSpacePPPM::from_accuracy(pppm_request()));
     eval.build();
     eval.run(f);
     return f.meta.get(kEnergy);
@@ -70,14 +83,15 @@ int main(int argc, char** argv) {
 
     for (double eps : {0.0, 0.01}) {
         // Analytic force via one evaluation.
-        const double alpha = cpu::pppm_alpha_from_accuracy(1.0e-4, 9.0);
+        const double alpha =
+            longrange::pppm_from_accuracy(pppm_request()).alpha;
         cpu::Frame f = make_frame(5.0);
         cpu::Evaluate eval;
         eval.set_neighbor(cpu::md::NeighborList<>{9.0, 1.0});
         eval.set_evaluator(
             cpu::PairLJCutCoulLong{{{0, 0, eps, 1.0}}, alpha, 9.0}
                 .set_special_bonds(1, 1, 1, 1, 1, 1));
-        eval.set_evaluator(cpu::KSpacePPPM::from_accuracy(1.0e-4, 9.0, 2.0));
+        eval.set_evaluator(cpu::KSpacePPPM::from_accuracy(pppm_request()));
         eval.build();
         eval.run(f);
         const AccReal* fptr = f.span(kAtom_fx);

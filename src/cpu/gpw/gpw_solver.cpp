@@ -6351,8 +6351,8 @@ std::vector<GpwAtom> GpwDftAccess::atoms_from_frame(const GpwDft& m,
     if (n < 1)
         throw std::invalid_argument(
             "GpwDft: empty Frame (nothing to solve) — fill kAtom_x/y/z and "
-            "kAtom_type (Z) first");
-    const int* __restrict sp_type = frame.span(kAtom_type);
+            "kAtom_atomic_number (Z) first");
+    const int* __restrict sp_type = frame.span(kAtom_atomic_number);
     const StorageReal* __restrict sp_x = frame.span(kAtom_x);
     const StorageReal* __restrict sp_y = frame.span(kAtom_y);
     const StorageReal* __restrict sp_z = frame.span(kAtom_z);

@@ -2790,7 +2790,7 @@ double DFTB2::Workspace::launch_mio(
     int& out_iterations, EnergyTerms& out_terms, Runtime* host,
     const std::array<std::vector<StorageReal>, 3>* positions) {
     const int n_at = f.nlocal();
-    const int* type = f.span(kAtom_type).data();
+    const int* type = f.span(kAtom_atomic_number).data();
     const StorageReal* x =
         positions ? (*positions)[0].data() : f.span(kAtom_x).data();
     const StorageReal* y =
@@ -3057,7 +3057,7 @@ double DFTB2::Workspace::launch_3ob(const cpu::Frame& f, double scc_tol,
                                     double& out_residual, int& out_iterations,
                                     EnergyTerms& out_terms, Runtime* host) {
     const int n_at = f.nlocal();
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     const StorageReal* x = f.span(kAtom_x);
     const StorageReal* y = f.span(kAtom_y);
     const StorageReal* z = f.span(kAtom_z);
@@ -3352,7 +3352,7 @@ void DFTB2::compute(const Frame& f, bool want_forces, bool want_stress,
             throw std::invalid_argument(
                 std::string("DFTB2::launch: spin_w_ha is unset — ")
                 + kDftbSpinHowto);
-        const int* ztype = f.span(kAtom_type).data();
+        const int* ztype = f.span(kAtom_atomic_number).data();
         std::vector<int> z_per_atom(static_cast<std::size_t>(n_at_launch));
         for (int a = 0; a < n_at_launch; ++a)
             z_per_atom[static_cast<std::size_t>(a)] = ztype[a];
@@ -3363,7 +3363,7 @@ void DFTB2::compute(const Frame& f, bool want_forces, bool want_stress,
     const double* guess_spin = nullptr;
     xt::xtensor<double, 2> aspc_predicted;
     bool aspc_used_prediction = false;
-    const auto species = f.span(kAtom_type);
+    const auto species = f.span(kAtom_atomic_number);
     const bool same_identity =
         predictor_n_at_ == n_at_launch
         && workspace_->predictor_species.size()
@@ -3431,7 +3431,7 @@ void DFTB2::compute(const Frame& f, bool want_forces, bool want_stress,
     if (any_u) {
         // Resolve Frame columns once at this launch boundary (13.7× rule).
         const int n_at = f.nlocal();
-        const int* type = f.span(kAtom_type).data();
+        const int* type = f.span(kAtom_atomic_number).data();
 
         auto apply_e_u = [&](const std::vector<double>& dq) {
             double eu = 0;
@@ -3527,7 +3527,7 @@ void DFTB2::compute(const Frame& f, bool want_forces, bool want_stress,
     e_disp_ = 0.0;
     if (d3) {
         const int n_at = f.nlocal();
-        const int* type = f.span(kAtom_type).data();
+        const int* type = f.span(kAtom_atomic_number).data();
         const StorageReal* x = f.span(kAtom_x);
         const StorageReal* y = f.span(kAtom_y);
         const StorageReal* z = f.span(kAtom_z);
@@ -3705,7 +3705,7 @@ TdDftbResult DFTB2::td_casida(const Frame& frame, int n_states,
     const int n_at = frame.nlocal();
     if (n_at < 1)
         throw std::invalid_argument("DFTB2::td_casida: empty frame");
-    const int* type = frame.span(kAtom_type).data();
+    const int* type = frame.span(kAtom_atomic_number).data();
     const StorageReal* x = frame.span(kAtom_x).data();
     const StorageReal* y = frame.span(kAtom_y).data();
     const StorageReal* z = frame.span(kAtom_z).data();

@@ -6,10 +6,12 @@ import pytest
 
 from _domains import skip_module_unless
 
-skip_module_unless("ATV_BUILD_HF")
-
 molpy = pytest.importorskip("molpy")
-from atomiverse import scf  # noqa: E402
+# atomiverse.scf raises MissingDomainError (an ImportError, not a
+# ModuleNotFoundError) without the hf module; pytest >= 9 importorskip no
+# longer skips on it, so the domain is checked first.
+skip_module_unless("ATV_BUILD_HF")
+scf = pytest.importorskip("atomiverse.scf")
 
 
 def h2_frame():

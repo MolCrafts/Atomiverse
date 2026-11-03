@@ -93,7 +93,7 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
     const double sig6 = sigma6_;
     const double alpha = alpha_;
     const double p = p_;
-    const double qqr2e = units::coulomb;
+    const double qqr2e = units::md_qqr2e;
     const double lam = std::min(1.0, std::max(0.0, lambda));
     const double one_m_lam = 1.0 - lam;
     const double soft0 = alpha * sig6 * std::pow(one_m_lam, p);

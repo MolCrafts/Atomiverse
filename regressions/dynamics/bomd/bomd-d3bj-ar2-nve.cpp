@@ -80,7 +80,7 @@ constexpr double kHaBohrInEvAng = 1.0 / units::kEvPerAngstromInHartreePerBohr;
 cpu::Frame ar2(double r) {
     cpu::Frame f(2);
     for (int i = 0; i < 2; ++i) {
-        f.span(kAtom_type)[i] = 18;
+        f.span(kAtom_atomic_number)[i] = 18;
         f.span(kAtom_mass)[i] = kArMass;
         f.span(kAtom_tag)[i] = i + 1;
         f.span(kAtom_x)[i] = 0.5 * kBoxL;

@@ -32,9 +32,10 @@ Standard atomic state lives in the `"atoms"` Block:
 
 - positions, velocities, masses and charges use `StorageReal`;
 - forces use `AccReal`, which is always `double`;
-- types and topology counts use native `int`;
+- the two identity columns (below) and topology counts use native `int`;
 - global identity uses the configurable `TagInt`;
-- images use three native `int8_t` columns;
+- images use one stride-3 `ImageInt` column (int32 per component in every
+  ID build; `core/precision.h` gives the LAMMPS `imageint` comparison);
 - bonds, angles, dihedrals and special lists use per-row variable-width
   topology columns;
 - runtime columns are inserted straight into the Block, carrying their own
@@ -43,8 +44,32 @@ Standard atomic state lives in the `"atoms"` Block:
 A CPU `Column` uniformly owns a two-dimensional `[rows, cols]` xtensor. Scalar
 columns have `cols == 1`; fixed vectors and topology strides use the same
 representation. The storage variant keeps the real types — `StorageReal`,
-`AccReal`, `TagInt`, `int`, `int8_t` — and never funnels a generic get/set
+`AccReal`, `TagInt`, `int`, `ImageInt` — and never funnels a generic get/set
 through `double`.
+
+### Identity: force-field type and species are two columns
+
+An atom carries two independent identities, one column each (LAMMPS
+semantics: an atom type is independent of its element):
+
+| Column | Key | Meaning | Read by | molpy |
+| --- | --- | --- | --- | --- |
+| `kAtom_type` | `type` | force-field type index, used as-is | every per-type table: typed LJ (`LJTypeCoeff` / `R4TypeCoeff`), Born, DPD `a_matrix`, Gaussian-charge widths, TIP4P O/H selectors, per-type polarizability, QEq / electrode / fix type selectors, MC insertion | `atoms.type_id` (u64) |
+| `kAtom_atomic_number` | `atomic_number` | chemical species Z, 0..118 (0 = wildcard / no element) | every element lookup: Gaussian / plane-wave / GPW basis and pseudopotentials, semiempirical and DFTB parameters, D3 / D4, AM1-BCC, element masses (vibrations), element symbols on output (XYZ, cube, mrec) | `atoms.atomic_number` (u64) |
+
+Neither stands in for the other: a coarse-grained bead has a type and no
+element, a QM geometry has species and no force-field types, and a QM/MM
+frame carries both. `Frame(n)` allocates both (zero-filled) like every schema
+column; a boundary whose source does not carry one — `from_molpy` without
+`type_id` or `atomic_number`, a LAMMPS data file (no species), an ExtXYZ file
+(no types) — **removes** that column instead of zero-filling it. A consumer
+that needs it then throws with the how-to (`atom_field_how_to`): a missing
+column at `span`, or the build-time ghost-contract check for a pair style
+that declares `read_stable(kAtom_type, …)`. Species are never guessed from a
+mass or a name; element symbols become Z only through molpy's
+`Element::fill_atomic_numbers`. Every mover of atom state (sort, migration,
+halo when declared, gather, broadcast, `clone_structure`, CUDA transfer and
+cell sort) carries whichever of the two columns the Frame has.
 
 `core/frame_schema.h` is the single semantic manifest for the standard atomic
 columns. It fixes the explicit wire ID, dtype, stride, topology group and the
@@ -192,9 +217,11 @@ The division of labour:
 - element identity has exactly one public owner, `molrs::Element`. Atomiverse
   declares no alias, no second enum and no implicit conversion. The ExtXYZ
   entry point consumes the `species` column that format prescribes, produces
-  `atoms.type` through the canonical `molrs::Element`, drops the format column,
-  and only then enters the strict `from_molpy`. The general boundary does no
-  `type` / `element` / `species` fallback;
+  `atoms.atomic_number` through the canonical `molrs::Element`, drops the
+  format column, and only then enters the strict `from_molpy`. The general
+  boundary reads `atoms.atomic_number` into the species column and
+  `atoms.type_id` into the type column and does no `type` / `element` /
+  `species` fallback;
 - write-back writes the result columns and serializable meta named in the
   current boundary contract, with an explicit range check on tag narrowing;
 - CPU-local population, capacity, stride and the tag index are never
