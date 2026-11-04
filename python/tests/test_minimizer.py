@@ -737,3 +737,50 @@ class TestMinimizeLateSetters:
         assert abs(r_after - _R_STAR) < abs(r_mid - _R_STAR), (
             "the second leg must move the dimer TOWARD the minimum"
         )
+
+
+# ── reproducibility: identical input → identical minimization ────────
+
+_REPRO_SCRIPT = r"""
+import numpy as np, molpy
+from atomiverse.longrange import CoulLong, KSpacePPPM
+from atomiverse.minimizer import LBFGS, ForceConverged, Minimize
+from atomiverse.neighbor import NeighborList
+from atomiverse.potentials.pair import LJCut
+rng = np.random.default_rng(3)
+side, a = 4, 2.9
+g = np.arange(side) * a
+xyz = np.array(np.meshgrid(g, g, g, indexing="ij")).reshape(3, -1).T + rng.normal(0, 0.15, (side**3, 3))
+q = np.array([1.0 if (i + j + k) % 2 == 0 else -1.0 for i in range(side) for j in range(side) for k in range(side)])
+frame = molpy.Frame(); atoms = molpy.Block()
+for axis, col in zip("xyz", xyz.T): atoms.insert(axis, col.copy())
+atoms.insert("mass", np.full(len(q), 30.0)); atoms.insert("charge", q)
+atoms.insert("atomic_number", np.full(len(q), 11, dtype=np.uint32))
+frame["atoms"] = atoms; frame.box = molpy.Box.cube(side * a)
+opt = Minimize()
+opt.add_criterion(ForceConverged(ftol=0.05, rms_ftol=0.03, max_dtol=0.0, rms_dtol=0.0, etol=0.0))
+opt.set_optimizer(LBFGS(memory=5, alpha0=0.01, max_ls=10))
+opt.set_neighbor(NeighborList(5.5, 0.5))
+opt.set_evaluator(LJCut(0.01, 2.6, 5.5))
+opt.set_evaluator(CoulLong(0.6, 5.5))
+opt.set_evaluator(KSpacePPPM(0.6, grid_spacing=0.6, order=5))
+r = opt.run(frame, 300)
+print(r.iterations, r.stop_reason, repr(float(frame.meta["energy"])))
+"""
+
+
+@needs("ATV_BUILD_KSPACE")
+def test_pppm_minimization_reproduces_across_processes() -> None:
+    """A timed FFTW plan could differ between processes and change the path;
+    two fresh interpreters at the same thread count must agree bit for bit."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, OMP_NUM_THREADS="2")
+    runs = [
+        subprocess.run([sys.executable, "-c", _REPRO_SCRIPT], env=env, check=True,
+                       capture_output=True, text=True).stdout.strip().splitlines()[-1]
+        for _ in range(2)
+    ]
+    assert runs[0] == runs[1], runs

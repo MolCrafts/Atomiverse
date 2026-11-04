@@ -91,7 +91,8 @@ void ImproperHarmonic::compute(const LaunchContext& ctx) {
 
     scratch_.bind(f);
 
-#pragma omp parallel reduction(+ : energy_total)
+    const int team = scratch_.team(n_tuples);
+#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP

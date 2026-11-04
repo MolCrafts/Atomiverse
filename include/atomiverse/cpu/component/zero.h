@@ -21,6 +21,7 @@ namespace cpu {
 class ZeroForces : public cpu::Component {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
+    bool trial_invariant() const override { return true; }
     std::string name() const override { return "zero_forces"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
@@ -31,6 +32,7 @@ class ZeroForces : public cpu::Component {
 class ZeroEnergy : public cpu::Component {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
+    bool trial_invariant() const override { return true; }
     std::string name() const override { return "zero_energy"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
@@ -43,6 +45,7 @@ class ZeroEnergy : public cpu::Component {
 class ZeroStress : public cpu::Component {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
+    bool trial_invariant() const override { return true; }
     std::string name() const override { return "zero_stress"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
@@ -52,6 +55,7 @@ class ZeroStress : public cpu::Component {
 class ZeroKinetic : public cpu::Component {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
+    bool trial_invariant() const override { return true; }
     std::string name() const override { return "zero_kinetic"; }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;

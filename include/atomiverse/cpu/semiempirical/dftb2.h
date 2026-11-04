@@ -152,8 +152,14 @@ enum class DftbBoundary {
 ///   dftb.k_mesh = {4, 1, 1};
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
 /// @endcode
-class DFTB2 : public cpu::Driver<ATV::scc::Phase>,
-              public cpu::Semiempirical,
+///
+/// `cpu::Semiempirical` (the Component identity) is the FIRST base on purpose:
+/// nanobind upcasts without a pointer adjustment, so the Python `DFTB2`
+/// (bound with `cpu::Component` as its base) is only a valid `Component&`
+/// when that subobject sits at offset zero. With the Driver first, every
+/// Python `set_evaluator(dftb2)` handed the engine a misaligned Component.
+class DFTB2 : public cpu::Semiempirical,
+              public cpu::Driver<ATV::scc::Phase>,
               public cpu::QmEngine {
   public:
     /// @brief SCC residual tolerance on max |Δq| (and |Δm| when open shell) [e].

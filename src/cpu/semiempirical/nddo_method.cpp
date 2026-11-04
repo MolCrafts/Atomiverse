@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -56,6 +58,26 @@ WrappedPositions unwrap_molecule(cpu::Frame& frame) {
             z[i] = static_cast<StorageReal>(z0 + dz);
     }
     return saved;
+}
+
+/// @brief What a caller needs to judge a failed SCF: method, iterations,
+///        final residuals and the thresholds they were judged against.
+std::string nonconvergence_message(const NDDOSolver& solver, int iterations,
+                                   double density_residual,
+                                   double energy_residual) {
+    const auto& config = solver.config();
+    char buffer[480];
+    std::snprintf(buffer, sizeof buffer,
+                  "%s SCF did not converge in %d iteration(s): last "
+                  "max|dP| = %.3e (density_tol %.3e), last |dE| = %.3e eV "
+                  "(energy_tol %.3e eV), max|FP-PF| = %.3e eV. Both "
+                  "tolerances must be met. Check the geometry, charge and "
+                  "multiplicity, or raise max_iter.",
+                  ATV::semiempirical::nddo_method_name(config.method),
+                  iterations, density_residual, config.density_tol,
+                  energy_residual, config.energy_tol,
+                  solver.commutator_residual());
+    return buffer;
 }
 
 void restore_positions(cpu::Frame& frame, const WrappedPositions& saved) {
@@ -260,7 +282,9 @@ ATV::semiempirical::NDDOResult& NddoMethod::drive_(NDDOSolver& solver,
         release();
         solver.result().converged = this->converged();
         if (!solver.result().converged)
-            throw std::runtime_error("NDDOSolver SCF did not converge");
+            throw std::runtime_error(nonconvergence_message(
+                solver, iterations_, work.density_residual,
+                work.energy_residual));
         return solver.result();
     } catch (...) {
         this->mutable_outer_status().reset();

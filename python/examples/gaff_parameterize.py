@@ -19,15 +19,15 @@ def main() -> None:
     charge_model = atv.AM1BCCCharges(method=atv.AM1(charge=0), correction="bcc")
     charges = charge_model.assign(molecule)
 
-    typifier = mp.typifier.GaffTypifier(atomtype="gaff2")
-    typed = typifier.typify(molecule)
-    forcefield = typifier.get_forcefield()
-    for row, (atom, charge) in enumerate(zip(typed.atoms, charges, strict=True), 1):
-        atom["charge"] = float(charge)
-        element = mp.Element.by_number(int(atom["atomic_number"])).symbol
-        atom["name"] = f"{element}{row}"
+    # Antechamber atom types first, then the GAFF2 bonded terms on them.
+    typed = mp.ff.typifier.AtdTypifier(parameter_set="gaff2").typify(molecule)
+    typifier = mp.ff.typifier.GaffTypifier(parameter_set="gaff2")
+    typed = typifier.typify(typed)
+    forcefield = typifier.forcefield()
 
+    # MOL2 names atoms C1, H7, ... from the element when the frame has none.
     frame = typed.to_frame()
+    frame["atoms"].insert("charge", charges)
     mp.io.write_mol2(Path("ethanol.mol2"), frame)
     mp.io.amber.AmberFrcmodWriter().write(Path("ethanol.frcmod"), forcefield)
     print(

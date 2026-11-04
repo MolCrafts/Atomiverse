@@ -58,6 +58,8 @@ Units: typed frame metadata energy [eV]; ``electronic_energy_hartree`` [Hartree]
 from __future__ import annotations
 
 import math
+import re
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -602,6 +604,118 @@ class TestUnsupportedElement:
 
         with pytest.raises(RuntimeError):
             av.single_point(frame, av.AM1())
+
+
+# ── Fail-loud boundary: overlapping nuclei and an exhausted SCF ──────
+
+#: A carbon 0.64 Å from methane's carbon — the C13–C101 fault (0.643 Å) of
+#: the 205-atom assembly that made AM1 iterate to "did not converge". The
+#: NDDO limit is 0.6 × (r_C + r_C) = 0.912 Å (Cordero covalent radii).
+_STRAY_C_Z = 0.64  # [Å]
+
+
+def _ch4_with_stray_carbon() -> "molpy.Frame":
+    frame = _make_ch4_frame()
+    atoms = frame["atoms"]
+    grown = molpy.Block()
+    for key, extra in (("x", 0.0), ("y", 0.0), ("z", _STRAY_C_Z), ("mass", 12.011)):
+        grown.insert(key, np.append(np.asarray(atoms[key], dtype=np.float64), extra))
+    grown.insert(
+        "atomic_number", np.append(np.asarray(atoms["atomic_number"]), 6).astype(np.uint32)
+    )
+    frame["atoms"] = grown
+    return frame
+
+
+class TestImpossibleGeometry:
+    @pytest.mark.parametrize("factory", [av.AM1, av.RM1, av.MNDO, av.PM3])
+    def test_overlap_refused_before_scf_with_pair_named(self, factory) -> None:
+        method = factory()
+        with pytest.raises(ValueError) as excinfo:
+            av.single_point(_ch4_with_stray_carbon(), method)
+        message = str(excinfo.value)
+        assert "before the SCF" in message
+        assert "1 atom pair" in message
+        assert "C0-C5 0.640 A (limit 0.912 A)" in message
+        assert method.last_result().iterations == 0
+
+    def test_am1bcc_refuses_the_same_geometry(self) -> None:
+        mol = molpy.Atomistic()
+        frame = _ch4_with_stray_carbon()
+        atoms = frame["atoms"]
+        added = [
+            mol.add_atom(atomic_number=int(z), x=float(x), y=float(y), z=float(w))
+            for z, x, y, w in zip(atoms["atomic_number"], atoms["x"], atoms["y"], atoms["z"])
+        ]
+        for i in (1, 2, 3, 4, 5):
+            mol.add_bond(added[0], added[i], bond_type=1, bond_number=1)
+        model = av.AM1BCCCharges(method=av.AM1(charge=0), correction="bcc")
+        with pytest.raises(ValueError, match=r"C0-C5 0\.640 A .*before the SCF|before the SCF.*C0-C5 0\.640 A"):
+            model.assign(mol)
+
+    def test_h2_bond_length_is_legal(self) -> None:
+        frame = molpy.Frame()
+        atoms = molpy.Block()
+        atoms.insert("x", np.array([0.0, 0.74]))
+        atoms.insert("y", np.zeros(2))
+        atoms.insert("z", np.zeros(2))
+        atoms.insert("atomic_number", np.array([1, 1], dtype=np.uint32))
+        frame["atoms"] = atoms
+        method = av.AM1()
+        av.single_point(frame, method)
+        assert method.last_result().converged
+
+
+class TestScfExhaustion:
+    def test_message_reports_iterations_residuals_and_thresholds(self) -> None:
+        method = av.AM1(max_iter=2)
+        with pytest.raises(RuntimeError) as excinfo:
+            av.single_point(_make_ch4_frame(), method)
+        message = str(excinfo.value)
+        assert "AM1 SCF did not converge in 2 iteration(s)" in message
+        assert "density_tol 1.000e-08" in message
+        assert "energy_tol 1.000e-10 eV" in message
+        match = re.search(r"max\|dP\| = (\S+) .*\|dE\| = (\S+) eV", message)
+        assert match, message
+        # Two iterations of a cold start are far from both thresholds.
+        assert float(match.group(1)) > 1e-8
+        assert math.isfinite(float(match.group(2)))
+        assert not method.last_result().converged
+
+
+# ── Mulliken parity with AmberTools SQM on a 71-atom molecule ────────
+
+_SQM_ORACLE = Path(__file__).resolve().parents[2] / "tools/sqm_oracle"
+#: SQM prints Mulliken charges to 1e-3 e, so rounding alone allows 5e-4 e;
+#: up to another 5e-4 e covers its STO-6G overlap and legacy constants
+#: (tools/sqm_oracle/README.md). Observed maximum: 5.99e-4 e.
+_TOL_SQM_CHARGE = 1.0e-3  # [e]
+
+
+def _sqm_monomer() -> tuple["molpy.Frame", "np.ndarray"]:
+    deck = (_SQM_ORACLE / "inputs/am1-pbix-monomer/sqm.in").read_text().splitlines()
+    rows = [line.split() for line in deck[deck.index(" /") + 1 :] if line.strip()]
+    xyz = np.array([[float(v) for v in row[2:5]] for row in rows])
+    frame = molpy.Frame()
+    atoms = molpy.Block()
+    for axis, column in zip("xyz", xyz.T):
+        atoms.insert(axis, column.copy())
+    atoms.insert("atomic_number", np.array([int(row[0]) for row in rows], dtype=np.uint32))
+    frame["atoms"] = atoms
+    out = (_SQM_ORACLE / "outputs/am1-pbix-monomer/sqm.out.txt").read_text()
+    table = out.split("Mulliken Charge\n")[1].split("Total Mulliken Charge")[0]
+    charges = np.array([float(line.split()[-1]) for line in table.strip().splitlines()])
+    return frame, charges
+
+
+class TestSqmMonomerParity:
+    def test_mulliken_charges_match_sqm(self) -> None:
+        frame, sqm_charges = _sqm_monomer()
+        assert sqm_charges.shape == (71,)
+        method = av.AM1(charge=0)
+        av.single_point(frame, method)
+        charges = np.asarray(method.last_result().mulliken_charges)
+        np.testing.assert_allclose(charges, sqm_charges, rtol=0, atol=_TOL_SQM_CHARGE)
 
 
 # ── AM1-BCC / ABCG2 charges (the GAFF / GAFF2 charge model) ─────────

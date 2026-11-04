@@ -174,9 +174,8 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
     Voigt6 vir;
     scratch_.bind(f);
 
-#pragma omp parallel num_threads(                                              \
-        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
-    reduction(+ : energy_total)
+    const int team = scratch_.team(n_tuples);
+#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP

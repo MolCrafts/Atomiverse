@@ -3,6 +3,7 @@
 ///        Optimization 2nd ed., Algorithm 7.4).
 
 #include "atomiverse/cpu/minimize/lbfgs_history.h"
+#include "atomiverse/cpu/minimize/vector_loop.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,7 +18,8 @@ namespace {
 /// Local (this-rank) inner product; the caller reduces it.
 double dot_local(const double* a, const double* b, int dim) {
     double s = 0;
-#pragma omp parallel for schedule(static) reduction(+ : s)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(+ : s) if (dim >= kParallelMinElements)
     for (int j = 0; j < dim; ++j)
         s += a[j] * b[j];
     return s;
@@ -79,7 +81,8 @@ void LbfgsHistory::push(const double* x, const double* g, int dim) {
     auto& y = y_history_[idx];
 
     double ys = 0, ss = 0, yy = 0;
-#pragma omp parallel for schedule(static) reduction(+ : ys, ss, yy)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(+ : ys, ss, yy) if (dim >= kParallelMinElements)
     for (int j = 0; j < dim; ++j) {
         s[j] = x[j] - x_prev_[j];
         y[j] = g[j] - g_prev_[j];
@@ -113,7 +116,7 @@ void LbfgsHistory::direction(const double* g, double* dir_out, int dim) {
             * sum_(dot_local(s_history_[idx].data(), q_ws_.data(), dim));
         alpha_ws_[k] = a;
         const auto& yk = y_history_[idx];
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
         for (int j = 0; j < dim; ++j)
             q_ws_[j] -= a * yk[j];
     }
@@ -129,7 +132,7 @@ void LbfgsHistory::direction(const double* g, double* dir_out, int dim) {
             gamma = 1.0 / (rho_history_[newest] * yy);
     }
 
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
     for (int j = 0; j < dim; ++j)
         r_ws_[j] = gamma * q_ws_[j];
 
@@ -140,13 +143,13 @@ void LbfgsHistory::direction(const double* g, double* dir_out, int dim) {
             * sum_(dot_local(y_history_[idx].data(), r_ws_.data(), dim));
         const auto& sk = s_history_[idx];
         const double coeff = alpha_ws_[k] - b;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
         for (int j = 0; j < dim; ++j)
             r_ws_[j] += sk[j] * coeff;
     }
 
     // dir = -H g: the descent direction.
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
     for (int j = 0; j < dim; ++j)
         dir_out[j] = -r_ws_[j];
 }

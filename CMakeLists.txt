@@ -354,6 +354,7 @@ if(NOT ATV_DOCS_ONLY)
             src/semiempirical/mndo_parameters.cpp
             src/semiempirical/pm3_parameters.cpp
             src/semiempirical/nddo_parameters.cpp
+            src/semiempirical/nddo_geometry.cpp
             src/cpu/semiempirical/nddo_density.cpp
             src/cpu/semiempirical/nddo_fock.cpp
             src/cpu/semiempirical/nddo_hcore.cpp

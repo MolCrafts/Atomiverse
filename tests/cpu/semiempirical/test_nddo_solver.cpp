@@ -1,5 +1,6 @@
 /// @file cpu/semiempirical/test_nddo_solver.cpp
 /// @brief NDDO preparation boundaries; no self-consistency loop.
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -8,6 +9,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/semiempirical/internal/nddo_solver.h"
 #include "atomiverse/cpu/semiempirical/nddo_density.h"
+#include "atomiverse/cpu/semiempirical/nddo_fock.h"
 
 namespace {
 using namespace ATV;
@@ -300,5 +302,93 @@ TEST(NddoDiagonalizer, RejectsInvalidInputAndCanRetry) {
     // An invalid new dimension must not invalidate the already-built size.
     EXPECT_THROW(solver.build(-1), std::invalid_argument);
     EXPECT_NO_THROW(solver.diagonalize_packed(packed, coefficients));
+}
+
+TEST(NddoFock, CachedTwoCenterBlocksReproduceTheDirectBuild) {
+    // Formaldehyde plus a distant water: s/p and s-only blocks of every size.
+    cpu::Frame frame(7);
+    const int z[7] = {6, 8, 1, 1, 8, 1, 1};
+    const double xyz[7][3] = {{0, 0, 0},         {0, 0, 1.21}, {0.94, 0, -0.54},
+                              {-0.94, 0, -0.54}, {3, 0, 0},    {3.96, 0, 0},
+                              {2.76, 0.93, 0}};
+    for (int a = 0; a < 7; ++a) {
+        frame.span(kAtom_type)[a] = z[a];
+        frame.span(kAtom_x)[a] = xyz[a][0];
+        frame.span(kAtom_y)[a] = xyz[a][1];
+        frame.span(kAtom_z)[a] = xyz[a][2];
+    }
+    const NDDOSystem system{frame, 0, 1};
+    const auto packed = static_cast<std::size_t>(system.n_orbitals)
+                        * (system.n_orbitals + 1) / 2;
+    std::vector<double> hcore(packed), density(packed), spin(packed);
+    for (std::size_t k = 0; k < packed; ++k) {
+        hcore[k] = -1.0 + 0.01 * static_cast<double>(k % 17);
+        density[k] = 0.3 * std::sin(0.7 * static_cast<double>(k));
+        spin[k] = 0.5 * density[k];
+    }
+    NDDOFockBuilder direct, cached;
+    const auto expected = direct.build(system, frame, hcore, density, spin);
+    EXPECT_FALSE(cached.has_two_center_cache(system));
+    EXPECT_THROW(cached.build_cached(system, hcore, density, spin),
+                 std::logic_error);
+    ASSERT_TRUE(cached.cache_two_center(
+        system, frame.span(kAtom_x), frame.span(kAtom_y), frame.span(kAtom_z)));
+    ASSERT_TRUE(cached.has_two_center_cache(system));
+    const auto fock = cached.build_cached(system, hcore, density, spin);
+    ASSERT_EQ(fock.size(), expected.size());
+    for (std::size_t k = 0; k < fock.size(); ++k)
+        EXPECT_NEAR(fock[k], expected[k],
+                    1e-12 * (1.0 + std::abs(expected[k])));
+    cached.release_two_center();
+    EXPECT_FALSE(cached.has_two_center_cache(system));
+}
+
+TEST(NddoDiagonalizer, PseudoStepKeepsEigenvectorsAndOrthonormality) {
+    // 4x4, two occupied orbitals with a 2 eV gap.
+    const int n = 4;
+    const std::vector<double> fock{-3.0, 0.1,  -2.5, 0.0, 0.2,
+                                   1.0,  0.05, 0.0,  0.1, 2.0};
+    NDDODiagonalizer solver;
+    solver.build(n);
+    std::vector<double> c(16, 731.0);
+    EXPECT_FALSE(solver.pseudo_diagonalize_packed(fock, 2, 0.5, c));
+    EXPECT_EQ(c, std::vector<double>(16, 731.0));
+    std::vector<double> exact;
+    solver.diagonalize_packed(fock, exact);
+    std::vector<double> rotated;
+    // At self-consistency (F_ov = 0) the step is the identity.
+    ASSERT_TRUE(solver.pseudo_diagonalize_packed(fock, 2, 0.5, rotated));
+    for (std::size_t k = 0; k < 16; ++k)
+        EXPECT_NEAR(rotated[k], exact[k], 1e-12);
+    EXPECT_FALSE(solver.pseudo_diagonalize_packed(fock, 2, 1e3, rotated));
+    EXPECT_FALSE(solver.pseudo_diagonalize_packed(fock, 0, 0.5, rotated));
+    // A perturbed operator: the rotated set stays orthonormal and its
+    // occupied-virtual coupling shrinks.
+    auto perturbed = fock;
+    perturbed[packed_index(2, 0)] += 0.2;
+    perturbed[packed_index(3, 1)] -= 0.15;
+    auto coupling = [&](const std::vector<double>& cr) {
+        double largest = 0.0;
+        for (int i = 0; i < 2; ++i)
+            for (int a = 2; a < 4; ++a) {
+                double f = 0.0;
+                for (int mu = 0; mu < n; ++mu)
+                    for (int nu = 0; nu < n; ++nu)
+                        f += cr[mu * n + i] * perturbed[packed_index(mu, nu)]
+                             * cr[nu * n + a];
+                largest = std::max(largest, std::abs(f));
+            }
+        return largest;
+    };
+    const double before = coupling(exact);
+    ASSERT_TRUE(solver.pseudo_diagonalize_packed(perturbed, 2, 0.5, rotated));
+    EXPECT_LT(coupling(rotated), 0.2 * before);
+    for (int p = 0; p < n; ++p)
+        for (int q = 0; q < n; ++q) {
+            double s = 0.0;
+            for (int mu = 0; mu < n; ++mu)
+                s += rotated[mu * n + p] * rotated[mu * n + q];
+            EXPECT_NEAR(s, p == q ? 1.0 : 0.0, 1e-12);
+        }
 }
 } // namespace

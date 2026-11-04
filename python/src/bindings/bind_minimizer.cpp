@@ -905,9 +905,7 @@ void bind_minimizer(nb::module_& m) {
             [](MinimizePhaseBuilder& self, const cpu::task::PairLJCutParams& p,
                int order) -> MinimizePhaseBuilder& {
                 self.handle->add_on_phase(
-                    p,
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
-                        .set_special_bonds(p.s12, p.s13, p.s14),
+                    p, cpu::task::internal::make_pair_lj_cut(p),
                     MinimizeBinding{self.phase, order});
                 return self;
             },

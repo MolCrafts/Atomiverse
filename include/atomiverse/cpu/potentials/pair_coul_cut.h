@@ -14,6 +14,7 @@
 #include "atomiverse/core/role.h"
 #include "atomiverse/cpu/component/pair_evaluator.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/pair_partition.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
@@ -45,6 +46,8 @@ class PairCoulCut : public cpu::PairPotential {
     }
 
     std::string name() const override { return "coul/cut"; }
+    /// A pure function of the geometry (no trial-dependent state).
+    bool trial_invariant() const override { return true; }
 
     /// @brief Enable LAMMPS-style special-bonds scales for Coulomb.
     /// @param s12 Weight for 1-2 pairs (0 = exclude; (0,1] multiplies E,F).
@@ -52,6 +55,15 @@ class PairCoulCut : public cpu::PairPotential {
     /// @param s14 Weight for 1-4 pairs (Amber/GAFF: 0.5).
     PairCoulCut& set_special_bonds(double s12, double s13, double s14) &;
     PairCoulCut set_special_bonds(double s12, double s13, double s14) &&;
+
+    /// @brief Coulomb constant k in E = k q_i q_j / r [eV·Å/e²].
+    ///
+    /// Default `units::coulomb` (14.399645, LAMMPS metal `qqr2e`). A force
+    /// field that states its own constant (Amber: 332.0522173 kcal·Å/(mol·e²)
+    /// = 14.399140 eV·Å/e²), or a dielectric ε folded in as k/ε, sets it here.
+    /// @throws std::invalid_argument if `k` is not finite and positive.
+    PairCoulCut& set_coulomb_constant(double k) &;
+    PairCoulCut set_coulomb_constant(double k) &&;
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
@@ -63,6 +75,7 @@ class PairCoulCut : public cpu::PairPotential {
     void rebuild_filtered_list(const Frame& frame, const md::PairList& pairs);
 
     double cutoff_sq_;
+    double qqr2e_;
     double s12_ = 1.0, s13_ = 1.0, s14_ = 1.0;
     bool any_special_ = false;
     md::SpecialScaleTable special_;
@@ -77,7 +90,13 @@ class PairCoulCut : public cpu::PairPotential {
     unsigned long long filtered_version_ = 0;
 
     int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
+    md::PairChunkScratch chunks_;
+
+    // Team / row balance / touched rows of the list `compute()` walks,
+    // rebuilt when that list changes (null source = not built).
+    md::PairRowPartition partition_;
+    const md::PairList* part_source_ = nullptr;
+    unsigned long long part_version_ = 0;
 };
 
 } // namespace cpu

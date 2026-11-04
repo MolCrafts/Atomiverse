@@ -61,7 +61,12 @@ int am1_orbital_count(int z) noexcept;
 double am1_core_charge(int z) noexcept;
 
 /// @brief Packed lower-triangle index for 0-based AO indices.
-std::size_t packed_index(int i, int j) noexcept;
+/// Inline: every Fock, density and force contraction indexes through it.
+inline std::size_t packed_index(int i, int j) noexcept {
+    const std::size_t hi = static_cast<std::size_t>(i < j ? j : i);
+    const std::size_t lo = static_cast<std::size_t>(i < j ? i : j);
+    return hi * (hi + 1) / 2 + lo;
+}
 
 /// @brief NDDO reference `chrge`: sum density diagonal entries over each atom's AO range.
 std::vector<double> atomic_populations_from_packed_density(

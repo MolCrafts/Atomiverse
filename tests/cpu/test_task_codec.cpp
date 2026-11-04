@@ -81,7 +81,22 @@ TaskSpec make_md_spec() {
     // them. α is spelled identically on `CoulLongParams` and
     // `KSpacePmeParams`: an unmatched α is a driver-level build error, so
     // the wire mirror has to carry the number twice, exactly.
-    entries.push_back(MDComponentEntry{PairCoulCutParams{6.0}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PairCoulCutParams{6.0, 0.0, 0.0, 0.8333333333333334, 14.39914},
+        std::nullopt});
+    // The per-type LJ table form, special weights and shift flag (v7).
+    entries.push_back(MDComponentEntry{PairLJCutParams{0.0,
+                                                       0.0,
+                                                       6.0,
+                                                       0.0,
+                                                       0.0,
+                                                       0.5,
+                                                       {0, 0, 1},
+                                                       {0, 1, 1},
+                                                       {0.0104, 0.005, 0.002},
+                                                       {3.4, 3.0, 2.6},
+                                                       false},
+                                       std::nullopt});
     entries.push_back(MDComponentEntry{CoulLongParams{0.5833333333333334, 6.0},
                                        std::nullopt});
     entries.push_back(MDComponentEntry{
@@ -440,7 +455,7 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
 // garbage — the NPT precedent: a LAYOUT change is a bump, an appended
 // component ID with a fresh payload is not. The exact-match version gate in
 // `unpack` is what makes the break loud instead of silent.
-TEST(TaskCodec, WireVersionIsSix) { EXPECT_EQ(TaskSpec::kWireVersion, 6u); }
+TEST(TaskCodec, WireVersionIsSeven) { EXPECT_EQ(TaskSpec::kWireVersion, 7u); }
 
 TEST(TaskCodec, MdRoundtripIsFieldExact) {
     const TaskSpec spec = make_md_spec();
@@ -545,7 +560,7 @@ TEST(TaskCodec, CrossKindComponentsNameSourceAndTarget) {
     // CG is Minimize-only, so an MD payload naming it is refused by NAME,
     // not by a bare "unknown component". One representative is enough — the
     // six share the `read_md_params` default arm — and CG is the one whose
-    // three-double neighbour on the MD side (`PairCoulCut` is one double,
+    // three-double neighbour on the MD side (`PairCoulCut` is five doubles,
     // `CoulLong` two) would otherwise decode as plausible numbers.
     md_bytes = pack(make_md_spec());
     write_scalar<std::uint16_t>(md_bytes, kFirstComponentIdOffset,

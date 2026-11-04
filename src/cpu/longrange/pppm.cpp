@@ -286,12 +286,15 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         green_.assign(static_cast<std::size_t>(ncomplex), 0.0);
 
         // Serial plans bind to dens_full_ / work_ (reused every step).
+        // FFTW_ESTIMATE, as LAMMPS: a MEASURE plan is picked by timing, so two
+        // processes could run different FFT algorithms and round differently;
+        // a minimization then followed a different path from identical input.
         plan_fwd_ = fftw_plan_dft_r2c_3d(
             K_[0], K_[1], K_[2], dens_full_.data(),
-            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_MEASURE);
+            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_ESTIMATE);
         plan_bwd_ = fftw_plan_dft_c2r_3d(
             K_[0], K_[1], K_[2], reinterpret_cast<fftw_complex*>(work_.data()),
-            dens_full_.data(), FFTW_MEASURE);
+            dens_full_.data(), FFTW_ESTIMATE);
         if (!plan_fwd_ || !plan_bwd_) {
             release_storage();
             throw std::runtime_error("KSpacePPPM: serial r2c/c2r plan failed");

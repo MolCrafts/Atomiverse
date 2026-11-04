@@ -35,6 +35,14 @@ Forces must differentiate the actual parameterized energy. CPU and CUDA AM1/RM1
 use analytic pair-integral derivatives within their supported element envelopes.
 Electronic stationarity is essential: both the density and energy convergence
 tolerances must be satisfied before forces are published.
+On CPU the SCF diagonalizes a Pulay-DIIS extrapolation of the Fock matrix
+(residual F P − P F, six vectors) while convergence is judged on the
+unextrapolated density and energy changes, so DIIS changes the path, not the
+converged answer. Once the commutator is below 0.05 eV, the full
+eigensolver is replaced by a BLAS-3 pseudo-diagonalization (first-order
+occupied–virtual rotation of the previous orbitals, re-orthonormalized),
+again without changing the self-consistent result. Geometries with atoms closer than 0.6 × their covalent-radius
+sum are refused before the SCF, naming the pairs.
 
 ## What the NDDO methods compute
 

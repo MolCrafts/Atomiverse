@@ -148,6 +148,10 @@ Current surface:
 - **Electrostatics** — `PairCoulCut` (truncated Coulomb) and the Ewald
   split `CoulLong` + `KSpacePME`. The reciprocal solver needs FFTW3, so
   `KSpacePME` is present only when the `kspace` module is built.
+  `PairCoulCut` takes 1-2/1-3/1-4 weights and an explicit Coulomb constant,
+  and `PairLJCut.table(...)` is the per-type LJ form with weights and an
+  `energy_shift` switch — the two kernels a molpy `lj/cut` + `coul/cut`
+  force field translates to (see *Force fields from molpy*).
 - **Geometry optimization** — CPU `minimizer.Minimize` with three fixed-cell
   optimizers (`LBFGS`, `CG`, `FIRE`), four variable-cell relaxers
   (`IsotropicCellRelax`, `AnisotropicCellRelax`, `TriclinicCellRelax`,
@@ -309,6 +313,84 @@ the nearest-neighbour spacing. The Python gate is 5e-4 relative, which is
 the PME discretization budget at 0.5 Å / order 6; the equivalent C++ case
 `npt_pme_nacl` measures 3.8e-8 on the same settings.
 
+## Force fields from molpy
+
+molpy composes a force field from LAMMPS-standard styles
+(`ff.def_style(category, name, params)` plus that style's types) and types a
+molecule against it — GAFF / GAFF2, OPLS-AA, MMFF or a hand-built one.
+`atomiverse.forcefield.compile(forcefield, frame)` translates it **style by
+style, one molpy style to one Atomiverse evaluator**, with no knowledge of
+which force field it is reading:
+
+| molpy style | Atomiverse evaluator |
+|---|---|
+| `pair lj/cut` | `PairLJCut.table` — per-type rows, cross pairs by the style's `mixing` (arithmetic / geometric / sixthpower), LJ weights from `ff.special_bonds`, the style's `cutoff` and `shift` |
+| `pair coul/cut` | `PairCoulCut` — Coulomb weights, the style's `cutoff`, its `coulomb` constant over `dielectric` |
+| `bond harmonic`, `angle harmonic` | `BondHarmonic`, `AngleHarmonic` |
+| `dihedral periodic` / `charmm` | `DihedralCharmm` (one row per nonzero periodic term) |
+| `improper cvff` / `periodic` / `harmonic` | `ImproperCvff` (periodic converted exactly by molpy) / `ImproperHarmonic` |
+
+Parameters convert by the dimensions molpy's style registry declares
+(`E`, `L`, `Q`, `A`) from the force field's `units` (`real` or `metal`) to
+eV / Å / e / rad. Any other style — including `coul/long` / `coul/long/pme`,
+whose Coulomb weights and constant `CoulLong` cannot take — is refused by
+name, never approximated. The result is a `Compiled(frame, evaluators,
+cutoff)`: the frame the driver runs on (the force-field atom type as integer
+`atoms.type_id`), the evaluators in style order, and the largest pair cutoff
+for the `NeighborList`.
+
+There is no vacuum mode: a gas-phase calculation of one molecule is
+composition. Set the pair styles' cutoff beyond the molecule and make the box
+large enough that no periodic image comes within it — every pair is then
+counted once with bare Coulomb, the Amber `ntb=0, cut=999` model:
+
+```python
+import numpy as np
+import molpy as mp
+import atomiverse as av
+from atomiverse import forcefield as avff
+
+mol = mp.io.smiles.read_smiles("C[N+](C)(C)CCBr").to_atomistic()
+mol, _ = mp.conformer.Conformer(seed=1).generate(mol)
+typed = mp.ff.typifier.AtdTypifier(parameter_set="gaff2").typify(mol)
+gaff = mp.ff.typifier.GaffTypifier(parameter_set="gaff2")
+typed = gaff.typify(typed)
+ff = gaff.forcefield()                       # pair lj/cut + pair coul/cut, ...
+
+frame = typed.to_frame()
+charges = av.AM1BCCCharges(method=av.AM1(charge=1)).assign(mol)
+frame["atoms"].insert("charge", charges)
+
+xyz = np.stack([np.asarray(frame["atoms"][k]) for k in "xyz"], axis=1)
+diameter = max(np.linalg.norm(xyz - p, axis=1).max() for p in xyz)
+rc, skin = diameter + 5.0, 2.0
+for name in ("lj/cut", "coul/cut"):
+    ff.get_style("pair", name).set(cutoff=rc)
+box = diameter + rc + 2 * skin
+for i, k in enumerate("xyz"):
+    frame["atoms"][k] = xyz[:, i] - xyz[:, i].mean() + box / 2
+frame.box = mp.Box.cube(box)
+
+system = avff.compile(ff, frame)
+opt = av.Minimize()
+opt.set_optimizer(av.LBFGS())
+opt.add_criterion(av.ForceConverged(ftol=1e-4))
+opt.set_neighbor(av.NeighborList(system.cutoff, skin))
+for term in system.evaluators:
+    opt.set_evaluator(term)
+opt.run(system.frame, 2000)
+```
+
+For a periodic system keep the force field's own cutoffs (GAFF: 10 Å) — or,
+for Ewald electrostatics, replace its `coul/cut` style and compose `CoulLong` +
+`KSpacePME` / `KSpacePPPM` yourself; that is a different model, not a
+translation. `compile` refuses a frame without a box, a type a style leaves
+unparameterized, or a style parameter the kernel cannot honour (LJ exponents
+other than 12-6, a Coulomb `delta`, a CHARMM dihedral weight `w`). The frame's
+atom kind is the force-field type, so the XYZ recorder, which spells a kind as
+an element, does not apply to it; write structures with molpy's writers from
+the typed frame.
+
 ## AM1 semiempirical single point, forces and BOMD
 
 This section uses **CPU AM1**. C++ also has CPU RM1 and a restricted CUDA
@@ -369,6 +451,14 @@ against executed OpenMOPAC 23.2.5 H₂O, CO and NH₃ fixtures for both methods.
 See the [semiempirical roadmap](../roadmap/semiempirical.md) for the exact
 element, backend and evidence limits; passing the AM1 Python suite does not
 establish RM1/CUDA Python support.
+
+Before the SCF, CPU AM1/RM1/MNDO/PM3 (and `AM1BCCCharges`) refuse a geometry
+in which two atoms are closer than 0.6 × the sum of their covalent radii
+(C–C 0.912 Å, C–H 0.642 Å, H–H 0.372 Å; the shortest real bonds sit near 0.77
+of the sum). The `ValueError` gives the number of offending pairs and the
+closest ones by 0-based atom index, element, distance and limit. An SCF that
+exhausts `max_iter` raises `RuntimeError` with the iteration count, the last
+density and energy changes, and both tolerances.
 
 ### Born-Oppenheimer MD
 
@@ -550,6 +640,13 @@ alternatives, not a stack:
 | `LBFGS(memory, alpha0, max_ls)` | quasi-Newton with a line search | the default; fastest near a minimum |
 | `CG(alpha0)` | Polak-Ribière⁺ conjugate gradient | low memory, or L-BFGS curvature keeps getting discarded |
 | `FIRE(dt0, dt_max, …)` | damped dynamics, no line search | far from the minimum, or the force source is noisy |
+
+When a CPU `LBFGS` or `CG` line search finds no lower energy within its trial
+budget, the optimizer drops its curvature history (CG restarts) and searches
+once more along steepest descent from the same geometry. If that fails too,
+the run stops at the last accepted geometry with `converged == False` and
+`stop_reason` `"lbfgs_line_search_failed"` / `"cg_line_search_failed"`; it no
+longer raises. Only an evaluator error during a trial is an exception.
 
 `memory` and `max_ls` are counts; `alpha0` is a step size in Å²/eV for `LBFGS`
 and `CG` — the trial displacement per unit force — but a dimensionless
@@ -1043,8 +1140,8 @@ own.
 | `set_thermostat` | `CSVR(T, tau, dt, seed)` | Bussi velocity rescale |
 | `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=1.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
-| `set_evaluator` | `PairLJCut(ε, σ, cutoff)` | Lennard-Jones 12-6 |
-| `set_evaluator` | `PairCoulCut(cutoff)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
+| `set_evaluator` | `PairLJCut(ε, σ, cutoff, s12=1, s13=1, s14=1, energy_shift=True)` or `PairLJCut.table(type_i, type_j, ε, σ, cutoff, …)` | Lennard-Jones 12-6, single-type or per-type table (CPU) |
+| `set_evaluator` | `PairCoulCut(cutoff, s12=1, s13=1, s14=1, coulomb=14.399645)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
 | `set_evaluator` | `CoulLong(alpha, cutoff)` | Ewald/PME **real-space** half; `alpha` [1/Å] must match its reciprocal partner |
 | `set_evaluator` | `KSpacePME(alpha, grid_spacing=1.0, order=6)` | Ewald/PME **reciprocal-space** half; only on `ATV_BUILD_KSPACE=ON` wheels |
 | `set_evaluator` | `PairMorse(D, alpha, r0, cutoff)` | Morse well `D(1−e^{−α(r−r₀)})²`, shifted at the cutoff. `D` [eV], `alpha` [1/Å], `r0` [Å], `cutoff` [Å] |

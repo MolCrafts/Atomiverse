@@ -550,6 +550,24 @@ bool Runtime::is_linear_force_slot_(int slot) const {
            && slot == linear_force_slot(plan_->kind);
 }
 
+bool Runtime::force_slot_trial_invariant_() const {
+    const int force_slot = plan_ ? linear_force_slot(plan_->kind) : -1;
+    if (force_slot < 0)
+        return false;
+    for (const auto& slot : plan_->slots) {
+        if (slot.phase != force_slot)
+            continue;
+        for (const auto& op : slot.ops) {
+            // The neighbor engine is driven by run_slot_/step_linear_ itself.
+            if (op.component && op.component->verlet_engine())
+                continue;
+            if (!op.component || !op.component->trial_invariant())
+                return false;
+        }
+    }
+    return true;
+}
+
 namespace {
 
 // Setup is outside the measured step loop. Preserve the user's timing setting
@@ -717,7 +735,31 @@ void Runtime::step_linear_(BigInt step_idx) {
     // LAMMPS Min::energy_force (src/min.cpp): nflag XOR on comm around
     // the force evaluation; reverse_comm if newton. GPL-2.0-only.
 
+    // Trial-force reuse (see OptimizeServices::forces_current): published per
+    // step for THIS plan and put back on exit, so a nested linear plan run
+    // from inside a trial cannot leak its answer into the enclosing step.
+    struct RestoreReuse {
+        OptimizeServices& opt;
+        bool reusable, current;
+        ~RestoreReuse() {
+            opt.trial_forces_reusable = reusable;
+            opt.forces_current = current;
+        }
+    } restore_reuse{context_.opt, context_.opt.trial_forces_reusable,
+                    context_.opt.forces_current};
+    context_.opt.trial_forces_reusable =
+        plan_->kind == PhaseKind::Minimizer && force_slot_trial_invariant_();
+    context_.opt.forces_current = false;
+
     for (std::size_t s = 0; s < plan_->slots.size(); ++s) {
+        if (static_cast<int>(s) == force_slot && context_.opt.forces_current) {
+            // The optimizer committed the geometry its last line-search trial
+            // evaluated, through this same force slot (run_slot_: neighbor
+            // decision, halo, every op, reverse comm). Replaying it would
+            // reproduce the frame bit for bit.
+            context_.opt.forces_current = false;
+            continue;
+        }
         if (static_cast<int>(s) == force_slot) {
             decide_neighbor_();
             comm_before_force_(force_slot, step_idx);

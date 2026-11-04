@@ -20,6 +20,7 @@
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/minimize/vector_loop.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
@@ -87,7 +88,8 @@ inline void require_finite_forces(const cpu::LaunchContext& ctx,
                                   const AccReal* fz) {
     double invalid = 0;
     const int n = owned_count(ctx);
-#pragma omp parallel for schedule(static) reduction(max : invalid)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(max : invalid) if (n >= kParallelMinElements)
     for (int i = 0; i < n; ++i)
         if (!std::isfinite(fx[i]) || !std::isfinite(fy[i])
             || !std::isfinite(fz[i]))

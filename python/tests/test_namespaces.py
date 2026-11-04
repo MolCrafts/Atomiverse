@@ -107,6 +107,11 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("BondFene", "atomiverse.potentials.bond", "Fene"),
     ("DihedralCharmm", "atomiverse.potentials.dihedral", "Charmm"),
     ("ImproperHarmonic", "atomiverse.potentials.improper", "Harmonic"),
+    # Amber/GAFF styles (atomiverse.forcefield): the fused LJ + real-space
+    # Ewald pair is the real-space half of a long-range split, so it lives
+    # beside CoulLong.
+    ("PairLJCutCoulLong", "atomiverse.longrange", "LJCutCoulLong"),
+    ("ImproperCvff", "atomiverse.potentials.improper", "Cvff"),
 )
 
 _PW_MAPPING: tuple[tuple[str, str, str], ...] = (
@@ -148,6 +153,7 @@ _MODULE_FLAGS: dict[str, tuple[str, ...]] = {
     "atomiverse.potentials.angle": ("ATV_BUILD_POTENTIALS",),
     "atomiverse.potentials.dihedral": ("ATV_BUILD_POTENTIALS",),
     "atomiverse.potentials.improper": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.longrange": ("ATV_BUILD_POTENTIALS",),
     "atomiverse.montecarlo": ("ATV_BUILD_MC",),
     "atomiverse.driver": (),
     "atomiverse.semiempirical": ("ATV_BUILD_SEMIEMPIRICAL",),
@@ -196,13 +202,12 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 43 entries (17 + the 7 unconditional Monte Carlo
-        rows of spec py-mc + the 2 unconditional vibration rows of spec
-        py-vib + the 8 unconditional geometry-optimization rows of spec
-        py-minimize-full + the 9 unconditional force-field rows of spec
-        py-pair-styles); a PW build contributes two types (PW, PWResult)
-        and an HF build the four concrete SCF methods."""
-        expected = 43 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        """The base has 52 unconditional rows (the ``_MAPPING`` table above:
+        drivers, Monte Carlo, vibration, minimization, the force-field
+        catalogue, the NDDO methods and the two Amber/GAFF styles of
+        atomiverse.forcefield); a PW build contributes two types (PW,
+        PWResult) and an HF build the four concrete SCF methods."""
+        expected = 52 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(

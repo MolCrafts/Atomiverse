@@ -63,6 +63,7 @@
 #ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #endif
+#include "atomiverse/cpu/task/internal/potential_builders.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
 using namespace ATV;
@@ -119,9 +120,7 @@ struct VibHandle {
     /// @param p Lennard-Jones parameters, as the shared task mirror.
     void set_evaluator_lj(const cpu::task::PairLJCutParams& p) {
         require_configurable_("set_evaluator");
-        driver.set_evaluator(
-            cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}.set_special_bonds(
-                p.s12, p.s13, p.s14));
+        driver.set_evaluator(cpu::task::internal::make_pair_lj_cut(p));
     }
 #endif
 

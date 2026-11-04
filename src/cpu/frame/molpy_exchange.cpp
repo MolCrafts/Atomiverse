@@ -59,16 +59,25 @@ void validate_exchange_schema(const molrs::FrameRef& src) {
 
     // molrs 0.13 split the two meanings that used to share `atoms.type`:
     // `atomic_number` (UInt) carries Z, while `type` is a String force-field
-    // label the caller owns. Atomiverse keys on Z, so it reads and writes
-    // `atomic_number`; `type` and `element` (the String symbol column
-    // molpy's Atomistic.to_frame() exports) stay in the allow-list — a frame
-    // arriving from a molrs tool may legitimately carry them — but are not
-    // imported.
+    // label the caller owns. The engine's per-atom kind is `atoms.type_id`
+    // (UInt, the force-field atom kind a per-type pair table is keyed by)
+    // when the frame states one, and Z from `atomic_number` otherwise;
+    // `type` and `element` (the String symbol column molpy's
+    // Atomistic.to_frame() exports) stay in the allow-list — a frame arriving
+    // from a molrs tool may legitimately carry them — but are not imported.
+    // So do the line-notation facts molpy states on a parsed or embedded
+    // molecule (`formal_charge`, `h_count`, `is_aromatic`, and a bond's
+    // `bond_type` / `bond_number` class): graph annotations, not physics.
     validate_columns(src, "atoms",
-                     {"x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "mass",
-                      "charge", "atomic_number", "type", "element", "tag", "ix",
-                      "iy", "iz"});
-    validate_columns(src, "bonds", {"atomi", "atomj", "type_id", "type"});
+                     {"x",       "y",           "z",       "vx",
+                      "vy",      "vz",          "fx",      "fy",
+                      "fz",      "mass",        "charge",  "atomic_number",
+                      "type_id", "type",        "element", "formal_charge",
+                      "h_count", "is_aromatic", "tag",     "ix",
+                      "iy",      "iz"});
+    validate_columns(
+        src, "bonds",
+        {"atomi", "atomj", "type_id", "type", "bond_type", "bond_number"});
     validate_columns(src, "angles",
                      {"atomi", "atomj", "atomk", "type_id", "type"});
     validate_columns(src, "dihedrals",
@@ -177,15 +186,21 @@ Frame materialize(const molrs::FrameRef& src) {
     auto x = require_f64(src, "atoms", "x");
     auto y = require_f64(src, "atoms", "y");
     auto z = require_f64(src, "atoms", "z");
+    // The per-atom kind: a force-field `type_id` when stated (a GAFF frame,
+    // whose LJ table distinguishes c3 from ca), else the element. Components
+    // that read Z (electronic methods, the XYZ recorder) need a frame
+    // without `type_id`.
     // molrs converts species only on request (Element::fill_atomic_numbers);
     // a frame that spells symbols alone is named, not silently converted.
-    if (!has_column(src, "atoms", "atomic_number")
+    const bool ff_kinds = has_column(src, "atoms", "type_id");
+    if (!ff_kinds && !has_column(src, "atoms", "atomic_number")
         && has_column(src, "atoms", "element"))
         throw std::runtime_error(
             "cpu::from_molpy: atoms carry 'element' symbols but no "
             "'atomic_number'; convert them first (molrs "
             "Element::fill_atomic_numbers / frame_fill_atomic_numbers)");
-    auto type = require_u64(src, "atoms", "atomic_number");
+    auto type =
+        require_u64(src, "atoms", ff_kinds ? "type_id" : "atomic_number");
     const int n = static_cast<int>(x.size());
     if (static_cast<int>(y.size()) != n || static_cast<int>(z.size()) != n
         || static_cast<int>(type.size()) != n)

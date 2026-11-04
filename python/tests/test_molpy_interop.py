@@ -72,11 +72,12 @@ def test_molrs_abi_mismatch_rejected_before_capsule_access() -> None:
             sys.executable,
             "-c",
             textwrap.dedent("""\
-            import molpy
+            import molpy._core
             from atomiverse._binding import _cpp
 
-            token = molpy._ffi_abi_token()
-            molpy._ffi_abi_token = lambda: ("999.0", *token[1:])
+            # The bridge asks molpy._core for the token, so patch it there.
+            token = molpy._core._ffi_abi_token()
+            molpy._core._ffi_abi_token = lambda: ("999.0", *token[1:])
 
             class UnreadableFrame:
                 def _ffi_frameref_capsule(self):
@@ -85,7 +86,7 @@ def test_molrs_abi_mismatch_rejected_before_capsule_access() -> None:
             try:
                 _cpp.MD().run(UnreadableFrame(), 0)
             except RuntimeError as exc:
-                assert "molrs ABI-line mismatch" in str(exc), str(exc)
+                assert "molpy ABI-line mismatch" in str(exc), str(exc)
                 assert "999.0" in str(exc), str(exc)
                 assert "linked" in str(exc), str(exc)
             else:

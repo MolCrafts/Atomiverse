@@ -165,6 +165,19 @@ struct OptimizeServices {
     /// would corrupt it. Halo exchange still runs, keeping trial forces
     /// correct for the bounded step.
     bool line_search_trial = false;
+
+    /// @brief Published by the Runtime when a Minimizer plan is compiled: true
+    /// when every op of the force phase is `Component::trial_invariant()`, so
+    /// a line-search trial's forces/energy at the accepted geometry are the
+    /// committed ones.
+    bool trial_forces_reusable = false;
+
+    /// @brief Set by an Optimizer during `line_search` when the frame already
+    /// holds the forces and energy of the geometry it just committed (the
+    /// accepted trial was the last one evaluated and `trial_forces_reusable`
+    /// holds). The Runtime then skips that step's force phase and clears the
+    /// flag; it is also cleared at the start of every linear step.
+    bool forces_current = false;
 };
 
 /// @brief Coupled-replica (band) services — publisher: `cpu::PathDriver::run`.

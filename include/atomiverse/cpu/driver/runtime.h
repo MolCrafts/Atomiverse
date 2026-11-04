@@ -238,6 +238,9 @@ class Runtime {
     void apply_ghost_cutoff_();
     /// @brief True when `slot` is Evaluate `evaluate` or Minimize `force`.
     bool is_linear_force_slot_(int slot) const;
+    /// @brief True when every non-engine op of the linear force slot is
+    ///        `Component::trial_invariant()`.
+    bool force_slot_trial_invariant_() const;
     /// @brief Position-only halo refresh (no reneighbor).
     void comm_refresh_(int slot, int step);
     /// @brief Exchange + borders. Flat slot args so Verlet can walk

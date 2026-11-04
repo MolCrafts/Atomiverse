@@ -48,6 +48,8 @@ class Reduce : public cpu::Component {
     Reduce() = default;
     explicit Reduce(int every) : every_(every < 1 ? 1 : every) {}
     std::string name() const override { return "reduce"; }
+    /// Every-step reduction is trial-invariant; a cadence is not.
+    bool trial_invariant() const override { return every_ == 1; }
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::end_of_step, -50)};
     }

@@ -369,6 +369,30 @@ TEST(Materialize, MissingAtomicNumberThrows) {
     }
 }
 
+TEST(Materialize, ForceFieldTypeIdIsTheAtomKind) {
+    // Two carbons of different GAFF kinds (c3 = 0, ca = 1): the per-type
+    // pair table is keyed by `type_id`, so it, not Z, is the atom kind.
+    auto fr = molrs::frame_new();
+    const std::vector<double> x = {0.0, 1.5};
+    for (const char* axis : {"x", "y", "z"})
+        molrs::frame_set_column_f64(
+            *fr, "atoms", axis,
+            ::rust::Slice<const double>(x.data(), x.size()));
+    const std::vector<std::uint64_t> z_num = {6, 6};
+    const std::vector<std::uint64_t> kind = {0, 1};
+    molrs::frame_set_column_u64(
+        *fr, "atoms", "atomic_number",
+        ::rust::Slice<const std::uint64_t>(z_num.data(), z_num.size()));
+    molrs::frame_set_column_u64(
+        *fr, "atoms", "type_id",
+        ::rust::Slice<const std::uint64_t>(kind.data(), kind.size()));
+
+    Frame cf = from_molpy(*fr);
+    const int* type = cf.span(ATV::kAtom_type).data();
+    EXPECT_EQ(type[0], 0);
+    EXPECT_EQ(type[1], 1);
+}
+
 TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
     auto fr = molrs::frame_new();
     // Only required fields: x, y, z, type. No velocities, no charge.
@@ -778,4 +802,15 @@ TEST(Materialize, RejectsUnknownAtomColumns) {
         *fr, "atoms", "rho",
         ::rust::Slice<const double>(rho.data(), rho.size()));
     EXPECT_THROW((void)from_molpy(*fr), std::runtime_error);
+}
+
+TEST(Materialize, AcceptsMolpyGraphAnnotations) {
+    // A molecule molpy parsed and embedded states its formal charges and
+    // drawn-hydrogen counts; they are graph annotations, read past.
+    auto fr = make_minimal_frame();
+    const std::vector<std::uint64_t> h_count = {0, 0};
+    molrs::frame_set_column_u64(
+        *fr, "atoms", "h_count",
+        ::rust::Slice<const std::uint64_t>(h_count.data(), h_count.size()));
+    EXPECT_NO_THROW((void)from_molpy(*fr));
 }

@@ -27,16 +27,47 @@ void bind_potentials(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::PairLJCutParams* p, double epsilon, double sigma,
-               double cutoff, double s12, double s13, double s14) {
-                new (p) cpu::task::PairLJCutParams{epsilon, sigma, cutoff,
-                                                   s12,     s13,   s14};
+               double cutoff, double s12, double s13, double s14,
+               bool energy_shift) {
+                new (p) cpu::task::PairLJCutParams{
+                    epsilon, sigma, cutoff, s12, s13,         s14,
+                    {},      {},    {},     {},  energy_shift};
             },
             nb::arg("epsilon"), nb::arg("sigma"), nb::arg("cutoff"),
             nb::arg("s12") = 1.0, nb::arg("s13") = 1.0, nb::arg("s14") = 1.0,
+            nb::arg("energy_shift") = true,
             "Construct with epsilon [eV], sigma [A], and cutoff [A].\n\n"
             "s12, s13, s14 are the 1-2 / 1-3 / 1-4 pair weights (LAMMPS "
-            "special_bonds). 0 drops that shell, 1 keeps it. The default "
-            "is (1, 1, 1). The task codec does not store these weights.");
+            "special_bonds). 0 drops that shell, a weight in (0, 1] scales "
+            "that pair's energy and force. The default is (1, 1, 1). "
+            "energy_shift subtracts V(cutoff) per pair (LAMMPS pair_modify "
+            "shift); default on.")
+        .def_static(
+            "table",
+            [](std::vector<int> type_i, std::vector<int> type_j,
+               std::vector<double> epsilon, std::vector<double> sigma,
+               double cutoff, double s12, double s13, double s14,
+               bool energy_shift) {
+                return cpu::task::PairLJCutParams{0.0,
+                                                  0.0,
+                                                  cutoff,
+                                                  s12,
+                                                  s13,
+                                                  s14,
+                                                  std::move(type_i),
+                                                  std::move(type_j),
+                                                  std::move(epsilon),
+                                                  std::move(sigma),
+                                                  energy_shift};
+            },
+            nb::arg("type_i"), nb::arg("type_j"), nb::arg("epsilon"),
+            nb::arg("sigma"), nb::arg("cutoff"), nb::arg("s12") = 1.0,
+            nb::arg("s13") = 1.0, nb::arg("s14") = 1.0,
+            nb::arg("energy_shift") = true,
+            "Multi-type form: one row per type pair — type_i, type_j (frame "
+            "atom kinds: atoms.type_id when stated, else Z), epsilon [eV], "
+            "sigma [A]. Unlisted cross pairs mix Lorentz-Berthelot from the "
+            "diagonal; a type with no diagonal has no LJ site. CPU only.");
 
     // ── The widened real-space catalogue ──
     //
@@ -303,12 +334,69 @@ void bind_potentials(nb::module_& m) {
         "rejected by run() instead of being read as neutral.")
         .def(
             "__init__",
-            [](cpu::task::PairCoulCutParams* p, double cutoff) {
-                new (p) cpu::task::PairCoulCutParams{cutoff};
+            [](cpu::task::PairCoulCutParams* p, double cutoff, double s12,
+               double s13, double s14, double coulomb) {
+                new (p) cpu::task::PairCoulCutParams{cutoff, s12, s13, s14,
+                                                     coulomb};
             },
-            nb::arg("cutoff"),
+            nb::arg("cutoff"), nb::arg("s12") = 1.0, nb::arg("s13") = 1.0,
+            nb::arg("s14") = 1.0, nb::arg("coulomb") = ATV::units::coulomb,
             "Construct with the real-space cutoff [A]. The neighbor list "
-            "must be built with a cutoff >= this value.");
+            "must be built with a cutoff >= this value. s12, s13, s14 are the "
+            "1-2 / 1-3 / 1-4 Coulomb weights (LAMMPS special_bonds coul). "
+            "coulomb is the constant k in k q_i q_j / r [eV A / e^2]; the "
+            "default 14.399645 is LAMMPS metal qqr2e.");
+
+    nb::class_<cpu::task::PairLJCutCoulLongParams>(
+        m, "PairLJCutCoulLong",
+        "Fused multi-type Lennard-Jones 12-6 + real-space Ewald Coulomb "
+        "(LAMMPS lj/cut/coul/long), the Amber/GAFF nonbonded style.")
+        .def(
+            "__init__",
+            [](cpu::task::PairLJCutCoulLongParams* p, std::vector<int> type_i,
+               std::vector<int> type_j, std::vector<double> epsilon,
+               std::vector<double> sigma, double alpha, double cutoff,
+               std::array<double, 3> special_lj,
+               std::array<double, 3> special_coul, bool energy_shift) {
+                new (p) cpu::task::PairLJCutCoulLongParams{std::move(type_i),
+                                                           std::move(type_j),
+                                                           std::move(epsilon),
+                                                           std::move(sigma),
+                                                           alpha,
+                                                           cutoff,
+                                                           special_lj,
+                                                           special_coul,
+                                                           energy_shift};
+            },
+            nb::arg("type_i"), nb::arg("type_j"), nb::arg("epsilon"),
+            nb::arg("sigma"), nb::arg("alpha"), nb::arg("cutoff"),
+            nb::arg("special_lj") = std::array<double, 3>{1.0, 1.0, 1.0},
+            nb::arg("special_coul") = std::array<double, 3>{1.0, 1.0, 1.0},
+            nb::arg("energy_shift") = false,
+            "One LJ row per type pair: type_i, type_j (frame atom kinds — "
+            "atoms.type_id when stated, else Z), epsilon [eV], sigma [A]. "
+            "Unlisted cross pairs mix Lorentz-Berthelot from the diagonal; a "
+            "type with no diagonal has no LJ site. alpha [1/A] must equal the "
+            "KSpacePME/KSpacePPPM alpha; cutoff [A] is shared by LJ and "
+            "Coulomb. special_lj / special_coul are the 1-2/1-3/1-4 weights "
+            "(Amber: (0, 0, 0.5) and (0, 0, 5/6)). energy_shift subtracts "
+            "V_LJ(rc) (LAMMPS pair_modify shift).");
+
+    nb::class_<cpu::task::ImproperCvffParams>(
+        m, "ImproperCvff",
+        "Amber/GAFF improper torsion V = K(1 + d cos(n phi)), d = +/-1 "
+        "(LAMMPS improper_style cvff).")
+        .def(
+            "__init__",
+            [](cpu::task::ImproperCvffParams* p, std::vector<double> K,
+               std::vector<int> d, std::vector<int> n) {
+                new (p) cpu::task::ImproperCvffParams{
+                    std::move(K), std::move(d), std::move(n)};
+            },
+            nb::arg("K"), nb::arg("d"), nb::arg("n"),
+            "Per improper type: K [eV], d (+1 or -1), n (0..6). phi is the "
+            "torsion angle of the improper 4-tuple in its frame order (Amber "
+            "puts the central atom third).");
 
     nb::class_<cpu::task::CoulLongParams>(
         m, "CoulLong",

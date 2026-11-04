@@ -47,6 +47,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.pair.WCA``               ``PairWCA``                 ``cpu::PairWCA``
 ``potentials.pair.Dpd``               ``PairDpd``                 ``cpu::PairDpd``
 ``longrange.CoulLong``                ``CoulLong``                ``cpu::CoulLong``
+``longrange.LJCutCoulLong``           ``PairLJCutCoulLong``       ``cpu::PairLJCutCoulLong``
 ``longrange.KSpacePME``               ``KSpacePME``               ``cpu::KSpacePME``
 ``longrange.KSpacePPPM``              ``KSpacePPPM``              ``cpu::KSpacePPPM``
 ``potentials.bond.Harmonic``          ``BondHarmonic``            ``cpu::BondHarmonic``
@@ -55,6 +56,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.dihedral.MultiHarmonic`` ``DihedralMultiHarmonic``   ``cpu::DihedralMultiHarmonic``
 ``potentials.dihedral.Charmm``        ``DihedralCharmm``          ``cpu::DihedralCharmm``
 ``potentials.improper.Harmonic``      ``ImproperHarmonic``        ``cpu::ImproperHarmonic``
+``potentials.improper.Cvff``          ``ImproperCvff``            ``cpu::ImproperCvff``
 ``recorder.Thermo``                   ``Thermo``                  ``cpu::Thermo``
 ``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
 ``montecarlo.MC``                     ``MC``                      ``cpu::mc::MC``
@@ -233,6 +235,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "PairWCA": ("atomiverse.potentials.pair", "WCA"),
     "PairDpd": ("atomiverse.potentials.pair", "Dpd"),
     "CoulLong": ("atomiverse.longrange", "CoulLong"),
+    "PairLJCutCoulLong": ("atomiverse.longrange", "LJCutCoulLong"),
     "KSpacePME": ("atomiverse.longrange", "KSpacePME"),
     "KSpacePPPM": ("atomiverse.longrange", "KSpacePPPM"),
     "BondHarmonic": ("atomiverse.potentials.bond", "Harmonic"),
@@ -241,6 +244,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
     "DihedralCharmm": ("atomiverse.potentials.dihedral", "Charmm"),
     "ImproperHarmonic": ("atomiverse.potentials.improper", "Harmonic"),
+    "ImproperCvff": ("atomiverse.potentials.improper", "Cvff"),
     "Thermo": ("atomiverse.recorder", "Thermo"),
     "XYZ": ("atomiverse.recorder", "XYZ"),
     "MC": ("atomiverse.montecarlo", "MC"),
@@ -334,6 +338,7 @@ _PUBLIC: tuple[str, ...] = (
     "PairWCA",
     "PairDpd",
     "CoulLong",
+    "PairLJCutCoulLong",
     "NeighborList",
     "BondHarmonic",
     "BondFene",
@@ -341,6 +346,7 @@ _PUBLIC: tuple[str, ...] = (
     "DihedralMultiHarmonic",
     "DihedralCharmm",
     "ImproperHarmonic",
+    "ImproperCvff",
     "Thermo",
     "XYZ",
     "MC",

@@ -38,6 +38,7 @@ implementation, not complete AmberTools SQM feature or input-file compatibility.
 | FD Hessian via `vib::Hessian` | ✓ | ○ | Existing CPU AM1 workflow; new MNDO/PM3 and CUDA Hessian workflows have no separate acceptance |
 | Heat of formation (MOPAC-style) | ✓ | ✓ | All four methods' executed OpenMOPAC pins; CUDA restricted to neutral closed-shell CHNO |
 | NDDO UHF / COSMO / Γ-PBC | ○ | ○ | Molecular AM1 under wrap unwraps an isolated fragment |
+| CPU NDDO SCF acceleration and input guard | ✓ | ○ | Pulay DIIS (six vectors, residual FP−PF), two-center blocks cached once per geometry (OpenMP build, 2 GiB budget), BLAS-3 pseudo-diagonalization once the commutator is below 0.05 eV, BLAS `dsyrk` density, OpenMP Fock and force pair loops; compensated energy sum. Atom pairs closer than 0.6 × the covalent-radius sum are refused before the SCF. 205-atom PBIX-Br trimer and 674-atom chain vs AmberTools SQM: [`benchmarks/semiempirical/nddo_sqm_pbix`](../../benchmarks/semiempirical/nddo_sqm_pbix/README.md); CUDA NDDO keeps its own loop and has no contact guard |
 
 ## 2. DFTB
 

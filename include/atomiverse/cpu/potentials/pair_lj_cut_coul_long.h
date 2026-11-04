@@ -40,6 +40,8 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
                       double cutoff);
 
     std::string name() const override { return "lj/cut/coul/long"; }
+    /// A pure function of the geometry (no trial-dependent state).
+    bool trial_invariant() const override { return true; }
 
     const LongRangeParticipant* as_long_range_participant() const override {
         return this;

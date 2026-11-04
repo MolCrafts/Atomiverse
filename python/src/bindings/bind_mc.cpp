@@ -60,6 +60,7 @@
 #include "atomiverse/cpu/montecarlo/volume_move.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/task/internal/potential_builders.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -155,9 +156,7 @@ struct McHandle {
     /// @param p Lennard-Jones parameters, as the shared task mirror.
     void set_evaluator(const cpu::task::PairLJCutParams& p) {
         require_configurable_("set_evaluator");
-        driver.set_evaluator(
-            cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}.set_special_bonds(
-                p.s12, p.s13, p.s14));
+        driver.set_evaluator(cpu::task::internal::make_pair_lj_cut(p));
     }
 
     /// @brief Install the neighbor list in its MC-correct form.

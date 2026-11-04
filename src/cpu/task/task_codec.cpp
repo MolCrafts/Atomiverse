@@ -135,6 +135,11 @@ void write(Writer& w, const PairLJCutParams& p) {
     w.f64(p.s12);
     w.f64(p.s13);
     w.f64(p.s14);
+    w.vec_i32(p.type_i);
+    w.vec_i32(p.type_j);
+    w.vec(p.type_epsilon);
+    w.vec(p.type_sigma);
+    w.u8(p.energy_shift ? 1 : 0);
 }
 
 PairLJCutParams read_pair_lj(Reader& r) {
@@ -145,6 +150,11 @@ PairLJCutParams read_pair_lj(Reader& r) {
     p.s12 = r.f64();
     p.s13 = r.f64();
     p.s14 = r.f64();
+    p.type_i = r.vec_i32();
+    p.type_j = r.vec_i32();
+    p.type_epsilon = r.vec();
+    p.type_sigma = r.vec();
+    p.energy_shift = r.u8() != 0;
     return p;
 }
 void write(Writer& w, const NeighborListParams& p) {
@@ -222,7 +232,13 @@ void write(Writer& w, const BerendsenBarostatParams& p) {
     w.f64(p.dt);
     w.f64(p.bulk_modulus);
 }
-void write(Writer& w, const PairCoulCutParams& p) { w.f64(p.cutoff); }
+void write(Writer& w, const PairCoulCutParams& p) {
+    w.f64(p.cutoff);
+    w.f64(p.s12);
+    w.f64(p.s13);
+    w.f64(p.s14);
+    w.f64(p.coulomb);
+}
 void write(Writer& w, const CoulLongParams& p) {
     w.f64(p.alpha);
     w.f64(p.cutoff);
@@ -648,7 +664,7 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
     case ComponentId::BerendsenBarostat:
         return BerendsenBarostatParams{r.f64(), r.f64(), r.f64(), r.f64()};
     case ComponentId::PairCoulCut:
-        return PairCoulCutParams{r.f64()};
+        return PairCoulCutParams{r.f64(), r.f64(), r.f64(), r.f64(), r.f64()};
     case ComponentId::CoulLong:
         return CoulLongParams{r.f64(), r.f64()};
     case ComponentId::KSpacePME:

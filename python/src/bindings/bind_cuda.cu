@@ -85,6 +85,11 @@ void bind_cuda_classical(nb::class_<Handle>& cls) {
         "set_evaluator",
         [](Handle& self, const cpu::task::PairLJCutParams& p) {
             self.require_configurable();
+            if (!p.type_i.empty() || !p.energy_shift)
+                throw std::invalid_argument(
+                    "CUDA PairLJCut is single-type and always shifted at the "
+                    "cutoff: the per-type table and energy_shift=False are "
+                    "CPU-only");
             auto lj = cuda::PairLJCut{p.epsilon, p.sigma, p.cutoff};
             lj.set_special_bonds(p.s12, p.s13, p.s14);
             self.driver.set_evaluator(std::move(lj));

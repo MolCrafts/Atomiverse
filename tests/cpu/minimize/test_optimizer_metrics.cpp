@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 #include <limits>
+#include <utility>
+
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/iteration_status.h"
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/verdict.h"
@@ -297,4 +301,110 @@ TEST(OptimizerMetrics, FirstMeasurementHasNoEnergyDifference) {
     check(cg);
     check(lbfgs);
     check(fire);
+}
+
+namespace {
+
+/// Harmonic well E = ½ Σ x² (forces −x) with an optional energy penalty that
+/// makes every displaced trial look uphill, so a line search must fail.
+struct HarmonicWell {
+    cpu::Frame& frame;
+    bool uphill = false;
+    double origin_energy = 0;
+    void evaluate() {
+        double e = 0;
+        for (int i = 0; i < frame.nlocal(); ++i) {
+            for (auto [x, fx] :
+                 {std::pair{kAtom_x, kAtom_fx}, std::pair{kAtom_y, kAtom_fy},
+                  std::pair{kAtom_z, kAtom_fz}}) {
+                const double v = frame.span(x)[i];
+                e += 0.5 * v * v;
+                frame.span(fx)[i] = -v;
+            }
+        }
+        frame.meta.get(kEnergy) = uphill ? origin_energy + 1.0 : e;
+    }
+};
+
+template <typename Optimizer>
+void lbfgs_like_step(Optimizer& optimizer, cpu::Context& context,
+                     cpu::Frame& frame, HarmonicWell& well) {
+    optimizer.launch(
+        {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+    optimizer.launch(
+        {context, frame, slot_of(minimizer::Phase::line_search), 0});
+    well.evaluate();
+    optimizer.launch(
+        {context, frame, slot_of(minimizer::Phase::convergence_check), 0});
+}
+
+} // namespace
+
+TEST(OptimizerMetrics, FailedLineSearchRecoversThenStopsWithoutThrowing) {
+    auto check = [](auto& optimizer, const char* reason) {
+        SCOPED_TRACE(optimizer.name());
+        cpu::Frame frame(2);
+        frame.box = cpu::Box::cubic(50);
+        frame.span(kAtom_x)[0] = 1.0;
+        frame.span(kAtom_y)[1] = -0.5;
+        frame.span(kAtom_z)[1] = 0.25;
+        cpu::Context context;
+        ConvergenceMetrics metrics;
+        IterationStatus status;
+        context.loop.metrics = &metrics;
+        context.loop.status = &status;
+        HarmonicWell well{frame};
+        context.opt.reeval_forces = [&](bool) { well.evaluate(); };
+        optimizer.build({context, frame});
+        well.evaluate();
+        // Two ordinary steps build a curvature history and lower the energy.
+        for (int s = 0; s < 2; ++s)
+            lbfgs_like_step(optimizer, context, frame, well);
+        EXPECT_FALSE(status.stop_requested);
+        // Now every trial is uphill: the search fails along the quasi-Newton
+        // direction, retries steepest descent, fails again, and stops.
+        const double x0 = frame.span(kAtom_x)[0];
+        const double y1 = frame.span(kAtom_y)[1];
+        well.origin_energy = frame.meta.get(kEnergy);
+        well.uphill = true;
+        optimizer.launch(
+            {context, frame, slot_of(minimizer::Phase::search_direction), 0});
+        EXPECT_NO_THROW(optimizer.launch(
+            {context, frame, slot_of(minimizer::Phase::line_search), 0}));
+        EXPECT_TRUE(status.stop_requested);
+        EXPECT_FALSE(status.converged);
+        EXPECT_EQ(status.reason, reason);
+        // The origin, its forces and its energy are restored.
+        EXPECT_EQ(frame.span(kAtom_x)[0], x0);
+        EXPECT_EQ(frame.span(kAtom_y)[1], y1);
+        EXPECT_EQ(frame.span(kAtom_fx)[0], -x0);
+        EXPECT_EQ(frame.meta.get(kEnergy), well.origin_energy);
+    };
+    cpu::minimizer::LBFGS lbfgs;
+    check(lbfgs, "lbfgs_line_search_failed");
+    EXPECT_EQ(lbfgs.line_search_recoveries(), 1);
+    cpu::minimizer::CG cg;
+    check(cg, "cg_line_search_failed");
+}
+
+TEST(OptimizerMetrics, LbfgsHarmonicWellStillConvergesWithoutRecovery) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(50);
+    frame.span(kAtom_x)[0] = 0.15;
+    frame.span(kAtom_y)[0] = -0.1;
+    cpu::Context context;
+    ConvergenceMetrics metrics;
+    IterationStatus status;
+    context.loop.metrics = &metrics;
+    context.loop.status = &status;
+    HarmonicWell well{frame};
+    context.opt.reeval_forces = [&](bool) { well.evaluate(); };
+    cpu::minimizer::LBFGS lbfgs;
+    lbfgs.build({context, frame});
+    well.evaluate();
+    for (int s = 0; s < 6; ++s)
+        lbfgs_like_step(lbfgs, context, frame, well);
+    EXPECT_FALSE(status.stop_requested);
+    EXPECT_EQ(lbfgs.line_search_recoveries(), 0);
+    EXPECT_LT(metrics.max_force, 1e-8);
 }

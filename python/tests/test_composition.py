@@ -47,3 +47,15 @@ def test_dftb_component_registration_keeps_owner(workflow):
     assert sys.getrefcount(evaluator) > before
     del evaluator
     driver.build()
+
+
+@needs("ATV_BUILD_SEMIEMPIRICAL")
+def test_dftb_evaluate_registration_is_a_valid_component():
+    """DFTB2 is bound with a Component base; that upcast must be exact."""
+    import atomiverse as av
+
+    evaluation = av.Evaluate()
+    evaluator = av.DFTB2(av.DftbSkSet.mio)
+    evaluation.set_evaluator(evaluator)
+    del evaluator
+    evaluation.build()

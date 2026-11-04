@@ -61,6 +61,7 @@ class BondedForceScratch {
     void build(int n_threads, int nmax) {
         n_threads_ = n_threads < 1 ? 1 : n_threads;
         direct_ = (n_threads_ == 1);
+        launch_direct_ = direct_;
         if (direct_) {
             fx_.clear();
             fy_.clear();
@@ -74,6 +75,22 @@ class BondedForceScratch {
     }
 
     int n_threads() const noexcept { return n_threads_; }
+
+    /// Terms below which one more thread costs more (wake-up, barrier, and
+    /// its zero + reduce sweep over every force row) than it saves.
+    static constexpr int kMinTuplesPerThread = 2048;
+
+    /// @brief Threads worth using for `n_tuples` terms this launch, at most
+    ///        `n_threads()`. Call before the parallel region and pass the
+    ///        result to `num_threads(...) if (team > 1)`: a team of one makes
+    ///        this launch direct (frame arrays, no zero/reduce), so a small
+    ///        topology does not wake the whole team every evaluation.
+    int team(int n_tuples) noexcept {
+        const int by_work = n_tuples / kMinTuplesPerThread;
+        const int t = std::clamp(by_work, 1, n_threads_ < 1 ? 1 : n_threads_);
+        launch_direct_ = direct_ || t == 1;
+        return t;
+    }
 
     std::size_t memory_bytes() const noexcept {
         std::size_t bytes = 0;
@@ -108,7 +125,7 @@ class BondedForceScratch {
             active_threads_ = 1;
 #endif
         }
-        if (direct_) {
+        if (launch_direct_) {
             // A caller that forgot `bind(f)` would otherwise get null force
             // pointers and silently drop every bonded force. Fail loudly.
             if (!fx_frame_)
@@ -144,7 +161,7 @@ class BondedForceScratch {
     void reduce_into(int n_force) const {
         // Single-thread direct mode wrote straight into the frame — nothing to
         // gather.
-        if (direct_)
+        if (launch_direct_)
             return;
         double* __restrict fx = fx_frame_.data();
         double* __restrict fy = fy_frame_.data();
@@ -174,6 +191,7 @@ class BondedForceScratch {
         fz_.clear();
         n_threads_ = 0;
         direct_ = false;
+        launch_direct_ = false;
         fx_frame_ = Span<AccReal>{};
         fy_frame_ = Span<AccReal>{};
         fz_frame_ = Span<AccReal>{};
@@ -183,6 +201,8 @@ class BondedForceScratch {
     int n_threads_ = 0;
     int active_threads_ = 1;
     bool direct_ = false; ///< single-thread: accumulate straight into frame.
+    /// This launch's mode: `direct_`, or a team of one chosen by `team()`.
+    bool launch_direct_ = false;
     std::vector<std::vector<double>> fx_, fy_, fz_;
     /// Frame fx/fy/fz spans, resolved once per launch by `bind()`.
     Span<AccReal> fx_frame_{}, fy_frame_{}, fz_frame_{};

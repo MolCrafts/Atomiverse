@@ -1,6 +1,10 @@
 /// @file cpu/task/internal/potential_builders.h
 /// @brief Typed real-space params -> the components they mirror.
 ///
+/// `PairLJCut` and `PairCoulCut` have builders too (below): several setters
+/// construct them and must agree on the table form, the special-bond weights,
+/// the energy shift and the Coulomb constant.
+///
 /// Only ONE style of the widened catalogue needs a builder: every other pair
 /// or bonded mirror hands its fields straight to a constructor, in declaration
 /// order, and a braced construction at the call site is the whole story there.
@@ -28,9 +32,12 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "atomiverse/cpu/potentials/pair_born.h"
+#include "atomiverse/cpu/potentials/pair_coul_cut.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
 namespace ATV::cpu::task::internal {
@@ -76,6 +83,58 @@ inline std::vector<cpu::BornTypeCoeff> born_table(const PairBornParams& p) {
                                            p.rho[k], p.sigma[k], p.C[k],
                                            p.D[k]});
     return table;
+}
+
+/// @brief Build `cpu::PairLJCut` from its mirror, in either constructor form.
+///
+/// One factory for every path that constructs the style (launcher replay,
+/// the Python MD / Minimize / MC / vibration setters), so the table form, the
+/// special-bond weights and the energy shift reach all of them alike.
+///
+/// @param p Typed mirror; a non-empty `type_i` selects the per-type form.
+/// @return The configured component.
+/// @throws std::invalid_argument When the four table columns differ in
+///         length, or when the table form also states a nonzero scalar
+///         epsilon / sigma (there is no system-wide pair to apply it to).
+inline cpu::PairLJCut make_pair_lj_cut(const PairLJCutParams& p) {
+    const std::size_t rows = p.type_i.size();
+    if (rows == 0) {
+        if (!p.type_j.empty() || !p.type_epsilon.empty()
+            || !p.type_sigma.empty())
+            throw std::invalid_argument(
+                "PairLJCut: type_j/type_epsilon/type_sigma given without "
+                "type_i");
+        return cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
+            .set_special_bonds(p.s12, p.s13, p.s14)
+            .set_energy_shift(p.energy_shift);
+    }
+    if (p.type_j.size() != rows || p.type_epsilon.size() != rows
+        || p.type_sigma.size() != rows)
+        throw std::invalid_argument(
+            "PairLJCut: type_i/type_j/type_epsilon/type_sigma are one "
+            "coefficient table seen column-wise and must have the same length");
+    if (p.epsilon != 0.0 || p.sigma != 0.0)
+        throw std::invalid_argument(
+            "PairLJCut: the per-type table form takes no system-wide "
+            "epsilon/sigma; pass 0 for both");
+    std::vector<cpu::LJTypeCoeff> table;
+    table.reserve(rows);
+    for (std::size_t k = 0; k < rows; ++k)
+        table.push_back(cpu::LJTypeCoeff{p.type_i[k], p.type_j[k],
+                                         p.type_epsilon[k], p.type_sigma[k]});
+    return cpu::PairLJCut{std::move(table), p.cutoff}
+        .set_special_bonds(p.s12, p.s13, p.s14)
+        .set_energy_shift(p.energy_shift);
+}
+
+/// @brief Build `cpu::PairCoulCut` from its mirror (cutoff, special-bond
+///        weights, Coulomb constant) — same single-factory reason as above.
+/// @param p Typed mirror.
+/// @return The configured component.
+inline cpu::PairCoulCut make_pair_coul_cut(const PairCoulCutParams& p) {
+    return cpu::PairCoulCut{p.cutoff}
+        .set_special_bonds(p.s12, p.s13, p.s14)
+        .set_coulomb_constant(p.coulomb);
 }
 
 } // namespace ATV::cpu::task::internal

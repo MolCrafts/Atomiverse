@@ -26,6 +26,11 @@
 
 #include <nanobind/nanobind.h>
 
+#include <cstddef>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
 #include "atomiverse/cpu/longrange/pppm.h"
@@ -39,12 +44,14 @@
 #include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/dihedral_charmm.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/improper_cvff.h"
 #include "atomiverse/cpu/potentials/improper_harmonic.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
 #include "atomiverse/cpu/potentials/pair_buck.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_dpd.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 #include "atomiverse/cpu/potentials/pair_morse.h"
 #include "atomiverse/cpu/potentials/pair_wca.h"
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
@@ -116,10 +123,8 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
     cls.def(
         "set_evaluator_pair_lj_cut",
         [](Handle& self, const ATV::cpu::task::PairLJCutParams& p) {
-            self.set_categorical(
-                "set_evaluator", p,
-                ATV::cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
-                    .set_special_bonds(p.s12, p.s13, p.s14));
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::task::internal::make_pair_lj_cut(p));
         },
         nb::arg("comp"),
         "Append the Lennard-Jones 12-6 pair evaluator. Needs a NeighborList "
@@ -128,8 +133,9 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
     cls.def(
         "set_evaluator_pair_coul_cut",
         [](Handle& self, const ATV::cpu::task::PairCoulCutParams& p) {
-            self.set_categorical("set_evaluator", p,
-                                 ATV::cpu::PairCoulCut{p.cutoff});
+            self.set_categorical(
+                "set_evaluator", p,
+                ATV::cpu::task::internal::make_pair_coul_cut(p));
         },
         nb::arg("comp"),
         "Append the truncated Coulomb pair evaluator. Self-contained — it "
@@ -150,6 +156,50 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "(KSpacePME) at the SAME alpha [1/A]. Needs a NeighborList whose "
         "cutoff is >= the Coulomb cutoff, and a per-atom 'charge' column [e] "
         "on the frame handed to run().");
+
+    cls.def(
+        "set_evaluator_pair_lj_cut_coul_long",
+        [](Handle& self, const ATV::cpu::task::PairLJCutCoulLongParams& p) {
+            const std::size_t rows = p.type_i.size();
+            if (p.type_j.size() != rows || p.epsilon.size() != rows
+                || p.sigma.size() != rows)
+                throw std::invalid_argument(
+                    "PairLJCutCoulLong: type_i/type_j/epsilon/sigma are one "
+                    "coefficient table seen column-wise and must have the "
+                    "same length");
+            std::vector<ATV::cpu::LJTypeCoeff> table;
+            table.reserve(rows);
+            for (std::size_t k = 0; k < rows; ++k)
+                table.push_back(ATV::cpu::LJTypeCoeff{
+                    p.type_i[k], p.type_j[k], p.epsilon[k], p.sigma[k]});
+            // Not a wire alternative: the handle records the name and the
+            // charge requirement itself, as for KSpacePPPM.
+            self.set_unmirrored_evaluator(
+                ATV::cpu::PairLJCutCoulLong{std::move(table), p.alpha, p.cutoff}
+                    .set_special_bonds(p.special_lj[0], p.special_lj[1],
+                                       p.special_lj[2], p.special_coul[0],
+                                       p.special_coul[1], p.special_coul[2])
+                    .set_energy_shift(p.energy_shift),
+                "PairLJCutCoulLong", true);
+        },
+        nb::arg("comp"),
+        "Append fused multi-type LJ + real-space Ewald Coulomb (LAMMPS "
+        "lj/cut/coul/long) with separate LJ and Coulomb special-bond weights. "
+        "build() requires exactly one reciprocal partner (KSpacePME / "
+        "KSpacePPPM) at the SAME alpha. Needs a NeighborList whose cutoff is "
+        ">= this cutoff and a per-atom 'charge' column [e]. Not an MPI "
+        "task-wire component: a launcher run that names it is refused.");
+
+    cls.def(
+        "set_evaluator_improper_cvff",
+        [](Handle& self, const ATV::cpu::task::ImproperCvffParams& p) {
+            self.set_unmirrored_evaluator(ATV::cpu::ImproperCvff{p.K, p.d, p.n},
+                                          "ImproperCvff", false);
+        },
+        nb::arg("comp"),
+        "Append the Amber/GAFF improper V = K(1 + d cos(n phi)). Reads the "
+        "frame's improper topology; its type_id indexes the per-type "
+        "vectors. Not an MPI task-wire component.");
 
 #ifdef ATV_HAS_KSPACE
     cls.def(

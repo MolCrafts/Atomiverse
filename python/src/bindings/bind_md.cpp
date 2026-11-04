@@ -811,9 +811,7 @@ void bind_md(nb::module_& m) {
             [](MdPhaseBuilder& self, const cpu::task::PairLJCutParams& p,
                int order) -> MdPhaseBuilder& {
                 self.handle->add_on_phase(
-                    p,
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
-                        .set_special_bonds(p.s12, p.s13, p.s14),
+                    p, cpu::task::internal::make_pair_lj_cut(p),
                     MDBinding{self.phase, order});
                 return self;
             },

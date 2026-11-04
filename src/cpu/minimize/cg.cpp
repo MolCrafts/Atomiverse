@@ -4,11 +4,13 @@
 
 #include "atomiverse/cpu/minimize/cg.h"
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/iteration_status.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/minimize/global_reduce.h"
 #include "atomiverse/cpu/minimize/line_search.h"
+#include "atomiverse/cpu/minimize/vector_loop.h"
 
 #include <algorithm>
 #include <cmath>
@@ -96,7 +98,7 @@ void CG::launch(const cpu::LaunchContext& ctx) {
         double local_max_force = 0;
         double sum_f2 = 0;
 #pragma omp parallel for schedule(static) reduction(+ : sum_f2)                \
-    reduction(max : local_max_force)
+    reduction(max : local_max_force) if (n >= kParallelMinElements)
         for (int i = 0; i < n; ++i) {
             const double fx = sp_fx[i];
             const double fy = sp_fy[i];
@@ -110,7 +112,7 @@ void CG::launch(const cpu::LaunchContext& ctx) {
         double local_max_disp = 0, sum_d2 = 0;
         if (disp_valid) {
 #pragma omp parallel for schedule(static) reduction(+ : sum_d2)                \
-    reduction(max : local_max_disp)
+    reduction(max : local_max_disp) if (n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
                 const double dx = sp_x[i] - x_prev_[i * 3 + 0];
                 const double dy = sp_y[i] - x_prev_[i * 3 + 1];
@@ -178,13 +180,10 @@ void CG::launch(const cpu::LaunchContext& ctx) {
     // pick the step length and write x_prev_ + alpha*d_prev_; the driver's
     // force phase (next) recomputes forces/energy at that geometry.
     if (ctx.at(ATV::minimizer::Phase::line_search)) {
-        const double cap =
-            (ls_dir_max_ > 1e-20) ? ls_max_step_ / ls_dir_max_ : 1.0;
-
         // Fixed mode (or no re-eval handle): legacy single step x + alpha0*d.
         if (ls_mode_ == LineSearchMode::Fixed
             || !ctx.runtime.opt.reeval_forces) {
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
                 sp_x[i] = x_prev_[i * 3 + 0] + alpha0_ * d_prev_[i * 3 + 0];
                 sp_y[i] = x_prev_[i * 3 + 1] + alpha0_ * d_prev_[i * 3 + 1];
@@ -195,8 +194,12 @@ void CG::launch(const cpu::LaunchContext& ctx) {
         if (!(ls_gd0_ < 0))
             return; // step 0 / degenerate — leave geometry to the conv. check
 
+        // Last trial evaluated with forces (see LBFGS: trial-force reuse).
+        double last_alpha = 0;
+        bool last_valid = false;
         auto phi = [&](double alpha, bool need_slope) -> LsSample {
-#pragma omp parallel for schedule(static)
+            last_valid = false;
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
                 sp_x[i] = x_prev_[i * 3 + 0] + alpha * d_prev_[i * 3 + 0];
                 sp_y[i] = x_prev_[i * 3 + 1] + alpha * d_prev_[i * 3 + 1];
@@ -205,10 +208,13 @@ void CG::launch(const cpu::LaunchContext& ctx) {
             ctx.runtime.opt.reeval_forces(need_slope);
             if (need_slope)
                 require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
+            last_alpha = alpha;
+            last_valid = need_slope;
             LsSample s;
             s.f = f.meta.get(kEnergy);
             double gd_local = 0;
-#pragma omp parallel for schedule(static) reduction(+ : gd_local)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(+ : gd_local) if (n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
                 gd_local += -sp_fx[i] * d_prev_[i * 3 + 0]
                             + -sp_fy[i] * d_prev_[i * 3 + 1]
@@ -218,9 +224,34 @@ void CG::launch(const cpu::LaunchContext& ctx) {
             return s;
         };
 
-        const double alpha_max = std::max(cap, ls_min_alpha_);
-        const double alpha_init = std::min(1.0, alpha_max);
+        auto search = [&]() -> LineSearchResult {
+            const double cap_now =
+                (ls_dir_max_ > 1e-20) ? ls_max_step_ / ls_dir_max_ : 1.0;
+            const double alpha_max = std::max(cap_now, ls_min_alpha_);
+            const double alpha_init = std::min(1.0, alpha_max);
+            if (ls_mode_ == LineSearchMode::StrongWolfe)
+                return strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
+                                    ls_c2_, /*max_evals=*/20, alpha_max);
+            return armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
+                                    ls_contract_, /*max_evals=*/20,
+                                    ls_min_alpha_);
+        };
+        // Trials never own the accepted geometry.
+        auto restore_origin = [&] {
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
+            for (int i = 0; i < n; ++i) {
+                sp_x[i] = x_prev_[i * 3 + 0];
+                sp_y[i] = x_prev_[i * 3 + 1];
+                sp_z[i] = x_prev_[i * 3 + 2];
+                sp_fx[i] = -g_prev_[i * 3 + 0];
+                sp_fy[i] = -g_prev_[i * 3 + 1];
+                sp_fz[i] = -g_prev_[i * 3 + 2];
+            }
+            f.meta.get(kEnergy) = ls_phi0_;
+            last_valid = false;
+        };
         LineSearchResult lr;
+        bool accepted = false;
         try {
             struct RestoreTrial {
                 cpu::Context& context;
@@ -233,38 +264,59 @@ void CG::launch(const cpu::LaunchContext& ctx) {
                       ctx.runtime.exec.trial_evaluation};
             ctx.runtime.opt.line_search_trial = true;
             ctx.runtime.exec.trial_evaluation = true;
-            if (ls_mode_ == LineSearchMode::StrongWolfe)
-                lr = strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
-                                  ls_c2_,
-                                  /*max_evals=*/20, alpha_max);
-            else
-                lr = armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init,
-                                      ls_c1_, ls_contract_, /*max_evals=*/20,
-                                      ls_min_alpha_);
-            if (!lr.ok && !lr.sufficient_decrease)
-                throw std::runtime_error(
-                    "CG line search found no acceptable step");
-        } catch (...) {
-            // Trials never own the accepted geometry. Restore the origin on
-            // both search exhaustion and evaluator failure, then preserve the error.
-#pragma omp parallel for schedule(static)
-            for (int i = 0; i < n; ++i) {
-                sp_x[i] = x_prev_[i * 3 + 0];
-                sp_y[i] = x_prev_[i * 3 + 1];
-                sp_z[i] = x_prev_[i * 3 + 2];
-                sp_fx[i] = -g_prev_[i * 3 + 0];
-                sp_fy[i] = -g_prev_[i * 3 + 1];
-                sp_fz[i] = -g_prev_[i * 3 + 2];
+            lr = search();
+            accepted = lr.ok || lr.sufficient_decrease;
+            bool steepest = true;
+            for (int j = 0; j < 3 * n && steepest; ++j)
+                steepest = d_prev_[j] == -g_prev_[j];
+            if (!accepted && global_max(ctx, steepest ? 0.0 : 1.0) > 0.0) {
+                // Restart conjugacy: retry once along steepest descent.
+                restore_origin();
+                double gg = 0, dir_max = 0;
+                for (int j = 0; j < 3 * n; ++j) {
+                    d_prev_[j] = -g_prev_[j];
+                    gg += g_prev_[j] * g_prev_[j];
+                    dir_max = std::max(dir_max, std::abs(d_prev_[j]));
+                }
+                ls_gd0_ = -global_sum(ctx, gg);
+                ls_dir_max_ = global_max(ctx, dir_max);
+                ATV_INFO("[cg] step={} line search failed; restarting along "
+                         "steepest descent",
+                         step_);
+                if (ls_gd0_ < 0) {
+                    lr = search();
+                    accepted = lr.ok || lr.sufficient_decrease;
+                }
             }
-            f.meta.get(kEnergy) = ls_phi0_;
+        } catch (...) {
+            restore_origin();
             throw;
         }
+        if (!accepted) {
+            // No lower energy along steepest descent either: keep the origin
+            // and stop without convergence (a result, not an error).
+            restore_origin();
+            if (IterationStatus* status = ctx.runtime.loop.status) {
+                status->stop_requested = true;
+                status->reason = "cg_line_search_failed";
+            }
+            ATV_WARN("[cg] step={} line search failed along steepest descent; "
+                     "stopping without convergence",
+                     step_);
+            return;
+        }
 
-        // The normal force phase evaluates this selected geometry and stages
-        // its electronic history for the enclosing physical-step transaction.
-
+        // Accepted step == last trial evaluated: keep its forces when every
+        // force-phase op is trial-invariant. Otherwise the normal force phase
+        // evaluates this selected geometry and stages its electronic history
+        // for the enclosing physical-step transaction.
         const double alpha = lr.alpha;
-#pragma omp parallel for schedule(static)
+        if (ctx.runtime.opt.trial_forces_reusable && last_valid
+            && alpha == last_alpha) {
+            ctx.runtime.opt.forces_current = true;
+            return;
+        }
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
         for (int i = 0; i < n; ++i) {
             sp_x[i] = x_prev_[i * 3 + 0] + alpha * d_prev_[i * 3 + 0];
             sp_y[i] = x_prev_[i * 3 + 1] + alpha * d_prev_[i * 3 + 1];
@@ -276,7 +328,7 @@ void CG::launch(const cpu::LaunchContext& ctx) {
     // ── Search direction (Polak-Ribière+) ──────────────────────────────
     auto& g = g_ws_;
     auto& x = x_ws_;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
     for (int i = 0; i < n; ++i) {
         x[i * 3 + 0] = sp_x[i];
         x[i * 3 + 1] = sp_y[i];
@@ -289,14 +341,15 @@ void CG::launch(const cpu::LaunchContext& ctx) {
     auto& d = d_ws_;
     if (!has_prev_) {
         // Step 0: steepest descent.
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
         for (int k = 0; k < dim; ++k)
             d[k] = -g[k];
     } else {
         // β = max(0, (g · (g - g_prev)) / (g_prev · g_prev)) — both inner
         // products are global sums so every rank applies the identical β.
         double num = 0, den = 0;
-#pragma omp parallel for schedule(static) reduction(+ : num, den)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(+ : num, den) if (dim >= kParallelMinElements)
         for (int k = 0; k < dim; ++k) {
             num += g[k] * (g[k] - g_prev_[k]);
             den += g_prev_[k] * g_prev_[k];
@@ -304,7 +357,7 @@ void CG::launch(const cpu::LaunchContext& ctx) {
         double nd[2] = {num, den};
         global_sum(ctx, nd, 2);
         const double beta = (nd[1] > 0.0) ? std::max(0.0, nd[0] / nd[1]) : 0.0;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
         for (int k = 0; k < dim; ++k)
             d[k] = -g[k] + beta * d_prev_[k];
     }
@@ -312,16 +365,18 @@ void CG::launch(const cpu::LaunchContext& ctx) {
     // Descent precheck: PR+ does not always yield a descent direction (N&W
     // §5.2). Reset to steepest descent if g·d ≥ 0. Globally reduced.
     double gd_local = 0;
-#pragma omp parallel for schedule(static) reduction(+ : gd_local)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(+ : gd_local) if (dim >= kParallelMinElements)
     for (int k = 0; k < dim; ++k)
         gd_local += g[k] * d[k];
     double gd0 = global_sum(ctx, gd_local);
     if (!(gd0 < 0)) {
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
         for (int k = 0; k < dim; ++k)
             d[k] = -g[k];
         double gg_local = 0;
-#pragma omp parallel for schedule(static) reduction(+ : gg_local)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(+ : gg_local) if (dim >= kParallelMinElements)
         for (int k = 0; k < dim; ++k)
             gg_local += g[k] * g[k];
         gd0 = -global_sum(ctx, gg_local);
@@ -329,7 +384,8 @@ void CG::launch(const cpu::LaunchContext& ctx) {
 
     // Global max|d| for the displacement cap.
     double dir_max = 0;
-#pragma omp parallel for schedule(static) reduction(max : dir_max)
+#pragma omp parallel for schedule(static)                                      \
+    reduction(max : dir_max) if (dim >= kParallelMinElements)
     for (int k = 0; k < dim; ++k)
         dir_max = std::max(dir_max, std::abs(d[k]));
     ls_dir_max_ = global_max(ctx, dir_max);

@@ -4,7 +4,14 @@
 #include "atomiverse/cpu/semiempirical/nddo_fock.h"
 
 #include <algorithm>
+#include <cmath>
+#include <exception>
 #include <stdexcept>
+#include <utility>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/semiempirical/nddo_two_electron.h"
@@ -46,6 +53,96 @@ void validate_packed_size(const char* name, int n_orbitals,
         throw std::runtime_error(std::string(name)
                                  + " size does not match NDDO orbital count");
     }
+}
+
+/// Below this many atoms the pair loop is too short to amortize threads.
+constexpr int kParallelPairAtoms = 16;
+
+/// Largest two-center integral cache [bytes]: 5.8 MB holds a 205-atom and
+/// 64 MB a 674-atom C/H/O/F/Br molecule; above the budget the Fock build
+/// recomputes blocks per pair.
+constexpr std::size_t kTwoCenterCacheBudget = std::size_t{2} << 30;
+
+/// Coulomb and exchange contributions of one (i, j) atom pair's two-center
+/// block `w` (row = atom-i orbital pair, n_pairs_j columns) to the Fock
+/// matrix. The pair's density blocks are gathered once, the 10/10/16-entry
+/// Fock blocks are formed locally and scattered once, so the inner loops do
+/// no packed-index arithmetic. Same terms as NDDO reference `fock2`.
+void accumulate_two_center_pair(const NDDOAtom& atom_i, const NDDOAtom& atom_j,
+                                const double* w, int n_pairs_j,
+                                const std::vector<double>& total_density,
+                                const std::vector<double>& spin_density,
+                                std::vector<double>& fock) {
+    const int ni = atom_i.n_orbitals, nj = atom_j.n_orbitals;
+    const int fi = atom_i.first_ao, fj = atom_j.first_ao;
+    double p_ii[10], p_jj[10], s_ij[4][4];
+    double f_ii[10] = {}, f_jj[10] = {}, f_ij[4][4] = {};
+    double m_i[10], m_j[10];
+    int a_of[10], b_of[10], c_of[10], d_of[10];
+    int pi = 0;
+    for (int a = 0; a < ni; ++a)
+        for (int b = 0; b <= a; ++b, ++pi) {
+            p_ii[pi] = total_density[packed_index(fi + a, fi + b)];
+            m_i[pi] = a == b ? 1.0 : 2.0;
+            a_of[pi] = a;
+            b_of[pi] = b;
+        }
+    int pj = 0;
+    for (int c = 0; c < nj; ++c)
+        for (int d = 0; d <= c; ++d, ++pj) {
+            p_jj[pj] = total_density[packed_index(fj + c, fj + d)];
+            m_j[pj] = c == d ? 1.0 : 2.0;
+            c_of[pj] = c;
+            d_of[pj] = d;
+        }
+    for (int a = 0; a < ni; ++a)
+        for (int c = 0; c < nj; ++c)
+            s_ij[a][c] = spin_density[packed_index(fi + a, fj + c)];
+    const int npi = pi, npj = pj;
+    for (pi = 0; pi < npi; ++pi) {
+        const double* row = w + static_cast<std::size_t>(pi) * n_pairs_j;
+        const int a = a_of[pi], b = b_of[pi];
+        double coulomb_i = 0.0;
+        for (pj = 0; pj < npj; ++pj) {
+            const double wij = row[pj];
+            coulomb_i += m_j[pj] * p_jj[pj] * wij;
+            f_jj[pj] += m_i[pi] * p_ii[pi] * wij;
+            const int c = c_of[pj], d = d_of[pj];
+            const double exchange = 0.25 * m_i[pi] * m_j[pj] * wij;
+            f_ij[a][c] -= exchange * s_ij[b][d];
+            f_ij[a][d] -= exchange * s_ij[b][c];
+            f_ij[b][c] -= exchange * s_ij[a][d];
+            f_ij[b][d] -= exchange * s_ij[a][c];
+        }
+        f_ii[pi] += coulomb_i;
+    }
+    for (pi = 0; pi < npi; ++pi)
+        fock[packed_index(fi + a_of[pi], fi + b_of[pi])] += f_ii[pi];
+    for (pj = 0; pj < npj; ++pj)
+        fock[packed_index(fj + c_of[pj], fj + d_of[pj])] += f_jj[pj];
+    for (int a = 0; a < ni; ++a) {
+        double* fock_row = fock.data() + packed_index(fi + a, fj);
+        for (int c = 0; c < nj; ++c)
+            fock_row[c] += f_ij[a][c];
+    }
+}
+
+int pair_thread_count(int n_atoms) {
+#ifdef _OPENMP
+    if (n_atoms >= kParallelPairAtoms)
+        return std::max(1, omp_get_max_threads());
+#endif
+    (void)n_atoms;
+    return 1;
+}
+
+/// Pair-block storage per atom pair (i > j): rows of atom-i orbital pairs.
+std::size_t pair_block_size(const NDDOAtom& a, const NDDOAtom& b) {
+    const auto pa =
+        static_cast<std::size_t>(a.n_orbitals * (a.n_orbitals + 1) / 2);
+    const auto pb =
+        static_cast<std::size_t>(b.n_orbitals * (b.n_orbitals + 1) / 2);
+    return pa * pb;
 }
 
 } // namespace
@@ -160,7 +257,7 @@ NDDOFockBuilder::add_two_center(const NDDOSystem& system,
                                 const cpu::Frame& frame,
                                 const std::vector<double>& one_center_fock,
                                 const std::vector<double>& total_density,
-                                const std::vector<double>& spin_density) const {
+                                const std::vector<double>& spin_density) {
     return add_two_center(system, frame.span(kAtom_x), frame.span(kAtom_y),
                           frame.span(kAtom_z), one_center_fock, total_density,
                           spin_density);
@@ -170,7 +267,7 @@ std::vector<double> NDDOFockBuilder::add_two_center(
     const NDDOSystem& system, const StorageReal* sp_x, const StorageReal* sp_y,
     const StorageReal* sp_z, const std::vector<double>& one_center_fock,
     const std::vector<double>& total_density,
-    const std::vector<double>& spin_density) const {
+    const std::vector<double>& spin_density) {
     validate_packed_size("one_center_fock", system.n_orbitals, one_center_fock);
     validate_packed_size("total_density", system.n_orbitals, total_density);
     validate_packed_size("spin_density", system.n_orbitals, spin_density);
@@ -180,69 +277,154 @@ std::vector<double> NDDOFockBuilder::add_two_center(
     }
 
     std::vector<double> fock = one_center_fock;
-    // One bounded s/p block is overwritten per pair; no all-pairs cache.
-    NDDOTwoCenterIntegralBlock w;
-    // Coordinates are hoisted by the caller (run / force) so the per-pair
-    // two-center block path never re-resolves Frame keys (13.7× rule).
-    for (std::size_t i = 0; i < system.atoms.size(); ++i) {
-        const auto& atom_i = system.atoms[i];
-        for (std::size_t j = 0; j < i; ++j) {
-            const auto& atom_j = system.atoms[j];
-            build_two_center_integral_block(system, sp_x, sp_y, sp_z,
-                                            static_cast<int>(i),
-                                            static_cast<int>(j), w);
+    // One bounded s/p block per thread is overwritten per pair.
+    accumulate_pairs_(
+        system, total_density, spin_density, fock,
+        [&](int i, int j, NDDOTwoCenterIntegralBlock& w) {
+            build_two_center_integral_block(system, sp_x, sp_y, sp_z, i, j, w);
+            return std::pair<const double*, int>{w.values.data(), w.n_pairs_j};
+        });
+    return fock;
+}
 
-            // Preserve the former local_pairs order exactly: (0,0), (1,0),
-            // (1,1), ... . This leaves the Fock accumulation order unchanged.
-            for (int li_a = 0; li_a < atom_i.n_orbitals; ++li_a) {
-                for (int li_b = 0; li_b <= li_a; ++li_b) {
-                    const int pi = local_pair_index0(li_a + 1, li_b + 1);
-                    const int ao_a = atom_i.first_ao + li_a;
-                    const int ao_b = atom_i.first_ao + li_b;
-                    const auto ab = packed_index(ao_a, ao_b);
-                    const double mult_i = li_a == li_b ? 1.0 : 2.0;
-
-                    for (int lj_c = 0; lj_c < atom_j.n_orbitals; ++lj_c) {
-                        for (int lj_d = 0; lj_d <= lj_c; ++lj_d) {
-                            const int pj =
-                                local_pair_index0(lj_c + 1, lj_d + 1);
-                            const int ao_c = atom_j.first_ao + lj_c;
-                            const int ao_d = atom_j.first_ao + lj_d;
-                            const auto cd = packed_index(ao_c, ao_d);
-                            const double mult_j = lj_c == lj_d ? 1.0 : 2.0;
-                            const double wij = w.at(pi, pj);
-
-                            fock[ab] += mult_j * total_density[cd] * wij;
-                            fock[cd] += mult_i * total_density[ab] * wij;
-
-                            const double exchange =
-                                0.25 * mult_i * mult_j * wij;
-                            fock[packed_index(ao_a, ao_c)] -=
-                                exchange
-                                * spin_density[packed_index(ao_b, ao_d)];
-                            fock[packed_index(ao_a, ao_d)] -=
-                                exchange
-                                * spin_density[packed_index(ao_b, ao_c)];
-                            fock[packed_index(ao_b, ao_c)] -=
-                                exchange
-                                * spin_density[packed_index(ao_a, ao_d)];
-                            fock[packed_index(ao_b, ao_d)] -=
-                                exchange
-                                * spin_density[packed_index(ao_a, ao_c)];
-                        }
-                    }
+bool NDDOFockBuilder::cache_two_center(const NDDOSystem& system,
+                                       const StorageReal* sp_x,
+                                       const StorageReal* sp_y,
+                                       const StorageReal* sp_z) {
+    if (sp_x == nullptr || sp_y == nullptr || sp_z == nullptr)
+        throw std::runtime_error(
+            "NDDOFockBuilder::cache_two_center requires non-null coordinates");
+    release_two_center();
+    const int n_atoms = static_cast<int>(system.atoms.size());
+    const std::size_t n_pairs =
+        static_cast<std::size_t>(n_atoms) * (n_atoms > 0 ? n_atoms - 1 : 0) / 2;
+    pair_offset_.resize(n_pairs + 1);
+    std::size_t total = 0, p = 0;
+    for (int i = 1; i < n_atoms; ++i)
+        for (int j = 0; j < i; ++j, ++p) {
+            pair_offset_[p] = total;
+            total += pair_block_size(system.atoms[i], system.atoms[j]);
+        }
+    pair_offset_[p] = total;
+    if (total > kTwoCenterCacheBudget / sizeof(double)) {
+        pair_offset_.clear();
+        return false;
+    }
+    pair_values_.resize(total);
+    const int n_threads = pair_thread_count(n_atoms);
+    std::exception_ptr failure;
+#pragma omp parallel num_threads(n_threads) if (n_threads > 1)
+    {
+        NDDOTwoCenterIntegralBlock w;
+#pragma omp for schedule(static, 1)
+        for (int i = 1; i < n_atoms; ++i) {
+            try {
+                std::size_t q = static_cast<std::size_t>(i) * (i - 1) / 2;
+                for (int j = 0; j < i; ++j, ++q) {
+                    build_two_center_integral_block(system, sp_x, sp_y, sp_z, i,
+                                                    j, w);
+                    std::copy_n(w.values.data(),
+                                pair_offset_[q + 1] - pair_offset_[q],
+                                pair_values_.data() + pair_offset_[q]);
                 }
+            } catch (...) {
+#pragma omp critical(nddo_cache_failure)
+                if (!failure)
+                    failure = std::current_exception();
             }
         }
     }
+    if (failure) {
+        release_two_center();
+        std::rethrow_exception(failure);
+    }
+    cached_atoms_ = n_atoms;
+    return true;
+}
+
+void NDDOFockBuilder::release_two_center() noexcept {
+    pair_values_.clear();
+    pair_offset_.clear();
+    cached_atoms_ = -1;
+}
+
+std::vector<double>
+NDDOFockBuilder::build_cached(const NDDOSystem& system,
+                              const std::vector<double>& packed_hcore,
+                              const std::vector<double>& total_density,
+                              const std::vector<double>& spin_density) {
+    if (cached_atoms_ != static_cast<int>(system.atoms.size()))
+        throw std::logic_error(
+            "NDDOFockBuilder::build_cached without a matching cache");
+    std::vector<double> fock =
+        add_one_center(system, packed_hcore, total_density, spin_density);
+    validate_packed_size("total_density", system.n_orbitals, total_density);
+    validate_packed_size("spin_density", system.n_orbitals, spin_density);
+    accumulate_pairs_(system, total_density, spin_density, fock,
+                      [&](int i, int j, NDDOTwoCenterIntegralBlock&) {
+                          const std::size_t q =
+                              static_cast<std::size_t>(i) * (i - 1) / 2 + j;
+                          const int pj = system.atoms[j].n_orbitals
+                                         * (system.atoms[j].n_orbitals + 1) / 2;
+                          return std::pair<const double*, int>{
+                              pair_values_.data() + pair_offset_[q], pj};
+                      });
     return fock;
+}
+
+template <typename BlockFn>
+void NDDOFockBuilder::accumulate_pairs_(
+    const NDDOSystem& system, const std::vector<double>& total_density,
+    const std::vector<double>& spin_density, std::vector<double>& fock,
+    BlockFn&& block) {
+    const int n_atoms = static_cast<int>(system.atoms.size());
+    // Each pair writes its (ii), (jj) and (ij) Fock blocks, so threads
+    // accumulate privately and are summed once; tiny systems stay serial.
+    const int n_threads = pair_thread_count(n_atoms);
+    const std::size_t packed_size = fock.size();
+    thread_fock_.resize(static_cast<std::size_t>(n_threads));
+    std::exception_ptr failure;
+#pragma omp parallel num_threads(n_threads) if (n_threads > 1)
+    {
+        int tid = 0;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+#endif
+        auto& local = thread_fock_[static_cast<std::size_t>(tid)];
+        local.assign(packed_size, 0.0);
+        NDDOTwoCenterIntegralBlock w;
+        // Rows grow with i; round-robin rows balance the triangle and keep
+        // the summation order fixed for a given thread count.
+#pragma omp for schedule(static, 1)
+        for (int i = 1; i < n_atoms; ++i) {
+            try {
+                for (int j = 0; j < i; ++j) {
+                    const auto [values, n_pairs_j] = block(i, j, w);
+                    accumulate_two_center_pair(system.atoms[i], system.atoms[j],
+                                               values, n_pairs_j, total_density,
+                                               spin_density, local);
+                }
+            } catch (...) {
+#pragma omp critical(nddo_fock_failure)
+                if (!failure)
+                    failure = std::current_exception();
+            }
+        }
+    }
+    if (failure)
+        std::rethrow_exception(failure);
+    for (int t = 0; t < n_threads; ++t) {
+        const auto& local = thread_fock_[static_cast<std::size_t>(t)];
+        for (std::size_t k = 0; k < packed_size; ++k)
+            fock[k] += local[k];
+    }
 }
 
 std::vector<double>
 NDDOFockBuilder::build(const NDDOSystem& system, const cpu::Frame& frame,
                        const std::vector<double>& packed_hcore,
                        const std::vector<double>& total_density,
-                       const std::vector<double>& spin_density) const {
+                       const std::vector<double>& spin_density) {
     return build(system, frame.span(kAtom_x), frame.span(kAtom_y),
                  frame.span(kAtom_z), packed_hcore, total_density,
                  spin_density);
@@ -253,7 +435,7 @@ NDDOFockBuilder::build(const NDDOSystem& system, const StorageReal* sp_x,
                        const StorageReal* sp_y, const StorageReal* sp_z,
                        const std::vector<double>& packed_hcore,
                        const std::vector<double>& total_density,
-                       const std::vector<double>& spin_density) const {
+                       const std::vector<double>& spin_density) {
     return add_two_center(
         system, sp_x, sp_y, sp_z,
         add_one_center(system, packed_hcore, total_density, spin_density),
@@ -267,27 +449,28 @@ double electronic_energy_ev(int n_orbitals, const std::vector<double>& density,
     validate_packed_size("hcore", n_orbitals, hcore);
     validate_packed_size("fock", n_orbitals, fock);
 
-    double diagonal = 0.0;
-    double off_diagonal = 0.0;
-    int k = 0;
-    const int nn = n_orbitals + 1;
-    for (int i = 2; i <= nn; ++i) {
-        diagonal += density[static_cast<std::size_t>(k)]
-                    * (hcore[static_cast<std::size_t>(k)]
-                       + fock[static_cast<std::size_t>(k)]);
-        const int jj = i - 1;
+    // Compensated (Neumaier) sums: the terms cancel to a total ~1e-3 of
+    // their absolute sum, so naive summation leaves ~1e-10 eV of round-off
+    // in a 200-atom energy -- the size of the default energy_tol, which made
+    // the SCF chase noise. Same terms, same helect formula.
+    struct Compensated {
+        double sum = 0.0, carry = 0.0;
+        void add(double x) {
+            const double t = sum + x;
+            carry +=
+                std::abs(sum) >= std::abs(x) ? (sum - t) + x : (x - t) + sum;
+            sum = t;
+        }
+        double value() const { return sum + carry; }
+    } diagonal, off_diagonal;
+    std::size_t k = 0;
+    for (int i = 0; i < n_orbitals; ++i) {
+        for (int j = 0; j < i; ++j, ++k)
+            off_diagonal.add(density[k] * (hcore[k] + fock[k]));
+        diagonal.add(density[k] * (hcore[k] + fock[k]));
         ++k;
-        if (i == nn) {
-            continue;
-        }
-        for (int off = 0; off < jj; ++off) {
-            off_diagonal += density[static_cast<std::size_t>(k)]
-                            * (hcore[static_cast<std::size_t>(k)]
-                               + fock[static_cast<std::size_t>(k)]);
-            ++k;
-        }
     }
-    return off_diagonal + 0.5 * diagonal;
+    return off_diagonal.value() + 0.5 * diagonal.value();
 }
 
 } // namespace semiempirical

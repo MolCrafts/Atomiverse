@@ -101,6 +101,7 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "VelocityVerlet",
         "NoseHooverNPT",
         "ParrinelloRahmanNPT",
+        "NvtSllod",
         "BerendsenBarostat",
         "InitVelocity",
         "NoseHoover",
@@ -176,6 +177,9 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "BondFene",
         "DihedralCharmm",
         "ImproperHarmonic",
+        # Amber/GAFF styles for molpy force fields (atomiverse.forcefield).
+        "PairLJCutCoulLong",
+        "ImproperCvff",
     }
 )
 
@@ -295,7 +299,7 @@ class TestCanonicalSurface:
 
     def test_public_names_are_the_honest_surface(self) -> None:
         """The public candidate list is fixed; availability filters __all__."""
-        assert len(_CANONICAL_ALL) == 75
+        assert len(_CANONICAL_ALL) == 78
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:

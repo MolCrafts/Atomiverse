@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/semiempirical/nddo_matrix.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -12,11 +13,30 @@
 
 #include "atomiverse/cpu/semiempirical/internal/nddo_system.h"
 
+extern "C" {
+// Fortran BLAS/LAPACK, the vocabulary of cpu/linalg/orbital_tangent.cpp.
+void dgemm_(const char* transa, const char* transb, const int* m, const int* n,
+            const int* k, const double* alpha, const double* a, const int* lda,
+            const double* b, const int* ldb, const double* beta, double* c,
+            const int* ldc);
+void dsyrk_(const char* uplo, const char* trans, const int* n, const int* k,
+            const double* alpha, const double* a, const int* lda,
+            const double* beta, double* c, const int* ldc);
+void dpotrf_(const char* uplo, const int* n, double* a, const int* lda,
+             int* info);
+void dtrsm_(const char* side, const char* uplo, const char* transa,
+            const char* diag, const int* m, const int* n, const double* alpha,
+            const double* a, const int* lda, double* b, const int* ldb);
+}
+
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
 namespace {
+
+/// n² element loops run on the OpenMP threads from this many orbitals on.
+constexpr int kParallelOrbitals = 256;
 
 void validate_packed(int n, const std::vector<double>& packed) {
     const std::size_t expected =
@@ -75,6 +95,7 @@ void NDDODiagonalizer::build(int n) {
         return;
     // Publish the usable size only after every allocation and query succeeds.
     n_ = 0;
+    has_orbitals_ = false;
     const auto dim = static_cast<std::size_t>(n);
     matrix_.resize({dim, dim});
     eigenvalues_.resize(dim);
@@ -119,16 +140,119 @@ void NDDODiagonalizer::diagonalize_packed(
     for (double value : eigenvalues_)
         if (!std::isfinite(value))
             throw std::runtime_error("NDDO non-finite orbital energy");
+    has_orbitals_ = true;
+    publish_row_major_(coefficients_row_major);
+}
+
+void NDDODiagonalizer::publish_row_major_(
+    std::vector<double>& coefficients_row_major) const {
     coefficients_row_major.resize(static_cast<std::size_t>(n_) * n_);
-    for (int i = 0; i < n_; ++i) {
-        for (int j = 0; j < n_; ++j) {
-            const double value = matrix_(i, j);
-            if (!std::isfinite(value))
-                throw std::runtime_error("NDDO non-finite orbital coefficient");
-            coefficients_row_major[static_cast<std::size_t>(i) * n_ + j] =
-                value;
+    const int n = n_;
+    const double* c = matrix_.data(); // Column-major.
+    bool finite = true;
+#pragma omp parallel for schedule(static)                                      \
+    reduction(&& : finite) if (n >= kParallelOrbitals)
+    for (int i = 0; i < n; ++i) {
+        double* row =
+            coefficients_row_major.data() + static_cast<std::size_t>(i) * n;
+        for (int j = 0; j < n; ++j) {
+            const double value = c[i + static_cast<std::size_t>(j) * n];
+            finite = finite && std::isfinite(value);
+            row[j] = value;
         }
     }
+    if (!finite)
+        throw std::runtime_error("NDDO non-finite orbital coefficient");
+}
+
+bool NDDODiagonalizer::pseudo_diagonalize_packed(
+    const std::vector<double>& packed, int n_occupied, double min_gap,
+    std::vector<double>& coefficients_row_major) {
+    if (n_ <= 0 || !has_orbitals_ || n_occupied <= 0 || n_occupied >= n_)
+        return false;
+    validate_packed(n_, packed);
+    const int n = n_, no = n_occupied, nv = n_ - n_occupied;
+    const auto nn = static_cast<std::size_t>(n) * n;
+    fock_.resize(nn);
+    product_.resize(nn);
+    rotated_.resize(nn);
+    mixing_.resize(static_cast<std::size_t>(no) * nv);
+    bool finite = true;
+#pragma omp parallel for schedule(static)                                      \
+    reduction(&& : finite) if (n >= kParallelOrbitals)
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j <= i; ++j) {
+            const double value = packed[packed_index(i, j)];
+            finite = finite && std::isfinite(value);
+            fock_[static_cast<std::size_t>(i) * n + j] =
+                fock_[static_cast<std::size_t>(j) * n + i] = value;
+        }
+    if (!finite)
+        throw std::runtime_error("NDDO non-finite Fock matrix");
+    const double* c = matrix_.data(); // Column-major orbitals, ld n.
+    const double* c_vir = c + static_cast<std::size_t>(no) * n;
+    const double one = 1.0, zero = 0.0, minus = -1.0;
+    const char no_t = 'N', trans = 'T', upper = 'U', right = 'R';
+    // G = F C, then ε_p = c_pᵀ F c_p and F_ia = C_occᵀ G_vir.
+    dgemm_(&no_t, &no_t, &n, &n, &n, &one, fock_.data(), &n, c, &n, &zero,
+           product_.data(), &n);
+    eigenvalues_.resize(static_cast<std::size_t>(n));
+    for (int p = 0; p < n; ++p) {
+        double e = 0.0;
+        const double* cp = c + static_cast<std::size_t>(p) * n;
+        const double* gp = product_.data() + static_cast<std::size_t>(p) * n;
+        for (int mu = 0; mu < n; ++mu)
+            e += cp[mu] * gp[mu];
+        eigenvalues_[static_cast<std::size_t>(p)] = e;
+    }
+    dgemm_(&trans, &no_t, &no, &nv, &n, &one, c, &n,
+           product_.data() + static_cast<std::size_t>(no) * n, &n, &zero,
+           mixing_.data(), &no);
+    for (int a = 0; a < nv; ++a)
+        for (int i = 0; i < no; ++i) {
+            const double gap = eigenvalues_[static_cast<std::size_t>(no + a)]
+                               - eigenvalues_[static_cast<std::size_t>(i)];
+            if (!(gap >= min_gap))
+                return false;
+            mixing_[static_cast<std::size_t>(a) * no + i] /= -gap;
+        }
+    // C_occ' = C_occ + C_vir κᵀ ; C_vir' = C_vir − C_occ κ.
+    std::copy(c, c + nn, rotated_.begin());
+    double* r_occ = rotated_.data();
+    double* r_vir = rotated_.data() + static_cast<std::size_t>(no) * n;
+    dgemm_(&no_t, &trans, &n, &no, &nv, &one, c_vir, &n, mixing_.data(), &no,
+           &one, r_occ, &n);
+    dgemm_(&no_t, &no_t, &n, &nv, &no, &minus, c, &n, mixing_.data(), &no, &one,
+           r_vir, &n);
+    // Orthonormalize the occupied set: C_occ'' = C_occ' U⁻¹, Uᵀ U = C'ᵀ C'.
+    auto orthonormalize = [&](double* block, int k) {
+        overlap_.resize(static_cast<std::size_t>(k) * k);
+        dsyrk_(&upper, &trans, &k, &n, &one, block, &n, &zero, overlap_.data(),
+               &k);
+        int info = 0;
+        dpotrf_(&upper, &k, overlap_.data(), &k, &info);
+        if (info != 0)
+            return false;
+        dtrsm_(&right, &upper, &no_t, &no_t, &n, &k, &one, overlap_.data(), &k,
+               block, &n);
+        return true;
+    };
+    if (!orthonormalize(r_occ, no))
+        return false;
+    // Project the occupied space out of the virtual block, then orthonormalize.
+    mixing_.resize(static_cast<std::size_t>(no) * nv);
+    dgemm_(&trans, &no_t, &no, &nv, &n, &one, r_occ, &n, r_vir, &n, &zero,
+           mixing_.data(), &no);
+    dgemm_(&no_t, &no_t, &n, &nv, &no, &minus, r_occ, &n, mixing_.data(), &no,
+           &one, r_vir, &n);
+    if (!orthonormalize(r_vir, nv))
+        return false;
+    for (std::size_t q = 0; q < nn; ++q)
+        if (!std::isfinite(rotated_[q]))
+            return false;
+    std::copy(rotated_.begin(), rotated_.end(), matrix_.data());
+    publish_row_major_(coefficients_row_major);
+    return true;
 }
 
 } // namespace semiempirical
