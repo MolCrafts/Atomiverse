@@ -402,6 +402,54 @@ TEST(DensityFitting, FittedJKCloseToDenseH2) {
                 << "," << j << ")";
 }
 
+// ── Indefinite density: the signed single-pass level-3 exchange equals the
+//    literal fitted contraction K_il = Σ_P Σ_jk B^P_ij P_jk B^P_kl (water,
+//    def2-SVP: d shells, Cartesian engine AOs). ────────────────────────
+TEST(DensityFitting, SignedExchangeMatchesLiteralFittedContraction) {
+    cpu::Frame f(3);
+    const int z[] = {8, 1, 1};
+    const double xyz[][3] = {
+        {0, 0, 0.1173}, {0, 0.7572, -0.4692}, {0, -0.7572, -0.4692}};
+    for (int i = 0; i < 3; ++i) {
+        f.span(kAtom_atomic_number)[i] = z[i];
+        f.span(kAtom_x)[i] = xyz[i][0];
+        f.span(kAtom_y)[i] = xyz[i][1];
+        f.span(kAtom_z)[i] = xyz[i][2];
+    }
+    f.box = cpu::Box::cubic(30);
+    internal::IntegralWorkspace pack{f, BasisSet::Def2SVP};
+    internal::DensityFitting df(pack.shells, pack.atoms, AuxBasis::Def2JKFIT);
+    const int n = df.n_ao();
+    RealMatrix P = xt::zeros<double>({std::size_t(n), std::size_t(n)});
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            P(i, j) = std::cos(0.7 * i + 0.3 * j) + std::cos(0.7 * j + 0.3 * i);
+    const auto& B = df.b_tensor();
+    RealMatrix Kref = xt::zeros<double>({std::size_t(n), std::size_t(n)});
+    std::vector<double> T(static_cast<std::size_t>(n) * n);
+    for (int a = 0; a < df.n_aux(); ++a) {
+        for (int i = 0; i < n; ++i)
+            for (int k = 0; k < n; ++k) {
+                double v = 0.0;
+                for (int j = 0; j < n; ++j)
+                    v += B(i * n + j, a) * P(j, k);
+                T[static_cast<std::size_t>(i) * n + k] = v;
+            }
+        for (int i = 0; i < n; ++i)
+            for (int l = 0; l < n; ++l) {
+                double v = 0.0;
+                for (int k = 0; k < n; ++k)
+                    v += T[static_cast<std::size_t>(i) * n + k]
+                         * B(k * n + l, a);
+                Kref(i, l) += v;
+            }
+    }
+    const RealMatrix K = df.k_fitted_from_density(P);
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            EXPECT_NEAR(K(i, j), Kref(i, j), 1e-10) << i << "," << j;
+}
+
 // ── Near-singular auxiliary metric throws (two H at 1e-7 Å duplicate
 //    every auxiliary function → Cholesky pivot collapse). ─────────────
 TEST(DensityFitting, NearSingularMetricThrows) {
