@@ -14,6 +14,7 @@
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/ewald_erfc.h"
 #include "atomiverse/cpu/potentials/force_scratch.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -25,6 +26,91 @@
 
 namespace ATV {
 namespace cpu {
+
+namespace {
+
+/// Multi-type LJ (+ optional r⁻⁴ attraction) and the real-space Ewald term
+/// of one pair, LAMMPS `lj/cut/coul/long` with special-bond tiers.
+struct LJCoulLongKernel {
+    const StorageReal* q = nullptr;
+    const int* type = nullptr;
+    const LJPairCoeff* tab = nullptr;
+    const std::uint8_t* tier = nullptr; ///< per CSR slot; null: no specials
+    double t_lj[4] = {1, 1, 1, 1};
+    double t_coul[4] = {1, 1, 1, 1};
+    int ntypes = 0;
+    double rc_sq = 0, coul_sq = 0, qqr2e = 1, alpha = 0;
+    bool has_r4 = false;
+
+    struct Row {
+        double qi_scale; ///< qqr2e · q_i
+        std::size_t ti_base;
+    };
+
+    double cutoff_sq() const { return rc_sq; }
+
+    Row row(int i) const {
+        return {qqr2e * q[i], static_cast<std::size_t>(type[i])
+                                  * static_cast<std::size_t>(ntypes)};
+    }
+
+    /// erfc(αr)/r and its force factor for every survivor, one xsimd batch
+    /// at a time (`ewald_erfc.h`); the walk pads `r2` past `n`.
+    void prepare(const Row& ri, const double* r2, int n,
+                 md::PairChunk& c) const {
+        if (ri.qi_scale != 0.0)
+            md::ewald_pair_factors(r2, n, alpha, c.a, c.b);
+    }
+
+    md::PairTerm operator()(const Row& ri, int j, int entry, double r2,
+                            const md::PairChunk& c, int k) const {
+        double fpair = 0.0;
+        double epair = 0.0;
+        const double sl = tier ? t_lj[tier[entry]] : 1.0;
+        if (sl != 0.0) {
+            // LAMMPS: factor_lj * (forcelj, evdwl - offset) inside the
+            // pair's own cut_ljsq.
+            const LJPairCoeff& cf =
+                tab[ri.ti_base + static_cast<std::size_t>(type[j])];
+            if (r2 < cf.cut_ljsq) {
+                const double r2inv = 1.0 / r2;
+                const double r6inv = r2inv * r2inv * r2inv;
+                fpair += sl * r2inv * (cf.lj1 * r6inv * r6inv - cf.lj2 * r6inv);
+                epair +=
+                    sl * (cf.lj3 * r6inv * r6inv - cf.lj4 * r6inv - cf.offset);
+            }
+            if (has_r4 && r2 < cf.r4_cutsq) {
+                const R4Term<double> t =
+                    r4_attraction(r2, cf.r4_a, cf.r4_rc5inv, cf.r4_e0);
+                fpair += sl * t.fpair;
+                epair += sl * t.energy;
+            }
+        }
+        // LAMMPS special convention with a kspace partner: the erfc part is
+        // UNscaled; scaled/excluded bonded pairs subtract (1-f)*qq/r — the
+        // plain-Coulomb share the reciprocal sum added for them.
+        if (ri.qi_scale != 0.0 && r2 < coul_sq) {
+            const double qj = q[j];
+            if (qj != 0.0) {
+                const double qq = ri.qi_scale * qj;
+                double ec = qq * c.a[k];
+                double fc = qq * c.b[k];
+                const double sc = tier ? t_coul[tier[entry]] : 1.0;
+                if (sc != 1.0) {
+                    const double r2i = 1.0 / r2;
+                    const double comp = (1.0 - sc) * qq * std::sqrt(r2i);
+                    ec -= comp;
+                    fc -= comp * r2i;
+                }
+                fpair += fc;
+                epair += ec;
+            }
+        }
+        return {fpair, epair};
+    }
+};
+
+} // namespace
 
 PairLJCutCoulLong::PairLJCutCoulLong(std::vector<LJTypeCoeff> coeffs,
                                      double alpha, double cutoff)
@@ -260,224 +346,35 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
         scale_source_ = &pairs;
     }
 
-    const int k_inum = pairs.inum;
-    const int* __restrict k_ilist = pairs.ilist.data();
-    const int* __restrict k_numneigh = pairs.numneigh.data();
-    const int* __restrict k_firstneigh = pairs.firstneigh.data();
-    const int* __restrict k_neighbors = pairs.neighbors.data();
-    const std::uint8_t* __restrict k_tier =
-        any_special_ ? pair_tier_.data() : nullptr;
-    const double t_lj[4] = {tier_lj_[0], tier_lj_[1], tier_lj_[2], tier_lj_[3]};
-    const double t_coul[4] = {tier_coul_[0], tier_coul_[1], tier_coul_[2],
-                              tier_coul_[3]};
-
-    const StorageReal* __restrict x_ptr = f.span(kAtom_x);
-    const StorageReal* __restrict y_ptr = f.span(kAtom_y);
-    const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    const StorageReal* __restrict q_ptr = f.span(kAtom_charge);
-    const int* __restrict type_ptr = f.span(kAtom_type);
-
-    const double rc_sq = cut_sq_;
-    const double coul_sq = cut_coulsq_;
-    const double qqr2e = ATV::units::md_qqr2e;
+    LJCoulLongKernel kernel;
+    kernel.q = f.span(kAtom_charge);
+    kernel.type = f.span(kAtom_type);
+    kernel.tab = table_.pairs().data();
+    kernel.tier = any_special_ ? pair_tier_.data() : nullptr;
+    for (int t = 0; t < 4; ++t) {
+        kernel.t_lj[t] = tier_lj_[t];
+        kernel.t_coul[t] = tier_coul_[t];
+    }
+    kernel.ntypes = n_types_;
+    kernel.rc_sq = cut_sq_;
+    kernel.coul_sq = cut_coulsq_;
+    kernel.qqr2e = ATV::units::md_qqr2e;
+    kernel.alpha = alpha_;
+    kernel.has_r4 = table_.has_r4();
+    const int* __restrict type_ptr = kernel.type;
     const int ntypes = n_types_;
-    const LJPairCoeff* __restrict tab = table_.pairs().data();
-    const bool has_r4 = table_.has_r4();
-    const double alpha = alpha_;
+
+    // The style's own stress switch narrows the launch's request.
     const bool do_virial = compute_stress_ && ctx.stress_requested;
+    LaunchContext walk = ctx;
+    walk.stress_requested = do_virial;
+    const md::PairTotals sums =
+        md::PairLoop<LJCoulLongKernel>::run(walk, kernel, "PairLJCutCoulLong");
 
-    double energy_total = 0;
-    double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
-
-    // if(n_threads_>1): pure serial path skips OpenMP fork (OMP=1 fair vs LAMMPS).
-    const md::ForcePass forces(ctx);
-#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
-    reduction(+ : energy_total) reduction(+ : v_xx) reduction(+ : v_yy)        \
-    reduction(+ : v_zz) reduction(+ : v_xy) reduction(+ : v_xz)                \
-    reduction(+ : v_yz)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = forces.thread(tid);
-        double* __restrict fxt = tf.fx;
-        double* __restrict fyt = tf.fy;
-        double* __restrict fzt = tf.fz;
-
-        // Survivor-compaction staging, one chunk of a neighbor list at a
-        // time. 7 x 512 doubles + the index list is ~30 KB, so a chunk and
-        // its survivor list stay L1-resident (48 KB/core) alongside the
-        // random position gathers of pass 1. The survivor r² and its two
-        // Ewald factors are padded to the xsimd batch width.
-        constexpr int kChunk = 512;
-        constexpr int kLanes = md::ewald_batch_width();
-        alignas(64) double dxb[kChunk];
-        alignas(64) double dyb[kChunk];
-        alignas(64) double dzb[kChunk];
-        alignas(64) double r2b[kChunk];
-        alignas(64) int surv[kChunk];
-        alignas(64) double r2s[kChunk + kLanes];
-        alignas(64) double ecb[kChunk + kLanes];
-        alignas(64) double fcb[kChunk + kLanes];
-
-#pragma omp for schedule(static)
-        for (int ii = 0; ii < k_inum; ++ii) {
-            const int i = k_ilist[ii];
-            const double xi = x_ptr[i], yi = y_ptr[i], zi = z_ptr[i];
-            const double qi_scale = qqr2e * q_ptr[i]; // hoist coulomb*qi
-            const int ti = type_ptr[i];
-            const int jnum = k_numneigh[i];
-            const int off = k_firstneigh[i];
-            double fi_x = 0, fi_y = 0, fi_z = 0;
-            const std::size_t ti_base =
-                static_cast<std::size_t>(ti) * static_cast<std::size_t>(ntypes);
-
-            // ~45% of a 2 A-skin list is out of cutoff. Rather than pay a
-            // hard-to-predict early exit inside the force loop, geometry is
-            // computed unconditionally (pass 1, branch-free and
-            // vectorizable), survivors are compacted, and only they reach
-            // the LJ/coulomb body.
-            for (int base = 0; base < jnum; base += kChunk) {
-                const int nc = std::min(kChunk, jnum - base);
-
-                // Halo-resolved axes retain their selected image.
-                for (int t = 0; t < nc; ++t) {
-                    const int j = k_neighbors[off + base + t];
-                    double dx = xi - x_ptr[j];
-                    double dy = yi - y_ptr[j];
-                    double dz = zi - z_ptr[j];
-                    dxb[t] = dx;
-                    dyb[t] = dy;
-                    dzb[t] = dz;
-                    r2b[t] = dx * dx + dy * dy + dz * dz;
-                }
-
-                // Branchless append; ascending order is mandatory so pass 2
-                // accumulates energy/force/virial in exactly the order the
-                // single-pass loop did (bitwise-identical totals).
-                int ns = 0;
-                for (int t = 0; t < nc; ++t) {
-                    const double r2 = r2b[t];
-                    surv[ns] = t;
-                    r2s[ns] = r2;
-                    ns += (r2 >= rc_sq || r2 == 0.0) ? 0 : 1;
-                }
-
-                // Pass 1.5: erfc(αr)/r and its force factor for every
-                // survivor, analytically, one xsimd batch at a time
-                // (cpu/potentials/ewald_erfc.h). Padding lanes get a
-                // harmless r² and are never read.
-                if (qi_scale != 0.0 && ns > 0) {
-                    const int padded = (ns + kLanes - 1) / kLanes * kLanes;
-                    for (int k = ns; k < padded; ++k)
-                        r2s[k] = 1.0;
-                    md::ewald_pair_factors(r2s, ns, alpha, ecb, fcb);
-                }
-
-                for (int k = 0; k < ns; ++k) {
-                    const int slot = surv[k];
-                    const int idx = off + base + slot;
-                    const int j = k_neighbors[idx];
-                    const double dx = dxb[slot];
-                    const double dy = dyb[slot];
-                    const double dz = dzb[slot];
-                    const double r2 = r2b[slot];
-
-                    double fpair = 0.0;
-                    double epair = 0.0;
-
-                    const double sl = k_tier ? t_lj[k_tier[idx]] : 1.0;
-                    if (sl != 0.0) {
-                        // LAMMPS: factor_lj * (forcelj, evdwl - offset)
-                        // inside the pair's own cut_ljsq.
-                        const LJPairCoeff& c =
-                            tab[ti_base
-                                + static_cast<std::size_t>(type_ptr[j])];
-                        if (r2 < c.cut_ljsq) {
-                            const double r2inv = 1.0 / r2;
-                            const double r6inv = r2inv * r2inv * r2inv;
-                            fpair += sl * r2inv
-                                     * (c.lj1 * r6inv * r6inv - c.lj2 * r6inv);
-                            epair += sl
-                                     * (c.lj3 * r6inv * r6inv - c.lj4 * r6inv
-                                        - c.offset);
-                        }
-                        if (has_r4 && r2 < c.r4_cutsq) {
-                            const R4Term<double> t =
-                                r4_attraction(r2, c.r4_a, c.r4_rc5inv, c.r4_e0);
-                            fpair += sl * t.fpair;
-                            epair += sl * t.energy;
-                        }
-                    }
-                    // LAMMPS special convention with a kspace partner: the
-                    // erfc part is UNscaled; scaled/excluded bonded pairs
-                    // subtract (1-f)*qq/r — the plain-Coulomb share the
-                    // reciprocal sum added for them.
-                    if (qi_scale != 0.0 && r2 < coul_sq) {
-                        const double qj = q_ptr[j];
-                        if (qj != 0.0) {
-                            const double qq = qi_scale * qj;
-                            double ec = qq * ecb[k];
-                            double fc = qq * fcb[k];
-                            const double sc =
-                                k_tier ? t_coul[k_tier[idx]] : 1.0;
-                            if (sc != 1.0) {
-                                const double r2i = 1.0 / r2;
-                                const double comp =
-                                    (1.0 - sc) * qq * std::sqrt(r2i);
-                                ec -= comp;
-                                fc -= comp * r2i;
-                            }
-                            fpair += fc;
-                            epair += ec;
-                        }
-                    }
-                    if (fpair == 0.0 && epair == 0.0)
-                        continue;
-
-                    const double fxp = dx * fpair;
-                    const double fyp = dy * fpair;
-                    const double fzp = dz * fpair;
-                    fi_x += fxp;
-                    fi_y += fyp;
-                    fi_z += fzp;
-                    if (ctx.forces_requested) {
-                        fxt[j] -= fxp;
-                        fyt[j] -= fyp;
-                        fzt[j] -= fzp;
-                    }
-                    energy_total += epair;
-                    if (do_virial) {
-                        v_xx += dx * fxp;
-                        v_yy += dy * fyp;
-                        v_zz += dz * fzp;
-                        v_xy += dx * fyp;
-                        v_xz += dx * fzp;
-                        v_yz += dy * fzp;
-                    }
-                }
-            }
-            if (ctx.forces_requested) {
-                fxt[i] += fi_x;
-                fyt[i] += fi_y;
-                fzt[i] += fi_z;
-            }
-        }
-    }
-
-    f.meta.get(kEnergy) += energy_total;
-    f.meta.get(kEnergyPair) += energy_total;
-    if (do_virial) {
-        if (ctx.stress_requested) {
-            f.meta.get(kStress)[0] += v_xx;
-            f.meta.get(kStress)[1] += v_yy;
-            f.meta.get(kStress)[2] += v_zz;
-            f.meta.get(kStress)[3] += v_xy;
-            f.meta.get(kStress)[4] += v_xz;
-            f.meta.get(kStress)[5] += v_yz;
-        }
-    }
+    f.meta.get(kEnergy) += sums.energy;
+    f.meta.get(kEnergyPair) += sums.energy;
+    if (do_virial)
+        sums.virial.flush_to(f.meta.get(kStress));
 
     // ── LJ tail correction (LAMMPS pair_modify tail yes) ─────────────────
     // E_tail = (2π/V)·Σ_i Σ_j N_i N_j ∫_rc^∞ u_ij r² dr = etail_pref_/V,
