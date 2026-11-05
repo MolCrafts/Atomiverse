@@ -68,7 +68,7 @@ int run() {
     cpu::electronic::SecondGenCp eval{std::move(gpw), /*aspc_k=*/1,
                                       corrector_budget};
 
-    constexpr int n_seed = 2; // warm ASPC history (order K=1 needs K+1)
+    constexpr int n_seed = 3; // warm ASPC history (order K=1 needs K+2)
     constexpr int n_prod = 2;
     constexpr int n_chunks = 1;
     // Soft relative drift (partial SCF heat) — same class as RKS SGCP water.

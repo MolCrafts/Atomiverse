@@ -59,7 +59,7 @@ int run() {
 
     constexpr double dt = 0.5; // fs
     constexpr int corrector_budget = 5;
-    constexpr int n_seed = 2; // ASPC K=1 needs K+1 densities
+    constexpr int n_seed = 3; // ASPC K=1 needs K+2 densities
     constexpr int n_prod = 2;
     constexpr double drift_tol = 0.10;
     constexpr double rmin = 0.4;

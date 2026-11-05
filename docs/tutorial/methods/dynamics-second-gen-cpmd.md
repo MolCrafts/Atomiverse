@@ -57,15 +57,20 @@ SCF).
 ### ASPC predictor and corrector
 
 Kolafa ASPC (*J. Comput. Chem.* **25**, 335 (2004), doi:10.1002/jcc.10385)
-of order \(K\) stores \(K+1\) previous densities and builds a Lagrange
-extrapolation for the next ionic step,
+of order \(K\) stores \(K+2\) previous densities and extrapolates the next
+ionic step with Kolafa's weights,
 
 \[
-P_{n+1}^{\mathrm{pred}} = \sum_{k=0}^{K} B_k\, D_{n-k}.
+P_{n+1}^{\mathrm{pred}} = \sum_{j=1}^{K+2} B_j\, D_{n+1-j},\qquad
+B_j = (-1)^{j+1}\, j\, \frac{\binom{2K+4}{K+2-j}}{\binom{2K+2}{K+1}}
 \]
 
+(\(K=1\): \(B = (5/2, -2, 1/2)\)). These are not Lagrange weights: they are
+exact only for a linear trend, which is what makes the predictor-corrector
+pair stable.
+
 Until the history is full, `predict()` returns false and the method runs a
-full SCF (seed phase; \(K+1\) seed steps). After warm-up, each production force
+full SCF (seed phase; \(K+2\) seed steps). After warm-up, each production force
 step:
 
 1. ASPC → initial density guess
@@ -118,7 +123,7 @@ cpu::md::MD sim;
 sim.set_integrator(cpu::md::VelocityVerlet{/*dt [fs]=*/0.5});
 sim.set_evaluator_ref(eval);
 sim.build();
-sim.run(frame, 2);   // seed: full SCF fills ASPC history (K+1 = 2)
+sim.run(frame, 3);   // seed: full SCF fills ASPC history (K+2 = 3)
 sim.run(frame, 1);   // first ASPC-warm production step → baseline E0
 // assert eval.last_result().iters <= 5
 sim.run(frame, 2);   // production drift window
@@ -188,7 +193,7 @@ Closed-shell RKS Γ-point GPW with the diagonalization/DIIS corrector.
 | XC / basis / PP | PBE / DZVP-MOLOPT-GTH / GTH-PBE-q6 (O), GTH-PBE-q1 (H) |
 | CUTOFF | 200 Ry |
 | SCF envelope | `tol = 1e-5`, `max_iter = 60` (seed), `mix = 0.3` |
-| ASPC \(K\) / corrector | **1** (needs \(K+1=2\) seed densities) / `corrector_max_iter = 5` |
+| ASPC \(K\) / corrector | **1** (needs \(K+2=3\) seed densities) / `corrector_max_iter = 5` |
 | \(\Delta t\) | 0.5 fs |
 | Initial velocity | COM-preserving H stretch \(v_x(\mathrm{H1})=+0.0015\), \(v_x(\mathrm{H2})=-0.0015\) Å/fs |
 | Steps | 2 seed (full SCF) + 1 baseline production + 2 drift production |
@@ -235,7 +240,7 @@ and bad \(K\) or budget; accepts default members. Offline CP2K sketch:
 
 Open-shell Γ-UKS GPW with **dual Kolafa ASPC** predictors on independent spin
 densities \(P^\alpha, P^\beta\) (two `ASPCPredictor` instances), then a partial
-SCF corrector with dual DIIS diagonalization (not OT): seed \(K+1\) full-SCF
+SCF corrector with dual DIIS diagonalization (not OT): seed \(K+2\) full-SCF
 steps, predict \(P^\sigma_{n+1}\) per spin, run at most `corrector_max_iter`
 SCF iterations, record \(P^\sigma\), evaluate forces at that state. UKS alone
 is accepted by `build()`. Triplet O₂ with GTH-q6 → 12 valence e⁻;
@@ -324,7 +329,7 @@ exclusion with the CP / XL wrappers; `CarParrinello` + `use_ot` is refused.
 | Cutoff / SCF | **200 Ry** / `tol = 1e-5`, `max_iter = 60`, `mix = 0.3`, `use_ot = true` |
 | dt / ASPC \(K\) | **0.5 fs** / **1** |
 | Corrector | OT, `corrector_max_iter = 5` |
-| Seed / production | 2 full-OT steps (\(K+1\)) / 1 baseline + 2 drift steps |
+| Seed / production | 3 full-OT steps (\(K+2\)) / 1 baseline + 2 drift steps |
 
 ### Gates
 
@@ -427,15 +432,15 @@ Niklasson XL instead of ASPC:
 
 ### ASPC on complex Bloch densities
 
-Real Lagrange coefficients \(\omega_m\) act **element-wise** on Hermitian
+The same real Kolafa weights \(B_j\) act **element-wise** on Hermitian
 \(P_k \in \mathbb{C}^{n_{\mathrm{ao}}\times n_{\mathrm{ao}}}\):
 
 \[
 P_k^{\mathrm{pred}}
-  = \sum_{m=0}^{K} \omega_m\, P_k^{(n-m)},
+  = \sum_{j=1}^{K+2} B_j\, P_k^{(n+1-j)},
 \]
 
-requiring \(K+1\) history densities (\(K=1\) → 2 seed SCF steps). After a
+requiring \(K+2\) history densities (\(K=1\) → 3 seed SCF steps). After a
 partial SCF at the new geometry yields \(P_k^{\mathrm{scf}}\), the Kolafa
 corrector blend
 
@@ -450,7 +455,7 @@ is recorded for the next step (`ASPCPredictor` / `ASPCPredictorCplx::correct`):
 ```cpp
 cpu::electronic::ASPCPredictorCplx aspc(/*order K=*/1);
 // after cold multi-k SCF: aspc.record(P_k);
-// when history_size() >= K+1:
+// when history_size() >= K+2:
 //   aspc.predict(P_pred);  // partial SCF → P_scf
 //   aspc.correct(P_scf, P_pred, P_corr);
 //   aspc.record(P_corr);

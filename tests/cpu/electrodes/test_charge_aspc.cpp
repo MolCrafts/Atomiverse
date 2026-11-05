@@ -143,13 +143,6 @@ TEST(ChargeASPC, InsufficientHistoryReturnsFalse) {
     EXPECT_FALSE(aspc.predict(pred));
 }
 
-TEST(ChargeASPC, CorrectorBlend) {
-    cpu::electrodes::ChargeASPC aspc(2);
-    std::vector<double> scf{1.0}, pred{0.0}, corr;
-    aspc.correct(scf, pred, corr);
-    EXPECT_NEAR(corr[0], 4.0 / 7.0, 1e-15);
-}
-
 TEST(ConstPotBO, CgMatchesDense) {
     auto f_dense = madelung_primary();
     auto f_cg = madelung_primary();

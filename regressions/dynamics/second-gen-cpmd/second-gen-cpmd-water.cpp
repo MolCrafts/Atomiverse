@@ -67,14 +67,14 @@ int run() {
     gpw_base_dft.nonperiodic = true;
     cpu::gpw::GPWEvaluator gpw_base(std::move(gpw_base_dft),
                                     /*compute_forces=*/true);
-    // Kolafa ASPC order K=1 (K+1=2 seed densities) + the corrector budget —
+    // Kolafa ASPC order K=1 (K+2=3 seed densities) + the corrector budget —
     // both constructor arguments on the SGCP wrapper, not public flags.
     cpu::electronic::SecondGenCp eval{std::move(gpw_base), /*aspc_k=*/1,
                                       corrector_budget};
 
-    // Seed ASPC history (K+1 densities) then production with corrector
+    // Seed ASPC history (K+2 densities) then production with corrector
     // budget. Short traj for ≤60 s gate (K=1 → 2 seed steps).
-    constexpr int n_seed = 2; // warm ASPC history (order K=1 needs K+1)
+    constexpr int n_seed = 3; // warm ASPC history (order K=1 needs K+2)
     constexpr int n_prod = 2;
     constexpr int n_chunks = 1;
     // Soft relative drift (partial SCF heat) vs BO 0.05 / CP 0.10.
@@ -88,7 +88,7 @@ int run() {
     sim.build();
 
     // Seed: full-SCF steps fill ASPC history (predict returns false until
-    // K+1 densities are recorded).
+    // K+2 densities are recorded).
     if (sim.run(frame, n_seed) != n_seed) {
         std::printf("FAIL: seed steps incomplete\n");
         return 1;

@@ -10,19 +10,18 @@
 /// fewer SCF iterations, and the nuclei move smoothly, so the density matrices
 /// of the previous steps predict the next one well.
 ///
-/// **The scheme.** Kolafa's always-stable predictor-corrector fits a Lagrange
-/// interpolating polynomial through the \(K+1\) most recent density matrices and
-/// evaluates it one step beyond the newest — a pure extrapolation. Label the
-/// retained densities \(P^{(0)}\) (oldest kept) … \(P^{(K)}\) (newest); the
-/// predictor is
+/// **The scheme.** Kolafa's always-stable predictor-corrector of order \(K\)
+/// extrapolates from the \(K+2\) most recent density matrices. Label them
+/// \(P^{(1)}\) (newest) … \(P^{(K+2)}\) (oldest kept); the predictor is
 ///
-///   P_pred = Σ_{j=0}^{K} ω_j P^{(j)},
-///   ω_j = Π_{i=0..K, i≠j} ((K+1) − i) / (j − i)
+///   P_pred = Σ_{j=1}^{K+2} B_j P^{(j)},
+///   B_j = (−1)^{j+1} · j · C(2K+4, K+2−j) / C(2K+2, K+1)
 ///
-/// with \(K\) the extrapolation order and \(\omega_j\) the (dimensionless)
-/// Lagrange weights for evaluating at abscissa \(K+1\). Extrapolation alone is
-/// not time-reversible, so a *corrector* step blends the SCF result obtained
-/// from that guess back toward the prediction,
+/// (`kolafa_aspc_weights(K+2)`). The weights sum to 1 and reproduce a linear
+/// trend exactly but, unlike Lagrange extrapolation weights, are not exact
+/// for higher polynomials: that trade buys unconditional stability once a
+/// *corrector* step blends the SCF result obtained from the guess back
+/// toward the prediction,
 ///
 ///   P_corr = (K+2)/(2K+3) · P_scf + (K+1)/(2K+3) · P_pred,
 ///
@@ -62,6 +61,20 @@ namespace ATV {
 namespace cpu {
 namespace electronic {
 
+/// @brief Kolafa's ASPC predictor weights for `n_vectors` stored snapshots.
+///
+/// B_j = (-1)^(j+1) · j · C(2n, n−j) / C(2n−2, n−1),  j = 1 (newest) … n,
+/// with n = `n_vectors` = k+2 for ASPC order k (Kolafa, J. Comput. Chem. 25,
+/// 335 (2004); the same expression as CP2K qs_wf_history_methods.F,
+/// `wfi_aspc_nr`). The weights sum to 1 and reproduce a linear trend exactly;
+/// they are deliberately *not* Lagrange extrapolation weights, which are
+/// unstable in a self-consistent predictor-corrector loop.
+/// @param n_vectors Number of snapshots, ≥ 1 (1 gives the plain warm start).
+/// @return B_1 … B_n, newest snapshot first (dimensionless).
+/// @throws std::invalid_argument when n_vectors < 1;
+///         std::overflow_error when the binomials exceed 64 bits.
+std::vector<double> kolafa_aspc_weights(int n_vectors);
+
 /// @brief ASPC density matrix predictor-corrector (real AO density).
 ///
 /// Usage (the caller owns the SCF solve; this type only extrapolates):
@@ -85,8 +98,8 @@ namespace electronic {
 class ASPCPredictor {
   public:
     /// @brief Construct with extrapolation order.
-    /// @param order Lagrange extrapolation order K (dimensionless, default 3).
-    ///        Prediction needs K+1 history points; the deque keeps at most K+2.
+    /// @param order ASPC order K (dimensionless, default 3). Prediction needs
+    ///        K+2 history points; the deque keeps exactly that many.
     /// @throws std::invalid_argument when order < 0.
     explicit ASPCPredictor(int order = 3);
 
@@ -100,11 +113,11 @@ class ASPCPredictor {
     ///        n_ao = number of atomic-orbital basis functions).
     void record(const xt::xtensor<double, 2>& P_scf);
 
-    /// @brief Predict the next step's density by Lagrange extrapolation over the
-    ///        K+1 newest history entries (formula in the file header).
+    /// @brief Predict the next step's density from the K+2 newest history
+    ///        entries with Kolafa's weights (formula in the file header).
     /// @param[out] P_predicted Extrapolated density matrix (n_ao × n_ao,
     ///        dimensionless); untouched when the history is too short.
-    /// @return true when `history_size() >= K+1` and a prediction was written;
+    /// @return true when `history_size() >= K+2` and a prediction was written;
     ///         false otherwise (the caller must then do a cold SCF solve).
     bool predict(xt::xtensor<double, 2>& P_predicted) const;
 
@@ -123,7 +136,7 @@ class ASPCPredictor {
                  xt::xtensor<double, 2>& P_corrected) const;
 
     /// @brief Reset history (e.g., after geometry discontinuity or restart), so
-    ///        the next `predict()` returns false until K+1 records accumulate.
+    ///        the next `predict()` returns false until K+2 records accumulate.
     void reset();
 
     /// @brief Number of history points currently stored.
@@ -131,23 +144,23 @@ class ASPCPredictor {
     int history_size() const { return static_cast<int>(history_.size()); }
 
     /// @brief Extrapolation order K.
-    /// @return Lagrange extrapolation order (dimensionless, ≥ 0).
+    /// @return ASPC order (dimensionless, ≥ 0).
     int order() const { return K_; }
 
   private:
     int K_; ///< Extrapolation order.
     std::deque<xt::xtensor<double, 2>>
         history_;               ///< Stored density matrices (newest last).
-    std::vector<double> omega_; ///< Lagrange extrapolation coefficients.
+    std::vector<double> omega_; ///< Kolafa weights B_1 (newest) … B_{K+2}.
 
-    /// @brief Compute Lagrange extrapolation coefficients for order K.
+    /// @brief Fill `omega_` with `kolafa_aspc_weights(K+2)`.
     void compute_coefficients();
 };
 
 /// @brief ASPC on complex Hermitian Bloch densities \(P_k\) — the multi-k
 ///        second-generation Car–Parrinello (SGCP) path.
 ///
-/// Same Kolafa Lagrange weights \(\omega_j\) and corrector weights as
+/// Same Kolafa weights \(B_j\) and corrector weights as
 /// `ASPCPredictor` (real, dimensionless), applied element-wise to
 /// `linalg::CplxMatrix`. Because the weights are real, a Hermitian history stays
 /// Hermitian up to floating-point roundoff. Used by `GPWEvaluator` with
@@ -156,7 +169,7 @@ class ASPCPredictor {
 class ASPCPredictorCplx {
   public:
     /// @brief Construct with extrapolation order.
-    /// @param order Lagrange order K (dimensionless, ≥ 0); prediction needs K+1
+    /// @param order ASPC order K (dimensionless, ≥ 0); prediction needs K+2
     ///        history points, the deque keeps at most K+2.
     /// @throws std::invalid_argument when order < 0.
     explicit ASPCPredictorCplx(int order = 3);
@@ -167,11 +180,11 @@ class ASPCPredictorCplx {
     ///        dimensionless).
     void record(const linalg::CplxMatrix& P_scf);
 
-    /// @brief Predict the next-step density by Lagrange extrapolation over the
-    ///        K+1 newest entries (formula in the file header).
+    /// @brief Predict the next-step density from the K+2 newest entries with
+    ///        Kolafa's weights (formula in the file header).
     /// @param[out] P_predicted Extrapolated complex density (n_ao × n_ao,
     ///        dimensionless); untouched when the history is too short.
-    /// @return true when `history_size() >= K+1`; false otherwise.
+    /// @return true when `history_size() >= K+2`; false otherwise.
     bool predict(linalg::CplxMatrix& P_predicted) const;
 
     /// @brief Kolafa blend \(P_\mathrm{corr} = w_\mathrm{scf} P_\mathrm{scf}
@@ -187,7 +200,7 @@ class ASPCPredictorCplx {
                  linalg::CplxMatrix& P_corrected) const;
 
     /// @brief Drop all history (geometry discontinuity / restart), so the next
-    ///        `predict()` returns false until K+1 records accumulate.
+    ///        `predict()` returns false until K+2 records accumulate.
     void reset();
 
     /// @brief Number of stored densities.
@@ -195,7 +208,7 @@ class ASPCPredictorCplx {
     int history_size() const { return static_cast<int>(history_.size()); }
 
     /// @brief Extrapolation order K.
-    /// @return Lagrange extrapolation order (dimensionless, ≥ 0).
+    /// @return ASPC order (dimensionless, ≥ 0).
     int order() const { return K_; }
 
   private:

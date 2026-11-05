@@ -12,7 +12,7 @@ One case; every section below is run by `atv_regressions --case dynamics/second-
 
 - Outer loop: `cpu::md::MD` + NVE `VelocityVerlet` (nuclei)
 - Force slot: `cpu::gpw::GPWEvaluator` with
-  **`second_gen_cp = true`**, **`second_gen_cp_k = 3`**,
+  **`second_gen_cp = true`**, **`second_gen_cp_k = 1`**,
   **`second_gen_cp_max_iter = 5`**, `compute_forces = true`
 - Electronics: Kolafa **ASPC** density predictor-corrector
   (`cpu::electronic::ASPCPredictor`) + **partial SCF corrector** (iteration budget
@@ -41,7 +41,7 @@ One case; every section below is run by `atv_regressions --case dynamics/second-
 | dt | 0.5 fs |
 | ASPC \(K\) | 1 |
 | Corrector SCF | `max_iter = 5` |
-| Seed | 2 full-SCF steps (warm ASPC history, \(K+1\)) |
+| Seed | 3 full-SCF steps (warm ASPC history, \(K+2\)) |
 | Production | 1 baseline + 2 drift steps |
 
 ### Offline oracle (CP2K)
@@ -226,7 +226,7 @@ corrector:
 | dt | 0.5 fs |
 | ASPC \(K\) | 1 |
 | Corrector | OT, `max_iter = 5` |
-| Seed | 2 full-OT steps (warm ASPC history, \(K+1\)) |
+| Seed | 3 full-OT steps (warm ASPC history, \(K+2\)) |
 | Production | 1 baseline + 2 drift steps |
 
 ### Offline oracle (CP2K)
@@ -420,7 +420,7 @@ closed-shell RKS** Gaussian-and-plane-waves (GPW / Quickstep) forces:
 | PP | GTH-PADE-q1 |
 | CUTOFF | 100 Ry (envelope run) |
 | k-mesh | \(1\times1\times2\), `k_time_reversal=false` → \(n_k=2\) |
-| ASPC \(K\) | 1 (needs \(K+1=2\) seed densities) |
+| ASPC \(K\) | 1 (needs \(K+2=3\) seed densities) |
 | Corrector SCF | `max_iter = 5` after ASPC warm |
 | Ensemble | NVE |
 | `dt` | 0.5 fs |
@@ -524,7 +524,7 @@ partial-SCF corrector:
 | PP | GTH-PADE-q1 |
 | CUTOFF | 100 Ry (envelope run) |
 | k-mesh | \(1\times1\times2\), `k_time_reversal=false` → \(n_k=2\) |
-| ASPC \(K\) | 1 (needs \(K+1=2\) seed densities) |
+| ASPC \(K\) | 1 (needs \(K+2=3\) seed densities) |
 | Corrector | OT, `max_iter = 5` after ASPC warm |
 | Ensemble | NVE |
 | `dt` | 0.5 fs |
