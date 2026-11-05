@@ -98,6 +98,14 @@ TEST(TestCamB3lyp, SpinExchangeSymmetryIncludingEmptyChannel) {
 TEST(TestCamB3lyp, ShortRangeB88MatchesLibxcItyhIncludingDiluteSpin) {
     // Genuine spin-unpolarized ITYH calls recover the one-spin kernel
     // without the oracle's extreme-polarization 1-zeta cancellation.
+    //
+    // Band: libxc evaluates the attenuation's closed form in double just
+    // below its a = 1.35 series switch, where the terms cancel. Against a
+    // 60-digit evaluation of the same expression the pin at rho = 3.2e-5
+    // (a = 1.333) is off by 7.1e-12 relative in vsigma, so an independently
+    // correct kernel can differ from the pin by more than 1e-11 there.
+    // Accuracy itself is pinned against exact values in the next test.
+    constexpr double kLibxcBand = 2e-11;
     for (std::size_t i = 0; i < cam_b3lyp_pin::short_range_points.size(); ++i) {
         const auto& p = cam_b3lyp_pin::short_range_points[i];
         double energy, vrho, vsigma;
@@ -106,8 +114,30 @@ TEST(TestCamB3lyp, ShortRangeB88MatchesLibxcItyhIncludingDiluteSpin) {
         const std::array<double, 3> got = {energy, vrho, vsigma};
         for (std::size_t k = 0; k < got.size(); ++k)
             EXPECT_NEAR(got[k], p.output[k],
-                        1e-11 * std::max(1.0, std::abs(p.output[k])))
+                        kLibxcBand * std::max(1.0, std::abs(p.output[k])))
                 << "point=" << i << " channel=" << k;
+    }
+}
+
+TEST(TestCamB3lyp, ShortRangeAttenuationIsAccurateAcrossTheSeriesSwitch) {
+    // vsigma of ITYH-B88 (mu = 0.33, sigma = 0) on both sides of the
+    // a = 1.35 switch between the closed form and the large-a series.
+    // Reference: the libxc maple attenuation expression evaluated with
+    // mpmath at 60 significant digits (A(a) and A'(a) exactly, then
+    // vsigma = -beta rho^{-4/3} (A + a A'/2)). Holds without extended
+    // long double (Apple arm64 has none).
+    struct Exact {
+        double rho, vsigma;
+    };
+    constexpr std::array<Exact, 2> exact = {{
+        {3.0000000000000001e-05, -1.3113306765390006835}, // a = 1.3624 (series)
+        {3.1999999999999999e-05, -1.3091450472014801258}, // a = 1.3334 (closed)
+    }};
+    for (const auto& e : exact) {
+        double energy, vrho, vsigma;
+        b88_short_range_exchange_spin(e.rho, 0.0, 0.33, energy, vrho, vsigma);
+        EXPECT_NEAR(vsigma, e.vsigma, 5e-12 * std::abs(e.vsigma))
+            << "rho=" << e.rho;
     }
 }
 
