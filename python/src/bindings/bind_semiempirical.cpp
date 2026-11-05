@@ -280,9 +280,7 @@ void bind_semiempirical(nb::module_& m) {
             cpu::Frame result(0);
             {
                 nb::gil_scoped_release release;
-                cpu::task::TaskDispatcher dispatcher(
-                    MPI_COMM_WORLD, cpu::task::kProtocolVersion,
-                    /*handshake=*/false); // main's dispatcher handshook
+                cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD);
                 result = dispatcher.dispatch(spec, std::move(work)).frame;
             }
             cpu::to_molpy(result, *fref);

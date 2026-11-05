@@ -22,12 +22,6 @@
 /// collective failure is out of this protocol's recovery scope (same
 /// boundary as today's native MPI runs).
 ///
-/// **Version handshake.** Both constructors join one collective handshake
-/// (root broadcasts its protocol version, every rank compares, the verdict
-/// is all-reduced): a mismatch throws `std::runtime_error` on EVERY rank,
-/// naming both versions. Dispatcher and workers must therefore construct in
-/// lockstep. The header's `version` field is defence in depth.
-///
 /// **Results.** After an MD or Minimize task the owning decomposition is released from
 /// the materialized driver (`test_eam_multirank` pattern) and the owners are
 /// gathered to rank 0 (`gather_to_root` → `to_frame`, which carries
@@ -37,7 +31,7 @@
 /// IS the result. Frame remains the only state currency; `TaskResult` is a
 /// separate control-plane record (iterations, convergence, stop reason).
 ///
-/// **Communicator.** v2 supports `comm == MPI_COMM_WORLD` (or a congruent
+/// **Communicator.** The protocol supports `comm == MPI_COMM_WORLD` (or a congruent
 /// communicator with identical ranks): the Frame broadcast rides
 /// `cpu::comm::bcast_frame`, which is WORLD-fixed by the
 /// `scatter_atoms_from_root` precedent. Communicator parameterization is a
@@ -73,13 +67,9 @@ enum class Command : std::int32_t {
     SHUTDOWN = 2, ///< Session over; WorkerLoop::run() returns.
 };
 
-/// @brief Protocol version; the handshake and every header carry it.
-inline constexpr std::int32_t kProtocolVersion = 2;
-
 /// @brief Fixed-size per-command header, broadcast as raw bytes.
 struct CommandHeader {
-    std::int32_t version = kProtocolVersion; ///< Defence in depth.
-    std::int32_t command = 0;                ///< A `Command` value.
+    std::int32_t command = 0;       ///< A `Command` value.
     std::int64_t payload_bytes = 0; ///< TaskSpec byte count (RUN_TASK).
 };
 
@@ -92,49 +82,38 @@ struct DispatchResult {
 /// @brief Worker-side blocking command loop (ranks != root).
 class WorkerLoop {
   public:
-    /// @brief Validating constructor; joins the collective version handshake.
+    /// @brief Validating constructor; makes no collective call.
     /// @param comm Communicator shared with the dispatcher (not owned; the
     ///             protocol neither dups nor frees it). Root is rank 0.
-    /// @param version Protocol version to handshake with (test seam);
-    ///                defaults to `kProtocolVersion`.
     /// @throws std::runtime_error if MPI is not initialized, `comm` is
-    ///         MPI_COMM_NULL, this rank IS rank 0, or the handshake finds a
-    ///         version mismatch on any rank (message names both versions).
-    explicit WorkerLoop(MPI_Comm comm, std::int32_t version = kProtocolVersion);
+    ///         MPI_COMM_NULL, or this rank IS rank 0.
+    explicit WorkerLoop(MPI_Comm comm);
 
     /// @brief Block on command broadcasts until SHUTDOWN.
     ///
     /// RUN_TASK executes the shared task path (task-level failure is folded
     /// into the status allreduces and does NOT exit the loop); SHUTDOWN
-    /// returns cleanly. Protocol-level corruption (header version mismatch,
-    /// unknown command) throws — the session is unrecoverable then.
+    /// returns cleanly. Protocol-level corruption (unknown command,
+    /// implausible payload size) throws — the session is unrecoverable then.
     void run();
 
   private:
     MPI_Comm comm_;
-    std::int32_t version_;
 };
 
 /// @brief Rank-0 dispatch endpoint: one broadcast per task, typed result back.
 class TaskDispatcher {
   public:
-    /// @brief Validating constructor; joins the collective version handshake.
+    /// @brief Validating constructor; makes no collective call, so the
+    ///        launcher's `main` and the bindings' dispatch seam (a separate
+    ///        copy of this library inside the extension module, constructed
+    ///        while the workers already block in their command loop) may
+    ///        each construct one.
     /// @param comm Communicator shared with the workers (not owned). Root is
     ///             rank 0 — this rank must BE rank 0.
-    /// @param version Protocol version (test seam); defaults to
-    ///                `kProtocolVersion`.
-    /// @param do_handshake Join the collective version handshake (default).
-    ///        The launcher's `main` constructs THE handshaking dispatcher
-    ///        (pairing with every WorkerLoop ctor); the bindings' dispatch
-    ///        seam — a separate copy of this library inside the extension
-    ///        module — constructs with `handshake = false`, because the
-    ///        workers are already blocked in their command loop and a
-    ///        second handshake would misalign the collectives.
-    /// @throws std::runtime_error if this rank is not rank 0 of `comm`, or
-    ///         on handshake mismatch (every rank throws).
-    explicit TaskDispatcher(MPI_Comm comm,
-                            std::int32_t version = kProtocolVersion,
-                            bool do_handshake = true);
+    /// @throws std::runtime_error if MPI is not initialized, `comm` is
+    ///         MPI_COMM_NULL, or this rank is not rank 0 of `comm`.
+    explicit TaskDispatcher(MPI_Comm comm);
 
     /// @brief Run one task on every rank; return state + loop control metadata.
     ///
@@ -156,7 +135,6 @@ class TaskDispatcher {
 
   private:
     MPI_Comm comm_;
-    std::int32_t version_;
 };
 
 } // namespace task

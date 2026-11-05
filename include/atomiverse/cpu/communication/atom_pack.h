@@ -18,8 +18,6 @@ namespace ATV {
 namespace cpu {
 namespace comm {
 
-inline constexpr std::uint32_t kAtomWireVersion = 2;
-
 enum class PackKind : std::uint8_t { Comm, Border, Exchange, Reverse };
 
 /// @brief Human name of a wire, for diagnostics.
@@ -52,7 +50,6 @@ constexpr const char* pack_kind_name(PackKind kind) noexcept {
 /// functions.
 struct PackPlan {
     PackKind kind = PackKind::Exchange;
-    std::uint32_t version = kAtomWireVersion;
     std::uint64_t fingerprint = 0;
     std::uint64_t frame_generation = 0;
     std::uint64_t block_generation = 0;
@@ -197,8 +194,7 @@ std::uint64_t column_schema_fingerprint(const std::vector<ColumnRef>& fields);
 /// Fail before an MPI payload operation when ranks disagree.  The MPI owner
 /// must compare/all-reduce this value collectively before point-to-point I/O.
 void require_schema_fingerprint(const PackPlan& local,
-                                std::uint64_t remote_fingerprint,
-                                std::uint32_t remote_version);
+                                std::uint64_t remote_fingerprint);
 
 /// @brief Multiply two sizes, throwing rather than wrapping.
 ///

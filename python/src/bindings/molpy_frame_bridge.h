@@ -2,8 +2,9 @@
 /// @brief Cross-extension bridge: borrow a molpy.Frame from a Python object.
 ///
 /// Atomiverse does not bind a Frame data type. The **user-facing** exchange
-/// layer is `molpy.Frame`. Capsule names are obtained from the merged
-/// molpy native extension and validated by its molcxx bridge.
+/// layer is `molpy.Frame`. The capsule name is the one the linked molcxx
+/// bridge accepts (`molrs::frameref_capsule_name()`), so a frame from a molpy
+/// whose handle layout differs fails the name check before any dereference.
 ///
 /// `borrow_molpy_frame()` extracts that capsule, hands the raw address to
 /// the molcxx CXX bridge (`molrs::frame_clone_from_addr`), and returns
@@ -14,7 +15,6 @@
 #include <string>
 
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/string.h>
 
 #include <cstdint>
 #include <stdexcept>
@@ -23,49 +23,19 @@
 
 namespace nb = nanobind;
 
-/// @brief The runtime capsule name, after checking the linked molpy ABI.
+/// @brief The capsule name the linked molcxx bridge accepts.
 ///
-/// Query molpy's own token for the name and compare its ABI line against the
-/// molrs-ffi source selected by ATV_MOLPY_PATH at build time. Comparing only
-/// the capsule and runtime package would accept a different embedded layout.
-///
-/// Cached: the answer cannot change inside one interpreter.
+/// Cached: the answer cannot change inside one process.
 /// @return The exact capsule name to hand `PyCapsule_GetPointer`.
-/// @throws std::runtime_error when the token is malformed or its ABI differs.
 inline const std::string& molpy_frameref_capsule_name() {
-    static const std::string name = [] {
-        nb::object token =
-            nb::module_::import_("molpy._core").attr("_ffi_abi_token")();
-        if (nb::len(token) < 3) {
-            throw std::runtime_error(
-                "molpy._core._ffi_abi_token() returned fewer than 3 fields; "
-                "this "
-                "molpy is too old for the Atomiverse Python bridge");
-        }
-        const std::string runtime_abi = nb::cast<std::string>(token[0]);
-        if (runtime_abi != ATV_MOLPY_ABI_LINE) {
-            throw std::runtime_error(
-                "molpy ABI-line mismatch: runtime molpy is " + runtime_abi
-                + " but Atomiverse is linked against " + ATV_MOLPY_ABI_LINE
-                + ". Rebuild and install both wheels from one molpy source.");
-        }
-        const std::string runtime_name = nb::cast<std::string>(token[2]);
-        const std::string linked_name(molrs::frameref_capsule_name());
-        if (runtime_name != linked_name) {
-            throw std::runtime_error(
-                "molpy native build mismatch: the Frame capsule differs from "
-                "Atomiverse's linked molcxx bridge. Rebuild both wheels from "
-                "the same local molpy checkout and Rust toolchain.");
-        }
-        return linked_name;
-    }();
+    static const std::string name(molrs::frameref_capsule_name());
     return name;
 }
 
-/// @brief Borrow a molpy.Frame handle after validating the molpy ABI.
+/// @brief Borrow a molpy.Frame handle after checking its capsule name.
 /// @param frame_obj A Python molpy.Frame instance.
 /// @return A handle sharing the originating frame's store.
-/// @throws std::runtime_error on an ABI mismatch or malformed frame capsule.
+/// @throws std::runtime_error on a malformed or foreign frame capsule.
 inline ::rust::Box<molrs::FrameRef> borrow_molpy_frame(nb::object frame_obj) {
     if (!nb::hasattr(frame_obj, "_ffi_frameref_capsule")) {
         throw std::runtime_error(
@@ -82,17 +52,16 @@ inline ::rust::Box<molrs::FrameRef> borrow_molpy_frame(nb::object frame_obj) {
     void* ptr = PyCapsule_GetPointer(cap, expected.c_str());
     if (ptr == nullptr) {
         // PyCapsule_GetPointer set a Python error (wrong name / NULL). The
-        // name carries molpy's ABI line, so the usual cause is a frame
-        // produced by a different molpy minor than the one in this process.
+        // name carries the producer's handle-layout fingerprint, so the usual
+        // cause is a molpy built separately from Atomiverse's linked molcxx.
         PyErr_Clear();
         const char* actual = PyCapsule_GetName(cap);
         throw std::runtime_error(
             std::string("molpy.Frame capsule is named \"")
             + (actual ? actual : "(null)") + "\" but this build expects \""
             + expected
-            + "\". That is a molpy ABI-line mismatch between the frame's "
-              "producer and this interpreter's molpy — rebuild them against "
-              "one molpy.");
+            + "\". Rebuild and install both wheels from the same local "
+              "molpy checkout and Rust toolchain.");
     }
     const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
     return molrs::frame_clone_from_addr(static_cast<std::size_t>(addr));

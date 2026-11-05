@@ -20,8 +20,8 @@ The C++ extension `_atomiverse` is built on the user's machine from the
 | `install` | `pip install --force-reinstall --no-deps <wheel> <molpy-wheel>` | the native wheel replaces the pure one; the local molpy wheel replaces the installed one |
 
 Build the molpy wheel and the `molcxx` bridge from the same local molpy
-checkout selected by `ATV_MOLPY_PATH` (default `../molpy`). The ABI token and
-capsule validation remain required. No molpy version is pinned.
+checkout selected by `ATV_MOLPY_PATH` (default `../molpy`). Capsule
+validation remains required. No molpy version is pinned.
 
 Because pip installs the native wheel, `_atomiverse*.so` and the
 `_build_info.json` CMake writes beside it are RECORD-tracked files of the

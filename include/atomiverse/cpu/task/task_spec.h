@@ -1,10 +1,10 @@
 /// @file cpu/task/task_spec.h
-/// @brief Closed, versioned, typed sum of launcher-dispatchable CPU tasks.
+/// @brief Closed, typed sum of launcher-dispatchable CPU tasks.
 ///
 /// TaskSpec is an in-memory/wire boundary, not a universal component IR. Each
 /// task alternative owns its own phase enum, component allow-list, and budget:
 /// MD cannot carry a minimizer phase and Minimize cannot carry an MD phase.
-/// Historic wire layouts are rejected; there is no compatibility decoder.
+/// There is one byte layout and no compatibility decoder.
 #pragma once
 
 #include <array>
@@ -313,7 +313,7 @@ inline bool operator==(const FixCsvrParams& a, const FixCsvrParams& b) {
 /// is exactly the constructor order (`T_target, tau_T, P_target, tau_P, dt,
 /// drag, mtchain, mpchain, couple_axis, T_stop`), and `task_codec` writes
 /// the fields in that same order — so this declaration doubles as the byte
-/// layout. Changing either side is a `kWireVersion` bump.
+/// layout.
 ///
 /// Not mirrored — a launcher-dispatched NPT run gets the C++ defaults for
 /// `NoseHooverNPT::set_couple_xy` (lockstep x/y cell edges) and
@@ -1716,7 +1716,7 @@ struct MinimizeTask {
     /// Iteration budget [count]; the loop stops here even if no criterion has
     /// fired.
     std::int64_t max_iter;
-    /// The single stop policy of this run. A variant since v5: a fixed-cell
+    /// The single stop policy of this run. A variant: a fixed-cell
     /// run judges forces, a variable-cell run judges pressure or stress.
     MinimizeCriterionParams convergence;
 };
@@ -1742,55 +1742,6 @@ inline bool operator==(const TaskResult& a, const TaskResult& b) {
 ///        payload that materializes it.
 class TaskSpec {
   public:
-    /// @brief Version tag written at the head of every encoded TaskSpec;
-    ///        `task_codec` rejects a payload whose tag differs.
-    ///
-    /// v3 was a hard cut to task-specific typed payloads; v4 is a hard cut to
-    /// the grown `NoseHooverNptParams` byte layout (the chain-length,
-    /// per-axis and ramp fields). Adding the `ParrinelloRahmanNPT` and
-    /// `BerendsenBarostat` component IDs did not by itself force a bump — a
-    /// new ID only ever appears in payloads that use it — but both land
-    /// under v4, and so do the electrostatic IDs (`PairCoulCut`, `CoulLong`,
-    /// `KSpacePME`) and `XyzRecorder` for the same reason: appended IDs with
-    /// fresh payloads leave every existing byte layout untouched. No v2 or v3
-    /// decoder exists: an older payload is an error, never a best-effort read.
-    ///
-    /// Admitting `AM1Params` into the MD payload likewise stays at
-    /// v4: the widening is append-only in the *alternative set*, not in the
-    /// bytes. ID 9 already existed and its five fields are written by the one
-    /// shared `write`/`read_am1` pair, so every previously encodable MD
-    /// payload encodes to the identical bytes and a v4 decoder written before
-    /// this change reads them unchanged.
-    ///
-    /// v5 is a LAYOUT change, which is why it is a bump where the six appended
-    /// minimize component IDs (21-26) would not have been: `MinimizeTask`'s
-    /// tail stopped being five bare `ForceConverged` doubles and became a
-    /// criterion variant — a `u16` id followed by that criterion's own fields.
-    /// A v4 payload's doubles would decode as an id followed by garbage, so
-    /// the exact-match version gate in `unpack` is what makes the break loud.
-    /// Same reasoning as the v4 `NoseHooverNptParams` bump.
-    ///
-    /// The nine real-space catalogue IDs (27-35) land under v5 without a bump,
-    /// for the reason IDs 21-26 would not have forced one: an appended ID with
-    /// a fresh payload leaves every existing byte layout untouched, so a v5
-    /// decoder written before them reads every previously encodable payload
-    /// unchanged. Only a LAYOUT change is a bump.
-    ///
-    /// v7 is a LAYOUT change: the `PairLJCutParams` payload (ID 0) gained its
-    /// per-type LJ rows, r⁻⁴ rows, the tail byte and the energy-shift byte
-    /// after the six scalars, and `PairCoulCutParams` its three special-bond
-    /// weights and the Coulomb constant, so a v6 payload would end early. IDs
-    /// 36 (`PairLJCutCoulLongParams`, ending in the tail byte), 37
-    /// (`AngleCosineParams`, one f64 run) and 38 (`FixEfieldParams`, three
-    /// f64) are appended with fresh payloads under the same bump.
-    ///
-    /// ID 39 (`MrecRecorderParams`: length-prefixed path, i32 every, u64
-    /// flush_every, u8 durable) is appended under v7 without a bump: no
-    /// existing ID's byte layout changed. Also under v7 (not yet released
-    /// when it landed), the `MDTask` payload ends with the driver's u64
-    /// `capture_buffer_bytes` after `n_steps`.
-    static constexpr std::uint32_t kWireVersion = 7;
-
     explicit TaskSpec(MDTask task);
     explicit TaskSpec(SinglePointTask task);
     explicit TaskSpec(MinimizeTask task);

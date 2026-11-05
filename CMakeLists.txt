@@ -1291,23 +1291,6 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_BUILD_PYTHON)
         find_package(Python 3.12 COMPONENTS Interpreter Development.Module REQUIRED)
 
-        # Compare the runtime molpy token with the ABI of the source actually
-        # linked above, including when ATV_MOLPY_PATH selects a sibling tree.
-        set(_atv_molpy_ffi_manifest "${ATV_MOLPY_PATH}/crates/molrs-ffi/Cargo.toml")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-                     "${_atv_molpy_ffi_manifest}")
-        execute_process(
-            COMMAND "${Python_EXECUTABLE}" -c
-                "import sys, tomllib; print('.'.join(tomllib.loads(open(sys.argv[1], encoding='utf-8').read())['package']['version'].split('.')[:2]))"
-                "${_atv_molpy_ffi_manifest}"
-            OUTPUT_VARIABLE _atv_molpy_abi_line
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE _atv_molpy_abi_result
-        )
-        if(NOT _atv_molpy_abi_result EQUAL 0 OR NOT _atv_molpy_abi_line)
-            message(FATAL_ERROR "Cannot determine linked molpy ABI from ${_atv_molpy_ffi_manifest}")
-        endif()
-
         # Locate nanobind from the active Python environment
         execute_process(
             COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
@@ -1357,8 +1340,6 @@ if(NOT ATV_DOCS_ONLY)
             endif()
         endif()
         nanobind_add_module(_atomiverse ${_ATV_NB_SRCS})
-        target_compile_definitions(_atomiverse PRIVATE
-            ATV_MOLPY_ABI_LINE="${_atv_molpy_abi_line}")
         if(ATV_BUILD_HF)
             target_compile_definitions(_atomiverse PRIVATE
                 ATV_HF_CXX_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"

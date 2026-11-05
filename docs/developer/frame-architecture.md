@@ -187,7 +187,7 @@ const std::size_t written = cpu::comm::pack_exchange(
     frame, plan, row, bytes, capacity);
 ```
 
-The wire fingerprint covers the current wire version, the sorted key and wire
+The wire fingerprint covers the sorted key and wire
 IDs, dtypes, native element widths, strides and groups, and the semantic flags.
 The insertion order of runtime columns does not affect wire order; a genuine
 schema difference fails collectively *before* any payload is exchanged.

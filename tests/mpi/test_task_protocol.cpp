@@ -4,13 +4,13 @@
 ///
 /// Launched under `mpirun -n N`. Runs at N=1, 2, 4 per CTest config.
 ///
-/// Session shape: every TEST is one complete "handshake → task(s) →
-/// SHUTDOWN" session, coordinated by rank branches INSIDE the test body —
+/// Session shape: every TEST is one complete "task(s) → SHUTDOWN"
+/// session, coordinated by rank branches INSIDE the test body —
 /// rank 0 constructs a TaskDispatcher and dispatches, ranks > 0 construct a
 /// WorkerLoop and block in run() until rank 0 broadcasts SHUTDOWN. Every
 /// collective is entered by every rank in the same order (lockstep), so no
-/// scenario can deadlock a passing binary; the version-mismatch and
-/// bad-TaskSpec scenarios pin exactly the lockstep-preserving error paths.
+/// scenario can deadlock a passing binary; the bad-TaskSpec scenario pins
+/// exactly the lockstep-preserving error path.
 ///
 /// Reference tiering for the physics equivalence (a, c, e): the protocol
 /// result must equal the SAME TaskSpec run directly (no protocol) through
@@ -33,8 +33,6 @@
 ///   - (a) dispatched ~10-atom LJ MD task ≡ direct run          [ac-002/003]
 ///   - (b) clean SHUTDOWN releases every worker, exit 0          [ac-004]
 ///   - (c) two sequential tasks in one session, worker loop-back [ac-005]
-///   - (d) asymmetric version mismatch → every rank throws
-///         std::runtime_error naming both versions, no deadlock  [ac-006]
 ///   - (e) materialize-failing TaskSpec → dispatch() throws on
 ///         rank 0, workers survive, next valid task succeeds     [ac-007]
 ///   - (f) Minimize uses the same result/gather protocol shape
@@ -291,14 +289,11 @@ void expect_trajectory_close_serial(const cpu::Frame& result,
 TEST(MpiTaskProtocol, WireConstantsAreStable) {
     EXPECT_EQ(static_cast<std::int32_t>(Command::RUN_TASK), 1);
     EXPECT_EQ(static_cast<std::int32_t>(Command::SHUTDOWN), 2);
-    EXPECT_EQ(kProtocolVersion, 2);
 
     static_assert(std::is_same_v<std::underlying_type_t<Command>, std::int32_t>,
                   "Command must be int32 on the wire");
     static_assert(std::is_trivially_copyable_v<CommandHeader>,
                   "CommandHeader is broadcast as MPI_BYTE");
-    static_assert(
-        std::is_same_v<decltype(CommandHeader::version), std::int32_t>);
     static_assert(
         std::is_same_v<decltype(CommandHeader::command), std::int32_t>);
     static_assert(
@@ -309,8 +304,7 @@ TEST(MpiTaskProtocol, WireConstantsAreStable) {
 //
 // Every rank checks its own wrong-side construction: rank 0 may not be a
 // WorkerLoop, ranks > 0 may not be a TaskDispatcher, nobody may pass
-// MPI_COMM_NULL to WorkerLoop. The rank/null checks are local (they must
-// precede the handshake, or a throwing ctor would desync the collective),
+// MPI_COMM_NULL to WorkerLoop. The constructors make no collective call,
 // so no rank enters a collective here and lockstep is trivially preserved.
 
 TEST(MpiTaskProtocol, WrongSideConstructionThrowsWithoutCollectives) {
@@ -359,8 +353,8 @@ TEST(MpiTaskProtocol, DispatchedLjMdTaskMatchesDirectRun) {
 
 // ── (b) Clean SHUTDOWN: ac-004 ──────────────────────────────────────────────
 //
-// A zero-task session: constructing the pair completes the handshake, then
-// SHUTDOWN must release every worker's run() and let every rank fall
+// A zero-task session: SHUTDOWN right after constructing the pair must
+// release every worker's run() and let every rank fall
 // through to MPI_Finalize in main (exit 0 is the binary completing; no
 // destructor may issue an MPI call, or finalize would blow up).
 
@@ -519,44 +513,6 @@ TEST(MpiTaskProtocol, TwoSequentialTasksInOneSessionBothMatch) {
         WorkerLoop worker(MPI_COMM_WORLD);
         EXPECT_NO_THROW(worker.run()); // two RUN_TASKs, then SHUTDOWN
     }
-}
-
-// ── (d) Asymmetric version mismatch aborts lockstep: ac-006 ─────────────────
-//
-// Rank 1 constructs at kProtocolVersion + 1 (the test seam); every other
-// rank at the default. The handshake's allreduce must surface the mismatch
-// on EVERY rank — including ranks whose local version matches rank 0's —
-// and every rank's ctor must throw std::runtime_error naming BOTH version
-// numbers. The allreduce is the handshake's last collective, so throwing
-// afterwards keeps lockstep: the test completing at all is the no-deadlock
-// assertion.
-
-TEST(MpiTaskProtocol, VersionMismatchThrowsOnEveryRankNamingBothVersions) {
-    if (world_size() == 1)
-        GTEST_SKIP() << "single-rank handshake is trivially self-consistent";
-
-    const std::int32_t good = kProtocolVersion;
-    const std::int32_t bad = kProtocolVersion + 1;
-
-    bool threw = false;
-    std::string message;
-    try {
-        if (world_rank() == 0) {
-            TaskDispatcher dispatcher(MPI_COMM_WORLD, good);
-        } else {
-            WorkerLoop worker(MPI_COMM_WORLD, world_rank() == 1 ? bad : good);
-        }
-    } catch (const std::runtime_error& e) {
-        threw = true;
-        message = e.what();
-    }
-
-    EXPECT_TRUE(threw) << "rank " << world_rank()
-                       << " must throw on the version mismatch";
-    EXPECT_NE(message.find(std::to_string(good)), std::string::npos)
-        << "message must name version " << good << ": \"" << message << "\"";
-    EXPECT_NE(message.find(std::to_string(bad)), std::string::npos)
-        << "message must name version " << bad << ": \"" << message << "\"";
 }
 
 // ── (e) Bad TaskSpec propagates, session survives: ac-007 ───────────────────

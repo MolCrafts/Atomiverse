@@ -11,7 +11,7 @@ upgrade replaces it.
 
 molpy and the native bridge are built from the same local molpy checkout.
 ATV_MOLPY_PATH selects that repository; its default is the sibling ../molpy.
-The capsule ABI handshake remains mandatory even without a release pin.
+A Frame capsule from a separately built molpy fails the capsule-name check.
 
 Raw pip / cmake output streams to the terminal (no capture). State lives in
 ``<build_dir>/atomiverse_cli_state.json``; the active build dir is recorded
@@ -192,7 +192,7 @@ def build_install_command(
     """``pip install`` of the native and molpy wheels.
 
     ``--force-reinstall`` because the pure and native wheels share a
-    version, as do the PyPI and local molpy of one ABI line;
+    version, and the local molpy wheel may share the installed one's;
     ``--no-deps`` because the pure install already resolved them.
     """
     return [

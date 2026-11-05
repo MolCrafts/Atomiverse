@@ -1,5 +1,5 @@
 /// @file tests/cpu/test_task_codec.cpp
-/// @brief TaskSpec v5 typed-payload and exact-wire contract tests.
+/// @brief TaskSpec typed-payload and exact-wire contract tests.
 
 #include <gtest/gtest.h>
 
@@ -20,13 +20,12 @@ using namespace ATV::cpu::task;
 
 namespace {
 
-constexpr std::size_t kVersionOffset = 4;
-constexpr std::size_t kTaskKindOffset = 8;
-constexpr std::size_t kFirstComponentIdOffset = 13;
-constexpr std::size_t kFirstPhaseOffset = 16;
+constexpr std::size_t kTaskKindOffset = 4;
+constexpr std::size_t kFirstComponentIdOffset = 9;
+constexpr std::size_t kFirstPhaseOffset = 12;
 // SinglePoint carries no entry-count word: its single component ID follows
-// the task-kind byte directly (magic 4 + version 4 + kind 1).
-constexpr std::size_t kSinglePointComponentIdOffset = 9;
+// the task-kind byte directly (magic 4 + kind 1).
+constexpr std::size_t kSinglePointComponentIdOffset = 5;
 
 template <typename T>
 void write_scalar(std::vector<std::byte>& bytes, std::size_t offset, T value) {
@@ -84,7 +83,7 @@ TaskSpec make_md_spec() {
     entries.push_back(MDComponentEntry{
         PairCoulCutParams{6.0, 0.0, 0.0, 0.8333333333333334, 14.39914},
         std::nullopt});
-    // The per-type LJ table form, special weights and shift flag (v7).
+    // The per-type LJ table form, special weights and shift flag.
     entries.push_back(MDComponentEntry{
         PairLJCutParams{
             0.0,
@@ -115,14 +114,13 @@ TaskSpec make_md_spec() {
     // categorical (`std::nullopt`) evaluator slot exactly like the pair
     // styles above and gives BOMD from a launcher payload. The byte layout
     // is the one `SinglePointTask` already writes (i32 charge, i32
-    // multiplicity, i32 max_iter, f64 density_tol, f64 energy_tol) — the
-    // widening is append-only, so `kWireVersion` stays 4.
+    // multiplicity, i32 max_iter, f64 density_tol, f64 energy_tol).
     entries.push_back(
         MDComponentEntry{AM1Params{-1, 2, 50, 1e-6, 1e-8}, std::nullopt});
     // Plane-wave DFT as an MD force source (py-pw-forces): like AM1 above it
     // rides the categorical (`std::nullopt`) evaluator slot, giving
     // plane-wave BOMD from a launcher payload. Wire ID 20 with a fresh
-    // payload, so `kWireVersion` stays 4 (append-only).
+    // payload.
     //
     // Fifteen fields — the widest mirror on the wire — so every one is
     // spelled with a NON-DEFAULT value (the NPT house rule): a codec that
@@ -156,8 +154,7 @@ TaskSpec make_md_spec() {
                                        std::nullopt});
     // ── The widened real-space catalogue (py-pair-styles) ────────────────
     //
-    // Nine appended IDs (27-35) with fresh payloads, so `kWireVersion` stays
-    // 5: no existing byte layout moves. All nine ride the categorical
+    // Nine appended IDs (27-35) with fresh payloads. All nine ride the categorical
     // (`std::nullopt`) evaluator slot — the slot is plural, so a pair style
     // JOINS `PairLJCut` above rather than replacing it, and the three bonded
     // styles join it the way `BondHarmonic` already does.
@@ -247,7 +244,7 @@ TaskSpec make_md_spec() {
         ImproperHarmonicParams{/*K=*/{0.4, 0.9},
                                /*chi0=*/{1.5707963267948966, 0.2}},
         std::nullopt});
-    // v7: the per-type `PairLJCut` mirror (rows with and without a per-pair
+    // The per-type `PairLJCut` mirror (rows with and without a per-pair
     // cutoff, plus r^-4 rows) and the fused `PairLJCutCoulLong` (ID 36) with
     // every field off its default.
     PairLJCutParams typed{0.0, 0.0, 9.5, 0.0, 0.5, 0.75};
@@ -503,17 +500,6 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(component_id(MDComponentParams{PWParams{}}), ComponentId::PW);
 }
 
-// v5: `MinimizeTask::convergence` stopped being a bare `ForceConvergedParams`
-// blob and became a criterion VARIANT (Force / Pressure / Stress), so the
-// Minimize payload now ends in a `u16` criterion id plus that criterion's own
-// fields. A v4 payload's five bare doubles would decode as an id followed by
-// garbage — the NPT precedent: a LAYOUT change is a bump, an appended
-// component ID with a fresh payload is not. The exact-match version gate in
-// `unpack` is what makes the break loud instead of silent.
-// v7: the `PairLJCutParams` payload gained LJ and r^-4 rows after its six
-// scalars — a layout change, hence a bump.
-TEST(TaskCodec, WireVersionIsSeven) { EXPECT_EQ(TaskSpec::kWireVersion, 7u); }
-
 TEST(TaskCodec, TypedPairLJCutMirrorSelectsOneConstructor) {
     PairLJCutParams single{0.0104, 3.4, 6.0};
     EXPECT_FALSE(single.typed());
@@ -601,15 +587,6 @@ TEST(TaskCodec, MinimizeCriterionRoundtripCoversEveryAlternative) {
         EXPECT_EQ(back.minimize().convergence.index(), criteria[i].index());
         EXPECT_TRUE(back.minimize() == spec.minimize());
     }
-}
-
-TEST(TaskCodec, VersionTwoAndUnknownVersionsAreRejected) {
-    auto bytes = pack(make_md_spec());
-    write_scalar<std::uint32_t>(bytes, kVersionOffset, 2);
-    expect_runtime_error(bytes, "version 2");
-    bytes = pack(make_md_spec());
-    write_scalar<std::uint32_t>(bytes, kVersionOffset, 99);
-    expect_runtime_error(bytes, "version 99");
 }
 
 TEST(TaskCodec, UnknownTaskAndComponentIdsAreRejected) {
