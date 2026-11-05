@@ -23,23 +23,22 @@ namespace ATV {
 namespace cpu {
 namespace minimizer {
 
-namespace {
-
-/// Owned-row inner product (per-rank partial; reduce with `global_sum`).
-double dot_local(const std::vector<double>& a, const std::vector<double>& b,
-                 int dim) {
-    double s = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(+ : s) if (dim >= kParallelMinElements)
-    for (int j = 0; j < dim; ++j)
-        s += a[j] * b[j];
-    return s;
-}
-
-} // namespace
-
 LBFGS::LBFGS(int memory, double alpha0, int max_ls)
     : memory_(memory), alpha0_(alpha0), max_ls_(max_ls) {}
+
+void LBFGS::steepest_descent_(int dim, double& gg, double& dir_max) {
+    const double* __restrict g = g_ws_.data();
+    double* __restrict d = direction_.data();
+    double sum = 0;
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : sum) if (parallel : dim >= kParallelMinElements)
+    for (int j = 0; j < dim; ++j) {
+        d[j] = -g[j];
+        sum += g[j] * g[j];
+    }
+    gg = sum;
+    dir_max = max_abs_local(g, dim); // |d_j| = |g_j|
+}
 
 double LBFGS::reduce_(double v) const {
     // `hist_` must not know MPI exists — that coupling is exactly what welded the
@@ -102,7 +101,6 @@ void LBFGS::build(const cpu::BuildContext& ctx) {
 }
 
 void LBFGS::launch(const cpu::LaunchContext& ctx) {
-    require_finite_forces(ctx);
     auto& f = ctx.frame;
     // The history's Reducer closes over `this` and reads this pointer: the recursion
     // needs an all-reduce but must not know what a LaunchContext is. Re-pointed every
@@ -119,6 +117,7 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     AccReal* __restrict sp_fx = f.span(kAtom_fx);
     AccReal* __restrict sp_fy = f.span(kAtom_fy);
     AccReal* __restrict sp_fz = f.span(kAtom_fz);
+    require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
 
     // Capacity growth (driver-level rebuild_frame after a migration influx)
     // is the one legal re-allocation point.
@@ -151,34 +150,17 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
 
     // ── Convergence check phase ──────────────────────────────────────
     if (ctx.at(ATV::minimizer::Phase::convergence_check)) {
-        double local_max_force = 0;
-        double sum_f2 = 0;
-#pragma omp parallel for schedule(static) reduction(+ : sum_f2)                \
-    reduction(max : local_max_force) if (n >= kParallelMinElements)
-        for (int i = 0; i < n; ++i) {
-            const double fx = sp_fx[i], fy = sp_fy[i], fz = sp_fz[i];
-            const double f2 = fx * fx + fy * fy + fz * fz;
-            sum_f2 += f2;
-            local_max_force = std::max(local_max_force, std::sqrt(f2));
-        }
+        double sum_f2 = 0, max_f2 = 0;
+        force_norms_local(sp_fx, sp_fy, sp_fz, n, sum_f2, max_f2);
+        const double local_max_force = std::sqrt(max_f2);
 
         const bool disp_valid = step_ > 0 && x_prev_valid_;
         const auto& xp = hist_->x_prev();
         double local_max_disp = 0;
         double sum_d2 = 0;
-        if (disp_valid) {
-#pragma omp parallel for schedule(static) reduction(+ : sum_d2)                \
-    reduction(max : local_max_disp) if (n >= kParallelMinElements)
-            for (int i = 0; i < n; ++i) {
-                const double dx = sp_x[i] - xp[i * 3 + 0];
-                const double dy = sp_y[i] - xp[i * 3 + 1];
-                const double dz = sp_z[i] - xp[i * 3 + 2];
-                sum_d2 += dx * dx + dy * dy + dz * dz;
-                local_max_disp = std::max(
-                    local_max_disp,
-                    std::max({std::abs(dx), std::abs(dy), std::abs(dz)}));
-            }
-        }
+        if (disp_valid)
+            displacement_norms_local(sp_x, sp_y, sp_z, xp.data(), n, sum_d2,
+                                     local_max_disp);
 
         double sums[3] = {sum_f2, sum_d2, static_cast<double>(n)};
         global_sum(ctx, sums, 3);
@@ -285,12 +267,13 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
             LsSample s;
             s.f = f.meta.get(kEnergy); // globally reduced by md::mpi::Reduce
             double gd_local = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(+ : gd_local) if (n >= kParallelMinElements)
+            const double* __restrict dir = direction_.data();
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : gd_local) if (parallel : n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
-                gd_local += -sp_fx[i] * direction_[i * 3 + 0]
-                            + -sp_fy[i] * direction_[i * 3 + 1]
-                            + -sp_fz[i] * direction_[i * 3 + 2];
+                gd_local += -sp_fx[i] * dir[i * 3 + 0]
+                            + -sp_fy[i] * dir[i * 3 + 1]
+                            + -sp_fz[i] * dir[i * 3 + 2];
             }
             s.dphi = global_sum(ctx, gd_local);
             return s;
@@ -352,15 +335,9 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
                 restore_origin();
                 hist_->reset();
                 ++ls_recoveries_;
-#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
-                for (int j = 0; j < dim; ++j)
-                    direction_[j] = -g_ws_[j];
-                ls_gd0_ = -global_sum(ctx, dot_local(g_ws_, g_ws_, dim));
-                double dir_max = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(max : dir_max) if (dim >= kParallelMinElements)
-                for (int j = 0; j < dim; ++j)
-                    dir_max = std::max(dir_max, std::abs(direction_[j]));
+                double gg = 0, dir_max = 0;
+                steepest_descent_(dim, gg, dir_max);
+                ls_gd0_ = -global_sum(ctx, gg);
                 ls_dir_max_ = global_max(ctx, dir_max);
                 ATV_INFO("[lbfgs] step={} line search failed along the "
                          "quasi-Newton direction; history reset, retrying "
@@ -451,24 +428,20 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     // descent direction iff g.p < 0. A bad (s,y) history or numerical noise
     // can violate it; reset to steepest descent so the line search is
     // well-posed. The dot products are globally reduced for rank-uniformity.
-    double gd0 = global_sum(ctx, dot_local(g, direction_, dim));
+    double gd0 = global_sum(ctx, dot_local(g.data(), direction_.data(), dim));
     // With no stored pair the recursion returns -g scaled: already steepest.
     steepest_ = hist_->stored() == 0;
+    // Max|direction| component for the line-search displacement cap.
+    double dir_max = 0;
     if (!(gd0 < 0)) {
         steepest_ = true;
-#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
-        for (int j = 0; j < dim; ++j)
-            direction_[j] = -g[j];
-        gd0 = -global_sum(ctx, dot_local(g, g, dim));
+        double gg = 0;
+        steepest_descent_(dim, gg, dir_max);
+        gd0 = -global_sum(ctx, gg);
         ATV_DEBUG("[lbfgs] non-descent direction step={} — reset to -g", step_);
+    } else {
+        dir_max = max_abs_local(direction_.data(), dim);
     }
-
-    // Global max|direction| component for the line-search displacement cap.
-    double dir_max = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(max : dir_max) if (dim >= kParallelMinElements)
-    for (int j = 0; j < dim; ++j)
-        dir_max = std::max(dir_max, std::abs(direction_[j]));
     ls_dir_max_ = global_max(ctx, dir_max);
     ls_gd0_ = gd0;
     ls_phi0_ =

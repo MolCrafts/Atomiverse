@@ -9,6 +9,7 @@
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/minimize/global_reduce.h"
+#include "atomiverse/cpu/minimize/vector_loop.h"
 
 #include <algorithm>
 #include <cmath>
@@ -34,7 +35,6 @@ void FIRE::build(const cpu::BuildContext& ctx) {
 }
 
 void FIRE::launch(const cpu::LaunchContext& ctx) {
-    require_finite_forces(ctx);
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
     const int dim = n * 3;
@@ -45,6 +45,7 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
     const AccReal* __restrict sp_fx = f.span(kAtom_fx);
     const AccReal* __restrict sp_fy = f.span(kAtom_fy);
     const AccReal* __restrict sp_fz = f.span(kAtom_fz);
+    require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
 
     if (dim > static_cast<int>(v_.size())) {
         v_.resize(dim, 0.0);
@@ -58,7 +59,8 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
             (cpu::multi_rank_dd(ctx.runtime)) ? dd->neighbor_generation : 0;
         if (gen != last_generation_) {
             if (last_generation_ != ~std::uint64_t{0}) {
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for simd if (parallel : dim >= kParallelMinElements)      \
+    schedule(static)
                 for (int k = 0; k < dim; ++k)
                     v_[k] = 0.0;
                 dt_ = dt0;
@@ -76,34 +78,15 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
 
     // ── Convergence check ──────────────────────────────────────────────
     if (ctx.at(ATV::minimizer::Phase::convergence_check)) {
-        double local_max_force = 0;
-        double sum_f2 = 0;
-#pragma omp parallel for schedule(static) reduction(+ : sum_f2)                \
-    reduction(max : local_max_force)
-        for (int i = 0; i < n; ++i) {
-            const double fx = sp_fx[i];
-            const double fy = sp_fy[i];
-            const double fz = sp_fz[i];
-            const double f2 = fx * fx + fy * fy + fz * fz;
-            sum_f2 += f2;
-            local_max_force = std::max(local_max_force, std::sqrt(f2));
-        }
+        double sum_f2 = 0, max_f2 = 0;
+        force_norms_local(sp_fx, sp_fy, sp_fz, n, sum_f2, max_f2);
+        const double local_max_force = std::sqrt(max_f2);
 
         const bool disp_valid = step_ > 0 && x_prev_valid_;
         double local_max_disp = 0, sum_d2 = 0;
-        if (disp_valid) {
-#pragma omp parallel for schedule(static) reduction(+ : sum_d2)                \
-    reduction(max : local_max_disp)
-            for (int i = 0; i < n; ++i) {
-                const double dx = sp_x[i] - x_prev_[i * 3 + 0];
-                const double dy = sp_y[i] - x_prev_[i * 3 + 1];
-                const double dz = sp_z[i] - x_prev_[i * 3 + 2];
-                sum_d2 += dx * dx + dy * dy + dz * dz;
-                local_max_disp = std::max(
-                    local_max_disp,
-                    std::max({std::abs(dx), std::abs(dy), std::abs(dz)}));
-            }
-        }
+        if (disp_valid)
+            displacement_norms_local(sp_x, sp_y, sp_z, x_prev_.data(), n,
+                                     sum_d2, local_max_disp);
 
         double sums[3] = {sum_f2, sum_d2, static_cast<double>(n)};
         global_sum(ctx, sums, 3);
@@ -156,7 +139,8 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
 
     // Snapshot geometry for next displacement metrics (before we move).
     // On step 0 this is the pre-move frame; after force, metrics see post-move.
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for simd if (parallel : n >= kParallelMinElements)        \
+    schedule(static)
     for (int i = 0; i < n; ++i) {
         x_prev_[i * 3 + 0] = sp_x[i];
         x_prev_[i * 3 + 1] = sp_y[i];
@@ -164,27 +148,23 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
     }
     x_prev_valid_ = true;
 
-    // P = F·v (global).
-    double p_local = 0;
-#pragma omp parallel for schedule(static) reduction(+ : p_local)
+    // P = F·v, |v|² and |F|² (global) in one pass, one collective.
+    double p_local = 0, v2 = 0, f2 = 0;
+    const double* __restrict v = v_.data();
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : p_local, v2, f2) if (parallel : n >= kParallelMinElements)
     for (int i = 0; i < n; ++i) {
-        p_local += sp_fx[i] * v_[i * 3 + 0] + sp_fy[i] * v_[i * 3 + 1]
-                   + sp_fz[i] * v_[i * 3 + 2];
-    }
-    const double P = global_sum(ctx, p_local);
-
-    // |v| and |F| for mixing (global Euclidean norms).
-    double v2 = 0, f2 = 0;
-#pragma omp parallel for schedule(static) reduction(+ : v2, f2)
-    for (int i = 0; i < n; ++i) {
-        v2 += v_[i * 3 + 0] * v_[i * 3 + 0] + v_[i * 3 + 1] * v_[i * 3 + 1]
-              + v_[i * 3 + 2] * v_[i * 3 + 2];
+        p_local += sp_fx[i] * v[i * 3 + 0] + sp_fy[i] * v[i * 3 + 1]
+                   + sp_fz[i] * v[i * 3 + 2];
+        v2 += v[i * 3 + 0] * v[i * 3 + 0] + v[i * 3 + 1] * v[i * 3 + 1]
+              + v[i * 3 + 2] * v[i * 3 + 2];
         f2 += sp_fx[i] * sp_fx[i] + sp_fy[i] * sp_fy[i] + sp_fz[i] * sp_fz[i];
     }
-    double norms[2] = {v2, f2};
-    global_sum(ctx, norms, 2);
-    const double v_norm = std::sqrt(std::max(norms[0], 0.0));
-    const double f_norm = std::sqrt(std::max(norms[1], 0.0));
+    double sums[3] = {p_local, v2, f2};
+    global_sum(ctx, sums, 3);
+    const double P = sums[0];
+    const double v_norm = std::sqrt(std::max(sums[1], 0.0));
+    const double f_norm = std::sqrt(std::max(sums[2], 0.0));
 
     // Bitzek: P>0 accelerate; P≤0 freeze. When |v|≈0 (first kick after F
     // appears, or cold start), P=0 is not a true uphill reverse — do not
@@ -195,7 +175,8 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
         // Mix: v ← (1-α)v + α F̂ |v|
         if (f_norm > 1e-30) {
             const double scale = alpha_ * v_norm / f_norm;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for simd if (parallel : n >= kParallelMinElements)        \
+    schedule(static)
             for (int i = 0; i < n; ++i) {
                 v_[i * 3 + 0] =
                     (1.0 - alpha_) * v_[i * 3 + 0] + scale * sp_fx[i];
@@ -212,7 +193,8 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
     } else if (v_norm > kVeps) {
         // True uphill / reverse power: freeze, shrink Δt, reset α.
         n_pos_ = 0;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for simd if (parallel : dim >= kParallelMinElements)      \
+    schedule(static)
         for (int k = 0; k < dim; ++k)
             v_[k] = 0.0;
         dt_ *= f_dec;
@@ -224,7 +206,8 @@ void FIRE::launch(const cpu::LaunchContext& ctx) {
     }
 
     // Symplectic Euler, unit mass: v += dt F; Δx = dt v; clamp; x += Δx.
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for simd if (parallel : n >= kParallelMinElements)        \
+    schedule(static)
     for (int i = 0; i < n; ++i) {
         v_[i * 3 + 0] += dt_ * sp_fx[i];
         v_[i * 3 + 1] += dt_ * sp_fy[i];

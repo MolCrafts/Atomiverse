@@ -22,6 +22,20 @@ namespace minimizer {
 
 CG::CG(double alpha0) : alpha0_(alpha0) {}
 
+double CG::steepest_descent_(const std::vector<double>& g,
+                             std::vector<double>& d, int dim) {
+    const double* __restrict gp = g.data();
+    double* __restrict dp = d.data();
+    double gg = 0;
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : gg) if (parallel : dim >= kParallelMinElements)
+    for (int k = 0; k < dim; ++k) {
+        dp[k] = -gp[k];
+        gg += gp[k] * gp[k];
+    }
+    return gg;
+}
+
 CG& CG::line_search(LineSearchMode mode, double c1, double c2, double max_step,
                     double min_alpha) {
     ls_mode_ = mode;
@@ -50,7 +64,6 @@ void CG::build(const cpu::BuildContext& ctx) {
 }
 
 void CG::launch(const cpu::LaunchContext& ctx) {
-    require_finite_forces(ctx);
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
     const int dim = n * 3;
@@ -63,6 +76,7 @@ void CG::launch(const cpu::LaunchContext& ctx) {
     AccReal* __restrict sp_fx = f.span(kAtom_fx);
     AccReal* __restrict sp_fy = f.span(kAtom_fy);
     AccReal* __restrict sp_fz = f.span(kAtom_fz);
+    require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
 
     // Capacity growth is the one legal re-allocation point.
     if (dim > static_cast<int>(x_ws_.size())) {
@@ -95,34 +109,15 @@ void CG::launch(const cpu::LaunchContext& ctx) {
 
     // ── Convergence check ──────────────────────────────────────────────
     if (ctx.at(ATV::minimizer::Phase::convergence_check)) {
-        double local_max_force = 0;
-        double sum_f2 = 0;
-#pragma omp parallel for schedule(static) reduction(+ : sum_f2)                \
-    reduction(max : local_max_force) if (n >= kParallelMinElements)
-        for (int i = 0; i < n; ++i) {
-            const double fx = sp_fx[i];
-            const double fy = sp_fy[i];
-            const double fz = sp_fz[i];
-            const double f2 = fx * fx + fy * fy + fz * fz;
-            sum_f2 += f2;
-            local_max_force = std::max(local_max_force, std::sqrt(f2));
-        }
+        double sum_f2 = 0, max_f2 = 0;
+        force_norms_local(sp_fx, sp_fy, sp_fz, n, sum_f2, max_f2);
+        const double local_max_force = std::sqrt(max_f2);
 
         const bool disp_valid = step_ > 0 && x_prev_valid_;
         double local_max_disp = 0, sum_d2 = 0;
-        if (disp_valid) {
-#pragma omp parallel for schedule(static) reduction(+ : sum_d2)                \
-    reduction(max : local_max_disp) if (n >= kParallelMinElements)
-            for (int i = 0; i < n; ++i) {
-                const double dx = sp_x[i] - x_prev_[i * 3 + 0];
-                const double dy = sp_y[i] - x_prev_[i * 3 + 1];
-                const double dz = sp_z[i] - x_prev_[i * 3 + 2];
-                sum_d2 += dx * dx + dy * dy + dz * dz;
-                local_max_disp = std::max(
-                    local_max_disp,
-                    std::max({std::abs(dx), std::abs(dy), std::abs(dz)}));
-            }
-        }
+        if (disp_valid)
+            displacement_norms_local(sp_x, sp_y, sp_z, x_prev_.data(), n,
+                                     sum_d2, local_max_disp);
 
         // Batched collectives, entered unconditionally by every rank.
         double sums[3] = {sum_f2, sum_d2, static_cast<double>(n)};
@@ -213,12 +208,13 @@ void CG::launch(const cpu::LaunchContext& ctx) {
             LsSample s;
             s.f = f.meta.get(kEnergy);
             double gd_local = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(+ : gd_local) if (n >= kParallelMinElements)
+            const double* __restrict dir = d_prev_.data();
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : gd_local) if (parallel : n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
-                gd_local += -sp_fx[i] * d_prev_[i * 3 + 0]
-                            + -sp_fy[i] * d_prev_[i * 3 + 1]
-                            + -sp_fz[i] * d_prev_[i * 3 + 2];
+                gd_local += -sp_fx[i] * dir[i * 3 + 0]
+                            + -sp_fy[i] * dir[i * 3 + 1]
+                            + -sp_fz[i] * dir[i * 3 + 2];
             }
             s.dphi = global_sum(ctx, gd_local);
             return s;
@@ -272,14 +268,10 @@ void CG::launch(const cpu::LaunchContext& ctx) {
             if (!accepted && global_max(ctx, steepest ? 0.0 : 1.0) > 0.0) {
                 // Restart conjugacy: retry once along steepest descent.
                 restore_origin();
-                double gg = 0, dir_max = 0;
-                for (int j = 0; j < 3 * n; ++j) {
-                    d_prev_[j] = -g_prev_[j];
-                    gg += g_prev_[j] * g_prev_[j];
-                    dir_max = std::max(dir_max, std::abs(d_prev_[j]));
-                }
+                const double gg = steepest_descent_(g_prev_, d_prev_, dim);
                 ls_gd0_ = -global_sum(ctx, gg);
-                ls_dir_max_ = global_max(ctx, dir_max);
+                ls_dir_max_ =
+                    global_max(ctx, max_abs_local(g_prev_.data(), dim));
                 ATV_INFO("[cg] step={} line search failed; restarting along "
                          "steepest descent",
                          step_);
@@ -347,48 +339,34 @@ void CG::launch(const cpu::LaunchContext& ctx) {
     } else {
         // β = max(0, (g · (g - g_prev)) / (g_prev · g_prev)) — both inner
         // products are global sums so every rank applies the identical β.
+        const double* __restrict gc = g.data();
+        const double* __restrict gp = g_prev_.data();
         double num = 0, den = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(+ : num, den) if (dim >= kParallelMinElements)
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : num, den) if (parallel : dim >= kParallelMinElements)
         for (int k = 0; k < dim; ++k) {
-            num += g[k] * (g[k] - g_prev_[k]);
-            den += g_prev_[k] * g_prev_[k];
+            num += gc[k] * (gc[k] - gp[k]);
+            den += gp[k] * gp[k];
         }
         double nd[2] = {num, den};
         global_sum(ctx, nd, 2);
         const double beta = (nd[1] > 0.0) ? std::max(0.0, nd[0] / nd[1]) : 0.0;
-#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
+        double* __restrict dc = d.data();
+        const double* __restrict dp = d_prev_.data();
+#pragma omp parallel for simd if (parallel : dim >= kParallelMinElements)      \
+    schedule(static)
         for (int k = 0; k < dim; ++k)
-            d[k] = -g[k] + beta * d_prev_[k];
+            dc[k] = -gc[k] + beta * dp[k];
     }
 
     // Descent precheck: PR+ does not always yield a descent direction (N&W
     // §5.2). Reset to steepest descent if g·d ≥ 0. Globally reduced.
-    double gd_local = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(+ : gd_local) if (dim >= kParallelMinElements)
-    for (int k = 0; k < dim; ++k)
-        gd_local += g[k] * d[k];
-    double gd0 = global_sum(ctx, gd_local);
-    if (!(gd0 < 0)) {
-#pragma omp parallel for schedule(static) if (dim >= kParallelMinElements)
-        for (int k = 0; k < dim; ++k)
-            d[k] = -g[k];
-        double gg_local = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(+ : gg_local) if (dim >= kParallelMinElements)
-        for (int k = 0; k < dim; ++k)
-            gg_local += g[k] * g[k];
-        gd0 = -global_sum(ctx, gg_local);
-    }
+    double gd0 = global_sum(ctx, dot_local(g.data(), d.data(), dim));
+    if (!(gd0 < 0))
+        gd0 = -global_sum(ctx, steepest_descent_(g, d, dim));
 
     // Global max|d| for the displacement cap.
-    double dir_max = 0;
-#pragma omp parallel for schedule(static)                                      \
-    reduction(max : dir_max) if (dim >= kParallelMinElements)
-    for (int k = 0; k < dim; ++k)
-        dir_max = std::max(dir_max, std::abs(d[k]));
-    ls_dir_max_ = global_max(ctx, dir_max);
+    ls_dir_max_ = global_max(ctx, max_abs_local(d.data(), dim));
     ls_gd0_ = gd0;
     ls_phi0_ = f.meta.get(kEnergy);
 

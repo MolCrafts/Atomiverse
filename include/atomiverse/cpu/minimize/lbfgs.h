@@ -159,6 +159,10 @@ class LBFGS : public cpu::Optimizer {
     /// @brief The all-reduce handed to `LbfgsHistory` — MPI under DD, identity serial.
     double reduce_(double v) const;
 
+    /// @brief `direction_ = -g_ws_` over `[0, dim)`, returning the local
+    /// partials `gᵀg` and `max|direction_|` from the same pass (unreduced).
+    void steepest_descent_(int dim, double& gg, double& dir_max);
+
     /// @brief Last observed `dd->neighbor_generation`; a bump means atom
     /// migration reshuffled local rows → history must be discarded.
     std::uint64_t last_generation_ = ~std::uint64_t{0};

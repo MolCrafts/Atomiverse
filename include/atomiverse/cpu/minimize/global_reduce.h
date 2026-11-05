@@ -86,15 +86,16 @@ inline double global_max(const cpu::LaunchContext& ctx, double v) {
 inline void require_finite_forces(const cpu::LaunchContext& ctx,
                                   const AccReal* fx, const AccReal* fy,
                                   const AccReal* fz) {
-    double invalid = 0;
+    // Branch-free so the scan vectorises: it runs at every optimizer phase
+    // and after every line-search trial.
+    int invalid = 0;
     const int n = owned_count(ctx);
-#pragma omp parallel for schedule(static)                                      \
-    reduction(max : invalid) if (n >= kParallelMinElements)
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(| : invalid) if (parallel : n >= kParallelMinElements)
     for (int i = 0; i < n; ++i)
-        if (!std::isfinite(fx[i]) || !std::isfinite(fy[i])
-            || !std::isfinite(fz[i]))
-            invalid = 1;
-    if (global_max(ctx, invalid) != 0)
+        invalid |= !std::isfinite(fx[i]) | !std::isfinite(fy[i])
+                   | !std::isfinite(fz[i]);
+    if (global_max(ctx, invalid != 0 ? 1.0 : 0.0) != 0)
         throw std::runtime_error("Optimizer: nonfinite force on an owned atom");
 }
 
