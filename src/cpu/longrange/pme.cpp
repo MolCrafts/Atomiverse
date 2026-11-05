@@ -12,6 +12,8 @@
 
 #include <fftw3.h>
 
+#include "atomiverse/cpu/device/fftw_threads.h"
+
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/units.h"
@@ -101,6 +103,7 @@ void KSpacePME::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         grid_.assign(static_cast<std::size_t>(ntot),
                      std::complex<double>(0, 0));
         auto* data = reinterpret_cast<fftw_complex*>(grid_.data());
+        device::ensure_fftw_threads();
         // FFTW_ESTIMATE: a timed (MEASURE) plan can differ between processes
         // and change the rounding, so identical inputs would not reproduce.
         // Plans bind to this array.

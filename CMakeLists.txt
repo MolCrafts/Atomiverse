@@ -867,19 +867,6 @@ if(NOT ATV_DOCS_ONLY)
                 src/cpu/gpw/gpw_evaluator.cpp
             )
             target_compile_definitions(atomiverse PUBLIC ATV_GPW_HAS_FFT)
-            # Optional FFTW3 OpenMP threading — the FFTs over the (large) density
-            # grid dominate GPW's cost. fftw_plan_with_nthreads is global, so one
-            # GPWSolver initialization threads every plan. Link libfftw3_omp if present.
-            find_library(FFTW3_OMP_LIB fftw3_omp HINTS
-                $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
-                $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
-            if(FFTW3_OMP_LIB AND OpenMP_CXX_FOUND)
-                target_link_libraries(atomiverse PUBLIC
-                    $<BUILD_INTERFACE:${FFTW3_OMP_LIB}>
-                    $<INSTALL_INTERFACE:Atomiverse::fftw_omp> OpenMP::OpenMP_CXX)
-                target_compile_definitions(atomiverse PUBLIC ATV_GPW_FFTW_THREADS)
-                message(STATUS "GPW: FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
-            endif()
             # CUDA GPW foothold: Γ-point device Poisson/FFT + Padé LDA XC grid
             # + product ρ collocate / V·shape integrate + composed KS chain
             # stage with closed-shell PBE-GGA (spectral ∇ρ / −∇·flux) +
@@ -1052,6 +1039,23 @@ if(NOT ATV_DOCS_ONLY)
         # CUDA PME (cuFFT) — only when the CUDA backend is also enabled.
         if(ATV_BUILD_CUDA)
             target_link_libraries(atomiverse PUBLIC CUDA::cufft)
+        endif()
+    endif()
+
+    # Optional FFTW3 OpenMP threading for every CPU FFT (GPW grids, PPPM/PME
+    # meshes). fftw_plan_with_nthreads is global, so the one
+    # `cpu::device::ensure_fftw_threads()` before the first plan threads all
+    # of them. Link libfftw3_omp if present.
+    if(TARGET fftw3_stub)
+        find_library(FFTW3_OMP_LIB fftw3_omp HINTS
+            $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
+            $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
+        if(FFTW3_OMP_LIB AND OpenMP_CXX_FOUND)
+            target_link_libraries(atomiverse PUBLIC
+                $<BUILD_INTERFACE:${FFTW3_OMP_LIB}>
+                $<INSTALL_INTERFACE:Atomiverse::fftw_omp> OpenMP::OpenMP_CXX)
+            target_compile_definitions(atomiverse PUBLIC ATV_FFTW_THREADS)
+            message(STATUS "FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
         endif()
     endif()
 

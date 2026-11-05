@@ -8,6 +8,10 @@
 /// Units: positions [Å], charges [e], fractional coords dimensionless.
 #pragma once
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include <cmath>
 #include <complex>
 #include <vector>
@@ -129,6 +133,7 @@ inline void pme_fill_atom_splines(const StorageReal* x, const StorageReal* y,
                                   int order, int* base, double* theta,
                                   double* dtheta) {
     const int n = order;
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < n_atoms; ++i) {
         double s[3];
         for (int d = 0; d < 3; ++d)
@@ -182,33 +187,50 @@ inline void pme_spread_charges(const StorageReal* q, int n_atoms, int order,
     const int K0 = K[0], K1 = K[1], K2 = K[2];
     const int n = order;
     const int nm1 = n - 1;
-    for (int i = 0; i < n_atoms; ++i) {
-        const double qi = q[i];
-        if (qi == 0.0)
-            continue;
-        const double* thx = &theta[(3 * i + 0) * n];
-        const double* thy = &theta[(3 * i + 1) * n];
-        const double* thz = &theta[(3 * i + 2) * n];
-        const int b0 = base[3 * i + 0] - nm1;
-        const int b1 = base[3 * i + 1] - nm1;
-        const int b2 = base[3 * i + 2] - nm1;
-        // theta[k] = M_n(frac + n-1-k) pairs with grid point u0 - (n-1) + k.
-        for (int a = 0; a < n; ++a) {
-            const int g0 = pme_wrap(b0 + a, K0);
-            const double wa = qi * thx[a];
-            for (int b = 0; b < n; ++b) {
-                const int g1 = pme_wrap(b1 + b, K1);
-                const double wab = wa * thy[b];
-                const int plane = K2 * (g1 + K1 * g0);
-                for (int c = 0; c < n; ++c) {
-                    const int g2 = pme_wrap(b2 + c, K2);
-                    // Charge is real — write only .real to cut complex ops.
-                    grid[plane + g2].real(grid[plane + g2].real()
-                                          + wab * thz[c]);
+    // Threads own disjoint slabs of k0 planes and each walks every atom, so
+    // every grid point sums its atoms in index order (bitwise the serial
+    // result) without private grids.
+#pragma omp parallel
+    {
+        int tid = 0, team = 1;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+        team = omp_get_num_threads();
+#endif
+        const int lo =
+            static_cast<int>(static_cast<long long>(K0) * tid / team);
+        const int hi =
+            static_cast<int>(static_cast<long long>(K0) * (tid + 1) / team);
+        for (int i = 0; i < n_atoms; ++i) {
+            const double qi = q[i];
+            if (qi == 0.0)
+                continue;
+            const double* thx = &theta[(3 * i + 0) * n];
+            const double* thy = &theta[(3 * i + 1) * n];
+            const double* thz = &theta[(3 * i + 2) * n];
+            const int b0 = base[3 * i + 0] - nm1;
+            const int b1 = base[3 * i + 1] - nm1;
+            const int b2 = base[3 * i + 2] - nm1;
+            // theta[k] = M_n(frac + n-1-k) pairs with grid point u0 - (n-1) + k.
+            for (int a = 0; a < n; ++a) {
+                const int g0 = pme_wrap(b0 + a, K0);
+                if (g0 < lo || g0 >= hi)
+                    continue;
+                const double wa = qi * thx[a];
+                for (int b = 0; b < n; ++b) {
+                    const int g1 = pme_wrap(b1 + b, K1);
+                    const double wab = wa * thy[b];
+                    const int plane = K2 * (g1 + K1 * g0);
+                    for (int c = 0; c < n; ++c) {
+                        const int g2 = pme_wrap(b2 + c, K2);
+                        // Charge is real — write only .real to cut complex ops.
+                        grid[plane + g2].real(grid[plane + g2].real()
+                                              + wab * thz[c]);
+                    }
                 }
             }
         }
-    }
+    } // omp parallel
 }
 
 } // namespace longrange
