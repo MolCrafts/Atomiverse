@@ -81,7 +81,6 @@ class PeriodicTorsionSet {
     const char* style_;
     bool compute_stress_ = true;
 
-    BondedForceScratch scratch_;
     DropTally drops_;
     BondedTupleCache cache_;
 };

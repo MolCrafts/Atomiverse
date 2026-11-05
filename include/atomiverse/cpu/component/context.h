@@ -41,6 +41,7 @@ class Runtime; ///< The Runtime; published on `Context::exec`. @see ExecServices
 namespace md {
 struct AtomSortState;
 struct PairList;
+class ThreadForces;
 namespace mpi {
 struct DomainDecomposition;
 } // namespace mpi
@@ -97,6 +98,15 @@ struct DynamicsServices {
 
     /// Independent full CSR for many-body consumers; pair_list always means half.
     const md::PairList* full_pair_list = nullptr;
+
+    /// @brief Non-owning handle to the Runtime's per-thread force
+    ///        accumulators (`cpu/potentials/force_scratch.h`).
+    ///
+    /// Published by `Runtime::init()`; the Runtime reduces them into the
+    /// frame once at the end of each slot walk, so every threaded kernel of
+    /// a step shares one zero and one reduce pass. Null outside a Runtime:
+    /// kernels then run with a team of one (`md::ForcePass`).
+    md::ThreadForces* thread_forces = nullptr;
 
     /// @brief LAMMPS `neighbor->skin` [Å]: the relative displacement the
     ///        active `NeighborProvider` tolerates between reneighbourings

@@ -31,7 +31,6 @@ class AngleHarmonic : public Angle {
   private:
     std::vector<double> K_, theta0_;
 
-    md::BondedForceScratch scratch_;
     md::DropTally drops_;
     /// @brief Resolved-tuple cache; rebuilt on migration / halo full rebuild.
     md::BondedTupleCache cache_;

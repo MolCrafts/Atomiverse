@@ -367,6 +367,9 @@ TEST(EAM, SerializedNestedTeamDoesNotReuseStaleThreadBuffers) {
         cpu::EAM{cpu::EAMPotential{molrs::Element::Cu, "sutton-chen"}, cutoff};
     potential.build({context, frame});
     potential.launch({context, frame, 0, 0, true, true});
+    // Direct launches outside a slot walk land the shared
+    // per-thread accumulators themselves, as the Runtime does.
+    context.md.thread_forces->flush();
     context.md.comm->reverse_comm({context, frame, 0, 0});
     const cpu::Frame expected = frame;
     for (const auto column : {kAtom_fx, kAtom_fy, kAtom_fz})
@@ -379,6 +382,9 @@ TEST(EAM, SerializedNestedTeamDoesNotReuseStaleThreadBuffers) {
 #pragma omp single
         {
             potential.launch({context, frame, 0, 0, true, true});
+            // Direct launches outside a slot walk land the shared
+            // per-thread accumulators themselves, as the Runtime does.
+            context.md.thread_forces->flush();
             context.md.comm->reverse_comm({context, frame, 0, 0});
         }
     }
@@ -392,6 +398,9 @@ TEST(EAM, SerializedNestedTeamDoesNotReuseStaleThreadBuffers) {
     const cpu::Frame before_energy = frame;
     frame.meta.get(kEnergy) = frame.meta.get(kEnergyPair) = 0.0;
     potential.launch({context, frame, 0, 0, false, false});
+    // Direct launches outside a slot walk land the shared
+    // per-thread accumulators themselves, as the Runtime does.
+    context.md.thread_forces->flush();
     EXPECT_NEAR(frame.meta.get(kEnergy), expected.meta.get(kEnergy), 1e-10);
     for (const auto column : {kAtom_fx, kAtom_fy, kAtom_fz})
         for (int i = 0; i < frame.nlocal(); ++i)

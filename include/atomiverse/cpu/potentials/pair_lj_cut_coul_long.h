@@ -178,7 +178,6 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     double tier_coul_[4] = {1.0, 1.0, 1.0, 1.0};
 
     int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
 
     /// Parallel to PairList::neighbors[] (no compact copy): the pair's tier,
     /// 0 for an ordinary pair. One byte per pair instead of two floats.

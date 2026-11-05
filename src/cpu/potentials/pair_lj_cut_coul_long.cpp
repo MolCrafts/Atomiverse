@@ -13,6 +13,7 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/ewald_erfc.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -152,16 +153,8 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
         // The type counts belong to this build's Frame.
         tail_ready_ = false;
     }
-    const int n = ctx.frame.capacity();
-    if (n_threads_ > 1) {
-        fx_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-        fy_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-        fz_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    } else {
-        fx_thr_.clear();
-        fy_thr_.clear();
-        fz_thr_.clear();
-    }
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads_, ctx.frame.capacity());
 
     tier_lj_[1] = lj12_;
     tier_lj_[2] = lj13_;
@@ -245,16 +238,6 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     const bool mpi = cpu::multi_rank_dd(ctx.runtime);
 #endif
 
-    if (n_threads_ > 1
-        && static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size())
-               < n_force) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n_force, 0.0);
-            fy_thr_[t].resize(n_force, 0.0);
-            fz_thr_[t].resize(n_force, 0.0);
-        }
-    }
-
     // Rows (and with them types) change only at a neighbor rebuild. A type
     // outside the table would index past it; refuse it at that rebuild.
     if (types_source_ != &pairs || pairs.version != types_version_) {
@@ -293,9 +276,6 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
     const StorageReal* __restrict q_ptr = f.span(kAtom_charge);
     const int* __restrict type_ptr = f.span(kAtom_type);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
 
     const double rc_sq = cut_sq_;
     const double coul_sq = cut_coulsq_;
@@ -309,36 +289,21 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     double energy_total = 0;
     double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
 
-// if(n_threads_>1): pure serial path skips OpenMP fork (OMP=1 fair vs LAMMPS).
-#pragma omp parallel num_threads(n_threads_) if (n_threads_ > 1)               \
+    // if(n_threads_>1): pure serial path skips OpenMP fork (OMP=1 fair vs LAMMPS).
+    const md::ForcePass forces(ctx);
+#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
     reduction(+ : energy_total) reduction(+ : v_xx) reduction(+ : v_yy)        \
     reduction(+ : v_zz) reduction(+ : v_xy) reduction(+ : v_xz)                \
     reduction(+ : v_yz)
     {
-        int tid = 0, team_size = 1;
+        int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
-        team_size = omp_get_num_threads();
 #endif
-        const bool direct = (n_threads_ == 1);
-        double* __restrict fxt;
-        double* __restrict fyt;
-        double* __restrict fzt;
-        if (direct) {
-            fxt = fx_ptr;
-            fyt = fy_ptr;
-            fzt = fz_ptr;
-        } else {
-            std::fill(fx_thr_[tid].begin(), fx_thr_[tid].begin() + n_force,
-                      0.0);
-            std::fill(fy_thr_[tid].begin(), fy_thr_[tid].begin() + n_force,
-                      0.0);
-            std::fill(fz_thr_[tid].begin(), fz_thr_[tid].begin() + n_force,
-                      0.0);
-            fxt = fx_thr_[tid].data();
-            fyt = fy_thr_[tid].data();
-            fzt = fz_thr_[tid].data();
-        }
+        const md::ThreadForce tf = forces.thread(tid);
+        double* __restrict fxt = tf.fx;
+        double* __restrict fyt = tf.fy;
+        double* __restrict fzt = tf.fz;
 
         // Survivor-compaction staging, one chunk of a neighbor list at a
         // time. 7 x 512 doubles + the index list is ~30 KB, so a chunk and
@@ -499,19 +464,6 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
                 fzt[i] += fi_z;
             }
         }
-
-        if (!direct) {
-#pragma omp for schedule(static)
-            for (int i = 0; i < n_force; ++i) {
-                for (int t = 0; t < team_size; ++t) {
-                    if (ctx.forces_requested) {
-                        fx_ptr[i] += fx_thr_[t][i];
-                        fy_ptr[i] += fy_thr_[t][i];
-                        fz_ptr[i] += fz_thr_[t][i];
-                    }
-                }
-            }
-        }
     }
 
     f.meta.get(kEnergy) += energy_total;
@@ -573,9 +525,6 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
 }
 
 void PairLJCutCoulLong::destroy(const DestroyContext&) {
-    fx_thr_.clear();
-    fy_thr_.clear();
-    fz_thr_.clear();
     special_off_.clear();
     special_tag_.clear();
     special_tier_.clear();
@@ -588,12 +537,6 @@ void PairLJCutCoulLong::destroy(const DestroyContext&) {
 
 std::size_t PairLJCutCoulLong::memory_bytes() const {
     std::size_t b = 0;
-    for (const auto& v : fx_thr_)
-        b += v.capacity() * sizeof(double);
-    for (const auto& v : fy_thr_)
-        b += v.capacity() * sizeof(double);
-    for (const auto& v : fz_thr_)
-        b += v.capacity() * sizeof(double);
     b += pair_tier_.capacity();
     b += special_tag_.capacity() * sizeof(TagInt);
     return b;

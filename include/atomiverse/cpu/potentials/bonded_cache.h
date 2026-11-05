@@ -10,20 +10,17 @@
 /// each kernel keeps one cache of fully-resolved local-index tuples and
 /// re-resolves only when the cache goes stale.
 ///
-/// **Staleness contract** (same one the NeighborList CSR relies on):
-/// - `DomainDecomposition::neighbor_generation` bumps on migration
-///   (owner rows reshuffled).
-/// - `DomainDecomposition::halo_generation` bumps on every halo *full
-///   rebuild* (ghost slots reshuffled). Position-only halo refreshes keep
-///   slot indices stable.
-/// - Frame identity, atom-block generation and owned/ghost tag sequence
-///   detect rebinding, topology/schema changes and serial row permutations.
+/// **Staleness contract:** `Frame::row_revision()` changes whenever a row
+/// may hold a different atom — migration (`CommBrick::exchange`), ghost
+/// rebuilds (`borders`), spatial sort, MC insert/delete, rebinding — and
+/// stays put across position-only halo refreshes. Frame identity and the
+/// atom-block generation catch rebinding and topology/schema changes. The
+/// check is O(1); it replaced a per-step O(n_force) tag comparison.
 ///
 /// Missing partners are recorded while rebuilding; require_complete() checks
 /// every rank before the partial tuple set can be used for a force evaluation.
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -52,33 +49,17 @@ struct BondedTupleCache {
     /// @brief True when the cache must be rebuilt before use.
     /// @param ctx Launch context (reads `dd` generation counters).
     bool stale(const cpu::LaunchContext& ctx) const {
-        const auto* dd = ctx.runtime.md.dd;
-        const int n_force = force_count(ctx);
-        if (!built_ || frame_ != &ctx.frame || owned_ != owned_count(ctx)
-            || tags_.size() != static_cast<std::size_t>(n_force)
-            || block_generation_ != ctx.frame.block("atoms").generation())
-            return true;
-        if (dd
-            && (dd->neighbor_generation != neigh_gen_
-                || dd->halo_generation != halo_gen_))
-            return true;
-        const auto tags = ctx.frame.span(kAtom_tag);
-        return !std::equal(tags_.begin(), tags_.end(), tags.data());
+        return !built_ || frame_ != &ctx.frame
+               || row_revision_ != ctx.frame.row_revision()
+               || block_generation_ != ctx.frame.block("atoms").generation();
     }
 
     /// @brief Record the Frame and row identity used to resolve these tuples.
     void mark_built(const cpu::LaunchContext& ctx) {
-        const auto* dd = ctx.runtime.md.dd;
         built_ = true;
         frame_ = &ctx.frame;
-        owned_ = owned_count(ctx);
+        row_revision_ = ctx.frame.row_revision();
         block_generation_ = ctx.frame.block("atoms").generation();
-        const auto tags = ctx.frame.span(kAtom_tag);
-        tags_.assign(tags.data(), tags.data() + force_count(ctx));
-        if (dd != nullptr) {
-            neigh_gen_ = dd->neighbor_generation;
-            halo_gen_ = dd->halo_generation;
-        }
     }
 
     /// @brief Fail together before any rank computes an incomplete force field.
@@ -105,16 +86,12 @@ struct BondedTupleCache {
         dropped_at_build = 0;
         built_ = false;
         frame_ = nullptr;
-        tags_.clear();
     }
 
   private:
     const cpu::Frame* frame_ = nullptr;
-    int owned_ = 0;
+    std::uint64_t row_revision_ = 0;
     std::uint64_t block_generation_ = 0;
-    std::vector<TagInt> tags_;
-    std::uint64_t neigh_gen_ = 0;
-    std::uint64_t halo_gen_ = 0;
     bool built_ = false;
 };
 

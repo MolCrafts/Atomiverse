@@ -73,6 +73,18 @@ class Frame {
     void set_nlocal(int n);
     void set_nghost(int n);
 
+    /// @brief Row-identity revision: a process-unique value that changes
+    ///        whenever a row may now hold a different atom.
+    ///
+    /// Every row-identity mutation goes through this class and draws a fresh
+    /// value: `set_nlocal` / `set_nghost` (migration, ghost rebuilds, MC
+    /// insert/delete), `copy_row` / `copy_row_from` (exchange compaction,
+    /// spatial sort), `set_capacity`, `restore_import_order`, construction
+    /// and assignment. Position refreshes leave it alone. Caches of resolved
+    /// row indices (`BondedTupleCache`) key on it instead of re-reading tags.
+    /// Writing tag columns through raw spans is not tracked.
+    std::uint64_t row_revision() const noexcept { return row_revision_; }
+
     /// LAMMPS-shaped chunked capacity growth over the canonical atoms Block.
     void grow(int target_capacity);
     void set_capacity(int new_capacity);
@@ -124,6 +136,9 @@ class Frame {
     Frame clone_structure(int rows) const;
 
   private:
+    void touch_rows_() noexcept;
+    std::uint64_t row_revision_ = 0;
+
     static int cols_for_(const FieldSpec& spec, const MetaMap& meta);
     void bind_resolution_state_() const noexcept;
     Block& atoms_block_() { return block("atoms"); }

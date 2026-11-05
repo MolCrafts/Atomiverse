@@ -153,9 +153,6 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     // Null source denotes an unbuilt cache; version zero is a valid list.
     const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
-
-    int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
 };
 
 } // namespace cpu

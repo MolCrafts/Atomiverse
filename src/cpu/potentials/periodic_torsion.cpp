@@ -99,7 +99,8 @@ void PeriodicTorsionSet::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void PeriodicTorsionSet::rebuild_tuples_(const LaunchContext& ctx) {
@@ -151,7 +152,6 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
         return;
 
     auto& f = ctx.frame;
-    const int n_force = ResolveView(ctx).n_force();
     const int* __restrict tup = cache_.flat.data();
     const StorageReal* __restrict x = f.span(kAtom_x);
     const StorageReal* __restrict y = f.span(kAtom_y);
@@ -172,16 +172,16 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
 
     double energy_total = 0.0;
     Voigt6 vir;
-    scratch_.bind(f);
+    const ForcePass forces(ctx);
 
-    const int team = scratch_.team(n_tuples);
+    const int team = forces.team(n_tuples);
 #pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const ThreadForce tf = scratch_.begin_thread(tid, n_force);
+        const ThreadForce tf = forces.thread(tid);
         Voigt6 vir_local;
 
 #pragma omp for schedule(static)
@@ -245,9 +245,6 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
         }
     }
 
-    if (do_forces)
-        scratch_.reduce_into(n_force);
-
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(topology_ == Topology::Improper ? kEnergyImproper
                                                : kEnergyDihedral) +=
@@ -261,7 +258,6 @@ void PeriodicTorsionSet::destroy() {
     drops_.report(style_);
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
 }
 
 } // namespace md

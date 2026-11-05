@@ -54,7 +54,8 @@ void StillingerWeber::build(const cpu::BuildContext& ctx) {
 #ifdef _OPENMP
     threads = omp_get_max_threads();
 #endif
-    forces_.build(threads, ctx.frame.capacity());
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(threads, ctx.frame.capacity());
     short_neighbors_.resize(static_cast<std::size_t>(threads));
 }
 
@@ -78,8 +79,7 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
     const TagInt* __restrict tag_ptr = f.span(kAtom_tag);
-    forces_.bind(f);
-    const int n_force = cpu::force_count(ctx);
+    const md::ForcePass forces(ctx);
     int max_neighbors = 0;
     for (int ii = 0; ii < pl->inum; ++ii)
         max_neighbors = std::max(max_neighbors, pl->numneigh[pl->ilist[ii]]);
@@ -89,14 +89,14 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
     double e_total = 0.0;
     double v[6] = {0, 0, 0, 0, 0, 0};
 
-#pragma omp parallel num_threads(forces_.n_threads())                          \
+#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
     reduction(+ : e_total, v[ : 6])
     {
         int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const md::ThreadForce force = forces_.begin_thread(tid, n_force);
+        const md::ThreadForce force = forces.thread(tid);
         double* __restrict fx_ptr = force.fx;
         double* __restrict fy_ptr = force.fy;
         double* __restrict fz_ptr = force.fz;
@@ -257,8 +257,6 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
         }
 
     } // thread-private Newton-on force accumulation
-    if (ctx.forces_requested)
-        forces_.reduce_into(n_force);
     f.meta.get(kEnergy) += e_total;
     f.meta.get(kEnergyPair) += e_total;
     if (ctx.stress_requested)
@@ -268,7 +266,6 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
 
 void StillingerWeber::destroy(const cpu::DestroyContext&) {
     short_neighbors_.clear();
-    forces_.clear();
 }
 
 } // namespace cpu
