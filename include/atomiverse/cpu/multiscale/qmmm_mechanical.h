@@ -8,17 +8,17 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/multiscale/internal/qm_mm_vdw.h"
 #include "atomiverse/cpu/multiscale/internal/qm_subsystem.h"
-#include "atomiverse/cpu/potentials/lj_type_coeff.h"
 
 namespace ATV {
 namespace cpu {
 
 /// @brief Mechanical embedding: E_QM(vacuum) + E_QM–MM^{LJ} + E_QM–MM^{Coul}.
 ///
-/// Any `QmEngine` (embedding never probed). QM region from `kAtomQmZ`.
+/// Any `QmEngine` (embedding never probed). QM region from `kAtomQm`.
 /// Classical cross-Coulomb reads both sides' `kAtom_charge` (QM charges may
 /// be nonzero — unlike electrostatic embedding).
 class QmmmMechanical : public Potential {

@@ -156,7 +156,7 @@ int run() {
     // ── (3) Product analytic fixed-P stress with d3bj = true ──────────────
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = z[i];
+        frame.span(kAtom_atomic_number)[i] = z[i];
         frame.span(kAtom_x)[i] = xs[i];
         frame.span(kAtom_y)[i] = ys[i];
         frame.span(kAtom_z)[i] = zs[i];

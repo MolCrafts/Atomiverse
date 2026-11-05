@@ -51,7 +51,7 @@ int run() {
     frame.span(kAtom_y)[1] = 0.0;
     frame.span(kAtom_z)[1] = 0.0;
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1; // Z = 1 (hydrogen)
+        frame.span(kAtom_atomic_number)[i] = 1; // Z = 1 (hydrogen)
         frame.span(kAtom_mass)[i] = 1.008;
         frame.span(kAtom_tag)[i] = i + 1;
     }

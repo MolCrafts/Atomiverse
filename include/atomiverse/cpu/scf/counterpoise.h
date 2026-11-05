@@ -200,11 +200,11 @@ class Counterpoise {
         const auto sx = dimer.span(kAtom_x);
         const auto sy = dimer.span(kAtom_y);
         const auto sz = dimer.span(kAtom_z);
-        const auto st = dimer.span(kAtom_type);
+        const auto st = dimer.span(kAtom_atomic_number);
         auto dx = sub.span(kAtom_x);
         auto dy = sub.span(kAtom_y);
         auto dz = sub.span(kAtom_z);
-        auto dt = sub.span(kAtom_type);
+        auto dt = sub.span(kAtom_atomic_number);
         for (int k = 0; k < n; ++k) {
             const int i = idx[static_cast<std::size_t>(k)];
             dx[k] = sx[i];

@@ -1,5 +1,20 @@
 /// @file cpu/potentials/pair_lj_cut.cpp
 /// @brief CPU PairLJCut — LJ 12-6 shifted, xsimd ket-loop, OMP force reduction.
+///
+/// The tail correction follows LAMMPS `PairLJCut::init_one`
+/// (`src/pair_lj_cut.cpp`, etail_ij / ptail_ij via `core/lj_type_table.h`),
+/// `src/compute_pe.cpp` (etail/V) and `ComputePressure::virial_compute`
+/// (`src/compute_pressure.cpp`, ptail/V on the diagonal). LAMMPS checkout
+/// `e8c4c278a8`:
+///
+///   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+///   https://www.lammps.org/, Sandia National Laboratories
+///   LAMMPS development team: developers@lammps.org
+///
+///   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+///   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+///   certain rights in this software.  This software is distributed under
+///   the GNU General Public License.
 
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/core/mat3.h"
@@ -60,64 +75,48 @@ PairLJCut::PairLJCut(std::vector<LJTypeCoeff> coeffs, double cutoff)
     // kernel silently computed nothing and every energy came back exactly 0.0.)
     sigma6_ = 0.0;
     v_shift_ = 0.0;
-    cutoff_sq_ = cutoff * cutoff;
-    per_type_mode_ = true;
-
-    for (const LJTypeCoeff& c : coeffs)
-        set_type_coeff(c.type_i, c.type_j, c.epsilon, c.sigma);
+    table_.emplace(std::move(coeffs), cutoff);
+    refresh_cutoff_();
 }
 
-void PairLJCut::grow_type_table_(int need) {
-    if (need <= n_types_)
-        return;
-    // Grow the square tables, preserving what is already set. New entries are
-    // unset: a type pair with no coefficient and no diagonal to mix from does
-    // not interact (eps = 0, see finalize_type_table_).
-    std::vector<double> e(static_cast<std::size_t>(need) * need, 0.0);
-    std::vector<double> s(static_cast<std::size_t>(need) * need, 0.0);
-    std::vector<char> f(static_cast<std::size_t>(need) * need, 0);
-    for (int a = 0; a < n_types_; ++a)
-        for (int b = 0; b < n_types_; ++b) {
-            const std::size_t old = static_cast<std::size_t>(a) * n_types_ + b;
-            const std::size_t nw = static_cast<std::size_t>(a) * need + b;
-            e[nw] = eps_tab_[old];
-            s[nw] = sigma_tab_[old];
-            f[nw] = set_tab_[old];
-        }
-    eps_tab_.swap(e);
-    sigma_tab_.swap(s);
-    set_tab_.swap(f);
-    n_types_ = need;
+void PairLJCut::refresh_cutoff_() {
+    // LAMMPS cutforce: the largest per-pair cutoff. The neighbor list must
+    // cover it; the hot loop's outer test uses it before the per-pair one.
+    const double rc = table_->max_cutoff();
+    cutoff_ = static_cast<AccReal>(rc);
+    cutoff_sq_ = rc * rc;
 }
 
-PairLJCut& PairLJCut::set_type_coeff(int type_i, int type_j, double epsilon,
-                                     double sigma) & {
-    if (!per_type_mode_)
+PairLJCut& PairLJCut::set_type_coeff(const LJTypeCoeff& row) & {
+    if (!table_)
         throw std::logic_error(
             "PairLJCut::set_type_coeff: this PairLJCut was built with a single "
             "epsilon/sigma and has no type table. Construct it from a "
             "coefficient list "
             "instead.");
-    if (type_i < 0 || type_j < 0)
-        throw std::invalid_argument(
-            "PairLJCut::set_type_coeff: types must be >= 0");
-    if (sigma <= 0.0)
-        throw std::invalid_argument(
-            "PairLJCut::set_type_coeff: sigma must be > 0");
-
-    grow_type_table_(std::max(type_i, type_j) + 1);
-
-    const std::size_t ij = static_cast<std::size_t>(type_i) * n_types_ + type_j;
-    const std::size_t ji = static_cast<std::size_t>(type_j) * n_types_ + type_i;
-    eps_tab_[ij] = eps_tab_[ji] = epsilon;
-    sigma_tab_[ij] = sigma_tab_[ji] = sigma;
-    set_tab_[ij] = set_tab_[ji] = 1;
+    table_->set_coeff(row);
+    refresh_cutoff_();
     return *this;
 }
 
-PairLJCut PairLJCut::set_type_coeff(int type_i, int type_j, double epsilon,
-                                    double sigma) && {
-    set_type_coeff(type_i, type_j, epsilon, sigma);
+PairLJCut PairLJCut::set_type_coeff(const LJTypeCoeff& row) && {
+    set_type_coeff(row);
+    return std::move(*this);
+}
+
+PairLJCut& PairLJCut::set_r4_attraction(std::vector<R4TypeCoeff> rows) & {
+    if (!table_)
+        throw std::logic_error(
+            "PairLJCut::set_r4_attraction: this PairLJCut was built with a "
+            "single epsilon/sigma and has no type table; the r^-4 term is "
+            "per type pair. Construct it from a coefficient list instead.");
+    table_->set_r4(std::move(rows));
+    refresh_cutoff_();
+    return *this;
+}
+
+PairLJCut PairLJCut::set_r4_attraction(std::vector<R4TypeCoeff> rows) && {
+    set_r4_attraction(std::move(rows));
     return std::move(*this);
 }
 
@@ -132,6 +131,17 @@ PairLJCut PairLJCut::set_special_bonds(double s12, double s13, double s14) && {
     s12_ = s12;
     s13_ = s13;
     s14_ = s14;
+    return std::move(*this);
+}
+
+PairLJCut& PairLJCut::set_tail_correction(bool on) & {
+    tail_ = on;
+    tail_ready_ = false;
+    return *this;
+}
+
+PairLJCut PairLJCut::set_tail_correction(bool on) && {
+    set_tail_correction(on);
     return std::move(*this);
 }
 
@@ -161,7 +171,7 @@ void PairLJCut::build(const BuildContext& ctx) {
     // No "did you remember to set coefficients?" check is needed: the per-type
     // constructor refuses an empty list, so a PairLJCut cannot exist in that state.
     // That is the point of moving the table into the constructor.
-    if (per_type_mode_) {
+    if (table_) {
         // The kernel indexes the table by (type_i, type_j) of every pair, so
         // it must span every type the Frame carries. A type no coefficient
         // names is an unset pair like any other: it does not interact.
@@ -173,16 +183,18 @@ void PairLJCut::build(const BuildContext& ctx) {
                     "PairLJCut: atom types must be >= 0 for a per-type table");
             max_type = std::max(max_type, type[i]);
         }
-        grow_type_table_(max_type + 1);
+        table_->build(max_type + 1, energy_shift_);
+        n_types_ = table_->n_types();
     }
     types_source_ = nullptr;
-    if (!per_type_mode_) {
+    if (!table_) {
         const double r2inv = 1.0 / cutoff_sq_;
         const double r6inv = r2inv * r2inv * r2inv * sigma6_;
         v_shift_ =
             energy_shift_ ? 4.0 * epsilon_ * (r6inv * r6inv - r6inv) : 0.0;
     }
-    finalize_type_table_();
+    // The tail's type counts belong to this build's Frame.
+    tail_ready_ = false;
     n_threads_ = 1;
 #ifdef _OPENMP
     n_threads_ = omp_get_max_threads();
@@ -242,63 +254,6 @@ void PairLJCut::rebuild_filtered_list(const Frame& f,
             ++kept;
         }
         filtered_numneigh_[i] = kept;
-    }
-}
-
-namespace {
-/// Lorentz-Berthelot: arithmetic mean of sigma, geometric mean of epsilon. The
-/// standard combining rule, and the one LAMMPS uses by default (`pair_modify mix
-/// geometric` is the alternative; this is `mix arithmetic`).
-inline void lorentz_berthelot(double eii, double sii, double ejj, double sjj,
-                              double& eij, double& sij) {
-    eij = std::sqrt(eii * ejj);
-    sij = 0.5 * (sii + sjj);
-}
-} // namespace
-
-/// Fill the off-diagonal from the diagonal by Lorentz-Berthelot, and precompute
-/// sigma^6 and the per-pair energy shift. Called once, from build().
-void PairLJCut::finalize_type_table_() {
-    if (n_types_ == 0)
-        return;
-    const double rc = static_cast<double>(this->pair_cutoff());
-
-    sig6_tab_.assign(static_cast<std::size_t>(n_types_) * n_types_, 0.0);
-    shift_tab_.assign(static_cast<std::size_t>(n_types_) * n_types_, 0.0);
-
-    for (int a = 0; a < n_types_; ++a) {
-        for (int b = 0; b < n_types_; ++b) {
-            const std::size_t ab = static_cast<std::size_t>(a) * n_types_ + b;
-            double e = eps_tab_[ab], s = sigma_tab_[ab];
-
-            if (!set_tab_[ab]) {
-                const std::size_t aa =
-                    static_cast<std::size_t>(a) * n_types_ + a;
-                const std::size_t bb =
-                    static_cast<std::size_t>(b) * n_types_ + b;
-                if (set_tab_[aa] && set_tab_[bb]) {
-                    lorentz_berthelot(eps_tab_[aa], sigma_tab_[aa],
-                                      eps_tab_[bb], sigma_tab_[bb], e, s);
-                    eps_tab_[ab] = e;
-                    sigma_tab_[ab] = s;
-                } else {
-                    // No diagonal to mix from: this type pair simply does not
-                    // interact. eps = 0 is the honest encoding (TIP3P hydrogens have
-                    // no LJ site at all), NOT a fallback to the single-sigma value —
-                    // which would silently reintroduce the very bug this exists to fix.
-                    e = 0.0;
-                    s = 1.0;
-                }
-            }
-            const double s2 = s * s;
-            const double s6 = s2 * s2 * s2;
-            sig6_tab_[ab] = s6;
-
-            const double r2inv = 1.0 / (rc * rc);
-            const double r6inv = r2inv * r2inv * r2inv * s6;
-            shift_tab_[ab] =
-                energy_shift_ ? 4.0 * e * (r6inv * r6inv - r6inv) : 0.0;
-        }
     }
 }
 
@@ -383,7 +338,9 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    const int* __restrict k_type = f.span(kAtom_type);
+    // Only the per-type table indexes by the force-field type.
+    const int* __restrict k_type =
+        n_types_ > 0 ? f.span(kAtom_type).data() : nullptr;
     AccReal* __restrict fx_ptr = f.span(kAtom_fx);
     AccReal* __restrict fy_ptr = f.span(kAtom_fy);
     AccReal* __restrict fz_ptr = f.span(kAtom_fz);
@@ -403,14 +360,16 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         // SIMD ket loop is skipped and the gathered one below packs each lane's
         // coefficients (and special weight) next to its coordinates. The
         // single-epsilon path — the one benchmarked against LAMMPS — is untouched.
-        const bool k_multi = (n_types_ > 0);
+        const bool k_multi = table_.has_value();
         // Partial special scales also need the per-pair weight: gathered loop.
         const bool use_simd = !k_multi && !has_partial_special_;
-        const bool use_gather = !use_simd;
+        // The r^-4 term has its own cutoff and formula per pair: a table that
+        // carries it goes down the scalar path (`ATV::r4_attraction`).
+        const bool use_gather = !use_simd && !(k_multi && table_->has_r4());
         const int k_ntypes = n_types_;
-        const double* k_eps = k_multi ? eps_tab_.data() : nullptr;
-        const double* k_sig6 = k_multi ? sig6_tab_.data() : nullptr;
-        const double* k_shift = k_multi ? shift_tab_.data() : nullptr;
+        // LAMMPS init_one records, one per (type_i, type_j) (lj1..lj4, own
+        // LJ cutoff and offset, r^-4 term).
+        const LJPairCoeff* k_tab = k_multi ? table_->pairs().data() : nullptr;
         const double vshift = v_shift_;
 
         // x_ptr/y_ptr/z_ptr are the schema spans resolved once above, before
@@ -456,7 +415,8 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         alignas(64) double xj_buf[16], yj_buf[16], zj_buf[16];
         alignas(64) double fxp_buf[16], fyp_buf[16], fzp_buf[16];
         alignas(64) double r2_buf[16], r6inv_buf[16];
-        alignas(64) double sig6_buf[16], eps_buf[16], shift_buf[16];
+        alignas(64) double lj1_buf[16], lj2_buf[16], lj3_buf[16];
+        alignas(64) double lj4_buf[16], offset_buf[16], cutsq_buf[16];
         alignas(64) std::int32_t mask_buf[16];
 
 #pragma omp for schedule(dynamic, 1)
@@ -624,9 +584,10 @@ void PairLJCut::compute(const LaunchContext& ctx) {
 
                 // ── Gathered SIMD ket loop: per-type table and/or per-pair special
                 // weights. Same arithmetic as the scalar tail below, W lanes at a
-                // time: each lane's sigma^6 / epsilon / shift is gathered from the
-                // table row of type_i by type_j, and its weight read from the
-                // filtered list (contiguous). Out-of-cutoff lanes are masked to 0.
+                // time: each lane's init_one record (lj1..lj4, offset, own LJ
+                // cutoff) is gathered from the table row of type_i by type_j, and
+                // its weight read from the filtered list (contiguous). Lanes
+                // outside their pair's cutoff are masked to 0.
                 const std::size_t g_row =
                     k_multi ? static_cast<std::size_t>(k_type[i]) * k_ntypes
                             : 0;
@@ -639,11 +600,15 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                         yj_buf[lane] = y_ptr[j];
                         zj_buf[lane] = z_ptr[j];
                         if (k_multi) {
-                            const std::size_t ab =
-                                g_row + static_cast<std::size_t>(k_type[j]);
-                            sig6_buf[lane] = k_sig6[ab];
-                            eps_buf[lane] = k_eps[ab];
-                            shift_buf[lane] = k_shift[ab];
+                            const LJPairCoeff& c =
+                                k_tab[g_row
+                                      + static_cast<std::size_t>(k_type[j])];
+                            lj1_buf[lane] = c.lj1;
+                            lj2_buf[lane] = c.lj2;
+                            lj3_buf[lane] = c.lj3;
+                            lj4_buf[lane] = c.lj4;
+                            offset_buf[lane] = c.offset;
+                            cutsq_buf[lane] = c.cut_ljsq;
                         }
                     }
                     const batch_t v_dx = v_xi - batch_t::load_aligned(xj_buf);
@@ -651,32 +616,40 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                     const batch_t v_dz = v_zi - batch_t::load_aligned(zj_buf);
                     const batch_t v_r2 =
                         (v_dx * v_dx + v_dy * v_dy) + v_dz * v_dz;
-                    const auto mask = v_r2 < v_rc_sq;
+                    // A pair with no LJ site has cut_ljsq = 0: always masked.
+                    const auto mask =
+                        v_r2 < (k_multi ? batch_t::load_aligned(cutsq_buf)
+                                        : v_rc_sq);
                     const batch_t v_r2inv =
                         v_one / xsimd::select(mask, v_r2, v_one);
-
-                    const batch_t v_s6 =
-                        k_multi ? batch_t::load_aligned(sig6_buf) : v_sig6;
-                    const batch_t v_e4 =
-                        k_multi ? batch_t(4.0) * batch_t::load_aligned(eps_buf)
-                                : v_eps4;
-                    const batch_t v_e24 =
-                        k_multi ? batch_t(24.0) * batch_t::load_aligned(eps_buf)
-                                : v_eps24;
-                    const batch_t v_sh =
-                        k_multi ? batch_t::load_aligned(shift_buf) : v_vshift;
                     const batch_t v_sc =
                         (k_scales != nullptr)
                             ? batch_t::load_unaligned(k_scales + off + jj)
                             : v_one;
 
-                    const batch_t v_r6inv =
-                        ((v_r2inv * v_r2inv) * v_r2inv) * v_s6;
-                    const batch_t v_fpair = xsimd::select(
-                        mask,
-                        ((v_sc * v_e24) * v_r2inv)
-                            * (v_two * v_r6inv * v_r6inv - v_r6inv),
-                        v_zero);
+                    batch_t v_fpair, v_epair;
+                    if (k_multi) {
+                        const batch_t v_r6inv = (v_r2inv * v_r2inv) * v_r2inv;
+                        v_fpair = (v_r2inv * v_r6inv)
+                                  * (batch_t::load_aligned(lj1_buf) * v_r6inv
+                                     - batch_t::load_aligned(lj2_buf));
+                        v_epair =
+                            v_r6inv
+                                * (batch_t::load_aligned(lj3_buf) * v_r6inv
+                                   - batch_t::load_aligned(lj4_buf))
+                            - batch_t::load_aligned(offset_buf);
+                        v_fpair = v_sc * v_fpair;
+                        v_epair = v_sc * v_epair;
+                    } else {
+                        const batch_t v_r6inv =
+                            ((v_r2inv * v_r2inv) * v_r2inv) * v_sig6;
+                        v_fpair = ((v_sc * v_eps24) * v_r2inv)
+                                  * (v_two * v_r6inv * v_r6inv - v_r6inv);
+                        v_epair = v_sc
+                                  * (v_eps4 * (v_r6inv * v_r6inv - v_r6inv)
+                                     - v_vshift);
+                    }
+                    v_fpair = xsimd::select(mask, v_fpair, v_zero);
                     const batch_t v_fxp = v_fpair * v_dx;
                     const batch_t v_fyp = v_fpair * v_dy;
                     const batch_t v_fzp = v_fpair * v_dz;
@@ -690,13 +663,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                     acc_vxy = acc_vxy + v_dx * v_fyp;
                     acc_vxz = acc_vxz + v_dx * v_fzp;
                     acc_vyz = acc_vyz + v_dy * v_fzp;
-                    acc_e =
-                        acc_e
-                        + xsimd::select(
-                            mask,
-                            v_sc
-                                * (v_e4 * (v_r6inv * v_r6inv - v_r6inv) - v_sh),
-                            v_zero);
+                    acc_e = acc_e + xsimd::select(mask, v_epair, v_zero);
                     v_fxp.store_aligned(fxp_buf);
                     v_fyp.store_aligned(fyp_buf);
                     v_fzp.store_aligned(fzp_buf);
@@ -738,29 +705,40 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                     if (r2 >= rc_sq)
                         continue;
 
-                    // Per-pair coefficients under a type table; the hoisted scalars
-                    // otherwise. An eps of exactly 0 (a type pair with no LJ site, e.g.
-                    // TIP3P hydrogens) contributes no force and no energy — which is the
-                    // point, and is why an unset pair mixes to eps = 0 rather than silently
-                    // falling back to the single-sigma value.
-                    double p_sig6 = sig6, p_eps24 = eps24, p_eps4 = eps4,
-                           p_shift = vshift;
-                    if (k_multi) {
-                        const std::size_t ab =
-                            g_row + static_cast<std::size_t>(k_type[j]);
-                        p_sig6 = k_sig6[ab];
-                        const double e = k_eps[ab];
-                        p_eps24 = double(24) * e;
-                        p_eps4 = double(4) * e;
-                        p_shift = k_shift[ab];
-                    }
-
-                    const double r2inv = double(1) / r2;
-                    const double r6inv = r2inv * r2inv * r2inv * p_sig6;
                     const double sc =
                         (k_scales != nullptr) ? k_scales[off + jj] : double(1);
-                    const double fpair = sc * p_eps24 * r2inv
-                                         * (double(2) * r6inv * r6inv - r6inv);
+                    double fpair, epair;
+                    if (k_multi) {
+                        // LAMMPS init_one record of (type_i, type_j): its own
+                        // LJ cutoff and offset, plus the r^-4 term. A pair with
+                        // no LJ site has cut_ljsq = 0 and is skipped here, which
+                        // is why an unset pair resolves to eps = 0 rather than
+                        // silently falling back to the single-sigma value.
+                        const LJPairCoeff& c =
+                            k_tab[g_row + static_cast<std::size_t>(k_type[j])];
+                        fpair = 0.0;
+                        epair = 0.0;
+                        if (r2 < c.cut_ljsq) {
+                            const double r2inv = double(1) / r2;
+                            const double r6inv = r2inv * r2inv * r2inv;
+                            fpair = r2inv * r6inv * (c.lj1 * r6inv - c.lj2);
+                            epair = r6inv * (c.lj3 * r6inv - c.lj4) - c.offset;
+                        }
+                        if (r2 < c.r4_cutsq) {
+                            const R4Term<double> t =
+                                r4_attraction(r2, c.r4_a, c.r4_rc5inv, c.r4_e0);
+                            fpair += t.fpair;
+                            epair += t.energy;
+                        }
+                        fpair *= sc;
+                        epair *= sc;
+                    } else {
+                        const double r2inv = double(1) / r2;
+                        const double r6inv = r2inv * r2inv * r2inv * sig6;
+                        fpair = sc * eps24 * r2inv
+                                * (double(2) * r6inv * r6inv - r6inv);
+                        epair = sc * (eps4 * (r6inv * r6inv - r6inv) - vshift);
+                    }
 
                     const double fxp = fpair * dx;
                     const double fyp = fpair * dy;
@@ -783,7 +761,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                         a_yz += dy * fzp;
                     }
 
-                    e_i += sc * (p_eps4 * (r6inv * r6inv - r6inv) - p_shift);
+                    e_i += epair;
                 }
                 if (do_forces) {
                     fxt_ptr[i] += fi_x;
@@ -828,6 +806,56 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         f.meta.get(kStress)[3] += v_xy;
         f.meta.get(kStress)[4] += v_xz;
         f.meta.get(kStress)[5] += v_yz;
+    }
+
+    // ── LJ tail correction (LAMMPS pair_modify tail yes) ─────────────────
+    // A global constant over the fixed type counts: it lands on the first
+    // rank only (the energy/virial reductions sum ranks). The volume is read
+    // every step because barostats move the cell.
+    if (tail_) {
+#ifdef ATV_HAS_MPI
+        const bool mpi = cpu::multi_rank_dd(ctx.runtime);
+#else
+        const bool mpi = false;
+#endif
+        if (!tail_ready_) {
+            const int n_owned = f.nlocal();
+            LJTail t;
+            if (table_) {
+                std::vector<double> cnt(static_cast<std::size_t>(n_types_),
+                                        0.0);
+                for (int i = 0; i < n_owned; ++i)
+                    cnt[static_cast<std::size_t>(k_type[i])] += 1.0;
+#ifdef ATV_HAS_MPI
+                if (mpi)
+                    MPI_Allreduce(MPI_IN_PLACE, cnt.data(), n_types_,
+                                  MPI_DOUBLE, MPI_SUM,
+                                  ctx.runtime.md.dd->cart_comm);
+#endif
+                t = table_->tail(cnt);
+            } else {
+                // Single-type form: every atom is the one LJ type.
+                double n = static_cast<double>(n_owned);
+#ifdef ATV_HAS_MPI
+                if (mpi)
+                    MPI_Allreduce(MPI_IN_PLACE, &n, 1, MPI_DOUBLE, MPI_SUM,
+                                  ctx.runtime.md.dd->cart_comm);
+#endif
+                t = lj_tail_pair(epsilon_, sigma_, std::sqrt(cutoff_sq_), n, n);
+            }
+            etail_pref_ = t.energy;
+            ptail_pref_ = t.virial;
+            tail_ready_ = true;
+        }
+        const bool first_rank = !mpi || ctx.runtime.mpi_rank == 0;
+        if (first_rank) {
+            const double vol = f.box.volume();
+            f.meta.get(kEnergy) += etail_pref_ / vol;
+            f.meta.get(kEnergyPair) += etail_pref_ / vol;
+            if (do_virial)
+                for (int d = 0; d < 3; ++d)
+                    f.meta.get(kStress)[d] += ptail_pref_ / vol;
+        }
     }
 }
 

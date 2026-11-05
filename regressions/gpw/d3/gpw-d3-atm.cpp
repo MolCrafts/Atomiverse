@@ -53,7 +53,7 @@ int run() {
     const double shift_ang[3] = {6.0 - 1.5, 6.0, 6.0};
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = Z[i];
+        frame.span(kAtom_atomic_number)[i] = Z[i];
         frame.span(kAtom_x)[i] = ang[i][0] + shift_ang[0];
         frame.span(kAtom_y)[i] = ang[i][1] + shift_ang[1];
         frame.span(kAtom_z)[i] = ang[i][2] + shift_ang[2];

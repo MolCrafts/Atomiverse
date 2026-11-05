@@ -12,7 +12,7 @@ inline ATV::cpu::Frame h3() {
     constexpr double p[3][3] = {
         {1.2, 1.1, 1}, {2.1, 1.6, 1.3}, {1.6, 2.25, 1.8}};
     for (int i = 0; i < 3; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_mass)[i] = 1.008;
         frame.span(kAtom_x)[i] = p[i][0];
         frame.span(kAtom_y)[i] = p[i][1];

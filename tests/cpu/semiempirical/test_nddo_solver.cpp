@@ -75,7 +75,7 @@ TEST(NddoDensity, InvalidInputPreservesOutputAndAllowsRetry) {
 
 TEST(NddoPreparation, MndoPm3RejectUnvalidatedIdentityBeforeScf) {
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[0] = frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = .8;
     for (const auto method : {ATV::semiempirical::SemiEmpiricalMethod::MNDO,
                               ATV::semiempirical::SemiEmpiricalMethod::PM3}) {
@@ -92,21 +92,21 @@ TEST(NddoPreparation, MndoPm3RejectUnvalidatedIdentityBeforeScf) {
         config.multiplicity = 3;
         NDDOSolver triplet{config};
         EXPECT_THROW(triplet.build(frame), std::invalid_argument);
-        frame.span(kAtom_type)[0] = 16;
+        frame.span(kAtom_atomic_number)[0] = 16;
         EXPECT_THROW(supported.scf_prepare(frame), std::runtime_error);
-        frame.span(kAtom_type)[0] = 1;
+        frame.span(kAtom_atomic_number)[0] = 1;
         EXPECT_NO_THROW(supported.scf_prepare(frame));
     }
 }
 
 TEST(NddoPreparation, RebuildsElementIdentityAtUnchangedSize) {
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 6;
+    frame.span(kAtom_atomic_number)[0] = 6;
     frame.span(kAtom_x)[0] = frame.span(kAtom_y)[0] = frame.span(kAtom_z)[0] =
         0;
     NDDOSolver solver{NDDOConfig{}};
     solver.build(frame);
-    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_atomic_number)[0] = 8;
     solver.scf_prepare(frame);
     EXPECT_EQ(solver.system().atoms[0].atomic_number, 8);
     EXPECT_EQ(solver.system().n_electrons, 6);
@@ -116,14 +116,14 @@ TEST(NddoPreparation, RebuildsElementIdentityAtUnchangedSize) {
 
 TEST(NddoPreparation, RebuildsAtomCount) {
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 6;
+    frame.span(kAtom_atomic_number)[0] = 6;
     frame.span(kAtom_x)[0] = frame.span(kAtom_y)[0] = frame.span(kAtom_z)[0] =
         0;
     NDDOSolver solver{NDDOConfig{}};
     solver.build(frame);
     cpu::Frame hydrogen(2);
     for (int a = 0; a < 2; ++a) {
-        hydrogen.span(kAtom_type)[a] = 1;
+        hydrogen.span(kAtom_atomic_number)[a] = 1;
         hydrogen.span(kAtom_x)[a] = 0.74 * a;
         hydrogen.span(kAtom_y)[a] = hydrogen.span(kAtom_z)[a] = 0;
     }
@@ -136,7 +136,7 @@ TEST(NddoPreparation, RebuildsAtomCount) {
 TEST(NddoPreparation, InvalidGeometryFailsBeforeScfAndCanRetry) {
     cpu::Frame frame(2);
     for (int a = 0; a < 2; ++a) {
-        frame.span(kAtom_type)[a] = 1;
+        frame.span(kAtom_atomic_number)[a] = 1;
         frame.span(kAtom_x)[a] = 0.74 * a;
         frame.span(kAtom_y)[a] = frame.span(kAtom_z)[a] = 0;
     }
@@ -155,7 +155,7 @@ TEST(NddoPreparation, InvalidGeometryFailsBeforeScfAndCanRetry) {
 }
 TEST(NddoPreparation, FailedForceRequestClearsSuccessAndOldForces) {
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 6;
+    frame.span(kAtom_atomic_number)[0] = 6;
     frame.span(kAtom_x)[0] = frame.span(kAtom_y)[0] = frame.span(kAtom_z)[0] =
         0;
     NDDOSolver solver{NDDOConfig{}};
@@ -170,7 +170,7 @@ TEST(NddoPreparation, FailedForceRequestClearsSuccessAndOldForces) {
 }
 TEST(NddoPreparation, ScfControlsUpdateWithoutRebuildingWorkspace) {
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 6;
+    frame.span(kAtom_atomic_number)[0] = 6;
     frame.span(kAtom_x)[0] = frame.span(kAtom_y)[0] = frame.span(kAtom_z)[0] =
         0;
     NDDOSolver solver{NDDOConfig{}};
@@ -202,7 +202,7 @@ TEST(NddoPreparation, ScfControlsUpdateWithoutRebuildingWorkspace) {
 TEST(NddoPreparation, ForceStorageIsReservedByBuildAndPreservedOnPreparation) {
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = 0.74 * i;
         frame.span(kAtom_y)[i] = frame.span(kAtom_z)[i] = 0;
     }
@@ -218,7 +218,7 @@ TEST(NddoPreparation, ForceStorageIsReservedByBuildAndPreservedOnPreparation) {
 
     cpu::Frame larger(4);
     for (int i = 0; i < 4; ++i) {
-        larger.span(kAtom_type)[i] = 1;
+        larger.span(kAtom_atomic_number)[i] = 1;
         larger.span(kAtom_x)[i] = 0.74 * i;
         larger.span(kAtom_y)[i] = larger.span(kAtom_z)[i] = 0;
     }
@@ -312,7 +312,7 @@ TEST(NddoFock, CachedTwoCenterBlocksReproduceTheDirectBuild) {
                               {-0.94, 0, -0.54}, {3, 0, 0},    {3.96, 0, 0},
                               {2.76, 0.93, 0}};
     for (int a = 0; a < 7; ++a) {
-        frame.span(kAtom_type)[a] = z[a];
+        frame.span(kAtom_atomic_number)[a] = z[a];
         frame.span(kAtom_x)[a] = xyz[a][0];
         frame.span(kAtom_y)[a] = xyz[a][1];
         frame.span(kAtom_z)[a] = xyz[a][2];

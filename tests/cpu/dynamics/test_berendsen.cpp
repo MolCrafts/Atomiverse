@@ -36,15 +36,15 @@ cpu::Frame two_movers(double mass, double v) {
     return f;
 }
 
-/// Instantaneous temperature [K] of `f` over `n_dof` degrees of freedom.
+/// Instantaneous temperature (lj units) of `f` over `n_dof` degrees of freedom.
 double temperature(const cpu::Frame& f, int n_dof) {
     double ke = 0;
     for (int i = 0; i < f.nlocal(); ++i) {
         const double vx = f.span(kAtom_vx)[i];
         ke += f.span(kAtom_mass)[i] * vx * vx;
     }
-    ke *= 0.5 * units::mass_v2_to_energy;
-    return 2.0 * ke / (n_dof * units::kB_ev_per_k);
+    ke *= 0.5 * units::md_mvv2e;
+    return 2.0 * ke / (n_dof * units::md_boltz);
 }
 
 cpu::Context make_ctx(int n_dof) {
@@ -56,11 +56,13 @@ cpu::Context make_ctx(int n_dof) {
 } // namespace
 
 TEST(Berendsen, ScalesVelocitiesByTheBerendsenFactor) {
-    constexpr double mass = 1.0;  // amu
-    constexpr double v = 0.01;    // Å/fs
-    constexpr double dt = 1.0;    // fs
-    constexpr double tau = 100.0; // fs
-    constexpr double T0 = 300.0;  // K
+    // lj units (md_mvv2e = md_boltz = 1): T_before = 1/3, T₀ = 0.5, so
+    // λ ≈ 1.0025 stays inside the LAMMPS [0.8, 1.25] clamp.
+    constexpr double mass = 1.0;
+    constexpr double v = 1.0;
+    constexpr double dt = 1.0;
+    constexpr double tau = 100.0;
+    constexpr double T0 = 0.5;
     constexpr int n_dof = 6;
 
     cpu::Frame f = two_movers(mass, v);
@@ -79,11 +81,11 @@ TEST(Berendsen, ScalesVelocitiesByTheBerendsenFactor) {
 }
 
 TEST(Berendsen, MovesTemperatureTowardTheSetpointFromBothSides) {
-    constexpr double dt = 1.0, tau = 50.0, T0 = 300.0;
+    constexpr double dt = 1.0, tau = 50.0, T0 = 0.5; // lj units
     constexpr int n_dof = 6;
 
-    // Hot start cools, cold start warms.
-    for (double v : {0.05, 0.001}) {
+    // Hot start cools (T = 4/3), cold start warms (T = 1/12).
+    for (double v : {2.0, 0.5}) {
         cpu::Frame f = two_movers(1.0, v);
         const double T_before = temperature(f, n_dof);
         cpu::md::Berendsen th(T0, tau, dt);
@@ -96,14 +98,14 @@ TEST(Berendsen, MovesTemperatureTowardTheSetpointFromBothSides) {
 }
 
 TEST(Berendsen, UsesUpdatedConstraintDofWithoutRebuilding) {
-    auto frame = two_movers(1.0, 0.01);
+    // lj units: T = 0.4 over 5 dof, T₀ = 0.5, λ inside the clamp.
+    auto frame = two_movers(1.0, 1.0);
     auto ctx = make_ctx(6);
-    cpu::md::Berendsen thermostat(300.0, 100.0, 1.0);
+    cpu::md::Berendsen thermostat(0.5, 100.0, 1.0);
     thermostat.build({ctx, frame});
     ctx.md.n_dof_global = 5;
     const double before = temperature(frame, 5);
-    const double expected =
-        0.01 * std::sqrt(1.0 + 0.01 * (300.0 / before - 1.0));
+    const double expected = 1.0 * std::sqrt(1.0 + 0.01 * (0.5 / before - 1.0));
     thermostat.launch({ctx, frame, ATV::slot_of(md::Phase::end_of_step), 0});
     EXPECT_NEAR(frame.span(kAtom_vx)[0], expected, 1e-14);
     EXPECT_NEAR(frame.span(kAtom_vx)[1], expected, 1e-14);

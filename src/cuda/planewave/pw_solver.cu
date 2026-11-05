@@ -117,8 +117,12 @@ class PwConverged final : public cuda::Criterion {
 // The PW basis setup is host-side; density/orbitals stay in their device state.
 cpu::Frame host_geometry(const cuda::Frame& device, cudaStream_t stream) {
     const int n = device.n_atoms();
+    if (n > 0 && !device.atoms.atomic_number)
+        throw std::invalid_argument(
+            std::string("cuda::pw::PW: parent frame has no species column; ")
+            + atom_field_how_to("atomic_number"));
     if (n <= 0 || !device.atoms.x || !device.atoms.y || !device.atoms.z
-        || !device.atoms.type || !device.box)
+        || !device.box)
         throw std::invalid_argument("cuda::pw::PW: incomplete parent geometry");
     cpu::Frame host(n);
     const pos_t* primary[3] = {device.atoms.x, device.atoms.y, device.atoms.z};
@@ -157,7 +161,7 @@ cpu::Frame host_geometry(const cuda::Frame& device, cudaStream_t stream) {
                                            cudaMemcpyDeviceToHost, stream));
         }
     }
-    ATV_CUDA_CHECK(cudaMemcpyAsync(types.data(), device.atoms.type,
+    ATV_CUDA_CHECK(cudaMemcpyAsync(types.data(), device.atoms.atomic_number,
                                    n * sizeof(int), cudaMemcpyDeviceToHost,
                                    stream));
     ATV_CUDA_CHECK(cudaMemcpyAsync(cell, device.box, sizeof(cell),
@@ -165,7 +169,7 @@ cpu::Frame host_geometry(const cuda::Frame& device, cudaStream_t stream) {
     ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
     transfers.pending = false;
     auto x = host.span(kAtom_x), y = host.span(kAtom_y), z = host.span(kAtom_z);
-    auto type = host.span(kAtom_type);
+    auto type = host.span(kAtom_atomic_number);
     for (int i = 0; i < n; ++i) {
         x[i] = load_position(hi[0].data(), lo[0].data(), i);
         y[i] = load_position(hi[1].data(), lo[1].data(), i);

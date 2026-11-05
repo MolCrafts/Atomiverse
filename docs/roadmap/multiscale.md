@@ -28,7 +28,9 @@ corrections. Legend: [Roadmap index](index.md). Trajectory observers:
 ## 3. QM/MM
 
 Compose under one outer Driver: MM evaluator + `Qmmm*.set_engine(QM…)`.
-QM region = `kAtomQmZ` mask; link cuts derived from mask × bonds.
+QM region = `kAtomQm` membership mask (0/1); QM species from
+`kAtom_atomic_number`, MM pair tables from the force-field `kAtom_type`;
+link cuts derived from mask × bonds.
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |

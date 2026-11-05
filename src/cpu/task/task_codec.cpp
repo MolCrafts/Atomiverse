@@ -1,5 +1,5 @@
 /// @file cpu/task/task_codec.cpp
-/// @brief TaskSpec v5 typed-sum codec; no historic decoder.
+/// @brief TaskSpec v7 typed-sum codec; no historic decoder.
 
 #include "atomiverse/cpu/task/task_codec.h"
 
@@ -51,6 +51,31 @@ struct Writer {
         u64(values.size());
         for (int value : values)
             i32(value);
+    }
+    /// @brief Length-prefixed LJ rows: per row i32 type_i, i32 type_j,
+    ///        f64 epsilon, f64 sigma, u8 has_cutoff, f64 cutoff (0 if unset).
+    void lj_rows(const std::vector<LJTypeCoeff>& rows) {
+        u64(rows.size());
+        for (const LJTypeCoeff& c : rows) {
+            i32(c.type_i);
+            i32(c.type_j);
+            f64(c.epsilon);
+            f64(c.sigma);
+            u8(c.cutoff ? 1 : 0);
+            f64(c.cutoff.value_or(0.0));
+        }
+    }
+    /// @brief Length-prefixed r⁻⁴ rows: per row i32, i32, f64 S, f64 sigma,
+    ///        f64 cutoff.
+    void r4_rows(const std::vector<R4TypeCoeff>& rows) {
+        u64(rows.size());
+        for (const R4TypeCoeff& c : rows) {
+            i32(c.type_i);
+            i32(c.type_j);
+            f64(c.strength);
+            f64(c.sigma);
+            f64(c.cutoff);
+        }
     }
     void string(const std::string& value) {
         u64(value.size());
@@ -111,6 +136,50 @@ struct Reader {
             values.push_back(i32());
         return values;
     }
+    /// @brief Read rows written by `Writer::lj_rows`; the count is checked
+    ///        against the remaining bytes before any allocation.
+    std::vector<LJTypeCoeff> lj_rows() {
+        constexpr std::size_t row_bytes = 4 + 4 + 8 + 8 + 1 + 8;
+        const std::uint64_t n = u64();
+        if (n > (size - at) / row_bytes)
+            throw std::runtime_error("task_codec: truncated LJ row payload");
+        std::vector<LJTypeCoeff> rows;
+        rows.reserve(static_cast<std::size_t>(n));
+        for (std::uint64_t k = 0; k < n; ++k) {
+            LJTypeCoeff c{};
+            c.type_i = i32();
+            c.type_j = i32();
+            c.epsilon = f64();
+            c.sigma = f64();
+            const std::uint8_t has = u8();
+            const double cut = f64();
+            if (has > 1)
+                throw std::runtime_error("task_codec: bad LJ cutoff flag");
+            if (has)
+                c.cutoff = cut;
+            rows.push_back(c);
+        }
+        return rows;
+    }
+    /// @brief Read rows written by `Writer::r4_rows`.
+    std::vector<R4TypeCoeff> r4_rows() {
+        constexpr std::size_t row_bytes = 4 + 4 + 8 + 8 + 8;
+        const std::uint64_t n = u64();
+        if (n > (size - at) / row_bytes)
+            throw std::runtime_error("task_codec: truncated r^-4 row payload");
+        std::vector<R4TypeCoeff> rows;
+        rows.reserve(static_cast<std::size_t>(n));
+        for (std::uint64_t k = 0; k < n; ++k) {
+            R4TypeCoeff c{};
+            c.type_i = i32();
+            c.type_j = i32();
+            c.strength = f64();
+            c.sigma = f64();
+            c.cutoff = f64();
+            rows.push_back(c);
+        }
+        return rows;
+    }
     std::string string() {
         const std::uint64_t n = u64();
         if (n > size - at)
@@ -135,10 +204,9 @@ void write(Writer& w, const PairLJCutParams& p) {
     w.f64(p.s12);
     w.f64(p.s13);
     w.f64(p.s14);
-    w.vec_i32(p.type_i);
-    w.vec_i32(p.type_j);
-    w.vec(p.type_epsilon);
-    w.vec(p.type_sigma);
+    w.lj_rows(p.coeffs);
+    w.r4_rows(p.r4);
+    w.u8(p.tail ? 1 : 0);
     w.u8(p.energy_shift ? 1 : 0);
 }
 
@@ -150,10 +218,9 @@ PairLJCutParams read_pair_lj(Reader& r) {
     p.s12 = r.f64();
     p.s13 = r.f64();
     p.s14 = r.f64();
-    p.type_i = r.vec_i32();
-    p.type_j = r.vec_i32();
-    p.type_epsilon = r.vec();
-    p.type_sigma = r.vec();
+    p.coeffs = r.lj_rows();
+    p.r4 = r.r4_rows();
+    p.tail = r.u8() != 0;
     p.energy_shift = r.u8() != 0;
     return p;
 }
@@ -242,6 +309,23 @@ void write(Writer& w, const PairCoulCutParams& p) {
 void write(Writer& w, const CoulLongParams& p) {
     w.f64(p.alpha);
     w.f64(p.cutoff);
+}
+// Declaration order: rows, alpha, cutoff, six special weights, the shift
+// byte, r^-4 rows, the tail byte — `read_pair_lj_coul_long` reads the same
+// sequence.
+void write(Writer& w, const PairLJCutCoulLongParams& p) {
+    w.lj_rows(p.coeffs);
+    w.f64(p.alpha);
+    w.f64(p.cutoff);
+    w.f64(p.lj12);
+    w.f64(p.lj13);
+    w.f64(p.lj14);
+    w.f64(p.c12);
+    w.f64(p.c13);
+    w.f64(p.c14);
+    w.u8(p.energy_shift ? 1 : 0);
+    w.r4_rows(p.r4);
+    w.u8(p.tail ? 1 : 0);
 }
 void write(Writer& w, const KSpacePmeParams& p) {
     w.f64(p.alpha);
@@ -345,6 +429,22 @@ void write(Writer& w, const DihedralCharmmParams& p) {
 void write(Writer& w, const ImproperHarmonicParams& p) {
     w.vec(p.K);
     w.vec(p.chi0);
+}
+// One length-prefixed f64 run: the cosine style has no equilibrium angle.
+void write(Writer& w, const AngleCosineParams& p) { w.vec(p.K); }
+// Three doubles in x/y/z order [V/Å].
+void write(Writer& w, const FixEfieldParams& p) {
+    w.f64(p.Ex);
+    w.f64(p.Ey);
+    w.f64(p.Ez);
+}
+// Declaration order: length-prefixed path, cadence, commit cadence, the
+// durable byte.
+void write(Writer& w, const MrecRecorderParams& p) {
+    w.string(p.path);
+    w.i32(p.every);
+    w.u64(p.flush_every);
+    w.u8(p.durable ? 1 : 0);
 }
 void write(Writer& w, const LBFGSParams& p) {
     w.i32(p.memory);
@@ -508,6 +608,14 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::DihedralCharmm;
     case 35:
         return ComponentId::ImproperHarmonic;
+    case 36:
+        return ComponentId::PairLJCutCoulLong;
+    case 37:
+        return ComponentId::AngleCosine;
+    case 38:
+        return ComponentId::FixEfield;
+    case 39:
+        return ComponentId::MrecRecorder;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -615,6 +723,25 @@ PairBornParams read_born(Reader& r) {
     return p;
 }
 
+/// @brief Read the fused typed LJ + Ewald real-space fields in the order
+///        `write` laid them down.
+PairLJCutCoulLongParams read_pair_lj_coul_long(Reader& r) {
+    PairLJCutCoulLongParams p;
+    p.coeffs = r.lj_rows();
+    p.alpha = r.f64();
+    p.cutoff = r.f64();
+    p.lj12 = r.f64();
+    p.lj13 = r.f64();
+    p.lj14 = r.f64();
+    p.c12 = r.f64();
+    p.c13 = r.f64();
+    p.c14 = r.f64();
+    p.energy_shift = r.u8() != 0;
+    p.r4 = r.r4_rows();
+    p.tail = r.u8() != 0;
+    return p;
+}
+
 MDComponentParams read_md_params(Reader& r, ComponentId id) {
     switch (id) {
     case ComponentId::PairLJCut:
@@ -695,6 +822,15 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return DihedralCharmmParams{r.vec(), r.vec_i32(), r.vec()};
     case ComponentId::ImproperHarmonic:
         return ImproperHarmonicParams{r.vec(), r.vec()};
+    case ComponentId::PairLJCutCoulLong:
+        return read_pair_lj_coul_long(r);
+    case ComponentId::AngleCosine:
+        return AngleCosineParams{r.vec()};
+    case ComponentId::FixEfield:
+        return FixEfieldParams{r.f64(), r.f64(), r.f64()};
+    case ComponentId::MrecRecorder:
+        // Braced init: reads sequenced left to right, as `write` laid them.
+        return MrecRecorderParams{r.string(), r.i32(), r.u64(), r.u8() != 0};
     // Every Minimize-only optimizer shares one refusal arm: naming one in an
     // MD payload is a wrong-home error, not an unknown component.
     case ComponentId::LBFGS:
@@ -816,6 +952,7 @@ std::vector<std::byte> pack(const TaskSpec& spec) {
             write_variant(w, entry.params);
         }
         w.i64(task.n_steps);
+        w.u64(task.capture_buffer_bytes);
     } else if (spec.kind() == TaskKind::SinglePoint) {
         w.u16(static_cast<std::uint16_t>(ComponentId::AM1));
         write(w, spec.single_point().evaluator);
@@ -861,6 +998,7 @@ TaskSpec unpack(const std::byte* data, std::size_t size) {
                 MDComponentEntry{read_md_params(r, id), binding});
         }
         task.n_steps = r.i64();
+        task.capture_buffer_bytes = r.u64();
         r.require_end();
         return TaskSpec(std::move(task));
     }

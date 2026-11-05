@@ -26,7 +26,7 @@ namespace {
 
 /// @brief Generate Gaussian-distributed velocities at target temperature.
 ///
-/// v_i ~ N(0, sigma) where sigma = sqrt(kB*T / (ATV::units::mass_v2_to_energy * m_i)).
+/// v_i ~ N(0, sigma) where sigma = sqrt(kB*T / (ATV::units::md_mvv2e * m_i)).
 /// Uses cuRAND device API (per-thread state, Philox generator).
 __global__ void
 generate_velocities(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
@@ -137,9 +137,9 @@ void InitVelocity::build(const BuildContext& ctx) {
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(static_cast<int>(n));
 
-    // sigma^2 = kB * T / (ATV::units::mass_v2_to_energy * m)  =>  pass kB*T/ATV::units::mass_v2_to_energy as common factor
+    // sigma^2 = kB * T / (ATV::units::md_mvv2e * m)  =>  pass kB*T/ATV::units::md_mvv2e as common factor
     const mixed_t kbt_over_mvv2e = static_cast<mixed_t>(
-        ATV::units::kB_ev_per_k * temperature_ / ATV::units::mass_v2_to_energy);
+        ATV::units::md_boltz * temperature_ / ATV::units::md_mvv2e);
 
     // 1. Generate Gaussian velocities
     generate_velocities<<<grid, block, 0, stream>>>(
@@ -206,7 +206,7 @@ void InitVelocity::build(const BuildContext& ctx) {
         if (ke > 0) {
             const mixed_t factor =
                 mixed_t(sqrt(temperature_ * double(ctx.runtime.md.n_dof_global)
-                             * units::kB_ev_per_k / (2 * ke)));
+                             * units::md_boltz / (2 * ke)));
             cublasHandle_t handle = nullptr;
             if (cublasCreate(&handle) != CUBLAS_STATUS_SUCCESS)
                 throw std::runtime_error("InitVelocity: cublasCreate failed");

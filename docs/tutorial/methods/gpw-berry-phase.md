@@ -46,7 +46,7 @@ phases); electronic polarization
 \(p^\mathrm{el}=(\varphi_\uparrow+\varphi_\downarrow)/2\pi\), wrap quantum 1.
 
 ```cpp
-// frame: Si positions [Å], Z = 14 in kAtom_type, orthorhombic box [Å]
+// frame: Si positions [Å], Z = 14 in kAtom_atomic_number, orthorhombic box [Å]
 GpwDft m{{Si}, /*cutoff_ry=*/80.0, XcKind::PADE};
 m.n_alpha = 8; m.n_beta = 8; m.n_occ = 0;
 m.build(frame);

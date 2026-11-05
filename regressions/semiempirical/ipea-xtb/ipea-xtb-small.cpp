@@ -34,7 +34,7 @@ cpu::Frame make_ch4() {
     const double z[5] = {0, s, -s, -s, s};
     const int Z[5] = {6, 1, 1, 1, 1};
     for (int i = 0; i < 5; ++i) {
-        f.span(kAtom_type)[i] = Z[i];
+        f.span(kAtom_atomic_number)[i] = Z[i];
         f.span(kAtom_x)[i] = x[i];
         f.span(kAtom_y)[i] = y[i];
         f.span(kAtom_z)[i] = z[i];

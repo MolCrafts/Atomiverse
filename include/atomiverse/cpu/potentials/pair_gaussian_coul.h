@@ -54,6 +54,7 @@ class PairGaussianCoul : public Pair {
     /// @return This style's ghost declarations.
     static constexpr std::array kGhosts = {
         GhostField::read_stable(kAtom_charge, "PairGaussianCoul"),
+        GhostField::read_stable(kAtom_type, "PairGaussianCoul"),
     };
     std::span<const GhostField> declare_ghosts() const override {
         return kGhosts;

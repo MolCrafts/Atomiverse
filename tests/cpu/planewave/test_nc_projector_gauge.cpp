@@ -69,7 +69,7 @@ TEST(PWNCGaugeCPU, FinalBandForcesRetainTinySignedOccupations) {
     frame.span(kAtom_x)[0] = ws.atom_pos_bohr[0][0] * bohr;
     frame.span(kAtom_y)[0] = ws.atom_pos_bohr[0][1] * bohr;
     frame.span(kAtom_z)[0] = ws.atom_pos_bohr[0][2] * bohr;
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
 
     DensityBuilder density;
     density.prepare(ws);

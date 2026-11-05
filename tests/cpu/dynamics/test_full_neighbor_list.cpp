@@ -81,8 +81,8 @@ std::multiset<Key> listed(const cpu::Frame& f, const cpu::md::PairList& pairs,
     }
     return result;
 }
-void check_lists(cpu::Frame& f, cpu::md::CellList& cells, double reach) {
-    const auto expected_full = oracle(f, reach);
+void check_lists(cpu::Frame& f, cpu::md::CellList& cells,
+                 const std::set<Key>& expected_full) {
     std::set<Key> expected_half;
     for (auto key : expected_full)
         expected_half.insert(canonical(key));
@@ -99,6 +99,9 @@ void check_lists(cpu::Frame& f, cpu::md::CellList& cells, double reach) {
     EXPECT_EQ(full.inum, f.nlocal());
     EXPECT_EQ(half.inum, f.nlocal());
     EXPECT_EQ(full.total_pairs, 2 * half.total_pairs);
+}
+void check_lists(cpu::Frame& f, cpu::md::CellList& cells, double reach) {
+    check_lists(f, cells, oracle(f, reach));
 }
 } // namespace
 
@@ -152,9 +155,12 @@ TEST(FullNeighborList, ReusedParallelRowsMatchBruteForceAcrossTeamSizes) {
         cpu::md::CellList cells(2.6, .4);
         cells.init_extended(f, 3.0, fixture.context.md.dd, f.capacity());
         cells.build(f);
+        // The brute-force oracle does not depend on the team size; build it
+        // once so the four team sizes stay well inside the unit timeout.
+        const auto expected_full = oracle(f, 3.0);
         for (int threads : {4, 1, 2, 4}) {
             omp_set_num_threads(threads);
-            check_lists(f, cells, 3.0);
+            check_lists(f, cells, expected_full);
         }
     }
     omp_set_num_threads(saved);

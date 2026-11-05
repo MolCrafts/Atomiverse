@@ -58,7 +58,7 @@ void NphIntegrator::build(const cpu::BuildContext& ctx) {
             compute_global_KE(cpu::LaunchContext{ctx.runtime, ctx.frame, 0, 0});
         double kT = (n_dof_ > 0 && ke > 0.0)
                         ? (2.0 * ke / static_cast<double>(n_dof_))
-                        : (units::kB_ev_per_k * kTref_K);
+                        : (units::md_boltz * kTref_K);
         W_ = (static_cast<double>(n_dof_) + 3.0) * kT * tau_P2;
     }
 
@@ -80,7 +80,7 @@ double NphIntegrator::compute_global_KE(const cpu::LaunchContext& ctx) const {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::mass_v2_to_energy;
+    ke_local *= 0.5 * units::md_mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -109,9 +109,8 @@ NphIntegrator::compute_axis_KE(const cpu::LaunchContext& ctx) const {
         ky += m * sp_vy[i] * sp_vy[i];
         kz += m * sp_vz[i] * sp_vz[i];
     }
-    double ke[3] = {0.5 * units::mass_v2_to_energy * kx,
-                    0.5 * units::mass_v2_to_energy * ky,
-                    0.5 * units::mass_v2_to_energy * kz};
+    double ke[3] = {0.5 * units::md_mvv2e * kx, 0.5 * units::md_mvv2e * ky,
+                    0.5 * units::md_mvv2e * kz};
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -184,7 +183,7 @@ void NphIntegrator::kick_v_by_force(const cpu::LaunchContext& ctx,
                                     double half_dt) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const double dtf = half_dt * units::force_to_accel;
+    const double dtf = half_dt * units::md_ftm2v;
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);

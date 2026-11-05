@@ -299,9 +299,16 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     d.atoms.fz = d.atoms.fx + 2 * cap;
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.mass, cap * sizeof(cuda::mixed_t)));
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.charge, cap * sizeof(cuda::force_t)));
-    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.type, cap * sizeof(int)));
+    // The identity columns exist on the device only when the host Frame
+    // carries them (`atom_field_how_to`); a consumer checks for null.
+    const bool has_type = frame.has("atoms", kAtom_type.key);
+    const bool has_species = frame.has("atoms", kAtom_atomic_number.key);
+    if (has_type)
+        ATV_CUDA_CHECK(cudaMalloc(&d.atoms.type, cap * sizeof(int)));
+    if (has_species)
+        ATV_CUDA_CHECK(cudaMalloc(&d.atoms.atomic_number, cap * sizeof(int)));
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.tag, cap * sizeof(std::int64_t)));
-    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.image, 3 * cap * sizeof(std::int8_t)));
+    ATV_CUDA_CHECK(cudaMalloc(&d.atoms.image, 3 * cap * sizeof(ImageInt)));
 
     // System scalars: gather the host frame's typed meta into one
     // device-resident SystemScalars struct.
@@ -323,13 +330,18 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     copy_h2d(d.atoms.vz, frame.span(kAtom_vz).data(), n);
     copy_h2d(d.atoms.mass, frame.span(kAtom_mass).data(), n);
     copy_h2d(d.atoms.charge, frame.span(kAtom_charge).data(), n);
-    ATV_CUDA_CHECK(cudaMemcpy(d.atoms.type, frame.span(kAtom_type).data(),
-                              n * sizeof(int), cudaMemcpyHostToDevice));
+    if (has_type)
+        ATV_CUDA_CHECK(cudaMemcpy(d.atoms.type, frame.span(kAtom_type).data(),
+                                  n * sizeof(int), cudaMemcpyHostToDevice));
+    if (has_species)
+        ATV_CUDA_CHECK(cudaMemcpy(d.atoms.atomic_number,
+                                  frame.span(kAtom_atomic_number).data(),
+                                  n * sizeof(int), cudaMemcpyHostToDevice));
     ATV_CUDA_CHECK(cudaMemcpy(d.atoms.tag, frame.span(kAtom_tag).data(),
                               n * sizeof(std::int64_t),
                               cudaMemcpyHostToDevice));
     ATV_CUDA_CHECK(cudaMemcpy(d.atoms.image, frame.span(kAtom_image).data(),
-                              3 * n * sizeof(std::int8_t),
+                              3 * n * sizeof(ImageInt),
                               cudaMemcpyHostToDevice));
 
     ATV_CUDA_CHECK(cudaMemset(d.atoms.fx, 0, 3 * cap * sizeof(fixed_t)));
@@ -544,7 +556,7 @@ void update_inputs(const cpu::Frame& src, Frame& dst, InputChange changes) {
         upload_position(dst.atoms.z, dst.atoms.z_corr, src.span(kAtom_z).data(),
                         n);
         ATV_CUDA_CHECK(cudaMemcpy(dst.atoms.image, src.span(kAtom_image).data(),
-                                  3 * n * sizeof(std::int8_t),
+                                  3 * n * sizeof(ImageInt),
                                   cudaMemcpyHostToDevice));
     }
     if (has_input_change(changes, InputChange::Velocity)) {
@@ -595,7 +607,7 @@ void to_cpu(const Frame& d, cpu::Frame& frame, bool copy_forces) {
     // Per-atom PBC image counts (mutable: updated as atoms cross box faces)
     if (d.atoms.image)
         ATV_CUDA_CHECK(cudaMemcpy(frame.span(kAtom_image).data(), d.atoms.image,
-                                  3 * n * sizeof(std::int8_t),
+                                  3 * n * sizeof(ImageInt),
                                   cudaMemcpyDeviceToHost));
 
     // System scalars: read the device SystemScalars back and scatter into the
@@ -713,6 +725,7 @@ void destroy(Frame& d) {
     cudaFree(d.atoms.mass);
     cudaFree(d.atoms.charge);
     cudaFree(d.atoms.type);
+    cudaFree(d.atoms.atomic_number);
     cudaFree(d.atoms.tag);
     cudaFree(d.atoms.image);
     cudaFree(d.atoms.d_size);

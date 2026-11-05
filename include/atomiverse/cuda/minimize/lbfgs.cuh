@@ -140,8 +140,12 @@ class LBFGS : public cuda::Optimizer {
     mixed_t* d_dir_ =
         nullptr; ///< Search direction (3N, persists for rollback).
     mixed_t* d_alpha_ = nullptr; ///< Two-loop a_k scalars (memory).
-    acc_t* d_dot_ = nullptr;     ///< Device {dot, dir_max} scratch reductions.
-    acc_t* d_ys_ = nullptr;      ///< Device curvature product y·s.
+    /// Image flags at the last accepted step ([3N] row-major, as
+    /// `Frame::atoms.image`): a rollback re-takes the trial from x_prev, so
+    /// the crossings the rejected trial counted are undone with it.
+    ImageInt* d_image_prev_ = nullptr;
+    acc_t* d_dot_ = nullptr; ///< Device {dot, dir_max} scratch reductions.
+    acc_t* d_ys_ = nullptr;  ///< Device curvature product y·s.
     acc_t* d_ls_ =
         nullptr; ///< Device {applied α, g·d, origin energy} line-search scalars.
     acc_t* h_ys_ = nullptr; ///< Pinned mirror of d_ys_.

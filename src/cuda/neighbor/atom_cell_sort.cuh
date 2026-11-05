@@ -60,7 +60,7 @@ struct AtomCellSortBuffers {
     DeviceVector<fixed_t> stage_fixed;    ///< staging for fixed-point forces.
     DeviceVector<std::int64_t> stage_i64; ///< staging for one int64 column.
     DeviceVector<int> stage_i;            ///< staging for one int column.
-    DeviceVector<std::int8_t> stage_i8;   ///< staging for the image column.
+    DeviceVector<ImageInt> stage_image;   ///< staging for the image column.
 
     void resize(int n) {
         cell_key.resize(n);
@@ -75,7 +75,7 @@ struct AtomCellSortBuffers {
         stage_mixed.resize(n);
         stage_fixed.resize(n);
         stage_i.resize(n);
-        stage_i8.resize(static_cast<std::size_t>(n) * 3);
+        stage_image.resize(static_cast<std::size_t>(n) * 3);
     }
 
     /// Size the int64 staging to hold the widest bonded column (n * max_cols).

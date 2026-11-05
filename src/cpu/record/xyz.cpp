@@ -22,7 +22,7 @@ namespace {
 /// @brief Stopgap launch-boundary span resolution for a `const cpu::Frame&`.
 ///
 /// Extract one frame's raw arrays (atomic number, x, y, z, cell matrix H) for
-/// the molpy writer. `kAtom_type` carries Z (the engine keys species on the
+/// the molpy writer. `kAtom_atomic_number` carries Z (the engine keys species on the
 /// atomic number; `from_molpy` fills it from `atoms.atomic_number`), so it
 /// crosses as molpy' `atomic_number` unchanged.
 void extract(const Frame& frame, std::vector<std::uint64_t>& atomic_number,
@@ -30,7 +30,7 @@ void extract(const Frame& frame, std::vector<std::uint64_t>& atomic_number,
              std::vector<double>& z, std::array<double, 9>& box) {
     const int n = static_cast<int>(frame.nlocal());
     // Hoisted once before the loop -- the 13.7x rule.
-    const int* __restrict sp_type = frame.span(kAtom_type);
+    const int* __restrict sp_type = frame.span(kAtom_atomic_number);
     internal::molpy_atomic_numbers(sp_type, static_cast<std::size_t>(n),
                                    atomic_number, "cpu::XYZ");
     x.resize(n);

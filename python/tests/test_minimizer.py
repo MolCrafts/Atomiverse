@@ -87,9 +87,14 @@ def test_wrong_phase_fails_before_build() -> None:
         Minimize().on("md.force")
 
 
-def test_gpu_is_explicitly_deferred() -> None:
-    with pytest.raises(ValueError, match="(?i)gpu|cuda"):
-        Minimize(device="cuda")
+def test_cuda_device_follows_the_built_backend() -> None:
+    """A CUDA extension selects the native CUDA Minimize; a CPU-only one
+    refuses ``device="cuda"`` loudly instead of silently running on CPU."""
+    if hasattr(_cpp, "_CudaMinimize"):
+        assert Minimize(device="cuda").device == "cuda"
+    else:
+        with pytest.raises(ValueError, match="(?i)gpu|cuda"):
+            Minimize(device="cuda")
 
 
 def test_run_returns_control_result_and_mutates_same_frame(argon_frame: object) -> None:

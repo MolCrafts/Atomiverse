@@ -47,9 +47,11 @@ int run() try {
     }
     ATV::cuda::Evaluate eval;
     eval.set_neighbor(ATV::cuda::NeighborList{9, 1});
+    // OpenMM pins: unshifted LJ.
     eval.set_evaluator(ATV::cuda::PairLJCutCoulLong{
-        {0.1094 * ev, 0.17 * ev}, {3.39967, 3.000012}, 0.35, 9}
-                           .set_special_bonds_amber());
+        {{0, 0, 0.1094 * ev, 3.39967}, {1, 1, 0.17 * ev, 3.000012}}, 0.35, 9}
+                           .set_special_bonds_amber()
+                           .set_energy_shift(false));
     eval.set_evaluator(ATV::cuda::BondHarmonic{{300.9 * ev}, {1.5375}});
     eval.set_evaluator(
         ATV::cuda::AngleHarmonic{{46.4 * ev}, {109.560047 * units::pi / 180}});

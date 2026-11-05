@@ -10,9 +10,9 @@
 /// O(window · n_atoms) for the lag ring — never O(trajectory). No analysis
 /// math and no record type live in C++ — see molpy crates/molrs/src/compute/time_series/.
 ///
-/// Backend-uniform: regardless of the producing driver/backend, snapshots are
-/// delivered to the CPU analysis executor's ring buffer (CUDA frames after
-/// async D2H), so this observer is CPU-only by construction.
+/// Lossless: every step on the cadence reaches the accumulator through the
+/// driver's shared capture buffer (`cpu::CaptureBuffer`); a slow analysis
+/// makes the run wait, it never skips a frame.
 ///
 /// @see cpu::VACF (observer/vacf.h) for the same streaming async pattern.
 #pragma once
@@ -21,7 +21,6 @@
 #include <vector>
 
 #include "atomiverse/cpu/asynchronous/async_observer.h"
-#include "atomiverse/cpu/asynchronous/frame_snapshot.h"
 #include "atomiverse/cpu/observe/constant_count_gate.h"
 #include "atomiverse/cpu/observe/trajectory_metrics.h"
 
@@ -52,7 +51,8 @@ class MSD : public cpu::md::AsyncObserver {
   public:
     /// @param dt          time between captured frames [fs] (= timestep * freq;
     ///                    > 0).
-    /// @param freq        capture every `freq` steps (0 = every snapshot).
+    /// @param freq        sample cadence [steps]: the state after every `freq`-th
+    ///              completed step, step 0 included (0 = every step).
     /// @param output_file MSD(t) output path.
     /// @param window      max lag [captured frames] of the curve and the
     ///                    Einstein fit (>= 1); bounds the position ring to
@@ -69,8 +69,8 @@ class MSD : public cpu::md::AsyncObserver {
     /* role via Observer base */
     int frequency() const override { return freq_; }
 
-    cpu::CaptureMask capture_mask() const override {
-        cpu::CaptureMask m;
+    CaptureColumns capture_columns() const override {
+        CaptureColumns m;
         m.tags = true;
         m.positions = true;
         return m;

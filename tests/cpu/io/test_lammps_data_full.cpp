@@ -126,6 +126,8 @@ TEST(LammpsDataFull, LoadsChargeTypeCoords) {
     ASSERT_EQ(f.nlocal(), 2);
     EXPECT_EQ(f.span(kAtom_type)[0], 0);
     EXPECT_EQ(f.span(kAtom_type)[1], 1);
+    // A data file names types, not elements: no species is guessed.
+    EXPECT_FALSE(f.has("atoms", "atomic_number"));
     EXPECT_NEAR(static_cast<double>(f.span(kAtom_charge)[0]), -0.25, 1e-12);
     EXPECT_NEAR(static_cast<double>(f.span(kAtom_charge)[1]), 0.25, 1e-12);
     EXPECT_NEAR(static_cast<double>(f.span(kAtom_x)[0]), 1.0, 1e-12);
@@ -369,4 +371,31 @@ TEST(LammpsDataFull, TriclinicTiltThrows) {
     const std::string path = write_temp("tilt", text);
     EXPECT_THROW(load_lammps_data(path), std::runtime_error);
     std::remove(path.c_str());
+}
+
+// Trailing `ix iy iz` land in kAtom_image (no silent drop), beyond the old
+// int8 range; a non-integer flag throws.
+TEST(LammpsDataFull, ReadsTrailingImageFlags) {
+    const std::string row1 = "1 1 1 -0.25 1.0 2.0 3.0";
+    const std::string row2 = "2 1 2  0.25 1.5 2.0 3.0";
+    std::string text = kMiniFull;
+    text.replace(text.find(row1), row1.size(), row1 + " 300 -2 0");
+    text.replace(text.find(row2), row2.size(), row2 + " 0 1 -40000");
+    const std::string path = write_temp("image", text);
+    const Frame f = load_lammps_data(path);
+    std::remove(path.c_str());
+    const auto image = f.span(ATV::kAtom_image);
+    EXPECT_EQ(image(0, 0), 300);
+    EXPECT_EQ(image(0, 1), -2);
+    EXPECT_EQ(image(0, 2), 0);
+    EXPECT_EQ(image(1, 0), 0);
+    EXPECT_EQ(image(1, 1), 1);
+    EXPECT_EQ(image(1, 2), -40000);
+
+    std::string bad = kMiniFull;
+    bad.replace(bad.find(row1), row1.size(), row1 + " 0.5 0 0");
+    bad.replace(bad.find(row2), row2.size(), row2 + " 0 0 0");
+    const std::string bad_path = write_temp("image_bad", bad);
+    EXPECT_THROW(load_lammps_data(bad_path), std::runtime_error);
+    std::remove(bad_path.c_str());
 }

@@ -106,7 +106,7 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
 /// backends call it and then run their own SCF loop.
 ///
 /// @param frame     Input structure: geometry (positions [Å]), species
-///                  (type = Z) and cell.
+///                  (atomic_number = Z) and cell.
 /// @param potential Immutable scalar norm-conserving physical provider.
 /// @param ecut_ry   Wavefunction cutoff [Ry].
 /// @param k_mesh    Monkhorst-Pack mesh size per dimension.

@@ -121,7 +121,7 @@ double solve_induced_dipoles(int n, const double* pos, const double* alpha,
                 + mu[static_cast<std::size_t>(3 * i + 2)]
                       * e_perm[static_cast<std::size_t>(3 * i + 2)]);
     }
-    return units::coulomb * e;
+    return units::md_qqr2e * e;
 }
 
 QmmmPolarizable::QmmmPolarizable(std::vector<LJTypeCoeff> cross_lj,

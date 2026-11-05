@@ -145,10 +145,10 @@ struct VibHandle {
     ///
     /// `every=1, delay=0, check=yes` — the shape the phonon regressions build
     /// (`regressions/response/phonons`,
-    /// `regressions/response/phonons`). The MD params default of
-    /// `delay=10` is wrong here for the same reason it is wrong for Monte
-    /// Carlo: the displacement loop is not a trajectory, so "ten steps since
-    /// the last rebuild" bounds nothing. With the check ON the half-skin test
+    /// `regressions/response/phonons`), spelled out because a deferred check
+    /// is wrong here for the same reason it is wrong for Monte Carlo: the
+    /// displacement loop is not a trajectory, so "N steps since the last
+    /// rebuild" bounds nothing. With the check ON the half-skin test
     /// still decides, so a +/-1e-3 A displacement pattern pays for exactly one
     /// build rather than 6N of them.
     ///

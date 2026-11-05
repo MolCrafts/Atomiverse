@@ -153,6 +153,7 @@ struct MinimizeHandle {
         if constexpr (std::is_same_v<P, cpu::task::PairLJCutParams>
                       || std::is_same_v<P, cpu::task::PairCoulCutParams>
                       || std::is_same_v<P, cpu::task::CoulLongParams>
+                      || std::is_same_v<P, cpu::task::PairLJCutCoulLongParams>
                       || std::is_same_v<P, cpu::task::BondHarmonicParams>
                       || std::is_same_v<P, cpu::task::AngleHarmonicParams>
                       || std::is_same_v<P,
@@ -172,7 +173,10 @@ struct MinimizeHandle {
                       || std::is_same_v<P, cpu::task::PairDpdParams>
                       || std::is_same_v<P, cpu::task::BondFeneParams>
                       || std::is_same_v<P, cpu::task::DihedralCharmmParams>
-                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>)
+                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>
+                      || std::is_same_v<P, cpu::task::AngleCosineParams>
+                      // MD-only on the wire; locally a force source as well.
+                      || std::is_same_v<P, cpu::task::FixEfieldParams>)
             driver.set_evaluator(std::move(component));
 #ifdef ATV_HAS_KSPACE
         else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)

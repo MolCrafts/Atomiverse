@@ -16,6 +16,8 @@ as a convenience (identity, not copies:
 Canonical deep path                   Top-level re-export         C++ symbol
 =====================================  ==========================  =========================
 ``md.MD``                             ``MD``                      ``cpu::md::MD``
+``md.set_units``                      ``set_units``               ``units::set_style``
+``md.units_style``                    ``units_style``             ``units::active``
 ``md.integrator.VelocityVerlet``      ``VelocityVerlet``          ``cpu::md::VelocityVerlet``
 ``md.integrator.NoseHooverNPT``       ``NoseHooverNPT``           ``cpu::md::NoseHooverNPT``
 ``md.integrator.ParrinelloRahmanNPT`` ``ParrinelloRahmanNPT``     ``cpu::md::ParrinelloRahmanNPT``
@@ -25,6 +27,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``md.thermostat.CSVR``                ``CSVR``                    ``cpu::md::FixCSVR``
 ``md.barostat.BerendsenBarostat``     ``BerendsenBarostat``       ``cpu::md::Barostat``
 ``md.InitVelocity``                   ``InitVelocity``            ``cpu::md::InitVelocity``
+``md.FixEfield``                      ``FixEfield``               ``cpu::md::FixEfield``
 ``minimizer.Minimize``                ``Minimize``                ``cpu::minimizer::Minimize``
 ``minimizer.LBFGS``                   ``LBFGS``                   ``cpu::minimizer::LBFGS``
 ``minimizer.CG``                      ``CG``                      ``cpu::minimizer::CG``
@@ -39,6 +42,9 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``minimizer.MinimizeResult``          ``MinimizeResult``          ``cpu::task::TaskResult``
 ``neighbor.NeighborList``             ``NeighborList``            ``cpu::md::NeighborList<>``
 ``potentials.pair.LJCut``             ``PairLJCut``               ``cpu::PairLJCut``
+``potentials.pair.LJCutCoulLong``     ``PairLJCutCoulLong``       ``cpu::PairLJCutCoulLong``
+``potentials.pair.LJTypeCoeff``       ``LJTypeCoeff``             ``ATV::LJTypeCoeff``
+``potentials.pair.R4TypeCoeff``       ``R4TypeCoeff``             ``ATV::R4TypeCoeff``
 ``potentials.pair.CoulCut``           ``PairCoulCut``             ``cpu::PairCoulCut``
 ``potentials.pair.Morse``             ``PairMorse``               ``cpu::PairMorse``
 ``potentials.pair.Buck``              ``PairBuck``                ``cpu::PairBuck``
@@ -47,18 +53,19 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.pair.WCA``               ``PairWCA``                 ``cpu::PairWCA``
 ``potentials.pair.Dpd``               ``PairDpd``                 ``cpu::PairDpd``
 ``longrange.CoulLong``                ``CoulLong``                ``cpu::CoulLong``
-``longrange.LJCutCoulLong``           ``PairLJCutCoulLong``       ``cpu::PairLJCutCoulLong``
 ``longrange.KSpacePME``               ``KSpacePME``               ``cpu::KSpacePME``
 ``longrange.KSpacePPPM``              ``KSpacePPPM``              ``cpu::KSpacePPPM``
 ``potentials.bond.Harmonic``          ``BondHarmonic``            ``cpu::BondHarmonic``
 ``potentials.bond.Fene``              ``BondFene``                ``cpu::BondFene``
 ``potentials.angle.Harmonic``         ``AngleHarmonic``           ``cpu::AngleHarmonic``
+``potentials.angle.Cosine``           ``AngleCosine``             ``cpu::AngleCosine``
 ``potentials.dihedral.MultiHarmonic`` ``DihedralMultiHarmonic``   ``cpu::DihedralMultiHarmonic``
 ``potentials.dihedral.Charmm``        ``DihedralCharmm``          ``cpu::DihedralCharmm``
 ``potentials.improper.Harmonic``      ``ImproperHarmonic``        ``cpu::ImproperHarmonic``
 ``potentials.improper.Cvff``          ``ImproperCvff``            ``cpu::ImproperCvff``
 ``recorder.Thermo``                   ``Thermo``                  ``cpu::Thermo``
 ``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
+``recorder.MrecRecorder``             ``MrecRecorder``            ``cpu::MrecRecorder``
 ``montecarlo.MC``                     ``MC``                      ``cpu::mc::MC``
 ``montecarlo.NptMC``                  ``NptMC``                   ``cpu::mc::NptMc``
 ``montecarlo.GCMC``                   ``GCMC``                    ``cpu::mc::Gcmc``
@@ -140,15 +147,16 @@ Fumi-Tosi table with a +D/r⁸ core), ``PairYukawa`` (screened, chargeless),
 ``PairWCA`` (purely repulsive, cutoff derived from σ) and ``PairDpd``
 (dissipative particle dynamics — a thermostat as well as a potential, so it
 replaces rather than joins one). Bonded styles are ``BondHarmonic`` /
-``BondFene``, ``AngleHarmonic``, ``DihedralMultiHarmonic`` /
+``BondFene``, ``AngleHarmonic`` / ``AngleCosine``, ``DihedralMultiHarmonic`` /
 ``DihedralCharmm`` and ``ImproperHarmonic``, each reading the matching
 topology block of the frame and indexing its parameters by that block's
 type. Three practical notes. Among the *pair* styles only ``PairLJCut`` and
 the electrostatic ones consume a ``NeighborList``; the other six walk all
 pairs O(N²) and need none, so size the system accordingly (the bonded styles
 walk topology tuples, not pairs, and never take a neighbor list either).
-``PairBorn``'s type keys are ATOMIC NUMBERS, because that is what the frame's
-per-atom type column carries. And ``PairDpd`` thermostats as well as
+``PairBorn``'s type keys are FORCE-FIELD TYPES — the frame's
+``atoms.type_id`` column, not ``atomic_number`` (the species). And
+``PairDpd`` thermostats as well as
 interacts, so it *replaces* ``NoseHoover`` / ``Langevin`` / ``CSVR`` instead
 of joining them. All of them are unconditional — a real-space style has no
 build flag of its own — and ``help(atomiverse.potentials)`` gives the deep
@@ -203,6 +211,8 @@ __version__ = "0.1.0"
 # import time (avoids stale editable maps and circular loads).
 _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "MD": ("atomiverse.md", "MD"),
+    "set_units": ("atomiverse.md", "set_units"),
+    "units_style": ("atomiverse.md", "units_style"),
     "InitVelocity": ("atomiverse.md", "InitVelocity"),
     "VelocityVerlet": ("atomiverse.md.integrator", "VelocityVerlet"),
     "NoseHooverNPT": ("atomiverse.md.integrator", "NoseHooverNPT"),
@@ -227,6 +237,9 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "MinimizeResult": ("atomiverse.minimizer", "MinimizeResult"),
     "NeighborList": ("atomiverse.neighbor", "NeighborList"),
     "PairLJCut": ("atomiverse.potentials.pair", "LJCut"),
+    "PairLJCutCoulLong": ("atomiverse.potentials.pair", "LJCutCoulLong"),
+    "LJTypeCoeff": ("atomiverse.potentials.pair", "LJTypeCoeff"),
+    "R4TypeCoeff": ("atomiverse.potentials.pair", "R4TypeCoeff"),
     "PairCoulCut": ("atomiverse.potentials.pair", "CoulCut"),
     "PairMorse": ("atomiverse.potentials.pair", "Morse"),
     "PairBuck": ("atomiverse.potentials.pair", "Buck"),
@@ -235,18 +248,20 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "PairWCA": ("atomiverse.potentials.pair", "WCA"),
     "PairDpd": ("atomiverse.potentials.pair", "Dpd"),
     "CoulLong": ("atomiverse.longrange", "CoulLong"),
-    "PairLJCutCoulLong": ("atomiverse.longrange", "LJCutCoulLong"),
     "KSpacePME": ("atomiverse.longrange", "KSpacePME"),
     "KSpacePPPM": ("atomiverse.longrange", "KSpacePPPM"),
     "BondHarmonic": ("atomiverse.potentials.bond", "Harmonic"),
     "BondFene": ("atomiverse.potentials.bond", "Fene"),
     "AngleHarmonic": ("atomiverse.potentials.angle", "Harmonic"),
+    "AngleCosine": ("atomiverse.potentials.angle", "Cosine"),
+    "FixEfield": ("atomiverse.md", "FixEfield"),
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
     "DihedralCharmm": ("atomiverse.potentials.dihedral", "Charmm"),
     "ImproperHarmonic": ("atomiverse.potentials.improper", "Harmonic"),
     "ImproperCvff": ("atomiverse.potentials.improper", "Cvff"),
     "Thermo": ("atomiverse.recorder", "Thermo"),
     "XYZ": ("atomiverse.recorder", "XYZ"),
+    "MrecRecorder": ("atomiverse.recorder", "MrecRecorder"),
     "MC": ("atomiverse.montecarlo", "MC"),
     "NptMC": ("atomiverse.montecarlo", "NptMC"),
     "GCMC": ("atomiverse.montecarlo", "GCMC"),
@@ -307,6 +322,8 @@ _NAME_DOMAINS: dict[str, str] = {
 # carries, computed on first access in `__getattr__`.
 _PUBLIC: tuple[str, ...] = (
     "MD",
+    "set_units",
+    "units_style",
     "VelocityVerlet",
     "NoseHooverNPT",
     "ParrinelloRahmanNPT",
@@ -330,6 +347,9 @@ _PUBLIC: tuple[str, ...] = (
     "StressConverged",
     "MinimizeResult",
     "PairLJCut",
+    "PairLJCutCoulLong",
+    "LJTypeCoeff",
+    "R4TypeCoeff",
     "PairCoulCut",
     "PairMorse",
     "PairBuck",
@@ -338,11 +358,12 @@ _PUBLIC: tuple[str, ...] = (
     "PairWCA",
     "PairDpd",
     "CoulLong",
-    "PairLJCutCoulLong",
     "NeighborList",
     "BondHarmonic",
     "BondFene",
     "AngleHarmonic",
+    "AngleCosine",
+    "FixEfield",
     "DihedralMultiHarmonic",
     "DihedralCharmm",
     "ImproperHarmonic",

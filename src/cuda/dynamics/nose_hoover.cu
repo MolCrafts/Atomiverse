@@ -3,11 +3,15 @@
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
+#include <cmath>
 #include <cuda_runtime.h>
+#include <stdexcept>
+#include <string>
 
 namespace ATV {
 
@@ -25,7 +29,21 @@ struct NoseHoover::State {
 
 NoseHoover::NoseHoover(double T_target, double tau, double dt)
     : T_target_(T_target), tau_(tau), dt_(dt),
-      state_(std::make_unique<State>()) {}
+      state_(std::make_unique<State>()) {
+    if (!(T_target > 0.0) || !std::isfinite(T_target) || !(tau > 0.0)
+        || !std::isfinite(tau) || !(dt > 0.0) || !std::isfinite(dt))
+        throw std::invalid_argument(
+            "cuda::md::NoseHoover: T_target [K], tau [fs] and dt [fs] must be "
+            "finite and > 0");
+}
+
+void NoseHoover::set_timestep(double dt_fs) {
+    if (!(dt_fs > 0.0) || !std::isfinite(dt_fs))
+        throw std::invalid_argument(
+            "cuda::md::NoseHoover: timestep must be finite and > 0 fs, got "
+            + std::to_string(dt_fs));
+    dt_ = dt_fs;
+}
 
 NoseHoover::~NoseHoover() = default;
 NoseHoover::NoseHoover(NoseHoover&&) noexcept = default;
@@ -102,42 +120,50 @@ __global__ void scale_vel(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
 
 void NoseHoover::build(const BuildContext& ctx) {
     state_->ndof = ctx.runtime.md.n_dof_global;
-    state_->Q = static_cast<mixed_t>(state_->ndof * ATV::units::kB_ev_per_k
+    state_->Q = static_cast<mixed_t>(state_->ndof * ATV::units::md_boltz
                                      * T_target_ * tau_ * tau_);
 
-    cudaMalloc(&state_->d_xi, sizeof(mixed_t));
-    cudaMalloc(&state_->d_ke_temp, sizeof(acc_t));
-    cudaMalloc(&state_->d_scale, sizeof(mixed_t));
-    cudaMalloc(&state_->d_block_count, sizeof(unsigned int));
-    cudaMemset(state_->d_xi, 0, sizeof(mixed_t));
-    cudaMemset(state_->d_block_count, 0, sizeof(unsigned int));
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_xi, sizeof(mixed_t)));
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_ke_temp, sizeof(acc_t)));
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_scale, sizeof(mixed_t)));
+    ATV_CUDA_CHECK(cudaMalloc(&state_->d_block_count, sizeof(unsigned int)));
+    ATV_CUDA_CHECK(cudaMemset(state_->d_xi, 0, sizeof(mixed_t)));
+    ATV_CUDA_CHECK(cudaMemset(state_->d_block_count, 0, sizeof(unsigned int)));
 
     // Initialize scale to 1.0
     const mixed_t one = mixed_t(1);
-    cudaMemcpy(state_->d_scale, &one, sizeof(mixed_t), cudaMemcpyHostToDevice);
+    ATV_CUDA_CHECK(cudaMemcpy(state_->d_scale, &one, sizeof(mixed_t),
+                              cudaMemcpyHostToDevice));
 }
 
 void NoseHoover::launch(const LaunchContext& ctx) {
+    // No thermal bath (e.g. one atom after COM removal): keep velocities and
+    // xi, as cpu::md::NoseHoover does, instead of dividing by Q = 0. The DOF
+    // count is fixed at build (identity edits rebuild), so this branches on
+    // a build-time host value, never on device state.
+    if (state_->ndof <= 0)
+        return;
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& f = ctx.frame;
     int n = f.n_atoms();
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(static_cast<int>(n));
 
-    const mixed_t ndof_kbT = static_cast<mixed_t>(
-        state_->ndof * ATV::units::kB_ev_per_k * T_target_);
+    const mixed_t ndof_kbT =
+        static_cast<mixed_t>(state_->ndof * ATV::units::md_boltz * T_target_);
     const mixed_t half_dt = mixed_t(0.5 * dt_);
 
     // Fused: reduce KE + update xi/scale (last block computes scale)
     cudaMemsetAsync(state_->d_ke_temp, 0, sizeof(acc_t), stream);
     reduce_ke_and_update<<<grid, block, 0, stream>>>(
         f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.mass, state_->d_ke_temp, n,
-        ATV::units::mass_v2_to_energy, state_->d_xi, state_->d_scale, state_->Q,
+        ATV::units::md_mvv2e, state_->d_xi, state_->d_scale, state_->Q,
         ndof_kbT, half_dt, state_->d_block_count, f.force_fault);
 
     // Scale velocities (reads scale written by the last block above)
     scale_vel<<<grid, block, 0, stream>>>(f.atoms.vx, f.atoms.vy, f.atoms.vz,
                                           state_->d_scale, n, f.force_fault);
+    ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 void NoseHoover::destroy(const DestroyContext& ctx) {

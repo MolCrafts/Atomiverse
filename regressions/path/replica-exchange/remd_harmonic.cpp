@@ -53,7 +53,7 @@ double weight(double r, double beta) {
 /// Exact mean acceptance of one exchange attempt between slots at Ti and Tj:
 ///     ⟨min(1, exp[(β_i−β_j)(U_i−U_j)])⟩ over P_i(r) P_j(r').
 double accept_exact(double t_i, double t_j) {
-    const double kb = units::kB_ev_per_k;
+    const double kb = units::md_boltz;
     const double bi = 1.0 / (kb * t_i), bj = 1.0 / (kb * t_j);
     const double s_max = std::sqrt(kb * std::max(t_i, t_j) / kSpring);
     const double lo = std::max(0.0, kR0 - 9.0 * s_max);
@@ -173,7 +173,7 @@ int run() {
     // Collapse writes the lowest-T slot; positions must remain finite, and the
     // bond must still be a bond (the spring cannot break, so anything outside
     // r0 +- 9 sigma at T0 means the trajectory left the model).
-    const double sigma0 = std::sqrt(units::kB_ev_per_k * T[0] / kSpring);
+    const double sigma0 = std::sqrt(units::md_boltz * T[0] / kSpring);
     double dx = f.span(kAtom_x)[0] - f.span(kAtom_x)[1];
     double dy = f.span(kAtom_y)[0] - f.span(kAtom_y)[1];
     double dz = f.span(kAtom_z)[0] - f.span(kAtom_z)[1];

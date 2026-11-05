@@ -35,11 +35,11 @@ int run() {
     }
 
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.0;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.0;
     frame.span(kAtom_z)[1] = 0.74;

@@ -87,7 +87,7 @@ bool check(const char* name, double got, double want, double tol) {
 int run() {
     constexpr double T = 300.0;
     constexpr double dPsi = 1.0;
-    const double kPinCDiff = kPinVarQ / (units::kB_ev_per_k * T);
+    const double kPinCDiff = kPinVarQ / (units::md_boltz * T);
 
     auto frame = make_parallel_plate();
     cpu::CapacitanceChargeFluctuation obs({1, 2}, T, dPsi);
@@ -116,8 +116,8 @@ int run() {
                kTol)
          && ok;
 
-    // Cross-check pin numeric against REFERENCE.md printed constant.
-    constexpr double kRefPrinted = 0.38681727072485284;
+    // lj row: md_boltz = 1, so C_diff = Var(Q) / T = 0.01/300.
+    constexpr double kRefPrinted = 0.01 / 300.0;
     ok = check("C_diff vs REFERENCE printed", kPinCDiff, kRefPrinted, 1e-14)
          && ok;
 

@@ -226,7 +226,7 @@ void UHF::cache_host_types(const cpu::Frame& frame) {
     host_Z_.resize(static_cast<std::size_t>(n > 0 ? n : 0));
     if (n <= 0)
         return;
-    const auto type = frame.span(kAtom_type);
+    const auto type = frame.span(kAtom_atomic_number);
     for (int i = 0; i < n; ++i)
         host_Z_[static_cast<std::size_t>(i)] = type[i];
 }
@@ -249,22 +249,27 @@ void UHF::assemble_(cuda::Context& ctx, cuda::Frame& frame, bool host_current) {
         throw std::invalid_argument(
             "cuda::scf::UHF: device frame has no atoms");
     }
+    if (!frame.atoms.atomic_number)
+        throw std::invalid_argument(
+            std::string("cuda::scf::UHF: device frame has no "
+                        "species column; ")
+            + atom_field_how_to("atomic_number"));
     auto stream = static_cast<cudaStream_t>(ctx.stream);
     // Host entry points already inspected the exact incoming identity. Nested
     // entries compare on device and return only a boolean; coordinates can
     // change without repeatedly transferring the nuclear-charge array.
     const bool changed =
         host_current
-        || !loop_->identity.matches(frame.atoms.type, natm, stream);
+        || !loop_->identity.matches(frame.atoms.atomic_number, natm, stream);
     if (changed) {
         if (!host_current) {
             host_Z_.resize(static_cast<std::size_t>(natm));
-            ATV_CUDA_CHECK(cudaMemcpyAsync(host_Z_.data(), frame.atoms.type,
-                                           natm * sizeof(int),
-                                           cudaMemcpyDeviceToHost, stream));
+            ATV_CUDA_CHECK(cudaMemcpyAsync(
+                host_Z_.data(), frame.atoms.atomic_number, natm * sizeof(int),
+                cudaMemcpyDeviceToHost, stream));
             ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
         }
-        loop_->identity.record(frame.atoms.type, natm, stream);
+        loop_->identity.record(frame.atoms.atomic_number, natm, stream);
     }
     if (!device_sp_sto3g_ok(basis, host_Z_.data(), natm)) {
         throw std::invalid_argument(

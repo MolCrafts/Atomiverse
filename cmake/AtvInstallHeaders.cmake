@@ -13,7 +13,8 @@ function(atv_install_headers target)
     endif()
     if(NOT ATV_BUILD_MD)
         list(APPEND excluded "^(cpu|cuda)/dynamics/" "^cpu/electrodes/"
-            "^cuda/communication/multi_gpu\\.cuh$")
+            "^cuda/communication/multi_gpu\\.cuh$"
+            "^cuda/record/(pressure_series|mrec_recorder)\\.cuh$")
     endif()
     if(NOT ATV_BUILD_MC)
         list(APPEND excluded "^cpu/montecarlo/")
@@ -77,6 +78,7 @@ function(atv_install_headers target)
         # LAMMPS data/coefficient readers are in the always-on source set.
         list(APPEND excluded "^cpu/io/(frame_writer|extxyz)\\.h$"
             "^cpu/record/(xyz|xyz_recorder|mrec|mrec_recorder)\\.h$"
+            "^cuda/record/mrec_recorder\\.cuh$"
             "^cpu/minimize/(trajectory_writer|final_geometry)\\.h$")
     endif()
     if(NOT ATV_BUILD_MOLPY)

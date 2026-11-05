@@ -152,7 +152,7 @@ void NDDOSolver::scf_prepare(const cpu::Frame& frame) {
     result_.converged = false;
     result_.forces_ev_a.clear();
     validate_supported_atoms_(frame);
-    const auto species = frame.span(kAtom_type);
+    const auto species = frame.span(kAtom_atomic_number);
     bool same_system = frame.nlocal() == n_atoms_;
     for (int i = 0; same_system && i < n_atoms_; ++i)
         same_system = species[i] == system_.atoms[i].atomic_number;
@@ -595,7 +595,7 @@ void NDDOSolver::validate_supported_atoms_(const cpu::Frame& frame) const {
         for (const auto& axis : coordinates)
             if (!std::isfinite(axis[i]))
                 throw std::invalid_argument("NDDO non-finite coordinate");
-    const int* __restrict sp_type = frame.span(kAtom_type);
+    const int* __restrict sp_type = frame.span(kAtom_atomic_number);
     for (int i = 0; i < frame.nlocal(); ++i) {
         const int z = sp_type[i];
         if (!ATV::semiempirical::nddo_has_parameter(config_.method, z)) {

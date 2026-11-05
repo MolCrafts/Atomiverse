@@ -5,7 +5,8 @@
 /// build():   allocates PairList + internal buffers + device control words;
 ///            pre-sizes CUB sort/scan temps so no rebuild allocates.
 /// launch(): one graph launch per step. A skin-gate kernel decides on the
-///            device whether the current positions need a rebuild and sets
+///            device whether the current positions and cell (LAMMPS
+///            check_distance box-corner shrink) need a rebuild and sets
 ///            a conditional node whose body is the full Hilbert → CSR →
 ///            mask pipeline. No host readback (iron law 10).
 /// destroy(): frees PairList, graph and buffers.
@@ -81,8 +82,6 @@ struct NeighborList::State {
     // Cached force-path scalars (computed once in build())
     force_t cut_skin_sq = force_t(0);
     force_t cutoff_sq = force_t(0);
-    force_t half_skin_sq =
-        force_t(0); // (skin/2)² — Verlet-skin trigger threshold
 
     bool first_launch = true;
     std::uint64_t epoch = 0; // bumps when the active set changes
@@ -135,8 +134,6 @@ void NeighborList::build(const BuildContext& ctx) {
     // Cache squared cutoffs so launch() doesn't recompute every step.
     s.cut_skin_sq = r_search * r_search;
     s.cutoff_sq = force_t(cutoff_) * force_t(cutoff_);
-    force_t half_skin = force_t(skin_) * force_t(0.5);
-    s.half_skin_sq = half_skin * half_skin;
 
     // Hilbert keys need the inverse cell; the hierarchy needs no cell grid,
     // atom-sized stencil, or dimensions readback.
@@ -437,8 +434,8 @@ void NeighborList::launch(const LaunchContext& ctx) {
                 launch_skin_gate<force_t>(
                     frame.atoms.x, frame.atoms.y, frame.atoms.z,
                     s.buf.ref_x.data(), s.buf.ref_y.data(), s.buf.ref_z.data(),
-                    n, s.half_skin_sq, ctx.runtime.host_box,
-                    s.reference_box.data(), s.control.data(), handle, stream);
+                    n, skin_, ctx.runtime.host_box, s.reference_box.data(),
+                    s.control.data(), handle, stream);
             },
             [&](cudaStream_t body) {
                 enqueue_hierarchy(args, ctx, body);
@@ -484,9 +481,8 @@ void NeighborList::launch(const LaunchContext& ctx) {
                     launch_skin_gate<force_t>(
                         frame.atoms.x, frame.atoms.y, frame.atoms.z,
                         s.buf.ref_x.data(), s.buf.ref_y.data(),
-                        s.buf.ref_z.data(), n, s.half_skin_sq,
-                        ctx.runtime.host_box, s.reference_box.data(),
-                        s.control.data(), handle, cs);
+                        s.buf.ref_z.data(), n, skin_, ctx.runtime.host_box,
+                        s.reference_box.data(), s.control.data(), handle, cs);
                 } catch (...) {
                     cudaGraph_t discard = nullptr;
                     cudaStreamEndCapture(cs, &discard);

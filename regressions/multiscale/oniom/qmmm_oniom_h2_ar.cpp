@@ -54,13 +54,14 @@ cpu::Frame make_water_mm() {
     const double xyz[][3] = {
         {0, 0, 0}, {0.96, 0, 0}, {-0.24, 0.93, 0.1}, {5.0, 0.3, 0.2}};
     frame.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
     for (int i = 0; i < 4; ++i) {
-        frame.span(kAtom_type)[i] = species[i];
+        frame.span(kAtom_type)[i] = species[i]; // LJ table key
+        frame.span(kAtom_atomic_number)[i] = species[i];
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_mass)[i] = 1;
-        frame.span(cpu::kAtomQmZ)[i] = i == 3 ? 0 : species[i];
+        frame.span(cpu::kAtomQm)[i] = i == 3 ? 0 : 1;
         frame.span(kAtom_x)[i] = xyz[i][0];
         frame.span(kAtom_y)[i] = xyz[i][1];
         frame.span(kAtom_z)[i] = xyz[i][2];
@@ -81,7 +82,7 @@ bool check_nddo_qmmm_history() {
             tolerance);
         return false;
     };
-    const std::vector<cpu::LJTypeCoeff> lj = {
+    const std::vector<LJTypeCoeff> lj = {
         {1, 1, 0.01, 1.2}, {8, 8, 0.02, 2.5}, {18, 18, 0.02, 3.0}};
     cpu::QmmmMechanical plain_qm{lj, 10}, probe_qm{lj, 10};
     plain_qm.set_engine_ref(normal);
@@ -147,7 +148,8 @@ bool check_nddo_qmmm_history() {
             cpu::Frame bare(3);
             bare.box = a.box;
             for (int i = 0; i < 3; ++i) {
-                bare.span(kAtom_type)[i] = a.span(kAtom_type)[i];
+                bare.span(kAtom_atomic_number)[i] =
+                    a.span(kAtom_atomic_number)[i];
                 bare.span(kAtom_x)[i] = a.span(kAtom_x)[i];
                 bare.span(kAtom_y)[i] = a.span(kAtom_y)[i];
                 bare.span(kAtom_z)[i] = a.span(kAtom_z)[i];
@@ -253,9 +255,12 @@ int run() {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_x)[2] = 5.0;
-    f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_type)[0] = 1; // LJ table keys
     f.span(kAtom_type)[1] = 1;
     f.span(kAtom_type)[2] = 18;
+    f.span(kAtom_atomic_number)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 18;
     for (int i = 0; i < 3; ++i) {
         f.span(kAtom_tag)[i] = i + 1;
         f.span(kAtom_mass)[i] = (i < 2) ? 1.0 : 40.0;
@@ -264,11 +269,11 @@ int run() {
     }
     f.box = cpu::Box::cubic(30);
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
-    f.span(cpu::kAtomQmZ)[2] = 0;
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
+    f.span(cpu::kAtomQm)[2] = 0;
 
     const double eps = 0.01, sigma = 3.4, cut = 12.0;
     cpu::QmmmOniom oniom{{{1, 1, eps, sigma}, {18, 18, eps, sigma}}, cut};

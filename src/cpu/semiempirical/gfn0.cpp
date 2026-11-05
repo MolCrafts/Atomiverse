@@ -1032,7 +1032,7 @@ void GFN0::launch(const LaunchContext& ctx) {
     if (n_at < 1)
         throw std::invalid_argument("GFN0: empty frame");
 
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     StorageReal* x = f.span(kAtom_x);
     StorageReal* y = f.span(kAtom_y);
     StorageReal* z = f.span(kAtom_z);

@@ -28,7 +28,7 @@ ATV::cpu::Frame water_frame() {
     };
     const int Z[3] = {8, 1, 1};
     for (int i = 0; i < 3; ++i) {
-        frame.span(ATV::kAtom_type)[i] = Z[i];
+        frame.span(ATV::kAtom_atomic_number)[i] = Z[i];
         frame.span(ATV::kAtom_x)[i] = static_cast<ATV::StorageReal>(xyz[i][0]);
         frame.span(ATV::kAtom_y)[i] = static_cast<ATV::StorageReal>(xyz[i][1]);
         frame.span(ATV::kAtom_z)[i] = static_cast<ATV::StorageReal>(xyz[i][2]);

@@ -25,34 +25,37 @@ using namespace ATV;
 
 namespace {
 
-void insert_qm_z(cpu::Frame& f) {
+void insert_qm_mask(cpu::Frame& f) {
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
 }
 
 cpu::Frame make_embed_h2o() {
     cpu::Frame f(5);
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_type)[0] = 8;
     f.span(kAtom_z)[0] = 0.1173;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[1] = 1;
     f.span(kAtom_y)[1] = 0.7572;
     f.span(kAtom_z)[1] = -0.4692;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_type)[2] = 1;
     f.span(kAtom_y)[2] = -0.7572;
     f.span(kAtom_z)[2] = -0.4692;
-    f.span(kAtom_type)[3] = 99;
+    f.span(kAtom_type)[3] = 99; // MM site type
     f.span(kAtom_z)[3] = 3.0;
     f.span(kAtom_charge)[3] = 0.5;
-    f.span(kAtom_type)[4] = 99;
+    f.span(kAtom_type)[4] = 99; // MM site type
     f.span(kAtom_z)[4] = -3.0;
     f.span(kAtom_charge)[4] = -0.5;
     for (int i = 0; i < 5; ++i)
         f.span(kAtom_tag)[i] = i + 1;
     f.box = cpu::Box::cubic(20.0);
-    insert_qm_z(f);
-    auto qm = f.span(cpu::kAtomQmZ);
-    qm[0] = 8;
+    insert_qm_mask(f);
+    auto qm = f.span(cpu::kAtomQm);
+    qm[0] = 1;
     qm[1] = 1;
     qm[2] = 1;
     qm[3] = 0;

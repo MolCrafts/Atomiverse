@@ -62,7 +62,7 @@ class QmSubsystem {
 
     /// @brief Resolve mask, derive links from bond topology, allocate private
     ///        frame, prepare engine.
-    /// @param ctx Parent build context with `kAtomQmZ` filled. Covalent QM/MM cuts are
+    /// @param ctx Parent build context with `kAtomQm` filled. Covalent QM/MM cuts are
     ///        **derived** from `num_bond`/`bond_atom` × mask (no bonds ⇒ zero
     ///        links). There is no `set_links` / `links()` user API.
     /// @param mpi_size Communicator size (v1 requires 1).
@@ -109,7 +109,7 @@ class QmSubsystem {
     bool reset_history_each_launch_ = false;
 
     std::vector<int> qm_rows_; ///< User-frame rows of real QM atoms.
-    std::vector<int> qm_z_;    ///< Atomic numbers from mask.
+    std::vector<int> qm_z_;    ///< Species Z of the QM rows.
     std::vector<ResolvedLink> resolved_links_;
     std::unordered_set<TagInt> link_mm_tags_;
 

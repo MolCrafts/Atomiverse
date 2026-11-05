@@ -46,7 +46,7 @@ int run() {
     constexpr double L = 12.0;
     constexpr double R = 1.2075;
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 8;
+        frame.span(kAtom_atomic_number)[i] = 8;
         frame.span(kAtom_mass)[i] = 15.999;
         frame.span(kAtom_x)[i] = 0.5 * L;
         frame.span(kAtom_y)[i] = 0.5 * L;

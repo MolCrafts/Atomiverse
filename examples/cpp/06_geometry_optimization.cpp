@@ -78,7 +78,7 @@ static cpu::Frame make_aspirin() {
     };
 
     for (int i = 0; i < 21; ++i) {
-        f.span(ATV::kAtom_type)[i] = types[i];
+        f.span(ATV::kAtom_atomic_number)[i] = types[i];
         f.span(ATV::kAtom_mass)[i] = masses[i];
         f.span(ATV::kAtom_x)[i] = coords[i][0];
         f.span(ATV::kAtom_y)[i] = coords[i][1];
@@ -151,7 +151,7 @@ int main() {
     ATV_INFO("[example] final coordinates [Angstrom]");
     const char* symbols[] = {"", "H", "He", "Li", "Be", "B", "C", "N", "O"};
     for (int i = 0; i < frame.nlocal(); ++i) {
-        int Z = static_cast<int>(frame.span(ATV::kAtom_type)[i]);
+        int Z = static_cast<int>(frame.span(ATV::kAtom_atomic_number)[i]);
         ATV_INFO("  {:>2s} {:12.6f} {:12.6f} {:12.6f}", symbols[Z],
                  frame.span(ATV::kAtom_x)[i], frame.span(ATV::kAtom_y)[i],
                  frame.span(ATV::kAtom_z)[i]);

@@ -32,16 +32,16 @@ using namespace ATV;
 int run() {
     // ── Rahman (1964) liquid argon ───────────────────────────────────────
     // eps/kB = 120 K, sigma = 3.4 A, number density 0.02071 A^-3, T = 94.4 K.
-    const double eps = 120.0 * units::kB_ev_per_k; // 0.010341 eV
-    const double sigma = 3.4;                      // [A]
-    const double cutoff = 2.5 * sigma;     // 8.5 A, the textbook LJ cutoff
-    const double skin = 0.5;               // [A]
-    const double number_density = 0.02071; // [A^-3]
-    const double temperature = 94.4;       // [K]
-    const double dt = 5.0;                 // [fs]  (Rahman used 10 fs)
-    const int n_side = 6;                  // 6^3 = 216 atoms
-    const int n_steps = 2000;              // 10 ps
-    const int n_chunks = 20;               // sample the drift 20x along the way
+    const double eps = 120.0 * units::md_boltz; // 0.010341 eV
+    const double sigma = 3.4;                   // [A]
+    const double cutoff = 2.5 * sigma;          // 8.5 A, the textbook LJ cutoff
+    const double skin = 0.5;                    // [A]
+    const double number_density = 0.02071;      // [A^-3]
+    const double temperature = 94.4;            // [K]
+    const double dt = 5.0;                      // [fs]  (Rahman used 10 fs)
+    const int n_side = 6;                       // 6^3 = 216 atoms
+    const int n_steps = 2000;                   // 10 ps
+    const int n_chunks = 20; // sample the drift 20x along the way
 
     // A simple-cubic lattice at the target density. The box must exceed twice
     // the cutoff so the minimum-image convention is unambiguous.

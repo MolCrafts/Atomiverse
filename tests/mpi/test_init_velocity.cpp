@@ -33,7 +33,7 @@ TEST(InitVelocity, GlobalComAndTargetTemperatureWithOneAtomPerRank) {
     for (int d = 0; d < 3; ++d)
         EXPECT_NEAR(global[d], 0, 1e-12);
     const double temperature =
-        global[3] * ATV::units::mass_v2_to_energy
-        / (context.md.n_dof_global * ATV::units::kB_ev_per_k);
+        global[3] * ATV::units::md_mvv2e
+        / (context.md.n_dof_global * ATV::units::md_boltz);
     EXPECT_NEAR(temperature, 300, 1e-9);
 }

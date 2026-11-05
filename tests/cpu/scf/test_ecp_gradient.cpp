@@ -28,7 +28,7 @@ namespace {
 /// A single iodine atom with def2-SVP + def2-ECP (Z_val = 25).
 cpu::scf::internal::IntegralWorkspace iodine_pack() {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 53; // I
+    f.span(kAtom_atomic_number)[0] = 53; // I
     f.box = cpu::Box::cubic(50.0);
     return cpu::scf::internal::IntegralWorkspace{f, BasisSet::Def2SVP, 0, false,
                                                  "def2-ECP"};
@@ -52,7 +52,7 @@ cpu::scf::internal::ScfGradient make_grad(cpu::scf::SpinType spin) {
 /// atom ECP gradient is zero by translational invariance; ROHF/GHF ECP throw.
 TEST(EcpGradient, RhfEcpRunsSiblingsThrowSingleAtomZeroForce) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 53; // I
+    f.span(kAtom_atomic_number)[0] = 53; // I
     f.box = cpu::Box::cubic(50.0);
     const cpu::scf::internal::IntegralWorkspace p{f, BasisSet::Def2SVP, 0,
                                                   false, "def2-ECP"};

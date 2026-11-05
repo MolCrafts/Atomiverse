@@ -75,7 +75,12 @@ def n_atoms() -> int:
 
 @pytest.fixture
 def argon_frame(n_atoms: int) -> "molpy.Frame":
-    """Single-type Ar molpy.Frame on a simple cubic lattice."""
+    """Single-type Ar molpy.Frame on a simple cubic lattice.
+
+    Carries both identity columns: ``atomic_number`` (the species, Z = 18)
+    and ``type_id`` (the force-field type, 1) — a per-type pair table keys
+    on the second, never on the first.
+    """
     xs, ys, zs, box_len = _argon_columns(n_atoms)
     frame = molpy.Frame()
     atoms = molpy.Block()
@@ -84,6 +89,7 @@ def argon_frame(n_atoms: int) -> "molpy.Frame":
     atoms.insert("z", zs)
     atoms.insert("mass", np.full(n_atoms, 39.948, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n_atoms, 18, dtype=np.uint32))
+    atoms.insert("type_id", np.full(n_atoms, 1, dtype=np.uint32))
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(box_len)
     return frame

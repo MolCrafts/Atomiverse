@@ -7,6 +7,8 @@
 /// `PairCoulCut` / `coul/long` for the Coulomb term).
 #pragma once
 
+#include <array>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -90,6 +92,16 @@ class PairBorn : public Pair {
 
     /// @brief True when a per-type coefficient table is active.
     bool is_multi_type() const { return multi_; }
+
+    /// @brief The per-type table reads the neighbour's force-field type.
+    static constexpr std::array kTypedGhosts = {
+        GhostField::read_stable(kAtom_type, "PairBorn"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        if (multi_)
+            return kTypedGhosts;
+        return {};
+    }
 
     /// @brief O(N²) path: withdraw neighbor-list gate.
     const NeighborConsumer* as_neighbor_consumer() const final {

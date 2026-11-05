@@ -38,7 +38,7 @@ cpu::Frame make_scf_system(int n) {
         frame.span(kAtom_y)[i] = double(0);
         frame.span(kAtom_z)[i] = double(0);
         frame.span(kAtom_mass)[i] = double(1);
-        frame.span(kAtom_type)[i] = 0;
+        frame.span(kAtom_atomic_number)[i] = 0;
     }
     frame.box = cpu::Box::cubic(100.0);
     return frame;

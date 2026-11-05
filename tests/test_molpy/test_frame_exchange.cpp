@@ -72,9 +72,10 @@ TEST(MolpyFrameExchange, MissingAtomsBlockThrows) {
     EXPECT_THROW(ATV::cpu::from_molpy(*fr), std::runtime_error);
 }
 
-// Species cross as Z only. A frame spelling symbols alone is refused with the
-// conversion named; after the explicit molpy conversion
-// (frame_fill_atomic_numbers) it materializes with Z in kAtom_type.
+// Species cross as Z only. A frame spelling symbols alone carries no species
+// column, and reading one names the conversion; after the explicit molpy
+// conversion (frame_fill_atomic_numbers) it materializes with Z in
+// kAtom_atomic_number. Symbols are never read as types either.
 TEST(MolpyFrameExchange, ElementSymbolsNeedTheExplicitConversion) {
     auto fr = molrs::frame_new();
     const std::vector<double> x = {0.0, 0.96};
@@ -92,20 +93,26 @@ TEST(MolpyFrameExchange, ElementSymbolsNeedTheExplicitConversion) {
         *fr, "atoms", "element",
         ::rust::Slice<const ::rust::String>(symbols.data(), symbols.size()));
 
-    try {
-        (void)ATV::cpu::from_molpy(*fr);
-        FAIL() << "from_molpy accepted a frame without atomic_number";
-    } catch (const std::runtime_error& e) {
-        EXPECT_NE(std::string(e.what()).find("fill_atomic_numbers"),
-                  std::string::npos)
-            << e.what();
+    {
+        const ATV::cpu::Frame symbols_only = ATV::cpu::from_molpy(*fr);
+        EXPECT_FALSE(symbols_only.has("atoms", "atomic_number"));
+        EXPECT_FALSE(symbols_only.has("atoms", "type"));
+        try {
+            (void)symbols_only.span(ATV::kAtom_atomic_number);
+            FAIL() << "a symbols-only frame must not carry species";
+        } catch (const std::runtime_error& e) {
+            EXPECT_NE(std::string(e.what()).find("fill_atomic_numbers"),
+                      std::string::npos)
+                << e.what();
+        }
     }
 
     molrs::frame_fill_atomic_numbers(*fr);
     ATV::cpu::Frame frame = ATV::cpu::from_molpy(*fr);
     ASSERT_EQ(frame.nlocal(), 2);
-    EXPECT_EQ(frame.span(ATV::kAtom_type)[0], 8);
-    EXPECT_EQ(frame.span(ATV::kAtom_type)[1], 1);
+    EXPECT_EQ(frame.span(ATV::kAtom_atomic_number)[0], 8);
+    EXPECT_EQ(frame.span(ATV::kAtom_atomic_number)[1], 1);
+    EXPECT_FALSE(frame.has("atoms", "type"));
 }
 
 } // namespace

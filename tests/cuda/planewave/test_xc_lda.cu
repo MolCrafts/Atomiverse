@@ -14,7 +14,7 @@
 
 using ATV::cpu::xc::evaluate_xc;
 using ATV::cpu::xc::XCType;
-using ATV::cuda::pw::internal::kXcEnergyPartials;
+using ATV::cuda::xc::kXcEnergyPartials;
 using ATV::cuda::xc::xc_lsda_grid;
 
 namespace {

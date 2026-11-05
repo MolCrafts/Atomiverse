@@ -622,7 +622,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     ///        `frame.meta[kEnergy]`; Hartree internals via `energy()`,
     ///        loop state via `converged()`/`stop_reason()`/`iterations()`,
     ///        wavefunction via `determinant()`.
-    /// @param frame  Geometry (Å) + Z in type column.
+    /// @param frame  Geometry (Å) + Z in the atomic_number column.
     /// @param guess  Optional density guess.
     /// @throws std::logic_error when `cpmd` is set — Car–Parrinello is a
     ///         nested-MD-force-slot method (there is no nuclear trajectory

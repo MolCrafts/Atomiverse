@@ -288,7 +288,7 @@ void UHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws,
                     cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(ws.d_ao_cart, h_ao_cart.data(), n * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
-    cudaMemcpyAsync(ws.d_atom_Z, ctx.frame.atoms.type,
+    cudaMemcpyAsync(ws.d_atom_Z, ctx.frame.atoms.atomic_number,
                     static_cast<std::size_t>(natm) * sizeof(int),
                     cudaMemcpyDeviceToDevice, stream);
 

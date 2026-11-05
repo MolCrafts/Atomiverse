@@ -121,6 +121,9 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "StressConverged",
         "MinimizeResult",
         "PairLJCut",
+        "PairLJCutCoulLong",
+        "LJTypeCoeff",
+        "R4TypeCoeff",
         "PairCoulCut",
         "CoulLong",
         "NeighborList",
@@ -177,8 +180,12 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "BondFene",
         "DihedralCharmm",
         "ImproperHarmonic",
-        # Amber/GAFF styles for molpy force fields (atomiverse.forcefield).
-        "PairLJCutCoulLong",
+        # NVT SLLOD (CPU + CUDA) and the coarse-grained polymer-electrolyte
+        # pair: the cosine bending angle and the uniform electric field.
+        "NvtSllod",
+        "AngleCosine",
+        "FixEfield",
+        # The Amber/GAFF improper of molpy force fields (atomiverse.forcefield).
         "ImproperCvff",
     }
 )
@@ -299,7 +306,7 @@ class TestCanonicalSurface:
 
     def test_public_names_are_the_honest_surface(self) -> None:
         """The public candidate list is fixed; availability filters __all__."""
-        assert len(_CANONICAL_ALL) == 78
+        assert len(_CANONICAL_ALL) == 82
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:
@@ -382,8 +389,12 @@ class TestPWSurface:
         """The analytic in-tree GTH path runs from Python and returns a
         finite energy [Ry] — 'runs, underconverged' contract at ecut 8 Ry
         and one k-point, no new reference values."""
+        from atomiverse.pw import GthPseudopotential
+
         # Si, in-tree analytic GTH; no file
-        pw = av.PW(gth_name="GTH-PBE-q4", ecut_ry=8.0, k_mesh=1)
+        pw = av.PW(
+            potential=GthPseudopotential(14, "GTH-PBE-q4"), ecut_ry=8.0, k_mesh=1
+        )
         pw.max_iter = 5
         pw.build(silicon_frame)
         result = pw.run(silicon_frame)
@@ -393,11 +404,11 @@ class TestPWSurface:
 
     @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
     def test_no_pseudopotential_raises(self) -> None:
-        """A plane-wave run has no default pseudopotential: leaving both
-        `gth_name` and `upf_path` empty fails loud at construction instead
+        """A plane-wave run has no default pseudopotential: `potential` is a
+        required keyword, so omitting it fails loud at construction instead
         of running a bare valence-charge potential that no cutoff
         converges."""
-        with pytest.raises(ValueError):
+        with pytest.raises(TypeError):
             av.PW(ecut_ry=8.0, k_mesh=1)
 
     @pytest.mark.skipif(_HAS_PW, reason="extension built with ATV_BUILD_PW")

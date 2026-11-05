@@ -28,7 +28,7 @@ int run() {
     // kills KE for N=1). BOMD product path still runs full SCF+analytic
     // forces every step.
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
     frame.span(kAtom_mass)[0] = 1.008;
     frame.span(kAtom_tag)[0] = 1;
     frame.span(kAtom_x)[0] = 0.0;

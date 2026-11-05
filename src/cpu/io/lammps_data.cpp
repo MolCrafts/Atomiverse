@@ -17,8 +17,10 @@
 #include "atomiverse/cpu/frame/frame.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -175,6 +177,7 @@ void read_atoms(DataReader& in, const std::string& path, Frame& frame,
     int* __restrict sp_type = frame.span(kAtom_type);
     StorageReal* __restrict sp_mass = frame.span(kAtom_mass);
     StorageReal* __restrict sp_q = frame.span(kAtom_charge);
+    ImageInt* __restrict sp_image = frame.span(kAtom_image).data();
 
     int next_idx = 0;
     bool style_known = false, is_full = false;
@@ -219,6 +222,20 @@ void read_atoms(DataReader& in, const std::string& path, Frame& frame,
         sp_type[idx] = atype - 1; // 0-indexed
         sp_q[idx] = static_cast<StorageReal>(q);
         sp_mass[idx] = static_cast<StorageReal>(mass->second);
+        // Trailing `ix iy iz` (LAMMPS Atom::data_atoms): the unwrapped
+        // position is x + H·image, so dropping them would silently reset
+        // every unwrapped consumer (MSD, FixEfield energy) to the wrapped
+        // start. Flags must be integers in the ImageInt range.
+        if (v.size() == want + 3)
+            for (int d = 0; d < 3; ++d) {
+                const double flag = v[want + static_cast<std::size_t>(d)];
+                if (flag != std::trunc(flag)
+                    || flag < std::numeric_limits<ImageInt>::min()
+                    || flag > std::numeric_limits<ImageInt>::max())
+                    die(path, "image flag is not an int32 integer: " + l);
+                sp_image[3 * static_cast<std::size_t>(idx) + d] =
+                    static_cast<ImageInt>(flag);
+            }
     }
 }
 
@@ -231,6 +248,11 @@ Frame load_lammps_data(const std::string& path) {
     if (h.atoms <= 0)
         die(path, "header reports zero atoms");
     Frame frame(static_cast<int>(h.atoms));
+    // A data file names force-field types, never elements: the Atoms type
+    // column lands in kAtom_type and the Frame carries no species column (a
+    // mass is not an element — Z is never guessed from it). A consumer that
+    // needs Z throws with the how-to (`atom_field_how_to`).
+    frame.block("atoms").erase(kAtom_atomic_number.key);
 
     std::unordered_map<int, double> type_to_mass;
     std::unordered_map<long long, int> id_to_idx;

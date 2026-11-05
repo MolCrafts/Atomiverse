@@ -78,10 +78,6 @@ int run() {
     // Dipoles are pure Gaussian-unit geometry (the Coulomb constant never
     // enters μ = αE), so they gate at 1e-9 relative; measured 2.6e-14.
     const double tol_mu_rel = 1e-9;
-    // Energy and force carry ATV's units::coulomb = 14.399645 eV·Å/e², an
-    // 8-digit truncation of the exact 14.399645478456…, i.e. a hard
-    // −3.3227e-08 relative floor. Measured deviation is exactly that value;
-    // after rescaling by the constant the agreement is 6e-14.
     const double tol_ef_rel = 1e-7;
 
     cpu::Frame frame_mw(2);
@@ -96,9 +92,13 @@ int run() {
 
     const double mu0_au = pim_mw.last_mu()[0] / kBohr_Ang;
     const double mu1_au = pim_mw.last_mu()[3] / kBohr_Ang;
-    const double epol_ha = frame_mw.meta.get(kEnergy) / kHartree_eV;
-    const double f0_au = frame_mw.span(kAtom_fx)[0] * kBohr_Ang / kHartree_eV;
-    const double f1_au = frame_mw.span(kAtom_fx)[1] * kBohr_Ang / kHartree_eV;
+    // Engine energy and force are the lj row. 1 Ha·bohr = units::coulomb eV·Å.
+    const double ke = units::coulomb;
+    const double epol_ha = frame_mw.meta.get(kEnergy) * ke / kHartree_eV;
+    const double f0_au =
+        frame_mw.span(kAtom_fx)[0] * ke * kBohr_Ang / kHartree_eV;
+    const double f1_au =
+        frame_mw.span(kAtom_fx)[1] * ke * kBohr_Ang / kHartree_eV;
 
     std::printf("[MW gate] thole_a=0, %d SCC iters\n", pim_mw.last_pol_iters());
     std::printf("  mu0  = %.16e e.a0   MW %.16e  rel %+.3e\n", mu0_au,
@@ -141,9 +141,12 @@ int run() {
     // MetalWalls has no Thole damping (grep 'thole' over the MetalWalls tree
     // at c8ad175d: zero hits). Closed-form two-site Applequist SCC with
     // van Duijnen/Swart exponential λ3/λ5/λ7; see REFERENCE.md.
-    const double E_pin = -0.12040946414707571; // [eV]
-    const double f0x_pin = 0.040341072868572643;
-    const double f1x_pin = -0.040341072868572643;
+    // Closed-form pins were eV (qqr2e = units::coulomb). Engine multiplies
+    // md_qqr2e, once, on energy and force. Dipoles do not carry it.
+    const double e_scale = units::md_qqr2e / units::coulomb;
+    const double E_pin = -0.12040946414707571 * e_scale;
+    const double f0x_pin = 0.040341072868572643 * e_scale;
+    const double f1x_pin = -0.040341072868572643 * e_scale;
     const double tol_e = 1e-9;
     const double tol_f = 1e-8;
 

@@ -156,7 +156,7 @@ TEST(HRemd, ReplicasAreThermostattedAtTheFixedTemperature) {
 
     const double ke = f.meta.get(ATV::kKinetic); // [eV], slot 0
     const double ndof = 3.0 * f.nlocal() - 3.0;
-    const double t_meas = 2.0 * ke / (ndof * units::kB_ev_per_k);
+    const double t_meas = 2.0 * ke / (ndof * units::md_boltz);
 
     // sqrt(2/Ndof) = 10% instantaneous spread at 189 DOF; 25% is a couple of
     // those and nowhere near where an unthermostatted replica lands.

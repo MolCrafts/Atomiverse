@@ -199,8 +199,9 @@ void launch_scatter_and_aabb(const int* sorted_indices, const pos_t* pos_x,
                              force_t* aabb_max_y, force_t* aabb_max_z,
                              cudaStream_t stream = 0);
 
-/// Current-step skin gate. Every block reduces "an atom moved more than half
-/// the skin, or the cell differs from the reference cell"; the last block
+/// Current-step skin gate. Every block reduces "an atom moved more than the
+/// LAMMPS check_distance trigger (half the skin less the reference-cell
+/// corner motion), or the cell motion alone consumed the skin"; the last block
 /// folds in the forced flag, publishes
 /// `control->rebuilt`, advances the rebuild count and mask generation, and
 /// sets the conditional rebuild handle. Must run inside the graph that owns
@@ -209,7 +210,7 @@ template <typename T>
 void launch_skin_gate(const pos_t* pos_x, const pos_t* pos_y,
                       const pos_t* pos_z, const pos_t* ref_x,
                       const pos_t* ref_y, const pos_t* ref_z, int num_atoms,
-                      T half_skin_sq, Box box, const Box* reference_box,
+                      double skin, Box box, const Box* reference_box,
                       Control* control, cudaGraphConditionalHandle handle,
                       cudaStream_t stream = 0);
 

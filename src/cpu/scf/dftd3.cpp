@@ -44,7 +44,7 @@ gpw::D3Result evaluate_d3bj(const Frame& frame, double s6, double s8, double a1,
     if (n <= 0)
         return empty;
 
-    const auto type = frame.span(kAtom_type);
+    const auto type = frame.span(kAtom_atomic_number);
     const auto x = frame.span(kAtom_x);
     const auto y = frame.span(kAtom_y);
     const auto z = frame.span(kAtom_z);

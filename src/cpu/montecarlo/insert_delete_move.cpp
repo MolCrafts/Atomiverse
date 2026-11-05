@@ -14,10 +14,13 @@ namespace ATV {
 namespace cpu {
 namespace mc {
 
-InsertDeleteMove::InsertDeleteMove(int type, double mass_amu)
-    : type_(type), mass_amu_(mass_amu) {
+InsertDeleteMove::InsertDeleteMove(int type, int atomic_number, double mass_amu)
+    : type_(type), atomic_number_(atomic_number), mass_amu_(mass_amu) {
     if (type <= 0)
         throw std::invalid_argument("InsertDeleteMove: type must be > 0");
+    if (atomic_number < 0 || atomic_number > 118)
+        throw std::invalid_argument(
+            "InsertDeleteMove: atomic_number must be in 0..118");
     if (!(mass_amu > 0.0))
         throw std::invalid_argument("InsertDeleteMove: mass must be > 0 amu");
 }
@@ -57,9 +60,16 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
         AccReal* __restrict sp_fy = ctx.frame.span(kAtom_fy);
         AccReal* __restrict sp_fz = ctx.frame.span(kAtom_fz);
         StorageReal* __restrict sp_charge = ctx.frame.span(kAtom_charge);
-        Span<std::int8_t> sp_image = ctx.frame.span(kAtom_image);
+        Span<ImageInt> sp_image = ctx.frame.span(kAtom_image);
         StorageReal* __restrict sp_mass = ctx.frame.span(kAtom_mass);
-        int* __restrict sp_type = ctx.frame.span(kAtom_type);
+        // Identity columns are stamped where the Frame carries them.
+        int* __restrict sp_type = ctx.frame.has("atoms", kAtom_type.key)
+                                      ? ctx.frame.span(kAtom_type).data()
+                                      : nullptr;
+        int* __restrict sp_species =
+            ctx.frame.has("atoms", kAtom_atomic_number.key)
+                ? ctx.frame.span(kAtom_atomic_number).data()
+                : nullptr;
         TagInt* __restrict sp_tag = ctx.frame.span(kAtom_tag);
 
         const int slot = nlocal;
@@ -94,7 +104,10 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
             nspecial(slot, 2) = 0;
         }
         sp_mass[slot] = static_cast<StorageReal>(mass_amu_);
-        sp_type[slot] = type_;
+        if (sp_type)
+            sp_type[slot] = type_;
+        if (sp_species)
+            sp_species[slot] = atomic_number_;
         sp_tag[slot] = ctx.frame.acquire_tag();
         ctx.frame.set_nlocal(nlocal + 1);
     } else {

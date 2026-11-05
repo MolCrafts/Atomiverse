@@ -7,6 +7,7 @@
 // certain rights. Distributed under the GNU General Public License.
 
 #include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/cpu/component/recorder.h"
 
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/stage.h"
@@ -83,7 +84,7 @@ int linear_force_slot(PhaseKind kind) {
 } // namespace
 
 Runtime::Runtime() = default;
-Runtime::~Runtime() { shutdown(); } // idempotent; releases cart_comm + executor
+Runtime::~Runtime() { shutdown(); } // idempotent; releases cart_comm + capture
 Runtime::Runtime(Runtime&&) noexcept = default;
 Runtime& Runtime::operator=(Runtime&&) noexcept = default;
 
@@ -128,8 +129,10 @@ void Runtime::init() {
     // Communication: allocate + publish the DomainDecomposition; build topology.
     domain_.allocate(context_);
 
-    // Asynchronous: start the analysis pipeline.
-    analysis_.start(context_);
+    // Asynchronous: publish the shared capture buffer (allocated when the
+    // first run starts with consumers subscribed).
+    context_.capture.buffer = capture_.get();
+    capture_->reset_stats();
 }
 
 void Runtime::set_frame(cpu::Frame& frame) {
@@ -215,7 +218,10 @@ InputChange Runtime::refresh_external_inputs() {
         // Readers must finish before mappings or row extents are refreshed.
         // Input hooks update local owned caches; force/halo collectives start
         // only after every rank has completed this boundary successfully.
-        analysis_.drain();
+        // A consumer failure stays pending for the end-of-run drain.
+        capture_->drain(/*raise=*/false);
+        if (has_input_change(changes, InputChange::Identity))
+            capture_->invalidate(); // re-laid out for the new population
         forces_ready_ = false;
         contracts_ready_ = false;
         verlet_setup_done_ = false;
@@ -290,7 +296,7 @@ void Runtime::refresh_plan_(BigInt step_idx) {
     if (force_bindings != force_bindings_)
         forces_ready_ = false;
     force_bindings_ = std::move(force_bindings);
-    analysis_.drain();
+    capture_->drain(/*raise=*/false);
     TimerRegistry& timing = device_.timing();
     // Register one timing handle per op (component name + phase + category
     // rollup), precomputed so the hot step loop never re-classifies / allocates.
@@ -359,7 +365,7 @@ void Runtime::launch_op_(std::size_t s, std::size_t o, BigInt step_idx) {
         || plan_->kind == PhaseKind::Minimizer || plan_->kind == PhaseKind::Vib
         || (plan_->kind == PhaseKind::MD
             && active_slot_ != slot_of(ATV::md::Phase::end_of_step));
-    if (op.frequency > 0 && step_idx % op.frequency != 0)
+    if (op.frequency > 0 && step_idx % op.frequency != op.frequency_phase)
         return;
     LaunchContext ctx{context_,
                       *frame_,
@@ -533,13 +539,14 @@ void Runtime::cache_verlet_comm_() {
 void Runtime::apply_ghost_cutoff_() {
     if (verlet_.neighbor)
         verlet_.neighbor->activate(context_);
-    cpu::Comm* comm = context_.md.comm;
-    if (!comm)
-        return;
     // A wider coordinate dependency needs the same relative-displacement
     // margin as the neighbor list, not a fixed percentage of its radius.
     const double skin =
         verlet_.neighbor ? verlet_.neighbor->validated_skin() : 0;
+    context_.md.neighbor_skin = skin;
+    cpu::Comm* comm = context_.md.comm;
+    if (!comm)
+        return;
     const double reach =
         std::max(verlet_.provider_reach, verlet_.consumer_halo_cutoff + skin);
     comm->set_ghost_cutoff(reach);
@@ -621,8 +628,13 @@ void Runtime::decide_neighbor_() {
     // LAMMPS Min::init drops delay/every/check for a minimization; only an MD
     // plan runs the cadence.
     const bool md_cadence = plan_ && plan_->kind == PhaseKind::MD;
+    // LAMMPS Neighbor::decide: a fix's next_reneighbor is honoured before
+    // the delay/every/check cadence (src/neighbor.cpp, SHA e8c4c278a8).
+    const bool requested = context_.md.reneighbor_requested;
+    context_.md.reneighbor_requested = false;
     context_.md.reneighbor =
-        !verlet_.neighbor || (plan_ && plan_->kind == PhaseKind::Sampling)
+        requested || !verlet_.neighbor
+        || (plan_ && plan_->kind == PhaseKind::Sampling)
         || verlet_.neighbor->decide_reneighbor(context_, *frame_, md_cadence);
     sync_reneighbor_flag(context_);
 }
@@ -821,6 +833,10 @@ void Runtime::step_verlet_(BigInt step_idx) {
 
 void Runtime::prepare_run(BigInt step_idx) {
     DispatchScope dispatch(this);
+    // The capture buffer is (re)allocated only when its consumer set or the
+    // population changed at a run boundary; otherwise this is a flag test.
+    if (frame_)
+        capture_->ensure(*frame_);
     if (plan_ && plan_->kind == PhaseKind::MD
         && !context_.exec.forces_requested)
         throw std::runtime_error(
@@ -917,8 +933,73 @@ void Runtime::prepare_run(BigInt step_idx) {
     forces_ready_ = true;
 }
 
+namespace {
+
+/// The end-of-iteration slot output hooks run in, or -1 for a plan kind
+/// that has no per-run output (only MD and minimization do).
+int output_slot(const Plan<cpu::Component>* plan) {
+    if (!plan)
+        return -1;
+    if (plan->kind == PhaseKind::MD)
+        return slot_of(ATV::md::Phase::end_of_step);
+    if (plan->kind == PhaseKind::Minimizer)
+        return slot_of(ATV::minimizer::Phase::end_of_step);
+    return -1;
+}
+
+} // namespace
+
+void Runtime::output_pass_(BigInt step_idx, bool final) {
+    DispatchScope dispatch(this);
+    const int phase = output_slot(plan_);
+    if (phase < 0)
+        return;
+    for (auto* component : plan_->components()) {
+        LaunchContext ctx{context_, *frame_, phase, step_idx};
+        const auto window = frame_->resolution_window();
+        struct RestoreWindow {
+            Frame& frame;
+            ResolutionWindow saved;
+            ~RestoreWindow() { frame.restore_resolution_window(saved); }
+        } restore_window{*frame_, window};
+        frame_->begin_resolution_window(kResolveBudgetPerLaunch);
+        if (final)
+            component->final_output(ctx);
+        else
+            component->setup_output(ctx);
+        frame_->end_resolution_window(component->name().c_str());
+    }
+}
+
+bool single_pass_output(const LaunchContext& ctx) {
+    const Runtime* runtime = ctx.runtime.exec.runtime;
+    return runtime && runtime->active_kind() == PhaseKind::Evaluate;
+}
+
+void Runtime::setup_output(BigInt step_idx) {
+    // LAMMPS src/output.cpp Output::setup, e8c4c278a8. Copyright (2003)
+    // Sandia Corporation. GPL-2.0-only. Called by Run::command at the start
+    // of every run — after Verlet::setup on a fresh one, alone (`run N pre
+    // no`) on a continued one — and by Min::setup, to write dumps and thermo
+    // for the current `update->ntimestep`. Each component applies its own
+    // cadence and the `last_dump` never-twice rule.
+    output_pass_(step_idx, /*final=*/false);
+}
+
+void Runtime::final_output(BigInt step_idx) {
+    // LAMMPS src/min.cpp Min::run, e8c4c278a8. Copyright (2003) Sandia
+    // Corporation. GPL-2.0-only. A minimization that stops before MAXITER
+    // sets next_dump / next_thermo to the current timestep and calls
+    // output->write: the final state is written once (never twice).
+    output_pass_(step_idx, /*final=*/true);
+}
+
 void Runtime::step(BigInt step_idx) {
     DispatchScope dispatch(this);
+    // A failed asynchronous consumer stops the run at the next step (an
+    // atomic flag test), never leaving the loop to wait on space that will
+    // not free.
+    capture_->check();
     EvaluationTransaction::Scope history(evaluation_history_);
     prepare_run(step_idx);
     TimerRegistry& timing_reg = device_.timing();
@@ -1297,9 +1378,10 @@ Runtime::collect_component_memory() const {
 void Runtime::destroy_components() {
     if (!components_built_)
         return;
-    // Drain and join analysis workers first so any in-flight `on_snapshot`
-    // completes against live subscribers before any component enters destroy().
-    analysis_.shutdown_workers();
+    // Drain and join the capture workers first so every captured frame is
+    // consumed by live consumers before any component enters destroy(). A
+    // consumer failure stays pending (raised by the driver's drain).
+    capture_->stop();
 
     components_built_ = false;
     destroy_plan(*plan_);
@@ -1308,10 +1390,7 @@ void Runtime::destroy_components() {
 void Runtime::unwind_failed_run() noexcept {
     failed_ = true;
     // Join readers before destroy callbacks release their captured state.
-    try {
-        analysis_.shutdown_workers();
-    } catch (...) {
-    }
+    capture_->stop();
     components_built_ = false;
     while (!component_order_.empty()) {
         auto* component = component_order_.back();
@@ -1337,7 +1416,9 @@ void Runtime::unwind_failed_run() noexcept {
 
 void Runtime::shutdown() {
     ATV_DEBUG("CPU runtime shutting down");
-    analysis_.teardown(context_);
+    if (capture_) // null in a moved-from Runtime
+        capture_->stop();
+    context_.capture.buffer = nullptr;
     context_.exec.runtime =
         nullptr; // the Runtime is gone; no node may reach it
     domain_.release_comm(context_);

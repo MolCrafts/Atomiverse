@@ -14,7 +14,7 @@ int run() {
     cpu::Frame frame(2);
     const double xyz[2][3] = {{0, 0, 0}, {0, 0, 1}};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = xyz[i][0];
         frame.span(kAtom_y)[i] = xyz[i][1];
         frame.span(kAtom_z)[i] = xyz[i][2];

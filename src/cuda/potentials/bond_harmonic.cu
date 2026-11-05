@@ -3,6 +3,7 @@
 
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/energy_term.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/potentials/bond_harmonic.cuh"
@@ -18,10 +19,10 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_bond_k(
     const pos_t* __restrict__ x, const pos_t* __restrict__ y,
     const pos_t* __restrict__ z, fixed_t* __restrict__ fx,
     fixed_t* __restrict__ fy, fixed_t* __restrict__ fz, ForceFault* fault,
-    acc_t* __restrict__ energy, acc_t* __restrict__ stress,
-    const int* __restrict__ bi, const int* __restrict__ bj,
-    const int* __restrict__ bt, const force_t* __restrict__ K,
-    const force_t* __restrict__ r0, cuda::Box box_arg, int n_bonds) {
+    EnergyTerm energy, acc_t* __restrict__ stress, const int* __restrict__ bi,
+    const int* __restrict__ bj, const int* __restrict__ bt,
+    const force_t* __restrict__ K, const force_t* __restrict__ r0,
+    cuda::Box box_arg, int n_bonds) {
     const auto box = box_arg.current().as<force_t>();
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -76,15 +77,15 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_bond_k(
 
     // Null energy/stress: the step has no eflag/vflag (LAMMPS ev_set). The
     // pointers are uniform, so skipping the collective is safe.
-    if (energy != nullptr || stress != nullptr) {
+    if (energy || stress != nullptr) {
         using Reduce =
             cub::BlockReduce<::cuda::std::array<acc_t, 7>, kDefaultBlock>;
         __shared__ typename Reduce::TempStorage reduction;
         const auto out =
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
         if (threadIdx.x == 0) {
-            if (energy != nullptr)
-                atomicAdd(energy, out[0]);
+            if (energy)
+                energy.add(out[0]);
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
@@ -138,7 +139,8 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
     constexpr int shmem = 0;
     kernels::harmonic_bond_k<<<grid, block, shmem, stream>>>(
         f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.fx, f.atoms.fy, f.atoms.fz,
-        f.force_fault, ctx.energy_requested ? &f.scalars->energy : nullptr,
+        f.force_fault,
+        energy_term(f.scalars, EnergyKind::Bond, ctx.energy_requested),
         ctx.stress_requested ? &f.scalars->stress[0] : nullptr, f.bonds.atomi,
         f.bonds.atomj, f.bonds.type, state_->d_K, state_->d_r0,
         ctx.runtime.host_box, nb);

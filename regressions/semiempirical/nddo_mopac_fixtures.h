@@ -91,7 +91,7 @@ inline constexpr Pin kPm3Pins[] = {
 inline ATV::cpu::Frame make_frame(const Pin& pin) {
     ATV::cpu::Frame frame(pin.count);
     for (int i = 0; i < pin.count; ++i) {
-        frame.span(ATV::kAtom_type)[i] = pin.species[i];
+        frame.span(ATV::kAtom_atomic_number)[i] = pin.species[i];
         frame.span(ATV::kAtom_tag)[i] = i + 1;
         frame.span(ATV::kAtom_mass)[i] = pin.species[i] == 1   ? 1
                                          : pin.species[i] == 6 ? 12

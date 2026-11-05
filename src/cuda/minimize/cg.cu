@@ -62,15 +62,17 @@ __global__ void pr_beta(acc_t* __restrict__ pr) {
 /// Saves the PRE-step positions (reconstructed primary + correction, mixed_t)
 /// into x_prev (the convergence check measures displacement against them)
 /// and the current gradient / direction for the next iteration's β. PBC
-/// wrap matches the MD integrators (whole lattice vectors, FP64 Box).
-/// A faulted force is never consumed.
+/// wrap matches the MD integrators (whole lattice vectors, FP64 Box) and
+/// counts the crossing into the image flags. CG has no rollback: the step is
+/// always accepted. A faulted force is never consumed.
 __global__ void
 cg_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
         pos_t* __restrict__ xc, pos_t* __restrict__ yc, pos_t* __restrict__ zc,
         const fixed_t* __restrict__ fx, const fixed_t* __restrict__ fy,
         const fixed_t* __restrict__ fz, mixed_t* __restrict__ x_prev,
         mixed_t* __restrict__ g_prev, mixed_t* __restrict__ d_prev,
-        const acc_t* __restrict__ pr, mixed_t alpha0, ForceFault* fault,
+        const acc_t* __restrict__ pr, mixed_t alpha0,
+        ImageInt* __restrict__ image, ForceFault* fault,
         const std::int64_t* __restrict__ tag, long long step, cuda::Box box,
         int n) {
     if (!forces_consumable(fault, tag, step))
@@ -95,7 +97,7 @@ cg_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
         pos[c] += alpha0 * d;
     }
 
-    box.wrap_position(pos[0], pos[1], pos[2]);
+    box.wrap_position(pos[0], pos[1], pos[2], image ? image + 3 * i : nullptr);
     store_position(x, xc, i, pos[0]);
     store_position(y, yc, i, pos[1]);
     store_position(z, zc, i, pos[2]);
@@ -144,7 +146,7 @@ void CG::launch(const LaunchContext& ctx) {
     const auto& a = frame.atoms;
     cg_step<<<grid, block, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, d_xprev_,
-        d_gprev_, d_dprev_, d_pr_, static_cast<mixed_t>(alpha0_),
+        d_gprev_, d_dprev_, d_pr_, static_cast<mixed_t>(alpha0_), a.image,
         frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box, n);
 
     ++step_;

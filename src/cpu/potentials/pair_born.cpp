@@ -165,12 +165,6 @@ void PairBorn::compute(const LaunchContext& ctx) {
                 double dx = x[j] - x[i];
                 double dy = y[j] - y[i];
                 double dz = z[j] - z[i];
-                dx = -dx;
-                dy = -dy;
-                dz = -dz;
-                dx = -dx;
-                dy = -dy;
-                dz = -dz;
                 born_pair(i, j, dx, dy, dz, A_, inv_rho, sigma_, C_, D_,
                           v_shift_);
             }

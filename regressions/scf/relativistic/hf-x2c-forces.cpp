@@ -35,7 +35,7 @@ int check(const Case& c) {
     using namespace ATV;
     cpu::Frame frame(static_cast<std::size_t>(c.n));
     for (int A = 0; A < c.n; ++A) {
-        frame.span(kAtom_type)[A] = c.Z[A];
+        frame.span(kAtom_atomic_number)[A] = c.Z[A];
         frame.span(kAtom_x)[A] = c.xyz[A][0];
         frame.span(kAtom_y)[A] = c.xyz[A][1];
         frame.span(kAtom_z)[A] = c.xyz[A][2];

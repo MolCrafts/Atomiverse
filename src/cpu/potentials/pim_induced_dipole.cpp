@@ -142,7 +142,7 @@ void PimInducedDipole::launch(const LaunchContext& ctx) {
     }
 
     const double rc2 = cutoff * cutoff;
-    const double k = units::coulomb;
+    const double k = units::md_qqr2e;
 
     // Permanent field E^perm [e/Å²] (Gaussian electrostatics, damped).
     std::vector<double> e_perm(static_cast<std::size_t>(3 * n), 0.0);
@@ -258,6 +258,8 @@ void PimInducedDipole::launch(const LaunchContext& ctx) {
     }
     e_pol_ = k * e;
     f.meta.get(kEnergy) += e_pol_;
+    // Polarization is a pair term (LAMMPS `epair`, as in pair amoeba).
+    f.meta.get(kEnergyPair) += e_pol_;
 
     // Hellmann–Feynman forces at fixed μ:
     //   F_i = q_i E_i^μ + (μ_i · ∇) E_i^{q+μ}

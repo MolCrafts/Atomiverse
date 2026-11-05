@@ -76,13 +76,17 @@ TEST(CpuVACFObserver, StreamedSnapshotsMatchHandComputedCurve) {
     const int max_lag = 3;
     ATV::VACF vacf{/*dt=*/0.5, max_lag, /*freq=*/0, out};
     for (int t = 0; t < 8; ++t) {
+        const std::vector<std::int64_t> tag{1};
+        const std::vector<double> vx{(t % 2 == 0) ? 1.0 : -1.0};
+        const std::vector<double> vy{(t % 2 == 0) ? 2.0 : 0.0};
+        const std::vector<double> vz{0.0};
         ATV::cpu::FrameSnapshot snap;
         snap.n_owned = 1;
-        snap.tag = {1};
+        snap.tag = tag;
         snap.step = t;
-        snap.vx = {(t % 2 == 0) ? 1.0 : -1.0};
-        snap.vy = {(t % 2 == 0) ? 2.0 : 0.0};
-        snap.vz = {0.0};
+        snap.vx = vx;
+        snap.vy = vy;
+        snap.vz = vz;
         vacf.on_snapshot(snap);
     }
     vacf.finalize();

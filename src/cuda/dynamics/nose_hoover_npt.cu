@@ -9,6 +9,7 @@
 #include "atomiverse/cuda/frame/precision.cuh"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <thrust/device_vector.h>
 
@@ -33,7 +34,7 @@ struct NptHistory {
 
 __global__ void initialize_history(NptHistory* history, NptParameters p) {
     auto& h = *history;
-    h.kt = units::kB_ev_per_k * p.temperature;
+    h.kt = units::md_boltz * p.temperature;
     h.mass = (double(p.dof) + 3.0) * h.kt * p.tau_p * p.tau_p;
     for (int k = 0; k < p.atom_chain; ++k)
         h.qt[k] = (k == 0 ? double(p.dof) : 1.0) * h.kt * p.tau_t * p.tau_t;
@@ -61,7 +62,7 @@ __global__ void atom_chain(NptHistory* history, NptParameters p, BigInt step,
         return;
     auto& h = *history;
     if (initial) {
-        h.kt = units::kB_ev_per_k
+        h.kt = units::md_boltz
                * ATV::md::ramp_target(p.temperature, p.stop_temperature, step,
                                       p.first, p.last);
         for (int k = 0; k < p.atom_chain; ++k)
@@ -113,8 +114,7 @@ __global__ void kick(mixed_t* vx, mixed_t* vy, mixed_t* vz, const fixed_t* fx,
         return;
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
-        const mixed_t factor =
-            half_dt * mixed_t(units::force_to_accel) / mass[i];
+        const mixed_t factor = half_dt * mixed_t(units::md_ftm2v) / mass[i];
         vx[i] += factor * decode_force<mixed_t>(fx[i]);
         vy[i] += factor * decode_force<mixed_t>(fy[i]);
         vz[i] += factor * decode_force<mixed_t>(fz[i]);
@@ -160,7 +160,7 @@ __global__ void reduced_kinetic(NptHistory* history, const double* ke,
                                 const ForceFault* fault) {
     if (state_frozen(fault))
         return;
-    history->kinetic = 0.5 * units::mass_v2_to_energy * ke[0];
+    history->kinetic = 0.5 * units::md_mvv2e * ke[0];
 }
 
 __global__ void pressure_update(NptHistory* history, NptParameters p,
@@ -174,13 +174,13 @@ __global__ void pressure_update(NptHistory* history, NptParameters p,
         return;
     double axes[3], diagonal[3], active_ke = 0;
     for (int a = 0; a < 3; ++a) {
-        axes[a] = 0.5 * units::mass_v2_to_energy * ke[1 + a];
+        axes[a] = 0.5 * units::md_mvv2e * ke[1 + a];
         diagonal[a] = scalars->stress[a] + 2.0 * axes[a];
         if (p.coupled[a])
             active_ke += axes[a];
     }
     if (h.anisotropic) {
-        h.kinetic = 0.5 * units::mass_v2_to_energy * ke[0];
+        h.kinetic = 0.5 * units::md_mvv2e * ke[0];
         h.anisotropic = false;
     }
     if (p.pressure_dimensions == 3) {
@@ -221,8 +221,9 @@ __global__ void propagate_cell(NptHistory* history, NptParameters p,
 __global__ void propagate_positions(pos_t* x, pos_t* y, pos_t* z, pos_t* xc,
                                     pos_t* yc, pos_t* zc, const mixed_t* vx,
                                     const mixed_t* vy, const mixed_t* vz,
-                                    const NptHistory* history, mixed_t dt,
-                                    int n, const ForceFault* fault) {
+                                    ImageInt* image, const NptHistory* history,
+                                    mixed_t dt, int n,
+                                    const ForceFault* fault) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n || state_frozen(fault))
         return;
@@ -233,9 +234,15 @@ __global__ void propagate_positions(pos_t* x, pos_t* y, pos_t* z, pos_t* xc,
                             + vy[i] * dt * mixed_t(h.drift[1]),
                         load_position(z, zc, i) * mixed_t(h.scale[2])
                             + vz[i] * dt * mixed_t(h.drift[2])};
-    for (int a = 0; a < 3; ++a)
-        value[a] -= mixed_t(h.next_box.cell[4 * a])
-                    * floor(value[a] * mixed_t(h.next_box.inv_l[a]));
+    for (int a = 0; a < 3; ++a) {
+        const mixed_t shift = floor(value[a] * mixed_t(h.next_box.inv_l[a]));
+        value[a] -= mixed_t(h.next_box.cell[4 * a]) * shift;
+        // LAMMPS Domain::pbc: the wrapped lattice translation joins the
+        // image flags, keeping x + L·image continuous.
+        if (image != nullptr)
+            image[3 * i + a] = static_cast<ImageInt>(image[3 * i + a]
+                                                     + static_cast<int>(shift));
+    }
     store_position(x, xc, i, value[0]);
     store_position(y, yc, i, value[1]);
     store_position(z, zc, i, value[2]);
@@ -297,7 +304,10 @@ NoseHooverNPT& NoseHooverNPT::operator=(NoseHooverNPT&&) noexcept = default;
 void NoseHooverNPT::build(const BuildContext& ctx) {
     if (!ctx.runtime.host_box.ortho)
         throw std::runtime_error(
-            "cuda::md::NoseHooverNPT: triclinic cells are not supported");
+            "cuda::md::NoseHooverNPT: triclinic cells are not supported — "
+            "the CUDA MTK barostat scales the three diagonal cell edges only. "
+            "Use an orthorhombic cell (zero tilts), or run the triclinic NPT "
+            "on the CPU backend (NoseHooverNPT / ParrinelloRahmanNPT)");
     state_ = std::make_unique<State>();
     auto& s = *state_;
     s.parameters = {T_target_,
@@ -391,7 +401,7 @@ void NoseHooverNPT::launch(const LaunchContext& ctx) {
             ctx.runtime.host_box); // P6
         propagate_positions<<<blocks, kDefaultBlock, 0, stream>>>(
             f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.x_corr, f.atoms.y_corr,
-            f.atoms.z_corr, f.atoms.vx, f.atoms.vy, f.atoms.vz,
+            f.atoms.z_corr, f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.image,
             thrust::raw_pointer_cast(s.history.data()), mixed_t(dt_), n,
             f.force_fault);
     } else if (ctx.at(ATV::md::Phase::final_integrate)) {

@@ -15,7 +15,7 @@
 /// *J. Chem. Phys.* **126**, 084704 (2007); MetalWalls JOSS 2020).
 ///
 /// Public surface units: length [Å], \f$\eta\f$ [Å⁻¹], charge [e].
-/// Energy prefactor is caller-supplied (`units::coulomb` for eV).
+/// Energy prefactor is caller-supplied (`units::md_qqr2e` for eV).
 ///
 /// Header-only pure math — no Frame, no Component. Consumed by
 /// `PairGaussianCoul` and (later) constant-potential BO private \(A\).
@@ -129,7 +129,7 @@ class GaussianChargeKernel {
     ///
     /// \(U_{ij} = \texttt{coulomb}\, q_i q_j\, G_{ij}(r)\).
     ///
-    /// @param coulomb Prefactor [eV·Å/e²] (`units::coulomb` for ATV metal units).
+    /// @param coulomb Prefactor [eV·Å/e²] (`units::md_qqr2e` for ATV metal units).
     /// @param q_i Charge on \(i\) [e].
     /// @param q_j Charge on \(j\) [e].
     /// @param r Separation [Å].

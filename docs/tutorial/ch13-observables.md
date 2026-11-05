@@ -84,13 +84,13 @@ namespace, while the loop, identity columns, and exact typed-meta keys stay fixe
 Observables are where that pattern pays off a second time.
 
 An observer never asks *how* the trajectory was produced. It subscribes to the
-snapshot ring, receives `positions` and/or `velocities`, and computes. So the
-exact same `ATV::MSD` measures self-diffusion whether the forces came from
-`PairLJCut` (classical MD), an `SCFEvaluator` (AIMD, [Comparing Models](ch15-cross-method.md)),
-or a plane-wave evaluator — and whether the loop ran on the CPU or, after an
-asynchronous device-to-host copy, on a GPU. The snapshot ring is the universal
-seam between *producing* state and *analysing* it, exactly as the `Force`
-capability is the universal seam between the loop and the physics.
+driver's capture buffer, receives `positions` and/or `velocities`, and
+computes. So the exact same `ATV::MSD` measures self-diffusion whether the
+forces came from `PairLJCut` (classical MD), an `SCFEvaluator` (AIMD,
+[Comparing Models](ch15-cross-method.md)), or a plane-wave evaluator. The
+capture buffer is the universal seam between *producing* state and
+*analysing* it, exactly as the `Force` capability is the universal seam
+between the loop and the physics.
 
 And because the analysis itself lives in molpy, adding an observable is a matter
 of bridging one more `compute`/`fit` kernel and wrapping it in a ~60-line
@@ -127,32 +127,35 @@ the integrator does not: analysis (an FFT, a histogram sweep, a curve fit) is
 often more expensive than a single MD step, and running it inline would throttle
 the hot loop.
 
-The solution is the **asynchronous snapshot ring**. An observer derives from
-`cpu::md::AsyncObserver` and declares, through a `CaptureMask`, exactly which
-fields it needs:
+The solution is the driver's **shared, lossless capture buffer**. An observer
+derives from `cpu::md::AsyncObserver` and declares, through
+`CaptureColumns`, exactly which fields it needs:
 
 ```cpp
-cpu::CaptureMask capture_mask() const override {
-    cpu::CaptureMask m;
-    m.positions  = true;   // RDF, MSD
-    // m.velocities = true; // VACF
-    return m;
+ATV::CaptureColumns capture_columns() const override {
+    ATV::CaptureColumns c;
+    c.positions  = true;   // RDF, MSD
+    // c.velocities = true; // VACF
+    return c;
 }
 ```
 
-At its configured `frequency()`, the driver copies just those fields into a
-lock-free ring buffer and returns to integrating immediately. A separate
-analysis worker thread drains the ring and calls the observer's
-`on_snapshot(const cpu::FrameSnapshot&)` — the integrator never waits. At the
-end of the run the driver calls `finalize()`, where the observer produces its
-result.
+At its configured `frequency()` (the initial state, then every N-th completed
+step), the driver copies the union of the fields its consumers need into a
+slot of one buffer shared by every asynchronous consumer of the driver — once
+per step, however many of them are due — and returns to integrating. Each
+observer's own worker thread calls its `on_snapshot(const
+cpu::FrameSnapshot&)` with that immutable copy, in step order. Nothing is
+skipped: if the analysis falls behind and the buffer's byte budget
+(`set_capture_buffer_bytes`, default 256 MiB) is full, the integrator waits
+for it, and `capture_stats()` reports how long. When the observer is
+destroyed the driver calls `finalize()`, where it produces its result.
 
-This design is *backend-uniform by construction*. A CUDA driver publishes into
-the same CPU ring after an asynchronous device-to-host copy, so an observer is
-CPU-only and works identically whether the frames came from `cpu::md::MD`,
-`cuda::md::MD`, or an AIMD run driven by an `SCFEvaluator`. This is the same
-"one loop, many physics" seam from [Comparing Models](ch15-cross-method.md), seen from
-the analysis side.
+The CUDA driver has the same mechanism (`cuda::CaptureBuffer`, with the
+step frozen on the device into pinned memory), so recorders and observers
+behave identically on both backends. This is the same "one loop, many
+physics" seam from [Comparing Models](ch15-cross-method.md), seen from the
+analysis side.
 
 Inside `on_snapshot`/`finalize`, the observer does **no analysis math** and holds
 **no record type**. It packs each snapshot's raw numbers (positions for MSD/RDF,

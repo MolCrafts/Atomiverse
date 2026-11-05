@@ -20,14 +20,16 @@ namespace minimizer {
 namespace {
 
 /// @brief PBC wrap (whole lattice vectors, FP64 cell) + split store shared
-///        by the step/rollback kernels; writes primary and correction columns.
+///        by the step/rollback kernels; writes primary and correction columns
+///        and counts the removed lattice translation into `image` (atom i's
+///        three flags; null when the Frame carries none).
 __device__ __forceinline__ void
 wrap_store(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
            pos_t* __restrict__ xc, pos_t* __restrict__ yc,
-           pos_t* __restrict__ zc, int i, const mixed_t pos[3],
+           pos_t* __restrict__ zc, ImageInt* image, int i, const mixed_t pos[3],
            const cuda::Box& box) {
     mixed_t px = pos[0], py = pos[1], pz = pos[2];
-    box.wrap_position(px, py, pz);
+    box.wrap_position(px, py, pz, image);
     store_position(x, xc, i, px);
     store_position(y, yc, i, py);
     store_position(z, zc, i, pz);
@@ -172,7 +174,8 @@ apply_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
            pos_t* __restrict__ zcorr, const mixed_t* __restrict__ xc,
            const mixed_t* __restrict__ gc, const mixed_t* __restrict__ r,
            mixed_t* __restrict__ dir, mixed_t* __restrict__ x_prev,
-           mixed_t* __restrict__ g_prev, const acc_t* __restrict__ dir_max,
+           mixed_t* __restrict__ g_prev, ImageInt* __restrict__ image,
+           ImageInt* __restrict__ image_prev, const acc_t* __restrict__ dir_max,
            mixed_t alpha0, acc_t* __restrict__ ls, ForceFault* fault,
            const std::int64_t* __restrict__ tag, long long step, cuda::Box box,
            int n) {
@@ -197,20 +200,28 @@ apply_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
         g_prev[c * n + i] = gc[c * n + i];
         pos[c] = xc[c * n + i] + alpha * d;
     }
-    wrap_store(x, y, z, xcorr, ycorr, zcorr, i, pos, box);
+    ImageInt* row = nullptr;
+    if (image != nullptr) {
+        row = image + 3 * i;
+#pragma unroll
+        for (int c = 0; c < 3; ++c)
+            image_prev[3 * i + c] = row[c];
+    }
+    wrap_store(x, y, z, xcorr, ycorr, zcorr, row, i, pos, box);
 }
 
 /// @brief Armijo rollback: re-take the trial from x_prev with the
 ///        contracted α along the SAME stored direction, then wrap.
 ///
 /// x_prev is the reconstructed coordinate, so the split store restores the
-/// primary and correction columns together.
-__global__ void rollback(pos_t* __restrict__ x, pos_t* __restrict__ y,
-                         pos_t* __restrict__ z, pos_t* __restrict__ xc,
-                         pos_t* __restrict__ yc, pos_t* __restrict__ zc,
-                         const mixed_t* __restrict__ x_prev,
-                         const mixed_t* __restrict__ dir, mixed_t alpha,
-                         cuda::Box box, int n) {
+/// primary and correction columns together; the image flags restart from
+/// their x_prev values, so the rejected trial's crossings are undone.
+__global__ void
+rollback(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+         pos_t* __restrict__ xc, pos_t* __restrict__ yc, pos_t* __restrict__ zc,
+         ImageInt* __restrict__ image, const ImageInt* __restrict__ image_prev,
+         const mixed_t* __restrict__ x_prev, const mixed_t* __restrict__ dir,
+         mixed_t alpha, cuda::Box box, int n) {
     box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
@@ -219,7 +230,14 @@ __global__ void rollback(pos_t* __restrict__ x, pos_t* __restrict__ y,
 #pragma unroll
     for (int c = 0; c < 3; ++c)
         pos[c] = x_prev[c * n + i] + alpha * dir[c * n + i];
-    wrap_store(x, y, z, xc, yc, zc, i, pos, box);
+    ImageInt* row = nullptr;
+    if (image != nullptr) {
+        row = image + 3 * i;
+#pragma unroll
+        for (int c = 0; c < 3; ++c)
+            row[c] = image_prev[3 * i + c];
+    }
+    wrap_store(x, y, z, xc, yc, zc, row, i, pos, box);
 }
 
 } // anonymous namespace
@@ -246,6 +264,8 @@ void LBFGS::build(const BuildContext& ctx) {
     cudaMalloc(&d_s_, static_cast<size_t>(memory_) * bytes3n);
     cudaMalloc(&d_y_, static_cast<size_t>(memory_) * bytes3n);
     cudaMalloc(&d_alpha_, memory_ * sizeof(mixed_t));
+    cudaMalloc(&d_image_prev_, static_cast<size_t>(n3_) * sizeof(ImageInt));
+    cudaMemset(d_image_prev_, 0, static_cast<size_t>(n3_) * sizeof(ImageInt));
     cudaMalloc(&d_dot_, 2 * sizeof(acc_t));
     cudaMalloc(&d_ys_, sizeof(acc_t));
     cudaMalloc(&d_ls_, 3 * sizeof(acc_t));
@@ -289,8 +309,9 @@ void LBFGS::launch(const LaunchContext& ctx) {
         auto& a = ctx.frame.atoms;
         auto set_trial = [&](double alpha) {
             rollback<<<cuda::grid_size(n_), cuda::kDefaultBlock, 0, stream>>>(
-                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, d_xprev_, d_dir_,
-                static_cast<mixed_t>(alpha), ctx.runtime.host_box, n_);
+                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.image,
+                d_image_prev_, d_xprev_, d_dir_, static_cast<mixed_t>(alpha),
+                ctx.runtime.host_box, n_);
         };
         try {
             ATV_CUDA_CHECK(cudaMemcpyAsync(h_ls_, d_ls_, 3 * sizeof(acc_t),
@@ -413,8 +434,9 @@ void LBFGS::launch(const LaunchContext& ctx) {
     max_abs3n<<<grid3, block, shmem, stream>>>(d_q_, d_dot_ + 1, n3);
     apply_step<<<grid, block, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, d_x_, d_g_, d_q_, d_dir_,
-        d_xprev_, d_gprev_, d_dot_ + 1, static_cast<mixed_t>(alpha0_), d_ls_,
-        frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box, n);
+        d_xprev_, d_gprev_, a.image, d_image_prev_, d_dot_ + 1,
+        static_cast<mixed_t>(alpha0_), d_ls_, frame.force_fault, a.tag,
+        ctx.step, ctx.runtime.host_box, n);
 
     if (ls_enabled_) {
         // Origin scalars consumed by the following bounded line-search phase.
@@ -440,6 +462,8 @@ void LBFGS::destroy(const DestroyContext& ctx) {
     cudaFree(d_s_);
     cudaFree(d_y_);
     cudaFree(d_alpha_);
+    cudaFree(d_image_prev_);
+    d_image_prev_ = nullptr;
     cudaFree(d_dot_);
     cudaFree(d_ys_);
     cudaFree(d_ls_);

@@ -100,11 +100,15 @@ int run() {
     //    NOT MetalWalls values: real MW (Ewald, no Thole) gives
     //    E_pol = -1.682169167852 eV on this same geometry — the 5.17x gap is
     //    the real-space truncation, see REFERENCE.md. Units: eV, eV, eV/A^3.
-    const double E_pol_pin = -8.695749870555906;
-    const double W_pin[6] = {-10.66184373345355, -12.125914211727187,
-                             -9.657852793291474, -0.2325271422922529,
-                             -2.2469237837238,   1.375774440282161};
-    const double P_pol_pin = -0.013021203851134545;
+    // Offline pins were eV (qqr2e = units::coulomb). The engine multiplies
+    // md_qqr2e, so energy, virial and the pressure made from that virial scale.
+    const double e_scale = ATV::units::md_qqr2e / ATV::units::coulomb;
+    const double E_pol_pin = -8.695749870555906 * e_scale;
+    const double W_pin[6] = {
+        -10.66184373345355 * e_scale, -12.125914211727187 * e_scale,
+        -9.657852793291474 * e_scale, -0.2325271422922529 * e_scale,
+        -2.2469237837238 * e_scale,   1.375774440282161 * e_scale};
+    const double P_pol_pin = -0.013021203851134545 * e_scale;
     const double tol_E = 1e-8;
     const double tol_W = 1e-7;
     const double tol_P = 1e-10;

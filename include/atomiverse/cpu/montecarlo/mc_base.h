@@ -69,7 +69,7 @@ class McBase : public Driver<ATV::sampling::Phase> {
         if (this->begin_run_(frame))
             bootstrapped_ = false;
         run_trials_(*this->backend_, frame, n_trials);
-        this->backend_->drain_analysis();
+        this->backend_->drain_capture();
     }
 
     void build_on(cpu::Runtime& runtime) override {

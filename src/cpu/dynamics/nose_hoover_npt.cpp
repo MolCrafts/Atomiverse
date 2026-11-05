@@ -117,7 +117,7 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
     }
 #endif
     n_atoms_global_ = N;
-    kT_ = units::kB_ev_per_k * T_target_;
+    kT_ = units::md_boltz * T_target_;
 
     // Standard MTK masses (Tuckerman 2006 §III).
     //   Q_t[0] = N_f kT tau_T^2 drives the full KE reservoir;
@@ -181,7 +181,7 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
 /// setpoint stays at `T_target_` — the no-ramp default.
 void NoseHooverNPT::compute_temp_target(BigInt step) {
     T_live_ = ATV::md::ramp_target(T_target_, T_stop_, step, nfirst_, nlast_);
-    kT_ = units::kB_ev_per_k * T_live_;
+    kT_ = units::md_boltz * T_live_;
 }
 
 double NoseHooverNPT::compute_global_KE(const cpu::LaunchContext& ctx) const {
@@ -200,7 +200,7 @@ double NoseHooverNPT::compute_global_KE(const cpu::LaunchContext& ctx) const {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::mass_v2_to_energy;
+    ke_local *= 0.5 * units::md_mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -233,9 +233,8 @@ NoseHooverNPT::compute_axis_KE(const cpu::LaunchContext& ctx) const {
         ky += m * sp_vy[i] * sp_vy[i];
         kz += m * sp_vz[i] * sp_vz[i];
     }
-    double ke[3] = {0.5 * units::mass_v2_to_energy * kx,
-                    0.5 * units::mass_v2_to_energy * ky,
-                    0.5 * units::mass_v2_to_energy * kz};
+    double ke[3] = {0.5 * units::md_mvv2e * kx, 0.5 * units::md_mvv2e * ky,
+                    0.5 * units::md_mvv2e * kz};
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -505,7 +504,7 @@ void NoseHooverNPT::kick_v_by_force(const cpu::LaunchContext& ctx,
                                     double half_dt) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const double dtf = half_dt * units::force_to_accel;
+    const double dtf = half_dt * units::md_ftm2v;
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);

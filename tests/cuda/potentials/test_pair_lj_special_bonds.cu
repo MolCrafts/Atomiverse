@@ -4,8 +4,9 @@
 ///
 /// Covers `msu-pe-cuda-components-05-cuda-lj-exclusions`:
 /// - public API exists and returns `*this` (ac-001).
-/// - each scale is 0 or 1, including mixed shells such as (1, 0, 0) (ac-002).
-/// - a fractional scale is rejected (ac-002b).
+/// - binary scales, including mixed shells such as (1, 0, 0) (ac-002).
+/// - fractional scales (LAMMPS factor_lj, e.g. Amber 0/0/0.5) are applied by
+///   the exception pass; a non-finite scale is rejected.
 /// - 4-atom chain with `(0,0,0)` exclusion yields zero LJ energy (ac-003).
 /// - `(1,0,0)` keeps the three bond pairs and drops 1-3 / 1-4 (ac-004).
 /// - a dihedral-free chain still drops the bond-graph 1-4 (PEGM has angles
@@ -133,12 +134,13 @@ TEST(CudaPairLJSpecialBonds, ApiAcceptsBinaryScales) {
         cuda::PairLJCut(1.0, 1.0, 3.0).set_special_bonds(0.0, 1.0, 0.0));
 }
 
-TEST(CudaPairLJSpecialBonds, ApiRejectsFractionalScaling) {
+TEST(CudaPairLJSpecialBonds, ApiAcceptsFractionalRejectsNonFinite) {
+    EXPECT_NO_THROW(
+        cuda::PairLJCut(1.0, 1.0, 3.0).set_special_bonds(0.5, 0.5, 0.5));
+    EXPECT_NO_THROW(
+        cuda::PairLJCut(1.0, 1.0, 3.0).set_special_bonds(0.0, 0.0, 0.5));
     EXPECT_THROW(
-        cuda::PairLJCut(1.0, 1.0, 3.0).set_special_bonds(0.5, 0.5, 0.5),
-        std::invalid_argument);
-    EXPECT_THROW(
-        cuda::PairLJCut(1.0, 1.0, 3.0).set_special_bonds(0.0, 0.0, 0.5),
+        cuda::PairLJCut(1.0, 1.0, 3.0).set_special_bonds(0.0, 0.0, NAN),
         std::invalid_argument);
 }
 
@@ -226,4 +228,25 @@ TEST(CudaPairLJSpecialBonds, FoldedChainWithoutDihedralAllExcluded) {
     sim.build();
     sim.run(frame, 1);
     EXPECT_NEAR(static_cast<double>(frame.meta.get(kEnergy)), 0.0, 1e-9);
+}
+
+// Amber (0, 0, 0.5) on the folded chain: bonds and 1-3 pairs drop, the
+// bond-graph 1-4 contact (atoms 0 and 3, r = 1) counts at half weight
+// through the exception pass.
+TEST(CudaPairLJSpecialBonds, FoldedChainAmberHalvesThe14) {
+    auto frame = make_folded_chain4();
+    const double cutoff = 3.0;
+    cuda::md::MD sim;
+    sim.set_neighbor(cuda::NeighborList{cutoff});
+    sim.set_evaluator(
+        cuda::PairLJCut{1.0, 1.0, cutoff}.set_special_bonds(0.0, 0.0, 0.5));
+    sim.set_integrator(cuda::md::VelocityVerlet{0.001});
+    sim.build();
+    sim.run(frame, 0); // energy of this geometry
+    auto lj = [](double r) {
+        const double sr6 = std::pow(1.0 / r, 6.0);
+        return 4.0 * (sr6 * sr6 - sr6);
+    };
+    const double expected = 0.5 * (lj(1.0) - lj(cutoff));
+    EXPECT_NEAR(static_cast<double>(frame.meta.get(kEnergy)), expected, 1e-8);
 }

@@ -32,9 +32,9 @@ int run() {
     // Pinned geometry (identical to REFERENCE.md and the energy sibling):
     // I(0,0,0); I(0,0,2.666) Å.
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 53;
+    frame.span(kAtom_atomic_number)[0] = 53;
     frame.span(kAtom_z)[0] = 0.0;
-    frame.span(kAtom_type)[1] = 53;
+    frame.span(kAtom_atomic_number)[1] = 53;
     frame.span(kAtom_z)[1] = 2.666;
     frame.box = cpu::Box::cubic(20.0);
 

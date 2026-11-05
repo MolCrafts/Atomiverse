@@ -47,7 +47,7 @@ int run() {
     cpu::Frame frame(2);
     const double x0[2] = {9.395, 10.605};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 8; // Z
+        frame.span(kAtom_atomic_number)[i] = 8; // Z
         frame.span(kAtom_mass)[i] = 15.999;
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_x)[i] = x0[i];

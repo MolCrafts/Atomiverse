@@ -59,8 +59,8 @@ namespace {
 ///        rank constructs a bitwise-identical full replica.
 cpu::Frame make_h2_frame() {
     cpu::Frame frame(2);
-    frame.span(ATV::kAtom_type)[0] = 1; // Z = 1 (hydrogen)
-    frame.span(ATV::kAtom_type)[1] = 1;
+    frame.span(ATV::kAtom_atomic_number)[0] = 1; // Z = 1 (hydrogen)
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
     frame.span(ATV::kAtom_x)[0] = 0.0;
     frame.span(ATV::kAtom_y)[0] = 0.0;
     frame.span(ATV::kAtom_z)[0] = -0.1;

@@ -39,7 +39,7 @@ cpu::Frame make_h2(double r = 0.74) {
     f.span(kAtom_x)[1] = r;
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -53,15 +53,15 @@ cpu::Frame make_h2(double r = 0.74) {
 cpu::Frame make_water() {
     // Slightly off-equilibrium water (Å).
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.96;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = -0.24;
     f.span(kAtom_y)[2] = 0.93;
     f.span(kAtom_z)[2] = 0.0;
@@ -125,7 +125,7 @@ TEST(DFTB2SK, H2EnergyFinite) {
 TEST(DFTB2SK, CH4EnergyFinite) {
     // Methane: C + 4H = 8 valence e (closed shell); exercises C–H SK tables.
     cpu::Frame f(5);
-    f.span(kAtom_type)[0] = 6;
+    f.span(kAtom_atomic_number)[0] = 6;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
     f.span(kAtom_z)[0] = 0;
@@ -136,7 +136,7 @@ TEST(DFTB2SK, CH4EnergyFinite) {
         {-1.09, -1.09, 1.09},
     };
     for (int i = 0; i < 4; ++i) {
-        f.span(kAtom_type)[i + 1] = 1;
+        f.span(kAtom_atomic_number)[i + 1] = 1;
         f.span(kAtom_x)[i + 1] = hpos[i][0] / std::sqrt(3.0);
         f.span(kAtom_y)[i + 1] = hpos[i][1] / std::sqrt(3.0);
         f.span(kAtom_z)[i + 1] = hpos[i][2] / std::sqrt(3.0);
@@ -174,7 +174,7 @@ TEST(DFTB2SK, WaterEnergyFinite) {
 
 TEST(DFTB2SK, UnsupportedElementThrows) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 26; // Fe
+    f.span(kAtom_atomic_number)[0] = 26; // Fe
     f.box = cpu::Box::cubic(10.0);
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;

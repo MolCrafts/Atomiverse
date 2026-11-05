@@ -132,7 +132,7 @@ coordinates in the table above.
 
 ```cpp
 cpu::Frame frame(3);
-// O (0,0,0), H (1.05,0,0), H (-0.26,1.0,0); kAtom_type = Z, masses, tags;
+// O (0,0,0), H (1.05,0,0), H (-0.26,1.0,0); kAtom_atomic_number = Z, masses, tags;
 // kAtom_f* zeroed.
 frame.box = cpu::Box::cubic(30.0);
 frame.meta.get(kEnergy) = 0;

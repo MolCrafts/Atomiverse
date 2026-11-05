@@ -25,7 +25,7 @@ PairDpd::PairDpd(double a, double gamma, double temperature, double cutoff,
         || !(gamma >= 0.0))
         throw std::invalid_argument("PairDpd: invalid parameters");
     cutoff_sq_ = cutoff * cutoff;
-    sigma_ = std::sqrt(2.0 * gamma_ * units::kB_ev_per_k * temperature_);
+    sigma_ = std::sqrt(2.0 * gamma_ * units::md_boltz * temperature_);
 }
 
 PairDpd::PairDpd(std::vector<std::vector<double>> a_matrix, double gamma,
@@ -50,7 +50,7 @@ PairDpd::PairDpd(std::vector<std::vector<double>> a_matrix, double gamma,
                 throw std::invalid_argument(
                     "PairDpd: a_matrix must be finite and symmetric");
     cutoff_sq_ = cutoff * cutoff;
-    sigma_ = std::sqrt(2.0 * gamma_ * units::kB_ev_per_k * temperature_);
+    sigma_ = std::sqrt(2.0 * gamma_ * units::md_boltz * temperature_);
 }
 
 double PairDpd::a_of_(int ti, int tj) const {
@@ -67,7 +67,9 @@ void PairDpd::compute(const LaunchContext& ctx) {
     const int n = static_cast<int>(f.nlocal());
     const double rc = pair_cutoff();
     const double inv_sqrt_dt = 1.0 / std::sqrt(dt_);
-    const auto type = f.span(kAtom_type);
+    // The single-amplitude form needs no force-field type; only the
+    // per-type `a_matrix` form reads (and so requires) the column.
+    const int* type = multi_ ? f.span(kAtom_type).data() : nullptr;
     const auto tags = f.span(kAtom_tag);
 
     double energy = 0.0;
@@ -137,15 +139,8 @@ void PairDpd::compute(const LaunchContext& ctx) {
         double dx = x[j] - x[i];
         double dy = y[j] - y[i];
         double dz = z[j] - z[i];
-        if (pair_list) {
-            // The list image is attached to j; this kernel uses r_j-r_i.
-            dx = -dx;
-            dy = -dy;
-            dz = -dz;
-            dx = -dx;
-            dy = -dy;
-            dz = -dz;
-        } else
+        // Listed rows carry their explicit periodic image.
+        if (!pair_list)
             f.box.min_image(dx, dy, dz);
         const double r2 = dx * dx + dy * dy + dz * dz;
         if (r2 >= cutoff_sq_ || r2 == 0.0)
@@ -157,7 +152,7 @@ void PairDpd::compute(const LaunchContext& ctx) {
         if (w <= 0.0)
             return;
 
-        const double aij = a_of_(type[i], type[j]);
+        const double aij = multi_ ? a_of_(type[i], type[j]) : a_default_;
         const double fc = aij * w;
         double fpair = -fc * inv_r;
 
@@ -212,6 +207,7 @@ void PairDpd::compute(const LaunchContext& ctx) {
                 accumulate_pair(i, j);
     }
     f.meta.get(kEnergy) += energy;
+    f.meta.get(kEnergyPair) += energy;
     if (ctx.stress_requested)
         vir.flush_to(f.meta.get(kStress));
 }

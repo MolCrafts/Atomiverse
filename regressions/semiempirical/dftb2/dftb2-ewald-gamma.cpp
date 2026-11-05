@@ -70,7 +70,7 @@ constexpr double kFz[] = {
 cpu::Frame make_water_cell() {
     cpu::Frame f(kNat);
     for (int i = 0; i < kNat; ++i) {
-        f.span(kAtom_type)[i] = kZnum[i];
+        f.span(kAtom_atomic_number)[i] = kZnum[i];
         f.span(kAtom_x)[i] = kPx[i];
         f.span(kAtom_y)[i] = kPy[i];
         f.span(kAtom_z)[i] = kPz[i];

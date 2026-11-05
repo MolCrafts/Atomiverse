@@ -29,13 +29,25 @@ namespace cpu {
 
 class Frame; // fwd -- CUDA-safe
 
+/// @brief Buffer accounting of an asynchronous producer (the CUDA
+///        `MrecRecorder`), written into the store's `status` section.
+struct MrecBufferStatus {
+    std::uint64_t budget_bytes = 0;     ///< Buffer budget [bytes].
+    std::uint64_t frame_bytes = 0;      ///< One frame in the buffer [bytes].
+    std::uint64_t peak_bytes = 0;       ///< Peak occupancy [bytes].
+    std::uint64_t blocked_episodes = 0; ///< Times the run waited for space.
+    double blocked_seconds = 0.0;       ///< Total time the run waited [s].
+};
+
 /// @brief Append `cpu::Frame`s to one `*.mrec` trajectory through molpy.
 ///
 /// Each append exports the frame through the canonical exchange
 /// (`cpu::to_molpy`: positions, velocities, forces, charges, images, tags,
-/// box and every serializable meta entry) plus the two per-run inputs the
-/// exchange skips on purpose, `atomic_number` and `mass` — a trajectory is
-/// read by tools that never saw the input file, so species travel with it.
+/// box and every serializable meta entry) plus the per-run inputs the
+/// exchange skips on purpose — `mass`, and each identity column the Frame
+/// carries: species Z as `atomic_number`, force-field type as `type_id` — a
+/// trajectory is read by tools that never saw the input file, so identity
+/// travels with it.
 /// molpy dedups a block whose bytes did not change, so re-sending the static
 /// columns costs a compare, not a write.
 ///
@@ -44,6 +56,20 @@ class Frame; // fwd -- CUDA-safe
 /// the same rule as `cpu::XYZ::write`). Steps must strictly increase, and
 /// whether frames carry a time is fixed by the first append. A closed writer
 /// refuses further appends — one writer records one run.
+///
+/// **Run status.** `close()` ends a minted store with the molrec `status`
+/// section (spec `molrec/docs/spec/status.md`, group attributes):
+/// `state` = `"succeeded"`, or `"failed"` with an `error` object (`type`
+/// `"WriteError"`, `message`) when an append or a commit of this writer
+/// failed or the producer reported a failure (`set_failed`);
+/// `frames_written` [count]; `finished_at` (RFC 3339, UTC); and, for an
+/// asynchronous producer that reported its buffer (`set_buffer_status`), a
+/// `buffer` object — `budget_bytes`, `frame_bytes`, `peak_bytes`,
+/// `blocked_episodes`, `blocked_seconds`. The frames that did land stay
+/// readable; a failed final commit still writes the status when it can.
+/// molcxx has no door for a record's `status` yet, so this one group is
+/// written here, in the spec's reference binding (a Zarr v3 group whose
+/// attributes are the document); molpy `MrecFile::status` reads it back.
 class MrecWriter {
   public:
     /// @brief Construct; nothing touches the filesystem until `append`.
@@ -85,18 +111,22 @@ class MrecWriter {
     /// @throws std::runtime_error naming the path when molpy rejects the frame
     ///         (non-increasing step, a block / column / meta key outside the
     ///         pinned schema, a dtype change) or the store cannot be written.
+    ///         A failed append marks the run failed (`failure()`).
     void append(const Frame& frame, std::int64_t step, double time,
                 bool has_time);
 
     /// @brief Commit every buffered frame (the checkpoint). No-op before the
     ///        first append and after `close()`.
-    /// @throws std::runtime_error naming the path on a storage failure.
+    /// @throws std::runtime_error naming the path on a storage failure, which
+    ///         also marks the run failed.
     void flush();
 
-    /// @brief Commit whatever is buffered and release the writer. Idempotent.
+    /// @brief Commit whatever is buffered, write the `status` section and
+    ///        release the writer. Idempotent.
     /// @throws std::runtime_error naming the path on a storage failure; the
-    ///         writer is released either way and what was already committed
-    ///         stays readable.
+    ///         writer is released either way, what was already committed
+    ///         stays readable, and the status section is still attempted
+    ///         (recording the failure).
     void close();
 
     /// @brief Frames committed to the store so far [count]. Live count while
@@ -105,6 +135,21 @@ class MrecWriter {
 
     /// @brief Frames handed to `append` so far [count].
     std::uint64_t appended() const noexcept { return appended_; }
+
+    /// @brief Mark the run failed: `close()` records `state = "failed"` with
+    ///        @p message as the error. The first failure wins.
+    /// @param message What failed, naming the store and the cause.
+    void set_failed(std::string message);
+
+    /// @brief The recorded failure; empty while the run has not failed.
+    const std::string& failure() const noexcept { return failure_; }
+
+    /// @brief Record the producer's buffer accounting; `close()` writes it
+    ///        into the `status` section. The latest value wins.
+    void set_buffer_status(const MrecBufferStatus& s) noexcept {
+        buffer_ = s;
+        has_buffer_ = true;
+    }
 
     /// @brief Whether `close()` has run.
     bool closed() const noexcept { return closed_; }
@@ -115,11 +160,18 @@ class MrecWriter {
   private:
     struct Impl;
 
+    /// @brief The append itself; `append` records a failure and counts.
+    void append_(const Frame& frame, std::int64_t step, double time,
+                 bool has_time);
+
     std::string path_;
     std::uint64_t flush_every_;
     bool durable_;
     std::uint64_t appended_ = 0;
     std::uint64_t committed_at_close_ = 0;
+    std::string failure_;     ///< First failure; empty = none.
+    MrecBufferStatus buffer_; ///< Producer buffer accounting.
+    bool has_buffer_ = false;
     bool closed_ = false;
     std::unique_ptr<Impl> impl_;
 };

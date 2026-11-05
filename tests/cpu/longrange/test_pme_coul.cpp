@@ -100,7 +100,7 @@ TEST(PmeCoul, MadelungNaCl) {
 
     const int N = n * n * n;
     const double e_expected =
-        -0.5 * N * kMadelungNaCl * ATV::units::coulomb / d;
+        -0.5 * N * kMadelungNaCl * ATV::units::md_qqr2e / d;
     EXPECT_NEAR(e / e_expected, 1.0, 5e-4)
         << "E=" << e << " expected=" << e_expected;
 }

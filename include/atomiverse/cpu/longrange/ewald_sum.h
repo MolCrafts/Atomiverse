@@ -5,9 +5,9 @@
 /// Pure operator math for the Ewald reciprocal sum (P. P. Ewald, *Ann. Phys.*
 /// **369**, 253 (1921). DOI: 10.1002/andp.19213690304):
 ///
-///   E_recip = units::coulomb · (4π/V) Σ_{k∈½} exp(−k²/4α²)/k² · |S(k)|²
-///   E_self  = −units::coulomb · (α/√π) Σ_i q_i²
-///   E_corr  = −units::coulomb · π/(2 V α²) · (Σ_i q_i)²
+///   E_recip = units::md_qqr2e · (4π/V) Σ_{k∈½} exp(−k²/4α²)/k² · |S(k)|²
+///   E_self  = −units::md_qqr2e · (α/√π) Σ_i q_i²
+///   E_corr  = −units::md_qqr2e · π/(2 V α²) · (Σ_i q_i)²
 ///
 /// with S(k) = Σ_j q_j exp(i k·r_j). The k-sum is over the **positive
 /// hemisphere** only (kz>0, or kz=0∧ky>0, or kz=ky=0∧kx>0), matching the
@@ -195,7 +195,7 @@ class EwaldSum {
                     AccReal* fx, AccReal* fy, AccReal* fz) const {
         const int ng = static_cast<int>(kx_.size());
         // Half-sphere: energy prefactor is 4π k_e / V; force factor uses 2·ug.
-        const double K = ATV::units::coulomb * 4.0 * ATV::units::pi / volume;
+        const double K = ATV::units::md_qqr2e * 4.0 * ATV::units::pi / volume;
         const double* __restrict kx = kx_.data();
         const double* __restrict ky = ky_.data();
         const double* __restrict kz = kz_.data();
@@ -246,7 +246,7 @@ class EwaldSum {
                                   double stress[6]) const {
         const int ng = static_cast<int>(kx_.size());
         // Half-sphere prefactor 4π k_e / V (see rebuild() hemisphere filter).
-        const double K = ATV::units::coulomb * 4.0 * ATV::units::pi / volume;
+        const double K = ATV::units::md_qqr2e * 4.0 * ATV::units::pi / volume;
         const double* __restrict kx = kx_.data();
         const double* __restrict ky = ky_.data();
         const double* __restrict kz = kz_.data();

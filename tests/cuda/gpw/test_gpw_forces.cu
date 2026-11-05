@@ -223,7 +223,7 @@ ATV::cpu::Frame h2_force_frame() {
     ATV::cpu::Frame frame(2);
     frame.box = ATV::cpu::Box::cubic(12 * ATV::units::kBohrInAngstrom);
     for (int i = 0; i < 2; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 1;
+        frame.span(ATV::kAtom_atomic_number)[i] = 1;
         frame.span(ATV::kAtom_x)[i] = (5.5 + i) * ATV::units::kBohrInAngstrom;
         frame.span(ATV::kAtom_y)[i] = 6 * ATV::units::kBohrInAngstrom;
         frame.span(ATV::kAtom_z)[i] = 6 * ATV::units::kBohrInAngstrom;

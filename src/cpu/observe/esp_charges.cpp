@@ -70,7 +70,7 @@ struct Sites {
         const auto x = frame.span(kAtom_x);
         const auto y = frame.span(kAtom_y);
         const auto zc = frame.span(kAtom_z);
-        const auto type = frame.span(kAtom_type);
+        const auto type = frame.span(kAtom_atomic_number);
         pos_ang.resize(static_cast<std::size_t>(natm));
         z.resize(static_cast<std::size_t>(natm));
         for (int i = 0; i < natm; ++i) {

@@ -38,6 +38,10 @@ void Backend::init() {
     context_.defer_stream = defer;
     context_.exec.backend = this;
     context_.exec.evaluation_transaction = &evaluation_;
+    // The shared capture buffer of the asynchronous consumers (allocated
+    // when a run starts with consumers subscribed).
+    context_.capture = &capture_;
+    capture_.reset_stats();
     release_fault_ring_();
     ATV_CUDA_CHECK(cudaMallocHost(&fault_ring_, kFaultRing * sizeof(unsigned)));
     if (!device_step_)
@@ -118,6 +122,7 @@ bool device_input(std::string_view block, const cpu::ColumnRef& column) {
     case AtomFieldId::mass:
     case AtomFieldId::charge:
     case AtomFieldId::type:
+    case AtomFieldId::atomic_number:
     case AtomFieldId::tag:
     case AtomFieldId::image:
     case AtomFieldId::num_bond:
@@ -171,6 +176,8 @@ void Backend::materialize(const cpu::Frame& frame) {
         for (int j = 0; j < 3; ++j)
             cell[3 * i + j] = frame.box.cell()(i, j);
     box.assign_cell(cell);
+    if (general_cell_)
+        box.ortho = false; // see Component::tilts_box
     Box* resident = nullptr;
     ATV_CUDA_CHECK(cudaMalloc(&resident, sizeof(Box)));
     // Zeroed cache: the first publish is a cell change (revision 1).
@@ -197,13 +204,20 @@ void Backend::load(const Plan<Component>& plan) {
     demands_.clear();
     gate_evaluation_ = plan.kind == PhaseKind::MD;
     virial_demanded_ = false;
+    general_cell_ = false;
+    for (auto* component : plan.components())
+        general_cell_ |= component->tilts_box();
+    if (general_cell_)
+        context_.host_box.ortho = false;
     report_step_ = -1;
     if (gate_evaluation_)
         for (auto* component : plan.components()) {
             const auto d = component->demand();
             if (d.every > 0 && (d.energy || d.virial))
                 demands_.push_back(d);
-            virial_demanded_ |= d.virial && d.every > 0;
+            // A virial consumer on no cadence (every 0: thermo 0) still
+            // reads it on the reported final step.
+            virial_demanded_ |= d.virial;
         }
 }
 
@@ -249,6 +263,10 @@ void Backend::destroy_plan(const Plan<Component>& plan) {
 }
 
 void Backend::prepare_run(BigInt step_idx) {
+    // The capture buffer is (re)allocated only when its consumer set changed
+    // at a run boundary; otherwise this is a flag test.
+    if (plan_)
+        capture_.ensure({context_, frame_});
     if (!plan_
         || (plan_->kind != PhaseKind::MD && plan_->kind != PhaseKind::Minimizer)
         || forces_ready_)
@@ -277,6 +295,53 @@ void Backend::prepare_run(BigInt step_idx) {
     forces_ready_ = true;
 }
 
+void Backend::setup_output(BigInt step_idx) {
+    // LAMMPS src/output.cpp Output::setup, e8c4c278a8. Copyright (2003)
+    // Sandia Corporation. GPL-2.0-only. Called by Run::command at the start
+    // of every run — after Verlet::setup on a fresh one, alone (`run N pre
+    // no`) on a continued one — and by Min::setup, to write dumps and thermo
+    // for the current `update->ntimestep`. Each component applies its own
+    // cadence and the `last_dump` never-twice rule; the launches are eager
+    // (outside every step graph) and enqueue device work only.
+    output_pass_(step_idx, /*final=*/false);
+}
+
+void Backend::final_output(BigInt step_idx) {
+    // LAMMPS src/min.cpp Min::run, e8c4c278a8. Copyright (2003) Sandia
+    // Corporation. GPL-2.0-only. A minimization that stops before MAXITER
+    // sets next_dump / next_thermo to the current timestep and calls
+    // output->write: the final state is written once (never twice).
+    output_pass_(step_idx, /*final=*/true);
+}
+
+void Backend::output_pass_(BigInt step_idx, bool final) {
+    if (!plan_)
+        return;
+    int phase = -1;
+    if (plan_->kind == PhaseKind::MD)
+        phase = slot_of(ATV::md::Phase::end_of_step);
+    else if (plan_->kind == PhaseKind::Minimizer)
+        phase = slot_of(ATV::minimizer::Phase::end_of_step);
+    if (phase < 0)
+        return;
+    struct DispatchGuard {
+        bool& active;
+        bool saved;
+        ~DispatchGuard() { active = saved; }
+    } guard{dispatching_, dispatching_};
+    dispatching_ = true;
+    for (auto* component : plan_->components()) {
+        LaunchContext ctx{context_, frame_, phase, step_idx};
+        if (final) {
+            ctx.forced_final = true;
+            component->final_output(ctx);
+        } else {
+            ctx.initializing_forces = true; // LAMMPS update->setupflag
+            component->setup_output(ctx);
+        }
+    }
+}
+
 void Backend::execute_phases(BigInt step_idx, int first_phase, int end_phase) {
     if (!plan_)
         throw std::invalid_argument("CUDA Backend has no loaded plan");
@@ -301,7 +366,8 @@ void Backend::execute_phases(const Plan<Component>& plan, BigInt step_idx,
         if (slot.ops.empty())
             continue;
         for (auto& op : slot.ops) {
-            if (op.frequency > 0 && step_idx % op.frequency != 0
+            if (op.frequency > 0
+                && step_idx % op.frequency != op.frequency_phase
                 && !(step_idx == report_step_
                      && op.component->samples_final_step()))
                 continue;
@@ -313,6 +379,9 @@ void Backend::execute_phases(const Plan<Component>& plan, BigInt step_idx,
             ctx.forces_requested &= slot.forces_requested;
             ctx.stress_requested &= slot.stress_requested;
             apply_demand_(ctx, step_idx);
+            // Host admission (capture-buffer backpressure), before any
+            // device work of this launch is enqueued.
+            op.component->before_launch(ctx);
             if (timed)
                 timer_->impl()->begin(stream);
             try {
@@ -345,11 +414,9 @@ void Backend::execute_phases(const Plan<Component>& plan, BigInt step_idx,
         //     `cudaStreamSynchronize(stream) + cudaStreamSynchronize(defer)`
         //     drained both streams 6× per step (per-phase × main + defer),
         //     ~80 µs/step pure host wait on Hopper for no semantic gain.
-        //   - Cross-stream dependencies (defer_stream reads main_stream's
-        //     buffers) are explicitly ordered by AsyncBridge::launch via
-        //     cudaEventRecord(main) + cudaStreamWaitEvent(defer) per
-        //     deferred op, so cross-stream reads see consistent values
-        //     without per-phase sync.
+        //   - Asynchronous consumers freeze their step on the compute
+        //     stream into the pinned capture buffer (in stream order, after
+        //     the step's physics), so no cross-stream sync is needed.
         //   - End-of-run sync happens in Backend::sync() / retrieve(). No
         //     component waits on the device inside a step (iron law 10);
         //     host-consumed values arrive through async copies.
@@ -359,6 +426,9 @@ void Backend::execute_phases(const Plan<Component>& plan, BigInt step_idx,
 }
 
 void Backend::step(BigInt step_idx) {
+    // A failed asynchronous consumer stops the run at the next step: a host
+    // atomic flag, no device read.
+    capture_.check();
     EvaluationTransaction::Scope evaluation(evaluation_);
     prepare_run(step_idx);
     sync_device_step_(step_idx);
@@ -475,7 +545,8 @@ void Backend::execute_step_graphed_(BigInt step_idx) {
     dispatching_ = true;
     for (const auto& slot : plan.slots) {
         for (const auto& op : slot.ops) {
-            if (op.frequency > 0 && step_idx % op.frequency != 0
+            if (op.frequency > 0
+                && step_idx % op.frequency != op.frequency_phase
                 && !(step_idx == report_step_
                      && op.component->samples_final_step()))
                 continue;
@@ -483,6 +554,11 @@ void Backend::execute_step_graphed_(BigInt step_idx) {
             ctx.forces_requested &= slot.forces_requested;
             ctx.stress_requested &= slot.stress_requested;
             apply_demand_(ctx, step_idx);
+            // Host admission once per execution, replayed or not, before the
+            // segment holding this launch is enqueued: the one point where a
+            // full capture buffer may hold the stepping thread (iron law
+            // 10's sanctioned exception), never inside a graph.
+            op.component->before_launch(ctx);
             const bool box = op.component->changes_box(slot.phase);
             if (op.scheduling != Scheduling::deferrable
                 && op.component->graph_capturable()) {
@@ -509,6 +585,10 @@ void Backend::run(int n_steps) {
 
 void Backend::destroy_components() {
     forget_graphs_();
+    // Every captured frame is consumed by live consumers before any of them
+    // is destroyed (synchronizes the compute stream — teardown). A consumer
+    // failure stays pending for retrieve().
+    capture_.stop();
     DestroyContext ctx{context_, frame_};
     lifecycle_.destroy_all([&](Component& c) { c.destroy(ctx); });
 }
@@ -518,6 +598,32 @@ void Backend::retrieve(cpu::Frame& frame, bool copy_forces) {
     cuda::to_cpu(frame_, frame, copy_forces);
     input_snapshot_.capture(frame, device_input);
     inputs_dirty_ = identity_dirty_ = false;
+    // Normal completion: every captured frame is consumed before run()
+    // reports success, and a consumer failure fails the run here (once).
+    std::exception_ptr failed;
+    try {
+        capture_.drain(/*raise=*/true);
+    } catch (...) {
+        failed = std::current_exception();
+    }
+    // End-of-run checks. Every component is asked; the first failure is
+    // rethrown after. A backend driven without a loaded plan has no
+    // components to ask.
+    if (plan_ == nullptr) {
+        if (failed)
+            std::rethrow_exception(failed);
+        return;
+    }
+    for (auto* component : plan_->components()) {
+        try {
+            component->on_retrieve({context_, frame_});
+        } catch (...) {
+            if (!failed)
+                failed = std::current_exception();
+        }
+    }
+    if (failed)
+        std::rethrow_exception(failed);
 }
 
 InputChange Backend::validate_inputs(const cpu::Frame& frame) const {
@@ -555,6 +661,11 @@ void Backend::refresh_inputs(const cpu::Frame& frame) {
         // Build replacement storage before releasing the current allocation.
         // The Frame object stays at the same address for borrowed method plans.
         auto replacement = cpu::to_cuda(frame);
+        // Captures in flight read the old frame's state only from their
+        // own slots; the buffer is re-laid out for the new population at
+        // the next run start.
+        capture_.stop();
+        capture_.invalidate();
         cuda::destroy(frame_);
         frame_ = replacement;
         identity_dirty_ = true;
@@ -571,6 +682,8 @@ void Backend::refresh_inputs(const cpu::Frame& frame) {
         for (int j = 0; j < 3; ++j)
             cell[3 * i + j] = frame.box.cell()(i, j);
     box.assign_cell(cell);
+    if (general_cell_)
+        box.ortho = false; // see Component::tilts_box
     publish_box_();
     context_.md.n_dof_global = ATV::md::degrees_of_freedom(frame.nlocal());
     // A reported scientific force fault belongs to the discarded evaluation.
@@ -611,11 +724,14 @@ void Backend::shutdown() {
             ATV_CUDA_CHECK(cudaStreamSynchronize(
                 static_cast<cudaStream_t>(context_.defer_stream)));
         });
+        capture_.stop();
         DestroyContext ctx{context_, frame_};
         lifecycle_.destroy_all([&](Component& component) {
             cleanup([&] { component.destroy(ctx); });
         });
     }
+    // Pinned slots and device words go while the streams still exist.
+    capture_.release();
     if (context_.host_box.resident)
         cleanup([&] {
             ATV_CUDA_CHECK(

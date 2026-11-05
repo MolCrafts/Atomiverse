@@ -85,18 +85,19 @@ TaskSpec make_md_spec() {
         PairCoulCutParams{6.0, 0.0, 0.0, 0.8333333333333334, 14.39914},
         std::nullopt});
     // The per-type LJ table form, special weights and shift flag (v7).
-    entries.push_back(MDComponentEntry{PairLJCutParams{0.0,
-                                                       0.0,
-                                                       6.0,
-                                                       0.0,
-                                                       0.0,
-                                                       0.5,
-                                                       {0, 0, 1},
-                                                       {0, 1, 1},
-                                                       {0.0104, 0.005, 0.002},
-                                                       {3.4, 3.0, 2.6},
-                                                       false},
-                                       std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PairLJCutParams{
+            0.0,
+            0.0,
+            6.0,
+            0.0,
+            0.0,
+            0.5,
+            {{0, 0, 0.0104, 3.4}, {0, 1, 0.005, 3.0}, {1, 1, 0.002, 2.6}},
+            {},
+            false,
+            false},
+        std::nullopt});
     entries.push_back(MDComponentEntry{CoulLongParams{0.5833333333333334, 6.0},
                                        std::nullopt});
     entries.push_back(MDComponentEntry{
@@ -186,9 +187,8 @@ TaskSpec make_md_spec() {
     // layout. The single-type C++ constructor stays expressible as one-row
     // vectors — that is what the materializer parity test uses.
     //
-    // TWO rows, keyed by the atomic numbers a real frame carries in
-    // `kAtom_type` (Na = 11, Cl = 17 — the Z-keying reality, not 0/1): a
-    // Na-Cl row and a Cl-Cl row. `type_i` and `type_j` therefore differ from
+    // TWO rows, keyed by force-field types used as-is in `kAtom_type`
+    // (11 and 17, deliberately not 0/1): a Na-Cl row and a Cl-Cl row. `type_i` and `type_j` therefore differ from
     // each other AND row to row, so a codec that swapped the two integer
     // vectors, or wrote one row twice, cannot survive the roundtrip. Five
     // parallel double vectors on top of that is the widest parallel-vector
@@ -247,7 +247,45 @@ TaskSpec make_md_spec() {
         ImproperHarmonicParams{/*K=*/{0.4, 0.9},
                                /*chi0=*/{1.5707963267948966, 0.2}},
         std::nullopt});
-    return TaskSpec(MDTask{std::move(entries), 7});
+    // v7: the per-type `PairLJCut` mirror (rows with and without a per-pair
+    // cutoff, plus r^-4 rows) and the fused `PairLJCutCoulLong` (ID 36) with
+    // every field off its default.
+    PairLJCutParams typed{0.0, 0.0, 9.5, 0.0, 0.5, 0.75};
+    typed.coeffs = {{1, 1, 0.011, 3.1, 7.25}, {2, 2, 0.042, 4.2}};
+    typed.r4 = {{1, 2, 0.061, 2.4, 6.5}};
+    typed.tail = true;
+    entries.push_back(MDComponentEntry{typed, std::nullopt});
+    PairLJCutCoulLongParams fused{{{0, 0, 0.013, 3.3, 8.5}, {0, 1, 0.02, 3.6}},
+                                  0.31,
+                                  9.25,
+                                  0.1,
+                                  0.2,
+                                  0.3,
+                                  0.4,
+                                  0.6,
+                                  0.7,
+                                  false,
+                                  {{0, 1, 0.07, 2.6, 5.5}},
+                                  /*tail=*/true};
+    entries.push_back(MDComponentEntry{fused, std::nullopt});
+    // `AngleCosineParams` — one K [eV] run, two distinct types; and
+    // `FixEfieldParams` — three distinct field components [V/Å], bound
+    // explicitly so its phase/order also roundtrips.
+    entries.push_back(
+        MDComponentEntry{AngleCosineParams{/*K=*/{0.0258, 1.5}}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{FixEfieldParams{/*Ex=*/0.01, /*Ey=*/-0.02, /*Ez=*/0.3},
+                         MDBinding{ATV::md::Phase::post_force, 100}});
+    // `MrecRecorderParams` — every field off its default so a swapped or
+    // dropped field cannot roundtrip by accident.
+    entries.push_back(MDComponentEntry{
+        MrecRecorderParams{"run/traj.mrec", /*every=*/25, /*flush_every=*/9,
+                           /*durable=*/false},
+        std::nullopt});
+    // The driver's capture budget exceeds 2^32 so a narrowed wire field
+    // cannot roundtrip either.
+    return TaskSpec(MDTask{std::move(entries), 7,
+                           /*capture_buffer_bytes=*/5'000'000'017ULL});
 }
 
 TaskSpec make_minimize_spec() {
@@ -397,6 +435,20 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::BondFene), 33u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::DihedralCharmm), 34u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::ImproperHarmonic), 35u);
+    // Coarse-grained polymer-electrolyte pair, appended after 36.
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::AngleCosine), 37u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixEfield), 38u);
+    EXPECT_EQ(component_id(MDComponentParams{AngleCosineParams{}}),
+              ComponentId::AngleCosine);
+    EXPECT_EQ(component_id(MDComponentParams{FixEfieldParams{}}),
+              ComponentId::FixEfield);
+    EXPECT_STREQ(component_name(ComponentId::AngleCosine), "AngleCosine");
+    EXPECT_STREQ(component_name(ComponentId::FixEfield), "FixEfield");
+    // The molrec trajectory sink, appended after 38.
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::MrecRecorder), 39u);
+    EXPECT_EQ(component_id(MDComponentParams{MrecRecorderParams{}}),
+              ComponentId::MrecRecorder);
+    EXPECT_STREQ(component_name(ComponentId::MrecRecorder), "MrecRecorder");
     // …and the variant→ID map for each, for the reason the cell relaxers
     // above already demonstrate: `PairMorseParams` and `PairBuckParams` are
     // both four doubles, `PairYukawaParams` is three, and the three bonded
@@ -421,6 +473,9 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
               ComponentId::DihedralCharmm);
     EXPECT_EQ(component_id(MDComponentParams{ImproperHarmonicParams{}}),
               ComponentId::ImproperHarmonic);
+    EXPECT_EQ(component_id(MDComponentParams{PairLJCutCoulLongParams{}}),
+              ComponentId::PairLJCutCoulLong);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairLJCutCoulLong), 36u);
     // The three electrostatic params are structurally similar (doubles, and
     // two of them lead with α), so pin the variant→ID map as well as the
     // numbers: a swapped arm is otherwise invisible on the wire.
@@ -455,7 +510,23 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
 // garbage — the NPT precedent: a LAYOUT change is a bump, an appended
 // component ID with a fresh payload is not. The exact-match version gate in
 // `unpack` is what makes the break loud instead of silent.
+// v7: the `PairLJCutParams` payload gained LJ and r^-4 rows after its six
+// scalars — a layout change, hence a bump.
 TEST(TaskCodec, WireVersionIsSeven) { EXPECT_EQ(TaskSpec::kWireVersion, 7u); }
+
+TEST(TaskCodec, TypedPairLJCutMirrorSelectsOneConstructor) {
+    PairLJCutParams single{0.0104, 3.4, 6.0};
+    EXPECT_FALSE(single.typed());
+    PairLJCutParams table{0.0, 0.0, 6.0};
+    table.coeffs = {{0, 0, 0.0104, 3.4}};
+    EXPECT_TRUE(table.typed());
+    PairLJCutParams both = table;
+    both.epsilon = 0.0104;
+    EXPECT_THROW(both.typed(), std::invalid_argument);
+    PairLJCutParams r4_only = single;
+    r4_only.r4 = {{0, 0, 0.05, 2.5, 6.0}};
+    EXPECT_THROW(r4_only.typed(), std::invalid_argument);
+}
 
 TEST(TaskCodec, MdRoundtripIsFieldExact) {
     const TaskSpec spec = make_md_spec();

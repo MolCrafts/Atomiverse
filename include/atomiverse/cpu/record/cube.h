@@ -50,7 +50,7 @@ CubeGrid bounding_box_grid(const std::vector<scf::native::Shell>& shells,
 /// @param filename Output path.
 /// @param title1   First title line.
 /// @param title2   Second title line.
-/// @param frame    Geometry (Å) + Z in type column.
+/// @param frame    Geometry (Å) + Z in the atomic_number column.
 /// @param grid     Grid description (all Bohr).
 /// @param values   Grid values in row-major order (ix, iy, iz) with
 ///                 iz the fastest axis -- cube-file convention.

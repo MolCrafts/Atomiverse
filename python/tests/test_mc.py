@@ -37,11 +37,7 @@ z ≡ e^{βμ}/Λ³, so             Frenkel & Smit, *Understanding Molecular
                               transcribed in ``regressions/mc/metropolis/
                               REFERENCE.md`` and used at
                               ``reg_gcmc_lj.cpp:84``
-Λ = h/√(2π m k_BT)            same REFERENCE.md; engine implementation
-                              ``core/units.h:171`` (``lambda_thermal``)
-k_B = 8.617333262e-5 eV/K,    ``core/units.h:138``, ``:161``, ``:149``
-h = 4.135667696 eV·fs,
-amu·Å²/fs² → eV = 103.6427
+Λ = h/√(2π m k T mvv2e)      lj row, ``lambda_thermal``: h = k = mvv2e = 1
 ρ(z) = z − 2·B₂(T)·z² + O(z³) Hill, *An Introduction to Statistical
                               Thermodynamics* (Dover 1986) §15-3 eq. (15-24);
                               ``regressions/mc/metropolis/REFERENCE.md``
@@ -88,9 +84,11 @@ from atomiverse.potentials.pair import LJCut
 
 # ── Unit constants, transcribed from core/units.h ───────────────────
 
-_KB_EV_PER_K: float = 8.617333262e-5  # core/units.h:138 [eV/K]
-_H_PLANCK_EV_FS: float = 4.135667696  # core/units.h:161 [eV·fs]
-_MASS_V2_TO_ENERGY: float = 103.6427  # core/units.h:149 [amu·Å²/fs² → eV]
+# lj row: md_boltz = md_hplanck = md_mvv2e = 1. The names stay so the
+# activity derivation below is the same algebra as units::lambda_thermal.
+_KB_EV_PER_K: float = 1.0
+_H_PLANCK_EV_FS: float = 1.0
+_MASS_V2_TO_ENERGY: float = 1.0
 
 # ── Argon-flavoured LJ, the same parameters regressions/mc/ samples ──
 
@@ -158,16 +156,12 @@ _GCMC_VOLUME_A3: float = _GCMC_BOX_A**3  # 8489.664 Å³ = 216 σ³
 _GCMC_Z_RED: float = 0.05
 _GCMC_Z_PER_A3: float = _GCMC_Z_RED / _SIGMA_A**3  # [Å⁻³]
 
-#: HARD-CODED GOLDEN — μ = k_BT·ln(z·Λ³) at T = 180 K, m = 39.948 amu,
-#: zσ³ = 0.05, σ = 3.4 Å. Derivation (all inputs pinned in the module
-#: docstring's table):
-#:     k_BT   = 8.617333262e-5 × 180        = 0.0155111998716    eV
-#:     Λ      = h/√(2π m k_BT · 103.6427)   = 0.20588093156041   Å
-#:     Λ³                                   = 8.7266663949720e-3 Å³
-#:     z      = 0.05 / 3.4³                 = 1.2721351516385e-3 Å⁻³
-#:     μ      = k_BT · ln(z Λ³)             = −0.17695844425991  eV
-_GCMC_MU_EV: float = -0.17695844425991422
-_GCMC_LAMBDA_A: float = 0.20588093156041126
+#: HARD-CODED GOLDEN — μ = kT·ln(z·Λ³) on the lj row (h = k = mvv2e = 1),
+#: T = 180, m = 39.948, zσ³ = 0.05, σ = 3.4.
+#:     Λ = 1/√(2π m T) = 0.0047046388726666956
+#:     μ = T · ln(z Λ³) = -4094.0419242493808
+_GCMC_MU_EV: float = -4094.0419242493808
+_GCMC_LAMBDA_A: float = 0.0047046388726666956
 
 #: Ideal-gas ⟨N⟩ = z·V = 10.80 atoms. The second-order Mayer term lifts this
 #: to 12.72 (ρ = z − 2B₂z², B₂ = −69.966 Å³ = −1.7801 σ³) and the first
@@ -261,7 +255,7 @@ class TestMcConstruction:
         assert VolumeMove(_NPT_DV_MAX_A3) is not None
 
     def test_insert_delete_move_constructs(self) -> None:
-        assert InsertDeleteMove(_Z_ARGON, _MASS_AMU) is not None
+        assert InsertDeleteMove(1, _Z_ARGON, _MASS_AMU) is not None
 
     def test_move_selector_chains_and_returns_self(self) -> None:
         """``add`` returns the selector so mixed ensembles read as one
@@ -306,7 +300,7 @@ class TestMcConstruction:
 
     def test_insert_delete_zero_mass_raises(self) -> None:
         with pytest.raises(ValueError):
-            InsertDeleteMove(_Z_ARGON, 0.0)
+            InsertDeleteMove(1, _Z_ARGON, 0.0)
 
 
 # ── 2. Canonical (NVT) sampling ─────────────────────────────────────
@@ -546,7 +540,7 @@ def _gcmc_handle() -> "GCMC":
     sim.set_mover(
         MoveSelector()
         .add(TranslateMove(0.4 * _SIGMA_A), 0.5)
-        .add(InsertDeleteMove(_Z_ARGON, _MASS_AMU), 0.5)
+        .add(InsertDeleteMove(1, _Z_ARGON, _MASS_AMU), 0.5)
     )
     return sim
 
@@ -657,8 +651,9 @@ class TestGcmc:
     def test_inserted_atoms_carry_the_configured_species(
         self, gcmc_frame: "molpy.Frame"
     ) -> None:
-        """``InsertDeleteMove(z, mass)`` stamps the species onto every
-        inserted row — the mass MUST be the one GCMC built Λ from."""
+        """``InsertDeleteMove(type, atomic_number, mass)`` stamps the
+        configured identity onto every inserted row — the mass MUST be the
+        one GCMC built Λ from."""
         sim = _gcmc_handle()
         sim.run(gcmc_frame, _GCMC_EQUILIBRATE)
         masses = np.asarray(gcmc_frame["atoms"]["mass"])

@@ -33,7 +33,7 @@ void NormalModeWriter::launch(const cpu::LaunchContext& ctx) {
 
     // Atom symbols from each atom's atomic number (no-fallback table).
     // Hoisted once before the loop -- the 13.7x rule.
-    const int* __restrict sp_type = ctx.frame.span(kAtom_type);
+    const int* __restrict sp_type = ctx.frame.span(kAtom_atomic_number);
     std::vector<std::string> symbol(n);
     for (int i = 0; i < n; ++i)
         symbol[i] = element_symbol(sp_type[i]);

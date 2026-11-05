@@ -45,7 +45,7 @@ struct NDDOSystem {
     /// lacks a parameter row for any atom, or if charge/multiplicity is
     /// inconsistent with the valence electron count.
     ///
-    /// @param frame         CPU Frame (type column = Z).
+    /// @param frame         CPU Frame (atomic_number column = Z).
     /// @param charge        Molecular charge.
     /// @param multiplicity  Spin multiplicity M = 2S + 1 (>= 1).
     /// @param method        NDDO parameter table.

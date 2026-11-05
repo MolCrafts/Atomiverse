@@ -127,7 +127,7 @@ ATV::cpu::Frame build(const Molecule& m) {
     ATV::cpu::Frame f(n);
     for (int i = 0; i < n; ++i) {
         const auto k = static_cast<std::size_t>(i);
-        f.span(ATV::kAtom_type)[k] = m.atoms[k].z;
+        f.span(ATV::kAtom_atomic_number)[k] = m.atoms[k].z;
         f.span(ATV::kAtom_x)[k] = static_cast<ATV::StorageReal>(m.atoms[k].x);
         f.span(ATV::kAtom_y)[k] = static_cast<ATV::StorageReal>(m.atoms[k].y);
         f.span(ATV::kAtom_z)[k] =

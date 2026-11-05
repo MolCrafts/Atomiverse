@@ -59,7 +59,7 @@ cpu::Frame frame_at(const std::vector<std::array<double, 3>>& pos_ang,
         f.span(kAtom_x)[static_cast<int>(i)] = pos_ang[i][0];
         f.span(kAtom_y)[static_cast<int>(i)] = pos_ang[i][1];
         f.span(kAtom_z)[static_cast<int>(i)] = pos_ang[i][2];
-        f.span(kAtom_type)[static_cast<int>(i)] = z[i];
+        f.span(kAtom_atomic_number)[static_cast<int>(i)] = z[i];
     }
     f.box = cpu::Box::cubic(50.0);
     return f;

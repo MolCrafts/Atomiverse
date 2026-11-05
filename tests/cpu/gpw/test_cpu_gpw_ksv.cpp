@@ -125,7 +125,7 @@ TEST(GpwBerryComputeGates, MetallicAndEmptyThrow) {
     const double a = 5.43 * kA2B;
     const double b2a = ATV::units::kBohrInAngstrom;
     ATV::cpu::Frame atoms(1);
-    atoms.span(ATV::kAtom_type)[0] = 14;
+    atoms.span(ATV::kAtom_atomic_number)[0] = 14;
     atoms.span(ATV::kAtom_x)[0] = 0.0;
     atoms.span(ATV::kAtom_y)[0] = 0.0;
     atoms.span(ATV::kAtom_z)[0] = 0.0;

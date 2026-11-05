@@ -61,9 +61,9 @@ ATV::cpu::Frame make_water() {
     frame.span(ATV::kAtom_x)[2] = 0.0;
     frame.span(ATV::kAtom_y)[2] = -0.7572;
     frame.span(ATV::kAtom_z)[2] = -0.4692;
-    frame.span(ATV::kAtom_type)[0] = 8; // O
-    frame.span(ATV::kAtom_type)[1] = 1; // H
-    frame.span(ATV::kAtom_type)[2] = 1; // H
+    frame.span(ATV::kAtom_atomic_number)[0] = 8; // O
+    frame.span(ATV::kAtom_atomic_number)[1] = 1; // H
+    frame.span(ATV::kAtom_atomic_number)[2] = 1; // H
     frame.box = ATV::cpu::Box::cubic(20.0);
     return frame;
 }

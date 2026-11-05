@@ -3,7 +3,7 @@
 ///
 /// The short-range half of an Ewald/PME split. Evaluates
 ///
-///   E_real = units::coulomb · Σ_{i<j} q_i q_j · erfc(α r_ij) / r_ij
+///   E_real = units::md_qqr2e · Σ_{i<j} q_i q_j · erfc(α r_ij) / r_ij
 ///
 /// over the neighbor list, where α is the Ewald splitting parameter shared
 /// with the reciprocal-space `KSpaceEwald` / `KSpacePME` component.

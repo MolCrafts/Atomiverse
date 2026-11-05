@@ -133,11 +133,10 @@ std::string ThermoStyle::line(const ThermoSample& s) const {
             out += fmt::format("{:10d}", static_cast<long long>(s.step));
             continue;
         case ThermoKeyword::Temp:
-            value =
-                s.ndof > 0
-                    ? 2.0 * s.ke
-                          / (static_cast<double>(s.ndof) * units::kB_ev_per_k)
-                    : 0.0;
+            value = s.ndof > 0
+                        ? 2.0 * s.ke
+                              / (static_cast<double>(s.ndof) * units::md_boltz)
+                        : 0.0;
             break;
         case ThermoKeyword::Pe:
             value = s.pe;

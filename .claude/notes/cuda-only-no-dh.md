@@ -27,8 +27,39 @@ end-of-run retrieve — not even a 4-byte flag. Rebuild, overflow, fault and sto
 are decided on the device for the current step (conditional graph nodes,
 capacity-sized grids reading device counts, fault-frozen state); the host
 observes them late through pinned async copies and `cudaEventQuery`.
-Thermo/recorder output is async (defer stream + worker). Evidence is an Nsight
-audit of steady steps (`md-residency`, `benchmarks/perf/md/residency/`), not a source grep.
+Thermo/recorder/analysis output is async and **lossless**: nothing an
+asynchronous consumer is due is ever dropped.
+
+**The one sanctioned exception — capture backpressure.** Every asynchronous
+consumer of a driver (`cuda::AsyncConsumer`: `MrecRecorder`, `XyzRecorder`,
+`Thermo`, `md::PressureSeries`, `DensityRecorder`, `RDF`, `MullikenObs`) reads
+its steps from the driver's ONE shared capture buffer (`cuda::CaptureBuffer`,
+owned by the Backend; the CPU twin is `cpu::CaptureBuffer`, both on the
+host-side `ATV::CaptureLedger`). A step any consumer needs is frozen once, on
+the compute stream, into a pinned host-mapped slot that every consumer due on
+the step reads; the slot frees when the last of them released it. The byte
+budget (`Driver::set_capture_buffer_bytes`, Python
+`MD(capture_buffer_bytes=…)`, CMake `ATV_CAPTURE_BUFFER_BYTES`) bounds every
+frame in flight across all consumers, and when it is full the run waits
+until space frees. Precisely:
+- *Where:* only on the stepping thread, in `Component::before_launch` (the
+  host-side admission the backend calls for every in-loop launch that passes
+  the cadence gate, before that step's work or step graph is enqueued — never
+  inside a graph) or in the eager `setup_output` / `final_output`.
+- *When:* only when the captures admitted but not yet released already fill
+  the budget. With space, admission is host counters plus a mutex — no CUDA
+  call, no device read, no wait (the cadence is the host step counter's, so
+  the host knows when a capture is enqueued without asking the device; a
+  consumer due on a step already captured joins it without a new frame).
+- *How:* a host condition variable signalled by a consumer worker when it
+  releases a frame — never `cudaStreamSynchronize` / `cudaEventSynchronize` /
+  synchronous copies, never a busy-wait. The consumers keep draining while
+  the stepping thread waits; a consumer failure wakes it and the run stops
+  with the error (the backend also checks a host failure flag every step).
+The capture kernels are graph-capturable (the label is the device step); each
+consumer's worker polls its own completion word through mapped memory, off
+the stepping thread. Evidence is an Nsight audit of steady steps
+(`md-residency`, `benchmarks/perf/md/residency/`), not a source grep.
 Open violations and fix order: [cuda-md-device-control.md](../specs/cuda-md-device-control.md).
 
 ## Open violations (fix order)

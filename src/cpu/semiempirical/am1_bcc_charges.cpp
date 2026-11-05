@@ -55,7 +55,7 @@ std::vector<double> AM1BCCCharges::assign(molrs::FrameRef& molecule) {
             "AM1BCCCharges: molecule has too many atoms");
     Frame work(static_cast<int>(n));
     for (std::size_t i = 0; i < n; ++i) {
-        work.span(kAtom_type)[i] = static_cast<int>(atomic_numbers[i]);
+        work.span(kAtom_atomic_number)[i] = static_cast<int>(atomic_numbers[i]);
         work.span(kAtom_x)[i] = static_cast<StorageReal>(x[i]);
         work.span(kAtom_y)[i] = static_cast<StorageReal>(y[i]);
         work.span(kAtom_z)[i] = static_cast<StorageReal>(z[i]);

@@ -152,7 +152,7 @@ int run() {
     // Product path: short GPW SCF with xdm=true reports same periodic E_disp.
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = Zarr[i];
+        frame.span(kAtom_atomic_number)[i] = Zarr[i];
         frame.span(kAtom_x)[i] = ang[i][0];
         frame.span(kAtom_y)[i] = ang[i][1];
         frame.span(kAtom_z)[i] = ang[i][2];

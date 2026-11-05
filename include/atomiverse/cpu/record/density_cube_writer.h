@@ -34,7 +34,12 @@ namespace recorder {
 
 /// @brief Electron-density cube writer.
 ///
-/// Default stride = 0 (every step). Set stride > 0 to thin output.
+/// Default stride = 1 (every iteration); 0 is clamped to 1. Bound in a
+/// minimization it follows the LAMMPS `minimize` + `dump` step convention:
+/// the initial state at setup (step 0), the state after every `stride`-th
+/// completed iteration, and the final state when a criterion stops the run
+/// early — the file is overwritten each time, so it ends as the final
+/// state's. `last_step_written()` names the state in the file.
 class DensityCubeWriter : public cpu::Component {
   public:
     /// @brief Construct with automatic bounding-box grid.
@@ -53,7 +58,19 @@ class DensityCubeWriter : public cpu::Component {
 
     std::string name() const override { return "density_cube_writer"; }
 
+    /// @brief Start of the run (LAMMPS `Output::setup`): the initial state
+    ///        as step 0.
+    void setup_output(const cpu::LaunchContext& ctx) override;
+    /// @brief End of iteration `ctx.step`: step `ctx.step + 1` when on
+    ///        stride.
     void launch(const cpu::LaunchContext& ctx) override;
+    /// @brief Early stop (LAMMPS `Min::run`): the final state unless that
+    ///        step is already written.
+    void final_output(const cpu::LaunchContext& ctx) override;
+
+    /// @brief Completed iterations of the state in the file now [count];
+    ///        -1 before the first write.
+    BigInt last_step_written() const { return last_step_; }
 
     /// @brief Number of cube files written.
     int n_writes() const { return n_writes_; }
@@ -71,6 +88,10 @@ class DensityCubeWriter : public cpu::Component {
     double spacing_;
     int stride_;
     int n_writes_ = 0;
+    BigInt last_step_ = -1; ///< LAMMPS `last_dump` (rank 0)
+
+    /// @brief Overwrite the cube with the state labelled `step`; rank 0.
+    void write_(const cpu::LaunchContext& ctx, BigInt step);
     double last_integral_ = 0.0;
 };
 

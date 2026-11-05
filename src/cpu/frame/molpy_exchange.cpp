@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -57,12 +58,12 @@ void validate_exchange_schema(const molrs::FrameRef& src) {
                                      + block + "'");
     }
 
-    // molpy keeps apart the two meanings that once shared `atoms.type`:
-    // `atomic_number` (UInt) carries Z, while `type` is a String force-field
-    // label the caller owns. The engine's per-atom kind is `atoms.type_id`
-    // (UInt, the force-field atom kind a per-type pair table is keyed by)
-    // when the frame states one, and Z from `atomic_number` otherwise;
-    // `type` and `element` (the String symbol column molpy's
+    // molpy keeps apart the meanings that once shared `atoms.type`:
+    // `atomic_number` (UInt) carries the species Z and `type_id` (UInt, the
+    // same convention as bonds/angles `type_id`) the force-field type index;
+    // `type` is a String force-field label the caller owns. Atomiverse reads
+    // the two integer columns into two Frame columns (`kAtom_atomic_number`,
+    // `kAtom_type`). `type` and `element` (the String symbol column molpy's
     // Atomistic.to_frame() exports) stay in the allow-list — a frame arriving
     // from a molpy tool may legitimately carry them — but are not imported.
     // So do the line-notation facts molpy states on a parsed or embedded
@@ -104,15 +105,29 @@ bool has_column(const molrs::FrameRef& src, const char* block,
     return values;
 }
 
-// The molpy domain index type `Idx` is u64 (`frame_column_u64`).
-::rust::Vec<std::uint64_t> require_u64(const molrs::FrameRef& src,
-                                       const char* block, const char* col) {
-    auto values = molrs::frame_column_u64(src, block, col);
-    if (values.empty())
-        throw std::runtime_error("cpu::from_molpy: required field '"
-                                 + std::string(block) + "." + col
-                                 + "' is missing or empty");
-    return values;
+/// @brief Read one optional per-atom identity column (`atomic_number` /
+///        `type_id`, molpy UInt) into its `int` Frame column.
+/// @param max Largest value the column may hold (118 for Z).
+/// @return False when the source does not carry the column.
+bool copy_identity(const molrs::FrameRef& src, const char* key,
+                   std::uint64_t max, Span<int> destination, int n) {
+    if (!has_column(src, "atoms", key))
+        return false;
+    auto values = molrs::frame_column_u64(src, "atoms", key);
+    if (static_cast<int>(values.size()) != n)
+        throw std::runtime_error("cpu::from_molpy: field 'atoms."
+                                 + std::string(key)
+                                 + "' has the wrong dtype or row count");
+    int* out = destination.data();
+    for (int i = 0; i < n; ++i) {
+        if (values[i] > max)
+            throw std::runtime_error(
+                "cpu::from_molpy: atoms." + std::string(key) + " row "
+                + std::to_string(i) + " is " + std::to_string(values[i])
+                + ", above the largest allowed value " + std::to_string(max));
+        out[i] = static_cast<int>(values[i]);
+    }
+    return true;
 }
 
 template <typename T>
@@ -186,24 +201,8 @@ Frame materialize(const molrs::FrameRef& src) {
     auto x = require_f64(src, "atoms", "x");
     auto y = require_f64(src, "atoms", "y");
     auto z = require_f64(src, "atoms", "z");
-    // The per-atom kind: a force-field `type_id` when stated (a GAFF frame,
-    // whose LJ table distinguishes c3 from ca), else the element. Components
-    // that read Z (electronic methods, the XYZ recorder) need a frame
-    // without `type_id`.
-    // molpy converts species only on request (Element::fill_atomic_numbers);
-    // a frame that spells symbols alone is named, not silently converted.
-    const bool ff_kinds = has_column(src, "atoms", "type_id");
-    if (!ff_kinds && !has_column(src, "atoms", "atomic_number")
-        && has_column(src, "atoms", "element"))
-        throw std::runtime_error(
-            "cpu::from_molpy: atoms carry 'element' symbols but no "
-            "'atomic_number'; convert them first (molpy "
-            "Element::fill_atomic_numbers / frame_fill_atomic_numbers)");
-    auto type =
-        require_u64(src, "atoms", ff_kinds ? "type_id" : "atomic_number");
     const int n = static_cast<int>(x.size());
-    if (static_cast<int>(y.size()) != n || static_cast<int>(z.size()) != n
-        || static_cast<int>(type.size()) != n)
+    if (static_cast<int>(y.size()) != n || static_cast<int>(z.size()) != n)
         throw std::runtime_error(
             "cpu::from_molpy: required atom columns have inconsistent rows");
 
@@ -211,13 +210,27 @@ Frame materialize(const molrs::FrameRef& src) {
     StorageReal* px = frame.span(kAtom_x).data();
     StorageReal* py = frame.span(kAtom_y).data();
     StorageReal* pz = frame.span(kAtom_z).data();
-    int* ptype = frame.span(kAtom_type).data();
     for (int i = 0; i < n; ++i) {
         px[i] = static_cast<StorageReal>(x[i]);
         py[i] = static_cast<StorageReal>(y[i]);
         pz[i] = static_cast<StorageReal>(z[i]);
-        ptype[i] = static_cast<int>(type[i]);
     }
+
+    // The two identity columns are optional here and travel only when the
+    // source carries them: a coarse-grained frame has types and no species,
+    // a QM geometry species and no types. An absent one is removed from the
+    // Frame rather than zero-filled, so the consumer that needs it throws
+    // with the how-to (`atom_field_how_to`) instead of reading a silent 0.
+    // molpy converts element symbols only on request
+    // (Element::fill_atomic_numbers); `element` alone is never read as Z.
+    if (!copy_identity(src, "atomic_number", 118,
+                       frame.span(kAtom_atomic_number), n))
+        frame.block("atoms").erase(kAtom_atomic_number.key);
+    if (!copy_identity(
+            src, "type_id",
+            static_cast<std::uint64_t>(std::numeric_limits<int>::max()),
+            frame.span(kAtom_type), n))
+        frame.block("atoms").erase(kAtom_type.key);
 
     copy_optional_f64(src, "vx", frame.span(kAtom_vx), n);
     copy_optional_f64(src, "vy", frame.span(kAtom_vy), n);
@@ -239,6 +252,11 @@ Frame materialize(const molrs::FrameRef& src) {
             destination[i] = static_cast<TagInt>(tags[i]);
     }
 
+    // molpy stores ix/iy/iz as i32 (`DType::Int`, core/schema `IX`), the
+    // exact width of ATV's per-component `ImageInt`, so images cross with no
+    // narrowing; `frame_column_i32` rejects any other column dtype.
+    static_assert(std::is_same_v<ImageInt, std::int32_t>,
+                  "molpy image columns are i32; ImageInt must match");
     auto image = frame.span(kAtom_image);
     const char* axes[3] = {"ix", "iy", "iz"};
     for (int d = 0; d < 3; ++d) {
@@ -250,7 +268,7 @@ Frame materialize(const molrs::FrameRef& src) {
                                      + std::string(axes[d])
                                      + "' has the wrong dtype or row count");
         for (int i = 0; i < n; ++i)
-            image(i, d) = static_cast<std::int8_t>(values[i]);
+            image(i, d) = values[i];
     }
 
     frame.clear_tag_index();

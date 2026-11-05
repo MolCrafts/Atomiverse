@@ -11,11 +11,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <variant>
 #include <vector>
 
+#include "atomiverse/core/capture_buffer.h"
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
 
@@ -42,37 +45,118 @@ inline const char* task_kind_name(TaskKind kind) noexcept {
 
 // ── Constructor parameter mirrors ─────────────────────────────────────────
 
-/// @brief Mirrors `cpu::PairLJCut` in either constructor form.
+namespace detail {
+/// @brief Field-exact equality of two LJ row lists (roundtrip checks).
+inline bool same_rows(const std::vector<LJTypeCoeff>& a,
+                      const std::vector<LJTypeCoeff>& b) {
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t k = 0; k < a.size(); ++k)
+        if (a[k].type_i != b[k].type_i || a[k].type_j != b[k].type_j
+            || a[k].epsilon != b[k].epsilon || a[k].sigma != b[k].sigma
+            || a[k].cutoff != b[k].cutoff)
+            return false;
+    return true;
+}
+/// @brief Field-exact equality of two r⁻⁴ row lists (roundtrip checks).
+inline bool same_rows(const std::vector<R4TypeCoeff>& a,
+                      const std::vector<R4TypeCoeff>& b) {
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t k = 0; k < a.size(); ++k)
+        if (a[k].type_i != b[k].type_i || a[k].type_j != b[k].type_j
+            || a[k].strength != b[k].strength || a[k].sigma != b[k].sigma
+            || a[k].cutoff != b[k].cutoff)
+            return false;
+    return true;
+}
+} // namespace detail
+
+/// @brief Wire mirror of both `cpu::PairLJCut` constructors.
 ///
-/// Single-type: `epsilon` [eV], `sigma` [Å], empty type table. Per-type: the
-/// `type_*` columns are one coefficient table seen column-wise (one row per
-/// type pair, keyed by frame `kAtom_type` values; unlisted cross pairs mix
-/// Lorentz-Berthelot from the diagonal, a type with no diagonal has no LJ
-/// site) and `epsilon` / `sigma` must be 0 — there is no system-wide pair in
-/// a multi-type system. The codec writes every field in declaration order.
+/// Empty `coeffs`: the single-type `PairLJCut(epsilon, sigma, cutoff)`.
+/// Non-empty `coeffs`: the per-type `PairLJCut(coeffs, cutoff)` (LAMMPS
+/// `init_one` mixing and per-pair cutoffs, `core/lj_type_table.h`); then
+/// `epsilon` and `sigma` must both be 0 — the materializer refuses a payload
+/// that states both a system-wide pair and a table. `r4` mirrors
+/// `set_r4_attraction` and needs `coeffs`. The codec writes the six scalars,
+/// then the LJ rows, then the r⁻⁴ rows, then the tail and energy-shift
+/// bytes.
 struct PairLJCutParams {
-    double epsilon;
-    double sigma;
-    double cutoff;
+    double epsilon; ///< Single-type well depth [eV]; 0 with a table.
+    double sigma;   ///< Single-type length [Å]; 0 with a table.
+    double cutoff;  ///< Cutoff [Å]; the global LJ cutoff with a table.
     /// 1-2 / 1-3 / 1-4 pair weights (LAMMPS special_bonds). Default 1 keeps
     /// every pair.
     double s12 = 1.0;
     double s13 = 1.0;
     double s14 = 1.0;
-    std::vector<int> type_i;          ///< First type of each table row.
-    std::vector<int> type_j;          ///< Second type of each table row.
-    std::vector<double> type_epsilon; ///< Well depth per row [eV].
-    std::vector<double> type_sigma;   ///< Length scale per row [Å].
-    /// LAMMPS `pair_modify shift`: subtract V(r_c) per pair. Default on, the
-    /// historical behaviour of `cpu::PairLJCut`.
+    /// Per-type LJ rows (ε [eV], σ [Å], optional cutoff [Å]).
+    std::vector<LJTypeCoeff> coeffs = {};
+    /// r⁻⁴ attraction rows (S [eV], σ [Å], r_c [Å]).
+    std::vector<R4TypeCoeff> r4 = {};
+    /// LAMMPS `pair_modify tail yes` (`set_tail_correction`).
+    bool tail = false;
+    /// LAMMPS `pair_modify shift` (`set_energy_shift`): subtract V(r_c) per
+    /// pair. Default on, the historical behaviour of `cpu::PairLJCut`.
     bool energy_shift = true;
+
+    /// @brief Which constructor this mirror selects (one rule for every
+    ///        backend that materializes it).
+    /// @return True for the per-type table constructor.
+    /// @throws std::invalid_argument when a table is given together with a
+    ///         nonzero epsilon/sigma, or r⁻⁴ rows without a table.
+    bool typed() const {
+        if (!coeffs.empty() && (epsilon != 0.0 || sigma != 0.0))
+            throw std::invalid_argument(
+                "PairLJCut: a per-type coefficient table and a system-wide "
+                "epsilon/sigma were both given; with a table, epsilon and "
+                "sigma must be 0");
+        if (coeffs.empty() && !r4.empty())
+            throw std::invalid_argument(
+                "PairLJCut: r^-4 attraction rows need a per-type coefficient "
+                "table");
+        return !coeffs.empty();
+    }
 };
 inline bool operator==(const PairLJCutParams& a, const PairLJCutParams& b) {
     return a.epsilon == b.epsilon && a.sigma == b.sigma && a.cutoff == b.cutoff
            && a.s12 == b.s12 && a.s13 == b.s13 && a.s14 == b.s14
-           && a.type_i == b.type_i && a.type_j == b.type_j
-           && a.type_epsilon == b.type_epsilon && a.type_sigma == b.type_sigma
+           && detail::same_rows(a.coeffs, b.coeffs)
+           && detail::same_rows(a.r4, b.r4) && a.tail == b.tail
            && a.energy_shift == b.energy_shift;
+}
+
+/// @brief Wire mirror of `cpu::PairLJCutCoulLong(coeffs, alpha, cutoff)` /
+///        `cuda::PairLJCutCoulLong` — fused typed LJ + Ewald real space.
+///
+/// The real-space half of an Ewald split like `CoulLongParams`: it needs a
+/// `KSpacePmeParams` partner at the same α in the same task. Field defaults
+/// are the C++ defaults: Amber specials and a shifted LJ. Not mirrored:
+/// `set_tail_correction` (CPU-only) — a launcher run gets no LJ tail.
+struct PairLJCutCoulLongParams {
+    /// LJ type rows (ε [eV], σ [Å], optional per-pair LJ cutoff [Å]).
+    std::vector<LJTypeCoeff> coeffs;
+    double alpha;  ///< Ewald α [1/Å]; equals the reciprocal partner's.
+    double cutoff; ///< Coulomb cutoff and global LJ cutoff [Å].
+    /// LJ special weights of 1-2 / 1-3 / 1-4 pairs [dimensionless].
+    double lj12 = 0.0, lj13 = 0.0, lj14 = 0.5;
+    /// Coulomb special weights of 1-2 / 1-3 / 1-4 pairs [dimensionless].
+    double c12 = 0.0, c13 = 0.0, c14 = 5.0 / 6.0;
+    /// LAMMPS `pair_modify shift` of every pair at its own LJ cutoff.
+    bool energy_shift = true;
+    /// r⁻⁴ attraction rows (S [eV], σ [Å], r_c [Å]).
+    std::vector<R4TypeCoeff> r4 = {};
+    /// LAMMPS `pair_modify tail yes` (`set_tail_correction`).
+    bool tail = false;
+};
+inline bool operator==(const PairLJCutCoulLongParams& a,
+                       const PairLJCutCoulLongParams& b) {
+    return detail::same_rows(a.coeffs, b.coeffs) && a.alpha == b.alpha
+           && a.cutoff == b.cutoff && a.lj12 == b.lj12 && a.lj13 == b.lj13
+           && a.lj14 == b.lj14 && a.c12 == b.c12 && a.c13 == b.c13
+           && a.c14 == b.c14 && a.energy_shift == b.energy_shift
+           && detail::same_rows(a.r4, b.r4) && a.tail == b.tail;
 }
 
 struct NeighborListParams {
@@ -161,12 +245,38 @@ struct XyzRecorderParams {
     /// afterwards. This mirror is a plain aggregate and validates nothing;
     /// an empty path is rejected later, by `cpu::XyzRecorder`'s constructor.
     std::string filename;
-    /// Write cadence [steps; >= 1] — one frame whenever `step % freq == 0`.
+    /// Write cadence [steps; >= 1] — one frame whenever the completed-step
+    /// count is a multiple of `freq`, the initial state (step 0) included.
     /// Also checked by `cpu::XyzRecorder`, not here.
     int freq;
 };
 inline bool operator==(const XyzRecorderParams& a, const XyzRecorderParams& b) {
     return a.filename == b.filename && a.freq == b.freq;
+}
+
+/// @brief Wire mirror of the `*.mrec` trajectory recorder —
+///        `cpu::MrecRecorder(path, every, flush_every, durable)` on CPU,
+///        `cuda::MrecRecorder(path, every, flush_every, durable)` on CUDA.
+///        One record is the Python `MrecRecorder` on either device.
+///
+/// Same arrangement as `XyzRecorderParams`: the mirror is always compiled
+/// and decodable; `TaskMaterializer` refuses it with a how-to on a build
+/// without the molpy streaming trajectory writer. Under the MPI launcher
+/// the CPU recorder gathers every rank's owned rows to rank 0 in tag order
+/// (`md::mpi::gather_for_root_io`, the LAMMPS `dump` gather) and only rank 0
+/// writes. Plain aggregate: the recorder constructors validate. The CUDA
+/// recorder's frames go through the driver's shared capture buffer, sized
+/// per driver (`MDTask::capture_buffer_bytes`), not per recorder.
+struct MrecRecorderParams {
+    std::string path;              ///< Output store [`*.mrec`].
+    int every = 1;                 ///< Write cadence [steps; >= 1].
+    std::uint64_t flush_every = 0; ///< Automatic commit cadence [frames].
+    bool durable = true;           ///< Sync on flush / close.
+};
+inline bool operator==(const MrecRecorderParams& a,
+                       const MrecRecorderParams& b) {
+    return a.path == b.path && a.every == b.every
+           && a.flush_every == b.flush_every && a.durable == b.durable;
 }
 
 /// @brief Mirrors `cpu::md::FixLangevin(T_start, T_stop, damp, dt, seed)`.
@@ -337,7 +447,7 @@ struct PairCoulCutParams {
     double s13 = 1.0; ///< 1-3 Coulomb weight.
     double s14 = 1.0; ///< 1-4 Coulomb weight.
     /// Coulomb constant k [eV·Å/e²] (`cpu::PairCoulCut::set_coulomb_constant`).
-    double coulomb = ATV::units::coulomb;
+    double coulomb = ATV::units::md_qqr2e;
 };
 inline bool operator==(const PairCoulCutParams& a, const PairCoulCutParams& b) {
     return a.cutoff == b.cutoff && a.s12 == b.s12 && a.s13 == b.s13
@@ -436,57 +546,23 @@ struct KSpacePppmParams {
     double alpha;
     /// Target real-space mesh spacing [Å]. Rounded to FFT sizes of factors 2, 3, 5.
     double grid_spacing;
-    /// B-spline order [count]. Python supplies 6; the CPU C++ default is 5.
+    /// Charge-assignment order [count]. Python supplies 6, the C++ default of
+    /// both backends.
     int order;
+    /// Explicit mesh (LAMMPS `kspace_modify mesh`, the solvers' mesh
+    /// constructor); all zero = derive it from `grid_spacing`.
+    std::array<int, 3> mesh{0, 0, 0};
 };
 inline bool operator==(const KSpacePppmParams& a, const KSpacePppmParams& b) {
     return a.alpha == b.alpha && a.grid_spacing == b.grid_spacing
-           && a.order == b.order;
-}
-
-/// @brief Constructor parameters of `cpu::PairLJCutCoulLong` — fused
-///        multi-type LJ 12-6 + real-space Ewald Coulomb (LAMMPS
-///        `lj/cut/coul/long`), the Amber/GAFF nonbonded style.
-///
-/// The LJ table crosses as parallel columns, one row per type pair (the
-/// wire's variable-length primitive is a run of one scalar type), and is
-/// transposed back into `cpu::LJTypeCoeff` rows at construction. Like
-/// `cpu::PairLJCut`'s table form, unlisted cross pairs take Lorentz-Berthelot
-/// mixing of the diagonal, and a type with no diagonal has no LJ site. Type
-/// keys are frame `kAtom_type` values: `atoms.type_id` when the molpy frame
-/// states one (a force-field atom kind), else Z.
-///
-/// Not an `MDComponentParams` / `MinimizeComponentParams` alternative,
-/// exactly like `KSpacePppmParams`: it is registered beside the task wire, so
-/// a launcher payload cannot name it. Its reciprocal partner is `KSpacePME`
-/// or `KSpacePPPM` at the same α.
-struct PairLJCutCoulLongParams {
-    std::vector<int> type_i;     ///< First type of each LJ row.
-    std::vector<int> type_j;     ///< Second type of each LJ row.
-    std::vector<double> epsilon; ///< Well depth per row [eV].
-    std::vector<double> sigma;   ///< Length scale per row [Å].
-    double alpha;                ///< Ewald α [1/Å]; equals the k-space α.
-    double cutoff;               ///< Shared LJ / Coulomb cutoff [Å].
-    /// 1-2 / 1-3 / 1-4 LJ weights (LAMMPS `special_bonds lj`).
-    std::array<double, 3> special_lj{1.0, 1.0, 1.0};
-    /// 1-2 / 1-3 / 1-4 Coulomb weights (LAMMPS `special_bonds coul`).
-    std::array<double, 3> special_coul{1.0, 1.0, 1.0};
-    /// LAMMPS `pair_modify shift`: subtract V_LJ(rc) per pair.
-    bool energy_shift = false;
-};
-inline bool operator==(const PairLJCutCoulLongParams& a,
-                       const PairLJCutCoulLongParams& b) {
-    return a.type_i == b.type_i && a.type_j == b.type_j
-           && a.epsilon == b.epsilon && a.sigma == b.sigma && a.alpha == b.alpha
-           && a.cutoff == b.cutoff && a.special_lj == b.special_lj
-           && a.special_coul == b.special_coul
-           && a.energy_shift == b.energy_shift;
+           && a.order == b.order && a.mesh == b.mesh;
 }
 
 /// @brief Constructor parameters of `cpu::ImproperCvff(K, d, n)` — the
 ///        Amber/GAFF improper V = K (1 + d cos(n φ)), d = ±1.
 ///
-/// Registered beside the task wire like `PairLJCutCoulLongParams`.
+/// Registered beside the task wire like `KSpacePppmParams`: a launcher
+/// payload cannot name it.
 struct ImproperCvffParams {
     std::vector<double> K; ///< Amplitude per improper type [eV].
     std::vector<int> d;    ///< Sign per type, +1 or −1.
@@ -693,14 +769,13 @@ inline bool operator==(const PairBuckParams& a, const PairBuckParams& b) {
 /// `cpu::PairBorn`, which walks all pairs O(N²) instead of taking the
 /// single-type arm's `ctx.md.pair_list` fast path.
 ///
-/// Type keys are frame `kAtom_type` values as-is. In this tree that column
-/// carries the ATOMIC NUMBER (`cpu::from_molpy` fills it from molpy
-/// `atomic_number`), so a Na-Cl row is `{11, 17}` and an argon dimer is
-/// `{18, 18}` — not a 0-based dense index. Every interacting pair must be
+/// Type keys are frame `kAtom_type` values as-is — the force-field type
+/// index (`cpu::from_molpy` fills it from molpy `atoms.type_id`), never the
+/// species — and are not renumbered. Every interacting pair must be
 /// listed; unlisted pairs do not interact (Fumi-Tosi parameters are not
 /// Lorentz-Berthelot, so there is no silent mixing).
 struct PairBornParams {
-    /// @brief First type of each row (frame `kAtom_type`, i.e. Z).
+    /// @brief First type of each row (frame `kAtom_type`).
     std::vector<int> type_i;
     /// @brief Second type of each row; the table is symmetric in (i, j).
     std::vector<int> type_j;
@@ -782,8 +857,8 @@ inline bool operator==(const PairWcaParams& a, const PairWcaParams& b) {
 /// reason `PairBornParams` is parallel vectors), and unlike the Born table it
 /// is a DENSE square matrix rather than a list of keyed rows, so it is not
 /// expressible as one flat run either. Its indices are frame `kAtom_type`
-/// values as-is — atomic numbers in this tree — so a faithful mirror would
-/// also have to carry max(Z) + 1 rows of mostly-unused amplitudes.
+/// values as-is, so a faithful mirror would also have to carry
+/// max(type) + 1 rows.
 ///
 /// Two behaviours a caller has to know, both documented on the C++ class:
 /// `kStress` carries the CONSERVATIVE virial only (the thermostat terms have
@@ -896,6 +971,39 @@ struct ImproperHarmonicParams {
 inline bool operator==(const ImproperHarmonicParams& a,
                        const ImproperHarmonicParams& b) {
     return a.K == b.K && a.chi0 == b.chi0;
+}
+
+/// @brief Wire mirror of `cpu::AngleCosine(K)` — LAMMPS `angle_style cosine`.
+///
+/// \(V = K(1 + \cos\theta)\) over the angle 3-tuples of the frame, minimum at
+/// \(\theta = \pi\): the bending stiffness of a semiflexible Kremer–Grest
+/// chain. One vector indexed by angle type and no equilibrium angle — the
+/// style has none — which is why it is not an `AngleHarmonicParams` with a
+/// fixed θ₀ but its own ID.
+struct AngleCosineParams {
+    /// @brief Angle stiffness per angle type K [eV].
+    std::vector<double> K;
+};
+inline bool operator==(const AngleCosineParams& a, const AngleCosineParams& b) {
+    return a.K == b.K;
+}
+
+/// @brief Wire mirror of `cpu::md::FixEfield(Ex, Ey, Ez)` — LAMMPS
+///        `fix efield` with a constant uniform field.
+///
+/// \(\mathbf F_i \mathrel{+}= q_i\mathbf E\) on every owned atom, and
+/// \(U \mathrel{+}= -\sum_i q_i\,\mathbf E\cdot\mathbf r_i^{\mathrm u}\) with
+/// unwrapped coordinates \(\mathbf r^{\mathrm u} = \mathbf r + H\,\mathbf n\)
+/// (image flags \(\mathbf n\)). Field in V/Å, so with charges in e the force
+/// is eV/Å (LAMMPS metal `qe2f = 1`). No virial: LAMMPS adds one only under
+/// `fix_modify virial yes`. Reads the per-atom charge column.
+struct FixEfieldParams {
+    double Ex = 0.0; ///< Field x-component [V/Å].
+    double Ey = 0.0; ///< Field y-component [V/Å].
+    double Ez = 0.0; ///< Field z-component [V/Å].
+};
+inline bool operator==(const FixEfieldParams& a, const FixEfieldParams& b) {
+    return a.Ex == b.Ex && a.Ey == b.Ey && a.Ez == b.Ez;
 }
 
 /// @brief Mirrors the `cpu::minimizer::LBFGS` constructor exactly.
@@ -1287,6 +1395,16 @@ enum class ComponentId : std::uint16_t {
     DihedralCharmm = 34,
     /// Harmonic improper torsion — `cpu::ImproperHarmonic`.
     ImproperHarmonic = 35,
+    /// Fused typed LJ + Ewald real space — `cpu::PairLJCutCoulLong`; the
+    /// real-space half of an Ewald split, MD-only.
+    PairLJCutCoulLong = 36,
+    /// Cosine angle (Kremer–Grest bending) — `cpu::AngleCosine`.
+    AngleCosine = 37,
+    /// Constant uniform electric field — `cpu::md::FixEfield`. MD-only.
+    FixEfield = 38,
+    /// molrec trajectory sink — `cpu::MrecRecorder`. Decodable everywhere;
+    /// materialized only with the molpy streaming trajectory writer.
+    MrecRecorder = 39,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -1363,6 +1481,14 @@ inline const char* component_name(ComponentId id) noexcept {
         return "DihedralCharmm";
     case ComponentId::ImproperHarmonic:
         return "ImproperHarmonic";
+    case ComponentId::PairLJCutCoulLong:
+        return "PairLJCutCoulLong";
+    case ComponentId::AngleCosine:
+        return "AngleCosine";
+    case ComponentId::FixEfield:
+        return "FixEfield";
+    case ComponentId::MrecRecorder:
+        return "MrecRecorder";
     }
     return "unknown";
 }
@@ -1400,17 +1526,17 @@ inline const char* criterion_name(MinimizeCriterionId id) noexcept {
     return "unknown";
 }
 
-using MDComponentParams =
-    std::variant<PairLJCutParams, NeighborListParams, BondHarmonicParams,
-                 AngleHarmonicParams, DihedralMultiHarmonicParams,
-                 VelocityVerletParams, InitVelocityParams, NoseHooverParams,
-                 ThermoParams, AM1Params, FixLangevinParams, FixCsvrParams,
-                 NoseHooverNptParams, ParrinelloRahmanNptParams,
-                 BerendsenBarostatParams, PairCoulCutParams, CoulLongParams,
-                 KSpacePmeParams, XyzRecorderParams, PWParams, PairMorseParams,
-                 PairBuckParams, PairBornParams, PairYukawaParams,
-                 PairWcaParams, PairDpdParams, BondFeneParams,
-                 DihedralCharmmParams, ImproperHarmonicParams>;
+using MDComponentParams = std::variant<
+    PairLJCutParams, NeighborListParams, BondHarmonicParams,
+    AngleHarmonicParams, DihedralMultiHarmonicParams, VelocityVerletParams,
+    InitVelocityParams, NoseHooverParams, ThermoParams, AM1Params,
+    FixLangevinParams, FixCsvrParams, NoseHooverNptParams,
+    ParrinelloRahmanNptParams, BerendsenBarostatParams, PairCoulCutParams,
+    CoulLongParams, KSpacePmeParams, XyzRecorderParams, PWParams,
+    PairMorseParams, PairBuckParams, PairBornParams, PairYukawaParams,
+    PairWcaParams, PairDpdParams, BondFeneParams, DihedralCharmmParams,
+    ImproperHarmonicParams, PairLJCutCoulLongParams, AngleCosineParams,
+    FixEfieldParams, MrecRecorderParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams, CGParams,
@@ -1485,6 +1611,14 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::DihedralCharmm;
             else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
                 return ComponentId::ImproperHarmonic;
+            else if constexpr (std::is_same_v<P, PairLJCutCoulLongParams>)
+                return ComponentId::PairLJCutCoulLong;
+            else if constexpr (std::is_same_v<P, AngleCosineParams>)
+                return ComponentId::AngleCosine;
+            else if constexpr (std::is_same_v<P, FixEfieldParams>)
+                return ComponentId::FixEfield;
+            else if constexpr (std::is_same_v<P, MrecRecorderParams>)
+                return ComponentId::MrecRecorder;
             else
                 static_assert(detail::unsupported_component_v<P>);
         },
@@ -1556,9 +1690,14 @@ inline bool operator==(const MinimizeComponentEntry& a,
 struct MDTask {
     std::vector<MDComponentEntry> entries;
     std::int64_t n_steps;
+    /// Byte budget of the driver's shared asynchronous capture buffer
+    /// (`Driver::set_capture_buffer_bytes`) [bytes; >= 1, checked when the
+    /// task is materialized]. Default `ATV_CAPTURE_BUFFER_BYTES`.
+    std::uint64_t capture_buffer_bytes = kCaptureBufferBytes;
 };
 inline bool operator==(const MDTask& a, const MDTask& b) {
-    return a.entries == b.entries && a.n_steps == b.n_steps;
+    return a.entries == b.entries && a.n_steps == b.n_steps
+           && a.capture_buffer_bytes == b.capture_buffer_bytes;
 }
 
 struct SinglePointTask {
@@ -1637,9 +1776,19 @@ class TaskSpec {
     /// decoder written before them reads every previously encodable payload
     /// unchanged. Only a LAYOUT change is a bump.
     ///
-    /// v7: `PairLJCutParams` grew the per-type table and `energy_shift`, and
-    /// `PairCoulCutParams` the special-bond weights and Coulomb constant —
-    /// two layout changes, so a v6 payload is refused.
+    /// v7 is a LAYOUT change: the `PairLJCutParams` payload (ID 0) gained its
+    /// per-type LJ rows, r⁻⁴ rows, the tail byte and the energy-shift byte
+    /// after the six scalars, and `PairCoulCutParams` its three special-bond
+    /// weights and the Coulomb constant, so a v6 payload would end early. IDs
+    /// 36 (`PairLJCutCoulLongParams`, ending in the tail byte), 37
+    /// (`AngleCosineParams`, one f64 run) and 38 (`FixEfieldParams`, three
+    /// f64) are appended with fresh payloads under the same bump.
+    ///
+    /// ID 39 (`MrecRecorderParams`: length-prefixed path, i32 every, u64
+    /// flush_every, u8 durable) is appended under v7 without a bump: no
+    /// existing ID's byte layout changed. Also under v7 (not yet released
+    /// when it landed), the `MDTask` payload ends with the driver's u64
+    /// `capture_buffer_bytes` after `n_steps`.
     static constexpr std::uint32_t kWireVersion = 7;
 
     explicit TaskSpec(MDTask task);

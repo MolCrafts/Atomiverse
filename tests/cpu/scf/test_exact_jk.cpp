@@ -16,7 +16,7 @@ cpu::Frame water() {
     const double xyz[][3] = {
         {0, 0, 0.1173}, {0, 0.7572, -0.4692}, {0, -0.7572, -0.4692}};
     for (int i = 0; i < 3; ++i) {
-        f.span(kAtom_type)[i] = z[i];
+        f.span(kAtom_atomic_number)[i] = z[i];
         f.span(kAtom_x)[i] = xyz[i][0];
         f.span(kAtom_y)[i] = xyz[i][1];
         f.span(kAtom_z)[i] = xyz[i][2];

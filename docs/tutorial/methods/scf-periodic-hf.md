@@ -37,7 +37,7 @@ arguments. `KUHF` also takes mesh-total `n_alpha` and `n_beta`
 stage builds `J = Ja+Jb` and `vhf = J−K` per spin (`KUHF.get_veff`);
 occupation fill is 1 (`get_occ`).
 
-Frame in is an orthorhombic cell: positions [Å], species in `kAtom_type`.
+Frame in is an orthorhombic cell: positions [Å], species in `kAtom_atomic_number`.
 `run(Frame&)` overwrites `kEnergy` and `kEnergyElectronic` [eV].
 `run(const Frame&)` writes nothing. `energy()` is the total in Hartree,
 nuclear repulsion included. `iterations()` is the count of that run.
@@ -47,7 +47,7 @@ Shells with l > 0 throw `krhf_ao_lgt0`. CPU `requires_full_frame()` is true.
 `KUHF::forces` throws `kuhf_nuclear_forces`. There is no device KUHF.
 
 ```cpp
-cpu::Frame frame = /* orthorhombic cell, positions in Å, species in kAtom_type */;
+cpu::Frame frame = /* orthorhombic cell, positions in Å, species in kAtom_atomic_number */;
 cpu::scf::KRHF krhf{cpu::scf::BasisSet::STO3G, /*k_mesh=*/{2, 1, 1},
                     /*charge=*/0, /*tol=*/1e-10, /*max_iter=*/40};
 krhf.run(frame);                              // overwrite kEnergy, kEnergyElectronic [eV]

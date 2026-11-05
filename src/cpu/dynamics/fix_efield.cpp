@@ -1,7 +1,8 @@
 /// @file src/cpu/dynamics/fix_efield.cpp
+/// @brief Constant-field path of LAMMPS `src/fix_efield.cpp`
+///        (`FixEfield::post_force`, charge term), checkout SHA e8c4c278a8.
+///        LAMMPS: Copyright (2003) Sandia Corporation, GNU GPL.
 #include "atomiverse/cpu/dynamics/fix_efield.h"
-
-#include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/component/owned_range.h"
@@ -19,15 +20,12 @@ void FixEfield::launch(const cpu::LaunchContext& ctx) {
     const double ey = Ey;
     const double ez = Ez;
 
-    // Unwrapped energy needs orthorhombic image · L (LAMMPS domain->unmap).
-    if (!f.box.is_orthorhombic()) {
-        throw std::runtime_error(
-            "FixEfield: triclinic boxes are not supported in this foothold "
-            "(need orthorhombic image unwrap)");
-    }
-    const double lx = f.box.length(0);
-    const double ly = f.box.length(1);
-    const double lz = f.box.length(2);
+    // Unwrapped coordinates r^u = r + H n with H's columns the lattice
+    // vectors (LAMMPS Domain::unmap, orthorhombic and triclinic alike).
+    const auto& h = f.box.cell();
+    const double h00 = h(0, 0), h01 = h(0, 1), h02 = h(0, 2);
+    const double h10 = h(1, 0), h11 = h(1, 1), h12 = h(1, 2);
+    const double h20 = h(2, 0), h21 = h(2, 1), h22 = h(2, 2);
 
     const StorageReal* __restrict q = f.span(kAtom_charge);
     const StorageReal* __restrict x = f.span(kAtom_x);
@@ -52,13 +50,16 @@ void FixEfield::launch(const cpu::LaunchContext& ctx) {
             fy[i] += fyi;
             fz[i] += fzi;
         }
-        // r^u = r + image * L  (ortho); image column is Fixed3 int8.
+        // r^u = r + H n; the image column is Fixed3 int8.
+        const double n0 = static_cast<double>(image(i, 0));
+        const double n1 = static_cast<double>(image(i, 1));
+        const double n2 = static_cast<double>(image(i, 2));
         const double xu =
-            static_cast<double>(x[i]) + static_cast<double>(image(i, 0)) * lx;
+            static_cast<double>(x[i]) + h00 * n0 + h01 * n1 + h02 * n2;
         const double yu =
-            static_cast<double>(y[i]) + static_cast<double>(image(i, 1)) * ly;
+            static_cast<double>(y[i]) + h10 * n0 + h11 * n1 + h12 * n2;
         const double zu =
-            static_cast<double>(z[i]) + static_cast<double>(image(i, 2)) * lz;
+            static_cast<double>(z[i]) + h20 * n0 + h21 * n1 + h22 * n2;
         // U += -F · r^u  (LAMMPS fsum[0])
         u -= fxi * xu + fyi * yu + fzi * zu;
     }

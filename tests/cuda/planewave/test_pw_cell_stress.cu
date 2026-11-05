@@ -21,7 +21,7 @@ namespace {
 
 cpu::Frame make_h_cubic(double L) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_mass)[0] = 1.008;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
@@ -34,7 +34,7 @@ cpu::Frame make_h_cubic(double L) {
 cpu::Frame make_h2_cubic(double L) {
     cpu::Frame f(2);
     for (int i = 0; i < 2; ++i) {
-        f.span(kAtom_type)[i] = 1;
+        f.span(kAtom_atomic_number)[i] = 1;
         f.span(kAtom_mass)[i] = 1.008;
     }
     f.span(kAtom_x)[0] = 0.0;

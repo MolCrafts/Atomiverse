@@ -16,8 +16,9 @@
 /// computed for; the captured graph recomputes them in stream order when the
 /// revision moves. A box change therefore needs neither graph recapture nor
 /// new FFT plans. The mesh is NOT re-chosen when the cell
-/// changes, so the grid spacing (and the reciprocal error) drift with the
-/// box.
+/// changes (LAMMPS `PPPM::setup` keeps `nx_pppm` and rebuilds only the
+/// Green's function), so the grid spacing and the reciprocal error drift
+/// with the box.
 ///
 /// When stress is required the six-component reciprocal virial is the exact
 /// strain derivative of the discrete PME energy at fixed fractional
@@ -33,6 +34,7 @@
 #include <array>
 #include <string>
 
+#include "atomiverse/core/pppm_accuracy.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cuda/device/graph_ring.cuh"
 #include "atomiverse/cuda/longrange/kspace.cuh"
@@ -92,6 +94,11 @@ class KSpacePME : public KSpace {
   protected:
     void compute(const LaunchContext& ctx) override;
 
+  protected:
+    /// Explicit mesh (`kspace_modify mesh`); zeros = derive from spacing.
+    /// Set by `cuda::KSpacePPPM`'s mesh constructor only.
+    int fixed_K_[3] = {0, 0, 0};
+
   private:
     void enqueue_(const LaunchContext& ctx, bool want_energy, bool want_virial);
     /// Graph per (eflag | vflag << 1), captured and instantiated in build.
@@ -114,6 +121,8 @@ class KSpacePME : public KSpace {
     void* d_potential_ = nullptr;   ///< PPPM V̂ half-spectrum, nhalf.
     double* d_influence_ = nullptr; ///< Conjugate-averaged influence, nhalf.
     double* d_virial_ = nullptr;    ///< Six virial coefficient planes, 6·nhalf.
+    double* d_ik_ =
+        nullptr; ///< PPPM folded ik planes (pppm_half_mode), 3·nhalf.
     void* d_grid_ = nullptr; ///< Real mesh. SPME: ntot. PPPM: 3·ntot, batched.
     void* d_spectrum_ =
         nullptr; ///< Half-spectrum. SPME: nhalf. PPPM: 3·nhalf, batched.
@@ -122,13 +131,41 @@ class KSpacePME : public KSpace {
 };
 
 /// @brief Hockney–Eastwood ik PPPM on the shared CUDA mesh path.
+///
+/// Same parameters, defaults and mesh rule as `cpu::KSpacePPPM`: the mesh is
+/// ⌈|a_d| / grid_spacing⌉ (or the explicit mesh) rounded up to sizes with
+/// factors 2, 3 and 5 (LAMMPS `factorable`), at least order + 1; charges are
+/// spread and the field is gathered on LAMMPS's centred stencil
+/// (`core/pppm_ik.h`), not on the one-sided smooth-PME stencil of
+/// `KSpacePME`. The half-spectrum energy, virial and ik field fold each mode
+/// with its conjugate partner (`pppm_half_mode`), LAMMPS's full complex
+/// `poisson_ik` on every mesh, even ones included.
+///
+/// Every atom is wrapped into the cell before it is mapped and the mesh is
+/// replicated on the one device, so there is no ghost depth an atom can
+/// outrun between reneighbourings (the CPU brick's `0.5·skin` bound); a
+/// non-finite coordinate is not deposited and its non-finite force raises
+/// the frame's force fault in the gather.
 class KSpacePPPM : public KSpacePME {
   public:
     /// @param alpha        Ewald α [1/Å], the same value as CoulLong.
     /// @param grid_spacing Target mesh spacing [Å]. Factors 2, 3 and 5 only.
-    /// @param order        B-spline order in [3, 12]. Default 6.
+    /// @param order        Charge-assignment order in [3, 12]. Default 6.
     explicit KSpacePPPM(double alpha, double grid_spacing = 1.0, int order = 6)
         : KSpacePME(alpha, grid_spacing, order, ReciprocalKind::PppmIk) {}
+
+    /// @brief Construct on an explicit mesh (LAMMPS `kspace_modify mesh`),
+    ///        the same rule as `cpu::KSpacePPPM`'s mesh constructor.
+    /// @throws std::invalid_argument on a non-positive mesh entry.
+    KSpacePPPM(double alpha, std::array<int, 3> mesh, int order = 6);
+
+    /// @brief α and mesh from an accuracy target (LAMMPS `kspace_style pppm
+    ///        <accuracy>`), `longrange::pppm_from_accuracy` — the same
+    ///        request gives the same solver as `cpu::KSpacePPPM`.
+    static KSpacePPPM from_accuracy(const longrange::PppmAccuracyRequest& req) {
+        const auto r = longrange::pppm_from_accuracy(req);
+        return KSpacePPPM(r.alpha, {r.mesh[0], r.mesh[1], r.mesh[2]}, r.order);
+    }
 
     std::string name() const override { return "pppm"; }
 };

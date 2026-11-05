@@ -2,12 +2,17 @@
 /// @brief LAMMPS data-file loader for atom_style full and molecular.
 ///
 /// Self-contained C++ reader (does not go through molpy auto-detection).
-/// Emits a fully populated `cpu::Frame`: positions, masses, types, optional
-/// partial charges and velocities, bonds/angles/dihedrals/impropers,
-/// orthogonal box, and `build_special_list()` 1-2/1-3/1-4 partners.
+/// Emits a fully populated `cpu::Frame`: positions, masses, force-field types
+/// (`kAtom_type`, the Atoms type column), optional partial charges and
+/// velocities, bonds/angles/dihedrals/impropers, orthogonal box, and
+/// `build_special_list()` 1-2/1-3/1-4 partners. A data file carries no
+/// element, so the returned Frame has NO species column
+/// (`kAtom_atomic_number`): Z is never guessed from a mass. Add it
+/// explicitly (`insert_field(AtomFieldId::atomic_number)` and fill it) before
+/// mounting a consumer that needs species.
 ///
-/// Supported Atoms layouts (auto-detected from the first Atoms data row,
-/// optional trailing image flags accepted):
+/// Supported Atoms layouts (auto-detected from the first Atoms data row;
+/// optional trailing `ix iy iz` image flags are read into `kAtom_image`):
 /// - **full**: `id mol-id type q x y z` — writes `kAtom_charge` [e]
 /// - **molecular**: `id mol-id type x y z` — charges left at zero
 ///

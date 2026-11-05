@@ -34,11 +34,11 @@ namespace {
 /// OH⁻: O(0,0,0), H(0,0,0.9640) Å — identical to the PySCF pin runs.
 ATV::cpu::Frame oh_frame() {
     ATV::cpu::Frame frame(2);
-    frame.span(ATV::kAtom_type)[0] = 8;
+    frame.span(ATV::kAtom_atomic_number)[0] = 8;
     frame.span(ATV::kAtom_x)[0] = 0.0;
     frame.span(ATV::kAtom_y)[0] = 0.0;
     frame.span(ATV::kAtom_z)[0] = 0.0;
-    frame.span(ATV::kAtom_type)[1] = 1;
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
     frame.span(ATV::kAtom_x)[1] = 0.0;
     frame.span(ATV::kAtom_y)[1] = 0.0;
     frame.span(ATV::kAtom_z)[1] = 0.9640;
@@ -101,7 +101,7 @@ int run() {
 
     // ── Cl⁻ / 6-31+G* total energy (third-period diffuse row) ──────────
     ATV::cpu::Frame cl(1);
-    cl.span(ATV::kAtom_type)[0] = 17;
+    cl.span(ATV::kAtom_atomic_number)[0] = 17;
     cl.span(ATV::kAtom_x)[0] = 0.0;
     cl.span(ATV::kAtom_y)[0] = 0.0;
     cl.span(ATV::kAtom_z)[0] = 0.0;
@@ -111,15 +111,15 @@ int run() {
 
     // ── H2O / aug-cc-pVDZ (spherical) total energy ──────────────────────
     ATV::cpu::Frame h2o(3);
-    h2o.span(ATV::kAtom_type)[0] = 8;
+    h2o.span(ATV::kAtom_atomic_number)[0] = 8;
     h2o.span(ATV::kAtom_x)[0] = 0.0;
     h2o.span(ATV::kAtom_y)[0] = 0.0;
     h2o.span(ATV::kAtom_z)[0] = 0.1173;
-    h2o.span(ATV::kAtom_type)[1] = 1;
+    h2o.span(ATV::kAtom_atomic_number)[1] = 1;
     h2o.span(ATV::kAtom_x)[1] = 0.0;
     h2o.span(ATV::kAtom_y)[1] = 0.7572;
     h2o.span(ATV::kAtom_z)[1] = -0.4692;
-    h2o.span(ATV::kAtom_type)[2] = 1;
+    h2o.span(ATV::kAtom_atomic_number)[2] = 1;
     h2o.span(ATV::kAtom_x)[2] = 0.0;
     h2o.span(ATV::kAtom_y)[2] = -0.7572;
     h2o.span(ATV::kAtom_z)[2] = -0.4692;

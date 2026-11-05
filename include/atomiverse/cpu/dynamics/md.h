@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/asynchronous/snapshot_publisher.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/communication/reduce.h"
 #include "atomiverse/cpu/component/bias.h"
@@ -86,7 +85,7 @@ namespace md {
 /// `comm->forward_comm()`; else `comm->exchange()` + `comm->borders()` +
 /// `neighbor->build()`; after force, `comm->reverse_comm()` (newton).
 /// Halo/Migrate/NeighborList are Verlet engine ops, not independent
-/// Plan cadences. Publish is mounted only when an async observer is.
+/// Plan cadences.
 ///
 /// Usage (LAMMPS-shaped):
 /// @code{.cpp}
@@ -117,6 +116,10 @@ class MD : public Driver<ATV::md::Phase> {
             throw std::invalid_argument("MD step budget must be nonnegative");
         this->begin_run_(frame);
         this->backend_->prepare_run(this->step_counter_);
+        // LAMMPS Run::command → Output::setup: every run writes the current
+        // state first (recorders on cadence, never a step twice), so a
+        // recorder's frame `s` is the state after `s` steps.
+        this->backend_->setup_output(this->step_counter_);
         BigInt iterations = 0;
         for (BigInt s = 0; s < n_steps; ++s) {
             this->mutable_outer_status().reset();
@@ -130,10 +133,10 @@ class MD : public Driver<ATV::md::Phase> {
                 break;
         }
         this->backend_->context().md.is_last_step = false;
-        // Drain async-analysis workers so every snapshot from this segment reaches its
-        // subscribers before `run()` returns — continuation defers full teardown, so the
-        // barrier is made explicit here.
-        this->backend_->drain_analysis();
+        // Every asynchronous capture of this run is consumed before `run()`
+        // returns (continuation defers teardown, so the barrier is explicit);
+        // a consumer failure fails the run here.
+        this->backend_->drain_capture();
         // Built-in end-of-run report (time + memory), like LAMMPS's loop summary.
         // Collective + rank-0 render; always emitted.
         this->emit_run_summary("md");
@@ -182,9 +185,8 @@ class MD : public Driver<ATV::md::Phase> {
 #endif
 
     MD() {
-        // Force/energy accumulators every force eval. Stress zeroing and
-        // Publish are opt-in in install_defaults(): NVT does not need a
-        // stress tensor, a run with no async observer does not snapshot,
+        // Force/energy accumulators every force eval. Stress zeroing is
+        // opt-in in install_defaults() (NVT does not need a stress tensor),
         // and Verlet nflag skips exchange on forward_comm steps.
         this->on(ATV::md::Phase::pre_force)
             .add(ZeroForces{}, -1000)
@@ -286,7 +288,9 @@ class MD : public Driver<ATV::md::Phase> {
 
     /// @brief Set the cadence of the global scalar `MPI_Allreduce` (energy /
     /// kinetic / stress). Default 1 = every step. A value > 1 fires the reduce
-    /// only on step 0 and every Nth step thereafter — eliding the per-step
+    /// only at setup, after every Nth completed step and on the last step of
+    /// a run — the steps a thermo / recorder of cadence N writes (completed
+    /// step N, 2N, …; LAMMPS `update->ntimestep % N`) — eliding the per-step
     /// latency-bound collective. ONLY valid when no per-step consumer reads the
     /// reduced scalars (NVE / per-atom Langevin, where the global energy/stress
     /// are pure diagnostics sampled every N steps). MUST stay 1 whenever a
@@ -397,24 +401,15 @@ class MD : public Driver<ATV::md::Phase> {
         if (!this->pending_named_("reduce"))
             this->bind_defaults(mpi::Reduce{scalar_reduce_every_});
 
-        // An explicitly mounted stress observer also publishes per-step stress,
-        // even when no barostat consumes it. Never carry the previous virial
-        // through another force evaluation or MPI scalar reduction.
-        if (s.needs_stress || s.has_virial_stress) {
-            if (!this->pending_named_("zero_stress"))
-                this->on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
-        }
+        // Force styles accumulate the virial into `kStress` on every force
+        // phase, consumer or not, and the Frame exports it (to_molpy, the
+        // XYZ comment, *.mrec meta). Never carry the previous virial through
+        // another force evaluation or MPI scalar reduction: without this
+        // zeroing an unconsumed `stress` was a running sum over all steps.
+        if (!this->pending_named_("zero_stress"))
+            this->on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
         if (s.needs_stress && !s.has_virial_stress)
             this->bind_defaults(Virial{});
-
-        // Snapshot publisher only if an async observer/recorder is mounted.
-        bool has_async = false;
-        this->for_each_pending([&](const cpu::Component& c) {
-            if (c.scheduling() == Scheduling::deferrable)
-                has_async = true;
-        });
-        if (has_async && !this->pending_named_("publish"))
-            this->on(ATV::md::Phase::end_of_step).add(cpu::Publish{}, 10);
 
         // Halo / exchange / reverse live on `ctx.md.comm` (Runtime Verlet
         // and linear wrap). Constraint and charge-updater ghost refresh is

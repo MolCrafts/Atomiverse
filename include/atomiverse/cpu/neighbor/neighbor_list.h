@@ -15,7 +15,7 @@
 /// |---------------------------|---------------------------|----------------|---------|
 /// | `neighbor skin style`     | `skin` ctor arg [Å]       | `0.3·cutoff`   | aligned (semantic); LAMMPS has no auto-skin — the auto default is a documented divergence (convenience, opt-out by passing skin explicitly) |
 /// | `neigh_modify every N`    | `every` ctor arg          | `1`            | aligned |
-/// | `neigh_modify delay M`    | `delay` ctor arg          | `10`           | aligned |
+/// | `neigh_modify delay M`    | `delay` ctor arg          | `0`            | aligned: LAMMPS defaults `delay = 0` (`src/neighbor.cpp:122`, e8c4c278a8). A deferred check is not safe for MD either: a bead that moves more than half the skin inside the delay window meets partners the list does not hold, and their force switches on mid-range (measured: a DPD fluid at dt = 0.04 τ heats from T* = 1 to 13 in 2 τ under `delay 10`, and holds T* = 1 under `delay 0`) |
 /// | `neigh_modify check yes/no` | `check` ctor arg (bool) | `true` (= `yes`) | aligned — see below |
 /// | `neigh_modify one N`      | (not exposed)             | —              | **documented divergence**: Atomiverse's neighbor storage is a growable CSR arena (`PairList::neighbors` is a `std::vector<int>`, the xtensor CSR rows grow via `ensure_at_least`). `one` is purely a LAMMPS allocation bound; with a growable arena it has no semantic effect, so no false parameter is introduced. |
 /// | `neigh_modify binsize`    | (not exposed)             | —              | **documented divergence**: the `CellList` strategy derives its cell size internally from `cutoff + skin`. LAMMPS exposes `binsize` to tune the binned-neighboring bin; Atomiverse's internal sizing makes it unnecessary, so the `bin` style is not exposed. |
@@ -34,7 +34,9 @@
 /// cell without moving atoms: a lattice-vector change larger than the
 /// skin, a halo-pad change, or a subdomain change rebuilds immediately.
 /// A Berendsen rescaling smaller than the skin does not — the affine
-/// coordinate change is visible to `check_distance`, and
+/// coordinate change is visible to `check_distance`, whose trigger shrinks
+/// by the box-corner motion since the last build (LAMMPS `boxcheck`,
+/// `core/neighbor_check.h`), and
 /// `CellList::build` still resizes bins from the live box when a rebuild
 /// runs. MD Verlet calls this from `Runtime::step` and then either
 /// `forward_comm` or `exchange+sort+borders+launch()` (build).
@@ -46,8 +48,10 @@
 // certain rights. Distributed under the GNU General Public License.
 #pragma once
 
+#include <array>
 #include <string>
 
+#include "atomiverse/core/neighbor_check.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
@@ -71,7 +75,8 @@ namespace md {
 /// the stored CSR is reused verbatim. Runtime calls `decide_reneighbor`
 /// and invokes `launch()` only when rebuilding; the decision scans owned
 /// positions only when cadence permits.
-/// Defaults match LAMMPS: `every=1`, `delay=10`, `check=true` (`check yes`).
+/// Defaults: `every=1`, `delay=0`, `check=true` (`check yes`), LAMMPS
+/// e8c4c278a8's defaults (see the table above).
 template <typename Strategy = CellList>
 class NeighborList : public cpu::Component, public cpu::NeighborProvider {
   public:
@@ -82,14 +87,14 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// @param every Attempt rebuild at most every N steps (LAMMPS `neigh_modify
     ///        every`; default 1 reproduces LAMMPS's built-in default).
     /// @param delay Skip displacement check for this many steps after a rebuild
-    ///        (LAMMPS `neigh_modify delay`; default 10 reproduces LAMMPS).
+    ///        (LAMMPS `neigh_modify delay`; default 0 reproduces LAMMPS).
     /// @param check Displacement-gated rebuild (LAMMPS `neigh_modify check`;
     ///        default `true` = `check yes`). `false` (= `check no`) skips the
     ///        skin displacement test, so the list rebuilds on every
     ///        `every`/`delay`-eligible step — matching `dist_check == 0` in
     ///        `Neighbor::decide()` (neighbor.cpp:2373, `return 1`).
     explicit NeighborList(double cutoff, double skin = -1.0, int every = 1,
-                          int delay = 10, bool check = true)
+                          int delay = 0, bool check = true)
         : strategy_(cutoff, skin), cutoff_(cutoff),
           every_(every < 1 ? 1 : every), delay_(delay < 0 ? 0 : delay),
           check_(check) {}
@@ -181,7 +186,16 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         const StorageReal* x = frame.span(kAtom_x);
         const StorageReal* y = frame.span(kAtom_y);
         const StorageReal* z = frame.span(kAtom_z);
-        const double limit = 0.25 * strategy_.skin() * strategy_.skin();
+        // LAMMPS Neighbor::check_distance (boxcheck): the half-skin trigger
+        // shrinks by the motion of the box corners since the last build.
+        double cell_now[9];
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                cell_now[3 * r + c] = frame.box.cell()(r, c);
+        const double limit = ATV::md::skin_trigger_sq(
+            saved_cell_.data(), cell_now, strategy_.skin());
+        if (limit < 0.0)
+            return true;
         // LAMMPS Neighbor::check_distance: owners move continuously between
         // rebuilds. Runtime wraps only before exchange, never between checks.
         for (int i = 0; i < saved_owned_; ++i) {
@@ -224,6 +238,9 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         const StorageReal* z = ctx.frame.span(kAtom_z);
         for (int i = 0; i < saved_owned_; ++i)
             saved_positions_[i] = Vec3{x[i], y[i], z[i]};
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                saved_cell_[3 * r + c] = ctx.frame.box.cell()(r, c);
         ago_ = 0;
         ++n_rebuilds_;
         last_halo_generation_ =
@@ -311,6 +328,8 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     Strategy strategy_;
     const mpi::DomainDecomposition* strategy_dd_ = nullptr;
     std::vector<Vec3> saved_positions_;
+    /// Cell at the last enumeration (LAMMPS `corners_hold` / `boxhi_hold`).
+    std::array<double, 9> saved_cell_{};
     int saved_owned_ = -1;
     int saved_active_ = -1;
     PairList pairs_;
@@ -322,7 +341,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     bool lists_stale_ = false;
     double cutoff_;
     int every_ = 1;
-    int delay_ = 10;
+    int delay_ = 0;
     /// @brief LAMMPS `neigh_modify check` flag. `true` (= `check yes`):
     /// displacement-gated rebuild. `false` (= `check no`): rebuild on every
     /// `every`/`delay`-eligible step regardless of displacement.

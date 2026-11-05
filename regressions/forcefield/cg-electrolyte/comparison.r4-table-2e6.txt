@@ -1,0 +1,23 @@
+
+Atomiverse CPU (a) vs LAMMPS (b)
+term                    E_a [eV]                 E_b [eV]    rel dE     F max     F rms         W
+r4       -2.7730480866565461e+00  -2.7730480866666629e+00  3.65e-12  2.23e-11  1.43e-11  5.66e-12
+
+Atomiverse CUDA (a) vs LAMMPS (b)
+term                    E_a [eV]                 E_b [eV]    rel dE     F max     F rms         W
+
+Atomiverse CUDA (a) vs CPU (b)
+term                    E_a [eV]                 E_b [eV]    rel dE     F max     F rms         W
+
+Engine (a) vs direct pair sum (b, exact_terms.py)
+a / b                   E_a [eV]                 E_b [eV]    rel dE     F max     F rms         W
+cpu / exact.real
+real      9.7167874032550117e-02   9.7167513051728827e-02  3.72e-06  7.64e-06  4.78e-06  6.75e-06
+cpu / cpu_table.real
+real      9.7167874032550117e-02   9.7167874032549131e-02  1.01e-14  3.17e-16  3.54e-16  6.87e-15
+cpu / exact.r4
+r4       -2.7730480866565461e+00  -2.7730480866565461e+00  0.00e+00  3.19e-16  3.19e-16  1.22e-15
+lammps / exact.r4
+r4       -2.7730480866666629e+00  -2.7730480866565461e+00  3.65e-12  2.23e-11  1.43e-11  5.66e-12
+
+cpu: sum of terms 1.1253060424375559e+02, total 1.1253060424375556e+02, rel 2.53e-16

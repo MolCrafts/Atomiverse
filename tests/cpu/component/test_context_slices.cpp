@@ -3,7 +3,7 @@
 ///        into flat core fields (n_threads / mpi_rank / mpi_size / timer /
 ///        outer_status) plus four nested pure-aggregate service slices —
 ///        `DynamicsServices md`, `SamplingServices mc`,
-///        `OptimizeServices opt`, `AnalysisServices analysis`.
+///        `OptimizeServices opt`, `CaptureServices capture`.
 ///
 /// Layout-only: no physics, no numerics. Pins
 ///   1. the exact per-slice field mapping (compile-level static_asserts),
@@ -11,12 +11,12 @@
 ///      ("field unset = service unavailable" semantics carried over verbatim),
 ///   3. core fields stay flat with today's defaults,
 ///   4. the header guards: DynamicsServices / SamplingServices /
-///      AnalysisServices trivially copyable (OptimizeServices exempt —
+///      CaptureServices trivially copyable (OptimizeServices exempt —
 ///      pre-existing std::function), Context non-polymorphic,
 ///   5. slices are plain writable aggregates (assign → read back).
 ///
 /// RED: fails to COMPILE against the current flat `cpu::Context`
-/// (no `md`/`mc`/`opt`/`analysis` members, no slice types). GREEN after the
+/// (no `md`/`mc`/`opt`/`capture` members, no slice types). GREEN after the
 /// include/atomiverse/cpu/component/context.h regrouping lands.
 
 #include <gtest/gtest.h>
@@ -26,7 +26,7 @@
 #include <type_traits>
 
 #include "atomiverse/core/iteration_status.h"
-#include "atomiverse/cpu/asynchronous/analysis_executor.h"
+#include "atomiverse/cpu/asynchronous/capture_buffer.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/montecarlo/transaction.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
@@ -41,8 +41,8 @@ TEST(ContextSlices, SliceStructsAreTriviallyCopyable) {
                   "DynamicsServices must stay a trivially copyable aggregate");
     static_assert(std::is_trivially_copyable_v<cpu::SamplingServices>,
                   "SamplingServices must stay a trivially copyable aggregate");
-    static_assert(std::is_trivially_copyable_v<cpu::AnalysisServices>,
-                  "AnalysisServices must stay a trivially copyable aggregate");
+    static_assert(std::is_trivially_copyable_v<cpu::CaptureServices>,
+                  "CaptureServices must stay a trivially copyable aggregate");
     // OptimizeServices is exempt: it carries the pre-existing std::function
     // reeval_forces (present in Context before this refactor).
     SUCCEED();
@@ -91,11 +91,11 @@ TEST(ContextSlices, OptimizeSliceFieldMapping) {
     SUCCEED();
 }
 
-TEST(ContextSlices, AnalysisSliceFieldMapping) {
-    static_assert(std::is_same_v<decltype(cpu::Context::analysis),
-                                 cpu::AnalysisServices>);
-    static_assert(std::is_same_v<decltype(cpu::AnalysisServices::executor),
-                                 cpu::AnalysisExecutor*>);
+TEST(ContextSlices, CaptureSliceFieldMapping) {
+    static_assert(
+        std::is_same_v<decltype(cpu::Context::capture), cpu::CaptureServices>);
+    static_assert(std::is_same_v<decltype(cpu::CaptureServices::buffer),
+                                 cpu::CaptureBuffer*>);
     SUCCEED();
 }
 
@@ -155,9 +155,9 @@ TEST(ContextSlices, DefaultOptimizeSliceIsNull) {
     EXPECT_FALSE(ctx.opt.line_search_trial);
 }
 
-TEST(ContextSlices, DefaultAnalysisSliceIsNull) {
+TEST(ContextSlices, DefaultCaptureSliceIsNull) {
     cpu::Context ctx;
-    EXPECT_EQ(ctx.analysis.executor, nullptr);
+    EXPECT_EQ(ctx.capture.buffer, nullptr);
 }
 
 // ── Slices are writable aggregates: assign → read back ────────────────────
@@ -209,12 +209,12 @@ TEST(ContextSlices, OptimizeSliceIsWritable) {
     EXPECT_TRUE(ctx.opt.line_search_trial);
 }
 
-TEST(ContextSlices, AnalysisSliceIsWritable) {
+TEST(ContextSlices, CaptureSliceIsWritable) {
     cpu::Context ctx;
 
-    cpu::AnalysisExecutor exec; // default-constructed, no init() — cheap
-    ctx.analysis.executor = &exec;
-    EXPECT_EQ(ctx.analysis.executor, &exec);
+    cpu::CaptureBuffer buffer; // nothing allocated until a run — cheap
+    ctx.capture.buffer = &buffer;
+    EXPECT_EQ(ctx.capture.buffer, &buffer);
 }
 
 // ── Pure-aggregate copy semantics ──────────────────────────────────────────

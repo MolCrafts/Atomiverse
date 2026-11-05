@@ -11,6 +11,7 @@
 /// inherit `Component`.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -20,6 +21,7 @@
 
 #include "atomiverse/core/backend_traits.h"
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/capture_buffer.h"
 #include "atomiverse/core/device.h"
 #include "atomiverse/core/plan.h"
 #include "atomiverse/core/stage.h"
@@ -200,8 +202,41 @@ class Driver {
             plan_ = std::move(o.plan_);
             backend_ = std::move(o.backend_);
             timer_ = std::move(o.timer_);
+            capture_buffer_bytes_ = o.capture_buffer_bytes_;
         }
         return *this;
+    }
+
+    /// @brief Byte budget of this driver's shared asynchronous capture
+    ///        buffer (core/capture_buffer.h) — the one buffer every
+    ///        asynchronous recorder and online-analysis observer of the
+    ///        driver reads its steps from.
+    ///
+    /// Bounds the bytes of every captured frame in flight across all of the
+    /// driver's consumers; allocated once when a run starts (only if an
+    /// asynchronous consumer is mounted). When it is full the run waits for
+    /// the consumers, never drops a step. Default `ATV_CAPTURE_BUFFER_BYTES`
+    /// (CMake, 256 MiB). A budget smaller than one captured frame is refused
+    /// with `std::invalid_argument` when the run starts. Set before the
+    /// first `run()`.
+    /// @param bytes Budget [bytes; >= 1].
+    /// @throws std::invalid_argument on 0.
+    void set_capture_buffer_bytes(std::uint64_t bytes) {
+        require_mutable_();
+        if (bytes == 0)
+            throw std::invalid_argument(
+                "capture_buffer_bytes must be >= 1 byte, got 0");
+        capture_buffer_bytes_ = bytes;
+    }
+    /// @brief The capture buffer budget [bytes].
+    std::uint64_t capture_buffer_bytes() const noexcept {
+        return capture_buffer_bytes_;
+    }
+    /// @brief Accounting of the capture buffer (budget, frame size, frames
+    ///        captured, peak occupancy, blocked episodes and seconds) since
+    ///        the driver's current backend started; zeros before a run.
+    CaptureStats capture_stats() const {
+        return backend_ ? backend_->capture().stats() : CaptureStats{};
     }
 
     /// @brief Begin explicit phase binding — the only public Plan-registration
@@ -378,6 +413,7 @@ class Driver {
     Plan<Component> plan_;
     std::unique_ptr<BackendT> backend_;
     std::unique_ptr<Timer> timer_;
+    std::uint64_t capture_buffer_bytes_ = kCaptureBufferBytes;
 
   private:
     /// @brief Registration-time gate: reject default bindings built from

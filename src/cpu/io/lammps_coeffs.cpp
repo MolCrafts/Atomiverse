@@ -117,9 +117,18 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
             need(5);
             const int ti = to_type(path, toks[1], where);
             const int tj = to_type(path, toks[2], where);
-            out.lj.push_back(LJTypeCoeff{
-                ti, tj, kcal_per_mol_to_ev(to_num(path, toks[3], where)),
-                to_num(path, toks[4], where)});
+            // pair_coeff i j eps sigma [cut_lj]. A per-pair Coulomb cutoff
+            // (lj/cut/coul/cut's sixth argument) has no ATV counterpart.
+            if (toks.size() > 6)
+                die(path, where
+                              + ": 'pair_coeff' with a per-pair Coulomb "
+                                "cutoff is not supported");
+            LJTypeCoeff row{ti, tj,
+                            kcal_per_mol_to_ev(to_num(path, toks[3], where)),
+                            to_num(path, toks[4], where)};
+            if (toks.size() == 6)
+                row.cutoff = to_num(path, toks[5], where);
+            out.lj.push_back(row);
         } else if (cmd == "bond_style") {
             need(2);
             if (toks[1] != "harmonic")

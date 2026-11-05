@@ -31,10 +31,20 @@ namespace minimizer {
 
 /// @brief Append the current geometry to an XYZ file each step.
 ///
-/// The first launched step truncates any pre-existing file; every later
-/// step appends one frame through molpy. Respects `stride` to thin long
-/// trajectories. The gather scratch and the XYZ writer are members, reused
-/// across launches (no allocation on the steady-state path).
+/// The first write truncates any pre-existing file; every later write
+/// appends one frame through molpy. The gather scratch and the XYZ writer
+/// are members, reused across launches (no allocation on the steady-state
+/// path).
+///
+/// **Step convention (LAMMPS `minimize` + `dump`).** A frame's `step` meta
+/// is the number of completed optimizer iterations and the frame is the
+/// geometry after exactly that many (LAMMPS `update->ntimestep`). The run's
+/// setup writes the initial geometry as step 0 (LAMMPS `Min::setup` →
+/// `Output::setup`); iteration `ctx.step` writes step `ctx.step + 1` when
+/// that is a multiple of `stride`; a minimization stopped by a criterion
+/// before its budget writes its final geometry even off cadence (LAMMPS
+/// `Min::run`); no step is written twice (LAMMPS `last_dump`). So a run that
+/// converges after 7 iterations at stride 3 writes steps 0, 3, 6, 7.
 ///
 /// MPI-aware: under multi-rank every rank joins a collective owner gather
 /// (`md::mpi::gather_for_root_io`, which enters `gather_to_root` tag-ordered)
@@ -44,7 +54,7 @@ class TrajectoryWriter : public cpu::Recorder {
     /// @brief Construct.
     /// @param filename Output XYZ path (appended; existing file is overwritten
     ///                 on the first launched step).
-    /// @param stride   Write every `stride` steps [steps]. Any value below 1
+    /// @param stride   Write every `stride` iterations. Any value below 1
     ///                 is silently clamped to 1 (write every step) — this
     ///                 constructor never throws. Its MD-side sibling
     ///                 `cpu::XyzRecorder` deliberately does the opposite and
@@ -61,10 +71,14 @@ class TrajectoryWriter : public cpu::Recorder {
         return {ATV::make_binding(ATV::minimizer::Phase::end_of_step, 0)};
     }
 
-    /// @brief Write one trajectory frame when the stride gate opens.
-    /// @param ctx Launch context — supplies the step index [steps], the
-    ///            frame to persist [Angstrom] and the MPI runtime.
+    /// @brief Start of the run: write the initial geometry as step 0.
+    void setup_output(const cpu::LaunchContext& ctx) override;
+    /// @brief End of iteration `ctx.step`: write it as step `ctx.step + 1`
+    ///        when on stride.
     void launch(const cpu::LaunchContext& ctx) override;
+    /// @brief Early stop: write the final geometry as step `ctx.step`
+    ///        unless already written.
+    void final_output(const cpu::LaunchContext& ctx) override;
 
     /// @brief Number of frames written so far [count]. Rank 0 only; other
     ///        ranks skip the write and stay at 0.
@@ -77,6 +91,10 @@ class TrajectoryWriter : public cpu::Recorder {
     cpu::Frame gathered_{0}; ///< multi-rank gather scratch (rank 0 only)
     int n_written_ = 0;
     bool truncated_ = false;
+    BigInt last_step_ = -1; ///< LAMMPS `last_dump`
+
+    /// @brief Gather and write the geometry labelled `step` [iterations].
+    void write_(const cpu::LaunchContext& ctx, BigInt step);
 };
 
 } // namespace minimizer

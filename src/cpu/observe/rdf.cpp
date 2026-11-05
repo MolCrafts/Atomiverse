@@ -25,7 +25,7 @@ void RDF::on_snapshot(const cpu::FrameSnapshot& snap) {
 
     cpu::pack_blocked(scratch_, snap.x, snap.y, snap.z, n);
     // Worker thread: a molpy refusal (bad frame, singular cell) is tallied
-    // for finalize(), never thrown out of the analysis executor.
+    // for finalize(), not a reason to stop the run.
     try {
         acc_.push(scratch_, cpu::cell_matrix(snap.box));
         ++n_frames_;
@@ -35,10 +35,10 @@ void RDF::on_snapshot(const cpu::FrameSnapshot& snap) {
 }
 
 void RDF::finalize() {
-    if (gate_.dropped() > 0)
-        ATV_WARN("[rdf] dropped {} snapshot(s) with changed atom count "
+    if (gate_.rejected() > 0)
+        ATV_WARN("[rdf] rejected {} snapshot(s) with a changed atom count "
                  "(constant count required)",
-                 gate_.dropped());
+                 gate_.rejected());
     if (rejected_.count() > 0)
         ATV_WARN("[rdf] molpy refused {} snapshot(s); first: {}",
                  rejected_.count(), rejected_.first_reason());

@@ -21,7 +21,7 @@ int run() {
     const double sigma = 2.0; // Å
     const double L = 12.0;    // Å (> 2σ)
     const double T = 298.15;  // K
-    const double kT = units::kB_ev_per_k * T;
+    const double kT = units::md_boltz * T;
     const double V_ex = 4.0 / 3.0 * units::pi * sigma * sigma * sigma;
     const double V = L * L * L;
     const double P = 1.0 - V_ex / V;

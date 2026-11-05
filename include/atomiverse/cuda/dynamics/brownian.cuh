@@ -10,6 +10,7 @@
 #pragma once
 
 #include "atomiverse/cuda/component/integrator.cuh"
+#include "atomiverse/cuda/component/timestep_protocol.cuh"
 
 #include <cstdint>
 #include <stdexcept>
@@ -29,8 +30,14 @@ namespace md {
 /// Positions advance by the Einstein drift plus a tag-keyed Gaussian.
 /// Velocities are left untouched. Orthorhombic cells with `length(0)`
 /// below 1e5 Å are wrapped; a free sandbox is not.
-class Brownian : public cuda::Integrator {
+class Brownian : public cuda::Integrator, public cuda::TimestepProvider {
   public:
+    /// @brief Publishes the step to `cuda::md::MD` (timestep protocol).
+    const cuda::TimestepProvider* as_timestep_provider() const override {
+        return this;
+    }
+    /// @return The constructor `dt` [fs].
+    double timestep() const override { return dt_; }
     /// @brief Construct the integrator.
     /// @param dt Timestep [fs]. Must be > 0.
     /// @param D Diffusion constant [Å²/fs]. Must be > 0.

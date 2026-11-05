@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/dynamics/fix_efield.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -66,7 +67,7 @@ TEST(FixEfield, EnergyIsMinusQDotE) {
 TEST(FixEfield, UnwrappedEnergyUsesImage) {
     auto f = two_ions();
     // Atom 0: image_x = +1 → xu = 1 + 20 = 21
-    f.span(kAtom_image)(0, 0) = static_cast<std::int8_t>(1);
+    f.span(kAtom_image)(0, 0) = static_cast<ATV::ImageInt>(1);
     const double Ex = 0.1;
     // U = -1*0.1*21 - (-1)*0.1*3 = -2.1 + 0.3 = -1.8
     cpu::Context ctx;
@@ -84,4 +85,29 @@ TEST(FixEfield, EnergyOnlySkipsForce) {
     field.launch(lc);
     EXPECT_NEAR(f.span(kAtom_fx)[0], 0.0, 1e-15);
     EXPECT_NEAR(f.meta.get(kEnergy), -0.2 * 1.0 + 0.2 * 3.0, 1e-15);
+}
+
+TEST(FixEfield, TriclinicUnwrapUsesEveryLatticeVector) {
+    auto f = two_ions();
+    // Columns are lattice vectors: a = (20,0,0), b = (3,18,0), c = (2,-1.5,16).
+    Mat3 cell = Mat3::diagonal(20.0, 18.0, 16.0);
+    cell(0, 1) = 3.0;
+    cell(0, 2) = 2.0;
+    cell(1, 2) = -1.5;
+    f.box = cpu::Box(cell);
+    // Atom 0 carries image (0, +1, -1): r^u = r + b - c
+    //   = (1 + 3 - 2, 0 + 18 + 1.5, 0 + 0 - 16) = (2, 19.5, -16).
+    f.span(kAtom_image)(0, 1) = static_cast<ATV::ImageInt>(1);
+    f.span(kAtom_image)(0, 2) = static_cast<ATV::ImageInt>(-1);
+    const double Ex = 0.1, Ey = -0.2, Ez = 0.05;
+    cpu::Context ctx;
+    cpu::md::FixEfield field(Ex, Ey, Ez);
+    field.launch({ctx, f, 0, 0});
+    // U = -sum_i q_i E . r_i^u with q0 = +1 at (2, 19.5, -16), q1 = -1 at (3, 0, 0).
+    const double u0 = -1.0 * (Ex * 2.0 + Ey * 19.5 + Ez * -16.0);
+    const double u1 = +1.0 * (Ex * 3.0);
+    EXPECT_NEAR(f.meta.get(kEnergy), u0 + u1, 1e-12);
+    // The force depends on neither the image nor the cell.
+    EXPECT_NEAR(f.span(kAtom_fy)[0], Ey, 1e-15);
+    EXPECT_NEAR(f.span(kAtom_fz)[1], -Ez, 1e-15);
 }

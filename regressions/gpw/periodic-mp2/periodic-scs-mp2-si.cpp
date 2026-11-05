@@ -39,7 +39,7 @@ int run() {
     ATV::cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
         const double q = (i == 0) ? 0.0 : a_ang / 4.0;
-        frame.span(ATV::kAtom_type)[i] = 14;
+        frame.span(ATV::kAtom_atomic_number)[i] = 14;
         frame.span(ATV::kAtom_x)[i] = q;
         frame.span(ATV::kAtom_y)[i] = q;
         frame.span(ATV::kAtom_z)[i] = q;

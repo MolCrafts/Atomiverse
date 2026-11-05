@@ -24,9 +24,9 @@ namespace {
 cpu::Frame make_water() {
     // Gas-phase water geometry near experiment (Å).
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
-    f.span(kAtom_type)[1] = 1;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[0] = 8;
+    f.span(kAtom_atomic_number)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;
@@ -73,7 +73,7 @@ TEST(RM1, ParameterLookup) {
 
 TEST(RM1, UnsupportedElementThrows) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 2; // He
+    f.span(kAtom_atomic_number)[0] = 2; // He
     f.span(kAtom_mass)[0] = 4.0;
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
     f.box = cpu::Box::cubic(10.0);

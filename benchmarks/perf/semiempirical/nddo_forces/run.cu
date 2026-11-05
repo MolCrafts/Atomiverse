@@ -71,7 +71,7 @@ cpu::Frame water_cluster(int waters) {
     for (int w = 0; w < waters; ++w)
         for (int a = 0; a < 3; ++a) {
             const int i = 3 * w + a;
-            frame.span(kAtom_type)[i] = species[a];
+            frame.span(kAtom_atomic_number)[i] = species[a];
             frame.span(kAtom_tag)[i] = i + 1;
             frame.span(kAtom_mass)[i] = masses[a];
             frame.span(kAtom_x)[i] = xyz[a][0] + 4 * (w % 4);

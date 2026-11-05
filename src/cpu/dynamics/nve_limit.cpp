@@ -32,7 +32,7 @@ void NVELimit::launch(const cpu::LaunchContext& ctx) {
     const int n = owned_count(ctx);
     const double vmax = xmax_ / dt_;
     const double vmax_sq = vmax * vmax;
-    const double dtf = 0.5 * dt_ * units::force_to_accel;
+    const double dtf = 0.5 * dt_ * units::md_ftm2v;
 
     // Hoisted once for both branches -- the launch-boundary rule.
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);

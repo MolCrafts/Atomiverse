@@ -33,8 +33,8 @@ cpu::Frame make_h2(double bond_length) {
     frame.span(ATV::kAtom_z)[1] = double(0);
     frame.span(ATV::kAtom_mass)[0] = double(1.008);
     frame.span(ATV::kAtom_mass)[1] = double(1.008);
-    frame.span(ATV::kAtom_type)[0] = 1;
-    frame.span(ATV::kAtom_type)[1] = 1;
+    frame.span(ATV::kAtom_atomic_number)[0] = 1;
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
     frame.box = ATV::cpu::Box::cubic(100.0);
     return frame;
 }
@@ -290,9 +290,9 @@ cpu::Frame make_h2o() {
     f.span(ATV::kAtom_mass)[0] = double(15.999);
     f.span(ATV::kAtom_mass)[1] = double(1.008);
     f.span(ATV::kAtom_mass)[2] = double(1.008);
-    f.span(ATV::kAtom_type)[0] = 8;
-    f.span(ATV::kAtom_type)[1] = 1;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
@@ -318,11 +318,11 @@ cpu::Frame make_ch4() {
     f.span(ATV::kAtom_z)[4] = double(-0.6276);
     for (int i = 0; i < 5; ++i)
         f.span(ATV::kAtom_mass)[i] = (i == 0) ? double(12.011) : double(1.008);
-    f.span(ATV::kAtom_type)[0] = 6;
-    f.span(ATV::kAtom_type)[1] = 1;
-    f.span(ATV::kAtom_type)[2] = 1;
-    f.span(ATV::kAtom_type)[3] = 1;
-    f.span(ATV::kAtom_type)[4] = 1;
+    f.span(ATV::kAtom_atomic_number)[0] = 6;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[3] = 1;
+    f.span(ATV::kAtom_atomic_number)[4] = 1;
     f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }

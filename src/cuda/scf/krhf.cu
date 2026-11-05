@@ -883,9 +883,11 @@ cpu::Frame host_geometry(const cuda::Frame& dev, cudaStream_t stream) {
     if (!dev.atoms.x || !dev.atoms.y || !dev.atoms.z)
         throw std::runtime_error(
             "cuda::scf::KRHF: device frame has no positions");
-    if (!dev.atoms.type)
+    if (!dev.atoms.atomic_number)
         throw std::runtime_error(
-            "cuda::scf::KRHF: device frame has no atom types");
+            std::string("cuda::scf::KRHF: device frame has no species "
+                        "column; ")
+            + atom_field_how_to("atomic_number"));
     if (!dev.box)
         throw std::runtime_error("cuda::scf::KRHF: device frame has no cell");
     if constexpr (kPositionCorrection) {
@@ -898,7 +900,7 @@ cpu::Frame host_geometry(const cuda::Frame& dev, cudaStream_t stream) {
     pull_position(host.span(kAtom_y), dev.atoms.y, dev.atoms.y_corr, n, stream);
     pull_position(host.span(kAtom_z), dev.atoms.z, dev.atoms.z_corr, n, stream);
     std::vector<int> types(static_cast<std::size_t>(n));
-    check_cuda(cudaMemcpyAsync(types.data(), dev.atoms.type,
+    check_cuda(cudaMemcpyAsync(types.data(), dev.atoms.atomic_number,
                                sizeof(int) * static_cast<std::size_t>(n),
                                cudaMemcpyDeviceToHost, stream),
                "D2H type");
@@ -907,7 +909,7 @@ cpu::Frame host_geometry(const cuda::Frame& dev, cudaStream_t stream) {
                                cudaMemcpyDeviceToHost, stream),
                "D2H cell");
     check_cuda(cudaStreamSynchronize(stream), "sync geometry");
-    auto ty = host.span(kAtom_type);
+    auto ty = host.span(kAtom_atomic_number);
     for (int i = 0; i < n; ++i)
         ty[i] = types[static_cast<std::size_t>(i)];
     Mat3 cell;

@@ -28,6 +28,7 @@
 
 #include <cstdint>
 
+#include "atomiverse/core/precision.h"
 #include "atomiverse/core/system_scalars.h"
 #include "atomiverse/cuda/frame/types.cuh"
 
@@ -120,7 +121,14 @@ struct Frame {
         fixed_t* fz = nullptr; ///< z forces [fixed-point eV/Angstrom, device].
         mixed_t* mass = nullptr;   ///< Masses [amu, device].
         force_t* charge = nullptr; ///< Partial charges [e, device].
-        int* type = nullptr;       ///< Atom types [device].
+        /// @brief Force-field type index per atom [device]; same semantic
+        /// field as CPU `kAtom_type`. Null when the host Frame carries no
+        /// type column (a consumer that needs it throws at setup).
+        int* type = nullptr;
+        /// @brief Chemical species Z per atom [device]; same semantic field
+        /// as CPU `kAtom_atomic_number`. Null when the host Frame carries no
+        /// species column (a consumer that needs it throws at setup).
+        int* atomic_number = nullptr;
 
         /// @brief Global atom identity [device], persistent across MPI
         /// migration and restart. Same semantic field as CPU `kAtom_tag`.
@@ -128,8 +136,9 @@ struct Frame {
 
         /// @brief Per-atom PBC crossing counts, flat row-major [device,
         /// 3 * n_atoms], `image[i * 3 + d]` for atom i along dimension d.
-        /// Same semantic field as CPU `kAtom_image`.
-        std::int8_t* image = nullptr;
+        /// Same semantic field and dtype (`ImageInt`, int32 per component)
+        /// as CPU `kAtom_image`.
+        ImageInt* image = nullptr;
 
         int* d_size = nullptr; ///< Atom count [device, 1 element].
 

@@ -39,7 +39,7 @@ namespace {
 
 constexpr double kSqrt2OverPi = 0.79788456080286535588;
 
-double A_self(double eta) { return units::coulomb * eta * kSqrt2OverPi; }
+double A_self(double eta) { return units::md_qqr2e * eta * kSqrt2OverPi; }
 
 } // namespace
 

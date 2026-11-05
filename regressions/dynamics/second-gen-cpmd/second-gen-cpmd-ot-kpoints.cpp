@@ -52,7 +52,7 @@ int run() {
         const double xa[2] = {0.5 * L_bohr - 0.5 * r0_bohr,
                               0.5 * L_bohr + 0.5 * r0_bohr};
         for (int i = 0; i < 2; ++i) {
-            fa.span(kAtom_type)[i] = 1;
+            fa.span(kAtom_atomic_number)[i] = 1;
             fa.span(kAtom_x)[i] = xa[i] * units::kBohrInAngstrom;
             fa.span(kAtom_y)[i] = 0.5 * L_bohr * units::kBohrInAngstrom;
             fa.span(kAtom_z)[i] = 0.5 * L_bohr * units::kBohrInAngstrom;
@@ -105,7 +105,7 @@ int run() {
     // ── B: SGCP NVE with the OT corrector on the k path ─────────────────
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_mass)[i] = 1.008;
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_x)[i] = x0[i];

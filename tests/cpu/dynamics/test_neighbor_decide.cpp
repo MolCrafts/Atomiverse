@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/driver/runtime.h"
@@ -51,6 +52,20 @@ TEST(TestNeighborDecide, DelayTenEveryOneCheckNoRebuildsOnTenthDecide) {
     ctx.md.reneighbor = tenth;
     nl.launch({ctx, frame, 0, 10});
     EXPECT_EQ(nl.n_rebuilds(), 2);
+}
+
+// LAMMPS e8c4c278a8 `neigh_modify` defaults (src/neighbor.cpp:122): every 1
+// delay 0 check yes. A deferred check is not safe for MD: a bead that moves
+// past half the skin inside the delay window meets partners the list lacks.
+TEST(TestNeighborDecide, DefaultChecksDisplacementOnTheFirstStep) {
+    auto frame = two_atoms();
+    cpu::Context ctx;
+    cpu::md::NeighborList<> nl(/*cutoff=*/2.0, /*skin=*/0.4);
+    nl.build({ctx, frame});
+    nl.launch({ctx, frame, 0, 0});
+    EXPECT_FALSE(nl.decide_reneighbor(ctx, frame, true));
+    frame.span(kAtom_x)[0] += 0.25; // > skin / 2
+    EXPECT_TRUE(nl.decide_reneighbor(ctx, frame, true));
 }
 
 TEST(TestNeighborDecide, PartitionDirtyForcesReneighborDuringDelay) {
@@ -250,4 +265,45 @@ TEST(TestNeighborDecide, SubSkinIsotropicScaleStaysOnCadence) {
     EXPECT_LT(nl.strategy().lattice_drift(frame), nl.strategy().skin());
     EXPECT_FALSE(nl.decide_reneighbor(ctx, frame, true));
     EXPECT_EQ(nl.n_rebuilds(), 1);
+}
+
+namespace {
+
+/// Rebuild once, change the cell, move owner 0 along x; decide.
+bool decide_after(const Mat3& cell, double move) {
+    auto frame = two_atoms();
+    cpu::Context ctx;
+    cpu::md::NeighborList<> nl(2.0, 0.4, 1, 0, true);
+    nl.set_atom_sort(1000, 0.0, false);
+    nl.build({ctx, frame});
+    nl.launch({ctx, frame, 0, 0});
+    frame.box = cpu::Box(cell);
+    frame.span(kAtom_x)[0] += move;
+    return nl.decide_reneighbor(ctx, frame, true);
+}
+
+} // namespace
+
+TEST(TestNeighborDecide, CellStrainShrinksTheDisplacementTrigger) {
+    // LAMMPS Neighbor::check_distance boxcheck: hi corner moves
+    // |(0.1, 0.1, 0.1)| = 0.173, trigger 0.5 (0.4 - 0.173) = 0.113.
+    const Mat3 strained = Mat3::diagonal(10.1, 10.1, 10.1);
+    EXPECT_TRUE(decide_after(strained, 0.15));
+    EXPECT_FALSE(decide_after(strained, 0.05));
+    EXPECT_FALSE(decide_after(Mat3::diagonal(10, 10, 10), 0.15));
+}
+
+TEST(TestNeighborDecide, TiltChangeShrinksTheTriggerByTwoCorners) {
+    // An xy change of 0.15 moves four corners by 0.15: trigger
+    // 0.5 (0.4 - 0.3) = 0.05.
+    Mat3 tilted = Mat3::diagonal(10, 10, 10);
+    tilted(0, 1) = 0.15;
+    EXPECT_TRUE(decide_after(tilted, 0.08));
+    EXPECT_FALSE(decide_after(tilted, 0.04));
+}
+
+TEST(TestNeighborDecide, CellChangeThatConsumesTheSkinRebuildsWithoutMotion) {
+    // Every lattice vector moves 0.3 < skin (no lattice-drift rebuild), but
+    // the hi corner moves 0.52 > skin.
+    EXPECT_TRUE(decide_after(Mat3::diagonal(10.3, 10.3, 10.3), 0.0));
 }

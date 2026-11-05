@@ -34,7 +34,7 @@ namespace {
 ATV::cpu::Frame h2_frame() {
     ATV::cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 1;
+        frame.span(ATV::kAtom_atomic_number)[i] = 1;
         frame.span(ATV::kAtom_mass)[i] = 1.008;
         frame.span(ATV::kAtom_y)[i] = 0.0;
         frame.span(ATV::kAtom_z)[i] = 0.0;
@@ -51,7 +51,7 @@ ATV::cpu::Frame h3_frame() {
     const double hx[3] = {0.0, 1.0, 0.5};
     const double hy[3] = {0.0, 0.0, 0.8660254037844386};
     for (int i = 0; i < 3; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 1;
+        frame.span(ATV::kAtom_atomic_number)[i] = 1;
         frame.span(ATV::kAtom_mass)[i] = 1.008;
         frame.span(ATV::kAtom_x)[i] = hx[i];
         frame.span(ATV::kAtom_y)[i] = hy[i];

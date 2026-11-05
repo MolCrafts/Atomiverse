@@ -94,6 +94,7 @@ class NoseHoover : public cpu::Thermostat, public cpu::TimestepConsumer {
     /// @param tau_T   Thermostat coupling time constant [fs]
     ///                (LAMMPS `Tdamp`).
     /// @param dt      Timestep [fs].
+    /// @throws std::invalid_argument unless all three are finite and > 0.
     NoseHoover(double T_start, double tau_T, double dt);
 
     std::string name() const override { return "nose_hoover"; }

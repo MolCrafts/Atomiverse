@@ -20,13 +20,14 @@ namespace cpu {
 /// @brief Load the first frame of an (ext)XYZ file into a new cpu::Frame.
 ///
 /// Reads the atom table (positions and the required ExtXYZ `species` column,
-/// consumed into per-atom `type` = atomic number Z) and the simulation box from
-/// the extended-XYZ `Lattice="..."` header. Only the first frame of a
-/// multi-frame file is read.
+/// consumed into the per-atom species `kAtom_atomic_number` = Z) and the
+/// simulation box from the extended-XYZ `Lattice="..."` header. Only the
+/// first frame of a multi-frame file is read. XYZ names elements, not
+/// force-field types, so the returned Frame carries no `kAtom_type` column.
 ///
 /// @param path Filesystem path to the (ext)XYZ file.
-/// @return Newly constructed cpu::Frame with atom positions, `type` (Z), and
-///         the periodic box filled.
+/// @return Newly constructed cpu::Frame with atom positions, species Z
+///         (`kAtom_atomic_number`), and the periodic box filled.
 /// @throws std::runtime_error if `path` does not exist, is a directory, or
 ///         cannot be opened for reading; or if the file lacks the required
 ///         `Lattice="..."` header (no fallback box is substituted). The message

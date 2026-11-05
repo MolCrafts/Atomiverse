@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <type_traits>
 #include <vector>
 
@@ -57,8 +58,8 @@ class TaggedNoise : public testing::TestWithParam<bool> {
         DeviceInput input(host);
         // Choose amplitudes equal to one in public units, so output is N(0,1).
         if (langevin) {
-            const double T = units::mass_v2_to_energy * units::force_to_accel
-                             * units::force_to_accel / (2 * units::kB_ev_per_k);
+            const double T = units::md_mvv2e * units::md_ftm2v * units::md_ftm2v
+                             / (2 * units::md_boltz);
             ATV::cuda::md::FixLangevin thermostat(T, T, 1, 1, seed);
             thermostat.launch({input.context, input.frame,
                                slot_of(md::Phase::post_force), step});
@@ -142,7 +143,7 @@ TEST(CudaMdReductions, KineticEnergyAndSixStressComponentsHaveDistinctSums) {
         host.span(kAtom_vx)[i] = x;
         host.span(kAtom_vy)[i] = y;
         host.span(kAtom_vz)[i] = z;
-        const double c = m * units::mass_v2_to_energy;
+        const double c = m * units::md_mvv2e;
         expected[0] += 0.5 * c * (x * x + y * y + z * z);
         expected[1] += c * x * x;
         expected[2] += c * y * y;
@@ -189,11 +190,14 @@ TEST(CudaMdReductions, InitVelocityHasTargetTemperatureAndZeroMomentum) {
             mv2 += m * v[d] * v[d];
         }
     }
-    EXPECT_NEAR(units::mass_v2_to_energy * mv2
-                    / ((3 * n - 3) * units::kB_ev_per_k),
-                300, (std::is_same_v<ATV::cuda::mixed_t, float> ? 1e-3 : 1e-9));
-    constexpr double tolerance =
-        std::is_same_v<ATV::cuda::mixed_t, float> ? 1e-9 : 1e-16;
+    EXPECT_NEAR(units::md_mvv2e * mv2 / ((3 * n - 3) * units::md_boltz), 300,
+                (std::is_same_v<ATV::cuda::mixed_t, float> ? 1e-3 : 1e-9));
+    // The COM residual is roundoff on velocities of size sigma, so bound it
+    // relative to sigma (unit mass). The bound is the old absolute one
+    // divided by the metal-unit sigma, sqrt(kB 300 / mvv2e) = 0.0158 A/fs.
+    const double sigma = std::sqrt(units::md_boltz * 300 / units::md_mvv2e);
+    const double tolerance =
+        (std::is_same_v<ATV::cuda::mixed_t, float> ? 6e-8 : 6e-15) * sigma;
     for (double p : momentum)
         EXPECT_NEAR(p / mass, 0, tolerance);
 }
@@ -215,9 +219,8 @@ TEST(CudaMdNoise, LangevinDoesNotReuseInitializationSamples) {
         {input.context, input.frame, slot_of(md::Phase::post_force), 0});
     ATV_CUDA_CHECK(cudaStreamSynchronize(input.stream));
     ATV::cuda::to_cpu(input.frame, host);
-    const double sigma_v =
-        std::sqrt(units::kB_ev_per_k * T / units::mass_v2_to_energy);
-    const double sigma_f = std::sqrt(2.0) * sigma_v / units::force_to_accel;
+    const double sigma_v = std::sqrt(units::md_boltz * T / units::md_mvv2e);
+    const double sigma_f = std::sqrt(2.0) * sigma_v / units::md_ftm2v;
     double cross[3] = {};
     for (int i = 0; i < n; ++i) {
         const double v[3] = {host.span(kAtom_vx)[i], host.span(kAtom_vy)[i],
@@ -225,8 +228,8 @@ TEST(CudaMdNoise, LangevinDoesNotReuseInitializationSamples) {
         const double f[3] = {host.span(kAtom_fx)[i], host.span(kAtom_fy)[i],
                              host.span(kAtom_fz)[i]};
         for (int d = 0; d < 3; ++d)
-            cross[d] += (v[d] / sigma_v)
-                        * ((f[d] + v[d] / units::force_to_accel) / sigma_f);
+            cross[d] +=
+                (v[d] / sigma_v) * ((f[d] + v[d] / units::md_ftm2v) / sigma_f);
     }
     for (double value : cross)
         EXPECT_NEAR(value / n, 0, 0.06);
@@ -239,10 +242,10 @@ TEST(CudaMdReductions, NoseHooverUsesEveryBlockBeforeScalingVelocities) {
         host.span(kAtom_mass)[i] = 1;
         const double v = 0.001 * (1 + i % 5);
         host.span(kAtom_vx)[i] = v;
-        ke += 0.5 * units::mass_v2_to_energy * v * v;
+        ke += 0.5 * units::md_mvv2e * v * v;
     }
     const double T = 300, tau = 10, dt = 0.25;
-    const double target = (3 * host.nlocal() - 3) * units::kB_ev_per_k * T;
+    const double target = (3 * host.nlocal() - 3) * units::md_boltz * T;
     const double xi = 0.5 * dt * (2 * ke - target) / (target * tau * tau);
     const double scale = std::exp(-0.5 * dt * xi);
     DeviceInput input(host);
@@ -257,6 +260,62 @@ TEST(CudaMdReductions, NoseHooverUsesEveryBlockBeforeScalingVelocities) {
     for (int i = 0; i < host.nlocal(); ++i)
         EXPECT_NEAR(host.span(kAtom_vx)[i], scale * 0.001 * (1 + i % 5),
                     tolerance);
+}
+
+// Same timestep rule as cpu::md::NoseHoover: the integrator's pushed dt, not
+// the constructor's, sets the half step.
+TEST(CudaMdReductions, NoseHooverUsesThePushedIntegratorTimestep) {
+    cpu::Frame host(64);
+    double ke = 0;
+    for (int i = 0; i < host.nlocal(); ++i) {
+        host.span(kAtom_mass)[i] = 2;
+        const double v = 0.002 * (1 + i % 3);
+        host.span(kAtom_vy)[i] = v;
+        ke += 0.5 * units::md_mvv2e * 2 * v * v;
+    }
+    const double T = 50, tau = 20, dt = 0.5;
+    const double target = (3 * host.nlocal() - 3) * units::md_boltz * T;
+    const double xi = 0.5 * dt * (2 * ke - target) / (target * tau * tau);
+    const double scale = std::exp(-0.5 * dt * xi);
+    DeviceInput input(host);
+    ATV::cuda::md::NoseHoover thermostat(T, tau, /*dt=*/7.0);
+    ASSERT_NE(thermostat.as_timestep_consumer(), nullptr);
+    EXPECT_FALSE(thermostat.timestep_required());
+    thermostat.set_timestep(dt);
+    thermostat.build({input.context, input.frame});
+    thermostat.launch({input.context, input.frame, 0, 0});
+    ATV_CUDA_CHECK(cudaStreamSynchronize(input.stream));
+    ATV::cuda::to_cpu(input.frame, host);
+    thermostat.destroy({input.context, input.frame});
+    for (int i = 0; i < host.nlocal(); ++i)
+        EXPECT_NEAR(host.span(kAtom_vy)[i], scale * 0.002 * (1 + i % 3), 1e-12);
+}
+
+TEST(CudaMdReductions, NoseHooverRefusesNonPositiveParameters) {
+    using ATV::cuda::md::NoseHoover;
+    EXPECT_THROW(NoseHoover(0.0, 10.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(300.0, 0.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(300.0, 10.0, -1.0), std::invalid_argument);
+    NoseHoover ok(300.0, 10.0, 1.0);
+    EXPECT_THROW(ok.set_timestep(0.0), std::invalid_argument);
+    EXPECT_THROW(ok.set_timestep(std::nan("")), std::invalid_argument);
+}
+
+// One atom has no thermal DOF after COM removal (Q = 0): the CPU twin leaves
+// the velocities alone, and so must this one, instead of writing NaN.
+TEST(CudaMdReductions, NoseHooverLeavesAZeroDofSystemUntouched) {
+    cpu::Frame host(1);
+    host.span(kAtom_mass)[0] = 1;
+    host.span(kAtom_vx)[0] = 0.01;
+    DeviceInput input(host);
+    ASSERT_EQ(input.context.md.n_dof_global, 0);
+    ATV::cuda::md::NoseHoover thermostat(300, 10, 1);
+    thermostat.build({input.context, input.frame});
+    thermostat.launch({input.context, input.frame, 0, 0});
+    ATV_CUDA_CHECK(cudaStreamSynchronize(input.stream));
+    ATV::cuda::to_cpu(input.frame, host);
+    thermostat.destroy({input.context, input.frame});
+    EXPECT_EQ(host.span(kAtom_vx)[0], 0.01);
 }
 
 } // namespace

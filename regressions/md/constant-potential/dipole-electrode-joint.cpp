@@ -67,7 +67,9 @@ void solve_once(Solver& s, cpu::Frame& frame) {
 } // namespace
 
 int run() {
-    // Min-image algebra pin (pin_joint.py; K = units::coulomb = 14.399645).
+    // Min-image algebra pin (pin_joint.py at K = units::coulomb).
+    // The engine now multiplies md_qqr2e (lj, 1). Q and μ are a joint
+    // solve, not a 1/K rescaling of these metal numbers.
     // NOT a MetalWalls number — see the file header and REFERENCE.md.
     constexpr double kQBotPin = -7.3285008958883610e-02;
     constexpr double kQTopPin = 7.3285008958883610e-02;

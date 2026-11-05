@@ -32,7 +32,7 @@ struct AtomList {
 
     AtomList() = default;
     /// @brief Build from Frame geometry.
-    /// @param frame       Geometry (Å) + Z in `kAtom_type`.
+    /// @param frame       Geometry (Å) + Z in `kAtom_atomic_number`.
     /// @param charge      Molecular charge (0 = neutral).
     /// @param ghost_atoms Local atom indices treated as ghosts (basis only;
     ///                    Z → 0 for nuclear/electron terms). Empty = none.

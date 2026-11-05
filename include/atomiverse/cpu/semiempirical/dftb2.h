@@ -510,7 +510,7 @@ class DFTB2 : public cpu::Semiempirical,
     /// anything but the structural limits gated in
     /// `regressions/semiempirical/td-dftb/`.
     ///
-    /// @param frame          Geometry [Å] + atomic number Z in the type column.
+    /// @param frame          Geometry [Å] + atomic number Z in the atomic_number column.
     ///                       Read-only; nothing is written to it.
     /// @param n_states       Number of lowest excitations to return
     ///                       (dimensionless), 1 ≤ n_states ≤ n_pair.

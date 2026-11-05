@@ -18,8 +18,11 @@ TEST(QmmmOniom, EnergyIdentityHighPlusLowRealMinusLowModel) {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_x)[2] = 5.0;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 18;
     f.span(kAtom_type)[2] = 18;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -28,11 +31,11 @@ TEST(QmmmOniom, EnergyIdentityHighPlusLowRealMinusLowModel) {
         f.span(kAtom_charge)[i] = 0;
     f.box = cpu::Box::cubic(30);
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
-    f.span(cpu::kAtomQmZ)[2] = 0;
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
+    f.span(cpu::kAtomQm)[2] = 0;
     f.meta.get(kEnergy) = 0;
     f.meta.get(kEnergyElectronic) = 0;
 
@@ -67,7 +70,9 @@ TEST(QmmmOniom, ForcesFiniteWhenRequested) {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_x)[2] = 4.0;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 18;
     f.span(kAtom_type)[2] = 18;
     for (int i = 0; i < 3; ++i) {
         f.span(kAtom_tag)[i] = i + 1;
@@ -76,11 +81,11 @@ TEST(QmmmOniom, ForcesFiniteWhenRequested) {
     }
     f.box = cpu::Box::cubic(30);
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
-    f.span(cpu::kAtomQmZ)[2] = 0;
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
+    f.span(cpu::kAtomQm)[2] = 0;
     f.meta.get(kEnergy) = 0;
 
     cpu::QmmmOniom oniom{{{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 12.0};

@@ -87,15 +87,19 @@
 /// @see cpu::md::MD for the CPU sibling driver with the same API surface
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cuda/component/timestep_protocol.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
 #include "atomiverse/cuda/dynamics/kinetic_energy.cuh"
@@ -138,7 +142,11 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     ///     equipartition (T_eq diverges to ~3.5× target observed in the `Thermalises`
     ///     test).
     ///   - `NoseHoover`/`NoseHooverNPT` extended variables persist.
-    ///   - Recorder cadence keys (modulo `frequency`) stay continuous.
+    ///   - Recorder cadence keys (modulo `frequency`) stay continuous, and a
+    ///     recorder's step axis continues: each run first writes the current
+    ///     state (LAMMPS `Output::setup`) unless that step was already
+    ///     written, then labels each end-of-step write with the completed
+    ///     step count.
     /// A different `frame` ⇒ genuinely independent simulation: tear the previous run
     /// down and restart the counter.
     ///
@@ -172,6 +180,10 @@ class MD : public cuda::Driver<ATV::md::Phase> {
                 this->backend_->refresh_inputs(frame);
             }
             this->backend_->prepare_run(step_counter_);
+            // LAMMPS Run::command → Output::setup: every run writes the
+            // current state first (recorders on cadence, never a step
+            // twice), so a recorder's frame `s` is the state after `s` steps.
+            this->backend_->setup_output(step_counter_);
             // The final step evaluates the energy the retrieved Frame reports.
             this->backend_->set_report_step(step_counter_ + n_steps - 1);
             BigInt iterations = 0;
@@ -266,6 +278,25 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         return *this;
     }
 
+    /// @brief Borrow the time integrator (same singular slot as
+    ///        `set_integrator`). The Python CUDA driver keeps a
+    ///        `NoseHooverNPT` so it can set the temperature-ramp span.
+    /// @param integ Integrator; must outlive this driver.
+    template <typename I>
+    MD& set_integrator_ref(I& integ) {
+        const std::string n = integ.name();
+        if (integrator_set_) {
+            if (*integrator_set_ == n)
+                return *this;
+            throw std::invalid_argument(
+                "set_integrator already configured with '" + *integrator_set_
+                + "', rejected re-call with '" + n + "'");
+        }
+        integrator_set_ = n;
+        this->bind_defaults_ref(integ);
+        return *this;
+    }
+
     /// @brief Add a thermostat (LAMMPS `fix … langevin / temp/berendsen`).
     /// Plural: each call appends; insertion order preserved.
     template <typename T>
@@ -298,7 +329,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     ///        cadence or keyword list throws.
     /// Binds `cuda::Thermo{every, keywords}` at `end_of_step @ +20`; its
     /// keywords decide which steps evaluate the energy and the virial.
-    /// @param every Print cadence [steps]. `0` prints every step.
+    /// @param every Print cadence [steps]. `0` prints the first and last
+    ///        step of each run only (LAMMPS `thermo 0`).
     /// @param keywords `thermo_style custom` keywords; empty selects the
     ///        LAMMPS default `step temp pe ke etotal`.
     MD& set_thermo(int every, std::vector<std::string> keywords = {}) {
@@ -358,6 +390,75 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         this->throw_if_missing_neighbor_list_(
             s, "cuda::md::MD",
             "Add `sim.set_neighbor(cuda::NeighborList{cutoff})`.");
+
+        negotiate_timestep_();
+    }
+
+    /// @brief Push the integrator's dt to every `TimestepConsumer` before any
+    ///        component `build()` — the CUDA mirror of
+    ///        `cpu::Driver::negotiate_timestep_` (same rules, same messages).
+    ///
+    /// Providers and consumers are deduplicated by identity because the walk
+    /// visits bindings (VelocityVerlet binds twice). Two providers on
+    /// different clocks throw naming both; a consumer that requires a dt
+    /// throws when nothing provides one; an unusable dt (not finite, <= 0) is
+    /// refused before the first push.
+    void negotiate_timestep_() {
+        struct PublishedDt {
+            std::string owner;
+            double dt_fs;
+        };
+        std::vector<PublishedDt> published;
+        std::unordered_set<const cuda::TimestepProvider*> seen_providers;
+        this->for_each_pending([&](const cuda::Component& c) {
+            const cuda::TimestepProvider* p = c.as_timestep_provider();
+            if (!p || !seen_providers.insert(p).second)
+                return;
+            published.push_back({c.name(), p->timestep()});
+        });
+        for (std::size_t i = 1; i < published.size(); ++i) {
+            const double a = published[0].dt_fs;
+            const double b = published[i].dt_fs;
+            const double diff = std::fabs(a - b);
+            const double scale = std::max(std::fabs(a), std::fabs(b));
+            const bool disagree =
+                std::isfinite(diff) ? diff > 1e-12 * scale : !(a == b);
+            if (disagree)
+                throw std::runtime_error(
+                    "MD::build(): conflicting MD timesteps — integrator '"
+                    + published[0].owner + "' publishes " + std::to_string(a)
+                    + " fs, integrator '" + published[i].owner + "' publishes "
+                    + std::to_string(b)
+                    + " fs; exactly one clock may own the run");
+        }
+        std::vector<std::pair<cuda::TimestepConsumer*, std::string>> consumers;
+        std::unordered_set<const cuda::TimestepConsumer*> seen_consumers;
+        this->for_each_pending_mut([&](cuda::Component& c) {
+            cuda::TimestepConsumer* tc = c.as_timestep_consumer();
+            if (tc && seen_consumers.insert(tc).second)
+                consumers.emplace_back(tc, c.name());
+        });
+        if (consumers.empty())
+            return;
+        if (!published.empty()
+            && (!(published[0].dt_fs > 0.0)
+                || !std::isfinite(published[0].dt_fs)))
+            throw std::runtime_error("MD::build(): integrator '"
+                                     + published[0].owner
+                                     + "' publishes an unusable timestep "
+                                     + std::to_string(published[0].dt_fs)
+                                     + " fs (must be finite and > 0)");
+        for (auto& [consumer, owner] : consumers) {
+            if (published.empty()) {
+                if (consumer->timestep_required())
+                    throw std::runtime_error(
+                        "MD::build(): '" + owner
+                        + "' requires the nuclear timestep, but no registered "
+                          "component implements TimestepProvider");
+                continue;
+            }
+            consumer->set_timestep(published[0].dt_fs);
+        }
     }
 
     void clear_singular_on_unfix_(std::string_view name_or_id) override {

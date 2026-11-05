@@ -11,8 +11,8 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/asynchronous/analysis_executor.h"
-#include "atomiverse/cpu/asynchronous/async_component_base.h"
+#include "atomiverse/cpu/asynchronous/async_consumer.h"
+#include "atomiverse/cpu/asynchronous/capture_buffer.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -275,11 +275,11 @@ TEST(ComponentOwnership, FailedPlanBuildReleasesEarlierObjects) {
     EXPECT_EQ(first.destroys, 2);
 }
 
-TEST(ComponentOwnership, DestroyingAsyncObjectUnregistersAndFinalizesIt) {
-    class Observer : public ATV::cpu::AsyncComponentBase {
+TEST(ComponentOwnership, DestroyingAsyncObjectUnsubscribesAndFinalizesIt) {
+    class Observer : public ATV::cpu::AsyncConsumer {
       public:
         std::string name() const override { return "async_lifetime"; }
-        ATV::cpu::CaptureMask capture_mask() const override { return {}; }
+        ATV::CaptureColumns capture_columns() const override { return {}; }
         void on_snapshot(const ATV::cpu::FrameSnapshot&) override {}
         void finalize() override { ++finalized; }
         int finalized = 0;
@@ -293,10 +293,11 @@ TEST(ComponentOwnership, DestroyingAsyncObjectUnregistersAndFinalizesIt) {
     runtime.load(plan);
     runtime.set_frame(frame);
     runtime.build_plan(plan);
-    auto* executor = runtime.context().analysis.executor;
-    ASSERT_EQ(executor->subscribers().size(), 1u);
+    auto* buffer = runtime.context().capture.buffer;
+    ASSERT_EQ(buffer, &runtime.capture());
+    EXPECT_TRUE(buffer->has_consumers());
     runtime.destroy_plan(plan);
-    EXPECT_TRUE(executor->subscribers().empty());
+    EXPECT_FALSE(buffer->has_consumers());
     EXPECT_EQ(observer.finalized, 1);
     runtime.shutdown();
     EXPECT_EQ(observer.finalized, 1);

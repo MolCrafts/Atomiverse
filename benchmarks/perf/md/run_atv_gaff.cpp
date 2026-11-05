@@ -22,6 +22,7 @@
 #include <mpi.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -33,6 +34,7 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/pppm_accuracy.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
@@ -68,9 +70,9 @@ struct Args {
     int steps = 500;
     double cutoff = 10.0;       // overridden by --ff pair_style cutoff
     double accuracy = 1.0e-4;   // overridden by --ff kspace_style accuracy
-    double alpha = -1.0;        // <0 → pppm_alpha_from_accuracy(accuracy)
+    double alpha = -1.0;        // <0 → LAMMPS PPPM::init (pppm_from_accuracy)
     int fft_ranks = 0;          // 0 → derive from the mesh
-    double grid_spacing = -1.0; // <0 → from_accuracy default (rcut/2.5)
+    double grid_spacing = -1.0; // <0 → the pppm_from_accuracy mesh
     double T = 400.0;
     double tau_T = 100.0;
     bool npt = false;
@@ -168,7 +170,7 @@ Args parse(int argc, char** argv) {
 
 // GAFF2 PEO type tables matching melt.ff / type labels in melt.data
 // types 0..4 = c3, h1, hc, ho, oh
-std::vector<cpu::LJTypeCoeff> peo_lj(double cut_unused) {
+std::vector<LJTypeCoeff> peo_lj(double cut_unused) {
     (void)cut_unused;
     using cpu::kcal_per_mol_to_ev;
     return {
@@ -210,7 +212,7 @@ int main(int argc, char** argv) {
     using cpu::kcal_per_mol_to_ev;
 
     // ── Coefficient tables: --ff file, or the built-in PEO GAFF2 tables ──
-    std::vector<cpu::LJTypeCoeff> lj_coeffs;
+    std::vector<LJTypeCoeff> lj_coeffs;
     std::vector<double> Kbond, r0, Kang, th0;
     std::vector<double> Kd, dphase;
     std::vector<int> nper;
@@ -301,22 +303,38 @@ int main(int argc, char** argv) {
         dphase.assign(9, 0.0);
     }
 
-    const double alpha = args.alpha > 0.0
-                             ? args.alpha
-                             : cpu::pppm_alpha_from_accuracy(accuracy, cutoff);
-    // `--mesh K`: spacing L/(K - 1/2) makes KSpacePPPM's ceil(L/spacing)
-    // land exactly on K (K itself must be FFT-friendly, as LAMMPS's is).
-    if (args.mesh > 0
-        && (std::abs(frame.box.length(0) - frame.box.length(1)) > 1e-9
-            || std::abs(frame.box.length(0) - frame.box.length(2)) > 1e-9))
-        throw std::invalid_argument("--mesh needs a cubic box");
-    const double grid_sp = args.mesh > 0
-                               ? frame.box.length(0) / (args.mesh - 0.5)
-                           : args.grid_spacing > 0.0 ? args.grid_spacing
-                                                     : (cutoff / 2.5);
+    // LAMMPS kspace_style pppm <accuracy> (default order 5) with the
+    // kspace_modify gewald / mesh overrides this tool exposes.
+    longrange::PppmAccuracyRequest acc_req;
+    acc_req.accuracy = accuracy;
+    acc_req.cutoff = cutoff;
+    acc_req.order = 5;
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c)
+            acc_req.cell[3 * r + c] = frame.box.cell()(r, c);
+    acc_req.natoms = n_atoms;
+    {
+        const StorageReal* qcol = frame.span(kAtom_charge);
+        for (int i = 0; i < n_atoms; ++i)
+            acc_req.qsqsum += double(qcol[i]) * double(qcol[i]);
+    }
+    if (args.alpha > 0.0)
+        acc_req.alpha = args.alpha;
+    if (args.mesh > 0)
+        acc_req.mesh[0] = acc_req.mesh[1] = acc_req.mesh[2] = args.mesh;
+    const longrange::PppmAccuracyResult acc =
+        longrange::pppm_from_accuracy(acc_req);
+    const double alpha = acc.alpha;
+    const std::array<int, 3> pppm_mesh = {acc.mesh[0], acc.mesh[1],
+                                          acc.mesh[2]};
+    const double grid_sp = args.grid_spacing; // > 0 overrides the mesh
     if (rank == 0)
-        std::printf("[atv] alpha=%.6f (%s) grid_spacing=%.3f\n", alpha,
-                    args.alpha > 0.0 ? "explicit" : "from accuracy", grid_sp);
+        std::printf(
+            "[atv] alpha=%.8g (%s) mesh=%d %d %d%s est. accuracy=%.8g\n", alpha,
+            args.alpha > 0.0 ? "explicit" : "from accuracy", pppm_mesh[0],
+            pppm_mesh[1], pppm_mesh[2],
+            grid_sp > 0.0 ? " (overridden by --grid-spacing)" : "",
+            acc.accuracy_absolute);
 
     // Velocities: keep the data file's if present, else Maxwell-Boltzmann.
     bool have_velocities = false;
@@ -348,8 +366,12 @@ int main(int argc, char** argv) {
                               .set_tail_correction(tail)
                               .set_energy_shift(shift)
                               .set_compute_stress(stress));
-        sim.set_evaluator(
-            cpu::KSpacePPPM{alpha, grid_sp, /*order=*/5, args.fft_ranks});
+        if (grid_sp > 0.0)
+            sim.set_evaluator(
+                cpu::KSpacePPPM{alpha, grid_sp, /*order=*/5, args.fft_ranks});
+        else
+            sim.set_evaluator(
+                cpu::KSpacePPPM{alpha, pppm_mesh, /*order=*/5, args.fft_ranks});
         sim.set_evaluator(cpu::BondHarmonic{Kbond, r0});
         sim.set_evaluator(cpu::AngleHarmonic{Kang, th0});
         if (use_charmm)

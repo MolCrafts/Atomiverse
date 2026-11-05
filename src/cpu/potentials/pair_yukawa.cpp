@@ -90,6 +90,7 @@ void PairYukawa::compute(const LaunchContext& ctx) {
                 accumulate_pair(i, j);
     }
     f.meta.get(kEnergy) += energy;
+    f.meta.get(kEnergyPair) += energy;
     if (ctx.stress_requested)
         vir.flush_to(f.meta.get(kStress));
 }

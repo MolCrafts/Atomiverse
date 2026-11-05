@@ -42,7 +42,7 @@ int run() {
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.box = cpu::Box::cubic(20.0);
 
     // PySCF 2.14.0 pins (REFERENCE.md; cart=True, conv_tol=1e-12, PBE TDDFT).

@@ -173,7 +173,7 @@ constexpr double b2a = units::kBohrInAngstrom;  // Frame is Å
 const double L = 8.0 * b2a;                     // 8 Bohr
 cpu::Frame frame(2);
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 1;
+    frame.span(kAtom_atomic_number)[i] = 1;
     frame.span(kAtom_x)[i] = 0.5 * L + (i == 0 ? -0.7 : 0.7) * b2a;
     frame.span(kAtom_y)[i] = 0.5 * L;
     frame.span(kAtom_z)[i] = 0.5 * L;
@@ -203,7 +203,7 @@ const double a = 4.225; // Å
 const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
 cpu::Frame frame(2);
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 11;
+    frame.span(kAtom_atomic_number)[i] = 11;
     frame.span(kAtom_x)[i] = frac[i][0] * a;
     frame.span(kAtom_y)[i] = frac[i][1] * a;
     frame.span(kAtom_z)[i] = frac[i][2] * a;
@@ -285,7 +285,7 @@ const int z[3] = {8, 1, 1};
 const double x[3]  = {5.0000, 5.7586, 4.2414};
 const double y[3]  = {5.0000, 5.0000, 5.0000};
 const double zc[3] = {5.0000, 5.5043, 5.5043};
-// ... fill kAtom_type / kAtom_x/y/z; frame.box = cpu::Box::cubic(10.0);
+// ... fill kAtom_atomic_number / kAtom_x/y/z; frame.box = cpu::Box::cubic(10.0);
 
 cpu::gpw::GpwDft dft{{O, H}, 250.0, cpu::gpw::XcKind::PBE};  // DZVP-MOLOPT-GTH, GTH-PBE-q6/q1
 dft.max_iter = 200;

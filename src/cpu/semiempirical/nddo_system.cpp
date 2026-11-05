@@ -39,7 +39,7 @@ NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
 
     int next_ao = 0;
     double electron_count = -static_cast<double>(charge_in);
-    const int* __restrict sp_type = frame.span(kAtom_type);
+    const int* __restrict sp_type = frame.span(kAtom_atomic_number);
     for (int i = 0; i < frame.nlocal(); ++i) {
         const int z = sp_type[i];
         const auto* p = ATV::semiempirical::nddo_parameter(method_in, z);

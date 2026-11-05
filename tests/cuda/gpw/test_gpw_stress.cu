@@ -32,7 +32,7 @@ ATV::cpu::Frame h2_frame() {
     cpu::Frame frame(2);
     frame.box = cpu::Box::cubic(12.0 * units::kBohrInAngstrom);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = (5.5 + i) * units::kBohrInAngstrom;
         frame.span(kAtom_y)[i] = 6.0 * units::kBohrInAngstrom;
         frame.span(kAtom_z)[i] = 6.0 * units::kBohrInAngstrom;

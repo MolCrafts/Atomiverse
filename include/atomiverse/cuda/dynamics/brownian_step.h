@@ -64,7 +64,7 @@ __host__ __device__ __forceinline__ bool bd_finite(T v) {
 /// @return μ such that μ F Δt is a length when F is eV/Å.
 template <typename T>
 __host__ __device__ __forceinline__ T brownian_mobility(T D, T temperature) {
-    return D / (T(ATV::units::kB_ev_per_k) * temperature);
+    return D / (T(ATV::units::md_boltz) * temperature);
 }
 
 /// @brief Noise amplitude √(2 D Δt) [Å].

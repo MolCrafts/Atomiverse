@@ -1,20 +1,22 @@
 /// @file test_rdf_molpy.cu
 /// @brief cuda::RDF on the molpy streaming accumulator (arch-refactor-07-molpy):
 /// static-trajectory g(r) parity vs a host-fed cpu::compute::RDFAccumulator,
-/// nearest-neighbor lattice-peak physics, and fail-fast constructor edges.
+/// nearest-neighbor lattice-peak physics, fail-fast constructor edges, and
+/// lossless capture: behind a one-frame budget and a slow consumer the curve
+/// and the sample count equal a run whose buffer never fills.
 ///
-/// A dt = 0 fs VelocityVerlet makes every MD frame identical, so the
-/// normalized g(r) is invariant under the async ring's drop_oldest frame
-/// drops — feeding ONE copy of the same frame into the host accumulator
-/// yields the exact reference curve regardless of how many frames the CUDA
-/// observer accepted. Units: positions / r / cell in Å, g(r) dimensionless.
+/// A dt = 0 fs VelocityVerlet makes every MD frame identical, so feeding ONE
+/// copy of the frame into the host accumulator yields the exact reference
+/// curve. Units: positions / r / cell in Å, g(r) dimensionless.
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -209,4 +211,94 @@ TEST(RDFMolpy, CtorThrowsOnInvalidBinCount) {
 TEST(RDFMolpy, CtorThrowsOnNonPositiveRMax) {
     EXPECT_THROW(cuda::RDF(0.0, kNBins, "unused_rdf.dat"),
                  std::invalid_argument);
+}
+
+// ── Lossless capture: no sample skipped under backpressure ────────────────
+
+namespace {
+
+/// A deliberately slow consumer sharing the driver's capture buffer.
+class SlowConsumer : public cuda::AsyncObserver {
+  public:
+    std::string name() const override { return "slow"; }
+    int frequency() const override { return 1; }
+    CaptureColumns capture_columns() const override {
+        CaptureColumns c;
+        c.positions = true;
+        return c;
+    }
+    int seen = 0;
+
+  protected:
+    void consume(const cuda::CaptureView&) override {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        ++seen;
+    }
+};
+
+/// Ten moving LJ atoms (the curve changes every step).
+cpu::Frame make_moving_frame() {
+    cpu::Frame frame(10);
+    for (int i = 0; i < 10; ++i) {
+        frame.span(kAtom_x)[i] = 8.0 + 3.5 * static_cast<double>(i % 5);
+        frame.span(kAtom_y)[i] = 10.0 + 3.5 * static_cast<double>(i / 5);
+        frame.span(kAtom_z)[i] = 15.0;
+        frame.span(kAtom_vx)[i] = 0.002 * static_cast<double>(i % 3 - 1);
+        frame.span(kAtom_vy)[i] = 0.001 * static_cast<double>(i % 2);
+        frame.span(kAtom_vz)[i] = 0.0005 * static_cast<double>(i % 4 - 2);
+        frame.span(kAtom_mass)[i] = 39.948;
+        frame.span(kAtom_type)[i] = 0;
+    }
+    frame.box = cpu::Box::cubic(30.0);
+    return frame;
+}
+
+struct RdfRun {
+    std::vector<double> r, g;
+    long long frames = 0;
+    std::uint64_t blocked = 0;
+};
+
+RdfRun rdf_run(bool tight, const std::string& path) {
+    constexpr int kSteps = 24;
+    cuda::RDF rdf{5.5, 40, path, /*every=*/1};
+    SlowConsumer slow;
+    RdfRun out;
+    {
+        cpu::Frame f = make_moving_frame();
+        cuda::md::MD sim;
+        sim.set_integrator(cuda::md::VelocityVerlet{1.0});
+        sim.on(md::Phase::force)
+            .add(cuda::NeighborList{6.0, 0.3}, -10)
+            .add(cuda::PairLJCut{0.0104, 3.4, 6.0});
+        sim.on(md::Phase::end_of_step).add_ref(rdf, +20);
+        if (tight) {
+            sim.on(md::Phase::end_of_step).add_ref(slow, +20);
+            sim.set_capture_buffer_bytes(cuda::CaptureBuffer::frame_bytes(
+                10, rdf.capture_columns() | slow.capture_columns()));
+        }
+        sim.build();
+        sim.run(f, kSteps);
+        out.frames = rdf.n_frames();
+        out.blocked = sim.capture_stats().blocked_episodes;
+    } // teardown writes the curve
+    parse_gr_file(path, out.r, out.g);
+    return out;
+}
+
+} // namespace
+
+TEST(RDFMolpy, CurveIdenticalUnderBackpressure) {
+    ScopedFile a("test_rdf_lossless_free.dat"),
+        b("test_rdf_lossless_tight.dat");
+    const RdfRun free_run = rdf_run(false, a.path);
+    const RdfRun tight = rdf_run(true, b.path);
+    // Every step 0..24 is a sample, in both runs.
+    EXPECT_EQ(free_run.frames, 25);
+    EXPECT_EQ(tight.frames, 25);
+    EXPECT_EQ(free_run.blocked, 0u);
+    EXPECT_GT(tight.blocked, 0u);
+    ASSERT_EQ(free_run.g.size(), 40u);
+    EXPECT_EQ(tight.r, free_run.r);
+    EXPECT_EQ(tight.g, free_run.g);
 }

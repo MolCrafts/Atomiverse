@@ -34,7 +34,7 @@ ATV::cpu::Frame make_o2() {
     constexpr double L = 12.0;
     constexpr double R = 1.2075;
     for (int i = 0; i < 2; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 8;
+        frame.span(ATV::kAtom_atomic_number)[i] = 8;
         frame.span(ATV::kAtom_x)[i] = 0.5 * L;
         frame.span(ATV::kAtom_y)[i] = 0.5 * L;
     }
@@ -52,7 +52,7 @@ ATV::cpu::Frame make_water_dimer() {
     const double y[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     const double zc[6] = {0.0, 0.504284, -0.504284, 0.0, 0.504284, -0.504284};
     for (int i = 0; i < 6; ++i) {
-        frame.span(ATV::kAtom_type)[i] = z[i];
+        frame.span(ATV::kAtom_atomic_number)[i] = z[i];
         frame.span(ATV::kAtom_x)[i] = x[i];
         frame.span(ATV::kAtom_y)[i] = y[i];
         frame.span(ATV::kAtom_z)[i] = zc[i];

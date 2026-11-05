@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
         const double xyz[3][3] = {
             {0, 0, 0.1173}, {0, 0.7572, -0.4692}, {0, -0.7572, -0.4692}};
         for (int i = 0; i < n; ++i) {
-            frame.span(kAtom_type)[i] = water && i == 0 ? 8 : 1;
+            frame.span(kAtom_atomic_number)[i] = water && i == 0 ? 8 : 1;
             frame.span(kAtom_mass)[i] = water && i == 0 ? 15.999 : 1.008;
             frame.span(kAtom_x)[i] = water ? xyz[i][0] : 0;
             frame.span(kAtom_y)[i] = water ? xyz[i][1] : 0;

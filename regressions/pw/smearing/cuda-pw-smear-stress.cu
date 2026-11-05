@@ -78,7 +78,7 @@ std::string parse_device_arg(int argc, char** argv) {
 /// FCC primitive cell, one Al at the origin, lattice constant a [Å].
 cpu::Frame make_al_fcc_primitive(double a_ang) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 13;
+    f.span(kAtom_atomic_number)[0] = 13;
     f.span(kAtom_mass)[0] = 26.9815385;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;

@@ -223,7 +223,8 @@ void host_edits(const Pin (&pins)[N], const std::string& label) {
                 label + " population external");
         outputs(frame, method.last_result(), label + " population Frame");
         if (pin.count == 2) {
-            std::swap(frame.span(kAtom_type)[0], frame.span(kAtom_type)[1]);
+            std::swap(frame.span(kAtom_atomic_number)[0],
+                      frame.span(kAtom_atomic_number)[1]);
             md.run(frame, 0);
             reference = frame;
             compare(method.last_result(), cpu_method.forces(reference),
@@ -345,12 +346,12 @@ void grade(const Pin (&pins)[N], const char* method_name) {
         if (pin.count == 3) {
             auto invalid = make_frame(pin);
             Gpu method{0, 1, 1000, 1e-10, 1e-12};
-            invalid.span(kAtom_type)[0] = 9;
+            invalid.span(kAtom_atomic_number)[0] = 9;
             rejects([&] { method.run(invalid); },
                     std::string(method_name) + " unsupported element");
             require(!method.has_density(),
                     std::string(method_name) + " invalid first build no guess");
-            invalid.span(kAtom_type)[0] = pin.species[0];
+            invalid.span(kAtom_atomic_number)[0] = pin.species[0];
             invalid.box = cpu::Box::cubic(20);
             rejects([&] { method.forces(invalid); },
                     std::string(method_name) + " unsupported periodic cell");

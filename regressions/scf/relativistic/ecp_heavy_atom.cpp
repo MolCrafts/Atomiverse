@@ -60,11 +60,11 @@ int run() {
 
     // ── I2, R = 2.666 A along z ─────────────────────────────────────────
     ATV::cpu::Frame i2(2);
-    i2.span(ATV::kAtom_type)[0] = 53;
+    i2.span(ATV::kAtom_atomic_number)[0] = 53;
     i2.span(ATV::kAtom_x)[0] = 0.0;
     i2.span(ATV::kAtom_y)[0] = 0.0;
     i2.span(ATV::kAtom_z)[0] = 0.0;
-    i2.span(ATV::kAtom_type)[1] = 53;
+    i2.span(ATV::kAtom_atomic_number)[1] = 53;
     i2.span(ATV::kAtom_x)[1] = 0.0;
     i2.span(ATV::kAtom_y)[1] = 0.0;
     i2.span(ATV::kAtom_z)[1] = 2.666;
@@ -73,11 +73,11 @@ int run() {
 
     // ── AuH, R = 1.524 A along z ────────────────────────────────────────
     ATV::cpu::Frame auh(2);
-    auh.span(ATV::kAtom_type)[0] = 79;
+    auh.span(ATV::kAtom_atomic_number)[0] = 79;
     auh.span(ATV::kAtom_x)[0] = 0.0;
     auh.span(ATV::kAtom_y)[0] = 0.0;
     auh.span(ATV::kAtom_z)[0] = 0.0;
-    auh.span(ATV::kAtom_type)[1] = 1;
+    auh.span(ATV::kAtom_atomic_number)[1] = 1;
     auh.span(ATV::kAtom_x)[1] = 0.0;
     auh.span(ATV::kAtom_y)[1] = 0.0;
     auh.span(ATV::kAtom_z)[1] = 1.524;

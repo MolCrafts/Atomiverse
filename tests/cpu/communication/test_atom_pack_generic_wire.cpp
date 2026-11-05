@@ -179,8 +179,14 @@ TEST(TestAtomPackGenericWire, BorderAllScalarRoundTripIsFieldMajor) {
         f.span(kAtom_tag)[i] = static_cast<TagInt>(500 + i);
         f.span(kAtom_type)[i] = i;
     }
-    cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Border, ATV::base_fields::engine_contract());
+    // The engine fields plus the force-field type a per-type style declares.
+    ATV::GhostContract contract = ATV::base_fields::engine_contract();
+    constexpr std::array typed = {
+        ATV::GhostField::read_stable(kAtom_type, "test"),
+    };
+    contract.declare(typed);
+    cpu::comm::PackPlan plan =
+        cpu::comm::make_wire_plan(f, cpu::comm::PackKind::Border, contract);
     const int send[2] = {1, 3};
     const std::size_t bytes = plan.bytes(2);
     std::vector<std::byte> wire(bytes);
@@ -202,9 +208,9 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
         f.span(kAtom_tag)[i] = static_cast<TagInt>(500 + i);
         f.span(kAtom_type)[i] = i;
         f.span(kAtom_charge)[i] = static_cast<StorageReal>(0.25 * i);
-        f.span(kAtom_image)(i, 0) = static_cast<std::int8_t>(i);
-        f.span(kAtom_image)(i, 1) = static_cast<std::int8_t>(-i);
-        f.span(kAtom_image)(i, 2) = static_cast<std::int8_t>(2 * i);
+        f.span(kAtom_image)(i, 0) = static_cast<ATV::ImageInt>(i);
+        f.span(kAtom_image)(i, 1) = static_cast<ATV::ImageInt>(-i);
+        f.span(kAtom_image)(i, 2) = static_cast<ATV::ImageInt>(2 * i);
     }
     cpu::comm::PackPlan plan =
         cpu::comm::make_wire_plan(f, cpu::comm::PackKind::Border, [] {
@@ -214,8 +220,9 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
             ATV::GhostContract b;
             b.declare(ATV::base_fields::kEngine);
             constexpr std::array plugin = {
+                ATV::GhostField::read_stable(kAtom_type, "test"),
                 ATV::GhostField::read_stable(kAtom_charge, "test"),
-                ATV::GhostField::read_stable("image", ColDType::Int8, 3,
+                ATV::GhostField::read_stable("image", ColDType::Image, 3,
                                              "test"),
             };
             b.declare(plugin);
@@ -238,10 +245,11 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
         EXPECT_DOUBLE_EQ(f.span(kAtom_charge)[dst],
                          static_cast<StorageReal>(0.25 * src));
         // All three image components survive — the reason border is row-major.
-        EXPECT_EQ(f.span(kAtom_image)(dst, 0), static_cast<std::int8_t>(src));
-        EXPECT_EQ(f.span(kAtom_image)(dst, 1), static_cast<std::int8_t>(-src));
+        EXPECT_EQ(f.span(kAtom_image)(dst, 0), static_cast<ATV::ImageInt>(src));
+        EXPECT_EQ(f.span(kAtom_image)(dst, 1),
+                  static_cast<ATV::ImageInt>(-src));
         EXPECT_EQ(f.span(kAtom_image)(dst, 2),
-                  static_cast<std::int8_t>(2 * src));
+                  static_cast<ATV::ImageInt>(2 * src));
     }
 }
 

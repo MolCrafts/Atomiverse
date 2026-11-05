@@ -22,7 +22,7 @@ cpu::Frame geometry(const std::vector<int>& z,
                     const std::vector<double>& bohr) {
     cpu::Frame frame(z.size());
     for (std::size_t a = 0; a < z.size(); ++a) {
-        frame.span(kAtom_type)[a] = z[a];
+        frame.span(kAtom_atomic_number)[a] = z[a];
         frame.span(kAtom_x)[a] = bohr[a * 3] / units::kAngstromInBohr;
         frame.span(kAtom_y)[a] = bohr[a * 3 + 1] / units::kAngstromInBohr;
         frame.span(kAtom_z)[a] = bohr[a * 3 + 2] / units::kAngstromInBohr;

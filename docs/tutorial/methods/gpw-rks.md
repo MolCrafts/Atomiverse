@@ -94,7 +94,7 @@ const double x[3]  = {5.0000, 5.7586, 4.2414};
 const double y[3]  = {5.0000, 5.0000, 5.0000};
 const double zc[3] = {5.0000, 5.5043, 5.5043};
 for (int i = 0; i < 3; ++i) {
-    frame.span(kAtom_type)[i] = z[i];
+    frame.span(kAtom_atomic_number)[i] = z[i];
     frame.span(kAtom_x)[i] = x[i];
     frame.span(kAtom_y)[i] = y[i];
     frame.span(kAtom_z)[i] = zc[i];
@@ -130,7 +130,7 @@ const double frac[4][3] = {
     {0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}, {0.5, 0.0, 0.25}, {0.0, 0.5, 0.75}};
 cpu::Frame frame(4);
 for (int i = 0; i < 4; ++i) {
-    frame.span(kAtom_type)[i] = 14;
+    frame.span(kAtom_atomic_number)[i] = 14;
     frame.span(kAtom_x)[i] = frac[i][0] * at;
     frame.span(kAtom_y)[i] = frac[i][1] * at;
     frame.span(kAtom_z)[i] = frac[i][2] * a;
@@ -946,7 +946,7 @@ sections; the conventional 8-atom cell is outside the budget.
 constexpr double a = 5.43;
 cpu::Frame frame(2);
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 14;
+    frame.span(kAtom_atomic_number)[i] = 14;
     frame.span(kAtom_x)[i] = frame.span(kAtom_y)[i] = frame.span(kAtom_z)[i] = i * a / 4.0;
 }
 frame.box = cpu::Box::cubic(a);

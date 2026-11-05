@@ -30,6 +30,14 @@ namespace minimizer {
 /// so it works with any force evaluator (classical, SCF-based, ...).
 /// Computes step_norm = ||x - x_prev|| between successive launches.
 ///
+/// **Step convention (LAMMPS `minimize` + `thermo 1`).** The `step` column
+/// is the number of completed optimizer iterations and the row is the state
+/// after exactly that many (LAMMPS `update->ntimestep`): row 0 is the
+/// initial state written at setup (LAMMPS `Min::setup` → `Output::setup`),
+/// iteration `ctx.step` writes row `ctx.step + 1`, a minimization stopped
+/// before its budget ends on its final iteration, and no step is written
+/// twice. step_norm of row s is |x_s − x_{s−1}| (0 for row 0).
+///
 /// MPI-aware: every rank computes owned-row partials and joins the
 /// cross-rank reduction (the launch is collective under multi-rank);
 /// only rank 0 writes the file / stdout row. After an atom-migration
@@ -49,7 +57,12 @@ class OptLog : public cpu::Recorder {
     }
 
     void build(const cpu::BuildContext& ctx) override;
+    /// @brief Start of the run: row 0, the initial state.
+    void setup_output(const cpu::LaunchContext& ctx) override;
+    /// @brief End of iteration `ctx.step`: row `ctx.step + 1`.
     void launch(const cpu::LaunchContext& ctx) override;
+    /// @brief Early stop: the final row unless already written.
+    void final_output(const cpu::LaunchContext& ctx) override;
     void destroy(const cpu::DestroyContext& ctx) override;
 
     /// @brief Number of rows written (excluding header).
@@ -66,6 +79,10 @@ class OptLog : public cpu::Recorder {
     int n_rows_ = 0;
     /// @brief Last observed `dd->neighbor_generation` (row-reshuffle signal).
     std::uint64_t last_generation_ = ~std::uint64_t{0};
+    BigInt last_step_ = -1; ///< last row written (LAMMPS `last_thermo`)
+
+    /// @brief One collective row for the state after `step` iterations.
+    void row_(const cpu::LaunchContext& ctx, BigInt step);
 };
 
 } // namespace minimizer

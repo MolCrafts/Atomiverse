@@ -1,13 +1,7 @@
-# tests/cuda/asynchronous/CMakeLists.txt — AsyncRecordBase / AsyncBridge unit guards.
+# tests/cuda/asynchronous/CMakeLists.txt — the shared asynchronous capture
+# buffer (cuda::CaptureBuffer / cuda::AsyncConsumer).
 #
-# Unit-only (one component / one property). Multi-step MD pipelines that used
-# to live here (hot_path_no_sync over 100 steps, async_bridge_tearing over a
-# full MD race) were deleted — they are e2e, not ctest material.
-#
-# test_async_record_correctness.cu shells out to a full MD binary — kept as
-# a source reference only; NOT registered with ctest.
-#
-# Labels: gpu_required so CI can skip GPU-less runners; cuda;async for
-# partial selection.
+# Unit-only: one property per test on a 10-atom LJ run. Labels: gpu_required
+# so CI can skip GPU-less runners; cuda;async for partial selection.
 
 atv_add_unit_exe(test_async_rhf_headers       test_async_rhf_headers.cu)

@@ -81,7 +81,7 @@ void write_cube(const std::string& filename, const std::string& title1,
     const StorageReal* px = frame.span(kAtom_x);
     const StorageReal* py = frame.span(kAtom_y);
     const StorageReal* pz = frame.span(kAtom_z);
-    const LocalInt* type = frame.span(kAtom_type);
+    const LocalInt* type = frame.span(kAtom_atomic_number);
     for (int i = 0; i < natm; ++i) {
         const int Z = static_cast<int>(type[i]);
         const double xb = static_cast<double>(px[i]) * units::kAngstromInBohr;

@@ -35,10 +35,12 @@ NoseHooverNPT = _cpp.NoseHooverNPT
 ParrinelloRahmanNPT = _cpp.ParrinelloRahmanNPT
 
 #: NVT SLLOD (LAMMPS ``fix nvt/sllod`` + ``fix deform`` ERATE, ``remap v``).
-#: ``NvtSllod(temperature [K], tau [fs], dt [fs], rate [1/fs], direction)``.
-#: ``direction`` is 0..5 for x, y, z, yz, xz, xy. Replaces ``VelocityVerlet``
-#: and includes the peculiar-velocity thermostat, so do not add another
-#: thermostat. The MPI launcher cannot carry this integrator.
+#: ``NvtSllod(temperature [K], tau [fs], dt [fs], rate [1/fs], direction,
+#: tchain=1)``. ``direction`` is 0..5 for x, y, z, yz, xz, xy; ``tchain`` is
+#: the Nose-Hoover chain length (LAMMPS ``fix nvt/sllod`` default 1). A tilt
+#: beyond half its box length flips the cell (LAMMPS ``flip yes``). Replaces
+#: ``VelocityVerlet`` and includes the peculiar-velocity thermostat, so do not
+#: add another thermostat. The MPI launcher cannot carry this integrator.
 NvtSllod = _cpp.NvtSllod
 
 __all__ = [

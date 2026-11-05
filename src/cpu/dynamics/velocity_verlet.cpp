@@ -38,7 +38,7 @@ void VelocityVerlet::launch(const cpu::LaunchContext& ctx) {
     StorageReal* __restrict sp_z = f.span(kAtom_z);
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
-        const double dtf = double(0.5) * dt_ * units::force_to_accel;
+        const double dtf = double(0.5) * dt_ * units::md_ftm2v;
 
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < n; ++i) {
@@ -52,7 +52,7 @@ void VelocityVerlet::launch(const cpu::LaunchContext& ctx) {
         }
 
     } else if (ctx.at(ATV::md::Phase::final_integrate)) {
-        const double dtf = double(0.5) * dt_ * units::force_to_accel;
+        const double dtf = double(0.5) * dt_ * units::md_ftm2v;
 
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < n; ++i) {
