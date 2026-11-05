@@ -4,7 +4,7 @@
 ///
 /// Usage:
 ///   md-residency --case lj-nve|lj-nh|lj-npt|lj-langevin|lj-brownian|
-///                       lj-deform|lj-nvelimit|lj-sllod|ion-pme
+///                       lj-deform|lj-nvelimit|lj-sllod|ion-pme|min-lbfgs
 ///                       --out FILE
 ///                [--steps N] [--warm N] [--side N] [--profile]
 ///
@@ -40,6 +40,8 @@
 #include "atomiverse/cuda/dynamics/nvt_sllod.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/longrange/pme.cuh"
+#include "atomiverse/cuda/minimize/lbfgs.cuh"
+#include "atomiverse/cuda/minimize/minimize.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut_coul_long.cuh"
@@ -142,9 +144,52 @@ int main(int argc, char** argv) try {
 
     static const std::set<std::string> kCases = {
         "lj-nve",    "lj-nh",       "lj-npt",   "lj-langevin", "lj-brownian",
-        "lj-deform", "lj-nvelimit", "lj-sllod", "ion-pme"};
+        "lj-deform", "lj-nvelimit", "lj-sllod", "ion-pme",     "min-lbfgs"};
     if (!kCases.count(name))
         throw std::invalid_argument("unknown case " + name);
+    if (name == "min-lbfgs") {
+        // Per-iteration cost of the CUDA L-BFGS loop (forces included) from
+        // the melted-lattice start: two fresh runs of `warm` and
+        // `warm + steps` iterations, so setup cancels in the difference.
+        auto timed = [&](int budget, cpu::Frame& frame) {
+            cuda::minimizer::Minimize min;
+            min.set_neighbor(cuda::NeighborList{kCutoff});
+            min.set_evaluator(cuda::PairLJCut{kEps, kSigma, kCutoff});
+            min.set_optimizer(cuda::minimizer::LBFGS{5, 0.01, 10});
+            min.build();
+            const auto start = std::chrono::steady_clock::now();
+            const auto iters = min.run(frame, budget);
+            return std::make_pair(iters,
+                                  std::chrono::duration<double, std::micro>(
+                                      std::chrono::steady_clock::now() - start)
+                                      .count());
+        };
+        // The lattice start is a stationary point: displace every row.
+        auto displaced = [&] {
+            auto f = make_liquid(side, 0.0177, false);
+            std::mt19937_64 rng(7);
+            std::uniform_real_distribution<double> u(-0.4, 0.4);
+            for (int i = 0; i < f.nlocal(); ++i) {
+                f.span(kAtom_x)[i] += u(rng);
+                f.span(kAtom_y)[i] += u(rng);
+                f.span(kAtom_z)[i] += u(rng);
+            }
+            return f;
+        };
+        auto warm_frame = displaced();
+        timed(2, warm_frame); // context, modules and graph capture warm-up
+        auto short_frame = displaced();
+        auto frame = displaced();
+        const auto [i1, t1] = timed(warm, short_frame);
+        const auto [i2, t2] = timed(warm + steps, frame);
+        write_state(out, frame, 0);
+        std::cout << "case=" << name << " atoms=" << frame.nlocal()
+                  << " iters=" << i1 << "/" << i2
+                  << " energy=" << frame.meta.get(kEnergy) << " us_per_step="
+                  << (t2 - t1) / double(std::max<long long>(1, i2 - i1))
+                  << '\n';
+        return 0;
+    }
     const bool charged = name == "ion-pme";
     auto frame = make_liquid(side, 0.0177, charged); // side^3 atoms
     cuda::NeighborList neighbor{kCutoff};
