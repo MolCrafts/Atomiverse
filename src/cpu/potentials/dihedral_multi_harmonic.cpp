@@ -2,7 +2,7 @@
 /// @brief CPU DihedralMultiHarmonic — V = Σₙ Cₙ cosⁿ(φ) implementation.
 
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
-#include "atomiverse/cpu/potentials/dihedral_geom.h"
+#include "atomiverse/core/dihedral_geom.h"
 #include "atomiverse/cpu/potentials/resolve_view.h"
 
 #include <cstddef>

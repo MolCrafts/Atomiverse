@@ -45,7 +45,10 @@
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
+#include "atomiverse/cpu/potentials/dihedral_charmm.h"
+#include "atomiverse/cpu/potentials/dihedral_fourier.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/improper_cvff.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 #include "atomiverse/cuda/dynamics/barostat.cuh"
@@ -68,6 +71,7 @@
 #include "atomiverse/cuda/potentials/dihedral_multi_harmonic.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut_coul_long.cuh"
+#include "atomiverse/cuda/potentials/periodic_torsion.cuh"
 #include "atomiverse/cuda/record/pressure_series.cuh"
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
@@ -142,8 +146,8 @@ cpu::Frame lattice(bool ions) {
     return f;
 }
 
-/// Eight six-bead kinked chains (two bond / angle / dihedral types) in a
-/// 16 Å box; chain 3 crosses the x face.
+/// Eight six-bead kinked chains (two bond / angle / dihedral / improper
+/// types) in a 16 Å box; chain 3 crosses the x face.
 cpu::Frame chains() {
     constexpr int kChains = 8, kPer = 6, n = kChains * kPer;
     constexpr double L = 16.0;
@@ -177,6 +181,9 @@ cpu::Frame chains() {
             f.add_angle(b + k, b + k + 1, b + k + 2, k % 2);
         for (int k = 0; k + 3 < kPer; ++k)
             f.add_dihedral(b + k, b + k + 1, b + k + 2, b + k + 3, k % 2);
+        // Out-of-plane terms around beads 1 and 3 (owner = second atom).
+        f.add_improper(b + 0, b + 1, b + 2, b + 3, 0);
+        f.add_improper(b + 2, b + 3, b + 4, b + 5, 1);
     }
     f.build_special_list();
     return f;
@@ -208,6 +215,18 @@ const std::vector<std::vector<double>> kDihCpu = {
     {0.03, -0.02, 0.04, 0.01, -0.005}, {0.02, 0.01, -0.03, 0.004, 0.002}};
 const std::vector<std::array<double, 5>> kDihCuda = {
     {0.03, -0.02, 0.04, 0.01, -0.005}, {0.02, 0.01, -0.03, 0.004, 0.002}};
+// Amber-like multi-term torsions (n up to 4, nonzero phases) and cvff
+// impropers (d = -1 / +1, n = 2 / 3).
+const std::vector<std::vector<TorsionTerm>> kFourier = {
+    {{0.02, 1, 0.0}, {0.015, 2, 3.14159265358979}, {0.004, 3, 0.3}},
+    {{0.01, 4, 1.1}, {0.006, 2, -0.4}}};
+const std::vector<double> kCharmmK = {0.03, 0.012};
+const std::vector<int> kCharmmN = {3, 2};
+const std::vector<double> kCharmmDelta = {0.0, 3.14159265358979};
+const std::vector<double> kCvffK = {0.05, 0.02};
+const std::vector<int> kCvffD = {-1, 1};
+const std::vector<int> kCvffN = {2, 3};
+
 // ── Cases ─────────────────────────────────────────────────────────────────
 
 struct Case {
@@ -299,6 +318,33 @@ std::vector<Case> cases() {
                        s.set_evaluator(cuda::BondHarmonic{kBondK, kBondR0});
                        s.set_evaluator(cuda::AngleHarmonic{kAngleK, kTheta0});
                        s.set_evaluator(cuda::DihedralMultiHarmonic{kDihCuda});
+                       s.set_integrator(cuda::md::VelocityVerlet{0.5});
+                   }});
+    out.push_back(
+        {"DihedralFourierImproperCvff", System::chains,
+         [](cpu::md::MD& s) {
+             s.set_evaluator(cpu::BondHarmonic{kBondK, kBondR0});
+             s.set_evaluator(cpu::DihedralFourier{kFourier});
+             s.set_evaluator(cpu::ImproperCvff{kCvffK, kCvffD, kCvffN});
+             s.set_integrator(cpu::md::VelocityVerlet{0.5});
+         },
+         [](cuda::md::MD& s) {
+             s.set_evaluator(cuda::BondHarmonic{kBondK, kBondR0});
+             s.set_evaluator(cuda::DihedralFourier{kFourier});
+             s.set_evaluator(cuda::ImproperCvff{kCvffK, kCvffD, kCvffN});
+             s.set_integrator(cuda::md::VelocityVerlet{0.5});
+         }});
+    out.push_back({"DihedralCharmm", System::chains,
+                   [](cpu::md::MD& s) {
+                       s.set_evaluator(cpu::BondHarmonic{kBondK, kBondR0});
+                       s.set_evaluator(cpu::DihedralCharmm{kCharmmK, kCharmmN,
+                                                           kCharmmDelta});
+                       s.set_integrator(cpu::md::VelocityVerlet{0.5});
+                   },
+                   [](cuda::md::MD& s) {
+                       s.set_evaluator(cuda::BondHarmonic{kBondK, kBondR0});
+                       s.set_evaluator(cuda::DihedralCharmm{kCharmmK, kCharmmN,
+                                                            kCharmmDelta});
                        s.set_integrator(cuda::md::VelocityVerlet{0.5});
                    }});
     out.push_back({"BondFeneAngleCosine", System::chains,

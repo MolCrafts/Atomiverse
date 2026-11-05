@@ -62,6 +62,17 @@ struct DihedralList {
     int* n_dihedrals = nullptr; ///< Dihedral count [device, 1 element].
 };
 
+/// @brief Improper topology list -- all arrays on device, molcrafts naming.
+///        Atom order and owner (atom j) as in `DihedralList`.
+struct ImproperList {
+    int* atomi = nullptr;       ///< First atom index [device].
+    int* atomj = nullptr;       ///< Second (owner) atom index [device].
+    int* atomk = nullptr;       ///< Third atom index [device].
+    int* atoml = nullptr;       ///< Fourth atom index [device].
+    int* type = nullptr;        ///< Improper type index [device].
+    int* n_impropers = nullptr; ///< Improper count [device, 1 element].
+};
+
 /// @brief First fixed-point force fault recorded on one Frame.
 ///
 /// Writers raise it when a value does not fit the fixed-point range
@@ -212,6 +223,8 @@ struct Frame {
     AngleList angles; ///< Angle topology (transferred by cpu::to_cuda).
     DihedralList
         dihedrals; ///< Dihedral topology (transferred by cpu::to_cuda).
+    ImproperList
+        impropers; ///< Improper topology (transferred by cpu::to_cuda).
 
     // -- Host-cached metadata (set at materialize, avoids D2H in loop) --
 
@@ -227,11 +240,15 @@ struct Frame {
     /// @brief Number of dihedrals cached on the host side.
     /// @return Dihedral count.
     int n_dihedrals() const { return n_dihedrals_; }
+    /// @brief Number of impropers cached on the host side.
+    /// @return Improper count.
+    int n_impropers() const { return n_impropers_; }
 
     int n_atoms_ = 0;     ///< Host-cached atom count.
     int n_bonds_ = 0;     ///< Host-cached bond count.
     int n_angles_ = 0;    ///< Host-cached angle count.
     int n_dihedrals_ = 0; ///< Host-cached dihedral count.
+    int n_impropers_ = 0; ///< Host-cached improper count.
 
     // -- Domain-decomposition counts (single-process multi-GPU) --
     // Owned atoms occupy [0, n_local); halo ghosts received from peer GPUs

@@ -29,7 +29,10 @@
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
+#include "atomiverse/cpu/potentials/dihedral_charmm.h"
+#include "atomiverse/cpu/potentials/dihedral_fourier.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/improper_cvff.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 #include "atomiverse/cuda/component/context.cuh"
@@ -46,6 +49,7 @@
 #include "atomiverse/cuda/potentials/dihedral_multi_harmonic.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut_coul_long.cuh"
+#include "atomiverse/cuda/potentials/periodic_torsion.cuh"
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
 #include "atomiverse/cpu/longrange/pppm.h"
@@ -102,8 +106,9 @@ void expect_only_term(const cpu::Frame& gpu, const cpu::Frame& cpu,
 
 constexpr double kBondedBox = 14.0;
 
-/// Three five-atom chains with off-plane kinks: 4 bonds, 3 angles and 2
-/// dihedrals per chain, two types each; chain 2 is wrapped through x = L.
+/// Three five-atom chains with off-plane kinks: 4 bonds, 3 angles, 2
+/// dihedrals and 2 impropers per chain, two types each; chain 2 is wrapped
+/// through x = L.
 cpu::Frame chains_frame() {
     constexpr int kChains = 3, kPer = 5, n = kChains * kPer;
     cpu::Frame f(n);
@@ -133,6 +138,8 @@ cpu::Frame chains_frame() {
             f.add_angle(b + k, b + k + 1, b + k + 2, k % 2);
         for (int k = 0; k + 3 < kPer; ++k)
             f.add_dihedral(b + k, b + k + 1, b + k + 2, b + k + 3, k % 2);
+        f.add_improper(b + 0, b + 1, b + 2, b + 3, 0);
+        f.add_improper(b + 1, b + 2, b + 3, b + 4, 1);
     }
     f.build_special_list();
     return f;
@@ -269,6 +276,27 @@ TEST(CudaEnergyTerms, DihedralMultiHarmonicIsDihedralEnergy) {
 }
 
 // A step without eflag leaves the total and every term untouched.
+TEST(CudaEnergyTerms, DihedralCharmmIsDihedralEnergy) {
+    expect_bonded_term(
+        cpu::DihedralCharmm({0.03, 0.012}, {3, 2}, {0.0, 3.14159265358979}),
+        cuda::DihedralCharmm({0.03, 0.012}, {3, 2}, {0.0, 3.14159265358979}),
+        kEnergyDihedral);
+}
+
+TEST(CudaEnergyTerms, DihedralFourierIsDihedralEnergy) {
+    const std::vector<std::vector<TorsionTerm>> terms = {
+        {{0.02, 1, 0.0}, {0.015, 2, 3.14159265358979}, {0.004, 3, 0.3}},
+        {{0.01, 4, 1.1}, {0.006, 6, -0.4}, {0.003, 0, 0.0}}};
+    expect_bonded_term(cpu::DihedralFourier(terms),
+                       cuda::DihedralFourier(terms), kEnergyDihedral);
+}
+
+TEST(CudaEnergyTerms, ImproperCvffIsImproperEnergy) {
+    expect_bonded_term(cpu::ImproperCvff({0.05, 0.02}, {-1, 1}, {2, 3}),
+                       cuda::ImproperCvff({0.05, 0.02}, {-1, 1}, {2, 3}),
+                       kEnergyImproper);
+}
+
 TEST(CudaEnergyTerms, UnrequestedEnergyLeavesEveryTermAtZero) {
     cpu::Frame host = chains_frame();
     DeviceInput input(host);

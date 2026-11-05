@@ -2,7 +2,7 @@
 /// @brief CPU ImproperHarmonic — V = K(χ − χ₀)².
 
 #include "atomiverse/cpu/potentials/improper_harmonic.h"
-#include "atomiverse/cpu/potentials/dihedral_geom.h"
+#include "atomiverse/core/dihedral_geom.h"
 #include "atomiverse/cpu/potentials/resolve_view.h"
 
 #include <cmath>

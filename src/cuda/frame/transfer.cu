@@ -217,6 +217,7 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     std::vector<int> flat_bond_i, flat_bond_j, flat_bond_t;
     std::vector<int> flat_ang_i, flat_ang_j, flat_ang_k, flat_ang_t;
     std::vector<int> flat_dih_i, flat_dih_j, flat_dih_k, flat_dih_l, flat_dih_t;
+    std::vector<int> flat_imp_i, flat_imp_j, flat_imp_k, flat_imp_l, flat_imp_t;
     if (frame.has_bonded()) {
         const int MB = stride_or_zero(frame, kBondPerAtom);
         const int MA = stride_or_zero(frame, kAnglePerAtom);
@@ -258,6 +259,22 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
                 flat_dih_t.push_back(dihedral_type[i * MD + m]);
             }
         }
+        // Impropers: the same (i, owner, k, l) row layout as dihedrals.
+        const int MI = stride_or_zero(frame, kImproperPerAtom);
+        if (MI > 0) {
+            const auto num_improper = frame.span(kAtom_num_improper);
+            const auto improper_atom = frame.span(kAtom_improper_atom);
+            const auto improper_type = frame.span(kAtom_improper_type);
+            for (int i = 0; i < n; ++i)
+                for (int m = 0; m < num_improper[i]; ++m) {
+                    const auto* row = &improper_atom[i * 3 * MI + 3 * m];
+                    flat_imp_i.push_back(static_cast<int>(row[0]));
+                    flat_imp_j.push_back(i);
+                    flat_imp_k.push_back(static_cast<int>(row[1]));
+                    flat_imp_l.push_back(static_cast<int>(row[2]));
+                    flat_imp_t.push_back(improper_type[i * MI + m]);
+                }
+        }
     }
 
     // Host-cached metadata. Single-GPU defaults for the domain-decomposition
@@ -271,6 +288,7 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
     d.n_bonds_ = static_cast<int>(flat_bond_i.size());
     d.n_angles_ = static_cast<int>(flat_ang_i.size());
     d.n_dihedrals_ = static_cast<int>(flat_dih_i.size());
+    d.n_impropers_ = static_cast<int>(flat_imp_i.size());
 
     // Scalar metadata on device
     ATV_CUDA_CHECK(cudaMalloc(&d.atoms.d_size, sizeof(int)));
@@ -428,6 +446,23 @@ cuda::Frame to_cuda(const Frame& frame, int capacity) {
                                   nd * sizeof(int), cudaMemcpyHostToDevice));
         ATV_CUDA_CHECK(cudaMemcpy(d.dihedrals.type, flat_dih_t.data(),
                                   nd * sizeof(int), cudaMemcpyHostToDevice));
+    }
+
+    // Improper topology
+    if (const int ni = d.n_impropers_; ni > 0) {
+        auto upload = [&](int*& dst, const std::vector<int>& src) {
+            ATV_CUDA_CHECK(cudaMalloc(&dst, bond_cap(ni) * sizeof(int)));
+            ATV_CUDA_CHECK(cudaMemcpy(dst, src.data(), ni * sizeof(int),
+                                      cudaMemcpyHostToDevice));
+        };
+        upload(d.impropers.atomi, flat_imp_i);
+        upload(d.impropers.atomj, flat_imp_j);
+        upload(d.impropers.atomk, flat_imp_k);
+        upload(d.impropers.atoml, flat_imp_l);
+        upload(d.impropers.type, flat_imp_t);
+        ATV_CUDA_CHECK(cudaMalloc(&d.impropers.n_impropers, sizeof(int)));
+        ATV_CUDA_CHECK(cudaMemcpy(d.impropers.n_impropers, &ni, sizeof(int),
+                                  cudaMemcpyHostToDevice));
     }
 
     // Single-GPU never calls materialize_per_atom_bonded, so without this
@@ -750,6 +785,13 @@ void destroy(Frame& d) {
     cudaFree(d.dihedrals.atoml);
     cudaFree(d.dihedrals.type);
     cudaFree(d.dihedrals.n_dihedrals);
+
+    cudaFree(d.impropers.atomi);
+    cudaFree(d.impropers.atomj);
+    cudaFree(d.impropers.atomk);
+    cudaFree(d.impropers.atoml);
+    cudaFree(d.impropers.type);
+    cudaFree(d.impropers.n_impropers);
 
     // Multi-GPU per-atom bonded SoA (null on single-GPU frames; cudaFree(0) ok).
     cudaFree(d.atoms.num_bond);

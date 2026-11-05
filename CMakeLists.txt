@@ -236,6 +236,7 @@ if(NOT ATV_DOCS_ONLY)
         src/core/capture_ledger.cpp
         src/core/log.cpp
         src/core/lj_type_table.cpp
+        src/core/periodic_torsion.cpp
         src/core/pppm_accuracy.cpp
         src/core/real_harmonics.cpp
         src/core/thermo_style.cpp
