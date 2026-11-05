@@ -1070,6 +1070,9 @@ if(ATV_BUILD_HF)
     # Formaldehyde / H2 TDA-force / NAC / ALDA e2e: regressions/scf/{ch2o_tdhf,
     # h2_tda_force,h2_analytic_tda_force,h2_tda_nac,h2_nac_vectors,h2_full_grid_alda}.
     atv_add_cpp_test(test_cpu_scf_tdhf_pack       cpu/scf/test_tdhf_pack.cpp)
+    # KS response: f^xc kernel (singlet/triplet), alpha_hf + kernel TDHFPack
+    # (dense == Davidson) and the range-separated admission guard. No SCF.
+    atv_add_cpp_test(test_cpu_scf_xc_response_kernel cpu/scf/test_xc_response_kernel.cpp)
     # hf-capability-gaps-16-solvent: C-PCM cavity/Born oracle, f(ε), H2O
     # solvent vs gas, solvent_eps=0 vacuum identity, forces throw.
     # hf-capability-gaps-17-bsse: ghost AtomList/ShellList/IntegralWorkspace

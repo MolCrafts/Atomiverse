@@ -107,7 +107,11 @@ the twin kernel only; these micro-systems do not stress dense RPA scaling.
 
 ### Shared limitations
 
-- Dense solvers only; no automatic Davidson fallback on these surfaces.
+- Closed-shell RKS response (`TDA<RKS>` / `TDDFT<RKS>`) solves densely up to
+  \(n_{\mathrm{ov}} = 512\) and with the matrix-free Davidson solver above;
+  singlet and triplet channels both carry the adiabatic \(f^{xc}\) kernel.
+  Range-separated hybrids (CAM-B3LYP) and custom functionals throw. UKS and
+  spin-flip response remain dense-only.
 - No restricted excitation windows, CVS or real-time TDDFT.
 - Analytic CIS/TDA forces and NACs live on `RHF`; no analytic gradients/NACs
   for the hybrid, UKS or spin-flip response paths here.
@@ -168,10 +172,9 @@ Closed-shell full Casida **A,B** response on RKS/B3LYP. Unlike hybrid TDA,
 de-excitation (**B**) is retained; the exact-exchange fraction
 \(\alpha_{\mathrm{hf}}\) scales HF-exchange blocks on **both** A and B, and the
 adiabatic semi-local \(f^{xc}\) comes from a finite difference of \(V_{xc}\) on
-the KS grid, so `es.tda == false` and `es.alda == false`. Dense path,
-\(n_{\mathrm{ov}}\le 512\) (larger spaces throw). The finite-difference
-\(f^{xc}\) is calibrated for the singlet channel; the triplet non-LSDA path
-omits that kernel. Closed-shell only: UKS full-LR is
+the KS grid, so `es.tda == false` and `es.alda == false`. The kernel is
+spin-adapted per channel (singlet \(f_{\alpha\alpha}+f_{\alpha\beta}\), triplet
+\(f_{\alpha\alpha}-f_{\alpha\beta}\)). Closed-shell only: UKS full-LR is
 [uks-full-lr-o2-lsda](#uks-full-lr-o2-lsda) (pure LSDA); open-shell hybrids and
 spin-flip full TDDFT are not on this path.
 

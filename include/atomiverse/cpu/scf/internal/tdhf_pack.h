@@ -23,6 +23,7 @@
 
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/internal/orbital_hessian.h"
+#include "atomiverse/cpu/scf/internal/xc_response_kernel.h"
 
 namespace ATV {
 namespace cpu {
@@ -34,10 +35,18 @@ namespace internal {
 class TDHFPack {
   public:
     /// @brief Bind the A/B kernel and the excitation channel to solve.
-    /// @param hessian Orbital Hessian kernel (borrowed; must outlive this).
-    /// @param ch      Excitation channel (singlet or triplet).
-    TDHFPack(const OrbitalHessian& hessian, Channel ch)
-        : hessian_(hessian), ch_(ch) {}
+    ///
+    /// HF response uses the defaults. KS response (Casida) scales exact
+    /// exchange by the functional's \(\alpha_{\mathrm{hf}}\) and adds the
+    /// semi-local kernel K to A and B: (A+B) += 2K, (A−B) unchanged.
+    /// @param hessian  Orbital Hessian kernel (borrowed; must outlive this).
+    /// @param ch       Excitation channel (singlet or triplet).
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
+    /// @param fxc      Optional f^xc kernel bound to the same channel
+    ///                 (borrowed; must outlive this).
+    TDHFPack(const OrbitalHessian& hessian, Channel ch, double alpha_hf = 1.0,
+             const XcResponseKernel* fxc = nullptr)
+        : hessian_(hessian), ch_(ch), alpha_hf_(alpha_hf), fxc_(fxc) {}
 
     /// @brief Rotation-space size at or below which the solvers build the
     ///        dense matrices; above it, the matrix-free Davidson path
@@ -86,9 +95,13 @@ class TDHFPack {
     Roots rpa_dense_(int n_states) const;     ///< Dense reduced form.
     Roots rpa_davidson_(int n_states) const;  ///< Reduced-subspace scheme.
     void check_n_states_(int n_states) const; ///< [1, n_ov] gate (throws).
+    RealVector plus_(const RealVector& v) const;  ///< (A+B)·v.
+    RealVector minus_(const RealVector& v) const; ///< (A−B)·v.
 
-    const OrbitalHessian& hessian_; ///< Borrowed kernel.
-    Channel ch_;                    ///< Bound excitation channel.
+    const OrbitalHessian& hessian_;         ///< Borrowed kernel.
+    Channel ch_;                            ///< Bound excitation channel.
+    double alpha_hf_ = 1.0;                 ///< Exact-exchange fraction.
+    const XcResponseKernel* fxc_ = nullptr; ///< Optional f^xc (borrowed).
 };
 
 } // namespace internal

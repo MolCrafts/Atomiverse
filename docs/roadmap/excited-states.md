@@ -13,9 +13,9 @@ Response and many-body methods on HF/KS references. Legend:
 | CIS / TDA (RHF) | ✓ | ○ | `TDA<RHF>::run` after `RHF::run` |
 | TDHF / RPA (RHF) | ✓ | ○ | `TDHF<RHF>::run` after `RHF::run` (`pyscf.tdscf.rhf.TDHF`) |
 | CIS(D) | ✓ | ○ | `CISD<RHF>::run` after `RHF::run`. Not an `RHF` member |
-| TDA-TDDFT (RKS) | ✓ | ○ | `TDA<RKS>::run` (`pyscf.tdscf.rks.TDA`). LSDA ALDA + hybrid B3LYP/PBE0 |
+| TDA-TDDFT (RKS) | ✓ | ○ | `TDA<RKS>::run` (`pyscf.tdscf.rks.TDA`). LDA/GGA/global hybrids, singlet + triplet; range-separated hybrids throw |
 | TDA-TDDFT (UKS) | ✓ | ○ | `TDA<UKS>::run` (`pyscf.tdscf.uks.TDA`). Spin-conserving LSDA |
-| Full LR-TDDFT (RKS) | ✓ | ○ | `TDDFT<RKS>::run` (`pyscf.tdscf.rks.TDDFT`). Casida A/B |
+| Full LR-TDDFT (RKS) | ✓ | ○ | `TDDFT<RKS>::run` (`pyscf.tdscf.rks.TDDFT`). Casida A/B, singlet + triplet; range-separated hybrids throw |
 | Full LR-TDDFT (UKS) | ✓ | ○ | `TDDFT<UKS>::run` (`pyscf.tdscf.uks.TDDFT`). Pure LSDA |
 | Spin-flip TDA / TDDFT | ✓ | ○ | `SfTDA<UHF>::run` / `SfTDHF<UHF>::run` |
 | CIS/TDA analytic forces | ◐ | ○ | `TDA<RHF>::forces`. Default analytic; FD fallback. No external pin; self-pinned cases removed |
