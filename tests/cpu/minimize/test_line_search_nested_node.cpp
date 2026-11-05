@@ -263,10 +263,25 @@ TEST(MinimizeNestedNode, FailedOrRejectedTrialsRestoreOriginWithoutCommit) {
         opt.on(ATV::minimizer::Phase::force).add_ref(method);
         opt.on(ATV::minimizer::Phase::force).add(TrialFailure{mode}, 10);
         opt.build();
-        EXPECT_THROW(opt.run(frame, 1), std::runtime_error);
+        if (mode == TrialFailure::Mode::Throw) {
+            // An evaluator failure during a trial is an error.
+            EXPECT_THROW(opt.run(frame, 1), std::runtime_error);
+            EXPECT_EQ(method.commits, 0);
+            EXPECT_DOUBLE_EQ(method.accepted_energy, 123.0);
+        } else {
+            // Every trial rejected: the search (and its steepest-descent
+            // retry) fails, which stops the loop unconverged at the origin.
+            EXPECT_NO_THROW(opt.run(frame, 1));
+            EXPECT_FALSE(opt.converged());
+            EXPECT_EQ(opt.stop_reason(), "lbfgs_line_search_failed");
+            // Only the origin itself, re-evaluated by the normal force phase,
+            // can be accepted; no trial geometry is.
+            EXPECT_LE(method.commits, 1);
+            if (method.commits == 1)
+                EXPECT_DOUBLE_EQ(method.accepted_energy,
+                                 frame.meta.get(kEnergy));
+        }
         EXPECT_GT(method.trials, 0);
-        EXPECT_EQ(method.commits, 0);
-        EXPECT_DOUBLE_EQ(method.accepted_energy, 123.0);
         for (int i = 0; i < frame.nlocal(); ++i) {
             EXPECT_EQ(frame.span(kAtom_x)[i], original.span(kAtom_x)[i]);
             EXPECT_EQ(frame.span(kAtom_y)[i], original.span(kAtom_y)[i]);

@@ -36,7 +36,7 @@ namespace cpu {
 class EAMPotential {
   public:
     /// @brief Look up an analytic-EAM parameterization.
-    /// @param element Chemical element (molrs periodic-table enum).
+    /// @param element Chemical element (molpy periodic-table enum).
     /// @param name Parameterization name, e.g. `"sutton-chen"`.
     /// @throws std::out_of_range if the (element, name) pair is not tabulated.
     EAMPotential(molrs::Element element, std::string_view name);

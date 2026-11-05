@@ -31,8 +31,7 @@
 /// device staging buffer, the K device-ring slots, and the per-slot events,
 /// so the recorder's CSV is complete when the simulation returns.
 ///
-/// Concrete subclasses (e.g. the CUDA-side `CudaCsvRecorder` in
-/// `benchmarks/md/polyethylene_tension.cpp`) launch a tiny pack-snapshot
+/// Concrete subclasses launch a tiny pack-snapshot
 /// kernel on the compute stream that fills `device_snapshot_`, then call
 /// `submit_async(step, [](const Snapshot& s, int64_t step) { ... })`.
 ///

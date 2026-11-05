@@ -70,20 +70,14 @@ function(atv_install_headers target)
     endif()
     if(NOT ATV_BUILD_ANALYSIS)
         list(APPEND excluded
-            "^cpu/observe/(rdf|rdf_curve|msd|vacf|trajectory_metrics|wham)\\.h$"
+            "^cpu/observe/(rdf|rdf_curve|msd|vacf|trajectory_metrics)\\.h$"
             "^cuda/observe/rdf\\.cuh$")
-    endif()
-    if(NOT ATV_MOLPY_HAS_WHAM)
-        list(APPEND excluded "^cpu/observe/wham\\.h$")
     endif()
     if(NOT ATV_BUILD_IO)
         # LAMMPS data/coefficient readers are in the always-on source set.
         list(APPEND excluded "^cpu/io/(frame_writer|extxyz)\\.h$"
             "^cpu/record/(xyz|xyz_recorder|mrec|mrec_recorder)\\.h$"
             "^cpu/minimize/(trajectory_writer|final_geometry)\\.h$")
-    endif()
-    if(NOT ATV_MOLPY_HAS_TRAJECTORY_WRITER)
-        list(APPEND excluded "^cpu/record/(mrec|mrec_recorder)\\.h$")
     endif()
     if(NOT ATV_BUILD_MOLPY)
         list(APPEND excluded "^(cpu|cuda)/frame/molpy_exchange\\.(h|cuh)$"

@@ -28,7 +28,7 @@ are decided on the device for the current step (conditional graph nodes,
 capacity-sized grids reading device counts, fault-frozen state); the host
 observes them late through pinned async copies and `cudaEventQuery`.
 Thermo/recorder output is async (defer stream + worker). Evidence is an Nsight
-audit of steady steps (`tools/diagnostics/md-residency/`), not a source grep.
+audit of steady steps (`md-residency`, `benchmarks/perf/md/residency/`), not a source grep.
 Open violations and fix order: [cuda-md-device-control.md](../specs/cuda-md-device-control.md).
 
 ## Open violations (fix order)
@@ -45,8 +45,8 @@ accepted P and raw-H W stay resident, AO/grid/ionic force contractions execute
 on device, and immutable derivative tables upload before SCF. Actual Nsight
 capture has zero H2D and only scalar eigensolver metadata D2H (4-byte status;
 8-byte matrix max-abs confirmed by a separate CUPTI numerical probe).
-[Native evidence](../../tools/diagnostics/gpw-residency/results/2026-10-27/residency-validation.json)
-includes 45 units, five water cases, unchanged Driver/model gates and zero-error,
+The native run
+included 45 units, five water cases, unchanged Driver/model gates and zero-error,
 zero-leak memcheck. Cold setup, other force branches and stress remain open.
 
 ## Worker checklist (CUDA slug)

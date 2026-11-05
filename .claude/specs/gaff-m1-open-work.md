@@ -1,7 +1,7 @@
 # GAFF milestone 1 + "fix every red" — open work
 
 Live hand-off. Plan of record: CPU vs LAMMPS, CUDA vs OpenMM, general GAFF2
-organic liquid, double + mixed on GPU (`benchmarks/gaff/README.md` holds the
+organic liquid, double + mixed on GPU (`benchmarks/compare/gaff-liquid/README.md` holds the
 protocol and gates G1/G2). Delete this file when every item below is closed.
 
 Machine paths, accounts, data and job IDs:
@@ -67,7 +67,7 @@ items 2–3; (4) resubmit the CPU matrix and the G2 run; (5) CPU perf phase;
 - `tests/cpu/semiempirical/test_gfn2_params.cpp` runs a full SCC — end-to-end
   inside `tests/` (iron law 1). `solve_gfn2` is very long. "wave" history
   wording remains in `docs/tutorial/methods/`.
-- The merged local molpy source includes the fixed-width prmtop integer
+- The local molpy source includes the fixed-width prmtop integer
   reader (`crates/molrs/src/io/amber/prmtop.rs`, `integer_field_width` /
   `split_integer_fields`). Atomiverse consumes it through `ATV_MOLPY_PATH`;
   there is no pending submodule pin bump.
@@ -94,6 +94,6 @@ items 2–3; (4) resubmit the CPU matrix and the G2 run; (5) CPU perf phase;
   Ndof from constraints. OpenMM's CUDA platform license has not been checked
   against GPL-2.0-only: implement from the published algorithms (Eastman et
   al.), never by copying OpenMM source.
-- **Phase 3 CUDA perf vs OpenMM** — baseline in
-  `benchmarks/gaff/results/openmm-gh200-baseline.json`.
+- **Phase 3 CUDA perf vs OpenMM** — GH200 OpenMM baseline measured with
+  `benchmarks/compare/gaff-liquid/run_openmm.py` (output not kept in git).
 - **Phase 4** final matrix, roadmap rows, notes.

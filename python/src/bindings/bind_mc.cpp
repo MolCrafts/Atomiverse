@@ -19,8 +19,8 @@
 ///     materializes its working frame ONCE and every later `run()` extends the
 ///     same chain; a fresh chain is a fresh handle object.
 ///  2. **Variable N.** μVT inserts and deletes atoms, and `cpu::to_molpy`
-///     rejects a changed row count (molrs `RaggedAxis0`). When N changed the
-///     binding rebuilds the molrs `atoms` block through the molrs *Python* API
+///     rejects a changed row count (molpy `RaggedAxis0`). When N changed the
+///     binding rebuilds the molpy `atoms` block through the molpy *Python* API
 ///     before exporting — see `rebuild_atoms_block_`.
 ///  3. **Single rank.** There is no MC task in the launcher protocol, so a run
 ///     under `atomiverse-launcher` is refused instead of silently sampling N
@@ -60,6 +60,7 @@
 #include "atomiverse/cpu/montecarlo/volume_move.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/task/internal/potential_builders.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -101,15 +102,15 @@ Verb verb_from_name(std::string_view name) {
 /// @brief Copy one Frame column into a fresh, numpy-owned 1-D array.
 ///
 /// The array owns its buffer through the shared `to_owned_array()` primitive
-/// (`owned_buffer.h`): molrs copies the data into its own column storage on
+/// (`owned_buffer.h`): molpy copies the data into its own column storage on
 /// `Block.insert`, and the engine's working frame keeps evolving afterwards,
 /// so nothing may alias either side. This wrapper adds the engine-column
-/// spelling (pointer + row count) and the dtype conversion the molrs schema
+/// spelling (pointer + row count) and the dtype conversion the molpy schema
 /// asks for — the one call site that needs a non-`double` element type, which
 /// is why it cannot go through `result_array.h`.
 ///
 /// @tparam Out numpy element type of the produced array (`double` /
-///         `std::uint32_t`) — the dtype the molrs schema declares for that
+///         `std::uint32_t`) — the dtype the molpy schema declares for that
 ///         column.
 /// @tparam In Element type of the engine column being copied.
 /// @param src First element of the contiguous engine column.
@@ -122,7 +123,7 @@ nb::object numpy_column(const In* src, std::size_t n) {
 }
 
 /// @brief One bound Monte Carlo preset: the driver, its working frame, and the
-///        molrs write-back.
+///        molpy write-back.
 ///
 /// @tparam Preset `cpu::mc::MC`, `cpu::mc::NptMc` or `cpu::mc::Gcmc` — the
 ///         three presets differ only in the `OutcomePolicy` their constructor
@@ -155,9 +156,7 @@ struct McHandle {
     /// @param p Lennard-Jones parameters, as the shared task mirror.
     void set_evaluator(const cpu::task::PairLJCutParams& p) {
         require_configurable_("set_evaluator");
-        driver.set_evaluator(
-            cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}.set_special_bonds(
-                p.s12, p.s13, p.s14));
+        driver.set_evaluator(cpu::task::internal::make_pair_lj_cut(p));
     }
 
     /// @brief Install the neighbor list in its MC-correct form.
@@ -190,7 +189,7 @@ struct McHandle {
     ///
     /// The FIRST call materializes the working frame from `frame_obj` and
     /// compiles the plan; every later call continues the same chain, so edits
-    /// made to the molrs Frame between calls are ignored.
+    /// made to the molpy Frame between calls are ignored.
     ///
     /// @param frame_obj A `molpy.Frame`; results are written back into it.
     /// @param n_trials Number of trial moves to attempt in this call.
@@ -298,10 +297,10 @@ struct McHandle {
         return total;
     }
 
-    /// @brief Export the working frame into the molrs Frame it came from.
+    /// @brief Export the working frame into the molpy Frame it came from.
     ///
     /// `cpu::to_molpy` writes into the EXISTING `atoms` block, so it is valid
-    /// only while the row count still matches; μVT changes it, and molrs
+    /// only while the row count still matches; μVT changes it, and molpy
     /// rejects a block whose columns disagree in length (`RaggedAxis0`). The
     /// rebuild below re-establishes the block at the new N first; `to_molpy`
     /// then fills x/v/f, charge, image, tag, the box and the typed metadata as
@@ -316,12 +315,12 @@ struct McHandle {
         cpu::to_molpy(work_, fref);
     }
 
-    /// @brief Replace the molrs `atoms` block with one at the chain's current
-    ///        population, through the molrs Python API (GIL held).
+    /// @brief Replace the molpy `atoms` block with one at the chain's current
+    ///        population, through the molpy Python API (GIL held).
     ///
     /// Every column is rebuilt so the new block is internally consistent at
     /// the new N — a partial rebuild would leave the untouched columns at the
-    /// old length and molrs would reject the block. `mass` and
+    /// old length and molpy would reject the block. `mass` and
     /// `atomic_number` are here because `to_molpy` deliberately does NOT write
     /// them (per-run immutable inputs on the fixed-N path); after an insertion
     /// they are outputs, stamped on the new row by `InsertDeleteMove`.
@@ -343,7 +342,7 @@ struct McHandle {
         insert("charge",
                numpy_column<double>(work_.span(kAtom_charge).data(), n));
         insert("mass", numpy_column<double>(work_.span(kAtom_mass).data(), n));
-        // Z is the species key on both sides of the boundary: molrs stores it
+        // Z is the species key on both sides of the boundary: molpy stores it
         // as an unsigned column, `from_molpy` lands it in `kAtom_type`, and
         // `InsertDeleteMove(z, mass)` stamps that same int on every insertion.
         insert("atomic_number",
@@ -576,7 +575,7 @@ void bind_mc(nb::module_& m) {
         .def(nb::init<int, double>(), nb::arg("z"), nb::arg("mass"),
              "Construct with the atomic number z (dimensionless, > 0) "
              "stamped on inserted atoms and their mass [amu] (> 0).\n\n"
-             "z is the species key on both sides of the molrs boundary: the "
+             "z is the species key on both sides of the molpy boundary: the "
              "frame's 'atomic_number' column becomes the engine's atom type, "
              "so an inserted Ar atom is z = 18 and comes back out in the "
              "rebuilt 'atomic_number' column.");
@@ -701,7 +700,7 @@ void bind_mc(nb::module_& m) {
         },
         "Volume [A^3] of the current (last-accepted) configuration — the "
         "sampled degree of freedom of this ensemble, and the same cell "
-        "written back to the molrs Frame box.");
+        "written back to the molpy Frame box.");
 
     nb::class_<McHandle<cpu::mc::Gcmc>> gcmc(
         m, "GCMC",
@@ -718,7 +717,7 @@ void bind_mc(nb::module_& m) {
         "setting for adsorption and vapour-liquid problems, where N — not the "
         "energy — is the answer you want.\n\n"
         "Pair it with a MoveSelector mixing TranslateMove and "
-        "InsertDeleteMove. Because N fluctuates, run() rebuilds the molrs "
+        "InsertDeleteMove. Because N fluctuates, run() rebuilds the molpy "
         "'atoms' block whenever the population changed, and n_atoms() is the "
         "observable to accumulate for <N>.");
     gcmc.def(

@@ -35,6 +35,14 @@ Forces must differentiate the actual parameterized energy. CPU and CUDA AM1/RM1
 use analytic pair-integral derivatives within their supported element envelopes.
 Electronic stationarity is essential: both the density and energy convergence
 tolerances must be satisfied before forces are published.
+On CPU the SCF diagonalizes a Pulay-DIIS extrapolation of the Fock matrix
+(residual F P − P F, six vectors) while convergence is judged on the
+unextrapolated density and energy changes, so DIIS changes the path, not the
+converged answer. Once the commutator is below 0.05 eV, the full
+eigensolver is replaced by a BLAS-3 pseudo-diagonalization (first-order
+occupied–virtual rotation of the previous orbitals, re-orthonormalized),
+again without changing the self-consistent result. Geometries with atoms closer than 0.6 × their covalent-radius
+sum are refused before the SCF, naming the pairs.
 
 ## What the NDDO methods compute
 
@@ -235,9 +243,9 @@ fixtures. The numerical-gradient
 oracle's error budget is documented independently of Atomiverse's analytic
 implementation.
 
-The [standing force benchmark](../../benchmarks/semiempirical/nddo_forces/README.md)
+The [standing force benchmark](../../benchmarks/perf/semiempirical/nddo_forces/README.md)
 records CPU complete-call timings and measured C++ allocation counts. The
-[energy benchmark](../../benchmarks/semiempirical/nddo_energy/README.md) separates
+[energy benchmark](../../benchmarks/perf/semiempirical/nddo_energy/README.md) separates
 CPU/CUDA host-Frame calls from nested resident CUDA solves. Benchmark source
 alone establishes neither device residency nor a speedup; follow the current
 validation status in the roadmap before relying on a backend.

@@ -1,5 +1,5 @@
 /// @file src/cpu/frame/molpy_exchange.cpp
-/// @brief molrs.Frame <-> canonical CPU block Frame.
+/// @brief molpy.Frame <-> canonical CPU block Frame.
 
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 
@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-#include "../io/molrs_meta.h"
+#include "../io/molpy_meta.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 #include "rust/cxx.h"
@@ -57,18 +57,27 @@ void validate_exchange_schema(const molrs::FrameRef& src) {
                                      + block + "'");
     }
 
-    // molrs 0.13 split the two meanings that used to share `atoms.type`:
+    // molpy keeps apart the two meanings that once shared `atoms.type`:
     // `atomic_number` (UInt) carries Z, while `type` is a String force-field
-    // label the caller owns. Atomiverse keys on Z, so it reads and writes
-    // `atomic_number`; `type` and `element` (the String symbol column
-    // molpy's Atomistic.to_frame() exports) stay in the allow-list — a frame
-    // arriving from a molrs tool may legitimately carry them — but are not
-    // imported.
+    // label the caller owns. The engine's per-atom kind is `atoms.type_id`
+    // (UInt, the force-field atom kind a per-type pair table is keyed by)
+    // when the frame states one, and Z from `atomic_number` otherwise;
+    // `type` and `element` (the String symbol column molpy's
+    // Atomistic.to_frame() exports) stay in the allow-list — a frame arriving
+    // from a molpy tool may legitimately carry them — but are not imported.
+    // So do the line-notation facts molpy states on a parsed or embedded
+    // molecule (`formal_charge`, `h_count`, `is_aromatic`, and a bond's
+    // `bond_type` / `bond_number` class): graph annotations, not physics.
     validate_columns(src, "atoms",
-                     {"x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "mass",
-                      "charge", "atomic_number", "type", "element", "tag", "ix",
-                      "iy", "iz"});
-    validate_columns(src, "bonds", {"atomi", "atomj", "type_id", "type"});
+                     {"x",       "y",           "z",       "vx",
+                      "vy",      "vz",          "fx",      "fy",
+                      "fz",      "mass",        "charge",  "atomic_number",
+                      "type_id", "type",        "element", "formal_charge",
+                      "h_count", "is_aromatic", "tag",     "ix",
+                      "iy",      "iz"});
+    validate_columns(
+        src, "bonds",
+        {"atomi", "atomj", "type_id", "type", "bond_type", "bond_number"});
     validate_columns(src, "angles",
                      {"atomi", "atomj", "atomk", "type_id", "type"});
     validate_columns(src, "dihedrals",
@@ -95,7 +104,7 @@ bool has_column(const molrs::FrameRef& src, const char* block,
     return values;
 }
 
-// The molrs domain index type `Idx` is u64 (`frame_column_u64`).
+// The molpy domain index type `Idx` is u64 (`frame_column_u64`).
 ::rust::Vec<std::uint64_t> require_u64(const molrs::FrameRef& src,
                                        const char* block, const char* col) {
     auto values = molrs::frame_column_u64(src, block, col);
@@ -123,7 +132,7 @@ void copy_optional_f64(const molrs::FrameRef& src, const char* key,
 
 /// @brief Read one integer topology column (`atomi`/`atomj`/... or `type_id`).
 ///
-/// molrs binds a key's dtype globally: `type` is String everywhere, `type_id`
+/// molpy binds a key's dtype globally: `type` is String everywhere, `type_id`
 /// is UInt. Atomiverse's topology kinds are integers, so they travel as
 /// `type_id`; the connectivity indices stay signed and are read as i32.
 std::vector<int> topology_kind_column(const molrs::FrameRef& src,
@@ -142,7 +151,7 @@ std::vector<int> topology_kind_column(const molrs::FrameRef& src,
 /// @brief Read one topology connectivity column (`atomi`/`atomj`/`atomk`/
 ///        `atoml`).
 ///
-/// molrs declares every identifier key UInt (u64 `Idx` since 0.14), so the
+/// molpy declares every identifier key UInt (u64 `Idx` since 0.14), so the
 /// endpoint indices are unsigned — they are row numbers into the target node
 /// block and are never negative.
 /// Kinds travel separately as `type_id` (`topology_kind_column`); `type` is a
@@ -170,22 +179,28 @@ void write_f64(molrs::FrameRef& dst, const char* key, const T* source, int n) {
         ::rust::Slice<const double>(values.data(), values.size()));
 }
 
-/// @brief The body of from_molpy; its molrs reads may raise `rust::Error`
+/// @brief The body of from_molpy; its molpy reads may raise `rust::Error`
 /// (a column of another dtype), which from_molpy names.
 Frame materialize(const molrs::FrameRef& src) {
     validate_exchange_schema(src);
     auto x = require_f64(src, "atoms", "x");
     auto y = require_f64(src, "atoms", "y");
     auto z = require_f64(src, "atoms", "z");
-    // molrs converts species only on request (Element::fill_atomic_numbers);
+    // The per-atom kind: a force-field `type_id` when stated (a GAFF frame,
+    // whose LJ table distinguishes c3 from ca), else the element. Components
+    // that read Z (electronic methods, the XYZ recorder) need a frame
+    // without `type_id`.
+    // molpy converts species only on request (Element::fill_atomic_numbers);
     // a frame that spells symbols alone is named, not silently converted.
-    if (!has_column(src, "atoms", "atomic_number")
+    const bool ff_kinds = has_column(src, "atoms", "type_id");
+    if (!ff_kinds && !has_column(src, "atoms", "atomic_number")
         && has_column(src, "atoms", "element"))
         throw std::runtime_error(
             "cpu::from_molpy: atoms carry 'element' symbols but no "
-            "'atomic_number'; convert them first (molrs "
+            "'atomic_number'; convert them first (molpy "
             "Element::fill_atomic_numbers / frame_fill_atomic_numbers)");
-    auto type = require_u64(src, "atoms", "atomic_number");
+    auto type =
+        require_u64(src, "atoms", ff_kinds ? "type_id" : "atomic_number");
     const int n = static_cast<int>(x.size());
     if (static_cast<int>(y.size()) != n || static_cast<int>(z.size()) != n
         || static_cast<int>(type.size()) != n)
@@ -312,7 +327,7 @@ Frame materialize(const molrs::FrameRef& src) {
             frame.box.set_cell(cell);
         }
     }
-    internal::decode_molrs_meta(src, frame.meta);
+    internal::decode_molpy_meta(src, frame.meta);
     return frame;
 }
 
@@ -371,9 +386,9 @@ void to_molpy(const Frame& src, molrs::FrameRef& dst) {
     set_i32("tag", tag_values);
 
     // The cell is an OUTPUT of a run under a barostat / cell relaxation, so
-    // it crosses back in the same molrs row-major H order the read side uses
+    // it crosses back in the same molpy row-major H order the read side uses
     // (h[i * 3 + j] == cell(i, j)). A degenerate cell (default-constructed
-    // Box, det == 0) describes no periodic system and molrs rejects it as a
+    // Box, det == 0) describes no periodic system and molpy rejects it as a
     // singular matrix, so it is skipped rather than pushed across.
     if (src.box.volume() > 0.0) {
         const Mat3& cell = src.box.cell();
@@ -390,7 +405,7 @@ void to_molpy(const Frame& src, molrs::FrameRef& dst) {
                 std::array<bool, 3>{true, true, true}.data(), 3));
     }
 
-    auto entries = internal::encode_molrs_meta(src.meta);
+    auto entries = internal::encode_molpy_meta(src.meta);
     for (auto& entry : entries)
         molrs::frame_set_meta(dst, std::move(entry));
 }

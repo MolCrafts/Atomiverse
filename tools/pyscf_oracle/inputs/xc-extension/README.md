@@ -10,6 +10,6 @@ python tools/pyscf_oracle/pin_scf.py uks --geom h2-1A --basis sto-3g --charge 1 
 ```
 
 JSON `e_tot_ha` and every `grad_ha_bohr` entry are the oracle output lines.
-Inputs and tolerances are recorded in `examples/xc-extension/README.md` and
+Inputs and tolerances are recorded in `examples/extensions/xc/README.md` and
 `regressions/scf/{rks,uks}/REFERENCE.md`. No Atomiverse value was used to
 construct these pins. Tests read frozen constants and do not launch PySCF.

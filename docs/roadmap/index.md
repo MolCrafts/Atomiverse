@@ -51,8 +51,8 @@ path.
 consumer. Unit tests alone are not enough.
 
 **⚡** is scarce. Today it is only the Lennard–Jones 12-6 pair style
-(CPU xsimd + CUDA cluster/tile, vs LAMMPS/Kokkos in `benchmarks/lj/` and
-`benchmarks/cuda/`). Correct-but-unbenchmarked code stays ✓.
+(CPU xsimd + CUDA cluster/tile, vs LAMMPS/Kokkos in
+`benchmarks/compare/lj-lammps/` with the `benchmarks/perf/md/` harnesses). Correct-but-unbenchmarked code stays ✓.
 
 **◐** never jumps to ✓ until the chapter’s Gaps row is closed.
 

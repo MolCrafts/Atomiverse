@@ -255,8 +255,8 @@ OMP_NUM_THREADS=4 mpirun -np 1 cp2k.psmp -i <CP2K oracle input for the section> 
 - J. P. Perdew, K. Burke, M. Ernzerhof, *Phys. Rev. Lett.* **77**, 3865 (1996) — PBE form.
 - CP2K manual: FORCE_EVAL / QS stress tensor section (`STRESS_TENSOR NUMERICAL` /
   `ANALYTICAL`); `&MGRID` CUTOFF / REL_CUTOFF / NGRIDS; `&KPOINTS SCHEME MONKHORST-PACK`.
-- Narrative: [Ch. 9 GPW](../ch09-gpw.md); example `examples/09_gpw.cpp`,
-  `examples/results/09_gpw.json`; roadmap [dft.md](../../roadmap/dft.md).
+- Narrative: [Ch. 9 GPW](../ch09-gpw.md); example `examples/cpp/10_gpw.cpp`;
+  roadmap [dft.md](../../roadmap/dft.md).
 - Spec records (git): `94e64ea9` (gpw-forces-water); `79de745b`, `d5e67a44`,
   `c20e5145`, `2a52d0e4` (gpw-stress-water); `dc7ad1bc`, `6d7f0955`
   (gpw-water-pbe-mt); `7022224b` (gpw-pbesol-si); `e086865c` (gpw-revpbe-si).
@@ -470,7 +470,7 @@ const bool ok = eval.last_result().converged;
 
 Oracle: CP2K Quickstep getting-started `h2o.inp` family (same geometry,
 DZVP-MOLOPT-GTH + GTH-PBE, CUTOFF 400, PERIODIC NONE / PSOLVER MT, PBE),
-cross-recorded by `examples/09_gpw.cpp` and [Ch. 9](../ch09-gpw.md).
+cross-recorded by `examples/cpp/10_gpw.cpp` and [Ch. 9](../ch09-gpw.md).
 
 | Term (CP2K) | Ha |
 | ---- | ---: |

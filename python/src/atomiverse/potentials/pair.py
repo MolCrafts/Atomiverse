@@ -20,11 +20,20 @@ vanishes there on its own.
 
 from atomiverse._binding import _cpp
 
-#: Lennard-Jones 12-6 — ``cpu::PairLJCut(epsilon [eV], sigma [Å], cutoff [Å], s12=1, s13=1, s14=1)``.
-#: ``s12``, ``s13``, ``s14`` are the 1-2 / 1-3 / 1-4 weights. The task codec stores them.
+#: Lennard-Jones 12-6 — ``cpu::PairLJCut``. Single type:
+#: ``LJCut(epsilon [eV], sigma [Å], cutoff [Å], s12=1, s13=1, s14=1,
+#: energy_shift=True)``. Per type: ``LJCut.table(type_i, type_j, epsilon,
+#: sigma, cutoff, s12=1, s13=1, s14=1, energy_shift=True)``, one row per type
+#: pair keyed by the frame's atom kind (``atoms.type_id`` when stated, else
+#: Z); unlisted cross pairs mix Lorentz-Berthelot, a type with no diagonal
+#: has no LJ site (CPU only). ``s12``/``s13``/``s14`` are the 1-2 / 1-3 / 1-4
+#: weights; ``energy_shift`` is LAMMPS ``pair_modify shift``. The task codec
+#: stores every field.
 LJCut = _cpp.PairLJCut
 
-#: Truncated Coulomb — ``cpu::PairCoulCut(cutoff [Å])``. The bare
+#: Truncated Coulomb — ``cpu::PairCoulCut(cutoff [Å], s12=1, s13=1, s14=1,
+#: coulomb=14.399645 [eV·Å/e²])``, with 1-2 / 1-3 / 1-4 weights and the
+#: Coulomb constant a force field states (folded with its dielectric). The bare
 #: ``q_i q_j / r`` sum over the neighbor list, hard-cut at ``cutoff``; needs
 #: no reciprocal-space partner, so it is the whole electrostatic model of
 #: the run that installs it. Needs a ``NeighborList`` built with a cutoff at

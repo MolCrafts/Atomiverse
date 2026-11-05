@@ -1,9 +1,9 @@
 /// @file tests/cpu/observe/test_vacf.cpp
-/// @brief VACF via the molrs FFI bridge (cpu::compute::VACF) and the ATV::VACF
+/// @brief VACF via the molpy FFI bridge (cpu::compute::VACF) and the ATV::VACF
 /// observer that streams snapshots into it.
 ///
-/// Validates the molrs-first analysis chain: velocity frames pushed one at a
-/// time into the molrs Vacf accumulator -> curve back to C++. molrs owns the
+/// Validates the molpy-first analysis chain: velocity frames pushed one at a
+/// time into the molpy Vacf accumulator -> curve back to C++. molpy owns the
 /// correlator numerics (its own Rust tests); here we assert the FFI round-trip
 /// against a hand-computed curve and the refusal of degenerate input.
 
@@ -20,7 +20,7 @@
 
 using ATV::cpu::compute::VACF;
 
-// One velocity frame of n_dof = 3. molrs Vacf defaults (module doc table +
+// One velocity frame of n_dof = 3. molpy Vacf defaults (module doc table +
 // `Correlator` docs): each DOF mean-subtracted, unbiased 1/(T - t) origin
 // average, mean over DOF.
 //   dof 0 alternates +1/-1 (mean 0)  -> fluctuation ±1
@@ -63,7 +63,7 @@ TEST(CpuVACF, ChangedWidthOrIntervalThrows) {
     EXPECT_EQ(acc.n_frames(), 1);
 }
 
-// ── ATV::VACF observer: snapshot packing into the molrs accumulator ────────
+// ── ATV::VACF observer: snapshot packing into the molpy accumulator ────────
 
 // One atom whose vx alternates ±1 and vy alternates 2/0 (vz = 0): packed
 // blocked vx|vy|vz it is the same 3-DOF signal as above, so the streamed

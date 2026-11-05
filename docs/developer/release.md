@@ -19,10 +19,9 @@ The C++ extension `_atomiverse` is built on the user's machine from the
 | `compile` | `pip wheel <src>/python --no-build-isolation -C wheel.cmake=true -C build-dir=<build>/cmake -C cmake.define.…`, then `pip wheel <ATV_MOLPY_PATH>/molpy --no-build-isolation` with `CARGO_TARGET_DIR=<build>/molpy-target` | the native wheel and a molpy wheel in `<build>/dist/` |
 | `install` | `pip install --force-reinstall --no-deps <wheel> <molpy-wheel>` | the native wheel replaces the pure one; the local molpy wheel replaces the installed one |
 
-Build the molpy wheel and the `molcxx` bridge from the same merged local
-checkout selected by `ATV_MOLPY_PATH` (default `../molrs`). The ABI token and
-capsule validation remain required. No molpy version is pinned during this
-migration.
+Build the molpy wheel and the `molcxx` bridge from the same local molpy
+checkout selected by `ATV_MOLPY_PATH` (default `../molpy`). The ABI token and
+capsule validation remain required. No molpy version is pinned.
 
 Because pip installs the native wheel, `_atomiverse*.so` and the
 `_build_info.json` CMake writes beside it are RECORD-tracked files of the
@@ -39,7 +38,7 @@ contains exactly the modules the user listed plus their DAG closure;
 ### Why not prebuilt native wheels
 
 The extension links BLAS/LAPACK, FFTW, optionally MPI and CUDA, the Rust
-molrs static library, and is compiled with `-march=native` for the SCF ERI
+molpy static library, and is compiled with `-march=native` for the SCF ERI
 kernels. A single manylinux binary would have to drop `-march=native` and
 freeze one module set; building from the tag keeps the user's module choice
 and full CPU speed. Revisit if a CPU-only, fixed-module, portable-ISA wheel
@@ -70,7 +69,7 @@ from the installed package) depends on this being the only copy.
      the `pypi` environment;
    - creates the GitHub release for the tag with the same files.
 
-Native builds currently require a separate local merged molpy checkout.
+Native builds require a local molpy checkout.
 
 ### One-time setup
 

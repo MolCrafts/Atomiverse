@@ -366,7 +366,8 @@ force candidates from the same accepted state before one publication; actual
 auxiliary, reference and nonfinite failures still throw. The nested caller
 uses the actual per-call publication result. No persistent solver flag or
 second static selector decides whether to publish. This owner has
-[scoped native GH200 qualification](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-cuda-uks-depth/archive-index.json)
+scoped native GH200 qualification
+(2026-10-28)
 with the current joint mixer for Gamma fixed nonempty UKS LSDA/PBE-family;
 UKS FD, multiple k points and empty endpoints remain separate gaps.
 Cold radial/Ewald setup, host scalar filling

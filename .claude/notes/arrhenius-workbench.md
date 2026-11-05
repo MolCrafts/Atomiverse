@@ -14,7 +14,7 @@ Machine facts for GAFF / regression work. Open work:
 - Lmod needs explicit versions (`GPU/Miniforge/26.3.2-2-eb`,
   `Python/3.13.5-bare-gcc-2025b-eb`, `buildenv-gcc/2026.03-mpich`). `bash
   script.sh` is not a login shell: scripts calling `module` must
-  `source /etc/profile` first (the `benchmarks/gaff/*.sh` scripts do).
+  `source /etc/profile` first (the `benchmarks/compare/gaff-liquid/*.sh` scripts do).
 - Login-node CPU affinity changes during a session; print
   `len(os.sched_getaffinity(0))` next to any login-node timing and prefer batch.
 - Working checkout: `~/work/molcrafts/Atomiverse-gaff` (update with
@@ -58,11 +58,11 @@ threads oversubscribes the node and produces false reds. Flags:
 `-DATV_BUILD_CUDA=OFF -DATV_BUILD_TESTS=ON -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON
 -DATV_BUILD_GPW=ON -DATV_BUILD_KSPACE=ON -DATV_BUILD_REGRESSIONS=ON
 -DATV_USE_MPI=ON -DBLA_VENDOR=OpenBLAS -DCMAKE_PREFIX_PATH=$OPENBLAS_ROOT`;
-set `ATV_MOLPY_PATH` to the merged molpy checkout for both trees.
+set `ATV_MOLPY_PATH` to the molpy checkout for both trees.
 
 ## Mac (M4) workbench — machine-local, may vanish on reboot
 
-- ATV build `/tmp/atv-gaff-build` (MD, KSPACE, MOLRS, SEMIEMPIRICAL; HF/PW/GPW
+- ATV build `/tmp/atv-gaff-build` (MD, KSPACE, MOLPY, SEMIEMPIRICAL; HF/PW/GPW
   off; `Python3_EXECUTABLE=/tmp/atv-gaff-build/pyenv/bin/python`), configured by
   `/tmp/atv-configure.sh <dir>`. GPW-on trees: `/tmp/atv-architecture-pw`,
   `/tmp/atv-agent-gpw`, `/tmp/atv-agent-vib`.
@@ -70,8 +70,7 @@ set `ATV_MOLPY_PATH` to the merged molpy checkout for both trees.
   `/tmp/atv-lammps-neighbor-reference`).
 - Conda env `molcrafts-tools`: AmberTools + OpenMM 8.6.1 (CPU); envs
   `xtb-oracle`, `tblite-oracle` for GFN pins.
-- molpy venv `~/work/molcrafts/molpy/.venv` carries molrs built from
-  `~/work/molcrafts/molrs`.
+- molpy is built from `~/work/molcrafts/molpy`.
 - OpenMPI on macOS: `OMPI_MCA_mpi_yield_when_idle=1`. One heavy job at a time.
 - Mac timings vary ±30 % run to run; direction only.
 

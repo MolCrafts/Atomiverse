@@ -1,7 +1,0 @@
-{
-  "pw_forces.cpp": "c85c6a601eb474553625a7cc06ff368d25657b6b337d2cc31009fd20c90c30ce",
-  "pw_final_state.cpp": "942eef173631348e87a8514ed06bf6bacb3a4fdddeebb3884477d722c75cca07",
-  "pw_solver.cpp": "212af900db7f1dabe8b10df7d41fa24ae8a0bde1420ce3208558e4927ddce3d0",
-  "frozen_functional_virial.cpp": "9cbd7a178c5754e903fa3b2d944d47eb78ac5418ea7c17ae6f7902125464b474",
-  "include/atomiverse/cpu/planewave/internal/pw_final_state.h": "8ae761080addd628d2c9989403b70243c84d60e67f81fc82b815ac94740221cc"
-}

@@ -52,9 +52,6 @@ the mechanism and the reasons.
   OpenMM cluster/tile engine stays the force path.
 - **Four namespaces** in one pillar: `cpu::Comm`, `cpu::comm`,
   `cpu::communication`, `cpu::md::mpi` (deliberate follow-up).
-- `tools/debug_amorphous/gather_frame.h` drives `pack_row` / `unpack_row` for a
-  variable-length all-gather — migration payload in a debug tool; leave it
-  unless the tool is reworked.
 - `SpatialGrid` slot map is x-fastest; CPU brick is x-slowest. Do not silently
   unify.
 - k-space remap `Alltoallv` is the other wall vs LAMMPS at high rank counts;

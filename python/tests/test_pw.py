@@ -3,9 +3,11 @@
 The Si2 fixture keeps a=5.43 Å, a primitive FCC cell, a +.08 Å displacement,
 GTH-PBE-q4, Gamma, 8/32 Ry, eight electrons and four fixed-occupation bands.
 LSDA means Slater exchange plus VWN5 correlation. Energy and all six force
-components are compared with an actual QE7.5 execution archived under
-``tools/diagnostics/nc-extension/python-fcc``. The reference uses QE's native
-GTH reader and records input, stdout, executable/source hashes and settings.
+components are compared with an actual QE7.5 execution recorded in
+``tests/data/pw/si2_fcc_qe75_reference.json`` (captured by
+``tools/qe_oracle/inputs/pw-python-si2-fcc/capture.py``). The reference uses
+QE's native GTH reader and records input, stdout, executable/source hashes
+and settings.
 The force reference sums the printed contributions before QE's subtraction
 of the total force; that subtraction cannot validate translation invariance.
 
@@ -58,7 +60,7 @@ _HARTREE_EV: float = 27.211386245988
 
 _QE_REFERENCE = json.loads(
     (Path(__file__).resolve().parents[2]
-     / "tools/diagnostics/nc-extension/python-fcc/reference.json").read_text()
+     / "tests/data/pw/si2_fcc_qe75_reference.json").read_text()
 )
 _QE_LSDA = next(run for run in _QE_REFERENCE["runs"] if run["name"] == "lsda14")
 #: Preserve each component, including its sign; do not use a native freeze.
@@ -126,7 +128,7 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molpy.Frame":
     @param stretch: Displacement of atom 1 along x [Å]; 0 is the ideal
         diamond geometry.
     @param with_box: When false the cell is left unset — the reachable
-        degenerate case for the fail-loud gate (molrs itself refuses a
+        degenerate case for the fail-loud gate (molpy itself refuses a
         singular cell matrix, raising ValueError("SingularCell")).
     @return molpy.Frame with x/y/z [Å], mass [amu] and atomic_number columns.
     """

@@ -7,7 +7,7 @@
 /// the same minimum-image sum", evaluated in-file — no third-party engine is
 /// imported, spawned or read at build or run time. perf_exempt: this slug
 /// makes no performance claim (rank scaling and wall-clock belong to the
-/// bench snapshot in `tools/bench_gaff_lammps/README.md`).
+/// `benchmarks/compare/gaff-peo-lammps` harness).
 ///
 /// One binary, two modes:
 ///  - parent (default): re-launches itself through the configured mpiexec

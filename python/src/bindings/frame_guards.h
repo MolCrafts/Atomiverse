@@ -1,6 +1,6 @@
 /// @file python/src/bindings/frame_guards.h
 /// @brief Shared pre-run predicates: what a driver handle's registrations
-///        demand of the molrs Frame handed to `run()`.
+///        demand of the molpy Frame handed to `run()`.
 ///
 /// Two questions every driver facade asks before it starts a run — "did the
 /// user register an electrostatic model?" and "does the frame carry the column
@@ -19,14 +19,14 @@
 #include "atomiverse/cpu/task/task_spec.h"
 #include "atomiverse/molpy.hpp"
 
-/// @brief Does `block` of a molrs Frame carry the column `key`?
+/// @brief Does `block` of a molpy Frame carry the column `key`?
 ///
-/// The molrs boundary is the only place where a column's *absence* is still
+/// The molpy boundary is the only place where a column's *absence* is still
 /// visible: `cpu::from_molpy` allocates every optional per-atom column and
 /// leaves an absent one zero-filled, so an evaluator downstream cannot tell
 /// "no charges were given" from "every charge is 0 e".
 ///
-/// @param frame Borrowed molrs Frame handle.
+/// @param frame Borrowed molpy Frame handle.
 /// @param block Block name, e.g. `"atoms"`.
 /// @param key   Column name, e.g. `"charge"`.
 /// @return True when that block carries that column.

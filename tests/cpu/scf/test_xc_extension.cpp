@@ -1,4 +1,4 @@
-#include "../../../examples/xc-extension/scaled_slater.h"
+#include "../../../examples/extensions/xc/scaled_slater.h"
 #include "atomiverse/cpu/scf/rks.h"
 #include "atomiverse/cpu/scf/tdhf.h"
 #include "atomiverse/cpu/xc/xc_functional.h"

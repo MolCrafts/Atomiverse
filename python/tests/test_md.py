@@ -123,7 +123,7 @@ class TestMDDriverBuild:
 # ── ac-002: MD on a molpy.Frame, end to end ─────────────────────────
 
 
-class TestMDRunOnMolrsFrame:
+class TestMDRunOnMolpyFrame:
     def test_positions_written_back(self, argon_frame, full_lj_md):
         """Positions update in the SAME molpy.Frame after run()."""
         x_before = np.asarray(argon_frame["atoms"]["x"]).copy()
@@ -352,7 +352,7 @@ class TestFrameBindingRemoved:
         assert not hasattr(_cpp, "Cpu" + "Frame")  # token split: ac-002 grep gate
 
     def test_no_frame_attr_on_package(self):
-        # Frame and Block have one owner: molrs.
+        # Frame and Block have one owner: molpy.
         assert not hasattr(av, "Frame")
         assert not hasattr(av, "Block")
 
@@ -1039,7 +1039,7 @@ class TestPairStyleCatalogue:
         r = 2.5 Å → 509.367188590998… eV.
 
         The one-row table keys {18, 18} because the fixture is argon and
-        molrs ``atomic_number`` is what the type column carries.
+        molpy ``atomic_number`` is what the type column carries.
         """
         from atomiverse.potentials.pair import Born
 
@@ -1540,7 +1540,7 @@ class TestAm1Bomd:
             sim.set_evaluator(object())
 
 
-class TestMolrsFrameBoundary:
+class TestMolpyFrameBoundary:
     def test_box_is_the_only_cell_property(self, argon_frame):
         assert argon_frame.box is not None
         assert not hasattr(argon_frame, "simbox")

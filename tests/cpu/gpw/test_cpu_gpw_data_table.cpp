@@ -6,8 +6,8 @@
 /// The values asserted below are spot-checks against the published sources
 /// (Krack, TCA 114, 145 (2005) for GTH-PBE; VandeVondele & Hutter, JCP 127,
 /// 114105 (2007) for MOLOPT), pinned so a bad transcription cannot pass. The
-/// deeper check that the tables are *physically* right is the finite-difference
-/// force oracle in benchmarks/qc/gpw/validation (ac-005).
+/// deeper check that the tables are *physically* right is the GPW force
+/// regressions under regressions/gpw.
 ///
 /// Unit-scale: table lookups only, no SCF, no parsing anywhere.
 

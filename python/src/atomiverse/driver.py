@@ -39,8 +39,10 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     Raises
     ------
     ValueError
-        If the requested backend is unavailable or mismatched, or if the method's
-        ``n_alpha + n_beta`` does not equal this frame's electron count.
+        If the requested backend is unavailable or mismatched, if the method's
+        ``n_alpha + n_beta`` does not equal this frame's electron count, or if
+        an NDDO method (AM1/RM1/MNDO/PM3) finds atoms closer than 0.6 x their
+        covalent-radius sum (the message names the pairs).
     TypeError
         If *evaluator* has neither a public run entry nor a native Component.
     RuntimeError

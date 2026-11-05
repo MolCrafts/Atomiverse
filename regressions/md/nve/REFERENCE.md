@@ -114,8 +114,8 @@ Design-time bound — re-pin from the measured GH200 gap before ever tightening.
 Per the ES/CUDA oracle law the CPU leg is a **parity** reference, not a
 literature number: it carries no independent physical authority. Absolute
 correctness of the LJ forces against an external engine (LAMMPS) is **not**
-pinned in-tree today — the old `benchmarks/md/lj/validation/` case was removed
-with the benchmarks teardown; what this case pins is the analytic conservation
+pinned by this case (see `benchmarks/compare/lj-lammps` for the LAMMPS
+comparison); what this case pins is the analytic conservation
 property (gates 1–2, each backend) and cross-backend consistency (gate 3).
 
 ### Why energy conservation is the right thing to pin here

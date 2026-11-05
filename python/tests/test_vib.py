@@ -39,7 +39,7 @@ unit paths (SI and atomic-unit/PySCF) that agree to ~1e-16 relative, and
 the pinned literal 26.456347759377 cm⁻¹ is checked against both.
 
 Note the frame contract: this domain reads the atom's **atomic number**
-(``kAtom_type``, from the molrs ``atomic_number`` column) and looks the mass
+(``kAtom_type``, from the molpy ``atomic_number`` column) and looks the mass
 up per Z — ``mass_weighting.cpp:26-28``. The per-atom ``mass`` column is
 present in the fixtures because MD-style frames carry it, but it is IGNORED
 here; changing it cannot move a frequency.

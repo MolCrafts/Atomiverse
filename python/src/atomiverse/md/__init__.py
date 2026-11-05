@@ -98,7 +98,7 @@ class MD:
         parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3.
         Continuation stays on one molpy.Frame.
 
-    Example (mirrors ``examples/07_md_lj.cpp``)::
+    Example (mirrors ``examples/cpp/08_md_lj.cpp``)::
 
         import atomiverse as av
 

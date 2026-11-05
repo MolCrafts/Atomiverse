@@ -1,31 +1,31 @@
 /// @file cpu/observe/trajectory_metrics.h
-/// @brief Trajectory-analysis compute objects — thin C++ wrappers over the molrs
-/// bridge analyses (molrs `compute::{Msd, Vacf, LinearFit, Rdf}`) and their
+/// @brief Trajectory-analysis compute objects — thin C++ wrappers over the molpy
+/// bridge analyses (molpy `compute::{Msd, Vacf, LinearFit, Rdf}`) and their
 /// streaming accumulators (`CorrelatorAccumulator`, `RdfAccumulator`).
 ///
-/// The engine *measures*; molrs *analyzes*. Each analysis takes its
-/// configuration as constructor arguments; `accumulator()` hands out the molrs
+/// The engine *measures*; molpy *analyzes*. Each analysis takes its
+/// configuration as constructor arguments; `accumulator()` hands out the molpy
 /// streaming accumulator — `push` one frame at a time, `finish()` reads the
 /// result so far without consuming the state. That is the only calling
-/// convention (molrs' MSD / VACF / RDF are accumulator-only): a stored
+/// convention (molpy' MSD / VACF / RDF are accumulator-only): a stored
 /// trajectory is pushed frame by frame. Memory is O(max_lag · n_dof)
 /// (MSD / VACF) or O(n_bins) (RDF) — never O(trajectory).
 ///
 /// MSD and VACF return a `TimeCorrelation` (one curve, item-averaged). The
 /// Einstein self-diffusion coefficient is not an analysis of its own: it is a
 /// `LinearFit` of the MSD curve composed by the caller, `D = slope / (2·dims)`
-/// (molrs `compute::Msd` docs).
+/// (molpy `compute::Msd` docs).
 ///
-/// Every fallible call throws — molrs never answers an error with an empty
+/// Every fallible call throws — molpy never answers an error with an empty
 /// curve, a NaN or `false`, and neither does this layer. Constructors throw
-/// `std::invalid_argument` for a configuration molrs refuses; `push` and
-/// `finish` throw `std::runtime_error` carrying the molrs message (a ragged
+/// `std::invalid_argument` for a configuration molpy refuses; `push` and
+/// `finish` throw `std::runtime_error` carrying the molpy message (a ragged
 /// buffer, a singular cell, a wrapped trajectory, fewer frames than
 /// `max_lag + 1`, …). A rejected `push` leaves the accumulator unchanged.
 ///
-/// **No analysis math lives in C++** — see molrs/src/compute/.
+/// **No analysis math lives in C++** — see molpy crates/molrs/src/compute/.
 ///
-/// CUDA-safe: this header exposes only std types (no `rust/cxx.h`); the molrs
+/// CUDA-safe: this header exposes only std types (no `rust/cxx.h`); the molpy
 /// objects live behind PIMPLs constructed inside the `.cpp`, so observer
 /// headers that include it stay includable from `.cu`/`.cuh`.
 #pragma once
@@ -38,10 +38,10 @@ namespace ATV {
 namespace cpu {
 namespace compute {
 
-/// @brief A time-correlation curve — wraps molrs `compute::TimeCorrelation`
+/// @brief A time-correlation curve — wraps molpy `compute::TimeCorrelation`
 /// (the output of `MSD`, `VACF` and their `CorrelatorAccumulator`).
 ///
-/// Move-only: it owns the molrs object so a `LinearFit` can read it without a
+/// Move-only: it owns the molpy object so a `LinearFit` can read it without a
 /// round trip through C++ buffers.
 class TimeCorrelation {
   public:
@@ -55,7 +55,7 @@ class TimeCorrelation {
     /// `push`. @return `max_lag + 1` lag times.
     std::vector<double> lag_times() const;
 
-    /// @brief The item-averaged curve, indexed by lag (molrs channel 0, the
+    /// @brief The item-averaged curve, indexed by lag (molpy channel 0, the
     /// only channel of the mean reduction these wrappers use).
     /// @return `max_lag + 1` values.
     std::vector<double> values() const;
@@ -68,7 +68,7 @@ class TimeCorrelation {
     std::unique_ptr<Impl> impl_;
 };
 
-/// @brief Streaming accumulator of `MSD` / `VACF` — wraps molrs
+/// @brief Streaming accumulator of `MSD` / `VACF` — wraps molpy
 /// `compute::CorrelatorAccumulator`. Obtain one from `MSD::accumulator()` or
 /// `VACF::accumulator()`.
 class CorrelatorAccumulator {
@@ -84,7 +84,7 @@ class CorrelatorAccumulator {
     /// for an MSD accumulator, any fixed number of velocity DOF [Å/fs] for a
     /// VACF accumulator. The first frame latches the width.
     /// @param dt sample interval [fs]; must be identical on every frame.
-    /// @throws std::runtime_error when molrs rejects the frame (width change,
+    /// @throws std::runtime_error when molpy rejects the frame (width change,
     /// non-finite value, changed `dt`); state unchanged.
     void push(const std::vector<double>& frame, double dt);
 
@@ -94,7 +94,7 @@ class CorrelatorAccumulator {
     /// H [Å] of this frame.
     /// @throws std::runtime_error as `push(frame, dt)`, and when a step since
     /// the previous frame exceeds half the cell's shortest perpendicular
-    /// height (a trajectory wrapped into its box — molrs
+    /// height (a trajectory wrapped into its box — molpy
     /// `ComputeError::Wrapped`); state unchanged.
     void push(const std::vector<double>& frame, double dt,
               const std::array<double, 9>& cell);
@@ -123,7 +123,7 @@ enum class MsdOrigins {
 };
 
 /// @brief Mean squared displacement `MSD(t) = ⟨|r_i(τ+t) − r_i(τ)|²⟩` over
-/// lags `0..=max_lag` frames, averaged over atoms — wraps molrs
+/// lags `0..=max_lag` frames, averaged over atoms — wraps molpy
 /// `compute::Msd`. Positions must be continuous across periodic boundaries.
 class MSD {
   public:
@@ -147,7 +147,7 @@ class MSD {
 
 /// @brief Velocity autocorrelation over lags `0..=max_lag` frames, each
 /// degree of freedom mean-subtracted, unbiased (`1/(T − t)`) and averaged over
-/// degrees of freedom — wraps molrs `compute::Vacf` with its defaults.
+/// degrees of freedom — wraps molpy `compute::Vacf` with its defaults.
 class VACF {
   public:
     /// @param max_lag largest lag [frames] (≥ 1).
@@ -174,7 +174,7 @@ struct LinearFitResult {
 };
 
 /// @brief Ordinary-least-squares line through a `TimeCorrelation` against its
-/// lag times — wraps molrs `compute::LinearFit`. Of an MSD curve, the
+/// lag times — wraps molpy `compute::LinearFit`. Of an MSD curve, the
 /// Einstein self-diffusion coefficient is `slope / (2·dims)`.
 class LinearFit {
   public:
@@ -186,7 +186,7 @@ class LinearFit {
     /// @brief Fit `correlation`.
     /// @param correlation the curve to fit.
     /// @return slope, intercept, r² and the lag window used.
-    /// @throws std::runtime_error on a molrs fit error.
+    /// @throws std::runtime_error on a molpy fit error.
     LinearFitResult compute(const TimeCorrelation& correlation) const;
 
   private:
@@ -194,27 +194,27 @@ class LinearFit {
     double end_;
 };
 
-/// @brief g(r) over one or more frames — molrs `compute::RdfResult`.
+/// @brief g(r) over one or more frames — molpy `compute::RdfResult`.
 struct RDFResult {
     std::vector<double> bin_edges;   ///< `n_bins + 1` edges [Å]
     std::vector<double> bin_centers; ///< `n_bins` centers [Å]
     std::vector<double> rdf;         ///< normalized g(r), one per bin
     std::vector<double> n_r;         ///< raw pair counts, one per bin
     double volume = 0.0; ///< cell volume summed over the frames [Å³]
-                         ///< (molrs `RdfResult::volume`; ÷ n_frames = mean)
+                         ///< (molpy `RdfResult::volume`; ÷ n_frames = mean)
     int n_frames = 0;    ///< frames folded
 };
 
 class RDFAccumulator;
 
 /// @brief Radial distribution function g(r) over `[r_min, r_max)` Å in
-/// `n_bins` bins — wraps molrs `compute::Rdf` (per-frame periodic cell-list
+/// `n_bins` bins — wraps molpy `compute::Rdf` (per-frame periodic cell-list
 /// self-query, ideal-gas shell-volume normalization).
 class RDF {
   public:
     /// @param n_bins number of radial bins (≥ 1). @param r_max upper edge of
     /// the last bin [Å] (> r_min). @param r_min lower edge of bin 0 [Å] (≥ 0).
-    /// Argument order mirrors molrs `Rdf::new(n_bins, r_max, r_min)`.
+    /// Argument order mirrors molpy `Rdf::new(n_bins, r_max, r_min)`.
     /// @throws std::invalid_argument on an out-of-range parameter.
     RDF(int n_bins, double r_max, double r_min);
 
@@ -228,7 +228,7 @@ class RDF {
     double r_min_;
 };
 
-/// @brief Streaming g(r) accumulator — wraps molrs `compute::RdfAccumulator`,
+/// @brief Streaming g(r) accumulator — wraps molpy `compute::RdfAccumulator`,
 /// the one form of the g(r). Obtain one from `RDF::accumulator()`.
 class RDFAccumulator {
   public:
@@ -241,7 +241,7 @@ class RDFAccumulator {
     /// @brief Fold one frame into the running histogram.
     /// @param positions blocked `x|y|z` [Å], length `3·n_atoms`.
     /// @param cell row-major 3×3 cell matrix H [Å] of this frame.
-    /// @throws std::runtime_error when molrs rejects the frame (bad shape,
+    /// @throws std::runtime_error when molpy rejects the frame (bad shape,
     /// singular cell); state unchanged.
     void push(const std::vector<double>& positions,
               const std::array<double, 9>& cell);

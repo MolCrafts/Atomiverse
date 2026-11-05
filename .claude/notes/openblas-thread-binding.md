@@ -24,7 +24,7 @@ recording any wall clock or shipping a Python wheel.
   justified.
 
 **Perf numbers measured bound (physics pins unaffected; re-measure before
-quoting):** `benchmarks/scf/validation/ri_speed/README.md`;
+quoting):** the former RI speed table (its harness was removed);
 [gpw-perf-baseline.md](gpw-perf-baseline.md) (whole CP2K ratio table);
 `regressions/scf/{uks-hessian-o2-sto3g,spin-flip-tda-o2,b2plyp-h2o,sf-tddft-o2,roks-grad-o2-sto3g}`;
 `regressions/gpw/{gpw-optb88-forces,gpw-vdw-uks-multigrid,gpw-stress-water,gpw-forces-water,gpw-variable-cell-molopt}`.

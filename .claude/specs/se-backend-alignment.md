@@ -106,7 +106,7 @@ required modules. GPU validation requires GH200, never inferred from CPU.
   request migration (`w1-request-migration-tests.log`). Direct/nested stress
   units, overwrite and accumulation also pass in the existing water case.
 - Python bridges call the same Frame methods, including DFTB0. The existing
-  molrs exchange and force-array conversion are reused; no parameter copy.
+  molpy exchange and force-array conversion are reused; no parameter copy.
   Python-enabled build passes. Actual molpy.Frame run/forces round trips for
   DFTB0/2 pass against the existing H2 pin, including force preservation and
   charge publication; DFTB2 stress returns finite Voigt values. Surface and
@@ -141,7 +141,7 @@ required modules. GPU validation requires GH200, never inferred from CPU.
   the component build/rebuild boundary, then validate MD/Minimize composition.
   The independent build uses `/tmp/atv-se-rust-1.99.1` after a concurrent
   global toolchain replacement interrupted compilation. A later external
-  change to molrs/rust-toolchain.toml is preserved.
+  change to molpy/rust-toolchain.toml is preserved.
 - W2-W6 pending. molq repair is complete; live GH200 submission, observation,
   completed-job status and logs have all been exercised successfully.
 

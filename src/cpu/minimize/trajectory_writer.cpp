@@ -1,5 +1,5 @@
 /// @file cpu/minimize/trajectory_writer.cpp
-/// @brief TrajectoryWriter -- molrs-backed XYZ append.
+/// @brief TrajectoryWriter -- molpy-backed XYZ append.
 ///        MPI-aware: collective owner gather, rank-0 I/O.
 
 #include "atomiverse/cpu/minimize/trajectory_writer.h"

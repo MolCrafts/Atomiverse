@@ -1,8 +1,8 @@
 /// @file cpu/record/xyz.h
-/// @brief XYZ trajectory writer — backed by molrs.
+/// @brief XYZ trajectory writer — backed by molpy.
 ///
 /// The writer takes a `cpu::Frame` and hands its raw per-atom arrays and
-/// metadata to molrs one frame at a time (molrs `write_xyz`); there is
+/// metadata to molpy one frame at a time (molpy `write_xyz`); there is
 /// no C++ record type.
 ///
 /// @see cpu::write_xyz_frame / cpu::write_mrec_frame (cpu/io/frame_writer.h)
@@ -15,13 +15,13 @@
 namespace ATV {
 namespace cpu {
 
-class Frame; // fwd — CUDA-safe (this header is pulled by 02_rhf.cu)
+class Frame; // fwd — keeps this header CUDA-safe
 
 /// @brief XYZ trajectory writer (standard element + coordinates).
 ///
-/// `write`/`append` write one frame's geometry through molrs. Species come
+/// `write`/`append` write one frame's geometry through molpy. Species come
 /// from `kAtom_type`, which carries the atomic number Z (0 is the wildcard
-/// `*`); molrs spells the element symbols. Extraction
+/// `*`); molpy spells the element symbols. Extraction
 /// scratch is reused across calls, so per-frame appends on a long-lived
 /// writer do not reallocate on the steady-state path.
 class XYZ {
@@ -33,7 +33,7 @@ class XYZ {
     /// @brief Truncate/create the file and write one frame.
     /// @param frame source of Z (`kAtom_type`), x/y/z [Å], box and meta.
     /// @throws std::invalid_argument on a negative Z; std::runtime_error
-    /// (molrs, path attached) on Z > 118 or a write failure.
+    /// (molpy, path attached) on Z > 118 or a write failure.
     void write(const Frame& frame);
     /// @brief Append one frame; same contract as `write`.
     /// @param frame source of Z (`kAtom_type`), x/y/z [Å], box and meta.

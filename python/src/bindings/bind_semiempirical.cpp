@@ -61,7 +61,7 @@ namespace {
 
 /// @brief Evaluate energy and charges over a borrowed molpy.Frame.
 ///
-/// Calls the method's Frame entry and publishes through the existing molrs
+/// Calls the method's Frame entry and publishes through the existing molpy
 /// bridge. Existing force columns are preserved by run().
 ///
 /// @param dftb  Borrowed method; its `last_*()` accessors are populated.
@@ -191,6 +191,26 @@ void bind_semiempirical(nb::module_& m) {
                     throw nb::type_error("AM1BCCCharges.assign expects a "
                                          "molpy.Atomistic molecular graph");
                 auto frame = molecule.attr("to_frame")();
+                // A coordinate an atom lacks is a null cell of its column;
+                // the native frame would read it as 0, so refuse it here.
+                nb::object atoms = frame.attr("__getitem__")("atoms");
+                for (const char* axis : {"x", "y", "z"}) {
+                    // An absent column is refused natively, by name.
+                    if (PyObject_IsTrue(atoms.attr("keys")()
+                                            .attr("__contains__")(axis)
+                                            .ptr())
+                        != 1)
+                        continue;
+                    nb::object mask = atoms.attr("validity")(axis);
+                    if (mask.is_none())
+                        continue;
+                    for (nb::handle held : mask)
+                        if (PyObject_IsTrue(held.ptr()) != 1)
+                            throw nb::value_error(
+                                (std::string("AM1BCCCharges: coordinate atoms.")
+                                 + axis + " is missing on some atoms")
+                                    .c_str());
+                }
                 auto transport = borrow_molpy_frame(frame);
                 std::vector<double> charges;
                 {

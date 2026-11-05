@@ -176,6 +176,18 @@ class Component {
     /// `as_*` protocol object — same shape as `requires_system_stress()`.
     virtual bool requires_tag_index() const { return false; }
 
+    /// @brief A trial evaluation of this component is as good as a committed one.
+    ///
+    /// True when `launch()` is a pure function of the Frame it is handed: no
+    /// history, cache or side effect that depends on `exec.trial_evaluation` /
+    /// `exec.initializing_forces` (no SCF guess staging, no bias deposition, no
+    /// RNG stream). When every component of a minimizer's force phase says so,
+    /// an optimizer may keep the forces and energy of the line-search trial it
+    /// accepts instead of replaying the force phase at the same geometry
+    /// (`OptimizeServices::trial_forces_reusable`). Opt-in: the default is
+    /// false, so an unknown component always gets its committed evaluation.
+    virtual bool trial_invariant() const { return false; }
+
     virtual Scheduling scheduling() const { return Scheduling::blocking; }
     virtual int frequency() const { return 0; }
     virtual std::size_t memory_bytes() const { return 0; }

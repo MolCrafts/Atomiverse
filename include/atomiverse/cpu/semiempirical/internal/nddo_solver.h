@@ -2,12 +2,15 @@
 /// @brief Internal NDDO engine (not a public bag API).
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/internal/nddo_system.h"
+#include "atomiverse/cpu/semiempirical/nddo_density.h"
+#include "atomiverse/cpu/semiempirical/nddo_fock.h"
 #include "atomiverse/cpu/semiempirical/nddo_hcore.h"
 #include "atomiverse/cpu/semiempirical/nddo_matrix.h"
 // internal only
@@ -50,7 +53,10 @@ struct NDDOScfState {
 /// Self-consistency is `NddoMethod` (`cpu::Driver<nddo::Phase>`). This
 /// class is the step body: `scf_prepare`, then one call each of
 /// `scf_diagonalize`, `scf_density`, `scf_fock`, and `scf_check` per
-/// iteration. Forces feed Evaluate / MD / Minimize through `AM1` / `RM1`.
+/// iteration. Each Fock build is Pulay-DIIS extrapolated (six vectors, residual
+/// F P - P F) for the next diagonalization; energy and the density/energy
+/// convergence residuals always use the unextrapolated F(P).
+/// Forces feed Evaluate / MD / Minimize through `AM1` / `RM1`.
 class NDDOSolver {
   public:
     explicit NDDOSolver(NDDOConfig config);
@@ -68,7 +74,9 @@ class NDDOSolver {
     /// @param frame Geometry [Å]. Not modified.
     /// Rebuilds when atom count or elements change; discards the old guess.
     /// @throws std::runtime_error if `build()` has not run or the system is open-shell.
-    /// @throws std::invalid_argument for empty/non-finite/coincident geometry.
+    /// @throws std::invalid_argument for empty or non-finite geometry, or for
+    ///         atom pairs closer than `kNddoContactFraction` x their
+    ///         covalent-radius sum (`require_nddo_contacts`).
     void scf_prepare(const cpu::Frame& frame);
     /// @brief Diagonalize the current packed Fock matrix.
     void scf_diagonalize();
@@ -102,6 +110,10 @@ class NDDOSolver {
     /// @return |ΔE| [eV], or +∞ before `scf_check`.
     const double& energy_residual() const { return scf_energy_delta_; }
 
+    /// @brief Max |F P - P F| of the last Fock build [eV]; the DIIS residual.
+    /// @return Commutator norm, or +∞ before the first `scf_fock`.
+    double commutator_residual() const { return scf_commutator_; }
+
     /// @brief Mutable result of the SCF in progress or just finished.
     ATV::semiempirical::NDDOResult& result() { return result_; }
 
@@ -125,6 +137,24 @@ class NDDOSolver {
     void validate_supported_atoms_(const cpu::Frame& frame) const;
 
   private:
+    /// Per-thread force workspace, retained across force evaluations.
+    struct ForceThread {
+        NDDOSystem pair;
+        std::vector<double> forces;
+    };
+    int force_thread_count_() const noexcept;
+    int dense_thread_count_() const noexcept;
+    /// F(P) of the current SCF density, from cached two-center blocks.
+    std::vector<double> build_scf_fock_();
+    /// Pulay DIIS on F(P): fills `scf_fock_diis_` and the commutator norm.
+    void extrapolate_fock_();
+    /// One (i, j) pair's fixed-density gradient added into `forces`.
+    void
+    accumulate_pair_force_(int i, int j,
+                           const std::array<const StorageReal*, 3>& coordinates,
+                           NDDOSystem& pair, std::vector<double>& forces) const;
+
+  private:
     NDDOConfig config_;
     bool built_ = false;
     bool has_density_ = false;
@@ -132,8 +162,8 @@ class NDDOSolver {
     NDDOSystem system_;
     NDDOScfState state_;
     ATV::semiempirical::NDDOResult result_;
-    // Allocated at build; force evaluation never constructs per-pair vectors.
-    NDDOSystem force_pair_;
+    // Per-thread workspace is retained; no per-pair vectors are constructed.
+    std::vector<ForceThread> force_threads_;
     std::vector<double> force_scratch_;
     std::vector<double> density_;
     std::vector<double> spin_density_;
@@ -148,8 +178,19 @@ class NDDOSolver {
     std::vector<double> scf_density_;
     std::vector<double> scf_spin_;
     std::vector<double> scf_fock_;
+    /// DIIS-extrapolated Fock that the next diagonalization uses.
+    std::vector<double> scf_fock_diis_;
     std::vector<double> scf_coeff_;
+    /// Pulay history: packed F(P), strict-lower commutators and their Gram.
+    static constexpr int kDiisVectors = 6;
+    std::array<std::vector<double>, kDiisVectors> diis_fock_, diis_error_;
+    std::array<double, kDiisVectors * kDiisVectors> diis_gram_{};
+    int diis_count_ = 0, diis_next_ = 0;
+    std::vector<double> diis_f_, diis_p_, diis_fp_; ///< Dense n x n scratch.
+    double scf_commutator_ = 0.0;
     NDDODiagonalizer diagonalizer_;
+    NDDOFockBuilder fock_builder_;
+    NDDODensityBuilder density_builder_;
     double scf_delta_ = 0.0;
     double scf_energy_delta_ = 0.0;
     double scf_prev_energy_ev_ = 0.0;

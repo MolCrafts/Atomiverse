@@ -1,7 +1,7 @@
 /// @file cpu/io/lammps_data.h
 /// @brief LAMMPS data-file loader for atom_style full and molecular.
 ///
-/// Self-contained C++ reader (does not go through molrs auto-detection).
+/// Self-contained C++ reader (does not go through molpy auto-detection).
 /// Emits a fully populated `cpu::Frame`: positions, masses, types, optional
 /// partial charges and velocities, bonds/angles/dihedrals/impropers,
 /// orthogonal box, and `build_special_list()` 1-2/1-3/1-4 partners.

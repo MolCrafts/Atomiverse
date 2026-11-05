@@ -33,6 +33,12 @@ std::vector<double> AM1BCCCharges::assign(molrs::FrameRef& molecule) {
             atomic_numbers =
                 molrs::frame_column_u64(molecule, "atoms", "atomic_number");
         }
+        // BCC corrections are looked up per bond: refuse a graph without
+        // connectivity by name rather than as a missing frame key.
+        if (!molrs::frame_has_block(molecule, "bonds"))
+            throw std::invalid_argument(
+                "AM1BCCCharges: the molecule has no bonds; BCC corrections "
+                "are looked up per bond, so connectivity is required");
         bond_i = molrs::frame_column_u64(molecule, "bonds", "atomi");
         bond_j = molrs::frame_column_u64(molecule, "bonds", "atomj");
     } catch (const ::rust::Error& error) {

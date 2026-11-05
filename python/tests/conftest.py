@@ -113,7 +113,7 @@ _BONDED_BOX: float = 20.0
 def bonded_frame() -> "molpy.Frame":
     """Four carbons carrying one bond, one dihedral and one improper.
 
-    Topology travels as molrs blocks: ``bonds`` (atomi/atomj/type_id),
+    Topology travels as molpy blocks: ``bonds`` (atomi/atomj/type_id),
     ``dihedrals`` and ``impropers`` (atomi..atoml/type_id), all
     ``np.uint32`` — the dtypes ``cpu::from_molpy`` requires
     (src/cpu/frame/molpy_exchange.cpp:147-165, :240-276; connectivity
@@ -162,7 +162,7 @@ def bonded_frame() -> "molpy.Frame":
 
 @pytest.fixture
 def full_lj_md():
-    """Full LJ MD via categorical setters (mirrors examples/07_md_lj.cpp)."""
+    """Full LJ MD via categorical setters (mirrors examples/cpp/08_md_lj.cpp)."""
     if not _HAS_MD:
         pytest.skip("needs ATV_BUILD_MD")
     cutoff = 8.5

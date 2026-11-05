@@ -48,7 +48,7 @@ reductions).
   the libraries above).
 - Peer copies for local multi-GPU transport (NCCL would not remove the
   topology-dependent packing). Host bookkeeping uses the C++ standard library;
-  trajectory analysis stays in molrs.
+  trajectory analysis stays in molpy.
 
 ## Scalar MD and lifecycle (CUDA side)
 

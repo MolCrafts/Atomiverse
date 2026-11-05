@@ -11,7 +11,7 @@ flag. Legend: [Roadmap index](index.md).
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| L-BFGS | ✓ | ✓ | |
+| L-BFGS | ✓ | ✓ | CPU: a failed line search resets the history and retries steepest descent, then stops unconverged (`lbfgs_line_search_failed`) instead of raising; CG restarts the same way |
 | Polak–Ribière⁺ CG | ✓ | ✓ | Nonlinear; Fletcher–Reeves not shipped |
 | FIRE | ✓ | ○ | |
 | Steepest descent | ○ | ✓ | CPU: only as CG β = 0; no SD component |
@@ -21,6 +21,9 @@ flag. Legend: [Roadmap index](index.md).
 | Variable-cell (triclinic) | ◐ | ○ | No external pin; self-pinned LJ shear case removed |
 | Constrained opt | ○ | ○ | |
 
+CPU PME/PPPM use `FFTW_ESTIMATE` plans, so a minimization or trajectory is
+bit-reproducible across processes for a given thread count (a timed
+`FFTW_MEASURE` plan could change the rounding between runs).
 Cell steps consume extensive `kStress` [eV]; consumers divide by \(V\).
 GPW/PW CELL_OPT productized. PR-NPT dynamics lives under
 [MD](molecular-dynamics.md), not here.

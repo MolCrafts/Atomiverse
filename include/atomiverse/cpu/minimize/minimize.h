@@ -118,8 +118,8 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
         return run_impl_(frame, max_iter, true);
     }
 
-    /// @brief User-facing entry — optimize the system stored in a molrs.Frame.
-    /// @param frame molrs.Frame handle (input geometry + output sink).
+    /// @brief User-facing entry — optimize the system stored in a molpy.Frame.
+    /// @param frame molpy.Frame handle (input geometry + output sink).
     /// @param max_iter Iteration budget.
     /// @return Number of iterations actually executed (≤ `max_iter`).
 #ifdef ATV_HAS_MOLPY

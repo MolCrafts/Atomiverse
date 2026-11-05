@@ -10,6 +10,47 @@ using namespace ATV;
 using namespace ATV::cpu::pw::internal;
 namespace {
 constexpr double pi = 3.1415926535897932384626433832795;
+
+// Independent spherical Bessel reference j_l(x) / x^l for l <= 3, so the
+// test does not lean on std::sph_bessel (absent from Apple libc++) or on the
+// in-tree regularized_bessel_jet it checks. Small x uses the ascending
+// series (Abramowitz & Stegun 10.1.2), which has no cancellation; larger x
+// uses the closed forms (A&S 10.1.11), which are accurate once x >= 2.
+double reference_bessel_over_xl(int l, double x) {
+    if (std::abs(x) < 2) {
+        double odd = 1; // (2l+1)!!
+        for (int k = 3; k <= 2 * l + 1; k += 2)
+            odd *= k;
+        double term = 1 / odd, sum = term;
+        for (int k = 1; k < 40; ++k) {
+            term *= -x * x / (2. * k * (2. * l + 2. * k + 1.));
+            sum += term;
+        }
+        return sum;
+    }
+    const double s = std::sin(x), c = std::cos(x), x2 = x * x;
+    double j = 0;
+    switch (l) {
+    case 0:
+        j = s / x;
+        break;
+    case 1:
+        j = s / x2 - c / x;
+        break;
+    case 2:
+        j = (3 / x2 - 1) * s / x - 3 * c / x2;
+        break;
+    case 3:
+        j = (15 / (x2 * x) - 6 / x) * s / x - (15 / x2 - 1) * c / x;
+        break;
+    default:
+        ADD_FAILURE() << "reference Bessel implemented for l <= 3 only";
+    }
+    return j / std::pow(x, l);
+}
+double reference_sph_bessel(int l, double x) {
+    return reference_bessel_over_xl(l, x) * std::pow(x, l);
+}
 constexpr int aa[6] = {0, 1, 2, 0, 0, 1}, bb[6] = {0, 1, 2, 1, 2, 2};
 NcPotentialData gaussian_data() {
     NcPotentialData data;
@@ -74,10 +115,9 @@ TEST(PwRadialDerivatives, RegularizedBesselMatchesIndependentSpecialFunctions) {
         for (double x : {1e-12, 1e-7, 1e-3, .3, .9999, 1.0001, 4., 12.}) {
             SCOPED_TRACE(::testing::Message() << "l=" << l << " x=" << x);
             auto got = regularized_bessel_jet(l, x);
-            EXPECT_NEAR(got.value, std::sph_bessel(l, x) / std::pow(x, l),
+            EXPECT_NEAR(got.value, reference_bessel_over_xl(l, x), 3e-13);
+            EXPECT_NEAR(got.slope_over_x, -reference_bessel_over_xl(l + 1, x),
                         3e-13);
-            EXPECT_NEAR(got.slope_over_x,
-                        -std::sph_bessel(l + 1, x) / std::pow(x, l + 1), 3e-13);
         }
     }
 }
@@ -106,11 +146,11 @@ TEST(PwRadialDerivatives, ExactEvenAndOddProjectorPrefixesIgnoreUnusedSuffix) {
         std::vector<AccReal> val(points), der(points);
         for (std::size_t i = 0; i < points; ++i) {
             const double r = data.r[i], x = .71 * r;
-            val[i] = r * data.kb[3].beta[i] * std::sph_bessel(1, x) / .71;
+            val[i] = r * data.kb[3].beta[i] * reference_sph_bessel(1, x) / .71;
             // d/dq[f_1(q)/q]/q = -integral r^3 beta j_2(qr)/(qr)^2 dr.
             der[i] = x == 0 ? 0
                             : -std::pow(r, 4) * data.kb[3].beta[i]
-                                  * std::sph_bessel(2, x) / (x * x);
+                                  * reference_sph_bessel(2, x) / (x * x);
         }
         EXPECT_NEAR(after.value, data.integrate_radial(val), 1e-12);
         EXPECT_NEAR(after.slope_over_q, data.integrate_radial(der), 1e-12);

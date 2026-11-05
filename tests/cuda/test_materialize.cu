@@ -5,7 +5,7 @@
 ///   - ac-002: a cuda::Frame produced by cuda::from_molpy carries the
 ///             aligned field set -- per-atom charge / tag / image plus a
 ///             device-resident SystemScalars -- matching cpu::Frame.
-///   - ac-003: molrs.Frame -> cuda::Frame -> molrs.Frame round-trips
+///   - ac-003: molpy.Frame -> cuda::Frame -> molpy.Frame round-trips
 ///             positions / velocities / charge element-wise (explicit
 ///             H2D on from_molpy, explicit D2H on to_molpy).
 
@@ -115,7 +115,7 @@ TEST(CudaMaterialize, AlignedFieldSet) {
     cuda::destroy(d);
 }
 
-// ── ac-003: molrs.Frame -> cuda::Frame -> to_molpy round-trips ────────
+// ── ac-003: molpy.Frame -> cuda::Frame -> to_molpy round-trips ────────
 
 TEST(CudaMaterialize, RoundTrip) {
     auto fr = make_full_frame();
@@ -127,7 +127,7 @@ TEST(CudaMaterialize, RoundTrip) {
     cuda::Frame d = cuda::from_molpy(*fr);
     ASSERT_EQ(d.n_atoms(), 3);
 
-    // Explicit D2H write-back into the same molrs.Frame.
+    // Explicit D2H write-back into the same molpy.Frame.
     cuda::to_molpy(d, *fr);
 
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");

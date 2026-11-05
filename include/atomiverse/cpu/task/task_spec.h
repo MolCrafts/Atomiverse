@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/units.h"
 
 namespace ATV::cpu::task {
 
@@ -41,20 +42,37 @@ inline const char* task_kind_name(TaskKind kind) noexcept {
 
 // ── Constructor parameter mirrors ─────────────────────────────────────────
 
+/// @brief Mirrors `cpu::PairLJCut` in either constructor form.
+///
+/// Single-type: `epsilon` [eV], `sigma` [Å], empty type table. Per-type: the
+/// `type_*` columns are one coefficient table seen column-wise (one row per
+/// type pair, keyed by frame `kAtom_type` values; unlisted cross pairs mix
+/// Lorentz-Berthelot from the diagonal, a type with no diagonal has no LJ
+/// site) and `epsilon` / `sigma` must be 0 — there is no system-wide pair in
+/// a multi-type system. The codec writes every field in declaration order.
 struct PairLJCutParams {
     double epsilon;
     double sigma;
     double cutoff;
     /// 1-2 / 1-3 / 1-4 pair weights (LAMMPS special_bonds). Default 1 keeps
-    /// every pair. The task codec writes these three scales after cutoff.
-    /// A payload that stops after cutoff is rejected.
+    /// every pair.
     double s12 = 1.0;
     double s13 = 1.0;
     double s14 = 1.0;
+    std::vector<int> type_i;          ///< First type of each table row.
+    std::vector<int> type_j;          ///< Second type of each table row.
+    std::vector<double> type_epsilon; ///< Well depth per row [eV].
+    std::vector<double> type_sigma;   ///< Length scale per row [Å].
+    /// LAMMPS `pair_modify shift`: subtract V(r_c) per pair. Default on, the
+    /// historical behaviour of `cpu::PairLJCut`.
+    bool energy_shift = true;
 };
 inline bool operator==(const PairLJCutParams& a, const PairLJCutParams& b) {
     return a.epsilon == b.epsilon && a.sigma == b.sigma && a.cutoff == b.cutoff
-           && a.s12 == b.s12 && a.s13 == b.s13 && a.s14 == b.s14;
+           && a.s12 == b.s12 && a.s13 == b.s13 && a.s14 == b.s14
+           && a.type_i == b.type_i && a.type_j == b.type_j
+           && a.type_epsilon == b.type_epsilon && a.type_sigma == b.type_sigma
+           && a.energy_shift == b.energy_shift;
 }
 
 struct NeighborListParams {
@@ -128,7 +146,7 @@ inline bool operator==(const ThermoParams& a, const ThermoParams& b) {
 /// @brief Wire mirror of `cpu::XyzRecorder(filename, freq)` — the MD
 ///        trajectory sink.
 ///
-/// The recorder itself needs `ATV_BUILD_IO` (its writer goes through molrs),
+/// The recorder itself needs `ATV_BUILD_IO` (its writer goes through molpy),
 /// but this mirror does not: the wire layer is always compiled, so a payload
 /// naming the recorder stays decodable on a build without the writer and is
 /// refused with a how-to when `TaskMaterializer` tries to construct it —
@@ -308,17 +326,22 @@ inline bool operator==(const BerendsenBarostatParams& a,
 /// Charges are Frame data, not a parameter: the style reads the per-atom
 /// `charge` column [e] of the Frame it is launched on.
 ///
-/// Not mirrored: `set_special_bonds` (the 1-2 / 1-3 / 1-4 weights — the
-/// per-pair scale factors LAMMPS applies to atoms one, two or three bonds
-/// apart). A launcher-dispatched run gets the C++ defaults, i.e. every
-/// weight 1.
+/// `s12` / `s13` / `s14` mirror `set_special_bonds` (the per-pair scale
+/// factors LAMMPS applies to atoms one, two or three bonds apart) and
+/// `coulomb` mirrors `set_coulomb_constant`.
 struct PairCoulCutParams {
     /// Real-space cutoff [Å]. The neighbor list must be built with a cutoff
     /// ≥ this value.
     double cutoff;
+    double s12 = 1.0; ///< 1-2 Coulomb weight.
+    double s13 = 1.0; ///< 1-3 Coulomb weight.
+    double s14 = 1.0; ///< 1-4 Coulomb weight.
+    /// Coulomb constant k [eV·Å/e²] (`cpu::PairCoulCut::set_coulomb_constant`).
+    double coulomb = ATV::units::coulomb;
 };
 inline bool operator==(const PairCoulCutParams& a, const PairCoulCutParams& b) {
-    return a.cutoff == b.cutoff;
+    return a.cutoff == b.cutoff && a.s12 == b.s12 && a.s13 == b.s13
+           && a.s14 == b.s14 && a.coulomb == b.coulomb;
 }
 
 /// @brief Wire mirror of `cpu::CoulLong(alpha, cutoff)` — the real-space
@@ -419,6 +442,59 @@ struct KSpacePppmParams {
 inline bool operator==(const KSpacePppmParams& a, const KSpacePppmParams& b) {
     return a.alpha == b.alpha && a.grid_spacing == b.grid_spacing
            && a.order == b.order;
+}
+
+/// @brief Constructor parameters of `cpu::PairLJCutCoulLong` — fused
+///        multi-type LJ 12-6 + real-space Ewald Coulomb (LAMMPS
+///        `lj/cut/coul/long`), the Amber/GAFF nonbonded style.
+///
+/// The LJ table crosses as parallel columns, one row per type pair (the
+/// wire's variable-length primitive is a run of one scalar type), and is
+/// transposed back into `cpu::LJTypeCoeff` rows at construction. Like
+/// `cpu::PairLJCut`'s table form, unlisted cross pairs take Lorentz-Berthelot
+/// mixing of the diagonal, and a type with no diagonal has no LJ site. Type
+/// keys are frame `kAtom_type` values: `atoms.type_id` when the molpy frame
+/// states one (a force-field atom kind), else Z.
+///
+/// Not an `MDComponentParams` / `MinimizeComponentParams` alternative,
+/// exactly like `KSpacePppmParams`: it is registered beside the task wire, so
+/// a launcher payload cannot name it. Its reciprocal partner is `KSpacePME`
+/// or `KSpacePPPM` at the same α.
+struct PairLJCutCoulLongParams {
+    std::vector<int> type_i;     ///< First type of each LJ row.
+    std::vector<int> type_j;     ///< Second type of each LJ row.
+    std::vector<double> epsilon; ///< Well depth per row [eV].
+    std::vector<double> sigma;   ///< Length scale per row [Å].
+    double alpha;                ///< Ewald α [1/Å]; equals the k-space α.
+    double cutoff;               ///< Shared LJ / Coulomb cutoff [Å].
+    /// 1-2 / 1-3 / 1-4 LJ weights (LAMMPS `special_bonds lj`).
+    std::array<double, 3> special_lj{1.0, 1.0, 1.0};
+    /// 1-2 / 1-3 / 1-4 Coulomb weights (LAMMPS `special_bonds coul`).
+    std::array<double, 3> special_coul{1.0, 1.0, 1.0};
+    /// LAMMPS `pair_modify shift`: subtract V_LJ(rc) per pair.
+    bool energy_shift = false;
+};
+inline bool operator==(const PairLJCutCoulLongParams& a,
+                       const PairLJCutCoulLongParams& b) {
+    return a.type_i == b.type_i && a.type_j == b.type_j
+           && a.epsilon == b.epsilon && a.sigma == b.sigma && a.alpha == b.alpha
+           && a.cutoff == b.cutoff && a.special_lj == b.special_lj
+           && a.special_coul == b.special_coul
+           && a.energy_shift == b.energy_shift;
+}
+
+/// @brief Constructor parameters of `cpu::ImproperCvff(K, d, n)` — the
+///        Amber/GAFF improper V = K (1 + d cos(n φ)), d = ±1.
+///
+/// Registered beside the task wire like `PairLJCutCoulLongParams`.
+struct ImproperCvffParams {
+    std::vector<double> K; ///< Amplitude per improper type [eV].
+    std::vector<int> d;    ///< Sign per type, +1 or −1.
+    std::vector<int> n;    ///< Multiplicity per type, 0..6.
+};
+inline bool operator==(const ImproperCvffParams& a,
+                       const ImproperCvffParams& b) {
+    return a.K == b.K && a.d == b.d && a.n == b.n;
 }
 
 /// @brief Mirrors the `cpu::semiempirical::AM1` constructor exactly.
@@ -1560,7 +1636,11 @@ class TaskSpec {
     /// a fresh payload leaves every existing byte layout untouched, so a v5
     /// decoder written before them reads every previously encodable payload
     /// unchanged. Only a LAYOUT change is a bump.
-    static constexpr std::uint32_t kWireVersion = 6;
+    ///
+    /// v7: `PairLJCutParams` grew the per-type table and `energy_shift`, and
+    /// `PairCoulCutParams` the special-bond weights and Coulomb constant —
+    /// two layout changes, so a v6 payload is refused.
+    static constexpr std::uint32_t kWireVersion = 7;
 
     explicit TaskSpec(MDTask task);
     explicit TaskSpec(SinglePointTask task);

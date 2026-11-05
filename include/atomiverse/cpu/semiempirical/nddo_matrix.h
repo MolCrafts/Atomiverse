@@ -40,8 +40,35 @@ class NDDODiagonalizer {
     void diagonalize_packed(const std::vector<double>& packed,
                             std::vector<double>& coefficients_row_major);
 
+    /// @brief One BLAS-3 pseudo-diagonalization step (MOPAC's idea, done as
+    ///        matrix products): rotate the orbitals of the previous solve by
+    ///        first-order occupied-virtual mixing κ_ia = F_ia / (ε_i − ε_a)
+    ///        in that orbital basis, then re-orthonormalize (Cholesky) the
+    ///        occupied set and the virtual complement.
+    ///
+    /// The orbitals are not eigenvectors, but their occupied space moves
+    /// toward the one that makes F_ov vanish, which is all the density needs;
+    /// at self-consistency F_ov = 0 and the step is the identity.
+    /// @param packed Symmetric Fock lower triangle [eV].
+    /// @param n_occupied Doubly occupied orbital count, 0 < n_occupied < n.
+    /// @param min_gap Smallest admitted ε_a − ε_i [eV]; a smaller gap refuses.
+    /// @param coefficients_row_major Rotated orbitals, row-major n by n.
+    /// @return false, leaving every output untouched, when no orbitals are
+    ///         held yet, a gap is below min_gap, or an orthonormalization
+    ///         fails; the caller then diagonalizes.
+    bool pseudo_diagonalize_packed(const std::vector<double>& packed,
+                                   int n_occupied, double min_gap,
+                                   std::vector<double>& coefficients_row_major);
+
+    /// @brief Forget the held orbitals (the next pseudo step refuses).
+    void reset_orbitals() noexcept { has_orbitals_ = false; }
+
   private:
+    void publish_row_major_(std::vector<double>& coefficients_row_major) const;
+
     int n_ = 0;
+    bool has_orbitals_ = false;
+    std::vector<double> fock_, product_, mixing_, overlap_, rotated_;
     cpu::linalg::RealMatrix matrix_;
     std::vector<double> eigenvalues_;
     std::vector<double> work_;

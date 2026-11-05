@@ -93,6 +93,10 @@ class CG : public cpu::Optimizer {
   private:
     double alpha0_;
 
+    /// @brief `d = -g` over `[0, dim)`; returns the local partial `gᵀg`.
+    static double steepest_descent_(const std::vector<double>& g,
+                                    std::vector<double>& d, int dim);
+
     // Line search. Default StrongWolfe (c2=0.1 for CG); `line_search()` overrides.
     LineSearchMode ls_mode_ = LineSearchMode::StrongWolfe;
     double ls_c1_ = 1e-4;        // Sufficient-decrease constant.

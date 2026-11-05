@@ -3140,10 +3140,11 @@ DFTB2::~DFTB2() {
 }
 
 DFTB2::DFTB2(DFTB2&& other)
-    : cpu::Driver<ATV::scc::Phase>(std::move(other)),
-      cpu::Semiempirical(std::move(other)), scc_tol(std::move(other.scc_tol)),
-      max_scc(std::move(other.max_scc)), mix_beta(std::move(other.mix_beta)),
-      sk_set(std::move(other.sk_set)), boundary(std::move(other.boundary)),
+    : cpu::Semiempirical(std::move(other)),
+      cpu::Driver<ATV::scc::Phase>(std::move(other)),
+      scc_tol(std::move(other.scc_tol)), max_scc(std::move(other.max_scc)),
+      mix_beta(std::move(other.mix_beta)), sk_set(std::move(other.sk_set)),
+      boundary(std::move(other.boundary)),
       ewald_cutoff(std::move(other.ewald_cutoff)),
       ewald_accuracy(std::move(other.ewald_accuracy)),
       charge(std::move(other.charge)),

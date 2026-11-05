@@ -1,5 +1,5 @@
 /// @file cpu/record/mrec.cpp
-/// @brief MrecWriter -- cpu::Frame → molrs exchange frame → streaming
+/// @brief MrecWriter -- cpu::Frame → molpy exchange frame → streaming
 ///        `MrecWriterRef`, one frame per append.
 
 #include "atomiverse/cpu/record/mrec.h"
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include "../io/molrs_species.h"
+#include "../io/molpy_species.h"
 #include "../io/readable_path.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
@@ -23,7 +23,7 @@
 namespace ATV {
 namespace cpu {
 
-/// @brief The molrs side: one persistent exchange frame (so the static
+/// @brief The molpy side: one persistent exchange frame (so the static
 ///        columns stay in place between appends) and the opaque writer handle,
 ///        absent until the first append mints the store and again after close.
 struct MrecWriter::Impl {
@@ -39,7 +39,7 @@ struct MrecWriter::Impl {
     /// `cpu::to_molpy` carries the write-back state (x/y/z, v, f, charge,
     /// image, tag, box, serializable meta). `atomic_number` and `mass` are
     /// per-run immutable *inputs* it deliberately leaves alone; a trajectory
-    /// store needs them anyway, and molrs pins sparsity per block, not per
+    /// store needs them anyway, and molpy pins sparsity per block, not per
     /// column, so they are re-sent with every atoms block rather than once.
     void export_from(const Frame& src) {
         molrs::FrameRef& dst = *frame;
@@ -47,7 +47,7 @@ struct MrecWriter::Impl {
 
         const int n = src.nlocal();
         // kAtom_type carries Z; a negative value is refused, not wrapped.
-        internal::molrs_atomic_numbers(src.span(kAtom_type).data(),
+        internal::molpy_atomic_numbers(src.span(kAtom_type).data(),
                                        static_cast<std::size_t>(n), z_scratch,
                                        "cpu::MrecWriter");
         mass_scratch.resize(static_cast<std::size_t>(n));
@@ -82,14 +82,14 @@ MrecWriter::MrecWriter(std::string path, std::uint64_t flush_every,
                        bool durable)
     : path_(std::move(path)), flush_every_(flush_every), durable_(durable),
       impl_(std::make_unique<Impl>()) {
-    // Loud rather than substituting a suffix: molrs brands a scientific
+    // Loud rather than substituting a suffix: molpy brands a scientific
     // record by its `*.mrec` path (and refuses the retired `.zarr`), and the
     // first append below replaces whatever stands at the path — a guard that
     // only ever deletes a `.mrec` tree is the point of insisting on it here.
     if (!ends_with_mrec(path_))
         throw std::invalid_argument(
             "MrecWriter: output path '" + path_
-            + "' must end in .mrec (molrs scientific record store; "
+            + "' must end in .mrec (molpy scientific record store; "
               "e.g. traj.mrec)");
 }
 
@@ -113,11 +113,11 @@ void MrecWriter::append(const Frame& frame, std::int64_t step, double time,
             + "' is closed (or moved-from) — one writer records one run; "
               "construct a new MrecWriter (or MrecRecorder) for another");
 
-    internal::with_molrs_context("cpu::MrecWriter::append", path_,
+    internal::with_molpy_context("cpu::MrecWriter::append", path_,
                                  [&] { impl_->export_from(frame); });
 
     if (!impl_->writer) {
-        // A fresh writer starts its own trajectory. molrs refuses to mint
+        // A fresh writer starts its own trajectory. molpy refuses to mint
         // over a store that already holds a sequence (never a silent
         // overwrite on its side), so the replacement is explicit here — and
         // bounded to a `*.mrec` path by the constructor check.
@@ -129,14 +129,14 @@ void MrecWriter::append(const Frame& frame, std::int64_t step, double time,
                                        "store: "
                                      + ec.message());
         impl_->writer =
-            internal::with_molrs_context("cpu::MrecWriter::append", path_, [&] {
+            internal::with_molpy_context("cpu::MrecWriter::append", path_, [&] {
                 return molrs::mrec_writer_create({path_.data(), path_.size()},
                                                  *impl_->frame, flush_every_,
                                                  durable_);
             });
     }
 
-    internal::with_molrs_context("cpu::MrecWriter::append", path_, [&] {
+    internal::with_molpy_context("cpu::MrecWriter::append", path_, [&] {
         molrs::mrec_writer_append(**impl_->writer, *impl_->frame, step, time,
                                   has_time);
     });
@@ -146,7 +146,7 @@ void MrecWriter::append(const Frame& frame, std::int64_t step, double time,
 void MrecWriter::flush() {
     if (!impl_ || !impl_->writer)
         return;
-    internal::with_molrs_context("cpu::MrecWriter::flush", path_, [&] {
+    internal::with_molpy_context("cpu::MrecWriter::flush", path_, [&] {
         molrs::mrec_writer_flush(**impl_->writer);
     });
 }
@@ -161,7 +161,7 @@ void MrecWriter::close() {
     // and the writer must read as released even when the commit throws.
     ::rust::Box<molrs::MrecWriterRef> handle = std::move(*impl_->writer);
     impl_->writer.reset();
-    internal::with_molrs_context("cpu::MrecWriter::close", path_, [&] {
+    internal::with_molpy_context("cpu::MrecWriter::close", path_, [&] {
         molrs::mrec_writer_close(std::move(handle));
     });
     committed_at_close_ = appended_;

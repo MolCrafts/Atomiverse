@@ -30,7 +30,9 @@ void ZeroForces::launch(const cpu::LaunchContext& ctx) {
     AccReal* __restrict sp_fx = f.span(kAtom_fx);
     AccReal* __restrict sp_fy = f.span(kAtom_fy);
     AccReal* __restrict sp_fz = f.span(kAtom_fz);
-#pragma omp parallel for schedule(static)
+    // A zero sweep is a few ns per row; only a large frame repays the team.
+    constexpr int kParallelMinRows = 32768;
+#pragma omp parallel for schedule(static) if (n >= kParallelMinRows)
     for (int i = 0; i < n; ++i) {
         sp_fx[i] = 0;
         sp_fy[i] = 0;

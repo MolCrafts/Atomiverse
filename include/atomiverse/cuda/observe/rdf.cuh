@@ -2,10 +2,10 @@
 /// @brief RDF -- header-only radial distribution function observer (async D2H bridge).
 ///
 /// Freezes frame positions + the per-frame cell into a device-ring slot and
-/// streams every captured frame into the molrs g(r) accumulator
+/// streams every captured frame into the molpy g(r) accumulator
 /// (`cpu::compute::RDFAccumulator`). All binning + shell-volume normalization
-/// happens in molrs — no analysis math in C++; the normalized curve and its
-/// molrs bin centers are written in destroy() via the single g(r) emitter
+/// happens in molpy — no analysis math in C++; the normalized curve and its
+/// molpy bin centers are written in destroy() via the single g(r) emitter
 /// `cpu::rdf_write_curve`.
 ///
 /// @see cpu::compute::RDFAccumulator (cpu/observe/trajectory_metrics.h)
@@ -29,14 +29,14 @@
 namespace ATV {
 namespace cuda {
 
-/// @brief Radial distribution function g(r) observer (molrs-backed).
+/// @brief Radial distribution function g(r) observer (molpy-backed).
 ///
 /// Freezes the frame's position arrays (blocked `x|y|z`) plus the 3x3 cell
 /// into a device-ring slot on the compute stream (before the next step mutates
 /// them), so each accumulated frame is a self-consistent step-N snapshot. The
 /// per-frame cell capture makes the accumulation NPT-correct (the cell is read
 /// every capture, not once at build). Reads no neighbor/pair data — the
-/// molrs accumulator builds its own LinkCell per frame.
+/// molpy accumulator builds its own LinkCell per frame.
 ///
 /// @code{.cpp}
 /// sim.on(md::Phase::end_of_step).add(RDF{3.0, 100, "rdf.dat"});
@@ -46,7 +46,7 @@ class RDF : public AsyncObserver {
     /// @param r_max upper edge of the last bin [Å] (> 0). @param n_bins radial
     /// bin count (>= 1). @param filename g(r) output path.
     /// @throws std::invalid_argument on out-of-range parameters (fail-fast,
-    /// no-fallback — refused by molrs `Rdf::new`).
+    /// no-fallback — refused by molpy `Rdf::new`).
     RDF(double r_max, int n_bins, std::string filename)
         : filename_(std::move(filename)),
           acc_(cpu::compute::RDF{n_bins, r_max, /*r_min=*/0.0}.accumulator()) {}
@@ -102,7 +102,7 @@ class RDF : public AsyncObserver {
 
     void on_data_ready(const LaunchContext&, int slot) override {
         // Widen the pinned pos_t/geom_t staging buffers to double for the
-        // molrs accumulator (blocked x|y|z layout is preserved by the freeze).
+        // molpy accumulator (blocked x|y|z layout is preserved by the freeze).
         // Analysis reads the primary stored coordinate only; the mixed-mode
         // correction (< 1 ulp of FP32) is below any bin width.
         // pos_ scratch reuse is safe: callbacks run in defer-stream FIFO order.
@@ -113,7 +113,7 @@ class RDF : public AsyncObserver {
         for (int i = 0; i < 9; ++i)
             cell[static_cast<size_t>(i)] =
                 static_cast<double>(h_cell_[slot][i]);
-        // Host callback: a molrs refusal is counted for on_destroy(), never
+        // Host callback: a molpy refusal is counted for on_destroy(), never
         // thrown across the stream callback.
         try {
             acc_.push(pos_, cell);
@@ -128,7 +128,7 @@ class RDF : public AsyncObserver {
             // CUDA host-side reporting precedent (comm/multi_gpu.cu).
             std::fprintf(stderr,
                          "[cuda::rdf] dropped %d frame(s) rejected by the "
-                         "molrs accumulator (shape mismatch / degenerate "
+                         "molpy accumulator (shape mismatch / degenerate "
                          "cell)\n",
                          n_rejected_);
         }
@@ -163,7 +163,7 @@ class RDF : public AsyncObserver {
 
   private:
     std::string filename_;
-    cpu::compute::RDFAccumulator acc_; ///< molrs streaming g(r) state
+    cpu::compute::RDFAccumulator acc_; ///< molpy streaming g(r) state
 
     int n_atoms_ = 0;
     int n_rejected_ = 0;              ///< frames the accumulator refused

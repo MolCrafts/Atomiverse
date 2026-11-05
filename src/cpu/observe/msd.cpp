@@ -1,6 +1,6 @@
 /// @file cpu/observe/msd.cpp
-/// @brief CPU async MSD observer — streams each snapshot into the molrs
-/// MSD accumulator (bounded memory; all analysis math in molrs).
+/// @brief CPU async MSD observer — streams each snapshot into the molpy
+/// MSD accumulator (bounded memory; all analysis math in molpy).
 
 #include "atomiverse/cpu/observe/msd.h"
 
@@ -48,7 +48,7 @@ void MSD::on_snapshot(const cpu::FrameSnapshot& snap) {
 
     // Snapshot position fields are double (widened from StorageReal at capture).
 
-    // Worker thread: a molrs refusal (wrapped step, bad frame) is tallied for
+    // Worker thread: a molpy refusal (wrapped step, bad frame) is tallied for
     // finalize(), never thrown out of the analysis executor.
     try {
         input_.pack(scratch_, snap.tag, snap.x, snap.y, snap.z, n, snap.step,
@@ -72,7 +72,7 @@ void MSD::finalize() {
                  "(constant count required)",
                  gate_.dropped());
     if (rejected_.count() > 0)
-        ATV_WARN("[msd] molrs refused {} snapshot(s); first: {}",
+        ATV_WARN("[msd] molpy refused {} snapshot(s); first: {}",
                  rejected_.count(), rejected_.first_reason());
     if (n_frames_ <= window_) {
         ATV_WARN("[msd] {} frame(s) accumulated; lags 0..{} need at least {} "
@@ -82,11 +82,11 @@ void MSD::finalize() {
     }
 
     // finalize() runs from the Runtime's shutdown (a destructor path), so a
-    // molrs error is reported, not thrown.
+    // molpy error is reported, not thrown.
     try {
         const cpu::compute::TimeCorrelation curve = acc_.finish();
-        // Einstein D: molrs fits the curve; the relation D = slope / (2·dims)
-        // is the composition molrs' Msd documents for the caller.
+        // Einstein D: molpy fits the curve; the relation D = slope / (2·dims)
+        // is the composition molpy' Msd documents for the caller.
         const cpu::compute::LinearFitResult fit =
             cpu::compute::LinearFit{kFitStart, kFitEnd}.compute(curve);
         msd_curve_ = curve.values();
@@ -94,9 +94,9 @@ void MSD::finalize() {
 
         const std::vector<double> lag_times = curve.lag_times(); // [fs]
         std::ofstream os(output_file_);
-        os << "# MSD via molrs Msd (all time origins, lags 0.." << window_
+        os << "# MSD via molpy Msd (all time origins, lags 0.." << window_
            << ")\n";
-        os << "# Einstein D (molrs LinearFit over lags " << fit.fit_start
+        os << "# Einstein D (molpy LinearFit over lags " << fit.fit_start
            << ".." << fit.fit_end << ") = " << d_
            << " Angstrom^2/fs   (frames=" << n_frames_ << ")\n";
         os << "# t[fs]  MSD[Angstrom^2]\n";

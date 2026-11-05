@@ -13,7 +13,7 @@ corrections. Legend: [Roadmap index](index.md). Trajectory observers:
 | Mulliken | ✓ | ✓ | |
 | Löwdin | ✓ | ○ | |
 | Merz–Kollman / CHELPG | ✓ | ○ | |
-| AM1-BCC (GAFF) / ABCG2 (GAFF2) | ✓ | ○ | `AM1BCCCharges`; ATV AM1 + molrs BCC typing; matches AmberTools antechamber at fixed geometry |
+| AM1-BCC (GAFF) / ABCG2 (GAFF2) | ✓ | ○ | `AM1BCCCharges`; ATV AM1 + molpy BCC typing; matches AmberTools antechamber at fixed geometry |
 | NPA / Hirshfeld / RESP / Gasteiger | ○ | ○ | |
 | QEq (population analysis) | ○ | ○ | Classical QEq MD: [Force Fields](force-fields.md) |
 

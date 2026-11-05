@@ -263,3 +263,16 @@ TEST(DFTBGammaLattice, NonSymmetricCellEnergyAndForcesRotateTogether) {
         EXPECT_NEAR(gz[i], expected[2], 1e-10);
     }
 }
+
+TEST(DFTBOutputs, PythonComponentBaseIsTheObjectAddress) {
+    // nanobind upcasts DFTB0/DFTB2 to their bound `cpu::Component` base
+    // without adjusting the pointer; a nonzero base offset made the Python
+    // `set_evaluator(DFTB2(...))` hand MD a misaligned Component (SIGSEGV in
+    // Runtime::build_plan).
+    DFTB2 dftb2{DftbSkSet::MioSketch};
+    DFTB0 dftb0;
+    EXPECT_EQ(static_cast<const void*>(static_cast<cpu::Component*>(&dftb2)),
+              static_cast<const void*>(&dftb2));
+    EXPECT_EQ(static_cast<const void*>(static_cast<cpu::Component*>(&dftb0)),
+              static_cast<const void*>(&dftb0));
+}

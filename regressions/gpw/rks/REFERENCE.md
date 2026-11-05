@@ -372,8 +372,8 @@ decomposition (Hartree units) from that twin:
 | **total** | **−17.21233714458516** |
 
 This is an **external-engine oracle**, not a golden snapshot of Atomiverse.
-Cross-recorded in-tree by `examples/09_gpw.cpp`, `examples/results/09_gpw.json`,
-and `docs/tutorial/ch09-gpw.md`. Historical engine milestone
+Cross-recorded in-tree by `examples/cpp/10_gpw.cpp` and
+`docs/tutorial/ch09-gpw.md`. Historical engine milestone
 (`6d7f0955`, 2026-06-18) reproduced this pin to ~0.43 mHa.
 
 Optional twin input (for offline re-pin only; **never** launched by ctest):

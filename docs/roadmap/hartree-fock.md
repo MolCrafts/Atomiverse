@@ -9,8 +9,8 @@ Shares one SCF solver with [Kohn–Sham DFT](dft.md): the 2×2 product
 ## Current benchmark evidence
 
 The status block below is generated from the new HF benchmark catalog and
-[the complete GH200 acceptance record](../../benchmarks/scf/results/2026-10-26-gh200/README.md).
-Its [20-row method/backend matrix](../../benchmarks/scf/results/2026-10-26-gh200/acceptance-cpu8-gpu1/matrix.md)
+the complete GH200 acceptance record (campaign `2026-10-26-gh200`).
+Its 20-row method/backend matrix (campaign `2026-10-26-gh200`)
 records accuracy, full-call time and hardware. All 60 required numerical cells
 passed. Public reachability, numerical acceptance, source/build qualification
 and CUDA-only trace qualification remain distinct evidence requirements.

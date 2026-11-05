@@ -1,5 +1,5 @@
 /// @file cpu/record/xyz_recorder.cpp
-/// @brief XyzRecorder -- molrs-backed XYZ append on the MD end_of_step phase.
+/// @brief XyzRecorder -- molpy-backed XYZ append on the MD end_of_step phase.
 ///        MPI-aware: collective owner gather, rank-0 I/O.
 
 #include "atomiverse/cpu/record/xyz_recorder.h"

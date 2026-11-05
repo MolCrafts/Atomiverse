@@ -9,6 +9,13 @@ bond/angle and polynomial-torsion GAFF subset on one GPU. Legend:
 
 **⚡** — only LJ 12-6 (CPU xsimd + CUDA OpenMM tile engine vs LAMMPS/Kokkos).
 
+A molpy GAFF/GAFF2 force field runs from Python through
+`atomiverse.forcefield.compile` — one molpy style to one evaluator: `lj/cut` →
+per-type `PairLJCut`, `coul/cut` → `PairCoulCut` (special weights, stated
+Coulomb constant), harmonic bond/angle, periodic / charmm torsions as
+`DihedralCharmm` rows, `ImproperCvff` / `ImproperHarmonic`; CPU. Ewald styles
+are not translated.
+
 Molecular GAFF/GAFF2 parameterization has a separate
 [scientific benchmark](../../benchmarks/forcefield/README.md), using native
 Atomiverse AM1 charges and molpy typing against live AmberTools. Its scope is
@@ -33,7 +40,7 @@ build provenance pass the scientific benchmark policy.
 | CHARMM torsion | ✓ | ○ | No optional 1–4 pair weights in style |
 | Fourier torsion (Amber/GAFF multi-term) | ✓ | ○ | `DihedralFourier`; LAMMPS `dihedral_style fourier` pin |
 | Harmonic improper | ✓ | ○ | First-class topology |
-| CVFF improper (Amber/GAFF) | ✓ | ○ | `ImproperCvff`; LAMMPS `improper_style cvff` pin |
+| CVFF improper (Amber/GAFF) | ✓ | ○ | `ImproperCvff`; LAMMPS `improper_style cvff` pin; Python `potentials.improper.Cvff` (local runs) |
 | OPLS / CMAP / Class-II cross | ○ | ○ | |
 
 ## 2. Nonbonded

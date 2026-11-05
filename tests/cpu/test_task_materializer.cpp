@@ -872,7 +872,7 @@ TEST(TaskMaterializer, MdBondedFullRunMatchesHandBuiltDriverBitwise) {
 /// @brief Per-frame atom lines of an XYZ trajectory ("symbol x y z" each).
 ///
 /// The comment line is deliberately dropped: it carries typed meta rendered
-/// from a molrs hash map, so its field ORDER is not reproducible between two
+/// from a molpy hash map, so its field ORDER is not reproducible between two
 /// runs even when the physics is bit-identical. The count line and the atom
 /// lines are.
 std::vector<std::vector<std::string>>

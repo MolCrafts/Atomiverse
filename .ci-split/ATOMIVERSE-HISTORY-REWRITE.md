@@ -27,9 +27,7 @@ That replays only commits after `a14449d8`. It does not push.
 
 ## Other local branches
 
-`8429ea47` and `543ebd8f` were not rewritten. `compat/molrs-016` already
-contains the new `origin/dev` and has nine commits of its own on top; leave
-that branch, including its worktree at `Atomiverse-molrs016`.
+`8429ea47` and `543ebd8f` were not rewritten.
 
 ```bash
 git fetch origin

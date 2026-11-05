@@ -14,7 +14,7 @@
 /// modulus. DOI: 10.1063/1.470117.
 ///
 /// **Performance.** Influence geometry tables are rebuilt only when the mesh
-/// or cell changes (not every step). FFTW plans use `FFTW_MEASURE`. Under MPI
+/// or cell changes (not every step). FFTW plans use `FFTW_ESTIMATE` (deterministic across processes). Under MPI
 /// (replicated grid) only rank 0 runs FFT + influence + iFFT; the force grid
 /// is broadcast — every rank still spreads owned charges and interpolates.
 /// (Distributed slab FFT is a future scalability refinement.)

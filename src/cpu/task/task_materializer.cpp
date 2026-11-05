@@ -87,7 +87,7 @@ namespace {
 #if defined(ATV_HAS_MD) && !defined(ATV_HAS_IO)
 /// @brief Reject an `XyzRecorderParams` entry in a build without the writer.
 ///
-/// `cpu::XyzRecorder` writes through molrs and is therefore behind the
+/// `cpu::XyzRecorder` writes through molpy and is therefore behind the
 /// `ATV_BUILD_IO` build flag, while the wire mirror `XyzRecorderParams` and
 /// its component ID are compiled unconditionally. A payload naming the
 /// recorder therefore still *decodes* on an IO-less build and has to be
@@ -326,8 +326,7 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                         .add(std::move(component), entry.binding->order);
                 };
                 if constexpr (std::is_same_v<P, PairLJCutParams>)
-                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
-                             .set_special_bonds(p.s12, p.s13, p.s14));
+                    bind(internal::make_pair_lj_cut(p));
                 else if constexpr (std::is_same_v<P, NeighborListParams>)
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, BondHarmonicParams>)
@@ -364,7 +363,7 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
                     bind(cpu::ImproperHarmonic{p.K, p.chi0});
                 else if constexpr (std::is_same_v<P, PairCoulCutParams>)
-                    bind(cpu::PairCoulCut{p.cutoff});
+                    bind(internal::make_pair_coul_cut(p));
                 else if constexpr (std::is_same_v<P, CoulLongParams>)
                     bind(cpu::CoulLong{p.alpha, p.cutoff});
                 else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
@@ -420,9 +419,7 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             }
             // Categorical path — no public Driver::add
             if constexpr (std::is_same_v<P, PairLJCutParams>)
-                driver.set_evaluator(
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
-                        .set_special_bonds(p.s12, p.s13, p.s14));
+                driver.set_evaluator(internal::make_pair_lj_cut(p));
             else if constexpr (std::is_same_v<P, NeighborListParams>)
                 driver.set_neighbor(cpu::md::NeighborList<>{p.cutoff, p.skin});
             else if constexpr (std::is_same_v<P, BondHarmonicParams>)
@@ -453,7 +450,7 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
                 driver.set_evaluator(cpu::ImproperHarmonic{p.K, p.chi0});
             else if constexpr (std::is_same_v<P, PairCoulCutParams>)
-                driver.set_evaluator(cpu::PairCoulCut{p.cutoff});
+                driver.set_evaluator(internal::make_pair_coul_cut(p));
             else if constexpr (std::is_same_v<P, CoulLongParams>)
                 driver.set_evaluator(cpu::CoulLong{p.alpha, p.cutoff});
             else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
@@ -534,8 +531,7 @@ void register_minimize_entry(minimizer::Minimize& driver,
                         .add(std::move(component), entry.binding->order);
                 };
                 if constexpr (std::is_same_v<P, PairLJCutParams>)
-                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
-                             .set_special_bonds(p.s12, p.s13, p.s14));
+                    bind(internal::make_pair_lj_cut(p));
                 else if constexpr (std::is_same_v<P, NeighborListParams>)
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, LBFGSParams>)
@@ -558,9 +554,7 @@ void register_minimize_entry(minimizer::Minimize& driver,
                 return;
             }
             if constexpr (std::is_same_v<P, PairLJCutParams>)
-                driver.set_evaluator(
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff}
-                        .set_special_bonds(p.s12, p.s13, p.s14));
+                driver.set_evaluator(internal::make_pair_lj_cut(p));
             else if constexpr (std::is_same_v<P, NeighborListParams>)
                 driver.set_neighbor(cpu::md::NeighborList<>{p.cutoff, p.skin});
             else if constexpr (std::is_same_v<P, LBFGSParams>)

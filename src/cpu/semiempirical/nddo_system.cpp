@@ -87,12 +87,6 @@ NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
     }
 }
 
-std::size_t packed_index(int i, int j) noexcept {
-    if (i < j)
-        return packed_index(j, i);
-    return static_cast<std::size_t>(i * (i + 1) / 2 + j);
-}
-
 std::vector<double> atomic_populations_from_packed_density(
     const NDDOSystem& system, const std::vector<double>& packed_density) {
     const std::size_t expected =

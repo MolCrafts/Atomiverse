@@ -102,6 +102,13 @@ class LbfgsHistory {
     std::vector<std::vector<double>> s_history_; ///< Position differences.
     std::vector<std::vector<double>> y_history_; ///< Gradient differences.
     std::vector<double> rho_history_;            ///< 1 / (yᵀs).
+    std::vector<double>
+        yy_history_; ///< yᵀy (global), for the eq. 7.20 scaling.
+    /// `push()` differences into these and swaps them into the ring only when
+    /// the pair passes the curvature test, so a rejected pair never overwrites
+    /// the oldest stored one.
+    std::vector<double> s_spare_;
+    std::vector<double> y_spare_;
     int n_stored_ = 0;
     int oldest_ = 0;
 
@@ -112,7 +119,6 @@ class LbfgsHistory {
     // Recursion workspaces — allocated once in the constructor. No allocation on the
     // hot path, same contract as a component's build()/launch() split.
     std::vector<double> q_ws_;
-    std::vector<double> r_ws_;
     std::vector<double> alpha_ws_;
 };
 

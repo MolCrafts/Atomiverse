@@ -32,7 +32,7 @@ namespace minimizer {
 /// @brief Append the current geometry to an XYZ file each step.
 ///
 /// The first launched step truncates any pre-existing file; every later
-/// step appends one frame through molrs. Respects `stride` to thin long
+/// step appends one frame through molpy. Respects `stride` to thin long
 /// trajectories. The gather scratch and the XYZ writer are members, reused
 /// across launches (no allocation on the steady-state path).
 ///
@@ -73,7 +73,7 @@ class TrajectoryWriter : public cpu::Recorder {
   private:
     std::string filename_;
     int stride_;
-    XYZ writer_;             ///< molrs-backed writer (reused every launch)
+    XYZ writer_;             ///< molpy-backed writer (reused every launch)
     cpu::Frame gathered_{0}; ///< multi-rank gather scratch (rank 0 only)
     int n_written_ = 0;
     bool truncated_ = false;

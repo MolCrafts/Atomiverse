@@ -101,7 +101,7 @@ set(_MAP_md
 # Paths that force a broader classical unit pass (no HF unless also mapped).
 # CI/gate config alone is core smoke — only product/source contracts widen.
 set(_MAP_broad
-  "CMakeLists.txt" "cmake/AtvProductModules" "cmake/MolpyContract"
+  "CMakeLists.txt" "cmake/AtvProductModules"
   "cmake/deps"
 )
 
@@ -314,8 +314,8 @@ execute_process(
     -DCMAKE_BUILD_TYPE=Release
     -DATV_BUILD_CUDA=OFF
     -DATV_BUILD_TESTS=ON
-    -DATV_BUILD_EXAMPLES=OFF
-    -DATV_BUILD_BENCHMARKS=OFF
+    -DATV_BUILD_EXAMPLES=ON
+    -DATV_BUILD_BENCHMARKS=ON
     -DATV_BUILD_HF=${_hf}
     -DATV_BUILD_PW=${_pw}
     -DATV_BUILD_GPW=${_gpw}
@@ -329,9 +329,10 @@ if(NOT _crc EQUAL 0)
   message(FATAL_ERROR "AtvUnitGate: configure failed (${_crc})")
 endif()
 
-# ── Build: the unit executables of the selected modules ─────────────────────
-# A module that is OFF contributes no sources to atv_tests, so the module
-# selection above is the test selection.
+# ── Build: unit executables, examples and perf harnesses of the selected ─────
+# modules. A module that is OFF contributes no sources, so the module selection
+# above is the test selection. Examples and benchmarks are compiled, not run,
+# so API drift breaks the gate instead of rotting silently.
 execute_process(
   COMMAND "${CMAKE_COMMAND}" --build "${_BUILD_DIR}" -j "${_JOBS}"
   RESULT_VARIABLE _brc

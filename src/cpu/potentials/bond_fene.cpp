@@ -79,8 +79,8 @@ void BondFene::compute(const LaunchContext& ctx) {
 
     scratch_.bind(f);
 
-#pragma omp parallel num_threads(                                              \
-        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
+    const int team = scratch_.team(n_tuples);
+#pragma omp parallel num_threads(team) if (team > 1)                           \
     reduction(+ : energy_total) reduction(+ : bad_type)                        \
     reduction(+ : overstretched)
     {

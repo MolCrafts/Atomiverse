@@ -4,8 +4,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from _domains import skip_module_unless
+
+skip_module_unless("ATV_BUILD_HF")
+
 molpy = pytest.importorskip("molpy")
-scf = pytest.importorskip("atomiverse.scf")
+from atomiverse import scf  # noqa: E402
 
 
 def h2_frame():

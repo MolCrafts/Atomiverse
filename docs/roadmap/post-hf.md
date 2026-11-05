@@ -13,7 +13,7 @@ non-converged reference. Legend: [Roadmap index](index.md).
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| RMP2 | ✓ | ✓ | Canonical O(N⁵), energy only on CUDA. `cuda::scf::MP2{cuda_rhf}.run(Frame&)` consumes device RHF orbitals/ERIs; occupied tiling, cuBLAS contractions and CUB spin-channel reduction. Dense reference limit 215 AOs; [GH200 validation](../../benchmarks/cuda/mp2-validation.md) |
+| RMP2 | ✓ | ✓ | Canonical O(N⁵), energy only on CUDA. `cuda::scf::MP2{cuda_rhf}.run(Frame&)` consumes device RHF orbitals/ERIs; occupied tiling, cuBLAS contractions and CUB spin-channel reduction. Dense reference limit 215 AOs; timed by `benchmarks/perf/scf/bench_mp2_cpu_vs_cuda.cu` |
 | UMP2 | ✓ | ○ | `MP2` on `UHF` |
 | ROMP2 | ✓ | ○ | UMP2 on ROHF reference |
 | Frozen-core MP2 | ✓ | ✓ | `MP2::frozen = N`; CUDA canonical RHF energy, pinned by frozen-core water / 6-31G*. CPU RI-MP2 combination reachable |

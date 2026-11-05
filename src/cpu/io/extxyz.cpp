@@ -1,5 +1,5 @@
 /// @file src/cpu/io/extxyz.cpp
-/// @brief Implementation of cpu::load_extxyz (ext)XYZ -> cpu::Frame via molrs.
+/// @brief Implementation of cpu::load_extxyz (ext)XYZ -> cpu::Frame via molpy.
 
 #include "atomiverse/cpu/io/extxyz.h"
 
@@ -16,10 +16,10 @@ Frame load_extxyz(const std::string& path) {
     // Pre-flight the common "wrong filename" case so the message is ours.
     internal::require_readable_file("cpu::load_extxyz", path);
 
-    // molrs parses the atom table + Lattice header and writes Z into
+    // molpy parses the atom table + Lattice header and writes Z into
     // atoms.atomic_number. A readable-but-corrupt file raises `rust::Error`;
     // the wrapper attaches the path, which the bridge message omits.
-    auto fref = internal::with_molrs_context("cpu::load_extxyz", path, [&] {
+    auto fref = internal::with_molpy_context("cpu::load_extxyz", path, [&] {
         return molrs::read_xyz({path.data(), path.size()});
     });
 

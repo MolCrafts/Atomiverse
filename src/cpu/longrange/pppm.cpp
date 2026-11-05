@@ -286,12 +286,15 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         green_.assign(static_cast<std::size_t>(ncomplex), 0.0);
 
         // Serial plans bind to dens_full_ / work_ (reused every step).
+        // FFTW_ESTIMATE, as LAMMPS: a MEASURE plan is picked by timing, so two
+        // processes could run different FFT algorithms and round differently;
+        // a minimization then followed a different path from identical input.
         plan_fwd_ = fftw_plan_dft_r2c_3d(
             K_[0], K_[1], K_[2], dens_full_.data(),
-            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_MEASURE);
+            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_ESTIMATE);
         plan_bwd_ = fftw_plan_dft_c2r_3d(
             K_[0], K_[1], K_[2], reinterpret_cast<fftw_complex*>(work_.data()),
-            dens_full_.data(), FFTW_MEASURE);
+            dens_full_.data(), FFTW_ESTIMATE);
         if (!plan_fwd_ || !plan_bwd_) {
             release_storage();
             throw std::runtime_error("KSpacePPPM: serial r2c/c2r plan failed");
@@ -730,8 +733,8 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
     // The brick family is the multi-rank default. The old "mesh ≤ 64³ &&
     // ranks ≥ 16 → replicated" rule is deleted: it was falsified by the
-    // three-arm matrix in tools/bench_gaff_lammps/README.md (2026-08-26
-    // snapshot, 24048-atom MIL0PEGM18, 32³ mesh), where at np=64 the brick
+    // three-arm GAFF PEO timing matrix (2026-08-26, 24048-atom MIL0PEGM18,
+    // 32³ mesh; harness: benchmarks/compare/gaff-peo-lammps), where at np=64 the brick
     // arm spends 4.78 s in Kspace against 5.43 s replicated — the interval
     // the old rule sent to replicated. The same matrix shows np=256 with
     // the two arms tied (brick 9.85 s vs replicated 9.87 s) because 32

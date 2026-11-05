@@ -85,14 +85,14 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
     scratch_.bind(f);
     const bool do_virial = ctx.stress_requested; // LAMMPS vflag
 
+    const int team = scratch_.team(n_tuples);
+
 // Stiff bonds contribute significantly to the stress tensor. The per-pair
 // virial accumulates into a thread-private `vir_local` and is combined under
 // a critical section (once per thread per step) — an OMP user-defined
 // reduction on Voigt6 would heap-allocate per step, violating the
 // "no allocation in launch()" invariant.
-#pragma omp parallel num_threads(                                              \
-        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
-    reduction(+ : energy_total)
+#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP

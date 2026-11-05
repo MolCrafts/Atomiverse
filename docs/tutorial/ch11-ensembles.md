@@ -480,9 +480,9 @@ barostat's `reads() == Stress` — in
 [`tests/cpu/dynamics/test_md_set_api.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/dynamics/test_md_set_api.cpp).
 Multi-rank NPT correctness (box consistency across ranks) is covered by
 [`tests/mpi/test_nose_hoover_npt_multirank.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/mpi/test_nose_hoover_npt_multirank.cpp).
-The ensemble-means-vs-LAMMPS benchmark is the designated external validation
-case, alongside the LJ and polyethylene cases under
-[`benchmarks/md`](https://github.com/MolCrafts/Atomiverse/blob/master/benchmarks/md).
+The ensemble-means-vs-LAMMPS comparison is the designated external validation
+case; the LJ comparison lives in
+[`benchmarks/compare/lj-lammps`](https://github.com/MolCrafts/Atomiverse/blob/master/benchmarks/compare/lj-lammps).
 
 ## Further reading
 

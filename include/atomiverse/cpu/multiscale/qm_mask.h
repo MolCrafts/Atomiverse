@@ -14,7 +14,7 @@
 ///
 /// Value **0 = MM**; **> 0 = QM with atomic number Z = value**. The force-field
 /// `type` column keeps its ordinary meaning. The column is runtime-only
-/// (`kDynamicFieldId`) and does not cross the molrs boundary in v1.
+/// (`kDynamicFieldId`) and does not cross the molpy boundary in v1.
 ///
 /// **Covalent QM/MM links** are not a separate user list: at
 /// `Qmmm*::build`, cuts are derived from this mask × existing

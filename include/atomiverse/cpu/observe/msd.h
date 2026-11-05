@@ -1,14 +1,14 @@
 /// @file cpu/observe/msd.h
-/// @brief CPU async mean-squared-displacement observer (molrs-backed,
+/// @brief CPU async mean-squared-displacement observer (molpy-backed,
 /// streaming).
 ///
 /// The C++ engine *measures* (each captured `FrameSnapshot`'s positions and
 /// cell are packed into a reusable scratch on the analysis worker thread);
-/// molrs *analyzes* (`compute::Msd` over all time origins — the windowed
+/// molpy *analyzes* (`compute::Msd` over all time origins — the windowed
 /// estimator — folded frame-by-frame through its `CorrelatorAccumulator`, then
 /// the Einstein slope through `compute::LinearFit`). Memory is
 /// O(window · n_atoms) for the lag ring — never O(trajectory). No analysis
-/// math and no record type live in C++ — see molrs/src/compute/time_series/.
+/// math and no record type live in C++ — see molpy crates/molrs/src/compute/time_series/.
 ///
 /// Backend-uniform: regardless of the producing driver/backend, snapshots are
 /// delivered to the CPU analysis executor's ring buffer (CUDA frames after
@@ -29,13 +29,13 @@ namespace ATV {
 
 /// @brief MD async mean-squared-displacement observer.
 ///
-/// Streams positions + cell from each captured `FrameSnapshot` into the molrs
+/// Streams positions + cell from each captured `FrameSnapshot` into the molpy
 /// MSD accumulator; `finalize()` reads the all-origins MSD(t) curve over lags
-/// `0..=window`, composes the Einstein D = slope / (2·3) from a molrs
+/// `0..=window`, composes the Einstein D = slope / (2·3) from a molpy
 /// `LinearFit` over the 20–80 % lag window, and writes both to file.
 ///
 /// The positions must be continuous across periodic boundaries: the cell is
-/// passed with every frame, so molrs refuses a frame whose step from the
+/// passed with every frame, so molpy refuses a frame whose step from the
 /// previous one exceeds half the cell height (a wrapped trajectory) and the
 /// refusal is reported at `finalize()`.
 ///
@@ -57,7 +57,7 @@ class MSD : public cpu::md::AsyncObserver {
     /// @param window      max lag [captured frames] of the curve and the
     ///                    Einstein fit (>= 1); bounds the position ring to
     ///                    O(window · n_atoms) memory. The run must capture at
-    ///                    least `window + 1` frames — molrs refuses a lag with
+    ///                    least `window + 1` frames — molpy refuses a lag with
     ///                    no origin rather than clamping it.
     /// @throws std::invalid_argument when `dt <= 0` or `window < 1`.
     explicit MSD(double dt, int freq = 0, std::string output_file = "msd.dat",
@@ -97,9 +97,9 @@ class MSD : public cpu::md::AsyncObserver {
     cpu::CorrelationInput input_;
     bool invalid_input_ = false;
     cpu::ConstantCountGate gate_;  ///< constant-atom-count admission gate
-    cpu::RejectedFrames rejected_; ///< frames the molrs accumulator refused
+    cpu::RejectedFrames rejected_; ///< frames the molpy accumulator refused
     std::vector<double> scratch_;  ///< reused blocked x|y|z packing buffer
-    cpu::compute::CorrelatorAccumulator acc_; ///< molrs streaming MSD state
+    cpu::compute::CorrelatorAccumulator acc_; ///< molpy streaming MSD state
     int n_frames_ = 0;
     std::vector<double> msd_curve_;
     double d_; ///< Einstein D from the last finalize() (NaN until then)

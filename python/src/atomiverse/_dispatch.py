@@ -31,6 +31,10 @@ EVALUATOR_DISPATCH: dict[type, str] = {
     _cpp.BondFene: "set_evaluator_bond_fene",
     _cpp.DihedralCharmm: "set_evaluator_dihedral_charmm",
     _cpp.ImproperHarmonic: "set_evaluator_improper_harmonic",
+    # Amber/GAFF styles registered beside the MPI task wire (like
+    # KSpacePPPM): local runs only.
+    _cpp.PairLJCutCoulLong: "set_evaluator_pair_lj_cut_coul_long",
+    _cpp.ImproperCvff: "set_evaluator_improper_cvff",
 }
 
 # The PME reciprocal solver is compile-optional (ATV_BUILD_KSPACE / FFTW3),
@@ -48,16 +52,28 @@ if has_domain("pw"):
     EVALUATOR_DISPATCH[_cpp.PW] = "set_evaluator_pw"
 
 
+#: Electronic methods ``bind_evaluator`` mounts by their concrete setter,
+#: outside the mirror table; present only on an extension that carries them.
+NDDO_TYPES: tuple[type, ...] = tuple(
+    getattr(_cpp, name)
+    for name in ("AM1", "RM1", "MNDO", "PM3",
+                 "_CudaAM1", "_CudaRM1", "_CudaMNDO", "_CudaPM3")
+    if hasattr(_cpp, name)
+)
+
+
 def unsupported_evaluator_message(component: object) -> str:
     """Return the ``TypeError`` text for a component no facade accepts.
 
     One message for both facades, for the same reason as one table: the
-    supported list must not go stale on one side.
+    supported list must not go stale on one side. It names the NDDO methods
+    too, since ``bind_evaluator`` accepts them.
 
     @param component: The object handed to ``set_evaluator``.
     @return Message naming the rejected type and every accepted one.
     """
-    supported = ", ".join(t.__name__ for t in EVALUATOR_DISPATCH)
+    accepted = [*EVALUATOR_DISPATCH, *(t for t in NDDO_TYPES if not t.__name__.startswith("_"))]
+    supported = ", ".join(t.__name__ for t in accepted)
     return (
         f"set_evaluator does not support {type(component).__name__}. "
         f"Supported: {supported}, native Component or DriverNode"
@@ -72,10 +88,7 @@ def bind_evaluator(driver: object, component: object) -> None:
     """
     # NDDO has multiple inheritance in C++; bind its concrete borrowed setter
     # instead of asking nanobind to cast through a nonzero DriverNode base.
-    nddo_types = tuple(getattr(_cpp, name) for name in
-                       ("AM1", "RM1", "MNDO", "PM3",
-                        "_CudaAM1", "_CudaRM1", "_CudaMNDO", "_CudaPM3") if hasattr(_cpp, name))
-    if isinstance(component, nddo_types):
+    if isinstance(component, NDDO_TYPES):
         driver.set_evaluator(component)
         return
     method = EVALUATOR_DISPATCH.get(type(component))
@@ -87,4 +100,4 @@ def bind_evaluator(driver: object, component: object) -> None:
         raise TypeError(unsupported_evaluator_message(component))
 
 
-__all__ = ["EVALUATOR_DISPATCH", "unsupported_evaluator_message", "bind_evaluator"]
+__all__ = ["EVALUATOR_DISPATCH", "NDDO_TYPES", "unsupported_evaluator_message", "bind_evaluator"]

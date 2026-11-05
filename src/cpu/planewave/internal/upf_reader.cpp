@@ -78,7 +78,7 @@ int integral_attribute(const std::string& line, const char* attribute,
 }
 
 int atomic_number(const std::string& symbol) {
-    // Reuse molrs' canonical periodic table rather than maintain a second
+    // Reuse molpy' canonical periodic table rather than maintain a second
     // symbol-to-Z mapping. This conversion runs once when admitting the file.
     const auto name = trim(symbol);
     if (name.empty())

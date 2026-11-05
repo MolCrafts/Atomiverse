@@ -1,9 +1,9 @@
 /// @file cpu/observe/vacf.h
-/// @brief CPU async velocity-autocorrelation-function observer (molrs-backed,
+/// @brief CPU async velocity-autocorrelation-function observer (molpy-backed,
 /// streaming).
 ///
 /// The engine measures (each captured `FrameSnapshot`'s velocities are packed
-/// into a reusable scratch); molrs analyzes (`compute::Vacf` through its
+/// into a reusable scratch); molpy analyzes (`compute::Vacf` through its
 /// `CorrelatorAccumulator`: streaming lagged-product sums with the exact
 /// mean-subtraction correction, equal to the batch FFT-ACF to round-off).
 /// Memory is O(resolution · n_atoms) for the lag ring — never O(trajectory).
@@ -25,7 +25,7 @@ namespace ATV {
 
 /// @brief MD async velocity-autocorrelation observer.
 ///
-/// Streams velocities from each captured `FrameSnapshot` into the molrs VACF
+/// Streams velocities from each captured `FrameSnapshot` into the molpy VACF
 /// accumulator; `finalize()` reads the mean-subtracted, unbiased,
 /// DOF-averaged VACF(t) over lags `0..=resolution` and writes it to file.
 /// Requires a constant atom count across the captured window (single-rank /
@@ -35,7 +35,7 @@ class VACF : public cpu::md::AsyncObserver {
     /// @param dt         time between captured frames [fs] (> 0).
     /// @param resolution max lag [captured frames] (>= 1); bounds the velocity
     ///                   ring to O(resolution · n_atoms) memory. The run must
-    ///                   capture at least `resolution + 1` frames — molrs
+    ///                   capture at least `resolution + 1` frames — molpy
     ///                   refuses a lag with no origin rather than clamping it.
     /// @param freq       capture every `freq` steps (0 = every snapshot).
     /// @param output_file VACF(t) output path.
@@ -73,9 +73,9 @@ class VACF : public cpu::md::AsyncObserver {
     cpu::CorrelationInput input_;
     bool invalid_input_ = false;
     cpu::ConstantCountGate gate_;  ///< constant-atom-count admission gate
-    cpu::RejectedFrames rejected_; ///< frames the molrs accumulator refused
+    cpu::RejectedFrames rejected_; ///< frames the molpy accumulator refused
     std::vector<double> scratch_;  ///< reused blocked vx|vy|vz buffer
-    cpu::compute::CorrelatorAccumulator acc_; ///< molrs streaming VACF state
+    cpu::compute::CorrelatorAccumulator acc_; ///< molpy streaming VACF state
     int n_frames_ = 0;
     std::vector<double> vacf_curve_;
 };

@@ -1,12 +1,14 @@
 # Scientific benchmark framework
 
-Status: the first HF implementation is available, 2026-10-26. It provides strict
-method declarations, bounded workers, independent numerical comparisons, complete
-sample records, hardware-annotated matrices, roadmap evidence and the molci 0.3
-observation protocol. See [HF benchmarks](../../benchmarks/scf/README.md) for the
-implemented 20 rows and explicit capability gaps. Cross-domain expansion,
+Status: the framework provides strict method declarations, bounded workers,
+independent numerical comparisons, complete sample records, hardware-annotated
+matrices, roadmap evidence and the molci 0.3 observation protocol. Implemented
+methods are molecular HF and KS-DFT ([`benchmarks/scf`](../../benchmarks/scf/README.md))
+and GAFF parameterization ([`benchmarks/forcefield`](../../benchmarks/forcefield/README.md));
+`python -m benchmarks list` prints their rows. Further domains (MD, post-HF),
 historical regression gates, shard merging and automated trace qualification
 remain separate delivery items; this document specifies their target contracts.
+[`benchmarks/README.md`](../../benchmarks/README.md) is the operational entry point.
 
 ## Purpose and terminology
 
@@ -30,9 +32,7 @@ verdict. A correct calculation can be slow and must remain visible as such.
 
 ```text
 benchmarks/
-  README.md
-  __init__.py                 # local benchmark package identity
-  __main__.py                  # discovery, selection and run/report commands
+  README.md  __init__.py  __main__.py  roadmap.toml  requirements.txt
   framework/
     specification.py          # method, system, participant and check contracts
     execution.py              # isolated workers, timeouts, timing and budgets
@@ -41,22 +41,27 @@ benchmarks/
     provenance.py             # actual hardware and verified source snapshots
     build.py                  # CMake/source/native-library build receipts
   systems/                    # immutable inputs shared by ATV and references
-  scf/
-    bench_rhf.py
-    bench_uhf.py
-    bench_rohf.py
-    bench_ghf.py
-    bench_mp3.py               # future method, not part of the HF delivery
-  dft/
-    bench_rks_pbe_def2_svp.py   # future domain expansion
-  md/
-    bench_nve.py               # future domain expansion
-  roadmap.toml                # stable capability IDs and evidence requirements
+    hf.json  dft.json  gaff.json
+  scf/                        # framework methods: bench_{rhf,uhf,rohf,ghf,rks,uks}.py
+  forcefield/                 # framework method: bench_gaff.py
+  perf/                       # native C++/CUDA timing harnesses (CMake, <build>/bin)
+  compare/                    # scripts against external engines (LAMMPS, OpenMM, SQM)
 ```
 
-The non-HF method paths above are targets. Do not revive the removed C++ registry, CMake option
-or CTest end-to-end runner. Unit tests for the new framework itself can live
-under `tests/`; scientific solves remain outside the unit suite.
+`__main__.py` discovers methods by globbing `benchmarks/*/bench_*.py`, so a
+method file sits exactly one level below `benchmarks/` and must export a
+`Method` named `SPEC`. A new domain (for example `md/bench_nve.py` or
+`scf/bench_mp3.py`) is added the same way; neither exists yet. Native harnesses
+belong only under `perf/`, and cross-code scripts only under `compare/`.
+
+**No results in git.** Campaign bundles, receipts and logs are written under
+`build/` or outside the source tree; `.gitignore` excludes
+`benchmarks/**/results/`. Documentation may quote a number with its hardware
+and date but does not link to a result bundle.
+
+Do not revive the removed C++ registry, CMake option
+or CTest end-to-end runner. Unit tests for the new framework itself live
+under `tests/benchmarks/`; scientific solves remain outside the unit suite.
 
 Each `bench_*.py` owns a scientific method or explicitly named model combination.
 It defines systems, supported participants, calculations, checks, tolerances
@@ -557,19 +562,19 @@ Do not hide a GPU campaign in an ordinary GitHub-hosted CPU job. Automatic
 publication uses the repository's existing credential policy; local design or
 measurement does not imply permission to publish externally.
 
-Implemented HF commands:
+Implemented commands:
 
 ```bash
 python -m benchmarks list
 python -m benchmarks catalog
 python -m benchmarks run --method rhf --tier acceptance --out build/hf-run
 python -m benchmarks.scf.bench_rhf --tier smoke --out build/rhf-smoke
-python -m benchmarks source --out /tmp/source-manifest.json
+python -m benchmarks source --out build/source-manifest.json
 python -m benchmarks attest-build --build-dir build/hf-native --jobs 2 --out build/hf-build-receipt.json
-python -m benchmarks report --input out/campaign/results.json --out out/report
-python -m benchmarks validate --input out/campaign/results.json
-python -m benchmarks roadmap --input out/campaign/results.json --chapter hartree-fock.md --check
-molci validate-snapshot out/report/snapshots/*.json
+python -m benchmarks report --input build/campaign/results.json --out build/report
+python -m benchmarks validate --input build/campaign/results.json
+python -m benchmarks roadmap --input build/campaign/results.json --chapter hartree-fock.md --check
+molci validate-snapshot build/report/snapshots/*.json
 ```
 
 Implemented tiers select predeclared coverage and budgets: `smoke`, `acceptance`

@@ -71,8 +71,8 @@ Compiler per-thread ERI stack is 1,008 B with 128 registers; packing alone
 has no clear measured latency gain. Shared Jacobi, odd shared leading and
 exact-zero work avoidance reduce the target complete HF call to 568 ms
 at 16 waters/112 AOs versus 918 ms CPU direct (8 threads), with unchanged gates.
-Small-case regressions and latency outliers are retained in the
-[HF timing, resource and residency evidence](../../benchmarks/cuda/hf-optimization-20261026.md).
+Small-case regressions and latency outliers were observed in the same
+2026-10-26 HF timing/residency campaign (its write-up is no longer in the tree).
 
 ## CUDA post-HF handoff
 
@@ -103,8 +103,8 @@ The final snapshot has ten HF→MP2 and six 64/65/112/116/117/215 eigen science
 windows with zero H2D/D2H, dynamic Device events, alloc/free APIs or UM
 activity and complete collection. Cold immutable module statics are separate.
 The unchanged UHF MINAO projection module retains its earlier six-window
-residency evidence in the
-[post-HF validation record](../../benchmarks/cuda/mp2-validation.md).
+residency evidence (recorded in the 2026-10-26 post-HF validation; the
+write-up is no longer in the tree).
 
 ## `cuda::pw::PW`
 
@@ -136,6 +136,6 @@ residency evidence in the
   (bound 1e-3 Ry — do not tighten from one cell); forces/stress CPU twins at
   ~1e-12.
 - Large-cell evidence (ES order step 4, Si Γ LSDA, ecut 15 Ry,
-  `benchmarks/cuda/bench_pw_large_cell.cu`): 64 atoms CUDA 9.7 s vs
+  `benchmarks/perf/pw/bench_pw_large_cell.cu`): 64 atoms CUDA 9.7 s vs
   same-settings CPU > 5400 s; 216 atoms CUDA 191 s. 8-atom cells are
   correctness-only. CPU PW is serial (threads enter only via OpenBLAS).

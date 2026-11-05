@@ -47,7 +47,7 @@ struct GaussianBasisSet {
 
 /// @brief A complete contracted Gaussian basis for one element/name.
 struct GaussianBasis {
-    molrs::Element element; ///< chemical element (molrs enum, Z = value).
+    molrs::Element element; ///< chemical element (molpy enum, Z = value).
     std::string name;       ///< basis name, e.g. "DZVP-MOLOPT-GTH".
     std::vector<GaussianBasisSet> sets; ///< contraction sets.
 

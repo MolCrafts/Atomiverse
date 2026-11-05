@@ -1,1 +1,0 @@
-2b8e8c8d61af99399329e703482171239aca8305083b1396608dc54c562eb5d1  .claude/campaigns/dft-gap-wave2-20261026/cuda/before-mp-cuda-pw-spin-smear-stress

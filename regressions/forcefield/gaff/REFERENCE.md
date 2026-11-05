@@ -66,7 +66,7 @@ Step PotEng E_dihed E_impro
 
 One N-methylacetamide, one ethylene carbonate and one toluene (37 atoms,
 65 dihedrals, 9 impropers) in a 30 Å periodic box, GAFF2 + AM1-BCC from
-AmberTools25, converted by `benchmarks/gaff/prmtop_to_lammps.py` (molrs).
+AmberTools25, converted by `benchmarks/compare/gaff-liquid/prmtop_to_lammps.py` (molpy).
 Pair, bond and angle styles are `zero` on the LAMMPS side; Atomiverse
 registers only `DihedralFourier` and `ImproperCvff`.
 
@@ -93,13 +93,13 @@ D. A. Case, “Development and testing of a general amber force field”,
 `reference.txt` is the energy [eV] followed by all eight Cartesian force
 vectors [eV/Å] printed by OpenMM 8.6.1, CUDA double, on Arrhenius GH200.
 It is an engine-generated pin, not a number inferred from Atomiverse.
-The exact oracle input is `tools/bench_gaff_openmm/fragment.data` and
+The exact oracle input is `benchmarks/compare/gaff-peo-openmm/fragment.data` and
 `fragment.ff`. Reproduce inside a GPU allocation:
 
 ```sh
-.openmm-env/bin/python tools/bench_gaff_openmm/compare.py \
-  --data tools/bench_gaff_openmm/fragment.data \
-  --ff tools/bench_gaff_openmm/fragment.ff --atv build-gaff-gpu/bin/bench_gaff \
+"$OPENMM_ENV/bin/python" benchmarks/compare/gaff-peo-openmm/compare.py \
+  --data benchmarks/compare/gaff-peo-openmm/fragment.data \
+  --ff benchmarks/compare/gaff-peo-openmm/fragment.ff --atv "$BUILD/bin/bench_gaff" \
   --out logs/gaff-fragment-pin --engine openmm --platform CUDA \
   --precision double --steps 1 --warmup 1
 ```

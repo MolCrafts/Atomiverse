@@ -63,12 +63,12 @@ Read it before planning work around a method.
 
 ```bash
 git clone --recursive <repo-url> && cd Atomiverse
-# Use the merged local molpy checkout: export ATV_MOLPY_PATH=/path/to/molpy
+# Use the local molpy checkout (default ../molpy): export ATV_MOLPY_PATH=/path/to/molpy
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
       -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON
-cmake --build build --target 02_rhf -j
-./build/examples/02_rhf
+cmake --build build --target 01_rhf -j
+./build/examples/01_rhf
 ```
 
 HF uses OpenMP threads by default. `OMP_NUM_THREADS` or `set_threads(n)` sets
@@ -148,32 +148,15 @@ Project architecture and build conventions: [project contract](docs/developer/pr
 
 ## Example programs
 
-`examples/` is a flat, numbered sequence — one concept per file, read in order.
-Each tutorial chapter is written around the matching example; the table and the
-rules for adding new ones are in [`examples/README.md`](examples/README.md).
-
-| # | File | Method | Build flag |
-|---|------|--------|------------|
-| 01 | `01_scf.cpp` | The bare SCF loop (no chemistry) | — |
-| 02 | `02_rhf.cpp` | Restricted Hartree-Fock (H₂) | `ATV_BUILD_HF` (CUDA twin `02_rhf.cu`) |
-| 03 | `03_uhf.cpp` | Unrestricted Hartree-Fock | `ATV_BUILD_HF` |
-| 04 | `04_uks.cpp` | Kohn-Sham DFT (UKS-LSDA) | `ATV_BUILD_HF` |
-| 05 | `05_geom_opt.cpp` | Geometry optimization (L-BFGS + DFT) | `ATV_BUILD_HF` |
-| 06 | `06_aimd.cpp` | Ab-initio MD (NVT) | `ATV_BUILD_HF` |
-| 07 | `07_md_lj.cpp` | Classical MD (argon, LJ) | — (CUDA twin `07_md_lj.cu`) |
-| 08 | `08_pw.cpp` | Plane-wave DFT (silicon) | `ATV_BUILD_PW` |
-| 09 | `09_gpw.cpp` | GPW DFT (water) | `ATV_BUILD_GPW` |
-| 11 | `11_koopmans.cpp` | Koopmans IP/EA | `ATV_BUILD_HF` |
-| 12 | `12_delta_scf.cpp` | ΔSCF excited state | `ATV_BUILD_HF` |
-| 13 | `13_mp2.cpp` | MP2 correlation | `ATV_BUILD_HF` |
-| 14 | `14_fci.cpp` | Full CI | `ATV_BUILD_HF` |
-| 15 | `15_am1.cpp` | AM1 semiempirical | `ATV_BUILD_SEMIEMPIRICAL` |
-| 16 | `16_density_cube.cpp` | Density cube output | `ATV_BUILD_HF` |
+`examples/` is split by audience: `cpp/` (numbered C++ API examples, one
+concept each), `python/`, `cli/` (input decks) and `extensions/` (out-of-tree
+projects). The full index and the build flag each example needs are in
+[`examples/README.md`](examples/README.md).
 
 ## Requirements
 
 C++20, CMake ≥ 3.18, BLAS/LAPACK (OpenBLAS), and a Rust toolchain for the
-molrs I/O dependency. The Gaussian-SCF kernels need `-march=native`.
+molpy CXX bridge (`molcxx`). The Gaussian-SCF kernels need `-march=native`.
 Plane-wave DFT (`ATV_BUILD_PW`) and reciprocal-space electrostatics
 (`ATV_BUILD_KSPACE`) need FFTW3. The CUDA backend needs the CUDA toolkit and a
 GPU. xtensor is fetched automatically.
@@ -182,10 +165,10 @@ Every method domain has its own `ATV_BUILD_<DOMAIN>` flag, and turning one off
 excludes its sources, headers, tests and regressions rather than merely hiding
 a symbol — so working on one method never means compiling the whole engine.
 
-**molpy** supplies the shared Frame, I/O and analysis APIs. During migration,
-build against the merged local repository (currently `../molrs`) using
-`-DATV_MOLPY_PATH=/path/to/merged/molpy` or the `ATV_MOLPY_PATH` environment
-variable. The C++ bridge is `molcxx/`; the Python wheel is `molpy/`. Both must
+**molpy** supplies the shared Frame, I/O and analysis APIs. Build against the
+local MolCrafts/molpy checkout (default: the sibling `../molpy`), or point
+`-DATV_MOLPY_PATH=/path/to/molpy` / the `ATV_MOLPY_PATH` environment variable
+at another one. The C++ bridge is `molcxx/`; the Python wheel is `molpy/`. Both must
 come from the same checkout. No molpy source revision or release is pinned.
 
 ## License

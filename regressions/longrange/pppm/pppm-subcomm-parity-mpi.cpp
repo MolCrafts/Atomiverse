@@ -11,7 +11,7 @@
 /// J. Comput. Phys. 117, 1 (1995), DOI 10.1006/jcph.1995.1039). No third-party
 /// engine is imported, spawned or read at build or run time. `perf_exempt`:
 /// this slug makes no performance claim — the three-arm wall-clock matrix
-/// belongs to `tools/bench_gaff_lammps/README.md`.
+/// belongs to `benchmarks/compare/gaff-peo-lammps`.
 ///
 /// One binary, two modes:
 ///  - parent (default): re-launches itself through the configured mpiexec

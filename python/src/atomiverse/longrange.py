@@ -79,6 +79,17 @@ require_domain(__name__, "potentials")
 #: Real-space Ewald/PME half — ``cpu::CoulLong(alpha [1/Å], cutoff [Å])``.
 CoulLong = _cpp.CoulLong
 
+#: Fused multi-type LJ 12-6 + real-space Ewald Coulomb, the Amber/GAFF
+#: nonbonded style (LAMMPS ``lj/cut/coul/long``) — ``cpu::PairLJCutCoulLong``.
+#: ``LJCutCoulLong(type_i, type_j, epsilon [eV], sigma [Å], alpha [1/Å],
+#: cutoff [Å], special_lj=(1,1,1), special_coul=(1,1,1), energy_shift=False)``:
+#: one LJ row per type pair, keyed by the frame's atom kind (``atoms.type_id``
+#: when stated, else Z), unlisted pairs mixed Lorentz-Berthelot; separate LJ
+#: and Coulomb 1-2/1-3/1-4 weights (Amber: ``(0, 0, 0.5)`` / ``(0, 0, 5/6)``).
+#: It is the real-space half: pair it with ``KSpacePPPM`` / ``KSpacePME`` at
+#: the same ``alpha``. Local runs only — not carried by the MPI task wire.
+LJCutCoulLong = _cpp.PairLJCutCoulLong
+
 if has_domain("kspace"):
     #: Reciprocal-space Ewald/PME half —
     #: ``cpu::KSpacePME(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6)``.
@@ -86,9 +97,9 @@ if has_domain("kspace"):
     #: ik PPPM reciprocal half —
     #: ``cpu::KSpacePPPM(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6)``.
     KSpacePPPM = _cpp.KSpacePPPM
-    __all__ = ["CoulLong", "KSpacePME", "KSpacePPPM"]
+    __all__ = ["CoulLong", "LJCutCoulLong", "KSpacePME", "KSpacePPPM"]
 else:
-    __all__ = ["CoulLong"]
+    __all__ = ["CoulLong", "LJCutCoulLong"]
 
 
 def __getattr__(name: str) -> Any:

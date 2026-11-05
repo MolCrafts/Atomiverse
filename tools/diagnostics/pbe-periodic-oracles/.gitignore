@@ -1,7 +1,0 @@
-**/scratch/
-__pycache__/
-# Preserve real external stdout as source evidence despite repository *.out.
-!**/qe.out
-!**/cp2k.out
-# Wavefunction restart files are neither pins nor provenance.
-**/*-RESTART.wfn*

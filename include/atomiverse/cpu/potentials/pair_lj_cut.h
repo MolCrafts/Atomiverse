@@ -10,14 +10,15 @@
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/lj_type_coeff.h"
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_partition.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
 namespace cpu {
 
-/// @brief Lennard-Jones 12-6 with shifted potential.
+/// @brief Lennard-Jones 12-6, shifted at the cutoff by default.
 ///
-/// V(r) = 4ε[(σ/r)¹² − (σ/r)⁶] − V_shift
+/// V(r) = 4ε[(σ/r)¹² − (σ/r)⁶] − V_shift   (V_shift = 0 with set_energy_shift(false))
 /// F(r) = (24ε/r)·[2·(σ/r)¹² − (σ/r)⁶]·r̂
 ///
 /// Optional special-bonds (LAMMPS convention): 1-2 / 1-3 / 1-4 weights
@@ -99,6 +100,8 @@ class PairLJCut : public Pair {
 
   public:
     std::string name() const override { return "lj"; }
+    /// A pure function of the geometry (no trial-dependent state).
+    bool trial_invariant() const override { return true; }
 
     /// @brief Enable/disable LAMMPS-style "special bonds" exclusions.
     /// See the class-level special-bonds description for full semantics.
@@ -122,10 +125,17 @@ class PairLJCut : public Pair {
     PairLJCut& set_compute_stress(bool on) &;
     PairLJCut set_compute_stress(bool on) &&;
 
+    /// @brief LAMMPS `pair_modify shift`: subtract V(r_c) from every counted
+    ///        pair so the energy is continuous at the cutoff. Forces are
+    ///        unaffected. Default on (the historical behaviour of this style);
+    ///        a force field that states no shift runs it off.
+    PairLJCut& set_energy_shift(bool on) &;
+    PairLJCut set_energy_shift(bool on) &&;
+
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
-    /// @brief Resident heap bytes: per-thread force accumulators (OMP>1 only)
+    /// @brief Resident heap bytes: per-chunk force accumulators (OMP>1 only)
     /// plus the exclusion map + filtered neighbor list (special-bonds runs).
     /// Classified under the "Pair" category by the driver memory summary.
     std::size_t memory_bytes() const override;
@@ -162,6 +172,9 @@ class PairLJCut : public Pair {
     unsigned long long types_version_ = 0;
     double sigma6_, cutoff_sq_, v_shift_;
 
+    /// `pair_modify shift` — see set_energy_shift. Applied at build().
+    bool energy_shift_ = true;
+
     // Special-bonds weights (LAMMPS special_bonds). Amber: (0, 0, 0.5).
     double s12_ = 1.0, s13_ = 1.0, s14_ = 1.0;
 
@@ -176,9 +189,10 @@ class PairLJCut : public Pair {
     bool has_partial_special_ = false;
     md::SpecialScaleTable special_;
 
-    // Per-thread force reduction buffers
+    // Thread budget, and the per-chunk force buffers + energy/virial sums of
+    // a multi-thread launch.
     int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
+    md::PairChunkScratch chunks_;
 
     // Special-filtered neighbor CSR (+ per-pair scale parallel to neighbors).
     std::vector<int> filtered_neighbors_;
@@ -189,6 +203,11 @@ class PairLJCut : public Pair {
     // Null source denotes an unbuilt cache; version zero is a valid list.
     const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
+    // Team / row balance / touched rows of the list `compute()` walks,
+    // rebuilt when that list changes (null source = not built).
+    md::PairRowPartition partition_;
+    const md::PairList* part_source_ = nullptr;
+    unsigned long long part_version_ = 0;
 };
 
 } // namespace cpu

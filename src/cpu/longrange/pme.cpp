@@ -101,12 +101,13 @@ void KSpacePME::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         grid_.assign(static_cast<std::size_t>(ntot),
                      std::complex<double>(0, 0));
         auto* data = reinterpret_cast<fftw_complex*>(grid_.data());
-        // FFTW_MEASURE times the planner once; overwrites the buffer (ok —
-        // we rebuild before first physics step). Plans bind to this array.
+        // FFTW_ESTIMATE: a timed (MEASURE) plan can differ between processes
+        // and change the rounding, so identical inputs would not reproduce.
+        // Plans bind to this array.
         plan_fwd_ = fftw_plan_dft_3d(K_[0], K_[1], K_[2], data, data,
-                                     FFTW_FORWARD, FFTW_MEASURE);
+                                     FFTW_FORWARD, FFTW_ESTIMATE);
         plan_bwd_ = fftw_plan_dft_3d(K_[0], K_[1], K_[2], data, data,
-                                     FFTW_BACKWARD, FFTW_MEASURE);
+                                     FFTW_BACKWARD, FFTW_ESTIMATE);
         if (!plan_fwd_ || !plan_bwd_) {
             if (plan_fwd_)
                 fftw_destroy_plan(static_cast<fftw_plan>(plan_fwd_));

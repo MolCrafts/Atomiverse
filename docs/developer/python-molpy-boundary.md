@@ -1,13 +1,13 @@
 # Python Frame boundary (acyclic)
 
-The merged MolCrafts/molpy repository owns the native Rust core, the `molcxx`
+The MolCrafts/molpy repository owns the native Rust core, the `molcxx`
 C++ bridge and the Python `molpy._core` extension. Atomiverse links `molcxx`
 and accepts `molpy.Frame` objects through their shared FFI handle.
 
 Both builds use the same local checkout selected by `ATV_MOLPY_PATH`
-(default `../molrs` during migration). No revision is pinned. The CXX bridge
-still exports the upstream `molrs::` namespace; it is not a separate Python
-package dependency.
+(default `../molpy`). No revision is pinned. The CXX bridge exports the
+`molrs::` namespace of molpy's own `crates/molrs` core; it is not a separate
+repository or Python package dependency.
 
 The nanobind bridge obtains the capsule name and ABI line from
 `molpy._core._ffi_abi_token()`. It checks the ABI against the linked

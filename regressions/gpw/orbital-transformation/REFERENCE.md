@@ -31,7 +31,7 @@ CP2K getting-started `h2o` geometry in a **10 Å** cubic cell (coordinates [Å])
 | H | 4.2414 | 5.0000 | 5.5043 |
 
 Settings: cutoff **250 Ry** (regression budget; 400 Ry tutorial class is
-`examples/09_gpw.cpp`), `max_iter=200`, `tol=1e-7`, mix `0.3` (DIIS path).
+`examples/cpp/10_gpw.cpp`), `max_iter=200`, `tol=1e-7`, mix `0.3` (DIIS path).
 
 ### Offline CP2K oracle
 

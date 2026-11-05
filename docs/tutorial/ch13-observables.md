@@ -92,7 +92,7 @@ asynchronous device-to-host copy, on a GPU. The snapshot ring is the universal
 seam between *producing* state and *analysing* it, exactly as the `Force`
 capability is the universal seam between the loop and the physics.
 
-And because the analysis itself lives in molrs, adding an observable is a matter
+And because the analysis itself lives in molpy, adding an observable is a matter
 of bridging one more `compute`/`fit` kernel and wrapping it in a ~60-line
 observer — never of writing new numerics in C++.
 
@@ -112,9 +112,9 @@ Check normalization and drift before interpreting disagreement as new physics.
 These original fragments and build notes are retained for reference.
 They may omit initialization; use the complete model example when running code.
 
-> **The engine measures; molrs analyzes.** The C++ side captures state as the
-> loop runs and hands it to [molrs](https://github.com/MolCrafts/molrs) — the
-> Rust infrastructure library — which owns every piece of analysis math
+> **The engine measures; molpy analyzes.** The C++ side captures state as the
+> loop runs and hands it to [molpy](https://github.com/MolCrafts/molpy) — the
+> infrastructure library — which owns every piece of analysis math
 > (`compute::Msd`, `compute::Vacf`, `compute::Rdf`, `compute::LinearFit`).
 > No correlation function, histogram normalization, or curve fit is
 > reimplemented in C++.
@@ -157,13 +157,13 @@ the analysis side.
 Inside `on_snapshot`/`finalize`, the observer does **no analysis math** and holds
 **no record type**. It packs each snapshot's raw numbers (positions for MSD/RDF,
 velocities for VACF) into a reusable scratch and *streams* the frame into a
-molrs accumulator (`cpu::compute::RDF::accumulator()`, and the
+molpy accumulator (`cpu::compute::RDF::accumulator()`, and the
 `CorrelatorAccumulator` of `cpu::compute::MSD` / `cpu::compute::VACF`);
 `finalize()` just reads the finished curve back. State stays
 bounded — O(bins) for g(r), O(window · n_atoms) for the correlation rings —
 never O(trajectory), so million-step runs stream at constant memory. This is
-the [infrastructure-in-molrs policy](https://github.com/MolCrafts/Atomiverse/blob/master/.claude/specs/molrs-analysis-ffi.md):
-molrs already ships a freud-class analysis library, validated by its own Rust
+the infrastructure-in-molpy policy:
+molpy already ships a freud-class analysis library, validated by its own Rust
 test suite (including streaming-equals-batch equivalence tests). Atomiverse
 exposes it through a thin CXX FFI bridge rather than porting the numerics.
 
@@ -259,7 +259,7 @@ const int n_frames = traj.n_frames_written();   // rank 0
 ```
 
 The element symbol on each atom line comes from the frame's per-atom `type`
-column, which the writer hands to molrs as an atomic number $Z$ — type 18 is
+column, which the writer hands to molpy as an atomic number $Z$ — type 18 is
 written as `Ar`. Frames typed with LAMMPS-style `1..N` type indices will
 therefore carry the element names of those small $Z$ values, which is a
 labelling artefact, not a physics one.
@@ -275,7 +275,7 @@ proceeds.
 
 ### Structure: the radial distribution function `ATV::RDF`
 
-`ATV::RDF` streams each snapshot's positions + cell into the molrs
+`ATV::RDF` streams each snapshot's positions + cell into the molpy
 `RdfAccumulator` — pair binning (per-frame periodic cell list), ideal-gas
 shell-volume normalisation and the bin centres all come from molpy; the
 observer keeps only O(n_bins) state:
@@ -294,17 +294,17 @@ convention), and enough bins that the first peak is well resolved. The output is
 a **physical** result: for the FCC argon system the first g(r) peak sits at the
 nearest-neighbour distance $a/\sqrt{2}$.
 
-> **The engine measures, molrs analyses.** Like `ATV::MSD` and `ATV::VACF`
+> **The engine measures, molpy analyses.** Like `ATV::MSD` and `ATV::VACF`
 > below, the C++ observer only *captures* state — every line of binning and
-> normalisation lives in molrs `compute::Rdf`, reused verbatim across the
+> normalisation lives in molpy `compute::Rdf`, reused verbatim across the
 > Python and WASM bindings. The engine holds no duplicate histogram.
 
 ### Transport, Einstein route: `ATV::MSD` and self-diffusion
 
-`ATV::MSD` streams positions (and the cell) into the molrs `Msd` accumulator —
+`ATV::MSD` streams positions (and the cell) into the molpy `Msd` accumulator —
 every captured frame is a time origin, the windowed estimator — and, at
 `finalize()`, reads the MSD(t) curve over lags `0..window`. The Einstein $D$ is
-composed from it exactly as molrs documents: a molrs `LinearFit` of the curve
+composed from it exactly as molpy documents: a molpy `LinearFit` of the curve
 over the 20–80 % lag window, then $D = \text{slope}/(2d)$ with $d = 3$:
 
 ```cpp
@@ -323,17 +323,17 @@ between captured frames, the abscissa of MSD(t). The optional fourth
 constructor argument `window` (default 256, at least 1) is the largest lag of
 the curve and of the fit; it also bounds the observer's memory to
 O(`window` · n_atoms), so arbitrarily long runs stream at constant footprint.
-The run must capture at least `window + 1` frames: molrs refuses a lag with no
+The run must capture at least `window + 1` frames: molpy refuses a lag with no
 time origin instead of clamping it, and the observer then logs a warning and
 writes nothing (`curve()` stays empty, `diffusion()` stays `NaN`). Positions
 must be continuous across the periodic boundary — the cell travels with every
-frame, and molrs refuses (and the observer counts and reports) a frame whose
+frame, and molpy refuses (and the observer counts and reports) a frame whose
 step from the previous one exceeds half the cell height.
 Convert to laboratory units with $1\ \text{Å}^2/\text{fs} = 0.1\ \text{cm}^2/\text{s}$.
 
 ### Transport, Green-Kubo route: `ATV::VACF`
 
-`ATV::VACF` streams per-frame velocities into the molrs `Vacf` accumulator
+`ATV::VACF` streams per-frame velocities into the molpy `Vacf` accumulator
 (lagged-product sums over a `resolution`-deep ring buffer, each degree of
 freedom mean-subtracted, unbiased $1/(T-t)$ origin average, averaged over
 degrees of freedom — equal to the FFT batch autocorrelation to round-off) and
@@ -389,10 +389,10 @@ Einstein-vs-Green-Kubo agreement is a *physical-consistency* check.
 ## Validation
 
 The analysis chain is validated at two levels, matching the "engine measures,
-molrs analyzes" split.
+molpy analyzes" split.
 
-**molrs owns the numerics.** Each `compute`/`fit` kernel has its own Rust unit
-test inside molrs; those are the source of truth for the mathematics.
+**molpy owns the numerics.** Each `compute`/`fit` kernel has its own Rust unit
+test inside molpy; those are the source of truth for the mathematics.
 
 **The C++ side validates the FFI round-trip and the physics.** Atomiverse tests
 assert that the bridge reproduces the Rust result and that the observable is
@@ -404,7 +404,7 @@ physically correct:
   this to `1e-9` (a **numerical** check) and that a degenerate trajectory
   returns an empty curve rather than aborting.
 - **Einstein D** — a valid trajectory yields a finite $D$; degenerate input
-  yields `NaN`. Numerical correctness of the fit is molrs's responsibility.
+  yields `NaN`. Numerical correctness of the fit is molpy's responsibility.
 - **RDF** — on an FCC argon lattice the first g(r) peak falls at the FCC
   nearest-neighbour distance (a **physical** check), and the histogram
   accumulates across snapshots at the configured frequency.
@@ -419,24 +419,22 @@ number.
 ## Reference provenance
 
 The three observers are exercised as fast, millisecond-scale unit tests that
-assert the molrs FFI round-trip and the observer plumbing:
+assert the molpy FFI round-trip and the observer plumbing:
 
 - MSD (analytic curve to `1e-9`, exact Einstein `LinearFit` slope,
   throw-on-degenerate):
   [`tests/cpu/observe/test_msd.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/observe/test_msd.cpp)
 - VACF (hand-computed curve to `1e-12`, throw-on-degenerate):
   [`tests/cpu/observe/test_vacf.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/observe/test_vacf.cpp)
-- RDF: the g(r) histogram math lives in molrs, not in C++, so the check that
+- RDF: the g(r) histogram math lives in molpy, not in C++, so the check that
   matters is the accumulator-parity test
-  [`tests/cuda/observe/test_rdf_molrs.cu`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cuda/observe/test_rdf_molrs.cu)
+  [`tests/cuda/observe/test_rdf_molpy.cu`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cuda/observe/test_rdf_molpy.cu)
 
 Energy conservation and ensemble-level observable averages are physical
-benchmark cases under [`benchmarks/md`](https://github.com/MolCrafts/Atomiverse/blob/master/benchmarks/md) (the LJ and
-polyethylene validations), not unit tests. The molrs analysis kernels
-(`compute::Msd`/`Vacf`/`Rdf`/`LinearFit`) are validated by molrs's
-own Rust test suite, which is the source of truth for the analysis mathematics;
-the design and task status for the whole bridge live in
-[`.claude/specs/molrs-analysis-ffi.md`](https://github.com/MolCrafts/Atomiverse/blob/master/.claude/specs/molrs-analysis-ffi.md).
+regression and benchmark cases (`regressions/md`,
+[`benchmarks/compare/lj-lammps`](https://github.com/MolCrafts/Atomiverse/blob/master/benchmarks/compare/lj-lammps)), not unit tests. The molpy analysis kernels
+(`compute::Msd`/`Vacf`/`Rdf`/`LinearFit`) are validated by molpy's
+own Rust test suite, which is the source of truth for the analysis mathematics.
 
 ## Questions for reflection
 

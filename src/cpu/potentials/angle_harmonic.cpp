@@ -82,11 +82,11 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
     // outer products per angle otherwise (LAMMPS vflag).
     const bool do_virial = ctx.stress_requested;
 
+    const int team = scratch_.team(n_tuples);
+
 // Thread-private virial combined under a critical section (no per-step heap
 // alloc, unlike an OMP user-defined reduction on Voigt6).
-#pragma omp parallel num_threads(                                              \
-        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
-    reduction(+ : energy_total)
+#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP

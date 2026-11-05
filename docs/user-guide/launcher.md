@@ -4,8 +4,8 @@ The compiled `atomiverse` binary is a **LAMMPS-shaped CLI**. Native input
 needs no Python:
 
 ```bash
-atomiverse -in examples/in.lj
-atomiverse -in examples/in.lj -log log.atv
+atomiverse -in examples/cli/in.lj
+atomiverse -in examples/cli/in.lj -log log.atv
 ```
 
 Python scripts (after a native wheel / `python -m atomiverse install`):

@@ -69,6 +69,12 @@ namespace minimizer {
 /// @endcode
 ///
 /// At step 0: steepest descent (no history). From step 1: L-BFGS direction.
+///
+/// A line search that finds no acceptable step along the L-BFGS direction
+/// resets the curvature history and retries along steepest descent from the
+/// same origin. If that fails too, the origin is kept and the loop is asked
+/// to stop (`stop_reason() == "lbfgs_line_search_failed"`, not converged);
+/// only an evaluator failure during a trial is an exception.
 class LBFGS : public cpu::Optimizer {
   public:
     /// @brief Construct L-BFGS step.
@@ -115,6 +121,10 @@ class LBFGS : public cpu::Optimizer {
     /// @brief Current max force magnitude.
     double max_force() const { return max_force_; }
 
+    /// @brief Line searches rescued by resetting the curvature history and
+    ///        retrying along steepest descent (since `build()`).
+    int line_search_recoveries() const { return ls_recoveries_; }
+
     /// @brief Per-step optimization trace.
     const std::vector<ATV::minimizer::OptRecord>& trace() const {
         return trace_;
@@ -149,6 +159,10 @@ class LBFGS : public cpu::Optimizer {
     /// @brief The all-reduce handed to `LbfgsHistory` — MPI under DD, identity serial.
     double reduce_(double v) const;
 
+    /// @brief `direction_ = -g_ws_` over `[0, dim)`, returning the local
+    /// partials `gᵀg` and `max|direction_|` from the same pass (unreduced).
+    void steepest_descent_(int dim, double& gg, double& dir_max);
+
     /// @brief Last observed `dd->neighbor_generation`; a bump means atom
     /// migration reshuffled local rows → history must be discarded.
     std::uint64_t last_generation_ = ~std::uint64_t{0};
@@ -168,6 +182,12 @@ class LBFGS : public cpu::Optimizer {
     double ls_phi0_ = 0;    // phi(0) = energy at x_prev_ [eV].
     double ls_gd0_ = 0;     // phi'(0) = g . direction (< 0 on descent).
     double ls_dir_max_ = 0; // global max|direction| component, for the cap.
+
+    /// True when this step's direction is steepest descent (no curvature
+    /// pair, or the quasi-Newton direction was not a descent direction).
+    bool steepest_ = true;
+    /// Line searches rescued by a history reset and a steepest-descent retry.
+    int ls_recoveries_ = 0;
 
     // Optimization trace
     std::vector<ATV::minimizer::OptRecord> trace_;

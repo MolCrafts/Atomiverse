@@ -151,10 +151,9 @@ grid, then tighten SCF. Only afterward compare functionals or enlarge the basis.
 
 The retained local C++ fragment mixes undeclared solver objects and repeated
 UKS declarations. It is historical interface material, **not a runnable
-program**. The upstream `examples/04_uks.cpp`, inspected on 16 September
-2026, uses a complete helium frame and the concrete UKS method. Start from
-that complete example at a pinned revision rather than trying to infer
-missing declarations from the fragment. No numerical result was rerun for
+program**. The runnable `examples/cpp/02_open_shell.cpp` solves the hydrogen
+atom with the concrete UHF and UKS (LSDA) methods. Start from that complete
+example rather than trying to infer missing declarations from the fragment. No numerical result was rerun for
 this prose revision.
 
 ## Live Atomic and H₂ Numbers

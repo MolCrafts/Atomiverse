@@ -1,11 +1,11 @@
 /// @file cpu/electrodes/charge_aspc.cpp
-/// @brief Kolafa ASPC (Always-Stable Predictor-Corrector) for electrode charges.
+/// @brief Kolafa ASPC predictor for electrode charges (CG warm start).
 ///
-/// Predictor coefficients for order K (Kolafa, J. Comput. Chem. 25, 335 (2004),
-/// Eq. 10), applied to the K+1 most recent history vectors:
+/// `order` K here counts K+1 history vectors (MetalWalls' convention, i.e.
+/// Kolafa order K−1). The weights are `electronic::kolafa_aspc_weights(K+1)`
+/// (Kolafa, J. Comput. Chem. 25, 335 (2004)):
 ///
-///   B_j = (-1)^(j+1) * j * C(2K+2, K+1-j) / C(2K, K),   j = 1 … K+1
-///   Q_pred(n+1) = sum_j B_j Q(n+1-j)
+///   Q_pred(n+1) = sum_{j=1}^{K+1} B_j Q(n+1-j)
 ///
 /// `omega_[k]` stores B_{K+1-k}, i.e. index 0 = oldest of the window.
 ///
@@ -24,36 +24,13 @@
 
 #include "atomiverse/cpu/electrodes/charge_aspc.h"
 
-#include <limits>
 #include <stdexcept>
+
+#include "atomiverse/cpu/electronic/aspc_predictor.h"
 
 namespace ATV {
 namespace cpu {
 namespace electrodes {
-
-namespace {
-
-/// @brief Exact binomial coefficient \(\binom{n}{k}\).
-/// @param n Upper index.
-/// @param k Lower index.
-/// @return \(\binom{n}{k}\), or 0 when \(k\) is out of \([0,n]\).
-/// @throws std::overflow_error if the value exceeds 64-bit range.
-unsigned long long binomial(int n, int k) {
-    if (k < 0 || k > n)
-        return 0ULL;
-    if (k > n - k)
-        k = n - k;
-    unsigned long long r = 1ULL;
-    for (int i = 1; i <= k; ++i) {
-        const auto num = static_cast<unsigned long long>(n - k + i);
-        if (r > std::numeric_limits<unsigned long long>::max() / num)
-            throw std::overflow_error("ChargeASPC: order too large");
-        r = r * num / static_cast<unsigned long long>(i); // exact at each step
-    }
-    return r;
-}
-
-} // namespace
 
 ChargeASPC::ChargeASPC(int order) : K_(order) {
     if (K_ < 0)
@@ -62,19 +39,9 @@ ChargeASPC::ChargeASPC(int order) : K_(order) {
 }
 
 void ChargeASPC::compute_coefficients_() {
-    omega_.resize(static_cast<std::size_t>(K_ + 1));
-    // Single division per coefficient keeps the value bit-identical to the
-    // exact rational (e.g. 792/252 == 22/7 as doubles) so the K=5 row matches
-    // MetalWalls' hard-coded constants exactly.
-    const double denom = static_cast<double>(binomial(2 * K_, K_));
-    for (int j = 1; j <= K_ + 1; ++j) {
-        const double num =
-            static_cast<double>(j)
-            * static_cast<double>(binomial(2 * K_ + 2, K_ + 1 - j));
-        const double sign = (j % 2 == 1) ? 1.0 : -1.0;
-        // omega_ index 0 = oldest of the K+1 window = B_{K+1}.
-        omega_[static_cast<std::size_t>(K_ + 1 - j)] = sign * num / denom;
-    }
+    // K+1 vectors; kolafa_aspc_weights is newest-first, omega_ oldest-first.
+    const auto b = electronic::kolafa_aspc_weights(K_ + 1);
+    omega_.assign(b.rbegin(), b.rend());
 }
 
 void ChargeASPC::record(const std::vector<double>& Q_scf) {
@@ -105,20 +72,6 @@ bool ChargeASPC::predict(std::vector<double>& Q_predicted) const {
             Q_predicted[i] += w * hk[i];
     }
     return true;
-}
-
-void ChargeASPC::correct(const std::vector<double>& Q_scf,
-                         const std::vector<double>& Q_predicted,
-                         std::vector<double>& Q_corrected) const {
-    if (Q_scf.size() != Q_predicted.size())
-        throw std::invalid_argument("ChargeASPC::correct: size mismatch");
-    const double w_scf =
-        static_cast<double>(K_ + 2) / static_cast<double>(2 * K_ + 3);
-    const double w_pred =
-        static_cast<double>(K_ + 1) / static_cast<double>(2 * K_ + 3);
-    Q_corrected.resize(Q_scf.size());
-    for (std::size_t i = 0; i < Q_scf.size(); ++i)
-        Q_corrected[i] = w_scf * Q_scf[i] + w_pred * Q_predicted[i];
 }
 
 void ChargeASPC::reset() {

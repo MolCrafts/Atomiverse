@@ -2,7 +2,7 @@
 /// @brief Admission gates for CUDA plane-wave strain-FD cell stress.
 ///
 /// Empty-frame, occupation and thermal-width rejection only; no SCF.
-/// Complete stress baselines are opt-in under tools/diagnostics/pbe-family.
+/// Complete-SCF CUDA stress cases live in regressions/pw (rks, collinear-spin).
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"

@@ -3,9 +3,18 @@
 
 #include "atomiverse/cpu/semiempirical/nddo_density.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 #include "atomiverse/cpu/semiempirical/internal/nddo_system.h"
+
+extern "C" {
+// Fortran BLAS rank-k update, the vocabulary of the zgemm_ binding in
+// cpu/linalg/orbital_tangent.cpp; xtensor-blas does not declare dsyrk_.
+void dsyrk_(const char* uplo, const char* trans, const int* n, const int* k,
+            const double* alpha, const double* a, const int* lda,
+            const double* beta, double* c, const int* ldc);
+}
 
 namespace ATV {
 namespace cpu {
@@ -13,21 +22,24 @@ namespace semiempirical {
 
 namespace {
 
-double coeff(const std::vector<double>& c, int mdim, int row1, int col1) {
-    return c[static_cast<std::size_t>(row1 - 1) * static_cast<std::size_t>(mdim)
-             + static_cast<std::size_t>(col1 - 1)];
-}
-
-double column_product_sum(const std::vector<double>& c, int mdim, int i1,
-                          int j1, int first_col1, int last_col1) {
-    if (first_col1 > last_col1) {
-        return 0.0;
+/// Accumulate alpha · Σ_{k in [first, last)} C(i,k) C(j,k) into the upper
+/// triangle of the column-major dense matrix (i <= j). Row-major C with row
+/// stride mdim is, read column-major, Cᵀ with leading dimension mdim, so the
+/// sum is (Cᵀ)ᵀ(Cᵀ) restricted to the rows [first, last) of Cᵀ.
+void accumulate_range(const std::vector<double>& c, int mdim, int norbs,
+                      int first0, int last0, double alpha, double beta,
+                      std::vector<double>& dense) {
+    const int k = last0 - first0;
+    if (k <= 0) {
+        if (beta == 0.0)
+            std::fill(dense.begin(), dense.end(), 0.0);
+        return;
     }
-    double sum = 0.0;
-    for (int k1 = first_col1; k1 <= last_col1; ++k1) {
-        sum += coeff(c, mdim, i1, k1) * coeff(c, mdim, j1, k1);
-    }
-    return sum;
+    // Direct Fortran BLAS: the cxxblas template overload resolves to its
+    // generic scalar loop here, which costs more than the whole BLAS call.
+    const char upper = 'U', transpose = 'T';
+    dsyrk_(&upper, &transpose, &norbs, &k, &alpha, c.data() + first0, &mdim,
+           &beta, dense.data(), &norbs);
 }
 
 void validate_density_input(const std::vector<double>& coefficients,
@@ -55,7 +67,7 @@ void validate_density_input(const std::vector<double>& coefficients,
 
 void NDDODensityBuilder::build_packed(const std::vector<double>& coefficients,
                                       const NDDODensityInput& input,
-                                      std::vector<double>& p) const {
+                                      std::vector<double>& p) {
     validate_density_input(coefficients, input);
     if (&coefficients == &p)
         throw std::invalid_argument("NDDO density output aliases coefficients");
@@ -80,22 +92,22 @@ void NDDODensityBuilder::build_packed(const std::vector<double>& coefficients,
         nu1 = input.n_fractional;
     }
 
-    p.resize(static_cast<std::size_t>(input.norbs)
-             * static_cast<std::size_t>(input.norbs + 1) / 2u);
-    for (int i1 = 1; i1 <= input.norbs; ++i1) {
-        for (int j1 = 1; j1 <= i1; ++j1) {
-            double sum2 =
-                column_product_sum(coefficients, input.mdim, i1, j1, nl2, nu2);
-            sum2 *= input.full_occupancy;
-            const double sum1 =
-                column_product_sum(coefficients, input.mdim, i1, j1, nl1, nu1);
-
-            const std::size_t idx = packed_index(i1 - 1, j1 - 1);
-            p[idx] = (sum2 + sum1 * frac) * sign;
-            if (i1 == j1) {
-                p[idx] += diagonal_constant;
-            }
-        }
+    const int n = input.norbs;
+    dense_.resize(static_cast<std::size_t>(n) * static_cast<std::size_t>(n));
+    // densit.F90: P = sign · (full · Σ_{nl2..nu2} + frac · Σ_{nl1..nu1}) + d.
+    accumulate_range(coefficients, input.mdim, n, nl2 - 1, nu2,
+                     sign * input.full_occupancy, 0.0, dense_);
+    accumulate_range(coefficients, input.mdim, n, nl1 - 1, nu1, sign * frac,
+                     1.0, dense_);
+    p.resize(static_cast<std::size_t>(n) * static_cast<std::size_t>(n + 1)
+             / 2u);
+    std::size_t idx = 0;
+    for (int i = 0; i < n; ++i) {
+        // Upper triangle column i holds P(j, i) for j <= i, contiguous in j.
+        const double* column = dense_.data() + static_cast<std::size_t>(i) * n;
+        for (int j = 0; j <= i; ++j, ++idx)
+            p[idx] = column[j];
+        p[idx - 1] += diagonal_constant;
     }
 }
 

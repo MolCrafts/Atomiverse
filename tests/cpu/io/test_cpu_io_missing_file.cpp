@@ -61,7 +61,7 @@ TEST(CpuIoMissingFile, LoadLammpsDataMissingPathThrows) {
 
 // ── Readable-but-corrupt input ─────────────────────────────────────────────
 //
-// molrs `read_xyz` returns `Result`, so a parse failure is a
+// molpy `read_xyz` returns `Result`, so a parse failure is a
 // `rust::Error` (not a Rust `panic!`, which cxx would turn into an abort),
 // and `load_extxyz` rethrows it as a `std::runtime_error` naming the path.
 TEST(CpuIoCorruptFile, LoadExtxyzCorruptFileThrowsWithPath) {

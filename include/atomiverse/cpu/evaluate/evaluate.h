@@ -121,12 +121,12 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
         history.accept();
     }
 
-    /// @brief User-facing entry — evaluate the system stored in a molrs.Frame.
+    /// @brief User-facing entry — evaluate the system stored in a molpy.Frame.
     ///
-    /// Materializes the molrs.Frame into a transient `cpu::Frame`, runs one evaluation
-    /// pass on it, and writes the results back into the *same* molrs.Frame. The borrow
+    /// Materializes the molpy.Frame into a transient `cpu::Frame`, runs one evaluation
+    /// pass on it, and writes the results back into the *same* molpy.Frame. The borrow
     /// window is strictly this one call.
-    /// @param frame molrs.Frame handle (input geometry + output sink).
+    /// @param frame molpy.Frame handle (input geometry + output sink).
 #ifdef ATV_HAS_MOLPY
     void run(molrs::FrameRef& frame) {
         cpu::Frame work = cpu::from_molpy(frame);

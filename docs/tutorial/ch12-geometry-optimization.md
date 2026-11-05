@@ -43,7 +43,7 @@ by accepting more steps.
 
 ## Tolerance convergence
 
-The aspirin example above uses `max_dtol = 0.1 Å` — quite loose by
+The aspirin example above uses `max_dtol = 0.05 Å` — quite loose by
 quantum-chemistry standards. The reason is that the L-BFGS line search
 is opt-in, and a fixed-step optimizer near a minimum routinely takes
 0.05 Å — 0.2 Å steps when the gradient is small but non-vanishing.

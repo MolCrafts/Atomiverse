@@ -13,9 +13,9 @@ third-party engine is imported, spawned or read at build or run time, and no
 engine snapshot is stored.
 perf_exempt: yes — this slug makes **no** performance claim. The reason the
 subgroup arm exists is wall-clock, but not one wall-clock number is asserted
-here: the three-arm × np ∈ {64, 125, 200, 256} matrix lives in the dated
-snapshot block of `tools/bench_gaff_lammps/README.md` and is explicitly not an
-acceptance criterion (spec `kspace-subcomm`, "Out of scope").
+here: the three-arm × np ∈ {64, 125, 200, 256} timing matrix is measured with
+`benchmarks/compare/gaff-peo-lammps` and is explicitly not an acceptance
+criterion (spec `kspace-subcomm`, "Out of scope").
 
 ### Invariant under test
 
@@ -285,9 +285,8 @@ the same forces as the world-communicator brick arm and as the serial control,
 and it self-reports the arm it actually took.
 
 Out of scope, by spec: the wall-clock case for the third arm
-(`tools/bench_gaff_lammps/README.md`, three-arm × np ∈ {64, 125, 200, 256}
-snapshot); the 24048-atom / 256-rank real-machine parity window
-(`tools/bench_gaff_lammps/widebox_parity.sh`, ac-010); the pure-function
+(`benchmarks/compare/gaff-peo-lammps`, three-arm × np ∈ {64, 125, 200, 256}); the 24048-atom / 256-rank real-machine parity window
+(`benchmarks/compare/gaff-peo-lammps/widebox_parity.sh`, ac-010); the pure-function
 behaviour of `pppm_fft_ranks` / `pppm_select_mesh_arm` (unit-tested serially in
 `tests/cpu/longrange/test_pppm_coul.cpp`); the n = 1/2/4 arm gates
 (`tests/mpi/test_pppm_subcomm_parity.cpp`); the Alltoallv shape; migrating the

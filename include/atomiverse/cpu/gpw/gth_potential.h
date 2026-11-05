@@ -35,7 +35,7 @@ struct GthNonlocalChannel {
 ///   + exp(-(r/rloc)^2/2) * sum_i C[i] (r/rloc)^(2(i-1)).
 /// Nonlocal part: separable Gaussian projectors with couplings `channels[*].h`.
 struct GthPotential {
-    molrs::Element element;   ///< chemical element (molrs enum, Z = value).
+    molrs::Element element;   ///< chemical element (molpy enum, Z = value).
     std::string name;         ///< parameterization, e.g. "GTH-PBE-q6".
     int zion = 0;             ///< number of valence electrons.
     double rloc = 0.0;        ///< local Gaussian radius [Bohr].
