@@ -1258,6 +1258,11 @@ if(ATV_BUILD_CUDA)
             atv_add_test(test_cuda_nvt_sllod_flip_lj
                 cuda/dynamics/test_nvt_sllod_flip_lj.cu)
         endif()
+        # CPU <-> CUDA parity of every classical MD component (one step,
+        # 50-step trajectory) and graphed-vs-eager replay of the same run.
+        if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+            atv_add_test(test_cuda_md_parity cuda/dynamics/test_md_parity.cu)
+        endif()
     endif()
     if(ATV_BUILD_MINIMIZER)
         atv_add_test(test_cuda_minimizer_image_flags

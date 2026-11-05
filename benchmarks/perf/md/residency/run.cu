@@ -3,7 +3,9 @@
 ///        before/after trajectory comparison (iron law 10).
 ///
 /// Usage:
-///   md-residency --case lj-nve|lj-nh|lj-npt|ion-pme --out FILE
+///   md-residency --case lj-nve|lj-nh|lj-npt|lj-langevin|lj-brownian|
+///                       lj-deform|lj-nvelimit|lj-sllod|ion-pme
+///                       --out FILE
 ///                [--steps N] [--warm N] [--side N] [--profile]
 ///
 /// The case runs `warm` steps, then `steps` more inside
@@ -11,6 +13,7 @@
 /// with `--capture-range=cudaProfilerApi` holds only steady steps plus the
 /// end-of-run retrieve. FILE receives the final positions, velocities,
 /// potential and kinetic energy as hexadecimal floats (exact comparison).
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -18,16 +21,23 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/sllod_flow.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cuda/dynamics/brownian.cuh"
+#include "atomiverse/cuda/dynamics/deform.cuh"
+#include "atomiverse/cuda/dynamics/fix_langevin.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover_npt.cuh"
+#include "atomiverse/cuda/dynamics/nve_limit.cuh"
+#include "atomiverse/cuda/dynamics/nvt_sllod.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/longrange/pme.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
@@ -41,7 +51,10 @@ namespace {
 // Argon-like LJ liquid started from a simple cubic lattice at 2x the target
 // temperature: it melts within the warm-up, so the steady interval rebuilds.
 constexpr double kEps = 0.0104, kSigma = 3.4, kCutoff = 8.5, kDt = 2.0;
-constexpr double kTemperature = 120.0, kMass = 39.948;
+// The classical engine works in LJ units (kB = 1, mvv2e = 1): the target
+// temperature is the energy kB·120 K of the eV-valued well depth.
+constexpr double kMass = 39.948;
+const double kTemperature = units::kB_ev_per_k * 120.0;
 
 cpu::Frame make_liquid(int n_side, double density, bool charged) {
     const int n = n_side * n_side * n_side;
@@ -50,8 +63,7 @@ cpu::Frame make_liquid(int n_side, double density, bool charged) {
     cpu::Frame frame(n);
     std::mt19937_64 rng(20261029);
     std::normal_distribution<double> normal(0.0, 1.0);
-    const double sigma_v = std::sqrt(units::kB_ev_per_k * 2.0 * kTemperature
-                                     / (units::mass_v2_to_energy * kMass));
+    const double sigma_v = std::sqrt(2.0 * kTemperature / kMass);
     double p[3] = {};
     int i = 0;
     for (int ix = 0; ix < n_side; ++ix)
@@ -128,28 +140,46 @@ int main(int argc, char** argv) try {
     if (out.empty() || steps < 1 || warm < 1)
         throw std::invalid_argument("--case, --out and positive steps needed");
 
+    static const std::set<std::string> kCases = {
+        "lj-nve",    "lj-nh",       "lj-npt",   "lj-langevin", "lj-brownian",
+        "lj-deform", "lj-nvelimit", "lj-sllod", "ion-pme"};
+    if (!kCases.count(name))
+        throw std::invalid_argument("unknown case " + name);
     const bool charged = name == "ion-pme";
     auto frame = make_liquid(side, 0.0177, charged); // side^3 atoms
     cuda::NeighborList neighbor{kCutoff};
     cuda::md::MD sim;
     sim.set_neighbor_ref(neighbor);
-    if (name == "lj-nve" || name == "lj-nh" || name == "lj-npt") {
+    const bool lj = name.rfind("lj-", 0) == 0;
+    if (lj) {
         sim.set_evaluator(cuda::PairLJCut{kEps, kSigma, kCutoff});
-    } else if (charged) {
+    } else {
         constexpr double alpha = 0.3;
         sim.set_evaluator(
             cuda::PairLJCutCoulLong{{{0, 0, kEps, kSigma}}, alpha, kCutoff});
         sim.on(md::Phase::force).add(cuda::KSpacePME{alpha, 1.0, 5}, 100);
-    } else {
-        throw std::invalid_argument("unknown case " + name);
     }
     if (name == "lj-npt")
         sim.set_integrator(cuda::md::NoseHooverNPT{
             kTemperature, 100 * kDt, units::bar_to_ev_per_a3, 1000 * kDt, kDt});
+    else if (name == "lj-brownian")
+        sim.set_integrator(cuda::md::Brownian{kDt, 1e-3, kTemperature, 5});
+    else if (name == "lj-nvelimit")
+        sim.set_integrator(cuda::md::NVELimit{kDt, 0.05});
+    else if (name == "lj-sllod")
+        sim.set_integrator(cuda::md::NvtSllod{kTemperature, 100 * kDt, kDt,
+                                              1e-6, md::kFlowXY, 3});
     else
         sim.set_integrator(cuda::md::VelocityVerlet{kDt});
     if (name == "lj-nh")
         sim.set_thermostat(cuda::md::NoseHoover{kTemperature, 100 * kDt, kDt});
+    if (name == "lj-langevin")
+        sim.set_thermostat(cuda::md::FixLangevin{kTemperature, kTemperature,
+                                                 100 * kDt, kDt, 5u});
+    if (name == "lj-deform")
+        sim.on(md::Phase::initial_integrate)
+            .add(cuda::md::Deform{cuda::md::Deform::Mode::erate, 1e-7, kDt, 0},
+                 200);
     sim.build();
 
     sim.run(frame, warm);
