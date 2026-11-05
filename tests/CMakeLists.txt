@@ -1190,9 +1190,8 @@ if(ATV_BUILD_HF)
     endif()
     # Mirrors cpu/scf/xc_functional.h — analytical hard-coded goldens (no live libxc).
     atv_add_cpp_test(test_xc_reference         cpu/scf/test_xc_reference.cpp)
-    # scf-review-06-scf-perf: geometry-fixed XCGridBasis cache equivalence —
-    # cached-basis vs rebuild-every-call evaluate_xc_batched are bitwise-equal
-    # for LDA and PBE. Mirrors cpu/scf/xc_grid_engine.h.
+    # Blocked XC engine: cache == build-per-call (bitwise), blocked GEMM vs
+    # pointwise quadrature (LDA/GGA, d shells), restricted == collinear.
     atv_add_cpp_test(test_xc_grid_engine       cpu/scf/test_xc_grid_engine.cpp)
     # libxc test oracle (sub-spec 02 of libxc-xc-fix creates the oracle/
     # subdirectory; this block lands ahead of it so the option flips on

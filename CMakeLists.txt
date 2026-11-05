@@ -678,6 +678,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/internal/cfmm_j.cpp
             src/cpu/scf/internal/density_fitting.cpp
             src/cpu/scf/internal/xc_response_kernel.cpp
+            src/cpu/scf/xc_grid_engine.cpp
             src/cpu/scf/internal/tda_gradient.cpp
             src/cpu/scf/internal/mp2_gradient.cpp
             src/cpu/scf/internal/ccsd_gradient.cpp

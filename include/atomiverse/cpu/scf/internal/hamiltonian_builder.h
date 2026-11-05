@@ -117,11 +117,12 @@ class HamiltonianBuilder {
     double memory_mb_ = 4000.0; ///< ExactJK cache budget from prepare().
     bool mpi_ = false;          ///< ExactJK MPI distribution from prepare().
     MolecularGrid grid_;        ///< KS XC grid (empty for HF).
-    /// Geometry-fixed AO-on-grid basis (Phi, and dPhi_x/y/z for GGA), rebuilt
-    /// only per geometry: `prepare()` invalidates it (built=false) and the
-    /// first KS `step()` lazily builds it, so the ~G·N transcendental basis
-    /// evaluations are hoisted out of the SCF iteration loop. `mutable` because
-    /// `step()` is const. GGA cost is 4×G·N doubles (see xc_grid_engine.h).
+    /// Geometry-fixed, block-compacted AO-on-grid basis (values, and
+    /// gradients for GGA), rebuilt only per geometry: `prepare()` invalidates
+    /// it (built=false) and the first KS `step()` lazily builds it, so the
+    /// transcendental basis evaluations are hoisted out of the SCF iteration
+    /// loop. `mutable` because `step()` is const. Memory is the screened
+    /// block product (see xc_grid_engine.h).
     mutable XCGridBasis xc_basis_;
     RI ri_ = RI::None; ///< Density-fitting mode set by prepare().
     Coulomb coulomb_ = Coulomb::Direct; ///< J-matrix algorithm.
