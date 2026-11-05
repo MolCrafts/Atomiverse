@@ -332,9 +332,7 @@ struct MinimizeHandle {
         cpu::task::DispatchResult dispatched{cpu::Frame(0), {}};
         {
             nb::gil_scoped_release release;
-            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD,
-                                                 cpu::task::kProtocolVersion,
-                                                 /*do_handshake=*/false);
+            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD);
             dispatched = dispatcher.dispatch(spec, std::move(work));
         }
         cpu::to_molpy(dispatched.frame, *frame);

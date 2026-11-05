@@ -1,5 +1,5 @@
 /// @file cpu/task/task_codec.cpp
-/// @brief TaskSpec v7 typed-sum codec; no historic decoder.
+/// @brief TaskSpec typed-sum codec; no compatibility decoder.
 
 #include "atomiverse/cpu/task/task_codec.h"
 
@@ -911,10 +911,7 @@ Phase read_phase(Reader& r, const char* domain) {
     return static_cast<Phase>(slot);
 }
 
-void write_header(Writer& w, const char (&magic)[4]) {
-    w.raw(magic);
-    w.u32(TaskSpec::kWireVersion);
-}
+void write_header(Writer& w, const char (&magic)[4]) { w.raw(magic); }
 
 void read_header(Reader& r, const char (&magic)[4]) {
     char actual[4];
@@ -922,12 +919,6 @@ void read_header(Reader& r, const char (&magic)[4]) {
         byte = static_cast<char>(r.u8());
     if (std::memcmp(actual, magic, sizeof(actual)) != 0)
         throw std::runtime_error("task_codec: bad magic");
-    const std::uint32_t version = r.u32();
-    if (version != TaskSpec::kWireVersion)
-        throw std::runtime_error("task_codec: wire version "
-                                 + std::to_string(version)
-                                 + " does not match exact version "
-                                 + std::to_string(TaskSpec::kWireVersion));
 }
 
 } // namespace

@@ -331,9 +331,7 @@ struct MdHandle {
         cpu::Frame result(0);
         {
             nb::gil_scoped_release release;
-            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD,
-                                                 cpu::task::kProtocolVersion,
-                                                 /*handshake=*/false);
+            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD);
             result = dispatcher.dispatch(spec, std::move(work)).frame;
         }
         result.restore_import_order(import_tags.data(), n_import);

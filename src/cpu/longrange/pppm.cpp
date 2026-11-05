@@ -1071,7 +1071,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             digest = mix(digest, K2);
             digest = mix(digest, fft_ranks_resolved_);
             digest = mix(digest, static_cast<long long>(mesh_arm_));
-            comm::require_collective_fingerprint(/*version=*/1, digest, comm,
+            comm::require_collective_fingerprint(digest, comm,
                                                  "KSpacePPPM::fft_comm");
 
             int cart_rank = 0;

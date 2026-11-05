@@ -114,7 +114,6 @@ void hash_fields(std::uint64_t& hash, const std::vector<ColumnRef>& fields) {
 
 std::uint64_t fingerprint(PackKind kind, const std::vector<ColumnRef>& fields) {
     std::uint64_t hash = 1469598103934665603ull;
-    hash_value(hash, kAtomWireVersion);
     hash_value(hash, kind);
     hash_fields(hash, fields);
     return hash;
@@ -259,7 +258,6 @@ void append_field(Writer& writer, const ColumnRef& col, int row,
 
 bool PackPlan::valid_for(const Frame& frame) const noexcept {
     return frame_owner == &frame && owner != nullptr
-           && version == kAtomWireVersion
            && frame.meta.generation() == frame_generation
            && owner->generation() == block_generation;
 }
@@ -267,8 +265,7 @@ bool PackPlan::valid_for(const Frame& frame) const noexcept {
 void PackPlan::validate(const Frame& frame) const {
     if (frame_owner != &frame || owner == nullptr)
         throw stale_handle_error("PackPlan belongs to a different Frame");
-    if (version != kAtomWireVersion
-        || frame.meta.generation() != frame_generation
+    if (frame.meta.generation() != frame_generation
         || owner->generation() != block_generation)
         throw stale_handle_error(
             "PackPlan is stale after a Frame schema/capacity mutation");
@@ -288,7 +285,6 @@ PackPlan make_wire_plan(const Frame& frame, PackKind kind,
 
 std::uint64_t column_schema_fingerprint(const std::vector<ColumnRef>& fields) {
     std::uint64_t hash = 1469598103934665603ull;
-    hash_value(hash, kAtomWireVersion);
     hash_fields(hash, fields);
     return hash;
 }
@@ -300,15 +296,12 @@ PackPlan make_exchange_plan(Frame& frame) {
     return make_plan(frame, PackKind::Exchange);
 }
 void require_schema_fingerprint(const PackPlan& local,
-                                std::uint64_t remote_fingerprint,
-                                std::uint32_t remote_version) {
-    if (remote_version == local.version
-        && remote_fingerprint == local.fingerprint)
+                                std::uint64_t remote_fingerprint) {
+    if (remote_fingerprint == local.fingerprint)
         return;
     std::ostringstream message;
-    message << "Frame wire schema mismatch: local v" << local.version << "/0x"
-            << std::hex << local.fingerprint << ", remote v" << std::dec
-            << remote_version << "/0x" << std::hex << remote_fingerprint;
+    message << "Frame wire schema mismatch: local 0x" << std::hex
+            << local.fingerprint << ", remote 0x" << remote_fingerprint;
     throw std::runtime_error(message.str());
 }
 
@@ -901,7 +894,6 @@ std::size_t PackPlan::max_row_bytes() const {
 
 std::uint64_t PackPlan::wire_fingerprint(std::uint64_t discriminator) const {
     std::uint64_t hash = 1469598103934665603ull;
-    hash_value(hash, version);
     hash_value(hash, fingerprint);
     hash_value(hash, discriminator);
     return hash;

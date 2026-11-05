@@ -215,8 +215,8 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
 
     const std::vector<ColumnRef> fields = migrated_columns(frame);
     comm::require_collective_fingerprint(
-        comm::kAtomWireVersion, comm::column_schema_fingerprint(fields),
-        dd.cart_comm, "gather_to_root");
+        comm::column_schema_fingerprint(fields), dd.cart_comm,
+        "gather_to_root");
 
     const int local_range_valid =
         frame.nlocal() >= 0 && frame.nlocal() <= frame.capacity();
@@ -332,7 +332,6 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         if (field.wire_id != kDynamicFieldId)
             continue;
         comm::require_collective_fingerprint(
-            comm::kAtomWireVersion,
             static_cast<std::uint64_t>(field.row_bytes()), dd.cart_comm,
             "gather_to_root/runtime-width");
         const std::size_t row_bytes = field.row_bytes();

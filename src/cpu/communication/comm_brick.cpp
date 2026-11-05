@@ -322,7 +322,7 @@ void exchange_along_dim(Frame& frame, md::mpi::DomainDecomposition* dd, int dim,
             frame.set_capacity(static_cast<int>(requested));
             const std::uint64_t fingerprint = plan.fingerprint;
             plan = make_exchange_plan(frame);
-            require_schema_fingerprint(plan, fingerprint, plan.version);
+            require_schema_fingerprint(plan, fingerprint);
         }
         const int first_new = frame.nlocal();
         int slot = frame.nlocal();
@@ -513,7 +513,7 @@ inline void forward_swap(Frame& frame, md::mpi::DomainDecomposition& dd,
         frame.set_capacity(static_cast<int>(requested));
         frame_cap = frame.capacity();
         plan = make_wire_plan(frame, plan.kind, contract);
-        require_schema_fingerprint(plan, fingerprint, plan.version);
+        require_schema_fingerprint(plan, fingerprint);
         ATV_DEBUG("halo_exchange: rank {} grew ghost capacity to {} "
                   "(needed {}) at axis {} round {}",
                   my_rank, frame_cap, needed, swaps[s].dim, swaps[s].round);
