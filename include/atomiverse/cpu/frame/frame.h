@@ -80,9 +80,12 @@ class Frame {
     /// value: `set_nlocal` / `set_nghost` (migration, ghost rebuilds, MC
     /// insert/delete), `copy_row` / `copy_row_from` (exchange compaction,
     /// spatial sort), `set_capacity`, `restore_import_order`, construction
-    /// and assignment. Position refreshes leave it alone. Caches of resolved
-    /// row indices (`BondedTupleCache`) key on it instead of re-reading tags.
-    /// Writing tag columns through raw spans is not tracked.
+    /// and assignment, and republishing the tag index (`clear_tag_index` /
+    /// `rebuild_tag_index` — how a reorder through raw columns announces
+    /// itself, as `md::notify_sorted` does). Position refreshes leave it
+    /// alone. Caches of resolved row indices (`BondedTupleCache`,
+    /// `FixSettle`) key on it instead of re-reading tags. Permuting raw
+    /// columns without republishing the index is not tracked.
     std::uint64_t row_revision() const noexcept { return row_revision_; }
 
     /// LAMMPS-shaped chunked capacity growth over the canonical atoms Block.

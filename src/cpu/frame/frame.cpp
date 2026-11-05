@@ -863,7 +863,12 @@ TagInt Frame::acquire_tag() {
     return static_cast<TagInt>(next.get()++);
 }
 
-void Frame::clear_tag_index() { meta.get(kTagIndex).clear(); }
+void Frame::clear_tag_index() {
+    meta.get(kTagIndex).clear();
+    // Republishing the index is how a reorder done through raw columns
+    // announces itself (md::notify_sorted).
+    touch_rows_();
+}
 
 void Frame::release_tag_index() {
     TagIndex fresh;
@@ -873,6 +878,7 @@ void Frame::release_tag_index() {
 void Frame::rebuild_tag_index(int begin, int end) {
     if (begin < 0 || end < begin || end > n_total())
         throw std::out_of_range("Frame tag-index range is invalid");
+    touch_rows_();
     auto& index = meta.get(kTagIndex);
     const TagInt* tags = span(kAtom_tag).data();
     index.reserve(index.size() + static_cast<std::size_t>(end - begin));
