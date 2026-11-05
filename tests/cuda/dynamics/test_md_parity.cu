@@ -31,6 +31,8 @@
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/deform.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/fix_rattle.h"
+#include "atomiverse/cpu/dynamics/fix_settle.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
@@ -55,6 +57,8 @@
 #include "atomiverse/cuda/dynamics/brownian.cuh"
 #include "atomiverse/cuda/dynamics/deform.cuh"
 #include "atomiverse/cuda/dynamics/fix_langevin.cuh"
+#include "atomiverse/cuda/dynamics/fix_rattle.cuh"
+#include "atomiverse/cuda/dynamics/fix_settle.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover_npt.cuh"
@@ -99,7 +103,7 @@ constexpr int kTrajectorySteps = 50;
 
 // ── Systems ───────────────────────────────────────────────────────────────
 
-enum class System { lj, ions, chains };
+enum class System { lj, ions, chains, water, ethane };
 
 constexpr double kLjEps = 0.0104, kLjSigma = 3.4, kLjCut = 6.5, kLjSkin = 1.0;
 constexpr double kIonAlpha = 0.34;
@@ -189,6 +193,188 @@ cpu::Frame chains() {
     return f;
 }
 
+/// One femtosecond in the engine's eV·Å·amu time unit (10.18 fs).
+constexpr double kFs = 1.0 / 10.180505;
+/// LJ-unit charge of one elementary charge: qqr2e = 1 holds e²/(4πε₀) =
+/// 14.3996 eV·Å in the charge itself.
+const double kQ = std::sqrt(14.399645);
+
+// TIP3P geometry and charges; LJ on the oxygen only.
+constexpr double kDOH = 0.9572, kDHH = 1.5139;
+constexpr double kWaterCut = 6.0, kWaterAlpha = 0.3;
+
+std::vector<LJTypeCoeff> water_lj() {
+    return {{0, 0, 0.00660, 3.1507}, {1, 1, 0.0, 1.0}, {0, 1, 0.0, 1.0}};
+}
+
+/// Rotate `v` by Rz(c) Ry(b) Rx(a).
+std::array<double, 3> rotate(std::array<double, 3> v, double a, double b,
+                             double c) {
+    auto rx = [&](double t) {
+        v = {v[0], std::cos(t) * v[1] - std::sin(t) * v[2],
+             std::sin(t) * v[1] + std::cos(t) * v[2]};
+    };
+    auto ry = [&](double t) {
+        v = {std::cos(t) * v[0] + std::sin(t) * v[2], v[1],
+             -std::sin(t) * v[0] + std::cos(t) * v[2]};
+    };
+    auto rz = [&](double t) {
+        v = {std::cos(t) * v[0] - std::sin(t) * v[1],
+             std::sin(t) * v[0] + std::cos(t) * v[1], v[2]};
+    };
+    rx(a);
+    ry(b);
+    rz(c);
+    return v;
+}
+
+/// 5x5x5 rigid TIP3P waters (3.1 Å O-O spacing, ~1 g/cm³), each with a
+/// jittered common orientation and a rigid-body velocity (translation plus
+/// rotation), so the constraints hold at the start. Tags equal rows; the
+/// O-H bonds and H-O-H angle carry no potential, only the exclusions.
+cpu::Frame water() {
+    constexpr int side = 5, n_w = side * side * side, n = 3 * n_w;
+    constexpr double a = 3.1, L = side * a;
+    const double half = 0.5 * kDHH;
+    const double h = std::sqrt(kDOH * kDOH - half * half);
+    const double m_o = 15.9994, m_h = 1.008, m_t = m_o + 2 * m_h;
+    // Body frame with the centre of mass at the origin.
+    const double yo = 2 * m_h * h / m_t;
+    const std::array<std::array<double, 3>, 3> body = {
+        {{0.0, yo, 0.0}, {-half, yo - h, 0.0}, {half, yo - h, 0.0}}};
+    cpu::Frame f(n);
+    int w = 0;
+    for (int x = 0; x < side; ++x)
+        for (int y = 0; y < side; ++y)
+            for (int z = 0; z < side; ++z, ++w) {
+                const std::array<double, 3> com = {(x + 0.5) * a, (y + 0.5) * a,
+                                                   (z + 0.5) * a};
+                const double ra = 0.3 * std::sin(1.3 * w),
+                             rb = 0.3 * std::cos(0.7 * w + 0.4),
+                             rc = 0.3 * std::sin(2.3 * w + 1.1);
+                const std::array<double, 3> vcom = {
+                    0.02 * std::sin(0.9 * w), 0.02 * std::cos(1.7 * w),
+                    0.02 * std::sin(0.4 * w + 0.5)};
+                const std::array<double, 3> omega = {
+                    0.1 * std::cos(1.1 * w), 0.1 * std::sin(0.6 * w + 0.2),
+                    0.1 * std::cos(2.9 * w)};
+                for (int s = 0; s < 3; ++s) {
+                    const int i = 3 * w + s;
+                    const auto r = rotate(body[s], ra, rb, rc);
+                    f.span(kAtom_x)[i] = std::fmod(com[0] + r[0] + L, L);
+                    f.span(kAtom_y)[i] = std::fmod(com[1] + r[1] + L, L);
+                    f.span(kAtom_z)[i] = std::fmod(com[2] + r[2] + L, L);
+                    f.span(kAtom_vx)[i] =
+                        vcom[0] + omega[1] * r[2] - omega[2] * r[1];
+                    f.span(kAtom_vy)[i] =
+                        vcom[1] + omega[2] * r[0] - omega[0] * r[2];
+                    f.span(kAtom_vz)[i] =
+                        vcom[2] + omega[0] * r[1] - omega[1] * r[0];
+                    f.span(kAtom_mass)[i] = s == 0 ? m_o : m_h;
+                    f.span(kAtom_tag)[i] = i;
+                    f.span(kAtom_type)[i] = s == 0 ? 0 : 1;
+                    f.span(kAtom_charge)[i] = (s == 0 ? -0.834 : 0.417) * kQ;
+                }
+            }
+    f.box = cpu::Box::cubic(L);
+    f.clear_tag_index();
+    f.rebuild_tag_index(0, n);
+    for (int k = 0; k < n_w; ++k) {
+        f.add_bond(3 * k, 3 * k + 1, 0);
+        f.add_bond(3 * k, 3 * k + 2, 0);
+        f.add_angle(3 * k + 1, 3 * k, 3 * k + 2, 0);
+    }
+    f.build_special_list();
+    return f;
+}
+
+// Ethane, OPLS-AA-like: C-C / C-H bonds (types 0 / 1), H-C-C / H-C-H
+// angles (0 / 1), H-C-C-H torsions, LJ + charges with Amber exclusions.
+constexpr double kCC = 1.529, kCH = 1.09, kHCC = 1.9321; // 110.7 deg
+constexpr double kEthaneCut = 6.0, kEthaneAlpha = 0.3;
+const std::vector<double> kEthBondK = {11.62, 14.74}, kEthBondR0 = {kCC, kCH};
+const std::vector<double> kEthAngleK = {1.626, 1.431},
+                          kEthTheta0 = {kHCC, 1.8814};
+const std::vector<std::vector<TorsionTerm>> kEthTorsion = {{{0.0065, 3, 0.0}}};
+
+std::vector<LJTypeCoeff> ethane_lj() {
+    return {
+        {0, 0, 0.002862, 3.5}, {1, 1, 0.001301, 2.5}, {0, 1, 0.001930, 2.958}};
+}
+
+/// 3x3x3 staggered ethanes on a 5 Å lattice, jittered orientations and
+/// small velocities (not constraint-consistent: the first step projects
+/// them). Tags equal rows: C1 C2 H1..H3 (on C1) H4..H6 (on C2).
+cpu::Frame ethane() {
+    constexpr int side = 3, n_m = side * side * side, per = 8, n = per * n_m;
+    constexpr double a = 5.0, L = side * a;
+    const double tp = M_PI - kHCC; // H tilt from the -C-C axis
+    std::array<std::array<double, 3>, per> body{};
+    body[0] = {-0.5 * kCC, 0.0, 0.0};
+    body[1] = {0.5 * kCC, 0.0, 0.0};
+    for (int k = 0; k < 3; ++k) {
+        const double p1 = 2.0 * M_PI * k / 3.0, p2 = p1 + M_PI / 3.0;
+        body[2 + k] = {-0.5 * kCC - kCH * std::cos(tp),
+                       kCH * std::sin(tp) * std::cos(p1),
+                       kCH * std::sin(tp) * std::sin(p1)};
+        body[5 + k] = {0.5 * kCC + kCH * std::cos(tp),
+                       kCH * std::sin(tp) * std::cos(p2),
+                       kCH * std::sin(tp) * std::sin(p2)};
+    }
+    cpu::Frame f(n);
+    int m = 0;
+    for (int x = 0; x < side; ++x)
+        for (int y = 0; y < side; ++y)
+            for (int z = 0; z < side; ++z, ++m) {
+                const std::array<double, 3> c = {(x + 0.5) * a, (y + 0.5) * a,
+                                                 (z + 0.5) * a};
+                const double ra = 1.1 * std::sin(1.3 * m),
+                             rb = 0.9 * std::cos(0.7 * m + 0.4),
+                             rc = 1.3 * std::sin(2.3 * m + 1.1);
+                for (int s = 0; s < per; ++s) {
+                    const int i = per * m + s;
+                    const auto r = rotate(body[s], ra, rb, rc);
+                    f.span(kAtom_x)[i] = std::fmod(c[0] + r[0] + L, L);
+                    f.span(kAtom_y)[i] = std::fmod(c[1] + r[1] + L, L);
+                    f.span(kAtom_z)[i] = std::fmod(c[2] + r[2] + L, L);
+                    f.span(kAtom_vx)[i] = 0.03 * std::sin(1.1 * i);
+                    f.span(kAtom_vy)[i] = 0.03 * std::cos(0.9 * i);
+                    f.span(kAtom_vz)[i] = 0.03 * std::sin(0.5 * i + 1.0);
+                    f.span(kAtom_mass)[i] = s < 2 ? 12.011 : 1.008;
+                    f.span(kAtom_tag)[i] = i;
+                    f.span(kAtom_type)[i] = s < 2 ? 0 : 1;
+                    f.span(kAtom_charge)[i] = (s < 2 ? -0.18 : 0.06) * kQ;
+                }
+            }
+    f.box = cpu::Box::cubic(L);
+    f.clear_tag_index();
+    f.rebuild_tag_index(0, n);
+    for (int k = 0; k < n_m; ++k) {
+        const int b = per * k;
+        f.add_bond(b, b + 1, 0);
+        for (int h = 0; h < 3; ++h) {
+            f.add_bond(b, b + 2 + h, 1);
+            f.add_bond(b + 1, b + 5 + h, 1);
+            f.add_angle(b + 2 + h, b, b + 1, 0);
+            f.add_angle(b + 5 + h, b + 1, b, 0);
+            for (int g = h + 1; g < 3; ++g) {
+                f.add_angle(b + 2 + h, b, b + 2 + g, 1);
+                f.add_angle(b + 5 + h, b + 1, b + 5 + g, 1);
+            }
+            for (int g = 0; g < 3; ++g)
+                f.add_dihedral(b + 2 + h, b, b + 1, b + 5 + g, 0);
+        }
+    }
+    f.build_special_list();
+    return f;
+}
+
+/// H-C-H 1-3 distance of the built ethane.
+double ethane_hh() {
+    const double tp = M_PI - kHCC;
+    return 2.0 * kCH * std::sin(tp) * std::sin(M_PI / 3.0);
+}
+
 cpu::Frame make_system(System s) {
     switch (s) {
     case System::lj:
@@ -197,6 +383,10 @@ cpu::Frame make_system(System s) {
         return lattice(true);
     case System::chains:
         return chains();
+    case System::water:
+        return water();
+    case System::ethane:
+        return ethane();
     }
     return lattice(false);
 }
@@ -229,6 +419,15 @@ const std::vector<int> kCvffN = {2, 3};
 
 // ── Cases ─────────────────────────────────────────────────────────────────
 
+/// SETTLE over every water of `water()` (tags 3k, 3k+1, 3k+2).
+template <typename Settle>
+Settle settle_waters() {
+    Settle settle{2.0 * kFs, kDOH, kDHH};
+    for (int k = 0; k < 125; ++k)
+        settle.add_water(3 * k, 3 * k + 1, 3 * k + 2);
+    return settle;
+}
+
 struct Case {
     std::string name;
     System system;
@@ -238,7 +437,18 @@ struct Case {
     Tolerance tol = kExact;
 };
 
-double cut_of(System s) { return s == System::chains ? kChainCut : kLjCut; }
+double cut_of(System s) {
+    switch (s) {
+    case System::chains:
+        return kChainCut;
+    case System::water:
+        return kWaterCut;
+    case System::ethane:
+        return kEthaneCut;
+    default:
+        return kLjCut;
+    }
+}
 
 void mount_cpu_forces(cpu::md::MD& sim, System s) {
     sim.set_neighbor(cpu::md::NeighborList<>{cut_of(s), kLjSkin, 1, 0, true});
@@ -252,6 +462,19 @@ void mount_cpu_forces(cpu::md::MD& sim, System s) {
         break;
     case System::chains:
         sim.set_evaluator(cpu::PairLJCut{kChainEps, kChainSigma, kChainCut});
+        break;
+    case System::water:
+        sim.set_evaluator(
+            cpu::PairLJCutCoulLong{water_lj(), kWaterAlpha, kWaterCut});
+        sim.set_evaluator(cpu::KSpaceEwald{kWaterAlpha, 1e-8});
+        break;
+    case System::ethane:
+        sim.set_evaluator(
+            cpu::PairLJCutCoulLong{ethane_lj(), kEthaneAlpha, kEthaneCut});
+        sim.set_evaluator(cpu::KSpaceEwald{kEthaneAlpha, 1e-8});
+        sim.set_evaluator(cpu::BondHarmonic{kEthBondK, kEthBondR0});
+        sim.set_evaluator(cpu::AngleHarmonic{kEthAngleK, kEthTheta0});
+        sim.set_evaluator(cpu::DihedralFourier{kEthTorsion});
         break;
     }
 }
@@ -268,6 +491,19 @@ void mount_cuda_forces(cuda::md::MD& sim, System s) {
         break;
     case System::chains:
         sim.set_evaluator(cuda::PairLJCut{kChainEps, kChainSigma, kChainCut});
+        break;
+    case System::water:
+        sim.set_evaluator(
+            cuda::PairLJCutCoulLong{water_lj(), kWaterAlpha, kWaterCut});
+        sim.set_evaluator(cuda::KSpaceEwald{kWaterAlpha, 1e-8});
+        break;
+    case System::ethane:
+        sim.set_evaluator(
+            cuda::PairLJCutCoulLong{ethane_lj(), kEthaneAlpha, kEthaneCut});
+        sim.set_evaluator(cuda::KSpaceEwald{kEthaneAlpha, 1e-8});
+        sim.set_evaluator(cuda::BondHarmonic{kEthBondK, kEthBondR0});
+        sim.set_evaluator(cuda::AngleHarmonic{kEthAngleK, kEthTheta0});
+        sim.set_evaluator(cuda::DihedralFourier{kEthTorsion});
         break;
     }
 }
@@ -462,6 +698,66 @@ std::vector<Case> cases() {
     out.push_back({"Brownian", System::lj, {}, [](cuda::md::MD& s) {
                        s.set_integrator(cuda::md::Brownian{kDt, 1e-4, kT, 11u});
                    }});
+    // Constraints at a 2 fs step: rigid TIP3P through SETTLE, X-H bonds
+    // (and, separately, rigid H-C-H angles) through RATTLE clusters.
+    constexpr double kDt2fs = 2.0 * kFs;
+    out.push_back({"SettleWater", System::water,
+                   [](cpu::md::MD& s) {
+                       s.set_integrator(cpu::md::VelocityVerlet{kDt2fs});
+                       s.set_observer(settle_waters<cpu::md::FixSettle>());
+                   },
+                   [](cuda::md::MD& s) {
+                       s.set_integrator(cuda::md::VelocityVerlet{kDt2fs});
+                       s.set_observer(settle_waters<cuda::md::FixSettle>());
+                   },
+                   kMesh});
+    // Ndof = 6 per water reaches the thermostat's target.
+    out.push_back(
+        {"SettleWaterNoseHoover", System::water,
+         [](cpu::md::MD& s) {
+             s.set_integrator(cpu::md::VelocityVerlet{kDt2fs});
+             s.set_thermostat(cpu::md::NoseHoover{0.02, 20 * kDt2fs, kDt2fs});
+             s.set_observer(settle_waters<cpu::md::FixSettle>());
+         },
+         [](cuda::md::MD& s) {
+             s.set_integrator(cuda::md::VelocityVerlet{kDt2fs});
+             s.set_thermostat(cuda::md::NoseHoover{0.02, 20 * kDt2fs, kDt2fs});
+             s.set_observer(settle_waters<cuda::md::FixSettle>());
+         },
+         kMesh});
+    out.push_back({"RattleXH", System::ethane,
+                   [](cpu::md::MD& s) {
+                       s.set_integrator(cpu::md::VelocityVerlet{kDt2fs});
+                       cpu::md::FixRattle rattle{kDt2fs};
+                       rattle.constrain_bond(1, kCH);
+                       s.set_observer(std::move(rattle));
+                   },
+                   [](cuda::md::MD& s) {
+                       s.set_integrator(cuda::md::VelocityVerlet{kDt2fs});
+                       cuda::md::FixRattle rattle{kDt2fs};
+                       rattle.constrain_bond(1, kCH);
+                       s.set_observer(std::move(rattle));
+                   },
+                   kMesh});
+    out.push_back(
+        {"RattleXHAngles", System::ethane,
+         [](cpu::md::MD& s) {
+             s.set_integrator(cpu::md::VelocityVerlet{kDt2fs});
+             s.set_thermostat(cpu::md::NoseHoover{0.02, 20 * kDt2fs, kDt2fs});
+             cpu::md::FixRattle rattle{kDt2fs};
+             rattle.constrain_bond(1, kCH);
+             rattle.constrain_angle(1, ethane_hh());
+             s.set_observer(std::move(rattle));
+         },
+         [](cuda::md::MD& s) {
+             s.set_integrator(cuda::md::VelocityVerlet{kDt2fs});
+             s.set_thermostat(cuda::md::NoseHoover{0.02, 20 * kDt2fs, kDt2fs});
+             cuda::md::FixRattle rattle{kDt2fs};
+             rattle.constrain_bond(1, kCH);
+             rattle.constrain_angle(1, ethane_hh());
+             s.set_observer(std::move(rattle));
+         },
+         kMesh});
     return out;
 }
 
@@ -664,5 +960,129 @@ TEST(CudaMdParitySeries, PressureSeriesGraphedRowsMatchEagerRows) {
             EXPECT_NEAR(graphed[r][k], eager[r][k],
                         1e-8 * (1.0 + std::abs(eager[r][k])))
                 << "row " << r << " column " << k;
+    }
+}
+
+// ── Constraints: the geometry holds, and an unsatisfiable one faults ──────
+
+namespace {
+
+double distance(const cpu::Frame& f, int i, int j) {
+    double d[3] = {f.span(kAtom_x)[i] - f.span(kAtom_x)[j],
+                   f.span(kAtom_y)[i] - f.span(kAtom_y)[j],
+                   f.span(kAtom_z)[i] - f.span(kAtom_z)[j]};
+    f.box.min_image(d[0], d[1], d[2]);
+    return std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+}
+
+const Case& case_named(const std::string& name) {
+    static const std::vector<Case> all = cases();
+    for (const Case& c : all)
+        if (c.name == name)
+            return c;
+    throw std::invalid_argument("no case " + name);
+}
+
+/// Run `steps` of a case on a caller-built frame (CPU or CUDA driver).
+template <typename Sim, typename Mount, typename Setup>
+void run_on(cpu::Frame& f, System s, Mount mount, Setup setup, int steps) {
+    Sim sim;
+    mount(sim, s);
+    setup(sim);
+    sim.build();
+    sim.run(f, steps);
+}
+
+} // namespace
+
+TEST(CudaMdConstraints, SettleKeepsEveryWaterRigid) {
+    const cpu::Frame f =
+        run_cuda(case_named("SettleWater"), kTrajectorySteps, false);
+    double worst = 0.0;
+    for (int k = 0; k < 125; ++k) {
+        worst = std::max(worst, std::abs(distance(f, 3 * k, 3 * k + 1) - kDOH));
+        worst = std::max(worst, std::abs(distance(f, 3 * k, 3 * k + 2) - kDOH));
+        worst =
+            std::max(worst, std::abs(distance(f, 3 * k + 1, 3 * k + 2) - kDHH));
+    }
+    EXPECT_LT(worst, kDouble ? 1e-10 : 1e-4);
+}
+
+TEST(CudaMdConstraints, RattleKeepsEveryXHBond) {
+    const cpu::Frame f =
+        run_cuda(case_named("RattleXHAngles"), kTrajectorySteps, false);
+    double worst_bond = 0.0, worst_hh = 0.0;
+    for (int m = 0; m < 27; ++m) {
+        const int b = 8 * m;
+        for (int h = 0; h < 3; ++h) {
+            worst_bond =
+                std::max(worst_bond, std::abs(distance(f, b, b + 2 + h) - kCH));
+            worst_bond = std::max(
+                worst_bond, std::abs(distance(f, b + 1, b + 5 + h) - kCH));
+            worst_hh = std::max(
+                worst_hh, std::abs(distance(f, b + 2 + h, b + 2 + (h + 1) % 3)
+                                   - ethane_hh()));
+        }
+    }
+    EXPECT_LT(worst_bond, kDouble ? 1e-8 : 1e-3);
+    EXPECT_LT(worst_hh, kDouble ? 1e-8 : 1e-3);
+}
+
+TEST(CudaMdConstraints, SettleOutOfPlaneOxygenFaultsLikeTheCpuThrows) {
+    // One oxygen leaves its molecular plane by far more than the
+    // molecule's own size in one step (1.6 Å against the 0.066 Å oxygen
+    // offset from the centre of mass): the CPU twin throws, the device
+    // raises the constraint fault and the run's retrieve throws.
+    auto broken = [] {
+        cpu::Frame f = water();
+        f.span(kAtom_vz)[0] = 8.0;
+        return f;
+    };
+    const Case& c = case_named("SettleWater");
+    {
+        cpu::Frame f = broken();
+        EXPECT_THROW(
+            run_on<cpu::md::MD>(f, c.system, mount_cpu_forces, c.cpu, 2),
+            std::runtime_error);
+    }
+    cpu::Frame f = broken();
+    try {
+        run_on<cuda::md::MD>(f, c.system, mount_cuda_forces, c.gpu, 2);
+        ADD_FAILURE() << "the CUDA run did not fault";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("constraint"), std::string::npos)
+            << e.what();
+    }
+}
+
+TEST(CudaMdConstraints, RattleUnconvergedClusterFaultsLikeTheCpuThrows) {
+    // One sweep cannot converge a CH3 cluster (three bonds through one
+    // carbon) to 1e-10: the CPU twin throws, the device faults.
+    auto cpu_setup = [](cpu::md::MD& s) {
+        s.set_integrator(cpu::md::VelocityVerlet{2.0 * kFs});
+        cpu::md::FixRattle rattle{2.0 * kFs, 1e-10, 1};
+        rattle.constrain_bond(1, kCH);
+        s.set_observer(std::move(rattle));
+    };
+    auto cuda_setup = [](cuda::md::MD& s) {
+        s.set_integrator(cuda::md::VelocityVerlet{2.0 * kFs});
+        cuda::md::FixRattle rattle{2.0 * kFs, 1e-10, 1};
+        rattle.constrain_bond(1, kCH);
+        s.set_observer(std::move(rattle));
+    };
+    {
+        cpu::Frame f = ethane();
+        EXPECT_THROW(run_on<cpu::md::MD>(f, System::ethane, mount_cpu_forces,
+                                         cpu_setup, 2),
+                     std::runtime_error);
+    }
+    cpu::Frame f = ethane();
+    try {
+        run_on<cuda::md::MD>(f, System::ethane, mount_cuda_forces, cuda_setup,
+                             2);
+        ADD_FAILURE() << "the CUDA run did not fault";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("constraint"), std::string::npos)
+            << e.what();
     }
 }

@@ -566,6 +566,17 @@ void throw_if_force_fault(const Frame& d) {
                                      + std::to_string(fault.step) + ")"
                                : std::string())
             + ". The device state is frozen at that step.");
+    if (fault.kinds & ForceFault::kConstraint)
+        throw std::runtime_error(
+            "CUDA constraint fault: a SETTLE/RATTLE constraint could not be "
+            "satisfied (unconverged iteration, singular system, or a "
+            "degenerate / out-of-plane molecule) at atom tag "
+            + std::to_string(tag)
+            + (fault.step >= 0 ? ", integration refused at step "
+                                     + std::to_string(fault.step)
+                               : std::string())
+            + ". An unsatisfied constraint is a corrupted molecule, not an "
+              "approximation; the device state is frozen at that step.");
     throw std::runtime_error(
         "CUDA force fault: " + what + " (|F| must stay below "
         + std::to_string(kFixedLimit * kForceFixedResolution)

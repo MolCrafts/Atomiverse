@@ -79,7 +79,9 @@ struct ImproperList {
 /// (`kConversion`, including NaN/Inf) or an accumulation wraps
 /// (`kAccumulation`). `row` is the first offending local row. A device-side
 /// reserve that a rebuild outgrew raises `kCapacity` with the entry count it
-/// needed. The first integrator that refuses the forces stamps `step` and
+/// needed. A constraint solver that cannot satisfy its constraints (an
+/// unconverged iteration, a degenerate or out-of-plane molecule) raises
+/// `kConstraint`. The first integrator that refuses the forces stamps `step` and
 /// that row's global `tag`; every state writer stops at the first fault, so
 /// the device state stays at the faulting step until `cuda::to_cpu` throws.
 struct ForceFault {
@@ -87,7 +89,9 @@ struct ForceFault {
     static constexpr unsigned kAccumulation = 2u; ///< Fixed-point sum wrapped.
     static constexpr unsigned kBond = 4u;         ///< FENE bond reached R0.
     static constexpr unsigned kCapacity = 8u; ///< Neighbor reserve overflowed.
-    unsigned kinds = 0;                       ///< Bitwise OR of fault kinds.
+    /// A holonomic constraint (SETTLE / RATTLE) could not be satisfied.
+    static constexpr unsigned kConstraint = 16u;
+    unsigned kinds = 0;  ///< Bitwise OR of fault kinds.
     int row = -1;        ///< First offending local row, -1 if unknown.
     long long step = -1; ///< Step at which integration was refused, -1 if none.
     long long tag = -1;  ///< Global tag of `row` at that step, -1 if unknown.

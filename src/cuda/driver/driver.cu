@@ -14,6 +14,7 @@
 #include "atomiverse/core/driver_template_impl.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/transfer.h"
+#include "atomiverse/cuda/component/constraint_protocol.cuh"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/log_callback.h"
 #include "atomiverse/cuda/device/timer.cuh"
@@ -163,12 +164,28 @@ void Backend::publish_box_() {
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
+void Backend::publish_dof_(const cpu::Frame& frame) {
+    BigInt n_constraints = 0;
+    if (plan_)
+        for (const Component* c : plan_->components())
+            if (const ConstraintProvider* cp = c->as_constraint())
+                n_constraints += cp->n_constraints(frame);
+    const BigInt ndof =
+        ATV::md::degrees_of_freedom(frame.nlocal(), n_constraints);
+    if (n_constraints > 0 && ndof <= 0)
+        throw std::runtime_error(
+            "CUDA backend: the constraints leave no degrees of freedom ("
+            + std::to_string(n_constraints) + " constraints on "
+            + std::to_string(frame.nlocal()) + " atoms)");
+    context_.md.n_dof_global = ndof;
+}
+
 void Backend::materialize(const cpu::Frame& frame) {
     forces_ready_ = false;
     forget_fault_();
     forget_graphs_();
     frame_ = cpu::to_cuda(frame);
-    context_.md.n_dof_global = ATV::md::degrees_of_freedom(frame.nlocal());
+    publish_dof_(frame);
 
     auto& box = context_.host_box;
     geom_t cell[9];
@@ -695,7 +712,7 @@ void Backend::refresh_inputs(const cpu::Frame& frame) {
     if (general_cell_)
         box.ortho = false; // see Component::tilts_box
     publish_box_();
-    context_.md.n_dof_global = ATV::md::degrees_of_freedom(frame.nlocal());
+    publish_dof_(frame);
     // A reported scientific force fault belongs to the discarded evaluation.
     // Reset it only at an explicit input/retry boundary, never during a step.
     const ForceFault clean_fault{};

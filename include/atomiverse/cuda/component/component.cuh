@@ -36,6 +36,8 @@ class
     LongRangeParticipant; // opt-in long-range protocol (long_range_protocol.cuh)
 class TimestepProvider;   // opt-in timestep protocol (timestep_protocol.cuh)
 class TimestepConsumer;
+class
+    ConstraintProvider; // opt-in constraint protocol (constraint_protocol.cuh)
 
 /// @brief Context for one-time component build (after Runtime + DeviceFrame exist).
 ///
@@ -208,6 +210,10 @@ class Component {
     /// @brief Demand side of the timestep protocol (`cuda::MrecRecorder`).
     ///        Default: not a consumer.
     virtual TimestepConsumer* as_timestep_consumer() { return nullptr; }
+    /// @brief Constraint protocol: components that remove degrees of
+    ///        freedom (`cuda::md::FixSettle`, `cuda::md::FixRattle`). The
+    ///        backend sums their counts into `Ndof`. Default: none.
+    virtual const ConstraintProvider* as_constraint() const { return nullptr; }
 
     /// @brief Scheduling trait (blocking or deferrable).
     /// @return Scheduling::blocking (default) or Scheduling::deferrable.
