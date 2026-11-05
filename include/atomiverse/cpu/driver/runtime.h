@@ -273,7 +273,7 @@ class Runtime {
     /// @brief Newton-on reverse of ghost forces [eV/Å].
     void comm_after_force_(int slot, BigInt step_idx);
     /// Reduce the shared per-thread force accumulators into the frame.
-    void flush_thread_forces_();
+    void flush_chunk_forces_();
     /// @brief LAMMPS Verlet::setup: `comm->exchange` then `borders` then
     ///        neighbor build (MPI only). Ghost positions in Å.
     void setup_verlet_comm_(BigInt step_idx = 0);
@@ -330,10 +330,10 @@ class Runtime {
     /// Heap-held so a moved Runtime keeps the address its Context publishes.
     std::unique_ptr<CaptureBuffer> capture_ = std::make_unique<CaptureBuffer>();
     /// Per-thread force accumulators shared by every threaded kernel; reduced
-    /// once per slot walk (`flush_thread_forces_`). Heap-held for the same
+    /// once per slot walk (`flush_chunk_forces_`). Heap-held for the same
     /// address-stability reason as `capture_`.
-    std::unique_ptr<md::ThreadForces> thread_forces_ =
-        std::make_unique<md::ThreadForces>();
+    std::unique_ptr<md::ChunkForces> chunk_forces_ =
+        std::make_unique<md::ChunkForces>();
 
     /// Per-slot, per-op dense timing handles, precomputed in `build_components()`
     /// so the hot `step()` loop never calls `component->name()`.

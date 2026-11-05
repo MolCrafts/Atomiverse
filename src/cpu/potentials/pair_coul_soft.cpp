@@ -45,7 +45,7 @@ void PairCoulSoft::build(const BuildContext& ctx) {
     n_threads_ = omp_get_max_threads();
 #endif
     const int n = ctx.frame.capacity();
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(n_threads_, n);
     dU_dlambda_ = 0;
 }
@@ -85,26 +85,26 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
         (p == 1.0) ? (-alpha * sig6)
                    : (-alpha * sig6 * p * std::pow(one_m_lam, p - 1.0));
 
-    double energy_total = 0;
-    double dU_total = 0;
-    double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
-
     if (!(lam > 0.0) && soft0 == 0.0) {
         dU_dlambda_ = 0;
         return;
     }
 
-    const md::ForcePass forces(ctx);
-#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
-    reduction(+ : energy_total) reduction(+ : dU_total) reduction(+ : v_xx)    \
-    reduction(+ : v_yy) reduction(+ : v_zz) reduction(+ : v_xy)                \
-    reduction(+ : v_xz) reduction(+ : v_yz)
+    // One chunk per thread (static rows): thread t owns force slot t and
+    // sum slot t, summed in slot order — deterministic per thread count.
+    md::ForcePass forces(ctx);
+    const int team = forces.team();
+    forces.open(team);
+#pragma omp parallel num_threads(team) if (team > 1)
     {
         int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const md::ThreadForce tf = forces.thread(tid);
+        const md::ForceRows tf = forces.rows(tid);
+        double energy_total = 0;
+        double dU_total = 0;
+        double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
         double* __restrict fxt_ptr = tf.fx;
         double* __restrict fyt_ptr = tf.fy;
         double* __restrict fzt_ptr = tf.fz;
@@ -179,18 +179,18 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
                 fzt_ptr[i] += fi_z;
             }
         }
+        forces.store(tid, energy_total,
+                     md::Voigt6{{v_xx, v_yy, v_zz, v_xy, v_xz, v_yz}},
+                     dU_total);
     }
+    const double energy_total = forces.energy();
+    const double dU_total = forces.extra();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    if (ctx.stress_requested) {
-        f.meta.get(kStress)[0] += v_xx;
-        f.meta.get(kStress)[1] += v_yy;
-        f.meta.get(kStress)[2] += v_zz;
-        f.meta.get(kStress)[3] += v_xy;
-        f.meta.get(kStress)[4] += v_xz;
-        f.meta.get(kStress)[5] += v_yz;
-    }
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
     dU_dlambda_ = dU_total;
 }
 

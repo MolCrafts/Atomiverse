@@ -36,8 +36,7 @@ void PairMorse::compute(const LaunchContext& ctx) {
             const double fpair = -dvdr / r; // F_ij = fpair · r_ij
             return md::PairTerm{fpair, v};
         }};
-    const md::PairTotals sums =
-        md::PairLoop<decltype(kernel)>::run(ctx, kernel, "PairMorse");
+    const md::PairTotals sums = loop_.run(ctx, kernel, "PairMorse");
     f.meta.get(kEnergy) += sums.energy;
     f.meta.get(kEnergyPair) += sums.energy;
     if (ctx.stress_requested)

@@ -62,8 +62,10 @@ struct LJCoulLongKernel {
             md::ewald_pair_factors(r2, n, alpha, c.a, c.b);
     }
 
-    md::PairTerm operator()(const Row& ri, int j, int entry, double r2,
-                            const md::PairChunk& c, int k) const {
+    md::PairTerm operator()(const Row& ri, const md::PairSite& p,
+                            const md::PairChunk& c) const {
+        const int j = p.j, entry = p.entry, k = p.k;
+        const double r2 = p.r2;
         double fpair = 0.0;
         double epair = 0.0;
         const double sl = tier ? t_lj[tier[entry]] : 1.0;
@@ -218,6 +220,7 @@ PairLJCutCoulLong PairLJCutCoulLong::set_tail_correction(bool on) && {
 
 void PairLJCutCoulLong::build(const BuildContext& ctx) {
     scale_source_ = nullptr;
+    loop_.reset();
     n_threads_ = 1;
 #ifdef _OPENMP
     n_threads_ = omp_get_max_threads();
@@ -239,7 +242,7 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
         // The type counts belong to this build's Frame.
         tail_ready_ = false;
     }
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(n_threads_, ctx.frame.capacity());
 
     tier_lj_[1] = lj12_;
@@ -368,8 +371,7 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     const bool do_virial = compute_stress_ && ctx.stress_requested;
     LaunchContext walk = ctx;
     walk.stress_requested = do_virial;
-    const md::PairTotals sums =
-        md::PairLoop<LJCoulLongKernel>::run(walk, kernel, "PairLJCutCoulLong");
+    const md::PairTotals sums = loop_.run(walk, kernel, "PairLJCutCoulLong");
 
     f.meta.get(kEnergy) += sums.energy;
     f.meta.get(kEnergyPair) += sums.energy;

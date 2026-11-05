@@ -35,8 +35,12 @@ double and mixed separately (small cells reported, not gated).
   parity). Slower: bonded kernels (~1.8×, `AngleHarmonic` acos and per-kernel
   thread scratch), RATTLE (~1.4× vs `fix rattle`), one-rank Comm (self-image
   swaps).
-- Threaded: the Runtime owns one per-thread force buffer (`md::ThreadForces`)
-  reduced once per slot walk, as LAMMPS `package omp`; bonded caches key on
+- Threaded: the Runtime owns one set of chunk-owned force slots and partial
+  sums (`md::ChunkForces`, reached through `md::ForcePass`) reduced in slot
+  order once per slot walk, as LAMMPS `package omp`; every pair, bonded and
+  many-body style uses it, so a run is bit-identical at a fixed thread count
+  (not across thread counts: the chunk count follows the team). No OpenMP
+  floating-point `reduction` in a force kernel. Bonded caches key on
   `Frame::row_revision()`. Pair styles share `md::PairLoop`; PPPM/PME spread,
   Green's sum and gather are threaded (x-plane slabs) with FFTW threads;
   SETTLE is analytic and threaded. Timings: wip/cpu-md-perf commit messages

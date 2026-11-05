@@ -39,7 +39,7 @@ void ImproperHarmonic::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(n_threads, ctx.frame.capacity());
 }
 
@@ -82,27 +82,20 @@ void ImproperHarmonic::compute(const LaunchContext& ctx) {
         return;
     const int* __restrict tup = cache_.flat.data();
 
-    double energy_total = 0;
-    md::Voigt6 vir;
-
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    const md::ForcePass forces(ctx);
+    md::ForcePass forces(ctx);
 
-    const int team = forces.team(n_tuples);
-#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = forces.thread(tid);
+    // Each chunk keeps its own energy and virial and stores them once;
+    // ForcePass sums the chunks in order (deterministic per thread count).
+    forces.for_each_chunk(n_tuples, [&](int c, int t_begin, int t_end,
+                                        md::ForceRows tf) {
+        double energy_total = 0;
         md::Voigt6 vir_local;
 
-#pragma omp for schedule(static)
-        for (int t = 0; t < n_tuples; ++t) {
+        for (int t = t_begin; t < t_end; ++t) {
             const int i1 = tup[5 * t + 0];
             const int i2 = tup[5 * t + 1];
             const int i3 = tup[5 * t + 2];
@@ -161,9 +154,10 @@ void ImproperHarmonic::compute(const LaunchContext& ctx) {
                                f3z + f4z);
             vir_local.add_pair(g.b3x, g.b3y, g.b3z, f4x, f4y, f4z);
         }
-#pragma omp critical
-        vir += vir_local;
-    }
+        forces.store(c, energy_total, vir_local);
+    });
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyImproper) += energy_total;

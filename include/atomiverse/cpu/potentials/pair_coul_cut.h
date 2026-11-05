@@ -90,9 +90,6 @@ class PairCoulCut : public cpu::PairPotential {
     const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
 
-    int n_threads_ = 1;
-    md::PairChunkScratch chunks_;
-
     // Team / row balance / touched rows of the list `compute()` walks,
     // rebuilt when that list changes (null source = not built).
     md::PairRowPartition partition_;

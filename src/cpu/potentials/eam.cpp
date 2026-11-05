@@ -61,7 +61,7 @@ void EAM::build(const cpu::BuildContext& ctx) {
 #ifdef _OPENMP
     threads = omp_get_max_threads();
 #endif
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(threads, ctx.frame.capacity());
     rho_threads_.assign(threads > 1 ? threads : 0, std::vector<double>(n));
 }
@@ -109,18 +109,22 @@ void EAM::launch(const cpu::LaunchContext& ctx) {
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    const md::ForcePass forces(ctx);
-    double e_total = 0.0;
-    double v[6] = {0, 0, 0, 0, 0, 0};
-#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
-    reduction(+ : e_total, v[ : 6])
+    // One chunk per thread (static loops): thread t owns force slot t and
+    // sum slot t, summed in slot order — deterministic per thread count.
+    md::ForcePass forces(ctx);
+    const int team = forces.team();
+    forces.open(team);
+#pragma omp parallel num_threads(team) if (team > 1)
     {
         int tid = 0, team_size = 1;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
         team_size = omp_get_num_threads();
 #endif
-        const md::ThreadForce force = forces.thread(tid);
+        const md::ForceRows force = forces.rows(tid);
+        double e_total = 0.0;
+        md::Voigt6 vir;
+        double* v = vir.v;
         double* __restrict density =
             rho_threads_.empty() ? rho_.data() : rho_threads_[tid].data();
         std::fill_n(density, n_active, 0.0);
@@ -223,12 +227,13 @@ void EAM::launch(const cpu::LaunchContext& ctx) {
                 }
             }
         }
-    } // thread-private Newton-on force accumulation
+        forces.store(tid, e_total, vir);
+    } // chunk-owned Newton-on force accumulation
+    const double e_total = forces.energy();
     f.meta.get(kEnergy) += e_total;
     f.meta.get(kEnergyPair) += e_total;
     if (ctx.stress_requested)
-        for (int k = 0; k < 6; ++k)
-            f.meta.get(kStress)[k] += v[k];
+        forces.virial().flush_to(f.meta.get(kStress));
 }
 
 void EAM::destroy(const cpu::DestroyContext&) {

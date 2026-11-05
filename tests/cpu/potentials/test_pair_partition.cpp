@@ -23,6 +23,7 @@
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pair_partition.h"
@@ -160,6 +161,10 @@ Result run_kernel(Make make, int threads, cpu::Frame f,
     omp_set_num_threads(threads);
     cpu::Context ctx;
     ctx.md.pair_list = &pairs;
+    // Threaded kernels scatter into the Runtime's chunk buffers; publish one
+    // as a Runtime would, and flush it as the end of a slot walk would.
+    cpu::md::ChunkForces arena;
+    ctx.md.chunk_forces = &arena;
     auto pot = make();
     pot.build({ctx, f});
     f.meta.get(kEnergy) = 0;
@@ -167,6 +172,7 @@ Result run_kernel(Make make, int threads, cpu::Frame f,
     for (int i = 0; i < rows; ++i)
         f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
     pot.launch({ctx, f, 0, 0, true, true});
+    arena.flush();
     pot.destroy({ctx, f});
     omp_set_num_threads(saved);
     Result r{f.meta.get(kEnergy), {}, {}, {}};

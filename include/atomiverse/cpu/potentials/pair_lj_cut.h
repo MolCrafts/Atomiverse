@@ -232,11 +232,6 @@ class PairLJCut : public Pair {
     bool has_partial_special_ = false;
     md::SpecialScaleTable special_;
 
-    // Thread budget, and the per-chunk force buffers + energy/virial sums of
-    // a multi-thread launch.
-    int n_threads_ = 1;
-    md::PairChunkScratch chunks_;
-
     // Special-filtered neighbor CSR (+ per-pair scale parallel to neighbors).
     std::vector<int> filtered_neighbors_;
     std::vector<int> filtered_numneigh_;

@@ -10,6 +10,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -63,11 +64,6 @@ PairCoulCut PairCoulCut::set_special_bonds(double s12, double s13,
 void PairCoulCut::build(const BuildContext& ctx) {
     filtered_source_ = nullptr;
     part_source_ = nullptr;
-    n_threads_ = 1;
-#ifdef _OPENMP
-    n_threads_ = omp_get_max_threads();
-#endif
-    chunks_.clear(); // sized on demand by compute()
 
     special_.s12 = s12_;
     special_.s13 = s13_;
@@ -154,24 +150,21 @@ void PairCoulCut::compute(const LaunchContext& ctx) {
         part_source_ = &pairs;
         part_version_ = pairs.version;
     }
-    const int team = partition_.team(n_threads_);
+    md::ForcePass forces(ctx);
+    const int team = partition_.team(forces.team());
     // One thread accumulates straight into the frame (already zeroed by
     // ZeroForces / the halo), so neither the scratch zero nor the reduce runs.
-    const bool direct = team == 1;
     // Rows past the list's highest reference receive nothing.
     const int n_touch = std::min(partition_.n_touch(), n_force);
     // Chunks are handed out dynamically; each owns its buffer and sums, so
     // the result does not depend on the thread that ran it.
     const int n_chunks = partition_.chunks(team);
-    chunks_.prepare(n_chunks, direct ? 0 : n_touch);
+    forces.open(team, n_chunks, n_touch);
 
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
     const StorageReal* __restrict q_ptr = f.span(kAtom_charge);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
 
     const double rc_sq = cutoff_sq_;
     const double qqr2e = qqr2e_;
@@ -188,14 +181,10 @@ void PairCoulCut::compute(const LaunchContext& ctx) {
 
 #pragma omp for schedule(dynamic, 1)
         for (int c = 0; c < n_chunks; ++c) {
-            double* fxc = fx_ptr;
-            double* fyc = fy_ptr;
-            double* fzc = fz_ptr;
-            if (!direct)
-                chunks_.begin_chunk(c, fxc, fyc, fzc);
-            double* __restrict fxt = fxc;
-            double* __restrict fyt = fyc;
-            double* __restrict fzt = fzc;
+            const md::ForceRows rows = forces.rows(c);
+            double* __restrict fxt = rows.fx;
+            double* __restrict fyt = rows.fy;
+            double* __restrict fzt = rows.fz;
             // Chunk-local sums, kept in registers across the force scatter.
             double e_thr = 0;
             double t_xx = 0, t_yy = 0, t_zz = 0, t_xy = 0, t_xz = 0, t_yz = 0;
@@ -333,38 +322,20 @@ void PairCoulCut::compute(const LaunchContext& ctx) {
                 t_xz += a_xz;
                 t_yz += a_yz;
             }
-            double* sums = chunks_.sums(c);
-            sums[0] = e_thr;
-            sums[1] = t_xx;
-            sums[2] = t_yy;
-            sums[3] = t_zz;
-            sums[4] = t_xy;
-            sums[5] = t_xz;
-            sums[6] = t_yz;
-        } // chunks (implicit barrier: every scatter has landed)
-
-        if (!direct && do_forces)
-            chunks_.reduce_forces(fx_ptr, fy_ptr, fz_ptr);
+            forces.store(c, e_thr,
+                         md::Voigt6{{t_xx, t_yy, t_zz, t_xy, t_xz, t_yz}});
+        } // chunks
     }
 
-    const double energy_total = chunks_.sum(0);
-    const double v_xx = chunks_.sum(1), v_yy = chunks_.sum(2),
-                 v_zz = chunks_.sum(3), v_xy = chunks_.sum(4),
-                 v_xz = chunks_.sum(5), v_yz = chunks_.sum(6);
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    if (do_virial) {
-        f.meta.get(kStress)[0] += v_xx;
-        f.meta.get(kStress)[1] += v_yy;
-        f.meta.get(kStress)[2] += v_zz;
-        f.meta.get(kStress)[3] += v_xy;
-        f.meta.get(kStress)[4] += v_xz;
-        f.meta.get(kStress)[5] += v_yz;
-    }
+    if (do_virial)
+        vir.flush_to(f.meta.get(kStress));
 }
 
 void PairCoulCut::destroy(const DestroyContext&) {
-    chunks_.clear();
     special_.clear();
     filtered_neighbors_.clear();
     filtered_scale_.clear();

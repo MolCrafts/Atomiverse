@@ -21,6 +21,7 @@
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 #include <algorithm>
 #include <cmath>
@@ -195,14 +196,6 @@ void PairLJCut::build(const BuildContext& ctx) {
     }
     // The tail's type counts belong to this build's Frame.
     tail_ready_ = false;
-    n_threads_ = 1;
-#ifdef _OPENMP
-    n_threads_ = omp_get_max_threads();
-#endif
-    // Chunk force buffers are sized by compute() to the rows the list
-    // touches; a single-thread run never allocates them.
-    chunks_.clear();
-
     special_.s12 = s12_;
     special_.s13 = s13_;
     special_.s14 = s14_;
@@ -312,7 +305,8 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         part_source_ = &pairs;
         part_version_ = pairs.version;
     }
-    const int team = partition_.team(n_threads_);
+    md::ForcePass forces(ctx);
+    const int team = partition_.team(forces.team());
     // Rows past the list's highest reference receive nothing.
     const int n_touch = std::min(partition_.n_touch(), n_force);
     // Single thread (pure-MPI, or a list too small to share): accumulate
@@ -322,9 +316,8 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     // pays. Otherwise the rows are cut into chunks handed out dynamically;
     // each chunk owns its force buffer and its energy/virial slot (summed in
     // chunk order, so the result does not depend on the thread that ran it).
-    const bool direct = (team == 1);
     const int n_chunks = partition_.chunks(team);
-    chunks_.prepare(n_chunks, direct ? 0 : n_touch);
+    forces.open(team, n_chunks, n_touch);
 
     // LAMMPS-style vflag gating: skip the 6-component pair virial when no
     // stress consumer is active (plain NVE). Loop-invariant, so the
@@ -341,9 +334,6 @@ void PairLJCut::compute(const LaunchContext& ctx) {
     // Only the per-type table indexes by the force-field type.
     const int* __restrict k_type =
         n_types_ > 0 ? f.span(kAtom_type).data() : nullptr;
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
 
 #pragma omp parallel num_threads(team) if (team > 1)
     {
@@ -421,14 +411,10 @@ void PairLJCut::compute(const LaunchContext& ctx) {
 
 #pragma omp for schedule(dynamic, 1)
         for (int c = 0; c < n_chunks; ++c) {
-            double* fxc = fx_ptr;
-            double* fyc = fy_ptr;
-            double* fzc = fz_ptr;
-            if (!direct)
-                chunks_.begin_chunk(c, fxc, fyc, fzc);
-            double* __restrict fxt_ptr = fxc;
-            double* __restrict fyt_ptr = fyc;
-            double* __restrict fzt_ptr = fzc;
+            const md::ForceRows rows = forces.rows(c);
+            double* __restrict fxt_ptr = rows.fx;
+            double* __restrict fyt_ptr = rows.fy;
+            double* __restrict fzt_ptr = rows.fz;
             // Chunk-local sums, kept in registers across the force scatter.
             double e_thr = 0;
             double t_xx = 0, t_yy = 0, t_zz = 0, t_xy = 0, t_xz = 0, t_yz = 0;
@@ -776,37 +762,18 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                 t_xz += a_xz;
                 t_yz += a_yz;
             }
-            double* sums = chunks_.sums(c);
-            sums[0] = e_thr;
-            sums[1] = t_xx;
-            sums[2] = t_yy;
-            sums[3] = t_zz;
-            sums[4] = t_xy;
-            sums[5] = t_xz;
-            sums[6] = t_yz;
-        } // chunks (implicit barrier: every scatter has landed)
-
-        // Gather the chunk buffers into the frame (direct mode already wrote
-        // straight into it).
-        if (!direct && do_forces)
-            chunks_.reduce_forces(fx_ptr, fy_ptr, fz_ptr);
+            forces.store(c, e_thr,
+                         md::Voigt6{{t_xx, t_yy, t_zz, t_xy, t_xz, t_yz}});
+        } // chunks
     }
 
-    const double energy_total = chunks_.sum(0);
-    const double v_xx = chunks_.sum(1), v_yy = chunks_.sum(2),
-                 v_zz = chunks_.sum(3), v_xy = chunks_.sum(4),
-                 v_xz = chunks_.sum(5), v_yz = chunks_.sum(6);
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    if (do_virial) {
-        f.meta.get(kStress)[0] += v_xx;
-        f.meta.get(kStress)[1] += v_yy;
-        f.meta.get(kStress)[2] += v_zz;
-        f.meta.get(kStress)[3] += v_xy;
-        f.meta.get(kStress)[4] += v_xz;
-        f.meta.get(kStress)[5] += v_yz;
-    }
+    if (do_virial)
+        vir.flush_to(f.meta.get(kStress));
 
     // ── LJ tail correction (LAMMPS pair_modify tail yes) ─────────────────
     // A global constant over the fixed type counts: it lands on the first
@@ -861,7 +828,6 @@ void PairLJCut::compute(const LaunchContext& ctx) {
 
 void PairLJCut::destroy(const DestroyContext& ctx) {
     (void)ctx;
-    chunks_.clear();
     special_.clear();
     filtered_neighbors_.clear();
     filtered_scale_.clear();
@@ -879,7 +845,6 @@ void PairLJCut::destroy(const DestroyContext& ctx) {
 std::size_t PairLJCut::memory_bytes() const {
     // `size()` (live elements) ≈ resident pages — see PairList::bytes.
     std::size_t n = 0;
-    n += chunks_.memory_bytes();
     n += (filtered_neighbors_.size() + filtered_numneigh_.size()
           + filtered_firstneigh_.size())
          * sizeof(int);
