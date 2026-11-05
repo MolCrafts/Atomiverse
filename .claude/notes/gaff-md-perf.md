@@ -43,6 +43,8 @@ double and mixed separately (small cells reported, not gated).
   floating-point `reduction` in a force kernel. Bonded caches key on
   `Frame::row_revision()`. Pair styles share `md::PairLoop`; PPPM/PME spread,
   Green's sum and gather are threaded (x-plane slabs) with FFTW threads;
+  their energy / virial fold is a fixed 64-chunk `device::ChunkedRange`
+  (thread-count independent);
   SETTLE is analytic and threaded. Timings: wip/cpu-md-perf commit messages
   (LAMMPS bench data.rhodo through run_atv_gaff, `--settle` for waters).
 - Every CPU pair style walks `md::PairLoop` (lj/cut and coul/cut keep

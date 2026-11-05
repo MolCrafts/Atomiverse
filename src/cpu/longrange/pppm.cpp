@@ -22,6 +22,7 @@
 /// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 #include "atomiverse/cpu/longrange/pppm.h"
 
+#include "atomiverse/cpu/device/chunked_range.h"
 #include "atomiverse/cpu/device/fftw_threads.h"
 
 #ifdef _OPENMP
@@ -944,11 +945,21 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             std::complex<double>* __restrict density = density_.data();
             const bool do_virial = ctx.stress_requested;
             const double* __restrict vcoef = virial_coef_.data();
-            double s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0;
-#pragma omp parallel for schedule(static) collapse(2)                          \
-    reduction(+ : e_recip, s0, s1, s2, s3, s4, s5)
-            for (int m0 = 0; m0 < K0; ++m0)
-                for (int m1 = 0; m1 < K1; ++m1)
+            // Energy and virial: a fixed partition of the (m0, m1) rows into
+            // ChunkedRange pieces, each summing into its own partial, folded
+            // in chunk order — the same bits at any thread count and in any
+            // run (an OpenMP `reduction` combines in thread-arrival order).
+            constexpr long kGreenChunks = 64;
+            const device::ChunkedRange rows(static_cast<long>(K0) * K1,
+                                            kGreenChunks);
+            double part[kGreenChunks][7] = {};
+            const long n_rows_chunks = rows.chunks();
+#pragma omp parallel for schedule(static)
+            for (long c = 0; c < n_rows_chunks; ++c) {
+                double e = 0, s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0;
+                for (long r = rows.begin(c); r < rows.end(c); ++r) {
+                    const int m0 = static_cast<int>(r / K1);
+                    const int m1 = static_cast<int>(r % K1);
                     for (int m2 = 0; m2 < n2; ++m2) {
                         const std::size_t u =
                             static_cast<std::size_t>(m2 + n2 * (m1 + K1 * m0));
@@ -961,7 +972,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                             w.real() * w.real() + w.imag() * w.imag();
                         const double herm =
                             (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
-                        e_recip += herm * G * q2;
+                        e += herm * G * q2;
                         if (do_virial) {
                             const double ug = herm * q2;
                             s0 += ug * vcoef[0 * nhalf + u];
@@ -972,12 +983,21 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                             s5 += ug * vcoef[5 * nhalf + u];
                         }
                     }
-            stress[0] += s0;
-            stress[1] += s1;
-            stress[2] += s2;
-            stress[3] += s3;
-            stress[4] += s4;
-            stress[5] += s5;
+                }
+                double* pc = part[c];
+                pc[0] = e;
+                pc[1] = s0;
+                pc[2] = s1;
+                pc[3] = s2;
+                pc[4] = s3;
+                pc[5] = s4;
+                pc[6] = s5;
+            }
+            for (long c = 0; c < n_rows_chunks; ++c) {
+                e_recip += part[c][0];
+                for (int d = 0; d < 6; ++d)
+                    stress[d] += part[c][1 + d];
+            }
             e_recip *= energy_scale;
             if (ctx.forces_requested) {
                 const double* dens = dens_full_.data();
