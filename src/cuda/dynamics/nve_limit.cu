@@ -34,9 +34,10 @@ __global__ void initial_integrate_limit(
     mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
     const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
     const mixed_t* __restrict__ mass, ImageInt* __restrict__ image,
-    ForceFault* fault, const std::int64_t* __restrict__ tag, long long step,
-    cuda::Box box, mixed_t dt, mixed_t vmax, mixed_t vmax_sq, int n) {
-    if (!forces_consumable(fault, tag, step))
+    ForceFault* fault, const std::int64_t* __restrict__ tag,
+    const long long* step_ptr, long long step, cuda::Box box, mixed_t dt,
+    mixed_t vmax, mixed_t vmax_sq, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -61,15 +62,14 @@ __global__ void initial_integrate_limit(
     store_position(z, zc, i, pz);
 }
 
-__global__ void
-final_integrate_limit(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
-                      mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
-                      const fixed_t* __restrict__ fy,
-                      const fixed_t* __restrict__ fz,
-                      const mixed_t* __restrict__ mass, ForceFault* fault,
-                      const std::int64_t* __restrict__ tag, long long step,
-                      mixed_t dt, mixed_t vmax, mixed_t vmax_sq, int n) {
-    if (!forces_consumable(fault, tag, step))
+__global__ void final_integrate_limit(
+    mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+    mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
+    const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
+    const mixed_t* __restrict__ mass, ForceFault* fault,
+    const std::int64_t* __restrict__ tag, const long long* step_ptr,
+    long long step, mixed_t dt, mixed_t vmax, mixed_t vmax_sq, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
@@ -89,7 +89,7 @@ final_integrate_limit(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
 
 void launch_nve_limit_initial(Frame& frame, int n, const cuda::Box& box,
                               mixed_t dt, mixed_t xmax, long long step,
-                              cudaStream_t stream) {
+                              cudaStream_t stream, const long long* step_ptr) {
     if (n <= 0)
         return;
     const mixed_t vmax = xmax / dt;
@@ -97,20 +97,21 @@ void launch_nve_limit_initial(Frame& frame, int n, const cuda::Box& box,
     initial_integrate_limit<<<cuda::grid_size(n), cuda::kDefaultBlock, 0,
                               stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
-        a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag, step, box, dt,
-        vmax, vmax * vmax, n);
+        a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag, step_ptr, step,
+        box, dt, vmax, vmax * vmax, n);
 }
 
 void launch_nve_limit_final(Frame& frame, int n, mixed_t dt, mixed_t xmax,
-                            long long step, cudaStream_t stream) {
+                            long long step, cudaStream_t stream,
+                            const long long* step_ptr) {
     if (n <= 0)
         return;
     const mixed_t vmax = xmax / dt;
     auto& a = frame.atoms;
     final_integrate_limit<<<cuda::grid_size(n), cuda::kDefaultBlock, 0,
                             stream>>>(a.vx, a.vy, a.vz, a.fx, a.fy, a.fz,
-                                      a.mass, frame.force_fault, a.tag, step,
-                                      dt, vmax, vmax * vmax, n);
+                                      a.mass, frame.force_fault, a.tag,
+                                      step_ptr, step, dt, vmax, vmax * vmax, n);
 }
 
 void NVELimit::launch(const LaunchContext& ctx) {
@@ -118,11 +119,11 @@ void NVELimit::launch(const LaunchContext& ctx) {
     const int n = ctx.frame.n_atoms();
     if (ctx.at(ATV::md::Phase::initial_integrate))
         launch_nve_limit_initial(ctx.frame, n, ctx.runtime.host_box,
-                                 mixed_t(dt_), mixed_t(xmax_), ctx.step,
-                                 stream);
+                                 mixed_t(dt_), mixed_t(xmax_), ctx.step, stream,
+                                 ctx.runtime.device_step);
     else
         launch_nve_limit_final(ctx.frame, n, mixed_t(dt_), mixed_t(xmax_),
-                               ctx.step, stream);
+                               ctx.step, stream, ctx.runtime.device_step);
 }
 
 } // namespace md

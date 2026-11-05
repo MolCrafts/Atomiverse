@@ -25,10 +25,11 @@ __global__ void brownian_integrate_kernel(
     const fixed_t* __restrict__ fx, const fixed_t* __restrict__ fy,
     const fixed_t* __restrict__ fz, ImageInt* __restrict__ image,
     ForceFault* fault, const std::int64_t* __restrict__ tag, mixed_t mobility,
-    mixed_t dt, mixed_t noise, cuda::Box box, std::uint64_t seed, BigInt step,
-    int n) {
-    if (!forces_consumable(fault, tag, step))
+    mixed_t dt, mixed_t noise, cuda::Box box, std::uint64_t seed,
+    const long long* step_ptr, long long host_step, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, host_step))
         return;
+    const long long step = current_step(step_ptr, host_step);
     box = box.current();
     const mixed_t Lx = box.length(0), Ly = box.length(1), Lz = box.length(2);
     const bool wrap = brownian_should_wrap(box.ortho, double(Lx));
@@ -99,7 +100,8 @@ void Brownian::launch(const LaunchContext& ctx) {
     const auto& a = frame.atoms;
     brownian_integrate_kernel<<<grid, block, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, a.image,
-        frame.force_fault, a.tag, mobility, dt, noise, box, seed_, ctx.step, n);
+        frame.force_fault, a.tag, mobility, dt, noise, box, seed_,
+        ctx.runtime.device_step, static_cast<long long>(ctx.step), n);
 }
 
 } // namespace md

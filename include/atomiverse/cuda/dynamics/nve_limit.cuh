@@ -36,9 +36,11 @@ namespace md {
 /// @param xmax Maximum displacement per step [Angstrom].
 /// @param step Step index stamped on a force fault.
 /// @param stream CUDA stream.
+/// @param step_ptr Device step copy read instead of `step` (null: `step`).
 void launch_nve_limit_initial(Frame& frame, int n, const cuda::Box& box,
                               mixed_t dt, mixed_t xmax, long long step,
-                              cudaStream_t stream = 0);
+                              cudaStream_t stream = 0,
+                              const long long* step_ptr = nullptr);
 /// @brief Second NVE/limit half-step on rows [0, n) of `frame`.
 /// @param frame Device frame (velocities, fixed-point forces).
 /// @param n Number of integrated (owned) rows.
@@ -46,8 +48,10 @@ void launch_nve_limit_initial(Frame& frame, int n, const cuda::Box& box,
 /// @param xmax Maximum displacement per step [Angstrom].
 /// @param step Step index stamped on a force fault.
 /// @param stream CUDA stream.
+/// @param step_ptr Device step copy read instead of `step` (null: `step`).
 void launch_nve_limit_final(Frame& frame, int n, mixed_t dt, mixed_t xmax,
-                            long long step, cudaStream_t stream = 0);
+                            long long step, cudaStream_t stream = 0,
+                            const long long* step_ptr = nullptr);
 
 class NVELimit : public cuda::Integrator, public cuda::TimestepProvider {
   public:
@@ -71,6 +75,9 @@ class NVELimit : public cuda::Integrator, public cuda::TimestepProvider {
         return {ATV::make_binding(ATV::md::Phase::initial_integrate, 0),
                 ATV::make_binding(ATV::md::Phase::final_integrate, 0)};
     }
+
+    /// @brief The fault stamp reads the device step: replayable.
+    bool graph_capturable() const override { return true; }
 
     void launch(const LaunchContext& ctx) override;
 

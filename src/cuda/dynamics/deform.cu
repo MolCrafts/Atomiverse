@@ -21,24 +21,31 @@ namespace md {
 namespace {
 
 struct DeviceState {
-    double L0 = 0;    ///< Deformed edge at the first launch [Angstrom].
-    double scale = 1; ///< This step's L_target / L_current.
+    double L0 = 0;        ///< Deformed edge at the first launch [Angstrom].
+    double scale = 1;     ///< This step's L_target / L_current.
+    long long origin = 0; ///< Step of the first launch after build.
     int armed = 0;
 };
 
 // One thread: snapshot L0 on the first launch (FixDeform::init lo_start /
 // hi_start), set this step's scale from the live cell and scale the cell's
 // `axis` row (r = H s keeps s when row `axis` of H and r scale together).
+// The elapsed time comes from the device step: after the launch at step s
+// the box reflects s - origin + 1 steps.
 __global__ void deform_box(geom_t* __restrict__ box, DeviceState* s, int axis,
-                           int trate, double rate, double t_elapsed,
+                           int trate, double rate, double dt,
+                           const long long* step_ptr, long long host_step,
                            const ForceFault* fault) {
     if (state_frozen(fault))
         return;
+    const long long step = current_step(step_ptr, host_step);
     const double L_prev = static_cast<double>(box[4 * axis]);
     if (!s->armed) {
         s->L0 = L_prev;
+        s->origin = step;
         s->armed = 1;
     }
+    const double t_elapsed = static_cast<double>(step - s->origin + 1) * dt;
     const double L_target = trate ? s->L0 * exp(rate * t_elapsed)
                                   : s->L0 * (1.0 + rate * t_elapsed);
     const double scale = L_prev > 0.0 ? L_target / L_prev : 1.0;
@@ -106,13 +113,11 @@ void Deform::build(const BuildContext&) {
     const DeviceState zero{};
     ATV_CUDA_CHECK(cudaMemcpy(state_->device, &zero, sizeof(DeviceState),
                               cudaMemcpyHostToDevice));
-    origin_step_ = -1;
 }
 
 void Deform::destroy(const DestroyContext&) {
     if (state_)
         state_->release();
-    origin_step_ = -1;
 }
 
 void Deform::launch(const LaunchContext& ctx) {
@@ -120,15 +125,10 @@ void Deform::launch(const LaunchContext& ctx) {
         throw std::logic_error("Deform: launch before build");
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& f = ctx.frame;
-    // Elapsed time since activation, from the host's own step indices:
-    // after the launch at step s the box reflects s - origin + 1 steps.
-    if (origin_step_ < 0)
-        origin_step_ = ctx.step;
-    const double t_elapsed =
-        static_cast<double>(ctx.step - origin_step_ + 1) * dt_;
-    deform_box<<<1, 1, 0, stream>>>(f.box, state_->device, axis_,
-                                    mode_ == Mode::trate ? 1 : 0, rate_,
-                                    t_elapsed, f.force_fault);
+    deform_box<<<1, 1, 0, stream>>>(
+        f.box, state_->device, axis_, mode_ == Mode::trate ? 1 : 0, rate_, dt_,
+        ctx.runtime.device_step, static_cast<long long>(ctx.step),
+        f.force_fault);
     pos_t* pos = axis_ == 0 ? f.atoms.x : axis_ == 1 ? f.atoms.y : f.atoms.z;
     pos_t* corr = axis_ == 0   ? f.atoms.x_corr
                   : axis_ == 1 ? f.atoms.y_corr
