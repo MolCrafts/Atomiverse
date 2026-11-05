@@ -72,9 +72,16 @@ TEST(EwaldErfc, ErfcAndGaussianAreUlpAccurateOnEveryInterval) {
             worst_erfc = std::max(
                 worst_erfc,
                 static_cast<double>(fabsl(erfc_out[l] / erfcl(x) - 1.0L)));
-            worst_exp = std::max(
-                worst_exp,
-                static_cast<double>(fabsl(exp_out[l] / expl(-x * x) - 1.0L)));
+            // exp(-x²) with x² split exactly (x² = hi + lo, |lo| ≤ ulp(hi)/2):
+            // exp(-hi)·(1 - lo) is ~1 ulp on any platform, whereas
+            // expl(-x*x) rounds x² first wherever long double is double
+            // (Apple arm64), an x²·ε error of the reference itself.
+            const double hi = in[l] * in[l];
+            const double lo = std::fma(in[l], in[l], -hi);
+            const long double exp_ref =
+                static_cast<long double>(std::exp(-hi)) * (1.0L - lo);
+            worst_exp = std::max(worst_exp, static_cast<double>(fabsl(
+                                                exp_out[l] / exp_ref - 1.0L)));
         }
     }
     // A few ulp for exactly representable arguments (fdlibm: < 1 ulp; the
