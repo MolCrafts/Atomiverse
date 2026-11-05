@@ -14,7 +14,7 @@
 #include "atomiverse/core/role.h"
 #include "atomiverse/cpu/component/pair_evaluator.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
-#include "atomiverse/cpu/potentials/pair_partition.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
@@ -90,11 +90,7 @@ class PairCoulCut : public cpu::PairPotential {
     const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
 
-    // Team / row balance / touched rows of the list `compute()` walks,
-    // rebuilt when that list changes (null source = not built).
-    md::PairRowPartition partition_;
-    const md::PairList* part_source_ = nullptr;
-    unsigned long long part_version_ = 0;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

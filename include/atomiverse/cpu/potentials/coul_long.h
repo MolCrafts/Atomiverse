@@ -23,6 +23,7 @@
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
@@ -81,7 +82,7 @@ class CoulLong : public cpu::Potential,
     md::SpecialScaleTable special_;
     unsigned long long special_version_ = 0;
 
-    int n_threads_ = 1;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

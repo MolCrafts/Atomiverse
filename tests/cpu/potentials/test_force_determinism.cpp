@@ -14,6 +14,8 @@
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/force_scratch.h"
+#include "atomiverse/cpu/potentials/pair_dpd.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pair_morse.h"
 
 #ifdef _OPENMP
@@ -165,4 +167,30 @@ TEST(ForceDeterminism, BondedStyleIsBitReproduciblePerThreadCount) {
     cpu::Frame f = chain(kAtoms, 1.0, 500.0);
     cpu::Context ctx;
     expect_reproducible([] { return cpu::BondHarmonic({2.5}, {0.9}); }, f, ctx);
+}
+
+TEST(ForceDeterminism, SimdRowWalkIsBitReproduciblePerThreadCount) {
+    // PairLJCut walks its rows with the xsimd ket loop (PairLoop::walk).
+    constexpr int kAtoms = 900;
+    cpu::Frame f = chain(kAtoms, 1.1, 500.0);
+    const auto pairs = all_pairs(kAtoms);
+    cpu::Context ctx;
+    ctx.md.pair_list = &pairs;
+    expect_reproducible([] { return cpu::PairLJCut(0.01, 1.0, 60.0); }, f, ctx);
+}
+
+TEST(ForceDeterminism, DpdRandomForcesAreBitReproduciblePerThreadCount) {
+    // F^R is pair-seeded (seed, step, tags): thread order never enters it.
+    constexpr int kAtoms = 900;
+    cpu::Frame f = chain(kAtoms, 1.1, 500.0);
+    for (int i = 0; i < kAtoms; ++i) {
+        f.span(kAtom_vx)[i] = 0.01 * std::sin(1.0 + i);
+        f.span(kAtom_vy)[i] = 0.01 * std::cos(2.0 + i);
+        f.span(kAtom_vz)[i] = 0.01 * std::sin(3.0 * i);
+    }
+    const auto pairs = all_pairs(kAtoms);
+    cpu::Context ctx;
+    ctx.md.pair_list = &pairs;
+    expect_reproducible(
+        [] { return cpu::PairDpd(2.0, 4.5, 1.0, 60.0, 0.01, 7); }, f, ctx);
 }

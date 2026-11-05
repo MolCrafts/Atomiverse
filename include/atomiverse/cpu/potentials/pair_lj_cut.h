@@ -14,7 +14,7 @@
 #include "atomiverse/core/lj_type_table.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/pair.h"
-#include "atomiverse/cpu/potentials/pair_partition.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
@@ -30,9 +30,9 @@ namespace cpu {
 /// `set_special_bonds(0.0, 0.0, 0.5)`. Lists come from `kAtom_nspecial` /
 /// `kAtom_special` (via `Frame::build_special_list`). Default: no specials.
 ///
-/// Thread-parallel with per-thread force reduction buffers
-/// (Newton's 3rd law). xsimd ket-loop in the inner pair walk (Track B.2,
-/// 1.21× over scalar on NEON64).
+/// Walked by `md::PairLoop` (chunk-owned force slots, Newton's 3rd law) with
+/// the xsimd ket loop as its row kernel (Track B.2, 1.21× over scalar on
+/// NEON64).
 class PairLJCut : public Pair {
   public:
     /// @param epsilon Well depth [eV].
@@ -75,8 +75,9 @@ class PairLJCut : public Pair {
     ///
     /// **Performance.** The single-type constructor keeps the hoisted xsimd ket loop —
     /// the kernel benchmarked against LAMMPS. Per-type coefficients cannot hoist out of
-    /// the inner loop, so this constructor selects a SCALAR path. Correct, not fast;
-    /// vectorizing it needs a SIMD gather over the table, which nobody has needed yet.
+    /// the inner loop, so this constructor runs the gathered xsimd loop (each lane's
+    /// table record packed next to its coordinates); a table with r⁻⁴ rows runs the
+    /// scalar per-pair kernel.
     ///
     /// @param coeffs Type-pair coefficients; must not be empty.
     /// @param cutoff Global LJ cutoff [Å] for rows that name none.
@@ -179,8 +180,8 @@ class PairLJCut : public Pair {
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
-    /// @brief Resident heap bytes: per-chunk force accumulators (OMP>1 only)
-    /// plus the exclusion map + filtered neighbor list (special-bonds runs).
+    /// @brief Resident heap bytes: the exclusion map + filtered neighbor
+    /// list (special-bonds runs); chunk force buffers belong to the Runtime.
     /// Classified under the "Pair" category by the driver memory summary.
     std::size_t memory_bytes() const override;
 
@@ -241,11 +242,7 @@ class PairLJCut : public Pair {
     // Null source denotes an unbuilt cache; version zero is a valid list.
     const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
-    // Team / row balance / touched rows of the list `compute()` walks,
-    // rebuilt when that list changes (null source = not built).
-    md::PairRowPartition partition_;
-    const md::PairList* part_source_ = nullptr;
-    unsigned long long part_version_ = 0;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

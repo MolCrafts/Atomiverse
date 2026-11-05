@@ -45,8 +45,11 @@ double and mixed separately (small cells reported, not gated).
   Green's sum and gather are threaded (x-plane slabs) with FFTW threads;
   SETTLE is analytic and threaded. Timings: wip/cpu-md-perf commit messages
   (LAMMPS bench data.rhodo through run_atv_gaff, `--settle` for waters).
-- Open: lj/cut and coul/* still carry their own loops; no CPU
-  energy-request gate; PME still Allreduces a c2c mesh to rank 0.
+- Every CPU pair style walks `md::PairLoop` (lj/cut and coul/cut keep
+  their xsimd ket loops as the loop's row `walk`; soft-core dU/dλ and DPD's
+  conservative-only virial ride `PairTermX`).
+- Open: no CPU energy-request gate; PME still Allreduces a c2c mesh to
+  rank 0.
 
 ## CUDA
 
