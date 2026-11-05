@@ -471,8 +471,20 @@ def _kinetic_from_columns(frame: "molpy.Frame") -> float:
     return float(0.5 * np.sum(mass * v_sq))
 
 
+#: The classical engine runs on the LAMMPS lj row with eV, Å and amu: one fs
+#: is 1/sqrt(103.6427) time units and temperatures are k_B·T in eV.
+_FS: float = 0.09822694585667956
+_KB: float = 8.617333262e-5  # eV/K
+
+
 class TestThermostatsAndNpt:
-    """NVT via Langevin/CSVR and NPT via NoseHooverNPT (LAMMPS `fix npt`)."""
+    """NVT via Langevin/CSVR and NPT via NoseHooverNPT (LAMMPS `fix npt`).
+
+    The engine runs on the LAMMPS lj row with eV, Å and amu, so times are in
+    sqrt(amu·Å²/eV) (``_FS`` per fs) and temperatures are k_B·T in eV
+    (``_KB`` per K). The physical choices below are stated in fs and K.
+    """
+
 
     #: Barostat cases need a real timestep: the 0.001 fs of the NVE smokes
     #: advances 5 as of physical time, which no cell can respond to. The Ar
@@ -480,14 +492,14 @@ class TestThermostatsAndNpt:
     #: is still ~1/450 of the Ar LJ oscillation period (~1.8 ps) and buys
     #: the same physical time in a quarter of the steps, which is what
     #: keeps these cases inside the suite's seconds-scale budget.
-    _DT = 4.0
+    _DT = 4.0 * _FS
     _CUTOFF = 8.5
 
     def _lj_no_integrator(self) -> MD:
         """Ar LJ recipe + seeded velocities; the caller installs the
         integrator (plain, NPT, or plain-plus-barostat)."""
         sim = MD()
-        sim.set_observer(InitVelocity(10.0, 42))
+        sim.set_observer(InitVelocity(10.0 * _KB, 42))
         sim.set_neighbor(NeighborList(self._CUTOFF))
         sim.set_evaluator(LJCut(0.0104, 3.4, self._CUTOFF))
         return sim
@@ -495,21 +507,21 @@ class TestThermostatsAndNpt:
     def _lj_nvt(self, thermostat) -> MD:
         cutoff = 8.5
         sim = MD()
-        sim.set_integrator(VelocityVerlet(0.001))
-        sim.set_observer(InitVelocity(10.0, 42))
+        sim.set_integrator(VelocityVerlet(0.001 * _FS))
+        sim.set_observer(InitVelocity(10.0 * _KB, 42))
         sim.set_thermostat(thermostat)
         sim.set_neighbor(NeighborList(cutoff))
         sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
         return sim
 
     def test_langevin_nvt_smoke(self, argon_frame):
-        sim = self._lj_nvt(Langevin(10.0, 10.0, 100.0, 0.001, 7))
+        sim = self._lj_nvt(Langevin(10.0 * _KB, 10.0 * _KB, 100.0 * _FS, 0.001 * _FS, 7))
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
         assert argon_frame.meta["kinetic"] > 0.0
 
     def test_csvr_nvt_smoke(self, argon_frame):
-        sim = self._lj_nvt(CSVR(10.0, 50.0, 0.001, 7))
+        sim = self._lj_nvt(CSVR(10.0 * _KB, 50.0 * _FS, 0.001 * _FS, 7))
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
         assert argon_frame.meta["kinetic"] > 0.0
@@ -517,8 +529,8 @@ class TestThermostatsAndNpt:
     def test_npt_smoke(self, argon_frame):
         cutoff = 8.5
         sim = MD()
-        sim.set_integrator(NoseHooverNPT(10.0, 100.0, 0.0, 1000.0, 0.001))
-        sim.set_observer(InitVelocity(10.0, 42))
+        sim.set_integrator(NoseHooverNPT(10.0 * _KB, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.001 * _FS))
+        sim.set_observer(InitVelocity(10.0 * _KB, 42))
         sim.set_neighbor(NeighborList(cutoff))
         sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
         sim.run(argon_frame, 5)
@@ -527,11 +539,11 @@ class TestThermostatsAndNpt:
     def test_set_thermostat_rejects_unknown_type(self, argon_frame):
         sim = MD()
         with pytest.raises(TypeError, match="NoseHoover, Langevin, or CSVR"):
-            sim.set_thermostat(VelocityVerlet(0.001))
+            sim.set_thermostat(VelocityVerlet(0.001 * _FS))
 
     def test_set_integrator_accepts_npt(self):
         sim = MD()
-        sim.set_integrator(NoseHooverNPT(300.0, 100.0, 0.0, 1000.0, 0.5))
+        sim.set_integrator(NoseHooverNPT(300.0 * _KB, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.5 * _FS))
 
     # ── py-md-npt: PR-NPT, Berendsen, and the NoseHooverNPT knob tail ──
 
@@ -546,7 +558,9 @@ class TestThermostatsAndNpt:
         sim = self._lj_no_integrator()
         # ctor order is T, P_target, tau_T, tau_P, dt — NOT NoseHooverNPT's
         # T, tau_T, P_target, tau_P, dt.
-        sim.set_integrator(ParrinelloRahmanNPT(10.0, 0.0, 100.0, 1000.0, self._DT))
+        sim.set_integrator(ParrinelloRahmanNPT(
+                10.0 * _KB, 0.0, 100.0 * _FS, 1000.0 * _FS, self._DT
+            ))
         sim.run(argon_frame, 10)
         assert np.isfinite(argon_frame.meta["energy"])
         volume_after = argon_frame.box.volume()
@@ -563,7 +577,7 @@ class TestThermostatsAndNpt:
         volume_before = argon_frame.box.volume()
         sim = self._lj_no_integrator()
         sim.set_integrator(VelocityVerlet(self._DT))
-        sim.set_barostat(BerendsenBarostat(0.0, 1000.0, self._DT))
+        sim.set_barostat(BerendsenBarostat(0.0, 1000.0 * _FS, self._DT))
         sim.run(argon_frame, 10)
         assert np.isfinite(argon_frame.meta["energy"])
         volume_after = argon_frame.box.volume()
@@ -580,7 +594,7 @@ class TestThermostatsAndNpt:
 
     def test_set_integrator_accepts_pr_npt(self):
         sim = MD()
-        sim.set_integrator(ParrinelloRahmanNPT(300.0, 0.0, 100.0, 1000.0, 0.5))
+        sim.set_integrator(ParrinelloRahmanNPT(300.0 * _KB, 0.0, 100.0 * _FS, 1000.0 * _FS, 0.5 * _FS))
 
     def test_npt_couple_axis_freezes_axis(self, argon_frame):
         """couple_axis[2] = False freezes the z edge exactly while the
@@ -589,10 +603,10 @@ class TestThermostatsAndNpt:
         sim = self._lj_no_integrator()
         sim.set_integrator(
             NoseHooverNPT(
-                10.0,
-                100.0,
+                10.0 * _KB,
+                100.0 * _FS,
                 0.0,
-                1000.0,
+                1000.0 * _FS,
                 self._DT,
                 couple_axis=(True, True, False),
             )
@@ -627,13 +641,17 @@ class TestThermostatsAndNpt:
 
         flat = self._lj_no_integrator()
         flat.set_integrator(
-            NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, self._DT, T_stop=10.0)
+            NoseHooverNPT(
+                10.0 * _KB, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=10.0 * _KB
+            )
         )
         flat.run(frame_flat, 25)
 
         ramped = self._lj_no_integrator()
         ramped.set_integrator(
-            NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, self._DT, T_stop=1000.0)
+            NoseHooverNPT(
+                10.0 * _KB, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=1000.0 * _KB
+            )
         )
         ramped.run(frame_ramped, 25)
 
@@ -651,7 +669,14 @@ class TestThermostatsAndNpt:
         sim = self._lj_no_integrator()
         sim.set_integrator(
             NoseHooverNPT(
-                10.0, 100.0, 0.0, 1000.0, self._DT, drag=0.5, mtchain=4, mpchain=4
+                10.0 * _KB,
+                100.0 * _FS,
+                0.0,
+                1000.0 * _FS,
+                self._DT,
+                drag=0.5,
+                mtchain=4,
+                mpchain=4,
             )
         )
         sim.run(argon_frame, 5)
@@ -937,11 +962,9 @@ _PAIR_Z: int = 18
 _PAIR_TYPE: int = 1
 _PAIR_MASS: float = 39.948  # [amu]
 
-#: Timestep [fs] of the static single point. The frame arrives with no
-#: velocity and no force column, so ``initial_integrate`` moves nothing
-#: and the force phase sees the geometry exactly as built; the timestep
-#: only has to be small enough that the trailing half-kick cannot matter
-#: to the energy already recorded.
+#: Timestep (lj time) the static single point installs. ``MD.run(frame, 0)``
+#: only evaluates the setup forces, so no step is taken and the value never
+#: moves an atom; MD still needs an integrator to build.
 _STATIC_DT: float = 1.0e-6
 
 #: Absolute energy tolerance [eV] for the closed forms. The kernels and
@@ -1040,10 +1063,11 @@ class TestPairStyleCatalogue:
     def _energy(frame: "molpy.Frame", evaluator: object) -> float:
         """Total potential energy [eV] of one static single point.
 
-        One VelocityVerlet step with no ``InitVelocity`` and no
-        ``NeighborList``: velocities and forces start at zero, so the
-        force phase evaluates the frame's own geometry and
-        ``frame.meta["energy"]`` is that geometry's energy.
+        A zero-step run: setup evaluates the force phase on the frame's own
+        geometry and nothing integrates, so ``frame.meta["energy"]`` is that
+        geometry's energy. (One VelocityVerlet step would first move the
+        atoms by ½·F/m·dt² — negligible in fs, but ~10⁻⁹ eV on the 509 eV
+        Born dimer once dt is in lj time.)
 
         @param frame: molpy.Frame to evaluate (advanced in place).
         @param evaluator: The single force source to install.
@@ -1052,7 +1076,7 @@ class TestPairStyleCatalogue:
         sim = MD()
         sim.set_integrator(VelocityVerlet(_STATIC_DT))
         sim.set_evaluator(evaluator)
-        sim.run(frame, 1)
+        sim.run(frame, 0)
         return float(frame.meta["energy"])
 
     # ── pair styles ────────────────────────────────────────────────

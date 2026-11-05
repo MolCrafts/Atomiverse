@@ -98,6 +98,8 @@ _CANONICAL_NEW_NAMES: tuple[str, ...] = (
 _CANONICAL_ALL: frozenset[str] = frozenset(
     {
         "MD",
+        "set_units",
+        "units_style",
         "VelocityVerlet",
         "NoseHooverNPT",
         "ParrinelloRahmanNPT",
@@ -306,7 +308,7 @@ class TestCanonicalSurface:
 
     def test_public_names_are_the_honest_surface(self) -> None:
         """The public candidate list is fixed; availability filters __all__."""
-        assert len(_CANONICAL_ALL) == 82
+        assert len(_CANONICAL_ALL) == 84
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:
