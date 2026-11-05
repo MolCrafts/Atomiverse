@@ -3,9 +3,9 @@
 ///        per-rank scalars and stress tensor.
 ///
 /// Bound at `end_of_step @ -50`, after `KineticEnergy @ -100` (so KE is
-/// the locally-summed value) and before `Publish @ +10` (so any
-/// async observer reading from the snapshot sees the globally-reduced
-/// scalars). Single-rank: structural no-op.
+/// the locally-summed value) and before the asynchronous consumers capture
+/// the frame (`end_of_step` >= +10), so they see the globally-reduced
+/// scalars. Single-rank: structural no-op.
 
 #include "atomiverse/cpu/communication/reduce.h"
 
@@ -30,19 +30,21 @@ void Reduce::launch(const cpu::LaunchContext& ctx) {
     if (!dd || dd->cart_comm == MPI_COMM_NULL)
         return;
 
-    // Cadence gate (see Reduce doc): with every_ > 1, fire only on step 0, the
-    // final step of the run, and every every_-th step. Force initialization
-    // always reduces, including a live refresh between cadence steps. Gated on the
-    // all-ranks-identical ctx.step / is_last_step so the collective is still
-    // entered in lockstep — no rank-divergent skip, hence no deadlock.
+    // Cadence gate (see Reduce doc): with every_ > 1, fire only after every
+    // every_-th completed step (ctx.step + 1, LAMMPS `update->ntimestep`; the
+    // step a thermo / recorder of the same cadence writes) and on the final
+    // step of the run. Force initialization (the setup the initial thermo
+    // line and frame read) always reduces, including a live refresh between
+    // cadence steps. Gated on the all-ranks-identical ctx.step / is_last_step
+    // so the collective is still entered in lockstep — no rank-divergent
+    // skip, hence no deadlock.
     // every_ == 1 (default) reduces every step, byte-identical to before; the
     // larger cadence is opt-in via MD::set_scalar_reduce_every. Always firing
     // on the last step keeps the globally-reduced scalars valid for the common
     // "read Frame metadata after run()" pattern, so the cadence is safe whenever
     // no *per-step* consumer reads them.
     if (!ctx.runtime.exec.initializing_forces && every_ > 1
-        && !ctx.runtime.md.is_last_step && ctx.step != 0
-        && (ctx.step % every_) != 0)
+        && !ctx.runtime.md.is_last_step && ((ctx.step + 1) % every_) != 0)
         return;
 
     auto& f = ctx.frame;

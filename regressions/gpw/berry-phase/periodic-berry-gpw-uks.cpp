@@ -50,7 +50,7 @@ cpu::Frame si_bct(double a_ang, double delta_frac_z) {
     frac[1][2] -= std::floor(frac[1][2]);
     cpu::Frame frame(4);
     for (int i = 0; i < 4; ++i) {
-        frame.span(kAtom_type)[i] = 14;
+        frame.span(kAtom_atomic_number)[i] = 14;
         frame.span(kAtom_x)[i] = frac[i][0] * at;
         frame.span(kAtom_y)[i] = frac[i][1] * at;
         frame.span(kAtom_z)[i] = frac[i][2] * a_ang;

@@ -156,19 +156,19 @@ constexpr double kOffOptimumFloorEvA = 0.5;
 /// @brief Water in MOPAC's C2v frame: O at origin, H1 on +x, H2 in the xy plane.
 /// @param oh_angstrom O–H bond length [Å] (both bonds; C2v).
 /// @param hoh_degrees H–O–H bond angle [degrees].
-/// @return Frame with Z in `kAtom_type`, positions [Å], 30 Å cubic box.
+/// @return Frame with Z in `kAtom_atomic_number`, positions [Å], 30 Å cubic box.
 ATV::cpu::Frame water(double oh_angstrom, double hoh_degrees) {
     const double theta = hoh_degrees * 3.14159265358979323846 / 180.0;
     ATV::cpu::Frame f(3);
-    f.span(ATV::kAtom_type)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
     f.span(ATV::kAtom_x)[0] = 0;
     f.span(ATV::kAtom_y)[0] = 0;
     f.span(ATV::kAtom_z)[0] = 0;
-    f.span(ATV::kAtom_type)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
     f.span(ATV::kAtom_x)[1] = static_cast<ATV::StorageReal>(oh_angstrom);
     f.span(ATV::kAtom_y)[1] = 0;
     f.span(ATV::kAtom_z)[1] = 0;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.span(ATV::kAtom_x)[2] =
         static_cast<ATV::StorageReal>(oh_angstrom * std::cos(theta));
     f.span(ATV::kAtom_y)[2] =
@@ -321,7 +321,7 @@ inline int run_cpu() {
     for (const auto& pin : kModernPins) {
         cpu::Frame frame(pin.count);
         for (int i = 0; i < pin.count; ++i) {
-            frame.span(kAtom_type)[i] = pin.species[i];
+            frame.span(kAtom_atomic_number)[i] = pin.species[i];
             frame.span(kAtom_x)[i] = pin.xyz[i][0];
             frame.span(kAtom_y)[i] = pin.xyz[i][1];
             frame.span(kAtom_z)[i] = pin.xyz[i][2];

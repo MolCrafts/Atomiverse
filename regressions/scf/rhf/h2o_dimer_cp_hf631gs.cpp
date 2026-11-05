@@ -35,7 +35,7 @@ int run() {
 
     cpu::Frame dimer(6);
     for (int i = 0; i < 6; ++i) {
-        dimer.span(kAtom_type)[i] = Z[i];
+        dimer.span(kAtom_atomic_number)[i] = Z[i];
         dimer.span(kAtom_x)[i] = coords[i][0];
         dimer.span(kAtom_y)[i] = coords[i][1];
         dimer.span(kAtom_z)[i] = coords[i][2];

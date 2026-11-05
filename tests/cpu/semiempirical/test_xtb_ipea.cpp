@@ -27,7 +27,7 @@ cpu::Frame make_ch4() {
     const double z[5] = {0, s, -s, -s, s};
     const int Z[5] = {6, 1, 1, 1, 1};
     for (int i = 0; i < 5; ++i) {
-        f.span(kAtom_type)[i] = Z[i];
+        f.span(kAtom_atomic_number)[i] = Z[i];
         f.span(kAtom_x)[i] = x[i];
         f.span(kAtom_y)[i] = y[i];
         f.span(kAtom_z)[i] = z[i];
@@ -42,15 +42,15 @@ cpu::Frame make_ch4() {
 
 cpu::Frame make_water() {
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.96;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = -0.24;
     f.span(kAtom_y)[2] = 0.93;
     f.span(kAtom_z)[2] = 0.0;
@@ -86,7 +86,7 @@ TEST(XtbIpea, TablesCoverHCNO) {
 
 TEST(XtbIpea, UnsupportedElementThrows) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 9; // F — not in the H/C/N/O foothold
+    f.span(kAtom_atomic_number)[0] = 9; // F — not in the H/C/N/O foothold
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0;
     f.span(kAtom_mass)[0] = 19.0;
     f.span(kAtom_tag)[0] = 1;

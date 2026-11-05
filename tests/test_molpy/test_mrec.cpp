@@ -149,7 +149,7 @@ TEST(MolpyMrec, CpuWriteMrecFrameRefusesMalformedInput) {
     EXPECT_THROW(ATV::cpu::write_mrec_frame(path, {8}, {0.0}, {0.0}, {0.0}, box,
                                             {"q", "q"}, {1.0, 2.0}),
                  std::invalid_argument);
-    // kAtom_type carries Z: negative is refused before it crosses, Z > 118
+    // kAtom_atomic_number carries Z: negative is refused before it crosses, Z > 118
     // by molpy.
     EXPECT_THROW(ATV::cpu::write_mrec_frame(path, {-1}, {0.0}, {0.0}, {0.0},
                                             box, {}, {}),

@@ -32,9 +32,22 @@
 /// | tier        | role                                   | LAMMPS twin | SMALLBIG | BIGBIG (default) |
 /// |-------------|----------------------------------------|-------------|----------|------------------|
 /// | `LocalInt`  | on-rank counts (nlocal, capacity, idx) | `smallint`  | int32    | int32            |
-/// | `ImageInt`  | periodic image flags                   | `imageint`  | int32    | int64            |
+/// | `ImageInt`  | one periodic image flag (per component)| `imageint`  | int32    | int32            |
 /// | `TagInt`    | global atom / molecule IDs             | `tagint`    | int32    | int64            |
 /// | `BigInt`    | global totals (natoms, ntimestep)      | `bigint`    | int64    | int64            |
+///
+/// `ImageInt` is fixed at int32 regardless of `ATV_ID_SIZE`. LAMMPS packs all
+/// three image counters into one `imageint` (10 bits each in an int32 under
+/// SMALLBIG, 21 bits each in an int64 under `-DLAMMPS_BIGBIG`;
+/// `src/lmptype.h`), so its reach is ±512 or ±2^20 crossings. Atomiverse
+/// stores the three counters unpacked (`kAtom_image`, stride 3); one signed
+/// 32-bit counter per component reaches ±2^31 crossings, beyond the BIGBIG
+/// packed range, with no pack/unpack step. A stable run moves an atom by less
+/// than one cell per step, so ±2^31 exceeds any step budget a run can afford;
+/// int64 would double the column for no reachable gain. (The former int8
+/// counter overflowed after ±127 crossings — reached by long diffusive,
+/// transport and NEMD-drift runs.) int32 is also molpy's `ix/iy/iz` dtype, so
+/// the molpy boundary copies images with no narrowing.
 ///
 /// Atomiverse defaults to BIGBIG (64-bit IDs) to preserve the legacy always-int64
 /// tag width — a byte-identical default; SMALLBIG (32-bit IDs, the LAMMPS default)
@@ -84,14 +97,15 @@ using LocalInt = std::int32_t;
 /// ranks, timestep index. **Always 64-bit** so a global count never overflows.
 using BigInt = std::int64_t;
 
+/// @brief One periodic image counter (LAMMPS `imageint` role, unpacked):
+///        how many times an atom crossed the cell along one lattice vector.
+///        Always 32-bit signed in every ID build (see the tier table).
+using ImageInt = std::int32_t;
+
 #ifdef ATV_ID_BIGBIG
-/// @brief Periodic image-flag type (LAMMPS `imageint`), 64-bit under BIGBIG.
-using ImageInt = std::int64_t;
 /// @brief Global atom / molecule ID type (LAMMPS `tagint`), 64-bit under BIGBIG.
 using TagInt = std::int64_t;
 #else // ATV_ID_SMALLBIG (default)
-/// @brief Periodic image-flag type (LAMMPS `imageint`), 32-bit under SMALLBIG.
-using ImageInt = std::int32_t;
 /// @brief Global atom / molecule ID type (LAMMPS `tagint`), 32-bit under SMALLBIG.
 using TagInt = std::int32_t;
 #endif

@@ -30,7 +30,7 @@ Run — installed wheel (pure-Python phase 1, then the native phase 2)::
     python -m atomiverse install
     python md_lj_argon.py
 
-Units: Å, eV, fs, amu, K.
+Units: the classical engine's LAMMPS lj row (boltz = mvv2e = ftm2v = 1).
 """
 
 from __future__ import annotations
@@ -70,9 +70,8 @@ _SEED: int = 42
 _N_STEPS: int = 200  # 0.2 ps
 _THERMO_EVERY: int = 100  # LAMMPS-style print cadence
 
-#: Boltzmann constant in engine units — the value core/units.h carries
-#: (`kB_ev_per_k`, CODATA); only used to report a temperature.
-_KB_EV_PER_K: float = 8.617333262e-5  # [eV/K]
+#: Temperature report uses the engine's md_boltz (lj row, 1).
+_KB_EV_PER_K: float = 1.0
 
 #: Minimum motion a 0.2 ps run at 94 K must produce [Å]. Argon's thermal
 #: speed there is ~2.4 Å/ps, so this leaves two orders of magnitude of

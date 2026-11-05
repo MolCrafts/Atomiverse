@@ -23,9 +23,10 @@ __global__ void brownian_integrate_kernel(
     pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
     pos_t* __restrict__ xc, pos_t* __restrict__ yc, pos_t* __restrict__ zc,
     const fixed_t* __restrict__ fx, const fixed_t* __restrict__ fy,
-    const fixed_t* __restrict__ fz, ForceFault* fault,
-    const std::int64_t* __restrict__ tag, mixed_t mobility, mixed_t dt,
-    mixed_t noise, cuda::Box box, std::uint64_t seed, BigInt step, int n) {
+    const fixed_t* __restrict__ fz, ImageInt* __restrict__ image,
+    ForceFault* fault, const std::int64_t* __restrict__ tag, mixed_t mobility,
+    mixed_t dt, mixed_t noise, cuda::Box box, std::uint64_t seed, BigInt step,
+    int n) {
     if (!forces_consumable(fault, tag, step))
         return;
     box = box.current();
@@ -58,9 +59,20 @@ __global__ void brownian_integrate_kernel(
     mixed_t nz = brownian_advance(load_position(z, zc, i), fzi, finite,
                                   mobility, dt, noise, gz);
     if (wrap) {
+        const mixed_t unwrapped[3] = {nx, ny, nz};
         nx = brownian_wrap(nx, Lx);
         ny = brownian_wrap(ny, Ly);
         nz = brownian_wrap(nz, Lz);
+        // LAMMPS Domain::pbc image bookkeeping: count the whole-edge shifts.
+        if (image != nullptr) {
+            const mixed_t wrapped[3] = {nx, ny, nz};
+            const mixed_t L[3] = {Lx, Ly, Lz};
+            for (int d = 0; d < 3; ++d)
+                image[3 * i + d] = static_cast<ImageInt>(
+                    image[3 * i + d]
+                    + static_cast<int>(
+                        nearbyint((unwrapped[d] - wrapped[d]) / L[d])));
+        }
     }
     store_position(x, xc, i, nx);
     store_position(y, yc, i, ny);
@@ -86,7 +98,7 @@ void Brownian::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     const auto& a = frame.atoms;
     brownian_integrate_kernel<<<grid, block, 0, stream>>>(
-        a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz,
+        a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, a.image,
         frame.force_fault, a.tag, mobility, dt, noise, box, seed_, ctx.step, n);
 }
 

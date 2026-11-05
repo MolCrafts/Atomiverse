@@ -89,9 +89,10 @@ int run() {
     // Derived QEq objective (bare-1/r kernel), see REFERENCE.md.
     check("E_qeq [eV]", qeq.qeq_energy(), -0.467311783767, 1e-6);
 
-    // Coulomb energy of the equilibrated charges (from the same MD step).
-    // LAMMPS thermo E_coul (metal units, qqr2e = 14.399645 = units::coulomb).
-    check("E_coul [eV]", f.meta.get(kEnergy), -0.254699311955, 1e-6);
+    // Coulomb energy of the equilibrated charges. The LAMMPS metal thermo
+    // pin is qqr2e = units::coulomb; the engine multiplies md_qqr2e.
+    check("E_coul", f.meta.get(kEnergy),
+          -0.254699311955 * units::md_qqr2e / units::coulomb, 1e-9);
 
     // ── Fair perf twin: 1000 repeated equilibrations (see in.qeq_perf) ─
     // QEq only — dummy Bias satisfies MD validation (no pair cost).

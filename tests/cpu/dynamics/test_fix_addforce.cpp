@@ -67,7 +67,7 @@ TEST(FixAddForce, EnergyIsMinusFDotR) {
 TEST(FixAddForce, UnwrappedEnergyUsesImage) {
     auto f = two_atoms();
     // Atom 0: image_z = +1 → zu = 5 + 20 = 25
-    f.span(kAtom_image)(0, 2) = static_cast<std::int8_t>(1);
+    f.span(kAtom_image)(0, 2) = static_cast<ATV::ImageInt>(1);
     // U = -0.05 * 25 = -1.25
     cpu::Context ctx;
     cpu::md::FixAddForce pull(0.0, 0.0, 0.05, 1);

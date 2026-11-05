@@ -461,6 +461,17 @@ opt.on(minimizer::Phase::end_of_step)
    .add(cpu::minimizer::TrajectoryWriter{"aspirin_traj.xyz", /*stride=*/1});
 ```
 
+`OptLog`, `TrajectoryWriter` (and `Thermo`, `XyzRecorder`,
+`MrecRecorder` and the cube writers when bound in a minimization) follow
+the LAMMPS `minimize` output convention (src/min.cpp `Min::setup` /
+`Min::run`): a record's `step` is the number of completed optimizer
+iterations and holds the state after exactly that many. The run's setup
+writes the initial geometry as step 0; iteration *i* writes step *i* when
+it is on the stride; a minimization stopped by a criterion before its
+iteration budget also writes its final state off stride; no step is written
+twice. A run that converges after 7 iterations at `stride=3` therefore
+writes steps 0, 3, 6 and 7; `OptLog` (every iteration) writes rows 0–7.
+
 All three are MPI-aware (rank-0-only writes) and respect the same
 build/launch/destroy lifecycle as every other component.
 

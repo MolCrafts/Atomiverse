@@ -148,7 +148,7 @@ void validate_inputs(const xt::xtensor<double, 2>& hessian_sc,
 std::vector<double> masses_from_frame(const cpu::Frame& unit) {
     const int n = unit.nlocal();
     std::vector<double> mass(static_cast<std::size_t>(n));
-    const auto type = unit.span(kAtom_type);
+    const auto type = unit.span(kAtom_atomic_number);
     for (int i = 0; i < n; ++i)
         mass[static_cast<std::size_t>(i)] = mass_amu(static_cast<int>(type[i]));
     return mass;

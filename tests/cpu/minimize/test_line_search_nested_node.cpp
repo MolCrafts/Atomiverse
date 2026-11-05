@@ -131,7 +131,7 @@ cpu::Frame displaced_pair() {
         f.span(kAtom_y)[i] = x0[i][1];
         f.span(kAtom_z)[i] = x0[i][2];
         f.span(kAtom_mass)[i] = 1.0;
-        f.span(kAtom_type)[i] = 1;
+        f.span(kAtom_atomic_number)[i] = 1;
     }
     f.box = cpu::Box::cubic(20.0);
     return f;

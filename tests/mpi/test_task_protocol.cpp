@@ -54,6 +54,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -66,6 +67,9 @@
 #include "atomiverse/cpu/task/task_materializer.h"
 #include "atomiverse/cpu/task/task_protocol.h"
 #include "atomiverse/cpu/task/task_spec.h"
+#ifdef ATV_HAS_IO
+#include "atomiverse/molpy.hpp"
+#endif
 
 using namespace ATV;
 using namespace ATV::cpu::task;
@@ -118,8 +122,8 @@ StorageReal fixture_charge(int i) {
 /// @brief Expected image flag of fixture atom `i` on axis `d` — nonzero and
 ///        untouched by this run (all atoms stay > cutoff inside the 30 Å
 ///        box for 5 steps at 10 K, so nothing wraps).
-std::int8_t fixture_image(int i, int d) {
-    return static_cast<std::int8_t>((d + 1) * (i - 4));
+ATV::ImageInt fixture_image(int i, int d) {
+    return static_cast<ATV::ImageInt>((d + 1) * (i - 4));
 }
 
 /// @brief Deterministic 10-atom LJ cluster (two rows of five along x) in a
@@ -369,6 +373,77 @@ TEST(MpiTaskProtocol, ShutdownReleasesEveryWorkerCleanly) {
         EXPECT_NO_THROW(worker.run());
     }
 }
+
+// ── (g) The `*.mrec` recorder rides the task wire ──────────────────────────
+//
+// An MD task carrying `MrecRecorderParams` records on every rank count: each
+// rank gathers its owned rows to rank 0 in tag order (the LAMMPS `dump`
+// gather, `md::mpi::gather_for_root_io`) and only rank 0 writes. Rank 0's
+// store must hold the initial state plus one frame per step (LAMMPS dump
+// convention: steps 0…kNSteps) with the WHOLE system, tag-ordered, and its
+// last frame must be the state the dispatcher gathered back.
+#ifdef ATV_HAS_IO
+TEST(MpiTaskProtocol, DispatchedMdTaskRecordsTheWholeSystemOnRankZero) {
+    const std::string path =
+        (std::filesystem::temp_directory_path()
+         / ("atv_mpi_task_mrec_n" + std::to_string(world_size()) + ".mrec"))
+            .string();
+    if (world_rank() == 0) {
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    std::vector<MDComponentEntry> entries = make_lj_spec().md().entries;
+    entries.push_back(MDComponentEntry{
+        MrecRecorderParams{path, /*every=*/1, 0, /*durable=*/false},
+        std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    if (world_rank() == 0) {
+        TaskDispatcher dispatcher(MPI_COMM_WORLD);
+        DispatchResult dispatched = dispatcher.dispatch(spec, make_lj_frame());
+        dispatcher.shutdown();
+        const cpu::Frame& result = dispatched.frame;
+        ASSERT_EQ(result.nlocal(), kNAtoms);
+
+        for (std::uint64_t f = 0; f <= static_cast<std::uint64_t>(kNSteps);
+             ++f) {
+            SCOPED_TRACE("frame " + std::to_string(f));
+            auto fr = molrs::read_mrec_trajectory_frame(
+                {path.data(), path.size()}, f);
+            auto tag = molrs::frame_column_i32(*fr, "atoms", "tag");
+            ASSERT_EQ(tag.size(), static_cast<std::size_t>(kNAtoms))
+                << "rank 0 must write every rank's atoms";
+            for (int i = 0; i < kNAtoms; ++i)
+                EXPECT_EQ(tag[static_cast<std::size_t>(i)], i);
+            auto mass = molrs::frame_column_f64(*fr, "atoms", "mass");
+            for (double m : mass)
+                EXPECT_DOUBLE_EQ(m, 39.948);
+        }
+        EXPECT_THROW(molrs::read_mrec_trajectory_frame(
+                         {path.data(), path.size()},
+                         static_cast<std::uint64_t>(kNSteps + 1)),
+                     std::exception);
+        // The last recorded step is the end of the run: the gathered state.
+        auto last = molrs::read_mrec_trajectory_frame(
+            {path.data(), path.size()}, static_cast<std::uint64_t>(kNSteps));
+        auto x = molrs::frame_column_f64(*last, "atoms", "x");
+        auto vx = molrs::frame_column_f64(*last, "atoms", "vx");
+        for (int i = 0; i < kNAtoms; ++i) {
+            EXPECT_NEAR(x[static_cast<std::size_t>(i)],
+                        result.span(ATV::kAtom_x)[i], 1e-12);
+            EXPECT_NEAR(vx[static_cast<std::size_t>(i)],
+                        result.span(ATV::kAtom_vx)[i], 1e-12);
+        }
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+    } else {
+        WorkerLoop worker(MPI_COMM_WORLD);
+        EXPECT_NO_THROW(worker.run());
+    }
+}
+#endif
 
 // ── (f) A second staged task reuses the protocol without MD erasure ────
 

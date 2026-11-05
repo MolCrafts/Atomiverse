@@ -161,13 +161,11 @@ struct McHandle {
 
     /// @brief Install the neighbor list in its MC-correct form.
     ///
-    /// delay = 0, NOT the MD params default of 10: a deferred displacement
-    /// check is a correctness bug here. An accepted trial move can push an
-    /// atom past the skin at any trial, and the very next trial's energy would
-    /// then be scored against a stale list — the sampled Hamiltonian would
-    /// silently stop being the one the user configured. MD tolerates
-    /// `delay 10` because its per-step displacement is bounded by dt; a Monte
-    /// Carlo proposal is not.
+    /// delay = 0 (the NeighborList default, spelled out because a deferred
+    /// displacement check is a correctness bug here): an accepted trial move
+    /// can push an atom past the skin at any trial, and the very next trial's
+    /// energy would then be scored against a stale list — the sampled
+    /// Hamiltonian would silently stop being the one the user configured.
     ///
     /// @param p Cutoff [Å] and skin [Å], as the shared task mirror.
     void set_neighbor(const cpu::task::NeighborListParams& p) {
@@ -320,10 +318,12 @@ struct McHandle {
     ///
     /// Every column is rebuilt so the new block is internally consistent at
     /// the new N — a partial rebuild would leave the untouched columns at the
-    /// old length and molpy would reject the block. `mass` and
-    /// `atomic_number` are here because `to_molpy` deliberately does NOT write
-    /// them (per-run immutable inputs on the fixed-N path); after an insertion
-    /// they are outputs, stamped on the new row by `InsertDeleteMove`.
+    /// old length and molpy would reject the block. `mass` and the identity
+    /// columns (`atomic_number`, `type_id`) are here because `to_molpy`
+    /// deliberately does NOT write them (per-run immutable inputs on the
+    /// fixed-N path); after an insertion they are outputs, stamped on the new
+    /// row by `InsertDeleteMove`. An identity column the input frame did not
+    /// carry is not invented on the way back.
     ///
     /// @param frame_obj The `molpy.Frame` whose `atoms` block is replaced.
     void rebuild_atoms_block_(nb::object frame_obj) {
@@ -342,11 +342,15 @@ struct McHandle {
         insert("charge",
                numpy_column<double>(work_.span(kAtom_charge).data(), n));
         insert("mass", numpy_column<double>(work_.span(kAtom_mass).data(), n));
-        // Z is the species key on both sides of the boundary: molpy stores it
-        // as an unsigned column, `from_molpy` lands it in `kAtom_type`, and
-        // `InsertDeleteMove(z, mass)` stamps that same int on every insertion.
-        insert("atomic_number",
-               numpy_column<std::uint32_t>(work_.span(kAtom_type).data(), n));
+        // One molpy column per Frame column: species Z <-> atomic_number,
+        // force-field type <-> type_id, each only when the Frame carries it.
+        if (work_.has("atoms", kAtom_atomic_number.key))
+            insert("atomic_number",
+                   numpy_column<std::uint32_t>(
+                       work_.span(kAtom_atomic_number).data(), n));
+        if (work_.has("atoms", kAtom_type.key))
+            insert("type_id", numpy_column<std::uint32_t>(
+                                  work_.span(kAtom_type).data(), n));
         frame_obj["atoms"] = block;
     }
 
@@ -567,18 +571,21 @@ void bind_mc(nb::module_& m) {
         "probability either insert one atom at a uniform position in the cell "
         "or delete one uniformly chosen atom.\n\n"
         "A deletion drawn on an empty cell is simply rejected. An inserted "
-        "atom carries the configured species and mass and nothing else: zero "
+        "atom carries the configured identity and mass and nothing else: zero "
         "velocity, zero charge, no bonds, and a freshly allocated atom tag "
         "(never a recycled one). Its mass MUST be the mass GCMC built its "
         "thermal wavelength Lambda from — mixing the two is a silently wrong "
         "chemical potential, and nothing checks it.")
-        .def(nb::init<int, double>(), nb::arg("z"), nb::arg("mass"),
-             "Construct with the atomic number z (dimensionless, > 0) "
-             "stamped on inserted atoms and their mass [amu] (> 0).\n\n"
-             "z is the species key on both sides of the molpy boundary: the "
-             "frame's 'atomic_number' column becomes the engine's atom type, "
-             "so an inserted Ar atom is z = 18 and comes back out in the "
-             "rebuilt 'atomic_number' column.");
+        .def(nb::init<int, int, double>(), nb::arg("type"),
+             nb::arg("atomic_number"), nb::arg("mass"),
+             "Construct with the force-field type (> 0), the species "
+             "atomic_number (Z, 0..118) and the mass [amu] (> 0) stamped on "
+             "inserted atoms.\n\n"
+             "Each identity is written only where the frame carries it: "
+             "type goes to the 'type_id' column and atomic_number to the "
+             "'atomic_number' column, so an inserted Ar atom of LJ type 1 is "
+             "InsertDeleteMove(type=1, atomic_number=18, mass=39.948) and "
+             "comes back out in both rebuilt columns.");
 
     nb::class_<cpu::mc::MoveSelector>(
         m, "MoveSelector",

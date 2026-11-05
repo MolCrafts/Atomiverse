@@ -51,6 +51,14 @@ class Frame {
 
     bool has(std::string_view block_key, std::string_view column_key) const;
 
+    /// @brief Give the atoms Block the canonical schema column `id` again,
+    ///        zero-filled, after a boundary left it out (the identity
+    ///        columns `type` / `atomic_number`, see `atom_field_how_to`).
+    ///        A no-op when the column is present. Removing one is
+    ///        `block("atoms").erase(key)`.
+    /// @param id Schema field to (re)create.
+    void insert_field(AtomFieldId id);
+
     void begin_resolution_window(std::size_t budget) const noexcept;
     void end_resolution_window(const char* component) const;
     std::size_t resolution_count() const noexcept;

@@ -726,7 +726,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMemcpyAsync(scf.d_ao_cart, h_ao_cart.data(), n_cart * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
 
-    cudaMemcpyAsync(scf.d_atom_Z, ctx.frame.atoms.type,
+    cudaMemcpyAsync(scf.d_atom_Z, ctx.frame.atoms.atomic_number,
                     static_cast<std::size_t>(natm) * sizeof(int),
                     cudaMemcpyDeviceToDevice, stream);
 

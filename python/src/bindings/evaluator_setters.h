@@ -31,6 +31,9 @@
 #include <utility>
 #include <vector>
 
+#ifdef ATV_HAS_MD
+#include "atomiverse/cpu/dynamics/fix_efield.h"
+#endif
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
 #include "atomiverse/cpu/longrange/pppm.h"
@@ -38,6 +41,7 @@
 #ifdef ATV_HAS_PW
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #endif
+#include "atomiverse/cpu/potentials/angle_cosine.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
@@ -57,6 +61,7 @@
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
 #ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
+#include "atomiverse/cpu/semiempirical/dftb2.h"
 #include "atomiverse/cpu/semiempirical/mndo_solver.h"
 #include "atomiverse/cpu/semiempirical/pm3_solver.h"
 #include "atomiverse/cpu/semiempirical/rm1_solver.h"
@@ -105,6 +110,15 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
             [](Handle& self, ATV::cpu::semiempirical::PM3& method) {
                 self.set_local_evaluator(method, "PM3");
             },
+            nb::arg("comp"), nb::keep_alive<1, 2>())
+        // DFTB2 leads with its Driver<scc::Phase> base, so its Component
+        // base sits at a nonzero offset too: convert in C++, never through
+        // a Python inheritance cast (nanobind applies no base offset).
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::DFTB2& method) {
+                self.set_local_evaluator(method, "DFTB2");
+            },
             nb::arg("comp"), nb::keep_alive<1, 2>());
 #endif
     cls.def(
@@ -127,8 +141,24 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
                                  ATV::cpu::task::internal::make_pair_lj_cut(p));
         },
         nb::arg("comp"),
-        "Append the Lennard-Jones 12-6 pair evaluator. Needs a NeighborList "
-        "whose cutoff is >= the LJ cutoff.");
+        "Append the Lennard-Jones 12-6 pair evaluator (single-type or per-type "
+        "table, optional r^-4 attraction). Needs a NeighborList whose cutoff "
+        "is >= the largest per-pair cutoff.");
+
+    cls.def(
+        "set_evaluator_pair_lj_cut_coul_long",
+        [](Handle& self, const ATV::cpu::task::PairLJCutCoulLongParams& p) {
+            self.set_categorical(
+                "set_evaluator", p,
+                ATV::cpu::task::internal::make_pair_lj_cut_coul_long(p));
+        },
+        nb::arg("comp"),
+        "Append the fused typed LJ + Ewald real-space evaluator (LAMMPS "
+        "lj/cut/coul/long). The real-space half of an Ewald split: build() "
+        "requires exactly one reciprocal-space partner (KSpacePME) at the "
+        "SAME alpha [1/A]. Needs a NeighborList whose cutoff is >= the "
+        "largest LJ / r^-4 / Coulomb cutoff, and a per-atom 'charge' column "
+        "[e] on the frame handed to run().");
 
     cls.def(
         "set_evaluator_pair_coul_cut",
@@ -156,39 +186,6 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "(KSpacePME) at the SAME alpha [1/A]. Needs a NeighborList whose "
         "cutoff is >= the Coulomb cutoff, and a per-atom 'charge' column [e] "
         "on the frame handed to run().");
-
-    cls.def(
-        "set_evaluator_pair_lj_cut_coul_long",
-        [](Handle& self, const ATV::cpu::task::PairLJCutCoulLongParams& p) {
-            const std::size_t rows = p.type_i.size();
-            if (p.type_j.size() != rows || p.epsilon.size() != rows
-                || p.sigma.size() != rows)
-                throw std::invalid_argument(
-                    "PairLJCutCoulLong: type_i/type_j/epsilon/sigma are one "
-                    "coefficient table seen column-wise and must have the "
-                    "same length");
-            std::vector<ATV::cpu::LJTypeCoeff> table;
-            table.reserve(rows);
-            for (std::size_t k = 0; k < rows; ++k)
-                table.push_back(ATV::cpu::LJTypeCoeff{
-                    p.type_i[k], p.type_j[k], p.epsilon[k], p.sigma[k]});
-            // Not a wire alternative: the handle records the name and the
-            // charge requirement itself, as for KSpacePPPM.
-            self.set_unmirrored_evaluator(
-                ATV::cpu::PairLJCutCoulLong{std::move(table), p.alpha, p.cutoff}
-                    .set_special_bonds(p.special_lj[0], p.special_lj[1],
-                                       p.special_lj[2], p.special_coul[0],
-                                       p.special_coul[1], p.special_coul[2])
-                    .set_energy_shift(p.energy_shift),
-                "PairLJCutCoulLong", true);
-        },
-        nb::arg("comp"),
-        "Append fused multi-type LJ + real-space Ewald Coulomb (LAMMPS "
-        "lj/cut/coul/long) with separate LJ and Coulomb special-bond weights. "
-        "build() requires exactly one reciprocal partner (KSpacePME / "
-        "KSpacePPPM) at the SAME alpha. Needs a NeighborList whose cutoff is "
-        ">= this cutoff and a per-atom 'charge' column [e]. Not an MPI "
-        "task-wire component: a launcher run that names it is refused.");
 
     cls.def(
         "set_evaluator_improper_cvff",
@@ -220,9 +217,14 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         [](Handle& self, const ATV::cpu::task::KSpacePppmParams& p) {
             // Move-only (FFTW plans). Not a wire alternative: the handle
             // records the name and the charge requirement itself.
-            self.set_unmirrored_evaluator(
-                ATV::cpu::KSpacePPPM{p.alpha, p.grid_spacing, p.order},
-                "KSpacePPPM", true);
+            if (p.mesh[0] > 0)
+                self.set_unmirrored_evaluator(
+                    ATV::cpu::KSpacePPPM{p.alpha, p.mesh, p.order},
+                    "KSpacePPPM", true);
+            else
+                self.set_unmirrored_evaluator(
+                    ATV::cpu::KSpacePPPM{p.alpha, p.grid_spacing, p.order},
+                    "KSpacePPPM", true);
         },
         nb::arg("comp"),
         "Append ik PPPM, the Hockney-Eastwood reciprocal half. build() "
@@ -259,6 +261,32 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         nb::arg("comp"),
         "Append the harmonic angle evaluator. Reads the frame's angle "
         "topology; parameters are indexed by angle type.");
+
+    cls.def(
+        "set_evaluator_angle_cosine",
+        [](Handle& self, const ATV::cpu::task::AngleCosineParams& p) {
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::AngleCosine{p.K});
+        },
+        nb::arg("comp"),
+        "Append the cosine angle evaluator V = K(1 + cos theta) (LAMMPS "
+        "`angle_style cosine`). Reads the frame's angle topology; K [eV] is "
+        "indexed by angle type.");
+
+#ifdef ATV_HAS_MD
+    cls.def(
+        "set_evaluator_fix_efield",
+        [](Handle& self, const ATV::cpu::task::FixEfieldParams& p) {
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::md::FixEfield{p.Ex, p.Ey, p.Ez});
+        },
+        nb::arg("comp"),
+        "Append a constant uniform electric field (LAMMPS `fix efield`): "
+        "F_i += q_i E with E in V/A, so F is eV/A for charges in e. Adds "
+        "U = -sum_i q_i E . r_i^u (unwrapped through the image flags) to the "
+        "energy and nothing to the virial. Reads the per-atom 'charge' "
+        "column; run() refuses a frame without one.");
+#endif
 
     cls.def(
         "set_evaluator_dihedral_multi_harmonic",
@@ -324,10 +352,10 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "U = A exp((sigma - r)/rho) - C/r^6 + D/r^8, shifted at the cutoff "
         "(LAMMPS `pair_style born`) — the Fumi-Tosi short-range half of a "
         "molten-salt model; add the Coulomb term as a separate evaluator.\n\n"
-        "The table is keyed by ATOMIC NUMBER. The frame's per-atom type "
-        "column is filled from the molpy `atomic_number` column, so a "
-        "sodium-chloride row is type_i=11, type_j=17 and an argon dimer is "
-        "18, 18 — not a 0-based index into anything.\n\n"
+        "The table is keyed by FORCE-FIELD TYPE: the frame's per-atom type "
+        "column is filled from the molpy `atoms.type_id` column (u64), not "
+        "from `atomic_number` (the species), and the keys are used as-is. "
+        "A frame without `type_id` is refused with a how-to.\n\n"
         "Every interacting type pair must be listed, and the table is "
         "symmetric in (i, j). An unlisted pair does NOT interact: Fumi-Tosi "
         "parameters are not Lorentz-Berthelot, so there is no mixing rule to "

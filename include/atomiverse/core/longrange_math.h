@@ -13,7 +13,7 @@ namespace ATV::longrange {
 /// @param alpha Ewald splitting parameter [1/Angstrom].
 /// @return −k_e α / √π [eV·Angstrom / e²·(1/Angstrom)] = [eV/e²].
 inline double self_energy_prefactor(double alpha) {
-    return -ATV::units::coulomb * alpha / std::sqrt(ATV::units::pi);
+    return -ATV::units::md_qqr2e * alpha / std::sqrt(ATV::units::pi);
 }
 
 /// @brief Energy of the uniform neutralizing background of a charged cell.
@@ -26,7 +26,7 @@ inline double self_energy_prefactor(double alpha) {
 /// @return Background energy [eV].
 inline double background_energy(double net_charge, double volume,
                                 double alpha) {
-    return -ATV::units::coulomb * ATV::units::pi * net_charge * net_charge
+    return -ATV::units::md_qqr2e * ATV::units::pi * net_charge * net_charge
            / (2.0 * volume * alpha * alpha);
 }
 

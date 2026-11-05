@@ -83,8 +83,9 @@ TEST(ConstPotBO, SignFollowsDeltaPsi) {
 
 TEST(ConstPotBO, PrimaryCellMatchesAnalytic) {
     // Independent analytic: no images, eta=2, Ψ=(0,1), q_elyt=(0.5,-0.5)
-    // Q from BO + neutrality (see agent pin script).
-    constexpr double kQTop = 0.27175356;
+    // Q from BO + neutrality in lj units (md_qqr2e = 1, see agent pin
+    // script). The metal-unit value (k_e = 14.399645) was 0.27175356.
+    constexpr double kQTop = 0.61748665;
     auto f = madelung_primary();
     cpu::md::ConstPotBO conp(2.0);
     conp.add_electrode(1, 0.0);
@@ -144,7 +145,7 @@ TEST(ConstPotBO, ZeroLtfUnchangedPrimaryPin) {
     conp.site_density = 0.0593; // ignored when l_tf == 0
     run_once(conp, f2);
     EXPECT_NEAR(conp.total_charge(1), q_ref, 1e-12);
-    EXPECT_NEAR(conp.total_charge(1), 0.27175356, 1e-6);
+    EXPECT_NEAR(conp.total_charge(1), 0.61748665, 1e-6); // lj units
 }
 
 TEST(ConstPotBO, ThomasFermiReducesCharge) {
@@ -191,7 +192,7 @@ TEST(ConstPotBO, ThomasFermiHardnessAnalyticTwoSite) {
     constexpr double kLtf = 1.0;
     constexpr double kD = 0.1;
     constexpr double kSep = 5.0; // Å along z
-    const double ke = units::coulomb;
+    const double ke = units::md_qqr2e;
     const double a0 = ke * kEta * std::sqrt(2.0 / 3.14159265358979323846);
     const double a01 = ke * std::erf(kEta / std::sqrt(2.0) * kSep) / kSep;
     const double h = 4.0 * 3.14159265358979323846 * ke * kLtf * kLtf * kD;

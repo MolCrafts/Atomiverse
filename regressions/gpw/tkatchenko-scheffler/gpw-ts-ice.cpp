@@ -38,7 +38,7 @@ int run() {
     const int Z[6] = {8, 1, 1, 8, 1, 1};
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = Z[i];
+        frame.span(kAtom_atomic_number)[i] = Z[i];
         frame.span(kAtom_x)[i] = ang[i][0];
         frame.span(kAtom_y)[i] = ang[i][1];
         frame.span(kAtom_z)[i] = ang[i][2];

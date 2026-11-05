@@ -49,15 +49,15 @@ namespace {
 ATV::cpu::Frame make_water() {
     // Experimental-like geometry (Å), slightly off-equilibrium so |F| ≠ 0.
     ATV::cpu::Frame f(3);
-    f.span(ATV::kAtom_type)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
     f.span(ATV::kAtom_x)[0] = 0.0;
     f.span(ATV::kAtom_y)[0] = 0.0;
     f.span(ATV::kAtom_z)[0] = 0.0;
-    f.span(ATV::kAtom_type)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
     f.span(ATV::kAtom_x)[1] = 1.05;
     f.span(ATV::kAtom_y)[1] = 0.0;
     f.span(ATV::kAtom_z)[1] = 0.0;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.span(ATV::kAtom_x)[2] = -0.26;
     f.span(ATV::kAtom_y)[2] = 1.0;
     f.span(ATV::kAtom_z)[2] = 0.0;
@@ -175,7 +175,7 @@ int run() {
         // A failed first build must not leave an unusable non-null engine.
         Method retry;
         auto invalid = f;
-        invalid.span(kAtom_type)[0] = 0;
+        invalid.span(kAtom_atomic_number)[0] = 0;
         failed = false;
         try {
             retry.forces(invalid);
@@ -467,7 +467,7 @@ int run() {
         frame = cpu::Frame(2);
         frame.box = cpu::Box::cubic(21);
         for (int i = 0; i < 2; ++i) {
-            frame.span(kAtom_type)[i] = 1;
+            frame.span(kAtom_atomic_number)[i] = 1;
             frame.span(kAtom_mass)[i] = 1;
             frame.span(kAtom_tag)[i] = i + 1;
         }
@@ -558,7 +558,8 @@ int run() {
             return false;
         phase = "build_hydrogen";
         cpu::Frame hydrogen(2);
-        hydrogen.span(kAtom_type)[0] = hydrogen.span(kAtom_type)[1] = 1;
+        hydrogen.span(kAtom_atomic_number)[0] =
+            hydrogen.span(kAtom_atomic_number)[1] = 1;
         hydrogen.span(kAtom_x)[1] = 0.8;
         method.build(hydrogen);
         method.forces(hydrogen);

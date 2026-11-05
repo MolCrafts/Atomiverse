@@ -143,7 +143,7 @@ int run() {
     cpu::Frame frame(2);
     const double* r[2] = {rA, rB};
     for (int a = 0; a < 2; ++a) {
-        frame.span(kAtom_type)[a] = 1;
+        frame.span(kAtom_atomic_number)[a] = 1;
         frame.span(kAtom_x)[a] = r[a][0] / kA2B;
         frame.span(kAtom_y)[a] = r[a][1] / kA2B;
         frame.span(kAtom_z)[a] = r[a][2] / kA2B;

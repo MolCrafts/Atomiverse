@@ -139,9 +139,9 @@ constexpr double kOrigin = kBoxL / kExpectedK0;
 /// Physics*, 8th ed., ch. 3; J. Sherman, Chem. Rev. 11, 93 (1932),
 /// DOI 10.1021/cr60038a002.
 constexpr double kMadelung = 1.747564594633182;
-/// Coulomb constant [eV*A/e^2]. Mirrors `ATV::units::coulomb`; the equality is
-/// checked at run time so this literal cannot silently drift from the engine's.
-constexpr double kCoulomb = 14.399645;
+/// Coulomb prefactor of the running engine (lj `md_qqr2e`). The equality is
+/// checked at run time so this literal cannot silently drift from the engine.
+constexpr double kCoulomb = 1.0;
 
 // ── Gates (hard-coded; see REFERENCE.md) ───────────────────────────────
 /// Grid-discretization window of a K = 12 / order-5 SPME mesh vs the exact
@@ -575,9 +575,9 @@ int run(int argc, char** argv) {
     // The Madelung literal below is multiplied by the Coulomb constant spelled
     // out in this file; if the engine's constant ever moved, the "literature"
     // energy would quietly stop being the engine's own units.
-    failures += gate("|kCoulomb - units::coulomb| [eV*A/e^2]",
-                     std::fabs(kCoulomb - static_cast<double>(units::coulomb)),
-                     0.0, kCoulomb == static_cast<double>(units::coulomb));
+    failures += gate("|kCoulomb - units::md_qqr2e|",
+                     std::fabs(kCoulomb - static_cast<double>(units::md_qqr2e)),
+                     0.0, kCoulomb == static_cast<double>(units::md_qqr2e));
 
     Report serial, subgroup, world;
     if (!run_under_mpiexec(self, 1, /*force_world_arm=*/false, serial))

@@ -189,7 +189,7 @@ using namespace ATV::cpu::pw;
 
 constexpr double kA = 5.43;  // Å
 cpu::Frame frame(2);
-frame.span(kAtom_type)[0] = frame.span(kAtom_type)[1] = 14;
+frame.span(kAtom_atomic_number)[0] = frame.span(kAtom_atomic_number)[1] = 14;
 frame.span(kAtom_mass)[0] = frame.span(kAtom_mass)[1] = 28.0855;
 frame.span(kAtom_x)[1] = frame.span(kAtom_y)[1] = frame.span(kAtom_z)[1] = kA / 4.0;
 const double h = kA / 2.0;

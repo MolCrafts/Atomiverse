@@ -25,7 +25,7 @@ inline cpu::Frame frame_bohr(std::initializer_list<const double*> positions,
     auto species = atomic_numbers.begin();
     int i = 0;
     for (const double* position : positions) {
-        frame.span(kAtom_type)[i] = *species++;
+        frame.span(kAtom_atomic_number)[i] = *species++;
         frame.span(kAtom_x)[i] = position[0] * units::kBohrInAngstrom;
         frame.span(kAtom_y)[i] = position[1] * units::kBohrInAngstrom;
         frame.span(kAtom_z)[i] = position[2] * units::kBohrInAngstrom;

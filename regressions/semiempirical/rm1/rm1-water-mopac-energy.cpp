@@ -65,9 +65,9 @@ constexpr double kHofTolKcal = 0.02;
 /// @return A 3-atom Frame in a 20 Å cubic box (isolation only).
 cpu::Frame water(double r, double theta_deg) {
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
-    f.span(kAtom_type)[1] = 1;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[0] = 8;
+    f.span(kAtom_atomic_number)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;

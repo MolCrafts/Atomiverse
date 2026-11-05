@@ -113,7 +113,7 @@ bool madelung_virial() {
     eval.build();
     eval.run(f);
     const int n = f.nlocal();
-    const double expected = -0.5 * n * kMadelung * units::coulomb / kD;
+    const double expected = -0.5 * n * kMadelung * units::md_qqr2e / kD;
     const double e = f.meta.get(kEnergy);
     const auto& w = f.meta.get(kStress);
     double diag = 0, off = 0;
@@ -137,8 +137,8 @@ struct NptOut {
 constexpr double kT = 300.0, kTauT = 100.0, kTauP = 1000.0, kDt = 1.0;
 const double kPressure = units::bar_to_ev_per_a3; // 1 bar
 
-std::vector<cpu::LJTypeCoeff> lb_coeffs() {
-    std::vector<cpu::LJTypeCoeff> coeffs;
+std::vector<LJTypeCoeff> lb_coeffs() {
+    std::vector<LJTypeCoeff> coeffs;
     for (int a = 0; a < 2; ++a)
         for (int b = a; b < 2; ++b)
             coeffs.push_back({a, b, std::sqrt(kEpsilon[a] * kEpsilon[b]),
@@ -185,8 +185,7 @@ NptOut npt_cuda(int steps) {
         cpu::Frame g = rocksalt(kD);
         cuda::Evaluate eval;
         eval.set_neighbor(cuda::NeighborList{kCut, 1.0});
-        eval.set_evaluator(
-            cuda::PairLJCutCoulLong{kEpsilon, kSigma, kAlpha, kCut});
+        eval.set_evaluator(cuda::PairLJCutCoulLong{lb_coeffs(), kAlpha, kCut});
         eval.on(evaluate::Phase::evaluate)
             .add(cuda::KSpacePME{kAlpha, kSpacing, kOrder}, 100);
         eval.build();
@@ -198,7 +197,7 @@ NptOut npt_cuda(int steps) {
     cpu::Frame g = rocksalt(kD);
     cuda::md::MD sim;
     sim.set_neighbor(cuda::NeighborList{kCut, 1.0});
-    sim.set_evaluator(cuda::PairLJCutCoulLong{kEpsilon, kSigma, kAlpha, kCut});
+    sim.set_evaluator(cuda::PairLJCutCoulLong{lb_coeffs(), kAlpha, kCut});
     sim.on(md::Phase::force)
         .add(cuda::KSpacePME{kAlpha, kSpacing, kOrder}, 100);
     sim.set_integrator(

@@ -118,7 +118,7 @@ TEST(NddoGeometry, RefusalListsClosestPairsFirstAndCountsTheRest) {
 TEST(NddoGeometry, SolverRefusesOverlapBeforeScfAndCanRetry) {
     cpu::Frame frame(2);
     for (int a = 0; a < 2; ++a) {
-        frame.span(kAtom_type)[a] = 1;
+        frame.span(kAtom_atomic_number)[a] = 1;
         frame.span(kAtom_x)[a] = 0.74 * a;
         frame.span(kAtom_y)[a] = frame.span(kAtom_z)[a] = 0;
     }

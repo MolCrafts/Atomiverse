@@ -26,6 +26,7 @@
 #include "nddo_bindings.h"
 #include "result_array.h"
 
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -190,6 +191,22 @@ void bind_semiempirical(nb::module_& m) {
                 if (!nb::isinstance(molecule, atomistic))
                     throw nb::type_error("AM1BCCCharges.assign expects a "
                                          "molpy.Atomistic molecular graph");
+                // Atomistic.to_frame fills a coordinate one atom lacks with
+                // 0.0, which would put that atom at the origin silently.
+                // Refuse on the graph, before the frame exists.
+                std::size_t index = 0;
+                for (nb::handle atom : molecule.attr("atoms")) {
+                    nb::object keys = atom.attr("keys")();
+                    for (const char* axis : {"x", "y", "z"})
+                        if (!nb::cast<bool>(keys.attr("__contains__")(axis)))
+                            throw nb::value_error(
+                                ("AM1BCCCharges: atom " + std::to_string(index)
+                                 + " has no '" + axis
+                                 + "' coordinate [A]; every atom needs x, y "
+                                   "and z")
+                                    .c_str());
+                    ++index;
+                }
                 auto frame = molecule.attr("to_frame")();
                 // A coordinate an atom lacks is a null cell of its column;
                 // the native frame would read it as 0, so refuse it here.
@@ -365,7 +382,10 @@ void bind_semiempirical(nb::module_& m) {
     m.attr("kDftbSpinConstantsLdaHa") =
         nb::cast(cpu::semiempirical::basis_data::kDftbSpinConstantsLdaHa);
 
-    nb::class_<DFTB2, cpu::Component>(
+    // No Python base: DFTB2's cpu::Component base is not its first base
+    // (Driver<scc::Phase> is), and nanobind's base cast applies no pointer
+    // offset. Drivers take it through concrete DFTB2& setters instead.
+    nb::class_<DFTB2>(
         m, "DFTB2",
         "SCC-DFTB2 (self-consistent-charge density-functional tight binding) "
         "for H/C/N/O — Elstner et al., Phys. Rev. B 58, 7260 (1998). A "

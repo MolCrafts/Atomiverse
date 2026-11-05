@@ -28,6 +28,22 @@ std::string write_tmp(const std::string& text) {
 
 } // namespace
 
+TEST(LammpsCoeffs, PairCoeffCarriesAnOptionalPerPairCutoff) {
+    const std::string path = write_tmp("pair_style lj/cut/coul/long 9.0\n"
+                                       "pair_coeff 1 1 0.086 3.4\n"
+                                       "pair_coeff 1 2 0.05 3.2 7.5\n");
+    const LammpsCoeffs c = load_lammps_coeffs(path);
+    std::remove(path.c_str());
+    ASSERT_EQ(c.lj.size(), 2u);
+    EXPECT_FALSE(c.lj[0].cutoff.has_value());
+    ASSERT_TRUE(c.lj[1].cutoff.has_value());
+    EXPECT_DOUBLE_EQ(*c.lj[1].cutoff, 7.5);
+
+    const std::string coul = write_tmp("pair_coeff 1 1 0.086 3.4 8.0 9.0\n");
+    EXPECT_THROW(load_lammps_coeffs(coul), std::runtime_error);
+    std::remove(coul.c_str());
+}
+
 TEST(LammpsCoeffs, ParsesHybridGaffFile) {
     const std::string path =
         write_tmp("# atom_style full\n"

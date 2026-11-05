@@ -95,8 +95,8 @@ void Remd::exchange_round_(bool even_edges) {
         const double Uj = fj.meta.get(kEnergy);
         const double Ti = temperatures[static_cast<std::size_t>(i)];
         const double Tj = temperatures[static_cast<std::size_t>(i + 1)];
-        const double beta_i = 1.0 / (units::kB_ev_per_k * Ti);
-        const double beta_j = 1.0 / (units::kB_ev_per_k * Tj);
+        const double beta_i = 1.0 / (units::md_boltz * Ti);
+        const double beta_j = 1.0 / (units::md_boltz * Tj);
         const double dbeta = beta_i - beta_j;
         const double dU = Ui - Uj;
         const double arg = dbeta * dU;

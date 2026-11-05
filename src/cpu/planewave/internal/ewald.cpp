@@ -78,7 +78,8 @@ EwaldSummation::EwaldSummation(const std::vector<Vec3>& pos_ang,
         // Periodic image reduction belongs to the same physical owner as the
         // sums. It also bounds every pair's fractional displacement, so the
         // precision-domain image box remains valid for unwrapped MD input.
-        cell_bohr.wrap_into(p[0], p[1], p[2]);
+        cell_bohr.wrap_into(p[0], p[1], p[2],
+                            /*image=*/nullptr); // private copy
     }
 
     forces_bohr_.assign(static_cast<std::size_t>(n), Vec3::zeros());

@@ -1,11 +1,18 @@
 /// @file cuda/dynamics/deform.cuh
-/// @brief Deform -- uniaxial strain deformation component.
+/// @brief Deform -- uniaxial strain deformation component (`remap x`).
 ///
-/// Rescales box and atom positions along a given axis at a constant engineering strain rate.
-/// CUDA-free header.
+/// Same API and step as `cpu::md::Deform` (LAMMPS `fix deform` `erate` /
+/// `trate` on one axis): the deformed axis's cell row and every row's
+/// coordinate along that axis scale by `L_target / L_current`, so
+/// fractional coordinates are preserved for tilted cells too. The reference
+/// length is snapshotted from the live device cell on the first launch and
+/// the scale is computed on the device from the current cell; the host only
+/// supplies the elapsed time. CUDA-free header.
 #pragma once
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "atomiverse/core/role.h"
 #include "atomiverse/cuda/component/component.cuh"
@@ -14,46 +21,52 @@ namespace ATV {
 namespace cuda {
 namespace md {
 
-/// @brief Uniaxial constant-strain-rate deformation.
+/// @brief Uniaxial constant-strain-rate deformation (mirrors
+///        `cpu::md::Deform`).
 ///
-/// Each step: box[axis] *= (1 + rate*dt). Atom positions remapped proportionally.
-/// Binds to initial_integrate at order -100 (before VelocityVerlet).
+/// Bound at `initial_integrate @ +200`, after the integrator's drift.
 class Deform : public Component {
   public:
-    /// @brief Construct deformation component.
-    /// @param axis        Deformation axis (0=x, 1=y, 2=z).
-    /// @param strain_rate Engineering strain rate [1/fs].
-    /// @param dt          Time step [fs] (must match integrator).
-    Deform(int axis, double strain_rate, double dt);
+    /// @brief Per-axis strain mode -- LAMMPS `fix deform` keywords.
+    enum class Mode {
+        /// Engineering strain `L = L0 (1 + R t)` (LAMMPS `erate`).
+        erate,
+        /// True strain `L = L0 exp(R t)` (LAMMPS `trate`).
+        trate,
+    };
+
+    /// @param mode Strain mode.
+    /// @param rate Strain rate `R` [1/fs]; positive stretches.
+    /// @param dt   MD step [fs] (must match the integrator).
+    /// @param axis Deformed axis: 0 = x, 1 = y, 2 = z.
+    Deform(Mode mode, double rate, double dt, int axis = 0);
+    ~Deform() override;
+    Deform(Deform&&) noexcept;
+    Deform& operator=(Deform&&) noexcept;
 
     bool changes_box(int) const override { return true; }
     std::string name() const override { return "deform"; }
     Role role() const override { return 0; }
 
-    /// @brief Structural role — a box/position time-step integrator.
-    ///
-    /// Mirrors `cpu::md::Deform`: a strain-rate deformation advances the
-    /// box and positions each step, so it occupies the `Integrator`
-    /// slot.
-    /// @return ComponentRole::Integrator.
-    /* role via Integrator base */
     /// @brief Write-set: affine remap of coordinates as the box strains.
-
     std::vector<DefaultBinding> default_bindings() const override;
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    void destroy(const DestroyContext& ctx) override;
+
+    /// @return Current strain rate `R` [1/fs].
+    double rate() const noexcept { return rate_; }
+
+    /// @return Strain mode.
+    Mode mode() const noexcept { return mode_; }
 
   private:
+    Mode mode_;
+    double rate_, dt_;
     int axis_;
-    double strain_rate_, dt_;
-    // LAMMPS-equivalent engineering-strain bookkeeping: cache L0 at build()
-    // and compute L_k = L0·(1 + erate·k·dt) per step, so the box grows
-    // LINEARLY with time. The previous per-step multiplier `(1+erate·dt)`
-    // compounded to L0·exp(erate·t) — fine for small total strain (LAMMPS
-    // agreement at ε≪1) but wrong at the stage-5 full strain ε=1.7 of the
-    // MSU PE deck, where it overshot to L/L0 ≈ 5.57 vs LAMMPS 2.72.
-    double L0_ = 0.0;
-    long long step_count_ = 0;
+    BigInt origin_step_ = -1; ///< Step of the first launch after build.
+    struct State;
+    std::unique_ptr<State> state_;
 };
 
 } // namespace md

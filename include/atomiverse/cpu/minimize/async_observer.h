@@ -1,29 +1,27 @@
 /// @file cpu/minimize/async_observer.h
-/// @brief `cpu::minimizer::AsyncObserver` -- minimizer-bound convenience
-/// wrapper over the driver-agnostic `cpu::AsyncComponentBase`.
+/// @brief `cpu::minimizer::AsyncObserver` -- minimizer-bound asynchronous
+///        observer: a `cpu::AsyncConsumer` with a default binding at
+///        `minimizer::Phase::end_of_step @ +20`.
 ///
-/// Same machinery as `cpu::AsyncComponentBase`; adds a default binding at
-/// `minimizer::Phase::end_of_step @ +20`. Use for observers that only run
-/// under geometry-optimization drivers (e.g. an async energy-history logger
-/// during L-BFGS). Cross-driver observers should inherit directly from
-/// `cpu::AsyncComponentBase` and bind explicitly per driver.
+/// For observers that only run under geometry optimization (e.g. an
+/// energy-history logger during L-BFGS); a step is an iteration. Cross-driver
+/// observers derive from `cpu::AsyncConsumer` and bind explicitly.
 #pragma once
 
 #include <vector>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/asynchronous/async_component_base.h"
+#include "atomiverse/cpu/asynchronous/async_consumer.h"
 
 namespace ATV {
 namespace cpu {
 namespace minimizer {
 
-/// @brief Minimizer-specific async observer base
-/// (binds `minimizer::Phase::end_of_step @ +20`).
-class AsyncObserver : public cpu::AsyncComponentBase {
+/// @brief Minimizer asynchronous observer
+///        (binds `minimizer::Phase::end_of_step @ +20`).
+class AsyncObserver : public cpu::AsyncConsumer {
   public:
-    /* role via Observer base */
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::end_of_step, 20)};
     }

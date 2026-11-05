@@ -46,6 +46,11 @@ int main(int argc, char** argv) try {
         throw std::invalid_argument("unknown force term");
     for (int i = 0; i < nt; ++i)
         in >> eps[i] >> sig[i];
+    // Diagonal rows only: unlisted pairs mix Lorentz-Berthelot, which keeps
+    // the per-atom fast tile path. OpenMM compares unshifted LJ.
+    std::vector<LJTypeCoeff> lj;
+    for (int i = 0; i < nt; ++i)
+        lj.push_back({i, i, eps[i], sig[i]});
     for (int i = 0; i < nbt; ++i)
         in >> bk[i] >> br[i];
     for (int i = 0; i < nat; ++i)
@@ -89,9 +94,9 @@ int main(int argc, char** argv) try {
     auto bind = [&](auto& sim, auto phase) {
         if (term == "all" || term == "nonbonded") {
             sim.set_neighbor(ATV::cuda::NeighborList{cutoff, 0.08 * cutoff});
-            sim.set_evaluator(
-                ATV::cuda::PairLJCutCoulLong{eps, sig, alpha, cutoff}
-                    .set_special_bonds_amber());
+            sim.set_evaluator(ATV::cuda::PairLJCutCoulLong{lj, alpha, cutoff}
+                                  .set_special_bonds_amber()
+                                  .set_energy_shift(false));
             sim.on(phase).add(ATV::cuda::KSpacePME{alpha, spacing, order}, 100);
         }
         if (term == "all" || term == "bond")
@@ -123,8 +128,9 @@ int main(int argc, char** argv) try {
     // statistics can be reported after timing; they are declared first so
     // they outlive the driver that borrows them.
     ATV::cuda::NeighborList md_neighbor{cutoff, 0.08 * cutoff};
-    auto md_pair = ATV::cuda::PairLJCutCoulLong{eps, sig, alpha, cutoff}
-                       .set_special_bonds_amber();
+    auto md_pair = ATV::cuda::PairLJCutCoulLong{lj, alpha, cutoff}
+                       .set_special_bonds_amber()
+                       .set_energy_shift(false);
     ATV::cuda::md::MD md;
     if (term == "all" || term == "nonbonded") {
         md.set_neighbor_ref(md_neighbor);
@@ -152,7 +158,7 @@ int main(int argc, char** argv) try {
         // here from the input velocities (later records come from MD).
         double ke0 = 0;
         for (int i = 0; i < n; ++i)
-            ke0 += 0.5 * units::mass_v2_to_energy * f.span(kAtom_mass)[i]
+            ke0 += 0.5 * units::md_mvv2e * f.span(kAtom_mass)[i]
                    * (f.span(kAtom_vx)[i] * f.span(kAtom_vx)[i]
                       + f.span(kAtom_vy)[i] * f.span(kAtom_vy)[i]
                       + f.span(kAtom_vz)[i] * f.span(kAtom_vz)[i]);

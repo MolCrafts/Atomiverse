@@ -46,7 +46,6 @@
 #include <type_traits>
 
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/asynchronous/snapshot_publisher.h"
 #include "atomiverse/cpu/communication/reduce.h"
 #include "atomiverse/cpu/component/bias.h"
 #include "atomiverse/cpu/component/gpw.h"
@@ -70,9 +69,9 @@ namespace minimizer {
 
 /// @brief Energy-minimization driver — convergence-aware Optimize loop.
 ///
-/// Auto-adds ZeroForces and ZeroEnergy at force phase. Wires the shared
-/// `cpu::Publish` into `end_of_step @ +10` so async observers
-/// see snapshots. `install_defaults()` injects the MPI infrastructure
+/// Auto-adds ZeroForces and ZeroEnergy at force phase. Asynchronous
+/// observers (`cpu::minimizer::AsyncObserver`) read their iterations from
+/// the driver's shared capture buffer. `install_defaults()` injects the MPI infrastructure
 /// documented in the file header (single-rank: structural no-ops).
 ///
 /// `validate_components()` requires ≥ 1 `Optimizer` component (e.g. `LBFGS`,
@@ -141,7 +140,6 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
             .add(cpu::ZeroForces{}, -1000)
             .add(cpu::ZeroEnergy{}, -999)
             .add(cpu::ZeroStress{}, -998);
-        this->on(ATV::minimizer::Phase::end_of_step).add(cpu::Publish{}, 10);
     }
 
     // ─── Minimizer-specific categorical setters ─────────────────────
@@ -233,15 +231,32 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
             [this](bool /*need_grad*/) {
                 this->backend_->run_stage(Traits::eval_phase, /*step_idx=*/0);
             };
+        // LAMMPS src/min.cpp Min::setup → Output::setup, e8c4c278a8
+        // (Copyright (2003) Sandia Corporation, GPL-2.0-only): the initial
+        // state is written as step 0; iteration s then ends at completed
+        // iteration s + 1 (`ntimestep = ++update->ntimestep` in iterate()).
+        this->backend_->setup_output(0);
+        auto& md_ctx = this->backend_->context().md;
         BigInt iters = 0;
+        bool stopped = false;
         for (BigInt s = 0; s < max_iter; ++s) {
             mutable_outer_status().reset();
+            // The budget's last iteration is LAMMPS `update->laststep`:
+            // thermo prints it whatever the cadence.
+            md_ctx.is_last_step = (s == max_iter - 1);
             step_once(s);
             ++iters;
             // The optimizer publishes metrics; criteria alone judge convergence.
-            if (poll_criteria_(s) != Verdict::Continue)
+            if (poll_criteria_(s) != Verdict::Continue) {
+                stopped = true;
                 break;
+            }
         }
+        md_ctx.is_last_step = false;
+        // LAMMPS Min::run: a stop before MAXITER forces output of the final
+        // state (dumps and thermo, each unless that step is already written).
+        if (stopped)
+            this->backend_->final_output(iters);
 
         DetachedRun result;
         result.iterations = iters;

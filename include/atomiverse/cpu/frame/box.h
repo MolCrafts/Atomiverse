@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/core/precision.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/core/vec3.h"
 
@@ -182,16 +183,43 @@ class Box {
         return w;
     }
 
-    /// @brief Wrap a Cartesian point into the primary fractional cell [0,1)^3.
-    [[gnu::always_inline]] inline void wrap_into(double& x, double& y,
-                                                 double& z) const noexcept {
+    /// @brief Wrap a Cartesian point into the primary fractional cell [0,1)^3
+    ///        by whole lattice vectors, counting them into image flags.
+    ///
+    /// LAMMPS `Domain::pbc` bookkeeping, mirrored by CUDA
+    /// `BoxGeometry::wrap_position`: the point moves by \(-H\mathbf n\) and
+    /// `image[d] += n_d`, so the unwrapped position \(\mathbf r +
+    /// H\,\mathrm{image}\) is unchanged. The translation is recovered as the
+    /// rounded fractional displacement, exact for any cell shape and for the
+    /// boundary corrections below. A zero-length orthorhombic axis is left
+    /// unwrapped (n = 0).
+    /// @param x Cartesian x [Å], wrapped in place.
+    /// @param y Cartesian y [Å], wrapped in place.
+    /// @param z Cartesian z [Å], wrapped in place.
+    /// @param image The row's three image counters (`kAtom_image` row, three
+    ///        contiguous `ImageInt`), advanced by the removed translation.
+    ///        Pass `nullptr` only for a scratch copy that is not atom state
+    ///        (binning, a solver-private coordinate set); wrapping a Frame
+    ///        row without its image corrupts every unwrapped consumer.
+    [[gnu::always_inline]] inline void
+    wrap_into(double& x, double& y, double& z, ImageInt* image) const noexcept {
+        const double x0 = x, y0 = y, z0 = z;
         if (ortho_) {
             x = wrap_axis(x, 0);
             y = wrap_axis(y, 1);
             z = wrap_axis(z, 2);
+            if (image != nullptr) {
+                const double moved[3] = {x0 - x, y0 - y, z0 - z};
+                const double inv[3] = {inv_lx_, inv_ly_, inv_lz_};
+                for (int d = 0; d < 3; ++d)
+                    if (cell_(d, d) > 0.0)
+                        image[d] = static_cast<ImageInt>(
+                            image[d] + std::lround(moved[d] * inv[d]));
+            }
             return;
         }
-        Vec3 s = to_fractional({x, y, z});
+        const Vec3 s0 = to_fractional({x, y, z});
+        Vec3 s = s0;
         for (int d = 0; d < 3; ++d) {
             s[d] -= std::floor(s[d]);
             if (s[d] >= 1 || s[d] < 0)
@@ -201,6 +229,10 @@ class Box {
         x = r[0];
         y = r[1];
         z = r[2];
+        if (image != nullptr)
+            for (int d = 0; d < 3; ++d)
+                image[d] =
+                    static_cast<ImageInt>(image[d] + std::lround(s0[d] - s[d]));
     }
 
     /// @brief xsimd-batched orthorhombic minimum-image. **Defined in box_simd.h.**

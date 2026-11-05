@@ -1,4 +1,4 @@
-"""``PairLJCut`` / ``PairCoulCut`` mirror fields: energy shift, per-type table,
+"""``PairLJCut`` / ``PairCoulCut`` mirror fields: energy shift, per-type rows,
 special weights and Coulomb constant, each checked on a two- or three-atom
 closed form."""
 
@@ -18,7 +18,7 @@ import molpy  # noqa: E402
 from atomiverse.md import MD  # noqa: E402
 from atomiverse.md.integrator import VelocityVerlet  # noqa: E402
 from atomiverse.neighbor import NeighborList  # noqa: E402
-from atomiverse.potentials.pair import CoulCut, LJCut  # noqa: E402
+from atomiverse.potentials.pair import CoulCut, LJCut, LJTypeCoeff  # noqa: E402
 
 CUTOFF = 8.0
 EPS, SIG = 0.01, 3.0
@@ -71,15 +71,19 @@ def test_single_type_energy_shift_switch(shift: bool) -> None:
 
 def test_table_explicit_cross_row_overrides_mixing_and_shift_is_per_pair() -> None:
     r = 3.5
-    table = LJCut.table([0, 1, 0], [0, 1, 1], [EPS, 0.002, 0.005], [SIG, 2.5, 3.3], CUTOFF)
+    table = LJCut([LJTypeCoeff(0, 0, EPS, SIG), LJTypeCoeff(1, 1, 0.002, 2.5),
+                   LJTypeCoeff(0, 1, 0.005, 3.3)], CUTOFF)
     energy = _energy(_frame([(0, 0, 0), (r, 0, 0)], [0, 1], [0, 0]), table)
     assert energy == pytest.approx(_lj(r, 0.005, 3.3) - _lj(CUTOFF, 0.005, 3.3), rel=1e-12)
 
 
-def test_table_columns_must_agree_in_length() -> None:
-    frame = _frame([(0, 0, 0), (3.5, 0, 0)], [0, 0], [0, 0])
-    with pytest.raises(ValueError, match="same length"):
-        _energy(frame, LJCut.table([0], [0, 1], [EPS], [SIG], CUTOFF))
+@pytest.mark.parametrize("shift", [True, False])
+def test_table_energy_shift_switch(shift: bool) -> None:
+    r = 3.5
+    table = LJCut([LJTypeCoeff(0, 0, EPS, SIG)], CUTOFF, energy_shift=shift)
+    energy = _energy(_frame([(0, 0, 0), (r, 0, 0)], [0, 0], [0, 0]), table)
+    expected = _lj(r) - (_lj(CUTOFF) if shift else 0.0)
+    assert energy == pytest.approx(expected, rel=1e-12)
 
 
 def test_coulomb_constant_and_special_weights() -> None:

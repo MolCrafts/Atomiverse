@@ -133,11 +133,15 @@ atv_add_cpp_test(test_mat3  core/test_mat3.cpp)
 atv_add_cpp_test(test_vec3  core/test_vec3.cpp)
 atv_add_cpp_test(test_real_harmonics core/test_real_harmonics.cpp)
 atv_add_cpp_test(test_units core/test_units.cpp)
+atv_add_cpp_test(test_unit_system core/test_unit_system.cpp)
 atv_add_cpp_test(test_thermo_style core/test_thermo_style.cpp)
 atv_add_cpp_test(test_gto core/test_gto.cpp)
 atv_add_cpp_test(test_driver_contract core/test_driver_contract.cpp)
 atv_add_cpp_test(test_evaluation_history core/test_evaluation_history.cpp)
 atv_add_cpp_test(test_plan_lifecycle core/test_plan_lifecycle.cpp)
+atv_add_cpp_test(test_lj_type_table core/test_lj_type_table.cpp)
+atv_add_cpp_test(test_pppm_stencil core/test_pppm_stencil.cpp)
+atv_add_cpp_test(test_pppm_accuracy core/test_pppm_accuracy.cpp)
 atv_add_cpp_test(test_cpu_electronic_aimd_method
                  cpu/electronic/test_aimd_method.cpp)
 
@@ -145,6 +149,8 @@ atv_add_cpp_test(test_cpu_electronic_aimd_method
 
 # Mirrors include/atomiverse/cpu/frame/box.h (+ box_simd.h).
 atv_add_cpp_test(test_cpu_box cpu/frame/test_box.cpp)
+# Mirrors include/atomiverse/cpu/frame/pbc.h (owned-row wrap + image flags).
+atv_add_cpp_test(test_cpu_pbc cpu/frame/test_pbc.cpp)
 # Mirrors include/atomiverse/cpu/device/chunked_range.h — the fixed, thread-count
 # independent partition every reproducible OpenMP reduction is built on.
 atv_add_cpp_test(test_cpu_chunked_range cpu/device/test_chunked_range.cpp)
@@ -317,6 +323,7 @@ if(ATV_BUILD_MINIMIZER)
 endif()
 if(ATV_BUILD_POTENTIALS)
     atv_add_cpp_test(test_cpu_bond_fene               cpu/potentials/test_bond_fene.cpp)
+    atv_add_cpp_test(test_cpu_angle_cosine            cpu/potentials/test_angle_cosine.cpp)
     atv_add_cpp_test(test_cpu_pair_wca                cpu/potentials/test_pair_wca.cpp)
     atv_add_cpp_test(test_cpu_pair_dpd                cpu/potentials/test_pair_dpd.cpp)
 endif()
@@ -344,6 +351,10 @@ if(ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_cpu_rm1                 cpu/semiempirical/test_rm1.cpp)
     atv_add_cpp_test(test_cpu_nddo_derivative cpu/semiempirical/test_nddo_derivative.cpp)
     atv_add_cpp_test(test_cpu_nddo_driver_node    cpu/semiempirical/test_nddo_driver_node.cpp)
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_cpp_test(test_cpu_nddo_trial_reuse
+                         cpu/semiempirical/test_nddo_trial_reuse.cpp)
+    endif()
     atv_add_cpp_test(test_cpu_nddo_solver         cpu/semiempirical/test_nddo_solver.cpp)
     atv_add_cpp_test(test_cpu_nddo_geometry       cpu/semiempirical/test_nddo_geometry.cpp)
     atv_add_cpp_test(test_cpu_dftb2_sk            cpu/semiempirical/test_dftb2_sk.cpp)
@@ -476,6 +487,10 @@ if(ATV_BUILD_VIB)
 endif()
 if(ATV_BUILD_POTENTIALS)
     atv_add_cpp_test(test_cpu_pair_lj_types  cpu/potentials/test_pair_lj_types.cpp)
+    if(ATV_BUILD_EVALUATE)
+        atv_add_cpp_test(test_cpu_pair_lj_typed_cutoff
+            cpu/potentials/test_pair_lj_typed_cutoff.cpp)
+    endif()
 endif()
 if(ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_md_fix_freeze  cpu/dynamics/test_fix_freeze.cpp)
@@ -485,6 +500,11 @@ if(ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_md_virtual_sites  cpu/dynamics/test_virtual_sites.cpp)
     atv_add_cpp_test(test_cpu_md_berendsen    cpu/dynamics/test_berendsen.cpp)
     atv_add_cpp_test(test_cpu_md_sllod_flow   cpu/dynamics/test_sllod_flow.cpp)
+    atv_add_cpp_test(test_cpu_md_nvt_sllod    cpu/dynamics/test_nvt_sllod.cpp)
+    if(ATV_BUILD_EVALUATE AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+        atv_add_cpp_test(test_cpu_md_nvt_sllod_flip_lj
+            cpu/dynamics/test_nvt_sllod_flip_lj.cpp)
+    endif()
     atv_add_cpp_test(test_cpu_md_npt_scalars cpu/dynamics/test_npt_scalars.cpp)
     atv_add_cpp_test(test_cpu_md_brownian     cpu/dynamics/test_brownian.cpp)
     atv_add_cpp_test(test_cuda_md_brownian cuda/dynamics/test_brownian.cpp)
@@ -554,11 +574,18 @@ endif()
 atv_add_cpp_test(test_cpu_md_frame_tag_image      cpu/dynamics/test_frame_tag_image.cpp)
 atv_add_cpp_test(test_cpu_md_domain_decomposition cpu/dynamics/test_domain_decomposition.cpp)
 
-atv_add_cpp_test(test_cpu_analysis_executor       cpu/test_analysis_executor.cpp)
+# The shared lossless capture buffer of asynchronous consumers (LJ MD).
+if(ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+    atv_add_cpp_test(test_cpu_capture_buffer      cpu/asynchronous/test_capture_buffer.cpp)
+endif()
 # MSD/VACF stream into molpy accumulators (cpu/observe/trajectory_metrics.h).
 if(ATV_BUILD_ANALYSIS)
     atv_add_cpp_test(test_cpu_observer_msd        cpu/observe/test_msd.cpp)
     atv_add_cpp_test(test_cpu_observer_vacf       cpu/observe/test_vacf.cpp)
+    if(ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+        atv_add_cpp_test(test_cpu_async_observers_lossless
+                         cpu/observe/test_async_observers_lossless.cpp)
+    endif()
 endif()
 atv_add_cpp_test(test_cpu_observer_widom          cpu/observe/test_widom.cpp)
 atv_add_cpp_test(test_cpu_observer_electrode_charge cpu/observe/test_electrode_charge_observer.cpp)
@@ -685,8 +712,24 @@ if(ATV_BUILD_IO AND ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_xyz_recorder                cpu/record/test_xyz_recorder.cpp)
 endif()
 
+# cpu::Thermo: the LAMMPS thermo step convention (setup line, completed-step
+# labels, last step off cadence, continued runs) against independent runs.
+if(ATV_BUILD_MD AND ATV_BUILD_NEIGHBOR AND ATV_BUILD_POTENTIALS)
+    atv_add_cpp_test(test_cpu_thermo                      cpu/record/test_thermo.cpp)
+endif()
+
+# The LAMMPS `minimize` output convention of the minimizer-loop writers
+# (TrajectoryWriter, OptLog, Thermo, XyzRecorder, MrecRecorder): initial
+# state, completed-iteration labels, forced final state on an early stop;
+# plus the single-pass Evaluate (LAMMPS `run 0`) labelling.
+if(ATV_BUILD_IO AND ATV_BUILD_MINIMIZER AND ATV_BUILD_EVALUATE
+   AND ATV_BUILD_NEIGHBOR AND ATV_BUILD_POTENTIALS)
+    atv_add_cpp_test(test_cpu_minimize_output             cpu/minimize/test_minimize_output.cpp)
+endif()
+
 # cpu::MrecRecorder — the streaming `*.mrec` sibling: constructor guards,
-# stride cadence + commit at teardown, frame-0 read-back through the bridge.
+# stride cadence + commit at teardown, frame read-back through the bridge,
+# the LAMMPS step convention against independent runs.
 # Same IO+MD gate as the XYZ recorder.
 if(ATV_BUILD_IO AND ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_mrec_recorder               cpu/record/test_mrec_recorder.cpp)
@@ -981,6 +1024,12 @@ if(ATV_BUILD_HF)
     if(ATV_BUILD_MD)
         atv_add_cpp_test(test_cpu_scf_rhf_aspc_md cpu/scf/test_rhf_aspc_md.cpp)
     endif()
+    # Minimizer line search keeps an SCF method's accepted trial instead of
+    # re-solving it (DriverNode::trial_invariant through the nested slot).
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_cpp_test(test_cpu_scf_method_trial_reuse
+                         cpu/scf/test_method_trial_reuse.cpp)
+    endif()
     # esmm-cpmd-04-ao-cpmd: AO Car-Parrinello on the mean-field methods —
     # the refusal lattice, the TimestepConsumer seam, ScfGradient::
     # compute_at_density parity at a converged determinant, and the
@@ -1180,7 +1229,9 @@ if(ATV_BUILD_CUDA)
     if(ATV_BUILD_EVALUATE)
         atv_add_test(test_cuda_evaluate cuda/evaluate/test_evaluate.cu)
     endif()
-    atv_add_test(test_cuda_async_bridge_requests cuda/asynchronous/test_async_bridge_requests.cu)
+    if(ATV_BUILD_MD AND ATV_BUILD_NEIGHBOR AND ATV_BUILD_POTENTIALS)
+        atv_add_test(test_cuda_capture_buffer cuda/asynchronous/test_capture_buffer.cu)
+    endif()
     if(ATV_BUILD_SEMIEMPIRICAL)
         atv_add_test(test_cuda_nddo_fock cuda/semiempirical/test_nddo_fock.cu)
         atv_add_test(test_cuda_nddo_two_electron cuda/semiempirical/test_nddo_two_electron.cu)
@@ -1196,6 +1247,18 @@ if(ATV_BUILD_CUDA)
     endif()
     if(ATV_BUILD_MD)
         atv_add_test(test_cuda_nose_hoover_npt cuda/dynamics/test_nose_hoover_npt.cu)
+        atv_add_test(test_cuda_fix_efield cuda/dynamics/test_fix_efield.cu)
+        atv_add_test(test_cuda_image_flags cuda/dynamics/test_image_flags.cu)
+        atv_add_test(test_cuda_nvt_sllod cuda/dynamics/test_nvt_sllod.cu)
+        atv_add_test(test_cuda_deform cuda/dynamics/test_deform.cu)
+        if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+            atv_add_test(test_cuda_nvt_sllod_flip_lj
+                cuda/dynamics/test_nvt_sllod_flip_lj.cu)
+        endif()
+    endif()
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_test(test_cuda_minimizer_image_flags
+            cuda/minimize/test_minimizer_image_flags.cu)
     endif()
     if(ATV_BUILD_NEIGHBOR)
         atv_add_test(test_cuda_neighborlist_skin_gating cuda/dynamics/test_neighborlist_skin_gating.cu)
@@ -1222,15 +1285,54 @@ if(ATV_BUILD_CUDA)
     if(ATV_BUILD_ANALYSIS AND ATV_BUILD_MD)
         atv_add_test(test_cuda_observer_rdf_molpy cuda/observe/test_rdf_molpy.cu)
     endif()
+    # cuda::MrecRecorder: count / cell / images, CPU parity, a held writer
+    # never holds the run, device-decided drops. Same IO gate as the
+    # component (iron law 8).
+    if(ATV_BUILD_MD AND ATV_BUILD_IO AND ATV_BUILD_NEIGHBOR
+       AND ATV_BUILD_POTENTIALS)
+        atv_add_test(test_cuda_mrec_recorder cuda/record/test_mrec_recorder.cu)
+    endif()
+    # The LAMMPS output step convention of cuda::XyzRecorder, cuda::Thermo
+    # and cuda::md::PressureSeries against independent runs (the XYZ writer
+    # reaches molpy IO).
+    if(ATV_BUILD_MD AND ATV_BUILD_IO AND ATV_BUILD_NEIGHBOR
+       AND ATV_BUILD_POTENTIALS)
+        atv_add_test(test_cuda_recorder_step_convention
+                     cuda/record/test_recorder_step_convention.cu)
+    endif()
+    # The LAMMPS `minimize` output convention on the CUDA minimizer loop
+    # (initial state, completed-iteration labels, forced final state on an
+    # early stop) against independent CUDA minimizations.
+    if(ATV_BUILD_MINIMIZER AND ATV_BUILD_IO AND ATV_BUILD_NEIGHBOR
+       AND ATV_BUILD_POTENTIALS)
+        atv_add_test(test_cuda_minimize_output
+                     cuda/minimize/test_minimize_output.cu)
+    endif()
     if(ATV_BUILD_POTENTIALS)
         atv_add_test(test_cuda_harmonic_coefficients cuda/potentials/test_harmonic_coefficients.cu)
+        atv_add_test(test_cuda_angle_cosine cuda/potentials/test_angle_cosine.cu)
+        atv_add_test(test_cuda_bond_fene cuda/potentials/test_bond_fene.cu)
         atv_add_test(test_cuda_packed_tiles cuda/potentials/test_packed_tiles.cu)
+    endif()
+    # Per-term energies (energy_pair/_bond/_angle/_dihedral) of every CUDA
+    # force-field family against the same-settings CPU style.
+    if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR AND ATV_BUILD_EVALUATE)
+        atv_add_test(test_cuda_energy_terms cuda/potentials/test_energy_terms.cu)
     endif()
     if(ATV_BUILD_MD)
         atv_add_test(test_cuda_pair_lj_special_bonds cuda/potentials/test_pair_lj_special_bonds.cu)
+        if(ATV_BUILD_EVALUATE)
+            atv_add_test(test_cuda_pair_lj_typed_cutoff
+                cuda/potentials/test_pair_lj_typed_cutoff.cu)
+        endif()
     endif()
     # Ewald always; the PME cases compile only with ATV_HAS_KSPACE.
     atv_add_test(test_cuda_kspace_virial cuda/longrange/test_kspace_virial.cu)
+    if(ATV_BUILD_KSPACE)
+        atv_add_test(test_cuda_kspace_pppm cuda/longrange/test_kspace_pppm.cu)
+    endif()
+    # Compiles to no tests without ATV_HAS_KSPACE.
+    atv_add_test(test_cuda_pppm_stencil cuda/longrange/test_pppm_stencil.cu)
     # pair_kernel is cuda-owned (backend-mirror-02-absorb); its scalar-math test
     # moved here from the former cpu/potentials/test_pair_kernel.cpp.
     if(ATV_BUILD_POTENTIALS)
@@ -1440,9 +1542,8 @@ if(ATV_BUILD_CUDA)
         atv_add_test(test_cuda_driver_binding_kind cuda/test_driver_binding_kind.cu)
     endif()
 
-    # AsyncRecordBase / AsyncBridge contract guards. The subdir registers
-    # benchmark-independent tests unconditionally and gates the
-    # polyethylene_tension-dependent ones on ATV_BUILD_BENCHMARKS internally.
+    # Compile site of the HF-gated asynchronous consumers (MullikenObs,
+    # DensityRecorder).
     add_subdirectory(cuda/asynchronous)
 
 endif()

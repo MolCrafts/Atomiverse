@@ -424,8 +424,8 @@ TEST(CudaClusterMask, SkinGateDecidesCurrentPeriodicMotionOnDevice) {
     ASSERT_EQ(cudaSuccess, cudaStreamBeginCaptureToGraph(cs, graph, nullptr,
                                                          nullptr, 0, mode));
     launch_skin_gate<force_t>(x.data(), zero.data(), zero.data(), ref.data(),
-                              zero.data(), zero.data(), n, force_t(0.25), box,
-                              nullptr, control.data(), handle, cs);
+                              zero.data(), zero.data(), n, 1.0, box, nullptr,
+                              control.data(), handle, cs);
     ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(cs, &captured));
     cudaGraphNode_t gate = nullptr;
     std::size_t roots = 1;

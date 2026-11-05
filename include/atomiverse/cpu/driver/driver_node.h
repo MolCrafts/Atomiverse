@@ -66,6 +66,13 @@ class DriverNode {
     virtual bool provides_force() const { return false; }
     virtual TimestepConsumer* timestep_consumer() { return nullptr; }
 
+    /// @brief A line-search trial of this loop is as good as a committed run.
+    ///
+    /// Same contract as `Component::trial_invariant`, forwarded by the
+    /// nested-slot adapter so a minimizer can keep the accepted trial of a
+    /// nested method instead of replaying it. Opt-in: false by default.
+    virtual bool trial_invariant() const { return false; }
+
     /// @brief Does anything in this loop resolve global tags at run time?
     ///
     /// Asked once, before the frame is bound, so `DomainRuntime` can decide

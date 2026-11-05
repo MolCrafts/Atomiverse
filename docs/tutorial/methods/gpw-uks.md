@@ -98,7 +98,7 @@ cpu::Frame frame(2);
 constexpr double L = 12.0;
 constexpr double R = 1.2075;
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 8;
+    frame.span(kAtom_atomic_number)[i] = 8;
     frame.span(kAtom_mass)[i] = 15.999;
     frame.span(kAtom_x)[i] = 0.5 * L;
     frame.span(kAtom_y)[i] = 0.5 * L;
@@ -159,7 +159,7 @@ constexpr double b2a = units::kBohrInAngstrom;
 const double L = 12.0;  // Bohr
 cpu::Frame frame(2);
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 1;
+    frame.span(kAtom_atomic_number)[i] = 1;
     frame.span(kAtom_x)[i] = (0.5 * L + (i == 0 ? -0.5 : 0.5)) * b2a;
     frame.span(kAtom_y)[i] = 0.5 * L * b2a;
     frame.span(kAtom_z)[i] = 0.5 * L * b2a;
@@ -1213,7 +1213,7 @@ constexpr double a_ang = 4.225;
 cpu::Frame frame(2);
 const double frac[2][3] = {{0.0, 0.0, 0.0}, {0.5, 0.5, 0.5}};
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 11;
+    frame.span(kAtom_atomic_number)[i] = 11;
     frame.span(kAtom_x)[i] = frac[i][0] * a_ang;
     frame.span(kAtom_y)[i] = frac[i][1] * a_ang;
     frame.span(kAtom_z)[i] = frac[i][2] * a_ang;

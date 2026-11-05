@@ -1,6 +1,6 @@
 /// @file src/cpu/io/molpy_species.h
 /// @brief The one species conversion at the molpy CXX boundary: the engine's
-/// `kAtom_type` (atomic number Z, `int`) to molpy' `atomic_number` column
+/// `kAtom_atomic_number` (atomic number Z, `int`) to molpy's `atomic_number` column
 /// (`u64`, 0..=118, 0 = wildcard `*`).
 ///
 /// molpy validates the upper bound and names the offending row; a negative
@@ -18,7 +18,7 @@
 namespace ATV::cpu::internal {
 
 /// @brief Convert a whole species column into a reusable `u64` scratch.
-/// @param z engine species values (`kAtom_type`). @param n row count.
+/// @param z engine species values (`kAtom_atomic_number`). @param n row count.
 /// @param out reused scratch, resized to `n`.
 /// @param who public operation name used as the message prefix.
 /// @throws std::invalid_argument on a negative value.
@@ -31,7 +31,7 @@ inline void molpy_atomic_numbers(const int* z, std::size_t n,
             throw std::invalid_argument(
                 std::string(who) + ": atom " + std::to_string(i)
                 + " has atomic number " + std::to_string(z[i])
-                + "; kAtom_type carries Z (0..118, 0 = wildcard)");
+                + "; kAtom_atomic_number carries Z (0..118, 0 = wildcard)");
         out[i] = static_cast<std::uint64_t>(z[i]);
     }
 }

@@ -180,6 +180,17 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     bool provides_energy() const override { return true; }
     bool provides_force() const override { return compute_force; }
     cpu::TimestepConsumer* timestep_consumer() override { return this; }
+    /// @brief A minimizer may keep this method's accepted line-search trial.
+    ///
+    /// Line-search trials and committed solves share the plain warm-start
+    /// density, so a kept trial is the converged SCF at the accepted geometry
+    /// and differs from a replay only through its starting guess (inside the
+    /// SCF tolerance). A guess owner that ticks with the nuclear clock — the
+    /// ASPC predictor, XL-BOMD or Car–Parrinello — makes trials and commits
+    /// differ, so any of them disables reuse.
+    bool trial_invariant() const override {
+        return !cpmd && !xl_bomd && !use_predictor_;
+    }
 
   private:
     template <typename Method>
@@ -622,7 +633,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     ///        `frame.meta[kEnergy]`; Hartree internals via `energy()`,
     ///        loop state via `converged()`/`stop_reason()`/`iterations()`,
     ///        wavefunction via `determinant()`.
-    /// @param frame  Geometry (Å) + Z in type column.
+    /// @param frame  Geometry (Å) + Z in the atomic_number column.
     /// @param guess  Optional density guess.
     /// @throws std::logic_error when `cpmd` is set — Car–Parrinello is a
     ///         nested-MD-force-slot method (there is no nuclear trajectory
@@ -838,9 +849,14 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
         int max_iter = -1;         ///< Budget override; <0 ⇒ member `max_iter`.
         double tol_override = -1;  ///< |ΔE| tol override; <0 ⇒ member `tol`.
         bool apply_aspc = true; ///< ASPC front/back; false on recursive call.
-        bool nested = false;    ///< Entered from an outer loop's force/energy
-                                ///< slot (the nuclear clock ticks) — XL-BOMD
-                                ///< propagates only on these entries.
+        /// Read and update the plain last-density warm start. Independent of
+        /// `apply_aspc`: a minimizer's line-search trial warm-starts (and
+        /// leaves its density for the next solve) without touching the
+        /// ASPC / XL histories.
+        bool warm_start = true;
+        bool nested = false; ///< Entered from an outer loop's force/energy
+                             ///< slot (the nuclear clock ticks) — XL-BOMD
+                             ///< propagates only on these entries.
         /// Accumulate (`+=`) into `kEnergy` / `kEnergyElectronic` / `kAtom_f*`
         /// instead of overwriting. True on the **in-plan** entry
         /// (`run_nested_erased`), where the hosting driver owns zeroing and

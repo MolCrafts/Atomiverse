@@ -56,7 +56,7 @@ int run() {
     const double r_bohr[2][3] = {{5.5, 6.0, 6.0}, {6.7, 6.1, 5.9}};
     ATV::cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 1;
+        frame.span(ATV::kAtom_atomic_number)[i] = 1;
         frame.span(ATV::kAtom_x)[i] = r_bohr[i][0] * kBohrInAngstrom;
         frame.span(ATV::kAtom_y)[i] = r_bohr[i][1] * kBohrInAngstrom;
         frame.span(ATV::kAtom_z)[i] = r_bohr[i][2] * kBohrInAngstrom;

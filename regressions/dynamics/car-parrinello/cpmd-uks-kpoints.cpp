@@ -45,7 +45,7 @@ cpu::Frame h2_frame() {
     const double x0[2] = {(kLBohr / 2.0 - 0.5 * kR0Bohr) * kBohr2Ang,
                           (kLBohr / 2.0 + 0.5 * kR0Bohr) * kBohr2Ang};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_mass)[i] = 1.008;
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_x)[i] = x0[i];

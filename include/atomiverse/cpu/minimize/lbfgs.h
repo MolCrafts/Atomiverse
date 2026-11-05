@@ -42,7 +42,6 @@
 
 #include "atomiverse/core/device.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/asynchronous/snapshot_publisher.h"
 #include "atomiverse/cpu/component/optimizer.h"
 #include "atomiverse/cpu/driver/backend_traits.h"
 #include "atomiverse/cpu/minimize/lbfgs_history.h"

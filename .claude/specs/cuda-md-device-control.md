@@ -160,9 +160,12 @@ bitwise unchanged; `lj_force_tile` time drops on non-thermo steps.
    required: no host-side per-step state baked into kernel arguments — the
    step index lives in a device counter advanced by the graph tail; ramp
    targets, Langevin keys, Deform strain and SLLOD flow derive from it on the
-   device. The neighbor IF graph and PME graph become child nodes. Components
-   whose launch needs a host worker (async recorders) declare themselves not
-   capturable; steps where they fire run eagerly, still sync-free.
+   device. The neighbor IF graph and PME graph become child nodes.
+   Asynchronous consumers (recorders, observers) are capturable too: their
+   capture kernels read the device step and the shared capture buffer's
+   pointers, and their host admission runs in `before_launch` outside the
+   graph; only a consumer whose capture is conditional on host state (the
+   SCF-density consumers) declares itself not capturable.
 
 Acceptance: steady LJ NVE step = one `cudaGraphLaunch`; GAFF PEO non-sampled
 step = one launch; trajectories bitwise equal to P2.

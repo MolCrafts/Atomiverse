@@ -26,7 +26,7 @@ cpu::Frame hydrogen() {
     frame.box = cpu::Box::orthorhombic(12 * a, 11 * a, 10 * a);
     constexpr double p[2][3] = {{5.45, 5.15, 4.4}, {6.55, 5.65, 4.8}};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_mass)[i] = 1.008;
         frame.span(kAtom_x)[i] = p[i][0] * a;
         frame.span(kAtom_y)[i] = p[i][1] * a;

@@ -28,7 +28,7 @@ namespace {
 ///        analytic GTH-PBE-q1 parameterization, so no UPF file is needed.
 cpu::Frame make_h_atom() {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_mass)[0] = 1.008;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;

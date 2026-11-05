@@ -39,7 +39,7 @@ cpu::Frame make_h2() {
     constexpr double bohr2ang = 0.52917720859;
     const double x[2] = {5.5 * bohr2ang, 6.5 * bohr2ang};
     for (int i = 0; i < 2; ++i) {
-        f.span(kAtom_type)[i] = 1;
+        f.span(kAtom_atomic_number)[i] = 1;
         f.span(kAtom_mass)[i] = 1.008;
         f.span(kAtom_tag)[i] = i + 1;
         f.span(kAtom_x)[i] = x[i];

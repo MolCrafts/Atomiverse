@@ -30,12 +30,12 @@ using namespace ATV;
 
 cpu::Frame water() {
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_z)[0] = 0.1173;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_y)[1] = 0.7572;
     f.span(kAtom_z)[1] = -0.4692;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_y)[2] = -0.7572;
     f.span(kAtom_z)[2] = -0.4692;
     f.box = cpu::Box::cubic(20.0);

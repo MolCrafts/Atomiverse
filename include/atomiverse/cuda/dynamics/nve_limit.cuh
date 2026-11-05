@@ -4,6 +4,7 @@
 #pragma once
 
 #include "atomiverse/cuda/component/integrator.cuh"
+#include "atomiverse/cuda/component/timestep_protocol.cuh"
 
 #include <string>
 #include <vector>
@@ -25,7 +26,7 @@ namespace md {
 /// Component/LaunchContext path (used by the multi-GPU PE driver, which owns
 /// raw per-subdomain SoA pointers rather than a single Frame). `xmax` is the
 /// per-step displacement cap [Å]; `vmax = xmax/dt` is computed internally.
-/// These mirror LAMMPS `fix nve/limit` exactly (ATV::units::force_to_accel units, Euclidean speed
+/// These mirror LAMMPS `fix nve/limit` exactly (ATV::units::md_ftm2v units, Euclidean speed
 /// cap, orthorhombic PBC wrap on the position update).
 /// @brief First NVE/limit half-step on rows [0, n) of `frame`.
 /// @param frame Device frame (positions, velocities, fixed-point forces).
@@ -48,8 +49,14 @@ void launch_nve_limit_initial(Frame& frame, int n, const cuda::Box& box,
 void launch_nve_limit_final(Frame& frame, int n, mixed_t dt, mixed_t xmax,
                             long long step, cudaStream_t stream = 0);
 
-class NVELimit : public cuda::Integrator {
+class NVELimit : public cuda::Integrator, public cuda::TimestepProvider {
   public:
+    /// @brief Publishes the step to `cuda::md::MD` (timestep protocol).
+    const cuda::TimestepProvider* as_timestep_provider() const override {
+        return this;
+    }
+    /// @return The constructor `dt` [fs].
+    double timestep() const override { return dt_; }
     /// @brief Construct NVE/limit integrator.
     /// @param dt   Timestep [fs].
     /// @param xmax Maximum distance an atom may move in one step [Å].

@@ -37,13 +37,13 @@ apply_langevin(const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
 
     const mixed_t m = mass[i];
     // gfactor1 (drag): `-m / (damp · ftm2v)`. Force = gfactor1 · v.
-    const mixed_t gfactor1 = -m / (damp * mixed_t(ATV::units::force_to_accel));
+    const mixed_t gfactor1 = -m / (damp * mixed_t(ATV::units::md_ftm2v));
     // gfactor2 (random): `sqrt(2 m kB T_live / (damp · dt · mvv2e)) / ftm2v`.
     const mixed_t gfactor2_inside =
-        mixed_t(2) * m * mixed_t(ATV::units::kB_ev_per_k) * T_live
-        / (damp * dt * mixed_t(ATV::units::mass_v2_to_energy));
+        mixed_t(2) * m * mixed_t(ATV::units::md_boltz) * T_live
+        / (damp * dt * mixed_t(ATV::units::md_mvv2e));
     const mixed_t gfactor2 =
-        sqrt(gfactor2_inside) / mixed_t(ATV::units::force_to_accel);
+        sqrt(gfactor2_inside) / mixed_t(ATV::units::md_ftm2v);
 
     // Two normal2_double calls consume eight 32-bit outputs per step.
     // Global tags select subsequences, so sorting/migration needs no RNG state.

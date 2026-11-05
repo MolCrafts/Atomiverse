@@ -43,7 +43,7 @@ class StopWhenTooHot : public cpu::Criterion {
         if (ndof <= 0)
             return Verdict::Continue;
         const double T =
-            2.0 * s.frame.meta.get(ATV::kKinetic) / (ndof * units::kB_ev_per_k);
+            2.0 * s.frame.meta.get(ATV::kKinetic) / (ndof * units::md_boltz);
         return (T > t_max_) ? Verdict::Stop : Verdict::Continue;
     }
 
@@ -178,11 +178,11 @@ TEST(CriterionTest, AUserCriterionCanReadTheFrame) {
 
     h.ctx.md.n_dof_global = 300;
     // KE for T = 300 K on 300 DOF: KE = Ndof kB T / 2
-    h.frame.meta.get(ATV::kKinetic) = 0.5 * 300 * units::kB_ev_per_k * 300.0;
+    h.frame.meta.get(ATV::kKinetic) = 0.5 * 300 * units::md_boltz * 300.0;
     EXPECT_EQ(crit.verdict(h.state(0)), Verdict::Continue);
 
     h.frame.meta.get(ATV::kKinetic) =
-        0.5 * 300 * units::kB_ev_per_k * 5000.0; // runaway
+        0.5 * 300 * units::md_boltz * 5000.0; // runaway
     EXPECT_EQ(crit.verdict(h.state(0)), Verdict::Stop);
 }
 
@@ -296,7 +296,7 @@ TEST(CriterionPoll, EmptyAndGuardOnlyLoopsDoNotConverge) {
     EXPECT_FALSE(driver.has_convergence_criterion());
     context.md.n_dof_global = 3;
     EXPECT_EQ(driver.poll_criteria_(1, frame, context), Verdict::Continue);
-    frame.meta.get(kKinetic) = 3 * units::kB_ev_per_k * 1000;
+    frame.meta.get(kKinetic) = 3 * units::md_boltz * 1000;
     EXPECT_EQ(driver.poll_criteria_(2, frame, context), Verdict::Stop);
 }
 

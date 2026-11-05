@@ -34,7 +34,7 @@ double classical_qmmm_coulomb(Frame& frame, const std::vector<int>& qm_rows,
     }
     std::unordered_set<int> qm_set(qm_rows.begin(), qm_rows.end());
     const double rc2 = cutoff * cutoff;
-    const double ke = units::coulomb; // eV·Å/e²
+    const double ke = units::md_qqr2e; // eV·Å/e²
     double e = 0.0;
     for (int iq : qm_rows) {
         const double qi = static_cast<double>(charge[iq]);

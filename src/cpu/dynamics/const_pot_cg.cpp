@@ -125,16 +125,16 @@ void ConstPotCG::collect_electrodes_(const cpu::Frame& frame) {
 
 double ConstPotCG::pair_A_(double r, double eta_i, double eta_j) const {
     if (r < 1e-14)
-        return units::coulomb * eta_i * kSqrt2OverPi;
+        return units::md_qqr2e * eta_i * kSqrt2OverPi;
     const double etaij =
         eta_i * eta_j / std::sqrt(eta_i * eta_i + eta_j * eta_j);
-    return units::coulomb * std::erf(etaij * r) / r;
+    return units::md_qqr2e * std::erf(etaij * r) / r;
 }
 
 double ConstPotCG::pair_b_(double r, double q, double eta_i) const {
     if (r < 1e-14)
         return 0.0;
-    return units::coulomb * q * std::erf(eta_i * r) / r;
+    return units::md_qqr2e * q * std::erf(eta_i * r) / r;
 }
 
 void ConstPotCG::build_matrix_(const cpu::Frame& frame) {
@@ -153,7 +153,7 @@ void ConstPotCG::build_matrix_(const cpu::Frame& frame) {
     for (int a = 0; a < m; ++a) {
         const int ia = elec_atoms_[static_cast<std::size_t>(a)];
         A_[static_cast<std::size_t>(a) * m + a] =
-            units::coulomb * eta * kSqrt2OverPi;
+            units::md_qqr2e * eta * kSqrt2OverPi;
 
         for (int b = a + 1; b < m; ++b) {
             const int ib = elec_atoms_[static_cast<std::size_t>(b)];
@@ -192,7 +192,7 @@ void ConstPotCG::build_matrix_(const cpu::Frame& frame) {
                     const double r = std::sqrt((nx * Lx) * (nx * Lx)
                                                + (ny * Ly) * (ny * Ly));
                     self_img +=
-                        units::coulomb * std::erf((eta / kSqrt2) * r) / r;
+                        units::md_qqr2e * std::erf((eta / kSqrt2) * r) / r;
                 }
             }
             A_[static_cast<std::size_t>(a) * m + a] += self_img;

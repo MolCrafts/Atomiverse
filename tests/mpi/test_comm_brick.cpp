@@ -159,6 +159,8 @@ TEST(TestReduce, ForceInitializationReducesBetweenProductionCadenceSteps) {
         }
     };
 
+    // Cadence counts completed steps (LAMMPS `update->ntimestep`): the end
+    // of step index 7 completes step 8, not a multiple of 5 — no reduce.
     reset_partials();
     reduce.launch({context, frame, 0, 7});
     expect_totals(local);
@@ -167,9 +169,11 @@ TEST(TestReduce, ForceInitializationReducesBetweenProductionCadenceSteps) {
     reduce.initialize_forces({context, frame, 0, 7});
     expect_totals(global);
 
+    // The end of step index 9 completes step 10: on cadence, reduced — the
+    // step a thermo / recorder of cadence 5 writes.
     context.exec.initializing_forces = false;
     reset_partials();
-    reduce.launch({context, frame, 0, 10});
+    reduce.launch({context, frame, 0, 9});
     expect_totals(global);
 }
 

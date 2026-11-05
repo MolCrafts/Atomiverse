@@ -11,7 +11,7 @@ ATV::cpu::Frame stress_guard_frame() {
     frame.meta.get(kEnergy) = 17.5;
     frame.meta.get(kStress) = {1, 2, 3, 4, 5, 6};
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = 3.5 + i;
         frame.span(kAtom_y)[i] = frame.span(kAtom_z)[i] = 4;
         frame.span(kAtom_fx)[i] = 3 + i;
@@ -63,7 +63,7 @@ TEST(GpwAdmission, RejectsInvalidResidualToleranceBeforeEvaluatingFrame) {
     cpu::Frame frame(2);
     frame.box = cpu::Box::cubic(8);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = 3.5 + i;
         frame.span(kAtom_y)[i] = frame.span(kAtom_z)[i] = 4;
     }

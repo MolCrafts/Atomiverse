@@ -19,8 +19,8 @@ namespace {
 
 ATV::cpu::Frame h2(double z) {
     ATV::cpu::Frame frame(2);
-    frame.span(ATV::kAtom_type)[0] = 1;
-    frame.span(ATV::kAtom_type)[1] = 1;
+    frame.span(ATV::kAtom_atomic_number)[0] = 1;
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
     frame.span(ATV::kAtom_z)[1] = z;
     frame.box = ATV::cpu::Box::cubic(30.0);
     return frame;
@@ -32,9 +32,9 @@ ATV::cpu::Frame h2o() {
     const double hx = 0.95 * std::sin(half);
     const double hz = 0.95 * std::cos(half);
     ATV::cpu::Frame frame(3);
-    frame.span(ATV::kAtom_type)[0] = 8;
-    frame.span(ATV::kAtom_type)[1] = 1;
-    frame.span(ATV::kAtom_type)[2] = 1;
+    frame.span(ATV::kAtom_atomic_number)[0] = 8;
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
+    frame.span(ATV::kAtom_atomic_number)[2] = 1;
     frame.span(ATV::kAtom_x)[1] = hx;
     frame.span(ATV::kAtom_z)[1] = hz;
     frame.span(ATV::kAtom_x)[2] = -hx;

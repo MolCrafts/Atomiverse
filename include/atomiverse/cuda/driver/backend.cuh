@@ -16,6 +16,7 @@
 
 #include "atomiverse/core/plan.h"
 #include "atomiverse/cpu/frame/input_snapshot.h"
+#include "atomiverse/cuda/asynchronous/capture_buffer.cuh"
 #include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/graph_ring.cuh"
@@ -90,6 +91,18 @@ class Backend {
     /// Establish force/scalar readiness without advancing the trajectory.
     void prepare_run(BigInt step_idx = 0);
 
+    /// @brief Per-run output of the current state (LAMMPS `Output::setup`):
+    ///        calls `setup_output` on every component of the MD plan with
+    ///        `ctx.step` = `step_idx`, the steps completed so far. Eager,
+    ///        device work only (no sync). No-op for other plans.
+    void setup_output(BigInt step_idx);
+
+    /// @brief Forced output of a minimization's final state (LAMMPS
+    ///        `Min::run` on a stop before MAXITER): calls `final_output` on
+    ///        every component of the minimizer plan with `ctx.step` =
+    ///        `step_idx` (iterations completed). Eager, device work only.
+    void final_output(BigInt step_idx);
+
     /// @brief Execute one simulation step (launch all components by phase).
     ///
     /// Never waits on the device (iron law 10): the step ends with an async
@@ -146,6 +159,10 @@ class Backend {
     /// @brief Release all resources (CUDA streams, device memory).
     void shutdown();
 
+    /// @brief The driver's shared asynchronous capture buffer.
+    CaptureBuffer& capture() noexcept { return capture_; }
+    const CaptureBuffer& capture() const noexcept { return capture_; }
+
     /// @brief Access the CUDA context (streams).
     cuda::Context& context() { return context_; }
 
@@ -159,6 +176,9 @@ class Backend {
     void apply_demand_(LaunchContext& ctx, BigInt step) const;
     void execute_step_graphed_(BigInt step_idx);
     void sync_device_step_(BigInt step_idx);
+    /// One `setup_output` (`final = false`) or `final_output` pass over the
+    /// MD / minimizer plan's components at its end-of-iteration slot.
+    void output_pass_(BigInt step_idx, bool final);
     void advance_device_step_(cudaStream_t stream);
     void forget_graphs_() noexcept;
     long long* device_step_ = nullptr; ///< context_.device_step storage.
@@ -168,6 +188,10 @@ class Backend {
     std::vector<EvaluationDemand> demands_; ///< MD plans only.
     bool gate_evaluation_ = false;
     bool virial_demanded_ = false;
+    /// A loaded component `tilts_box()`: kernels must take the general-cell
+    /// specialization even while the published cell is still orthorhombic,
+    /// because the host never re-reads the cell the device shears.
+    bool general_cell_ = false;
     BigInt report_step_ = -1;
     void forget_fault_();
     void release_fault_ring_();
@@ -178,7 +202,7 @@ class Backend {
     bool fault_pending_[kFaultRing] = {};
     int fault_slot_ = 0;
     bool fault_observed_ = false;
-    detail::ComponentLifecycle<Component> lifecycle_;
+    ATV::detail::ComponentLifecycle<Component> lifecycle_;
     EvaluationTransaction evaluation_;
     cpu::FrameInputSnapshot input_snapshot_;
     bool inputs_dirty_ = false;
@@ -187,7 +211,9 @@ class Backend {
     bool dispatching_ = false;
     std::vector<std::pair<int, Component*>> force_bindings_;
     cuda::Context context_{}; ///< CUDA stream handles.
-    cuda::Frame frame_{};     ///< Device-resident system state + host metadata.
+    /// Every asynchronous consumer's frames (published on context_.capture).
+    CaptureBuffer capture_;
+    cuda::Frame frame_{}; ///< Device-resident system state + host metadata.
     const Plan<Component>* plan_ =
         nullptr;             ///< Non-owning pointer to compiled Plan.
     Timer* timer_ = nullptr; ///< Non-owning pointer to optional Timer.

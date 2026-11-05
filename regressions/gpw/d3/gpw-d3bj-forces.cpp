@@ -106,7 +106,8 @@ std::vector<std::array<double, 3>> forces_ha_bohr(const ATV::cpu::Frame& f) {
 ATV::cpu::Frame geometry_copy(const ATV::cpu::Frame& src) {
     ATV::cpu::Frame f(src.nlocal());
     for (int i = 0; i < src.nlocal(); ++i) {
-        f.span(ATV::kAtom_type)[i] = src.span(ATV::kAtom_type)[i];
+        f.span(ATV::kAtom_atomic_number)[i] =
+            src.span(ATV::kAtom_atomic_number)[i];
         f.span(ATV::kAtom_x)[i] = src.span(ATV::kAtom_x)[i];
         f.span(ATV::kAtom_y)[i] = src.span(ATV::kAtom_y)[i];
         f.span(ATV::kAtom_z)[i] = src.span(ATV::kAtom_z)[i];
@@ -183,7 +184,7 @@ int run() {
     // ── (2) Product GPW with D3(BJ) forces ────────────────────────────────
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = z[i];
+        frame.span(kAtom_atomic_number)[i] = z[i];
         frame.span(kAtom_x)[i] = xs[i];
         frame.span(kAtom_y)[i] = ys[i];
         frame.span(kAtom_z)[i] = zs[i];

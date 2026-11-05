@@ -29,6 +29,9 @@
 #   ATV_KEEP_BUILD   set to 1 to keep the tree for follow-up runs
 #   ATV_RUN          shell command after ctest (GPU module env; ${BUILD}
 #                    expands in that shell).
+#   ATV_BLAS_FLAVOUR OpenBLAS flavour: pthread | sequential | openmp | module
+#                    (default: pthread when ATV_CMAKE_FLAGS builds the Python
+#                    extension, else the module's OpenMP install)
 #   ATV_CUDA_ROOT    CUDA toolkit (default: the GH200 manual 13.2.1 install;
 #                    the module's 13.0 toolkit is not used)
 
@@ -67,8 +70,34 @@ hash -r
 if [[ "$(uname -m)" == aarch64 ]]; then
     export RUSTUP_TOOLCHAIN=stable-aarch64-unknown-linux-gnu
 fi
-export LD_LIBRARY_PATH="${ATV_CUDA_ROOT}/lib64:${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
+# OpenBLAS flavour. The module points at the OpenMP build, which hangs in
+# threaded GEMM once the Python extension is dlopen'ed into CPython; the
+# runtime pick is the first LIBRARY_PATH directory, so the flavour is chosen
+# here (.claude/notes/openblas-thread-binding.md section 2). Default: pthread
+# when the configure builds the Python extension, the module's flavour
+# otherwise.
+if [[ -z "${ATV_BLAS_FLAVOUR:-}" ]]; then
+    case " ${ATV_CMAKE_FLAGS:-} " in
+    *"-DATV_BUILD_PYTHON=ON"*) ATV_BLAS_FLAVOUR=pthread ;;
+    *) ATV_BLAS_FLAVOUR=module ;;
+    esac
+fi
+if [[ "${ATV_BLAS_FLAVOUR}" != module ]]; then
+    if [[ "${OPENBLAS_ROOT}" != */openmp/* ]]; then
+        echo "ATV_BLAS_FLAVOUR=${ATV_BLAS_FLAVOUR}: OPENBLAS_ROOT=${OPENBLAS_ROOT} is not an /openmp/ install" >&2
+        exit 2
+    fi
+    OPENBLAS_ROOT="${OPENBLAS_ROOT/\/openmp\//\/${ATV_BLAS_FLAVOUR}\/}"
+    if [[ ! -f "${OPENBLAS_ROOT}/lib/libopenblas.so" ]]; then
+        echo "ATV_BLAS_FLAVOUR=${ATV_BLAS_FLAVOUR}: no ${OPENBLAS_ROOT}/lib/libopenblas.so" >&2
+        exit 2
+    fi
+    export LIBRARY_PATH="${OPENBLAS_ROOT}/lib:${LIBRARY_PATH:-}"
+    ATV_CMAKE_FLAGS="${ATV_CMAKE_FLAGS:-} -DBLAS_LIBRARIES=${OPENBLAS_ROOT}/lib/libopenblas.so -DLAPACK_LIBRARIES=${OPENBLAS_ROOT}/lib/libopenblas.so"
+fi
+echo "openblas=${OPENBLAS_ROOT} (flavour ${ATV_BLAS_FLAVOUR})"
+export LD_LIBRARY_PATH="${ATV_CUDA_ROOT}/lib64:${LIBRARY_PATH:-}:${LD_LIBRARY_PATH:-}"
 
 echo "host=$(hostname) arch=$(uname -m)"
 echo "cmake=$(command -v cmake) nvcc=$(command -v nvcc || true)"

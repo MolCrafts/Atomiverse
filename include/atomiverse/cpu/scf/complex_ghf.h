@@ -96,7 +96,7 @@ class ComplexGHF : public cpu::Driver<ATV::scf::Phase>, public HF {
     void destroy_on(cpu::Runtime& rt) override;
 
     /// @brief Run SCF. Overwrites `kEnergy` and `kEnergyElectronic` [eV].
-    /// @param frame Positions [Å], species in `kAtom_type`.
+    /// @param frame Positions [Å], species in `kAtom_atomic_number`.
     void run(Frame& frame);
 
     /// @brief Run SCF without writing the Frame.

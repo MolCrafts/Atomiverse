@@ -118,7 +118,7 @@ AtomList::AtomList(const Frame& frame, int charge,
     atoms.resize(static_cast<std::size_t>(natm));
     basis_z.resize(static_cast<std::size_t>(natm));
     int nelec = -charge;
-    const int* __restrict sp_type = frame.span(kAtom_type);
+    const int* __restrict sp_type = frame.span(kAtom_atomic_number);
     const StorageReal* __restrict sp_x = frame.span(kAtom_x);
     const StorageReal* __restrict sp_y = frame.span(kAtom_y);
     const StorageReal* __restrict sp_z = frame.span(kAtom_z);

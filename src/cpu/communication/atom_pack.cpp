@@ -835,9 +835,9 @@ void accumulate_reverse_wire(const PackPlan& plan, const std::vector<int>& rows,
             case ColDType::Int:
                 accumulate_column<int>(field, rows, buffer.data() + offset);
                 break;
-            case ColDType::Int8:
-                accumulate_column<std::int8_t>(field, rows,
-                                               buffer.data() + offset);
+            case ColDType::Image:
+                accumulate_column<ImageInt>(field, rows,
+                                            buffer.data() + offset);
                 break;
             }
             offset += bytes;

@@ -29,7 +29,7 @@ void MultipoleObserver::launch(const LaunchContext& ctx) {
     const auto x = frame.span(kAtom_x);
     const auto y = frame.span(kAtom_y);
     const auto z = frame.span(kAtom_z);
-    const auto type = frame.span(kAtom_type);
+    const auto type = frame.span(kAtom_atomic_number);
     double zsum = 0.0, origin[3] = {0.0, 0.0, 0.0};
     for (int i = 0; i < natm; ++i) {
         const double zi = static_cast<double>(type[i]);

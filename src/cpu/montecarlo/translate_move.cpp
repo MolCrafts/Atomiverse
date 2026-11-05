@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/montecarlo/translate_move.h"
 
+#include <cstddef>
 #include <random>
 #include <stdexcept>
 
@@ -60,6 +61,7 @@ void TranslateMove::launch(const cpu::LaunchContext& ctx) {
     StorageReal* __restrict sp_x = ctx.frame.span(kAtom_x);
     StorageReal* __restrict sp_y = ctx.frame.span(kAtom_y);
     StorageReal* __restrict sp_z = ctx.frame.span(kAtom_z);
+    ImageInt* __restrict sp_image = ctx.frame.span(kAtom_image).data();
 
     std::uniform_int_distribution<int> pick(0, n - 1);
     std::uniform_real_distribution<double> disp(-delta_, delta_);
@@ -79,7 +81,11 @@ void TranslateMove::launch(const cpu::LaunchContext& ctx) {
     // which eventually drives an atom outside the box and blows up the cell
     // list. Energy is unaffected: the evaluator uses the minimum image. A
     // degenerate (zero-length) box is left as-is (wrap_axis is a no-op).
-    ctx.frame.box.wrap_into(nx, ny, nz);
+    // The lattice translation is counted into the row's image flags (LAMMPS
+    // Domain::pbc), so r + H·image follows the physical displacement; the
+    // row snapshot above includes `image`, so a rejected move restores it.
+    ctx.frame.box.wrap_into(nx, ny, nz,
+                            sp_image + 3 * static_cast<std::size_t>(i));
 
     sp_x[i] = static_cast<StorageReal>(nx);
     sp_y[i] = static_cast<StorageReal>(ny);

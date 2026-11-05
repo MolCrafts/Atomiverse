@@ -20,8 +20,9 @@ class Frame; // fwd — keeps this header CUDA-safe
 /// @brief XYZ trajectory writer (standard element + coordinates).
 ///
 /// `write`/`append` write one frame's geometry through molpy. Species come
-/// from `kAtom_type`, which carries the atomic number Z (0 is the wildcard
-/// `*`); molpy spells the element symbols. Extraction
+/// from `kAtom_atomic_number`, the atomic number Z (0 is the wildcard `*`);
+/// molpy spells the element symbols. A frame without a species column
+/// throws with the how-to. Extraction
 /// scratch is reused across calls, so per-frame appends on a long-lived
 /// writer do not reallocate on the steady-state path.
 class XYZ {
@@ -31,12 +32,12 @@ class XYZ {
     explicit XYZ(const std::string& filename);
 
     /// @brief Truncate/create the file and write one frame.
-    /// @param frame source of Z (`kAtom_type`), x/y/z [Å], box and meta.
+    /// @param frame source of Z (`kAtom_atomic_number`), x/y/z [Å], box and meta.
     /// @throws std::invalid_argument on a negative Z; std::runtime_error
     /// (molpy, path attached) on Z > 118 or a write failure.
     void write(const Frame& frame);
     /// @brief Append one frame; same contract as `write`.
-    /// @param frame source of Z (`kAtom_type`), x/y/z [Å], box and meta.
+    /// @param frame source of Z (`kAtom_atomic_number`), x/y/z [Å], box and meta.
     void append(const Frame& frame);
 
   private:

@@ -376,7 +376,8 @@ Three questions, in order:
 3. **Does the extension cross the host/device boundary?**
    - If yes: read [Architecture](architecture.md) and consider whether
      the right home is the CUDA backend, the CPU backend, or a small
-     helper on both with an `AsyncBridge` between them.
+     helper on both with an `AsyncConsumer` (the shared capture buffer)
+     between them.
    - If no: stay on the CPU side. The CPU subsystem boundaries (md /
      minimizer / scf) under `cpu` are the right
      organizing axis.

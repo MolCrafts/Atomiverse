@@ -65,7 +65,7 @@ int n_sph(const AtomBasis& ab) {
 
 cpu::Frame one_atom(int Z) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = Z;
+    f.span(kAtom_atomic_number)[0] = Z;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;

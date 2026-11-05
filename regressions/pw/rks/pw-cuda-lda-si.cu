@@ -69,8 +69,8 @@ std::string parse_device_arg(int argc, char** argv) {
 /// @brief 2-atom fcc-primitive diamond silicon, lattice constant `a` [Å].
 cpu::Frame make_si_fcc(double a) {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 14;
-    f.span(kAtom_type)[1] = 14;
+    f.span(kAtom_atomic_number)[0] = 14;
+    f.span(kAtom_atomic_number)[1] = 14;
     f.span(kAtom_mass)[0] = 28.0855;
     f.span(kAtom_mass)[1] = 28.0855;
     f.span(kAtom_x)[0] = 0.0;

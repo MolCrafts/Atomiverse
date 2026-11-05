@@ -24,7 +24,7 @@ namespace atv_reg_semiempirical_nddo_sharp_discriminator {
 
 namespace {
 
-using ATV::kAtom_type;
+using ATV::kAtom_atomic_number;
 using ATV::kAtom_x;
 using ATV::kAtom_y;
 using ATV::kAtom_z;
@@ -54,9 +54,9 @@ struct Point {
 
 Frame linear_co2(double r_co) {
     Frame f(3);
-    f.span(kAtom_type)[0] = 6;
-    f.span(kAtom_type)[1] = 8;
-    f.span(kAtom_type)[2] = 8;
+    f.span(kAtom_atomic_number)[0] = 6;
+    f.span(kAtom_atomic_number)[1] = 8;
+    f.span(kAtom_atomic_number)[2] = 8;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
     f.span(kAtom_z)[0] = 0;
@@ -72,8 +72,8 @@ Frame linear_co2(double r_co) {
 
 Frame diatomic_co(double r_co) {
     Frame f(2);
-    f.span(kAtom_type)[0] = 6;
-    f.span(kAtom_type)[1] = 8;
+    f.span(kAtom_atomic_number)[0] = 6;
+    f.span(kAtom_atomic_number)[1] = 8;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
     f.span(kAtom_z)[0] = 0;

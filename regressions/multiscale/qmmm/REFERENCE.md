@@ -8,7 +8,7 @@ One case; every section below is run by `atv_regressions --case multiscale/qmmm`
 ### System
 
 - Electrostatic QM/MM coupling (`QmmmElectrostatic`) with empty cross-LJ table
-- QM region: H₂O via `kAtomQmZ` (Z = 8,1,1)
+- QM region: H₂O via the `kAtomQm` mask (species Z = 8,1,1 in `kAtom_atomic_number`)
 - MM: two atoms with charges ±0.5 e at z = ±3 Å
 - Engine: RHF/STO-3G, `embed_self_energy = false` (engine default via subsystem)
 
@@ -53,7 +53,7 @@ Finite `last_qm_energy` for \(g\in\{0.709,0.55\}\);
 
 ### System
 
-- NVE QM/MM-MD: RHF/STO-3G water (mask `qm_z`) + two charged LJ MM sites
+- NVE QM/MM-MD: RHF/STO-3G water (mask `qm`) + two charged LJ MM sites
 - Composition: `md::MD` + `VelocityVerlet` + `PairLJCut` (MM–MM) +
   `QmmmElectrostatic` + `set_engine(RHF.predictor(3))`
 - `embed_cutoff` large enough that sites stay collected every step

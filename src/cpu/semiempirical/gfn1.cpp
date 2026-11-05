@@ -936,7 +936,7 @@ void GFN1::launch(const LaunchContext& ctx) {
         throw std::runtime_error(
             "GFN1: open shell (multiplicity!=1) is not a product path; "
             "closed-shell only (see queue spin-gfn-xtb)");
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     const StorageReal* x = f.span(kAtom_x);
     const StorageReal* y = f.span(kAtom_y);
     const StorageReal* z = f.span(kAtom_z);

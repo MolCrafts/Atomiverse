@@ -86,6 +86,9 @@ struct backend_traits<cpu::device_tag> {
             bool requires_tag_index() const override {
                 return node && node->requires_tag_index();
             }
+            bool trial_invariant() const override {
+                return node && node->trial_invariant();
+            }
             cpu::TimestepConsumer* as_timestep_consumer() override {
                 return step;
             }

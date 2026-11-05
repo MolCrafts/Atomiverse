@@ -41,8 +41,8 @@ constexpr double kEcutRy = 15.0;
 constexpr int kMesh = 2;
 
 void set_diamond_si(cpu::Frame& frame, double a_ang) {
-    frame.span(kAtom_type)[0] = 14;
-    frame.span(kAtom_type)[1] = 14;
+    frame.span(kAtom_atomic_number)[0] = 14;
+    frame.span(kAtom_atomic_number)[1] = 14;
     frame.span(kAtom_mass)[0] = 28.0855;
     frame.span(kAtom_mass)[1] = 28.0855;
     frame.span(kAtom_x)[0] = 0.0;

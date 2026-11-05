@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -13,6 +14,7 @@
 #ifdef ATV_HAS_MD
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
+#include "atomiverse/cpu/dynamics/fix_efield.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -31,6 +33,7 @@
 #ifdef ATV_HAS_PW
 #include "atomiverse/cpu/planewave/pw_solver.h"
 #endif
+#include "atomiverse/cpu/potentials/angle_cosine.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
@@ -47,6 +50,9 @@
 #include "atomiverse/cpu/potentials/pair_wca.h"
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
 #include "atomiverse/cpu/record/thermo.h"
+#ifdef ATV_HAS_IO
+#include "atomiverse/cpu/record/mrec_recorder.h"
+#endif
 #ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
@@ -102,6 +108,25 @@ namespace {
     throw std::runtime_error("XyzRecorder requires ATV_BUILD_IO=ON "
                              "(trajectory writer not compiled in)");
 }
+#endif
+
+#ifdef ATV_HAS_MD
+/// @brief Build the CPU `*.mrec` recorder from its wire mirror, or refuse it
+///        on a build without the trajectory writer (ATV_BUILD_IO, the
+///        `throw_io_not_built` arrangement: decodable everywhere, refused
+///        where it would be constructed — never a silent trajectory-less run).
+/// @throws std::runtime_error naming the flags when the writer is absent.
+#ifdef ATV_HAS_IO
+cpu::MrecRecorder mrec_recorder(const MrecRecorderParams& p) {
+    return cpu::MrecRecorder{p.path, p.every, p.flush_every, p.durable};
+}
+#else
+[[noreturn]] void throw_mrec_not_built() {
+    throw std::runtime_error(
+        "MrecRecorder requires ATV_BUILD_IO=ON (trajectory writer not "
+        "compiled in)");
+}
+#endif
 #endif
 
 // Only the MD replay names it.
@@ -362,10 +387,16 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                     bind(cpu::DihedralCharmm{p.K, p.n, p.delta});
                 else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
                     bind(cpu::ImproperHarmonic{p.K, p.chi0});
+                else if constexpr (std::is_same_v<P, AngleCosineParams>)
+                    bind(cpu::AngleCosine{p.K});
+                else if constexpr (std::is_same_v<P, FixEfieldParams>)
+                    bind(cpu::md::FixEfield{p.Ex, p.Ey, p.Ez});
                 else if constexpr (std::is_same_v<P, PairCoulCutParams>)
                     bind(internal::make_pair_coul_cut(p));
                 else if constexpr (std::is_same_v<P, CoulLongParams>)
                     bind(cpu::CoulLong{p.alpha, p.cutoff});
+                else if constexpr (std::is_same_v<P, PairLJCutCoulLongParams>)
+                    bind(internal::make_pair_lj_cut_coul_long(p));
                 else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
 #ifdef ATV_HAS_KSPACE
                     // Move-only (it owns FFTW plans): the prvalue goes
@@ -413,6 +444,12 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
 #else
                     throw_io_not_built();
 #endif
+                } else if constexpr (std::is_same_v<P, MrecRecorderParams>) {
+#ifdef ATV_HAS_IO
+                    bind(mrec_recorder(p));
+#else
+                    throw_mrec_not_built();
+#endif
                 } else
                     static_assert(detail::unsupported_component_v<P>);
                 return;
@@ -449,10 +486,18 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 driver.set_evaluator(cpu::DihedralCharmm{p.K, p.n, p.delta});
             else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
                 driver.set_evaluator(cpu::ImproperHarmonic{p.K, p.chi0});
+            else if constexpr (std::is_same_v<P, AngleCosineParams>)
+                driver.set_evaluator(cpu::AngleCosine{p.K});
+            else if constexpr (std::is_same_v<P, FixEfieldParams>)
+                // A force source on the plural evaluator slot (force phase),
+                // as `cpu::md::FixEfield` documents for categorical use.
+                driver.set_evaluator(cpu::md::FixEfield{p.Ex, p.Ey, p.Ez});
             else if constexpr (std::is_same_v<P, PairCoulCutParams>)
                 driver.set_evaluator(internal::make_pair_coul_cut(p));
             else if constexpr (std::is_same_v<P, CoulLongParams>)
                 driver.set_evaluator(cpu::CoulLong{p.alpha, p.cutoff});
+            else if constexpr (std::is_same_v<P, PairLJCutCoulLongParams>)
+                driver.set_evaluator(internal::make_pair_lj_cut_coul_long(p));
             else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
 #ifdef ATV_HAS_KSPACE
                 // Move-only (it owns FFTW plans): the prvalue goes straight
@@ -503,6 +548,12 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 driver.set_record(cpu::XyzRecorder{p.filename, p.freq});
 #else
                 throw_io_not_built();
+#endif
+            } else if constexpr (std::is_same_v<P, MrecRecorderParams>) {
+#ifdef ATV_HAS_IO
+                driver.set_record(mrec_recorder(p));
+#else
+                throw_mrec_not_built();
 #endif
             } else
                 static_assert(detail::unsupported_component_v<P>);
@@ -587,6 +638,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
         const auto& task = spec.md();
         budget_ = task.n_steps;
         md_.emplace();
+        md_->set_capture_buffer_bytes(task.capture_buffer_bytes);
         for (const auto& entry : task.entries)
             register_md_entry(*md_, entry, task.n_steps);
         md_->build();

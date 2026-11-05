@@ -62,7 +62,7 @@ struct OneAtomSystem {
 
 cpu::Frame one_atom_frame(double x_ang, double y_ang, double z_ang, int z) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = z;
+    f.span(kAtom_atomic_number)[0] = z;
     f.span(kAtom_x)[0] = x_ang;
     f.span(kAtom_y)[0] = y_ang;
     f.span(kAtom_z)[0] = z_ang;

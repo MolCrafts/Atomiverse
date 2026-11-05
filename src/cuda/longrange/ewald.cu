@@ -19,6 +19,7 @@
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/energy_term.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/longrange/ewald.cuh"
@@ -38,18 +39,18 @@ namespace kernels {
 /// @brief Flag the k tables stale when the published cell revision moved;
 ///        add the neutralizing-background energy (and its virial).
 template <bool Virial>
-__global__ void
-ewald_refresh_tables(Box box_arg, EwaldTables* __restrict__ tables,
-                     double background_coef, acc_t* __restrict__ energy,
-                     acc_t* __restrict__ stress) {
+__global__ void ewald_refresh_tables(Box box_arg,
+                                     EwaldTables* __restrict__ tables,
+                                     double background_coef, EnergyTerm energy,
+                                     acc_t* __restrict__ stress) {
     const Box box = box_arg.current();
     EwaldTables& t = *tables;
     t.dirty = box.revision != t.revision;
     t.revision = box.revision;
     // E_bg ∝ 1/V: its virial −∂E/∂ε_aa is E_bg on each diagonal component.
     const double background = -background_coef / box.volume();
-    if (energy != nullptr)
-        atomicAdd(energy, background);
+    if (energy)
+        energy.add(background);
     if constexpr (Virial)
         for (int d = 0; d < 3; ++d)
             atomicAdd(stress + d, background);
@@ -124,14 +125,14 @@ __global__ void ewald_structure_factor(
 
 /// @brief Reciprocal energy Σ_k K·kw·|S(k)|² (+ virial), K = 2π k_e / V.
 template <bool Virial>
-__global__ void
-ewald_energy(const double* __restrict__ kw, const double* __restrict__ virial,
-             const double* __restrict__ sr, const double* __restrict__ si,
-             int ng, Box box_arg, acc_t* __restrict__ energy,
-             acc_t* __restrict__ stress) {
+__global__ void ewald_energy(const double* __restrict__ kw,
+                             const double* __restrict__ virial,
+                             const double* __restrict__ sr,
+                             const double* __restrict__ si, int ng, Box box_arg,
+                             EnergyTerm energy, acc_t* __restrict__ stress) {
     const int k = blockIdx.x * blockDim.x + threadIdx.x;
-    const double K =
-        ATV::units::coulomb * 2.0 * ATV::units::pi / box_arg.current().volume();
+    const double K = ATV::units::md_qqr2e * 2.0 * ATV::units::pi
+                     / box_arg.current().volume();
     constexpr int components = Virial ? 7 : 1;
     ::cuda::std::array<acc_t, components> values{};
     if (k < ng) {
@@ -148,8 +149,8 @@ ewald_energy(const double* __restrict__ kw, const double* __restrict__ virial,
     const auto sum =
         Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
     if (threadIdx.x == 0) {
-        if (energy != nullptr)
-            atomicAdd(energy, sum[0]);
+        if (energy)
+            energy.add(sum[0]);
         if constexpr (Virial)
             for (int c = 0; c < 6; ++c)
                 atomicAdd(stress + c, sum[c + 1]);
@@ -165,21 +166,20 @@ ewald_forces(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
              const double* __restrict__ kx, const double* __restrict__ ky,
              const double* __restrict__ kz, const double* __restrict__ kw,
              const double* __restrict__ sr, const double* __restrict__ si,
-             int ng, Box box_arg, double self_pref,
-             acc_t* __restrict__ energy) {
+             int ng, Box box_arg, double self_pref, EnergyTerm energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = i < n ? double(q[i]) : 0;
-    if (energy != nullptr) { // uniform: a step without eflag skips it
+    if (energy) { // uniform: a step without eflag skips it
         using Reduce = cub::BlockReduce<double, kDefaultBlock>;
         __shared__ typename Reduce::TempStorage reduction;
         const double self_energy = Reduce(reduction).Sum(self_pref * qi * qi);
         if (threadIdx.x == 0)
-            atomicAdd(energy, self_energy);
+            energy.add(self_energy);
     }
     if (i >= n)
         return;
-    const double K =
-        ATV::units::coulomb * 2.0 * ATV::units::pi / box_arg.current().volume();
+    const double K = ATV::units::md_qqr2e * 2.0 * ATV::units::pi
+                     / box_arg.current().volume();
     const double xi = double(x[i]), yi = double(y[i]), zi = double(z[i]);
     double fxi = 0, fyi = 0, fzi = 0;
     for (int k = 0; k < ng; ++k) {
@@ -276,7 +276,10 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
     const double inv4a2 = 1.0 / (4.0 * alpha_ * alpha_);
     auto* tables = static_cast<EwaldTables*>(d_tables_);
     // Per-step LAMMPS eflag/vflag.
-    acc_t* energy = ctx.energy_requested ? &frame.scalars->energy : nullptr;
+    // Self, reciprocal and background energy are pair energy, as on CPU
+    // (LAMMPS `epair` includes `elong`).
+    const EnergyTerm energy =
+        energy_term(frame.scalars, EnergyKind::Pair, ctx.energy_requested);
     acc_t* stress = frame.scalars->stress;
     const bool virial = ctx.stress_requested;
     const int blk = kDefaultBlock;
@@ -289,7 +292,7 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
         kernels::ewald_structure_factor<<<ng_, blk, 0, stream>>>(
             frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
             d_kx_, d_ky_, d_kz_, ng_, d_sr_, d_si_);
-        if (energy != nullptr || Virial)
+        if (energy || Virial)
             kernels::ewald_energy<Virial><<<grid_size(ng_), blk, 0, stream>>>(
                 d_kw_, d_virial_, d_sr_, d_si_, ng_, box, energy, stress);
     };

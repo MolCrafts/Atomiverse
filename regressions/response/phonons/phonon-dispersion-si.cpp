@@ -54,7 +54,7 @@ cpu::Frame diamond_conventional(double a, int n_cell) {
                         static_cast<StorageReal>((double(iy) + frac[k][1]) * a);
                     f.span(kAtom_z)[idx] =
                         static_cast<StorageReal>((double(iz) + frac[k][2]) * a);
-                    f.span(kAtom_type)[idx] = 14;
+                    f.span(kAtom_atomic_number)[idx] = 14;
                     f.span(kAtom_mass)[idx] = 28.0855;
                     f.span(kAtom_tag)[idx] = static_cast<TagInt>(idx + 1);
                     ++idx;

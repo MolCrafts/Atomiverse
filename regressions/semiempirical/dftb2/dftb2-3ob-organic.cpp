@@ -25,7 +25,7 @@ constexpr double kTol_eV = 0.05;
 
 cpu::Frame make_ch4() {
     cpu::Frame f(5);
-    f.span(kAtom_type)[0] = 6;
+    f.span(kAtom_atomic_number)[0] = 6;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
@@ -37,7 +37,7 @@ cpu::Frame make_ch4() {
         {-s, -s, s},
     };
     for (int i = 0; i < 4; ++i) {
-        f.span(kAtom_type)[i + 1] = 1;
+        f.span(kAtom_atomic_number)[i + 1] = 1;
         f.span(kAtom_x)[i + 1] = hpos[i][0];
         f.span(kAtom_y)[i + 1] = hpos[i][1];
         f.span(kAtom_z)[i + 1] = hpos[i][2];

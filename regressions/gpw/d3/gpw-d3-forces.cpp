@@ -162,7 +162,7 @@ int run() {
     // ── (2) Product GPW with D3 forces ────────────────────────────────────
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = z[i];
+        frame.span(kAtom_atomic_number)[i] = z[i];
         frame.span(kAtom_x)[i] = xs[i];
         frame.span(kAtom_y)[i] = ys[i];
         frame.span(kAtom_z)[i] = zs[i];
@@ -232,7 +232,7 @@ int run() {
 
     cpu::Frame frame_plain(6);
     for (int i = 0; i < 6; ++i) {
-        frame_plain.span(kAtom_type)[i] = z[i];
+        frame_plain.span(kAtom_atomic_number)[i] = z[i];
         frame_plain.span(kAtom_x)[i] = xs[i];
         frame_plain.span(kAtom_y)[i] = ys[i];
         frame_plain.span(kAtom_z)[i] = zs[i];

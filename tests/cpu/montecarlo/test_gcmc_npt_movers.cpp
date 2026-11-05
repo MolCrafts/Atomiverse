@@ -116,13 +116,19 @@ TEST(VolumeMove, BootstrapPassIsNoOp) {
 // ── InsertDeleteMove ────────────────────────────────────────────────────────
 
 TEST(InsertDeleteMove, RejectsBadConstruction) {
-    EXPECT_THROW((cpu::mc::InsertDeleteMove{0, 1.0}), std::invalid_argument);
-    EXPECT_THROW((cpu::mc::InsertDeleteMove{1, 0.0}), std::invalid_argument);
+    EXPECT_THROW((cpu::mc::InsertDeleteMove{0, 18, 1.0}),
+                 std::invalid_argument);
+    EXPECT_THROW((cpu::mc::InsertDeleteMove{1, 18, 0.0}),
+                 std::invalid_argument);
+    EXPECT_THROW((cpu::mc::InsertDeleteMove{1, 119, 1.0}),
+                 std::invalid_argument);
+    EXPECT_THROW((cpu::mc::InsertDeleteMove{1, -1, 1.0}),
+                 std::invalid_argument);
 }
 
 TEST(InsertDeleteMove, InsertionAppendsAZeroedRowInsideTheCell) {
     MoverHarness h{3};
-    cpu::mc::InsertDeleteMove mv{2, 39.948};
+    cpu::mc::InsertDeleteMove mv{2, 18, 39.948};
     // Drive until an insertion happens (coin is 50/50).
     while (true) {
         const int n_before = h.frame.nlocal();
@@ -140,6 +146,7 @@ TEST(InsertDeleteMove, InsertionAppendsAZeroedRowInsideTheCell) {
             EXPECT_EQ(h.frame.span(kAtom_num_bond)[slot], 0);
             EXPECT_EQ(h.frame.span(kAtom_mass)[slot], StorageReal(39.948));
             EXPECT_EQ(h.frame.span(kAtom_type)[slot], 2);
+            EXPECT_EQ(h.frame.span(kAtom_atomic_number)[slot], 18);
             EXPECT_EQ(h.frame.span(kAtom_tag)[slot], 3);
             break;
         }
@@ -147,10 +154,26 @@ TEST(InsertDeleteMove, InsertionAppendsAZeroedRowInsideTheCell) {
     }
 }
 
+TEST(InsertDeleteMove, InsertionStampsOnlyTheIdentityColumnsTheFrameCarries) {
+    MoverHarness h{3};
+    h.frame.block("atoms").erase(kAtom_atomic_number.key);
+    cpu::mc::InsertDeleteMove mv{2, 18, 39.948};
+    while (true) {
+        const int n_before = h.frame.nlocal();
+        mv.launch(h.launch());
+        if (h.txn.verb == Verb::Insert) {
+            EXPECT_EQ(h.frame.span(kAtom_type)[n_before], 2);
+            EXPECT_FALSE(h.frame.has("atoms", "atomic_number"));
+            break;
+        }
+        h.txn.rollback(h.frame);
+    }
+}
+
 TEST(InsertDeleteMove, DeletionCompactsAndPatchResurrects) {
     MoverHarness h{4};
     const cpu::Frame before = h.frame;
-    cpu::mc::InsertDeleteMove mv{1, 39.948};
+    cpu::mc::InsertDeleteMove mv{1, 18, 39.948};
     while (true) {
         mv.launch(h.launch());
         if (h.txn.verb == Verb::Delete) {
@@ -177,7 +200,7 @@ TEST(InsertDeleteMove, DeletionRollbackSurvivesGhostSlotOverwrite) {
     // must not rely on that row still holding the survivor.
     MoverHarness h{4};
     const cpu::Frame before = h.frame;
-    cpu::mc::InsertDeleteMove mv{1, 39.948};
+    cpu::mc::InsertDeleteMove mv{1, 18, 39.948};
     int deletions = 0;
     while (deletions < 24) {
         mv.launch(h.launch());
@@ -204,7 +227,7 @@ TEST(InsertDeleteMove, DeletionRollbackSurvivesGhostSlotOverwrite) {
 
 TEST(InsertDeleteMove, DeletionFromEmptyFrameProposesNothing) {
     MoverHarness h{0};
-    cpu::mc::InsertDeleteMove mv{1, 39.948};
+    cpu::mc::InsertDeleteMove mv{1, 18, 39.948};
     int none_seen = 0;
     for (int k = 0; k < 40; ++k) {
         mv.launch(h.launch());
@@ -269,7 +292,7 @@ TEST(MoveSelector, TemporaryChainIsOwnedByTheDriver) {
     mc.set_neighbor(cpu::md::NeighborList<>{8.5, 1.0, 1, 0, true});
     mc.set_mover(cpu::mc::MoveSelector{}
                      .add(cpu::mc::TranslateMove{0.2}, 0.5)
-                     .add(cpu::mc::InsertDeleteMove{1, 39.948}, 0.5));
+                     .add(cpu::mc::InsertDeleteMove{1, 18, 39.948}, 0.5));
     EXPECT_NO_THROW(mc.build());
 }
 

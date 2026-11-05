@@ -198,8 +198,12 @@ TEST(DriverBindingKind, MdPlanShapeUnchanged) {
         slot_names(plan, static_cast<std::size_t>(P::pre_neighbor)).empty());
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::neighbor)).empty());
+    // zero_stress is a default too: force styles accumulate the virial on
+    // every force phase, and without it an unconsumed `stress` summed over
+    // all steps (and was exported so by to_molpy / the recorders).
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::pre_force)),
-              (std::vector<std::string>{"zero_forces", "zero_energy"}));
+              (std::vector<std::string>{"zero_forces", "zero_energy",
+                                        "zero_stress"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
               (std::vector<std::string>{"noop_force"}));
     EXPECT_TRUE(
@@ -232,8 +236,10 @@ TEST(DriverBindingKind, MinimizePlanShapeUnchanged) {
                                   "stub_force", "reduce"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::convergence_check)),
               (std::vector<std::string>{"lbfgs"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
-              (std::vector<std::string>{"publish"}));
+    // No `publish` default: asynchronous observers read the driver's shared
+    // capture buffer, so end_of_step carries only what the user binds.
+    EXPECT_TRUE(
+        slot_names(plan, static_cast<std::size_t>(P::end_of_step)).empty());
 }
 
 TEST(DriverBindingKind, HessianPlanShapeUnchanged) {

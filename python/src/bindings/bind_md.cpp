@@ -17,6 +17,7 @@
 /// launcher TaskSpec path stays byte-compatible. ``MdHandle`` materializes the
 /// real C++ components on each setter and records the mirror entry.
 
+#include "capture_stats.h"
 #include "evaluator_setters.h"
 #include "frame_guards.h"
 #include "molpy_frame_bridge.h"
@@ -37,6 +38,7 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
@@ -60,6 +62,9 @@
 #include "atomiverse/cpu/record/thermo.h"
 #ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
+#endif
+#ifdef ATV_HAS_IO
+#include "atomiverse/cpu/record/mrec_recorder.h"
 #endif
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
@@ -150,6 +155,7 @@ struct MdHandle {
                       || std::is_same_v<P, cpu::task::AngleHarmonicParams>
                       || std::is_same_v<P, cpu::task::PairCoulCutParams>
                       || std::is_same_v<P, cpu::task::CoulLongParams>
+                      || std::is_same_v<P, cpu::task::PairLJCutCoulLongParams>
                       || std::is_same_v<P,
                                         cpu::task::DihedralMultiHarmonicParams>
                       // The widened real-space catalogue: six pair styles and
@@ -163,7 +169,11 @@ struct MdHandle {
                       || std::is_same_v<P, cpu::task::PairDpdParams>
                       || std::is_same_v<P, cpu::task::BondFeneParams>
                       || std::is_same_v<P, cpu::task::DihedralCharmmParams>
-                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>)
+                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>
+                      || std::is_same_v<P, cpu::task::AngleCosineParams>
+                      // A uniform field is a force source on the same slot
+                      // (force phase), as cpu::md::FixEfield documents.
+                      || std::is_same_v<P, cpu::task::FixEfieldParams>)
             driver.set_evaluator(std::move(comp));
 #ifdef ATV_HAS_KSPACE
         else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)
@@ -216,10 +226,13 @@ struct MdHandle {
         else if constexpr (std::is_same_v<P, cpu::task::ThermoParams>)
             driver.set_thermo(
                 static_cast<const cpu::task::ThermoParams&>(p).freq);
-        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>)
-            // The trajectory sink owns its file handle and its own stride
-            // gate, so it goes in whole through the recorder slot (plural)
-            // rather than through a driver-level cadence like Thermo's.
+        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>
+                           || std::is_same_v<P, cpu::task::MrecRecorderParams>)
+            // The trajectory sinks own their file handle and their own
+            // stride gate, so they go in whole through the recorder slot
+            // (plural) rather than through a driver-level cadence like
+            // Thermo's. Both are mirrored: under the MPI launcher every rank
+            // gathers its owned rows to rank 0, which alone writes.
             driver.set_record(std::move(comp));
         else
             static_assert(cpu::task::detail::unsupported_component_v<P>);
@@ -304,7 +317,8 @@ struct MdHandle {
                 "MD.run: the MPI launcher task payload cannot carry "
                 + unmirrored_.front() + "; run without the launcher");
         cpu::task::TaskSpec spec(
-            cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps)});
+            cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps),
+                              driver.capture_buffer_bytes()});
         auto fref = borrow_molpy_frame(frame_obj);
         require_charge_column(*fref);
         cpu::Frame work = cpu::from_molpy(*fref);
@@ -345,6 +359,24 @@ struct MdPhaseBuilder {
 } // namespace
 
 void bind_md(nb::module_& m) {
+    m.def(
+        "set_units",
+        [](const std::string& style) {
+            try {
+                units::set_style(style);
+            } catch (const std::invalid_argument& e) {
+                throw nb::value_error(e.what());
+            }
+        },
+        nb::arg("style"),
+        "LAMMPS `units` for the classical engine. Only \"lj\" is accepted: "
+        "pair, k-space and integrators multiply that row. Other styles are "
+        "from_style rows for an explicit PPPM estimate. Process-global; "
+        "call it before KSpacePPPM.from_accuracy and before run.");
+    m.def(
+        "units_style", []() { return std::string(units::active().style); },
+        "Active LAMMPS units style. The engine coupling is the lj row.");
+
     nb::enum_<md::Phase>(m, "Phase", "MD phase sequence (LAMMPS-style).")
         .value("initial_integrate", md::Phase::initial_integrate)
         .value("pre_force", md::Phase::pre_force)
@@ -372,20 +404,44 @@ void bind_md(nb::module_& m) {
         "Do not add NoseHoover or Langevin beside it. `direction` is the "
         "Voigt index 0..5: x, y, z, yz, xz, xy. `rate` is the engineering "
         "strain rate [1/fs]. The strain clock is internal and restarts when "
-        "the driver is built again.\n\n"
+        "the driver is built again. `tchain` is the Nose-Hoover chain "
+        "length (LAMMPS `tchain`; `fix nvt/sllod` defaults it to 1). A tilt "
+        "beyond half its box length flips the cell (LAMMPS `flip yes`).\n\n"
         "This record is not part of the MPI task payload. `MD.run` under the "
         "launcher rejects it.")
         .def(
             "__init__",
             [](ATV::md::NvtSllodSpec* p, double temperature, double tau,
-               double dt, double rate, int direction) {
-                new (p) ATV::md::NvtSllodSpec{temperature, tau, dt, rate,
-                                              direction};
+               double dt, double rate, int direction, int tchain) {
+                new (p) ATV::md::NvtSllodSpec{temperature, tau,       dt,
+                                              rate,        direction, tchain};
             },
             nb::arg("temperature"), nb::arg("tau"), nb::arg("dt"),
-            nb::arg("rate"), nb::arg("direction"),
+            nb::arg("rate"), nb::arg("direction"), nb::arg("tchain") = 1,
             "temperature [K], tau [fs] (LAMMPS Tdamp), dt [fs], "
-            "engineering rate [1/fs], direction 0..5.");
+            "engineering rate [1/fs], direction 0..5, chain length tchain.");
+
+    nb::class_<cpu::task::FixEfieldParams>(
+        m, "FixEfield",
+        "Constant uniform electric field (LAMMPS `fix efield Ex Ey Ez`, "
+        "metal units).\n\n"
+        "A force source for MD.set_evaluator on CPU and CUDA: F_i += q_i E. "
+        "The energy U = -sum_i q_i E . r_i^u uses unwrapped coordinates "
+        "r^u = r + H n through the frame's image flags (LAMMPS fsum[0]); it "
+        "drifts by the work the field does on migrating ions and is not a "
+        "bounded potential under PBC. No virial is added (LAMMPS "
+        "`fix_modify virial` is off by default). Needs a per-atom 'charge' "
+        "column [e].")
+        .def(
+            "__init__",
+            [](cpu::task::FixEfieldParams* p, double Ex, double Ey, double Ez) {
+                new (p) cpu::task::FixEfieldParams{Ex, Ey, Ez};
+            },
+            nb::arg("Ex"), nb::arg("Ey"), nb::arg("Ez"),
+            "Construct with the field components Ex, Ey, Ez [V/A].")
+        .def_ro("Ex", &cpu::task::FixEfieldParams::Ex, "Field x [V/A].")
+        .def_ro("Ey", &cpu::task::FixEfieldParams::Ey, "Field y [V/A].")
+        .def_ro("Ez", &cpu::task::FixEfieldParams::Ez, "Field z [V/A].");
 
     nb::class_<cpu::task::InitVelocityParams>(
         m, "InitVelocity", "Maxwell-Boltzmann velocity initialization.")
@@ -560,8 +616,16 @@ void bind_md(nb::module_& m) {
             "cpu/dynamics/barostat.h; pass 10.0 for LAMMPS-identical "
             "relaxation.");
 
-    nb::class_<cpu::task::ThermoParams>(m, "Thermo",
-                                        "Thermodynamic output at end_of_step.")
+    nb::class_<cpu::task::ThermoParams>(
+        m, "Thermo",
+        "Thermodynamic output at end_of_step.\n\n"
+        "LAMMPS `thermo` step convention: the `step` column is the number of "
+        "completed MD steps and the line is the state after that many steps. "
+        "Each run() first prints the header and the initial state (step 0), "
+        "then the state after every `freq`-th step and after the last step: "
+        "run(frame, 1000) at freq=100 prints steps 0, 100, ..., 1000. "
+        "freq=0 prints the first and last step of each run only (LAMMPS "
+        "`thermo 0`).")
         .def(
             "__init__",
             [](cpu::task::ThermoParams* p, int freq) {
@@ -584,9 +648,11 @@ void bind_md(nb::module_& m) {
         "later write of that same recorder appends, so handing a NEW "
         "XYZ(path, freq) to a second run starts the trajectory over instead "
         "of extending it.\n\n"
-        "Within one run() call the step index runs 0..n_steps-1, so the "
-        "stride gate opens on the steps 0, freq, 2*freq, ... below n_steps: "
-        "a 10-step run at freq=5 writes 2 frames (steps 0 and 5), never 3. "
+        "LAMMPS `dump` step convention: a frame's step is the number of "
+        "completed MD steps and the frame is the state after exactly that "
+        "many steps. A run() writes the initial state (step 0) and then the "
+        "state after every `freq`-th step, up to and including the last: a "
+        "10-step run at freq=5 writes 3 frames (steps 0, 5 and 10). "
         "Each run() call advances a freshly materialized working frame, so "
         "chunked run() calls are not one continued trajectory — do not rely "
         "on the step index carrying over between them.")
@@ -601,10 +667,74 @@ void bind_md(nb::module_& m) {
             "  filename  output XYZ path (truncated on the first write, "
             "appended to afterwards).\n"
             "  freq      write cadence [steps, >= 1; default 1] — one frame "
-            "whenever step % freq == 0.\n\n"
+            "whenever the completed-step count is a multiple of freq "
+            "(including the initial state, step 0).\n\n"
             "This object is a plain parameter record; the values are checked "
             "when the recorder is built, so an empty path or freq < 1 raises "
             "ValueError from MD.set_record(...), not from here.");
+
+#ifdef ATV_HAS_IO
+    // Bound once here as the task-wire mirror: the CPU handle mirrors it to
+    // the MPI launcher, and the CUDA MD handle (bind_cuda.cu) accepts the
+    // same record and builds cuda::MrecRecorder from it.
+    nb::class_<cpu::task::MrecRecorderParams>(
+        m, "MrecRecorder",
+        "molrec (`*.mrec`) trajectory output at end_of_step, on the CPU and "
+        "the CUDA MD driver alike, and under the MPI launcher.\n\n"
+        "Every `every` steps one frame is appended to the store: positions "
+        "[A], velocities [A/fs], forces [eV/A], charges [e], images (int32 "
+        "ix/iy/iz, so unwrapped = x + ix*a + iy*b + iz*c), tags, mass "
+        "[amu], the identity columns the frame carries (force-field type as "
+        "`type_id`, species as `atomic_number`; an absent one stays absent), "
+        "the cell, the energies/virial in the frame metadata, the step and "
+        "— with an integrator — time = step*dt [fs]. The step is the number "
+        "of completed MD steps and the frame is the state after exactly that "
+        "many steps (LAMMPS `dump`): a run() of n steps at every=k records "
+        "steps 0, k, 2k, ..., up to and including n. Rows are in ascending "
+        "tag order. Read it back with `molpy.io.mrec.MrecReader(path)`; the "
+        "store's `status` section records `state` (with the `error` when "
+        "the run failed), `frames_written` and, on CUDA, the `buffer` "
+        "accounting of the driver's capture buffer (`budget_bytes`, "
+        "`frame_bytes`, `peak_bytes`, `blocked_episodes`, "
+        "`blocked_seconds`).\n\n"
+        "The first frame replaces any store at the path. A recorder records "
+        "one run: on the CPU driver each run() is an independent simulation "
+        "(steps restart at 0), so give a second run() a new MD and "
+        "recorder; on the CUDA driver continued run() calls on the same "
+        "frame extend the same trajectory, the step axis continuing and the "
+        "boundary step written once. Under the MPI launcher every rank "
+        "gathers its atoms to rank 0, which alone writes.\n\n"
+        "CUDA recording is asynchronous but lossless: frames travel through "
+        "the driver's one shared capture buffer (MD(capture_buffer_bytes=…)) "
+        "and when it is full the run waits until the consumers free space — "
+        "no frame is ever dropped. Waits are logged and recorded in the "
+        "`status` section. If writing fails (disk full, I/O error) the run "
+        "stops with RuntimeError naming the store and the cause, and the "
+        "status records state = \"failed\".")
+        .def(
+            "__init__",
+            [](cpu::task::MrecRecorderParams* p, std::string path, int every,
+               std::uint64_t flush_every, bool durable) {
+                new (p) cpu::task::MrecRecorderParams{std::move(path), every,
+                                                      flush_every, durable};
+            },
+            nb::arg("path"), nb::arg("every") = 1, nb::arg("flush_every") = 0,
+            nb::arg("durable") = true,
+            "  path         output store, must end in .mrec\n"
+            "  every        write cadence [steps, >= 1; default 1] — one "
+            "frame whenever the completed-step count is a multiple of every "
+            "(including the initial state, step 0)\n"
+            "  flush_every  automatic commit cadence [frames]; 0 lets molpy "
+            "commit whole chunks\n"
+            "  durable      sync the files on each commit\n\n"
+            "The frame buffer is the driver's, not the recorder's: "
+            "MD(capture_buffer_bytes=…). Checked by MD.set_record (ValueError "
+            "on a bad path or every < 1).")
+        .def_ro("path", &cpu::task::MrecRecorderParams::path)
+        .def_ro("every", &cpu::task::MrecRecorderParams::every)
+        .def_ro("flush_every", &cpu::task::MrecRecorderParams::flush_every)
+        .def_ro("durable", &cpu::task::MrecRecorderParams::durable);
+#endif
 
     // ── MD driver (categorical setters) ──
     nb::class_<MdHandle> md(
@@ -615,6 +745,34 @@ void bind_md(nb::module_& m) {
         "RuntimeError afterwards. A different configuration means a new MD "
         "object. Running again with the same configuration stays legal.");
     md.def(nb::init<>())
+        .def(
+            "set_units",
+            [](MdHandle&, const std::string& style) {
+                try {
+                    units::set_style(style);
+                } catch (const std::invalid_argument& e) {
+                    throw nb::value_error(e.what());
+                }
+            },
+            nb::arg("style"),
+            "LAMMPS `units` for this process. Only \"lj\" runs on the "
+            "engine. Same function as the module-level set_units; call it "
+            "before KSpacePPPM.from_accuracy and before run.")
+        .def(
+            "set_capture_buffer_bytes",
+            [](MdHandle& self, std::uint64_t bytes) {
+                self.require_configurable_("set_capture_buffer_bytes");
+                self.driver.set_capture_buffer_bytes(bytes);
+            },
+            nb::arg("bytes"),
+            "Byte budget of the driver's shared asynchronous capture buffer; "
+            ">= 1. Carried by the MPI launcher.")
+        .def(
+            "capture_stats",
+            [](const MdHandle& self) {
+                return capture_stats_dict(self.driver.capture_stats());
+            },
+            "Capture-buffer accounting of the driver's last run.")
         .def(
             "set_integrator",
             [](MdHandle& self, const cpu::task::VelocityVerletParams& p) {
@@ -653,7 +811,7 @@ void bind_md(nb::module_& m) {
             [](MdHandle& self, const ATV::md::NvtSllodSpec& p) {
                 self.set_nvt_sllod_(cpu::md::NvtSllod{p.temperature_K, p.tau_fs,
                                                       p.dt_fs, p.rate_per_fs,
-                                                      p.direction});
+                                                      p.direction, p.tchain});
             },
             nb::arg("comp"),
             "NVT SLLOD. Not mirrored into the MPI task payload.")
@@ -761,6 +919,21 @@ void bind_md(nb::module_& m) {
             "Register the XYZ trajectory recorder (LAMMPS `dump`). Binds at "
             "end_of_step and writes one frame every freq steps; raises "
             "ValueError on an empty path or freq < 1.")
+#endif
+#ifdef ATV_HAS_IO
+        .def(
+            "set_record",
+            [](MdHandle& self, const cpu::task::MrecRecorderParams& p) {
+                self.set_categorical("set_record", p,
+                                     cpu::MrecRecorder{p.path, p.every,
+                                                       p.flush_every,
+                                                       p.durable});
+            },
+            nb::arg("comp"),
+            "Register the `*.mrec` trajectory recorder (cpu::MrecRecorder). "
+            "Binds at end_of_step; raises ValueError on a path without the "
+            ".mrec suffix or every < 1. Carried by the MPI launcher (rank-0 "
+            "gather and write).")
 #endif
         .def(
             "on",

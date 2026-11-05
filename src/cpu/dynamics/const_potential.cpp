@@ -136,7 +136,7 @@ void ConstPotentialBO::rebuild_A_(const Frame& frame) {
     const auto x = frame.span(kAtom_x);
     const auto y = frame.span(kAtom_y);
     const auto z = frame.span(kAtom_z);
-    const double ke = units::coulomb;
+    const double ke = units::md_qqr2e;
     const double aii = ke * std::sqrt(2.0 / 3.14159265358979323846) / w_;
 
     for (int i = 0; i < n_elec_; ++i) {
@@ -170,7 +170,7 @@ void ConstPotentialBO::solve_(Frame& frame) {
     const auto x = frame.span(kAtom_x);
     const auto y = frame.span(kAtom_y);
     const auto z = frame.span(kAtom_z);
-    const double ke = units::coulomb;
+    const double ke = units::md_qqr2e;
 
     // Mark electrode rows for Φ skip.
     std::vector<char> is_elec(static_cast<std::size_t>(n_own), 0);

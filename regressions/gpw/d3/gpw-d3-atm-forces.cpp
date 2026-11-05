@@ -244,7 +244,7 @@ int run() {
     //        evaluator (isolated cell; CP2K CUTOFF 300 / EPS_SCF 1e-7) ─────
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = z[i];
+        frame.span(kAtom_atomic_number)[i] = z[i];
         frame.span(kAtom_x)[i] = raw[i][0] + 4.5;
         frame.span(kAtom_y)[i] = raw[i][1] + 6.0;
         frame.span(kAtom_z)[i] = raw[i][2] + 6.0;
@@ -311,7 +311,7 @@ int run() {
 
     cpu::Frame frame_two(6);
     for (int i = 0; i < 6; ++i) {
-        frame_two.span(kAtom_type)[i] = z[i];
+        frame_two.span(kAtom_atomic_number)[i] = z[i];
         frame_two.span(kAtom_x)[i] = raw[i][0] + 4.5;
         frame_two.span(kAtom_y)[i] = raw[i][1] + 6.0;
         frame_two.span(kAtom_z)[i] = raw[i][2] + 6.0;

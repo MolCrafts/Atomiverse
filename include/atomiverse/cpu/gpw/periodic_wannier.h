@@ -28,7 +28,7 @@
 /// `PeriodicWannier` — no public `*Config` bag, no factories.
 ///
 /// @code
-///   // frame: Si positions [Å], Z in kAtom_type,
+///   // frame: Si positions [Å], Z in kAtom_atomic_number,
 ///   //        box = Box::orthorhombic(a/√2, a/√2, a) [Å] (BCT Si)
 ///   cpu::gpw::GpwDft dft{{{molrs::Element::Si,
 ///                          cpu::gpw::GaussianBasis(molrs::Element::Si, "SZV-GTH"),

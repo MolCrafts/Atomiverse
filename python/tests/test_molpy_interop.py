@@ -75,7 +75,8 @@ def test_molpy_abi_mismatch_rejected_before_capsule_access() -> None:
             import molpy._core
             from atomiverse._binding import _cpp
 
-            # The bridge asks molpy._core for the token, so patch it there.
+            # The bridge reads the token from molpy._core (the native module
+            # that owns the Frame capsule), so that is the one to fake.
             token = molpy._core._ffi_abi_token()
             molpy._core._ffi_abi_token = lambda: ("999.0", *token[1:])
 

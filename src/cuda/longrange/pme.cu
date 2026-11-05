@@ -17,6 +17,12 @@
 /// mesh energy for both conjugate half-spectrum indices. Lattice vectors are
 /// the cell columns (molpy/LAMMPS H): s = cell⁻¹ · r and the wave vector of
 /// mode m is Σ_d m_d (row d of cell⁻¹).
+///
+/// The PPPM setting (`ReciprocalKind::PppmIk`) spreads and gathers on
+/// LAMMPS's centred stencil, `src/KSPACE/pppm.cpp` `particle_map` /
+/// `make_rho` / `fieldforce_ik` at checkout e8c4c278a8 (Copyright (2003)
+/// Sandia Corporation, GPL-2.0-only), through `core/pppm_ik.h`; smooth PME
+/// keeps the one-sided Essmann stencil.
 #include <cmath>
 #include <cstdio>
 #include <cuda_runtime.h>
@@ -32,6 +38,7 @@
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/energy_term.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/longrange/pme.cuh"
@@ -91,7 +98,9 @@ __device__ __forceinline__ void pme_bspline(force_t frac, int runtime_order,
 }
 
 // Each grid dimension is at least order+1 and every stencil index lies in
-// [-(order-1), K]. One adjustment suffices, including the rounded u==K edge.
+// [-(order-1), K + order/2] (SPME: [⌊u⌋-(order-1), ⌊u⌋]; PPPM: nx + nlower …
+// nx + nupper, nx ≤ K). One adjustment suffices, including the rounded u==K
+// edge.
 __device__ __forceinline__ int wrap_idx(int v, int K) {
     if (v < 0)
         v += K;
@@ -100,8 +109,27 @@ __device__ __forceinline__ int wrap_idx(int v, int K) {
     return v;
 }
 
+/// @brief B-spline weights of one axis and the first grid point they belong to.
+///
+/// Pppm: LAMMPS centred stencil — θ[a] at nx + nlower + a (core/pppm_ik.h).
+/// Otherwise the Essmann one-sided stencil — θ[a] at ⌊u⌋ − (n−1) + a.
+template <int Order, bool Pppm>
+__device__ __forceinline__ int mesh_stencil(double u, int n, force_t* theta,
+                                            force_t* dtheta) {
+    if constexpr (Pppm) {
+        double frac = 0.0;
+        const int nx = longrange::pppm_particle_map(u, n, frac);
+        pme_bspline<Order>(force_t(frac), n, theta, dtheta);
+        return nx + longrange::pppm_stencil_lower(n);
+    } else {
+        const int u0 = int(floor(u));
+        pme_bspline<Order>(force_t(u - u0), n, theta, dtheta);
+        return u0 - (n - 1);
+    }
+}
+
 /// @brief Spread owned charges; order adjacent threads share one atom.
-template <int Order>
+template <int Order, bool Pppm>
 __global__ void
 pme_spread(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
            const pos_t* __restrict__ z, const force_t* __restrict__ q,
@@ -119,21 +147,24 @@ pme_spread(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
     constexpr int extent = Order > 0 ? Order : 12;
     force_t th[3][extent], dth[3][extent];
-    int base[3];
+    int start[3];
     for (int d = 0; d < 3; ++d) {
         const double s = inv_cell[3 * d + 0] * rx + inv_cell[3 * d + 1] * ry
                          + inv_cell[3 * d + 2] * rz;
         double u = s * g.K[d];
         u -= floor(u / g.K[d]) * g.K[d];
-        const int u0 = int(floor(u));
-        pme_bspline<Order>(force_t(u - u0), n, th[d], dth[d]);
-        base[d] = u0;
+        // A non-finite coordinate has no grid point: depositing it would
+        // index outside the mesh. Skipping it leaves the gather's NaN force
+        // to raise the frame force fault.
+        if (!(u >= 0.0 && u <= double(g.K[d])))
+            return;
+        start[d] = mesh_stencil<Order, Pppm>(u, n, th[d], dth[d]);
     }
-    const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2], nm1 = n - 1;
+    const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2];
     // As in OpenMM spreadCharge, adjacent threads write consecutive z
     // stencil sites. Each issues n*n atomics instead of n*n*n serial atomics.
     // Keep the existing (q*theta_x)*theta_y*theta_z multiplication order.
-    const int g2 = wrap_idx(base[2] - nm1 + c, K2);
+    const int g2 = wrap_idx(start[2] + c, K2);
     // Select without dynamically indexing the order-specialized theta
     // array, so the compiler can retain the spline coefficients in registers.
     force_t wz = 0;
@@ -142,10 +173,10 @@ pme_spread(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
         if (k == c)
             wz = th[2][k];
     for (int a = 0; a < n; ++a) {
-        const int g0 = wrap_idx(base[0] - nm1 + a, K0);
+        const int g0 = wrap_idx(start[0] + a, K0);
         const force_t wa = qi * th[0][a];
         for (int b = 0; b < n; ++b) {
-            const int g1 = wrap_idx(base[1] - nm1 + b, K1);
+            const int g1 = wrap_idx(start[1] + b, K1);
             const force_t wab = wa * th[1][b];
             const int idx = g2 + K2 * (g1 + K1 * g0);
             atomicAdd(&grid[idx], wab * wz);
@@ -157,8 +188,7 @@ pme_spread(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
 ///        moved; add the neutralizing-background energy (and its virial).
 template <bool Virial>
 __global__ void pme_refresh_tables(Box box_arg, PmeTables* __restrict__ tables,
-                                   double background_coef,
-                                   acc_t* __restrict__ energy,
+                                   double background_coef, EnergyTerm energy,
                                    acc_t* __restrict__ stress) {
     const Box box = box_arg.current();
     PmeTables& t = *tables;
@@ -166,8 +196,8 @@ __global__ void pme_refresh_tables(Box box_arg, PmeTables* __restrict__ tables,
     t.revision = box.revision;
     // E_bg ∝ 1/V: its virial −∂E/∂ε_aa is E_bg on each diagonal component.
     const double background = -background_coef / box.volume();
-    if (energy != nullptr)
-        atomicAdd(energy, background);
+    if (energy)
+        energy.add(background);
     if constexpr (Virial)
         for (int d = 0; d < 3; ++d)
             atomicAdd(stress + d, background);
@@ -238,12 +268,11 @@ template <bool Virial>
 __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
                               Box box_arg, const double* __restrict__ influence,
                               const double* __restrict__ virial, int nhalf,
-                              acc_t* __restrict__ energy,
-                              acc_t* __restrict__ stress) {
+                              EnergyTerm energy, acc_t* __restrict__ stress) {
     const int K2 = g.K[2];
     const int half_z = K2 / 2 + 1;
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const double escale = ATV::units::coulomb
+    const double escale = ATV::units::md_qqr2e
                           / (2.0 * ATV::units::pi * box_arg.current().volume());
     constexpr int components = Virial ? 7 : 1;
     ::cuda::std::array<acc_t, components> values{};
@@ -273,7 +302,7 @@ __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
     // Tail lanes and the zero mode contribute zero but must participate in
     // the collective. One atomic per block and component. A step without
     // eflag/vflag (null energy, no Virial) skips it; the branch is uniform.
-    if (energy == nullptr && !Virial)
+    if (!energy && !Virial)
         return;
     using Reduce =
         cub::BlockReduce<::cuda::std::array<acc_t, components>, kDefaultBlock>;
@@ -281,8 +310,8 @@ __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
     const auto sum =
         Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
     if (threadIdx.x == 0) {
-        if (energy != nullptr)
-            atomicAdd(energy, sum[0]);
+        if (energy)
+            energy.add(sum[0]);
         if constexpr (Virial)
             for (int k = 0; k < 6; ++k)
                 atomicAdd(stress + k, sum[k + 1]);
@@ -297,24 +326,25 @@ pme_interp(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
            const pos_t* __restrict__ x, const pos_t* __restrict__ y,
            const pos_t* __restrict__ z, const force_t* __restrict__ q,
            int natoms, PmeGeom g, Box box_arg, const force_t* __restrict__ grid,
-           double self_pref, acc_t* __restrict__ energy) {
+           double self_pref, EnergyTerm energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = (i < natoms) ? double(q[i]) : 0.0;
     // Reduce before the neutral/tail early exit so every lane reaches the
     // block barriers, including partially populated final blocks. The
     // energy pointer is uniform: a step without eflag skips the reduction.
-    if (energy != nullptr) {
+    if (energy) {
         using Reduce = cub::BlockReduce<double, kDefaultBlock>;
         __shared__ typename Reduce::TempStorage reduction;
         const double block_energy = Reduce(reduction).Sum(self_pref * qi * qi);
         if (threadIdx.x == 0)
-            atomicAdd(energy, block_energy);
+            energy.add(block_energy);
     }
     if (i >= natoms || qi == 0.0)
         return;
     const Box box = box_arg.current();
     const double* inv_cell = box.inv_cell;
-    const double fscale = ATV::units::coulomb / (ATV::units::pi * box.volume());
+    const double fscale =
+        ATV::units::md_qqr2e / (ATV::units::pi * box.volume());
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
     const int n = Order > 0 ? Order : g.order;
     constexpr int extent = Order > 0 ? Order : 12;
@@ -357,27 +387,19 @@ pme_interp(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
     add_force_owned(fz, i, force_t(-fscale * qi * fzv), fault);
 }
 
-__device__ __forceinline__ void pppm_column_lengths(const Box& box,
-                                                    double L[3]) {
-    for (int c = 0; c < 3; ++c) {
-        const double x = box.cell[c];
-        const double y = box.cell[3 + c];
-        const double z = box.cell[6 + c];
-        L[c] = ::sqrt(x * x + y * y + z * z);
-    }
-}
-
-/// @brief Hockney–Eastwood G(k) and its ik virial coefficients.
+/// @brief Folded half-spectrum PPPM tables (core/pppm_ik.h pppm_half_mode).
 ///
-/// One thread per r2c mode. G is even, so the stored half-spectrum mode is
-/// the whole contribution; the energy kernel applies the Hermitian weight.
-/// Virial slots hold G·(δ_ab + vt·m_a·m_b) with m = k/(2π).
+/// One thread per r2c mode: the energy weight, the three ik planes and the
+/// six virial planes, each mode folded with its conjugate partner so the
+/// half-spectrum sums equal LAMMPS's full complex mesh (Nyquist planes of an
+/// even mesh included). Virial slots hold G·(δ_ab + vt·m_a·m_b), m = k/(2π).
 template <bool Virial>
 __global__ void
 pppm_refresh_influence(const PmeTables* __restrict__ tables, Box box_arg,
                        PmeGeom g, const double* __restrict__ gf_b, double alpha,
                        double* __restrict__ influence,
-                       double* __restrict__ virial, int nhalf) {
+                       double* __restrict__ virial, double* __restrict__ ik,
+                       int nhalf) {
     if (!tables->dirty)
         return;
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -389,54 +411,30 @@ pppm_refresh_influence(const PmeTables* __restrict__ tables, Box box_arg,
     const int m1 = (idx / half_z) % K1;
     const int m2 = idx % half_z;
     const Box box = box_arg.current();
-    double L[3];
-    pppm_column_lengths(box, L);
     const int K[3] = {K0, K1, K2};
-    const int h0 = longrange::pppm_signed_mode(m0, K0);
-    const int h1 = longrange::pppm_signed_mode(m1, K1);
-    const int h2 = longrange::pppm_signed_mode(m2, K2);
-    const double G = longrange::pppm_green_ik(h0, h1, h2, L, K, alpha, g.order,
-                                              gf_b, box.inv_cell);
-    influence[idx] = G;
-    if constexpr (Virial) {
-        double coef[6] = {};
-        if (G != 0.0) {
-            double k[3];
-            longrange::pppm_wavevector(h0, h1, h2, box.inv_cell, k);
-            const double inv_twopi = 0.5 / ATV::units::pi;
-            const double mx = k[0] * inv_twopi;
-            const double my = k[1] * inv_twopi;
-            const double mz = k[2] * inv_twopi;
-            const double msq = mx * mx + my * my + mz * mz;
-            const double vt =
-                -2.0
-                * (1.0 / msq
-                   + (ATV::units::pi * ATV::units::pi) / (alpha * alpha));
-            coef[0] = G * (1.0 + vt * mx * mx);
-            coef[1] = G * (1.0 + vt * my * my);
-            coef[2] = G * (1.0 + vt * mz * mz);
-            coef[3] = G * vt * mx * my;
-            coef[4] = G * vt * mx * mz;
-            coef[5] = G * vt * my * mz;
-        }
+    const longrange::PppmHalfMode hm = longrange::pppm_half_mode(
+        m0, m1, m2, box.cell, K, alpha, g.order, gf_b, box.inv_cell, Virial);
+    influence[idx] = hm.green;
+    for (int a = 0; a < 3; ++a)
+        ik[static_cast<std::size_t>(a) * nhalf + idx] = hm.ik[a];
+    if constexpr (Virial)
         for (int c = 0; c < 6; ++c)
-            virial[static_cast<std::size_t>(c) * nhalf + idx] = coef[c];
-    }
+            virial[static_cast<std::size_t>(c) * nhalf + idx] = hm.virial[c];
 }
 
-/// @brief PPPM energy and V̂ = (G/V) ρ̂. Does not overwrite ρ̂.
+/// @brief PPPM energy and ρ̂/V (the ik fields multiply it by the folded ik
+///        coefficients). Does not overwrite ρ̂.
 template <bool Virial>
 __global__ void pppm_energy(const PmeComplex* __restrict__ density,
                             PmeComplex* __restrict__ potential, PmeGeom g,
                             Box box_arg, const double* __restrict__ influence,
                             const double* __restrict__ virial, int nhalf,
-                            acc_t* __restrict__ energy,
-                            acc_t* __restrict__ stress) {
+                            EnergyTerm energy, acc_t* __restrict__ stress) {
     const int half_z = g.K[2] / 2 + 1;
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const Box box = box_arg.current();
     const double volume = box.volume();
-    const double escale = ATV::units::coulomb / (2.0 * volume);
+    const double escale = ATV::units::md_qqr2e / (2.0 * volume);
     const double inv_vol = 1.0 / volume;
     constexpr int components = Virial ? 7 : 1;
     ::cuda::std::array<acc_t, components> values{};
@@ -452,10 +450,10 @@ __global__ void pppm_energy(const PmeComplex* __restrict__ density,
             for (int k = 0; k < 6; ++k)
                 values[k + 1] =
                     scaled * virial[static_cast<std::size_t>(k) * nhalf + idx];
-        potential[idx].x = G * inv_vol * qr;
-        potential[idx].y = G * inv_vol * qi;
+        potential[idx].x = inv_vol * qr;
+        potential[idx].y = inv_vol * qi;
     }
-    if (energy == nullptr && !Virial)
+    if (!energy && !Virial)
         return; // uniform: no eflag/vflag this step
     using Reduce =
         cub::BlockReduce<::cuda::std::array<acc_t, components>, kDefaultBlock>;
@@ -463,40 +461,32 @@ __global__ void pppm_energy(const PmeComplex* __restrict__ density,
     const auto sum =
         Reduce(reduction).Reduce(values, SumComponents<acc_t, components>{});
     if (threadIdx.x == 0) {
-        if (energy != nullptr)
-            atomicAdd(energy, sum[0]);
+        if (energy)
+            energy.add(sum[0]);
         if constexpr (Virial)
             for (int k = 0; k < 6; ++k)
                 atomicAdd(stress + k, sum[k + 1]);
     }
 }
 
-/// @brief Write i·k·V̂ for all three axes into a batched half-spectrum.
+/// @brief Write i·ik_a·ρ̂/V for all three axes into a batched half-spectrum.
 ///
 /// Batch `a` starts at `spectrum + a·nhalf` and is the cuFFT input for
-/// ∂V/∂r_a. V̂ itself is left in `potential`.
+/// ∂V/∂r_a; `ik` holds the folded coefficients (pppm_half_mode), so the c2r
+/// transform is LAMMPS's real part of its complex ik transform.
 __global__ void pppm_ik_fields(const PmeComplex* __restrict__ potential,
-                               PmeComplex* __restrict__ spectrum, Box box_arg,
-                               PmeGeom g, int nhalf) {
+                               const double* __restrict__ ik,
+                               PmeComplex* __restrict__ spectrum, int nhalf) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= nhalf)
         return;
-    const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2];
-    const int half_z = K2 / 2 + 1;
-    const int m0 = idx / (half_z * K1);
-    const int m1 = (idx / half_z) % K1;
-    const int m2 = idx % half_z;
-    const int h0 = longrange::pppm_signed_mode(m0, K0);
-    const int h1 = longrange::pppm_signed_mode(m1, K1);
-    const int h2 = longrange::pppm_signed_mode(m2, K2);
-    double k[3];
-    longrange::pppm_wavevector(h0, h1, h2, box_arg.current().inv_cell, k);
     const double re = potential[idx].x, im = potential[idx].y;
 #pragma unroll
     for (int axis = 0; axis < 3; ++axis) {
+        const double c = ik[static_cast<std::size_t>(axis) * nhalf + idx];
         PmeComplex* out = spectrum + static_cast<long long>(axis) * nhalf;
-        out[idx].x = -k[axis] * im;
-        out[idx].y = k[axis] * re;
+        out[idx].x = -c * im;
+        out[idx].y = c * re;
     }
 }
 
@@ -513,46 +503,50 @@ pppm_gather(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
             const pos_t* __restrict__ z, const force_t* __restrict__ q,
             int natoms, PmeGeom g, Box box_arg,
             const force_t* __restrict__ grid, int ntot, double self_pref,
-            acc_t* __restrict__ energy) {
+            EnergyTerm energy) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = (i < natoms) ? double(q[i]) : 0.0;
-    if (energy != nullptr) { // uniform: no eflag skips the self energy
+    if (energy) { // uniform: no eflag skips the self energy
         using Reduce = cub::BlockReduce<double, kDefaultBlock>;
         __shared__ typename Reduce::TempStorage reduction;
         const double block_energy = Reduce(reduction).Sum(self_pref * qi * qi);
         if (threadIdx.x == 0)
-            atomicAdd(energy, block_energy);
+            energy.add(block_energy);
     }
     if (i >= natoms || qi == 0.0)
         return;
     const Box box = box_arg.current();
     const double* inv_cell = box.inv_cell;
-    const double coulomb = ATV::units::coulomb;
+    const double coulomb = ATV::units::md_qqr2e;
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
     const int n = Order > 0 ? Order : g.order;
     constexpr int extent = Order > 0 ? Order : 12;
     force_t th[3][extent], dth[3][extent];
-    int base[3];
+    int start[3];
     for (int d = 0; d < 3; ++d) {
         const double s = inv_cell[3 * d + 0] * rx + inv_cell[3 * d + 1] * ry
                          + inv_cell[3 * d + 2] * rz;
         double u = s * g.K[d];
         u -= floor(u / g.K[d]) * g.K[d];
-        const int u0 = int(floor(u));
-        pme_bspline<Order>(force_t(u - u0), n, th[d], dth[d]);
-        base[d] = u0;
+        if (!(u >= 0.0 && u <= double(g.K[d]))) {
+            // Non-finite coordinate: no mesh read; the NaN force raises the
+            // frame force fault instead of a wild index.
+            add_force_owned(fx, i, force_t(nan("")), fault);
+            return;
+        }
+        start[d] = mesh_stencil<Order, true>(u, n, th[d], dth[d]);
     }
-    const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2], nm1 = n - 1;
+    const int K0 = g.K[0], K1 = g.K[1], K2 = g.K[2];
     const force_t* gx = grid;
     const force_t* gy = grid + static_cast<long long>(ntot);
     const force_t* gz = grid + 2LL * static_cast<long long>(ntot);
     force_t accx = 0, accy = 0, accz = 0;
     for (int a = 0; a < n; ++a) {
-        const int g0 = wrap_idx(base[0] - nm1 + a, K0);
+        const int g0 = wrap_idx(start[0] + a, K0);
         for (int b = 0; b < n; ++b) {
-            const int g1 = wrap_idx(base[1] - nm1 + b, K1);
+            const int g1 = wrap_idx(start[1] + b, K1);
             for (int c = 0; c < n; ++c) {
-                const int g2 = wrap_idx(base[2] - nm1 + c, K2);
+                const int g2 = wrap_idx(start[2] + c, K2);
                 const int gid = g2 + K2 * (g1 + K1 * g0);
                 const force_t w = th[0][a] * th[1][b] * th[2][c];
                 accx += gx[gid] * w;
@@ -595,26 +589,6 @@ cufftResult execute_inverse(cufftHandle plan, Complex* spectrum, Real* grid) {
         static_assert(std::is_same_v<Real, float>);
         return cufftExecC2R(plan, spectrum, grid);
     }
-}
-
-int pppm_fft_size(int n) {
-    // LAMMPS PPPM::factorable: 2, 3 and 5 only. 7 is legal for SPME here
-    // and is not legal for this mesh.
-    auto ok = [](int m) {
-        for (int p : {2, 3, 5})
-            while (m % p == 0)
-                m /= p;
-        return m == 1;
-    };
-    if (n < 4)
-        n = 4;
-    while (!ok(n)) {
-        if (n == std::numeric_limits<int>::max())
-            throw std::overflow_error(
-                "KSpacePPPM: FFT dimension exceeds int indexing");
-        ++n;
-    }
-    return n;
 }
 
 int good_fft_size(int n) {
@@ -697,6 +671,16 @@ KSpacePME::KSpacePME(double alpha, double grid_spacing, int order,
 
 KSpacePME::~KSpacePME() {}
 
+KSpacePPPM::KSpacePPPM(double alpha, std::array<int, 3> mesh, int order)
+    : KSpacePPPM(alpha, /*grid_spacing=*/1.0, order) {
+    for (int d = 0; d < 3; ++d) {
+        if (mesh[d] <= 0)
+            throw std::invalid_argument(
+                "KSpacePPPM: every mesh entry must be > 0");
+        fixed_K_[d] = mesh[d];
+    }
+}
+
 void KSpacePME::build(const BuildContext& ctx) {
     const long long spread_threads =
         static_cast<long long>(ctx.frame.n_local()) * order_;
@@ -721,17 +705,18 @@ void KSpacePME::build(const BuildContext& ctx) {
             const double z = box.cell[6 + d];
             len = std::sqrt(x * x + y * y + z * z);
         }
-        const double requested = std::ceil(len / spacing_);
+        const double requested =
+            fixed_K_[d] > 0 ? double(fixed_K_[d]) : std::ceil(len / spacing_);
         if (!std::isfinite(requested) || requested <= 0
             || requested > std::numeric_limits<int>::max())
             throw std::overflow_error(
                 pppm ? "KSpacePPPM: FFT dimension outside int indexing"
                      : "KSpacePME: FFT dimension outside int indexing");
-        K_[d] = pppm ? pppm_fft_size(int(requested))
+        K_[d] = pppm ? longrange::pppm_fft_size(int(requested))
                      : good_fft_size(int(requested));
         if (K_[d] < order_ + 1)
-            K_[d] =
-                pppm ? pppm_fft_size(order_ + 1) : good_fft_size(order_ + 1);
+            K_[d] = pppm ? longrange::pppm_fft_size(order_ + 1)
+                         : good_fft_size(order_ + 1);
         if (!pppm) {
             const auto axis = spline_moduli(K_[d], order_);
             moduli.insert(moduli.end(), axis.begin(), axis.end());
@@ -773,6 +758,8 @@ void KSpacePME::build(const BuildContext& ctx) {
                                   cudaMemcpyHostToDevice));
         ATV_CUDA_CHECK(cudaMalloc(&d_potential_,
                                   std::size_t(nhalf_) * sizeof(PmeComplex)));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&d_ik_, 3 * std::size_t(nhalf_) * sizeof(double)));
     } else {
         ATV_CUDA_CHECK(cudaMalloc(&d_moduli_, moduli.size() * sizeof(double)));
         ATV_CUDA_CHECK(cudaMemcpy(d_moduli_, moduli.data(),
@@ -909,7 +896,10 @@ void KSpacePME::enqueue_(const LaunchContext& ctx, bool want_energy,
     const double inv_pi2_a2 =
         ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
     const int blk = kDefaultBlock;
-    acc_t* energy = want_energy ? &frame.scalars->energy : nullptr;
+    // Self, reciprocal and background energy are pair energy, as on CPU
+    // (LAMMPS `epair` includes `elong`).
+    const EnergyTerm energy =
+        energy_term(frame.scalars, EnergyKind::Pair, want_energy);
     acc_t* stress = frame.scalars->stress;
 
     const bool pppm = kind_ == ReciprocalKind::PppmIk;
@@ -922,7 +912,7 @@ void KSpacePME::enqueue_(const LaunchContext& ctx, bool want_energy,
             kernels::pppm_refresh_influence<true>
                 <<<grid_size(nhalf_), blk, 0, stream>>>(
                     tables, box, geom, d_gf_b_, alpha_, d_influence_, d_virial_,
-                    nhalf_);
+                    d_ik_, nhalf_);
         else
             kernels::pme_refresh_influence<true>
                 <<<grid_size(nhalf_), blk, 0, stream>>>(
@@ -935,17 +925,25 @@ void KSpacePME::enqueue_(const LaunchContext& ctx, bool want_energy,
         refresh.template operator()<false>();
     ATV_CUDA_CHECK(
         cudaMemsetAsync(grid, 0, std::size_t(ntot_) * sizeof(force_t), stream));
-    auto spread = [&]<int Order>() {
-        kernels::pme_spread<Order><<<grid_size(n * order_), blk, 0, stream>>>(
-            frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
-            geom, box, grid);
+    // PPPM spreads on the LAMMPS centred stencil, SPME on Essmann's.
+    auto spread = [&]<int Order, bool Pppm>() {
+        kernels::pme_spread<Order, Pppm>
+            <<<grid_size(n * order_), blk, 0, stream>>>(
+                frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge,
+                n, geom, box, grid);
+    };
+    auto spread_kind = [&]<int Order>() {
+        if (pppm)
+            spread.template operator()<Order, true>();
+        else
+            spread.template operator()<Order, false>();
     };
     if (order_ == 5)
-        spread.template operator()<5>();
+        spread_kind.template operator()<5>();
     else if (order_ == 6)
-        spread.template operator()<6>();
+        spread_kind.template operator()<6>();
     else
-        spread.template operator()<0>();
+        spread_kind.template operator()<0>();
     if (execute_forward(forward, grid, spectrum) != CUFFT_SUCCESS)
         throw std::runtime_error(pppm ? "KSpacePPPM: forward FFT failed"
                                       : "KSpacePME: forward FFT failed");
@@ -960,7 +958,7 @@ void KSpacePME::enqueue_(const LaunchContext& ctx, bool want_energy,
                 spectrum, potential, geom, box, d_influence_, d_virial_, nhalf_,
                 energy, stress);
         kernels::pppm_ik_fields<<<grid_size(nhalf_), blk, 0, stream>>>(
-            potential, spectrum, box, geom, nhalf_);
+            potential, d_ik_, spectrum, nhalf_);
         if (execute_inverse(inverse, spectrum, grid) != CUFFT_SUCCESS)
             throw std::runtime_error("KSpacePPPM: inverse FFT failed");
         auto gather = [&]<int Order>() {
@@ -1031,6 +1029,8 @@ void KSpacePME::destroy(const DestroyContext& ctx) {
     d_gf_b_ = nullptr;
     cudaFree(d_potential_);
     d_potential_ = nullptr;
+    cudaFree(d_ik_);
+    d_ik_ = nullptr;
     cudaFree(d_influence_);
     d_influence_ = nullptr;
     cudaFree(d_virial_);

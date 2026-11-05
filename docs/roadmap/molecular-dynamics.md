@@ -52,6 +52,25 @@ self-image multiplicity have direct tests. The 800-step PR-NPT LJ regression
 also passes. These checks do not establish every potential/barostat combination;
 GPW and slab Ewald retain orthorhombic restrictions.
 
+Image flags follow LAMMPS `Domain::pbc` on both backends: every wrap of atom
+state (CPU rebuild wrap, SLLOD and the MC translate move; CUDA velocity
+Verlet, NVE limit, MTK NPT, SLLOD, Brownian and the `sd` / `cg` / `lbfgs`
+minimizer steps) adds the lattice translation to `image`, so
+\(r + H\,\mathrm{image}\) is continuous and is what a retrieved Frame carries
+(unwrapped transport, `FixEfield` energy). A rejected MC move and an L-BFGS
+Armijo rollback restore the images they changed. Each image component is an
+`ImageInt` (int32) on both backends, so a run may cross the cell ±2³¹ times
+per axis; LAMMPS data files and molpy frames carry `ix/iy/iz` in and out
+exactly.
+
+On CUDA a plan whose integrator tilts the cell (SLLOD yz/xz/xy) dispatches the
+general-cell pair, neighbor and mask kernels from the first step. Both
+backends decide a Verlet rebuild with LAMMPS `Neighbor::check_distance`'s box
+check: the half-skin trigger shrinks by the motion of the cell corners since
+the last build (`core/neighbor_check.h`), and a cell change that alone
+consumes the skin rebuilds; on CUDA the decision is the device skin gate, so a
+deforming cell no longer rebuilds every step.
+
 CPU MD uses one Runtime rebuild sequence and explicit periodic ghost rows for
 both serial and MPI execution. Frame owns row extents; neighbor consumers
 declare interaction coverage independently of skin and communication reach.
@@ -74,11 +93,13 @@ cluster hardware.
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| Constant / oscillating E-field | ✓ | ○ | |
+| Constant E-field | ✓ | ◐ | `FixEfield` (LAMMPS `fix efield`, constant path): \(F = qE\), field in V/Å; \(U = -\sum q\,E\cdot r^u\) through the image flags (orthorhombic and triclinic), no virial (LAMMPS `fix_modify virial` default off). CUDA `cuda::md::FixEfield`: device-only, graph-capturable; unit tests vs analytic and CPU on a charged pair, no external pin. Wire ID 38; Python `FixEfield` via `MD.set_evaluator` on CPU and CUDA |
+| Oscillating E-field | ✓ | ○ | |
 | Constant-force pull | ✓ | ○ | |
 | Constant-velocity pull (SMD) | ◐ | ○ | No external pin; self-pinned case removed |
-| Uniaxial Deform | ✓ | ✓ | CUDA: `erate` only |
-| SLLOD / Lees–Edwards / heat flux | ○ | ○ | |
+| Uniaxial Deform | ✓ | ✓ | `Deform(Mode::erate` or `Mode::trate, rate, dt, axis)` on both backends: one axis, remap x (the axis row of the cell and the coordinates scale together, so tilted cells keep fractional coordinates), no shear; CUDA unit test vs CPU on a tilted cell; neither backend's `Deform` is exposed to Python |
+| NVT SLLOD (`fix nvt/sllod` + `fix deform erate`, remap v) | ◐ | ◐ | `NvtSllod`, one direction per run (x y z yz xz xy), constant engineering rate, upper-triangular cell, Nosé–Hoover chain of length `tchain` (default 1, the LAMMPS `fix nvt/sllod` default; FixNH order with the carried peculiar temperature), LAMMPS `flip yes` box flip when a tilt passes half its box length (decided at end_of_step, executed at the next pre_exchange with `Domain::image_flip`; on CUDA both on the device). Same scalar laws on both backends (`core/sllod_flow.h`); unit tests: the chain against a transcription of `FixNH::nhc_temp_integrate`, CUDA vs CPU one step and an eight-step `tchain = 3` run (chain variables, unwrapped state), the flip on both backends, and an LJ shear across the flip whose per-step energy and forces equal a freshly built list (CPU) and the CPU run (CUDA). `PressureSeries` writes the six-component −P (lab-frame kinetic, LAMMPS default thermo) for one continuous run. Python: `NvtSllod(..., tchain=1)` + `MD.set_pressure_series` (CUDA). No external pin |
+| Lees–Edwards / heat flux | ○ | ○ | |
 
 ## 5. Ab initio MD
 

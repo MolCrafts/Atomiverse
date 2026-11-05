@@ -49,8 +49,8 @@ int run() {
     constexpr double L = 10.0;
     constexpr double R = 1.668;
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 28;
-    frame.span(kAtom_type)[1] = 8;
+    frame.span(kAtom_atomic_number)[0] = 28;
+    frame.span(kAtom_atomic_number)[1] = 8;
     frame.span(kAtom_mass)[0] = 58.693;
     frame.span(kAtom_mass)[1] = 15.999;
     frame.span(kAtom_x)[0] = 0.5 * L;

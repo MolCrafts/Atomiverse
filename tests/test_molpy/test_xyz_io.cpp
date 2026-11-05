@@ -121,8 +121,8 @@ TEST(MolpyXyzIo, CpuWriteXyzFrameWrapper) {
     EXPECT_TRUE(std::filesystem::exists(path));
     remove_path(path);
 
-    // kAtom_type carries Z: a negative value has no atomic-number spelling
-    // and is refused before it crosses; Z > 118 is molpy' refusal.
+    // kAtom_atomic_number carries Z: a negative value has no atomic-number spelling
+    // and is refused before it crosses; Z > 118 is molpy's refusal.
     EXPECT_THROW(ATV::cpu::write_xyz_frame(path, {-1}, {0.0}, {0.0}, {0.0}, box,
                                            /*append=*/false),
                  std::invalid_argument);

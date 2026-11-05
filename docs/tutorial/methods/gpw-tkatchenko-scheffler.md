@@ -349,7 +349,7 @@ CP2K TS twin).
 cpu::gpw::GpwDft gpw{kinds, 300.0, cpu::gpw::XcKind::PADE};   // one Kind per element
 gpw.k_mesh[0] = 1; gpw.k_mesh[1] = 1; gpw.k_mesh[2] = 2;
 gpw.ts = true;
-gpw.build(frame);                     // positions [Å], Z in kAtom_type, box [Å]
+gpw.build(frame);                     // positions [Å], Z in kAtom_atomic_number, box [Å]
 const auto& scf = gpw.forces(frame);  // SCF + analytic forces → kAtom_f* [eV/Å]
 // scf.e_disp [Ha] is geometry-only TS
 ```

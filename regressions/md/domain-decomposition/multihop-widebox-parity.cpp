@@ -64,6 +64,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/component/component.h"
@@ -284,7 +285,7 @@ struct OracleEnergy {
 /// Mirrors each engine kernel term by term:
 ///  * LJ 12-6 cutoff-shifted exactly as `cpu::PairLJCut` shifts it
 ///    (u(r) - u(r_c)); force is the unshifted analytic gradient.
-///  * Coulomb `E = 14.399645 q_i q_j / r` for r < r_c, NOT shifted, exactly
+///  * Coulomb `E = md_qqr2e q_i q_j / r` for r < r_c, NOT shifted, exactly
 ///    as `cpu::PairCoulCut` computes it (`src/cpu/potentials/pair_coul_cut.cpp`).
 ///  * Special bonds: with weights (0, 0, 0.5) on a 3-site A-B-A molecule the
 ///    1-2 and 1-3 pairs — i.e. every same-molecule pair — are dropped from
@@ -311,7 +312,7 @@ OracleEnergy brute_force(const std::vector<double>& x,
     const double rc2 = kCut * kCut;
     const double rc6inv = (1.0 / (rc2 * rc2 * rc2)) * sigma6;
     const double v_shift = 4.0 * kEps * (rc6inv * rc6inv - rc6inv);
-    const double coulomb = 14.399645; // eV*A/e^2, ATV::units::coulomb
+    const double coulomb = ATV::units::md_qqr2e;
 
     // ── Non-bonded: every unordered pair, same-molecule pairs excluded.
     for (std::size_t i = 0; i < n; ++i) {

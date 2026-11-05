@@ -12,7 +12,7 @@ GAFF, OPLS or a hand-built one go through the same arms.
 molpy style                 Atomiverse evaluator
 ==========================  ===========================================
 ``atom full``               (none — masses / charges are frame data)
-``pair lj/cut``             ``PairLJCut.table`` — per-type LJ, cross pairs
+``pair lj/cut``             ``PairLJCut`` (``LJTypeCoeff`` rows) — per-type LJ, cross pairs
                             by the style's ``mixing``, LJ special weights
                             from ``ff.special_bonds``, the style's
                             ``cutoff`` and ``shift``
@@ -340,7 +340,7 @@ def _mix(rule: str, ei: float, si: float, ej: float, sj: float) -> tuple[float, 
 
 
 def _lj_cut(style: Any, conv: _Converter, atom_types: list[str], special: tuple) -> tuple[Any, float]:
-    """``pair lj/cut`` → ``PairLJCut.table`` over the frame's atom types."""
+    """``pair lj/cut`` → per-type ``PairLJCut`` over the frame's atom types."""
     params = style.params
     if float(params.get("n", 12.0)) != 12.0 or float(params.get("m", 6.0)) != 6.0:
         raise ForceFieldError("pair lj/cut: only the 12-6 exponents have a kernel")
@@ -362,18 +362,15 @@ def _lj_cut(style: Any, conv: _Converter, atom_types: list[str], special: tuple)
     if missing:
         raise ForceFieldError(f"pair lj/cut: no like-pair row for atom type(s) {missing}")
 
-    ti, tj, eps, sig = [], [], [], []
+    rows = []
     for a, name_a in enumerate(atom_types):
         for b in range(a, len(atom_types)):
             name_b = atom_types[b]
             row = cross.get(frozenset((name_a, name_b)))
             if row is None:
                 row = diag[name_a] if a == b else _mix(rule, *diag[name_a], *diag[name_b])
-            ti.append(a)
-            tj.append(b)
-            eps.append(row[0])
-            sig.append(row[1])
-    term = _cpp.PairLJCut.table(ti, tj, eps, sig, cutoff, *special, energy_shift=shift)
+            rows.append(_cpp.LJTypeCoeff(a, b, row[0], row[1]))
+    term = _cpp.PairLJCut(rows, cutoff, *special, energy_shift=shift)
     return term, cutoff
 
 

@@ -8,10 +8,11 @@ cpu-breadth-03 **ac-009** documentation.
 
 | Layer | Path | Owns |
 |---|---|---|
-| Reciprocal solvers + their math | `longrange`, `src/cpu/longrange/` | `KSpaceEwald` / `KSpacePME` (complex c2c SPME) / **`KSpacePPPM` (real brick + r2c/c2r, SPME H(m))**, together with `EwaldSum`, the PME B-spline / moduli / influence helpers, and the HE green tables (`pppm_green.h`) |
+| Reciprocal solvers + their math | `longrange`, `src/cpu/longrange/` | `KSpaceEwald` / `KSpacePME` (complex c2c SPME) / **`KSpacePPPM` (real brick + r2c/c2r, Hockney–Eastwood ik G(k), LAMMPS centred stencil)**, together with `EwaldSum` and the PME B-spline / moduli / influence helpers; the PPPM stencil, G(k) and mesh-size laws both backends call are `core/pppm_ik.h` |
 | CUDA counterpart | `longrange`, `src/cuda/longrange/` | the same split on device (cuFFT); single-GPU only |
 | Build flag | `ATV_BUILD_KSPACE` | Gates FFTW3 / mesh reciprocal |
-| Science gate | `tests/cpu/longrange/test_pppm_coul.cpp` | Madelung, Ewald/PME parity, α-independence, FD forces |
+| Science gate | `tests/cpu/longrange/test_pppm_coul.cpp` | Madelung, Ewald/PME parity, α-independence, FD forces, literal LAMMPS reference on odd and even meshes |
+| Accuracy → (α, mesh) | `core/pppm_accuracy.h`, `src/core/pppm_accuracy.cpp` | LAMMPS `PPPM::init` port (`set_grid_global`, `estimate_ik_error`, `acons`, `adjust_gewald`, `final_accuracy`), used by `cpu::KSpacePPPM::from_accuracy`, `cuda::KSpacePPPM::from_accuracy` and Python `KSpacePPPM.from_accuracy`; gate `tests/core/test_pppm_accuracy.cpp` (LAMMPS printouts) |
 
 Electrostatics splits LAMMPS-style: real-space pair styles live in
 `potentials/`, reciprocal solvers **and their math** in each backend's own
@@ -78,6 +79,16 @@ and related unit tests.
 
 Self-energy partitions over owned atoms; reciprocal energy/net-charge on
 rank 0; `Reduce` all-reduces frame energy/stress.
+
+The brick's ghost extents are LAMMPS `Grid3d::ghost_grid` with
+`set_distance(0.5·skin)`: an owned atom may sit half the neighbor skin outside
+its subdomain until the next exchange. The skin is the active
+`NeighborProvider::validated_skin()`, which the Runtime publishes as
+`Context::md.neighbor_skin` with the provider's views; the extents (and the
+grid plans) are re-derived when the mesh, the processor grid or the skin
+changes, as LAMMPS does at `init`. Drift beyond that throws (LAMMPS "Out of
+range atoms - cannot compute PPPM"). CUDA PPPM runs on one device with a
+replicated mesh and wraps each atom, so it has no such bound.
 
 Halo still only exchanges immediate neighbour ranks — the charged NPT MPI
 fixture uses a box large enough that `cutoff + skin` fits in each subdomain

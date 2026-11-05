@@ -26,7 +26,8 @@ namespace longrange {
 /// `fill_bspline` (J. Chem. Phys. 103, 8577 (1995), appendix).
 ///
 /// @param frac   Fractional offset in [0, 1).
-/// @param n      B-spline order (≥ 2; PME uses ≥ 3).
+/// @param n      B-spline order, ≥ 3 (the recursion seeds order 2 and
+///               raises it at least once).
 /// @param[out] theta  Length @p n.
 /// @param[out] dtheta Length @p n.
 inline void bspline(double frac, int n, double* theta, double* dtheta) {
@@ -204,39 +205,6 @@ inline void pme_spread_charges(const StorageReal* q, int n_atoms, int order,
                     // Charge is real — write only .real to cut complex ops.
                     grid[plane + g2].real(grid[plane + g2].real()
                                           + wab * thz[c]);
-                }
-            }
-        }
-    }
-}
-
-/// @brief Spread onto a real grid (for r2c paths / faster charge assignment).
-inline void pme_spread_charges_real(const StorageReal* q, int n_atoms,
-                                    int order, const int K[3], const int* base,
-                                    const double* theta, double* grid) {
-    const int K0 = K[0], K1 = K[1], K2 = K[2];
-    const int n = order;
-    const int nm1 = n - 1;
-    for (int i = 0; i < n_atoms; ++i) {
-        const double qi = q[i];
-        if (qi == 0.0)
-            continue;
-        const double* thx = &theta[(3 * i + 0) * n];
-        const double* thy = &theta[(3 * i + 1) * n];
-        const double* thz = &theta[(3 * i + 2) * n];
-        const int b0 = base[3 * i + 0] - nm1;
-        const int b1 = base[3 * i + 1] - nm1;
-        const int b2 = base[3 * i + 2] - nm1;
-        for (int a = 0; a < n; ++a) {
-            const int g0 = pme_wrap(b0 + a, K0);
-            const double wa = qi * thx[a];
-            for (int b = 0; b < n; ++b) {
-                const int g1 = pme_wrap(b1 + b, K1);
-                const double wab = wa * thy[b];
-                const int plane = K2 * (g1 + K1 * g0);
-                for (int c = 0; c < n; ++c) {
-                    const int g2 = pme_wrap(b2 + c, K2);
-                    grid[plane + g2] += wab * thz[c];
                 }
             }
         }

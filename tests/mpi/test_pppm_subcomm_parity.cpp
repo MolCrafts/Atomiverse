@@ -13,12 +13,15 @@
 ///   * world 4 → `fft_ranks() == 3`, `mesh_arm() == BrickSubgroup`, and the
 ///     physics is invariant: total energy and tag-aligned per-atom forces
 ///     match a `fft_ranks = 4` `BrickWorld` run on the same system, and the
-///     reduced energy is rank-consistent.
+///     reduced energy is rank-consistent;
+///   * world 2 and 4 → each brick arm equals the replicated arm
+///     (`ATV_PPPM_ALLREDUCE=1`) for odd and even orders, which pins the
+///     ghost extents of LAMMPS's centred stencil (`Grid3d::ghost_grid` with
+///     `set_stencil_atom(-nlower, nupper)` and the odd-order 0.5 shift).
 ///
 /// Geometry (grilling-corrected): cubic L = 18 Å with spacing 3.2 Å gives
-/// `ceil(18 / 3.2) = 6`, `good_fft_size(6) = 6`; order 5 needs K ≥ 6 so the
-/// order clamp leaves it alone, and dim 2 is even so the evenness clamp does
-/// too. Eight ±1 e point charges, net neutral, off every cell edge and off the
+/// `ceil(18 / 3.2) = 6`, `pppm_fft_size(6) = 6`; order 5 needs K ≥ 6 so the
+/// order clamp leaves it alone. Eight ±1 e point charges, net neutral, off every cell edge and off the
 /// 2×2×1 domain cuts at 9 Å.
 ///
 /// One static evaluation per arm — no convergence loop, no timing, no external
@@ -33,14 +36,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/pppm_ik.h"
 #include "atomiverse/cpu/communication/gather.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/longrange/pme_spline.h"
 #include "atomiverse/cpu/longrange/pppm.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
@@ -85,9 +89,9 @@ constexpr Site kSites[kNAtoms] = {
 };
 
 /// @brief Mesh planes along dim 0 for this test's box/spacing, from the real
-/// sizing function the solver uses (`ensure_grid`, `pppm.cpp:135`).
+/// sizing function the solver uses (`KSpacePPPM::ensure_grid`).
 int resolved_k0() {
-    return longrange::good_fft_size(
+    return longrange::pppm_fft_size(
         static_cast<int>(std::ceil(kBoxL / kSpacing)));
 }
 
@@ -131,11 +135,12 @@ struct ArmRun {
 
 /// @brief Build CoulLong + KSpacePPPM, run exactly one static step, report.
 /// @param fft_ranks 0 = derive from the mesh (default arm), else pinned.
-ArmRun run_arm(int fft_ranks) {
+/// @param order Charge-assignment order.
+ArmRun run_arm(int fft_ranks, int order = kOrder) {
     cpu::Frame frame = make_charges();
     // Held by reference so the accessors can be read after the run: a moved-in
     // evaluator would leave this object empty.
-    cpu::KSpacePPPM kspace{kAlpha, kSpacing, kOrder, fft_ranks};
+    cpu::KSpacePPPM kspace{kAlpha, kSpacing, order, fft_ranks};
 
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{0.0});
@@ -352,4 +357,204 @@ TEST(PppmSubcommParity, FourRanksAgreeOnReducedEnergy) {
     EXPECT_NEAR(e_min, e_max,
                 kRankAgreeRel * std::max(1.0, std::fabs(run.energy)))
         << "ranks disagree on the reduced energy (non-member rank left out?)";
+}
+
+// ── world = 2, 4: brick arms against the replicated arm, odd and even ──────
+
+TEST(PppmSubcommParity, BrickArmsMatchReplicatedForOddAndEvenOrders) {
+    if (!arm_case_enabled(2) && !arm_case_enabled(4))
+        GTEST_SKIP() << "2- or 4-rank + ATV_HAS_FFTW_MPI specific; got "
+                        "world_size="
+                     << world_size();
+    struct AllreduceEnv {
+        bool present = std::getenv("ATV_PPPM_ALLREDUCE") != nullptr;
+        std::string value = present ? std::getenv("ATV_PPPM_ALLREDUCE") : "";
+        ~AllreduceEnv() {
+            if (present)
+                setenv("ATV_PPPM_ALLREDUCE", value.c_str(), 1);
+            else
+                unsetenv("ATV_PPPM_ALLREDUCE");
+        }
+    } restore;
+    for (int order : {3, 4, 5, 6, 7}) {
+        SCOPED_TRACE("order " + std::to_string(order));
+        unsetenv("ATV_PPPM_ALLREDUCE");
+        const ArmRun brick = run_arm(/*fft_ranks=*/0, order);
+        setenv("ATV_PPPM_ALLREDUCE", "1", 1);
+        const ArmRun replicated = run_arm(/*fft_ranks=*/0, order);
+        unsetenv("ATV_PPPM_ALLREDUCE");
+        EXPECT_NE(brick.arm, cpu::PppmMeshArm::Replicated)
+            << "the default multi-rank arm must be a brick arm";
+        EXPECT_EQ(replicated.arm, cpu::PppmMeshArm::Replicated);
+        EXPECT_NEAR(brick.energy, replicated.energy,
+                    kEnergyRel * std::max(1.0, std::fabs(replicated.energy)));
+        if (world_rank() != 0)
+            continue;
+        ASSERT_EQ(brick.gathered.n_total, kNAtoms);
+        ASSERT_EQ(replicated.gathered.n_total, kNAtoms);
+        double fmax = 0.0, dmax = 0.0;
+        for (int i = 0; i < kNAtoms; ++i) {
+            const std::size_t k = static_cast<std::size_t>(i);
+            ASSERT_EQ(brick.gathered.tag[k], replicated.gathered.tag[k]);
+            const double r[3] = {replicated.gathered.fx[k],
+                                 replicated.gathered.fy[k],
+                                 replicated.gathered.fz[k]};
+            const double b[3] = {brick.gathered.fx[k], brick.gathered.fy[k],
+                                 brick.gathered.fz[k]};
+            for (int d = 0; d < 3; ++d) {
+                fmax = std::max(fmax, std::fabs(r[d]));
+                dmax = std::max(dmax, std::fabs(b[d] - r[d]));
+            }
+        }
+        ASSERT_GT(fmax, 1e-3) << "reciprocal forces vanished; parity vacuous";
+        EXPECT_LT(dmax, kForceAbs)
+            << "brick arm changed the forces: max|ΔF| = " << dmax << " eV/Å";
+    }
+}
+
+// ── ghost depth: LAMMPS set_distance(0.5·skin) ─────────────────────────────
+
+namespace {
+
+constexpr double kDriftSpacing = 1.0; ///< mesh spacing [Å] → K = 18
+constexpr double kDriftCutoff = 3.0;  ///< real-space cutoff [Å]
+constexpr double kDriftSkin = 5.0;    ///< skin [Å]: owned drift up to 2.5 Å
+constexpr double kDriftStart = 8.85;  ///< [Å], 0.15 Å inside the 9 Å cut
+constexpr double kDriftStep = 2.3;    ///< displacement in one 1 fs step [Å]
+
+/// @brief One MD step in which site 0 crosses a subdomain cut by 2.15 Å
+/// (2.15 mesh cells) without reneighbouring (2.3 Å < skin/2 = 2.5 Å,
+/// delay 0, check yes); the step's forces are taken at the displaced
+/// position.
+ArmRun run_drift(int axis, int order) {
+    cpu::Frame frame = make_charges();
+    StorageReal* r[3] = {frame.span(ATV::kAtom_x), frame.span(ATV::kAtom_y),
+                         frame.span(ATV::kAtom_z)};
+    StorageReal* v[3] = {frame.span(ATV::kAtom_vx), frame.span(ATV::kAtom_vy),
+                         frame.span(ATV::kAtom_vz)};
+    r[axis][0] = kDriftStart;
+    v[axis][0] = kDriftStep; // Å/fs, dt = 1 fs
+    cpu::KSpacePPPM kspace{kAlpha, kDriftSpacing, order};
+    cpu::md::MD sim;
+    sim.set_integrator(cpu::md::VelocityVerlet{1.0});
+    sim.set_neighbor(cpu::md::NeighborList<>{kDriftCutoff, kDriftSkin,
+                                             /*every=*/1, /*delay=*/0,
+                                             /*check=*/true});
+    sim.on(md::Phase::force).add(cpu::CoulLong{kAlpha, kDriftCutoff});
+    sim.set_evaluator_ref(kspace);
+    sim.build();
+    sim.run(frame, 1);
+    ArmRun out;
+    out.energy = frame.meta.get(ATV::kEnergy);
+    out.arm = kspace.mesh_arm();
+    auto dd = sim.release_dd();
+    if (dd != nullptr)
+        out.gathered = cpu::md::mpi::gather_to_root(frame, *dd);
+    return out;
+}
+
+/// @brief First axis the default decomposition cuts (dims > 1), or -1.
+int cut_axis() {
+    cpu::Frame frame = make_charges();
+    cpu::md::MD sim;
+    sim.set_integrator(cpu::md::VelocityVerlet{0.0});
+    sim.set_neighbor(cpu::md::NeighborList<>{kDriftCutoff, kDriftSkin});
+    sim.on(md::Phase::force).add(cpu::CoulLong{kAlpha, kDriftCutoff});
+    sim.set_evaluator(cpu::KSpacePPPM{kAlpha, kDriftSpacing, kOrder});
+    sim.build();
+    sim.run(frame, 1);
+    auto dd = sim.release_dd();
+    if (dd == nullptr)
+        return -1;
+    for (int d = 0; d < 3; ++d)
+        if (dd->dims[d] > 1)
+            return d;
+    return -1;
+}
+
+} // namespace
+
+TEST(PppmSubcommParity, OwnedAtomDriftingTwoCellsPastItsCutUsesSkinGhosts) {
+    if (!arm_case_enabled(2) && !arm_case_enabled(4))
+        GTEST_SKIP() << "2- or 4-rank + ATV_HAS_FFTW_MPI specific; got "
+                        "world_size="
+                     << world_size();
+    const int axis = cut_axis();
+    ASSERT_GE(axis, 0) << "no cut axis in a multi-rank decomposition";
+    // The first cut of 2 or 4 ranks sits at kBoxL/2 on that axis.
+    ASSERT_GT(kDriftStart + kDriftStep - 0.5 * kBoxL, 2.0 * kDriftSpacing);
+    ASSERT_LT(kDriftStep, 0.5 * kDriftSkin);
+    struct AllreduceEnv {
+        bool present = std::getenv("ATV_PPPM_ALLREDUCE") != nullptr;
+        std::string value = present ? std::getenv("ATV_PPPM_ALLREDUCE") : "";
+        ~AllreduceEnv() {
+            if (present)
+                setenv("ATV_PPPM_ALLREDUCE", value.c_str(), 1);
+            else
+                unsetenv("ATV_PPPM_ALLREDUCE");
+        }
+    } restore;
+    for (int order : {5, 6}) {
+        SCOPED_TRACE("order " + std::to_string(order));
+        unsetenv("ATV_PPPM_ALLREDUCE");
+        // A one-cell ghost margin threw "maps to mesh cells outside this
+        // rank's ghost-extended brick" here.
+        ArmRun brick;
+        ASSERT_NO_THROW(brick = run_drift(axis, order));
+        setenv("ATV_PPPM_ALLREDUCE", "1", 1);
+        const ArmRun replicated = run_drift(axis, order);
+        unsetenv("ATV_PPPM_ALLREDUCE");
+        EXPECT_NE(brick.arm, cpu::PppmMeshArm::Replicated);
+        EXPECT_NEAR(brick.energy, replicated.energy,
+                    kEnergyRel * std::max(1.0, std::fabs(replicated.energy)));
+        if (world_rank() != 0)
+            continue;
+        ASSERT_EQ(brick.gathered.n_total, kNAtoms);
+        double dmax = 0.0, fmax = 0.0;
+        for (int i = 0; i < kNAtoms; ++i) {
+            const std::size_t k = static_cast<std::size_t>(i);
+            ASSERT_EQ(brick.gathered.tag[k], replicated.gathered.tag[k]);
+            const double rf[3] = {replicated.gathered.fx[k],
+                                  replicated.gathered.fy[k],
+                                  replicated.gathered.fz[k]};
+            const double bf[3] = {brick.gathered.fx[k], brick.gathered.fy[k],
+                                  brick.gathered.fz[k]};
+            for (int d = 0; d < 3; ++d) {
+                fmax = std::max(fmax, std::fabs(rf[d]));
+                dmax = std::max(dmax, std::fabs(bf[d] - rf[d]));
+            }
+        }
+        ASSERT_GT(fmax, 1e-3);
+        EXPECT_LT(dmax, kForceAbs);
+    }
+}
+
+TEST(PppmSubcommParity, OutOfRangeAtomThrowsOnEveryRank) {
+    if (!arm_case_enabled(2) && !arm_case_enabled(4))
+        GTEST_SKIP() << "2- or 4-rank + ATV_HAS_FFTW_MPI specific; got "
+                        "world_size="
+                     << world_size();
+    const int axis = cut_axis();
+    ASSERT_GE(axis, 0) << "no cut axis in a multi-rank decomposition";
+    // A 0.2 Å skin gives 0.1 Å of ghost cells beyond the cut, and the
+    // neighbor list never rebuilds, so the 2.3 Å step leaves the owning
+    // rank's brick. Only that rank detects it; every rank must throw
+    // rather than wait in the next mesh collective.
+    cpu::Frame frame = make_charges();
+    StorageReal* r[3] = {frame.span(ATV::kAtom_x), frame.span(ATV::kAtom_y),
+                         frame.span(ATV::kAtom_z)};
+    StorageReal* v[3] = {frame.span(ATV::kAtom_vx), frame.span(ATV::kAtom_vy),
+                         frame.span(ATV::kAtom_vz)};
+    r[axis][0] = kDriftStart;
+    v[axis][0] = kDriftStep; // Å/fs, dt = 1 fs
+    cpu::KSpacePPPM kspace{kAlpha, kDriftSpacing, kOrder};
+    cpu::md::MD sim;
+    sim.set_integrator(cpu::md::VelocityVerlet{1.0});
+    sim.set_neighbor(cpu::md::NeighborList<>{kDriftCutoff, /*skin=*/0.2,
+                                             /*every=*/1000, /*delay=*/0,
+                                             /*check=*/false});
+    sim.on(md::Phase::force).add(cpu::CoulLong{kAlpha, kDriftCutoff});
+    sim.set_evaluator_ref(kspace);
+    sim.build();
+    EXPECT_THROW(sim.run(frame, 1), std::runtime_error);
 }

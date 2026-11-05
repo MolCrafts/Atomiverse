@@ -95,7 +95,7 @@ double kinetic(const cpu::Frame& f) {
         const double vz = f.span(kAtom_vz)[i];
         ke += 0.5 * f.span(kAtom_mass)[i] * (vx * vx + vy * vy + vz * vz);
     }
-    return ke * units::mass_v2_to_energy; // amu·Å²/fs² → eV
+    return ke * units::md_mvv2e; // amu·Å²/fs² → eV
 }
 
 /// Velocity-Verlet trajectory driven by one PIM component (SCF or XL).
@@ -138,9 +138,10 @@ int run() {
     // Same MW-expressible gate A as pim-induced-dipole-bulk (c8ad175d):
     // E_pol = ΔCoulomb(pol − α=0), F = ΔF. MW has no Thole damping.
     // XL fixed point at a stationary geometry must BE the SCF solution.
-    const double E_pin = -2.4397739572766e-01; // [eV]  −8.9660039191731e-3 Ha
-    const double F_pin =
-        3.4926913376021e-01; // [eV/Å] +6.7922032485569e-3 Ha/a0
+    // MetalWalls pins are eV. The engine multiplies md_qqr2e.
+    const double e_scale = units::md_qqr2e / units::coulomb;
+    const double E_pin = -2.4397739572766e-01 * e_scale;
+    const double F_pin = 3.4926913376021e-01 * e_scale;
     const double tol_e = 1e-7 * std::fabs(E_pin);
     const double tol_f = 1e-7 * std::fabs(F_pin);
 

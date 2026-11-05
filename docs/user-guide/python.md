@@ -137,19 +137,20 @@ Current surface:
 - **MD** — the `MD` driver and its components under the canonical C++
   (LAMMPS-style) names: `VelocityVerlet`, `NoseHooverNPT`,
   `ParrinelloRahmanNPT`, `InitVelocity`, `NoseHoover`, `Langevin`, `CSVR`,
-  `BerendsenBarostat`, `NeighborList`, `Thermo`, `XYZ`.
+  `BerendsenBarostat`, `NeighborList`, `Thermo`, `XYZ`, `MrecRecorder`.
 - **Real-space force field** — the plural `set_evaluator` menu. Pair styles
   `PairLJCut`, `PairMorse`, `PairBuck`, `PairBorn`, `PairYukawa`, `PairWCA`
   and `PairDpd`; bonded styles `BondHarmonic`, `BondFene`, `AngleHarmonic`,
-  `DihedralMultiHarmonic`, `DihedralCharmm` and `ImproperHarmonic`. A
+  `AngleCosine`, `DihedralMultiHarmonic`, `DihedralCharmm` and
+  `ImproperHarmonic`; the uniform field `FixEfield` (`atomiverse.md`). A
   real-space style has no build flag of its own, so all of them are in every
   native build. The table under *MD driver* below gives the signatures and units.
 - **Electrostatics** — `PairCoulCut` (truncated Coulomb) and the Ewald
   split `CoulLong` + `KSpacePME`. The reciprocal solver needs FFTW3, so
   `KSpacePME` is present only when the `kspace` module is built.
   `PairCoulCut` takes 1-2/1-3/1-4 weights and an explicit Coulomb constant,
-  and `PairLJCut.table(...)` is the per-type LJ form with weights and an
-  `energy_shift` switch — the two kernels a molpy `lj/cut` + `coul/cut`
+  and `PairLJCut([LJTypeCoeff, ...], cutoff, ...)` is the per-type LJ form
+  with weights and an `energy_shift` switch — the two kernels a molpy `lj/cut` + `coul/cut`
   force field translates to (see *Force fields from molpy*).
 - **Geometry optimization** — CPU `minimizer.Minimize` with three fixed-cell
   optimizers (`LBFGS`, `CG`, `FIRE`), four variable-cell relaxers
@@ -243,7 +244,15 @@ The full mapping table lives in `help(atomiverse)`.
 
 Backend selection is a `device=` constructor parameter (PyTorch-style),
 never a namespace: `av.md.MD(dt=0.001, device="cpu")` is the default;
-`device="cuda"` raises `ValueError` until the CUDA bindings land.
+`device="cuda"` selects the CUDA driver on an extension built with CUDA and
+raises `ValueError` otherwise. The setter tables below say which components
+the CUDA driver binds.
+
+Periodic image flags are the optional `ix`, `iy`, `iz` columns of the `atoms`
+block, dtype `int32` (molpy's dtype for them). A run reads them, counts every
+wrap of an atom back into the cell, and writes them back, so
+\(x + H\,(ix, iy, iz)\) is the unwrapped position on both backends. A 64-bit
+column is rejected, not narrowed: insert `np.int32` values.
 
 ## Charged systems: Coulomb and PME
 
@@ -323,7 +332,7 @@ which force field it is reading:
 
 | molpy style | Atomiverse evaluator |
 |---|---|
-| `pair lj/cut` | `PairLJCut.table` — per-type rows, cross pairs by the style's `mixing` (arithmetic / geometric / sixthpower), LJ weights from `ff.special_bonds`, the style's `cutoff` and `shift` |
+| `pair lj/cut` | `PairLJCut([LJTypeCoeff, ...], cutoff)` — per-type rows, cross pairs by the style's `mixing` (arithmetic / geometric / sixthpower), LJ weights from `ff.special_bonds`, the style's `cutoff` and `shift` |
 | `pair coul/cut` | `PairCoulCut` — Coulomb weights, the style's `cutoff`, its `coulomb` constant over `dielectric` |
 | `bond harmonic`, `angle harmonic` | `BondHarmonic`, `AngleHarmonic` |
 | `dihedral periodic` / `charmm` | `DihedralCharmm` (one row per nonzero periodic term) |
@@ -1021,7 +1030,7 @@ gcmc.set_neighbor(av.NeighborList(8.5, 1.0))
 gcmc.set_mover(
     av.MoveSelector()
     .add(av.TranslateMove(1.36), 0.5)
-    .add(av.InsertDeleteMove(18, 39.948), 0.5)      # z = 18 (Ar), m [amu]
+    .add(av.InsertDeleteMove(1, 18, 39.948), 0.5)   # type 1, Z = 18 (Ar), m [amu]
 )
 
 gcmc.run(frame, 50_000)                             # equilibrate
@@ -1049,8 +1058,11 @@ not the one you asked for, and nothing compares them.
 
 Because N fluctuates, `run()` **rebuilds** the frame's `atoms` block
 whenever the population changed: every column comes back at the new N,
-including `mass` and `atomic_number`, which the fixed-N path treats as
-immutable inputs and never writes.
+including `mass` and whichever identity columns the frame carried
+(`atomic_number`, `type_id`), which the fixed-N path treats as immutable
+inputs and never writes. `InsertDeleteMove(type, atomic_number, mass)`
+stamps each identity on an inserted atom only where the frame carries that
+column.
 
 Monte Carlo is single-rank by design — no MC task exists in the MPI
 launcher protocol — so `run()` raises `RuntimeError` under
@@ -1074,9 +1086,24 @@ before choosing a state point.
 
 ### molpy.Frame in, molpy.Frame out
 
-The frame must carry an `atoms` block with `x, y, z, atomic_number` columns
-(`mass` required for MD; `atomic_number` [uint] carries Z — the string
-`type` column is a force-field label Atomiverse does not read). After
+The frame must carry an `atoms` block with `x, y, z` columns (`mass`
+required for MD) and the identity columns its methods read — two columns,
+one meaning each:
+
+- `atomic_number` [uint] — the chemical species Z (0 = no element). Read by
+  every element lookup: SCF / DFT / semiempirical methods, D3, AM1-BCC,
+  vibrational masses, element symbols in `XYZ` output.
+- `type_id` [uint] — the force-field type index, the same convention the
+  `bonds` / `angles` blocks use. Read by every per-type table: typed
+  `PairLJCut` (`LJTypeCoeff`), `PairLJCutCoulLong`, `PairBorn`, the DPD
+  `a_matrix`, MC insertion.
+
+A coarse-grained model carries `type_id` only; a QM geometry `atomic_number`
+only; QM/MM both. A method whose column is missing raises with the how-to —
+no type is ever derived from Z or the other way round. The string `type`
+column is a force-field label Atomiverse does not read, and `element`
+symbols are converted to `atomic_number` only explicitly (molpy
+`Element.fill_atomic_numbers`). After
 `run()` the frame holds updated `x/y/z`, `vx/vy/vz`, and `fx/fy/fz`. Global
 results are exact-dtype typed metadata in `frame.meta`, read back as plain
 Python values: `energy`, `kinetic`, and `conserved` are `float` (`f64` on
@@ -1100,6 +1127,8 @@ Components register through **categorical setters**, mirroring the C++
 - `sim.set_record(XYZ(path, freq))` — trajectory output (LAMMPS `dump`):
   one XYZ frame every `freq` steps, element symbols taken from the frame's
   per-atom `atomic_number` column
+- `sim.set_record(MrecRecorder(path, every))` — molrec (`*.mrec`)
+  trajectory on CPU **and** CUDA (see *Trajectories: MrecRecorder* below)
 
 Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`. It
 covers exactly the six components listed under `_PHASE_DISPATCH` in
@@ -1139,25 +1168,76 @@ own.
 | `set_thermostat` | `CSVR(T, tau, dt, seed)` | Bussi velocity rescale |
 | `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=1.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
-| `set_evaluator` | `PairLJCut(ε, σ, cutoff, s12=1, s13=1, s14=1, energy_shift=True)` or `PairLJCut.table(type_i, type_j, ε, σ, cutoff, …)` | Lennard-Jones 12-6, single-type or per-type table (CPU) |
-| `set_evaluator` | `PairCoulCut(cutoff, s12=1, s13=1, s14=1, coulomb=14.399645)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
+| `set_evaluator` | `PairLJCut(ε, σ, cutoff, s12=1, s13=1, s14=1, energy_shift=True)` or `PairLJCut([LJTypeCoeff(type_i, type_j, ε, σ, cutoff=None), …], cutoff, s12=1, s13=1, s14=1, energy_shift=True)` | Lennard-Jones 12-6, single-type or per-type table |
+| `set_evaluator` | `PairCoulCut(cutoff, s12=1, s13=1, s14=1, coulomb=1)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
 | `set_evaluator` | `CoulLong(alpha, cutoff)` | Ewald/PME **real-space** half; `alpha` [1/Å] must match its reciprocal partner |
 | `set_evaluator` | `KSpacePME(alpha, grid_spacing=1.0, order=6)` | Ewald/PME **reciprocal-space** half; only on `ATV_BUILD_KSPACE=ON` wheels |
 | `set_evaluator` | `PairMorse(D, alpha, r0, cutoff)` | Morse well `D(1−e^{−α(r−r₀)})²`, shifted at the cutoff. `D` [eV], `alpha` [1/Å], `r0` [Å], `cutoff` [Å] |
 | `set_evaluator` | `PairBuck(A, rho, C, cutoff)` | Buckingham `A e^{−r/ρ} − C/r⁶`, shifted at the cutoff. `A` [eV], `rho` [Å], `C` [eV·Å⁶], `cutoff` [Å] |
-| `set_evaluator` | `PairBorn(type_i, type_j, A, rho, sigma, C, D, cutoff)` | Born-Mayer-Huggins / Fumi-Tosi table, one entry per row across the parallel sequences; type keys are **atomic numbers**, unlisted pairs do not interact. `A` [eV], `rho` [Å], `sigma` [Å], `C` [eV·Å⁶], `D` [eV·Å⁸], `cutoff` [Å] |
+| `set_evaluator` | `PairBorn(type_i, type_j, A, rho, sigma, C, D, cutoff)` | Born-Mayer-Huggins / Fumi-Tosi table, one entry per row across the parallel sequences; type keys are **force-field types** (the frame's `type_id`), unlisted pairs do not interact. `A` [eV], `rho` [Å], `sigma` [Å], `C` [eV·Å⁶], `D` [eV·Å⁸], `cutoff` [Å] |
 | `set_evaluator` | `PairYukawa(A, kappa, cutoff)` | Screened Coulomb `A e^{−κr}/r` — reads no `charge` column; `A` [eV·Å] is the whole strength. `kappa` [1/Å], `cutoff` [Å] |
 | `set_evaluator` | `PairWCA(epsilon, sigma)` | Purely repulsive LJ, cut and shifted at `2^(1/6)·σ` — the cutoff is **derived**, not an argument. `epsilon` [eV], `sigma` [Å] |
 | `set_evaluator` | `PairDpd(a, gamma, temperature, cutoff, dt, seed=1)` | Groot-Warren DPD — a *thermostat* as well as a potential, so install it instead of one; stress carries the conservative virial only and the random force is redrawn every step. `a` [eV/Å] (a force), `gamma` [eV·fs/Å²], `temperature` [K], `cutoff` [Å], `dt` [fs] and must equal the integrator's |
 | `set_evaluator` | `BondHarmonic(K, r0)` | Bond stretching `K(r − r₀)²`. `K` [eV/Å²], `r0` [Å], per bond type |
 | `set_evaluator` | `BondFene(K, R0)` | Kremer-Grest FENE bond `−½KR₀²ln(1 − (r/R₀)²)`; `r ≥ R0` raises `RuntimeError` rather than reporting an infinite energy. `K` [eV/Å²], `R0` [Å], per bond type |
 | `set_evaluator` | `AngleHarmonic(K, θ0)` | Angle bending `K(θ − θ₀)²`. `K` [eV/rad²], `θ0` [rad], per angle type |
+| `set_evaluator` | `AngleCosine(K)` | LAMMPS `angle_style cosine` `K(1 + cos θ)`, minimum at θ = π (Kremer–Grest bending). `K` [eV], per angle type. Also on `MD(device="cuda")`, where the angle slot holds one style |
+| `set_evaluator` | `FixEfield(Ex, Ey, Ez)` | Uniform electric field (LAMMPS `fix efield`): `F = qE`, `E` [V/Å], so `F` [eV/Å] for `charge` [e]. Energy `−Σ q E·r^u` on unwrapped coordinates (image flags); no virial. Needs a `charge` column; also on `MD(device="cuda")` |
 | `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral `Σₙ Cₙ cosⁿφ`. `Cn` [eV], one coefficient list per dihedral type |
 | `set_evaluator` | `DihedralCharmm(K, n, delta)` | CHARMM periodic torsion `K(1 + cos(nφ − δ))`. `K` [eV], `n` an integer multiplicity ≥ 1 (minima per full turn), `delta` [rad], per dihedral type |
 | `set_evaluator` | `ImproperHarmonic(K, chi0)` | Harmonic out-of-plane torsion `K(χ − χ₀)²`; reads the frame's `impropers` block. `K` [eV/rad²], `chi0` [rad], per improper type |
-| `set_thermo` | `N` (int) | Thermo print every N steps |
+| `set_thermo` | `N` (int) | Thermo print every N steps: the initial state (step 0), every N-th completed step and the last step of each run; `step` counts completed steps (LAMMPS `thermo`). `N=0` prints the first and last step only (LAMMPS `thermo 0`). Also on `MD(device="cuda")` (`cuda::Thermo`, printed asynchronously) |
 | `Thermo(freq)` | end_of_step | Thermodynamic output |
-| `set_record` | `XYZ(filename, freq=1)` | XYZ trajectory at end_of_step — one frame whenever `step % freq == 0`. Within a `run()` call `step` is zero-based (`0 … n_steps-1`), so 10 steps at `freq=5` write 2 frames (steps 0 and 5), never 3. A recorder truncates the file on its first write and appends afterwards, so give a second run its own `XYZ(...)` |
+| `set_record` | `XYZ(filename, freq=1)` | XYZ trajectory — one frame whenever the completed-step count is a multiple of `freq`, the frame being the state after that many steps (LAMMPS `dump`). A run writes the initial state (step 0) and then the end of every `freq`-th step, so 10 steps at `freq=5` write 3 frames (steps 0, 5 and 10). A recorder truncates the file on its first write and appends afterwards, so give a second run its own `XYZ(...)` |
+| `set_record` | `MrecRecorder(path, every=1, flush_every=0, durable=True)` | molrec trajectory at end_of_step, same cadence rule as `XYZ`; CPU and `MD(device="cuda")`. Path must end in `.mrec`; replaced on the first frame |
+
+#### Trajectories: MrecRecorder
+
+`MrecRecorder` writes a *molrec* store (`*.mrec`, the MolCrafts record
+format; reference implementation molpy `io::mrec`). It is the one trajectory
+recorder that runs on both devices with the same frames:
+
+```python
+from pathlib import Path
+import atomiverse as av
+from molpy.io.mrec import MrecReader
+
+sim = av.MD(device="cuda")                  # or "cpu"
+sim.set_integrator(av.VelocityVerlet(1.0))
+sim.set_neighbor(av.NeighborList(8.5, 0.5))
+sim.set_evaluator(av.PairLJCut(0.0104, 3.4, 8.5))
+sim.set_record(av.MrecRecorder("traj.mrec", every=100))
+sim.run(frame, 10_000)
+
+with MrecReader(Path("traj.mrec")) as traj:
+    print(traj.step[:3], traj.time[:3])     # [0, 100, 200] [0.0, 100.0, 200.0]
+    first = traj[0]                          # a molpy.Frame
+    x_unwrapped = first["atoms"]["x"] + first["atoms"]["ix"] * first.box.matrix[0, 0]
+```
+
+| Stored | Content |
+| ------ | ------- |
+| `atoms` columns | `x y z` [Å], `vx vy vz` [Å/fs], `fx fy fz` [eV/Å], `charge` [e], `ix iy iz` (int32 image counts), `tag`, `atomic_number`, `mass` [amu] — rows in ascending tag order |
+| box | the cell of that step (a barostat or deform moves it) |
+| meta | `energy`, `energy_pair`/`_bond`/`_angle`/`_dihedral`/`_improper` (CPU only so far: CUDA styles fill just the total `energy`, the terms read 0), `kinetic`, `conserved`, `stress` (the step's virial), `stress_kinetic` [eV] |
+| axes | `step` — completed MD steps, the frame being the state after that many (LAMMPS `dump`; a run of `n` steps at `every=k` records `0, k, …, n`) — and `time = step · dt` [fs] when an integrator is set |
+
+- **After `run()` returns, the store holds every frame of that run** on both
+  devices; open it with `MrecReader(Path(path))` (a plain `str` is refused
+  as ambiguous by molpy).
+- **CPU:** each `run()` is an independent simulation that restarts at step
+  0, so one recorder records one `run()` — use a new `MD` and recorder for
+  another run.
+- **CUDA:** `run()` calls on the same frame continue one trajectory, and the
+  recorder keeps appending to it; the step axis continues and the boundary
+  step is written once (`run(f, 4); run(f, 4)` at `every=2` gives steps
+  0, 2, 4, 6, 8). Frames are frozen on the device at
+  end_of_step, copied to the host asynchronously and written by worker
+  threads; the MD loop never waits for the disk. A few frames can queue on
+  the device and on the host; if the writer falls further behind (a very slow
+  filesystem at a very small `every`), the device skips frames and the count
+  is logged as a warning. Raise `every` if that happens.
+- Not carried by the MPI launcher (`MD.run` under it refuses the recorder).
 
 #### Constant pressure: NPT
 

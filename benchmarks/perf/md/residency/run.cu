@@ -138,7 +138,7 @@ int main(int argc, char** argv) try {
     } else if (charged) {
         constexpr double alpha = 0.3;
         sim.set_evaluator(
-            cuda::PairLJCutCoulLong{{kEps}, {kSigma}, alpha, kCutoff});
+            cuda::PairLJCutCoulLong{{{0, 0, kEps, kSigma}}, alpha, kCutoff});
         sim.on(md::Phase::force).add(cuda::KSpacePME{alpha, 1.0, 5}, 100);
     } else {
         throw std::invalid_argument("unknown case " + name);

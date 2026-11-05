@@ -44,7 +44,7 @@ ATV::cpu::Frame initial_frame(const Pin& water) {
             "NDDO NVE requires the archived O,H,H water fixture");
     cpu::Frame frame(3);
     for (int i = 0; i < 3; ++i) {
-        frame.span(kAtom_type)[i] = water.species[i];
+        frame.span(kAtom_atomic_number)[i] = water.species[i];
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_mass)[i] = i == 0 ? 16 : 1;
         frame.span(kAtom_x)[i] = water.xyz[i][0];
@@ -76,7 +76,7 @@ inline void record_sample(Trace& trace, const ATV::cpu::Frame& frame,
     double sum_mv2 = 0;
     for (int i = 0; i < frame.nlocal(); ++i)
         sum_mv2 += mass[i] * (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]);
-    const double expected_ke = .5 * units::mass_v2_to_energy * sum_mv2;
+    const double expected_ke = .5 * units::md_mvv2e * sum_mv2;
     const double ke = frame.meta.get(kKinetic);
     const double potential = frame.meta.get(kEnergy);
     if (!std::isfinite(ke) || !std::isfinite(expected_ke)

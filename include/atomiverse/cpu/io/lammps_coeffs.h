@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-#include "atomiverse/cpu/potentials/lj_type_coeff.h"
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/potentials/periodic_torsion.h"
 
 namespace ATV {

@@ -52,7 +52,7 @@ class MP2 : public cuda::DriverNode {
     const std::size_t workspace_budget_bytes;
 
     /// @brief Solve RHF then MP2, overwriting Frame energy [eV].
-    /// @param frame Geometry [Å], with nuclear atomic numbers in `kAtom_type`.
+    /// @param frame Geometry [Å], with nuclear atomic numbers in `kAtom_atomic_number`.
     /// @return Unscaled spin channels, correlation and total energy [Hartree].
     cpu::scf::MP2Result run(cpu::Frame& frame);
     /// @brief Solve RHF then MP2 without writing the input Frame.

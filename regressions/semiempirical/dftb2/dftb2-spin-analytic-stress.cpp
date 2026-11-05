@@ -34,8 +34,8 @@ namespace {
 /// every Voigt component of the virial is non-trivial and |R| = r_ang.
 cpu::Frame make_tilted_diatomic(int z1, double r_ang) {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 8;
-    f.span(kAtom_type)[1] = z1;
+    f.span(kAtom_atomic_number)[0] = 8;
+    f.span(kAtom_atomic_number)[1] = z1;
     f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0;
     f.span(kAtom_x)[1] = static_cast<StorageReal>(r_ang * 0.6);
     f.span(kAtom_y)[1] = static_cast<StorageReal>(r_ang * 0.7);

@@ -41,6 +41,12 @@ class NddoMethod : public cpu::Driver<ATV::nddo::Phase>,
     /// @return true.
     bool provides_force() const override { return true; }
 
+    /// @brief A minimizer may keep the accepted line-search trial: trials stage
+    ///        their density in the step's evaluation transaction like a
+    ///        committed solve, so the last evaluated geometry's density is the
+    ///        one the step commits.
+    bool trial_invariant() const override { return true; }
+
     /// @brief Run the SCF and write every result channel onto the frame:
     ///        total energy [eV] to `kEnergy` and `kEnergyElectronic`, Mulliken
     ///        charges [e] to `kAtom_charge`, and — when asked — forces [eV/Å]

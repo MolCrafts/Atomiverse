@@ -24,7 +24,7 @@ namespace {
 ATV::cpu::Frame n2_frame() {
     ATV::cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 7;
+        frame.span(ATV::kAtom_atomic_number)[i] = 7;
         frame.span(ATV::kAtom_mass)[i] = 14.0067;
         frame.span(ATV::kAtom_x)[i] = 0.0;
         frame.span(ATV::kAtom_y)[i] = 0.0;

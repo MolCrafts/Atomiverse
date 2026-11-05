@@ -104,7 +104,7 @@ int run() {
     // ≤ 0.1%. So 5% is ≈ 6σ, while the "no QM at all" failure mode is +46%.
     const double var_rel_tol = 0.05;
 
-    const double kT = units::kB_ev_per_k * temperature; // [eV]
+    const double kT = units::md_boltz * temperature; // [eV]
 
     // ── Drift guard: re-measure the RHF curvature at r0 ───────────────────
     // Five single points (energy only — this stencil wants no gradient). If
@@ -113,7 +113,7 @@ int run() {
     auto rhf_energy_at = [&](double r) {
         cpu::Frame f(2);
         for (int i = 0; i < 2; ++i) {
-            f.span(kAtom_type)[i] = 1; // Z = 1
+            f.span(kAtom_atomic_number)[i] = 1; // Z = 1
             f.span(kAtom_mass)[i] = 1.008;
             f.span(kAtom_tag)[i] = i + 1;
             f.span(kAtom_y)[i] = centre;
@@ -154,7 +154,7 @@ int run() {
     // ── Build the chain: nested RHF energy + umbrella, one mover ─────────
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1; // Z = 1 (hydrogen)
+        frame.span(kAtom_atomic_number)[i] = 1; // Z = 1 (hydrogen)
         frame.span(kAtom_mass)[i] = 1.008;
         frame.span(kAtom_tag)[i] = i + 1; // DistanceCV resolves these tags
         frame.span(kAtom_y)[i] = centre;

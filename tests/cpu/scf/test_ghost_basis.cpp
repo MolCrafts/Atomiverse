@@ -29,8 +29,8 @@ namespace {
 /// He–He dimer at 2.5 Å (two closed-shell He atoms).
 cpu::Frame make_he2(double r_ang = 2.5) {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 2;
-    f.span(kAtom_type)[1] = 2;
+    f.span(kAtom_atomic_number)[0] = 2;
+    f.span(kAtom_atomic_number)[1] = 2;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;

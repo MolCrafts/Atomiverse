@@ -72,7 +72,7 @@ cpu::Frame make_frame(const std::vector<double>& r0) {
     const int natm = static_cast<int>(r0.size() / 3);
     cpu::Frame f(natm);
     for (int a = 0; a < natm; ++a) {
-        f.span(kAtom_type)[a] = 1;
+        f.span(kAtom_atomic_number)[a] = 1;
         f.span(kAtom_x)[a] =
             static_cast<StorageReal>(r0[static_cast<std::size_t>(3 * a + 0)]);
         f.span(kAtom_y)[a] =

@@ -194,8 +194,11 @@ void NddoMethod::publish_in_context_(const cpu::LaunchContext& ctx,
     workspace_->budget = budget;
     host_runtime_ = host;
     nested_active_ = host != nullptr;
+    // Line-search trials stage like committed solves (the step commits the
+    // last one staged); MC trials and force preparation accept nothing.
     accept_history_ = !(ctx.runtime.exec.initializing_forces
-                        || ctx.runtime.exec.trial_evaluation);
+                        || (ctx.runtime.exec.trial_evaluation
+                            && !ctx.runtime.opt.line_search_trial));
     publish(frame, ctx.forces_requested && ctx.runtime.exec.forces_requested,
             accumulate);
 }

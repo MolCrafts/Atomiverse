@@ -8,8 +8,9 @@
 /// `from_molpy()` accepts only the canonical
 /// atoms/bonds/angles/dihedrals/impropers blocks and their declared columns.
 /// Unknown blocks/columns, wrong dtypes, and inconsistent row counts fail
-/// immediately. Required fields (positions, `atomic_number`) fail with a
-/// named exception; optional state defaults to zero/empty.
+/// immediately. Required fields (positions) fail with a named exception;
+/// optional state defaults to zero/empty, except the two identity columns,
+/// which are left OUT of the Frame when the source does not carry them.
 /// `to_molpy()` pushes mutable atom state, the simulation box, and every
 /// serializable exact-dtype metadata entry back into the same molpy.Frame.
 /// The box is in the write-back set because a barostat or a cell relaxation
@@ -28,18 +29,28 @@ namespace cpu {
 /// @brief Materialize a molpy.Frame into a new cpu::Frame.
 ///
 /// Reads the `atoms` block (`x, y, z, vx, vy, vz, fx, fy, fz, mass,
-/// atomic_number, tag, charge`, plus per-axis image columns `ix, iy, iz`),
-/// the `bonds`, `angles`, `dihedrals` and `impropers` topology blocks, and
-/// the simulation box.
+/// atomic_number, type_id, tag, charge`, plus per-axis image columns
+/// `ix, iy, iz`), the `bonds`, `angles`, `dihedrals` and `impropers`
+/// topology blocks, and the simulation box.
 ///
-/// Required fields are the atom positions (`x`, `y`, `z`) and
-/// `atomic_number` — the atomic number Z, which molpy keeps separate from the
-/// old `atoms.type` column and which lands in `cpu::Frame`'s `kAtom_type`.
-/// Their absence throws `std::runtime_error` naming the missing field.
-/// Every other field is optional and defaults to zero / empty when absent.
-/// The String columns `type` (force-field label) and `element` (symbol) are
-/// accepted so that a frame written by a molpy tool still validates, but
-/// they are not imported: Atomiverse keys species on Z.
+/// The required fields are the atom positions (`x`, `y`, `z`); their absence
+/// throws `std::runtime_error` naming the missing field. The two per-atom
+/// identity columns carry one meaning each:
+///
+/// - `atomic_number` (u64, Z 0..118, 0 = wildcard) → `kAtom_atomic_number`,
+///   the chemical species every element lookup reads;
+/// - `type_id` (u64, the convention bonds/angles `type_id` already use) →
+///   `kAtom_type`, the force-field type index every per-type table reads.
+///
+/// Either may be absent (a coarse-grained frame has no species, a QM
+/// geometry no force-field types). An absent one is removed from the
+/// returned Frame — not zero-filled — so the consumer that needs it throws
+/// with a how-to (`atom_field_how_to`). Every other field is optional and
+/// defaults to zero / empty when absent. The String columns `type`
+/// (force-field label) and `element` (symbol) are accepted so that a frame
+/// written by a molpy tool still validates, but they are not imported: a
+/// symbol becomes Z only through molpy's explicit
+/// `Element::fill_atomic_numbers`.
 ///
 /// @param src molpy.Frame to read (introspected by block/column name).
 /// @return Newly constructed cpu::Frame with all available fields filled.
@@ -59,7 +70,8 @@ Frame from_molpy(const molrs::FrameRef& src);
 /// | charge [e]             | optional (zero default) | written |
 /// | image (ix/iy/iz)       | optional (i32→int8)     | written (int8→i32) |
 /// | tag                    | optional (i32→TagInt)   | written (checked i32 narrowing; overflow throws, no silent truncation) |
-/// | atomic_number (Z)      | required (u32 → `kAtom_type`) | NOT written (per-run immutable input) |
+/// | atomic_number (Z)      | optional (u64 → `kAtom_atomic_number`; absent ⇒ column removed) | NOT written (per-run immutable input) |
+/// | type_id (FF type)      | optional (u64 → `kAtom_type`; absent ⇒ column removed) | NOT written (per-run immutable input) |
 /// | type, element          | allow-listed, not imported | NOT written |
 /// | mass [amu]             | optional                | NOT written (per-run immutable input) |
 /// | bonds/angles/dihedrals/impropers | optional → per-atom | NOT written (per-run static) |

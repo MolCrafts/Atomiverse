@@ -49,7 +49,7 @@ void MSD::on_snapshot(const cpu::FrameSnapshot& snap) {
     // Snapshot position fields are double (widened from StorageReal at capture).
 
     // Worker thread: a molpy refusal (wrapped step, bad frame) is tallied for
-    // finalize(), never thrown out of the analysis executor.
+    // finalize(), not a reason to stop the run.
     try {
         input_.pack(scratch_, snap.tag, snap.x, snap.y, snap.z, n, snap.step,
                     freq_ > 0 ? freq_ : 1);
@@ -67,10 +67,10 @@ void MSD::finalize() {
                  rejected_.first_reason());
         return;
     }
-    if (gate_.dropped() > 0)
-        ATV_WARN("[msd] dropped {} snapshot(s) with changed atom count "
+    if (gate_.rejected() > 0)
+        ATV_WARN("[msd] rejected {} snapshot(s) with a changed atom count "
                  "(constant count required)",
-                 gate_.dropped());
+                 gate_.rejected());
     if (rejected_.count() > 0)
         ATV_WARN("[msd] molpy refused {} snapshot(s); first: {}",
                  rejected_.count(), rejected_.first_reason());

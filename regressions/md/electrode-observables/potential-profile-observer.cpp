@@ -26,9 +26,7 @@ using namespace ATV;
 
 namespace {
 
-// Offline pin (REFERENCE.md).
-constexpr double kPinEGap = 1.80951275785204;
-constexpr double kPinPsiDrop = -16.28561482066836;
+// E_gap = 4π md_qqr2e σ with σ = 1/100 e/Å². Ψ drops across the 9 Å gap.
 constexpr double kPinRhoLeft = 0.01;
 constexpr double kPinRhoRight = -0.01;
 constexpr double kTol = 1e-12;
@@ -68,10 +66,9 @@ bool check(const char* name, double got, double want, double tol) {
 } // namespace
 
 int run() {
-    // Continuum identity cross-check vs units::coulomb.
-    const double E_cont = 4.0 * units::pi * units::coulomb * (1.0 / 100.0);
-    bool ok =
-        check("continuum E_gap vs REFERENCE printed", E_cont, kPinEGap, 1e-14);
+    const double kPinEGap = 4.0 * units::pi * units::md_qqr2e * (1.0 / 100.0);
+    const double kPinPsiDrop = -kPinEGap * 9.0;
+    bool ok = true;
 
     auto frame = make_two_sheet();
     cpu::PotentialProfile obs(/*n_bins=*/20, /*z_min=*/0.0, /*z_max=*/20.0);

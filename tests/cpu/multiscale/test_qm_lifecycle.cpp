@@ -17,10 +17,11 @@ namespace {
 cpu::Frame make_frame() {
     cpu::Frame frame(2);
     frame.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
-    frame.span(cpu::kAtomQmZ)[0] = 8;
-    frame.span(cpu::kAtomQmZ)[1] = 0;
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    frame.span(cpu::kAtomQm)[0] = 1;
+    frame.span(cpu::kAtomQm)[1] = 0;
+    frame.span(kAtom_atomic_number)[0] = 8; // the QM atom's species
     frame.span(kAtom_tag)[0] = 11;
     frame.span(kAtom_tag)[1] = 22;
     frame.span(kAtom_x)[0] = 1.25;
@@ -45,7 +46,7 @@ struct ProbeEngine : cpu::QmEngine {
     void prepare(const cpu::BuildContext& ctx) override {
         prepared = &ctx.runtime;
         EXPECT_EQ(ctx.frame.nlocal(), 1);
-        EXPECT_EQ(ctx.frame.span(kAtom_type)[0], 8);
+        EXPECT_EQ(ctx.frame.span(kAtom_atomic_number)[0], 8);
         EXPECT_DOUBLE_EQ(ctx.frame.span(kAtom_x)[0], 1.25);
         EXPECT_DOUBLE_EQ(ctx.frame.span(kAtom_y)[0], -0.5);
         EXPECT_DOUBLE_EQ(ctx.frame.span(kAtom_z)[0], 0.75);

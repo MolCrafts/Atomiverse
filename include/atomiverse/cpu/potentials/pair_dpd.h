@@ -74,7 +74,18 @@ class PairDpd : public Pair, public cpu::TimestepConsumer {
         GhostField::read_each_step(kAtom_vy, "PairDpd"),
         GhostField::read_each_step(kAtom_vz, "PairDpd"),
     };
+    /// @brief The per-type `a_matrix` form also reads the neighbour's
+    /// force-field type.
+    static constexpr std::array kTypedGhosts = {
+        GhostField::read_stable(kAtom_tag, "PairDpd"),
+        GhostField::read_each_step(kAtom_vx, "PairDpd"),
+        GhostField::read_each_step(kAtom_vy, "PairDpd"),
+        GhostField::read_each_step(kAtom_vz, "PairDpd"),
+        GhostField::read_stable(kAtom_type, "PairDpd"),
+    };
     std::span<const GhostField> declare_ghosts() const override {
+        if (multi_)
+            return kTypedGhosts;
         return kGhosts;
     }
 
@@ -98,11 +109,11 @@ class PairDpd : public Pair, public cpu::TimestepConsumer {
 
     /// @brief Multi-component: a per-type-pair amplitude matrix.
     ///
-    /// The matrix is indexed by the frame's `kAtom_type` values AS-IS. In this
-    /// tree that column carries the ATOMIC NUMBER (`cpu::from_molpy` fills it
-    /// from molpy `atomic_number`), so the matrix must be square of side
-    /// max(Z) + 1 — an argon/sodium mixture needs 19 rows, not 2 — and a type
-    /// outside it throws at `launch` rather than falling back to a default.
+    /// The matrix is indexed by the frame's force-field `kAtom_type` values
+    /// AS-IS (`cpu::from_molpy` fills them from molpy `atoms.type_id`), so it
+    /// must be square of side max(type) + 1, and a type outside it throws at
+    /// `launch` rather than falling back to a default. The Frame must carry
+    /// the type column; the single-amplitude form reads none.
     ///
     /// @param a_matrix    Square amplitude table `a_matrix[t_i][t_j]` [eV/Å].
     ///                    Must be supplied SYMMETRIC: the kernel is not

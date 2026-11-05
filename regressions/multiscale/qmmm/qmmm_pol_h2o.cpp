@@ -34,9 +34,13 @@ cpu::Frame water_plus_site() {
     f.span(kAtom_x)[3] = 0;
     f.span(kAtom_y)[3] = 0;
     f.span(kAtom_z)[3] = 4.0;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[3] = 18;
     f.span(kAtom_type)[3] = 18;
     for (int i = 0; i < 4; ++i) {
         f.span(kAtom_tag)[i] = i + 1;
@@ -45,10 +49,10 @@ cpu::Frame water_plus_site() {
     }
     f.box = cpu::Box::cubic(25);
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                                kDynamicFieldId});
-    auto qm = f.span(cpu::kAtomQmZ);
-    qm[0] = 8;
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    auto qm = f.span(cpu::kAtomQm);
+    qm[0] = 1;
     qm[1] = 1;
     qm[2] = 1;
     qm[3] = 0;

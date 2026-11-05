@@ -104,11 +104,11 @@ void add_shell(std::vector<cpu::scf::native::Shell>& shells,
 
 cpu::Frame i2_frame() {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 53;
+    f.span(kAtom_atomic_number)[0] = 53;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 53;
+    f.span(kAtom_atomic_number)[1] = 53;
     f.span(kAtom_x)[1] = 0.0;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 2.666;
@@ -359,15 +359,15 @@ TEST(EcpIntegralWorkspace, LightMoleculeUnchangedAndUnknownNameThrows) {
     // H2O: every atom is all-electron in def2-ECP — the pack must be
     // identical to the empty-ecp path (per-element table, no global switch).
     cpu::Frame h2o(3);
-    h2o.span(kAtom_type)[0] = 8;
+    h2o.span(kAtom_atomic_number)[0] = 8;
     h2o.span(kAtom_x)[0] = 0.0;
     h2o.span(kAtom_y)[0] = 0.0;
     h2o.span(kAtom_z)[0] = 0.1173;
-    h2o.span(kAtom_type)[1] = 1;
+    h2o.span(kAtom_atomic_number)[1] = 1;
     h2o.span(kAtom_x)[1] = 0.0;
     h2o.span(kAtom_y)[1] = 0.7572;
     h2o.span(kAtom_z)[1] = -0.4692;
-    h2o.span(kAtom_type)[2] = 1;
+    h2o.span(kAtom_atomic_number)[2] = 1;
     h2o.span(kAtom_x)[2] = 0.0;
     h2o.span(kAtom_y)[2] = -0.7572;
     h2o.span(kAtom_z)[2] = -0.4692;

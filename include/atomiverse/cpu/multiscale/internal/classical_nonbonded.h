@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/potentials/lj_type_coeff.h"
 
 namespace ATV {
 namespace cpu {

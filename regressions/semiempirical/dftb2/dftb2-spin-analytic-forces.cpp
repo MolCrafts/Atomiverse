@@ -24,7 +24,7 @@ namespace {
 
 cpu::Frame make_o2_offeq(double r_ang = 1.30) {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 8;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;

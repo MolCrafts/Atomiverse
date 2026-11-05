@@ -25,6 +25,10 @@ namespace recorder {
 enum class OrbitalSpin { Alpha, Beta };
 
 /// @brief Molecular-orbital cube writer.
+///
+/// Same step convention as `DensityCubeWriter`: initial state at setup, the
+/// state after every `stride`-th completed iteration, the final state on an
+/// early stop; the file is overwritten each time.
 class OrbitalCubeWriter : public cpu::Component {
   public:
     /// @brief Construct with automatic bounding-box grid.
@@ -34,7 +38,7 @@ class OrbitalCubeWriter : public cpu::Component {
     /// @param spin       Which spin channel to read from.
     /// @param padding    Bounding-box padding [Bohr].
     /// @param spacing    Isotropic grid spacing [Bohr].
-    /// @param stride     Write every N steps.
+    /// @param stride     Write every N iterations (< 1 clamped to 1).
     OrbitalCubeWriter(scf::MeanFieldOutputs handle, std::string filename,
                       int mo_index, OrbitalSpin spin = OrbitalSpin::Alpha,
                       double padding = 4.0, double spacing = 0.25,
@@ -47,7 +51,19 @@ class OrbitalCubeWriter : public cpu::Component {
 
     std::string name() const override { return "orbital_cube_writer"; }
 
+    /// @brief Start of the run (LAMMPS `Output::setup`): the initial state
+    ///        as step 0.
+    void setup_output(const cpu::LaunchContext& ctx) override;
+    /// @brief End of iteration `ctx.step`: step `ctx.step + 1` when on
+    ///        stride.
     void launch(const cpu::LaunchContext& ctx) override;
+    /// @brief Early stop (LAMMPS `Min::run`): the final state unless that
+    ///        step is already written.
+    void final_output(const cpu::LaunchContext& ctx) override;
+
+    /// @brief Completed iterations of the state in the file now [count];
+    ///        -1 before the first write.
+    BigInt last_step_written() const { return last_step_; }
 
     /// @brief Number of cube files written.
     int n_writes() const { return n_writes_; }
@@ -63,6 +79,10 @@ class OrbitalCubeWriter : public cpu::Component {
     double spacing_;
     int stride_;
     int n_writes_ = 0;
+    BigInt last_step_ = -1; ///< LAMMPS `last_dump` (rank 0)
+
+    /// @brief Overwrite the cube with the state labelled `step`; rank 0.
+    void write_(const cpu::LaunchContext& ctx, BigInt step);
 };
 
 } // namespace recorder

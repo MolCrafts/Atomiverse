@@ -39,7 +39,8 @@ struct Result {
 cpu::Frame make_frame(const std::vector<Atom>& atoms, double box) {
     cpu::Frame f(static_cast<int>(atoms.size()));
     for (int i = 0; i < static_cast<int>(atoms.size()); ++i) {
-        f.span(kAtom_type)[i] = atoms[static_cast<std::size_t>(i)].elem;
+        f.span(kAtom_atomic_number)[i] =
+            atoms[static_cast<std::size_t>(i)].elem;
         f.span(kAtom_x)[i] = atoms[static_cast<std::size_t>(i)].x;
         f.span(kAtom_y)[i] = atoms[static_cast<std::size_t>(i)].y;
         f.span(kAtom_z)[i] = atoms[static_cast<std::size_t>(i)].z;
@@ -309,7 +310,7 @@ int run() {
     method.forces(small);
     if (std::fabs(method.last_energy() - r074.energy) > kE_tol)
         return fail("atom-count rebuild");
-    small.span(kAtom_type)[0] = 2;
+    small.span(kAtom_atomic_number)[0] = 2;
     rejected = false;
     try {
         method.run(small);
@@ -318,7 +319,7 @@ int run() {
     }
     if (!rejected)
         return fail("unsupported element was accepted");
-    small.span(kAtom_type)[0] = 1;
+    small.span(kAtom_atomic_number)[0] = 1;
     method.forces(small);
     if (std::fabs(method.last_energy() - r074.energy) > kE_tol)
         return fail("retry after failed identity rebuild");

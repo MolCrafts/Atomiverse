@@ -56,7 +56,7 @@ ATV::cpu::Frame h2_hs(double L) {
     const double x[2] = {0.5 * L - 0.5, 0.5 * L + 0.5};
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 1;
+        frame.span(kAtom_atomic_number)[i] = 1;
         frame.span(kAtom_x)[i] = x[i] * b2a;
         frame.span(kAtom_y)[i] = 0.5 * L * b2a;
         frame.span(kAtom_z)[i] = 0.5 * L * b2a;

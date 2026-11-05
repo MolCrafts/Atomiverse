@@ -52,8 +52,8 @@ ATV::cpu::Frame make_h2() {
     frame.span(kAtom_z)[1] = 0.0;
     frame.span(kAtom_mass)[0] = 1.008;
     frame.span(kAtom_mass)[1] = 1.008;
-    frame.span(kAtom_type)[0] = 1;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_vx)[0] = 0.001;
     frame.span(kAtom_vx)[1] = -0.001;
     frame.box = cpu::Box::cubic(100.0);

@@ -83,7 +83,7 @@ double ClassicalNonbonded::launch(Frame& frame, const std::vector<int>& rows,
         fz = frame.span(kAtom_fz);
     }
 
-    const double ke = units::coulomb;
+    const double ke = units::md_qqr2e;
     double e = 0.0;
     for (int a = 0; a < m; ++a) {
         const int i = atoms[static_cast<std::size_t>(a)];

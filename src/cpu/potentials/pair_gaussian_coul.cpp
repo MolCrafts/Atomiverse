@@ -36,7 +36,7 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
     AccReal* __restrict fy = f.span(kAtom_fy);
     AccReal* __restrict fz = f.span(kAtom_fz);
 
-    const double K = ATV::units::coulomb;
+    const double K = ATV::units::md_qqr2e;
     double energy = 0.0;
     // Pair virial, Voigt xx yy zz xy xz yz [eV] — Σ Δr ⊗ f, LAMMPS sign.
     //
@@ -105,12 +105,6 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
                 double dx = static_cast<double>(x[j] - x[i]);
                 double dy = static_cast<double>(y[j] - y[i]);
                 double dz = static_cast<double>(z[j] - z[i]);
-                dx = -dx;
-                dy = -dy;
-                dz = -dz;
-                dx = -dx;
-                dy = -dy;
-                dz = -dz;
                 accumulate(i, j, dx, dy, dz);
             }
         }
@@ -127,6 +121,7 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
     }
 
     f.meta.get(kEnergy) += energy;
+    f.meta.get(kEnergyPair) += energy;
     if (ctx.stress_requested)
         vir.flush_to(f.meta.get(kStress));
 }

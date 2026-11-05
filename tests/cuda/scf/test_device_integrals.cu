@@ -86,8 +86,8 @@ struct DeviceBasis {
         frame.span(kAtom_z)[1] = double(0);
         frame.span(kAtom_mass)[0] = double(1.008);
         frame.span(kAtom_mass)[1] = double(1.008);
-        frame.span(kAtom_type)[0] = 1;
-        frame.span(kAtom_type)[1] = 1;
+        frame.span(kAtom_atomic_number)[0] = 1;
+        frame.span(kAtom_atomic_number)[1] = 1;
         frame.box = cpu::Box::cubic(100.0);
         // compute_eri=true: the ERI test reads ref.ERI directly.
         ref = cpu::scf::internal::IntegralWorkspace{

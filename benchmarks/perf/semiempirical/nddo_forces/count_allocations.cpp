@@ -151,7 +151,7 @@ void set_geometry(cpu::Frame& frame, int waters, int path_step = 0) {
                                   4.0 * (w / 16)};
         for (int a = 0; a < 3; ++a) {
             const int i = 3 * w + a;
-            frame.span(kAtom_type)[i] = a == 0 ? 8 : 1;
+            frame.span(kAtom_atomic_number)[i] = a == 0 ? 8 : 1;
             frame.span(kAtom_mass)[i] = a == 0 ? 15.999 : 1.008;
             for (int d = 0; d < 3; ++d)
                 coordinates[d][i] = monomer[a][d] + offset[d];

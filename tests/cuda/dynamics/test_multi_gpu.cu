@@ -494,6 +494,10 @@ TEST(MultiGpu, LjForceParityVsSingleGpu) {
     }
     const double cut = 3.5, eps = 1.0, sig = 2.5;
 
+    cuda::md::MultiGpu mg(2);
+    if (mg.count() < 2)
+        GTEST_SKIP() << "needs >= 2 GPUs";
+
     cpu::Frame ref(n);
     for (int i = 0; i < n; ++i)
         ref.span(kAtom_tag)[i] = i;
@@ -505,9 +509,6 @@ TEST(MultiGpu, LjForceParityVsSingleGpu) {
         mg1.gather_forces(ref);
     }
 
-    cuda::md::MultiGpu mg(2);
-    if (mg.count() < 2)
-        GTEST_SKIP() << "needs >= 2 GPUs";
     mg.partition(g);
     mg.build_halo(cut);
     mg.compute_lj_bruteforce(cut, eps, sig);
@@ -572,6 +573,10 @@ TEST(MultiGpu, LjForceParityDims2Overlap) {
     }
     const double cut = 4.5, eps = 1.0, sig = 2.5;
 
+    cuda::md::MultiGpu mg(2);
+    if (mg.count() < 2)
+        GTEST_SKIP() << "needs >= 2 GPUs";
+
     cpu::Frame ref(n);
     for (int i = 0; i < n; ++i)
         ref.span(kAtom_tag)[i] = i;
@@ -583,9 +588,6 @@ TEST(MultiGpu, LjForceParityDims2Overlap) {
         mg1.gather_forces(ref);
     }
 
-    cuda::md::MultiGpu mg(2);
-    if (mg.count() < 2)
-        GTEST_SKIP() << "needs >= 2 GPUs";
     mg.partition(g, 4.0);
     ASSERT_EQ(mg.domain().dims(), (std::array<int, 3>{2, 1, 1}));
     mg.build_halo(cut);

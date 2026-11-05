@@ -26,9 +26,9 @@ cpu::Frame make_h2o() {
     f.span(kAtom_z)[0] = 0.0;
     f.span(kAtom_z)[1] = -0.5860;
     f.span(kAtom_z)[2] = -0.5860;
-    f.span(kAtom_type)[0] = 8;
-    f.span(kAtom_type)[1] = 1;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[0] = 8;
+    f.span(kAtom_atomic_number)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;

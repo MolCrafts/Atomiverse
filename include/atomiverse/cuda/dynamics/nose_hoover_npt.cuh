@@ -36,6 +36,7 @@
 #pragma once
 
 #include "atomiverse/cuda/component/integrator.cuh"
+#include "atomiverse/cuda/component/timestep_protocol.cuh"
 
 #include <array>
 #include <cstdint>
@@ -52,8 +53,14 @@ namespace md {
 
 /// @brief CUDA MTK NPT integrator. Same API surface and Trotter ordering
 ///        as `cpu::md::NoseHooverNPT`.
-class NoseHooverNPT : public cuda::Integrator {
+class NoseHooverNPT : public cuda::Integrator, public cuda::TimestepProvider {
   public:
+    /// @brief Publishes the step to `cuda::md::MD` (timestep protocol).
+    const cuda::TimestepProvider* as_timestep_provider() const override {
+        return this;
+    }
+    /// @return The constructor `dt` [fs].
+    double timestep() const override { return dt_; }
     /// @brief Construct MTK NPT (mirror of cpu::md::NoseHooverNPT; no Config bag).
     NoseHooverNPT(double T_target, double tau_T, double P_target, double tau_P,
                   double dt, double drag = 0.0, int mtchain = 3,

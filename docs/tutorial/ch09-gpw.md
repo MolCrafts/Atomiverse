@@ -107,7 +107,7 @@ Practice:
 an isolated water molecule, the electronic structure of CP2K's getting-started
 `h2o.inp`. Keep it open beside this text.
 
-**Step 1 — build the Frame.** GPW reads `frame.span(kAtom_type)` as the atomic number
+**Step 1 — build the Frame.** GPW reads `frame.span(kAtom_atomic_number)` as the atomic number
 $Z$ and needs a cell (`cpu::Box`); an isolated molecule sits in a box large
 enough to avoid its images:
 
@@ -118,7 +118,7 @@ const double x[3]  = {5.0000, 5.7586, 4.2414};     // Å
 const double y[3]  = {5.0000, 5.0000, 5.0000};
 const double zc[3] = {5.0000, 5.5043, 5.5043};
 for (int i = 0; i < 3; ++i) {
-    f.span(kAtom_type)[i] = z[i];
+    f.span(kAtom_atomic_number)[i] = z[i];
     f.span(kAtom_x)[i] = x[i];
     f.span(kAtom_y)[i] = y[i];
     f.span(kAtom_z)[i] = zc[i];

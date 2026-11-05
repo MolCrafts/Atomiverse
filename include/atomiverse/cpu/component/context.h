@@ -7,8 +7,8 @@
 /// stays flat — it is read by every component. Workflow-specific services
 /// are grouped into nested plain-aggregate slices, each filled only by its
 /// owning preset: `md` (classical force pipeline), `mc`
-/// (Metropolis sampling), `opt` (optimizer line search), `analysis`
-/// (async analysis executor). Unfilled slice fields stay `nullptr` =
+/// (Metropolis sampling), `opt` (optimizer line search), `capture`
+/// (the shared asynchronous capture buffer). Unfilled slice fields stay `nullptr` =
 /// service unavailable; components check before use. Cross-slice reads
 /// are legitimate (slices group by *publisher*, not by exclusive
 /// consumer): `CommBrick::exchange` reads `opt.line_search_trial`, Minimize's
@@ -34,7 +34,7 @@ class EvaluationTransaction;
 
 namespace cpu {
 
-class AnalysisExecutor;
+class CaptureBuffer;
 class ReplicaSet;
 class Runtime; ///< The Runtime; published on `Context::exec`. @see ExecServices
 
@@ -98,6 +98,18 @@ struct DynamicsServices {
     /// Independent full CSR for many-body consumers; pair_list always means half.
     const md::PairList* full_pair_list = nullptr;
 
+    /// @brief LAMMPS `neighbor->skin` [Å]: the relative displacement the
+    ///        active `NeighborProvider` tolerates between reneighbourings
+    ///        (`NeighborProvider::validated_skin()`).
+    ///
+    /// Published by the Runtime with the provider's views, before any
+    /// component runs. An owned atom lies at most `skin / 2` outside its
+    /// subdomain until the next exchange, which is what a consumer that
+    /// sizes per-rank storage from atom positions (KSpacePPPM's ghost
+    /// brick, LAMMPS `Grid3d::set_distance`) must allow for. 0 without a
+    /// provider: every step then reneighbours and exchanges.
+    double neighbor_skin = 0.0;
+
     /// @brief Global degrees of freedom, `3N - 3 - n_constraints`.
     ///
     /// **The single owner.** Published by `Driver::setup_pass()` after the frame
@@ -126,6 +138,15 @@ struct DynamicsServices {
     /// `exchange` + `borders` + `neighbor->build`. Default `true` so
     /// linear drivers that never call decide still rebuild ghosts.
     bool reneighbor = true;
+
+    /// @brief A fix forces the next step to reneighbor (LAMMPS
+    ///        `Fix::force_reneighbor` / `next_reneighbor`, honoured first in
+    ///        `Neighbor::decide`).
+    ///
+    /// Set by a component whose next `pre_exchange` must run (NvtSllod after
+    /// deciding a box flip); MD Verlet consumes and clears it in the next
+    /// reneighbor decision. Every rank sets it identically.
+    bool reneighbor_requested = false;
 };
 
 /// @brief Metropolis-sampling services (publisher: `cpu::mc::MC::run`).
@@ -256,12 +277,12 @@ struct ExecServices {
     bool trial_evaluation = false;
 };
 
-/// @brief Async-analysis services (publisher: `AnalysisExecutor::install`).
-struct AnalysisServices {
-    /// @brief Non-owning handle to the per-rank analysis executor.
-    /// Allocated by `Backend::init()`; published so async observers /
-    /// recorders can reach the executor from any lifecycle context.
-    AnalysisExecutor* executor = nullptr;
+/// @brief Asynchronous-capture services (publisher: `cpu::Runtime::init`).
+struct CaptureServices {
+    /// @brief Non-owning handle to the driver tree's shared capture buffer
+    /// (`cpu::CaptureBuffer`, owned by the Runtime). Every asynchronous
+    /// consumer (`cpu::AsyncConsumer`) subscribes to it at build.
+    CaptureBuffer* buffer = nullptr;
 };
 
 /// @brief CPU execution context: flat core state + per-workflow slices.
@@ -292,12 +313,12 @@ struct Context {
     /// It does not declare convergence: that is a `Criterion`'s job.
     LoopServices loop;
 
-    ExecServices exec;         ///< The Runtime executing this node tree.
-    DynamicsServices md;       ///< Classical force-pipeline slice.
-    SamplingServices mc;       ///< Metropolis-sampling slice.
-    OptimizeServices opt;      ///< Optimizer line-search slice.
-    PathServices path;         ///< Coupled-replica (band) slice.
-    AnalysisServices analysis; ///< Async-analysis slice.
+    ExecServices exec;       ///< The Runtime executing this node tree.
+    DynamicsServices md;     ///< Classical force-pipeline slice.
+    SamplingServices mc;     ///< Metropolis-sampling slice.
+    OptimizeServices opt;    ///< Optimizer line-search slice.
+    PathServices path;       ///< Coupled-replica (band) slice.
+    CaptureServices capture; ///< Asynchronous-capture slice.
 };
 
 // Zero-cost-grouping guards: the slices stay plain aggregates and the
@@ -309,7 +330,7 @@ static_assert(std::is_trivially_copyable_v<SamplingServices>);
 static_assert(std::is_trivially_copyable_v<PathServices>);
 static_assert(std::is_trivially_copyable_v<LoopServices>);
 static_assert(std::is_trivially_copyable_v<ExecServices>);
-static_assert(std::is_trivially_copyable_v<AnalysisServices>);
+static_assert(std::is_trivially_copyable_v<CaptureServices>);
 static_assert(!std::is_polymorphic_v<Context>);
 
 } // namespace cpu

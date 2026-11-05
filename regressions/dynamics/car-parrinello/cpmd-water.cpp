@@ -42,7 +42,7 @@ int run() {
     const double z0[3] = {5.0000, 5.5043, 5.5043};
     const double mass[3] = {15.999, 1.008, 1.008};
     for (int i = 0; i < 3; ++i) {
-        frame.span(kAtom_type)[i] = z[i];
+        frame.span(kAtom_atomic_number)[i] = z[i];
         frame.span(kAtom_mass)[i] = mass[i];
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_x)[i] = x0[i];

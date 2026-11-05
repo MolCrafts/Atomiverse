@@ -40,7 +40,7 @@ using namespace atv_reg_semiempirical_am1_water_mopac_energy;
 cpu::Frame molecule(const ModernMopacPin& pin) {
     cpu::Frame frame(pin.count);
     for (int i = 0; i < pin.count; ++i) {
-        frame.span(kAtom_type)[i] = pin.species[i];
+        frame.span(kAtom_atomic_number)[i] = pin.species[i];
         frame.span(kAtom_x)[i] = pin.xyz[i][0];
         frame.span(kAtom_y)[i] = pin.xyz[i][1];
         frame.span(kAtom_z)[i] = pin.xyz[i][2];
@@ -330,7 +330,8 @@ void short_md(const ModernMopacPin& pin) {
     check_observables(split_frame, direct.forces(edited_reference));
     split_frame = dynamic_molecule(kModernPins[pin.rm1 ? 4 : 1]);
     split.run(split_frame, 0);
-    std::swap(split_frame.span(kAtom_type)[0], split_frame.span(kAtom_type)[1]);
+    std::swap(split_frame.span(kAtom_atomic_number)[0],
+              split_frame.span(kAtom_atomic_number)[1]);
     std::swap(split_frame.span(kAtom_mass)[0], split_frame.span(kAtom_mass)[1]);
     edited_reference = split_frame;
     split.run(split_frame, 0);
@@ -559,10 +560,10 @@ void grade(int m) {
         frame.span(kAtom_x)[1] = oldx;
         near("retry E", method.run(frame).total_energy_ev,
              moved.total_energy_ev, 1e-8);
-        frame.span(kAtom_type)[0] = 9;
+        frame.span(kAtom_atomic_number)[0] = 9;
         rejects([&] { method.run(frame); },
                 "same-size unsupported identity rejected");
-        frame.span(kAtom_type)[0] = pin.species[0];
+        frame.span(kAtom_atomic_number)[0] = pin.species[0];
         near("identity retry", method.run(frame).total_energy_ev,
              moved.total_energy_ev, 1e-8);
         frame.box = cpu::Box::cubic(20);
@@ -573,7 +574,8 @@ void grade(int m) {
         require(!method.provides_system_stress(),
                 "molecular stress capability absent");
         if (pin.count == 2) {
-            std::swap(frame.span(kAtom_type)[0], frame.span(kAtom_type)[1]);
+            std::swap(frame.span(kAtom_atomic_number)[0],
+                      frame.span(kAtom_atomic_number)[1]);
             const auto swapped =
                 cpu_method.run(static_cast<const cpu::Frame&>(frame));
             const auto actual = method.run(frame);
@@ -583,7 +585,8 @@ void grade(int m) {
                 near("same-count supported identity q",
                      actual.mulliken_charges[i], swapped.mulliken_charges[i],
                      1e-8);
-            std::swap(frame.span(kAtom_type)[0], frame.span(kAtom_type)[1]);
+            std::swap(frame.span(kAtom_atomic_number)[0],
+                      frame.span(kAtom_atomic_number)[1]);
             method.run(frame);
         }
         // A cold finite budget fails; controls changed after failure take effect.
@@ -605,11 +608,11 @@ void grade(int m) {
     rejects([&] { Gpu spin{0, 3}; }, "open-shell constructor rejected");
     {
         Gpu first_failure{0, 1, 1000, 1e-10, 1e-12};
-        frame.span(kAtom_type)[0] = 9;
+        frame.span(kAtom_atomic_number)[0] = 9;
         rejects([&] { first_failure.run(frame); },
                 "first invalid identity build");
         require(!first_failure.has_density(), "invalid build retains no guess");
-        frame.span(kAtom_type)[0] = 8;
+        frame.span(kAtom_atomic_number)[0] = 8;
         first_failure.run(frame);
         require(first_failure.converged(), "retry after first build failure");
     }
@@ -879,10 +882,10 @@ void grade(int m) {
     }
     Cpu changed_cpu{0, 1, 1000, 1e-10, 1e-12};
     auto methane = cpu::Frame(5);
-    methane.span(kAtom_type)[0] = 6;
+    methane.span(kAtom_atomic_number)[0] = 6;
     const double a = .63;
     for (int i = 1; i < 5; ++i) {
-        methane.span(kAtom_type)[i] = 1;
+        methane.span(kAtom_atomic_number)[i] = 1;
         methane.span(kAtom_x)[i] = (i == 1 || i == 2) ? a : -a;
         methane.span(kAtom_y)[i] = (i == 1 || i == 3) ? a : -a;
         methane.span(kAtom_z)[i] = (i == 1 || i == 4) ? a : -a;

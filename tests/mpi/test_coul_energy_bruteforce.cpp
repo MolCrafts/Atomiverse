@@ -68,7 +68,7 @@ cpu::Frame make_charged_fcc(int n_cells, double a_lat, double q_mag) {
 }
 
 // Real-space screened Coulomb pair energy, replicating CoulLong exactly:
-// E = units::coulomb · q_i q_j · erfc(α r) / r for r < cutoff.
+// E = units::md_qqr2e · q_i q_j · erfc(α r) / r for r < cutoff.
 double brute_force_coul_energy(const cpu::Frame& frame, double alpha,
                                double cutoff) {
     const int n = frame.nlocal();
@@ -100,7 +100,7 @@ double brute_force_coul_energy(const cpu::Frame& frame, double alpha,
             if (r2 >= rc_sq || r2 == 0.0)
                 continue;
             const double r = std::sqrt(r2);
-            e += units::coulomb * frame.span(ATV::kAtom_charge)[i]
+            e += units::md_qqr2e * frame.span(ATV::kAtom_charge)[i]
                  * frame.span(ATV::kAtom_charge)[j] * std::erfc(alpha * r) / r;
         }
     }

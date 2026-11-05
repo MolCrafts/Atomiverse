@@ -34,7 +34,7 @@ int run() {
     constexpr double R = 1.2075;
     const double mass = 15.999;
     for (int i = 0; i < 2; ++i) {
-        frame.span(kAtom_type)[i] = 8;
+        frame.span(kAtom_atomic_number)[i] = 8;
         frame.span(kAtom_mass)[i] = mass;
         frame.span(kAtom_tag)[i] = i + 1;
         frame.span(kAtom_x)[i] = 0.5 * L;

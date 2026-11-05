@@ -110,8 +110,9 @@ void apply_permutation_owned(Frame& frame, const int* order, int n,
     permute_rows(a.mass, order, n, 1, buf.stage_mixed, stream);
     permute_rows(a.charge, order, n, 1, buf.stage_pos, stream);
     permute_rows(a.type, order, n, 1, buf.stage_i, stream);
+    permute_rows(a.atomic_number, order, n, 1, buf.stage_i, stream);
     permute_rows(a.tag, order, n, 1, buf.stage_i64, stream);
-    permute_rows(a.image, order, n, 3, buf.stage_i8, stream); // image[i*3+d]
+    permute_rows(a.image, order, n, 3, buf.stage_image, stream); // image[i*3+d]
 
     // -- Bonded SoA (multi-GPU only; null on single-GPU). Runtime strides
     //    mirror transfer.cu::materialize_per_atom_bonded exactly. --

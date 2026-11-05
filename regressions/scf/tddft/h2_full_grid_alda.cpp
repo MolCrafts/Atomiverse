@@ -23,7 +23,7 @@ int run() {
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.box = cpu::Box::cubic(20);
 
     cpu::scf::RKS rks(cpu::scf::BasisSet::STO3G, cpu::xc::XCType::LSDA);

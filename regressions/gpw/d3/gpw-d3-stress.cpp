@@ -74,7 +74,7 @@ int run() {
 
     cpu::Frame frame(6);
     for (int i = 0; i < 6; ++i) {
-        frame.span(kAtom_type)[i] = z[i];
+        frame.span(kAtom_atomic_number)[i] = z[i];
         frame.span(kAtom_x)[i] = x[i];
         frame.span(kAtom_y)[i] = y[i];
         frame.span(kAtom_z)[i] = zc[i];

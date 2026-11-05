@@ -3,6 +3,7 @@
 
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/energy_term.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/potentials/angle_harmonic.cuh"
@@ -32,11 +33,10 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_angle_k(
     const pos_t* __restrict__ x, const pos_t* __restrict__ y,
     const pos_t* __restrict__ z, fixed_t* __restrict__ fx,
     fixed_t* __restrict__ fy, fixed_t* __restrict__ fz, ForceFault* fault,
-    acc_t* __restrict__ energy, acc_t* __restrict__ stress,
-    const int* __restrict__ ai, const int* __restrict__ aj,
-    const int* __restrict__ ak, const int* __restrict__ at,
-    const force_t* __restrict__ K, const force_t* __restrict__ theta0,
-    cuda::Box box_arg, int n_angles) {
+    EnergyTerm energy, acc_t* __restrict__ stress, const int* __restrict__ ai,
+    const int* __restrict__ aj, const int* __restrict__ ak,
+    const int* __restrict__ at, const force_t* __restrict__ K,
+    const force_t* __restrict__ theta0, cuda::Box box_arg, int n_angles) {
     const auto box = box_arg.current().as<force_t>();
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -127,15 +127,15 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_angle_k(
 
     // Null energy/stress: the step has no eflag/vflag (LAMMPS ev_set). The
     // pointers are uniform, so skipping the collective is safe.
-    if (energy != nullptr || stress != nullptr) {
+    if (energy || stress != nullptr) {
         using Reduce =
             cub::BlockReduce<::cuda::std::array<acc_t, 7>, kDefaultBlock>;
         __shared__ typename Reduce::TempStorage reduction;
         const auto out =
             Reduce(reduction).Reduce(my_vals, SumComponents<acc_t, 7>{});
         if (threadIdx.x == 0) {
-            if (energy != nullptr)
-                atomicAdd(energy, out[0]);
+            if (energy)
+                energy.add(out[0]);
             if (stress != nullptr) {
 #pragma unroll
                 for (int c = 0; c < 6; ++c)
@@ -185,7 +185,8 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
     constexpr int shmem = 0;
     harmonic_angle_k<<<grid, block, shmem, stream>>>(
         f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.fx, f.atoms.fy, f.atoms.fz,
-        f.force_fault, ctx.energy_requested ? &f.scalars->energy : nullptr,
+        f.force_fault,
+        energy_term(f.scalars, EnergyKind::Angle, ctx.energy_requested),
         ctx.stress_requested ? &f.scalars->stress[0] : nullptr, f.angles.atomi,
         f.angles.atomj, f.angles.atomk, f.angles.type, state_->d_K,
         state_->d_theta0, ctx.runtime.host_box, na);

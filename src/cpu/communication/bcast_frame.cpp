@@ -31,7 +31,8 @@ namespace comm {
 
 namespace {
 
-inline constexpr std::uint32_t kBcastWireVersion = 1;
+// 2: the identity-column presence pair precedes the header.
+inline constexpr std::uint32_t kBcastWireVersion = 2;
 inline constexpr std::uint32_t kMetaWireVersion = 1;
 
 class ByteWriter {
@@ -261,6 +262,24 @@ void bcast_frame(Frame& frame, int root) {
     if (root_min != root_max || root < 0 || root >= world)
         throw std::invalid_argument(
             "bcast_frame: root rank is invalid or differs across ranks");
+
+    // The identity columns are optional (a boundary leaves out the one its
+    // source did not carry, `atom_field_how_to`). Receivers adopt the root's
+    // choice before the schema digest below compares column sets.
+    int identity[2] = {frame.has("atoms", kAtom_type.key) ? 1 : 0,
+                       frame.has("atoms", kAtom_atomic_number.key) ? 1 : 0};
+    MPI_Bcast(identity, 2, MPI_INT, root, MPI_COMM_WORLD);
+    if (rank != root) {
+        const std::pair<AtomFieldId, const char*> keys[2] = {
+            {AtomFieldId::type, kAtom_type.key},
+            {AtomFieldId::atomic_number, kAtom_atomic_number.key}};
+        for (int k = 0; k < 2; ++k) {
+            if (identity[k] != 0)
+                frame.insert_field(keys[k].first);
+            else if (frame.has("atoms", keys[k].second))
+                frame.block("atoms").erase(keys[k].second);
+        }
+    }
 
     // The atoms Block's own column selection, not a compiled wire plan. A
     // broadcast is a bulk column-major collective: it wants the column set

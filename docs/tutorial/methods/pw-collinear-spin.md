@@ -86,7 +86,7 @@ spin are the [pw-uks-fe-smearing](pw-smearing.md#pw-uks-fe-smearing) section.
 ```cpp
 cpu::Frame frame(2);
 for (int i = 0; i < 2; ++i) {
-    frame.span(kAtom_type)[i] = 8;       // Z(O)
+    frame.span(kAtom_atomic_number)[i] = 8;       // Z(O)
     frame.span(kAtom_mass)[i] = 15.999;
     frame.span(kAtom_x)[i] = 0.0;
     frame.span(kAtom_y)[i] = 0.0;

@@ -67,7 +67,7 @@ int run() try {
 
     const int N = n * n * n;
     const double e_expected =
-        -0.5 * N * kMadelungNaCl * ATV::units::coulomb / d;
+        -0.5 * N * kMadelungNaCl * ATV::units::md_qqr2e / d;
     const double e = static_cast<double>(frame.meta.get(kEnergy));
     // pos_t / force_t are single precision in mixed and single modes → looser tol.
     const double error = std::abs(e / e_expected - 1.0);

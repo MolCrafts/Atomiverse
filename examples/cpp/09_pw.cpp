@@ -52,8 +52,8 @@ namespace {
 /// are the fcc primitive vectors (a/2)(0,1,1), (a/2)(1,0,1), (a/2)(1,1,0).
 cpu::Frame make_silicon(double a) {
     cpu::Frame f(2);
-    f.span(ATV::kAtom_type)[0] = 14; // Si, Z = 14
-    f.span(ATV::kAtom_type)[1] = 14;
+    f.span(ATV::kAtom_atomic_number)[0] = 14; // Si, Z = 14
+    f.span(ATV::kAtom_atomic_number)[1] = 14;
     f.span(ATV::kAtom_mass)[0] = 28.0855;
     f.span(ATV::kAtom_mass)[1] = 28.0855;
     f.span(ATV::kAtom_x)[0] = 0.0;

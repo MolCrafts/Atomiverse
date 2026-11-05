@@ -24,7 +24,7 @@ void validate_frame_species(const cpu::Frame& frame, int z, int valence) {
     if (frame.nlocal() == 0)
         throw std::invalid_argument(
             "PW requires a nonempty single-species Frame");
-    const auto types = frame.span(kAtom_type);
+    const auto types = frame.span(kAtom_atomic_number);
     for (std::size_t i = 0; i < frame.nlocal(); ++i)
         if (types[i] != z)
             throw std::invalid_argument(

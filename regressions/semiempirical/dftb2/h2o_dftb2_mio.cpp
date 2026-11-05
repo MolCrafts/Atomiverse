@@ -48,15 +48,15 @@ struct LoopAudit : cpu::Component {
 
 cpu::Frame make_water() {
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.96;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = -0.24;
     f.span(kAtom_y)[2] = 0.93;
     f.span(kAtom_z)[2] = 0.0;
@@ -290,12 +290,12 @@ int run() {
             changed.span(kAtom_x)[1] += 0.08;
             changed.span(kAtom_z)[2] += 0.03;
         } else if (variant == 1) {
-            changed.span(kAtom_type)[0] = 6;
+            changed.span(kAtom_atomic_number)[0] = 6;
         } else if (variant == 2) {
             changed = cpu::Frame(2);
             changed.box = cpu::Box::cubic(20.0);
             for (int a = 0; a < 2; ++a) {
-                changed.span(kAtom_type)[a] = 1;
+                changed.span(kAtom_atomic_number)[a] = 1;
                 changed.span(kAtom_x)[a] = 0.74 * a;
                 changed.span(kAtom_y)[a] = changed.span(kAtom_z)[a] = 0.0;
             }
@@ -324,7 +324,7 @@ int run() {
                 }
     }
     auto invalid_species = make_water();
-    invalid_species.span(kAtom_type)[0] = 2;
+    invalid_species.span(kAtom_atomic_number)[0] = 2;
     rejected = false;
     try {
         direct.forces(invalid_species);

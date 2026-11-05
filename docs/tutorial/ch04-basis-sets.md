@@ -425,8 +425,8 @@ frame.span(kAtom_z)[0] = 0;
 frame.span(kAtom_x)[1] = 0;
 frame.span(kAtom_y)[1] = 0;
 frame.span(kAtom_z)[1] = 0.74;
-frame.span(kAtom_type)[0] = 1;
-frame.span(kAtom_type)[1] = 1;
+frame.span(kAtom_atomic_number)[0] = 1;
+frame.span(kAtom_atomic_number)[1] = 1;
 frame.box = cpu::Box::cubic(30.0);
 
 cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};

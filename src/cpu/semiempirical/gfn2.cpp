@@ -619,7 +619,7 @@ struct SolveOut {
 SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                     double mix_beta, bool want_grad, Runtime* host = nullptr) {
     const int n_at = f.nlocal();
-    const int* type = f.span(kAtom_type).data();
+    const int* type = f.span(kAtom_atomic_number).data();
     const StorageReal* xA = f.span(kAtom_x).data();
     const StorageReal* yA = f.span(kAtom_y).data();
     const StorageReal* zA = f.span(kAtom_z).data();

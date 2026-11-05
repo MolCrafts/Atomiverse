@@ -142,7 +142,7 @@ for BCC Fe with a ferro seed).
 ```cpp
 // BCC Fe primitive, cubic a = 2.87 Å, one atom at origin
 cpu::Frame f(1);
-f.span(kAtom_type)[0] = 26;       // Z(Fe)
+f.span(kAtom_atomic_number)[0] = 26;       // Z(Fe)
 f.span(kAtom_mass)[0] = 55.845;
 f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
 const double h = 2.87 / 2.0;
@@ -272,7 +272,7 @@ form: \(s = -2[f\ln f+(1-f)\ln(1-f)]\), so
 ```cpp
 // FCC Al primitive, a = 4.05 Å, one atom at origin
 cpu::Frame f(1);
-f.span(kAtom_type)[0] = 13;
+f.span(kAtom_atomic_number)[0] = 13;
 f.span(kAtom_mass)[0] = 26.9815385;
 f.span(kAtom_x)[0] = f.span(kAtom_y)[0] = f.span(kAtom_z)[0] = 0.0;
 const double h = 4.05 / 2.0;

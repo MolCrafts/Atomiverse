@@ -26,15 +26,15 @@ local minimum instead of getting stuck in it.
 An *ensemble* is the set of macroscopic quantities held fixed. Three
 presets over one shared trial loop, plus the four movers they compose:
 
-=========================  =================================================
-``MC(T, seed)``            canonical NVT — fixed N, V, T
-``NptMC(T, P, seed)``      isothermal-isobaric — fixed N, P, T; V sampled
-``GCMC(T, mu, m, seed)``   grand-canonical muVT — fixed mu, V, T; N sampled
-``TranslateMove(delta)``   displace one random atom in [-delta, delta]^3
-``VolumeMove(dv_max)``     isotropic volume change (NPT)
-``InsertDeleteMove(z, m)`` insert / delete one atom of species z (muVT)
-``MoveSelector()``         weighted mix — fires exactly ONE child per trial
-=========================  =================================================
+===========================  =================================================
+``MC(T, seed)``              canonical NVT — fixed N, V, T
+``NptMC(T, P, seed)``        isothermal-isobaric — fixed N, P, T; V sampled
+``GCMC(T, mu, m, seed)``     grand-canonical muVT — fixed mu, V, T; N sampled
+``TranslateMove(delta)``     displace one random atom in [-delta, delta]^3
+``VolumeMove(dv_max)``       isotropic volume change (NPT)
+``InsertDeleteMove(t,z,m)``  insert / delete one atom: type t, species z
+``MoveSelector()``           weighted mix — fires exactly ONE child per trial
+===========================  =================================================
 
 **NVT** holds the particle number N, the cell volume V and the temperature
 T fixed — the plain canonical ensemble. **NPT** holds N, the external
@@ -80,9 +80,9 @@ and no explicit ``build()``; the first ``run()`` compiles the plan::
     print(sim.acceptance_ratio(), sim.current_energy())
 
 ``set_neighbor`` takes the ordinary ``NeighborList(cutoff, skin)``, but
-builds it in the MC-correct form (``every=1, delay=0, check=yes``): an
-accepted trial move can cross the skin at any trial, so the rebuild check
-is never deferred the way MD's ``delay=10`` default defers it.
+builds it in the MC-correct form (``every=1, delay=0, check=yes``, the
+LAMMPS defaults MD uses too): an accepted trial move can cross the skin at
+any trial, so the rebuild check must never be deferred.
 
 Two sizing rules are the caller's, not the engine's: the neighbor cutoff
 must be at least the pair potential's cutoff, and ``cutoff + skin`` must
@@ -133,7 +133,8 @@ and of ``regressions/mc/metropolis/REFERENCE.md``, which pins <N>(z) against
 the Mayer activity expansion using exactly this relation.
 
 Because ``GCMC(T, mu, m, seed)`` builds ``Lambda`` from its ``m``, the
-``InsertDeleteMove(z, m)`` that actually stamps atoms into the cell must
+``InsertDeleteMove(type, atomic_number, m)`` that actually stamps atoms into
+the cell must
 carry the **same** mass. Two different masses mean the sampled chemical
 potential is not the requested one — a silent error, since nothing
 compares them.
@@ -181,8 +182,10 @@ Variable particle number
 muVT changes N, and ``to_molpy`` cannot write a changed row count into an
 existing block. After a ``GCMC.run()`` that inserted or deleted atoms, the
 frame's ``atoms`` block is therefore *rebuilt* at the new N — every column
-comes back, including ``mass`` and ``atomic_number``, which the fixed-N
-path treats as immutable inputs and does not write. Accumulate ``n_atoms()``
+comes back, including ``mass`` and whichever identity columns the frame
+carried (``atomic_number`` for the species, ``type_id`` for the force-field
+type), which the fixed-N path treats as immutable inputs and does not
+write. An identity column the input frame lacked is not invented. Accumulate ``n_atoms()``
 along the chain for <N>.
 
 Single rank

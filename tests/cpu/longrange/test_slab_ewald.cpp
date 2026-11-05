@@ -103,7 +103,7 @@ TEST(SlabCorrMath, NeutralDipoleFormula) {
     const double zprd = 20.0 * 3.0;
     const double e =
         longrange::slab_corr_energy(mz, /*Q=*/0.0, /*mz_r2=*/0.0, vol, zprd);
-    const double expect = units::coulomb * 2.0 * units::pi * mz * mz / vol;
+    const double expect = units::md_qqr2e * 2.0 * units::pi * mz * mz / vol;
     EXPECT_NEAR(e, expect, 1e-12);
 }
 
@@ -119,7 +119,7 @@ TEST(SlabCorrMath, ForceMatchesEnergyGradient) {
     longrange::slab_corr_add_forces(q, z, 1, mz, /*Q=*/1.0, vol, fz);
     // ffact * q * (Mz − Q z) = ke*(-4π/V)*2*(5 − 1*3) = ke*(-4π/V)*2*2
     const double expect =
-        units::coulomb * (-4.0 * units::pi / vol) * 2.0 * (mz - 1.0 * 3.0);
+        units::md_qqr2e * (-4.0 * units::pi / vol) * 2.0 * (mz - 1.0 * 3.0);
     EXPECT_NEAR(fz[0], expect, 1e-12);
 }
 

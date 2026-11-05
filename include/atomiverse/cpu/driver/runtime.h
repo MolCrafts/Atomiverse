@@ -5,8 +5,8 @@
 ///
 /// backend-mirror-05-dissolve replaced the former god-class: domain
 /// decomposition now lives in `communication::DomainRuntime`, thread + timing
-/// setup in `device::DeviceRuntime`, the async pipeline in
-/// `asynchronous::AnalysisRuntime`. This type owns those three, binds the Frame,
+/// setup in `device::DeviceRuntime`, the asynchronous frame capture in
+/// `cpu::CaptureBuffer`. This type owns those three, binds the Frame,
 /// and dispatches Plans (one per driver node in the tree). It operates directly
 /// on the user's cpu::Frame (zero-copy, zero transfer).
 ///
@@ -31,7 +31,7 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/timer.h"
-#include "atomiverse/cpu/asynchronous/analysis_runtime.h"
+#include "atomiverse/cpu/asynchronous/capture_buffer.h"
 #include "atomiverse/cpu/communication/domain_runtime.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
@@ -101,7 +101,7 @@ class Runtime {
     Runtime& operator=(Runtime&&) noexcept;
 
     /// @brief Configure threads (device), detect MPI, allocate the DD
-    ///        (communication), start the analysis pipeline, publish services.
+    ///        (communication), publish the capture buffer and services.
     void init();
 
     /// @brief Bind a compiled Plan for execution (non-owning).
@@ -130,6 +130,20 @@ class Runtime {
     void step_stage(int slot, BigInt step_idx);
     /// Establish initial MD forces once, without advancing the clock.
     void prepare_run(BigInt step_idx = 0);
+    /// Per-run output of the current state (LAMMPS `Output::setup`): calls
+    /// `setup_output` on every component of the MD or minimizer plan with
+    /// `ctx.step` = `step_idx`, the steps / iterations completed so far.
+    /// No-op for other plans.
+    void setup_output(BigInt step_idx);
+    /// Forced output of a minimization's final state (LAMMPS `Min::run` on a
+    /// stop before MAXITER): calls `final_output` on every component of the
+    /// minimizer (or MD) plan with `ctx.step` = `step_idx`.
+    void final_output(BigInt step_idx);
+    /// Workflow of the plan executing now (the nested plan inside a
+    /// `ScopedPlan`); `Evaluate` when none is bound.
+    PhaseKind active_kind() const {
+        return plan_ ? plan_->kind : PhaseKind::Evaluate;
+    }
 
     // ── Nested plans: a sub-driver runs its own Plan on THIS runtime ──────────
     void build_plan(const Plan<cpu::Component>& plan);
@@ -149,11 +163,17 @@ class Runtime {
     /// @brief Destroy all components in reverse Plan order.
     void destroy_components();
 
-    /// @brief Block until the async-analysis executor has drained.
-    void drain_analysis() {
+    /// @brief End of a run: every asynchronous capture is consumed before
+    ///        the driver reports success; a consumer failure is thrown here
+    ///        (once) if the run has not raised it yet.
+    void drain_capture() {
         DispatchScope dispatch(this);
-        analysis_.drain();
+        capture_->drain(/*raise=*/true);
     }
+
+    /// @brief The driver tree's shared asynchronous capture buffer.
+    CaptureBuffer& capture() noexcept { return *capture_; }
+    const CaptureBuffer& capture() const noexcept { return *capture_; }
 
     /// @brief Release all resources.
     void shutdown();
@@ -263,6 +283,9 @@ class Runtime {
     void step_verlet_(BigInt step_idx);
     void launch_op_(std::size_t slot, std::size_t op, BigInt step_idx);
     void walk_slot_(int phase, BigInt step_idx, bool skip_engine);
+    /// One `setup_output` (`final = false`) or `final_output` pass over the
+    /// plan's components at its end-of-iteration slot.
+    void output_pass_(BigInt step_idx, bool final);
     void launch_engine_(cpu::Component* c, int slot, int op, int phase,
                         BigInt step_idx);
     void release_component_(cpu::Component* component);
@@ -301,7 +324,8 @@ class Runtime {
 
     communication::DomainRuntime domain_{};
     device::DeviceRuntime device_{};
-    asynchronous::AnalysisRuntime analysis_{};
+    /// Heap-held so a moved Runtime keeps the address its Context publishes.
+    std::unique_ptr<CaptureBuffer> capture_ = std::make_unique<CaptureBuffer>();
 
     /// Per-slot, per-op dense timing handles, precomputed in `build_components()`
     /// so the hot `step()` loop never calls `component->name()`.

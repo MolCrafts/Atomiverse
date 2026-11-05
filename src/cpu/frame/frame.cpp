@@ -184,9 +184,9 @@ Column::Column(ColumnSpec spec, int rows) : spec_(spec) {
         storage_.emplace<3>(
             ColumnBuffer<int, ColDType::Int>{xt::zeros<int>({n, c})});
         break;
-    case ColDType::Int8:
-        storage_.emplace<4>(ColumnBuffer<std::int8_t, ColDType::Int8>{
-            xt::zeros<std::int8_t>({n, c})});
+    case ColDType::Image:
+        storage_.emplace<4>(ColumnBuffer<ImageInt, ColDType::Image>{
+            xt::zeros<ImageInt>({n, c})});
         break;
     }
     if ((spec_.flags & kColIdentityTail) && spec_.cols == 1) {
@@ -608,6 +608,16 @@ Frame& Frame::operator=(Frame&& other) {
     box = std::move(other.box);
     bind_resolution_state_();
     return *this;
+}
+
+void Frame::insert_field(AtomFieldId id) {
+    const FieldSpec& field = kAtomFieldSpecs[static_cast<std::size_t>(id)];
+    Block& atoms = atoms_block_();
+    if (atoms.contains(field.key))
+        return;
+    atoms.insert(field.key,
+                 ColumnSpec{field.dtype, cols_for_(field, meta), field.group,
+                            field.epi, field.flags, field.wire_id});
 }
 
 void Frame::bind_resolution_state_() const noexcept {
@@ -1142,6 +1152,13 @@ Frame Frame::clone_structure(int rows) const {
         if (column.wire_id() == kDynamicFieldId)
             target_atoms.insert(key, column.spec());
     }
+    // A schema column the source left out (an identity column its boundary
+    // did not provide) stays out of the clone too.
+    // (Read through columns(): a structural clone resolves no column plan.)
+    for (const FieldSpec& field : kAtomFieldSpecs)
+        if (source_atoms.columns().find(field.key)
+            == source_atoms.columns().end())
+            target_atoms.erase(field.key);
     for (const auto& [key, source_block] : blocks) {
         if (key == "atoms")
             continue;
@@ -1161,11 +1178,14 @@ std::vector<SchemaError> validate_ghosts(const GhostContract& required,
     std::vector<SchemaError> errors = required.conflicts();
     for (const GhostField& f : required) {
         if (!frame.has("atoms", f.name)) {
+            const char* how = atom_field_how_to(f.name);
             errors.push_back(SchemaError{
                 f.name, f.required_by,
-                "the Frame has no such column. Add it before the run "
-                "(Block::insert, or load a file that carries it), or unmount "
-                "the component that needs it."});
+                how ? "the Frame has no such column: " + std::string(how)
+                    : std::string(
+                          "the Frame has no such column. Add it before the run "
+                          "(Block::insert, or load a file that carries it), or "
+                          "unmount the component that needs it.")});
             continue;
         }
         const auto& cols = frame.block("atoms").columns();

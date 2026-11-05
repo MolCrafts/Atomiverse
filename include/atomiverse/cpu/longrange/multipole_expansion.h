@@ -109,7 +109,7 @@ class MultipoleExpansion {
     /// Φ = Σ_{n,m} M_n^m · I_n^m(point − centre). Requires |point − centre| > 0.
     ///
     /// @param point Absolute evaluation point [length].
-    /// @return Potential Φ [dimensionless; multiply by units::coulomb for eV].
+    /// @return Potential Φ [dimensionless; multiply by units::md_qqr2e for eV].
     AccReal evaluate(const Vec3& point) const;
 
   private:
