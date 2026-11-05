@@ -351,6 +351,10 @@ if(ATV_BUILD_SEMIEMPIRICAL)
     atv_add_cpp_test(test_cpu_rm1                 cpu/semiempirical/test_rm1.cpp)
     atv_add_cpp_test(test_cpu_nddo_derivative cpu/semiempirical/test_nddo_derivative.cpp)
     atv_add_cpp_test(test_cpu_nddo_driver_node    cpu/semiempirical/test_nddo_driver_node.cpp)
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_cpp_test(test_cpu_nddo_trial_reuse
+                         cpu/semiempirical/test_nddo_trial_reuse.cpp)
+    endif()
     atv_add_cpp_test(test_cpu_nddo_solver         cpu/semiempirical/test_nddo_solver.cpp)
     atv_add_cpp_test(test_cpu_nddo_geometry       cpu/semiempirical/test_nddo_geometry.cpp)
     atv_add_cpp_test(test_cpu_dftb2_sk            cpu/semiempirical/test_dftb2_sk.cpp)
@@ -1019,6 +1023,12 @@ if(ATV_BUILD_HF)
     # pinned in cpu/electronic/test_aspc_predictor.cpp.
     if(ATV_BUILD_MD)
         atv_add_cpp_test(test_cpu_scf_rhf_aspc_md cpu/scf/test_rhf_aspc_md.cpp)
+    endif()
+    # Minimizer line search keeps an SCF method's accepted trial instead of
+    # re-solving it (DriverNode::trial_invariant through the nested slot).
+    if(ATV_BUILD_MINIMIZER)
+        atv_add_cpp_test(test_cpu_scf_method_trial_reuse
+                         cpu/scf/test_method_trial_reuse.cpp)
     endif()
     # esmm-cpmd-04-ao-cpmd: AO Car-Parrinello on the mean-field methods —
     # the refusal lattice, the TimestepConsumer seam, ScfGradient::

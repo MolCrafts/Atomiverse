@@ -434,6 +434,7 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
         opts.nested = true;
         opts.apply_aspc =
             !(ctx.exec.initializing_forces || ctx.exec.trial_evaluation);
+        opts.warm_start = opts.apply_aspc;
         opts.forces = true; // CP nuclei need Born-Oppenheimer forces at t = 0
         opts.write_energy = true;
         opts.accumulate =
@@ -464,6 +465,10 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
     // Bypass both history-based guesses and all predictor/XL history writes.
     opts.apply_aspc =
         !(ctx.exec.initializing_forces || ctx.exec.trial_evaluation);
+    // A minimizer's line-search trial still warm-starts from (and leaves) the
+    // plain last density: it may become the committed evaluation
+    // (`trial_invariant`). MC trials and force preparation stay cold.
+    opts.warm_start = opts.apply_aspc || ctx.opt.line_search_trial;
     // The outer loop's per-phase force policy, ANDed down the Context by the
     // Runtime: an energy-only phase (MC's trial `energy`) skips the whole
     // gradient — for a QM method the dominant cost of the sweep.
@@ -575,13 +580,14 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
     const SCFInitialGuess* effective_guess = guess;
     bool predicted = false;
 
-    // Rung 1. `apply_aspc == false` is the corrector/fallback recursion, which
-    // already carries the guess this ladder resolved for it.
-    bool resolved = (guess != nullptr) || !opts.apply_aspc;
+    // Rung 1. An explicit guess wins. The history-based rungs 2-3 belong to
+    // the nuclear clock (`apply_aspc`); rung 4 is the plain warm start
+    // (`warm_start`), which line-search trials share with committed solves.
+    bool resolved = guess != nullptr;
 
     // Rung 2. Restricted / GHF carry one channel (the factor-2 total, resp.
     // spinor, density); UHF/UKS/ROHF/ROKS carry α and β.
-    if (!resolved && xl_alpha_ && xl_alpha_->ready()) {
+    if (!resolved && opts.apply_aspc && xl_alpha_ && xl_alpha_->ready()) {
         density_guess.P_alpha = xl_alpha_->aux();
         density_guess.P_beta = (xl_beta_ && xl_beta_->ready())
                                    ? xl_beta_->aux()
@@ -594,7 +600,8 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
 
     // Rung 3. Both channels are polled (predict has no side effect and the
     // pair is used or dropped together).
-    if (!resolved && use_predictor_ && aspc_alpha_ && aspc_beta_) {
+    if (!resolved && opts.apply_aspc && use_predictor_ && aspc_alpha_
+        && aspc_beta_) {
         xt::xtensor<double, 2> Pa_guess, Pb_guess;
         const bool have_alpha = aspc_alpha_->predict(Pa_guess);
         const bool have_beta = aspc_beta_->predict(Pb_guess);
@@ -610,7 +617,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
     }
 
     // Rung 4. The previous outer-step density (available with or without ASPC).
-    if (!resolved && has_last_density_) {
+    if (!resolved && opts.warm_start && has_last_density_) {
         density_guess.P_alpha = last_P_alpha_;
         density_guess.P_beta = last_P_beta_;
         density_guess.has_alpha = true;
@@ -724,7 +731,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
             aspc_beta_->record(P_beta);
         }
     }
-    if (opts.apply_aspc && this->converged()) {
+    if (opts.warm_start && this->converged()) {
         has_last_density_ = true;
         last_P_alpha_ = P_alpha;
         last_P_beta_ = P_beta;
@@ -1945,6 +1952,7 @@ void MeanFieldMethod<D>::evaluate(const cpu::LaunchContext& qm_ctx) {
     opts.nested = host != nullptr;
     opts.apply_aspc = !(qm_ctx.runtime.exec.initializing_forces
                         || qm_ctx.runtime.exec.trial_evaluation);
+    opts.warm_start = opts.apply_aspc || qm_ctx.runtime.opt.line_search_trial;
     opts.unwrap = true;
     // Standalone-style overwrite of energy/forces on the private QM frame
     // (couplings pre-zero the channels).
