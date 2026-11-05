@@ -1124,16 +1124,16 @@ if(ATV_BUILD_HF)
     atv_add_cpp_test(test_cpu_scf_kpoint_hf
                      cpu/scf/test_kpoint_hf.cpp)
     atv_add_cpp_test(test_cpu_scf_xc_cam_b3lyp_params cpu/scf/test_xc_cam_b3lyp_params.cpp)
-    # scf-review-06-scf-perf: fused one-sweep jk_rhf vs two-pass g_rhf+k
-    # (≤1e-12 Ha F gate, d-shell fixture) + coulomb_exchange_fused thread
-    # invariance. Mirrors cpu/scf/operators.cpp.
+    # coulomb_exchange_fused thread invariance. Mirrors cpu/scf/operators.cpp.
     atv_add_cpp_test(test_cpu_scf_operators     cpu/scf/test_operators.cpp)
     atv_add_cpp_test(test_cpu_scf_exact_jk      cpu/scf/test_exact_jk.cpp)
+    # Every HF/KS Fock branch through ExactJK vs literal J/K (fixed densities).
+    atv_add_cpp_test(test_cpu_scf_hamiltonian_builder cpu/scf/test_hamiltonian_builder.cpp)
     # hf-capability-gaps-12-df: def2-JKFIT table, g-shell 2c/3c integrals,
     # metric whitening, fitted J/K vs dense (single calls, no SCF).
     atv_add_cpp_test(test_density_fitting       cpu/scf/test_density_fitting.cpp)
     # hf-capability-gaps-21-cfmm: shell-pair distributions, near/far tables,
-    # single H2O/STO-3G j(P) vs dense direct J (no converged SCF).
+    # ExactJK J + far correction vs direct J on H2O/STO-3G (no SCF).
     atv_add_cpp_test(test_cfmm_j                cpu/scf/test_cfmm_j.cpp)
     atv_add_cpp_test(test_cpu_scf_primitives    cpu/scf/test_primitives.cpp)
     atv_add_cpp_test(test_cpu_scf_accelerators  cpu/scf/test_accelerators.cpp)

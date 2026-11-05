@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/internal/cfmm_j.h"
+#include "atomiverse/cpu/scf/internal/exact_jk.h"
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
@@ -137,13 +139,17 @@ TEST(CfmmJ, H2OSto3GMatchesDirectJ) {
         P(0, 1) = P(1, 0) = 0.1;
     }
 
-    ShellPairList sp(pack);
+    internal::ExactJK exact;
+    exact.prepare(pack.view(), /*memory_mb=*/0.0);
     RealMatrix J_direct;
-    sp.j(P, J_direct);
+    const internal::JKRequest request{&P, &J_direct};
+    exact.compute(std::span<const internal::JKRequest>(&request, 1));
 
+    // CFMM J = exact near-field baseline + far-pair multipole correction.
     internal::CfmmJ cfmm(pack.shells, /*order=*/10, /*threshold=*/1e-9);
     cfmm.prepare();
-    RealMatrix J_cfmm = cfmm.j(P);
+    RealMatrix J_cfmm = J_direct;
+    cfmm.apply_far_correction(P, J_cfmm);
 
     const double max_diff = max_abs_diff(J_cfmm, J_direct);
     EXPECT_LE(max_diff, 1e-8) << "max |J_CFMM - J_direct| = " << max_diff;

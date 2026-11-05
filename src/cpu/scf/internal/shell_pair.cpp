@@ -45,61 +45,6 @@ blocks_from_shells(const std::vector<native::Shell>& shells) {
     return blocks;
 }
 
-ShellPairList::ShellPairList(const internal::IntegralView& ints, double thr) {
-    const int n = ints.n_ao_cart(); // Cartesian engine dimension
-
-    ShellPairList spl;
-    spl.n_basis = n;
-    spl.threshold = thr;
-
-    // Copy backing storage and fix up shell pointers to own data.
-    // ints.shells[i].alpha/coeff point into method shell_data; after copy they
-    // must be redirected into spl.shell_data.
-    spl.shell_data = ints.shell_data;
-    spl.atoms = ints.atoms;
-    spl.shells.resize(n);
-    for (int i = 0; i < n; ++i) {
-        spl.shells[i] = ints.shells[i];
-        const int np = spl.shells[i].n_prim;
-        spl.shells[i].alpha = spl.shell_data[i].data();
-        spl.shells[i].coeff = spl.shell_data[i].data() + np;
-    }
-
-    // Compute Schwarz bounds Q_ij = sqrt((ij|ij)) and collect screened pairs.
-    //
-    // The scalar native::eri path uses McMurchie-Davidson with R_tab sized
-    // for l_max=1 (Ltot <= 4), so d-shells (Ltot up to 8) would read past
-    // the buffer. Any pair containing an l>=2 shell bypasses screening —
-    // we keep the pair unconditionally with schwarz=+inf. Downstream
-    // direct-SCF paths using this AO-level list (UHF/UKS today) lose some
-    // screening efficiency for d-containing systems; restricted-HF uses
-    // the Rys-backed ShellBlockPairList and is unaffected.
-    spl.pairs.reserve(static_cast<std::size_t>(n * (n + 1) / 2));
-    int n_screened = 0;
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j <= i; ++j) {
-            double schwarz;
-            if (spl.shells[i].l >= 2 || spl.shells[j].l >= 2) {
-                schwarz = std::numeric_limits<double>::infinity();
-            } else {
-                const double diag = native::eri(spl.shells[i], spl.shells[j],
-                                                spl.shells[i], spl.shells[j]);
-                schwarz = std::sqrt(std::max(0.0, diag));
-            }
-            if (schwarz > thr) {
-                spl.pairs.push_back({i, j, schwarz});
-            } else {
-                ++n_screened;
-            }
-        }
-    }
-
-    ATV_DEBUG("[shell_pair] built n_basis={} pairs={} screened={} thr={:.1e}",
-              n, spl.pairs.size(), n_screened, thr);
-
-    *this = std::move(spl);
-}
-
 ShellBlockPairList::ShellBlockPairList(const internal::IntegralView& ints,
                                        double thr) {
     const int n = ints.n_ao_cart(); // Cartesian engine dimension
