@@ -68,7 +68,7 @@ The 72³ result differs by 3.18e-6 Ha, below the unchanged 1e-3 Ha gate.
 
 ### Current CPU validation
 
-The [current native run](../../../tools/diagnostics/pw-xc-response/native-o2-validation.txt)
+The current native run
 converges the PBE triplet in 12 iterations and prints −57.46535257 Ry, M=2.
 Both registered O₂ sections pass their original energy, magnetization,
 activation and whole-section runtime gates. The density FFT and wavefunction

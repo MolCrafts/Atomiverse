@@ -38,7 +38,7 @@ __all__ = [
 
 INSTALL_HINT = (
     "The Atomiverse C++ extension (_atomiverse) is not installed.\n"
-    "Build it with an Atomiverse checkout and the merged molpy source:\n"
+    "Build it with an Atomiverse checkout and the local molpy checkout:\n"
     "  export ATV_MOLPY_PATH=/path/to/merged/molpy\n"
     "  pip install 'atomiverse[native]'\n"
     "  python -m atomiverse config md --src /path/to/Atomiverse\n"

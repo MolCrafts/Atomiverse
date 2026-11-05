@@ -23,9 +23,9 @@
 
 namespace nb = nanobind;
 
-/// @brief The runtime capsule name, after checking the linked molrs ABI.
+/// @brief The runtime capsule name, after checking the linked molpy ABI.
 ///
-/// Query molrs's own token for the name and compare its ABI line against the
+/// Query molpy's own token for the name and compare its ABI line against the
 /// molrs-ffi source selected by ATV_MOLPY_PATH at build time. Comparing only
 /// the capsule and runtime package would accept a different embedded layout.
 ///
@@ -62,7 +62,7 @@ inline const std::string& molpy_frameref_capsule_name() {
     return name;
 }
 
-/// @brief Borrow a molpy.Frame handle after validating the molrs ABI.
+/// @brief Borrow a molpy.Frame handle after validating the molpy ABI.
 /// @param frame_obj A Python molpy.Frame instance.
 /// @return A handle sharing the originating frame's store.
 /// @throws std::runtime_error on an ABI mismatch or malformed frame capsule.
@@ -82,8 +82,8 @@ inline ::rust::Box<molrs::FrameRef> borrow_molpy_frame(nb::object frame_obj) {
     void* ptr = PyCapsule_GetPointer(cap, expected.c_str());
     if (ptr == nullptr) {
         // PyCapsule_GetPointer set a Python error (wrong name / NULL). The
-        // name carries molrs's ABI line, so the usual cause is a frame
-        // produced by a different molrs minor than the one in this process.
+        // name carries molpy's ABI line, so the usual cause is a frame
+        // produced by a different molpy minor than the one in this process.
         PyErr_Clear();
         const char* actual = PyCapsule_GetName(cap);
         throw std::runtime_error(

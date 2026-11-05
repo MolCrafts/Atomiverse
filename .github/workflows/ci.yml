@@ -72,7 +72,7 @@ jobs:
           ref: dev
           path: molpy-source
 
-      - name: Select merged molpy source (unpinned dev)
+      - name: Select molpy source (unpinned dev)
         run: echo "ATV_MOLPY_PATH=$GITHUB_WORKSPACE/molpy-source" >> "$GITHUB_ENV"
 
       # Full optional slice on manual GHA (path gate is local pre-push).
@@ -152,7 +152,10 @@ jobs:
         env:
           BENCHMARK_TIER: ${{ inputs.hf_benchmark_tier }}
         run: |
+          # SCF methods only: forcefield.gaff needs SEMIEMPIRICAL and AmberTools.
           python -m benchmarks run --tier "$BENCHMARK_TIER" --threads 1 \
+            --method rhf --method uhf --method rohf --method ghf \
+            --method rks --method uks \
             --repeats 1 --warmup 0 --timeout 600 \
             --build-receipt build/hf-build-receipt.json --out build/hf-benchmark-results
       - name: Rebuild and validate the report after scientific failures

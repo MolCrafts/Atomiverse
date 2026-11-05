@@ -733,8 +733,8 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
     // The brick family is the multi-rank default. The old "mesh ≤ 64³ &&
     // ranks ≥ 16 → replicated" rule is deleted: it was falsified by the
-    // three-arm matrix in tools/bench_gaff_lammps/README.md (2026-08-26
-    // snapshot, 24048-atom MIL0PEGM18, 32³ mesh), where at np=64 the brick
+    // three-arm GAFF PEO timing matrix (2026-08-26, 24048-atom MIL0PEGM18,
+    // 32³ mesh; harness: benchmarks/compare/gaff-peo-lammps), where at np=64 the brick
     // arm spends 4.78 s in Kspace against 5.43 s replicated — the interval
     // the old rule sent to replicated. The same matrix shows np=256 with
     // the two arms tied (brick 9.85 s vs replicated 9.87 s) because 32

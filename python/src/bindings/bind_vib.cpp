@@ -80,7 +80,7 @@ std::span<const double> tensor_span(const xt::xtensor<double, Rank>& tensor) {
 }
 
 /// @brief One bound Hessian driver: the preset, its working frame, and the
-///        molrs write-back.
+///        molpy write-back.
 ///
 /// Declaration order matters. `work_` comes BEFORE `driver`: members are
 /// destroyed in reverse declaration order, and the driver's teardown path

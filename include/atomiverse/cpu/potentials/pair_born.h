@@ -19,7 +19,7 @@ namespace cpu {
 ///
 /// Frame `kAtom_type` values are used as-is and are never renumbered. In this
 /// tree that column carries the ATOMIC NUMBER — `cpu::from_molpy` fills it from
-/// the molrs `atomic_number` column — so a Na–Cl row is `{11, 17}` and an argon
+/// the molpy `atomic_number` column — so a Na–Cl row is `{11, 17}` and an argon
 /// dimer is `{18, 18}`, not a 0-based dense index. Symmetric table: (i,j) and
 /// (j,i) share the same parameters.
 struct BornTypeCoeff {

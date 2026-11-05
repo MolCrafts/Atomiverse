@@ -163,12 +163,6 @@ pyrightconfig.json
 *.cube
 *.png
 *.xyz
-# …except the checked-in benchmark starting geometries
-!benchmarks/qc/rhf/validation/molecules/*.xyz
-# …and the checked-in MSU-PE reference plots (Phase 5 acceptance artifacts)
-!benchmarks/md/reference/polyethylene/*.png
-# …and literature-facing tutorial results (docs embed these)
-!examples/results/**
 !docs/assets/structures/**
 
 
@@ -185,16 +179,10 @@ pyrightconfig.json
 build_*/
 build-*/
 
-# Debug / run artifacts for debug_amorphous LAMMPS-comparison harness
-tools/debug_amorphous/*.data
-tools/debug_amorphous/*.dat
-tools/debug_amorphous/restart.*
-tools/debug_amorphous/log.*
-
 # Ad-hoc SCF debug dumps
 tools/*.npy
 tools/dump_*.txt
-# LAMMPS run artifacts (regenerable — see benchmarks/.../SOURCES.md)
+# LAMMPS run artifacts (regenerable)
 log.lammps
 **/log.lammps
 jobs/
@@ -215,5 +203,6 @@ logs/
 # macOS Finder metadata
 .DS_Store
 
-# Retired molrs submodule checkout; merged molpy is selected via ATV_MOLPY_PATH.
-/molrs/
+
+# Benchmark output never lives in git (campaigns write under build/ or out of tree)
+benchmarks/**/results/

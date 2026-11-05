@@ -1,5 +1,5 @@
-#include "../../../examples/xc-extension/pins.h"
-#include "../../../examples/xc-extension/scaled_slater.h"
+#include "../../../examples/extensions/xc/pins.h"
+#include "../../../examples/extensions/xc/scaled_slater.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/methods.h"

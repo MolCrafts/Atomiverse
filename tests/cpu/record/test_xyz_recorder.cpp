@@ -67,7 +67,7 @@ cpu::Frame make_lj_frame() {
 
 // ── XYZ parse-back ──────────────────────────────────────────────────────
 
-/// @brief One parsed XYZ frame: `cpu::XYZ` emits the molrs extended-XYZ
+/// @brief One parsed XYZ frame: `cpu::XYZ` emits the molpy extended-XYZ
 ///        layout — count line, comment line (`Lattice=… <meta…> Properties=…`),
 ///        then one `species x y z` line per atom.
 struct XyzFrame {
@@ -224,7 +224,7 @@ TEST(XyzRecorderTest, FreshRecorderOnSamePathTruncatesInsteadOfAppending) {
 // One frame, parsed back through the extended-XYZ layout `cpu::XYZ` writes:
 // count line, comment line carrying the cell and the typed meta the recorder
 // stamps, then `symbol x y z` per atom. The meta ORDER inside the comment is
-// not asserted — molrs iterates a hash map, so only presence is stable.
+// not asserted — molpy iterates a hash map, so only presence is stable.
 TEST(XyzRecorderTest, WrittenFrameCarriesLatticeStepAndFiniteCoordinates) {
     const std::string path = fresh_tmp_path("atv_xyz_recorder_content.xyz");
 

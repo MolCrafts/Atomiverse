@@ -241,8 +241,7 @@ Default `Coulomb::Direct` is bit-identical to the historical path.
 | C₁₀H₂₂ STO-3G | \(\|E_{\mathrm{CFMM}}-E_{\mathrm{Direct}}\|\) | \(\le 10^{-7}\) Ha | regression `scf/rhf` section `c10h22_cfmm_j` |
 
 Small molecules at default thresholds may be all near-field (CFMM ≡ Direct
-numerically); timing gains appear only for larger systems
-(`benchmarks/scf/validation/cfmm_scaling/`).
+numerically); timing gains appear only for larger systems.
 
 ---
 

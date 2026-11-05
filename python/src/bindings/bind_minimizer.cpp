@@ -267,7 +267,7 @@ struct MinimizeHandle {
     /// `cpu::from_molpy` zero-fills an absent one, so past that point a
     /// forgotten charge column is indistinguishable from a deliberately
     /// neutral system — the optimization converges instantly on a Hamiltonian
-    /// with no electrostatics in it. The molrs Frame is the last place the
+    /// with no electrostatics in it. The molpy Frame is the last place the
     /// absence is visible, so the refusal happens here, with a how-to.
     ///
     /// Intentional zeros stay expressible: insert an explicit zero `charge`
@@ -280,7 +280,7 @@ struct MinimizeHandle {
     /// would refuse must still trip this guard on the serial path, which is
     /// the path that actually ran it.
     ///
-    /// @param frame Borrowed molrs Frame about to be optimized.
+    /// @param frame Borrowed molpy Frame about to be optimized.
     /// @throws std::runtime_error when a Coulomb evaluator is registered and
     ///         the frame's `atoms` block has no `charge` column.
     void require_charge_column(const molrs::FrameRef& frame) const {

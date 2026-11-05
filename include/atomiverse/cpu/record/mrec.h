@@ -1,9 +1,9 @@
 /// @file cpu/record/mrec.h
-/// @brief MrecWriter -- streaming `*.mrec` trajectory writer backed by molrs.
+/// @brief MrecWriter -- streaming `*.mrec` trajectory writer backed by molpy.
 ///
-/// *mrec* is molrs' scientific record store (a Zarr v3 tree under a `*.mrec/`
+/// *mrec* is molpy' scientific record store (a Zarr v3 tree under a `*.mrec/`
 /// path). This writer is the engine's trajectory output path: one writer per
-/// run, one `cpu::Frame` per `append`. molrs buffers the appended frames and
+/// run, one `cpu::Frame` per `append`. molpy buffers the appended frames and
 /// lands them whole chunks at a time; `flush()` is the checkpoint (every
 /// buffered frame is committed, durably when the writer was made `durable`)
 /// and `close()` ends the run. The first appended frame pins the schema — a
@@ -11,12 +11,12 @@
 /// that omits a block carries the previous content forward, so a producer
 /// writes static blocks once and only the changing ones afterwards.
 ///
-/// CUDA-safe: the molrs handles live behind a private implementation, so this
+/// CUDA-safe: the molpy handles live behind a private implementation, so this
 /// header pulls neither `rust/cxx.h` nor the generated bridge.
 ///
 /// @see cpu::MrecRecorder (cpu/record/mrec_recorder.h) for the MD Recorder.
 /// @see cpu::write_mrec_frame (cpu/io/frame_writer.h) for the single-frame
-///      checkpoint door; molrs `read_mrec_trajectory_frame` reads a frame of
+///      checkpoint door; molpy `read_mrec_trajectory_frame` reads a frame of
 ///      this trajectory back.
 #pragma once
 
@@ -29,14 +29,14 @@ namespace cpu {
 
 class Frame; // fwd -- CUDA-safe
 
-/// @brief Append `cpu::Frame`s to one `*.mrec` trajectory through molrs.
+/// @brief Append `cpu::Frame`s to one `*.mrec` trajectory through molpy.
 ///
 /// Each append exports the frame through the canonical exchange
 /// (`cpu::to_molpy`: positions, velocities, forces, charges, images, tags,
 /// box and every serializable meta entry) plus the two per-run inputs the
 /// exchange skips on purpose, `atomic_number` and `mass` — a trajectory is
 /// read by tools that never saw the input file, so species travel with it.
-/// molrs dedups a block whose bytes did not change, so re-sending the static
+/// molpy dedups a block whose bytes did not change, so re-sending the static
 /// columns costs a compare, not a write.
 ///
 /// The store is minted lazily on the first `append`; a store already standing
@@ -47,12 +47,12 @@ class Frame; // fwd -- CUDA-safe
 class MrecWriter {
   public:
     /// @brief Construct; nothing touches the filesystem until `append`.
-    /// @param path        Output store path. Must end in `.mrec` — molrs
+    /// @param path        Output store path. Must end in `.mrec` — molpy
     ///                    identifies a scientific record by that suffix and
     ///                    refuses the retired `.zarr` brand.
     /// @param flush_every Automatic landing cadence [frames]; every this many
-    ///                    appended frames molrs commits the buffer on its own.
-    ///                    `0` leaves the cadence to molrs (one inner chunk).
+    ///                    appended frames molpy commits the buffer on its own.
+    ///                    `0` leaves the cadence to molpy (one inner chunk).
     /// @param durable     `true` syncs the touched files on `flush()` /
     ///                    `close()` so a returned call means the frames
     ///                    survive a power loss; automatic landings never sync.
@@ -82,7 +82,7 @@ class MrecWriter {
     /// @param has_time Whether this run carries a time axis (fixed by the
     ///                 first append).
     /// @throws std::logic_error   after `close()`.
-    /// @throws std::runtime_error naming the path when molrs rejects the frame
+    /// @throws std::runtime_error naming the path when molpy rejects the frame
     ///         (non-increasing step, a block / column / meta key outside the
     ///         pinned schema, a dtype change) or the store cannot be written.
     void append(const Frame& frame, std::int64_t step, double time,

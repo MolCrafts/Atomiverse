@@ -2,8 +2,8 @@
 /// @brief Top-level nanobind module definition for _atomiverse.
 ///
 /// Atomiverse binds the driver / component API only — never a Frame data
-/// type. Simulation state crosses the boundary as a `molpy.Frame` (from the
-/// separate `molrs` extension); each `run()` borrows it via a PyCapsule.
+/// type. Simulation state crosses the boundary as a `molpy.Frame` (from
+/// molpy's own `molpy._core` extension); each `run()` borrows it via a PyCapsule.
 ///
 /// Per-domain init functions are compiled only when the matching
 /// ATV_BUILD_* product module is ON (see cmake/AtvProductModules.cmake).

@@ -22,7 +22,7 @@ The model has three stages:
 
 1. AM1 Mulliken charges at the input geometry. ATV AM1 is closed-shell RHF.
 2. Averaging over topologically equivalent atoms (antechamber `-eq 1`).
-3. Bond charge increments, looked up by BCC atom type and bond type and perceived from connectivity (molrs `BccModel`).
+3. Bond charge increments, looked up by BCC atom type and bond type and perceived from connectivity (molpy `BccModel`).
 
 ### Oracle run
 

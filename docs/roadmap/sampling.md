@@ -33,6 +33,6 @@ suite, not a PLUMED replacement. Legend: [Roadmap index](index.md).
 | ---------- | :-: | :--: | ----- |
 | Soft-core λ TI (`dU/dλ`) | ✓ | ○ | Primitive, not multi-window campaign |
 | FEP (same soft-core path) | ✓ | ○ | |
-| WHAM (multi-window) | ✓ | ○ | `cpu::Wham` over molrs |
+| WHAM (multi-window) | ○ | ○ | Needs a molpy WHAM solver; umbrella regression carries a smoke WHAM only |
 | Widom insertion | ✓ | ○ | Observer / snapshot estimator |
 | MBAR / absolute solvation / BAR campaigns | ○ | ○ | |

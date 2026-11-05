@@ -1,5 +1,5 @@
 /// @file tests/cpu/io/test_cpu_io_extxyz.cpp
-/// @brief Tests for cpu::load_extxyz -- (ext)XYZ loading through molrs.
+/// @brief Tests for cpu::load_extxyz -- (ext)XYZ loading through molpy.
 ///
 /// Small deterministic inline fixtures only (no external file dependency):
 /// correct atom count / box from the Lattice= header / per-atom type = Z, and

@@ -1,7 +1,8 @@
 # CPU MD execution — mechanism and LAMMPS mapping
 
 Binding summary: docs/developer/project-contract.md › CPU MD execution. This note holds the mechanism
-and which LAMMPS source each piece follows. Numbers: `benchmarks/lj/README.md`.
+and which LAMMPS source each piece follows. Harness: `benchmarks/compare/lj-lammps` (numbers are
+not kept in git; rerun it).
 
 ## Rebuild boundary and cadence
 

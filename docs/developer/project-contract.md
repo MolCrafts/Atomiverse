@@ -41,7 +41,8 @@ so parallel machinery is **ported from LAMMPS, not independently derived**.
 | `include/atomiverse/` + `src/` | Mirrored header/impl trees |
 | `tests/` | Unit tests only |
 | `regressions/` | Archived scientific cases and oracle records; no runner |
-| `benchmarks/` | Standing performance benchmarks; never registered with ctest |
+| `benchmarks/` | Scientific benchmark framework (`python -m benchmarks`), native perf harnesses (`perf/`), cross-code comparisons (`compare/`); never registered with ctest; no results in git |
+| `examples/` | API examples by audience: `cpp/` (numbered), `python/`, `cli/`, `extensions/`; compiled by the unit gate, never run by it |
 | `docs/` | The manual. `docs/roadmap/` is the **only** place that states what is implemented on which backend |
 | `.claude/notes/` | Passive project knowledge (current understanding only) |
 | `.claude/specs/` | Live specs; deleted at `done` |
@@ -58,7 +59,7 @@ bash -lc '
   export OPENBLAS_ROOT="$OPENBLASDIR"             # module sets OPENBLASDIR only
   export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu   # default is wrongly aarch64
   export LD_LIBRARY_PATH="$LIBRARY_PATH:$LD_LIBRARY_PATH"   # module sets link path only
-  export ATV_MOLPY_PATH="$(pwd)/../molrs"       # merged local molpy checkout
+  export ATV_MOLPY_PATH="$(pwd)/../molpy"       # local MolCrafts/molpy checkout
   cmake -B build -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
         -DCMAKE_BUILD_TYPE=Release -DATV_BUILD_TESTS=ON \
         -DATV_BUILD_HF=ON -DATV_BUILD_PW=ON -DATV_BUILD_CUDA=OFF -DBLA_VENDOR=OpenBLAS
@@ -78,9 +79,9 @@ bash -lc '
   `#!/bin/bash -l`, loads `GPU/buildenv-gcccuda/2026.03-cu13.0`, and keeps the
   default aarch64 Rust. `tools/gpu_job.sh` / `tools/cpu_job.sh` are
   parameterised templates, not one script per slug. Never pipe `module load`.
-- **molpy** is consumed from the merged local checkout via `ATV_MOLPY_PATH`
-  (default `../molrs`). Use its `molcxx/` bridge and `molpy/` wheel together;
-  no revision pin is imposed during migration.
+- **molpy** is consumed from the local MolCrafts/molpy checkout via
+  `ATV_MOLPY_PATH` (default `../molpy`). Use its `molcxx/` bridge and `molpy/`
+  wheel together; no revision pin is imposed.
 - Source transport into a reused build tree must invalidate changed files;
   do not preserve older timestamps over newer compiled objects. After class
   layout changes, rebuild every consuming translation unit, including tests
@@ -199,9 +200,9 @@ Integral state is **private fields** on the concrete method (`ints_S_`,
 - Dependencies live in the module DAG (`atv_force_on`). Work on one domain with
   its closure only (e.g. SE-only: `SEMIEMPIRICAL` + `EVALUATE` ON; everything
   else, CUDA included, OFF).
-- molrs is **derived**: products force `ATV_BUILD_MOLPY=ON`, never the inverse
-  (`FATAL_ERROR "X requires MOLRS"` is banned). A slice needing a specific molrs
-  pin (WHAM ⇒ `ATV_MOLPY_HAS_WHAM`) gates sources on it.
+- molpy is **derived**: products force `ATV_BUILD_MOLPY=ON`, never the inverse
+  (`FATAL_ERROR "X requires MOLPY"` is banned). Every bridge surface Atomiverse
+  uses is required of the molpy checkout; no capability probe gates sources.
 
 ### 9. No silent debt
 
@@ -280,7 +281,7 @@ feature lives in the same directory on every backend.
 
 ### Box and decomposition
 
-- **Box** stores lattice vectors in columns (`r = H s`, molrs/LAMMPS H) on both
+- **Box** stores lattice vectors in columns (`r = H s`, molpy/LAMMPS H) on both
   backends; CellList, comm, PW, Ewald/PME/PPPM, DFTB lattice sums and
   vibrational supercells use that convention.
 - CPU Box: inverse/face-height/reduced-lattice caches, exact general-skew
@@ -549,12 +550,12 @@ Boundary vocabulary: typed **blocks**, exact-dtype **meta**, **box**.
   transfer in low-level operators; CUDA stays on device between explicit
   transfers.
 
-### molrs integration
+### molpy integration
 
-The engine *measures*; molrs *analyzes and stores*. Bridges are raw-array FFI
+The engine *measures*; molpy *analyzes and stores*. Bridges are raw-array FFI
 wrappers (`cpu/io/frame_writer.h`, `cpu/observe/trajectory_metrics.h` PIMPL),
 no `rust/cxx.h` in public headers. **No analysis math in C++ on either
-backend**; RDF observers stream positions + cell into the molrs accumulator;
+backend**; RDF observers stream positions + cell into the molpy accumulator;
 the one g(r) emitter is `cpu::rdf_write_curve`.
 
 ### Ghost data is a lifetime contract, not a wire
@@ -714,7 +715,7 @@ unnecessary splitting, transfers, intermediate storage or duplicate primitives.
   and sampling cadence; do not normalize by the large binding energy or treat
   short-trajectory convergence as long-time stability. Frame and borrowed
   methods must outlive the Driver that uses them, including test teardown.
-- Performance harnesses live in `benchmarks/semiempirical/`, outside CTest.
+- Performance harnesses live in `benchmarks/perf/semiempirical/`, outside CTest.
   Report complete-call boundaries, cold/warm state, SCF controls/iterations,
   thread count and observed allocation/transfer/memory costs. A matrix-storage
   estimate or source inspection does not establish device residency.

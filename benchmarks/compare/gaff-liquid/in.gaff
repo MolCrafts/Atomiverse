@@ -1,0 +1,79 @@
+# General-GAFF benchmark deck (LAMMPS side of benchmarks/compare/gaff-liquid).
+#
+# Same physics as run_openmm.py and run_atv_gaff:
+#   lj/cut/coul/long, no shift, no tail, special_bonds amber (from system.ff),
+#   mix arithmetic, explicit PPPM mesh / order / g_ewald, neighbor skin 2.0.
+#
+# mode = sp : single point -> thermo components + forces.dump
+# mode = md : NVT Nose-Hoover (tchain 1, as ATV's single-chain NoseHoover and
+#             OpenMM chain 1), optional X-H RATTLE, timed run
+#
+# ensemble = nvt (timing) | nve (gate G2, energy drift; thermo etotal)
+#
+# lmp -in in.gaff -var data system.data -var ff system.ff -var mode md ...
+
+variable data   index system.data
+variable ff     index system.ff
+variable mode   index sp
+variable cut    index 9.0
+variable gewald index 0.35
+variable meshx  index 64
+variable meshy  index 64
+variable meshz  index 64
+variable order  index 5
+variable diff   index ad
+variable kstyle index pppm
+variable dt     index 2.0
+variable shake  index yes
+variable temp   index 300.0
+variable warmup index 200
+variable steps  index 5000
+variable thermo index 1000
+variable seed   index 20261020
+variable ensemble index nvt
+
+units           real
+atom_style      full
+boundary        p p p
+read_data       ${data}
+
+pair_style      lj/cut/coul/long ${cut}
+include         ${ff}
+pair_modify     shift no tail no
+# kstyle = ewald gives the tight reference the gate compares PPPM/PME to.
+if "${kstyle} == ewald" then &
+  "kspace_style ewald 1.0e-10" &
+  "kspace_modify gewald ${gewald}" &
+else &
+  "kspace_style pppm 1.0e-5" &
+  "kspace_modify mesh ${meshx} ${meshy} ${meshz} order ${order} gewald ${gewald} diff ${diff}"
+
+neighbor        2.0 bin
+neigh_modify    delay 0 every 1 check yes
+
+thermo_style    custom step temp pe ke etotal press ebond eangle edihed eimp evdwl ecoul elong
+thermo_modify   flush yes format float %22.14e
+
+if "${mode} == sp" then "jump SELF single_point" else "jump SELF dynamics"
+
+label single_point
+run             0
+write_dump      all custom forces.dump id fx fy fz modify sort id format float %22.14e
+print           "SP_DONE"
+quit
+
+label dynamics
+velocity        all create ${temp} ${seed} dist gaussian mom yes rot no
+if "${ensemble} == nve" then "fix ens all nve" else &
+   "fix ens all nvt temp ${temp} ${temp} 100.0 tchain 1"
+# X-H constraints as RATTLE (SHAKE positions + velocity stage): the algorithm
+# Atomiverse's FixRattle and OpenMM's integrators run. Plain `fix shake` has
+# no velocity stage, so timing it against them compares unequal work.
+# LAMMPS wants fix rattle defined last.
+if "${shake} == yes" then "fix shk all rattle 1.0e-5 100 0 m 1.008"
+timestep        ${dt}
+thermo          ${thermo}
+run             ${warmup}
+timer           full
+run             ${steps}
+print           "BENCH_DONE"

@@ -45,7 +45,7 @@ namespace cuda {
 /// @brief Cell matrix, cached inverse and orthorhombic scalars in precision T.
 ///
 /// Row-major 3×3 storage matching `triclinic.cuh`. Lattice vectors are the
-/// cell **columns** (molrs/LAMMPS H, upper triangular for tilted cells):
+/// cell **columns** (molpy/LAMMPS H, upper triangular for tilted cells):
 /// r = cell · s, fractional s = inv_cell · r.
 template <typename T>
 struct BoxGeometry {

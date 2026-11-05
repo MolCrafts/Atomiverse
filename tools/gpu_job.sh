@@ -35,7 +35,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
-: "${ATV_MOLPY_PATH:=$PWD/../molrs}"
+: "${ATV_MOLPY_PATH:=$PWD/../molpy}"
 export ATV_MOLPY_PATH
 
 module load GPU/buildenv-gcccuda/2026.03-cu13.0

@@ -64,7 +64,7 @@ class TestMolpyInterop:
         assert np.isfinite(energy)
 
 
-def test_molrs_abi_mismatch_rejected_before_capsule_access() -> None:
+def test_molpy_abi_mismatch_rejected_before_capsule_access() -> None:
     # A fresh interpreter exercises the first, cached ABI handshake even if
     # earlier tests already borrowed a frame. No simulation is run.
     result = subprocess.run(
@@ -90,7 +90,7 @@ def test_molrs_abi_mismatch_rejected_before_capsule_access() -> None:
                 assert "999.0" in str(exc), str(exc)
                 assert "linked" in str(exc), str(exc)
             else:
-                raise AssertionError("mismatched molrs ABI was accepted")
+                raise AssertionError("mismatched molpy ABI was accepted")
             """),
         ],
         capture_output=True,

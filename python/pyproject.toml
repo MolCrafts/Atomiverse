@@ -16,8 +16,8 @@ readme = "README.md"
 license = "GPL-2.0-only"
 # molcrafts-molpy (the Frame currency) requires >=3.12.
 requires-python = ">=3.12"
-# The local merged molpy wheel and CXX bridge must come from the same tree.
-# No molpy release version is pinned during the repository migration.
+# The local molpy wheel and CXX bridge must come from the same tree.
+# No molpy release version is pinned.
 dependencies = ["numpy", "molcrafts-molpy", "typer>=0.12"]
 
 [project.optional-dependencies]
@@ -29,15 +29,11 @@ dev      = ["pytest", "pytest-cov", "numpy"]
 native   = ["nanobind>=2.4", "scikit-build-core>=0.10", "maturin>=1.0,<2.0"]
 # Docs: only the theme (+ zensical). MolVis and MolPlot fences both live in
 # molcrafts-zensical-theme; browser bundles load from the npm CDN in
-# zensical.toml. Do NOT add molcrafts-molplot here — that is for paper
-# charting in the `examples` extra, not for documentation builds.
+# zensical.toml. Do NOT add molcrafts-molplot here.
 docs     = [
   "zensical>=0.0.45",
   "molcrafts-zensical-theme>=0.2.3",
 ]
-# Python examples (pw_qe_compare, …): paper plots via molplot; systems via the
-# core molpy dependency. Do not add matplotlib or ASE here — MolCrafts stack only.
-examples = ["molcrafts-molplot>=0.1.2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

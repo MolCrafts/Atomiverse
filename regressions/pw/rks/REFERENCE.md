@@ -95,8 +95,7 @@ Frame energy must match \(E_\mathrm{Ry} \times 13.605693\) eV within \(10^{-4}\)
 
 CP2K Quickstep bulk-Si decks use **GTH-PADE + DZVP-GTH** (different PP and
 discretization). Absolute total energies are **not** comparable to ONCV
-plane-wave; EOS (\(a_0\), \(B_0\)) is the fair CP2K science comparison (see
-historical `benchmarks/pw` docs). An optional twin input skeleton lives under
+plane-wave; EOS (\(a_0\), \(B_0\)) is the fair CP2K science comparison. An optional twin input skeleton lives under
 `tools/cp2k_oracle/inputs/si_lda_pw_note.inp` for offline wall timing only.
 
 ### Performance

@@ -1,7 +1,7 @@
 """Source resolution for the native build.
 
 The native extension is built from a local Atomiverse **checkout** (git clone
-with a local merged molpy checkout); there is no remote-source path. The checkout's
+with a local molpy checkout); there is no remote-source path. The checkout's
 version (``__version__`` in ``python/src/atomiverse/__init__.py``) must equal
 the installed package version, so a native build never silently swaps the
 release the user installed for a different tree.
@@ -86,7 +86,7 @@ def resolve_source(src: str, *, version: Optional[str] = None) -> SourceSpec:
     @param version: Override the expected version (tests only; production
         uses :func:`package_version`).
     @return :class:`SourceSpec` for the checkout.
-    @raises ConfigError: if *src* is not a checkout, lacks the merged molpy
+    @raises ConfigError: if *src* is not a checkout, lacks the molpy
         checkout, or its version differs from the installed one.
     """
     path = Path(src).expanduser().resolve()
@@ -115,12 +115,12 @@ def resolve_source(src: str, *, version: Optional[str] = None) -> SourceSpec:
 
 
 def molpy_source_root(source_root: Path) -> Path:
-    """Locate the merged local molpy checkout shared by CXX and Python builds."""
-    root = Path(os.environ.get("ATV_MOLPY_PATH", str(source_root.parent / "molrs"))).expanduser().resolve()
+    """Locate the local molpy checkout shared by CXX and Python builds."""
+    root = Path(os.environ.get("ATV_MOLPY_PATH", str(source_root.parent / "molpy"))).expanduser().resolve()
     for relative in ("molcxx/Cargo.toml", "molpy/pyproject.toml", "crates/molrs-ffi/Cargo.toml"):
         if not (root / relative).is_file():
             raise ConfigError(
-                f"merged molpy checkout missing {relative} under {root}; "
+                f"molpy checkout missing {relative} under {root}; "
                 "set ATV_MOLPY_PATH to the local MolCrafts/molpy repository"
             )
     return root

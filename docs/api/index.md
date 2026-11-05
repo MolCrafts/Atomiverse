@@ -97,7 +97,7 @@ grids and analytic nuclear forces. The checked `evaluate` entry validates
 shapes and complete finite outputs; providers override `evaluate_batch`.
 Energy output is per volume (Ha/Bohr³), with spin-resolved first derivatives.
 
-The [independent consumer example](https://github.com/MolCrafts/Atomiverse/tree/dev/examples/xc-extension)
+The [independent consumer example](https://github.com/MolCrafts/Atomiverse/tree/dev/examples/extensions/xc)
 uses only installed headers and `find_package(Atomiverse CONFIG REQUIRED
 COMPONENTS HF EVALUATE)`. Rho/sigma are supported for CPU molecular KS;
 tau/Laplacian, custom hybrid operators, second-order response kernels and CUDA
@@ -135,15 +135,15 @@ are supported; MP2 forces are unavailable. Mutable calls publish the
 correlated total in the Frame [eV] and return spin channels and energies
 [Hartree]. The extra correlation scratch budget defaults to 512 MiB,
 excluding HF and library contexts. See the [CUDA MP2 example](../tutorial/methods/scf-mp2.md#cuda-closed-shell-mp2)
-and [GH200 validation](../../benchmarks/cuda/mp2-validation.md).
+and the `benchmarks/perf/scf/bench_mp2_cpu_vs_cuda.cu` harness.
 
 ### Record output and analyze results
 
 Start with these types:
 
 - [`cpu::Thermo`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/thermo.h)
-- [`cpu::write_xyz_frame` / `cpu::write_mrec_frame` (molrs-backed single-frame writers; the latter writes a `*.mrec` checkpoint)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/io/frame_writer.h)
-- [`cpu::MrecRecorder` (streaming `*.mrec` MD trajectory Recorder — `set_record`, step stride, `time` axis from the integrator; needs the molrs 0.16 `MrecWriter` bridge)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec_recorder.h)
+- [`cpu::write_xyz_frame` / `cpu::write_mrec_frame` (molpy-backed single-frame writers; the latter writes a `*.mrec` checkpoint)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/io/frame_writer.h)
+- [`cpu::MrecRecorder` (streaming `*.mrec` MD trajectory Recorder — `set_record`, step stride, `time` axis from the integrator; needs molpy's `MrecWriter` bridge)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec_recorder.h)
 - [`cpu::MrecWriter` (bare streaming writer beneath the Recorder)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec.h)
 - [`ATV::RDF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/rdf.h)
 - [trajectory analysis (`cpu::compute::*` streaming accumulators — push frame by frame, no batch form)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/trajectory_metrics.h)

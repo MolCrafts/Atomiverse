@@ -141,7 +141,7 @@ class MD : public Driver<ATV::md::Phase> {
         return iterations;
     }
 
-    /// @brief User-facing entry — advance the system stored in a molrs.Frame.
+    /// @brief User-facing entry — advance the system stored in a molpy.Frame.
     ///
     /// Each call to this overload materializes a fresh `cpu::Frame`, so consecutive
     /// `run(molrs::FrameRef&, …)` calls are independent simulations (no trajectory
@@ -161,7 +161,7 @@ class MD : public Driver<ATV::md::Phase> {
     /// is skipped when the owned count changed or the tags are not a unique
     /// permutation of the import snapshot.
     ///
-    /// @param frame molrs.Frame handle (input geometry + output sink).
+    /// @param frame molpy.Frame handle (input geometry + output sink).
     /// @param n_steps Step budget.
     /// @return Number of iterations actually executed.
 #ifdef ATV_HAS_MOLPY

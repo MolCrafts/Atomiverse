@@ -12,7 +12,7 @@ namespace ATV {
 namespace cuda {
 
 Frame from_molpy(const molrs::FrameRef& src) {
-    // Reuse the cpu materializer for the molrs block/column contract, then
+    // Reuse the cpu materializer for the molpy block/column contract, then
     // transfer the host frame to the device with an explicit H2D copy.
     cpu::Frame host = cpu::from_molpy(src);
     return cpu::to_cuda(host);

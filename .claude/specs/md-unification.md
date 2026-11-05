@@ -32,9 +32,9 @@ plan below; do not report it complete until every item is done.
    revisions, execution exclusion, targeted cache/history invalidation (also
    closes CUDA's missing host-edit invalidation between chunks).
 2. Move all classical model parameters and evolving biases into typed Frame
-   blocks/meta, including C++/Python/tasks/molrs/MPI/device transfer call sites.
+   blocks/meta, including C++/Python/tasks/molpy/MPI/device transfer call sites.
 3. Driver-lifetime trajectories independent of Frame object address; fix the
-   molrs transient-frame lifecycle; unify setup / segment epilogue / defaults /
+   molpy transient-frame lifecycle; unify setup / segment epilogue / defaults /
    protocols.
 4. (Single-GPU MD part tracked in
    [cuda-md-device-control.md](cuda-md-device-control.md).)

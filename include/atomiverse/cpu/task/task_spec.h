@@ -146,7 +146,7 @@ inline bool operator==(const ThermoParams& a, const ThermoParams& b) {
 /// @brief Wire mirror of `cpu::XyzRecorder(filename, freq)` — the MD
 ///        trajectory sink.
 ///
-/// The recorder itself needs `ATV_BUILD_IO` (its writer goes through molrs),
+/// The recorder itself needs `ATV_BUILD_IO` (its writer goes through molpy),
 /// but this mirror does not: the wire layer is always compiled, so a payload
 /// naming the recorder stays decodable on a build without the writer and is
 /// refused with a how-to when `TaskMaterializer` tries to construct it —

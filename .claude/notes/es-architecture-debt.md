@@ -100,8 +100,8 @@ the semiempirical track and were not revalidated by this DFT census.
   16 fixed/FD model cases, four physical nested branches and the existing
   QE Si₂ energy/full-force gate on GH200 allocation 4522779.
 - `es-cuda-es-tests-e2e`: three complete-SCF stress cases moved unchanged
-  to opt-in `pw-cell-stress-baselines`, outside CTest, and all three native
-  cases pass. Other unit files are not certified by this targeted migration.
+  out of CTest into an opt-in baseline harness (since removed), and all three
+  native cases passed. Other unit files are not certified by this targeted migration.
 - `es-gpw-ot-freeloop`: all six CPU OT outer paths and Γ-RKS polish now
   share the existing typed Driver iteration loop. Internal line searches and
   bounded fixed-H optimizers remain numerical kernels. Total nested budgets,
@@ -116,8 +116,7 @@ the semiempirical track and were not revalidated by this DFT census.
   The CPU fix passes 39 units and 16 fixed/FD public cases with actual stage
   measurements; the frozen old CPU archive fails eight lifecycle probes.
   Final NVCC targets, 29 host guards and the scoped post-refactor GH200
-  nested, lifecycle, thermal and existing QE checks pass (allocation 4522779);
-  see [scoped evidence](../../tools/diagnostics/pbe-family/results/2026-10-27-pw-driver/README.md).
+  nested, lifecycle, thermal and existing QE checks pass (allocation 4522779).
 - `PWEvaluator` is deleted. `src/cpu/planewave/pw_solver.cpp:1070`
   (`PW::run_nested_erased`) calls `evaluate_`, which runs SCF once and passes
   the resulting state into force/stress assembly. The old three-SCF evaluator

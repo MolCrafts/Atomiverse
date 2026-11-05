@@ -133,7 +133,7 @@ void bind_potentials(nb::module_& m) {
         "Fumi-Tosi short-range half of a molten-salt model. Add the Coulomb "
         "term as a separate evaluator.\n\n"
         "The table is per TYPE PAIR and the keys are ATOMIC NUMBERS: the "
-        "frame's per-atom type column is filled from the molrs "
+        "frame's per-atom type column is filled from the molpy "
         "`atomic_number` column, so a sodium-chloride row is type_i=11, "
         "type_j=17 and an argon dimer is 18, 18 — not a 0-based index.\n\n"
         "Every interacting pair must be listed, and the table is symmetric in "

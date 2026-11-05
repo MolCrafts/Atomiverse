@@ -1,2 +1,0 @@
-1b5a98d8e4d9d50a3a269c92d6bd8fd6ba7dd7e043bf34eac55b25da8070e0cc  /nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-20261026/cuda/build/bin/cuda-pw-public
-6e1eb413ef20b58cb06dcbad65d0b7b49492559278f03ab335326c2edb30b307  /nobackup/proj/disk/teoroo/personal/jicli594/work/molcrafts/Atomiverse/.claude/campaigns/dft-gap-20261026/cuda/build/libatomiverse.a

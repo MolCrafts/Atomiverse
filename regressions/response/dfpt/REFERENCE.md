@@ -919,8 +919,8 @@ including complex off-diagonal phases and unprojected asymmetry, without SCF.
 CPU validation on 2026-10-25 passed all 1785 units and all 15 DFPT
 sections. This complete section took 12.50 s at the declared one thread;
 Re C00(X) was 19.46231972 and the q-pattern curvature was 19.45278291 eV/Å².
-These are observed native checks, not replacement oracle pins. Raw output and
-source hashes: [XC/response validation](../../../tools/diagnostics/pw-xc-response/README.md).
+These are observed native checks (2026-10-26 XC/response validation run),
+not replacement oracle pins.
 The existing external CP2K reference process wall was 288.7 s.
 It is retained as historical provenance, not a refreshed fair timing ratio.
 
@@ -1193,8 +1193,8 @@ including complex off-diagonal phases and unprojected asymmetry, without SCF.
 CPU validation on 2026-10-25 passed all 1785 units and all 15 DFPT
 sections. This complete section took 33.31 s at the declared one thread;
 Re C00(X) was 19.45605115 and the q-pattern curvature was 19.45278288 eV/Å².
-These are observed native checks, not replacement oracle pins. Raw output and
-source hashes: [XC/response validation](../../../tools/diagnostics/pw-xc-response/README.md).
+These are observed native checks (2026-10-26 XC/response validation run),
+not replacement oracle pins.
 The existing external CP2K reference process wall was 577.8 s.
 It is retained as historical provenance, not a refreshed fair timing ratio.
 
@@ -1320,7 +1320,7 @@ including complex off-diagonal phases and unprojected asymmetry, without SCF.
 CPU validation on 2026-10-25 passed all 1785 units and all 15 DFPT
 sections. This complete section took 32.58 s at the declared one thread;
 Re C00(X) was 19.45605115 and the q-pattern curvature was 19.45278288 eV/Å².
-These are observed native checks, not replacement oracle pins. Raw output and
-source hashes: [XC/response validation](../../../tools/diagnostics/pw-xc-response/README.md).
+These are observed native checks (2026-10-26 XC/response validation run),
+not replacement oracle pins.
 The existing external CP2K reference process wall was 585.9 s.
 It is retained as historical provenance, not a refreshed fair timing ratio.

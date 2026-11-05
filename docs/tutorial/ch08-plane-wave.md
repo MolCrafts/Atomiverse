@@ -240,7 +240,7 @@ For a file-free silicon calculation, pass
 For different scalar NC physics, derive `NormConservingPotential` and supply
 immutable radial tables plus the batched local value/derivative operation.
 PW owns all transforms, force contractions and electronic iteration. The
-[independent installed project](../../examples/nc-extension/README.md)
+[independent installed project](../../examples/extensions/nc/README.md)
 demonstrates that extension without a new Driver or a copied solver.
 
 ## Implementation outline

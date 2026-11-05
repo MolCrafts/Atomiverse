@@ -1,7 +1,7 @@
 # CUDA GAFF / OpenMM performance methodology
 
-Harness: `tools/bench_gaff_openmm/`, public consumer
-`benchmarks/cuda/bench_gaff.cu`. Run only in an Arrhenius GPU batch
+Harness: `benchmarks/compare/gaff-peo-openmm/`, public consumer
+`benchmarks/perf/md/bench_gaff.cu`. Run only in an Arrhenius GPU batch
 allocation; ten-second deadline per engine process; three short samples,
 report the median. Build, installation and the instrumented profile are
 excluded from throughput.

@@ -134,19 +134,15 @@ why both layers exist.
 
 @section examples Example Programs
 
-Representative entry points:
+Representative entry points (full index in `examples/README.md`):
 
-- `examples/01_scf.cpp` -- explicit SCF introduction example
-- `examples/02_rhf.cpp` -- CPU RHF tutorial example
-- `examples/02_rhf.cu` -- CUDA translation of the same RHF lesson
-- `examples/03_uhf.cpp` -- UHF bond breaking and spin contamination
-- `examples/04_uks.cpp` -- UKS / LSDA examples
-- `examples/05_geom_opt.cpp` -- L-BFGS aspirin geometry optimization
-- `examples/06_aimd.cpp` -- ab initio molecular dynamics on H2 (NVT)
-- `examples/07_md_lj.cpp` -- classical Lennard-Jones MD (CPU, argon)
-- `examples/07_md_lj.cu` -- CUDA twin of the same classical-MD lesson
-- `examples/08_pw.cpp` -- plane-wave DFT for a periodic solid
-- `examples/09_gpw.cpp` -- GPW DFT single point (water)
+- `examples/cpp/01_rhf.cpp` -- RHF single point on H2: a method object and the Frame
+- `examples/cpp/02_open_shell.cpp` -- UHF and UKS-LSDA on the hydrogen atom
+- `examples/cpp/06_geometry_optimization.cpp` -- L-BFGS aspirin geometry optimization
+- `examples/cpp/07_aimd.cpp` -- ab initio molecular dynamics on H2 (NVT)
+- `examples/cpp/08_md_lj.cpp` -- classical Lennard-Jones MD (argon)
+- `examples/cpp/09_pw.cpp` -- plane-wave DFT for a periodic solid
+- `examples/cpp/10_gpw.cpp` -- GPW DFT single point (water)
 
 @section docsbuild Building The Docs
 

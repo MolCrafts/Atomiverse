@@ -96,7 +96,7 @@ TEST(TestRysEriErf, OffCenterValueAndDerivativeVsPyscf) {
     // PySCF 2.14.0 / libcint, four normalized s primitives (alpha=1),
     // mol.with_range_coulomb(0.33); negative int2e_ip1_cart is the nuclear
     // derivative on A. Reproduce with
-    // tools/diagnostics/molecular-dft/pin_erf.py (full output retained there).
+    // tools/pyscf_oracle/pin_erf.py (prints the full record).
     const double alpha = 1.0, coeff = native::phys_norm(alpha);
     const double xyz[4][3] = {
         {0.1, -0.2, 0.3}, {0.8, 0.1, -0.4}, {-0.2, 0.6, 0.5}, {0.3, -0.5, 0.9}};
@@ -136,7 +136,7 @@ TEST(TestRysEriErf, NuclearDerivativesAllCentersAndShellSwaps) {
     // Independent finite differences of the value kernel exercise both
     // canonicalization swaps, angular raising/lowering, all nuclear centers
     // and contracted primitives. Molecular CAM-B3LYP oracle checks live in
-    // tools/diagnostics/molecular-dft rather than this integral unit test.
+    // regressions/scf/rks and benchmarks/scf rather than this integral unit test.
     const double alpha[2] = {0.4, 1.2}, coeff[2] = {0.7, 0.3};
     const double xyz[4][3] = {
         {0.1, -0.2, 0.3}, {0.8, 0.1, -0.4}, {-0.2, 0.6, 0.5}, {0.3, -0.5, 0.9}};

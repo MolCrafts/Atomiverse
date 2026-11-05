@@ -36,7 +36,7 @@ namespace cpu {
 /// @brief Append the current geometry to an XYZ trajectory every `freq` steps.
 ///
 /// The first launched write truncates any pre-existing file; every later
-/// write of the same recorder appends one frame through molrs. A freshly
+/// write of the same recorder appends one frame through molpy. A freshly
 /// constructed recorder therefore always starts its own trajectory rather
 /// than extending a previous run's.
 ///
@@ -49,7 +49,7 @@ namespace cpu {
 /// 2 frames (steps 0 and 5), never 3.
 ///
 /// Each atom's element symbol comes from its `kAtom_type` value, which the
-/// underlying writer hands to molrs as an **atomic number Z** (type 18 is
+/// underlying writer hands to molpy as an **atomic number Z** (type 18 is
 /// written as `Ar`). A frame typed with LAMMPS-style 1..N type indices
 /// therefore names the elements of those Z values, not the intended species.
 ///
@@ -94,7 +94,7 @@ class XyzRecorder : public cpu::Recorder {
   private:
     std::string filename_;
     int freq_;
-    XYZ writer_;             ///< molrs-backed writer (reused every launch)
+    XYZ writer_;             ///< molpy-backed writer (reused every launch)
     cpu::Frame gathered_{0}; ///< multi-rank gather scratch (rank 0 only)
     int n_written_ = 0;
     bool truncated_ = false;

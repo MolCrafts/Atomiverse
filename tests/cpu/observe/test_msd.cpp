@@ -1,10 +1,10 @@
 /// @file tests/cpu/observe/test_msd.cpp
-/// @brief MSD via the molrs FFI bridge (cpu::compute::MSD + LinearFit) and
+/// @brief MSD via the molpy FFI bridge (cpu::compute::MSD + LinearFit) and
 /// the ATV::MSD observer that streams snapshots into it.
 ///
-/// Validates the molrs-first analysis chain: blocked x|y|z position frames
-/// pushed one at a time into the molrs MSD accumulator -> curve back to C++.
-/// All analysis math is in molrs; this asserts the FFI round-trip reproduces
+/// Validates the molpy-first analysis chain: blocked x|y|z position frames
+/// pushed one at a time into the molpy MSD accumulator -> curve back to C++.
+/// All analysis math is in molpy; this asserts the FFI round-trip reproduces
 /// the analytic MSD and that the Einstein composition (LinearFit slope /
 /// 2·dims) is wired correctly.
 
@@ -65,7 +65,7 @@ TEST(CpuMSD, LinearDisplacementMatchesAnalytic) {
 }
 
 // Fewer frames than max_lag + 1 (including a single frame or none) is a
-// molrs refusal, never an empty or clamped curve.
+// molpy refusal, never an empty or clamped curve.
 TEST(CpuMSD, TooFewFramesThrows) {
     EXPECT_THROW(ballistic_curve(MSD{1}, 1.0, 2.0, 1, 1.0), std::runtime_error);
     EXPECT_THROW(ballistic_curve(MSD{1}, 1.0, 2.0, 0, 1.0), std::runtime_error);
@@ -80,10 +80,10 @@ TEST(CpuMSD, RaggedFrameThrows) {
     EXPECT_EQ(acc.n_frames(), 0);
 }
 
-// Einstein composition: D = slope / (2·dims) of a molrs LinearFit over the
+// Einstein composition: D = slope / (2·dims) of a molpy LinearFit over the
 // MSD curve. For MSD(τ) = c·i² at lags τ = i·dt, i = s..e consecutive, the
 // least-squares slope of i² on i is (s + e), so slope = c·(s + e)/dt — an
-// exact check that the curve, its lag times and the fit window reach molrs
+// exact check that the curve, its lag times and the fit window reach molpy
 // unchanged.
 TEST(CpuMSD, EinsteinSlopeOfABallisticCurve) {
     const double a = 1.0, b = 2.0, dt = 2.0;
@@ -118,7 +118,7 @@ std::string scratch_path(const char* name) {
 }
 } // namespace
 
-// The observer streams blocked x|y|z + cell into molrs and composes
+// The observer streams blocked x|y|z + cell into molpy and composes
 // D = LinearFit slope / (2·3); for MSD = c·i² the slope over consecutive lags
 // s..e is c·(s + e)/dt (see EinsteinSlopeOfABallisticCurve).
 TEST(CpuMSDObserver, CurveAndEinsteinDFromStreamedSnapshots) {
@@ -146,7 +146,7 @@ TEST(CpuMSDObserver, CurveAndEinsteinDFromStreamedSnapshots) {
     std::filesystem::remove(out);
 }
 
-// Fewer than window + 1 frames: molrs refuses the unresolved lags, so the
+// Fewer than window + 1 frames: molpy refuses the unresolved lags, so the
 // observer writes nothing and leaves curve empty / D NaN (finalize never
 // throws — it runs on the Runtime's shutdown path).
 TEST(CpuMSDObserver, TooShortRunWritesNothing) {
@@ -161,7 +161,7 @@ TEST(CpuMSDObserver, TooShortRunWritesNothing) {
     EXPECT_FALSE(std::filesystem::exists(out));
 }
 
-// A step longer than half the cell height is a wrapped trajectory: molrs
+// A step longer than half the cell height is a wrapped trajectory: molpy
 // refuses that snapshot and the observer counts only accepted frames.
 TEST(CpuMSDObserver, WrappedStepIsRefusedNotAccumulated) {
     ATV::MSD msd{/*dt=*/1.0, /*freq=*/0, "unused_msd.dat", /*window=*/1};

@@ -1,11 +1,11 @@
 # General GAFF MD vs LAMMPS (CPU) and OpenMM (CUDA)
 
-Harness and numbers: `benchmarks/gaff/README.md`. Open work:
+Harness: `benchmarks/compare/gaff-liquid` (results not in git). Open work:
 [`../specs/gaff-m1-open-work.md`](../specs/gaff-m1-open-work.md). Machines:
 [arrhenius-workbench.md](arrhenius-workbench.md). System B is the general-GAFF
 liquid (toluene / NMA / ethanol / EC, 24,840 atoms, fourier torsions, cvff
 impropers, X–H RATTLE, 2 fs). System A (PEO/LiTFSI) stays in
-`tools/bench_gaff_lammps/`.
+`benchmarks/compare/gaff-peo-lammps/`.
 
 ## Fairness rules
 

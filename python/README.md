@@ -23,9 +23,9 @@ python -m atomiverse compile -j 8
 python -m atomiverse install
 ```
 
-`compile` builds a native wheel with exactly the listed modules, plus molrs
-from the checkout's submodule so both sides of the frame exchange are the
-same tree; `install` installs both with pip, so `pip uninstall atomiverse`
+`compile` builds a native wheel with exactly the listed modules, plus molpy
+from the sibling `../molpy` checkout (`ATV_MOLPY_PATH`) so both sides of the
+frame exchange are the same tree; `install` installs both with pip, so `pip uninstall atomiverse`
 removes the extension.
 
 Toolchain, module list and the full API:

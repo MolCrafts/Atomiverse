@@ -2,7 +2,7 @@
 /// @brief Round-trip + boundary tests for cpu::from_molpy / cpu::to_molpy.
 ///
 /// Covers the rust-frame-lowering-02 acceptance criteria:
-///   - ac-002: molrs.Frame -> cpu::Frame -> molrs.Frame round-trips
+///   - ac-002: molpy.Frame -> cpu::Frame -> molpy.Frame round-trips
 ///             positions / velocities / forces / charge / topology / box /
 ///             typed system metadata element-wise.
 ///   - ac-003: required fields fail loud (named exception); optional fields
@@ -14,12 +14,12 @@
 /// (golden round-trip): image (int8 -> i32 ix/iy/iz widen-back) and tag
 /// (TagInt -> i32 checked narrowing, overflow throws) ARE written back;
 /// type / mass / topology are static run inputs, designated non-write-back,
-/// and must keep their pre-materialize molrs values.
+/// and must keep their pre-materialize molpy values.
 ///
 /// The **box is a write-back field** (py-md-npt ac-002): barostats
 /// (Parrinello-Rahman / Berendsen / Nose-Hoover NPT) make the cell an output
 /// of a run, so a cpu::Frame whose Box was mutated must present that cell on
-/// the molrs.Frame after to_molpy, or a Python caller can never observe a
+/// the molpy.Frame after to_molpy, or a Python caller can never observe a
 /// barostatted cell.
 
 #include <array>
@@ -47,7 +47,7 @@ using ATV::cpu::to_molpy;
 
 namespace {
 
-// Build a fully-populated molrs.Frame with three atoms, one bond, one
+// Build a fully-populated molpy.Frame with three atoms, one bond, one
 // angle, one dihedral, and a cubic box.
 ::rust::Box<molrs::FrameRef> make_full_frame() {
     auto fr = molrs::frame_new();
@@ -98,7 +98,7 @@ namespace {
         *fr, "atoms", "tag",
         ::rust::Slice<const std::int32_t>(tag.data(), tag.size()));
 
-    // Topology: one bond, one angle, one dihedral. molrs topology columns
+    // Topology: one bond, one angle, one dihedral. molpy topology columns
     // reference atoms by tag (materialize scatters them via the tag->local
     // map), so use the atom tags {10,11,12} above -- not row indices.
     const std::vector<std::uint64_t> bi = {10}, bj = {11}, bt = {1};
@@ -157,7 +157,7 @@ namespace {
 }
 
 // Extend the fully-populated frame with per-axis PBC image columns
-// (i32 in molrs, int8 [n,3] in cpu::Frame) for the to_molpy contract
+// (i32 in molpy, int8 [n,3] in cpu::Frame) for the to_molpy contract
 // tests. Values must fit int8 (|image| <= 127).
 ::rust::Box<molrs::FrameRef> make_contract_frame() {
     auto fr = make_full_frame();
@@ -178,7 +178,7 @@ namespace {
     return fr;
 }
 
-// Minimal molrs frame: required columns only (x/y/z/type), no box, no
+// Minimal molpy frame: required columns only (x/y/z/type), no box, no
 // topology, no tag/image columns.
 ::rust::Box<molrs::FrameRef> make_minimal_frame() {
     auto fr = molrs::frame_new();
@@ -232,7 +232,7 @@ TEST(Materialize, RoundTrip) {
 
     to_molpy(cf, *fr);
 
-    // Read every per-atom column back out of the molrs.Frame.
+    // Read every per-atom column back out of the molpy.Frame.
     auto rx = molrs::frame_column_f64(*fr, "atoms", "x");
     auto ry = molrs::frame_column_f64(*fr, "atoms", "y");
     auto rz = molrs::frame_column_f64(*fr, "atoms", "z");
@@ -288,7 +288,7 @@ TEST(Materialize, RoundTrip) {
     EXPECT_DOUBLE_EQ(cf.box.length(2), 20.0);
 
     // System results cross the boundary only as exact typed metadata. No
-    // synthetic result block exists in the molrs schema.
+    // synthetic result block exists in the molpy schema.
     std::vector<molrs::KeyedMetaValue> meta;
     for (const rust::String& key : molrs::frame_meta_keys(*fr))
         meta.push_back(molrs::frame_get_meta(*fr, {key.data(), key.size()}));
@@ -348,7 +348,7 @@ TEST(Materialize, MissingPositionsThrows) {
 
 TEST(Materialize, MissingAtomicNumberThrows) {
     auto fr = molrs::frame_new();
-    // Positions present, atomic_number absent. Since molrs 0.13 the element
+    // Positions present, atomic_number absent. In molpy the element
     // identity lives in `atoms.atomic_number` (UInt); `type` is a String
     // force-field label this boundary does not import.
     const std::vector<double> x = {0.0, 1.0};
@@ -432,7 +432,7 @@ TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
 // ── arch-refactor-06-frame §2: to_molpy field contract (golden) ────────
 
 // Contract fields (x/v/f/charge, image, tag, typed metadata) mutated on the
-// cpu::Frame must reach the molrs.Frame through to_molpy. image goes back
+// cpu::Frame must reach the molpy.Frame through to_molpy. image goes back
 // through the same ix/iy/iz i32 columns materialize reads (int8 -> i32
 // widen); tag presents the permuted values (TagInt -> i32 narrowing).
 TEST(WriteBackContract, GoldenRoundTripContractFields) {
@@ -484,23 +484,23 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
     ASSERT_EQ(rix.size(), 3u);
     ASSERT_EQ(riy.size(), 3u);
     ASSERT_EQ(riz.size(), 3u);
-    EXPECT_EQ(rix[0], 3) << "mutated image(0,0) must reach molrs atoms.ix";
+    EXPECT_EQ(rix[0], 3) << "mutated image(0,0) must reach molpy atoms.ix";
     EXPECT_EQ(rix[1], -1);
     EXPECT_EQ(rix[2], 2);
     EXPECT_EQ(riy[0], 0);
-    EXPECT_EQ(riy[1], -7) << "mutated image(1,1) must reach molrs atoms.iy";
+    EXPECT_EQ(riy[1], -7) << "mutated image(1,1) must reach molpy atoms.iy";
     EXPECT_EQ(riy[2], -2);
     EXPECT_EQ(riz[0], -1);
     EXPECT_EQ(riz[1], 0);
-    EXPECT_EQ(riz[2], 90) << "mutated image(2,2) must reach molrs atoms.iz";
+    EXPECT_EQ(riz[2], 90) << "mutated image(2,2) must reach molpy atoms.iz";
 
     // NEW contract: tag writes back (TagInt -> i32 checked narrowing) and
     // presents the permutation.
     auto rtag = molrs::frame_column_i32(*fr, "atoms", "tag");
     ASSERT_EQ(rtag.size(), 3u);
-    EXPECT_EQ(rtag[0], 12) << "permuted tag must reach molrs atoms.tag";
+    EXPECT_EQ(rtag[0], 12) << "permuted tag must reach molpy atoms.tag";
     EXPECT_EQ(rtag[1], 11);
-    EXPECT_EQ(rtag[2], 10) << "permuted tag must reach molrs atoms.tag";
+    EXPECT_EQ(rtag[2], 10) << "permuted tag must reach molpy atoms.tag";
 
     // System results stay a typed-metadata write channel. Synthetic scalar
     // blocks are forbidden by the v2 exchange schema.
@@ -526,7 +526,7 @@ TEST(WriteBackContract, GoldenRoundTripContractFields) {
 
 // Non-contract fields (type / mass / topology blocks) are static run inputs
 // and designated non-write-back: mutating them on the cpu::Frame must NOT
-// leak into the molrs.Frame — every such column keeps its pre-materialize
+// leak into the molpy.Frame — every such column keeps its pre-materialize
 // value. The box is NOT in this set (see the box write-back tests below).
 TEST(WriteBackContract, NonContractFieldsUntouched) {
     auto fr = make_contract_frame();
@@ -578,7 +578,7 @@ TEST(WriteBackContract, NonContractFieldsUntouched) {
 }
 
 // py-md-npt ac-002: a barostatted cell is an OUTPUT of a run, so a Box
-// mutated on the cpu::Frame must reach the molrs.Frame through to_molpy —
+// mutated on the cpu::Frame must reach the molpy.Frame through to_molpy —
 // exact doubles, no rescaling, no rounding.
 TEST(WriteBackContract, MutatedBoxWritesBack) {
     auto fr = make_full_frame();
@@ -599,7 +599,7 @@ TEST(WriteBackContract, MutatedBoxWritesBack) {
     auto h = molrs::frame_box(*fr).h;
     ASSERT_EQ(h.size(), 9u);
     EXPECT_DOUBLE_EQ(h[0], scaled)
-        << "a barostatted cell must reach the molrs box; without this a "
+        << "a barostatted cell must reach the molpy box; without this a "
            "Python caller can never observe the NPT cell";
     EXPECT_DOUBLE_EQ(h[4], scaled);
     EXPECT_DOUBLE_EQ(h[8], scaled);
@@ -623,7 +623,7 @@ TEST(WriteBackContract, MutatedBoxWritesBack) {
 }
 
 // The same write-back for a triclinic cell: all nine entries cross, in
-// molrs' row-major H order (the cell below is deliberately asymmetric, so a
+// molpy' row-major H order (the cell below is deliberately asymmetric, so a
 // transposed write cannot pass).
 TEST(WriteBackContract, TriclinicBoxWritesBack) {
     auto fr = make_full_frame();
@@ -654,7 +654,7 @@ TEST(WriteBackContract, TriclinicBoxWritesBack) {
             EXPECT_DOUBLE_EQ(h[i * 3 + j],
                              static_cast<double>(cf.box.cell()(i, j)))
                 << "triclinic H(" << i << "," << j
-                << ") must cross to molrs row-major";
+                << ") must cross to molpy row-major";
 
     // Symmetric with the read side: materializing the written frame gives
     // back the same cell.
@@ -694,7 +694,7 @@ TEST(WriteBackContract, TagOverflowThrows) {
 // Boundary: a minimal frame (required columns only, no box / topology /
 // tag / image columns) survives to_molpy without throwing. Note for the box
 // write-back: this frame's Box is default-constructed (cell = 0, singular),
-// and molrs' frame_set_box rejects a singular cell — so the write-back must
+// and molpy' frame_set_box rejects a singular cell — so the write-back must
 // skip a degenerate cell rather than push it across.
 TEST(WriteBackContract, MinimalFrameWriteBackDoesNotThrow) {
     auto fr = make_minimal_frame();
@@ -704,12 +704,12 @@ TEST(WriteBackContract, MinimalFrameWriteBackDoesNotThrow) {
     EXPECT_NO_THROW(to_molpy(cf, *fr));
 }
 
-// ── The molrs boundary vs the frame-block mapping facade ────────────────────
+// ── The molpy boundary vs the frame-block mapping facade ────────────────────
 //
-// frame-block-01 gave cpu::Frame two things molrs has no place for: registry-
+// frame-block-01 gave cpu::Frame two things molpy has no place for: registry-
 // owned EXTENSION COLUMNS (`insert("rho", …)` — a per-atom payload a component
 // attaches at runtime). Such columns are engine-local method scratch. Typed,
-// serializable metadata is different: it is the current molrs exchange
+// serializable metadata is different: it is the current molpy exchange
 // channel and crosses exactly, without a synthetic block.
 
 TEST(WriteBackContract, ExtensionColumnsStayLocalAndTypedMetaCrosses) {
@@ -740,7 +740,7 @@ TEST(WriteBackContract, ExtensionColumnsStayLocalAndTypedMetaCrosses) {
     ASSERT_EQ(static_cast<int>(rx.size()), 3);
     EXPECT_DOUBLE_EQ(rx[1], 6.75);
 
-    // The extension column is NOT exported: molrs has no "rho" column.
+    // The extension column is NOT exported: molpy has no "rho" column.
     for (const auto& column : molrs::frame_block_columns(*fr, "atoms")) {
         EXPECT_NE(std::string(column.data(), column.size()), "rho")
             << "an extension column leaked across the FFI boundary";
@@ -760,7 +760,7 @@ TEST(WriteBackContract, ExtensionColumnsStayLocalAndTypedMetaCrosses) {
 
 TEST(Materialize, MaterializedFrameCarriesNoExtras) {
     // The reverse direction: materialize builds a frame with the schema
-    // columns only — no extension columns are invented from stray molrs
+    // columns only — no extension columns are invented from stray molpy
     // columns, and the mapping facade reports exactly that.
     auto fr = make_contract_frame();
     Frame cf = from_molpy(*fr);

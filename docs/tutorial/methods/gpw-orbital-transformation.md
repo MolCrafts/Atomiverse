@@ -301,7 +301,7 @@ const bool ok = eval.last_result().converged;
 ```
 
 The regression uses `250` Ry (budget); the tutorial class in
-`examples/09_gpw.cpp` is `400` Ry. No unit test in the tree covers OT
+`examples/cpp/10_gpw.cpp` is `400` Ry. No unit test in the tree covers OT
 (fixed-H OT, mini-H₂ OT≈DIIS, member toggle).
 
 ### Validation (vs CP2K)

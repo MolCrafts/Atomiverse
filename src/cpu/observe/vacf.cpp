@@ -1,6 +1,6 @@
 /// @file cpu/observe/vacf.cpp
-/// @brief CPU async VACF observer — streams each snapshot into the molrs
-/// VACF accumulator (bounded memory; all autocorrelation math in molrs).
+/// @brief CPU async VACF observer — streams each snapshot into the molpy
+/// VACF accumulator (bounded memory; all autocorrelation math in molpy).
 
 #include "atomiverse/cpu/observe/vacf.h"
 
@@ -39,7 +39,7 @@ void VACF::on_snapshot(const cpu::FrameSnapshot& snap) {
 
     // Snapshot velocity fields are double (widened from StorageReal at capture).
 
-    // Worker thread: a molrs refusal is tallied for finalize(), never thrown
+    // Worker thread: a molpy refusal is tallied for finalize(), never thrown
     // out of the analysis executor.
     try {
         input_.pack(scratch_, snap.tag, snap.vx, snap.vy, snap.vz, n, snap.step,
@@ -63,7 +63,7 @@ void VACF::finalize() {
                  "(constant count required)",
                  gate_.dropped());
     if (rejected_.count() > 0)
-        ATV_WARN("[vacf] molrs refused {} snapshot(s); first: {}",
+        ATV_WARN("[vacf] molpy refused {} snapshot(s); first: {}",
                  rejected_.count(), rejected_.first_reason());
     if (n_frames_ <= resolution_) {
         ATV_WARN("[vacf] {} frame(s) accumulated; lags 0..{} need at least {} "
@@ -73,14 +73,14 @@ void VACF::finalize() {
     }
 
     // finalize() runs from the Runtime's shutdown (a destructor path), so a
-    // molrs error is reported, not thrown.
+    // molpy error is reported, not thrown.
     try {
         const cpu::compute::TimeCorrelation curve = acc_.finish();
         vacf_curve_ = curve.values();
         const std::vector<double> lag_times = curve.lag_times(); // [fs]
 
         std::ofstream os(output_file_);
-        os << "# VACF via molrs Vacf (mean-subtracted, unbiased, "
+        os << "# VACF via molpy Vacf (mean-subtracted, unbiased, "
               "DOF-averaged, streaming)\n";
         os << "# t[fs]  VACF   (frames=" << n_frames_
            << ", atoms=" << gate_.n_atoms() << ", max_lag=" << resolution_

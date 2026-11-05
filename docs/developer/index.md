@@ -36,12 +36,12 @@ way it is, not to assume domain knowledge.
 - **[The Frame](frame-architecture.md)** — what `cpu::Frame` physically is:
   named typed Blocks, exact-dtype meta, and the Box that owns the cell; the
   typed resolution boundary that keeps a column read as cheap as a raw array;
-  and the schema that drives MPI packing and the molrs boundary.
+  and the schema that drives MPI packing and the molpy boundary.
 - **[KSpace long-range electrostatics](kspace-long-range.md)** — CoulLong +
   Ewald/PME pairing, stress, cell refresh vs rebuild, replicated-grid MPI
   ceiling, and the accepted charged-NPT scope.
 - **[Python / molpy boundary](python-molpy-boundary.md)** — the acyclic
-  dependency order between molrs, molpy, the C++ library, the CLI and the
+  dependency order between molpy, molpy, the C++ library, the CLI and the
   Python package.
 - **[Releasing the Python package](release.md)** — what goes to PyPI, how
   users build the native extension with pip, and how a tag is published.

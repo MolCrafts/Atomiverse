@@ -19,7 +19,7 @@ This file asserts only what a *binding* can break: the handle constructs,
 the chain advances (acceptance strictly inside (0,1) — a frozen chain and a
 "accept everything" chain both fail), the statistics are per-verb and
 cumulative across ``run()`` calls, the results are written back into the
-molrs Frame (positions, box, and — for μVT — a rebuilt ``atoms`` block at
+molpy Frame (positions, box, and — for μVT — a rebuilt ``atoms`` block at
 the new N), and the build gates fail loud.
 
 Hard-coded goldens (μVT)
@@ -381,7 +381,7 @@ class TestNvtMc:
     def test_frame_meta_energy_is_the_chain_energy(
         self, argon_frame: "molpy.Frame"
     ) -> None:
-        """The molrs Frame carries the LAST ACCEPTED energy, bit-identical
+        """The molpy Frame carries the LAST ACCEPTED energy, bit-identical
         to the handle's own bookkeeping — a rejected trial's energy must
         never survive the write-back."""
         sim = _nvt_handle()
@@ -514,7 +514,7 @@ class TestNptMc:
         assert volume > 0.0
 
     def test_box_written_back(self, npt_frame: "molpy.Frame") -> None:
-        """The accepted box lands in the molrs Frame, not only in the
+        """The accepted box lands in the molpy Frame, not only in the
         handle's bookkeeping."""
         volume_before = npt_frame.box.volume()
         sim = _npt_handle()
@@ -522,7 +522,7 @@ class TestNptMc:
         volume_after = npt_frame.box.volume()
         assert sim.accepts("box") > 0, "no accepted volume move to write back"
         assert volume_after != pytest.approx(volume_before, rel=1.0e-12), (
-            "an accepted volume move must change the molrs Frame box"
+            "an accepted volume move must change the molpy Frame box"
         )
         assert volume_after == pytest.approx(sim.current_volume(), rel=1.0e-10)
 
@@ -629,7 +629,7 @@ class TestGcmc:
         self, gcmc_frame: "molpy.Frame"
     ) -> None:
         """Write-back contract (spec py-mc DECIDED #2): ``to_molpy``
-        rejects a changed row count, so the binding rebuilds the molrs
+        rejects a changed row count, so the binding rebuilds the molpy
         ``atoms`` block. Every column must come back at the new N.
 
         Checked after EVERY block rather than once at the end: whether N

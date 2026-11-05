@@ -43,7 +43,7 @@ auto sigma = method.stress(frame); // eV/Å³; kStress = sigma * volume [eV]
   iteration loop; the fused DIIS/eigen/density primitive retains its numerical
   order. Derivatives use that solve's state. Live-bound moves, requests,
   standalone and nested stage/criterion lifecycles, exception/retry and
-  geometry reuse pass in the [native envelope](../../tools/diagnostics/gpw-driver/results/2026-10-27/gh200/validation.json).
+  geometry reuse pass in the native envelope.
 - Mid-SCF on device (non-default stream): P resident → weight pack → ρ
   collocate (SG PBC sphere-window | MG monom multi-level) → Poisson + XC →
   V_eff → integrate → V_AO scatter → H = H0 + V → device DIIS residual → eigen

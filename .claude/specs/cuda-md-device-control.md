@@ -27,7 +27,7 @@ single-GPU MD loop.
 Harness: iron law 10 in `docs/developer/project-contract.md`, the MD section of
 `.claude/notes/cuda-only-no-dh.md`, the corrected skin-gate bullet in
 `.claude/notes/cuda-openmm-md-perf.md`. Evidence (not a ctest, per iron law 1):
-`tools/diagnostics/md-residency/` — an Nsight capture of steady MD steps
+`md-residency` (`benchmarks/perf/md/residency/`) — an Nsight capture of steady MD steps
 between `cudaProfilerStart/Stop`, audited by `trace.py` for zero forbidden
 runtime calls on the stepping thread and zero D2H except declared async pinned
 mirrors.
@@ -38,8 +38,8 @@ mirrors.
   step loop for lj-nve / lj-nh / lj-npt / ion-pme; lj-nve bitwise equal to the
   pre-change tree, NH / NPT / PME within the baseline's own FP64 atomic
   run-to-run noise, identical rebuild counts. Results:
-  `tools/diagnostics/md-residency/results/p4/` (audits),
-  `benchmarks/cuda/mps_pack/results/p5.txt` (MPS table).
+  P4 audits from `md-residency` + `md/residency/trace.py` and the P5 MPS table from
+  `benchmarks/perf/md/mps_pack.sh` (neither output is kept in the tree).
 - Launches: LJ NVE/NH and LJ/coul/long + PME run as ~1.3 host launches and
   ~2 runtime calls per step (baseline 6–10 launches, 20–30 calls): segment
   graphs with the neighbor IF node and the PME graph spliced in, the tile
@@ -171,7 +171,7 @@ step = one launch; trajectories bitwise equal to P2.
 
 1. Events waited on by worker threads use `cudaEventBlockingSync`, so packed
    processes with one core do not have two threads spinning.
-2. `benchmarks/cuda/mps_pack/`: K = 1, 2, 4, 8 processes on one GPU under
+2. `benchmarks/perf/md/mps_pack.sh`: K = 1, 2, 4, 8 processes on one GPU under
    `nvidia-cuda-mps-control`, LJ 2k / 8k / 32k atoms and GAFF PEO 1,840 atoms;
    aggregate ns/day and per-process host API time per step, before (current
    `dev`) and after each phase.
@@ -181,5 +181,5 @@ step = one launch; trajectories bitwise equal to P2.
 - GH200 via `molq`, double and mixed: CUDA MD primitives, neighbor, LJ,
   LJ/coul/long, PME, NH/NPT/SLLOD/Langevin/Deform unit targets; memcheck on
   the neighbor graph; racecheck on the captured step.
-- Bitwise trajectory comparison scripts live with the md-residency diagnostic.
+- Bitwise trajectory comparison: `benchmarks/perf/md/residency/compare.py`.
 - No "MPS faster" claim without the P4 table.

@@ -6,7 +6,7 @@
  * docs site exercises the latest workspace build. Fall back to jsDelivr
  * when no staged build exists.
  *
- * molrs is wasm-bindgen bundler-target only; the viewer entry
+ * molpy is wasm-bindgen bundler-target only; the viewer entry
  * (`dist/main.js`) must ship a properly wired WASM module.
  */
 const packageBundle = new URL(

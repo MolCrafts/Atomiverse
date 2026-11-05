@@ -1,4 +1,4 @@
-// Actual QE 7.6 routine output; tools/diagnostics/pw-smearing/capture_qe.py.
+// Actual QE 7.6 routine output; tools/qe_oracle/inputs/pw-smearing/capture_qe.py.
 #pragma once
 #include <array>
 namespace qe_smearing_pin {

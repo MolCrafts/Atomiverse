@@ -1,7 +1,7 @@
 /// @file python/src/bindings/bind_md.cpp
 /// @brief MD driver + component bindings aligned with the C++ categorical API.
 ///
-/// Public surface mirrors ``examples/07_md_lj.cpp`` and ``cpu::md::MD``:
+/// Public surface mirrors ``examples/cpp/08_md_lj.cpp`` and ``cpu::md::MD``:
 ///
 /// @code
 ///   sim.set_evaluator(PairLJCut{…});
@@ -240,20 +240,20 @@ struct MdHandle {
     ///
     /// - At the **C++ boundary** `charge` is an *optional* per-atom column.
     ///   `cpu::from_molpy` allocates it either way and zero-fills it when the
-    ///   molrs Frame did not carry it, because a C++ caller that hands over a
+    ///   molpy Frame did not carry it, because a C++ caller that hands over a
     ///   frame with no charges is stating a neutral system on purpose.
     /// - At the **Python boundary** that same silence is the common mistake:
     ///   an all-zero charge column and a forgotten charge column produce
     ///   identical, plausible-looking output (energy finite, forces finite,
     ///   electrostatics simply absent), and by the time `from_molpy` has run
-    ///   the difference is gone. So the binding checks the molrs Frame — the
+    ///   the difference is gone. So the binding checks the molpy Frame — the
     ///   last place where absence is still visible — and throws with a how-to
     ///   instead of running a Coulomb model on charges nobody supplied.
     ///
     /// Intentional zeros stay expressible: insert an explicit zero `charge`
     /// column and the check passes.
     ///
-    /// @param frame Borrowed molrs Frame about to be advanced.
+    /// @param frame Borrowed molpy Frame about to be advanced.
     /// @throws std::runtime_error when a Coulomb evaluator is registered and
     ///         the frame's `atoms` block has no `charge` column.
     void require_charge_column(const molrs::FrameRef& frame) const {
@@ -274,7 +274,7 @@ struct MdHandle {
         if (!gate.active()) {
             // Every ramping component gets THIS run's span `[0, n_steps]`,
             // identical to what `TaskMaterializer` installs on the launcher
-            // path. Each `run()` is an independent simulation — the molrs
+            // path. Each `run()` is an independent simulation — the molpy
             // overload of `cpu::md::MD::run` tears its run down before
             // returning, so the next call's `LaunchContext::step` restarts at
             // 0 and a span carried over from an earlier call would put the

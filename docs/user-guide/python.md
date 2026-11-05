@@ -22,8 +22,7 @@ pip install atomiverse
 This installs the Python API shell and CLI only — **no C++ compile**, no
 prebuilt `_atomiverse` binary. Requires Python ≥ 3.12, NumPy, and
 `molcrafts-molpy` (the only user-facing Frame type). **Do not `import molpy`**
-from user code — molrs is an engine-private schema, pulled transitively
-by molpy.
+from user code — molpy's Rust core is an engine-private schema.
 
 ```bash
 python -m atomiverse            # version + install guidance
@@ -36,7 +35,7 @@ raises `ImportError` pointing at phase 2.
 ### Phase 2 — native build from a checkout
 
 The extension is compiled from the **source tag matching the installed
-version**, together with a local merged molpy checkout, using the toolchain described in
+version**, together with a local molpy checkout, using the toolchain described in
 [Getting started](getting-started.md) — a C++20 compiler, CMake, BLAS/LAPACK,
 a Rust toolchain for molpy's native core, and FFTW3 for `pw` / `kspace`.
 
@@ -56,7 +55,7 @@ python -m atomiverse compile -j 8
 python -m atomiverse install
 
 python -m atomiverse status
-python -m atomiverse run Atomiverse/python/examples/md_lj_argon.py
+python -m atomiverse run Atomiverse/examples/python/md_lj_argon.py
 ```
 
 `compile` builds in `<src>/build-python` (override with `config
@@ -1088,7 +1087,7 @@ fail loud with a `RuntimeError` naming the field.
 ### MD driver
 
 Components register through **categorical setters**, mirroring the C++
-`cpu::md::MD` / `Driver` API (same shape as `examples/07_md_lj.cpp`):
+`cpu::md::MD` / `Driver` API (same shape as `examples/cpp/08_md_lj.cpp`):
 
 - `sim.set_integrator(VelocityVerlet(dt))`
 - `sim.set_thermostat(NoseHoover(T, tau_T, dt))`
@@ -1390,11 +1389,10 @@ print(sim.summary())   # per-phase wall-clock breakdown
 
 ## Examples
 
-`python/examples/` holds four scripts. They use the MolCrafts stack only —
-molpy, numpy, and (for the plane-wave one) molplot — never ASE or
-matplotlib.
+`examples/python/` holds four scripts. They use the MolCrafts stack only —
+molpy and numpy — never ASE or matplotlib.
 
-Three of them run on a `config md minimize am1` build, need no external program, finish in
+The first three run on a `config md minimize am1` build, need no external program, finish in
 seconds, and **exit nonzero** when their own sanity check fails, so they
 can be smoke-run:
 
@@ -1409,30 +1407,17 @@ cd /path/to/Atomiverse
 # Development tree; an installed wheel needs no PYTHONPATH at all.
 export PYTHONPATH="$PWD/build-py:$PWD/python/src"
 
-python python/examples/md_lj_argon.py
-python python/examples/minimize_lj_dimer.py
-python python/examples/am1_ch4.py
+python examples/python/md_lj_argon.py
+python examples/python/minimize_lj_dimer.py
+python examples/python/am1_ch4.py
 ```
 
-The fourth, `pw_qe_compare.py`, is a plane-wave DFT convergence study of Si
-diamond (energy vs cutoff, k-mesh and lattice constant) against Quantum
-ESPRESSO on the same norm-conserving UPF. It is **not** smoke-runnable
-alongside the three above, for three reasons: `av.PW` exists only in a
-build with the `pw` module; the reference half
-needs a `pw.x` binary at the path in the script header, and `--skip-qe` runs
-the Atomiverse side alone; and the figures need the `examples` extra. It
-sweeps 26 SCF solves, so budget minutes rather than seconds.
-
-```bash
-pip install -e './python[examples]'          # molcrafts-molplot + molcrafts-molpy
-python -m atomiverse config pw --src /path/to/Atomiverse   # ATV_BUILD_PW=ON
-python -m atomiverse compile -j 8
-python -m atomiverse install
-python python/examples/pw_qe_compare.py --skip-qe --sweep ecut
-```
+`gaff_parameterize.py` types ethanol with molpy's GAFF2 typifiers, assigns
+AM1-BCC charges with `atomiverse.AM1BCCCharges` (needs the `semiempirical`
+module) and writes `ethanol.mol2` / `ethanol.frcmod` to the working directory.
 
 ## Next steps
 
-- **Benchmarks** — `python/benchmarks/bench_md.py` for system-size scaling.
+- **Benchmarks** — `python -m benchmarks` (see `benchmarks/README.md`).
 - **Tests** — `python/tests/test_surface.py` documents the exact exported
   surface and its fail-loud contract.

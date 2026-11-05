@@ -87,7 +87,7 @@ namespace {
 #if defined(ATV_HAS_MD) && !defined(ATV_HAS_IO)
 /// @brief Reject an `XyzRecorderParams` entry in a build without the writer.
 ///
-/// `cpu::XyzRecorder` writes through molrs and is therefore behind the
+/// `cpu::XyzRecorder` writes through molpy and is therefore behind the
 /// `ATV_BUILD_IO` build flag, while the wire mirror `XyzRecorderParams` and
 /// its component ID are compiled unconditionally. A payload naming the
 /// recorder therefore still *decodes* on an IO-less build and has to be

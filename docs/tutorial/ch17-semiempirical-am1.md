@@ -243,9 +243,9 @@ fixtures. The numerical-gradient
 oracle's error budget is documented independently of Atomiverse's analytic
 implementation.
 
-The [standing force benchmark](../../benchmarks/semiempirical/nddo_forces/README.md)
+The [standing force benchmark](../../benchmarks/perf/semiempirical/nddo_forces/README.md)
 records CPU complete-call timings and measured C++ allocation counts. The
-[energy benchmark](../../benchmarks/semiempirical/nddo_energy/README.md) separates
+[energy benchmark](../../benchmarks/perf/semiempirical/nddo_energy/README.md) separates
 CPU/CUDA host-Frame calls from nested resident CUDA solves. Benchmark source
 alone establishes neither device residency nor a speedup; follow the current
 validation status in the roadmap before relying on a backend.

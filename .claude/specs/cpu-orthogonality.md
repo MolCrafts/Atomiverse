@@ -96,8 +96,9 @@ not the current Box ABI. Current scope and evidence are in
 
 The separate orthorhombic benchmark snapshot passes 68 LJ/EAM/SW initial/one-step checks and all
 60 timed initial-state checks. Complete paired measurements, source/binary
-hashes and representation limitations are in benchmarks/lj/cpu-contracts-m4.json;
-historical snapshots remain explicitly separate. The newer flat-stencil snapshot is in benchmarks/lj/cpu-triclinic-m4.json:
+hashes and representation limitations were recorded in an Apple M4 snapshot
+(result files are no longer kept in git; rerun `benchmarks/compare/lj-lammps`).
+In the newer flat-stencil M4 snapshot,
 neighbor construction improves 9–24% relative to its paired baseline but remains
 1.54–2.01× LAMMPS. Universal performance parity is not established.
 

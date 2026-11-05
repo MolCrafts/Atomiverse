@@ -42,7 +42,7 @@ PRODUCT_MODULES: tuple[str, ...] = tuple(MODULE_TO_DEFINE.keys())
 #   MD, MC, MINIMIZER → POTENTIALS + NEIGHBOR
 #   PATH → MINIMIZER  (then inherits minimizer → potentials+neighbor)
 #   KSPACE → POTENTIALS
-# HF has no product-module edge (its only dependency, MOLRS, is derived).
+# HF has no product-module edge (its only dependency, MOLPY, is derived).
 AUTO_ENABLE: Dict[str, tuple[str, ...]] = {
     "md": ("potentials", "neighbor"),
     "mc": ("potentials", "neighbor"),

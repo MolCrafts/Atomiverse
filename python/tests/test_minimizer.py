@@ -565,7 +565,7 @@ def test_set_evaluator_still_rejects_unknown_type() -> None:
 # ONE dispatch table (ac-003 above) means Minimize accepts every force
 # source MD accepts — including the three Coulomb styles. It does NOT yet
 # mean Minimize *guards* them: `MdHandle::require_charge_column`
-# (python/src/bindings/bind_md.cpp) rejects a molrs Frame with no `charge`
+# (python/src/bindings/bind_md.cpp) rejects a molpy Frame with no `charge`
 # column before an electrostatic MD run, and `MinimizeHandle::run`
 # (python/src/bindings/bind_minimizer.cpp:215) has no equivalent. The
 # consequence is the exact failure mode that guard was written for:
@@ -575,7 +575,7 @@ def test_set_evaluator_still_rejects_unknown_type() -> None:
 # under LJ (or under nothing) while the electrostatics the caller asked
 # for is silently absent, and the result looks plausible.
 #
-# The refusal belongs to the SAME boundary for both drivers: the molrs
+# The refusal belongs to the SAME boundary for both drivers: the molpy
 # Frame is the last place where a column's absence is visible.
 
 

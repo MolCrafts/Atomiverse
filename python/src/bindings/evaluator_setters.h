@@ -325,7 +325,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "(LAMMPS `pair_style born`) — the Fumi-Tosi short-range half of a "
         "molten-salt model; add the Coulomb term as a separate evaluator.\n\n"
         "The table is keyed by ATOMIC NUMBER. The frame's per-atom type "
-        "column is filled from the molrs `atomic_number` column, so a "
+        "column is filled from the molpy `atomic_number` column, so a "
         "sodium-chloride row is type_i=11, type_j=17 and an argon dimer is "
         "18, 18 — not a 0-based index into anything.\n\n"
         "Every interacting type pair must be listed, and the table is "

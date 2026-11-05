@@ -30,7 +30,7 @@
 /// Every entry point reads the frame's per-atom `atomic_number` column [Z]
 /// (that is what selects the pseudopotential and the valence-electron count)
 /// plus positions [Å] and the box; a frame missing that column is refused by
-/// the molrs → Frame conversion before any solve starts.
+/// the molpy → Frame conversion before any solve starts.
 ///
 /// Hand a `PW` to `MD.set_evaluator` and the run becomes plane-wave
 /// Born-Oppenheimer dynamics: the driver borrows the same method as a
@@ -124,7 +124,7 @@ std::string smearing_name(ATV::electronic::Smearing smearing) {
 /// through its iteration budget and report a NaN energy, which is exactly the
 /// failure a user cannot diagnose.
 ///
-/// The check is on the materialized Frame rather than on the molrs handle
+/// The check is on the materialized Frame rather than on the molpy handle
 /// because that is where "no box at all" and "a box with zero volume" become
 /// the same, well-defined question.
 ///

@@ -1,4 +1,0 @@
-Double-precision diagnosis of upstream opz_pow_n_m1 reconstruction, not an oracle
-rho_a 1e-06 rho_b 1e-08 z_beta -0.9801980198019804 direct_spin_fraction 0.019801980198019806
-power 2.6666666666666665 direct 2.8700512924722867e-05 1+expm1(p*log1p(z)) 2.8700512924695332e-05 relative difference -9.5940261142941506e-13
-power 3.6666666666666665 direct 5.6832698860837367e-07 1+expm1(p*log1p(z)) 5.6832698858144681e-07 relative difference -4.7379167795274136e-11

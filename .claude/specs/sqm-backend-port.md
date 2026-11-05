@@ -130,7 +130,7 @@ energy-only path passes. AM1 and RM1 must each satisfy every applicable gate.
   AM1/RM1 history, retry and forces pass; affected HF integration also passed
   on GH200. Python currently exposes the CPU AM1 path, not complete RM1/CUDA
   parity.
-- Standing allocation measurements in `benchmarks/semiempirical/nddo_forces/`
+- Standing allocation measurements in `benchmarks/perf/semiempirical/nddo_forces/`
   retain identical scientific values and SCF counts. Persistent stages save
   66 C++ allocations/call; Fock scratch saves `(iterations+1)*atoms²`; retained
   LAPACK workspace saves nine allocations/iteration. At 48 atoms the latest
@@ -209,14 +209,14 @@ energy-only path passes. AM1 and RM1 must each satisfy every applicable gate.
   `gpu-public-forces-r4-{spec,ref}.json`; that job is terminal-success and its
   observer has stopped. Source snapshot hashes are in
   `public-forces-final-source.json`, with its patch/untracked archive and a
-  separate molrs toolchain patch/head. Earlier failed-job logs are retained;
+  separate Rust-dependency toolchain patch/head. Earlier failed-job logs are retained;
   they are not numerical acceptance evidence.
 - The final energy/charge benchmark completed all eight method/size groups
   (3/12/24/48 atoms). Its executable SHA256 is
   `3c15b5fce61a0071680c7d156f151f4585819abff60ca1050ad7a3616edf8eb7`.
   Maximum final CPU/CUDA differences are 4.730e-11 eV and 4.730e-14 e. The
   report, raw JSON, source hashes, cache and source-archive provenance live in
-  `benchmarks/semiempirical/nddo_energy/`; rerunning its read-only analysis on
+  `benchmarks/perf/semiempirical/nddo_energy/`; rerunning its read-only analysis on
   the raw data reproduces the saved aggregate exactly.
 - Both full-process traces have no warning/error diagnostics. The 48-atom,
   twenty-call resident energy windows contain 57/56 AM1/RM1 SCF iterations,
@@ -356,7 +356,7 @@ preparation and deadlock MD communication. `Runtime::refresh_external_inputs`
 now collectively ORs change/error flags over the existing spatial cartesian
 communicator in three local phases (snapshot, support preflight, invalidation).
 The empty-communicator serial replica path stays local. No distributed
-semiempirical solve was added. The isolated MOLRS/SE/HF/CUDA-off MPI build
+semiempirical solve was added. The isolated MOLPY/SE/HF/CUDA-off MPI build
 `/tmp/atv-sqm-input-mpi-build` passes the six new `test_mpi_input_updates_n2`
 checks and existing `test_mpi_criterion_n2`; logs are `cpu-inputs-mpi-*`.
 This CPU-only source change occurred after job 4374526 was frozen; the remote
@@ -370,7 +370,7 @@ passed: 112 SE-only CUDA unit tests; 241 combined CTest registrations (228
 passes, 13 multi-GPU skips); AM1/RM1 external/composed gates; memcheck zero
 errors; affected MD, RHF and minimizer regressions. Full stdout/stderr are
 `/tmp/atv-sqm-evidence/gpu-input-python-{stdout,stderr}.log`.
-Python dependencies and same-source ARM molrs built successfully, but the
+Python dependencies and same-source ARM molpy built successfully, but the
 provenance step incorrectly required Git metadata in the deliberately Git-free
 remote source transport. Python CMake/tests did not run, so Python CUDA remains
 unverified. Repair the packaging step using the exported source hash manifest
@@ -378,13 +378,13 @@ and run only the pending Python gate. Native gates need no repeat for this
 packaging-only change. The previous watch was stopped after terminal status.
 
 Pending Python-only retry: **4375722**, incarnation `2026-10-24T21:04:56Z`.
-Script verifies every file of exported molrs source manifest before the build;
+Script verifies every file of exported molpy source manifest before the build;
 no remote Git metadata is required. Job reuses the installed ARM dependencies
 and isolated build, with unchanged native source snapshot. Spec/ref/submit/watch
 files use `gpu-python-retry-*` under the evidence root. Do not duplicate.
 
 Python retry 4375722 correctly rejected a mismatched provenance manifest before
-build: remote molrs uses its committed rust-toolchain.toml, whereas the local
+build: remote molpy uses its committed rust-toolchain.toml, whereas the local
 checkout has an unrelated unstaged stable-channel edit intentionally not synced.
 Manifest corrected to the actual committed source (no source file changes); all
 986 remote file hashes verified read-only before the next submit. The job selects
@@ -525,7 +525,7 @@ GPU speedup. Existing automation was found PAUSED and remains unchanged.
 ### 2026-10-25 four-method force resource slice (in progress)
 
 Evidence `/tmp/atv-sqm-evidence/force-perf-20261025/`. Baseline HEAD/origin
-8e9b2daad. Existing unrelated notes/spec/molrs edits protected; results excluded.
+8e9b2daad. Existing unrelated notes/spec/molpy edits protected; results excluded.
 New schema2 native/Python/allocation harness: all four methods, isolated
 3/12/24/48 atom distorted-water clusters, cold5, fresh mode owner+warmup5base,
 20 fixed/moving calls; controls1000/1e-10density/1e-12eVenergy unchanged.
@@ -580,6 +580,6 @@ intoanunprovenownership/reservedVRAMclaim. Alllifetimespairingcomplete.
 AM1/RM1tracesn481, MNDO/PM3n179; alltiminingsn481. Profiletimesexcluded.
 Finalnumericalsourcemanifestmatchescheckoutexactly. Finalsourcearchive/
 patch/hash, binaries and rawreports retainedlocal. Roadmap/harnessupdated;
-commit/pushincludesexplicit12filesonly, excludesnotes/results/spec/molrs/tools.
+commit/pushincludesexplicit12filesonly, excludesnotes/results/spec/molpy/tools.
 
-Force-resource closeout committed/pushed toorigin/dev as7eb9f5630. Bothcommitandpushhookspassed; twelveexplicitfilesonly. Notes/results/specs/molrs/unrelatededitsremainedlocal. NoGPUjobsleftfromthisslice; automationstillPAUSED.
+Force-resource closeout committed/pushed toorigin/dev as7eb9f5630. Bothcommitandpushhookspassed; twelveexplicitfilesonly. Notes/results/specs/molpy/unrelatededitsremainedlocal. NoGPUjobsleftfromthisslice; automationstillPAUSED.

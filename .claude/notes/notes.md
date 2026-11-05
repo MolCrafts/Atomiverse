@@ -41,8 +41,8 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
 - **Open-shell cluster GPW mixer.** Si₂-triplet GTH in a cluster box is
   SCF-ill-conditioned for ATV (linear/DIIS/OT) where CP2K converges with
   Broyden; a better mixer is the gap and blocks the `gpw-fd-phonon-si` e2e.
-- **CPU MD vs LAMMPS.** Same-input LJ/EAM/SW+LJ numbers:
-  `benchmarks/lj/README.md`. Open: Comm category slower than LAMMPS (includes
+- **CPU MD vs LAMMPS.** Same-input LJ/EAM/SW+LJ harness:
+  `benchmarks/compare/lj-lammps` (results not in git). Open: Comm category slower than LAMMPS (includes
   ATV reductions), SW+LJ neighbor build ~1.5–2×, no x86/cluster numbers.
 - **Component clone ceiling** — revisit when a real N-replica inner-loop user
   appears.
@@ -79,13 +79,12 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
 ## Build-shape conclusions
 
 - **molpy is derived** (`ATV_BUILD_ANALYSIS` / `IO` / `PYTHON` / `GPW` / `HF` /
-  `SEMIEMPIRICAL` force `ATV_BUILD_MOLPY=ON`). Optional bridge slices (WHAM ⇒
-  `ATV_MOLPY_HAS_WHAM`, streaming mrec ⇒ `ATV_MOLPY_HAS_TRAJECTORY_WRITER`)
-  gate sources and regressions on the same condition.
-- **Merged molpy source:** `ATV_MOLPY_PATH` selects the local merged
-  MolCrafts/molpy repository (default `../molrs`). Corrosion imports
-  `molcxx/Cargo.toml`; Python builds `molpy/`. Both consume the same checkout.
-  The retired `./molrs` submodule is unused; no source revision is pinned.
+  `SEMIEMPIRICAL` force `ATV_BUILD_MOLPY=ON`). Every bridge surface Atomiverse
+  uses is required of the molpy checkout; there are no capability probes.
+- **molpy source:** `ATV_MOLPY_PATH` selects the local MolCrafts/molpy
+  repository (default `../molpy`). Corrosion imports `molcxx/Cargo.toml`;
+  Python builds `molpy/`. Both consume the same checkout; no source revision
+  is pinned.
 - **Unit-suite determinism:** bit-for-bit comparisons pin `OMP_NUM_THREADS=1`
   via test ENVIRONMENT; FD-vs-analytic tests choose `h` so round-off does not
   drown the tolerance.

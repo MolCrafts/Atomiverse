@@ -15,7 +15,7 @@
 /// the published revision differs. Reciprocal virial: Essmann et
 /// al., J. Chem. Phys. 103, 8577 (1995), eq. 2.11, evaluated on the discrete
 /// mesh energy for both conjugate half-spectrum indices. Lattice vectors are
-/// the cell columns (molrs/LAMMPS H): s = cell⁻¹ · r and the wave vector of
+/// the cell columns (molpy/LAMMPS H): s = cell⁻¹ · r and the wave vector of
 /// mode m is Σ_d m_d (row d of cell⁻¹).
 #include <cmath>
 #include <cstdio>

@@ -1,1 +1,0 @@
-/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x

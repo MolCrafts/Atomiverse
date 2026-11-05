@@ -12,13 +12,13 @@ stretched-triplet QE reference passes all original gates, rotation and MPI2;
 all nine strain lanes pass at two steps on the constant-beta-zero tangent.
 Other nominally empty fixed/Gaussian channels retain earlier paths. A narrow
 MP1/PBE/actual-Gamma/populated-UKS selector has been added; its
-[CPU integrated archive](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-mp-gamma-pbe/cpu-integrated/archive-manifest.json)
+CPU integrated archive
 passes independent tensor, full-SCF and matched-QE checks. Its 1487-source
 wave passes all scoped mathematical gates and a repository-independent
 relocated replay. Three original strict-parser helper failures and seven
 successful same-log recollections remain explicit; the original pipeline
 exit is still one. The separately qualified
-[restricted MP1 PBE Gamma Si2 slice](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-mp-rks-gamma-pbe/cpu-integrated/archive-manifest.json)
+restricted MP1 PBE Gamma Si2 slice
 retains degeneracy two, signed occupations and positive total density. Its
 fresh main-source wave completes 88 groups/132 rank records, 281 units and
 18 artifact identities. Independent full-SCF strains and a freshly linked
@@ -28,7 +28,7 @@ to the archived 12-Ry/.02-Ry/six-band model. Other MP settings keep their
 earlier path.
 CUDA covers Gamma RKS fixed/FD and fixed nonempty UKS LSDA/PBE-family total
 force/stress with certified final-band ensembles and request-aware device
-scratch. The [integrated UKS archive](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-cuda-uks-depth/archive-index.json)
+scratch. The integrated UKS archive
 seals 162 native records, 135 request cases, 33 unit tests, three clean
 memchecks and 18 private artifact identities, with independent review and
 relocated parser replay while the original repository is hidden. Both
@@ -39,7 +39,7 @@ and no extra SCF. Separate positive-spin device XC controls cover all nine
 strains, two steps, rotation and nontrivial cross-gradients for five models;
 neither these controls nor the public fixed-UKS scope qualify clipped/empty
 analytic derivatives, UKS FD or multiple k points.
-The [earlier fixed/FD/Gaussian and empty-spin receipt](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-empty-spin-mixing-depth/collection-portable/wave-validation.json)
+The earlier fixed/FD/Gaussian and empty-spin receipt
 records 1480 exact source identities, native binary scopes, matched actual-QE
 energy/full-force/six-stress checks and independent prior mathematical evidence.
 Private profiles and earlier failed gap/link/diagnostic controls retain their
@@ -437,7 +437,7 @@ the correction, as discussed in [Kahan's compiler analysis](https://people.eecs.
 [Ogita, Rump and Oishi](https://www.tuhh.de/ti3/paper/rump/OgRuOi05.pdf)
 give the broader context of compensated summation and dot products; the present
 small change does not claim their stronger algorithms' universal guarantees.
-The [scoped acceptance](../../tools/diagnostics/pw-analytic-stress/results/2026-10-28-accuracy-stream/source-review/wave-validation.json)
+The scoped acceptance
 keeps exact-integration, original tiny-strain failures and actual public/QE
 checks separately attributable to their recorded libraries.
 

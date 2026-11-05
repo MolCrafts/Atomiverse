@@ -1,7 +1,0 @@
-# Keep scientific evidence reviewable; executable artifacts stay in build/.molq.
-!results/**/*.log
-!results/**/*.out
-!qe-2026-10-28/**/*.out
-!qe-2026-10-28/**/*.log
-__pycache__/
-**/scratch/

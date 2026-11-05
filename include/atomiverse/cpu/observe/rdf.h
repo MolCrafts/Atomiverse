@@ -1,15 +1,15 @@
 /// @file cpu/observe/rdf.h
-/// @brief CPU async radial-distribution-function observer (molrs-backed,
+/// @brief CPU async radial-distribution-function observer (molpy-backed,
 /// streaming).
 ///
 /// The engine *measures* (each captured `FrameSnapshot`'s positions + cell are
-/// packed into a reusable scratch on the analysis worker thread); molrs
+/// packed into a reusable scratch on the analysis worker thread); molpy
 /// *analyzes* (`compute::Rdf` through its `RdfAccumulator`: per-frame periodic
 /// cell-list self-query + ideal-gas shell-volume normalization, folded
 /// frame-by-frame). Memory is O(n_bins) — never
 /// O(trajectory) — so million-step runs stream through at constant footprint.
 /// No analysis math and no record type in C++ — both backends' RDF observers
-/// stream through the molrs accumulator; the g(r) file format has one emitter
+/// stream through the molpy accumulator; the g(r) file format has one emitter
 /// (`rdf_write_curve` in observer/rdf_curve.h).
 ///
 /// @see cpu::VACF (observer/vacf.h) for the same streaming async pattern
@@ -26,10 +26,10 @@
 
 namespace ATV {
 
-/// @brief MD async radial-distribution-function observer (molrs-backed).
+/// @brief MD async radial-distribution-function observer (molpy-backed).
 ///
 /// Streams positions + per-frame cell from each captured `FrameSnapshot` into
-/// the molrs `RdfAccumulator`; `finalize()` reads the normalized g(r) with its
+/// the molpy `RdfAccumulator`; `finalize()` reads the normalized g(r) with its
 /// bin centers and writes it to `output_file`.
 ///
 /// Usage:
@@ -50,7 +50,7 @@ class RDF : public cpu::md::AsyncObserver {
     /// count. @param freq capture every `freq` steps (0 = every snapshot).
     /// @param output_file g(r) output path.
     /// @throws std::invalid_argument on n_bins < 1 or r_max <= 0 (refused by
-    /// molrs `Rdf::new`).
+    /// molpy `Rdf::new`).
     RDF(double r_max, int n_bins, int freq = 0,
         std::string output_file = "rdf.dat");
 
@@ -80,9 +80,9 @@ class RDF : public cpu::md::AsyncObserver {
     std::string output_file_;
 
     cpu::ConstantCountGate gate_;      ///< constant-atom-count admission gate
-    cpu::RejectedFrames rejected_;     ///< frames the molrs accumulator refused
+    cpu::RejectedFrames rejected_;     ///< frames the molpy accumulator refused
     std::vector<double> scratch_;      ///< reused blocked x|y|z packing buffer
-    cpu::compute::RDFAccumulator acc_; ///< molrs streaming g(r) state
+    cpu::compute::RDFAccumulator acc_; ///< molpy streaming g(r) state
     std::vector<double> gr_; ///< normalized g(r), filled at finalize()
     int n_frames_ = 0;
 };

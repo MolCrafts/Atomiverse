@@ -26,7 +26,7 @@ namespace scf {
 /// def2-ECP data. `channels` is sorted by ascending l with the local part
 /// U_L last (see `basis_data::AtomEcp`).
 struct EcpPotential {
-    molrs::Element element; ///< Chemical element (molrs enum, Z = value).
+    molrs::Element element; ///< Chemical element (molpy enum, Z = value).
     std::string name;       ///< Parameterization family, e.g. "def2-ECP".
     int n_core = 0;         ///< Core electrons replaced by the ECP.
     std::vector<basis_data::EcpChannel>

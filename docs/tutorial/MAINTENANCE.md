@@ -23,8 +23,8 @@ adds intermediate reasoning and model-specific exercises. Later chapters
 still require their own detailed passes; navigation checks do not certify
 their scientific or API content.
 
-On 16 September 2026, an earlier pass inspected upstream `examples/04_uks.cpp`
-for the helium UKS example. The current pass inspected
+On 16 September 2026, an earlier pass inspected the then helium UKS example
+(since merged into `examples/cpp/02_open_shell.cpp`). The current pass inspected
 `frame.h` for the frame representation. These
 were moving-branch source inspections, not pinned release validations or
 executed engine tests. Primary papers were consulted for the EAM motivation,

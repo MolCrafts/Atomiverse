@@ -1,7 +1,7 @@
 /// @file src/cpu/io/readable_path.h
-/// @brief Path pre-flight and molrs error translation for the FFI boundary.
+/// @brief Path pre-flight and molpy error translation for the FFI boundary.
 ///
-/// The molrs bridge readers and writers are fallible —
+/// The molpy bridge readers and writers are fallible —
 /// `fn read_xyz(path: &str) -> Result<Box<FrameRef>>` and the same for
 /// `read_mrec_frame`, `read_mrec_trajectory_frame`, `write_xyz`,
 /// `write_mrec_frame`, `frame_set_box`, the four `frame_set_column_*` and
@@ -14,11 +14,11 @@
 ///   * `require_readable_file` / `require_readable_store` — a pre-flight check
 ///     so the overwhelmingly common "wrong filename" case reports the path in
 ///     our own wording instead of whatever the Rust I/O error happens to say;
-///   * `with_molrs_context` — attach the operation and path to a `rust::Error`
+///   * `with_molpy_context` — attach the operation and path to a `rust::Error`
 ///     that does cross, because the bridge messages do not name the file.
 ///
 /// Internal to `src/cpu/io/` and its neighbours (same status as
-/// `src/cpu/io/molrs_meta.h`) — not a public header, not part of the API.
+/// `src/cpu/io/molpy_meta.h`) — not a public header, not part of the API.
 #pragma once
 
 #include <filesystem>
@@ -50,7 +50,7 @@ inline std::string unreadable_message(const char* who, const std::string& path,
 /// @brief Throw unless `path` is an existing regular file this process can read.
 ///
 /// @param who  Public function name used as the message prefix.
-/// @param path Filesystem path about to be handed to a molrs reader.
+/// @param path Filesystem path about to be handed to a molpy reader.
 /// @throws std::runtime_error if the path does not exist, names a directory, or
 ///         cannot be opened for reading.
 inline void require_readable_file(const char* who, const std::string& path) {
@@ -69,20 +69,20 @@ inline void require_readable_file(const char* who, const std::string& path) {
             who, path, "not a readable file (permission denied?)"));
 }
 
-/// @brief Run a molrs bridge call, naming the operation and path on failure.
+/// @brief Run a molpy bridge call, naming the operation and path on failure.
 ///
-/// molrs reports I/O and schema errors as `rust::Error`, whose message
+/// molpy reports I/O and schema errors as `rust::Error`, whose message
 /// does not include the file it was working on. Wrapping restores that
 /// context without swallowing the underlying reason.
 ///
-/// @tparam F  Callable invoking exactly one molrs bridge function.
+/// @tparam F  Callable invoking exactly one molpy bridge function.
 /// @param who Public function name used as the message prefix.
 /// @param path Filesystem path the call operates on.
 /// @param f   The bridge call.
 /// @return Whatever @p f returns.
 /// @throws std::runtime_error wrapping any `rust::Error` @p f raised.
 template <typename F>
-auto with_molrs_context(const char* who, const std::string& path, F&& f)
+auto with_molpy_context(const char* who, const std::string& path, F&& f)
     -> decltype(f()) {
     try {
         return f();
@@ -98,7 +98,7 @@ auto with_molrs_context(const char* who, const std::string& path, F&& f)
 /// both shapes are accepted; only unreadability is rejected.
 ///
 /// @param who  Public function name used as the message prefix.
-/// @param path Filesystem path about to be handed to a molrs reader.
+/// @param path Filesystem path about to be handed to a molpy reader.
 /// @throws std::runtime_error if the path does not exist or cannot be read.
 inline void require_readable_store(const char* who, const std::string& path) {
     const std::filesystem::path fs_path{path};

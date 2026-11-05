@@ -1,8 +1,0 @@
-[2026-10-26 18:42:30.993] [info] [integrals] start natm=2 basis=STO-3G n_basis=2 electrons=2 charge=0 ecp=- ecp_atoms=0
-[2026-10-26 18:42:30.994] [info] [integrals] one-electron done ms=0.0
-[2026-10-26 18:42:30.994] [info] [integrals] done total_ms=0.5 v_nuc=0.715104
-[2026-10-26 18:42:30.994] [info] CPU runtime initialized: 2 threads, MPI rank 0/1
-[2026-10-26 18:42:30.995] [info] [exact_jk] cache_bytes=0 build_ms=0.103 mpi_ranks=1
-[2026-10-26 18:42:30.995] [info] all components built
-[2026-10-26 18:42:30.995] [info] [scf] iterations=13 loop_ms=0.702
-{"repeat":0,"energy_hartree":-1.1167593073964441,"iterations":13,"threads":2,"seconds":0.0024592640000000001}

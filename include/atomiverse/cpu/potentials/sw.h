@@ -31,7 +31,7 @@ namespace cpu {
 class SWPotential {
   public:
     /// @brief Look up a Stillinger-Weber parameterization.
-    /// @param element Chemical element (molrs periodic-table enum).
+    /// @param element Chemical element (molpy periodic-table enum).
     /// @param name Parameterization name, e.g. `"stillinger-weber"`.
     /// @throws std::out_of_range if the (element, name) pair is not tabulated.
     SWPotential(molrs::Element element, std::string_view name);

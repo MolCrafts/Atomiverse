@@ -1,61 +1,111 @@
-# Scientific benchmarks
+# Benchmarks
 
-The Python suite compares public Atomiverse methods with live independent
-engines, measuring accuracy, end-to-end wall time and resources. Its entry point
-is `python -m benchmarks`. It does not use the removed regression runner or
-register scientific calculations with CTest.
+Benchmarks measure accuracy, speed and resources outside the unit suite. None
+of them is registered with CTest. The tree has one axis per directory:
 
-The first delivery is [molecular HF](scf/README.md): RHF, UHF, ROHF and GHF,
-20 method/model/task rows, 25 acceptance workloads and an additional 16-water
-performance workload. Unsupported backends and unmigrated capabilities are
-explicit cells/catalog entries, not passes.
+```text
+benchmarks/
+  README.md  __init__.py  __main__.py  framework/  roadmap.toml  requirements.txt
+  systems/      hf.json dft.json gaff.json
+  scf/          bench_{rhf,uhf,rohf,ghf,rks,uks}.py  hf.py  dft.py
+  forcefield/   bench_gaff.py
+  perf/         CMakeLists.txt  md/  scf/  pw/  semiempirical/{nddo_energy,nddo_forces}/
+  compare/      lj-lammps/  gaff-liquid/  gaff-peo-openmm/  gaff-peo-lammps/  am1-sqm/
+```
 
-Install the public HF-enabled ATV extension and published
-`molcrafts-molpy==0.20.0` in one environment. Install the coordinated
-molcrafts-ci 0.3 checkout before `requirements.txt` until that protocol is
-released. The native bridge must satisfy the runtime's ABI fingerprint check;
-never bypass it to accept a different Rust build. Optional GPU oracles are
-discovered by actual import/execution, not assumed from a package name.
+- **Framework spine** (`__main__.py`, `framework/`, `roadmap.toml`): the
+  `python -m benchmarks` CLI. It discovers methods, runs isolated workers,
+  compares observables, and writes reports and roadmap evidence.
+- **`systems/`**: canonical inputs that the Atomiverse and reference
+  participants share. Methods read these files and do not embed their own copies.
+- **`scf/`, `forcefield/`**: framework methods. Each `bench_*.py` compares
+  public Atomiverse calls with a live independent engine. See
+  [scf/README.md](scf/README.md) and [forcefield/README.md](forcefield/README.md).
+- **`perf/`**: native C++/CUDA timing harnesses, built by CMake into
+  `<build>/bin`. See [perf/README.md](perf/README.md).
+- **`compare/`**: scripts that drive Atomiverse and an external engine
+  (LAMMPS, OpenMM, AmberTools SQM) on the same input. Each subdirectory has
+  its own README.
+
+## Rules
+
+1. A framework method is `benchmarks/<domain>/bench_*.py`, exactly one level
+   deep. `__main__.py` globs `*/bench_*.py`, and each match must export a
+   `Method` named `SPEC`. A file that matches without a `SPEC` is an error.
+   Shared helpers use other names (`hf.py`, `dft.py`).
+2. Native harnesses live only under `perf/<domain>/`. Each one is declared in
+   `perf/CMakeLists.txt` and requires `-DATV_BUILD_BENCHMARKS=ON`.
+3. `compare/` holds only scripts against external engines. They may call
+   binaries from `perf/`, but they don't declare framework methods.
+4. Inputs shared by several participants belong in `systems/`.
+5. **Results are never committed.** `.gitignore` ignores `benchmarks/**/results/`.
+   Campaigns write under `build/` or outside the source tree. A document may
+   quote a measured number together with its hardware, but it must not link
+   to a result bundle.
+
+## Framework CLI
+
+Install the HF-enabled Atomiverse extension and `molcrafts-molpy==0.20.0` in
+one environment. Until the molcrafts-ci 0.3 observation protocol is released,
+install the sibling checkout before `requirements.txt`. The native bridge
+must pass the runtime's ABI fingerprint check; do not bypass it to accept a
+different Rust build. Optional GPU oracles count as available only if they
+actually import and run; an installed package name is not enough.
 
 ```bash
 python -m pip install -e ../molcrafts-ci
 python -m pip install -r benchmarks/requirements.txt
-python -m benchmarks list
-python -m benchmarks catalog
+python -m benchmarks list        # methods and their row IDs
+python -m benchmarks catalog     # declared capabilities, including gaps
 python -m benchmarks run --tier smoke --threads 1 --repeats 1 --warmup 0 \
-  --out build/hf-smoke
+  --out build/bench-smoke
 ```
 
-Each campaign writes the authoritative `results.json`, every cold/warm
-observation and log, detailed CSV, `matrix.md`/`matrix.html`, roadmap evidence,
-JUnit and `snapshots/benchmark.json`. The final table column identifies actual
-hardware/environment. A controlled speedup needs five samples, passing
-observables, consistent native binary fingerprints and matched resource policy;
-raw times remain visible otherwise.
+`run` selects coverage with `--tier {smoke,acceptance,performance}`,
+`--method` (repeatable) and `--system` (explicit IDs, marked partial). Its
+other options are `--threads`, `--repeats`, `--warmup`, `--timeout` and
+`--require-cuda`. Each method can also run as a module, for example
+`python -m benchmarks.scf.bench_rhf --tier smoke --out build/rhf-smoke`.
 
-Local runs can explicitly add `--no-snapshot` to produce scientific results,
-tables and raw evidence without the optional molci CI envelope. This choice is
-recorded in the result protocol; the default still requires the coordinated
-molcrafts-ci 0.3 API and never substitutes an older envelope schema.
+A campaign writes:
 
-Run `python -m benchmarks validate --input <results.json>` for the strict result
-contract and `molci validate-snapshot <snapshot.json>` for its storage envelope.
-`report` regenerates views from the observations. `source` captures hashes for
-transporting a frozen source snapshot; `run --source-manifest` verifies every
-declared source before and after execution. It does not infer that an arbitrary
-installed library was compiled from that source.
+- the authoritative `results.json`;
+- every cold and warm observation and log;
+- a detailed CSV, `matrix.md` and `matrix.html`;
+- roadmap evidence, JUnit and `snapshots/benchmark.json`.
 
-`roadmap --input <results.json> --chapter hartree-fock.md --write` updates only
-the chapter's generated evidence block; `--check` detects drift. Local dirty
-builds, missing coverage and unqualified CUDA windows cannot promote ✓/⚡.
-Performance qualification also needs the capability's acceptance coverage;
-a performance-only subset cannot inherit an unmeasured basis or method branch.
-Historical regression gates, multi-shard merging and automated profiling are
-future work, not hidden fallback behavior.
+The matrix's last column identifies the actual hardware and environment. A
+controlled speedup requires all of these:
 
-For a source-qualified build, configure CMake first, then use `attest-build`
-to perform the build and record unchanged source, compiler settings and the
-native library hash. Install that exact library and pass its receipt to `run`:
+- five samples;
+- passing observables;
+- consistent native binary fingerprints;
+- a matched resource policy.
+
+Without them, the report shows raw times and no ratio.
+
+`--no-snapshot` writes the scientific results, tables and raw evidence without
+the optional molci CI envelope. The result protocol records this choice. By
+default, the coordinated molcrafts-ci 0.3 API is required, and an older
+envelope schema is never substituted.
+
+- `validate --input <results.json>` checks the strict result contract.
+  `molci validate-snapshot <snapshot.json>` checks the storage envelope.
+- `report --input <results.json> --out <dir>` regenerates the views from the
+  stored observations.
+- `source --out <manifest.json>` captures source hashes for moving a frozen
+  source snapshot. `run --source-manifest` checks every declared source before
+  and after execution. It doesn't infer that an installed library was compiled
+  from that source.
+- `roadmap --input <results.json> --chapter hartree-fock.md --write` updates
+  only the chapter's generated evidence block. `--check` detects drift. A
+  local dirty build, missing coverage or an unqualified CUDA window cannot
+  promote a ✓ or ⚡ mark. Performance qualification also needs the
+  capability's acceptance coverage.
+- `attest-build` gives a source-qualified build. Configure CMake first; this
+  command then runs the build and records the unchanged source, the compiler
+  settings and the native library hash. Install that exact library and pass
+  the receipt to `run`:
 
 ```bash
 python -m benchmarks attest-build --build-dir build/hf-native --jobs 2 \
@@ -64,12 +114,11 @@ python -m benchmarks run --tier acceptance --build-receipt build/hf-build-receip
   --out build/hf-acceptance
 ```
 
-Every ATV worker verifies the loaded binary against that receipt. A receipt
-does not make a dirty tree a clean release, and it does not qualify CUDA-only
-residency. Store receipts/logs under ignored `build/` or outside the source tree.
+Every Atomiverse worker checks its loaded binary against the receipt. A
+receipt doesn't make a dirty tree a clean release, and it doesn't qualify
+CUDA-only residency. Keep receipts and logs under `build/` or outside the tree.
 
-The existing manual CI workflow contains an HF benchmark job. CUDA/HPC campaigns
+The manual CI workflow includes an HF benchmark job. CUDA and HPC campaigns
 run through molq on their declared hardware and emit the same result schema.
-The molcrafts-ci Benchmark view reads the method/backend matrix, hardware notes,
-scientific summary and per-observation provenance. Current local snapshots are
-untracked; coordinated CI/package changes must land before public publishing.
+Historical regression gates, multi-shard merging and automated profiling are
+not implemented. They are future work, and nothing falls back to them.

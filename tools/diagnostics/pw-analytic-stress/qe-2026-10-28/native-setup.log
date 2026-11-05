@@ -1,3 +1,0 @@
-[2026-10-28 01:33:11.496] [info] [pw] ========== PW SCF ==========
-[2026-10-28 01:33:11.496] [info] [pw] atoms=2 elec=8 bands=4 ecut_ry=12 NC(Z=14)
-SETUP ng_rho=1393 ng_wfc=171 bands=4 nelec=8 base=16,18,16 lda=24,28,24 volume_A3=37.1525 nproj=3

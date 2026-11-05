@@ -7,8 +7,7 @@
 /// OPLS-like values (θ₀ = 112.7° / k = 58.35 / OPLS dihedral) must
 /// touch this file, forcing a code-review conversation.
 ///
-/// Cross-file consistency between this canonical block and the 15
-/// `benchmarks/md/pe/performance/polyethylene_tension.cpp` +
+/// Cross-file consistency between this canonical block and the
 /// `tests/{cpu,mpi}/test_pe_*.cpp` files is **not** enforced here —
 /// each of those files carries its own constants block (the
 /// well-known smell). The deduplication refactor is `pe-ff-

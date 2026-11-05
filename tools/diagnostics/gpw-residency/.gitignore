@@ -1,3 +1,0 @@
-# Keep native evidence reviewable; generated executables stay in .molq/build.
-!results/**/*.log
-!results/**/*.out

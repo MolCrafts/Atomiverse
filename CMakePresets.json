@@ -10,11 +10,11 @@
       "name": "cpu-unit-base",
       "hidden": true,
       "displayName": "CPU unit base (no optional physics)",
-      "description": "Serial unit scaffold. Uses the merged local molpy source in ../molrs without a revision pin.",
+      "description": "Serial unit scaffold. Uses the local molpy checkout in ../molpy without a revision pin.",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "ATV_MOLPY_PATH": "${sourceDir}/../molrs",
+        "ATV_MOLPY_PATH": "${sourceDir}/../molpy",
         "ATV_BUILD_CUDA": "OFF",
         "ATV_BUILD_TESTS": "ON",
         "ATV_BUILD_EXAMPLES": "OFF",

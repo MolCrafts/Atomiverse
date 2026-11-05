@@ -590,10 +590,10 @@ prints got / want / tol and exits non-zero. ≤ 60 s, single node.
 
 - **oracle:** external — PySCF 2.14.0, actual output in
   `tools/pyscf_oracle/inputs/xc-extension/water.json`.
-- **input / reproduction:** [external XC example](../../../examples/xc-extension/README.md),
+- **input / reproduction:** [external XC example](../../../examples/extensions/xc/README.md),
   `0.8*LDA_X,`, STO-3G Cartesian, grid level 3, SCF tolerance 1e-12 Ha.
 - **quantity:** total energy and complete nuclear gradient, pins copied verbatim
-  into `examples/xc-extension/pins.h`, F = −gradient converted to eV/Å.
+  into `examples/extensions/xc/pins.h`, F = −gradient converted to eV/Å.
 - **tolerances (declared before ATV run):** 1e-6 Ha energy; 2e-5 Ha/Bohr per
   force component for the independently known grid pruning/response difference.
 - **consumer:** external `ScaledSlater` subclass; public headers only, same

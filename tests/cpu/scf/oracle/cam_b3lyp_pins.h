@@ -1,4 +1,4 @@
-// Genuine PySCF/libxc CAM-B3LYP pins; regenerate with tools/diagnostics/molecular-dft/pin_cam_xc.py.
+// Genuine PySCF/libxc CAM-B3LYP pins; regenerate with tools/pyscf_oracle/pin_cam_xc.py.
 #pragma once
 #include <array>
 namespace cam_b3lyp_pin {

@@ -1,5 +1,5 @@
 /// @file cpu/record/mrec_recorder.cpp
-/// @brief MrecRecorder -- molrs-backed `*.mrec` append on the MD end_of_step
+/// @brief MrecRecorder -- molpy-backed `*.mrec` append on the MD end_of_step
 ///        phase. MPI-aware: collective owner gather, rank-0 I/O.
 
 #include "atomiverse/cpu/record/mrec_recorder.h"

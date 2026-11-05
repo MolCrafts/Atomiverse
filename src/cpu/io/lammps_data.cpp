@@ -1,7 +1,7 @@
 /// @file cpu/io/lammps_data.cpp
 /// @brief Self-contained C++ reader for LAMMPS atom_style full and molecular.
 ///
-/// We parse the file directly rather than going through molrs because molrs's
+/// We parse the file directly rather than going through molpy because molpy's
 /// atom-style auto-detection misclassifies molecular 6-column lines (third
 /// token looks like a float → charge branch → mol_id becomes type). Full
 /// (7-column, with q) is detected from the first Atoms data row token count.

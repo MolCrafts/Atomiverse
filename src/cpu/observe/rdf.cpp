@@ -1,6 +1,6 @@
 /// @file cpu/observe/rdf.cpp
-/// @brief CPU async RDF observer — streams each snapshot into the molrs
-/// g(r) accumulator (bounded memory; all binning + normalization in molrs).
+/// @brief CPU async RDF observer — streams each snapshot into the molpy
+/// g(r) accumulator (bounded memory; all binning + normalization in molpy).
 
 #include "atomiverse/cpu/observe/rdf.h"
 
@@ -24,7 +24,7 @@ void RDF::on_snapshot(const cpu::FrameSnapshot& snap) {
         return;
 
     cpu::pack_blocked(scratch_, snap.x, snap.y, snap.z, n);
-    // Worker thread: a molrs refusal (bad frame, singular cell) is tallied
+    // Worker thread: a molpy refusal (bad frame, singular cell) is tallied
     // for finalize(), never thrown out of the analysis executor.
     try {
         acc_.push(scratch_, cpu::cell_matrix(snap.box));
@@ -40,13 +40,13 @@ void RDF::finalize() {
                  "(constant count required)",
                  gate_.dropped());
     if (rejected_.count() > 0)
-        ATV_WARN("[rdf] molrs refused {} snapshot(s); first: {}",
+        ATV_WARN("[rdf] molpy refused {} snapshot(s); first: {}",
                  rejected_.count(), rejected_.first_reason());
     if (n_frames_ == 0)
         return;
 
-    // All binning + shell-volume normalization happened in molrs. finalize()
-    // runs from the Runtime's shutdown (a destructor path), so a molrs error
+    // All binning + shell-volume normalization happened in molpy. finalize()
+    // runs from the Runtime's shutdown (a destructor path), so a molpy error
     // is reported, not thrown.
     try {
         const cpu::compute::RDFResult result = acc_.finish();

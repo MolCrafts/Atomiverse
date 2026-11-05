@@ -21,7 +21,8 @@ from benchmarks.framework.provenance import digest, file_hash
 from benchmarks.framework.specification import Check, Method, Participant, Row, System
 
 HERE = Path(__file__).resolve().parent
-CANONICAL = json.loads((HERE / "systems.json").read_text(encoding="utf-8"))
+SYSTEMS = HERE.parent / "systems" / "gaff.json"
+CANONICAL = json.loads(SYSTEMS.read_text(encoding="utf-8"))
 AMBER_DEFAULT = "/software/sse2/el9_epyc9005/easybuild/prefix/software/AmberTools/26.1-gmpich-2026.03"
 
 
@@ -49,7 +50,7 @@ def method_row(atomtype: str, correction: str) -> Row:
             "comparison_class": "matched_accuracy", "geometry_optimization": False,
             "am1_density_tolerance": 1e-10, "am1_energy_tolerance_ev": 1e-10,
             "sqm_scfconv": 1e-10, "sqm_maxcyc": 0, "equivalencing": 1,
-            "canonical_sha256": file_hash(HERE / "systems.json"),
+            "canonical_sha256": file_hash(SYSTEMS),
             "chemistry": CANONICAL["systems"],
             "scope": "full fixed-geometry molecular parameterization; no dynamics",
         },
@@ -227,9 +228,11 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
         for atom, charge in zip(mol.atoms, charges):
             atom["charge"] = float(charge)
         start = time.perf_counter()
-        typifier = mp.typifier.GaffTypifier(atomtype=row.model["atomtype"])
-        typed = typifier.typify(mol)
-        ff = typifier.get_forcefield()
+        parameter_set = row.model["atomtype"]
+        labelled = mp.ff.typifier.AtdTypifier(parameter_set=parameter_set).typify(mol)
+        typifier = mp.ff.typifier.GaffTypifier(parameter_set=parameter_set)
+        typed = typifier.typify(labelled)
+        ff = typifier.forcefield()
         typing_seconds = time.perf_counter() - start
         observables, detail = _parameters(ff, typed.to_frame())
         detail.update(meta)

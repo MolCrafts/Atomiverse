@@ -3,7 +3,7 @@
 /// Smooth PME: Essmann et al., JCP 103, 8577 (1995), doi:10.1063/1.470117.
 /// The oracle uses the cardinal spline's closed polynomial, not the device
 /// recurrence, and explicitly sums every signed Fourier mode and its gradient.
-/// Lattice vectors are the cell columns (molrs/LAMMPS H): u = K · cell⁻¹ · r.
+/// Lattice vectors are the cell columns (molpy/LAMMPS H): u = K · cell⁻¹ · r.
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"

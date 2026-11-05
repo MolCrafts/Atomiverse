@@ -27,8 +27,8 @@ namespace md {
 /// provides natural damping of the innermost thermostat-momentum
 /// oscillation that a single-chain integrator cannot absorb, which is
 /// what keeps an over-compressed start-state (large `P_target − P_int`)
-/// from producing the 8000 K-then-freeze ringing the debug_amorphous
-/// harness exhibited under length-1 chains.
+/// from producing the 8000 K-then-freeze ringing an amorphous-polyethylene
+/// LAMMPS comparison exhibited under length-1 chains.
 ///
 /// Algorithm (Tuckerman 2006, *J. Phys. A* 39, 5629; Shinoda 2004,
 /// *Phys. Rev. B* 69, 134103):

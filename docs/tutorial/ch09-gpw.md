@@ -127,7 +127,7 @@ f.box = cpu::Box::cubic(10.0);                   // 10 Å box
 ```
 
 **Step 2 — declare a `Kind` per element.** A `cpu::gpw::Kind` is CP2K's
-`&KIND` concept: one chemical element (`molrs::Element`, the molrs
+`&KIND` concept: one chemical element (`molrs::Element`, the molpy
 periodic-table enum) paired with its contracted Gaussian basis and GTH
 pseudopotential, both from the in-tree data tables:
 

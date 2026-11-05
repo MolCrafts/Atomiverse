@@ -1,6 +1,0 @@
-{
-  "archive_sha256": "3027a1a4e3b3f753c7084d18b6239e32b6e826b2615274950814aed2d8e959f2",
-  "current_archive_sha256": "3027a1a4e3b3f753c7084d18b6239e32b6e826b2615274950814aed2d8e959f2",
-  "formal_source_freeze": ".molq/pw-fixed-spin-xc-depth/frozen-source.json",
-  "formal_source_sha256": "ec2ab50ad1817dadbcaef4cd35ee42de6e461c8599a7142e052a27632adacfdf"
-}

@@ -1,12 +1,12 @@
 /// @file cpu/observe/constant_count_gate.h
 /// @brief Shared measure-side skeleton for trajectory observers: the
-/// constant-atom-count admission gate, the molrs-rejection tally and the
+/// constant-atom-count admission gate, the molpy-rejection tally and the
 /// blocked-x|y|z / cell-matrix snapshot packers.
 ///
 /// The async trajectory observers (RDF/MSD/VACF) require a constant atom count
 /// across the captured window (single-rank MVP; no migration). Each previously
 /// copy-pasted the first-frame latch + mismatch drop; this header is the single
-/// implementation. Dropped and molrs-rejected frames are counted so
+/// implementation. Dropped and molpy-rejected frames are counted so
 /// `finalize()` can warn instead of losing data silently.
 #pragma once
 
@@ -56,15 +56,15 @@ class ConstantCountGate {
     BigInt n_dropped_ = 0;
 };
 
-/// @brief Tally of snapshots the molrs accumulator refused.
+/// @brief Tally of snapshots the molpy accumulator refused.
 ///
 /// `on_snapshot` runs on an analysis worker thread, where an escaping
-/// exception would terminate the process; an observer catches the molrs
+/// exception would terminate the process; an observer catches the molpy
 /// refusal there, records it here, and reports the tally in `finalize()`.
 class RejectedFrames {
   public:
     /// @brief Count one refused frame; the first reason is kept verbatim.
-    /// @param why the exception molrs raised for the frame.
+    /// @param why the exception molpy raised for the frame.
     void record(const std::exception& why) {
         if (count_ == 0)
             first_reason_ = why.what();
@@ -73,7 +73,7 @@ class RejectedFrames {
 
     /// @brief Number of refused frames.
     BigInt count() const { return count_; }
-    /// @brief The molrs message of the first refused frame (empty if none).
+    /// @brief The molpy message of the first refused frame (empty if none).
     const std::string& first_reason() const { return first_reason_; }
 
   private:
@@ -132,7 +132,7 @@ class CorrelationInput {
     bool ready_ = false;
 };
 
-/// @brief A snapshot's cell matrix H as molrs takes it: row-major, widened to
+/// @brief A snapshot's cell matrix H as molpy takes it: row-major, widened to
 /// double.
 /// @param box the snapshot's cell [Å].
 /// @return the nine values of `box.cell()` [Å], row-major.

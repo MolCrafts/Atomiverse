@@ -248,7 +248,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// zero nuclear charge and contribute no electrons (Boys–Bernardi
     /// counterpoise: basis-only sites). Empty = no ghosts (default;
     /// bit-identical to the pre-ghost path). Ghost markers live on the
-    /// method, never on Frame (Frame purity; molrs Element forbids Z ≤ 0).
+    /// method, never on Frame (Frame purity; molpy Element forbids Z ≤ 0).
     /// Non-empty + Kohn–Sham (RKS/UKS) throws — KS grid radii key off Z
     /// and are not wired for ghosts in this link.
     std::vector<int> ghost_atoms;

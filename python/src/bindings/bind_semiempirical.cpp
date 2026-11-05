@@ -61,7 +61,7 @@ namespace {
 
 /// @brief Evaluate energy and charges over a borrowed molpy.Frame.
 ///
-/// Calls the method's Frame entry and publishes through the existing molrs
+/// Calls the method's Frame entry and publishes through the existing molpy
 /// bridge. Existing force columns are preserved by run().
 ///
 /// @param dftb  Borrowed method; its `last_*()` accessors are populated.

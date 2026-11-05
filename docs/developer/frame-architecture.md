@@ -103,7 +103,7 @@ frame.meta.set(kStep, std::int64_t{42});
 auto stress = frame.meta.ref(kStress);
 ```
 
-The serializable schema uses the same 19 explicit dtype IDs as molrs: scalar
+The serializable schema uses the same 19 explicit dtype IDs as molpy: scalar
 Bool / I32 / I64 / U32 / U64 / F32 / F64 / String, plus the prescribed array
 types of length 3, 6 and 9. The tag-to-row index is a CPU-local 255th kind: it
 can only be rebuilt, and never crosses an FFI, an MPI Frame broadcast, or a
@@ -178,7 +178,7 @@ Whole-Frame broadcast and gather use that same exchange schema plus an explicit
 typed-meta and cell protocol. Sending a C++ Frame, Block, Box or variant object
 as raw memory is forbidden.
 
-## 7. The molrs boundary
+## 7. The molpy boundary
 
 `from_molpy()` is the one entry point from `molrs::Frame` to `cpu::Frame`, and
 `to_molpy()` is the one exit. Both read and write Block columns and exact typed
@@ -187,7 +187,7 @@ key/value metadata, and no legacy decoder.
 
 The division of labour:
 
-- molrs flat bonds / angles / dihedrals become CPU per-row global-tag topology
+- molpy flat bonds / angles / dihedrals become CPU per-row global-tag topology
   during `from_molpy`;
 - element identity has exactly one public owner, `molrs::Element`. Atomiverse
   declares no alias, no second enum and no implicit conversion. The ExtXYZ
@@ -201,7 +201,7 @@ The division of labour:
   serialized;
 - the Box crosses as explicit cell data, never as copied C++ object memory.
 
-molpy uses `molpy.Frame` / `molpy.Block` directly. Atomiverse, molrs and molpy
+molpy uses `molpy.Frame` / `molpy.Block` directly. Atomiverse, molpy and molpy
 share one current format version; anything else is rejected rather than
 implicitly migrated.
 
@@ -240,6 +240,6 @@ The source and compile-negative gates hold at least the following:
   layer and the documentation teach only `span(ColKey)`, typed meta and `box`;
 - no MPI payload funnels through `double`, and runtime columns and topology
   take part in the schema plan;
-- molrs typed-meta IDs and versions match the CXX boundary exactly;
+- molpy typed-meta IDs and versions match the CXX boundary exactly;
 - CUDA remains explicitly deferred, and the CPU keeps no compatibility surface
   on its behalf.

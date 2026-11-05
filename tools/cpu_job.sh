@@ -22,12 +22,13 @@
 # ATV_BUILD_DIR, ATV_KEEP_BUILD, ATV_RUN (shell command after ctest in this
 # module env; ${BUILD} expands in it). A benchmark needs the whole node:
 #   sbatch -A <account> -n 256 --exclusive -t 02:00:00 \
-#     --export=ALL,ATV_RUN='benchmarks/gaff/run_cpu_matrix.sh' tools/cpu_job.sh
+#     --export=ALL,ATV_CMAKE_FLAGS="-DATV_BUILD_BENCHMARKS=ON -DATV_USE_MPI=ON -DATV_BUILD_KSPACE=ON",ATV_TARGETS=run_atv_gaff,ATV_CTEST_RE='^$',GAFF_DATA_DIR=<dir>,ATV_RUN='benchmarks/compare/gaff-liquid/run_cpu_matrix.sh' \
+#     tools/cpu_job.sh
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
-: "${ATV_MOLPY_PATH:=$PWD/../molrs}"
+: "${ATV_MOLPY_PATH:=$PWD/../molpy}"
 export ATV_MOLPY_PATH
 
 module load buildenv-gcc/2026.03-mpich

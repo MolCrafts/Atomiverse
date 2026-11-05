@@ -18,7 +18,7 @@
 ///   sim.run(frame, 1000);   // ctx.step 0…999 -> frames at 0, 10, 20, …
 /// @endcode
 ///
-/// molrs buffers the appended frames and lands them a chunk at a time; the
+/// molpy buffers the appended frames and lands them a chunk at a time; the
 /// buffered tail is committed by `flush()` (checkpoint), by the automatic
 /// landing every `flush_every` frames, and finally by `destroy()` — which the
 /// driver fires when the run is torn down (the preset's destructor, or the
@@ -56,7 +56,7 @@ namespace cpu {
 /// steps only. Whether frames carry a time is fixed by the first append.
 ///
 /// **Schema is pinned by the first frame.** A serializable meta key that
-/// first appears on a later step is a molrs error naming the key: mount every
+/// first appears on a later step is a molpy error naming the key: mount every
 /// observer before the first recorded frame; a run that starts recording a
 /// new quantity midway needs a new store.
 ///
@@ -72,7 +72,7 @@ class MrecRecorder : public cpu::Recorder, public cpu::TimestepConsumer {
     ///                    first launched write, replacing an existing store.
     /// @param freq        Write cadence [steps; >= 1] — one frame is appended
     ///                    whenever `step % freq == 0`.
-    /// @param flush_every Automatic commit cadence [frames]; `0` lets molrs
+    /// @param flush_every Automatic commit cadence [frames]; `0` lets molpy
     ///                    land whole chunks at its own cadence. `1` commits
     ///                    every frame (crash-safe, write-amplifying).
     /// @param durable     Sync the touched files on `flush()` / `close()` /
@@ -137,7 +137,7 @@ class MrecRecorder : public cpu::Recorder, public cpu::TimestepConsumer {
     std::string filename_;
     int freq_;
     double dt_fs_ = 0.0;     ///< integrator dt [fs]; 0 ⇒ steps only
-    MrecWriter writer_;      ///< molrs-backed writer (reused every launch)
+    MrecWriter writer_;      ///< molpy-backed writer (reused every launch)
     cpu::Frame gathered_{0}; ///< multi-rank gather scratch (rank 0 only)
     int n_written_ = 0;
 };

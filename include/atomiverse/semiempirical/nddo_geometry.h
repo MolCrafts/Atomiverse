@@ -30,7 +30,7 @@ inline constexpr std::size_t kNddoContactReportLimit = 5;
 /// @brief Single-bond covalent radius [Å].
 ///
 /// Cordero et al., Dalton Trans. 2008, 2832 (DOI 10.1039/b801115j); the same
-/// table molrs `Element::covalent_radius` carries (C sp³, low-spin Mn/Fe/Co).
+/// table molpy `Element::covalent_radius` carries (C sp³, low-spin Mn/Fe/Co).
 /// @param z Atomic number, 1..86.
 /// @return Radius [Å].
 /// @throws std::invalid_argument for z outside 1..86 (no fallback radius).

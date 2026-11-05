@@ -29,7 +29,7 @@ namespace cuda {
 /// columns are frozen alongside the primary coordinates and the written
 /// coordinate is the reconstructed `x + x_corr`.
 ///
-/// Frames go through the molrs-backed `cpu::write_xyz_frame` (extended XYZ
+/// Frames go through the molpy-backed `cpu::write_xyz_frame` (extended XYZ
 /// with a Lattice comment line): the species column is the element symbol
 /// derived from `atoms.type` interpreted as atomic number Z, so non-Z type
 /// ids map to placeholder symbols (e.g. LJ type 0 -> "X"). This replaces the
@@ -130,7 +130,7 @@ class XyzRecorder : public AsyncRecorder {
     }
 
     void on_data_ready(const LaunchContext& ctx, int slot) override {
-        // Reconstruct primary + correction and widen to double for the molrs
+        // Reconstruct primary + correction and widen to double for the molpy
         // writer. Callbacks are serialized on the defer stream, so the
         // dx_/dy_/dz_/box_ scratch is reused safely (one callback in flight
         // at a time).

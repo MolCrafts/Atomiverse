@@ -3,7 +3,7 @@
 ///
 /// Three concerns, one per test: the constructor guards, the stride gate plus
 /// the committed frame count after teardown, and the content of frame 0 read
-/// back through the molrs bridge (`read_mrec_trajectory_frame`). The recorder is driven
+/// back through the molpy bridge (`read_mrec_trajectory_frame`). The recorder is driven
 /// through a minimal deterministic LJ `cpu::md::MD` run because `launch()`
 /// reads `ctx.step` and `ctx.runtime` — there is no smaller way to drive it —
 /// but nothing here is a physics claim: frame 0 is compared against the same
@@ -86,7 +86,7 @@ void remove_store(const std::string& path) {
 
 // ── 1. Constructor guards ────────────────────────────────────────────────
 
-// The store suffix is the format's identity (molrs refuses `.zarr`), and a
+// The store suffix is the format's identity (molpy refuses `.zarr`), and a
 // cadence below one step has no meaning; both are rejected loudly, before
 // anything touches the filesystem.
 TEST(MrecRecorderTest, ConstructorRejectsWrongSuffixAndZeroFreq) {

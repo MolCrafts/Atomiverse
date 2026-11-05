@@ -9,8 +9,8 @@ tree, so a repeat compile is incremental — and on the checkout's
 RECORD-tracked file of the distribution: ``pip uninstall`` removes it and an
 upgrade replaces it.
 
-molpy and the native bridge are built from the same local merged checkout.
-ATV_MOLPY_PATH selects that repository; its default is the sibling ../molrs.
+molpy and the native bridge are built from the same local molpy checkout.
+ATV_MOLPY_PATH selects that repository; its default is the sibling ../molpy.
 The capsule ABI handshake remains mandatory even without a release pin.
 
 Raw pip / cmake output streams to the terminal (no capture). State lives in
@@ -92,7 +92,7 @@ class BuildState:
     modules: List[str] = field(default_factory=list)
     fingerprint: str = ""
     wheel: str = ""  # native wheel produced by compile
-    molpy_wheel: str = ""  # molpy wheel built from the local merged checkout by compile
+    molpy_wheel: str = ""  # molpy wheel built from the local molpy checkout by compile
     installed: bool = False
 
     def save(self, path: Optional[Path] = None) -> Path:
@@ -161,7 +161,7 @@ def build_wheel_command(
 def build_molpy_wheel_command(
     source_root: Path, build_dir: Path, *, python: Optional[str] = None, molpy_root: Optional[Path] = None
 ) -> List[str]:
-    """Assemble the ``pip wheel`` command for molpy from the local merged checkout.
+    """Assemble the ``pip wheel`` command for molpy from the local molpy checkout.
 
     Run with ``CARGO_TARGET_DIR=<build_dir>/molpy-target`` (see
     ``molpy_target_dir``) so a repeat compile reuses the cargo build.
@@ -302,7 +302,7 @@ def run_compile(
     state = BuildState.load(state_file)
     bdir = Path(state.build_dir)
     if "ATV_MOLPY_PATH" not in state.defines:
-        raise ConfigError("build state has no merged molpy source; run atomiverse config again")
+        raise ConfigError("build state has no molpy source; run atomiverse config again")
     cmd = build_wheel_command(Path(state.python_dir), bdir, state.defines)
     env = dict(os.environ)
     if jobs is not None and jobs > 0:

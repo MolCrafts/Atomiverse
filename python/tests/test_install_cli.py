@@ -203,7 +203,7 @@ def test_molpy_wheel_command_builds_local_checkout(tmp_path: Path) -> None:
     root = _fake_checkout(tmp_path / "atv", "0.1.0")
     cmd = build_molpy_wheel_command(root, Path("/b"), python="/usr/bin/python")
     assert cmd[:4] == ["/usr/bin/python", "-m", "pip", "wheel"]
-    assert str(root.parent / "molrs" / "molpy") in cmd
+    assert str(root.parent / "molpy" / "molpy") in cmd
     assert "--no-build-isolation" in cmd and "--no-deps" in cmd
     assert cmd[cmd.index("--wheel-dir") + 1] == "/b/dist"
 
@@ -246,15 +246,15 @@ def test_build_state_missing_fails_loud(tmp_path: Path) -> None:
 # ── source resolution ────────────────────────────────────────────────────────
 
 
-def _fake_checkout(root: Path, version: str, *, molrs: bool = True) -> Path:
+def _fake_checkout(root: Path, version: str, *, molpy: bool = True) -> Path:
     root = root / "checkout"
     pkg = root / "python" / "src" / "atomiverse"
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
     (root / "python" / "pyproject.toml").write_text("", encoding="utf-8")
     (root / "CMakeLists.txt").write_text("project(x)\n", encoding="utf-8")
-    if molrs:
-        dependency = root.parent / "molrs"
+    if molpy:
+        dependency = root.parent / "molpy"
         for relative in ("molcxx/Cargo.toml", "molpy/pyproject.toml", "crates/molrs-ffi/Cargo.toml"):
             target = dependency / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -278,8 +278,8 @@ def test_resolve_source_version_mismatch(tmp_path: Path) -> None:
 
 
 def test_resolve_source_needs_merged_molpy(tmp_path: Path) -> None:
-    root = _fake_checkout(tmp_path, "0.1.0", molrs=False)
-    with pytest.raises(ConfigError, match="merged molpy checkout"):
+    root = _fake_checkout(tmp_path, "0.1.0", molpy=False)
+    with pytest.raises(ConfigError, match="molpy checkout missing"):
         resolve_source(str(root), version="0.1.0")
 
 
@@ -407,7 +407,7 @@ def test_run_subcommand(tmp_path: Path, capsys) -> None:
 
 def test_local_molpy_override_is_shared_by_wheel_build(tmp_path: Path, monkeypatch) -> None:
     root = _fake_checkout(tmp_path / "default", "0.1.0")
-    other = _fake_checkout(tmp_path / "override", "0.1.0").parent / "molrs"
+    other = _fake_checkout(tmp_path / "override", "0.1.0").parent / "molpy"
     monkeypatch.setenv("ATV_MOLPY_PATH", str(other))
     command = build_molpy_wheel_command(root, tmp_path / "build")
     assert str(other / "molpy") in command

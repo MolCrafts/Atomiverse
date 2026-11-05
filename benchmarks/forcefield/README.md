@@ -7,7 +7,7 @@ unit tests and does not execute an external scientific program from pytest.
 
 `bench_gaff.py` declares four combinations: GAFF and GAFF2, each with AM1-BCC
 (`bcc`) and ABCG2 (`abcg2`). Atom typing and charge correction are independent
-choices. The canonical inputs in `systems.json` contain complete atom properties,
+choices. The canonical inputs in `../systems/gaff.json` contain complete atom properties,
 connectivity, stated bond orders and explicit hydrogens, with positions rounded
 once to 0.001 Å. Their accompanying MOL2 text is the exact AmberTools input.
 Conformer generation is excluded from every participant's measured task.
@@ -20,12 +20,20 @@ not a claim to cover arbitrary organic chemistry, radicals or metal complexes.
 
 ## Compared task
 
-Each native invocation reconstructs a fresh `molpy.Atomistic`, computes charges
-with `atomiverse.AM1BCCCharges(..., correction=...).assign(molecule)`, stores
-the returned charges on its local molecule, and runs
-`molpy.typifier.GaffTypifier(atomtype=...).typify(molecule)`. It obtains the
-parameters with `get_forcefield()` and materializes atom-ordered charges/types
-and explicit parameter records.
+Each native invocation reconstructs a fresh `molpy.Atomistic` and computes
+charges with `atomiverse.AM1BCCCharges(method=atomiverse.AM1(...),
+correction=...).assign(molecule)`. It stores the returned charges on its local
+molecule. Typing then runs in two steps, both with the row's `parameter_set`
+(`gaff` or `gaff2`):
+
+1. `molpy.ff.typifier.AtdTypifier(parameter_set=...).typify(molecule)` applies
+   antechamber's `ATOMTYPE_*.DEF` rules and returns a clone with GAFF atom types.
+2. `molpy.ff.typifier.GaffTypifier(parameter_set=...).typify(labelled)` matches
+   the bonded terms against the compiled `gaff.dat`/`gaff2.dat` table (with
+   parmchk2-style estimates), and `.forcefield()` returns the parameters.
+
+From the typed frame and force field, it materializes atom-ordered
+charges/types and explicit parameter records.
 
 Each independent invocation writes a fresh MOL2 in a fresh job directory,
 runs `antechamber -at ... -c ... -eq 1 -ek "qm_theory='AM1', maxcyc=0,
@@ -89,8 +97,7 @@ receipt's source-tree digest and the actual loaded binary hashes, recording the
 receipt SHA-256 and sibling tree SHA-256. The controller must recompute the full
 sibling source tree after the campaign and verify all observations used the
 same receipt, tree and libraries. A changed sibling tree or inconsistent receipt
-invalidates timing ratios explicitly. The Slurm submission/run scripts retained
-with the isolated result implement this procedure. Without a receipt, the
+invalidates timing ratios explicitly. Without a receipt, the
 adapter computes sibling provenance directly in every worker; it never omits
 source information to save time. Source hashing and provenance checks are
 outside the scientific E2E timer.
@@ -104,13 +111,11 @@ python -m benchmarks.forcefield.bench_gaff --tier performance --threads 1 \
 ```
 
 Each run writes the standard results JSON, matrix, raw observation artifacts,
-CSV and JUnit. `--no-snapshot` explicitly disables the separate CI envelope and
-records that choice in `bundle.protocol.ci_snapshot`. The local environment's
-installed molci is older than the framework's required 0.3 protocol; its
-`Manifest` rejects `observation_id`. Scientific observations, checks and timing
-reports remain complete, but no compatible CI snapshot is claimed. Remove the
-flag after installing the coordinated molci protocol rather than downgrading
-or rewriting its schema. Existing observations can be re-reported with
+CSV and JUnit under the `--out` directory; keep it, and `ATV_GAFF_ARTIFACT_ROOT`,
+under `build/` or outside the source tree. `--no-snapshot` disables the separate
+CI envelope and records that choice in `bundle.protocol.ci_snapshot`; use it
+when the installed molci predates the 0.3 protocol (its `Manifest` rejects
+`observation_id`). Existing observations can be re-reported with
 `python -m benchmarks report --input <results.json> --out <directory>` once
 the compatible protocol is available; no scientific rerun is needed for that
 envelope alone.
@@ -122,7 +127,6 @@ includes imports and runtime initialization. Five accepted warm samples are
 required before a speedup can be reported. A dirty source tree cannot promote
 the roadmap's official ✓/⚡ marks; measured local results still remain visible.
 
-The [DMSO reference-anomaly bundle](results/2026-10-26-reference-anomaly/README.md)
-preserves a proven numbering-dependent GAFF2 torsion assignment in tleap.
-Those comparison cells remain failures with no speedup; the native exact-table
-assignment remains symmetric under the atom permutation.
+A known tleap behavior: for DMSO, tleap's GAFF2 torsion assignment depends on
+atom numbering. Those comparison cells remain failures with no speedup; the
+native exact-table assignment is symmetric under the atom permutation.

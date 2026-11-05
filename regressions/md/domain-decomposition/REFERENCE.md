@@ -377,9 +377,9 @@ oracle_version: n/a (analytic identity; no oracle binary is run — the O(N²)
 minimum-image direct sum is recomputed inside the regression. See citations
 below.)
 perf_exempt: yes — this slug makes **no** performance claim. Rank-scaling,
-steps/s and the LAMMPS comparison of `comm-topology-03` live in the dated
-snapshot block of `tools/bench_gaff_lammps/README.md` and are explicitly not
-acceptance criteria. No wall-clock number is asserted here.
+steps/s and the LAMMPS comparison of `comm-topology-03` are measured with
+`benchmarks/compare/gaff-peo-lammps` and are explicitly not acceptance
+criteria. No wall-clock number is asserted here.
 
 ### Invariant under test
 
@@ -623,4 +623,4 @@ by spec: the non-uniform (RCB) hop chain and the `max_hops > dims − 1` refusal
 deeper shells at 8 ranks on one axis
 (`tests/mpi/test_halo_dual_image_ghosts.cpp` `_n8`), long-range electrostatics
 (no PPPM here), the 24k-atom / 256-rank real-machine run
-(`tools/bench_gaff_lammps/widebox_parity.sh`), and every performance number.
+(`benchmarks/compare/gaff-peo-lammps/widebox_parity.sh`), and every performance number.
