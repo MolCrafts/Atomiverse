@@ -152,8 +152,7 @@ TEST(CudaPairLJSpecialBonds, ApiAcceptsFractionalRejectsNonFinite) {
 // pairs bypass the exclusion CSR mask (-1 is in no partner list) and
 // erroneously contributed ~-0.40 eV to the total LJ energy. The new
 // guard rejects pairs with negative atom indices outright; valid pairs
-// still flow through the existing `r < cutoff && r >= kMinPairDist`
-// filter as before.
+// still flow through the tile test `0 < r^2 < cutoff^2`.
 TEST(CudaPairLJSpecialBonds, FourAtomChainAllExcludedZeroEnergy) {
     auto frame = make_chain4();
     const double cutoff = 3.0;

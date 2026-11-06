@@ -133,6 +133,8 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     /// @return True for the typed path; false before the first build.
     bool typed_kernel() const;
     void build(const BuildContext& ctx) override;
+    void invalidate_inputs(InputChange changes,
+                           const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
   protected:

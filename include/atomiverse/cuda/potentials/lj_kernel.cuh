@@ -1,5 +1,5 @@
 /// @file cuda/potentials/lj_kernel.cuh
-/// @brief LJ constants shared by cuda::PairLJCut and its tests.
+/// @brief LJ shift shared by cuda::PairLJCut and its tests.
 #pragma once
 
 #include "atomiverse/cuda/frame/types.cuh"
@@ -7,9 +7,6 @@
 namespace ATV {
 namespace cuda {
 namespace kernels {
-
-/// @brief Minimum pair distance to avoid LJ singularity [Angstrom].
-inline constexpr cuda::force_t kMinPairDist = cuda::force_t(1e-10);
 
 /// @brief Compute LJ potential shift at cutoff.
 /// @param epsilon Well depth [eV].

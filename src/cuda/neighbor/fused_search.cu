@@ -9,12 +9,15 @@
 
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 #include <cuda_runtime.h>
 #include <thrust/binary_search.h>
 #include <thrust/execution_policy.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
 namespace ATV::cuda::md::nlist {
 
@@ -185,60 +188,148 @@ void launch_compute_csr_masks(const pos_t* cluster_x, const pos_t* cluster_y,
 // motion test runs on the primary coordinates against a cell narrowed once
 // to the scratch type.
 template <typename T>
+constexpr T kInfinity = std::numeric_limits<T>::infinity();
+template <typename T>
+constexpr T kEpsilon = std::numeric_limits<T>::epsilon();
+
+// OpenMM's singlePeriodicCopy criterion from one cluster's live coordinates
+// (one warp = one cluster; every lane participates, pad lanes as `live =
+// false`). A reused Hilbert cluster then needs no assumption about its
+// motion within the skin; wide clusters keep the per-pair minimum image.
+template <typename T>
+__device__ __forceinline__ void
+publish_cluster_image(bool live, T x, T y, T z, const BoxGeometry<T>& box,
+                      T cutoff, ClusterImage* images, int ci) {
+    namespace cg = cooperative_groups;
+    auto warp = cg::tiled_partition<32>(cg::this_thread_block());
+    constexpr T inf = kInfinity<T>;
+    constexpr T eps = kEpsilon<T>;
+    ClusterImage image{};
+    if (box.ortho) {
+        const T position[3] = {x, y, z};
+        bool single = true;
+#pragma unroll
+        for (int d = 0; d < 3; ++d) {
+            const T lo =
+                cg::reduce(warp, live ? position[d] : inf, cg::less<T>{});
+            const T hi =
+                cg::reduce(warp, live ? position[d] : -inf, cg::greater<T>{});
+            const T length = T(box.cell[4 * d]);
+            const T halfwidth = (hi - lo) * T(0.5);
+            const T margin =
+                T(32) * eps * (fabs(lo) + fabs(hi) + fabs(length) + cutoff);
+            // Every cutoff neighbour then lies strictly inside the half cell
+            // centred here. Warp-uniform, including pad lanes.
+            single = single && halfwidth + cutoff + margin < length * T(0.5);
+            image.center[d] = force_t(lo + halfwidth);
+        }
+        image.single = single ? 1 : 0;
+    }
+    if (warp.thread_rank() == 0)
+        images[ci] = image;
+}
+
+// One thread per cluster slot: read the slot's atom once, publish it as the
+// live cluster position and fold it into its cluster's image. With `Gate`
+// the same read drives the skin test against the slot-ordered reference of
+// the last rebuild — every block reduces "an atom moved more than the LAMMPS
+// check_distance trigger (`core/neighbor_check.h`; a cell change that alone
+// consumes the skin rebuilds)" and the last block sets the conditional
+// rebuild handle. The trigger is computed once per block in FP64 from the
+// FP64 cells; the motion test runs on the primary coordinates against a
+// cell narrowed once to the scratch type.
+template <typename T, bool Gate>
 __global__ void
-skin_gate_k(const pos_t* __restrict__ pos_x, const pos_t* __restrict__ pos_y,
+skin_gate_k(const int* __restrict__ orig_index, int num_slots,
+            const pos_t* __restrict__ pos_x, const pos_t* __restrict__ pos_y,
             const pos_t* __restrict__ pos_z, const pos_t* __restrict__ ref_x,
             const pos_t* __restrict__ ref_y, const pos_t* __restrict__ ref_z,
-            int num_atoms, double skin, Box box_arg, const Box* reference_box,
+            pos_t* __restrict__ cl_x, pos_t* __restrict__ cl_y,
+            pos_t* __restrict__ cl_z, ClusterImage* __restrict__ images,
+            T image_cut, double skin, Box box_arg, const Box* reference_box,
             Control* control, cudaGraphConditionalHandle handle) {
     const Box geom = box_arg.current();
+    const auto box = geom.as<T>();
     __shared__ double trigger_sq;
-    if (threadIdx.x == 0)
-        trigger_sq =
-            reference_box
-                ? ATV::md::skin_trigger_sq(reference_box->cell, geom.cell, skin)
-                : 0.25 * skin * skin;
-    __syncthreads();
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    bool moved = trigger_sq < 0.0;
-    if (i < num_atoms && !moved) {
-        const auto box = geom.as<T>();
-        T dx = pos_x[i] - ref_x[i];
-        T dy = pos_y[i] - ref_y[i];
-        T dz = pos_z[i] - ref_z[i];
-        box.min_image(dx, dy, dz);
-        moved = dx * dx + dy * dy + dz * dz > T(trigger_sq);
+    if constexpr (Gate) {
+        if (threadIdx.x == 0)
+            trigger_sq = reference_box
+                             ? ATV::md::skin_trigger_sq(reference_box->cell,
+                                                        geom.cell, skin)
+                             : 0.25 * skin * skin;
+        __syncthreads();
     }
-    const int count = __syncthreads_count(moved);
-    if (threadIdx.x != 0)
-        return;
-    if (count != 0)
-        atomicOr(&control->motion, 1);
-    __threadfence();
-    // atomicInc wraps to zero on the last ticket, re-arming the next step.
-    if (atomicInc(&control->done, gridDim.x - 1) != gridDim.x - 1)
-        return;
-    const bool rebuild =
-        (atomicExch(&control->motion, 0) | atomicExch(&control->force, 0)) != 0;
-    control->rebuilt = rebuild;
-    if (rebuild) {
-        ++control->rebuilds;
-        control->generation = atomicAdd(&g_mask_generation, 1ULL) + 1ULL;
+    const int k = blockIdx.x * blockDim.x + threadIdx.x;
+    const int a = k < num_slots ? orig_index[k] : -1;
+    T x = 0, y = 0, z = 0;
+    if (a >= 0) {
+        x = pos_x[a];
+        y = pos_y[a];
+        z = pos_z[a];
+        cl_x[k] = pos_t(x);
+        cl_y[k] = pos_t(y);
+        cl_z[k] = pos_t(z);
     }
-    cudaGraphSetConditional(handle, rebuild ? 1u : 0u);
+    // Slots are whole clusters and blocks whole warps: a warp is either a
+    // full cluster or entirely past the end.
+    if (k - static_cast<int>(threadIdx.x % 32) < num_slots)
+        publish_cluster_image<T>(a >= 0, x, y, z, box, image_cut, images,
+                                 k / 32);
+    if constexpr (Gate) {
+        bool moved = trigger_sq < 0.0;
+        if (a >= 0 && !moved) {
+            T dx = x - ref_x[k];
+            T dy = y - ref_y[k];
+            T dz = z - ref_z[k];
+            box.min_image(dx, dy, dz);
+            moved = dx * dx + dy * dy + dz * dz > T(trigger_sq);
+        }
+        const int count = __syncthreads_count(moved);
+        if (threadIdx.x != 0)
+            return;
+        if (count != 0)
+            atomicOr(&control->motion, 1);
+        __threadfence();
+        // atomicInc wraps to zero on the last ticket, re-arming the next step.
+        if (atomicInc(&control->done, gridDim.x - 1) != gridDim.x - 1)
+            return;
+        const bool rebuild =
+            (atomicExch(&control->motion, 0) | atomicExch(&control->force, 0))
+            != 0;
+        control->rebuilt = rebuild;
+        if (rebuild) {
+            ++control->rebuilds;
+            control->generation = atomicAdd(&g_mask_generation, 1ULL) + 1ULL;
+        }
+        cudaGraphSetConditional(handle, rebuild ? 1u : 0u);
+    }
 }
 
 template <typename T>
-void launch_skin_gate(const pos_t* pos_x, const pos_t* pos_y,
-                      const pos_t* pos_z, const pos_t* ref_x,
-                      const pos_t* ref_y, const pos_t* ref_z, int num_atoms,
-                      double skin, Box box, const Box* reference_box,
-                      Control* control, cudaGraphConditionalHandle handle,
-                      cudaStream_t stream) {
-    const int grid = ATV::cuda::grid_size(num_atoms, 256);
-    skin_gate_k<T><<<grid, 256, 0, stream>>>(pos_x, pos_y, pos_z, ref_x, ref_y,
-                                             ref_z, num_atoms, skin, box,
-                                             reference_box, control, handle);
+void launch_skin_gate(const ClusterSlots& slots, const pos_t* pos_x,
+                      const pos_t* pos_y, const pos_t* pos_z, double skin,
+                      Box box, const Box* reference_box, Control* control,
+                      cudaGraphConditionalHandle handle, cudaStream_t stream) {
+    const int grid = ATV::cuda::grid_size(std::max(slots.num_slots, 1), 256);
+    skin_gate_k<T, true><<<grid, 256, 0, stream>>>(
+        slots.orig_index, slots.num_slots, pos_x, pos_y, pos_z, slots.ref_x,
+        slots.ref_y, slots.ref_z, slots.cl_x, slots.cl_y, slots.cl_z,
+        slots.images, T(slots.image_cut), skin, box, reference_box, control,
+        handle);
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
+
+template <typename T>
+void launch_refresh_clusters(const ClusterSlots& slots, const pos_t* pos_x,
+                             const pos_t* pos_y, const pos_t* pos_z, Box box,
+                             cudaStream_t stream) {
+    if (slots.num_slots <= 0)
+        return;
+    const int grid = ATV::cuda::grid_size(slots.num_slots, 256);
+    skin_gate_k<T, false><<<grid, 256, 0, stream>>>(
+        slots.orig_index, slots.num_slots, pos_x, pos_y, pos_z, nullptr,
+        nullptr, nullptr, slots.cl_x, slots.cl_y, slots.cl_z, slots.images,
+        T(slots.image_cut), 0.0, box, nullptr, nullptr, {});
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
@@ -254,10 +345,10 @@ void launch_publish_generation(Control* control, cudaStream_t stream) {
 }
 
 // ---------------------------------------------------------------------------
-// Kernel: Snapshot per-atom positions into ref_{x,y,z}
+// Snapshot the rebuilt slot positions into ref_{x,y,z}
 // ---------------------------------------------------------------------------
 
-void launch_snapshot_ref_atoms(const pos_t* pos_x, const pos_t* pos_y,
+void launch_snapshot_ref_slots(const pos_t* pos_x, const pos_t* pos_y,
                                const pos_t* pos_z, pos_t* ref_x, pos_t* ref_y,
                                pos_t* ref_z, int num_atoms,
                                cudaStream_t stream) {
@@ -283,6 +374,8 @@ namespace {
     reinterpret_cast<const void*>(&launch_compute_csr_masks<force_t>);
 [[maybe_unused]] const void* _inst_launch_skin_gate =
     reinterpret_cast<const void*>(&launch_skin_gate<force_t>);
+[[maybe_unused]] const void* _inst_launch_refresh_clusters =
+    reinterpret_cast<const void*>(&launch_refresh_clusters<force_t>);
 } // namespace
 
 } // namespace ATV::cuda::md::nlist

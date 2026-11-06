@@ -9,6 +9,7 @@
 
 #include "atomiverse/cuda/frame/frame.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
+#include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include <cuda_runtime.h>
 
 #include <cstddef>
@@ -50,16 +51,11 @@ struct NListBuffers {
     DeviceVector<uint64_t> interaction_mask;
     DeviceVector<char> prefix_temp;
 
-    // Reference positions for the Verlet-skin rebuild check
-    // (snapshot of frame.atoms.x/y/z taken at the end of every full
-    // rebuild; consumed by the skin gate each step).
+    // Slot-ordered reference positions for the Verlet-skin rebuild check
+    // (the cluster positions of the last full rebuild; consumed by the skin
+    // gate each step) and the per-cluster single-copy images of the step.
     DeviceVector<pos_t> ref_x, ref_y, ref_z;
-
-    void resize_atoms(int n) {
-        ref_x.resize(n);
-        ref_y.resize(n);
-        ref_z.resize(n);
-    }
+    DeviceVector<ClusterImage> images;
 
     // The Hilbert/cluster/AABB/CSR pipeline is the CUDA MD force source of
     // truth. Allocate at build-time capacity; set_active_count can reuse
@@ -74,6 +70,10 @@ struct NListBuffers {
         cluster_x.resize(padded);
         cluster_y.resize(padded);
         cluster_z.resize(padded);
+        ref_x.resize(padded);
+        ref_y.resize(padded);
+        ref_z.resize(padded);
+        images.resize(n_clusters);
         original_index.resize(padded);
         cluster_count.resize(n_clusters);
 
@@ -199,25 +199,49 @@ void launch_scatter_and_aabb(const int* sorted_indices, const pos_t* pos_x,
                              force_t* aabb_max_y, force_t* aabb_max_z,
                              cudaStream_t stream = 0);
 
-/// Current-step skin gate. Every block reduces "an atom moved more than the
-/// LAMMPS check_distance trigger (half the skin less the reference-cell
-/// corner motion), or the cell motion alone consumed the skin"; the last block
-/// folds in the forced flag, publishes
-/// `control->rebuilt`, advances the rebuild count and mask generation, and
-/// sets the conditional rebuild handle. Must run inside the graph that owns
-/// `handle`.
-template <typename T>
-void launch_skin_gate(const pos_t* pos_x, const pos_t* pos_y,
-                      const pos_t* pos_z, const pos_t* ref_x,
-                      const pos_t* ref_y, const pos_t* ref_z, int num_atoms,
-                      double skin, Box box, const Box* reference_box,
-                      Control* control, cudaGraphConditionalHandle handle,
-                      cudaStream_t stream = 0);
+/// Slot-ordered live state of the cluster list: what the skin gate reads
+/// (the slot map, the slot-ordered reference positions of the last rebuild)
+/// and publishes (live slot positions, per-cluster images).
+struct ClusterSlots {
+    const int* orig_index = nullptr;
+    int num_slots = 0; ///< num_clusters * kClusterSize.
+    const pos_t* ref_x = nullptr;
+    const pos_t* ref_y = nullptr;
+    const pos_t* ref_z = nullptr;
+    pos_t* cl_x = nullptr;
+    pos_t* cl_y = nullptr;
+    pos_t* cl_z = nullptr;
+    ClusterImage* images = nullptr;
+    double image_cut = 0.0; ///< Pair cutoff the images must cover [Å].
+};
 
+/// Current-step skin gate, one thread per cluster slot. Each slot's atom is
+/// read once: stored as the live cluster position, folded into its
+/// cluster's single-copy image, and tested against the slot's reference
+/// position. Every block reduces "an atom moved more than the LAMMPS
+/// check_distance trigger (half the skin less the reference-cell corner
+/// motion), or the cell motion alone consumed the skin"; the last block
+/// folds in the forced flag, publishes `control->rebuilt`, advances the
+/// rebuild count and mask generation, and sets the conditional rebuild
+/// handle. Must run inside the graph that owns `handle`.
+template <typename T>
+void launch_skin_gate(const ClusterSlots& slots, const pos_t* pos_x,
+                      const pos_t* pos_y, const pos_t* pos_z, double skin,
+                      Box box, const Box* reference_box, Control* control,
+                      cudaGraphConditionalHandle handle,
+                      cudaStream_t stream = 0);
+/// The gate's publication without the gate: live slot positions and
+/// cluster images (after a rebuild's scatter, and every step of a
+/// driver-cadence list).
+template <typename T>
+void launch_refresh_clusters(const ClusterSlots& slots, const pos_t* pos_x,
+                             const pos_t* pos_y, const pos_t* pos_z, Box box,
+                             cudaStream_t stream = 0);
 /// Advances the mask generation without a skin gate (multi-GPU rebuild).
 void launch_publish_generation(Control* control, cudaStream_t stream = 0);
 
-void launch_snapshot_ref_atoms(const pos_t* pos_x, const pos_t* pos_y,
+/// Copy the rebuilt cluster positions into the slot-ordered skin reference.
+void launch_snapshot_ref_slots(const pos_t* pos_x, const pos_t* pos_y,
                                const pos_t* pos_z, pos_t* ref_x, pos_t* ref_y,
                                pos_t* ref_z, int num_atoms,
                                cudaStream_t stream = 0);

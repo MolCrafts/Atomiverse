@@ -164,11 +164,13 @@ void NeighborList::build(const BuildContext& ctx) {
             dense_limit, static_cast<long long>(cluster_pair_capacity_));
     s.pair_capacity = static_cast<int>(cluster_cap_ll);
 
-    // Always-needed per-atom buffers (Verlet-skin reference positions).
-    s.buf.resize_atoms(n);
-
     // OpenMM cluster pipeline is the CUDA neighbor source of truth.
     s.buf.resize_cluster_csr(n, nc);
+    // The skin gate of the forced first rebuild reads the slot map before
+    // that rebuild writes it: start with every slot a pad slot.
+    ATV_CUDA_CHECK(cudaMemsetAsync(s.buf.original_index.data(), 0xff,
+                                   std::size_t(nc) * kClusterSize * sizeof(int),
+                                   stream));
     CubTempBytes cub_bytes = query_cub_temp_bytes(n, nc);
     if (cub_bytes.sort_bytes > 0)
         s.buf.sort_temp.resize(cub_bytes.sort_bytes);
@@ -251,6 +253,7 @@ void NeighborList::build(const BuildContext& ctx) {
     pairs_.cl_x = s.buf.cluster_x.data();
     pairs_.cl_y = s.buf.cluster_y.data();
     pairs_.cl_z = s.buf.cluster_z.data();
+    pairs_.cl_image = s.buf.images.data();
     pairs_.num_clusters = nc;
     pairs_.cluster_pair_capacity = s.pair_capacity;
     pairs_.rebuilt = &s.control.data()->rebuilt;
@@ -311,7 +314,24 @@ struct RebuildArgs {
     int capacity;
     bool periodic;
     force_t cut_skin_sq;
+    double cutoff;
 };
+
+// The slot-ordered live state the gate reads and publishes.
+ClusterSlots cluster_slots(NListBuffers<force_t>& b, int nc, double cutoff) {
+    ClusterSlots slots;
+    slots.orig_index = b.original_index.data();
+    slots.num_slots = nc * kClusterSize;
+    slots.ref_x = b.ref_x.data();
+    slots.ref_y = b.ref_y.data();
+    slots.ref_z = b.ref_z.data();
+    slots.cl_x = b.cluster_x.data();
+    slots.cl_y = b.cluster_y.data();
+    slots.cl_z = b.cluster_z.data();
+    slots.images = b.images.data();
+    slots.image_cut = cutoff;
+    return slots;
+}
 
 void enqueue_hierarchy(const RebuildArgs& a, const LaunchContext& ctx,
                        cudaStream_t stream) {
@@ -332,6 +352,10 @@ void enqueue_hierarchy(const RebuildArgs& a, const LaunchContext& ctx,
         b.original_index.data(), b.cluster_count.data(), b.aabb_min_x.data(),
         b.aabb_min_y.data(), b.aabb_min_z.data(), b.aabb_max_x.data(),
         b.aabb_max_y.data(), b.aabb_max_z.data(), stream);
+    // The new layout's cluster images (the gate computed the old one's).
+    launch_refresh_clusters<force_t>(
+        cluster_slots(b, a.nc, a.cutoff), frame.atoms.x, frame.atoms.y,
+        frame.atoms.z, ctx.runtime.host_box, stream);
     ClusterBounds bounds{b.aabb_min_x.data(), b.aabb_min_y.data(),
                          b.aabb_min_z.data(), b.aabb_max_x.data(),
                          b.aabb_max_y.data(), b.aabb_max_z.data()};
@@ -348,7 +372,6 @@ void enqueue_hierarchy(const RebuildArgs& a, const LaunchContext& ctx,
 bool enqueue_csr(const RebuildArgs& a, const LaunchContext& ctx,
                  cudaStream_t stream) {
     auto& b = *a.buf;
-    auto& frame = ctx.frame;
     ClusterBounds bounds{b.aabb_min_x.data(), b.aabb_min_y.data(),
                          b.aabb_min_z.data(), b.aabb_max_x.data(),
                          b.aabb_max_y.data(), b.aabb_max_z.data()};
@@ -364,9 +387,10 @@ bool enqueue_csr(const RebuildArgs& a, const LaunchContext& ctx,
         b.row_ptr.data(), b.col_idx.data(), b.original_index.data(), a.nc,
         ctx.runtime.md.excl_offsets, ctx.runtime.md.excl_partners,
         ctx.runtime.md.s_excl, b.interaction_mask.data(), stream);
-    launch_snapshot_ref_atoms(frame.atoms.x, frame.atoms.y, frame.atoms.z,
-                              b.ref_x.data(), b.ref_y.data(), b.ref_z.data(),
-                              a.n, stream);
+    launch_snapshot_ref_slots(b.cluster_x.data(), b.cluster_y.data(),
+                              b.cluster_z.data(), b.ref_x.data(),
+                              b.ref_y.data(), b.ref_z.data(),
+                              a.nc * kClusterSize, stream);
     return baked;
 }
 
@@ -409,6 +433,10 @@ void NeighborList::launch(const LaunchContext& ctx) {
         if (s.first_launch) {
             rebuild_issue(ctx);
             finalize_rebuild(ctx);
+        } else {
+            launch_refresh_clusters<force_t>(
+                cluster_slots(s.buf, nc, cutoff_), frame.atoms.x, frame.atoms.y,
+                frame.atoms.z, ctx.runtime.host_box, stream);
         }
         return;
     }
@@ -421,7 +449,8 @@ void NeighborList::launch(const LaunchContext& ctx) {
                            nc,
                            s.pair_capacity,
                            s.periodic,
-                           s.cut_skin_sq};
+                           s.cut_skin_sq,
+                           cutoff_};
     // Inside a step segment the gate and the conditional rebuild join the
     // step graph: one launch for the whole step instead of a graph of our
     // own (each separately launched conditional graph costs ~16 us of idle
@@ -432,10 +461,9 @@ void NeighborList::launch(const LaunchContext& ctx) {
             stream, s.capture_stream,
             [&](cudaGraphConditionalHandle handle) {
                 launch_skin_gate<force_t>(
-                    frame.atoms.x, frame.atoms.y, frame.atoms.z,
-                    s.buf.ref_x.data(), s.buf.ref_y.data(), s.buf.ref_z.data(),
-                    n, skin_, ctx.runtime.host_box, s.reference_box.data(),
-                    s.control.data(), handle, stream);
+                    cluster_slots(s.buf, nc, cutoff_), frame.atoms.x,
+                    frame.atoms.y, frame.atoms.z, skin_, ctx.runtime.host_box,
+                    s.reference_box.data(), s.control.data(), handle, stream);
             },
             [&](cudaStream_t body) {
                 enqueue_hierarchy(args, ctx, body);
@@ -479,10 +507,10 @@ void NeighborList::launch(const LaunchContext& ctx) {
                             "capture gate");
                 try {
                     launch_skin_gate<force_t>(
-                        frame.atoms.x, frame.atoms.y, frame.atoms.z,
-                        s.buf.ref_x.data(), s.buf.ref_y.data(),
-                        s.buf.ref_z.data(), n, skin_, ctx.runtime.host_box,
-                        s.reference_box.data(), s.control.data(), handle, cs);
+                        cluster_slots(s.buf, nc, cutoff_), frame.atoms.x,
+                        frame.atoms.y, frame.atoms.z, skin_,
+                        ctx.runtime.host_box, s.reference_box.data(),
+                        s.control.data(), handle, cs);
                 } catch (...) {
                     cudaGraph_t discard = nullptr;
                     cudaStreamEndCapture(cs, &discard);
@@ -569,7 +597,8 @@ void NeighborList::rebuild_issue(const LaunchContext& ctx) {
                            nc,
                            s.pair_capacity,
                            s.periodic,
-                           s.cut_skin_sq};
+                           s.cut_skin_sq,
+                           cutoff_};
     enqueue_hierarchy(args, ctx, stream);
     ATV_CUDA_CHECK(cudaMemcpyAsync(s.h_cluster_pair_count,
                                    s.buf.row_ptr.data() + nc, sizeof(int),
