@@ -23,7 +23,7 @@ skip_module_unless("ATV_BUILD_MD")
 import molpy  # noqa: E402
 
 from atomiverse import forcefield as avff  # noqa: E402
-from atomiverse.forcefield import KCAL_PER_MOL, ForceFieldError  # noqa: E402
+from atomiverse.forcefield import ForceFieldError  # noqa: E402
 from atomiverse.md import MD  # noqa: E402
 from atomiverse.md.integrator import VelocityVerlet  # noqa: E402
 from atomiverse.neighbor import NeighborList  # noqa: E402
@@ -102,7 +102,7 @@ def _frame(xyz, types, charges, *, bonds=(), angles=(), dihedrals=(), impropers=
 
 
 def _energy(system: avff.Compiled) -> float:
-    sim = MD()
+    sim = MD(units=system.units)
     sim.set_integrator(VelocityVerlet(0.5))
     sim.set_neighbor(NeighborList(system.cutoff, 1.0))
     for term in system.evaluators:
@@ -119,13 +119,27 @@ def _chain(n: int, *, spacing: float = 1.5):
     return [(spacing * i, 0.0, 0.0) for i in range(n)]
 
 
-def test_kcal_per_mol_is_the_codata_value():
-    assert KCAL_PER_MOL == pytest.approx(0.04336410424, rel=1e-10)
+def test_parameters_stay_in_the_force_fields_units():
+    """No conversion: a units real force field runs as units real."""
+    frame = _frame([(0, 0, 0), (5, 0, 0)], ["a", "b"], [0.0, 0.0])
+    system = avff.compile(_forcefield(), frame, units="real")
+    assert system.units == "real"
+    lj = system.evaluators[0]
+    assert isinstance(lj, LJCut)
+
+
+def test_a_force_field_in_another_style_than_the_run_is_refused():
+    frame = _frame([(0, 0, 0), (5, 0, 0)], ["a", "b"], [0.0, 0.0])
+    with pytest.raises(ForceFieldError, match="units 'real' but the run is in units 'metal'"):
+        avff.compile(_forcefield(), frame, units="metal")
+    # The default is the script-level style (lj unless set_units chose one).
+    with pytest.raises(ForceFieldError, match="units 'lj'"):
+        avff.compile(_forcefield(), frame)
 
 
 def test_like_kinds_split_by_type_not_element():
     frame = _frame([(0, 0, 0), (5, 0, 0), (10, 0, 0)], ["a", "b", "a"], [0.0] * 3)
-    system = avff.compile(_forcefield(), frame)
+    system = avff.compile(_forcefield(), frame, units="real")
     kinds = np.asarray(system.frame["atoms"]["type_id"])
     assert kinds[0] == kinds[2] != kinds[1]
     # One molpy style, one evaluator: lj/cut then coul/cut, in style order.
@@ -133,11 +147,11 @@ def test_like_kinds_split_by_type_not_element():
     assert system.cutoff == CUTOFF
 
 
-def test_lj_cross_term_mixes_lorentz_berthelot_in_ev():
+def test_lj_cross_term_mixes_lorentz_berthelot():
     r = 4.0
     frame = _frame([(0, 0, 0), (r, 0, 0)], ["a", "b"], [0.0, 0.0])
-    energy = _energy(avff.compile(_forcefield(), frame))
-    eps = math.sqrt(0.1 * 0.02) * KCAL_PER_MOL
+    energy = _energy(avff.compile(_forcefield(), frame, units="real"))
+    eps = math.sqrt(0.1 * 0.02)
     sigma = (3.4 + 2.6) / 2
     expected = 4 * eps * ((sigma / r) ** 12 - (sigma / r) ** 6)
     assert energy == pytest.approx(expected, rel=1e-9, abs=1e-12)
@@ -146,8 +160,8 @@ def test_lj_cross_term_mixes_lorentz_berthelot_in_ev():
 def test_bonded_pair_is_excluded_and_bond_energy_is_k_dr_squared():
     r = 1.7
     frame = _frame([(0, 0, 0), (r, 0, 0)], ["a", "a"], [0.0, 0.0], bonds=[(0, 1)])
-    energy = _energy(avff.compile(_forcefield(), frame))
-    assert energy == pytest.approx(300.0 * KCAL_PER_MOL * (r - 1.5) ** 2, rel=1e-9)
+    energy = _energy(avff.compile(_forcefield(), frame, units="real"))
+    assert energy == pytest.approx(300.0 * (r - 1.5) ** 2, rel=1e-9)
 
 
 def test_multi_term_dihedral_becomes_one_charmm_row_per_term():
@@ -160,7 +174,7 @@ def test_multi_term_dihedral_becomes_one_charmm_row_per_term():
         angles=[(0, 1, 2), (1, 2, 3)],
         dihedrals=[(0, 1, 2, 3)],
     )
-    system = avff.compile(_forcefield(dihedral_terms=terms), frame)
+    system = avff.compile(_forcefield(dihedral_terms=terms), frame, units="real")
     # The zero-amplitude term contributes nothing and is not emitted.
     assert system.frame["dihedrals"].n_rows == 2
     # Right angles everywhere: angle energy is 2 k (90° - 110°)², the
@@ -172,7 +186,7 @@ def test_multi_term_dihedral_becomes_one_charmm_row_per_term():
     # 1-4 pair (atoms 0 and 3, r = 1.5·√3) at half weight; charges are zero.
     r14 = 1.5 * math.sqrt(3.0)
     lj14 = 0.5 * 4 * 0.1 * ((3.4 / r14) ** 12 - (3.4 / r14) ** 6)
-    expected = (angle + torsion + lj14) * KCAL_PER_MOL
+    expected = (angle + torsion + lj14)
     assert _energy(system) == pytest.approx(expected, rel=1e-8)
 
 
@@ -184,14 +198,14 @@ def test_periodic_improper_becomes_cvff_with_the_sign_of_its_phase():
         bonds=[(0, 1), (1, 2), (2, 3)],
         impropers=[(0, 1, 2, 3)],
     )
-    system = avff.compile(_forcefield(improper=(1.1, 2, 180.0)), frame)
+    system = avff.compile(_forcefield(improper=(1.1, 2, 180.0)), frame, units="real")
     improper = system.evaluators[-1]
     assert isinstance(improper, Cvff)
     # φ = 90°: 1.1 (1 - cos 180°) = 2.2 kcal/mol, plus the 1-3/1-4 pair
     # terms the bonds leave: 1-4 at half weight; 1-3 excluded.
     r14 = 1.5 * math.sqrt(3.0)
     lj14 = 0.5 * 4 * 0.1 * ((3.4 / r14) ** 12 - (3.4 / r14) ** 6)
-    assert _energy(system) == pytest.approx((2.2 + lj14) * KCAL_PER_MOL, rel=1e-8)
+    assert _energy(system) == pytest.approx((2.2 + lj14), rel=1e-8)
 
 
 def test_a_style_without_a_counterpart_is_refused():
@@ -199,7 +213,7 @@ def test_a_style_without_a_counterpart_is_refused():
     ff.def_style("bond", "morse")
     frame = _frame([(0, 0, 0), (1.5, 0, 0)], ["a", "a"], [0.0, 0.0])
     with pytest.raises(ForceFieldError, match="bond morse"):
-        avff.compile(ff, frame)
+        avff.compile(ff, frame, units="real")
 
 
 def test_an_unparameterized_type_is_refused_by_name():
@@ -207,7 +221,7 @@ def test_an_unparameterized_type_is_refused_by_name():
     ff = _forcefield()
     ff.get_style("bond", "harmonic").del_type("a-a")
     with pytest.raises(ForceFieldError, match="a-a"):
-        avff.compile(ff, frame)
+        avff.compile(ff, frame, units="real")
 
 
 def test_a_frame_without_charges_is_refused():
@@ -217,7 +231,7 @@ def test_a_frame_without_charges_is_refused():
         atoms.insert(key, np.asarray(frame["atoms"][key]))
     frame["atoms"] = atoms
     with pytest.raises(KeyError, match="charge"):
-        avff.compile(_forcefield(), frame)
+        avff.compile(_forcefield(), frame, units="real")
 
 
 def test_gaff2_typed_molecule_translates_completely():
@@ -232,7 +246,7 @@ def test_gaff2_typed_molecule_translates_completely():
     frame["atoms"].insert("charge", np.asarray(charges))
     frame.box = molpy.Box.cube(BOX)
 
-    system = avff.compile(typifier.forcefield(), frame)
+    system = avff.compile(typifier.forcefield(), frame, units="real")
     out = system.frame
     n_types = len(set(np.asarray(frame["atoms"]["type"])))
     assert len(set(np.asarray(out["atoms"]["type_id"]))) == n_types
@@ -247,8 +261,8 @@ def test_gaff2_typed_molecule_translates_completely():
 def test_mixing_rule_comes_from_the_style():
     r = 4.0
     frame = _frame([(0, 0, 0), (r, 0, 0)], ["a", "b"], [0.0, 0.0])
-    energy = _energy(avff.compile(_forcefield(mixing="geometric"), frame))
-    eps = math.sqrt(0.1 * 0.02) * KCAL_PER_MOL
+    energy = _energy(avff.compile(_forcefield(mixing="geometric"), frame, units="real"))
+    eps = math.sqrt(0.1 * 0.02)
     sigma = math.sqrt(3.4 * 2.6)
     expected = 4 * eps * ((sigma / r) ** 12 - (sigma / r) ** 6)
     assert energy == pytest.approx(expected, rel=1e-9, abs=1e-12)
@@ -259,10 +273,10 @@ def test_shift_follows_the_style_parameter():
     frame = _frame([(0, 0, 0), (r, 0, 0)], ["a", "a"], [0.0, 0.0])
 
     def lj(x: float) -> float:
-        return 4 * 0.1 * KCAL_PER_MOL * ((3.4 / x) ** 12 - (3.4 / x) ** 6)
+        return 4 * 0.1 * ((3.4 / x) ** 12 - (3.4 / x) ** 6)
 
-    unshifted = _energy(avff.compile(_forcefield(), frame))
-    shifted = _energy(avff.compile(_forcefield(shift=1.0), frame))
+    unshifted = _energy(avff.compile(_forcefield(), frame, units="real"))
+    shifted = _energy(avff.compile(_forcefield(shift=1.0), frame, units="real"))
     assert unshifted == pytest.approx(lj(r), rel=1e-10)
     assert shifted == pytest.approx(lj(r) - lj(CUTOFF), rel=1e-10)
 
@@ -272,8 +286,8 @@ def test_coulomb_uses_the_constant_the_style_states():
     frame = _frame([(0, 0, 0), (r, 0, 0)], ["b", "b"], [0.4, -0.3])
     ff = _forcefield()
     ff.get_style("pair", "lj/cut").get_type_by_name("b").set(epsilon=0.0)
-    energy = _energy(avff.compile(ff, frame))
-    expected = AMBER_COULOMB * KCAL_PER_MOL * 0.4 * -0.3 / r
+    energy = _energy(avff.compile(ff, frame, units="real"))
+    expected = AMBER_COULOMB * 0.4 * -0.3 / r
     assert energy == pytest.approx(expected, rel=1e-12)
 
 
@@ -282,7 +296,7 @@ def test_cutoff_is_read_from_the_style_params():
     ff = _forcefield()
     for name in ("lj/cut", "coul/cut"):
         ff.get_style("pair", name).set(cutoff=25.0)
-    assert avff.compile(ff, frame).cutoff == 25.0
+    assert avff.compile(ff, frame, units="real").cutoff == 25.0
 
 
 def test_an_ewald_style_is_refused_by_name():
@@ -290,4 +304,4 @@ def test_an_ewald_style_is_refused_by_name():
     ff.def_style("pair", "coul/long/pme", {"cutoff": CUTOFF, "alpha": 0.3})
     frame = _frame([(0, 0, 0), (4.0, 0, 0)], ["a", "a"], [0.0, 0.0])
     with pytest.raises(ForceFieldError, match="coul/long/pme"):
-        avff.compile(ff, frame)
+        avff.compile(ff, frame, units="real")

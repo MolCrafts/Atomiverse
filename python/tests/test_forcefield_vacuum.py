@@ -26,7 +26,6 @@ skip_module_unless("ATV_BUILD_MD", "ATV_BUILD_MINIMIZER", "ATV_BUILD_POTENTIALS"
 import molpy  # noqa: E402
 
 from atomiverse import forcefield as avff  # noqa: E402
-from atomiverse.forcefield import KCAL_PER_MOL  # noqa: E402
 from atomiverse.md import MD  # noqa: E402
 from atomiverse.md.integrator import VelocityVerlet  # noqa: E402
 from atomiverse.minimizer import LBFGS, ForceConverged, Minimize  # noqa: E402
@@ -92,16 +91,16 @@ def _tiers(n: int, bonds: np.ndarray) -> np.ndarray:
 
 
 def _reference(frame, forcefield, xyz: np.ndarray) -> tuple[float, np.ndarray]:
-    """All-pairs Amber vacuum energy [eV] and forces [eV/Å]."""
+    """All-pairs Amber vacuum energy and forces in the force field's units."""
     atoms = frame["atoms"]
     n = atoms.n_rows
     lj = {t.itom.name: t.params for t in forcefield.get_style("pair", "lj/cut").get_types()}
     types = [str(t) for t in np.asarray(atoms["type"])]
-    eps = np.array([lj[t]["epsilon"] for t in types]) * KCAL_PER_MOL
+    eps = np.array([lj[t]["epsilon"] for t in types])
     sig = np.array([lj[t]["sigma"] for t in types])
     q = np.asarray(atoms["charge"], dtype=np.float64)
     coul = forcefield.get_style("pair", "coul/cut").params
-    coulomb = float(coul["coulomb"]) * KCAL_PER_MOL / float(coul.get("dielectric", 1.0))
+    coulomb = float(coul["coulomb"]) / float(coul.get("dielectric", 1.0))
     s_lj, s_coul = forcefield.special_bonds
     w_lj = np.array([1.0, *s_lj, 1.0])  # by tier 0..4; tier 0 is unused
     w_coul = np.array([1.0, *s_coul, 1.0])
@@ -130,12 +129,12 @@ def _reference(frame, forcefield, xyz: np.ndarray) -> tuple[float, np.ndarray]:
 
 
 def _evaluate(system: avff.Compiled, xyz: np.ndarray | None = None, *, pair_only: bool = True):
-    """Energy [eV] and forces [eV/Å] of the vacuum model at ``xyz``."""
+    """Energy and forces of the vacuum model at ``xyz`` (force-field units)."""
     frame = system.frame.copy()
     if xyz is not None:
         for col, key in enumerate(("x", "y", "z")):
             frame["atoms"][key] = xyz[:, col].copy()
-    sim = MD()
+    sim = MD(units=system.units)
     sim.set_integrator(VelocityVerlet(0.5))
     sim.set_neighbor(NeighborList(system.cutoff, SKIN))
     for term in system.evaluators:
@@ -148,14 +147,14 @@ def _evaluate(system: avff.Compiled, xyz: np.ndarray | None = None, *, pair_only
 
 def test_gaff_nonbonded_is_two_cutoff_styles_at_the_style_cutoff(typed):
     frame, forcefield = typed
-    system = avff.compile(forcefield, frame)
+    system = avff.compile(forcefield, frame, units=forcefield.units)
     assert [type(t) for t in system.evaluators[:2]] == [LJCut, CoulCut]
     assert system.cutoff == CUTOFF
 
 
 def test_vacuum_energy_and_forces_match_all_pairs_reference(typed):
     frame, forcefield = typed
-    system = avff.compile(forcefield, frame)
+    system = avff.compile(forcefield, frame, units=forcefield.units)
     xyz = _xyz(system.frame)
     energy, forces = _evaluate(system)
     e_ref, f_ref = _reference(frame, forcefield, xyz)
@@ -166,7 +165,7 @@ def test_vacuum_energy_and_forces_match_all_pairs_reference(typed):
 
 def test_vacuum_forces_are_the_negative_energy_gradient(typed):
     frame, forcefield = typed
-    system = avff.compile(forcefield, frame)
+    system = avff.compile(forcefield, frame, units=forcefield.units)
     xyz0 = _xyz(system.frame)
     _, forces = _evaluate(system, xyz0, pair_only=False)
     h = 1e-5
@@ -184,7 +183,7 @@ def test_vacuum_forces_are_the_negative_energy_gradient(typed):
 
 def test_minimize_and_md_run_without_a_kspace(typed):
     frame, forcefield = typed
-    system = avff.compile(forcefield, frame)
+    system = avff.compile(forcefield, frame, units=forcefield.units)
 
     def install(driver):
         driver.set_neighbor(NeighborList(system.cutoff, SKIN))
@@ -192,7 +191,7 @@ def test_minimize_and_md_run_without_a_kspace(typed):
             driver.set_evaluator(term)
 
     e0, _ = _evaluate(system, pair_only=False)
-    opt = Minimize()
+    opt = Minimize(units=system.units)
     opt.set_optimizer(LBFGS())
     opt.add_criterion(ForceConverged(ftol=1e-4))
     install(opt)
@@ -201,7 +200,7 @@ def test_minimize_and_md_run_without_a_kspace(typed):
     e1 = float(relaxed.meta["energy"])
     assert math.isfinite(e1) and e1 < e0
 
-    sim = MD()
+    sim = MD(units=system.units)
     sim.set_integrator(VelocityVerlet(0.5))
     install(sim)
     sim.run(relaxed, 20)
