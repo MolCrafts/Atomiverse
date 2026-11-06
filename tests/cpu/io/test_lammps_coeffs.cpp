@@ -69,18 +69,18 @@ TEST(LammpsCoeffs, ParsesHybridGaffFile) {
     ASSERT_EQ(c.lj.size(), 1u);
     EXPECT_EQ(c.lj[0].type_i, 0);
     EXPECT_EQ(c.lj[0].type_j, 0);
-    EXPECT_NEAR(c.lj[0].epsilon, kcal_per_mol_to_ev(0.086), 1e-15);
+    EXPECT_NEAR(c.lj[0].epsilon, 0.086, 1e-15);
     EXPECT_DOUBLE_EQ(c.lj[0].sigma, 3.3996695);
 
     // bond type 2 (index 1) was never given → zero-filled
     ASSERT_EQ(c.bond_K.size(), 3u);
-    EXPECT_NEAR(c.bond_K[0], kcal_per_mol_to_ev(461.1), 1e-12);
+    EXPECT_NEAR(c.bond_K[0], 461.1, 1e-12);
     EXPECT_DOUBLE_EQ(c.bond_r0[0], 1.3984);
     EXPECT_DOUBLE_EQ(c.bond_K[1], 0.0);
-    EXPECT_NEAR(c.bond_K[2], kcal_per_mol_to_ev(345.8), 1e-12);
+    EXPECT_NEAR(c.bond_K[2], 345.8, 1e-12);
 
     ASSERT_EQ(c.angle_K.size(), 2u);
-    EXPECT_NEAR(c.angle_K[1], kcal_per_mol_to_ev(66.0), 1e-12);
+    EXPECT_NEAR(c.angle_K[1], 66.0, 1e-12);
     EXPECT_NEAR(c.angle_theta0[1], degree_to_rad(120.02), 1e-12);
 
     // hybrid split: both tables cover both types
@@ -88,14 +88,14 @@ TEST(LammpsCoeffs, ParsesHybridGaffFile) {
     EXPECT_TRUE(c.has_multi);
     ASSERT_EQ(c.dihedral_charmm_K.size(), 2u);
     ASSERT_EQ(c.dihedral_multi_Cn.size(), 2u);
-    EXPECT_NEAR(c.dihedral_charmm_K[0], kcal_per_mol_to_ev(3.625), 1e-12);
+    EXPECT_NEAR(c.dihedral_charmm_K[0], 3.625, 1e-12);
     EXPECT_EQ(c.dihedral_charmm_n[0], 2);
     EXPECT_NEAR(c.dihedral_charmm_delta[0], degree_to_rad(180.0), 1e-12);
     EXPECT_DOUBLE_EQ(c.dihedral_charmm_K[1], 0.0); // multi type → zero charmm
     ASSERT_EQ(c.dihedral_multi_Cn[0].size(), 1u);  // charmm type → {0}
     EXPECT_DOUBLE_EQ(c.dihedral_multi_Cn[0][0], 0.0);
     ASSERT_EQ(c.dihedral_multi_Cn[1].size(), 5u);
-    EXPECT_NEAR(c.dihedral_multi_Cn[1][1], kcal_per_mol_to_ev(-1.8), 1e-12);
+    EXPECT_NEAR(c.dihedral_multi_Cn[1][1], -1.8, 1e-12);
 
     EXPECT_TRUE(c.has_special);
     EXPECT_DOUBLE_EQ(c.special_lj[2], 0.5);
@@ -122,7 +122,7 @@ TEST(LammpsCoeffs, NonHybridDihedralStyle) {
     std::remove(path.c_str());
     EXPECT_TRUE(c.has_charmm);
     EXPECT_FALSE(c.has_multi);
-    EXPECT_NEAR(c.dihedral_charmm_K[0], kcal_per_mol_to_ev(1.1), 1e-12);
+    EXPECT_NEAR(c.dihedral_charmm_K[0], 1.1, 1e-12);
     EXPECT_EQ(c.dihedral_charmm_n[0], 3);
 }
 
@@ -180,14 +180,14 @@ TEST(LammpsCoeffs, ParsesFourierAndCvff) {
     EXPECT_FALSE(c.has_charmm);
     ASSERT_EQ(c.dihedral_fourier.size(), 2u);
     ASSERT_EQ(c.dihedral_fourier[1].size(), 2u);
-    EXPECT_DOUBLE_EQ(c.dihedral_fourier[1][0].K, kcal_per_mol_to_ev(0.80));
+    EXPECT_DOUBLE_EQ(c.dihedral_fourier[1][0].K, 0.80);
     EXPECT_EQ(c.dihedral_fourier[1][0].n, 1);
     EXPECT_DOUBLE_EQ(c.dihedral_fourier[1][0].delta, degree_to_rad(180.0));
     EXPECT_EQ(c.dihedral_fourier[1][1].n, 3);
     ASSERT_EQ(c.dihedral_fourier[0].size(), 1u);
     ASSERT_TRUE(c.has_improper_cvff);
     ASSERT_EQ(c.improper_K.size(), 2u);
-    EXPECT_DOUBLE_EQ(c.improper_K[0], kcal_per_mol_to_ev(1.1));
+    EXPECT_DOUBLE_EQ(c.improper_K[0], 1.1);
     EXPECT_EQ(c.improper_d[0], -1);
     EXPECT_EQ(c.improper_n[0], 2);
     EXPECT_EQ(c.improper_d[1], 1);

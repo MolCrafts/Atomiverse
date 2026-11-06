@@ -21,7 +21,6 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/io/lammps_coeffs.h"
 #include "atomiverse/cpu/io/lammps_data.h"
-#include "atomiverse/cpu/io/lammps_real.h"
 #include "atomiverse/cpu/potentials/dihedral_fourier.h"
 #include "atomiverse/cpu/potentials/improper_cvff.h"
 #include "harness/registry.h"
@@ -47,16 +46,17 @@ int run() {
         return 1;
     }
 
+    // The coefficient file is LAMMPS `units real`; so is the run.
     cpu::Evaluate eval;
+    eval.set_units("real");
     eval.set_evaluator(cpu::DihedralFourier{ff.dihedral_fourier});
     eval.set_evaluator(
         cpu::ImproperCvff{ff.improper_K, ff.improper_d, ff.improper_n});
     eval.build();
     eval.run(f);
 
-    const double kcal = 1.0 / cpu::kKcalPerMolInEv;
-    const double edihed = f.meta.get(kEnergyDihedral) * kcal;
-    const double eimp = f.meta.get(kEnergyImproper) * kcal;
+    const double edihed = f.meta.get(kEnergyDihedral);
+    const double eimp = f.meta.get(kEnergyImproper);
     std::printf("edihed = %.16e (ref %.16e)\neimp   = %.16e (ref %.16e)\n",
                 edihed, edihed_ref, eimp, eimp_ref);
     bool ok = std::fabs(edihed - edihed_ref) <= tol_E
@@ -80,9 +80,8 @@ int run() {
         if (!(iss >> id >> ref[0] >> ref[1] >> ref[2]))
             continue;
         const int i = row_of.at(static_cast<std::size_t>(id));
-        const double got[3] = {f.span(kAtom_fx)[i] * kcal,
-                               f.span(kAtom_fy)[i] * kcal,
-                               f.span(kAtom_fz)[i] * kcal};
+        const double got[3] = {f.span(kAtom_fx)[i], f.span(kAtom_fy)[i],
+                               f.span(kAtom_fz)[i]};
         for (int d = 0; d < 3; ++d)
             worst = std::max(worst, std::fabs(got[d] - ref[d]));
         ++rows;

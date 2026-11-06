@@ -1,8 +1,8 @@
 /// @file cpu/io/lammps_coeffs.cpp
-/// @brief LAMMPS `units real` coefficient-file parser.
+/// @brief LAMMPS coefficient-file parser (values in the file's own units).
 
 #include "atomiverse/cpu/io/lammps_coeffs.h"
-#include "atomiverse/cpu/io/lammps_real.h"
+#include "atomiverse/core/units.h"
 
 #include <algorithm>
 #include <fstream>
@@ -19,6 +19,11 @@ namespace {
 [[noreturn]] void die(const std::string& path, const std::string& msg) {
     throw std::runtime_error("load_lammps_coeffs(" + path + "): " + msg);
 }
+
+/// LAMMPS takes angles in degrees and works in radians (`angle_coeff`,
+/// `dihedral_coeff` phases); this is that internal conversion, not a unit
+/// style conversion.
+double deg2rad(double deg) { return deg * ATV::units::kDegreeInRad; }
 
 /// Split one line into whitespace tokens, dropping `#` comments.
 std::vector<std::string> tokenize(const std::string& line) {
@@ -123,8 +128,7 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
                 die(path, where
                               + ": 'pair_coeff' with a per-pair Coulomb "
                                 "cutoff is not supported");
-            LJTypeCoeff row{ti, tj,
-                            kcal_per_mol_to_ev(to_num(path, toks[3], where)),
+            LJTypeCoeff row{ti, tj, to_num(path, toks[3], where),
                             to_num(path, toks[4], where)};
             if (toks.size() == 6)
                 row.cutoff = to_num(path, toks[5], where);
@@ -141,7 +145,7 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
             const int t = to_type(path, toks[1], where);
             ensure_size(out.bond_K, t, 0.0);
             ensure_size(out.bond_r0, t, 0.0);
-            out.bond_K[t] = kcal_per_mol_to_ev(to_num(path, toks[2], where));
+            out.bond_K[t] = to_num(path, toks[2], where);
             out.bond_r0[t] = to_num(path, toks[3], where);
         } else if (cmd == "angle_style") {
             need(2);
@@ -155,8 +159,8 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
             const int t = to_type(path, toks[1], where);
             ensure_size(out.angle_K, t, 0.0);
             ensure_size(out.angle_theta0, t, 0.0);
-            out.angle_K[t] = kcal_per_mol_to_ev(to_num(path, toks[2], where));
-            out.angle_theta0[t] = degree_to_rad(to_num(path, toks[3], where));
+            out.angle_K[t] = to_num(path, toks[2], where);
+            out.angle_theta0[t] = deg2rad(to_num(path, toks[3], where));
         } else if (cmd == "dihedral_style") {
             need(2);
             if (toks[1] == "hybrid") {
@@ -215,9 +219,8 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
                                       + ": fourier multiplicity must be a "
                                         "non-negative integer");
                     terms.push_back(TorsionTerm{
-                        kcal_per_mol_to_ev(to_num(path, toks[b], where)),
-                        static_cast<int>(n),
-                        degree_to_rad(to_num(path, toks[b + 2], where))});
+                        to_num(path, toks[b], where), static_cast<int>(n),
+                        deg2rad(to_num(path, toks[b + 2], where))});
                 }
                 out.dihedral_fourier[t] = std::move(terms);
                 out.has_fourier = true;
@@ -226,8 +229,7 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
                     die(path, where
                                   + ": dihedral_coeff charmm needs "
                                     "K n d weight");
-                const double K =
-                    kcal_per_mol_to_ev(to_num(path, toks[arg0], where));
+                const double K = to_num(path, toks[arg0], where);
                 const double n = to_num(path, toks[arg0 + 1], where);
                 const double d = to_num(path, toks[arg0 + 2], where);
                 const double w = to_num(path, toks[arg0 + 3], where);
@@ -242,13 +244,12 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
                                     "positive integer");
                 out.dihedral_charmm_K[t] = K;
                 out.dihedral_charmm_n[t] = static_cast<int>(n);
-                out.dihedral_charmm_delta[t] = degree_to_rad(d);
+                out.dihedral_charmm_delta[t] = deg2rad(d);
                 out.has_charmm = true;
             } else if (style == "multi/harmonic") {
                 std::vector<double> Cn;
                 for (std::size_t i = arg0; i < toks.size(); ++i)
-                    Cn.push_back(
-                        kcal_per_mol_to_ev(to_num(path, toks[i], where)));
+                    Cn.push_back(to_num(path, toks[i], where));
                 if (Cn.empty())
                     die(path, where
                                   + ": dihedral_coeff multi/harmonic needs "
@@ -285,8 +286,7 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
             ensure_size(out.improper_K, t, 0.0);
             ensure_size(out.improper_d, t, 1);
             ensure_size(out.improper_n, t, 0);
-            out.improper_K[t] =
-                kcal_per_mol_to_ev(to_num(path, toks[2], where));
+            out.improper_K[t] = to_num(path, toks[2], where);
             out.improper_d[t] = static_cast<int>(d);
             out.improper_n[t] = static_cast<int>(n);
         } else if (cmd == "special_bonds") {
