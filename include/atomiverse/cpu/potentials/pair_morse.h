@@ -18,6 +18,7 @@
 #include <string>
 
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -44,12 +45,16 @@ class PairMorse : public Pair {
         return nullptr;
     }
 
+    /// @brief Forget the walk's cached row partition.
+    void build(const BuildContext&) override { loop_.reset(); }
+
   protected:
     void compute(const LaunchContext& ctx) override;
 
   private:
     double D_, alpha_, r0_;
     double cutoff_sq_, v_shift_;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

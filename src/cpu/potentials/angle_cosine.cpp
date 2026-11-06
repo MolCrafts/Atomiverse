@@ -35,7 +35,7 @@ void AngleCosine::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(n_threads, ctx.frame.capacity());
 }
 
@@ -89,63 +89,58 @@ void AngleCosine::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    const md::ForcePass forces(ctx);
+    md::ForcePass forces(ctx);
     const bool do_force = ctx.forces_requested;
     const bool do_virial = ctx.stress_requested;
-    double energy_total = 0;
-    md::Voigt6 vir;
 
-#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
-    reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = forces.thread(tid);
-        md::Voigt6 vir_local;
+    // Each chunk keeps its own energy and virial and stores them once;
+    // ForcePass sums the chunks in order (deterministic per thread count).
+    forces.for_each_chunk(
+        n_tuples, [&](int c, int t_begin, int t_end, md::ForceRows tf) {
+            double energy_total = 0;
+            md::Voigt6 vir_local;
 
-#pragma omp for schedule(static)
-        for (int t = 0; t < n_tuples; ++t) {
-            const int i = tup[4 * t + 0];
-            const int j = tup[4 * t + 1];
-            const int k = tup[4 * t + 2];
-            const int type = tup[4 * t + 3];
+            for (int t = t_begin; t < t_end; ++t) {
+                const int i = tup[4 * t + 0];
+                const int j = tup[4 * t + 1];
+                const int k = tup[4 * t + 2];
+                const int type = tup[4 * t + 3];
 
-            double d1[3] = {double(x_ptr[i]) - double(x_ptr[j]),
-                            double(y_ptr[i]) - double(y_ptr[j]),
-                            double(z_ptr[i]) - double(z_ptr[j])};
-            f.box.min_image(d1[0], d1[1], d1[2]);
-            double d2[3] = {double(x_ptr[k]) - double(x_ptr[j]),
-                            double(y_ptr[k]) - double(y_ptr[j]),
-                            double(z_ptr[k]) - double(z_ptr[j])};
-            f.box.min_image(d2[0], d2[1], d2[2]);
+                double d1[3] = {double(x_ptr[i]) - double(x_ptr[j]),
+                                double(y_ptr[i]) - double(y_ptr[j]),
+                                double(z_ptr[i]) - double(z_ptr[j])};
+                f.box.min_image(d1[0], d1[1], d1[2]);
+                double d2[3] = {double(x_ptr[k]) - double(x_ptr[j]),
+                                double(y_ptr[k]) - double(y_ptr[j]),
+                                double(z_ptr[k]) - double(z_ptr[j])};
+                f.box.min_image(d2[0], d2[1], d2[2]);
 
-            const AngleCosineTerm<double> term =
-                angle_cosine_term<double>(K_[type], d1, d2);
-            energy_total += term.energy;
+                const AngleCosineTerm<double> term =
+                    angle_cosine_term<double>(K_[type], d1, d2);
+                energy_total += term.energy;
 
-            if (do_force) {
-                tf.fx[i] += term.f1[0];
-                tf.fy[i] += term.f1[1];
-                tf.fz[i] += term.f1[2];
-                tf.fx[k] += term.f3[0];
-                tf.fy[k] += term.f3[1];
-                tf.fz[k] += term.f3[2];
-                tf.fx[j] -= term.f1[0] + term.f3[0];
-                tf.fy[j] -= term.f1[1] + term.f3[1];
-                tf.fz[j] -= term.f1[2] + term.f3[2];
+                if (do_force) {
+                    tf.fx[i] += term.f1[0];
+                    tf.fy[i] += term.f1[1];
+                    tf.fz[i] += term.f1[2];
+                    tf.fx[k] += term.f3[0];
+                    tf.fy[k] += term.f3[1];
+                    tf.fz[k] += term.f3[2];
+                    tf.fx[j] -= term.f1[0] + term.f3[0];
+                    tf.fy[j] -= term.f1[1] + term.f3[1];
+                    tf.fz[j] -= term.f1[2] + term.f3[2];
+                }
+                if (do_virial) {
+                    vir_local.add_pair(d1[0], d1[1], d1[2], term.f1[0],
+                                       term.f1[1], term.f1[2]);
+                    vir_local.add_pair(d2[0], d2[1], d2[2], term.f3[0],
+                                       term.f3[1], term.f3[2]);
+                }
             }
-            if (do_virial) {
-                vir_local.add_pair(d1[0], d1[1], d1[2], term.f1[0], term.f1[1],
-                                   term.f1[2]);
-                vir_local.add_pair(d2[0], d2[1], d2[2], term.f3[0], term.f3[1],
-                                   term.f3[2]);
-            }
-        }
-#pragma omp critical
-        vir += vir_local;
-    }
+            forces.store(c, energy_total, vir_local);
+        });
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyAngle) += energy_total;

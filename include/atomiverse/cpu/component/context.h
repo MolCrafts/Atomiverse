@@ -41,7 +41,7 @@ class Runtime; ///< The Runtime; published on `Context::exec`. @see ExecServices
 namespace md {
 struct AtomSortState;
 struct PairList;
-class ThreadForces;
+class ChunkForces;
 namespace mpi {
 struct DomainDecomposition;
 } // namespace mpi
@@ -106,7 +106,7 @@ struct DynamicsServices {
     /// frame once at the end of each slot walk, so every threaded kernel of
     /// a step shares one zero and one reduce pass. Null outside a Runtime:
     /// kernels then run with a team of one (`md::ForcePass`).
-    md::ThreadForces* thread_forces = nullptr;
+    md::ChunkForces* chunk_forces = nullptr;
 
     /// @brief LAMMPS `neighbor->skin` [Å]: the relative displacement the
     ///        active `NeighborProvider` tolerates between reneighbourings

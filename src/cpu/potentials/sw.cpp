@@ -54,7 +54,7 @@ void StillingerWeber::build(const cpu::BuildContext& ctx) {
 #ifdef _OPENMP
     threads = omp_get_max_threads();
 #endif
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(threads, ctx.frame.capacity());
     short_neighbors_.resize(static_cast<std::size_t>(threads));
 }
@@ -79,24 +79,27 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
     const TagInt* __restrict tag_ptr = f.span(kAtom_tag);
-    const md::ForcePass forces(ctx);
+    md::ForcePass forces(ctx);
     int max_neighbors = 0;
     for (int ii = 0; ii < pl->inum; ++ii)
         max_neighbors = std::max(max_neighbors, pl->numneigh[pl->ilist[ii]]);
     for (auto& neighbors : short_neighbors_)
         neighbors.resize(static_cast<std::size_t>(max_neighbors));
 
-    double e_total = 0.0;
-    double v[6] = {0, 0, 0, 0, 0, 0};
-
-#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
-    reduction(+ : e_total, v[ : 6])
+    // One chunk per thread (static loop): thread t owns force slot t and sum
+    // slot t, summed in slot order — deterministic per thread count.
+    const int team = forces.team();
+    forces.open(team);
+#pragma omp parallel num_threads(team) if (team > 1)
     {
         int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const md::ThreadForce force = forces.thread(tid);
+        const md::ForceRows force = forces.rows(tid);
+        double e_total = 0.0;
+        md::Voigt6 vir;
+        double* v = vir.v;
         double* __restrict fx_ptr = force.fx;
         double* __restrict fy_ptr = force.fy;
         double* __restrict fz_ptr = force.fz;
@@ -255,13 +258,13 @@ void StillingerWeber::launch(const cpu::LaunchContext& ctx) {
                 fz_ptr[i] += fiz;
             }
         }
-
-    } // thread-private Newton-on force accumulation
+        forces.store(tid, e_total, vir);
+    } // chunk-owned Newton-on force accumulation
+    const double e_total = forces.energy();
     f.meta.get(kEnergy) += e_total;
     f.meta.get(kEnergyPair) += e_total;
     if (ctx.stress_requested)
-        for (int c = 0; c < 6; ++c)
-            f.meta.get(kStress)[c] += v[c];
+        forces.virial().flush_to(f.meta.get(kStress));
 }
 
 void StillingerWeber::destroy(const cpu::DestroyContext&) {

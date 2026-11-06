@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -157,6 +158,9 @@ class PairDpd : public Pair, public cpu::TimestepConsumer {
         return nullptr;
     }
 
+    /// @brief Forget the walk's cached row partition.
+    void build(const BuildContext&) override { loop_.reset(); }
+
   protected:
     void compute(const LaunchContext& ctx) override;
 
@@ -174,6 +178,7 @@ class PairDpd : public Pair, public cpu::TimestepConsumer {
     int stream_origin_ = 0;
 
     double a_of_(int ti, int tj) const;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

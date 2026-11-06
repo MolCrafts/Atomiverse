@@ -20,7 +20,12 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/pppm_ik.h"
@@ -518,5 +523,82 @@ TEST(PppmCoul, NonuniformDistributedCutsRejectBeforeBuildOrCollectives) {
     EXPECT_THROW(mesh.build({ctx, frame}), std::invalid_argument);
     EXPECT_THROW(mesh.launch({ctx, frame, 0, 0}), std::invalid_argument);
     EXPECT_DOUBLE_EQ(frame.meta.get(kEnergy), 17.0);
+}
+#endif
+
+#ifdef _OPENMP
+namespace {
+
+struct KSpaceSnapshot {
+    double energy = 0.0;
+    double stress[6] = {};
+    std::vector<double> f;
+
+    bool operator==(const KSpaceSnapshot& o) const {
+        for (int k = 0; k < 6; ++k)
+            if (stress[k] != o.stress[k])
+                return false;
+        return energy == o.energy && f == o.f;
+    }
+};
+
+/// Repeated launches of one built reciprocal solver at OMP 1 / 4 / 8 must
+/// agree bit for bit. (The energy / virial fold is thread-count independent
+/// by construction; the FFT and so the forces follow FFTW's threaded plan.)
+template <class Make>
+void expect_kspace_reproducible(Make make) {
+    const int saved = omp_get_max_threads();
+    const int saved_dynamic = omp_get_dynamic();
+    omp_set_dynamic(0);
+    for (const int threads : {1, 4, 8}) {
+        omp_set_num_threads(threads);
+        cpu::Frame f = make_rocksalt(2.82, 8);
+        // Break the lattice symmetry so no sum is trivially exact.
+        for (int i = 0; i < f.nlocal(); ++i) {
+            f.span(kAtom_x)[i] += 0.05 * std::sin(1.3 * i);
+            f.span(kAtom_y)[i] += 0.05 * std::cos(0.7 * i);
+            f.span(kAtom_z)[i] += 0.05 * std::sin(2.1 * i + 0.4);
+        }
+        cpu::Context ctx;
+        auto recip = make();
+        recip.build({ctx, f});
+        std::vector<KSpaceSnapshot> runs;
+        for (int rep = 0; rep < 4; ++rep) {
+            zero_force_energy_stress(f);
+            recip.launch({ctx, f, 0, 0, true, true});
+            KSpaceSnapshot s;
+            s.energy = f.meta.get(kEnergy);
+            for (int k = 0; k < 6; ++k)
+                s.stress[k] = f.meta.get(kStress)[k];
+            for (int i = 0; i < f.nlocal(); ++i) {
+                s.f.push_back(f.span(kAtom_fx)[i]);
+                s.f.push_back(f.span(kAtom_fy)[i]);
+                s.f.push_back(f.span(kAtom_fz)[i]);
+            }
+            runs.push_back(std::move(s));
+        }
+        recip.destroy({ctx, f});
+        EXPECT_NE(runs[0].energy, 0.0);
+        for (int rep = 1; rep < 4; ++rep)
+            EXPECT_TRUE(runs[rep] == runs[0])
+                << threads << " threads, repeat " << rep;
+    }
+    omp_set_num_threads(saved);
+    omp_set_dynamic(saved_dynamic);
+}
+
+} // namespace
+
+TEST(PppmCoul, ThreadedRunIsBitReproduciblePerThreadCount) {
+    // 512 ions, 48³ mesh: the threaded spread, Green's sum and gather all run
+    // with a full team; the energy / virial sums are folded in a fixed chunk
+    // order.
+    expect_kspace_reproducible(
+        [] { return cpu::KSpacePPPM(0.35, /*spacing=*/0.47, /*order=*/5); });
+}
+
+TEST(PmeCoul, ThreadedRunIsBitReproduciblePerThreadCount) {
+    expect_kspace_reproducible(
+        [] { return cpu::KSpacePME(0.35, /*spacing=*/0.47, /*order=*/5); });
 }
 #endif

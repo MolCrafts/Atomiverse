@@ -40,8 +40,7 @@ void PairYukawa::compute(const LaunchContext& ctx) {
                 -dUdr / r; // F on i from j: fpair * r_ij with r_ij = r_j-r_i
             return md::PairTerm{fpair, v};
         }};
-    const md::PairTotals sums =
-        md::PairLoop<decltype(kernel)>::run(ctx, kernel, "PairYukawa");
+    const md::PairTotals sums = loop_.run(ctx, kernel, "PairYukawa");
     f.meta.get(kEnergy) += sums.energy;
     f.meta.get(kEnergyPair) += sums.energy;
     if (ctx.stress_requested)

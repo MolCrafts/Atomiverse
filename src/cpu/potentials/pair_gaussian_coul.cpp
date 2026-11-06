@@ -52,9 +52,10 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
             return {static_cast<double>(q[i]),
                     self->eta_of(static_cast<int>(type[i]))};
         }
-        md::PairTerm operator()(const Row& ri, int j, int, double r2,
-                                const md::PairChunk&, int) const {
-            const double r = std::sqrt(r2);
+        md::PairTerm operator()(const Row& ri, const md::PairSite& p,
+                                const md::PairChunk&) const {
+            const int j = p.j;
+            const double r = std::sqrt(p.r2);
             const double ej = self->eta_of(static_cast<int>(type[j]));
             const double pref = K * ri.qi * static_cast<double>(q[j]);
             // F_i = −pref·G'(r)/r · (r_i − r_j).
@@ -67,8 +68,7 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
     for (int i = 0; i < f.n_total(); ++i)
         (void)eta_of(static_cast<int>(type[i]));
     const Kernel kernel{this, q, type, K, cutoff_sq_};
-    const md::PairTotals sums =
-        md::PairLoop<Kernel>::run(ctx, kernel, "PairGaussianCoul");
+    const md::PairTotals sums = loop_.run(ctx, kernel, "PairGaussianCoul");
     energy += sums.energy;
 
     if (include_self_) {

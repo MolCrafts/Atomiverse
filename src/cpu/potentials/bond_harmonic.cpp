@@ -23,10 +23,10 @@ void BondHarmonic::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    // Per-thread accumulators are sized to the full backing-store capacity
+    // Chunk accumulators are sized to the full backing-store capacity
     // (`nmax`); only the live `[0, n_force)` rows are touched per step (a
     // partner row may be a ghost, so the range must span owners + ghosts).
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(n_threads, ctx.frame.capacity());
 }
 
@@ -38,7 +38,7 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
 
     // Single source of truth for owned/ghost counts + bounded tag→local
     // resolution. `n_local` = owners to iterate; `n_force` = owners + ghosts,
-    // the extent the per-thread force buffers and the reduction touch (NOT
+    // the extent the chunk force buffers and the reduction touch (NOT
     // `Frame::n_total()`, which is the global atom count in multi-rank).
     // `resolve()` returns -1 for any tag that is absent or maps outside
     // `[0, n_force)`; incomplete topology fails collectively before evaluation.
@@ -73,73 +73,62 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
         return;
     const int* __restrict tup = cache_.flat.data();
 
-    double energy_total = 0;
-    md::Voigt6 vir;
-
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    // Open this launch's share of the Runtime's per-thread accumulators once,
-    // before the parallel region (see md::ForcePass).
-    const md::ForcePass forces(ctx);
+    // Open this launch's chunks of the Runtime's accumulators once, before
+    // the parallel region (see md::ForcePass).
+    md::ForcePass forces(ctx);
     const bool do_virial = ctx.stress_requested; // LAMMPS vflag
 
-    const int team = forces.team(n_tuples);
+    // Stiff bonds contribute significantly to the stress tensor. Each chunk
+    // keeps its own energy and virial and stores them once; ForcePass sums
+    // the chunks in order (deterministic for a given thread count).
+    forces.for_each_chunk(
+        n_tuples, [&](int c, int t_begin, int t_end, md::ForceRows tf) {
+            double energy_total = 0;
+            md::Voigt6 vir_local;
 
-// Stiff bonds contribute significantly to the stress tensor. The per-pair
-// virial accumulates into a thread-private `vir_local` and is combined under
-// a critical section (once per thread per step) — an OMP user-defined
-// reduction on Voigt6 would heap-allocate per step, violating the
-// "no allocation in launch()" invariant.
-#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = forces.thread(tid);
-        md::Voigt6 vir_local;
+            // Hot loop over pre-resolved tuples (Newton-bond-ON: each bond is
+            // owned by its smaller-tag atom, stored once). Partner `j` may be
+            // an owner or a ghost; ghost force halves ship home via CommBrick.
+            for (int t = t_begin; t < t_end; ++t) {
+                const int i = tup[3 * t + 0];
+                const int j = tup[3 * t + 1];
+                const int type = tup[3 * t + 2];
 
-        // Hot loop over pre-resolved tuples (Newton-bond-ON: each bond is
-        // owned by its smaller-tag atom, stored once). Partner `j` may be
-        // an owner or a ghost; ghost force halves ship home via CommBrick.
-#pragma omp for schedule(static)
-        for (int t = 0; t < n_tuples; ++t) {
-            const int i = tup[3 * t + 0];
-            const int j = tup[3 * t + 1];
-            const int type = tup[3 * t + 2];
+                double dx = x_ptr[i] - x_ptr[j];
+                double dy = y_ptr[i] - y_ptr[j];
+                double dz = z_ptr[i] - z_ptr[j];
+                f.box.min_image(dx, dy, dz);
 
-            double dx = x_ptr[i] - x_ptr[j];
-            double dy = y_ptr[i] - y_ptr[j];
-            double dz = z_ptr[i] - z_ptr[j];
-            f.box.min_image(dx, dy, dz);
+                const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
+                const double dr = r - r0_[type];
 
-            const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
-            const double dr = r - r0_[type];
+                energy_total += K_[type] * dr * dr;
 
-            energy_total += K_[type] * dr * dr;
+                const double fpair = -double(2) * K_[type] * dr / r;
+                const double fx_val = fpair * dx;
+                const double fy_val = fpair * dy;
+                const double fz_val = fpair * dz;
 
-            const double fpair = -double(2) * K_[type] * dr / r;
-            const double fx_val = fpair * dx;
-            const double fy_val = fpair * dy;
-            const double fz_val = fpair * dz;
+                if (ctx.forces_requested) {
+                    tf.fx[i] += fx_val;
+                    tf.fx[j] -= fx_val;
+                    tf.fy[i] += fy_val;
+                    tf.fy[j] -= fy_val;
+                    tf.fz[i] += fz_val;
+                    tf.fz[j] -= fz_val;
+                }
 
-            if (ctx.forces_requested) {
-                tf.fx[i] += fx_val;
-                tf.fx[j] -= fx_val;
-                tf.fy[i] += fy_val;
-                tf.fy[j] -= fy_val;
-                tf.fz[i] += fz_val;
-                tf.fz[j] -= fz_val;
+                if (do_virial)
+                    vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
             }
-
-            if (do_virial)
-                vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
-        }
-#pragma omp critical
-        vir += vir_local;
-    }
+            forces.store(c, energy_total, vir_local);
+        });
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyBond) += energy_total;

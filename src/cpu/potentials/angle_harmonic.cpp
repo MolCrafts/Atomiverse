@@ -23,7 +23,7 @@ void AngleHarmonic::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(n_threads, ctx.frame.capacity());
 }
 
@@ -66,39 +66,30 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
         return;
     const int* __restrict tup = cache_.flat.data();
 
-    double energy_total = 0;
     // Angle virial: Σ d_ji ⊗ F_i + d_jk ⊗ F_k (centre force cancels by
     // Newton's 3rd, so this is translation-invariant and PBC-safe).
-    md::Voigt6 vir;
 
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    // Open this launch's share of the Runtime's per-thread accumulators once,
+    // Open this launch's chunks of the Runtime's accumulators once,
     // before the parallel region (see md::ForcePass).
-    const md::ForcePass forces(ctx);
+    md::ForcePass forces(ctx);
     // The virial is only flushed when stress is requested; skip the two
     // outer products per angle otherwise (LAMMPS vflag).
     const bool do_virial = ctx.stress_requested;
 
-    const int team = forces.team(n_tuples);
-
-// Thread-private virial combined under a critical section (no per-step heap
-// alloc, unlike an OMP user-defined reduction on Voigt6).
-#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = forces.thread(tid);
+    // Each chunk keeps its own energy and virial and stores them once;
+    // ForcePass sums the chunks in order (deterministic per thread count).
+    forces.for_each_chunk(n_tuples, [&](int c, int t_begin, int t_end,
+                                        md::ForceRows tf) {
+        double energy_total = 0;
         md::Voigt6 vir_local;
 
         // Hot loop over pre-resolved tuples: centre atom `j` owns the
         // angle; partners (i, k) may be owners or ghosts.
-#pragma omp for schedule(static)
-        for (int t = 0; t < n_tuples; ++t) {
+        for (int t = t_begin; t < t_end; ++t) {
             {
                 const int i = tup[4 * t + 0];
                 const int j = tup[4 * t + 1];
@@ -177,9 +168,10 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
                 }
             }
         }
-#pragma omp critical
-        vir += vir_local;
-    }
+        forces.store(c, energy_total, vir_local);
+    });
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyAngle) += energy_total;

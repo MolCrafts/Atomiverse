@@ -13,7 +13,7 @@
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
-#include "atomiverse/cpu/potentials/force_scratch.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -40,17 +40,70 @@ PairCoulSoft::PairCoulSoft(double cutoff, double sigma_c, double alpha,
 }
 
 void PairCoulSoft::build(const BuildContext& ctx) {
-    n_threads_ = 1;
+    loop_.reset();
+    int n_threads = 1;
 #ifdef _OPENMP
-    n_threads_ = omp_get_max_threads();
+    n_threads = omp_get_max_threads();
 #endif
-    const int n = ctx.frame.capacity();
-    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
-        arena->reserve(n_threads_, n);
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
     dU_dlambda_ = 0;
 }
 
 void PairCoulSoft::destroy(const DestroyContext&) {}
+
+namespace {
+
+/// Beutler one-leg soft-core Coulomb pair, with its dU/dλ as the extra.
+struct CoulSoftKernel {
+    const StorageReal* q = nullptr;
+    double rc_sq = 0, inv_rc = 0, qqr2e = 1, lam = 1, soft0 = 0,
+           dsoft0_dlam = 0;
+
+    struct Row {
+        double qi;
+    };
+
+    double cutoff_sq() const { return rc_sq; }
+    Row row(int i) const { return {static_cast<double>(q[i])}; }
+    bool skip(const Row& ri) const { return ri.qi == 0.0; }
+
+    md::PairTermX operator()(const Row& ri, const md::PairSite& p,
+                             const md::PairChunk&) const {
+        const double qj = q[p.j];
+        if (qj == 0.0)
+            return {};
+        const double r2 = p.r2;
+        const double r6 = r2 * r2 * r2;
+        const double r_lam = std::pow(soft0 + r6, 1.0 / 6.0);
+        const double inv_rl = 1.0 / r_lam;
+        const double qq = qqr2e * ri.qi * qj;
+
+        // V = λ qq (1/r_λ − 1/r_c)
+        const double vpair = qq * (inv_rl - inv_rc);
+        md::PairTermX t;
+        t.energy = lam * vpair;
+
+        // ∂V/∂λ = vpair + λ qq (−1/r_λ²) ∂r_λ/∂λ
+        // ∂r_λ/∂λ = (1/6)(soft0+r6)^{−5/6} ∂soft0/∂λ
+        //         = dsoft0_dlam / (6 r_λ⁵)
+        const double r_lam5 = r_lam * r_lam * r_lam * r_lam * r_lam;
+        const double drlam_dlam = dsoft0_dlam / (6.0 * r_lam5);
+        t.extra = vpair + lam * qq * (-inv_rl * inv_rl) * drlam_dlam;
+
+        // fpair such that F_i = fpair * dx:
+        // F_r = λ qq r⁵ / r_λ⁷  ⇒ fpair = λ qq r⁴ / r_λ⁷
+        if (lam > 0.0) {
+            const double r4 = r2 * r2;
+            const double r_lam7 = r_lam5 * r_lam * r_lam;
+            t.fpair = lam * qq * r4 / r_lam7;
+        }
+        t.fvirial = t.fpair;
+        return t;
+    }
+};
+
+} // namespace
 
 void PairCoulSoft::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
@@ -60,23 +113,9 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
 
-    const int k_inum = pairs.inum;
-    const int* __restrict ilist = pairs.ilist.data();
-    const int* __restrict numneigh = pairs.numneigh.data();
-    const int* __restrict firstneigh = pairs.firstneigh.data();
-    const int* __restrict neighbors = pairs.neighbors.data();
-
-    const StorageReal* __restrict x_ptr = f.span(kAtom_x);
-    const StorageReal* __restrict y_ptr = f.span(kAtom_y);
-    const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    const StorageReal* __restrict q_ptr = f.span(kAtom_charge);
-
-    const double rc_sq = cutoff_sq_;
-    const double inv_rc = inv_rc_;
     const double sig6 = sigma6_;
     const double alpha = alpha_;
     const double p = p_;
-    const double qqr2e = units::md_qqr2e;
     const double lam = std::min(1.0, std::max(0.0, lambda));
     const double one_m_lam = 1.0 - lam;
     const double soft0 = alpha * sig6 * std::pow(one_m_lam, p);
@@ -85,112 +124,28 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
         (p == 1.0) ? (-alpha * sig6)
                    : (-alpha * sig6 * p * std::pow(one_m_lam, p - 1.0));
 
-    double energy_total = 0;
-    double dU_total = 0;
-    double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
-
     if (!(lam > 0.0) && soft0 == 0.0) {
         dU_dlambda_ = 0;
         return;
     }
 
-    const md::ForcePass forces(ctx);
-#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
-    reduction(+ : energy_total) reduction(+ : dU_total) reduction(+ : v_xx)    \
-    reduction(+ : v_yy) reduction(+ : v_zz) reduction(+ : v_xy)                \
-    reduction(+ : v_xz) reduction(+ : v_yz)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = forces.thread(tid);
-        double* __restrict fxt_ptr = tf.fx;
-        double* __restrict fyt_ptr = tf.fy;
-        double* __restrict fzt_ptr = tf.fz;
-
-#pragma omp for schedule(static)
-        for (int ii = 0; ii < k_inum; ++ii) {
-            const int i = ilist[ii];
-            const double xi = x_ptr[i], yi = y_ptr[i], zi = z_ptr[i];
-            const double qi = q_ptr[i];
-            if (qi == 0.0)
-                continue;
-            const int jnum = numneigh[i];
-            const int off = firstneigh[i];
-            double fi_x = 0, fi_y = 0, fi_z = 0;
-            for (int jj = 0; jj < jnum; ++jj) {
-                const int j = neighbors[off + jj];
-                const double qj = q_ptr[j];
-                if (qj == 0.0)
-                    continue;
-                double dx, dy, dz;
-                dx = xi - x_ptr[j];
-                dy = yi - y_ptr[j];
-                dz = zi - z_ptr[j];
-                const double r2 = dx * dx + dy * dy + dz * dz;
-                if (r2 >= rc_sq || r2 == 0.0)
-                    continue;
-
-                const double r6 = r2 * r2 * r2;
-                const double r_lam = std::pow(soft0 + r6, 1.0 / 6.0);
-                const double inv_rl = 1.0 / r_lam;
-                const double qq = qqr2e * qi * qj;
-
-                // V = λ qq (1/r_λ − 1/r_c)
-                const double vpair = qq * (inv_rl - inv_rc);
-                energy_total += lam * vpair;
-
-                // ∂V/∂λ = vpair + λ qq (−1/r_λ²) ∂r_λ/∂λ
-                // ∂r_λ/∂λ = (1/6)(soft0+r6)^{−5/6} ∂soft0/∂λ
-                //         = dsoft0_dlam / (6 r_λ⁵)
-                const double r_lam5 = r_lam * r_lam * r_lam * r_lam * r_lam;
-                const double drlam_dlam = dsoft0_dlam / (6.0 * r_lam5);
-                dU_total += vpair + lam * qq * (-inv_rl * inv_rl) * drlam_dlam;
-
-                // fpair such that F_i = fpair * dx:
-                // F_r = λ qq r⁵ / r_λ⁷  ⇒ fpair = λ qq r⁴ / r_λ⁷
-                if (lam > 0.0) {
-                    const double r4 = r2 * r2;
-                    const double r_lam7 = r_lam5 * r_lam * r_lam;
-                    const double fpair = lam * qq * r4 / r_lam7;
-                    const double fxp = fpair * dx;
-                    const double fyp = fpair * dy;
-                    const double fzp = fpair * dz;
-                    fi_x += fxp;
-                    fi_y += fyp;
-                    fi_z += fzp;
-                    if (ctx.forces_requested) {
-                        fxt_ptr[j] -= fxp;
-                        fyt_ptr[j] -= fyp;
-                        fzt_ptr[j] -= fzp;
-                    }
-                    v_xx += dx * fxp;
-                    v_yy += dy * fyp;
-                    v_zz += dz * fzp;
-                    v_xy += dx * fyp;
-                    v_xz += dx * fzp;
-                    v_yz += dy * fzp;
-                }
-            }
-            if (ctx.forces_requested) {
-                fxt_ptr[i] += fi_x;
-                fyt_ptr[i] += fi_y;
-                fzt_ptr[i] += fi_z;
-            }
-        }
-    }
+    CoulSoftKernel kernel;
+    kernel.q = f.span(kAtom_charge);
+    kernel.rc_sq = cutoff_sq_;
+    kernel.inv_rc = inv_rc_;
+    kernel.qqr2e = units::md_qqr2e;
+    kernel.lam = lam;
+    kernel.soft0 = soft0;
+    kernel.dsoft0_dlam = dsoft0_dlam;
+    const md::PairTotals sums = loop_.run(ctx, md::PairRows::of(pairs), kernel);
+    const double energy_total = sums.energy;
+    const double dU_total = sums.extra;
+    const md::Voigt6& vir = sums.virial;
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    if (ctx.stress_requested) {
-        f.meta.get(kStress)[0] += v_xx;
-        f.meta.get(kStress)[1] += v_yy;
-        f.meta.get(kStress)[2] += v_zz;
-        f.meta.get(kStress)[3] += v_xy;
-        f.meta.get(kStress)[4] += v_xz;
-        f.meta.get(kStress)[5] += v_yz;
-    }
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
     dU_dlambda_ = dU_total;
 }
 

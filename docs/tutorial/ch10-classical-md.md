@@ -221,8 +221,8 @@ Check registration and derivative support against the selected revision.
 | `cpu::AngleHarmonic` | $K(\theta - \theta_0)^2$ | Energy &#124; Force |
 | `cpu::DihedralMultiHarmonic` | $\sum_n a_n \cos^n\phi$ | Energy &#124; Force |
 
-They share the same lifecycle, the same OpenMP per-thread force
-reduction buffer pattern, and the same cell-list-driven neighbor-list
+They share the same lifecycle, the same chunk-owned OpenMP force
+buffers (deterministic at a fixed thread count), and the same cell-list-driven neighbor-list
 hand-off. None of them know about the integrator. That decoupling is
 what makes the rest of the chapter short.
 

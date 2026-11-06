@@ -20,6 +20,7 @@
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -63,7 +64,7 @@ class PairLJSoft : public Pair {
     double v_shift_ = 0; ///< Hard LJ at raw rc [eV].
     double dU_dlambda_ = 0;
 
-    int n_threads_ = 1;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

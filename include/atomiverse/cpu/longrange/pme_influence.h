@@ -17,6 +17,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/device/chunked_range.h"
 
 namespace ATV {
 namespace longrange {
@@ -179,26 +180,41 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
     const double* __restrict my = tab.my.data();
     const double* __restrict mz = tab.mz.data();
     const double* __restrict inv_msq = tab.inv_msq.data();
-    double e = 0.0;
-    double st[6] = {0, 0, 0, 0, 0, 0};
-#pragma omp parallel for schedule(static) reduction(+ : e, st[ : 6])
-    for (int idx = 0; idx < ntot; ++idx) {
-        const double h = H[idx];
-        if (h == 0.0) {
-            // Zero mode (and any unused slot): clear contribution.
-            grid[idx] = 0;
-            continue;
+    // A fixed partition of the modes (ChunkedRange), one partial per chunk,
+    // folded in chunk order: the same bits at any thread count and in any
+    // run (an OpenMP `reduction` combines in thread-arrival order).
+    constexpr long kChunks = 64;
+    const cpu::device::ChunkedRange modes(ntot, kChunks);
+    double part[kChunks][7] = {};
+    const long n_chunks = modes.chunks();
+#pragma omp parallel for schedule(static)
+    for (long c = 0; c < n_chunks; ++c) {
+        double e = 0.0;
+        double st[6] = {0, 0, 0, 0, 0, 0};
+        for (long l = modes.begin(c); l < modes.end(c); ++l) {
+            const int idx = static_cast<int>(l);
+            const double h = H[idx];
+            if (h == 0.0) {
+                // Zero mode (and any unused slot): clear contribution.
+                grid[idx] = 0;
+                continue;
+            }
+            const std::complex<double> Qm = grid[idx];
+            const double q2 = Qm.real() * Qm.real() + Qm.imag() * Qm.imag();
+            e += h * q2;
+            pme_mode_virial(h * q2, mx[idx], my[idx], mz[idx], inv_msq[idx],
+                            vt_const, st);
+            grid[idx] = h * Qm;
         }
-        const std::complex<double> Qm = grid[idx];
-        const double q2 = Qm.real() * Qm.real() + Qm.imag() * Qm.imag();
-        e += h * q2;
-        pme_mode_virial(h * q2, mx[idx], my[idx], mz[idx], inv_msq[idx],
-                        vt_const, st);
-        grid[idx] = h * Qm;
+        part[c][0] = e;
+        for (int d = 0; d < 6; ++d)
+            part[c][1 + d] = st[d];
     }
-    e_recip = e;
-    for (int d = 0; d < 6; ++d)
-        stress[d] = st[d];
+    for (long c = 0; c < n_chunks; ++c) {
+        e_recip += part[c][0];
+        for (int d = 0; d < 6; ++d)
+            stress[d] += part[c][1 + d];
+    }
     const double escale =
         ATV::units::md_qqr2e / (2.0 * ATV::units::pi * volume);
     e_recip *= escale;

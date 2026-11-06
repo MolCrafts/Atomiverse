@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -108,6 +109,9 @@ class PairBorn : public Pair {
         return nullptr;
     }
 
+    /// @brief Forget the walk's cached row partition.
+    void build(const BuildContext&) override { loop_.reset(); }
+
   protected:
     void compute(const LaunchContext& ctx) override;
 
@@ -139,6 +143,8 @@ class PairBorn : public Pair {
     std::vector<Entry> table_; ///< dense n_types_ × n_types_
 
     double cutoff_sq_ = 0;
+
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

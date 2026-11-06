@@ -29,7 +29,7 @@ void PeriodicTorsionSet::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    if (ThreadForces* arena = ctx.runtime.md.thread_forces)
+    if (ChunkForces* arena = ctx.runtime.md.chunk_forces)
         arena->reserve(n_threads, ctx.frame.capacity());
 }
 
@@ -100,22 +100,15 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
     const double* __restrict cd = table_.cos_delta.data();
     const double* __restrict sd = table_.sin_delta.data();
 
-    double energy_total = 0.0;
-    Voigt6 vir;
-    const ForcePass forces(ctx);
-
-    const int team = forces.team(n_tuples);
-#pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const ThreadForce tf = forces.thread(tid);
+    // Each chunk keeps its own energy and virial and stores them once;
+    // ForcePass sums the chunks in order (deterministic per thread count).
+    ForcePass forces(ctx);
+    forces.for_each_chunk(n_tuples, [&](int c, int q_begin, int q_end,
+                                        ForceRows tf) {
+        double energy_total = 0.0;
         Voigt6 vir_local;
 
-#pragma omp for schedule(static)
-        for (int q = 0; q < n_tuples; ++q) {
+        for (int q = q_begin; q < q_end; ++q) {
             const int i1 = tup[5 * q + 0];
             const int i2 = tup[5 * q + 1];
             const int i3 = tup[5 * q + 2];
@@ -161,11 +154,10 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
                 vir_local.add_pair(g.b3x, g.b3y, g.b3z, f4x, f4y, f4z);
             }
         }
-        if (do_virial) {
-#pragma omp critical
-            vir += vir_local;
-        }
-    }
+        forces.store(c, energy_total, vir_local);
+    });
+    const double energy_total = forces.energy();
+    const Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(topology_ == Topology::Improper ? kEnergyImproper

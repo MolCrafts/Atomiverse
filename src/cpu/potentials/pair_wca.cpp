@@ -36,8 +36,7 @@ void PairWCA::compute(const LaunchContext& ctx) {
                                  lj.raw(r2, 0.0, 0.0);
                              return md::PairTerm{c.fpair, c.energy};
                          }};
-    const md::PairTotals sums =
-        md::PairLoop<decltype(kernel)>::run(ctx, kernel, "PairWCA");
+    const md::PairTotals sums = loop_.run(ctx, kernel, "PairWCA");
     f.meta.get(kEnergy) += sums.energy;
     f.meta.get(kEnergyPair) += sums.energy;
     if (ctx.stress_requested)

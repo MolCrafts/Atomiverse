@@ -48,8 +48,7 @@ void PairBuck::compute(const LaunchContext& ctx) {
                              const double fpair = -dUdr / r;
                              return md::PairTerm{fpair, v};
                          }};
-    const md::PairTotals sums =
-        md::PairLoop<decltype(kernel)>::run(ctx, kernel, "PairBuck");
+    const md::PairTotals sums = loop_.run(ctx, kernel, "PairBuck");
     f.meta.get(kEnergy) += sums.energy;
     f.meta.get(kEnergyPair) += sums.energy;
     if (ctx.stress_requested)

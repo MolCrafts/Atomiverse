@@ -23,6 +23,7 @@
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/potentials/pair.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -185,6 +186,7 @@ class PairLJCutCoulLong : public Pair, public LongRangeParticipant {
     // Null source denotes an unbuilt cache; version zero is a valid list.
     const md::PairList* scale_source_ = nullptr;
     unsigned long long scale_version_ = 0;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu
