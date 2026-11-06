@@ -84,8 +84,9 @@ from atomiverse.potentials.pair import LJCut
 
 # ── Unit constants, transcribed from core/units.h ───────────────────
 
-# lj row: md_boltz = md_hplanck = md_mvv2e = 1. The names stay so the
-# activity derivation below is the same algebra as units::lambda_thermal.
+# The samplers run in the default LAMMPS style lj: boltz = hplanck = mvv2e
+# = 1. The names stay so the activity derivation below is the same algebra
+# as units::lambda_thermal.
 _KB_EV_PER_K: float = 1.0
 _H_PLANCK_EV_FS: float = 1.0
 _MASS_V2_TO_ENERGY: float = 1.0
