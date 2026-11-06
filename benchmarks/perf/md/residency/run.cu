@@ -398,8 +398,8 @@ int main(int argc, char** argv) try {
     if (water || ethane) {
         // Integrator and constraints are mounted with the force field above.
     } else if (name == "lj-npt") {
-        sim.set_integrator(cuda::md::NoseHooverNPT{
-            kTemperature, 100 * kDt, kPressure, 1000 * kDt, kDt});
+        sim.set_integrator(cuda::md::NoseHooverNPT{kTemperature, 100 * kDt,
+                                                   kPressure, 1000 * kDt, kDt});
     } else if (name == "lj-brownian") {
         sim.set_integrator(cuda::md::Brownian{kDt, 1.0, kTemperature, 5});
     } else if (name == "lj-nvelimit") {

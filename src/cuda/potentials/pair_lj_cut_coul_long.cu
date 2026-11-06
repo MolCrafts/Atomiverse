@@ -75,8 +75,7 @@ exceptions(const Exception* pairs, int count, const pos_t* x, const pos_t* y,
            const pos_t* z, const force_t* q, const tile::TypedPairCoeff* table,
            Box box_arg, force_t alpha, force_t qqrd2e, force_t coul_cut2,
            fixed_t* fx, fixed_t* fy, fixed_t* fz, ForceFault* fault,
-           acc_t* partial,
-           int partial_stride, int partial_offset) {
+           acc_t* partial, int partial_stride, int partial_offset) {
     const ForceBox box = box_arg.current().as<force_t>();
     const int p = blockIdx.x * blockDim.x + threadIdx.x;
     acc_t e = 0, v[6] = {};
@@ -442,9 +441,8 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
                 s.pairs, s.count, f.atoms.x, f.atoms.y, f.atoms.z,
                 f.atoms.charge, s.table, ctx.runtime.host_box, force_t(alpha_),
                 force_t(ctx.runtime.units.qqrd2e()), coul_cut2, f.atoms.fx,
-                f.atoms.fy, f.atoms.fz, f.force_fault,
-                engine.partial(), engine.partial_stride(),
-                engine.extra_offset());
+                f.atoms.fy, f.atoms.fz, f.force_fault, engine.partial(),
+                engine.partial_stride(), engine.extra_offset());
         engine.template reduce<E, V>(
             ctx, energy_term(f.scalars, EnergyKind::Pair, E),
             V ? f.scalars->stress : nullptr);

@@ -125,7 +125,9 @@ struct Style {
     double P(double energy_per_volume) const {
         return energy_per_volume * u.nktv2p;
     }
-    double q(double lj_charge) const { return lj_charge / std::sqrt(u.qqrd2e()); }
+    double q(double lj_charge) const {
+        return lj_charge / std::sqrt(u.qqrd2e());
+    }
 };
 
 Style style(const char* name) {
@@ -312,7 +314,8 @@ cpu::Frame water(const Style& u = lj_style()) {
                     f.span(kAtom_mass)[i] = s == 0 ? m_o : m_h;
                     f.span(kAtom_tag)[i] = i;
                     f.span(kAtom_type)[i] = s == 0 ? 0 : 1;
-                    f.span(kAtom_charge)[i] = u.q((s == 0 ? -0.834 : 0.417) * kQ);
+                    f.span(kAtom_charge)[i] =
+                        u.q((s == 0 ? -0.834 : 0.417) * kQ);
                 }
             }
     f.box = cpu::Box::cubic(L);
@@ -554,12 +557,13 @@ constexpr double kT = 0.005, kTHot = 0.0075, kTRamp = 0.01;
 
 std::vector<Case> cases() {
     std::vector<Case> out;
-    out.push_back(
-        {"VelocityVerletLJ", System::lj,
-         [](cpu::md::MD& s, const Style& u) { s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt)}); },
-         [](cuda::md::MD& s, const Style& u) {
-             s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt)});
-         }});
+    out.push_back({"VelocityVerletLJ", System::lj,
+                   [](cpu::md::MD& s, const Style& u) {
+                       s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt)});
+                   },
+                   [](cuda::md::MD& s, const Style& u) {
+                       s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt)});
+                   }});
     out.push_back({"LJCutCoulLongEwald", System::ions,
                    [](cpu::md::MD& s, const Style& u) {
                        s.set_evaluator(cpu::KSpaceEwald{kIonAlpha, 1e-8});
@@ -636,44 +640,56 @@ std::vector<Case> cases() {
     out.push_back({"NoseHoover", System::lj,
                    [](cpu::md::MD& s, const Style& u) {
                        s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt)});
-                       s.set_thermostat(cpu::md::NoseHoover{u.T(kT), u.time(40.0), u.time(kDt)});
+                       s.set_thermostat(cpu::md::NoseHoover{
+                           u.T(kT), u.time(40.0), u.time(kDt)});
                    },
                    [](cuda::md::MD& s, const Style& u) {
                        s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt)});
-                       s.set_thermostat(cuda::md::NoseHoover{u.T(kT), u.time(40.0), u.time(kDt)});
+                       s.set_thermostat(cuda::md::NoseHoover{
+                           u.T(kT), u.time(40.0), u.time(kDt)});
                    }});
-    out.push_back({"NoseHooverNPT", System::lj,
-                   [](cpu::md::MD& s, const Style& u) {
-                       s.set_integrator(cpu::md::NoseHooverNPT{
-                           u.T(kT), u.time(40.0),
-                           u.P(50 * units::bar_to_ev_per_a3), u.time(200.0),
-                           u.time(kDt)});
-                   },
-                   [](cuda::md::MD& s, const Style& u) {
-                       s.set_integrator(cuda::md::NoseHooverNPT{
-                           u.T(kT), u.time(40.0),
-                           u.P(50 * units::bar_to_ev_per_a3), u.time(200.0),
-                           u.time(kDt)});
-                   }});
-    // A temperature ramp over the run span (host-side target today).
     out.push_back(
-        {"NoseHooverNPTRamp", System::lj,
+        {"NoseHooverNPT", System::lj,
          [](cpu::md::MD& s, const Style& u) {
-             cpu::md::NoseHooverNPT npt{
-                 u.T(kT),     u.time(40.0), 0.0, u.time(200.0),
-                 u.time(kDt), 0.0,          3,   3,
-                 {true, true, true},        u.T(kTHot)};
-             npt.set_run_span(0, kTrajectorySteps);
-             s.set_integrator(std::move(npt));
+             s.set_integrator(cpu::md::NoseHooverNPT{
+                 u.T(kT), u.time(40.0), u.P(50 * units::bar_to_ev_per_a3),
+                 u.time(200.0), u.time(kDt)});
          },
          [](cuda::md::MD& s, const Style& u) {
-             cuda::md::NoseHooverNPT npt{
-                 u.T(kT),     u.time(40.0), 0.0, u.time(200.0),
-                 u.time(kDt), 0.0,          3,   3,
-                 {true, true, true},        u.T(kTHot)};
-             npt.set_run_span(0, kTrajectorySteps);
-             s.set_integrator(std::move(npt));
+             s.set_integrator(cuda::md::NoseHooverNPT{
+                 u.T(kT), u.time(40.0), u.P(50 * units::bar_to_ev_per_a3),
+                 u.time(200.0), u.time(kDt)});
          }});
+    // A temperature ramp over the run span (host-side target today).
+    out.push_back({"NoseHooverNPTRamp", System::lj,
+                   [](cpu::md::MD& s, const Style& u) {
+                       cpu::md::NoseHooverNPT npt{u.T(kT),
+                                                  u.time(40.0),
+                                                  0.0,
+                                                  u.time(200.0),
+                                                  u.time(kDt),
+                                                  0.0,
+                                                  3,
+                                                  3,
+                                                  {true, true, true},
+                                                  u.T(kTHot)};
+                       npt.set_run_span(0, kTrajectorySteps);
+                       s.set_integrator(std::move(npt));
+                   },
+                   [](cuda::md::MD& s, const Style& u) {
+                       cuda::md::NoseHooverNPT npt{u.T(kT),
+                                                   u.time(40.0),
+                                                   0.0,
+                                                   u.time(200.0),
+                                                   u.time(kDt),
+                                                   0.0,
+                                                   3,
+                                                   3,
+                                                   {true, true, true},
+                                                   u.T(kTHot)};
+                       npt.set_run_span(0, kTrajectorySteps);
+                       s.set_integrator(std::move(npt));
+                   }});
     out.push_back({"BerendsenBarostat", System::lj,
                    [](cpu::md::MD& s, const Style& u) {
                        s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt)});
@@ -688,20 +704,23 @@ std::vector<Case> cases() {
                            u.time(kDt), u.P(10.0)});
                    }});
     // xmax below the fastest atom's |v| dt: the limiter engages.
-    out.push_back(
-        {"NVELimit", System::lj,
-         [](cpu::md::MD& s, const Style& u) { s.set_integrator(cpu::md::NVELimit{u.time(kDt), 2e-3}); },
-         [](cuda::md::MD& s, const Style& u) {
-             s.set_integrator(cuda::md::NVELimit{u.time(kDt), 2e-3});
-         }});
-    out.push_back({"NvtSllod", System::lj,
+    out.push_back({"NVELimit", System::lj,
                    [](cpu::md::MD& s, const Style& u) {
-                       s.set_integrator(cpu::md::NvtSllod{u.T(kT), u.time(40.0), u.time(kDt), u.rate(2e-4),
-                                                          md::kFlowXY, 3});
+                       s.set_integrator(cpu::md::NVELimit{u.time(kDt), 2e-3});
                    },
                    [](cuda::md::MD& s, const Style& u) {
-                       s.set_integrator(cuda::md::NvtSllod{u.T(kT), u.time(40.0), u.time(kDt), u.rate(2e-4),
-                                                           md::kFlowXY, 3});
+                       s.set_integrator(cuda::md::NVELimit{u.time(kDt), 2e-3});
+                   }});
+    out.push_back({"NvtSllod", System::lj,
+                   [](cpu::md::MD& s, const Style& u) {
+                       s.set_integrator(
+                           cpu::md::NvtSllod{u.T(kT), u.time(40.0), u.time(kDt),
+                                             u.rate(2e-4), md::kFlowXY, 3});
+                   },
+                   [](cuda::md::MD& s, const Style& u) {
+                       s.set_integrator(cuda::md::NvtSllod{
+                           u.T(kT), u.time(40.0), u.time(kDt), u.rate(2e-4),
+                           md::kFlowXY, 3});
                    }});
     out.push_back({"Deform", System::lj,
                    [](cpu::md::MD& s, const Style& u) {
@@ -719,84 +738,90 @@ std::vector<Case> cases() {
                                 200);
                    }});
     // T = 0: drag only, so the CPU twin is deterministic.
-    out.push_back(
-        {"LangevinDrag", System::lj,
-         [](cpu::md::MD& s, const Style& u) {
-             s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt)});
-             s.set_thermostat(cpu::md::FixLangevin{0.0, 0.0, u.time(80.0), u.time(kDt), 7u});
-         },
-         [](cuda::md::MD& s, const Style& u) {
-             s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt)});
-             s.set_thermostat(cuda::md::FixLangevin{0.0, 0.0, u.time(80.0), u.time(kDt), 7u});
-         }});
-    // Noise keyed on (seed, tag, step): only graph-vs-eager is meaningful.
-    out.push_back({"LangevinNoise", System::lj, {}, [](cuda::md::MD& s, const Style& u) {
+    out.push_back({"LangevinDrag", System::lj,
+                   [](cpu::md::MD& s, const Style& u) {
+                       s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt)});
+                       s.set_thermostat(cpu::md::FixLangevin{
+                           0.0, 0.0, u.time(80.0), u.time(kDt), 7u});
+                   },
+                   [](cuda::md::MD& s, const Style& u) {
                        s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt)});
-                       s.set_thermostat(
-                           cuda::md::FixLangevin{u.T(kT), u.T(kT), u.time(80.0),
-                                                 u.time(kDt), 7u});
+                       s.set_thermostat(cuda::md::FixLangevin{
+                           0.0, 0.0, u.time(80.0), u.time(kDt), 7u});
                    }});
-    out.push_back({"LangevinNoiseRamp", System::lj, {}, [](cuda::md::MD& s, const Style& u) {
+    // Noise keyed on (seed, tag, step): only graph-vs-eager is meaningful.
+    out.push_back(
+        {"LangevinNoise", System::lj, {}, [](cuda::md::MD& s, const Style& u) {
+             s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt)});
+             s.set_thermostat(cuda::md::FixLangevin{
+                 u.T(kT), u.T(kT), u.time(80.0), u.time(kDt), 7u});
+         }});
+    out.push_back({"LangevinNoiseRamp",
+                   System::lj,
+                   {},
+                   [](cuda::md::MD& s, const Style& u) {
                        s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt)});
-                       cuda::md::FixLangevin langevin{u.T(kT), u.T(kTRamp),
-                                                      u.time(80.0),
-                                                      u.time(kDt), 7u};
+                       cuda::md::FixLangevin langevin{
+                           u.T(kT), u.T(kTRamp), u.time(80.0), u.time(kDt), 7u};
                        langevin.set_run_span(0, kTrajectorySteps);
                        s.set_thermostat(std::move(langevin));
                    }});
-    out.push_back({"Brownian", System::lj, {}, [](cuda::md::MD& s, const Style& u) {
-                       s.set_integrator(cuda::md::Brownian{u.time(kDt), u.rate(1e-4), u.T(kT),
-                                          11u});
-                   }});
+    out.push_back(
+        {"Brownian", System::lj, {}, [](cuda::md::MD& s, const Style& u) {
+             s.set_integrator(
+                 cuda::md::Brownian{u.time(kDt), u.rate(1e-4), u.T(kT), 11u});
+         }});
     // Constraints at a 2 fs step: rigid TIP3P through SETTLE, X-H bonds
     // (and, separately, rigid H-C-H angles) through RATTLE clusters.
     constexpr double kDt2fs = 2.0 * kFs;
-    out.push_back({"SettleWater", System::water,
-                   [](cpu::md::MD& s, const Style& u) {
-                       s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
-                       s.set_observer(settle_waters<cpu::md::FixSettle>(u));
-                   },
-                   [](cuda::md::MD& s, const Style& u) {
-                       s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
-                       s.set_observer(settle_waters<cuda::md::FixSettle>(u));
-                   },
-                   kMesh});
+    out.push_back(
+        {"SettleWater", System::water,
+         [](cpu::md::MD& s, const Style& u) {
+             s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
+             s.set_observer(settle_waters<cpu::md::FixSettle>(u));
+         },
+         [](cuda::md::MD& s, const Style& u) {
+             s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
+             s.set_observer(settle_waters<cuda::md::FixSettle>(u));
+         },
+         kMesh});
     // Ndof = 6 per water reaches the thermostat's target.
     out.push_back(
         {"SettleWaterNoseHoover", System::water,
          [](cpu::md::MD& s, const Style& u) {
              s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
-             s.set_thermostat(cpu::md::NoseHoover{u.T(0.02), u.time(20 * kDt2fs),
-                                                  u.time(kDt2fs)});
+             s.set_thermostat(cpu::md::NoseHoover{
+                 u.T(0.02), u.time(20 * kDt2fs), u.time(kDt2fs)});
              s.set_observer(settle_waters<cpu::md::FixSettle>(u));
          },
          [](cuda::md::MD& s, const Style& u) {
              s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
-             s.set_thermostat(cuda::md::NoseHoover{u.T(0.02), u.time(20 * kDt2fs),
-                                                  u.time(kDt2fs)});
+             s.set_thermostat(cuda::md::NoseHoover{
+                 u.T(0.02), u.time(20 * kDt2fs), u.time(kDt2fs)});
              s.set_observer(settle_waters<cuda::md::FixSettle>(u));
          },
          kMesh});
-    out.push_back({"RattleXH", System::ethane,
-                   [](cpu::md::MD& s, const Style& u) {
-                       s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
-                       cpu::md::FixRattle rattle{u.time(kDt2fs)};
-                       rattle.constrain_bond(1, kCH);
-                       s.set_observer(std::move(rattle));
-                   },
-                   [](cuda::md::MD& s, const Style& u) {
-                       s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
-                       cuda::md::FixRattle rattle{u.time(kDt2fs)};
-                       rattle.constrain_bond(1, kCH);
-                       s.set_observer(std::move(rattle));
-                   },
-                   kMesh});
+    out.push_back(
+        {"RattleXH", System::ethane,
+         [](cpu::md::MD& s, const Style& u) {
+             s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
+             cpu::md::FixRattle rattle{u.time(kDt2fs)};
+             rattle.constrain_bond(1, kCH);
+             s.set_observer(std::move(rattle));
+         },
+         [](cuda::md::MD& s, const Style& u) {
+             s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
+             cuda::md::FixRattle rattle{u.time(kDt2fs)};
+             rattle.constrain_bond(1, kCH);
+             s.set_observer(std::move(rattle));
+         },
+         kMesh});
     out.push_back(
         {"RattleXHAngles", System::ethane,
          [](cpu::md::MD& s, const Style& u) {
              s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
-             s.set_thermostat(cpu::md::NoseHoover{u.T(0.02), u.time(20 * kDt2fs),
-                                                  u.time(kDt2fs)});
+             s.set_thermostat(cpu::md::NoseHoover{
+                 u.T(0.02), u.time(20 * kDt2fs), u.time(kDt2fs)});
              cpu::md::FixRattle rattle{u.time(kDt2fs)};
              rattle.constrain_bond(1, kCH);
              rattle.constrain_angle(1, ethane_hh());
@@ -804,8 +829,8 @@ std::vector<Case> cases() {
          },
          [](cuda::md::MD& s, const Style& u) {
              s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
-             s.set_thermostat(cuda::md::NoseHoover{u.T(0.02), u.time(20 * kDt2fs),
-                                                  u.time(kDt2fs)});
+             s.set_thermostat(cuda::md::NoseHoover{
+                 u.T(0.02), u.time(20 * kDt2fs), u.time(kDt2fs)});
              cuda::md::FixRattle rattle{u.time(kDt2fs)};
              rattle.constrain_bond(1, kCH);
              rattle.constrain_angle(1, ethane_hh());
@@ -922,8 +947,7 @@ void expect_same_state(const cpu::Frame& got, const cpu::Frame& want,
                 << "cell(" << a << "," << b << ")";
 }
 
-class CudaMdParity
-    : public testing::TestWithParam<std::tuple<Case, Style>> {};
+class CudaMdParity : public testing::TestWithParam<std::tuple<Case, Style>> {};
 
 } // namespace
 
@@ -952,7 +976,8 @@ TEST_P(CudaMdParity, GraphedStepsMatchEagerSteps) {
     const Case& c = std::get<0>(GetParam());
     const Style& u = std::get<1>(GetParam());
     const cpu::Frame eager = run_cuda(c, kTrajectorySteps, /*eager=*/true, u);
-    const cpu::Frame graphed = run_cuda(c, kTrajectorySteps, /*eager=*/false, u);
+    const cpu::Frame graphed =
+        run_cuda(c, kTrajectorySteps, /*eager=*/false, u);
     // A replay that froze the first step's host state would leave the
     // trajectory far from the eager one; make sure the run moved at all.
     const cpu::Frame start = make_system(c.system, u);

@@ -214,8 +214,7 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
         for (int d = 0; d < 6; ++d)
             stress[d] += part[c][1 + d];
     }
-    const double escale =
-        qqrd2e / (2.0 * ATV::units::pi * volume);
+    const double escale = qqrd2e / (2.0 * ATV::units::pi * volume);
     e_recip *= escale;
     for (int d = 0; d < 6; ++d)
         stress[d] *= escale;
