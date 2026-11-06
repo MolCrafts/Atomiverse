@@ -469,7 +469,10 @@ void Backend::advance_device_step_(cudaStream_t stream) {
     ++device_step_next_;
 }
 
-void Backend::forget_graphs_() noexcept { step_graphs_.clear(); }
+void Backend::forget_graphs_() noexcept {
+    segment_memo_.clear();
+    step_graphs_.clear();
+}
 
 // One MD step as replayed segments: consecutive graph-capturable main-stream
 // components form a segment captured once per signature (components, phase,
@@ -479,17 +482,14 @@ void Backend::forget_graphs_() noexcept { step_graphs_.clear(); }
 void Backend::execute_step_graphed_(BigInt step_idx) {
     const auto& plan = *plan_;
     const auto stream = static_cast<cudaStream_t>(context_.stream);
-    struct Entry {
-        Component* component; // null: the device step advance
-        int phase;
-        bool forces, energy, stress, box;
-    };
-    std::vector<Entry> segment;
+    auto& segment = segment_;
+    segment.clear();
+    std::size_t ordinal = 0;
     auto flush = [&] {
         if (segment.empty())
             return;
-        std::vector<std::uintptr_t> key;
-        key.reserve(segment.size() * 3);
+        auto& key = segment_key_;
+        key.clear();
         for (const auto& e : segment) {
             key.push_back(reinterpret_cast<std::uintptr_t>(e.component));
             key.push_back(e.component ? static_cast<std::uintptr_t>(
@@ -498,6 +498,14 @@ void Backend::execute_step_graphed_(BigInt step_idx) {
             key.push_back(static_cast<std::uintptr_t>(e.phase) << 4
                           | (e.forces ? 1u : 0u) | (e.energy ? 2u : 0u)
                           | (e.stress ? 4u : 0u) | (e.box ? 8u : 0u));
+        }
+        if (ordinal >= segment_memo_.size())
+            segment_memo_.resize(ordinal + 1);
+        SegmentMemo& memo = segment_memo_[ordinal++];
+        if (memo.ring && memo.key == key) {
+            ATV_CUDA_CHECK(memo.ring->launch(stream));
+            segment.clear();
+            return;
         }
         auto found = step_graphs_.find(key);
         if (found == step_graphs_.end()) {
@@ -532,8 +540,10 @@ void Backend::execute_step_graphed_(BigInt step_idx) {
             };
             GraphRing ring;
             ring.build(capture);
-            found = step_graphs_.emplace(std::move(key), std::move(ring)).first;
+            found = step_graphs_.emplace(key, std::move(ring)).first;
         }
+        memo.key = key;
+        memo.ring = &found->second;
         ATV_CUDA_CHECK(found->second.launch(stream));
         segment.clear();
     };

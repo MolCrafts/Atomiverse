@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "atomiverse/core/pair_kernel.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/error.cuh"
@@ -18,7 +19,6 @@
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/coul_long.cuh"
-#include "atomiverse/cuda/potentials/pair_kernel.h"
 
 namespace ATV {
 

@@ -39,7 +39,6 @@ class ImproperHarmonic : public Improper {
     std::vector<double> K_;
     std::vector<double> chi0_;
 
-    md::BondedForceScratch scratch_;
     md::DropTally drops_;
     md::BondedTupleCache cache_;
 };

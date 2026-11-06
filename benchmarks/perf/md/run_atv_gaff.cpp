@@ -12,7 +12,11 @@
 /// General GAFF (benchmarks/compare/gaff-liquid): `--ff` may also carry `dihedral_style
 /// fourier` and `improper_style cvff`; `--shake` holds every bond with a
 /// hydrogen (mass < 1.1 amu) rigid like `fix shake ... m 1.008`; `--mesh K`
-/// pins a cubic K³ PPPM mesh like `kspace_modify mesh K K K`.
+/// pins a cubic K³ PPPM mesh like `kspace_modify mesh K K K`; `--settle`
+/// (with `--shake`) holds every water — an O (15.5–16.5 amu) whose only
+/// two bonds go to terminal hydrogens — rigid with FixSettle instead of
+/// RATTLE (LAMMPS `fix shake ... b <OH> a <HOH>`): d_OH from the bond
+/// type's r0, d_HH from the first water's geometry.
 ///
 /// Usage:
 ///   mpirun -np N run_atv_gaff --data melt.data --steps 1000 [--warmup 100]
@@ -38,6 +42,7 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
+#include "atomiverse/cpu/dynamics/fix_settle.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -85,6 +90,7 @@ struct Args {
     double dt = 1.0;           // fs
     int mesh = 0;              // >0: cubic K³ PPPM mesh (kspace_modify mesh)
     bool shake = false;        // hold X-H bonds rigid (fix shake m 1.008)
+    bool settle = false;       // rigid waters through FixSettle
     double shake_tol = 1.0e-5; // relative tolerance
     std::string forces_out;    // single point: write "id fx fy fz" kcal/mol/Å
     int thermo = 0;            // >0: Thermo line every N steps (LAMMPS thermo)
@@ -143,6 +149,8 @@ Args parse(int argc, char** argv) {
             a.mesh = std::atoi(next("--mesh"));
         else if (!std::strcmp(argv[i], "--shake"))
             a.shake = true;
+        else if (!std::strcmp(argv[i], "--settle"))
+            a.settle = true;
         else if (!std::strcmp(argv[i], "--shake-tol"))
             a.shake_tol = std::atof(next("--shake-tol"));
         else if (!std::strcmp(argv[i], "--forces-out"))
@@ -156,7 +164,8 @@ Args parse(int argc, char** argv) {
                 "run_atv_gaff --data PATH [--ff PATH] [--steps N] [--warmup N]"
                 " [--cutoff 10] [--accuracy 1e-4] [--grid-spacing Å]"
                 " [--T 400] [--tau-T 100] [--npt] [--P atm] [--tau-P 1000]"
-                " [--single-point] [--seed N] [--dt fs] [--mesh K] [--shake]"
+                " [--single-point] [--seed N] [--dt fs] [--mesh K] [--shake] "
+                "[--settle]"
                 " [--shake-tol 1e-5] [--forces-out PATH] [--tail 0|1]"
                 " [--shift 0|1] [--thermo N] [--nve]\n");
             std::exit(0);
@@ -540,6 +549,8 @@ int main(int argc, char** argv) {
     }
     if (args.thermo > 0)
         sim.set_thermo(args.thermo);
+    if (args.settle && !args.shake)
+        throw std::invalid_argument("--settle needs --shake");
     if (args.shake) {
         // `fix shake ... m 1.008`: every bond type that bonds a hydrogen
         // (mass < 1.1 amu) is held at its bond_coeff r0.
@@ -547,11 +558,62 @@ int main(int argc, char** argv) {
         const auto num_bond = frame.span(kAtom_num_bond);
         const auto bond_atom = frame.span(kAtom_bond_atom);
         const auto bond_type = frame.span(kAtom_bond_type);
+        const int n = frame.nlocal();
+        // Waters for --settle: an oxygen whose only two bonds go to
+        // hydrogens that have no other bond. Bonds are stored once, so the
+        // adjacency is gathered from both ends (tag = row).
+        std::set<int> water_types;
+        cpu::md::FixSettle settle{args.dt, 1.0, 1.0};
+        int n_waters = 0;
+        if (args.settle) {
+            std::vector<std::vector<std::pair<int, int>>> adj(
+                static_cast<std::size_t>(n));
+            for (int i = 0; i < n; ++i)
+                for (int m = 0; m < num_bond[i]; ++m) {
+                    const int j = static_cast<int>(bond_atom(i, m));
+                    adj[static_cast<std::size_t>(i)].push_back(
+                        {j, bond_type(i, m)});
+                    adj[static_cast<std::size_t>(j)].push_back(
+                        {i, bond_type(i, m)});
+                }
+            const auto x = frame.span(kAtom_x);
+            const auto y = frame.span(kAtom_y);
+            const auto z = frame.span(kAtom_z);
+            std::vector<std::array<int, 3>> waters;
+            for (int o = 0; o < n; ++o) {
+                const auto& nb = adj[static_cast<std::size_t>(o)];
+                if (!(mass[o] > 15.5 && mass[o] < 16.5) || nb.size() != 2)
+                    continue;
+                const int h1 = nb[0].first, h2 = nb[1].first;
+                if (mass[h1] < 1.1 && mass[h2] < 1.1
+                    && adj[static_cast<std::size_t>(h1)].size() == 1
+                    && adj[static_cast<std::size_t>(h2)].size() == 1) {
+                    waters.push_back({o, h1, h2});
+                    water_types.insert(nb[0].second);
+                    water_types.insert(nb[1].second);
+                }
+            }
+            if (waters.empty() || water_types.size() != 1)
+                throw std::runtime_error(
+                    "--settle: need waters sharing one O-H bond type");
+            const int t = *water_types.begin();
+            const auto& w0 = waters.front();
+            double dx = x[w0[1]] - x[w0[2]], dy = y[w0[1]] - y[w0[2]],
+                   dz = z[w0[1]] - z[w0[2]];
+            frame.box.min_image(dx, dy, dz);
+            settle =
+                cpu::md::FixSettle{args.dt, r0[static_cast<std::size_t>(t)],
+                                   std::sqrt(dx * dx + dy * dy + dz * dz)};
+            for (const auto& w : waters)
+                settle.add_water(w[0], w[1], w[2]);
+            n_waters = static_cast<int>(waters.size());
+        }
         std::set<int> types;
-        for (int i = 0; i < frame.nlocal(); ++i)
+        for (int i = 0; i < n; ++i)
             for (int m = 0; m < num_bond[i]; ++m) {
                 const int j = static_cast<int>(bond_atom(i, m)); // tag = row
-                if (mass[i] < 1.1 || mass[j] < 1.1)
+                if ((mass[i] < 1.1 || mass[j] < 1.1)
+                    && water_types.count(bond_type(i, m)) == 0)
                     types.insert(bond_type(i, m));
             }
         cpu::md::FixRattle rattle{args.dt, args.shake_tol, /*max_iter=*/100};
@@ -561,9 +623,12 @@ int main(int argc, char** argv) {
             rattle.constrain_bond(t, r0[static_cast<std::size_t>(t)]);
         }
         if (rank == 0)
-            std::printf("[atv] shake: %zu X-H bond types held rigid\n",
-                        types.size());
+            std::printf("[atv] shake: %zu X-H bond types held rigid, %d "
+                        "SETTLE waters\n",
+                        types.size(), n_waters);
         sim.set_observer(std::move(rattle));
+        if (args.settle)
+            sim.set_observer(std::move(settle));
     }
     if (!have_velocities)
         sim.set_observer(

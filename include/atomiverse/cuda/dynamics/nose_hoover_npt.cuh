@@ -73,6 +73,7 @@ class NoseHooverNPT : public cuda::Integrator, public cuda::TimestepProvider {
     NoseHooverNPT& set_run_span(std::int64_t nfirst, std::int64_t nlast) {
         nfirst_ = nfirst;
         nlast_ = nlast;
+        ++epoch_;
         return *this;
     }
 
@@ -102,8 +103,14 @@ class NoseHooverNPT : public cuda::Integrator, public cuda::TimestepProvider {
     ~NoseHooverNPT() override;
     NoseHooverNPT(NoseHooverNPT&&) noexcept;
     NoseHooverNPT& operator=(NoseHooverNPT&&) noexcept;
+    /// @brief Every kernel reads the device step; the run span is a kernel
+    ///        argument (part of the graph epoch).
+    bool graph_capturable() const override { return true; }
+    std::uint64_t graph_epoch() const override { return epoch_; }
     void initialize_forces(const LaunchContext& ctx) override;
     void build(const BuildContext& ctx) override;
+    /// @brief Host mirror of the ramped target (`T_target()`).
+    void before_launch(const LaunchContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
@@ -116,6 +123,7 @@ class NoseHooverNPT : public cuda::Integrator, public cuda::TimestepProvider {
     std::int64_t nfirst_ = 0, nlast_ = 0;
 
     double T_live_ = 0;
+    std::uint64_t epoch_ = 0;
     struct State;
     std::unique_ptr<State> state_;
 };

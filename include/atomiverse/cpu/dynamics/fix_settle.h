@@ -106,7 +106,7 @@ class FixSettle : public Constraint,
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
-    /// @brief LAMMPS RATTLE/SHAKE packer mode. XSHAKE applies \(p_d L_d\) [Å].
+    /// @brief LAMMPS RATTLE/SHAKE packer mode. XSHAKE adds the lattice translation H·pbc [Å].
     enum class CommMode { XSHAKE, VP, V };
 
     /// @brief Select the packer mode.
@@ -117,7 +117,8 @@ class FixSettle : public Constraint,
     /// @return 3.
     int comm_forward() const override { return 3; }
 
-    /// @brief Pack sendlist rows. XSHAKE applies \(p_d L_d\) [Å]; VP/V do not.
+    /// @brief Pack sendlist rows. XSHAKE adds the image's lattice translation
+    ///        `H·pbc` [Å] (general triclinic cells); VP/V do not.
     /// @param n Number of local rows in `list` [dimensionless].
     /// @param list Local row indices to pack.
     /// @param buf Output buffer.
@@ -154,6 +155,9 @@ class FixSettle : public Constraint,
     std::vector<double> ref_;
     CommMode comm_mode_ = CommMode::XSHAKE;
     cpu::Frame* frame_ = nullptr;
+    /// Frame and `Frame::row_revision()` the cached rows were resolved on.
+    const cpu::Frame* rows_frame_ = nullptr;
+    std::uint64_t rows_revision_ = 0;
 };
 
 } // namespace md

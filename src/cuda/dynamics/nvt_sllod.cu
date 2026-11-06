@@ -137,9 +137,10 @@ __global__ void measure_thermostat(
     const pos_t* __restrict__ z, const pos_t* __restrict__ xc,
     const pos_t* __restrict__ yc, const pos_t* __restrict__ zc,
     const mixed_t* __restrict__ mass, Device* d, ChainArgs chain, int n,
-    ForceFault* fault, const std::int64_t* __restrict__ tag, long long step) {
+    ForceFault* fault, const std::int64_t* __restrict__ tag,
+    const long long* step_ptr, long long step) {
     if constexpr (Kick) {
-        if (!forces_consumable(fault, tag, step))
+        if (!forces_consumable(fault, tag, step_ptr, step))
             return;
     } else {
         if (state_frozen(fault))
@@ -238,9 +239,10 @@ nve_x(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
       mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
       const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
       const mixed_t* __restrict__ mass, ImageInt* __restrict__ image,
-      ForceFault* fault, const std::int64_t* __restrict__ tag, long long step,
-      const Device* __restrict__ d, double dt, int n) {
-    if (!forces_consumable(fault, tag, step))
+      ForceFault* fault, const std::int64_t* __restrict__ tag,
+      const long long* step_ptr, long long step, const Device* __restrict__ d,
+      double dt, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
@@ -497,6 +499,24 @@ ATV::md::SllodChainState NvtSllod::thermostat_chain() const {
     return out;
 }
 
+void NvtSllod::before_launch(const LaunchContext& ctx) {
+    if (!ctx.at(ATV::md::Phase::end_of_step))
+        return;
+    // The host's own strain clock: the edge stays positive is checked before
+    // the step is enqueued (deterministic, no device read).
+    const long long next = step_ + 1;
+    if (dir_ < 3) {
+        double h_new[6];
+        double h0[6] = {0, 0, 0, 0, 0, 0};
+        h0[dir_] = 1.0;
+        ATV::md::sllod_box_at(h0, rate_, dt_, dir_, next, h_new);
+        if (!(h_new[dir_] > 0.0))
+            throw std::invalid_argument(
+                "NvtSllod: deformed edge is not positive");
+    }
+    step_ = next;
+}
+
 void NvtSllod::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
@@ -505,6 +525,7 @@ void NvtSllod::launch(const LaunchContext& ctx) {
     const int n_all = frame.n_all();
     const int block = cuda::kDefaultBlock;
     Device* d = state_->device;
+    const long long* step_ptr = ctx.runtime.device_step;
 
     if (!armed_)
         throw std::logic_error("NvtSllod: launch before build");
@@ -535,7 +556,7 @@ void NvtSllod::launch(const LaunchContext& ctx) {
             measure_thermostat<false><<<grid, block, 0, stream>>>(
                 a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.x, a.y, a.z, a.x_corr,
                 a.y_corr, a.z_corr, a.mass, d, chain, n, frame.force_fault,
-                a.tag, ctx.step);
+                a.tag, step_ptr, ctx.step);
             measured_ = true;
         } else {
             carried_thermostat<<<1, 1, 0, stream>>>(d, chain,
@@ -544,8 +565,8 @@ void NvtSllod::launch(const LaunchContext& ctx) {
         scale();
         nve_x<<<grid, block, 0, stream>>>(
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
-            a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag, ctx.step, d,
-            dt_, n);
+            a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag, step_ptr,
+            ctx.step, d, dt_, n);
     } else if (ctx.at(ATV::md::Phase::pre_exchange)) {
         if (!can_flip_)
             return;
@@ -556,27 +577,15 @@ void NvtSllod::launch(const LaunchContext& ctx) {
         measure_thermostat<true><<<grid, block, 0, stream>>>(
             a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.x, a.y, a.z, a.x_corr,
             a.y_corr, a.z_corr, a.mass, d, chain, n, frame.force_fault, a.tag,
-            ctx.step);
+            step_ptr, ctx.step);
         measured_ = true;
         scale();
     } else if (ctx.at(ATV::md::Phase::end_of_step)) {
-        const long long next = step_ + 1;
-        if (dir_ < 3) {
-            // Deterministic in the host's own step count; no device read.
-            double h_new[6];
-            double h0[6] = {0, 0, 0, 0, 0, 0};
-            h0[dir_] = 1.0;
-            ATV::md::sllod_box_at(h0, rate_, dt_, dir_, next, h_new);
-            if (!(h_new[dir_] > 0.0))
-                throw std::invalid_argument(
-                    "NvtSllod: deformed edge is not positive");
-        }
         advance_box<<<1, 1, 0, stream>>>(frame.box, d, frame.force_fault);
         if (dir_ < 3)
             shift_edge<<<cuda::grid_size(n_all), block, 0, stream>>>(
                 a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz,
                 a.image, d, dir_, n, n_all, frame.force_fault);
-        step_ = next;
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }

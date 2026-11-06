@@ -71,7 +71,16 @@ class NvtSllod : public cuda::Integrator, public cuda::TimestepProvider {
                 ATV::make_binding(ATV::md::Phase::end_of_step, 0)};
     }
 
+    /// @brief Kernels read the device step; the first-step kick and
+    ///        measurement are host state folded into the graph epoch.
+    bool graph_capturable() const override { return true; }
+    std::uint64_t graph_epoch() const override {
+        return (kicked_ ? 1u : 0u) | (measured_ ? 2u : 0u);
+    }
+
     void build(const BuildContext& ctx) override;
+    /// @brief Host strain clock and edge-positivity check (no device work).
+    void before_launch(const LaunchContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 

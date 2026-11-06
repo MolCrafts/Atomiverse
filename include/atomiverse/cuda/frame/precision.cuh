@@ -315,6 +315,14 @@ forces_consumable(ForceFault* fault, const std::int64_t* tag, long long step) {
     return false;
 }
 
+/// @brief The step a launch runs: the backend's device step copy when
+///        present (a replayed graph reads the step it actually runs), the
+///        host step otherwise (component tests without a backend, setup).
+__device__ __forceinline__ long long current_step(const long long* step_ptr,
+                                                  long long step) {
+    return step_ptr ? *step_ptr : step;
+}
+
 /// @brief Integrator gate reading the step index from device memory, so a
 ///        replayed graph stamps the step it actually ran (null: `step`).
 __device__ __forceinline__ bool forces_consumable(ForceFault* fault,
@@ -323,7 +331,7 @@ __device__ __forceinline__ bool forces_consumable(ForceFault* fault,
                                                   long long step) {
     if (fault == nullptr || fault->kinds == 0)
         return true;
-    return forces_consumable(fault, tag, step_ptr ? *step_ptr : step);
+    return forces_consumable(fault, tag, current_step(step_ptr, step));
 }
 
 } // namespace cuda

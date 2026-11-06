@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
-#include <limits>
 
 namespace ATV {
 
@@ -29,12 +28,21 @@ apply_langevin(const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
                fixed_t* __restrict__ fy, fixed_t* __restrict__ fz,
                const mixed_t* __restrict__ mass,
                const std::int64_t* __restrict__ tag, ForceFault* fault,
-               std::uint64_t seed, std::uint64_t step, mixed_t T_live,
-               mixed_t damp, mixed_t dt, int n) {
+               std::uint64_t seed, const long long* step_ptr, long long step,
+               bool setup, double T_start, double T_stop, BigInt nfirst,
+               BigInt nlast, mixed_t damp, mixed_t dt, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
 
+    // The live setpoint follows the device step (matches CPU
+    // compute_target), so a replayed graph ramps like the eager launch.
+    const long long now = current_step(step_ptr, step);
+    const mixed_t T_live = static_cast<mixed_t>(
+        ATV::md::ramp_target(T_start, T_stop, BigInt(now), nfirst, nlast));
+    // The setup force pass draws from its own counter window.
+    const std::uint64_t counter =
+        setup ? ~std::uint64_t(0) : static_cast<std::uint64_t>(now);
     const mixed_t m = mass[i];
     // gfactor1 (drag): `-m / (damp · ftm2v)`. Force = gfactor1 · v.
     const mixed_t gfactor1 = -m / (damp * mixed_t(ATV::units::md_ftm2v));
@@ -50,7 +58,7 @@ apply_langevin(const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
     curandStatePhilox4_32_10_t state;
     // Keep a distinct 2^62-output window from initialization and Brownian.
     curand_init(seed, static_cast<unsigned long long>(tag[i]),
-                (2ull << 62) + 8ull * step, &state);
+                (2ull << 62) + 8ull * counter, &state);
     const double2 xy = curand_normal2_double(&state);
     const double2 zw = curand_normal2_double(&state);
 
@@ -61,25 +69,28 @@ apply_langevin(const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
 
 } // anonymous namespace
 
-void FixLangevin::launch(const LaunchContext& ctx) {
-    // ── Host-side T_live update (matches CPU compute_target) ────────
+void FixLangevin::before_launch(const LaunchContext& ctx) {
+    // Host mirror of the device setpoint for T_target(); no device work.
     T_live_ =
         ATV::md::ramp_target(T_start_, T_stop_, ctx.step, nfirst_, nlast_);
+}
 
+void FixLangevin::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
     int n = frame.n_atoms();
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(n);
-
+    // The setup force pass runs eagerly before the device step is synced:
+    // it keys on the host step.
+    const long long* step_ptr =
+        ctx.initializing_forces ? nullptr : ctx.runtime.device_step;
     apply_langevin<<<grid, block, 0, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.fx,
         frame.atoms.fy, frame.atoms.fz, frame.atoms.mass, frame.atoms.tag,
-        frame.force_fault, seed_,
-        ctx.initializing_forces ? std::numeric_limits<std::uint64_t>::max()
-                                : static_cast<std::uint64_t>(ctx.step),
-        static_cast<mixed_t>(T_live_), static_cast<mixed_t>(damp_),
-        static_cast<mixed_t>(dt_), n);
+        frame.force_fault, seed_, step_ptr, static_cast<long long>(ctx.step),
+        ctx.initializing_forces, T_start_, T_stop_, nfirst_, nlast_,
+        static_cast<mixed_t>(damp_), static_cast<mixed_t>(dt_), n);
 }
 
 } // namespace md

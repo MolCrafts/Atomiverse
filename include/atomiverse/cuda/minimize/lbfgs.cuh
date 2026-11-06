@@ -5,16 +5,15 @@
 /// optional Armijo backtracking line search, hot-swappable inside
 /// `cuda::minimizer::Minimize` next to `CG` / `SteepestDescent`.
 ///
-/// Execution model: the heavy vector work (history update, two-loop
-/// recursion, step application) is GPU-pure — every intermediate dot
-/// product lands in a device scalar that the next kernel reads by
-/// pointer, the same device-scalar chaining as
-/// `cuda::md::NoseHoover`. Two host touch points per iteration remain,
-/// both **host-dependent compute** by necessity:
-///   - `search_direction` reads back the 8-byte curvature product
-///     `y·s` — the accept/reject decision gates the host-side circular
-///     history bookkeeping that determines how many two-loop kernels
-///     are launched.
+/// Execution model: the search-direction iteration (history update,
+/// two-loop recursion, step application) is device-resident and replayed
+/// as one captured graph. The curvature test and the pair ring live on the
+/// device: a candidate pair is staged in a spare buffer and swapped in only
+/// when y·s > 1e-10, so a rejected pair never overwrites the oldest stored
+/// one. The recursion launches a fixed `2 memory + 1` vector passes (each
+/// update fused with the next inner product, y·y cached per pair; passes
+/// beyond the stored count exit at once), so the launch sequence does not
+/// depend on device state. Host touch points per iteration:
 ///   - `convergence_check` runs the shared `ConvCheck` bridge (the
 ///     metrics must reach the host, where the driver polls its
 ///     handlers). Optional line search reads three origin scalars and one
@@ -40,6 +39,7 @@
 #pragma once
 
 #include "atomiverse/cuda/component/optimizer.cuh"
+#include "atomiverse/cuda/device/graph_ring.cuh"
 
 #include <string>
 #include <vector>
@@ -140,21 +140,21 @@ class LBFGS : public cuda::Optimizer {
     mixed_t* d_dir_ =
         nullptr; ///< Search direction (3N, persists for rollback).
     mixed_t* d_alpha_ = nullptr; ///< Two-loop a_k scalars (memory).
-    /// Image flags at the last accepted step ([3N] row-major, as
-    /// `Frame::atoms.image`): a rollback re-takes the trial from x_prev, so
-    /// the crossings the rejected trial counted are undone with it.
     ImageInt* d_image_prev_ = nullptr;
-    acc_t* d_dot_ = nullptr; ///< Device {dot, dir_max} scratch reductions.
-    acc_t* d_ys_ = nullptr;  ///< Device curvature product y·s.
+    acc_t* d_dot_ = nullptr; ///< Per-iteration reductions (y·s, y·y, max|d|,
+                             ///< one inner product per two-loop pass).
+    int n_dots_ = 0;
+    /// Device pair ring: {n_stored, oldest, spare} then slot[memory]. The
+    /// curvature test and the ring bookkeeping run on the device.
+    int* d_ring_state_ = nullptr;
+    acc_t* d_rho_ = nullptr; ///< 1/(y·s) then y·y per pair buffer.
     acc_t* d_ls_ =
         nullptr; ///< Device {applied α, g·d, origin energy} line-search scalars.
-    acc_t* h_ys_ = nullptr; ///< Pinned mirror of d_ys_.
     acc_t* h_ls_ = nullptr; ///< Pinned mirror of d_ls_.
+    /// The search-direction iteration, captured once without and once with
+    /// a candidate pair.
+    GraphRing graphs_[2];
 
-    // Host-side circular-buffer bookkeeping (gates kernel-launch counts).
-    std::vector<double> rho_; ///< 1 / (y·s) per stored pair.
-    int n_stored_ = 0;
-    int oldest_ = 0;
     BigInt step_ = 0;
     bool has_prev_ = false;
 

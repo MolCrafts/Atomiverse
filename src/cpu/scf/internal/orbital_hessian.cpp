@@ -132,7 +132,8 @@ xt::xtensor<double, 4> OrbitalHessian::transform_block_(
     return cur;
 }
 
-RealVector OrbitalHessian::sigma_plus(const RealVector& v, Channel ch) const {
+RealVector OrbitalHessian::sigma_plus(const RealVector& v, Channel ch,
+                                      double alpha_hf) const {
     if (static_cast<int>(v.size()) != n_ov())
         throw std::invalid_argument("OrbitalHessian::sigma_plus: v.size() = "
                                     + std::to_string(v.size())
@@ -146,9 +147,10 @@ RealVector OrbitalHessian::sigma_plus(const RealVector& v, Channel ch) const {
             for (int b = 0; b < nv_; ++b) {
                 for (int j = 0; j < no_; ++j) {
                     const int q = b * no_ + j;
-                    acc += (cw * ovov_(a, i, b, j) - oovv_(i, j, a, b)
-                            - ovov_(a, j, b, i))
-                           * v(q);
+                    acc +=
+                        (cw * ovov_(a, i, b, j)
+                         - alpha_hf * (oovv_(i, j, a, b) + ovov_(a, j, b, i)))
+                        * v(q);
                 }
             }
             y(p) = acc;
@@ -157,7 +159,8 @@ RealVector OrbitalHessian::sigma_plus(const RealVector& v, Channel ch) const {
     return y;
 }
 
-RealVector OrbitalHessian::sigma_minus(const RealVector& v, Channel ch) const {
+RealVector OrbitalHessian::sigma_minus(const RealVector& v, Channel ch,
+                                       double alpha_hf) const {
     (void)ch; // (A − B) is channel-independent for real closed-shell orbitals
     if (static_cast<int>(v.size()) != n_ov())
         throw std::invalid_argument("OrbitalHessian::sigma_minus: v.size() = "
@@ -171,7 +174,8 @@ RealVector OrbitalHessian::sigma_minus(const RealVector& v, Channel ch) const {
             for (int b = 0; b < nv_; ++b) {
                 for (int j = 0; j < no_; ++j) {
                     const int q = b * no_ + j;
-                    acc += (-oovv_(i, j, a, b) + ovov_(a, j, b, i)) * v(q);
+                    acc += alpha_hf * (ovov_(a, j, b, i) - oovv_(i, j, a, b))
+                           * v(q);
                 }
             }
             y(p) = acc;
@@ -180,7 +184,7 @@ RealVector OrbitalHessian::sigma_minus(const RealVector& v, Channel ch) const {
     return y;
 }
 
-RealMatrix OrbitalHessian::dense_plus(Channel ch) const {
+RealMatrix OrbitalHessian::dense_plus(Channel ch, double alpha_hf) const {
     const double cw = coulomb_weight(ch);
     const std::size_t nov = static_cast<std::size_t>(n_ov());
     RealMatrix M = xt::zeros<double>({nov, nov});
@@ -190,8 +194,9 @@ RealMatrix OrbitalHessian::dense_plus(Channel ch) const {
                 for (int j = 0; j < no_; ++j) {
                     const int p = a * no_ + i;
                     const int q = b * no_ + j;
-                    double val = cw * ovov_(a, i, b, j) - oovv_(i, j, a, b)
-                                 - ovov_(a, j, b, i);
+                    double val =
+                        cw * ovov_(a, i, b, j)
+                        - alpha_hf * (oovv_(i, j, a, b) + ovov_(a, j, b, i));
                     if (a == b && i == j)
                         val += eps_virt_(a) - eps_occ_(i);
                     M(p, q) = val;
@@ -199,7 +204,7 @@ RealMatrix OrbitalHessian::dense_plus(Channel ch) const {
     return M;
 }
 
-RealMatrix OrbitalHessian::dense_minus(Channel ch) const {
+RealMatrix OrbitalHessian::dense_minus(Channel ch, double alpha_hf) const {
     (void)ch; // (A − B) is channel-independent for real closed-shell orbitals
     const std::size_t nov = static_cast<std::size_t>(n_ov());
     RealMatrix M = xt::zeros<double>({nov, nov});
@@ -209,7 +214,8 @@ RealMatrix OrbitalHessian::dense_minus(Channel ch) const {
                 for (int j = 0; j < no_; ++j) {
                     const int p = a * no_ + i;
                     const int q = b * no_ + j;
-                    double val = -oovv_(i, j, a, b) + ovov_(a, j, b, i);
+                    double val =
+                        alpha_hf * (ovov_(a, j, b, i) - oovv_(i, j, a, b));
                     if (a == b && i == j)
                         val += eps_virt_(a) - eps_occ_(i);
                     M(p, q) = val;
@@ -258,14 +264,14 @@ RealMatrix OrbitalHessian::dense_B(Channel ch, double alpha_hf) const {
     return B;
 }
 
-RealVector OrbitalHessian::diagonal_plus(Channel ch) const {
+RealVector OrbitalHessian::diagonal_plus(Channel ch, double alpha_hf) const {
     const double cw = coulomb_weight(ch);
     RealVector d = xt::zeros<double>({static_cast<std::size_t>(n_ov())});
     for (int a = 0; a < nv_; ++a)
         for (int i = 0; i < no_; ++i)
             d(a * no_ + i) = eps_virt_(a) - eps_occ_(i)
-                             + (cw - 1.0) * ovov_(a, i, a, i)
-                             - oovv_(i, i, a, a);
+                             + (cw - alpha_hf) * ovov_(a, i, a, i)
+                             - alpha_hf * oovv_(i, i, a, a);
     return d;
 }
 

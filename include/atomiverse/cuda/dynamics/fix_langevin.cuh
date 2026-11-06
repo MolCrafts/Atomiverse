@@ -67,10 +67,11 @@ class FixLangevin : public cuda::Thermostat {
     FixLangevin& set_run_span(std::int64_t nfirst, std::int64_t nlast) {
         nfirst_ = nfirst;
         nlast_ = nlast;
+        ++epoch_;
         return *this;
     }
 
-    /// @return Live thermostat setpoint [K], updated each `launch()`.
+    /// @return Live thermostat setpoint [K], updated before each launch.
     double T_target() const noexcept { return T_live_; }
 
     std::string name() const override { return "fix_langevin"; }
@@ -89,8 +90,17 @@ class FixLangevin : public cuda::Thermostat {
         return {ATV::make_binding(ATV::md::Phase::post_force, +500)};
     }
 
+    /// @brief The ramp and the noise counter read the device step; the run
+    ///        span is a kernel argument (part of the graph epoch).
+    bool graph_capturable() const override { return true; }
+    std::uint64_t graph_epoch() const override { return epoch_; }
+
+    void before_launch(const LaunchContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
-    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
+    void initialize_forces(const LaunchContext& ctx) override {
+        before_launch(ctx);
+        launch(ctx);
+    }
 
   private:
     double T_start_;
@@ -101,6 +111,7 @@ class FixLangevin : public cuda::Thermostat {
     std::int64_t nfirst_ = 0;
     std::int64_t nlast_ = 0;
     double T_live_;
+    std::uint64_t epoch_ = 0;
 };
 
 } // namespace md

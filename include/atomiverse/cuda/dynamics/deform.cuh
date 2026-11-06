@@ -47,6 +47,8 @@ class Deform : public Component {
     bool changes_box(int) const override { return true; }
     std::string name() const override { return "deform"; }
     Role role() const override { return 0; }
+    /// @brief The strain clock is the device step: replayable.
+    bool graph_capturable() const override { return true; }
 
     /// @brief Write-set: affine remap of coordinates as the box strains.
     std::vector<DefaultBinding> default_bindings() const override;
@@ -64,7 +66,6 @@ class Deform : public Component {
     Mode mode_;
     double rate_, dt_;
     int axis_;
-    BigInt origin_step_ = -1; ///< Step of the first launch after build.
     struct State;
     std::unique_ptr<State> state_;
 };

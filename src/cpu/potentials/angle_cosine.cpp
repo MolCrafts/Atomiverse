@@ -35,7 +35,8 @@ void AngleCosine::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void AngleCosine::compute(const LaunchContext& ctx) {
@@ -46,7 +47,6 @@ void AngleCosine::compute(const LaunchContext& ctx) {
 
     const md::ResolveView rv(ctx);
     const int nlocal = rv.n_local();
-    const int n_force = rv.n_force();
 
     // Layout {i, j, k, type} per angle, j = centre/owner (LAMMPS anglelist
     // order i1, i2, i3).
@@ -89,21 +89,20 @@ void AngleCosine::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    scratch_.bind(f);
+    const md::ForcePass forces(ctx);
     const bool do_force = ctx.forces_requested;
     const bool do_virial = ctx.stress_requested;
     double energy_total = 0;
     md::Voigt6 vir;
 
-#pragma omp parallel num_threads(                                              \
-        scratch_.n_threads()) if (scratch_.n_threads() > 1)                    \
+#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
     reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const md::ThreadForce tf = scratch_.begin_thread(tid, n_force);
+        const md::ThreadForce tf = forces.thread(tid);
         md::Voigt6 vir_local;
 
 #pragma omp for schedule(static)
@@ -148,9 +147,6 @@ void AngleCosine::compute(const LaunchContext& ctx) {
         vir += vir_local;
     }
 
-    if (do_force)
-        scratch_.reduce_into(n_force);
-
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyAngle) += energy_total;
     if (do_virial)
@@ -163,7 +159,6 @@ void AngleCosine::destroy(const DestroyContext& /*ctx*/) {
     drops_.report("AngleCosine");
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
 }
 
 } // namespace cpu

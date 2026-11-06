@@ -33,7 +33,6 @@ class DihedralMultiHarmonic : public Dihedral {
     /// member of a hybrid dihedral split owns it) is skipped in the hot loop.
     std::vector<char> active_;
 
-    md::BondedForceScratch scratch_;
     md::DropTally drops_;
     /// @brief Resolved-tuple cache; rebuilt on migration / halo full rebuild.
     md::BondedTupleCache cache_;

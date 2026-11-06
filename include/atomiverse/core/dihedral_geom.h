@@ -1,15 +1,20 @@
-/// @file cpu/potentials/dihedral_geom.h
-/// @brief Shared 4-atom dihedral geometry + dV/dcos → force map.
+/// @file core/dihedral_geom.h
+/// @brief Shared 4-atom dihedral geometry + dV/dcos → force map, the one
+///        implementation of the CPU bonded loops and the CUDA torsion
+///        kernel (host and device; FP64).
 ///
-/// Used by DihedralMultiHarmonic and DihedralCharmm (second caller justified
-/// the extract). Not a Component — pure geometry helpers.
+/// Not a Component — pure geometry helpers.
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 
+#if defined(__CUDACC__)
+#define ATV_GEOM_HD __host__ __device__
+#else
+#define ATV_GEOM_HD
+#endif
+
 namespace ATV {
-namespace cpu {
 namespace dihedral_geom {
 
 /// @brief Bond vectors (min-imaged), plane normals, and cos/sin of φ.
@@ -29,8 +34,9 @@ struct Geometry {
 };
 
 /// @brief Cross product a × b → (cx,cy,cz).
-inline void cross(double ax, double ay, double az, double bx, double by,
-                  double bz, double& cx, double& cy, double& cz) {
+ATV_GEOM_HD inline void cross(double ax, double ay, double az, double bx,
+                              double by, double bz, double& cx, double& cy,
+                              double& cz) {
     cx = ay * bz - az * by;
     cy = az * bx - ax * bz;
     cz = ax * by - ay * bx;
@@ -40,9 +46,10 @@ inline void cross(double ax, double ay, double az, double bx, double by,
 /// @param min_image Callable `(double&,double&,double&) const` applying PBC.
 /// @return false if either plane normal vanishes (colinear bonds).
 template <typename MinImage>
-inline bool fill(double r1x, double r1y, double r1z, double r2x, double r2y,
-                 double r2z, double r3x, double r3y, double r3z, double r4x,
-                 double r4y, double r4z, MinImage&& min_image, Geometry& g) {
+ATV_GEOM_HD inline bool fill(double r1x, double r1y, double r1z, double r2x,
+                             double r2y, double r2z, double r3x, double r3y,
+                             double r3z, double r4x, double r4y, double r4z,
+                             MinImage&& min_image, Geometry& g) {
     g.b1x = r2x - r1x;
     g.b1y = r2y - r1y;
     g.b1z = r2z - r1z;
@@ -64,23 +71,23 @@ inline bool fill(double r1x, double r1y, double r1z, double r2x, double r2y,
     if (n1_sq < 1e-20 || n2_sq < 1e-20)
         return false;
 
-    g.n1_inv = 1.0 / std::sqrt(n1_sq);
-    g.n2_inv = 1.0 / std::sqrt(n2_sq);
+    g.n1_inv = 1.0 / sqrt(n1_sq);
+    g.n2_inv = 1.0 / sqrt(n2_sq);
     const double b2_sq = g.b2x * g.b2x + g.b2y * g.b2y + g.b2z * g.b2z;
     if (b2_sq < 1e-20)
         return false;
-    const double b2_inv = 1.0 / std::sqrt(b2_sq);
+    const double b2_inv = 1.0 / sqrt(b2_sq);
 
     double cos_phi =
         (g.n1x * g.n2x + g.n1y * g.n2y + g.n1z * g.n2z) * g.n1_inv * g.n2_inv;
-    cos_phi = std::max(-1.0, std::min(1.0, cos_phi));
+    cos_phi = cos_phi < -1.0 ? -1.0 : (cos_phi > 1.0 ? 1.0 : cos_phi);
 
     // Signed sin via (n1 × n2) · û_b2 / (|n1||n2|).
     double mx, my, mz;
     cross(g.n1x, g.n1y, g.n1z, g.n2x, g.n2y, g.n2z, mx, my, mz);
     double sin_phi =
         (mx * g.b2x + my * g.b2y + mz * g.b2z) * g.n1_inv * g.n2_inv * b2_inv;
-    sin_phi = std::max(-1.0, std::min(1.0, sin_phi));
+    sin_phi = sin_phi < -1.0 ? -1.0 : (sin_phi > 1.0 ? 1.0 : sin_phi);
 
     g.cos_phi = cos_phi;
     g.sin_phi = sin_phi;
@@ -91,11 +98,11 @@ inline bool fill(double r1x, double r1y, double r1z, double r2x, double r2y,
 ///
 /// Same chain rule as DihedralMultiHarmonic (see test_pe_fd_force.cpp).
 /// Output forces are F = −∇V (ready to accumulate into frame force arrays).
-inline void forces_from_dV_dcos(const Geometry& g, double dV_dcos, double& f1x,
-                                double& f1y, double& f1z, double& f2x,
-                                double& f2y, double& f2z, double& f3x,
-                                double& f3y, double& f3z, double& f4x,
-                                double& f4y, double& f4z) {
+ATV_GEOM_HD inline void
+forces_from_dV_dcos(const Geometry& g, double dV_dcos, double& f1x, double& f1y,
+                    double& f1z, double& f2x, double& f2y, double& f2z,
+                    double& f3x, double& f3y, double& f3z, double& f4x,
+                    double& f4y, double& f4z) {
     // Reuse inverses from fill() — saves two sqrts per dihedral.
     const double n1_inv = g.n1_inv;
     const double n2_inv = g.n2_inv;
@@ -153,18 +160,18 @@ inline void forces_from_dV_dcos(const Geometry& g, double dV_dcos, double& f1x,
 /// @brief Convert dE/dφ → dE/dcos(φ) with a stable limit at sin φ → 0.
 ///
 /// d(cos)/dφ = −sin φ ⇒ dE/dcos = (dE/dφ) / (−sin φ).
-inline double dV_dcos_from_dE_dphi(double dE_dphi, double sin_phi,
-                                   double cos_phi, double d2E_dphi2) {
+ATV_GEOM_HD inline double dV_dcos_from_dE_dphi(double dE_dphi, double sin_phi,
+                                               double cos_phi,
+                                               double d2E_dphi2) {
     constexpr double kSinEps = 1e-10;
-    if (std::abs(sin_phi) > kSinEps)
+    if (fabs(sin_phi) > kSinEps)
         return -dE_dphi / sin_phi;
     // L'Hôpital: d/dφ [dE/dφ] / d/dφ [−sin φ] = (d²E/dφ²) / (−cos φ)
     // when sin φ = 0 and cos φ = ±1.
-    if (std::abs(cos_phi) > kSinEps)
+    if (fabs(cos_phi) > kSinEps)
         return -d2E_dphi2 / cos_phi;
     return 0.0;
 }
 
 } // namespace dihedral_geom
-} // namespace cpu
 } // namespace ATV

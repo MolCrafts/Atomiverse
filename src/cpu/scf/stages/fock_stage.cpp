@@ -84,12 +84,16 @@ void FockStage::launch(const cpu::LaunchContext& ctx) {
         const RealMatrix Pba = DB::spin_block(P_alpha_, 1, 0);
         const RealMatrix Pbb = DB::spin_block(P_alpha_, 1, 1);
 
-        RealMatrix Jaa, Jbb, unused, Kaa, Kbb, Kab, Kba;
-        hamiltonian_.exact_jk(Paa, Jaa, Kaa, 0);
-        hamiltonian_.exact_jk(Pbb, Jbb, Kbb, 1);
-        hamiltonian_.exact_jk(Pab, unused, Kab, 2);
-        hamiltonian_.exact_jk(Pba, unused, Kba, 3);
-        const RealMatrix Jn = Jaa + Jbb;
+        // One integral pass: J of the spin-summed density, K of all four
+        // spin blocks.
+        const RealMatrix Pn = Paa + Pbb;
+        RealMatrix Jn, Kaa, Kbb, Kab, Kba;
+        const internal::JKRequest requests[] = {{&Pn, &Jn, nullptr, 1.0, 0},
+                                                {&Paa, nullptr, &Kaa, 1.0, 1},
+                                                {&Pbb, nullptr, &Kbb, 1.0, 2},
+                                                {&Pab, nullptr, &Kab, 1.0, 3},
+                                                {&Pba, nullptr, &Kba, 1.0, 4}};
+        hamiltonian_.exact_jk(requests);
 
         const RealMatrix& h = integrals_.Hcore;
         RealMatrix F = xt::zeros<double>({2 * n, 2 * n});

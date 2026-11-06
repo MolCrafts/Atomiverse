@@ -390,6 +390,8 @@ class KSpacePPPM : public cpu::KSpace {
     // Serial full-mesh buffers (1-rank path / green tables).
     std::vector<double> dens_full_; ///< full K0·K1·K2 real buffer (serial FFT)
     std::vector<std::complex<double>> work_;
+    std::vector<std::complex<double>>
+        density_; ///< ρ̂/V kept across the 3 ik solves
     /// Folded half-spectrum tables (`longrange::pppm_half_mode`), full
     /// K0×K1×n2c: energy weight, three ik planes, six virial planes.
     std::vector<double> green_;

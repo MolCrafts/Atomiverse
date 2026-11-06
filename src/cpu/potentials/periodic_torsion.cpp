@@ -2,7 +2,7 @@
 /// @brief Shared periodic torsion loop (charmm / fourier / cvff).
 
 #include "atomiverse/cpu/potentials/periodic_torsion.h"
-#include "atomiverse/cpu/potentials/dihedral_geom.h"
+#include "atomiverse/core/dihedral_geom.h"
 #include "atomiverse/cpu/potentials/resolve_view.h"
 
 #include <cmath>
@@ -19,87 +19,18 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-namespace {
-
-constexpr int kMaxMultiplicity = 6; // LAMMPS cvff bound; fourier never above
-
-/// cos(nφ), sin(nφ) from (cos φ, sin φ) by recurrence — no atan2 / sincos.
-inline void multiple_angle(int n, double c, double s, double& cn, double& sn) {
-    switch (n) {
-    case 0:
-        cn = 1.0;
-        sn = 0.0;
-        return;
-    case 1:
-        cn = c;
-        sn = s;
-        return;
-    case 2:
-        cn = c * c - s * s;
-        sn = 2.0 * s * c;
-        return;
-    case 3:
-        cn = (4.0 * c * c - 3.0) * c;
-        sn = (3.0 - 4.0 * s * s) * s;
-        return;
-    default:
-        cn = 1.0;
-        sn = 0.0;
-        for (int k = 0; k < n; ++k) {
-            const double cn1 = cn * c - sn * s;
-            sn = sn * c + cn * s;
-            cn = cn1;
-        }
-    }
-}
-
-/// A phase within one ulp-scale of 0 or π gets an exact zero sine, so
-/// `cvff` (d = ±1) is a pure cosine series like LAMMPS's integer sign.
-inline double clean_sin(double delta) {
-    const double s = std::sin(delta);
-    return std::abs(s) < 1.0e-14 ? 0.0 : s;
-}
-
-} // namespace
-
 PeriodicTorsionSet::PeriodicTorsionSet(
     std::vector<std::vector<TorsionTerm>> terms, Topology topology,
     const char* style)
-    : topology_(topology), style_(style) {
-    if (terms.empty())
-        throw std::invalid_argument(std::string(style_)
-                                    + ": at least one type is required");
-    offset_.reserve(terms.size() + 1);
-    offset_.push_back(0);
-    active_.assign(terms.size(), 0);
-    for (std::size_t t = 0; t < terms.size(); ++t) {
-        for (const TorsionTerm& term : terms[t]) {
-            if (!std::isfinite(term.K) || !std::isfinite(term.delta))
-                throw std::invalid_argument(std::string(style_)
-                                            + ": non-finite K or phase at type "
-                                            + std::to_string(t));
-            if (term.n < 0 || term.n > kMaxMultiplicity)
-                throw std::invalid_argument(
-                    std::string(style_) + ": multiplicity "
-                    + std::to_string(term.n) + " at type " + std::to_string(t)
-                    + " is outside [0, 6]");
-            K_.push_back(term.K);
-            n_.push_back(term.n);
-            cos_delta_.push_back(std::cos(term.delta));
-            sin_delta_.push_back(clean_sin(term.delta));
-            if (term.K != 0.0)
-                active_[t] = 1;
-        }
-        offset_.push_back(static_cast<int>(K_.size()));
-    }
-}
+    : table_(terms, style), topology_(topology), style_(style) {}
 
 void PeriodicTorsionSet::build(const BuildContext& ctx) {
     int n_threads = 1;
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void PeriodicTorsionSet::rebuild_tuples_(const LaunchContext& ctx) {
@@ -113,7 +44,7 @@ void PeriodicTorsionSet::rebuild_tuples_(const LaunchContext& ctx) {
         f.span(improper ? kAtom_improper_type : kAtom_dihedral_type);
     const ResolveView rv(ctx);
     const int nlocal = rv.n_local();
-    const int ntypes = static_cast<int>(active_.size());
+    const int ntypes = table_.n_types();
 
     cache_.flat.clear();
     cache_.dropped_at_build = 0;
@@ -133,7 +64,7 @@ void PeriodicTorsionSet::rebuild_tuples_(const LaunchContext& ctx) {
                 ++cache_.dropped_at_build;
                 continue;
             }
-            if (!active_[static_cast<std::size_t>(t)])
+            if (!table_.active[static_cast<std::size_t>(t)])
                 continue; // all-zero type: exactly no energy or force
             cache_.flat.insert(cache_.flat.end(), {i1, i2, i3, i4, t});
         }
@@ -151,7 +82,6 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
         return;
 
     auto& f = ctx.frame;
-    const int n_force = ResolveView(ctx).n_force();
     const int* __restrict tup = cache_.flat.data();
     const StorageReal* __restrict x = f.span(kAtom_x);
     const StorageReal* __restrict y = f.span(kAtom_y);
@@ -164,24 +94,24 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
     const bool do_virial = compute_stress_ && ctx.stress_requested;
     const bool do_forces = ctx.forces_requested;
 
-    const int* __restrict off = offset_.data();
-    const double* __restrict Kt = K_.data();
-    const int* __restrict nt = n_.data();
-    const double* __restrict cd = cos_delta_.data();
-    const double* __restrict sd = sin_delta_.data();
+    const int* __restrict off = table_.offset.data();
+    const double* __restrict Kt = table_.K.data();
+    const int* __restrict nt = table_.n.data();
+    const double* __restrict cd = table_.cos_delta.data();
+    const double* __restrict sd = table_.sin_delta.data();
 
     double energy_total = 0.0;
     Voigt6 vir;
-    scratch_.bind(f);
+    const ForcePass forces(ctx);
 
-    const int team = scratch_.team(n_tuples);
+    const int team = forces.team(n_tuples);
 #pragma omp parallel num_threads(team) if (team > 1) reduction(+ : energy_total)
     {
         int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const ThreadForce tf = scratch_.begin_thread(tid, n_force);
+        const ThreadForce tf = forces.thread(tid);
         Voigt6 vir_local;
 
 #pragma omp for schedule(static)
@@ -199,17 +129,9 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
                 continue;
 
             // V = Σ K (1 + cos(nφ − δ)); dV/dφ = −Σ K n sin(nφ − δ).
-            double energy = 0.0, dE_dphi = 0.0, d2E_dphi2 = 0.0;
-            for (int k = off[t]; k < off[t + 1]; ++k) {
-                double cn, sn;
-                multiple_angle(nt[k], g.cos_phi, g.sin_phi, cn, sn);
-                const double carg = cn * cd[k] + sn * sd[k];
-                const double sarg = sn * cd[k] - cn * sd[k];
-                const double n = static_cast<double>(nt[k]);
-                energy += Kt[k] * (1.0 + carg);
-                dE_dphi -= Kt[k] * n * sarg;
-                d2E_dphi2 -= Kt[k] * n * n * carg;
-            }
+            double energy, dE_dphi, d2E_dphi2;
+            torsion_sum(off[t], off[t + 1], Kt, nt, cd, sd, g.cos_phi,
+                        g.sin_phi, energy, dE_dphi, d2E_dphi2);
             energy_total += energy;
 
             const double dV_dcos = dihedral_geom::dV_dcos_from_dE_dphi(
@@ -245,9 +167,6 @@ void PeriodicTorsionSet::compute(const LaunchContext& ctx) {
         }
     }
 
-    if (do_forces)
-        scratch_.reduce_into(n_force);
-
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(topology_ == Topology::Improper ? kEnergyImproper
                                                : kEnergyDihedral) +=
@@ -261,7 +180,6 @@ void PeriodicTorsionSet::destroy() {
     drops_.report(style_);
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
 }
 
 } // namespace md

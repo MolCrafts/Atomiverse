@@ -176,24 +176,6 @@ void CfmmJ::classify_pairs_() {
 void CfmmJ::prepare() {
     form_distributions_();
     classify_pairs_();
-    // Own a ShellPairList for the exact near-field baseline. Built from the
-    // owned shells via a thin internal::IntegralWorkspace-free path: fill pairs from dists_.
-    sp_.n_basis = n_ao_;
-    sp_.threshold = schwarz_thr_;
-    sp_.shells = shells_;
-    sp_.shell_data = shell_data_;
-    // Re-bind shell pointers into owned shell_data_ (same as ctor).
-    for (int i = 0; i < n_ao_; ++i) {
-        const int np = shells_[static_cast<std::size_t>(i)].n_prim;
-        sp_.shells[static_cast<std::size_t>(i)].alpha =
-            sp_.shell_data[static_cast<std::size_t>(i)].data();
-        sp_.shells[static_cast<std::size_t>(i)].coeff =
-            sp_.shell_data[static_cast<std::size_t>(i)].data() + np;
-    }
-    sp_.pairs.clear();
-    sp_.pairs.reserve(dists_.size());
-    for (const auto& d : dists_)
-        sp_.pairs.push_back({d.i, d.j, d.schwarz});
     prepared_ = true;
     ATV_INFO("[cfmm] prepared n_dist={} near={} far={} order={} thr={:.1e}",
              dists_.size(), near_pairs_.size(), far_pairs_.size(), order_,
@@ -215,27 +197,6 @@ bool CfmmJ::distribution_spherical(int d) const {
 std::pair<int, int> CfmmJ::distribution_aos(int d) const {
     const Dist& x = dists_.at(static_cast<std::size_t>(d));
     return {x.i, x.j};
-}
-
-RealMatrix CfmmJ::j(const RealMatrix& P_total) const {
-    if (!prepared_)
-        throw std::runtime_error("CfmmJ::j called before prepare()");
-    if (static_cast<int>(P_total.shape(0)) != n_ao_
-        || static_cast<int>(P_total.shape(1)) != n_ao_)
-        throw std::invalid_argument(
-            "CfmmJ::j: density dimension does not match n_ao");
-
-    // Exact Schwarz direct J for all retained pairs (OpenMP inside
-    // ShellPairList::j). When the far list is empty this IS the CFMM
-    // result (all interactions near — identity with Direct). When far
-    // pairs exist we replace their exact ERI contribution with the
-    // multipole (M2L monopole) contribution so the far path is exercised
-    // without double counting.
-    RealMatrix J;
-    sp_.j(P_total, J);
-
-    apply_far_correction(P_total, J);
-    return J;
 }
 
 void CfmmJ::apply_far_correction(const RealMatrix& P_total,

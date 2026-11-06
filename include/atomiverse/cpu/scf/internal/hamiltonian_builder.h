@@ -10,6 +10,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 
 #include "atomiverse/cpu/scf/basis_set.h" // AuxBasis
 #include "atomiverse/cpu/scf/dense_matrix.h"
@@ -18,7 +19,6 @@
 #include "atomiverse/cpu/scf/internal/density_fitting.h"
 #include "atomiverse/cpu/scf/internal/exact_jk.h"
 #include "atomiverse/cpu/scf/internal/integral_view.h"
-#include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/scf_enums.h" // MeanFieldType / SpinType / RI / Coulomb
 #include "atomiverse/cpu/scf/xc_grid_engine.h" // XCGridBasis (per-geometry cache)
 #include "atomiverse/cpu/xc/xc_functional.h"   // xc::XCType
@@ -79,10 +79,11 @@ class HamiltonianBuilder {
                  double cfmm_threshold = 1e-9, double max_memory_mb = 4000.0,
                  bool mpi = false);
 
-    /// Exact J/K in the working AO basis, also for nonsymmetric spin blocks.
-    void exact_jk(const RealMatrix& P, RealMatrix& J, RealMatrix& K,
-                  int channel = 0) const {
-        exact_.step(P, J, K, channel);
+    /// Exact J/K in the working AO basis for several densities in one
+    /// integral pass, also for nonsymmetric spin blocks (incremental per
+    /// request channel).
+    void exact_jk(std::span<const JKRequest> requests) const {
+        exact_.step(requests);
     }
 
     /// @brief Build F from the current α/β densities.
@@ -103,15 +104,25 @@ class HamiltonianBuilder {
          const ATV::electronic::XcFunctional* functional = nullptr) const;
 
   private:
-    ExactJK exact_;
-    ShellBlockPairList sp_block_; ///< RHF/RKS shell-block list (libcint-style).
-    ShellPairList sp_;            ///< AO-level list for UHF/UKS J/K paths.
-    MolecularGrid grid_;          ///< KS XC grid (empty for HF).
-    /// Geometry-fixed AO-on-grid basis (Phi, and dPhi_x/y/z for GGA), rebuilt
-    /// only per geometry: `prepare()` invalidates it (built=false) and the
-    /// first KS `step()` lazily builds it, so the ~G·N transcendental basis
-    /// evaluations are hoisted out of the SCF iteration loop. `mutable` because
-    /// `step()` is const. GGA cost is 4×G·N doubles (see xc_grid_engine.h).
+    /// The exact engine for operator 1/r (omega = 0) or erf(omega r)/r,
+    /// prepared on first use when prepare() did not need it.
+    const ExactJK& exact_engine_(const internal::IntegralView& integrals,
+                                 double omega) const;
+
+    /// Exact 1/r J/K: every Direct/CFMM Coulomb build and all exact exchange.
+    /// `mutable` so the RI::J exchange engine can be prepared on first use.
+    mutable ExactJK exact_;
+    /// Exact erf(mu r)/r exchange of a range-separated hybrid (lazy).
+    mutable ExactJK exact_lr_;
+    double memory_mb_ = 4000.0; ///< ExactJK cache budget from prepare().
+    bool mpi_ = false;          ///< ExactJK MPI distribution from prepare().
+    MolecularGrid grid_;        ///< KS XC grid (empty for HF).
+    /// Geometry-fixed, block-compacted AO-on-grid basis (values, and
+    /// gradients for GGA), rebuilt only per geometry: `prepare()` invalidates
+    /// it (built=false) and the first KS `step()` lazily builds it, so the
+    /// transcendental basis evaluations are hoisted out of the SCF iteration
+    /// loop. `mutable` because `step()` is const. Memory is the screened
+    /// block product (see xc_grid_engine.h).
     mutable XCGridBasis xc_basis_;
     RI ri_ = RI::None; ///< Density-fitting mode set by prepare().
     Coulomb coulomb_ = Coulomb::Direct; ///< J-matrix algorithm.

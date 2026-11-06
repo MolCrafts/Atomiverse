@@ -1,4 +1,4 @@
-/// @file cuda/potentials/pair_kernel.h
+/// @file core/pair_kernel.h
 /// @brief Backend-agnostic, potential-neutral pairwise force/energy kernels.
 ///
 /// force-infra-03: the per-pair force *math* lives here, ONCE, decoupled from
@@ -15,6 +15,9 @@
 /// SIMD ket-loop), and the CUDA device real/work type. Each term masks its own
 /// cutoff branch-free (multiply by a 0/1 `T`), so combined styles with
 /// different LJ/Coulomb cutoffs compose correctly and vectorize.
+///
+/// Both backends include it from core: the CUDA Verlet kernels and the CPU
+/// `md::PairLoop` kernels (WCA uses `LJKernel` there).
 ///
 /// The header is CUDA-safe: in a `.cu` translation unit only the scalar/device
 /// math is compiled; the `xsimd` batch overloads are guarded out (a `.cu` only

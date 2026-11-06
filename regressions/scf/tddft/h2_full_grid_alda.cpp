@@ -1,9 +1,9 @@
 /// @file regressions/scf/h2_full_grid_alda/reg_h2_full_grid_alda.cpp
 /// @brief H2/STO-3G LSDA TDA with full MO-product ALDA — hard-coded S1 gate.
 ///
-/// Oracle: Atomiverse full-grid ALDA path (Dirac-exchange f^xc on SG0 grid),
-/// 2026-07-23. Window is relative to the diagonal-only skeleton path and the
-/// CIS@RKS (PBE) continuum — absolute S1 pinned from this engine.
+/// Oracle: PySCF 2.14.0 `dft.RKS(xc="lda,vwn")` + `tdscf.TDA` (external).
+/// The former self-pin (7.653049 eV) came from a kernel that kept full HF
+/// exchange and only the Dirac part of f^xc; see REFERENCE.md.
 #include <cmath>
 #include <cstdio>
 
@@ -40,10 +40,10 @@ int run() {
         std::printf("FAIL alda flag\n");
         return 1;
     }
-    // Hard-coded S1 [eV]: Atomiverse full-grid ALDA (H2 r=0.74 Å, STO-3G,
-    // LSDA, SG0 50×110), 2026-07-23. Tolerance 0.05 eV covers grid noise.
-    constexpr double kS1Ref = 7.653049; // eV
-    constexpr double kTol = 0.05;       // eV
+    // S1 [eV]: PySCF 2.14.0 LDA,VWN TDA (H2 r=0.74 Å, STO-3G). Tolerance
+    // 0.05 eV covers the SG0 vs PySCF default grid difference.
+    constexpr double kS1Ref = 26.443003; // eV
+    constexpr double kTol = 0.05;        // eV
     if (!(std::fabs(es.energy_ev[0] - kS1Ref) < kTol)) {
         std::printf("FAIL S1 out of window\n");
         return 1;

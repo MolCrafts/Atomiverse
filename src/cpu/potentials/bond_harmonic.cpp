@@ -26,7 +26,8 @@ void BondHarmonic::build(const BuildContext& ctx) {
     // Per-thread accumulators are sized to the full backing-store capacity
     // (`nmax`); only the live `[0, n_force)` rows are touched per step (a
     // partner row may be a ghost, so the range must span owners + ghosts).
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void BondHarmonic::compute(const LaunchContext& ctx) {
@@ -43,7 +44,6 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
     // `[0, n_force)`; incomplete topology fails collectively before evaluation.
     const md::ResolveView rv(ctx);
     const int nlocal = rv.n_local();
-    const int n_force = rv.n_force();
 
     // Tuple cache: tag→local hash resolution happens only when row
     // indices may have moved (migration / halo full rebuild), not every
@@ -80,12 +80,12 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    // Resolve the frame's force spans ONCE, before the parallel region opens
-    // (never inside it — see BondedForceScratch::bind).
-    scratch_.bind(f);
+    // Open this launch's share of the Runtime's per-thread accumulators once,
+    // before the parallel region (see md::ForcePass).
+    const md::ForcePass forces(ctx);
     const bool do_virial = ctx.stress_requested; // LAMMPS vflag
 
-    const int team = scratch_.team(n_tuples);
+    const int team = forces.team(n_tuples);
 
 // Stiff bonds contribute significantly to the stress tensor. The per-pair
 // virial accumulates into a thread-private `vir_local` and is combined under
@@ -98,7 +98,7 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const md::ThreadForce tf = scratch_.begin_thread(tid, n_force);
+        const md::ThreadForce tf = forces.thread(tid);
         md::Voigt6 vir_local;
 
         // Hot loop over pre-resolved tuples (Newton-bond-ON: each bond is
@@ -141,9 +141,6 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
         vir += vir_local;
     }
 
-    if (ctx.forces_requested)
-        scratch_.reduce_into(n_force);
-
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyBond) += energy_total;
     if (ctx.stress_requested)
@@ -156,7 +153,6 @@ void BondHarmonic::destroy(const DestroyContext& /*ctx*/) {
     drops_.report("BondHarmonic");
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
     // Owned-tuple cache is owned by the cpu::Bond base; nothing to clear here.
 }
 

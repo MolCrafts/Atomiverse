@@ -61,7 +61,8 @@ void EAM::build(const cpu::BuildContext& ctx) {
 #ifdef _OPENMP
     threads = omp_get_max_threads();
 #endif
-    forces_.build(threads, ctx.frame.capacity());
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(threads, ctx.frame.capacity());
     rho_threads_.assign(threads > 1 ? threads : 0, std::vector<double>(n));
 }
 
@@ -108,10 +109,10 @@ void EAM::launch(const cpu::LaunchContext& ctx) {
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    forces_.bind(f);
+    const md::ForcePass forces(ctx);
     double e_total = 0.0;
     double v[6] = {0, 0, 0, 0, 0, 0};
-#pragma omp parallel num_threads(forces_.n_threads())                          \
+#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
     reduction(+ : e_total, v[ : 6])
     {
         int tid = 0, team_size = 1;
@@ -119,7 +120,7 @@ void EAM::launch(const cpu::LaunchContext& ctx) {
         tid = omp_get_thread_num();
         team_size = omp_get_num_threads();
 #endif
-        const md::ThreadForce force = forces_.begin_thread(tid, n_active);
+        const md::ThreadForce force = forces.thread(tid);
         double* __restrict density =
             rho_threads_.empty() ? rho_.data() : rho_threads_[tid].data();
         std::fill_n(density, n_active, 0.0);
@@ -223,8 +224,6 @@ void EAM::launch(const cpu::LaunchContext& ctx) {
             }
         }
     } // thread-private Newton-on force accumulation
-    if (ctx.forces_requested)
-        forces_.reduce_into(n_active);
     f.meta.get(kEnergy) += e_total;
     f.meta.get(kEnergyPair) += e_total;
     if (ctx.stress_requested)
@@ -236,7 +235,6 @@ void EAM::destroy(const cpu::DestroyContext&) {
     rho_.clear();
     dF_.clear();
     rho_threads_.clear();
-    forces_.clear();
 }
 
 } // namespace cpu

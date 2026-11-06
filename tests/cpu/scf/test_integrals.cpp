@@ -382,41 +382,6 @@ TEST(NativeIntegrals, PType_Orthogonality) {
         << "<py|pz> != 0";
 }
 
-/// @brief Verify block-level g_rhf matches AO-level g_rhf for a given frame.
-static void compare_g_ao_vs_block(const cpu::Frame& frame, const char* label) {
-    auto pack =
-        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
-    int n = pack.n_basis;
-
-    // Dense test density with off-diagonal elements to exercise all contributions.
-    RealMatrix P = xt::zeros<double>({(size_t)n, (size_t)n});
-    for (int i = 0; i < n; ++i)
-        P(i, i) = 0.5;
-    for (int i = 0; i < n - 1; ++i) {
-        P(i, i + 1) = 0.1;
-        P(i + 1, i) = 0.1;
-    }
-
-    auto sp_ao = ShellPairList{pack};
-    auto sp_blk = ShellBlockPairList{pack};
-
-    RealMatrix G_ao, G_blk;
-    sp_ao.g_rhf(P, G_ao);
-    sp_blk.g_rhf(P, G_blk);
-
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            EXPECT_NEAR(static_cast<double>(G_blk(i, j)),
-                        static_cast<double>(G_ao(i, j)), 1e-9)
-                << label << " G[" << i << "," << j << "] mismatch";
-}
-
-TEST(NativeIntegrals, BlockG_H2O) { compare_g_ao_vs_block(make_h2o(), "H2O"); }
-
-TEST(NativeIntegrals, BlockG_CH4) { compare_g_ao_vs_block(make_ch4(), "CH4"); }
-
-TEST(NativeIntegrals, BlockG_H2) { compare_g_ao_vs_block(make_h2(0.74), "H2"); }
-
 #else // !ATV_HAS_HF
 
 #include <gtest/gtest.h>

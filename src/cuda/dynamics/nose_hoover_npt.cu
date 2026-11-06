@@ -27,7 +27,7 @@ struct NptParameters {
 struct NptHistory {
     double *qt, *qb, *eta_t, *eta_b, *dot_t, *dot_b;
     double kt, mass, kinetic;
-    double eps[3], scale[3], drift[3];
+    double eps[3], scale[3], cell_scale[3], drift[3];
     Box next_box;
     bool anisotropic;
 };
@@ -56,15 +56,14 @@ __device__ void barostat_chain(NptHistory& h, const NptParameters& p) {
             h.eps[a] *= scale;
 }
 
-__global__ void atom_chain(NptHistory* history, NptParameters p, BigInt step,
-                           bool initial) {
-    if (state_frozen(p.fault))
-        return;
-    auto& h = *history;
+// ── Scalar stages (one thread; each early-returns on a frozen run) ────────
+
+__device__ void atom_chain(NptHistory& h, const NptParameters& p,
+                           long long step, bool initial) {
     if (initial) {
         h.kt = units::md_boltz
-               * ATV::md::ramp_target(p.temperature, p.stop_temperature, step,
-                                      p.first, p.last);
+               * ATV::md::ramp_target(p.temperature, p.stop_temperature,
+                                      BigInt(step), p.first, p.last);
         for (int k = 0; k < p.atom_chain; ++k)
             h.qt[k] = (k == 0 ? double(p.dof) : 1.0) * h.kt * p.tau_t * p.tau_t;
         barostat_chain(h, p); // P1 precedes atom thermostat P2
@@ -75,21 +74,7 @@ __global__ void atom_chain(NptHistory* history, NptParameters p, BigInt step,
     h.scale[0] = h.scale[1] = h.scale[2] = scale;
 }
 
-__global__ void scale_velocities(mixed_t* vx, mixed_t* vy, mixed_t* vz,
-                                 const NptHistory* history, int n,
-                                 const ForceFault* fault) {
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n && !state_frozen(fault)) {
-        vx[i] *= mixed_t(history->scale[0]);
-        vy[i] *= mixed_t(history->scale[1]);
-        vz[i] *= mixed_t(history->scale[2]);
-    }
-}
-
-__global__ void barostat_scale(NptHistory* history, NptParameters p) {
-    if (state_frozen(p.fault))
-        return;
-    auto& h = *history;
+__device__ void barostat_scale(NptHistory& h, const NptParameters& p) {
     double sum = 0;
     for (int a = 0; a < 3; ++a)
         if (p.coupled[a])
@@ -106,69 +91,9 @@ __global__ void barostat_scale(NptHistory* history, NptParameters p) {
         h.kinetic *= h.scale[0] * h.scale[0];
 }
 
-__global__ void kick(mixed_t* vx, mixed_t* vy, mixed_t* vz, const fixed_t* fx,
-                     const fixed_t* fy, const fixed_t* fz, const mixed_t* mass,
-                     ForceFault* fault, const std::int64_t* tag, long long step,
-                     mixed_t half_dt, int n) {
-    if (!forces_consumable(fault, tag, step))
-        return;
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n) {
-        const mixed_t factor = half_dt * mixed_t(units::md_ftm2v) / mass[i];
-        vx[i] += factor * decode_force<mixed_t>(fx[i]);
-        vy[i] += factor * decode_force<mixed_t>(fy[i]);
-        vz[i] += factor * decode_force<mixed_t>(fz[i]);
-    }
-}
-__global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void reduce_ke_axes_k(
-    const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
-    const mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
-    acc_t* __restrict__ buf, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    double mx = 0.0, my = 0.0, mz = 0.0;
-    if (i < n) {
-        double m = static_cast<double>(mass[i]);
-        double vxi = static_cast<double>(vx[i]);
-        double vyi = static_cast<double>(vy[i]);
-        double vzi = static_cast<double>(vz[i]);
-        mx = m * vxi * vxi;
-        my = m * vyi * vyi;
-        mz = m * vzi * vzi;
-    }
-    // One CUB collective preserves the three independent kinetic components.
-    ::cuda::std::array<double, 3> my_vals = {mx, my, mz};
-
-    using Reduce =
-        cub::BlockReduce<::cuda::std::array<double, 3>, kDefaultBlock>;
-    __shared__ typename Reduce::TempStorage reduction;
-    const auto out =
-        Reduce(reduction).Reduce(my_vals, SumComponents<double, 3>{});
-    if (threadIdx.x == 0) {
-        double bx = out[0], by = out[1], bz = out[2];
-        atomicAdd(&buf[1], bx);
-        atomicAdd(&buf[2], by);
-        atomicAdd(&buf[3], bz);
-        atomicAdd(&buf[0], bx + by + bz);
-    }
-}
-
-__global__ void seed_kinetic(NptHistory* history,
-                             const SystemScalars* scalars) {
-    history->kinetic = scalars->kinetic;
-}
-__global__ void reduced_kinetic(NptHistory* history, const double* ke,
-                                const ForceFault* fault) {
-    if (state_frozen(fault))
-        return;
-    history->kinetic = 0.5 * units::md_mvv2e * ke[0];
-}
-
-__global__ void pressure_update(NptHistory* history, NptParameters p,
+__device__ void pressure_update(NptHistory& h, const NptParameters& p,
                                 const double* ke, const SystemScalars* scalars,
                                 const geom_t* cell) {
-    if (state_frozen(p.fault))
-        return;
-    auto& h = *history;
     const double volume = cell[0] * cell[4] * cell[8];
     if (!(volume > 0))
         return;
@@ -199,60 +124,27 @@ __global__ void pressure_update(NptHistory* history, NptParameters p,
                 / h.mass * (0.5 * p.dt);
 }
 
-__global__ void propagate_cell(NptHistory* history, NptParameters p,
-                               geom_t* cell, Box seed) {
-    if (state_frozen(p.fault))
-        return;
-    auto& h = *history;
+/// The next cell (P6) from the current strain rate. The cell itself is
+/// committed by the position propagation, which reads only `next_box`.
+__device__ void next_cell(NptHistory& h, const NptParameters& p,
+                          const geom_t* cell, Box seed) {
+    geom_t next[9];
+    for (int k = 0; k < 9; ++k)
+        next[k] = cell[k];
     for (int a = 0; a < 3; ++a) {
         double x = h.eps[a] * p.dt;
         x = x < -0.005 ? -0.005 : (x > 0.005 ? 0.005 : x);
-        h.scale[a] = exp(x);
+        h.cell_scale[a] = exp(x);
         h.drift[a] = fabs(x) < 1e-4 ? 1.0 + x * (0.5 + x / 6.0) : expm1(x) / x;
-        cell[4 * a] *= h.scale[a];
+        next[4 * a] *= h.cell_scale[a];
     }
     seed.resident = nullptr;
-    seed.assign_cell(cell);
+    seed.assign_cell(next);
     h.next_box = seed;
 }
 
-// Coordinates are reconstructed, propagated and wrapped in integration
-// precision against the FP64 next cell, then split again.
-__global__ void propagate_positions(pos_t* x, pos_t* y, pos_t* z, pos_t* xc,
-                                    pos_t* yc, pos_t* zc, const mixed_t* vx,
-                                    const mixed_t* vy, const mixed_t* vz,
-                                    ImageInt* image, const NptHistory* history,
-                                    mixed_t dt, int n,
-                                    const ForceFault* fault) {
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n || state_frozen(fault))
-        return;
-    const auto& h = *history;
-    mixed_t value[3] = {load_position(x, xc, i) * mixed_t(h.scale[0])
-                            + vx[i] * dt * mixed_t(h.drift[0]),
-                        load_position(y, yc, i) * mixed_t(h.scale[1])
-                            + vy[i] * dt * mixed_t(h.drift[1]),
-                        load_position(z, zc, i) * mixed_t(h.scale[2])
-                            + vz[i] * dt * mixed_t(h.drift[2])};
-    for (int a = 0; a < 3; ++a) {
-        const mixed_t shift = floor(value[a] * mixed_t(h.next_box.inv_l[a]));
-        value[a] -= mixed_t(h.next_box.cell[4 * a]) * shift;
-        // LAMMPS Domain::pbc: the wrapped lattice translation joins the
-        // image flags, keeping x + L·image continuous.
-        if (image != nullptr)
-            image[3 * i + a] = static_cast<ImageInt>(image[3 * i + a]
-                                                     + static_cast<int>(shift));
-    }
-    store_position(x, xc, i, value[0]);
-    store_position(y, yc, i, value[1]);
-    store_position(z, zc, i, value[2]);
-}
-
-__global__ void finish(NptHistory* history, NptParameters p,
+__device__ void finish(NptHistory& h, const NptParameters& p,
                        SystemScalars* scalars, const geom_t* cell) {
-    if (state_frozen(p.fault))
-        return;
-    auto& h = *history;
     barostat_chain(h, p); // P11, after the atom thermostat P10
     double energy = h.kinetic + scalars->energy;
     for (int a = 0; a < 3; ++a)
@@ -270,6 +162,178 @@ __global__ void finish(NptHistory* history, NptParameters p,
     energy += p.pressure * cell[0] * cell[4] * cell[8];
     scalars->kinetic = h.kinetic;
     scalars->conserved = energy;
+}
+
+__device__ void clear_kinetic(double* ke) {
+    ke[0] = ke[1] = ke[2] = ke[3] = 0.0;
+}
+
+// ── Fused launches: one single-thread kernel between grid passes ──────────
+
+/// initial_integrate P1-P2: barostat and atom chains at the ramped target.
+__global__ void initial_chains(NptHistory* history, NptParameters p,
+                               const long long* step_ptr, long long step) {
+    if (state_frozen(p.fault))
+        return;
+    atom_chain(*history, p, current_step(step_ptr, step), true);
+}
+
+/// initial_integrate P3-P4 and the P6 cell: strain rate from the scaled
+/// kinetic tensor, the barostat velocity scale and the next cell.
+__global__ void initial_barostat(NptHistory* history, NptParameters p,
+                                 double* ke, const SystemScalars* scalars,
+                                 const geom_t* cell, Box seed) {
+    if (state_frozen(p.fault))
+        return;
+    auto& h = *history;
+    pressure_update(h, p, ke, scalars, cell);
+    barostat_scale(h, p);
+    next_cell(h, p, cell, seed);
+    clear_kinetic(ke);
+}
+
+/// end_of_step P8: measured kinetic energy, then the barostat scale.
+__global__ void final_barostat(NptHistory* history, NptParameters p,
+                               double* ke) {
+    if (state_frozen(p.fault))
+        return;
+    auto& h = *history;
+    h.kinetic = 0.5 * units::md_mvv2e * ke[0];
+    barostat_scale(h, p);
+    clear_kinetic(ke);
+}
+
+/// end_of_step P9-P11: strain rate, atom chain, barostat chain and the
+/// conserved quantity (none of them reads the velocities P10 rescales).
+__global__ void final_chains(NptHistory* history, NptParameters p, double* ke,
+                             SystemScalars* scalars, const geom_t* cell,
+                             const long long* step_ptr, long long step) {
+    if (state_frozen(p.fault))
+        return;
+    auto& h = *history;
+    pressure_update(h, p, ke, scalars, cell);
+    atom_chain(h, p, current_step(step_ptr, step), false);
+    finish(h, p, scalars, cell);
+    clear_kinetic(ke);
+}
+
+/// Per-axis kinetic tensor of the block's rows into `buf` (total, x, y, z).
+__device__ void accumulate_kinetic(double mx, double my, double mz,
+                                   acc_t* __restrict__ buf) {
+    // One CUB collective preserves the three independent kinetic components.
+    ::cuda::std::array<double, 3> my_vals = {mx, my, mz};
+    using Reduce =
+        cub::BlockReduce<::cuda::std::array<double, 3>, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const auto out =
+        Reduce(reduction).Reduce(my_vals, SumComponents<double, 3>{});
+    if (threadIdx.x == 0) {
+        double bx = out[0], by = out[1], bz = out[2];
+        atomicAdd(&buf[1], bx);
+        atomicAdd(&buf[2], by);
+        atomicAdd(&buf[3], bz);
+        atomicAdd(&buf[0], bx + by + bz);
+    }
+}
+
+/// Optionally rescale the velocities by the history's scale, then reduce
+/// the kinetic tensor of the result.
+template <bool Scale, bool Reduce>
+__global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void scale_reduce(
+    mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+    mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
+    const NptHistory* history, acc_t* __restrict__ buf, int n,
+    const ForceFault* fault) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    double mx = 0.0, my = 0.0, mz = 0.0;
+    if (i < n) {
+        mixed_t ux = vx[i], uy = vy[i], uz = vz[i];
+        if (Scale && !state_frozen(fault)) {
+            ux *= mixed_t(history->scale[0]);
+            uy *= mixed_t(history->scale[1]);
+            uz *= mixed_t(history->scale[2]);
+            vx[i] = ux;
+            vy[i] = uy;
+            vz[i] = uz;
+        }
+        if (Reduce) {
+            const double m = static_cast<double>(mass[i]);
+            const double a = ux, b = uy, c = uz;
+            mx = m * a * a;
+            my = m * b * b;
+            mz = m * c * c;
+        }
+    }
+    if (Reduce)
+        accumulate_kinetic(mx, my, mz, buf);
+}
+
+/// P4 velocity scale fused with the P5 / P7 half kick.
+template <bool Scale>
+__global__ void scale_kick(mixed_t* vx, mixed_t* vy, mixed_t* vz,
+                           const fixed_t* fx, const fixed_t* fy,
+                           const fixed_t* fz, const mixed_t* mass,
+                           const NptHistory* history, ForceFault* fault,
+                           const std::int64_t* tag, const long long* step_ptr,
+                           long long step, mixed_t half_dt, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
+        return;
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        mixed_t ux = vx[i], uy = vy[i], uz = vz[i];
+        if (Scale) {
+            ux *= mixed_t(history->scale[0]);
+            uy *= mixed_t(history->scale[1]);
+            uz *= mixed_t(history->scale[2]);
+        }
+        const mixed_t factor = half_dt * mixed_t(units::md_ftm2v) / mass[i];
+        vx[i] = ux + factor * decode_force<mixed_t>(fx[i]);
+        vy[i] = uy + factor * decode_force<mixed_t>(fy[i]);
+        vz[i] = uz + factor * decode_force<mixed_t>(fz[i]);
+    }
+}
+
+__global__ void seed_kinetic(NptHistory* history,
+                             const SystemScalars* scalars) {
+    history->kinetic = scalars->kinetic;
+}
+
+// Coordinates are reconstructed, propagated and wrapped in integration
+// precision against the FP64 next cell, then split again. The first thread
+// commits the next cell (no thread reads the old one here).
+__global__ void propagate_positions(pos_t* x, pos_t* y, pos_t* z, pos_t* xc,
+                                    pos_t* yc, pos_t* zc, const mixed_t* vx,
+                                    const mixed_t* vy, const mixed_t* vz,
+                                    ImageInt* image, const NptHistory* history,
+                                    geom_t* cell, mixed_t dt, int n,
+                                    const ForceFault* fault) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (state_frozen(fault))
+        return;
+    const auto& h = *history;
+    if (i == 0)
+        for (int a = 0; a < 3; ++a)
+            cell[4 * a] = h.next_box.cell[4 * a];
+    if (i >= n)
+        return;
+    mixed_t value[3] = {load_position(x, xc, i) * mixed_t(h.cell_scale[0])
+                            + vx[i] * dt * mixed_t(h.drift[0]),
+                        load_position(y, yc, i) * mixed_t(h.cell_scale[1])
+                            + vy[i] * dt * mixed_t(h.drift[1]),
+                        load_position(z, zc, i) * mixed_t(h.cell_scale[2])
+                            + vz[i] * dt * mixed_t(h.drift[2])};
+    for (int a = 0; a < 3; ++a) {
+        const mixed_t shift = floor(value[a] * mixed_t(h.next_box.inv_l[a]));
+        value[a] -= mixed_t(h.next_box.cell[4 * a]) * shift;
+        // LAMMPS Domain::pbc: the wrapped lattice translation joins the
+        // image flags, keeping x + L·image continuous.
+        if (image != nullptr)
+            image[3 * i + a] = static_cast<ImageInt>(image[3 * i + a]
+                                                     + static_cast<int>(shift));
+    }
+    store_position(x, xc, i, value[0]);
+    store_position(y, yc, i, value[1]);
+    store_position(z, zc, i, value[2]);
 }
 } // namespace
 
@@ -354,6 +418,15 @@ void NoseHooverNPT::initialize_forces(const LaunchContext& ctx) {
     }
 }
 
+void NoseHooverNPT::before_launch(const LaunchContext& ctx) {
+    // Host mirror of the device ramp for T_target(); no device work.
+    if (ctx.at(ATV::md::Phase::initial_integrate))
+        T_live_ =
+            ATV::md::ramp_target(T_target_, T_stop_, ctx.step, nfirst_, nlast_);
+}
+
+// Five launches per stage (two single-thread scalar kernels between three
+// grid passes), every one reading the step from the device: capturable.
 void NoseHooverNPT::launch(const LaunchContext& ctx) {
     auto& s = *state_;
     auto& f = ctx.frame;
@@ -363,67 +436,37 @@ void NoseHooverNPT::launch(const LaunchContext& ctx) {
     p.first = nfirst_;
     p.last = nlast_;
     p.fault = f.force_fault;
-    auto scale = [&] {
-        scale_velocities<<<blocks, kDefaultBlock, 0, stream>>>(
-            f.atoms.vx, f.atoms.vy, f.atoms.vz,
-            thrust::raw_pointer_cast(s.history.data()), n, f.force_fault);
-    };
-    auto reduce = [&] {
-        ATV_CUDA_CHECK(cudaMemsetAsync(thrust::raw_pointer_cast(s.ke.data()), 0,
-                                       4 * sizeof(double), stream));
-        reduce_ke_axes_k<<<blocks, kDefaultBlock, 0, stream>>>(
-            f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.mass,
-            thrust::raw_pointer_cast(s.ke.data()), n);
-    };
-    auto force_kick = [&] {
-        kick<<<blocks, kDefaultBlock, 0, stream>>>(
-            f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.fx, f.atoms.fy,
-            f.atoms.fz, f.atoms.mass, f.force_fault, f.atoms.tag, ctx.step,
-            mixed_t(0.5 * dt_), n);
-    };
+    NptHistory* history = thrust::raw_pointer_cast(s.history.data());
+    double* ke = thrust::raw_pointer_cast(s.ke.data());
+    const long long* step_ptr = ctx.runtime.device_step;
+    const long long step = static_cast<long long>(ctx.step);
+    const auto& a = f.atoms;
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
-        T_live_ =
-            ATV::md::ramp_target(T_target_, T_stop_, ctx.step, nfirst_, nlast_);
-        atom_chain<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()), p, ctx.step,
-            true); // P1,P2
-        scale();
-        reduce();
-        pressure_update<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()), p,
-            thrust::raw_pointer_cast(s.ke.data()), f.scalars, f.box); // P3
-        barostat_scale<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()), p); // P4
-        scale();
-        force_kick(); // P5
-        propagate_cell<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()), p, f.box,
-            ctx.runtime.host_box); // P6
+        initial_chains<<<1, 1, 0, stream>>>(history, p, step_ptr, step); // P1-2
+        scale_reduce<true, true><<<blocks, kDefaultBlock, 0, stream>>>(
+            a.vx, a.vy, a.vz, a.mass, history, ke, n, f.force_fault);
+        initial_barostat<<<1, 1, 0, stream>>>(history, p, ke, f.scalars, f.box,
+                                              ctx.runtime.host_box); // P3-4,6
+        scale_kick<true><<<blocks, kDefaultBlock, 0, stream>>>(
+            a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, history, f.force_fault,
+            a.tag, step_ptr, step, mixed_t(0.5 * dt_), n); // P4-5
         propagate_positions<<<blocks, kDefaultBlock, 0, stream>>>(
-            f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.x_corr, f.atoms.y_corr,
-            f.atoms.z_corr, f.atoms.vx, f.atoms.vy, f.atoms.vz, f.atoms.image,
-            thrust::raw_pointer_cast(s.history.data()), mixed_t(dt_), n,
-            f.force_fault);
+            a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz,
+            a.image, history, f.box, mixed_t(dt_), n, f.force_fault); // P6
     } else if (ctx.at(ATV::md::Phase::final_integrate)) {
-        force_kick(); // P7
+        scale_kick<false><<<blocks, kDefaultBlock, 0, stream>>>(
+            a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, history, f.force_fault,
+            a.tag, step_ptr, step, mixed_t(0.5 * dt_), n); // P7
     } else if (ctx.at(ATV::md::Phase::end_of_step)) {
-        reduce();
-        reduced_kinetic<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()),
-            thrust::raw_pointer_cast(s.ke.data()), f.force_fault);
-        barostat_scale<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()), p); // P8
-        scale();
-        reduce();
-        pressure_update<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()), p,
-            thrust::raw_pointer_cast(s.ke.data()), f.scalars, f.box); // P9
-        atom_chain<<<1, 1, 0, stream>>>(
-            thrust::raw_pointer_cast(s.history.data()), p, ctx.step,
-            false); // P10
-        scale();
-        finish<<<1, 1, 0, stream>>>(thrust::raw_pointer_cast(s.history.data()),
-                                    p, f.scalars, f.box); // P11
+        scale_reduce<false, true><<<blocks, kDefaultBlock, 0, stream>>>(
+            a.vx, a.vy, a.vz, a.mass, history, ke, n, f.force_fault);
+        final_barostat<<<1, 1, 0, stream>>>(history, p, ke); // P8
+        scale_reduce<true, true><<<blocks, kDefaultBlock, 0, stream>>>(
+            a.vx, a.vy, a.vz, a.mass, history, ke, n, f.force_fault);
+        final_chains<<<1, 1, 0, stream>>>(history, p, ke, f.scalars, f.box,
+                                          step_ptr, step); // P9-11
+        scale_reduce<true, false><<<blocks, kDefaultBlock, 0, stream>>>(
+            a.vx, a.vy, a.vz, a.mass, history, ke, n, f.force_fault); // P10
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }

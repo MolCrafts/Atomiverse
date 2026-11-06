@@ -72,8 +72,7 @@ class EAM : public cpu::Potential,
     /// @brief Resident heap bytes (the per-atom density + embedding-derivative
     /// arrays). Classified under "Pair" by the driver memory summary.
     std::size_t memory_bytes() const override {
-        std::size_t bytes = (rho_.capacity() + dF_.capacity()) * sizeof(double)
-                            + forces_.memory_bytes();
+        std::size_t bytes = (rho_.capacity() + dF_.capacity()) * sizeof(double);
         for (const auto& density : rho_threads_)
             bytes += density.capacity() * sizeof(double);
         return bytes;
@@ -99,7 +98,6 @@ class EAM : public cpu::Potential,
     std::vector<double> rho_;
     std::vector<double> dF_;
     std::vector<std::vector<double>> rho_threads_;
-    md::BondedForceScratch forces_;
 };
 
 } // namespace cpu

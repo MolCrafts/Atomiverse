@@ -143,7 +143,7 @@ class StillingerWeber : public cpu::Potential, public cpu::NeighborConsumer {
     void launch(const cpu::LaunchContext& ctx) override;
     void destroy(const cpu::DestroyContext& ctx) override;
     std::size_t memory_bytes() const override {
-        std::size_t bytes = forces_.memory_bytes();
+        std::size_t bytes = 0;
         for (const auto& neighbors : short_neighbors_)
             bytes += neighbors.capacity() * sizeof(int);
         return bytes;
@@ -151,7 +151,6 @@ class StillingerWeber : public cpu::Potential, public cpu::NeighborConsumer {
 
   private:
     SWPotential pot_;
-    md::BondedForceScratch forces_;
     std::vector<std::vector<int>> short_neighbors_;
 };
 

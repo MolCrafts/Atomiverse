@@ -35,9 +35,14 @@ double and mixed separately (small cells reported, not gated).
   parity). Slower: bonded kernels (~1.8×, `AngleHarmonic` acos and per-kernel
   thread scratch), RATTLE (~1.4× vs `fix rattle`), one-rank Comm (self-image
   swaps).
-- Threaded: every bonded kernel owns a full-length thread-private force buffer
-  and reduces it alone; LAMMPS `package omp` reduces once per step for all
-  styles — the structural reason Bond scales badly with threads.
+- Threaded: the Runtime owns one per-thread force buffer (`md::ThreadForces`)
+  reduced once per slot walk, as LAMMPS `package omp`; bonded caches key on
+  `Frame::row_revision()`. Pair styles share `md::PairLoop`; PPPM/PME spread,
+  Green's sum and gather are threaded (x-plane slabs) with FFTW threads;
+  SETTLE is analytic and threaded. Timings: wip/cpu-md-perf commit messages
+  (LAMMPS bench data.rhodo through run_atv_gaff, `--settle` for waters).
+- Open: lj/cut and coul/* still carry their own loops; no CPU
+  energy-request gate; PME still Allreduces a c2c mesh to rank 0.
 
 ## CUDA
 
