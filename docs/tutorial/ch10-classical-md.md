@@ -85,8 +85,9 @@ $$\begin{aligned}
 The superscript labels a numerical time level. Forces at the initial
 geometry must already be available for the first half update. After the
 position update, evaluate forces again before completing the velocity.
-These equations use coherent units; a library using eV, Å, fs, and amu
-must include the appropriate conversion in force divided by mass.
+These equations use coherent units; in a LAMMPS style such as `real` or
+`metal` the force-over-mass term carries the style's `ftm2v`, which the
+engine takes from the run's `units`.
 
 For smooth conservative forces and a fixed step, this method is
 time-reversible and symplectic: it preserves the canonical phase-space

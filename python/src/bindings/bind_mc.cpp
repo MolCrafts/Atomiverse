@@ -400,7 +400,8 @@ void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
             nb::arg("comp"),
             "Install the neighbor list — the cached list of pairs closer than "
             "cutoff + skin, which is what makes a trial energy cost O(N) "
-            "instead of O(N^2). The SKIN [A] is the extra margin the list is "
+            "instead of O(N^2). The SKIN [length] is the extra margin the list "
+            "is "
             "built with beyond the interaction cutoff, so the same list stays "
             "valid while atoms move a little.\n\n"
             "The MC-correct form is built here: every=1, delay=0, check=yes — "
@@ -453,42 +454,43 @@ void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
             "selector fires exactly ONE child per trial — that is the Monte "
             "Carlo contract, and it is why a mixed ensemble goes through a "
             "MoveSelector instead of two set_mover calls.")
-        .def("run", &Handle::run, nb::arg("frame"), nb::arg("n_trials"),
-             "Attempt n_trials trial moves on a molpy.Frame. GIL released "
-             "during sampling.\n\n"
-             "n_trials counts SINGLE TRIAL MOVES, not sweeps: each count is "
-             "one proposal (one atom displaced, or one volume change, or one "
-             "insertion/deletion) followed by one accept/reject decision. It "
-             "is NOT the 'one attempted move per particle' sweep some texts "
-             "count in, so a chain of N atoms needs roughly N times more "
-             "trials here than it would sweeps there.\n\n"
-             "Consecutive calls CONTINUE one Markov chain — the standard "
-             "run(equilibrate); run(sample) pattern — so the tallies "
-             "accumulate and the configuration carries over. The frame is "
-             "materialized once, on the first call: edits made to the "
-             "molpy.Frame between calls are ignored, and a fresh chain means "
-             "a fresh sampler object.\n\n"
-             "Results are written back into the SAME molpy.Frame after every "
-             "call: positions [A], the box, and the energy of the last "
-             "accepted configuration in frame.meta['energy'] [eV]. When the "
-             "trial moves changed the particle number the 'atoms' block is "
-             "rebuilt at the new N.\n\n"
-             "Monte Carlo scores energies only — no gradient is ever "
-             "assembled — so the frame's fx/fy/fz come back ZEROED, not as "
-             "physical forces; use an MD or Evaluate driver if you want "
-             "forces. Velocities are left as they were (an inserted atom "
-             "gets zero velocity), because nothing in this sampler moves in "
-             "time.\n\n"
-             "Raises RuntimeError under the MPI launcher (Monte Carlo is "
-             "single-rank by design), and before any sampling when no Mover, "
-             "no energy source, or no neighbor list for a pair style was "
-             "registered.")
+        .def(
+            "run", &Handle::run, nb::arg("frame"), nb::arg("n_trials"),
+            "Attempt n_trials trial moves on a molpy.Frame. GIL released "
+            "during sampling.\n\n"
+            "n_trials counts SINGLE TRIAL MOVES, not sweeps: each count is "
+            "one proposal (one atom displaced, or one volume change, or one "
+            "insertion/deletion) followed by one accept/reject decision. It "
+            "is NOT the 'one attempted move per particle' sweep some texts "
+            "count in, so a chain of N atoms needs roughly N times more "
+            "trials here than it would sweeps there.\n\n"
+            "Consecutive calls CONTINUE one Markov chain — the standard "
+            "run(equilibrate); run(sample) pattern — so the tallies "
+            "accumulate and the configuration carries over. The frame is "
+            "materialized once, on the first call: edits made to the "
+            "molpy.Frame between calls are ignored, and a fresh chain means "
+            "a fresh sampler object.\n\n"
+            "Results are written back into the SAME molpy.Frame after every "
+            "call: positions [length], the box, and the energy of the last "
+            "accepted configuration in frame.meta['energy'] [energy]. When the "
+            "trial moves changed the particle number the 'atoms' block is "
+            "rebuilt at the new N.\n\n"
+            "Monte Carlo scores energies only — no gradient is ever "
+            "assembled — so the frame's fx/fy/fz come back ZEROED, not as "
+            "physical forces; use an MD or Evaluate driver if you want "
+            "forces. Velocities are left as they were (an inserted atom "
+            "gets zero velocity), because nothing in this sampler moves in "
+            "time.\n\n"
+            "Raises RuntimeError under the MPI launcher (Monte Carlo is "
+            "single-rank by design), and before any sampling when no Mover, "
+            "no energy source, or no neighbor list for a pair style was "
+            "registered.")
         .def(
             "current_energy",
             [](const Handle& self) {
                 return static_cast<double>(self.driver.current_energy());
             },
-            "Energy [eV] of the current (last-accepted) configuration. A "
+            "Energy [energy] of the current (last-accepted) configuration. A "
             "rejected trial's energy never survives — this is the same value "
             "written to frame.meta['energy'].")
         .def("attempts", &Handle::attempts,
@@ -545,12 +547,14 @@ void bind_mc(nb::module_& m) {
         "proposal probabilities cancel in the acceptance ratio and nothing "
         "but the energy is left, which is what makes the plain "
         "min(1, exp(-dE/(k_B T))) Metropolis rule correct here.\n\n"
-        "delta [A] is the knob that sets the acceptance ratio: too large and "
+        "delta [length] is the knob that sets the acceptance ratio: too large "
+        "and "
         "almost every trial overlaps a neighbour and is rejected, too small "
         "and the chain crawls over the configuration space. The usual target "
         "is an acceptance ratio of roughly 0.3-0.5.")
-        .def(nb::init<double>(), nb::arg("delta"),
-             "Construct with the displacement half-width delta [A] (> 0).");
+        .def(
+            nb::init<double>(), nb::arg("delta"),
+            "Construct with the displacement half-width delta [length] (> 0).");
 
     nb::class_<cpu::mc::VolumeMove>(
         m, "VolumeMove",
@@ -567,7 +571,7 @@ void bind_mc(nb::module_& m) {
         "just like any other trial — but it is the only move that samples "
         "the volume, so do not starve it in the MoveSelector weights.")
         .def(nb::init<double>(), nb::arg("dv_max"),
-             "Construct with the volume half-width dv_max [A^3] (> 0).");
+             "Construct with the volume half-width dv_max [volume] (> 0).");
 
     nb::class_<cpu::mc::InsertDeleteMove>(
         m, "InsertDeleteMove",
@@ -583,7 +587,7 @@ void bind_mc(nb::module_& m) {
         .def(nb::init<int, int, double>(), nb::arg("type"),
              nb::arg("atomic_number"), nb::arg("mass"),
              "Construct with the force-field type (> 0), the species "
-             "atomic_number (Z, 0..118) and the mass [amu] (> 0) stamped on "
+             "atomic_number (Z, 0..118) and the mass [mass] (> 0) stamped on "
              "inserted atoms.\n\n"
              "Each identity is written only where the frame carries it: "
              "type goes to the 'type_id' column and atomic_number to the "
@@ -645,9 +649,10 @@ void bind_mc(nb::module_& m) {
         "configuration, and the proposal is then either kept (accepted) or "
         "undone (rejected).\n\n"
         "Keeping it with probability min(1, exp(-dE / (k_B T))) — the "
-        "METROPOLIS rule, in which dE [eV] is the trial energy minus the "
+        "METROPOLIS rule, in which dE [energy] is the trial energy minus the "
         "energy of the last accepted configuration, k_B is the Boltzmann "
-        "constant (8.617333e-5 eV/K) and T [K] the temperature — is what "
+        "constant (the run's boltz) and T [temperature] the temperature — is "
+        "what "
         "makes the visited configurations appear with the Boltzmann "
         "probability exp(-E/(k_B T)). A plain average over the chain is then "
         "the NVT ensemble average, with no dynamics and no velocities "
@@ -663,7 +668,8 @@ void bind_mc(nb::module_& m) {
                 McHandle<cpu::mc::MC>(static_cast<AccReal>(temperature), seed);
         },
         nb::arg("temperature"), nb::arg("seed"),
-        "Construct with the ensemble temperature [K] (> 0) and the seed of "
+        "Construct with the ensemble temperature [temperature] (> 0) and the "
+        "seed of "
         "the single RNG stream shared by the movers and the acceptance test "
         "(one seed, one reproducible chain). A temperature <= 0 raises "
         "ValueError: the Boltzmann weight exp(-dE/(k_B T)) is undefined "
@@ -680,7 +686,7 @@ void bind_mc(nb::module_& m) {
         "displacement uses the canonical rule of MC. A volume move from V to "
         "V' is accepted with probability "
         "min(1, exp(-beta[dE + P (V' - V) - N k_B T ln(V'/V)])), where beta = "
-        "1/(k_B T) and dE [eV] is the trial energy minus the last accepted "
+        "1/(k_B T) and dE [energy] is the trial energy minus the last accepted "
         "energy. The P (V' - V) term is the work done against the external "
         "pressure; the N k_B T ln(V'/V) term is entropic — a volume move "
         "rescales every coordinate together with the cell, i.e. it holds the "
@@ -700,16 +706,18 @@ void bind_mc(nb::module_& m) {
                                          static_cast<AccReal>(pressure), seed);
         },
         nb::arg("temperature"), nb::arg("pressure"), nb::arg("seed"),
-        "Construct with the ensemble temperature [K] (> 0), the external "
-        "pressure [eV/A^3] (LAMMPS sign, positive = compressive; 1 bar ~ "
-        "6.2415e-7 eV/A^3) and the RNG seed.");
+        "Construct with the ensemble temperature [temperature] (> 0), the "
+        "external "
+        "pressure [pressure] (LAMMPS sign, positive = compressive; in the "
+        "run's pressure "
+        "unit: metal bar, real atm) and the RNG seed.");
     bind_mc_common(npt);
     npt.def(
         "current_volume",
         [](const McHandle<cpu::mc::NptMc>& self) {
             return self.driver.current_volume();
         },
-        "Volume [A^3] of the current (last-accepted) configuration — the "
+        "Volume [volume] of the current (last-accepted) configuration — the "
         "sampled degree of freedom of this ensemble, and the same cell "
         "written back to the molpy Frame box.");
 
@@ -720,7 +728,8 @@ void bind_mc(nb::module_& m) {
         "particle number N is sampled.\n\n"
         "The cell is treated as being in contact with an infinite reservoir "
         "of one species that it may exchange atoms with. The CHEMICAL "
-        "POTENTIAL mu [eV] is the free-energy change of adding one atom to a "
+        "POTENTIAL mu [energy] is the free-energy change of adding one atom to "
+        "a "
         "system, and the reservoir is held at exactly this value, which makes "
         "it the control knob of the ensemble: raising mu pushes atoms "
         "in, lowering it pulls them out, and the cell settles at whatever <N> "
@@ -740,13 +749,15 @@ void bind_mc(nb::module_& m) {
                                         static_cast<AccReal>(mu), mass, seed);
         },
         nb::arg("temperature"), nb::arg("mu"), nb::arg("mass"), nb::arg("seed"),
-        "Construct with the ensemble temperature [K] (> 0), the chemical "
-        "potential mu [eV] of the single insertable species, its mass [amu] "
+        "Construct with the ensemble temperature [temperature] (> 0), the "
+        "chemical "
+        "potential mu [energy] of the single insertable species, its mass "
+        "[mass] "
         "(> 0) and the RNG seed.\n\n"
         "mu is the TOTAL chemical potential — the ideal-gas part included, "
         "not the excess part alone. Concretely, the acceptance rule uses mu "
         "only through the ACTIVITY z = exp(beta mu)/Lambda^3 [1/A^3], where "
-        "beta = 1/(k_B T) and Lambda = h/sqrt(2 pi m k_B T) [A] is the "
+        "beta = 1/(k_B T) and Lambda = h/sqrt(2 pi m k_B T) [length] is the "
         "thermal de Broglie wavelength — the quantum length scale of a free "
         "particle of mass m at temperature T, which is what carries the "
         "'per unit volume' in z. z is the ideal-gas number density the "

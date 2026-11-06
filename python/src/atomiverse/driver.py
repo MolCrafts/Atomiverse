@@ -15,7 +15,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     geometry — a *single point*, as opposed to a trajectory or an
     optimization.
 
-    Energy lands in the frame's typed ``meta`` map [eV]; charge-capable
+    Energy lands in the frame's typed ``meta`` map (run units); charge-capable
     evaluators (AM1) write per-atom charges [e] back into the same
     ``molpy.Frame``. The evaluator is borrowed — inspect
     ``evaluator.last_result()`` afterwards for solver-internal quantities.
@@ -28,7 +28,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     Parameters
     ----------
     frame : molpy.Frame
-        System state, updated in place in engine units (eV and Å).
+        System state, updated in place in the run's units.
     evaluator : method or evaluator component
         A method with ``run(frame)``, or a native evaluator Component.
         Forces follow that object's run policy; use ``forces(frame)`` when

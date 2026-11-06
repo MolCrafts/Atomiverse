@@ -96,7 +96,7 @@ class MD:
     Parameters
     ----------
     dt : float, optional
-        Timestep in fs. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
+        Timestep in the run's time unit. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
     device : str, optional
         Execution backend: ``"cpu"`` or ``"cuda"``. CUDA binds the same
         pair, FENE, harmonic and cosine angle, Coulomb/PME/PPPM, uniform
@@ -303,8 +303,8 @@ class MD:
         The NPT integrators (``NoseHooverNPT``, ``ParrinelloRahmanNPT``)
         replace the integrator instead and take no separate barostat.
 
-        Pressure targets are in eV/Å³ (positive means compressive);
-        1 bar ≈ 6.2415e-7 eV/Å³.
+        Pressure targets are in the run's LAMMPS pressure unit (metal: bar,
+        real: atm; positive means compressive).
         """
         if type(component) not in (_cpp.BerendsenBarostat,):
             raise TypeError(
@@ -456,7 +456,7 @@ class MD:
           trajectory, on **both** devices with the same columns:
           positions, velocities, forces, charges, int32 images, tags,
           mass, cell, energies (total and per term), ``step`` and
-          ``time`` [fs], plus the identity columns the frame carries
+          ``time`` [time], plus the identity columns the frame carries
           (``type_id`` and/or ``atomic_number``). Read it with
           ``molpy.io.mrec.MrecReader``. After :meth:`run` returns the
           store holds every frame of that run; on CUDA the frames are

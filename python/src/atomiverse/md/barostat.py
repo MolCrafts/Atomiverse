@@ -12,8 +12,8 @@ Install via ``MD.set_barostat(BerendsenBarostat(P_target, tau_P, dt))``,
 alongside an integrator and a thermostat — unlike ``NoseHooverNPT`` /
 ``ParrinelloRahmanNPT``, which replace the integrator instead.
 
-Pressure is in eV/Å³ with the LAMMPS sign convention (positive means
-compressive); **1 bar ≈ 6.2415e-7 eV/Å³**. The Berendsen scheme relaxes
+Pressure is in the run's LAMMPS pressure unit (metal: bar, real: atm)
+with the LAMMPS sign convention (positive means compressive). The Berendsen scheme relaxes
 the pressure smoothly but does *not* sample a rigorous NPT distribution —
 use it to equilibrate a box, and an NPT integrator for production NPT
 statistics.
@@ -22,8 +22,8 @@ statistics.
 from atomiverse._binding import _cpp
 
 #: Berendsen isotropic barostat (LAMMPS ``fix press/berendsen iso``) —
-#: ``cpu::md::Barostat(P_target [eV/Å³], tau_P [fs], dt [fs],
-#: bulk_modulus [eV/Å³] = 1.0)``. ``tau_P`` is the coupling time (how fast
+#: ``cpu::md::Barostat(P_target [pressure], tau_P [time], dt [time],
+#: bulk_modulus [pressure] = 1.0)``. ``tau_P`` is the coupling time (how fast
 #: the pressure is driven to its target) and ``bulk_modulus`` is the
 #: tunable modulus β that divides the per-step rescale; the default 1.0 is
 #: deliberately not LAMMPS's 10.0 (see ``cpu/dynamics/barostat.h``).

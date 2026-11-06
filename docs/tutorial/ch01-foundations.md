@@ -33,17 +33,21 @@ Record both the coordinates and the boundary treatment.
 
 ## Dimensional reasoning
 
-The companion examples use eV, Å, fs, and amu for frame quantities. A force
-therefore has units eV/Å and pressure has units eV/Å³. Electronic method
-objects may additionally expose Hartree energies and bohr lengths. An energy
-conversion alone is insufficient for a force: both its numerator and its
-length denominator must be converted.
+Classical MD works in a LAMMPS `units` style chosen per run
+(`MD(units="real")`, `Driver::set_units`, default `lj` as in LAMMPS): every
+parameter, the timestep, temperatures, pressures and the frame are in that
+style, exactly as a LAMMPS input deck would state them, and nothing is
+converted. `metal` is eV, Å, ps, g/mol, K and bar; `real` is kcal/mol, Å, fs,
+g/mol, K and atm. Electronic method objects may additionally expose Hartree
+energies and bohr lengths. An energy conversion alone is insufficient for a
+force: both its numerator and its length denominator must be converted.
 
 For orientation, $1\,E_h\simeq27.211386$ eV and $1\,a_0\simeq0.529177$ Å,
 so $1\,E_h/a_0\simeq51.4221$ eV/Å. Use the project's unit registry for
 implementation, rather than repeatedly entering rounded constants. The
-eV–Å–fs–amu convention also requires a conversion factor in Newton's equation;
-its numerical values are not a coherent SI unit system.
+real, metal and electron styles carry conversion factors in Newton's
+equation (LAMMPS `ftm2v`, `mvv2e`), which the engine takes from the selected
+style.
 
 More precision cannot repair a missing physical interaction. Distinguish
 error in the model, error in solving that model, and uncertainty from finite
@@ -204,13 +208,11 @@ rules are part of the physical model.
 
 ### Converting units
 
-The frame convention used in these examples is:
-**energy in eV, length in Å, time in fs, mass in amu, temperature in K,
-force in eV/Å.** Electronic-structure solvers work *internally* in
-Hartree/Bohr/Rydberg but convert into `frame.meta.get(kEnergy)` in eV before
-returning, so these examples read frame energies in eV. Do not equate this convention
-with another program's similarly named unit style; compare each base unit,
-particularly the time unit.
+Classical MD frames are in the run's LAMMPS `units` style, with the factor
+table of LAMMPS `Update::set_units` (`core/unit_system.h`). Electronic-
+structure solvers work *internally* in Hartree/Bohr/Rydberg and report
+energies in eV and forces in eV/Å, the `metal` energy and length; run a
+Born-Oppenheimer MD with them in `units metal` (time in ps).
 
 When you do need to cross the bridge — say to compare a force against a
 PySCF gradient reported in Hartree/Bohr — do it explicitly through
