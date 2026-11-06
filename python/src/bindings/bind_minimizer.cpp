@@ -20,6 +20,7 @@
 #include "evaluator_setters.h"
 #include "frame_guards.h"
 #include "molpy_frame_bridge.h"
+#include "units_binding.h"
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -324,8 +325,9 @@ struct MinimizeHandle {
         // TaskSpec always carries a convergence policy (defaults if unset).
         const MinimizeCriterionParams conv =
             user_criterion ? convergence : MinimizeCriterionParams{};
-        const cpu::task::TaskSpec spec{cpu::task::MinimizeTask{
-            mirror, static_cast<std::int64_t>(max_iter), conv}};
+        const cpu::task::TaskSpec spec{
+            cpu::task::MinimizeTask{mirror, static_cast<std::int64_t>(max_iter),
+                                    conv, driver.units().style}};
         auto frame = borrow_molpy_frame(frame_obj);
         require_charge_column(*frame);
         cpu::Frame work = cpu::from_molpy(*frame);
@@ -727,6 +729,12 @@ void bind_minimizer(nb::module_& m) {
         "RuntimeError afterwards. A different configuration means a new "
         "Minimize object. Running again with the same configuration stays "
         "legal and re-optimizes from the frame's current state.");
+    ATV::python::bind_units(
+        minimize,
+        [](MinimizeHandle& h) -> cpu::minimizer::Minimize& { return h.driver; },
+        [](const MinimizeHandle& h, const char* s) {
+            h.require_configurable_(s);
+        });
     minimize
         .def(nb::init<>(),
              "Default construct; ForceConverged is auto-installed at build "

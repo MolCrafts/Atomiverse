@@ -501,18 +501,21 @@ void bind_potentials(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::PairCoulCutParams* p, double cutoff, double s12,
-               double s13, double s14, double coulomb) {
+               double s13, double s14, std::optional<double> coulomb) {
+                if (coulomb && !(*coulomb > 0.0))
+                    throw nb::value_error(
+                        "PairCoulCut: coulomb must be finite and > 0");
                 new (p) cpu::task::PairCoulCutParams{cutoff, s12, s13, s14,
-                                                     coulomb};
+                                                     coulomb.value_or(0.0)};
             },
             nb::arg("cutoff"), nb::arg("s12") = 1.0, nb::arg("s13") = 1.0,
-            nb::arg("s14") = 1.0, nb::arg("coulomb") = ATV::units::md_qqr2e,
-            "Construct with the real-space cutoff [A]. The neighbor list "
+            nb::arg("s14") = 1.0, nb::arg("coulomb") = nb::none(),
+            "Construct with the real-space cutoff [length]. The neighbor list "
             "must be built with a cutoff >= this value. s12, s13, s14 are the "
             "1-2 / 1-3 / 1-4 Coulomb weights (LAMMPS special_bonds coul). "
-            "coulomb is the constant k in k q_i q_j / r; the default 1 is "
-            "the LAMMPS lj qqr2e every classical kernel uses (metal: "
-            "14.399645 eV A / e^2).");
+            "coulomb is the constant k in k q_i q_j / r, in the run's units; "
+            "None (default) uses the run's qqrd2e, as LAMMPS coul/cut does "
+            "(real: 332.06371, metal: 14.399645, lj: 1).");
 
     nb::class_<cpu::task::ImproperCvffParams>(
         m, "ImproperCvff",
@@ -632,7 +635,8 @@ void bind_potentials(nb::module_& m) {
             "from_accuracy",
             [](nb::object frame_obj, double accuracy, double cutoff, int order,
                std::optional<double> alpha,
-               std::optional<std::array<int, 3>> mesh) {
+               std::optional<std::array<int, 3>> mesh,
+               const std::string& units_style) {
                 auto frame = borrow_molpy_frame(frame_obj);
                 if (!has_molpy_column(*frame, "atoms", "charge"))
                     throw nb::value_error(
@@ -655,21 +659,25 @@ void bind_potentials(nb::module_& m) {
                 if (mesh)
                     for (int d = 0; d < 3; ++d)
                         req.mesh[d] = (*mesh)[d];
-                // Active LAMMPS row. The engine multiplies lj, so this is
-                // lj unless set_units("lj") selected that same row.
-                req.unit_system = units::active();
+                // The run's LAMMPS row: two_charge and qqrd2e of PPPM::init.
+                try {
+                    req.unit_system = units::from_style(units_style);
+                } catch (const std::invalid_argument& e) {
+                    throw nb::value_error(e.what());
+                }
                 const auto r = longrange::pppm_from_accuracy(req);
                 return cpu::task::KSpacePppmParams{
                     r.alpha, 1.0, r.order, {r.mesh[0], r.mesh[1], r.mesh[2]}};
             },
             nb::arg("frame"), nb::arg("accuracy"), nb::arg("cutoff"),
             nb::arg("order") = 6, nb::arg("alpha") = nb::none(),
-            nb::arg("mesh") = nb::none(),
+            nb::arg("mesh") = nb::none(), nb::arg("units") = "lj",
             "LAMMPS `kspace_style pppm <accuracy>` for this frame: alpha "
             "and mesh from the relative RMS force accuracy, the real-space "
             "Coulomb cutoff, the cell and the charges (PPPM::init: "
             "set_grid_global + adjust_gewald). two_charge and qqrd2e come "
-            "from the active units style (set_units; the engine row is lj). "
+            "from `units`, the LAMMPS style of the run that will use the "
+            "result (pass the driver's units_style). "
             "The mesh counts stay fixed after this call. A later cell change "
             "rebuilds the Green's function only (PPPM::setup), and does not "
             "call set_grid_global. `alpha` / `mesh` fix one of them "
@@ -700,7 +708,10 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::NeighborListParams{cutoff, skin};
             },
             nb::arg("cutoff"), nb::arg("skin") = double(-1),
-            "Construct with cutoff [A] and optional skin distance [A].");
+            "Construct with cutoff and optional skin distance, in the run's "
+            "length unit. Without a skin the run's LAMMPS units default "
+            "applies (lj 0.3, real/metal/electron 2.0, si 0.001, "
+            "cgs/micro/nano 0.1).");
 
     nb::class_<cpu::task::BondHarmonicParams>(
         m, "BondHarmonic", "Harmonic bond potential V = K(r - r0)^2.")

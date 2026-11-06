@@ -7,6 +7,7 @@ runs one pass of the ``Evaluate`` driver preset.
 """
 
 from atomiverse._binding import _cpp, has_domain, require_cpp, backend_type
+from atomiverse._units import resolve as _resolve_units
 
 
 def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
@@ -88,11 +89,27 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
 
 
 class Evaluate:
-    """One native energy/force evaluation with borrowed, kept-alive methods."""
-    def __init__(self, device: str = "cpu") -> None:
+    """One native energy/force evaluation with borrowed, kept-alive methods.
+
+    ``units`` is the run's LAMMPS ``units`` style (see
+    :class:`atomiverse.MD`); default :func:`atomiverse.units_style`.
+    """
+
+    def __init__(self, device: str = "cpu", units: str | None = None) -> None:
         self.device = device
         self._cpp = backend_type(device, "_Evaluate", "_CudaEvaluate")()
+        self._cpp.set_units(_resolve_units(units))
         self._built = False
+
+    def set_units(self, style: str):
+        """LAMMPS ``units <style>`` of this run (before the first ``run``)."""
+        self._cpp.set_units(style)
+        return self
+
+    @property
+    def units_style(self) -> str:
+        """LAMMPS ``units`` style of this run."""
+        return self._cpp.units_style
 
     def set_evaluator(self, method: object):
         # A classical parameter mirror has no device. A borrowed electronic

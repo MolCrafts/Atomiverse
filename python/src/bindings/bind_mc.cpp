@@ -33,6 +33,7 @@
 
 #include "molpy_frame_bridge.h"
 #include "owned_buffer.h"
+#include "units_binding.h"
 
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/optional.h>
@@ -254,7 +255,6 @@ struct McHandle {
     ///         (no chain exists yet, so there is no configuration to count).
     int n_atoms() const { return materialized_ ? work_.nlocal() : 0; }
 
-  private:
     /// @brief Refuse a configuration change once the chain has started.
     ///
     /// The execution plan is compiled exactly once, on the first `run()`
@@ -276,6 +276,7 @@ struct McHandle {
                   "is also what starts a fresh chain.");
     }
 
+  private:
     /// @brief The shared MC loop, for the per-verb tallies.
     /// @return This preset as its `McBase` base.
     const cpu::mc::McBase& base_() const { return driver; }
@@ -369,6 +370,9 @@ struct McHandle {
 template <typename Preset>
 void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
     using Handle = McHandle<Preset>;
+    ATV::python::bind_units(
+        cls, [](Handle& h) -> Preset& { return h.driver; },
+        [](const Handle& h, const char* s) { h.require_configurable_(s); });
     cls.def(
            "set_evaluator",
            [](Handle& self, const cpu::task::PairLJCutParams& p) {

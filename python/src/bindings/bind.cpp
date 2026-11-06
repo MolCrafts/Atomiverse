@@ -14,6 +14,7 @@
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "molpy_frame_bridge.h"
+#include "units_binding.h"
 #include <nanobind/nanobind.h>
 #ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
@@ -77,7 +78,12 @@ NB_MODULE(_atomiverse, m) {
               ATV::cpu::to_molpy(work, *frame);
           });
 
-    nb::class_<ATV::cpu::Evaluate>(m, "_Evaluate")
+    nb::class_<ATV::cpu::Evaluate> evaluate(m, "_Evaluate");
+    ATV::python::bind_units(
+        evaluate,
+        [](ATV::cpu::Evaluate& d) -> ATV::cpu::Evaluate& { return d; },
+        [](const ATV::cpu::Evaluate&, const char*) {});
+    evaluate
         .def(nb::init<>())
 #ifdef ATV_HAS_SEMIEMPIRICAL
         .def(

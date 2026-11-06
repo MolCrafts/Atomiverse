@@ -51,6 +51,7 @@
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
+#include "units_binding.h"
 // The eighteen force sources this file used to spell out are registered from
 // `evaluator_setters.h`, which owns their build gates. The four headers below
 // are still included HERE because the `PhaseBuilder` escape hatch at the
@@ -316,9 +317,9 @@ struct MdHandle {
             throw std::runtime_error(
                 "MD.run: the MPI launcher task payload cannot carry "
                 + unmirrored_.front() + "; run without the launcher");
-        cpu::task::TaskSpec spec(
-            cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps),
-                              driver.capture_buffer_bytes()});
+        cpu::task::TaskSpec spec(cpu::task::MDTask{
+            mirror, static_cast<std::int64_t>(n_steps),
+            driver.capture_buffer_bytes(), driver.units().style});
         auto fref = borrow_molpy_frame(frame_obj);
         require_charge_column(*fref);
         cpu::Frame work = cpu::from_molpy(*fref);
@@ -357,24 +358,6 @@ struct MdPhaseBuilder {
 } // namespace
 
 void bind_md(nb::module_& m) {
-    m.def(
-        "set_units",
-        [](const std::string& style) {
-            try {
-                units::set_style(style);
-            } catch (const std::invalid_argument& e) {
-                throw nb::value_error(e.what());
-            }
-        },
-        nb::arg("style"),
-        "LAMMPS `units` for the classical engine. Only \"lj\" is accepted: "
-        "pair, k-space and integrators multiply that row. Other styles are "
-        "from_style rows for an explicit PPPM estimate. Process-global; "
-        "call it before KSpacePPPM.from_accuracy and before run.");
-    m.def(
-        "units_style", []() { return std::string(units::active().style); },
-        "Active LAMMPS units style. The engine coupling is the lj row.");
-
     nb::enum_<md::Phase>(m, "Phase", "MD phase sequence (LAMMPS-style).")
         .value("initial_integrate", md::Phase::initial_integrate)
         .value("pre_force", md::Phase::pre_force)
@@ -742,20 +725,10 @@ void bind_md(nb::module_& m) {
         "compiled exactly once, so every setter — and on(phase) — raises "
         "RuntimeError afterwards. A different configuration means a new MD "
         "object. Running again with the same configuration stays legal.");
+    ATV::python::bind_units(
+        md, [](MdHandle& h) -> cpu::md::MD& { return h.driver; },
+        [](const MdHandle& h, const char* s) { h.require_configurable_(s); });
     md.def(nb::init<>())
-        .def(
-            "set_units",
-            [](MdHandle&, const std::string& style) {
-                try {
-                    units::set_style(style);
-                } catch (const std::invalid_argument& e) {
-                    throw nb::value_error(e.what());
-                }
-            },
-            nb::arg("style"),
-            "LAMMPS `units` for this process. Only \"lj\" runs on the "
-            "engine. Same function as the module-level set_units; call it "
-            "before KSpacePPPM.from_accuracy and before run.")
         .def(
             "set_capture_buffer_bytes",
             [](MdHandle& self, std::uint64_t bytes) {

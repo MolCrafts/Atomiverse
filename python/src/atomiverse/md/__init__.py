@@ -27,6 +27,8 @@ from atomiverse._dispatch import (
     EVALUATOR_DISPATCH as _EVALUATOR_DISPATCH,
     bind_evaluator as _bind_evaluator,
 )
+from atomiverse._units import resolve as _resolve_units
+from atomiverse._units import set_units, units_style
 
 # ---------------------------------------------------------------------------
 # Phase name → C++ enum (escape hatch for on(phase).add)
@@ -63,20 +65,6 @@ _PHASE_DISPATCH: dict[type, str] = {
     _cpp.Thermo: "add_thermo",
 }
 
-
-def set_units(style: str) -> None:
-    """LAMMPS ``units`` for the classical engine.
-
-    Only ``\"lj\"`` is accepted. Pair, k-space and integrators multiply
-    that row. The choice is process-global and must precede
-    ``KSpacePPPM.from_accuracy`` and ``MD.run``.
-    """
-    _cpp.set_units(style)
-
-
-def units_style() -> str:
-    """Active LAMMPS units style. The engine coupling is the lj row."""
-    return _cpp.units_style()
 
 
 class PhaseBuilder:
@@ -117,6 +105,13 @@ class MD:
         parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3. One
         angle style per CUDA run (singular slot). Continuation stays on one
         molpy.Frame.
+    units : str, optional
+        LAMMPS ``units`` style of the run (``"lj"``, ``"real"``,
+        ``"metal"``, ``"si"``, ``"cgs"``, ``"electron"``, ``"micro"``,
+        ``"nano"``). Every parameter, ``dt``, temperature, pressure and the
+        frame are taken in that style and every result is reported in it;
+        nothing is converted. Default: :func:`atomiverse.units_style`
+        (``"lj"`` unless :func:`atomiverse.set_units` chose another).
     capture_buffer_bytes : int, optional
         Byte budget [bytes, >= 1] of the driver's ONE shared asynchronous
         capture buffer. Every asynchronous recorder (on CUDA:
@@ -153,9 +148,11 @@ class MD:
         dt: float | None = None,
         device: str = "cpu",
         capture_buffer_bytes: int | None = None,
+        units: str | None = None,
     ) -> None:
         self.device = device
         self._cpp = backend_type(device, "MD", "_CudaMD")()
+        self._cpp.set_units(_resolve_units(units))
         self._built = False
         if capture_buffer_bytes is not None:
             if int(capture_buffer_bytes) < 1:
@@ -172,14 +169,14 @@ class MD:
     # ------------------------------------------------------------------
 
     def set_units(self, style: str) -> MD:
-        """LAMMPS ``units`` for this process.
-
-        Only ``\"lj\"`` runs on the engine. Same function as
-        :func:`atomiverse.set_units`. Call it before
-        ``KSpacePPPM.from_accuracy`` and before :meth:`run`.
-        """
+        """LAMMPS ``units <style>`` of this run (before the first :meth:`run`)."""
         self._cpp.set_units(style)
         return self
+
+    @property
+    def units_style(self) -> str:
+        """LAMMPS ``units`` style of this run."""
+        return self._cpp.units_style
 
     def set_integrator(self, component: object) -> MD:
         """Install the time integrator (``cpu::md::MD::set_integrator``).
