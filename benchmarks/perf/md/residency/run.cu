@@ -5,7 +5,7 @@
 /// Usage:
 ///   md-residency --case lj-nve|lj-nh|lj-npt|lj-langevin|lj-brownian|
 ///                       lj-deform|lj-nvelimit|lj-sllod|ion-pme|min-lbfgs|
-///                       water-settle|ethane-rattle
+///                       min-lbfgs-ls|water-settle|ethane-rattle
 ///                       --out FILE
 ///                [--steps N] [--warm N] [--side N] [--profile]
 ///
@@ -296,18 +296,23 @@ int main(int argc, char** argv) try {
     static const std::set<std::string> kCases = {
         "lj-nve",      "lj-nh",     "lj-npt",       "lj-langevin",
         "lj-brownian", "lj-deform", "lj-nvelimit",  "lj-sllod",
-        "ion-pme",     "min-lbfgs", "water-settle", "ethane-rattle"};
+        "ion-pme",     "min-lbfgs", "water-settle", "ethane-rattle",
+        "min-lbfgs-ls"};
     if (!kCases.count(name))
         throw std::invalid_argument("unknown case " + name);
-    if (name == "min-lbfgs") {
+    if (name == "min-lbfgs" || name == "min-lbfgs-ls") {
         // Per-iteration cost of the CUDA L-BFGS loop (forces included) from
         // the melted-lattice start: two fresh runs of `warm` and
         // `warm + steps` iterations, so setup cancels in the difference.
+        // min-lbfgs-ls adds the bounded Armijo line search.
         auto timed = [&](int budget, cpu::Frame& frame) {
             cuda::minimizer::Minimize min;
             min.set_neighbor(cuda::NeighborList{kCutoff});
             min.set_evaluator(cuda::PairLJCut{kEps, kSigma, kCutoff});
-            min.set_optimizer(cuda::minimizer::LBFGS{5, 0.01, 10});
+            cuda::minimizer::LBFGS lbfgs{5, 0.01, 10};
+            if (name == "min-lbfgs-ls")
+                lbfgs.line_search();
+            min.set_optimizer(std::move(lbfgs));
             min.build();
             const auto start = std::chrono::steady_clock::now();
             const auto iters = min.run(frame, budget);

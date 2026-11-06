@@ -115,7 +115,9 @@ struct ExecServices {
 };
 
 struct OptimizationServices {
-    /// Reentrant force-phase service owned by the active minimizer.
+    /// Reentrant force-phase service owned by the active minimizer: enqueues
+    /// one force-phase evaluation on the stream (no sync, no fault check —
+    /// the caller judges the trial on the device).
     std::function<void(bool)> reeval_forces;
 };
 
