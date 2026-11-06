@@ -103,6 +103,7 @@ class Widom : public Observer {
     long long n_insertions() const { return n_insertions_; }
 
   private:
+    double boltz_ = 1.0; ///< The run's boltz, cached at build().
     void validate_params_() const;
     double delta_u_(const Frame& frame, double x, double y, double z) const;
     void accumulate_frame_(const Frame& frame);

@@ -121,7 +121,7 @@ double solve_induced_dipoles(int n, const double* pos, const double* alpha,
                 + mu[static_cast<std::size_t>(3 * i + 2)]
                       * e_perm[static_cast<std::size_t>(3 * i + 2)]);
     }
-    return units::md_qqr2e * e;
+    return e;
 }
 
 QmmmPolarizable::QmmmPolarizable(std::vector<LJTypeCoeff> cross_lj,
@@ -233,9 +233,10 @@ void QmmmPolarizable::launch(const LaunchContext& ctx) {
     last_pol_iters_ = 0;
     if (alpha > 0.0 && n_mm > 0) {
         std::vector<double> mu;
-        e_pol_ = solve_induced_dipoles(n_mm, pos.data(), alpha_v.data(),
-                                       e_perm.data(), thole_a, pol_tol,
-                                       pol_max_iter, mu, &last_pol_iters_);
+        e_pol_ = ctx.runtime.units.qqrd2e()
+                 * solve_induced_dipoles(n_mm, pos.data(), alpha_v.data(),
+                                         e_perm.data(), thole_a, pol_tol,
+                                         pol_max_iter, mu, &last_pol_iters_);
         f.meta.get(kEnergy) += e_pol_;
     }
 

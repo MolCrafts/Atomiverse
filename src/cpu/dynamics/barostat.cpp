@@ -45,8 +45,12 @@ void Barostat::launch(const cpu::LaunchContext& ctx) {
     // post-force velocity snapshot. This `+trace/(3V)` convention is
     // identical to `NoseHooverNPT` and LAMMPS — the link
     // `lammps-api-align-04` flipped the previous `−trace/(3V)`.
-    const double P = ATV::md::isotropic_pressure(
-        f.meta.get(kStress).data(), f.meta.get(kStressKinetic).data(), V);
+    // In the run's pressure unit (× nktv2p), like P_target and the bulk
+    // modulus (LAMMPS fix press/berendsen works in pressure units).
+    const double P =
+        ATV::md::isotropic_pressure(f.meta.get(kStress).data(),
+                                    f.meta.get(kStressKinetic).data(), V)
+        * ctx.runtime.units.nktv2p;
     const double mu =
         ATV::md::berendsen_dilation(P, P_target_, dt_, tau_P_, bulk_modulus_);
 

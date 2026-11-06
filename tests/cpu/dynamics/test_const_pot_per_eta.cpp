@@ -114,14 +114,14 @@ TEST(ConstPotPerEta, VacuumPairAnalyticCharge) {
     conp.electroneutrality = true;
     run_once(conp, f);
 
-    const double k = units::md_qqr2e;
+    const double k = units::UnitSystem::lj().qqrd2e();
     const double a11 = k * kSqrt2OverPi * eta1;
     const double a22 = k * kSqrt2OverPi * eta2;
     const double eta12 = eta1 * eta2 / std::sqrt(eta1 * eta1 + eta2 * eta2);
     const double a12 = k * std::erf(eta12 * d) / d;
     const double q_expect = dpsi / (a11 + a22 - 2.0 * a12);
 
-    // Hard-coded sanity in lj units (k = md_qqr2e = 1). The metal-unit
+    // Hard-coded sanity in lj units (k = qqrd2e = 1). The metal-unit
     // value (k = 14.399645) was 0.037722100829787 = this / 14.399645.
     EXPECT_NEAR(q_expect, 0.543184860603138, 1e-12);
     EXPECT_NEAR(conp.total_charge(1), q_expect, 1e-10);
@@ -156,7 +156,7 @@ TEST(ConstPotPerEta, ElectrodeForceMatchesRhsKernelGradient) {
     conp.write_electrode_forces = true;
     run_once(conp, f);
 
-    const double k = units::md_qqr2e;
+    const double k = units::UnitSystem::lj().qqrd2e();
     constexpr double kSqrtPi = 1.7724538509055160273;
     const double ar = eta_g * r;
     const double dPhi_dr = k * qj

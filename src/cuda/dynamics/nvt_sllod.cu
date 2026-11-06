@@ -52,10 +52,12 @@ struct Device {
 struct ChainArgs {
     double* chain;
     int length;
-    double target; ///< N_f kT [eV].
-    double kT;     ///< [eV].
+    double target; ///< N_f kT [energy].
+    double kT;     ///< [energy].
     double dt;
-    bool active; ///< N_f > 0 and Q_0 > 0.
+    bool active;  ///< N_f > 0 and Q_0 > 0.
+    double ftm2v; ///< The run's LAMMPS `force->ftm2v`.
+    double mvv2e; ///< The run's LAMMPS `force->mvv2e`.
 };
 
 // LAMMPS Domain::pbc / image_flip image bookkeeping for one row.
@@ -155,8 +157,8 @@ __global__ void measure_thermostat(
         double uy = static_cast<double>(vy[i]);
         double uz = static_cast<double>(vz[i]);
         if constexpr (Kick) {
-            const double kick = 0.5 * chain.dt * ATV::units::md_ftm2v
-                                / static_cast<double>(mass[i]);
+            const double kick =
+                0.5 * chain.dt * chain.ftm2v / static_cast<double>(mass[i]);
             ux += kick * decode_force<double>(fx[i]);
             uy += kick * decode_force<double>(fy[i]);
             uz += kick * decode_force<double>(fz[i]);
@@ -176,7 +178,7 @@ __global__ void measure_thermostat(
         const double px = ux - bx;
         const double py = uy - by;
         const double pz = uz - bz;
-        val = 0.5 * ATV::units::md_mvv2e * static_cast<double>(mass[i])
+        val = 0.5 * chain.mvv2e * static_cast<double>(mass[i])
               * (px * px + py * py + pz * pz);
     }
     const double sum = Reduce(reduction).Sum(val);
@@ -241,15 +243,14 @@ nve_x(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
       const mixed_t* __restrict__ mass, ImageInt* __restrict__ image,
       ForceFault* fault, const std::int64_t* __restrict__ tag,
       const long long* step_ptr, long long step, const Device* __restrict__ d,
-      double dt, int n) {
+      double dt, double ftm2v, int n) {
     if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
     const SllodFlow& flow = d->flow;
-    const double kick =
-        0.5 * dt * ATV::units::md_ftm2v / static_cast<double>(mass[i]);
+    const double kick = 0.5 * dt * ftm2v / static_cast<double>(mass[i]);
     double ux = static_cast<double>(vx[i]) + kick * decode_force<double>(fx[i]);
     double uy = static_cast<double>(vy[i]) + kick * decode_force<double>(fy[i]);
     double uz = static_cast<double>(vz[i]) + kick * decode_force<double>(fz[i]);
@@ -465,7 +466,7 @@ void NvtSllod::build(const BuildContext& ctx) {
     if (state_->ndof > 0)
         ATV::md::sllod_chain_masses(chain.data() + 2 * tchain_, tchain_,
                                     static_cast<double>(state_->ndof),
-                                    units::md_boltz * T_, tau_);
+                                    ctx.runtime.units.boltz * T_, tau_);
     state_->mass0 = chain[2 * tchain_];
     ATV_CUDA_CHECK(cudaMalloc(&state_->device, sizeof(Device)));
     ATV_CUDA_CHECK(cudaMemcpy(state_->device, &host, sizeof(Device),
@@ -530,13 +531,15 @@ void NvtSllod::launch(const LaunchContext& ctx) {
     if (!armed_)
         throw std::logic_error("NvtSllod: launch before build");
 
-    const double kT = units::md_boltz * T_;
+    const double kT = ctx.runtime.units.boltz * T_;
     const ChainArgs chain{state_->chain,
                           tchain_,
                           static_cast<double>(state_->ndof) * kT,
                           kT,
                           dt_,
-                          state_->ndof > 0 && state_->mass0 > 0};
+                          state_->ndof > 0 && state_->mass0 > 0,
+                          ctx.runtime.units.ftm2v,
+                          ctx.runtime.units.mvv2e};
     const int grid = cuda::grid_size(n);
     auto scale = [&]() {
         scale_peculiar<<<grid, block, 0, stream>>>(
@@ -566,7 +569,7 @@ void NvtSllod::launch(const LaunchContext& ctx) {
         nve_x<<<grid, block, 0, stream>>>(
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
             a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag, step_ptr,
-            ctx.step, d, dt_, n);
+            ctx.step, d, dt_, ctx.runtime.units.ftm2v, n);
     } else if (ctx.at(ATV::md::Phase::pre_exchange)) {
         if (!can_flip_)
             return;

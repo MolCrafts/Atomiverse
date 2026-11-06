@@ -97,7 +97,7 @@ TEST(ConstChargeElectrode, SolvedPotentialMatchesAnalyticTwoSite) {
     constexpr double kEta = 2.0;
     constexpr double kSep = 5.0;
     constexpr double kQ = 0.25;
-    const double ke = units::md_qqr2e;
+    const double ke = units::UnitSystem::lj().qqrd2e();
     const double a_self = ke * kEta * std::sqrt(2.0 / 3.14159265358979323846);
     const double a01 = ke * std::erf(kEta / std::sqrt(2.0) * kSep) / kSep;
     const double psi_bot = a_self * (-kQ) + a01 * kQ;

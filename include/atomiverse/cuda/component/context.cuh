@@ -20,6 +20,7 @@
 
 #include "atomiverse/core/evaluation_history.h"
 #include "atomiverse/core/iteration_status.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cuda/frame/box.cuh"
 
@@ -128,6 +129,12 @@ struct OptimizationServices {
 /// stream.
 struct Context {
     void* stream = nullptr; ///< Main CUDA stream (cast to cudaStream_t in .cu).
+
+    /// @brief The run's LAMMPS `units` style (publisher: the Driver, before
+    ///        any component builds; default lj). Host-side: a component reads
+    ///        the factors it needs here and passes them to its kernels as
+    ///        launch arguments. @see cpu::Context::units
+    units::UnitSystem units = units::UnitSystem::lj();
     void* defer_stream =
         nullptr; ///< Secondary stream for deferrable operations.
 

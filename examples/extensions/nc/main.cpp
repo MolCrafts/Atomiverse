@@ -185,10 +185,11 @@ int main(int argc, char** argv) {
                 for (int i = 0; i < 2; ++i)
                     for (int d = 0; d < 3; ++d) {
                         const double got = d == 0 ? x[i] : d == 1 ? y[i] : z[i];
-                        const double want = xyz[i][d]
-                                            + .5 * dt * dt * units::md_ftm2v
-                                                  * initial_force[i][d]
-                                                  / frame.span(kAtom_mass)[i];
+                        const double want =
+                            xyz[i][d]
+                            + .5 * dt * dt * units::UnitSystem::lj().ftm2v
+                                  * initial_force[i][d]
+                                  / frame.span(kAtom_mass)[i];
                         nc_example::near(got, want, 2e-12,
                                          "MD initial-force Verlet drift [Ang]");
                     }

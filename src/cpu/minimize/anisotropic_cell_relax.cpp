@@ -50,7 +50,8 @@ void AnisotropicCellRelax::launch(const LaunchContext& ctx) {
             invalid = 1;
     double pressures[3]{}, ds[3]{}, residual = 0;
     for (int d = 0; d < 3; ++d) {
-        pressures[d] = invalid ? 0.0 : stress[d] / V;
+        // In the run's pressure unit (LAMMPS fix box/relax: × nktv2p).
+        pressures[d] = invalid ? 0.0 : stress[d] / V * ctx.runtime.units.nktv2p;
         if (relaxed[d]) {
             const double delta = pressures[d] - P_target;
             ds[d] = invalid ? 0.0 : alpha0 * delta / bulk_mod;

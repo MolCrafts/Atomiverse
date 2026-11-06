@@ -30,7 +30,8 @@ apply_langevin(const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
                const std::int64_t* __restrict__ tag, ForceFault* fault,
                std::uint64_t seed, const long long* step_ptr, long long step,
                bool setup, double T_start, double T_stop, BigInt nfirst,
-               BigInt nlast, mixed_t damp, mixed_t dt, int n) {
+               BigInt nlast, mixed_t damp, mixed_t dt, mixed_t ftm2v,
+               mixed_t boltz, mixed_t mvv2e, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
@@ -45,13 +46,11 @@ apply_langevin(const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
         setup ? ~std::uint64_t(0) : static_cast<std::uint64_t>(now);
     const mixed_t m = mass[i];
     // gfactor1 (drag): `-m / (damp · ftm2v)`. Force = gfactor1 · v.
-    const mixed_t gfactor1 = -m / (damp * mixed_t(ATV::units::md_ftm2v));
+    const mixed_t gfactor1 = -m / (damp * ftm2v);
     // gfactor2 (random): `sqrt(2 m kB T_live / (damp · dt · mvv2e)) / ftm2v`.
     const mixed_t gfactor2_inside =
-        mixed_t(2) * m * mixed_t(ATV::units::md_boltz) * T_live
-        / (damp * dt * mixed_t(ATV::units::md_mvv2e));
-    const mixed_t gfactor2 =
-        sqrt(gfactor2_inside) / mixed_t(ATV::units::md_ftm2v);
+        mixed_t(2) * m * boltz * T_live / (damp * dt * mvv2e);
+    const mixed_t gfactor2 = sqrt(gfactor2_inside) / ftm2v;
 
     // Two normal2_double calls consume eight 32-bit outputs per step.
     // Global tags select subsequences, so sorting/migration needs no RNG state.
@@ -90,7 +89,10 @@ void FixLangevin::launch(const LaunchContext& ctx) {
         frame.atoms.fy, frame.atoms.fz, frame.atoms.mass, frame.atoms.tag,
         frame.force_fault, seed_, step_ptr, static_cast<long long>(ctx.step),
         ctx.initializing_forces, T_start_, T_stop_, nfirst_, nlast_,
-        static_cast<mixed_t>(damp_), static_cast<mixed_t>(dt_), n);
+        static_cast<mixed_t>(damp_), static_cast<mixed_t>(dt_),
+        static_cast<mixed_t>(ctx.runtime.units.ftm2v),
+        static_cast<mixed_t>(ctx.runtime.units.boltz),
+        static_cast<mixed_t>(ctx.runtime.units.mvv2e), n);
 }
 
 } // namespace md

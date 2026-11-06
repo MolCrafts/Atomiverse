@@ -54,7 +54,7 @@ class HarmonicTrap : public Component {
 
 /// @brief Draw thermal velocities onto a bead Frame (no COM wipe for N=1).
 static void seed_bead_velocity_(cpu::Frame& f, double temperature_K,
-                                unsigned seed) {
+                                unsigned seed, const units::UnitSystem& u) {
     const int n = f.nlocal();
     if (n <= 0)
         return;
@@ -64,10 +64,10 @@ static void seed_bead_velocity_(cpu::Frame& f, double temperature_K,
     auto vy = f.span(kAtom_vy);
     auto vz = f.span(kAtom_vz);
     const auto mass = f.span(kAtom_mass);
-    const double kT = units::md_boltz * temperature_K;
+    const double kT = u.boltz * temperature_K;
     for (int i = 0; i < n; ++i) {
         const double m = static_cast<double>(mass[i]);
-        const double sig = std::sqrt(kT / (units::md_mvv2e * m));
+        const double sig = std::sqrt(kT / (u.mvv2e * m));
         vx[i] = sig * g(rng);
         vy[i] = sig * g(rng);
         vz[i] = sig * g(rng);
@@ -92,12 +92,12 @@ static void seed_bead_velocity_(cpu::Frame& f, double temperature_K,
 }
 
 double Pimd::compute_k_spring_(double temperature_K, int n_beads,
-                               double mass_amu) {
-    // ℏ = md_hplanck / 2π. m_eff = md_mvv2e * m. β = 1/(md_boltz T).
-    const double hbar = units::md_hplanck / (2.0 * units::pi);
-    const double kT = units::md_boltz * temperature_K;
+                               double mass_amu, const units::UnitSystem& u) {
+    // ℏ = hplanck / 2π. m_eff = mvv2e * m. β = 1/(boltz T), run's units.
+    const double hbar = u.hplanck / (2.0 * units::pi);
+    const double kT = u.boltz * temperature_K;
     const double beta = 1.0 / kT;
-    const double m_eff = units::md_mvv2e * mass_amu;
+    const double m_eff = u.mvv2e * mass_amu;
     const double beta_hbar = beta * hbar;
     return m_eff * static_cast<double>(n_beads) / (beta_hbar * beta_hbar);
 }
@@ -139,7 +139,7 @@ void Pimd::ensure_built_(cpu::Frame& frame) {
     if (!(mass > 0.0))
         throw std::invalid_argument("Pimd: atom mass must be > 0 amu");
     mass_amu_ = mass;
-    k_spring_ = compute_k_spring_(temperature, n_beads, mass);
+    k_spring_ = compute_k_spring_(temperature, n_beads, mass, units);
 
     band_ = std::make_unique<ReplicaSet>(frame, *expansion_);
     const int P = band_->size();
@@ -155,6 +155,7 @@ void Pimd::ensure_built_(cpu::Frame& frame) {
     }
     for (int s = 0; s < P; ++s) {
         auto md = std::make_unique<cpu::md::MD>();
+        md->set_units(units.name());
         md->set_integrator(cpu::md::VelocityVerlet{dt});
         if (k_external > 0.0)
             md->on(ATV::md::Phase::force).add(HarmonicTrap{k_external});
@@ -169,7 +170,7 @@ void Pimd::ensure_built_(cpu::Frame& frame) {
         // InitVelocity always subtracts COM velocity; for nlocal==1 that
         // zeros v entirely — seed without COM removal in that case.
         seed_bead_velocity_(band_->frame(s), temperature,
-                            static_cast<unsigned>(seed ^ (s + 1u)));
+                            static_cast<unsigned>(seed ^ (s + 1u)), units);
         programs_.push_back(std::move(md));
     }
     built_ = true;
@@ -235,12 +236,12 @@ void Pimd::collapse_centroid_(cpu::Frame& out) {
 
 double Pimd::free_particle_rg2_analytic() const {
     // 3D free ring polymer (single particle):
-    // ⟨R_g²⟩ = (ℏ² β² / (4 m_eff)) (1 − 1/P²), lj row.
+    // ⟨R_g²⟩ = (ℏ² β² / (4 m_eff)) (1 − 1/P²), run's units.
     // Ref: Tuckerman, Statistical Mechanics; Chandler & Wolynes (1981).
-    const double hbar = units::md_hplanck / (2.0 * units::pi);
-    const double kT = units::md_boltz * temperature;
+    const double hbar = units.hplanck / (2.0 * units::pi);
+    const double kT = units.boltz * temperature;
     const double beta = 1.0 / kT;
-    const double m_eff = units::md_mvv2e * mass_amu_;
+    const double m_eff = units.mvv2e * mass_amu_;
     const double P = static_cast<double>(n_beads);
     const double hb = hbar * beta;
     return (hb * hb / (4.0 * m_eff)) * (1.0 - 1.0 / (P * P));

@@ -26,8 +26,7 @@ namespace ATV {
 namespace cpu {
 
 PairCoulCut::PairCoulCut(double cutoff)
-    : PairPotential(cutoff), cutoff_sq_(cutoff * cutoff),
-      qqr2e_(ATV::units::md_qqr2e) {
+    : PairPotential(cutoff), cutoff_sq_(cutoff * cutoff) {
     if (cutoff <= 0.0)
         throw std::invalid_argument("PairCoulCut: cutoff must be > 0");
 }
@@ -36,7 +35,7 @@ PairCoulCut& PairCoulCut::set_coulomb_constant(double k) & {
     if (!(k > 0.0) || !std::isfinite(k))
         throw std::invalid_argument(
             "PairCoulCut: the Coulomb constant must be finite and > 0");
-    qqr2e_ = k;
+    coulomb_ = k;
     return *this;
 }
 
@@ -62,6 +61,8 @@ PairCoulCut PairCoulCut::set_special_bonds(double s12, double s13,
 }
 
 void PairCoulCut::build(const BuildContext& ctx) {
+    // LAMMPS `force->qqrd2e` of the run unless the model states its own.
+    qqr2e_ = coulomb_ > 0.0 ? coulomb_ : ctx.runtime.units.qqrd2e();
     filtered_source_ = nullptr;
     loop_.reset();
 

@@ -110,7 +110,7 @@ void Metadynamics::launch(const LaunchContext& ctx) {
         const double Vhere = bias_at_(last_s_);
         double h = h0_;
         if (gamma_ > 1.0) {
-            const double kT = units::md_boltz * temperature_;
+            const double kT = ctx.runtime.units.boltz * temperature_;
             h = h0_ * std::exp(-Vhere / ((gamma_ - 1.0) * kT));
         }
         for (int a = 0; a < n; ++a)

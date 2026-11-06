@@ -56,10 +56,16 @@ TEST(GcmcMetropolis, RejectsBadConstruction) {
 }
 
 TEST(GcmcMetropolis, LambdaCubedMatchesUnits) {
-    std::mt19937_64 rng(1u);
-    cpu::mc::GcmcMetropolis p{120.0, 0.0, 39.948, rng};
-    const double lam = units::lambda_thermal(39.948, 120.0);
-    EXPECT_DOUBLE_EQ(p.lambda_cubed(), lam * lam * lam);
+    // Λ is set when the chain starts, in the run's units (lj, then real).
+    for (const char* style : {"lj", "real"}) {
+        PolicyHarness h;
+        h.ctx.units = units::from_style(style);
+        cpu::mc::GcmcMetropolis p{120.0, 0.0, 39.948, h.rng};
+        p.on_start(h.state());
+        const double lam =
+            units::lambda_thermal(39.948, 120.0, units::from_style(style));
+        EXPECT_DOUBLE_EQ(p.lambda_cubed(), lam * lam * lam) << style;
+    }
 }
 
 TEST(GcmcMetropolis, DownhillDisplacementAlwaysCommits) {
@@ -94,7 +100,7 @@ TEST(GcmcMetropolis, DisplacementAcceptanceMatchesBoltzmannFactor) {
             ASSERT_EQ(p.after_stages(h.state()), Outcome::Commit);
         }
     }
-    const double expected = std::exp(-dE / (units::md_boltz * T));
+    const double expected = std::exp(-dE / (units::UnitSystem::lj().boltz * T));
     const double observed = static_cast<double>(commits) / n_trials;
     const double sigma = std::sqrt(expected * (1.0 - expected) / n_trials);
     EXPECT_NEAR(observed, expected, 4.0 * sigma);
@@ -112,7 +118,7 @@ TEST(GcmcMetropolis, InsertionPrefactorGovernsTheDecision) {
 }
 
 TEST(GcmcMetropolis, HopelessInsertionIsRejected) {
-    // lj units (md_boltz = 1): μ = −1000 at T = 1 gives βμ = −1000, so
+    // lj units (boltz = 1): μ = −1000 at T = 1 gives βμ = −1000, so
     // exp(-arg) ≈ 0 and every trial is rejected.
     PolicyHarness h;
     cpu::mc::GcmcMetropolis p{1.0, -1000.0, 1.0, h.rng};

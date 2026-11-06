@@ -36,9 +36,11 @@ TEST(PairCoulCut, FilteredListUsesExplicitOwnerIndices) {
             coul.set_special_bonds(0.0, 0.0, 0.5);
         coul.build({context, frame});
         coul.launch({context, frame, 0, 0, true, true});
-        EXPECT_NEAR(frame.meta.get(kEnergy), units::md_qqr2e / 2.0, 1e-12);
+        EXPECT_NEAR(frame.meta.get(kEnergy),
+                    units::UnitSystem::lj().qqrd2e() / 2.0, 1e-12);
         EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[0], 0.0);
-        EXPECT_NEAR(frame.span(kAtom_fx)[2], -units::md_qqr2e / 4.0, 1e-12);
+        EXPECT_NEAR(frame.span(kAtom_fx)[2],
+                    -units::UnitSystem::lj().qqrd2e() / 4.0, 1e-12);
         coul.destroy({context, frame});
     }
 }
@@ -67,7 +69,8 @@ TEST(PairCoulCut, FilteredRowsRetainExplicitImageCoordinates) {
             coul.build({context, frame});
             coul.launch({context, frame, 0, 0, true, true});
             EXPECT_NEAR(frame.meta.get(kEnergy),
-                        inside ? -units::md_qqr2e / 3.6 : 0.0, 1e-12);
+                        inside ? -units::UnitSystem::lj().qqrd2e() / 3.6 : 0.0,
+                        1e-12);
             if (!inside) {
                 EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[0], 0.0);
                 EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[1], 0.0);
@@ -111,7 +114,7 @@ TEST(PairCoulCut, FilteredCacheTracksSourceAndBuildLifecycle) {
         coul.launch({context, frame, 0, 0, false, false});
         return frame.meta.get(kEnergy);
     };
-    const double expected = -units::md_qqr2e / 2.0;
+    const double expected = -units::UnitSystem::lj().qqrd2e() / 2.0;
     EXPECT_NEAR(evaluate(populated), expected, 1e-12);
     EXPECT_DOUBLE_EQ(evaluate(empty), 0.0);
     EXPECT_NEAR(evaluate(populated), expected, 1e-12);
@@ -168,7 +171,7 @@ TEST(PairCoulCut, TwoChargeEnergyAndForce) {
     coul.destroy({ctx, f});
 
     const double r = 2.0;
-    const double e_ref = units::md_qqr2e * (1.0) * (-1.0) / r;
+    const double e_ref = units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0) / r;
     EXPECT_NEAR(f.meta.get(kEnergy), e_ref, 1e-12);
     // Attractive: atom 0 pulled toward +x (positive force).
     EXPECT_GT(f.span(kAtom_fx)[0], 0.0);
@@ -264,6 +267,7 @@ TEST(PairCoulCut, SpecialBondsKeepIntermolecular) {
     coul.destroy({ctx, f});
 
     const double r = 3.0;
-    const double e_ref = units::md_qqr2e * (-0.834) * (-0.834) / r;
+    const double e_ref =
+        units::UnitSystem::lj().qqrd2e() * (-0.834) * (-0.834) / r;
     EXPECT_NEAR(f.meta.get(kEnergy), e_ref, 1e-12);
 }

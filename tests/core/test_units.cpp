@@ -23,12 +23,19 @@ TEST(Units, RoundtripAngstromBohr) {
     EXPECT_NEAR(back, a, 1e-12);
 }
 
-TEST(Units, ThermalDeBroglieUsesTheLjRow) {
+TEST(Units, ThermalDeBroglieUsesTheRunsRow) {
     // lj: h = k = mvv2e = 1, so Λ = 1/sqrt(2π m T).
-    const double lambda = units::lambda_thermal(1.008, 300.0);
+    const auto lj = units::UnitSystem::lj();
+    const double lambda = units::lambda_thermal(1.008, 300.0, lj);
     const double expect = 1.0 / std::sqrt(2.0 * units::pi * 1.008 * 300.0);
     EXPECT_NEAR(lambda, expect, 1e-12);
     // Heavier + hotter shrinks it: Λ ~ 1/sqrt(mT).
-    EXPECT_NEAR(units::lambda_thermal(4.032, 300.0), lambda / 2.0, 1e-12);
-    EXPECT_NEAR(units::lambda_thermal(1.008, 1200.0), lambda / 2.0, 1e-12);
+    EXPECT_NEAR(units::lambda_thermal(4.032, 300.0, lj), lambda / 2.0, 1e-12);
+    EXPECT_NEAR(units::lambda_thermal(1.008, 1200.0, lj), lambda / 2.0, 1e-12);
+    // metal: H at 300 K has Λ = h / sqrt(2π m kB T) = 1.00394 Å (CODATA);
+    // LAMMPS's real hplanck (95.306976368) gives 1.00327 Å.
+    EXPECT_NEAR(units::lambda_thermal(1.008, 300.0, units::from_style("metal")),
+                1.003942, 1e-5);
+    EXPECT_NEAR(units::lambda_thermal(1.008, 300.0, units::from_style("real")),
+                1.003271, 1e-5);
 }

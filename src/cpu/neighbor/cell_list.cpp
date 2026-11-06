@@ -15,6 +15,7 @@
 #include "atomiverse/cpu/neighbor/cell_list.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/communication/domain.h"
 
 #include <algorithm>
@@ -34,8 +35,13 @@ namespace md {
 // ── CellList ─────────────────────────────────────────────────────
 
 CellList::CellList(double cutoff, double skin)
-    : cutoff_(cutoff), skin_(skin < 0 ? double(0.3) * cutoff : skin),
-      cutoff_skin_(cutoff + (skin < 0 ? double(0.3) * cutoff : skin)) {}
+    : cutoff_(cutoff), skin_(skin < 0 ? units::UnitSystem::lj().skin : skin),
+      cutoff_skin_(cutoff + skin_) {}
+
+void CellList::set_skin(double skin) {
+    skin_ = skin;
+    cutoff_skin_ = cutoff_ + skin;
+}
 
 void CellList::init(const cpu::Frame& frame, double cutoff_skin) {
     cutoff_skin_ = cutoff_skin;

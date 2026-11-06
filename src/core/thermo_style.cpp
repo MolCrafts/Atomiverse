@@ -120,10 +120,10 @@ std::string ThermoStyle::header() const {
 
 std::string ThermoStyle::line(const ThermoSample& s) const {
     std::string out;
-    // Pressure tensor P = (W + K) / V, reported in bar (LAMMPS metal units).
+    // LAMMPS compute pressure: P = (K + W) / V · nktv2p, in the run's
+    // pressure unit.
     auto pressure = [&](int a) {
-        return s.volume > 0 ? (s.virial[a] + s.kinetic[a]) / s.volume
-                                  / units::bar_to_ev_per_a3
+        return s.volume > 0 ? (s.virial[a] + s.kinetic[a]) / s.volume * s.nktv2p
                             : 0.0;
     };
     for (auto column : columns_) {
@@ -134,8 +134,7 @@ std::string ThermoStyle::line(const ThermoSample& s) const {
             continue;
         case ThermoKeyword::Temp:
             value = s.ndof > 0
-                        ? 2.0 * s.ke
-                              / (static_cast<double>(s.ndof) * units::md_boltz)
+                        ? 2.0 * s.ke / (static_cast<double>(s.ndof) * s.boltz)
                         : 0.0;
             break;
         case ThermoKeyword::Pe:

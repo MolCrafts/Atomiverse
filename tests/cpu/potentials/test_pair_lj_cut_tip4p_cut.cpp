@@ -4,7 +4,7 @@
 /// Pin: tools/metalwalls_oracle/inputs/lammps/four-site-tip4p-foothold/
 /// (units lj on the metal data file, pair_style lj/cut/tip4p/cut,
 /// pair_modify shift yes). Classical MD multiplies the lj row
-/// (md_qqr2e = 1), so the pin is the lj twin of the units metal run.
+/// (qqrd2e = 1), so the pin is the lj twin of the units metal run.
 /// No live LAMMPS in ctest.
 
 #include <cmath>

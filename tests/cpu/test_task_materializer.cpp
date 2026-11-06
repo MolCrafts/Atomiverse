@@ -109,7 +109,7 @@ namespace {
 
 // Argon-like LJ parameters; kSpacing ≈ 2^(1/6)·σ so the cluster starts near
 // the LJ minimum and 5 steps at 1 fs stay tame. Classical MD runs on the
-// LAMMPS lj row (md_boltz = md_mvv2e = md_ftm2v = 1), so with energies in
+// LAMMPS lj row (boltz = mvv2e = ftm2v = 1), so with energies in
 // eV, lengths in Å and masses in amu the time unit is sqrt(amu·Å²/eV)
 // ≈ 10.18 fs and temperatures are k_B·T in eV.
 constexpr double kEps = 0.0104;             // [eV]

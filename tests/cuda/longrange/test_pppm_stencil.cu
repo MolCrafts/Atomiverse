@@ -111,7 +111,7 @@ Run run_cuda(const std::array<double, 9>& cell, const std::vector<double>& frac,
         qsq += double(c) * double(c);
     Run out;
     out.energy =
-        scalars.energy - longrange::self_energy_prefactor(kAlpha) * qsq;
+        scalars.energy - longrange::self_energy_prefactor(kAlpha, 1.0) * qsq;
     out.mesh = solver.mesh();
     for (int c = 0; c < 6; ++c)
         out.virial[c] = scalars.stress[c];

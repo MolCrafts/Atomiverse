@@ -189,6 +189,7 @@ void ConstPotBO::record_aspc_() {
 }
 
 void ConstPotBO::build(const BuildContext& ctx) {
+    qqrd2e_ = ctx.runtime.units.qqrd2e();
     if (groups_.empty())
         throw std::runtime_error(
             "ConstPotBO: add at least one electrode via add_electrode(type, "
@@ -296,17 +297,17 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
 double ConstPotBO::pair_A_(double r, double eta_i, double eta_j) const {
     if (r < 1e-14) {
         // Should not be called for i==j self; self uses eta * sqrt(2/π).
-        return units::md_qqr2e * eta_i * kSqrt2OverPi;
+        return qqrd2e_ * eta_i * kSqrt2OverPi;
     }
     const double etaij =
         eta_i * eta_j / std::sqrt(eta_i * eta_i + eta_j * eta_j);
-    return units::md_qqr2e * std::erf(etaij * r) / r;
+    return qqrd2e_ * std::erf(etaij * r) / r;
 }
 
 double ConstPotBO::pair_b_(double r, double q, double eta_i) const {
     if (r < 1e-14)
         return 0.0;
-    return units::md_qqr2e * q * std::erf(eta_i * r) / r;
+    return qqrd2e_ * q * std::erf(eta_i * r) / r;
 }
 
 void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
@@ -327,7 +328,7 @@ void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
         const double eta_a = eta_vec_[static_cast<std::size_t>(a)];
         // Self: k * η_a * sqrt(2/π)
         A_[static_cast<std::size_t>(a) * m + a] =
-            units::md_qqr2e * eta_a * kSqrt2OverPi;
+            qqrd2e_ * eta_a * kSqrt2OverPi;
 
         for (int b = a + 1; b < m; ++b) {
             const int ib = elec_atoms_[static_cast<std::size_t>(b)];
@@ -371,8 +372,7 @@ void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
                     const double r = std::sqrt((nx * Lx) * (nx * Lx)
                                                + (ny * Ly) * (ny * Ly));
                     // Same-site images use η_a/√2 (plate_cap / Gaussian product)
-                    self_img +=
-                        units::md_qqr2e * std::erf((eta_a / kSqrt2) * r) / r;
+                    self_img += qqrd2e_ * std::erf((eta_a / kSqrt2) * r) / r;
                 }
             }
             A_[static_cast<std::size_t>(a) * m + a] += self_img;
@@ -381,12 +381,12 @@ void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
 
     // Thomas–Fermi metallicity (Scalfi et al. JCP 153, 174704 (2020)):
     // U_TF^(2) = Σ_i (l_TF² / (2 ε0 v_i)) Q_i²  ⇒  A_ii += l_TF² / (ε0 v_i)
-    // with 1/ε0 = 4π k_e and k_e = units::md_qqr2e [eV·Å/e²]. The fixed-
+    // with 1/ε0 = 4π k_e and k_e = qqrd2e_ [eV·Å/e²]. The fixed-
     // density foothold uses v_i = 1/site_density for every site; the
     // MetalWalls `voronoi_volume` companion supplies per-site v_i.
     if (l_tf > 0.0) {
         constexpr double kPi = 3.14159265358979323846;
-        const double pref = 4.0 * kPi * units::md_qqr2e * l_tf * l_tf;
+        const double pref = 4.0 * kPi * qqrd2e_ * l_tf * l_tf;
         if (!site_volume.empty()) {
             if (site_volume.size() != static_cast<std::size_t>(frame.nlocal()))
                 throw std::invalid_argument(
@@ -838,7 +838,7 @@ void ConstPotBO::write_electrode_forces_(cpu::Frame& frame) const {
             const double erf_ar = std::erf(ar);
             // dΦ/dr with Φ = k q erf(αr)/r
             const double dPhi_dr =
-                units::md_qqr2e * qj
+                qqrd2e_ * qj
                 * (2.0 * alpha / kSqrtPi * std::exp(-ar * ar) / r
                    - erf_ar / (r * r));
             // E = −∇Φ = −(dΦ/dr)(r_hat); force on electrode F = Q E

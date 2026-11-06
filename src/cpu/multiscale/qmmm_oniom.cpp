@@ -22,10 +22,11 @@ void QmmmOniom::launch(const LaunchContext& ctx) {
     sub_.launch(ctx, e_high_);
 
     // E_low(real) − E_low(model), with matching force signs.
+    const double qqrd2e = ctx.runtime.units.qqrd2e();
     e_low_real_ = low_.launch(ctx.frame, /*rows=*/{}, ctx.forces_requested,
-                              /*force_sign=*/+1.0);
+                              qqrd2e, /*force_sign=*/+1.0);
     e_low_model_ = low_.launch(ctx.frame, sub_.qm_rows(), ctx.forces_requested,
-                               /*force_sign=*/-1.0);
+                               qqrd2e, /*force_sign=*/-1.0);
 
     ctx.frame.meta.get(kEnergy) += e_low_real_ - e_low_model_;
     // Classical low is not electronic — leave kEnergyElectronic = high only.

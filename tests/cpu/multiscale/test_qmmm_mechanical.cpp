@@ -114,6 +114,6 @@ TEST(QmmmMechanical, ClassicalCoulombClosedForm) {
     f.meta.get(kEnergy) = 0;
     q2.launch(lc);
     // only H0–MM at r=2: ke * 1 * (-1) / 2
-    const double want = units::md_qqr2e * (1.0) * (-1.0) / 2.0;
+    const double want = units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0) / 2.0;
     EXPECT_NEAR(q2.last_coul_energy(), want, 1e-12);
 }

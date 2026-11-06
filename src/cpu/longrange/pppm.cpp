@@ -802,8 +802,8 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
     // ρ̂ here is the unnormalized FFT of q·θ, with no N/V. LAMMPS stores
     // (N/V) times that density, so its (G/N) ρ̂_lammps is our (G/V) ρ̂ and
     // the energy prefactor is coulomb/(2V), not the SPME coulomb/(2πV).
-    const double energy_scale = ATV::units::md_qqr2e / (2.0 * vol);
-    const double coulomb = ATV::units::md_qqr2e;
+    const double energy_scale = ctx.runtime.units.qqrd2e() / (2.0 * vol);
+    const double coulomb = ctx.runtime.units.qqrd2e();
     const int n2c = K2 / 2 + 1;
     const std::size_t nhalf = static_cast<std::size_t>(K0)
                               * static_cast<std::size_t>(K1)
@@ -1423,7 +1423,9 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
         qsq_local += q[i] * q[i];
         q_local += q[i];
     }
-    const double e_self = longrange::self_energy_prefactor(alpha_) * qsq_local;
+    const double e_self =
+        longrange::self_energy_prefactor(alpha_, ctx.runtime.units.qqrd2e())
+        * qsq_local;
     f.meta.get(kEnergy) += e_self;
     f.meta.get(kEnergyPair) += e_self;
 
@@ -1434,7 +1436,8 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                       dd->cart_comm);
 #endif
     if (first_rank) {
-        const double e_net = longrange::background_energy(q_total, vol, alpha_);
+        const double e_net = longrange::background_energy(
+            q_total, vol, alpha_, ctx.runtime.units.qqrd2e());
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
         if (ctx.stress_requested) {

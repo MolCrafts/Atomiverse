@@ -140,16 +140,16 @@ double DipoleElectrodeJoint::alpha_of_(int type) const {
 double DipoleElectrodeJoint::pair_A_(double r, double eta_i,
                                      double eta_j) const {
     if (r < 1e-14)
-        return units::md_qqr2e * eta_i * kSqrt2OverPi;
+        return qqrd2e_ * eta_i * kSqrt2OverPi;
     const double etaij =
         eta_i * eta_j / std::sqrt(eta_i * eta_i + eta_j * eta_j);
-    return units::md_qqr2e * std::erf(etaij * r) / r;
+    return qqrd2e_ * std::erf(etaij * r) / r;
 }
 
 double DipoleElectrodeJoint::pair_b_(double r, double q, double eta_i) const {
     if (r < 1e-14)
         return 0.0;
-    return units::md_qqr2e * q * std::erf(eta_i * r) / r;
+    return qqrd2e_ * q * std::erf(eta_i * r) / r;
 }
 
 void DipoleElectrodeJoint::collect_electrodes_(const cpu::Frame& frame) {
@@ -194,8 +194,7 @@ void DipoleElectrodeJoint::build_matrix_(const cpu::Frame& frame) {
     std::fill(A_.begin(), A_.end(), 0.0);
     for (int a = 0; a < m; ++a) {
         const int ia = elec_atoms_[static_cast<std::size_t>(a)];
-        A_[static_cast<std::size_t>(a) * m + a] =
-            units::md_qqr2e * eta * kSqrt2OverPi;
+        A_[static_cast<std::size_t>(a) * m + a] = qqrd2e_ * eta * kSqrt2OverPi;
 
         for (int b = a + 1; b < m; ++b) {
             const int ib = elec_atoms_[static_cast<std::size_t>(b)];
@@ -233,8 +232,7 @@ void DipoleElectrodeJoint::build_matrix_(const cpu::Frame& frame) {
                         continue;
                     const double r = std::sqrt((nx * Lx) * (nx * Lx)
                                                + (ny * Ly) * (ny * Ly));
-                    self_img +=
-                        units::md_qqr2e * std::erf((eta / kSqrt2) * r) / r;
+                    self_img += qqrd2e_ * std::erf((eta / kSqrt2) * r) / r;
                 }
             }
             A_[static_cast<std::size_t>(a) * m + a] += self_img;
@@ -255,7 +253,7 @@ void DipoleElectrodeJoint::build_rhs_(const Spans& s,
     const double Lx = box.length(0);
     const double Ly = box.length(1);
     const int R = xy_image_range < 0 ? 0 : xy_image_range;
-    const double k = units::md_qqr2e;
+    const double k = qqrd2e_;
 
     std::fill(b_.begin(), b_.end(), 0.0);
     for (int a = 0; a < m; ++a) {
@@ -547,6 +545,7 @@ double DipoleElectrodeJoint::scc_mu_(const Spans& s) {
 }
 
 void DipoleElectrodeJoint::build(const BuildContext& ctx) {
+    qqrd2e_ = ctx.runtime.units.qqrd2e();
     if (groups_.empty())
         throw std::runtime_error(
             "DipoleElectrodeJoint: add at least one electrode via "

@@ -170,11 +170,11 @@ inline constexpr double mass_v2_to_energy = 103.6427;
 
 // Electrostatic coupling of one elementary-charge pair at 1 Å, in eV
 // (CODATA). Electronic-structure Hamiltonians (SCF, PW, DFTB, NDDO,
-// Hartree) keep this constant. Classical MD multiplies `md_qqr2e`.
+// Hartree) keep this constant. Classical MD multiplies the run's qqrd2e.
 inline constexpr double coulomb = 14.399645;
 
 /// Planck constant in eV·fs (CODATA 2018, 4.135667696e-15 eV·s).
-/// The running thermal wavelength uses `md_hplanck` (lj row), not this.
+/// Classical MD uses the run's `UnitSystem::hplanck`, not this.
 inline constexpr double h_planck_ev_fs = 4.135667696;
 
 } // namespace units
@@ -185,17 +185,18 @@ inline constexpr double h_planck_ev_fs = 4.135667696;
 
 namespace ATV::units {
 
-/// @brief Thermal wavelength on the lj row.
+/// @brief de Broglie thermal wavelength in a LAMMPS `units` style.
 ///
-/// `Λ = md_hplanck / sqrt(2 π m md_boltz T md_mvv2e)` with every factor
-/// equal to 1. Mass and temperature are in the running style. The
-/// eV·Å·fs form is `h_planck_ev_fs`, `kB_ev_per_k`, `mass_v2_to_energy`.
+/// `Λ = hplanck / sqrt(2 π m boltz T mvv2e)` (LAMMPS `fix gcmc`), with mass,
+/// temperature and the result in the style's own units.
 /// @param mass Particle mass in the style's mass unit.
 /// @param temperature Temperature in the style's temperature unit.
+/// @param u The run's unit system.
 /// @return Λ in the style's length unit.
-[[nodiscard]] inline double lambda_thermal(double mass, double temperature) {
-    return md_hplanck
-           / std::sqrt(2.0 * pi * mass * md_boltz * temperature * md_mvv2e);
+[[nodiscard]] inline double lambda_thermal(double mass, double temperature,
+                                           const UnitSystem& u) {
+    return u.hplanck
+           / std::sqrt(2.0 * pi * mass * u.boltz * temperature * u.mvv2e);
 }
 
 } // namespace ATV::units

@@ -89,7 +89,7 @@ TEST(Remd, RejectsNonPositiveThermostatTau) {
 /// it away and stays at its setpoint; a constant-energy one keeps it and runs
 /// nearly three times hot. Measured: 270 K with the thermostat, 862 K without.
 TEST(Remd, ReplicasAreThermostattedAtTheirSlotTemperature) {
-    // lj units (md_boltz = md_mvv2e = 1) on eV, Å, amu: the temperature is
+    // lj units (boltz = mvv2e = 1) on eV, Å, amu: the temperature is
     // k_B·300 K in eV and the time unit is sqrt(amu·Å²/eV) ≈ 10.18 fs, so
     // these are the 300 K / 1 fs / 20 fs of the metal-unit version.
     const double t0 = units::kB_ev_per_k * 300.0;
@@ -103,7 +103,7 @@ TEST(Remd, ReplicasAreThermostattedAtTheirSlotTemperature) {
 
     const double ke = f.meta.get(ATV::kKinetic); // slot 0
     const double ndof = 3.0 * f.nlocal() - 3.0;
-    const double t_meas = 2.0 * ke / (ndof * units::md_boltz);
+    const double t_meas = 2.0 * ke / (ndof * units::UnitSystem::lj().boltz);
 
     // sqrt(2/Ndof) = 10% instantaneous spread at 189 DOF; 25% is a couple of
     // those and nowhere near the factor 2.9 a constant-energy replica shows.

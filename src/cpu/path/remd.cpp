@@ -57,6 +57,7 @@ void Remd::ensure_built_(cpu::Frame& frame) {
     for (int i = 0; i < n; ++i) {
         const double t_i = temperatures[static_cast<std::size_t>(i)];
         auto md = std::make_unique<cpu::md::MD>();
+        md->set_units(units.name());
         md->set_integrator(cpu::md::VelocityVerlet{dt});
         // Independent InitVelocity stream per replica (seed ^ (i+1)).
         md->set_observer(
@@ -95,8 +96,8 @@ void Remd::exchange_round_(bool even_edges) {
         const double Uj = fj.meta.get(kEnergy);
         const double Ti = temperatures[static_cast<std::size_t>(i)];
         const double Tj = temperatures[static_cast<std::size_t>(i + 1)];
-        const double beta_i = 1.0 / (units::md_boltz * Ti);
-        const double beta_j = 1.0 / (units::md_boltz * Tj);
+        const double beta_i = 1.0 / (units.boltz * Ti);
+        const double beta_j = 1.0 / (units.boltz * Tj);
         const double dbeta = beta_i - beta_j;
         const double dU = Ui - Uj;
         const double arg = dbeta * dU;

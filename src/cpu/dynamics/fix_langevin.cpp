@@ -70,10 +70,11 @@ void FixLangevin::launch(const cpu::LaunchContext& ctx) {
     // gfactor2_pre * sqrt(m) * gauss -> random force. The temperature
     // enters as `sqrt(T_live_)`, recomputed every step so the ramp is
     // honoured exactly like LAMMPS scaling `gfactor2` by `tsqrt`.
-    const double inv_damp_ftm2v = 1.0 / (damp_ * units::md_ftm2v);
-    const double gfactor2_pre = std::sqrt(2.0 * units::md_boltz * T_live_
-                                          / (damp_ * dt_ * units::md_mvv2e))
-                                / units::md_ftm2v;
+    const double inv_damp_ftm2v = 1.0 / (damp_ * ctx.runtime.units.ftm2v);
+    const double gfactor2_pre =
+        std::sqrt(2.0 * ctx.runtime.units.boltz * T_live_
+                  / (damp_ * dt_ * ctx.runtime.units.mvv2e))
+        / ctx.runtime.units.ftm2v;
 
     // Hoisted once before the parallel region -- never span() inside
     // #pragma omp parallel.

@@ -28,8 +28,8 @@ namespace md {
 /// 2. Random kick:              F_rand =   sqrt(2 m kB T / (damp · dt · mvv2e)) / ftm2v · ξ
 ///
 /// where `ξ ~ N(0, 1)` per Cartesian component per atom per step,
-/// `ftm2v = units::md_ftm2v` and `mvv2e = units::md_mvv2e` (the metal-unit conversion
-/// constants). The combined force satisfies the fluctuation-dissipation
+/// `ftm2v` and `mvv2e` the run's LAMMPS `units` factors
+/// (`ctx.runtime.units`). The combined force satisfies the fluctuation-dissipation
 /// theorem so velocity-Verlet integration of `f_total = f_phys + F_drag
 /// + F_rand` produces the canonical NVT ensemble at the live setpoint.
 ///

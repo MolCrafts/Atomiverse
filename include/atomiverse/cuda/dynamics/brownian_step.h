@@ -58,13 +58,15 @@ __host__ __device__ __forceinline__ bool bd_finite(T v) {
 
 } // namespace detail
 
-/// @brief Mobility μ = D / kT [Å²/fs / eV].
-/// @param D Diffusion constant [Å²/fs].
-/// @param temperature Temperature [K].
-/// @return μ such that μ F Δt is a length when F is eV/Å.
+/// @brief Mobility μ = D / (boltz T) [length²/time / energy].
+/// @param D Diffusion constant [length²/time].
+/// @param temperature Temperature [temperature].
+/// @param boltz The run's Boltzmann constant (LAMMPS `force->boltz`).
+/// @return μ such that μ F Δt is a length.
 template <typename T>
-__host__ __device__ __forceinline__ T brownian_mobility(T D, T temperature) {
-    return D / (T(ATV::units::md_boltz) * temperature);
+__host__ __device__ __forceinline__ T brownian_mobility(T D, T temperature,
+                                                        T boltz) {
+    return D / (boltz * temperature);
 }
 
 /// @brief Noise amplitude √(2 D Δt) [Å].

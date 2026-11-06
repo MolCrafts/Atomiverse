@@ -58,10 +58,10 @@ class PairCoulCut : public cpu::PairPotential {
 
     /// @brief Coulomb constant k in E = k q_i q_j / r [energy·length/charge²].
     ///
-    /// Default `units::md_qqr2e` (1, the LAMMPS lj row every classical kernel
-    /// multiplies, `core/unit_system.h`). A force field that states its own
-    /// constant in its own units (Amber: 332.0522173 kcal·Å/(mol·e²); metal:
-    /// 14.399645 eV·Å/e²), or a dielectric ε folded in as k/ε, sets it here.
+    /// Default: the run's `qqrd2e` (LAMMPS `force->qqrd2e` of the selected
+    /// `units` style). A force field that states its own constant in the
+    /// run's units (Amber 332.0522173, MMFF 332.0716 kcal·Å/(mol·e²) under
+    /// `units real`), or a dielectric folded in as k/ε, sets it here.
     /// @throws std::invalid_argument if `k` is not finite and positive.
     PairCoulCut& set_coulomb_constant(double k) &;
     PairCoulCut set_coulomb_constant(double k) &&;
@@ -76,7 +76,8 @@ class PairCoulCut : public cpu::PairPotential {
     void rebuild_filtered_list(const Frame& frame, const md::PairList& pairs);
 
     double cutoff_sq_;
-    double qqr2e_;
+    double coulomb_ = 0.0; ///< Explicit constant; 0 = the run's qqrd2e.
+    double qqr2e_ = 1.0;   ///< Constant in use, resolved at build().
     double s12_ = 1.0, s13_ = 1.0, s14_ = 1.0;
     bool any_special_ = false;
     md::SpecialScaleTable special_;

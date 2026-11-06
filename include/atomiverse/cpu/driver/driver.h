@@ -275,6 +275,12 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     void build() {
         this->require_mutable_();
         install_defaults();
+        // LAMMPS `units` resets `neighbor->skin`: a list without an explicit
+        // skin takes the run style's default before anything validates it.
+        this->for_each_pending_mut([&](cpu::Component& c) {
+            if (cpu::NeighborProvider* np = c.neighbor_provider())
+                np->apply_default_skin(this->units_.skin);
+        });
         compile_physical_contract_();
         validate_long_range_contract_();
         validate_components();
@@ -613,6 +619,10 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         this->backend_->enable_driver_unwind();
         try {
             this->backend_->init();
+            // LAMMPS `units`: one style for the run, on the Context before
+            // any component builds (components read it in build()/launch()).
+            this->backend_->context().units = this->units_;
+            this->units_bound_ = true;
             this->backend_->capture().set_budget(this->capture_buffer_bytes_);
             this->backend_->load(this->plan_);
             this->backend_->set_frame(frame);
@@ -904,6 +914,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         if (attached_runtime_ || live_)
             throw std::logic_error(
                 "driver is already attached to a live Runtime");
+        this->adopt_parent_units_(rt.context().units);
         compile();
         const int parent_dof = rt.context().md.n_dof_global;
         struct RestoreDof {

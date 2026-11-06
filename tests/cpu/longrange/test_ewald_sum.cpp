@@ -77,14 +77,14 @@ TEST(EwaldSumMath, TwoIonCubicKTableAndReciprocalEnergy) {
                                  stress);
 
     // Pin from pre-refactor implementation output (same formula, same α/acc)
-    // in lj units (md_qqr2e = 1): the metal-unit pin 1.5075250344529976
+    // in lj units (qqrd2e = 1): the metal-unit pin 1.5075250344529976
     // divided by k_e = 14.399645.
     EXPECT_NEAR(e_recip, 0.10469181944784046, 1e-12);
 
     const double e_self = sum.self_energy(q[0] * q[0] + q[1] * q[1]);
     // −k_C · α/√π · Σq² with Σq² = 2.
-    const double e_self_pin =
-        -ATV::units::md_qqr2e * alpha / std::sqrt(ATV::units::pi) * 2.0;
+    const double e_self_pin = -ATV::units::UnitSystem::lj().qqrd2e() * alpha
+                              / std::sqrt(ATV::units::pi) * 2.0;
     EXPECT_DOUBLE_EQ(e_self, e_self_pin);
 
     // Neutral cell → net-charge term is exactly zero.

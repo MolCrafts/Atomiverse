@@ -37,25 +37,35 @@ TEST(ThermoStyle, RejectsUnknownRepeatedAndEmptyKeywords) {
                  std::invalid_argument);
 }
 
-TEST(ThermoStyle, PressureIsVirialPlusKineticOverVolumeInBar) {
+TEST(ThermoStyle, PressureIsVirialPlusKineticOverVolumeTimesNktv2p) {
+    // LAMMPS compute pressure: P = (K + W) / V · nktv2p, in the style's own
+    // pressure unit (lj: reduced; metal: bar; real: atm).
     const ThermoStyle style({"press", "pxx", "vol"});
-    ThermoSample s;
-    s.volume = 1000.0;
-    s.virial[0] = 1.0; // eV
-    s.kinetic[0] = 2.0;
-    const double pxx = 3.0 / 1000.0 / units::bar_to_ev_per_a3;
-    const std::string line = style.line(s);
-    double press = 0, xx = 0, vol = 0;
-    ASSERT_EQ(std::sscanf(line.c_str(), "%lf %lf %lf", &press, &xx, &vol), 3);
-    EXPECT_NEAR(xx, pxx, 1e-6 * pxx);
-    EXPECT_NEAR(press, pxx / 3.0, 1e-6 * pxx);
-    EXPECT_DOUBLE_EQ(vol, 1000.0);
+    for (const char* name : {"lj", "metal", "real"}) {
+        const auto u = units::from_style(name);
+        ThermoSample s;
+        s.volume = 1000.0;
+        s.virial[0] = 1.0; // energy
+        s.kinetic[0] = 2.0;
+        s.boltz = u.boltz;
+        s.nktv2p = u.nktv2p;
+        const double pxx = 3.0 / 1000.0 * u.nktv2p;
+        const std::string line = style.line(s);
+        double press = 0, xx = 0, vol = 0;
+        ASSERT_EQ(std::sscanf(line.c_str(), "%lf %lf %lf", &press, &xx, &vol),
+                  3);
+        EXPECT_NEAR(xx, pxx, 1e-6 * pxx) << name;
+        EXPECT_NEAR(press, pxx / 3.0, 1e-6 * pxx) << name;
+        EXPECT_DOUBLE_EQ(vol, 1000.0);
+    }
 }
 
 TEST(ThermoStyle, TemperatureUsesDegreesOfFreedom) {
     const ThermoStyle style({"temp"});
     ThermoSample s;
-    s.ke = 0.5 * 3.0 * units::md_boltz * 300.0;
+    const auto real = units::from_style("real");
+    s.ke = 0.5 * 3.0 * real.boltz * 300.0;
+    s.boltz = real.boltz;
     s.ndof = 3;
     double temp = 0;
     ASSERT_EQ(std::sscanf(style.line(s).c_str(), "%lf", &temp), 1);

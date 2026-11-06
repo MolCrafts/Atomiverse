@@ -173,7 +173,7 @@ bool run_leg(const char* name, bool multi_k, bool linearized, LegResult& out) {
     double ke0 = 0.0;
     for (int i = 0; i < 2; ++i) {
         const double vx = static_cast<double>(frame.span(kAtom_vx)[i]);
-        ke0 += 0.5 * 1.008 * vx * vx / units::md_ftm2v;
+        ke0 += 0.5 * 1.008 * vx * vx / units::UnitSystem::lj().ftm2v;
     }
     out.pot_ha.push_back(eval.last_result().e_total);
     out.stress_ha.push_back(s0);

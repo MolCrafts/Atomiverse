@@ -135,7 +135,9 @@ class NeighborList : public Component, public NeighborProvider {
   public:
     /// @brief Construct with cutoff and optional skin width.
     /// @param cutoff Interaction cutoff [Angstrom].
-    /// @param skin   Verlet skin width [Angstrom]. Negative = auto (0.3 * cutoff).
+    /// @param skin   Verlet skin width [length]. Negative = the LAMMPS default
+    ///        of the run's `units` style (`units::UnitSystem::skin`),
+    ///        resolved at build.
     /// @param cluster_pair_capacity Reserved directed cluster-pair entries;
     ///        zero measures the initial list and adds density-based headroom.
     ///        A rebuild that outgrows it raises `ForceFault::kCapacity`.
@@ -262,7 +264,8 @@ class NeighborList : public Component, public NeighborProvider {
 
   private:
     double cutoff_;                 ///< Interaction cutoff [Angstrom].
-    double skin_;                   ///< Verlet skin width [Angstrom].
+    double skin_;                   ///< Verlet skin width [length].
+    bool skin_explicit_;            ///< Constructed with a skin >= 0.
     int cluster_pair_capacity_ = 0; ///< Explicit CSR capacity; zero = estimate.
     bool rebuild_on_request_ = false; ///< Skip the skin auto-gate (multi-GPU).
     PairList pairs_;     ///< Owned device pair list (allocated in build()).

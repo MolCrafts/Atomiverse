@@ -177,7 +177,7 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     /// @brief Construct MTK NPT integrator (parameters assigned immediately).
     /// @param T_target Target temperature [K] (also ramp start).
     /// @param tau_T Thermostat coupling time [fs] (LAMMPS Tdamp).
-    /// @param P_target Target pressure [eV/Å³] (LAMMPS sign, positive compressive).
+    /// @param P_target Target pressure [style pressure] (LAMMPS sign, positive compressive).
     /// @param tau_P Barostat coupling time [fs] (LAMMPS Pdamp).
     /// @param dt Timestep [fs].
     /// @param drag Empirical NHC drag (LAMMPS drag); 0 disables.
@@ -267,6 +267,7 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:
+    double nktv2p_ = 1.0; ///< The run's nktv2p (pressure → energy/volume).
     // Configuration
     double T_target_; ///< Ramp start temperature [K] (LAMMPS `t_start`).
     double T_stop_;   ///< Ramp end temperature [K] (LAMMPS `t_stop`).
@@ -302,7 +303,8 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     // Derived in build()
     BigInt n_atoms_global_ = 0;
     int n_dof_ = 0;           ///< 3N - 3 (COM removed)
-    double kT_ = 0.0;         ///< kB · T_target [eV]
+    double kT_ = 0.0;         ///< boltz · T_target [energy]
+    double boltz_ = 1.0;      ///< The run's boltz, cached at build().
     std::vector<double> Q_t_; ///< Atom-NHC masses per chain link [eV·fs²]
     std::vector<double> Q_b_; ///< Baro-NHC masses per chain link [eV·fs²]
     double W_ = 0.0;          ///< Barostat mass [eV·fs²]

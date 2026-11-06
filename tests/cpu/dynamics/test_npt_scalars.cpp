@@ -11,7 +11,8 @@ TEST(NptScalars, MtkUsesAtomCountIndependentlyOfConstraintDof) {
         ATV::cpu::Frame frame(2);
         frame.box = ATV::cpu::Box::cubic(10);
         constexpr double kinetic = 2, dt = 0.001;
-        const double speed = std::sqrt(kinetic / ATV::units::md_mvv2e);
+        const double speed =
+            std::sqrt(kinetic / ATV::units::UnitSystem::lj().mvv2e);
         frame.span(ATV::kAtom_mass)[0] = frame.span(ATV::kAtom_mass)[1] = 1;
         frame.span(ATV::kAtom_vy)[0] = speed;
         frame.span(ATV::kAtom_vy)[1] = -speed;
@@ -20,8 +21,8 @@ TEST(NptScalars, MtkUsesAtomCountIndependentlyOfConstraintDof) {
         ATV::cpu::publish_global_dof(context, frame, constraints);
         const double dof = context.md.n_dof_global;
         const double kT = 2 * kinetic / dof;
-        ATV::cpu::md::NoseHooverNPT npt(kT / ATV::units::md_boltz, 1, 0, 1, dt,
-                                        0, 1, 1);
+        ATV::cpu::md::NoseHooverNPT npt(kT / ATV::units::UnitSystem::lj().boltz,
+                                        1, 0, 1, dt, 0, 1, 1);
         npt.build({context, frame});
         npt.initialize_forces(
             {context, frame, ATV::slot_of(ATV::md::Phase::end_of_step), 0});

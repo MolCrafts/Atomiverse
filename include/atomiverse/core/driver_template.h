@@ -15,6 +15,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -25,6 +26,7 @@
 #include "atomiverse/core/device.h"
 #include "atomiverse/core/plan.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 
 namespace ATV {
 
@@ -203,6 +205,9 @@ class Driver {
             backend_ = std::move(o.backend_);
             timer_ = std::move(o.timer_);
             capture_buffer_bytes_ = o.capture_buffer_bytes_;
+            units_ = o.units_;
+            units_bound_ = o.units_bound_;
+            units_explicit_ = o.units_explicit_;
         }
         return *this;
     }
@@ -228,6 +233,37 @@ class Driver {
                 "capture_buffer_bytes must be >= 1 byte, got 0");
         capture_buffer_bytes_ = bytes;
     }
+    /// @brief LAMMPS `units <style>` for this run (default lj).
+    ///
+    /// Selects the factor row every classical component multiplies
+    /// (`boltz`, `mvv2e`, `ftm2v`, `qqrd2e`, `nktv2p`, ...), and with it the
+    /// unit of every number the run takes and reports: parameters, `dt`,
+    /// temperatures, pressures and the frame's positions, masses, charges
+    /// and velocities are all in that style, as in LAMMPS. Nothing is
+    /// converted. Like LAMMPS, which refuses `units` once the box exists,
+    /// the style is fixed once this driver has bound a system: set it before
+    /// the first `run()`. A nested driver runs in its parent's style.
+    /// @param style LAMMPS name: lj, real, metal, si, cgs, electron, micro,
+    ///        nano.
+    /// @throws std::invalid_argument on an unknown style.
+    /// @throws std::logic_error after a run bound the system in another
+    ///         style.
+    void set_units(std::string_view style) {
+        require_mutable_();
+        const units::UnitSystem next = units::from_style(style);
+        if (units_bound_ && next.style != units_.style)
+            throw std::logic_error(
+                std::string("units: the run already bound its system in '")
+                + units_.name() + "'; the style cannot change to '"
+                + next.name()
+                + "' (LAMMPS refuses `units` after the box exists). Use a "
+                  "new driver.");
+        units_ = next;
+        units_explicit_ = true;
+    }
+    /// @brief The run's LAMMPS `units` style (default lj).
+    const units::UnitSystem& units() const noexcept { return units_; }
+
     /// @brief The capture buffer budget [bytes].
     std::uint64_t capture_buffer_bytes() const noexcept {
         return capture_buffer_bytes_;
@@ -414,6 +450,25 @@ class Driver {
     std::unique_ptr<BackendT> backend_;
     std::unique_ptr<Timer> timer_;
     std::uint64_t capture_buffer_bytes_ = kCaptureBufferBytes;
+    /// The run's unit style, published on the Context by `setup_pass`.
+    units::UnitSystem units_ = units::UnitSystem::lj();
+    /// True once a run published `units_` with a bound system.
+    bool units_bound_ = false;
+    /// True once `set_units` chose the style (a nested driver must agree
+    /// with its parent's run).
+    bool units_explicit_ = false;
+
+    /// @brief A nested driver runs in its parent's style (one Context).
+    /// @throws std::invalid_argument when this driver chose another style.
+    void adopt_parent_units_(const units::UnitSystem& parent) {
+        if (units_explicit_ && units_.style != parent.style)
+            throw std::invalid_argument(
+                std::string("units: a nested driver set to '") + units_.name()
+                + "' cannot run inside a run in '" + parent.name()
+                + "'; one run has one units style");
+        units_ = parent;
+        units_bound_ = true;
+    }
 
   private:
     /// @brief Registration-time gate: reject default bindings built from

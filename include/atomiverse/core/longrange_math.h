@@ -10,10 +10,11 @@
 namespace ATV::longrange {
 
 /// @brief Ewald self-energy prefactor; multiply by Σ q_i².
-/// @param alpha Ewald splitting parameter [1/Angstrom].
-/// @return −k_e α / √π [eV·Angstrom / e²·(1/Angstrom)] = [eV/e²].
-inline double self_energy_prefactor(double alpha) {
-    return -ATV::units::md_qqr2e * alpha / std::sqrt(ATV::units::pi);
+/// @param alpha Ewald splitting parameter [1/length].
+/// @param qqrd2e The run's Coulomb constant (LAMMPS `force->qqrd2e`).
+/// @return −qqrd2e α / √π [energy/charge²].
+inline double self_energy_prefactor(double alpha, double qqrd2e) {
+    return -qqrd2e * alpha / std::sqrt(ATV::units::pi);
 }
 
 /// @brief Energy of the uniform neutralizing background of a charged cell.
@@ -22,11 +23,12 @@ inline double self_energy_prefactor(double alpha) {
 /// −∂E/∂ε_aa equals E on each diagonal component and vanishes off-diagonal.
 /// @param net_charge Total charge Q of the cell [e].
 /// @param volume Cell volume [Angstrom³].
-/// @param alpha Ewald splitting parameter [1/Angstrom].
-/// @return Background energy [eV].
-inline double background_energy(double net_charge, double volume,
-                                double alpha) {
-    return -ATV::units::md_qqr2e * ATV::units::pi * net_charge * net_charge
+/// @param alpha Ewald splitting parameter [1/length].
+/// @param qqrd2e The run's Coulomb constant (LAMMPS `force->qqrd2e`).
+/// @return Background energy [energy].
+inline double background_energy(double net_charge, double volume, double alpha,
+                                double qqrd2e) {
+    return -qqrd2e * ATV::units::pi * net_charge * net_charge
            / (2.0 * volume * alpha * alpha);
 }
 

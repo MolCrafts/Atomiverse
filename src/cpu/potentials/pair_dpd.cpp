@@ -25,7 +25,6 @@ PairDpd::PairDpd(double a, double gamma, double temperature, double cutoff,
         || !(gamma >= 0.0))
         throw std::invalid_argument("PairDpd: invalid parameters");
     cutoff_sq_ = cutoff * cutoff;
-    sigma_ = std::sqrt(2.0 * gamma_ * units::md_boltz * temperature_);
 }
 
 PairDpd::PairDpd(std::vector<std::vector<double>> a_matrix, double gamma,
@@ -50,7 +49,6 @@ PairDpd::PairDpd(std::vector<std::vector<double>> a_matrix, double gamma,
                 throw std::invalid_argument(
                     "PairDpd: a_matrix must be finite and symmetric");
     cutoff_sq_ = cutoff * cutoff;
-    sigma_ = std::sqrt(2.0 * gamma_ * units::md_boltz * temperature_);
 }
 
 double PairDpd::a_of_(int ti, int tj) const {
@@ -64,6 +62,8 @@ double PairDpd::a_of_(int ti, int tj) const {
 
 void PairDpd::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
+    // LAMMPS pair dpd `sigma = sqrt(2 boltz T gamma)` in the run's units.
+    sigma_ = std::sqrt(2.0 * gamma_ * ctx.runtime.units.boltz * temperature_);
     const double rc = pair_cutoff();
     const double inv_sqrt_dt = 1.0 / std::sqrt(dt_);
     // The single-amplitude form needs no force-field type; only the

@@ -20,14 +20,15 @@ namespace {
 /// (zeros for tail lanes). CUB reduces the independent components together;
 /// thread 0 adds the block's results to the global accumulators.
 ///
-/// Stress writes Σ m·vα·vβ (ATV::units::md_mvv2e folded in, NO volume division);
+/// Stress writes Σ m·vα·vβ (mvv2e folded in, NO volume division);
 /// the consumer (`cuda::md::NoseHooverNPT::update_eps_dot_` /
 /// pressure observers) divides by V.
 __global__
 __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void kinetic_energy_stress(
     const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
     const mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
-    acc_t* __restrict__ kinetic, acc_t* __restrict__ stress_kinetic, int n) {
+    acc_t* __restrict__ kinetic, acc_t* __restrict__ stress_kinetic,
+    acc_t mvv2e, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     acc_t my_ke = acc_t(0);
@@ -38,7 +39,7 @@ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void kinetic_energy_stress(
         acc_t vyi = static_cast<acc_t>(vy[i]);
         acc_t vzi = static_cast<acc_t>(vz[i]);
         acc_t v2 = vxi * vxi + vyi * vyi + vzi * vzi;
-        my_ke = acc_t(0.5) * ATV::units::md_mvv2e * m * v2;
+        my_ke = acc_t(0.5) * mvv2e * m * v2;
         if (stress_kinetic != nullptr) {
             my_s[0] = m * vxi * vxi; // xx
             my_s[1] = m * vyi * vyi; // yy
@@ -59,7 +60,6 @@ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void kinetic_energy_stress(
     if (threadIdx.x == 0) {
         atomicAdd(kinetic, static_cast<acc_t>(out[0]));
         if (stress_kinetic != nullptr) {
-            const acc_t mvv2e = static_cast<acc_t>(ATV::units::md_mvv2e);
 #pragma unroll
             for (int c = 0; c < 6; ++c)
                 atomicAdd(&stress_kinetic[c],
@@ -85,7 +85,8 @@ void KineticEnergy::launch(const LaunchContext& ctx) {
     kinetic_energy_stress<<<grid, block, shmem, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.mass,
         &frame.scalars->kinetic,
-        frame.scalars != nullptr ? frame.scalars->stress_kinetic : nullptr, n);
+        frame.scalars != nullptr ? frame.scalars->stress_kinetic : nullptr,
+        static_cast<acc_t>(ctx.runtime.units.mvv2e), n);
 }
 
 } // namespace md

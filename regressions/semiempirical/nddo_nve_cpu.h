@@ -76,7 +76,7 @@ inline void record_sample(Trace& trace, const ATV::cpu::Frame& frame,
     double sum_mv2 = 0;
     for (int i = 0; i < frame.nlocal(); ++i)
         sum_mv2 += mass[i] * (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]);
-    const double expected_ke = .5 * units::md_mvv2e * sum_mv2;
+    const double expected_ke = .5 * units::UnitSystem::lj().mvv2e * sum_mv2;
     const double ke = frame.meta.get(kKinetic);
     const double potential = frame.meta.get(kEnergy);
     if (!std::isfinite(ke) || !std::isfinite(expected_ke)

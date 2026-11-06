@@ -114,6 +114,8 @@ class Thermo : public AsyncRecorder {
             sample.kinetic[a] = sc.stress_kinetic[a];
         }
         sample.ndof = runtime_->md.n_dof_global;
+        sample.boltz = runtime_->units.boltz;
+        sample.nktv2p = runtime_->units.nktv2p;
         // The setup line opens a run (LAMMPS prints the header per run).
         if (v.kind == CaptureKind::setup || !header_printed_) {
             ATV_INFO("{}", style_.header());

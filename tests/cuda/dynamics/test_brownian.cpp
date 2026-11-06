@@ -48,9 +48,10 @@ TEST(CudaBrownian, DriftMatchesMobility) {
     const double temperature = 300.0;
     const double dt = 0.5;
     const double force = 0.1;
-    const double mobility = cuda::md::brownian_mobility(D, temperature);
+    const double mobility = cuda::md::brownian_mobility(D, temperature, 1.0);
     const double noise = cuda::md::brownian_noise_amplitude(D, dt);
-    EXPECT_DOUBLE_EQ(mobility, D / (units::md_boltz * temperature));
+    EXPECT_DOUBLE_EQ(mobility,
+                     D / (units::UnitSystem::lj().boltz * temperature));
     EXPECT_DOUBLE_EQ(noise, std::sqrt(2.0 * D * dt));
     const double x =
         cuda::md::brownian_advance(1.25, force, true, mobility, dt, noise, 0.0);
@@ -58,7 +59,7 @@ TEST(CudaBrownian, DriftMatchesMobility) {
 }
 
 TEST(CudaBrownian, NonFiniteForceSkipsDrift) {
-    const double mobility = cuda::md::brownian_mobility(0.02, 300.0);
+    const double mobility = cuda::md::brownian_mobility(0.02, 300.0, 1.0);
     const double noise = cuda::md::brownian_noise_amplitude(0.02, 0.5);
     EXPECT_FALSE(cuda::md::brownian_forces_finite(
         std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0));
@@ -84,7 +85,7 @@ TEST(CudaBrownian, WrapMatchesCpuSandboxRule) {
 TEST(CudaBrownian, FreeParticleStepVariance) {
     const double D = 0.01;
     const double dt = 1.0;
-    const double mobility = cuda::md::brownian_mobility(D, 300.0);
+    const double mobility = cuda::md::brownian_mobility(D, 300.0, 1.0);
     const double noise = cuda::md::brownian_noise_amplitude(D, dt);
     std::mt19937_64 rng(42);
     std::normal_distribution<double> normal(0.0, 1.0);

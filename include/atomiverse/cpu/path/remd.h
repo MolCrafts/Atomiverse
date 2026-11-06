@@ -5,6 +5,8 @@
 /// Exchange on even/odd adjacent pairs; collapse to lowest-T slot.
 #pragma once
 
+#include "atomiverse/core/unit_system.h"
+
 #include <cstdint>
 #include <memory>
 #include <random>
@@ -47,7 +49,10 @@ class Remd {
   public:
     /// @brief Strictly increasing temperature ladder [K], size ≥ 2.
     std::vector<double> temperatures;
-    /// @brief Nested MD timestep [fs].
+    /// @brief LAMMPS `units` of every replica program (default lj); the
+    ///        temperatures, `dt` and the exchange test are in this style.
+    units::UnitSystem units = units::UnitSystem::lj();
+    /// @brief Nested MD timestep [style time].
     double dt = 1.0;
     /// @brief Nested MD steps between exchange rounds.
     int steps_per_exchange = 10;

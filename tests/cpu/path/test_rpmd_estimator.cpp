@@ -27,9 +27,9 @@ TEST(RpmdEstimator, AnalyticPositiveAndClassicalLimit) {
     EXPECT_GT(pimd.radius_of_gyration_sq(), 0.0);
 
     // Direct formula check (P=4 classical free-polymer Rg²):
-    const double hbar = units::md_hplanck / (2.0 * units::pi);
-    const double beta = 1.0 / (units::md_boltz * 300.0);
-    const double m_eff = units::md_mvv2e * 1.0;
+    const double hbar = units::UnitSystem::lj().hplanck / (2.0 * units::pi);
+    const double beta = 1.0 / (units::UnitSystem::lj().boltz * 300.0);
+    const double m_eff = units::UnitSystem::lj().mvv2e * 1.0;
     const double P = 4.0;
     const double expect =
         (hbar * beta) * (hbar * beta) / (4.0 * m_eff) * (1.0 - 1.0 / (P * P));

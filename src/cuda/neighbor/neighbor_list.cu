@@ -113,6 +113,10 @@ struct NeighborList::State {
 // ============================================================================
 
 void NeighborList::build(const BuildContext& ctx) {
+    // LAMMPS `units` resets `neighbor->skin`: no explicit skin takes the run
+    // style's default.
+    if (!skin_explicit_)
+        skin_ = ctx.runtime.units.skin;
     state_ = std::make_unique<State>();
     auto& s = *state_;
     ATV_CUDA_CHECK(cudaMallocHost(&s.h_cluster_pair_count, sizeof(int)));
@@ -642,10 +646,10 @@ void NeighborList::destroy(const DestroyContext& ctx) {
 
 NeighborList::NeighborList(double cutoff, double skin,
                            int cluster_pair_capacity)
-    : cutoff_(cutoff), skin_(skin < 0.0 ? 0.3 * cutoff : skin),
+    : cutoff_(cutoff), skin_(skin), skin_explicit_(skin >= 0.0),
       cluster_pair_capacity_(cluster_pair_capacity) {
     if (!std::isfinite(cutoff_) || cutoff_ <= 0 || !std::isfinite(skin_)
-        || skin_ < 0 || cluster_pair_capacity_ < 0)
+        || cluster_pair_capacity_ < 0)
         throw std::invalid_argument(
             "NeighborList: positive finite cutoff, finite nonnegative skin and "
             "nonnegative cluster pair capacity required");

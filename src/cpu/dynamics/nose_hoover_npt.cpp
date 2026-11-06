@@ -117,7 +117,9 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
     }
 #endif
     n_atoms_global_ = N;
-    kT_ = units::md_boltz * T_target_;
+    boltz_ = ctx.runtime.units.boltz;
+    nktv2p_ = ctx.runtime.units.nktv2p;
+    kT_ = boltz_ * T_target_;
 
     // Standard MTK masses (Tuckerman 2006 §III).
     //   Q_t[0] = N_f kT tau_T^2 drives the full KE reservoir;
@@ -181,7 +183,7 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
 /// setpoint stays at `T_target_` — the no-ramp default.
 void NoseHooverNPT::compute_temp_target(BigInt step) {
     T_live_ = ATV::md::ramp_target(T_target_, T_stop_, step, nfirst_, nlast_);
-    kT_ = units::md_boltz * T_live_;
+    kT_ = boltz_ * T_live_;
 }
 
 double NoseHooverNPT::compute_global_KE(const cpu::LaunchContext& ctx) const {
@@ -200,7 +202,7 @@ double NoseHooverNPT::compute_global_KE(const cpu::LaunchContext& ctx) const {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::md_mvv2e;
+    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -233,8 +235,9 @@ NoseHooverNPT::compute_axis_KE(const cpu::LaunchContext& ctx) const {
         ky += m * sp_vy[i] * sp_vy[i];
         kz += m * sp_vz[i] * sp_vz[i];
     }
-    double ke[3] = {0.5 * units::md_mvv2e * kx, 0.5 * units::md_mvv2e * ky,
-                    0.5 * units::md_mvv2e * kz};
+    double ke[3] = {0.5 * ctx.runtime.units.mvv2e * kx,
+                    0.5 * ctx.runtime.units.mvv2e * ky,
+                    0.5 * ctx.runtime.units.mvv2e * kz};
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -383,12 +386,14 @@ void NoseHooverNPT::update_eps_dot(const cpu::LaunchContext& ctx,
     //   P_⊥ = P_n − n_surf · γ / L_z
     // (P_n ≡ P_target_; z keeps P_n). When γ==0 this collapses to
     // semi-isotropic isobaric NPT under couple_xy.
-    double P_tgt[3] = {P_target_, P_target_, P_target_};
+    // LAMMPS `p_target / nktv2p`: the target in energy/volume.
+    const double P_n = P_target_ / nktv2p_;
+    double P_tgt[3] = {P_n, P_n, P_n};
     if (couple_xy_ && gamma_ != 0.0) {
         const double Lz = f.box.length(2);
         if (Lz > 0.0) {
             const double Plat =
-                P_target_ - static_cast<double>(n_surfaces_) * gamma_ / Lz;
+                P_n - static_cast<double>(n_surfaces_) * gamma_ / Lz;
             P_tgt[0] = P_tgt[1] = Plat;
         }
     }
@@ -504,7 +509,7 @@ void NoseHooverNPT::kick_v_by_force(const cpu::LaunchContext& ctx,
                                     double half_dt) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const double dtf = half_dt * units::md_ftm2v;
+    const double dtf = half_dt * ctx.runtime.units.ftm2v;
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);
@@ -678,7 +683,7 @@ NoseHooverNPT::extended_hamiltonian(const cpu::LaunchContext& ctx) const {
     for (int k = 0; k < mpchain_; ++k)
         H += kT_ * eta_b_[static_cast<std::size_t>(k)];
     // Pressure-volume term.
-    H += P_target_ * f.box.volume();
+    H += P_target_ / nktv2p_ * f.box.volume();
     return H;
 }
 

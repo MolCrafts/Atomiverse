@@ -72,7 +72,8 @@ ParrinelloRahmanNPT::ParrinelloRahmanNPT(double T_target, double P_target,
 void ParrinelloRahmanNPT::build(const cpu::BuildContext& ctx) {
     // Driver publishes the constraint-aware global DOF count before build.
     n_dof_ = ctx.runtime.md.n_dof_global;
-    kT_ = units::md_boltz * T_target_;
+    kT_ = ctx.runtime.units.boltz * T_target_;
+    nktv2p_ = ctx.runtime.units.nktv2p;
 
     Q_t_.assign(static_cast<std::size_t>(mtchain_), 0.0);
     Q_b_.assign(static_cast<std::size_t>(mpchain_), 0.0);
@@ -117,7 +118,7 @@ ParrinelloRahmanNPT::compute_global_KE(const cpu::LaunchContext& ctx) const {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::md_mvv2e;
+    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -146,8 +147,9 @@ ParrinelloRahmanNPT::compute_axis_KE(const cpu::LaunchContext& ctx) const {
         ky += m * sp_vy[i] * sp_vy[i];
         kz += m * sp_vz[i] * sp_vz[i];
     }
-    double ke[3] = {0.5 * units::md_mvv2e * kx, 0.5 * units::md_mvv2e * ky,
-                    0.5 * units::md_mvv2e * kz};
+    double ke[3] = {0.5 * ctx.runtime.units.mvv2e * kx,
+                    0.5 * ctx.runtime.units.mvv2e * ky,
+                    0.5 * ctx.runtime.units.mvv2e * kz};
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -337,7 +339,7 @@ void ParrinelloRahmanNPT::update_eps_dot(const cpu::LaunchContext& ctx,
     const double W_axis = W_ / 3.0;
     for (int a = 0; a < 3; ++a) {
         const double G_diag =
-            (3.0 * V * (static_cast<double>(P_tens(a, a)) - P_target_)
+            (3.0 * V * (static_cast<double>(P_tens(a, a)) - P_target_ / nktv2p_)
              + mtk_term)
             / W_;
         eps_dot_(a, a) += G_diag * half_dt;
@@ -431,7 +433,7 @@ void ParrinelloRahmanNPT::kick_v_by_force(const cpu::LaunchContext& ctx,
                                           double half_dt) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const double dtf = half_dt * units::md_ftm2v;
+    const double dtf = half_dt * ctx.runtime.units.ftm2v;
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);
@@ -582,7 +584,7 @@ ParrinelloRahmanNPT::extended_hamiltonian(const cpu::LaunchContext& ctx) const {
         H += kT_ * eta_t_[static_cast<std::size_t>(k)];
     for (int k = 0; k < mpchain_; ++k)
         H += kT_ * eta_b_[static_cast<std::size_t>(k)];
-    H += P_target_ * f.box.volume();
+    H += P_target_ / nktv2p_ * f.box.volume();
     return H;
 }
 

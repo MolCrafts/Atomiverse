@@ -19,7 +19,7 @@ template <typename PhaseEnum, typename DeviceTag>
 void Driver<PhaseEnum, DeviceTag>::run(frame_type& frame, int n_steps) {
     if (!backend_)
         backend_ = std::make_unique<BackendT>();
-    traits::run(*backend_, frame, plan_, timer_.get(), n_steps);
+    traits::run(*backend_, frame, plan_, timer_.get(), units_, n_steps);
 }
 
 template <typename PhaseEnum, typename DeviceTag>
@@ -52,6 +52,9 @@ void Driver<PhaseEnum, DeviceTag>::shutdown() {
         backend_->shutdown();
         backend_.reset();
     }
+    // The bound system is released: like LAMMPS `clear`, a new style may be
+    // selected for the next run.
+    units_bound_ = false;
     mutation_lock_ = nullptr;
     if constexpr (traits::has_device_timing) {
         if (timer_) {

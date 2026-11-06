@@ -29,7 +29,7 @@ void PairGaussianCoul::compute(const LaunchContext& ctx) {
 
     const StorageReal* __restrict q = f.span(kAtom_charge);
     const LocalInt* __restrict type = f.span(kAtom_type);
-    const double K = ATV::units::md_qqr2e;
+    const double K = ctx.runtime.units.qqrd2e();
     double energy = 0.0;
 
     // This style is *not* a `LongRangeParticipant`: it is a self-contained

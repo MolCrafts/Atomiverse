@@ -184,7 +184,7 @@ struct LJKernel {
 
 /// @brief Real-space (screened) Coulomb — the short-range half of Ewald,
 /// `E = qqr2e·q_i q_j·erfc(α r)/r`. Mirrors `cpu::CoulLong` exactly. `qqr2e` is
-/// the Coulomb constant in the active unit system (ATV::units::md_qqr2e).
+/// the Coulomb constant in the active unit system (qqrd2e).
 struct CoulKernel {
     double qqr2e = 0.0;
     double alpha = 0.0;

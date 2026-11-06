@@ -1,5 +1,5 @@
 /// @file cuda/minimize/sd.cu
-/// @brief cuda::minimizer::SteepestDescent kernel: x += alpha * f / m * ATV::units::md_ftm2v.
+/// @brief cuda::minimizer::SteepestDescent kernel: x += alpha * f / m * ftm2v.
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cuda/device/launch.cuh"
@@ -18,7 +18,7 @@ namespace {
 /// @brief Steepest descent position update.
 ///
 /// Moves each atom along the force direction:
-///   x[i] += alpha * fx[i] / mass[i] * ATV::units::md_ftm2v
+///   x[i] += alpha * fx[i] / mass[i] * ftm2v
 ///
 /// Same unit conversion as VelocityVerlet. The backend prepares initial forces
 /// before the first optimizer step. The update runs in
@@ -31,7 +31,7 @@ sd_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
         const fixed_t* __restrict__ fz, const mixed_t* __restrict__ mass,
         ImageInt* __restrict__ image, ForceFault* fault,
         const std::int64_t* __restrict__ tag, long long step, cuda::Box box,
-        mixed_t alpha, int n) {
+        mixed_t alpha, mixed_t ftm2v, int n) {
     if (!forces_consumable(fault, tag, step))
         return;
     box = box.current();
@@ -40,7 +40,7 @@ sd_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
     if (i >= n)
         return;
 
-    const mixed_t scale = alpha * mixed_t(ATV::units::md_ftm2v) / mass[i];
+    const mixed_t scale = alpha * ftm2v / mass[i];
     mixed_t px = load_position(x, xc, i) + scale * decode_force<mixed_t>(fx[i]);
     mixed_t py = load_position(y, yc, i) + scale * decode_force<mixed_t>(fy[i]);
     mixed_t pz = load_position(z, zc, i) + scale * decode_force<mixed_t>(fz[i]);
@@ -81,7 +81,7 @@ void SteepestDescent::launch(const LaunchContext& ctx) {
     sd_step<<<grid, block, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, a.mass,
         a.image, frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box,
-        mixed_t(alpha_), n);
+        mixed_t(alpha_), mixed_t(ctx.runtime.units.ftm2v), n);
     ++step_;
 }
 

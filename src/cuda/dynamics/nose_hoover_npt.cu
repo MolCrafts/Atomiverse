@@ -22,6 +22,8 @@ struct NptParameters {
     bool coupled[3];
     // A faulted run keeps every chain, cell and atom at the faulting step.
     const ForceFault* fault;
+    // The run's LAMMPS `units` factors.
+    double boltz, mvv2e, ftm2v;
 };
 
 struct NptHistory {
@@ -34,7 +36,7 @@ struct NptHistory {
 
 __global__ void initialize_history(NptHistory* history, NptParameters p) {
     auto& h = *history;
-    h.kt = units::md_boltz * p.temperature;
+    h.kt = p.boltz * p.temperature;
     h.mass = (double(p.dof) + 3.0) * h.kt * p.tau_p * p.tau_p;
     for (int k = 0; k < p.atom_chain; ++k)
         h.qt[k] = (k == 0 ? double(p.dof) : 1.0) * h.kt * p.tau_t * p.tau_t;
@@ -61,7 +63,7 @@ __device__ void barostat_chain(NptHistory& h, const NptParameters& p) {
 __device__ void atom_chain(NptHistory& h, const NptParameters& p,
                            long long step, bool initial) {
     if (initial) {
-        h.kt = units::md_boltz
+        h.kt = p.boltz
                * ATV::md::ramp_target(p.temperature, p.stop_temperature,
                                       BigInt(step), p.first, p.last);
         for (int k = 0; k < p.atom_chain; ++k)
@@ -99,13 +101,13 @@ __device__ void pressure_update(NptHistory& h, const NptParameters& p,
         return;
     double axes[3], diagonal[3], active_ke = 0;
     for (int a = 0; a < 3; ++a) {
-        axes[a] = 0.5 * units::md_mvv2e * ke[1 + a];
+        axes[a] = 0.5 * p.mvv2e * ke[1 + a];
         diagonal[a] = scalars->stress[a] + 2.0 * axes[a];
         if (p.coupled[a])
             active_ke += axes[a];
     }
     if (h.anisotropic) {
-        h.kinetic = 0.5 * units::md_mvv2e * ke[0];
+        h.kinetic = 0.5 * p.mvv2e * ke[0];
         h.anisotropic = false;
     }
     if (p.pressure_dimensions == 3) {
@@ -198,7 +200,7 @@ __global__ void final_barostat(NptHistory* history, NptParameters p,
     if (state_frozen(p.fault))
         return;
     auto& h = *history;
-    h.kinetic = 0.5 * units::md_mvv2e * ke[0];
+    h.kinetic = 0.5 * p.mvv2e * ke[0];
     barostat_scale(h, p);
     clear_kinetic(ke);
 }
@@ -270,12 +272,12 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void scale_reduce(
 
 /// P4 velocity scale fused with the P5 / P7 half kick.
 template <bool Scale>
-__global__ void scale_kick(mixed_t* vx, mixed_t* vy, mixed_t* vz,
-                           const fixed_t* fx, const fixed_t* fy,
-                           const fixed_t* fz, const mixed_t* mass,
-                           const NptHistory* history, ForceFault* fault,
-                           const std::int64_t* tag, const long long* step_ptr,
-                           long long step, mixed_t half_dt, int n) {
+__global__ void
+scale_kick(mixed_t* vx, mixed_t* vy, mixed_t* vz, const fixed_t* fx,
+           const fixed_t* fy, const fixed_t* fz, const mixed_t* mass,
+           const NptHistory* history, ForceFault* fault,
+           const std::int64_t* tag, const long long* step_ptr, long long step,
+           mixed_t half_dt, mixed_t ftm2v, int n) {
     if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -286,7 +288,7 @@ __global__ void scale_kick(mixed_t* vx, mixed_t* vy, mixed_t* vz,
             uy *= mixed_t(history->scale[1]);
             uz *= mixed_t(history->scale[2]);
         }
-        const mixed_t factor = half_dt * mixed_t(units::md_ftm2v) / mass[i];
+        const mixed_t factor = half_dt * ftm2v / mass[i];
         vx[i] = ux + factor * decode_force<mixed_t>(fx[i]);
         vy[i] = uy + factor * decode_force<mixed_t>(fy[i]);
         vz[i] = uz + factor * decode_force<mixed_t>(fz[i]);
@@ -378,7 +380,8 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
                     T_stop_,
                     tau_T_,
                     tau_P_,
-                    P_target_,
+                    // LAMMPS `p_target / nktv2p`: energy/volume.
+                    P_target_ / ctx.runtime.units.nktv2p,
                     dt_,
                     drag_,
                     mtchain_,
@@ -389,7 +392,10 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
                     ctx.runtime.md.n_dof_global,
                     ctx.frame.n_atoms(),
                     {couple_axis_[0], couple_axis_[1], couple_axis_[2]},
-                    nullptr};
+                    nullptr,
+                    ctx.runtime.units.boltz,
+                    ctx.runtime.units.mvv2e,
+                    ctx.runtime.units.ftm2v};
     s.chain.resize(3 * (mtchain_ + mpchain_));
     NptHistory h{};
     h.qt = thrust::raw_pointer_cast(s.chain.data());
@@ -449,14 +455,16 @@ void NoseHooverNPT::launch(const LaunchContext& ctx) {
                                               ctx.runtime.host_box); // P3-4,6
         scale_kick<true><<<blocks, kDefaultBlock, 0, stream>>>(
             a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, history, f.force_fault,
-            a.tag, step_ptr, step, mixed_t(0.5 * dt_), n); // P4-5
+            a.tag, step_ptr, step, mixed_t(0.5 * dt_), mixed_t(p.ftm2v),
+            n); // P4-5
         propagate_positions<<<blocks, kDefaultBlock, 0, stream>>>(
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz,
             a.image, history, f.box, mixed_t(dt_), n, f.force_fault); // P6
     } else if (ctx.at(ATV::md::Phase::final_integrate)) {
         scale_kick<false><<<blocks, kDefaultBlock, 0, stream>>>(
             a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, history, f.force_fault,
-            a.tag, step_ptr, step, mixed_t(0.5 * dt_), n); // P7
+            a.tag, step_ptr, step, mixed_t(0.5 * dt_), mixed_t(p.ftm2v),
+            n); // P7
     } else if (ctx.at(ATV::md::Phase::end_of_step)) {
         scale_reduce<false, true><<<blocks, kDefaultBlock, 0, stream>>>(
             a.vx, a.vy, a.vz, a.mass, history, ke, n, f.force_fault);

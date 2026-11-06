@@ -50,7 +50,7 @@ namespace md {
 /// Parameters are constructor arguments and public members — no Config bag.
 ///
 /// @code
-/// cpu::md::PistonElectrode piston(/*type=*/3, /*P [eV/Å³]=*/1e-4,
+/// cpu::md::PistonElectrode piston(/*type=*/3, /*P [style pressure]=*/1e-4,
 ///                                 cpu::md::PistonElectrode::Side::Upper);
 /// piston.tau_damp = 50.0; // optional COM friction [fs]
 /// sim.set_observer(std::move(piston));
@@ -66,7 +66,7 @@ class PistonElectrode : public cpu::Component {
     };
 
     /// @param type_id Atom type of this electrode piston (matches `kAtom_type`).
-    /// @param P_target Target normal pressure [eV/Å³]. 1 bar ≈ 6.2415e-7 eV/Å³.
+    /// @param P_target Target normal pressure [style pressure]. Like LAMMPS, the run's pressure unit (metal: bar, real: atm).
     /// @param side Upper or lower wall (external-force sign).
     PistonElectrode(int type_id, double P_target, Side side);
 
@@ -76,7 +76,7 @@ class PistonElectrode : public cpu::Component {
     Side side() const noexcept { return side_; }
 
     // ── Public parameters (mutable after construction) ───────────────
-    double P_target = 0.0; ///< Target \(P_z\) [eV/Å³].
+    double P_target = 0.0; ///< Target \(P_z\) [style pressure].
     /// Optional COM friction time constant [fs]. If `>0`, adds
     /// \(F_{\mathrm{damp}} = -M v_{\mathrm{com},z}/\tau\) into the net force
     /// (textbook equilibration aid; default off).
@@ -96,7 +96,7 @@ class PistonElectrode : public cpu::Component {
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
-    /// @brief Instantaneous piston \(P_z\) [eV/Å³] from last `post_force`.
+    /// @brief Instantaneous piston \(P_z\) [style pressure] from last `post_force`.
     double last_P_z() const noexcept { return last_P_z_; }
     /// @brief \(\sum F_z\) on piston atoms before redistribution [eV/Å].
     double last_F_z_atoms() const noexcept { return last_F_z_atoms_; }
@@ -110,6 +110,8 @@ class PistonElectrode : public cpu::Component {
     double last_mass() const noexcept { return last_mass_; }
 
   private:
+    double nktv2p_ = 1.0; ///< The run's nktv2p (pressure → energy/volume).
+    double ftm2v_ = 1.0;  ///< The run's ftm2v, cached at build().
     void resolve_rows_(const cpu::Frame& f, int n_owned);
     void snapshot_xy_offsets_(const cpu::Frame& f);
     void apply_forces_(cpu::Frame& f);

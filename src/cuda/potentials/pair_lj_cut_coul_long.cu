@@ -73,8 +73,9 @@ template <bool Energy, bool Virial>
 __global__ void
 exceptions(const Exception* pairs, int count, const pos_t* x, const pos_t* y,
            const pos_t* z, const force_t* q, const tile::TypedPairCoeff* table,
-           Box box_arg, force_t alpha, force_t coul_cut2, fixed_t* fx,
-           fixed_t* fy, fixed_t* fz, ForceFault* fault, acc_t* partial,
+           Box box_arg, force_t alpha, force_t qqrd2e, force_t coul_cut2,
+           fixed_t* fx, fixed_t* fy, fixed_t* fz, ForceFault* fault,
+           acc_t* partial,
            int partial_stride, int partial_offset) {
     const ForceBox box = box_arg.current().as<force_t>();
     const int p = blockIdx.x * blockDim.x + threadIdx.x;
@@ -96,7 +97,7 @@ exceptions(const Exception* pairs, int count, const pos_t* x, const pos_t* y,
                 en = lj.energy;
             }
             if (r2 < coul_cut2) {
-                const force_t qq = force_t(units::md_qqr2e) * q[i] * q[j] * inv;
+                const force_t qq = qqrd2e * q[i] * q[j] * inv;
                 const force_t screened = t.coul_scale - erf(ar);
                 fr += qq
                       * (screened
@@ -376,7 +377,7 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
     // Ordinary tile force excludes every exception. The sparse pass restores
     // the scaled LJ / r^-4 and the real-space Ewald exclusion correction
     // into the partial slots after the tiles.
-    const potentials::CoulKernel coul{units::md_qqr2e, alpha_,
+    const potentials::CoulKernel coul{ctx.runtime.units.qqrd2e(), alpha_,
                                       cut_coul_ * cut_coul_};
     const tile::Coulomb coulomb{coul, f.atoms.charge,
                                 /*masked=*/s.typed && cut_coul_ < cutoff_};
@@ -440,7 +441,8 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
             exceptions<E, V><<<s.exception_blocks, kDefaultBlock, 0, stream>>>(
                 s.pairs, s.count, f.atoms.x, f.atoms.y, f.atoms.z,
                 f.atoms.charge, s.table, ctx.runtime.host_box, force_t(alpha_),
-                coul_cut2, f.atoms.fx, f.atoms.fy, f.atoms.fz, f.force_fault,
+                force_t(ctx.runtime.units.qqrd2e()), coul_cut2, f.atoms.fx,
+                f.atoms.fy, f.atoms.fz, f.force_fault,
                 engine.partial(), engine.partial_stride(),
                 engine.extra_offset());
         engine.template reduce<E, V>(

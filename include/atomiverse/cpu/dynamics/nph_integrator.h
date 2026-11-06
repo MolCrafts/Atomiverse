@@ -37,12 +37,12 @@ namespace md {
 /// Requires system stress. v1 is **isotropic volume only**; full-cell
 /// NPH-PR is out of scope.
 ///
-/// Units: \(P\) [eV/Å³], \(\tau_P\) [fs], \(dt\) [fs], \(W\) [eV·fs²].
+/// Units: \(P\) [style pressure], \(\tau_P\) [fs], \(dt\) [fs], \(W\) [eV·fs²].
 ///
 /// Reference: Martyna, Tobias, Klein, *J. Chem. Phys.* **101**, 4177 (1994).
 class NphIntegrator : public cpu::Integrator, public cpu::TimestepProvider {
   public:
-    /// @param P_target Target pressure [eV/Å³], LAMMPS-standard sign
+    /// @param P_target Target pressure [style pressure], LAMMPS-standard sign
     ///                 (positive ⇔ compressive).
     /// @param tau_P    Barostat coupling time [fs] (sets default mass).
     /// @param dt       Timestep [fs].
@@ -70,6 +70,7 @@ class NphIntegrator : public cpu::Integrator, public cpu::TimestepProvider {
     double eps_dot() const noexcept { return eps_dot_; }
 
   private:
+    double nktv2p_ = 1.0; ///< The run's nktv2p (pressure → energy/volume).
     double P_target_;
     double tau_P_;
     double dt_;

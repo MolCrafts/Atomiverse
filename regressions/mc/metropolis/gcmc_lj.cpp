@@ -35,12 +35,13 @@ int run() {
     // ── Argon-flavoured LJ, truncated AND shifted at 2.5σ ────────────────
     // The engine's PairLJCut is cut-and-shifted, so B₂ below is computed for
     // exactly that potential — convention-exact, no long-range correction.
-    const double eps = 120.0 * units::md_boltz;        // ε/k_B = 120 K [eV]
-    const double sigma = 3.4;                          // [Å]
-    const double cutoff = 2.5 * sigma;                 // [Å]
-    const double t_red = 1.5;                          // supercritical vapor
-    const double temperature = t_red * 120.0;          // 180 K
-    const double kT = units::md_boltz * temperature;   // [eV]
+    const double eps =
+        120.0 * units::UnitSystem::lj().boltz; // ε/k_B = 120 K [eV]
+    const double sigma = 3.4;                  // [Å]
+    const double cutoff = 2.5 * sigma;         // [Å]
+    const double t_red = 1.5;                  // supercritical vapor
+    const double temperature = t_red * 120.0;  // 180 K
+    const double kT = units::UnitSystem::lj().boltz * temperature; // [eV]
     const double mass = 39.948;                        // argon [amu]
     const double box_len = 12.0 * sigma;               // 40.8 Å; > 2 rc
     const double volume = box_len * box_len * box_len; // [Å³]
@@ -77,9 +78,10 @@ int run() {
                 b2 / (sigma * sigma * sigma));
 
     // ── Two activities on the dilute vapor branch ────────────────────────
-    const double z_red[2] = {0.010, 0.030};                         // z σ³
-    const double lambda = units::lambda_thermal(mass, temperature); // [Å]
-    const double lambda3 = lambda * lambda * lambda;                // [Å³]
+    const double z_red[2] = {0.010, 0.030}; // z σ³
+    const double lambda =
+        units::lambda_thermal(mass, temperature, units::UnitSystem::lj());
+    const double lambda3 = lambda * lambda * lambda; // [Å³]
 
     int failures = 0;
     for (int p = 0; p < 2; ++p) {

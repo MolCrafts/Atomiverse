@@ -20,6 +20,7 @@
 #include "atomiverse/core/capture_buffer.h"
 #include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/units.h"
 
 namespace ATV::cpu::task {
@@ -446,8 +447,9 @@ struct PairCoulCutParams {
     double s12 = 1.0; ///< 1-2 Coulomb weight.
     double s13 = 1.0; ///< 1-3 Coulomb weight.
     double s14 = 1.0; ///< 1-4 Coulomb weight.
-    /// Coulomb constant k [eV·Å/e²] (`cpu::PairCoulCut::set_coulomb_constant`).
-    double coulomb = ATV::units::md_qqr2e;
+    /// Coulomb constant k [energy·length/charge² of the run's units]
+    /// (`cpu::PairCoulCut::set_coulomb_constant`); 0 = the run's qqrd2e.
+    double coulomb = 0.0;
 };
 inline bool operator==(const PairCoulCutParams& a, const PairCoulCutParams& b) {
     return a.cutoff == b.cutoff && a.s12 == b.s12 && a.s13 == b.s13
@@ -1694,9 +1696,13 @@ struct MDTask {
     /// (`Driver::set_capture_buffer_bytes`) [bytes; >= 1, checked when the
     /// task is materialized]. Default `ATV_CAPTURE_BUFFER_BYTES`.
     std::uint64_t capture_buffer_bytes = kCaptureBufferBytes;
+    /// LAMMPS `units` style of the run (`Driver::set_units`); every
+    /// parameter of `entries` and the Frame are in this style.
+    units::Style units = units::Style::lj;
 };
 inline bool operator==(const MDTask& a, const MDTask& b) {
     return a.entries == b.entries && a.n_steps == b.n_steps
+           && a.units == b.units
            && a.capture_buffer_bytes == b.capture_buffer_bytes;
 }
 
@@ -1719,10 +1725,12 @@ struct MinimizeTask {
     /// The single stop policy of this run. A variant: a fixed-cell
     /// run judges forces, a variable-cell run judges pressure or stress.
     MinimizeCriterionParams convergence;
+    /// LAMMPS `units` style of the run (`Driver::set_units`).
+    units::Style units = units::Style::lj;
 };
 inline bool operator==(const MinimizeTask& a, const MinimizeTask& b) {
     return a.entries == b.entries && a.max_iter == b.max_iter
-           && a.convergence == b.convergence;
+           && a.convergence == b.convergence && a.units == b.units;
 }
 
 using TaskPayload = std::variant<MDTask, SinglePointTask, MinimizeTask>;

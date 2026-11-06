@@ -25,6 +25,7 @@
 #include <type_traits>
 
 #include "atomiverse/core/iteration_status.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/verdict.h"
 
 namespace ATV {
@@ -300,6 +301,15 @@ struct Context {
     int n_threads = 0; ///< OpenMP threads (0 = auto-detect).
     int mpi_rank = 0;  ///< MPI rank within communicator (0 if no MPI).
     int mpi_size = 1;  ///< MPI communicator size (1 if no MPI).
+
+    /// @brief The run's LAMMPS `units` style (publisher: the Driver, before
+    ///        any component builds; default lj as in LAMMPS).
+    ///
+    /// Every classical factor (`boltz`, `mvv2e`, `ftm2v`, `qqrd2e`,
+    /// `nktv2p`, ...) a component multiplies comes from here. One value for
+    /// the whole driver tree: a nested driver runs on its parent's Runtime and
+    /// reads the same one. @see core/unit_system.h
+    units::UnitSystem units = units::UnitSystem::lj();
 
     /// @brief Non-owning handle to the per-Backend timing registry.
     /// Published by `Backend::init()`. Components reach it (via

@@ -83,7 +83,7 @@ TEST(ConstPotBO, SignFollowsDeltaPsi) {
 
 TEST(ConstPotBO, PrimaryCellMatchesAnalytic) {
     // Independent analytic: no images, eta=2, Ψ=(0,1), q_elyt=(0.5,-0.5)
-    // Q from BO + neutrality in lj units (md_qqr2e = 1, see agent pin
+    // Q from BO + neutrality in lj units (qqrd2e = 1, see agent pin
     // script). The metal-unit value (k_e = 14.399645) was 0.27175356.
     constexpr double kQTop = 0.61748665;
     auto f = madelung_primary();
@@ -192,7 +192,7 @@ TEST(ConstPotBO, ThomasFermiHardnessAnalyticTwoSite) {
     constexpr double kLtf = 1.0;
     constexpr double kD = 0.1;
     constexpr double kSep = 5.0; // Å along z
-    const double ke = units::md_qqr2e;
+    const double ke = units::UnitSystem::lj().qqrd2e();
     const double a0 = ke * kEta * std::sqrt(2.0 / 3.14159265358979323846);
     const double a01 = ke * std::erf(kEta / std::sqrt(2.0) * kSep) / kSep;
     const double h = 4.0 * 3.14159265358979323846 * ke * kLtf * kLtf * kD;

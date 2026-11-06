@@ -67,7 +67,7 @@ TEST(PppmCoul, MadelungNaCl) {
 
     const int N = n * n * n;
     const double e_expected =
-        -0.5 * N * kMadelungNaCl * ATV::units::md_qqr2e / d;
+        -0.5 * N * kMadelungNaCl * ATV::units::UnitSystem::lj().qqrd2e() / d;
     EXPECT_NEAR(e / e_expected, 1.0, 1e-3)
         << "E=" << e << " expected=" << e_expected;
 }
@@ -244,8 +244,8 @@ void check_stencil_against_lammps(const double* cell, int order, double spacing,
     solver.build({runtime, f});
     zero_force_energy_stress(f);
     solver.launch({runtime, f, 0, 0});
-    const double e_atv =
-        f.meta.get(kEnergy) - longrange::self_energy_prefactor(kAlpha) * qsq;
+    const double e_atv = f.meta.get(kEnergy)
+                         - longrange::self_energy_prefactor(kAlpha, 1.0) * qsq;
     double stress_atv[6];
     for (int c = 0; c < 6; ++c)
         stress_atv[c] = f.meta.get(kStress)[c];

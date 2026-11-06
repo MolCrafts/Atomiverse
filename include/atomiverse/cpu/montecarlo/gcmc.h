@@ -43,15 +43,12 @@ class GcmcMetropolis : public OutcomePolicy {
     /// @throws std::invalid_argument on a non-positive temperature or mass.
     GcmcMetropolis(AccReal temperature_K, AccReal mu_ev, double mass_amu,
                    std::mt19937_64& rng)
-        : temperature_(temperature_K), mu_(mu_ev), rng_(rng) {
+        : temperature_(temperature_K), mu_(mu_ev), mass_(mass_amu), rng_(rng) {
         if (!(temperature_K > AccReal(0)))
             throw std::invalid_argument(
                 "GcmcMetropolis: temperature must be > 0 K");
         if (!(mass_amu > 0.0))
             throw std::invalid_argument("GcmcMetropolis: mass must be > 0 amu");
-        const double lam =
-            units::lambda_thermal(mass_amu, static_cast<double>(temperature_K));
-        lambda3_ = lam * lam * lam;
     }
 
     /// @brief Stable identifier, for diagnostics.
@@ -60,6 +57,10 @@ class GcmcMetropolis : public OutcomePolicy {
     /// @brief Seed the reference energy from the initial configuration.
     void on_start(const cpu::LoopState& s) override {
         e_cur_ = s.frame.meta.get(kEnergy);
+        // Λ in the run's units (LAMMPS fix gcmc: hplanck, boltz, mvv2e).
+        const double lam = units::lambda_thermal(
+            mass_, static_cast<double>(temperature_), s.runtime.units);
+        lambda3_ = lam * lam * lam;
     }
 
     /// @brief Judge the trial now in the frame, by its verb.
@@ -73,7 +74,7 @@ class GcmcMetropolis : public OutcomePolicy {
                 "under an MC preset");
         const AccReal e_trial = s.frame.meta.get(kEnergy);
         const double beta =
-            1.0 / (units::md_boltz * static_cast<double>(temperature_));
+            1.0 / (s.runtime.units.boltz * static_cast<double>(temperature_));
         const double dE = static_cast<double>(e_trial - e_cur_);
         const double mu = static_cast<double>(mu_);
         const double v = s.frame.box.volume();
@@ -131,7 +132,9 @@ class GcmcMetropolis : public OutcomePolicy {
 
     AccReal temperature_;  ///< Ensemble temperature [K].
     AccReal mu_;           ///< Chemical potential [eV].
-    double lambda3_ = 0;   ///< Λ³ [Å³] at `temperature_`.
+    double mass_;          ///< Particle mass [style mass].
+    double lambda3_ = 0;   ///< Λ³ [style volume] at `temperature_`, set by
+                           ///< `on_start` in the run's units.
     std::mt19937_64& rng_; ///< The run's RNG stream, shared with the Movers.
     AccReal e_cur_ = 0;    ///< Energy of the last accepted state [eV].
 };

@@ -31,6 +31,7 @@ PressureSeries::PressureSeries(std::string path, int every, double epsilon_ev,
 }
 
 void PressureSeries::on_build(const BuildContext& ctx) {
+    mvv2e_ = ctx.runtime.units.mvv2e;
     if (ctx.frame.n_local() < 1 || ctx.frame.box == nullptr
         || ctx.frame.scalars == nullptr)
         throw std::invalid_argument(
@@ -49,7 +50,7 @@ void PressureSeries::consume(const CaptureView& v) {
     // Lab-frame kinetic tensor Σ m v⊗v [eV] of the captured state.
     double kinetic[6] = {};
     for (int i = 0; i < v.n_atoms; ++i) {
-        const double m = v.mass[i] * units::md_mvv2e;
+        const double m = v.mass[i] * mvv2e_;
         const double vx = v.vx[i], vy = v.vy[i], vz = v.vz[i];
         kinetic[0] += m * vx * vx;
         kinetic[1] += m * vy * vy;

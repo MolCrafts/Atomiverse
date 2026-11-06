@@ -11,7 +11,7 @@
 /// consumer, as the producer split below states.
 ///
 /// Producer split:
-///   - Kinetic term `Σ m·vα·vβ · ATV::units::md_mvv2e` → `cuda::md::KineticEnergy`
+///   - Kinetic term `Σ m·vα·vβ · mvv2e → `cuda::md::KineticEnergy`
 ///     atomic-adds it into `frame.scalars->stress_kinetic[6]` via the
 ///     packed warp-shuffle reduction it does for KE (one fused kernel
 ///     since cuda-md-review-cleanup-05).

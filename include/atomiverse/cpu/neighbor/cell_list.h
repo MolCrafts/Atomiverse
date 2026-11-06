@@ -37,8 +37,13 @@ struct DomainDecomposition;
 class CellList {
   public:
     /// @param cutoff Interaction cutoff [Angstrom].
-    /// @param skin Verlet skin width [Angstrom]. Negative = auto (0.3 * cutoff).
+    /// @param skin Verlet skin width [length]. Negative = the LAMMPS default
+    ///        of the run's `units` (lj 0.3 until a driver applies its style
+    ///        through `set_skin`).
     explicit CellList(double cutoff, double skin = -1.0);
+
+    /// @brief Replace the skin (the driver's LAMMPS `units` default).
+    void set_skin(double skin);
 
     /// Prepare bins around the complete fractional cell plus reach. Input
     /// positions are raw Cartesian rows; periodic images must already exist.

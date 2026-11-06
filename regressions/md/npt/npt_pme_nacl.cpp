@@ -142,7 +142,8 @@ int run() {
     // ── (1) Madelung ───────────────────────────────────────────────────
     cpu::Frame frame = nacl(kDExp);
     const double e0 = electrostatic_energy(frame);
-    const double e_ref = -0.5 * kN * kMadelung * units::md_qqr2e / kDExp;
+    const double e_ref =
+        -0.5 * kN * kMadelung * units::UnitSystem::lj().qqrd2e() / kDExp;
     const double madelung_rel = std::fabs(e0 / e_ref - 1.0);
     std::printf("NaCl PME Madelung: E = %.6f eV  ref = %.6f eV  |rel| = %.3e\n",
                 e0, e_ref, madelung_rel);

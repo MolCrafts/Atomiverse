@@ -90,9 +90,10 @@ int run() {
     check("E_qeq [eV]", qeq.qeq_energy(), -0.467311783767, 1e-6);
 
     // Coulomb energy of the equilibrated charges. The LAMMPS metal thermo
-    // pin is qqr2e = units::coulomb; the engine multiplies md_qqr2e.
+    // pin is qqr2e = units::coulomb; the engine multiplies qqrd2e.
     check("E_coul", f.meta.get(kEnergy),
-          -0.254699311955 * units::md_qqr2e / units::coulomb, 1e-9);
+          -0.254699311955 * units::UnitSystem::lj().qqrd2e() / units::coulomb,
+          1e-9);
 
     // ── Fair perf twin: 1000 repeated equilibrations (see in.qeq_perf) ─
     // QEq only — dummy Bias satisfies MD validation (no pair cost).

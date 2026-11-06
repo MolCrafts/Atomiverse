@@ -249,9 +249,9 @@ TEST(SllodFlow, BiasRoundTrip) {
 }
 
 TEST(SllodFlow, NoseHooverHalf) {
-    const double kB = ATV::units::md_boltz;
+    const double kB = ATV::units::UnitSystem::lj().boltz;
     const double ndof = 3;
-    // lj units (md_boltz = 1): T is the metal k_B·300 K in eV, so the pins
+    // lj units (boltz = 1): T is the metal k_B·300 K in eV, so the pins
     // below keep their pre-lj magnitudes.
     const double T = 0.025851999786;
     const double tau = 100;
@@ -297,7 +297,7 @@ SllodFlow make_flow(const double* h0, double rate, double dt, int dir) {
 TEST(SllodFlow, ChainMatchesLammpsNhcTempIntegrate) {
     // Chains of several lengths over half-steps whose measured KE jumps
     // between calls (as final_integrate's fresh measurement does).
-    const double kT = ATV::units::md_boltz * 300.0;
+    const double kT = ATV::units::UnitSystem::lj().boltz * 300.0;
     const double ndof = 45, tau = 20, dt = 2;
     for (int m : {1, 2, 3, 5}) {
         atv_test::LammpsNhc ref(m, ndof, kT, tau, dt);

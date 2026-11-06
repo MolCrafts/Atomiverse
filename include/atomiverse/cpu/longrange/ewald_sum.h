@@ -5,9 +5,12 @@
 /// Pure operator math for the Ewald reciprocal sum (P. P. Ewald, *Ann. Phys.*
 /// **369**, 253 (1921). DOI: 10.1002/andp.19213690304):
 ///
-///   E_recip = units::md_qqr2e · (4π/V) Σ_{k∈½} exp(−k²/4α²)/k² · |S(k)|²
-///   E_self  = −units::md_qqr2e · (α/√π) Σ_i q_i²
-///   E_corr  = −units::md_qqr2e · π/(2 V α²) · (Σ_i q_i)²
+///   E_recip = qqrd2e · (4π/V) Σ_{k∈½} exp(−k²/4α²)/k² · |S(k)|²
+///   E_self  = −qqrd2e · (α/√π) Σ_i q_i²
+///   E_corr  = −qqrd2e · π/(2 V α²) · (Σ_i q_i)²
+///
+/// `qqrd2e` is the run's Coulomb constant (`set_qqrd2e`, LAMMPS
+/// `force->qqrd2e`; default 1, the lj row).
 ///
 /// with S(k) = Σ_j q_j exp(i k·r_j). The k-sum is over the **positive
 /// hemisphere** only (kz>0, or kz=0∧ky>0, or kz=ky=0∧kx>0), matching the
@@ -195,7 +198,7 @@ class EwaldSum {
                     AccReal* fx, AccReal* fy, AccReal* fz) const {
         const int ng = static_cast<int>(kx_.size());
         // Half-sphere: energy prefactor is 4π k_e / V; force factor uses 2·ug.
-        const double K = ATV::units::md_qqr2e * 4.0 * ATV::units::pi / volume;
+        const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
         const double* __restrict kx = kx_.data();
         const double* __restrict ky = ky_.data();
         const double* __restrict kz = kz_.data();
@@ -225,7 +228,7 @@ class EwaldSum {
     /// @param qsq_sum Σ_i q_i² [e²].
     /// @return E_self [eV].
     double self_energy(double qsq_sum) const {
-        return longrange::self_energy_prefactor(alpha_) * qsq_sum;
+        return longrange::self_energy_prefactor(alpha_, qqrd2e_) * qsq_sum;
     }
 
     /// @brief Net-charge (background) correction [eV].
@@ -233,7 +236,7 @@ class EwaldSum {
     /// @param volume  Cell volume [Å³].
     /// @return E_corr [eV].
     double net_charge_energy(double q_total, double volume) const {
-        return longrange::background_energy(q_total, volume, alpha_);
+        return longrange::background_energy(q_total, volume, alpha_, qqrd2e_);
     }
 
     /// @brief Reciprocal energy and virial from global S(k).
@@ -246,7 +249,7 @@ class EwaldSum {
                                   double stress[6]) const {
         const int ng = static_cast<int>(kx_.size());
         // Half-sphere prefactor 4π k_e / V (see rebuild() hemisphere filter).
-        const double K = ATV::units::md_qqr2e * 4.0 * ATV::units::pi / volume;
+        const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
         const double* __restrict kx = kx_.data();
         const double* __restrict ky = ky_.data();
         const double* __restrict kz = kz_.data();
@@ -295,7 +298,12 @@ class EwaldSum {
                * sizeof(double);
     }
 
+    /// @brief The run's Coulomb constant (LAMMPS `force->qqrd2e`); the
+    ///        owning solver sets it at build from `ctx.runtime.units`.
+    void set_qqrd2e(double qqrd2e) { qqrd2e_ = qqrd2e; }
+
   private:
+    double qqrd2e_ = 1.0;
     double alpha_;
     double accuracy_;
     std::vector<double> kx_, ky_, kz_, kw_, kvterm_;

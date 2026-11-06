@@ -73,7 +73,7 @@ void Berendsen::launch(const cpu::LaunchContext& ctx) {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::md_mvv2e;
+    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -89,7 +89,8 @@ void Berendsen::launch(const cpu::LaunchContext& ctx) {
     if (ke <= 0.0)
         return;
 
-    const double T = 2.0 * ke / (static_cast<double>(n_dof) * units::md_boltz);
+    const double T =
+        2.0 * ke / (static_cast<double>(n_dof) * ctx.runtime.units.boltz);
 
     // Berendsen 1984 Eq. 11: λ² = 1 + (Δt/τ)(T₀/T − 1).
     //

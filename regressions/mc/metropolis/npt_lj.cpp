@@ -36,14 +36,15 @@ using namespace ATV;
 
 int run() {
     // ── Argon-flavoured LJ, truncated AND shifted at 2.5σ ────────────────
-    const double eps = 120.0 * units::md_boltz;      // ε/k_B = 120 K [eV]
-    const double sigma = 3.4;                        // [Å]
-    const double cutoff = 2.5 * sigma;               // [Å]
-    const double t_red = 1.5;                        // supercritical vapor
-    const double temperature = t_red * 120.0;        // 180 K
-    const double kT = units::md_boltz * temperature; // [eV]
-    const double mass = 39.948;                      // argon [amu]
-    const int n_atoms = 125;                         // 5³ — clean SC lattice
+    const double eps =
+        120.0 * units::UnitSystem::lj().boltz; // ε/k_B = 120 K [eV]
+    const double sigma = 3.4;                  // [Å]
+    const double cutoff = 2.5 * sigma;         // [Å]
+    const double t_red = 1.5;                  // supercritical vapor
+    const double temperature = t_red * 120.0;  // 180 K
+    const double kT = units::UnitSystem::lj().boltz * temperature; // [eV]
+    const double mass = 39.948; // argon [amu]
+    const int n_atoms = 125;    // 5³ — clean SC lattice
 
     // Dilute state point: P* = Pσ³/ε = 0.0297 targets ρσ³ ≈ 0.02, where the
     // virial series is converged at second order (see REFERENCE.md).

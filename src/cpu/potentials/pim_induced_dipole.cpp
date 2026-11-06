@@ -142,7 +142,7 @@ void PimInducedDipole::launch(const LaunchContext& ctx) {
     }
 
     const double rc2 = cutoff * cutoff;
-    const double k = units::md_qqr2e;
+    const double k = ctx.runtime.units.qqrd2e();
 
     // Permanent field E^perm [e/Å²] (Gaussian electrostatics, damped).
     std::vector<double> e_perm(static_cast<std::size_t>(3 * n), 0.0);

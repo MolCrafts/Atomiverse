@@ -25,7 +25,7 @@ namespace {
 // ── Fixed-Q 5-atom parallel-plate toy (REFERENCE.md) ───────────────────
 // Electrode η = 1.0 Å⁻¹ (type 1); ion is point (type 0).
 // q_L = +0.25 on L0,L1; q_R = −0.25 on R0,R1; q_ion = +1.
-// Literature kernel energy at qqr2e = units::coulomb. Scaled onto md_qqr2e
+// Literature kernel energy at qqr2e = units::coulomb. Scaled onto qqrd2e
 // where the engine is called.
 constexpr double kEFixedMetal = 1.938689655050537;
 
@@ -47,7 +47,7 @@ double solve_two_site_q1(double A11, double A12, double Psi1, double Psi2) {
 
 int run() {
     const double eta = 1.0;
-    const double K = ATV::units::md_qqr2e;
+    const double K = ATV::units::UnitSystem::lj().qqrd2e();
     const double kEFixedPin = kEFixedMetal * K / ATV::units::coulomb;
     const double kQGaussPin = kQGaussMetal * ATV::units::coulomb / K;
     int nfail = 0;

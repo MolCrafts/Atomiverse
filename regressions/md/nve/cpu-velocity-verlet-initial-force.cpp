@@ -45,15 +45,16 @@ int run() try {
     auto analytic_step = [&] {
         const double force =
             2 * spring * (expected_x[1] - expected_x[0] - equilibrium);
-        const double old_a[2] = {force * units::md_ftm2v / masses[0],
-                                 -force * units::md_ftm2v / masses[1]};
+        const double old_a[2] = {
+            force * units::UnitSystem::lj().ftm2v / masses[0],
+            -force * units::UnitSystem::lj().ftm2v / masses[1]};
         for (int i = 0; i < 2; ++i)
             expected_x[i] += dt * expected_v[i] + 0.5 * dt * dt * old_a[i];
         const double new_force =
             2 * spring * (expected_x[1] - expected_x[0] - equilibrium);
         for (int i = 0; i < 2; ++i) {
-            const double new_a =
-                (i == 0 ? new_force : -new_force) * units::md_ftm2v / masses[i];
+            const double new_a = (i == 0 ? new_force : -new_force)
+                                 * units::UnitSystem::lj().ftm2v / masses[i];
             expected_v[i] += 0.5 * dt * (old_a[i] + new_a);
         }
     };

@@ -46,14 +46,17 @@ namespace {
 __global__ void berendsen_dilation_k(const geom_t* box,
                                      const SystemScalars* scalars,
                                      double target, double dt, double damping,
-                                     double modulus, mixed_t* mu) {
+                                     double modulus, double nktv2p,
+                                     mixed_t* mu) {
     const double volume = fabs(box[0] * (box[4] * box[8] - box[5] * box[7])
                                - box[1] * (box[3] * box[8] - box[5] * box[6])
                                + box[2] * (box[3] * box[7] - box[4] * box[6]));
     *mu = volume > 0.0
               ? mixed_t(ATV::md::berendsen_dilation(
-                    ATV::md::isotropic_pressure(
-                        scalars->stress, scalars->stress_kinetic, volume),
+                    // In pressure units, like target and modulus.
+                    ATV::md::isotropic_pressure(scalars->stress,
+                                                scalars->stress_kinetic, volume)
+                        * nktv2p,
                     target, dt, damping, modulus))
               : mixed_t(1);
 }
@@ -92,7 +95,8 @@ void Barostat::launch(const LaunchContext& ctx) {
     int grid = cuda::grid_size(static_cast<int>(n));
 
     berendsen_dilation_k<<<1, 1, 0, stream>>>(
-        f.box, f.scalars, P_target_, dt_, tau_p_, bulk_modulus_, state_->d_mu);
+        f.box, f.scalars, P_target_, dt_, tau_p_, bulk_modulus_,
+        ctx.runtime.units.nktv2p, state_->d_mu);
     berendsen_scale_k<<<std::max(1, grid), block, 0, stream>>>(
         f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.x_corr, f.atoms.y_corr,
         f.atoms.z_corr, f.box, state_->d_mu, n, f.force_fault);

@@ -61,7 +61,7 @@ int run() {
     // ── Pinned constants (derivation:
     //    tools/metalwalls_oracle/inputs/literature/constant_d_pins.py) ──
     const double V = 1000.0;
-    const double ke = units::md_qqr2e;
+    const double ke = units::UnitSystem::lj().qqrd2e();
 
     // ── Gate A: static field / energy at D_z = 0.5 ─────────────────────
     // P_z = q d / V = 2e-3. E_z = D_z − 4π k_e P_z.
@@ -122,14 +122,14 @@ int run() {
     // ── Gate B: constant-D dynamics at D_z = 0 — itinerant-polarization
     //    harmonic well (Cox & Sprik JCP 151, 064506 (2019)) ─────────────
     // Relative coordinate d: U = 2π k_e q² d² / V,
-    // ω = sqrt(4π k_e q² / (μ V) · md_ftm2v), μ = 1/2 for two unit masses.
+    // ω = sqrt(4π k_e q² / (μ V) · ftm2v), μ = 1/2 for two unit masses.
     // d(t) = d0 cos(ωt). dt = 0.1 in the style's time unit.
     {
         const double dt = 0.1;
         const double d0 = 2.0;
         const double mu = 0.5;
-        const double omega =
-            std::sqrt(4.0 * units::pi * ke * 1.0 / (mu * V) * units::md_ftm2v);
+        const double omega = std::sqrt(4.0 * units::pi * ke * 1.0 / (mu * V)
+                                       * units::UnitSystem::lj().ftm2v);
         const double U0 = 2.0 * units::pi * ke * d0 * d0 / V;
         const double tol_z = 5e-5;
 
@@ -181,7 +181,7 @@ int run() {
         double ke = 0.0;
         for (int i = 0; i < 2; ++i) {
             const double vz = double(f.span(kAtom_vz)[i]);
-            ke += 0.5 * units::md_mvv2e * 1.0 * vz * vz;
+            ke += 0.5 * units::UnitSystem::lj().mvv2e * 1.0 * vz * vz;
         }
         const double e_tot = ke + f.meta.get(kEnergy);
         std::printf("Gate B: KE+U=%.16e U0=%.16e\n", e_tot, U0);
@@ -193,7 +193,8 @@ int run() {
         std::printf("Gate B: Ez(final)=%.16e Pz(final)=%.16e\n",
                     dfield.last_Ez(), dfield.last_Pz());
         if (std::fabs(dfield.last_Ez()
-                      - (-4.0 * units::pi * units::md_qqr2e * dfield.last_Pz()))
+                      - (-4.0 * units::pi * units::UnitSystem::lj().qqrd2e()
+                         * dfield.last_Pz()))
             > 1e-13) {
             std::printf("FAIL B Ez = -4*pi*k_e*Pz self-consistency\n");
             ok = false;

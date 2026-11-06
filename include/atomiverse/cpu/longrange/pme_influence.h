@@ -60,8 +60,8 @@ inline void pme_mode_virial(double ug, double mx, double my, double mz,
 inline void pme_apply_influence(std::complex<double>* grid, const int K[3],
                                 const double* bsp_mod0, const double* bsp_mod1,
                                 const double* bsp_mod2, const Mat3& inv_cell,
-                                double alpha, double volume, double& e_recip,
-                                double stress[6]) {
+                                double alpha, double volume, double qqrd2e,
+                                double& e_recip, double stress[6]) {
     const int K0 = K[0], K1 = K[1], K2 = K[2];
     const double inv_pi2_a2 = ATV::units::pi * ATV::units::pi / (alpha * alpha);
     const double vt_const = inv_pi2_a2; // π²/α² term inside vt
@@ -101,8 +101,7 @@ inline void pme_apply_influence(std::complex<double>* grid, const int K[3],
             }
         }
     }
-    const double escale =
-        ATV::units::md_qqr2e / (2.0 * ATV::units::pi * volume);
+    const double escale = qqrd2e / (2.0 * ATV::units::pi * volume);
     e_recip *= escale;
     for (int d = 0; d < 6; ++d)
         stress[d] *= escale;
@@ -169,8 +168,8 @@ inline void pme_build_influence_tables(const int K[3], const double* bsp_mod0,
 /// @brief Apply precomputed influence tables (no exp, no inv_cell walks).
 inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
                                        const PmeInfluenceTables& tab,
-                                       double volume, double& e_recip,
-                                       double stress[6]) {
+                                       double volume, double qqrd2e,
+                                       double& e_recip, double stress[6]) {
     e_recip = 0;
     for (int d = 0; d < 6; ++d)
         stress[d] = 0.0;
@@ -216,7 +215,7 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
             stress[d] += part[c][1 + d];
     }
     const double escale =
-        ATV::units::md_qqr2e / (2.0 * ATV::units::pi * volume);
+        qqrd2e / (2.0 * ATV::units::pi * volume);
     e_recip *= escale;
     for (int d = 0; d < 6; ++d)
         stress[d] *= escale;
@@ -225,7 +224,7 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
 /// @brief Interpolate reciprocal forces onto owned atoms from the inverse-FFT
 ///        convolution grid.
 ///
-/// F_{i,a} = −(units::md_qqr2e/πV) q_i Σ_stencil C(grid) Σ_d dθ_d Π_{d'≠d} θ_{d'}
+/// F_{i,a} = −(qqrd2e/πV) q_i Σ_stencil C(grid) Σ_d dθ_d Π_{d'≠d} θ_{d'}
 ///           · K_d · inv_cell(d,a)
 ///
 /// @param q       Charges [e], length @p n_atoms.
@@ -240,14 +239,15 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
 /// @param[in,out] fx,fy,fz Force accumulators [eV/Å], length @p n_atoms.
 inline void pme_interpolate_forces(const StorageReal* q, int n_atoms, int order,
                                    const int K[3], const Mat3& inv_cell,
-                                   double volume, const int* base,
-                                   const double* theta, const double* dtheta,
+                                   double volume, double qqrd2e,
+                                   const int* base, const double* theta,
+                                   const double* dtheta,
                                    const std::complex<double>* grid,
                                    AccReal* fx, AccReal* fy, AccReal* fz) {
     const int K0 = K[0], K1 = K[1], K2 = K[2];
     const int n = order;
     const int nm1 = n - 1;
-    const double fscale = ATV::units::md_qqr2e / (ATV::units::pi * volume);
+    const double fscale = qqrd2e / (ATV::units::pi * volume);
     // Local wrap (same as pme_spline::pme_wrap) — keep this header free of
     // a hard dependency on the spline TU for CUDA-safe inclusion.
     auto wrap = [](int g, int Km) {
